@@ -9,6 +9,9 @@ import {
   useCompleteTask,
   useCreateTask,
   useToggleHabit,
+  useCompletedToday,
+  flattenTasks,
+  pickUpNext,
 } from "@/lib/queries";
 import StarField from "@/components/StarField";
 import { cn, dueLabel, isOverdue, todayDow } from "@/lib/utils";
@@ -71,6 +74,72 @@ function UpNext({ task, onStart }: { task?: TodoistTask; onStart: (id: string) =
   );
 }
 
+/** One task row. `depth` indents subtasks under their parent. */
+function TaskRow({
+  task,
+  depth = 0,
+  childCount = 0,
+  projectName,
+  onComplete,
+}: {
+  task: TodoistTask;
+  depth?: number;
+  childCount?: number;
+  projectName?: string;
+  onComplete: (id: string) => void;
+}) {
+  const late = isOverdue(task.due?.date);
+
+  return (
+    <li
+      className={cn(
+        "group flex items-center gap-4 border-b border-white/[0.055] py-3 pr-5 last:border-0",
+        depth > 0 && "bg-white/[0.015]",
+      )}
+      style={{ paddingLeft: 20 + depth * 26 }}
+    >
+      {/* Subtasks get a short elbow so the hierarchy reads without a full tree. */}
+      {depth > 0 && <span aria-hidden className="text-chalk-dim -ml-4 text-[11px]">└</span>}
+
+      <button
+        onClick={() => onComplete(task.id)}
+        aria-label={`Complete ${task.content}`}
+        className={cn(
+          "h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] transition-colors",
+          late
+            ? "border-alert bg-alert shadow-[inset_0_0_0_2px_var(--color-panel)]"
+            : "border-white/25 hover:border-accent",
+        )}
+      />
+
+      <span className={cn("min-w-0 flex-1 truncate", depth > 0 ? "text-[12.5px]" : "text-[13.5px]")}>
+        {task.content}
+      </span>
+
+      {childCount > 0 && (
+        <span className="text-chalk-dim shrink-0 text-[10.5px] tracking-[0.10em]">
+          {childCount} sub{childCount === 1 ? "" : "s"}
+        </span>
+      )}
+
+      {projectName && (
+        <span className="text-chalk-dim hidden shrink-0 text-[10.5px] uppercase tracking-[0.10em] sm:inline">
+          {projectName}
+        </span>
+      )}
+
+      <span
+        className={cn(
+          "w-[86px] shrink-0 text-right text-[10.5px] uppercase tracking-[0.15em]",
+          late ? "text-alert font-semibold" : "text-chalk",
+        )}
+      >
+        {dueLabel(task.due?.date) ?? ""}
+      </span>
+    </li>
+  );
+}
+
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "alert" | "accent" }) {
   return (
     <div className="bg-panel px-4 py-3">
@@ -91,6 +160,7 @@ export default function DashboardPage() {
   const { data: tasks, isLoading, error } = useTasks();
   const { data: habits } = useHabits();
   const { data: projects } = useProjects();
+  const { data: completedToday } = useCompletedToday();
   const score = useScoreboard();
   const complete = useCompleteTask();
   const create = useCreateTask();
@@ -103,20 +173,14 @@ export default function DashboardPage() {
     [projects],
   );
 
-  /** Overdue first, then soonest. Undated sink to the bottom. */
-  const queue = useMemo(() => {
-    return [...(tasks ?? [])].sort((a, b) => {
-      const ad = a.due?.date ?? "9999";
-      const bd = b.due?.date ?? "9999";
-      if (ad !== bd) return ad < bd ? -1 : 1;
-      return b.priority - a.priority;
-    });
-  }, [tasks]);
+  /** Subtasks nested under parents at any depth; overdue first, then soonest. */
+  const rows = useMemo(() => flattenTasks(tasks ?? []), [tasks]);
 
-  const upNext = queue[0];
-  const rest = queue.slice(1);
+  // A parent with open subtasks isn't actionable, so Up Next drills to a leaf.
+  const upNext = pickUpNext(rows);
   const habitsToday = (habits ?? []).filter((h) => h.dueToday);
   const pct = score.atBats > 0 ? Math.round((score.hits / score.atBats) * 100) : 0;
+  const doneCount = completedToday?.length ?? 0;
 
   async function onAdd(e: FormEvent) {
     e.preventDefault();
@@ -164,44 +228,20 @@ export default function DashboardPage() {
         <div className="bg-panel min-h-0 rounded border border-white/[0.07]">
           {isLoading ? (
             <p className="label-caps animate-pulse py-10 text-center">Loading</p>
-          ) : rest.length === 0 ? (
-            <p className="text-chalk py-10 text-center text-sm">Nothing else queued.</p>
+          ) : rows.length === 0 ? (
+            <p className="text-chalk py-10 text-center text-sm">Nothing queued.</p>
           ) : (
             <ul>
-              {rest.map((t) => {
-                const late = isOverdue(t.due?.date);
-                return (
-                  <li
-                    key={t.id}
-                    className="group flex items-center gap-4 border-b border-white/[0.055] px-5 py-3 last:border-0"
-                  >
-                    <button
-                      onClick={() => complete.mutate(t.id)}
-                      aria-label={`Complete ${t.content}`}
-                      className={cn(
-                        "h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] transition-colors",
-                        late
-                          ? "border-alert bg-alert shadow-[inset_0_0_0_2px_var(--color-panel)]"
-                          : "border-white/25 hover:border-accent",
-                      )}
-                    />
-                    <span className="min-w-0 flex-1 truncate text-[13.5px]">{t.content}</span>
-                    {t.project_id && projectName.has(t.project_id) && (
-                      <span className="text-chalk-dim hidden shrink-0 text-[10.5px] uppercase tracking-[0.10em] sm:inline">
-                        {projectName.get(t.project_id)}
-                      </span>
-                    )}
-                    <span
-                      className={cn(
-                        "w-[86px] shrink-0 text-right text-[10.5px] uppercase tracking-[0.15em]",
-                        late ? "text-alert font-semibold" : "text-chalk",
-                      )}
-                    >
-                      {dueLabel(t.due?.date) ?? ""}
-                    </span>
-                  </li>
-                );
-              })}
+              {rows.map(({ task, depth, childCount }) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  depth={depth}
+                  childCount={childCount}
+                  projectName={projectName.get(task.project_id ?? "")}
+                  onComplete={(id) => complete.mutate(id)}
+                />
+              ))}
             </ul>
           )}
         </div>
@@ -229,9 +269,9 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-accent/15 grid grid-cols-2 gap-px">
+          <Stat label="Done Today" value={String(doneCount)} tone="accent" />
           <Stat label="Due Today" value={String(score.onDeck)} />
           <Stat label="Overdue" value={String(score.strikeouts)} tone="alert" />
-          <Stat label="Habits" value={String(habitsToday.length)} />
           <Stat label="Streak" value={String(score.habitStreak)} tone="accent" />
         </div>
 

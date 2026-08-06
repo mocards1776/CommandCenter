@@ -1,7 +1,14 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
-import { useTasks, useProjects, useCreateTask, useCompleteTask, useDeleteTask } from "@/lib/queries";
+import {
+  useTasks,
+  useProjects,
+  useCreateTask,
+  useCompleteTask,
+  useDeleteTask,
+  flattenTasks,
+} from "@/lib/queries";
 import { cn, dueLabel, isOverdue, todayStr } from "@/lib/utils";
 
 type Filter = "all" | "today" | "overdue";
@@ -32,12 +39,9 @@ export default function TodosPage() {
           ? list.filter((t) => t.due?.date && t.due.date.slice(0, 10) < today)
           : list;
 
-    return [...filtered].sort((a, b) => {
-      const ad = a.due?.date ?? "9999";
-      const bd = b.due?.date ?? "9999";
-      if (ad !== bd) return ad < bd ? -1 : 1;
-      return b.priority - a.priority;
-    });
+    // Filtering first means a child whose parent is filtered out still shows,
+    // as a root — flattenTasks treats an absent parent as top level.
+    return flattenTasks(filtered);
   }, [tasks, filter]);
 
   async function onAdd(e: FormEvent) {
@@ -124,13 +128,22 @@ export default function TodosPage() {
           <p className="text-chalk py-10 text-center text-sm">Nothing here.</p>
         ) : (
           <ul>
-            {visible.map((t) => {
+            {visible.map(({ task: t, depth, childCount }) => {
               const late = isOverdue(t.due?.date);
               return (
                 <li
                   key={t.id}
-                  className="group flex items-center gap-4 border-b border-white/[0.055] px-5 py-3 last:border-0"
+                  className={cn(
+                    "group flex items-center gap-4 border-b border-white/[0.055] py-3 pr-5 last:border-0",
+                    depth > 0 && "bg-white/[0.015]",
+                  )}
+                  style={{ paddingLeft: 20 + depth * 26 }}
                 >
+                  {depth > 0 && (
+                    <span aria-hidden className="text-chalk-dim -ml-4 text-[11px]">
+                      └
+                    </span>
+                  )}
                   <button
                     onClick={() => complete.mutate(t.id)}
                     aria-label={`Complete ${t.content}`}
@@ -143,7 +156,9 @@ export default function TodosPage() {
                   />
 
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13.5px]">{t.content}</p>
+                    <p className={cn("truncate", depth > 0 ? "text-[12.5px]" : "text-[13.5px]")}>
+                      {t.content}
+                    </p>
                     {t.labels.length > 0 && (
                       <p className="text-chalk-dim truncate text-[11px]">
                         {t.labels.map((l) => `@${l}`).join(" ")}
@@ -151,6 +166,11 @@ export default function TodosPage() {
                     )}
                   </div>
 
+                  {childCount > 0 && (
+                    <span className="text-chalk-dim shrink-0 text-[10.5px] tracking-[0.10em]">
+                      {childCount} sub{childCount === 1 ? "" : "s"}
+                    </span>
+                  )}
                   {t.project_id && projectName.has(t.project_id) && (
                     <span className="text-chalk-dim hidden shrink-0 text-[10.5px] uppercase tracking-[0.10em] sm:inline">
                       {projectName.get(t.project_id)}

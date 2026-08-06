@@ -67,6 +67,27 @@ async function collect<T>(path: string, params: Record<string, string | number |
   return out;
 }
 
+/**
+ * Completed tasks live on their own endpoint and come back under `items`
+ * rather than `results` — the active /tasks list never includes them.
+ * Window is kept wide and filtered by the caller, so a timezone edge can't
+ * silently drop the first or last completion of the day.
+ */
+async function collectCompleted(sinceIso: string, untilIso: string) {
+  const out: TodoistTask[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 10; page++) {
+    const res: { items: TodoistTask[]; next_cursor: string | null } = await call(
+      "tasks/completed/by_completion_date",
+      { params: { since: sinceIso, until: untilIso, limit: 200, ...(cursor ? { cursor } : {}) } },
+    );
+    out.push(...(res.items ?? []));
+    cursor = res.next_cursor;
+    if (!cursor) break;
+  }
+  return out;
+}
+
 export const todoist = {
   projects: () => collect<TodoistProject>("projects"),
   labels: () => collect<TodoistLabel>("labels"),
@@ -77,6 +98,9 @@ export const todoist = {
     collect<TodoistTask>("tasks", { project_id: opts.projectId }),
 
   task: (id: string) => call<TodoistTask>(`tasks/${id}`),
+
+  /** Tasks completed in the given UTC window. */
+  completed: (sinceIso: string, untilIso: string) => collectCompleted(sinceIso, untilIso),
 
   create: (task: NewTask) => call<TodoistTask>("tasks", { method: "POST", body: task }),
 

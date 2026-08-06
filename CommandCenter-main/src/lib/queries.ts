@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, requireUserId } from "./supabase";
 import { todoist } from "./todoist";
-import { todayStr, isDueToday, streakFrom } from "./utils";
+import { todayStr, toDateStr, isDueToday, streakFrom } from "./utils";
 import type {
   Habit,
   HabitInsert,
@@ -17,6 +17,7 @@ export const keys = {
   habits: ["habits"] as const,
   completions: ["habit_completions"] as const,
   tasks: ["todoist", "tasks"] as const,
+  completed: ["todoist", "completed"] as const,
   projects: ["todoist", "projects"] as const,
   labels: ["todoist", "labels"] as const,
 };
@@ -27,6 +28,29 @@ export function useTasks() {
   return useQuery({
     queryKey: keys.tasks,
     queryFn: () => todoist.tasks(),
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Tasks completed today. Todoist's active /tasks endpoint never returns
+ * completed tasks, so this is the only way to know what got done.
+ * A 48-hour window is fetched and then filtered to the Central-time day,
+ * which avoids off-by-one errors at the UTC boundary.
+ */
+export function useCompletedToday() {
+  return useQuery({
+    queryKey: keys.completed,
+    queryFn: async () => {
+      const until = new Date();
+      const since = new Date(until.getTime() - 48 * 3600_000);
+      const items = await todoist.completed(
+        since.toISOString().slice(0, 19) + "Z",
+        until.toISOString().slice(0, 19) + "Z",
+      );
+      const today = todayStr();
+      return items.filter((t) => t.completed_at && toDateStr(t.completed_at) === today);
+    },
     staleTime: 30_000,
   });
 }
@@ -77,7 +101,10 @@ export function useCompleteTask() {
     onError: (_err, _id, ctx) => {
       if (ctx?.previous) qc.setQueryData(keys.tasks, ctx.previous);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: keys.tasks }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: keys.tasks });
+      qc.invalidateQueries({ queryKey: keys.completed });
+    },
   });
 }
 
@@ -206,6 +233,7 @@ export function useDeleteHabit() {
 export function useScoreboard(): Scoreboard {
   const { data: tasks } = useTasks();
   const { data: habits } = useHabits();
+  const { data: completed } = useCompletedToday();
 
   const today = todayStr();
   const list = tasks ?? [];
@@ -213,11 +241,13 @@ export function useScoreboard(): Scoreboard {
   const dueToday = list.filter((t) => t.due?.date?.slice(0, 10) === today);
   const overdue = list.filter((t) => t.due?.date && t.due.date.slice(0, 10) < today);
 
-  // Todoist drops completed tasks from the active list, so "hits" comes from
-  // habits + remaining count rather than a completed-task query.
+  const tasksDone = completed?.length ?? 0;
   const habitsDone = habits?.filter((h) => h.completedToday).length ?? 0;
-  const atBats = dueToday.length + habitsDone;
-  const hits = habitsDone;
+
+  // "At bats" is everything that was on the plate today: what got done plus
+  // what is still outstanding.
+  const hits = tasksDone + habitsDone;
+  const atBats = hits + dueToday.length + (habits?.filter((h) => h.dueToday && !h.completedToday).length ?? 0);
 
   return {
     hits,
@@ -228,4 +258,59 @@ export function useScoreboard(): Scoreboard {
     focusMinutes: 0,
     habitStreak: habits?.reduce((max, h) => Math.max(max, h.streak), 0) ?? 0,
   };
+}
+
+export type TaskRow = { task: TodoistTask; depth: number; childCount: number };
+
+/**
+ * Flatten Todoist's parent_id graph into render-ready rows carrying their
+ * depth. Recursive rather than one level deep: nesting can go deeper than
+ * parent/child (a subtask may itself have subtasks), and a single-level
+ * implementation silently drops those grandchildren.
+ */
+export function flattenTasks(tasks: TodoistTask[]): TaskRow[] {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const children = new Map<string, TodoistTask[]>();
+  const roots: TodoistTask[] = [];
+
+  for (const t of tasks) {
+    // A task whose parent is absent (filtered out, or already completed) is
+    // treated as a root so it can never disappear from the list.
+    if (t.parent_id && byId.has(t.parent_id)) {
+      const arr = children.get(t.parent_id) ?? [];
+      arr.push(t);
+      children.set(t.parent_id, arr);
+    } else {
+      roots.push(t);
+    }
+  }
+
+  const order = (a: TodoistTask, b: TodoistTask) => {
+    const ad = a.due?.date ?? "9999";
+    const bd = b.due?.date ?? "9999";
+    if (ad !== bd) return ad < bd ? -1 : 1;
+    return b.priority - a.priority;
+  };
+
+  const rows: TaskRow[] = [];
+  const seen = new Set<string>();
+
+  const walk = (task: TodoistTask, depth: number) => {
+    if (seen.has(task.id)) return; // guards against a cyclic parent_id
+    seen.add(task.id);
+    const kids = (children.get(task.id) ?? []).sort(order);
+    rows.push({ task, depth, childCount: kids.length });
+    for (const k of kids) walk(k, depth + 1);
+  };
+
+  for (const r of roots.sort(order)) walk(r, 0);
+  return rows;
+}
+
+/**
+ * The next thing to actually do. A parent with open subtasks is not
+ * actionable, so this returns the first leaf in render order.
+ */
+export function pickUpNext(rows: TaskRow[]): TodoistTask | undefined {
+  return rows.find((r) => r.childCount === 0)?.task ?? rows[0]?.task;
 }
