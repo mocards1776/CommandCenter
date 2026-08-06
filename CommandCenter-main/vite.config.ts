@@ -18,12 +18,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    proxy: {
-      "/api": {
-        target: "http://localhost:8000",
-        changeOrigin: true,
-        secure: false,
-      },
-    },
+    // No dev proxy: the app talks to Supabase and to the Todoist edge function
+    // over https directly. The old /api -> localhost:8000 FastAPI proxy is gone.
   },
 });

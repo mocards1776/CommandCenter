@@ -1,375 +1,144 @@
-import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
-import { dashboardApi, gamificationApi, habitsApi } from "@/lib/api";
-import { GameScoreboard } from "@/components/dashboard/GameScoreboard";
-import { NextUpPanel } from "@/components/dashboard/NextUpPanel";
-import { BaseballPanel } from "@/components/dashboard/BaseballPanel";
-import { WeatherCard } from "@/components/WeatherCard";
-import { useTimerStore } from "@/store";
-import { Loader2 } from "lucide-react";
-import { todayStr } from "@/lib/utils";
-import toast from "react-hot-toast";
+import { Link } from "react-router-dom";
+import { Check } from "lucide-react";
+import { useTasks, useHabits, useScoreboard, useCompleteTask, useToggleHabit } from "@/lib/queries";
+import { battingAvg, dueLabel, isOverdue, priorityColor, todayStr, cn } from "@/lib/utils";
+import type { TodoistTask } from "@/types";
 
-function useLiveClock() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return now;
-}
-
-function DashHabitRow({ entry, todayStr }: { entry: any; todayStr: string }) {
-  const qc = useQueryClient();
-  const habitId: string = entry?.habit?.id ?? entry?.id ?? "";
-  const name: string    = entry?.habit?.name ?? entry?.name ?? "—";
-  const icon: string    = entry?.habit?.icon ?? entry?.icon ?? "";
-  const completions: any[] = Array.isArray(entry?.habit?.completions)
-    ? entry.habit.completions
-    : Array.isArray(entry?.completions) ? entry.completions : [];
-  const isDone: boolean = typeof entry?.completed === "boolean"
-    ? entry.completed
-    : completions.some((c: any) => c?.completed_date === todayStr);
-
-  const completeMut = useMutation({
-    mutationFn: () => habitsApi.complete(habitId, { completed_date: todayStr }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["habits"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      toast.success(`${icon} ${name}`, { duration: 1800 });
-    },
-  });
-  const uncompleteMut = useMutation({
-    mutationFn: () => habitsApi.uncomplete(habitId, todayStr),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["habits"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-  });
-
-  const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!habitId || completeMut.isPending || uncompleteMut.isPending) return;
-    isDone ? uncompleteMut.mutate() : completeMut.mutate();
-  };
-
+function Stat({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        padding: "7px 14px",
-        gap: 10,
-        borderBottom: "1px solid rgba(240,236,224,0.05)",
-        cursor: "default",
-        transition: "background 0.12s",
-      }}
-      onMouseEnter={e => (e.currentTarget.style.background = "rgba(232,168,32,0.04)")}
-      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-    >
-      <div onClick={handleClick} title={isDone ? "Mark incomplete" : "Mark complete"} style={{ cursor: "pointer", flexShrink: 0, lineHeight: 0 }}>
-        {isDone ? (
-          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-            <circle cx="11" cy="11" r="10" stroke="#e8a820" strokeWidth="1.5" />
-            <circle cx="11" cy="11" r="7" fill="#e8a820" />
-            <path d="M7.5 11l2.5 2.5 4.5-4.5" stroke="#1a2e1f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        ) : (
-          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-            <circle cx="11" cy="11" r="10" stroke="rgba(240,236,224,0.25)" strokeWidth="1.5" />
-          </svg>
-        )}
-      </div>
-      <span style={{
-        fontFamily: "'Oswald', Arial, sans-serif",
-        fontWeight: 700,
-        fontSize: 13,
-        letterSpacing: "0.10em",
-        textTransform: "uppercase",
-        color: isDone ? "#f0ece0" : "rgba(240,236,224,0.55)",
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-        flex: 1,
-        minWidth: 0,
-      }}>
-        {icon && <span style={{ fontSize: 14, flexShrink: 0 }}>{icon}</span>}
-        {name}
+    <div className="panel px-4 py-3 flex flex-col gap-1">
+      <span className="label-caps">{label}</span>
+      <span className="numeral text-3xl font-bold" style={accent ? { color: accent } : undefined}>
+        {value}
       </span>
     </div>
   );
 }
 
-export function DashboardPage() {
-  const navigate = useNavigate();
-  const { activeTimer } = useTimerStore();
-  const today = todayStr();
-  const now = useLiveClock();
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "MORNING" : hour < 17 ? "AFTERNOON" : "EVENING";
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: dashboardApi.get,
-    refetchInterval: 60_000,
-  });
-
-  const { data: gamHistory } = useQuery({
-    queryKey: ["gamification-history"],
-    queryFn: () => gamificationApi.history(30),
-    retry: false,
-    staleTime: 5 * 60_000,
-  });
-
-  if (isLoading) return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300 }}>
-      <Loader2 size={28} style={{ color: "#e8a820", animation: "spin 1s linear infinite" }} />
-    </div>
-  );
-
-  const overdueCount = data?.overdue_tasks?.length ?? 0;
-  const completed = data?.completed_tasks_today ?? 0;
-  const attempted = data?.total_tasks_today ?? 0;
-  const focusMinutes = data ? Math.round((data.time_tracked_seconds ?? 0) / 60) : 0;
-
-  const scoreboardStats = data?.gamification ?? {
-    stat_date: today,
-    tasks_completed: completed,
-    tasks_attempted: attempted,
-    habits_completed: 0,
-    total_focus_minutes: focusMinutes,
-    home_runs: 0,
-    hits: completed,
-    strikeouts: overdueCount,
-    batting_average: attempted > 0 ? completed / attempted : 0,
-    hitting_streak: 0,
-  };
-
-  const overdueT = data?.overdue_tasks ?? [];
-
-  const habitEntries: any[] = Array.isArray(data?.today_habits) ? data.today_habits : [];
-
-  const habitsDone = habitEntries.filter((e: any) => {
-    if (typeof e?.completed === "boolean") return e.completed;
-    const comps = Array.isArray(e?.habit?.completions) ? e.habit.completions
-      : Array.isArray(e?.completions) ? e.completions : [];
-    return comps.some((c: any) => c?.completed_date === today);
-  }).length;
-
-  const projects = (data?.active_projects ?? []).slice(0, 3);
-  const allPending = [...(data?.today_tasks ?? []), ...overdueT].filter(
-    (task: any, index: number, arr: any[]) => arr.findIndex(t => t.id === task.id) === index
-  );
-  const nowChicago = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Chicago" }));
-  const pendingHabits = habitEntries.filter((e: any) => {
-    const hh = e?.habit?.time_hour ?? e?.time_hour;
-    const mm = e?.habit?.time_minute ?? e?.time_minute;
-    // Default behavior on dashboard: hide habits until their scheduled time arrives.
-    if (typeof hh === "number" && typeof mm === "number") {
-      const startMins = hh * 60 + mm;
-      const nowMins = nowChicago.getHours() * 60 + nowChicago.getMinutes();
-      if (nowMins < startMins) return false;
-    }
-    if (typeof e?.completed === "boolean") return !e.completed;
-    const comps = Array.isArray(e?.habit?.completions) ? e.habit.completions
-      : Array.isArray(e?.completions) ? e.completions : [];
-    return !comps.some((c: any) => c?.completed_date === today);
-  }).slice(0, 4);
-
-  const timeStr = now.toLocaleTimeString("en-US", {
-    timeZone: "America/Chicago",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-  const dateStr = now.toLocaleDateString("en-US", {
-    timeZone: "America/Chicago",
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).toUpperCase();
+function TaskRow({ task, onDone }: { task: TodoistTask; onDone: (id: string) => void }) {
+  const label = dueLabel(task.due?.date);
+  const overdue = isOverdue(task.due?.date);
 
   return (
-    <div>
-      {/* TOP BAR */}
-      <div className="top-bar" style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", padding: "8px 24px", position: "relative", gap: 14 }}>
-        <WeatherCard />
-        <span style={{ color: "#e8a820", fontSize: 9, letterSpacing: 5, opacity: 0.6 }}>&#9733; &#9733; &#9733;</span>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, lineHeight: 1 }}>
-          <span style={{ fontFamily: "'Inter',sans-serif", fontSize: 14, fontWeight: 900, letterSpacing: "0.15em", color: "rgba(255,255,255,0.75)", textTransform: "uppercase" }}>JOSH'S</span>
-          <span style={{ fontFamily: "'Inter',sans-serif", fontSize: 24, fontWeight: 900, letterSpacing: "-0.03em", color: "#ffffff", textTransform: "uppercase" }}>COMMAND CENTER</span>
-          <span style={{ fontSize: 14 }}>&#x1F1FA;&#x1F1F8;</span>
-        </div>
-        <span style={{ color: "#e8a820", fontSize: 9, letterSpacing: 5, opacity: 0.6 }}>&#9733; &#9733; &#9733;</span>
+    <li className="flex items-center gap-3 px-3 py-2.5 border-b border-line last:border-0 group">
+      <button
+        onClick={() => onDone(task.id)}
+        aria-label={`Complete ${task.content}`}
+        className="w-4 h-4 shrink-0 border-2 rounded-full grid place-items-center transition-colors hover:bg-turf/20"
+        style={{ borderColor: priorityColor(task.priority) || "var(--color-panel-hi)" }}
+      >
+        <Check size={10} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+      </button>
+      <span className="flex-1 min-w-0 truncate text-sm">{task.content}</span>
+      {label && (
+        <span className={cn("text-xs shrink-0", overdue ? "text-clay" : "text-chalk")}>{label}</span>
+      )}
+    </li>
+  );
+}
 
-        {/* Date + Time */}
-        <div style={{ position: "absolute", right: 24, top: "50%", transform: "translateY(-50%)", textAlign: "right" }}>
-          <div style={{
-            fontFamily: "'Oswald', Arial, sans-serif",
-            fontSize: 18,
-            fontWeight: 700,
-            letterSpacing: "0.06em",
-            color: "#f4c842",
-            lineHeight: 1,
-            fontVariantNumeric: "tabular-nums",
-          }}>{timeStr}</div>
-          <div style={{
-            fontSize: 8,
-            fontWeight: 600,
-            letterSpacing: "0.14em",
-            color: "rgba(255,255,255,0.3)",
-            marginTop: 3,
-          }}>{dateStr}</div>
-        </div>
+export default function DashboardPage() {
+  const { data: tasks, isLoading, error } = useTasks();
+  const { data: habits } = useHabits();
+  const score = useScoreboard();
+  const complete = useCompleteTask();
+  const toggleHabit = useToggleHabit();
+
+  const today = todayStr();
+  const dueToday = (tasks ?? [])
+    .filter((t) => t.due?.date && t.due.date.slice(0, 10) <= today)
+    .sort((a, b) => (a.due!.date < b.due!.date ? -1 : 1))
+    .slice(0, 8);
+
+  const habitsToday = (habits ?? []).filter((h) => h.dueToday);
+
+  if (error) {
+    return (
+      <div className="panel p-4 text-clay text-sm">
+        Could not load tasks: {error instanceof Error ? error.message : String(error)}
       </div>
+    );
+  }
 
-      <div className="stripe" />
+  return (
+    <div className="flex flex-col gap-6 max-w-5xl">
+      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Stat label="Batting Avg" value={battingAvg(score.battingAverage)} accent="var(--color-gold)" />
+        <Stat label="On Deck" value={String(score.onDeck)} />
+        <Stat
+          label="Strikeouts"
+          value={String(score.strikeouts)}
+          accent={score.strikeouts > 0 ? "var(--color-clay)" : undefined}
+        />
+        <Stat label="Streak" value={String(score.habitStreak)} accent="var(--color-turf)" />
+      </section>
 
-      {/* MAIN GRID */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: "3px solid #1e3629" }}>
-        <div style={{ borderRight: "3px solid #1e3629" }}>
-          <GameScoreboard stats={scoreboardStats} history={gamHistory} />
+      <section>
+        <div className="flex items-baseline justify-between mb-2">
+          <h2 className="label-caps">Due Today</h2>
+          <Link to="/todos" className="text-xs text-chalk hover:text-gold transition-colors">
+            All tasks →
+          </Link>
         </div>
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <NextUpPanel tasks={allPending} />
+        <div className="panel">
+          {isLoading ? (
+            <p className="px-3 py-6 text-center label-caps animate-pulse">Loading</p>
+          ) : dueToday.length === 0 ? (
+            <p className="px-3 py-6 text-center text-chalk text-sm">Nothing due. Clean slate.</p>
+          ) : (
+            <ul>
+              {dueToday.map((t) => (
+                <TaskRow key={t.id} task={t} onDone={(id) => complete.mutate(id)} />
+              ))}
+            </ul>
+          )}
         </div>
-      </div>
+      </section>
 
-      <div className="stripe-thin" />
-      <div className="stripe-3" />
-
-      {/* BOTTOM ROW */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr" }}>
-
-        {/* Habits */}
-        <div style={{ borderRight: "3px solid #1e3629" }}>
-          <div className="bottom-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span>Today's Habits</span>
-            <button className="panel-header-link" onClick={() => navigate("/habits")} style={{ fontSize: 9 }}>Manage &#8594;</button>
-          </div>
-          {pendingHabits.length === 0 ? (
-            <p style={{ padding: "12px 14px", fontFamily: "'IM Fell English',Georgia,serif", fontStyle: "italic", fontSize: 11, color: "rgba(245,240,224,0.2)" }}>No habits configured</p>
-          ) : pendingHabits.map((entry: any, idx: number) => {
-            const id = entry?.habit?.id ?? entry?.id ?? idx;
-            return <DashHabitRow key={id} entry={entry} todayStr={today} />;
-          })}
+      <section>
+        <div className="flex items-baseline justify-between mb-2">
+          <h2 className="label-caps">Habits</h2>
+          <Link to="/habits" className="text-xs text-chalk hover:text-gold transition-colors">
+            Manage →
+          </Link>
         </div>
-
-        {/* Projects */}
-        <div style={{ borderRight: "3px solid #1e3629" }}>
-          <div className="bottom-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span>Active Projects</span>
-            <button className="panel-header-link" onClick={() => navigate("/projects")} style={{ fontSize: 9 }}>All &#8594;</button>
-          </div>
-          {projects.length === 0 ? (
-            <p style={{ padding: "12px 14px", fontFamily: "'IM Fell English',Georgia,serif", fontStyle: "italic", fontSize: 11, color: "rgba(245,240,224,0.2)" }}>No active projects</p>
-          ) : projects.map((p: any) => (
-            (() => {
-              const totalTasks = Number(p.task_count ?? 0);
-              const pct = Number(p.completion_percentage ?? 0);
-              const completedTasks = Math.max(0, Math.round((totalTasks * pct) / 100));
-              const openTasks = Math.max(0, totalTasks - completedTasks);
-              return (
-                <div key={p.id} className="proj-row" onClick={() => navigate(`/projects/${p.id}`)}>
-                  <div className="proj-name-line">
-                    <span className="proj-name">{p.title}</span>
-                    <span className="proj-pct">{pct}%</span>
-                  </div>
-                  <div className="proj-track"><div className="proj-fill" style={{ width: `${pct}%` }} /></div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 3 }}>
-                    <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(245,240,224,0.25)" }}>
-                      {openTasks} Open Tasks
-                    </span>
-                    <span style={{ fontSize: 8, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(245,240,224,0.14)" }}>
-                      {completedTasks} Completed Tasks
-                    </span>
-                  </div>
-                </div>
-              );
-            })()
-          ))}
-        </div>
-
-        {/* Completion panel */}
-        <div>
-          <div className="bottom-label">Completion &#183; Today</div>
-          <div style={{ padding: "8px 14px" }}>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 12, marginBottom: 14 }}>
-              <div>
-                <div style={{ fontSize: 8, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 4 }}>Tasks</div>
-                <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-                  <div className="panel panel-sm"><span className="panel-num gold" style={{ fontSize: 20 }}>{data?.completed_tasks_today ?? 0}</span></div>
-                  <div style={{ fontSize: 18, color: "rgba(255,255,255,0.2)", lineHeight: "36px" }}>/</div>
-                  <div className="panel panel-sm"><span className="panel-num empty" style={{ fontSize: 20 }}>{data?.total_tasks_today ?? 0}</span></div>
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 8, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 4 }}>Habits</div>
-                <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-                  <div className="panel panel-sm"><span className="panel-num gold" style={{ fontSize: 20 }}>{habitsDone}</span></div>
-                  <div style={{ fontSize: 18, color: "rgba(255,255,255,0.2)", lineHeight: "36px" }}>/</div>
-                  <div className="panel panel-sm"><span className="panel-num empty" style={{ fontSize: 20 }}>{habitEntries.length}</span></div>
-                </div>
-              </div>
-            </div>
-            {overdueT.length > 0 && (
-              <div>
-                <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.2)", marginBottom: 4 }}>Overdue</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div className="panel panel-sm"><span className="panel-num red" style={{ fontSize: 20 }}>{overdueT.length}</span></div>
+        <div className="panel">
+          {habitsToday.length === 0 ? (
+            <p className="px-3 py-6 text-center text-chalk text-sm">No habits scheduled today.</p>
+          ) : (
+            <ul>
+              {habitsToday.map((h) => (
+                <li
+                  key={h.id}
+                  className="flex items-center gap-3 px-3 py-2.5 border-b border-line last:border-0"
+                >
                   <button
-                    type="button"
-                    onClick={() => navigate("/todos?needsAttention=1")}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      padding: 0,
-                      cursor: "pointer",
-                      fontFamily: "'Oswald',Arial,sans-serif",
-                      fontSize: 10,
-                      color: "rgba(255,255,255,0.3)",
-                      letterSpacing: "0.1em",
-                      textTransform: "uppercase",
-                    }}
-                    title="View tasks needing attention"
+                    onClick={() => toggleHabit.mutate({ habitId: h.id, done: !h.completedToday })}
+                    aria-label={`${h.completedToday ? "Undo" : "Complete"} ${h.name}`}
+                    className={cn(
+                      "w-4 h-4 shrink-0 border-2 grid place-items-center transition-colors",
+                      h.completedToday ? "bg-turf border-turf" : "border-panel-hi hover:border-turf",
+                    )}
                   >
-                    Need attention
+                    {h.completedToday && <Check size={10} className="text-shell" />}
                   </button>
-                </div>
-              </div>
-            )}
-            {overdueT.length === 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div className="panel panel-sm"><span className="panel-num gold" style={{ fontSize: 20 }}>&#10003;</span></div>
-                <span style={{ fontFamily: "'Oswald',Arial,sans-serif", fontSize: 10, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em", textTransform: "uppercase" }}>All clear</span>
-              </div>
-            )}
-          </div>
+                  <span
+                    className={cn(
+                      "flex-1 min-w-0 truncate text-sm",
+                      h.completedToday && "line-through text-chalk-dim",
+                    )}
+                  >
+                    {h.name}
+                  </span>
+                  {h.streak > 0 && (
+                    <span className="numeral text-xs text-gold shrink-0">{h.streak}d</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-
-      </div>
-
-      {/* Footer quote */}
-      <div className="stripe-thin" />
-      <div style={{ padding: "5px 16px", background: "#1e3629" }}>
-        <p style={{ fontFamily: "'IM Fell English',Georgia,serif", fontStyle: "italic", fontSize: 9, color: "rgba(232,168,32,0.25)", textAlign: "center" }}>
-          &ldquo;It is not in the still calm of life that great characters are formed.&rdquo; &#8212; Abigail Adams
-        </p>
-      </div>
-
-      {/* Section divider — matches the stripe pattern used between all other sections */}
-      <div className="stripe-thin" />
-      <div className="stripe-3" />
-
-      {/* Baseball scoreboard panel */}
-      <BaseballPanel />
-
+      </section>
     </div>
   );
 }

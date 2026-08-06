@@ -1,292 +1,141 @@
-import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { habitsApi } from "@/lib/api";
-import { HabitRow } from "@/components/habits/HabitRow";
-import { HabitModal } from "@/components/habits/HabitModal";
-import { Loader2 } from "lucide-react";
-import { todayStr } from "@/lib/utils";
+import { useState, type FormEvent } from "react";
+import { Check, Trash2, Plus } from "lucide-react";
+import toast from "react-hot-toast";
+import { useHabits, useCreateHabit, useDeleteHabit, useToggleHabit } from "@/lib/queries";
+import { cn } from "@/lib/utils";
+import type { HabitFrequency } from "@/types";
 
-function toCDT(d: Date): string {
-  return d.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
-}
+const FREQUENCIES: { value: HabitFrequency; label: string }[] = [
+  { value: "daily", label: "Every day" },
+  { value: "weekdays", label: "Weekdays" },
+  { value: "weekends", label: "Weekends" },
+  { value: "weekly", label: "Weekly" },
+];
 
-export function getLast7(): string[] {
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
-    return toCDT(d);
-  });
-}
+export default function HabitsPage() {
+  const { data: habits, isLoading, error } = useHabits();
+  const create = useCreateHabit();
+  const remove = useDeleteHabit();
+  const toggle = useToggleHabit();
 
-export function dayLabel(dateStr: string): string {
-  const d = new Date(dateStr + "T12:00:00");
-  return d.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/Chicago" }).toUpperCase();
-}
+  const [name, setName] = useState("");
+  const [frequency, setFrequency] = useState<HabitFrequency>("daily");
 
-function useLiveClock() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return now;
-}
-
-function readBool(key: string, def: boolean): boolean {
-  try { const v = localStorage.getItem(key); return v === null ? def : v === "true"; } catch { return def; }
-}
-function writeBool(key: string, val: boolean) {
-  try { localStorage.setItem(key, String(val)); } catch {}
-}
-
-export function HabitsPage() {
-  const [newOpen, setNewOpen] = useState(false);
-  const today = todayStr();
-  const last7 = getLast7();
-  const now = useLiveClock();
-
-  // ── Persistent filter state ──────────────────────────────────────────
-  const [hideCompleted, setHideCompleted] = useState(() => readBool("habits_hideCompleted", false));
-  const [hideFuture,    setHideFuture]    = useState(() => readBool("habits_hideFuture",    false));
-
-  function toggleHideCompleted() {
-    setHideCompleted(v => { writeBool("habits_hideCompleted", !v); return !v; });
-  }
-  function toggleHideFuture() {
-    setHideFuture(v => { writeBool("habits_hideFuture", !v); return !v; });
+  async function onAdd(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setName("");
+    try {
+      await create.mutateAsync({ name: trimmed, frequency });
+    } catch (err) {
+      setName(trimmed);
+      toast.error(err instanceof Error ? err.message : "Could not add habit");
+    }
   }
 
-  const { data: habits, isLoading } = useQuery({
-    queryKey: ["habits"],
-    queryFn: () => habitsApi.list(),
-  });
-
-  // Current CDT time components for "hide future" logic
-  const nowCDT = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
-  const nowHour   = nowCDT.getHours();
-  const nowMinute = nowCDT.getMinutes();
-
-  // Apply filters — guard against null/undefined completions
-  const visibleHabits = (habits ?? []).filter(h => {
-    if (!h || typeof h !== "object") return false;
-    if (hideCompleted) {
-      const doneToday = (h.completions ?? []).some((c: any) => c.completed_date === today);
-      if (doneToday) return false;
-    }
-    if (hideFuture) {
-      const hh = h.time_hour   != null ? Number(h.time_hour)   : null;
-      const mm = h.time_minute != null ? Number(h.time_minute) : 0;
-      if (hh !== null) {
-        const isLater = hh > nowHour || (hh === nowHour && mm > nowMinute);
-        if (isLater) return false;
-      }
-    }
-    return true;
-  });
-
-  const done  = habits?.filter(h => (h.completions ?? []).some((c: any) => c.completed_date === today)).length ?? 0;
-  const total = habits?.length ?? 0;
-  const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
-
-  // Live clock strings in CDT
-  const timeStr = now.toLocaleTimeString("en-US", {
-    timeZone: "America/Chicago",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-  const dateStr = now.toLocaleDateString("en-US", {
-    timeZone: "America/Chicago",
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).toUpperCase();
-
-  const hdrPad: React.CSSProperties = { padding: "5px 10px", gap: 6 };
-
-  // ── Checkbox style helpers ───────────────────────────────────────────
-  const cbWrap: React.CSSProperties = {
-    display: "flex", alignItems: "center", gap: 5, cursor: "pointer",
-    userSelect: "none" as const,
-  };
-  const cbBox = (checked: boolean): React.CSSProperties => ({
-    width: 13, height: 13, border: `1.5px solid ${checked ? "#e8a820" : "rgba(240,236,224,0.3)"}`,
-    background: checked ? "rgba(232,168,32,0.18)" : "transparent",
-    borderRadius: 2, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-    transition: "all 0.15s",
-  });
-  const cbLabel: React.CSSProperties = {
-    fontFamily: "'Oswald',Arial,sans-serif", fontSize: 9, fontWeight: 600,
-    letterSpacing: "0.14em", color: "rgba(240,236,224,0.5)", textTransform: "uppercase" as const,
-  };
+  if (error) {
+    return (
+      <div className="panel p-4 text-clay text-sm">
+        Could not load habits: {error instanceof Error ? error.message : String(error)}
+      </div>
+    );
+  }
 
   return (
-    <div style={{ fontFamily: "'Oswald', Arial, sans-serif" }}>
-
-      {/* ── COMMAND CENTER HEADER ── */}
-      <div className="top-bar" style={{
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "8px 24px",
-        position: "relative",
-        gap: 14,
-      }}>
-        <span style={{ color: "#e8a820", fontSize: 9, letterSpacing: 5, opacity: 0.6 }}>&#9733; &#9733; &#9733;</span>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, lineHeight: 1 }}>
-          <span style={{ fontFamily: "'Inter',sans-serif", fontSize: 14, fontWeight: 900, letterSpacing: "0.15em", color: "rgba(255,255,255,0.75)", textTransform: "uppercase" }}>JOSH'S</span>
-          <span style={{ fontFamily: "'Inter',sans-serif", fontSize: 24, fontWeight: 900, letterSpacing: "-0.03em", color: "#ffffff", textTransform: "uppercase" }}>COMMAND CENTER</span>
-          <span style={{ fontSize: 14 }}>&#x1F1FA;&#x1F1F8;</span>
+    <div className="flex flex-col gap-4 max-w-3xl">
+      <form onSubmit={onAdd} className="flex flex-col sm:flex-row gap-2">
+        <div className="flex-1 flex items-center gap-2 panel px-3">
+          <Plus size={16} className="text-chalk shrink-0" />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="New habit"
+            className="flex-1 bg-transparent py-2.5 text-sm outline-none placeholder:text-chalk-dim"
+          />
         </div>
-        <span style={{ color: "#e8a820", fontSize: 9, letterSpacing: 5, opacity: 0.6 }}>&#9733; &#9733; &#9733;</span>
+        <select
+          value={frequency}
+          onChange={(e) => setFrequency(e.target.value as HabitFrequency)}
+          className="panel px-3 py-2.5 text-sm outline-none focus:border-gold"
+        >
+          {FREQUENCIES.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          disabled={create.isPending || !name.trim()}
+          className="bg-gold text-shell font-semibold uppercase tracking-wider text-xs px-5 py-2.5 hover:brightness-110 disabled:opacity-40 transition"
+        >
+          Add
+        </button>
+      </form>
 
-        {/* Date + Time — right side */}
-        <div style={{ position: "absolute", right: 24, top: "50%", transform: "translateY(-50%)", textAlign: "right" }}>
-          <div style={{
-            fontFamily: "'Oswald', Arial, sans-serif",
-            fontSize: 18,
-            fontWeight: 700,
-            letterSpacing: "0.06em",
-            color: "#f4c842",
-            lineHeight: 1,
-            fontVariantNumeric: "tabular-nums",
-          }}>{timeStr}</div>
-          <div style={{
-            fontSize: 8,
-            fontWeight: 600,
-            letterSpacing: "0.14em",
-            color: "rgba(255,255,255,0.3)",
-            marginTop: 3,
-          }}>{dateStr}</div>
-        </div>
-      </div>
-
-      <div className="stripe" />
-
-      {/* ── HABITS PANEL ── */}
-      <div style={{ padding: "16px 12px" }}>
-        <div style={{
-          background: "linear-gradient(180deg, #1e5c38 0%, #154d2c 100%)",
-          border: "3px solid #0a1e12",
-          boxShadow: "0 10px 50px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.05)",
-          overflow: "hidden",
-        }}>
-
-          {/* ── TITLE ── */}
-          <div style={{
-            textAlign: "center",
-            padding: "20px 16px 10px",
-            borderBottom: "3px solid #0a1e12",
-            background: "rgba(0,0,0,0.25)",
-          }}>
-            <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: "0.28em", color: "#f0ece0", textTransform: "uppercase", lineHeight: 1 }}>HABITS</div>
-            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.18em", color: "rgba(240,236,224,0.3)", marginTop: 5 }}>
-              {done}/{total} ENLISTED TODAY &nbsp;·&nbsp; {pct}%
-            </div>
-
-            {/* ── FILTER CHECKBOXES ── */}
-            <div style={{ display: "flex", justifyContent: "center", gap: 18, marginTop: 10 }}>
-              <div style={cbWrap} onClick={toggleHideCompleted} role="checkbox" aria-checked={hideCompleted}>
-                <div style={cbBox(hideCompleted)}>
-                  {hideCompleted && (
-                    <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
-                      <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="#e8a820" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
+      <div className="panel">
+        {isLoading ? (
+          <p className="px-3 py-8 text-center label-caps animate-pulse">Loading</p>
+        ) : (habits ?? []).length === 0 ? (
+          <p className="px-3 py-8 text-center text-chalk text-sm">
+            No habits yet. Add one above.
+          </p>
+        ) : (
+          <ul>
+            {(habits ?? []).map((h) => (
+              <li
+                key={h.id}
+                className="flex items-center gap-3 px-3 py-3 border-b border-line last:border-0 group"
+              >
+                <button
+                  onClick={() => toggle.mutate({ habitId: h.id, done: !h.completedToday })}
+                  disabled={!h.dueToday}
+                  aria-label={`${h.completedToday ? "Undo" : "Complete"} ${h.name}`}
+                  className={cn(
+                    "w-5 h-5 shrink-0 border-2 grid place-items-center transition-colors",
+                    h.completedToday
+                      ? "bg-turf border-turf"
+                      : "border-panel-hi hover:border-turf disabled:opacity-30 disabled:hover:border-panel-hi",
                   )}
-                </div>
-                <span style={cbLabel}>Hide Completed</span>
-              </div>
-              <div style={cbWrap} onClick={toggleHideFuture} role="checkbox" aria-checked={hideFuture}>
-                <div style={cbBox(hideFuture)}>
-                  {hideFuture && (
-                    <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
-                      <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="#e8a820" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  )}
-                </div>
-                <span style={cbLabel}>Hide Future</span>
-              </div>
-            </div>
-          </div>
+                >
+                  {h.completedToday && <Check size={12} className="text-shell" />}
+                </button>
 
-          {/* ── PROGRESS BAR ── */}
-          {total > 0 && (
-            <div style={{ height: 4, background: "rgba(0,0,0,0.45)" }}>
-              <div style={{
-                height: "100%",
-                width: `${pct}%`,
-                background: "linear-gradient(90deg, #c88a10, #f4c842)",
-                transition: "width 0.9s cubic-bezier(0.16,1,0.3,1)",
-                boxShadow: "0 0 10px rgba(232,168,32,0.55)",
-              }} />
-            </div>
-          )}
+                <div className="flex-1 min-w-0">
+                  <p
+                    className={cn(
+                      "truncate text-sm",
+                      h.completedToday && "line-through text-chalk-dim",
+                    )}
+                  >
+                    {h.name}
+                  </p>
+                  <p className="text-xs text-chalk-dim">
+                    {FREQUENCIES.find((f) => f.value === h.frequency)?.label ?? h.frequency}
+                    {!h.dueToday && " · not scheduled today"}
+                  </p>
+                </div>
 
-          {/* ── COLUMN HEADERS ── */}
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            borderBottom: "3px solid #0a1e12",
-            background: "rgba(0,0,0,0.4)",
-            minHeight: 38,
-            ...hdrPad,
-          }}>
-            <div style={{ width: 44, flexShrink: 0, textAlign: "center", fontSize: 8, fontWeight: 700, letterSpacing: "0.18em", color: "rgba(240,236,224,0.35)" }}>P</div>
-            <div style={{ width: 162, flexShrink: 0, paddingLeft: 11, fontSize: 8, fontWeight: 700, letterSpacing: "0.18em", color: "rgba(240,236,224,0.35)" }}>HABIT</div>
-            <div style={{ display: "flex", flex: 1, gap: 4 }}>
-              {last7.map(ds => {
-                const isToday = ds === today;
-                return (
-                  <div key={ds} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "4px 2px" }}>
-                    <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", color: isToday ? "#e8a820" : "rgba(240,236,224,0.38)" }}>{dayLabel(ds)}</span>
-                    {isToday && <span style={{ fontSize: 7, letterSpacing: "0.1em", color: "rgba(232,168,32,0.5)", marginTop: 2 }}>TODAY</span>}
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ width: 3, flexShrink: 0 }} />
-            {(["\uD83D\uDD25 STK", "\u2B50 BST", "\uD83D\uDCC5 MTH"] as const).map(label => (
-              <div key={label} style={{ width: 54, flexShrink: 0, fontSize: 8, fontWeight: 700, letterSpacing: "0.12em", color: "rgba(240,236,224,0.38)", textAlign: "center", lineHeight: 1.3 }}>{label}</div>
+                <div className="text-right shrink-0">
+                  <p className="numeral text-lg text-gold leading-none">{h.streak}</p>
+                  <p className="label-caps">day{h.streak === 1 ? "" : "s"}</p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    if (confirm(`Delete "${h.name}" and its history?`)) remove.mutate(h.id);
+                  }}
+                  aria-label={`Delete ${h.name}`}
+                  className="opacity-0 group-hover:opacity-100 text-chalk-dim hover:text-clay transition shrink-0"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </li>
             ))}
-          </div>
-
-          {/* ── ROWS ── */}
-          {isLoading ? (
-            <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
-              <Loader2 size={24} style={{ color: "#e8a820", animation: "spin 1s linear infinite" }} />
-            </div>
-          ) : total === 0 ? (
-            <div style={{ padding: "52px 16px", textAlign: "center" }}>
-              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.2em", color: "rgba(240,236,224,0.18)" }}>NO HABITS ENLISTED</p>
-              <p style={{ fontFamily: "'IM Fell English',Georgia,serif", fontStyle: "italic", fontSize: 11, marginTop: 8, color: "rgba(240,236,224,0.1)" }}>Discipline is the soul of an army</p>
-            </div>
-          ) : visibleHabits.length === 0 ? (
-            <div style={{ padding: "32px 16px", textAlign: "center" }}>
-              <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.18em", color: "rgba(240,236,224,0.18)" }}>ALL FILTERED OUT</p>
-              <p style={{ fontFamily: "'IM Fell English',Georgia,serif", fontStyle: "italic", fontSize: 10, marginTop: 6, color: "rgba(240,236,224,0.1)" }}>Adjust filters above to see more</p>
-            </div>
-          ) : (
-            visibleHabits.map((h, idx) => (
-              <HabitRow key={h.id} habit={h} todayStr={today} last7={last7} isEven={idx % 2 === 0} />
-            ))
-          )}
-
-          {/* ── FOOTER ── */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "12px 16px", borderTop: "3px solid #0a1e12", background: "rgba(0,0,0,0.3)" }}>
-            <button
-              className="btn btn-solid-gold"
-              onClick={() => setNewOpen(true)}
-              style={{ letterSpacing: "0.16em", fontSize: 11 }}
-            >
-              + ENLIST NEW HABIT
-            </button>
-          </div>
-        </div>
+          </ul>
+        )}
       </div>
-
-      <HabitModal open={newOpen} onClose={() => setNewOpen(false)} />
     </div>
   );
 }

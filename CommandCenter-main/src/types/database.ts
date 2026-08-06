@@ -1,0 +1,264 @@
+// Generated from the live Supabase schema. Regenerate after any migration.
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
+export type Database = {
+  __InternalSupabase: { PostgrestVersion: "14.5" };
+  public: {
+    Tables: {
+      profiles: {
+        Row: {
+          id: string;
+          display_name: string | null;
+          weather_lat: number | null;
+          weather_lon: number | null;
+          weather_label: string | null;
+          timezone: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          display_name?: string | null;
+          weather_lat?: number | null;
+          weather_lon?: number | null;
+          weather_label?: string | null;
+          timezone?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          display_name?: string | null;
+          weather_lat?: number | null;
+          weather_lon?: number | null;
+          weather_label?: string | null;
+          timezone?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      habits: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          description: string | null;
+          color: string | null;
+          icon: string | null;
+          frequency: string;
+          custom_days: number[] | null;
+          target_minutes: number | null;
+          time_hour: number | null;
+          time_minute: number | null;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          description?: string | null;
+          color?: string | null;
+          icon?: string | null;
+          frequency?: string;
+          custom_days?: number[] | null;
+          target_minutes?: number | null;
+          time_hour?: number | null;
+          time_minute?: number | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["habits"]["Insert"]>;
+        Relationships: [];
+      };
+      habit_completions: {
+        Row: {
+          id: string;
+          user_id: string;
+          habit_id: string;
+          completed_date: string;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          habit_id: string;
+          completed_date: string;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["habit_completions"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "habit_completions_habit_id_fkey";
+            columns: ["habit_id"];
+            isOneToOne: false;
+            referencedRelation: "habits";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      time_entries: {
+        Row: {
+          id: string;
+          user_id: string;
+          todoist_task_id: string | null;
+          habit_id: string | null;
+          started_at: string;
+          ended_at: string | null;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          todoist_task_id?: string | null;
+          habit_id?: string | null;
+          started_at: string;
+          ended_at?: string | null;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["time_entries"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "time_entries_habit_id_fkey";
+            columns: ["habit_id"];
+            isOneToOne: false;
+            referencedRelation: "habits";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      time_blocks: {
+        Row: {
+          id: string;
+          user_id: string;
+          todoist_task_id: string | null;
+          title: string;
+          start_time: string;
+          end_time: string;
+          color: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          todoist_task_id?: string | null;
+          title: string;
+          start_time: string;
+          end_time: string;
+          color?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["time_blocks"]["Insert"]>;
+        Relationships: [];
+      };
+      notes: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string | null;
+          content: string;
+          tags: string[];
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title?: string | null;
+          content: string;
+          tags?: string[];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["notes"]["Insert"]>;
+        Relationships: [];
+      };
+      crm_people: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          email: string | null;
+          phone: string | null;
+          company: string | null;
+          notes: string | null;
+          last_contacted: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          email?: string | null;
+          phone?: string | null;
+          company?: string | null;
+          notes?: string | null;
+          last_contacted?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["crm_people"]["Insert"]>;
+        Relationships: [];
+      };
+      braindump_entries: {
+        Row: {
+          id: string;
+          user_id: string;
+          raw_text: string;
+          processed: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          raw_text: string;
+          processed?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["braindump_entries"]["Insert"]>;
+        Relationships: [];
+      };
+      favorite_sports_teams: {
+        Row: {
+          id: string;
+          user_id: string;
+          team_name: string;
+          league: string | null;
+          sport: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          team_name: string;
+          league?: string | null;
+          sport?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["favorite_sports_teams"]["Insert"]>;
+        Relationships: [];
+      };
+    };
+    Views: { [_ in never]: never };
+    Functions: { [_ in never]: never };
+    Enums: { [_ in never]: never };
+    CompositeTypes: { [_ in never]: never };
+  };
+};
+
+type PublicSchema = Database["public"];
+export type Tables<T extends keyof PublicSchema["Tables"]> = PublicSchema["Tables"][T]["Row"];
+export type TablesInsert<T extends keyof PublicSchema["Tables"]> = PublicSchema["Tables"][T]["Insert"];
+export type TablesUpdate<T extends keyof PublicSchema["Tables"]> = PublicSchema["Tables"][T]["Update"];

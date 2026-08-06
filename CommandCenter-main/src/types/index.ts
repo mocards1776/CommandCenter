@@ -1,261 +1,118 @@
-// ─── Enums ───────────────────────────────────────────────────
-export type TaskStatus = "today" | "in_progress" | "done" | "cancelled" | "waiting" | "upcoming" | "someday";
-export type Priority = "low" | "medium" | "high" | "critical";
-export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
+import type { Tables, TablesInsert, TablesUpdate } from "./database";
+
+export type { Database, Tables, TablesInsert, TablesUpdate } from "./database";
+
+// ─── Supabase-backed records ──────────────────────────────────────────────
+export type Profile = Tables<"profiles">;
+export type Habit = Tables<"habits">;
+export type HabitCompletion = Tables<"habit_completions">;
+export type TimeEntry = Tables<"time_entries">;
+export type TimeBlock = Tables<"time_blocks">;
+export type Note = Tables<"notes">;
+export type CRMPerson = Tables<"crm_people">;
+export type BraindumpEntry = Tables<"braindump_entries">;
+export type FavoriteSportsTeam = Tables<"favorite_sports_teams">;
+
+export type HabitInsert = TablesInsert<"habits">;
+export type HabitUpdate = TablesUpdate<"habits">;
+
 export type HabitFrequency = "daily" | "weekdays" | "weekends" | "weekly" | "custom";
 
-// ─── Tag / Category ──────────────────────────────────────────
-export interface Tag {
-  id: string;
-  name: string;
-  color: string;
-  created_at: string;
-}
+/** A habit plus the derived state the UI needs. */
+export type HabitWithStatus = Habit & {
+  completedToday: boolean;
+  streak: number;
+  dueToday: boolean;
+};
 
-export interface Category {
-  id: string;
-  name: string;
-  color: string;
-  icon?: string;
-  created_at: string;
-}
+// ─── Todoist (unified /api/v1) ────────────────────────────────────────────
+// Todoist priority is inverted from what you'd expect: 4 is urgent, 1 is none.
+export type TodoistPriority = 1 | 2 | 3 | 4;
 
-// ─── Task ────────────────────────────────────────────────────
-export interface Subtask {
-  id: string;
-  title: string;
-  status: TaskStatus;
-  priority: Priority;
-  importance: number;
-  difficulty: number;
-  focus_score: number;
-  time_estimate_minutes?: number;
-  actual_time_minutes: number;
-  due_date?: string;
-  scheduled_date?: string;
-  scheduled_start_at?: string;
-  completed_at?: string;
-  sort_order: number;
-  show_in_daily: boolean;
-  tag_ids: string[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Task {
-  id: string;
-  title: string;
-  description?: string;
-  notes?: string;
-  status: TaskStatus;
-  priority: Priority;
-  importance: number;
-  difficulty: number;
-  focus_score: number;
-  time_estimate_minutes?: number;
-  actual_time_minutes: number;
-  time_variance_minutes?: number;
-  due_date?: string;
-  scheduled_date?: string;
-  scheduled_start_at?: string;
-  completed_at?: string;
-  show_in_daily: boolean;
-  tag_ids: string[];
-  project_id?: string;
-  category_id?: string;
-  parent_id?: string;
-  sort_order: number;
-  gcal_event_id?: string;
-  subtasks: Subtask[];
-  created_at: string;
-  updated_at: string;
-}
-
-export type TaskCreate = Omit<Task, "id" | "focus_score" | "actual_time_minutes" | "time_variance_minutes" | "completed_at" | "created_at" | "updated_at" | "subtasks">;
-export type TaskUpdate = Partial<TaskCreate & { actual_time_minutes: number; completed_at: string }>;
-
-// ─── Project ─────────────────────────────────────────────────
-export interface Project {
-  id: string;
-  title: string;
-  description?: string;
-  notes?: string;
-  status: ProjectStatus;
-  priority: Priority;
-  importance: number;
-  difficulty: number;
-  focus_score: number;
-  time_estimate_minutes?: number;
-  actual_time_minutes: number;
-  due_date?: string;
-  start_date?: string;
-  completed_at?: string;
-  category_id?: string;
-  tag_ids: string[];
-  show_in_daily: boolean;
-  completion_percentage: number;
-  tasks: Task[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ProjectSummary extends Omit<Project, "tasks"> {
-  task_count: number;
-}
-
-// ─── Habit ───────────────────────────────────────────────────
-export interface HabitCompletion {
-  id: string;
-  habit_id: string;
-  completed_date: string;
-  note?: string;
-  duration_minutes?: number;
-  created_at: string;
-}
-
-export interface Habit {
-  id: string;
-  name: string;
-  description?: string;
-  frequency: HabitFrequency;
-  custom_days?: number[];
-  target_minutes?: number;
-  time_hour?: number;
-  time_minute?: number;
-  color: string;
-  icon?: string;
-  sort_order: number;
-  is_active: boolean;
-  completions: HabitCompletion[];
-  created_at: string;
-  updated_at: string;
-}
-
-// ─── Time Entry ───────────────────────────────────────────────
-export interface TimeEntry {
-  id: string;
-  task_id?: string;
-  habit_id?: string;
-  started_at: string;
-  ended_at?: string;
-  duration_seconds: number;
-  is_active: boolean;
-  note?: string;
-  created_at: string;
-}
-
-// ─── Note ─────────────────────────────────────────────────────
-export interface Note {
-  id: string;
-  title?: string;
-  content: string;
-  task_id?: string;
-  project_id?: string;
-  habit_id?: string;
-  crm_person_id?: string;
-  tag_ids: string[];
-  is_pinned: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-// ─── CRM ──────────────────────────────────────────────────────
-export interface CRMPerson {
-  id: string;
-  name: string;
-  email?: string;
-  phone?: string;
-  company?: string;
-  relationship_type?: string;
-  last_contact_date?: string;
-  contact_frequency_days?: number;
-  notes_text?: string;
-  birthday?: string;
-  avatar_url?: string;
-  tag_ids: string[];
-  days_since_contact?: number;
-  overdue_contact: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-// ─── Time Block ───────────────────────────────────────────────
-export interface TimeBlock {
-  id: string;
-  title: string;
-  description?: string;
-  start_time: string;
-  end_time: string;
-  color: string;
+export type TodoistDue = {
+  date: string; // YYYY-MM-DD or full ISO when a time is set
+  string: string; // the natural-language text the user typed
+  lang: string;
   is_recurring: boolean;
-  recurrence_rule?: string;
-  task_id?: string;
+  timezone?: string | null;
+};
+
+export type TodoistTask = {
+  id: string;
+  project_id: string;
+  section_id: string | null;
+  parent_id: string | null;
+  content: string;
+  description: string;
+  labels: string[];
+  priority: TodoistPriority;
+  due: TodoistDue | null;
+  deadline: { date: string } | null;
+  duration: { amount: number; unit: "minute" | "day" } | null;
+  checked: boolean;
+  is_deleted: boolean;
+  child_order: number;
+  added_at: string;
+  completed_at: string | null;
+  url?: string;
+};
+
+export type TodoistProject = {
+  id: string;
+  name: string;
+  color: string;
+  parent_id: string | null;
+  child_order: number;
+  is_favorite: boolean;
+  is_archived: boolean;
+  is_deleted: boolean;
+  view_style: string;
+};
+
+export type TodoistLabel = {
+  id: string;
+  name: string;
+  color: string;
+  order: number;
+  is_favorite: boolean;
+};
+
+export type TodoistSection = {
+  id: string;
+  project_id: string;
+  name: string;
+  section_order: number;
+};
+
+/** Fields accepted when creating a task. `due_string` uses Todoist's own
+ *  natural-language parser ("tomorrow at 3pm"), which is why this app has no
+ *  date-parsing code of its own. */
+export type NewTask = {
+  content: string;
+  description?: string;
   project_id?: string;
-  gcal_event_id?: string;
-  gcal_calendar_id?: string;
-  created_at: string;
-  updated_at: string;
-}
+  section_id?: string;
+  parent_id?: string;
+  labels?: string[];
+  priority?: TodoistPriority;
+  due_string?: string;
+  due_date?: string;
+  duration?: number;
+  duration_unit?: "minute" | "day";
+};
 
-// ─── Braindump ────────────────────────────────────────────────
-export interface BraindumpEntry {
-  id: string;
-  raw_text: string;
-  processed: boolean;
-  ai_result?: {
-    summary: string;
-    projects: any[];
-    standalone_tasks: any[];
-    notes: string;
-  };
-  created_task_ids: string[];
-  created_project_ids: string[];
-  created_at: string;
-  processed_at?: string;
-}
+export type TaskPatch = Partial<Omit<NewTask, "project_id" | "section_id" | "parent_id">>;
 
-// ─── Gamification ─────────────────────────────────────────────
-export interface GamificationStats {
-  stat_date: string;
-  tasks_completed: number;
-  tasks_attempted: number;
-  habits_completed: number;
-  total_focus_minutes: number;
-  /** Sum of focus scores for tasks completed that day (+ project completion bonuses). */
-  focus_score_completed?: number;
-  home_runs: number;
-  hits: number;
-  strikeouts: number;
-  batting_average: number;
-  hitting_streak: number;
-}
-
-// ─── Dashboard ────────────────────────────────────────────────
-export interface DashboardSummary {
-  today_tasks: Task[];
-  overdue_tasks: Task[];
-  active_projects: ProjectSummary[];
-  today_habits: Habit[];
-  active_timer?: TimeEntry;
-  gamification?: GamificationStats;
-  total_tasks_today: number;
-  completed_tasks_today: number;
-  habit_completion_rate: number;
-  tasks_today?: number;
-  completed_today?: number;
-  focus_score_today?: number;
-  time_tracked_seconds?: number;
-  streak_days?: number;
-}
-
-// ─── Sports ───────────────────────────────────────────────────
-export interface FavoriteSportsTeam {
-  id: string;
-  team_name: string;
-  team_id?: string;
-  sport: string;
-  league?: string;
-  abbreviation?: string;
-  sort_order: number;
-  created_at: string;
-}
+// ─── Dashboard ────────────────────────────────────────────────────────────
+/** Baseball scoring, computed client-side from Todoist + Supabase rather than
+ *  by a server endpoint (the old /dashboard/ route was the usual suspect when
+ *  stats went blank). */
+export type Scoreboard = {
+  hits: number; // tasks completed today
+  atBats: number; // tasks due today
+  battingAverage: number;
+  strikeouts: number; // overdue
+  onDeck: number; // due today, not done
+  focusMinutes: number;
+  habitStreak: number;
+};
