@@ -1,34 +1,37 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════════════
-   CommandCenter — Fenway scoreboard
-   The palette from the old DURANGO build, expressed as real design tokens
-   so components use `bg-panel` / `text-gold` instead of bespoke CSS classes.
+   CommandCenter — "Capitol"
+   Navy and red. Patriotic through craft rather than volume: an engraved
+   star field, hairline rules, and a high-contrast serif for display.
+
+   Red does double duty as brand accent AND the overdue signal, so the two
+   are separated by weight and fill, not hue:
+     --color-accent  hairlines, small-caps labels, quiet marks
+     --color-alert   overdue only — brighter, bolder, solid fills
    ═══════════════════════════════════════════════════════════════════════ */
 
 @theme {
   /* Surfaces, dark to light */
-  --color-field: #162a1c; /* page background */
-  --color-shell: #1e3629; /* chrome: bars, headers */
-  --color-panel: #2a4a3a; /* cards */
-  --color-panel-hi: #3a5a46; /* hover, borders */
-  --color-line: #223c2a;
+  --color-ink: #081228; /* chrome: header, nav, rail */
+  --color-field: #0a1730; /* page background */
+  --color-panel: #0d1d3c; /* cards, lists */
+  --color-hero: #16294f; /* the Up Next block */
+  --color-hero-lift: #132a57;
 
-  /* Accents */
-  --color-gold: #e8a820; /* primary accent, stripes */
-  --color-clay: #d94040; /* danger, overdue, priority 4 */
-  --color-cream: #f5f0e0; /* body text */
-  --color-turf: #4caf50; /* success, completed */
-  --color-sky: #38bdf8; /* info */
+  /* Brand */
+  --color-accent: #d9515c; /* the red, at label weight */
+  --color-accent-deep: #c0303b; /* solid fills, buttons */
+  --color-accent-dark: #9c1f28;
+  --color-alert: #ff8a93; /* overdue, and only overdue */
 
-  /* Muted text */
-  --color-chalk: rgba(245, 240, 224, 0.62);
-  --color-chalk-dim: rgba(245, 240, 224, 0.38);
+  /* Text */
+  --color-cream: #f4f1e9;
+  --color-chalk: rgba(237, 239, 245, 0.55);
+  --color-chalk-dim: rgba(237, 239, 245, 0.3);
 
-  --font-display: "Oswald", "Arial Narrow", Arial, sans-serif;
-  --font-body: "Inter", system-ui, -apple-system, sans-serif;
-
-  --radius-panel: 2px;
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-body: "Libre Franklin", system-ui, -apple-system, sans-serif;
 }
 
 @layer base {
@@ -43,17 +46,16 @@
 
   body {
     background: var(--color-field);
-    color: var(--color-cream);
+    color: #edeff5;
     min-height: 100vh;
     overflow-x: hidden;
   }
 
   h1,
   h2,
-  h3,
-  .display {
+  h3 {
     font-family: var(--font-display);
-    letter-spacing: 0.06em;
+    font-weight: 700;
   }
 
   ::-webkit-scrollbar {
@@ -64,46 +66,87 @@
     background: var(--color-field);
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--color-panel-hi);
+    background: rgba(217, 81, 92, 0.35);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--color-gold);
+    background: var(--color-accent);
   }
 
-  /* Keyboard focus stays visible; the gold reads on every surface here. */
   :focus-visible {
-    outline: 2px solid var(--color-gold);
+    outline: 2px solid var(--color-accent);
     outline-offset: 2px;
   }
 }
 
 @layer components {
-  /* The one piece of real chrome worth keeping: the gold rule under bars. */
-  .stripe {
-    height: 4px;
-    background: var(--color-gold);
-    flex-shrink: 0;
+  /* Small-caps label. Used for every section head and stat key. */
+  .label-caps {
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-chalk);
   }
 
-  .panel {
-    background: var(--color-panel);
-    border: 1px solid var(--color-line);
-    box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.25);
+  /* Section heading: accent label with a hairline running to the edge. */
+  .rule-head {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    font-family: var(--font-body);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: var(--color-accent);
+  }
+  .rule-head::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgba(217, 81, 92, 0.22);
   }
 
-  /* Scoreboard numerals — tabular so digits don't jitter as they tick up. */
+  /* Display numerals — serif, tabular so they don't jitter as they tick. */
   .numeral {
     font-family: var(--font-display);
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.02em;
   }
 
-  .label-caps {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--color-chalk);
+  /* The flag: canton, star, stripes. Small enough to need real proportions. */
+  .flag-mark {
+    width: 30px;
+    height: 20px;
+    border-radius: 1.5px;
+    position: relative;
+    overflow: hidden;
+    flex: none;
+    box-shadow: 0 0 0 1px rgba(217, 81, 92, 0.45);
+    background: repeating-linear-gradient(180deg, #b3252f 0 2.85px, #f4f1e9 2.85px 5.7px);
+  }
+  .flag-mark::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 13px;
+    height: 11.4px;
+    background: var(--color-hero);
+  }
+  .flag-mark::after {
+    content: "★";
+    position: absolute;
+    left: 2px;
+    top: -1px;
+    font-size: 9px;
+    color: #f4f1e9;
+    line-height: 13px;
+  }
+
+  /* The red/white/navy hairline under the header. */
+  .rule-flag {
+    height: 2px;
+    flex: none;
+    background: linear-gradient(90deg, #b3252f 0 34%, #f4f1e9 34% 67%, #2b4c8c 67%);
   }
 }
 

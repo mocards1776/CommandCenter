@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Check, Trash2, Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useHabits, useCreateHabit, useDeleteHabit, useToggleHabit } from "@/lib/queries";
 import { cn } from "@/lib/utils";
@@ -36,28 +36,32 @@ export default function HabitsPage() {
 
   if (error) {
     return (
-      <div className="panel p-4 text-clay text-sm">
-        Could not load habits: {error instanceof Error ? error.message : String(error)}
+      <div className="p-7">
+        <div className="bg-panel border-alert/40 text-alert rounded border p-4 text-sm">
+          Could not load habits: {error instanceof Error ? error.message : String(error)}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4 max-w-3xl">
-      <form onSubmit={onAdd} className="flex flex-col sm:flex-row gap-2">
-        <div className="flex-1 flex items-center gap-2 panel px-3">
-          <Plus size={16} className="text-chalk shrink-0" />
+    <div className="flex max-w-3xl flex-col gap-4 p-6 md:p-7">
+      <h2 className="rule-head">Habits</h2>
+
+      <form onSubmit={onAdd} className="flex flex-col gap-2 sm:flex-row">
+        <div className="bg-panel flex flex-1 items-center gap-2.5 rounded-sm border border-white/10 px-4 focus-within:border-accent/50">
+          <Plus size={15} className="text-chalk-dim shrink-0" />
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="New habit"
-            className="flex-1 bg-transparent py-2.5 text-sm outline-none placeholder:text-chalk-dim"
+            className="placeholder:text-chalk-dim flex-1 bg-transparent py-3 text-[13px] outline-none"
           />
         </div>
         <select
           value={frequency}
           onChange={(e) => setFrequency(e.target.value as HabitFrequency)}
-          className="panel px-3 py-2.5 text-sm outline-none focus:border-gold"
+          className="bg-panel text-cream rounded-sm border border-white/10 px-3 py-3 text-[13px] outline-none focus:border-accent/50"
         >
           {FREQUENCIES.map((f) => (
             <option key={f.value} value={f.value}>
@@ -68,58 +72,51 @@ export default function HabitsPage() {
         <button
           type="submit"
           disabled={create.isPending || !name.trim()}
-          className="bg-gold text-shell font-semibold uppercase tracking-wider text-xs px-5 py-2.5 hover:brightness-110 disabled:opacity-40 transition"
+          className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.20em] transition hover:brightness-110 disabled:opacity-40"
         >
           Add
         </button>
       </form>
 
-      <div className="panel">
+      <div className="bg-panel rounded border border-white/[0.07]">
         {isLoading ? (
-          <p className="px-3 py-8 text-center label-caps animate-pulse">Loading</p>
+          <p className="label-caps animate-pulse py-10 text-center">Loading</p>
         ) : (habits ?? []).length === 0 ? (
-          <p className="px-3 py-8 text-center text-chalk text-sm">
-            No habits yet. Add one above.
-          </p>
+          <p className="text-chalk py-10 text-center text-sm">No habits yet. Add one above.</p>
         ) : (
           <ul>
             {(habits ?? []).map((h) => (
               <li
                 key={h.id}
-                className="flex items-center gap-3 px-3 py-3 border-b border-line last:border-0 group"
+                className="group flex items-center gap-4 border-b border-white/[0.055] px-5 py-3.5 last:border-0"
               >
                 <button
                   onClick={() => toggle.mutate({ habitId: h.id, done: !h.completedToday })}
                   disabled={!h.dueToday}
                   aria-label={`${h.completedToday ? "Undo" : "Complete"} ${h.name}`}
                   className={cn(
-                    "w-5 h-5 shrink-0 border-2 grid place-items-center transition-colors",
+                    "grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[2px] border-[1.5px] text-[10px] transition-colors",
                     h.completedToday
-                      ? "bg-turf border-turf"
-                      : "border-panel-hi hover:border-turf disabled:opacity-30 disabled:hover:border-panel-hi",
+                      ? "border-accent bg-accent text-field"
+                      : "border-white/25 hover:border-accent disabled:opacity-30 disabled:hover:border-white/25",
                   )}
                 >
-                  {h.completedToday && <Check size={12} className="text-shell" />}
+                  {h.completedToday && "✓"}
                 </button>
 
-                <div className="flex-1 min-w-0">
-                  <p
-                    className={cn(
-                      "truncate text-sm",
-                      h.completedToday && "line-through text-chalk-dim",
-                    )}
-                  >
+                <div className="min-w-0 flex-1">
+                  <p className={cn("truncate text-[13.5px]", h.completedToday && "text-chalk-dim")}>
                     {h.name}
                   </p>
-                  <p className="text-xs text-chalk-dim">
+                  <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.10em]">
                     {FREQUENCIES.find((f) => f.value === h.frequency)?.label ?? h.frequency}
-                    {!h.dueToday && " · not scheduled today"}
+                    {!h.dueToday && " · not today"}
                   </p>
                 </div>
 
-                <div className="text-right shrink-0">
-                  <p className="numeral text-lg text-gold leading-none">{h.streak}</p>
-                  <p className="label-caps">day{h.streak === 1 ? "" : "s"}</p>
+                <div className="shrink-0 text-right">
+                  <p className="numeral text-accent text-[19px] leading-none">{h.streak}</p>
+                  <p className="label-caps text-[9.5px]">day{h.streak === 1 ? "" : "s"}</p>
                 </div>
 
                 <button
@@ -127,7 +124,7 @@ export default function HabitsPage() {
                     if (confirm(`Delete "${h.name}" and its history?`)) remove.mutate(h.id);
                   }}
                   aria-label={`Delete ${h.name}`}
-                  className="opacity-0 group-hover:opacity-100 text-chalk-dim hover:text-clay transition shrink-0"
+                  className="text-chalk-dim hover:text-alert shrink-0 opacity-0 transition group-hover:opacity-100"
                 >
                   <Trash2 size={14} />
                 </button>

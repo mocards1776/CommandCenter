@@ -74,10 +74,15 @@ npm run lint
   `src/lib/utils.ts`. Using UTC makes tasks flip to "tomorrow" at 6–7pm local.
 - **Free-tier Supabase projects pause after ~7 days idle** and the free plan
   caps at 2 active projects.
+- **Never sign up test users with made-up addresses.** Email confirmation is on,
+  so every signup sends a real message; fake addresses bounce and Supabase
+  throttles the project's email sending. Turn confirmation off in Auth settings
+  before any signup testing, or test against the account you actually own.
 
 ## Status
 
-Rebuilt pages: Login, Dashboard, Todos, Habits.
+Rebuilt pages: Login, Dashboard, Todos, Habits — "Capitol" theme (navy and red,
+engraved star field, Playfair Display + Libre Franklin).
 
 Not yet rebuilt — the schema supports them, the UI does not exist yet: Focus,
 Calendar/TimeBlock, Stats, Notes, Braindump, Daily Summary, Weather, Sports,

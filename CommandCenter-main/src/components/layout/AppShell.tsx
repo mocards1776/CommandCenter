@@ -1,12 +1,13 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, ListChecks, Repeat, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import StarField from "@/components/StarField";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/todos", label: "Todos", icon: ListChecks },
-  { to: "/habits", label: "Habits", icon: Repeat },
+  { to: "/dashboard", label: "Dashboard" },
+  { to: "/todos", label: "Todos" },
+  { to: "/habits", label: "Habits" },
 ];
 
 export default function AppShell() {
@@ -20,49 +21,47 @@ export default function AppShell() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="bg-shell flex items-center justify-between px-5 py-2">
-        <div className="flex items-baseline gap-4">
-          <h1 className="display text-xl font-bold uppercase tracking-[0.18em] text-white">
-            Command Center
+    <div className="flex min-h-screen flex-col">
+      <header className="bg-ink relative flex h-[70px] shrink-0 items-center justify-between overflow-hidden px-6 md:px-8">
+        <StarField count={26} seed={3} />
+        <div className="relative z-10 flex items-center gap-4">
+          <span className="flag-mark" />
+          <h1 className="font-display text-cream text-[25px] tracking-[0.05em]">
+            Command <span className="text-accent">Center</span>
           </h1>
-          <span className="label-caps hidden sm:inline">{today}</span>
         </div>
         <button
           onClick={() => void signOut()}
-          className="flex items-center gap-2 text-chalk hover:text-gold transition-colors text-sm"
           title={user?.email ?? undefined}
+          className="label-caps relative z-10 flex items-center gap-2 transition-colors hover:text-cream"
         >
-          <LogOut size={15} />
-          <span className="hidden sm:inline">Sign out</span>
+          <span className="hidden sm:inline">{today}</span>
+          <LogOut size={14} />
         </button>
       </header>
-      <div className="stripe" />
+      <div className="rule-flag" />
 
-      <div className="flex flex-1 min-h-0">
-        <nav className="bg-shell w-16 md:w-52 shrink-0 py-4 flex flex-col gap-1">
-          {NAV.map(({ to, label, icon: Icon }) => (
+      <div className="flex min-h-0 flex-1">
+        <nav className="bg-ink w-[68px] shrink-0 border-r border-accent/15 py-5 md:w-[196px]">
+          {NAV.map(({ to, label }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-3 px-4 md:px-5 py-3 text-sm transition-colors border-l-3",
+                  "block border-l-2 px-4 py-3 text-[11.5px] uppercase tracking-[0.19em] transition-colors md:px-7",
                   isActive
-                    ? "border-gold bg-panel text-cream"
-                    : "border-transparent text-chalk hover:text-cream hover:bg-panel/50",
+                    ? "border-accent bg-accent/[0.07] text-cream"
+                    : "border-transparent text-chalk hover:text-cream",
                 )
               }
             >
-              <Icon size={18} className="shrink-0" />
-              <span className="hidden md:inline uppercase tracking-wider text-xs font-semibold">
-                {label}
-              </span>
+              {label}
             </NavLink>
           ))}
         </nav>
 
-        <main className="flex-1 min-w-0 p-4 md:p-6 overflow-x-hidden">
+        <main className="min-w-0 flex-1 overflow-x-hidden">
           <Outlet />
         </main>
       </div>

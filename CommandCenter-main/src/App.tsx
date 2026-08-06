@@ -70,8 +70,8 @@ export default function App() {
             style: {
               background: "var(--color-panel)",
               color: "var(--color-cream)",
-              border: "1px solid var(--color-line)",
-              borderRadius: "2px",
+              border: "1px solid rgba(217,81,92,0.3)",
+              borderRadius: "3px",
             },
           }}
         />

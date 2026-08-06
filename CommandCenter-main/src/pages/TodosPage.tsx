@@ -1,9 +1,8 @@
 import { useMemo, useState, type FormEvent } from "react";
-import { Check, Trash2, Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useTasks, useProjects, useCreateTask, useCompleteTask, useDeleteTask } from "@/lib/queries";
-import { dueLabel, isOverdue, priorityColor, cn, todayStr } from "@/lib/utils";
-import type { TodoistTask } from "@/types";
+import { cn, dueLabel, isOverdue, todayStr } from "@/lib/utils";
 
 type Filter = "all" | "today" | "overdue";
 
@@ -15,7 +14,7 @@ export default function TodosPage() {
   const remove = useDeleteTask();
 
   const [draft, setDraft] = useState("");
-  const [projectId, setProjectId] = useState<string>("");
+  const [projectId, setProjectId] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
 
   const projectName = useMemo(
@@ -33,7 +32,6 @@ export default function TodosPage() {
           ? list.filter((t) => t.due?.date && t.due.date.slice(0, 10) < today)
           : list;
 
-    // Dated tasks first, soonest at the top; undated fall to the bottom.
     return [...filtered].sort((a, b) => {
       const ad = a.due?.date ?? "9999";
       const bd = b.due?.date ?? "9999";
@@ -48,12 +46,8 @@ export default function TodosPage() {
     if (!content) return;
     setDraft("");
     try {
-      // due_string is passed straight through — Todoist parses "tomorrow at
-      // 3pm" server-side, so there is no date parsing in this app.
-      await create.mutateAsync({
-        content,
-        project_id: projectId || undefined,
-      });
+      // Todoist parses the natural-language date itself, server-side.
+      await create.mutateAsync({ content, project_id: projectId || undefined });
     } catch (err) {
       setDraft(content);
       toast.error(err instanceof Error ? err.message : "Could not add task");
@@ -62,28 +56,32 @@ export default function TodosPage() {
 
   if (error) {
     return (
-      <div className="panel p-4 text-clay text-sm">
-        Could not load tasks: {error instanceof Error ? error.message : String(error)}
+      <div className="p-7">
+        <div className="bg-panel border-alert/40 text-alert rounded border p-4 text-sm">
+          Could not load tasks: {error instanceof Error ? error.message : String(error)}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4 max-w-4xl">
-      <form onSubmit={onAdd} className="flex flex-col sm:flex-row gap-2">
-        <div className="flex-1 flex items-center gap-2 panel px-3">
-          <Plus size={16} className="text-chalk shrink-0" />
+    <div className="flex max-w-4xl flex-col gap-4 p-6 md:p-7">
+      <h2 className="rule-head">Tasks</h2>
+
+      <form onSubmit={onAdd} className="flex flex-col gap-2 sm:flex-row">
+        <div className="bg-panel flex flex-1 items-center gap-2.5 rounded-sm border border-white/10 px-4 focus-within:border-accent/50">
+          <Plus size={15} className="text-chalk-dim shrink-0" />
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Add a task — try &quot;Call Dave tomorrow at 3pm&quot;"
-            className="flex-1 bg-transparent py-2.5 text-sm outline-none placeholder:text-chalk-dim"
+            placeholder='Add a task — try "Call Dave tomorrow at 3pm"'
+            className="placeholder:text-chalk-dim flex-1 bg-transparent py-3 text-[13px] outline-none"
           />
         </div>
         <select
           value={projectId}
           onChange={(e) => setProjectId(e.target.value)}
-          className="panel px-3 py-2.5 text-sm outline-none focus:border-gold"
+          className="bg-panel text-cream rounded-sm border border-white/10 px-3 py-3 text-[13px] outline-none focus:border-accent/50"
         >
           <option value="">Inbox</option>
           {(projects ?? [])
@@ -97,78 +95,82 @@ export default function TodosPage() {
         <button
           type="submit"
           disabled={create.isPending || !draft.trim()}
-          className="bg-gold text-shell font-semibold uppercase tracking-wider text-xs px-5 py-2.5 hover:brightness-110 disabled:opacity-40 transition"
+          className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-6 py-3 text-[11px] font-semibold uppercase tracking-[0.20em] transition hover:brightness-110 disabled:opacity-40"
         >
           Add
         </button>
       </form>
 
-      <div className="flex gap-1">
+      <div className="flex items-center gap-1">
         {(["all", "today", "overdue"] as Filter[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
             className={cn(
-              "px-3 py-1.5 text-xs uppercase tracking-wider font-semibold transition-colors",
-              filter === f ? "bg-panel text-gold" : "text-chalk hover:text-cream",
+              "px-3 py-1.5 text-[10.5px] uppercase tracking-[0.19em] transition-colors",
+              filter === f ? "text-accent border-b border-accent" : "text-chalk hover:text-cream",
             )}
           >
             {f}
           </button>
         ))}
-        <span className="ml-auto label-caps self-center">{visible.length} tasks</span>
+        <span className="label-caps ml-auto">{visible.length} tasks</span>
       </div>
 
-      <div className="panel">
+      <div className="bg-panel rounded border border-white/[0.07]">
         {isLoading ? (
-          <p className="px-3 py-8 text-center label-caps animate-pulse">Loading</p>
+          <p className="label-caps animate-pulse py-10 text-center">Loading</p>
         ) : visible.length === 0 ? (
-          <p className="px-3 py-8 text-center text-chalk text-sm">Nothing here.</p>
+          <p className="text-chalk py-10 text-center text-sm">Nothing here.</p>
         ) : (
           <ul>
-            {visible.map((t: TodoistTask) => {
-              const label = dueLabel(t.due?.date);
-              const overdue = isOverdue(t.due?.date);
+            {visible.map((t) => {
+              const late = isOverdue(t.due?.date);
               return (
                 <li
                   key={t.id}
-                  className="flex items-center gap-3 px-3 py-2.5 border-b border-line last:border-0 group"
+                  className="group flex items-center gap-4 border-b border-white/[0.055] px-5 py-3 last:border-0"
                 >
                   <button
                     onClick={() => complete.mutate(t.id)}
                     aria-label={`Complete ${t.content}`}
-                    className="w-4 h-4 shrink-0 border-2 rounded-full grid place-items-center hover:bg-turf/20 transition-colors"
-                    style={{ borderColor: priorityColor(t.priority) || "var(--color-panel-hi)" }}
-                  >
-                    <Check size={10} className="opacity-0 group-hover:opacity-60 transition-opacity" />
-                  </button>
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] transition-colors",
+                      late
+                        ? "border-alert bg-alert shadow-[inset_0_0_0_2px_var(--color-panel)]"
+                        : "border-white/25 hover:border-accent",
+                    )}
+                  />
 
-                  <div className="flex-1 min-w-0">
-                    <p className="truncate text-sm">{t.content}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13.5px]">{t.content}</p>
                     {t.labels.length > 0 && (
-                      <p className="text-xs text-chalk-dim truncate">
+                      <p className="text-chalk-dim truncate text-[11px]">
                         {t.labels.map((l) => `@${l}`).join(" ")}
                       </p>
                     )}
                   </div>
 
                   {t.project_id && projectName.has(t.project_id) && (
-                    <span className="text-xs text-chalk-dim shrink-0 hidden sm:inline">
+                    <span className="text-chalk-dim hidden shrink-0 text-[10.5px] uppercase tracking-[0.10em] sm:inline">
                       {projectName.get(t.project_id)}
                     </span>
                   )}
-                  {label && (
-                    <span className={cn("text-xs shrink-0", overdue ? "text-clay" : "text-chalk")}>
-                      {label}
-                    </span>
-                  )}
+                  <span
+                    className={cn(
+                      "w-[86px] shrink-0 text-right text-[10.5px] uppercase tracking-[0.15em]",
+                      late ? "text-alert font-semibold" : "text-chalk",
+                    )}
+                  >
+                    {dueLabel(t.due?.date) ?? ""}
+                  </span>
 
                   <button
                     onClick={() => {
                       if (confirm(`Delete "${t.content}"?`)) remove.mutate(t.id);
                     }}
                     aria-label={`Delete ${t.content}`}
-                    className="opacity-0 group-hover:opacity-100 text-chalk-dim hover:text-clay transition shrink-0"
+                    className="text-chalk-dim hover:text-alert shrink-0 opacity-0 transition group-hover:opacity-100"
                   >
                     <Trash2 size={14} />
                   </button>
