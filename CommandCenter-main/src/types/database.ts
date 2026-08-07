@@ -261,6 +261,7 @@ export type Database = {
           series: string | null;
           series_position: number | null;
           description: string | null;
+          subjects: string[] | null;
           cover_url: string | null;
           cover_path: string | null;
           source_url: string | null;
@@ -303,6 +304,7 @@ export type Database = {
           series?: string | null;
           series_position?: number | null;
           description?: string | null;
+          subjects?: string[] | null;
           cover_url?: string | null;
           cover_path?: string | null;
           source_url?: string | null;

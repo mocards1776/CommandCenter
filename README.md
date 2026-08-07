@@ -9,6 +9,7 @@ Personal dashboard: tasks, habits, and time tracking.
 | Frontend | `CommandCenter-main/` | Vite + React 19 + TypeScript, Tailwind v4, TanStack Query, React Router |
 | Database + auth | Supabase project `esdgrgulaxnewmhjuyzh` | Postgres 17, Supabase Auth, row-level security |
 | Todoist proxy | `supabase/functions/todoist/` | Deno edge function |
+| Book lookup / enrichment | `supabase/functions/book-lookup/`, `supabase/functions/backfill-covers/` | Deno edge functions |
 | Tasks | Todoist | unified `/api/v1` |
 | Hosting | Vercel | root `vercel.json` builds `CommandCenter-main` |
 
@@ -52,7 +53,8 @@ npm run lint
 - **Frontend** — pushes to the connected branch deploy via Vercel. Environment
   variable changes do *not* apply to existing deployments; redeploy after
   editing them.
-- **Edge function** — `supabase functions deploy todoist`
+- **Edge functions** — `supabase functions deploy <name>` (`todoist`,
+  `book-lookup`, `backfill-covers`)
 - **Migrations** — applied to the Supabase project; `supabase/migrations/`
   is the record.
 
@@ -70,6 +72,18 @@ npm run lint
   on and reports it as `PGRST205 "not found in schema cache"`, which points at
   the wrong problem. `ALTER DEFAULT PRIVILEGES` is configured to cover new
   tables; verify with `get_advisors` after any migration.
+- **Open Library keeps descriptions on the *work*, not the edition.**
+  `/api/books?jscmd=details` never returns one, so the enrichment function
+  follows `details.works[0].key` to `/works/OL…W.json`. Missing this produced
+  exactly 1 description across 385 enriched books.
+- **Google Books rate-limits anonymous callers to nothing.** Every unauthenticated
+  `volumes?q=isbn:` request comes back 429. It is a fallback only. Set
+  `GOOGLE_BOOKS_API_KEY` as a Supabase secret to make it useful — Open Library
+  alone covers roughly half the library.
+- **Third-party keys belong in Supabase, never Vercel.** Anything prefixed
+  `VITE_` is compiled into the bundle and shipped to every browser. That applies
+  to `TODOIST_API_TOKEN`, `GOOGLE_BOOKS_API_KEY`, `ANTHROPIC_API_KEY`, and
+  `READWISE_TOKEN`.
 - **All dates are Central time** (`America/Chicago`), computed in
   `src/lib/utils.ts`. Using UTC makes tasks flip to "tomorrow" at 6–7pm local.
 - **Free-tier Supabase projects pause after ~7 days idle** and the free plan
@@ -81,8 +95,8 @@ npm run lint
 
 ## Status
 
-Rebuilt pages: Login, Dashboard, Todos, Habits — "Capitol" theme (navy and red,
-engraved star field, Playfair Display + Libre Franklin).
+Rebuilt pages: Login, Dashboard, Todos, Habits, Reading — "Capitol" theme (navy
+and red, engraved star field, Playfair Display + Libre Franklin).
 
 Not yet rebuilt — the schema supports them, the UI does not exist yet: Focus,
 Calendar/TimeBlock, Stats, Notes, Braindump, Daily Summary, Weather, Sports,

@@ -1,6 +1,19 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Upload, Search, Star, Link2, Plus, X, BookOpen, ImageDown, Bookmark } from "lucide-react";
+import {
+  Upload,
+  Search,
+  Star,
+  Link2,
+  Plus,
+  X,
+  BookOpen,
+  ImageDown,
+  Bookmark,
+  Sparkles,
+  LayoutGrid,
+  Rows3,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import {
   fetchBooks,
@@ -21,6 +34,7 @@ import {
   percentToPage,
   pageToPercent,
   enrichRemaining,
+  enrichBook,
   fetchBookSessions,
   fetchEditions,
   type Edition,
@@ -614,9 +628,12 @@ function ReadingHistory({ book }: { book: Book }) {
   return (
     <div className="mb-4">
       <div className="mb-2 flex items-center">
-        <span className="label-caps flex-1">Page sessions</span>
-        <button onClick={() => setAdding(!adding)} className="text-accent text-[10.5px] uppercase tracking-[0.15em]">
-          {adding ? "cancel" : "+ add"}
+        <span className="label-caps flex-1">Times read · {log.length}</span>
+        <button
+          onClick={() => setAddingRead(!addingRead)}
+          className="text-accent text-[10.5px] uppercase tracking-[0.15em]"
+        >
+          {addingRead ? "cancel" : "+ add a read"}
         </button>
       </div>
 
@@ -648,19 +665,7 @@ function ReadingHistory({ book }: { book: Book }) {
       )}
 
       {/* Times read — each deletable, which is how a duplicate goes away. */}
-      <div className="mb-3">
-        <div className="mb-1.5 flex items-center">
-          <span className="text-chalk-dim flex-1 text-[10.5px] uppercase tracking-[0.15em]">
-            Times read · {log.length}
-          </span>
-          <button
-            onClick={() => setAddingRead(!addingRead)}
-            className="text-accent text-[10.5px] uppercase tracking-[0.15em]"
-          >
-            {addingRead ? "cancel" : "+ add a read"}
-          </button>
-        </div>
-
+      <div className="mb-4">
         {addingRead && (
           <form
             onSubmit={(e: FormEvent) => {
@@ -801,6 +806,16 @@ function ReadingHistory({ book }: { book: Book }) {
       )}
 
       {sessions && sessions.length > 0 && book.status !== "read" && (
+        <>
+        <div className="mb-2 mt-4 flex items-center">
+          <span className="label-caps flex-1">Page sessions</span>
+          <button
+            onClick={() => setAdding(!adding)}
+            className="text-accent text-[10.5px] uppercase tracking-[0.15em]"
+          >
+            {adding ? "cancel" : "+ add"}
+          </button>
+        </div>
         <ul>
           {sessions.map((sess) => (
             <li key={sess.id} className="border-b border-white/[0.05] py-1.5 last:border-0">
@@ -855,6 +870,7 @@ function ReadingHistory({ book }: { book: Book }) {
             </li>
           ))}
         </ul>
+        </>
       )}
 
       {(!sessions || sessions.length === 0) && !adding && (
@@ -1010,17 +1026,35 @@ function BookDetail({
     },
   });
 
+  const refetchInfo = useMutation({
+    mutationFn: () => enrichBook(book.id),
+    onSuccess: (r) => {
+      refresh();
+      toast[r.blurbs ? "success" : "error"](
+        r.blurbs ? "Found it" : "Nothing found for this one",
+      );
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Lookup failed"),
+  });
+
   const cover = coverSrc(book);
+  const subjects = book.subjects ?? [];
   const pct = book.page_count ? Math.min(100, (book.current_page / book.page_count) * 100) : null;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
       <aside
-        className="bg-field h-full w-full max-w-md overflow-y-auto border-l border-accent/25 p-6"
+        // Full-height sheet, so it needs the safe area itself — the app header
+        // that normally handles it isn't in this stacking context.
+        className="bg-field h-full w-full max-w-md overflow-y-auto overscroll-contain border-l border-accent/25 p-6"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 5rem)",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cover bleeds behind the title, the way a book jacket would. */}
-        <div className="relative -mx-6 -mt-6 mb-5 overflow-hidden px-6 pb-5 pt-6">
+        <div className="relative -mx-6 mb-5 overflow-hidden rounded-lg px-6 pb-5 pt-5">
           {cover && (
             <>
               <img
@@ -1127,6 +1161,43 @@ function BookDetail({
             </button>
           </div>
         </div>
+
+        {/* The blurb is the whole reason you open a book you haven't read yet,
+            so it sits above the logging controls instead of under them. */}
+        {(book.description || subjects.length > 0) && (
+          <div className="mb-5">
+            <span className="label-caps">About</span>
+            {book.description && (
+              <p className="text-chalk mt-2 whitespace-pre-line text-[12.5px] leading-relaxed">
+                {book.description}
+              </p>
+            )}
+            {subjects.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {subjects.map((s) => (
+                  <span
+                    key={s}
+                    className="text-chalk-dim rounded-full border border-accent/25 px-2.5 py-[3px] text-[10.5px]"
+                  >
+                    {s}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Nothing to show means nothing was ever fetched for this one. */}
+        {!book.description && (
+          <button
+            onClick={() => refetchInfo.mutate()}
+            disabled={refetchInfo.isPending}
+            className="text-chalk hover:text-cream mb-5 flex w-full items-center justify-center gap-2 rounded-sm border border-white/10 py-2 text-[10.5px] uppercase tracking-[0.15em] transition hover:border-accent/50 disabled:opacity-40"
+          >
+            <Sparkles size={13} />
+            {refetchInfo.isPending ? "Looking it up…" : "Fetch book info"}
+          </button>
+        )}
 
         {/* Status */}
         <label className="mb-4 block">
@@ -1343,15 +1414,6 @@ function BookDetail({
             className="bg-panel text-cream mt-1.5 w-full resize-y rounded-sm border border-white/10 px-3 py-2 text-[13px] outline-none focus:border-accent/50"
           />
         </label>
-
-        {book.description && (
-          <div className="mb-4">
-            <span className="label-caps">About</span>
-            <p className="text-chalk mt-2 whitespace-pre-line text-[12.5px] leading-relaxed">
-              {book.description}
-            </p>
-          </div>
-        )}
 
         <button
           onClick={async () => {
@@ -2006,26 +2068,237 @@ function TagStats({
   );
 }
 
+/* ── Shelf ──────────────────────────────────────────────────────────── */
+/**
+ * The library itself. Covers is for browsing by jacket the way you'd browse a
+ * shelf; Details is for scanning — same books, same click targets.
+ */
+function Shelf({
+  books,
+  view,
+  onOpen,
+  onFilter,
+}: {
+  books: Book[];
+  view: "list" | "grid";
+  onOpen: (b: Book) => void;
+  onFilter: (f: { type: "author" | "tag"; value: string }) => void;
+}) {
+  if (books.length === 0) {
+    return (
+      <div className="bg-panel rounded border border-white/[0.07] py-14 text-center">
+        <BookOpen size={26} className="text-chalk-dim mx-auto" />
+        <p className="text-chalk mt-3 text-sm">Nothing on this shelf yet.</p>
+      </div>
+    );
+  }
+
+  if (view === "grid") {
+    return (
+      <ul className="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        {books.map((b) => {
+          const cover = coverSrc(b);
+          const pct = b.page_count
+            ? Math.min(100, (b.current_page / b.page_count) * 100)
+            : null;
+          return (
+            <li key={b.id}>
+              <button onClick={() => onOpen(b)} className="group block w-full text-left">
+                <div className="relative aspect-[2/3] overflow-hidden rounded shadow-[0_10px_26px_rgba(0,0,0,.5)] transition-transform duration-200 group-hover:-translate-y-1">
+                  {cover ? (
+                    <img
+                      src={cover}
+                      alt=""
+                      loading="lazy"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="bg-panel flex h-full w-full flex-col items-center justify-center gap-2 px-2">
+                      <BookOpen size={18} className="text-chalk-dim" />
+                      <span className="text-chalk-dim line-clamp-3 text-center text-[9.5px] leading-tight">
+                        {b.title}
+                      </span>
+                    </div>
+                  )}
+                  {/* A spine shadow and a hairline edge: flat art, book object. */}
+                  <div className="pointer-events-none absolute inset-y-0 left-0 w-[7%] bg-gradient-to-r from-black/45 to-transparent" />
+                  <div className="pointer-events-none absolute inset-0 rounded ring-1 ring-inset ring-white/10" />
+
+                  {b.star_rating !== null && (
+                    <span className="bg-ink/85 text-accent absolute right-1 top-1 flex items-center gap-0.5 rounded-sm px-1.5 py-0.5 text-[10px] backdrop-blur">
+                      <Star size={9} className="fill-current" />
+                      <span className="numeral">{b.star_rating}</span>
+                    </span>
+                  )}
+                  {pct !== null && b.status === "currently-reading" && (
+                    <div className="absolute inset-x-0 bottom-0 h-1 bg-black/50">
+                      <div className="bg-accent h-full" style={{ width: `${pct}%` }} />
+                    </div>
+                  )}
+                </div>
+                <p className="text-cream mt-1.5 line-clamp-2 text-[11.5px] leading-tight">
+                  {b.title}
+                </p>
+                <p className="text-chalk-dim truncate text-[10px]">{b.authors || "Unknown"}</p>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {books.map((b) => {
+        const cover = coverSrc(b);
+        const pct = b.page_count ? Math.min(100, (b.current_page / b.page_count) * 100) : null;
+        const facts = [
+          b.published_year ? String(b.published_year) : null,
+          b.page_count ? `${b.page_count} pages` : null,
+          b.format ? b.format[0].toUpperCase() + b.format.slice(1) : null,
+          b.read_count > 1 ? `read ${b.read_count}×` : null,
+        ].filter(Boolean) as string[];
+
+        return (
+          <li key={b.id}>
+            <button
+              onClick={() => onOpen(b)}
+              className="bg-panel group relative flex w-full items-start gap-4 overflow-hidden rounded border border-white/[0.07] py-3 pl-4 pr-4 text-left transition-colors hover:border-accent/35 hover:bg-white/[0.03]"
+            >
+              {/* Stripe wipes in on hover — the flag motif at row scale. */}
+              <span className="bg-accent absolute inset-y-0 left-0 w-[3px] origin-top scale-y-0 transition-transform duration-200 group-hover:scale-y-100" />
+
+              {cover ? (
+                <img
+                  src={cover}
+                  alt=""
+                  loading="lazy"
+                  className="h-[66px] w-[44px] shrink-0 rounded-[2px] object-cover shadow-[0_4px_14px_rgba(0,0,0,.5)]"
+                />
+              ) : (
+                <div className="bg-field grid h-[66px] w-[44px] shrink-0 place-items-center rounded-[2px]">
+                  <BookOpen size={15} className="text-chalk-dim" />
+                </div>
+              )}
+
+              <div className="min-w-0 flex-1">
+                <p className="text-cream truncate text-[14px]">{b.title}</p>
+
+                <p className="text-chalk-dim truncate text-[11.5px]">
+                  <span
+                    role="link"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      if (!b.authors) return;
+                      e.stopPropagation(); // don't also open the drawer
+                      onFilter({ type: "author", value: b.authors.split(",")[0].trim() });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && b.authors) {
+                        e.stopPropagation();
+                        onFilter({ type: "author", value: b.authors.split(",")[0].trim() });
+                      }
+                    }}
+                    className={b.authors ? "hover:text-accent cursor-pointer" : ""}
+                  >
+                    {b.authors || "Unknown author"}
+                  </span>
+                </p>
+
+                {facts.length > 0 && (
+                  <p className="text-chalk-dim mt-1 truncate text-[10.5px]">{facts.join(" · ")}</p>
+                )}
+
+                {b.description && (
+                  <p className="text-chalk mt-1.5 line-clamp-2 text-[11.5px] leading-snug">
+                    {b.description}
+                  </p>
+                )}
+
+                {b.tags.length > 0 && (
+                  <span className="mt-1.5 flex flex-wrap gap-1">
+                    {b.tags.slice(0, 4).map((t) => (
+                      <span
+                        key={t}
+                        role="link"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFilter({ type: "tag", value: t });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.stopPropagation();
+                            onFilter({ type: "tag", value: t });
+                          }
+                        }}
+                        className="text-chalk-dim hover:text-accent hover:border-accent/45 cursor-pointer rounded-full border border-white/10 px-2 py-[1px] text-[9.5px]"
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </span>
+                )}
+
+                {pct !== null && b.status === "currently-reading" && (
+                  <span className="mt-2 flex items-center gap-2">
+                    <span className="h-1 w-32 overflow-hidden rounded-sm bg-white/10">
+                      <span
+                        className="bg-accent block h-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </span>
+                    <span className="text-chalk-dim numeral text-[10px]">{Math.round(pct)}%</span>
+                  </span>
+                )}
+              </div>
+
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                {b.star_rating !== null && (
+                  <span className="text-accent flex items-center gap-1 text-[11.5px]">
+                    <Star size={11} className="fill-current" />
+                    <span className="numeral">{b.star_rating}</span>
+                  </span>
+                )}
+                {b.finished_at && (
+                  <span className="text-chalk-dim hidden text-right text-[10.5px] sm:block">
+                    {fmtLongDate(b.finished_at)}
+                  </span>
+                )}
+              </div>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /* ── Cover backfill ─────────────────────────────────────────────────── */
 function CoverBackfill() {
   const qc = useQueryClient();
   const { data: remaining } = useQuery({ queryKey: ["enrich-remaining"], queryFn: enrichRemaining });
   const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<{ found: number; left: number } | null>(null);
+  const [progress, setProgress] = useState<{ found: number; blurbs: number; left: number } | null>(
+    null,
+  );
 
   async function run() {
     setRunning(true);
     let found = 0;
+    let blurbs = 0;
     try {
       // Loop batches until the server says nothing is left. Bounded so a
       // permanently-failing row can't spin forever.
-      for (let i = 0; i < 200; i++) {
+      for (let i = 0; i < 300; i++) {
         const r = await backfillCoversBatch(12);
         found += r.found;
-        setProgress({ found, left: r.remaining });
+        blurbs += r.blurbs ?? 0;
+        setProgress({ found, blurbs, left: r.remaining });
         if (r.remaining === 0 || r.processed === 0) break;
       }
-      toast.success(`Enriched ${found} books`);
+      toast.success(`${found} covers, ${blurbs} descriptions`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Backfill failed");
     } finally {
@@ -2052,7 +2325,7 @@ function CoverBackfill() {
       >
         <ImageDown size={14} />
         {running
-          ? `${progress?.found ?? 0} found · ${progress?.left ?? remaining} left`
+          ? `${progress?.found ?? 0} covers · ${progress?.blurbs ?? 0} blurbs · ${progress?.left ?? remaining} left`
           : "Fetch details"}
       </button>
     </div>
@@ -2073,6 +2346,15 @@ export default function ReadingPage() {
   >(null);
   const [open, setOpen] = useState<Book | null>(null);
   const [adding, setAdding] = useState(false);
+  // Jackets or details — remembered, because it's a taste thing, not a mode.
+  const [view, setView] = useState<"list" | "grid">(
+    () => (localStorage.getItem("reading-view") as "list" | "grid" | null) ?? "list",
+  );
+
+  const pickView = (v: "list" | "grid") => {
+    setView(v);
+    localStorage.setItem("reading-view", v);
+  };
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -2156,6 +2438,28 @@ export default function ReadingPage() {
               {s.label} <span className="text-chalk-dim ml-1">{counts[s.key] ?? 0}</span>
             </button>
           ))}
+
+          <div className="ml-auto flex items-center gap-1">
+            {([
+              ["grid", LayoutGrid, "Covers"],
+              ["list", Rows3, "Details"],
+            ] as const).map(([v, Icon, label]) => (
+              <button
+                key={v}
+                onClick={() => pickView(v)}
+                aria-label={label}
+                title={label}
+                className={cn(
+                  "rounded-sm border p-1.5 transition-colors",
+                  view === v
+                    ? "border-accent/50 bg-accent/15 text-accent"
+                    : "text-chalk-dim hover:text-cream border-white/10",
+                )}
+              >
+                <Icon size={14} />
+              </button>
+            ))}
+          </div>
         </div>
 
         {filter && (
@@ -2175,74 +2479,7 @@ export default function ReadingPage() {
           </button>
         )}
 
-        <div className="bg-panel rounded border border-white/[0.07]">
-          {visible.length === 0 ? (
-            <p className="text-chalk py-10 text-center text-sm">Nothing on this shelf.</p>
-          ) : (
-            <ul>
-              {visible.map((b) => {
-                const cover = coverSrc(b);
-                const pct = b.page_count ? (b.current_page / b.page_count) * 100 : null;
-                return (
-                  <li key={b.id}>
-                    <button
-                      onClick={() => setOpen(b)}
-                      className="flex w-full items-center gap-3.5 border-b border-white/[0.055] px-4 py-2.5 text-left transition-colors hover:bg-white/[0.03]"
-                    >
-                      {cover ? (
-                        <img src={cover} alt="" className="h-11 w-8 shrink-0 rounded-[2px] object-cover" />
-                      ) : (
-                        <div className="bg-field grid h-11 w-8 shrink-0 place-items-center rounded-[2px]">
-                          <BookOpen size={13} className="text-chalk-dim" />
-                        </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13.5px]">{b.title}</p>
-                        <p className="text-chalk-dim truncate text-[11px]">
-                          <span
-                            role="link"
-                            tabIndex={0}
-                            onClick={(e) => {
-                              if (!b.authors) return;
-                              e.stopPropagation(); // don't also open the drawer
-                              setFilter({ type: "author", value: b.authors.split(",")[0].trim() });
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && b.authors) {
-                                e.stopPropagation();
-                                setFilter({ type: "author", value: b.authors.split(",")[0].trim() });
-                              }
-                            }}
-                            className={b.authors ? "hover:text-accent cursor-pointer" : ""}
-                          >
-                            {b.authors || "Unknown author"}
-                          </span>
-                          {b.read_count > 1 && (
-                            <span className="text-accent ml-2">×{b.read_count}</span>
-                          )}
-                        </p>
-                        {pct !== null && b.status === "currently-reading" && (
-                          <div className="mt-1 h-1 w-32 overflow-hidden rounded-sm bg-white/10">
-                            <div className="bg-accent h-full" style={{ width: `${pct}%` }} />
-                          </div>
-                        )}
-                      </div>
-                      {b.star_rating !== null && (
-                        <span className="text-accent flex shrink-0 items-center gap-1 text-[11px]">
-                          <Star size={11} className="fill-current" />
-                          <span className="numeral">{b.star_rating}</span>
-                        </span>
-                      )}
-                      <span className="text-chalk hidden w-[112px] shrink-0 text-right text-[10.5px] sm:block">
-                        {fmtLongDate(b.finished_at)}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+        <Shelf books={visible} view={view} onOpen={setOpen} onFilter={setFilter} />
       </div>
 
       <aside className="bg-ink flex flex-col gap-6 border-accent/15 p-4 md:p-6 lg:border-l">

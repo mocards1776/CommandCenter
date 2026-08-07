@@ -402,10 +402,27 @@ export async function deleteSession(id: string): Promise<void> {
 export type BackfillResult = {
   processed: number;
   found: number;
+  pages?: number;
+  blurbs?: number;
   missed: number;
   sources: Record<string, number>;
   remaining: number;
 };
+
+/**
+ * Re-fetch metadata for one book, ignoring whether it was enriched before.
+ * Backs the "Fetch book info" button on a book that came through the import
+ * with nothing but a title.
+ */
+export async function enrichBook(bookId: string): Promise<BackfillResult> {
+  const { data, error } = await supabase.functions.invoke<BackfillResult & { error?: string }>(
+    "backfill-covers",
+    { body: { bookId } },
+  );
+  if (error) throw new Error(error.message);
+  if (!data || data.error) throw new Error(data?.error ?? "Lookup failed");
+  return data;
+}
 
 /** One batch. The caller loops until `remaining` is 0. */
 export async function backfillCoversBatch(batch = 25): Promise<BackfillResult> {
@@ -527,8 +544,7 @@ export async function enrichRemaining(): Promise<number> {
   const { count, error } = await supabase
     .from("books")
     .select("id", { count: "exact", head: true })
-    .is("enriched_at", null)
-    .not("isbn", "is", null);
+    .is("enriched_at", null);
   if (error) throw error;
   return count ?? 0;
 }
