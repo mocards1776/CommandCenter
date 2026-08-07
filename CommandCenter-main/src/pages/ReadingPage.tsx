@@ -35,6 +35,7 @@ import {
   duplicateIndexes,
   sortReadLog,
   type ReadThrough,
+  periodStats,
   type ReadingSession,
 } from "@/lib/books";
 import StarField from "@/components/StarField";
@@ -914,7 +915,10 @@ function BookDetail({
   const { burst, fanfare } = useCelebration();
   const [pages, setPages] = useState("");
   const [date, setDate] = useState(todayStr());
-  const [mode, setMode] = useState<"pages" | "percent" | "page">("pages");
+  // Seeded from the book so the mode you last used for it comes back.
+  const [mode, setMode] = useState<"pages" | "percent" | "page">(
+    (book.progress_mode as "pages" | "percent" | "page") ?? "pages",
+  );
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["books"] });
@@ -999,6 +1003,7 @@ function BookDetail({
             <h2 className="font-display text-cream text-[21px] leading-tight">
               <Editable
                 value={book.title}
+                doubleClick
                 onSave={(v) => v.trim() && patch.mutate({ title: v.trim() })}
                 inputClassName="w-full text-[19px]"
               />
@@ -1123,7 +1128,11 @@ function BookDetail({
             {(["pages", "percent", "page"] as const).map((m) => (
               <button
                 key={m}
-                onClick={() => setMode(m)}
+                onClick={() => {
+                  setMode(m);
+                  // Remember it for next time, silently.
+                  if (m !== book.progress_mode) patch.mutate({ progress_mode: m });
+                }}
                 className={cn(
                   "px-2.5 py-1 text-[9.5px] uppercase tracking-[0.14em] transition-colors",
                   mode === m ? "text-accent border-accent border-b" : "text-chalk-dim hover:text-chalk",
@@ -1716,6 +1725,39 @@ function GoalCard({ books, onDrill }: { books: Book[]; onDrill: (year: string) =
 }
 
 
+
+/* ── This week / this month ─────────────────────────────────────────── */
+function PeriodTotals({ books, sessions }: { books: Book[]; sessions: ReadingSession[] }) {
+  const s = useMemo(() => periodStats(books, sessions), [books, sessions]);
+
+  const Cell = ({ label, value, sub }: { label: string; value: number; sub: string }) => (
+    <div className="bg-panel px-4 py-3">
+      <div className="label-caps text-[9.5px] tracking-[0.17em]">{label}</div>
+      <div className="numeral text-cream mt-1 text-[27px] leading-none">
+        {value.toLocaleString()}
+      </div>
+      <div className="text-chalk-dim mt-1 text-[9.5px] uppercase tracking-[0.12em]">{sub}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <h2 className="rule-head mb-3">Recent</h2>
+      <div className="bg-accent/15 grid grid-cols-2 gap-px">
+        <Cell label="This week" value={s.pagesWeek} sub="pages" />
+        <Cell label="This week" value={s.booksWeek} sub={s.booksWeek === 1 ? "book" : "books"} />
+        <Cell label="This month" value={s.pagesMonth} sub="pages" />
+        <Cell label="This month" value={s.booksMonth} sub={s.booksMonth === 1 ? "book" : "books"} />
+      </div>
+      {s.pagesWeek === 0 && s.pagesMonth === 0 && (
+        <p className="text-chalk-dim mt-2 text-[10.5px] leading-relaxed">
+          Page counts come from logged sessions. Log some reading and this fills in.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /* ── Stats by tag ───────────────────────────────────────────────────── */
 function TagStats({
   books,
@@ -2020,6 +2062,7 @@ export default function ReadingPage() {
       </div>
 
       <aside className="bg-ink flex flex-col gap-6 border-accent/15 p-4 md:p-6 lg:border-l">
+        <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
         <GoalCard books={books ?? []} onDrill={(y) => setFilter({ type: "year", value: y })} />
         <CoverBackfill />
         <PagesCalendar sessions={sessions ?? []} />

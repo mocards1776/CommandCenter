@@ -1,4 +1,5 @@
 import { supabase, requireUserId } from "./supabase";
+import { todayStr } from "./utils";
 import type { Book, BookInsert, ReadStatus } from "@/types";
 
 const VALID_STATUS: ReadStatus[] = [
@@ -720,4 +721,46 @@ export function duplicateIndexes(log: ReadThrough[]): Set<number> {
     else seen.set(key, i);
   });
   return dupes;
+}
+
+// ── Weekly / monthly totals ──────────────────────────────────────────────
+
+export type PeriodStats = {
+  pagesWeek: number;
+  pagesMonth: number;
+  booksWeek: number;
+  booksMonth: number;
+};
+
+/** Monday-start week; both windows in Central time to match everything else. */
+export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodStats {
+  const today = todayStr();
+  const d = new Date(`${today}T12:00:00`);
+
+  const dow = (d.getDay() + 6) % 7; // Monday = 0
+  const weekStart = new Date(d);
+  weekStart.setDate(weekStart.getDate() - dow);
+  const weekStartIso = weekStart.toISOString().slice(0, 10);
+  const monthStartIso = `${today.slice(0, 7)}-01`;
+
+  let pagesWeek = 0;
+  let pagesMonth = 0;
+  for (const s of sessions) {
+    if (s.session_date >= monthStartIso) pagesMonth += s.pages_read;
+    if (s.session_date >= weekStartIso) pagesWeek += s.pages_read;
+  }
+
+  let booksWeek = 0;
+  let booksMonth = 0;
+  for (const b of books) {
+    // Count every read-through that finished in the window, not just the
+    // book's latest finish — a re-read this month is a book read this month.
+    for (const r of b.read_log ?? []) {
+      if (!r.end) continue;
+      if (r.end >= monthStartIso) booksMonth++;
+      if (r.end >= weekStartIso) booksWeek++;
+    }
+  }
+
+  return { pagesWeek, pagesMonth, booksWeek, booksMonth };
 }

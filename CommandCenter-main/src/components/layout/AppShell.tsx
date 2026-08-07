@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { LayoutDashboard, ListChecks, Repeat, BookOpen, LogOut } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import StarField from "@/components/StarField";
+import InstallHint from "@/components/InstallHint";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -71,6 +72,8 @@ export default function AppShell() {
           <Outlet />
         </main>
       </div>
+
+      <InstallHint />
 
       {/* Mobile tab bar */}
       <nav

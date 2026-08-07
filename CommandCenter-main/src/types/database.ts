@@ -269,6 +269,7 @@ export type Database = {
           on_deck_order: number;
           enriched_at: string | null;
           read_log: { start: string | null; end: string | null }[];
+          progress_mode: string;
           created_at: string;
           updated_at: string;
         };
@@ -310,6 +311,7 @@ export type Database = {
           on_deck_order?: number;
           enriched_at?: string | null;
           read_log?: { start: string | null; end: string | null }[];
+          progress_mode?: string;
           created_at?: string;
           updated_at?: string;
         };
