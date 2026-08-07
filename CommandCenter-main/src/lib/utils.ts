@@ -124,3 +124,28 @@ export function formatDuration(seconds: number): string {
   if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
+
+/** "August 23, 2025" — for dates a person reads, not sorts by. */
+export function fmtLongDate(d?: string | null): string {
+  if (!d) return "";
+  const iso = d.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return d;
+  // Noon avoids the date shifting a day when parsed as UTC midnight.
+  return new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** StoryGraph exported ranges like "2025/06/08-2025/06/11"; humanise both ends. */
+export function fmtDateRange(raw: string): string {
+  const parts = raw.trim().split("-");
+  const norm = (p: string) => p.trim().replace(/\//g, "-");
+  if (parts.length === 2) {
+    const a = fmtLongDate(norm(parts[0]));
+    const b = fmtLongDate(norm(parts[1]));
+    return a && b ? `${a} – ${b}` : raw;
+  }
+  return fmtLongDate(norm(raw)) || raw;
+}

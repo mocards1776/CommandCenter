@@ -24,11 +24,16 @@ import {
   fetchBookSessions,
   fetchEditions,
   type Edition,
+  applyEdition,
+  addSession,
+  updateSession,
+  deleteSession,
+  recalcProgress,
   type ReadingSession,
 } from "@/lib/books";
 import StarField from "@/components/StarField";
 import { useCelebration } from "@/components/celebration-context";
-import { cn, todayStr } from "@/lib/utils";
+import { cn, todayStr, fmtLongDate, fmtDateRange } from "@/lib/utils";
 import type { Book, ReadStatus } from "@/types";
 
 const SHELVES: { key: ReadStatus; label: string }[] = [
@@ -147,7 +152,7 @@ function PagesCalendar({ sessions }: { sessions: ReadingSession[] }) {
               return (
                 <div
                   key={d.date}
-                  title={`${d.date}: ${d.pages} page${d.pages === 1 ? "" : "s"}`}
+                  title={`${fmtLongDate(d.date)}: ${d.pages} page${d.pages === 1 ? "" : "s"}`}
                   className="h-[9px] w-[9px] rounded-[2px]"
                   style={{
                     background:
@@ -491,60 +496,188 @@ function LibrarySearch({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => 
 
 /* ── Reading history ────────────────────────────────────────────────── */
 function ReadingHistory({ book }: { book: Book }) {
+  const qc = useQueryClient();
   const { data: sessions } = useQuery({
     queryKey: ["book-sessions", book.id],
     queryFn: () => fetchBookSessions(book.id),
   });
 
-  // The import kept StoryGraph's raw ranges; they're the only history that
-  // exists for books finished before session logging.
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState({ date: todayStr(), pages: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [edit, setEdit] = useState({ date: "", pages: "" });
+
+  const refresh = async () => {
+    await recalcProgress(book.id);
+    qc.invalidateQueries({ queryKey: ["book-sessions", book.id] });
+    qc.invalidateQueries({ queryKey: ["books"] });
+    qc.invalidateQueries({ queryKey: ["reading-sessions"] });
+  };
+
+  const add = useMutation({
+    mutationFn: () =>
+      addSession({
+        bookId: book.id,
+        date: draft.date,
+        pages: Number.parseInt(draft.pages, 10) || 0,
+      }),
+    onSuccess: async () => {
+      setDraft({ date: todayStr(), pages: "" });
+      setAdding(false);
+      await refresh();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not add"),
+  });
+
+  const save = useMutation({
+    mutationFn: (id: string) =>
+      updateSession(id, {
+        session_date: edit.date,
+        pages_read: Number.parseInt(edit.pages, 10) || 0,
+      }),
+    onSuccess: async () => {
+      setEditingId(null);
+      await refresh();
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteSession(id),
+    onSuccess: refresh,
+  });
+
   const imported = (book.dates_read ?? "")
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
 
-  if ((sessions?.length ?? 0) === 0 && imported.length === 0 && !book.finished_at) return null;
+  const field =
+    "bg-field text-cream rounded-sm border border-white/10 px-2 py-1 text-[12px] outline-none focus:border-accent/50";
 
   return (
     <div className="mb-4">
-      <span className="label-caps">Reading history</span>
+      <div className="mb-2 flex items-center">
+        <span className="label-caps flex-1">Reading history</span>
+        <button onClick={() => setAdding(!adding)} className="text-accent text-[10.5px] uppercase tracking-[0.15em]">
+          {adding ? "cancel" : "+ add"}
+        </button>
+      </div>
 
-      {book.finished_at && (
-        <p className="text-chalk mt-2 text-[12.5px]">
-          Finished {book.finished_at}
-          {book.started_at ? ` · started ${book.started_at}` : ""}
+      {adding && (
+        <form
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            if (Number.parseInt(draft.pages, 10) > 0) add.mutate();
+          }}
+          className="mb-3 flex gap-2"
+        >
+          <input
+            type="date"
+            value={draft.date}
+            onChange={(e) => setDraft({ ...draft, date: e.target.value })}
+            className={cn(field, "flex-1")}
+          />
+          <input
+            value={draft.pages}
+            onChange={(e) => setDraft({ ...draft, pages: e.target.value })}
+            inputMode="numeric"
+            placeholder="Pages"
+            className={cn(field, "w-20")}
+          />
+          <button className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-3 text-[10px] font-semibold uppercase tracking-[0.12em]">
+            Add
+          </button>
+        </form>
+      )}
+
+      {(book.finished_at || book.started_at) && (
+        <p className="text-chalk mb-2 text-[12.5px]">
+          {book.started_at && `Started ${fmtLongDate(book.started_at)}`}
+          {book.started_at && book.finished_at && " · "}
+          {book.finished_at && `Finished ${fmtLongDate(book.finished_at)}`}
         </p>
       )}
 
       {imported.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="mb-2 flex flex-wrap gap-1.5">
           {imported.map((d, i) => (
-            <span key={i} className="bg-panel text-chalk rounded-sm px-2 py-1 text-[10.5px]">
-              {d}
+            <span
+              key={i}
+              className="bg-panel text-chalk rounded-sm px-2 py-1 text-[10.5px]"
+              title="Imported from StoryGraph"
+            >
+              {fmtDateRange(d)}
             </span>
           ))}
         </div>
       )}
 
       {sessions && sessions.length > 0 && (
-        <ul className="mt-2">
-          {sessions.slice(0, 12).map((s) => (
-            <li
-              key={s.id}
-              className="flex items-center justify-between border-b border-white/[0.05] py-1.5 text-[12px] last:border-0"
-            >
-              <span className="text-chalk">{s.session_date}</span>
-              <span className="numeral text-accent">{s.pages_read} pages</span>
+        <ul>
+          {sessions.map((sess) => (
+            <li key={sess.id} className="border-b border-white/[0.05] py-1.5 last:border-0">
+              {editingId === sess.id ? (
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={edit.date}
+                    onChange={(e) => setEdit({ ...edit, date: e.target.value })}
+                    className={cn(field, "flex-1")}
+                  />
+                  <input
+                    value={edit.pages}
+                    onChange={(e) => setEdit({ ...edit, pages: e.target.value })}
+                    inputMode="numeric"
+                    className={cn(field, "w-16")}
+                  />
+                  <button
+                    onClick={() => save.mutate(sess.id)}
+                    className="text-accent text-[10px] uppercase tracking-[0.12em]"
+                  >
+                    save
+                  </button>
+                  <button
+                    onClick={() => setEditingId(null)}
+                    className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]"
+                  >
+                    cancel
+                  </button>
+                </div>
+              ) : (
+                <div className="group flex items-center gap-2 text-[12px]">
+                  <button
+                    onClick={() => {
+                      setEditingId(sess.id);
+                      setEdit({ date: sess.session_date, pages: String(sess.pages_read) });
+                    }}
+                    className="text-chalk hover:text-cream flex-1 text-left"
+                  >
+                    {fmtLongDate(sess.session_date)}
+                  </button>
+                  <span className="numeral text-accent">{sess.pages_read} pages</span>
+                  <button
+                    onClick={() => remove.mutate(sess.id)}
+                    aria-label="Delete entry"
+                    className="text-chalk-dim hover:text-alert opacity-0 transition group-hover:opacity-100"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
+      )}
+
+      {(!sessions || sessions.length === 0) && imported.length === 0 && !adding && (
+        <p className="text-chalk-dim text-[12px]">No entries yet.</p>
       )}
     </div>
   );
 }
 
 /* ── Other editions ─────────────────────────────────────────────────── */
-function Editions({ book, onUse }: { book: Book; onUse: (pages: number) => void }) {
+function Editions({ book, onApplied }: { book: Book; onApplied: () => void }) {
   const [open, setOpen] = useState(false);
   const { data, isLoading } = useQuery({
     queryKey: ["editions", book.isbn],
@@ -587,14 +720,22 @@ function Editions({ book, onUse }: { book: Book; onUse: (pages: number) => void 
                   {e.number_of_pages ? ` · ${e.number_of_pages}p` : ""}
                 </p>
               </div>
-              {e.number_of_pages && (
-                <button
-                  onClick={() => onUse(e.number_of_pages!)}
-                  className="bg-panel text-chalk hover:text-accent shrink-0 rounded-sm px-2 py-1 text-[10px] uppercase tracking-[0.1em]"
-                >
-                  Use {e.number_of_pages}p
-                </button>
-              )}
+              <button
+                onClick={async () => {
+                  try {
+                    const r = await applyEdition(book, e);
+                    onApplied();
+                    toast.success(
+                      r.coverApplied ? "Edition and cover applied" : "Edition applied",
+                    );
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Could not apply");
+                  }
+                }}
+                className="bg-panel text-chalk hover:text-accent shrink-0 rounded-sm px-2 py-1 text-[10px] uppercase tracking-[0.1em]"
+              >
+                Use this
+              </button>
             </div>
           ))}
         </div>
@@ -709,7 +850,7 @@ function BookDetail({
               />
             </h2>
 
-            <p className="mt-1 text-[12.5px]">
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[12.5px]">
               <Editable
                 value={book.authors}
                 placeholder="Add author"
@@ -717,6 +858,18 @@ function BookDetail({
                 className="text-chalk hover:text-cream"
                 inputClassName="w-full"
               />
+              {/* The name itself edits, so browsing needs its own control. */}
+              {book.authors && (
+                <button
+                  onClick={() => {
+                    onFilter({ type: "author", value: book.authors!.split(",")[0].trim() });
+                    onClose();
+                  }}
+                  className="text-accent hover:text-cream text-[10.5px] uppercase tracking-[0.14em]"
+                >
+                  see all →
+                </button>
+              )}
             </p>
 
             <p className="text-chalk-dim mt-1.5 text-[11px]">
@@ -964,7 +1117,7 @@ function BookDetail({
         </div>
 
         <ReadingHistory book={book} />
-        <Editions book={book} onUse={(p) => patch.mutate({ page_count: p })} />
+        <Editions book={book} onApplied={refresh} />
 
         {/* Review */}
         <label className="mb-4 block">
@@ -1527,7 +1680,12 @@ export default function ReadingPage() {
       .filter((b) => {
         if (!filter) return true;
         if (filter.type === "tag") return b.tags.includes(filter.value);
-        if (filter.type === "author") return (b.authors ?? "").includes(filter.value);
+        if (filter.type === "author") {
+          // Multi-author books list everyone, so match any one contributor.
+          return (b.authors ?? "")
+            .split(",")
+            .some((a) => a.trim().toLowerCase() === filter.value.toLowerCase());
+        }
         return b.finished_at?.startsWith(filter.value) ?? false;
       })
       .slice(0, 300);
@@ -1652,8 +1810,8 @@ export default function ReadingPage() {
                           <span className="numeral">{b.star_rating}</span>
                         </span>
                       )}
-                      <span className="text-chalk w-[58px] shrink-0 text-right text-[10.5px]">
-                        {b.finished_at?.slice(0, 7).replace("-", "/") ?? ""}
+                      <span className="text-chalk hidden w-[112px] shrink-0 text-right text-[10.5px] sm:block">
+                        {fmtLongDate(b.finished_at)}
                       </span>
                     </button>
                   </li>

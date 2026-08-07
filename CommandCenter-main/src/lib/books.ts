@@ -576,3 +576,90 @@ export async function fetchEditions(isbn: string): Promise<Edition[]> {
     .filter((e: Edition) => e.number_of_pages || e.cover_id)
     .slice(0, 12);
 }
+
+/**
+ * Adopt an edition: its page count, publisher and year, and its cover.
+ * Selecting an edition previously only took the page count, which is why the
+ * cover never changed.
+ */
+export async function applyEdition(
+  book: Book,
+  edition: Edition,
+): Promise<{ coverApplied: boolean }> {
+  const patch: Partial<Book> = {};
+  if (edition.number_of_pages) patch.page_count = edition.number_of_pages;
+  if (edition.publishers?.[0]) patch.publisher = edition.publishers[0];
+  const yr = edition.publish_date?.match(/\d{4}/)?.[0];
+  if (yr) patch.published_year = Number.parseInt(yr, 10);
+
+  let coverApplied = false;
+  if (edition.cover_id) {
+    try {
+      // Open Library serves covers with Access-Control-Allow-Origin: *,
+      // so the browser can fetch the bytes and we store our own copy.
+      const res = await fetch(`https://covers.openlibrary.org/b/id/${edition.cover_id}-L.jpg`);
+      if (res.ok) {
+        const blob = await res.blob();
+        if (blob.size > 3000) {
+          const buf = new Uint8Array(await blob.arrayBuffer());
+          let bin = "";
+          for (let i = 0; i < buf.length; i += 8192) {
+            bin += String.fromCharCode(...buf.subarray(i, i + 8192));
+          }
+          const type = blob.type || "image/jpeg";
+          patch.cover_path = await storeCover(book.id, btoa(bin), type);
+          patch.locked_at = new Date().toISOString();
+          coverApplied = true;
+        }
+      }
+    } catch {
+      // Page count still applies even if the cover can't be fetched.
+    }
+  }
+
+  await updateBook(book.id, patch);
+  return { coverApplied };
+}
+
+// ── Editing reading history ──────────────────────────────────────────────
+
+export async function addSession(input: {
+  bookId: string | null;
+  date: string;
+  pages: number;
+  note?: string | null;
+}): Promise<void> {
+  const user_id = await requireUserId();
+  const { error } = await supabase.from("reading_sessions").insert({
+    user_id,
+    book_id: input.bookId,
+    session_date: input.date,
+    pages_read: input.pages,
+    note: input.note ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function updateSession(
+  id: string,
+  patch: { session_date?: string; pages_read?: number; note?: string | null },
+): Promise<void> {
+  const { error } = await supabase.from("reading_sessions").update(patch).eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * Recompute a book's current_page from its sessions. Editing history has to
+ * move progress with it, or the two silently disagree.
+ */
+export async function recalcProgress(bookId: string): Promise<void> {
+  const sessions = await fetchBookSessions(bookId);
+  const total = sessions.reduce((sum, s) => sum + s.pages_read, 0);
+  const { data: book } = await supabase
+    .from("books")
+    .select("page_count")
+    .eq("id", bookId)
+    .single();
+  const cap = book?.page_count ?? null;
+  await updateBook(bookId, { current_page: cap ? Math.min(total, cap) : total });
+}
