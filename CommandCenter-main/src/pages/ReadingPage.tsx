@@ -17,6 +17,8 @@ import {
   RefreshCw,
   Wand2,
   Send,
+  Layers,
+  Maximize2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -41,6 +43,8 @@ import {
   enrichBook,
   syncReadwise,
   askAI,
+  classifyBatch,
+  unclassifiedCount,
   titleKey,
   type Suggestion,
   fetchHighlights,
@@ -67,6 +71,7 @@ import {
   type ReadingSession,
 } from "@/lib/books";
 import StarField from "@/components/StarField";
+import HighlightCard from "@/components/HighlightCard";
 import { useCelebration } from "@/components/celebration-context";
 import { cn, todayStr, fmtLongDate } from "@/lib/utils";
 import type { Book, BookHighlight, ReadStatus } from "@/types";
@@ -78,6 +83,12 @@ const SHELVES: { key: ReadStatus; label: string }[] = [
   { key: "did-not-finish", label: "DNF" },
   { key: "paused", label: "Paused" },
 ];
+
+/** One filter across the whole library, so any value on screen can link to it. */
+type Filter = {
+  type: "author" | "tag" | "year" | "series" | "fiction";
+  value: string;
+};
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -968,11 +979,13 @@ function Highlights({ book }: { book: Book }) {
     queryFn: () => fetchHighlights(book.id),
   });
   const [showAll, setShowAll] = useState(false);
+  const [open, setOpen] = useState<number | null>(null);
 
   if (isLoading || !data || data.length === 0) return null;
 
   // Long lists are a wall of text in a drawer; the rest is one tap away.
   const shown: BookHighlight[] = showAll ? data : data.slice(0, 5);
+  const cover = coverSrc(book);
 
   return (
     <div className="mb-5">
@@ -983,22 +996,32 @@ function Highlights({ book }: { book: Book }) {
 
       <div className="mt-2.5 flex flex-col gap-2.5">
         {shown.map((h) => (
-          <blockquote
+          <button
             key={h.id}
-            className="bg-panel rounded-sm border-l-2 border-accent/50 px-3.5 py-2.5"
+            onClick={() => setOpen(data.indexOf(h))}
+            className="bg-panel group rounded-sm border-l-2 border-accent/50 px-3.5 py-2.5 text-left transition hover:border-accent hover:bg-white/[0.03]"
           >
             <p className="text-cream whitespace-pre-line text-[12.5px] leading-relaxed">{h.text}</p>
+            {h.my_note && (
+              <p className="text-accent mt-2 text-[11.5px] italic">{h.my_note}</p>
+            )}
             {h.note && (
               <p className="text-chalk-dim mt-2 border-t border-white/[0.07] pt-2 text-[11.5px] italic">
                 {h.note}
               </p>
             )}
-            {h.location !== null && (
-              <p className="text-chalk-dim mt-1.5 text-[10px] uppercase tracking-[0.14em]">
-                {h.location_type === "page" ? "Page" : "Location"} {h.location}
-              </p>
-            )}
-          </blockquote>
+            <span className="mt-1.5 flex items-center justify-between">
+              <span className="text-chalk-dim text-[10px] uppercase tracking-[0.14em]">
+                {h.location !== null
+                  ? `${h.location_type === "page" ? "Page" : "Location"} ${h.location}`
+                  : ""}
+              </span>
+              <Maximize2
+                size={11}
+                className="text-chalk-dim group-hover:text-accent shrink-0"
+              />
+            </span>
+          </button>
         ))}
       </div>
 
@@ -1009,6 +1032,17 @@ function Highlights({ book }: { book: Book }) {
         >
           {showAll ? "Show fewer" : `Show all ${data.length}`}
         </button>
+      )}
+
+      {open !== null && data[open] && (
+        <HighlightCard
+          highlight={data[open]}
+          book={book}
+          cover={cover}
+          onClose={() => setOpen(null)}
+          onPrev={open > 0 ? () => setOpen(open - 1) : undefined}
+          onNext={open < data.length - 1 ? () => setOpen(open + 1) : undefined}
+        />
       )}
     </div>
   );
@@ -1023,7 +1057,7 @@ function BookDetail({
   book: Book;
   onClose: () => void;
   allTags: string[];
-  onFilter: (f: { type: "author" | "tag"; value: string }) => void;
+  onFilter: (f: Filter) => void;
 }) {
   const qc = useQueryClient();
   const { burst, fanfare } = useCelebration();
@@ -1204,7 +1238,32 @@ function BookDetail({
                 <span className="text-chalk-dim">
                   Read {book.read_count}×
                 </span>
+                {book.fiction !== null && (
+                  <button
+                    onClick={() => {
+                      onFilter({ type: "fiction", value: book.fiction ? "fiction" : "nonfiction" });
+                      onClose();
+                    }}
+                    className="text-chalk-dim hover:text-accent"
+                  >
+                    {book.fiction ? "Fiction" : "Non-fiction"}
+                  </button>
+                )}
               </div>
+
+              {book.series && (
+                <button
+                  onClick={() => {
+                    onFilter({ type: "series", value: book.series! });
+                    onClose();
+                  }}
+                  className="text-accent hover:text-cream mt-1.5 flex items-center gap-1.5 text-[11.5px]"
+                >
+                  <Layers size={12} />
+                  {book.series}
+                  {book.series_position ? ` #${book.series_position}` : ""}
+                </button>
+              )}
 
               {book.publisher && (
                 <p className="text-chalk-dim mt-1 truncate text-[11px]">{book.publisher}</p>
@@ -1252,8 +1311,6 @@ function BookDetail({
           </div>
         )}
 
-        <Highlights book={book} />
-
         {/* Nothing to show means nothing was ever fetched for this one. */}
         {!book.description && (
           <button
@@ -1290,6 +1347,27 @@ function BookDetail({
             ))}
           </select>
         </label>
+
+        {/* Fiction is set in bulk by the classifier; this is the correction. */}
+        <div className="mb-4 flex gap-1">
+          {[
+            { on: true, label: "Fiction" },
+            { on: false, label: "Non-fiction" },
+          ].map(({ on, label }) => (
+            <button
+              key={label}
+              onClick={() => patch.mutate({ fiction: book.fiction === on ? null : on })}
+              className={cn(
+                "flex-1 rounded-sm border py-1.5 text-[10.5px] uppercase tracking-[0.15em] transition",
+                book.fiction === on
+                  ? "border-accent bg-accent/15 text-accent"
+                  : "text-chalk-dim hover:text-cream border-white/10",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         {/* On deck is about what's next, so it's meaningless mid-book. */}
         {book.status !== "currently-reading" && (
@@ -1429,6 +1507,10 @@ function BookDetail({
             </div>
           )}
         </div>
+
+        {/* Highlights sit under the logging controls: updating progress is the
+            thing you came to do, reading back quotes is the thing you linger on. */}
+        <Highlights book={book} />
 
         {/* Tags */}
         <div className="mb-4">
@@ -1628,8 +1710,22 @@ function AskAI({ books, onClose }: { books: Book[]; onClose: () => void }) {
               return (
                 <li
                   key={`${s.title}-${s.author}`}
-                  className="bg-panel rounded border border-white/[0.07] px-4 py-3"
+                  className="bg-panel flex gap-3.5 rounded border border-white/[0.07] px-4 py-3"
                 >
+                  {s.cover_url ? (
+                    <img
+                      src={s.cover_url}
+                      alt=""
+                      loading="lazy"
+                      className="h-[74px] w-[50px] shrink-0 rounded-[2px] object-cover shadow-[0_4px_14px_rgba(0,0,0,.5)]"
+                    />
+                  ) : (
+                    <div className="bg-field grid h-[74px] w-[50px] shrink-0 place-items-center rounded-[2px]">
+                      <BookOpen size={15} className="text-chalk-dim" />
+                    </div>
+                  )}
+
+                  <div className="min-w-0 flex-1">
                   <p className="text-cream text-[14px] leading-snug">{s.title}</p>
                   <p className="text-chalk-dim mt-0.5 text-[11.5px]">
                     {s.author}
@@ -1657,6 +1753,7 @@ function AskAI({ books, onClose }: { books: Book[]; onClose: () => void }) {
                         <Plus size={12} /> Add to library
                       </button>
                     )}
+                  </div>
                   </div>
                 </li>
               );
@@ -2321,7 +2418,7 @@ function Shelf({
   view: "list" | "grid";
   highlights: Record<string, number>;
   onOpen: (b: Book) => void;
-  onFilter: (f: { type: "author" | "tag"; value: string }) => void;
+  onFilter: (f: Filter) => void;
 }) {
   if (books.length === 0) {
     return (
@@ -2521,6 +2618,65 @@ function Shelf({
   );
 }
 
+/* ── Classifier ─────────────────────────────────────────────────────── */
+/**
+ * Fills fiction/non-fiction and series across the library. Open Library has
+ * neither at any useful rate, so this is the model reading titles — which
+ * means it costs a little and belongs behind an explicit button.
+ */
+function Classifier() {
+  const qc = useQueryClient();
+  const { data: left } = useQuery({ queryKey: ["unclassified"], queryFn: unclassifiedCount });
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; series: number; left: number } | null>(
+    null,
+  );
+
+  async function run() {
+    setRunning(true);
+    let done = 0;
+    let series = 0;
+    try {
+      for (let i = 0; i < 100; i++) {
+        const r = await classifyBatch(60);
+        done += r.processed;
+        series += r.series;
+        setProgress({ done, series, left: r.remaining });
+        if (r.remaining === 0 || r.processed === 0) break;
+      }
+      toast.success(`${done} classified · ${series} in a series`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Classification failed");
+    } finally {
+      setRunning(false);
+      qc.invalidateQueries({ queryKey: ["books"] });
+      qc.invalidateQueries({ queryKey: ["unclassified"] });
+    }
+  }
+
+  if (!left) return null;
+
+  return (
+    <div>
+      <h2 className="rule-head mb-2">Fiction &amp; series</h2>
+      <p className="text-chalk-dim mb-2 text-[11px] leading-relaxed">
+        {left.toLocaleString()} books aren&apos;t sorted yet. This asks Claude whether each is
+        fiction and which series it belongs to — neither is in Open Library.
+      </p>
+      <button
+        onClick={run}
+        disabled={running}
+        className="bg-panel text-cream flex w-full items-center justify-center gap-2 rounded-sm border border-accent/30 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.15em] transition hover:border-accent disabled:opacity-50"
+      >
+        <Layers size={13} />
+        {running
+          ? `${progress?.done ?? 0} done · ${progress?.left ?? left} left`
+          : "Sort the library"}
+      </button>
+    </div>
+  );
+}
+
 /* ── Readwise ───────────────────────────────────────────────────────── */
 /** Pulls Kindle/Readwise highlights and attaches them to matching books. */
 function ReadwiseSync() {
@@ -2662,9 +2818,7 @@ export default function ReadingPage() {
   const [shelf, setShelf] = useState<ReadStatus>("currently-reading");
   // One filter across author / tag / year, so every number on the page can
   // be a link into the list that produced it.
-  const [filter, setFilter] = useState<
-    { type: "author" | "tag" | "year"; value: string } | null
-  >(null);
+  const [filter, setFilter] = useState<Filter | null>(null);
   const [open, setOpen] = useState<Book | null>(null);
   const [adding, setAdding] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -2698,6 +2852,8 @@ export default function ReadingPage() {
       .filter((b) => {
         if (!filter) return true;
         if (filter.type === "tag") return b.tags.includes(filter.value);
+        if (filter.type === "series") return b.series === filter.value;
+        if (filter.type === "fiction") return b.fiction === (filter.value === "fiction");
         if (filter.type === "author") {
           // Multi-author books list everyone, so match any one contributor.
           return (b.authors ?? "")
@@ -2795,7 +2951,13 @@ export default function ReadingPage() {
             onClick={() => setFilter(null)}
             className="bg-accent/15 text-accent border-accent/40 self-start rounded-sm border px-3 py-1.5 text-[11px] uppercase tracking-[0.15em]"
           >
-            {filter.type === "year"
+            {filter.type === "fiction"
+              ? filter.value === "fiction"
+                ? "Fiction"
+                : "Non-fiction"
+              : filter.type === "series"
+                ? filter.value
+                : filter.type === "year"
               ? filter.value.length === 7
                 ? new Date(`${filter.value}-02T12:00:00`).toLocaleDateString("en-US", {
                     month: "long",
@@ -2822,6 +2984,7 @@ export default function ReadingPage() {
         <GoalCard books={books ?? []} onDrill={(y) => setFilter({ type: "year", value: y })} />
         <ReadwiseSync />
         <CoverBackfill />
+        <Classifier />
         <PagesCalendar sessions={sessions ?? []} />
         <MonthlyStats
           books={books ?? []}

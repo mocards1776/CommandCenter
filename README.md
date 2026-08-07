@@ -11,7 +11,7 @@ Personal dashboard: tasks, habits, and time tracking.
 | Todoist proxy | `supabase/functions/todoist/` | Deno edge function |
 | Book lookup / enrichment | `supabase/functions/book-lookup/`, `supabase/functions/backfill-covers/` | Deno edge functions |
 | Highlights | `supabase/functions/readwise-sync/` | Readwise API v2 |
-| AI search / recommendations | `supabase/functions/book-ai/` | Claude Opus 5 (user's own Anthropic key) |
+| AI search / recommendations / classification | `supabase/functions/book-ai/` | Claude Opus 5 (user's own Anthropic key) |
 | Tasks | Todoist | unified `/api/v1` |
 | Hosting | Vercel | root `vercel.json` builds `CommandCenter-main` |
 
@@ -92,6 +92,16 @@ npm run lint
   `output_config.format`.** So `book-ai` uses structured outputs for
   recommendations (no tools) and a parsed JSON block for search (web search) —
   combining the two 400s.
+- **Open Library has no usable series data.** 0 of 2,635 books returned a
+  `series` field, and only 11 titles carry a parseable parenthetical, so series
+  and fiction/non-fiction both come from the model (`book-ai` mode `classify`),
+  batched with `classified_at` as the bookmark.
+- **Storage serves covers with `access-control-allow-origin: *`**, which is
+  what lets the highlight card export a jacket-backed image — a canvas that
+  draws a cross-origin image without CORS taints and throws only at
+  `toBlob()`. An image load also needs its own timeout: `onerror` does not fire
+  for a connection that stalls rather than refuses, which silently produced a
+  blank card.
 - **Third-party keys belong in Supabase, never Vercel.** Anything prefixed
   `VITE_` is compiled into the bundle and shipped to every browser. That applies
   to `TODOIST_API_TOKEN`, `GOOGLE_BOOKS_API_KEY`, `ANTHROPIC_API_KEY`, and

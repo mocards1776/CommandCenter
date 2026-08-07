@@ -404,7 +404,42 @@ export type Suggestion = {
   author: string;
   year: string;
   reason: string;
+  cover_url?: string | null;
 };
+
+export type ClassifyResult = { processed: number; series: number; remaining: number };
+
+/**
+ * One batch of fiction/series classification. The caller loops until
+ * `remaining` is 0; the server records progress per book, so an interrupted
+ * run resumes rather than restarting.
+ */
+export async function classifyBatch(batch = 60): Promise<ClassifyResult> {
+  const { data, error } = await supabase.functions.invoke<ClassifyResult & { error?: string }>(
+    "book-ai",
+    { body: { mode: "classify", batch } },
+  );
+  if (data?.error) throw new Error(data.error);
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Classification failed");
+  return data;
+}
+
+/** How many books have never been classified. */
+export async function unclassifiedCount(): Promise<number> {
+  const { count, error } = await supabase
+    .from("books")
+    .select("id", { count: "exact", head: true })
+    .is("classified_at", null);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/** A reader's own note on a highlight — kept apart from Readwise's own note. */
+export async function saveHighlightNote(id: string, my_note: string | null): Promise<void> {
+  const { error } = await supabase.from("book_highlights").update({ my_note }).eq("id", id);
+  if (error) throw error;
+}
 
 /**
  * Ask Claude for books. `search` answers a natural-language request with web

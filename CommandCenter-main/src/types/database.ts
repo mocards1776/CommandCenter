@@ -262,6 +262,8 @@ export type Database = {
           series_position: number | null;
           description: string | null;
           subjects: string[] | null;
+          fiction: boolean | null;
+          classified_at: string | null;
           cover_url: string | null;
           cover_path: string | null;
           source_url: string | null;
@@ -305,6 +307,8 @@ export type Database = {
           series_position?: number | null;
           description?: string | null;
           subjects?: string[] | null;
+          fiction?: boolean | null;
+          classified_at?: string | null;
           cover_url?: string | null;
           cover_path?: string | null;
           source_url?: string | null;
@@ -335,6 +339,7 @@ export type Database = {
           category: string | null;
           text: string;
           note: string | null;
+          my_note: string | null;
           location: number | null;
           location_type: string | null;
           color: string | null;
@@ -354,6 +359,7 @@ export type Database = {
           category?: string | null;
           text: string;
           note?: string | null;
+          my_note?: string | null;
           location?: number | null;
           location_type?: string | null;
           color?: string | null;

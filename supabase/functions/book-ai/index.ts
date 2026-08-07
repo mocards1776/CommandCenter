@@ -4,19 +4,17 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // which is worse than tracking the current SDK.
 import Anthropic from "npm:@anthropic-ai/sdk";
 
-// Two AI features over the reading library, both driven by the user's own
-// Anthropic key:
+// Three AI features over the reading library, on the user's own Anthropic key:
 //
-//   mode "recommend" — reads the library (ratings, tags, recent reads) and
-//     suggests books to read next. No tools; structured output, so the result
-//     always parses.
-//   mode "search"    — natural-language book search ("college football books
-//     that have audiobooks"), answered with web search.
+//   "recommend" — reads the library and suggests what to read next.
+//   "search"    — natural-language book search, answered with web search.
+//   "classify"  — batched pass filling fiction/non-fiction and series. Open
+//     Library has neither at a useful rate (0 of 2,635 books had series data),
+//     so the model is the only source that scales.
 //
-// The two are deliberately configured differently. Web search results carry
-// citations, and citations are rejected alongside output_config.format — so
-// the search path asks for a JSON block in the prompt and parses it
-// tolerantly, rather than using structured outputs and 400ing.
+// Only "search" skips structured outputs: web search results carry citations,
+// and citations are rejected alongside output_config.format, so that path asks
+// for a JSON block and parses it tolerantly instead of 400ing.
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -38,6 +36,55 @@ type Suggestion = {
   author: string;
   year: string;
   reason: string;
+  cover_url?: string | null;
+};
+
+/**
+ * Jacket for a suggested book. Open Library's search returns a cover id, which
+ * is enough — these are previews, not library records, so nothing is stored.
+ */
+async function coverFor(title: string, author: string): Promise<string | null> {
+  try {
+    const params = new URLSearchParams({ title: title.slice(0, 120), limit: "1", fields: "title,cover_i" });
+    if (author) params.set("author", author.split(",")[0].trim());
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 6000);
+    const res = await fetch(`https://openlibrary.org/search.json?${params}`, {
+      signal: ctl.signal,
+      headers: { "User-Agent": "CommandCenter/1.0 (personal reading tracker)" },
+    }).finally(() => clearTimeout(t));
+    if (!res.ok) return null;
+    const doc = (await res.json())?.docs?.[0];
+    return typeof doc?.cover_i === "number"
+      ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+const CLASSIFY_SCHEMA = {
+  type: "object",
+  properties: {
+    books: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          fiction: { type: "boolean" },
+          // "" when the book stands alone — an empty string is unambiguous in a
+          // way a missing key isn't.
+          series: { type: "string" },
+          series_position: { type: "string" },
+        },
+        required: ["id", "fiction", "series", "series_position"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["books"],
+  additionalProperties: false,
 };
 
 const SUGGESTION_SCHEMA = {
@@ -119,6 +166,115 @@ function digest(
     .join("\n");
 }
 
+/**
+ * Server-side fallback is the documented default for this model, but it is a
+ * beta parameter — if the API rejects it, the request is worth more than the
+ * fallback, so retry once without it rather than failing the user's click.
+ */
+async function askClaude(client: Anthropic, params: Record<string, unknown>) {
+  const withFallback = {
+    ...params,
+    betas: ["server-side-fallback-2026-07-01"],
+    fallbacks: "default",
+  };
+  try {
+    const stream = client.beta.messages.stream(withFallback as never);
+    return await stream.finalMessage();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!/fallback|beta/i.test(msg)) throw e;
+    const stream = client.beta.messages.stream(params as never);
+    return await stream.finalMessage();
+  }
+}
+
+/**
+ * One batch of fiction/series classification. The caller loops until
+ * `remaining` is 0. classified_at is the bookmark, so an interrupted run
+ * resumes instead of restarting, and re-running only touches new books.
+ */
+async function classify(
+  admin: ReturnType<typeof createClient>,
+  client: Anthropic,
+  userId: string,
+  batch: number,
+) {
+  const { data: books, error } = await admin
+    .from("books")
+    .select("id,title,authors,published_year")
+    .eq("user_id", userId)
+    .is("classified_at", null)
+    .limit(batch);
+  if (error) return json({ error: error.message }, 500);
+  if (!books?.length) return json({ processed: 0, series: 0, remaining: 0 });
+
+  // Short ids: full UUIDs would be most of the prompt at 60 books a batch.
+  const list = books
+    .map((b, i) => `${i}. ${b.title}${b.authors ? ` — ${b.authors}` : ""}${b.published_year ? ` (${b.published_year})` : ""}`)
+    .join("\n");
+
+  const message = await askClaude(client, {
+    model: MODEL,
+    max_tokens: 16000,
+    thinking: { type: "adaptive" },
+    output_config: { effort: "low", format: { type: "json_schema", schema: CLASSIFY_SCHEMA } },
+    system:
+      "You classify books. For each numbered book return: `id` (the number, as a string), " +
+      "`fiction` (true for novels and short-story collections, false for everything else " +
+      "including memoir, biography, history and self-help), `series` (the series name, or " +
+      '"" if the book stands alone), and `series_position` (the number within the series ' +
+      'as a string, or "" if unknown or not applicable). ' +
+      "Return one entry per book, in order. If you do not recognise a book, still return an " +
+      'entry: guess `fiction` from the title and author, and leave both series fields "".',
+    messages: [{ role: "user", content: list }],
+  });
+
+  if (message.stop_reason === "refusal") {
+    return json({ error: "Claude declined to classify that batch." }, 400);
+  }
+
+  const text = (message.content ?? [])
+    .filter((b: { type: string }) => b.type === "text")
+    .map((b: { text: string }) => b.text)
+    .join("\n");
+
+  let parsed: { id: string; fiction: boolean; series: string; series_position: string }[] = [];
+  try {
+    parsed = JSON.parse(text)?.books ?? [];
+  } catch {
+    return json({ error: "Could not read the classification response." }, 502);
+  }
+
+  const now = new Date().toISOString();
+  let series = 0;
+
+  // Stamp every book in the batch, including ones the model skipped — otherwise
+  // an unrecognised book blocks the loop forever.
+  const answered = new Map(parsed.map((p) => [String(p.id), p]));
+  for (let i = 0; i < books.length; i++) {
+    const got = answered.get(String(i));
+    const patch: Record<string, unknown> = { classified_at: now };
+    if (got) {
+      if (typeof got.fiction === "boolean") patch.fiction = got.fiction;
+      if (got.series?.trim()) {
+        patch.series = got.series.trim();
+        const n = Number.parseFloat(got.series_position);
+        patch.series_position = Number.isFinite(n) ? n : null;
+        series++;
+      }
+    }
+    await admin.from("books").update(patch).eq("id", books[i].id);
+  }
+
+  const { count: remaining } = await admin
+    .from("books")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .is("classified_at", null);
+
+  return json({ processed: books.length, series, remaining: remaining ?? 0 });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -147,44 +303,33 @@ Deno.serve(async (req: Request) => {
 
   let mode = "recommend";
   let query = "";
+  let batch = 60;
   try {
     const body = await req.json();
-    if (body?.mode === "search") mode = "search";
+    if (body?.mode === "search" || body?.mode === "classify") mode = body.mode;
     query = String(body?.query ?? "").slice(0, 500);
+    if (typeof body?.batch === "number") batch = Math.min(100, Math.max(10, body.batch));
   } catch {
     // defaults are fine
   }
   if (mode === "search" && !query.trim()) return json({ error: "Ask me something." }, 400);
 
   const admin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const client = new Anthropic({ apiKey });
+
+  if (mode === "classify") {
+    return await classify(admin, client, userId, batch);
+  }
+
   const { data: books, error } = await admin
     .from("books")
     .select("title,authors,star_rating,tags,status,finished_at")
     .eq("user_id", userId);
   if (error) return json({ error: error.message }, 500);
 
-  const client = new Anthropic({ apiKey });
   const taste = digest(books ?? []);
 
-  // Server-side fallback is the documented default for this model, but it is a
-  // beta parameter — if the API rejects it, the request is worth more than the
-  // fallback, so retry once without it rather than failing the user's click.
-  async function ask(params: Record<string, unknown>) {
-    const withFallback = {
-      ...params,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-    };
-    try {
-      const stream = client.beta.messages.stream(withFallback as never);
-      return await stream.finalMessage();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (!/fallback|beta/i.test(msg)) throw e;
-      const stream = client.beta.messages.stream(params as never);
-      return await stream.finalMessage();
-    }
-  }
+  const ask = (params: Record<string, unknown>) => askClaude(client, params);
 
   try {
     let message;
@@ -251,7 +396,16 @@ Deno.serve(async (req: Request) => {
             ?.recommendations ?? extractJson(text))
         : extractJson(text);
 
-    return json({ recommendations, model: message.model, mode });
+    // Jackets last, in parallel — a slow cover lookup shouldn't hold up an
+    // answer that's otherwise ready.
+    const withCovers = await Promise.all(
+      recommendations.map(async (r: Suggestion) => ({
+        ...r,
+        cover_url: await coverFor(r.title, r.author),
+      })),
+    );
+
+    return json({ recommendations: withCovers, model: message.model, mode });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // The two failures worth naming precisely; everything else passes through.

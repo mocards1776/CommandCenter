@@ -20,5 +20,10 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
    rather than duplicates) and `integration_sync`, the per-service bookmark
    that makes the pull incremental.
 
+8. `fiction_series_and_highlight_notes` — `books.fiction` and
+   `books.classified_at` (the classifier's batch bookmark), an index on
+   `(user_id, series)`, and `book_highlights.my_note` — the reader's own note,
+   separate from Readwise's `note` so a re-sync can't overwrite it.
+
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.
