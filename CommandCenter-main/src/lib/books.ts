@@ -272,6 +272,11 @@ export async function storeCover(
 }
 
 export function coverSrc(book: Book): string | null {
+  // Google's vid=ISBN content URL is a shared blue "no cover" skeleton. If that's
+  // what we saved as cover_url, the stored file is almost certainly that stub —
+  // treat the jacket as missing so Find/paste cover can run.
+  if (book.cover_url && /[?&]vid=ISBN/i.test(book.cover_url)) return null;
+
   // Prefer our stored copy; fall back to the remote URL only if we never got bytes.
   if (book.cover_path && book.cover_path.length > 0) {
     return supabase.storage.from("book-covers").getPublicUrl(book.cover_path).data.publicUrl;
@@ -497,15 +502,29 @@ async function edgeErrorMessage(error: { message: string; context?: unknown }, f
  * cover backfill), then Claude web search. With `url`, fetch that page/image.
  */
 export async function pullCover(bookId: string, url?: string): Promise<CoverPullResult> {
+  // Drop Google's shared "no cover" stub so a retry can store a real jacket.
+  const { data: existing } = await supabase
+    .from("books")
+    .select("cover_path,cover_url")
+    .eq("id", bookId)
+    .maybeSingle();
+  if (existing?.cover_url && /[?&]vid=ISBN/i.test(existing.cover_url)) {
+    await updateBook(bookId, { cover_path: null, cover_url: null });
+  }
+
   if (!url?.trim()) {
     // Reuse the battle-tested cover pipeline before spending AI tokens.
     await supabase.functions.invoke("backfill-covers", { body: { bookId } }).catch(() => {});
     const { data: row } = await supabase
       .from("books")
-      .select("cover_path")
+      .select("cover_path,cover_url")
       .eq("id", bookId)
       .maybeSingle();
-    if (row?.cover_path && row.cover_path.length > 0) {
+    if (
+      row?.cover_path &&
+      row.cover_path.length > 0 &&
+      !(row.cover_url && /[?&]vid=ISBN/i.test(row.cover_url))
+    ) {
       return { found: true, source: "catalog", cover_path: row.cover_path };
     }
   }

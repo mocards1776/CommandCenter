@@ -1190,6 +1190,8 @@ function BookDetail({
 
   const [coverLink, setCoverLink] = useState("");
   const [showCoverLink, setShowCoverLink] = useState(false);
+  // img onError — storage can hold a Google "no cover" stub that still 200s.
+  const [coverBroken, setCoverBroken] = useState(false);
 
   const findCover = useMutation({
     mutationFn: (url?: string) => pullCover(book.id, url),
@@ -1197,6 +1199,7 @@ function BookDetail({
       refresh();
       setCoverLink("");
       setShowCoverLink(false);
+      setCoverBroken(false);
       toast.success(
         r.source === "ai" ? "Cover found" : r.source === "link" ? "Cover saved" : "Cover found",
       );
@@ -1204,7 +1207,7 @@ function BookDetail({
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't find a cover"),
   });
 
-  const cover = coverSrc(book);
+  const cover = coverBroken ? null : coverSrc(book);
   const subjects = book.subjects ?? [];
   const pct = book.page_count ? Math.min(100, (book.current_page / book.page_count) * 100) : null;
 
@@ -1240,6 +1243,7 @@ function BookDetail({
               <img
                 src={cover}
                 alt=""
+                onError={() => setCoverBroken(true)}
                 className="h-[196px] w-[131px] shrink-0 rounded object-cover shadow-[0_18px_44px_rgba(0,0,0,.7)]"
               />
             ) : (
@@ -1404,53 +1408,55 @@ function BookDetail({
           </button>
         )}
 
-        {/* Blank jacket: AI pull first, paste a retailer/image link as backup. */}
-        {!cover && (
-          <div className="mb-5 space-y-2">
+        {/* Cover override — always available so a bad/placeholder jacket can be replaced. */}
+        <div className="mb-5 space-y-2">
+          <button
+            type="button"
+            onClick={() => findCover.mutate(undefined)}
+            disabled={findCover.isPending}
+            className="text-chalk hover:text-cream flex w-full items-center justify-center gap-2 rounded-sm border border-accent/30 py-2 text-[10.5px] uppercase tracking-[0.15em] transition hover:border-accent disabled:opacity-40"
+          >
+            <Wand2 size={13} className="text-accent" />
+            {findCover.isPending && !coverLink
+              ? "Finding cover…"
+              : cover
+                ? "Replace cover with AI"
+                : "Find cover with AI"}
+          </button>
+          {showCoverLink ? (
+            <form
+              onSubmit={(e: FormEvent) => {
+                e.preventDefault();
+                if (coverLink.trim()) findCover.mutate(coverLink.trim());
+              }}
+              className="flex gap-2"
+            >
+              <input
+                value={coverLink}
+                onChange={(e) => setCoverLink(e.target.value)}
+                placeholder="https://… cover image or book page"
+                autoFocus
+                className="bg-panel text-cream min-w-0 flex-1 rounded-sm border border-white/10 px-3 py-2 text-[12px] outline-none focus:border-accent/50"
+              />
+              <button
+                type="submit"
+                disabled={findCover.isPending || !coverLink.trim()}
+                className="text-cream from-accent-deep to-accent-dark shrink-0 rounded-sm bg-gradient-to-b px-3 text-[10.5px] font-semibold uppercase tracking-[0.15em] disabled:opacity-40"
+              >
+                Save
+              </button>
+            </form>
+          ) : (
             <button
               type="button"
-              onClick={() => findCover.mutate(undefined)}
-              disabled={findCover.isPending}
-              className="text-chalk hover:text-cream flex w-full items-center justify-center gap-2 rounded-sm border border-accent/30 py-2 text-[10.5px] uppercase tracking-[0.15em] transition hover:border-accent disabled:opacity-40"
+              onClick={() => setShowCoverLink(true)}
+              className="text-chalk-dim hover:text-cream flex w-full items-center justify-center gap-2 py-1 text-[10.5px] uppercase tracking-[0.15em]"
             >
-              <Wand2 size={13} className="text-accent" />
-              {findCover.isPending && !coverLink ? "Finding cover…" : "Find cover with AI"}
+              <Link2 size={12} />
+              {cover ? "Or paste a new cover link" : "Or paste a link"}
             </button>
-            {showCoverLink ? (
-              <form
-                onSubmit={(e: FormEvent) => {
-                  e.preventDefault();
-                  if (coverLink.trim()) findCover.mutate(coverLink.trim());
-                }}
-                className="flex gap-2"
-              >
-                <input
-                  value={coverLink}
-                  onChange={(e) => setCoverLink(e.target.value)}
-                  placeholder="https://… cover image or book page"
-                  autoFocus
-                  className="bg-panel text-cream min-w-0 flex-1 rounded-sm border border-white/10 px-3 py-2 text-[12px] outline-none focus:border-accent/50"
-                />
-                <button
-                  type="submit"
-                  disabled={findCover.isPending || !coverLink.trim()}
-                  className="text-cream from-accent-deep to-accent-dark shrink-0 rounded-sm bg-gradient-to-b px-3 text-[10.5px] font-semibold uppercase tracking-[0.15em] disabled:opacity-40"
-                >
-                  Save
-                </button>
-              </form>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowCoverLink(true)}
-                className="text-chalk-dim hover:text-cream flex w-full items-center justify-center gap-2 py-1 text-[10.5px] uppercase tracking-[0.15em]"
-              >
-                <Link2 size={12} />
-                Or paste a link
-              </button>
-            )}
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Status */}
         <label className="mb-4 block">

@@ -139,9 +139,24 @@ function sniffImageType(bytes: Uint8Array): string | null {
   return null;
 }
 
+/**
+ * Google Books serves an identical blue "no cover" skeleton for missing jackets
+ * (vid=ISBN…&zoom=3). Hash it so we never lock that onto a book.
+ */
+const GOOGLE_PLACEHOLDER_SHA256 = new Set([
+  "5e7f0425abc77878f2a1efe98f12070d7e97b3047d2ce1cd050598230e34e205",
+]);
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 /** Download an image URL; reject tiny placeholders and non-images. */
 async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string } | null> {
   try {
+    // The vid=ISBN form is what returns the shared skeleton placeholder.
+    if (/[?&]vid=ISBN/i.test(url)) return null;
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 12000);
     const res = await fetch(url, {
@@ -156,6 +171,7 @@ async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string
     if (!res.ok) return null;
     const bytes = new Uint8Array(await res.arrayBuffer());
     if (bytes.byteLength < 3000 || bytes.byteLength > 4_000_000) return null;
+    if (GOOGLE_PLACEHOLDER_SHA256.has(await sha256Hex(bytes))) return null;
     const header = (res.headers.get("Content-Type") ?? "").split(";")[0].trim();
     const type = header.startsWith("image/") ? header : sniffImageType(bytes);
     if (!type) return null;
