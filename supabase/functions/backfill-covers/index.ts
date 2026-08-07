@@ -58,6 +58,27 @@ type Meta = {
   subjects?: string[];
 };
 
+/**
+ * Fiction/non-fiction from catalog subjects when the signal is clear.
+ * Open Library and Google often tag "Fiction", "Fantasy fiction", or
+ * "Biography & Autobiography" — enough to fill the boolean without Claude.
+ * Ambiguous or conflicting tags return null so the classifier can decide.
+ */
+function inferFiction(subjects: string[] | undefined | null): boolean | null {
+  if (!subjects?.length) return null;
+  let fictionHit = false;
+  let nonfictionHit = false;
+  for (const raw of subjects) {
+    const s = raw.toLowerCase();
+    if (/\bnon[\s-]?fiction\b/.test(s)) nonfictionHit = true;
+    else if (/\bfiction\b/.test(s)) fictionHit = true;
+    else if (/\b(biography|autobiography|memoir|self-help)\b/.test(s)) nonfictionHit = true;
+  }
+  if (fictionHit && !nonfictionHit) return true;
+  if (nonfictionHit && !fictionHit) return false;
+  return null;
+}
+
 /** Open Library stores descriptions as either a string or {type, value}. */
 function plainText(v: unknown): string | undefined {
   const s = typeof v === "string" ? v : (v as { value?: string } | null)?.value;
@@ -260,7 +281,7 @@ Deno.serve(async (req: Request) => {
   const query = admin
     .from("books")
     .select(
-      "id,isbn,title,authors,subtitle,cover_path,page_count,publisher,published_year,description",
+      "id,isbn,title,authors,subtitle,cover_path,page_count,publisher,published_year,description,subjects,fiction",
     )
     .eq("user_id", userId);
 
@@ -340,6 +361,13 @@ Deno.serve(async (req: Request) => {
     }
     if (meta.subtitle && (force || !b.subtitle)) patch.subtitle = meta.subtitle;
     if (meta.subjects) patch.subjects = meta.subjects;
+
+    // Fiction is auto-pulled from subjects — never overwrite a value the reader
+    // (or the classifier) already set.
+    if (b.fiction === null) {
+      const inferred = inferFiction(meta.subjects ?? (b as { subjects?: string[] }).subjects);
+      if (inferred !== null) patch.fiction = inferred;
+    }
 
     if (wantCover) {
       let img: { bytes: Uint8Array; type: string } | null = null;

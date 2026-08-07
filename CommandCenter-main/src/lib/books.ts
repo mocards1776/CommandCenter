@@ -297,15 +297,22 @@ export async function addBookFromUrl(url: string, overrides: Partial<BookInsert>
     ...overrides,
   });
 
+  let saved: Book;
   if (found.cover_base64 && found.cover_type) {
     try {
       const path = await storeCover(book.id, found.cover_base64, found.cover_type);
-      return await updateBook(book.id, { cover_path: path, locked_at: new Date().toISOString() });
+      saved = await updateBook(book.id, { cover_path: path, locked_at: new Date().toISOString() });
     } catch {
       // The book is saved either way; a failed cover upload isn't fatal.
+      saved = await updateBook(book.id, { locked_at: new Date().toISOString() });
     }
+  } else {
+    saved = await updateBook(book.id, { locked_at: new Date().toISOString() });
   }
-  return await updateBook(book.id, { locked_at: new Date().toISOString() });
+
+  // Subjects + fiction/series — URL scrape doesn't carry those.
+  await enrichBook(saved.id).catch(() => {});
+  return saved;
 }
 
 // ── Reading sessions ─────────────────────────────────────────────────────
@@ -418,6 +425,18 @@ export async function classifyBatch(batch = 60): Promise<ClassifyResult> {
   const { data, error } = await supabase.functions.invoke<ClassifyResult & { error?: string }>(
     "book-ai",
     { body: { mode: "classify", batch } },
+  );
+  if (data?.error) throw new Error(data.error);
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Classification failed");
+  return data;
+}
+
+/** Classify one book — used right after enrich so fiction lands without a bulk run. */
+export async function classifyBook(bookId: string): Promise<ClassifyResult> {
+  const { data, error } = await supabase.functions.invoke<ClassifyResult & { error?: string }>(
+    "book-ai",
+    { body: { mode: "classify", bookId } },
   );
   if (data?.error) throw new Error(data.error);
   if (error) throw new Error(error.message);
@@ -551,7 +570,8 @@ export type BackfillResult = {
 /**
  * Re-fetch metadata for one book, ignoring whether it was enriched before.
  * Backs the "Fetch book info" button on a book that came through the import
- * with nothing but a title.
+ * with nothing but a title. Also auto-pulls fiction (subjects first, then
+ * Claude) so the reader never has to set it by hand.
  */
 export async function enrichBook(bookId: string): Promise<BackfillResult> {
   const { data, error } = await supabase.functions.invoke<BackfillResult & { error?: string }>(
@@ -560,6 +580,17 @@ export async function enrichBook(bookId: string): Promise<BackfillResult> {
   );
   if (error) throw new Error(error.message);
   if (!data || data.error) throw new Error(data?.error ?? "Lookup failed");
+
+  // Subjects may have settled fiction; Claude fills holes + series. Skip when
+  // both are already done so "Fetch book info" doesn't re-spend tokens.
+  const { data: row } = await supabase
+    .from("books")
+    .select("fiction,classified_at")
+    .eq("id", bookId)
+    .maybeSingle();
+  if (row && (row.fiction === null || row.classified_at === null)) {
+    await classifyBook(bookId).catch(() => {});
+  }
   return data;
 }
 

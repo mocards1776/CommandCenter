@@ -327,6 +327,58 @@ function MonthlyStats({
  * Click (or tap) a value to edit it in place. Enter or blur commits, Escape
  * reverts — no separate edit mode for the whole record just to fix an author.
  */
+/**
+ * Fiction is auto-pulled — shown as a chip, not a form control. Single click
+ * filters the library; double-click cycles Fiction → Non-fiction → unset.
+ * A short delay keeps the first half of a double-click from closing the drawer.
+ */
+function FictionLabel({
+  fiction,
+  onFilter,
+  onCorrect,
+}: {
+  fiction: boolean | null;
+  onFilter: () => void;
+  onCorrect: (next: boolean | null) => void;
+}) {
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (fiction === null) return;
+        if (clickTimer.current) clearTimeout(clickTimer.current);
+        clickTimer.current = setTimeout(() => {
+          clickTimer.current = null;
+          onFilter();
+        }, 280);
+      }}
+      onDoubleClick={(e) => {
+        e.preventDefault();
+        if (clickTimer.current) {
+          clearTimeout(clickTimer.current);
+          clickTimer.current = null;
+        }
+        // Cycle Fiction → Non-fiction → unset (enrich/classify can refill unset).
+        const next = fiction === true ? false : fiction === false ? null : true;
+        onCorrect(next);
+      }}
+      title={
+        fiction === null
+          ? "Double-click to set"
+          : "Click to browse · double-click to correct"
+      }
+      className={cn(
+        "-mx-1 rounded-sm px-1 transition-colors hover:bg-white/10",
+        fiction === null ? "text-chalk-dim/60" : "text-chalk-dim hover:text-accent",
+      )}
+    >
+      {fiction === null ? "—" : fiction ? "Fiction" : "Non-fiction"}
+    </button>
+  );
+}
+
 function Editable({
   value,
   onSave,
@@ -1238,17 +1290,15 @@ function BookDetail({
                 <span className="text-chalk-dim">
                   Read {book.read_count}×
                 </span>
-                {book.fiction !== null && (
-                  <button
-                    onClick={() => {
-                      onFilter({ type: "fiction", value: book.fiction ? "fiction" : "nonfiction" });
-                      onClose();
-                    }}
-                    className="text-chalk-dim hover:text-accent"
-                  >
-                    {book.fiction ? "Fiction" : "Non-fiction"}
-                  </button>
-                )}
+                <FictionLabel
+                  fiction={book.fiction}
+                  onFilter={() => {
+                    if (book.fiction === null) return;
+                    onFilter({ type: "fiction", value: book.fiction ? "fiction" : "nonfiction" });
+                    onClose();
+                  }}
+                  onCorrect={(next) => patch.mutate({ fiction: next })}
+                />
               </div>
 
               {book.series && (
@@ -1347,27 +1397,6 @@ function BookDetail({
             ))}
           </select>
         </label>
-
-        {/* Fiction is set in bulk by the classifier; this is the correction. */}
-        <div className="mb-4 flex gap-1">
-          {[
-            { on: true, label: "Fiction" },
-            { on: false, label: "Non-fiction" },
-          ].map(({ on, label }) => (
-            <button
-              key={label}
-              onClick={() => patch.mutate({ fiction: book.fiction === on ? null : on })}
-              className={cn(
-                "flex-1 rounded-sm border py-1.5 text-[10.5px] uppercase tracking-[0.15em] transition",
-                book.fiction === on
-                  ? "border-accent bg-accent/15 text-accent"
-                  : "text-chalk-dim hover:text-cream border-white/10",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
 
         {/* On deck is about what's next, so it's meaningless mid-book. */}
         {book.status !== "currently-reading" && (
@@ -1793,8 +1822,8 @@ function AddPanel({ onClose }: { onClose: () => void }) {
   });
 
   const fromForm = useMutation({
-    mutationFn: () =>
-      createBook({
+    mutationFn: async () => {
+      const book = await createBook({
         title: manual.title.trim(),
         authors: manual.authors.trim() || null,
         page_count: manual.page_count ? Number.parseInt(manual.page_count, 10) : null,
@@ -1802,7 +1831,11 @@ function AddPanel({ onClose }: { onClose: () => void }) {
         finished_at: manual.finished_at || null,
         last_date_read: manual.finished_at || null,
         read_count: manual.status === "read" ? 1 : 0,
-      }),
+      });
+      // Pull blurb/subjects/fiction so the shelf entry isn't bare.
+      await enrichBook(book.id).catch(() => {});
+      return book;
+    },
     onSuccess: () => {
       toast.success("Book added");
       done();
@@ -2620,9 +2653,9 @@ function Shelf({
 
 /* ── Classifier ─────────────────────────────────────────────────────── */
 /**
- * Fills fiction/non-fiction and series across the library. Open Library has
- * neither at any useful rate, so this is the model reading titles — which
- * means it costs a little and belongs behind an explicit button.
+ * Backfills fiction (when catalog subjects didn't settle it) and series
+ * across the library. New books get this on enrich; this button is for the
+ * backlog. Costs a little, so it stays behind an explicit click.
  */
 function Classifier() {
   const qc = useQueryClient();
@@ -2660,8 +2693,8 @@ function Classifier() {
     <div>
       <h2 className="rule-head mb-2">Fiction &amp; series</h2>
       <p className="text-chalk-dim mb-2 text-[11px] leading-relaxed">
-        {left.toLocaleString()} books aren&apos;t sorted yet. This asks Claude whether each is
-        fiction and which series it belongs to — neither is in Open Library.
+        {left.toLocaleString()} books still need sorting. Fiction usually comes from the catalog;
+        this asks Claude to fill the gaps and assign series.
       </p>
       <button
         onClick={run}

@@ -8,9 +8,9 @@ import Anthropic from "npm:@anthropic-ai/sdk";
 //
 //   "recommend" — reads the library and suggests what to read next.
 //   "search"    — natural-language book search, answered with web search.
-//   "classify"  — batched pass filling fiction/non-fiction and series. Open
-//     Library has neither at a useful rate (0 of 2,635 books had series data),
-//     so the model is the only source that scales.
+//   "classify"  — batched (or single-book via bookId) pass filling fiction/
+//     non-fiction and series. Catalog subjects often settle fiction during
+//     enrich; the model fills the rest and is the only source for series.
 //
 // Only "search" skips structured outputs: web search results carry citations,
 // and citations are rejected alongside output_config.format, so that path asks
@@ -192,19 +192,22 @@ async function askClaude(client: Anthropic, params: Record<string, unknown>) {
  * One batch of fiction/series classification. The caller loops until
  * `remaining` is 0. classified_at is the bookmark, so an interrupted run
  * resumes instead of restarting, and re-running only touches new books.
+ * Pass `bookId` to classify a single book (e.g. right after enrich) even if
+ * it was already stamped — fiction already on the row is left alone.
  */
 async function classify(
   admin: ReturnType<typeof createClient>,
   client: Anthropic,
   userId: string,
   batch: number,
+  bookId: string | null = null,
 ) {
-  const { data: books, error } = await admin
+  let q = admin
     .from("books")
-    .select("id,title,authors,published_year")
-    .eq("user_id", userId)
-    .is("classified_at", null)
-    .limit(batch);
+    .select("id,title,authors,published_year,fiction")
+    .eq("user_id", userId);
+  q = bookId ? q.eq("id", bookId).limit(1) : q.is("classified_at", null).limit(batch);
+  const { data: books, error } = await q;
   if (error) return json({ error: error.message }, 500);
   if (!books?.length) return json({ processed: 0, series: 0, remaining: 0 });
 
@@ -255,7 +258,10 @@ async function classify(
     const got = answered.get(String(i));
     const patch: Record<string, unknown> = { classified_at: now };
     if (got) {
-      if (typeof got.fiction === "boolean") patch.fiction = got.fiction;
+      // Catalog subjects (or a double-click correction) win over the model.
+      if (typeof got.fiction === "boolean" && books[i].fiction === null) {
+        patch.fiction = got.fiction;
+      }
       if (got.series?.trim()) {
         patch.series = got.series.trim();
         const n = Number.parseFloat(got.series_position);
@@ -304,11 +310,13 @@ Deno.serve(async (req: Request) => {
   let mode = "recommend";
   let query = "";
   let batch = 60;
+  let bookId: string | null = null;
   try {
     const body = await req.json();
     if (body?.mode === "search" || body?.mode === "classify") mode = body.mode;
     query = String(body?.query ?? "").slice(0, 500);
     if (typeof body?.batch === "number") batch = Math.min(100, Math.max(10, body.batch));
+    if (typeof body?.bookId === "string") bookId = body.bookId;
   } catch {
     // defaults are fine
   }
@@ -318,7 +326,7 @@ Deno.serve(async (req: Request) => {
   const client = new Anthropic({ apiKey });
 
   if (mode === "classify") {
-    return await classify(admin, client, userId, batch);
+    return await classify(admin, client, userId, batch, bookId);
   }
 
   const { data: books, error } = await admin
