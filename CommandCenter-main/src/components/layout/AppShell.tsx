@@ -8,6 +8,7 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/todos", label: "Todos" },
   { to: "/habits", label: "Habits" },
+  { to: "/reading", label: "Reading" },
 ];
 
 export default function AppShell() {

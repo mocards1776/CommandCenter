@@ -5,10 +5,10 @@ import {
   useTasks,
   useProjects,
   useCreateTask,
-  useCompleteTask,
   useDeleteTask,
   flattenTasks,
 } from "@/lib/queries";
+import { useTaskCompletion } from "@/hooks/useTaskCompletion";
 import { cn, dueLabel, isOverdue, todayStr } from "@/lib/utils";
 
 type Filter = "all" | "today" | "overdue";
@@ -17,7 +17,7 @@ export default function TodosPage() {
   const { data: tasks, isLoading, error } = useTasks();
   const { data: projects } = useProjects();
   const create = useCreateTask();
-  const complete = useCompleteTask();
+  const { completeFromEvent, isClearing } = useTaskCompletion();
   const remove = useDeleteTask();
 
   const [draft, setDraft] = useState("");
@@ -136,6 +136,7 @@ export default function TodosPage() {
                   className={cn(
                     "group flex items-center gap-4 border-b border-white/[0.055] py-3 pr-5 last:border-0",
                     depth > 0 && "bg-white/[0.015]",
+                    isClearing(t.id) && "cc-clearing",
                   )}
                   style={{ paddingLeft: 20 + depth * 26 }}
                 >
@@ -145,13 +146,14 @@ export default function TodosPage() {
                     </span>
                   )}
                   <button
-                    onClick={() => complete.mutate(t.id)}
+                    onClick={(e) => completeFromEvent(t.id, e)}
                     aria-label={`Complete ${t.content}`}
                     className={cn(
-                      "h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] transition-colors",
-                      late
+                      "h-4 w-4 shrink-0 rounded-full border-[1.5px] transition-all hover:scale-125",
+                      isClearing(t.id) && "cc-check-pop border-accent bg-accent",
+                      !isClearing(t.id) && late
                         ? "border-alert bg-alert shadow-[inset_0_0_0_2px_var(--color-panel)]"
-                        : "border-white/25 hover:border-accent",
+                        : !isClearing(t.id) && "border-white/25 hover:border-accent hover:bg-accent/30",
                     )}
                   />
 

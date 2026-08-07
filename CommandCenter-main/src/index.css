@@ -150,6 +150,126 @@
   }
 }
 
+@layer components {
+  /* ── Completion feedback ──────────────────────────────────────────────
+     Stars fly out of the checkbox, a ring pulses, and the row clears out.
+     All of it is decoration: nothing here gates the actual mutation. */
+
+  .cc-star {
+    animation: cc-fly 780ms cubic-bezier(0.15, 0.75, 0.35, 1) forwards;
+    text-shadow: 0 0 8px currentColor;
+  }
+  @keyframes cc-fly {
+    0% {
+      transform: translate(0, 0) scale(0.3) rotate(0deg);
+      opacity: 0;
+    }
+    18% {
+      opacity: 1;
+    }
+    /* Overshoot then fall, so it arcs instead of sliding in a straight line. */
+    70% {
+      transform: translate(var(--dx), var(--dy)) scale(1.05) rotate(var(--rot));
+      opacity: 1;
+    }
+    100% {
+      transform: translate(calc(var(--dx) * 1.15), calc(var(--dy) + 46px)) scale(0.5)
+        rotate(var(--rot));
+      opacity: 0;
+    }
+  }
+
+  .cc-ring {
+    width: 14px;
+    height: 14px;
+    margin: -7px 0 0 -7px;
+    border-radius: 50%;
+    border: 2px solid var(--color-accent);
+    animation: cc-ring 520ms ease-out forwards;
+  }
+  @keyframes cc-ring {
+    0% {
+      transform: scale(0.4);
+      opacity: 0.9;
+    }
+    100% {
+      transform: scale(4.2);
+      opacity: 0;
+    }
+  }
+
+  /* The row acknowledges the click before it disappears. */
+  .cc-clearing {
+    animation: cc-clear 420ms ease-in forwards;
+  }
+  @keyframes cc-clear {
+    0% {
+      opacity: 1;
+    }
+    22% {
+      background: rgba(217, 81, 92, 0.14);
+    }
+    100% {
+      opacity: 0;
+      transform: translateX(26px);
+    }
+  }
+
+  .cc-check-pop {
+    animation: cc-pop-in 340ms cubic-bezier(0.2, 1.5, 0.4, 1);
+  }
+  @keyframes cc-pop-in {
+    0% {
+      transform: scale(1);
+    }
+    45% {
+      transform: scale(1.6);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  .cc-fall {
+    top: -30px;
+    animation: cc-fall 2200ms cubic-bezier(0.35, 0.1, 0.6, 1) forwards;
+    text-shadow: 0 0 10px currentColor;
+  }
+  @keyframes cc-fall {
+    0% {
+      transform: translateY(0) rotate(0deg);
+      opacity: 0;
+    }
+    12% {
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(105vh) rotate(400deg);
+      opacity: 0;
+    }
+  }
+
+  .cc-pop {
+    animation: cc-banner 2600ms ease-out forwards;
+  }
+  @keyframes cc-banner {
+    0% {
+      transform: scale(0.85) translateY(10px);
+      opacity: 0;
+    }
+    10% {
+      transform: scale(1) translateY(0);
+      opacity: 1;
+    }
+    80% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

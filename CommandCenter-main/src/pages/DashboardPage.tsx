@@ -6,7 +6,6 @@ import {
   useHabits,
   useProjects,
   useScoreboard,
-  useCompleteTask,
   useCreateTask,
   useToggleHabit,
   useCompletedToday,
@@ -14,6 +13,7 @@ import {
   pickUpNext,
 } from "@/lib/queries";
 import StarField from "@/components/StarField";
+import { useTaskCompletion } from "@/hooks/useTaskCompletion";
 import { cn, dueLabel, isOverdue, todayDow } from "@/lib/utils";
 import type { TodoistTask } from "@/types";
 
@@ -24,7 +24,13 @@ function estimate(task: TodoistTask): string | null {
   return unit === "minute" ? `About ${amount} min` : `About ${amount} d`;
 }
 
-function UpNext({ task, onStart }: { task?: TodoistTask; onStart: (id: string) => void }) {
+function UpNext({
+  task,
+  onStart,
+}: {
+  task?: TodoistTask;
+  onStart: (id: string, e: React.MouseEvent<HTMLElement>) => void;
+}) {
   if (!task) {
     return (
       <div className="from-hero-lift to-hero relative overflow-hidden rounded border border-accent/30 bg-gradient-to-br px-8 py-7">
@@ -65,7 +71,7 @@ function UpNext({ task, onStart }: { task?: TodoistTask; onStart: (id: string) =
       </div>
 
       <button
-        onClick={() => onStart(task.id)}
+        onClick={(e) => onStart(task.id, e)}
         className="from-accent-deep to-accent-dark absolute bottom-6 right-7 z-10 rounded-sm bg-gradient-to-b px-6 py-2.5 text-[11px] font-semibold uppercase tracking-[0.20em] text-cream transition hover:brightness-110"
       >
         Done
@@ -81,12 +87,14 @@ function TaskRow({
   childCount = 0,
   projectName,
   onComplete,
+  clearing,
 }: {
   task: TodoistTask;
   depth?: number;
   childCount?: number;
   projectName?: string;
-  onComplete: (id: string) => void;
+  onComplete: (id: string, e: React.MouseEvent<HTMLElement>) => void;
+  clearing?: boolean;
 }) {
   const late = isOverdue(task.due?.date);
 
@@ -95,6 +103,7 @@ function TaskRow({
       className={cn(
         "group flex items-center gap-4 border-b border-white/[0.055] py-3 pr-5 last:border-0",
         depth > 0 && "bg-white/[0.015]",
+        clearing && "cc-clearing",
       )}
       style={{ paddingLeft: 20 + depth * 26 }}
     >
@@ -102,13 +111,14 @@ function TaskRow({
       {depth > 0 && <span aria-hidden className="text-chalk-dim -ml-4 text-[11px]">└</span>}
 
       <button
-        onClick={() => onComplete(task.id)}
+        onClick={(e) => onComplete(task.id, e)}
         aria-label={`Complete ${task.content}`}
         className={cn(
-          "h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] transition-colors",
-          late
+          "h-4 w-4 shrink-0 rounded-full border-[1.5px] transition-all hover:scale-125",
+          clearing && "cc-check-pop border-accent bg-accent",
+          !clearing && late
             ? "border-alert bg-alert shadow-[inset_0_0_0_2px_var(--color-panel)]"
-            : "border-white/25 hover:border-accent",
+            : !clearing && "border-white/25 hover:border-accent hover:bg-accent/30",
         )}
       />
 
@@ -162,7 +172,7 @@ export default function DashboardPage() {
   const { data: projects } = useProjects();
   const { data: completedToday } = useCompletedToday();
   const score = useScoreboard();
-  const complete = useCompleteTask();
+  const { completeFromEvent, isClearing } = useTaskCompletion();
   const create = useCreateTask();
   const toggleHabit = useToggleHabit();
 
@@ -211,7 +221,7 @@ export default function DashboardPage() {
     <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[1fr_306px]">
       {/* ── Main column ── */}
       <div className="flex min-w-0 flex-col gap-4 p-6 md:p-7">
-        <UpNext task={upNext} onStart={(id) => complete.mutate(id)} />
+        <UpNext task={upNext} onStart={completeFromEvent} />
 
         <form onSubmit={onAdd}>
           <div className="bg-panel flex items-center gap-2.5 rounded-sm border border-white/10 px-4 focus-within:border-accent/50">
@@ -239,7 +249,8 @@ export default function DashboardPage() {
                   depth={depth}
                   childCount={childCount}
                   projectName={projectName.get(task.project_id ?? "")}
-                  onComplete={(id) => complete.mutate(id)}
+                  onComplete={completeFromEvent}
+                  clearing={isClearing(task.id)}
                 />
               ))}
             </ul>

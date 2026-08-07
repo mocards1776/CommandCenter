@@ -230,6 +230,54 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["braindump_entries"]["Insert"]>;
         Relationships: [];
       };
+      books: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          authors: string | null;
+          contributors: string | null;
+          isbn: string | null;
+          format: string | null;
+          status: string;
+          date_added: string | null;
+          last_date_read: string | null;
+          dates_read: string | null;
+          read_count: number;
+          star_rating: number | null;
+          review: string | null;
+          moods: string | null;
+          pace: string | null;
+          tags: string[];
+          owned: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          authors?: string | null;
+          contributors?: string | null;
+          isbn?: string | null;
+          format?: string | null;
+          status?: string;
+          date_added?: string | null;
+          last_date_read?: string | null;
+          dates_read?: string | null;
+          read_count?: number;
+          star_rating?: number | null;
+          review?: string | null;
+          moods?: string | null;
+          pace?: string | null;
+          tags?: string[];
+          owned?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["books"]["Insert"]>;
+        Relationships: [];
+      };
       favorite_sports_teams: {
         Row: {
           id: string;

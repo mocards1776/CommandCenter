@@ -3,11 +3,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "@/lib/auth";
 import { useAuth } from "@/lib/auth-context";
+import { CelebrationProvider } from "@/components/Celebration";
 import AppShell from "@/components/layout/AppShell";
 import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
 import TodosPage from "@/pages/TodosPage";
 import HabitsPage from "@/pages/HabitsPage";
+import ReadingPage from "@/pages/ReadingPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -45,6 +47,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <CelebrationProvider>
         <BrowserRouter>
           <Routes>
             <Route
@@ -60,10 +63,12 @@ export default function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/todos" element={<TodosPage />} />
               <Route path="/habits" element={<HabitsPage />} />
+              <Route path="/reading" element={<ReadingPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </BrowserRouter>
+        </CelebrationProvider>
         <Toaster
           position="bottom-right"
           toastOptions={{

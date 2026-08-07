@@ -12,6 +12,10 @@ export type Note = Tables<"notes">;
 export type CRMPerson = Tables<"crm_people">;
 export type BraindumpEntry = Tables<"braindump_entries">;
 export type FavoriteSportsTeam = Tables<"favorite_sports_teams">;
+export type Book = Tables<"books">;
+export type BookInsert = TablesInsert<"books">;
+
+export type ReadStatus = "read" | "to-read" | "currently-reading" | "did-not-finish" | "paused";
 
 export type HabitInsert = TablesInsert<"habits">;
 export type HabitUpdate = TablesUpdate<"habits">;
