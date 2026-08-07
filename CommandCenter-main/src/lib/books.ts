@@ -272,7 +272,7 @@ export async function storeCover(
 
 export function coverSrc(book: Book): string | null {
   // Prefer our stored copy; fall back to the remote URL only if we never got bytes.
-  if (book.cover_path) {
+  if (book.cover_path && book.cover_path.length > 0) {
     return supabase.storage.from("book-covers").getPublicUrl(book.cover_path).data.publicUrl;
   }
   return book.cover_url ?? null;
@@ -380,4 +380,129 @@ export async function logPages(opts: {
 export async function deleteSession(id: string): Promise<void> {
   const { error } = await supabase.from("reading_sessions").delete().eq("id", id);
   if (error) throw error;
+}
+
+// ── Cover backfill ───────────────────────────────────────────────────────
+
+export type BackfillResult = {
+  processed: number;
+  found: number;
+  missed: number;
+  sources: Record<string, number>;
+  remaining: number;
+};
+
+/** One batch. The caller loops until `remaining` is 0. */
+export async function backfillCoversBatch(batch = 25): Promise<BackfillResult> {
+  const { data, error } = await supabase.functions.invoke<BackfillResult & { error?: string }>(
+    "backfill-covers",
+    { body: { batch } },
+  );
+  if (error) throw new Error(error.message);
+  if (!data || (data as { error?: string }).error) {
+    throw new Error((data as { error?: string })?.error ?? "Backfill failed");
+  }
+  return data;
+}
+
+/** How many books still need a cover attempt. */
+export async function coversRemaining(): Promise<number> {
+  const { count, error } = await supabase
+    .from("books")
+    .select("id", { count: "exact", head: true })
+    .is("cover_path", null)
+    .not("isbn", "is", null);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+// ── On Deck ──────────────────────────────────────────────────────────────
+
+export async function fetchOnDeck(): Promise<Book[]> {
+  const { data, error } = await supabase
+    .from("books")
+    .select("*")
+    .eq("on_deck", true)
+    .order("on_deck_order")
+    .limit(12);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function setOnDeck(id: string, on: boolean): Promise<void> {
+  const { error } = await supabase.from("books").update({ on_deck: on }).eq("id", id);
+  if (error) throw error;
+}
+
+// ── Goals ────────────────────────────────────────────────────────────────
+
+export type ReadingGoal = {
+  id: string;
+  user_id: string;
+  year: number;
+  target_books: number | null;
+  target_pages: number | null;
+};
+
+export async function fetchGoal(year: number): Promise<ReadingGoal | null> {
+  const { data, error } = await supabase
+    .from("reading_goals")
+    .select("*")
+    .eq("year", year)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as ReadingGoal) ?? null;
+}
+
+export async function saveGoal(
+  year: number,
+  targets: { target_books?: number | null; target_pages?: number | null },
+): Promise<void> {
+  const user_id = await requireUserId();
+  const { error } = await supabase
+    .from("reading_goals")
+    .upsert({ user_id, year, ...targets }, { onConflict: "user_id,year" });
+  if (error) throw error;
+}
+
+// ── Progress helpers ─────────────────────────────────────────────────────
+
+/** Percent → absolute page, for logging by "I'm 40% through". */
+export function percentToPage(percent: number, pageCount: number | null): number | null {
+  if (!pageCount || pageCount <= 0) return null;
+  return Math.round((Math.min(100, Math.max(0, percent)) / 100) * pageCount);
+}
+
+export function pageToPercent(page: number, pageCount: number | null): number | null {
+  if (!pageCount || pageCount <= 0) return null;
+  return Math.min(100, Math.max(0, (page / pageCount) * 100));
+}
+
+/**
+ * Jump straight to a page (or percent), rather than adding a delta. Records
+ * the difference as a session so the calendar and monthly totals stay right.
+ */
+export async function setProgress(opts: {
+  bookId: string;
+  toPage: number;
+  date: string;
+  currentPage: number;
+  pageCount: number | null;
+  status: string;
+}): Promise<{ finished: boolean; delta: number }> {
+  const delta = Math.max(0, opts.toPage - opts.currentPage);
+  if (delta > 0) {
+    const { finished } = await logPages({
+      bookId: opts.bookId,
+      pages: delta,
+      date: opts.date,
+      currentPage: opts.currentPage,
+      pageCount: opts.pageCount,
+      status: opts.status,
+    });
+    return { finished, delta };
+  }
+  // Moving backwards corrects a mistake; adjust the page without a session.
+  await updateBook(opts.bookId, { current_page: Math.max(0, opts.toPage) });
+  return { finished: false, delta: 0 };
 }

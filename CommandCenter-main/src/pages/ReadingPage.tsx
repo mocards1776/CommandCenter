@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Upload, Search, Star, Link2, Plus, X, BookOpen } from "lucide-react";
+import { Upload, Search, Star, Link2, Plus, X, BookOpen, ImageDown, Bookmark } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   fetchBooks,
@@ -12,6 +12,15 @@ import {
   addBookFromUrl,
   logPages,
   coverSrc,
+  backfillCoversBatch,
+  coversRemaining,
+  fetchOnDeck,
+  setOnDeck,
+  fetchGoal,
+  saveGoal,
+  setProgress,
+  percentToPage,
+  pageToPercent,
   type ReadingSession,
 } from "@/lib/books";
 import StarField from "@/components/StarField";
@@ -250,6 +259,7 @@ function BookDetail({ book, onClose }: { book: Book; onClose: () => void }) {
   const [pages, setPages] = useState("");
   const [date, setDate] = useState(todayStr());
   const [tagDraft, setTagDraft] = useState("");
+  const [mode, setMode] = useState<"pages" | "percent" | "page">("pages");
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["books"] });
@@ -279,6 +289,33 @@ function BookDetail({ book, onClose }: { book: Book; onClose: () => void }) {
       else toast.success(`${n} pages logged`);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not log pages"),
+  });
+
+  const jump = useMutation({
+    mutationFn: (toPage: number) =>
+      setProgress({
+        bookId: book.id,
+        toPage,
+        date,
+        currentPage: book.current_page,
+        pageCount: book.page_count,
+        status: book.status,
+      }),
+    onSuccess: (r) => {
+      setPages("");
+      refresh();
+      if (r.finished) fanfare(`Finished ${book.title}.`);
+      else toast.success(r.delta > 0 ? `${r.delta} pages logged` : "Progress updated");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not update"),
+  });
+
+  const deck = useMutation({
+    mutationFn: (on: boolean) => setOnDeck(book.id, on),
+    onSuccess: () => {
+      refresh();
+      qc.invalidateQueries({ queryKey: ["on-deck"] });
+    },
   });
 
   const cover = coverSrc(book);
@@ -344,6 +381,19 @@ function BookDetail({ book, onClose }: { book: Book; onClose: () => void }) {
           </select>
         </label>
 
+        <button
+          onClick={() => deck.mutate(!book.on_deck)}
+          className={cn(
+            "mb-4 flex w-full items-center justify-center gap-2 rounded-sm border py-2 text-[10.5px] font-semibold uppercase tracking-[0.15em] transition",
+            book.on_deck
+              ? "border-accent bg-accent/15 text-accent"
+              : "text-chalk hover:text-cream border-white/10 hover:border-accent/50",
+          )}
+        >
+          <Bookmark size={13} className={book.on_deck ? "fill-current" : ""} />
+          {book.on_deck ? "On deck" : "Add to on deck"}
+        </button>
+
         {/* Rating */}
         <div className="mb-4">
           <span className="label-caps">Rating</span>
@@ -370,22 +420,49 @@ function BookDetail({ book, onClose }: { book: Book; onClose: () => void }) {
             </>
           )}
 
+          <div className="mt-3 flex gap-1">
+            {(["pages", "percent", "page"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={cn(
+                  "px-2.5 py-1 text-[9.5px] uppercase tracking-[0.14em] transition-colors",
+                  mode === m ? "text-accent border-accent border-b" : "text-chalk-dim hover:text-chalk",
+                )}
+              >
+                {m === "pages" ? "+ pages" : m === "percent" ? "% done" : "on page"}
+              </button>
+            ))}
+          </div>
+
           <form
             onSubmit={(e: FormEvent) => {
               e.preventDefault();
-              const n = Number.parseInt(pages, 10);
-              if (!Number.isFinite(n) || n <= 0) return;
+              const n = Number.parseFloat(pages);
+              if (!Number.isFinite(n)) return;
               const r = (e.currentTarget as HTMLFormElement).getBoundingClientRect();
               burst(r.left + r.width / 2, r.top + r.height / 2);
-              log.mutate(n);
+
+              if (mode === "pages") {
+                if (n > 0) log.mutate(Math.round(n));
+                return;
+              }
+              // Percent and absolute page both resolve to "move to page X".
+              const target =
+                mode === "percent" ? percentToPage(n, book.page_count) : Math.round(n);
+              if (target === null) {
+                toast.error("Add a page count first");
+                return;
+              }
+              jump.mutate(target);
             }}
-            className="mt-3 flex gap-2"
+            className="mt-2 flex gap-2"
           >
             <input
               value={pages}
               onChange={(e) => setPages(e.target.value)}
-              inputMode="numeric"
-              placeholder="Pages"
+              inputMode="decimal"
+              placeholder={mode === "percent" ? "%" : mode === "page" ? "Page" : "Pages"}
               className="bg-field text-cream w-20 rounded-sm border border-white/10 px-2.5 py-2 text-[13px] outline-none focus:border-accent/50"
             />
             <input
@@ -396,12 +473,42 @@ function BookDetail({ book, onClose }: { book: Book; onClose: () => void }) {
             />
             <button
               type="submit"
-              disabled={log.isPending || !pages}
+              disabled={log.isPending || jump.isPending || !pages}
               className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-4 text-[10.5px] font-semibold uppercase tracking-[0.15em] disabled:opacity-40"
             >
               Log
             </button>
           </form>
+
+          {/* Live conversion, so the number you type is never ambiguous. */}
+          {book.page_count && pages && Number.isFinite(Number.parseFloat(pages)) && (
+            <p className="text-chalk-dim mt-1.5 text-[10.5px]">
+              {mode === "percent"
+                ? `${Math.round(Number.parseFloat(pages))}% = page ${percentToPage(Number.parseFloat(pages), book.page_count)} of ${book.page_count}`
+                : mode === "page"
+                  ? `page ${Math.round(Number.parseFloat(pages))} = ${Math.round(pageToPercent(Number.parseFloat(pages), book.page_count) ?? 0)}%`
+                  : `+${Math.round(Number.parseFloat(pages))} pages → page ${Math.min(book.page_count, book.current_page + Math.round(Number.parseFloat(pages)))}`}
+            </p>
+          )}
+
+          {/* Quick taps: the common case shouldn't need the keyboard. */}
+          {mode === "pages" && (
+            <div className="mt-2 flex gap-1.5">
+              {[10, 20, 25, 50].map((n) => (
+                <button
+                  key={n}
+                  onClick={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    burst(r.left + r.width / 2, r.top + r.height / 2);
+                    log.mutate(n);
+                  }}
+                  className="bg-field text-chalk hover:text-cream flex-1 rounded-sm border border-white/10 py-1.5 text-[11px] transition hover:border-accent/50"
+                >
+                  +{n}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Tags */}
@@ -703,6 +810,234 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
   );
 }
 
+
+/* ── Now reading hero ───────────────────────────────────────────────── */
+function NowReading({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => void }) {
+  const reading = books.filter((b) => b.status === "currently-reading");
+  if (reading.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {reading.slice(0, 2).map((b) => {
+        const cover = coverSrc(b);
+        const pct = b.page_count ? Math.min(100, (b.current_page / b.page_count) * 100) : null;
+        return (
+          <button
+            key={b.id}
+            onClick={() => onOpen(b)}
+            className="from-hero-lift to-hero relative flex items-center gap-5 overflow-hidden rounded border border-accent/30 bg-gradient-to-br p-5 text-left transition hover:border-accent/60 sm:gap-6 sm:p-6"
+          >
+            <StarField count={22} seed={31} />
+            {cover ? (
+              <img
+                src={cover}
+                alt=""
+                className="relative z-10 h-28 w-[76px] shrink-0 rounded-sm object-cover shadow-[0_10px_28px_rgba(0,0,0,.55)] sm:h-36 sm:w-24"
+              />
+            ) : (
+              <div className="bg-panel relative z-10 grid h-28 w-[76px] shrink-0 place-items-center rounded-sm sm:h-36 sm:w-24">
+                <BookOpen size={22} className="text-chalk-dim" />
+              </div>
+            )}
+
+            <div className="relative z-10 min-w-0 flex-1">
+              <div className="rule-head mb-1.5">Now reading</div>
+              <h2 className="font-display text-cream truncate text-[22px] leading-tight sm:text-[28px]">
+                {b.title}
+              </h2>
+              <p className="text-chalk mt-1 truncate text-[12.5px]">{b.authors}</p>
+
+              {pct !== null ? (
+                <>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-sm bg-white/10">
+                    <div
+                      className="from-accent-deep to-accent h-full bg-gradient-to-r transition-[width] duration-500"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <p className="text-chalk-dim mt-1.5 text-[10.5px] uppercase tracking-[0.14em]">
+                    page {b.current_page} of {b.page_count} · {Math.round(pct)}% ·{" "}
+                    {b.page_count! - b.current_page} to go
+                  </p>
+                </>
+              ) : (
+                <p className="text-chalk-dim mt-3 text-[10.5px] uppercase tracking-[0.14em]">
+                  add a page count to track progress
+                </p>
+              )}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── On Deck ────────────────────────────────────────────────────────── */
+function OnDeckStrip({ onOpen }: { onOpen: (b: Book) => void }) {
+  const { data } = useQuery({ queryKey: ["on-deck"], queryFn: fetchOnDeck });
+  if (!data || data.length === 0) return null;
+
+  return (
+    <div>
+      <h2 className="rule-head mb-3">On deck</h2>
+      <div className="flex gap-3 overflow-x-auto pb-1">
+        {data.map((b) => {
+          const cover = coverSrc(b);
+          return (
+            <button
+              key={b.id}
+              onClick={() => onOpen(b)}
+              className="group w-[74px] shrink-0 text-left"
+              title={b.title}
+            >
+              {cover ? (
+                <img
+                  src={cover}
+                  alt=""
+                  className="h-[104px] w-[74px] rounded-sm object-cover shadow-lg transition group-hover:-translate-y-1"
+                />
+              ) : (
+                <div className="bg-panel grid h-[104px] w-[74px] place-items-center rounded-sm transition group-hover:-translate-y-1">
+                  <BookOpen size={16} className="text-chalk-dim" />
+                </div>
+              )}
+              <p className="text-chalk mt-1.5 line-clamp-2 text-[10.5px] leading-tight">{b.title}</p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Goals ──────────────────────────────────────────────────────────── */
+function GoalCard({ books }: { books: Book[] }) {
+  const qc = useQueryClient();
+  const year = new Date().getFullYear();
+  const { data: goal } = useQuery({ queryKey: ["goal", year], queryFn: () => fetchGoal(year) });
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const done = books.filter((b) => b.finished_at?.startsWith(String(year))).length;
+  const target = goal?.target_books ?? null;
+  const pct = target ? Math.min(100, (done / target) * 100) : null;
+
+  // Where you should be by today if the year were evenly paced.
+  const dayOfYear = Math.floor((Date.now() - new Date(year, 0, 1).getTime()) / 86_400_000) + 1;
+  const expected = target ? (target * dayOfYear) / 365 : null;
+  const ahead = expected !== null ? done - expected : null;
+
+  const save = useMutation({
+    mutationFn: (n: number | null) => saveGoal(year, { target_books: n }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["goal", year] });
+      setEditing(false);
+    },
+  });
+
+  return (
+    <div>
+      <h2 className="rule-head mb-3">{year} goal</h2>
+
+      {target === null || editing ? (
+        <form
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            const n = Number.parseInt(draft, 10);
+            save.mutate(Number.isFinite(n) && n > 0 ? n : null);
+          }}
+          className="flex gap-2"
+        >
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            inputMode="numeric"
+            placeholder="Books"
+            className="bg-panel text-cream w-full rounded-sm border border-white/10 px-3 py-2 text-[13px] outline-none focus:border-accent/50"
+          />
+          <button className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-4 text-[10.5px] font-semibold uppercase tracking-[0.15em]">
+            Set
+          </button>
+        </form>
+      ) : (
+        <button onClick={() => { setDraft(String(target)); setEditing(true); }} className="w-full text-left">
+          <div className="flex items-baseline gap-2">
+            <span className="numeral text-accent text-[34px] leading-none">{done}</span>
+            <span className="text-chalk text-[13px]">of {target} books</span>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-sm bg-white/10">
+            <div
+              className="from-accent-deep to-accent h-full bg-gradient-to-r transition-[width] duration-700"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          {ahead !== null && (
+            <p className="text-chalk-dim mt-1.5 text-[10.5px]">
+              {ahead >= 0
+                ? `${Math.round(ahead)} ahead of pace`
+                : `${Math.abs(Math.round(ahead))} behind pace`}
+            </p>
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ── Cover backfill ─────────────────────────────────────────────────── */
+function CoverBackfill() {
+  const qc = useQueryClient();
+  const { data: remaining } = useQuery({ queryKey: ["covers-remaining"], queryFn: coversRemaining });
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<{ found: number; left: number } | null>(null);
+
+  async function run() {
+    setRunning(true);
+    let found = 0;
+    try {
+      // Loop batches until the server says nothing is left. Bounded so a
+      // permanently-failing row can't spin forever.
+      for (let i = 0; i < 200; i++) {
+        const r = await backfillCoversBatch(25);
+        found += r.found;
+        setProgress({ found, left: r.remaining });
+        if (r.remaining === 0 || r.processed === 0) break;
+      }
+      toast.success(`Found ${found} covers`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Backfill failed");
+    } finally {
+      setRunning(false);
+      qc.invalidateQueries({ queryKey: ["books"] });
+      qc.invalidateQueries({ queryKey: ["covers-remaining"] });
+      qc.invalidateQueries({ queryKey: ["on-deck"] });
+    }
+  }
+
+  if (!remaining) return null;
+
+  return (
+    <div>
+      <h2 className="rule-head mb-2">Covers</h2>
+      <p className="text-chalk-dim mb-2 text-[11px] leading-relaxed">
+        {remaining.toLocaleString()} books have an ISBN but no cover yet. Roughly 6 in 10 will be
+        found.
+      </p>
+      <button
+        onClick={run}
+        disabled={running}
+        className="bg-panel text-cream flex w-full items-center justify-center gap-2 rounded-sm border border-accent/30 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.15em] transition hover:border-accent disabled:opacity-50"
+      >
+        <ImageDown size={14} />
+        {running
+          ? `${progress?.found ?? 0} found · ${progress?.left ?? remaining} left`
+          : "Fetch covers"}
+      </button>
+    </div>
+  );
+}
+
 /* ── Page ───────────────────────────────────────────────────────────── */
 export default function ReadingPage() {
   const qc = useQueryClient();
@@ -764,7 +1099,10 @@ export default function ReadingPage() {
 
   return (
     <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[1fr_306px]">
-      <div className="flex min-w-0 flex-col gap-4 p-6 md:p-7">
+      <div className="flex min-w-0 flex-col gap-5 p-4 md:p-7">
+        <NowReading books={books ?? []} onOpen={setOpen} />
+        <OnDeckStrip onOpen={setOpen} />
+
         <div className="flex flex-wrap items-center gap-3">
           <div className="bg-panel flex flex-1 items-center gap-2.5 rounded-sm border border-white/10 px-4 focus-within:border-accent/50">
             <Search size={14} className="text-chalk-dim shrink-0" />
@@ -857,7 +1195,9 @@ export default function ReadingPage() {
         </div>
       </div>
 
-      <aside className="bg-ink flex flex-col gap-6 border-l border-accent/15 p-6">
+      <aside className="bg-ink flex flex-col gap-6 border-accent/15 p-4 md:p-6 lg:border-l">
+        <GoalCard books={books ?? []} />
+        <CoverBackfill />
         <PagesCalendar sessions={sessions ?? []} />
         <MonthlyStats books={books ?? []} sessions={sessions ?? []} />
 

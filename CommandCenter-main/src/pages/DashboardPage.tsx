@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
-import { Plus } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Plus, BookOpen } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   useTasks,
@@ -12,6 +13,8 @@ import {
   flattenTasks,
   pickUpNext,
 } from "@/lib/queries";
+import { useQuery } from "@tanstack/react-query";
+import { fetchOnDeck, coverSrc } from "@/lib/books";
 import StarField from "@/components/StarField";
 import { useTaskCompletion } from "@/hooks/useTaskCompletion";
 import { cn, dueLabel, isOverdue, todayDow } from "@/lib/utils";
@@ -150,6 +153,43 @@ function TaskRow({
   );
 }
 
+/** The next few books, so the shelf is visible where you actually look. */
+function OnDeckRail() {
+  const { data } = useQuery({ queryKey: ["on-deck"], queryFn: fetchOnDeck });
+  if (!data || data.length === 0) return null;
+
+  return (
+    <div>
+      <h2 className="rule-head mb-3">On deck</h2>
+      <div className="flex gap-2.5 overflow-x-auto pb-1">
+        {data.slice(0, 6).map((b) => {
+          const cover = coverSrc(b);
+          return (
+            <Link
+              key={b.id}
+              to="/reading"
+              className="group w-[54px] shrink-0"
+              title={`${b.title}${b.authors ? ` — ${b.authors}` : ""}`}
+            >
+              {cover ? (
+                <img
+                  src={cover}
+                  alt=""
+                  className="h-[76px] w-[54px] rounded-sm object-cover shadow-md transition group-hover:-translate-y-1"
+                />
+              ) : (
+                <div className="bg-panel grid h-[76px] w-[54px] place-items-center rounded-sm transition group-hover:-translate-y-1">
+                  <BookOpen size={14} className="text-chalk-dim" />
+                </div>
+              )}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "alert" | "accent" }) {
   return (
     <div className="bg-panel px-4 py-3">
@@ -220,7 +260,7 @@ export default function DashboardPage() {
   return (
     <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[1fr_306px]">
       {/* ── Main column ── */}
-      <div className="flex min-w-0 flex-col gap-4 p-6 md:p-7">
+      <div className="flex min-w-0 flex-col gap-4 p-4 md:p-7">
         <UpNext task={upNext} onStart={completeFromEvent} />
 
         <form onSubmit={onAdd}>
@@ -259,7 +299,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Rail ── */}
-      <aside className="bg-ink flex flex-col gap-5 border-l border-accent/15 p-6">
+      <aside className="bg-ink flex flex-col gap-5 border-accent/15 p-4 md:p-6 lg:border-l">
         <div className="flex items-center gap-4">
           <div
             className="grid h-[78px] w-[78px] shrink-0 place-items-center rounded-full"
@@ -345,6 +385,7 @@ export default function DashboardPage() {
             </>
           )}
         </div>
+        <OnDeckRail />
       </aside>
     </div>
   );

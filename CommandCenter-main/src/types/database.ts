@@ -265,6 +265,8 @@ export type Database = {
           started_at: string | null;
           finished_at: string | null;
           favorite: boolean;
+          on_deck: boolean;
+          on_deck_order: number;
           created_at: string;
           updated_at: string;
         };
@@ -302,10 +304,34 @@ export type Database = {
           started_at?: string | null;
           finished_at?: string | null;
           favorite?: boolean;
+          on_deck?: boolean;
+          on_deck_order?: number;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["books"]["Insert"]>;
+        Relationships: [];
+      };
+      reading_goals: {
+        Row: {
+          id: string;
+          user_id: string;
+          year: number;
+          target_books: number | null;
+          target_pages: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          year: number;
+          target_books?: number | null;
+          target_pages?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["reading_goals"]["Insert"]>;
         Relationships: [];
       };
       reading_sessions: {

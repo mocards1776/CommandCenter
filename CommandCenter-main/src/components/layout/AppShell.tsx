@@ -1,14 +1,14 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { LogOut } from "lucide-react";
+import { LayoutDashboard, ListChecks, Repeat, BookOpen, LogOut } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import StarField from "@/components/StarField";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/todos", label: "Todos" },
-  { to: "/habits", label: "Habits" },
-  { to: "/reading", label: "Reading" },
+  { to: "/dashboard", label: "Dashboard", short: "Today", Icon: LayoutDashboard },
+  { to: "/todos", label: "Todos", short: "Todos", Icon: ListChecks },
+  { to: "/habits", label: "Habits", short: "Habits", Icon: Repeat },
+  { to: "/reading", label: "Reading", short: "Reading", Icon: BookOpen },
 ];
 
 export default function AppShell() {
@@ -23,11 +23,14 @@ export default function AppShell() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="bg-ink relative flex h-[70px] shrink-0 items-center justify-between overflow-hidden px-6 md:px-8">
+      <header
+        className="bg-ink relative flex h-[58px] shrink-0 items-center justify-between overflow-hidden px-4 md:h-[70px] md:px-8"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
         <StarField count={26} seed={3} />
-        <div className="relative z-10 flex items-center gap-4">
+        <div className="relative z-10 flex items-center gap-3 md:gap-4">
           <span className="flag-mark" />
-          <h1 className="font-display text-cream text-[25px] tracking-[0.05em]">
+          <h1 className="font-display text-cream text-[19px] tracking-[0.05em] md:text-[25px]">
             Command <span className="text-accent">Center</span>
           </h1>
         </div>
@@ -36,21 +39,22 @@ export default function AppShell() {
           title={user?.email ?? undefined}
           className="label-caps relative z-10 flex items-center gap-2 transition-colors hover:text-cream"
         >
-          <span className="hidden sm:inline">{today}</span>
-          <LogOut size={14} />
+          <span className="hidden lg:inline">{today}</span>
+          <LogOut size={15} />
         </button>
       </header>
       <div className="rule-flag" />
 
       <div className="flex min-h-0 flex-1">
-        <nav className="bg-ink w-[68px] shrink-0 border-r border-accent/15 py-5 md:w-[196px]">
+        {/* Desktop rail */}
+        <nav className="bg-ink hidden w-[196px] shrink-0 border-r border-accent/15 py-5 md:block">
           {NAV.map(({ to, label }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
                 cn(
-                  "block border-l-2 px-4 py-3 text-[11.5px] uppercase tracking-[0.19em] transition-colors md:px-7",
+                  "block border-l-2 px-7 py-3 text-[11.5px] uppercase tracking-[0.19em] transition-colors",
                   isActive
                     ? "border-accent bg-accent/[0.07] text-cream"
                     : "border-transparent text-chalk hover:text-cream",
@@ -62,10 +66,38 @@ export default function AppShell() {
           ))}
         </nav>
 
-        <main className="min-w-0 flex-1 overflow-x-hidden">
+        {/* pb clears the fixed mobile tab bar */}
+        <main className="min-w-0 flex-1 overflow-x-hidden pb-[76px] md:pb-0">
           <Outlet />
         </main>
       </div>
+
+      {/* Mobile tab bar */}
+      <nav
+        className="bg-ink fixed inset-x-0 bottom-0 z-40 flex border-t border-accent/20 md:hidden"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        {NAV.map(({ to, short, Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            className={({ isActive }) =>
+              cn(
+                // 56px tall: a comfortable thumb target, not a 32px link
+                "flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[9.5px] uppercase tracking-[0.14em] transition-colors",
+                isActive ? "text-accent" : "text-chalk-dim",
+              )
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <Icon size={19} className={isActive ? "scale-110 transition-transform" : ""} />
+                {short}
+              </>
+            )}
+          </NavLink>
+        ))}
+      </nav>
     </div>
   );
 }
