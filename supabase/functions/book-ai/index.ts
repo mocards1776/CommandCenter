@@ -67,28 +67,47 @@ async function coverFor(title: string, author: string, size: "M" | "L" = "M"): P
   }
 }
 
+const GOOGLE_KEY = Deno.env.get("GOOGLE_BOOKS_API_KEY") ?? "";
+
+/** Upgrade a Google Books thumbnail into a larger front-cover URL when possible. */
+function upgradeGoogleCover(raw: string): string {
+  let u = raw.replace(/^http:/, "https:").replace(/&edge=curl/g, "");
+  u = u.replace(/[?&]zoom=\d+/, "").replace(/[?&]img=\d+/, "");
+  // zoom=1 is a readable jacket; the API's default zoom=5 is a tiny stamp.
+  if (u.includes("books.google") || u.includes("googleusercontent.com")) {
+    u += (u.includes("?") ? "&" : "?") + "zoom=1&img=1";
+  }
+  return u;
+}
+
 /** Google Books often has a jacket when Open Library does not. */
 async function googleCover(title: string, author: string | null, isbn: string | null): Promise<string | null> {
-  try {
-    const q = isbn
-      ? `isbn:${isbn.replace(/[^0-9Xx]/g, "")}`
-      : `intitle:${title.slice(0, 80)}${author ? `+inauthor:${author.split(",")[0].trim().slice(0, 40)}` : ""}`;
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 8000);
-    const res = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1`,
-      { signal: ctl.signal, headers: { "User-Agent": UA } },
-    ).finally(() => clearTimeout(t));
-    if (!res.ok) return null;
-    const links = (await res.json())?.items?.[0]?.volumeInfo?.imageLinks as
-      | Record<string, string>
-      | undefined;
-    if (!links) return null;
-    const raw = links.extraLarge ?? links.large ?? links.medium ?? links.thumbnail ?? links.smallThumbnail;
-    return raw ? String(raw).replace(/^http:/, "https:").replace(/&edge=curl/, "") : null;
-  } catch {
-    return null;
+  const queries: string[] = [];
+  if (isbn) queries.push(`isbn:${isbn.replace(/[^0-9Xx]/g, "")}`);
+  queries.push(
+    `intitle:${title.slice(0, 80)}${author ? ` inauthor:${author.split(",")[0].trim().slice(0, 40)}` : ""}`,
+  );
+  for (const q of queries) {
+    try {
+      const key = GOOGLE_KEY ? `&key=${encodeURIComponent(GOOGLE_KEY)}` : "";
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 8000);
+      const res = await fetch(
+        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1${key}`,
+        { signal: ctl.signal, headers: { "User-Agent": UA } },
+      ).finally(() => clearTimeout(t));
+      if (!res.ok) continue;
+      const links = (await res.json())?.items?.[0]?.volumeInfo?.imageLinks as
+        | Record<string, string>
+        | undefined;
+      if (!links) continue;
+      const raw = links.extraLarge ?? links.large ?? links.medium ?? links.thumbnail ?? links.smallThumbnail;
+      if (raw) return upgradeGoogleCover(String(raw));
+    } catch {
+      // try next query
+    }
   }
+  return null;
 }
 
 function sniffImageType(bytes: Uint8Array): string | null {
@@ -177,25 +196,36 @@ async function coverFromPage(pageUrl: string): Promise<string | null> {
   }
 }
 
-/** Collect every plausible image URL Claude (or its citations) mentioned. */
-function extractCoverUrls(text: string): string[] {
-  const out: string[] = [];
-  const push = (raw: string) => {
+type AiCoverHint = { urls: string[]; pages: string[]; isbns: string[] };
+
+/** Collect image URLs, page URLs, and ISBNs Claude mentioned. */
+function extractCoverHints(text: string): AiCoverHint {
+  const urls: string[] = [];
+  const pages: string[] = [];
+  const isbns: string[] = [];
+  const pushUrl = (raw: string, asPage = false) => {
     let u = raw.trim().replace(/[),.;]+$/, "");
     if (u.startsWith("//")) u = "https:" + u;
     if (!/^https?:\/\//i.test(u)) return;
-    if (out.includes(u)) return;
-    out.push(u);
+    const list = asPage ? pages : urls;
+    if (!list.includes(u)) list.push(u);
+  };
+  const pushIsbn = (raw: string) => {
+    const n = raw.replace(/[^0-9Xx]/g, "");
+    if ((n.length === 10 || n.length === 13) && !isbns.includes(n)) isbns.push(n);
   };
 
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = fenced ? fenced[1] : text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
   try {
     const parsed = JSON.parse(candidate);
-    const primary = parsed?.cover_url;
-    if (typeof primary === "string") push(primary);
+    if (typeof parsed?.cover_url === "string") pushUrl(parsed.cover_url);
+    if (typeof parsed?.isbn === "string") pushIsbn(parsed.isbn);
     if (Array.isArray(parsed?.cover_urls)) {
-      for (const u of parsed.cover_urls) if (typeof u === "string") push(u);
+      for (const u of parsed.cover_urls) if (typeof u === "string") pushUrl(u);
+    }
+    if (Array.isArray(parsed?.page_urls)) {
+      for (const u of parsed.page_urls) if (typeof u === "string") pushUrl(u, true);
     }
   } catch {
     // fall through to regex sweep
@@ -203,11 +233,15 @@ function extractCoverUrls(text: string): string[] {
 
   for (const m of text.matchAll(/https?:\/\/[^\s"'<>]+/gi)) {
     const u = m[0];
-    if (/\.(jpg|jpeg|png|webp)(\?|$)/i.test(u) || /covers\.openlibrary|books\.google|googleusercontent|covers\.openlib/i.test(u)) {
-      push(u);
+    if (/\.(jpg|jpeg|png|webp)(\?|$)/i.test(u) || /covers\.openlibrary|books\.google|googleusercontent/i.test(u)) {
+      pushUrl(u);
+    } else if (/amazon\.|goodreads\.|barnesandnoble\.|bookshop\.org|openlibrary\.org\/(works|books)|books\.google\.[^/]+\/books/i.test(u)) {
+      pushUrl(u, true);
     }
   }
-  return out;
+  for (const m of text.matchAll(/\b(?:97[89][0-9]{10}|[0-9]{9}[0-9Xx])\b/g)) pushIsbn(m[0]);
+
+  return { urls, pages, isbns };
 }
 
 /**
@@ -279,22 +313,24 @@ async function findCover(
   if (!img && !url && client) {
     const q =
       `"${book.title}"${book.authors ? ` ${book.authors.split(",")[0].trim()}` : ""}` +
-      `${book.isbn ? ` ISBN ${book.isbn}` : ""} book cover`;
+      `${book.isbn ? ` ISBN ${book.isbn}` : ""}`;
     try {
       const message = await askClaude(client, {
         model: MODEL,
         max_tokens: 4000,
         thinking: { type: "adaptive" },
         output_config: { effort: "low" },
-        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }],
+        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 6 }],
         system:
-          "You find direct URLs to book cover IMAGE FILES (jpg/png/webp), not HTML pages. " +
-          "Prefer covers.openlibrary.org, books.google.com image CDN, or publisher art. " +
-          "Answer with a ```json fenced block only: " +
-          '{"cover_url":"https://...","cover_urls":["https://..."]}. ' +
-          "Put the best URL in cover_url and up to 4 alternates in cover_urls. " +
-          "If you cannot find a direct image URL, return {\"cover_url\":\"\",\"cover_urls\":[]}.",
-        messages: [{ role: "user", content: `Find cover image URLs for: ${q}` }],
+          "You help fetch book cover art. Search the web and return a ```json fenced block only:\n" +
+          '{"isbn":"978...","cover_url":"https://...jpg","cover_urls":["https://..."],' +
+          '"page_urls":["https://openlibrary.org/..."]}.\n' +
+          "Rules: isbn is the 13-digit ISBN if you can find one (else \"\"). " +
+          "cover_url/cover_urls must be DIRECT image files (jpg/png/webp) when possible — " +
+          "prefer covers.openlibrary.org/b/isbn/... or Google Books content URLs. " +
+          "page_urls are retail/library pages that show the cover (Open Library, Amazon, Goodreads). " +
+          "Always fill whatever you can; empty strings/arrays are ok.",
+        messages: [{ role: "user", content: `Find the cover for: ${q}` }],
       });
       if (message.stop_reason === "refusal") {
         aiError = "Claude declined that cover search.";
@@ -303,10 +339,22 @@ async function findCover(
           .filter((b: { type: string }) => b.type === "text")
           .map((b: { text: string }) => b.text)
           .join("\n");
-        for (const found of extractCoverUrls(text)) {
-          img = await grabImage(found);
+        const hint = extractCoverHints(text);
+
+        // ISBNs beat hotlinked retail images — OL will serve bytes we can store.
+        for (const isbn of hint.isbns) {
+          push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`, "ai");
+          push(`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`, "ai");
+        }
+        for (const u of hint.urls) push(upgradeGoogleCover(u), "ai");
+        for (const page of hint.pages.slice(0, 4)) {
+          push(await coverFromPage(page), "ai");
+        }
+
+        for (const c of candidates.filter((c) => c.source === "ai")) {
+          img = await grabImage(c.url);
           if (img) {
-            usedUrl = found;
+            usedUrl = c.url;
             source = "ai";
             break;
           }

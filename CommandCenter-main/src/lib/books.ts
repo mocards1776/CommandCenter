@@ -493,10 +493,23 @@ async function edgeErrorMessage(error: { message: string; context?: unknown }, f
 }
 
 /**
- * Pull a jacket for a blank book. Without `url`, Open Library / Google then
- * Claude + web search; with `url`, scrape/fetch that page or image link.
+ * Pull a jacket for a blank book. Catalog enrich first (same path as bulk
+ * cover backfill), then Claude web search. With `url`, fetch that page/image.
  */
 export async function pullCover(bookId: string, url?: string): Promise<CoverPullResult> {
+  if (!url?.trim()) {
+    // Reuse the battle-tested cover pipeline before spending AI tokens.
+    await supabase.functions.invoke("backfill-covers", { body: { bookId } }).catch(() => {});
+    const { data: row } = await supabase
+      .from("books")
+      .select("cover_path")
+      .eq("id", bookId)
+      .maybeSingle();
+    if (row?.cover_path && row.cover_path.length > 0) {
+      return { found: true, source: "catalog", cover_path: row.cover_path };
+    }
+  }
+
   const { data, error } = await supabase.functions.invoke<CoverPullResult & { error?: string }>(
     "book-ai",
     { body: { mode: "cover", bookId, url: url?.trim() || undefined } },
