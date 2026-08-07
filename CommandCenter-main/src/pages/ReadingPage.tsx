@@ -166,7 +166,15 @@ function PagesCalendar({ sessions }: { sessions: ReadingSession[] }) {
 }
 
 /* ── Monthly stats ──────────────────────────────────────────────────── */
-function MonthlyStats({ books, sessions }: { books: Book[]; sessions: ReadingSession[] }) {
+function MonthlyStats({
+  books,
+  sessions,
+  onDrill,
+}: {
+  books: Book[];
+  sessions: ReadingSession[];
+  onDrill: (year: string) => void;
+}) {
   const [year, setYear] = useState(() => new Date().getFullYear());
 
   const years = useMemo(() => {
@@ -225,14 +233,18 @@ function MonthlyStats({ books, sessions }: { books: Book[]; sessions: ReadingSes
 
       <div className="flex h-24 items-end gap-1">
         {rows.bookCount.map((n, i) => (
-          <div key={i} className="flex flex-1 flex-col items-center gap-1">
+          <button
+            key={i}
+            onClick={() => onDrill(String(year))}
+            className="flex flex-1 flex-col items-center gap-1"
+          >
             <div
               className="from-accent-deep to-accent w-full rounded-sm bg-gradient-to-t"
               style={{ height: `${Math.max(2, (n / maxBooks) * 68)}px` }}
               title={`${MONTHS[i]} ${year}: ${n} books · ${(rows.loggedPages[i] + rows.estimatedPages[i]).toLocaleString()} pages`}
             />
             <span className="text-chalk-dim text-[8.5px]">{MONTHS[i][0]}</span>
-          </div>
+          </button>
         ))}
       </div>
       <p className="text-chalk mt-2 text-[11px]">
@@ -252,13 +264,152 @@ function MonthlyStats({ books, sessions }: { books: Book[]; sessions: ReadingSes
   );
 }
 
+
+/* ── Inline edit ────────────────────────────────────────────────────── */
+/**
+ * Click (or tap) a value to edit it in place. Enter or blur commits, Escape
+ * reverts — no separate edit mode for the whole record just to fix an author.
+ */
+function Editable({
+  value,
+  onSave,
+  placeholder = "—",
+  numeric = false,
+  className,
+  inputClassName,
+}: {
+  value: string | number | null;
+  onSave: (v: string) => void;
+  placeholder?: string;
+  numeric?: boolean;
+  className?: string;
+  inputClassName?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        inputMode={numeric ? "numeric" : undefined}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          setEditing(false);
+          if (draft !== String(value ?? "")) onSave(draft);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") {
+            setDraft(String(value ?? ""));
+            setEditing(false);
+          }
+        }}
+        className={cn(
+          "bg-field text-cream rounded-sm border border-accent/50 px-2 py-1 text-[13px] outline-none",
+          inputClassName,
+        )}
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={() => {
+        setDraft(String(value ?? ""));
+        setEditing(true);
+      }}
+      title="Click to edit"
+      className={cn(
+        "-mx-1 rounded-sm px-1 text-left transition-colors hover:bg-white/10",
+        value === null || value === "" ? "text-chalk-dim" : "",
+        className,
+      )}
+    >
+      {value === null || value === "" ? placeholder : value}
+    </button>
+  );
+}
+
+/* ── Tag input with suggestions ─────────────────────────────────────── */
+function TagInput({
+  existing,
+  current,
+  onAdd,
+}: {
+  existing: string[];
+  current: string[];
+  onAdd: (t: string) => void;
+}) {
+  const [draft, setDraft] = useState("");
+
+  const matches = useMemo(() => {
+    const q = draft.trim().toLowerCase();
+    if (!q) return [];
+    return existing
+      .filter((t) => !current.includes(t) && t.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [draft, existing, current]);
+
+  const commit = (t: string) => {
+    const v = t.trim();
+    if (v && !current.includes(v)) onAdd(v);
+    setDraft("");
+  };
+
+  return (
+    <div className="relative mt-2">
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            // Enter takes the top suggestion when there is one, so existing
+            // tags win over accidentally creating a near-duplicate.
+            commit(matches[0] ?? draft);
+          }
+        }}
+        placeholder="Add a tag"
+        className="bg-panel text-cream w-full rounded-sm border border-white/10 px-3 py-2 text-[12.5px] outline-none focus:border-accent/50"
+      />
+      {matches.length > 0 && (
+        <div className="bg-panel absolute z-20 mt-1 w-full overflow-hidden rounded-sm border border-accent/30 shadow-xl">
+          {matches.map((t) => (
+            <button
+              key={t}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                commit(t);
+              }}
+              className="text-chalk hover:bg-accent/20 hover:text-cream block w-full px-3 py-1.5 text-left text-[12px]"
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Book detail ────────────────────────────────────────────────────── */
-function BookDetail({ book, onClose }: { book: Book; onClose: () => void }) {
+function BookDetail({
+  book,
+  onClose,
+  allTags,
+  onFilter,
+}: {
+  book: Book;
+  onClose: () => void;
+  allTags: string[];
+  onFilter: (f: { type: "author" | "tag"; value: string }) => void;
+}) {
   const qc = useQueryClient();
   const { burst, fanfare } = useCelebration();
   const [pages, setPages] = useState("");
   const [date, setDate] = useState(todayStr());
-  const [tagDraft, setTagDraft] = useState("");
   const [mode, setMode] = useState<"pages" | "percent" | "page">("pages");
 
   const refresh = () => {
@@ -327,30 +478,82 @@ function BookDetail({ book, onClose }: { book: Book; onClose: () => void }) {
         className="bg-field h-full w-full max-w-md overflow-y-auto border-l border-accent/25 p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-5 flex items-start gap-4">
+        <div className="mb-5 flex items-start gap-5">
           {cover ? (
             <img
               src={cover}
               alt=""
-              className="h-28 w-20 shrink-0 rounded-sm object-cover shadow-lg"
+              className="h-[188px] w-[126px] shrink-0 rounded object-cover shadow-[0_14px_36px_rgba(0,0,0,.6)]"
             />
           ) : (
-            <div className="bg-panel grid h-28 w-20 shrink-0 place-items-center rounded-sm">
-              <BookOpen size={22} className="text-chalk-dim" />
+            <div className="bg-panel grid h-[188px] w-[126px] shrink-0 place-items-center rounded">
+              <BookOpen size={26} className="text-chalk-dim" />
             </div>
           )}
+
           <div className="min-w-0 flex-1">
-            <h2 className="font-display text-cream text-[21px] leading-tight">{book.title}</h2>
-            <p className="text-chalk mt-1 text-[12.5px]">{book.authors || "Unknown author"}</p>
-            {book.page_count && (
-              <p className="text-chalk-dim mt-0.5 text-[11px]">{book.page_count} pages</p>
-            )}
+            <h2 className="font-display text-cream text-[21px] leading-tight">
+              <Editable
+                value={book.title}
+                onSave={(v) => v.trim() && patch.mutate({ title: v.trim() })}
+                inputClassName="w-full text-[19px]"
+              />
+            </h2>
+
+            <p className="mt-1 text-[12.5px]">
+              <Editable
+                value={book.authors}
+                placeholder="Add author"
+                onSave={(v) => patch.mutate({ authors: v.trim() || null })}
+                className="text-chalk hover:text-cream"
+                inputClassName="w-full"
+              />
+            </p>
+
+            <p className="text-chalk-dim mt-1.5 text-[11px]">
+              <Editable
+                value={book.page_count}
+                placeholder="Add pages"
+                numeric
+                onSave={(v) => {
+                  const n = Number.parseInt(v, 10);
+                  patch.mutate({ page_count: Number.isFinite(n) && n > 0 ? n : null });
+                }}
+                inputClassName="w-20"
+              />
+              {book.page_count ? " pages" : ""}
+            </p>
+
+            {/* Re-reads: the count only means something if you can see it. */}
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-chalk-dim text-[11px]">Read</span>
+              <button
+                onClick={() => patch.mutate({ read_count: Math.max(0, book.read_count - 1) })}
+                className="bg-panel text-chalk hover:text-cream h-5 w-5 rounded-sm text-[12px] leading-none"
+                aria-label="One fewer read"
+              >
+                −
+              </button>
+              <span className="numeral text-accent text-[15px]">{book.read_count}</span>
+              <span className="text-chalk-dim text-[11px]">
+                time{book.read_count === 1 ? "" : "s"}
+              </span>
+              <button
+                onClick={() => patch.mutate({ read_count: book.read_count + 1 })}
+                className="bg-panel text-chalk hover:text-cream h-5 w-5 rounded-sm text-[12px] leading-none"
+                aria-label="One more read"
+              >
+                +
+              </button>
+            </div>
+
             {book.locked_at && (
-              <p className="text-chalk-dim mt-1 text-[10px] uppercase tracking-[0.12em]">
+              <p className="text-chalk-dim mt-1.5 text-[10px] uppercase tracking-[0.12em]">
                 ✓ saved locally
               </p>
             )}
           </div>
+
           <button onClick={onClose} className="text-chalk hover:text-cream shrink-0">
             <X size={18} />
           </button>
@@ -381,6 +584,8 @@ function BookDetail({ book, onClose }: { book: Book; onClose: () => void }) {
           </select>
         </label>
 
+        {/* On deck is about what's next, so it's meaningless mid-book. */}
+        {book.status !== "currently-reading" && (
         <button
           onClick={() => deck.mutate(!book.on_deck)}
           className={cn(
@@ -393,17 +598,20 @@ function BookDetail({ book, onClose }: { book: Book; onClose: () => void }) {
           <Bookmark size={13} className={book.on_deck ? "fill-current" : ""} />
           {book.on_deck ? "On deck" : "Add to on deck"}
         </button>
+        )}
 
-        {/* Rating */}
-        <div className="mb-4">
-          <span className="label-caps">Rating</span>
-          <div className="mt-1.5">
-            <RatingPicker
-              value={book.star_rating}
-              onChange={(v) => patch.mutate({ star_rating: v })}
-            />
+        {/* Rating waits until you've finished — rating mid-read is noise. */}
+        {book.status !== "currently-reading" && (
+          <div className="mb-4">
+            <span className="label-caps">Rating</span>
+            <div className="mt-1.5">
+              <RatingPicker
+                value={book.star_rating}
+                onChange={(v) => patch.mutate({ star_rating: v })}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Progress + logging */}
         <div className="bg-panel mb-4 rounded border border-white/[0.07] p-4">
@@ -520,7 +728,15 @@ function BookDetail({ book, onClose }: { book: Book; onClose: () => void }) {
                 key={t}
                 className="bg-panel text-chalk flex items-center gap-1.5 rounded-sm px-2 py-1 text-[11px]"
               >
-                {t}
+                <button
+                  onClick={() => {
+                    onFilter({ type: "tag", value: t });
+                    onClose();
+                  }}
+                  className="hover:text-accent"
+                >
+                  {t}
+                </button>
                 <button
                   onClick={() => patch.mutate({ tags: book.tags.filter((x) => x !== t) })}
                   className="hover:text-alert"
@@ -531,23 +747,11 @@ function BookDetail({ book, onClose }: { book: Book; onClose: () => void }) {
               </span>
             ))}
           </div>
-          <form
-            onSubmit={(e: FormEvent) => {
-              e.preventDefault();
-              const t = tagDraft.trim();
-              if (!t || book.tags.includes(t)) return;
-              patch.mutate({ tags: [...book.tags, t] });
-              setTagDraft("");
-            }}
-            className="mt-2"
-          >
-            <input
-              value={tagDraft}
-              onChange={(e) => setTagDraft(e.target.value)}
-              placeholder="Add a tag and press Enter"
-              className="bg-panel text-cream w-full rounded-sm border border-white/10 px-3 py-2 text-[12.5px] outline-none focus:border-accent/50"
-            />
-          </form>
+          <TagInput
+            existing={allTags}
+            current={book.tags}
+            onAdd={(t) => patch.mutate({ tags: [...book.tags, t] })}
+          />
         </div>
 
         {/* Review */}
@@ -817,59 +1021,80 @@ function NowReading({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => voi
   if (reading.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-3">
-      {reading.slice(0, 2).map((b) => {
-        const cover = coverSrc(b);
-        const pct = b.page_count ? Math.min(100, (b.current_page / b.page_count) * 100) : null;
-        return (
-          <button
-            key={b.id}
-            onClick={() => onOpen(b)}
-            className="from-hero-lift to-hero relative flex items-center gap-5 overflow-hidden rounded border border-accent/30 bg-gradient-to-br p-5 text-left transition hover:border-accent/60 sm:gap-6 sm:p-6"
-          >
-            <StarField count={22} seed={31} />
-            {cover ? (
-              <img
-                src={cover}
-                alt=""
-                className="relative z-10 h-28 w-[76px] shrink-0 rounded-sm object-cover shadow-[0_10px_28px_rgba(0,0,0,.55)] sm:h-36 sm:w-24"
-              />
-            ) : (
-              <div className="bg-panel relative z-10 grid h-28 w-[76px] shrink-0 place-items-center rounded-sm sm:h-36 sm:w-24">
-                <BookOpen size={22} className="text-chalk-dim" />
-              </div>
-            )}
+    // Extra bottom margin and a rule below: this is the headline of the page,
+    // not the first item in a list.
+    <section className="mb-2 border-b border-accent/15 pb-6">
+      <div className="flex flex-col gap-4">
+        {reading.slice(0, 2).map((b) => {
+          const cover = coverSrc(b);
+          const pct = b.page_count ? Math.min(100, (b.current_page / b.page_count) * 100) : null;
+          return (
+            <button
+              key={b.id}
+              onClick={() => onOpen(b)}
+              className="from-hero-lift to-hero group relative flex items-start gap-5 overflow-hidden rounded-lg border border-accent/30 bg-gradient-to-br p-5 text-left transition hover:border-accent/70 sm:gap-7 sm:p-7"
+            >
+              <StarField count={26} seed={31} />
 
-            <div className="relative z-10 min-w-0 flex-1">
-              <div className="rule-head mb-1.5">Now reading</div>
-              <h2 className="font-display text-cream truncate text-[22px] leading-tight sm:text-[28px]">
-                {b.title}
-              </h2>
-              <p className="text-chalk mt-1 truncate text-[12.5px]">{b.authors}</p>
-
-              {pct !== null ? (
-                <>
-                  <div className="mt-3 h-1.5 overflow-hidden rounded-sm bg-white/10">
-                    <div
-                      className="from-accent-deep to-accent h-full bg-gradient-to-r transition-[width] duration-500"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <p className="text-chalk-dim mt-1.5 text-[10.5px] uppercase tracking-[0.14em]">
-                    page {b.current_page} of {b.page_count} · {Math.round(pct)}% ·{" "}
-                    {b.page_count! - b.current_page} to go
-                  </p>
-                </>
+              {cover ? (
+                <img
+                  src={cover}
+                  alt=""
+                  className="relative z-10 h-[132px] w-[88px] shrink-0 rounded object-cover shadow-[0_12px_32px_rgba(0,0,0,.6)] transition group-hover:-translate-y-0.5 sm:h-[168px] sm:w-[112px]"
+                />
               ) : (
-                <p className="text-chalk-dim mt-3 text-[10.5px] uppercase tracking-[0.14em]">
-                  add a page count to track progress
-                </p>
+                <div className="bg-panel relative z-10 grid h-[132px] w-[88px] shrink-0 place-items-center rounded sm:h-[168px] sm:w-[112px]">
+                  <BookOpen size={24} className="text-chalk-dim" />
+                </div>
               )}
-            </div>
-          </button>
-        );
-      })}
-    </div>
+
+              <div className="relative z-10 min-w-0 flex-1">
+                <div className="rule-head mb-2">Now reading</div>
+
+                {/* Wraps instead of truncating — long titles are the norm. */}
+                <h2 className="font-display text-cream text-[21px] leading-[1.15] sm:text-[27px]">
+                  {b.title}
+                </h2>
+                {b.authors && (
+                  <p className="text-chalk mt-1.5 text-[12.5px] sm:text-[13.5px]">{b.authors}</p>
+                )}
+                {b.read_count > 1 && (
+                  <p className="text-accent mt-1 text-[10.5px] uppercase tracking-[0.14em]">
+                    re-read · {b.read_count} times
+                  </p>
+                )}
+
+                {pct !== null ? (
+                  <div className="mt-4">
+                    <div className="flex items-baseline gap-2">
+                      <span className="numeral text-accent text-[26px] leading-none">
+                        {Math.round(pct)}%
+                      </span>
+                      <span className="text-chalk-dim text-[11px]">
+                        page {b.current_page} of {b.page_count}
+                      </span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-sm bg-black/30">
+                      <div
+                        className="from-accent-deep to-accent h-full bg-gradient-to-r transition-[width] duration-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <p className="text-chalk-dim mt-1.5 text-[10.5px] uppercase tracking-[0.14em]">
+                      {b.page_count! - b.current_page} pages to go
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-chalk-dim mt-4 text-[10.5px] uppercase tracking-[0.14em]">
+                    add a page count to track progress
+                  </p>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -912,7 +1137,7 @@ function OnDeckStrip({ onOpen }: { onOpen: (b: Book) => void }) {
 }
 
 /* ── Goals ──────────────────────────────────────────────────────────── */
-function GoalCard({ books }: { books: Book[] }) {
+function GoalCard({ books, onDrill }: { books: Book[]; onDrill: (year: string) => void }) {
   const qc = useQueryClient();
   const year = new Date().getFullYear();
   const { data: goal } = useQuery({ queryKey: ["goal", year], queryFn: () => fetchGoal(year) });
@@ -961,10 +1186,21 @@ function GoalCard({ books }: { books: Book[] }) {
           </button>
         </form>
       ) : (
-        <button onClick={() => { setDraft(String(target)); setEditing(true); }} className="w-full text-left">
+        <div className="w-full text-left">
           <div className="flex items-baseline gap-2">
-            <span className="numeral text-accent text-[34px] leading-none">{done}</span>
-            <span className="text-chalk text-[13px]">of {target} books</span>
+            <button
+              onClick={() => onDrill(String(year))}
+              title="Show these books"
+              className="numeral text-accent hover:text-cream text-[34px] leading-none transition-colors"
+            >
+              {done}
+            </button>
+            <button
+              onClick={() => { setDraft(String(target)); setEditing(true); }}
+              className="text-chalk hover:text-cream text-[13px]"
+            >
+              of {target} books
+            </button>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-sm bg-white/10">
             <div
@@ -979,7 +1215,7 @@ function GoalCard({ books }: { books: Book[] }) {
                 : `${Math.abs(Math.round(ahead))} behind pace`}
             </p>
           )}
-        </button>
+        </div>
       )}
     </div>
   );
@@ -1046,7 +1282,11 @@ export default function ReadingPage() {
 
   const [shelf, setShelf] = useState<ReadStatus>("currently-reading");
   const [q, setQ] = useState("");
-  const [tag, setTag] = useState<string | null>(null);
+  // One filter across author / tag / year, so every number on the page can
+  // be a link into the list that produced it.
+  const [filter, setFilter] = useState<
+    { type: "author" | "tag" | "year"; value: string } | null
+  >(null);
   const [open, setOpen] = useState<Book | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -1062,11 +1302,24 @@ export default function ReadingPage() {
     return [...c.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14);
   }, [books]);
 
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const b of books ?? []) for (const t of b.tags) set.add(t);
+    return [...set].sort();
+  }, [books]);
+
   const visible = useMemo(() => {
     const needle = q.trim().toLowerCase();
+    // A filter looks across the whole library; the shelf tabs only apply
+    // when you haven't drilled in from a stat or a tag.
     return (books ?? [])
-      .filter((b) => b.status === shelf)
-      .filter((b) => !tag || b.tags.includes(tag))
+      .filter((b) => (filter ? true : b.status === shelf))
+      .filter((b) => {
+        if (!filter) return true;
+        if (filter.type === "tag") return b.tags.includes(filter.value);
+        if (filter.type === "author") return (b.authors ?? "").includes(filter.value);
+        return b.finished_at?.startsWith(filter.value) ?? false;
+      })
       .filter(
         (b) =>
           !needle ||
@@ -1074,7 +1327,7 @@ export default function ReadingPage() {
           (b.authors ?? "").toLowerCase().includes(needle),
       )
       .slice(0, 300);
-  }, [books, shelf, q, tag]);
+  }, [books, shelf, q, filter]);
 
   // Keep the open drawer in sync with refetched data.
   const openBook = open ? ((books ?? []).find((b) => b.id === open.id) ?? open) : null;
@@ -1136,12 +1389,12 @@ export default function ReadingPage() {
           ))}
         </div>
 
-        {tag && (
+        {filter && (
           <button
-            onClick={() => setTag(null)}
-            className="text-accent self-start text-[11px] uppercase tracking-[0.15em]"
+            onClick={() => setFilter(null)}
+            className="bg-accent/15 text-accent border-accent/40 self-start rounded-sm border px-3 py-1.5 text-[11px] uppercase tracking-[0.15em]"
           >
-            tag: {tag} ✕
+            {filter.type}: {filter.value} · {visible.length} · clear ✕
           </button>
         )}
 
@@ -1169,7 +1422,27 @@ export default function ReadingPage() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[13.5px]">{b.title}</p>
                         <p className="text-chalk-dim truncate text-[11px]">
-                          {b.authors || "Unknown author"}
+                          <span
+                            role="link"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              if (!b.authors) return;
+                              e.stopPropagation(); // don't also open the drawer
+                              setFilter({ type: "author", value: b.authors.split(",")[0].trim() });
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && b.authors) {
+                                e.stopPropagation();
+                                setFilter({ type: "author", value: b.authors.split(",")[0].trim() });
+                              }
+                            }}
+                            className={b.authors ? "hover:text-accent cursor-pointer" : ""}
+                          >
+                            {b.authors || "Unknown author"}
+                          </span>
+                          {b.read_count > 1 && (
+                            <span className="text-accent ml-2">×{b.read_count}</span>
+                          )}
                         </p>
                         {pct !== null && b.status === "currently-reading" && (
                           <div className="mt-1 h-1 w-32 overflow-hidden rounded-sm bg-white/10">
@@ -1196,10 +1469,14 @@ export default function ReadingPage() {
       </div>
 
       <aside className="bg-ink flex flex-col gap-6 border-accent/15 p-4 md:p-6 lg:border-l">
-        <GoalCard books={books ?? []} />
+        <GoalCard books={books ?? []} onDrill={(y) => setFilter({ type: "year", value: y })} />
         <CoverBackfill />
         <PagesCalendar sessions={sessions ?? []} />
-        <MonthlyStats books={books ?? []} sessions={sessions ?? []} />
+        <MonthlyStats
+          books={books ?? []}
+          sessions={sessions ?? []}
+          onDrill={(y) => setFilter({ type: "year", value: y })}
+        />
 
         <div>
           <h2 className="rule-head mb-3">Tags</h2>
@@ -1207,10 +1484,14 @@ export default function ReadingPage() {
             {topTags.map(([t, n]) => (
               <button
                 key={t}
-                onClick={() => setTag(tag === t ? null : t)}
+                onClick={() =>
+                  setFilter(filter?.type === "tag" && filter.value === t ? null : { type: "tag", value: t })
+                }
                 className={cn(
                   "rounded-sm px-2 py-1 text-[10.5px] transition-colors",
-                  tag === t ? "bg-accent text-field" : "bg-panel text-chalk hover:text-cream",
+                  filter?.type === "tag" && filter.value === t
+                    ? "bg-accent text-field"
+                    : "bg-panel text-chalk hover:text-cream",
                 )}
               >
                 {t} <span className="opacity-60">{n}</span>
@@ -1220,7 +1501,14 @@ export default function ReadingPage() {
         </div>
       </aside>
 
-      {openBook && <BookDetail book={openBook} onClose={() => setOpen(null)} />}
+      {openBook && (
+        <BookDetail
+          book={openBook}
+          onClose={() => setOpen(null)}
+          allTags={allTags}
+          onFilter={setFilter}
+        />
+      )}
       {adding && <AddPanel onClose={() => setAdding(false)} />}
     </div>
   );
