@@ -397,6 +397,46 @@ export async function deleteSession(id: string): Promise<void> {
   if (error) throw error;
 }
 
+// ── AI ───────────────────────────────────────────────────────────────────
+
+export type Suggestion = {
+  title: string;
+  author: string;
+  year: string;
+  reason: string;
+};
+
+/**
+ * Ask Claude for books. `search` answers a natural-language request with web
+ * search; `recommend` reads the library and suggests what to read next.
+ */
+export async function askAI(mode: "search" | "recommend", query = ""): Promise<Suggestion[]> {
+  const { data, error } = await supabase.functions.invoke<{
+    recommendations?: Suggestion[];
+    error?: string;
+  }>("book-ai", { body: { mode, query } });
+  // A non-2xx carries the useful message in the body, not in error.message.
+  if (data?.error) throw new Error(data.error);
+  if (error) throw new Error(error.message);
+  return data?.recommendations ?? [];
+}
+
+/**
+ * Same normalisation the Readwise matcher uses server-side: drop the subtitle
+ * and a leading article so "Relentless" finds "Relentless: A Memoir".
+ */
+export function titleKey(raw: string): string {
+  return raw
+    .toLowerCase()
+    .split(/[:\u2014\u2013]|\s-\s/)[0]
+    .replace(/\(.*?\)/g, "")
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9 ]/g, "")
+    .replace(/^(the|a|an) /, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 // ── Readwise highlights ──────────────────────────────────────────────────
 
 export type SyncResult = {

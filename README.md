@@ -11,6 +11,7 @@ Personal dashboard: tasks, habits, and time tracking.
 | Todoist proxy | `supabase/functions/todoist/` | Deno edge function |
 | Book lookup / enrichment | `supabase/functions/book-lookup/`, `supabase/functions/backfill-covers/` | Deno edge functions |
 | Highlights | `supabase/functions/readwise-sync/` | Readwise API v2 |
+| AI search / recommendations | `supabase/functions/book-ai/` | Claude Opus 5 (user's own Anthropic key) |
 | Tasks | Todoist | unified `/api/v1` |
 | Hosting | Vercel | root `vercel.json` builds `CommandCenter-main` |
 
@@ -55,7 +56,7 @@ npm run lint
   variable changes do *not* apply to existing deployments; redeploy after
   editing them.
 - **Edge functions** — `supabase functions deploy <name>` (`todoist`,
-  `book-lookup`, `backfill-covers`, `readwise-sync`)
+  `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`)
 - **Migrations** — applied to the Supabase project; `supabase/migrations/`
   is the record.
 
@@ -87,6 +88,10 @@ npm run lint
   dropped — Readwise stores the cover title) plus author surname, and a bare
   title shared by two library books is treated as no match rather than a
   guess.
+- **Web search results carry citations, and citations are rejected alongside
+  `output_config.format`.** So `book-ai` uses structured outputs for
+  recommendations (no tools) and a parsed JSON block for search (web search) —
+  combining the two 400s.
 - **Third-party keys belong in Supabase, never Vercel.** Anything prefixed
   `VITE_` is compiled into the bundle and shipped to every browser. That applies
   to `TODOIST_API_TOKEN`, `GOOGLE_BOOKS_API_KEY`, `ANTHROPIC_API_KEY`, and

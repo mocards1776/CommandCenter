@@ -15,6 +15,8 @@ import {
   Rows3,
   Highlighter,
   RefreshCw,
+  Wand2,
+  Send,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -38,6 +40,9 @@ import {
   enrichRemaining,
   enrichBook,
   syncReadwise,
+  askAI,
+  titleKey,
+  type Suggestion,
   fetchHighlights,
   fetchHighlightCounts,
   readwiseSyncedAt,
@@ -1493,6 +1498,176 @@ function BookDetail({
   );
 }
 
+/* ── Ask AI ─────────────────────────────────────────────────────────── */
+/**
+ * Two things behind one panel: a natural-language search ("college football
+ * books with audiobooks") and recommendations drawn from the library itself.
+ * A suggestion you already own is marked rather than hidden — knowing it's
+ * already on a shelf is the useful part of the answer.
+ */
+function AskAI({ books, onClose }: { books: Book[]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Suggestion[] | null>(null);
+  const [added, setAdded] = useState<Record<string, string>>({});
+
+  // Indexed once so every result can say whether it's already on a shelf.
+  const owned = useMemo(() => {
+    const m = new Map<string, Book>();
+    for (const b of books) {
+      const k = titleKey(b.title);
+      if (k && !m.has(k)) m.set(k, b);
+    }
+    return m;
+  }, [books]);
+
+  const ask = useMutation({
+    mutationFn: (mode: "search" | "recommend") => askAI(mode, query),
+    onSuccess: (r) => {
+      setResults(r);
+      if (r.length === 0) toast("Nothing came back — try rewording it.", { icon: "🤔" });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Ask failed"),
+  });
+
+  const add = useMutation({
+    mutationFn: async (s: Suggestion) => {
+      const year = Number.parseInt(s.year, 10);
+      const book = await createBook({
+        title: s.title,
+        authors: s.author || null,
+        status: "to-read",
+        published_year: Number.isFinite(year) ? year : null,
+      });
+      // Go straight for the cover and blurb so it doesn't land on the shelf bare.
+      await enrichBook(book.id).catch(() => {});
+      return book;
+    },
+    onSuccess: (book, s) => {
+      setAdded((a) => ({ ...a, [s.title]: book.id }));
+      qc.invalidateQueries({ queryKey: ["books"] });
+      toast.success(`Added ${book.title}`);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not add"),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <aside
+        className="bg-field h-full w-full max-w-lg overflow-y-auto overscroll-contain border-l border-accent/25 p-6"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 5rem)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="relative -mx-6 mb-5 overflow-hidden px-6 pb-5">
+          <StarField count={20} seed={17} />
+          <div className="relative z-10 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="font-display text-cream text-[23px] leading-tight">
+                Ask for a <span className="text-accent">book</span>
+              </h2>
+              <p className="text-chalk-dim mt-1 text-[11.5px]">
+                Describe what you want, or let it read your shelves.
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="text-chalk hover:text-cream bg-field/60 shrink-0 rounded-full p-1.5 backdrop-blur"
+            >
+              <X size={17} />
+            </button>
+          </div>
+        </div>
+
+        <form
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            if (query.trim()) ask.mutate("search");
+          }}
+          className="flex gap-2"
+        >
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="college football books that have audiobooks"
+            className="bg-panel text-cream min-w-0 flex-1 rounded-sm border border-white/10 px-3 py-2.5 text-[13px] outline-none focus:border-accent/50"
+          />
+          <button
+            type="submit"
+            disabled={ask.isPending || !query.trim()}
+            className="from-accent-deep to-accent-dark text-cream flex shrink-0 items-center gap-2 rounded-sm bg-gradient-to-b px-4 text-[10.5px] font-semibold uppercase tracking-[0.15em] disabled:opacity-40"
+          >
+            <Send size={13} />
+            Ask
+          </button>
+        </form>
+
+        <button
+          onClick={() => ask.mutate("recommend")}
+          disabled={ask.isPending}
+          className="text-chalk hover:text-cream mt-2.5 flex w-full items-center justify-center gap-2 rounded-sm border border-white/10 py-2.5 text-[10.5px] uppercase tracking-[0.15em] transition hover:border-accent/50 disabled:opacity-40"
+        >
+          <Wand2 size={13} className="text-accent" />
+          What should I read next?
+        </button>
+
+        {ask.isPending && (
+          <p className="label-caps mt-8 animate-pulse text-center">
+            {ask.variables === "search" ? "Searching" : "Reading your shelves"}
+          </p>
+        )}
+
+        {results && !ask.isPending && (
+          <ul className="mt-6 flex flex-col gap-2.5">
+            {results.map((s) => {
+              const have = owned.get(titleKey(s.title));
+              const justAdded = added[s.title];
+              return (
+                <li
+                  key={`${s.title}-${s.author}`}
+                  className="bg-panel rounded border border-white/[0.07] px-4 py-3"
+                >
+                  <p className="text-cream text-[14px] leading-snug">{s.title}</p>
+                  <p className="text-chalk-dim mt-0.5 text-[11.5px]">
+                    {s.author}
+                    {s.year ? ` · ${s.year}` : ""}
+                  </p>
+                  {s.reason && (
+                    <p className="text-chalk mt-2 text-[12px] leading-relaxed">{s.reason}</p>
+                  )}
+
+                  <div className="mt-2.5">
+                    {have ? (
+                      <span className="text-chalk-dim text-[10.5px] uppercase tracking-[0.15em]">
+                        Already in your library
+                      </span>
+                    ) : justAdded ? (
+                      <span className="text-accent text-[10.5px] uppercase tracking-[0.15em]">
+                        Added to To read
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => add.mutate(s)}
+                        disabled={add.isPending}
+                        className="text-chalk hover:text-accent flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.15em] disabled:opacity-40"
+                      >
+                        <Plus size={12} /> Add to library
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </aside>
+    </div>
+  );
+}
+
 /* ── Add ────────────────────────────────────────────────────────────── */
 function AddPanel({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
@@ -2492,6 +2667,7 @@ export default function ReadingPage() {
   >(null);
   const [open, setOpen] = useState<Book | null>(null);
   const [adding, setAdding] = useState(false);
+  const [asking, setAsking] = useState(false);
   // Jackets or details — remembered, because it's a taste thing, not a mode.
   const [view, setView] = useState<"list" | "grid">(
     () => (localStorage.getItem("reading-view") as "list" | "grid" | null) ?? "list",
@@ -2568,6 +2744,12 @@ export default function ReadingPage() {
             className="from-accent-deep to-accent-dark text-cream flex items-center gap-2 rounded-sm bg-gradient-to-b px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em]"
           >
             <Plus size={13} /> Add
+          </button>
+          <button
+            onClick={() => setAsking(true)}
+            className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-accent/30 px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em] transition hover:border-accent"
+          >
+            <Wand2 size={13} className="text-accent" /> Ask
           </button>
         </div>
 
@@ -2667,6 +2849,7 @@ export default function ReadingPage() {
         />
       )}
       {adding && <AddPanel onClose={() => setAdding(false)} />}
+      {asking && <AskAI books={books ?? []} onClose={() => setAsking(false)} />}
     </div>
   );
 }
