@@ -475,6 +475,23 @@ export async function askAI(mode: "search" | "recommend", query = ""): Promise<S
   return data?.recommendations ?? [];
 }
 
+export type CoverPullResult = { found: boolean; source?: string; cover_path?: string };
+
+/**
+ * Pull a jacket for a blank book. Without `url`, Open Library then Claude +
+ * web search; with `url`, scrape/fetch that page or image link.
+ */
+export async function pullCover(bookId: string, url?: string): Promise<CoverPullResult> {
+  const { data, error } = await supabase.functions.invoke<CoverPullResult & { error?: string }>(
+    "book-ai",
+    { body: { mode: "cover", bookId, url: url?.trim() || undefined } },
+  );
+  if (data?.error) throw new Error(data.error);
+  if (error) throw new Error(error.message);
+  if (!data?.found) throw new Error(data?.error ?? "Couldn't find a cover for this one.");
+  return data;
+}
+
 /**
  * Same normalisation the Readwise matcher uses server-side: drop the subtitle
  * and a leading article so "Relentless" finds "Relentless: A Memoir".

@@ -43,6 +43,7 @@ import {
   enrichBook,
   syncReadwise,
   askAI,
+  pullCover,
   classifyBatch,
   unclassifiedCount,
   titleKey,
@@ -1181,11 +1182,26 @@ function BookDetail({
     mutationFn: () => enrichBook(book.id),
     onSuccess: (r) => {
       refresh();
-      toast[r.blurbs ? "success" : "error"](
-        r.blurbs ? "Found it" : "Nothing found for this one",
-      );
+      const hit = Boolean(r.blurbs || r.found || r.pages);
+      toast[hit ? "success" : "error"](hit ? "Found it" : "Nothing found for this one");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Lookup failed"),
+  });
+
+  const [coverLink, setCoverLink] = useState("");
+  const [showCoverLink, setShowCoverLink] = useState(false);
+
+  const findCover = useMutation({
+    mutationFn: (url?: string) => pullCover(book.id, url),
+    onSuccess: (r) => {
+      refresh();
+      setCoverLink("");
+      setShowCoverLink(false);
+      toast.success(
+        r.source === "ai" ? "Cover found" : r.source === "link" ? "Cover saved" : "Cover found",
+      );
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't find a cover"),
   });
 
   const cover = coverSrc(book);
@@ -1227,9 +1243,24 @@ function BookDetail({
                 className="h-[196px] w-[131px] shrink-0 rounded object-cover shadow-[0_18px_44px_rgba(0,0,0,.7)]"
               />
             ) : (
-              <div className="bg-panel grid h-[196px] w-[131px] shrink-0 place-items-center rounded">
-                <BookOpen size={28} className="text-chalk-dim" />
-              </div>
+              <button
+                type="button"
+                onClick={() => findCover.mutate(undefined)}
+                disabled={findCover.isPending}
+                title="Find cover with AI"
+                className="bg-panel hover:border-accent/40 grid h-[196px] w-[131px] shrink-0 place-items-center rounded border border-dashed border-white/15 transition disabled:opacity-50"
+              >
+                <span className="flex flex-col items-center gap-2 px-2 text-center">
+                  {findCover.isPending ? (
+                    <Sparkles size={22} className="text-accent animate-pulse" />
+                  ) : (
+                    <ImageDown size={22} className="text-chalk-dim" />
+                  )}
+                  <span className="text-chalk-dim text-[10px] uppercase tracking-[0.14em]">
+                    {findCover.isPending ? "Finding…" : "Find cover"}
+                  </span>
+                </span>
+              </button>
             )}
 
             <div className="min-w-0 flex-1">
@@ -1371,6 +1402,54 @@ function BookDetail({
             <Sparkles size={13} />
             {refetchInfo.isPending ? "Looking it up…" : "Fetch book info"}
           </button>
+        )}
+
+        {/* Blank jacket: AI pull first, paste a retailer/image link as backup. */}
+        {!cover && (
+          <div className="mb-5 space-y-2">
+            <button
+              type="button"
+              onClick={() => findCover.mutate(undefined)}
+              disabled={findCover.isPending}
+              className="text-chalk hover:text-cream flex w-full items-center justify-center gap-2 rounded-sm border border-accent/30 py-2 text-[10.5px] uppercase tracking-[0.15em] transition hover:border-accent disabled:opacity-40"
+            >
+              <Wand2 size={13} className="text-accent" />
+              {findCover.isPending && !coverLink ? "Finding cover…" : "Find cover with AI"}
+            </button>
+            {showCoverLink ? (
+              <form
+                onSubmit={(e: FormEvent) => {
+                  e.preventDefault();
+                  if (coverLink.trim()) findCover.mutate(coverLink.trim());
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  value={coverLink}
+                  onChange={(e) => setCoverLink(e.target.value)}
+                  placeholder="https://… cover image or book page"
+                  autoFocus
+                  className="bg-panel text-cream min-w-0 flex-1 rounded-sm border border-white/10 px-3 py-2 text-[12px] outline-none focus:border-accent/50"
+                />
+                <button
+                  type="submit"
+                  disabled={findCover.isPending || !coverLink.trim()}
+                  className="text-cream from-accent-deep to-accent-dark shrink-0 rounded-sm bg-gradient-to-b px-3 text-[10.5px] font-semibold uppercase tracking-[0.15em] disabled:opacity-40"
+                >
+                  Save
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowCoverLink(true)}
+                className="text-chalk-dim hover:text-cream flex w-full items-center justify-center gap-2 py-1 text-[10.5px] uppercase tracking-[0.15em]"
+              >
+                <Link2 size={12} />
+                Or paste a link
+              </button>
+            )}
+          </div>
         )}
 
         {/* Status */}

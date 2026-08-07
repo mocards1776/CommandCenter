@@ -4,17 +4,19 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // which is worse than tracking the current SDK.
 import Anthropic from "npm:@anthropic-ai/sdk";
 
-// Three AI features over the reading library, on the user's own Anthropic key:
+// Four AI features over the reading library, on the user's own Anthropic key:
 //
 //   "recommend" — reads the library and suggests what to read next.
 //   "search"    — natural-language book search, answered with web search.
 //   "classify"  — batched (or single-book via bookId) pass filling fiction/
 //     non-fiction and series. Catalog subjects often settle fiction during
 //     enrich; the model fills the rest and is the only source for series.
+//   "cover"     — find and store a jacket for one book (Open Library first,
+//     then Claude + web search; or a reader-supplied page/image URL).
 //
-// Only "search" skips structured outputs: web search results carry citations,
-// and citations are rejected alongside output_config.format, so that path asks
-// for a JSON block and parses it tolerantly instead of 400ing.
+// Only "search"/"cover" skip structured outputs: web search results carry
+// citations, and citations are rejected alongside output_config.format, so
+// those paths ask for a JSON block and parse it tolerantly instead of 400ing.
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -39,11 +41,13 @@ type Suggestion = {
   cover_url?: string | null;
 };
 
+const UA = "CommandCenter/1.0 (personal reading tracker)";
+
 /**
  * Jacket for a suggested book. Open Library's search returns a cover id, which
  * is enough — these are previews, not library records, so nothing is stored.
  */
-async function coverFor(title: string, author: string): Promise<string | null> {
+async function coverFor(title: string, author: string, size: "M" | "L" = "M"): Promise<string | null> {
   try {
     const params = new URLSearchParams({ title: title.slice(0, 120), limit: "1", fields: "title,cover_i" });
     if (author) params.set("author", author.split(",")[0].trim());
@@ -51,16 +55,194 @@ async function coverFor(title: string, author: string): Promise<string | null> {
     const t = setTimeout(() => ctl.abort(), 6000);
     const res = await fetch(`https://openlibrary.org/search.json?${params}`, {
       signal: ctl.signal,
-      headers: { "User-Agent": "CommandCenter/1.0 (personal reading tracker)" },
+      headers: { "User-Agent": UA },
     }).finally(() => clearTimeout(t));
     if (!res.ok) return null;
     const doc = (await res.json())?.docs?.[0];
     return typeof doc?.cover_i === "number"
-      ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
+      ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-${size}.jpg`
       : null;
   } catch {
     return null;
   }
+}
+
+/** Download an image URL; reject tiny placeholders and non-images. */
+async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string } | null> {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 10000);
+    const res = await fetch(url, {
+      signal: ctl.signal,
+      redirect: "follow",
+      headers: { "User-Agent": UA },
+    }).finally(() => clearTimeout(t));
+    if (!res.ok) return null;
+    const type = (res.headers.get("Content-Type") ?? "").split(";")[0];
+    if (!type.startsWith("image/")) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength < 3000 || bytes.byteLength > 4_000_000) return null;
+    return { bytes, type };
+  } catch {
+    return null;
+  }
+}
+
+/** Pull a cover URL out of a retail/library page (og:image / twitter:image). */
+async function coverFromPage(pageUrl: string): Promise<string | null> {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 10000);
+    const res = await fetch(pageUrl, {
+      signal: ctl.signal,
+      headers: { "User-Agent": UA },
+    }).finally(() => clearTimeout(t));
+    if (!res.ok) return null;
+    const html = await res.text();
+    const patterns = [
+      /<meta[^>]+(?:property|name)=["']og:image["'][^>]*content=["']([^"']+)["']/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']og:image["']/i,
+      /<meta[^>]+(?:property|name)=["']twitter:image["'][^>]*content=["']([^"']+)["']/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']twitter:image["']/i,
+    ];
+    for (const re of patterns) {
+      const m = re.exec(html);
+      if (m?.[1]) {
+        let u = m[1].trim();
+        if (u.startsWith("//")) u = "https:" + u;
+        return u;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function extractCoverUrl(text: string): string | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const candidate = fenced ? fenced[1] : text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+  try {
+    const parsed = JSON.parse(candidate);
+    const u = String(parsed?.cover_url ?? "").trim();
+    if (/^https?:\/\//i.test(u)) return u;
+  } catch {
+    // fall through
+  }
+  const m = text.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"'<>]*)?/i);
+  return m?.[0] ?? null;
+}
+
+/**
+ * Find a jacket for one book and store our own copy. Order: reader URL (if
+ * any) → Open Library → Claude web search. Empty cover_path means a prior
+ * catalog miss; this path is allowed to overwrite that.
+ */
+async function findCover(
+  admin: ReturnType<typeof createClient>,
+  client: Anthropic | null,
+  userId: string,
+  bookId: string,
+  url: string | null,
+) {
+  const { data: book, error } = await admin
+    .from("books")
+    .select("id,title,authors,isbn,cover_path")
+    .eq("user_id", userId)
+    .eq("id", bookId)
+    .maybeSingle();
+  if (error) return json({ error: error.message }, 500);
+  if (!book) return json({ error: "Book not found" }, 404);
+
+  type Candidate = { url: string; source: string };
+  const candidates: Candidate[] = [];
+
+  if (url) {
+    // Direct image, or a book page whose og:image is the jacket.
+    if (/\.(jpg|jpeg|png|webp)(\?|$)/i.test(url) || /covers\.openlibrary\.org/i.test(url)) {
+      candidates.push({ url, source: "link" });
+    } else {
+      const fromPage = await coverFromPage(url);
+      if (fromPage) candidates.push({ url: fromPage, source: "link" });
+      // Image CDNs sometimes omit a file extension — try the URL itself last.
+      candidates.push({ url, source: "link" });
+    }
+  } else {
+    const ol = await coverFor(String(book.title ?? ""), book.authors ?? "", "L");
+    if (ol) candidates.push({ url: ol, source: "openlibrary" });
+  }
+
+  let img: { bytes: Uint8Array; type: string } | null = null;
+  let usedUrl: string | null = null;
+  let source = "none";
+  for (const c of candidates) {
+    img = await grabImage(c.url);
+    if (img) {
+      usedUrl = c.url;
+      source = c.source;
+      break;
+    }
+  }
+
+  // Catalog miss (or dead OL link): spend tokens on a web search.
+  if (!img && !url && client) {
+    const q =
+      `"${book.title}"${book.authors ? ` ${book.authors.split(",")[0].trim()}` : ""}` +
+      `${book.isbn ? ` ISBN ${book.isbn}` : ""} book cover image`;
+    try {
+      const message = await askClaude(client, {
+        model: MODEL,
+        max_tokens: 4000,
+        thinking: { type: "adaptive" },
+        output_config: { effort: "low" },
+        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 4 }],
+        system:
+          "You find a direct URL to a book cover image (jpg/png/webp). Prefer Open Library, " +
+          "Google Books, or publisher art. Answer with a ```json fenced block and nothing else: " +
+          '{"cover_url":"https://..."}. If you cannot find one, return {"cover_url":""}.',
+        messages: [{ role: "user", content: `Find the cover image for: ${q}` }],
+      });
+      if (message.stop_reason !== "refusal") {
+        const text = (message.content ?? [])
+          .filter((b: { type: string }) => b.type === "text")
+          .map((b: { text: string }) => b.text)
+          .join("\n");
+        const found = extractCoverUrl(text);
+        if (found) {
+          img = await grabImage(found);
+          if (img) {
+            usedUrl = found;
+            source = "ai";
+          }
+        }
+      }
+    } catch {
+      // report nothing found below
+    }
+  }
+
+  if (!img || !usedUrl) {
+    return json({ error: "Couldn't find a cover for this one.", found: false }, 404);
+  }
+
+  const ext = img.type.includes("png") ? "png" : img.type.includes("webp") ? "webp" : "jpg";
+  const path = `${userId}/${book.id}.${ext}`;
+  const { error: upErr } = await admin.storage
+    .from("book-covers")
+    .upload(path, img.bytes, { contentType: img.type, upsert: true });
+  if (upErr) return json({ error: upErr.message }, 500);
+
+  const { error: updErr } = await admin
+    .from("books")
+    .update({
+      cover_path: path,
+      cover_url: usedUrl,
+      locked_at: new Date().toISOString(),
+    })
+    .eq("id", book.id);
+  if (updErr) return json({ error: updErr.message }, 500);
+
+  return json({ found: true, source, cover_path: path });
 }
 
 const CLASSIFY_SCHEMA = {
@@ -285,17 +467,6 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) {
-    return json(
-      {
-        error:
-          "No Anthropic key on the server. Add ANTHROPIC_API_KEY under Edge Functions → Secrets in Supabase (not Vercel).",
-      },
-      400,
-    );
-  }
-
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 
   // Identify with the caller's own token; read with the service role scoped to
@@ -311,22 +482,43 @@ Deno.serve(async (req: Request) => {
   let query = "";
   let batch = 60;
   let bookId: string | null = null;
+  let coverUrl: string | null = null;
   try {
     const body = await req.json();
-    if (body?.mode === "search" || body?.mode === "classify") mode = body.mode;
+    if (body?.mode === "search" || body?.mode === "classify" || body?.mode === "cover") {
+      mode = body.mode;
+    }
     query = String(body?.query ?? "").slice(0, 500);
     if (typeof body?.batch === "number") batch = Math.min(100, Math.max(10, body.batch));
     if (typeof body?.bookId === "string") bookId = body.bookId;
+    if (typeof body?.url === "string" && body.url.trim()) coverUrl = body.url.trim().slice(0, 2000);
   } catch {
     // defaults are fine
   }
   if (mode === "search" && !query.trim()) return json({ error: "Ask me something." }, 400);
+  if (mode === "cover" && !bookId) return json({ error: "Which book?" }, 400);
 
   const admin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const client = new Anthropic({ apiKey });
+
+  // Cover-from-link only needs storage; everything else needs Claude.
+  const needsClaude = !(mode === "cover" && coverUrl);
+  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  if (needsClaude && !apiKey) {
+    return json(
+      {
+        error:
+          "No Anthropic key on the server. Add ANTHROPIC_API_KEY under Edge Functions → Secrets in Supabase (not Vercel).",
+      },
+      400,
+    );
+  }
+  const client = apiKey ? new Anthropic({ apiKey }) : null;
 
   if (mode === "classify") {
-    return await classify(admin, client, userId, batch, bookId);
+    return await classify(admin, client!, userId, batch, bookId);
+  }
+  if (mode === "cover") {
+    return await findCover(admin, client, userId, bookId!, coverUrl);
   }
 
   const { data: books, error } = await admin
@@ -337,7 +529,7 @@ Deno.serve(async (req: Request) => {
 
   const taste = digest(books ?? []);
 
-  const ask = (params: Record<string, unknown>) => askClaude(client, params);
+  const ask = (params: Record<string, unknown>) => askClaude(client!, params);
 
   try {
     let message;
