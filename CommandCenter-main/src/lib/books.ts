@@ -190,3 +190,194 @@ export async function clearBooks(): Promise<void> {
   const { error } = await supabase.from("books").delete().eq("user_id", userId);
   if (error) throw error;
 }
+
+// ── Mutations ────────────────────────────────────────────────────────────
+
+export async function updateBook(id: string, patch: Partial<Book>): Promise<Book> {
+  const { data, error } = await supabase.from("books").update(patch).eq("id", id).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function createBook(input: Partial<BookInsert> & { title: string }): Promise<Book> {
+  const user_id = await requireUserId();
+  const { data, error } = await supabase
+    .from("books")
+    .insert({ ...input, user_id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteBook(id: string): Promise<void> {
+  const { error } = await supabase.from("books").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ── Lookup by URL ────────────────────────────────────────────────────────
+
+export type Lookup = {
+  title: string | null;
+  subtitle: string | null;
+  authors: string | null;
+  isbn: string | null;
+  page_count: number | null;
+  publisher: string | null;
+  published_year: number | null;
+  description: string | null;
+  cover_url: string | null;
+  cover_base64: string | null;
+  cover_type: string | null;
+  source_url: string;
+};
+
+export async function lookupBookUrl(url: string): Promise<Lookup> {
+  const { data, error } = await supabase.functions.invoke<Lookup & { error?: string }>(
+    "book-lookup",
+    { body: { url } },
+  );
+  if (error) throw new Error(error.message);
+  if (!data || (data as { error?: string }).error) {
+    throw new Error((data as { error?: string })?.error ?? "Lookup failed");
+  }
+  return data;
+}
+
+/**
+ * Store our own copy of the cover. This is what "locking" means: once the
+ * bytes are in our bucket, the record no longer depends on the retailer
+ * keeping the image (or the page) alive.
+ */
+export async function storeCover(
+  bookId: string,
+  base64: string,
+  contentType: string,
+): Promise<string> {
+  const userId = await requireUserId();
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+
+  const ext = contentType.includes("png") ? "png" : contentType.includes("webp") ? "webp" : "jpg";
+  // Path must start with the user id — the storage policy keys on that folder.
+  const path = `${userId}/${bookId}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from("book-covers")
+    .upload(path, bytes, { contentType, upsert: true });
+  if (error) throw error;
+  return path;
+}
+
+export function coverSrc(book: Book): string | null {
+  // Prefer our stored copy; fall back to the remote URL only if we never got bytes.
+  if (book.cover_path) {
+    return supabase.storage.from("book-covers").getPublicUrl(book.cover_path).data.publicUrl;
+  }
+  return book.cover_url ?? null;
+}
+
+/** Create a book from a URL lookup, storing the cover so it can't rot. */
+export async function addBookFromUrl(url: string, overrides: Partial<BookInsert> = {}) {
+  const found = await lookupBookUrl(url);
+  const book = await createBook({
+    title: found.title?.trim() || "Untitled",
+    subtitle: found.subtitle,
+    authors: found.authors,
+    isbn: found.isbn,
+    page_count: found.page_count,
+    publisher: found.publisher,
+    published_year: found.published_year,
+    description: found.description,
+    cover_url: found.cover_url,
+    source_url: found.source_url,
+    status: "to-read",
+    ...overrides,
+  });
+
+  if (found.cover_base64 && found.cover_type) {
+    try {
+      const path = await storeCover(book.id, found.cover_base64, found.cover_type);
+      return await updateBook(book.id, { cover_path: path, locked_at: new Date().toISOString() });
+    } catch {
+      // The book is saved either way; a failed cover upload isn't fatal.
+    }
+  }
+  return await updateBook(book.id, { locked_at: new Date().toISOString() });
+}
+
+// ── Reading sessions ─────────────────────────────────────────────────────
+
+export type ReadingSession = {
+  id: string;
+  user_id: string;
+  book_id: string | null;
+  session_date: string;
+  pages_read: number;
+  minutes: number | null;
+  note: string | null;
+  created_at: string;
+};
+
+export async function fetchSessions(): Promise<ReadingSession[]> {
+  const { data, error } = await supabase
+    .from("reading_sessions")
+    .select("*")
+    .order("session_date", { ascending: false })
+    .limit(2000);
+  if (error) throw error;
+  return (data ?? []) as ReadingSession[];
+}
+
+/**
+ * Log pages read. Also advances the book's current_page, and finishes the
+ * book automatically once it reaches its page count — otherwise "read 40
+ * pages" and "mark as read" are two chores instead of one.
+ */
+export async function logPages(opts: {
+  bookId: string;
+  pages: number;
+  date: string;
+  minutes?: number | null;
+  note?: string | null;
+  currentPage: number;
+  pageCount: number | null;
+  status: string;
+}): Promise<{ finished: boolean }> {
+  const user_id = await requireUserId();
+
+  const { error } = await supabase.from("reading_sessions").insert({
+    user_id,
+    book_id: opts.bookId,
+    session_date: opts.date,
+    pages_read: opts.pages,
+    minutes: opts.minutes ?? null,
+    note: opts.note ?? null,
+  });
+  if (error) throw error;
+
+  const nextPage = Math.max(0, opts.currentPage + opts.pages);
+  const finished = opts.pageCount !== null && nextPage >= opts.pageCount;
+
+  const patch: Partial<Book> = {
+    current_page: opts.pageCount ? Math.min(nextPage, opts.pageCount) : nextPage,
+  };
+  if (finished) {
+    patch.status = "read";
+    patch.finished_at = opts.date;
+    patch.last_date_read = opts.date;
+  } else if (opts.status === "to-read") {
+    // First pages logged means you've started it.
+    patch.status = "currently-reading";
+    patch.started_at = opts.date;
+  }
+
+  await updateBook(opts.bookId, patch);
+  return { finished };
+}
+
+export async function deleteSession(id: string): Promise<void> {
+  const { error } = await supabase.from("reading_sessions").delete().eq("id", id);
+  if (error) throw error;
+}
