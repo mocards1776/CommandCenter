@@ -506,3 +506,73 @@ export async function setProgress(opts: {
   await updateBook(opts.bookId, { current_page: Math.max(0, opts.toPage) });
   return { finished: false, delta: 0 };
 }
+
+/** Books still awaiting enrichment (covers, page counts, descriptions). */
+export async function enrichRemaining(): Promise<number> {
+  const { count, error } = await supabase
+    .from("books")
+    .select("id", { count: "exact", head: true })
+    .is("enriched_at", null)
+    .not("isbn", "is", null);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/** Reading sessions for one book, newest first. */
+export async function fetchBookSessions(bookId: string): Promise<ReadingSession[]> {
+  const { data, error } = await supabase
+    .from("reading_sessions")
+    .select("*")
+    .eq("book_id", bookId)
+    .order("session_date", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ReadingSession[];
+}
+
+// ── Other editions ───────────────────────────────────────────────────────
+
+export type Edition = {
+  key: string;
+  title: string;
+  publishers: string[];
+  publish_date?: string;
+  number_of_pages?: number;
+  isbn?: string;
+  cover_id?: number;
+};
+
+/**
+ * Other editions of the same work, via Open Library. Useful mainly for
+ * borrowing a page count when your own edition has none — the StoryGraph
+ * export carries no page counts at all.
+ */
+export async function fetchEditions(isbn: string): Promise<Edition[]> {
+  const clean = isbn.replace(/[^0-9Xx]/g, "");
+  if (clean.length !== 13 && clean.length !== 10) return [];
+
+  // ISBN -> edition -> its work -> all editions of that work.
+  const edRes = await fetch(`https://openlibrary.org/isbn/${clean}.json`);
+  if (!edRes.ok) return [];
+  const ed = await edRes.json();
+  const workKey: string | undefined = ed?.works?.[0]?.key;
+  if (!workKey) return [];
+
+  const listRes = await fetch(`https://openlibrary.org${workKey}/editions.json?limit=40`);
+  if (!listRes.ok) return [];
+  const list = await listRes.json();
+
+  return (list.entries ?? [])
+    .map(
+      (e: Record<string, unknown>): Edition => ({
+        key: String(e.key ?? ""),
+        title: String(e.title ?? ""),
+        publishers: (e.publishers as string[]) ?? [],
+        publish_date: e.publish_date as string | undefined,
+        number_of_pages: e.number_of_pages as number | undefined,
+        isbn: ((e.isbn_13 as string[]) ?? (e.isbn_10 as string[]) ?? [])[0],
+        cover_id: ((e.covers as number[]) ?? [])[0],
+      }),
+    )
+    .filter((e: Edition) => e.number_of_pages || e.cover_id)
+    .slice(0, 12);
+}

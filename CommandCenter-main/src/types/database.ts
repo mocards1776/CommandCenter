@@ -267,6 +267,7 @@ export type Database = {
           favorite: boolean;
           on_deck: boolean;
           on_deck_order: number;
+          enriched_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -306,6 +307,7 @@ export type Database = {
           favorite?: boolean;
           on_deck?: boolean;
           on_deck_order?: number;
+          enriched_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

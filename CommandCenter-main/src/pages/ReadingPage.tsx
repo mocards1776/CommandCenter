@@ -13,7 +13,6 @@ import {
   logPages,
   coverSrc,
   backfillCoversBatch,
-  coversRemaining,
   fetchOnDeck,
   setOnDeck,
   fetchGoal,
@@ -21,6 +20,10 @@ import {
   setProgress,
   percentToPage,
   pageToPercent,
+  enrichRemaining,
+  fetchBookSessions,
+  fetchEditions,
+  type Edition,
   type ReadingSession,
 } from "@/lib/books";
 import StarField from "@/components/StarField";
@@ -394,6 +397,212 @@ function TagInput({
   );
 }
 
+
+/* ── Search ─────────────────────────────────────────────────────────── */
+/**
+ * Searches the whole library, not the open shelf. Results drop down as you
+ * type — with 2,600 books, filtering one tab was never going to find things.
+ */
+function LibrarySearch({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => void }) {
+  const [q, setQ] = useState("");
+  const [focused, setFocused] = useState(false);
+
+  const results = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (needle.length < 2) return [];
+    const scored: { b: Book; score: number }[] = [];
+    for (const b of books) {
+      const title = b.title.toLowerCase();
+      const author = (b.authors ?? "").toLowerCase();
+      let score = -1;
+      // Rank: title prefix beats title substring beats author.
+      if (title.startsWith(needle)) score = 0;
+      else if (title.includes(needle)) score = 1;
+      else if (author.includes(needle)) score = 2;
+      else if (b.tags.some((t) => t.toLowerCase().includes(needle))) score = 3;
+      if (score >= 0) scored.push({ b, score });
+      if (scored.length > 400) break;
+    }
+    return scored.sort((x, y) => x.score - y.score).slice(0, 8).map((x) => x.b);
+  }, [q, books]);
+
+  return (
+    <div className="relative flex-1">
+      <div className="bg-panel flex items-center gap-2.5 rounded-sm border border-white/10 px-4 focus-within:border-accent/50">
+        <Search size={14} className="text-chalk-dim shrink-0" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onFocus={() => setFocused(true)}
+          // Delay so a click on a result registers before the list unmounts.
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          placeholder="Search your whole library"
+          className="placeholder:text-chalk-dim flex-1 bg-transparent py-2.5 text-[13px] outline-none"
+        />
+        {q && (
+          <button onClick={() => setQ("")} className="text-chalk-dim hover:text-cream">
+            <X size={13} />
+          </button>
+        )}
+      </div>
+
+      {focused && q.trim().length >= 2 && (
+        <div className="bg-panel absolute z-30 mt-1 w-full overflow-hidden rounded border border-accent/30 shadow-2xl">
+          {results.length === 0 ? (
+            <p className="text-chalk-dim px-4 py-3 text-[12px]">No matches.</p>
+          ) : (
+            results.map((b) => {
+              const cover = coverSrc(b);
+              return (
+                <button
+                  key={b.id}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onOpen(b);
+                    setQ("");
+                  }}
+                  className="hover:bg-accent/15 flex w-full items-center gap-3 border-b border-white/[0.05] px-3 py-2 text-left last:border-0"
+                >
+                  {cover ? (
+                    <img src={cover} alt="" className="h-10 w-7 shrink-0 rounded-[2px] object-cover" />
+                  ) : (
+                    <div className="bg-field grid h-10 w-7 shrink-0 place-items-center rounded-[2px]">
+                      <BookOpen size={11} className="text-chalk-dim" />
+                    </div>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="text-cream block truncate text-[12.5px]">{b.title}</span>
+                    <span className="text-chalk-dim block truncate text-[10.5px]">
+                      {b.authors || "Unknown author"}
+                    </span>
+                  </span>
+                  <span className="text-chalk-dim shrink-0 text-[9.5px] uppercase tracking-[0.12em]">
+                    {SHELVES.find((sh) => sh.key === b.status)?.label}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Reading history ────────────────────────────────────────────────── */
+function ReadingHistory({ book }: { book: Book }) {
+  const { data: sessions } = useQuery({
+    queryKey: ["book-sessions", book.id],
+    queryFn: () => fetchBookSessions(book.id),
+  });
+
+  // The import kept StoryGraph's raw ranges; they're the only history that
+  // exists for books finished before session logging.
+  const imported = (book.dates_read ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  if ((sessions?.length ?? 0) === 0 && imported.length === 0 && !book.finished_at) return null;
+
+  return (
+    <div className="mb-4">
+      <span className="label-caps">Reading history</span>
+
+      {book.finished_at && (
+        <p className="text-chalk mt-2 text-[12.5px]">
+          Finished {book.finished_at}
+          {book.started_at ? ` · started ${book.started_at}` : ""}
+        </p>
+      )}
+
+      {imported.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {imported.map((d, i) => (
+            <span key={i} className="bg-panel text-chalk rounded-sm px-2 py-1 text-[10.5px]">
+              {d}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {sessions && sessions.length > 0 && (
+        <ul className="mt-2">
+          {sessions.slice(0, 12).map((s) => (
+            <li
+              key={s.id}
+              className="flex items-center justify-between border-b border-white/[0.05] py-1.5 text-[12px] last:border-0"
+            >
+              <span className="text-chalk">{s.session_date}</span>
+              <span className="numeral text-accent">{s.pages_read} pages</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* ── Other editions ─────────────────────────────────────────────────── */
+function Editions({ book, onUse }: { book: Book; onUse: (pages: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const { data, isLoading } = useQuery({
+    queryKey: ["editions", book.isbn],
+    queryFn: () => fetchEditions(book.isbn ?? ""),
+    enabled: open && Boolean(book.isbn),
+  });
+
+  if (!book.isbn) return null;
+
+  return (
+    <div className="mb-4">
+      <button onClick={() => setOpen(!open)} className="label-caps hover:text-cream">
+        {open ? "▾" : "▸"} Other editions
+      </button>
+
+      {open && (
+        <div className="mt-2">
+          {isLoading && <p className="text-chalk-dim text-[12px]">Looking…</p>}
+          {data && data.length === 0 && (
+            <p className="text-chalk-dim text-[12px]">No other editions found.</p>
+          )}
+          {data?.map((e: Edition) => (
+            <div
+              key={e.key}
+              className="flex items-center gap-3 border-b border-white/[0.05] py-2 last:border-0"
+            >
+              {e.cover_id ? (
+                <img
+                  src={`https://covers.openlibrary.org/b/id/${e.cover_id}-S.jpg`}
+                  alt=""
+                  className="h-11 w-8 shrink-0 rounded-[2px] object-cover"
+                />
+              ) : (
+                <div className="bg-panel h-11 w-8 shrink-0 rounded-[2px]" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-cream truncate text-[12px]">{e.publishers[0] ?? "Unknown"}</p>
+                <p className="text-chalk-dim text-[10.5px]">
+                  {e.publish_date ?? "—"}
+                  {e.number_of_pages ? ` · ${e.number_of_pages}p` : ""}
+                </p>
+              </div>
+              {e.number_of_pages && (
+                <button
+                  onClick={() => onUse(e.number_of_pages!)}
+                  className="bg-panel text-chalk hover:text-accent shrink-0 rounded-sm px-2 py-1 text-[10px] uppercase tracking-[0.1em]"
+                >
+                  Use {e.number_of_pages}p
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Book detail ────────────────────────────────────────────────────── */
 function BookDetail({
   book,
@@ -753,6 +962,9 @@ function BookDetail({
             onAdd={(t) => patch.mutate({ tags: [...book.tags, t] })}
           />
         </div>
+
+        <ReadingHistory book={book} />
+        <Editions book={book} onUse={(p) => patch.mutate({ page_count: p })} />
 
         {/* Review */}
         <label className="mb-4 block">
@@ -1224,7 +1436,7 @@ function GoalCard({ books, onDrill }: { books: Book[]; onDrill: (year: string) =
 /* ── Cover backfill ─────────────────────────────────────────────────── */
 function CoverBackfill() {
   const qc = useQueryClient();
-  const { data: remaining } = useQuery({ queryKey: ["covers-remaining"], queryFn: coversRemaining });
+  const { data: remaining } = useQuery({ queryKey: ["enrich-remaining"], queryFn: enrichRemaining });
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ found: number; left: number } | null>(null);
 
@@ -1235,18 +1447,18 @@ function CoverBackfill() {
       // Loop batches until the server says nothing is left. Bounded so a
       // permanently-failing row can't spin forever.
       for (let i = 0; i < 200; i++) {
-        const r = await backfillCoversBatch(25);
+        const r = await backfillCoversBatch(12);
         found += r.found;
         setProgress({ found, left: r.remaining });
         if (r.remaining === 0 || r.processed === 0) break;
       }
-      toast.success(`Found ${found} covers`);
+      toast.success(`Enriched ${found} books`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Backfill failed");
     } finally {
       setRunning(false);
       qc.invalidateQueries({ queryKey: ["books"] });
-      qc.invalidateQueries({ queryKey: ["covers-remaining"] });
+      qc.invalidateQueries({ queryKey: ["enrich-remaining"] });
       qc.invalidateQueries({ queryKey: ["on-deck"] });
     }
   }
@@ -1255,10 +1467,10 @@ function CoverBackfill() {
 
   return (
     <div>
-      <h2 className="rule-head mb-2">Covers</h2>
+      <h2 className="rule-head mb-2">Book details</h2>
       <p className="text-chalk-dim mb-2 text-[11px] leading-relaxed">
-        {remaining.toLocaleString()} books have an ISBN but no cover yet. Roughly 6 in 10 will be
-        found.
+        {remaining.toLocaleString()} books still need details. This fetches cover art, page
+        counts, descriptions and publishers — none of which StoryGraph exports.
       </p>
       <button
         onClick={run}
@@ -1268,7 +1480,7 @@ function CoverBackfill() {
         <ImageDown size={14} />
         {running
           ? `${progress?.found ?? 0} found · ${progress?.left ?? remaining} left`
-          : "Fetch covers"}
+          : "Fetch details"}
       </button>
     </div>
   );
@@ -1281,7 +1493,6 @@ export default function ReadingPage() {
   const { data: sessions } = useQuery({ queryKey: ["reading-sessions"], queryFn: fetchSessions });
 
   const [shelf, setShelf] = useState<ReadStatus>("currently-reading");
-  const [q, setQ] = useState("");
   // One filter across author / tag / year, so every number on the page can
   // be a link into the list that produced it.
   const [filter, setFilter] = useState<
@@ -1309,7 +1520,6 @@ export default function ReadingPage() {
   }, [books]);
 
   const visible = useMemo(() => {
-    const needle = q.trim().toLowerCase();
     // A filter looks across the whole library; the shelf tabs only apply
     // when you haven't drilled in from a stat or a tag.
     return (books ?? [])
@@ -1320,14 +1530,8 @@ export default function ReadingPage() {
         if (filter.type === "author") return (b.authors ?? "").includes(filter.value);
         return b.finished_at?.startsWith(filter.value) ?? false;
       })
-      .filter(
-        (b) =>
-          !needle ||
-          b.title.toLowerCase().includes(needle) ||
-          (b.authors ?? "").toLowerCase().includes(needle),
-      )
       .slice(0, 300);
-  }, [books, shelf, q, filter]);
+  }, [books, shelf, filter]);
 
   // Keep the open drawer in sync with refetched data.
   const openBook = open ? ((books ?? []).find((b) => b.id === open.id) ?? open) : null;
@@ -1357,15 +1561,7 @@ export default function ReadingPage() {
         <OnDeckStrip onOpen={setOpen} />
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="bg-panel flex flex-1 items-center gap-2.5 rounded-sm border border-white/10 px-4 focus-within:border-accent/50">
-            <Search size={14} className="text-chalk-dim shrink-0" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search title or author"
-              className="placeholder:text-chalk-dim flex-1 bg-transparent py-2.5 text-[13px] outline-none"
-            />
-          </div>
+          <LibrarySearch books={books ?? []} onOpen={setOpen} />
           <button
             onClick={() => setAdding(true)}
             className="from-accent-deep to-accent-dark text-cream flex items-center gap-2 rounded-sm bg-gradient-to-b px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em]"
