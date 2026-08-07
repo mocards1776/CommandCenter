@@ -3,6 +3,7 @@ import { LayoutDashboard, ListChecks, Repeat, BookOpen, LogOut } from "lucide-re
 import { useAuth } from "@/lib/auth-context";
 import StarField from "@/components/StarField";
 import InstallHint from "@/components/InstallHint";
+import { useRouteManifest } from "@/hooks/useRouteManifest";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -14,6 +15,7 @@ const NAV = [
 
 export default function AppShell() {
   const { user, signOut } = useAuth();
+  useRouteManifest();
 
   const today = new Date().toLocaleDateString("en-US", {
     timeZone: "America/Chicago",
@@ -25,8 +27,13 @@ export default function AppShell() {
   return (
     <div className="flex min-h-screen flex-col">
       <header
-        className="bg-ink relative flex h-[58px] shrink-0 items-center justify-between overflow-hidden px-4 md:h-[70px] md:px-8"
-        style={{ paddingTop: "env(safe-area-inset-top)" }}
+        // min-h, not h: with a fixed height the safe-area padding pushed the
+        // title out of the box instead of moving the box down.
+        className="bg-ink relative flex min-h-[58px] shrink-0 items-center justify-between overflow-hidden px-4 md:min-h-[70px] md:px-8"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 0.5rem)",
+          paddingBottom: "0.5rem",
+        }}
       >
         <StarField count={26} seed={3} />
         <div className="relative z-10 flex items-center gap-3 md:gap-4">

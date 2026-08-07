@@ -36,6 +36,9 @@ import {
   sortReadLog,
   type ReadThrough,
   periodStats,
+  fetchDailyGoal,
+  saveDailyGoal,
+  dailyProgress,
   type ReadingSession,
 } from "@/lib/books";
 import StarField from "@/components/StarField";
@@ -131,7 +134,9 @@ function PagesCalendar({ sessions }: { sessions: ReadingSession[] }) {
     const cols: { date: string; pages: number }[][] = [];
     let col: { date: string; pages: number }[] = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const iso = d.toISOString().slice(0, 10);
+      // Local parts, not toISOString(): that converts to UTC and shifts the
+      // day for anything after ~7pm Central.
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       col.push({ date: iso, pages: byDay.get(iso) ?? 0 });
       if (col.length === 7) {
         cols.push(col);
@@ -752,7 +757,15 @@ function ReadingHistory({ book }: { book: Book }) {
                       </span>
                     )}
                     <button
-                      onClick={() => removeRead.mutate(i)}
+                      onClick={() => {
+                        const when =
+                          entry.start && entry.end && entry.start !== entry.end
+                            ? `${fmtLongDate(entry.start)} – ${fmtLongDate(entry.end)}`
+                            : fmtLongDate(entry.end ?? entry.start) || "this read";
+                        // Deleting a read-through changes the count and the
+                        // finish date, so it always asks first.
+                        if (confirm(`Delete the read from ${when}?`)) removeRead.mutate(i);
+                      }}
                       aria-label="Delete this read"
                       title="Delete this read"
                       className="text-chalk-dim hover:text-alert opacity-60 transition group-hover:opacity-100"
@@ -767,7 +780,26 @@ function ReadingHistory({ book }: { book: Book }) {
         )}
       </div>
 
-      {sessions && sessions.length > 0 && (
+      {sessions && sessions.length > 0 && book.status === "read" && (
+        <details className="mt-1">
+          <summary className="text-chalk-dim cursor-pointer text-[10.5px] uppercase tracking-[0.14em]">
+            {sessions.length} day{sessions.length === 1 ? "" : "s"} of page logs
+          </summary>
+          <ul className="mt-1">
+            {sessions.slice(0, 40).map((sess) => (
+              <li
+                key={sess.id}
+                className="flex items-center justify-between border-b border-white/[0.05] py-1 text-[11.5px] last:border-0"
+              >
+                <span className="text-chalk-dim">{fmtLongDate(sess.session_date)}</span>
+                <span className="numeral text-chalk">{sess.pages_read}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {sessions && sessions.length > 0 && book.status !== "read" && (
         <ul>
           {sessions.map((sess) => (
             <li key={sess.id} className="border-b border-white/[0.05] py-1.5 last:border-0">
@@ -1042,6 +1074,12 @@ function BookDetail({
             <p className="text-chalk-dim mt-2 text-[11px]">
               Read {book.read_count} time{book.read_count === 1 ? "" : "s"}
             </p>
+
+            {book.started_at && (
+              <p className="text-chalk-dim mt-1 text-[11px]">
+                Started {fmtLongDate(book.started_at)}
+              </p>
+            )}
 
             {book.locked_at && (
               <p className="text-chalk-dim mt-1.5 text-[10px] uppercase tracking-[0.12em]">
@@ -1561,8 +1599,13 @@ function NowReading({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => voi
                 {b.authors && (
                   <p className="text-chalk mt-1.5 text-[12.5px] sm:text-[13.5px]">{b.authors}</p>
                 )}
+                {b.started_at && (
+                  <p className="text-chalk-dim mt-1 text-[10.5px] uppercase tracking-[0.14em]">
+                    started {fmtLongDate(b.started_at)}
+                  </p>
+                )}
                 {b.read_count > 1 && (
-                  <p className="text-accent mt-1 text-[10.5px] uppercase tracking-[0.14em]">
+                  <p className="text-accent mt-0.5 text-[10.5px] uppercase tracking-[0.14em]">
                     re-read · {b.read_count} times
                   </p>
                 )}
@@ -1725,6 +1768,101 @@ function GoalCard({ books, onDrill }: { books: Book[]; onDrill: (year: string) =
 }
 
 
+
+
+/* ── Pages today + daily goal ───────────────────────────────────────── */
+function DailyPages({ sessions }: { sessions: ReadingSession[] }) {
+  const qc = useQueryClient();
+  const { data: goal } = useQuery({ queryKey: ["daily-goal"], queryFn: fetchDailyGoal });
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const p = useMemo(() => dailyProgress(sessions, goal ?? null), [sessions, goal]);
+
+  const save = useMutation({
+    mutationFn: (n: number | null) => saveDailyGoal(n),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["daily-goal"] });
+      setEditing(false);
+    },
+  });
+
+  const pct = p.goal ? Math.min(100, (p.today / p.goal) * 100) : null;
+
+  return (
+    <div>
+      <h2 className="rule-head mb-3">Today</h2>
+
+      <div className="flex items-baseline gap-2">
+        <span className="numeral text-accent text-[38px] leading-none">{p.today}</span>
+        <span className="text-chalk text-[13px]">
+          page{p.today === 1 ? "" : "s"}
+          {p.goal ? ` of ${p.goal}` : ""}
+        </span>
+      </div>
+
+      {pct !== null && (
+        <div className="mt-2 h-2 overflow-hidden rounded-sm bg-white/10">
+          <div
+            className={cn(
+              "h-full transition-[width] duration-500",
+              p.metToday ? "bg-turf" : "from-accent-deep to-accent bg-gradient-to-r",
+            )}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+
+      {p.goal !== null && (
+        <div className="mt-2 flex items-center gap-3">
+          <span className={cn("text-[11px]", p.metToday ? "text-accent" : "text-chalk-dim")}>
+            {p.metToday ? "✓ goal met" : `${p.goal - p.today} to go`}
+          </span>
+          {p.streak > 0 && (
+            <span className="text-accent text-[11px]">
+              🔥 {p.streak} day{p.streak === 1 ? "" : "s"}
+            </span>
+          )}
+          {p.bestStreak > p.streak && (
+            <span className="text-chalk-dim text-[10.5px]">best {p.bestStreak}</span>
+          )}
+        </div>
+      )}
+
+      {editing || p.goal === null ? (
+        <form
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            const n = Number.parseInt(draft, 10);
+            save.mutate(Number.isFinite(n) && n > 0 ? n : null);
+          }}
+          className="mt-2 flex gap-2"
+        >
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            inputMode="numeric"
+            placeholder="Pages per day"
+            className="bg-panel text-cream w-full rounded-sm border border-white/10 px-3 py-1.5 text-[13px] outline-none focus:border-accent/50"
+          />
+          <button className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-3 text-[10px] font-semibold uppercase tracking-[0.12em]">
+            Set
+          </button>
+        </form>
+      ) : (
+        <button
+          onClick={() => {
+            setDraft(String(p.goal));
+            setEditing(true);
+          }}
+          className="text-chalk-dim hover:text-cream mt-1.5 text-[10px] uppercase tracking-[0.14em]"
+        >
+          change goal
+        </button>
+      )}
+    </div>
+  );
+}
 
 /* ── This week / this month ─────────────────────────────────────────── */
 function PeriodTotals({ books, sessions }: { books: Book[]; sessions: ReadingSession[] }) {
@@ -2062,6 +2200,7 @@ export default function ReadingPage() {
       </div>
 
       <aside className="bg-ink flex flex-col gap-6 border-accent/15 p-4 md:p-6 lg:border-l">
+        <DailyPages sessions={sessions ?? []} />
         <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
         <GoalCard books={books ?? []} onDrill={(y) => setFilter({ type: "year", value: y })} />
         <CoverBackfill />

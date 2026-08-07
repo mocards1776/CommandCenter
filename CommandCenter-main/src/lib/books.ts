@@ -1,5 +1,5 @@
 import { supabase, requireUserId } from "./supabase";
-import { todayStr } from "./utils";
+import { todayStr, shiftDay } from "./utils";
 import type { Book, BookInsert, ReadStatus } from "@/types";
 
 const VALID_STATUS: ReadStatus[] = [
@@ -368,6 +368,20 @@ export async function logPages(opts: {
     patch.status = "read";
     patch.finished_at = opts.date;
     patch.last_date_read = opts.date;
+
+    // Close out the read-through, so a finished book shows a start–end range
+    // rather than only a pile of daily page entries.
+    const { data: current } = await supabase
+      .from("books")
+      .select("read_log, started_at, read_count")
+      .eq("id", opts.bookId)
+      .single();
+    const log = (current?.read_log ?? []) as ReadThrough[];
+    const already = log.some((r) => r.end === opts.date);
+    if (!already) {
+      patch.read_log = [...log, { start: current?.started_at ?? null, end: opts.date }];
+      patch.read_count = log.length + 1;
+    }
   } else if (opts.status === "to-read") {
     // First pages logged means you've started it.
     patch.status = "currently-reading";
@@ -738,9 +752,7 @@ export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodSt
   const d = new Date(`${today}T12:00:00`);
 
   const dow = (d.getDay() + 6) % 7; // Monday = 0
-  const weekStart = new Date(d);
-  weekStart.setDate(weekStart.getDate() - dow);
-  const weekStartIso = weekStart.toISOString().slice(0, 10);
+  const weekStartIso = shiftDay(today, -dow);
   const monthStartIso = `${today.slice(0, 7)}-01`;
 
   let pagesWeek = 0;
@@ -763,4 +775,74 @@ export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodSt
   }
 
   return { pagesWeek, pagesMonth, booksWeek, booksMonth };
+}
+
+// ── Daily pages goal ─────────────────────────────────────────────────────
+
+export async function fetchDailyGoal(): Promise<number | null> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("daily_page_goal")
+    .maybeSingle();
+  if (error) throw error;
+  return data?.daily_page_goal ?? null;
+}
+
+export async function saveDailyGoal(pages: number | null): Promise<void> {
+  const userId = await requireUserId();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ daily_page_goal: pages })
+    .eq("id", userId);
+  if (error) throw error;
+}
+
+export type DailyProgress = {
+  today: number;
+  goal: number | null;
+  metToday: boolean;
+  streak: number;
+  bestStreak: number;
+};
+
+/**
+ * Pages today plus the run of consecutive days that met the goal.
+ *
+ * Today counts only once it's met, so an unfinished day doesn't read as a
+ * broken streak at breakfast — the run is measured from yesterday backwards
+ * and today is added on top when it qualifies.
+ */
+export function dailyProgress(sessions: ReadingSession[], goal: number | null): DailyProgress {
+  const byDay = new Map<string, number>();
+  for (const s of sessions) {
+    byDay.set(s.session_date, (byDay.get(s.session_date) ?? 0) + s.pages_read);
+  }
+
+  const today = todayStr();
+  const pagesToday = byDay.get(today) ?? 0;
+  const metToday = goal !== null && pagesToday >= goal;
+
+  if (goal === null) {
+    return { today: pagesToday, goal, metToday: false, streak: 0, bestStreak: 0 };
+  }
+
+  let streak = metToday ? 1 : 0;
+  for (let day = shiftDay(today, -1); ; day = shiftDay(day, -1)) {
+    if ((byDay.get(day) ?? 0) >= goal) streak++;
+    else break;
+    if (streak > 3650) break; // safety valve
+  }
+
+  // Longest run anywhere in the logged history.
+  const days = [...byDay.keys()].filter((d) => (byDay.get(d) ?? 0) >= goal).sort();
+  let best = 0;
+  let run = 0;
+  let prev: string | null = null;
+  for (const d of days) {
+    run = prev && shiftDay(prev, 1) === d ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = d;
+  }
+
+  return { today: pagesToday, goal, metToday, streak, bestStreak: Math.max(best, streak) };
 }

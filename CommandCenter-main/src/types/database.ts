@@ -13,6 +13,7 @@ export type Database = {
           weather_lon: number | null;
           weather_label: string | null;
           timezone: string;
+          daily_page_goal: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -23,6 +24,7 @@ export type Database = {
           weather_lon?: number | null;
           weather_label?: string | null;
           timezone?: string;
+          daily_page_goal?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -33,6 +35,7 @@ export type Database = {
           weather_lon?: number | null;
           weather_label?: string | null;
           timezone?: string;
+          daily_page_goal?: number | null;
           created_at?: string;
           updated_at?: string;
         };

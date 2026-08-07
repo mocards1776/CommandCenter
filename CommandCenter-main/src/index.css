@@ -270,6 +270,17 @@
   }
 }
 
+/* iOS Safari zooms the page whenever a focused input has a font-size below
+   16px, and never zooms back out. The UI is deliberately small, so the size
+   is forced up on touch screens only — desktop keeps the tighter scale. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

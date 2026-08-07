@@ -1,0 +1,16 @@
+{
+  "name": "Reading",
+  "short_name": "Reading",
+  "description": "Your library, progress and reading goals.",
+  "start_url": "/reading",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0A1730",
+  "theme_color": "#081228",
+  "icons": [
+    { "src": "/icon-books-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-books-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-books-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

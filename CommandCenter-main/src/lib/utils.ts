@@ -21,6 +21,25 @@ export function toDateStr(d: Date | string): string {
   return new Date(d).toLocaleDateString("en-CA", { timeZone: TZ });
 }
 
+/**
+ * YYYY-MM-DD for a Date, in Central time. Use this instead of
+ * toISOString().slice(0,10), which is UTC and lands on the wrong day for
+ * anything after ~7pm local.
+ *
+ * America/Chicago covers CDT and CST — the offset follows daylight saving
+ * automatically, so no part of the app hardcodes -05:00 or -06:00.
+ */
+export function isoDayCT(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: TZ });
+}
+
+/** N days before/after a Central-time day string. */
+export function shiftDay(day: string, days: number): string {
+  const d = new Date(`${day}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-US", {
     timeZone: TZ,
