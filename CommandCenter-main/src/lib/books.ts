@@ -477,9 +477,24 @@ export async function askAI(mode: "search" | "recommend", query = ""): Promise<S
 
 export type CoverPullResult = { found: boolean; source?: string; cover_path?: string };
 
+/** Prefer the JSON body message; supabase-js hides it behind a generic string. */
+async function edgeErrorMessage(error: { message: string; context?: unknown }, fallback: string) {
+  const ctx = error.context as { json?: () => Promise<unknown>; body?: unknown } | undefined;
+  try {
+    if (ctx && typeof ctx.json === "function") {
+      const body = (await ctx.json()) as { error?: string };
+      if (body?.error) return body.error;
+    }
+  } catch {
+    // fall through
+  }
+  if (error.message && !/non-2xx/i.test(error.message)) return error.message;
+  return fallback;
+}
+
 /**
- * Pull a jacket for a blank book. Without `url`, Open Library then Claude +
- * web search; with `url`, scrape/fetch that page or image link.
+ * Pull a jacket for a blank book. Without `url`, Open Library / Google then
+ * Claude + web search; with `url`, scrape/fetch that page or image link.
  */
 export async function pullCover(bookId: string, url?: string): Promise<CoverPullResult> {
   const { data, error } = await supabase.functions.invoke<CoverPullResult & { error?: string }>(
@@ -487,7 +502,9 @@ export async function pullCover(bookId: string, url?: string): Promise<CoverPull
     { body: { mode: "cover", bookId, url: url?.trim() || undefined } },
   );
   if (data?.error) throw new Error(data.error);
-  if (error) throw new Error(error.message);
+  if (error) {
+    throw new Error(await edgeErrorMessage(error, "Couldn't find a cover for this one."));
+  }
   if (!data?.found) throw new Error(data?.error ?? "Couldn't find a cover for this one.");
   return data;
 }

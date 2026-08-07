@@ -67,21 +67,79 @@ async function coverFor(title: string, author: string, size: "M" | "L" = "M"): P
   }
 }
 
+/** Google Books often has a jacket when Open Library does not. */
+async function googleCover(title: string, author: string | null, isbn: string | null): Promise<string | null> {
+  try {
+    const q = isbn
+      ? `isbn:${isbn.replace(/[^0-9Xx]/g, "")}`
+      : `intitle:${title.slice(0, 80)}${author ? `+inauthor:${author.split(",")[0].trim().slice(0, 40)}` : ""}`;
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 8000);
+    const res = await fetch(
+      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1`,
+      { signal: ctl.signal, headers: { "User-Agent": UA } },
+    ).finally(() => clearTimeout(t));
+    if (!res.ok) return null;
+    const links = (await res.json())?.items?.[0]?.volumeInfo?.imageLinks as
+      | Record<string, string>
+      | undefined;
+    if (!links) return null;
+    const raw = links.extraLarge ?? links.large ?? links.medium ?? links.thumbnail ?? links.smallThumbnail;
+    return raw ? String(raw).replace(/^http:/, "https:").replace(/&edge=curl/, "") : null;
+  } catch {
+    return null;
+  }
+}
+
+function sniffImageType(bytes: Uint8Array): string | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return "image/png";
+  }
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
 /** Download an image URL; reject tiny placeholders and non-images. */
 async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string } | null> {
   try {
     const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 10000);
+    const t = setTimeout(() => ctl.abort(), 12000);
     const res = await fetch(url, {
       signal: ctl.signal,
       redirect: "follow",
-      headers: { "User-Agent": UA },
+      headers: {
+        "User-Agent": UA,
+        // Some CDNs 403 a bare fetch; Accept helps, and OL covers want a referer-ish UA.
+        Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+      },
     }).finally(() => clearTimeout(t));
     if (!res.ok) return null;
-    const type = (res.headers.get("Content-Type") ?? "").split(";")[0];
-    if (!type.startsWith("image/")) return null;
     const bytes = new Uint8Array(await res.arrayBuffer());
     if (bytes.byteLength < 3000 || bytes.byteLength > 4_000_000) return null;
+    const header = (res.headers.get("Content-Type") ?? "").split(";")[0].trim();
+    const type = header.startsWith("image/") ? header : sniffImageType(bytes);
+    if (!type) return null;
     return { bytes, type };
   } catch {
     return null;
@@ -119,18 +177,37 @@ async function coverFromPage(pageUrl: string): Promise<string | null> {
   }
 }
 
-function extractCoverUrl(text: string): string | null {
+/** Collect every plausible image URL Claude (or its citations) mentioned. */
+function extractCoverUrls(text: string): string[] {
+  const out: string[] = [];
+  const push = (raw: string) => {
+    let u = raw.trim().replace(/[),.;]+$/, "");
+    if (u.startsWith("//")) u = "https:" + u;
+    if (!/^https?:\/\//i.test(u)) return;
+    if (out.includes(u)) return;
+    out.push(u);
+  };
+
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const candidate = fenced ? fenced[1] : text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
   try {
     const parsed = JSON.parse(candidate);
-    const u = String(parsed?.cover_url ?? "").trim();
-    if (/^https?:\/\//i.test(u)) return u;
+    const primary = parsed?.cover_url;
+    if (typeof primary === "string") push(primary);
+    if (Array.isArray(parsed?.cover_urls)) {
+      for (const u of parsed.cover_urls) if (typeof u === "string") push(u);
+    }
   } catch {
-    // fall through
+    // fall through to regex sweep
   }
-  const m = text.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^\s"'<>]*)?/i);
-  return m?.[0] ?? null;
+
+  for (const m of text.matchAll(/https?:\/\/[^\s"'<>]+/gi)) {
+    const u = m[0];
+    if (/\.(jpg|jpeg|png|webp)(\?|$)/i.test(u) || /covers\.openlibrary|books\.google|googleusercontent|covers\.openlib/i.test(u)) {
+      push(u);
+    }
+  }
+  return out;
 }
 
 /**
@@ -151,25 +228,38 @@ async function findCover(
     .eq("user_id", userId)
     .eq("id", bookId)
     .maybeSingle();
-  if (error) return json({ error: error.message }, 500);
-  if (!book) return json({ error: "Book not found" }, 404);
+  if (error) return json({ found: false, error: error.message }, 500);
+  if (!book) return json({ found: false, error: "Book not found" });
 
   type Candidate = { url: string; source: string };
   const candidates: Candidate[] = [];
+  const push = (u: string | null | undefined, source: string) => {
+    if (!u) return;
+    let next = u.trim();
+    if (next.startsWith("//")) next = "https:" + next;
+    if (!/^https?:\/\//i.test(next)) return;
+    if (candidates.some((c) => c.url === next)) return;
+    candidates.push({ url: next, source });
+  };
 
   if (url) {
     // Direct image, or a book page whose og:image is the jacket.
     if (/\.(jpg|jpeg|png|webp)(\?|$)/i.test(url) || /covers\.openlibrary\.org/i.test(url)) {
-      candidates.push({ url, source: "link" });
+      push(url, "link");
     } else {
-      const fromPage = await coverFromPage(url);
-      if (fromPage) candidates.push({ url: fromPage, source: "link" });
+      push(await coverFromPage(url), "link");
       // Image CDNs sometimes omit a file extension — try the URL itself last.
-      candidates.push({ url, source: "link" });
+      push(url, "link");
     }
   } else {
-    const ol = await coverFor(String(book.title ?? ""), book.authors ?? "", "L");
-    if (ol) candidates.push({ url: ol, source: "openlibrary" });
+    const isbn = String(book.isbn ?? "").replace(/[^0-9Xx]/g, "");
+    if (isbn.length === 10 || isbn.length === 13) {
+      push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`, "openlibrary");
+      push(`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`, "openlibrary");
+    }
+    push(await coverFor(String(book.title ?? ""), book.authors ?? "", "L"), "openlibrary");
+    push(await coverFor(String(book.title ?? ""), book.authors ?? "", "M"), "openlibrary");
+    push(await googleCover(String(book.title ?? ""), book.authors, book.isbn), "google");
   }
 
   let img: { bytes: Uint8Array; type: string } | null = null;
@@ -185,44 +275,57 @@ async function findCover(
   }
 
   // Catalog miss (or dead OL link): spend tokens on a web search.
+  let aiError: string | null = null;
   if (!img && !url && client) {
     const q =
       `"${book.title}"${book.authors ? ` ${book.authors.split(",")[0].trim()}` : ""}` +
-      `${book.isbn ? ` ISBN ${book.isbn}` : ""} book cover image`;
+      `${book.isbn ? ` ISBN ${book.isbn}` : ""} book cover`;
     try {
       const message = await askClaude(client, {
         model: MODEL,
         max_tokens: 4000,
         thinking: { type: "adaptive" },
         output_config: { effort: "low" },
-        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 4 }],
+        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }],
         system:
-          "You find a direct URL to a book cover image (jpg/png/webp). Prefer Open Library, " +
-          "Google Books, or publisher art. Answer with a ```json fenced block and nothing else: " +
-          '{"cover_url":"https://..."}. If you cannot find one, return {"cover_url":""}.',
-        messages: [{ role: "user", content: `Find the cover image for: ${q}` }],
+          "You find direct URLs to book cover IMAGE FILES (jpg/png/webp), not HTML pages. " +
+          "Prefer covers.openlibrary.org, books.google.com image CDN, or publisher art. " +
+          "Answer with a ```json fenced block only: " +
+          '{"cover_url":"https://...","cover_urls":["https://..."]}. ' +
+          "Put the best URL in cover_url and up to 4 alternates in cover_urls. " +
+          "If you cannot find a direct image URL, return {\"cover_url\":\"\",\"cover_urls\":[]}.",
+        messages: [{ role: "user", content: `Find cover image URLs for: ${q}` }],
       });
-      if (message.stop_reason !== "refusal") {
+      if (message.stop_reason === "refusal") {
+        aiError = "Claude declined that cover search.";
+      } else {
         const text = (message.content ?? [])
           .filter((b: { type: string }) => b.type === "text")
           .map((b: { text: string }) => b.text)
           .join("\n");
-        const found = extractCoverUrl(text);
-        if (found) {
+        for (const found of extractCoverUrls(text)) {
           img = await grabImage(found);
           if (img) {
             usedUrl = found;
             source = "ai";
+            break;
           }
         }
       }
-    } catch {
-      // report nothing found below
+    } catch (e) {
+      aiError = e instanceof Error ? e.message : String(e);
     }
   }
 
   if (!img || !usedUrl) {
-    return json({ error: "Couldn't find a cover for this one.", found: false }, 404);
+    // 200 on purpose: supabase-js turns non-2xx into a generic toast and drops
+    // the body, so "couldn't find one" has to ride a success status.
+    return json({
+      found: false,
+      error: aiError
+        ? `Cover search failed: ${aiError.slice(0, 180)}`
+        : "Couldn't find a cover for this one. Try pasting a cover image link.",
+    });
   }
 
   const ext = img.type.includes("png") ? "png" : img.type.includes("webp") ? "webp" : "jpg";
