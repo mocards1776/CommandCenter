@@ -29,11 +29,17 @@ import {
   updateSession,
   deleteSession,
   recalcProgress,
+  addReadThrough,
+  updateReadThrough,
+  removeReadThrough,
+  duplicateIndexes,
+  sortReadLog,
+  type ReadThrough,
   type ReadingSession,
 } from "@/lib/books";
 import StarField from "@/components/StarField";
 import { useCelebration } from "@/components/celebration-context";
-import { cn, todayStr, fmtLongDate, fmtDateRange } from "@/lib/utils";
+import { cn, todayStr, fmtLongDate } from "@/lib/utils";
 import type { Book, ReadStatus } from "@/types";
 
 const SHELVES: { key: ReadStatus; label: string }[] = [
@@ -285,6 +291,8 @@ function Editable({
   numeric = false,
   className,
   inputClassName,
+  doubleClick = false,
+  onSingleClick,
 }: {
   value: string | number | null;
   onSave: (v: string) => void;
@@ -292,6 +300,9 @@ function Editable({
   numeric?: boolean;
   className?: string;
   inputClassName?: string;
+  /** Require a double click to edit, leaving single click free for navigation. */
+  doubleClick?: boolean;
+  onSingleClick?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -325,10 +336,18 @@ function Editable({
   return (
     <button
       onClick={() => {
+        if (doubleClick) {
+          onSingleClick?.();
+          return;
+        }
         setDraft(String(value ?? ""));
         setEditing(true);
       }}
-      title="Click to edit"
+      onDoubleClick={() => {
+        setDraft(String(value ?? ""));
+        setEditing(true);
+      }}
+      title={doubleClick ? "Click to browse · double-click to edit" : "Click to edit"}
       className={cn(
         "-mx-1 rounded-sm px-1 text-left transition-colors hover:bg-white/10",
         value === null || value === "" ? "text-chalk-dim" : "",
@@ -506,6 +525,42 @@ function ReadingHistory({ book }: { book: Book }) {
   const [draft, setDraft] = useState({ date: todayStr(), pages: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [edit, setEdit] = useState({ date: "", pages: "" });
+  const [addingRead, setAddingRead] = useState(false);
+  const [readDraft, setReadDraft] = useState({ start: "", end: todayStr() });
+  const [editingRead, setEditingRead] = useState<number | null>(null);
+  const [readEdit, setReadEdit] = useState({ start: "", end: "" });
+
+  const log = useMemo(() => sortReadLog(book.read_log ?? []), [book.read_log]);
+  const dupes = useMemo(() => duplicateIndexes(log), [log]);
+
+  const refreshBook = () => {
+    qc.invalidateQueries({ queryKey: ["books"] });
+    qc.invalidateQueries({ queryKey: ["on-deck"] });
+  };
+
+  const addRead = useMutation({
+    mutationFn: (entry: ReadThrough) => addReadThrough({ ...book, read_log: log }, entry),
+    onSuccess: () => {
+      setAddingRead(false);
+      setReadDraft({ start: "", end: todayStr() });
+      refreshBook();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not add"),
+  });
+
+  const saveRead = useMutation({
+    mutationFn: ({ index, entry }: { index: number; entry: ReadThrough }) =>
+      updateReadThrough({ ...book, read_log: log }, index, entry),
+    onSuccess: () => {
+      setEditingRead(null);
+      refreshBook();
+    },
+  });
+
+  const removeRead = useMutation({
+    mutationFn: (index: number) => removeReadThrough({ ...book, read_log: log }, index),
+    onSuccess: refreshBook,
+  });
 
   const refresh = async () => {
     await recalcProgress(book.id);
@@ -546,18 +601,13 @@ function ReadingHistory({ book }: { book: Book }) {
     onSuccess: refresh,
   });
 
-  const imported = (book.dates_read ?? "")
-    .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean);
-
   const field =
     "bg-field text-cream rounded-sm border border-white/10 px-2 py-1 text-[12px] outline-none focus:border-accent/50";
 
   return (
     <div className="mb-4">
       <div className="mb-2 flex items-center">
-        <span className="label-caps flex-1">Reading history</span>
+        <span className="label-caps flex-1">Page sessions</span>
         <button onClick={() => setAdding(!adding)} className="text-accent text-[10.5px] uppercase tracking-[0.15em]">
           {adding ? "cancel" : "+ add"}
         </button>
@@ -590,27 +640,131 @@ function ReadingHistory({ book }: { book: Book }) {
         </form>
       )}
 
-      {(book.finished_at || book.started_at) && (
-        <p className="text-chalk mb-2 text-[12.5px]">
-          {book.started_at && `Started ${fmtLongDate(book.started_at)}`}
-          {book.started_at && book.finished_at && " · "}
-          {book.finished_at && `Finished ${fmtLongDate(book.finished_at)}`}
-        </p>
-      )}
-
-      {imported.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {imported.map((d, i) => (
-            <span
-              key={i}
-              className="bg-panel text-chalk rounded-sm px-2 py-1 text-[10.5px]"
-              title="Imported from StoryGraph"
-            >
-              {fmtDateRange(d)}
-            </span>
-          ))}
+      {/* Times read — each deletable, which is how a duplicate goes away. */}
+      <div className="mb-3">
+        <div className="mb-1.5 flex items-center">
+          <span className="text-chalk-dim flex-1 text-[10.5px] uppercase tracking-[0.15em]">
+            Times read · {log.length}
+          </span>
+          <button
+            onClick={() => setAddingRead(!addingRead)}
+            className="text-accent text-[10.5px] uppercase tracking-[0.15em]"
+          >
+            {addingRead ? "cancel" : "+ add a read"}
+          </button>
         </div>
-      )}
+
+        {addingRead && (
+          <form
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault();
+              if (!readDraft.end) return;
+              addRead.mutate({ start: readDraft.start || null, end: readDraft.end });
+            }}
+            className="mb-2 flex flex-wrap items-end gap-2"
+          >
+            <label className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+              Started
+              <input
+                type="date"
+                value={readDraft.start}
+                onChange={(e) => setReadDraft({ ...readDraft, start: e.target.value })}
+                className={cn(field, "mt-0.5 block")}
+              />
+            </label>
+            <label className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+              Finished
+              <input
+                type="date"
+                required
+                value={readDraft.end}
+                onChange={(e) => setReadDraft({ ...readDraft, end: e.target.value })}
+                className={cn(field, "mt-0.5 block")}
+              />
+            </label>
+            <button className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]">
+              Add
+            </button>
+          </form>
+        )}
+
+        {log.length === 0 ? (
+          <p className="text-chalk-dim text-[12px]">Not recorded as read yet.</p>
+        ) : (
+          <ul>
+            {log.map((entry, i) => (
+              <li
+                key={`${entry.start}-${entry.end}-${i}`}
+                className={cn(
+                  "group flex items-center gap-2 border-b border-white/[0.05] py-1.5 text-[12px] last:border-0",
+                  dupes.has(i) && "bg-alert/10",
+                )}
+              >
+                {editingRead === i ? (
+                  <>
+                    <input
+                      type="date"
+                      value={readEdit.start}
+                      onChange={(e) => setReadEdit({ ...readEdit, start: e.target.value })}
+                      className={cn(field, "flex-1")}
+                    />
+                    <input
+                      type="date"
+                      value={readEdit.end}
+                      onChange={(e) => setReadEdit({ ...readEdit, end: e.target.value })}
+                      className={cn(field, "flex-1")}
+                    />
+                    <button
+                      onClick={() =>
+                        saveRead.mutate({
+                          index: i,
+                          entry: { start: readEdit.start || null, end: readEdit.end || null },
+                        })
+                      }
+                      className="text-accent text-[10px] uppercase"
+                    >
+                      save
+                    </button>
+                    <button
+                      onClick={() => setEditingRead(null)}
+                      className="text-chalk-dim text-[10px] uppercase"
+                    >
+                      cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setEditingRead(i);
+                        setReadEdit({ start: entry.start ?? "", end: entry.end ?? "" });
+                      }}
+                      className="text-chalk hover:text-cream flex-1 text-left"
+                    >
+                      {entry.start && entry.end && entry.start !== entry.end
+                        ? `${fmtLongDate(entry.start)} – ${fmtLongDate(entry.end)}`
+                        : fmtLongDate(entry.end ?? entry.start) || "Date unknown"}
+                    </button>
+                    {dupes.has(i) && (
+                      <span className="text-alert text-[9.5px] uppercase tracking-[0.12em]">
+                        duplicate
+                      </span>
+                    )}
+                    <button
+                      onClick={() => removeRead.mutate(i)}
+                      aria-label="Delete this read"
+                      title="Delete this read"
+                      className="text-chalk-dim hover:text-alert opacity-60 transition group-hover:opacity-100"
+                    >
+                      <X size={12} />
+                    </button>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {sessions && sessions.length > 0 && (
         <ul>
@@ -669,8 +823,8 @@ function ReadingHistory({ book }: { book: Book }) {
         </ul>
       )}
 
-      {(!sessions || sessions.length === 0) && imported.length === 0 && !adding && (
-        <p className="text-chalk-dim text-[12px]">No entries yet.</p>
+      {(!sessions || sessions.length === 0) && !adding && (
+        <p className="text-chalk-dim text-[12px]">No page sessions logged.</p>
       )}
     </div>
   );
@@ -850,26 +1004,20 @@ function BookDetail({
               />
             </h2>
 
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[12.5px]">
+            <p className="mt-1 text-[12.5px]">
               <Editable
                 value={book.authors}
                 placeholder="Add author"
+                doubleClick
+                onSingleClick={() => {
+                  if (!book.authors) return;
+                  onFilter({ type: "author", value: book.authors.split(",")[0].trim() });
+                  onClose();
+                }}
                 onSave={(v) => patch.mutate({ authors: v.trim() || null })}
-                className="text-chalk hover:text-cream"
+                className="text-chalk hover:text-accent"
                 inputClassName="w-full"
               />
-              {/* The name itself edits, so browsing needs its own control. */}
-              {book.authors && (
-                <button
-                  onClick={() => {
-                    onFilter({ type: "author", value: book.authors!.split(",")[0].trim() });
-                    onClose();
-                  }}
-                  className="text-accent hover:text-cream text-[10.5px] uppercase tracking-[0.14em]"
-                >
-                  see all →
-                </button>
-              )}
             </p>
 
             <p className="text-chalk-dim mt-1.5 text-[11px]">
@@ -886,28 +1034,9 @@ function BookDetail({
               {book.page_count ? " pages" : ""}
             </p>
 
-            {/* Re-reads: the count only means something if you can see it. */}
-            <div className="mt-2 flex items-center gap-2">
-              <span className="text-chalk-dim text-[11px]">Read</span>
-              <button
-                onClick={() => patch.mutate({ read_count: Math.max(0, book.read_count - 1) })}
-                className="bg-panel text-chalk hover:text-cream h-5 w-5 rounded-sm text-[12px] leading-none"
-                aria-label="One fewer read"
-              >
-                −
-              </button>
-              <span className="numeral text-accent text-[15px]">{book.read_count}</span>
-              <span className="text-chalk-dim text-[11px]">
-                time{book.read_count === 1 ? "" : "s"}
-              </span>
-              <button
-                onClick={() => patch.mutate({ read_count: book.read_count + 1 })}
-                className="bg-panel text-chalk hover:text-cream h-5 w-5 rounded-sm text-[12px] leading-none"
-                aria-label="One more read"
-              >
-                +
-              </button>
-            </div>
+            <p className="text-chalk-dim mt-2 text-[11px]">
+              Read {book.read_count} time{book.read_count === 1 ? "" : "s"}
+            </p>
 
             {book.locked_at && (
               <p className="text-chalk-dim mt-1.5 text-[10px] uppercase tracking-[0.12em]">
@@ -1586,6 +1715,80 @@ function GoalCard({ books, onDrill }: { books: Book[]; onDrill: (year: string) =
   );
 }
 
+
+/* ── Stats by tag ───────────────────────────────────────────────────── */
+function TagStats({
+  books,
+  active,
+  onPick,
+}: {
+  books: Book[];
+  active: string | null;
+  onPick: (t: string) => void;
+}) {
+  const rows = useMemo(() => {
+    const agg = new Map<string, { count: number; rated: number; sum: number; pages: number }>();
+    for (const b of books) {
+      for (const t of b.tags) {
+        const r = agg.get(t) ?? { count: 0, rated: 0, sum: 0, pages: 0 };
+        r.count++;
+        if (b.star_rating !== null) {
+          r.rated++;
+          r.sum += b.star_rating;
+        }
+        if (b.page_count) r.pages += b.page_count;
+        agg.set(t, r);
+      }
+    }
+    return [...agg.entries()]
+      .map(([tag, r]) => ({
+        tag,
+        count: r.count,
+        avg: r.rated > 0 ? r.sum / r.rated : null,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 18);
+  }, [books]);
+
+  if (rows.length === 0) return null;
+  const max = Math.max(...rows.map((r) => r.count));
+
+  return (
+    <div>
+      <h2 className="rule-head mb-3">By tag</h2>
+      <div className="flex flex-col gap-2">
+        {rows.map((r) => (
+          <button
+            key={r.tag}
+            onClick={() => onPick(r.tag)}
+            className={cn(
+              "group text-left transition-colors",
+              active === r.tag ? "text-accent" : "text-chalk hover:text-cream",
+            )}
+          >
+            <div className="flex items-baseline gap-2 text-[12px]">
+              <span className="min-w-0 flex-1 truncate">{r.tag}</span>
+              {r.avg !== null && (
+                <span className="text-chalk-dim shrink-0 text-[10.5px]">★ {r.avg.toFixed(2)}</span>
+              )}
+              <span className="numeral text-accent shrink-0 text-[13px]">{r.count}</span>
+            </div>
+            <div className="mt-1 h-1 overflow-hidden rounded-sm bg-white/10">
+              <div
+                className={cn(
+                  "h-full transition-[width]",
+                  active === r.tag ? "bg-accent" : "bg-accent/50 group-hover:bg-accent",
+                )}
+                style={{ width: `${(r.count / max) * 100}%` }}
+              />
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── Cover backfill ─────────────────────────────────────────────────── */
 function CoverBackfill() {
   const qc = useQueryClient();
@@ -1658,12 +1861,6 @@ export default function ReadingPage() {
     const c: Record<string, number> = {};
     for (const b of books ?? []) c[b.status] = (c[b.status] ?? 0) + 1;
     return c;
-  }, [books]);
-
-  const topTags = useMemo(() => {
-    const c = new Map<string, number>();
-    for (const b of books ?? []) for (const t of b.tags) c.set(t, (c.get(t) ?? 0) + 1);
-    return [...c.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14);
   }, [books]);
 
   const allTags = useMemo(() => {
@@ -1832,27 +2029,15 @@ export default function ReadingPage() {
           onDrill={(y) => setFilter({ type: "year", value: y })}
         />
 
-        <div>
-          <h2 className="rule-head mb-3">Tags</h2>
-          <div className="flex flex-wrap gap-1.5">
-            {topTags.map(([t, n]) => (
-              <button
-                key={t}
-                onClick={() =>
-                  setFilter(filter?.type === "tag" && filter.value === t ? null : { type: "tag", value: t })
-                }
-                className={cn(
-                  "rounded-sm px-2 py-1 text-[10.5px] transition-colors",
-                  filter?.type === "tag" && filter.value === t
-                    ? "bg-accent text-field"
-                    : "bg-panel text-chalk hover:text-cream",
-                )}
-              >
-                {t} <span className="opacity-60">{n}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        <TagStats
+          books={books ?? []}
+          active={filter?.type === "tag" ? filter.value : null}
+          onPick={(t) =>
+            setFilter(
+              filter?.type === "tag" && filter.value === t ? null : { type: "tag", value: t },
+            )
+          }
+        />
       </aside>
 
       {openBook && (

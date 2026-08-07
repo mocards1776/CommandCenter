@@ -663,3 +663,61 @@ export async function recalcProgress(bookId: string): Promise<void> {
   const cap = book?.page_count ?? null;
   await updateBook(bookId, { current_page: cap ? Math.min(total, cap) : total });
 }
+
+// ── Read-throughs ────────────────────────────────────────────────────────
+
+export type ReadThrough = { start: string | null; end: string | null };
+
+/** Newest first, by finish date. */
+export function sortReadLog(log: ReadThrough[]): ReadThrough[] {
+  return [...log].sort((a, b) => (b.end ?? "").localeCompare(a.end ?? ""));
+}
+
+/**
+ * read_count is derived from read_log, so the two can never disagree — the
+ * old +/- counter could drift away from the actual dates.
+ */
+async function writeReadLog(book: Book, log: ReadThrough[]): Promise<void> {
+  const sorted = sortReadLog(log);
+  const latest = sorted[0]?.end ?? null;
+  await updateBook(book.id, {
+    read_log: sorted,
+    read_count: sorted.length,
+    // Finishing dates come from the log, so the shelves and stats follow it.
+    finished_at: latest ?? book.finished_at,
+    last_date_read: latest ?? book.last_date_read,
+    ...(sorted.length > 0 && book.status === "to-read" ? { status: "read" as const } : {}),
+  });
+}
+
+export async function addReadThrough(book: Book, entry: ReadThrough): Promise<void> {
+  await writeReadLog(book, [...(book.read_log ?? []), entry]);
+}
+
+export async function updateReadThrough(
+  book: Book,
+  index: number,
+  entry: ReadThrough,
+): Promise<void> {
+  const log = [...(book.read_log ?? [])];
+  log[index] = entry;
+  await writeReadLog(book, log);
+}
+
+/** Delete one read-through — the way to remove a duplicate. */
+export async function removeReadThrough(book: Book, index: number): Promise<void> {
+  const log = (book.read_log ?? []).filter((_, i) => i !== index);
+  await writeReadLog(book, log);
+}
+
+/** Duplicate entries (same start and end) so the UI can flag them. */
+export function duplicateIndexes(log: ReadThrough[]): Set<number> {
+  const seen = new Map<string, number>();
+  const dupes = new Set<number>();
+  log.forEach((e, i) => {
+    const key = `${e.start ?? ""}|${e.end ?? ""}`;
+    if (seen.has(key)) dupes.add(i);
+    else seen.set(key, i);
+  });
+  return dupes;
+}
