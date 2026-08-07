@@ -11,6 +11,14 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
    `PGRST205 "not found in schema cache"`.
 4. `harden_functions` — pins `search_path` on `touch_updated_at` and revokes
    `EXECUTE` on `handle_new_user` so it is not callable as an RPC.
+5. `books` … `daily_page_goal` — the reading library: books, reading sessions,
+   goals, on-deck ordering, per-book progress mode, read-through log.
+6. `books_add_subjects` — `books.subjects text[]`, genre chips from Open
+   Library.
+7. `book_highlights_and_sync_state` — Readwise highlights (`book_highlights`,
+   owner-scoped RLS, `unique (user_id, readwise_id)` so a re-sync upserts
+   rather than duplicates) and `integration_sync`, the per-service bookmark
+   that makes the pull incremental.
 
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.

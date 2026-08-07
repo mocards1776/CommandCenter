@@ -14,6 +14,7 @@ export type BraindumpEntry = Tables<"braindump_entries">;
 export type FavoriteSportsTeam = Tables<"favorite_sports_teams">;
 export type Book = Tables<"books">;
 export type BookInsert = TablesInsert<"books">;
+export type BookHighlight = Tables<"book_highlights">;
 
 export type ReadStatus = "read" | "to-read" | "currently-reading" | "did-not-finish" | "paused";
 

@@ -13,6 +13,8 @@ import {
   Sparkles,
   LayoutGrid,
   Rows3,
+  Highlighter,
+  RefreshCw,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -35,6 +37,10 @@ import {
   pageToPercent,
   enrichRemaining,
   enrichBook,
+  syncReadwise,
+  fetchHighlights,
+  fetchHighlightCounts,
+  readwiseSyncedAt,
   fetchBookSessions,
   fetchEditions,
   type Edition,
@@ -58,7 +64,7 @@ import {
 import StarField from "@/components/StarField";
 import { useCelebration } from "@/components/celebration-context";
 import { cn, todayStr, fmtLongDate } from "@/lib/utils";
-import type { Book, ReadStatus } from "@/types";
+import type { Book, BookHighlight, ReadStatus } from "@/types";
 
 const SHELVES: { key: ReadStatus; label: string }[] = [
   { key: "currently-reading", label: "Reading" },
@@ -949,6 +955,60 @@ function Editions({ book, onApplied }: { book: Book; onApplied: () => void }) {
 }
 
 /* ── Book detail ────────────────────────────────────────────────────── */
+/* ── Highlights ─────────────────────────────────────────────────────── */
+/** Readwise highlights for one book. Silent when there are none. */
+function Highlights({ book }: { book: Book }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["highlights", book.id],
+    queryFn: () => fetchHighlights(book.id),
+  });
+  const [showAll, setShowAll] = useState(false);
+
+  if (isLoading || !data || data.length === 0) return null;
+
+  // Long lists are a wall of text in a drawer; the rest is one tap away.
+  const shown: BookHighlight[] = showAll ? data : data.slice(0, 5);
+
+  return (
+    <div className="mb-5">
+      <span className="label-caps flex items-center gap-2">
+        <Highlighter size={12} className="text-accent" />
+        Highlights · {data.length}
+      </span>
+
+      <div className="mt-2.5 flex flex-col gap-2.5">
+        {shown.map((h) => (
+          <blockquote
+            key={h.id}
+            className="bg-panel rounded-sm border-l-2 border-accent/50 px-3.5 py-2.5"
+          >
+            <p className="text-cream whitespace-pre-line text-[12.5px] leading-relaxed">{h.text}</p>
+            {h.note && (
+              <p className="text-chalk-dim mt-2 border-t border-white/[0.07] pt-2 text-[11.5px] italic">
+                {h.note}
+              </p>
+            )}
+            {h.location !== null && (
+              <p className="text-chalk-dim mt-1.5 text-[10px] uppercase tracking-[0.14em]">
+                {h.location_type === "page" ? "Page" : "Location"} {h.location}
+              </p>
+            )}
+          </blockquote>
+        ))}
+      </div>
+
+      {data.length > 5 && (
+        <button
+          onClick={() => setShowAll(!showAll)}
+          className="text-chalk-dim hover:text-accent mt-2.5 text-[10.5px] uppercase tracking-[0.15em]"
+        >
+          {showAll ? "Show fewer" : `Show all ${data.length}`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function BookDetail({
   book,
   onClose,
@@ -1186,6 +1246,8 @@ function BookDetail({
             )}
           </div>
         )}
+
+        <Highlights book={book} />
 
         {/* Nothing to show means nothing was ever fetched for this one. */}
         {!book.description && (
@@ -2076,11 +2138,13 @@ function TagStats({
 function Shelf({
   books,
   view,
+  highlights,
   onOpen,
   onFilter,
 }: {
   books: Book[];
   view: "list" | "grid";
+  highlights: Record<string, number>;
   onOpen: (b: Book) => void;
   onFilter: (f: { type: "author" | "tag"; value: string }) => void;
 }) {
@@ -2130,6 +2194,12 @@ function Shelf({
                       <span className="numeral">{b.star_rating}</span>
                     </span>
                   )}
+                  {highlights[b.id] && (
+                    <span className="bg-ink/85 text-chalk absolute left-1 top-1 flex items-center gap-0.5 rounded-sm px-1.5 py-0.5 text-[10px] backdrop-blur">
+                      <Highlighter size={9} className="text-accent" />
+                      <span className="numeral">{highlights[b.id]}</span>
+                    </span>
+                  )}
                   {pct !== null && b.status === "currently-reading" && (
                     <div className="absolute inset-x-0 bottom-0 h-1 bg-black/50">
                       <div className="bg-accent h-full" style={{ width: `${pct}%` }} />
@@ -2158,6 +2228,7 @@ function Shelf({
           b.page_count ? `${b.page_count} pages` : null,
           b.format ? b.format[0].toUpperCase() + b.format.slice(1) : null,
           b.read_count > 1 ? `read ${b.read_count}×` : null,
+          highlights[b.id] ? `${highlights[b.id]} highlights` : null,
         ].filter(Boolean) as string[];
 
         return (
@@ -2275,6 +2346,77 @@ function Shelf({
   );
 }
 
+/* ── Readwise ───────────────────────────────────────────────────────── */
+/** Pulls Kindle/Readwise highlights and attaches them to matching books. */
+function ReadwiseSync() {
+  const qc = useQueryClient();
+  const { data: syncedAt } = useQuery({
+    queryKey: ["readwise-synced"],
+    queryFn: readwiseSyncedAt,
+  });
+  const { data: counts } = useQuery({
+    queryKey: ["highlight-counts"],
+    queryFn: fetchHighlightCounts,
+  });
+
+  const total = Object.values(counts ?? {}).reduce((a, b) => a + b, 0);
+  const books = Object.keys(counts ?? {}).length;
+
+  const sync = useMutation({
+    // A first run has nothing to be incremental against, so it reads it all.
+    mutationFn: (full: boolean) => syncReadwise(full),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["highlight-counts"] });
+      qc.invalidateQueries({ queryKey: ["readwise-synced"] });
+      qc.invalidateQueries({ queryKey: ["highlights"] });
+      toast.success(
+        r.highlights
+          ? `${r.highlights} highlights · ${r.matched} books matched`
+          : "Already up to date",
+      );
+      // Titles Readwise has that the library doesn't — usually worth knowing.
+      if (r.unmatched.length) {
+        toast(`${r.unmatched.length} not in your library, e.g. ${r.unmatched[0]}`, {
+          icon: "📕",
+          duration: 6000,
+        });
+      }
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Readwise sync failed"),
+  });
+
+  return (
+    <div>
+      <h2 className="rule-head mb-2">Highlights</h2>
+      <p className="text-chalk-dim mb-2 text-[11px] leading-relaxed">
+        {total > 0
+          ? `${total.toLocaleString()} highlights across ${books} book${books === 1 ? "" : "s"}.`
+          : "Pull your Kindle highlights in from Readwise. They attach to the matching book."}
+      </p>
+
+      <button
+        onClick={() => sync.mutate(total === 0)}
+        disabled={sync.isPending}
+        className="bg-panel text-cream flex w-full items-center justify-center gap-2 rounded-sm border border-accent/30 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.15em] transition hover:border-accent disabled:opacity-50"
+      >
+        <RefreshCw size={13} className={sync.isPending ? "animate-spin" : ""} />
+        {sync.isPending ? "Syncing" : total > 0 ? "Sync highlights" : "Import highlights"}
+      </button>
+
+      {syncedAt && (
+        <button
+          onClick={() => sync.mutate(true)}
+          disabled={sync.isPending}
+          title="Re-read every highlight, not just what changed"
+          className="text-chalk-dim hover:text-accent mt-1.5 w-full text-[10px] uppercase tracking-[0.14em]"
+        >
+          Last synced {fmtLongDate(syncedAt.slice(0, 10))} · full resync
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ── Cover backfill ─────────────────────────────────────────────────── */
 function CoverBackfill() {
   const qc = useQueryClient();
@@ -2337,6 +2479,10 @@ export default function ReadingPage() {
   const qc = useQueryClient();
   const { data: books, isLoading, error } = useQuery({ queryKey: ["books"], queryFn: fetchBooks });
   const { data: sessions } = useQuery({ queryKey: ["reading-sessions"], queryFn: fetchSessions });
+  const { data: highlightCounts } = useQuery({
+    queryKey: ["highlight-counts"],
+    queryFn: fetchHighlightCounts,
+  });
 
   const [shelf, setShelf] = useState<ReadStatus>("currently-reading");
   // One filter across author / tag / year, so every number on the page can
@@ -2479,13 +2625,20 @@ export default function ReadingPage() {
           </button>
         )}
 
-        <Shelf books={visible} view={view} onOpen={setOpen} onFilter={setFilter} />
+        <Shelf
+          books={visible}
+          view={view}
+          highlights={highlightCounts ?? {}}
+          onOpen={setOpen}
+          onFilter={setFilter}
+        />
       </div>
 
       <aside className="bg-ink flex flex-col gap-6 border-accent/15 p-4 md:p-6 lg:border-l">
         <DailyPages sessions={sessions ?? []} />
         <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
         <GoalCard books={books ?? []} onDrill={(y) => setFilter({ type: "year", value: y })} />
+        <ReadwiseSync />
         <CoverBackfill />
         <PagesCalendar sessions={sessions ?? []} />
         <MonthlyStats

@@ -10,6 +10,7 @@ Personal dashboard: tasks, habits, and time tracking.
 | Database + auth | Supabase project `esdgrgulaxnewmhjuyzh` | Postgres 17, Supabase Auth, row-level security |
 | Todoist proxy | `supabase/functions/todoist/` | Deno edge function |
 | Book lookup / enrichment | `supabase/functions/book-lookup/`, `supabase/functions/backfill-covers/` | Deno edge functions |
+| Highlights | `supabase/functions/readwise-sync/` | Readwise API v2 |
 | Tasks | Todoist | unified `/api/v1` |
 | Hosting | Vercel | root `vercel.json` builds `CommandCenter-main` |
 
@@ -54,7 +55,7 @@ npm run lint
   variable changes do *not* apply to existing deployments; redeploy after
   editing them.
 - **Edge functions** — `supabase functions deploy <name>` (`todoist`,
-  `book-lookup`, `backfill-covers`)
+  `book-lookup`, `backfill-covers`, `readwise-sync`)
 - **Migrations** — applied to the Supabase project; `supabase/migrations/`
   is the record.
 
@@ -80,6 +81,12 @@ npm run lint
   `volumes?q=isbn:` request comes back 429. It is a fallback only. Set
   `GOOGLE_BOOKS_API_KEY` as a Supabase secret to make it useful — Open Library
   alone covers roughly half the library.
+- **Readwise calls everything a "book."** Articles, tweets and podcasts come
+  back from the same `/export/` endpoint; only `category === "books"` is
+  matched against the library. Matching is on a normalised title (subtitle
+  dropped — Readwise stores the cover title) plus author surname, and a bare
+  title shared by two library books is treated as no match rather than a
+  guess.
 - **Third-party keys belong in Supabase, never Vercel.** Anything prefixed
   `VITE_` is compiled into the bundle and shipped to every browser. That applies
   to `TODOIST_API_TOKEN`, `GOOGLE_BOOKS_API_KEY`, `ANTHROPIC_API_KEY`, and

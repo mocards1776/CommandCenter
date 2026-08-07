@@ -323,6 +323,64 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["books"]["Insert"]>;
         Relationships: [];
       };
+      book_highlights: {
+        Row: {
+          id: string;
+          user_id: string;
+          book_id: string | null;
+          readwise_id: number;
+          readwise_book_id: number | null;
+          source_title: string | null;
+          source_author: string | null;
+          category: string | null;
+          text: string;
+          note: string | null;
+          location: number | null;
+          location_type: string | null;
+          color: string | null;
+          url: string | null;
+          highlighted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          book_id?: string | null;
+          readwise_id: number;
+          readwise_book_id?: number | null;
+          source_title?: string | null;
+          source_author?: string | null;
+          category?: string | null;
+          text: string;
+          note?: string | null;
+          location?: number | null;
+          location_type?: string | null;
+          color?: string | null;
+          url?: string | null;
+          highlighted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["book_highlights"]["Insert"]>;
+        Relationships: [];
+      };
+      integration_sync: {
+        Row: {
+          user_id: string;
+          service: string;
+          synced_at: string | null;
+          detail: Record<string, unknown>;
+        };
+        Insert: {
+          user_id: string;
+          service: string;
+          synced_at?: string | null;
+          detail?: Record<string, unknown>;
+        };
+        Update: Partial<Database["public"]["Tables"]["integration_sync"]["Insert"]>;
+        Relationships: [];
+      };
       reading_goals: {
         Row: {
           id: string;

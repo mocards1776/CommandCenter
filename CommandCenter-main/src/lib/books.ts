@@ -1,6 +1,6 @@
 import { supabase, requireUserId } from "./supabase";
 import { todayStr, shiftDay } from "./utils";
-import type { Book, BookInsert, ReadStatus } from "@/types";
+import type { Book, BookHighlight, BookInsert, ReadStatus } from "@/types";
 
 const VALID_STATUS: ReadStatus[] = [
   "read",
@@ -395,6 +395,70 @@ export async function logPages(opts: {
 export async function deleteSession(id: string): Promise<void> {
   const { error } = await supabase.from("reading_sessions").delete().eq("id", id);
   if (error) throw error;
+}
+
+// ── Readwise highlights ──────────────────────────────────────────────────
+
+export type SyncResult = {
+  sources: number;
+  matched: number;
+  highlights: number;
+  unmatched: string[];
+  incremental: boolean;
+};
+
+/**
+ * Pulls highlights from Readwise. Incremental by default; `full` re-reads the
+ * whole account, which is what you want after fixing a title so it can match.
+ */
+export async function syncReadwise(full = false): Promise<SyncResult> {
+  const { data, error } = await supabase.functions.invoke<SyncResult & { error?: string }>(
+    "readwise-sync",
+    { body: { full } },
+  );
+  // A non-2xx carries the useful message in the body, not in error.message.
+  if (data?.error) throw new Error(data.error);
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Readwise sync failed");
+  return data;
+}
+
+/** Highlights for one book, in reading order. */
+export async function fetchHighlights(bookId: string): Promise<BookHighlight[]> {
+  const { data, error } = await supabase
+    .from("book_highlights")
+    .select("*")
+    .eq("book_id", bookId)
+    .order("location", { ascending: true, nullsFirst: false })
+    .order("highlighted_at", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** How many highlights each book has, so a book can show a count. */
+export async function fetchHighlightCounts(): Promise<Record<string, number>> {
+  const { data, error } = await supabase
+    .from("book_highlights")
+    .select("book_id")
+    .not("book_id", "is", null)
+    .limit(20000);
+  if (error) throw error;
+  const out: Record<string, number> = {};
+  for (const r of data ?? []) {
+    if (r.book_id) out[r.book_id] = (out[r.book_id] ?? 0) + 1;
+  }
+  return out;
+}
+
+/** When Readwise was last pulled, for the sync card. */
+export async function readwiseSyncedAt(): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("integration_sync")
+    .select("synced_at")
+    .eq("service", "readwise")
+    .maybeSingle();
+  if (error) throw error;
+  return data?.synced_at ?? null;
 }
 
 // ── Cover backfill ───────────────────────────────────────────────────────
