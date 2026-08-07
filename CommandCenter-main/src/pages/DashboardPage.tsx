@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { Plus, BookOpen } from "lucide-react";
+import { Plus, BookOpen, LogOut } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   useTasks,
@@ -17,6 +17,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchOnDeck, coverSrc } from "@/lib/books";
 import StarField from "@/components/StarField";
 import { useTaskCompletion } from "@/hooks/useTaskCompletion";
+import { useAuth } from "@/lib/auth-context";
 import { cn, dueLabel, isOverdue, todayDow } from "@/lib/utils";
 import type { TodoistTask } from "@/types";
 
@@ -213,6 +214,7 @@ export default function DashboardPage() {
   const { data: completedToday } = useCompletedToday();
   const score = useScoreboard();
   const { completeFromEvent, isClearing } = useTaskCompletion();
+  const { signOut } = useAuth();
   const create = useCreateTask();
   const toggleHabit = useToggleHabit();
 
@@ -386,6 +388,14 @@ export default function DashboardPage() {
           )}
         </div>
         <OnDeckRail />
+
+        <button
+          onClick={() => void signOut()}
+          className="text-chalk-dim hover:text-alert mt-2 flex items-center justify-center gap-2 py-2 text-[10.5px] uppercase tracking-[0.19em] transition-colors md:hidden"
+        >
+          <LogOut size={13} />
+          Sign out
+        </button>
       </aside>
     </div>
   );

@@ -193,7 +193,7 @@ function MonthlyStats({
 }: {
   books: Book[];
   sessions: ReadingSession[];
-  onDrill: (year: string) => void;
+  onDrill: (period: string) => void;
 }) {
   const [year, setYear] = useState(() => new Date().getFullYear());
 
@@ -255,8 +255,9 @@ function MonthlyStats({
         {rows.bookCount.map((n, i) => (
           <button
             key={i}
-            onClick={() => onDrill(String(year))}
-            className="flex flex-1 flex-col items-center gap-1"
+            onClick={() => onDrill(`${year}-${String(i + 1).padStart(2, "0")}`)}
+            disabled={n === 0}
+            className="flex flex-1 flex-col items-center gap-1 disabled:cursor-default"
           >
             <div
               className="from-accent-deep to-accent w-full rounded-sm bg-gradient-to-t"
@@ -865,7 +866,7 @@ function ReadingHistory({ book }: { book: Book }) {
 
 /* ── Other editions ─────────────────────────────────────────────────── */
 function Editions({ book, onApplied }: { book: Book; onApplied: () => void }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const { data, isLoading } = useQuery({
     queryKey: ["editions", book.isbn],
     queryFn: () => fetchEditions(book.isbn ?? ""),
@@ -1018,79 +1019,113 @@ function BookDetail({
         className="bg-field h-full w-full max-w-md overflow-y-auto border-l border-accent/25 p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-5 flex items-start gap-5">
-          {cover ? (
-            <img
-              src={cover}
-              alt=""
-              className="h-[188px] w-[126px] shrink-0 rounded object-cover shadow-[0_14px_36px_rgba(0,0,0,.6)]"
-            />
-          ) : (
-            <div className="bg-panel grid h-[188px] w-[126px] shrink-0 place-items-center rounded">
-              <BookOpen size={26} className="text-chalk-dim" />
-            </div>
+        {/* Cover bleeds behind the title, the way a book jacket would. */}
+        <div className="relative -mx-6 -mt-6 mb-5 overflow-hidden px-6 pb-5 pt-6">
+          {cover && (
+            <>
+              <img
+                src={cover}
+                alt=""
+                aria-hidden
+                className="absolute inset-0 h-full w-full scale-125 object-cover opacity-20 blur-2xl"
+              />
+              <div className="from-field via-field/70 absolute inset-0 bg-gradient-to-t to-transparent" />
+            </>
           )}
+          <StarField count={18} seed={41} />
 
-          <div className="min-w-0 flex-1">
-            <h2 className="font-display text-cream text-[21px] leading-tight">
-              <Editable
-                value={book.title}
-                doubleClick
-                onSave={(v) => v.trim() && patch.mutate({ title: v.trim() })}
-                inputClassName="w-full text-[19px]"
+          <div className="relative z-10 flex items-start gap-5">
+            {cover ? (
+              <img
+                src={cover}
+                alt=""
+                className="h-[196px] w-[131px] shrink-0 rounded object-cover shadow-[0_18px_44px_rgba(0,0,0,.7)]"
               />
-            </h2>
-
-            <p className="mt-1 text-[12.5px]">
-              <Editable
-                value={book.authors}
-                placeholder="Add author"
-                doubleClick
-                onSingleClick={() => {
-                  if (!book.authors) return;
-                  onFilter({ type: "author", value: book.authors.split(",")[0].trim() });
-                  onClose();
-                }}
-                onSave={(v) => patch.mutate({ authors: v.trim() || null })}
-                className="text-chalk hover:text-accent"
-                inputClassName="w-full"
-              />
-            </p>
-
-            <p className="text-chalk-dim mt-1.5 text-[11px]">
-              <Editable
-                value={book.page_count}
-                placeholder="Add pages"
-                numeric
-                onSave={(v) => {
-                  const n = Number.parseInt(v, 10);
-                  patch.mutate({ page_count: Number.isFinite(n) && n > 0 ? n : null });
-                }}
-                inputClassName="w-20"
-              />
-              {book.page_count ? " pages" : ""}
-            </p>
-
-            <p className="text-chalk-dim mt-2 text-[11px]">
-              Read {book.read_count} time{book.read_count === 1 ? "" : "s"}
-            </p>
-
-            {book.started_at && (
-              <p className="text-chalk-dim mt-1 text-[11px]">
-                Started {fmtLongDate(book.started_at)}
-              </p>
+            ) : (
+              <div className="bg-panel grid h-[196px] w-[131px] shrink-0 place-items-center rounded">
+                <BookOpen size={28} className="text-chalk-dim" />
+              </div>
             )}
 
-            {book.locked_at && (
-              <p className="text-chalk-dim mt-1.5 text-[10px] uppercase tracking-[0.12em]">
-                ✓ saved locally
+            <div className="min-w-0 flex-1">
+              <h2 className="font-display text-cream text-[23px] leading-[1.15]">
+                <Editable
+                  value={book.title}
+                  doubleClick
+                  onSave={(v) => v.trim() && patch.mutate({ title: v.trim() })}
+                  inputClassName="w-full text-[19px]"
+                />
+              </h2>
+
+              {book.subtitle && (
+                <p className="text-chalk mt-1 text-[12.5px] italic">{book.subtitle}</p>
+              )}
+
+              <p className="mt-1.5 text-[13px]">
+                <Editable
+                  value={book.authors}
+                  placeholder="Add author"
+                  doubleClick
+                  onSingleClick={() => {
+                    if (!book.authors) return;
+                    onFilter({ type: "author", value: book.authors.split(",")[0].trim() });
+                    onClose();
+                  }}
+                  onSave={(v) => patch.mutate({ authors: v.trim() || null })}
+                  className="text-chalk hover:text-accent"
+                  inputClassName="w-full"
+                />
               </p>
-            )}
+
+              {book.star_rating !== null && (
+                <div className="mt-2 flex items-center gap-1.5">
+                  <Star size={13} className="text-accent fill-current" />
+                  <span className="numeral text-accent text-[15px]">{book.star_rating}</span>
+                </div>
+              )}
+
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                <span className="text-chalk-dim">
+                  <Editable
+                    value={book.page_count}
+                    placeholder="Add pages"
+                    numeric
+                    onSave={(v) => {
+                      const n = Number.parseInt(v, 10);
+                      patch.mutate({ page_count: Number.isFinite(n) && n > 0 ? n : null });
+                    }}
+                    inputClassName="w-20"
+                  />
+                  {book.page_count ? " pages" : ""}
+                </span>
+                {book.published_year && (
+                  <span className="text-chalk-dim">{book.published_year}</span>
+                )}
+                {book.format && <span className="text-chalk-dim capitalize">{book.format}</span>}
+                <span className="text-chalk-dim">
+                  Read {book.read_count}×
+                </span>
+              </div>
+
+              {book.publisher && (
+                <p className="text-chalk-dim mt-1 truncate text-[11px]">{book.publisher}</p>
+              )}
+              {book.started_at && (
+                <p className="text-chalk-dim mt-1 text-[11px]">
+                  Started {fmtLongDate(book.started_at)}
+                </p>
+              )}
+              {book.isbn && <p className="text-chalk-dim mt-1 text-[10px]">ISBN {book.isbn}</p>}
+            </div>
+
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="text-chalk hover:text-cream bg-field/60 shrink-0 rounded-full p-1.5 backdrop-blur"
+            >
+              <X size={17} />
+            </button>
           </div>
-
-          <button onClick={onClose} className="text-chalk hover:text-cream shrink-0">
-            <X size={18} />
-          </button>
         </div>
 
         {/* Status */}
@@ -1310,10 +1345,12 @@ function BookDetail({
         </label>
 
         {book.description && (
-          <details className="mb-4">
-            <summary className="label-caps cursor-pointer">Description</summary>
-            <p className="text-chalk mt-2 text-[12.5px] leading-relaxed">{book.description}</p>
-          </details>
+          <div className="mb-4">
+            <span className="label-caps">About</span>
+            <p className="text-chalk mt-2 whitespace-pre-line text-[12.5px] leading-relaxed">
+              {book.description}
+            </p>
+          </div>
         )}
 
         <button
@@ -2063,6 +2100,7 @@ export default function ReadingPage() {
             .split(",")
             .some((a) => a.trim().toLowerCase() === filter.value.toLowerCase());
         }
+        // A prefix, so "2026" is a year and "2026-08" is a month.
         return b.finished_at?.startsWith(filter.value) ?? false;
       })
       .slice(0, 300);
@@ -2125,7 +2163,15 @@ export default function ReadingPage() {
             onClick={() => setFilter(null)}
             className="bg-accent/15 text-accent border-accent/40 self-start rounded-sm border px-3 py-1.5 text-[11px] uppercase tracking-[0.15em]"
           >
-            {filter.type}: {filter.value} · {visible.length} · clear ✕
+            {filter.type === "year"
+              ? filter.value.length === 7
+                ? new Date(`${filter.value}-02T12:00:00`).toLocaleDateString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })
+                : filter.value
+              : `${filter.type}: ${filter.value}`}{" "}
+            · {visible.length} · clear ✕
           </button>
         )}
 

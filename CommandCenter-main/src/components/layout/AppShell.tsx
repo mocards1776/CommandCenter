@@ -42,20 +42,13 @@ export default function AppShell() {
             Command <span className="text-accent">Center</span>
           </h1>
         </div>
-        <button
-          onClick={() => void signOut()}
-          title={user?.email ?? undefined}
-          className="label-caps relative z-10 flex items-center gap-2 transition-colors hover:text-cream"
-        >
-          <span className="hidden lg:inline">{today}</span>
-          <LogOut size={15} />
-        </button>
+        <span className="label-caps relative z-10 hidden lg:inline">{today}</span>
       </header>
       <div className="rule-flag" />
 
       <div className="flex min-h-0 flex-1">
         {/* Desktop rail */}
-        <nav className="bg-ink hidden w-[196px] shrink-0 border-r border-accent/15 py-5 md:block">
+        <nav className="bg-ink hidden w-[196px] shrink-0 flex-col border-r border-accent/15 py-5 md:flex">
           {NAV.map(({ to, label }) => (
             <NavLink
               key={to}
@@ -72,6 +65,15 @@ export default function AppShell() {
               {label}
             </NavLink>
           ))}
+
+          <button
+            onClick={() => void signOut()}
+            title={user?.email ?? undefined}
+            className="text-chalk-dim hover:text-cream mt-auto flex items-center gap-2 px-7 py-3 text-[10.5px] uppercase tracking-[0.19em] transition-colors"
+          >
+            <LogOut size={13} />
+            Sign out
+          </button>
         </nav>
 
         {/* pb clears the fixed mobile tab bar */}
