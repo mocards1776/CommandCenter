@@ -466,10 +466,13 @@ export async function saveHighlightNote(id: string, my_note: string | null): Pro
 }
 
 /**
- * Ask Claude for books. `search` answers a natural-language request with web
- * search; `recommend` reads the library and suggests what to read next.
+ * Ask for books. `catalog` is free (Google Books + Open Library). `search`
+ * uses Claude + web search; `recommend` reads the library for what to read next.
  */
-export async function askAI(mode: "search" | "recommend", query = ""): Promise<Suggestion[]> {
+export async function askAI(
+  mode: "search" | "recommend" | "catalog",
+  query = "",
+): Promise<Suggestion[]> {
   const { data, error } = await supabase.functions.invoke<{
     recommendations?: Suggestion[];
     error?: string;

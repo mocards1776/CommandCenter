@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { X, Share } from "lucide-react";
 
 const DISMISSED_KEY = "cc_install_hint_dismissed";
@@ -11,6 +12,8 @@ const DISMISSED_KEY = "cc_install_hint_dismissed";
  */
 export default function InstallHint() {
   const [show, setShow] = useState(false);
+  const { pathname } = useLocation();
+  const onReading = pathname.startsWith("/reading");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -46,11 +49,15 @@ export default function InstallHint() {
       <div className="bg-hero border-accent/50 flex items-start gap-3 rounded-lg border px-4 py-3.5 shadow-2xl">
         <span className="flag-mark mt-0.5 shrink-0" />
         <div className="min-w-0 flex-1">
-          <p className="text-cream text-[13px] font-semibold">Add to your Home Screen</p>
+          <p className="text-cream text-[13px] font-semibold">
+            {onReading ? "Bookmark Reading on your Home Screen" : "Add to your Home Screen"}
+          </p>
           <p className="text-chalk mt-1 text-[11.5px] leading-relaxed">
             Tap <Share size={11} className="inline align-[-1px]" /> then{" "}
-            <span className="text-cream">Add to Home Screen</span> — it opens full screen, with no
-            browser bar.
+            <span className="text-cream">Add to Home Screen</span>
+            {onReading
+              ? " — opens the library only, without Dashboard or Todos."
+              : " — it opens full screen, with no browser bar."}
           </p>
         </div>
         <button

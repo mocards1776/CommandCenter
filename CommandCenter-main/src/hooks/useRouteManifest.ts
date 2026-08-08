@@ -56,6 +56,6 @@ export function useRouteManifest() {
 
     // Safari shows the document title under the icon when adding, so make it
     // match what the icon will be called.
-    document.title = reading ? "Reading — Command Center" : "🇺🇸 Josh's Command Center";
+    document.title = reading ? "Reading" : "🇺🇸 Josh's Command Center";
   }, [pathname]);
 }

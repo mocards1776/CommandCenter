@@ -4,15 +4,13 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // which is worse than tracking the current SDK.
 import Anthropic from "npm:@anthropic-ai/sdk";
 
-// Four AI features over the reading library, on the user's own Anthropic key:
+// Features over the reading library:
 //
-//   "recommend" — reads the library and suggests what to read next.
-//   "search"    — natural-language book search, answered with web search.
-//   "classify"  — batched (or single-book via bookId) pass filling fiction/
-//     non-fiction and series. Catalog subjects often settle fiction during
-//     enrich; the model fills the rest and is the only source for series.
-//   "cover"     — find and store a jacket for one book (Open Library first,
-//     then Claude + web search; or a reader-supplied page/image URL).
+//   "recommend" — Claude reads the library and suggests what to read next.
+//   "search"    — Claude + web search for natural-language book requests.
+//   "catalog"   — FREE search via Google Books + Open Library (no Anthropic).
+//   "classify"  — batched (or single-book via bookId) fiction/series fill.
+//   "cover"     — find and store a jacket (OL / Google / Claude / pasted URL).
 //
 // Only "search"/"cover" skip structured outputs: web search results carry
 // citations, and citations are rejected alongside output_config.format, so
@@ -630,6 +628,89 @@ async function classify(
   return json({ processed: books.length, series, remaining: remaining ?? 0 });
 }
 
+/**
+ * Free catalog search — Google Books + Open Library. No Anthropic spend.
+ * Used for "Find similar" and the Ask panel's Catalog tab.
+ */
+async function catalogSearch(query: string): Promise<Suggestion[]> {
+  const q = query.trim().slice(0, 200);
+  if (!q) return [];
+  const out: Suggestion[] = [];
+  const seen = new Set<string>();
+
+  const push = (title: string, author: string, year: string, reason: string, cover: string | null) => {
+    const key = title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push({
+      title,
+      author,
+      year,
+      reason,
+      cover_url: cover,
+    });
+  };
+
+  // Google Books (optional API key avoids anonymous 429s).
+  try {
+    const key = GOOGLE_KEY ? `&key=${encodeURIComponent(GOOGLE_KEY)}` : "";
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 9000);
+    const res = await fetch(
+      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=12${key}`,
+      { signal: ctl.signal, headers: { "User-Agent": UA } },
+    ).finally(() => clearTimeout(t));
+    if (res.ok) {
+      const items = (await res.json())?.items ?? [];
+      for (const it of items) {
+        const v = it.volumeInfo ?? {};
+        const title = String(v.title ?? "").trim();
+        if (!title) continue;
+        const authors = Array.isArray(v.authors) ? v.authors.join(", ") : "";
+        const year = String(v.publishedDate ?? "").slice(0, 4);
+        const links = v.imageLinks as Record<string, string> | undefined;
+        const cover = links?.thumbnail || links?.smallThumbnail
+          ? String(links.thumbnail ?? links.smallThumbnail).replace(/^http:/, "https:")
+          : null;
+        const cats = Array.isArray(v.categories) ? v.categories.slice(0, 2).join(" · ") : "";
+        push(title, authors, year, cats || "Google Books", cover);
+      }
+    }
+  } catch {
+    // fall through to Open Library
+  }
+
+  // Open Library fills gaps (and works without an API key).
+  if (out.length < 8) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 9000);
+      const res = await fetch(
+        `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=12&fields=title,author_name,first_publish_year,cover_i,subject`,
+        { signal: ctl.signal, headers: { "User-Agent": UA } },
+      ).finally(() => clearTimeout(t));
+      if (res.ok) {
+        for (const doc of (await res.json())?.docs ?? []) {
+          const title = String(doc.title ?? "").trim();
+          if (!title) continue;
+          const author = Array.isArray(doc.author_name) ? doc.author_name.slice(0, 2).join(", ") : "";
+          const year = doc.first_publish_year ? String(doc.first_publish_year) : "";
+          const cover = typeof doc.cover_i === "number"
+            ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
+            : null;
+          const sub = Array.isArray(doc.subject) ? String(doc.subject[0] ?? "") : "";
+          push(title, author, year, sub || "Open Library", cover);
+          if (out.length >= 12) break;
+        }
+      }
+    } catch {
+      // partial results are fine
+    }
+  }
+
+  return out.slice(0, 12);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -652,7 +733,13 @@ Deno.serve(async (req: Request) => {
   let coverUrl: string | null = null;
   try {
     const body = await req.json();
-    if (body?.mode === "search" || body?.mode === "classify" || body?.mode === "cover") {
+    if (
+      body?.mode === "search" ||
+      body?.mode === "classify" ||
+      body?.mode === "cover" ||
+      body?.mode === "catalog" ||
+      body?.mode === "recommend"
+    ) {
       mode = body.mode;
     }
     query = String(body?.query ?? "").slice(0, 500);
@@ -662,12 +749,19 @@ Deno.serve(async (req: Request) => {
   } catch {
     // defaults are fine
   }
-  if (mode === "search" && !query.trim()) return json({ error: "Ask me something." }, 400);
+  if ((mode === "search" || mode === "catalog") && !query.trim()) {
+    return json({ error: "Ask me something." }, 400);
+  }
   if (mode === "cover" && !bookId) return json({ error: "Which book?" }, 400);
 
   const admin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-  // Cover-from-link only needs storage; everything else needs Claude.
+  // Free catalog + cover-from-link need no Claude.
+  if (mode === "catalog") {
+    const recommendations = await catalogSearch(query);
+    return json({ recommendations, mode: "catalog" });
+  }
+
   const needsClaude = !(mode === "cover" && coverUrl);
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (needsClaude && !apiKey) {

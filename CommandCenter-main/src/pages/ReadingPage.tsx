@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Upload,
@@ -19,6 +19,7 @@ import {
   Send,
   Layers,
   Maximize2,
+  ChartColumn,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -1106,11 +1107,13 @@ function BookDetail({
   onClose,
   allTags,
   onFilter,
+  onFindSimilar,
 }: {
   book: Book;
   onClose: () => void;
   allTags: string[];
   onFilter: (f: Filter) => void;
+  onFindSimilar: (b: Book) => void;
 }) {
   const qc = useQueryClient();
   const { burst, fanfare } = useCelebration();
@@ -1334,6 +1337,14 @@ function BookDetail({
                   }}
                   onCorrect={(next) => patch.mutate({ fiction: next })}
                 />
+                <button
+                  type="button"
+                  onClick={() => onFindSimilar(book)}
+                  className="text-accent hover:text-cream inline-flex items-center gap-1 rounded-full border border-accent/40 px-2.5 py-[3px] text-[10.5px] uppercase tracking-[0.12em] transition hover:bg-accent/10"
+                >
+                  <Sparkles size={11} />
+                  Find similar
+                </button>
               </div>
 
               {book.series && (
@@ -1696,16 +1707,25 @@ function BookDetail({
 
 /* ── Ask AI ─────────────────────────────────────────────────────────── */
 /**
- * Two things behind one panel: a natural-language search ("college football
- * books with audiobooks") and recommendations drawn from the library itself.
- * A suggestion you already own is marked rather than hidden — knowing it's
- * already on a shelf is the useful part of the answer.
+ * Catalog (free Google Books + Open Library) is the default. Claude search /
+ * shelf recommendations stay behind the AI tab — useful, but not free.
+ * A suggestion you already own is marked rather than hidden.
  */
-function AskAI({ books, onClose }: { books: Book[]; onClose: () => void }) {
+function AskAI({
+  books,
+  onClose,
+  seed,
+}: {
+  books: Book[];
+  onClose: () => void;
+  seed?: { query: string; mode: "catalog" | "search" };
+}) {
   const qc = useQueryClient();
-  const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"catalog" | "ai">(seed?.mode === "search" ? "ai" : "catalog");
+  const [query, setQuery] = useState(seed?.query ?? "");
   const [results, setResults] = useState<Suggestion[] | null>(null);
   const [added, setAdded] = useState<Record<string, string>>({});
+  const seeded = useRef(false);
 
   // Indexed once so every result can say whether it's already on a shelf.
   const owned = useMemo(() => {
@@ -1718,13 +1738,21 @@ function AskAI({ books, onClose }: { books: Book[]; onClose: () => void }) {
   }, [books]);
 
   const ask = useMutation({
-    mutationFn: (mode: "search" | "recommend") => askAI(mode, query),
+    mutationFn: (mode: "search" | "recommend" | "catalog") => askAI(mode, query),
     onSuccess: (r) => {
       setResults(r);
       if (r.length === 0) toast("Nothing came back — try rewording it.", { icon: "🤔" });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Ask failed"),
   });
+
+  // Find similar / deep-link opens the panel already mid-search.
+  useEffect(() => {
+    if (!seed?.query || seeded.current) return;
+    seeded.current = true;
+    ask.mutate(seed.mode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount for seed
+  }, []);
 
   const add = useMutation({
     mutationFn: async (s: Suggestion) => {
@@ -1762,10 +1790,10 @@ function AskAI({ books, onClose }: { books: Book[]; onClose: () => void }) {
           <div className="relative z-10 flex items-start justify-between gap-4">
             <div>
               <h2 className="font-display text-cream text-[23px] leading-tight">
-                Ask for a <span className="text-accent">book</span>
+                Find a <span className="text-accent">book</span>
               </h2>
               <p className="text-chalk-dim mt-1 text-[11.5px]">
-                Describe what you want, or let it read your shelves.
+                Free catalog search, or ask AI when you need a smarter pick.
               </p>
             </div>
             <button
@@ -1778,17 +1806,45 @@ function AskAI({ books, onClose }: { books: Book[]; onClose: () => void }) {
           </div>
         </div>
 
+        <div className="mb-3 flex gap-1">
+          {(
+            [
+              ["catalog", "Catalog · free"],
+              ["ai", "Ask AI"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setTab(k)}
+              className={cn(
+                "rounded-sm px-3 py-1.5 text-[10.5px] uppercase tracking-[0.15em] transition",
+                tab === k
+                  ? "border border-accent/50 bg-accent/15 text-accent"
+                  : "text-chalk-dim hover:text-cream border border-transparent",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <form
           onSubmit={(e: FormEvent) => {
             e.preventDefault();
-            if (query.trim()) ask.mutate("search");
+            if (!query.trim()) return;
+            ask.mutate(tab === "catalog" ? "catalog" : "search");
           }}
           className="flex gap-2"
         >
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="college football books that have audiobooks"
+            placeholder={
+              tab === "catalog"
+                ? "title, author, or topic"
+                : "college football books that have audiobooks"
+            }
             className="bg-panel text-cream min-w-0 flex-1 rounded-sm border border-white/10 px-3 py-2.5 text-[13px] outline-none focus:border-accent/50"
           />
           <button
@@ -1797,22 +1853,34 @@ function AskAI({ books, onClose }: { books: Book[]; onClose: () => void }) {
             className="from-accent-deep to-accent-dark text-cream flex shrink-0 items-center gap-2 rounded-sm bg-gradient-to-b px-4 text-[10.5px] font-semibold uppercase tracking-[0.15em] disabled:opacity-40"
           >
             <Send size={13} />
-            Ask
+            {tab === "catalog" ? "Search" : "Ask"}
           </button>
         </form>
 
-        <button
-          onClick={() => ask.mutate("recommend")}
-          disabled={ask.isPending}
-          className="text-chalk hover:text-cream mt-2.5 flex w-full items-center justify-center gap-2 rounded-sm border border-white/10 py-2.5 text-[10.5px] uppercase tracking-[0.15em] transition hover:border-accent/50 disabled:opacity-40"
-        >
-          <Wand2 size={13} className="text-accent" />
-          What should I read next?
-        </button>
+        {tab === "ai" && (
+          <button
+            onClick={() => ask.mutate("recommend")}
+            disabled={ask.isPending}
+            className="text-chalk hover:text-cream mt-2.5 flex w-full items-center justify-center gap-2 rounded-sm border border-white/10 py-2.5 text-[10.5px] uppercase tracking-[0.15em] transition hover:border-accent/50 disabled:opacity-40"
+          >
+            <Wand2 size={13} className="text-accent" />
+            What should I read next?
+          </button>
+        )}
+
+        {tab === "catalog" && (
+          <p className="text-chalk-dim mt-2 text-[10.5px]">
+            Google Books + Open Library — no AI cost.
+          </p>
+        )}
 
         {ask.isPending && (
           <p className="label-caps mt-8 animate-pulse text-center">
-            {ask.variables === "search" ? "Searching" : "Reading your shelves"}
+            {ask.variables === "recommend"
+              ? "Reading your shelves"
+              : ask.variables === "catalog"
+                ? "Searching catalogs"
+                : "Searching"}
           </p>
         )}
 
@@ -2923,6 +2991,75 @@ function CoverBackfill() {
   );
 }
 
+/* ── Stats popover ──────────────────────────────────────────────────── */
+/** Months / tags / goal in a sheet next to the shelves — not buried above. */
+function StatsPopover({
+  books,
+  sessions,
+  filter,
+  onClose,
+  onDrill,
+  onTag,
+}: {
+  books: Book[];
+  sessions: ReadingSession[];
+  filter: Filter | null;
+  onClose: () => void;
+  onDrill: (period: string) => void;
+  onTag: (t: string) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label="Reading stats"
+        className="bg-field max-h-[85vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-xl border border-accent/25 p-5 shadow-2xl sm:rounded-xl"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.25rem)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="font-display text-cream text-[20px]">
+            Browse by <span className="text-accent">month</span>
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="text-chalk hover:text-cream rounded-full p-1.5"
+          >
+            <X size={17} />
+          </button>
+        </div>
+        <div className="flex flex-col gap-6">
+          <MonthlyStats
+            books={books}
+            sessions={sessions}
+            onDrill={(y) => {
+              onDrill(y);
+              onClose();
+            }}
+          />
+          <GoalCard
+            books={books}
+            onDrill={(y) => {
+              onDrill(y);
+              onClose();
+            }}
+          />
+          <TagStats
+            books={books}
+            active={filter?.type === "tag" ? filter.value : null}
+            onPick={(t) => {
+              onTag(t);
+              onClose();
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Page ───────────────────────────────────────────────────────────── */
 export default function ReadingPage() {
   const qc = useQueryClient();
@@ -2932,6 +3069,7 @@ export default function ReadingPage() {
     queryKey: ["highlight-counts"],
     queryFn: fetchHighlightCounts,
   });
+  const { data: dailyGoal } = useQuery({ queryKey: ["daily-goal"], queryFn: fetchDailyGoal });
 
   const [shelf, setShelf] = useState<ReadStatus>("currently-reading");
   // One filter across author / tag / year, so every number on the page can
@@ -2940,6 +3078,8 @@ export default function ReadingPage() {
   const [open, setOpen] = useState<Book | null>(null);
   const [adding, setAdding] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [askSeed, setAskSeed] = useState<{ query: string; mode: "catalog" | "search" } | undefined>();
+  const [statsOpen, setStatsOpen] = useState(false);
   // Jackets or details — remembered, because it's a taste thing, not a mode.
   const [view, setView] = useState<"list" | "grid">(
     () => (localStorage.getItem("reading-view") as "list" | "grid" | null) ?? "list",
@@ -2948,6 +3088,54 @@ export default function ReadingPage() {
   const pickView = (v: "list" | "grid") => {
     setView(v);
     localStorage.setItem("reading-view", v);
+  };
+
+  const pagesToday = useMemo(
+    () => dailyProgress(sessions ?? [], dailyGoal ?? null).today,
+    [sessions, dailyGoal],
+  );
+
+  // Swipe-back / browser back walks the book-detail stack.
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const id = (e.state as { readingBook?: string } | null)?.readingBook;
+      if (id) {
+        const b = (books ?? []).find((x) => x.id === id) ?? null;
+        setOpen(b);
+      } else {
+        setOpen(null);
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [books]);
+
+  const openBookDrawer = (b: Book) => {
+    setOpen(b);
+    const cur = (history.state as { readingBook?: string } | null)?.readingBook;
+    if (cur !== b.id) {
+      history.pushState({ readingBook: b.id }, "", window.location.href);
+    }
+  };
+
+  const closeBookDrawer = () => {
+    if ((history.state as { readingBook?: string } | null)?.readingBook) {
+      history.back();
+    } else {
+      setOpen(null);
+    }
+  };
+
+  const findSimilar = (b: Book) => {
+    const author = (b.authors ?? "").split(",")[0]?.trim();
+    const bits = [b.title, author, ...(b.subjects ?? []).slice(0, 2)].filter(Boolean);
+    setAskSeed({ query: bits.join(" "), mode: "catalog" });
+    setOpen(null);
+    // Drop the book history entry without a popstate race against the panel.
+    if ((history.state as { readingBook?: string } | null)?.readingBook) {
+      history.replaceState({}, "", window.location.href);
+    }
+    setAsking(true);
   };
 
   const counts = useMemo(() => {
@@ -3008,11 +3196,27 @@ export default function ReadingPage() {
   return (
     <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[1fr_306px]">
       <div className="flex min-w-0 flex-col gap-5 p-4 md:p-7">
-        <NowReading books={books ?? []} onOpen={setOpen} />
-        <OnDeckStrip onOpen={setOpen} />
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <NowReading books={books ?? []} onOpen={openBookDrawer} />
+          </div>
+          <div
+            className="shrink-0 pt-1 text-right"
+            title={dailyGoal ? `Goal ${dailyGoal} pages/day` : "Pages logged today"}
+          >
+            <div className="numeral text-accent text-[28px] leading-none md:text-[32px]">
+              {pagesToday}
+            </div>
+            <div className="text-chalk-dim mt-0.5 text-[9.5px] uppercase tracking-[0.16em]">
+              pages today
+              {dailyGoal != null ? ` · ${dailyGoal}` : ""}
+            </div>
+          </div>
+        </div>
+        <OnDeckStrip onOpen={openBookDrawer} />
 
         <div className="flex flex-wrap items-center gap-3">
-          <LibrarySearch books={books ?? []} onOpen={setOpen} />
+          <LibrarySearch books={books ?? []} onOpen={openBookDrawer} />
           <button
             onClick={() => setAdding(true)}
             className="from-accent-deep to-accent-dark text-cream flex items-center gap-2 rounded-sm bg-gradient-to-b px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em]"
@@ -3020,14 +3224,17 @@ export default function ReadingPage() {
             <Plus size={13} /> Add
           </button>
           <button
-            onClick={() => setAsking(true)}
+            onClick={() => {
+              setAskSeed(undefined);
+              setAsking(true);
+            }}
             className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-accent/30 px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em] transition hover:border-accent"
           >
-            <Wand2 size={13} className="text-accent" /> Ask
+            <Wand2 size={13} className="text-accent" /> Find
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1">
+        <div className="relative flex flex-wrap items-center gap-1">
           {SHELVES.map((s) => (
             <button
               key={s.key}
@@ -3042,6 +3249,16 @@ export default function ReadingPage() {
           ))}
 
           <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setStatsOpen(true)}
+              aria-label="Months and tags"
+              title="Months & tags"
+              className="text-chalk-dim hover:text-cream flex items-center gap-1.5 rounded-sm border border-white/10 px-2.5 py-1.5 text-[10px] uppercase tracking-[0.14em] transition hover:border-accent/40"
+            >
+              <ChartColumn size={14} />
+              <span className="hidden sm:inline">Months</span>
+            </button>
             {([
               ["grid", LayoutGrid, "Covers"],
               ["list", Rows3, "Details"],
@@ -3091,12 +3308,12 @@ export default function ReadingPage() {
           books={visible}
           view={view}
           highlights={highlightCounts ?? {}}
-          onOpen={setOpen}
+          onOpen={openBookDrawer}
           onFilter={setFilter}
         />
       </div>
 
-      <aside className="bg-ink flex flex-col gap-6 border-accent/15 p-4 md:p-6 lg:border-l">
+      <aside className="bg-ink hidden flex-col gap-6 border-accent/15 p-4 md:p-6 lg:flex lg:border-l">
         <DailyPages sessions={sessions ?? []} />
         <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
         <GoalCard books={books ?? []} onDrill={(y) => setFilter({ type: "year", value: y })} />
@@ -3121,16 +3338,50 @@ export default function ReadingPage() {
         />
       </aside>
 
+      {/* Mobile still needs import/sync tools — keep a compact strip. */}
+      <div className="flex flex-col gap-6 border-t border-accent/15 p-4 lg:hidden">
+        <DailyPages sessions={sessions ?? []} />
+        <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
+        <ReadwiseSync />
+        <CoverBackfill />
+        <Classifier />
+        <PagesCalendar sessions={sessions ?? []} />
+      </div>
+
       {openBook && (
         <BookDetail
           book={openBook}
-          onClose={() => setOpen(null)}
+          onClose={closeBookDrawer}
           allTags={allTags}
           onFilter={setFilter}
+          onFindSimilar={findSimilar}
         />
       )}
       {adding && <AddPanel onClose={() => setAdding(false)} />}
-      {asking && <AskAI books={books ?? []} onClose={() => setAsking(false)} />}
+      {asking && (
+        <AskAI
+          books={books ?? []}
+          seed={askSeed}
+          onClose={() => {
+            setAsking(false);
+            setAskSeed(undefined);
+          }}
+        />
+      )}
+      {statsOpen && (
+        <StatsPopover
+          books={books ?? []}
+          sessions={sessions ?? []}
+          filter={filter}
+          onClose={() => setStatsOpen(false)}
+          onDrill={(y) => setFilter({ type: "year", value: y })}
+          onTag={(t) =>
+            setFilter(
+              filter?.type === "tag" && filter.value === t ? null : { type: "tag", value: t },
+            )
+          }
+        />
+      )}
     </div>
   );
 }
