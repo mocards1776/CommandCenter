@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "@/lib/auth";
@@ -10,6 +10,7 @@ import DashboardPage from "@/pages/DashboardPage";
 import TodosPage from "@/pages/TodosPage";
 import HabitsPage from "@/pages/HabitsPage";
 import ReadingPage from "@/pages/ReadingPage";
+import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,11 +22,20 @@ const queryClient = new QueryClient({
   },
 });
 
+/** Remember solo before any auth redirect can strip `?solo=1`. */
+function captureSoloFromUrl() {
+  if (typeof window === "undefined") return;
+  if (new URLSearchParams(window.location.search).get("solo") === "1") {
+    markReadingSolo();
+  }
+}
+
 function Protected() {
   const { session, loading } = useAuth();
+  const location = useLocation();
 
   // Render nothing while the stored session resolves, otherwise a refresh
-  // flashes the login screen before landing back on the dashboard.
+  // flashes the login screen before landing back on the library/dashboard.
   if (loading) {
     return (
       <div className="min-h-screen grid place-items-center">
@@ -34,16 +44,34 @@ function Protected() {
     );
   }
 
-  return session ? <AppShell /> : <Navigate to="/login" replace />;
+  if (!session) {
+    const next = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
+
+  return <AppShell />;
 }
 
 function PublicOnly({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
+  const [params] = useSearchParams();
   if (loading) return null;
-  return session ? <Navigate to="/dashboard" replace /> : <>{children}</>;
+  if (session) {
+    captureSoloFromUrl();
+    const next = safeNextPath(params.get("next")) ?? homePath();
+    return <Navigate to={next} replace />;
+  }
+  return <>{children}</>;
+}
+
+function HomeRedirect() {
+  captureSoloFromUrl();
+  return <Navigate to={homePath()} replace />;
 }
 
 export default function App() {
+  captureSoloFromUrl();
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
@@ -59,13 +87,13 @@ export default function App() {
               }
             />
             <Route element={<Protected />}>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/" element={<HomeRedirect />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/todos" element={<TodosPage />} />
               <Route path="/habits" element={<HabitsPage />} />
               <Route path="/reading" element={<ReadingPage />} />
             </Route>
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<HomeRedirect />} />
           </Routes>
         </BrowserRouter>
         </CelebrationProvider>

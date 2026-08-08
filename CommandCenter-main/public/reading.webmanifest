@@ -3,7 +3,7 @@
   "short_name": "Reading",
   "description": "Your library, progress and reading goals.",
   "start_url": "/reading?solo=1",
-  "scope": "/reading",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#0A1730",

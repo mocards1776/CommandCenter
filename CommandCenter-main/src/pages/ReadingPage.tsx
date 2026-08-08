@@ -3069,8 +3069,6 @@ export default function ReadingPage() {
     queryKey: ["highlight-counts"],
     queryFn: fetchHighlightCounts,
   });
-  const { data: dailyGoal } = useQuery({ queryKey: ["daily-goal"], queryFn: fetchDailyGoal });
-
   const [shelf, setShelf] = useState<ReadStatus>("currently-reading");
   // One filter across author / tag / year, so every number on the page can
   // be a link into the list that produced it.
@@ -3089,11 +3087,6 @@ export default function ReadingPage() {
     setView(v);
     localStorage.setItem("reading-view", v);
   };
-
-  const pagesToday = useMemo(
-    () => dailyProgress(sessions ?? [], dailyGoal ?? null).today,
-    [sessions, dailyGoal],
-  );
 
   // Swipe-back / browser back walks the book-detail stack.
   useEffect(() => {
@@ -3194,158 +3187,143 @@ export default function ReadingPage() {
   }
 
   return (
-    <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[1fr_306px]">
-      <div className="flex min-w-0 flex-col gap-5 p-4 md:p-7">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <NowReading books={books ?? []} onOpen={openBookDrawer} />
-          </div>
-          <div
-            className="shrink-0 pt-1 text-right"
-            title={dailyGoal ? `Goal ${dailyGoal} pages/day` : "Pages logged today"}
-          >
-            <div className="numeral text-accent text-[28px] leading-none md:text-[32px]">
-              {pagesToday}
-            </div>
-            <div className="text-chalk-dim mt-0.5 text-[9.5px] uppercase tracking-[0.16em]">
-              pages today
-              {dailyGoal != null ? ` · ${dailyGoal}` : ""}
-            </div>
-          </div>
-        </div>
-        <OnDeckStrip onOpen={openBookDrawer} />
-
-        <div className="flex flex-wrap items-center gap-3">
-          <LibrarySearch books={books ?? []} onOpen={openBookDrawer} />
-          <button
-            onClick={() => setAdding(true)}
-            className="from-accent-deep to-accent-dark text-cream flex items-center gap-2 rounded-sm bg-gradient-to-b px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em]"
-          >
-            <Plus size={13} /> Add
-          </button>
-          <button
-            onClick={() => {
-              setAskSeed(undefined);
-              setAsking(true);
-            }}
-            className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-accent/30 px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em] transition hover:border-accent"
-          >
-            <Wand2 size={13} className="text-accent" /> Find
-          </button>
-        </div>
-
-        <div className="relative flex flex-wrap items-center gap-1">
-          {SHELVES.map((s) => (
+    <div className="flex min-h-0 flex-col">
+      <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[1fr_306px]">
+        <div className="flex min-w-0 flex-col gap-5 p-4 md:p-7">
+          <div className="flex flex-wrap items-center gap-3">
+            <LibrarySearch books={books ?? []} onOpen={openBookDrawer} />
             <button
-              key={s.key}
-              onClick={() => setShelf(s.key)}
-              className={cn(
-                "px-3 py-1.5 text-[10.5px] uppercase tracking-[0.19em] transition-colors",
-                shelf === s.key ? "text-accent border-accent border-b" : "text-chalk hover:text-cream",
-              )}
+              onClick={() => setAdding(true)}
+              className="from-accent-deep to-accent-dark text-cream flex items-center gap-2 rounded-sm bg-gradient-to-b px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em]"
             >
-              {s.label} <span className="text-chalk-dim ml-1">{counts[s.key] ?? 0}</span>
+              <Plus size={13} /> Add
             </button>
-          ))}
-
-          <div className="ml-auto flex items-center gap-1">
             <button
-              type="button"
-              onClick={() => setStatsOpen(true)}
-              aria-label="Months and tags"
-              title="Months & tags"
-              className="text-chalk-dim hover:text-cream flex items-center gap-1.5 rounded-sm border border-white/10 px-2.5 py-1.5 text-[10px] uppercase tracking-[0.14em] transition hover:border-accent/40"
+              onClick={() => {
+                setAskSeed(undefined);
+                setAsking(true);
+              }}
+              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-accent/30 px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em] transition hover:border-accent"
             >
-              <ChartColumn size={14} />
-              <span className="hidden sm:inline">Months</span>
+              <Wand2 size={13} className="text-accent" /> Find
             </button>
-            {([
-              ["grid", LayoutGrid, "Covers"],
-              ["list", Rows3, "Details"],
-            ] as const).map(([v, Icon, label]) => (
+          </div>
+
+          <NowReading books={books ?? []} onOpen={openBookDrawer} />
+          <OnDeckStrip onOpen={openBookDrawer} />
+
+          <div className="relative flex flex-wrap items-center gap-1">
+            {SHELVES.map((s) => (
               <button
-                key={v}
-                onClick={() => pickView(v)}
-                aria-label={label}
-                title={label}
+                key={s.key}
+                onClick={() => setShelf(s.key)}
                 className={cn(
-                  "rounded-sm border p-1.5 transition-colors",
-                  view === v
-                    ? "border-accent/50 bg-accent/15 text-accent"
-                    : "text-chalk-dim hover:text-cream border-white/10",
+                  "px-3 py-1.5 text-[10.5px] uppercase tracking-[0.19em] transition-colors",
+                  shelf === s.key ? "text-accent border-accent border-b" : "text-chalk hover:text-cream",
                 )}
               >
-                <Icon size={14} />
+                {s.label} <span className="text-chalk-dim ml-1">{counts[s.key] ?? 0}</span>
               </button>
             ))}
+
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setStatsOpen(true)}
+                aria-label="Months and tags"
+                title="Months & tags"
+                className="text-chalk-dim hover:text-cream flex items-center gap-1.5 rounded-sm border border-white/10 px-2.5 py-1.5 text-[10px] uppercase tracking-[0.14em] transition hover:border-accent/40"
+              >
+                <ChartColumn size={14} />
+                <span className="hidden sm:inline">Months</span>
+              </button>
+              {([
+                ["grid", LayoutGrid, "Covers"],
+                ["list", Rows3, "Details"],
+              ] as const).map(([v, Icon, label]) => (
+                <button
+                  key={v}
+                  onClick={() => pickView(v)}
+                  aria-label={label}
+                  title={label}
+                  className={cn(
+                    "rounded-sm border p-1.5 transition-colors",
+                    view === v
+                      ? "border-accent/50 bg-accent/15 text-accent"
+                      : "text-chalk-dim hover:text-cream border-white/10",
+                  )}
+                >
+                  <Icon size={14} />
+                </button>
+              ))}
+            </div>
           </div>
+
+          {filter && (
+            <button
+              onClick={() => setFilter(null)}
+              className="bg-accent/15 text-accent border-accent/40 self-start rounded-sm border px-3 py-1.5 text-[11px] uppercase tracking-[0.15em]"
+            >
+              {filter.type === "fiction"
+                ? filter.value === "fiction"
+                  ? "Fiction"
+                  : "Non-fiction"
+                : filter.type === "series"
+                  ? filter.value
+                  : filter.type === "year"
+                    ? filter.value.length === 7
+                      ? new Date(`${filter.value}-02T12:00:00`).toLocaleDateString("en-US", {
+                          month: "long",
+                          year: "numeric",
+                        })
+                      : filter.value
+                    : `${filter.type}: ${filter.value}`}{" "}
+              · {visible.length} · clear ✕
+            </button>
+          )}
+
+          <Shelf
+            books={visible}
+            view={view}
+            highlights={highlightCounts ?? {}}
+            onOpen={openBookDrawer}
+            onFilter={setFilter}
+          />
         </div>
 
-        {filter && (
-          <button
-            onClick={() => setFilter(null)}
-            className="bg-accent/15 text-accent border-accent/40 self-start rounded-sm border px-3 py-1.5 text-[11px] uppercase tracking-[0.15em]"
-          >
-            {filter.type === "fiction"
-              ? filter.value === "fiction"
-                ? "Fiction"
-                : "Non-fiction"
-              : filter.type === "series"
-                ? filter.value
-                : filter.type === "year"
-              ? filter.value.length === 7
-                ? new Date(`${filter.value}-02T12:00:00`).toLocaleDateString("en-US", {
-                    month: "long",
-                    year: "numeric",
-                  })
-                : filter.value
-              : `${filter.type}: ${filter.value}`}{" "}
-            · {visible.length} · clear ✕
-          </button>
-        )}
+        <aside className="bg-ink hidden flex-col gap-6 border-accent/15 p-4 md:p-6 lg:flex lg:border-l">
+          <DailyPages sessions={sessions ?? []} />
+          <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
+          <GoalCard books={books ?? []} onDrill={(y) => setFilter({ type: "year", value: y })} />
+          <PagesCalendar sessions={sessions ?? []} />
+          <MonthlyStats
+            books={books ?? []}
+            sessions={sessions ?? []}
+            onDrill={(y) => setFilter({ type: "year", value: y })}
+          />
+          <TagStats
+            books={books ?? []}
+            active={filter?.type === "tag" ? filter.value : null}
+            onPick={(t) =>
+              setFilter(
+                filter?.type === "tag" && filter.value === t ? null : { type: "tag", value: t },
+              )
+            }
+          />
+        </aside>
 
-        <Shelf
-          books={visible}
-          view={view}
-          highlights={highlightCounts ?? {}}
-          onOpen={openBookDrawer}
-          onFilter={setFilter}
-        />
+        <div className="flex flex-col gap-6 border-t border-accent/15 p-4 lg:hidden">
+          <DailyPages sessions={sessions ?? []} />
+          <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
+          <PagesCalendar sessions={sessions ?? []} />
+        </div>
       </div>
 
-      <aside className="bg-ink hidden flex-col gap-6 border-accent/15 p-4 md:p-6 lg:flex lg:border-l">
-        <DailyPages sessions={sessions ?? []} />
-        <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
-        <GoalCard books={books ?? []} onDrill={(y) => setFilter({ type: "year", value: y })} />
+      {/* Always the last thing on the page — covers, highlights, fiction/series. */}
+      <div className="bg-ink flex flex-col gap-6 border-t border-accent/15 p-4 md:p-6 lg:grid lg:grid-cols-3 lg:gap-6">
         <ReadwiseSync />
         <CoverBackfill />
         <Classifier />
-        <PagesCalendar sessions={sessions ?? []} />
-        <MonthlyStats
-          books={books ?? []}
-          sessions={sessions ?? []}
-          onDrill={(y) => setFilter({ type: "year", value: y })}
-        />
-
-        <TagStats
-          books={books ?? []}
-          active={filter?.type === "tag" ? filter.value : null}
-          onPick={(t) =>
-            setFilter(
-              filter?.type === "tag" && filter.value === t ? null : { type: "tag", value: t },
-            )
-          }
-        />
-      </aside>
-
-      {/* Mobile still needs import/sync tools — keep a compact strip. */}
-      <div className="flex flex-col gap-6 border-t border-accent/15 p-4 lg:hidden">
-        <DailyPages sessions={sessions ?? []} />
-        <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
-        <ReadwiseSync />
-        <CoverBackfill />
-        <Classifier />
-        <PagesCalendar sessions={sessions ?? []} />
       </div>
 
       {openBook && (

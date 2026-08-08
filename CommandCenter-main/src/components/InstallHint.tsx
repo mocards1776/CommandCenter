@@ -56,7 +56,7 @@ export default function InstallHint() {
             Tap <Share size={11} className="inline align-[-1px]" /> then{" "}
             <span className="text-cream">Add to Home Screen</span>
             {onReading
-              ? " — opens the library only, without Dashboard or Todos."
+              ? " — delete any old icon first, then add from this page so it opens Reading (not Dashboard)."
               : " — it opens full screen, with no browser bar."}
           </p>
         </div>

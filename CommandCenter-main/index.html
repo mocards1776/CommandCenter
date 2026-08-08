@@ -22,6 +22,25 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Reading Home Screen uses ?solo=1. Persist before React auth redirects
+      // can strip the query, and send bare "/" to the library when preferred.
+      (function () {
+        try {
+          if (/[?&]solo=1(?:&|$)/.test(location.search)) {
+            localStorage.setItem("reading-solo", "1");
+            sessionStorage.setItem("reading-solo", "1");
+          }
+          var path = location.pathname;
+          if (
+            (path === "/" || path === "") &&
+            localStorage.getItem("reading-solo") === "1"
+          ) {
+            location.replace("/reading?solo=1");
+          }
+        } catch (e) {}
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

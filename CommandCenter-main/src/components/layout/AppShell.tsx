@@ -4,7 +4,13 @@ import { LayoutDashboard, ListChecks, Repeat, BookOpen, LogOut } from "lucide-re
 import { useAuth } from "@/lib/auth-context";
 import StarField from "@/components/StarField";
 import InstallHint from "@/components/InstallHint";
+import PagesTodayBadge from "@/components/PagesTodayBadge";
 import { useRouteManifest } from "@/hooks/useRouteManifest";
+import {
+  clearReadingSolo,
+  markReadingSolo,
+  prefersReadingHome,
+} from "@/lib/reading-home";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -14,22 +20,12 @@ const NAV = [
   { to: "/reading", label: "Reading", short: "Reading", Icon: BookOpen },
 ];
 
-const READING_SOLO_KEY = "reading-solo";
-
 function isStandaloneApp() {
   if (typeof window === "undefined") return false;
   return (
     window.matchMedia?.("(display-mode: standalone)").matches ||
     (window.navigator as { standalone?: boolean }).standalone === true
   );
-}
-
-function readSoloFlag() {
-  try {
-    return sessionStorage.getItem(READING_SOLO_KEY) === "1";
-  } catch {
-    return false;
-  }
 }
 
 export default function AppShell() {
@@ -40,25 +36,37 @@ export default function AppShell() {
 
   const soloParam = searchParams.get("solo") === "1";
   const onReading = pathname.startsWith("/reading");
-  const [soloSession, setSoloSession] = useState(readSoloFlag);
+  // UI solo mode is session-scoped; localStorage only steers `/` + post-login.
+  const [soloSession, setSoloSession] = useState(
+    () => soloParam || prefersReadingHome(),
+  );
 
   // Home Screen / bookmark with ?solo=1 stays in the library — no tabs to
   // Dashboard/Todos. Full Command Center still shows nav on /reading.
   useEffect(() => {
-    if (!onReading) return;
-    const readingManifest = document
-      .querySelector('link[rel="manifest"]')
-      ?.getAttribute("href")
-      ?.includes("reading.webmanifest");
-    if (soloParam || (isStandaloneApp() && readingManifest)) {
-      try {
-        sessionStorage.setItem(READING_SOLO_KEY, "1");
-      } catch {
-        // private mode
+    if (onReading) {
+      const readingManifest = document
+        .querySelector('link[rel="manifest"]')
+        ?.getAttribute("href")
+        ?.includes("reading.webmanifest");
+      if (soloParam || (isStandaloneApp() && readingManifest)) {
+        markReadingSolo();
+        setSoloSession(true);
       }
-      setSoloSession(true);
+      return;
     }
-  }, [soloParam, onReading]);
+
+    // Using the rest of Command Center clears the Reading-home preference
+    // so the main icon keeps opening the dashboard.
+    if (
+      pathname.startsWith("/dashboard") ||
+      pathname.startsWith("/todos") ||
+      pathname.startsWith("/habits")
+    ) {
+      clearReadingSolo();
+      setSoloSession(false);
+    }
+  }, [soloParam, onReading, pathname]);
 
   const readingOnly = useMemo(
     () => onReading && (soloParam || soloSession),
@@ -87,7 +95,7 @@ export default function AppShell() {
         <div className="relative z-10 flex items-center gap-3 md:gap-4">
           <span className="flag-mark" />
           <h1 className="font-display text-cream text-[19px] tracking-[0.05em] md:text-[25px]">
-            {readingOnly ? (
+            {onReading ? (
               <>
                 <span className="text-accent">Reading</span>
               </>
@@ -98,7 +106,11 @@ export default function AppShell() {
             )}
           </h1>
         </div>
-        <span className="label-caps relative z-10 hidden lg:inline">{today}</span>
+        {onReading ? (
+          <PagesTodayBadge />
+        ) : (
+          <span className="label-caps relative z-10 hidden lg:inline">{today}</span>
+        )}
       </header>
       <div className="rule-flag" />
 
