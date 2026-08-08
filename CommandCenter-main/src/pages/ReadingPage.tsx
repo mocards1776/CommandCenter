@@ -526,7 +526,33 @@ function TagInput({
  * Library hits first, then a free Google Books / Open Library catalog search
  * so you can find books you don’t own yet without opening Ask AI.
  */
-function LibrarySearch({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => void }) {
+/** Score library rows for a search needle (shared by dropdown + full page). */
+function searchLibrary(books: Book[], raw: string, limit = 40): Book[] {
+  const needle = raw.trim().toLowerCase();
+  if (needle.length < 2) return [];
+  const scored: { b: Book; score: number }[] = [];
+  for (const b of books) {
+    const title = b.title.toLowerCase();
+    const author = (b.authors ?? "").toLowerCase();
+    let score = -1;
+    if (title.startsWith(needle)) score = 0;
+    else if (title.includes(needle)) score = 1;
+    else if (author.includes(needle)) score = 2;
+    else if (b.tags.some((t) => t.toLowerCase().includes(needle))) score = 3;
+    if (score >= 0) scored.push({ b, score });
+  }
+  return scored.sort((x, y) => x.score - y.score).slice(0, limit).map((x) => x.b);
+}
+
+function LibrarySearch({
+  books,
+  onOpen,
+  onFullSearch,
+}: {
+  books: Book[];
+  onOpen: (b: Book) => void;
+  onFullSearch: (q: string) => void;
+}) {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [focused, setFocused] = useState(false);
@@ -546,23 +572,7 @@ function LibrarySearch({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => 
     return m;
   }, [books]);
 
-  const library = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (needle.length < 2) return [];
-    const scored: { b: Book; score: number }[] = [];
-    for (const b of books) {
-      const title = b.title.toLowerCase();
-      const author = (b.authors ?? "").toLowerCase();
-      let score = -1;
-      if (title.startsWith(needle)) score = 0;
-      else if (title.includes(needle)) score = 1;
-      else if (author.includes(needle)) score = 2;
-      else if (b.tags.some((t) => t.toLowerCase().includes(needle))) score = 3;
-      if (score >= 0) scored.push({ b, score });
-      if (scored.length > 400) break;
-    }
-    return scored.sort((x, y) => x.score - y.score).slice(0, 6).map((x) => x.b);
-  }, [q, books]);
+  const library = useMemo(() => searchLibrary(books, q, 6), [q, books]);
 
   const catalog = useQuery({
     queryKey: ["catalog-search", debounced],
@@ -573,9 +583,7 @@ function LibrarySearch({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => 
 
   const catalogHits = useMemo(() => {
     const rows = catalog.data ?? [];
-    return rows
-      .filter((s) => !owned.has(titleKey(s.title)))
-      .slice(0, 6);
+    return rows.filter((s) => !owned.has(titleKey(s.title))).slice(0, 6);
   }, [catalog.data, owned]);
 
   const add = useMutation({
@@ -605,22 +613,36 @@ function LibrarySearch({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => 
 
   return (
     <div className="relative flex-1">
-      <div className="bg-panel flex items-center gap-2.5 rounded-sm border border-white/10 px-4 focus-within:border-accent/50">
-        <Search size={14} className="text-chalk-dim shrink-0" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setTimeout(() => setFocused(false), 180)}
-          placeholder="Search library or find a book"
-          className="placeholder:text-chalk-dim flex-1 bg-transparent py-2.5 text-[13px] outline-none"
-        />
-        {q && (
-          <button onClick={() => setQ("")} className="text-chalk-dim hover:text-cream">
-            <X size={13} />
-          </button>
-        )}
-      </div>
+      <form
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          const needle = q.trim();
+          if (needle.length < 2) return;
+          setFocused(false);
+          onFullSearch(needle);
+        }}
+      >
+        <div className="bg-panel flex items-center gap-2.5 rounded-sm border border-white/10 px-4 focus-within:border-accent/50">
+          <Search size={14} className="text-chalk-dim shrink-0" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setTimeout(() => setFocused(false), 180)}
+            placeholder="Search library or find a book"
+            className="placeholder:text-chalk-dim flex-1 bg-transparent py-2.5 text-[13px] outline-none"
+          />
+          {q && (
+            <button
+              type="button"
+              onClick={() => setQ("")}
+              className="text-chalk-dim hover:text-cream"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+      </form>
 
       {show && (
         <div className="bg-panel absolute z-30 mt-1 max-h-[70vh] w-full overflow-y-auto rounded border border-accent/30 shadow-2xl">
@@ -712,9 +734,227 @@ function LibrarySearch({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => 
             )}
           </div>
 
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onFullSearch(q.trim());
+              setQ("");
+            }}
+            className="text-accent hover:bg-accent/10 flex w-full items-center justify-center gap-2 px-3 py-2.5 text-[10.5px] uppercase tracking-[0.15em]"
+          >
+            <Search size={12} />
+            See all results
+          </button>
+
           {empty && <p className="text-chalk-dim px-4 py-3 text-[12px]">No matches.</p>}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Full-page search ───────────────────────────────────────────────── */
+function SearchResultsPage({
+  query,
+  books,
+  onClose,
+  onOpen,
+}: {
+  query: string;
+  books: Book[];
+  onClose: () => void;
+  onOpen: (b: Book) => void;
+}) {
+  const qc = useQueryClient();
+  const [q, setQ] = useState(query);
+
+  const owned = useMemo(() => {
+    const m = new Map<string, Book>();
+    for (const b of books) {
+      const k = titleKey(b.title);
+      if (k && !m.has(k)) m.set(k, b);
+    }
+    return m;
+  }, [books]);
+
+  const library = useMemo(() => searchLibrary(books, q, 80), [q, books]);
+
+  const catalog = useQuery({
+    queryKey: ["catalog-search-full", q.trim()],
+    queryFn: () => askAI("catalog", q.trim()),
+    enabled: q.trim().length >= 2,
+    staleTime: 60_000,
+  });
+
+  const catalogHits = useMemo(() => {
+    return (catalog.data ?? []).filter((s) => !owned.has(titleKey(s.title)));
+  }, [catalog.data, owned]);
+
+  const add = useMutation({
+    mutationFn: async (s: Suggestion) => {
+      const year = Number.parseInt(s.year, 10);
+      const book = await createBook({
+        title: s.title,
+        authors: s.author || null,
+        status: "to-read",
+        published_year: Number.isFinite(year) ? year : null,
+      });
+      await enrichBook(book.id).catch(() => {});
+      return book;
+    },
+    onSuccess: (book) => {
+      qc.invalidateQueries({ queryKey: ["books"] });
+      toast.success(`Added ${book.title}`);
+      onOpen(book);
+      onClose();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not add"),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <aside
+        className="bg-field h-full w-full max-w-lg overflow-y-auto overscroll-contain border-l border-accent/25 p-6"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 5rem)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-display text-cream text-[23px] leading-tight">
+              Search <span className="text-accent">results</span>
+            </h2>
+            <p className="text-chalk-dim mt-1 text-[11.5px]">Your library, then free catalogs.</p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="text-chalk hover:text-cream shrink-0 rounded-full p-1.5"
+          >
+            <X size={17} />
+          </button>
+        </div>
+
+        <form
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+          }}
+          className="mb-5"
+        >
+          <div className="bg-panel flex items-center gap-2.5 rounded-sm border border-white/10 px-4 focus-within:border-accent/50">
+            <Search size={14} className="text-chalk-dim shrink-0" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              autoFocus
+              className="placeholder:text-chalk-dim flex-1 bg-transparent py-2.5 text-[13px] outline-none"
+            />
+          </div>
+        </form>
+
+        <section className="mb-6">
+          <h3 className="rule-head mb-3">
+            Your library <span className="text-chalk-dim normal-case tracking-normal">· {library.length}</span>
+          </h3>
+          {library.length === 0 ? (
+            <p className="text-chalk-dim text-[12px]">No library matches.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {library.map((b) => {
+                const cover = coverSrc(b);
+                return (
+                  <li key={b.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpen(b);
+                        onClose();
+                      }}
+                      className="hover:bg-accent/10 flex w-full items-center gap-3 rounded border border-white/[0.06] px-3 py-2.5 text-left"
+                    >
+                      {cover ? (
+                        <img src={cover} alt="" className="h-14 w-9 shrink-0 rounded-[2px] object-cover" />
+                      ) : (
+                        <div className="bg-panel grid h-14 w-9 shrink-0 place-items-center rounded-[2px]">
+                          <BookOpen size={13} className="text-chalk-dim" />
+                        </div>
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="text-cream block text-[13.5px] leading-snug">{b.title}</span>
+                        <span className="text-chalk-dim mt-0.5 block text-[11px]">
+                          {b.authors || "Unknown author"}
+                          {" · "}
+                          {SHELVES.find((sh) => sh.key === b.status)?.label}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        <section>
+          <h3 className="rule-head mb-3">
+            Catalog · free
+            {catalog.isFetching ? (
+              <span className="text-chalk-dim normal-case tracking-normal"> · searching…</span>
+            ) : (
+              <span className="text-chalk-dim normal-case tracking-normal">
+                {" "}
+                · {catalogHits.length}
+              </span>
+            )}
+          </h3>
+          {catalog.isError && (
+            <p className="text-alert text-[12px]">
+              {catalog.error instanceof Error ? catalog.error.message : "Catalog search failed"}
+            </p>
+          )}
+          {!catalog.isFetching && catalogHits.length === 0 && (
+            <p className="text-chalk-dim text-[12px]">No catalog matches.</p>
+          )}
+          <ul className="flex flex-col gap-2">
+            {catalogHits.map((s) => (
+              <li
+                key={`${s.title}-${s.author}`}
+                className="bg-panel flex items-center gap-3 rounded border border-white/[0.06] px-3 py-2.5"
+              >
+                {s.cover_url ? (
+                  <img
+                    src={s.cover_url}
+                    alt=""
+                    className="h-14 w-9 shrink-0 rounded-[2px] object-cover"
+                  />
+                ) : (
+                  <div className="bg-field grid h-14 w-9 shrink-0 place-items-center rounded-[2px]">
+                    <BookOpen size={13} className="text-chalk-dim" />
+                  </div>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="text-cream block text-[13.5px] leading-snug">{s.title}</span>
+                  <span className="text-chalk-dim mt-0.5 block text-[11px]">
+                    {s.author || "Unknown author"}
+                    {s.year ? ` · ${s.year}` : ""}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => add.mutate(s)}
+                  disabled={add.isPending}
+                  className="text-accent hover:text-cream shrink-0 text-[10.5px] uppercase tracking-[0.14em] disabled:opacity-40"
+                >
+                  Add
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </aside>
     </div>
   );
 }
@@ -1323,8 +1563,18 @@ function BookDetail({
 
   const [coverLink, setCoverLink] = useState("");
   const [showCoverLink, setShowCoverLink] = useState(false);
+  // Replace / paste cover UI — only after a double-tap on the jacket.
+  const [coverToolsOpen, setCoverToolsOpen] = useState(false);
+  const coverTapAt = useRef(0);
   // img onError — storage can hold a Google "no cover" stub that still 200s.
   const [coverBroken, setCoverBroken] = useState(false);
+
+  useEffect(() => {
+    setCoverToolsOpen(false);
+    setShowCoverLink(false);
+    setCoverLink("");
+    setCoverBroken(false);
+  }, [book.id]);
 
   const findCover = useMutation({
     mutationFn: (url?: string) => pullCover(book.id, url),
@@ -1332,6 +1582,7 @@ function BookDetail({
       refresh();
       setCoverLink("");
       setShowCoverLink(false);
+      setCoverToolsOpen(false);
       setCoverBroken(false);
       toast.success(
         r.source === "ai" ? "Cover found" : r.source === "link" ? "Cover saved" : "Cover found",
@@ -1339,6 +1590,17 @@ function BookDetail({
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't find a cover"),
   });
+
+  const openCoverTools = () => {
+    setCoverToolsOpen(true);
+    setShowCoverLink(false);
+  };
+
+  const onCoverActivate = () => {
+    const now = Date.now();
+    if (now - coverTapAt.current < 380) openCoverTools();
+    coverTapAt.current = now;
+  };
 
   const cover = coverBroken ? null : coverSrc(book);
   const subjects = book.subjects ?? [];
@@ -1373,12 +1635,23 @@ function BookDetail({
 
           <div className="relative z-10 flex items-start gap-5">
             {cover ? (
-              <img
-                src={cover}
-                alt=""
-                onError={() => setCoverBroken(true)}
-                className="h-[196px] w-[131px] shrink-0 rounded object-cover shadow-[0_18px_44px_rgba(0,0,0,.7)]"
-              />
+              <button
+                type="button"
+                title="Double-tap to replace cover"
+                onClick={onCoverActivate}
+                onDoubleClick={(e) => {
+                  e.preventDefault();
+                  openCoverTools();
+                }}
+                className="shrink-0 rounded focus:outline-none"
+              >
+                <img
+                  src={cover}
+                  alt=""
+                  onError={() => setCoverBroken(true)}
+                  className="h-[196px] w-[131px] rounded object-cover shadow-[0_18px_44px_rgba(0,0,0,.7)]"
+                />
+              </button>
             ) : (
               <button
                 type="button"
@@ -1613,55 +1886,67 @@ function BookDetail({
           </div>
         )}
 
-        {/* Cover override — always available so a bad/placeholder jacket can be replaced. */}
-        <div className="mb-5 space-y-2">
-          <button
-            type="button"
-            onClick={() => findCover.mutate(undefined)}
-            disabled={findCover.isPending}
-            className="text-chalk hover:text-cream flex w-full items-center justify-center gap-2 rounded-sm border border-accent/30 py-2 text-[10.5px] uppercase tracking-[0.15em] transition hover:border-accent disabled:opacity-40"
-          >
-            <Wand2 size={13} className="text-accent" />
-            {findCover.isPending && !coverLink
-              ? "Finding cover…"
-              : cover
-                ? "Replace cover with AI"
-                : "Find cover with AI"}
-          </button>
-          {showCoverLink ? (
-            <form
-              onSubmit={(e: FormEvent) => {
-                e.preventDefault();
-                if (coverLink.trim()) findCover.mutate(coverLink.trim());
-              }}
-              className="flex gap-2"
-            >
-              <input
-                value={coverLink}
-                onChange={(e) => setCoverLink(e.target.value)}
-                placeholder="https://… cover image or book page"
-                autoFocus
-                className="bg-panel text-cream min-w-0 flex-1 rounded-sm border border-white/10 px-3 py-2 text-[12px] outline-none focus:border-accent/50"
-              />
+        {/* Cover replace — only after double-tapping the jacket. */}
+        {coverToolsOpen && (
+          <div className="mb-5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="label-caps">Replace cover</span>
               <button
-                type="submit"
-                disabled={findCover.isPending || !coverLink.trim()}
-                className="text-cream from-accent-deep to-accent-dark shrink-0 rounded-sm bg-gradient-to-b px-3 text-[10.5px] font-semibold uppercase tracking-[0.15em] disabled:opacity-40"
+                type="button"
+                onClick={() => {
+                  setCoverToolsOpen(false);
+                  setShowCoverLink(false);
+                  setCoverLink("");
+                }}
+                className="text-chalk-dim hover:text-cream text-[10px] uppercase tracking-[0.14em]"
               >
-                Save
+                Cancel
               </button>
-            </form>
-          ) : (
+            </div>
             <button
               type="button"
-              onClick={() => setShowCoverLink(true)}
-              className="text-chalk-dim hover:text-cream flex w-full items-center justify-center gap-2 py-1 text-[10.5px] uppercase tracking-[0.15em]"
+              onClick={() => findCover.mutate(undefined)}
+              disabled={findCover.isPending}
+              className="text-chalk hover:text-cream flex w-full items-center justify-center gap-2 rounded-sm border border-accent/30 py-2 text-[10.5px] uppercase tracking-[0.15em] transition hover:border-accent disabled:opacity-40"
             >
-              <Link2 size={12} />
-              {cover ? "Or paste a new cover link" : "Or paste a link"}
+              <Wand2 size={13} className="text-accent" />
+              {findCover.isPending && !coverLink ? "Finding cover…" : "Find cover with AI"}
             </button>
-          )}
-        </div>
+            {showCoverLink ? (
+              <form
+                onSubmit={(e: FormEvent) => {
+                  e.preventDefault();
+                  if (coverLink.trim()) findCover.mutate(coverLink.trim());
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  value={coverLink}
+                  onChange={(e) => setCoverLink(e.target.value)}
+                  placeholder="https://… cover image or book page"
+                  autoFocus
+                  className="bg-panel text-cream min-w-0 flex-1 rounded-sm border border-white/10 px-3 py-2 text-[12px] outline-none focus:border-accent/50"
+                />
+                <button
+                  type="submit"
+                  disabled={findCover.isPending || !coverLink.trim()}
+                  className="text-cream from-accent-deep to-accent-dark shrink-0 rounded-sm bg-gradient-to-b px-3 text-[10.5px] font-semibold uppercase tracking-[0.15em] disabled:opacity-40"
+                >
+                  Save
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowCoverLink(true)}
+                className="text-chalk-dim hover:text-cream flex w-full items-center justify-center gap-2 py-1 text-[10.5px] uppercase tracking-[0.15em]"
+              >
+                <Link2 size={12} />
+                Or paste a cover link
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Status */}
         <label className="mb-4 block">
@@ -2142,7 +2427,13 @@ function AskAI({
 }
 
 /* ── Add ────────────────────────────────────────────────────────────── */
-function AddPanel({ onClose }: { onClose: () => void }) {
+function AddPanel({
+  onClose,
+  onAdded,
+}: {
+  onClose: () => void;
+  onAdded: (b: Book) => void;
+}) {
   const qc = useQueryClient();
   const [mode, setMode] = useState<"url" | "manual">("url");
   const [url, setUrl] = useState("");
@@ -2154,16 +2445,17 @@ function AddPanel({ onClose }: { onClose: () => void }) {
     status: "read" as ReadStatus,
   });
 
-  const done = () => {
+  const finish = (book: Book) => {
     qc.invalidateQueries({ queryKey: ["books"] });
     onClose();
+    onAdded(book);
   };
 
   const fromUrl = useMutation({
     mutationFn: () => addBookFromUrl(url.trim()),
     onSuccess: (b) => {
       toast.success(`Added "${b.title}"`);
-      done();
+      finish(b);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Lookup failed"),
   });
@@ -2183,9 +2475,9 @@ function AddPanel({ onClose }: { onClose: () => void }) {
       await enrichBook(book.id).catch(() => {});
       return book;
     },
-    onSuccess: () => {
+    onSuccess: (b) => {
       toast.success("Book added");
-      done();
+      finish(b);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not add"),
   });
@@ -2379,7 +2671,7 @@ function NowReading({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => voi
     // not the first item in a list.
     <section className="mb-2 border-b border-accent/15 pb-6">
       <div className="flex flex-col gap-4">
-        {reading.slice(0, 2).map((b) => {
+        {reading.map((b) => {
           const cover = coverSrc(b);
           const pct = b.page_count ? Math.min(100, (b.current_page / b.page_count) * 100) : null;
           return (
@@ -3300,6 +3592,7 @@ export default function ReadingPage() {
   const [asking, setAsking] = useState(false);
   const [askSeed, setAskSeed] = useState<{ query: string; mode: "catalog" | "search" } | undefined>();
   const [statsOpen, setStatsOpen] = useState(false);
+  const [searchPage, setSearchPage] = useState<string | null>(null);
   // Jackets or details — remembered, because it's a taste thing, not a mode.
   const [view, setView] = useState<"list" | "grid">(
     () => (localStorage.getItem("reading-view") as "list" | "grid" | null) ?? "list",
@@ -3413,7 +3706,11 @@ export default function ReadingPage() {
       <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[1fr_306px]">
         <div className="flex min-w-0 flex-col gap-5 p-4 md:p-7">
         <div className="flex flex-wrap items-center gap-3">
-          <LibrarySearch books={books ?? []} onOpen={openBookDrawer} />
+          <LibrarySearch
+            books={books ?? []}
+            onOpen={openBookDrawer}
+            onFullSearch={(q) => setSearchPage(q)}
+          />
           <button
             onClick={() => setAdding(true)}
             className="from-accent-deep to-accent-dark text-cream flex items-center gap-2 rounded-sm bg-gradient-to-b px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em]"
@@ -3430,13 +3727,6 @@ export default function ReadingPage() {
             <Wand2 size={13} className="text-accent" /> Find
           </button>
         </div>
-        <p className="text-chalk-dim -mt-2 text-[10.5px] leading-relaxed md:hidden">
-          Home Screen bookmark: open{" "}
-          <a href="/read.html" className="text-accent underline underline-offset-2">
-            /read.html
-          </a>{" "}
-          first, then Share → Add (Safari locks the URL to that page).
-        </p>
 
           <NowReading books={books ?? []} onOpen={openBookDrawer} />
           <OnDeckStrip onOpen={openBookDrawer} />
@@ -3566,7 +3856,20 @@ export default function ReadingPage() {
           onOpenBook={openBookDrawer}
         />
       )}
-      {adding && <AddPanel onClose={() => setAdding(false)} />}
+      {adding && (
+        <AddPanel
+          onClose={() => setAdding(false)}
+          onAdded={(b) => openBookDrawer(b)}
+        />
+      )}
+      {searchPage !== null && (
+        <SearchResultsPage
+          query={searchPage}
+          books={books ?? []}
+          onClose={() => setSearchPage(null)}
+          onOpen={openBookDrawer}
+        />
+      )}
       {asking && (
         <AskAI
           books={books ?? []}
