@@ -45,6 +45,8 @@ import {
   enrichBook,
   syncReadwise,
   askAI,
+  browseNewPopular,
+  type BrowseShelf,
   pullCover,
   classifyBatch,
   unclassifiedCount,
@@ -1538,6 +1540,8 @@ function BookDetail({
         bookId: book.id,
         date,
         pageCount: book.page_count,
+        currentPage: book.current_page,
+        status: book.status,
       }),
     onSuccess: () => {
       refresh();
@@ -1724,9 +1728,11 @@ function BookDetail({
               </p>
 
               {book.star_rating !== null && (
-                <div className="mt-2 flex items-center gap-1.5">
-                  <Star size={13} className="text-accent fill-current" />
-                  <span className="numeral text-accent text-[15px]">{book.star_rating}</span>
+                <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-sm border border-cream/20 bg-cream/10 px-2.5 py-1">
+                  <Star size={15} className="text-cream fill-cream" />
+                  <span className="numeral text-cream text-[18px] leading-none tracking-wide">
+                    {book.star_rating}
+                  </span>
                 </div>
               )}
 
@@ -1975,11 +1981,14 @@ function BookDetail({
             value={book.status}
             onChange={(e) => {
               const status = e.target.value as ReadStatus;
+              if (status === "read" && book.status !== "read") {
+                finish.mutate();
+                return;
+              }
               const p: Partial<Book> = { status };
-              if (status === "read" && !book.finished_at) {
-                p.finished_at = todayStr();
-                p.last_date_read = todayStr();
-                if (book.read_count === 0) p.read_count = 1;
+              if (status === "currently-reading" && book.status !== "currently-reading") {
+                p.started_at = todayStr();
+                if (!book.last_date_read) p.last_date_read = todayStr();
               }
               patch.mutate(p);
             }}
@@ -2462,6 +2471,168 @@ function AskAI({
   );
 }
 
+/* ── New & popular (browse) ─────────────────────────────────────────── */
+/** Walk the new-release table the way you’d wander Barnes & Noble. */
+function NewPopularPanel({
+  books,
+  onClose,
+}: {
+  books: Book[];
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [added, setAdded] = useState<Record<string, string>>({});
+
+  const owned = useMemo(() => {
+    const m = new Map<string, Book>();
+    for (const b of books) {
+      const k = titleKey(b.title);
+      if (k && !m.has(k)) m.set(k, b);
+    }
+    return m;
+  }, [books]);
+
+  const browse = useQuery({
+    queryKey: ["browse-new-popular"],
+    queryFn: browseNewPopular,
+    staleTime: 1000 * 60 * 30,
+  });
+
+  const add = useMutation({
+    mutationFn: async (s: Suggestion) => {
+      const year = Number.parseInt(s.year, 10);
+      const book = await createBook({
+        title: s.title,
+        authors: s.author || null,
+        status: "to-read",
+        published_year: Number.isFinite(year) ? year : null,
+      });
+      await enrichBook(book.id).catch(() => {});
+      return book;
+    },
+    onSuccess: (book, s) => {
+      setAdded((a) => ({ ...a, [s.title]: book.id }));
+      qc.invalidateQueries({ queryKey: ["books"] });
+      toast.success(`Added ${book.title}`);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not add"),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <aside
+        className="bg-field h-full w-full max-w-lg overflow-y-auto overscroll-contain border-l border-accent/25 p-6"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 5rem)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="relative -mx-6 mb-5 overflow-hidden px-6 pb-5">
+          <StarField count={22} seed={41} />
+          <div className="relative z-10 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="font-display text-cream text-[23px] leading-tight">
+                New & <span className="text-accent">popular</span>
+              </h2>
+              <p className="text-chalk-dim mt-1 text-[11.5px]">
+                What’s on the table right now — new releases and books people are reading.
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="text-chalk hover:text-cream bg-field/60 shrink-0 rounded-full p-1.5 backdrop-blur"
+            >
+              <X size={17} />
+            </button>
+          </div>
+        </div>
+
+        {browse.isPending && (
+          <p className="label-caps mt-10 animate-pulse text-center">Browsing the shelves</p>
+        )}
+        {browse.isError && (
+          <p className="text-alert mt-6 text-center text-[13px]">
+            {browse.error instanceof Error ? browse.error.message : "Could not load"}
+          </p>
+        )}
+
+        {browse.data && (
+          <div className="flex flex-col gap-8">
+            {browse.data.map((shelf: BrowseShelf) => (
+              <section key={shelf.id}>
+                <div className="rule-head mb-1">{shelf.title}</div>
+                <p className="text-chalk-dim mb-3 text-[11.5px]">{shelf.blurb}</p>
+                <ul className="flex flex-col gap-2.5">
+                  {shelf.books.map((s) => {
+                    const have = owned.get(titleKey(s.title));
+                    const justAdded = added[s.title];
+                    return (
+                      <li
+                        key={`${shelf.id}-${s.title}-${s.author}`}
+                        className="bg-panel flex gap-3.5 rounded border border-white/[0.07] px-4 py-3"
+                      >
+                        {s.cover_url ? (
+                          <img
+                            src={s.cover_url}
+                            alt=""
+                            loading="lazy"
+                            className="h-[74px] w-[50px] shrink-0 rounded-[2px] object-cover shadow-[0_4px_14px_rgba(0,0,0,.5)]"
+                          />
+                        ) : (
+                          <div className="bg-field grid h-[74px] w-[50px] shrink-0 place-items-center rounded-[2px]">
+                            <BookOpen size={15} className="text-chalk-dim" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-cream text-[14px] leading-snug">{s.title}</p>
+                          <p className="text-chalk-dim mt-0.5 text-[11.5px]">
+                            {s.author}
+                            {s.year ? ` · ${s.year}` : ""}
+                          </p>
+                          {s.reason && (
+                            <p className="text-chalk mt-1.5 text-[11.5px] leading-relaxed">
+                              {s.reason}
+                            </p>
+                          )}
+                          <div className="mt-2.5">
+                            {have ? (
+                              <span className="text-chalk-dim text-[10.5px] uppercase tracking-[0.15em]">
+                                Already in your library
+                              </span>
+                            ) : justAdded ? (
+                              <span className="text-accent text-[10.5px] uppercase tracking-[0.15em]">
+                                Added to To read
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => add.mutate(s)}
+                                disabled={add.isPending}
+                                className="text-chalk hover:text-accent flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.15em] disabled:opacity-40"
+                              >
+                                <Plus size={12} /> Add to library
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ))}
+            {browse.data.length === 0 && (
+              <p className="text-chalk-dim text-center text-[13px]">Nothing on the table right now.</p>
+            )}
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
 /* ── Add ────────────────────────────────────────────────────────────── */
 function AddPanel({
   onClose,
@@ -2698,8 +2869,33 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
 
 
 /* ── Now reading hero ───────────────────────────────────────────────── */
-function NowReading({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => void }) {
-  const reading = books.filter((b) => b.status === "currently-reading");
+function NowReading({
+  books,
+  sessions,
+  onOpen,
+}: {
+  books: Book[];
+  sessions: ReadingSession[];
+  onOpen: (b: Book) => void;
+}) {
+  const reading = useMemo(() => {
+    const latest = new Map<string, string>();
+    for (const s of sessions) {
+      if (!s.book_id) continue;
+      const prev = latest.get(s.book_id);
+      if (!prev || s.session_date > prev) latest.set(s.book_id, s.session_date);
+    }
+    return books
+      .filter((b) => b.status === "currently-reading")
+      .sort((a, b) => {
+        const aKey = latest.get(a.id) ?? a.last_date_read ?? a.started_at ?? "";
+        const bKey = latest.get(b.id) ?? b.last_date_read ?? b.started_at ?? "";
+        if (aKey !== bKey) return bKey.localeCompare(aKey);
+        return (b.current_page ?? 0) - (a.current_page ?? 0);
+      })
+      .slice(0, 3);
+  }, [books, sessions]);
+
   if (reading.length === 0) return null;
 
   return (
@@ -3626,6 +3822,7 @@ export default function ReadingPage() {
   const [open, setOpen] = useState<Book | null>(null);
   const [adding, setAdding] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
   const [askSeed, setAskSeed] = useState<{ query: string; mode: "catalog" | "search" } | undefined>();
   const [statsOpen, setStatsOpen] = useState(false);
   const [searchPage, setSearchPage] = useState<string | null>(null);
@@ -3764,8 +3961,39 @@ export default function ReadingPage() {
           </button>
         </div>
 
-          <NowReading books={books ?? []} onOpen={openBookDrawer} />
+          <NowReading
+            books={books ?? []}
+            sessions={sessions ?? []}
+            onOpen={openBookDrawer}
+          />
           <OnDeckStrip onOpen={openBookDrawer} />
+
+          {/* Today / Recent / heatmap sit above the shelf tabs so the tabs
+              open the library under the numbers that describe it. */}
+          <div className="flex flex-col gap-6 border-t border-accent/15 pt-5">
+            <DailyPages sessions={sessions ?? []} />
+            <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
+            <PagesCalendar sessions={sessions ?? []} />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setBrowsing(true)}
+            className="text-chalk hover:text-cream group flex w-full items-center justify-between gap-3 rounded-sm border border-accent/25 bg-gradient-to-r from-accent/[0.07] to-transparent px-4 py-3 text-left transition hover:border-accent/50"
+          >
+            <span>
+              <span className="text-accent block text-[10px] font-semibold uppercase tracking-[0.2em]">
+                Browse
+              </span>
+              <span className="font-display text-cream mt-0.5 block text-[18px] leading-tight">
+                New & popular
+              </span>
+              <span className="text-chalk-dim mt-0.5 block text-[11.5px]">
+                New releases and what’s moving — like walking the front tables.
+              </span>
+            </span>
+            <Sparkles size={16} className="text-accent shrink-0 opacity-80 group-hover:opacity-100" />
+          </button>
 
           <div className="relative flex flex-wrap items-center gap-1">
             {SHELVES.map((s) => (
@@ -3847,10 +4075,7 @@ export default function ReadingPage() {
         </div>
 
         <aside className="bg-ink hidden flex-col gap-6 border-accent/15 p-4 md:p-6 lg:flex lg:border-l">
-          <DailyPages sessions={sessions ?? []} />
-          <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
           <GoalCard books={books ?? []} onDrill={(y) => setFilter({ type: "year", value: y })} />
-          <PagesCalendar sessions={sessions ?? []} />
           <MonthlyStats
             books={books ?? []}
             sessions={sessions ?? []}
@@ -3866,12 +4091,6 @@ export default function ReadingPage() {
             }
           />
         </aside>
-
-        <div className="flex flex-col gap-6 border-t border-accent/15 p-4 lg:hidden">
-          <DailyPages sessions={sessions ?? []} />
-          <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
-          <PagesCalendar sessions={sessions ?? []} />
-        </div>
       </div>
 
       {/* Always the last thing on the page — covers, highlights, fiction/series. */}
@@ -3915,6 +4134,9 @@ export default function ReadingPage() {
             setAskSeed(undefined);
           }}
         />
+      )}
+      {browsing && (
+        <NewPopularPanel books={books ?? []} onClose={() => setBrowsing(false)} />
       )}
       {statsOpen && (
         <StatsPopover

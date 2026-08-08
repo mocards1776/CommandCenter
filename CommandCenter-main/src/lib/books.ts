@@ -514,6 +514,35 @@ export async function fetchSessions(): Promise<ReadingSession[]> {
 }
 
 /**
+ * Start date for the current read-through: book.started_at when it belongs
+ * to this pass, otherwise the earliest session after the previous finish.
+ */
+async function resolveThroughStart(
+  bookId: string,
+  startedAt: string | null,
+  readLog: ReadThrough[],
+): Promise<string | null> {
+  const prevEnd = readLog
+    .map((r) => r.end)
+    .filter((d): d is string => Boolean(d))
+    .sort()
+    .at(-1) ?? null;
+
+  if (startedAt && (!prevEnd || startedAt > prevEnd)) return startedAt;
+
+  const { data } = await supabase
+    .from("reading_sessions")
+    .select("session_date")
+    .eq("book_id", bookId)
+    .order("session_date", { ascending: true });
+
+  const dates = (data ?? [])
+    .map((s) => s.session_date as string)
+    .filter((d) => !prevEnd || d > prevEnd);
+  return dates[0] ?? startedAt;
+}
+
+/**
  * Log pages read. Also advances the book's current_page, and finishes the
  * book automatically once it reaches its page count — otherwise "read 40
  * pages" and "mark as read" are two chores instead of one.
@@ -545,11 +574,12 @@ export async function logPages(opts: {
 
   const patch: Partial<Book> = {
     current_page: opts.pageCount ? Math.min(nextPage, opts.pageCount) : nextPage,
+    // Any pages logged count as recent activity — drives Now Reading order.
+    last_date_read: opts.date,
   };
   if (finished) {
     patch.status = "read";
     patch.finished_at = opts.date;
-    patch.last_date_read = opts.date;
 
     // Close out the read-through, so a finished book shows a start–end range
     // rather than only a pile of daily page entries.
@@ -561,13 +591,32 @@ export async function logPages(opts: {
     const log = (current?.read_log ?? []) as ReadThrough[];
     const already = log.some((r) => r.end === opts.date);
     if (!already) {
-      patch.read_log = [...log, { start: current?.started_at ?? null, end: opts.date }];
+      const start = await resolveThroughStart(opts.bookId, current?.started_at ?? null, log);
+      patch.read_log = [...log, { start, end: opts.date }];
       patch.read_count = log.length + 1;
+      if (start) patch.started_at = start;
     }
   } else if (opts.status === "to-read") {
     // First pages logged means you've started it.
     patch.status = "currently-reading";
     patch.started_at = opts.date;
+  } else if (opts.status === "currently-reading" || opts.status === "paused") {
+    // Re-reads often leave started_at on an old pass — refresh when unset or stale.
+    const { data: current } = await supabase
+      .from("books")
+      .select("started_at, read_log")
+      .eq("id", opts.bookId)
+      .single();
+    const log = (current?.read_log ?? []) as ReadThrough[];
+    const prevEnd = log
+      .map((r) => r.end)
+      .filter((d): d is string => Boolean(d))
+      .sort()
+      .at(-1);
+    if (!current?.started_at || (prevEnd && current.started_at <= prevEnd)) {
+      const start = await resolveThroughStart(opts.bookId, null, log);
+      patch.started_at = start ?? opts.date;
+    }
   }
 
   await updateBook(opts.bookId, patch);
@@ -575,15 +624,35 @@ export async function logPages(opts: {
 }
 
 /**
- * Mark a book finished without needing to log the last page.
- * Closes the current read-through the same way logging past page_count does.
+ * Mark a book finished. Logs any remaining pages so Today / stats count them,
+ * then closes the read-through with a real start–end range.
  */
 export async function finishBook(opts: {
   bookId: string;
   date?: string;
   pageCount: number | null;
-}): Promise<Book> {
+  currentPage: number;
+  status: string;
+}): Promise<{ finished: boolean; pagesLogged: number }> {
   const date = opts.date ?? todayStr();
+  const remaining =
+    opts.pageCount !== null && opts.pageCount > opts.currentPage
+      ? opts.pageCount - opts.currentPage
+      : 0;
+
+  if (remaining > 0) {
+    const r = await logPages({
+      bookId: opts.bookId,
+      pages: remaining,
+      date,
+      currentPage: opts.currentPage,
+      pageCount: opts.pageCount,
+      status: opts.status,
+    });
+    return { finished: r.finished, pagesLogged: remaining };
+  }
+
+  // Already at (or past) the last page — still close the through.
   const { data: current, error } = await supabase
     .from("books")
     .select("read_log, started_at, read_count")
@@ -603,13 +672,16 @@ export async function finishBook(opts: {
 
   const already = log.some((r) => r.end === date);
   if (!already) {
-    patch.read_log = [...log, { start: current?.started_at ?? null, end: date }];
+    const start = await resolveThroughStart(opts.bookId, current?.started_at ?? null, log);
+    patch.read_log = [...log, { start, end: date }];
     patch.read_count = log.length + 1;
+    if (start) patch.started_at = start;
   } else if ((current?.read_count ?? 0) === 0) {
     patch.read_count = 1;
   }
 
-  return updateBook(opts.bookId, patch);
+  await updateBook(opts.bookId, patch);
+  return { finished: true, pagesLogged: 0 };
 }
 
 export async function deleteSession(id: string): Promise<void> {
@@ -689,6 +761,24 @@ export async function askAI(
   if (data?.error) throw new Error(data.error);
   if (error) throw new Error(error.message);
   return data?.recommendations ?? [];
+}
+
+export type BrowseShelf = {
+  id: string;
+  title: string;
+  blurb: string;
+  books: Suggestion[];
+};
+
+/** New releases + popular shelves — free Google Books browse, no query needed. */
+export async function browseNewPopular(): Promise<BrowseShelf[]> {
+  const { data, error } = await supabase.functions.invoke<{
+    shelves?: BrowseShelf[];
+    error?: string;
+  }>("book-ai", { body: { mode: "browse" } });
+  if (data?.error) throw new Error(data.error);
+  if (error) throw new Error(error.message);
+  return data?.shelves ?? [];
 }
 
 export type CoverPullResult = { found: boolean; source?: string; cover_path?: string };

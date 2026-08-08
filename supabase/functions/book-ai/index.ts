@@ -9,6 +9,7 @@ import Anthropic from "npm:@anthropic-ai/sdk";
 //   "recommend" — Claude reads the library and suggests what to read next.
 //   "search"    — Claude + web search for natural-language book requests.
 //   "catalog"   — FREE search via Google Books + Open Library (no Anthropic).
+//   "browse"    — FREE new & popular shelves (Google Books, no Anthropic).
 //   "classify"  — batched (or single-book via bookId) fiction/series fill.
 //   "cover"     — find and store a jacket (OL / Google / Claude / pasted URL).
 //
@@ -711,6 +712,105 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
   return out.slice(0, 12);
 }
 
+type BrowseShelf = {
+  id: string;
+  title: string;
+  blurb: string;
+  books: Suggestion[];
+};
+
+/**
+ * Barnes & Noble energy — new releases and popular shelves from Google Books.
+ * Free; no Anthropic. Each shelf is a separate query so failures stay isolated.
+ */
+async function browseNewPopular(): Promise<BrowseShelf[]> {
+  const year = new Date().getFullYear();
+  const key = GOOGLE_KEY ? `&key=${encodeURIComponent(GOOGLE_KEY)}` : "";
+
+  const fetchShelf = async (
+    id: string,
+    title: string,
+    blurb: string,
+    q: string,
+    orderBy: "newest" | "relevance",
+  ): Promise<BrowseShelf> => {
+    const books: Suggestion[] = [];
+    const seen = new Set<string>();
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 9000);
+      const url =
+        `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}` +
+        `&orderBy=${orderBy}&maxResults=12&printType=books&langRestrict=en${key}`;
+      const res = await fetch(url, {
+        signal: ctl.signal,
+        headers: { "User-Agent": UA },
+      }).finally(() => clearTimeout(t));
+      if (res.ok) {
+        for (const it of (await res.json())?.items ?? []) {
+          const v = it.volumeInfo ?? {};
+          const bookTitle = String(v.title ?? "").trim();
+          if (!bookTitle) continue;
+          const k = bookTitle.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+          if (!k || seen.has(k)) continue;
+          seen.add(k);
+          const authors = Array.isArray(v.authors) ? v.authors.join(", ") : "";
+          const pubYear = String(v.publishedDate ?? "").slice(0, 4);
+          const links = v.imageLinks as Record<string, string> | undefined;
+          const cover = links?.thumbnail || links?.smallThumbnail
+            ? String(links.thumbnail ?? links.smallThumbnail).replace(/^http:/, "https:")
+            : null;
+          const cats = Array.isArray(v.categories) ? v.categories.slice(0, 2).join(" · ") : "";
+          books.push({
+            title: bookTitle,
+            author: authors,
+            year: pubYear,
+            reason: cats || blurb,
+            cover_url: cover,
+          });
+          if (books.length >= 10) break;
+        }
+      }
+    } catch {
+      // empty shelf is fine
+    }
+    return { id, title, blurb, books };
+  };
+
+  const shelves = await Promise.all([
+    fetchShelf(
+      "new",
+      "New releases",
+      "Just out — fresh jackets on the table.",
+      `subject:fiction ${year}`,
+      "newest",
+    ),
+    fetchShelf(
+      "popular-fiction",
+      "Popular fiction",
+      "What everyone seems to be reading.",
+      `subject:fiction bestseller`,
+      "relevance",
+    ),
+    fetchShelf(
+      "popular-nonfiction",
+      "Popular nonfiction",
+      "Stories from the real world, moving fast.",
+      `subject:biography ${year}`,
+      "relevance",
+    ),
+    fetchShelf(
+      "new-nonfiction",
+      "New nonfiction",
+      "Recent nonfiction hitting shelves.",
+      `subject:"social science" OR subject:history ${year}`,
+      "newest",
+    ),
+  ]);
+
+  return shelves.filter((s) => s.books.length > 0);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -738,6 +838,7 @@ Deno.serve(async (req: Request) => {
       body?.mode === "classify" ||
       body?.mode === "cover" ||
       body?.mode === "catalog" ||
+      body?.mode === "browse" ||
       body?.mode === "recommend"
     ) {
       mode = body.mode;
@@ -760,6 +861,10 @@ Deno.serve(async (req: Request) => {
   if (mode === "catalog") {
     const recommendations = await catalogSearch(query);
     return json({ recommendations, mode: "catalog" });
+  }
+  if (mode === "browse") {
+    const shelves = await browseNewPopular();
+    return json({ shelves, mode: "browse" });
   }
 
   const needsClaude = !(mode === "cover" && coverUrl);
