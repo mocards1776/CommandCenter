@@ -48,6 +48,8 @@ import {
   classifyBatch,
   unclassifiedCount,
   titleKey,
+  findDuplicateBooks,
+  mergeBooks,
   type Suggestion,
   fetchHighlights,
   fetchHighlightCounts,
@@ -1211,16 +1213,20 @@ function Highlights({ book }: { book: Book }) {
 
 function BookDetail({
   book,
+  books,
   onClose,
   allTags,
   onFilter,
   onFindSimilar,
+  onOpenBook,
 }: {
   book: Book;
+  books: Book[];
   onClose: () => void;
   allTags: string[];
   onFilter: (f: Filter) => void;
   onFindSimilar: (b: Book) => void;
+  onOpenBook: (b: Book) => void;
 }) {
   const qc = useQueryClient();
   const { burst, fanfare } = useCelebration();
@@ -1296,6 +1302,23 @@ function BookDetail({
       toast[hit ? "success" : "error"](hit ? "Found it" : "Nothing found for this one");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Lookup failed"),
+  });
+
+  const dupes = useMemo(() => findDuplicateBooks(books, book), [books, book]);
+
+  const mergeDupe = useMutation({
+    mutationFn: (absorbId: string) => mergeBooks(book.id, [absorbId]),
+    onSuccess: (merged, absorbId) => {
+      refresh();
+      qc.invalidateQueries({ queryKey: ["highlight-counts"] });
+      const gone = books.find((b) => b.id === absorbId);
+      toast.success(
+        `Merged ${gone?.format ?? "edition"} into this — ${merged.read_count} read-through${
+          merged.read_count === 1 ? "" : "s"
+        }`,
+      );
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not merge"),
   });
 
   const [coverLink, setCoverLink] = useState("");
@@ -1524,6 +1547,70 @@ function BookDetail({
             <Sparkles size={13} />
             {refetchInfo.isPending ? "Looking it up…" : "Fetch book info"}
           </button>
+        )}
+
+        {dupes.length > 0 && (
+          <div className="mb-5">
+            <span className="label-caps">Same book, other editions</span>
+            <p className="text-chalk-dim mt-1.5 text-[11px] leading-relaxed">
+              StoryGraph often imports digital / hardcover / audio as separate rows. Merge folds
+              their read-throughs, tags and cover into this one.
+            </p>
+            <ul className="mt-2.5 flex flex-col gap-2">
+              {dupes.map((d) => {
+                const dCover = coverSrc(d);
+                return (
+                  <li
+                    key={d.id}
+                    className="bg-panel flex items-center gap-3 rounded border border-white/[0.07] px-3 py-2.5"
+                  >
+                    {dCover ? (
+                      <img
+                        src={dCover}
+                        alt=""
+                        className="h-12 w-8 shrink-0 rounded-[2px] object-cover"
+                      />
+                    ) : (
+                      <div className="bg-field grid h-12 w-8 shrink-0 place-items-center rounded-[2px]">
+                        <BookOpen size={12} className="text-chalk-dim" />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onOpenBook(d)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <p className="text-cream truncate text-[12.5px] capitalize">
+                        {d.format || "unknown format"}
+                      </p>
+                      <p className="text-chalk-dim text-[10.5px]">
+                        {SHELVES.find((s) => s.key === d.status)?.label ?? d.status}
+                        {d.read_count > 0 ? ` · read ${d.read_count}×` : ""}
+                        {d.isbn ? ` · ISBN` : ""}
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={mergeDupe.isPending}
+                      onClick={() => {
+                        if (
+                          !confirm(
+                            `Merge the ${d.format || "other"} edition into this one? That edition’s row will be removed.`,
+                          )
+                        ) {
+                          return;
+                        }
+                        mergeDupe.mutate(d.id);
+                      }}
+                      className="text-accent hover:text-cream shrink-0 text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
+                    >
+                      Merge in
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         )}
 
         {/* Cover override — always available so a bad/placeholder jacket can be replaced. */}
@@ -3471,10 +3558,12 @@ export default function ReadingPage() {
       {openBook && (
         <BookDetail
           book={openBook}
+          books={books ?? []}
           onClose={closeBookDrawer}
           allTags={allTags}
           onFilter={setFilter}
           onFindSimilar={findSimilar}
+          onOpenBook={openBookDrawer}
         />
       )}
       {adding && <AddPanel onClose={() => setAdding(false)} />}

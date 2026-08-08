@@ -56,7 +56,32 @@ type Meta = {
   published_year?: number;
   subtitle?: string;
   subjects?: string[];
+  isbn?: string;
+  coverUrl?: string;
 };
+
+/** "The Mannings: The Fall…" → try the short work title Open Library indexes. */
+function titleVariants(title: string): string[] {
+  const raw = title.trim();
+  if (!raw) return [];
+  const beforeColon = raw.split(/[:\u2014\u2013]|\s+-\s+/)[0].trim();
+  const out: string[] = [];
+  for (const t of [beforeColon, raw]) {
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+function titlesMatch(wantTitle: string, gotTitle: string): boolean {
+  const want = wantTitle.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const got = gotTitle.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!want || !got) return false;
+  // Either side may be the short work title or the full edition title.
+  return want.startsWith(got.slice(0, Math.min(12, got.length))) ||
+    got.startsWith(want.slice(0, Math.min(12, want.length))) ||
+    want.includes(got) ||
+    got.includes(want);
+}
 
 /**
  * Fiction/non-fiction from catalog subjects when the signal is clear.
@@ -183,48 +208,92 @@ function googleMeta(v: Record<string, unknown> | null): Meta {
 /**
  * Last resort for the ~500 imported rows that carry no ISBN at all. Open
  * Library's search returns a work key and a cover id, which is enough to get
- * both a blurb and a jacket.
+ * both a blurb and a jacket. Tries the short title first — OL indexes
+ * "The Mannings", not the full subtitle string from StoryGraph.
  */
 async function lookupByTitle(title: string, authors: string | null): Promise<Meta & { coverId?: number }> {
   const out: Meta & { coverId?: number } = {};
   const author = (authors ?? "").split(",")[0].trim();
   if (!title.trim()) return out;
 
+  for (const variant of titleVariants(title)) {
+    try {
+      const params = new URLSearchParams({
+        title: variant.slice(0, 120),
+        limit: "3",
+        fields:
+          "key,title,author_name,cover_i,first_publish_year,number_of_pages_median,publisher,subject,isbn",
+      });
+      if (author) params.set("author", author);
+
+      const res = await fetchWithTimeout(`https://openlibrary.org/search.json?${params}`, 9000);
+      if (!res.ok) continue;
+      const docs = (await res.json())?.docs ?? [];
+      const doc = docs.find((d: { title?: string }) => titlesMatch(title, String(d.title ?? ""))) ??
+        docs[0];
+      if (!doc) continue;
+      if (!titlesMatch(title, String(doc.title ?? ""))) continue;
+
+      if (typeof doc.number_of_pages_median === "number") out.page_count = doc.number_of_pages_median;
+      if (typeof doc.first_publish_year === "number") out.published_year = doc.first_publish_year;
+      if (typeof doc.publisher?.[0] === "string") out.publisher = doc.publisher[0];
+      out.subjects = cleanSubjects(doc.subject);
+      if (typeof doc.cover_i === "number") out.coverId = doc.cover_i;
+      const isbn13 = Array.isArray(doc.isbn)
+        ? doc.isbn.find((x: string) => String(x).replace(/[^0-9Xx]/g, "").length === 13)
+        : null;
+      const isbnAny = Array.isArray(doc.isbn) ? doc.isbn[0] : null;
+      if (isbn13 || isbnAny) out.isbn = String(isbn13 ?? isbnAny).replace(/[^0-9Xx]/g, "");
+
+      if (typeof doc.key === "string") {
+        const w = await fetchWithTimeout(`https://openlibrary.org${doc.key}.json`);
+        if (w.ok) {
+          const work = await w.json();
+          out.description = plainText(work.description);
+          out.subjects ??= cleanSubjects(work.subjects);
+        }
+      }
+      if (out.description || out.page_count || out.coverId) return out;
+    } catch {
+      // try next variant
+    }
+  }
+
+  // Google Books by title — often has the blurb when OL's work record is empty.
   try {
-    const params = new URLSearchParams({
-      title: title.slice(0, 120),
-      limit: "1",
-      fields: "key,title,author_name,cover_i,first_publish_year,number_of_pages_median,publisher,subject",
-    });
-    if (author) params.set("author", author);
-
-    const res = await fetchWithTimeout(`https://openlibrary.org/search.json?${params}`, 9000);
-    if (!res.ok) return out;
-    const doc = (await res.json())?.docs?.[0];
-    if (!doc) return out;
-
-    // Guard against a fuzzy match landing on an unrelated book.
-    const want = title.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const got = String(doc.title ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (!want.startsWith(got.slice(0, 12)) && !got.startsWith(want.slice(0, 12))) return out;
-
-    if (typeof doc.number_of_pages_median === "number") out.page_count = doc.number_of_pages_median;
-    if (typeof doc.first_publish_year === "number") out.published_year = doc.first_publish_year;
-    if (typeof doc.publisher?.[0] === "string") out.publisher = doc.publisher[0];
-    out.subjects = cleanSubjects(doc.subject);
-    if (typeof doc.cover_i === "number") out.coverId = doc.cover_i;
-
-    if (typeof doc.key === "string") {
-      const w = await fetchWithTimeout(`https://openlibrary.org${doc.key}.json`);
-      if (w.ok) {
-        const work = await w.json();
-        out.description = plainText(work.description);
-        out.subjects ??= cleanSubjects(work.subjects);
+    const q = `intitle:${titleVariants(title)[0].slice(0, 80)}${
+      author ? ` inauthor:${author.slice(0, 40)}` : ""
+    }`;
+    const key = GOOGLE_KEY ? `&key=${encodeURIComponent(GOOGLE_KEY)}` : "";
+    const res = await fetchWithTimeout(
+      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=3${key}`,
+      9000,
+    );
+    if (res.ok) {
+      const items = (await res.json())?.items ?? [];
+      for (const it of items) {
+        const v = it.volumeInfo ?? {};
+        if (!titlesMatch(title, String(v.title ?? ""))) continue;
+        const gb = googleMeta(v);
+        out.page_count ??= gb.page_count;
+        out.description ??= gb.description;
+        out.publisher ??= gb.publisher;
+        out.published_year ??= gb.published_year;
+        out.subjects ??= gb.subjects;
+        const ids = Array.isArray(v.industryIdentifiers) ? v.industryIdentifiers : [];
+        const isbn13 = ids.find((x: { type?: string }) => x.type === "ISBN_13")?.identifier;
+        const isbn10 = ids.find((x: { type?: string }) => x.type === "ISBN_10")?.identifier;
+        if (!out.isbn && (isbn13 || isbn10)) out.isbn = String(isbn13 ?? isbn10);
+        const links = v.imageLinks as Record<string, string> | undefined;
+        const cover = links?.extraLarge ?? links?.large ?? links?.medium ?? links?.thumbnail;
+        if (cover) out.coverUrl = String(cover).replace(/^http:/, "https:");
+        break;
       }
     }
   } catch {
-    // a miss is fine; the book just stays sparse
+    // partial OL result is still useful
   }
+
   return out;
 }
 
@@ -359,8 +428,15 @@ Deno.serve(async (req: Request) => {
         published_year: meta.published_year ?? bt.published_year,
         subtitle: meta.subtitle,
         subjects: meta.subjects ?? bt.subjects,
+        isbn: meta.isbn ?? bt.isbn,
+        coverUrl: meta.coverUrl ?? bt.coverUrl,
       };
       if (bt.coverId) coverUrls.push(`https://covers.openlibrary.org/b/id/${bt.coverId}-L.jpg`);
+      if (bt.coverUrl) coverUrls.push(bt.coverUrl);
+      // Title search often yields an ISBN — use it for a better jacket pass.
+      if (!hasIsbn && bt.isbn) {
+        coverUrls.unshift(`https://covers.openlibrary.org/b/isbn/${bt.isbn}-L.jpg?default=false`);
+      }
     }
 
     if (meta.page_count && (force || !b.page_count)) {
@@ -377,6 +453,7 @@ Deno.serve(async (req: Request) => {
     }
     if (meta.subtitle && (force || !b.subtitle)) patch.subtitle = meta.subtitle;
     if (meta.subjects) patch.subjects = meta.subjects;
+    if (meta.isbn && (force || !b.isbn)) patch.isbn = meta.isbn;
 
     // Fiction is auto-pulled from subjects — never overwrite a value the reader
     // (or the classifier) already set.

@@ -216,6 +216,176 @@ export async function deleteBook(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Same work across StoryGraph formats (digital / hardcover / audio often
+ * import as separate rows). Author is the first listed name only.
+ */
+export function workKey(b: Pick<Book, "title" | "authors">): string {
+  const author = (b.authors ?? "").split(",")[0].trim().toLowerCase();
+  return `${titleKey(b.title)}|${author}`;
+}
+
+/** Other library rows that are the same work under a different format. */
+export function findDuplicateBooks(books: Book[], of: Book): Book[] {
+  const key = workKey(of);
+  return books
+    .filter((b) => b.id !== of.id && workKey(b) === key)
+    .sort((a, b) => (b.read_count ?? 0) - (a.read_count ?? 0));
+}
+
+function hasJacket(b: Book): boolean {
+  return Boolean(b.cover_path && b.cover_path.length > 0) &&
+    !(b.cover_url && /[?&]vid=ISBN/i.test(b.cover_url));
+}
+
+const STATUS_RANK: Record<string, number> = {
+  "currently-reading": 5,
+  read: 4,
+  paused: 3,
+  "did-not-finish": 2,
+  "to-read": 1,
+};
+
+/**
+ * Fold one or more duplicate edition rows into `keepId`. Read-throughs,
+ * tags, ISBN/cover/blurb holes, highlights and sessions move over; the
+ * absorbed rows are deleted. Use whenever StoryGraph split formats.
+ */
+export async function mergeBooks(keepId: string, absorbIds: string[]): Promise<Book> {
+  const ids = [...new Set(absorbIds.filter((id) => id && id !== keepId))];
+  if (!ids.length) throw new Error("Nothing to merge.");
+
+  const { data: rows, error } = await supabase
+    .from("books")
+    .select("*")
+    .in("id", [keepId, ...ids]);
+  if (error) throw error;
+  const keep = rows?.find((b) => b.id === keepId);
+  if (!keep) throw new Error("Keep book not found.");
+  const absorbs = (rows ?? []).filter((b) => b.id !== keepId);
+  if (!absorbs.length) throw new Error("Duplicate book not found.");
+
+  const patch: Partial<Book> = {};
+  const fill = <K extends keyof Book>(key: K, better?: (v: Book[K]) => boolean) => {
+    const cur = keep[key];
+    const empty =
+      cur === null ||
+      cur === undefined ||
+      cur === "" ||
+      (Array.isArray(cur) && cur.length === 0);
+    if (!empty && !better?.(cur)) return;
+    for (const a of absorbs) {
+      const v = a[key];
+      if (v === null || v === undefined || v === "") continue;
+      if (Array.isArray(v) && v.length === 0) continue;
+      if (better && !better(v)) continue;
+      patch[key] = v as Book[K];
+      break;
+    }
+  };
+
+  fill("isbn");
+  fill("subtitle");
+  fill("page_count");
+  fill("publisher");
+  fill("published_year");
+  fill("description");
+  fill("subjects", (v) => Array.isArray(v) && v.length > 0);
+  fill("series");
+  fill("series_position");
+  if (keep.fiction === null) fill("fiction");
+  if (!keep.format) fill("format");
+
+  if (!hasJacket(keep)) {
+    for (const a of absorbs) {
+      if (!hasJacket(a)) continue;
+      patch.cover_path = a.cover_path;
+      patch.cover_url = a.cover_url;
+      patch.locked_at = a.locked_at ?? new Date().toISOString();
+      break;
+    }
+  }
+
+  const tagSet = new Set<string>([...(keep.tags ?? []), ...absorbs.flatMap((a) => a.tags ?? [])]);
+  patch.tags = [...tagSet];
+
+  const ratings = [keep.star_rating, ...absorbs.map((a) => a.star_rating)].filter(
+    (n): n is number => n !== null && n !== undefined,
+  );
+  if (ratings.length) patch.star_rating = Math.max(...ratings);
+
+  if (!keep.review) {
+    const rev = absorbs.find((a) => a.review)?.review;
+    if (rev) patch.review = rev;
+  }
+
+  const log: { start: string | null; end: string | null }[] = [
+    ...((keep.read_log ?? []) as { start: string | null; end: string | null }[]),
+  ];
+  const seen = new Set(log.map((r) => `${r.start ?? ""}|${r.end ?? ""}`));
+  for (const a of absorbs) {
+    for (const r of (a.read_log ?? []) as { start: string | null; end: string | null }[]) {
+      const k = `${r.start ?? ""}|${r.end ?? ""}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      log.push(r);
+    }
+  }
+  const sorted = [...log].sort((a, b) => (b.end ?? "").localeCompare(a.end ?? ""));
+  patch.read_log = sorted;
+  patch.read_count = sorted.length;
+  if (sorted[0]?.end) {
+    patch.finished_at = sorted[0].end;
+    patch.last_date_read = sorted[0].end;
+  }
+  const starts = sorted.map((r) => r.start).filter(Boolean).sort();
+  if (starts[0]) patch.started_at = starts[0]!;
+
+  let bestStatus = keep.status;
+  let bestRank = STATUS_RANK[keep.status] ?? 0;
+  for (const a of absorbs) {
+    const r = STATUS_RANK[a.status] ?? 0;
+    if (r > bestRank) {
+      bestRank = r;
+      bestStatus = a.status;
+    }
+  }
+  patch.status = bestStatus;
+
+  if (absorbs.some((a) => a.on_deck) && !keep.on_deck) {
+    patch.on_deck = true;
+    patch.on_deck_order = absorbs.find((a) => a.on_deck)?.on_deck_order ?? keep.on_deck_order;
+  }
+
+  // Move child rows before deleting parents (FK may restrict otherwise).
+  for (const a of absorbs) {
+    const { error: hErr } = await supabase
+      .from("book_highlights")
+      .update({ book_id: keepId })
+      .eq("book_id", a.id);
+    if (hErr) throw hErr;
+    const { error: sErr } = await supabase
+      .from("reading_sessions")
+      .update({ book_id: keepId })
+      .eq("book_id", a.id);
+    if (sErr) throw sErr;
+  }
+
+  const { data: merged, error: uErr } = await supabase
+    .from("books")
+    .update(patch)
+    .eq("id", keepId)
+    .select()
+    .single();
+  if (uErr) throw uErr;
+
+  for (const a of absorbs) {
+    await deleteBook(a.id);
+  }
+
+  return merged;
+}
+
 // ── Lookup by URL ────────────────────────────────────────────────────────
 
 export type Lookup = {
