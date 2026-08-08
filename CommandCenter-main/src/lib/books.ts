@@ -999,6 +999,9 @@ export type PeriodStats = {
   pagesMonth: number;
   booksWeek: number;
   booksMonth: number;
+  /** 1 = best month ever by pages logged; null when this month has no pages. */
+  monthRank: number | null;
+  monthTotal: number;
 };
 
 /** Monday-start week; both windows in Central time to match everything else. */
@@ -1008,14 +1011,20 @@ export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodSt
 
   const dow = (d.getDay() + 6) % 7; // Monday = 0
   const weekStartIso = shiftDay(today, -dow);
-  const monthStartIso = `${today.slice(0, 7)}-01`;
+  const monthKey = today.slice(0, 7);
+  const monthStartIso = `${monthKey}-01`;
 
   let pagesWeek = 0;
   let pagesMonth = 0;
+  const byMonth = new Map<string, number>();
   for (const s of sessions) {
     if (s.session_date >= monthStartIso) pagesMonth += s.pages_read;
     if (s.session_date >= weekStartIso) pagesWeek += s.pages_read;
+    const mk = s.session_date.slice(0, 7);
+    byMonth.set(mk, (byMonth.get(mk) ?? 0) + s.pages_read);
   }
+  // Ensure the current month is ranked even when empty.
+  if (!byMonth.has(monthKey)) byMonth.set(monthKey, pagesMonth);
 
   let booksWeek = 0;
   let booksMonth = 0;
@@ -1029,7 +1038,22 @@ export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodSt
     }
   }
 
-  return { pagesWeek, pagesMonth, booksWeek, booksMonth };
+  const monthRank = rankDescending(byMonth.get(monthKey) ?? 0, [...byMonth.values()]);
+  return {
+    pagesWeek,
+    pagesMonth,
+    booksWeek,
+    booksMonth,
+    monthRank: pagesMonth > 0 ? monthRank : null,
+    monthTotal: byMonth.size,
+  };
+}
+
+/** 1-based rank among totals (higher is better). Ties share the better rank. */
+function rankDescending(value: number, all: number[]): number {
+  let better = 0;
+  for (const n of all) if (n > value) better++;
+  return better + 1;
 }
 
 // ── Daily pages goal ─────────────────────────────────────────────────────
@@ -1058,6 +1082,9 @@ export type DailyProgress = {
   metToday: boolean;
   streak: number;
   bestStreak: number;
+  /** 1 = best single day ever by pages logged; null when today is 0. */
+  allTimeRank: number | null;
+  allTimeDays: number;
 };
 
 /**
@@ -1076,9 +1103,22 @@ export function dailyProgress(sessions: ReadingSession[], goal: number | null): 
   const today = todayStr();
   const pagesToday = byDay.get(today) ?? 0;
   const metToday = goal !== null && pagesToday >= goal;
+  if (!byDay.has(today)) byDay.set(today, pagesToday);
+
+  const dayTotals = [...byDay.values()];
+  const allTimeDays = dayTotals.filter((n) => n > 0).length || (pagesToday > 0 ? 1 : 0);
+  const allTimeRank = pagesToday > 0 ? rankDescending(pagesToday, dayTotals) : null;
 
   if (goal === null) {
-    return { today: pagesToday, goal, metToday: false, streak: 0, bestStreak: 0 };
+    return {
+      today: pagesToday,
+      goal,
+      metToday: false,
+      streak: 0,
+      bestStreak: 0,
+      allTimeRank,
+      allTimeDays,
+    };
   }
 
   let streak = metToday ? 1 : 0;
@@ -1099,5 +1139,13 @@ export function dailyProgress(sessions: ReadingSession[], goal: number | null): 
     prev = d;
   }
 
-  return { today: pagesToday, goal, metToday, streak, bestStreak: Math.max(best, streak) };
+  return {
+    today: pagesToday,
+    goal,
+    metToday,
+    streak,
+    bestStreak: Math.max(best, streak),
+    allTimeRank,
+    allTimeDays,
+  };
 }

@@ -2,7 +2,7 @@
   "name": "Reading",
   "short_name": "Reading",
   "description": "Your library, progress and reading goals.",
-  "start_url": "/reading?solo=1",
+  "start_url": "/read.html",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",

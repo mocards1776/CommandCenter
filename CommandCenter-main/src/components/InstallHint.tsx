@@ -5,10 +5,9 @@ import { X, Share } from "lucide-react";
 const DISMISSED_KEY = "cc_install_hint_dismissed";
 
 /**
- * iOS only grants standalone mode to apps launched from the Home Screen icon
- * — a URL opened in Safari always keeps the browser chrome, and no manifest
- * setting overrides that. So the best available answer is to make the Home
- * Screen route obvious, once, on the devices where it applies.
+ * iOS bookmarks the URL of the page you’re on — the Add sheet won’t let you
+ * edit it. Reading must be added from /read.html (static meta + Reading icon),
+ * never from /dashboard.
  */
 export default function InstallHint() {
   const [show, setShow] = useState(false);
@@ -18,23 +17,19 @@ export default function InstallHint() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Already installed? Nothing to suggest.
     const standalone =
       window.matchMedia?.("(display-mode: standalone)").matches ||
-      // Safari's own flag, which predates the standard media query.
       (window.navigator as { standalone?: boolean }).standalone === true;
     if (standalone) return;
 
     if (localStorage.getItem(DISMISSED_KEY)) return;
 
-    // Only iOS Safari needs the manual instructions; Android fires its own
-    // install prompt and desktop has an address-bar affordance.
     const ua = navigator.userAgent;
-    const isIOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+    const isIOS =
+      /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
     const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
     if (!isIOS || !isSafari) return;
 
-    // Let the page settle before interrupting.
     const t = window.setTimeout(() => setShow(true), 1800);
     return () => window.clearTimeout(t);
   }, []);
@@ -50,14 +45,26 @@ export default function InstallHint() {
         <span className="flag-mark mt-0.5 shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="text-cream text-[13px] font-semibold">
-            {onReading ? "Bookmark Reading on your Home Screen" : "Add to your Home Screen"}
+            {onReading ? "Bookmark Reading (not Dashboard)" : "Add to your Home Screen"}
           </p>
           <p className="text-chalk mt-1 text-[11.5px] leading-relaxed">
-            Tap <Share size={11} className="inline align-[-1px]" /> then{" "}
-            <span className="text-cream">Add to Home Screen</span>
-            {onReading
-              ? " — delete any old icon first, then add from this page so it opens Reading (not Dashboard)."
-              : " — it opens full screen, with no browser bar."}
+            {onReading ? (
+              <>
+                Open{" "}
+                <a href="/read.html" className="text-accent underline underline-offset-2">
+                  /read.html
+                </a>
+                , then tap <Share size={11} className="inline align-[-1px]" /> →{" "}
+                <span className="text-cream">Add to Home Screen</span>. The URL must say read.html
+                — Safari won’t let you edit it.
+              </>
+            ) : (
+              <>
+                Tap <Share size={11} className="inline align-[-1px]" /> then{" "}
+                <span className="text-cream">Add to Home Screen</span> — it opens full screen, with
+                no browser bar.
+              </>
+            )}
           </p>
         </div>
         <button

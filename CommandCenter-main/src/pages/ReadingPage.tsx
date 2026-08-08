@@ -521,14 +521,30 @@ function TagInput({
 
 /* ── Search ─────────────────────────────────────────────────────────── */
 /**
- * Searches the whole library, not the open shelf. Results drop down as you
- * type — with 2,600 books, filtering one tab was never going to find things.
+ * Library hits first, then a free Google Books / Open Library catalog search
+ * so you can find books you don’t own yet without opening Ask AI.
  */
 function LibrarySearch({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => void }) {
+  const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [focused, setFocused] = useState(false);
+  const [debounced, setDebounced] = useState("");
 
-  const results = useMemo(() => {
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebounced(q.trim()), 350);
+    return () => window.clearTimeout(t);
+  }, [q]);
+
+  const owned = useMemo(() => {
+    const m = new Map<string, Book>();
+    for (const b of books) {
+      const k = titleKey(b.title);
+      if (k && !m.has(k)) m.set(k, b);
+    }
+    return m;
+  }, [books]);
+
+  const library = useMemo(() => {
     const needle = q.trim().toLowerCase();
     if (needle.length < 2) return [];
     const scored: { b: Book; score: number }[] = [];
@@ -536,7 +552,6 @@ function LibrarySearch({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => 
       const title = b.title.toLowerCase();
       const author = (b.authors ?? "").toLowerCase();
       let score = -1;
-      // Rank: title prefix beats title substring beats author.
       if (title.startsWith(needle)) score = 0;
       else if (title.includes(needle)) score = 1;
       else if (author.includes(needle)) score = 2;
@@ -544,8 +559,47 @@ function LibrarySearch({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => 
       if (score >= 0) scored.push({ b, score });
       if (scored.length > 400) break;
     }
-    return scored.sort((x, y) => x.score - y.score).slice(0, 8).map((x) => x.b);
+    return scored.sort((x, y) => x.score - y.score).slice(0, 6).map((x) => x.b);
   }, [q, books]);
+
+  const catalog = useQuery({
+    queryKey: ["catalog-search", debounced],
+    queryFn: () => askAI("catalog", debounced),
+    enabled: debounced.length >= 2 && focused,
+    staleTime: 60_000,
+  });
+
+  const catalogHits = useMemo(() => {
+    const rows = catalog.data ?? [];
+    return rows
+      .filter((s) => !owned.has(titleKey(s.title)))
+      .slice(0, 6);
+  }, [catalog.data, owned]);
+
+  const add = useMutation({
+    mutationFn: async (s: Suggestion) => {
+      const year = Number.parseInt(s.year, 10);
+      const book = await createBook({
+        title: s.title,
+        authors: s.author || null,
+        status: "to-read",
+        published_year: Number.isFinite(year) ? year : null,
+      });
+      await enrichBook(book.id).catch(() => {});
+      return book;
+    },
+    onSuccess: (book) => {
+      qc.invalidateQueries({ queryKey: ["books"] });
+      toast.success(`Added ${book.title}`);
+      setQ("");
+      onOpen(book);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not add"),
+  });
+
+  const show = focused && q.trim().length >= 2;
+  const empty =
+    library.length === 0 && !catalog.isFetching && catalogHits.length === 0 && !catalog.isError;
 
   return (
     <div className="relative flex-1">
@@ -555,9 +609,8 @@ function LibrarySearch({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => 
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onFocus={() => setFocused(true)}
-          // Delay so a click on a result registers before the list unmounts.
-          onBlur={() => setTimeout(() => setFocused(false), 150)}
-          placeholder="Search your whole library"
+          onBlur={() => setTimeout(() => setFocused(false), 180)}
+          placeholder="Search library or find a book"
           className="placeholder:text-chalk-dim flex-1 bg-transparent py-2.5 text-[13px] outline-none"
         />
         {q && (
@@ -567,43 +620,97 @@ function LibrarySearch({ books, onOpen }: { books: Book[]; onOpen: (b: Book) => 
         )}
       </div>
 
-      {focused && q.trim().length >= 2 && (
-        <div className="bg-panel absolute z-30 mt-1 w-full overflow-hidden rounded border border-accent/30 shadow-2xl">
-          {results.length === 0 ? (
-            <p className="text-chalk-dim px-4 py-3 text-[12px]">No matches.</p>
-          ) : (
-            results.map((b) => {
-              const cover = coverSrc(b);
-              return (
-                <button
-                  key={b.id}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onOpen(b);
-                    setQ("");
-                  }}
-                  className="hover:bg-accent/15 flex w-full items-center gap-3 border-b border-white/[0.05] px-3 py-2 text-left last:border-0"
-                >
-                  {cover ? (
-                    <img src={cover} alt="" className="h-10 w-7 shrink-0 rounded-[2px] object-cover" />
-                  ) : (
-                    <div className="bg-field grid h-10 w-7 shrink-0 place-items-center rounded-[2px]">
-                      <BookOpen size={11} className="text-chalk-dim" />
-                    </div>
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="text-cream block truncate text-[12.5px]">{b.title}</span>
-                    <span className="text-chalk-dim block truncate text-[10.5px]">
-                      {b.authors || "Unknown author"}
+      {show && (
+        <div className="bg-panel absolute z-30 mt-1 max-h-[70vh] w-full overflow-y-auto rounded border border-accent/30 shadow-2xl">
+          {library.length > 0 && (
+            <div>
+              <p className="text-chalk-dim px-3 pt-2.5 pb-1 text-[9.5px] uppercase tracking-[0.16em]">
+                Your library
+              </p>
+              {library.map((b) => {
+                const cover = coverSrc(b);
+                return (
+                  <button
+                    key={b.id}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onOpen(b);
+                      setQ("");
+                    }}
+                    className="hover:bg-accent/15 flex w-full items-center gap-3 border-b border-white/[0.05] px-3 py-2 text-left last:border-0"
+                  >
+                    {cover ? (
+                      <img src={cover} alt="" className="h-10 w-7 shrink-0 rounded-[2px] object-cover" />
+                    ) : (
+                      <div className="bg-field grid h-10 w-7 shrink-0 place-items-center rounded-[2px]">
+                        <BookOpen size={11} className="text-chalk-dim" />
+                      </div>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="text-cream block truncate text-[12.5px]">{b.title}</span>
+                      <span className="text-chalk-dim block truncate text-[10.5px]">
+                        {b.authors || "Unknown author"}
+                      </span>
                     </span>
-                  </span>
-                  <span className="text-chalk-dim shrink-0 text-[9.5px] uppercase tracking-[0.12em]">
-                    {SHELVES.find((sh) => sh.key === b.status)?.label}
-                  </span>
-                </button>
-              );
-            })
+                    <span className="text-chalk-dim shrink-0 text-[9.5px] uppercase tracking-[0.12em]">
+                      {SHELVES.find((sh) => sh.key === b.status)?.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           )}
+
+          <div>
+            <p className="text-chalk-dim px-3 pt-2.5 pb-1 text-[9.5px] uppercase tracking-[0.16em]">
+              Catalog · free
+              {catalog.isFetching ? " · searching…" : ""}
+            </p>
+            {catalog.isError && (
+              <p className="text-alert px-3 py-2 text-[12px]">
+                {catalog.error instanceof Error ? catalog.error.message : "Catalog search failed"}
+              </p>
+            )}
+            {catalogHits.map((s) => (
+              <div
+                key={`${s.title}-${s.author}`}
+                className="flex items-center gap-3 border-b border-white/[0.05] px-3 py-2 last:border-0"
+              >
+                {s.cover_url ? (
+                  <img
+                    src={s.cover_url}
+                    alt=""
+                    className="h-10 w-7 shrink-0 rounded-[2px] object-cover"
+                  />
+                ) : (
+                  <div className="bg-field grid h-10 w-7 shrink-0 place-items-center rounded-[2px]">
+                    <BookOpen size={11} className="text-chalk-dim" />
+                  </div>
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="text-cream block truncate text-[12.5px]">{s.title}</span>
+                  <span className="text-chalk-dim block truncate text-[10.5px]">
+                    {s.author || "Unknown author"}
+                    {s.year ? ` · ${s.year}` : ""}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => add.mutate(s)}
+                  disabled={add.isPending}
+                  className="text-accent hover:text-cream shrink-0 text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
+                >
+                  Add
+                </button>
+              </div>
+            ))}
+            {!catalog.isFetching && catalogHits.length === 0 && library.length > 0 && (
+              <p className="text-chalk-dim px-3 py-2 text-[11.5px]">No new catalog matches.</p>
+            )}
+          </div>
+
+          {empty && <p className="text-chalk-dim px-4 py-3 text-[12px]">No matches.</p>}
         </div>
       )}
     </div>
@@ -2432,21 +2539,30 @@ function DailyPages({ sessions }: { sessions: ReadingSession[] }) {
         </div>
       )}
 
-      {p.goal !== null && (
-        <div className="mt-2 flex items-center gap-3">
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        {p.allTimeRank != null && (
+          <span className="text-accent text-[11px]">
+            #{p.allTimeRank} all-time day
+            <span className="text-chalk-dim">
+              {" "}
+              of {p.allTimeDays}
+            </span>
+          </span>
+        )}
+        {p.goal !== null && (
           <span className={cn("text-[11px]", p.metToday ? "text-accent" : "text-chalk-dim")}>
             {p.metToday ? "✓ goal met" : `${p.goal - p.today} to go`}
           </span>
-          {p.streak > 0 && (
-            <span className="text-accent text-[11px]">
-              🔥 {p.streak} day{p.streak === 1 ? "" : "s"}
-            </span>
-          )}
-          {p.bestStreak > p.streak && (
-            <span className="text-chalk-dim text-[10.5px]">best {p.bestStreak}</span>
-          )}
-        </div>
-      )}
+        )}
+        {p.goal !== null && p.streak > 0 && (
+          <span className="text-accent text-[11px]">
+            🔥 {p.streak} day{p.streak === 1 ? "" : "s"}
+          </span>
+        )}
+        {p.goal !== null && p.bestStreak > p.streak && (
+          <span className="text-chalk-dim text-[10.5px]">best {p.bestStreak}</span>
+        )}
+      </div>
 
       {editing || p.goal === null ? (
         <form
@@ -2487,15 +2603,29 @@ function DailyPages({ sessions }: { sessions: ReadingSession[] }) {
 function PeriodTotals({ books, sessions }: { books: Book[]; sessions: ReadingSession[] }) {
   const s = useMemo(() => periodStats(books, sessions), [books, sessions]);
 
-  const Cell = ({ label, value, sub }: { label: string; value: number; sub: string }) => (
+  const Cell = ({
+    label,
+    value,
+    sub,
+    rank,
+  }: {
+    label: string;
+    value: number;
+    sub: string;
+    rank?: string | null;
+  }) => (
     <div className="bg-panel px-4 py-3">
       <div className="label-caps text-[9.5px] tracking-[0.17em]">{label}</div>
       <div className="numeral text-cream mt-1 text-[27px] leading-none">
         {value.toLocaleString()}
       </div>
       <div className="text-chalk-dim mt-1 text-[9.5px] uppercase tracking-[0.12em]">{sub}</div>
+      {rank && <div className="text-accent mt-1 text-[10px]">{rank}</div>}
     </div>
   );
+
+  const monthRankLabel =
+    s.monthRank != null ? `#${s.monthRank} of ${s.monthTotal} months` : null;
 
   return (
     <div>
@@ -2503,7 +2633,12 @@ function PeriodTotals({ books, sessions }: { books: Book[]; sessions: ReadingSes
       <div className="bg-accent/15 grid grid-cols-2 gap-px">
         <Cell label="This week" value={s.pagesWeek} sub="pages" />
         <Cell label="This week" value={s.booksWeek} sub={s.booksWeek === 1 ? "book" : "books"} />
-        <Cell label="This month" value={s.pagesMonth} sub="pages" />
+        <Cell
+          label="This month"
+          value={s.pagesMonth}
+          sub="pages"
+          rank={monthRankLabel}
+        />
         <Cell label="This month" value={s.booksMonth} sub={s.booksMonth === 1 ? "book" : "books"} />
       </div>
       {s.pagesWeek === 0 && s.pagesMonth === 0 && (
@@ -3190,24 +3325,31 @@ export default function ReadingPage() {
     <div className="flex min-h-0 flex-col">
       <div className="grid min-h-0 grid-cols-1 lg:grid-cols-[1fr_306px]">
         <div className="flex min-w-0 flex-col gap-5 p-4 md:p-7">
-          <div className="flex flex-wrap items-center gap-3">
-            <LibrarySearch books={books ?? []} onOpen={openBookDrawer} />
-            <button
-              onClick={() => setAdding(true)}
-              className="from-accent-deep to-accent-dark text-cream flex items-center gap-2 rounded-sm bg-gradient-to-b px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em]"
-            >
-              <Plus size={13} /> Add
-            </button>
-            <button
-              onClick={() => {
-                setAskSeed(undefined);
-                setAsking(true);
-              }}
-              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-accent/30 px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em] transition hover:border-accent"
-            >
-              <Wand2 size={13} className="text-accent" /> Find
-            </button>
-          </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <LibrarySearch books={books ?? []} onOpen={openBookDrawer} />
+          <button
+            onClick={() => setAdding(true)}
+            className="from-accent-deep to-accent-dark text-cream flex items-center gap-2 rounded-sm bg-gradient-to-b px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em]"
+          >
+            <Plus size={13} /> Add
+          </button>
+          <button
+            onClick={() => {
+              setAskSeed(undefined);
+              setAsking(true);
+            }}
+            className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-accent/30 px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em] transition hover:border-accent"
+          >
+            <Wand2 size={13} className="text-accent" /> Find
+          </button>
+        </div>
+        <p className="text-chalk-dim -mt-2 text-[10.5px] leading-relaxed md:hidden">
+          Home Screen bookmark: open{" "}
+          <a href="/read.html" className="text-accent underline underline-offset-2">
+            /read.html
+          </a>{" "}
+          first, then Share → Add (Safari locks the URL to that page).
+        </p>
 
           <NowReading books={books ?? []} onOpen={openBookDrawer} />
           <OnDeckStrip onOpen={openBookDrawer} />
