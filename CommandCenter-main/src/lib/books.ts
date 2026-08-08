@@ -1300,17 +1300,86 @@ export type PeriodStats = {
   /** 1 = best month ever by pages logged; null when this month has no pages. */
   monthRank: number | null;
   monthTotal: number;
+  weekStart: string;
+  monthStart: string;
+  today: string;
 };
+
+/** Monday-start week bounds (Central calendar dates, same as todayStr). */
+export function periodBounds(today = todayStr()) {
+  const d = new Date(`${today}T12:00:00`);
+  const dow = (d.getDay() + 6) % 7; // Monday = 0
+  return {
+    today,
+    weekStart: shiftDay(today, -dow),
+    monthStart: `${today.slice(0, 7)}-01`,
+  };
+}
+
+export type PagesContribution = {
+  bookId: string | null;
+  title: string;
+  authors: string | null;
+  book: Book | null;
+  pages: number;
+};
+
+/** Pages logged in [from, to], rolled up per book (most pages first). */
+export function pagesContributions(
+  sessions: ReadingSession[],
+  books: Book[],
+  from: string,
+  to: string,
+): PagesContribution[] {
+  const byId = new Map(books.map((b) => [b.id, b]));
+  const agg = new Map<string, number>();
+  for (const s of sessions) {
+    if (s.session_date < from || s.session_date > to) continue;
+    const key = s.book_id ?? "__none__";
+    agg.set(key, (agg.get(key) ?? 0) + s.pages_read);
+  }
+  return [...agg.entries()]
+    .map(([key, pages]) => {
+      const book = key === "__none__" ? null : (byId.get(key) ?? null);
+      return {
+        bookId: book?.id ?? (key === "__none__" ? null : key),
+        title: book?.title ?? "Unknown book",
+        authors: book?.authors ?? null,
+        book,
+        pages,
+      };
+    })
+    .sort((a, b) => b.pages - a.pages || a.title.localeCompare(b.title));
+}
+
+export type FinishedContribution = {
+  book: Book;
+  ended: string;
+  started: string | null;
+};
+
+/** Read-throughs finished in [from, to], newest finish first. */
+export function finishedContributions(
+  books: Book[],
+  from: string,
+  to: string,
+): FinishedContribution[] {
+  const out: FinishedContribution[] = [];
+  for (const b of books) {
+    for (const r of b.read_log ?? []) {
+      if (!r.end || r.end < from || r.end > to) continue;
+      out.push({ book: b, ended: r.end, started: r.start });
+    }
+  }
+  return out.sort(
+    (a, b) => b.ended.localeCompare(a.ended) || a.book.title.localeCompare(b.book.title),
+  );
+}
 
 /** Monday-start week; both windows in Central time to match everything else. */
 export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodStats {
-  const today = todayStr();
-  const d = new Date(`${today}T12:00:00`);
-
-  const dow = (d.getDay() + 6) % 7; // Monday = 0
-  const weekStartIso = shiftDay(today, -dow);
+  const { today, weekStart: weekStartIso, monthStart: monthStartIso } = periodBounds();
   const monthKey = today.slice(0, 7);
-  const monthStartIso = `${monthKey}-01`;
 
   let pagesWeek = 0;
   let pagesMonth = 0;
@@ -1344,6 +1413,9 @@ export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodSt
     booksMonth,
     monthRank: pagesMonth > 0 ? monthRank : null,
     monthTotal: byMonth.size,
+    weekStart: weekStartIso,
+    monthStart: monthStartIso,
+    today,
   };
 }
 

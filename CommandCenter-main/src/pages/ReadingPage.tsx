@@ -47,6 +47,9 @@ import {
   askAI,
   browseNewPopular,
   type BrowseShelf,
+  pagesContributions,
+  finishedContributions,
+  periodBounds,
   pullCover,
   classifyBatch,
   unclassifiedCount,
@@ -2471,6 +2474,157 @@ function AskAI({
   );
 }
 
+/* ── Stats breakdown (today / week / month) ─────────────────────────── */
+export type BreakdownFocus =
+  | { kind: "pages"; label: string; from: string; to: string }
+  | { kind: "finished"; label: string; from: string; to: string };
+
+function StatsBreakdown({
+  focus,
+  books,
+  sessions,
+  onClose,
+  onOpenBook,
+}: {
+  focus: BreakdownFocus;
+  books: Book[];
+  sessions: ReadingSession[];
+  onClose: () => void;
+  onOpenBook: (b: Book) => void;
+}) {
+  const pageRows = useMemo(
+    () =>
+      focus.kind === "pages"
+        ? pagesContributions(sessions, books, focus.from, focus.to)
+        : [],
+    [focus, sessions, books],
+  );
+  const finished = useMemo(
+    () =>
+      focus.kind === "finished"
+        ? finishedContributions(books, focus.from, focus.to)
+        : [],
+    [focus, books],
+  );
+  const totalPages = pageRows.reduce((n, r) => n + r.pages, 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      <aside
+        className="bg-field h-full w-full max-w-md overflow-y-auto overscroll-contain border-l border-accent/25 p-6"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 5rem)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-display text-cream text-[22px] leading-tight">{focus.label}</h2>
+            <p className="text-chalk-dim mt-1 text-[11.5px]">
+              {focus.kind === "pages"
+                ? `${totalPages.toLocaleString()} page${totalPages === 1 ? "" : "s"} across ${pageRows.length} book${pageRows.length === 1 ? "" : "s"}`
+                : `${finished.length} finished`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="text-chalk hover:text-cream bg-field/60 shrink-0 rounded-full p-1.5 backdrop-blur"
+          >
+            <X size={17} />
+          </button>
+        </div>
+
+        {focus.kind === "pages" && pageRows.length === 0 && (
+          <p className="text-chalk-dim text-[13px]">No pages logged in this window.</p>
+        )}
+        {focus.kind === "finished" && finished.length === 0 && (
+          <p className="text-chalk-dim text-[13px]">Nothing finished in this window.</p>
+        )}
+
+        {focus.kind === "pages" && pageRows.length > 0 && (
+          <ul className="flex flex-col gap-2">
+            {pageRows.map((r) => {
+              const cover = r.book ? coverSrc(r.book) : null;
+              return (
+                <li key={r.bookId ?? r.title}>
+                  <button
+                    type="button"
+                    disabled={!r.book}
+                    onClick={() => r.book && onOpenBook(r.book)}
+                    className={cn(
+                      "bg-panel flex w-full items-center gap-3 rounded border border-white/[0.07] px-3 py-2.5 text-left",
+                      r.book && "hover:border-accent/40 transition",
+                    )}
+                  >
+                    {cover ? (
+                      <img
+                        src={cover}
+                        alt=""
+                        className="h-12 w-8 shrink-0 rounded-[2px] object-cover"
+                      />
+                    ) : (
+                      <div className="bg-field grid h-12 w-8 shrink-0 place-items-center rounded-[2px]">
+                        <BookOpen size={12} className="text-chalk-dim" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-cream truncate text-[13px]">{r.title}</p>
+                      {r.authors && (
+                        <p className="text-chalk-dim truncate text-[11px]">{r.authors}</p>
+                      )}
+                    </div>
+                    <span className="numeral text-accent shrink-0 text-[18px]">{r.pages}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {focus.kind === "finished" && finished.length > 0 && (
+          <ul className="flex flex-col gap-2">
+            {finished.map((r) => {
+              const cover = coverSrc(r.book);
+              return (
+                <li key={`${r.book.id}-${r.ended}`}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenBook(r.book)}
+                    className="bg-panel hover:border-accent/40 flex w-full items-center gap-3 rounded border border-white/[0.07] px-3 py-2.5 text-left transition"
+                  >
+                    {cover ? (
+                      <img
+                        src={cover}
+                        alt=""
+                        className="h-12 w-8 shrink-0 rounded-[2px] object-cover"
+                      />
+                    ) : (
+                      <div className="bg-field grid h-12 w-8 shrink-0 place-items-center rounded-[2px]">
+                        <BookOpen size={12} className="text-chalk-dim" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-cream truncate text-[13px]">{r.book.title}</p>
+                      <p className="text-chalk-dim text-[11px]">
+                        {r.started && r.started !== r.ended
+                          ? `${fmtLongDate(r.started)} – ${fmtLongDate(r.ended)}`
+                          : fmtLongDate(r.ended)}
+                      </p>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </aside>
+    </div>
+  );
+}
+
 /* ── New & popular (browse) ─────────────────────────────────────────── */
 /** Walk the new-release table the way you’d wander Barnes & Noble. */
 function NewPopularPanel({
@@ -2493,7 +2647,7 @@ function NewPopularPanel({
   }, [books]);
 
   const browse = useQuery({
-    queryKey: ["browse-new-popular"],
+    queryKey: ["browse-new-popular", "front-tables"],
     queryFn: browseNewPopular,
     staleTime: 1000 * 60 * 30,
   });
@@ -2536,7 +2690,7 @@ function NewPopularPanel({
                 New & <span className="text-accent">popular</span>
               </h2>
               <p className="text-chalk-dim mt-1 text-[11.5px]">
-                What’s on the table right now — new releases and books people are reading.
+                Front-of-store energy — new releases and bestsellers on the big tables.
               </p>
             </div>
             <button
@@ -3108,13 +3262,20 @@ function GoalCard({ books, onDrill }: { books: Book[]; onDrill: (year: string) =
 
 
 /* ── Pages today + daily goal ───────────────────────────────────────── */
-function DailyPages({ sessions }: { sessions: ReadingSession[] }) {
+function DailyPages({
+  sessions,
+  onBreakdown,
+}: {
+  sessions: ReadingSession[];
+  onBreakdown: (focus: BreakdownFocus) => void;
+}) {
   const qc = useQueryClient();
   const { data: goal } = useQuery({ queryKey: ["daily-goal"], queryFn: fetchDailyGoal });
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
   const p = useMemo(() => dailyProgress(sessions, goal ?? null), [sessions, goal]);
+  const today = periodBounds().today;
 
   const save = useMutation({
     mutationFn: (n: number | null) => saveDailyGoal(n),
@@ -3126,20 +3287,35 @@ function DailyPages({ sessions }: { sessions: ReadingSession[] }) {
 
   const pct = p.goal ? Math.min(100, (p.today / p.goal) * 100) : null;
 
+  const openToday = () =>
+    onBreakdown({ kind: "pages", label: "Today", from: today, to: today });
+
   return (
     <div>
       <h2 className="rule-head mb-3">Today</h2>
 
-      <div className="flex items-baseline gap-2">
-        <span className="numeral text-accent text-[38px] leading-none">{p.today}</span>
-        <span className="text-chalk text-[13px]">
+      <button
+        type="button"
+        onClick={openToday}
+        className="group flex items-baseline gap-2 text-left transition"
+        aria-label={`${p.today} pages today — see which books`}
+      >
+        <span className="numeral text-accent group-hover:text-cream text-[38px] leading-none transition">
+          {p.today}
+        </span>
+        <span className="text-chalk group-hover:text-cream text-[13px] transition">
           page{p.today === 1 ? "" : "s"}
           {p.goal ? ` of ${p.goal}` : ""}
         </span>
-      </div>
+      </button>
 
       {pct !== null && (
-        <div className="mt-2 h-2 overflow-hidden rounded-sm bg-white/10">
+        <button
+          type="button"
+          onClick={openToday}
+          className="mt-2 block h-2 w-full overflow-hidden rounded-sm bg-white/10"
+          aria-label="Today progress — see which books"
+        >
           <div
             className={cn(
               "h-full transition-[width] duration-500",
@@ -3147,7 +3323,7 @@ function DailyPages({ sessions }: { sessions: ReadingSession[] }) {
             )}
             style={{ width: `${pct}%` }}
           />
-        </div>
+        </button>
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -3211,7 +3387,15 @@ function DailyPages({ sessions }: { sessions: ReadingSession[] }) {
 }
 
 /* ── This week / this month ─────────────────────────────────────────── */
-function PeriodTotals({ books, sessions }: { books: Book[]; sessions: ReadingSession[] }) {
+function PeriodTotals({
+  books,
+  sessions,
+  onBreakdown,
+}: {
+  books: Book[];
+  sessions: ReadingSession[];
+  onBreakdown: (focus: BreakdownFocus) => void;
+}) {
   const s = useMemo(() => periodStats(books, sessions), [books, sessions]);
 
   const Cell = ({
@@ -3219,20 +3403,26 @@ function PeriodTotals({ books, sessions }: { books: Book[]; sessions: ReadingSes
     value,
     sub,
     rank,
+    onClick,
   }: {
     label: string;
     value: number;
     sub: string;
     rank?: string | null;
+    onClick: () => void;
   }) => (
-    <div className="bg-panel px-4 py-3">
+    <button
+      type="button"
+      onClick={onClick}
+      className="bg-panel hover:bg-panel/80 px-4 py-3 text-left transition"
+    >
       <div className="label-caps text-[9.5px] tracking-[0.17em]">{label}</div>
       <div className="numeral text-cream mt-1 text-[27px] leading-none">
         {value.toLocaleString()}
       </div>
       <div className="text-chalk-dim mt-1 text-[9.5px] uppercase tracking-[0.12em]">{sub}</div>
       {rank && <div className="text-accent mt-1 text-[10px]">{rank}</div>}
-    </div>
+    </button>
   );
 
   const monthRankLabel =
@@ -3242,15 +3432,59 @@ function PeriodTotals({ books, sessions }: { books: Book[]; sessions: ReadingSes
     <div>
       <h2 className="rule-head mb-3">Recent</h2>
       <div className="bg-accent/15 grid grid-cols-2 gap-px">
-        <Cell label="This week" value={s.pagesWeek} sub="pages" />
-        <Cell label="This week" value={s.booksWeek} sub={s.booksWeek === 1 ? "book" : "books"} />
+        <Cell
+          label="This week"
+          value={s.pagesWeek}
+          sub="pages"
+          onClick={() =>
+            onBreakdown({
+              kind: "pages",
+              label: "This week · pages",
+              from: s.weekStart,
+              to: s.today,
+            })
+          }
+        />
+        <Cell
+          label="This week"
+          value={s.booksWeek}
+          sub={s.booksWeek === 1 ? "book" : "books"}
+          onClick={() =>
+            onBreakdown({
+              kind: "finished",
+              label: "This week · finished",
+              from: s.weekStart,
+              to: s.today,
+            })
+          }
+        />
         <Cell
           label="This month"
           value={s.pagesMonth}
           sub="pages"
           rank={monthRankLabel}
+          onClick={() =>
+            onBreakdown({
+              kind: "pages",
+              label: "This month · pages",
+              from: s.monthStart,
+              to: s.today,
+            })
+          }
         />
-        <Cell label="This month" value={s.booksMonth} sub={s.booksMonth === 1 ? "book" : "books"} />
+        <Cell
+          label="This month"
+          value={s.booksMonth}
+          sub={s.booksMonth === 1 ? "book" : "books"}
+          onClick={() =>
+            onBreakdown({
+              kind: "finished",
+              label: "This month · finished",
+              from: s.monthStart,
+              to: s.today,
+            })
+          }
+        />
       </div>
       {s.pagesWeek === 0 && s.pagesMonth === 0 && (
         <p className="text-chalk-dim mt-2 text-[10.5px] leading-relaxed">
@@ -3823,6 +4057,7 @@ export default function ReadingPage() {
   const [adding, setAdding] = useState(false);
   const [asking, setAsking] = useState(false);
   const [browsing, setBrowsing] = useState(false);
+  const [breakdown, setBreakdown] = useState<BreakdownFocus | null>(null);
   const [askSeed, setAskSeed] = useState<{ query: string; mode: "catalog" | "search" } | undefined>();
   const [statsOpen, setStatsOpen] = useState(false);
   const [searchPage, setSearchPage] = useState<string | null>(null);
@@ -3831,52 +4066,134 @@ export default function ReadingPage() {
     () => (localStorage.getItem("reading-view") as "list" | "grid" | null) ?? "list",
   );
 
+  type ReadingHistory = {
+    readingBook?: string;
+    readingBrowse?: boolean;
+    readingAsk?: boolean;
+    readingBreakdown?: BreakdownFocus;
+  };
+
   const pickView = (v: "list" | "grid") => {
     setView(v);
     localStorage.setItem("reading-view", v);
   };
 
-  // Swipe-back / browser back walks the book-detail stack.
+  // Swipe-back / browser back walks book detail, browse, ask, and breakdowns.
   useEffect(() => {
     const onPop = (e: PopStateEvent) => {
-      const id = (e.state as { readingBook?: string } | null)?.readingBook;
-      if (id) {
-        const b = (books ?? []).find((x) => x.id === id) ?? null;
-        setOpen(b);
+      const st = (e.state as ReadingHistory | null) ?? {};
+      if (st.readingBook) {
+        setOpen((books ?? []).find((x) => x.id === st.readingBook) ?? null);
       } else {
         setOpen(null);
       }
+      setBrowsing(Boolean(st.readingBrowse));
+      setAsking(Boolean(st.readingAsk));
+      setBreakdown(st.readingBreakdown ?? null);
+      if (!st.readingAsk) setAskSeed(undefined);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [books]);
 
+  const pushReading = (patch: ReadingHistory) => {
+    const cur = (history.state as ReadingHistory | null) ?? {};
+    history.pushState({ ...cur, ...patch }, "", window.location.href);
+  };
+
+  const backOr = (clear: () => void, isOurs: (st: ReadingHistory) => boolean) => {
+    const st = (history.state as ReadingHistory | null) ?? {};
+    if (isOurs(st)) history.back();
+    else clear();
+  };
+
   const openBookDrawer = (b: Book) => {
+    // Opening a book from browse/breakdown stacks on top so back returns there.
     setOpen(b);
-    const cur = (history.state as { readingBook?: string } | null)?.readingBook;
-    if (cur !== b.id) {
-      history.pushState({ readingBook: b.id }, "", window.location.href);
+    const cur = (history.state as ReadingHistory | null) ?? {};
+    if (cur.readingBook !== b.id) {
+      pushReading({ readingBook: b.id });
     }
   };
 
-  const closeBookDrawer = () => {
-    if ((history.state as { readingBook?: string } | null)?.readingBook) {
-      history.back();
-    } else {
-      setOpen(null);
+  const closeBookDrawer = () =>
+    backOr(
+      () => setOpen(null),
+      (st) => Boolean(st.readingBook),
+    );
+
+  const openBrowse = () => {
+    setOpen(null);
+    setBrowsing(true);
+    const st = (history.state as ReadingHistory | null) ?? {};
+    if (!st.readingBrowse) {
+      pushReading({
+        readingBrowse: true,
+        readingBook: undefined,
+        readingAsk: undefined,
+        readingBreakdown: undefined,
+      });
     }
   };
+
+  const closeBrowse = () =>
+    backOr(
+      () => setBrowsing(false),
+      (st) => Boolean(st.readingBrowse),
+    );
+
+  const openAsk = (seed?: { query: string; mode: "catalog" | "search" }) => {
+    setOpen(null);
+    setAskSeed(seed);
+    setAsking(true);
+    const st = (history.state as ReadingHistory | null) ?? {};
+    if (!st.readingAsk) {
+      pushReading({
+        readingAsk: true,
+        readingBook: undefined,
+        readingBrowse: undefined,
+        readingBreakdown: undefined,
+      });
+    }
+  };
+
+  const closeAsk = () =>
+    backOr(
+      () => {
+        setAsking(false);
+        setAskSeed(undefined);
+      },
+      (st) => Boolean(st.readingAsk),
+    );
+
+  const openBreakdown = (focus: BreakdownFocus) => {
+    setOpen(null);
+    setBreakdown(focus);
+    pushReading({
+      readingBreakdown: focus,
+      readingBook: undefined,
+    });
+  };
+
+  const closeBreakdown = () =>
+    backOr(
+      () => setBreakdown(null),
+      (st) => Boolean(st.readingBreakdown),
+    );
 
   const findSimilar = (b: Book) => {
     const author = (b.authors ?? "").split(",")[0]?.trim();
     const bits = [b.title, author, ...(b.subjects ?? []).slice(0, 2)].filter(Boolean);
-    setAskSeed({ query: bits.join(" "), mode: "catalog" });
-    setOpen(null);
-    // Drop the book history entry without a popstate race against the panel.
-    if ((history.state as { readingBook?: string } | null)?.readingBook) {
-      history.replaceState({}, "", window.location.href);
+    // Close the book entry, then open ask on a clean history step.
+    if ((history.state as ReadingHistory | null)?.readingBook) {
+      history.replaceState(
+        { ...((history.state as ReadingHistory | null) ?? {}), readingBook: undefined },
+        "",
+        window.location.href,
+      );
     }
-    setAsking(true);
+    setOpen(null);
+    openAsk({ query: bits.join(" "), mode: "catalog" });
   };
 
   const counts = useMemo(() => {
@@ -3951,10 +4268,7 @@ export default function ReadingPage() {
             <Plus size={13} /> Add
           </button>
           <button
-            onClick={() => {
-              setAskSeed(undefined);
-              setAsking(true);
-            }}
+            onClick={() => openAsk()}
             className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-accent/30 px-5 py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.19em] transition hover:border-accent"
           >
             <Wand2 size={13} className="text-accent" /> Find
@@ -3971,14 +4285,18 @@ export default function ReadingPage() {
           {/* Today / Recent / heatmap sit above the shelf tabs so the tabs
               open the library under the numbers that describe it. */}
           <div className="flex flex-col gap-6 border-t border-accent/15 pt-5">
-            <DailyPages sessions={sessions ?? []} />
-            <PeriodTotals books={books ?? []} sessions={sessions ?? []} />
+            <DailyPages sessions={sessions ?? []} onBreakdown={openBreakdown} />
+            <PeriodTotals
+              books={books ?? []}
+              sessions={sessions ?? []}
+              onBreakdown={openBreakdown}
+            />
             <PagesCalendar sessions={sessions ?? []} />
           </div>
 
           <button
             type="button"
-            onClick={() => setBrowsing(true)}
+            onClick={openBrowse}
             className="text-chalk hover:text-cream group flex w-full items-center justify-between gap-3 rounded-sm border border-accent/25 bg-gradient-to-r from-accent/[0.07] to-transparent px-4 py-3 text-left transition hover:border-accent/50"
           >
             <span>
@@ -4125,18 +4443,16 @@ export default function ReadingPage() {
           onOpen={openBookDrawer}
         />
       )}
-      {asking && (
-        <AskAI
+      {asking && <AskAI books={books ?? []} seed={askSeed} onClose={closeAsk} />}
+      {browsing && <NewPopularPanel books={books ?? []} onClose={closeBrowse} />}
+      {breakdown && (
+        <StatsBreakdown
+          focus={breakdown}
           books={books ?? []}
-          seed={askSeed}
-          onClose={() => {
-            setAsking(false);
-            setAskSeed(undefined);
-          }}
+          sessions={sessions ?? []}
+          onClose={closeBreakdown}
+          onOpenBook={openBookDrawer}
         />
-      )}
-      {browsing && (
-        <NewPopularPanel books={books ?? []} onClose={() => setBrowsing(false)} />
       )}
       {statsOpen && (
         <StatsPopover
