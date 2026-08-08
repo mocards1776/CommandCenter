@@ -5,6 +5,8 @@ export type CelebrationApi = {
   burst: (x: number, y: number) => void;
   /** Full-screen volley plus a line of text. Milestones only. */
   fanfare: (message: string) => void;
+  /** Closing a book — longer, louder than a task milestone. */
+  bookFinish: (title: string) => void;
 };
 
 // Split from <CelebrationProvider> so that file exports only a component —
@@ -13,5 +15,11 @@ export const CelebrationContext = createContext<CelebrationApi | null>(null);
 
 export function useCelebration(): CelebrationApi {
   // Missing provider shouldn't be able to break completing a task.
-  return useContext(CelebrationContext) ?? { burst: () => {}, fanfare: () => {} };
+  return (
+    useContext(CelebrationContext) ?? {
+      burst: () => {},
+      fanfare: () => {},
+      bookFinish: () => {},
+    }
+  );
 }

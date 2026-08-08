@@ -31,6 +31,7 @@ import {
   deleteBook,
   addBookFromUrl,
   logPages,
+  finishBook,
   coverSrc,
   backfillCoversBatch,
   fetchOnDeck,
@@ -1469,7 +1470,7 @@ function BookDetail({
   onOpenBook: (b: Book) => void;
 }) {
   const qc = useQueryClient();
-  const { burst, fanfare } = useCelebration();
+  const { burst, bookFinish } = useCelebration();
   const [pages, setPages] = useState("");
   const [date, setDate] = useState(todayStr());
   // Seeded from the book so the mode you last used for it comes back.
@@ -1482,9 +1483,14 @@ function BookDetail({
     qc.invalidateQueries({ queryKey: ["reading-sessions"] });
   };
 
+  const celebrateFinish = () => bookFinish(book.title);
+
   const patch = useMutation({
     mutationFn: (p: Partial<Book>) => updateBook(book.id, p),
-    onSuccess: refresh,
+    onSuccess: (_data, vars) => {
+      refresh();
+      if (vars.status === "read" && book.status !== "read") celebrateFinish();
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
   });
 
@@ -1501,7 +1507,7 @@ function BookDetail({
     onSuccess: (r, n) => {
       setPages("");
       refresh();
-      if (r.finished) fanfare(`Finished ${book.title}.`);
+      if (r.finished) celebrateFinish();
       else toast.success(`${n} pages logged`);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not log pages"),
@@ -1520,10 +1526,24 @@ function BookDetail({
     onSuccess: (r) => {
       setPages("");
       refresh();
-      if (r.finished) fanfare(`Finished ${book.title}.`);
+      if (r.finished) celebrateFinish();
       else toast.success(r.delta > 0 ? `${r.delta} pages logged` : "Progress updated");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not update"),
+  });
+
+  const finish = useMutation({
+    mutationFn: () =>
+      finishBook({
+        bookId: book.id,
+        date,
+        pageCount: book.page_count,
+      }),
+    onSuccess: () => {
+      refresh();
+      celebrateFinish();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not finish book"),
   });
 
   const deck = useMutation({
@@ -2015,6 +2035,22 @@ function BookDetail({
                 page {book.current_page} of {book.page_count} · {Math.round(pct)}%
               </p>
             </>
+          )}
+
+          {(book.status === "currently-reading" || book.status === "paused") && (
+            <button
+              type="button"
+              disabled={finish.isPending}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                burst(r.left + r.width / 2, r.top + r.height / 2);
+                finish.mutate();
+              }}
+              className="bg-accent text-field hover:bg-accent/90 mt-3 flex w-full items-center justify-center gap-2 rounded-sm py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition disabled:opacity-40"
+            >
+              <BookOpen size={14} />
+              {finish.isPending ? "Finishing…" : "Finish book"}
+            </button>
           )}
 
           <div className="mt-3 flex gap-1">

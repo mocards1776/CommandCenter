@@ -574,6 +574,44 @@ export async function logPages(opts: {
   return { finished };
 }
 
+/**
+ * Mark a book finished without needing to log the last page.
+ * Closes the current read-through the same way logging past page_count does.
+ */
+export async function finishBook(opts: {
+  bookId: string;
+  date?: string;
+  pageCount: number | null;
+}): Promise<Book> {
+  const date = opts.date ?? todayStr();
+  const { data: current, error } = await supabase
+    .from("books")
+    .select("read_log, started_at, read_count")
+    .eq("id", opts.bookId)
+    .single();
+  if (error) throw error;
+
+  const log = (current?.read_log ?? []) as ReadThrough[];
+  const patch: Partial<Book> = {
+    status: "read",
+    finished_at: date,
+    last_date_read: date,
+  };
+  if (opts.pageCount !== null && opts.pageCount > 0) {
+    patch.current_page = opts.pageCount;
+  }
+
+  const already = log.some((r) => r.end === date);
+  if (!already) {
+    patch.read_log = [...log, { start: current?.started_at ?? null, end: date }];
+    patch.read_count = log.length + 1;
+  } else if ((current?.read_count ?? 0) === 0) {
+    patch.read_count = 1;
+  }
+
+  return updateBook(opts.bookId, patch);
+}
+
 export async function deleteSession(id: string): Promise<void> {
   const { error } = await supabase.from("reading_sessions").delete().eq("id", id);
   if (error) throw error;
