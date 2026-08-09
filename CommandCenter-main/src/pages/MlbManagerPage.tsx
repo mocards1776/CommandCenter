@@ -30,7 +30,7 @@ export default function MlbManagerPage() {
   const qc = useQueryClient();
 
   const detail = useQuery({
-    queryKey: ["mlb-manager-v4", managerId],
+    queryKey: ["mlb-manager-v5", managerId],
     queryFn: () => fetchMlbManagerDetail(managerId!),
     enabled: Boolean(managerId),
     staleTime: 180_000,
@@ -130,12 +130,19 @@ export default function MlbManagerPage() {
             alt=""
             width={140}
             height={140}
+            referrerPolicy="no-referrer"
             className="mx-auto h-[128px] w-[128px] rounded-xl bg-[#0c1a2e] object-cover object-top ring-2 ring-white/20 shadow-xl sm:mx-0"
             onError={(e) => {
               const el = e.currentTarget;
-              if (!el.src.includes("mlbstatic")) {
-                el.src = `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${m.id}/headshot/67/current`;
+              const mlb = `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_426,q_auto:best/v1/people/${m.id}/headshot/67/current`;
+              if (!el.dataset.fallback) {
+                el.dataset.fallback = "1";
+                if (!el.src.includes("mlbstatic")) {
+                  el.src = mlb;
+                  return;
+                }
               }
+              el.style.visibility = "hidden";
             }}
           />
           <div className="min-w-0 flex-1">
@@ -154,7 +161,9 @@ export default function MlbManagerPage() {
                   {m.name}
                 </h1>
                 <p className="mt-1.5 text-[13px] text-white/75">
-                  Manager · {m.teamAbbrev} · {m.yearsWithTeam} season
+                  {m.isInterim ? "Interim manager" : m.shortLeash ? "Manager (short leash)" : "Manager"}
+                  {" · "}
+                  {m.teamAbbrev} · {m.yearsWithTeam} season
                   {m.yearsWithTeam === 1 ? "" : "s"} with club
                 </p>
               </div>

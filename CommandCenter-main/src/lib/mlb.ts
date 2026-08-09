@@ -227,6 +227,9 @@ export type MlbManager = {
   primaryColor: string;
   yearsWithTeam: number;
   heatFactors: HotSeatFactor[];
+  /** MLB lists them as Interim Manager, or short/1-year leash. */
+  isInterim: boolean;
+  shortLeash: boolean;
 };
 
 export type MlbManagerDetail = MlbManager & {
@@ -2111,17 +2114,48 @@ export async function fetchMlbPlayerGameLog(
     });
 }
 
-async function fetchManagerContractNote(name: string): Promise<string | null> {
+async function invokeSports<T extends Record<string, unknown>>(
+  body: Record<string, unknown>,
+): Promise<T | null> {
   try {
-    const { data } = await supabase.functions.invoke("sports", {
-      body: { action: "contract", name },
+    const { data, error } = await supabase.functions.invoke("sports", { body });
+    if (!error && data && !(data as { error?: string }).error) return data as T;
+  } catch {
+    /* fall through to direct fetch */
+  }
+  try {
+    const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    if (!base || !key) return null;
+    const res = await fetch(`${base}/functions/v1/sports`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+        apikey: key,
+      },
+      body: JSON.stringify(body),
     });
-    if (!data || (data as { error?: string }).error) return null;
-    const d = data as { contractStatus?: string | null };
-    return d.contractStatus ?? null;
+    if (!res.ok) return null;
+    const data = (await res.json()) as T & { error?: string };
+    if (!data || data.error) return null;
+    return data;
   } catch {
     return null;
   }
+}
+
+function isShortLeashContract(note: string | null | undefined): boolean {
+  if (!note) return false;
+  return /\b(1[\s-]?year|one[\s-]?year|1\s*yr\b|single[\s-]?year|interim)\b/i.test(note);
+}
+
+async function fetchManagerContractNote(name: string): Promise<string | null> {
+  const data = await invokeSports<{ contractStatus?: string | null }>({
+    action: "contract",
+    name,
+  });
+  return data?.contractStatus ?? null;
 }
 
 type WikiCard = { extract: string | null; image: string | null };
@@ -2199,16 +2233,54 @@ async function fetchWikipediaCard(name: string): Promise<WikiCard> {
   }
 }
 
+async function fetchManagerPhotoMeta(name: string): Promise<{
+  photo: string | null;
+  interim: boolean;
+  shortLeash: boolean;
+}> {
+  const data = await invokeSports<{
+    photo?: string | null;
+    interim?: boolean;
+    shortLeash?: boolean;
+  }>({
+    action: "managerPhoto",
+    name,
+  });
+  return {
+    photo: data?.photo ?? null,
+    interim: Boolean(data?.interim),
+    shortLeash: Boolean(data?.shortLeash),
+  };
+}
+
 async function fetchManagerPhoto(name: string): Promise<string | null> {
-  try {
-    const { data } = await supabase.functions.invoke("sports", {
-      body: { action: "managerPhoto", name },
-    });
-    if (!data || (data as { error?: string }).error) return null;
-    return (data as { photo?: string | null }).photo ?? null;
-  } catch {
-    return null;
-  }
+  return (await fetchManagerPhotoMeta(name)).photo;
+}
+
+type CoachMgr = {
+  job?: string;
+  title?: string;
+  person?: { id?: number; fullName?: string };
+};
+
+function coachRole(c: CoachMgr): string {
+  return `${c.job || ""} ${c.title || ""}`.trim();
+}
+
+function isInterimManagerRole(role: string): boolean {
+  return /\binterim\b/i.test(role) && /\bmanager\b/i.test(role);
+}
+
+function pickTeamManager(roster: CoachMgr[]): CoachMgr | null {
+  const primary = roster.find((c) => {
+    const job = (c.job || "").trim();
+    const title = (c.title || "").trim();
+    return job === "Manager" || title === "Manager";
+  });
+  if (primary?.person?.id) return primary;
+  return (
+    roster.find((c) => isInterimManagerRole(coachRole(c)) && c.person?.id) ?? null
+  );
 }
 
 async function managerIdForTeamSeason(
@@ -2218,14 +2290,8 @@ async function managerIdForTeamSeason(
   try {
     const coaches = (await mlbGet(`teams/${teamId}/coaches`, {
       season: String(season),
-    })) as {
-      roster?: { job?: string; title?: string; person?: { id?: number } }[];
-    };
-    const mgr = (coaches.roster ?? []).find((c) => {
-      const job = (c.job || c.title || "").trim();
-      return job === "Manager";
-    });
-    return mgr?.person?.id ?? null;
+    })) as { roster?: CoachMgr[] };
+    return pickTeamManager(coaches.roster ?? [])?.person?.id ?? null;
   } catch {
     return null;
   }
@@ -2310,6 +2376,8 @@ type BbrefManagerCareerPayload = {
   error?: string;
   url?: string;
   photo?: string | null;
+  interim?: boolean;
+  shortLeash?: boolean;
   seasons?: {
     season: number;
     team: string;
@@ -2345,34 +2413,59 @@ type BbrefManagerCareerPayload = {
   managerOfYearWins?: number;
 };
 
+function cleanCareerSeasons(
+  seasons: BbrefManagerCareerPayload["seasons"],
+): NonNullable<BbrefManagerCareerPayload["seasons"]> {
+  return (seasons ?? []).filter(
+    (s) =>
+      Number.isFinite(s.season) &&
+      s.wins + s.losses > 0 &&
+      !/^[A-Z]{2,3}$/.test(String(s.team || "").trim()),
+  );
+}
+
 async function fetchManagerCareer(name: string): Promise<BbrefManagerCareerPayload | null> {
-  try {
-    const { data } = await supabase.functions.invoke("sports", {
-      body: { action: "managerCareer", name },
-    });
-    if (!data || (data as { error?: string }).error) return null;
-    return data as BbrefManagerCareerPayload;
-  } catch {
-    return null;
-  }
+  const data = await invokeSports<BbrefManagerCareerPayload>({
+    action: "managerCareer",
+    name,
+  });
+  if (!data) return null;
+  const seasons = cleanCareerSeasons(data.seasons);
+  const career =
+    data.career && data.career.wins + data.career.losses > 0
+      ? data.career
+      : seasons.length
+        ? (() => {
+            const wins = seasons.reduce((n, s) => n + s.wins, 0);
+            const losses = seasons.reduce((n, s) => n + s.losses, 0);
+            return {
+              wins,
+              losses,
+              pct: wins + losses > 0 ? (wins / (wins + losses)).toFixed(3).replace(/^0/, "") : ".000",
+              games: wins + losses,
+              postWins: seasons.reduce((n, s) => n + s.postWins, 0),
+              postLosses: seasons.reduce((n, s) => n + s.postLosses, 0),
+            };
+          })()
+        : null;
+  return {
+    ...data,
+    seasons,
+    career,
+    stints: (data.stints ?? []).filter((s) => s.wins + s.losses > 0),
+  };
 }
 
 async function fetchManagerRumors(name?: string | null): Promise<{
   items: MlbManagerRumor[];
   checkedAt: string | null;
 }> {
-  try {
-    const { data } = await supabase.functions.invoke("sports", {
-      body: { action: "managerRumors", name: name ?? null },
-    });
-    if (!data || (data as { error?: string }).error) {
-      return { items: [], checkedAt: null };
-    }
-    const d = data as { items?: MlbManagerRumor[]; checkedAt?: string };
-    return { items: d.items ?? [], checkedAt: d.checkedAt ?? null };
-  } catch {
-    return { items: [], checkedAt: null };
-  }
+  const d = await invokeSports<{ items?: MlbManagerRumor[]; checkedAt?: string }>({
+    action: "managerRumors",
+    name: name ?? null,
+  });
+  if (!d) return { items: [], checkedAt: null };
+  return { items: d.items ?? [], checkedAt: d.checkedAt ?? null };
 }
 
 /** League-wide hot-seat rumor digest (refresh ~daily). */
@@ -2398,13 +2491,19 @@ function buildHotSeat(
     yearsWithTeam: number;
     contractNote?: string | null;
     rumorHeat?: number;
+    interim?: boolean;
+    shortLeash?: boolean;
   },
 ): { score: number; factors: HotSeatFactor[] } {
   const gbNum = input.gb === "—" || !input.gb ? 0 : parseFloat(input.gb) || 0;
   const factors: HotSeatFactor[] = [];
   const years = Math.max(1, input.yearsWithTeam || 1);
-  // First-year managers get a grace period; heat ramps by year 3–4.
-  const tenureScale = years <= 1 ? 0.55 : years === 2 ? 0.78 : 1;
+  const interim = Boolean(input.interim);
+  const shortLeash = Boolean(input.shortLeash) || isShortLeashContract(input.contractNote);
+  const precarious = interim || shortLeash;
+  // Interim / 1-year deals get full pressure — no first-year cushion.
+  // Otherwise first-year managers get a grace period; heat ramps by year 3–4.
+  const tenureScale = precarious ? 1 : years <= 1 ? 0.55 : years === 2 ? 0.78 : 1;
 
   const losePtsRaw = (1 - (Number.isFinite(input.winPct) ? input.winPct : 0.5)) * 40;
   const losePts = Math.round(losePtsRaw * tenureScale * 10) / 10;
@@ -2455,7 +2554,16 @@ function buildHotSeat(
         : "Rank unknown",
   });
 
-  if (years <= 1) {
+  if (precarious) {
+    factors.push({
+      key: "interim",
+      label: interim ? "Interim manager" : "Short leash",
+      points: 28,
+      detail: interim
+        ? "Interim skippers are always on the hottest seat → +28 heat"
+        : "One-year / interim-style deal → +28 heat (no grace period)",
+    });
+  } else if (years <= 1) {
     factors.push({
       key: "tenure-grace",
       label: "First-year cushion",
@@ -2570,19 +2678,14 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
     teams.map(async (team) => {
       if (!team.id) return;
       try {
-        const mgrId = await managerIdForTeamSeason(team.id, season);
-        if (!mgrId) return;
         const coaches = (await mlbGet(`teams/${team.id}/coaches`, {
           season: String(season),
-        })) as {
-          roster?: {
-            job?: string;
-            title?: string;
-            person?: { id?: number; fullName?: string };
-          }[];
-        };
-        const mgr = (coaches.roster ?? []).find((c) => c.person?.id === mgrId);
-        if (!mgr?.person?.fullName) return;
+        })) as { roster?: CoachMgr[] };
+        const mgr = pickTeamManager(coaches.roster ?? []);
+        const mgrId = mgr?.person?.id;
+        if (!mgrId || !mgr.person?.fullName) return;
+        const role = coachRole(mgr);
+        const isInterim = isInterimManagerRole(role);
 
         let yearsWithTeam = 1;
         for (let y = season - 1; y >= season - 20; y--) {
@@ -2591,23 +2694,39 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
           yearsWithTeam += 1;
         }
 
-        const wiki = await fetchWikipediaCard(mgr.person.fullName);
-        let headshot = wiki.image;
-        if (!headshot) headshot = await fetchManagerPhoto(mgr.person.fullName);
-        if (!headshot) headshot = mlbHeadshot(mgrId, 213);
-
         const st = standingByTeam.get(team.id);
         const wins = st?.wins ?? 0;
         const losses = st?.losses ?? 0;
         const gp = wins + losses;
         const winPct = gp > 0 ? wins / gp : 0.5;
         const playoff = parseOddsPercent(st?.playoff);
+
+        const [wiki, bbMeta, contractNote] = await Promise.all([
+          fetchWikipediaCard(mgr.person.fullName),
+          fetchManagerPhotoMeta(mgr.person.fullName),
+          isInterim || yearsWithTeam <= 1
+            ? fetchManagerContractNote(mgr.person.fullName)
+            : Promise.resolve(null),
+        ]);
+        // Prefer BBRef portraits — mlbstatic manager shots are often blank generics.
+        const headshot = bbMeta.photo || wiki.image || mlbHeadshot(mgrId, 213);
+        const interim = isInterim || bbMeta.interim;
+        // 1-year deals, explicit interim, or year-1 skippers deep under .500 = always hot.
+        const shortLeash =
+          interim ||
+          bbMeta.shortLeash ||
+          isShortLeashContract(contractNote) ||
+          (yearsWithTeam <= 1 && winPct < 0.42);
+
         const heat = buildHotSeat({
           winPct,
           gb: st?.gb ?? "—",
           playoff,
           divisionRank: st?.rank ? Number(st.rank) : null,
           yearsWithTeam,
+          contractNote,
+          interim,
+          shortLeash,
         });
 
         managers.push({
@@ -2623,12 +2742,14 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
           gb: st?.gb ?? "—",
           playoffOdds: playoff,
           divisionRank: st?.rank ? Number(st.rank) : null,
-          contractNote: null,
+          contractNote,
           hotSeatScore: heat.score,
           headshot,
           primaryColor: TEAM_COLORS[team.id] ?? "d9515c",
           yearsWithTeam,
           heatFactors: heat.factors,
+          isInterim: interim,
+          shortLeash,
         });
       } catch {
         // skip team
@@ -2706,9 +2827,10 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
   const moyAwards = awards.filter((a) => /manager of the year/i.test(a.name));
   const wsAwards = awards.filter((a) => /world series/i.test(a.name));
 
+  const bbSeasons = cleanCareerSeasons(careerRaw?.seasons);
   const seasonRecords: MlbManagerSeasonRecord[] =
-    careerRaw?.seasons && careerRaw.seasons.length > 0
-      ? [...careerRaw.seasons]
+    bbSeasons.length > 0
+      ? [...bbSeasons]
           .sort((a, b) => b.season - a.season)
           .map((s) => ({
             season: s.season,
@@ -2722,24 +2844,29 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
             postLosses: s.postLosses,
             comments: s.comments || "",
           }))
-      : fallbackRecords;
+      : fallbackRecords.filter((r) => r.wins + r.losses > 0);
 
   // Overlay current-season GB from live standings when team matches.
   const currentRow = seasonRecords.find((r) => r.season === season);
   if (currentRow) currentRow.gb = base.gb;
 
-  const stints: MlbManagerStint[] = (careerRaw?.stints ?? []).map((s) => ({
-    team: s.team,
-    start: s.start,
-    end: s.end,
-    wins: s.wins,
-    losses: s.losses,
-    pct: s.pct,
-    departure: s.departure ?? null,
-    departureUrl: s.departureUrl ?? null,
-  }));
+  const stints: MlbManagerStint[] = (careerRaw?.stints ?? [])
+    .filter((s) => s.wins + s.losses > 0)
+    .map((s) => ({
+      team: s.team,
+      start: s.start,
+      end: s.end,
+      wins: s.wins,
+      losses: s.losses,
+      pct: s.pct,
+      departure: s.departure ?? null,
+      departureUrl: s.departureUrl ?? null,
+    }));
 
-  const careerTotals = careerRaw?.career;
+  const careerTotals =
+    careerRaw?.career && careerRaw.career.wins + careerRaw.career.losses > 0
+      ? careerRaw.career
+      : null;
   const career: MlbManagerCareer | null = careerTotals
     ? {
         wins: careerTotals.wins,
@@ -2794,6 +2921,18 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
     1,
   );
 
+  const interimFromCareer =
+    Boolean(careerRaw?.interim) ||
+    seasonRecords.some((r) => /interim/i.test(r.comments)) ||
+    (wiki.extract ? /\binterim manager\b/i.test(wiki.extract) : false);
+  const isInterim = base.isInterim || interimFromCareer;
+  const shortLeash =
+    base.shortLeash ||
+    isShortLeashContract(contractNote) ||
+    isInterim ||
+    Boolean(careerRaw?.shortLeash) ||
+    (yearsWithTeam <= 1 && base.winPct < 0.42);
+
   const heat = buildHotSeat({
     winPct: base.winPct,
     gb: base.gb,
@@ -2802,6 +2941,8 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
     yearsWithTeam,
     contractNote,
     rumorHeat,
+    interim: isInterim,
+    shortLeash,
   });
 
   const playingCareer =
@@ -2880,6 +3021,11 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
           .join("; ")}.`
       : "",
     `Current record: ${base.record} (${(base.winPct * 100).toFixed(1)}% · ${base.gb} GB).`,
+    isInterim
+      ? `${base.name} is listed as an interim / short-leash manager — hottest-seat pressure applies.`
+      : shortLeash
+        ? "Short contract leash: no first-year grace on the hot seat."
+        : "",
     `${yearsWithTeam} season${yearsWithTeam === 1 ? "" : "s"} as ${base.teamName} manager.`,
     base.playoffOdds != null ? `Playoff odds: ${base.playoffOdds.toFixed(1)}%.` : "",
     contractNote ? `Contract: ${contractNote}.` : "Contract terms not published.",
@@ -2891,7 +3037,11 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
       : "No MLB playing seasons on record (coach/manager track).",
   ].filter(Boolean);
 
-  let headshot = wiki.image || careerRaw?.photo || base.headshot || null;
+  let headshot =
+    careerRaw?.photo ||
+    (base.headshot && !base.headshot.includes("mlbstatic.com") ? base.headshot : null) ||
+    wiki.image ||
+    null;
   if (!headshot || headshot.includes("mlbstatic.com")) {
     const bbPhoto = await fetchManagerPhoto(base.name);
     if (bbPhoto) headshot = bbPhoto;
@@ -2902,12 +3052,16 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
   const finalSeasonRecords =
     seasonRecords.length > 0
       ? seasonRecords
-      : await fetchManagerSeasonRecords(id, base.teamId, base.teamAbbrev, season);
+      : (await fetchManagerSeasonRecords(id, base.teamId, base.teamAbbrev, season)).filter(
+          (r) => r.wins + r.losses > 0,
+        );
 
   return {
     ...base,
     yearsWithTeam,
     contractNote,
+    isInterim,
+    shortLeash,
     hotSeatScore: heat.score,
     heatFactors: heat.factors,
     headshot,

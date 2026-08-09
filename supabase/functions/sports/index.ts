@@ -305,6 +305,47 @@ async function findBbrefManagerUrl(name: string): Promise<string | null> {
   return null;
 }
 
+function parseBbrefInt(raw: string): number | null {
+  const t = raw.trim();
+  if (!/^-?\d+$/.test(t)) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+function extractBbrefManagerPhoto(html: string): string | null {
+  const photoRaw =
+    html.match(
+      /src="(https?:\/\/www\.baseball-reference\.com\/req\/[^"]+headshots\/[^"]+\.jpg)"/i,
+    )?.[1] ??
+    html.match(
+      /content="(https?:\/\/www\.baseball-reference\.com\/req\/[^"]+headshots\/[^"]+\.jpg)"/i,
+    )?.[1] ??
+    html.match(/og:image"\s+content="([^"]+)"/i)?.[1] ??
+    null;
+  if (!photoRaw) return null;
+  if (photoRaw.includes("image_resize.cgi")) {
+    return photoRaw.match(/url=(https?:\/\/[^&]+)/i)?.[1] ?? photoRaw;
+  }
+  return photoRaw;
+}
+
+function detectManagerLeash(html: string): { interim: boolean; shortLeash: boolean } {
+  const head = stripTags(html.slice(0, 12000));
+  const comments = [...html.matchAll(/data-stat="comments"[^>]*>([\s\S]*?)<\/t/gi)]
+    .map((m) => stripTags(m[1]))
+    .join(" ");
+  const interim =
+    /\binterim manager\b/i.test(head) ||
+    /\bas interim\b/i.test(head) ||
+    /\binterim\b/i.test(comments);
+  // First-year audition deals / explicit interim language = always hot.
+  const shortLeash =
+    interim ||
+    /\b(1[\s-]?year|one[\s-]?year|1\s*yr)\b.{0,48}\b(deal|contract|agreement)\b/i.test(head) ||
+    /\b(deal|contract|agreement)\b.{0,48}\b(1[\s-]?year|one[\s-]?year|1\s*yr)\b/i.test(head);
+  return { interim, shortLeash };
+}
+
 async function scrapeBbrefManager(name: string) {
   const url = await findBbrefManagerUrl(name);
   if (!url) return { error: "Manager page not found", name };
@@ -317,8 +358,13 @@ async function scrapeBbrefManager(name: string) {
     return { error: "Manager page not found", name };
   }
   const i = html.indexOf('id="div_manager_stats"');
-  const chunk = i >= 0 ? html.slice(i, i + 60000) : html;
-  const rows = [...chunk.matchAll(/<tr >([\s\S]*?)<\/tr>/g)].map((m) => m[1]);
+  // Keep the primary manager_stats table only — later abbr/team tables are 0–0 junk.
+  const tableEnd = i >= 0 ? html.indexOf("</table>", i) : -1;
+  const chunk =
+    i >= 0
+      ? html.slice(i, tableEnd > i ? tableEnd + 8 : i + 40000)
+      : html;
+  const rows = [...chunk.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((m) => m[1]);
   const cell = (row: string, key: string) => {
     const m = row.match(new RegExp(`data-stat="${key}"[^>]*>([\\s\\S]*?)</t`, "i"));
     return m ? stripTags(m[1]) : "";
@@ -338,25 +384,30 @@ async function scrapeBbrefManager(name: string) {
   }[] = [];
   for (const row of rows) {
     const yearRaw = cell(row, "year_ID");
-    const wins = Number(cell(row, "W"));
-    const losses = Number(cell(row, "L"));
-    if (!/^\d{4}$/.test(yearRaw) || !Number.isFinite(wins) || !Number.isFinite(losses)) continue;
+    const wins = parseBbrefInt(cell(row, "W"));
+    const losses = parseBbrefInt(cell(row, "L"));
+    const team = cell(row, "team_ID") || "—";
+    // Skip empty / abbreviation summary rows (COL/ATL with blank W-L → Number('') === 0).
+    if (!/^\d{4}$/.test(yearRaw) || wins == null || losses == null) continue;
+    if (wins + losses <= 0) continue;
+    if (/^[A-Z]{2,3}$/.test(team)) continue;
     const finishRaw = cell(row, "finish");
+    const comments = cell(row, "comments") || "";
     seasons.push({
       season: Number(yearRaw),
-      team: cell(row, "team_ID") || "—",
+      team,
       league: cell(row, "lg_ID") || "",
-      games: Number(cell(row, "G")) || wins + losses,
+      games: parseBbrefInt(cell(row, "G")) ?? wins + losses,
       wins,
       losses,
       pct: cell(row, "win_loss_perc") || ".000",
       finish: finishRaw && /^\d+$/.test(finishRaw) ? Number(finishRaw) : null,
-      postWins: Number(cell(row, "W_post")) || 0,
-      postLosses: Number(cell(row, "L_post")) || 0,
-      comments: cell(row, "comments") || "",
+      postWins: parseBbrefInt(cell(row, "W_post")) ?? 0,
+      postLosses: parseBbrefInt(cell(row, "L_post")) ?? 0,
+      comments,
     });
   }
-  // Totals row: empty year, empty team
+  // Totals row: empty year, empty team — keep the largest W+L (ignore trailing 0–0 junk).
   let career: {
     wins: number;
     losses: number;
@@ -368,18 +419,19 @@ async function scrapeBbrefManager(name: string) {
   for (const row of rows) {
     const yearRaw = cell(row, "year_ID");
     const team = cell(row, "team_ID");
-    const wins = Number(cell(row, "W"));
-    const losses = Number(cell(row, "L"));
-    if (yearRaw === "" && team === "" && Number.isFinite(wins) && Number.isFinite(losses)) {
-      career = {
-        wins,
-        losses,
-        pct: cell(row, "win_loss_perc") || ".000",
-        games: Number(cell(row, "G")) || wins + losses,
-        postWins: Number(cell(row, "W_post")) || 0,
-        postLosses: Number(cell(row, "L_post")) || 0,
-      };
-    }
+    const wins = parseBbrefInt(cell(row, "W"));
+    const losses = parseBbrefInt(cell(row, "L"));
+    if (yearRaw !== "" || team !== "" || wins == null || losses == null) continue;
+    if (wins + losses <= 0) continue;
+    const next = {
+      wins,
+      losses,
+      pct: cell(row, "win_loss_perc") || ".000",
+      games: parseBbrefInt(cell(row, "G")) ?? wins + losses,
+      postWins: parseBbrefInt(cell(row, "W_post")) ?? 0,
+      postLosses: parseBbrefInt(cell(row, "L_post")) ?? 0,
+    };
+    if (!career || next.wins + next.losses > career.wins + career.losses) career = next;
   }
   if (!career && seasons.length) {
     const wins = seasons.reduce((s, x) => s + x.wins, 0);
@@ -428,11 +480,16 @@ async function scrapeBbrefManager(name: string) {
     }
   }
 
+  const currentYear = new Date().getFullYear();
   // Baseline departure blurb from final season of each completed stint.
   for (let i = 0; i < stints.length; i++) {
     const st = stints[i];
-    const isCurrent = i === stints.length - 1;
-    if (isCurrent) continue;
+    const isCurrent = i === stints.length - 1 && st.end >= currentYear - 0;
+    if (isCurrent) {
+      st.departure = null;
+      st.departureUrl = null;
+      continue;
+    }
     const lastSeason = seasons.filter((s) => s.team === st.team && s.season === st.end)[0];
     const finish =
       lastSeason?.finish != null ? `${lastSeason.finish}${ordinal(lastSeason.finish)}` : null;
@@ -445,22 +502,25 @@ async function scrapeBbrefManager(name: string) {
   try {
     await Promise.race([
       Promise.all(
-        stints.slice(0, -1).map(async (st) => {
-          const teamHint = st.team.split(" ").pop() || st.team;
-          const news = await fetchGoogleNews(
-            `"${name}" ${teamHint} (fired OR dismissed OR "will not return" OR parted OR "mutual agreement") manager MLB`,
-            3,
-          );
-          const hit = news.find((n) =>
-            /fired|dismiss|will not return|parted|mutual|hired|named|replace/i.test(n.title),
-          );
-          if (hit) {
-            st.departure = hit.title;
-            st.departureUrl = hit.url;
-          }
-        }),
+        stints
+          .filter((st) => st.departure)
+          .slice(0, 3)
+          .map(async (st) => {
+            const teamHint = st.team.split(" ").pop() || st.team;
+            const news = await fetchGoogleNews(
+              `"${name}" ${teamHint} (fired OR dismissed OR "will not return" OR parted OR "mutual agreement") manager MLB`,
+              3,
+            );
+            const hit = news.find((n) =>
+              /fired|dismiss|will not return|parted|mutual|hired|named|replace/i.test(n.title),
+            );
+            if (hit) {
+              st.departure = hit.title;
+              st.departureUrl = hit.url;
+            }
+          }),
       ),
-      new Promise((resolve) => setTimeout(resolve, 4500)),
+      new Promise((resolve) => setTimeout(resolve, 2500)),
     ]);
   } catch {
     /* keep baseline departure blurbs */
@@ -480,13 +540,10 @@ async function scrapeBbrefManager(name: string) {
     Number(m[1]),
   );
   const managerOfYearWins = moy.filter((p) => p === 1).length;
-  const photoRaw =
-    html.match(/src="(https?:\/\/www\.baseball-reference\.com\/req\/[^"]+headshots[^"]+)"/i)?.[1] ??
-    html.match(/og:image"\s+content="([^"]+)"/i)?.[1] ??
-    null;
-  const photo = photoRaw?.includes("image_resize.cgi")
-    ? (photoRaw.match(/url=(https?:\/\/[^&]+)/i)?.[1] ?? photoRaw)
-    : photoRaw;
+  const photo = extractBbrefManagerPhoto(html);
+  const leash = detectManagerLeash(html);
+  const interim =
+    leash.interim || seasons.some((s) => /interim/i.test(s.comments));
 
   return {
     source: "baseball-reference",
@@ -496,6 +553,8 @@ async function scrapeBbrefManager(name: string) {
     seasons,
     stints,
     career,
+    interim,
+    shortLeash: leash.shortLeash || interim,
     divisionTitles,
     postseasonAppearances,
     worldSeriesAppearances,
@@ -657,20 +716,28 @@ async function scrapeManagerRumors(name?: string | null) {
 
 async function scrapeBbrefManagerPhoto(name: string) {
   const url = await findBbrefManagerUrl(name);
-  if (!url) return { error: "Manager page not found", name, photo: null as string | null };
+  if (!url) {
+    return {
+      error: "Manager page not found",
+      name,
+      photo: null as string | null,
+      interim: false,
+      shortLeash: false,
+    };
+  }
   const html = await (
     await fetch(url, {
       headers: { "User-Agent": UA, Accept: "text/html", Referer: "https://www.baseball-reference.com/" },
     })
   ).text();
-  const photoRaw =
-    html.match(/src="(https?:\/\/www\.baseball-reference\.com\/req\/[^"]+headshots[^"]+)"/i)?.[1] ??
-    html.match(/og:image"\s+content="([^"]+)"/i)?.[1] ??
-    null;
-  const photo = photoRaw?.includes("image_resize.cgi")
-    ? (photoRaw.match(/url=(https?:\/\/[^&]+)/i)?.[1] ?? photoRaw)
-    : photoRaw;
-  return { source: "baseball-reference", url, name, photo };
+  const leash = detectManagerLeash(html);
+  return {
+    source: "baseball-reference",
+    url,
+    name,
+    photo: extractBbrefManagerPhoto(html),
+    ...leash,
+  };
 }
 
 Deno.serve(async (req: Request) => {

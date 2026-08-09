@@ -29,7 +29,7 @@ function heatLabel(rank: number): string {
 export default function MlbManagersPage() {
   const { user } = useAuth();
   const managers = useQuery({
-    queryKey: ["mlb-managers-v4"],
+    queryKey: ["mlb-managers-v5"],
     queryFn: fetchMlbManagers,
     staleTime: 180_000,
   });
@@ -155,8 +155,9 @@ export default function MlbManagersPage() {
 
           <p className="text-[11px] leading-relaxed text-[#8b93a7]">
             Heat scores win percentage, games back, playoff odds, and division place — then
-            scales by tenure (year-1 cushion, year-3+ pressure when under .500). Detail pages
-            also fold in contract security and daily media rumor hits.
+            scales by tenure. Interim and short-leash (1-year / year-1 under .420) skippers
+            always take full pressure. Detail pages also fold in contract security and daily
+            media rumor hits.
           </p>
         </>
       )}
@@ -234,11 +235,25 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
           alt=""
           width={48}
           height={48}
+          referrerPolicy="no-referrer"
           className="h-12 w-12 shrink-0 rounded-md bg-[#0c1a2e] object-cover object-top ring-1 ring-white/10"
+          onError={(e) => {
+            const el = e.currentTarget;
+            const mlb = `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${m.id}/headshot/67/current`;
+            if (!el.dataset.fallback && !el.src.includes("mlbstatic")) {
+              el.dataset.fallback = "1";
+              el.src = mlb;
+            }
+          }}
         />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span className="text-cream truncate text-[15px] font-semibold">{m.name}</span>
+            {(m.isInterim || m.shortLeash) && (
+              <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-alert">
+                {m.isInterim ? "Interim" : "Short leash"}
+              </span>
+            )}
             <span
               className={cn(
                 "text-[10px] font-bold uppercase tracking-[0.14em]",
