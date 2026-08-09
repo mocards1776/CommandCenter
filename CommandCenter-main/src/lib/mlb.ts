@@ -77,6 +77,23 @@ export type MlbLeaderBoard = {
 
 export type MlbPlayerStatLine = { label: string; value: string };
 
+export type MlbDraftInfo = {
+  year: number | null;
+  round: string | null;
+  pick: number | null;
+  team: string | null;
+  school: string | null;
+  signingBonus: string | null;
+  /** e.g. "2024 · Rd 1, Pick 7 · St. Louis Cardinals" */
+  display: string | null;
+};
+
+export type MlbSplitRow = {
+  code: string;
+  label: string;
+  stats: MlbPlayerStatLine[];
+};
+
 export type MlbPlayerCard = {
   id: number;
   name: string;
@@ -93,6 +110,7 @@ export type MlbPlayerCard = {
   birthPlace: string | null;
   mlbDebut: string | null;
   draftYear: number | null;
+  draft: MlbDraftInfo | null;
   school: string | null;
   teamId: number | null;
   teamName: string | null;
@@ -120,6 +138,8 @@ export type MlbPlayerContract = {
   acquisition: string[];
   url: string | null;
   source: string;
+  aav?: string | null;
+  totalValue?: string | null;
 };
 
 function currentSeason(): number {
@@ -640,7 +660,7 @@ export async function fetchMlbPlayerTransactions(playerId: number): Promise<MlbT
 export async function fetchPlayerContract(playerName: string): Promise<MlbPlayerContract | null> {
   try {
     const { data, error } = await supabase.functions.invoke("sports", {
-      body: { action: "bbref", name: playerName },
+      body: { action: "contract", name: playerName },
     });
     if (error) throw error;
     if (!data || (data as { error?: string }).error) return null;
@@ -651,6 +671,8 @@ export async function fetchPlayerContract(playerName: string): Promise<MlbPlayer
       acquisition?: string[];
       url?: string;
       source?: string;
+      aav?: string | null;
+      totalValue?: string | null;
     };
     return {
       contractStatus: d.contractStatus ?? null,
@@ -658,8 +680,117 @@ export async function fetchPlayerContract(playerName: string): Promise<MlbPlayer
       salaryHistory: d.salaryHistory ?? [],
       acquisition: d.acquisition ?? [],
       url: d.url ?? null,
-      source: d.source ?? "baseball-reference",
+      source: d.source ?? "spotrac",
+      aav: d.aav ?? null,
+      totalValue: d.totalValue ?? null,
     };
+  } catch {
+    return null;
+  }
+}
+
+const SPLIT_HIT_KEYS: [string, string][] = [
+  ["gamesPlayed", "G"],
+  ["atBats", "AB"],
+  ["runs", "R"],
+  ["hits", "H"],
+  ["homeRuns", "HR"],
+  ["rbi", "RBI"],
+  ["baseOnBalls", "BB"],
+  ["strikeOuts", "SO"],
+  ["avg", "AVG"],
+  ["obp", "OBP"],
+  ["slg", "SLG"],
+  ["ops", "OPS"],
+];
+
+const SPLIT_PITCH_KEYS: [string, string][] = [
+  ["gamesPlayed", "G"],
+  ["wins", "W"],
+  ["losses", "L"],
+  ["era", "ERA"],
+  ["inningsPitched", "IP"],
+  ["hits", "H"],
+  ["runs", "R"],
+  ["earnedRuns", "ER"],
+  ["baseOnBalls", "BB"],
+  ["strikeOuts", "SO"],
+  ["homeRuns", "HR"],
+  ["whip", "WHIP"],
+];
+
+/** Season situational splits (home/away, vs L/R, day/night). */
+export async function fetchMlbPlayerSplits(
+  playerId: number | string,
+  group: "hitting" | "pitching",
+  season = currentSeason(),
+): Promise<MlbSplitRow[]> {
+  const id = Number(playerId);
+  const raw = (await mlbGet(`people/${id}/stats`, {
+    stats: "statSplits",
+    group,
+    season: String(season),
+    sitCodes: "h,a,vl,vr,d,n",
+  })) as {
+    stats?: {
+      splits?: {
+        split?: { code?: string; description?: string };
+        stat?: Record<string, unknown>;
+      }[];
+    }[];
+  };
+
+  const keys = group === "pitching" ? SPLIT_PITCH_KEYS : SPLIT_HIT_KEYS;
+  const order = ["h", "a", "vl", "vr", "d", "n"];
+  const rows: MlbSplitRow[] = [];
+  for (const block of raw.stats ?? []) {
+    for (const sp of block.splits ?? []) {
+      const code = (sp.split?.code ?? "").toLowerCase();
+      const label = sp.split?.description ?? code.toUpperCase();
+      const stats = pickStats(sp.stat, keys);
+      if (!stats.length) continue;
+      rows.push({ code, label, stats });
+    }
+  }
+  rows.sort((a, b) => {
+    const ai = order.indexOf(a.code);
+    const bi = order.indexOf(b.code);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+  return rows;
+}
+
+/** ESPN draft line as fallback when MLB hydrate is empty. */
+export async function fetchEspnDraftLine(playerName: string): Promise<string | null> {
+  try {
+    const searchUrl = new URL("https://site.api.espn.com/apis/common/v3/search");
+    searchUrl.searchParams.set("query", playerName);
+    searchUrl.searchParams.set("limit", "8");
+    searchUrl.searchParams.set("type", "player");
+    const searchRes = await fetch(searchUrl.toString(), {
+      headers: { Accept: "application/json" },
+    });
+    if (!searchRes.ok) return null;
+    const search = (await searchRes.json()) as {
+      items?: { id?: string; displayName?: string; type?: string }[];
+    };
+    const hit = (search.items ?? []).find(
+      (i) =>
+        i.type === "player" &&
+        (i.displayName ?? "").toLowerCase() === playerName.toLowerCase(),
+    ) ?? (search.items ?? []).find((i) => i.type === "player");
+    if (!hit?.id) return null;
+
+    const athleteRes = await fetch(
+      `https://site.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${hit.id}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!athleteRes.ok) return null;
+    const athlete = (await athleteRes.json()) as {
+      athlete?: { displayDraft?: string; fullName?: string };
+      displayDraft?: string;
+    };
+    return athlete.athlete?.displayDraft ?? athlete.displayDraft ?? null;
   } catch {
     return null;
   }
@@ -900,6 +1031,42 @@ const PITCH_KEYS: [string, string][] = [
   ["earnedRuns", "ER"],
 ];
 
+function formatDraft(d: {
+  year?: string | number;
+  pickRound?: string;
+  pickNumber?: number;
+  signingBonus?: string;
+  school?: { name?: string };
+  team?: { name?: string; abbreviation?: string };
+} | null | undefined): MlbDraftInfo | null {
+  if (!d) return null;
+  const year =
+    d.year != null && String(d.year).trim() !== ""
+      ? Number(d.year)
+      : null;
+  const round = d.pickRound ? String(d.pickRound) : null;
+  const pick = d.pickNumber != null ? Number(d.pickNumber) : null;
+  const team = d.team?.name ?? d.team?.abbreviation ?? null;
+  const school = d.school?.name ?? null;
+  const bonusNum = d.signingBonus != null ? Number(d.signingBonus) : NaN;
+  const signingBonus = Number.isFinite(bonusNum)
+    ? `$${bonusNum.toLocaleString("en-US")}`
+    : null;
+
+  const parts: string[] = [];
+  if (year != null && !Number.isNaN(year)) parts.push(String(year));
+  if (round != null || pick != null) {
+    const rd = round != null ? `Rd ${round}` : null;
+    const pk = pick != null ? `Pick ${pick}` : null;
+    parts.push([rd, pk].filter(Boolean).join(", "));
+  }
+  if (team) parts.push(team);
+  const display = parts.length ? parts.join(" · ") : null;
+  if (!display && !school) return null;
+
+  return { year, round, pick, team, school, signingBonus, display };
+}
+
 export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlayerCard> {
   const season = currentSeason();
   const id = Number(playerId);
@@ -923,6 +1090,14 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
       birthCountry?: string;
       mlbDebutDate?: string;
       draftYear?: number;
+      drafts?: {
+        year?: string | number;
+        pickRound?: string;
+        pickNumber?: number;
+        signingBonus?: string;
+        school?: { name?: string };
+        team?: { name?: string; abbreviation?: string };
+      }[];
       education?: {
         highschools?: { name?: string; city?: string; state?: string }[];
         colleges?: { name?: string }[];
@@ -962,11 +1137,68 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
   const teamId = p.currentTeam?.id ?? null;
   const hs = p.education?.highschools?.[0];
   const college = p.education?.colleges?.[0];
+  let draft = formatDraft(p.drafts?.[0]);
+  if (!draft && p.draftYear != null) {
+    draft = {
+      year: p.draftYear,
+      round: null,
+      pick: null,
+      team: null,
+      school: null,
+      signingBonus: null,
+      display: String(p.draftYear),
+    };
+  }
+  // ESPN fills round/pick when MLB hydrate only has the year
+  if (!draft?.round || draft.pick == null) {
+    try {
+      const espnLine = await fetchEspnDraftLine(p.fullName ?? "");
+      if (espnLine) {
+        // e.g. "2024: Rd 1, Pk 7 (STL)"
+        const m = espnLine.match(
+          /(\d{4})\s*:\s*Rd\s*([^,]+),\s*Pk\s*(\d+)\s*(?:\(([^)]+)\))?/i,
+        );
+        if (m) {
+          const year = Number(m[1]);
+          const round = m[2].trim();
+          const pick = Number(m[3]);
+          const team = m[4]?.trim() ?? draft?.team ?? null;
+          const display = [String(year), `Rd ${round}, Pick ${pick}`, team]
+            .filter(Boolean)
+            .join(" · ");
+          draft = {
+            year,
+            round,
+            pick,
+            team,
+            school: draft?.school ?? null,
+            signingBonus: draft?.signingBonus ?? null,
+            display,
+          };
+        } else if (!draft?.display) {
+          draft = {
+            year: p.draftYear ?? null,
+            round: null,
+            pick: null,
+            team: null,
+            school: draft?.school ?? null,
+            signingBonus: null,
+            display: espnLine,
+          };
+        }
+      }
+    } catch {
+      // optional
+    }
+  }
+
   const school = college?.name
     ? college.name
-    : hs
-      ? [hs.name, hs.city, hs.state].filter(Boolean).join(", ")
-      : null;
+    : draft?.school
+      ? draft.school
+      : hs
+        ? [hs.name, hs.city, hs.state].filter(Boolean).join(", ")
+        : null;
 
   return {
     id: p.id ?? id,
@@ -983,7 +1215,8 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
     birthDate: p.birthDate ?? null,
     birthPlace: place || null,
     mlbDebut: p.mlbDebutDate ?? null,
-    draftYear: p.draftYear ?? null,
+    draftYear: draft?.year ?? p.draftYear ?? null,
+    draft,
     school,
     teamId,
     teamName: p.currentTeam?.name ?? null,

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Loader2, Star } from "lucide-react";
 import toast from "react-hot-toast";
@@ -13,11 +13,13 @@ import {
 import {
   fetchMlbPlayer,
   fetchMlbPlayerHighlights,
+  fetchMlbPlayerSplits,
   fetchMlbPlayerTransactions,
   fetchPlayerContract,
   mlbTeamLogo,
   type MlbPlayerCard,
   type MlbPlayerStatLine,
+  type MlbSplitRow,
 } from "@/lib/mlb";
 import { cn } from "@/lib/utils";
 
@@ -60,6 +62,20 @@ export default function MlbPlayerPage() {
     queryFn: () => fetchPlayerContract(player.data!.name),
     enabled: Boolean(player.data?.name),
     staleTime: 600_000,
+  });
+
+  const isPitcherPreview =
+    Boolean(player.data) &&
+    ((player.data!.pitching.length > 0 && player.data!.position === "P") ||
+      player.data!.pitching.length > player.data!.hitting.length);
+  const splitGroup = isPitcherPreview ? "pitching" : "hitting";
+
+  const splits = useQuery({
+    queryKey: ["mlb-player-splits", playerId, splitGroup, player.data?.season],
+    queryFn: () =>
+      fetchMlbPlayerSplits(player.data!.id, splitGroup, player.data!.season),
+    enabled: Boolean(player.data),
+    staleTime: 120_000,
   });
 
   const toggleFav = useMutation({
@@ -172,6 +188,19 @@ export default function MlbPlayerPage() {
       )}
       {isPitcher && p.hitting.length > 0 && p.hitting.some((s) => s.label === "AB" || s.label === "G") && (
         <StatTable title={`${p.season} Batting`} stats={p.hitting} accent={accent} />
+      )}
+
+      {splits.isPending && (
+        <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+          <Loader2 size={14} className="animate-spin" /> Loading splits…
+        </p>
+      )}
+      {(splits.data?.length ?? 0) > 0 && (
+        <SplitsTable
+          title={`${p.season} Splits`}
+          rows={splits.data!}
+          accent={accent}
+        />
       )}
 
       <BioAndOrigin player={p} />
@@ -337,7 +366,57 @@ function StatTable({
   );
 }
 
+function SplitsTable({
+  title,
+  rows,
+  accent,
+}: {
+  title: string;
+  rows: MlbSplitRow[];
+  accent: string;
+}) {
+  const labels = rows[0]?.stats.map((s) => s.label) ?? [];
+  return (
+    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="border-b border-white/[0.06] px-4 py-2.5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: accent }}>
+          {title}
+        </h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-center text-[12px]">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+              <th className="px-2 py-2 text-left font-medium">Split</th>
+              {labels.map((label) => (
+                <th key={label} className="px-2 py-2 font-medium">
+                  {label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.code} className="border-t border-white/[0.05]">
+                <td className="text-cream px-2 py-2 text-left text-[12px]">{row.label}</td>
+                {row.stats.map((s) => (
+                  <td key={s.label} className="numeral text-cream px-2 py-2 text-[14px]">
+                    {s.value}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function BioAndOrigin({ player }: { player: MlbPlayerCard }) {
+  const draftValue =
+    player.draft?.display ??
+    (player.draftYear != null ? String(player.draftYear) : "—");
   return (
     <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
       <h3 className="rule-head mb-3">Bio</h3>
@@ -346,11 +425,11 @@ function BioAndOrigin({ player }: { player: MlbPlayerCard }) {
         <BioItem label="Born" value={player.birthDate ?? "—"} />
         <BioItem label="Birthplace" value={player.birthPlace ?? "—"} />
         <BioItem label="Debut" value={player.mlbDebut ?? "—"} />
-        <BioItem
-          label="Draft"
-          value={player.draftYear != null ? String(player.draftYear) : "—"}
-        />
-        <BioItem label="School" value={player.school ?? "—"} />
+        <BioItem label="Draft" value={draftValue} />
+        {player.draft?.signingBonus && (
+          <BioItem label="Signing bonus" value={player.draft.signingBonus} />
+        )}
+        <BioItem label="School" value={player.school ?? player.draft?.school ?? "—"} />
       </dl>
     </section>
   );
@@ -382,23 +461,41 @@ function ContractBlock({
 
       {!loading && (
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border border-white/[0.08] px-3 py-3">
-            <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">Contract status</p>
-            <p className="text-cream mt-1 text-[14px]">
+          <div className="rounded-lg border border-white/[0.08] px-3 py-3 sm:col-span-2">
+            <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">Contract</p>
+            <p className="text-cream mt-1 text-[14px] leading-snug">
               {contract?.contractStatus ?? "Not published"}
             </p>
+            {(contract?.totalValue || contract?.aav) && (
+              <p className="mt-2 text-[12px] text-[#b8bfd0]">
+                {[
+                  contract.totalValue ? `Total ${contract.totalValue}` : null,
+                  contract.aav ? `AAV ${contract.aav}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            )}
           </div>
           <div className="rounded-lg border border-white/[0.08] px-3 py-3">
             <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
-              Latest reported salary
+              {contract?.currentSalary?.year === "Total"
+                ? "Contract value"
+                : "This season pay"}
             </p>
             <p className="numeral text-cream mt-1 text-[22px] leading-none">
               {contract?.currentSalary?.display ?? "—"}
             </p>
-            {contract?.currentSalary?.year && (
+            {contract?.currentSalary?.year && contract.currentSalary.year !== "Total" && (
               <p className="mt-1 text-[11px] text-[#8b93a7]">{contract.currentSalary.year}</p>
             )}
           </div>
+          {contract?.aav && (
+            <div className="rounded-lg border border-white/[0.08] px-3 py-3">
+              <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">AAV</p>
+              <p className="numeral text-cream mt-1 text-[22px] leading-none">{contract.aav}</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -450,11 +547,12 @@ function ContractBlock({
           rel="noreferrer"
           className="text-accent inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] hover:underline"
         >
-          Baseball Reference <ExternalLink size={11} />
+          {contract.source === "spotrac" ? "Spotrac" : "Baseball Reference"}{" "}
+          <ExternalLink size={11} />
         </a>
       )}
       <p className="text-[10.5px] text-[#8b93a7]">
-        Salary via Baseball Reference / SABR · transactions via MLB Stats API
+        Contract via Spotrac / Baseball Reference · transactions via MLB Stats API
       </p>
     </section>
   );
