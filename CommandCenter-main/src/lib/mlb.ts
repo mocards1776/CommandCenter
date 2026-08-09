@@ -113,8 +113,186 @@ export function mlbHeadshot(playerId: number | string, size: 213 | 426 = 213): s
   return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_${size},q_auto:best/v1/people/${playerId}/headshot/67/current`;
 }
 
+/** Crisp SVG team mark — use on scoreboards / standings. */
+export function mlbTeamLogo(teamId: number | string): string {
+  return `https://www.mlbstatic.com/team-logos/${teamId}.svg`;
+}
+
 export function mlbActionShot(playerId: number | string): string {
   return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:action:hero:current.jpg/r_max,c_fill,g_auto,w_800,h_1000,q_auto:best/v1/people/${playerId}/action/hero/current`;
+}
+
+export type MlbBoxscoreBatter = {
+  id: number;
+  name: string;
+  position: string;
+  ab: number;
+  r: number;
+  h: number;
+  rbi: number;
+  bb: number;
+  so: number;
+  summary: string;
+};
+
+export type MlbBoxscorePitcher = {
+  id: number;
+  name: string;
+  note: string | null;
+  ip: string;
+  h: number;
+  r: number;
+  er: number;
+  bb: number;
+  so: number;
+  summary: string;
+};
+
+export type MlbBoxscoreSide = {
+  teamId: number;
+  name: string;
+  abbrev: string;
+  runs: number;
+  hits: number;
+  errors: number;
+  batters: MlbBoxscoreBatter[];
+  pitchers: MlbBoxscorePitcher[];
+};
+
+export type MlbBoxscore = {
+  gamePk: number;
+  status: string;
+  when: string | null;
+  venue: string | null;
+  innings: { num: number; away: number | null; home: number | null }[];
+  away: MlbBoxscoreSide;
+  home: MlbBoxscoreSide;
+};
+
+type BoxTeamRaw = {
+  team?: { id?: number; name?: string; abbreviation?: string };
+  teamStats?: {
+    batting?: { runs?: number; hits?: number };
+    fielding?: { errors?: number };
+  };
+  batters?: number[];
+  pitchers?: number[];
+  players?: Record<
+    string,
+    {
+      person?: { fullName?: string };
+      position?: { abbreviation?: string };
+      stats?: {
+        batting?: Record<string, unknown>;
+        pitching?: Record<string, unknown>;
+      };
+    }
+  >;
+};
+
+function mapBoxSide(
+  raw: BoxTeamRaw | undefined,
+  fallback: { id?: number; name?: string; abbreviation?: string } | undefined,
+  rh: { runs?: number; hits?: number; errors?: number } | undefined,
+): MlbBoxscoreSide {
+  const team = raw?.team ?? fallback;
+  const players = raw?.players ?? {};
+  const batters = (raw?.batters ?? [])
+    .map((id) => {
+      const p = players[`ID${id}`];
+      const b = p?.stats?.batting;
+      if (!p || !b) return null;
+      return {
+        id,
+        name: p.person?.fullName ?? "—",
+        position: p.position?.abbreviation ?? "",
+        ab: Number(b.atBats ?? 0),
+        r: Number(b.runs ?? 0),
+        h: Number(b.hits ?? 0),
+        rbi: Number(b.rbi ?? 0),
+        bb: Number(b.baseOnBalls ?? 0),
+        so: Number(b.strikeOuts ?? 0),
+        summary: String(b.summary ?? ""),
+      } satisfies MlbBoxscoreBatter;
+    })
+    .filter((x): x is MlbBoxscoreBatter => x != null);
+
+  const pitchers = (raw?.pitchers ?? [])
+    .map((id) => {
+      const p = players[`ID${id}`];
+      const s = p?.stats?.pitching;
+      if (!p || !s) return null;
+      return {
+        id,
+        name: p.person?.fullName ?? "—",
+        note: s.note ? String(s.note) : null,
+        ip: String(s.inningsPitched ?? "0.0"),
+        h: Number(s.hits ?? 0),
+        r: Number(s.runs ?? 0),
+        er: Number(s.earnedRuns ?? 0),
+        bb: Number(s.baseOnBalls ?? 0),
+        so: Number(s.strikeOuts ?? 0),
+        summary: String(s.summary ?? ""),
+      } satisfies MlbBoxscorePitcher;
+    })
+    .filter((x): x is MlbBoxscorePitcher => x != null);
+
+  return {
+    teamId: team?.id ?? 0,
+    name: team?.name ?? "—",
+    abbrev: team?.abbreviation ?? teamAbbrev(team),
+    runs: rh?.runs ?? Number(raw?.teamStats?.batting?.runs ?? 0),
+    hits: rh?.hits ?? Number(raw?.teamStats?.batting?.hits ?? 0),
+    errors: rh?.errors ?? Number(raw?.teamStats?.fielding?.errors ?? 0),
+    batters,
+    pitchers,
+  };
+}
+
+export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxscore> {
+  const pk = String(gamePk);
+  const [box, live] = await Promise.all([
+    mlbGet(`game/${pk}/boxscore`) as Promise<{ teams?: { away?: BoxTeamRaw; home?: BoxTeamRaw } }>,
+    fetch(`https://statsapi.mlb.com/api/v1.1/game/${pk}/feed/live`, {
+      headers: { Accept: "application/json" },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null) as Promise<{
+      gameData?: {
+        status?: { detailedState?: string };
+        datetime?: { dateTime?: string };
+        venue?: { name?: string };
+        teams?: {
+          away?: { id?: number; name?: string; abbreviation?: string };
+          home?: { id?: number; name?: string; abbreviation?: string };
+        };
+      };
+      liveData?: {
+        linescore?: {
+          innings?: { num?: number; away?: { runs?: number }; home?: { runs?: number } }[];
+          teams?: {
+            away?: { runs?: number; hits?: number; errors?: number };
+            home?: { runs?: number; hits?: number; errors?: number };
+          };
+        };
+      };
+    } | null>,
+  ]);
+
+  const ls = live?.liveData?.linescore;
+  return {
+    gamePk: Number(pk),
+    status: live?.gameData?.status?.detailedState ?? "Final",
+    when: fmtWhen(live?.gameData?.datetime?.dateTime),
+    venue: live?.gameData?.venue?.name ?? null,
+    innings: (ls?.innings ?? []).map((i) => ({
+      num: i.num ?? 0,
+      away: i.away?.runs ?? null,
+      home: i.home?.runs ?? null,
+    })),
+    away: mapBoxSide(box.teams?.away, live?.gameData?.teams?.away, ls?.teams?.away),
+    home: mapBoxSide(box.teams?.home, live?.gameData?.teams?.home, ls?.teams?.home),
+  };
 }
 
 function fmtWhen(iso: string | null | undefined): string | null {

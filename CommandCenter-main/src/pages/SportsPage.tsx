@@ -82,13 +82,20 @@ function GameLine({
 function TeamCard({
   snap,
   accent,
+  mlbTeamId,
   onOpen,
 }: {
   snap: TeamSnapshot;
   accent?: string;
+  mlbTeamId?: number;
   onOpen: () => void;
 }) {
   const bar = accent ? `#${accent}` : "var(--color-accent)";
+  const logo =
+    snap.logo ||
+    (mlbTeamId
+      ? `https://www.mlbstatic.com/team-logos/${mlbTeamId}.svg`
+      : null);
   return (
     <button
       type="button"
@@ -97,15 +104,13 @@ function TeamCard({
     >
       <div className="absolute inset-x-0 top-0 h-[3px]" style={{ background: bar }} />
       <div className="flex items-start gap-3.5 p-4 pt-5">
-        {snap.logo ? (
-          <img
-            src={snap.logo}
-            alt=""
-            className="h-14 w-14 shrink-0 object-contain"
-          />
+        {logo ? (
+          <div className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-white p-1.5 shadow-sm">
+            <img src={logo} alt="" className="h-full w-full object-contain" />
+          </div>
         ) : (
-          <div className="bg-field grid h-14 w-14 shrink-0 place-items-center rounded-sm">
-            <Trophy size={18} className="text-chalk-dim" />
+          <div className="bg-field grid h-16 w-16 shrink-0 place-items-center rounded-full">
+            <Trophy size={20} className="text-chalk-dim" />
           </div>
         )}
         <div className="min-w-0 flex-1">
@@ -475,6 +480,7 @@ export default function SportsPage() {
               key={fav.key}
               snap={q.data}
               accent={byKeyFav.get(fav.key)?.color}
+              mlbTeamId={byKeyFav.get(fav.key)?.mlbTeamId}
               onOpen={() => setSelectedKey(fav.key)}
             />
           );
@@ -656,11 +662,19 @@ function TeamDetailPanel({
               </DetailSection>
 
               <DetailSection title="Upcoming">
-                <GameList games={detail.upcoming} empty="No upcoming games." />
+                <GameList
+                  games={detail.upcoming}
+                  empty="No upcoming games."
+                  mlbBoxscores={detail.source === "mlb"}
+                />
               </DetailSection>
 
               <DetailSection title="Recent">
-                <GameList games={detail.recent} empty="No recent games." />
+                <GameList
+                  games={detail.recent}
+                  empty="No recent games."
+                  mlbBoxscores={detail.source === "mlb"}
+                />
               </DetailSection>
 
               <DetailSection title="Roster">
@@ -758,35 +772,66 @@ function EmptyLine({ children }: { children: ReactNode }) {
   return <p className="text-chalk-dim text-[12.5px]">{children}</p>;
 }
 
-function GameList({ games, empty }: { games: ScheduleGame[]; empty: string }) {
+function GameList({
+  games,
+  empty,
+  mlbBoxscores,
+}: {
+  games: ScheduleGame[];
+  empty: string;
+  mlbBoxscores?: boolean;
+}) {
   if (games.length === 0) return <EmptyLine>{empty}</EmptyLine>;
   return (
     <ul className="bg-panel divide-y divide-white/[0.05] rounded border border-white/[0.07]">
-      {games.map((g) => (
-        <li key={g.id} className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2.5 text-[12.5px]">
-          <div className="min-w-0">
-            <span className="text-cream">{g.label}</span>
-            {g.detail ? (
-              <span
-                className={cn(
-                  "ml-2",
-                  g.won === true && "text-turf",
-                  g.won === false && "text-alert",
-                  g.won == null && "text-chalk",
-                )}
+      {games.map((g) => {
+        const canOpen = mlbBoxscores && /^\d+$/.test(g.id);
+        const body = (
+          <>
+            <div className="min-w-0">
+              <span className="text-cream group-hover:underline">{g.label}</span>
+              {g.detail ? (
+                <span
+                  className={cn(
+                    "ml-2",
+                    g.won === true && "text-turf",
+                    g.won === false && "text-alert",
+                    g.won == null && "text-chalk",
+                  )}
+                >
+                  {g.detail}
+                </span>
+              ) : null}
+              {g.live ? (
+                <span className="text-alert ml-2 text-[10px] font-semibold uppercase tracking-wide">
+                  Live
+                </span>
+              ) : null}
+            </div>
+            <span className="text-chalk-dim text-[11px]">
+              {g.when ?? g.status}
+              {canOpen ? " · Box" : ""}
+            </span>
+          </>
+        );
+        return (
+          <li key={g.id}>
+            {canOpen ? (
+              <Link
+                to={`/sports/mlb/game/${g.id}`}
+                className="group flex flex-wrap items-baseline justify-between gap-2 px-3 py-2.5 text-[12.5px] hover:bg-white/[0.03]"
+                onClick={(e) => e.stopPropagation()}
               >
-                {g.detail}
-              </span>
-            ) : null}
-            {g.live ? (
-              <span className="text-alert ml-2 text-[10px] font-semibold uppercase tracking-wide">
-                Live
-              </span>
-            ) : null}
-          </div>
-          <span className="text-chalk-dim text-[11px]">{g.when ?? g.status}</span>
-        </li>
-      ))}
+                {body}
+              </Link>
+            ) : (
+              <div className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2.5 text-[12.5px]">
+                {body}
+              </div>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -807,9 +852,7 @@ function StatGrid({
         {rows.map((s) => (
           <div key={s.label} className="bg-panel rounded border border-white/[0.07] px-2.5 py-2">
             <dt className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">{s.label}</dt>
-            <dd className="numeral text-cream mt-0.5 text-[18px]" style={{ color: accent }}>
-              {s.value}
-            </dd>
+            <dd className="numeral text-cream mt-0.5 text-[18px]">{s.value}</dd>
           </div>
         ))}
       </dl>

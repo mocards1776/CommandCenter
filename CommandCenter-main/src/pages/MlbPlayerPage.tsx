@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, Star } from "lucide-react";
@@ -9,7 +9,12 @@ import {
   isFavoritePlayer,
   removeFavoritePlayer,
 } from "@/lib/favorite-players";
-import { fetchMlbPlayer, type MlbPlayerCard, type MlbPlayerStatLine } from "@/lib/mlb";
+import {
+  fetchMlbPlayer,
+  mlbTeamLogo,
+  type MlbPlayerCard,
+  type MlbPlayerStatLine,
+} from "@/lib/mlb";
 import { cn } from "@/lib/utils";
 
 export default function MlbPlayerPage() {
@@ -56,7 +61,6 @@ export default function MlbPlayerPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn’t update favorite"),
   });
 
-  // Back-swipe support when opened as a panel-like route
   useEffect(() => {
     const st = (history.state as { mlbPlayer?: string } | null) ?? {};
     if (playerId && st.mlbPlayer !== playerId) {
@@ -93,10 +97,11 @@ export default function MlbPlayerPage() {
   const p = player.data;
   const accent = `#${p.primaryColor ?? "d9515c"}`;
   const isFav = Boolean(favQuery.data);
+  const headline = (p.hitting.length > 0 ? p.hitting : p.pitching).slice(0, 3);
 
   return (
-    <div className="mx-auto max-w-3xl p-4 md:p-7">
-      <div className="mb-4 flex items-center justify-between gap-3">
+    <div className="mx-auto max-w-2xl p-4 md:p-7">
+      <div className="mb-5 flex items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => navigate(-1)}
@@ -112,9 +117,10 @@ export default function MlbPlayerPage() {
         </Link>
       </div>
 
-      <PlayerHero
+      <PlayerCard
         player={p}
         accent={accent}
+        headline={headline}
         isFavorite={isFav}
         favoriting={toggleFav.isPending}
         onToggleFavorite={() => toggleFav.mutate()}
@@ -122,18 +128,18 @@ export default function MlbPlayerPage() {
 
       <div className="mt-6 flex flex-col gap-6">
         {p.hitting.length > 0 && (
-          <StatBlock title={`${p.season} Hitting`} stats={p.hitting} accent={accent} />
+          <StatBlock title={`${p.season} Hitting`} stats={p.hitting} />
         )}
         {p.pitching.length > 0 && (
-          <StatBlock title={`${p.season} Pitching`} stats={p.pitching} accent={accent} />
+          <StatBlock title={`${p.season} Pitching`} stats={p.pitching} />
         )}
         {p.hitting.length === 0 && p.pitching.length === 0 && (
           <p className="text-chalk-dim text-[13px]">No season stats posted yet.</p>
         )}
 
-        <section className="bg-panel rounded-xl border border-white/[0.07] p-4">
+        <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
           <h3 className="rule-head mb-3">Bio</h3>
-          <dl className="grid grid-cols-2 gap-3 text-[12.5px] sm:grid-cols-3">
+          <dl className="grid grid-cols-2 gap-3 text-[13px] sm:grid-cols-3">
             <BioItem label="Bats / Throws" value={`${p.bats ?? "—"} / ${p.throws ?? "—"}`} />
             <BioItem label="Height" value={p.height ?? "—"} />
             <BioItem label="Weight" value={p.weight ? `${p.weight} lb` : "—"} />
@@ -146,143 +152,113 @@ export default function MlbPlayerPage() {
   );
 }
 
-function PlayerHero({
+function PlayerCard({
   player,
   accent,
+  headline,
   isFavorite,
   favoriting,
   onToggleFavorite,
 }: {
   player: MlbPlayerCard;
   accent: string;
+  headline: MlbPlayerStatLine[];
   isFavorite: boolean;
   favoriting: boolean;
   onToggleFavorite: () => void;
 }) {
-  const [imgOk, setImgOk] = useState(true);
-  const [shot, setShot] = useState<"action" | "head">("action");
-
   return (
-    <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
-      <div
-        className="absolute inset-0"
-        style={{
-          background: `linear-gradient(145deg, ${accent}cc 0%, #081228 42%, #0a1730 100%)`,
-        }}
-      />
-      <div
-        className="pointer-events-none absolute -top-24 -right-16 h-72 w-72 rounded-full opacity-40 blur-3xl"
-        style={{ background: accent }}
-      />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_20%_0%,rgba(244,241,233,0.12),transparent_55%)]" />
+    <article className="bg-panel overflow-hidden rounded-2xl border border-white/[0.1]">
+      <div className="h-1.5 w-full" style={{ background: accent }} />
 
-      <div className="relative grid gap-0 sm:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
-        <div className="relative min-h-[320px] overflow-hidden sm:min-h-[420px]">
-          {imgOk ? (
-            <img
-              src={shot === "action" ? player.actionShot : player.headshot}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover object-top transition duration-700"
-              onError={() => {
-                if (shot === "action") setShot("head");
-                else setImgOk(false);
-              }}
-            />
-          ) : (
-            <div className="absolute inset-0 grid place-items-center">
-              <span className="font-display text-cream/20 text-[120px] leading-none">
-                {player.number ?? "•"}
-              </span>
-            </div>
-          )}
-          <div className="absolute inset-0 bg-gradient-to-t from-[#081228] via-[#081228]/25 to-transparent sm:bg-gradient-to-r sm:from-transparent sm:via-[#081228]/40 sm:to-[#081228]" />
+      <div className="flex flex-col items-center px-5 pt-7 pb-5 text-center sm:px-8">
+        <div className="relative mb-4">
+          <div
+            className="absolute -inset-1 rounded-full opacity-50 blur-md"
+            style={{ background: accent }}
+          />
+          <img
+            src={player.headshot}
+            alt=""
+            width={168}
+            height={168}
+            className="relative h-[168px] w-[168px] rounded-full object-cover object-top ring-2 ring-white/20"
+          />
           {player.number && (
             <span
-              className="font-display absolute top-4 left-4 text-[64px] leading-none opacity-25 sm:text-[88px]"
-              style={{ color: "#f4f1e9" }}
+              className="font-display absolute -right-1 -bottom-1 grid h-10 w-10 place-items-center rounded-full text-[16px] text-cream ring-2 ring-[#0d1d3c]"
+              style={{ background: accent }}
             >
               {player.number}
             </span>
           )}
         </div>
 
-        <div className="relative flex flex-col justify-end gap-4 p-5 sm:p-7">
-          <div>
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              {player.position && (
-                <span
-                  className="rounded-sm px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-cream"
-                  style={{ background: accent }}
-                >
-                  {player.position}
-                </span>
-              )}
-              {player.teamAbbrev && (
-                <span className="text-chalk text-[11px] uppercase tracking-[0.16em]">
-                  {player.teamName ?? player.teamAbbrev}
-                </span>
-              )}
-            </div>
-            <p className="text-chalk text-[13px] tracking-wide">{player.firstName}</p>
-            <h1 className="font-display text-cream text-[40px] leading-[0.95] sm:text-[48px]">
-              {player.lastName || player.name}
-            </h1>
-            {player.positionName && (
-              <p className="text-chalk-dim mt-2 text-[12px]">{player.positionName}</p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-3 gap-2">
-            {(player.hitting.length > 0
-              ? player.hitting
-              : player.pitching
-            )
-              .slice(0, 3)
-              .map((s) => (
-                <div
-                  key={s.label}
-                  className="rounded-lg border border-white/10 bg-black/25 px-2.5 py-2 backdrop-blur-sm"
-                >
-                  <p className="text-[10px] uppercase tracking-[0.14em] text-white/45">{s.label}</p>
-                  <p className="numeral text-cream mt-0.5 text-[22px] leading-none">{s.value}</p>
-                </div>
-              ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={onToggleFavorite}
-            disabled={favoriting}
-            className={cn(
-              "inline-flex items-center justify-center gap-2 rounded-sm px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition disabled:opacity-50",
-              isFavorite
-                ? "text-cream border border-white/20 bg-white/10"
-                : "text-cream",
-            )}
-            style={
-              isFavorite
-                ? undefined
-                : { background: `linear-gradient(180deg, ${accent}, #6b1218)` }
-            }
-          >
-            <Star size={14} className={isFavorite ? "fill-current text-accent" : ""} />
-            {isFavorite ? "Favorited" : "Add favorite"}
-          </button>
+        <div className="mb-2 flex flex-wrap items-center justify-center gap-2">
+          {player.position && (
+            <span
+              className="rounded-sm px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-cream"
+              style={{ background: accent }}
+            >
+              {player.position}
+            </span>
+          )}
+          {player.teamId != null && (
+            <span className="inline-flex items-center gap-1.5 text-[12px] text-[#c8cdd8]">
+              <img
+                src={mlbTeamLogo(player.teamId)}
+                alt=""
+                className="h-5 w-5 object-contain"
+              />
+              {player.teamName ?? player.teamAbbrev}
+            </span>
+          )}
         </div>
+
+        <p className="text-[14px] tracking-wide text-[#b8bfd0]">{player.firstName}</p>
+        <h1 className="font-display text-cream mt-0.5 text-[40px] leading-none sm:text-[46px]">
+          {player.lastName || player.name}
+        </h1>
+        {player.positionName && (
+          <p className="mt-2 text-[12px] text-[#8b93a7]">{player.positionName}</p>
+        )}
+      </div>
+
+      {headline.length > 0 && (
+        <div className="grid grid-cols-3 gap-px border-y border-white/[0.08] bg-white/[0.06]">
+          {headline.map((s) => (
+            <div key={s.label} className="bg-panel px-3 py-3.5 text-center">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                {s.label}
+              </p>
+              <p className="numeral text-cream mt-1 text-[26px] leading-none">{s.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="p-4 sm:p-5">
+        <button
+          type="button"
+          onClick={onToggleFavorite}
+          disabled={favoriting}
+          className={cn(
+            "inline-flex w-full items-center justify-center gap-2 rounded-sm px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition disabled:opacity-50",
+            isFavorite
+              ? "border border-white/20 bg-white/[0.06] text-cream"
+              : "text-cream",
+          )}
+          style={isFavorite ? undefined : { background: accent }}
+        >
+          <Star size={14} className={isFavorite ? "fill-current text-accent" : ""} />
+          {isFavorite ? "Favorited" : "Add favorite"}
+        </button>
       </div>
     </article>
   );
 }
 
-function StatBlock({
-  title,
-  stats,
-  accent,
-}: {
-  title: string;
-  stats: MlbPlayerStatLine[];
-  accent: string;
-}) {
+function StatBlock({ title, stats }: { title: string; stats: MlbPlayerStatLine[] }) {
   return (
     <section>
       <h3 className="rule-head mb-3">{title}</h3>
@@ -290,12 +266,12 @@ function StatBlock({
         {stats.map((s) => (
           <div
             key={s.label}
-            className="bg-panel rounded-xl border border-white/[0.07] px-3 py-3"
+            className="rounded-xl border border-white/[0.08] bg-[#0d1d3c] px-3 py-3"
           >
-            <dt className="text-chalk-dim text-[10px] uppercase tracking-[0.14em]">{s.label}</dt>
-            <dd className="numeral text-cream mt-1 text-[22px] leading-none" style={{ color: accent }}>
-              {s.value}
-            </dd>
+            <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+              {s.label}
+            </dt>
+            <dd className="numeral text-cream mt-1 text-[24px] leading-none">{s.value}</dd>
           </div>
         ))}
       </dl>
@@ -314,7 +290,7 @@ function BioItem({
 }) {
   return (
     <div className={className}>
-      <dt className="text-chalk-dim text-[10px] uppercase tracking-[0.14em]">{label}</dt>
+      <dt className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">{label}</dt>
       <dd className="text-cream mt-0.5">{value}</dd>
     </div>
   );

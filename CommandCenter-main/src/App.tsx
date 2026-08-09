@@ -13,6 +13,7 @@ import ReadingPage from "@/pages/ReadingPage";
 import SportsPage from "@/pages/SportsPage";
 import MlbPage from "@/pages/MlbPage";
 import MlbPlayerPage from "@/pages/MlbPlayerPage";
+import MlbGamePage from "@/pages/MlbGamePage";
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
 import { markSportsSolo } from "@/lib/sports-home";
 
@@ -103,6 +104,7 @@ export default function App() {
               <Route path="/sports" element={<SportsPage />} />
               <Route path="/sports/mlb" element={<MlbPage />} />
               <Route path="/sports/mlb/player/:playerId" element={<MlbPlayerPage />} />
+              <Route path="/sports/mlb/game/:gamePk" element={<MlbGamePage />} />
             </Route>
             <Route path="*" element={<HomeRedirect />} />
           </Routes>

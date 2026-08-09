@@ -11,6 +11,7 @@ import {
   fetchMlbScoreboard,
   fetchMlbStandings,
   mlbHeadshot,
+  mlbTeamLogo,
   playoffOddsFromStandings,
   type MlbLeaderBoard,
   type MlbScoreGame,
@@ -254,9 +255,10 @@ function ScoreboardSection({
 
 function ScoreCard({ game }: { game: MlbScoreGame }) {
   return (
-    <article
+    <Link
+      to={`/sports/mlb/game/${game.id}`}
       className={cn(
-        "bg-panel relative overflow-hidden rounded-lg border px-3.5 py-3",
+        "bg-panel relative block overflow-hidden rounded-lg border px-3.5 py-3 transition hover:border-accent/40",
         game.live ? "border-alert/40" : "border-white/[0.07]",
       )}
     >
@@ -272,13 +274,13 @@ function ScoreCard({ game }: { game: MlbScoreGame }) {
         >
           {game.live ? game.inning || "Live" : game.final ? "Final" : game.status}
         </span>
-        {!game.live && !game.final && (
-          <span className="text-chalk-dim text-[10.5px]">{game.when}</span>
-        )}
+        <span className="text-chalk-dim text-[10.5px]">
+          {!game.live && !game.final ? game.when : "Box →"}
+        </span>
       </div>
       <TeamScoreLine side={game.away} emphasize={game.final && (game.away.score ?? 0) > (game.home.score ?? 0)} />
       <TeamScoreLine side={game.home} emphasize={game.final && (game.home.score ?? 0) > (game.away.score ?? 0)} />
-    </article>
+    </Link>
   );
 }
 
@@ -290,13 +292,16 @@ function TeamScoreLine({
   emphasize?: boolean;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-1">
-      <div className="min-w-0">
-        <span className={cn("text-[14px]", emphasize ? "text-cream font-semibold" : "text-chalk")}>
+    <div className="flex items-center justify-between gap-3 py-1">
+      <div className="flex min-w-0 items-center gap-2">
+        {side.teamId ? (
+          <img src={mlbTeamLogo(side.teamId)} alt="" className="h-6 w-6 object-contain" />
+        ) : null}
+        <span className={cn("text-[14px]", emphasize ? "text-cream font-semibold" : "text-[#c8cdd8]")}>
           {side.abbrev}
         </span>
         {side.record && (
-          <span className="text-chalk-dim ml-2 text-[10.5px]">{side.record}</span>
+          <span className="text-[10.5px] text-[#8b93a7]">{side.record}</span>
         )}
       </div>
       <span
@@ -343,10 +348,19 @@ function StandingsSection({
             <tbody>
               {t.rows.map((r) => (
                 <tr key={r.teamId} className="border-t border-white/[0.04]">
-                  <td className="text-cream px-3 py-2">
-                    <span className="text-chalk-dim numeral mr-1.5">{r.rank}</span>
-                    {r.team}
-                  </td>
+                            <td className="text-cream px-3 py-2">
+                              <span className="inline-flex items-center gap-2">
+                                <span className="text-chalk-dim numeral w-3">{r.rank}</span>
+                                {r.teamId ? (
+                                  <img
+                                    src={mlbTeamLogo(r.teamId)}
+                                    alt=""
+                                    className="h-5 w-5 object-contain"
+                                  />
+                                ) : null}
+                                {r.team}
+                              </span>
+                            </td>
                   <td className="numeral text-cream px-1.5 py-2">{r.wins}</td>
                   <td className="numeral text-chalk px-1.5 py-2">{r.losses}</td>
                   <td className="numeral text-chalk px-1.5 py-2">{r.pct}</td>
