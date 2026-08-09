@@ -1,17 +1,23 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
 import HighlightReel from "@/components/sports/HighlightReel";
 import {
+  buildPlayerNameIndex,
   fetchEspnGameRecap,
   fetchMlbBoxscore,
   fetchMlbGameHighlights,
   formatGameDuration,
   mlbTeamLogo,
+  parseEspnRecapHtml,
+  resolveMissingRecapPlayers,
+  teamPagePath,
   type MlbBoxscoreBatter,
   type MlbBoxscorePitcher,
   type MlbBoxscoreSide,
+  type MlbGameRecap,
+  type RecapInline,
 } from "@/lib/mlb";
 import { cn } from "@/lib/utils";
 
@@ -180,7 +186,7 @@ export default function MlbGamePage() {
           <Loader2 size={14} className="animate-spin" /> Loading game wrap…
         </p>
       )}
-      {recap.data && <GameWrap recap={recap.data} />}
+      {recap.data && <GameWrap recap={recap.data} box={g} />}
 
       {highlights.isPending && (
         <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
@@ -197,48 +203,86 @@ export default function MlbGamePage() {
 
 function EspnTeam({ side, align }: { side: MlbBoxscoreSide; align: "left" | "right" }) {
   return (
-    <div
+    <Link
+      to={teamPagePath(side.teamId)}
       className={cn(
-        "flex min-w-0 flex-col items-center gap-2",
+        "flex min-w-0 flex-col items-center gap-2 transition hover:opacity-90",
         align === "left" ? "sm:items-start" : "sm:items-end",
       )}
     >
       <img src={mlbTeamLogo(side.teamId)} alt="" className="h-14 w-14 object-contain sm:h-16 sm:w-16" />
       <div className={cn("text-center", align === "left" ? "sm:text-left" : "sm:text-right")}>
-        <p className="text-[15px] font-bold tracking-wide text-white sm:text-[17px]">{side.abbrev}</p>
+        <p className="text-[15px] font-bold tracking-wide text-white underline-offset-2 hover:underline sm:text-[17px]">
+          {side.abbrev}
+        </p>
         <p className="truncate text-[11px] text-[#8b93a7]">{side.name}</p>
       </div>
-    </div>
+    </Link>
   );
 }
 
 function GameWrap({
   recap,
+  box,
 }: {
-  recap: {
-    headline: string;
-    description: string | null;
-    storyText: string;
-    url: string;
+  recap: MlbGameRecap;
+  box: {
+    away: MlbBoxscoreSide;
+    home: MlbBoxscoreSide;
   };
 }) {
   const [open, setOpen] = useState(false);
-  const preview = recap.storyText.slice(0, 420);
-  const long = recap.storyText.length > 420;
+  const [segments, setSegments] = useState<RecapInline[]>([]);
+
+  const nameIndex = useMemo(() => {
+    const players = [
+      ...box.away.batters.map((b) => ({ id: b.id, name: b.name })),
+      ...box.home.batters.map((b) => ({ id: b.id, name: b.name })),
+      ...box.away.pitchers.map((p) => ({ id: p.id, name: p.name })),
+      ...box.home.pitchers.map((p) => ({ id: p.id, name: p.name })),
+    ];
+    return buildPlayerNameIndex(players);
+  }, [box]);
+
+  useEffect(() => {
+    const parsed = parseEspnRecapHtml(recap.storyHtml || recap.storyText, nameIndex);
+    setSegments(parsed);
+    let cancelled = false;
+    void resolveMissingRecapPlayers(parsed).then((resolved) => {
+      if (!cancelled) setSegments(resolved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [recap.storyHtml, recap.storyText, nameIndex]);
+
+  const storyText = recap.storyText.replace(/—\s*—/g, "—").trim();
+  const desc = (recap.description ?? "").replace(/^—\s*/, "").trim();
+  const showDesc = Boolean(desc) && !storyText.toLowerCase().includes(desc.toLowerCase().slice(0, 48));
+  const long = storyText.length > 420;
+
+  const rendered = (
+    <RecapBody segments={segments.length ? segments : [{ kind: "text", text: storyText }]} />
+  );
 
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] px-4 py-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">Game wrap</p>
-        <h2 className="text-cream mt-1 text-[18px] leading-snug font-semibold">{recap.headline}</h2>
-        {recap.description && (
-          <p className="mt-1.5 text-[13px] leading-relaxed text-[#b8bfd0]">{recap.description}</p>
+        <h2 className="font-display text-cream mt-1 text-[22px] leading-snug">{recap.headline}</h2>
+        {showDesc && (
+          <p className="font-display mt-2 text-[15px] leading-relaxed text-[#d8d2c4]">{desc}</p>
         )}
       </div>
-      <div className="px-4 py-3">
-        <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-[#c8cdd8]">
-          {open || !long ? recap.storyText : `${preview.trim()}…`}
-        </p>
+      <div className="px-4 py-4">
+        <div
+          className={cn(
+            "font-display text-[16.5px] leading-[1.65] text-[#ebe6d8]",
+            !open && long && "line-clamp-6",
+          )}
+        >
+          {rendered}
+        </div>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           {long && (
             <button
@@ -263,6 +307,60 @@ function GameWrap({
   );
 }
 
+function RecapBody({ segments }: { segments: RecapInline[] }) {
+  const nodes: ReactNode[] = [];
+  segments.forEach((seg, i) => {
+    if (seg.kind === "text") {
+      nodes.push(<span key={i}>{seg.text}</span>);
+      return;
+    }
+    if (seg.kind === "player" && seg.playerId != null) {
+      nodes.push(
+        <Link
+          key={i}
+          to={`/sports/mlb/player/${seg.playerId}`}
+          className="text-accent underline decoration-accent/35 underline-offset-[3px] transition hover:decoration-accent"
+        >
+          {seg.text}
+        </Link>,
+      );
+      return;
+    }
+    if (seg.kind === "team" && seg.teamId != null) {
+      nodes.push(
+        <Link
+          key={i}
+          to={teamPagePath(seg.teamId)}
+          className="text-accent underline decoration-accent/35 underline-offset-[3px] transition hover:decoration-accent"
+        >
+          {seg.text}
+        </Link>,
+      );
+      return;
+    }
+    if (seg.kind === "ext") {
+      nodes.push(
+        <a
+          key={i}
+          href={seg.href}
+          target="_blank"
+          rel="noreferrer"
+          className="text-accent underline decoration-accent/35 underline-offset-[3px]"
+        >
+          {seg.text}
+        </a>,
+      );
+      return;
+    }
+    nodes.push(
+      <span key={i} className="text-accent">
+        {seg.text}
+      </span>,
+    );
+  });
+  return <>{nodes}</>;
+}
+
 function InningRow({
   side,
   innings,
@@ -274,7 +372,11 @@ function InningRow({
 }) {
   return (
     <tr className="border-t border-white/[0.05]">
-      <td className="px-3 py-2 text-left text-[12px] font-semibold text-white">{side.abbrev}</td>
+      <td className="px-3 py-2 text-left text-[12px] font-semibold text-white">
+        <Link to={teamPagePath(side.teamId)} className="hover:text-accent hover:underline">
+          {side.abbrev}
+        </Link>
+      </td>
       {innings.map((i) => (
         <td key={i.num} className="numeral px-1 py-2 text-[#c8cdd8]">
           {i[which] ?? "—"}
@@ -292,7 +394,12 @@ function BoxSide({ title, side }: { title: string; side: MlbBoxscoreSide }) {
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="flex items-center gap-2 border-b border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
         <img src={mlbTeamLogo(side.teamId)} alt="" className="h-6 w-6 object-contain" />
-        <h2 className="text-[14px] font-bold tracking-wide text-white">{title}</h2>
+        <Link
+          to={teamPagePath(side.teamId)}
+          className="text-[14px] font-bold tracking-wide text-white hover:text-accent hover:underline"
+        >
+          {title}
+        </Link>
       </div>
 
       <div className="overflow-x-auto">

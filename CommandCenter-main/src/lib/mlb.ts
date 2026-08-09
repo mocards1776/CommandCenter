@@ -107,6 +107,8 @@ export type MlbPlayerCard = {
   height: string | null;
   weight: string | null;
   birthDate: string | null;
+  /** Age in years — shown prominently on the card. */
+  age: number | null;
   birthPlace: string | null;
   mlbDebut: string | null;
   draftYear: number | null;
@@ -123,6 +125,50 @@ export type MlbPlayerCard = {
   careerHitting: MlbPlayerStatLine[];
   careerPitching: MlbPlayerStatLine[];
   season: number;
+};
+
+export type MlbGameLogEntry = {
+  date: string;
+  gamePk: number;
+  opponent: string;
+  opponentId: number | null;
+  isHome: boolean;
+  isWin: boolean | null;
+  summary: string;
+  stats: MlbPlayerStatLine[];
+};
+
+export type MlbManager = {
+  id: number;
+  name: string;
+  teamId: number;
+  teamName: string;
+  teamAbbrev: string;
+  record: string;
+  wins: number;
+  losses: number;
+  winPct: number;
+  gb: string;
+  playoffOdds: number | null;
+  divisionRank: number | null;
+  contractNote: string | null;
+  /** Higher = hotter seat (more likely to be fired). */
+  hotSeatScore: number;
+  hotSeatRank: number;
+  headshot: string;
+  primaryColor: string;
+};
+
+export type MlbManagerDetail = MlbManager & {
+  age: number | null;
+  birthDate: string | null;
+  birthPlace: string | null;
+  bio: string | null;
+  careerNotes: string[];
+  school: string | null;
+  wikiExtract: string | null;
+  timeline: { date: string; text: string }[];
+  playingCareer: { season: string; team: string; games: string; summary: string }[];
 };
 
 export type MlbTransaction = {
@@ -144,6 +190,180 @@ export type MlbPlayerContract = {
 
 function currentSeason(): number {
   return new Date().getFullYear();
+}
+
+function ageFromBirthDate(birthDate: string | null | undefined): number | null {
+  if (!birthDate) return null;
+  const born = new Date(`${birthDate}T12:00:00Z`);
+  if (Number.isNaN(born.getTime())) return null;
+  const now = new Date();
+  let age = now.getUTCFullYear() - born.getUTCFullYear();
+  const m = now.getUTCMonth() - born.getUTCMonth();
+  if (m < 0 || (m === 0 && now.getUTCDate() < born.getUTCDate())) age -= 1;
+  return age;
+}
+
+export function teamPagePath(teamId: number | null | undefined): string {
+  if (teamId == null || !Number.isFinite(teamId)) return "/sports/mlb?solo=1";
+  // Sports board opens the team drawer for any mlb-{id} key (and legacy mlb-stl).
+  if (teamId === 138) return "/sports?solo=1&team=mlb-stl";
+  return `/sports?solo=1&team=mlb-${teamId}`;
+}
+
+/** ESPN scoreboard abbrev → MLB Stats API team id. */
+const ESPN_ABBREV_TO_TEAM_ID: Record<string, number> = {
+  LAA: 108,
+  ARI: 109,
+  AZ: 109,
+  BAL: 110,
+  BOS: 111,
+  CHC: 112,
+  CIN: 113,
+  CLE: 114,
+  COL: 115,
+  DET: 116,
+  HOU: 117,
+  KC: 118,
+  LAD: 119,
+  WSH: 120,
+  NYM: 121,
+  ATH: 133,
+  OAK: 133,
+  PIT: 134,
+  SD: 135,
+  SEA: 136,
+  SF: 137,
+  STL: 138,
+  TB: 139,
+  TEX: 140,
+  TOR: 141,
+  MIN: 142,
+  PHI: 143,
+  ATL: 144,
+  CHW: 145,
+  CWS: 145,
+  MIA: 146,
+  NYY: 147,
+  MIL: 158,
+};
+
+export function mlbTeamIdFromEspnAbbrev(abbrev: string | null | undefined): number | null {
+  if (!abbrev) return null;
+  return ESPN_ABBREV_TO_TEAM_ID[abbrev.toUpperCase()] ?? null;
+}
+
+export type RecapInline =
+  | { kind: "text"; text: string }
+  | { kind: "player"; text: string; playerId: number | null; espnId: string | null }
+  | { kind: "team"; text: string; teamId: number | null }
+  | { kind: "ext"; text: string; href: string };
+
+/** Turn ESPN recap HTML into inline segments with player/team targets. */
+export function parseEspnRecapHtml(
+  html: string,
+  nameToPlayerId: Map<string, number>,
+): RecapInline[] {
+  const parts: RecapInline[] = [];
+  const re = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  const pushText = (raw: string) => {
+    const text = stripHtml(raw)
+      .replace(/\u00a0/g, " ")
+      .replace(/—\s*—/g, "—")
+      .replace(/\s+/g, " ");
+    if (text) parts.push({ kind: "text", text });
+  };
+  while ((m = re.exec(html))) {
+    if (m.index > last) pushText(html.slice(last, m.index));
+    const href = m[1];
+    const label = stripHtml(m[2]).trim();
+    const playerMatch = href.match(/\/mlb\/player\/_\/id\/(\d+)\//i);
+    const teamMatch = href.match(/\/mlb\/team\/_\/name\/([a-z0-9]+)\//i);
+    if (playerMatch) {
+      const key = normalizePersonName(label);
+      parts.push({
+        kind: "player",
+        text: label,
+        playerId: nameToPlayerId.get(key) ?? null,
+        espnId: playerMatch[1],
+      });
+    } else if (teamMatch) {
+      parts.push({
+        kind: "team",
+        text: label,
+        teamId: mlbTeamIdFromEspnAbbrev(teamMatch[1]),
+      });
+    } else if (/^https?:/i.test(href) && !/apnews\.com\/hub\/mlb/i.test(href)) {
+      parts.push({ kind: "ext", text: label, href });
+    } else {
+      pushText(label);
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < html.length) pushText(html.slice(last));
+  return parts;
+}
+
+export function normalizePersonName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\./g, "")
+    .replace(/\b(jr|sr|ii|iii|iv)\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+export function buildPlayerNameIndex(
+  players: { id: number; name: string }[],
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const p of players) {
+    map.set(normalizePersonName(p.name), p.id);
+    const bits = p.name.split(/\s+/);
+    if (bits.length >= 2) {
+      map.set(normalizePersonName(`${bits[0][0]} ${bits[bits.length - 1]}`), p.id);
+      map.set(normalizePersonName(bits[bits.length - 1]), p.id);
+    }
+  }
+  return map;
+}
+
+/** Resolve ESPN-linked names missing from the box score via MLB people search. */
+export async function resolveMissingRecapPlayers(
+  segments: RecapInline[],
+): Promise<RecapInline[]> {
+  const missing = [
+    ...new Set(
+      segments
+        .filter((s): s is Extract<RecapInline, { kind: "player" }> => s.kind === "player" && s.playerId == null)
+        .map((s) => s.text),
+    ),
+  ].slice(0, 12);
+  if (!missing.length) return segments;
+  const found = new Map<string, number>();
+  await Promise.all(
+    missing.map(async (name) => {
+      try {
+        const raw = (await mlbGet("people/search", { names: name })) as {
+          people?: { id?: number; fullName?: string }[];
+        };
+        const hit =
+          (raw.people ?? []).find(
+            (p) => normalizePersonName(p.fullName ?? "") === normalizePersonName(name),
+          ) ?? raw.people?.[0];
+        if (hit?.id) found.set(normalizePersonName(name), hit.id);
+      } catch {
+        // ignore
+      }
+    }),
+  );
+  if (!found.size) return segments;
+  return segments.map((s) =>
+    s.kind === "player" && s.playerId == null
+      ? { ...s, playerId: found.get(normalizePersonName(s.text)) ?? null }
+      : s,
+  );
 }
 
 function chicagoToday(): string {
@@ -236,13 +456,6 @@ export type MlbGameRecap = {
   storyHtml: string;
   storyText: string;
   url: string;
-};
-
-export type MlbLeagueRank = {
-  label: string;
-  value: string;
-  rank: number;
-  of: number;
 };
 
 export type MlbRecentBlock = {
@@ -982,6 +1195,21 @@ const PITCH_RANK_DEFS: RankDef[] = [
   { sortStat: "inningsPitched", label: "IP", order: "desc", statKey: "inningsPitched" },
 ];
 
+export type MlbLeagueRank = {
+  label: string;
+  value: string;
+  rank: number;
+  of: number;
+  /** ESPN-style display e.g. "Tied-55th" or "7th" */
+  display: string;
+};
+
+function ordinal(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th"][Math.min(n % 10, 9)]}`;
+}
+
 async function rankForStat(
   playerId: number,
   group: "hitting" | "pitching",
@@ -1011,11 +1239,24 @@ async function rankForStat(
     if (idx < 0) return null;
     const value = splits[idx]?.stat?.[def.statKey];
     if (value == null || value === "") return null;
+    const tied =
+      (idx > 0 &&
+        String(splits[idx - 1]?.stat?.[def.statKey] ?? "") === String(value)) ||
+      (idx < splits.length - 1 &&
+        String(splits[idx + 1]?.stat?.[def.statKey] ?? "") === String(value));
+    // rank is first occurrence of this value
+    let rank = idx + 1;
+    for (let i = idx - 1; i >= 0; i--) {
+      if (String(splits[i]?.stat?.[def.statKey] ?? "") === String(value)) rank = i + 1;
+      else break;
+    }
+    const display = tied ? `Tied-${ordinal(rank)}` : ordinal(rank);
     return {
       label: def.label,
       value: String(value),
-      rank: idx + 1,
+      rank,
       of: splits.length,
+      display,
     };
   } catch {
     return null;
@@ -1400,6 +1641,7 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
       height?: string;
       weight?: number;
       birthDate?: string;
+      currentAge?: number;
       birthCity?: string;
       birthStateProvince?: string;
       birthCountry?: string;
@@ -1528,6 +1770,7 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
     height: p.height ?? null,
     weight: p.weight != null ? String(p.weight) : null,
     birthDate: p.birthDate ?? null,
+    age: p.currentAge ?? ageFromBirthDate(p.birthDate),
     birthPlace: place || null,
     mlbDebut: p.mlbDebutDate ?? null,
     draftYear: draft?.year ?? p.draftYear ?? null,
@@ -1574,4 +1817,304 @@ export function playoffOddsFromStandings(tables: MlbDivisionTable[]): MlbPlayoff
   const num = (s: string) => parseFloat(s.replace("%", "")) || 0;
   rows.sort((a, b) => num(b.playoffPercent) - num(a.playoffPercent));
   return rows;
+}
+
+export async function fetchMlbPlayerGameLog(
+  playerId: number | string,
+  group: "hitting" | "pitching",
+  limit = 10,
+  season = currentSeason(),
+): Promise<MlbGameLogEntry[]> {
+  const id = Number(playerId);
+  const keys = group === "pitching" ? SPLIT_PITCH_KEYS : SPLIT_HIT_KEYS;
+  const raw = (await mlbGet(`people/${id}/stats`, {
+    stats: "gameLog",
+    group,
+    season: String(season),
+    gameType: "R",
+  })) as {
+    stats?: {
+      splits?: {
+        date?: string;
+        isHome?: boolean;
+        isWin?: boolean;
+        opponent?: { id?: number; name?: string; abbreviation?: string };
+        game?: { gamePk?: number };
+        stat?: Record<string, unknown>;
+      }[];
+    }[];
+  };
+  const splits = raw.stats?.[0]?.splits ?? [];
+  return splits
+    .slice()
+    .reverse()
+    .slice(0, limit)
+    .map((s) => {
+      const oppName =
+        s.opponent?.abbreviation ||
+        (s.opponent?.name ?? "OPP").replace(
+          /^(St\. Louis|New York|Los Angeles|Chicago|Tampa Bay|Kansas City|San Francisco|San Diego|Toronto) /,
+          "",
+        );
+      return {
+        date: s.date ?? "",
+        gamePk: s.game?.gamePk ?? 0,
+        opponent: oppName,
+        opponentId: s.opponent?.id ?? null,
+        isHome: Boolean(s.isHome),
+        isWin: s.isWin ?? null,
+        summary: String(s.stat?.summary ?? ""),
+        stats: pickStats(s.stat, keys.slice(0, 8)),
+      };
+    });
+}
+
+async function fetchManagerContractNote(name: string): Promise<string | null> {
+  try {
+    const { data } = await supabase.functions.invoke("sports", {
+      body: { action: "contract", name },
+    });
+    if (!data || (data as { error?: string }).error) return null;
+    const d = data as { contractStatus?: string | null };
+    return d.contractStatus ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** All 30 MLB managers with a computed hot-seat ranking. */
+export async function fetchMlbManagers(): Promise<MlbManager[]> {
+  const season = currentSeason();
+  const [teamsRaw, standings] = await Promise.all([
+    mlbGet("teams", { sportId: "1", season: String(season) }) as Promise<{
+      teams?: { id?: number; name?: string; abbreviation?: string }[];
+    }>,
+    fetchMlbStandings(),
+  ]);
+
+  const standingByTeam = new Map<
+    number,
+    { wins: number; losses: number; pct: string; gb: string; rank: string; playoff: string | null }
+  >();
+  for (const t of standings) {
+    for (const r of t.rows) {
+      standingByTeam.set(r.teamId, {
+        wins: r.wins,
+        losses: r.losses,
+        pct: r.pct,
+        gb: r.gb,
+        rank: r.rank,
+        playoff: r.playoffPercent,
+      });
+    }
+  }
+
+  const teams = teamsRaw.teams ?? [];
+  const managers: Omit<MlbManager, "hotSeatRank">[] = [];
+
+  await Promise.all(
+    teams.map(async (team) => {
+      if (!team.id) return;
+      try {
+        const coaches = (await mlbGet(`teams/${team.id}/coaches`, {
+          season: String(season),
+        })) as {
+          roster?: {
+            job?: string;
+            title?: string;
+            person?: { id?: number; fullName?: string };
+          }[];
+        };
+        const mgr = (coaches.roster ?? []).find((c) => {
+          const job = (c.job || c.title || "").trim();
+          return job === "Manager";
+        });
+        if (!mgr?.person?.id || !mgr.person.fullName) return;
+        const st = standingByTeam.get(team.id);
+        const wins = st?.wins ?? 0;
+        const losses = st?.losses ?? 0;
+        const gp = wins + losses;
+        const winPct = gp > 0 ? wins / gp : 0.5;
+        const gbNum = st?.gb === "—" || !st?.gb ? 0 : parseFloat(st.gb) || 0;
+        const playoff =
+          st?.playoff != null ? parseFloat(String(st.playoff).replace("%", "")) : null;
+        // Heat: losing + out of race + deep GB. Contract detail loaded on manager page.
+        const score =
+          (1 - winPct) * 45 +
+          Math.min(gbNum, 25) * 1.6 +
+          (playoff != null ? (100 - playoff) * 0.25 : 20) +
+          (st?.rank && Number(st.rank) >= 4 ? 6 : 0);
+        managers.push({
+          id: mgr.person.id,
+          name: mgr.person.fullName,
+          teamId: team.id,
+          teamName: team.name ?? "—",
+          teamAbbrev: team.abbreviation ?? "—",
+          record: `${wins}-${losses}`,
+          wins,
+          losses,
+          winPct,
+          gb: st?.gb ?? "—",
+          playoffOdds: playoff,
+          divisionRank: st?.rank ? Number(st.rank) : null,
+          contractNote: null,
+          hotSeatScore: Math.round(score * 10) / 10,
+          headshot: mlbHeadshot(mgr.person.id, 213),
+          primaryColor: TEAM_COLORS[team.id] ?? "d9515c",
+        });
+      } catch {
+        // skip team
+      }
+    }),
+  );
+
+  managers.sort((a, b) => b.hotSeatScore - a.hotSeatScore);
+  return managers.map((m, i) => ({ ...m, hotSeatRank: i + 1 }));
+}
+
+async function fetchWikipediaExtract(name: string): Promise<string | null> {
+  try {
+    const title = name.trim().replace(/\s+/g, "_");
+    const res = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { extract?: string; type?: string };
+    if (data.type === "disambiguation") return null;
+    return data.extract?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchMlbManagerDetail(managerId: number | string): Promise<MlbManagerDetail> {
+  const id = Number(managerId);
+  const all = await fetchMlbManagers();
+  const base = all.find((m) => m.id === id);
+  if (!base) throw new Error("Manager not found");
+
+  const season = currentSeason();
+  const [person, contractNote, wikiExtract, txRaw] = await Promise.all([
+    mlbGet(`people/${id}`, {
+      hydrate: "currentTeam,education,stats(group=[hitting],type=[yearByYear])",
+    }) as Promise<{
+      people?: {
+        fullName?: string;
+        birthDate?: string;
+        currentAge?: number;
+        birthCity?: string;
+        birthStateProvince?: string;
+        birthCountry?: string;
+        education?: { colleges?: { name?: string }[]; highschools?: { name?: string }[] };
+        stats?: {
+          type?: { displayName?: string };
+          group?: { displayName?: string };
+          splits?: {
+            season?: string;
+            team?: { name?: string };
+            stat?: { gamesPlayed?: number; summary?: string };
+          }[];
+        }[];
+      }[];
+    }>,
+    fetchManagerContractNote(base.name),
+    fetchWikipediaExtract(base.name),
+    mlbGet("transactions", {
+      playerId: String(id),
+      startDate: "1990-01-01",
+      endDate: `${season}-12-31`,
+    }).catch(() => ({ transactions: [] })) as Promise<{
+      transactions?: { date?: string; typeDesc?: string; description?: string }[];
+    }>,
+  ]);
+
+  const p = person.people?.[0];
+  const place = [p?.birthCity, p?.birthStateProvince, p?.birthCountry].filter(Boolean).join(", ");
+  const school =
+    p?.education?.colleges?.[0]?.name ?? p?.education?.highschools?.[0]?.name ?? null;
+
+  let hotSeatScore = base.hotSeatScore;
+  if (contractNote && /through 202[89]|2029|2030|extension/i.test(contractNote)) {
+    hotSeatScore = Math.max(0, hotSeatScore - 8);
+  }
+  if (contractNote && /2026|lame.?duck|final year/i.test(contractNote) && base.winPct < 0.48) {
+    hotSeatScore += 10;
+  }
+
+  const playingCareer =
+    (p?.stats ?? [])
+      .flatMap((block) => block.splits ?? [])
+      .filter((s) => s.season)
+      .map((s) => ({
+        season: String(s.season),
+        team: s.team?.name ?? "—",
+        games: s.stat?.gamesPlayed != null ? String(s.stat.gamesPlayed) : "—",
+        summary: s.stat?.summary ?? "",
+      }))
+      .slice(-20) ?? [];
+
+  const timeline = (txRaw.transactions ?? [])
+    .filter((t) => t.date && t.description)
+    .map((t) => ({
+      date: t.date!,
+      text: t.description!,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // Team hire / managerial markers from the club's transaction feed (best-effort).
+  try {
+    const teamTx = (await mlbGet("transactions", {
+      teamId: String(base.teamId),
+      startDate: `${season - 12}-01-01`,
+      endDate: `${season}-12-31`,
+    })) as { transactions?: { date?: string; description?: string }[] };
+    for (const t of teamTx.transactions ?? []) {
+      const desc = t.description ?? "";
+      if (
+        t.date &&
+        new RegExp(base.name.split(" ").pop() ?? base.name, "i").test(desc) &&
+        /manager|hired|named|promoted/i.test(desc)
+      ) {
+        if (!timeline.some((x) => x.date === t.date && x.text === desc)) {
+          timeline.push({ date: t.date, text: desc });
+        }
+      }
+    }
+    timeline.sort((a, b) => a.date.localeCompare(b.date));
+  } catch {
+    // optional
+  }
+
+  const heatLabel =
+    base.hotSeatRank <= 5 ? "Blazing" : base.hotSeatRank <= 12 ? "Warm" : base.hotSeatRank <= 20 ? "Cool" : "Safe";
+
+  const careerNotes: string[] = [
+    wikiExtract ?? `${base.name} is the manager of the ${base.teamName}.`,
+    `Current record: ${base.record} (${(base.winPct * 100).toFixed(1)}% · ${base.gb} GB).`,
+    base.divisionRank != null ? `Division rank: ${base.divisionRank}.` : "",
+    base.playoffOdds != null ? `Playoff odds: ${base.playoffOdds.toFixed(1)}%.` : "",
+    contractNote ? `Contract: ${contractNote}.` : "Contract terms not published.",
+    school ? `School: ${school}.` : "",
+    place ? `Born: ${place}.` : "",
+    `Hot seat: #${base.hotSeatRank} of 30 — ${heatLabel} (score ${Math.round(hotSeatScore * 10) / 10}).`,
+    playingCareer.length
+      ? `MLB playing career: ${playingCareer.length} season${playingCareer.length === 1 ? "" : "s"} on record.`
+      : "No MLB playing seasons on record (coach/manager track).",
+  ].filter(Boolean);
+
+  return {
+    ...base,
+    contractNote,
+    hotSeatScore: Math.round(hotSeatScore * 10) / 10,
+    age: p?.currentAge ?? ageFromBirthDate(p?.birthDate),
+    birthDate: p?.birthDate ?? null,
+    birthPlace: place || null,
+    bio: wikiExtract ?? contractNote,
+    careerNotes,
+    school,
+    wikiExtract,
+    timeline: timeline.slice(-24),
+    playingCareer,
+  };
 }

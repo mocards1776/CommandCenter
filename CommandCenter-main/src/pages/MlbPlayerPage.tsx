@@ -429,7 +429,7 @@ function SeasonStatsStrip({
                 {s.value}
               </p>
               {rank && (
-                <p className="text-chalk-dim mt-1.5 text-[11px]">{rank.display}</p>
+                <p className="mt-1.5 text-[12px] font-medium text-[#b8c0d2]">{rank.display}</p>
               )}
             </div>
           );

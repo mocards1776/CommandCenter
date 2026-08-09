@@ -15,6 +15,7 @@ import {
   mlbTeamLogo,
   pickHeroGame,
   playoffOddsFromStandings,
+  teamPagePath,
   type MlbLeaderBoard,
   type MlbScoreGame,
 } from "@/lib/mlb";
@@ -331,14 +332,27 @@ function TeamScoreLine({
           <img src={mlbTeamLogo(side.teamId)} alt="" className="h-7 w-7 object-contain" />
         ) : null}
         <div className="min-w-0">
-          <span
-            className={cn(
-              "block text-[15px] font-semibold tracking-wide",
-              emphasize ? "text-white" : muted ? "text-white/45" : "text-[#d5dae6]",
-            )}
-          >
-            {side.abbrev}
-          </span>
+          {side.teamId ? (
+            <Link
+              to={teamPagePath(side.teamId)}
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "block text-[15px] font-semibold tracking-wide hover:underline",
+                emphasize ? "text-white" : muted ? "text-white/45" : "text-[#d5dae6]",
+              )}
+            >
+              {side.abbrev}
+            </Link>
+          ) : (
+            <span
+              className={cn(
+                "block text-[15px] font-semibold tracking-wide",
+                emphasize ? "text-white" : muted ? "text-white/45" : "text-[#d5dae6]",
+              )}
+            >
+              {side.abbrev}
+            </span>
+          )}
           {side.record && (
             <span className="text-[10px] text-[#8b93a7]">{side.record}</span>
           )}
@@ -398,7 +412,12 @@ function StandingsSection({
                                     className="h-5 w-5 object-contain"
                                   />
                                 ) : null}
-                                {r.team}
+                                <Link
+                                  to={teamPagePath(r.teamId)}
+                                  className="hover:text-accent hover:underline"
+                                >
+                                  {r.team}
+                                </Link>
                               </span>
                             </td>
                   <td className="numeral text-cream px-1.5 py-2">{r.wins}</td>
@@ -511,7 +530,15 @@ function OddsSection({
             const pct = parseFloat(r.playoffPercent) || 0;
             return (
               <tr key={r.teamId} className="border-t border-white/[0.04]">
-                <td className="text-cream px-3 py-2.5">{r.team}</td>
+                <td className="text-cream px-3 py-2.5">
+                  <Link
+                    to={teamPagePath(r.teamId)}
+                    className="inline-flex items-center gap-2 hover:text-accent hover:underline"
+                  >
+                    <img src={mlbTeamLogo(r.teamId)} alt="" className="h-5 w-5 object-contain" />
+                    {r.team}
+                  </Link>
+                </td>
                 <td className="numeral text-chalk px-2 py-2.5">{r.record}</td>
                 <td className="px-2 py-2.5">
                   <div className="flex items-center gap-2">

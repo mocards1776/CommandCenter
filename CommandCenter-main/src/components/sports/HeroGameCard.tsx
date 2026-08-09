@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { mlbTeamLogo, type MlbScoreGame } from "@/lib/mlb";
+import { mlbTeamLogo, teamPagePath, type MlbScoreGame } from "@/lib/mlb";
 import { cn } from "@/lib/utils";
 
 export default function HeroGameCard({
@@ -97,11 +97,21 @@ function HeroSide({
 }) {
   return (
     <div className={cn("flex min-w-0 flex-col items-center gap-2", align === "right" && "sm:items-end", align === "left" && "sm:items-start")}>
-      <div className="grid h-16 w-16 place-items-center rounded-full bg-white p-2 shadow-lg sm:h-20 sm:w-20">
+      <Link
+        to={teamPagePath(side.teamId)}
+        onClick={(e) => e.stopPropagation()}
+        className="grid h-16 w-16 place-items-center rounded-full bg-white p-2 shadow-lg transition hover:scale-[1.03] sm:h-20 sm:w-20"
+      >
         <img src={mlbTeamLogo(side.teamId)} alt="" className="h-full w-full object-contain" />
-      </div>
+      </Link>
       <div className={cn("text-center", align === "right" && "sm:text-right", align === "left" && "sm:text-left")}>
-        <p className="font-display text-cream text-[22px] leading-none sm:text-[26px]">{side.abbrev}</p>
+        <Link
+          to={teamPagePath(side.teamId)}
+          onClick={(e) => e.stopPropagation()}
+          className="font-display text-cream text-[22px] leading-none hover:underline sm:text-[26px]"
+        >
+          {side.abbrev}
+        </Link>
         {side.record && <p className="mt-1 text-[11px] text-white/45">{side.record}</p>}
       </div>
     </div>

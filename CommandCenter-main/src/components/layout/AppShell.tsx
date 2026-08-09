@@ -8,6 +8,7 @@ import {
   Trophy,
   LogOut,
   Users,
+  Flame,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import StarField from "@/components/StarField";
@@ -38,9 +39,18 @@ const SPORTS_NAV = [
   { to: "/sports?solo=1", match: (p: string) => p === "/sports", label: "Teams", Icon: Users },
   {
     to: "/sports/mlb?solo=1",
-    match: (p: string) => p.startsWith("/sports/mlb"),
+    match: (p: string) =>
+      p === "/sports/mlb" ||
+      p.startsWith("/sports/mlb/game") ||
+      p.startsWith("/sports/mlb/player"),
     label: "MLB",
     Icon: Trophy,
+  },
+  {
+    to: "/sports/mlb/managers?solo=1",
+    match: (p: string) => p.startsWith("/sports/mlb/managers"),
+    label: "Managers",
+    Icon: Flame,
   },
 ];
 

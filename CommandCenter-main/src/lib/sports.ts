@@ -72,6 +72,11 @@ export type ScheduleGame = {
   status: string;
   won: boolean | null;
   live: boolean;
+  /** e.g. "Liberatore vs Skenes" */
+  pitchers?: string | null;
+  myPitcher?: string | null;
+  oppPitcher?: string | null;
+  opponentTeamId?: number | null;
 };
 
 export type RosterPlayer = {
@@ -218,8 +223,65 @@ export const DEFAULT_FAVORITES: SportsFavorite[] = [
   },
 ];
 
+/** ESPN team ids for MLB logos/odds when opening non-favorite clubs. */
+const MLB_TEAM_META: Record<
+  number,
+  { abbrev: string; name: string; shortName: string; espnId: string; color: string }
+> = {
+  108: { abbrev: "LAA", name: "Los Angeles Angels", shortName: "Angels", espnId: "3", color: "ba0021" },
+  109: { abbrev: "AZ", name: "Arizona Diamondbacks", shortName: "D-backs", espnId: "29", color: "a71930" },
+  110: { abbrev: "BAL", name: "Baltimore Orioles", shortName: "Orioles", espnId: "1", color: "df4601" },
+  111: { abbrev: "BOS", name: "Boston Red Sox", shortName: "Red Sox", espnId: "2", color: "bd3039" },
+  112: { abbrev: "CHC", name: "Chicago Cubs", shortName: "Cubs", espnId: "16", color: "0e3386" },
+  113: { abbrev: "CIN", name: "Cincinnati Reds", shortName: "Reds", espnId: "17", color: "c6011f" },
+  114: { abbrev: "CLE", name: "Cleveland Guardians", shortName: "Guardians", espnId: "5", color: "e31937" },
+  115: { abbrev: "COL", name: "Colorado Rockies", shortName: "Rockies", espnId: "27", color: "33006f" },
+  116: { abbrev: "DET", name: "Detroit Tigers", shortName: "Tigers", espnId: "6", color: "0c2340" },
+  117: { abbrev: "HOU", name: "Houston Astros", shortName: "Astros", espnId: "18", color: "002d62" },
+  118: { abbrev: "KC", name: "Kansas City Royals", shortName: "Royals", espnId: "7", color: "004687" },
+  119: { abbrev: "LAD", name: "Los Angeles Dodgers", shortName: "Dodgers", espnId: "19", color: "005a9c" },
+  120: { abbrev: "WSH", name: "Washington Nationals", shortName: "Nationals", espnId: "20", color: "ab0003" },
+  121: { abbrev: "NYM", name: "New York Mets", shortName: "Mets", espnId: "21", color: "002d72" },
+  133: { abbrev: "ATH", name: "Athletics", shortName: "Athletics", espnId: "11", color: "003831" },
+  134: { abbrev: "PIT", name: "Pittsburgh Pirates", shortName: "Pirates", espnId: "23", color: "27251f" },
+  135: { abbrev: "SD", name: "San Diego Padres", shortName: "Padres", espnId: "25", color: "2f241d" },
+  136: { abbrev: "SEA", name: "Seattle Mariners", shortName: "Mariners", espnId: "12", color: "005c5c" },
+  137: { abbrev: "SF", name: "San Francisco Giants", shortName: "Giants", espnId: "26", color: "fd5a1e" },
+  138: { abbrev: "STL", name: "St. Louis Cardinals", shortName: "Cardinals", espnId: "24", color: "be0a14" },
+  139: { abbrev: "TB", name: "Tampa Bay Rays", shortName: "Rays", espnId: "30", color: "8fbce6" },
+  140: { abbrev: "TEX", name: "Texas Rangers", shortName: "Rangers", espnId: "13", color: "003278" },
+  141: { abbrev: "TOR", name: "Toronto Blue Jays", shortName: "Blue Jays", espnId: "14", color: "134a8e" },
+  142: { abbrev: "MIN", name: "Minnesota Twins", shortName: "Twins", espnId: "9", color: "002b5c" },
+  143: { abbrev: "PHI", name: "Philadelphia Phillies", shortName: "Phillies", espnId: "22", color: "e81828" },
+  144: { abbrev: "ATL", name: "Atlanta Braves", shortName: "Braves", espnId: "15", color: "ce1141" },
+  145: { abbrev: "CWS", name: "Chicago White Sox", shortName: "White Sox", espnId: "4", color: "27251f" },
+  146: { abbrev: "MIA", name: "Miami Marlins", shortName: "Marlins", espnId: "28", color: "00a3e0" },
+  147: { abbrev: "NYY", name: "New York Yankees", shortName: "Yankees", espnId: "10", color: "0c2340" },
+  158: { abbrev: "MIL", name: "Milwaukee Brewers", shortName: "Brewers", espnId: "8", color: "12284b" },
+};
+
+export function mlbTeamFavorite(teamId: number): SportsFavorite | undefined {
+  const meta = MLB_TEAM_META[teamId];
+  if (!meta) return undefined;
+  return {
+    key: teamId === 138 ? "mlb-stl" : `mlb-${teamId}`,
+    name: meta.name,
+    shortName: meta.shortName,
+    sport: "Baseball",
+    league: "MLB",
+    espnPath: `baseball/mlb/teams/${meta.espnId}`,
+    mlbTeamId: teamId,
+    kind: "team",
+    color: meta.color,
+  };
+}
+
 export function favoriteByKey(key: string): SportsFavorite | undefined {
-  return DEFAULT_FAVORITES.find((f) => f.key === key);
+  const known = DEFAULT_FAVORITES.find((f) => f.key === key);
+  if (known) return known;
+  const m = /^mlb-(\d+)$/.exec(key);
+  if (m) return mlbTeamFavorite(Number(m[1]));
+  return undefined;
 }
 
 export function loadSportsLayout(): SportsLayout {
@@ -681,11 +743,11 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
   const [standingsRaw, rosterRaw, scheduleRaw, hitTeam, pitchTeam, hitLeaders, pitchLeaders] =
     await Promise.all([
       mlbGet(
-        `standings?leagueId=104&season=${season}&standingsTypes=regularSeason&hydrate=division`,
+        `standings?leagueId=103,104&season=${season}&standingsTypes=regularSeason&hydrate=division`,
       ),
       mlbGet(`teams/${teamId}/roster?rosterType=active`),
       mlbGet(
-        `schedule?teamId=${teamId}&sportId=1&startDate=${season}-03-01&endDate=${season}-11-15`,
+        `schedule?teamId=${teamId}&sportId=1&startDate=${season}-03-01&endDate=${season}-11-15&hydrate=probablePitcher,team`,
       ),
       mlbGet(`teams/${teamId}/stats?season=${season}&group=hitting&stats=season`),
       mlbGet(`teams/${teamId}/stats?season=${season}&group=pitching&stats=season`),
@@ -760,8 +822,18 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
         gameDate?: string;
         status?: { detailedState?: string; abstractGameState?: string };
         teams?: {
-          away?: { team?: { id?: number; name?: string }; score?: number; isWinner?: boolean };
-          home?: { team?: { id?: number; name?: string }; score?: number; isWinner?: boolean };
+          away?: {
+            team?: { id?: number; name?: string };
+            score?: number;
+            isWinner?: boolean;
+            probablePitcher?: { fullName?: string; lastName?: string };
+          };
+          home?: {
+            team?: { id?: number; name?: string };
+            score?: number;
+            isWinner?: boolean;
+            probablePitcher?: { fullName?: string; lastName?: string };
+          };
         };
       };
       const home = game.teams?.home;
@@ -793,6 +865,26 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
       const label = `${ha} ${oppName}`;
       const detail =
         mine?.score != null && opp?.score != null ? `${mine.score}–${opp.score}` : null;
+      const myPitcher =
+        mine?.probablePitcher?.fullName ??
+        mine?.probablePitcher?.lastName ??
+        null;
+      const oppPitcher =
+        opp?.probablePitcher?.fullName ??
+        opp?.probablePitcher?.lastName ??
+        null;
+      const myShort =
+        mine?.probablePitcher?.lastName ||
+        mine?.probablePitcher?.fullName?.split(" ").pop() ||
+        null;
+      const oppShort =
+        opp?.probablePitcher?.lastName ||
+        opp?.probablePitcher?.fullName?.split(" ").pop() ||
+        null;
+      const pitchers =
+        !done && (myShort || oppShort)
+          ? `${myShort ?? "TBD"} vs ${oppShort ?? "TBD"}`
+          : null;
       const row: ScheduleGame = {
         id: String(game.gamePk ?? game.gameDate),
         when: fmtWhen(game.gameDate) ?? fmtDay(d.date),
@@ -801,6 +893,10 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
         status: live ? "Live" : done ? (mine?.isWinner ? "Win" : "Loss") : detailed || "Scheduled",
         won: done ? Boolean(mine?.isWinner) : null,
         live,
+        pitchers,
+        myPitcher: !done ? myPitcher : null,
+        oppPitcher: !done ? oppPitcher : null,
+        opponentTeamId: opp?.team?.id ?? null,
       };
       if (done) recent.push(row);
       else upcoming.push(row);

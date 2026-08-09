@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
@@ -16,7 +16,7 @@ import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
 import HeroGameCard from "@/components/sports/HeroGameCard";
 import { useAuth } from "@/lib/auth-context";
-import { fetchTeamCurrentGame, mlbTeamLogo } from "@/lib/mlb";
+import { fetchTeamCurrentGame, mlbTeamLogo, teamPagePath } from "@/lib/mlb";
 import {
   DEFAULT_FAVORITES,
   ensureFavoriteTeamsSeeded,
@@ -293,7 +293,15 @@ export default function SportsPage() {
   const { user } = useAuth();
   const [layout, setLayout] = useState<SportsLayout>(() => loadSportsLayout());
   const [customizing, setCustomizing] = useState(false);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const [selectedKey, setSelectedKey] = useState<string | null>(
+    () => searchParams.get("team") || null,
+  );
+
+  useEffect(() => {
+    const team = searchParams.get("team");
+    if (team) setSelectedKey(team);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -700,8 +708,21 @@ function TeamDetailPanel({
                                     className="h-5 w-5 object-contain"
                                   />
                                 ) : null}
-                                {row.team}
-                                {row.isMe ? " ★" : ""}
+                                {detail.source === "mlb" && row.teamId ? (
+                                  <Link
+                                    to={teamPagePath(Number(row.teamId))}
+                                    className="hover:text-cream hover:underline"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {row.team}
+                                    {row.isMe ? " ★" : ""}
+                                  </Link>
+                                ) : (
+                                  <>
+                                    {row.team}
+                                    {row.isMe ? " ★" : ""}
+                                  </>
+                                )}
                               </span>
                             </td>
                             <td className="numeral text-cream px-2 py-2">{row.record}</td>
@@ -836,33 +857,57 @@ function GameList({
   mlbBoxscores?: boolean;
 }) {
   if (games.length === 0) return <EmptyLine>{empty}</EmptyLine>;
+  const upcomingStyle = games.some((g) => g.myPitcher || g.oppPitcher || g.pitchers);
   return (
     <ul className="bg-panel divide-y divide-white/[0.05] rounded border border-white/[0.07]">
       {games.map((g) => {
         const canOpen = mlbBoxscores && /^\d+$/.test(g.id);
+        const showMatchup = Boolean(g.myPitcher || g.oppPitcher || g.pitchers);
         const body = (
           <>
-            <div className="min-w-0">
-              <span className="text-cream group-hover:underline">{g.label}</span>
-              {g.detail ? (
-                <span
-                  className={cn(
-                    "ml-2",
-                    g.won === true && "text-turf",
-                    g.won === false && "text-alert",
-                    g.won == null && "text-chalk",
-                  )}
-                >
-                  {g.detail}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-cream text-[14px] font-semibold group-hover:underline">
+                  {g.label}
                 </span>
-              ) : null}
-              {g.live ? (
-                <span className="text-alert ml-2 text-[10px] font-semibold uppercase tracking-wide">
-                  Live
-                </span>
-              ) : null}
+                {g.detail ? (
+                  <span
+                    className={cn(
+                      "numeral text-[14px]",
+                      g.won === true && "text-turf",
+                      g.won === false && "text-alert",
+                      g.won == null && "text-chalk",
+                    )}
+                  >
+                    {g.detail}
+                  </span>
+                ) : null}
+                {g.live ? (
+                  <span className="text-alert text-[10px] font-semibold uppercase tracking-wide">
+                    Live
+                  </span>
+                ) : null}
+              </div>
+              {showMatchup && (
+                <div className="mt-1.5 rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                    Expected pitching
+                  </p>
+                  <p className="text-cream mt-0.5 text-[12.5px] leading-snug">
+                    {g.myPitcher || g.oppPitcher ? (
+                      <>
+                        <span>{g.myPitcher ?? "TBD"}</span>
+                        <span className="mx-1.5 text-[#8b93a7]">vs</span>
+                        <span>{g.oppPitcher ?? "TBD"}</span>
+                      </>
+                    ) : (
+                      g.pitchers
+                    )}
+                  </p>
+                </div>
+              )}
             </div>
-            <span className="text-chalk-dim text-[11px]">
+            <span className="text-chalk-dim shrink-0 text-[11px]">
               {g.when ?? g.status}
               {canOpen ? " · Box" : ""}
             </span>
@@ -873,13 +918,21 @@ function GameList({
             {canOpen ? (
               <Link
                 to={`/sports/mlb/game/${g.id}`}
-                className="group flex flex-wrap items-baseline justify-between gap-2 px-3 py-2.5 text-[12.5px] hover:bg-white/[0.03]"
+                className={cn(
+                  "group flex flex-wrap items-start justify-between gap-2 px-3 text-[12.5px] hover:bg-white/[0.03]",
+                  upcomingStyle && showMatchup ? "py-3" : "items-baseline py-2.5",
+                )}
                 onClick={(e) => e.stopPropagation()}
               >
                 {body}
               </Link>
             ) : (
-              <div className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2.5 text-[12.5px]">
+              <div
+                className={cn(
+                  "flex flex-wrap items-start justify-between gap-2 px-3 text-[12.5px]",
+                  upcomingStyle && showMatchup ? "py-3" : "items-baseline py-2.5",
+                )}
+              >
                 {body}
               </div>
             )}
