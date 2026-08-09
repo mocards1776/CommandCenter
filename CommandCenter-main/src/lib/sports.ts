@@ -679,7 +679,9 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
 
   const [standingsRaw, rosterRaw, scheduleRaw, hitTeam, pitchTeam, hitLeaders, pitchLeaders] =
     await Promise.all([
-      mlbGet(`standings?leagueId=104&season=${season}&standingsTypes=regularSeason`),
+      mlbGet(
+        `standings?leagueId=104&season=${season}&standingsTypes=regularSeason&hydrate=division`,
+      ),
       mlbGet(`teams/${teamId}/roster?rosterType=active`),
       mlbGet(
         `schedule?teamId=${teamId}&sportId=1&startDate=${season}-03-01&endDate=${season}-11-15`,
