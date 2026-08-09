@@ -11,7 +11,10 @@ import TodosPage from "@/pages/TodosPage";
 import HabitsPage from "@/pages/HabitsPage";
 import ReadingPage from "@/pages/ReadingPage";
 import SportsPage from "@/pages/SportsPage";
+import MlbPage from "@/pages/MlbPage";
+import MlbPlayerPage from "@/pages/MlbPlayerPage";
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
+import { markSportsSolo } from "@/lib/sports-home";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,7 +29,11 @@ const queryClient = new QueryClient({
 /** Remember solo before any auth redirect can strip `?solo=1`. */
 function captureSoloFromUrl() {
   if (typeof window === "undefined") return;
-  if (new URLSearchParams(window.location.search).get("solo") === "1") {
+  if (new URLSearchParams(window.location.search).get("solo") !== "1") return;
+  const path = window.location.pathname;
+  if (path.startsWith("/sports")) {
+    markSportsSolo();
+  } else {
     markReadingSolo();
   }
 }
@@ -94,6 +101,8 @@ export default function App() {
               <Route path="/habits" element={<HabitsPage />} />
               <Route path="/reading" element={<ReadingPage />} />
               <Route path="/sports" element={<SportsPage />} />
+              <Route path="/sports/mlb" element={<MlbPage />} />
+              <Route path="/sports/mlb/player/:playerId" element={<MlbPlayerPage />} />
             </Route>
             <Route path="*" element={<HomeRedirect />} />
           </Routes>

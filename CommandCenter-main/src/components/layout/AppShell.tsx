@@ -11,6 +11,11 @@ import {
   markReadingSolo,
   prefersReadingHome,
 } from "@/lib/reading-home";
+import {
+  clearSportsSolo,
+  markSportsSolo,
+  prefersSportsHome,
+} from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -37,13 +42,17 @@ export default function AppShell() {
 
   const soloParam = searchParams.get("solo") === "1";
   const onReading = pathname.startsWith("/reading");
+  const onMlb = pathname.startsWith("/sports/mlb");
+  const onSports = pathname.startsWith("/sports");
+
   // UI solo mode is session-scoped; localStorage only steers `/` + post-login.
   const [soloSession, setSoloSession] = useState(
-    () => soloParam || prefersReadingHome(),
+    () =>
+      soloParam ||
+      (onMlb && prefersSportsHome()) ||
+      (onReading && prefersReadingHome()),
   );
 
-  // Home Screen / bookmark with ?solo=1 stays in the library — no tabs to
-  // Dashboard/Todos. Full Command Center still shows nav on /reading.
   useEffect(() => {
     if (onReading) {
       const readingManifest = document
@@ -52,28 +61,48 @@ export default function AppShell() {
         ?.includes("reading.webmanifest");
       if (soloParam || (isStandaloneApp() && readingManifest)) {
         markReadingSolo();
+        clearSportsSolo();
         setSoloSession(true);
       }
       return;
     }
 
-    // Using the rest of Command Center clears the Reading-home preference
+    if (onMlb) {
+      const mlbManifest = document
+        .querySelector('link[rel="manifest"]')
+        ?.getAttribute("href")
+        ?.includes("mlb.webmanifest");
+      if (soloParam || (isStandaloneApp() && mlbManifest) || prefersSportsHome()) {
+        markSportsSolo();
+        clearReadingSolo();
+        setSoloSession(true);
+      }
+      return;
+    }
+
+    // Using the rest of Command Center clears solo Home Screen preferences
     // so the main icon keeps opening the dashboard.
     if (
       pathname.startsWith("/dashboard") ||
       pathname.startsWith("/todos") ||
       pathname.startsWith("/habits") ||
-      pathname.startsWith("/sports")
+      (onSports && !onMlb)
     ) {
       clearReadingSolo();
+      clearSportsSolo();
       setSoloSession(false);
     }
-  }, [soloParam, onReading, pathname]);
+  }, [soloParam, onReading, onMlb, onSports, pathname]);
 
   const readingOnly = useMemo(
     () => onReading && (soloParam || soloSession),
     [onReading, soloParam, soloSession],
   );
+  const sportsOnly = useMemo(
+    () => onMlb && (soloParam || soloSession || prefersSportsHome()),
+    [onMlb, soloParam, soloSession],
+  );
+  const hideChrome = readingOnly || sportsOnly;
 
   const today = new Date().toLocaleDateString("en-US", {
     timeZone: "America/Chicago",
@@ -82,11 +111,23 @@ export default function AppShell() {
     day: "numeric",
   });
 
+  const brand = onReading ? (
+    <>
+      <span className="text-accent">Reading</span>
+    </>
+  ) : onMlb ? (
+    <>
+      <span className="text-accent">MLB</span>
+    </>
+  ) : (
+    <>
+      Command <span className="text-accent">Center</span>
+    </>
+  );
+
   return (
     <div className="flex min-h-screen flex-col">
       <header
-        // min-h, not h: with a fixed height the safe-area padding pushed the
-        // title out of the box instead of moving the box down.
         className="bg-ink relative flex min-h-[58px] shrink-0 items-center justify-between overflow-hidden px-4 md:min-h-[70px] md:px-8"
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 0.5rem)",
@@ -97,15 +138,7 @@ export default function AppShell() {
         <div className="relative z-10 flex items-center gap-3 md:gap-4">
           <span className="flag-mark" />
           <h1 className="font-display text-cream text-[19px] tracking-[0.05em] md:text-[25px]">
-            {onReading ? (
-              <>
-                <span className="text-accent">Reading</span>
-              </>
-            ) : (
-              <>
-                Command <span className="text-accent">Center</span>
-              </>
-            )}
+            {brand}
           </h1>
         </div>
         {onReading ? (
@@ -117,8 +150,7 @@ export default function AppShell() {
       <div className="rule-flag" />
 
       <div className="flex min-h-0 flex-1">
-        {/* Desktop rail — hidden in the Reading-only Home Screen app. */}
-        {!readingOnly && (
+        {!hideChrome && (
           <nav className="bg-ink hidden w-[196px] shrink-0 flex-col border-r border-accent/15 py-5 md:flex">
             {NAV.map(({ to, label }) => (
               <NavLink
@@ -127,7 +159,7 @@ export default function AppShell() {
                 className={({ isActive }) =>
                   cn(
                     "block border-l-2 px-7 py-3 text-[11.5px] uppercase tracking-[0.19em] transition-colors",
-                    isActive
+                    isActive || (to === "/sports" && onSports)
                       ? "border-accent bg-accent/[0.07] text-cream"
                       : "border-transparent text-chalk hover:text-cream",
                   )
@@ -148,11 +180,10 @@ export default function AppShell() {
           </nav>
         )}
 
-        {/* pb clears the fixed mobile tab bar (unless reading-only standalone). */}
         <main
           className={cn(
             "min-w-0 flex-1 overflow-x-hidden md:pb-0",
-            readingOnly ? "pb-0" : "pb-[76px]",
+            hideChrome ? "pb-0" : "pb-[76px]",
           )}
         >
           <Outlet />
@@ -161,8 +192,7 @@ export default function AppShell() {
 
       <InstallHint />
 
-      {/* Mobile tab bar — omitted for the Reading Home Screen bookmark. */}
-      {!readingOnly && (
+      {!hideChrome && (
         <nav
           className="bg-ink fixed inset-x-0 bottom-0 z-40 flex border-t border-accent/20 md:hidden"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
@@ -173,15 +203,21 @@ export default function AppShell() {
               to={to}
               className={({ isActive }) =>
                 cn(
-                  // 56px tall: a comfortable thumb target, not a 32px link
                   "flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[9.5px] uppercase tracking-[0.14em] transition-colors",
-                  isActive ? "text-accent" : "text-chalk-dim",
+                  isActive || (to === "/sports" && onSports) ? "text-accent" : "text-chalk-dim",
                 )
               }
             >
               {({ isActive }) => (
                 <>
-                  <Icon size={19} className={isActive ? "scale-110 transition-transform" : ""} />
+                  <Icon
+                    size={19}
+                    className={
+                      isActive || (to === "/sports" && onSports)
+                        ? "scale-110 transition-transform"
+                        : ""
+                    }
+                  />
                   {short}
                 </>
               )}

@@ -83,6 +83,7 @@ export type RosterPlayer = {
 };
 
 export type LeaderStat = {
+  id?: string;
   name: string;
   line: string;
 };
@@ -876,13 +877,20 @@ function mlbLeaders(
   line: (stat: Record<string, unknown>) => string | null,
 ): LeaderStat[] {
   const splits =
-    (raw as { stats?: { splits?: { player?: { fullName?: string }; stat?: Record<string, unknown> }[] }[] })
-      .stats?.[0]?.splits ?? [];
+    (raw as {
+      stats?: {
+        splits?: { player?: { id?: number; fullName?: string }; stat?: Record<string, unknown> }[];
+      }[];
+    }).stats?.[0]?.splits ?? [];
   const out: LeaderStat[] = [];
   for (const s of splits) {
     const text = line(s.stat ?? {});
     if (!text) continue;
-    out.push({ name: s.player?.fullName ?? "—", line: text });
+    out.push({
+      id: s.player?.id != null ? String(s.player.id) : undefined,
+      name: s.player?.fullName ?? "—",
+      line: text,
+    });
   }
   return out;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
@@ -409,10 +410,22 @@ export default function SportsPage() {
             </h2>
             <p className="text-chalk mt-2 max-w-lg text-[13px] leading-relaxed">
               Tap a team for standings, schedule, roster, stats, and playoff odds.
-              Cardinals pull from MLB Stats API.
+              Or open the full MLB hub for live scores and league leaders.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/sports/mlb"
+              className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
+            >
+              MLB hub
+            </Link>
+            <a
+              href="/mlb.html"
+              className="text-chalk hover:text-cream rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
+            >
+              MLB Home Screen
+            </a>
             <button
               type="button"
               onClick={refreshAll}
@@ -425,7 +438,7 @@ export default function SportsPage() {
             <button
               type="button"
               onClick={() => setCustomizing(true)}
-              className="from-accent-deep to-accent-dark text-cream flex items-center gap-2 rounded-sm bg-gradient-to-b px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
+              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
             >
               <Settings2 size={13} />
               Customize
@@ -655,17 +668,40 @@ function TeamDetailPanel({
                   <EmptyLine>Roster unavailable.</EmptyLine>
                 ) : (
                   <ul className="bg-panel divide-y divide-white/[0.05] rounded border border-white/[0.07]">
-                    {detail.roster.map((p) => (
-                      <li key={p.id} className="flex items-baseline gap-2 px-3 py-2 text-[12.5px]">
-                        <span className="text-chalk-dim numeral w-8 shrink-0 text-[11px]">
-                          {p.number ? `#${p.number}` : "—"}
-                        </span>
-                        <span className="text-cream min-w-0 flex-1 truncate">{p.name}</span>
-                        <span className="text-chalk-dim shrink-0 text-[10px] uppercase tracking-[0.12em]">
-                          {p.position ?? "—"}
-                        </span>
-                      </li>
-                    ))}
+                    {detail.roster.map((p) => {
+                      const mlbClickable =
+                        detail.source === "mlb" && /^\d+$/.test(String(p.id));
+                      const row = (
+                        <>
+                          <span className="text-chalk-dim numeral w-8 shrink-0 text-[11px]">
+                            {p.number ? `#${p.number}` : "—"}
+                          </span>
+                          <span className="text-cream min-w-0 flex-1 truncate group-hover:underline">
+                            {p.name}
+                          </span>
+                          <span className="text-chalk-dim shrink-0 text-[10px] uppercase tracking-[0.12em]">
+                            {p.position ?? "—"}
+                          </span>
+                        </>
+                      );
+                      return (
+                        <li key={p.id}>
+                          {mlbClickable ? (
+                            <Link
+                              to={`/sports/mlb/player/${p.id}`}
+                              className="group flex items-baseline gap-2 px-3 py-2 text-[12.5px] hover:bg-white/[0.03]"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {row}
+                            </Link>
+                          ) : (
+                            <div className="flex items-baseline gap-2 px-3 py-2 text-[12.5px]">
+                              {row}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </DetailSection>
@@ -786,21 +822,38 @@ function LeaderList({
   leaders,
 }: {
   title: string;
-  leaders: { name: string; line: string }[];
+  leaders: { id?: string; name: string; line: string }[];
 }) {
   return (
     <div>
       <p className="text-chalk-dim mb-2 text-[10.5px] uppercase tracking-[0.14em]">{title}</p>
       <ul className="flex flex-col gap-2">
-        {leaders.map((l) => (
-          <li
-            key={`${title}-${l.name}-${l.line}`}
-            className="border-b border-white/[0.05] pb-2 last:border-0"
-          >
-            <p className="text-cream text-[13px]">{l.name}</p>
-            <p className="text-chalk-dim numeral mt-0.5 text-[11.5px]">{l.line}</p>
-          </li>
-        ))}
+        {leaders.map((l) => {
+          const body = (
+            <>
+              <p className="text-cream text-[13px] group-hover:underline">{l.name}</p>
+              <p className="text-chalk-dim numeral mt-0.5 text-[11.5px]">{l.line}</p>
+            </>
+          );
+          return (
+            <li
+              key={`${title}-${l.id ?? l.name}-${l.line}`}
+              className="border-b border-white/[0.05] pb-2 last:border-0"
+            >
+              {l.id ? (
+                <Link
+                  to={`/sports/mlb/player/${l.id}`}
+                  className="group block"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {body}
+                </Link>
+              ) : (
+                body
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

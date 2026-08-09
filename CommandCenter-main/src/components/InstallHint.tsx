@@ -13,6 +13,7 @@ export default function InstallHint() {
   const [show, setShow] = useState(false);
   const { pathname } = useLocation();
   const onReading = pathname.startsWith("/reading");
+  const onMlb = pathname.startsWith("/sports/mlb");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -45,7 +46,11 @@ export default function InstallHint() {
         <span className="flag-mark mt-0.5 shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="text-cream text-[13px] font-semibold">
-            {onReading ? "Bookmark Reading (not Dashboard)" : "Add to your Home Screen"}
+            {onReading
+              ? "Bookmark Reading (not Dashboard)"
+              : onMlb
+                ? "Bookmark MLB (not Dashboard)"
+                : "Add to your Home Screen"}
           </p>
           <p className="text-chalk mt-1 text-[11.5px] leading-relaxed">
             {onReading ? (
@@ -56,6 +61,16 @@ export default function InstallHint() {
                 </a>
                 , then tap <Share size={11} className="inline align-[-1px]" /> →{" "}
                 <span className="text-cream">Add to Home Screen</span>. The URL must say read.html
+                — Safari won’t let you edit it.
+              </>
+            ) : onMlb ? (
+              <>
+                Open{" "}
+                <a href="/mlb.html" className="text-accent underline underline-offset-2">
+                  /mlb.html
+                </a>
+                , then tap <Share size={11} className="inline align-[-1px]" /> →{" "}
+                <span className="text-cream">Add to Home Screen</span>. The URL must say mlb.html
                 — Safari won’t let you edit it.
               </>
             ) : (

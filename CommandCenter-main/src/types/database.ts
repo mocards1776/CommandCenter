@@ -453,6 +453,34 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["favorite_sports_teams"]["Insert"]>;
         Relationships: [];
       };
+      favorite_sports_players: {
+        Row: {
+          id: string;
+          user_id: string;
+          player_id: string;
+          player_name: string;
+          team_name: string | null;
+          team_id: string | null;
+          sport: string | null;
+          league: string | null;
+          position: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          player_id: string;
+          player_name: string;
+          team_name?: string | null;
+          team_id?: string | null;
+          sport?: string | null;
+          league?: string | null;
+          position?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["favorite_sports_players"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };

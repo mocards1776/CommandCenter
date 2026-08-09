@@ -2,28 +2,42 @@ import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 
 /**
- * Lets one app produce two Home Screen icons: adding from /reading gives a
- * Reading icon that opens straight to the library, adding from anywhere else
- * gives the full Command Center.
+ * Lets one app produce multiple Home Screen icons: Reading, MLB, or full
+ * Command Center — depending on which route you’re on when you Add.
  *
  * iOS reads all of this at the moment you tap "Add to Home Screen". Crucially
  * it takes the icon from <link rel="apple-touch-icon">, NOT from the
- * manifest's icons array — swapping only the manifest leaves the old icon,
- * which is exactly what went wrong the first time.
+ * manifest's icons array — swapping only the manifest leaves the old icon.
  */
 export function useRouteManifest() {
   const { pathname } = useLocation();
 
   useEffect(() => {
     const reading = pathname.startsWith("/reading");
+    const mlb = pathname.startsWith("/sports/mlb");
 
-    const manifest = reading ? "/reading.webmanifest" : "/manifest.webmanifest";
-    const icon192 = reading ? "/icon-books-192.png" : "/icon-192.png";
-    const icon512 = reading ? "/icon-books-512.png" : "/icon-512.png";
-    const title = reading ? "Reading" : "Command";
+    const mode = reading ? "reading" : mlb ? "mlb" : "app";
 
-    // Replace the manifest element rather than mutating href: Safari does not
-    // reliably re-read a manifest whose href was changed in place.
+    const manifest =
+      mode === "reading"
+        ? "/reading.webmanifest"
+        : mode === "mlb"
+          ? "/mlb.webmanifest"
+          : "/manifest.webmanifest";
+    const icon192 =
+      mode === "reading"
+        ? "/icon-books-192.png"
+        : mode === "mlb"
+          ? "/icon-mlb-192.png"
+          : "/icon-192.png";
+    const icon512 =
+      mode === "reading"
+        ? "/icon-books-512.png"
+        : mode === "mlb"
+          ? "/icon-mlb-512.png"
+          : "/icon-512.png";
+    const title = mode === "reading" ? "Reading" : mode === "mlb" ? "MLB" : "Command";
+
     const oldManifest = document.querySelector('link[rel="manifest"]');
     if (!oldManifest || !oldManifest.getAttribute("href")?.endsWith(manifest)) {
       oldManifest?.remove();
@@ -33,7 +47,6 @@ export function useRouteManifest() {
       document.head.appendChild(link);
     }
 
-    // The one iOS actually uses for the Home Screen icon.
     document.querySelectorAll('link[rel="apple-touch-icon"]').forEach((el) => el.remove());
     for (const [href, sizes] of [
       [icon192, "192x192"],
@@ -54,8 +67,7 @@ export function useRouteManifest() {
     );
     if (titleMeta) titleMeta.content = title;
 
-    // Safari shows the document title under the icon when adding, so make it
-    // match what the icon will be called.
-    document.title = reading ? "Reading" : "🇺🇸 Josh's Command Center";
+    document.title =
+      mode === "reading" ? "Reading" : mode === "mlb" ? "MLB" : "🇺🇸 Josh's Command Center";
   }, [pathname]);
 }
