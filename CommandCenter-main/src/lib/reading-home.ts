@@ -30,12 +30,12 @@ export function prefersReadingHome(): boolean {
 /** Where signed-in users land when `/` or post-login has no explicit next. */
 export function homePath(): string {
   try {
-    // Sports / MLB Home Screen preference wins when set (set from /mlb.html).
+    // Sports Home Screen preference (set from /sports.html).
     if (
       localStorage.getItem("sports-solo") === "1" ||
       sessionStorage.getItem("sports-solo") === "1"
     ) {
-      return "/sports/mlb?solo=1";
+      return "/sports?solo=1";
     }
   } catch {
     // private mode

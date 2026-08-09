@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 
 /**
- * Lets one app produce multiple Home Screen icons: Reading, MLB, or full
+ * Lets one app produce multiple Home Screen icons: Reading, Sports, or full
  * Command Center — depending on which route you’re on when you Add.
  *
  * iOS reads all of this at the moment you tap "Add to Home Screen". Crucially
@@ -14,29 +14,29 @@ export function useRouteManifest() {
 
   useEffect(() => {
     const reading = pathname.startsWith("/reading");
-    const mlb = pathname.startsWith("/sports/mlb");
+    const sports = pathname.startsWith("/sports");
 
-    const mode = reading ? "reading" : mlb ? "mlb" : "app";
+    const mode = reading ? "reading" : sports ? "sports" : "app";
 
     const manifest =
       mode === "reading"
         ? "/reading.webmanifest"
-        : mode === "mlb"
-          ? "/mlb.webmanifest"
+        : mode === "sports"
+          ? "/sports.webmanifest"
           : "/manifest.webmanifest";
     const icon192 =
       mode === "reading"
         ? "/icon-books-192.png"
-        : mode === "mlb"
+        : mode === "sports"
           ? "/icon-mlb-192.png"
           : "/icon-192.png";
     const icon512 =
       mode === "reading"
         ? "/icon-books-512.png"
-        : mode === "mlb"
+        : mode === "sports"
           ? "/icon-mlb-512.png"
           : "/icon-512.png";
-    const title = mode === "reading" ? "Reading" : mode === "mlb" ? "MLB" : "Command";
+    const title = mode === "reading" ? "Reading" : mode === "sports" ? "Sports" : "Command";
 
     const oldManifest = document.querySelector('link[rel="manifest"]');
     if (!oldManifest || !oldManifest.getAttribute("href")?.endsWith(manifest)) {
@@ -68,6 +68,6 @@ export function useRouteManifest() {
     if (titleMeta) titleMeta.content = title;
 
     document.title =
-      mode === "reading" ? "Reading" : mode === "mlb" ? "MLB" : "🇺🇸 Josh's Command Center";
+      mode === "reading" ? "Reading" : mode === "sports" ? "Sports" : "🇺🇸 Josh's Command Center";
   }, [pathname]);
 }

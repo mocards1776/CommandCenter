@@ -6,14 +6,14 @@ const DISMISSED_KEY = "cc_install_hint_dismissed";
 
 /**
  * iOS bookmarks the URL of the page you’re on — the Add sheet won’t let you
- * edit it. Reading must be added from /read.html (static meta + Reading icon),
+ * edit it. Reading/Sports must be added from their static launch pages,
  * never from /dashboard.
  */
 export default function InstallHint() {
   const [show, setShow] = useState(false);
   const { pathname } = useLocation();
   const onReading = pathname.startsWith("/reading");
-  const onMlb = pathname.startsWith("/sports/mlb");
+  const onSports = pathname.startsWith("/sports");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -48,8 +48,8 @@ export default function InstallHint() {
           <p className="text-cream text-[13px] font-semibold">
             {onReading
               ? "Bookmark Reading (not Dashboard)"
-              : onMlb
-                ? "Bookmark MLB (not Dashboard)"
+              : onSports
+                ? "Bookmark Sports (not Dashboard)"
                 : "Add to your Home Screen"}
           </p>
           <p className="text-chalk mt-1 text-[11.5px] leading-relaxed">
@@ -63,15 +63,15 @@ export default function InstallHint() {
                 <span className="text-cream">Add to Home Screen</span>. The URL must say read.html
                 — Safari won’t let you edit it.
               </>
-            ) : onMlb ? (
+            ) : onSports ? (
               <>
                 Open{" "}
-                <a href="/mlb.html" className="text-accent underline underline-offset-2">
-                  /mlb.html
+                <a href="/sports.html" className="text-accent underline underline-offset-2">
+                  /sports.html
                 </a>
                 , then tap <Share size={11} className="inline align-[-1px]" /> →{" "}
-                <span className="text-cream">Add to Home Screen</span>. The URL must say mlb.html
-                — Safari won’t let you edit it.
+                <span className="text-cream">Add to Home Screen</span>. The URL must say
+                sports.html — Safari won’t let you edit it.
               </>
             ) : (
               <>

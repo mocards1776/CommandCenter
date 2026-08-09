@@ -1,4 +1,4 @@
-/** Persist “open MLB / Sports, not Dashboard” across Home Screen launches. */
+/** Persist “open Sports (standalone), not Dashboard” across Home Screen launches. */
 const KEY = "sports-solo";
 
 export function markSportsSolo() {

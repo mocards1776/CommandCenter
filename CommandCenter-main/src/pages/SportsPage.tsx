@@ -421,10 +421,10 @@ export default function SportsPage() {
               MLB hub
             </Link>
             <a
-              href="/mlb.html"
+              href="/sports.html"
               className="text-chalk hover:text-cream rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
             >
-              MLB Home Screen
+              Sports Home Screen
             </a>
             <button
               type="button"

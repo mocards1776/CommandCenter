@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { LayoutDashboard, ListChecks, Repeat, BookOpen, Trophy, LogOut } from "lucide-react";
+import {
+  LayoutDashboard,
+  ListChecks,
+  Repeat,
+  BookOpen,
+  Trophy,
+  LogOut,
+  Users,
+} from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import StarField from "@/components/StarField";
 import InstallHint from "@/components/InstallHint";
@@ -26,6 +34,16 @@ const NAV = [
   { to: "/sports", label: "Sports", short: "Sports", Icon: Trophy },
 ];
 
+const SPORTS_NAV = [
+  { to: "/sports?solo=1", match: (p: string) => p === "/sports", label: "Teams", Icon: Users },
+  {
+    to: "/sports/mlb?solo=1",
+    match: (p: string) => p.startsWith("/sports/mlb"),
+    label: "MLB",
+    Icon: Trophy,
+  },
+];
+
 function isStandaloneApp() {
   if (typeof window === "undefined") return false;
   return (
@@ -42,14 +60,12 @@ export default function AppShell() {
 
   const soloParam = searchParams.get("solo") === "1";
   const onReading = pathname.startsWith("/reading");
-  const onMlb = pathname.startsWith("/sports/mlb");
   const onSports = pathname.startsWith("/sports");
 
-  // UI solo mode is session-scoped; localStorage only steers `/` + post-login.
   const [soloSession, setSoloSession] = useState(
     () =>
       soloParam ||
-      (onMlb && prefersSportsHome()) ||
+      (onSports && prefersSportsHome()) ||
       (onReading && prefersReadingHome()),
   );
 
@@ -67,12 +83,14 @@ export default function AppShell() {
       return;
     }
 
-    if (onMlb) {
-      const mlbManifest = document
+    if (onSports) {
+      const sportsManifest = document
         .querySelector('link[rel="manifest"]')
         ?.getAttribute("href")
-        ?.includes("mlb.webmanifest");
-      if (soloParam || (isStandaloneApp() && mlbManifest) || prefersSportsHome()) {
+        ?.includes("sports.webmanifest");
+      // Solo only when explicitly launched (?solo=1) or from the Sports Home Screen app.
+      // Do not force-hide Command Center chrome just because sports-solo is in storage.
+      if (soloParam || (isStandaloneApp() && sportsManifest)) {
         markSportsSolo();
         clearReadingSolo();
         setSoloSession(true);
@@ -80,29 +98,28 @@ export default function AppShell() {
       return;
     }
 
-    // Using the rest of Command Center clears solo Home Screen preferences
+    // Leaving Sports/Reading for the rest of Command Center clears solo prefs
     // so the main icon keeps opening the dashboard.
     if (
       pathname.startsWith("/dashboard") ||
       pathname.startsWith("/todos") ||
-      pathname.startsWith("/habits") ||
-      (onSports && !onMlb)
+      pathname.startsWith("/habits")
     ) {
       clearReadingSolo();
       clearSportsSolo();
       setSoloSession(false);
     }
-  }, [soloParam, onReading, onMlb, onSports, pathname]);
+  }, [soloParam, onReading, onSports, pathname]);
 
   const readingOnly = useMemo(
     () => onReading && (soloParam || soloSession),
     [onReading, soloParam, soloSession],
   );
   const sportsOnly = useMemo(
-    () => onMlb && (soloParam || soloSession || prefersSportsHome()),
-    [onMlb, soloParam, soloSession],
+    () => onSports && (soloParam || soloSession),
+    [onSports, soloParam, soloSession],
   );
-  const hideChrome = readingOnly || sportsOnly;
+  const hideMainChrome = readingOnly || sportsOnly;
 
   const today = new Date().toLocaleDateString("en-US", {
     timeZone: "America/Chicago",
@@ -112,13 +129,9 @@ export default function AppShell() {
   });
 
   const brand = onReading ? (
-    <>
-      <span className="text-accent">Reading</span>
-    </>
-  ) : onMlb ? (
-    <>
-      <span className="text-accent">MLB</span>
-    </>
+    <span className="text-accent">Reading</span>
+  ) : sportsOnly || onSports ? (
+    <span className="text-accent">Sports</span>
   ) : (
     <>
       Command <span className="text-accent">Center</span>
@@ -150,7 +163,7 @@ export default function AppShell() {
       <div className="rule-flag" />
 
       <div className="flex min-h-0 flex-1">
-        {!hideChrome && (
+        {!hideMainChrome && (
           <nav className="bg-ink hidden w-[196px] shrink-0 flex-col border-r border-accent/15 py-5 md:flex">
             {NAV.map(({ to, label }) => (
               <NavLink
@@ -180,10 +193,31 @@ export default function AppShell() {
           </nav>
         )}
 
+        {/* Sports standalone: side rail with Teams / MLB only */}
+        {sportsOnly && (
+          <nav className="bg-ink hidden w-[160px] shrink-0 flex-col border-r border-accent/15 py-5 md:flex">
+            {SPORTS_NAV.map(({ to, match, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={cn(
+                  "block border-l-2 px-6 py-3 text-[11.5px] uppercase tracking-[0.19em] transition-colors",
+                  match(pathname)
+                    ? "border-accent bg-accent/[0.07] text-cream"
+                    : "border-transparent text-chalk hover:text-cream",
+                )}
+              >
+                {label}
+              </NavLink>
+            ))}
+          </nav>
+        )}
+
         <main
           className={cn(
             "min-w-0 flex-1 overflow-x-hidden md:pb-0",
-            hideChrome ? "pb-0" : "pb-[76px]",
+            // Reading solo: no bottom bar. Sports solo + full app: pad for tabs.
+            readingOnly ? "pb-0" : "pb-[76px] md:pb-0",
           )}
         >
           <Outlet />
@@ -192,7 +226,8 @@ export default function AppShell() {
 
       <InstallHint />
 
-      {!hideChrome && (
+      {/* Full Command Center mobile tabs */}
+      {!hideMainChrome && (
         <nav
           className="bg-ink fixed inset-x-0 bottom-0 z-40 flex border-t border-accent/20 md:hidden"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
@@ -223,6 +258,31 @@ export default function AppShell() {
               )}
             </NavLink>
           ))}
+        </nav>
+      )}
+
+      {/* Sports standalone mobile tabs — Teams + MLB only */}
+      {sportsOnly && (
+        <nav
+          className="bg-ink fixed inset-x-0 bottom-0 z-40 flex border-t border-accent/20 md:hidden"
+          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        >
+          {SPORTS_NAV.map(({ to, match, label, Icon }) => {
+            const active = match(pathname);
+            return (
+              <NavLink
+                key={to}
+                to={to}
+                className={cn(
+                  "flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[9.5px] uppercase tracking-[0.14em] transition-colors",
+                  active ? "text-accent" : "text-chalk-dim",
+                )}
+              >
+                <Icon size={19} className={active ? "scale-110 transition-transform" : ""} />
+                {label}
+              </NavLink>
+            );
+          })}
         </nav>
       )}
     </div>

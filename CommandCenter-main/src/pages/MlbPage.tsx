@@ -94,7 +94,7 @@ export default function MlbPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <a
-              href="/mlb.html"
+              href="/sports.html"
               className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
             >
               <Share size={13} />
