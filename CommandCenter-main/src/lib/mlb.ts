@@ -1,5 +1,7 @@
 /** MLB Stats API helpers — scoreboard, standings, leaders, player cards. */
 
+import { supabase } from "./supabase";
+
 const MLB = "https://statsapi.mlb.com/api/v1";
 const ESPN_STANDINGS = "https://site.api.espn.com/apis/v2/sports/baseball/mlb/standings";
 
@@ -637,7 +639,7 @@ export async function fetchMlbPlayerTransactions(playerId: number): Promise<MlbT
 
 export async function fetchPlayerContract(playerName: string): Promise<MlbPlayerContract | null> {
   try {
-    const { data, error } = await (await import("./supabase")).supabase.functions.invoke("sports", {
+    const { data, error } = await supabase.functions.invoke("sports", {
       body: { action: "bbref", name: playerName },
     });
     if (error) throw error;
