@@ -1,11 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 /**
- * Thin ESPN proxy for the Sports dashboard.
- * Keeps team scores/schedules off the browser origin and avoids UA quirks.
+ * ESPN proxy fallback for the Sports dashboard.
+ * Prefer the browser (ESPN allows CORS); this path uses a browser-like UA
+ * because ESPN 403s many server/edge clients.
  *
  * POST { path: "baseball/mlb/teams/24" }
- *   → https://site.api.espn.com/apis/site/v2/sports/{path}
  */
 
 const CORS: Record<string, string> = {
@@ -25,7 +25,6 @@ function json(body: unknown, status = 200) {
 
 function safePath(raw: string): string | null {
   const p = raw.replace(/^\/+/, "").split("?")[0];
-  // sport/league/... only — no scheme, no parent hops.
   if (!/^[a-z0-9._/-]+$/i.test(p)) return null;
   if (p.includes("..")) return null;
   if (p.length > 180) return null;
@@ -50,17 +49,24 @@ Deno.serve(async (req: Request) => {
   try {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 12000);
+    // ESPN blocks generic bot/server UAs — look like a normal browser tab.
     const res = await fetch(`${ESPN}/${safe}`, {
       signal: ctl.signal,
       headers: {
-        Accept: "application/json",
-        "User-Agent": "CommandCenter/1.0 (personal sports dashboard)",
+        Accept: "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Referer: "https://www.espn.com/",
+        Origin: "https://www.espn.com",
       },
     }).finally(() => clearTimeout(t));
 
     const text = await res.text();
     if (!res.ok) {
-      return json({ error: `ESPN ${res.status}`, detail: text.slice(0, 200) }, 502);
+      // 200 with error payload so supabase-js surfaces the message instead of
+      // the generic "Edge Function returned a non-2xx status code".
+      return json({ error: `ESPN ${res.status}`, detail: text.slice(0, 200) }, 200);
     }
     return new Response(text, {
       status: 200,
@@ -72,6 +78,6 @@ Deno.serve(async (req: Request) => {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return json({ error: msg }, 502);
+    return json({ error: msg }, 200);
   }
 });

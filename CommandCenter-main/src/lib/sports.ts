@@ -192,9 +192,29 @@ export function visibleFavorites(layout: SportsLayout): SportsFavorite[] {
     .filter((f): f is SportsFavorite => f != null && !hidden.has(f.key));
 }
 
+const ESPN = "https://site.api.espn.com/apis/site/v2/sports";
+
+/**
+ * ESPN allows browser CORS (`Access-Control-Allow-Origin: *`) but blocks many
+ * server/edge User-Agents with 403. Fetch from the client first; only fall
+ * back to the sports edge proxy if the direct call fails.
+ */
 async function espnGet(path: string): Promise<unknown> {
+  const clean = path.replace(/^\/+/, "");
+  try {
+    const ctl = new AbortController();
+    const t = window.setTimeout(() => ctl.abort(), 12000);
+    const res = await fetch(`${ESPN}/${clean}`, {
+      signal: ctl.signal,
+      headers: { Accept: "application/json" },
+    }).finally(() => window.clearTimeout(t));
+    if (res.ok) return await res.json();
+  } catch {
+    // fall through to edge proxy
+  }
+
   const { data, error } = await supabase.functions.invoke("sports", {
-    body: { path },
+    body: { path: clean },
   });
   if (error) throw new Error(error.message);
   if (data && typeof data === "object" && "error" in data && (data as { error?: string }).error) {
