@@ -98,13 +98,20 @@
     font-weight: 600;
     letter-spacing: 0.26em;
     text-transform: uppercase;
-    color: var(--color-accent);
+    color: #e8e4d9;
   }
   .rule-head::after {
     content: "";
     flex: 1;
     height: 1px;
-    background: rgba(217, 81, 92, 0.22);
+    background: rgba(232, 228, 217, 0.22);
+  }
+  .rule-head::before {
+    content: "";
+    width: 8px;
+    height: 2px;
+    background: var(--color-accent);
+    border-radius: 1px;
   }
 
   /* Display numerals — serif, tabular so they don't jitter as they tick. */

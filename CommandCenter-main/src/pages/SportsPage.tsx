@@ -16,7 +16,7 @@ import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
 import HeroGameCard from "@/components/sports/HeroGameCard";
 import { useAuth } from "@/lib/auth-context";
-import { fetchTeamCurrentGame, mlbTeamLogo, teamPagePath } from "@/lib/mlb";
+import { fetchTeamCurrentGame, mlbHeadshot, mlbTeamLogo, teamPagePath } from "@/lib/mlb";
 import {
   DEFAULT_FAVORITES,
   ensureFavoriteTeamsSeeded,
@@ -847,6 +847,26 @@ function EmptyLine({ children }: { children: ReactNode }) {
   return <p className="text-chalk-dim text-[12.5px]">{children}</p>;
 }
 
+function PitcherChip({ name, id }: { name?: string | null; id?: number | null }) {
+  const label = name ?? "TBD";
+  return (
+    <span className="inline-flex min-w-0 items-center gap-2">
+      {id != null ? (
+        <img
+          src={mlbHeadshot(id, 213)}
+          alt=""
+          className="h-9 w-9 shrink-0 rounded-full bg-[#0c1a2e] object-cover object-top ring-1 ring-white/15"
+        />
+      ) : (
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/[0.06] text-[9px] text-[#8b93a7]">
+          TBD
+        </span>
+      )}
+      <span className="text-cream truncate text-[12.5px] leading-snug">{label}</span>
+    </span>
+  );
+}
+
 function GameList({
   games,
   empty,
@@ -866,7 +886,14 @@ function GameList({
         const body = (
           <>
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-baseline gap-x-2">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {g.opponentTeamId != null && (
+                  <img
+                    src={mlbTeamLogo(g.opponentTeamId)}
+                    alt=""
+                    className="h-7 w-7 shrink-0 object-contain"
+                  />
+                )}
                 <span className="text-cream text-[14px] font-semibold group-hover:underline">
                   {g.label}
                 </span>
@@ -889,21 +916,15 @@ function GameList({
                 ) : null}
               </div>
               {showMatchup && (
-                <div className="mt-1.5 rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5">
-                  <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                <div className="mt-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-2">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#b8c0d2]">
                     Expected pitching
                   </p>
-                  <p className="text-cream mt-0.5 text-[12.5px] leading-snug">
-                    {g.myPitcher || g.oppPitcher ? (
-                      <>
-                        <span>{g.myPitcher ?? "TBD"}</span>
-                        <span className="mx-1.5 text-[#8b93a7]">vs</span>
-                        <span>{g.oppPitcher ?? "TBD"}</span>
-                      </>
-                    ) : (
-                      g.pitchers
-                    )}
-                  </p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                    <PitcherChip name={g.myPitcher} id={g.myPitcherId} />
+                    <span className="text-[11px] uppercase tracking-[0.14em] text-[#8b93a7]">vs</span>
+                    <PitcherChip name={g.oppPitcher} id={g.oppPitcherId} />
+                  </div>
                 </div>
               )}
             </div>

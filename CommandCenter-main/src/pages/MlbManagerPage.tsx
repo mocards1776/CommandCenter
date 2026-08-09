@@ -20,7 +20,7 @@ export default function MlbManagerPage() {
   const navigate = useNavigate();
 
   const detail = useQuery({
-    queryKey: ["mlb-manager", managerId],
+    queryKey: ["mlb-manager-v2", managerId],
     queryFn: () => fetchMlbManagerDetail(managerId!),
     enabled: Boolean(managerId),
     staleTime: 180_000,
@@ -74,14 +74,20 @@ export default function MlbManagerPage() {
         </Link>
       </div>
 
-      <article className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-        <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-start">
+      <article className="relative overflow-hidden rounded-2xl border border-white/[0.1]">
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `linear-gradient(135deg, #081228 0%, ${accent}55 55%, #0a1730 100%)`,
+          }}
+        />
+        <div className="relative z-10 flex flex-col gap-5 p-5 sm:flex-row sm:items-start">
           <img
             src={m.headshot}
             alt=""
-            width={120}
-            height={120}
-            className="mx-auto h-[108px] w-[108px] rounded-lg bg-[#0c1a2e] object-cover object-top ring-1 ring-white/10 sm:mx-0"
+            width={140}
+            height={140}
+            className="mx-auto h-[128px] w-[128px] rounded-xl bg-[#0c1a2e] object-cover object-top ring-2 ring-white/20 shadow-xl sm:mx-0"
           />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -90,25 +96,25 @@ export default function MlbManagerPage() {
                   <img src={mlbTeamLogo(m.teamId)} alt="" className="h-6 w-6 object-contain" />
                   <Link
                     to={teamPagePath(m.teamId)}
-                    className="text-chalk hover:text-cream text-[13px] font-medium transition"
+                    className="text-[13px] font-medium text-white/80 transition hover:text-white"
                   >
                     {m.teamName}
                   </Link>
                 </div>
-                <h1 className="font-display text-cream text-[34px] leading-[0.95] sm:text-[42px]">
+                <h1 className="font-display text-[34px] leading-[0.95] text-white sm:text-[42px]">
                   {m.name}
                 </h1>
-                <p className="text-chalk mt-1.5 text-[13px]">Manager · {m.teamAbbrev}</p>
+                <p className="mt-1.5 text-[13px] text-white/75">
+                  Manager · {m.teamAbbrev} · {m.yearsWithTeam} season
+                  {m.yearsWithTeam === 1 ? "" : "s"} with club
+                </p>
               </div>
               {m.age != null && (
-                <div
-                  className="shrink-0 rounded-md px-3 py-2 text-center"
-                  style={{ background: `${accent}22`, border: `1px solid ${accent}55` }}
-                >
-                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#8b93a7]">
+                <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">
                     Age
                   </p>
-                  <p className="numeral text-cream text-[28px] leading-none">{m.age}</p>
+                  <p className="numeral text-[28px] leading-none text-white">{m.age}</p>
                 </div>
               )}
             </div>
@@ -124,7 +130,10 @@ export default function MlbManagerPage() {
               <Meta label="Birthdate" value={m.birthDate ?? "—"} />
               <Meta label="Birthplace" value={m.birthPlace ?? "—"} />
               <Meta label="School" value={m.school ?? "—"} />
-              <Meta label="Division rank" value={m.divisionRank != null ? String(m.divisionRank) : "—"} />
+              <Meta
+                label="Division rank"
+                value={m.divisionRank != null ? String(m.divisionRank) : "—"}
+              />
             </dl>
           </div>
         </div>
@@ -133,7 +142,7 @@ export default function MlbManagerPage() {
       <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
         <div className="mb-3 flex items-center gap-2">
           <Flame size={16} className={heatTone(m.hotSeatRank)} />
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#c8cdd8]">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
             Hot seat
           </h2>
         </div>
@@ -149,6 +158,25 @@ export default function MlbManagerPage() {
             <p className="mt-1 text-[12px] text-[#8b93a7]">heat score</p>
           </div>
         </div>
+        <ul className="mt-4 space-y-2 border-t border-white/[0.06] pt-3">
+          {m.heatFactors.map((f) => (
+            <li key={f.key} className="flex items-start justify-between gap-3 text-[12.5px]">
+              <div className="min-w-0">
+                <p className="text-[#e8e4d9]">{f.label}</p>
+                <p className="text-[11px] text-[#8b93a7]">{f.detail}</p>
+              </div>
+              <span
+                className={cn(
+                  "numeral shrink-0",
+                  f.points > 0 ? "text-alert" : f.points < 0 ? "text-emerald-300" : "text-[#8b93a7]",
+                )}
+              >
+                {f.points > 0 ? "+" : ""}
+                {f.points.toFixed(1)}
+              </span>
+            </li>
+          ))}
+        </ul>
         {m.contractNote && (
           <p className="text-cream mt-4 text-[13.5px] leading-relaxed">
             <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
@@ -158,6 +186,44 @@ export default function MlbManagerPage() {
           </p>
         )}
       </section>
+
+      {m.seasonRecords.length > 0 && (
+        <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+          <div className="border-b border-white/[0.06] px-4 py-2.5">
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+              Year-by-year record · {m.teamAbbrev}
+            </h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[420px] text-left text-[12px]">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                  <th className="px-3 py-2 font-medium">Year</th>
+                  <th className="px-3 py-2 font-medium">W-L</th>
+                  <th className="px-3 py-2 font-medium">Pct</th>
+                  <th className="px-3 py-2 font-medium">GB</th>
+                  <th className="px-3 py-2 font-medium">Div</th>
+                </tr>
+              </thead>
+              <tbody>
+                {m.seasonRecords.map((row) => (
+                  <tr key={row.season} className="border-t border-white/[0.05]">
+                    <td className="numeral text-cream px-3 py-2">{row.season}</td>
+                    <td className="numeral text-cream px-3 py-2">
+                      {row.wins}-{row.losses}
+                    </td>
+                    <td className="numeral px-3 py-2 text-[#c8cdd8]">{row.pct}</td>
+                    <td className="numeral px-3 py-2 text-[#c8cdd8]">{row.gb}</td>
+                    <td className="numeral px-3 py-2 text-[#c8cdd8]">
+                      {row.divisionRank ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {m.wikiExtract && (
         <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
@@ -205,7 +271,7 @@ export default function MlbManagerPage() {
       {m.playingCareer.length > 0 && (
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
           <div className="border-b border-white/[0.06] px-4 py-2.5">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
               Playing career
             </h2>
           </div>
@@ -240,8 +306,8 @@ export default function MlbManagerPage() {
 function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">{label}</dt>
-      <dd className="text-cream mt-0.5">{value}</dd>
+      <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">{label}</dt>
+      <dd className="mt-0.5 text-white">{value}</dd>
     </div>
   );
 }

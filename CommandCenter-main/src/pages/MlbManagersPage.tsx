@@ -25,7 +25,7 @@ function heatLabel(rank: number): string {
 
 export default function MlbManagersPage() {
   const managers = useQuery({
-    queryKey: ["mlb-managers"],
+    queryKey: ["mlb-managers-v2"],
     queryFn: fetchMlbManagers,
     staleTime: 180_000,
   });
@@ -38,8 +38,8 @@ export default function MlbManagersPage() {
           Managers
         </h1>
         <p className="text-chalk max-w-xl text-[13.5px] leading-relaxed">
-          Every big-league skipper, ranked by hot seat — win percentage, games back, playoff
-          odds, and division place. Open a manager for full history.
+          Every big-league skipper, ranked by hot seat. Press or hover a rank to see the
+          scoring breakdown. Open a manager for year-by-year records and contract terms.
         </p>
       </header>
 
@@ -59,7 +59,7 @@ export default function MlbManagersPage() {
           <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
             <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3">
               <Flame size={16} className="text-alert" />
-              <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#c8cdd8]">
+              <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
                 Hot seat ranking
               </h2>
             </div>
@@ -71,9 +71,9 @@ export default function MlbManagersPage() {
           </section>
 
           <p className="text-[11px] leading-relaxed text-[#8b93a7]">
-            Hot seat score weighs losing percentage, games behind the division lead, playoff
-            odds, and low division rank. Contract status adjusts the score on each manager’s
-            detail page.
+            Heat scores win percentage, games back, playoff odds, division place, and long
+            tenure while losing. Contract security adjusts the score on each manager’s detail
+            page.
           </p>
         </>
       )}
@@ -83,6 +83,10 @@ export default function MlbManagersPage() {
 
 function ManagerRow({ manager: m }: { manager: MlbManager }) {
   const navigate = useNavigate();
+  const title = m.heatFactors
+    .map((f) => `${f.label}: ${f.points >= 0 ? "+" : ""}${f.points.toFixed(1)} — ${f.detail}`)
+    .join("\n");
+
   return (
     <li>
       <div
@@ -97,14 +101,51 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
           }
         }}
       >
-        <span
-          className={cn(
-            "numeral w-8 shrink-0 text-center text-[18px] font-semibold",
-            heatTone(m.hotSeatRank),
-          )}
+        <details
+          className="relative shrink-0"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
         >
-          {m.hotSeatRank}
-        </span>
+          <summary
+            className={cn(
+              "numeral list-none text-center text-[18px] font-semibold marker:content-none",
+              heatTone(m.hotSeatRank),
+            )}
+            title={title}
+          >
+            <span className="inline-flex w-8 flex-col items-center">
+              {m.hotSeatRank}
+              <span className="text-[8px] font-semibold uppercase tracking-[0.1em] text-[#8b93a7]">
+                why
+              </span>
+            </span>
+          </summary>
+          <div className="bg-panel absolute top-full left-0 z-20 mt-2 w-[260px] rounded-lg border border-white/15 p-3 shadow-2xl sm:w-[300px]">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#e8e4d9]">
+              Hot seat #{m.hotSeatRank} · {m.hotSeatScore.toFixed(1)}
+            </p>
+            <ul className="space-y-2">
+              {m.heatFactors.map((f) => (
+                <li key={f.key} className="text-[11.5px] leading-snug">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[#c8cdd8]">{f.label}</span>
+                    <span
+                      className={cn(
+                        "numeral",
+                        f.points > 0 ? "text-alert" : f.points < 0 ? "text-emerald-300" : "text-[#8b93a7]",
+                      )}
+                    >
+                      {f.points > 0 ? "+" : ""}
+                      {f.points.toFixed(1)}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[10.5px] text-[#8b93a7]">{f.detail}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
+
         <img
           src={m.headshot}
           alt=""
@@ -115,7 +156,12 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span className="text-cream truncate text-[15px] font-semibold">{m.name}</span>
-            <span className={cn("text-[10px] font-bold uppercase tracking-[0.14em]", heatTone(m.hotSeatRank))}>
+            <span
+              className={cn(
+                "text-[10px] font-bold uppercase tracking-[0.14em]",
+                heatTone(m.hotSeatRank),
+              )}
+            >
               {heatLabel(m.hotSeatRank)}
             </span>
           </div>
@@ -129,6 +175,9 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
               {m.teamAbbrev}
             </Link>
             <span className="numeral">{m.record}</span>
+            <span>
+              {m.yearsWithTeam} yr{m.yearsWithTeam === 1 ? "" : "s"}
+            </span>
             <span>{m.gb === "—" ? "—" : `${m.gb} GB`}</span>
             {m.playoffOdds != null && <span>{m.playoffOdds.toFixed(0)}% PO</span>}
           </div>

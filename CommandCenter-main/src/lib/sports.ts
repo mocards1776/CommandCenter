@@ -76,6 +76,8 @@ export type ScheduleGame = {
   pitchers?: string | null;
   myPitcher?: string | null;
   oppPitcher?: string | null;
+  myPitcherId?: number | null;
+  oppPitcherId?: number | null;
   opponentTeamId?: number | null;
 };
 
@@ -826,13 +828,13 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
             team?: { id?: number; name?: string };
             score?: number;
             isWinner?: boolean;
-            probablePitcher?: { fullName?: string; lastName?: string };
+            probablePitcher?: { id?: number; fullName?: string; lastName?: string };
           };
           home?: {
             team?: { id?: number; name?: string };
             score?: number;
             isWinner?: boolean;
-            probablePitcher?: { fullName?: string; lastName?: string };
+            probablePitcher?: { id?: number; fullName?: string; lastName?: string };
           };
         };
       };
@@ -896,6 +898,8 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
         pitchers,
         myPitcher: !done ? myPitcher : null,
         oppPitcher: !done ? oppPitcher : null,
+        myPitcherId: !done ? mine?.probablePitcher?.id ?? null : null,
+        oppPitcherId: !done ? opp?.probablePitcher?.id ?? null : null,
         opponentTeamId: opp?.team?.id ?? null,
       };
       if (done) recent.push(row);

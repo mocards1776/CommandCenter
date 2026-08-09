@@ -61,10 +61,10 @@ export default function MlbPlayerPage() {
   });
 
   const contract = useQuery({
-    queryKey: ["mlb-player-contract", player.data?.name],
+    queryKey: ["mlb-player-contract-v3", player.data?.name],
     queryFn: () => fetchPlayerContract(player.data!.name),
     enabled: Boolean(player.data?.name),
-    staleTime: 600_000,
+    staleTime: 120_000,
   });
 
   const isPitcherPreview =
@@ -295,46 +295,57 @@ function PlayerHeader({
     player.bats && player.throws ? `${player.bats}/${player.throws}` : player.bats ?? player.throws;
 
   return (
-    <article className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-      <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-start">
+    <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
+      <img
+        src={player.actionShot}
+        alt=""
+        className="absolute inset-0 h-full w-full object-cover object-top opacity-45"
+      />
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `linear-gradient(120deg, #081228f2 12%, ${accent}66 48%, #0a1730ee 88%)`,
+        }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#081228] via-[#081228]/55 to-transparent" />
+
+      <div className="relative z-10 flex flex-col gap-5 p-5 sm:flex-row sm:items-end sm:p-7">
         <div className="relative mx-auto shrink-0 sm:mx-0">
           <img
             src={player.headshot}
             alt=""
-            width={120}
-            height={120}
-            className="h-[108px] w-[108px] rounded-lg bg-[#0c1a2e] object-cover object-top ring-1 ring-white/10"
+            width={160}
+            height={160}
+            className="h-[140px] w-[140px] rounded-xl bg-[#0c1a2e] object-cover object-top ring-2 ring-white/25 shadow-2xl sm:h-[160px] sm:w-[160px]"
           />
+          {player.teamId != null && (
+            <img
+              src={mlbTeamLogo(player.teamId)}
+              alt=""
+              className="absolute -right-2 -bottom-2 h-10 w-10 rounded-full bg-white p-1 shadow-lg"
+            />
+          )}
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               {player.teamId != null && player.teamName && (
-                <div className="mb-2 flex items-center gap-2">
-                  <img
-                    src={mlbTeamLogo(player.teamId)}
-                    alt=""
-                    className="h-6 w-6 shrink-0 object-contain"
-                  />
-                  <Link
-                    to={teamPagePath(player.teamId)}
-                    className="text-chalk hover:text-cream truncate text-[13px] font-medium transition"
-                  >
-                    {player.teamName}
-                  </Link>
-                </div>
+                <Link
+                  to={teamPagePath(player.teamId)}
+                  className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/70 transition hover:text-white"
+                >
+                  {player.teamName}
+                </Link>
               )}
-
-              <p className="text-[13px] font-medium uppercase tracking-[0.08em] text-[#8b93a7]">
+              <p className="mt-1 text-[13px] font-medium uppercase tracking-[0.08em] text-white/65">
                 {player.firstName}
               </p>
-              <h1 className="font-display text-cream text-[34px] leading-[0.95] sm:text-[42px]">
+              <h1 className="font-display text-[38px] leading-[0.92] text-white sm:text-[48px]">
                 {player.lastName || player.name}
               </h1>
-
               {(player.number || player.position) && (
-                <p className="text-chalk mt-1.5 text-[13px]">
+                <p className="mt-1.5 text-[13px] text-white/75">
                   {[player.number ? `#${player.number}` : null, player.position]
                     .filter(Boolean)
                     .join(" · ")}
@@ -343,12 +354,9 @@ function PlayerHeader({
             </div>
 
             {player.age != null && (
-              <div
-                className="shrink-0 rounded-md px-3 py-2 text-center"
-                style={{ background: `${accent}22`, border: `1px solid ${accent}55` }}
-              >
-                <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[#8b93a7]">Age</p>
-                <p className="numeral text-cream text-[28px] leading-none">{player.age}</p>
+              <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
+                <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">Age</p>
+                <p className="numeral text-[30px] leading-none text-white">{player.age}</p>
               </div>
             )}
           </div>
@@ -356,20 +364,23 @@ function PlayerHeader({
           <dl className="mt-4 grid grid-cols-1 gap-2.5 text-[12.5px] sm:grid-cols-3">
             {htWt && (
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">HT / WT</dt>
-                <dd className="text-cream mt-0.5">{htWt}</dd>
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">HT / WT</dt>
+                <dd className="mt-0.5 text-white">{htWt}</dd>
               </div>
             )}
             {player.birthDate && (
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">Birthdate</dt>
-                <dd className="text-cream mt-0.5">{player.birthDate}</dd>
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Birthdate</dt>
+                <dd className="mt-0.5 text-white">
+                  {player.birthDate}
+                  {player.age != null ? ` (${player.age})` : ""}
+                </dd>
               </div>
             )}
             {batThr && (
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">Bat / Thr</dt>
-                <dd className="text-cream mt-0.5">{batThr}</dd>
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Bat / Thr</dt>
+                <dd className="mt-0.5 text-white">{batThr}</dd>
               </div>
             )}
           </dl>
@@ -381,7 +392,7 @@ function PlayerHeader({
             className={cn(
               "mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition disabled:opacity-50 sm:w-auto",
               isFavorite
-                ? "border border-white/20 bg-white/[0.06] text-cream"
+                ? "border border-white/30 bg-white/10 text-white"
                 : "text-cream",
             )}
             style={isFavorite ? undefined : { background: accent }}
@@ -504,7 +515,7 @@ function RecentGamesSection({
           ) : (
             <ChevronRight size={16} className="text-accent shrink-0" />
           )}
-          <span className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: accent }}>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
             {recent.label} ({recent.games} G)
           </span>
         </span>
@@ -617,7 +628,7 @@ function StatTable({
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] px-4 py-2.5">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: accent }}>
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
           {title}
         </h3>
       </div>
@@ -660,7 +671,7 @@ function SplitsTable({
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] px-4 py-2.5">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: accent }}>
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
           {title}
         </h3>
       </div>
