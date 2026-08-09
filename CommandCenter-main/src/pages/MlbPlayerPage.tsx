@@ -22,6 +22,7 @@ import {
   type MlbGameLogEntry,
   type MlbLeagueRank,
   type MlbPlayerCard,
+  type MlbPlayerSeasonRow,
   type MlbPlayerStatLine,
   type MlbSplitRow,
 } from "@/lib/mlb";
@@ -34,7 +35,7 @@ export default function MlbPlayerPage() {
   const qc = useQueryClient();
 
   const player = useQuery({
-    queryKey: ["mlb-player", playerId],
+    queryKey: ["mlb-player-v4", playerId],
     queryFn: () => fetchMlbPlayer(playerId!),
     enabled: Boolean(playerId),
     staleTime: 120_000,
@@ -62,10 +63,11 @@ export default function MlbPlayerPage() {
   });
 
   const contract = useQuery({
-    queryKey: ["mlb-player-contract-v3", player.data?.name],
+    queryKey: ["mlb-player-contract-v5", player.data?.name],
     queryFn: () => fetchPlayerContract(player.data!.name),
     enabled: Boolean(player.data?.name),
-    staleTime: 120_000,
+    staleTime: 300_000,
+    retry: 2,
   });
 
   const isPitcherPreview =
@@ -238,6 +240,21 @@ export default function MlbPlayerPage() {
       {careerStats.length > 0 && (
         <StatTable title="Career Regular Season" stats={careerStats} accent={accent} />
       )}
+
+      {(isPitcher ? p.yearByYearPitching : p.yearByYearHitting).length > 0 && (
+        <YearByYearTable
+          title="Career by year"
+          rows={isPitcher ? p.yearByYearPitching : p.yearByYearHitting}
+          isPitcher={isPitcher}
+        />
+      )}
+      {!isPitcher && p.yearByYearPitching.length > 0 && (
+        <YearByYearTable title="Pitching by year" rows={p.yearByYearPitching} isPitcher />
+      )}
+      {isPitcher && p.yearByYearHitting.length > 0 && (
+        <YearByYearTable title="Batting by year" rows={p.yearByYearHitting} isPitcher={false} />
+      )}
+
       {!isPitcher && p.pitching.length > 0 && (
         <StatTable title={`${p.season} Pitching`} stats={p.pitching} accent={accent} />
       )}
@@ -263,6 +280,8 @@ export default function MlbPlayerPage() {
       <ContractBlock
         contract={contract.data ?? null}
         loading={contract.isPending}
+        error={contract.isError ? contract.error : null}
+        onRetry={() => void contract.refetch()}
         transactions={transactions.data ?? []}
         teamName={p.teamName}
         player={p}
@@ -299,28 +318,34 @@ function PlayerHeader({
 
   return (
     <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
-      <img
-        src={player.actionShot}
-        alt=""
-        className="absolute inset-0 h-full w-full object-cover object-top opacity-45"
-      />
       <div
         className="absolute inset-0"
         style={{
-          background: `linear-gradient(120deg, #081228f2 12%, ${accent}66 48%, #0a1730ee 88%)`,
+          background: `linear-gradient(145deg, #0a1428 0%, ${accent}40 42%, #07101f 100%)`,
         }}
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#081228] via-[#081228]/55 to-transparent" />
+      <img
+        src={player.heroBackdrop}
+        alt=""
+        className="absolute inset-0 h-full w-full object-cover object-[center_20%] opacity-[0.28]"
+        onError={(e) => {
+          e.currentTarget.style.display = "none";
+        }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-r from-[#07101f] via-[#07101f]/75 to-[#07101f]/35" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#07101f] via-transparent to-[#07101f]/40" />
 
       <div className="relative z-10 flex flex-col gap-5 p-5 sm:flex-row sm:items-end sm:p-7">
         <div className="relative mx-auto shrink-0 sm:mx-0">
-          <img
-            src={player.headshot}
-            alt=""
-            width={160}
-            height={160}
-            className="h-[140px] w-[140px] rounded-xl bg-[#0c1a2e] object-cover object-top ring-2 ring-white/25 shadow-2xl sm:h-[160px] sm:w-[160px]"
-          />
+          <div className="overflow-hidden rounded-xl bg-[#dfe6f2] p-1 shadow-2xl ring-2 ring-white/30">
+            <img
+              src={player.headshot}
+              alt=""
+              width={160}
+              height={160}
+              className="h-[140px] w-[140px] rounded-[10px] object-cover object-[center_12%] sm:h-[160px] sm:w-[160px]"
+            />
+          </div>
           {player.teamId != null && (
             <span className="absolute -right-2 -bottom-2">
               <TeamMark teamId={player.teamId} size="md" />
@@ -617,6 +642,72 @@ function GameLogRow({ entry }: { entry: MlbGameLogEntry }) {
   );
 }
 
+function YearByYearTable({
+  title,
+  rows,
+  isPitcher,
+}: {
+  title: string;
+  rows: MlbPlayerSeasonRow[];
+  isPitcher: boolean;
+}) {
+  const labels = isPitcher
+    ? ["W", "L", "ERA", "IP", "SO", "WHIP", "SV"]
+    : ["G", "AB", "AVG", "HR", "RBI", "OPS", "SB"];
+
+  return (
+    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="border-b border-white/[0.06] px-4 py-2.5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+          {title}
+        </h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left text-[12px]">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+              <th className="px-3 py-2 font-medium">Year</th>
+              <th className="px-3 py-2 font-medium">Tm</th>
+              {labels.map((l) => (
+                <th key={l} className="px-2 py-2 text-center font-medium">
+                  {l}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const map = new Map(row.stats.map((s) => [s.label, s.value]));
+              return (
+                <tr key={`${row.season}-${row.team}`} className="border-t border-white/[0.05]">
+                  <td className="numeral text-cream px-3 py-2">{row.season}</td>
+                  <td className="px-3 py-2 text-[#c8cdd8]">
+                    {row.teamId != null ? (
+                      <Link
+                        to={teamPagePath(row.teamId)}
+                        className="hover:text-cream hover:underline"
+                      >
+                        {row.team}
+                      </Link>
+                    ) : (
+                      row.team
+                    )}
+                  </td>
+                  {labels.map((l) => (
+                    <td key={l} className="numeral text-cream px-2 py-2 text-center">
+                      {map.get(l) ?? "—"}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function StatTable({
   title,
   stats,
@@ -730,12 +821,16 @@ function BioAndOrigin({ player }: { player: MlbPlayerCard }) {
 function ContractBlock({
   contract,
   loading,
+  error,
+  onRetry,
   transactions,
   teamName,
   player,
 }: {
   contract: Awaited<ReturnType<typeof fetchPlayerContract>>;
   loading: boolean;
+  error?: unknown;
+  onRetry?: () => void;
   transactions: { date: string; type: string; description: string }[];
   teamName?: string | null;
   player: MlbPlayerCard;
@@ -750,7 +845,8 @@ function ContractBlock({
     Boolean(contract?.contractStatus) ||
     Boolean(contract?.currentSalary?.display) ||
     Boolean(contract?.totalValue) ||
-    Boolean(contract?.aav);
+    Boolean(contract?.aav) ||
+    (contract?.salaryHistory?.length ?? 0) > 0;
 
   return (
     <section className="bg-panel space-y-4 rounded-xl border border-white/[0.08] p-4">
@@ -812,10 +908,22 @@ function ContractBlock({
               )}
             </div>
           ) : (
-            !player.draft?.display &&
-            story.lines.length === 0 && (
-              <p className="text-chalk-dim text-[13px]">Contract details not published.</p>
-            )
+            <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-4 py-3">
+              <p className="text-chalk-dim text-[13px]">
+                {error
+                  ? `Couldn't load contract details${error instanceof Error ? `: ${error.message}` : "."}`
+                  : "Contract details not published for this player."}
+              </p>
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="text-accent mt-2 text-[11px] font-semibold uppercase tracking-[0.14em] hover:underline"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
           )}
 
           {contract?.salaryHistory && contract.salaryHistory.length > 0 && (

@@ -244,31 +244,39 @@ async function scrapeSpotrac(name: string, hintUrl?: string | null) {
 }
 
 async function scrapeContract(name: string, hintUrl?: string | null) {
+  // Prefer Baseball Reference — salary tables + contract status are reliable from the edge.
+  let bb: Awaited<ReturnType<typeof scrapeBbref>> | null = null;
+  try {
+    bb = await scrapeBbref(name);
+  } catch {
+    bb = null;
+  }
+  if (bb && !("error" in bb) && (bb.contractStatus || bb.currentSalary || bb.salaryHistory?.length)) {
+    try {
+      const spotrac = await scrapeSpotrac(name, hintUrl);
+      if (spotrac) {
+        if (!bb.aav && spotrac.aav) bb.aav = spotrac.aav;
+        if (!bb.totalValue && spotrac.totalValue) bb.totalValue = spotrac.totalValue;
+        if (!bb.contractStatus && spotrac.contractStatus) bb.contractStatus = spotrac.contractStatus;
+        if (!bb.currentSalary && spotrac.currentSalary) bb.currentSalary = spotrac.currentSalary;
+        for (const line of spotrac.acquisition ?? []) {
+          if (!bb.acquisition.includes(line)) bb.acquisition.push(line);
+        }
+        if (spotrac.url) bb.url = spotrac.url;
+        bb.source = spotrac.contractStatus ? "spotrac+baseball-reference" : bb.source;
+      }
+    } catch {
+      /* keep bbref */
+    }
+    return bb;
+  }
   try {
     const spotrac = await scrapeSpotrac(name, hintUrl);
-    if (spotrac?.contractStatus || spotrac?.currentSalary) {
-      try {
-        const bb = await scrapeBbref(name);
-        if (!("error" in bb)) {
-          if (!spotrac.salaryHistory.length && bb.salaryHistory?.length) {
-            spotrac.salaryHistory = bb.salaryHistory;
-          }
-          if (!spotrac.currentSalary && bb.currentSalary) spotrac.currentSalary = bb.currentSalary;
-          if (!spotrac.aav && bb.aav) spotrac.aav = bb.aav;
-          if (!spotrac.totalValue && bb.totalValue) spotrac.totalValue = bb.totalValue;
-          for (const line of bb.acquisition ?? []) {
-            if (!spotrac.acquisition.includes(line)) spotrac.acquisition.push(line);
-          }
-        }
-      } catch {
-        /* */
-      }
-      return spotrac;
-    }
+    if (spotrac?.contractStatus || spotrac?.currentSalary) return spotrac;
   } catch {
     /* */
   }
-  return scrapeBbref(name);
+  return bb ?? { error: "Contract not found", name };
 }
 
 async function findBbrefManagerUrl(name: string): Promise<string | null> {

@@ -99,6 +99,13 @@ export type MlbSplitRow = {
   stats: MlbPlayerStatLine[];
 };
 
+export type MlbPlayerSeasonRow = {
+  season: number;
+  teamId: number | null;
+  team: string;
+  stats: MlbPlayerStatLine[];
+};
+
 export type MlbPlayerCard = {
   id: number;
   name: string;
@@ -125,10 +132,14 @@ export type MlbPlayerCard = {
   primaryColor: string | null;
   headshot: string;
   actionShot: string;
+  /** Wide hero backdrop (16:9 action crop). */
+  heroBackdrop: string;
   hitting: MlbPlayerStatLine[];
   pitching: MlbPlayerStatLine[];
   careerHitting: MlbPlayerStatLine[];
   careerPitching: MlbPlayerStatLine[];
+  yearByYearHitting: MlbPlayerSeasonRow[];
+  yearByYearPitching: MlbPlayerSeasonRow[];
   season: number;
 };
 
@@ -498,7 +509,12 @@ export function mlbTeamCapLogo(teamId: number | string): string {
 }
 
 export function mlbActionShot(playerId: number | string): string {
-  return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:action:hero:current.jpg/r_max,c_fill,g_auto,w_800,h_1000,q_auto:best/v1/people/${playerId}/action/hero/current`;
+  return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:action:hero:current.jpg/c_fill,g_auto,w_900,h_1100,q_auto:best/v1/people/${playerId}/action/hero/current`;
+}
+
+/** Wide action crop for card backdrops — faces/subjects stay in frame. */
+export function mlbHeroBackdrop(playerId: number | string): string {
+  return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:action:hero:current.jpg/ar_16:9,c_fill,g_auto,w_1600,q_auto:best/v1/people/${playerId}/action/hero/current`;
 }
 
 export type MlbBoxscoreBatter = {
@@ -1220,39 +1236,73 @@ export function buildAcquisitionStory(
   return { headline, lines: lines.slice(0, 8) };
 }
 
+function mapContractPayload(data: unknown): MlbPlayerContract | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as {
+    error?: string;
+    contractStatus?: string | null;
+    currentSalary?: MlbPlayerContract["currentSalary"];
+    salaryHistory?: MlbPlayerContract["salaryHistory"];
+    acquisition?: string[];
+    url?: string;
+    source?: string;
+    aav?: string | null;
+    totalValue?: string | null;
+  };
+  if (d.error && !d.contractStatus && !d.currentSalary) return null;
+  const hasAnything =
+    Boolean(d.contractStatus) ||
+    Boolean(d.currentSalary?.display) ||
+    Boolean(d.totalValue) ||
+    Boolean(d.aav) ||
+    (d.salaryHistory?.length ?? 0) > 0;
+  if (!hasAnything) return null;
+  return {
+    contractStatus: d.contractStatus ?? null,
+    currentSalary: d.currentSalary ?? null,
+    salaryHistory: d.salaryHistory ?? [],
+    acquisition: d.acquisition ?? [],
+    url: d.url ?? null,
+    source: d.source ?? "baseball-reference",
+    aav: d.aav ?? null,
+    totalValue: d.totalValue ?? null,
+  };
+}
+
 export async function fetchPlayerContract(
   playerName: string,
   opts?: { url?: string | null },
 ): Promise<MlbPlayerContract | null> {
-  try {
-    const { data, error } = await supabase.functions.invoke("sports", {
-      body: { action: "contract", name: playerName, url: opts?.url ?? undefined },
-    });
-    if (error) throw error;
-    if (!data || (data as { error?: string }).error) return null;
-    const d = data as {
-      contractStatus?: string | null;
-      currentSalary?: MlbPlayerContract["currentSalary"];
-      salaryHistory?: MlbPlayerContract["salaryHistory"];
-      acquisition?: string[];
-      url?: string;
-      source?: string;
-      aav?: string | null;
-      totalValue?: string | null;
-    };
-    return {
-      contractStatus: d.contractStatus ?? null,
-      currentSalary: d.currentSalary ?? null,
-      salaryHistory: d.salaryHistory ?? [],
-      acquisition: d.acquisition ?? [],
-      url: d.url ?? null,
-      source: d.source ?? "spotrac",
-      aav: d.aav ?? null,
-      totalValue: d.totalValue ?? null,
-    };
-  } catch {
-    return null;
+  const name = playerName.trim();
+  if (name.length < 3) return null;
+
+  // BBRef first — more reliable salary tables than Spotrac search from the edge.
+  const attempts: { action: string; body: Record<string, unknown> }[] = [
+    { action: "bbref", body: { action: "bbref", name } },
+    {
+      action: "contract",
+      body: { action: "contract", name, ...(opts?.url ? { url: opts.url } : {}) },
+    },
+  ];
+
+  let lastError: Error | null = null;
+  for (const attempt of attempts) {
+    try {
+      const { data, error } = await supabase.functions.invoke("sports", {
+        body: attempt.body,
+      });
+      if (error) {
+        lastError = new Error(error.message || `${attempt.action} failed`);
+        continue;
+      }
+      const mapped = mapContractPayload(data);
+      if (mapped) return mapped;
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+    }
   }
+  if (lastError) throw lastError;
+  return null;
 }
 
 const SPLIT_HIT_KEYS: [string, string][] = [
@@ -1768,50 +1818,94 @@ function formatDraft(d: {
   return { year, round, pick, team, school, signingBonus, display };
 }
 
+async function fetchYearByYearRows(
+  playerId: number,
+  group: "hitting" | "pitching",
+): Promise<MlbPlayerSeasonRow[]> {
+  try {
+    const raw = (await mlbGet(`people/${playerId}/stats`, {
+      stats: "yearByYear",
+      group,
+      sportId: "1",
+    })) as {
+      stats?: {
+        splits?: {
+          season?: string;
+          team?: { id?: number; name?: string; abbreviation?: string };
+          stat?: Record<string, unknown>;
+        }[];
+      }[];
+    };
+    const keys = group === "pitching" ? PITCH_KEYS : HIT_KEYS;
+    const rows: MlbPlayerSeasonRow[] = [];
+    for (const s of raw.stats?.[0]?.splits ?? []) {
+      const season = Number(s.season);
+      if (!Number.isFinite(season)) continue;
+      const stats = pickStats(s.stat, keys);
+      if (!stats.length) continue;
+      rows.push({
+        season,
+        teamId: s.team?.id ?? null,
+        team: s.team?.abbreviation || s.team?.name || "—",
+        stats,
+      });
+    }
+    // Newest first for the table
+    rows.sort((a, b) => b.season - a.season);
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlayerCard> {
   const season = currentSeason();
   const id = Number(playerId);
-  const raw = (await mlbGet(`people/${id}`, {
-    hydrate: `currentTeam,draft,education,stats(group=[hitting,pitching],type=[season,career],season=${season})`,
-  })) as {
-    people?: {
-      id?: number;
-      fullName?: string;
-      firstName?: string;
-      lastName?: string;
-      primaryNumber?: string;
-      primaryPosition?: { abbreviation?: string; name?: string };
-      batSide?: { code?: string; description?: string };
-      pitchHand?: { code?: string; description?: string };
-      height?: string;
-      weight?: number;
-      birthDate?: string;
-      currentAge?: number;
-      birthCity?: string;
-      birthStateProvince?: string;
-      birthCountry?: string;
-      mlbDebutDate?: string;
-      draftYear?: number;
-      drafts?: {
-        year?: string | number;
-        pickRound?: string;
-        pickNumber?: number;
-        signingBonus?: string;
-        school?: { name?: string };
-        team?: { name?: string; abbreviation?: string };
+  const [raw, yearByYearHitting, yearByYearPitching] = await Promise.all([
+    mlbGet(`people/${id}`, {
+      hydrate: `currentTeam,draft,education,stats(group=[hitting,pitching],type=[season,career],season=${season})`,
+    }) as Promise<{
+      people?: {
+        id?: number;
+        fullName?: string;
+        firstName?: string;
+        lastName?: string;
+        primaryNumber?: string;
+        primaryPosition?: { abbreviation?: string; name?: string };
+        batSide?: { code?: string; description?: string };
+        pitchHand?: { code?: string; description?: string };
+        height?: string;
+        weight?: number;
+        birthDate?: string;
+        currentAge?: number;
+        birthCity?: string;
+        birthStateProvince?: string;
+        birthCountry?: string;
+        mlbDebutDate?: string;
+        draftYear?: number;
+        drafts?: {
+          year?: string | number;
+          pickRound?: string;
+          pickNumber?: number;
+          signingBonus?: string;
+          school?: { name?: string };
+          team?: { name?: string; abbreviation?: string };
+        }[];
+        education?: {
+          highschools?: { name?: string; city?: string; state?: string }[];
+          colleges?: { name?: string }[];
+        };
+        currentTeam?: { id?: number; name?: string; abbreviation?: string };
+        stats?: {
+          group?: { displayName?: string };
+          type?: { displayName?: string };
+          splits?: { stat?: Record<string, unknown> }[];
+        }[];
       }[];
-      education?: {
-        highschools?: { name?: string; city?: string; state?: string }[];
-        colleges?: { name?: string }[];
-      };
-      currentTeam?: { id?: number; name?: string; abbreviation?: string };
-      stats?: {
-        group?: { displayName?: string };
-        type?: { displayName?: string };
-        splits?: { stat?: Record<string, unknown> }[];
-      }[];
-    }[];
-  };
+    }>,
+    fetchYearByYearRows(id, "hitting"),
+    fetchYearByYearRows(id, "pitching"),
+  ]);
 
   const p = raw.people?.[0];
   if (!p) throw new Error("Player not found");
@@ -1827,11 +1921,11 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
     const stat = s.splits?.[0]?.stat;
     if (group.includes("hitting")) {
       if (type.includes("career")) careerHitting = pickStats(stat, HIT_KEYS);
-      else hitting = pickStats(stat, HIT_KEYS);
+      else if (type.includes("season") || !type.includes("year")) hitting = pickStats(stat, HIT_KEYS);
     }
     if (group.includes("pitching")) {
       if (type.includes("career")) careerPitching = pickStats(stat, PITCH_KEYS);
-      else pitching = pickStats(stat, PITCH_KEYS);
+      else if (type.includes("season") || !type.includes("year")) pitching = pickStats(stat, PITCH_KEYS);
     }
   }
 
@@ -1927,10 +2021,13 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
     primaryColor: teamId != null ? TEAM_COLORS[teamId] ?? "d9515c" : "d9515c",
     headshot: mlbHeadshot(p.id ?? id, 426),
     actionShot: mlbActionShot(p.id ?? id),
+    heroBackdrop: mlbHeroBackdrop(p.id ?? id),
     hitting,
     pitching,
     careerHitting,
     careerPitching,
+    yearByYearHitting,
+    yearByYearPitching,
     season,
   };
 }
