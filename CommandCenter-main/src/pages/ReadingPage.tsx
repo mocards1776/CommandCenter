@@ -1487,6 +1487,7 @@ function BookDetail({
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["books"] });
     qc.invalidateQueries({ queryKey: ["reading-sessions"] });
+    qc.invalidateQueries({ queryKey: ["on-deck"] });
   };
 
   const celebrateFinish = (finishedAt = date || todayStr()) =>
@@ -1497,6 +1498,9 @@ function BookDetail({
     onSuccess: (_data, vars) => {
       refresh();
       if (vars.status === "read" && book.status !== "read") celebrateFinish();
+      if (vars.status === "currently-reading" && book.on_deck) {
+        toast.success("Moved to Reading — off the deck");
+      }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
   });
@@ -1994,6 +1998,8 @@ function BookDetail({
               if (status === "currently-reading" && book.status !== "currently-reading") {
                 p.started_at = todayStr();
                 if (!book.last_date_read) p.last_date_read = todayStr();
+                // On deck is the queue — once you start, it leaves the queue.
+                if (book.on_deck) p.on_deck = false;
               }
               patch.mutate(p);
             }}

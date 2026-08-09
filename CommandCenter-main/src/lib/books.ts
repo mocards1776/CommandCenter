@@ -195,7 +195,12 @@ export async function clearBooks(): Promise<void> {
 // ── Mutations ────────────────────────────────────────────────────────────
 
 export async function updateBook(id: string, patch: Partial<Book>): Promise<Book> {
-  const { data, error } = await supabase.from("books").update(patch).eq("id", id).select().single();
+  // Starting a book means it's no longer waiting in the on-deck queue.
+  const next: Partial<Book> =
+    patch.status === "currently-reading"
+      ? { ...patch, on_deck: false }
+      : patch;
+  const { data, error } = await supabase.from("books").update(next).eq("id", id).select().single();
   if (error) throw error;
   return data;
 }
@@ -596,10 +601,11 @@ export async function logPages(opts: {
       patch.read_count = log.length + 1;
       if (start) patch.started_at = start;
     }
-  } else if (opts.status === "to-read") {
-    // First pages logged means you've started it.
+  } else if (opts.status === "to-read" || opts.status === "did-not-finish") {
+    // First pages logged means you've started it — leave on deck.
     patch.status = "currently-reading";
     patch.started_at = opts.date;
+    patch.on_deck = false;
   } else if (opts.status === "currently-reading" || opts.status === "paused") {
     // Re-reads often leave started_at on an old pass — refresh when unset or stale.
     const { data: current } = await supabase
