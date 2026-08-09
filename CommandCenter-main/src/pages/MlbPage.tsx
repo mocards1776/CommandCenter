@@ -131,11 +131,14 @@ export default function MlbPage() {
         />
       )}
 
-      {favorites.data && favorites.data.length > 0 && (
+      {favorites.data &&
+        favorites.data.some((f) => (f.position ?? "").toLowerCase() !== "manager") && (
         <section>
           <h3 className="rule-head mb-3">Your players</h3>
           <div className="flex gap-3 overflow-x-auto pb-1">
-            {favorites.data.map((f) => (
+            {favorites.data
+              .filter((f) => (f.position ?? "").toLowerCase() !== "manager")
+              .map((f) => (
               <Link
                 key={f.id}
                 to={`/sports/mlb/player/${f.playerId}`}
@@ -163,6 +166,44 @@ export default function MlbPage() {
                 />
               </Link>
             ))}
+          </div>
+        </section>
+      )}
+
+      {favorites.data &&
+        favorites.data.some((f) => (f.position ?? "").toLowerCase() === "manager") && (
+        <section>
+          <h3 className="rule-head mb-3">Your managers</h3>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {favorites.data
+              .filter((f) => (f.position ?? "").toLowerCase() === "manager")
+              .map((f) => (
+                <Link
+                  key={f.id}
+                  to={`/sports/mlb/managers/${f.playerId}`}
+                  className="bg-panel group relative w-[148px] shrink-0 overflow-hidden rounded-lg border border-white/[0.08] transition hover:border-accent/40"
+                >
+                  <div className="from-accent-dark/80 absolute inset-0 bg-gradient-to-t to-transparent opacity-80" />
+                  <img
+                    src={mlbHeadshot(f.playerId, 213)}
+                    alt=""
+                    className="aspect-[3/4] w-full object-cover object-top"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 p-2.5">
+                    <p className="font-display text-cream text-[15px] leading-tight drop-shadow">
+                      {f.playerName.split(" ").slice(-1)[0]}
+                    </p>
+                    <p className="text-chalk-dim mt-0.5 text-[10px] uppercase tracking-[0.12em]">
+                      Manager{f.teamName ? ` · ${f.teamName}` : ""}
+                    </p>
+                  </div>
+                  <Star
+                    size={12}
+                    className="text-accent absolute top-2 right-2 fill-current drop-shadow"
+                  />
+                </Link>
+              ))}
           </div>
         </section>
       )}

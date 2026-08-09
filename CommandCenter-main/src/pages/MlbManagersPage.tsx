@@ -1,12 +1,15 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Flame } from "lucide-react";
+import { ExternalLink, Flame, Loader2, Star } from "lucide-react";
 import {
+  fetchMlbManagerRumorsFeed,
   fetchMlbManagers,
   mlbTeamLogo,
   teamPagePath,
   type MlbManager,
 } from "@/lib/mlb";
+import { listFavoriteManagers } from "@/lib/favorite-managers";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
 function heatTone(rank: number): string {
@@ -24,10 +27,24 @@ function heatLabel(rank: number): string {
 }
 
 export default function MlbManagersPage() {
+  const { user } = useAuth();
   const managers = useQuery({
-    queryKey: ["mlb-managers-v2"],
+    queryKey: ["mlb-managers-v3"],
     queryFn: fetchMlbManagers,
     staleTime: 180_000,
+  });
+
+  const favorites = useQuery({
+    queryKey: ["favorite-managers", user?.id],
+    queryFn: () => listFavoriteManagers(user!.id),
+    enabled: Boolean(user?.id),
+    staleTime: 30_000,
+  });
+
+  const rumors = useQuery({
+    queryKey: ["mlb-manager-rumors-feed"],
+    queryFn: fetchMlbManagerRumorsFeed,
+    staleTime: 86_400_000, // daily
   });
 
   return (
@@ -38,10 +55,75 @@ export default function MlbManagersPage() {
           Managers
         </h1>
         <p className="text-chalk max-w-xl text-[13.5px] leading-relaxed">
-          Every big-league skipper, ranked by hot seat. Press or hover a rank to see the
-          scoring breakdown. Open a manager for year-by-year records and contract terms.
+          Every big-league skipper, ranked by hot seat. First-year managers get a cushion;
+          heat ramps by year three and four. Favorite the ones you want to track.
         </p>
       </header>
+
+      {favorites.data && favorites.data.length > 0 && (
+        <section>
+          <h2 className="rule-head mb-3">Your managers</h2>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {favorites.data.map((f) => (
+              <Link
+                key={f.id}
+                to={`/sports/mlb/managers/${f.playerId}`}
+                className="bg-panel group relative w-[148px] shrink-0 overflow-hidden rounded-lg border border-white/[0.08] transition hover:border-accent/40"
+              >
+                <div className="from-accent-dark/80 absolute inset-0 bg-gradient-to-t to-transparent opacity-80" />
+                <img
+                  src={`https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${f.playerId}/headshot/67/current`}
+                  alt=""
+                  className="aspect-[3/4] w-full object-cover object-top"
+                  loading="lazy"
+                />
+                <div className="absolute inset-x-0 bottom-0 p-2.5">
+                  <p className="font-display text-cream text-[15px] leading-tight drop-shadow">
+                    {f.playerName.split(" ").slice(-1)[0]}
+                  </p>
+                  <p className="text-chalk-dim mt-0.5 text-[10px] uppercase tracking-[0.12em]">
+                    Manager{f.teamName ? ` · ${f.teamName}` : ""}
+                  </p>
+                </div>
+                <Star
+                  size={12}
+                  className="text-accent absolute top-2 right-2 fill-current drop-shadow"
+                />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {rumors.data && rumors.data.items.length > 0 && (
+        <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <h2 className="rule-head">Hot-seat chatter</h2>
+            {rumors.data.checkedAt && (
+              <p className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                Checked {new Date(rumors.data.checkedAt).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+          <ul className="space-y-2.5">
+            {rumors.data.items.slice(0, 5).map((r) => (
+              <li key={r.url}>
+                <a
+                  href={r.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group block text-[13px] leading-snug text-[#c8cdd8] hover:text-cream"
+                >
+                  {r.title}
+                  <span className="mt-0.5 flex items-center gap-1 text-[11px] text-[#8b93a7]">
+                    {r.source} <ExternalLink size={11} />
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {managers.isPending && (
         <p className="text-chalk-dim flex items-center gap-2 text-[13px]">
@@ -71,9 +153,9 @@ export default function MlbManagersPage() {
           </section>
 
           <p className="text-[11px] leading-relaxed text-[#8b93a7]">
-            Heat scores win percentage, games back, playoff odds, division place, and long
-            tenure while losing. Contract security adjusts the score on each manager’s detail
-            page.
+            Heat scores win percentage, games back, playoff odds, and division place — then
+            scales by tenure (year-1 cushion, year-3+ pressure when under .500). Detail pages
+            also fold in contract security and daily media rumor hits.
           </p>
         </>
       )}

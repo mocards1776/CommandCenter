@@ -152,11 +152,46 @@ export type HotSeatFactor = {
 
 export type MlbManagerSeasonRecord = {
   season: number;
+  team: string;
   wins: number;
   losses: number;
   pct: string;
   gb: string;
   divisionRank: number | null;
+  postWins: number;
+  postLosses: number;
+  comments: string;
+};
+
+export type MlbManagerStint = {
+  team: string;
+  start: number;
+  end: number;
+  wins: number;
+  losses: number;
+  pct: string;
+  departure: string | null;
+  departureUrl: string | null;
+};
+
+export type MlbManagerCareer = {
+  wins: number;
+  losses: number;
+  pct: string;
+  games: number;
+  seasons: number;
+  postWins: number;
+  postLosses: number;
+  divisionTitles: number;
+  postseasonAppearances: number;
+  worldSeriesAppearances: number;
+  managerOfYear: number;
+};
+
+export type MlbManagerRumor = {
+  title: string;
+  url: string;
+  source: string;
 };
 
 export type MlbManager = {
@@ -193,6 +228,11 @@ export type MlbManagerDetail = MlbManager & {
   timeline: { date: string; text: string }[];
   playingCareer: { season: string; team: string; games: string; summary: string }[];
   seasonRecords: MlbManagerSeasonRecord[];
+  stints: MlbManagerStint[];
+  career: MlbManagerCareer | null;
+  awards: { season: string; name: string }[];
+  rumors: MlbManagerRumor[];
+  bbrefUrl: string | null;
 };
 
 export type MlbTransaction = {
@@ -2026,6 +2066,7 @@ async function managerIdForTeamSeason(
 
 async function teamStandingForSeason(
   teamId: number,
+  teamAbbrev: string,
   season: number,
 ): Promise<MlbManagerSeasonRecord | null> {
   try {
@@ -2036,7 +2077,7 @@ async function teamStandingForSeason(
     })) as {
       records?: {
         teamRecords?: {
-          team?: { id?: number };
+          team?: { id?: number; abbreviation?: string; name?: string };
           wins?: number;
           losses?: number;
           winningPercentage?: string;
@@ -2050,11 +2091,15 @@ async function teamStandingForSeason(
         if (r.team?.id !== teamId) continue;
         return {
           season,
+          team: r.team?.abbreviation ?? teamAbbrev,
           wins: r.wins ?? 0,
           losses: r.losses ?? 0,
           pct: r.winningPercentage ?? ".000",
           gb: r.gamesBack === "0.0" || r.gamesBack === "-" ? "—" : String(r.gamesBack ?? "—"),
           divisionRank: r.divisionRank ? Number(r.divisionRank) : null,
+          postWins: 0,
+          postLosses: 0,
+          comments: "",
         };
       }
     }
@@ -2067,17 +2112,114 @@ async function teamStandingForSeason(
 async function fetchManagerSeasonRecords(
   managerId: number,
   teamId: number,
+  teamAbbrev: string,
   season: number,
 ): Promise<MlbManagerSeasonRecord[]> {
   const out: MlbManagerSeasonRecord[] = [];
   for (let y = season; y >= season - 20; y--) {
     const id = await managerIdForTeamSeason(teamId, y);
     if (id !== managerId) break;
-    const st = await teamStandingForSeason(teamId, y);
+    const st = await teamStandingForSeason(teamId, teamAbbrev, y);
     if (st) out.push(st);
-    else out.push({ season: y, wins: 0, losses: 0, pct: "—", gb: "—", divisionRank: null });
+    else {
+      out.push({
+        season: y,
+        team: teamAbbrev,
+        wins: 0,
+        losses: 0,
+        pct: "—",
+        gb: "—",
+        divisionRank: null,
+        postWins: 0,
+        postLosses: 0,
+        comments: "",
+      });
+    }
   }
   return out;
+}
+
+type BbrefManagerCareerPayload = {
+  error?: string;
+  url?: string;
+  photo?: string | null;
+  seasons?: {
+    season: number;
+    team: string;
+    wins: number;
+    losses: number;
+    pct: string;
+    finish: number | null;
+    postWins: number;
+    postLosses: number;
+    comments: string;
+  }[];
+  stints?: {
+    team: string;
+    start: number;
+    end: number;
+    wins: number;
+    losses: number;
+    pct: string;
+    departure: string | null;
+    departureUrl?: string | null;
+  }[];
+  career?: {
+    wins: number;
+    losses: number;
+    pct: string;
+    games: number;
+    postWins: number;
+    postLosses: number;
+  } | null;
+  divisionTitles?: number;
+  postseasonAppearances?: number;
+  worldSeriesAppearances?: number;
+  managerOfYearWins?: number;
+};
+
+async function fetchManagerCareer(name: string): Promise<BbrefManagerCareerPayload | null> {
+  try {
+    const { data } = await supabase.functions.invoke("sports", {
+      body: { action: "managerCareer", name },
+    });
+    if (!data || (data as { error?: string }).error) return null;
+    return data as BbrefManagerCareerPayload;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchManagerRumors(name?: string | null): Promise<{
+  items: MlbManagerRumor[];
+  checkedAt: string | null;
+}> {
+  try {
+    const { data } = await supabase.functions.invoke("sports", {
+      body: { action: "managerRumors", name: name ?? null },
+    });
+    if (!data || (data as { error?: string }).error) {
+      return { items: [], checkedAt: null };
+    }
+    const d = data as { items?: MlbManagerRumor[]; checkedAt?: string };
+    return { items: d.items ?? [], checkedAt: d.checkedAt ?? null };
+  } catch {
+    return { items: [], checkedAt: null };
+  }
+}
+
+/** League-wide hot-seat rumor digest (refresh ~daily). */
+export async function fetchMlbManagerRumorsFeed(): Promise<{
+  items: MlbManagerRumor[];
+  checkedAt: string | null;
+}> {
+  return fetchManagerRumors(null);
+}
+
+function parseOddsPercent(raw: string | number | null | undefined): number | null {
+  if (raw == null || raw === "" || raw === "-" || raw === "—") return null;
+  const n = typeof raw === "number" ? raw : parseFloat(String(raw).replace(/%/g, "").trim());
+  return Number.isFinite(n) ? n : null;
 }
 
 function buildHotSeat(
@@ -2088,20 +2230,25 @@ function buildHotSeat(
     divisionRank: number | null;
     yearsWithTeam: number;
     contractNote?: string | null;
+    rumorHeat?: number;
   },
 ): { score: number; factors: HotSeatFactor[] } {
   const gbNum = input.gb === "—" || !input.gb ? 0 : parseFloat(input.gb) || 0;
   const factors: HotSeatFactor[] = [];
+  const years = Math.max(1, input.yearsWithTeam || 1);
+  // First-year managers get a grace period; heat ramps by year 3–4.
+  const tenureScale = years <= 1 ? 0.55 : years === 2 ? 0.78 : 1;
 
-  const losePts = Math.round((1 - input.winPct) * 40 * 10) / 10;
+  const losePtsRaw = (1 - (Number.isFinite(input.winPct) ? input.winPct : 0.5)) * 40;
+  const losePts = Math.round(losePtsRaw * tenureScale * 10) / 10;
   factors.push({
     key: "winpct",
     label: "Win percentage",
     points: losePts,
-    detail: `${(input.winPct * 100).toFixed(1)}% → ${losePts.toFixed(1)} heat (worse records score higher)`,
+    detail: `${((Number.isFinite(input.winPct) ? input.winPct : 0) * 100).toFixed(1)}% → ${losePts.toFixed(1)} heat (scaled for year ${years} tenure)`,
   });
 
-  const gbPts = Math.round(Math.min(gbNum, 28) * 1.4 * 10) / 10;
+  const gbPts = Math.round(Math.min(Math.max(gbNum, 0), 28) * 1.4 * tenureScale * 10) / 10;
   factors.push({
     key: "gb",
     label: "Games back",
@@ -2109,21 +2256,28 @@ function buildHotSeat(
     detail: `${input.gb === "—" ? "Tied / leading" : `${input.gb} GB`} → ${gbPts.toFixed(1)} heat`,
   });
 
+  const playoff = Number.isFinite(input.playoff as number) ? (input.playoff as number) : null;
   const playoffPts =
-    input.playoff != null
-      ? Math.round((100 - input.playoff) * 0.28 * 10) / 10
-      : 18;
+    playoff != null
+      ? Math.round((100 - playoff) * 0.28 * tenureScale * 10) / 10
+      : Math.round(16 * tenureScale * 10) / 10;
   factors.push({
     key: "playoff",
     label: "Playoff odds",
-    points: playoffPts,
+    points: Number.isFinite(playoffPts) ? playoffPts : 0,
     detail:
-      input.playoff != null
-        ? `${input.playoff.toFixed(1)}% → ${playoffPts.toFixed(1)} heat`
+      playoff != null
+        ? `${playoff.toFixed(1)}% → ${playoffPts.toFixed(1)} heat`
         : `Odds unavailable → ${playoffPts.toFixed(1)} heat default`,
   });
 
-  const divPts = input.divisionRank != null && input.divisionRank >= 4 ? 8 : input.divisionRank === 3 ? 3 : 0;
+  const divPtsRaw =
+    input.divisionRank != null && input.divisionRank >= 4
+      ? 8
+      : input.divisionRank === 3
+        ? 3
+        : 0;
+  const divPts = Math.round(divPtsRaw * tenureScale * 10) / 10;
   factors.push({
     key: "division",
     label: "Division place",
@@ -2134,24 +2288,39 @@ function buildHotSeat(
         : "Rank unknown",
   });
 
-  // Long tenures get a little more heat when the club is middling/bad.
-  const tenurePts =
-    input.yearsWithTeam >= 4 && input.winPct < 0.5
-      ? Math.min(6, (input.yearsWithTeam - 3) * 1.5)
-      : 0;
-  if (tenurePts > 0) {
+  if (years <= 1) {
+    factors.push({
+      key: "tenure-grace",
+      label: "First-year cushion",
+      points: -12,
+      detail: "Year-1 managers rarely sit on the hottest seats → −12 heat",
+    });
+  } else if (years === 2) {
+    factors.push({
+      key: "tenure-grace",
+      label: "Second-year leash",
+      points: -5,
+      detail: "Still early in the seat → −5 heat",
+    });
+  } else if (years >= 3 && input.winPct < 0.5) {
+    const tenurePts = Math.min(14, (years - 2) * 3.5);
+    factors.push({
+      key: "tenure-pressure",
+      label: "Longer leash expired",
+      points: Math.round(tenurePts * 10) / 10,
+      detail: `Year ${years} with club under .500 → +${tenurePts.toFixed(1)} heat`,
+    });
+  } else {
     factors.push({
       key: "tenure",
-      label: "Long tenure + losing",
-      points: Math.round(tenurePts * 10) / 10,
-      detail: `${input.yearsWithTeam} years with club under .500 → +${tenurePts.toFixed(1)}`,
+      label: "Tenure",
+      points: 0,
+      detail: `Year ${years} with current club`,
     });
   }
 
-  let contractAdj = 0;
   const note = input.contractNote ?? "";
   if (note && /through 202[89]|2029|2030|extension|club option/i.test(note)) {
-    contractAdj -= 9;
     factors.push({
       key: "contract-safe",
       label: "Contract security",
@@ -2159,7 +2328,6 @@ function buildHotSeat(
       detail: `${note} → −9 heat`,
     });
   } else if (note && /2026|final year|lame.?duck|expir/i.test(note) && input.winPct < 0.48) {
-    contractAdj += 10;
     factors.push({
       key: "contract-hot",
       label: "Lame-duck pressure",
@@ -2175,11 +2343,24 @@ function buildHotSeat(
     });
   }
 
-  const score =
-    Math.round(
-      (factors.reduce((s, f) => s + f.points, 0) + (contractAdj === 0 ? 0 : 0)) * 10,
-    ) / 10;
-  return { score: Math.max(0, score), factors };
+  if (input.rumorHeat && input.rumorHeat > 0) {
+    factors.push({
+      key: "rumors",
+      label: "Media / hot-seat chatter",
+      points: input.rumorHeat,
+      detail: `Recent hot-seat / firing rumor hits → +${input.rumorHeat.toFixed(1)} heat`,
+    });
+  }
+
+  const total = factors.reduce((s, f) => s + (Number.isFinite(f.points) ? f.points : 0), 0);
+  const score = Math.round(Math.max(0, total) * 10) / 10;
+  return {
+    score: Number.isFinite(score) ? score : 0,
+    factors: factors.map((f) => ({
+      ...f,
+      points: Number.isFinite(f.points) ? f.points : 0,
+    })),
+  };
 }
 
 function ordinalSuffix(n: number): string {
@@ -2243,14 +2424,22 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
           yearsWithTeam += 1;
         }
 
-        const wiki = await fetchWikipediaCard(mgr.person.fullName);
+        let wiki = await fetchWikipediaCard(mgr.person.fullName);
+        if (!wiki.image) {
+          wiki = await fetchWikipediaCard(`${mgr.person.fullName} (baseball)`);
+        }
+        if (!wiki.image) {
+          wiki = {
+            ...wiki,
+            image: (await fetchWikipediaCard(`${mgr.person.fullName} manager`)).image,
+          };
+        }
         const st = standingByTeam.get(team.id);
         const wins = st?.wins ?? 0;
         const losses = st?.losses ?? 0;
         const gp = wins + losses;
         const winPct = gp > 0 ? wins / gp : 0.5;
-        const playoff =
-          st?.playoff != null ? parseFloat(String(st.playoff).replace("%", "")) : null;
+        const playoff = parseOddsPercent(st?.playoff);
         const heat = buildHotSeat({
           winPct,
           gb: st?.gb ?? "—",
@@ -2296,53 +2485,161 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
   if (!base) throw new Error("Manager not found");
 
   const season = currentSeason();
-  const [person, contractNote, wiki, txRaw, seasonRecords] = await Promise.all([
-    mlbGet(`people/${id}`, {
-      hydrate: "currentTeam,education,stats(group=[hitting],type=[yearByYear])",
-    }) as Promise<{
-      people?: {
-        fullName?: string;
-        birthDate?: string;
-        currentAge?: number;
-        birthCity?: string;
-        birthStateProvince?: string;
-        birthCountry?: string;
-        education?: { colleges?: { name?: string }[]; highschools?: { name?: string }[] };
-        stats?: {
-          type?: { displayName?: string };
-          group?: { displayName?: string };
-          splits?: {
-            season?: string;
-            team?: { name?: string };
-            stat?: { gamesPlayed?: number; summary?: string };
+  const [person, contractNote, wiki, txRaw, fallbackRecords, careerRaw, rumorsRaw] =
+    await Promise.all([
+      mlbGet(`people/${id}`, {
+        hydrate: "currentTeam,education,awards,stats(group=[hitting],type=[yearByYear])",
+      }) as Promise<{
+        people?: {
+          fullName?: string;
+          birthDate?: string;
+          currentAge?: number;
+          birthCity?: string;
+          birthStateProvince?: string;
+          birthCountry?: string;
+          education?: { colleges?: { name?: string }[]; highschools?: { name?: string }[] };
+          awards?: { season?: string | number; name?: string }[];
+          stats?: {
+            type?: { displayName?: string };
+            group?: { displayName?: string };
+            splits?: {
+              season?: string;
+              team?: { name?: string };
+              stat?: { gamesPlayed?: number; summary?: string };
+            }[];
           }[];
         }[];
-      }[];
-    }>,
-    fetchManagerContractNote(base.name),
-    fetchWikipediaCard(base.name),
-    mlbGet("transactions", {
-      playerId: String(id),
-      startDate: "1990-01-01",
-      endDate: `${season}-12-31`,
-    }).catch(() => ({ transactions: [] })) as Promise<{
-      transactions?: { date?: string; typeDesc?: string; description?: string }[];
-    }>,
-    fetchManagerSeasonRecords(id, base.teamId, season),
-  ]);
+      }>,
+      fetchManagerContractNote(base.name),
+      fetchWikipediaCard(base.name),
+      mlbGet("transactions", {
+        playerId: String(id),
+        startDate: "1990-01-01",
+        endDate: `${season}-12-31`,
+      }).catch(() => ({ transactions: [] })) as Promise<{
+        transactions?: { date?: string; typeDesc?: string; description?: string }[];
+      }>,
+      fetchManagerSeasonRecords(id, base.teamId, base.teamAbbrev, season),
+      fetchManagerCareer(base.name),
+      fetchManagerRumors(base.name),
+    ]);
 
   const p = person.people?.[0];
   const place = [p?.birthCity, p?.birthStateProvince, p?.birthCountry].filter(Boolean).join(", ");
   const school =
     p?.education?.colleges?.[0]?.name ?? p?.education?.highschools?.[0]?.name ?? null;
 
+  const managedYears = new Set((careerRaw?.seasons ?? []).map((s) => s.season));
+  const awards = (p?.awards ?? [])
+    .filter((a) => a.name && a.season)
+    .map((a) => ({ season: String(a.season), name: String(a.name) }))
+    .filter((a) => {
+      const yr = Number(a.season);
+      if (/manager of the year/i.test(a.name)) return true;
+      if (/world series/i.test(a.name) && managedYears.has(yr)) return true;
+      if (/pennant|championship series/i.test(a.name) && managedYears.has(yr)) return true;
+      return false;
+    });
+
+  const moyAwards = awards.filter((a) => /manager of the year/i.test(a.name));
+  const wsAwards = awards.filter((a) => /world series/i.test(a.name));
+
+  const seasonRecords: MlbManagerSeasonRecord[] =
+    careerRaw?.seasons && careerRaw.seasons.length > 0
+      ? [...careerRaw.seasons]
+          .sort((a, b) => b.season - a.season)
+          .map((s) => ({
+            season: s.season,
+            team: s.team,
+            wins: s.wins,
+            losses: s.losses,
+            pct: s.pct,
+            gb: "—",
+            divisionRank: s.finish,
+            postWins: s.postWins,
+            postLosses: s.postLosses,
+            comments: s.comments || "",
+          }))
+      : fallbackRecords;
+
+  // Overlay current-season GB from live standings when team matches.
+  const currentRow = seasonRecords.find((r) => r.season === season);
+  if (currentRow) currentRow.gb = base.gb;
+
+  const stints: MlbManagerStint[] = (careerRaw?.stints ?? []).map((s) => ({
+    team: s.team,
+    start: s.start,
+    end: s.end,
+    wins: s.wins,
+    losses: s.losses,
+    pct: s.pct,
+    departure: s.departure ?? null,
+    departureUrl: s.departureUrl ?? null,
+  }));
+
+  const careerTotals = careerRaw?.career;
+  const career: MlbManagerCareer | null = careerTotals
+    ? {
+        wins: careerTotals.wins,
+        losses: careerTotals.losses,
+        pct: careerTotals.pct,
+        games: careerTotals.games,
+        seasons: seasonRecords.length,
+        postWins: careerTotals.postWins,
+        postLosses: careerTotals.postLosses,
+        divisionTitles: careerRaw?.divisionTitles ?? 0,
+        postseasonAppearances: careerRaw?.postseasonAppearances ?? 0,
+        worldSeriesAppearances: Math.max(
+          careerRaw?.worldSeriesAppearances ?? 0,
+          wsAwards.length,
+        ),
+        managerOfYear: Math.max(careerRaw?.managerOfYearWins ?? 0, moyAwards.length),
+      }
+    : seasonRecords.length
+      ? {
+          wins: seasonRecords.reduce((n, r) => n + r.wins, 0),
+          losses: seasonRecords.reduce((n, r) => n + r.losses, 0),
+          pct: (() => {
+            const w = seasonRecords.reduce((n, r) => n + r.wins, 0);
+            const l = seasonRecords.reduce((n, r) => n + r.losses, 0);
+            return w + l > 0 ? (w / (w + l)).toFixed(3).replace(/^0/, "") : ".000";
+          })(),
+          games: seasonRecords.reduce((n, r) => n + r.wins + r.losses, 0),
+          seasons: seasonRecords.length,
+          postWins: seasonRecords.reduce((n, r) => n + r.postWins, 0),
+          postLosses: seasonRecords.reduce((n, r) => n + r.postLosses, 0),
+          divisionTitles: seasonRecords.filter((r) => r.divisionRank === 1).length,
+          postseasonAppearances: seasonRecords.filter((r) => r.postWins + r.postLosses > 0)
+            .length,
+          worldSeriesAppearances: wsAwards.length,
+          managerOfYear: moyAwards.length,
+        }
+      : null;
+
+  const rumorItems = rumorsRaw.items;
+  const rumorHeat = Math.min(
+    12,
+    rumorItems.filter((r) => /hot seat|fired|dismiss|replace|axed|oust/i.test(r.title)).length *
+      2.5,
+  );
+
+  const yearsWithTeam = Math.max(
+    base.yearsWithTeam,
+    seasonRecords.filter((r) =>
+      new RegExp(base.teamAbbrev, "i").test(r.team) ||
+      new RegExp(base.teamName.split(" ").pop() ?? "", "i").test(r.team),
+    ).length,
+    1,
+  );
+
   const heat = buildHotSeat({
     winPct: base.winPct,
     gb: base.gb,
     playoff: base.playoffOdds,
     divisionRank: base.divisionRank,
-    yearsWithTeam: base.yearsWithTeam || seasonRecords.length || 1,
+    yearsWithTeam,
     contractNote,
+    rumorHeat,
   });
 
   const playingCareer =
@@ -2376,7 +2673,7 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
       if (
         t.date &&
         new RegExp(base.name.split(" ").pop() ?? base.name, "i").test(desc) &&
-        /manager|hired|named|promoted/i.test(desc)
+        /manager|hired|named|promoted|fired|dismiss/i.test(desc)
       ) {
         if (!timeline.some((x) => x.date === t.date && x.text === desc)) {
           timeline.push({ date: t.date, text: desc });
@@ -2388,15 +2685,40 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
     // optional
   }
 
-  const yearsWithTeam = Math.max(base.yearsWithTeam, seasonRecords.length, 1);
   const heatLabel =
-    base.hotSeatRank <= 5 ? "Blazing" : base.hotSeatRank <= 12 ? "Warm" : base.hotSeatRank <= 20 ? "Cool" : "Safe";
+    base.hotSeatRank <= 5
+      ? "Blazing"
+      : base.hotSeatRank <= 12
+        ? "Warm"
+        : base.hotSeatRank <= 20
+          ? "Cool"
+          : "Safe";
 
   const careerNotes: string[] = [
     wiki.extract ?? `${base.name} is the manager of the ${base.teamName}.`,
+    career
+      ? `Career managerial record: ${career.wins}-${career.losses} (${career.pct}) over ${career.seasons} season${career.seasons === 1 ? "" : "s"}.`
+      : "",
+    career && career.divisionTitles
+      ? `Division titles: ${career.divisionTitles}.`
+      : "",
+    career && career.postseasonAppearances
+      ? `Postseason appearances: ${career.postseasonAppearances} (${career.postWins}-${career.postLosses}).`
+      : "",
+    career && career.worldSeriesAppearances
+      ? `World Series as manager: ${career.worldSeriesAppearances}.`
+      : "",
+    career && career.managerOfYear
+      ? `Manager of the Year awards: ${career.managerOfYear}.`
+      : "",
+    stints.length > 1
+      ? `Prior clubs: ${stints
+          .slice(0, -1)
+          .map((s) => `${s.team} (${s.start}–${s.end})`)
+          .join("; ")}.`
+      : "",
     `Current record: ${base.record} (${(base.winPct * 100).toFixed(1)}% · ${base.gb} GB).`,
     `${yearsWithTeam} season${yearsWithTeam === 1 ? "" : "s"} as ${base.teamName} manager.`,
-    base.divisionRank != null ? `Division rank: ${base.divisionRank}.` : "",
     base.playoffOdds != null ? `Playoff odds: ${base.playoffOdds.toFixed(1)}%.` : "",
     contractNote ? `Contract: ${contractNote}.` : "Contract terms not published.",
     school ? `School: ${school}.` : "",
@@ -2407,13 +2729,15 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
       : "No MLB playing seasons on record (coach/manager track).",
   ].filter(Boolean);
 
+  const headshot = wiki.image || careerRaw?.photo || base.headshot || mlbHeadshot(id, 426);
+
   return {
     ...base,
     yearsWithTeam,
     contractNote,
     hotSeatScore: heat.score,
     heatFactors: heat.factors,
-    headshot: wiki.image ?? base.headshot,
+    headshot,
     age: p?.currentAge ?? ageFromBirthDate(p?.birthDate),
     birthDate: p?.birthDate ?? null,
     birthPlace: place || null,
@@ -2424,5 +2748,10 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
     timeline: timeline.slice(-24),
     playingCareer,
     seasonRecords,
+    stints,
+    career,
+    awards,
+    rumors: rumorItems,
+    bbrefUrl: careerRaw?.url ?? null,
   };
 }

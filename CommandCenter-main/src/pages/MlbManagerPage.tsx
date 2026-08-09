@@ -1,11 +1,18 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Flame, Loader2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, ExternalLink, Flame, Loader2, Star } from "lucide-react";
+import toast from "react-hot-toast";
 import {
   fetchMlbManagerDetail,
   mlbTeamLogo,
   teamPagePath,
 } from "@/lib/mlb";
+import {
+  addFavoriteManager,
+  isFavoriteManager,
+  removeFavoriteManager,
+} from "@/lib/favorite-managers";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
 function heatTone(rank: number): string {
@@ -18,12 +25,45 @@ function heatTone(rank: number): string {
 export default function MlbManagerPage() {
   const { managerId } = useParams<{ managerId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const qc = useQueryClient();
 
   const detail = useQuery({
-    queryKey: ["mlb-manager-v2", managerId],
+    queryKey: ["mlb-manager-v3", managerId],
     queryFn: () => fetchMlbManagerDetail(managerId!),
     enabled: Boolean(managerId),
     staleTime: 180_000,
+  });
+
+  const favQuery = useQuery({
+    queryKey: ["favorite-manager", user?.id, managerId],
+    queryFn: () => isFavoriteManager(user!.id, managerId!),
+    enabled: Boolean(user?.id && managerId),
+  });
+
+  const toggleFav = useMutation({
+    mutationFn: async () => {
+      if (!user?.id || !detail.data) throw new Error("Not signed in");
+      if (favQuery.data) {
+        await removeFavoriteManager(user.id, String(detail.data.id));
+        return false;
+      }
+      await addFavoriteManager({
+        userId: user.id,
+        managerId: String(detail.data.id),
+        managerName: detail.data.name,
+        teamName: detail.data.teamName,
+        teamId: String(detail.data.teamId),
+      });
+      return true;
+    },
+    onSuccess: (nowFav) => {
+      void qc.invalidateQueries({ queryKey: ["favorite-manager", user?.id, managerId] });
+      void qc.invalidateQueries({ queryKey: ["favorite-managers", user?.id] });
+      void qc.invalidateQueries({ queryKey: ["favorite-players", user?.id] });
+      toast.success(nowFav ? "Manager favorited" : "Removed from favorites");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't update favorite"),
   });
 
   if (detail.isPending) {
@@ -55,6 +95,8 @@ export default function MlbManagerPage() {
   const m = detail.data;
   const accent = `#${m.primaryColor}`;
   const wikiUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(m.name.replace(/\s+/g, "_"))}`;
+  const career = m.career;
+  const isFavorite = Boolean(favQuery.data);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-7">
@@ -88,6 +130,12 @@ export default function MlbManagerPage() {
             width={140}
             height={140}
             className="mx-auto h-[128px] w-[128px] rounded-xl bg-[#0c1a2e] object-cover object-top ring-2 ring-white/20 shadow-xl sm:mx-0"
+            onError={(e) => {
+              const el = e.currentTarget;
+              if (!el.src.includes("mlbstatic")) {
+                el.src = `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${m.id}/headshot/67/current`;
+              }
+            }}
           />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -120,24 +168,76 @@ export default function MlbManagerPage() {
             </div>
 
             <dl className="mt-4 grid grid-cols-2 gap-2.5 text-[12.5px] sm:grid-cols-4">
-              <Meta label="Record" value={m.record} />
-              <Meta label="Win %" value={`${(m.winPct * 100).toFixed(1)}%`} />
-              <Meta label="GB" value={m.gb} />
+              <Meta label="This year" value={m.record} />
+              <Meta
+                label="Career"
+                value={career ? `${career.wins}-${career.losses}` : "—"}
+              />
+              <Meta label="Career pct" value={career?.pct ?? "—"} />
               <Meta
                 label="Playoff %"
                 value={m.playoffOdds != null ? `${m.playoffOdds.toFixed(1)}%` : "—"}
               />
-              <Meta label="Birthdate" value={m.birthDate ?? "—"} />
-              <Meta label="Birthplace" value={m.birthPlace ?? "—"} />
-              <Meta label="School" value={m.school ?? "—"} />
+              <Meta label="Div titles" value={career ? String(career.divisionTitles) : "—"} />
               <Meta
-                label="Division rank"
-                value={m.divisionRank != null ? String(m.divisionRank) : "—"}
+                label="Postseason"
+                value={
+                  career
+                    ? `${career.postseasonAppearances} (${career.postWins}-${career.postLosses})`
+                    : "—"
+                }
               />
+              <Meta
+                label="World Series"
+                value={career ? String(career.worldSeriesAppearances) : "—"}
+              />
+              <Meta label="Mgr of Year" value={career ? String(career.managerOfYear) : "—"} />
             </dl>
+
+            <button
+              type="button"
+              onClick={() => toggleFav.mutate()}
+              disabled={!user || toggleFav.isPending}
+              className={cn(
+                "mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition disabled:opacity-50 sm:w-auto",
+                isFavorite
+                  ? "border border-white/30 bg-white/10 text-white"
+                  : "text-cream",
+              )}
+              style={isFavorite ? undefined : { background: accent }}
+            >
+              <Star size={14} className={isFavorite ? "fill-current text-accent" : ""} />
+              {isFavorite ? "Favorited" : "Favorite manager"}
+            </button>
           </div>
         </div>
       </article>
+
+      {career && (
+        <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+          <h2 className="rule-head mb-3">Career résumé</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatChip label="Record" value={`${career.wins}-${career.losses}`} />
+            <StatChip label="Seasons" value={String(career.seasons)} />
+            <StatChip label="Division titles" value={String(career.divisionTitles)} />
+            <StatChip label="Postseason" value={String(career.postseasonAppearances)} />
+            <StatChip label="Playoff W-L" value={`${career.postWins}-${career.postLosses}`} />
+            <StatChip label="World Series" value={String(career.worldSeriesAppearances)} />
+            <StatChip label="Mgr of the Year" value={String(career.managerOfYear)} />
+            <StatChip label="Win %" value={career.pct} />
+          </div>
+          {m.awards.length > 0 && (
+            <ul className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3">
+              {m.awards.map((a) => (
+                <li key={`${a.season}-${a.name}`} className="text-[13px] text-[#c8cdd8]">
+                  <span className="numeral text-accent mr-2">{a.season}</span>
+                  {a.name}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
         <div className="mb-3 flex items-center gap-2">
@@ -187,41 +287,153 @@ export default function MlbManagerPage() {
         )}
       </section>
 
+      {m.rumors.length > 0 && (
+        <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+          <h2 className="rule-head mb-3">Hot-seat chatter</h2>
+          <p className="mb-3 text-[12px] text-[#8b93a7]">
+            Latest media hits mentioning hot seat / firing rumors for this manager.
+          </p>
+          <ul className="space-y-3">
+            {m.rumors.map((r) => (
+              <li key={r.url}>
+                <a
+                  href={r.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group block text-[13.5px] leading-snug text-[#e8e4d9] hover:text-white"
+                >
+                  {r.title}
+                  <span className="mt-0.5 flex items-center gap-1 text-[11px] text-[#8b93a7] group-hover:text-accent">
+                    {r.source} <ExternalLink size={11} />
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {m.stints.length > 0 && (
+        <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+          <h2 className="rule-head mb-3">Managerial stops</h2>
+          <ul className="space-y-4">
+            {[...m.stints].reverse().map((s, idx) => {
+              const current = idx === 0;
+              return (
+                <li
+                  key={`${s.team}-${s.start}-${s.end}`}
+                  className="border-l-2 border-accent/45 pl-3"
+                >
+                  <p className="text-[15px] font-semibold text-[#e8e4d9]">
+                    {s.team}{" "}
+                    <span className="numeral text-[13px] font-normal text-[#8b93a7]">
+                      {s.start}
+                      {s.end !== s.start ? `–${s.end}` : ""}
+                    </span>
+                    {current && (
+                      <span className="ml-2 text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-300">
+                        Current
+                      </span>
+                    )}
+                  </p>
+                  <p className="numeral mt-0.5 text-[13px] text-[#c8cdd8]">
+                    {s.wins}-{s.losses} ({s.pct})
+                  </p>
+                  {!current && s.departure && (
+                    <p className="mt-1.5 text-[12.5px] leading-relaxed text-[#a8b0c2]">
+                      {s.departureUrl ? (
+                        <a
+                          href={s.departureUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-start gap-1 hover:text-cream hover:underline"
+                        >
+                          {s.departure}
+                          <ExternalLink size={11} className="mt-0.5 shrink-0" />
+                        </a>
+                      ) : (
+                        s.departure
+                      )}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       {m.seasonRecords.length > 0 && (
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
           <div className="border-b border-white/[0.06] px-4 py-2.5">
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
-              Year-by-year record · {m.teamAbbrev}
+              Year-by-year record · all clubs
             </h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px] text-left text-[12px]">
+            <table className="w-full min-w-[520px] text-left text-[12px]">
               <thead>
                 <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
                   <th className="px-3 py-2 font-medium">Year</th>
+                  <th className="px-3 py-2 font-medium">Tm</th>
                   <th className="px-3 py-2 font-medium">W-L</th>
                   <th className="px-3 py-2 font-medium">Pct</th>
-                  <th className="px-3 py-2 font-medium">GB</th>
                   <th className="px-3 py-2 font-medium">Div</th>
+                  <th className="px-3 py-2 font-medium">Post</th>
                 </tr>
               </thead>
               <tbody>
                 {m.seasonRecords.map((row) => (
-                  <tr key={row.season} className="border-t border-white/[0.05]">
+                  <tr key={`${row.season}-${row.team}`} className="border-t border-white/[0.05]">
                     <td className="numeral text-cream px-3 py-2">{row.season}</td>
+                    <td className="px-3 py-2 text-[#c8cdd8]">{row.team}</td>
                     <td className="numeral text-cream px-3 py-2">
                       {row.wins}-{row.losses}
                     </td>
                     <td className="numeral px-3 py-2 text-[#c8cdd8]">{row.pct}</td>
-                    <td className="numeral px-3 py-2 text-[#c8cdd8]">{row.gb}</td>
                     <td className="numeral px-3 py-2 text-[#c8cdd8]">
                       {row.divisionRank ?? "—"}
                     </td>
+                    <td className="numeral px-3 py-2 text-[#c8cdd8]">
+                      {row.postWins + row.postLosses > 0
+                        ? `${row.postWins}-${row.postLosses}`
+                        : "—"}
+                    </td>
                   </tr>
                 ))}
+                {career && (
+                  <tr className="border-t border-white/[0.12] bg-white/[0.03]">
+                    <td className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#e8e4d9]">
+                      Career
+                    </td>
+                    <td className="px-3 py-2.5 text-[#8b93a7]">—</td>
+                    <td className="numeral text-cream px-3 py-2.5 font-semibold">
+                      {career.wins}-{career.losses}
+                    </td>
+                    <td className="numeral px-3 py-2.5 text-[#e8e4d9]">{career.pct}</td>
+                    <td className="numeral px-3 py-2.5 text-[#c8cdd8]">
+                      {career.divisionTitles} titles
+                    </td>
+                    <td className="numeral px-3 py-2.5 text-[#c8cdd8]">
+                      {career.postWins}-{career.postLosses}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
+          {m.bbrefUrl && (
+            <div className="border-t border-white/[0.06] px-4 py-2.5">
+              <a
+                href={m.bbrefUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] hover:underline"
+              >
+                Baseball Reference <ExternalLink size={11} />
+              </a>
+            </div>
+          )}
         </section>
       )}
 
@@ -308,6 +520,15 @@ function Meta({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">{label}</dt>
       <dd className="mt-0.5 text-white">{value}</dd>
+    </div>
+  );
+}
+
+function StatChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-white/[0.08] bg-white/[0.03] px-3 py-2.5">
+      <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">{label}</p>
+      <p className="numeral text-cream mt-1 text-[18px] leading-none">{value}</p>
     </div>
   );
 }
