@@ -78,6 +78,7 @@ import {
   fetchDailyGoal,
   saveDailyGoal,
   dailyProgress,
+  topReadingDays,
   buildFinishCard,
   type ReadingSession,
 } from "@/lib/books";
@@ -2482,10 +2483,11 @@ function AskAI({
   );
 }
 
-/* ── Stats breakdown (today / week / month) ─────────────────────────── */
+/* ── Stats breakdown (today / week / month / top days) ──────────────── */
 export type BreakdownFocus =
   | { kind: "pages"; label: string; from: string; to: string }
-  | { kind: "finished"; label: string; from: string; to: string };
+  | { kind: "finished"; label: string; from: string; to: string }
+  | { kind: "top-days"; label: string; limit?: number };
 
 function StatsBreakdown({
   focus,
@@ -2493,12 +2495,14 @@ function StatsBreakdown({
   sessions,
   onClose,
   onOpenBook,
+  onDrill,
 }: {
   focus: BreakdownFocus;
   books: Book[];
   sessions: ReadingSession[];
   onClose: () => void;
   onOpenBook: (b: Book) => void;
+  onDrill?: (focus: BreakdownFocus) => void;
 }) {
   const pageRows = useMemo(
     () =>
@@ -2514,7 +2518,18 @@ function StatsBreakdown({
         : [],
     [focus, books],
   );
+  const topDays = useMemo(
+    () => (focus.kind === "top-days" ? topReadingDays(sessions, focus.limit ?? 10) : []),
+    [focus, sessions],
+  );
   const totalPages = pageRows.reduce((n, r) => n + r.pages, 0);
+
+  const subtitle =
+    focus.kind === "pages"
+      ? `${totalPages.toLocaleString()} page${totalPages === 1 ? "" : "s"} across ${pageRows.length} book${pageRows.length === 1 ? "" : "s"}`
+      : focus.kind === "finished"
+        ? `${finished.length} finished`
+        : `Top ${topDays.length} day${topDays.length === 1 ? "" : "s"} by pages`;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
@@ -2529,11 +2544,7 @@ function StatsBreakdown({
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <h2 className="font-display text-cream text-[22px] leading-tight">{focus.label}</h2>
-            <p className="text-chalk-dim mt-1 text-[11.5px]">
-              {focus.kind === "pages"
-                ? `${totalPages.toLocaleString()} page${totalPages === 1 ? "" : "s"} across ${pageRows.length} book${pageRows.length === 1 ? "" : "s"}`
-                : `${finished.length} finished`}
-            </p>
+            <p className="text-chalk-dim mt-1 text-[11.5px]">{subtitle}</p>
           </div>
           <button
             type="button"
@@ -2550,6 +2561,9 @@ function StatsBreakdown({
         )}
         {focus.kind === "finished" && finished.length === 0 && (
           <p className="text-chalk-dim text-[13px]">Nothing finished in this window.</p>
+        )}
+        {focus.kind === "top-days" && topDays.length === 0 && (
+          <p className="text-chalk-dim text-[13px]">No reading days logged yet.</p>
         )}
 
         {focus.kind === "pages" && pageRows.length > 0 && (
@@ -2626,6 +2640,53 @@ function StatsBreakdown({
                 </li>
               );
             })}
+          </ul>
+        )}
+
+        {focus.kind === "top-days" && topDays.length > 0 && (
+          <ul className="flex flex-col gap-2">
+            {topDays.map((d) => (
+              <li key={d.date}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onDrill?.({
+                      kind: "pages",
+                      label: fmtLongDate(d.date),
+                      from: d.date,
+                      to: d.date,
+                    })
+                  }
+                  className={cn(
+                    "bg-panel hover:border-accent/40 flex w-full items-center gap-3 rounded border px-3 py-2.5 text-left transition",
+                    d.isToday ? "border-accent/45" : "border-white/[0.07]",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "numeral w-8 shrink-0 text-center text-[18px]",
+                      d.rank <= 3 ? "text-accent" : "text-chalk-dim",
+                    )}
+                  >
+                    #{d.rank}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-cream text-[13px]">{fmtLongDate(d.date)}</p>
+                    {d.isToday && (
+                      <p className="text-accent text-[10.5px] uppercase tracking-[0.14em]">
+                        Today
+                      </p>
+                    )}
+                  </div>
+                  <span className="numeral text-accent shrink-0 text-[18px]">
+                    {d.pages}
+                    <span className="text-chalk-dim ml-1 text-[11px] font-sans tracking-normal">
+                      p
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
           </ul>
         )}
       </aside>
@@ -3336,13 +3397,21 @@ function DailyPages({
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
         {p.allTimeRank != null && (
-          <span className="text-accent text-[11px]">
+          <button
+            type="button"
+            onClick={() =>
+              onBreakdown({
+                kind: "top-days",
+                label: "Best reading days",
+                limit: 10,
+              })
+            }
+            className="text-accent hover:text-cream text-[11px] transition"
+            aria-label={`#${p.allTimeRank} all-time day of ${p.allTimeDays} — see top days`}
+          >
             #{p.allTimeRank} all-time day
-            <span className="text-chalk-dim">
-              {" "}
-              of {p.allTimeDays}
-            </span>
-          </span>
+            <span className="text-chalk-dim"> of {p.allTimeDays}</span>
+          </button>
         )}
         {p.goal !== null && (
           <span className={cn("text-[11px]", p.metToday ? "text-accent" : "text-chalk-dim")}>
@@ -4460,6 +4529,7 @@ export default function ReadingPage() {
           sessions={sessions ?? []}
           onClose={closeBreakdown}
           onOpenBook={openBookDrawer}
+          onDrill={openBreakdown}
         />
       )}
       {statsOpen && (

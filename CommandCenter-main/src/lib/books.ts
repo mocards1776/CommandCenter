@@ -1558,6 +1558,47 @@ export type DailyProgress = {
  * broken streak at breakfast — the run is measured from yesterday backwards
  * and today is added on top when it qualifies.
  */
+export type TopReadingDay = {
+  date: string;
+  pages: number;
+  rank: number;
+  isToday: boolean;
+};
+
+/** Best single days by pages logged — used for the all-time day rank drill-down. */
+export function topReadingDays(sessions: ReadingSession[], limit = 10): TopReadingDay[] {
+  const byDay = new Map<string, number>();
+  for (const s of sessions) {
+    byDay.set(s.session_date, (byDay.get(s.session_date) ?? 0) + s.pages_read);
+  }
+  const today = todayStr();
+  const ranked = [...byDay.entries()]
+    .filter(([, pages]) => pages > 0)
+    .sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]));
+
+  const out: TopReadingDay[] = [];
+  let i = 0;
+  while (i < ranked.length && out.length < limit) {
+    const pages = ranked[i][1];
+    // Ties share a rank (1, 1, 3…) matching rankDescending used for today's badge.
+    const rank = i + 1;
+    let j = i;
+    while (j < ranked.length && ranked[j][1] === pages) {
+      if (out.length < limit) {
+        out.push({
+          date: ranked[j][0],
+          pages,
+          rank,
+          isToday: ranked[j][0] === today,
+        });
+      }
+      j += 1;
+    }
+    i = j;
+  }
+  return out;
+}
+
 export function dailyProgress(sessions: ReadingSession[], goal: number | null): DailyProgress {
   const byDay = new Map<string, number>();
   for (const s of sessions) {
