@@ -1,30 +1,26 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
-import { CelebrationContext, type CelebrationApi } from "./celebration-context";
+import {
+  CelebrationContext,
+  type BookFinishPayload,
+  type CelebrationApi,
+} from "./celebration-context";
+import FinishBookCard from "./FinishBookCard";
 
 /**
  * Completing something should feel like something. Three levels:
  *   burst()      — stars fly out of the thing you just clicked. Every task.
  *   fanfare()    — full-screen volley plus a line of text. Milestones only.
- *   bookFinish() — closing a book. Longer, denser, and a little prouder.
+ *   bookFinish() — closing a book. Share-style card + a short confetti wash.
  *
- * All are no-ops under prefers-reduced-motion.
+ * Confetti is a no-op under prefers-reduced-motion; the finish card still shows.
  */
 
 type Burst = { id: number; x: number; y: number; seed: number };
 type Fanfare = { id: number; message: string };
-type BookFinish = { id: number; title: string; line: string; seed: number };
+type BookFinish = { id: number; card: BookFinishPayload; seed: number };
 
 const STAR_COLORS = ["#D9515C", "#F4F1E9", "#FF8A93", "#C0303B", "#EDEFF5"];
 const BOOK_COLORS = ["#D9515C", "#F4F1E9", "#FF8A93", "#C0303B", "#E8D5A3", "#EDEFF5"];
-
-const FINISH_LINES = [
-  "That's a wrap.",
-  "Another one down.",
-  "Onto the shelf.",
-  "Well read.",
-  "Closed the cover.",
-  "What a run.",
-];
 
 function reducedMotion() {
   return (
@@ -104,27 +100,20 @@ function Fanfare({ message }: Fanfare) {
   );
 }
 
-function BookFinishBanner({ title, line, seed }: BookFinish) {
+function BookFinishConfetti({ seed }: { seed: number }) {
   let s = seed;
   const rnd = () => ((s = (s * 1103515245 + 12345) % 2147483648) / 2147483648);
 
-  const cols = Array.from({ length: 48 }, (_, i) => ({
-    left: `${(i * 2.15 + (i % 5) * 0.7) % 100}%`,
-    delay: `${Math.floor(rnd() * 900)}ms`,
+  const cols = Array.from({ length: 36 }, (_, i) => ({
+    left: `${(i * 2.8 + (i % 5) * 0.7) % 100}%`,
+    delay: `${Math.floor(rnd() * 700)}ms`,
     color: BOOK_COLORS[i % BOOK_COLORS.length],
-    size: 10 + ((i * 11) % 18),
+    size: 10 + ((i * 11) % 16),
     drift: `${(rnd() * 40 - 20).toFixed(1)}px`,
   }));
 
-  // A few mid-screen bursts so the finish feels centered, not just raining.
-  const pops = [
-    { x: "22%", y: "38%", delay: 80 },
-    { x: "78%", y: "32%", delay: 220 },
-    { x: "50%", y: "58%", delay: 360 },
-  ];
-
   return (
-    <div className="pointer-events-none fixed inset-0 z-[110] overflow-hidden">
+    <div className="pointer-events-none fixed inset-0 z-[115] overflow-hidden">
       <div className="cc-book-wash absolute inset-0" />
       {cols.map((c, i) => (
         <span
@@ -143,24 +132,6 @@ function BookFinishBanner({ title, line, seed }: BookFinish) {
           ★
         </span>
       ))}
-      {pops.map((p, i) => (
-        <span
-          key={`pop-${i}`}
-          className="cc-book-flare absolute"
-          style={{ left: p.x, top: p.y, animationDelay: `${p.delay}ms` }}
-        />
-      ))}
-      <div className="absolute inset-x-0 top-[20%] flex justify-center px-6">
-        <div className="cc-book-pop bg-hero/95 max-w-md rounded border border-accent/55 px-8 py-6 text-center backdrop-blur-sm">
-          <p className="text-accent mb-2 text-[10px] font-semibold uppercase tracking-[0.22em]">
-            Finished
-          </p>
-          <p className="font-display text-cream text-[28px] leading-tight sm:text-[34px]">
-            {title}
-          </p>
-          <p className="text-chalk mt-3 text-[13px] tracking-wide">{line}</p>
-        </div>
-      </div>
     </div>
   );
 }
@@ -169,6 +140,7 @@ export function CelebrationProvider({ children }: { children: ReactNode }) {
   const [bursts, setBursts] = useState<Burst[]>([]);
   const [fanfares, setFanfares] = useState<Fanfare[]>([]);
   const [bookFinishes, setBookFinishes] = useState<BookFinish[]>([]);
+  const [confetti, setConfetti] = useState<{ id: number; seed: number }[]>([]);
   const next = useRef(0);
 
   const burst = useCallback((x: number, y: number) => {
@@ -185,28 +157,36 @@ export function CelebrationProvider({ children }: { children: ReactNode }) {
     window.setTimeout(() => setFanfares((f) => f.filter((s) => s.id !== id)), 2600);
   }, []);
 
-  const bookFinish = useCallback((title: string) => {
-    if (reducedMotion()) return;
+  const bookFinish = useCallback((card: BookFinishPayload) => {
     const id = next.current++;
-    const line = FINISH_LINES[id % FINISH_LINES.length];
-    setBookFinishes((f) => [...f, { id, title, line, seed: id * 4243 + 7 }]);
-    // Center bursts so finishing from a keyboard path still feels physical.
-    const cx = typeof window !== "undefined" ? window.innerWidth / 2 : 0;
-    const cy = typeof window !== "undefined" ? window.innerHeight * 0.42 : 0;
-    const b1 = next.current++;
-    const b2 = next.current++;
-    const b3 = next.current++;
-    setBursts((b) => [
-      ...b,
-      { id: b1, x: cx - 80, y: cy, seed: id * 17 },
-      { id: b2, x: cx + 80, y: cy + 40, seed: id * 31 },
-      { id: b3, x: cx, y: cy - 30, seed: id * 53 },
-    ]);
-    window.setTimeout(
-      () => setBursts((b) => b.filter((s) => s.id !== b1 && s.id !== b2 && s.id !== b3)),
-      1100,
-    );
-    window.setTimeout(() => setBookFinishes((f) => f.filter((s) => s.id !== id)), 4200);
+    // One card at a time — finishing two books back-to-back shouldn't stack modals.
+    setBookFinishes([{ id, card, seed: id * 4243 + 7 }]);
+
+    if (!reducedMotion()) {
+      const cid = next.current++;
+      setConfetti([{ id: cid, seed: id * 4243 + 7 }]);
+      window.setTimeout(() => setConfetti((c) => c.filter((s) => s.id !== cid)), 2800);
+
+      const cx = typeof window !== "undefined" ? window.innerWidth / 2 : 0;
+      const cy = typeof window !== "undefined" ? window.innerHeight * 0.38 : 0;
+      const b1 = next.current++;
+      const b2 = next.current++;
+      const b3 = next.current++;
+      setBursts((b) => [
+        ...b,
+        { id: b1, x: cx - 80, y: cy, seed: id * 17 },
+        { id: b2, x: cx + 80, y: cy + 40, seed: id * 31 },
+        { id: b3, x: cx, y: cy - 30, seed: id * 53 },
+      ]);
+      window.setTimeout(
+        () => setBursts((b) => b.filter((s) => s.id !== b1 && s.id !== b2 && s.id !== b3)),
+        1100,
+      );
+    }
+  }, []);
+
+  const dismissFinish = useCallback((id: number) => {
+    setBookFinishes((f) => f.filter((s) => s.id !== id));
   }, []);
 
   return (
@@ -218,8 +198,11 @@ export function CelebrationProvider({ children }: { children: ReactNode }) {
       {fanfares.map((f) => (
         <Fanfare key={f.id} {...f} />
       ))}
+      {confetti.map((c) => (
+        <BookFinishConfetti key={c.id} seed={c.seed} />
+      ))}
       {bookFinishes.map((f) => (
-        <BookFinishBanner key={f.id} {...f} />
+        <FinishBookCard key={f.id} card={f.card} onClose={() => dismissFinish(f.id)} />
       ))}
     </CelebrationContext.Provider>
   );

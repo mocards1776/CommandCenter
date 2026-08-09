@@ -78,6 +78,7 @@ import {
   fetchDailyGoal,
   saveDailyGoal,
   dailyProgress,
+  buildFinishCard,
   type ReadingSession,
 } from "@/lib/books";
 import StarField from "@/components/StarField";
@@ -1488,7 +1489,8 @@ function BookDetail({
     qc.invalidateQueries({ queryKey: ["reading-sessions"] });
   };
 
-  const celebrateFinish = () => bookFinish(book.title);
+  const celebrateFinish = (finishedAt = date || todayStr()) =>
+    bookFinish(buildFinishCard(book, books, finishedAt));
 
   const patch = useMutation({
     mutationFn: (p: Partial<Book>) => updateBook(book.id, p),

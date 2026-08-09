@@ -1384,6 +1384,86 @@ export function finishedContributions(
   );
 }
 
+/** Inclusive day span between two YYYY-MM-DD dates. */
+export function inclusiveDays(start: string | null | undefined, end: string): number | null {
+  if (!start) return null;
+  const a = Date.parse(`${start.slice(0, 10)}T12:00:00`);
+  const b = Date.parse(`${end.slice(0, 10)}T12:00:00`);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return null;
+  return Math.round((b - a) / 86_400_000) + 1;
+}
+
+/**
+ * 1-based finish counts for the week / month / year containing `finishedAt`.
+ * Adds this finish when the in-memory library hasn't refreshed yet.
+ */
+export function finishOrdinals(
+  books: Book[],
+  bookId: string,
+  finishedAt: string,
+): { week: number; month: number; year: number } {
+  const day = finishedAt.slice(0, 10);
+  const { weekStart, monthStart } = periodBounds(day);
+  const yearStart = `${day.slice(0, 4)}-01-01`;
+
+  const countIn = (from: string) => {
+    let n = 0;
+    let includesThis = false;
+    for (const b of books) {
+      for (const r of b.read_log ?? []) {
+        if (!r.end || r.end < from || r.end > day) continue;
+        n += 1;
+        if (b.id === bookId && r.end === day) includesThis = true;
+      }
+    }
+    if (!includesThis) n += 1;
+    return n;
+  };
+
+  return {
+    week: countIn(weekStart),
+    month: countIn(monthStart),
+    year: countIn(yearStart),
+  };
+}
+
+/** Payload for the finish celebration / share card. */
+export function buildFinishCard(
+  book: Book,
+  books: Book[],
+  finishedAt = todayStr(),
+): {
+  title: string;
+  authors: string | null;
+  coverUrl: string | null;
+  pages: number | null;
+  days: number | null;
+  rating: number | null;
+  weekNumber: number;
+  monthNumber: number;
+  yearNumber: number;
+  finishedAt: string;
+} {
+  const day = finishedAt.slice(0, 10);
+  const openStart = (book.read_log ?? []).find((r) => r.start && !r.end)?.start ?? null;
+  const closedStart =
+    [...(book.read_log ?? [])].reverse().find((r) => r.end === day)?.start ?? null;
+  const start = openStart ?? closedStart ?? book.started_at;
+  const ordinals = finishOrdinals(books, book.id, day);
+  return {
+    title: book.title,
+    authors: book.authors,
+    coverUrl: coverSrc(book),
+    pages: book.page_count && book.page_count > 0 ? book.page_count : null,
+    days: inclusiveDays(start, day),
+    rating: book.star_rating,
+    weekNumber: ordinals.week,
+    monthNumber: ordinals.month,
+    yearNumber: ordinals.year,
+    finishedAt: day,
+  };
+}
+
 /** Monday-start week; both windows in Central time to match everything else. */
 export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodStats {
   const { today, weekStart: weekStartIso, monthStart: monthStartIso } = periodBounds();
