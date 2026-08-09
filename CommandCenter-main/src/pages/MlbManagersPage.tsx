@@ -29,7 +29,7 @@ function heatLabel(rank: number): string {
 export default function MlbManagersPage() {
   const { user } = useAuth();
   const managers = useQuery({
-    queryKey: ["mlb-managers-v5"],
+    queryKey: ["mlb-managers-v6"],
     queryFn: fetchMlbManagers,
     staleTime: 180_000,
   });

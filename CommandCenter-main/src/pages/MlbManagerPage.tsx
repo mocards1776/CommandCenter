@@ -30,7 +30,7 @@ export default function MlbManagerPage() {
   const qc = useQueryClient();
 
   const detail = useQuery({
-    queryKey: ["mlb-manager-v5", managerId],
+    queryKey: ["mlb-manager-v6", managerId],
     queryFn: () => fetchMlbManagerDetail(managerId!),
     enabled: Boolean(managerId),
     staleTime: 180_000,

@@ -2117,9 +2117,18 @@ export async function fetchMlbPlayerGameLog(
 async function invokeSports<T extends Record<string, unknown>>(
   body: Record<string, unknown>,
 ): Promise<T | null> {
+  const usable = (data: unknown): data is T =>
+    Boolean(data) &&
+    typeof data === "object" &&
+    !(data as { error?: string }).error;
+
   try {
     const { data, error } = await supabase.functions.invoke("sports", { body });
-    if (!error && data && !(data as { error?: string }).error) return data as T;
+    // supabase-js sometimes sets `error` on non-2xx even when the JSON body is fine.
+    if (usable(data)) return data;
+    if (error && !data) {
+      /* fall through */
+    }
   } catch {
     /* fall through to direct fetch */
   }
@@ -2138,7 +2147,7 @@ async function invokeSports<T extends Record<string, unknown>>(
     });
     if (!res.ok) return null;
     const data = (await res.json()) as T & { error?: string };
-    if (!data || data.error) return null;
+    if (!usable(data)) return null;
     return data;
   } catch {
     return null;
@@ -2370,6 +2379,68 @@ async function fetchManagerSeasonRecords(
     }
   }
   return out;
+}
+
+/**
+ * Year-by-year managerial record across every club — walks seasons backward
+ * and checks all 30 teams. Survives gaps (e.g. Skip Schumaker MIA → TEX) and
+ * does not depend on the Baseball Reference edge function.
+ */
+async function fetchManagerSeasonsAcrossTeams(
+  managerId: number,
+  season: number,
+): Promise<MlbManagerSeasonRecord[]> {
+  const teamsRaw = (await mlbGet("teams", {
+    sportId: "1",
+    season: String(season),
+  })) as { teams?: { id?: number; abbreviation?: string }[] };
+  const teams = (teamsRaw.teams ?? []).filter(
+    (t): t is { id: number; abbreviation?: string } => typeof t.id === "number",
+  );
+  if (!teams.length) return [];
+
+  const out: MlbManagerSeasonRecord[] = [];
+  let emptyStreak = 0;
+
+  for (let y = season; y >= season - 24; y--) {
+    const hits = await Promise.all(
+      teams.map(async (t) => {
+        const mid = await managerIdForTeamSeason(t.id, y);
+        if (mid !== managerId) return null;
+        return teamStandingForSeason(t.id, t.abbreviation ?? "—", y);
+      }),
+    );
+    const st = hits.find((h) => h && h.wins + h.losses > 0) ?? null;
+    if (st) {
+      out.push(st);
+      emptyStreak = 0;
+    } else {
+      emptyStreak += 1;
+      // Allow a year or two off between jobs; stop after a long drought.
+      if (emptyStreak >= 6 && out.length > 0) break;
+    }
+  }
+
+  return out.sort((a, b) => b.season - a.season || a.team.localeCompare(b.team));
+}
+
+function mergeManagerSeasonRecords(
+  ...lists: MlbManagerSeasonRecord[][]
+): MlbManagerSeasonRecord[] {
+  const byKey = new Map<string, MlbManagerSeasonRecord>();
+  for (const list of lists) {
+    for (const row of list) {
+      if (row.wins + row.losses <= 0) continue;
+      const key = `${row.season}:${row.team}`;
+      const prev = byKey.get(key);
+      if (!prev || row.wins + row.losses > prev.wins + prev.losses) {
+        byKey.set(key, row);
+      }
+    }
+  }
+  return [...byKey.values()].sort(
+    (a, b) => b.season - a.season || a.team.localeCompare(b.team),
+  );
 }
 
 type BbrefManagerCareerPayload = {
@@ -2701,20 +2772,19 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
         const winPct = gp > 0 ? wins / gp : 0.5;
         const playoff = parseOddsPercent(st?.playoff);
 
-        const [wiki, bbMeta, contractNote] = await Promise.all([
+        // Keep the list light — avoid 30 parallel BBRef scrapes (they starve
+        // managerCareer on the detail page). Detail fetches the real portrait.
+        const [wiki, contractNote] = await Promise.all([
           fetchWikipediaCard(mgr.person.fullName),
-          fetchManagerPhotoMeta(mgr.person.fullName),
           isInterim || yearsWithTeam <= 1
             ? fetchManagerContractNote(mgr.person.fullName)
             : Promise.resolve(null),
         ]);
-        // Prefer BBRef portraits — mlbstatic manager shots are often blank generics.
-        const headshot = bbMeta.photo || wiki.image || mlbHeadshot(mgrId, 213);
-        const interim = isInterim || bbMeta.interim;
+        const headshot = wiki.image || mlbHeadshot(mgrId, 213);
+        const interim = isInterim;
         // 1-year deals, explicit interim, or year-1 skippers deep under .500 = always hot.
         const shortLeash =
           interim ||
-          bbMeta.shortLeash ||
           isShortLeashContract(contractNote) ||
           (yearsWithTeam <= 1 && winPct < 0.42);
 
@@ -2768,7 +2838,9 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
   if (!base) throw new Error("Manager not found");
 
   const season = currentSeason();
-  const [person, contractNote, wiki, txRaw, fallbackRecords, careerRaw, rumorsRaw] =
+  // Career seasons: prefer BBRef, but always also scan MLB coaches across clubs
+  // so prior years still show when the edge scrape is slow/blocked.
+  const [person, contractNote, wiki, txRaw, fallbackRecords, careerRaw, rumorsRaw, mlbSeasons] =
     await Promise.all([
       mlbGet(`people/${id}`, {
         hydrate: "currentTeam,education,awards,stats(group=[hitting],type=[yearByYear])",
@@ -2805,6 +2877,7 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
       fetchManagerSeasonRecords(id, base.teamId, base.teamAbbrev, season),
       fetchManagerCareer(base.name),
       fetchManagerRumors(base.name),
+      fetchManagerSeasonsAcrossTeams(id, season),
     ]);
 
   const p = person.people?.[0];
@@ -2812,7 +2885,31 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
   const school =
     p?.education?.colleges?.[0]?.name ?? p?.education?.highschools?.[0]?.name ?? null;
 
-  const managedYears = new Set((careerRaw?.seasons ?? []).map((s) => s.season));
+  const bbSeasons = cleanCareerSeasons(careerRaw?.seasons).map((s) => ({
+    season: s.season,
+    team: s.team,
+    wins: s.wins,
+    losses: s.losses,
+    pct: s.pct,
+    gb: "—",
+    divisionRank: s.finish,
+    postWins: s.postWins,
+    postLosses: s.postLosses,
+    comments: s.comments || "",
+  }));
+  // Merge BBRef + MLB cross-team scan + current-club fallback so prior clubs
+  // never disappear when one source is thin (Skip: MIA 2023–24 + TEX 2026).
+  const seasonRecords = mergeManagerSeasonRecords(
+    bbSeasons,
+    mlbSeasons,
+    fallbackRecords.filter((r) => r.wins + r.losses > 0),
+  );
+
+  // Overlay current-season GB from live standings when team matches.
+  const currentRow = seasonRecords.find((r) => r.season === season);
+  if (currentRow) currentRow.gb = base.gb;
+
+  const managedYears = new Set(seasonRecords.map((s) => s.season));
   const awards = (p?.awards ?? [])
     .filter((a) => a.name && a.season)
     .map((a) => ({ season: String(a.season), name: String(a.name) }))
@@ -2827,30 +2924,7 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
   const moyAwards = awards.filter((a) => /manager of the year/i.test(a.name));
   const wsAwards = awards.filter((a) => /world series/i.test(a.name));
 
-  const bbSeasons = cleanCareerSeasons(careerRaw?.seasons);
-  const seasonRecords: MlbManagerSeasonRecord[] =
-    bbSeasons.length > 0
-      ? [...bbSeasons]
-          .sort((a, b) => b.season - a.season)
-          .map((s) => ({
-            season: s.season,
-            team: s.team,
-            wins: s.wins,
-            losses: s.losses,
-            pct: s.pct,
-            gb: "—",
-            divisionRank: s.finish,
-            postWins: s.postWins,
-            postLosses: s.postLosses,
-            comments: s.comments || "",
-          }))
-      : fallbackRecords.filter((r) => r.wins + r.losses > 0);
-
-  // Overlay current-season GB from live standings when team matches.
-  const currentRow = seasonRecords.find((r) => r.season === season);
-  if (currentRow) currentRow.gb = base.gb;
-
-  const stints: MlbManagerStint[] = (careerRaw?.stints ?? [])
+  let stints: MlbManagerStint[] = (careerRaw?.stints ?? [])
     .filter((s) => s.wins + s.losses > 0)
     .map((s) => ({
       team: s.team,
@@ -2862,6 +2936,33 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
       departure: s.departure ?? null,
       departureUrl: s.departureUrl ?? null,
     }));
+  if (!stints.length && seasonRecords.length) {
+    // Build club stints from the merged year-by-year table when BBRef is down.
+    const built: MlbManagerStint[] = [];
+    const chronological = [...seasonRecords].sort((a, b) => a.season - b.season);
+    for (const s of chronological) {
+      const last = built[built.length - 1];
+      if (last && last.team === s.team && s.season === last.end + 1) {
+        last.end = s.season;
+        last.wins += s.wins;
+        last.losses += s.losses;
+        const g = last.wins + last.losses;
+        last.pct = g > 0 ? (last.wins / g).toFixed(3).replace(/^0/, "") : ".000";
+      } else {
+        built.push({
+          team: s.team,
+          start: s.season,
+          end: s.season,
+          wins: s.wins,
+          losses: s.losses,
+          pct: s.pct,
+          departure: null,
+          departureUrl: null,
+        });
+      }
+    }
+    stints = built;
+  }
 
   const careerTotals =
     careerRaw?.career && careerRaw.career.wins + careerRaw.career.losses > 0
