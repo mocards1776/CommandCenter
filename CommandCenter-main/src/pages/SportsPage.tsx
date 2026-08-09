@@ -14,7 +14,9 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
+import HeroGameCard from "@/components/sports/HeroGameCard";
 import { useAuth } from "@/lib/auth-context";
+import { fetchTeamCurrentGame, mlbTeamLogo } from "@/lib/mlb";
 import {
   DEFAULT_FAVORITES,
   ensureFavoriteTeamsSeeded,
@@ -383,6 +385,13 @@ export default function SportsPage() {
     enabled: Boolean(user?.id),
   });
 
+  const cardsHero = useQuery({
+    queryKey: ["sports-hero-game", 138],
+    queryFn: () => fetchTeamCurrentGame(138),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  });
+
   const updateLayout = (next: SportsLayout) => {
     setLayout(next);
     saveSportsLayout(next);
@@ -456,6 +465,20 @@ export default function SportsPage() {
         <p className="text-chalk-dim text-[11.5px]">
           Couldn’t sync favorites to the cloud — using your local board.
         </p>
+      )}
+
+      {cardsHero.data && (
+        <HeroGameCard
+          game={cardsHero.data}
+          accent="#be0a14"
+          label={
+            cardsHero.data.live
+              ? "Cardinals · Live"
+              : cardsHero.data.final
+                ? "Cardinals · Latest"
+                : "Cardinals · Next up"
+          }
+        />
       )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -646,9 +669,18 @@ function TeamDetailPanel({
                             )}
                           >
                             <td className={cn("px-3 py-2", row.isMe ? "text-cream font-medium" : "text-chalk")}>
-                              <span className="text-chalk-dim numeral mr-2">{row.rank}</span>
-                              {row.team}
-                              {row.isMe ? " ★" : ""}
+                              <span className="inline-flex items-center gap-2">
+                                <span className="text-chalk-dim numeral w-3">{row.rank}</span>
+                                {detail.source === "mlb" && row.teamId ? (
+                                  <img
+                                    src={mlbTeamLogo(row.teamId)}
+                                    alt=""
+                                    className="h-5 w-5 object-contain"
+                                  />
+                                ) : null}
+                                {row.team}
+                                {row.isMe ? " ★" : ""}
+                              </span>
                             </td>
                             <td className="numeral text-cream px-2 py-2">{row.record}</td>
                             <td className="numeral text-chalk px-2 py-2">{row.pct || "—"}</td>

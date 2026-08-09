@@ -1,8 +1,10 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Loader2 } from "lucide-react";
+import HighlightReel from "@/components/sports/HighlightReel";
 import {
   fetchMlbBoxscore,
+  fetchMlbGameHighlights,
   mlbTeamLogo,
   type MlbBoxscoreBatter,
   type MlbBoxscorePitcher,
@@ -23,6 +25,13 @@ export default function MlbGamePage() {
       q.state.data?.status && /progress|live|in progress/i.test(q.state.data.status)
         ? 20_000
         : false,
+  });
+
+  const highlights = useQuery({
+    queryKey: ["mlb-game-highlights", gamePk],
+    queryFn: () => fetchMlbGameHighlights(gamePk!),
+    enabled: Boolean(gamePk),
+    staleTime: 60_000,
   });
 
   if (box.isPending) {
@@ -114,6 +123,13 @@ export default function MlbGamePage() {
           </div>
         )}
       </header>
+
+      {highlights.isPending && (
+        <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+          <Loader2 size={14} className="animate-spin" /> Loading highlights…
+        </p>
+      )}
+      <HighlightReel highlights={highlights.data ?? []} title="Game highlights" />
 
       <BoxSide title={g.away.name} side={g.away} />
       <BoxSide title={g.home.name} side={g.home} />

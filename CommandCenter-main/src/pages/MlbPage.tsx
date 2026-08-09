@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Share, Star } from "lucide-react";
 import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
+import HeroGameCard from "@/components/sports/HeroGameCard";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import {
@@ -12,6 +13,7 @@ import {
   fetchMlbStandings,
   mlbHeadshot,
   mlbTeamLogo,
+  pickHeroGame,
   playoffOddsFromStandings,
   type MlbLeaderBoard,
   type MlbScoreGame,
@@ -60,6 +62,7 @@ export default function MlbPage() {
   );
 
   const liveCount = scoreboard.data?.filter((g) => g.live).length ?? 0;
+  const hero = scoreboard.data ? pickHeroGame(scoreboard.data) : null;
   const refreshing =
     scoreboard.isFetching || standings.isFetching || leaders.isFetching;
 
@@ -119,6 +122,13 @@ export default function MlbPage() {
           </div>
         </div>
       </div>
+
+      {hero && (
+        <HeroGameCard
+          game={hero}
+          label={hero.live ? "Live now" : hero.final ? "Latest final" : "Up next"}
+        />
+      )}
 
       {favorites.data && favorites.data.length > 0 && (
         <section>

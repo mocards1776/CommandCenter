@@ -13,6 +13,7 @@ export type MlbScoreGame = {
   away: MlbScoreSide;
   home: MlbScoreSide;
   when: string | null;
+  venue: string | null;
 };
 
 export type MlbScoreSide = {
@@ -20,7 +21,20 @@ export type MlbScoreSide = {
   name: string;
   abbrev: string;
   score: number | null;
+  hits: number | null;
+  errors: number | null;
   record: string | null;
+  probablePitcher: string | null;
+};
+
+export type MlbHighlight = {
+  id: string;
+  title: string;
+  description: string | null;
+  duration: string | null;
+  thumb: string | null;
+  url: string;
+  date: string | null;
 };
 
 export type MlbStandingRow = {
@@ -75,6 +89,9 @@ export type MlbPlayerCard = {
   weight: string | null;
   birthDate: string | null;
   birthPlace: string | null;
+  mlbDebut: string | null;
+  draftYear: number | null;
+  school: string | null;
   teamId: number | null;
   teamName: string | null;
   teamAbbrev: string | null;
@@ -83,7 +100,24 @@ export type MlbPlayerCard = {
   actionShot: string;
   hitting: MlbPlayerStatLine[];
   pitching: MlbPlayerStatLine[];
+  careerHitting: MlbPlayerStatLine[];
+  careerPitching: MlbPlayerStatLine[];
   season: number;
+};
+
+export type MlbTransaction = {
+  date: string;
+  type: string;
+  description: string;
+};
+
+export type MlbPlayerContract = {
+  contractStatus: string | null;
+  currentSalary: { year: string; amount: number; display: string; team: string | null } | null;
+  salaryHistory: { year: string; amount: number; display: string; team: string | null }[];
+  acquisition: string[];
+  url: string | null;
+  source: string;
 };
 
 function currentSeason(): number {
@@ -319,24 +353,34 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
   const raw = (await mlbGet("schedule", {
     sportId: "1",
     date,
-    hydrate: "linescore,team",
+    hydrate: "linescore,team,probablePitcher,venue",
   })) as {
     dates?: {
       games?: {
         gamePk?: number;
         gameDate?: string;
         status?: { detailedState?: string; abstractGameState?: string };
-        linescore?: { currentInningOrdinal?: string; inningState?: string };
+        venue?: { name?: string };
+        linescore?: {
+          currentInningOrdinal?: string;
+          inningState?: string;
+          teams?: {
+            away?: { runs?: number; hits?: number; errors?: number };
+            home?: { runs?: number; hits?: number; errors?: number };
+          };
+        };
         teams?: {
           away?: {
             score?: number;
             team?: { id?: number; name?: string; abbreviation?: string; teamName?: string };
             leagueRecord?: { wins?: number; losses?: number };
+            probablePitcher?: { fullName?: string };
           };
           home?: {
             score?: number;
             team?: { id?: number; name?: string; abbreviation?: string; teamName?: string };
             leagueRecord?: { wins?: number; losses?: number };
+            probablePitcher?: { fullName?: string };
           };
         };
       }[];
@@ -354,15 +398,19 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
         : null;
     const side = (
       s: NonNullable<typeof g.teams>["away"],
+      rh: { runs?: number; hits?: number; errors?: number } | undefined,
     ): MlbScoreSide => ({
       teamId: s?.team?.id ?? 0,
       name: s?.team?.name ?? "—",
       abbrev: teamAbbrev(s?.team),
-      score: s?.score ?? null,
+      score: rh?.runs ?? s?.score ?? null,
+      hits: rh?.hits ?? null,
+      errors: rh?.errors ?? null,
       record:
         s?.leagueRecord?.wins != null
           ? `${s.leagueRecord.wins}-${s.leagueRecord.losses ?? 0}`
           : null,
+      probablePitcher: s?.probablePitcher?.fullName ?? null,
     });
     return {
       id: String(g.gamePk ?? g.gameDate),
@@ -371,11 +419,248 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
       live,
       final,
       inning: inn,
-      away: side(g.teams?.away),
-      home: side(g.teams?.home),
+      away: side(g.teams?.away, g.linescore?.teams?.away),
+      home: side(g.teams?.home, g.linescore?.teams?.home),
       when: fmtWhen(g.gameDate),
+      venue: g.venue?.name ?? null,
     };
   });
+}
+
+/** Live first, else today's unfinished, else latest final. */
+export function pickHeroGame(games: MlbScoreGame[]): MlbScoreGame | null {
+  if (!games.length) return null;
+  return (
+    games.find((g) => g.live) ??
+    games.find((g) => !g.final && g.abstractState !== "Final") ??
+    [...games].reverse().find((g) => g.final) ??
+    games[0]
+  );
+}
+
+export async function fetchTeamCurrentGame(teamId: number): Promise<MlbScoreGame | null> {
+  const date = chicagoToday();
+  const board = await fetchMlbScoreboard(date);
+  const today = board.filter((g) => g.away.teamId === teamId || g.home.teamId === teamId);
+  if (today.length) return pickHeroGame(today);
+
+  const season = currentSeason();
+  const upcoming = (await mlbGet("schedule", {
+    sportId: "1",
+    teamId: String(teamId),
+    startDate: date,
+    endDate: `${season}-11-15`,
+    hydrate: "linescore,team,probablePitcher,venue",
+  })) as { dates?: { date?: string; games?: { gamePk?: number }[] }[] };
+
+  for (const day of upcoming.dates ?? []) {
+    const pk = day.games?.[0]?.gamePk;
+    if (!pk || !day.date) continue;
+    const dayBoard = await fetchMlbScoreboard(day.date);
+    const hit = dayBoard.find((g) => g.id === String(pk));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function pickPlayback(
+  playbacks: { name?: string; url?: string }[] | undefined,
+): string | null {
+  if (!playbacks?.length) return null;
+  const prefer = ["mp4Avc", "highBit", "HTTP_CLOUD_WIRED_60", "HTTP_CLOUD_WIRED"];
+  for (const name of prefer) {
+    const hit = playbacks.find((p) => p.name === name && p.url);
+    if (hit?.url) return hit.url;
+  }
+  return playbacks.find((p) => p.url && /\.mp4/i.test(p.url))?.url ?? null;
+}
+
+function highlightThumb(image: {
+  templateUrl?: string;
+  cuts?: { src?: string; width?: number }[];
+} | undefined): string | null {
+  if (!image) return null;
+  const cut =
+    image.cuts?.find((c) => (c.width ?? 0) >= 640) ??
+    image.cuts?.[0];
+  if (cut?.src) return cut.src;
+  if (image.templateUrl) {
+    return image.templateUrl.replace(
+      "{formatInstructions}",
+      "w_640,h_360,c_fill,g_auto,q_auto:best,f_jpg",
+    );
+  }
+  return null;
+}
+
+export async function fetchMlbGameHighlights(gamePk: number | string): Promise<MlbHighlight[]> {
+  const raw = (await mlbGet(`game/${gamePk}/content`)) as {
+    highlights?: {
+      highlights?: {
+        items?: {
+          type?: string;
+          title?: string;
+          headline?: string;
+          description?: string;
+          duration?: string;
+          date?: string;
+          playbacks?: { name?: string; url?: string }[];
+          image?: { templateUrl?: string; cuts?: { src?: string; width?: number }[] };
+          slug?: string;
+          id?: string;
+        }[];
+      };
+    };
+  };
+  const items = raw.highlights?.highlights?.items ?? [];
+  const out: MlbHighlight[] = [];
+  for (const v of items) {
+    if (v.type !== "video") continue;
+    const url = pickPlayback(v.playbacks);
+    if (!url) continue;
+    out.push({
+      id: String(v.id ?? v.slug ?? v.title),
+      title: v.title || v.headline || "Highlight",
+      description: v.description ?? null,
+      duration: v.duration ?? null,
+      thumb: highlightThumb(v.image),
+      url,
+      date: v.date ?? null,
+    });
+  }
+  return out;
+}
+
+export async function fetchMlbPlayerHighlights(
+  playerId: number,
+  teamId: number | null,
+  playerName: string,
+): Promise<MlbHighlight[]> {
+  if (!teamId) return [];
+  const season = currentSeason();
+  const end = chicagoToday();
+  const start = `${season}-03-01`;
+  const raw = (await mlbGet("schedule", {
+    sportId: "1",
+    teamId: String(teamId),
+    startDate: start,
+    endDate: end,
+    hydrate: "game(content(highlights(highlights)))",
+  })) as {
+    dates?: {
+      games?: {
+        gamePk?: number;
+        content?: {
+          highlights?: {
+            highlights?: {
+              items?: {
+                type?: string;
+                title?: string;
+                headline?: string;
+                description?: string;
+                duration?: string;
+                date?: string;
+                playbacks?: { name?: string; url?: string }[];
+                image?: { templateUrl?: string; cuts?: { src?: string; width?: number }[] };
+                slug?: string;
+                id?: string;
+                keywordsAll?: { value?: string; displayName?: string }[];
+              }[];
+            };
+          };
+        };
+      }[];
+    }[];
+  };
+
+  const needle = new RegExp(
+    `${playerId}|${playerName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+    "i",
+  );
+  const out: MlbHighlight[] = [];
+  const seen = new Set<string>();
+  for (const day of [...(raw.dates ?? [])].reverse()) {
+    for (const g of [...(day.games ?? [])].reverse()) {
+      for (const v of g.content?.highlights?.highlights?.items ?? []) {
+        if (v.type !== "video") continue;
+        const blob = [
+          v.title,
+          v.headline,
+          v.description,
+          ...(v.keywordsAll ?? []).map((k) => `${k.value ?? ""} ${k.displayName ?? ""}`),
+        ].join(" ");
+        if (!needle.test(blob)) continue;
+        const url = pickPlayback(v.playbacks);
+        if (!url) continue;
+        const id = String(v.id ?? v.slug ?? v.title);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push({
+          id,
+          title: v.title || v.headline || "Highlight",
+          description: v.description ?? null,
+          duration: v.duration ?? null,
+          thumb: highlightThumb(v.image),
+          url,
+          date: v.date ?? null,
+        });
+        if (out.length >= 12) return out;
+      }
+    }
+  }
+  return out;
+}
+
+export async function fetchMlbPlayerTransactions(playerId: number): Promise<MlbTransaction[]> {
+  const season = currentSeason();
+  const raw = (await mlbGet("transactions", {
+    playerId: String(playerId),
+    startDate: `01/01/${season - 12}`,
+    endDate: `12/31/${season}`,
+  })) as {
+    transactions?: {
+      date?: string;
+      typeDesc?: string;
+      typeCode?: string;
+      description?: string;
+    }[];
+  };
+  const interesting = /Drafted|Traded|Signed|Claimed|Selected|Purchase|Free Agent|Rule 5|Waivers/i;
+  return (raw.transactions ?? [])
+    .filter((t) => interesting.test(`${t.typeDesc ?? ""} ${t.description ?? ""}`))
+    .map((t) => ({
+      date: t.date ?? "",
+      type: t.typeDesc || t.typeCode || "Transaction",
+      description: t.description ?? "",
+    }));
+}
+
+export async function fetchPlayerContract(playerName: string): Promise<MlbPlayerContract | null> {
+  try {
+    const { data, error } = await (await import("./supabase")).supabase.functions.invoke("sports", {
+      body: { action: "bbref", name: playerName },
+    });
+    if (error) throw error;
+    if (!data || (data as { error?: string }).error) return null;
+    const d = data as {
+      contractStatus?: string | null;
+      currentSalary?: MlbPlayerContract["currentSalary"];
+      salaryHistory?: MlbPlayerContract["salaryHistory"];
+      acquisition?: string[];
+      url?: string;
+      source?: string;
+    };
+    return {
+      contractStatus: d.contractStatus ?? null,
+      currentSalary: d.currentSalary ?? null,
+      salaryHistory: d.salaryHistory ?? [],
+      acquisition: d.acquisition ?? [],
+      url: d.url ?? null,
+      source: d.source ?? "baseball-reference",
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function fetchEspnPlayoffMap(): Promise<
@@ -578,11 +863,46 @@ const TEAM_COLORS: Record<number, string> = {
   158: "12284b", // MIL
 };
 
+const HIT_KEYS: [string, string][] = [
+  ["gamesPlayed", "G"],
+  ["atBats", "AB"],
+  ["avg", "AVG"],
+  ["homeRuns", "HR"],
+  ["rbi", "RBI"],
+  ["stolenBases", "SB"],
+  ["ops", "OPS"],
+  ["obp", "OBP"],
+  ["slg", "SLG"],
+  ["hits", "H"],
+  ["runs", "R"],
+  ["doubles", "2B"],
+  ["triples", "3B"],
+  ["baseOnBalls", "BB"],
+  ["strikeOuts", "SO"],
+];
+
+const PITCH_KEYS: [string, string][] = [
+  ["gamesPlayed", "G"],
+  ["gamesStarted", "GS"],
+  ["wins", "W"],
+  ["losses", "L"],
+  ["era", "ERA"],
+  ["inningsPitched", "IP"],
+  ["strikeOuts", "SO"],
+  ["whip", "WHIP"],
+  ["saves", "SV"],
+  ["holds", "HLD"],
+  ["baseOnBalls", "BB"],
+  ["hits", "H"],
+  ["homeRuns", "HR"],
+  ["earnedRuns", "ER"],
+];
+
 export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlayerCard> {
   const season = currentSeason();
   const id = Number(playerId);
   const raw = (await mlbGet(`people/${id}`, {
-    hydrate: `currentTeam,stats(group=[hitting,pitching],type=[season],season=${season})`,
+    hydrate: `currentTeam,draft,education,stats(group=[hitting,pitching],type=[season,career],season=${season})`,
   })) as {
     people?: {
       id?: number;
@@ -599,9 +919,16 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
       birthCity?: string;
       birthStateProvince?: string;
       birthCountry?: string;
+      mlbDebutDate?: string;
+      draftYear?: number;
+      education?: {
+        highschools?: { name?: string; city?: string; state?: string }[];
+        colleges?: { name?: string }[];
+      };
       currentTeam?: { id?: number; name?: string; abbreviation?: string };
       stats?: {
         group?: { displayName?: string };
+        type?: { displayName?: string };
         splits?: { stat?: Record<string, unknown> }[];
       }[];
     }[];
@@ -612,40 +939,32 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
 
   let hitting: MlbPlayerStatLine[] = [];
   let pitching: MlbPlayerStatLine[] = [];
+  let careerHitting: MlbPlayerStatLine[] = [];
+  let careerPitching: MlbPlayerStatLine[] = [];
+
   for (const s of p.stats ?? []) {
     const group = (s.group?.displayName ?? "").toLowerCase();
+    const type = (s.type?.displayName ?? "").toLowerCase();
     const stat = s.splits?.[0]?.stat;
     if (group.includes("hitting")) {
-      hitting = pickStats(stat, [
-        ["avg", "AVG"],
-        ["homeRuns", "HR"],
-        ["rbi", "RBI"],
-        ["ops", "OPS"],
-        ["obp", "OBP"],
-        ["slg", "SLG"],
-        ["hits", "H"],
-        ["runs", "R"],
-        ["stolenBases", "SB"],
-        ["strikeOuts", "SO"],
-      ]);
+      if (type.includes("career")) careerHitting = pickStats(stat, HIT_KEYS);
+      else hitting = pickStats(stat, HIT_KEYS);
     }
     if (group.includes("pitching")) {
-      pitching = pickStats(stat, [
-        ["era", "ERA"],
-        ["wins", "W"],
-        ["losses", "L"],
-        ["strikeOuts", "SO"],
-        ["whip", "WHIP"],
-        ["saves", "SV"],
-        ["inningsPitched", "IP"],
-        ["holds", "HLD"],
-        ["baseOnBalls", "BB"],
-      ]);
+      if (type.includes("career")) careerPitching = pickStats(stat, PITCH_KEYS);
+      else pitching = pickStats(stat, PITCH_KEYS);
     }
   }
 
   const place = [p.birthCity, p.birthStateProvince, p.birthCountry].filter(Boolean).join(", ");
   const teamId = p.currentTeam?.id ?? null;
+  const hs = p.education?.highschools?.[0];
+  const college = p.education?.colleges?.[0];
+  const school = college?.name
+    ? college.name
+    : hs
+      ? [hs.name, hs.city, hs.state].filter(Boolean).join(", ")
+      : null;
 
   return {
     id: p.id ?? id,
@@ -661,6 +980,9 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
     weight: p.weight != null ? String(p.weight) : null,
     birthDate: p.birthDate ?? null,
     birthPlace: place || null,
+    mlbDebut: p.mlbDebutDate ?? null,
+    draftYear: p.draftYear ?? null,
+    school,
     teamId,
     teamName: p.currentTeam?.name ?? null,
     teamAbbrev: p.currentTeam?.abbreviation ?? null,
@@ -669,6 +991,8 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
     actionShot: mlbActionShot(p.id ?? id),
     hitting,
     pitching,
+    careerHitting,
+    careerPitching,
     season,
   };
 }
