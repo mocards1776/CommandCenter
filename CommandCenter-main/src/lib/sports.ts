@@ -12,6 +12,8 @@ export type SportsFavorite = {
   kind: "team" | "tour";
   /** Hex without #, from the franchise when known. */
   color?: string;
+  /** Official MLB Stats API team id when available (Cardinals = 138). */
+  mlbTeamId?: number;
 };
 
 export type SportsLayout = {
@@ -41,6 +43,7 @@ export type GameChip = {
   detail: string | null;
   when: string | null;
   won: boolean | null;
+  live?: boolean;
 };
 
 export type TourSnapshot = {
@@ -51,7 +54,63 @@ export type TourSnapshot = {
   leaders: { name: string; score: string; detail: string | null }[];
 };
 
+export type StandingRow = {
+  rank: string;
+  team: string;
+  teamId: string | null;
+  record: string;
+  gb: string;
+  pct: string;
+  isMe: boolean;
+};
+
+export type ScheduleGame = {
+  id: string;
+  when: string | null;
+  label: string;
+  detail: string | null;
+  status: string;
+  won: boolean | null;
+  live: boolean;
+};
+
+export type RosterPlayer = {
+  id: string;
+  name: string;
+  number: string | null;
+  position: string | null;
+  batsThrows?: string | null;
+};
+
+export type LeaderStat = {
+  name: string;
+  line: string;
+};
+
+export type TeamDetail = {
+  key: string;
+  name: string;
+  shortName: string;
+  logo: string | null;
+  color: string | null;
+  record: string | null;
+  standing: string | null;
+  playoffOdds: string | null;
+  wildCardOdds: string | null;
+  division: StandingRow[];
+  upcoming: ScheduleGame[];
+  recent: ScheduleGame[];
+  roster: RosterPlayer[];
+  hittingLeaders: LeaderStat[];
+  pitchingLeaders: LeaderStat[];
+  teamHitting: { label: string; value: string }[];
+  teamPitching: { label: string; value: string }[];
+  source: "mlb" | "espn";
+};
+
 const LAYOUT_KEY = "sports-layout-v1";
+const ESPN = "https://site.api.espn.com/apis/site/v2/sports";
+const MLB = "https://statsapi.mlb.com/api/v1";
 
 /** Default board — your teams, front of the store. */
 export const DEFAULT_FAVORITES: SportsFavorite[] = [
@@ -62,6 +121,7 @@ export const DEFAULT_FAVORITES: SportsFavorite[] = [
     sport: "Baseball",
     league: "MLB",
     espnPath: "baseball/mlb/teams/24",
+    mlbTeamId: 138,
     kind: "team",
     color: "be0a14",
   },
@@ -157,6 +217,10 @@ export const DEFAULT_FAVORITES: SportsFavorite[] = [
   },
 ];
 
+export function favoriteByKey(key: string): SportsFavorite | undefined {
+  return DEFAULT_FAVORITES.find((f) => f.key === key);
+}
+
 export function loadSportsLayout(): SportsLayout {
   const defaults: SportsLayout = {
     order: DEFAULT_FAVORITES.map((f) => f.key),
@@ -192,13 +256,6 @@ export function visibleFavorites(layout: SportsLayout): SportsFavorite[] {
     .filter((f): f is SportsFavorite => f != null && !hidden.has(f.key));
 }
 
-const ESPN = "https://site.api.espn.com/apis/site/v2/sports";
-
-/**
- * ESPN allows browser CORS (`Access-Control-Allow-Origin: *`) but blocks many
- * server/edge User-Agents with 403. Fetch from the client first; only fall
- * back to the sports edge proxy if the direct call fails.
- */
 async function espnGet(path: string): Promise<unknown> {
   const clean = path.replace(/^\/+/, "");
   try {
@@ -223,10 +280,34 @@ async function espnGet(path: string): Promise<unknown> {
   return data;
 }
 
+async function mlbGet(path: string): Promise<unknown> {
+  const clean = path.replace(/^\/+/, "");
+  const ctl = new AbortController();
+  const t = window.setTimeout(() => ctl.abort(), 12000);
+  const res = await fetch(`${MLB}/${clean}`, {
+    signal: ctl.signal,
+    headers: { Accept: "application/json" },
+  }).finally(() => window.clearTimeout(t));
+  if (!res.ok) throw new Error(`MLB ${res.status}`);
+  return res.json();
+}
+
 function pickLogo(logos: { href?: string; rel?: string[] }[] | undefined): string | null {
   if (!Array.isArray(logos) || logos.length === 0) return null;
   const full = logos.find((l) => l.rel?.includes("full"));
   return (full ?? logos[0])?.href ?? null;
+}
+
+/** ESPN sometimes returns score as a string, sometimes as { displayValue, value }. */
+function scoreText(score: unknown): string {
+  if (score == null) return "";
+  if (typeof score === "string" || typeof score === "number") return String(score);
+  if (typeof score === "object") {
+    const o = score as { displayValue?: unknown; value?: unknown };
+    if (o.displayValue != null) return String(o.displayValue);
+    if (o.value != null) return String(o.value);
+  }
+  return "";
 }
 
 function fmtWhen(iso: string | null | undefined): string | null {
@@ -245,18 +326,45 @@ function fmtWhen(iso: string | null | undefined): string | null {
   }
 }
 
-function competitionChip(
-  comp: {
-    competitors?: {
-      homeAway?: string;
-      score?: string;
-      winner?: boolean;
-      team?: { abbreviation?: string; displayName?: string; id?: string };
-    }[];
-    status?: { type?: { state?: string; completed?: boolean; shortDetail?: string; detail?: string } };
-  } | null,
-  myId: string,
-): GameChip | null {
+function fmtDay(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  try {
+    return new Date(iso.includes("T") ? iso : `${iso}T12:00:00`).toLocaleDateString("en-US", {
+      timeZone: "America/Chicago",
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return null;
+  }
+}
+
+function currentSeason(): number {
+  // MLB/NHL/NBA seasons that span years: before July, prior year can still matter
+  // for spring sports; for late summer use current year.
+  return new Date().getFullYear();
+}
+
+type EspnComp = {
+  competitors?: {
+    homeAway?: string;
+    score?: unknown;
+    winner?: boolean;
+    team?: { abbreviation?: string; displayName?: string; id?: string };
+  }[];
+  status?: {
+    type?: {
+      state?: string;
+      completed?: boolean;
+      shortDetail?: string;
+      detail?: string;
+      description?: string;
+    };
+  };
+};
+
+function competitionChip(comp: EspnComp | null, myId: string): GameChip | null {
   if (!comp?.competitors?.length) return null;
   const mine = comp.competitors.find((c) => String(c.team?.id) === String(myId));
   const opp = comp.competitors.find((c) => String(c.team?.id) !== String(myId));
@@ -264,13 +372,14 @@ function competitionChip(
   const ha = mine.homeAway === "home" ? "vs" : "@";
   const oppName = opp.team?.abbreviation || opp.team?.displayName || "OPP";
   const state = comp.status?.type?.state;
-  const done = comp.status?.type?.completed || state === "post";
+  const done = Boolean(comp.status?.type?.completed || state === "post");
+  const live = state === "in";
   if (done) {
-    const ms = mine.score ?? "";
-    const os = opp.score ?? "";
+    const ms = scoreText(mine.score);
+    const os = scoreText(opp.score);
     return {
       label: `${ha} ${oppName}`,
-      detail: `${ms}–${os}`,
+      detail: ms && os ? `${ms}–${os}` : null,
       when: comp.status?.type?.shortDetail ?? null,
       won: typeof mine.winner === "boolean" ? mine.winner : null,
     };
@@ -280,6 +389,7 @@ function competitionChip(
     detail: comp.status?.type?.shortDetail ?? comp.status?.type?.detail ?? null,
     when: null,
     won: null,
+    live,
   };
 }
 
@@ -298,7 +408,7 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
       nextEvent?: {
         name?: string;
         date?: string;
-        competitions?: Parameters<typeof competitionChip>[0][];
+        competitions?: EspnComp[];
       }[];
     };
   };
@@ -315,14 +425,10 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
     if (nextGame) nextGame.when = fmtWhen(next.date) ?? nextGame.when;
   }
 
-  // Recent result from schedule (last completed).
   let lastGame: GameChip | null = null;
   try {
     const sched = (await espnGet(`${fav.espnPath}/schedule`)) as {
-      events?: {
-        date?: string;
-        competitions?: Parameters<typeof competitionChip>[0][];
-      }[];
+      events?: { date?: string; competitions?: EspnComp[] }[];
     };
     const events = [...(sched.events ?? [])].reverse();
     for (const ev of events) {
@@ -361,8 +467,7 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
         status?: { type?: { description?: string; detail?: string } };
         competitors?: {
           athlete?: { displayName?: string };
-          score?: string;
-          linescores?: { value?: number }[];
+          score?: unknown;
           status?: { type?: { description?: string } };
         }[];
       }[];
@@ -373,7 +478,7 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
   const comp = event?.competitions?.[0];
   const leaders = (comp?.competitors ?? []).slice(0, 5).map((c) => ({
     name: c.athlete?.displayName ?? "—",
-    score: c.score ?? "—",
+    score: scoreText(c.score) || "—",
     detail: c.status?.type?.description ?? null,
   }));
 
@@ -386,6 +491,425 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
   };
 }
 
+function espnSportRoot(espnPath: string): string {
+  // baseball/mlb/teams/24 → baseball/mlb
+  const parts = espnPath.split("/");
+  const i = parts.indexOf("teams");
+  return i > 0 ? parts.slice(0, i).join("/") : parts.slice(0, 2).join("/");
+}
+
+async function fetchEspnPlayoffOdds(
+  fav: SportsFavorite,
+  espnTeamId: string,
+): Promise<{ playoff: string | null; wildCard: string | null; standing: string | null }> {
+  try {
+    const root = espnSportRoot(fav.espnPath);
+    const res = await fetch(`https://site.api.espn.com/apis/v2/sports/${root}/standings`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return { playoff: null, wildCard: null, standing: null };
+    const d = (await res.json()) as {
+      children?: {
+        name?: string;
+        standings?: {
+          entries?: {
+            team?: { id?: string; displayName?: string };
+            stats?: { name?: string; displayValue?: string }[];
+          }[];
+        };
+      }[];
+    };
+    for (const child of d.children ?? []) {
+      for (const e of child.standings?.entries ?? []) {
+        if (String(e.team?.id) !== String(espnTeamId)) continue;
+        const stat = (n: string) => e.stats?.find((s) => s.name === n)?.displayValue ?? null;
+        const rank = stat("rank") ?? stat("playoffSeed");
+        const div = shortDiv(child.name);
+        return {
+          playoff: stat("playoffPercent"),
+          wildCard: stat("wildCardPercent"),
+          standing: rank ? `${rank}${/^\d+$/.test(rank) ? ordinalSuffix(Number(rank)) : ""} in ${div}` : null,
+        };
+      }
+    }
+  } catch {
+    // optional
+  }
+  return { playoff: null, wildCard: null, standing: null };
+}
+
+async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
+  const espnTeamId = fav.espnPath.split("/").pop() ?? "";
+  const snap = await fetchTeamSnapshot(fav);
+  const odds = await fetchEspnPlayoffOdds(fav, espnTeamId);
+
+  // Schedule
+  const upcoming: ScheduleGame[] = [];
+  const recent: ScheduleGame[] = [];
+  try {
+    const sched = (await espnGet(`${fav.espnPath}/schedule`)) as {
+      events?: {
+        id?: string;
+        date?: string;
+        competitions?: EspnComp[];
+      }[];
+    };
+    for (const ev of sched.events ?? []) {
+      const chip = competitionChip(ev.competitions?.[0] ?? null, espnTeamId);
+      if (!chip) continue;
+      const row: ScheduleGame = {
+        id: String(ev.id ?? `${ev.date}-${chip.label}`),
+        when: fmtWhen(ev.date),
+        label: chip.label,
+        detail: chip.detail,
+        status: chip.live ? "Live" : chip.won != null ? (chip.won ? "Win" : "Loss") : "Scheduled",
+        won: chip.won,
+        live: Boolean(chip.live),
+      };
+      const state = ev.competitions?.[0]?.status?.type?.state;
+      const done = ev.competitions?.[0]?.status?.type?.completed || state === "post";
+      if (done) recent.push(row);
+      else upcoming.push(row);
+    }
+    recent.reverse();
+  } catch {
+    // optional
+  }
+
+  // Roster
+  const roster: RosterPlayer[] = [];
+  try {
+    const raw = (await espnGet(`${fav.espnPath}/roster`)) as {
+      athletes?: {
+        position?: string;
+        items?: {
+          id?: string;
+          displayName?: string;
+          jersey?: string;
+          position?: { abbreviation?: string };
+        }[];
+      }[];
+    };
+    for (const group of raw.athletes ?? []) {
+      for (const a of group.items ?? []) {
+        roster.push({
+          id: String(a.id ?? a.displayName),
+          name: a.displayName ?? "—",
+          number: a.jersey ?? null,
+          position: a.position?.abbreviation ?? group.position ?? null,
+        });
+      }
+    }
+  } catch {
+    // optional
+  }
+
+  // Division standings from ESPN v2 when possible
+  const division: StandingRow[] = [];
+  try {
+    const root = espnSportRoot(fav.espnPath);
+    const res = await fetch(`https://site.api.espn.com/apis/v2/sports/${root}/standings`, {
+      headers: { Accept: "application/json" },
+    });
+    if (res.ok) {
+      const d = (await res.json()) as {
+        children?: {
+          name?: string;
+          standings?: {
+            entries?: {
+              team?: { id?: string; displayName?: string; shortDisplayName?: string };
+              stats?: { name?: string; displayValue?: string }[];
+            }[];
+          };
+        }[];
+      };
+      for (const child of d.children ?? []) {
+        const entries = child.standings?.entries ?? [];
+        const mine = entries.some((e) => String(e.team?.id) === String(espnTeamId));
+        if (!mine) continue;
+        for (const e of entries) {
+          const stat = (n: string) => e.stats?.find((s) => s.name === n)?.displayValue ?? "";
+          division.push({
+            rank: stat("rank") || String(division.length + 1),
+            team: e.team?.shortDisplayName || e.team?.displayName || "—",
+            teamId: e.team?.id ? String(e.team.id) : null,
+            record: stat("overall") || `${stat("wins")}-${stat("losses")}`,
+            gb: stat("gamesBehind") || "—",
+            pct: stat("winPercent") || "",
+            isMe: String(e.team?.id) === String(espnTeamId),
+          });
+        }
+        break;
+      }
+    }
+  } catch {
+    // optional
+  }
+
+  return {
+    key: fav.key,
+    name: snap.name,
+    shortName: snap.shortName,
+    logo: snap.logo,
+    color: snap.color,
+    record: snap.record,
+    standing: odds.standing ?? snap.standing,
+    playoffOdds: odds.playoff,
+    wildCardOdds: odds.wildCard,
+    division,
+    upcoming: upcoming.slice(0, 12),
+    recent: recent.slice(0, 8),
+    roster,
+    hittingLeaders: [],
+    pitchingLeaders: [],
+    teamHitting: [],
+    teamPitching: [],
+    source: "espn",
+  };
+}
+
+async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
+  const teamId = fav.mlbTeamId!;
+  const season = currentSeason();
+  const espnTeamId = fav.espnPath.split("/").pop() ?? "24";
+
+  // Logo/color from ESPN (MLB API logos are less convenient).
+  const snap = await fetchTeamSnapshot(fav).catch(() => null);
+  const odds = await fetchEspnPlayoffOdds(fav, espnTeamId);
+
+  const [standingsRaw, rosterRaw, scheduleRaw, hitTeam, pitchTeam, hitLeaders, pitchLeaders] =
+    await Promise.all([
+      mlbGet(`standings?leagueId=104&season=${season}&standingsTypes=regularSeason`),
+      mlbGet(`teams/${teamId}/roster?rosterType=active`),
+      mlbGet(
+        `schedule?teamId=${teamId}&sportId=1&startDate=${season}-03-01&endDate=${season}-11-15`,
+      ),
+      mlbGet(`teams/${teamId}/stats?season=${season}&group=hitting&stats=season`),
+      mlbGet(`teams/${teamId}/stats?season=${season}&group=pitching&stats=season`),
+      mlbGet(
+        `stats?stats=season&group=hitting&season=${season}&sportIds=1&teamIds=${teamId}&playerPool=all&limit=40&sortStat=ops&order=desc`,
+      ),
+      mlbGet(
+        `stats?stats=season&group=pitching&season=${season}&sportIds=1&teamIds=${teamId}&playerPool=all&limit=40&sortStat=era&order=asc`,
+      ),
+    ]);
+
+  // Division standings (NL Central)
+  const division: StandingRow[] = [];
+  let myRecord: string | null = snap?.record ?? null;
+  let myStanding: string | null = snap?.standing ?? null;
+  for (const block of (standingsRaw as { records?: unknown[] }).records ?? []) {
+    const rec = block as {
+      division?: { name?: string };
+      teamRecords?: {
+        team?: { id?: number; name?: string };
+        wins?: number;
+        losses?: number;
+        divisionRank?: string;
+        gamesBack?: string;
+        winningPercentage?: string;
+      }[];
+    };
+    const rows = rec.teamRecords ?? [];
+    if (!rows.some((r) => r.team?.id === teamId)) continue;
+    for (const r of rows) {
+      const isMe = r.team?.id === teamId;
+      if (isMe) {
+        myRecord = `${r.wins}-${r.losses}`;
+        myStanding = `${r.divisionRank}${ordinalSuffix(Number(r.divisionRank))} in ${shortDiv(rec.division?.name)}`;
+      }
+      division.push({
+        rank: String(r.divisionRank ?? ""),
+        team: (r.team?.name ?? "—").replace("St. Louis ", "").replace("Chicago ", "C. "),
+        teamId: r.team?.id != null ? String(r.team.id) : null,
+        record: `${r.wins}-${r.losses}`,
+        gb: r.gamesBack === "0.0" || r.gamesBack === "-" ? "—" : String(r.gamesBack ?? "—"),
+        pct: r.winningPercentage ?? "",
+        isMe,
+      });
+    }
+    break;
+  }
+
+  const roster: RosterPlayer[] = (
+    (rosterRaw as { roster?: unknown[] }).roster ?? []
+  ).map((p) => {
+    const row = p as {
+      person?: { id?: number; fullName?: string };
+      jerseyNumber?: string;
+      position?: { abbreviation?: string };
+    };
+    return {
+      id: String(row.person?.id ?? row.person?.fullName),
+      name: row.person?.fullName ?? "—",
+      number: row.jerseyNumber ?? null,
+      position: row.position?.abbreviation ?? null,
+    };
+  });
+
+  const upcoming: ScheduleGame[] = [];
+  const recent: ScheduleGame[] = [];
+  for (const day of (scheduleRaw as { dates?: unknown[] }).dates ?? []) {
+    const d = day as { date?: string; games?: unknown[] };
+    for (const g of d.games ?? []) {
+      const game = g as {
+        gamePk?: number;
+        gameDate?: string;
+        status?: { detailedState?: string; abstractGameState?: string };
+        teams?: {
+          away?: { team?: { id?: number; name?: string }; score?: number; isWinner?: boolean };
+          home?: { team?: { id?: number; name?: string }; score?: number; isWinner?: boolean };
+        };
+      };
+      const home = game.teams?.home;
+      const away = game.teams?.away;
+      const meHome = home?.team?.id === teamId;
+      const mine = meHome ? home : away;
+      const opp = meHome ? away : home;
+      const ha = meHome ? "vs" : "@";
+      const oppName = (opp?.team?.name ?? "OPP")
+        .replace("St. Louis ", "")
+        .replace(/^(New York|Los Angeles|Chicago|Toronto|Kansas City|Tampa Bay|San Francisco|San Diego|Arizona) /, (m) => {
+          const map: Record<string, string> = {
+            "New York ": "NY ",
+            "Los Angeles ": "LA ",
+            "Chicago ": "C. ",
+            "Toronto ": "Tor. ",
+            "Kansas City ": "KC ",
+            "Tampa Bay ": "TB ",
+            "San Francisco ": "SF ",
+            "San Diego ": "SD ",
+            "Arizona ": "Ari. ",
+          };
+          return map[m] ?? m;
+        });
+      const state = game.status?.abstractGameState;
+      const detailed = game.status?.detailedState ?? "";
+      const live = state === "Live";
+      const done = state === "Final";
+      const label = `${ha} ${oppName}`;
+      const detail =
+        mine?.score != null && opp?.score != null ? `${mine.score}–${opp.score}` : null;
+      const row: ScheduleGame = {
+        id: String(game.gamePk ?? game.gameDate),
+        when: fmtWhen(game.gameDate) ?? fmtDay(d.date),
+        label,
+        detail: live ? detailed : detail,
+        status: live ? "Live" : done ? (mine?.isWinner ? "Win" : "Loss") : detailed || "Scheduled",
+        won: done ? Boolean(mine?.isWinner) : null,
+        live,
+      };
+      if (done) recent.push(row);
+      else upcoming.push(row);
+    }
+  }
+  recent.reverse();
+
+  const teamHitting = pickTeamStatLines(hitTeam, [
+    ["runs", "R"],
+    ["homeRuns", "HR"],
+    ["avg", "AVG"],
+    ["obp", "OBP"],
+    ["slg", "SLG"],
+    ["ops", "OPS"],
+  ]);
+  const teamPitching = pickTeamStatLines(pitchTeam, [
+    ["era", "ERA"],
+    ["whip", "WHIP"],
+    ["strikeOuts", "SO"],
+    ["saves", "SV"],
+    ["wins", "W"],
+    ["inningsPitched", "IP"],
+  ]);
+
+  const hittingLeaders = mlbLeaders(hitLeaders, (s) => {
+    const ab = Number(s.atBats ?? 0);
+    if (ab < 50) return null;
+    return `${s.avg ?? "—"} AVG · ${s.homeRuns ?? 0} HR · ${s.ops ?? "—"} OPS`;
+  }).slice(0, 6);
+
+  const pitchingLeaders = mlbLeaders(pitchLeaders, (s) => {
+    const ip = parseFloat(String(s.inningsPitched ?? 0));
+    if (ip < 20) return null;
+    return `${s.era ?? "—"} ERA · ${s.strikeOuts ?? 0} SO · ${s.inningsPitched ?? "—"} IP`;
+  }).slice(0, 6);
+
+  return {
+    key: fav.key,
+    name: snap?.name ?? fav.name,
+    shortName: snap?.shortName ?? fav.shortName,
+    logo: snap?.logo ?? null,
+    color: snap?.color ?? fav.color ?? null,
+    record: myRecord,
+    standing: odds.standing ?? myStanding,
+    playoffOdds: odds.playoff,
+    wildCardOdds: odds.wildCard,
+    division,
+    upcoming: upcoming.slice(0, 15),
+    recent: recent.slice(0, 10),
+    roster,
+    hittingLeaders,
+    pitchingLeaders,
+    teamHitting,
+    teamPitching,
+    source: "mlb",
+  };
+}
+
+function pickTeamStatLines(
+  raw: unknown,
+  keys: [string, string][],
+): { label: string; value: string }[] {
+  const splits =
+    (raw as { stats?: { splits?: { stat?: Record<string, unknown> }[] }[] }).stats?.[0]?.splits ??
+    [];
+  const stat = splits[0]?.stat ?? {};
+  return keys
+    .filter(([k]) => stat[k] != null)
+    .map(([k, label]) => ({ label, value: String(stat[k]) }));
+}
+
+function mlbLeaders(
+  raw: unknown,
+  line: (stat: Record<string, unknown>) => string | null,
+): LeaderStat[] {
+  const splits =
+    (raw as { stats?: { splits?: { player?: { fullName?: string }; stat?: Record<string, unknown> }[] }[] })
+      .stats?.[0]?.splits ?? [];
+  const out: LeaderStat[] = [];
+  for (const s of splits) {
+    const text = line(s.stat ?? {});
+    if (!text) continue;
+    out.push({ name: s.player?.fullName ?? "—", line: text });
+  }
+  return out;
+}
+
+function shortDiv(name?: string): string {
+  if (!name) return "division";
+  return name
+    .replace("National League ", "NL ")
+    .replace("American League ", "AL ")
+    .replace("Central", "Cent")
+    .replace("East", "East")
+    .replace("West", "West");
+}
+
+function ordinalSuffix(n: number): string {
+  if (!Number.isFinite(n)) return "";
+  const j = n % 10;
+  const k = n % 100;
+  if (j === 1 && k !== 11) return "st";
+  if (j === 2 && k !== 12) return "nd";
+  if (j === 3 && k !== 13) return "rd";
+  return "th";
+}
+
+export async function fetchTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
+  if (fav.mlbTeamId) return fetchMlbTeamDetail(fav);
+  return fetchEspnTeamDetail(fav);
+}
+
 /** Seed the favorites table so the board has a durable home in Supabase. */
 export async function ensureFavoriteTeamsSeeded(userId: string): Promise<void> {
   const { data, error } = await supabase
@@ -394,7 +918,9 @@ export async function ensureFavoriteTeamsSeeded(userId: string): Promise<void> {
     .eq("user_id", userId);
   if (error) throw error;
   const have = new Set((data ?? []).map((r) => r.team_name.toLowerCase()));
-  const missing = DEFAULT_FAVORITES.filter((f) => f.kind === "team" && !have.has(f.name.toLowerCase()));
+  const missing = DEFAULT_FAVORITES.filter(
+    (f) => f.kind === "team" && !have.has(f.name.toLowerCase()),
+  );
   if (missing.length === 0) return;
   const { error: insErr } = await supabase.from("favorite_sports_teams").insert(
     missing.map((f) => ({

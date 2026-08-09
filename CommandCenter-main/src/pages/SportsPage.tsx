@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronUp,
   Eye,
   EyeOff,
+  Loader2,
   RefreshCw,
   Settings2,
   Trophy,
+  X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
@@ -15,14 +17,18 @@ import { useAuth } from "@/lib/auth-context";
 import {
   DEFAULT_FAVORITES,
   ensureFavoriteTeamsSeeded,
+  favoriteByKey,
+  fetchTeamDetail,
   fetchTeamSnapshot,
   fetchTourSnapshot,
   loadSportsLayout,
   saveSportsLayout,
   visibleFavorites,
   type GameChip,
+  type ScheduleGame,
   type SportsFavorite,
   type SportsLayout,
+  type TeamDetail,
   type TeamSnapshot,
   type TourSnapshot,
 } from "@/lib/sports";
@@ -52,10 +58,17 @@ function GameLine({
             "text-cream",
             game.won === true && "text-turf",
             game.won === false && "text-alert",
+            game.live && "text-cream",
           )}
         >
           {game.label}
           {game.detail ? ` · ${game.detail}` : ""}
+          {game.live ? (
+            <span className="text-alert ml-1.5 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide">
+              <span className="bg-alert inline-block h-1.5 w-1.5 animate-pulse rounded-full" />
+              Live
+            </span>
+          ) : null}
         </span>
         {game.when && (
           <span className="text-chalk-dim mt-0.5 block text-[10.5px]">{game.when}</span>
@@ -65,10 +78,22 @@ function GameLine({
   );
 }
 
-function TeamCard({ snap, accent }: { snap: TeamSnapshot; accent?: string }) {
+function TeamCard({
+  snap,
+  accent,
+  onOpen,
+}: {
+  snap: TeamSnapshot;
+  accent?: string;
+  onOpen: () => void;
+}) {
   const bar = accent ? `#${accent}` : "var(--color-accent)";
   return (
-    <article className="bg-panel relative overflow-hidden rounded border border-white/[0.07]">
+    <button
+      type="button"
+      onClick={onOpen}
+      className="bg-panel group relative w-full overflow-hidden rounded border border-white/[0.07] text-left transition hover:border-accent/35 hover:shadow-[0_0_0_1px_rgba(190,10,20,0.12)]"
+    >
       <div className="absolute inset-x-0 top-0 h-[3px]" style={{ background: bar }} />
       <div className="flex items-start gap-3.5 p-4 pt-5">
         {snap.logo ? (
@@ -83,7 +108,9 @@ function TeamCard({ snap, accent }: { snap: TeamSnapshot; accent?: string }) {
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <h3 className="font-display text-cream text-[20px] leading-tight">{snap.shortName}</h3>
+          <h3 className="font-display text-cream text-[20px] leading-tight group-hover:underline">
+            {snap.shortName}
+          </h3>
           <p className="text-chalk-dim mt-0.5 text-[10.5px] uppercase tracking-[0.14em]">
             {snap.name}
           </p>
@@ -96,12 +123,15 @@ function TeamCard({ snap, accent }: { snap: TeamSnapshot; accent?: string }) {
             )}
           </div>
         </div>
+        <span className="text-chalk-dim group-hover:text-accent shrink-0 self-center text-[10px] uppercase tracking-[0.14em] opacity-0 transition group-hover:opacity-100">
+          Open
+        </span>
       </div>
       <div className="border-t border-white/[0.06] px-4 py-3 flex flex-col gap-2">
         <GameLine label="Last" game={snap.lastGame} />
         <GameLine label="Next" game={snap.nextGame} />
       </div>
-    </article>
+    </button>
   );
 }
 
@@ -255,6 +285,7 @@ export default function SportsPage() {
   const { user } = useAuth();
   const [layout, setLayout] = useState<SportsLayout>(() => loadSportsLayout());
   const [customizing, setCustomizing] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -283,6 +314,35 @@ export default function SportsPage() {
     if (st.sportsCustomize) history.back();
     else setCustomizing(false);
   };
+
+  useEffect(() => {
+    if (!selectedKey) return;
+    const st = (history.state as { sportsTeam?: string } | null) ?? {};
+    if (st.sportsTeam !== selectedKey) {
+      history.pushState({ ...st, sportsTeam: selectedKey }, "", window.location.href);
+    }
+    const onPop = (e: PopStateEvent) => {
+      const next = (e.state as { sportsTeam?: string } | null) ?? {};
+      if (!next.sportsTeam) setSelectedKey(null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [selectedKey]);
+
+  const closeTeam = () => {
+    const st = (history.state as { sportsTeam?: string } | null) ?? {};
+    if (st.sportsTeam) history.back();
+    else setSelectedKey(null);
+  };
+
+  const selectedFav = selectedKey ? favoriteByKey(selectedKey) : undefined;
+  const detailQuery = useQuery({
+    queryKey: ["sports-team-detail", selectedKey],
+    queryFn: () => fetchTeamDetail(selectedFav!),
+    enabled: Boolean(selectedFav),
+    staleTime: 60_000,
+    retry: 1,
+  });
 
   const favorites = useMemo(() => visibleFavorites(layout), [layout]);
 
@@ -348,8 +408,8 @@ export default function SportsPage() {
               Your <span className="text-accent">board</span>
             </h2>
             <p className="text-chalk mt-2 max-w-lg text-[13px] leading-relaxed">
-              Favorites up front — records, last result, next tip. Customize the order
-              anytime.
+              Tap a team for standings, schedule, roster, stats, and playoff odds.
+              Cardinals pull from MLB Stats API.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -402,6 +462,7 @@ export default function SportsPage() {
               key={fav.key}
               snap={q.data}
               accent={byKeyFav.get(fav.key)?.color}
+              onOpen={() => setSelectedKey(fav.key)}
             />
           );
         })}
@@ -416,8 +477,346 @@ export default function SportsPage() {
       {customizing && (
         <CustomizePanel layout={layout} onChange={updateLayout} onClose={closeCustomize} />
       )}
+
+      {selectedKey && selectedFav && (
+        <TeamDetailPanel
+          fav={selectedFav}
+          detail={detailQuery.data ?? null}
+          loading={detailQuery.isPending || detailQuery.isFetching}
+          error={detailQuery.isError ? errorMessage(detailQuery.error) : null}
+          onClose={closeTeam}
+        />
+      )}
     </div>
   );
+}
+
+function TeamDetailPanel({
+  fav,
+  detail,
+  loading,
+  error,
+  onClose,
+}: {
+  fav: SportsFavorite;
+  detail: TeamDetail | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const accent = fav.color ? `#${fav.color}` : "var(--color-accent)";
+  const title = detail?.shortName ?? fav.shortName;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/55" onClick={onClose}>
+      <aside
+        className="bg-field flex h-full w-full max-w-lg flex-col overflow-hidden border-l border-accent/25"
+        style={{
+          paddingTop: "env(safe-area-inset-top)",
+          paddingBottom: "env(safe-area-inset-bottom)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="shrink-0 border-b border-white/[0.07] px-5 py-4">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="rule-head mb-1">{fav.league}</div>
+              <h2 className="font-display text-cream text-[26px] leading-tight">{title}</h2>
+              <p className="text-chalk-dim mt-0.5 text-[11px] uppercase tracking-[0.14em]">
+                {detail?.name ?? fav.name}
+                {detail?.source === "mlb" ? " · MLB Stats API" : ""}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-chalk hover:text-cream rounded-sm p-2"
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          {detail && (
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              {detail.record && (
+                <span className="numeral text-[24px] leading-none" style={{ color: accent }}>
+                  {detail.record}
+                </span>
+              )}
+              {detail.standing && (
+                <span className="text-chalk text-[12px]">{detail.standing}</span>
+              )}
+            </div>
+          )}
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5">
+          {loading && !detail && (
+            <div className="text-chalk flex items-center justify-center gap-2 py-20 text-[13px]">
+              <Loader2 size={16} className="animate-spin" />
+              Loading team…
+            </div>
+          )}
+          {error && !detail && (
+            <p className="text-alert text-[13px]">{error}</p>
+          )}
+          {detail && (
+            <div className="flex flex-col gap-7">
+              <DetailSection title="Playoff odds">
+                {detail.playoffOdds || detail.wildCardOdds ? (
+                  <div className="bg-panel rounded border border-white/[0.07] p-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
+                          Make playoffs
+                        </p>
+                        <p className="numeral text-cream mt-1 text-[36px] leading-none" style={{ color: accent }}>
+                          {formatOdds(detail.playoffOdds)}
+                        </p>
+                      </div>
+                      {detail.wildCardOdds && (
+                        <div className="text-right">
+                          <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
+                            Wild card
+                          </p>
+                          <p className="numeral text-cream mt-1 text-[22px]">
+                            {formatOdds(detail.wildCardOdds)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    {pctNumber(detail.playoffOdds) != null && (
+                      <div className="bg-field mt-3 h-1.5 overflow-hidden rounded-full">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, pctNumber(detail.playoffOdds)!))}%`,
+                            background: accent,
+                          }}
+                        />
+                      </div>
+                    )}
+                    <p className="text-chalk-dim mt-2 text-[11px]">ESPN projections</p>
+                  </div>
+                ) : (
+                  <EmptyLine>Playoff odds not available yet.</EmptyLine>
+                )}
+              </DetailSection>
+
+              <DetailSection title="Standings">
+                {detail.division.length === 0 ? (
+                  <EmptyLine>No standings available.</EmptyLine>
+                ) : (
+                  <div className="bg-panel overflow-x-auto rounded border border-white/[0.07]">
+                    <table className="w-full min-w-[420px] text-left text-[12px]">
+                      <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+                        <tr className="border-b border-white/[0.06]">
+                          <th className="px-3 py-2 font-medium">Team</th>
+                          <th className="px-2 py-2 font-medium">Rec</th>
+                          <th className="px-2 py-2 font-medium">Pct</th>
+                          <th className="px-2 py-2 font-medium">GB</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.division.map((row) => (
+                          <tr
+                            key={`${row.rank}-${row.team}`}
+                            className={cn(
+                              "border-t border-white/[0.04]",
+                              row.isMe && "bg-white/[0.04]",
+                            )}
+                          >
+                            <td className={cn("px-3 py-2", row.isMe ? "text-cream font-medium" : "text-chalk")}>
+                              <span className="text-chalk-dim numeral mr-2">{row.rank}</span>
+                              {row.team}
+                              {row.isMe ? " ★" : ""}
+                            </td>
+                            <td className="numeral text-cream px-2 py-2">{row.record}</td>
+                            <td className="numeral text-chalk px-2 py-2">{row.pct || "—"}</td>
+                            <td className="numeral text-chalk px-2 py-2">{row.gb}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </DetailSection>
+
+              <DetailSection title="Upcoming">
+                <GameList games={detail.upcoming} empty="No upcoming games." />
+              </DetailSection>
+
+              <DetailSection title="Recent">
+                <GameList games={detail.recent} empty="No recent games." />
+              </DetailSection>
+
+              <DetailSection title="Roster">
+                {detail.roster.length === 0 ? (
+                  <EmptyLine>Roster unavailable.</EmptyLine>
+                ) : (
+                  <ul className="bg-panel divide-y divide-white/[0.05] rounded border border-white/[0.07]">
+                    {detail.roster.map((p) => (
+                      <li key={p.id} className="flex items-baseline gap-2 px-3 py-2 text-[12.5px]">
+                        <span className="text-chalk-dim numeral w-8 shrink-0 text-[11px]">
+                          {p.number ? `#${p.number}` : "—"}
+                        </span>
+                        <span className="text-cream min-w-0 flex-1 truncate">{p.name}</span>
+                        <span className="text-chalk-dim shrink-0 text-[10px] uppercase tracking-[0.12em]">
+                          {p.position ?? "—"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </DetailSection>
+
+              <DetailSection title="Team stats">
+                {(detail.teamHitting.length > 0 || detail.teamPitching.length > 0) ? (
+                  <div className="flex flex-col gap-3">
+                    {detail.teamHitting.length > 0 && (
+                      <StatGrid title="Hitting" rows={detail.teamHitting} accent={accent} />
+                    )}
+                    {detail.teamPitching.length > 0 && (
+                      <StatGrid title="Pitching" rows={detail.teamPitching} accent={accent} />
+                    )}
+                  </div>
+                ) : (
+                  <EmptyLine>
+                    {detail.source === "mlb"
+                      ? "Team stats unavailable."
+                      : "Detailed team stats via MLB for Cardinals; other leagues show standings & roster."}
+                  </EmptyLine>
+                )}
+              </DetailSection>
+
+              {(detail.hittingLeaders.length > 0 || detail.pitchingLeaders.length > 0) && (
+                <DetailSection title="Leaders">
+                  <div className="flex flex-col gap-4">
+                    {detail.hittingLeaders.length > 0 && (
+                      <LeaderList title="Hitting" leaders={detail.hittingLeaders} />
+                    )}
+                    {detail.pitchingLeaders.length > 0 && (
+                      <LeaderList title="Pitching" leaders={detail.pitchingLeaders} />
+                    )}
+                  </div>
+                </DetailSection>
+              )}
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <h3 className="rule-head mb-3">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function EmptyLine({ children }: { children: ReactNode }) {
+  return <p className="text-chalk-dim text-[12.5px]">{children}</p>;
+}
+
+function GameList({ games, empty }: { games: ScheduleGame[]; empty: string }) {
+  if (games.length === 0) return <EmptyLine>{empty}</EmptyLine>;
+  return (
+    <ul className="bg-panel divide-y divide-white/[0.05] rounded border border-white/[0.07]">
+      {games.map((g) => (
+        <li key={g.id} className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2.5 text-[12.5px]">
+          <div className="min-w-0">
+            <span className="text-cream">{g.label}</span>
+            {g.detail ? (
+              <span
+                className={cn(
+                  "ml-2",
+                  g.won === true && "text-turf",
+                  g.won === false && "text-alert",
+                  g.won == null && "text-chalk",
+                )}
+              >
+                {g.detail}
+              </span>
+            ) : null}
+            {g.live ? (
+              <span className="text-alert ml-2 text-[10px] font-semibold uppercase tracking-wide">
+                Live
+              </span>
+            ) : null}
+          </div>
+          <span className="text-chalk-dim text-[11px]">{g.when ?? g.status}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function StatGrid({
+  title,
+  rows,
+  accent,
+}: {
+  title: string;
+  rows: { label: string; value: string }[];
+  accent: string;
+}) {
+  return (
+    <div>
+      <p className="text-chalk-dim mb-2 text-[10.5px] uppercase tracking-[0.14em]">{title}</p>
+      <dl className="grid grid-cols-3 gap-2">
+        {rows.map((s) => (
+          <div key={s.label} className="bg-panel rounded border border-white/[0.07] px-2.5 py-2">
+            <dt className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">{s.label}</dt>
+            <dd className="numeral text-cream mt-0.5 text-[18px]" style={{ color: accent }}>
+              {s.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function LeaderList({
+  title,
+  leaders,
+}: {
+  title: string;
+  leaders: { name: string; line: string }[];
+}) {
+  return (
+    <div>
+      <p className="text-chalk-dim mb-2 text-[10.5px] uppercase tracking-[0.14em]">{title}</p>
+      <ul className="flex flex-col gap-2">
+        {leaders.map((l) => (
+          <li
+            key={`${title}-${l.name}-${l.line}`}
+            className="border-b border-white/[0.05] pb-2 last:border-0"
+          >
+            <p className="text-cream text-[13px]">{l.name}</p>
+            <p className="text-chalk-dim numeral mt-0.5 text-[11.5px]">{l.line}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function formatOdds(raw: string | null): string {
+  if (!raw) return "—";
+  const n = pctNumber(raw);
+  if (n != null) return `${Number.isInteger(n) ? n : n.toFixed(1)}%`;
+  return raw.includes("%") ? raw : `${raw}%`;
+}
+
+function pctNumber(raw: string | null): number | null {
+  if (!raw) return null;
+  const n = parseFloat(raw.replace("%", "").trim());
+  return Number.isFinite(n) ? n : null;
 }
 
 function errorMessage(err: unknown): string {
