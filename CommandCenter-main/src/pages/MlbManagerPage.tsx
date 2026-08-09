@@ -2,9 +2,10 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Flame, Loader2, Star } from "lucide-react";
 import toast from "react-hot-toast";
+import TeamMark from "@/components/sports/TeamMark";
+import SportsNotesPanel from "@/components/sports/SportsNotesPanel";
 import {
   fetchMlbManagerDetail,
-  mlbTeamLogo,
   teamPagePath,
 } from "@/lib/mlb";
 import {
@@ -29,7 +30,7 @@ export default function MlbManagerPage() {
   const qc = useQueryClient();
 
   const detail = useQuery({
-    queryKey: ["mlb-manager-v3", managerId],
+    queryKey: ["mlb-manager-v4", managerId],
     queryFn: () => fetchMlbManagerDetail(managerId!),
     enabled: Boolean(managerId),
     staleTime: 180_000,
@@ -141,7 +142,7 @@ export default function MlbManagerPage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="mb-2 flex items-center gap-2">
-                  <img src={mlbTeamLogo(m.teamId)} alt="" className="h-6 w-6 object-contain" />
+                  <TeamMark teamId={m.teamId} size="sm" />
                   <Link
                     to={teamPagePath(m.teamId)}
                     className="text-[13px] font-medium text-white/80 transition hover:text-white"
@@ -291,7 +292,7 @@ export default function MlbManagerPage() {
         <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
           <h2 className="rule-head mb-3">Hot-seat chatter</h2>
           <p className="mb-3 text-[12px] text-[#8b93a7]">
-            Latest media hits mentioning hot seat / firing rumors for this manager.
+            MLB manager job-security hits from news and social (X / Reddit / Bluesky).
           </p>
           <ul className="space-y-3">
             {m.rumors.map((r) => (
@@ -304,6 +305,7 @@ export default function MlbManagerPage() {
                 >
                   {r.title}
                   <span className="mt-0.5 flex items-center gap-1 text-[11px] text-[#8b93a7] group-hover:text-accent">
+                    {r.channel === "social" ? "Social · " : ""}
                     {r.source} <ExternalLink size={11} />
                   </span>
                 </a>
@@ -312,6 +314,8 @@ export default function MlbManagerPage() {
           </ul>
         </section>
       )}
+
+      <SportsNotesPanel entityType="manager" entityId={m.id} entityName={m.name} />
 
       {m.stints.length > 0 && (
         <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
@@ -363,13 +367,17 @@ export default function MlbManagerPage() {
         </section>
       )}
 
-      {m.seasonRecords.length > 0 && (
-        <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-          <div className="border-b border-white/[0.06] px-4 py-2.5">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
-              Year-by-year record · all clubs
-            </h2>
-          </div>
+      <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+        <div className="border-b border-white/[0.06] px-4 py-2.5">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+            Season-by-season record
+          </h2>
+        </div>
+        {m.seasonRecords.length === 0 ? (
+          <p className="px-4 py-6 text-[13px] text-[#8b93a7]">
+            Season-by-season managerial record unavailable right now.
+          </p>
+        ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-left text-[12px]">
               <thead>
@@ -422,20 +430,20 @@ export default function MlbManagerPage() {
               </tbody>
             </table>
           </div>
-          {m.bbrefUrl && (
-            <div className="border-t border-white/[0.06] px-4 py-2.5">
-              <a
-                href={m.bbrefUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-accent inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] hover:underline"
-              >
-                Baseball Reference <ExternalLink size={11} />
-              </a>
-            </div>
-          )}
-        </section>
-      )}
+        )}
+        {m.bbrefUrl && (
+          <div className="border-t border-white/[0.06] px-4 py-2.5">
+            <a
+              href={m.bbrefUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] hover:underline"
+            >
+              Baseball Reference <ExternalLink size={11} />
+            </a>
+          </div>
+        )}
+      </section>
 
       {m.wikiExtract && (
         <section className="bg-panel rounded-xl border border-white/[0.08] p-4">

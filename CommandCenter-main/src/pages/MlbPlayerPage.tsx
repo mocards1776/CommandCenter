@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Loader2, Star } from "lucide-react";
 import toast from "react-hot-toast";
 import HighlightReel from "@/components/sports/HighlightReel";
+import SportsNotesPanel from "@/components/sports/SportsNotesPanel";
+import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
 import { addFavoritePlayer, isFavoritePlayer, removeFavoritePlayer } from "@/lib/favorite-players";
 import {
@@ -16,7 +18,6 @@ import {
   fetchMlbPlayerSplits,
   fetchMlbPlayerTransactions,
   fetchPlayerContract,
-  mlbTeamLogo,
   teamPagePath,
   type MlbGameLogEntry,
   type MlbLeagueRank,
@@ -257,6 +258,8 @@ export default function MlbPlayerPage() {
 
       <BioAndOrigin player={p} />
 
+      <SportsNotesPanel entityType="player" entityId={p.id} entityName={p.name} />
+
       <ContractBlock
         contract={contract.data ?? null}
         loading={contract.isPending}
@@ -319,11 +322,9 @@ function PlayerHeader({
             className="h-[140px] w-[140px] rounded-xl bg-[#0c1a2e] object-cover object-top ring-2 ring-white/25 shadow-2xl sm:h-[160px] sm:w-[160px]"
           />
           {player.teamId != null && (
-            <img
-              src={mlbTeamLogo(player.teamId)}
-              alt=""
-              className="absolute -right-2 -bottom-2 h-10 w-10 rounded-full bg-white p-1 shadow-lg"
-            />
+            <span className="absolute -right-2 -bottom-2">
+              <TeamMark teamId={player.teamId} size="md" />
+            </span>
           )}
         </div>
 

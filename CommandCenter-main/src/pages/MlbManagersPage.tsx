@@ -1,10 +1,10 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Flame, Loader2, Star } from "lucide-react";
+import TeamMark from "@/components/sports/TeamMark";
 import {
   fetchMlbManagerRumorsFeed,
   fetchMlbManagers,
-  mlbTeamLogo,
   teamPagePath,
   type MlbManager,
 } from "@/lib/mlb";
@@ -29,7 +29,7 @@ function heatLabel(rank: number): string {
 export default function MlbManagersPage() {
   const { user } = useAuth();
   const managers = useQuery({
-    queryKey: ["mlb-managers-v3"],
+    queryKey: ["mlb-managers-v4"],
     queryFn: fetchMlbManagers,
     staleTime: 180_000,
   });
@@ -42,7 +42,7 @@ export default function MlbManagersPage() {
   });
 
   const rumors = useQuery({
-    queryKey: ["mlb-manager-rumors-feed"],
+    queryKey: ["mlb-manager-rumors-feed-v2"],
     queryFn: fetchMlbManagerRumorsFeed,
     staleTime: 86_400_000, // daily
   });
@@ -116,6 +116,7 @@ export default function MlbManagersPage() {
                 >
                   {r.title}
                   <span className="mt-0.5 flex items-center gap-1 text-[11px] text-[#8b93a7]">
+                    {r.channel === "social" ? "Social · " : ""}
                     {r.source} <ExternalLink size={11} />
                   </span>
                 </a>
@@ -253,7 +254,7 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
               className="inline-flex items-center gap-1.5 hover:text-cream hover:underline"
               onClick={(e) => e.stopPropagation()}
             >
-              <img src={mlbTeamLogo(m.teamId)} alt="" className="h-4 w-4 object-contain" />
+              <TeamMark teamId={m.teamId} size="xs" />
               {m.teamAbbrev}
             </Link>
             <span className="numeral">{m.record}</span>

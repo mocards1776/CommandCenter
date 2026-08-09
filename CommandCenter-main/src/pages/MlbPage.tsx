@@ -7,12 +7,13 @@ import StarField from "@/components/StarField";
 import HeroGameCard from "@/components/sports/HeroGameCard";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
+import TeamMark from "@/components/sports/TeamMark";
 import {
+  fetchFavoritePlayersYesterday,
   fetchMlbLeaders,
   fetchMlbScoreboard,
   fetchMlbStandings,
   mlbHeadshot,
-  mlbTeamLogo,
   pickHeroGame,
   playoffOddsFromStandings,
   teamPagePath,
@@ -55,6 +56,18 @@ export default function MlbPage() {
     queryFn: () => listFavoritePlayers(user!.id),
     enabled: Boolean(user?.id),
     staleTime: 30_000,
+  });
+
+  const playerFavs = useMemo(
+    () => (favorites.data ?? []).filter((f) => (f.position ?? "").toLowerCase() !== "manager"),
+    [favorites.data],
+  );
+
+  const yesterday = useQuery({
+    queryKey: ["favorite-players-yesterday", user?.id, playerFavs.map((f) => f.playerId).join(",")],
+    queryFn: () => fetchFavoritePlayersYesterday(playerFavs),
+    enabled: playerFavs.length > 0,
+    staleTime: 120_000,
   });
 
   const odds = useMemo(
@@ -129,6 +142,56 @@ export default function MlbPage() {
           game={hero}
           label={hero.live ? "Live now" : hero.final ? "Latest final" : "Up next"}
         />
+      )}
+
+      {yesterday.data && yesterday.data.lines.length > 0 && (
+        <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <h3 className="rule-head">Yesterday</h3>
+            <p className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+              {yesterday.data.date}
+            </p>
+          </div>
+          <ul className="space-y-3">
+            {yesterday.data.lines.map((line) => (
+              <li key={line.playerId}>
+                <Link
+                  to={`/sports/mlb/player/${line.playerId}`}
+                  className="flex items-start gap-3 rounded-lg border border-white/[0.05] px-2 py-2 transition hover:bg-white/[0.03]"
+                >
+                  <img
+                    src={mlbHeadshot(line.playerId, 213)}
+                    alt=""
+                    className="h-12 w-10 shrink-0 rounded-md bg-[#dfe6f2] object-cover object-[center_15%]"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <p className="text-cream text-[14px] font-semibold">{line.playerName}</p>
+                      {line.played && line.isWin != null && (
+                        <span
+                          className={cn(
+                            "text-[10px] font-bold uppercase tracking-[0.12em]",
+                            line.isWin ? "text-emerald-300" : "text-alert",
+                          )}
+                        >
+                          {line.isWin ? "W" : "L"}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[12px] text-[#a8b0c2]">
+                      {line.played
+                        ? `${line.isHome ? "vs" : "@"} ${line.opponent}`
+                        : "No game / DNP"}
+                    </p>
+                    <p className="numeral text-cream mt-1 text-[13px] leading-snug">
+                      {line.played ? line.summary || "—" : "Did not play"}
+                    </p>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {favorites.data &&
@@ -369,9 +432,7 @@ function TeamScoreLine({
   return (
     <div className="flex items-center justify-between gap-3 py-1">
       <div className="flex min-w-0 items-center gap-2">
-        {side.teamId ? (
-          <img src={mlbTeamLogo(side.teamId)} alt="" className="h-7 w-7 object-contain" />
-        ) : null}
+        {side.teamId ? <TeamMark teamId={side.teamId} size="sm" /> : null}
         <div className="min-w-0">
           {side.teamId ? (
             <Link
@@ -446,13 +507,7 @@ function StandingsSection({
                             <td className="text-cream px-3 py-2">
                               <span className="inline-flex items-center gap-2">
                                 <span className="text-chalk-dim numeral w-3">{r.rank}</span>
-                                {r.teamId ? (
-                                  <img
-                                    src={mlbTeamLogo(r.teamId)}
-                                    alt=""
-                                    className="h-5 w-5 object-contain"
-                                  />
-                                ) : null}
+                                {r.teamId ? <TeamMark teamId={r.teamId} size="xs" /> : null}
                                 <Link
                                   to={teamPagePath(r.teamId)}
                                   className="hover:text-accent hover:underline"
@@ -576,7 +631,7 @@ function OddsSection({
                     to={teamPagePath(r.teamId)}
                     className="inline-flex items-center gap-2 hover:text-accent hover:underline"
                   >
-                    <img src={mlbTeamLogo(r.teamId)} alt="" className="h-5 w-5 object-contain" />
+                    <TeamMark teamId={r.teamId} size="xs" />
                     {r.team}
                   </Link>
                 </td>

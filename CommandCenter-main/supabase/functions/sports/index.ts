@@ -433,23 +433,30 @@ async function scrapeBbrefManager(name: string) {
       `Left ${st.team} after ${st.end} (${st.wins}-${st.losses}${finish ? `, ${finish}` : ""})`;
   }
 
-  // Upgrade departures with a news headline when available.
-  await Promise.all(
-    stints.slice(0, -1).map(async (st) => {
-      const teamHint = st.team.split(" ").pop() || st.team;
-      const news = await fetchGoogleNews(
-        `"${name}" ${teamHint} (fired OR dismissed OR "will not return" OR parted OR "mutual agreement" OR hired OR named) manager`,
-        3,
-      );
-      const hit = news.find((n) =>
-        /fired|dismiss|will not return|parted|mutual|hired|named|replace/i.test(n.title),
-      );
-      if (hit) {
-        st.departure = hit.title;
-        st.departureUrl = hit.url;
-      }
-    }),
-  );
+  // Upgrade departures with a news headline when available (best-effort, timed).
+  try {
+    await Promise.race([
+      Promise.all(
+        stints.slice(0, -1).map(async (st) => {
+          const teamHint = st.team.split(" ").pop() || st.team;
+          const news = await fetchGoogleNews(
+            `"${name}" ${teamHint} (fired OR dismissed OR "will not return" OR parted OR "mutual agreement") manager MLB`,
+            3,
+          );
+          const hit = news.find((n) =>
+            /fired|dismiss|will not return|parted|mutual|hired|named|replace/i.test(n.title),
+          );
+          if (hit) {
+            st.departure = hit.title;
+            st.departureUrl = hit.url;
+          }
+        }),
+      ),
+      new Promise((resolve) => setTimeout(resolve, 4500)),
+    ]);
+  } catch {
+    /* keep baseline departure blurbs */
+  }
 
   const divisionTitles = seasons.filter((s) => s.finish === 1).length;
   const postseasonAppearances = seasons.filter((s) => s.postWins + s.postLosses > 0).length;
@@ -528,21 +535,74 @@ async function fetchGoogleNews(
   }
 }
 
-async function scrapeManagerRumors(name?: string | null) {
-  const q = name?.trim()
-    ? `"${name.trim()}" (hot seat OR fired OR "will be fired" OR "on the hot seat" OR dismissed) MLB manager`
-    : `MLB manager ("hot seat" OR "on the hot seat" OR "will be fired" OR dismissed) when:7d`;
-  const seen = new Set<string>();
-  const items: { title: string; url: string; source: string }[] = [];
+function isRelevantMlbManagerRumor(title: string, url: string, named?: string | null): boolean {
+  const text = `${title} ${url}`;
+  // Wrong sports / roles / off-topic
+  if (
+    /\b(NFL|NHL|NBA|MLS|WNBA|college football|NCAA|Red Wings|general managers?|\bGM\b|head coach|jersey retirement|retire(?:s|d)? (?:his |her )?jersey|ejection|ejected|quick-hook)\b/i.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+  const mlbCue = /\b(MLB|Major League|baseball|skipper|managerial)\b/i.test(text);
+  const managerCue = /\bmanagers?\b|\bskipper\b|\bbench boss\b/i.test(text);
+  const heatCue =
+    /\b(hot seat|on the hot seat|fired|dismissed|will be fired|will not return|ousted|axed|job security|under fire)\b/i.test(
+      text,
+    );
+  if (!heatCue || !managerCue) return false;
+  // Prefer explicit MLB cues; allow manager+heat when clearly not another sport (already filtered).
+  if (!mlbCue && !/\b(AL|NL|American League|National League)\b/i.test(text)) {
+    // still ok if title is clearly "MLB managers" style; otherwise require mlbCue for league feed
+    if (!named) return false;
+  }
+  if (named?.trim()) {
+    const parts = named.trim().split(/\s+/);
+    const last = parts[parts.length - 1];
+    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (!new RegExp(esc(last), "i").test(text) && !new RegExp(esc(named), "i").test(text)) {
+      return false;
+    }
+  }
+  return true;
+}
 
-  for (const hit of await fetchGoogleNews(q, 10)) {
-    if (seen.has(hit.url)) continue;
-    seen.add(hit.url);
-    items.push(hit);
+async function scrapeManagerRumors(name?: string | null) {
+  const year = new Date().getFullYear();
+  const queries = name?.trim()
+    ? [
+        `"${name.trim()}" MLB (manager OR skipper) ("hot seat" OR fired OR dismissed OR "will not return")`,
+        `"${name.trim()}" (manager OR skipper) ("hot seat" OR fired) (site:x.com OR site:twitter.com OR site:reddit.com OR site:bsky.app)`,
+      ]
+    : [
+        `MLB (manager OR skipper) ("hot seat" OR "on the hot seat" OR fired OR dismissed) ${year}`,
+        `("hot seat" OR fired OR dismissed) (manager OR skipper) MLB -NFL -NHL -NBA -coach`,
+        `MLB manager ("hot seat" OR fired) (site:x.com OR site:twitter.com OR site:reddit.com/r/baseball OR site:bsky.app)`,
+      ];
+
+  const seen = new Set<string>();
+  const items: { title: string; url: string; source: string; channel: string }[] = [];
+
+  for (const q of queries) {
+    for (const hit of await fetchGoogleNews(q, 10)) {
+      if (seen.has(hit.url)) continue;
+      if (!isRelevantMlbManagerRumor(hit.title, hit.url, name)) continue;
+      seen.add(hit.url);
+      const social = /x\.com|twitter\.com|reddit\.com|bsky\.app|nitter/i.test(hit.url);
+      items.push({
+        ...hit,
+        source: social ? hit.source || "Social" : hit.source,
+        channel: social ? "social" : "news",
+      });
+      if (items.length >= 8) break;
+    }
+    if (items.length >= 8) break;
   }
 
   // Fallback scrapers when RSS is thin.
   if (items.length < 3) {
+    const q = queries[0];
     const urls = [
       `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
       `https://www.bing.com/search?q=${encodeURIComponent(q)}`,
@@ -559,7 +619,7 @@ async function scrapeManagerRumors(name?: string | null) {
           const title = stripTags(m[2]);
           if (!title || title.length < 20 || title.length > 180) continue;
           if (/duckduckgo|bing\.com|microsoft|google\.|yahoo\./i.test(href)) continue;
-          if (!/hot seat|fired|dismiss|replace|manager|skipper|bench/i.test(title + href)) continue;
+          if (!isRelevantMlbManagerRumor(title, href, name)) continue;
           if (seen.has(href)) continue;
           seen.add(href);
           let source = "News";
@@ -568,7 +628,13 @@ async function scrapeManagerRumors(name?: string | null) {
           } catch {
             /* */
           }
-          items.push({ title, url: href, source });
+          const social = /x\.com|twitter\.com|reddit\.com|bsky\.app/i.test(href);
+          items.push({
+            title,
+            url: href,
+            source,
+            channel: social ? "social" : "news",
+          });
           if (items.length >= 8) break;
         }
       } catch {
@@ -579,6 +645,24 @@ async function scrapeManagerRumors(name?: string | null) {
   }
 
   return { name: name ?? null, items: items.slice(0, 8), checkedAt: new Date().toISOString() };
+}
+
+async function scrapeBbrefManagerPhoto(name: string) {
+  const url = await findBbrefManagerUrl(name);
+  if (!url) return { error: "Manager page not found", name, photo: null as string | null };
+  const html = await (
+    await fetch(url, {
+      headers: { "User-Agent": UA, Accept: "text/html", Referer: "https://www.baseball-reference.com/" },
+    })
+  ).text();
+  const photoRaw =
+    html.match(/src="(https?:\/\/www\.baseball-reference\.com\/req\/[^"]+headshots[^"]+)"/i)?.[1] ??
+    html.match(/og:image"\s+content="([^"]+)"/i)?.[1] ??
+    null;
+  const photo = photoRaw?.includes("image_resize.cgi")
+    ? (photoRaw.match(/url=(https?:\/\/[^&]+)/i)?.[1] ?? photoRaw)
+    : photoRaw;
+  return { source: "baseball-reference", url, name, photo };
 }
 
 Deno.serve(async (req: Request) => {
@@ -615,6 +699,15 @@ Deno.serve(async (req: Request) => {
     const name = body.name != null ? String(body.name).trim() : null;
     try {
       return json(await scrapeManagerRumors(name));
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 200);
+    }
+  }
+  if (body.action === "managerPhoto") {
+    const name = String(body.name ?? "").trim();
+    if (name.length < 3 || name.length > 80) return json({ error: "Bad name" }, 400);
+    try {
+      return json(await scrapeBbrefManagerPhoto(name));
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 200);
     }

@@ -192,6 +192,7 @@ export type MlbManagerRumor = {
   title: string;
   url: string;
   source: string;
+  channel?: string;
 };
 
 export type MlbManager = {
@@ -483,9 +484,17 @@ export function mlbHeadshot(playerId: number | string, size: 213 | 426 = 213): s
   return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_${size},q_auto:best/v1/people/${playerId}/headshot/67/current`;
 }
 
-/** Crisp SVG team mark — use on scoreboards / standings. */
+/**
+ * Primary color team mark (bird-on-bat for STL, etc.).
+ * Pair with a white disc (`TeamMark`) on dark backgrounds.
+ */
 export function mlbTeamLogo(teamId: number | string): string {
-  return `https://www.mlbstatic.com/team-logos/${teamId}.svg`;
+  return `https://www.mlbstatic.com/team-logos/team-primary-on-light/${teamId}.svg`;
+}
+
+/** Simpler cap mark — useful at very small sizes. */
+export function mlbTeamCapLogo(teamId: number | string): string {
+  return `https://www.mlbstatic.com/team-logos/team-cap-on-light/${teamId}.svg`;
 }
 
 export function mlbActionShot(playerId: number | string): string {
@@ -2020,7 +2029,56 @@ async function fetchManagerContractNote(name: string): Promise<string | null> {
 
 type WikiCard = { extract: string | null; image: string | null };
 
+function cleanWikiImage(url: string | null | undefined): string | null {
+  if (!url) return null;
+  // Drop tracking params; prefer full commons URL.
+  return url.replace(/\?utm_source=.*$/, "").trim() || null;
+}
+
 async function fetchWikipediaCard(name: string): Promise<WikiCard> {
+  const titles = [
+    name.trim(),
+    `${name.trim()} (baseball)`,
+    `${name.trim()} (baseball manager)`,
+  ];
+  for (const title of titles) {
+    try {
+      // MediaWiki API is more reliable for pageimages than REST summary.
+      const api = new URL("https://en.wikipedia.org/w/api.php");
+      api.searchParams.set("action", "query");
+      api.searchParams.set("titles", title);
+      api.searchParams.set("prop", "pageimages|extracts");
+      api.searchParams.set("exintro", "1");
+      api.searchParams.set("explaintext", "1");
+      api.searchParams.set("pithumbsize", "640");
+      api.searchParams.set("pilicense", "any");
+      api.searchParams.set("format", "json");
+      api.searchParams.set("origin", "*");
+      const res = await fetch(api.toString());
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        query?: {
+          pages?: Record<
+            string,
+            {
+              missing?: boolean;
+              extract?: string;
+              thumbnail?: { source?: string };
+              original?: { source?: string };
+            }
+          >;
+        };
+      };
+      const page = Object.values(data.query?.pages ?? {})[0];
+      if (!page || page.missing) continue;
+      const image = cleanWikiImage(page.original?.source ?? page.thumbnail?.source);
+      const extract = page.extract?.trim() || null;
+      if (image || extract) return { extract, image };
+    } catch {
+      /* try next title */
+    }
+  }
+  // REST fallback
   try {
     const title = name.trim().replace(/\s+/g, "_");
     const res = await fetch(
@@ -2037,10 +2095,22 @@ async function fetchWikipediaCard(name: string): Promise<WikiCard> {
     if (data.type === "disambiguation") return { extract: null, image: null };
     return {
       extract: data.extract?.trim() || null,
-      image: data.originalimage?.source ?? data.thumbnail?.source ?? null,
+      image: cleanWikiImage(data.originalimage?.source ?? data.thumbnail?.source),
     };
   } catch {
     return { extract: null, image: null };
+  }
+}
+
+async function fetchManagerPhoto(name: string): Promise<string | null> {
+  try {
+    const { data } = await supabase.functions.invoke("sports", {
+      body: { action: "managerPhoto", name },
+    });
+    if (!data || (data as { error?: string }).error) return null;
+    return (data as { photo?: string | null }).photo ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -2424,16 +2494,11 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
           yearsWithTeam += 1;
         }
 
-        let wiki = await fetchWikipediaCard(mgr.person.fullName);
-        if (!wiki.image) {
-          wiki = await fetchWikipediaCard(`${mgr.person.fullName} (baseball)`);
-        }
-        if (!wiki.image) {
-          wiki = {
-            ...wiki,
-            image: (await fetchWikipediaCard(`${mgr.person.fullName} manager`)).image,
-          };
-        }
+        const wiki = await fetchWikipediaCard(mgr.person.fullName);
+        let headshot = wiki.image;
+        if (!headshot) headshot = await fetchManagerPhoto(mgr.person.fullName);
+        if (!headshot) headshot = mlbHeadshot(mgrId, 213);
+
         const st = standingByTeam.get(team.id);
         const wins = st?.wins ?? 0;
         const losses = st?.losses ?? 0;
@@ -2463,7 +2528,7 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
           divisionRank: st?.rank ? Number(st.rank) : null,
           contractNote: null,
           hotSeatScore: heat.score,
-          headshot: wiki.image ?? mlbHeadshot(mgrId, 213),
+          headshot,
           primaryColor: TEAM_COLORS[team.id] ?? "d9515c",
           yearsWithTeam,
           heatFactors: heat.factors,
@@ -2729,7 +2794,18 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
       : "No MLB playing seasons on record (coach/manager track).",
   ].filter(Boolean);
 
-  const headshot = wiki.image || careerRaw?.photo || base.headshot || mlbHeadshot(id, 426);
+  let headshot = wiki.image || careerRaw?.photo || base.headshot || null;
+  if (!headshot || headshot.includes("mlbstatic.com")) {
+    const bbPhoto = await fetchManagerPhoto(base.name);
+    if (bbPhoto) headshot = bbPhoto;
+  }
+  if (!headshot) headshot = mlbHeadshot(id, 426);
+
+  // Always surface a season-by-season table — prefer BBRef all-clubs, else current-team scan.
+  const finalSeasonRecords =
+    seasonRecords.length > 0
+      ? seasonRecords
+      : await fetchManagerSeasonRecords(id, base.teamId, base.teamAbbrev, season);
 
   return {
     ...base,
@@ -2747,11 +2823,91 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
     wikiExtract: wiki.extract,
     timeline: timeline.slice(-24),
     playingCareer,
-    seasonRecords,
+    seasonRecords: finalSeasonRecords,
     stints,
     career,
     awards,
     rumors: rumorItems,
     bbrefUrl: careerRaw?.url ?? null,
   };
+}
+
+export type FavoriteYesterdayLine = {
+  playerId: string;
+  playerName: string;
+  teamName: string | null;
+  position: string | null;
+  date: string;
+  summary: string;
+  opponent: string;
+  isHome: boolean;
+  isWin: boolean | null;
+  stats: MlbPlayerStatLine[];
+  group: "hitting" | "pitching";
+  played: boolean;
+};
+
+/** How each favorited player (non-manager) did in yesterday's games (America/Chicago). */
+export async function fetchFavoritePlayersYesterday(
+  favorites: {
+    playerId: string;
+    playerName: string;
+    teamName?: string | null;
+    position?: string | null;
+  }[],
+): Promise<{ date: string; lines: FavoriteYesterdayLine[] }> {
+  const today = chicagoToday();
+  const date = addDaysIso(today, -1);
+  const season = Number(date.slice(0, 4));
+  const players = favorites.filter(
+    (f) => (f.position ?? "").toLowerCase() !== "manager",
+  );
+
+  const lines = await Promise.all(
+    players.map(async (f) => {
+      const isPitcher = /^(p|pitcher|sp|rp|cl)$/i.test(f.position ?? "");
+      const groups: ("hitting" | "pitching")[] = isPitcher
+        ? ["pitching", "hitting"]
+        : ["hitting", "pitching"];
+      for (const group of groups) {
+        try {
+          const log = await fetchMlbPlayerGameLog(f.playerId, group, 5, season);
+          const game = log.find((g) => g.date === date);
+          if (!game) continue;
+          return {
+            playerId: f.playerId,
+            playerName: f.playerName,
+            teamName: f.teamName ?? null,
+            position: f.position ?? null,
+            date,
+            summary: game.summary || `${game.stats.map((s) => `${s.label} ${s.value}`).join(" · ")}`,
+            opponent: game.opponent,
+            isHome: game.isHome,
+            isWin: game.isWin,
+            stats: game.stats.slice(0, 6),
+            group,
+            played: true,
+          } satisfies FavoriteYesterdayLine;
+        } catch {
+          /* try next group */
+        }
+      }
+      return {
+        playerId: f.playerId,
+        playerName: f.playerName,
+        teamName: f.teamName ?? null,
+        position: f.position ?? null,
+        date,
+        summary: "Did not play",
+        opponent: "—",
+        isHome: true,
+        isWin: null,
+        stats: [],
+        group: isPitcher ? "pitching" : "hitting",
+        played: false,
+      } satisfies FavoriteYesterdayLine;
+    }),
+  );
+
+  return { date, lines };
 }

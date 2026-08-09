@@ -15,8 +15,9 @@ import {
 import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
 import HeroGameCard from "@/components/sports/HeroGameCard";
+import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
-import { fetchTeamCurrentGame, mlbHeadshot, mlbTeamLogo, teamPagePath } from "@/lib/mlb";
+import { fetchTeamCurrentGame, mlbHeadshot, teamPagePath } from "@/lib/mlb";
 import {
   DEFAULT_FAVORITES,
   ensureFavoriteTeamsSeeded,
@@ -702,11 +703,7 @@ function TeamDetailPanel({
                               <span className="inline-flex items-center gap-2">
                                 <span className="text-chalk-dim numeral w-3">{row.rank}</span>
                                 {detail.source === "mlb" && row.teamId ? (
-                                  <img
-                                    src={mlbTeamLogo(row.teamId)}
-                                    alt=""
-                                    className="h-5 w-5 object-contain"
-                                  />
+                                  <TeamMark teamId={row.teamId} size="xs" />
                                 ) : null}
                                 {detail.source === "mlb" && row.teamId ? (
                                   <Link
@@ -888,11 +885,7 @@ function GameList({
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 {g.opponentTeamId != null && (
-                  <img
-                    src={mlbTeamLogo(g.opponentTeamId)}
-                    alt=""
-                    className="h-7 w-7 shrink-0 object-contain"
-                  />
+                  <TeamMark teamId={g.opponentTeamId} size="sm" />
                 )}
                 <span className="text-cream text-[14px] font-semibold group-hover:underline">
                   {g.label}

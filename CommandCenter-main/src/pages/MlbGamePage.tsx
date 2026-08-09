@@ -3,13 +3,13 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
 import HighlightReel from "@/components/sports/HighlightReel";
+import TeamMark from "@/components/sports/TeamMark";
 import {
   buildPlayerNameIndex,
   fetchEspnGameRecap,
   fetchMlbBoxscore,
   fetchMlbGameHighlights,
   formatGameDuration,
-  mlbTeamLogo,
   parseEspnRecapHtml,
   resolveMissingRecapPlayers,
   teamPagePath,
@@ -210,7 +210,7 @@ function EspnTeam({ side, align }: { side: MlbBoxscoreSide; align: "left" | "rig
         align === "left" ? "sm:items-start" : "sm:items-end",
       )}
     >
-      <img src={mlbTeamLogo(side.teamId)} alt="" className="h-14 w-14 object-contain sm:h-16 sm:w-16" />
+      <TeamMark teamId={side.teamId} size="xl" />
       <div className={cn("text-center", align === "left" ? "sm:text-left" : "sm:text-right")}>
         <p className="text-[15px] font-bold tracking-wide text-white underline-offset-2 hover:underline sm:text-[17px]">
           {side.abbrev}
@@ -393,7 +393,7 @@ function BoxSide({ title, side }: { title: string; side: MlbBoxscoreSide }) {
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="flex items-center gap-2 border-b border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
-        <img src={mlbTeamLogo(side.teamId)} alt="" className="h-6 w-6 object-contain" />
+        <TeamMark teamId={side.teamId} size="sm" />
         <Link
           to={teamPagePath(side.teamId)}
           className="text-[14px] font-bold tracking-wide text-white hover:text-accent hover:underline"

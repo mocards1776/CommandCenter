@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { mlbHeadshot, mlbTeamLogo, teamPagePath, type MlbScoreGame } from "@/lib/mlb";
+import { mlbHeadshot, teamPagePath, type MlbScoreGame } from "@/lib/mlb";
+import TeamMark from "@/components/sports/TeamMark";
 import { cn } from "@/lib/utils";
 
 export default function HeroGameCard({
@@ -158,13 +159,15 @@ function PitcherStack({
       )}
     >
       {side.probablePitcherId ? (
-        <img
-          src={mlbHeadshot(side.probablePitcherId, 213)}
-          alt=""
-          className="h-20 w-20 rounded-full bg-[#0c1a2e] object-cover object-top ring-2 ring-white/20 sm:h-24 sm:w-24"
-        />
+        <div className="relative h-[88px] w-[72px] overflow-hidden rounded-xl bg-[#dfe6f2] ring-2 ring-white/25 sm:h-[104px] sm:w-[84px]">
+          <img
+            src={mlbHeadshot(side.probablePitcherId, 426)}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover object-[center_12%] scale-[1.12]"
+          />
+        </div>
       ) : (
-        <div className="grid h-20 w-20 place-items-center rounded-full bg-white/10 text-[11px] text-white/40 sm:h-24 sm:w-24">
+        <div className="grid h-[88px] w-[72px] place-items-center rounded-xl bg-white/10 text-[11px] text-white/40 sm:h-[104px] sm:w-[84px]">
           TBD
         </div>
       )}
@@ -196,12 +199,9 @@ function HeroSide({
       <Link
         to={teamPagePath(side.teamId)}
         onClick={(e) => e.stopPropagation()}
-        className={cn(
-          "grid place-items-center rounded-full bg-white p-2 shadow-lg transition hover:scale-[1.03]",
-          compact ? "h-14 w-14 sm:h-16 sm:w-16" : "h-16 w-16 sm:h-20 sm:w-20",
-        )}
+        className="transition hover:scale-[1.03]"
       >
-        <img src={mlbTeamLogo(side.teamId)} alt="" className="h-full w-full object-contain" />
+        <TeamMark teamId={side.teamId} size={compact ? "lg" : "xl"} />
       </Link>
       <div
         className={cn(
