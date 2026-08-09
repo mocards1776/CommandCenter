@@ -220,9 +220,35 @@ export type MlbBoxscore = {
   status: string;
   when: string | null;
   venue: string | null;
+  attendance: number | null;
+  gameDurationMinutes: number | null;
+  weather: string | null;
+  officialDate: string | null;
   innings: { num: number; away: number | null; home: number | null }[];
   away: MlbBoxscoreSide;
   home: MlbBoxscoreSide;
+};
+
+export type MlbGameRecap = {
+  espnEventId: string;
+  headline: string;
+  description: string | null;
+  storyHtml: string;
+  storyText: string;
+  url: string;
+};
+
+export type MlbLeagueRank = {
+  label: string;
+  value: string;
+  rank: number;
+  of: number;
+};
+
+export type MlbRecentBlock = {
+  label: string;
+  games: number;
+  stats: MlbPlayerStatLine[];
 };
 
 type BoxTeamRaw = {
@@ -316,8 +342,10 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
       .catch(() => null) as Promise<{
       gameData?: {
         status?: { detailedState?: string };
-        datetime?: { dateTime?: string };
+        datetime?: { dateTime?: string; officialDate?: string };
         venue?: { name?: string };
+        weather?: { condition?: string; temp?: string; wind?: string };
+        gameInfo?: { attendance?: number; gameDurationMinutes?: number };
         teams?: {
           away?: { id?: number; name?: string; abbreviation?: string };
           home?: { id?: number; name?: string; abbreviation?: string };
@@ -336,11 +364,21 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
   ]);
 
   const ls = live?.liveData?.linescore;
+  const weather = live?.gameData?.weather;
+  const weatherLine = weather
+    ? [weather.temp ? `${weather.temp}°` : null, weather.condition, weather.wind]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
   return {
     gamePk: Number(pk),
     status: live?.gameData?.status?.detailedState ?? "Final",
     when: fmtWhen(live?.gameData?.datetime?.dateTime),
     venue: live?.gameData?.venue?.name ?? null,
+    attendance: live?.gameData?.gameInfo?.attendance ?? null,
+    gameDurationMinutes: live?.gameData?.gameInfo?.gameDurationMinutes ?? null,
+    weather: weatherLine || null,
+    officialDate: live?.gameData?.datetime?.officialDate ?? null,
     innings: (ls?.innings ?? []).map((i) => ({
       num: i.num ?? 0,
       away: i.away?.runs ?? null,
@@ -349,6 +387,88 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
     away: mapBoxSide(box.teams?.away, live?.gameData?.teams?.away, ls?.teams?.away),
     home: mapBoxSide(box.teams?.home, live?.gameData?.teams?.home, ls?.teams?.home),
   };
+}
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** ESPN game wrap / recap for an MLB game (matched by date + team abbrevs). */
+export async function fetchEspnGameRecap(
+  officialDate: string | null | undefined,
+  homeAbbrev: string,
+  awayAbbrev: string,
+): Promise<MlbGameRecap | null> {
+  if (!officialDate) return null;
+  const ymd = officialDate.replace(/-/g, "");
+  try {
+    const boardRes = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${ymd}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!boardRes.ok) return null;
+    const board = (await boardRes.json()) as {
+      events?: {
+        id?: string;
+        competitions?: {
+          competitors?: { homeAway?: string; team?: { abbreviation?: string } }[];
+        }[];
+      }[];
+    };
+    const home = homeAbbrev.toUpperCase();
+    const away = awayAbbrev.toUpperCase();
+    const event = (board.events ?? []).find((e) => {
+      const comps = e.competitions?.[0]?.competitors ?? [];
+      const h = comps.find((c) => c.homeAway === "home")?.team?.abbreviation?.toUpperCase();
+      const a = comps.find((c) => c.homeAway === "away")?.team?.abbreviation?.toUpperCase();
+      return h === home && a === away;
+    });
+    if (!event?.id) return null;
+
+    const sumRes = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${event.id}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!sumRes.ok) return null;
+    const sum = (await sumRes.json()) as {
+      article?: {
+        headline?: string;
+        description?: string;
+        story?: string;
+        links?: { web?: { href?: string } };
+      };
+    };
+    const article = sum.article;
+    if (!article?.headline || !article.story) return null;
+    return {
+      espnEventId: event.id,
+      headline: article.headline,
+      description: article.description ?? null,
+      storyHtml: article.story,
+      storyText: stripHtml(article.story),
+      url:
+        article.links?.web?.href ??
+        `https://www.espn.com/mlb/recap/_/gameId/${event.id}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function formatGameDuration(minutes: number | null | undefined): string | null {
+  if (minutes == null || !Number.isFinite(minutes)) return null;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}` : `${m} min`;
 }
 
 function fmtWhen(iso: string | null | undefined): string | null {
@@ -480,6 +600,25 @@ export async function fetchTeamCurrentGame(teamId: number): Promise<MlbScoreGame
     if (!pk || !day.date) continue;
     const dayBoard = await fetchMlbScoreboard(day.date);
     const hit = dayBoard.find((g) => g.id === String(pk));
+    if (hit) return hit;
+  }
+
+  // Fall back to most recent final so the team drawer always has a hero card
+  const past = (await mlbGet("schedule", {
+    sportId: "1",
+    teamId: String(teamId),
+    startDate: `${season}-03-01`,
+    endDate: date,
+    hydrate: "linescore,team,probablePitcher,venue",
+  })) as { dates?: { date?: string; games?: { gamePk?: number; status?: { abstractGameState?: string } }[] }[] };
+
+  for (const day of [...(past.dates ?? [])].reverse()) {
+    const g = [...(day.games ?? [])]
+      .reverse()
+      .find((x) => x.status?.abstractGameState === "Final" && x.gamePk);
+    if (!g?.gamePk || !day.date) continue;
+    const dayBoard = await fetchMlbScoreboard(day.date);
+    const hit = dayBoard.find((x) => x.id === String(g.gamePk));
     if (hit) return hit;
   }
   return null;
@@ -633,11 +772,23 @@ export async function fetchMlbPlayerHighlights(
   return out;
 }
 
+/** Word-boundary match — "Assigned" must NOT match "Signed". */
+const ACQUISITION_TYPE =
+  /^(Drafted|Trade|Traded|Signed|Claimed|Selected|Purchase|Purchased|Free Agent|Rule 5|Waivers)$/i;
+
+function txPriority(type: string): number {
+  if (/^trade/i.test(type)) return 0;
+  if (/^draft/i.test(type)) return 1;
+  if (/^sign/i.test(type)) return 2;
+  if (/^selected|purchase|claim|rule\s*5|waiver|free agent/i.test(type)) return 3;
+  return 9;
+}
+
 export async function fetchMlbPlayerTransactions(playerId: number): Promise<MlbTransaction[]> {
   const season = currentSeason();
   const raw = (await mlbGet("transactions", {
     playerId: String(playerId),
-    startDate: `01/01/${season - 12}`,
+    startDate: `01/01/${season - 14}`,
     endDate: `12/31/${season}`,
   })) as {
     transactions?: {
@@ -647,14 +798,71 @@ export async function fetchMlbPlayerTransactions(playerId: number): Promise<MlbT
       description?: string;
     }[];
   };
-  const interesting = /Drafted|Traded|Signed|Claimed|Selected|Purchase|Free Agent|Rule 5|Waivers/i;
   return (raw.transactions ?? [])
-    .filter((t) => interesting.test(`${t.typeDesc ?? ""} ${t.description ?? ""}`))
+    .filter((t) => ACQUISITION_TYPE.test((t.typeDesc || t.typeCode || "").trim()))
     .map((t) => ({
       date: t.date ?? "",
       type: t.typeDesc || t.typeCode || "Transaction",
       description: t.description ?? "",
-    }));
+    }))
+    .sort((a, b) => {
+      const pd = txPriority(a.type) - txPriority(b.type);
+      if (pd !== 0) return pd;
+      return b.date.localeCompare(a.date);
+    });
+}
+
+/**
+ * Curated “how he got here” story — trade to current club first,
+ * then draft / original signing. Never bury the trade under minor-league assignments.
+ */
+export function buildAcquisitionStory(
+  transactions: MlbTransaction[],
+  extras: string[] = [],
+  teamName?: string | null,
+): { headline: string | null; lines: string[] } {
+  const teamHint = (teamName ?? "").replace(/^St\.\s*/i, "").split(/\s+/)[0] || "";
+  const trade =
+    transactions.find(
+      (t) =>
+        /^trade/i.test(t.type) &&
+        (!teamHint || new RegExp(teamHint, "i").test(t.description)),
+    ) ?? transactions.find((t) => /^trade/i.test(t.type));
+  const draft = transactions.find((t) => /^draft/i.test(t.type));
+  const signed = transactions.find((t) => /^sign/i.test(t.type));
+  const selected = transactions.find((t) => /selected|purchase|claim|rule\s*5/i.test(t.type));
+
+  const lines: string[] = [];
+  let headline: string | null = null;
+
+  if (trade) {
+    headline = `${trade.date}: ${trade.description}`;
+    lines.push(headline);
+  }
+  if (draft) {
+    const line = `${draft.date}: ${draft.description}`;
+    if (!lines.includes(line)) lines.push(line);
+    if (!headline) headline = line;
+  }
+  if (signed) {
+    const line = `${signed.date}: ${signed.description}`;
+    if (!lines.includes(line)) lines.push(line);
+    if (!headline) headline = line;
+  }
+  if (selected) {
+    const line = `${selected.date}: ${selected.description}`;
+    if (!lines.includes(line)) lines.push(line);
+  }
+
+  for (const extra of extras) {
+    const cleaned = extra.trim();
+    if (cleaned && !lines.some((l) => l.includes(cleaned) || cleaned.includes(l))) {
+      lines.push(cleaned);
+    }
+  }
+
+  // Cap secondary noise
+  return { headline, lines: lines.slice(0, 8) };
 }
 
 export async function fetchPlayerContract(playerName: string): Promise<MlbPlayerContract | null> {
@@ -718,6 +926,113 @@ const SPLIT_PITCH_KEYS: [string, string][] = [
   ["homeRuns", "HR"],
   ["whip", "WHIP"],
 ];
+
+export async function fetchMlbPlayerRecent(
+  playerId: number | string,
+  group: "hitting" | "pitching",
+  games: 5 | 10,
+  season = currentSeason(),
+): Promise<MlbRecentBlock | null> {
+  const id = Number(playerId);
+  const keys = group === "pitching" ? SPLIT_PITCH_KEYS : SPLIT_HIT_KEYS;
+  try {
+    const raw = (await mlbGet(`people/${id}/stats`, {
+      stats: "lastXGames",
+      group,
+      season: String(season),
+      limit: String(games),
+      gameType: "R",
+    })) as {
+      stats?: { splits?: { stat?: Record<string, unknown> }[] }[];
+    };
+    const stat = raw.stats?.[0]?.splits?.[0]?.stat;
+    const stats = pickStats(stat, keys);
+    if (!stats.length) return null;
+    const gPlayed = Number(stat?.gamesPlayed ?? games);
+    return {
+      label: `Last ${games}`,
+      games: Number.isFinite(gPlayed) && gPlayed > 0 ? gPlayed : games,
+      stats,
+    };
+  } catch {
+    return null;
+  }
+}
+
+type RankDef = { sortStat: string; label: string; order: "asc" | "desc"; statKey: string };
+
+const HIT_RANK_DEFS: RankDef[] = [
+  { sortStat: "homeRuns", label: "HR", order: "desc", statKey: "homeRuns" },
+  { sortStat: "battingAverage", label: "AVG", order: "desc", statKey: "avg" },
+  { sortStat: "ops", label: "OPS", order: "desc", statKey: "ops" },
+  { sortStat: "rbi", label: "RBI", order: "desc", statKey: "rbi" },
+  { sortStat: "stolenBases", label: "SB", order: "desc", statKey: "stolenBases" },
+];
+
+const PITCH_RANK_DEFS: RankDef[] = [
+  { sortStat: "earnedRunAverage", label: "ERA", order: "asc", statKey: "era" },
+  { sortStat: "strikeouts", label: "SO", order: "desc", statKey: "strikeOuts" },
+  { sortStat: "wins", label: "W", order: "desc", statKey: "wins" },
+  {
+    sortStat: "walksAndHitsPerInningPitched",
+    label: "WHIP",
+    order: "asc",
+    statKey: "whip",
+  },
+  { sortStat: "inningsPitched", label: "IP", order: "desc", statKey: "inningsPitched" },
+];
+
+async function rankForStat(
+  playerId: number,
+  group: "hitting" | "pitching",
+  def: RankDef,
+  season: number,
+): Promise<MlbLeagueRank | null> {
+  try {
+    const raw = (await mlbGet("stats", {
+      stats: "season",
+      group,
+      season: String(season),
+      sportId: "1",
+      playerPool: "qualified",
+      limit: "400",
+      sortStat: def.sortStat,
+      order: def.order,
+    })) as {
+      stats?: {
+        splits?: {
+          player?: { id?: number };
+          stat?: Record<string, unknown>;
+        }[];
+      }[];
+    };
+    const splits = raw.stats?.[0]?.splits ?? [];
+    const idx = splits.findIndex((s) => s.player?.id === playerId);
+    if (idx < 0) return null;
+    const value = splits[idx]?.stat?.[def.statKey];
+    if (value == null || value === "") return null;
+    return {
+      label: def.label,
+      value: String(value),
+      rank: idx + 1,
+      of: splits.length,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Qualified MLB league ranks for key counting stats. */
+export async function fetchMlbPlayerLeagueRanks(
+  playerId: number | string,
+  group: "hitting" | "pitching",
+  season = currentSeason(),
+): Promise<MlbLeagueRank[]> {
+  const id = Number(playerId);
+  const defs = group === "pitching" ? PITCH_RANK_DEFS : HIT_RANK_DEFS;
+  const ranks = await Promise.all(defs.map((d) => rankForStat(id, group, d, season)));
+  return ranks.filter((r): r is MlbLeagueRank => r != null);
+}
 
 /** Season situational splits (home/away, vs L/R, day/night). */
 export async function fetchMlbPlayerSplits(

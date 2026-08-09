@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
 import HighlightReel from "@/components/sports/HighlightReel";
 import {
+  fetchEspnGameRecap,
   fetchMlbBoxscore,
   fetchMlbGameHighlights,
+  formatGameDuration,
   mlbTeamLogo,
   type MlbBoxscoreBatter,
   type MlbBoxscorePitcher,
@@ -34,6 +37,20 @@ export default function MlbGamePage() {
     staleTime: 60_000,
   });
 
+  const recap = useQuery({
+    queryKey: [
+      "mlb-game-recap",
+      gamePk,
+      box.data?.officialDate,
+      box.data?.home.abbrev,
+      box.data?.away.abbrev,
+    ],
+    queryFn: () =>
+      fetchEspnGameRecap(box.data!.officialDate, box.data!.home.abbrev, box.data!.away.abbrev),
+    enabled: Boolean(box.data?.officialDate && box.data.home.abbrev && box.data.away.abbrev),
+    staleTime: 300_000,
+  });
+
   if (box.isPending) {
     return (
       <div className="text-chalk flex min-h-[50vh] items-center justify-center gap-2">
@@ -61,6 +78,14 @@ export default function MlbGamePage() {
   }
 
   const g = box.data;
+  const duration = formatGameDuration(g.gameDurationMinutes);
+  const metaBits = [
+    g.venue,
+    g.when,
+    duration ? `Time ${duration}` : null,
+    g.attendance != null ? `Att ${g.attendance.toLocaleString("en-US")}` : null,
+    g.weather,
+  ].filter(Boolean);
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
@@ -80,39 +105,57 @@ export default function MlbGamePage() {
         </Link>
       </div>
 
-      <header className="bg-panel rounded-xl border border-white/[0.08] p-4 sm:p-5">
-        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-          <p className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+      {/* ESPN-style game header */}
+      <header className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+        <div className="flex items-center justify-between gap-2 border-b border-white/[0.07] px-4 py-2.5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#a8b0c2]">
             {g.status}
-            {g.venue ? ` · ${g.venue}` : ""}
           </p>
-          {g.when && <p className="text-[11px] text-[#8b93a7]">{g.when}</p>}
+          {g.officialDate && (
+            <p className="text-[11px] text-[#8b93a7]">
+              {new Date(`${g.officialDate}T12:00:00`).toLocaleDateString("en-US", {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </p>
+          )}
         </div>
 
-        <div className="flex items-center justify-between gap-3">
-          <ScoreTeam side={g.away} />
-          <span className="font-display text-cream text-[28px] tabular-nums">
-            {g.away.runs}
-            <span className="text-chalk-dim mx-2 text-[18px]">–</span>
-            {g.home.runs}
-          </span>
-          <ScoreTeam side={g.home} align="right" />
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-5 sm:gap-4 sm:px-6">
+          <EspnTeam side={g.away} align="left" />
+          <div className="text-center">
+            <p className="font-display text-[44px] leading-none tabular-nums text-white sm:text-[56px]">
+              <span className={g.away.runs > g.home.runs ? "text-white" : "text-white/55"}>
+                {g.away.runs}
+              </span>
+              <span className="mx-2 text-[22px] text-white/25 sm:mx-3">-</span>
+              <span className={g.home.runs > g.away.runs ? "text-white" : "text-white/55"}>
+                {g.home.runs}
+              </span>
+            </p>
+            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+              {g.status === "Final" ? "Final" : g.status}
+            </p>
+          </div>
+          <EspnTeam side={g.home} align="right" />
         </div>
 
         {g.innings.length > 0 && (
-          <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[420px] text-center text-[12px]">
+          <div className="overflow-x-auto border-t border-white/[0.07]">
+            <table className="w-full min-w-[440px] text-center text-[12px]">
               <thead>
-                <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                  <th className="px-1 py-1 text-left font-medium"> </th>
+                <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                  <th className="px-3 py-2 text-left font-medium"> </th>
                   {g.innings.map((i) => (
-                    <th key={i.num} className="numeral px-1 py-1 font-medium">
+                    <th key={i.num} className="numeral px-1 py-2 font-medium">
                       {i.num}
                     </th>
                   ))}
-                  <th className="numeral px-1.5 py-1 font-medium">R</th>
-                  <th className="numeral px-1.5 py-1 font-medium">H</th>
-                  <th className="numeral px-1.5 py-1 font-medium">E</th>
+                  <th className="numeral px-2 py-2 font-semibold text-white/70">R</th>
+                  <th className="numeral px-2 py-2 font-medium">H</th>
+                  <th className="numeral px-2 py-2 font-medium">E</th>
                 </tr>
               </thead>
               <tbody>
@@ -122,7 +165,22 @@ export default function MlbGamePage() {
             </table>
           </div>
         )}
+
+        {metaBits.length > 0 && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-white/[0.07] px-4 py-3 text-[11.5px] text-[#a8b0c2]">
+            {metaBits.map((bit) => (
+              <span key={String(bit)}>{bit}</span>
+            ))}
+          </div>
+        )}
       </header>
+
+      {recap.isPending && (
+        <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+          <Loader2 size={14} className="animate-spin" /> Loading game wrap…
+        </p>
+      )}
+      {recap.data && <GameWrap recap={recap.data} />}
 
       {highlights.isPending && (
         <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
@@ -137,15 +195,71 @@ export default function MlbGamePage() {
   );
 }
 
-function ScoreTeam({ side, align }: { side: MlbBoxscoreSide; align?: "right" }) {
+function EspnTeam({ side, align }: { side: MlbBoxscoreSide; align: "left" | "right" }) {
   return (
-    <div className={cn("flex min-w-0 flex-1 items-center gap-2", align === "right" && "flex-row-reverse text-right")}>
-      <img src={mlbTeamLogo(side.teamId)} alt="" className="h-10 w-10 shrink-0 object-contain" />
-      <div className="min-w-0">
-        <p className="text-cream truncate text-[15px] font-semibold">{side.abbrev}</p>
+    <div
+      className={cn(
+        "flex min-w-0 flex-col items-center gap-2",
+        align === "left" ? "sm:items-start" : "sm:items-end",
+      )}
+    >
+      <img src={mlbTeamLogo(side.teamId)} alt="" className="h-14 w-14 object-contain sm:h-16 sm:w-16" />
+      <div className={cn("text-center", align === "left" ? "sm:text-left" : "sm:text-right")}>
+        <p className="text-[15px] font-bold tracking-wide text-white sm:text-[17px]">{side.abbrev}</p>
         <p className="truncate text-[11px] text-[#8b93a7]">{side.name}</p>
       </div>
     </div>
+  );
+}
+
+function GameWrap({
+  recap,
+}: {
+  recap: {
+    headline: string;
+    description: string | null;
+    storyText: string;
+    url: string;
+  };
+}) {
+  const [open, setOpen] = useState(false);
+  const preview = recap.storyText.slice(0, 420);
+  const long = recap.storyText.length > 420;
+
+  return (
+    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="border-b border-white/[0.06] px-4 py-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">Game wrap</p>
+        <h2 className="text-cream mt-1 text-[18px] leading-snug font-semibold">{recap.headline}</h2>
+        {recap.description && (
+          <p className="mt-1.5 text-[13px] leading-relaxed text-[#b8bfd0]">{recap.description}</p>
+        )}
+      </div>
+      <div className="px-4 py-3">
+        <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-[#c8cdd8]">
+          {open || !long ? recap.storyText : `${preview.trim()}…`}
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {long && (
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent hover:underline"
+            >
+              {open ? "Show less" : "Read full wrap"}
+            </button>
+          )}
+          <a
+            href={recap.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-chalk-dim hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em]"
+          >
+            ESPN <ExternalLink size={11} />
+          </a>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -160,15 +274,15 @@ function InningRow({
 }) {
   return (
     <tr className="border-t border-white/[0.05]">
-      <td className="text-cream px-1 py-1.5 text-left font-medium">{side.abbrev}</td>
+      <td className="px-3 py-2 text-left text-[12px] font-semibold text-white">{side.abbrev}</td>
       {innings.map((i) => (
-        <td key={i.num} className="numeral px-1 py-1.5 text-[#c8cdd8]">
+        <td key={i.num} className="numeral px-1 py-2 text-[#c8cdd8]">
           {i[which] ?? "—"}
         </td>
       ))}
-      <td className="numeral text-cream px-1.5 py-1.5 font-semibold">{side.runs}</td>
-      <td className="numeral px-1.5 py-1.5 text-[#c8cdd8]">{side.hits}</td>
-      <td className="numeral px-1.5 py-1.5 text-[#c8cdd8]">{side.errors}</td>
+      <td className="numeral px-2 py-2 font-bold text-white">{side.runs}</td>
+      <td className="numeral px-2 py-2 text-[#c8cdd8]">{side.hits}</td>
+      <td className="numeral px-2 py-2 text-[#c8cdd8]">{side.errors}</td>
     </tr>
   );
 }
@@ -176,9 +290,9 @@ function InningRow({
 function BoxSide({ title, side }: { title: string; side: MlbBoxscoreSide }) {
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-      <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2.5">
+      <div className="flex items-center gap-2 border-b border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
         <img src={mlbTeamLogo(side.teamId)} alt="" className="h-6 w-6 object-contain" />
-        <h2 className="font-display text-cream text-[18px]">{title}</h2>
+        <h2 className="text-[14px] font-bold tracking-wide text-white">{title}</h2>
       </div>
 
       <div className="overflow-x-auto">

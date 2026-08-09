@@ -11,12 +11,16 @@ import {
   removeFavoritePlayer,
 } from "@/lib/favorite-players";
 import {
+  buildAcquisitionStory,
   fetchMlbPlayer,
   fetchMlbPlayerHighlights,
+  fetchMlbPlayerLeagueRanks,
+  fetchMlbPlayerRecent,
   fetchMlbPlayerSplits,
   fetchMlbPlayerTransactions,
   fetchPlayerContract,
   mlbTeamLogo,
+  type MlbLeagueRank,
   type MlbPlayerCard,
   type MlbPlayerStatLine,
   type MlbSplitRow,
@@ -76,6 +80,28 @@ export default function MlbPlayerPage() {
       fetchMlbPlayerSplits(player.data!.id, splitGroup, player.data!.season),
     enabled: Boolean(player.data),
     staleTime: 120_000,
+  });
+
+  const last5 = useQuery({
+    queryKey: ["mlb-player-last5", playerId, splitGroup, player.data?.season],
+    queryFn: () => fetchMlbPlayerRecent(player.data!.id, splitGroup, 5, player.data!.season),
+    enabled: Boolean(player.data),
+    staleTime: 120_000,
+  });
+
+  const last10 = useQuery({
+    queryKey: ["mlb-player-last10", playerId, splitGroup, player.data?.season],
+    queryFn: () => fetchMlbPlayerRecent(player.data!.id, splitGroup, 10, player.data!.season),
+    enabled: Boolean(player.data),
+    staleTime: 120_000,
+  });
+
+  const ranks = useQuery({
+    queryKey: ["mlb-player-ranks", playerId, splitGroup, player.data?.season],
+    queryFn: () =>
+      fetchMlbPlayerLeagueRanks(player.data!.id, splitGroup, player.data!.season),
+    enabled: Boolean(player.data),
+    staleTime: 300_000,
   });
 
   const toggleFav = useMutation({
@@ -180,6 +206,30 @@ export default function MlbPlayerPage() {
           accent={accent}
         />
       )}
+
+      {(ranks.data?.length ?? 0) > 0 && (
+        <LeagueRanks ranks={ranks.data!} accent={accent} season={p.season} />
+      )}
+
+      {(last5.data || last10.data) && (
+        <div className="space-y-3">
+          {last5.data && (
+            <StatTable
+              title={`${last5.data.label} (${last5.data.games} G)`}
+              stats={last5.data.stats}
+              accent={accent}
+            />
+          )}
+          {last10.data && (
+            <StatTable
+              title={`${last10.data.label} (${last10.data.games} G)`}
+              stats={last10.data.stats}
+              accent={accent}
+            />
+          )}
+        </div>
+      )}
+
       {careerStats.length > 0 && (
         <StatTable title="Career Regular Season" stats={careerStats} accent={accent} />
       )}
@@ -209,6 +259,7 @@ export default function MlbPlayerPage() {
         contract={contract.data ?? null}
         loading={contract.isPending}
         transactions={transactions.data ?? []}
+        teamName={p.teamName}
       />
 
       {highlights.isPending && (
@@ -239,48 +290,72 @@ function PlayerHeader({
   const top = seasonStats.slice(0, 6);
 
   return (
-    <article className="bg-panel overflow-hidden rounded-2xl border border-white/[0.1]">
-      <div className="h-1.5 w-full" style={{ background: accent }} />
-      <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-start sm:p-6">
+    <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] bg-[#07111f]">
+      {/* MLB.com-style full-bleed team wash + action shot */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `linear-gradient(120deg, ${accent}cc 0%, ${accent}66 35%, #07111f 70%)`,
+        }}
+      />
+      <img
+        src={player.actionShot}
+        alt=""
+        className="absolute inset-y-0 right-0 h-full w-[58%] object-cover object-top opacity-35 mix-blend-luminosity sm:opacity-45"
+        onError={(e) => {
+          (e.currentTarget as HTMLImageElement).style.display = "none";
+        }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-r from-[#07111f] via-[#07111f]/88 to-transparent" />
+
+      <div className="relative z-10 flex flex-col gap-5 p-5 sm:flex-row sm:items-end sm:p-6">
         <div className="relative mx-auto shrink-0 sm:mx-0">
+          <div
+            className="absolute -inset-1 rounded-full opacity-80 blur-md"
+            style={{ background: accent }}
+          />
           <img
             src={player.headshot}
             alt=""
-            width={148}
-            height={148}
-            className="h-[148px] w-[148px] rounded-full object-cover object-top ring-2 ring-white/15"
+            width={160}
+            height={160}
+            className="relative h-[150px] w-[150px] rounded-full bg-[#0c1a2e] object-cover object-top ring-4 ring-white/90"
           />
           {player.teamId != null && (
             <img
               src={mlbTeamLogo(player.teamId)}
               alt=""
-              className="absolute -right-1 -bottom-1 h-11 w-11 rounded-full bg-white p-1 shadow-md"
+              className="absolute -right-1 -bottom-1 h-12 w-12 rounded-full bg-white p-1 shadow-md"
             />
           )}
         </div>
 
-        <div className="min-w-0 flex-1 text-center sm:text-left">
+        <div className="min-w-0 flex-1 text-center sm:pb-1 sm:text-left">
           <div className="mb-2 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+            {player.number && (
+              <span className="font-display text-[28px] leading-none text-white/90">
+                #{player.number}
+              </span>
+            )}
             {player.position && (
               <span
                 className="rounded-sm px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-cream"
                 style={{ background: accent }}
               >
                 {player.position}
-                {player.number ? ` · #${player.number}` : ""}
               </span>
             )}
             {player.teamName && (
-              <span className="text-[12px] text-[#b8bfd0]">{player.teamName}</span>
+              <span className="text-[12px] font-medium text-white/75">{player.teamName}</span>
             )}
           </div>
-          <p className="text-[14px] text-[#b8bfd0]">{player.firstName}</p>
-          <h1 className="font-display text-cream text-[38px] leading-[0.95] sm:text-[44px]">
+          <p className="text-[15px] font-medium tracking-wide text-white/70">{player.firstName}</p>
+          <h1 className="font-display text-[42px] leading-[0.92] text-white sm:text-[52px]">
             {player.lastName || player.name}
           </h1>
-          <p className="mt-2 text-[12px] text-[#8b93a7]">
+          <p className="mt-2 text-[12px] text-white/55">
             {[
-              player.bats && player.throws ? `B/T: ${player.bats}/${player.throws}` : null,
+              player.bats && player.throws ? `B/T ${player.bats}/${player.throws}` : null,
               player.height,
               player.weight ? `${player.weight} lb` : null,
               player.positionName,
@@ -290,16 +365,16 @@ function PlayerHeader({
           </p>
 
           {top.length > 0 && (
-            <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
+            <div className="mt-4 grid grid-cols-3 gap-1.5 sm:grid-cols-6">
               {top.map((s) => (
                 <div
                   key={s.label}
-                  className="rounded-lg border border-white/[0.08] bg-black/20 px-2 py-2 text-center"
+                  className="border border-white/15 bg-black/35 px-2 py-2 text-center backdrop-blur-sm"
                 >
-                  <p className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-[#8b93a7]">
+                  <p className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-white/55">
                     {s.label}
                   </p>
-                  <p className="numeral text-cream mt-0.5 text-[18px] leading-none">{s.value}</p>
+                  <p className="numeral mt-0.5 text-[20px] leading-none text-white">{s.value}</p>
                 </div>
               ))}
             </div>
@@ -310,8 +385,8 @@ function PlayerHeader({
             onClick={onToggleFavorite}
             disabled={favoriting}
             className={cn(
-              "mt-4 inline-flex w-full items-center justify-center gap-2 rounded-sm px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition disabled:opacity-50 sm:w-auto",
-              isFavorite ? "border border-white/20 bg-white/[0.06] text-cream" : "text-cream",
+              "mt-4 inline-flex w-full items-center justify-center gap-2 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition disabled:opacity-50 sm:w-auto",
+              isFavorite ? "border border-white/25 bg-white/10 text-cream" : "text-cream",
             )}
             style={isFavorite ? undefined : { background: accent }}
           >
@@ -435,19 +510,50 @@ function BioAndOrigin({ player }: { player: MlbPlayerCard }) {
   );
 }
 
+function LeagueRanks({
+  ranks,
+  accent,
+  season,
+}: {
+  ranks: MlbLeagueRank[];
+  accent: string;
+  season: number;
+}) {
+  return (
+    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="border-b border-white/[0.06] px-4 py-2.5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: accent }}>
+          {season} MLB ranks (qualified)
+        </h3>
+      </div>
+      <div className="grid grid-cols-2 gap-px bg-white/[0.04] sm:grid-cols-5">
+        {ranks.map((r) => (
+          <div key={r.label} className="bg-panel px-3 py-3 text-center">
+            <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">{r.label}</p>
+            <p className="numeral text-cream mt-1 text-[20px] leading-none">{r.value}</p>
+            <p className="mt-1.5 text-[12px] font-semibold" style={{ color: accent }}>
+              #{r.rank}
+              <span className="font-normal text-[#8b93a7]"> / {r.of}</span>
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ContractBlock({
   contract,
   loading,
   transactions,
+  teamName,
 }: {
   contract: Awaited<ReturnType<typeof fetchPlayerContract>>;
   loading: boolean;
   transactions: { date: string; type: string; description: string }[];
+  teamName?: string | null;
 }) {
-  const acquisition =
-    contract?.acquisition?.length
-      ? contract.acquisition
-      : transactions.slice(0, 6).map((t) => `${t.date}: ${t.description}`);
+  const story = buildAcquisitionStory(transactions, contract?.acquisition ?? [], teamName);
 
   return (
     <section className="bg-panel space-y-4 rounded-xl border border-white/[0.08] p-4">
@@ -522,13 +628,21 @@ function ContractBlock({
         </div>
       )}
 
-      {acquisition.length > 0 && (
+      {story.lines.length > 0 && (
         <div>
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
             How he got here
           </p>
+          {story.headline && /trade/i.test(story.headline) && (
+            <div className="mb-3 border border-accent/35 bg-accent/10 px-3 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
+                Trade that brought him here
+              </p>
+              <p className="text-cream mt-1.5 text-[13.5px] leading-relaxed">{story.headline}</p>
+            </div>
+          )}
           <ul className="space-y-2">
-            {acquisition.map((line) => (
+            {story.lines.map((line) => (
               <li
                 key={line}
                 className="border-l-2 border-accent/50 pl-3 text-[12.5px] leading-relaxed text-[#c8cdd8]"

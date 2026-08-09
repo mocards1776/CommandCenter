@@ -548,6 +548,15 @@ function TeamDetailPanel({
 }) {
   const accent = fav.color ? `#${fav.color}` : "var(--color-accent)";
   const title = detail?.shortName ?? fav.shortName;
+  const mlbTeamId = fav.mlbTeamId;
+
+  const hero = useQuery({
+    queryKey: ["team-detail-hero", mlbTeamId],
+    queryFn: () => fetchTeamCurrentGame(mlbTeamId!),
+    enabled: Boolean(mlbTeamId),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/55" onClick={onClose}>
@@ -604,6 +613,19 @@ function TeamDetailPanel({
           )}
           {detail && (
             <div className="flex flex-col gap-7">
+              {hero.data && (
+                <HeroGameCard
+                  game={hero.data}
+                  accent={accent}
+                  label={
+                    hero.data.live
+                      ? `${title} · Live`
+                      : hero.data.final
+                        ? `${title} · Latest`
+                        : `${title} · Next up`
+                  }
+                />
+              )}
               <DetailSection title="Playoff odds">
                 {detail.playoffOdds || detail.wildCardOdds ? (
                   <div className="bg-panel rounded border border-white/[0.07] p-4">

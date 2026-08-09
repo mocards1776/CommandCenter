@@ -264,32 +264,53 @@ function ScoreboardSection({
 }
 
 function ScoreCard({ game }: { game: MlbScoreGame }) {
+  const awayWins =
+    game.final && (game.away.score ?? 0) > (game.home.score ?? 0);
+  const homeWins =
+    game.final && (game.home.score ?? 0) > (game.away.score ?? 0);
+
   return (
     <Link
       to={`/sports/mlb/game/${game.id}`}
       className={cn(
-        "bg-panel relative block overflow-hidden rounded-lg border px-3.5 py-3 transition hover:border-accent/40",
-        game.live ? "border-alert/40" : "border-white/[0.07]",
+        "relative block overflow-hidden rounded-lg border bg-[#0a1424] transition hover:border-accent/40",
+        game.live ? "border-alert/45" : "border-white/[0.08]",
       )}
     >
       {game.live && (
         <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-alert to-transparent" />
       )}
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
         <span
           className={cn(
-            "text-[10px] font-semibold uppercase tracking-[0.14em]",
-            game.live ? "text-alert" : "text-chalk-dim",
+            "text-[10px] font-bold uppercase tracking-[0.14em]",
+            game.live ? "text-alert" : "text-[#8b93a7]",
           )}
         >
-          {game.live ? game.inning || "Live" : game.final ? "Final" : game.status}
+          {game.live ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-alert" />
+              {game.inning || "Live"}
+            </span>
+          ) : game.final ? (
+            "Final"
+          ) : (
+            game.status
+          )}
         </span>
-        <span className="text-chalk-dim text-[10.5px]">
-          {!game.live && !game.final ? game.when : "Box →"}
+        <span className="truncate text-[10.5px] text-[#8b93a7]">
+          {!game.live && !game.final ? game.when : game.venue ?? "Box score"}
         </span>
       </div>
-      <TeamScoreLine side={game.away} emphasize={game.final && (game.away.score ?? 0) > (game.home.score ?? 0)} />
-      <TeamScoreLine side={game.home} emphasize={game.final && (game.home.score ?? 0) > (game.away.score ?? 0)} />
+      <div className="space-y-0.5 px-3 py-2.5">
+        <TeamScoreLine side={game.away} emphasize={awayWins} muted={homeWins} />
+        <TeamScoreLine side={game.home} emphasize={homeWins} muted={awayWins} />
+      </div>
+      {(game.away.probablePitcher || game.home.probablePitcher) && !game.final && !game.live && (
+        <p className="truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#8b93a7]">
+          {game.away.probablePitcher ?? "TBD"} vs {game.home.probablePitcher ?? "TBD"}
+        </p>
+      )}
     </Link>
   );
 }
@@ -297,27 +318,36 @@ function ScoreCard({ game }: { game: MlbScoreGame }) {
 function TeamScoreLine({
   side,
   emphasize,
+  muted,
 }: {
   side: MlbScoreGame["away"];
   emphasize?: boolean;
+  muted?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1">
       <div className="flex min-w-0 items-center gap-2">
         {side.teamId ? (
-          <img src={mlbTeamLogo(side.teamId)} alt="" className="h-6 w-6 object-contain" />
+          <img src={mlbTeamLogo(side.teamId)} alt="" className="h-7 w-7 object-contain" />
         ) : null}
-        <span className={cn("text-[14px]", emphasize ? "text-cream font-semibold" : "text-[#c8cdd8]")}>
-          {side.abbrev}
-        </span>
-        {side.record && (
-          <span className="text-[10.5px] text-[#8b93a7]">{side.record}</span>
-        )}
+        <div className="min-w-0">
+          <span
+            className={cn(
+              "block text-[15px] font-semibold tracking-wide",
+              emphasize ? "text-white" : muted ? "text-white/45" : "text-[#d5dae6]",
+            )}
+          >
+            {side.abbrev}
+          </span>
+          {side.record && (
+            <span className="text-[10px] text-[#8b93a7]">{side.record}</span>
+          )}
+        </div>
       </div>
       <span
         className={cn(
-          "numeral text-[22px] leading-none",
-          emphasize ? "text-accent" : "text-cream",
+          "numeral text-[26px] leading-none",
+          emphasize ? "text-white" : muted ? "text-white/40" : "text-white",
         )}
       >
         {side.score ?? "—"}
