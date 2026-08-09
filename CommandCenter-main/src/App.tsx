@@ -10,6 +10,7 @@ import DashboardPage from "@/pages/DashboardPage";
 import TodosPage from "@/pages/TodosPage";
 import HabitsPage from "@/pages/HabitsPage";
 import ReadingPage from "@/pages/ReadingPage";
+import SportsPage from "@/pages/SportsPage";
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
 
 const queryClient = new QueryClient({
@@ -92,6 +93,7 @@ export default function App() {
               <Route path="/todos" element={<TodosPage />} />
               <Route path="/habits" element={<HabitsPage />} />
               <Route path="/reading" element={<ReadingPage />} />
+              <Route path="/sports" element={<SportsPage />} />
             </Route>
             <Route path="*" element={<HomeRedirect />} />
           </Routes>

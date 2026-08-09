@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { LayoutDashboard, ListChecks, Repeat, BookOpen, LogOut } from "lucide-react";
+import { LayoutDashboard, ListChecks, Repeat, BookOpen, Trophy, LogOut } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import StarField from "@/components/StarField";
 import InstallHint from "@/components/InstallHint";
@@ -18,6 +18,7 @@ const NAV = [
   { to: "/todos", label: "Todos", short: "Todos", Icon: ListChecks },
   { to: "/habits", label: "Habits", short: "Habits", Icon: Repeat },
   { to: "/reading", label: "Reading", short: "Reading", Icon: BookOpen },
+  { to: "/sports", label: "Sports", short: "Sports", Icon: Trophy },
 ];
 
 function isStandaloneApp() {
@@ -61,7 +62,8 @@ export default function AppShell() {
     if (
       pathname.startsWith("/dashboard") ||
       pathname.startsWith("/todos") ||
-      pathname.startsWith("/habits")
+      pathname.startsWith("/habits") ||
+      pathname.startsWith("/sports")
     ) {
       clearReadingSolo();
       setSoloSession(false);

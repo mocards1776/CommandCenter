@@ -898,15 +898,23 @@ export async function fetchHighlights(bookId: string): Promise<BookHighlight[]> 
 
 /** How many highlights each book has, so a book can show a count. */
 export async function fetchHighlightCounts(): Promise<Record<string, number>> {
-  const { data, error } = await supabase
-    .from("book_highlights")
-    .select("book_id")
-    .not("book_id", "is", null)
-    .limit(20000);
-  if (error) throw error;
+  // PostgREST caps a single response at ~1,000 rows even when .limit() is
+  // higher — page through so the Highlights card doesn't stop at "1,000".
+  const PAGE = 1000;
   const out: Record<string, number> = {};
-  for (const r of data ?? []) {
-    if (r.book_id) out[r.book_id] = (out[r.book_id] ?? 0) + 1;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("book_highlights")
+      .select("book_id")
+      .not("book_id", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = data ?? [];
+    for (const r of rows) {
+      if (r.book_id) out[r.book_id] = (out[r.book_id] ?? 0) + 1;
+    }
+    if (rows.length < PAGE) break;
   }
   return out;
 }

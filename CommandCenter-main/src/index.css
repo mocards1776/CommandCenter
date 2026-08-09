@@ -24,6 +24,7 @@
   --color-accent-deep: #c0303b; /* solid fills, buttons */
   --color-accent-dark: #9c1f28;
   --color-alert: #ff8a93; /* overdue, and only overdue */
+  --color-turf: #3d9b6e; /* wins / goal met */
 
   /* Text */
   --color-cream: #f4f1e9;
