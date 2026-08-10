@@ -1,6 +1,12 @@
 # NL Central Standings — macOS Widget
 
-Native **WidgetKit** desktop widget for the National League Central, built for an **Apple Silicon M1 MacBook Pro 16"** (macOS 14 Sonoma or later).
+**Want this without cloning the repo or opening Xcode?** Use the Übersicht widget:
+
+→ See **[Uebersicht/README.md](Uebersicht/README.md)** (3 Terminal steps).
+
+---
+
+Native **WidgetKit** desktop widget for the National League Central is also included below, for an **Apple Silicon M1 MacBook Pro 16"** (macOS 14 Sonoma or later). That path needs Xcode once.
 
 Live data comes from the same MLB Stats API CommandCenter uses (`statsapi.mlb.com`). The Cardinals row is highlighted to match your sports favorites.
 
