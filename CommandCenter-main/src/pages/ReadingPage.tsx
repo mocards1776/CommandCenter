@@ -2306,6 +2306,8 @@ function AskAI({
       setAdded((a) => ({ ...a, [s.title]: book.id }));
       qc.invalidateQueries({ queryKey: ["books"] });
       toast.success(`Added ${book.title}`);
+      onOpen?.(book);
+      onClose();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not add"),
   });
