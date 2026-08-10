@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NL Central Widget Preview</title>
+  <style>
+    :root {
+      --ink: #081228;
+      --field: #0a1730;
+      --panel: #0d1d3c;
+      --hero: #16294f;
+      --accent: #d9515c;
+      --accent-deep: #c0303b;
+      --turf: #3d9b6e;
+      --cream: #f4f1e9;
+      --chalk: rgba(237, 239, 245, 0.55);
+      --chalk-dim: rgba(237, 239, 245, 0.3);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      gap: 2rem;
+      padding: 2rem;
+      font-family: "SF Pro Rounded", "Avenir Next", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(ellipse at 20% 0%, #16294f 0%, transparent 50%),
+        linear-gradient(160deg, #081228, #0a1730 40%, #06101f);
+      color: var(--cream);
+    }
+    h1 {
+      margin: 0 0 0.25rem;
+      font-size: 0.85rem;
+      letter-spacing: 0.18em;
+      color: var(--accent);
+      text-align: center;
+    }
+    .sub {
+      text-align: center;
+      color: var(--chalk);
+      font-size: 0.8rem;
+      margin-bottom: 1.5rem;
+    }
+    .stage {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    .widget {
+      position: relative;
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+      background: var(--field);
+      isolation: isolate;
+    }
+    .widget::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(135deg, rgba(22,41,79,0.55), rgba(10,23,48,0.2), rgba(8,18,40,0.85)),
+        repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 27px,
+          rgba(255,255,255,0.03) 27px,
+          rgba(255,255,255,0.03) 28px
+        );
+      z-index: -1;
+    }
+    .medium { width: 360px; padding: 14px; }
+    .large { width: 420px; padding: 16px; }
+    .label {
+      font-size: 0.7rem;
+      letter-spacing: 0.14em;
+      color: var(--chalk-dim);
+      text-align: center;
+      margin-bottom: 0.4rem;
+    }
+    .hdr {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+    .hdr .title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      color: var(--accent);
+    }
+    .large .hdr .title { font-size: 13px; letter-spacing: 1.4px; }
+    .hdr .meta {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 9px;
+      color: var(--chalk-dim);
+    }
+    .large .hdr .meta { font-size: 10px; }
+    .season {
+      font-size: 10px;
+      color: var(--chalk);
+      margin-top: 2px;
+    }
+    .cols, .row {
+      display: grid;
+      align-items: center;
+      gap: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .medium .cols, .medium .row {
+      grid-template-columns: 3px 16px 1fr 28px 28px 36px;
+    }
+    .large .cols, .large .row {
+      grid-template-columns: 3px 20px 1fr 32px 32px 44px 40px 36px;
+    }
+    .cols {
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--chalk-dim);
+      padding: 0 6px 4px;
+      letter-spacing: 0.04em;
+    }
+    .large .cols { font-size: 10px; padding-top: 8px; }
+    .row {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      padding: 5px 6px;
+      border-radius: 6px;
+      margin: 1px 0;
+    }
+    .large .row { font-size: 13px; padding: 7px 6px; }
+    .row .bar { width: 3px; height: 14px; border-radius: 1.5px; }
+    .row.stl {
+      background: rgba(192, 48, 59, 0.22);
+      font-weight: 700;
+    }
+    .row .team { font-family: "SF Pro Rounded", "Avenir Next", sans-serif; font-weight: 600; padding-left: 6px; }
+    .row .rank { color: var(--chalk); }
+    .num { text-align: right; }
+    .pct, .chalk { color: var(--chalk); }
+    .win { color: var(--turf); }
+    .loss { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div>
+    <h1>NL CENTRAL STANDINGS</h1>
+    <p class="sub">macOS WidgetKit preview · M1 MacBook Pro 16″ · live MLB Stats API shape</p>
+    <div class="stage">
+      <div>
+        <div class="label">SYSTEM MEDIUM</div>
+        <div class="widget medium" id="med"></div>
+      </div>
+      <div>
+        <div class="label">SYSTEM LARGE</div>
+        <div class="widget large" id="lg"></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    // Snapshot from MLB Stats API (division 205) — kept inline so file:// previews render.
+    const colors = { 158: "#FFC52F", 112: "#0E3386", 138: "#C41E3A", 134: "#FDB827", 113: "#C6011F" };
+    const rows = [
+      { id:158, rank:1, abbr:"MIL", name:"Brewers", w:74, l:44, pct:".627", gb:"—", streak:"W2" },
+      { id:112, rank:2, abbr:"CHC", name:"Cubs", w:69, l:50, pct:".580", gb:"5.5", streak:"W1" },
+      { id:138, rank:3, abbr:"STL", name:"Cardinals", w:59, l:59, pct:".500", gb:"15.0", streak:"W1" },
+      { id:134, rank:4, abbr:"PIT", name:"Pirates", w:58, l:62, pct:".483", gb:"17.0", streak:"L1" },
+      { id:113, rank:5, abbr:"CIN", name:"Reds", w:56, l:61, pct:".479", gb:"17.5", streak:"L3" },
+    ];
+    const now = "3:26 PM";
+    document.getElementById("med").innerHTML = `
+      <div class="hdr"><div class="title">NL CENTRAL</div><div class="meta">${now}</div></div>
+      <div class="cols"><span></span><span>#</span><span>TEAM</span><span class="num">W</span><span class="num">L</span><span class="num">GB</span></div>
+      ${rows.map(r => `
+        <div class="row ${r.id===138?"stl":""}">
+          <span class="bar" style="background:${colors[r.id]}"></span>
+          <span class="rank">${r.rank}</span>
+          <span class="team">${r.abbr}</span>
+          <span class="num">${r.w}</span><span class="num">${r.l}</span><span class="num">${r.gb}</span>
+        </div>`).join("")}`;
+    document.getElementById("lg").innerHTML = `
+      <div class="hdr">
+        <div><div class="title">NL CENTRAL</div><div class="season">2026 · Major League Baseball</div></div>
+        <div class="meta">${now}</div>
+      </div>
+      <div class="cols"><span></span><span>#</span><span>TEAM</span><span class="num">W</span><span class="num">L</span><span class="num">PCT</span><span class="num">GB</span><span class="num">STR</span></div>
+      ${rows.map(r => `
+        <div class="row ${r.id===138?"stl":""}">
+          <span class="bar" style="background:${colors[r.id]}"></span>
+          <span class="rank">${r.rank}</span>
+          <span class="team">${r.name}</span>
+          <span class="num">${r.w}</span><span class="num">${r.l}</span>
+          <span class="num pct">${r.pct}</span><span class="num">${r.gb}</span>
+          <span class="num ${r.streak.startsWith("W")?"win":r.streak.startsWith("L")?"loss":""}">${r.streak}</span>
+        </div>`).join("")}`;
+  </script>
+</body>
+</html>

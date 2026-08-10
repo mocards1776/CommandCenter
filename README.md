@@ -14,6 +14,7 @@ Personal dashboard: tasks, habits, and time tracking.
 | AI search / recommendations / classification | `supabase/functions/book-ai/` | Claude Opus 5 (user's own Anthropic key) |
 | Tasks | Todoist | unified `/api/v1` |
 | Hosting | Vercel | root `vercel.json` builds `CommandCenter-main` |
+| macOS widget | `NLCentralStandings/` | WidgetKit NL Central standings (M1 Mac, macOS 14+) |
 
 **Todoist owns all task data.** Tasks, projects, sections, and labels live in
 Todoist and are never mirrored into Postgres — there is no sync to drift.

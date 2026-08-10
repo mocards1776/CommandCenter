@@ -2,6 +2,16 @@
 
 ---
 
+## NL Central macOS widget — August 10, 2026
+
+- Added `NLCentralStandings/`: native WidgetKit desktop widget for NL Central
+  standings (M1 MacBook Pro / macOS 14+).
+- Live data from MLB Stats API (`statsapi.mlb.com`), same source as the Sports
+  hub; Cardinals row highlighted with the Fenway scoreboard palette.
+- Host app + Medium / Large / Extra Large widget sizes; README with install steps.
+
+---
+
 ## Rebuild — August 6, 2026
 
 Complete rewrite. Todoist became the source of truth for tasks; Supabase
