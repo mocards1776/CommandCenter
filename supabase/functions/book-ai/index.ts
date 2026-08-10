@@ -71,10 +71,11 @@ const GOOGLE_KEY = Deno.env.get("GOOGLE_BOOKS_API_KEY") ?? "";
 /** Upgrade a Google Books thumbnail into a larger front-cover URL when possible. */
 function upgradeGoogleCover(raw: string): string {
   let u = raw.replace(/^http:/, "https:").replace(/&edge=curl/g, "");
-  u = u.replace(/[?&]zoom=\d+/, "").replace(/[?&]img=\d+/, "");
-  // zoom=1 is a readable jacket; the API's default zoom=5 is a tiny stamp.
+  // zoom=0 is the large jacket; API thumbnails arrive as zoom=1 (~128px) or zoom=5 stamps.
   if (u.includes("books.google") || u.includes("googleusercontent.com")) {
-    u += (u.includes("?") ? "&" : "?") + "zoom=1&img=1";
+    if (/[?&]zoom=\d+/i.test(u)) u = u.replace(/([?&])zoom=\d+/gi, "$1zoom=0");
+    else u += (u.includes("?") ? "&" : "?") + "zoom=0";
+    if (!/[?&]img=/i.test(u)) u += "&img=1";
   }
   return u;
 }
@@ -156,9 +157,13 @@ async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string
   try {
     // The vid=ISBN form is what returns the shared skeleton placeholder.
     if (/[?&]vid=ISBN/i.test(url)) return null;
+    const fetchUrl = upgradeGoogleCover(url).replace(
+      /\/b\/(id|isbn|olid)\/([^/?#]+)-(S|M)\.jpe?g/i,
+      "/b/$1/$2-L.jpg",
+    );
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 12000);
-    const res = await fetch(url, {
+    const res = await fetch(fetchUrl, {
       signal: ctl.signal,
       redirect: "follow",
       headers: {
@@ -180,6 +185,26 @@ async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string
   }
 }
 
+/** True when the URL looks like a direct jacket image (not a retail HTML page). */
+function isLikelyImageUrl(url: string): boolean {
+  if (/\.(jpg|jpeg|png|webp|gif)(\?|#|$)/i.test(url)) return true;
+  if (/covers\.openlibrary\.org/i.test(url)) return true;
+  if (/books\.google\.[^/]+\/books\/content/i.test(url)) return true;
+  if (/googleusercontent\.com\/books/i.test(url)) return true;
+  if (/m\.media-amazon\.com\/images/i.test(url)) return true;
+  if (/images-na\.ssl-images-amazon\.com|images-.*\.ssl-images-amazon\.com/i.test(url)) return true;
+  if (/compressed\.photo\.goodreads\.com|i\.gr-assets\.com/i.test(url)) return true;
+  if (/images\.isbndb\.com|covers\.openbd\.jp/i.test(url)) return true;
+  return false;
+}
+
+/** Normalize a pasted link (quotes, angle brackets, protocol-relative). */
+function normalizeCoverInput(raw: string): string {
+  let u = raw.trim().replace(/^['"<]+/, "").replace(/['">]+$/, "").trim();
+  if (u.startsWith("//")) u = "https:" + u;
+  return u;
+}
+
 /** Pull a cover URL out of a retail/library page (og:image / twitter:image). */
 async function coverFromPage(pageUrl: string): Promise<string | null> {
   try {
@@ -187,22 +212,29 @@ async function coverFromPage(pageUrl: string): Promise<string | null> {
     const t = setTimeout(() => ctl.abort(), 10000);
     const res = await fetch(pageUrl, {
       signal: ctl.signal,
-      headers: { "User-Agent": UA },
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+      },
     }).finally(() => clearTimeout(t));
     if (!res.ok) return null;
+    const ctype = (res.headers.get("Content-Type") ?? "").toLowerCase();
+    // Caller sometimes hands us a direct image that lacks a file extension.
+    if (ctype.startsWith("image/")) return pageUrl;
     const html = await res.text();
     const patterns = [
-      /<meta[^>]+(?:property|name)=["']og:image["'][^>]*content=["']([^"']+)["']/i,
-      /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']og:image["']/i,
-      /<meta[^>]+(?:property|name)=["']twitter:image["'][^>]*content=["']([^"']+)["']/i,
-      /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']twitter:image["']/i,
+      /<meta[^>]+(?:property|name)=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)["']/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']og:image(?::secure_url)?["']/i,
+      /<meta[^>]+(?:property|name)=["']twitter:image(?::src)?["'][^>]*content=["']([^"']+)["']/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']twitter:image(?::src)?["']/i,
     ];
     for (const re of patterns) {
       const m = re.exec(html);
       if (m?.[1]) {
         let u = m[1].trim();
         if (u.startsWith("//")) u = "https:" + u;
-        return u;
+        if (/^https?:\/\//i.test(u)) return u;
       }
     }
     return null;
@@ -292,13 +324,14 @@ async function findCover(
   };
 
   if (url) {
+    const pasted = normalizeCoverInput(url);
     // Direct image, or a book page whose og:image is the jacket.
-    if (/\.(jpg|jpeg|png|webp)(\?|$)/i.test(url) || /covers\.openlibrary\.org/i.test(url)) {
-      push(url, "link");
+    if (isLikelyImageUrl(pasted)) {
+      push(pasted, "link");
     } else {
-      push(await coverFromPage(url), "link");
+      push(await coverFromPage(pasted), "link");
       // Image CDNs sometimes omit a file extension — try the URL itself last.
-      push(url, "link");
+      push(pasted, "link");
     }
   } else {
     const isbn = String(book.isbn ?? "").replace(/[^0-9Xx]/g, "");
@@ -381,13 +414,34 @@ async function findCover(
   }
 
   if (!img || !usedUrl) {
+    // Pasted image URL we couldn't download (CDN bot wall, etc.): still save the
+    // hotlink and clear cover_path so the client actually shows the new jacket.
+    if (url) {
+      const hotlink =
+        candidates.find((c) => c.source === "link" && isLikelyImageUrl(c.url))?.url ??
+        (isLikelyImageUrl(normalizeCoverInput(url)) ? normalizeCoverInput(url) : null);
+      if (hotlink) {
+        const { error: hotErr } = await admin
+          .from("books")
+          .update({
+            cover_path: null,
+            cover_url: hotlink,
+            locked_at: new Date().toISOString(),
+          })
+          .eq("id", book.id);
+        if (hotErr) return json({ found: false, error: hotErr.message }, 500);
+        return json({ found: true, source: "link", cover_path: null, cover_url: hotlink });
+      }
+    }
     // 200 on purpose: supabase-js turns non-2xx into a generic toast and drops
     // the body, so "couldn't find one" has to ride a success status.
     return json({
       found: false,
       error: aiError
         ? `Cover search failed: ${aiError.slice(0, 180)}`
-        : "Couldn't find a cover for this one. Try pasting a cover image link.",
+        : url
+          ? "That link didn't look like a cover image. Paste a direct image URL (…jpg/png) or a book page with an og:image."
+          : "Couldn't find a cover for this one. Try pasting a cover image link.",
     });
   }
 
@@ -396,7 +450,22 @@ async function findCover(
   const { error: upErr } = await admin.storage
     .from("book-covers")
     .upload(path, img.bytes, { contentType: img.type, upsert: true });
-  if (upErr) return json({ error: upErr.message }, 500);
+  if (upErr) {
+    // Upload failed but we still have a usable remote URL — prefer showing that
+    // over leaving the old jacket in place.
+    if (url) {
+      const { error: hotErr } = await admin
+        .from("books")
+        .update({
+          cover_path: null,
+          cover_url: usedUrl,
+          locked_at: new Date().toISOString(),
+        })
+        .eq("id", book.id);
+      if (!hotErr) return json({ found: true, source: "link", cover_path: null, cover_url: usedUrl });
+    }
+    return json({ error: upErr.message }, 500);
+  }
 
   const { error: updErr } = await admin
     .from("books")
@@ -959,7 +1028,12 @@ Deno.serve(async (req: Request) => {
     query = String(body?.query ?? "").slice(0, 500);
     if (typeof body?.batch === "number") batch = Math.min(100, Math.max(10, body.batch));
     if (typeof body?.bookId === "string") bookId = body.bookId;
-    if (typeof body?.url === "string" && body.url.trim()) coverUrl = body.url.trim().slice(0, 2000);
+    // Prefer `url`; accept `query` as an alias so paste never silently no-ops.
+    const rawUrl =
+      (typeof body?.url === "string" && body.url.trim()) ||
+      (mode === "cover" && typeof body?.query === "string" && body.query.trim()) ||
+      "";
+    if (rawUrl) coverUrl = normalizeCoverInput(String(rawUrl)).slice(0, 2000);
   } catch {
     // defaults are fine
   }
