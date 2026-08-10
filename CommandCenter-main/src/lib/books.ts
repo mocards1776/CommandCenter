@@ -583,14 +583,17 @@ export function upgradeCoverUrl(url: string | null | undefined): string | null {
 }
 
 /**
- * Ordered jacket candidates for sharp display. Storage first (reader may have
- * replaced it), then upgraded remote URL, then Open Library ISBN large.
- * Callers can walk the list when an image is missing or too small.
+ * Ordered jacket candidates for sharp display. Storage first (our locked
+ * copy), cache-busted by locked_at so a replaced jacket isn't stuck behind
+ * CDN. Then remote URL, then Open Library ISBN large.
+ * Paste clears cover_path first so the new URL wins immediately.
  */
 export function coverCandidates(book: {
   cover_path?: string | null;
   cover_url?: string | null;
   isbn?: string | null;
+  locked_at?: string | null;
+  updated_at?: string | null;
 }): string[] {
   const out: string[] = [];
   const push = (raw: string | null | undefined) => {
@@ -602,7 +605,9 @@ export function coverCandidates(book: {
   if (book.cover_url && /[?&]vid=ISBN/i.test(book.cover_url)) {
     // Shared Google "no cover" stub — treat as blank.
   } else if (book.cover_path && book.cover_path.length > 0) {
-    push(supabase.storage.from("book-covers").getPublicUrl(book.cover_path).data.publicUrl);
+    const base = supabase.storage.from("book-covers").getPublicUrl(book.cover_path).data.publicUrl;
+    const bust = book.locked_at || book.updated_at || "";
+    push(bust ? `${base}${base.includes("?") ? "&" : "?"}v=${encodeURIComponent(bust)}` : base);
   }
 
   push(book.cover_url);
@@ -993,11 +998,15 @@ function cleanPastedCoverUrl(raw: string): string {
   return upgradeCoverUrl(u) ?? u;
 }
 
-/** Last-resort: stick the pasted image URL on the book so the jacket updates. */
+/** Stick a pasted image URL on the book so the jacket updates immediately. */
 async function saveCoverHotlink(bookId: string, url: string): Promise<CoverPullResult> {
   const cover_url = cleanPastedCoverUrl(url);
-  // Clear cover_path — otherwise the old stored thumb wins in coverCandidates.
-  await updateBook(bookId, { cover_url, cover_path: null });
+  // Clear cover_path — otherwise a CDN-cached storage object keeps the old art.
+  await updateBook(bookId, {
+    cover_url,
+    cover_path: null,
+    locked_at: new Date().toISOString(),
+  });
   return { found: true, source: "link", cover_path: null, cover_url };
 }
 
@@ -1018,48 +1027,75 @@ export async function pullCover(bookId: string, url?: string): Promise<CoverPull
     await updateBook(bookId, { cover_path: null, cover_url: null });
   }
 
-  if (!pasted) {
-    // Reuse the battle-tested cover pipeline before spending AI tokens.
-    await supabase.functions.invoke("backfill-covers", { body: { bookId } }).catch(() => {});
-    const { data: row } = await supabase
-      .from("books")
-      .select("cover_path,cover_url")
-      .eq("id", bookId)
-      .maybeSingle();
-    if (
-      row?.cover_path &&
-      row.cover_path.length > 0 &&
-      !(row.cover_url && /[?&]vid=ISBN/i.test(row.cover_url))
-    ) {
-      return { found: true, source: "catalog", cover_path: row.cover_path };
+  // Paste path: apply a direct image URL immediately so the UI swaps before
+  // the edge round-trip, then best-effort store our own copy.
+  if (pasted) {
+    if (!/^https?:\/\//i.test(pasted)) {
+      throw new Error("Paste a full https:// image link.");
     }
+    const direct = isLikelyCoverImageUrl(pasted);
+    if (direct) await saveCoverHotlink(bookId, pasted);
+    try {
+      const { data } = await supabase.functions.invoke<CoverPullResult & { error?: string }>(
+        "book-ai",
+        { body: { mode: "cover", bookId, url: pasted } },
+      );
+      if (data?.found) {
+        const cover_url = data.cover_url ?? (direct ? pasted : null);
+        await updateBook(bookId, {
+          cover_path: data.cover_path ?? null,
+          cover_url,
+          locked_at: new Date().toISOString(),
+        });
+        return {
+          found: true,
+          source: "link",
+          cover_path: data.cover_path ?? null,
+          cover_url,
+        };
+      }
+    } catch {
+      // Hotlink may already be saved — edge store is optional.
+    }
+    if (direct) return { found: true, source: "link", cover_path: null, cover_url: pasted };
+    throw new Error(
+      "That link didn't yield a cover. Paste a direct image URL (…jpg/png).",
+    );
   }
 
-  try {
-    const { data, error } = await supabase.functions.invoke<CoverPullResult & { error?: string }>(
-      "book-ai",
-      { body: { mode: "cover", bookId, url: pasted || undefined } },
-    );
-    if (data?.found) return data;
-    if (pasted && isLikelyCoverImageUrl(pasted)) {
-      // Edge couldn't store bytes (or CORS flake) — still apply the link.
-      return await saveCoverHotlink(bookId, pasted);
-    }
-    if (data?.error) throw new Error(data.error);
-    if (error) {
-      throw new Error(await edgeErrorMessage(error, "Couldn't find a cover for this one."));
-    }
-    throw new Error(data?.error ?? "Couldn't find a cover for this one.");
-  } catch (e) {
-    if (pasted && isLikelyCoverImageUrl(pasted)) {
-      try {
-        return await saveCoverHotlink(bookId, pasted);
-      } catch {
-        // fall through to original error
-      }
-    }
-    throw e;
+  // Reuse the battle-tested cover pipeline before spending AI tokens.
+  await supabase.functions.invoke("backfill-covers", { body: { bookId } }).catch(() => {});
+  const { data: row } = await supabase
+    .from("books")
+    .select("cover_path,cover_url")
+    .eq("id", bookId)
+    .maybeSingle();
+  if (
+    row?.cover_path &&
+    row.cover_path.length > 0 &&
+    !(row.cover_url && /[?&]vid=ISBN/i.test(row.cover_url))
+  ) {
+    return { found: true, source: "catalog", cover_path: row.cover_path };
   }
+
+  const { data, error } = await supabase.functions.invoke<CoverPullResult & { error?: string }>(
+    "book-ai",
+    { body: { mode: "cover", bookId } },
+  );
+  if (data?.found) return data;
+  if (data?.error) throw new Error(data.error);
+  if (error) {
+    throw new Error(await edgeErrorMessage(error, "Couldn't find a cover for this one."));
+  }
+  throw new Error(data?.error ?? "Couldn't find a cover for this one.");
+}
+
+/** Repair StoryGraph / catalog blurbs where ’ and — became "?". */
+export function cleanBookText(text: string): string {
+  return text
+    .replace(/\uFFFD/g, "'")
+    .replace(/([A-Za-z])\?(t|s|re|ve|ll|d|m)\b/g, "$1'$2")
+    .replace(/([A-Za-z])\?([A-Za-z])/g, "$1—$2");
 }
 
 /**
