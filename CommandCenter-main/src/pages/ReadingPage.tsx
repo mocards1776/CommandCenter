@@ -1649,22 +1649,30 @@ function BookDetail({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Cover bleeds behind the title, the way a book jacket would. */}
-        <div className="relative -mx-6 mb-5 overflow-hidden rounded-lg px-6 pb-5 pt-5">
+        {/* Cover-led hero — jacket is the visual anchor, title sits under it. */}
+        <div className="relative -mx-6 mb-6 overflow-hidden px-6 pb-6 pt-1">
           {cover && (
             <>
               <img
                 src={cover}
                 alt=""
                 aria-hidden
-                className="absolute inset-0 h-full w-full scale-125 object-cover opacity-20 blur-2xl"
+                className="absolute inset-0 h-full w-full scale-[1.6] object-cover opacity-40 blur-3xl"
               />
-              <div className="from-field via-field/70 absolute inset-0 bg-gradient-to-t to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-[#0a1428]/55 to-[#0a1428]" />
             </>
           )}
-          <StarField count={18} seed={41} />
+          {!cover && <StarField count={18} seed={41} />}
 
-          <div className="relative z-10 flex items-start gap-5">
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="text-chalk hover:text-cream absolute top-1 right-4 z-20 rounded-full bg-black/35 p-1.5 backdrop-blur"
+          >
+            <X size={17} />
+          </button>
+
+          <div className="relative z-10 flex flex-col items-center pt-2 text-center">
             {cover ? (
               <button
                 type="button"
@@ -1674,13 +1682,17 @@ function BookDetail({
                   e.preventDefault();
                   openCoverTools();
                 }}
-                className="shrink-0 rounded focus:outline-none"
+                className="group relative shrink-0 rounded-md focus:outline-none"
               >
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute -inset-3 rounded-xl bg-accent/15 opacity-0 blur-xl transition group-hover:opacity-100"
+                />
                 <img
                   src={cover}
                   alt=""
                   onError={() => setCoverBroken(true)}
-                  className="h-[196px] w-[131px] rounded object-cover shadow-[0_18px_44px_rgba(0,0,0,.7)]"
+                  className="relative h-[268px] w-[180px] rounded-md object-cover shadow-[0_28px_64px_rgba(0,0,0,.8)] ring-1 ring-white/20 transition duration-300 group-hover:ring-accent/50 sm:h-[300px] sm:w-[200px]"
                 />
               </button>
             ) : (
@@ -1689,13 +1701,13 @@ function BookDetail({
                 onClick={() => findCover.mutate(undefined)}
                 disabled={findCover.isPending}
                 title="Find cover with AI"
-                className="bg-panel hover:border-accent/40 grid h-[196px] w-[131px] shrink-0 place-items-center rounded border border-dashed border-white/15 transition disabled:opacity-50"
+                className="bg-panel hover:border-accent/40 grid h-[268px] w-[180px] shrink-0 place-items-center rounded-md border border-dashed border-white/15 transition disabled:opacity-50 sm:h-[300px] sm:w-[200px]"
               >
                 <span className="flex flex-col items-center gap-2 px-2 text-center">
                   {findCover.isPending ? (
-                    <Sparkles size={22} className="text-accent animate-pulse" />
+                    <Sparkles size={26} className="text-accent animate-pulse" />
                   ) : (
-                    <ImageDown size={22} className="text-chalk-dim" />
+                    <ImageDown size={26} className="text-chalk-dim" />
                   )}
                   <span className="text-chalk-dim text-[10px] uppercase tracking-[0.14em]">
                     {findCover.isPending ? "Finding…" : "Find cover"}
@@ -1704,21 +1716,22 @@ function BookDetail({
               </button>
             )}
 
-            <div className="min-w-0 flex-1">
-              <h2 className="font-display text-cream text-[23px] leading-[1.15]">
+            <div className="mt-5 w-full min-w-0">
+              <h2 className="font-display text-cream text-[26px] leading-[1.12] sm:text-[28px]">
                 <Editable
                   value={book.title}
                   doubleClick
                   onSave={(v) => v.trim() && patch.mutate({ title: v.trim() })}
-                  inputClassName="w-full text-[19px]"
+                  inputClassName="w-full text-center text-[22px]"
+                  className="text-center"
                 />
               </h2>
 
               {book.subtitle && (
-                <p className="text-chalk mt-1 text-[12.5px] italic">{book.subtitle}</p>
+                <p className="text-chalk mt-1.5 text-[13px] italic">{book.subtitle}</p>
               )}
 
-              <p className="mt-1.5 text-[13px]">
+              <p className="mt-2 text-[14px]">
                 <Editable
                   value={book.authors}
                   placeholder="Add author"
@@ -1729,13 +1742,13 @@ function BookDetail({
                     onClose();
                   }}
                   onSave={(v) => patch.mutate({ authors: v.trim() || null })}
-                  className="text-chalk hover:text-accent"
-                  inputClassName="w-full"
+                  className="text-chalk hover:text-accent text-center"
+                  inputClassName="w-full text-center"
                 />
               </p>
 
               {book.star_rating !== null && (
-                <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-sm border border-cream/20 bg-cream/10 px-2.5 py-1">
+                <div className="mt-3 inline-flex items-center gap-1.5 rounded-sm border border-cream/20 bg-cream/10 px-2.5 py-1">
                   <Star size={15} className="text-cream fill-cream" />
                   <span className="numeral text-cream text-[18px] leading-none tracking-wide">
                     {book.star_rating}
@@ -1743,8 +1756,8 @@ function BookDetail({
                 </div>
               )}
 
-              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
-                <span className="text-chalk-dim">
+              <div className="text-chalk-dim mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-[11.5px]">
+                <span>
                   <Editable
                     value={book.page_count}
                     placeholder="Add pages"
@@ -1753,17 +1766,13 @@ function BookDetail({
                       const n = Number.parseInt(v, 10);
                       patch.mutate({ page_count: Number.isFinite(n) && n > 0 ? n : null });
                     }}
-                    inputClassName="w-20"
+                    inputClassName="w-20 text-center"
                   />
                   {book.page_count ? " pages" : ""}
                 </span>
-                {book.published_year && (
-                  <span className="text-chalk-dim">{book.published_year}</span>
-                )}
-                {book.format && <span className="text-chalk-dim capitalize">{book.format}</span>}
-                <span className="text-chalk-dim">
-                  Read {book.read_count}×
-                </span>
+                {book.published_year && <span>{book.published_year}</span>}
+                {book.format && <span className="capitalize">{book.format}</span>}
+                <span>Read {book.read_count}×</span>
                 <FictionLabel
                   fiction={book.fiction}
                   onFilter={() => {
@@ -1773,48 +1782,40 @@ function BookDetail({
                   }}
                   onCorrect={(next) => patch.mutate({ fiction: next })}
                 />
+              </div>
+
+              <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
                 <button
                   type="button"
                   onClick={() => onFindSimilar(book)}
-                  className="text-accent hover:text-cream inline-flex items-center gap-1 rounded-full border border-accent/40 px-2.5 py-[3px] text-[10.5px] uppercase tracking-[0.12em] transition hover:bg-accent/10"
+                  className="text-accent hover:text-cream inline-flex items-center gap-1.5 rounded-full border border-accent/40 px-3 py-1.5 text-[10.5px] uppercase tracking-[0.12em] transition hover:bg-accent/10"
                 >
                   <Sparkles size={11} />
                   Find similar
                 </button>
+                {book.series && (
+                  <button
+                    onClick={() => {
+                      onFilter({ type: "series", value: book.series! });
+                      onClose();
+                    }}
+                    className="text-accent hover:text-cream inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-[10.5px] transition hover:border-accent/40"
+                  >
+                    <Layers size={12} />
+                    {book.series}
+                    {book.series_position ? ` #${book.series_position}` : ""}
+                  </button>
+                )}
               </div>
 
-              {book.series && (
-                <button
-                  onClick={() => {
-                    onFilter({ type: "series", value: book.series! });
-                    onClose();
-                  }}
-                  className="text-accent hover:text-cream mt-1.5 flex items-center gap-1.5 text-[11.5px]"
-                >
-                  <Layers size={12} />
-                  {book.series}
-                  {book.series_position ? ` #${book.series_position}` : ""}
-                </button>
+              {(book.publisher || book.started_at || book.isbn) && (
+                <div className="text-chalk-dim mt-3 space-y-0.5 text-[11px]">
+                  {book.publisher && <p className="truncate">{book.publisher}</p>}
+                  {book.started_at && <p>Started {fmtLongDate(book.started_at)}</p>}
+                  {book.isbn && <p>ISBN {book.isbn}</p>}
+                </div>
               )}
-
-              {book.publisher && (
-                <p className="text-chalk-dim mt-1 truncate text-[11px]">{book.publisher}</p>
-              )}
-              {book.started_at && (
-                <p className="text-chalk-dim mt-1 text-[11px]">
-                  Started {fmtLongDate(book.started_at)}
-                </p>
-              )}
-              {book.isbn && <p className="text-chalk-dim mt-1 text-[10px]">ISBN {book.isbn}</p>}
             </div>
-
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              className="text-chalk hover:text-cream bg-field/60 shrink-0 rounded-full p-1.5 backdrop-blur"
-            >
-              <X size={17} />
-            </button>
           </div>
         </div>
 
