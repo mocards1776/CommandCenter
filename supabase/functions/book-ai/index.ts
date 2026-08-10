@@ -71,10 +71,11 @@ const GOOGLE_KEY = Deno.env.get("GOOGLE_BOOKS_API_KEY") ?? "";
 /** Upgrade a Google Books thumbnail into a larger front-cover URL when possible. */
 function upgradeGoogleCover(raw: string): string {
   let u = raw.replace(/^http:/, "https:").replace(/&edge=curl/g, "");
-  u = u.replace(/[?&]zoom=\d+/, "").replace(/[?&]img=\d+/, "");
-  // zoom=1 is a readable jacket; the API's default zoom=5 is a tiny stamp.
+  // zoom=0 is the large jacket; API thumbnails arrive as zoom=1 (~128px) or zoom=5 stamps.
   if (u.includes("books.google") || u.includes("googleusercontent.com")) {
-    u += (u.includes("?") ? "&" : "?") + "zoom=1&img=1";
+    if (/[?&]zoom=\d+/i.test(u)) u = u.replace(/([?&])zoom=\d+/gi, "$1zoom=0");
+    else u += (u.includes("?") ? "&" : "?") + "zoom=0";
+    if (!/[?&]img=/i.test(u)) u += "&img=1";
   }
   return u;
 }
@@ -156,9 +157,13 @@ async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string
   try {
     // The vid=ISBN form is what returns the shared skeleton placeholder.
     if (/[?&]vid=ISBN/i.test(url)) return null;
+    const fetchUrl = upgradeGoogleCover(url).replace(
+      /\/b\/(id|isbn|olid)\/([^/?#]+)-(S|M)\.jpe?g/i,
+      "/b/$1/$2-L.jpg",
+    );
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 12000);
-    const res = await fetch(url, {
+    const res = await fetch(fetchUrl, {
       signal: ctl.signal,
       redirect: "follow",
       headers: {

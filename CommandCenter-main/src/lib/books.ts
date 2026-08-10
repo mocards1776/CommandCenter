@@ -446,17 +446,69 @@ export async function storeCover(
   return path;
 }
 
+/** Rewrite common catalog jacket URLs to the largest available size. */
+export function upgradeCoverUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  let u = url.trim().replace(/^http:/i, "https:");
+  if (!u || /[?&]vid=ISBN/i.test(u)) return null;
+
+  // Open Library: S/M → L
+  u = u.replace(/\/b\/(id|isbn|olid)\/([^/?#]+)-(S|M)\.jpe?g(\?[^#]*)?$/i, "/b/$1/$2-L.jpg$4");
+  u = u.replace(/-([SM])\.jpe?g(\?|#|$)/i, "-L.jpg$2");
+
+  // Google Books content / thumbnail endpoints — zoom=0 is the large front cover.
+  // (API thumbnails arrive as zoom=1/~128px, which looks soft at hero size.)
+  if (/books\.google\.|googleusercontent\.com\/books|books\.googleusercontent/i.test(u)) {
+    u = u.replace(/([?&])edge=curl(&)?/gi, (_, p1, p2) => (p2 ? p1 : ""));
+    if (/[?&]zoom=\d+/i.test(u)) u = u.replace(/([?&])zoom=\d+/gi, "$1zoom=0");
+    else u += (u.includes("?") ? "&" : "?") + "zoom=0";
+    if (!/[?&]img=/i.test(u)) u += "&img=1";
+  }
+
+  return u;
+}
+
+/**
+ * Ordered jacket candidates for sharp display. Storage first (reader may have
+ * replaced it), then upgraded remote URL, then Open Library ISBN large.
+ * Callers can walk the list when an image is missing or too small.
+ */
+export function coverCandidates(book: {
+  cover_path?: string | null;
+  cover_url?: string | null;
+  isbn?: string | null;
+}): string[] {
+  const out: string[] = [];
+  const push = (raw: string | null | undefined) => {
+    const u = upgradeCoverUrl(raw) ?? (raw && !/[?&]vid=ISBN/i.test(raw) ? raw : null);
+    if (!u || out.includes(u)) return;
+    out.push(u);
+  };
+
+  if (book.cover_url && /[?&]vid=ISBN/i.test(book.cover_url)) {
+    // Shared Google "no cover" stub — treat as blank.
+  } else if (book.cover_path && book.cover_path.length > 0) {
+    push(supabase.storage.from("book-covers").getPublicUrl(book.cover_path).data.publicUrl);
+  }
+
+  push(book.cover_url);
+
+  const isbn = String(book.isbn ?? "").replace(/[^0-9Xx]/g, "");
+  if (isbn.length === 10 || isbn.length === 13) {
+    push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`);
+  }
+
+  return out;
+}
+
 export function coverSrc(book: Book): string | null {
   // Google's vid=ISBN content URL is a shared blue "no cover" skeleton. If that's
   // what we saved as cover_url, the stored file is almost certainly that stub —
   // treat the jacket as missing so Find/paste cover can run.
-  if (book.cover_url && /[?&]vid=ISBN/i.test(book.cover_url)) return null;
-
-  // Prefer our stored copy; fall back to the remote URL only if we never got bytes.
-  if (book.cover_path && book.cover_path.length > 0) {
-    return supabase.storage.from("book-covers").getPublicUrl(book.cover_path).data.publicUrl;
+  if (book.cover_url && /[?&]vid=ISBN/i.test(book.cover_url)) {
+    if (!book.cover_path || book.cover_path.length === 0) return null;
   }
-  return book.cover_url ?? null;
+  return coverCandidates(book)[0] ?? null;
 }
 
 /** Create a book from a URL lookup, storing the cover so it can't rot. */

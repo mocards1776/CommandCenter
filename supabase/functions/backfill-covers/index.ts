@@ -314,7 +314,16 @@ async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string
   try {
     // The vid=ISBN form is what returns the shared skeleton placeholder.
     if (/[?&]vid=ISBN/i.test(url)) return null;
-    const res = await fetchWithTimeout(url, 8000, { redirect: "follow" });
+    // Prefer large Google jackets — API thumbnails are ~128px and look soft in-app.
+    let fetchUrl = url.replace(/^http:/i, "https:");
+    if (/books\.google\.|googleusercontent\.com\/books/i.test(fetchUrl)) {
+      fetchUrl = fetchUrl.replace(/&edge=curl/gi, "");
+      if (/[?&]zoom=\d+/i.test(fetchUrl)) fetchUrl = fetchUrl.replace(/([?&])zoom=\d+/gi, "$1zoom=0");
+      else fetchUrl += (fetchUrl.includes("?") ? "&" : "?") + "zoom=0";
+      if (!/[?&]img=/i.test(fetchUrl)) fetchUrl += "&img=1";
+    }
+    fetchUrl = fetchUrl.replace(/\/b\/(id|isbn|olid)\/([^/?#]+)-(S|M)\.jpe?g/i, "/b/$1/$2-L.jpg");
+    const res = await fetchWithTimeout(fetchUrl, 8000, { redirect: "follow" });
     if (!res.ok) return null;
     const type = (res.headers.get("Content-Type") ?? "").split(";")[0];
     if (!type.startsWith("image/")) return null;
