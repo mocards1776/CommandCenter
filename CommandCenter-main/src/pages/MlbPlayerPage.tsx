@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth-context";
 import { addFavoritePlayer, isFavoritePlayer, removeFavoritePlayer } from "@/lib/favorite-players";
 import {
   buildAcquisitionStory,
+  buildPlayerPerformanceSummary,
   fetchMlbPlayer,
   fetchMlbPlayerGameLog,
   fetchMlbPlayerHighlights,
@@ -21,6 +22,7 @@ import {
   teamPagePath,
   type MlbGameLogEntry,
   type MlbLeagueRank,
+  type MlbPerformanceSummary,
   type MlbPlayerCard,
   type MlbPlayerSeasonRow,
   type MlbPlayerStatLine,
@@ -63,8 +65,19 @@ export default function MlbPlayerPage() {
   });
 
   const contract = useQuery({
-    queryKey: ["mlb-player-contract-v5", player.data?.name],
-    queryFn: () => fetchPlayerContract(player.data!.name),
+    queryKey: [
+      "mlb-player-contract-v6",
+      player.data?.name,
+      player.data?.firstName,
+      player.data?.lastName,
+    ],
+    queryFn: () =>
+      fetchPlayerContract(player.data!.name, {
+        altNames: [
+          [player.data!.firstName, player.data!.lastName].filter(Boolean).join(" "),
+          player.data!.lastName,
+        ],
+      }),
     enabled: Boolean(player.data?.name),
     staleTime: 300_000,
     retry: 2,
@@ -75,6 +88,13 @@ export default function MlbPlayerPage() {
     ((player.data!.pitching.length > 0 && player.data!.position === "P") ||
       player.data!.pitching.length > player.data!.hitting.length);
   const splitGroup = isPitcherPreview ? "pitching" : "hitting";
+
+  const latestGame = useQuery({
+    queryKey: ["mlb-player-latest-game", playerId, splitGroup, player.data?.season],
+    queryFn: () => fetchMlbPlayerGameLog(player.data!.id, splitGroup, 1, player.data!.season),
+    enabled: Boolean(player.data),
+    staleTime: 120_000,
+  });
 
   const splits = useQuery({
     queryKey: ["mlb-player-splits", playerId, splitGroup, player.data?.season],
@@ -172,6 +192,11 @@ export default function MlbPlayerPage() {
   const seasonStats = isPitcher ? p.pitching : p.hitting;
   const careerStats = isPitcher ? p.careerPitching : p.careerHitting;
   const mlbUrl = `https://www.mlb.com/player/${slugify(p.name)}-${p.id}`;
+  const performance = buildPlayerPerformanceSummary({
+    isPitcher,
+    latest: latestGame.data?.[0],
+    last5: last5.data,
+  });
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-7">
@@ -187,7 +212,7 @@ export default function MlbPlayerPage() {
           href={mlbUrl}
           target="_blank"
           rel="noreferrer"
-          className="text-chalk-dim hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em]"
+          className="text-chalk-dim/80 hover:text-chalk inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em]"
         >
           MLB.com <ExternalLink size={12} />
         </a>
@@ -200,6 +225,8 @@ export default function MlbPlayerPage() {
         favoriting={toggleFav.isPending}
         onToggleFavorite={() => toggleFav.mutate()}
       />
+
+      {performance && <PerformanceSummaryCard summary={performance} />}
 
       {seasonStats.length > 0 && (
         <SeasonStatsStrip
@@ -294,6 +321,35 @@ export default function MlbPlayerPage() {
       )}
       <HighlightReel highlights={highlights.data ?? []} title="Player highlights" defaultOpen={false} />
     </div>
+  );
+}
+
+function PerformanceSummaryCard({ summary }: { summary: MlbPerformanceSummary }) {
+  return (
+    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="border-b border-white/[0.06] px-4 py-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+          Form
+        </p>
+        <p className="text-cream mt-1 text-[13px] leading-snug">
+          Built from MLB game logs — no AI summary.
+        </p>
+      </div>
+      <div className="grid gap-0 sm:grid-cols-2">
+        <div className="border-b border-white/[0.06] px-4 py-3 sm:border-r sm:border-b-0">
+          <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
+            {summary.latestTitle}
+          </p>
+          <p className="text-cream mt-1.5 text-[14px] leading-relaxed">{summary.latestLine}</p>
+        </div>
+        <div className="px-4 py-3">
+          <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
+            {summary.recentTitle}
+          </p>
+          <p className="text-cream mt-1.5 text-[14px] leading-relaxed">{summary.recentLine}</p>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -912,13 +968,13 @@ function ContractBlock({
               <p className="text-chalk-dim text-[13px]">
                 {error
                   ? `Couldn't load contract details${error instanceof Error ? `: ${error.message}` : "."}`
-                  : "Contract details not published for this player."}
+                  : "No salary table came back from Baseball Reference / Spotrac for this player yet."}
               </p>
               {onRetry && (
                 <button
                   type="button"
                   onClick={onRetry}
-                  className="text-accent mt-2 text-[11px] font-semibold uppercase tracking-[0.14em] hover:underline"
+                  className="text-chalk-dim mt-2 text-[11px] font-semibold uppercase tracking-[0.14em] hover:text-cream hover:underline"
                 >
                   Retry
                 </button>
@@ -982,7 +1038,7 @@ function ContractBlock({
           href={contract.url}
           target="_blank"
           rel="noreferrer"
-          className="text-accent inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] hover:underline"
+          className="text-chalk-dim hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] hover:underline"
         >
           {contract.source === "spotrac" ? "Spotrac" : "Baseball Reference"}{" "}
           <ExternalLink size={11} />

@@ -89,23 +89,31 @@ async function scrapeBbref(name: string) {
     ).text();
   }
   const salaries: { year: string; amount: number; team: string | null }[] = [];
+  // BBRef often wraps tables in HTML comments — search the raw markup either way.
+  const searchable = html.replace(/<!--([\s\S]*?)-->/g, "$1");
   // Prefer rows that carry data-amount (salary tables).
   const rowRe =
     /<tr[^>]*>[\s\S]*?data-stat="year_ID"[^>]*>\s*(\d{4})[\s\S]*?data-stat="team_name"[^>]*>([\s\S]*?)<\/td>[\s\S]*?data-amount="([\d.]+)"[\s\S]*?<\/tr>/gi;
   let sm: RegExpExecArray | null;
-  while ((sm = rowRe.exec(html))) {
+  while ((sm = rowRe.exec(searchable))) {
     salaries.push({ year: sm[1], team: stripTags(sm[2]) || null, amount: Number(sm[3]) });
   }
   if (!salaries.length) {
     const loose =
       /data-stat="year_ID"[^>]*>(\d{4})[\s\S]*?data-stat="team_name"[^>]*>([\s\S]*?)<\/td>[\s\S]*?data-amount="([\d.]+)"/gi;
-    while ((sm = loose.exec(html))) {
+    while ((sm = loose.exec(searchable))) {
       salaries.push({ year: sm[1], team: stripTags(sm[2]) || null, amount: Number(sm[3]) });
     }
   }
+  // Dedupe by year (keep first / earliest occurrence).
+  const byYear = new Map<string, { year: string; amount: number; team: string | null }>();
+  for (const s of salaries) {
+    if (!byYear.has(s.year)) byYear.set(s.year, s);
+  }
+  const uniqueSalaries = [...byYear.values()].sort((a, b) => Number(a.year) - Number(b.year));
   const statusMatch =
-    html.match(/Contract Status<\/strong>\s*:?\s*([^<]+)/i) ??
-    html.match(/(\d{4})\s*Contract Status<\/strong>\s*:?\s*([^<\n]+)/i);
+    searchable.match(/Contract Status<\/strong>\s*:?\s*([^<]+)/i) ??
+    searchable.match(/(\d{4})\s*Contract Status<\/strong>\s*:?\s*([^<\n]+)/i);
   const contractStatus = statusMatch
     ? stripTags(statusMatch[statusMatch.length - 1] ?? "")
     : null;
@@ -115,12 +123,12 @@ async function scrapeBbref(name: string) {
     /<p><strong>[^<]+<\/strong>\s*Traded by[\s\S]*?<\/p>/gi,
     /<p><strong>[^<]+<\/strong>\s*Signed as[\s\S]*?<\/p>/gi,
   ]) {
-    for (const hit of html.matchAll(re)) {
+    for (const hit of searchable.matchAll(re)) {
       const text = stripTags(hit[0]);
       if (text && !acquisition.includes(text)) acquisition.push(text);
     }
   }
-  const latest = pickCurrentSalary(salaries, contractStatus);
+  const latest = pickCurrentSalary(uniqueSalaries, contractStatus);
   const totals = parseBbrefTotals(contractStatus);
   return {
     source: "baseball-reference",
@@ -135,7 +143,7 @@ async function scrapeBbref(name: string) {
           team: latest.team,
         }
       : null,
-    salaryHistory: salaries.slice(-8).map((s) => ({
+    salaryHistory: uniqueSalaries.slice(-12).map((s) => ({
       year: s.year,
       amount: s.amount,
       display: moneyDisplay(s.amount),

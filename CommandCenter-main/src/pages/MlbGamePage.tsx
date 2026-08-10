@@ -308,6 +308,8 @@ function GameWrap({
 }
 
 function RecapBody({ segments }: { segments: RecapInline[] }) {
+  const linkClass =
+    "text-inherit underline decoration-white/20 underline-offset-[3px] transition hover:decoration-white/45";
   const nodes: ReactNode[] = [];
   segments.forEach((seg, i) => {
     if (seg.kind === "text") {
@@ -316,11 +318,7 @@ function RecapBody({ segments }: { segments: RecapInline[] }) {
     }
     if (seg.kind === "player" && seg.playerId != null) {
       nodes.push(
-        <Link
-          key={i}
-          to={`/sports/mlb/player/${seg.playerId}`}
-          className="text-accent underline decoration-accent/35 underline-offset-[3px] transition hover:decoration-accent"
-        >
+        <Link key={i} to={`/sports/mlb/player/${seg.playerId}`} className={linkClass}>
           {seg.text}
         </Link>,
       );
@@ -328,11 +326,7 @@ function RecapBody({ segments }: { segments: RecapInline[] }) {
     }
     if (seg.kind === "team" && seg.teamId != null) {
       nodes.push(
-        <Link
-          key={i}
-          to={teamPagePath(seg.teamId)}
-          className="text-accent underline decoration-accent/35 underline-offset-[3px] transition hover:decoration-accent"
-        >
+        <Link key={i} to={teamPagePath(seg.teamId)} className={linkClass}>
           {seg.text}
         </Link>,
       );
@@ -340,23 +334,13 @@ function RecapBody({ segments }: { segments: RecapInline[] }) {
     }
     if (seg.kind === "ext") {
       nodes.push(
-        <a
-          key={i}
-          href={seg.href}
-          target="_blank"
-          rel="noreferrer"
-          className="text-accent underline decoration-accent/35 underline-offset-[3px]"
-        >
+        <a key={i} href={seg.href} target="_blank" rel="noreferrer" className={linkClass}>
           {seg.text}
         </a>,
       );
       return;
     }
-    nodes.push(
-      <span key={i} className="text-accent">
-        {seg.text}
-      </span>,
-    );
+    nodes.push(<span key={i}>{seg.text}</span>);
   });
   return <>{nodes}</>;
 }

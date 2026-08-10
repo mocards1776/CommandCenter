@@ -346,17 +346,19 @@ export function parseEspnRecapHtml(
   const re = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let last = 0;
   let m: RegExpExecArray | null;
+  // Keep edge spaces — stripHtml used to .trim(), which glued "Name"+"hit" → "Namehit".
   const pushText = (raw: string) => {
     const text = stripHtml(raw)
       .replace(/\u00a0/g, " ")
       .replace(/—\s*—/g, "—")
-      .replace(/\s+/g, " ");
+      .replace(/[ \t\f\v]+/g, " ")
+      .replace(/\n+/g, " ");
     if (text) parts.push({ kind: "text", text });
   };
   while ((m = re.exec(html))) {
     if (m.index > last) pushText(html.slice(last, m.index));
     const href = m[1];
-    const label = stripHtml(m[2]).trim();
+    const label = stripHtml(m[2]).replace(/\s+/g, " ").trim();
     const playerMatch = href.match(/\/mlb\/player\/_\/id\/(\d+)\//i);
     const teamMatch = href.match(/\/mlb\/team\/_\/name\/([a-z0-9]+)\//i);
     if (playerMatch) {
@@ -381,7 +383,48 @@ export function parseEspnRecapHtml(
     last = m.index + m[0].length;
   }
   if (last < html.length) pushText(html.slice(last));
-  return parts;
+  return ensureRecapSegmentSpacing(parts);
+}
+
+/** Insert a space when adjacent segments would otherwise run together. */
+export function ensureRecapSegmentSpacing(parts: RecapInline[]): RecapInline[] {
+  if (parts.length < 2) return parts;
+  const out: RecapInline[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const cur = parts[i];
+    if (i === 0) {
+      out.push(cur);
+      continue;
+    }
+    const prev = out[out.length - 1];
+    const prevText = prev.text;
+    const curText = cur.text;
+    if (!prevText || !curText) {
+      out.push(cur);
+      continue;
+    }
+    const left = prevText[prevText.length - 1];
+    const right = curText[0];
+    const needsSpace =
+      !/\s/.test(left) &&
+      !/\s/.test(right) &&
+      // Don't insert before/after punctuation that shouldn't be spaced that way
+      !/^[.,;:!?)\]}]/.test(right) &&
+      !/[(["']$/.test(left) &&
+      (/[A-Za-z0-9)]$/.test(left) || /[A-Za-z0-9]/.test(right));
+    if (needsSpace) {
+      if (prev.kind === "text") {
+        out[out.length - 1] = { ...prev, text: `${prevText} ` };
+      } else if (cur.kind === "text") {
+        out.push({ ...cur, text: ` ${curText}` });
+        continue;
+      } else {
+        out.push({ kind: "text", text: " " });
+      }
+    }
+    out.push(cur);
+  }
+  return out;
 }
 
 export function normalizePersonName(name: string): string {
@@ -725,6 +768,8 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
 }
 
 function stripHtml(html: string): string {
+  // Do not trim — callers that parse inline HTML need leading/trailing spaces
+  // so linked names don't run into neighboring words.
   return html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n\n")
@@ -733,8 +778,7 @@ function stripHtml(html: string): string {
     .replace(/&amp;/g, "&")
     .replace(/&#39;/g, "'")
     .replace(/&quot;/g, '"')
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .replace(/\n{3,}/g, "\n\n");
 }
 
 /** ESPN game wrap / recap for an MLB game (matched by date + team abbrevs). */
@@ -789,7 +833,7 @@ export async function fetchEspnGameRecap(
       headline: article.headline,
       description: article.description ?? null,
       storyHtml: article.story,
-      storyText: stripHtml(article.story),
+      storyText: stripHtml(article.story).trim(),
       url:
         article.links?.web?.href ??
         `https://www.espn.com/mlb/recap/_/gameId/${event.id}`,
@@ -1258,7 +1302,9 @@ function mapContractPayload(data: unknown): MlbPlayerContract | null {
     aav?: string | null;
     totalValue?: string | null;
   };
-  if (d.error && !d.contractStatus && !d.currentSalary) return null;
+  if (d.error && !d.contractStatus && !d.currentSalary && !(d.salaryHistory?.length)) {
+    return null;
+  }
   const hasAnything =
     Boolean(d.contractStatus) ||
     Boolean(d.currentSalary?.display) ||
@@ -1278,36 +1324,62 @@ function mapContractPayload(data: unknown): MlbPlayerContract | null {
   };
 }
 
+async function invokeSportsContract(body: Record<string, unknown>): Promise<MlbPlayerContract | null> {
+  // Prefer usable JSON even when supabase-js also sets `error` (common on edge 2xx quirks).
+  try {
+    const { data, error } = await supabase.functions.invoke("sports", { body });
+    const mapped = mapContractPayload(data);
+    if (mapped) return mapped;
+    if (error && !data) {
+      /* fall through */
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    if (!base || !key) return null;
+    const res = await fetch(`${base}/functions/v1/sports`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+        apikey: key,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
+    return mapContractPayload(await res.json());
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchPlayerContract(
   playerName: string,
-  opts?: { url?: string | null },
+  opts?: { url?: string | null; altNames?: string[] },
 ): Promise<MlbPlayerContract | null> {
-  const name = playerName.trim();
-  if (name.length < 3) return null;
+  const names = [
+    playerName.trim(),
+    ...(opts?.altNames ?? []).map((n) => n.trim()),
+  ].filter((n, i, arr) => n.length >= 3 && arr.indexOf(n) === i);
 
-  // BBRef first — more reliable salary tables than Spotrac search from the edge.
-  const attempts: { action: string; body: Record<string, unknown> }[] = [
-    { action: "bbref", body: { action: "bbref", name } },
-    {
-      action: "contract",
-      body: { action: "contract", name, ...(opts?.url ? { url: opts.url } : {}) },
-    },
-  ];
+  if (!names.length) return null;
 
   let lastError: Error | null = null;
-  for (const attempt of attempts) {
-    try {
-      const { data, error } = await supabase.functions.invoke("sports", {
-        body: attempt.body,
-      });
-      if (error) {
-        lastError = new Error(error.message || `${attempt.action} failed`);
-        continue;
+  for (const name of names) {
+    const attempts: Record<string, unknown>[] = [
+      { action: "bbref", name },
+      { action: "contract", name, ...(opts?.url ? { url: opts.url } : {}) },
+    ];
+    for (const body of attempts) {
+      try {
+        const mapped = await invokeSportsContract(body);
+        if (mapped) return mapped;
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error(String(e));
       }
-      const mapped = mapContractPayload(data);
-      if (mapped) return mapped;
-    } catch (e) {
-      lastError = e instanceof Error ? e : new Error(String(e));
     }
   }
   if (lastError) throw lastError;
@@ -2118,6 +2190,116 @@ export async function fetchMlbPlayerGameLog(
         stats: pickStats(s.stat, keys.slice(0, 8)),
       };
     });
+}
+
+export type MlbPerformanceSummary = {
+  latestTitle: string;
+  latestLine: string;
+  recentTitle: string;
+  recentLine: string;
+};
+
+function fmtGameDateLabel(iso: string): string {
+  if (!iso) return "Latest game";
+  try {
+    return new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function statValue(stats: MlbPlayerStatLine[], label: string): string | null {
+  return stats.find((s) => s.label === label)?.value ?? null;
+}
+
+/** Template blurb from MLB stats — no LLM / tokens. */
+export function buildPlayerPerformanceSummary(input: {
+  isPitcher: boolean;
+  latest: MlbGameLogEntry | null | undefined;
+  last5: MlbRecentBlock | null | undefined;
+}): MlbPerformanceSummary | null {
+  const latest = input.latest;
+  const last5 = input.last5;
+  if (!latest && !last5) return null;
+
+  let latestTitle = "That day";
+  let latestLine = "No game log yet this season.";
+  if (latest) {
+    const when = fmtGameDateLabel(latest.date);
+    const vs = `${latest.isHome ? "vs" : "@"} ${latest.opponent || "OPP"}`;
+    latestTitle = when;
+    if (latest.summary?.trim()) {
+      latestLine = `${vs}: ${latest.summary.trim()}`;
+    } else if (input.isPitcher) {
+      const bits = [
+        statValue(latest.stats, "IP") ? `${statValue(latest.stats, "IP")} IP` : null,
+        statValue(latest.stats, "H") != null ? `${statValue(latest.stats, "H")} H` : null,
+        statValue(latest.stats, "ER") != null ? `${statValue(latest.stats, "ER")} ER` : null,
+        statValue(latest.stats, "BB") != null ? `${statValue(latest.stats, "BB")} BB` : null,
+        statValue(latest.stats, "SO") != null ? `${statValue(latest.stats, "SO")} K` : null,
+      ].filter(Boolean);
+      latestLine = bits.length ? `${vs}: ${bits.join(", ")}` : `${vs}: line unavailable`;
+    } else {
+      const ab = statValue(latest.stats, "AB");
+      const h = statValue(latest.stats, "H");
+      const bits = [
+        ab != null && h != null ? `${h}-for-${ab}` : null,
+        statValue(latest.stats, "HR") && statValue(latest.stats, "HR") !== "0"
+          ? `${statValue(latest.stats, "HR")} HR`
+          : null,
+        statValue(latest.stats, "RBI") && statValue(latest.stats, "RBI") !== "0"
+          ? `${statValue(latest.stats, "RBI")} RBI`
+          : null,
+        statValue(latest.stats, "BB") && statValue(latest.stats, "BB") !== "0"
+          ? `${statValue(latest.stats, "BB")} BB`
+          : null,
+        statValue(latest.stats, "SO") && statValue(latest.stats, "SO") !== "0"
+          ? `${statValue(latest.stats, "SO")} K`
+          : null,
+      ].filter(Boolean);
+      latestLine = bits.length ? `${vs}: ${bits.join(", ")}` : `${vs}: line unavailable`;
+    }
+  }
+
+  let recentTitle = "Recent";
+  let recentLine = "Recent form unavailable.";
+  if (last5?.stats?.length) {
+    const g = last5.games || 5;
+    recentTitle = `Last ${g}`;
+    if (input.isPitcher) {
+      const bits = [
+        statValue(last5.stats, "ERA") ? `${statValue(last5.stats, "ERA")} ERA` : null,
+        statValue(last5.stats, "WHIP") ? `${statValue(last5.stats, "WHIP")} WHIP` : null,
+        statValue(last5.stats, "IP") ? `${statValue(last5.stats, "IP")} IP` : null,
+        statValue(last5.stats, "SO") ? `${statValue(last5.stats, "SO")} K` : null,
+        statValue(last5.stats, "BB") != null ? `${statValue(last5.stats, "BB")} BB` : null,
+      ].filter(Boolean);
+      recentLine = bits.length
+        ? `${bits.join(" · ")} over ${g} appearance${g === 1 ? "" : "s"}`
+        : `Last ${g} appearances loaded`;
+    } else {
+      const bits = [
+        statValue(last5.stats, "AVG") ? `${statValue(last5.stats, "AVG")} AVG` : null,
+        (() => {
+          const h = statValue(last5.stats, "H");
+          const ab = statValue(last5.stats, "AB");
+          return h != null && ab != null ? `${h}-for-${ab}` : null;
+        })(),
+        statValue(last5.stats, "HR") != null ? `${statValue(last5.stats, "HR")} HR` : null,
+        statValue(last5.stats, "RBI") != null ? `${statValue(last5.stats, "RBI")} RBI` : null,
+        statValue(last5.stats, "OPS") ? `${statValue(last5.stats, "OPS")} OPS` : null,
+      ].filter(Boolean);
+      recentLine = bits.length
+        ? `${bits.join(" · ")} over ${g} game${g === 1 ? "" : "s"}`
+        : `Last ${g} games loaded`;
+    }
+  }
+
+  return { latestTitle, latestLine, recentTitle, recentLine };
 }
 
 async function invokeSports<T extends Record<string, unknown>>(
