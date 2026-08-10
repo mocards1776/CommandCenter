@@ -26,6 +26,7 @@ import {
   fetchBooks,
   fetchSessions,
   importStoryGraphCsv,
+  repairMisfiledReads,
   updateBook,
   createBook,
   deleteBook,
@@ -4142,6 +4143,29 @@ export default function ReadingPage() {
     queryKey: ["highlight-counts"],
     queryFn: fetchHighlightCounts,
   });
+
+  // One-shot: StoryGraph left some finished books on To Read with dates/ratings.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const n = await repairMisfiledReads();
+        if (!cancelled && n > 0) {
+          await qc.invalidateQueries({ queryKey: ["books"] });
+          toast.success(
+            n === 1
+              ? "Moved 1 finished book off To read"
+              : `Moved ${n} finished books off To read`,
+          );
+        }
+      } catch {
+        // Non-fatal — shelf still loads.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [qc]);
   const [shelf, setShelf] = useState<ReadStatus>("currently-reading");
   // One filter across author / tag / year, so every number on the page can
   // be a link into the list that produced it.
