@@ -74,6 +74,53 @@ function toNumber(v: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * StoryGraph "Dates Read" looks like "2024/03/09-2024/03/11, 2021/09/13".
+ * Build the same read_log shape the rest of the app uses.
+ */
+export function parseStoryGraphDatesRead(raw: string): { start: string | null; end: string | null }[] {
+  const out: { start: string | null; end: string | null }[] = [];
+  for (const part of raw.split(",")) {
+    const p = part.trim();
+    if (!p) continue;
+    // Range: YYYY/MM/DD-YYYY/MM/DD (date parts use /, so one "-" separates ends).
+    const range = /^(\d{4}\/\d{2}\/\d{2})\s*-\s*(\d{4}\/\d{2}\/\d{2})$/.exec(p);
+    if (range) {
+      out.push({ start: toDate(range[1]), end: toDate(range[2]) });
+      continue;
+    }
+    const single = toDate(p);
+    if (single) out.push({ start: null, end: single });
+  }
+  return out;
+}
+
+/**
+ * StoryGraph often leaves Read Status as "to-read" on rows that already have
+ * finish dates / a read count (format duplicates, re-shelves, export quirks).
+ * Trust those finish signals unless the row is actively mid-read / DNF / paused.
+ */
+function statusFromStoryGraph(
+  rawStatus: string,
+  readCount: number,
+  lastRead: string | null,
+  datesRead: string,
+): ReadStatus {
+  const status = VALID_STATUS.includes(rawStatus as ReadStatus)
+    ? (rawStatus as ReadStatus)
+    : "to-read";
+  if (
+    status === "currently-reading" ||
+    status === "paused" ||
+    status === "did-not-finish" ||
+    status === "read"
+  ) {
+    return status;
+  }
+  if (readCount > 0 || lastRead || datesRead.trim()) return "read";
+  return status;
+}
+
 export type ImportResult = { inserted: number; skipped: number; total: number };
 
 /**
@@ -127,8 +174,20 @@ export async function importStoryGraphCsv(
       continue;
     }
 
-    const rawStatus = at(r, idx.status) as ReadStatus;
+    const rawStatus = at(r, idx.status);
     const rating = toNumber(at(r, idx.rating));
+    const datesRead = at(r, idx.datesRead);
+    const lastRead = toDate(at(r, idx.lastRead));
+    const readLog = parseStoryGraphDatesRead(datesRead);
+    const readCount = Math.max(
+      Math.trunc(toNumber(at(r, idx.readCount)) ?? 0),
+      readLog.length,
+    );
+    const status = statusFromStoryGraph(rawStatus, readCount, lastRead, datesRead);
+    const finishedAt =
+      status === "read"
+        ? readLog.find((e) => e.end)?.end ?? lastRead
+        : null;
 
     books.push({
       user_id: userId,
@@ -137,11 +196,13 @@ export async function importStoryGraphCsv(
       contributors: at(r, idx.contributors) || null,
       isbn: at(r, idx.isbn) || null,
       format: at(r, idx.format) || null,
-      status: VALID_STATUS.includes(rawStatus) ? rawStatus : "to-read",
+      status,
       date_added: toDate(at(r, idx.dateAdded)),
-      last_date_read: toDate(at(r, idx.lastRead)),
-      dates_read: at(r, idx.datesRead) || null,
-      read_count: Math.trunc(toNumber(at(r, idx.readCount)) ?? 0),
+      last_date_read: lastRead,
+      dates_read: datesRead || null,
+      read_count: readCount,
+      read_log: readLog,
+      finished_at: finishedAt,
       // Guard the CHECK constraint rather than letting one bad cell 400 the batch.
       star_rating: rating !== null && rating >= 0 && rating <= 5 ? rating : null,
       review: at(r, idx.review) || null,
@@ -166,6 +227,55 @@ export async function importStoryGraphCsv(
   }
 
   return { inserted, skipped, total: books.length };
+}
+
+/**
+ * Move finished books out of To Read when StoryGraph (or a merge) left them
+ * there with read dates / a read-through log. Safe to re-run.
+ */
+export async function repairMisfiledReads(): Promise<number> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("books")
+    .select("id, last_date_read, dates_read, read_count, read_log, finished_at")
+    .eq("user_id", userId)
+    .eq("status", "to-read");
+  if (error) throw error;
+
+  let fixed = 0;
+  for (const b of data ?? []) {
+    const log = (b.read_log ?? []) as { start: string | null; end: string | null }[];
+    const fromDates = parseStoryGraphDatesRead(String(b.dates_read ?? ""));
+    const merged = [...log];
+    const seen = new Set(merged.map((r) => `${r.start ?? ""}|${r.end ?? ""}`));
+    for (const r of fromDates) {
+      const k = `${r.start ?? ""}|${r.end ?? ""}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      merged.push(r);
+    }
+    const hasEvidence =
+      (b.read_count ?? 0) > 0 ||
+      Boolean(b.last_date_read) ||
+      merged.some((r) => r.end);
+    if (!hasEvidence) continue;
+
+    const sorted = [...merged].sort((a, b) => (b.end ?? "").localeCompare(a.end ?? ""));
+    const finished = sorted.find((r) => r.end)?.end ?? b.last_date_read ?? b.finished_at;
+    const { error: uErr } = await supabase
+      .from("books")
+      .update({
+        status: "read",
+        read_log: sorted,
+        read_count: Math.max(b.read_count ?? 0, sorted.length),
+        finished_at: finished,
+        last_date_read: finished ?? b.last_date_read,
+      })
+      .eq("id", b.id);
+    if (uErr) throw uErr;
+    fixed++;
+  }
+  return fixed;
 }
 
 export async function fetchBooks(): Promise<Book[]> {
@@ -356,6 +466,10 @@ export async function mergeBooks(keepId: string, absorbIds: string[]): Promise<B
     }
   }
   patch.status = bestStatus;
+  // Finish dates mean the work has been read — don't leave a merged row on To Read.
+  if (sorted.some((r) => r.end) && (STATUS_RANK[bestStatus] ?? 0) <= STATUS_RANK["to-read"]) {
+    patch.status = "read";
+  }
 
   if (absorbs.some((a) => a.on_deck) && !keep.on_deck) {
     patch.on_deck = true;
