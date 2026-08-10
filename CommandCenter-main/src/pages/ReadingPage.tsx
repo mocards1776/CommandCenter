@@ -53,6 +53,7 @@ import {
   finishedContributions,
   periodBounds,
   pullCover,
+  cleanBookText,
   classifyBatch,
   unclassifiedCount,
   titleKey,
@@ -1471,15 +1472,12 @@ function SharpCover({
   onOpenTools?: () => void;
   onBroken?: () => void;
 }) {
-  const candidates = useMemo(
-    () => coverCandidates(book),
-    [book.cover_path, book.cover_url, book.isbn],
-  );
+  const candidates = useMemo(() => coverCandidates(book), [book]);
   const [idx, setIdx] = useState(0);
 
   useEffect(() => {
     setIdx(0);
-  }, [book.id, book.cover_path, book.cover_url, book.isbn]);
+  }, [book.id, book.cover_path, book.cover_url, book.isbn, book.locked_at, book.updated_at]);
 
   const src = candidates[idx] ?? null;
   if (!src) return null;
@@ -1487,26 +1485,25 @@ function SharpCover({
   return (
     <button
       type="button"
-      title="Double-tap to replace cover"
+      title="Tap to change cover"
       onClick={onActivate}
       onDoubleClick={(e) => {
         e.preventDefault();
         onOpenTools?.();
       }}
-      className="group relative shrink-0 focus:outline-none"
+      className="book-sheet-cover group relative shrink-0 focus:outline-none"
     >
-      {/* Soft glow behind the jacket — Apple Books energy without neon. */}
       <span
         aria-hidden
-        className="pointer-events-none absolute -inset-6 rounded-[28px] bg-white/10 opacity-50 blur-2xl transition group-hover:opacity-70"
+        className="pointer-events-none absolute -inset-8 rounded-[36px] bg-white/[0.12] opacity-60 blur-3xl transition duration-500 group-hover:opacity-80"
       />
       <img
         src={src}
         alt=""
         decoding="async"
+        referrerPolicy="no-referrer"
         onLoad={(e) => {
           const w = e.currentTarget.naturalWidth;
-          // Stored Google thumbs are often ~128–200px — skip to the next candidate.
           if (w > 0 && w < 260 && idx < candidates.length - 1) {
             setIdx((i) => i + 1);
           }
@@ -1516,14 +1513,25 @@ function SharpCover({
           else onBroken?.();
         }}
         className={cn(
-          "relative rounded-[6px] object-cover",
-          "shadow-[0_2px_4px_rgba(0,0,0,.25),0_18px_48px_rgba(0,0,0,.55),0_40px_80px_rgba(0,0,0,.35)]",
-          "ring-1 ring-white/15",
+          "relative rounded-[4px] object-cover",
+          "shadow-[0_1px_2px_rgba(0,0,0,.35),0_12px_28px_rgba(0,0,0,.45),0_32px_64px_rgba(0,0,0,.4)]",
+          "ring-1 ring-white/20",
           className,
         )}
       />
     </button>
   );
+}
+
+/** Hide subtitle when the title already carries it after a colon. */
+function displaySubtitle(title: string, subtitle: string | null | undefined): string | null {
+  if (!subtitle?.trim()) return null;
+  const sub = subtitle.trim();
+  const t = title.toLowerCase();
+  if (t.includes(sub.toLowerCase())) return null;
+  const afterColon = title.split(/:\s*/)[1]?.trim().toLowerCase();
+  if (afterColon && afterColon === sub.toLowerCase()) return null;
+  return sub;
 }
 
 function BookDetail({
@@ -1663,30 +1671,38 @@ function BookDetail({
   });
 
   const [coverLink, setCoverLink] = useState("");
-  const [showCoverLink, setShowCoverLink] = useState(false);
-  // Replace / paste cover UI — only after a double-tap on the jacket.
   const [coverToolsOpen, setCoverToolsOpen] = useState(false);
-  const coverTapAt = useRef(0);
   // img onError — storage can hold a Google "no cover" stub that still 200s.
   const [coverBroken, setCoverBroken] = useState(false);
 
   useEffect(() => {
     setCoverToolsOpen(false);
-    setShowCoverLink(false);
     setCoverLink("");
     setCoverBroken(false);
   }, [book.id]);
 
   const findCover = useMutation({
     mutationFn: (url?: string) => pullCover(book.id, url),
-    onSuccess: (r) => {
+    onSuccess: async (r) => {
+      // Optimistic: swap the open book's jacket before the list refetch lands.
+      qc.setQueryData<Book[]>(["books"], (prev) =>
+        (prev ?? []).map((b) =>
+          b.id === book.id
+            ? {
+                ...b,
+                cover_path: r.cover_path ?? null,
+                cover_url: r.cover_url ?? b.cover_url,
+                locked_at: new Date().toISOString(),
+              }
+            : b,
+        ),
+      );
       refresh();
       setCoverLink("");
-      setShowCoverLink(false);
       setCoverToolsOpen(false);
       setCoverBroken(false);
       toast.success(
-        r.source === "ai" ? "Cover found" : r.source === "link" ? "Cover saved" : "Cover found",
+        r.source === "ai" ? "Cover found" : r.source === "link" ? "Cover updated" : "Cover found",
       );
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't find a cover"),
@@ -1694,42 +1710,43 @@ function BookDetail({
 
   const openCoverTools = () => {
     setCoverToolsOpen(true);
-    setShowCoverLink(false);
-  };
-
-  const onCoverActivate = () => {
-    const now = Date.now();
-    if (now - coverTapAt.current < 380) openCoverTools();
-    coverTapAt.current = now;
   };
 
   const cover = coverBroken ? null : coverSrc(book);
   const subjects = book.subjects ?? [];
   const pct = book.page_count ? Math.min(100, (book.current_page / book.page_count) * 100) : null;
+  const subtitle = displaySubtitle(book.title, book.subtitle);
+  const about = book.description ? cleanBookText(book.description) : null;
+
+  const submitCoverLink = (raw: string) => {
+    const url = raw.trim();
+    if (!url) return;
+    findCover.mutate(url);
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/55 backdrop-blur-[2px]" onClick={onClose}>
+    <div className="book-sheet-scrim fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-md" onClick={onClose}>
       <aside
-        // Full-height sheet, so it needs the safe area itself — the app header
-        // that normally handles it isn't in this stacking context.
-        className="bg-field h-full w-full max-w-md overflow-y-auto overscroll-contain border-l border-white/[0.06] shadow-[-24px_0_80px_rgba(0,0,0,.45)]"
+        className="book-sheet-panel bg-field/95 h-full w-full max-w-md overflow-y-auto overscroll-contain border-l border-white/[0.07] shadow-[-32px_0_100px_rgba(0,0,0,.55)] backdrop-blur-xl"
         style={{
-          paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)",
+          paddingTop: "calc(env(safe-area-inset-top) + 0.5rem)",
           paddingBottom: "calc(env(safe-area-inset-bottom) + 5rem)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Cover-led hero — jacket is the visual anchor, title sits under it. */}
-        <div className="relative mb-2 overflow-hidden px-6 pb-7 pt-1">
+        {/* Immersive cover hero — one composition, jacket as the plane. */}
+        <div className="relative mb-1 overflow-hidden px-6 pb-8 pt-2">
           {cover && (
             <>
               <img
                 src={cover}
                 alt=""
                 aria-hidden
-                className="absolute inset-0 h-full w-full scale-[1.35] object-cover opacity-[0.34] blur-3xl"
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 h-full w-full scale-[1.45] object-cover opacity-40 blur-[48px]"
               />
-              <div className="absolute inset-0 bg-gradient-to-b from-[#0a1428]/20 via-[#0a1428]/70 to-[#0a1428]" />
+              <div className="absolute inset-0 bg-gradient-to-b from-[#070f1f]/10 via-[#0a1428]/75 to-[#0a1428]" />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#0a1428] to-transparent" />
             </>
           )}
           {!cover && <StarField count={18} seed={41} />}
@@ -1737,46 +1754,77 @@ function BookDetail({
           <button
             onClick={onClose}
             aria-label="Close"
-            className="text-cream/90 hover:text-cream absolute top-1 right-4 z-20 rounded-full bg-white/10 p-2 shadow-sm ring-1 ring-white/15 backdrop-blur-md transition hover:bg-white/15"
+            className="text-cream absolute top-1 right-4 z-20 rounded-full bg-black/25 p-2.5 shadow-lg ring-1 ring-white/20 backdrop-blur-xl transition hover:bg-black/35"
           >
-            <X size={16} />
+            <X size={15} strokeWidth={2.25} />
           </button>
 
-          <div className="relative z-10 flex flex-col items-center pt-5 text-center">
+          <div className="relative z-10 flex flex-col items-center pt-6 text-center">
             {cover ? (
-              <SharpCover
-                book={book}
-                onActivate={onCoverActivate}
-                onOpenTools={openCoverTools}
-                onBroken={() => setCoverBroken(true)}
-                className="h-[300px] w-[200px] sm:h-[332px] sm:w-[222px]"
-              />
+              <>
+                <SharpCover
+                  book={book}
+                  onActivate={openCoverTools}
+                  onOpenTools={openCoverTools}
+                  onBroken={() => setCoverBroken(true)}
+                  className="h-[320px] w-[214px] sm:h-[360px] sm:w-[240px]"
+                />
+                <button
+                  type="button"
+                  onClick={openCoverTools}
+                  className="text-chalk/90 hover:text-cream mt-3.5 text-[11px] tracking-[0.08em] transition"
+                >
+                  Change cover
+                </button>
+              </>
             ) : (
-              <div className="flex w-full flex-col items-center gap-3">
+              <div className="flex w-full flex-col items-center gap-4">
                 <button
                   type="button"
                   onClick={() => findCover.mutate(undefined)}
                   disabled={findCover.isPending}
                   title="Find cover with AI"
-                  className="bg-panel/80 hover:border-white/25 grid h-[300px] w-[200px] shrink-0 place-items-center rounded-[6px] border border-dashed border-white/15 transition disabled:opacity-50 sm:h-[332px] sm:w-[222px]"
+                  className="bg-white/[0.04] hover:border-white/25 grid h-[320px] w-[214px] shrink-0 place-items-center rounded-[4px] border border-dashed border-white/15 transition disabled:opacity-50 sm:h-[360px] sm:w-[240px]"
                 >
-                  <span className="flex flex-col items-center gap-2 px-2 text-center">
+                  <span className="flex flex-col items-center gap-2.5 px-2 text-center">
                     {findCover.isPending && !coverLink ? (
-                      <Sparkles size={26} className="text-accent animate-pulse" />
+                      <Sparkles size={28} className="text-accent animate-pulse" />
                     ) : (
-                      <ImageDown size={26} className="text-chalk-dim" />
+                      <ImageDown size={28} className="text-chalk-dim" />
                     )}
-                    <span className="text-chalk-dim text-[10px] uppercase tracking-[0.14em]">
+                    <span className="text-chalk-dim text-[11px] tracking-[0.12em]">
                       {findCover.isPending && !coverLink ? "Finding…" : "Find cover"}
                     </span>
                   </span>
                 </button>
+              </div>
+            )}
+
+            {(coverToolsOpen || !cover) && (
+              <div className="mt-4 w-full max-w-[300px] space-y-2">
+                {cover && (
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-chalk-dim text-[10px] uppercase tracking-[0.18em]">
+                      Replace cover
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCoverToolsOpen(false);
+                        setCoverLink("");
+                      }}
+                      className="text-chalk-dim hover:text-cream text-[10px] uppercase tracking-[0.14em]"
+                    >
+                      Done
+                    </button>
+                  </div>
+                )}
                 <form
                   onSubmit={(e: FormEvent) => {
                     e.preventDefault();
-                    if (coverLink.trim()) findCover.mutate(coverLink.trim());
+                    submitCoverLink(coverLink);
                   }}
-                  className="flex w-full max-w-[280px] gap-2"
+                  className="flex gap-2"
                 >
                   <input
                     value={coverLink}
@@ -1786,25 +1834,35 @@ function BookDetail({
                       if (text && /^https?:\/\//i.test(text)) {
                         e.preventDefault();
                         setCoverLink(text);
-                        findCover.mutate(text);
+                        submitCoverLink(text);
                       }
                     }}
                     placeholder="Paste cover image URL"
-                    className="bg-panel/90 text-cream min-w-0 flex-1 rounded-xl border border-white/10 px-3 py-2 text-[12px] outline-none focus:border-white/25"
+                    autoFocus={coverToolsOpen}
+                    className="bg-black/30 text-cream min-w-0 flex-1 rounded-2xl border border-white/12 px-3.5 py-2.5 text-[13px] outline-none backdrop-blur-md placeholder:text-white/30 focus:border-white/30"
                   />
                   <button
                     type="submit"
                     disabled={findCover.isPending || !coverLink.trim()}
-                    className="text-cream from-accent-deep to-accent-dark shrink-0 rounded-xl bg-gradient-to-b px-3 text-[10.5px] font-semibold uppercase tracking-[0.15em] disabled:opacity-40"
+                    className="text-cream shrink-0 rounded-2xl bg-white/15 px-3.5 text-[11px] font-semibold tracking-[0.06em] backdrop-blur-md transition hover:bg-white/22 disabled:opacity-40"
                   >
-                    Save
+                    {findCover.isPending && coverLink ? "…" : "Use"}
                   </button>
                 </form>
+                <button
+                  type="button"
+                  onClick={() => findCover.mutate(undefined)}
+                  disabled={findCover.isPending}
+                  className="text-chalk hover:text-cream flex w-full items-center justify-center gap-2 py-1.5 text-[11px] tracking-[0.04em] disabled:opacity-40"
+                >
+                  <Wand2 size={12} className="opacity-70" />
+                  {findCover.isPending && !coverLink ? "Finding with AI…" : "Find with AI"}
+                </button>
               </div>
             )}
 
-            <div className="mt-7 w-full min-w-0 px-1">
-              <h2 className="font-display text-cream text-[27px] leading-[1.15] tracking-[-0.015em] sm:text-[30px]">
+            <div className="mt-8 w-full min-w-0 px-1">
+              <h2 className="font-display text-cream text-[28px] leading-[1.12] tracking-[-0.02em] sm:text-[32px]">
                 <Editable
                   value={book.title}
                   doubleClick
@@ -1814,11 +1872,13 @@ function BookDetail({
                 />
               </h2>
 
-              {book.subtitle && (
-                <p className="text-chalk mt-2 text-[13.5px] leading-snug">{book.subtitle}</p>
+              {subtitle && (
+                <p className="text-chalk/80 mt-2.5 text-[14px] leading-snug tracking-[-0.01em]">
+                  {subtitle}
+                </p>
               )}
 
-              <p className="mt-3 text-[15px] tracking-[-0.01em]">
+              <p className="mt-3.5 text-[16px] tracking-[-0.015em]">
                 <Editable
                   value={book.authors}
                   placeholder="Add author"
@@ -1835,33 +1895,25 @@ function BookDetail({
               </p>
 
               {book.star_rating !== null && (
-                <div className="mt-3.5 inline-flex items-center gap-1 text-cream/90">
+                <div className="mt-4 inline-flex items-center gap-1">
                   {Array.from({ length: 5 }, (_, i) => (
                     <Star
                       key={i}
-                      size={14}
-                      className={i < Math.round(book.star_rating!) ? "fill-cream text-cream" : "text-white/20"}
+                      size={15}
+                      className={
+                        i < Math.round(book.star_rating!)
+                          ? "fill-cream text-cream"
+                          : "text-white/15"
+                      }
                     />
                   ))}
-                  <span className="numeral text-chalk ml-1.5 text-[12px]">{book.star_rating}</span>
+                  <span className="numeral text-chalk ml-1.5 text-[13px]">{book.star_rating}</span>
                 </div>
               )}
 
-              <div className="text-chalk-dim mt-4 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[12px] tracking-[0.01em]">
-                <span>
-                  <Editable
-                    value={book.page_count}
-                    placeholder="Add pages"
-                    numeric
-                    onSave={(v) => {
-                      const n = Number.parseInt(v, 10);
-                      patch.mutate({ page_count: Number.isFinite(n) && n > 0 ? n : null });
-                    }}
-                    inputClassName="w-20 text-center"
-                  />
-                  {book.page_count ? " pages" : ""}
-                </span>
-                {book.published_year && (
+              <div className="text-chalk-dim mt-5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[12.5px] tracking-[0.02em]">
+                {book.page_count != null && <span>{book.page_count} pages</span>}
+                {book.published_year != null && (
                   <>
                     <span className="text-white/20">·</span>
                     <span>{book.published_year}</span>
@@ -1873,8 +1925,12 @@ function BookDetail({
                     <span className="capitalize">{book.format}</span>
                   </>
                 )}
-                <span className="text-white/20">·</span>
-                <span>Read {book.read_count}×</span>
+                {book.read_count > 0 && (
+                  <>
+                    <span className="text-white/20">·</span>
+                    <span>Read {book.read_count}×</span>
+                  </>
+                )}
                 <span className="text-white/20">·</span>
                 <FictionLabel
                   fiction={book.fiction}
@@ -1887,13 +1943,13 @@ function BookDetail({
                 />
               </div>
 
-              <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
                 <button
                   type="button"
                   onClick={() => onFindSimilar(book)}
-                  className="text-chalk hover:text-cream inline-flex items-center gap-1.5 rounded-full bg-white/[0.06] px-3.5 py-1.5 text-[11px] tracking-[0.04em] transition hover:bg-white/[0.1]"
+                  className="text-cream/90 hover:text-cream inline-flex items-center gap-1.5 text-[13px] tracking-[-0.01em] transition"
                 >
-                  <Sparkles size={12} className="opacity-70" />
+                  <Sparkles size={13} className="opacity-60" />
                   Find similar
                 </button>
                 {book.series && (
@@ -1902,43 +1958,33 @@ function BookDetail({
                       onFilter({ type: "series", value: book.series! });
                       onClose();
                     }}
-                    className="text-chalk hover:text-cream inline-flex items-center gap-1.5 rounded-full bg-white/[0.06] px-3.5 py-1.5 text-[11px] tracking-[0.04em] transition hover:bg-white/[0.1]"
+                    className="text-cream/90 hover:text-cream inline-flex items-center gap-1.5 text-[13px] tracking-[-0.01em] transition"
                   >
-                    <Layers size={12} className="opacity-70" />
+                    <Layers size={13} className="opacity-60" />
                     {book.series}
                     {book.series_position ? ` #${book.series_position}` : ""}
                   </button>
                 )}
               </div>
-
-              {(book.publisher || book.started_at || book.isbn) && (
-                <div className="text-chalk-dim/90 mt-4 space-y-0.5 text-[11px] tracking-[0.01em]">
-                  {book.publisher && <p className="truncate">{book.publisher}</p>}
-                  {book.started_at && <p>Started {fmtLongDate(book.started_at)}</p>}
-                  {book.isbn && <p>ISBN {book.isbn}</p>}
-                </div>
-              )}
             </div>
           </div>
         </div>
 
         <div className="px-6">
-        {/* The blurb is the whole reason you open a book you haven't read yet,
-            so it sits above the logging controls instead of under them. */}
-        {(book.description || subjects.length > 0) && (
-          <div className="mb-6">
+        {(about || subjects.length > 0) && (
+          <div className="mb-7">
             <span className="label-caps">About</span>
-            {book.description && (
-              <p className="text-chalk mt-2.5 whitespace-pre-line text-[13.5px] leading-[1.55]">
-                {book.description}
+            {about && (
+              <p className="text-chalk mt-3 whitespace-pre-line text-[14.5px] leading-[1.62] tracking-[-0.01em]">
+                {about}
               </p>
             )}
             {subjects.length > 0 && (
-              <div className="mt-3.5 flex flex-wrap gap-1.5">
+              <div className="mt-4 flex flex-wrap gap-2">
                 {subjects.map((s) => (
                   <span
                     key={s}
-                    className="text-chalk rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] tracking-[0.01em]"
+                    className="text-chalk/90 text-[12px] tracking-[0.01em]"
                   >
                     {s}
                   </span>
@@ -2024,76 +2070,6 @@ function BookDetail({
           </div>
         )}
 
-        {/* Cover replace — only after double-tapping the jacket. */}
-        {coverToolsOpen && (
-          <div className="mb-5 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="label-caps">Replace cover</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setCoverToolsOpen(false);
-                  setShowCoverLink(false);
-                  setCoverLink("");
-                }}
-                className="text-chalk-dim hover:text-cream text-[10px] uppercase tracking-[0.14em]"
-              >
-                Cancel
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => findCover.mutate(undefined)}
-              disabled={findCover.isPending}
-              className="text-chalk hover:text-cream flex w-full items-center justify-center gap-2 rounded-xl border border-white/12 py-2.5 text-[10.5px] uppercase tracking-[0.15em] transition hover:border-white/25 disabled:opacity-40"
-            >
-              <Wand2 size={13} className="opacity-70" />
-              {findCover.isPending && !coverLink ? "Finding cover…" : "Find cover with AI"}
-            </button>
-            {showCoverLink ? (
-              <form
-                onSubmit={(e: FormEvent) => {
-                  e.preventDefault();
-                  if (coverLink.trim()) findCover.mutate(coverLink.trim());
-                }}
-                className="flex gap-2"
-              >
-                <input
-                  value={coverLink}
-                  onChange={(e) => setCoverLink(e.target.value)}
-                  onPaste={(e) => {
-                    const text = e.clipboardData.getData("text")?.trim();
-                    if (text && /^https?:\/\//i.test(text)) {
-                      e.preventDefault();
-                      setCoverLink(text);
-                      findCover.mutate(text);
-                    }
-                  }}
-                  placeholder="https://… cover image or book page"
-                  autoFocus
-                  className="bg-panel text-cream min-w-0 flex-1 rounded-xl border border-white/10 px-3 py-2.5 text-[12px] outline-none focus:border-white/25"
-                />
-                <button
-                  type="submit"
-                  disabled={findCover.isPending || !coverLink.trim()}
-                  className="text-cream from-accent-deep to-accent-dark shrink-0 rounded-xl bg-gradient-to-b px-3 text-[10.5px] font-semibold uppercase tracking-[0.15em] disabled:opacity-40"
-                >
-                  {findCover.isPending && coverLink ? "Saving…" : "Save"}
-                </button>
-              </form>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowCoverLink(true)}
-                className="text-chalk-dim hover:text-cream flex w-full items-center justify-center gap-2 py-1 text-[10.5px] uppercase tracking-[0.15em]"
-              >
-                <Link2 size={12} />
-                Or paste a cover link
-              </button>
-            )}
-          </div>
-        )}
-
         {/* Status */}
         <label className="mb-4 block">
           <span className="label-caps">Status</span>
@@ -2114,7 +2090,7 @@ function BookDetail({
               }
               patch.mutate(p);
             }}
-            className="bg-panel text-cream mt-2 w-full appearance-none rounded-xl border border-white/[0.08] px-3.5 py-3 text-[14px] outline-none focus:border-white/20"
+            className="bg-panel/90 text-cream mt-2 w-full appearance-none rounded-2xl border border-white/[0.08] px-3.5 py-3.5 text-[14px] outline-none focus:border-white/20"
           >
             {SHELVES.map((s) => (
               <option key={s.key} value={s.key}>

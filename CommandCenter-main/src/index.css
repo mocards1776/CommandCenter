@@ -156,6 +156,45 @@
     flex: none;
     background: linear-gradient(90deg, #b3252f 0 34%, #f4f1e9 34% 67%, #2b4c8c 67%);
   }
+
+  /* Book detail sheet — Apple Books energy: soft slide + fade. */
+  .book-sheet-scrim {
+    animation: book-scrim-in 280ms ease-out both;
+  }
+  .book-sheet-panel {
+    animation: book-sheet-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .book-sheet-cover {
+    animation: book-cover-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes book-scrim-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes book-sheet-in {
+    from {
+      opacity: 0.7;
+      transform: translateX(28px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes book-cover-in {
+    from {
+      opacity: 0;
+      transform: translateY(18px) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
 }
 
 @layer components {
