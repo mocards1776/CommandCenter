@@ -4146,10 +4146,13 @@ export default function ReadingPage() {
 
   // One-shot: StoryGraph left some finished books on To Read with dates/ratings.
   useEffect(() => {
+    const flag = "reading-repaired-misfiled-v1";
+    if (sessionStorage.getItem(flag)) return;
     let cancelled = false;
     (async () => {
       try {
         const n = await repairMisfiledReads();
+        sessionStorage.setItem(flag, "1");
         if (!cancelled && n > 0) {
           await qc.invalidateQueries({ queryKey: ["books"] });
           toast.success(
