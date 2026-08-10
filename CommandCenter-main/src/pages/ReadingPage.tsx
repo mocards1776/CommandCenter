@@ -1751,24 +1751,55 @@ function BookDetail({
                 className="h-[300px] w-[200px] sm:h-[332px] sm:w-[222px]"
               />
             ) : (
-              <button
-                type="button"
-                onClick={() => findCover.mutate(undefined)}
-                disabled={findCover.isPending}
-                title="Find cover with AI"
-                className="bg-panel/80 hover:border-white/25 grid h-[300px] w-[200px] shrink-0 place-items-center rounded-[6px] border border-dashed border-white/15 transition disabled:opacity-50 sm:h-[332px] sm:w-[222px]"
-              >
-                <span className="flex flex-col items-center gap-2 px-2 text-center">
-                  {findCover.isPending ? (
-                    <Sparkles size={26} className="text-accent animate-pulse" />
-                  ) : (
-                    <ImageDown size={26} className="text-chalk-dim" />
-                  )}
-                  <span className="text-chalk-dim text-[10px] uppercase tracking-[0.14em]">
-                    {findCover.isPending ? "Finding…" : "Find cover"}
+              <div className="flex w-full flex-col items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => findCover.mutate(undefined)}
+                  disabled={findCover.isPending}
+                  title="Find cover with AI"
+                  className="bg-panel/80 hover:border-white/25 grid h-[300px] w-[200px] shrink-0 place-items-center rounded-[6px] border border-dashed border-white/15 transition disabled:opacity-50 sm:h-[332px] sm:w-[222px]"
+                >
+                  <span className="flex flex-col items-center gap-2 px-2 text-center">
+                    {findCover.isPending && !coverLink ? (
+                      <Sparkles size={26} className="text-accent animate-pulse" />
+                    ) : (
+                      <ImageDown size={26} className="text-chalk-dim" />
+                    )}
+                    <span className="text-chalk-dim text-[10px] uppercase tracking-[0.14em]">
+                      {findCover.isPending && !coverLink ? "Finding…" : "Find cover"}
+                    </span>
                   </span>
-                </span>
-              </button>
+                </button>
+                <form
+                  onSubmit={(e: FormEvent) => {
+                    e.preventDefault();
+                    if (coverLink.trim()) findCover.mutate(coverLink.trim());
+                  }}
+                  className="flex w-full max-w-[280px] gap-2"
+                >
+                  <input
+                    value={coverLink}
+                    onChange={(e) => setCoverLink(e.target.value)}
+                    onPaste={(e) => {
+                      const text = e.clipboardData.getData("text")?.trim();
+                      if (text && /^https?:\/\//i.test(text)) {
+                        e.preventDefault();
+                        setCoverLink(text);
+                        findCover.mutate(text);
+                      }
+                    }}
+                    placeholder="Paste cover image URL"
+                    className="bg-panel/90 text-cream min-w-0 flex-1 rounded-xl border border-white/10 px-3 py-2 text-[12px] outline-none focus:border-white/25"
+                  />
+                  <button
+                    type="submit"
+                    disabled={findCover.isPending || !coverLink.trim()}
+                    className="text-cream from-accent-deep to-accent-dark shrink-0 rounded-xl bg-gradient-to-b px-3 text-[10.5px] font-semibold uppercase tracking-[0.15em] disabled:opacity-40"
+                  >
+                    Save
+                  </button>
+                </form>
+              </div>
             )}
 
             <div className="mt-7 w-full min-w-0 px-1">
@@ -2029,6 +2060,14 @@ function BookDetail({
                 <input
                   value={coverLink}
                   onChange={(e) => setCoverLink(e.target.value)}
+                  onPaste={(e) => {
+                    const text = e.clipboardData.getData("text")?.trim();
+                    if (text && /^https?:\/\//i.test(text)) {
+                      e.preventDefault();
+                      setCoverLink(text);
+                      findCover.mutate(text);
+                    }
+                  }}
                   placeholder="https://… cover image or book page"
                   autoFocus
                   className="bg-panel text-cream min-w-0 flex-1 rounded-xl border border-white/10 px-3 py-2.5 text-[12px] outline-none focus:border-white/25"
@@ -2038,7 +2077,7 @@ function BookDetail({
                   disabled={findCover.isPending || !coverLink.trim()}
                   className="text-cream from-accent-deep to-accent-dark shrink-0 rounded-xl bg-gradient-to-b px-3 text-[10.5px] font-semibold uppercase tracking-[0.15em] disabled:opacity-40"
                 >
-                  Save
+                  {findCover.isPending && coverLink ? "Saving…" : "Save"}
                 </button>
               </form>
             ) : (

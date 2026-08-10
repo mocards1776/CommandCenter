@@ -839,7 +839,12 @@ export async function browseNewPopular(): Promise<BrowseShelf[]> {
   return data?.shelves ?? [];
 }
 
-export type CoverPullResult = { found: boolean; source?: string; cover_path?: string };
+export type CoverPullResult = {
+  found: boolean;
+  source?: string;
+  cover_path?: string | null;
+  cover_url?: string | null;
+};
 
 /** Prefer the JSON body message; supabase-js hides it behind a generic string. */
 async function edgeErrorMessage(error: { message: string; context?: unknown }, fallback: string) {
@@ -856,11 +861,39 @@ async function edgeErrorMessage(error: { message: string; context?: unknown }, f
   return fallback;
 }
 
+/** True when a pasted string looks like a direct cover image URL. */
+function isLikelyCoverImageUrl(url: string): boolean {
+  if (/\.(jpg|jpeg|png|webp|gif)(\?|#|$)/i.test(url)) return true;
+  if (/covers\.openlibrary\.org/i.test(url)) return true;
+  if (/books\.google\.[^/]+\/books\/content/i.test(url)) return true;
+  if (/googleusercontent\.com\/books/i.test(url)) return true;
+  if (/m\.media-amazon\.com\/images/i.test(url)) return true;
+  if (/images-.*\.ssl-images-amazon\.com/i.test(url)) return true;
+  if (/compressed\.photo\.goodreads\.com|i\.gr-assets\.com/i.test(url)) return true;
+  return false;
+}
+
+function cleanPastedCoverUrl(raw: string): string {
+  let u = raw.trim().replace(/^['"<]+/, "").replace(/['">]+$/, "").trim();
+  if (u.startsWith("//")) u = `https:${u}`;
+  return upgradeCoverUrl(u) ?? u;
+}
+
+/** Last-resort: stick the pasted image URL on the book so the jacket updates. */
+async function saveCoverHotlink(bookId: string, url: string): Promise<CoverPullResult> {
+  const cover_url = cleanPastedCoverUrl(url);
+  // Clear cover_path — otherwise the old stored thumb wins in coverCandidates.
+  await updateBook(bookId, { cover_url, cover_path: null });
+  return { found: true, source: "link", cover_path: null, cover_url };
+}
+
 /**
  * Pull a jacket for a blank book. Catalog enrich first (same path as bulk
  * cover backfill), then Claude web search. With `url`, fetch that page/image.
  */
 export async function pullCover(bookId: string, url?: string): Promise<CoverPullResult> {
+  const pasted = url?.trim() ? cleanPastedCoverUrl(url) : "";
+
   // Drop Google's shared "no cover" stub so a retry can store a real jacket.
   const { data: existing } = await supabase
     .from("books")
@@ -871,7 +904,7 @@ export async function pullCover(bookId: string, url?: string): Promise<CoverPull
     await updateBook(bookId, { cover_path: null, cover_url: null });
   }
 
-  if (!url?.trim()) {
+  if (!pasted) {
     // Reuse the battle-tested cover pipeline before spending AI tokens.
     await supabase.functions.invoke("backfill-covers", { body: { bookId } }).catch(() => {});
     const { data: row } = await supabase
@@ -888,16 +921,31 @@ export async function pullCover(bookId: string, url?: string): Promise<CoverPull
     }
   }
 
-  const { data, error } = await supabase.functions.invoke<CoverPullResult & { error?: string }>(
-    "book-ai",
-    { body: { mode: "cover", bookId, url: url?.trim() || undefined } },
-  );
-  if (data?.error) throw new Error(data.error);
-  if (error) {
-    throw new Error(await edgeErrorMessage(error, "Couldn't find a cover for this one."));
+  try {
+    const { data, error } = await supabase.functions.invoke<CoverPullResult & { error?: string }>(
+      "book-ai",
+      { body: { mode: "cover", bookId, url: pasted || undefined } },
+    );
+    if (data?.found) return data;
+    if (pasted && isLikelyCoverImageUrl(pasted)) {
+      // Edge couldn't store bytes (or CORS flake) — still apply the link.
+      return await saveCoverHotlink(bookId, pasted);
+    }
+    if (data?.error) throw new Error(data.error);
+    if (error) {
+      throw new Error(await edgeErrorMessage(error, "Couldn't find a cover for this one."));
+    }
+    throw new Error(data?.error ?? "Couldn't find a cover for this one.");
+  } catch (e) {
+    if (pasted && isLikelyCoverImageUrl(pasted)) {
+      try {
+        return await saveCoverHotlink(bookId, pasted);
+      } catch {
+        // fall through to original error
+      }
+    }
+    throw e;
   }
-  if (!data?.found) throw new Error(data?.error ?? "Couldn't find a cover for this one.");
-  return data;
 }
 
 /**
