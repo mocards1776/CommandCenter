@@ -704,9 +704,13 @@ function LibrarySearch({
               </p>
             )}
             {catalogHits.map((s) => (
-              <div
+              <button
                 key={`${s.title}-${s.author}`}
-                className="flex items-center gap-3 border-b border-white/[0.05] px-3 py-2 last:border-0"
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => add.mutate(s)}
+                disabled={add.isPending}
+                className="hover:bg-accent/10 flex w-full items-center gap-3 border-b border-white/[0.05] px-3 py-2 text-left last:border-0 disabled:opacity-50"
               >
                 {s.cover_url ? (
                   <img
@@ -726,16 +730,10 @@ function LibrarySearch({
                     {s.year ? ` · ${s.year}` : ""}
                   </span>
                 </span>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => add.mutate(s)}
-                  disabled={add.isPending}
-                  className="text-accent hover:text-cream shrink-0 text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
-                >
-                  Add
-                </button>
-              </div>
+                <span className="text-accent shrink-0 text-[10px] uppercase tracking-[0.14em]">
+                  {add.isPending ? "…" : "Add"}
+                </span>
+              </button>
             ))}
             {!catalog.isFetching && catalogHits.length === 0 && library.length > 0 && (
               <p className="text-chalk-dim px-3 py-2 text-[11.5px]">No new catalog matches.</p>
@@ -928,35 +926,34 @@ function SearchResultsPage({
           )}
           <ul className="flex flex-col gap-2">
             {catalogHits.map((s) => (
-              <li
-                key={`${s.title}-${s.author}`}
-                className="bg-panel flex items-center gap-3 rounded border border-white/[0.06] px-3 py-2.5"
-              >
-                {s.cover_url ? (
-                  <img
-                    src={s.cover_url}
-                    alt=""
-                    className="h-14 w-9 shrink-0 rounded-[2px] object-cover"
-                  />
-                ) : (
-                  <div className="bg-field grid h-14 w-9 shrink-0 place-items-center rounded-[2px]">
-                    <BookOpen size={13} className="text-chalk-dim" />
-                  </div>
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="text-cream block text-[13.5px] leading-snug">{s.title}</span>
-                  <span className="text-chalk-dim mt-0.5 block text-[11px]">
-                    {s.author || "Unknown author"}
-                    {s.year ? ` · ${s.year}` : ""}
-                  </span>
-                </span>
+              <li key={`${s.title}-${s.author}`}>
                 <button
                   type="button"
                   onClick={() => add.mutate(s)}
                   disabled={add.isPending}
-                  className="text-accent hover:text-cream shrink-0 text-[10.5px] uppercase tracking-[0.14em] disabled:opacity-40"
+                  className="bg-panel hover:bg-accent/10 hover:border-accent/40 flex w-full items-center gap-3 rounded border border-white/[0.06] px-3 py-2.5 text-left transition disabled:opacity-50"
                 >
-                  Add
+                  {s.cover_url ? (
+                    <img
+                      src={s.cover_url}
+                      alt=""
+                      className="h-14 w-9 shrink-0 rounded-[2px] object-cover"
+                    />
+                  ) : (
+                    <div className="bg-field grid h-14 w-9 shrink-0 place-items-center rounded-[2px]">
+                      <BookOpen size={13} className="text-chalk-dim" />
+                    </div>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="text-cream block text-[13.5px] leading-snug">{s.title}</span>
+                    <span className="text-chalk-dim mt-0.5 block text-[11px]">
+                      {s.author || "Unknown author"}
+                      {s.year ? ` · ${s.year}` : ""}
+                    </span>
+                  </span>
+                  <span className="text-accent shrink-0 text-[10.5px] uppercase tracking-[0.14em]">
+                    {add.isPending ? "…" : "Add"}
+                  </span>
                 </button>
               </li>
             ))}
@@ -2250,10 +2247,12 @@ function BookDetail({
 function AskAI({
   books,
   onClose,
+  onOpen,
   seed,
 }: {
   books: Book[];
   onClose: () => void;
+  onOpen?: (b: Book) => void;
   seed?: { query: string; mode: "catalog" | "search" };
 }) {
   const qc = useQueryClient();
@@ -2425,54 +2424,68 @@ function AskAI({
             {results.map((s) => {
               const have = owned.get(titleKey(s.title));
               const justAdded = added[s.title];
+              const openOwned = have
+                ? () => {
+                    onOpen?.(have);
+                    onClose();
+                  }
+                : null;
+              const canAdd = !have && !justAdded;
               return (
-                <li
-                  key={`${s.title}-${s.author}`}
-                  className="bg-panel flex gap-3.5 rounded border border-white/[0.07] px-4 py-3"
-                >
-                  {s.cover_url ? (
-                    <img
-                      src={s.cover_url}
-                      alt=""
-                      loading="lazy"
-                      className="h-[74px] w-[50px] shrink-0 rounded-[2px] object-cover shadow-[0_4px_14px_rgba(0,0,0,.5)]"
-                    />
-                  ) : (
-                    <div className="bg-field grid h-[74px] w-[50px] shrink-0 place-items-center rounded-[2px]">
-                      <BookOpen size={15} className="text-chalk-dim" />
-                    </div>
-                  )}
-
-                  <div className="min-w-0 flex-1">
-                  <p className="text-cream text-[14px] leading-snug">{s.title}</p>
-                  <p className="text-chalk-dim mt-0.5 text-[11.5px]">
-                    {s.author}
-                    {s.year ? ` · ${s.year}` : ""}
-                  </p>
-                  {s.reason && (
-                    <p className="text-chalk mt-2 text-[12px] leading-relaxed">{s.reason}</p>
-                  )}
-
-                  <div className="mt-2.5">
-                    {have ? (
-                      <span className="text-chalk-dim text-[10.5px] uppercase tracking-[0.15em]">
-                        Already in your library
-                      </span>
-                    ) : justAdded ? (
-                      <span className="text-accent text-[10.5px] uppercase tracking-[0.15em]">
-                        Added to To read
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => add.mutate(s)}
-                        disabled={add.isPending}
-                        className="text-chalk hover:text-accent flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.15em] disabled:opacity-40"
-                      >
-                        <Plus size={12} /> Add to library
-                      </button>
+                <li key={`${s.title}-${s.author}`}>
+                  <button
+                    type="button"
+                    disabled={add.isPending || (!canAdd && !openOwned)}
+                    onClick={() => {
+                      if (openOwned) openOwned();
+                      else if (canAdd) add.mutate(s);
+                    }}
+                    className={cn(
+                      "bg-panel flex w-full gap-3.5 rounded border border-white/[0.07] px-4 py-3 text-left transition",
+                      (canAdd || openOwned) && "hover:border-accent/40",
+                      add.isPending && "opacity-50",
                     )}
-                  </div>
-                  </div>
+                  >
+                    {s.cover_url ? (
+                      <img
+                        src={s.cover_url}
+                        alt=""
+                        loading="lazy"
+                        className="h-[74px] w-[50px] shrink-0 rounded-[2px] object-cover shadow-[0_4px_14px_rgba(0,0,0,.5)]"
+                      />
+                    ) : (
+                      <div className="bg-field grid h-[74px] w-[50px] shrink-0 place-items-center rounded-[2px]">
+                        <BookOpen size={15} className="text-chalk-dim" />
+                      </div>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <p className="text-cream text-[14px] leading-snug">{s.title}</p>
+                      <p className="text-chalk-dim mt-0.5 text-[11.5px]">
+                        {s.author}
+                        {s.year ? ` · ${s.year}` : ""}
+                      </p>
+                      {s.reason && (
+                        <p className="text-chalk mt-2 text-[12px] leading-relaxed">{s.reason}</p>
+                      )}
+
+                      <div className="mt-2.5">
+                        {have ? (
+                          <span className="text-chalk-dim text-[10.5px] uppercase tracking-[0.15em]">
+                            Already in your library · Open
+                          </span>
+                        ) : justAdded ? (
+                          <span className="text-accent text-[10.5px] uppercase tracking-[0.15em]">
+                            Added to To read
+                          </span>
+                        ) : (
+                          <span className="text-chalk flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.15em]">
+                            <Plus size={12} /> Add to library
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
                 </li>
               );
             })}
@@ -4520,7 +4533,14 @@ export default function ReadingPage() {
           onOpen={openBookDrawer}
         />
       )}
-      {asking && <AskAI books={books ?? []} seed={askSeed} onClose={closeAsk} />}
+      {asking && (
+        <AskAI
+          books={books ?? []}
+          seed={askSeed}
+          onClose={closeAsk}
+          onOpen={openBookDrawer}
+        />
+      )}
       {browsing && <NewPopularPanel books={books ?? []} onClose={closeBrowse} />}
       {breakdown && (
         <StatsBreakdown
