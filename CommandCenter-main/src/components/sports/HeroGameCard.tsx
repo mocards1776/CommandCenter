@@ -150,20 +150,18 @@ function PitcherStack({
   const parts = name.split(" ");
   const last = parts.length > 1 ? parts[parts.length - 1] : name;
   const first = parts.length > 1 ? parts.slice(0, -1).join(" ") : "";
+  const playerHref = side.probablePitcherId
+    ? `/sports/mlb/player/${side.probablePitcherId}`
+    : null;
 
-  return (
-    <div
-      className={cn(
-        "flex min-w-0 flex-col gap-2",
-        align === "right" ? "items-end text-right" : "items-start text-left",
-      )}
-    >
+  const body = (
+    <>
       {side.probablePitcherId ? (
-        <div className="relative h-[88px] w-[72px] overflow-hidden rounded-xl bg-[#dfe6f2] ring-2 ring-white/25 sm:h-[104px] sm:w-[84px]">
+        <div className="relative h-[88px] w-[72px] overflow-hidden rounded-xl bg-[#dfe6f2] ring-2 ring-white/25 transition group-hover/pitcher:ring-white/45 sm:h-[104px] sm:w-[84px]">
           <img
             src={mlbHeadshot(side.probablePitcherId, 426)}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover object-[center_12%] scale-[1.12]"
+            className="absolute inset-0 h-full w-full scale-[1.12] object-cover object-[center_12%]"
           />
         </div>
       ) : (
@@ -175,7 +173,26 @@ function PitcherStack({
         <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-white/55">{first}</p>
       )}
       <p className="font-display text-cream text-[22px] leading-none sm:text-[26px]">{last}</p>
-    </div>
+    </>
+  );
+
+  const stackClass = cn(
+    "flex min-w-0 flex-col gap-2",
+    align === "right" ? "items-end text-right" : "items-start text-left",
+  );
+
+  if (!playerHref) {
+    return <div className={stackClass}>{body}</div>;
+  }
+
+  return (
+    <Link
+      to={playerHref}
+      onClick={(e) => e.stopPropagation()}
+      className={cn(stackClass, "group/pitcher transition hover:opacity-95")}
+    >
+      {body}
+    </Link>
   );
 }
 

@@ -846,7 +846,7 @@ function EmptyLine({ children }: { children: ReactNode }) {
 
 function PitcherChip({ name, id }: { name?: string | null; id?: number | null }) {
   const label = name ?? "TBD";
-  return (
+  const body = (
     <span className="inline-flex min-w-0 items-center gap-2">
       {id != null ? (
         <img
@@ -861,6 +861,16 @@ function PitcherChip({ name, id }: { name?: string | null; id?: number | null })
       )}
       <span className="text-cream truncate text-[12.5px] leading-snug">{label}</span>
     </span>
+  );
+  if (id == null) return body;
+  return (
+    <Link
+      to={`/sports/mlb/player/${id}`}
+      onClick={(e) => e.stopPropagation()}
+      className="hover:opacity-90"
+    >
+      {body}
+    </Link>
   );
 }
 

@@ -929,6 +929,7 @@ export function pickHeroGame(games: MlbScoreGame[]): MlbScoreGame | null {
  * Featured team game:
  * - live always wins
  * - after a final, keep showing that final until 10:00 AM America/Chicago
+ *   the next morning (including late evening the same night)
  * - then flip to the next scheduled/pregame matchup
  */
 export async function fetchTeamCurrentGame(teamId: number): Promise<MlbScoreGame | null> {
@@ -941,6 +942,8 @@ export async function fetchTeamCurrentGame(teamId: number): Promise<MlbScoreGame
   const live = today.find((g) => g.live);
   if (live) return live;
 
+  // Before 10am Central, hold yesterday's result — don't jump to tonight's
+  // scheduled game just because the calendar day rolled over.
   if (hour < 10) {
     const yday = addDaysIso(date, -1);
     const boardY = await fetchMlbScoreboard(yday);
@@ -948,12 +951,15 @@ export async function fetchTeamCurrentGame(teamId: number): Promise<MlbScoreGame
       .reverse()
       .find((g) => teamInGame(g, teamId) && g.final);
     if (yFinal) return yFinal;
-    const todayFinal = [...today].reverse().find((g) => g.final);
-    if (todayFinal) return todayFinal;
   }
 
+  // Same-day unfinished (scheduled / warmup / delayed) — e.g. DH game 2.
   const preview = today.find((g) => !g.final);
   if (preview) return preview;
+
+  // Tonight's final stays featured until the morning cutoff above.
+  const todayFinal = [...today].reverse().find((g) => g.final);
+  if (todayFinal) return todayFinal;
 
   const upcoming = (await mlbGet("schedule", {
     sportId: "1",
