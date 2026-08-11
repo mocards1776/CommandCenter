@@ -101,10 +101,68 @@ export type RssFilter = {
   createdAt: string;
 };
 
+/**
+ * STL Today’s Cardinals rss.app feed also carries MLS / City SC stories.
+ * Detect clear soccer bleed so we don’t need a blunt “city” phrase ban.
+ */
+export function isSoccerBleedArticle(
+  item: Pick<RssFeedItem, "link" | "title" | "snippet">,
+): boolean {
+  const title = item.title.toLowerCase();
+  const snippet = (item.snippet ?? "").toLowerCase();
+  const link = item.link.toLowerCase();
+  const hay = `${title} ${snippet}`;
+
+  // Section URLs from stltoday (and similar) are definitive.
+  if (
+    /\/sports\/professional\/mls\b/.test(link) ||
+    /\/mls\/city-sc\b/.test(link) ||
+    /\/soccer\//.test(link) ||
+    /[?&]section=soccer\b/.test(link)
+  ) {
+    return true;
+  }
+
+  // Strong title/snippet signals — "City SC", not bare "city".
+  const strong = [
+    "city sc",
+    "st. louis city sc",
+    "st louis city sc",
+    "stl city sc",
+    "marcel hartel",
+  ];
+  if (strong.some((p) => hay.includes(p))) return true;
+
+  // MLS + soccer club context together.
+  if (/\bmls\b/.test(hay) && /\b(soccer|midfielder|football club|hannover)\b/.test(hay)) {
+    return true;
+  }
+
+  return false;
+}
+
+/** Prefer a sectional path over the whole host when blacklisting from a row. */
+export function suggestUrlFilterValue(articleUrl: string): string {
+  try {
+    const u = new URL(articleUrl);
+    const path = u.pathname.toLowerCase();
+    // STL Today MLS / City SC section
+    const mls = path.match(/(\/sports\/professional\/mls(?:\/city-sc)?)/);
+    if (mls) return mls[1].replace(/^\/+|\/+$/g, "");
+    const soccer = path.match(/(\/soccer(?:\/[a-z0-9-]+)?)/);
+    if (soccer) return soccer[1].replace(/^\/+|\/+$/g, "");
+    // Fall back to host so Ban still does something useful.
+    return u.hostname.replace(/^www\./, "");
+  } catch {
+    return articleUrl;
+  }
+}
+
 export function articleMatchesFilters(
   item: Pick<RssFeedItem, "link" | "title" | "snippet">,
   filters: RssFilter[],
 ): boolean {
+  if (isSoccerBleedArticle(item)) return true;
   if (!filters.length) return false;
   const hayTitle = item.title.toLowerCase();
   const haySnippet = (item.snippet ?? "").toLowerCase();
@@ -125,7 +183,6 @@ export function applyRssFilters<T extends Pick<RssFeedItem, "link" | "title" | "
   items: T[],
   filters: RssFilter[],
 ): T[] {
-  if (!filters.length) return items;
   return items.filter((item) => !articleMatchesFilters(item, filters));
 }
 

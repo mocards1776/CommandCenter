@@ -35,6 +35,7 @@ import {
   markRssRead,
   markRssReadMany,
   markRssUnread,
+  suggestUrlFilterValue,
   updateRssHighlightNote,
   type RssFeedId,
   type RssFeedItem,
@@ -640,9 +641,9 @@ function ArticleRow({
         <button
           type="button"
           onClick={onBlockUrl}
-          title="Blacklist this site"
+          title="Blacklist this URL section"
           className="text-chalk-dim hover:text-alert mt-1 shrink-0"
-          aria-label="Blacklist site"
+          aria-label="Blacklist URL"
         >
           <Ban size={15} />
         </button>
@@ -1052,12 +1053,10 @@ export default function RssPage() {
                 read={readUrls.has(item.link)}
                 onOpen={() => openArticle(item)}
                 onBlockUrl={() => {
-                  try {
-                    const host = new URL(item.link).hostname.replace(/^www\./, "");
-                    addFilterMut.mutate({ kind: "url", value: host });
-                  } catch {
-                    addFilterMut.mutate({ kind: "url", value: item.link });
-                  }
+                  addFilterMut.mutate({
+                    kind: "url",
+                    value: suggestUrlFilterValue(item.link),
+                  });
                 }}
               />
             ))}
@@ -1099,6 +1098,9 @@ function FiltersPanel({
     <div className="flex flex-col gap-5 p-4 md:p-5">
       <p className="text-chalk font-rss text-[14px] leading-relaxed">
         Hide stories that match a phrase (title/snippet) or a URL fragment (host or path).
+        MLS / City SC pieces on the STL Today Cardinals feed are auto-hidden — use a phrase
+        like <span className="text-cream">City SC</span> only if you want an explicit rule;
+        bare “city” is too broad.
       </p>
       <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row">
         <select
@@ -1112,7 +1114,7 @@ function FiltersPanel({
         <input
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder={kind === "phrase" ? "e.g. Liberatore" : "e.g. heavy.com"}
+          placeholder={kind === "phrase" ? "e.g. City SC" : "e.g. mls/city-sc"}
           className="bg-panel placeholder:text-chalk-dim text-cream min-w-0 flex-1 rounded-sm border border-white/10 px-3 py-2.5 text-[13px] outline-none focus:border-accent/50"
         />
         <button

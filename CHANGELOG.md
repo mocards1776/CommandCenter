@@ -2,6 +2,15 @@
 
 ---
 
+## Hide City SC soccer bleed — August 11, 2026
+
+- Auto-hide clear MLS / City SC stories that leak into the STL Today Cardinals
+  feed (URL section + “City SC” signals — not bare “city”).
+- Ban on a row prefers a path filter (e.g. `sports/professional/mls`) over the
+  whole `stltoday.com` host.
+
+---
+
 ## Player contract + RotoWire brief — August 11, 2026
 
 - Contract scrape: unwrap Baseball Reference HTML comments, better player match,
