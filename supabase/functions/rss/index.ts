@@ -191,6 +191,7 @@ function stripNoise(html: string): string {
     .replace(/<style[\s\S]*?<\/style>/gi, "")
     .replace(/<noscript[\s\S]*?<\/noscript>/gi, "")
     .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+    .replace(/<template[\s\S]*?<\/template>/gi, "")
     .replace(/<!--[\s\S]*?-->/g, "");
 }
 
@@ -223,6 +224,55 @@ function unlockEncryptedContent(html: string): string {
   );
 }
 
+const CHROME_CLASS_RE =
+  /(?:subscriber-hide|tnt-gift|gift-|share-tools|share-bar|social-share|social-links|follow-this|follow-author|author-card|asset-user|asset-meta|asset-tags|asset-comments|comments-|newsletter|notification|modal-|dropdown-menu|preferred-source|google-preferred|paywall|clipboard|subscribe-promo|inline-relcontent|tnt-inline|trinity|audio-player|related-articles|read-more|promo-)/i;
+
+/** Drop share/gift/follow/modals and other newspaper chrome before sanitize. */
+function stripArticleChrome(html: string): string {
+  let out = html;
+  out = out.replace(/<template[\s\S]*?<\/template>/gi, "");
+  // Repeatedly peel nested chrome wrappers.
+  for (let pass = 0; pass < 8; pass++) {
+    const next = out.replace(
+      /<(div|section|aside|nav|ul|form|button|figure)([^>]*)>([\s\S]*?)<\/\1>/gi,
+      (full, tag: string, attrs: string, inner: string) => {
+        const hay = (attrs + " " + inner.slice(0, 240)).toLowerCase();
+        if (CHROME_CLASS_RE.test(attrs) || CHROME_CLASS_RE.test(hay)) return "";
+        if (/id="[^"]*(?:gift|follow|share|modal|notification|clipboard)[^"]*"/i.test(attrs)) {
+          return "";
+        }
+        return full;
+      },
+    );
+    if (next === out) break;
+    out = next;
+  }
+  // Author byline cards / avatar blocks that aren't the article.
+  out = out.replace(
+    /<(div|aside)[^>]*class="[^"]*(?:asset-author|byline-card|author-bio|author-info)[^"]*"[^>]*>[\s\S]*?<\/\1>/gi,
+    "",
+  );
+  return out;
+}
+
+/** Prefer TownNews article paragraphs only — avoids gift/share chrome in asset-content. */
+function extractTownNewsParagraphs(html: string): string | null {
+  const parts: string[] = [];
+  const re =
+    /<(p|div)([^>]*class="[^"]*(?:subscriber-preview|lee-article-text|article-body)[^"]*"[^>]*)>([\s\S]*?)<\/\1>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const attrs = m[2] || "";
+    if (/subscriber-hide|trinity|inline-relcontent/i.test(attrs)) continue;
+    const inner = m[3].trim();
+    if (stripTags(inner).length < 20) continue;
+    parts.push("<p>" + inner + "</p>");
+  }
+  if (!parts.length) return null;
+  const joined = parts.join("\n");
+  return stripTags(joined).length > 200 ? joined : null;
+}
+
 /** Match a full nested <div>…</div> (non-greedy patterns stop at the first child close). */
 function sliceBalancedDiv(html: string, openRe: RegExp): string | null {
   const m = openRe.exec(html);
@@ -249,14 +299,17 @@ function sliceBalancedDiv(html: string, openRe: RegExp): string | null {
 }
 
 function extractFragment(html: string): string | null {
+  const townNews = extractTownNewsParagraphs(html);
+  if (townNews) return townNews;
+
   // TownNews / BLOX: prefer balanced article body so unlocked subscriber paragraphs are kept.
   const balancedOpeners = [
     /<div[^>]*itemprop="articleBody"[^>]*>/i,
-    /<div[^>]*class="[^"]*asset-content[^"]*"[^>]*>/i,
-    /<div[^>]*class="[^"]*subscriber-premium[^"]*"[^>]*>/i,
     /<div[^>]*class="[^"]*lee-article-body[^"]*"[^>]*>/i,
     /<div[^>]*class="[^"]*blog-item-content[^"]*e-content[^"]*"[^>]*>/i,
     /<div[^>]*class="[^"]*e-content[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*asset-content[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*subscriber-premium[^"]*"[^>]*>/i,
   ];
   for (const re of balancedOpeners) {
     const frag = sliceBalancedDiv(html, re);
@@ -265,7 +318,7 @@ function extractFragment(html: string): string | null {
 
   const patterns = [
     /<div[^>]*class="[^"]*blog-item-content[^"]*e-content[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<div[^>]*class="[^"]*blog-item-author-profile/i,
-    /<(?:div|section|article)[^>]*class="[^"]*(?:post-content|entry-content|article-content|article-body|post-body|rich-text|subscriber-premium)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|section|article)>/i,
+    /<(?:div|section|article)[^>]*class="[^"]*(?:post-content|entry-content|article-content|article-body|post-body|rich-text)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|section|article)>/i,
     /<article[^>]*>([\s\S]*?)<\/article>/i,
     /<main[^>]*>([\s\S]*?)<\/main>/i,
   ];
@@ -282,6 +335,45 @@ function extractFragment(html: string): string | null {
     if (text.length > best.length) best = chunk;
   }
   return best.length > 200 ? best : null;
+}
+
+const JUNK_TEXT_RE =
+  /(?:get email notifications|your notification has been saved|problem saving your notification|followed notifications|please log in to use this feature|don't have an account|sign up today|gift this article|new subscriber benefit|copied to clipboard|out of gifts for the month|share this article paywall|prefer us on google|preferred news source|author twitter|author email|follow [\w .|/-]+ post-dispatch|manage followed notifications|facebook|twitter|bluesky|whatsapp|\bsms\b|copy (?:article )?link|copy link|\bprint\b|\{\{[^}]+\}\}|data-(?:html|toggle|placement|trigger)|aria-label="tooltip|tabindex="0"|role="button")/i;
+
+/** Drop leftover chrome paragraphs and leaked attribute debris after sanitize. */
+function scrubContentHtml(html: string): string {
+  let out = html
+    .replace(/\s*data-[a-z0-9-]+="[^"]*"/gi, "")
+    .replace(/\s*(?:role|aria-label|tabindex|data-placement|data-trigger|data-toggle|data-html)="[^"]*"/gi, "")
+    .replace(/\{\{[^}]+\}\}/g, "")
+    .replace(/"[^"]*data-html="true"[^<]*/gi, "");
+
+  out = out.replace(/<(p|li|h[1-6]|blockquote)(\b[^>]*)>([\s\S]*?)<\/\1>/gi, (full, tag, attrs, inner) => {
+    const text = stripTags(inner).replace(/\s+/g, " ").trim();
+    if (!text) return "";
+    if (text.length < 120 && JUNK_TEXT_RE.test(text)) return "";
+    if (/^(?:facebook|twitter|bluesky|whatsapp|sms|email|print|copy link|save|close|log in)$/i.test(text)) {
+      return "";
+    }
+    return "<" + tag + attrs + ">" + inner + "</" + tag + ">";
+  });
+
+  // Orphaned chrome lines not wrapped in p
+  out = out
+    .split(/\n+/)
+    .filter((line) => {
+      const t = stripTags(line).replace(/\s+/g, " ").trim();
+      if (!t) return true;
+      if (t.length < 160 && JUNK_TEXT_RE.test(t)) return false;
+      return true;
+    })
+    .join("\n");
+
+  return out
+    .replace(/<p>\s*<\/p>/gi, "")
+    .replace(/(?:\s*<br>\s*){3,}/gi, "<br><br>")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function attrValue(attrs: string, name: string): string | null {
@@ -381,7 +473,7 @@ async function handleRead(url: string) {
   const html = unlockEncryptedContent(stripNoise(await fetchText(url)));
   const frag = extractFragment(html);
   if (!frag) return json({ error: "Could not extract article text", url }, 422);
-  const contentHtml = sanitizeHtml(frag);
+  const contentHtml = scrubContentHtml(sanitizeHtml(stripArticleChrome(frag)));
   const contentText = stripTags(contentHtml);
   if (contentText.length < 80) {
     return json({ error: "Extracted text too short", url }, 422);

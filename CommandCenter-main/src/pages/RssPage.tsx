@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useQueries, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   CheckCheck,
+  ChevronRight,
   Circle,
   ExternalLink,
+  Folder,
   Highlighter,
-  Newspaper,
+  Inbox,
   RefreshCw,
   Share,
   Trash2,
@@ -29,84 +31,13 @@ import {
   type RssFeedItem,
   type RssHighlight,
 } from "@/lib/rss";
-import StarField from "@/components/StarField";
 import { cn } from "@/lib/utils";
+
+type NavView = "unread" | RssFeedId | "notes";
 
 function readingMinutes(words: number): string {
   const m = Math.max(1, Math.round(words / 220));
   return `${m} min read`;
-}
-
-function FeedList({
-  items,
-  readUrls,
-  onOpen,
-}: {
-  items: RssFeedItem[];
-  readUrls: Set<string>;
-  onOpen: (item: RssFeedItem) => void;
-}) {
-  return (
-    <ul className="divide-y divide-white/[0.06]">
-      {items.map((item) => {
-        const read = readUrls.has(item.link);
-        return (
-          <li key={item.id}>
-            <div
-              className={cn(
-                "group flex w-full gap-4 px-1 py-5 transition-colors md:gap-5",
-                read && "opacity-55",
-              )}
-            >
-              <button
-                type="button"
-                onClick={() => onOpen(item)}
-                className="shrink-0"
-                aria-label={`Open ${item.title}`}
-              >
-                {item.image ? (
-                  <img
-                    src={item.image}
-                    alt=""
-                    className="bg-hero h-[72px] w-[96px] object-cover transition group-hover:brightness-110 md:h-[88px] md:w-[120px]"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="bg-hero text-chalk-dim grid h-[72px] w-[96px] place-items-center md:h-[88px] md:w-[120px]">
-                    <Newspaper size={22} />
-                  </div>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpen(item)}
-                className="min-w-0 flex-1 text-left"
-              >
-                <div className="label-caps text-accent mb-1.5">
-                  {formatFeedDate(item.publishedAt)}
-                  {item.author ? ` · ${item.author}` : ""}
-                  {read ? " · Read" : ""}
-                </div>
-                <h3
-                  className={cn(
-                    "font-rss text-cream text-[22px] leading-snug font-medium transition-colors group-hover:text-white md:text-[26px]",
-                    read && "text-chalk",
-                  )}
-                >
-                  {item.title}
-                </h3>
-                {item.snippet ? (
-                  <p className="font-rss text-chalk mt-2 line-clamp-2 text-[14.5px] leading-relaxed">
-                    {item.snippet}
-                  </p>
-                ) : null}
-              </button>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
 }
 
 function HighlightComposer({
@@ -160,36 +91,6 @@ function HighlightComposer({
   );
 }
 
-function NotesPanel({
-  highlights,
-  onDelete,
-  onUpdateNote,
-}: {
-  highlights: RssHighlight[];
-  onDelete: (id: string) => void;
-  onUpdateNote: (id: string, note: string) => void;
-}) {
-  if (!highlights.length) {
-    return (
-      <p className="text-chalk font-rss text-[14px] leading-relaxed">
-        Select text in the article, then tap Highlight to save a quote and optional comment.
-      </p>
-    );
-  }
-  return (
-    <ul className="flex flex-col gap-4">
-      {highlights.map((h) => (
-        <HighlightCard
-          key={h.id}
-          highlight={h}
-          onDelete={() => onDelete(h.id)}
-          onUpdateNote={(note) => onUpdateNote(h.id, note)}
-        />
-      ))}
-    </ul>
-  );
-}
-
 function HighlightCard({
   highlight,
   onDelete,
@@ -222,10 +123,7 @@ function HighlightCard({
             className="font-rss bg-field text-cream w-full resize-none rounded-sm border border-white/10 px-3 py-2 text-[13px] outline-none focus:border-accent/50"
           />
           <div className="flex gap-2">
-            <button
-              type="submit"
-              className="text-accent text-[11px] uppercase tracking-[0.16em]"
-            >
+            <button type="submit" className="text-accent text-[11px] uppercase tracking-[0.16em]">
               Save note
             </button>
             <button
@@ -359,7 +257,7 @@ function ReaderView({
   const image = article.data?.image || item.image;
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,42rem)_minmax(16rem,1fr)]">
+    <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,42rem)_minmax(15rem,1fr)]">
       <article className="font-rss min-w-0">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <button
@@ -368,7 +266,7 @@ function ReaderView({
             className="font-body text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] transition-colors"
           >
             <ArrowLeft size={14} />
-            Back to feed
+            Back
           </button>
           <button
             type="button"
@@ -394,7 +292,7 @@ function ReaderView({
             {byline ? ` · ${byline}` : ""}
             {article.data?.wordCount ? ` · ${readingMinutes(article.data.wordCount)}` : ""}
           </div>
-          <h2 className="text-cream text-[32px] leading-[1.15] font-semibold md:text-[40px]">
+          <h2 className="text-cream text-[30px] leading-[1.15] font-semibold md:text-[38px]">
             {title}
           </h2>
           <a
@@ -409,14 +307,10 @@ function ReaderView({
         </header>
 
         {image ? (
-          <a href={item.link} target="_blank" rel="noopener noreferrer">
-            <img src={image} alt="" className="mb-8 max-h-[320px] w-full object-cover" />
-          </a>
+          <button type="button" onClick={() => window.open(item.link, "_blank", "noopener,noreferrer")} className="mb-8 block w-full">
+            <img src={image} alt="" className="max-h-[320px] w-full object-cover" />
+          </button>
         ) : null}
-
-        <p className="label-caps font-body text-chalk-dim mb-4">
-          Select text to highlight · add a comment in Notes
-        </p>
 
         {article.isLoading ? (
           <p className="label-caps font-body animate-pulse">Extracting text</p>
@@ -424,16 +318,6 @@ function ReaderView({
           <div className="bg-panel border-alert/40 font-body text-alert rounded border p-4 text-sm">
             Could not extract article text:{" "}
             {article.error instanceof Error ? article.error.message : String(article.error)}
-            <div className="mt-3">
-              <a
-                href={item.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-cream underline underline-offset-2"
-              >
-                Open original
-              </a>
-            </div>
           </div>
         ) : (
           <div
@@ -453,11 +337,22 @@ function ReaderView({
         )}
       >
         <div className="rule-head mb-4">Notes</div>
-        <NotesPanel
-          highlights={highlights.data ?? []}
-          onDelete={(id) => deleteMut.mutate(id)}
-          onUpdateNote={(id, note) => noteMut.mutate({ id, note })}
-        />
+        {(highlights.data?.length ?? 0) === 0 ? (
+          <p className="text-chalk font-rss text-[14px] leading-relaxed">
+            Select text in the article to highlight and comment.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-4">
+            {highlights.data?.map((h) => (
+              <HighlightCard
+                key={h.id}
+                highlight={h}
+                onDelete={() => deleteMut.mutate(h.id)}
+                onUpdateNote={(note) => noteMut.mutate({ id: h.id, note })}
+              />
+            ))}
+          </ul>
+        )}
       </aside>
 
       {pendingQuote ? (
@@ -472,42 +367,177 @@ function ReaderView({
   );
 }
 
+function ArticleRow({
+  item,
+  read,
+  onOpen,
+}: {
+  item: RssFeedItem;
+  read: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className={cn(
+          "hover:bg-white/[0.03] flex w-full items-start gap-3 border-b border-white/[0.06] px-3 py-3.5 text-left transition-colors",
+          read && "opacity-50",
+        )}
+      >
+        <span
+          className={cn(
+            "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
+            read ? "bg-white/15" : "bg-accent",
+          )}
+          aria-hidden
+        />
+        {item.image ? (
+          <img
+            src={item.image}
+            alt=""
+            className="bg-hero h-14 w-[4.5rem] shrink-0 object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="bg-hero text-chalk-dim grid h-14 w-[4.5rem] shrink-0 place-items-center text-[10px] uppercase tracking-wider">
+            —
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="label-caps text-chalk-dim mb-1">
+            {formatFeedDate(item.publishedAt)}
+            {item.author ? ` · ${item.author}` : ""}
+          </div>
+          <h3
+            className={cn(
+              "font-rss text-[16px] leading-snug font-medium md:text-[17px]",
+              read ? "text-chalk" : "text-cream",
+            )}
+          >
+            {item.title}
+          </h3>
+          {item.snippet ? (
+            <p className="font-rss text-chalk mt-1 line-clamp-2 text-[13px] leading-relaxed">
+              {item.snippet}
+            </p>
+          ) : null}
+        </div>
+        <ChevronRight size={16} className="text-chalk-dim mt-1 shrink-0" />
+      </button>
+    </li>
+  );
+}
+
 export default function RssPage() {
   const qc = useQueryClient();
-  const [feedId, setFeedId] = useState<RssFeedId>("moscout");
+  const [nav, setNav] = useState<NavView>("unread");
   const [selected, setSelected] = useState<RssFeedItem | null>(null);
-  const [notesOnly, setNotesOnly] = useState(false);
-  const feedMeta = RSS_FEEDS.find((f) => f.id === feedId) ?? RSS_FEEDS[0];
-
-  const feed = useQuery({
-    queryKey: ["rss-feed", feedMeta.url],
-    queryFn: () => fetchRssFeed(feedMeta.url),
-    staleTime: 5 * 60_000,
-  });
+  const [mobilePane, setMobilePane] = useState<"sidebar" | "list">("sidebar");
 
   const reads = useQuery({
     queryKey: ["rss-reads"],
     queryFn: fetchRssReads,
     staleTime: 60_000,
   });
+  const readUrls = reads.data ?? new Set<string>();
+
+  const feedQueries = useQueries({
+    queries: RSS_FEEDS.map((f) => ({
+      queryKey: ["rss-feed", f.url],
+      queryFn: () => fetchRssFeed(f.url),
+      staleTime: 5 * 60_000,
+    })),
+  });
 
   const allNotes = useQuery({
     queryKey: ["rss-highlights-all"],
     queryFn: () => fetchRssHighlights(),
-    enabled: notesOnly,
+    enabled: nav === "notes",
   });
 
-  const readUrls = reads.data ?? new Set<string>();
+  const feedById = useMemo(() => {
+    const map = new Map<string, { items: RssFeedItem[]; title: string; url: string }>();
+    RSS_FEEDS.forEach((f, i) => {
+      const data = feedQueries[i]?.data;
+      map.set(f.id, {
+        items: data?.items ?? [],
+        title: data?.title || f.title,
+        url: f.url,
+      });
+    });
+    return map;
+  }, [feedQueries]);
+
+  const unreadByFeed = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const f of RSS_FEEDS) {
+      const items = feedById.get(f.id)?.items ?? [];
+      counts[f.id] = items.filter((it) => !readUrls.has(it.link)).length;
+    }
+    return counts;
+  }, [feedById, readUrls]);
+
+  const totalUnread = useMemo(
+    () => Object.values(unreadByFeed).reduce((a, b) => a + b, 0),
+    [unreadByFeed],
+  );
+
+  const listItems = useMemo(() => {
+    if (nav === "notes") return [];
+    if (nav === "unread") {
+      const merged: (RssFeedItem & { feedId: RssFeedId; feedUrl: string })[] = [];
+      for (const f of RSS_FEEDS) {
+        const pack = feedById.get(f.id);
+        for (const it of pack?.items ?? []) {
+          if (!readUrls.has(it.link)) {
+            merged.push({ ...it, feedId: f.id, feedUrl: f.url });
+          }
+        }
+      }
+      merged.sort((a, b) => {
+        const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
+        const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
+        return db - da;
+      });
+      return merged;
+    }
+    const pack = feedById.get(nav);
+    return (pack?.items ?? []).map((it) => ({
+      ...it,
+      feedId: nav,
+      feedUrl: pack?.url ?? "",
+    }));
+  }, [nav, feedById, readUrls]);
+
+  const activeFeedUrl =
+    selected && nav !== "notes" && nav !== "unread"
+      ? feedById.get(nav)?.url ?? RSS_FEEDS[0].url
+      : selected
+        ? RSS_FEEDS.find((f) =>
+            (feedById.get(f.id)?.items ?? []).some((it) => it.link === selected.link),
+          )?.url ?? RSS_FEEDS[0].url
+        : RSS_FEEDS[0].url;
+
+  const listTitle =
+    nav === "unread"
+      ? "Unread"
+      : nav === "notes"
+        ? "Notes"
+        : RSS_FEEDS.find((f) => f.id === nav)?.title ?? "Feed";
+
+  const feedsLoading = feedQueries.some((q) => q.isLoading);
+  const feedsFetching = feedQueries.some((q) => q.isFetching);
 
   async function toggleRead(item: RssFeedItem) {
     try {
-      if (readUrls.has(item.link)) {
-        await markRssUnread(item.link);
-      } else {
+      if (readUrls.has(item.link)) await markRssUnread(item.link);
+      else {
         await markRssRead({
           articleUrl: item.link,
           articleTitle: item.title,
-          feedUrl: feedMeta.url,
+          feedUrl: activeFeedUrl,
         });
       }
       await qc.invalidateQueries({ queryKey: ["rss-reads"] });
@@ -516,137 +546,192 @@ export default function RssPage() {
     }
   }
 
-  return (
-    <div className="flex flex-col gap-5 p-6 md:p-7">
-      {!selected && (
-        <div className="from-hero-lift to-hero relative overflow-hidden rounded border border-accent/30 bg-gradient-to-br px-7 py-6">
-          <StarField count={28} seed={17} />
-          <div className="relative z-10 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <div className="rule-head">Dispatch</div>
-              <h2 className="font-rss text-cream mt-2 text-[34px] leading-tight font-semibold md:text-[40px]">
-                {notesOnly ? "Notes" : feed.data?.title || feedMeta.title}
-              </h2>
-              <p className="font-rss text-chalk mt-2 max-w-xl text-[15px] leading-relaxed">
-                Full article text extracted for reading — highlight passages and leave comments.
-              </p>
-              <a
-                href="/rss.html"
-                className="text-chalk hover:text-cream mt-3 inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em]"
-              >
-                <Share size={12} />
-                Dispatch Home Screen
-              </a>
-            </div>
-            <div className="relative z-10 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setNotesOnly(false);
-                  void feed.refetch();
-                }}
-                disabled={feed.isFetching}
-                className={cn(
-                  "text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] transition-colors",
-                  feed.isFetching && "opacity-50",
-                )}
-              >
-                <RefreshCw size={13} className={feed.isFetching ? "animate-spin" : ""} />
-                Refresh
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+  function selectNav(next: NavView) {
+    setNav(next);
+    setSelected(null);
+    setMobilePane("list");
+  }
 
-      {!selected && (
-        <div className="flex flex-wrap gap-2">
-          {RSS_FEEDS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => {
-                setFeedId(f.id);
-                setNotesOnly(false);
-                setSelected(null);
-              }}
-              className={cn(
-                "rounded-sm border px-3 py-2 text-[11px] uppercase tracking-[0.16em] transition-colors",
-                !notesOnly && feedId === f.id
-                  ? "border-accent/50 bg-accent/15 text-cream"
-                  : "border-white/10 text-chalk hover:text-cream",
-              )}
-            >
-              {f.short}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => {
-              setNotesOnly(true);
-              setSelected(null);
-            }}
-            className={cn(
-              "rounded-sm border px-3 py-2 text-[11px] uppercase tracking-[0.16em] transition-colors",
-              notesOnly
-                ? "border-accent/50 bg-accent/15 text-cream"
-                : "border-white/10 text-chalk hover:text-cream",
-            )}
-          >
-            Notes
-          </button>
-        </div>
-      )}
+  function openArticle(item: RssFeedItem) {
+    setSelected(item);
+  }
 
-      {notesOnly && !selected ? (
-        <div className="bg-panel rounded border border-white/[0.06] p-5">
-          <div className="rule-head mb-4">All highlights</div>
-          {allNotes.isLoading ? (
-            <p className="label-caps animate-pulse">Loading notes</p>
-          ) : (allNotes.data?.length ?? 0) === 0 ? (
-            <p className="text-chalk font-rss text-sm">No highlights yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-5">
-              {allNotes.data?.map((h) => (
-                <li key={h.id} className="border-white/[0.06] border-b pb-4 last:border-0">
-                  <div className="label-caps text-accent mb-1">
-                    {h.articleTitle || h.articleUrl}
-                  </div>
-                  <blockquote className="font-rss text-cream border-accent/40 border-l-2 pl-3 text-[15px] leading-relaxed">
-                    {h.quoteText}
-                  </blockquote>
-                  {h.note ? (
-                    <p className="font-rss text-chalk mt-2 text-[13.5px]">{h.note}</p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ) : feed.isLoading && !selected ? (
-        <p className="label-caps animate-pulse">Loading feed</p>
-      ) : feed.isError && !selected ? (
-        <div className="bg-panel border-alert/40 text-alert rounded border p-4 text-sm">
-          Could not load feed:{" "}
-          {feed.error instanceof Error ? feed.error.message : String(feed.error)}
-        </div>
-      ) : selected ? (
+  if (selected) {
+    return (
+      <div className="p-4 md:p-6">
         <ReaderView
           item={selected}
-          feedUrl={feedMeta.url}
+          feedUrl={activeFeedUrl}
           isRead={readUrls.has(selected.link)}
           onBack={() => setSelected(null)}
           onToggleRead={() => void toggleRead(selected)}
         />
-      ) : (
-        <div className="bg-panel rounded border border-white/[0.06] px-4 md:px-5">
-          <FeedList
-            items={feed.data?.items ?? []}
-            readUrls={readUrls}
-            onOpen={setSelected}
-          />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-[calc(100vh-4.5rem)] flex-col md:flex-row">
+      {/* Sidebar — classic reader feed list */}
+      <aside
+        className={cn(
+          "bg-ink border-white/[0.06] w-full shrink-0 border-b md:w-[260px] md:border-r md:border-b-0",
+          mobilePane === "list" ? "hidden md:flex md:flex-col" : "flex flex-col",
+        )}
+      >
+        <div className="flex items-center justify-between px-4 pt-5 pb-3">
+          <h2 className="font-rss text-cream text-[26px] font-semibold tracking-tight">Dispatch</h2>
+          <button
+            type="button"
+            onClick={() => void Promise.all(feedQueries.map((q) => q.refetch()))}
+            disabled={feedsFetching}
+            className="text-chalk hover:text-cream p-1"
+            aria-label="Refresh feeds"
+          >
+            <RefreshCw size={15} className={feedsFetching ? "animate-spin" : ""} />
+          </button>
         </div>
-      )}
+
+        <div className="px-2 pb-2">
+          <p className="label-caps text-chalk-dim px-2 py-2">Filters</p>
+          <button
+            type="button"
+            onClick={() => selectNav("unread")}
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2.5 text-left transition-colors",
+              nav === "unread" ? "bg-accent/15 text-cream" : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+            )}
+          >
+            <Inbox size={16} className="text-accent shrink-0" />
+            <span className="min-w-0 flex-1 text-[13.5px]">Unread Articles</span>
+            <span className="text-chalk tabular-nums text-[12px]">{totalUnread}</span>
+            <ChevronRight size={14} className="opacity-50" />
+          </button>
+        </div>
+
+        <div className="flex-1 px-2 pb-4">
+          <p className="label-caps text-chalk-dim px-2 py-2">Feeds</p>
+          <ul className="flex flex-col gap-0.5">
+            {RSS_FEEDS.map((f) => (
+              <li key={f.id}>
+                <button
+                  type="button"
+                  onClick={() => selectNav(f.id)}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2.5 text-left transition-colors",
+                    nav === f.id
+                      ? "bg-accent/15 text-cream"
+                      : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+                  )}
+                >
+                  <Folder size={16} className="text-accent shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-[13.5px]">{f.title}</span>
+                  <span className="text-chalk tabular-nums text-[12px]">
+                    {unreadByFeed[f.id] ?? 0}
+                  </span>
+                  <ChevronRight size={14} className="opacity-50" />
+                </button>
+              </li>
+            ))}
+            <li>
+              <button
+                type="button"
+                onClick={() => selectNav("notes")}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2.5 text-left transition-colors",
+                  nav === "notes"
+                    ? "bg-accent/15 text-cream"
+                    : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+                )}
+              >
+                <Highlighter size={16} className="text-accent shrink-0" />
+                <span className="min-w-0 flex-1 text-[13.5px]">Notes</span>
+                <ChevronRight size={14} className="opacity-50" />
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div className="border-white/[0.06] border-t px-4 py-3">
+          <a
+            href="/rss.html"
+            className="text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.16em]"
+          >
+            <Share size={11} />
+            Home Screen
+          </a>
+        </div>
+      </aside>
+
+      {/* Article list / notes */}
+      <section
+        className={cn(
+          "bg-field min-w-0 flex-1",
+          mobilePane === "sidebar" ? "hidden md:block" : "block",
+        )}
+      >
+        <div className="border-white/[0.06] flex items-center gap-3 border-b px-4 py-3.5">
+          <button
+            type="button"
+            onClick={() => setMobilePane("sidebar")}
+            className="text-chalk hover:text-cream md:hidden"
+            aria-label="Back to feeds"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-rss text-cream truncate text-[22px] font-semibold">{listTitle}</h3>
+            <p className="text-chalk-dim text-[11px] uppercase tracking-[0.14em]">
+              {nav === "notes"
+                ? `${allNotes.data?.length ?? 0} highlights`
+                : `${listItems.length} articles`}
+            </p>
+          </div>
+        </div>
+
+        {nav === "notes" ? (
+          <div className="p-4 md:p-5">
+            {allNotes.isLoading ? (
+              <p className="label-caps animate-pulse">Loading notes</p>
+            ) : (allNotes.data?.length ?? 0) === 0 ? (
+              <p className="text-chalk font-rss text-sm">No highlights yet.</p>
+            ) : (
+              <ul className="flex flex-col gap-5">
+                {allNotes.data?.map((h) => (
+                  <li key={h.id} className="border-white/[0.06] border-b pb-4 last:border-0">
+                    <div className="label-caps text-accent mb-1">
+                      {h.articleTitle || h.articleUrl}
+                    </div>
+                    <blockquote className="font-rss text-cream border-accent/40 border-l-2 pl-3 text-[15px] leading-relaxed">
+                      {h.quoteText}
+                    </blockquote>
+                    {h.note ? (
+                      <p className="font-rss text-chalk mt-2 text-[13.5px]">{h.note}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : feedsLoading ? (
+          <p className="label-caps animate-pulse p-5">Loading feeds</p>
+        ) : listItems.length === 0 ? (
+          <p className="text-chalk font-rss p-5 text-sm">
+            {nav === "unread" ? "You're caught up." : "No articles in this feed."}
+          </p>
+        ) : (
+          <ul>
+            {listItems.map((item) => (
+              <ArticleRow
+                key={item.id + item.link}
+                item={item}
+                read={readUrls.has(item.link)}
+                onOpen={() => openArticle(item)}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
