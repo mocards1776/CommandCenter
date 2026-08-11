@@ -19,16 +19,24 @@ export default function HeroGameCard({
       to={`/sports/mlb/game/${game.id}`}
       className="group relative block overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.35)]"
     >
+      {/* Dual team color washes — ESPN-style matchup plane */}
+      <div className="absolute inset-0 bg-[#07101d]" />
       <div
-        className="absolute inset-0"
+        className="absolute inset-y-0 left-0 w-[55%] opacity-90"
         style={{
-          background: `radial-gradient(ellipse at 20% 0%, ${accent}55, transparent 50%), linear-gradient(145deg, #132a57 0%, #081228 55%, #0a1730 100%)`,
+          background: `radial-gradient(ellipse at 18% 40%, #${game.away.primaryColor}99, transparent 62%)`,
         }}
       />
-      <div className="pointer-events-none absolute inset-0 bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2280%22 height=%2280%22><circle cx=%221%22 cy=%221%22 r=%221%22 fill=%22rgba(255,255,255,0.04)%22/></svg>')] opacity-70" />
+      <div
+        className="absolute inset-y-0 right-0 w-[55%] opacity-90"
+        style={{
+          background: `radial-gradient(ellipse at 82% 40%, #${game.home.primaryColor}99, transparent 62%)`,
+        }}
+      />
+      <div className="pointer-events-none absolute inset-0 bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2280%22 height=%2280%22><circle cx=%221%22 cy=%221%22 r=%221%22 fill=%22rgba(255,255,255,0.04)%22/></svg>')] opacity-60" />
 
       <div className="relative z-10 p-5 sm:p-7">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
           <p className="text-[10.5px] font-semibold uppercase tracking-[0.2em] text-white/55">
             {label}
           </p>
@@ -46,7 +54,7 @@ export default function HeroGameCard({
             ) : game.final ? (
               "Final"
             ) : (
-              game.status
+              "Preview"
             )}
           </span>
         </div>
@@ -56,7 +64,7 @@ export default function HeroGameCard({
         ) : (
           <>
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-6">
-              <HeroSide side={game.away} align="left" accent={accent} />
+              <HeroSide side={game.away} align="left" />
               <div className="text-center">
                 <p className="font-display text-cream text-[40px] leading-none tabular-nums sm:text-[52px]">
                   {game.away.score ?? "–"}
@@ -72,7 +80,7 @@ export default function HeroGameCard({
                   </p>
                 )}
               </div>
-              <HeroSide side={game.home} align="right" accent={accent} />
+              <HeroSide side={game.home} align="right" />
             </div>
 
             <div className="mt-5 flex flex-wrap items-end justify-between gap-3 border-t border-white/10 pt-4">
@@ -98,21 +106,21 @@ function PregameLayout({ game, accent }: { game: MlbScoreGame; accent: string })
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
-        <HeroSide side={game.away} align="left" compact accent={accent} />
+        <HeroSide side={game.away} align="left" />
         <div className="px-1 text-center">
           <p className="font-display text-cream text-[42px] leading-none tracking-tight sm:text-[56px]">
             {game.whenShort ?? "TBD"}
           </p>
-          <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/50">
-            {game.when?.replace(/\s+at\s+.+$/i, "") ?? "First pitch"}
+          <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">
+            First pitch
           </p>
         </div>
-        <HeroSide side={game.home} align="right" compact accent={accent} />
+        <HeroSide side={game.home} align="right" />
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-4 sm:px-5">
+      <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-4 sm:px-5">
         <p className="mb-3 text-center text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">
-          Expected pitching
+          Probable pitchers
         </p>
         <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2 sm:gap-4">
           <PitcherStack side={game.away} align="left" />
@@ -132,7 +140,7 @@ function PregameLayout({ game, accent }: { game: MlbScoreGame; accent: string })
           className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.16em] transition group-hover:translate-x-0.5"
           style={{ color: accent }}
         >
-          Box & highlights →
+          Preview →
         </span>
       </div>
     </div>
@@ -199,18 +207,14 @@ function PitcherStack({
 function HeroSide({
   side,
   align,
-  compact,
-  accent,
 }: {
   side: MlbScoreGame["away"];
   align: "left" | "right";
-  compact?: boolean;
-  accent: string;
 }) {
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-col items-center gap-2",
+        "flex min-w-0 flex-col items-center gap-2.5",
         align === "right" && "sm:items-end",
         align === "left" && "sm:items-start",
       )}
@@ -221,10 +225,16 @@ function HeroSide({
         className="relative transition hover:scale-[1.03]"
       >
         <span
-          className="pointer-events-none absolute -inset-3 rounded-full opacity-70 blur-xl"
-          style={{ background: `radial-gradient(circle, ${accent}88, transparent 70%)` }}
+          className="pointer-events-none absolute -inset-4 rounded-full opacity-80 blur-2xl"
+          style={{
+            background: `radial-gradient(circle, #${side.primaryColor}cc, transparent 70%)`,
+          }}
         />
-        <TeamMark teamId={side.teamId} size={compact ? "lg" : "xl"} className="relative" />
+        <TeamMark
+          teamId={side.teamId}
+          size="xl"
+          className="relative shadow-[0_10px_30px_rgba(0,0,0,0.45)]"
+        />
       </Link>
       <div
         className={cn(
@@ -236,14 +246,15 @@ function HeroSide({
         <Link
           to={teamPagePath(side.teamId)}
           onClick={(e) => e.stopPropagation()}
-          className={cn(
-            "font-display text-cream leading-none hover:underline",
-            compact ? "text-[18px] sm:text-[22px]" : "text-[22px] sm:text-[26px]",
-          )}
+          className="block text-[20px] font-bold tracking-wide text-white hover:underline sm:text-[24px]"
         >
           {side.abbrev}
         </Link>
-        {side.record && <p className="mt-1 text-[11px] text-white/45">{side.record}</p>}
+        {side.record ? (
+          <p className="numeral mt-1 text-[14px] font-medium text-white/75">{side.record}</p>
+        ) : (
+          <p className="mt-1 truncate text-[11px] text-white/45">{side.name}</p>
+        )}
       </div>
     </div>
   );

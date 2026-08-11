@@ -32,6 +32,8 @@ export type MlbScoreSide = {
   record: string | null;
   probablePitcher: string | null;
   probablePitcherId: number | null;
+  /** Hex without # — team brand color for matchup chrome. */
+  primaryColor: string;
 };
 
 export type MlbHighlight = {
@@ -1143,20 +1145,24 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
     const side = (
       s: NonNullable<typeof g.teams>["away"],
       rh: { runs?: number; hits?: number; errors?: number } | undefined,
-    ): MlbScoreSide => ({
-      teamId: s?.team?.id ?? 0,
-      name: s?.team?.name ?? "—",
-      abbrev: teamAbbrev(s?.team),
-      score: rh?.runs ?? s?.score ?? null,
-      hits: rh?.hits ?? null,
-      errors: rh?.errors ?? null,
-      record:
-        s?.leagueRecord?.wins != null
-          ? `${s.leagueRecord.wins}-${s.leagueRecord.losses ?? 0}`
-          : null,
-      probablePitcher: s?.probablePitcher?.fullName ?? null,
-      probablePitcherId: s?.probablePitcher?.id ?? null,
-    });
+    ): MlbScoreSide => {
+      const teamId = s?.team?.id ?? 0;
+      return {
+        teamId,
+        name: s?.team?.name ?? "—",
+        abbrev: teamAbbrev(s?.team),
+        score: rh?.runs ?? s?.score ?? null,
+        hits: rh?.hits ?? null,
+        errors: rh?.errors ?? null,
+        record:
+          s?.leagueRecord?.wins != null
+            ? `${s.leagueRecord.wins}-${s.leagueRecord.losses ?? 0}`
+            : null,
+        probablePitcher: s?.probablePitcher?.fullName ?? null,
+        probablePitcherId: s?.probablePitcher?.id ?? null,
+        primaryColor: TEAM_COLORS[teamId] ?? "d9515c",
+      };
+    };
     return {
       id: String(g.gamePk ?? g.gameDate),
       status: g.status?.detailedState ?? abstract,

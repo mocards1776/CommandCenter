@@ -348,14 +348,9 @@ function RotoWireBriefCard({
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] flex items-center justify-between gap-3 px-4 py-3">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-            RotoWire
-          </p>
-          <p className="text-cream mt-1 text-[13px] leading-snug">
-            Expert player note — in addition to the MLB form summary below.
-          </p>
-        </div>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+          RotoWire
+        </p>
         {brief?.url ? (
           <a
             href={brief.url}
@@ -401,9 +396,6 @@ function PerformanceSummaryCard({ summary }: { summary: MlbPerformanceSummary })
       <div className="border-b border-white/[0.06] px-4 py-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
           Form
-        </p>
-        <p className="text-cream mt-1 text-[13px] leading-snug">
-          Built from MLB game logs.
         </p>
       </div>
       <div className="grid gap-0 sm:grid-cols-2">

@@ -373,19 +373,32 @@ function ScoreCard({ game }: { game: MlbScoreGame }) {
     game.final && (game.away.score ?? 0) > (game.home.score ?? 0);
   const homeWins =
     game.final && (game.home.score ?? 0) > (game.away.score ?? 0);
+  const pregame = !game.live && !game.final;
 
   return (
     <Link
       to={`/sports/mlb/game/${game.id}`}
       className={cn(
-        "relative block overflow-hidden rounded-lg border bg-[#0a1424] transition hover:border-accent/40",
+        "relative block overflow-hidden rounded-lg border bg-[#07101d] transition hover:border-accent/40",
         game.live ? "border-alert/45" : "border-white/[0.08]",
       )}
     >
+      <div
+        className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-70"
+        style={{
+          background: `radial-gradient(ellipse at 15% 50%, #${game.away.primaryColor}55, transparent 65%)`,
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-70"
+        style={{
+          background: `radial-gradient(ellipse at 85% 50%, #${game.home.primaryColor}55, transparent 65%)`,
+        }}
+      />
       {game.live && (
         <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-alert to-transparent" />
       )}
-      <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
+      <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
         <span
           className={cn(
             "text-[10px] font-bold uppercase tracking-[0.14em]",
@@ -400,23 +413,63 @@ function ScoreCard({ game }: { game: MlbScoreGame }) {
           ) : game.final ? (
             "Final"
           ) : (
-            game.status
+            "Preview"
           )}
         </span>
         <span className="truncate text-[10.5px] text-[#8b93a7]">
-          {!game.live && !game.final ? game.when : game.venue ?? "Box score"}
+          {pregame ? game.whenShort ?? game.when : game.venue ?? "Box score"}
         </span>
       </div>
-      <div className="space-y-0.5 px-3 py-2.5">
-        <TeamScoreLine side={game.away} emphasize={awayWins} muted={homeWins} />
-        <TeamScoreLine side={game.home} emphasize={homeWins} muted={awayWins} />
-      </div>
-      {(game.away.probablePitcher || game.home.probablePitcher) && !game.final && !game.live && (
-        <p className="truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#8b93a7]">
-          {game.away.probablePitcher ?? "TBD"} vs {game.home.probablePitcher ?? "TBD"}
+
+      {pregame ? (
+        <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
+          <ScorePreviewTeam side={game.away} align="left" />
+          <div className="text-center">
+            <p className="font-display text-[28px] leading-none text-white">
+              {game.whenShort ?? "TBD"}
+            </p>
+          </div>
+          <ScorePreviewTeam side={game.home} align="right" />
+        </div>
+      ) : (
+        <div className="relative z-10 space-y-0.5 px-3 py-2.5">
+          <TeamScoreLine side={game.away} emphasize={awayWins} muted={homeWins} />
+          <TeamScoreLine side={game.home} emphasize={homeWins} muted={awayWins} />
+        </div>
+      )}
+
+      {(game.away.probablePitcher || game.home.probablePitcher) && pregame && (
+        <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
+          {game.away.probablePitcher?.split(" ").slice(-1)[0] ?? "TBD"} vs{" "}
+          {game.home.probablePitcher?.split(" ").slice(-1)[0] ?? "TBD"}
         </p>
       )}
     </Link>
+  );
+}
+
+function ScorePreviewTeam({
+  side,
+  align,
+}: {
+  side: MlbScoreGame["away"];
+  align: "left" | "right";
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 flex-col items-center gap-1.5",
+        align === "left" ? "sm:items-start" : "sm:items-end",
+      )}
+    >
+      {side.teamId ? <TeamMark teamId={side.teamId} size="md" /> : null}
+      <div className={cn("text-center", align === "left" ? "sm:text-left" : "sm:text-right")}>
+        <p className="text-[15px] font-bold tracking-wide text-white">{side.abbrev}</p>
+        {side.record && (
+          <p className="numeral mt-0.5 text-[12px] font-medium text-white/70">{side.record}</p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -456,7 +509,7 @@ function TeamScoreLine({
             </span>
           )}
           {side.record && (
-            <span className="text-[10px] text-[#8b93a7]">{side.record}</span>
+            <span className="numeral text-[11px] text-white/65">{side.record}</span>
           )}
         </div>
       </div>
