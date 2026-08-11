@@ -68,21 +68,21 @@ export default function MlbPlayerPage() {
 
   const contract = useQuery({
     queryKey: [
-      "mlb-player-contract-v7",
+      "mlb-player-contract-v8",
       player.data?.name,
+      player.data?.useName,
       player.data?.firstName,
       player.data?.lastName,
     ],
     queryFn: () =>
       fetchPlayerContract(player.data!.name, {
-        altNames: [
-          [player.data!.firstName, player.data!.lastName].filter(Boolean).join(" "),
-          player.data!.lastName,
-        ],
+        useName: player.data!.useName,
+        firstName: player.data!.firstName,
+        lastName: player.data!.lastName,
       }),
     enabled: Boolean(player.data?.name),
-    staleTime: 300_000,
-    retry: 2,
+    staleTime: 120_000,
+    retry: 3,
   });
 
   const brief = useQuery({
@@ -1111,7 +1111,11 @@ function ContractBlock({
           rel="noreferrer"
           className="text-chalk-dim hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] hover:underline"
         >
-          {contract.source === "spotrac" ? "Spotrac" : "Baseball Reference"}{" "}
+          {contract.source === "spotrac+baseball-reference"
+            ? "Spotrac + Baseball Reference"
+            : contract.source?.includes("spotrac")
+              ? "Spotrac"
+              : "Baseball Reference"}{" "}
           <ExternalLink size={11} />
         </a>
       )}

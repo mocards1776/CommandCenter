@@ -181,25 +181,50 @@ function slugifyName(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
+/** Known Spotrac MLB ids — search engines often miss market-value URLs. */
+const SPOTRAC_IDS: Record<string, { id: string; slug: string }> = {
+  "andre pallante": { id: "30525", slug: "andre-pallante" },
+  "neil pallante": { id: "30525", slug: "andre-pallante" },
+  pallante: { id: "30525", slug: "andre-pallante" },
+};
+
+const SPOTRAC_PLAYER_RE =
+  /spotrac\.com\/mlb\/player(?:\/market-value)?\/_\/id\/(\d+)\/([a-z0-9-]+)/i;
+
+function normalizeSpotracUrl(raw: string): string | null {
+  const m = raw.match(SPOTRAC_PLAYER_RE);
+  if (!m) return null;
+  return `https://www.spotrac.com/mlb/player/_/id/${m[1]}/${m[2].toLowerCase()}`;
+}
+
+function spotracUrlForName(name: string): string | null {
+  const key = name.trim().toLowerCase().replace(/\s+/g, " ");
+  const hit = SPOTRAC_IDS[key];
+  if (!hit) return null;
+  return `https://www.spotrac.com/mlb/player/_/id/${hit.id}/${hit.slug}`;
+}
+
 async function findSpotracUrl(name: string, hintUrl?: string | null): Promise<string | null> {
-  if (hintUrl && /spotrac\.com\/mlb\/player\/_\/id\/\d+\//i.test(hintUrl)) {
-    return hintUrl.split("?")[0];
+  if (hintUrl) {
+    const normalized = normalizeSpotracUrl(hintUrl);
+    if (normalized) return normalized;
   }
+  const known = spotracUrlForName(name);
+  if (known) return known;
+
   const slug = slugifyName(name);
   const last = slug.split("-").filter(Boolean).slice(-1)[0] ?? "";
   const urls = [
-    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`site:spotrac.com/mlb/player/_/id ${name}`)}`,
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`site:spotrac.com/mlb/player ${name}`)}`,
     `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`"${name}" site:spotrac.com/mlb/player/_/id`)}`,
-    `https://www.bing.com/search?q=${encodeURIComponent(`"${name}" site:spotrac.com/mlb/player/_/id`)}`,
+    `https://www.bing.com/search?q=${encodeURIComponent(`"${name}" site:spotrac.com/mlb/player`)}`,
   ];
   for (const url of urls) {
     try {
       const html = await (
         await fetch(url, { headers: { "User-Agent": UA, Accept: "text/html" } })
       ).text();
-      const matches = [
-        ...html.matchAll(/spotrac\.com\/mlb\/player\/_\/id\/(\d+)\/([a-z0-9-]+)/gi),
-      ];
+      const matches = [...html.matchAll(new RegExp(SPOTRAC_PLAYER_RE.source, "gi"))];
       if (!matches.length) continue;
       const ranked = matches
         .map((m) => {
@@ -250,22 +275,39 @@ async function scrapeSpotrac(name: string, hintUrl?: string | null) {
     }
   }
   const contractStatus = (ldDesc || metaDesc || "").replace(/\s+/g, " ").trim() || null;
+  const blob = `${metaDesc ?? ""} ${ldDesc ?? ""} ${html.slice(0, 80_000)}`;
   const aavMatch =
-    (metaDesc ?? "").match(/average annual salary of \$([\d,]+)/i) ??
-    html.match(/average annual salary of \$([\d,]+)/i);
+    blob.match(/average annual salary of \$([\d,]+)/i) ??
+    blob.match(/average annual value[^$]{0,40}\$([\d,]+)/i);
   const totalMatch =
-    (metaDesc ?? "").match(/\$([\d,]+)\s+contract/i) ??
-    html.match(/signed a[n]?\s+\d+\s+year[s]?,\s*\$([\d,]+)/i);
+    blob.match(/\$([\d,]+)\s+contract/i) ??
+    blob.match(/signed a[n]?\s+\d+\s+year[s]?,\s*\$([\d,]+)/i) ??
+    blob.match(/signed a[n]?\s+\d+\s+year[s]?\s*\$([\d.]+)\s*million/i) ??
+    blob.match(/\$([\d.]+)\s*million contract/i);
   const year = String(new Date().getFullYear());
   const cardCash = html.match(/card-text[^>]*>\s*\$([\d,]+)\s*</i);
   const yearSalary = html.match(
     new RegExp(`In ${year}[^.\\n]{0,120}?\\$([\\d,]+)`, "i"),
   );
+  const millionToCash = (raw: string): number | null => {
+    if (/^\d+(?:\.\d+)?$/.test(raw) && blob.toLowerCase().includes(`${raw} million`)) {
+      return Math.round(parseFloat(raw) * 1_000_000);
+    }
+    return parseMoney(raw);
+  };
   const currentAmount =
     (yearSalary && parseMoney(yearSalary[1])) ||
     (cardCash && parseMoney(cardCash[1])) ||
-    (totalMatch && parseMoney(totalMatch[1])) ||
+    (totalMatch && millionToCash(totalMatch[1])) ||
+    (aavMatch && parseMoney(aavMatch[1])) ||
     null;
+  const totalValue =
+    totalMatch
+      ? moneyDisplay(millionToCash(totalMatch[1]) ?? parseMoney(totalMatch[1]) ?? 0)
+      : null;
+  const aav = aavMatch
+    ? moneyDisplay(parseMoney(aavMatch[1]) ?? 0)
+    : totalValue;
   return {
     source: "spotrac",
     url: playerUrl,
@@ -277,46 +319,68 @@ async function scrapeSpotrac(name: string, hintUrl?: string | null) {
         : null,
     salaryHistory: [] as { year: string; amount: number; display: string; team: string | null }[],
     acquisition: contractStatus ? [contractStatus] : [],
-    aav: aavMatch ? moneyDisplay(parseMoney(aavMatch[1]) ?? 0) : null,
-    totalValue: totalMatch ? moneyDisplay(parseMoney(totalMatch[1]) ?? 0) : null,
+    aav,
+    totalValue,
     image: ldImage,
   };
 }
 
+function hasContractBits(c: {
+  contractStatus?: string | null;
+  currentSalary?: unknown;
+  salaryHistory?: unknown[];
+  aav?: string | null;
+  totalValue?: string | null;
+} | null | undefined): boolean {
+  if (!c) return false;
+  return Boolean(
+    c.contractStatus ||
+      c.currentSalary ||
+      c.aav ||
+      c.totalValue ||
+      (c.salaryHistory?.length ?? 0) > 0,
+  );
+}
+
 async function scrapeContract(name: string, hintUrl?: string | null) {
-  // Prefer Baseball Reference — salary tables + contract status are reliable from the edge.
-  let bb: Awaited<ReturnType<typeof scrapeBbref>> | null = null;
-  try {
-    bb = await scrapeBbref(name);
-  } catch {
-    bb = null;
-  }
-  if (bb && !("error" in bb) && (bb.contractStatus || bb.currentSalary || bb.salaryHistory?.length)) {
-    try {
-      const spotrac = await scrapeSpotrac(name, hintUrl);
-      if (spotrac) {
-        if (!bb.aav && spotrac.aav) bb.aav = spotrac.aav;
-        if (!bb.totalValue && spotrac.totalValue) bb.totalValue = spotrac.totalValue;
-        if (!bb.contractStatus && spotrac.contractStatus) bb.contractStatus = spotrac.contractStatus;
-        if (!bb.currentSalary && spotrac.currentSalary) bb.currentSalary = spotrac.currentSalary;
-        for (const line of spotrac.acquisition ?? []) {
-          if (!bb.acquisition.includes(line)) bb.acquisition.push(line);
-        }
-        if (spotrac.url) bb.url = spotrac.url;
-        bb.source = spotrac.contractStatus ? "spotrac+baseball-reference" : bb.source;
+  // Pull BBRef + Spotrac together so a Spotrac miss or BBRef blip still fills the card.
+  const [bbSettled, spotracSettled] = await Promise.allSettled([
+    scrapeBbref(name),
+    scrapeSpotrac(name, hintUrl),
+  ]);
+  const bb =
+    bbSettled.status === "fulfilled" && bbSettled.value && !("error" in bbSettled.value)
+      ? bbSettled.value
+      : null;
+  const spotrac =
+    spotracSettled.status === "fulfilled" ? spotracSettled.value : null;
+
+  if (bb && hasContractBits(bb)) {
+    if (spotrac && hasContractBits(spotrac)) {
+      if (!bb.aav && spotrac.aav) bb.aav = spotrac.aav;
+      if (!bb.totalValue && spotrac.totalValue) bb.totalValue = spotrac.totalValue;
+      if (!bb.contractStatus && spotrac.contractStatus) bb.contractStatus = spotrac.contractStatus;
+      if (!bb.currentSalary && spotrac.currentSalary) bb.currentSalary = spotrac.currentSalary;
+      for (const line of spotrac.acquisition ?? []) {
+        if (!bb.acquisition.includes(line)) bb.acquisition.push(line);
       }
-    } catch {
-      /* keep bbref */
+      // Prefer Spotrac player URL when we have one (canonical contract page).
+      if (spotrac.url) bb.url = spotrac.url;
+      bb.source = "spotrac+baseball-reference";
     }
     return bb;
   }
-  try {
-    const spotrac = await scrapeSpotrac(name, hintUrl);
-    if (spotrac?.contractStatus || spotrac?.currentSalary) return spotrac;
-  } catch {
-    /* */
-  }
-  return bb ?? { error: "Contract not found", name };
+  if (spotrac && hasContractBits(spotrac)) return spotrac;
+  if (bb) return bb;
+  return {
+    error:
+      bbSettled.status === "rejected"
+        ? bbSettled.reason instanceof Error
+          ? bbSettled.reason.message
+          : String(bbSettled.reason)
+        : "Contract not found",
+    name,
+  };
 }
 
 function normPerson(s: string): string {

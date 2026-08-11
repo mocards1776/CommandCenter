@@ -110,6 +110,8 @@ export type MlbPlayerCard = {
   id: number;
   name: string;
   firstName: string;
+  /** Prefer this over legal firstName when present (e.g. Andre vs Neil). */
+  useName: string;
   lastName: string;
   number: string | null;
   position: string | null;
@@ -1454,7 +1456,13 @@ export function buildAcquisitionStory(
 
 function mapContractPayload(data: unknown): MlbPlayerContract | null {
   if (!data || typeof data !== "object") return null;
-  const d = data as {
+  // supabase-js occasionally nests the body; unwrap once.
+  const root = data as Record<string, unknown>;
+  const nested =
+    root.data && typeof root.data === "object" && !Array.isArray(root.data)
+      ? (root.data as Record<string, unknown>)
+      : root;
+  const d = nested as {
     error?: string;
     contractStatus?: string | null;
     currentSalary?: MlbPlayerContract["currentSalary"];
@@ -1485,6 +1493,45 @@ function mapContractPayload(data: unknown): MlbPlayerContract | null {
     aav: d.aav ?? null,
     totalValue: d.totalValue ?? null,
   };
+}
+
+/** Spotrac ids we already know — skip search entirely when BBRef blips. */
+const SPOTRAC_PLAYER_HINTS: Record<string, string> = {
+  "andre pallante": "https://www.spotrac.com/mlb/player/_/id/30525/andre-pallante",
+  "neil pallante": "https://www.spotrac.com/mlb/player/_/id/30525/andre-pallante",
+  pallante: "https://www.spotrac.com/mlb/player/_/id/30525/andre-pallante",
+};
+
+function spotracHintForName(name: string): string | null {
+  const key = name.trim().toLowerCase().replace(/\s+/g, " ");
+  return SPOTRAC_PLAYER_HINTS[key] ?? null;
+}
+
+/** Build lookup names: prefer useName over legal firstName; skip ambiguous single tokens. */
+export function contractLookupNames(input: {
+  name: string;
+  useName?: string;
+  firstName?: string;
+  lastName?: string;
+}): string[] {
+  const last = (input.lastName ?? "").trim();
+  const use = (input.useName ?? "").trim();
+  const first = (input.firstName ?? "").trim();
+  const full = input.name.trim();
+  const candidates = [
+    full,
+    use && last ? `${use} ${last}` : "",
+    first && last ? `${first} ${last}` : "",
+    // Last names only when distinctive enough to avoid "Lee"/"Cruz" collisions.
+    last.length >= 5 ? last : "",
+  ];
+  return candidates.filter((n, i, arr) => {
+    if (n.length < 3) return false;
+    if (arr.indexOf(n) !== i) return false;
+    // Never search bare first/use names ("Andre" → wrong player).
+    if (!n.includes(" ") && n.toLowerCase() !== last.toLowerCase()) return false;
+    return true;
+  });
 }
 
 async function invokeSportsContract(body: Record<string, unknown>): Promise<MlbPlayerContract | null> {
@@ -1521,19 +1568,31 @@ async function invokeSportsContract(body: Record<string, unknown>): Promise<MlbP
 
 export async function fetchPlayerContract(
   playerName: string,
-  opts?: { url?: string | null; altNames?: string[] },
+  opts?: { url?: string | null; altNames?: string[]; useName?: string; firstName?: string; lastName?: string },
 ): Promise<MlbPlayerContract | null> {
-  const names = [
-    playerName.trim(),
-    ...(opts?.altNames ?? []).map((n) => n.trim()),
-  ].filter((n, i, arr) => n.length >= 3 && arr.indexOf(n) === i);
+  const names = contractLookupNames({
+    name: playerName,
+    useName: opts?.useName,
+    firstName: opts?.firstName,
+    lastName: opts?.lastName,
+  });
+  for (const alt of opts?.altNames ?? []) {
+    const t = alt.trim();
+    if (t.length >= 3 && !names.includes(t) && (t.includes(" ") || t.length >= 5)) names.push(t);
+  }
 
   if (!names.length) return null;
+
+  const hint =
+    (opts?.url && opts.url.trim()) ||
+    spotracHintForName(playerName) ||
+    names.map(spotracHintForName).find(Boolean) ||
+    null;
 
   let lastError: Error | null = null;
   for (const name of names) {
     const attempts: Record<string, unknown>[] = [
-      { action: "contract", name, ...(opts?.url ? { url: opts.url } : {}) },
+      { action: "contract", name, ...(hint ? { url: hint } : {}) },
       { action: "bbref", name },
     ];
     for (const body of attempts) {
@@ -1546,7 +1605,8 @@ export async function fetchPlayerContract(
     }
   }
   if (lastError) throw lastError;
-  return null;
+  // Throw so React Query retries instead of caching an empty success.
+  throw new Error("No salary table came back from Baseball Reference / Spotrac yet");
 }
 
 export type MlbPlayerBrief = {
@@ -2186,6 +2246,8 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
         id?: number;
         fullName?: string;
         firstName?: string;
+        useName?: string;
+        middleName?: string;
         lastName?: string;
         primaryNumber?: string;
         primaryPosition?: { abbreviation?: string; name?: string };
@@ -2317,6 +2379,7 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
     id: p.id ?? id,
     name: p.fullName ?? "—",
     firstName: p.firstName ?? "",
+    useName: p.useName ?? p.middleName ?? p.firstName ?? "",
     lastName: p.lastName ?? "",
     number: p.primaryNumber ?? null,
     position: p.primaryPosition?.abbreviation ?? null,
