@@ -16,6 +16,7 @@ import MlbPlayerPage from "@/pages/MlbPlayerPage";
 import MlbGamePage from "@/pages/MlbGamePage";
 import MlbManagersPage from "@/pages/MlbManagersPage";
 import MlbManagerPage from "@/pages/MlbManagerPage";
+import RssPage from "@/pages/RssPage";
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
 import { markSportsSolo } from "@/lib/sports-home";
 
@@ -109,6 +110,7 @@ export default function App() {
               <Route path="/sports/mlb/managers/:managerId" element={<MlbManagerPage />} />
               <Route path="/sports/mlb/player/:playerId" element={<MlbPlayerPage />} />
               <Route path="/sports/mlb/game/:gamePk" element={<MlbGamePage />} />
+              <Route path="/rss" element={<RssPage />} />
             </Route>
             <Route path="*" element={<HomeRedirect />} />
           </Routes>

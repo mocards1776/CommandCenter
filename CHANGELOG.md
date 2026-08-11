@@ -2,6 +2,15 @@
 
 ---
 
+## RSS reader — August 11, 2026
+
+- Added `/rss` page with Missouri Scout feed (`rss.app` XML).
+- New `rss` edge function fetches the feed and extracts full article HTML
+  (reader-mode style) so truncated Squarespace snippets are readable in-app.
+- Nav entry under Command Center chrome (desktop + mobile).
+
+---
+
 ## NL Central macOS widget — August 10, 2026
 
 - Added `NLCentralStandings/`: native WidgetKit desktop widget for NL Central

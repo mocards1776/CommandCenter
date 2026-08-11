@@ -57,7 +57,7 @@ npm run lint
   variable changes do *not* apply to existing deployments; redeploy after
   editing them.
 - **Edge functions** — `supabase functions deploy <name>` (`todoist`,
-  `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`)
+  `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`, `sports`, `rss`)
 - **Migrations** — applied to the Supabase project; `supabase/migrations/`
   is the record.
 
@@ -118,12 +118,11 @@ npm run lint
 
 ## Status
 
-Rebuilt pages: Login, Dashboard, Todos, Habits, Reading — "Capitol" theme (navy
+Rebuilt pages: Login, Dashboard, Todos, Habits, Reading, RSS, Sports — "Capitol" theme (navy
 and red, engraved star field, Playfair Display + Libre Franklin).
 
 Not yet rebuilt — the schema supports them, the UI does not exist yet: Focus,
-Calendar/TimeBlock, Stats, Notes, Braindump, Daily Summary, Weather, Sports,
-CRM.
+Calendar/TimeBlock, Stats, Notes, Braindump, Daily Summary, Weather, CRM.
 
 The FastAPI backend in `CommandCenter-backend/` is **retired** and no longer
 called by the frontend. It is kept only for reference until the rebuild is

@@ -6,6 +6,7 @@ import {
   Repeat,
   BookOpen,
   Trophy,
+  Newspaper,
   LogOut,
   Users,
   Flame,
@@ -32,6 +33,7 @@ const NAV = [
   { to: "/todos", label: "Todos", short: "Todos", Icon: ListChecks },
   { to: "/habits", label: "Habits", short: "Habits", Icon: Repeat },
   { to: "/reading", label: "Reading", short: "Reading", Icon: BookOpen },
+  { to: "/rss", label: "RSS", short: "RSS", Icon: Newspaper },
   { to: "/sports", label: "Sports", short: "Sports", Icon: Trophy },
 ];
 
@@ -113,7 +115,8 @@ export default function AppShell() {
     if (
       pathname.startsWith("/dashboard") ||
       pathname.startsWith("/todos") ||
-      pathname.startsWith("/habits")
+      pathname.startsWith("/habits") ||
+      pathname.startsWith("/rss")
     ) {
       clearReadingSolo();
       clearSportsSolo();
