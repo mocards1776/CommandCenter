@@ -25,5 +25,8 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
    `(user_id, series)`, and `book_highlights.my_note` — the reader's own note,
    separate from Readwise's `note` so a re-sync can't overwrite it.
 
+9. `rss_filters` — per-user phrase / URL blacklist for Dispatch (`kind` in
+   `phrase|url`, unique `(user_id, kind, value)`, owner-scoped RLS).
+
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.

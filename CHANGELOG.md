@@ -2,6 +2,14 @@
 
 ---
 
+## Dispatch feed + filters — August 11, 2026
+
+- Third feed: **Cardinals Wire** (`rss.app` tdKZI96…).
+- Phrase + URL blacklist filters (`rss_filters`), managed under Filters in the
+  sidebar; Ban on a row blacklists that host.
+
+---
+
 ## Dispatch cleanup — August 11, 2026
 
 - Strip STL Today share/gift/follow/notification chrome from extracted HTML;
