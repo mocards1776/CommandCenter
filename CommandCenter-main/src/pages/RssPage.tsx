@@ -49,11 +49,11 @@ function FeedList({
                 {formatFeedDate(item.publishedAt)}
                 {item.author ? ` · ${item.author}` : ""}
               </div>
-              <h3 className="font-display text-cream text-[22px] leading-snug transition-colors group-hover:text-white md:text-[26px]">
+              <h3 className="font-rss text-cream text-[22px] leading-snug font-medium transition-colors group-hover:text-white md:text-[26px]">
                 {item.title}
               </h3>
               {item.snippet ? (
-                <p className="text-chalk mt-2 line-clamp-2 text-[13.5px] leading-relaxed">
+                <p className="font-rss text-chalk mt-2 line-clamp-2 text-[14.5px] leading-relaxed">
                   {item.snippet}
                 </p>
               ) : null}
@@ -87,32 +87,32 @@ function ReaderView({
   const image = article.data?.image || item.image;
 
   return (
-    <article className="mx-auto max-w-[42rem]">
+    <article className="font-rss mx-auto max-w-[42rem]">
       <button
         type="button"
         onClick={onBack}
-        className="text-chalk hover:text-cream mb-6 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] transition-colors"
+        className="font-body text-chalk hover:text-cream mb-6 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] transition-colors"
       >
         <ArrowLeft size={14} />
         Back to feed
       </button>
 
       <header className="mb-8">
-        <div className="label-caps text-accent mb-3">
+        <div className="label-caps font-body text-accent mb-3">
           {formatFeedDate(item.publishedAt)}
           {byline ? ` · ${byline}` : ""}
           {article.data?.wordCount
             ? ` · ${readingMinutes(article.data.wordCount)}`
             : ""}
         </div>
-        <h2 className="font-display text-cream text-[32px] leading-[1.15] md:text-[40px]">
+        <h2 className="text-cream text-[32px] leading-[1.15] font-semibold md:text-[40px]">
           {title}
         </h2>
         <a
           href={item.link}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-chalk hover:text-accent mt-4 inline-flex items-center gap-1.5 text-[12px] transition-colors"
+          className="font-body text-chalk hover:text-accent mt-4 inline-flex items-center gap-1.5 text-[12px] transition-colors"
         >
           Original
           <ExternalLink size={12} />
@@ -128,9 +128,9 @@ function ReaderView({
       ) : null}
 
       {article.isLoading ? (
-        <p className="label-caps animate-pulse">Extracting text</p>
+        <p className="label-caps font-body animate-pulse">Extracting text</p>
       ) : article.isError ? (
-        <div className="bg-panel border-alert/40 text-alert rounded border p-4 text-sm">
+        <div className="bg-panel border-alert/40 font-body text-alert rounded border p-4 text-sm">
           Could not extract article text:{" "}
           {article.error instanceof Error ? article.error.message : String(article.error)}
           <div className="mt-3">
@@ -146,7 +146,7 @@ function ReaderView({
         </div>
       ) : (
         <div
-          className="rss-reader prose-invert max-w-none text-[17px] leading-[1.7] text-[#e8eaf0] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:border-accent/40 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-chalk [&_em]:text-[#d9dce6] [&_h2]:font-display [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:text-cream [&_h3]:font-display [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:text-cream [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5"
+          className="rss-reader max-w-none text-[18px] leading-[1.75] text-[#e8eaf0] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:border-accent/40 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-chalk [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5"
           dangerouslySetInnerHTML={{ __html: article.data?.contentHtml ?? "" }}
         />
       )}
@@ -171,10 +171,10 @@ export default function RssPage() {
           <div className="relative z-10 flex flex-wrap items-end justify-between gap-4">
             <div>
               <div className="rule-head">RSS</div>
-              <h2 className="font-display text-cream mt-2 text-[34px] leading-tight md:text-[40px]">
+              <h2 className="font-rss text-cream mt-2 text-[34px] leading-tight font-semibold md:text-[40px]">
                 {feed.data?.title || "Missouri Scout"}
               </h2>
-              <p className="text-chalk mt-2 max-w-xl text-sm leading-relaxed">
+              <p className="font-rss text-chalk mt-2 max-w-xl text-[15px] leading-relaxed">
                 Full article text extracted for reading — no need for Apple Reader Mode.
               </p>
             </div>
