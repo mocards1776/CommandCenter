@@ -18,11 +18,13 @@ import {
   fetchMlbPlayerRecent,
   fetchMlbPlayerSplits,
   fetchMlbPlayerTransactions,
+  fetchPlayerBrief,
   fetchPlayerContract,
   teamPagePath,
   type MlbGameLogEntry,
   type MlbLeagueRank,
   type MlbPerformanceSummary,
+  type MlbPlayerBrief,
   type MlbPlayerCard,
   type MlbPlayerSeasonRow,
   type MlbPlayerStatLine,
@@ -66,7 +68,7 @@ export default function MlbPlayerPage() {
 
   const contract = useQuery({
     queryKey: [
-      "mlb-player-contract-v6",
+      "mlb-player-contract-v7",
       player.data?.name,
       player.data?.firstName,
       player.data?.lastName,
@@ -81,6 +83,14 @@ export default function MlbPlayerPage() {
     enabled: Boolean(player.data?.name),
     staleTime: 300_000,
     retry: 2,
+  });
+
+  const brief = useQuery({
+    queryKey: ["mlb-player-brief-v1", player.data?.name],
+    queryFn: () => fetchPlayerBrief(player.data!.name),
+    enabled: Boolean(player.data?.name),
+    staleTime: 300_000,
+    retry: 1,
   });
 
   const isPitcherPreview =
@@ -226,6 +236,10 @@ export default function MlbPlayerPage() {
         onToggleFavorite={() => toggleFav.mutate()}
       />
 
+      {(brief.data || brief.isPending) && (
+        <RotoWireBriefCard brief={brief.data ?? null} loading={brief.isPending} />
+      )}
+
       {performance && <PerformanceSummaryCard summary={performance} />}
 
       {seasonStats.length > 0 && (
@@ -324,6 +338,63 @@ export default function MlbPlayerPage() {
   );
 }
 
+function RotoWireBriefCard({
+  brief,
+  loading,
+}: {
+  brief: MlbPlayerBrief | null;
+  loading: boolean;
+}) {
+  return (
+    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="border-b border-white/[0.06] flex items-center justify-between gap-3 px-4 py-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            RotoWire
+          </p>
+          <p className="text-cream mt-1 text-[13px] leading-snug">
+            Expert player note — in addition to the MLB form summary below.
+          </p>
+        </div>
+        {brief?.url ? (
+          <a
+            href={brief.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-chalk-dim hover:text-chalk inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em]"
+          >
+            Source <ExternalLink size={12} />
+          </a>
+        ) : null}
+      </div>
+      <div className="px-4 py-3">
+        {loading ? (
+          <div className="text-chalk-dim flex items-center gap-2 text-[13px]">
+            <Loader2 size={14} className="animate-spin" />
+            Loading brief…
+          </div>
+        ) : brief?.story || brief?.headline ? (
+          <div className="space-y-2">
+            {brief.headline ? (
+              <p className="text-cream text-[15px] font-medium leading-snug">{brief.headline}</p>
+            ) : null}
+            {brief.story ? (
+              <p className="text-chalk text-[14px] leading-relaxed">{brief.story}</p>
+            ) : null}
+            {brief.published ? (
+              <p className="text-[11px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                {brief.published}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-chalk-dim text-[13px]">No RotoWire note available right now.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function PerformanceSummaryCard({ summary }: { summary: MlbPerformanceSummary }) {
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
@@ -332,7 +403,7 @@ function PerformanceSummaryCard({ summary }: { summary: MlbPerformanceSummary })
           Form
         </p>
         <p className="text-cream mt-1 text-[13px] leading-snug">
-          Built from MLB game logs — no AI summary.
+          Built from MLB game logs.
         </p>
       </div>
       <div className="grid gap-0 sm:grid-cols-2">

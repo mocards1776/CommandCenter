@@ -1533,8 +1533,8 @@ export async function fetchPlayerContract(
   let lastError: Error | null = null;
   for (const name of names) {
     const attempts: Record<string, unknown>[] = [
-      { action: "bbref", name },
       { action: "contract", name, ...(opts?.url ? { url: opts.url } : {}) },
+      { action: "bbref", name },
     ];
     for (const body of attempts) {
       try {
@@ -1547,6 +1547,79 @@ export async function fetchPlayerContract(
   }
   if (lastError) throw lastError;
   return null;
+}
+
+export type MlbPlayerBrief = {
+  source: string;
+  name: string;
+  espnId: string | null;
+  headline: string | null;
+  story: string | null;
+  description: string | null;
+  published: string | null;
+  news: { headline: string; description: string }[];
+  url: string | null;
+};
+
+export async function fetchPlayerBrief(playerName: string): Promise<MlbPlayerBrief | null> {
+  const name = playerName.trim();
+  if (name.length < 3) return null;
+  try {
+    const { data, error } = await supabase.functions.invoke("sports", {
+      body: { action: "playerBrief", name },
+    });
+    const payload = (data ?? null) as
+      | (Partial<MlbPlayerBrief> & { error?: string })
+      | null;
+    if (payload && !payload.error && (payload.headline || payload.story || payload.news?.length)) {
+      return {
+        source: payload.source ?? "rotowire",
+        name: payload.name ?? name,
+        espnId: payload.espnId ?? null,
+        headline: payload.headline ?? null,
+        story: payload.story ?? null,
+        description: payload.description ?? null,
+        published: payload.published ?? null,
+        news: payload.news ?? [],
+        url: payload.url ?? null,
+      };
+    }
+    if (error && !payload) throw error;
+  } catch {
+    /* fall through to direct fetch */
+  }
+
+  // Browser fallback if the edge function is unavailable.
+  try {
+    const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    if (!base || !key) return null;
+    const res = await fetch(`${base}/functions/v1/sports`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+        apikey: key,
+      },
+      body: JSON.stringify({ action: "playerBrief", name }),
+    });
+    if (!res.ok) return null;
+    const payload = (await res.json()) as Partial<MlbPlayerBrief> & { error?: string };
+    if (payload.error || !(payload.headline || payload.story || payload.news?.length)) return null;
+    return {
+      source: payload.source ?? "rotowire",
+      name: payload.name ?? name,
+      espnId: payload.espnId ?? null,
+      headline: payload.headline ?? null,
+      story: payload.story ?? null,
+      description: payload.description ?? null,
+      published: payload.published ?? null,
+      news: payload.news ?? [],
+      url: payload.url ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 const SPLIT_HIT_KEYS: [string, string][] = [

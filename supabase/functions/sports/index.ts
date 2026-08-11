@@ -78,10 +78,24 @@ async function scrapeBbref(name: string) {
   });
   let html = await searchRes.text();
   let playerUrl = searchRes.url;
+  const want = name.trim().toLowerCase();
   if (!/\/players\/[a-z]\/[a-z0-9]+\.shtml/i.test(playerUrl)) {
-    const m = html.match(/href="(\/players\/[a-z]\/[a-z0-9]+\.shtml)"/i);
-    if (!m) return { error: "Player not found on Baseball Reference", name };
-    playerUrl = `https://www.baseball-reference.com${m[1]}`;
+    // Prefer an anchor whose link text matches the player name.
+    const linkRe = /href="(\/players\/[a-z]\/[a-z0-9]+\.shtml)"[^>]*>([^<]{2,80})<\/a>/gi;
+    let best: { path: string; score: number } | null = null;
+    let m: RegExpExecArray | null;
+    while ((m = linkRe.exec(html))) {
+      const label = stripTags(m[2]).toLowerCase();
+      let score = 0;
+      if (label === want) score = 100;
+      else if (label.startsWith(want) || want.startsWith(label)) score = 80;
+      else if (label.includes(want.split(/\s+/).slice(-1)[0] ?? "")) score = 40;
+      if (!best || score > best.score) best = { path: m[1], score };
+    }
+    const fallback = html.match(/href="(\/players\/[a-z]\/[a-z0-9]+\.shtml)"/i);
+    const path = (best && best.score >= 40 ? best.path : null) ?? fallback?.[1];
+    if (!path) return { error: "Player not found on Baseball Reference", name };
+    playerUrl = `https://www.baseball-reference.com${path}`;
     html = await (
       await fetch(playerUrl, {
         headers: { "User-Agent": UA, Accept: "text/html", Referer: searchUrl },
@@ -89,25 +103,38 @@ async function scrapeBbref(name: string) {
     ).text();
   }
   const salaries: { year: string; amount: number; team: string | null }[] = [];
+  // BBRef often wraps tables in HTML comments — search the raw markup either way.
+  const searchable = html.replace(/<!--([\s\S]*?)-->/g, "$1");
   // Prefer rows that carry data-amount (salary tables).
   const rowRe =
     /<tr[^>]*>[\s\S]*?data-stat="year_ID"[^>]*>\s*(\d{4})[\s\S]*?data-stat="team_name"[^>]*>([\s\S]*?)<\/td>[\s\S]*?data-amount="([\d.]+)"[\s\S]*?<\/tr>/gi;
   let sm: RegExpExecArray | null;
-  while ((sm = rowRe.exec(html))) {
-    salaries.push({ year: sm[1], team: stripTags(sm[2]) || null, amount: Number(sm[3]) });
+  while ((sm = rowRe.exec(searchable))) {
+    const amount = Number(sm[3]);
+    if (!Number.isFinite(amount)) continue;
+    salaries.push({ year: sm[1], team: stripTags(sm[2]) || null, amount });
   }
   if (!salaries.length) {
     const loose =
       /data-stat="year_ID"[^>]*>(\d{4})[\s\S]*?data-stat="team_name"[^>]*>([\s\S]*?)<\/td>[\s\S]*?data-amount="([\d.]+)"/gi;
-    while ((sm = loose.exec(html))) {
-      salaries.push({ year: sm[1], team: stripTags(sm[2]) || null, amount: Number(sm[3]) });
+    while ((sm = loose.exec(searchable))) {
+      const amount = Number(sm[3]);
+      if (!Number.isFinite(amount)) continue;
+      salaries.push({ year: sm[1], team: stripTags(sm[2]) || null, amount });
     }
   }
+  // Dedupe by year (keep latest / highest amount when duplicated).
+  const byYear = new Map<string, { year: string; amount: number; team: string | null }>();
+  for (const s of salaries) {
+    const prev = byYear.get(s.year);
+    if (!prev || s.amount >= prev.amount) byYear.set(s.year, s);
+  }
+  const uniqueSalaries = [...byYear.values()].sort((a, b) => Number(a.year) - Number(b.year));
   const statusMatch =
-    html.match(/Contract Status<\/strong>\s*:?\s*([^<]+)/i) ??
-    html.match(/(\d{4})\s*Contract Status<\/strong>\s*:?\s*([^<\n]+)/i);
+    searchable.match(/Contract Status<\/strong>\s*:?\s*([^<]+)/i) ??
+    searchable.match(/(\d{4})\s*Contract Status<\/strong>\s*:?\s*([^<\n]+)/i);
   const contractStatus = statusMatch
-    ? stripTags(statusMatch[statusMatch.length - 1] ?? "")
+    ? stripTags(statusMatch[statusMatch.length - 1] ?? "").replace(/\s+/g, " ").trim()
     : null;
   const acquisition: string[] = [];
   for (const re of [
@@ -115,12 +142,12 @@ async function scrapeBbref(name: string) {
     /<p><strong>[^<]+<\/strong>\s*Traded by[\s\S]*?<\/p>/gi,
     /<p><strong>[^<]+<\/strong>\s*Signed as[\s\S]*?<\/p>/gi,
   ]) {
-    for (const hit of html.matchAll(re)) {
+    for (const hit of searchable.matchAll(re)) {
       const text = stripTags(hit[0]);
       if (text && !acquisition.includes(text)) acquisition.push(text);
     }
   }
-  const latest = pickCurrentSalary(salaries, contractStatus);
+  const latest = pickCurrentSalary(uniqueSalaries, contractStatus);
   const totals = parseBbrefTotals(contractStatus);
   return {
     source: "baseball-reference",
@@ -135,7 +162,7 @@ async function scrapeBbref(name: string) {
           team: latest.team,
         }
       : null,
-    salaryHistory: salaries.slice(-8).map((s) => ({
+    salaryHistory: uniqueSalaries.slice(-12).map((s) => ({
       year: s.year,
       amount: s.amount,
       display: moneyDisplay(s.amount),
@@ -159,10 +186,11 @@ async function findSpotracUrl(name: string, hintUrl?: string | null): Promise<st
     return hintUrl.split("?")[0];
   }
   const slug = slugifyName(name);
+  const last = slug.split("-").filter(Boolean).slice(-1)[0] ?? "";
   const urls = [
-    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`site:spotrac.com/mlb/player ${name}`)}`,
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`site:spotrac.com/mlb/player/_/id ${name}`)}`,
     `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`"${name}" site:spotrac.com/mlb/player/_/id`)}`,
-    `https://www.bing.com/search?q=${encodeURIComponent(`"${name}" site:spotrac.com/mlb/player`)}`,
+    `https://www.bing.com/search?q=${encodeURIComponent(`"${name}" site:spotrac.com/mlb/player/_/id`)}`,
   ];
   for (const url of urls) {
     try {
@@ -173,9 +201,21 @@ async function findSpotracUrl(name: string, hintUrl?: string | null): Promise<st
         ...html.matchAll(/spotrac\.com\/mlb\/player\/_\/id\/(\d+)\/([a-z0-9-]+)/gi),
       ];
       if (!matches.length) continue;
-      const exact = matches.find((m) => m[2].toLowerCase() === slug);
-      const pick = exact ?? matches[0];
-      return `https://www.spotrac.com/mlb/player/_/id/${pick[1]}/${pick[2]}`;
+      const ranked = matches
+        .map((m) => {
+          const s = m[2].toLowerCase();
+          let score = 0;
+          if (s === slug) score = 100;
+          else if (s.endsWith(slug) || slug.endsWith(s)) score = 80;
+          else if (last && s.endsWith(`-${last}`) && s.includes(slug.split("-")[0] ?? "")) score = 70;
+          else if (last && s.includes(last)) score = 20;
+          return { id: m[1], slug: s, score };
+        })
+        .filter((x) => x.score >= 70)
+        .sort((a, b) => b.score - a.score);
+      const pick = ranked[0];
+      if (!pick) continue;
+      return `https://www.spotrac.com/mlb/player/_/id/${pick.id}/${pick.slug}`;
     } catch {
       /* next */
     }
@@ -277,6 +317,76 @@ async function scrapeContract(name: string, hintUrl?: string | null) {
     /* */
   }
   return bb ?? { error: "Contract not found", name };
+}
+
+function normPerson(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\./g, "")
+    .replace(/\b(jr|sr|ii|iii|iv)\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** RotoWire write-up via ESPN athlete overview (plus a couple news headlines). */
+async function scrapePlayerBrief(name: string) {
+  const want = normPerson(name);
+  const searchUrl =
+    `https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&type=player&limit=8&query=` +
+    encodeURIComponent(name.trim());
+  const searchRes = await fetch(searchUrl, {
+    headers: { Accept: "application/json", "User-Agent": UA, Referer: "https://www.espn.com/" },
+  });
+  if (!searchRes.ok) return { error: `ESPN search ${searchRes.status}`, name };
+  const searchJson = (await searchRes.json()) as {
+    items?: { id?: string; displayName?: string; league?: string; type?: string }[];
+  };
+  const mlb = (searchJson.items ?? []).filter(
+    (it) => String(it.league ?? "").toLowerCase() === "mlb" || it.type === "player",
+  );
+  const hit =
+    mlb.find((it) => normPerson(it.displayName ?? "") === want) ??
+    mlb.find((it) => normPerson(it.displayName ?? "").includes(want.split(" ").slice(-1)[0] ?? "")) ??
+    mlb[0];
+  if (!hit?.id) return { error: "Player not found on ESPN", name };
+
+  const ovRes = await fetch(
+    `https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${hit.id}/overview`,
+    { headers: { Accept: "application/json", "User-Agent": UA, Referer: "https://www.espn.com/" } },
+  );
+  if (!ovRes.ok) return { error: `ESPN overview ${ovRes.status}`, name, espnId: hit.id };
+  const ov = (await ovRes.json()) as {
+    rotowire?: {
+      headline?: string;
+      story?: string;
+      description?: string;
+      published?: string;
+    };
+    news?: { headline?: string; description?: string; published?: string; type?: string }[];
+  };
+  const rw = ov.rotowire ?? {};
+  const news = (ov.news ?? [])
+    .filter((n) => n.headline && n.type !== "Media")
+    .slice(0, 3)
+    .map((n) => ({
+      headline: n.headline ?? "",
+      description: n.description ?? "",
+    }));
+  if (!rw.headline && !rw.story && !news.length) {
+    return { error: "No RotoWire brief available", name, espnId: hit.id };
+  }
+  return {
+    source: "rotowire",
+    provider: "espn",
+    name: hit.displayName ?? name,
+    espnId: String(hit.id),
+    headline: rw.headline ?? rw.description ?? null,
+    story: rw.story ?? null,
+    description: rw.description ?? null,
+    published: rw.published ?? null,
+    news,
+    url: `https://www.espn.com/mlb/player/_/id/${hit.id}`,
+  };
 }
 
 async function findBbrefManagerUrl(name: string): Promise<string | null> {
@@ -757,6 +867,15 @@ Deno.serve(async (req: Request) => {
       const data =
         body.action === "bbref" ? await scrapeBbref(name) : await scrapeContract(name, hintUrl);
       return json(data);
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 200);
+    }
+  }
+  if (body.action === "playerBrief") {
+    const name = String(body.name ?? "").trim();
+    if (name.length < 3 || name.length > 80) return json({ error: "Bad name" }, 400);
+    try {
+      return json(await scrapePlayerBrief(name));
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 200);
     }

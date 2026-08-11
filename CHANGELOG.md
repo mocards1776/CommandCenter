@@ -2,6 +2,15 @@
 
 ---
 
+## Player contract + RotoWire brief — August 11, 2026
+
+- Contract scrape: unwrap Baseball Reference HTML comments, better player match,
+  stricter Spotrac URL picking; prefer combined `contract` action.
+- Player pages show a **RotoWire** note (via ESPN) above the MLB game-log form
+  summary; removed the “no AI summary” line.
+
+---
+
 ## Dispatch reader UX — August 11, 2026
 
 - Player names open an in-app peek (article stays open); any MLB player can link,
