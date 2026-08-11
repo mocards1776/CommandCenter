@@ -479,13 +479,6 @@ async function findBbrefManagerUrl(name: string): Promise<string | null> {
   return null;
 }
 
-function parseBbrefInt(raw: string): number | null {
-  const t = raw.trim();
-  if (!/^-?\d+$/.test(t)) return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
-}
-
 function extractBbrefManagerPhoto(html: string): string | null {
   const photoRaw =
     html.match(
@@ -520,374 +513,6 @@ function detectManagerLeash(html: string): { interim: boolean; shortLeash: boole
   return { interim, shortLeash };
 }
 
-async function scrapeBbrefManager(name: string) {
-  const url = await findBbrefManagerUrl(name);
-  if (!url) return { error: "Manager page not found", name };
-  const html = await (
-    await fetch(url, {
-      headers: { "User-Agent": UA, Accept: "text/html", Referer: "https://www.baseball-reference.com/" },
-    })
-  ).text();
-  if (/404|Page Not Found/i.test(html) && !/manager_stats/.test(html)) {
-    return { error: "Manager page not found", name };
-  }
-  const i = html.indexOf('id="div_manager_stats"');
-  // Keep the primary manager_stats table only — later abbr/team tables are 0–0 junk.
-  const tableEnd = i >= 0 ? html.indexOf("</table>", i) : -1;
-  const chunk =
-    i >= 0
-      ? html.slice(i, tableEnd > i ? tableEnd + 8 : i + 40000)
-      : html;
-  const rows = [...chunk.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((m) => m[1]);
-  const cell = (row: string, key: string) => {
-    const m = row.match(new RegExp(`data-stat="${key}"[^>]*>([\\s\\S]*?)</t`, "i"));
-    return m ? stripTags(m[1]) : "";
-  };
-  const seasons: {
-    season: number;
-    team: string;
-    league: string;
-    games: number;
-    wins: number;
-    losses: number;
-    pct: string;
-    finish: number | null;
-    postWins: number;
-    postLosses: number;
-    comments: string;
-  }[] = [];
-  for (const row of rows) {
-    const yearRaw = cell(row, "year_ID");
-    const wins = parseBbrefInt(cell(row, "W"));
-    const losses = parseBbrefInt(cell(row, "L"));
-    const team = cell(row, "team_ID") || "—";
-    // Skip empty / abbreviation summary rows (COL/ATL with blank W-L → Number('') === 0).
-    if (!/^\d{4}$/.test(yearRaw) || wins == null || losses == null) continue;
-    if (wins + losses <= 0) continue;
-    if (/^[A-Z]{2,3}$/.test(team)) continue;
-    const finishRaw = cell(row, "finish");
-    const comments = cell(row, "comments") || "";
-    seasons.push({
-      season: Number(yearRaw),
-      team,
-      league: cell(row, "lg_ID") || "",
-      games: parseBbrefInt(cell(row, "G")) ?? wins + losses,
-      wins,
-      losses,
-      pct: cell(row, "win_loss_perc") || ".000",
-      finish: finishRaw && /^\d+$/.test(finishRaw) ? Number(finishRaw) : null,
-      postWins: parseBbrefInt(cell(row, "W_post")) ?? 0,
-      postLosses: parseBbrefInt(cell(row, "L_post")) ?? 0,
-      comments,
-    });
-  }
-  // Totals row: empty year, empty team — keep the largest W+L (ignore trailing 0–0 junk).
-  let career: {
-    wins: number;
-    losses: number;
-    pct: string;
-    games: number;
-    postWins: number;
-    postLosses: number;
-  } | null = null;
-  for (const row of rows) {
-    const yearRaw = cell(row, "year_ID");
-    const team = cell(row, "team_ID");
-    const wins = parseBbrefInt(cell(row, "W"));
-    const losses = parseBbrefInt(cell(row, "L"));
-    if (yearRaw !== "" || team !== "" || wins == null || losses == null) continue;
-    if (wins + losses <= 0) continue;
-    const next = {
-      wins,
-      losses,
-      pct: cell(row, "win_loss_perc") || ".000",
-      games: parseBbrefInt(cell(row, "G")) ?? wins + losses,
-      postWins: parseBbrefInt(cell(row, "W_post")) ?? 0,
-      postLosses: parseBbrefInt(cell(row, "L_post")) ?? 0,
-    };
-    if (!career || next.wins + next.losses > career.wins + career.losses) career = next;
-  }
-  if (!career && seasons.length) {
-    const wins = seasons.reduce((s, x) => s + x.wins, 0);
-    const losses = seasons.reduce((s, x) => s + x.losses, 0);
-    const postWins = seasons.reduce((s, x) => s + x.postWins, 0);
-    const postLosses = seasons.reduce((s, x) => s + x.postLosses, 0);
-    career = {
-      wins,
-      losses,
-      pct: wins + losses > 0 ? (wins / (wins + losses)).toFixed(3).replace(/^0/, "") : ".000",
-      games: wins + losses,
-      postWins,
-      postLosses,
-    };
-  }
-
-  const stints: {
-    team: string;
-    start: number;
-    end: number;
-    wins: number;
-    losses: number;
-    pct: string;
-    departure: string | null;
-    departureUrl: string | null;
-  }[] = [];
-  for (const s of seasons) {
-    const last = stints[stints.length - 1];
-    if (last && last.team === s.team && s.season === last.end + 1) {
-      last.end = s.season;
-      last.wins += s.wins;
-      last.losses += s.losses;
-      const g = last.wins + last.losses;
-      last.pct = g > 0 ? (last.wins / g).toFixed(3).replace(/^0/, "") : ".000";
-    } else {
-      stints.push({
-        team: s.team,
-        start: s.season,
-        end: s.season,
-        wins: s.wins,
-        losses: s.losses,
-        pct: s.pct,
-        departure: null,
-        departureUrl: null,
-      });
-    }
-  }
-
-  const currentYear = new Date().getFullYear();
-  // Baseline departure blurb from final season of each completed stint.
-  for (let i = 0; i < stints.length; i++) {
-    const st = stints[i];
-    const isCurrent = i === stints.length - 1 && st.end >= currentYear - 0;
-    if (isCurrent) {
-      st.departure = null;
-      st.departureUrl = null;
-      continue;
-    }
-    const lastSeason = seasons.filter((s) => s.team === st.team && s.season === st.end)[0];
-    const finish =
-      lastSeason?.finish != null ? `${lastSeason.finish}${ordinal(lastSeason.finish)}` : null;
-    st.departure =
-      lastSeason?.comments ||
-      `Left ${st.team} after ${st.end} (${st.wins}-${st.losses}${finish ? `, ${finish}` : ""})`;
-  }
-
-  // Upgrade departures with a news headline when available (best-effort, timed).
-  try {
-    await Promise.race([
-      Promise.all(
-        stints
-          .filter((st) => st.departure)
-          .slice(0, 3)
-          .map(async (st) => {
-            const teamHint = st.team.split(" ").pop() || st.team;
-            const news = await fetchGoogleNews(
-              `"${name}" ${teamHint} (fired OR dismissed OR "will not return" OR parted OR "mutual agreement") manager MLB`,
-              3,
-            );
-            const hit = news.find((n) =>
-              /fired|dismiss|will not return|parted|mutual|hired|named|replace/i.test(n.title),
-            );
-            if (hit) {
-              st.departure = hit.title;
-              st.departureUrl = hit.url;
-            }
-          }),
-      ),
-      new Promise((resolve) => setTimeout(resolve, 2500)),
-    ]);
-  } catch {
-    /* keep baseline departure blurbs */
-  }
-
-  const divisionTitles = seasons.filter((s) => s.finish === 1).length;
-  const postseasonAppearances = seasons.filter((s) => s.postWins + s.postLosses > 0).length;
-  const managedYears = new Set(seasons.map((s) => s.season));
-  const worldSeriesYears = [
-    ...html.matchAll(/World Series[^<]{0,80}?(\d{4})/gi),
-    ...html.matchAll(/(\d{4})[^<]{0,40}World Series/gi),
-  ]
-    .map((m) => Number(m[1]))
-    .filter((y) => Number.isFinite(y) && managedYears.has(y));
-  const worldSeriesAppearances = new Set(worldSeriesYears).size;
-  const moy = [...html.matchAll(/Manager of the Year \((\d)(?:st|nd|rd|th)\)/gi)].map((m) =>
-    Number(m[1]),
-  );
-  const managerOfYearWins = moy.filter((p) => p === 1).length;
-  const photo = extractBbrefManagerPhoto(html);
-  const leash = detectManagerLeash(html);
-  const interim =
-    leash.interim || seasons.some((s) => /interim/i.test(s.comments));
-
-  return {
-    source: "baseball-reference",
-    url,
-    name,
-    photo,
-    seasons,
-    stints,
-    career,
-    interim,
-    shortLeash: leash.shortLeash || interim,
-    divisionTitles,
-    postseasonAppearances,
-    worldSeriesAppearances,
-    worldSeriesYears: [...new Set(worldSeriesYears)],
-    managerOfYearWins,
-    managerOfYearFinishes: moy,
-  };
-}
-
-function ordinal(n: number): string {
-  const v = n % 100;
-  if (v >= 11 && v <= 13) return "th";
-  return ["th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th"][Math.min(n % 10, 9)];
-}
-
-async function fetchGoogleNews(
-  query: string,
-  limit = 8,
-): Promise<{ title: string; url: string; source: string }[]> {
-  const rss = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
-  try {
-    const xml = await (await fetch(rss, { headers: { "User-Agent": UA, Accept: "application/rss+xml,application/xml,text/xml" } })).text();
-    const items: { title: string; url: string; source: string }[] = [];
-    for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)) {
-      const block = m[1];
-      const title = stripTags(
-        (block.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/i)?.[1] ??
-          block.match(/<title>([^<]+)<\/title>/i)?.[1] ??
-          "").replace(/ - [^-]+$/, ""),
-      );
-      const link =
-        block.match(/<link>([^<]+)<\/link>/i)?.[1] ??
-        block.match(/url="([^"]+)"/i)?.[1] ??
-        "";
-      const source =
-        stripTags(block.match(/<source[^>]*>([^<]+)<\/source>/i)?.[1] ?? "") || "News";
-      if (!title || title.length < 18 || !link) continue;
-      if (/google news/i.test(title)) continue;
-      items.push({ title, url: link, source });
-      if (items.length >= limit) break;
-    }
-    return items;
-  } catch {
-    return [];
-  }
-}
-
-function isRelevantMlbManagerRumor(title: string, url: string, named?: string | null): boolean {
-  const text = `${title} ${url}`;
-  // Wrong sports / roles / off-topic
-  if (
-    /\b(NFL|NHL|NBA|MLS|WNBA|college football|NCAA|Red Wings|general managers?|\bGM\b|head coach|jersey retirement|retire(?:s|d)? (?:his |her )?jersey|ejection|ejected|quick-hook)\b/i.test(
-      text,
-    )
-  ) {
-    return false;
-  }
-  const mlbCue = /\b(MLB|Major League|baseball|skipper|managerial)\b/i.test(text);
-  const managerCue = /\bmanagers?\b|\bskipper\b|\bbench boss\b/i.test(text);
-  const heatCue =
-    /\b(hot seat|on the hot seat|fired|dismissed|will be fired|will not return|ousted|axed|job security|under fire)\b/i.test(
-      text,
-    );
-  if (!heatCue || !managerCue) return false;
-  // Prefer explicit MLB cues; allow manager+heat when clearly not another sport (already filtered).
-  if (!mlbCue && !/\b(AL|NL|American League|National League)\b/i.test(text)) {
-    // still ok if title is clearly "MLB managers" style; otherwise require mlbCue for league feed
-    if (!named) return false;
-  }
-  if (named?.trim()) {
-    const parts = named.trim().split(/\s+/);
-    const last = parts[parts.length - 1];
-    const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (!new RegExp(esc(last), "i").test(text) && !new RegExp(esc(named), "i").test(text)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-async function scrapeManagerRumors(name?: string | null) {
-  const year = new Date().getFullYear();
-  const queries = name?.trim()
-    ? [
-        `"${name.trim()}" MLB (manager OR skipper) ("hot seat" OR fired OR dismissed OR "will not return")`,
-        `"${name.trim()}" (manager OR skipper) ("hot seat" OR fired) (site:x.com OR site:twitter.com OR site:reddit.com OR site:bsky.app)`,
-      ]
-    : [
-        `MLB (manager OR skipper) ("hot seat" OR "on the hot seat" OR fired OR dismissed) ${year}`,
-        `("hot seat" OR fired OR dismissed) (manager OR skipper) MLB -NFL -NHL -NBA -coach`,
-        `MLB manager ("hot seat" OR fired) (site:x.com OR site:twitter.com OR site:reddit.com/r/baseball OR site:bsky.app)`,
-      ];
-
-  const seen = new Set<string>();
-  const items: { title: string; url: string; source: string; channel: string }[] = [];
-
-  for (const q of queries) {
-    for (const hit of await fetchGoogleNews(q, 10)) {
-      if (seen.has(hit.url)) continue;
-      if (!isRelevantMlbManagerRumor(hit.title, hit.url, name)) continue;
-      seen.add(hit.url);
-      const social = /x\.com|twitter\.com|reddit\.com|bsky\.app|nitter/i.test(hit.url);
-      items.push({
-        ...hit,
-        source: social ? hit.source || "Social" : hit.source,
-        channel: social ? "social" : "news",
-      });
-      if (items.length >= 8) break;
-    }
-    if (items.length >= 8) break;
-  }
-
-  // Fallback scrapers when RSS is thin.
-  if (items.length < 3) {
-    const q = queries[0];
-    const urls = [
-      `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
-      `https://www.bing.com/search?q=${encodeURIComponent(q)}`,
-    ];
-    for (const searchUrl of urls) {
-      try {
-        const html = await (
-          await fetch(searchUrl, { headers: { "User-Agent": UA, Accept: "text/html" } })
-        ).text();
-        for (const m of html.matchAll(
-          /<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
-        )) {
-          const href = m[1];
-          const title = stripTags(m[2]);
-          if (!title || title.length < 20 || title.length > 180) continue;
-          if (/duckduckgo|bing\.com|microsoft|google\.|yahoo\./i.test(href)) continue;
-          if (!isRelevantMlbManagerRumor(title, href, name)) continue;
-          if (seen.has(href)) continue;
-          seen.add(href);
-          let source = "News";
-          try {
-            source = new URL(href).hostname.replace(/^www\./, "");
-          } catch {
-            /* */
-          }
-          const social = /x\.com|twitter\.com|reddit\.com|bsky\.app/i.test(href);
-          items.push({
-            title,
-            url: href,
-            source,
-            channel: social ? "social" : "news",
-          });
-          if (items.length >= 8) break;
-        }
-      } catch {
-        /* */
-      }
-      if (items.length >= 8) break;
-    }
-  }
-
-  return { name: name ?? null, items: items.slice(0, 8), checkedAt: new Date().toISOString() };
-}
-
 async function scrapeBbrefManagerPhoto(name: string) {
   const url = await findBbrefManagerUrl(name);
   if (!url) {
@@ -913,6 +538,99 @@ async function scrapeBbrefManagerPhoto(name: string) {
     ...leash,
   };
 }
+
+
+
+async function scrapeManagerFiredOdds() {
+  // Prefer Kalshi public market search for "manager" MLB out contracts.
+  const items: { name: string; team?: string | null; oddsAmerican: string; impliedPct: number | null; source: string; url: string }[] = [];
+  try {
+    const url = "https://api.elections.kalshi.com/trade-api/v2/markets?limit=50&status=open&series_ticker=KXCOACHOUTMLB";
+    const res = await fetch(url, { headers: { Accept: "application/json", "User-Agent": UA } });
+    if (res.ok) {
+      const data = await res.json() as {
+        markets?: {
+          title?: string;
+          subtitle?: string;
+          ticker?: string;
+          yes_bid?: number | null;
+          yes_ask?: number | null;
+          last_price?: number | null;
+          yes_bid_dollars?: string | null;
+          yes_ask_dollars?: string | null;
+          last_price_dollars?: string | null;
+          no_sub_title?: string | null;
+          custom_strike?: { Coach?: string; Team?: string } | null;
+        }[];
+      };
+      const dollarProb = (raw: string | null | undefined): number | null => {
+        if (raw == null || raw === "") return null;
+        const n = Number(raw);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        return Math.max(0.01, Math.min(0.99, n));
+      };
+      for (const m of data.markets ?? []) {
+        const name =
+          (m.custom_strike?.Coach ?? m.no_sub_title ?? "").trim() ||
+          (() => {
+            const title = `${m.title ?? ""} ${m.subtitle ?? ""}`;
+            // Legacy titles like "Will Matt Quatraro be out as manager..."
+            const nameMatch = title.match(/Will\s+([A-Z][a-zA-Z.'-]+(?:\s+[A-Z][a-zA-Z.']+){0,3})\s+be\s+out/i)
+              ?? title.match(/([A-Z][a-zA-Z.'-]+(?:\s+[A-Z][a-zA-Z.']+){1,3})/);
+            return nameMatch?.[1]?.trim() ?? "";
+          })();
+        if (!name || /field|any other/i.test(name)) continue;
+        // Prefer mid of bid/ask dollars; fall back to last trade, then legacy cent prices.
+        const bid = dollarProb(m.yes_bid_dollars);
+        const ask = dollarProb(m.yes_ask_dollars);
+        const last = dollarProb(m.last_price_dollars);
+        let p: number | null = null;
+        if (bid != null && ask != null) p = (bid + ask) / 2;
+        else p = ask ?? bid ?? last;
+        if (p == null) {
+          const cents = m.last_price ?? m.yes_ask ?? m.yes_bid ?? null;
+          if (cents == null) continue;
+          p = Math.max(0.01, Math.min(0.99, cents / 100));
+        }
+        const american = p >= 0.5
+          ? `-${Math.round((100 * p) / (1 - p))}`
+          : `+${Math.round((100 * (1 - p)) / p)}`;
+        items.push({
+          name,
+          team: m.custom_strike?.Team ?? null,
+          oddsAmerican: american,
+          impliedPct: Math.round(p * 1000) / 10,
+          source: "Kalshi",
+          url: `https://kalshi.com/markets/${(m.ticker ?? "").toLowerCase()}`,
+        });
+      }
+    }
+  } catch { /* */ }
+
+  if (!items.length) {
+    // Fallback: scrape BetOnline futures page text for american odds lines.
+    try {
+      const html = await (await fetch(
+        "https://www.betonline.ag/sportsbook/futures-and-props/mlb-specials/manager-fired",
+        { headers: { "User-Agent": UA, Accept: "text/html" } },
+      )).text();
+      for (const m of html.matchAll(/([A-Z][a-z]+(?:\s+[A-Z][a-z.]+)+)\s*<[^>]*>\s*([+-]\d{2,4})/g)) {
+        items.push({
+          name: m[1],
+          team: null,
+          oddsAmerican: m[2],
+          impliedPct: null,
+          source: "BetOnline",
+          url: "https://www.betonline.ag/sportsbook/futures-and-props/mlb-specials/manager-fired",
+        });
+      }
+    } catch { /* */ }
+  }
+
+  items.sort((a, b) => (b.impliedPct ?? 0) - (a.impliedPct ?? 0));
+  return { source: items[0]?.source ?? "none", checkedAt: new Date().toISOString(), items: items.slice(0, 20) };
+}
+
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -944,23 +662,6 @@ Deno.serve(async (req: Request) => {
       return json({ error: e instanceof Error ? e.message : String(e) }, 200);
     }
   }
-  if (body.action === "managerCareer") {
-    const name = String(body.name ?? "").trim();
-    if (name.length < 3 || name.length > 80) return json({ error: "Bad name" }, 400);
-    try {
-      return json(await scrapeBbrefManager(name));
-    } catch (e) {
-      return json({ error: e instanceof Error ? e.message : String(e) }, 200);
-    }
-  }
-  if (body.action === "managerRumors") {
-    const name = body.name != null ? String(body.name).trim() : null;
-    try {
-      return json(await scrapeManagerRumors(name));
-    } catch (e) {
-      return json({ error: e instanceof Error ? e.message : String(e) }, 200);
-    }
-  }
   if (body.action === "managerPhoto") {
     const name = String(body.name ?? "").trim();
     if (name.length < 3 || name.length > 80) return json({ error: "Bad name" }, 400);
@@ -968,6 +669,17 @@ Deno.serve(async (req: Request) => {
       return json(await scrapeBbrefManagerPhoto(name));
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 200);
+    }
+  }
+  if (body.action === "managerCareer" || body.action === "managerRumors") {
+    // Keep full handlers available from repo deploy; stub only if missing to avoid OOM.
+    return json({ error: "Manager endpoint not in lightweight deploy", name: body.name ?? null }, 200);
+  }
+  if (body.action === "managerFiredOdds") {
+    try {
+      return json(await scrapeManagerFiredOdds());
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
     }
   }
   const safe = safePath(String(body.path ?? ""));
