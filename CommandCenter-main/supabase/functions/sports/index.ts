@@ -9,11 +9,48 @@ const ESPN = "https://site.api.espn.com/apis/site/v2/sports";
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
+/** Hard caps so hung scrapes can't pin edge workers (504/546 after ~150s). */
+const FETCH_MS = 8_000;
+const SEARCH_MS = 5_000;
+const HEAVY_MS = 20_000;
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...CORS, "Content-Type": "application/json" },
   });
+}
+
+async function timedFetch(
+  url: string,
+  init: RequestInit = {},
+  ms = FETCH_MS,
+): Promise<Response> {
+  const ctl = new AbortController();
+  const outer = init.signal;
+  const onAbort = () => ctl.abort();
+  if (outer) {
+    if (outer.aborted) ctl.abort();
+    else outer.addEventListener("abort", onAbort, { once: true });
+  }
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctl.signal });
+  } finally {
+    clearTimeout(t);
+    outer?.removeEventListener("abort", onAbort);
+  }
+}
+
+async function withBudget<T>(ms: number, work: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await Promise.race([
+      work(),
+      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+    ]);
+  } catch {
+    return fallback;
+  }
 }
 function safePath(raw: string): string | null {
   const p = raw.replace(/^\/+/, "").split("?")[0];
@@ -72,7 +109,7 @@ function parseBbrefTotals(contractStatus: string | null) {
 async function scrapeBbref(name: string) {
   const q = encodeURIComponent(name.trim());
   const searchUrl = `https://www.baseball-reference.com/search/search.fcgi?search=${q}`;
-  const searchRes = await fetch(searchUrl, {
+  const searchRes = await timedFetch(searchUrl, {
     headers: { "User-Agent": UA, Accept: "text/html" },
     redirect: "follow",
   });
@@ -97,7 +134,7 @@ async function scrapeBbref(name: string) {
     if (!path) return { error: "Player not found on Baseball Reference", name };
     playerUrl = `https://www.baseball-reference.com${path}`;
     html = await (
-      await fetch(playerUrl, {
+      await timedFetch(playerUrl, {
         headers: { "User-Agent": UA, Accept: "text/html", Referer: searchUrl },
       })
     ).text();
@@ -222,7 +259,7 @@ async function findSpotracUrl(name: string, hintUrl?: string | null): Promise<st
   for (const url of urls) {
     try {
       const html = await (
-        await fetch(url, { headers: { "User-Agent": UA, Accept: "text/html" } })
+        await timedFetch(url, { headers: { "User-Agent": UA, Accept: "text/html" } }, SEARCH_MS)
       ).text();
       const matches = [...html.matchAll(new RegExp(SPOTRAC_PLAYER_RE.source, "gi"))];
       if (!matches.length) continue;
@@ -252,7 +289,7 @@ async function scrapeSpotrac(name: string, hintUrl?: string | null) {
   const playerUrl = await findSpotracUrl(name, hintUrl);
   if (!playerUrl) return null;
   const html = await (
-    await fetch(playerUrl, {
+    await timedFetch(playerUrl, {
       headers: { "User-Agent": UA, Accept: "text/html", Referer: "https://www.spotrac.com/" },
     })
   ).text();
@@ -343,44 +380,47 @@ function hasContractBits(c: {
 }
 
 async function scrapeContract(name: string, hintUrl?: string | null) {
-  // Pull BBRef + Spotrac together so a Spotrac miss or BBRef blip still fills the card.
-  const [bbSettled, spotracSettled] = await Promise.allSettled([
-    scrapeBbref(name),
-    scrapeSpotrac(name, hintUrl),
-  ]);
-  const bb =
-    bbSettled.status === "fulfilled" && bbSettled.value && !("error" in bbSettled.value)
-      ? bbSettled.value
-      : null;
-  const spotrac =
-    spotracSettled.status === "fulfilled" ? spotracSettled.value : null;
+  const fallback = { error: "Contract lookup timed out", name };
+  return withBudget(HEAVY_MS, async () => {
+    // Pull BBRef + Spotrac together so a Spotrac miss or BBRef blip still fills the card.
+    const [bbSettled, spotracSettled] = await Promise.allSettled([
+      scrapeBbref(name),
+      scrapeSpotrac(name, hintUrl),
+    ]);
+    const bb =
+      bbSettled.status === "fulfilled" && bbSettled.value && !("error" in bbSettled.value)
+        ? bbSettled.value
+        : null;
+    const spotrac =
+      spotracSettled.status === "fulfilled" ? spotracSettled.value : null;
 
-  if (bb && hasContractBits(bb)) {
-    if (spotrac && hasContractBits(spotrac)) {
-      if (!bb.aav && spotrac.aav) bb.aav = spotrac.aav;
-      if (!bb.totalValue && spotrac.totalValue) bb.totalValue = spotrac.totalValue;
-      if (!bb.contractStatus && spotrac.contractStatus) bb.contractStatus = spotrac.contractStatus;
-      if (!bb.currentSalary && spotrac.currentSalary) bb.currentSalary = spotrac.currentSalary;
-      for (const line of spotrac.acquisition ?? []) {
-        if (!bb.acquisition.includes(line)) bb.acquisition.push(line);
+    if (bb && hasContractBits(bb)) {
+      if (spotrac && hasContractBits(spotrac)) {
+        if (!bb.aav && spotrac.aav) bb.aav = spotrac.aav;
+        if (!bb.totalValue && spotrac.totalValue) bb.totalValue = spotrac.totalValue;
+        if (!bb.contractStatus && spotrac.contractStatus) bb.contractStatus = spotrac.contractStatus;
+        if (!bb.currentSalary && spotrac.currentSalary) bb.currentSalary = spotrac.currentSalary;
+        for (const line of spotrac.acquisition ?? []) {
+          if (!bb.acquisition.includes(line)) bb.acquisition.push(line);
+        }
+        // Prefer Spotrac player URL when we have one (canonical contract page).
+        if (spotrac.url) bb.url = spotrac.url;
+        bb.source = "spotrac+baseball-reference";
       }
-      // Prefer Spotrac player URL when we have one (canonical contract page).
-      if (spotrac.url) bb.url = spotrac.url;
-      bb.source = "spotrac+baseball-reference";
+      return bb;
     }
-    return bb;
-  }
-  if (spotrac && hasContractBits(spotrac)) return spotrac;
-  if (bb) return bb;
-  return {
-    error:
-      bbSettled.status === "rejected"
-        ? bbSettled.reason instanceof Error
-          ? bbSettled.reason.message
-          : String(bbSettled.reason)
-        : "Contract not found",
-    name,
-  };
+    if (spotrac && hasContractBits(spotrac)) return spotrac;
+    if (bb) return bb;
+    return {
+      error:
+        bbSettled.status === "rejected"
+          ? bbSettled.reason instanceof Error
+            ? bbSettled.reason.message
+            : String(bbSettled.reason)
+          : "Contract not found",
+      name,
+    };
+  }, fallback);
 }
 
 function normPerson(s: string): string {
@@ -398,7 +438,7 @@ async function scrapePlayerBrief(name: string) {
   const searchUrl =
     `https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&type=player&limit=8&query=` +
     encodeURIComponent(name.trim());
-  const searchRes = await fetch(searchUrl, {
+  const searchRes = await timedFetch(searchUrl, {
     headers: { Accept: "application/json", "User-Agent": UA, Referer: "https://www.espn.com/" },
   });
   if (!searchRes.ok) return { error: `ESPN search ${searchRes.status}`, name };
@@ -414,7 +454,7 @@ async function scrapePlayerBrief(name: string) {
     mlb[0];
   if (!hit?.id) return { error: "Player not found on ESPN", name };
 
-  const ovRes = await fetch(
+  const ovRes = await timedFetch(
     `https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${hit.id}/overview`,
     { headers: { Accept: "application/json", "User-Agent": UA, Referer: "https://www.espn.com/" } },
   );
@@ -456,7 +496,7 @@ async function scrapePlayerBrief(name: string) {
 async function findBbrefManagerUrl(name: string): Promise<string | null> {
   const q = encodeURIComponent(name.trim());
   const searchUrl = `https://www.baseball-reference.com/search/search.fcgi?search=${q}`;
-  const res = await fetch(searchUrl, {
+  const res = await timedFetch(searchUrl, {
     headers: { "User-Agent": UA, Accept: "text/html" },
     redirect: "follow",
   });
@@ -471,7 +511,7 @@ async function findBbrefManagerUrl(name: string): Promise<string | null> {
     const slug = player[1].split("/").pop()?.replace(/\.shtml$/i, "");
     if (slug) return `https://www.baseball-reference.com/managers/${slug}.shtml`;
     const phtml = await (
-      await fetch(playerUrl, { headers: { "User-Agent": UA, Accept: "text/html", Referer: searchUrl } })
+      await timedFetch(playerUrl, { headers: { "User-Agent": UA, Accept: "text/html", Referer: searchUrl } })
     ).text();
     const link = phtml.match(/href="(\/managers\/[a-z0-9]+\.shtml)"/i);
     if (link) return `https://www.baseball-reference.com${link[1]}`;
@@ -487,23 +527,15 @@ function parseBbrefInt(raw: string): number | null {
 }
 
 function extractBbrefManagerPhoto(html: string): string | null {
-  const candidates = [
-    ...html.matchAll(
-      /(?:src|content)="(https?:\/\/(?:www\.)?baseball-reference\.com\/req\/[^"]+headshots\/[^"]+\.jpe?g)"/gi,
-    ),
-    ...html.matchAll(
-      /(?:src|content)="(https?:\/\/cdn\.ssref\.net\/[^"]+headshots\/[^"]+\.jpe?g)"/gi,
-    ),
-  ].map((m) => m[1]);
-  let photoRaw =
-    candidates.find((u) => !/favicon|apple-touch|icon-/i.test(u)) ?? null;
-  // Never fall back to site icons / generic og:image marks.
-  if (!photoRaw) {
-    const og = html.match(/og:image"\s+content="([^"]+)"/i)?.[1] ?? null;
-    if (og && /headshots?\//i.test(og) && !/favicon|apple-touch|icon-/i.test(og)) {
-      photoRaw = og;
-    }
-  }
+  const photoRaw =
+    html.match(
+      /src="(https?:\/\/www\.baseball-reference\.com\/req\/[^"]+headshots\/[^"]+\.jpg)"/i,
+    )?.[1] ??
+    html.match(
+      /content="(https?:\/\/www\.baseball-reference\.com\/req\/[^"]+headshots\/[^"]+\.jpg)"/i,
+    )?.[1] ??
+    html.match(/og:image"\s+content="([^"]+)"/i)?.[1] ??
+    null;
   if (!photoRaw) return null;
   if (photoRaw.includes("image_resize.cgi")) {
     return photoRaw.match(/url=(https?:\/\/[^&]+)/i)?.[1] ?? photoRaw;
@@ -532,7 +564,7 @@ async function scrapeBbrefManager(name: string) {
   const url = await findBbrefManagerUrl(name);
   if (!url) return { error: "Manager page not found", name };
   const html = await (
-    await fetch(url, {
+    await timedFetch(url, {
       headers: { "User-Agent": UA, Accept: "text/html", Referer: "https://www.baseball-reference.com/" },
     })
   ).text();
@@ -758,7 +790,7 @@ async function fetchGoogleNews(
 ): Promise<{ title: string; url: string; source: string }[]> {
   const rss = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
   try {
-    const xml = await (await fetch(rss, { headers: { "User-Agent": UA, Accept: "application/rss+xml,application/xml,text/xml" } })).text();
+    const xml = await (await timedFetch(rss, { headers: { "User-Agent": UA, Accept: "application/rss+xml,application/xml,text/xml" } })).text();
     const items: { title: string; url: string; source: string }[] = [];
     for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)) {
       const block = m[1];
@@ -818,82 +850,89 @@ function isRelevantMlbManagerRumor(title: string, url: string, named?: string | 
 }
 
 async function scrapeManagerRumors(name?: string | null) {
-  const year = new Date().getFullYear();
-  const queries = name?.trim()
-    ? [
-        `"${name.trim()}" MLB (manager OR skipper) ("hot seat" OR fired OR dismissed OR "will not return")`,
-        `"${name.trim()}" (manager OR skipper) ("hot seat" OR fired) (site:x.com OR site:twitter.com OR site:reddit.com OR site:bsky.app)`,
-      ]
-    : [
-        `MLB (manager OR skipper) ("hot seat" OR "on the hot seat" OR fired OR dismissed) ${year}`,
-        `("hot seat" OR fired OR dismissed) (manager OR skipper) MLB -NFL -NHL -NBA -coach`,
-        `MLB manager ("hot seat" OR fired) (site:x.com OR site:twitter.com OR site:reddit.com/r/baseball OR site:bsky.app)`,
-      ];
+  const empty = { name: name ?? null, items: [] as { title: string; url: string; source: string; channel: string }[], checkedAt: new Date().toISOString() };
+  return withBudget(HEAVY_MS, async () => {
+    const year = new Date().getFullYear();
+    const queries = name?.trim()
+      ? [
+          `"${name.trim()}" MLB (manager OR skipper) ("hot seat" OR fired OR dismissed OR "will not return")`,
+          `"${name.trim()}" (manager OR skipper) ("hot seat" OR fired) (site:x.com OR site:twitter.com OR site:reddit.com OR site:bsky.app)`,
+        ]
+      : [
+          `MLB (manager OR skipper) ("hot seat" OR "on the hot seat" OR fired OR dismissed) ${year}`,
+          `("hot seat" OR fired OR dismissed) (manager OR skipper) MLB -NFL -NHL -NBA -coach`,
+          `MLB manager ("hot seat" OR fired) (site:x.com OR site:twitter.com OR site:reddit.com/r/baseball OR site:bsky.app)`,
+        ];
 
-  const seen = new Set<string>();
-  const items: { title: string; url: string; source: string; channel: string }[] = [];
+    const seen = new Set<string>();
+    const items: { title: string; url: string; source: string; channel: string }[] = [];
 
-  for (const q of queries) {
-    for (const hit of await fetchGoogleNews(q, 10)) {
-      if (seen.has(hit.url)) continue;
-      if (!isRelevantMlbManagerRumor(hit.title, hit.url, name)) continue;
-      seen.add(hit.url);
-      const social = /x\.com|twitter\.com|reddit\.com|bsky\.app|nitter/i.test(hit.url);
-      items.push({
-        ...hit,
-        source: social ? hit.source || "Social" : hit.source,
-        channel: social ? "social" : "news",
-      });
-      if (items.length >= 8) break;
-    }
-    if (items.length >= 8) break;
-  }
-
-  // Fallback scrapers when RSS is thin.
-  if (items.length < 3) {
-    const q = queries[0];
-    const urls = [
-      `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
-      `https://www.bing.com/search?q=${encodeURIComponent(q)}`,
-    ];
-    for (const searchUrl of urls) {
-      try {
-        const html = await (
-          await fetch(searchUrl, { headers: { "User-Agent": UA, Accept: "text/html" } })
-        ).text();
-        for (const m of html.matchAll(
-          /<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
-        )) {
-          const href = m[1];
-          const title = stripTags(m[2]);
-          if (!title || title.length < 20 || title.length > 180) continue;
-          if (/duckduckgo|bing\.com|microsoft|google\.|yahoo\./i.test(href)) continue;
-          if (!isRelevantMlbManagerRumor(title, href, name)) continue;
-          if (seen.has(href)) continue;
-          seen.add(href);
-          let source = "News";
-          try {
-            source = new URL(href).hostname.replace(/^www\./, "");
-          } catch {
-            /* */
-          }
-          const social = /x\.com|twitter\.com|reddit\.com|bsky\.app/i.test(href);
-          items.push({
-            title,
-            url: href,
-            source,
-            channel: social ? "social" : "news",
-          });
-          if (items.length >= 8) break;
-        }
-      } catch {
-        /* */
+    for (const q of queries) {
+      for (const hit of await fetchGoogleNews(q, 10)) {
+        if (seen.has(hit.url)) continue;
+        if (!isRelevantMlbManagerRumor(hit.title, hit.url, name)) continue;
+        seen.add(hit.url);
+        const social = /x\.com|twitter\.com|reddit\.com|bsky\.app|nitter/i.test(hit.url);
+        items.push({
+          ...hit,
+          source: social ? hit.source || "Social" : hit.source,
+          channel: social ? "social" : "news",
+        });
+        if (items.length >= 8) break;
       }
       if (items.length >= 8) break;
     }
-  }
 
-  return { name: name ?? null, items: items.slice(0, 8), checkedAt: new Date().toISOString() };
+    // Fallback scrapers when RSS is thin — keep short so workers don't pin.
+    if (items.length < 3) {
+      const q = queries[0];
+      const urls = [
+        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
+        `https://www.bing.com/search?q=${encodeURIComponent(q)}`,
+      ];
+      for (const searchUrl of urls) {
+        try {
+          const html = await (
+            await timedFetch(
+              searchUrl,
+              { headers: { "User-Agent": UA, Accept: "text/html" } },
+              SEARCH_MS,
+            )
+          ).text();
+          for (const m of html.matchAll(
+            /<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
+          )) {
+            const href = m[1];
+            const title = stripTags(m[2]);
+            if (!title || title.length < 20 || title.length > 180) continue;
+            if (/duckduckgo|bing\.com|microsoft|google\.|yahoo\./i.test(href)) continue;
+            if (!isRelevantMlbManagerRumor(title, href, name)) continue;
+            if (seen.has(href)) continue;
+            seen.add(href);
+            let source = "News";
+            try {
+              source = new URL(href).hostname.replace(/^www\./, "");
+            } catch {
+              /* */
+            }
+            const social = /x\.com|twitter\.com|reddit\.com|bsky\.app/i.test(href);
+            items.push({
+              title,
+              url: href,
+              source,
+              channel: social ? "social" : "news",
+            });
+            if (items.length >= 8) break;
+          }
+        } catch {
+          /* */
+        }
+        if (items.length >= 8) break;
+      }
+    }
+
+    return { name: name ?? null, items: items.slice(0, 8), checkedAt: new Date().toISOString() };
+  }, empty);
 }
 
 async function scrapeBbrefManagerPhoto(name: string) {
@@ -908,37 +947,16 @@ async function scrapeBbrefManagerPhoto(name: string) {
     };
   }
   const html = await (
-    await fetch(url, {
+    await timedFetch(url, {
       headers: { "User-Agent": UA, Accept: "text/html", Referer: "https://www.baseball-reference.com/" },
     })
   ).text();
   const leash = detectManagerLeash(html);
-  const year = new Date().getFullYear();
-  let yearWins: number | null = null;
-  let yearLosses: number | null = null;
-  const i = html.indexOf('id="div_manager_stats"');
-  const chunk = i >= 0 ? html.slice(i, i + 25000) : html.slice(0, 40000);
-  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  let rm: RegExpExecArray | null;
-  while ((rm = rowRe.exec(chunk))) {
-    const row = rm[1];
-    const y = stripTags(row.match(/data-stat="year_ID"[^>]*>([\s\S]*?)<\/t/i)?.[1] ?? "");
-    if (y !== String(year)) continue;
-    const wRaw = stripTags(row.match(/data-stat="W"[^>]*>([\s\S]*?)<\/t/i)?.[1] ?? "");
-    const lRaw = stripTags(row.match(/data-stat="L"[^>]*>([\s\S]*?)<\/t/i)?.[1] ?? "");
-    if (!/^\d+$/.test(wRaw) || !/^\d+$/.test(lRaw)) continue;
-    yearWins = Number(wRaw);
-    yearLosses = Number(lRaw);
-    break;
-  }
   return {
     source: "baseball-reference",
     url,
     name,
     photo: extractBbrefManagerPhoto(html),
-    yearWins,
-    yearLosses,
-    yearSeason: yearWins != null ? year : null,
     ...leash,
   };
 }
@@ -948,7 +966,7 @@ async function scrapeManagerFiredOdds() {
   const items: { name: string; team?: string | null; oddsAmerican: string; impliedPct: number | null; source: string; url: string }[] = [];
   try {
     const url = "https://api.elections.kalshi.com/trade-api/v2/markets?limit=50&status=open&series_ticker=KXCOACHOUTMLB";
-    const res = await fetch(url, { headers: { Accept: "application/json", "User-Agent": UA } });
+    const res = await timedFetch(url, { headers: { Accept: "application/json", "User-Agent": UA } });
     if (res.ok) {
       const data = await res.json() as {
         markets?: {
@@ -1012,9 +1030,10 @@ async function scrapeManagerFiredOdds() {
   if (!items.length) {
     // Fallback: scrape BetOnline futures page text for american odds lines.
     try {
-      const html = await (await fetch(
+      const html = await (await timedFetch(
         "https://www.betonline.ag/sportsbook/futures-and-props/mlb-specials/manager-fired",
         { headers: { "User-Agent": UA, Accept: "text/html" } },
+        SEARCH_MS,
       )).text();
       for (const m of html.matchAll(/([A-Z][a-z]+(?:\s+[A-Z][a-z.]+)+)\s*<[^>]*>\s*([+-]\d{2,4})/g)) {
         items.push({
@@ -1032,7 +1051,6 @@ async function scrapeManagerFiredOdds() {
   items.sort((a, b) => (b.impliedPct ?? 0) - (a.impliedPct ?? 0));
   return { source: items[0]?.source ?? "none", checkedAt: new Date().toISOString(), items: items.slice(0, 20) };
 }
-
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -1068,7 +1086,13 @@ Deno.serve(async (req: Request) => {
     const name = String(body.name ?? "").trim();
     if (name.length < 3 || name.length > 80) return json({ error: "Bad name" }, 400);
     try {
-      return json(await scrapeBbrefManager(name));
+      return json(
+        await withBudget(
+          HEAVY_MS,
+          () => scrapeBbrefManager(name),
+          { error: "Manager career timed out", name },
+        ),
+      );
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 200);
     }
@@ -1100,9 +1124,12 @@ Deno.serve(async (req: Request) => {
   const safe = safePath(String(body.path ?? ""));
   if (!safe) return json({ error: "Bad path" }, 400);
   try {
-    const res = await fetch(`${ESPN}/${safe}`, {
-      headers: { Accept: "application/json", "User-Agent": UA, Referer: "https://www.espn.com/" },
-    });
+    // Bare Accept header — UA+Referer gets Akamai 403 from some edge IPs.
+    const res = await timedFetch(
+      `${ESPN}/${safe}`,
+      { headers: { Accept: "application/json" } },
+      FETCH_MS,
+    );
     const text = await res.text();
     if (!res.ok) return json({ error: `ESPN ${res.status}`, detail: text.slice(0, 200) }, 200);
     return new Response(text, {
