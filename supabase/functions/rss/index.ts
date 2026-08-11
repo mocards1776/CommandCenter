@@ -42,9 +42,14 @@ const ALLOWED_TAGS = new Set([
   "img",
   "figure",
   "figcaption",
+  "footer",
+  "cite",
   "hr",
   "span",
 ]);
+
+const TWEET_URL_RE = /(?:twitter\.com|x\.com)\/\w+\/status(?:es)?\/\d+/i;
+const TWEET_EMBED_RE = /twitter-tweet|rss-tweet|data-tweet|twt-embed|twitter-video/i;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -236,6 +241,10 @@ function stripArticleChrome(html: string): string {
     const next = out.replace(
       /<(div|section|aside|nav|ul|form|button|figure)([^>]*)>([\s\S]*?)<\/\1>/gi,
       (full, tag: string, attrs: string, inner: string) => {
+        // Keep tweet embeds even when wrapped in share/social chrome.
+        if (TWEET_EMBED_RE.test(attrs) || TWEET_EMBED_RE.test(inner) || TWEET_URL_RE.test(inner)) {
+          return full;
+        }
         const hay = (attrs + " " + inner.slice(0, 240)).toLowerCase();
         if (CHROME_CLASS_RE.test(attrs) || CHROME_CLASS_RE.test(hay)) return "";
         if (/id="[^"]*(?:gift|follow|share|modal|notification|clipboard)[^"]*"/i.test(attrs)) {
@@ -257,16 +266,24 @@ function stripArticleChrome(html: string): string {
 
 /** Prefer TownNews article paragraphs only — avoids gift/share chrome in asset-content. */
 function extractTownNewsParagraphs(html: string): string | null {
+  // Tweet embeds live outside lee-article-text <p>s — use the full body path instead.
+  if (TWEET_EMBED_RE.test(html) || TWEET_URL_RE.test(html)) return null;
+
   const parts: string[] = [];
   const re =
-    /<(p|div)([^>]*class="[^"]*(?:subscriber-preview|lee-article-text|article-body)[^"]*"[^>]*)>([\s\S]*?)<\/\1>/gi;
+    /<(p|div|blockquote)([^>]*class="[^"]*(?:subscriber-preview|lee-article-text|article-body|twitter-tweet)[^"]*"[^>]*)>([\s\S]*?)<\/\1>/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) {
+    const tag = m[1].toLowerCase();
     const attrs = m[2] || "";
     if (/subscriber-hide|trinity|inline-relcontent/i.test(attrs)) continue;
     const inner = m[3].trim();
     if (stripTags(inner).length < 20) continue;
-    parts.push("<p>" + inner + "</p>");
+    if (tag === "blockquote" || TWEET_EMBED_RE.test(attrs)) {
+      parts.push("<blockquote>" + inner + "</blockquote>");
+    } else {
+      parts.push("<p>" + inner + "</p>");
+    }
   }
   if (!parts.length) return null;
   const joined = parts.join("\n");
@@ -349,6 +366,10 @@ function scrubContentHtml(html: string): string {
     .replace(/"[^"]*data-html="true"[^<]*/gi, "");
 
   out = out.replace(/<(p|li|h[1-6]|blockquote)(\b[^>]*)>([\s\S]*?)<\/\1>/gi, (full, tag, attrs, inner) => {
+    // Never drop stylized tweets for containing the word "twitter".
+    if (tag === "blockquote" && (TWEET_EMBED_RE.test(attrs) || TWEET_URL_RE.test(inner))) {
+      return "<" + tag + attrs + ">" + inner + "</" + tag + ">";
+    }
     const text = stripTags(inner).replace(/\s+/g, " ").trim();
     if (!text) return "";
     if (text.length < 120 && JUNK_TEXT_RE.test(text)) return "";
@@ -387,6 +408,46 @@ function attrValue(attrs: string, name: string): string | null {
   return sq ? sq[1] : null;
 }
 
+/** Turn twitter-tweet markup into a clean quote + attribution footer. */
+function stylizeTweetBlockquotes(html: string): string {
+  return html.replace(/<blockquote\b([^>]*)>([\s\S]*?)<\/blockquote>/gi, (_full, attrs, inner) => {
+    const hay = String(attrs) + " " + String(inner);
+    const isTweet =
+      TWEET_EMBED_RE.test(hay) ||
+      TWEET_URL_RE.test(hay) ||
+      /(?:^|[\s>])(?:—|&mdash;)\s*[^<]+?\(@\w+\)/i.test(stripTags(inner));
+
+    let body = String(inner)
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/pic\.twitter\.com\/\w+/gi, "")
+      .trim();
+
+    // Already has a footer — keep structure, mark as tweet when applicable.
+    if (/<footer\b/i.test(body)) {
+      return `<blockquote${isTweet ? ' class="rss-tweet"' : ""}>${body}</blockquote>`;
+    }
+
+    // Common embed shape: <p>…</p> — Name (@handle) <a>Date</a>
+    const metaMatch = body.match(
+      /(?:<br\s*\/?>|\n|\s)*(?:—|&mdash;|–|&ndash;)\s*([\s\S]*?)(<a\b[^>]*>[\s\S]*?<\/a>)\s*$/i,
+    );
+    if (metaMatch && (isTweet || /\(@\w+\)/.test(metaMatch[1]))) {
+      const before = body.slice(0, metaMatch.index).trim();
+      const who = stripTags(metaMatch[1]).replace(/\s+/g, " ").trim();
+      const link = metaMatch[2];
+      body =
+        before +
+        `<footer class="rss-tweet-meta">— ${who} ${link}</footer>`;
+      return `<blockquote class="rss-tweet">${body}</blockquote>`;
+    }
+
+    if (isTweet) {
+      return `<blockquote class="rss-tweet">${body}</blockquote>`;
+    }
+    return `<blockquote>${body}</blockquote>`;
+  });
+}
+
 function sanitizeHtml(frag: string): string {
   const cleaned = frag.replace(
     /<\/?([a-zA-Z0-9]+)(\s[^>]*)?>/g,
@@ -416,15 +477,26 @@ function sanitizeHtml(frag: string): string {
         if (alt) keep.push('alt="' + alt.replace(/"/g, "&quot;") + '"');
         keep.push('loading="lazy"');
       }
+      if (name === "blockquote") {
+        const cls = attrValue(attrs, "class") || "";
+        if (TWEET_EMBED_RE.test(cls) || TWEET_EMBED_RE.test(attrs)) {
+          keep.push('class="rss-tweet"');
+        }
+      }
+      if (name === "footer" || name === "cite") {
+        keep.push('class="rss-tweet-meta"');
+      }
       return "<" + name + (keep.length ? " " + keep.join(" ") : "") + ">";
     },
   );
 
-  return cleaned
-    .replace(/\u200d|\ufeff/g, "")
-    .replace(/<p>\s*<\/p>/gi, "")
-    .replace(/(?:\s*<br>\s*){3,}/gi, "<br><br>")
-    .trim();
+  return stylizeTweetBlockquotes(
+    cleaned
+      .replace(/\u200d|\ufeff/g, "")
+      .replace(/<p>\s*<\/p>/gi, "")
+      .replace(/(?:\s*<br>\s*){3,}/gi, "<br><br>")
+      .trim(),
+  );
 }
 
 function pageMeta(html: string) {
