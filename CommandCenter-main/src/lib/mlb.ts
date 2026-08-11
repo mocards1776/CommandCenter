@@ -451,6 +451,117 @@ export function buildPlayerNameIndex(
   return map;
 }
 
+export async function fetchMlbTeamRoster(
+  teamId: number,
+): Promise<{ id: number; name: string }[]> {
+  const raw = (await mlbGet(`teams/${teamId}/roster`, { rosterType: "active" })) as {
+    roster?: { person?: { id?: number; fullName?: string } }[];
+  };
+  return (raw.roster ?? [])
+    .map((r) => ({
+      id: r.person?.id ?? 0,
+      name: r.person?.fullName ?? "",
+    }))
+    .filter((p) => p.id && p.name);
+}
+
+/** Resolve bare "First Last" mentions via MLB people search (capped). */
+export async function searchMlbPlayersByNames(
+  names: string[],
+): Promise<Map<string, number>> {
+  const found = new Map<string, number>();
+  const unique = [...new Set(names.map((n) => n.trim()).filter(Boolean))].slice(0, 16);
+  await Promise.all(
+    unique.map(async (name) => {
+      try {
+        const raw = (await mlbGet("people/search", { names: name })) as {
+          people?: { id?: number; fullName?: string }[];
+        };
+        const hit =
+          (raw.people ?? []).find(
+            (p) => normalizePersonName(p.fullName ?? "") === normalizePersonName(name),
+          ) ?? raw.people?.[0];
+        if (hit?.id) found.set(normalizePersonName(name), hit.id);
+      } catch {
+        // ignore
+      }
+    }),
+  );
+  return found;
+}
+
+/**
+ * Wrap player names in article HTML with links to `/sports/mlb/player/:id`.
+ * Longer names win so "Hunter Dobbins" matches before "Dobbins".
+ */
+export function linkifyMlbPlayersInHtml(
+  html: string,
+  nameToId: Map<string, number>,
+): string {
+  if (!html || !nameToId.size || typeof DOMParser === "undefined") return html;
+  const names = [...nameToId.keys()]
+    .filter((n) => n.length >= 3)
+    .sort((a, b) => b.length - a.length);
+  if (!names.length) return html;
+
+  const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Allow flexible whitespace/punctuation between name parts as in the index key.
+  const pattern = names
+    .map((n) =>
+      escapeRe(n)
+        .split(/\s+/)
+        .join("[\\s.\\-]+"),
+    )
+    .join("|");
+  const re = new RegExp(`\\b(?:${pattern})\\b`, "gi");
+
+  const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, "text/html");
+  const root = doc.getElementById("root");
+  if (!root) return html;
+
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  let node = walker.nextNode();
+  while (node) {
+    const parent = node.parentElement;
+    if (parent && !["A", "SCRIPT", "STYLE", "CODE", "PRE"].includes(parent.tagName)) {
+      textNodes.push(node as Text);
+    }
+    node = walker.nextNode();
+  }
+
+  for (const textNode of textNodes) {
+    const value = textNode.nodeValue ?? "";
+    if (!re.test(value)) {
+      re.lastIndex = 0;
+      continue;
+    }
+    re.lastIndex = 0;
+    const frag = doc.createDocumentFragment();
+    let last = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(value))) {
+      if (m.index > last) frag.appendChild(doc.createTextNode(value.slice(last, m.index)));
+      const matched = m[0];
+      const id = nameToId.get(normalizePersonName(matched));
+      if (id) {
+        const a = doc.createElement("a");
+        a.href = `/sports/mlb/player/${id}`;
+        a.className = "rss-player-link";
+        a.textContent = matched;
+        frag.appendChild(a);
+      } else {
+        frag.appendChild(doc.createTextNode(matched));
+      }
+      last = m.index + matched.length;
+    }
+    if (last < value.length) frag.appendChild(doc.createTextNode(value.slice(last)));
+    textNode.parentNode?.replaceChild(frag, textNode);
+  }
+
+  return root.innerHTML;
+}
+
 /** Resolve ESPN-linked names missing from the box score via MLB people search. */
 export async function resolveMissingRecapPlayers(
   segments: RecapInline[],

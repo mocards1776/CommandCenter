@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type TouchEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQueries, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   CheckCheck,
+  ChevronLeft,
   ChevronRight,
   Circle,
   ExternalLink,
@@ -18,6 +20,7 @@ import toast from "react-hot-toast";
 import {
   RSS_FEEDS,
   createRssHighlight,
+  dedupeArticles,
   deleteRssHighlight,
   fetchRssArticle,
   fetchRssFeed,
@@ -29,8 +32,16 @@ import {
   updateRssHighlightNote,
   type RssFeedId,
   type RssFeedItem,
+  type RssFeedItemRef,
   type RssHighlight,
 } from "@/lib/rss";
+import {
+  buildPlayerNameIndex,
+  fetchMlbTeamRoster,
+  linkifyMlbPlayersInHtml,
+  normalizePersonName,
+  searchMlbPlayersByNames,
+} from "@/lib/mlb";
 import { cn } from "@/lib/utils";
 
 type NavView = "unread" | RssFeedId | "notes";
@@ -60,7 +71,7 @@ function HighlightComposer({
           <X size={16} />
         </button>
       </div>
-      <blockquote className="font-rss text-cream/90 border-accent/40 mb-3 border-l-2 pl-3 text-[14px] leading-relaxed italic">
+      <blockquote className="font-rss text-cream/90 border-accent/40 mb-3 border-l-2 pl-3 text-[15px] leading-relaxed italic">
         {quote}
       </blockquote>
       <textarea
@@ -68,7 +79,7 @@ function HighlightComposer({
         onChange={(e) => setNote(e.target.value)}
         placeholder="Add a note (optional)"
         rows={3}
-        className="font-rss bg-field placeholder:text-chalk-dim text-cream mb-3 w-full resize-none rounded-sm border border-white/10 px-3 py-2 text-[14px] outline-none focus:border-accent/50"
+        className="font-rss bg-field placeholder:text-chalk-dim text-cream mb-3 w-full resize-none rounded-sm border border-white/10 px-3 py-2 text-[15px] outline-none focus:border-accent/50"
       />
       <div className="flex justify-end gap-2">
         <button
@@ -111,7 +122,7 @@ function HighlightCard({
 
   return (
     <li className="border-white/[0.08] border-b pb-4 last:border-0">
-      <blockquote className="font-rss text-cream border-accent/50 border-l-2 pl-3 text-[15px] leading-relaxed">
+      <blockquote className="font-rss text-cream border-accent/50 border-l-2 pl-3 text-[16px] leading-relaxed">
         {highlight.quoteText}
       </blockquote>
       {editing ? (
@@ -120,7 +131,7 @@ function HighlightCard({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             rows={2}
-            className="font-rss bg-field text-cream w-full resize-none rounded-sm border border-white/10 px-3 py-2 text-[13px] outline-none focus:border-accent/50"
+            className="font-rss bg-field text-cream w-full resize-none rounded-sm border border-white/10 px-3 py-2 text-[14px] outline-none focus:border-accent/50"
           />
           <div className="flex gap-2">
             <button type="submit" className="text-accent text-[11px] uppercase tracking-[0.16em]">
@@ -143,7 +154,7 @@ function HighlightCard({
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="font-rss text-chalk hover:text-cream text-left text-[13.5px] leading-relaxed"
+            className="font-rss text-chalk hover:text-cream text-left text-[14px] leading-relaxed"
           >
             {highlight.note || <span className="italic opacity-70">Add a comment…</span>}
           </button>
@@ -161,23 +172,59 @@ function HighlightCard({
   );
 }
 
+function useSwipeNav(opts: {
+  onBack: () => void;
+  onNext: (() => void) | null;
+  enabled: boolean;
+}) {
+  const start = useRef<{ x: number; y: number } | null>(null);
+
+  return {
+    onTouchStart: (e: TouchEvent) => {
+      if (!opts.enabled) return;
+      const t = e.changedTouches[0] ?? e.touches[0];
+      start.current = { x: t.clientX, y: t.clientY };
+    },
+    onTouchEnd: (e: TouchEvent) => {
+      if (!opts.enabled || !start.current) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - start.current.x;
+      const dy = t.clientY - start.current.y;
+      start.current = null;
+      if (Math.abs(dx) < 72 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+      if (dx > 0) opts.onBack();
+      else if (opts.onNext) opts.onNext();
+    },
+  };
+}
+
 function ReaderView({
   item,
   feedUrl,
   isRead,
+  hasPrev,
+  hasNext,
   onBack,
+  onPrev,
+  onNext,
   onToggleRead,
 }: {
   item: RssFeedItem;
   feedUrl: string;
   isRead: boolean;
+  hasPrev: boolean;
+  hasNext: boolean;
   onBack: () => void;
+  onPrev: () => void;
+  onNext: () => void;
   onToggleRead: () => void;
 }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const articleBodyRef = useRef<HTMLDivElement>(null);
   const [pendingQuote, setPendingQuote] = useState<string | null>(null);
   const [showNotes, setShowNotes] = useState(false);
+  const [linkedHtml, setLinkedHtml] = useState<string>("");
 
   const article = useQuery({
     queryKey: ["rss-article", item.link],
@@ -190,9 +237,29 @@ function ReaderView({
     queryFn: () => fetchRssHighlights(item.link),
   });
 
+  const roster = useQuery({
+    queryKey: ["mlb-roster-stl"],
+    queryFn: () => fetchMlbTeamRoster(138),
+    staleTime: 30 * 60_000,
+  });
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [item.link]);
+
+  // iOS edge-swipe / browser back returns to the feed list.
+  useEffect(() => {
+    const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+    if (st.dispatchArticle !== item.link) {
+      history.pushState({ ...st, dispatchArticle: item.link }, "", window.location.href);
+    }
+    const onPop = (e: PopStateEvent) => {
+      const next = (e.state as { dispatchArticle?: string } | null) ?? {};
+      if (!next.dispatchArticle) onBack();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [item.link, onBack]);
 
   useEffect(() => {
     void markRssRead({
@@ -203,6 +270,40 @@ function ReaderView({
       .then(() => qc.invalidateQueries({ queryKey: ["rss-reads"] }))
       .catch(() => {});
   }, [item.link, item.title, feedUrl, qc]);
+
+  // Link MLB player names → Sports player profiles.
+  useEffect(() => {
+    const html = article.data?.contentHtml;
+    if (!html) {
+      setLinkedHtml("");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const players = roster.data ?? [];
+      const index = buildPlayerNameIndex(players);
+      // Pull "First Last" candidates from the article for people/search fill-in.
+      const text = article.data?.contentText ?? "";
+      const candidates = [
+        ...new Set(
+          (text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z.'-]+){1,2}\b/g) ?? []).filter(
+            (n) => !index.has(normalizePersonName(n)),
+          ),
+        ),
+      ].slice(0, 12);
+      if (candidates.length) {
+        const found = await searchMlbPlayersByNames(candidates);
+        for (const [k, id] of found) index.set(k, id);
+      }
+      if (cancelled) return;
+      setLinkedHtml(linkifyMlbPlayersInHtml(html, index));
+    })().catch(() => {
+      if (!cancelled) setLinkedHtml(html);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [article.data?.contentHtml, article.data?.contentText, roster.data]);
 
   const createMut = useMutation({
     mutationFn: (note: string) =>
@@ -252,17 +353,34 @@ function ReaderView({
     sel.removeAllRanges();
   }
 
+  const swipe = useSwipeNav({
+    enabled: !pendingQuote,
+    onBack: () => {
+      const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+      if (st.dispatchArticle) history.back();
+      else onBack();
+    },
+    onNext: hasNext ? onNext : null,
+  });
+
   const title = article.data?.title || item.title;
   const byline = article.data?.byline || item.author;
   const image = article.data?.image || item.image;
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,42rem)_minmax(15rem,1fr)]">
+    <div
+      className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,42rem)_minmax(15rem,1fr)]"
+      {...swipe}
+    >
       <article className="font-rss min-w-0">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={onBack}
+            onClick={() => {
+              const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+              if (st.dispatchArticle) history.back();
+              else onBack();
+            }}
             className="font-body text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] transition-colors"
           >
             <ArrowLeft size={14} />
@@ -292,7 +410,7 @@ function ReaderView({
             {byline ? ` · ${byline}` : ""}
             {article.data?.wordCount ? ` · ${readingMinutes(article.data.wordCount)}` : ""}
           </div>
-          <h2 className="text-cream text-[30px] leading-[1.15] font-semibold md:text-[38px]">
+          <h2 className="text-cream text-[32px] leading-[1.15] font-semibold md:text-[40px]">
             {title}
           </h2>
           <a
@@ -307,7 +425,11 @@ function ReaderView({
         </header>
 
         {image ? (
-          <button type="button" onClick={() => window.open(item.link, "_blank", "noopener,noreferrer")} className="mb-8 block w-full">
+          <button
+            type="button"
+            onClick={() => window.open(item.link, "_blank", "noopener,noreferrer")}
+            className="mb-8 block w-full"
+          >
             <img src={image} alt="" className="max-h-[320px] w-full object-cover" />
           </button>
         ) : null}
@@ -323,11 +445,44 @@ function ReaderView({
           <div
             ref={articleBodyRef}
             onMouseUp={captureSelection}
-            onTouchEnd={() => window.setTimeout(captureSelection, 50)}
-            className="rss-reader max-w-none text-[18px] leading-[1.75] text-[#e8eaf0] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:border-accent/40 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-chalk [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5"
-            dangerouslySetInnerHTML={{ __html: article.data?.contentHtml ?? "" }}
+            onTouchEnd={(e) => {
+              swipe.onTouchEnd(e);
+              window.setTimeout(captureSelection, 50);
+            }}
+            onClick={(e) => {
+              const a = (e.target as HTMLElement).closest("a.rss-player-link") as HTMLAnchorElement | null;
+              if (!a) return;
+              e.preventDefault();
+              const href = a.getAttribute("href");
+              if (href?.startsWith("/sports/mlb/player/")) {
+                navigate(`${href}?solo=1`);
+              }
+            }}
+            className="rss-reader max-w-none text-[20px] leading-[1.8] text-[#eceef4] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_a.rss-player-link]:text-accent [&_a.rss-player-link]:decoration-accent/40 [&_a.rss-player-link]:underline-offset-[3px] [&_blockquote]:border-l-2 [&_blockquote]:border-accent/40 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-chalk [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5"
+            dangerouslySetInnerHTML={{ __html: linkedHtml || article.data?.contentHtml || "" }}
           />
         )}
+
+        <div className="border-white/[0.08] mt-10 flex items-center justify-between gap-3 border-t pt-5">
+          <button
+            type="button"
+            disabled={!hasPrev}
+            onClick={onPrev}
+            className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] disabled:opacity-30"
+          >
+            <ChevronLeft size={16} />
+            Previous
+          </button>
+          <button
+            type="button"
+            disabled={!hasNext}
+            onClick={onNext}
+            className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] disabled:opacity-30"
+          >
+            Next
+            <ChevronRight size={16} />
+          </button>
+        </div>
       </article>
 
       <aside
@@ -338,7 +493,7 @@ function ReaderView({
       >
         <div className="rule-head mb-4">Notes</div>
         {(highlights.data?.length ?? 0) === 0 ? (
-          <p className="text-chalk font-rss text-[14px] leading-relaxed">
+          <p className="text-chalk font-rss text-[15px] leading-relaxed">
             Select text in the article to highlight and comment.
           </p>
         ) : (
@@ -412,14 +567,14 @@ function ArticleRow({
           </div>
           <h3
             className={cn(
-              "font-rss text-[16px] leading-snug font-medium md:text-[17px]",
+              "font-rss text-[17px] leading-snug font-medium md:text-[18px]",
               read ? "text-chalk" : "text-cream",
             )}
           >
             {item.title}
           </h3>
           {item.snippet ? (
-            <p className="font-rss text-chalk mt-1 line-clamp-2 text-[13px] leading-relaxed">
+            <p className="font-rss text-chalk mt-1 line-clamp-2 text-[14px] leading-relaxed">
               {item.snippet}
             </p>
           ) : null}
@@ -433,7 +588,7 @@ function ArticleRow({
 export default function RssPage() {
   const qc = useQueryClient();
   const [nav, setNav] = useState<NavView>("unread");
-  const [selected, setSelected] = useState<RssFeedItem | null>(null);
+  const [selected, setSelected] = useState<RssFeedItemRef | null>(null);
   const [mobilePane, setMobilePane] = useState<"sidebar" | "list">("sidebar");
 
   const reads = useQuery({
@@ -462,7 +617,7 @@ export default function RssPage() {
     RSS_FEEDS.forEach((f, i) => {
       const data = feedQueries[i]?.data;
       map.set(f.id, {
-        items: data?.items ?? [],
+        items: dedupeArticles(data?.items ?? []),
         title: data?.title || f.title,
         url: f.url,
       });
@@ -479,15 +634,10 @@ export default function RssPage() {
     return counts;
   }, [feedById, readUrls]);
 
-  const totalUnread = useMemo(
-    () => Object.values(unreadByFeed).reduce((a, b) => a + b, 0),
-    [unreadByFeed],
-  );
-
   const listItems = useMemo(() => {
-    if (nav === "notes") return [];
+    if (nav === "notes") return [] as RssFeedItemRef[];
     if (nav === "unread") {
-      const merged: (RssFeedItem & { feedId: RssFeedId; feedUrl: string })[] = [];
+      const merged: RssFeedItemRef[] = [];
       for (const f of RSS_FEEDS) {
         const pack = feedById.get(f.id);
         for (const it of pack?.items ?? []) {
@@ -496,12 +646,13 @@ export default function RssPage() {
           }
         }
       }
-      merged.sort((a, b) => {
+      const deduped = dedupeArticles(merged);
+      deduped.sort((a, b) => {
         const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
         const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
         return db - da;
       });
-      return merged;
+      return deduped;
     }
     const pack = feedById.get(nav);
     return (pack?.items ?? []).map((it) => ({
@@ -511,14 +662,20 @@ export default function RssPage() {
     }));
   }, [nav, feedById, readUrls]);
 
-  const activeFeedUrl =
-    selected && nav !== "notes" && nav !== "unread"
-      ? feedById.get(nav)?.url ?? RSS_FEEDS[0].url
-      : selected
-        ? RSS_FEEDS.find((f) =>
-            (feedById.get(f.id)?.items ?? []).some((it) => it.link === selected.link),
-          )?.url ?? RSS_FEEDS[0].url
-        : RSS_FEEDS[0].url;
+  const totalUnread = useMemo(() => {
+    // Deduped unread across feeds so the same story isn't double-counted.
+    const merged: RssFeedItem[] = [];
+    for (const f of RSS_FEEDS) {
+      for (const it of feedById.get(f.id)?.items ?? []) {
+        if (!readUrls.has(it.link)) merged.push(it);
+      }
+    }
+    return dedupeArticles(merged).length;
+  }, [feedById, readUrls]);
+
+  const selectedIndex = selected
+    ? listItems.findIndex((it) => it.link === selected.link)
+    : -1;
 
   const listTitle =
     nav === "unread"
@@ -537,7 +694,7 @@ export default function RssPage() {
         await markRssRead({
           articleUrl: item.link,
           articleTitle: item.title,
-          feedUrl: activeFeedUrl,
+          feedUrl: selected?.feedUrl ?? RSS_FEEDS[0].url,
         });
       }
       await qc.invalidateQueries({ queryKey: ["rss-reads"] });
@@ -552,8 +709,14 @@ export default function RssPage() {
     setMobilePane("list");
   }
 
-  function openArticle(item: RssFeedItem) {
+  function openArticle(item: RssFeedItemRef) {
     setSelected(item);
+  }
+
+  function goRelative(delta: number) {
+    if (selectedIndex < 0) return;
+    const next = listItems[selectedIndex + delta];
+    if (next) setSelected(next);
   }
 
   if (selected) {
@@ -561,9 +724,13 @@ export default function RssPage() {
       <div className="p-4 md:p-6">
         <ReaderView
           item={selected}
-          feedUrl={activeFeedUrl}
+          feedUrl={selected.feedUrl}
           isRead={readUrls.has(selected.link)}
+          hasPrev={selectedIndex > 0}
+          hasNext={selectedIndex >= 0 && selectedIndex < listItems.length - 1}
           onBack={() => setSelected(null)}
+          onPrev={() => goRelative(-1)}
+          onNext={() => goRelative(1)}
           onToggleRead={() => void toggleRead(selected)}
         />
       </div>
@@ -572,7 +739,6 @@ export default function RssPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-4.5rem)] flex-col md:flex-row">
-      {/* Sidebar — classic reader feed list */}
       <aside
         className={cn(
           "bg-ink border-white/[0.06] w-full shrink-0 border-b md:w-[260px] md:border-r md:border-b-0",
@@ -599,7 +765,9 @@ export default function RssPage() {
             onClick={() => selectNav("unread")}
             className={cn(
               "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2.5 text-left transition-colors",
-              nav === "unread" ? "bg-accent/15 text-cream" : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+              nav === "unread"
+                ? "bg-accent/15 text-cream"
+                : "text-chalk hover:bg-white/[0.04] hover:text-cream",
             )}
           >
             <Inbox size={16} className="text-accent shrink-0" />
@@ -663,7 +831,6 @@ export default function RssPage() {
         </div>
       </aside>
 
-      {/* Article list / notes */}
       <section
         className={cn(
           "bg-field min-w-0 flex-1",
@@ -702,11 +869,11 @@ export default function RssPage() {
                     <div className="label-caps text-accent mb-1">
                       {h.articleTitle || h.articleUrl}
                     </div>
-                    <blockquote className="font-rss text-cream border-accent/40 border-l-2 pl-3 text-[15px] leading-relaxed">
+                    <blockquote className="font-rss text-cream border-accent/40 border-l-2 pl-3 text-[16px] leading-relaxed">
                       {h.quoteText}
                     </blockquote>
                     {h.note ? (
-                      <p className="font-rss text-chalk mt-2 text-[13.5px]">{h.note}</p>
+                      <p className="font-rss text-chalk mt-2 text-[14px]">{h.note}</p>
                     ) : null}
                   </li>
                 ))}

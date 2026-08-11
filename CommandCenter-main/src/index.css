@@ -33,8 +33,8 @@
 
   --font-display: "Playfair Display", Georgia, serif;
   --font-body: "Libre Franklin", system-ui, -apple-system, sans-serif;
-  /* RSS reader: editorial serif (not Georgia / Garamond / Playfair) */
-  --font-rss: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  /* RSS reader body — open, readable book face (not Newsreader) */
+  --font-rss: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Palatino, serif;
 }
 
 @layer base {

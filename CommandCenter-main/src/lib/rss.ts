@@ -30,6 +30,11 @@ export type RssFeedItem = {
   snippet: string;
 };
 
+export type RssFeedItemRef = RssFeedItem & {
+  feedId: RssFeedId;
+  feedUrl: string;
+};
+
 export type RssFeed = {
   title: string;
   description: string;
@@ -37,6 +42,36 @@ export type RssFeed = {
   feedUrl: string;
   items: RssFeedItem[];
 };
+
+/** Canonical key for de-duplicating the same story across feeds. */
+export function articleDedupeKey(item: Pick<RssFeedItem, "link" | "title">): string {
+  try {
+    const u = new URL(item.link);
+    u.hash = "";
+    // Drop tracking params; keep path identity.
+    ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "fbclid", "gclid"].forEach(
+      (k) => u.searchParams.delete(k),
+    );
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+    const path = u.pathname.replace(/\/+$/, "").toLowerCase();
+    return `url:${host}${path}`;
+  } catch {
+    return `title:${item.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}`;
+  }
+}
+
+/** Keep first occurrence when the same article appears in multiple feeds. */
+export function dedupeArticles<T extends Pick<RssFeedItem, "link" | "title">>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    const key = articleDedupeKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
 
 export type RssArticle = {
   url: string;
