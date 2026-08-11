@@ -29,7 +29,7 @@ function heatLabel(rank: number): string {
 export default function MlbManagersPage() {
   const { user } = useAuth();
   const managers = useQuery({
-    queryKey: ["mlb-managers-v6"],
+    queryKey: ["mlb-managers-v7"],
     queryFn: fetchMlbManagers,
     staleTime: 180_000,
   });
@@ -126,6 +126,43 @@ export default function MlbManagersPage() {
         </section>
       )}
 
+      {managers.data && managers.data.some((m) => m.firedOddsAmerican) && (
+        <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+          <h2 className="rule-head mb-3">Next manager fired</h2>
+          <ol className="grid gap-2 sm:grid-cols-2">
+            {managers.data
+              .filter((m) => m.firedOddsAmerican)
+              .slice()
+              .sort((a, b) => (b.firedOddsPct ?? -1) - (a.firedOddsPct ?? -1))
+              .slice(0, 8)
+              .map((m) => (
+                <li key={`odds-${m.id}`}>
+                  <Link
+                    to={`/sports/mlb/managers/${m.id}`}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] px-3 py-2.5 transition hover:border-white/20 hover:bg-white/[0.03]"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-[13px] font-semibold text-cream">
+                        {m.name}
+                      </span>
+                      <span className="text-[11px] text-[#8b93a7]">
+                        {m.teamAbbrev}
+                        {m.firedOddsPct != null ? ` · ${m.firedOddsPct}%` : ""}
+                      </span>
+                    </span>
+                    <span className="numeral shrink-0 text-[15px] font-semibold text-amber-200">
+                      {m.firedOddsAmerican}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+          </ol>
+          <p className="mt-2 text-[10.5px] text-[#8b93a7]">
+            Live Kalshi prices when the market is open — not a sportsbook ticket.
+          </p>
+        </section>
+      )}
+
       {managers.isPending && (
         <p className="text-chalk-dim flex items-center gap-2 text-[13px]">
           <Loader2 size={16} className="animate-spin" /> Loading managers…
@@ -156,8 +193,8 @@ export default function MlbManagersPage() {
           <p className="text-[11px] leading-relaxed text-[#8b93a7]">
             Heat scores win percentage, games back, playoff odds, and division place — then
             scales by tenure. Interim and short-leash (1-year / year-1 under .420) skippers
-            always take full pressure. Detail pages also fold in contract security and daily
-            media rumor hits.
+            always take full pressure. “Next fired” prices come from Kalshi when the market
+            is open. Interim records are the skipper’s own W–L, not the full team season.
           </p>
         </>
       )}
@@ -240,18 +277,23 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
           onError={(e) => {
             const el = e.currentTarget;
             const mlb = `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${m.id}/headshot/67/current`;
-            if (!el.dataset.fallback && !el.src.includes("mlbstatic")) {
+            if (!el.dataset.fallback) {
               el.dataset.fallback = "1";
-              el.src = mlb;
+              if (!el.src.includes("mlbstatic")) el.src = mlb;
             }
           }}
         />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span className="text-cream truncate text-[15px] font-semibold">{m.name}</span>
-            {(m.isInterim || m.shortLeash) && (
+            {m.isInterim && (
+              <span className="rounded-sm bg-alert/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-alert">
+                Interim
+              </span>
+            )}
+            {!m.isInterim && m.shortLeash && (
               <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-alert">
-                {m.isInterim ? "Interim" : "Short leash"}
+                Short leash
               </span>
             )}
             <span
@@ -263,7 +305,7 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
               {heatLabel(m.hotSeatRank)}
             </span>
           </div>
-          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 text-[12px] text-[#a8b0c2]">
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 text-[12px] text-[#c8cdd8]">
             <Link
               to={teamPagePath(m.teamId)}
               className="inline-flex items-center gap-1.5 hover:text-cream hover:underline"
@@ -272,12 +314,33 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
               <TeamMark teamId={m.teamId} size="xs" />
               {m.teamAbbrev}
             </Link>
-            <span className="numeral">{m.record}</span>
-            <span>
+            <span className="numeral font-medium text-cream" title={m.recordLabel}>
+              {m.record}
+              {m.recordLabel === "As manager" && (
+                <span className="ml-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#8b93a7]">
+                  mgr
+                </span>
+              )}
+            </span>
+            <span className="text-[#a8b0c2]">
               {m.yearsWithTeam} yr{m.yearsWithTeam === 1 ? "" : "s"}
             </span>
-            <span>{m.gb === "—" ? "—" : `${m.gb} GB`}</span>
-            {m.playoffOdds != null && <span>{m.playoffOdds.toFixed(0)}% PO</span>}
+            <span className="text-[#a8b0c2]">{m.gb === "—" ? "—" : `${m.gb} GB`}</span>
+            {m.playoffOdds != null && (
+              <span className="text-[#a8b0c2]">{m.playoffOdds.toFixed(0)}% PO</span>
+            )}
+            {m.firedOddsAmerican && (
+              <span
+                className="numeral rounded-sm bg-white/[0.06] px-1.5 py-0.5 text-[11px] font-semibold text-amber-200"
+                title={
+                  m.firedOddsPct != null
+                    ? `Next manager fired · ~${m.firedOddsPct}% (Kalshi)`
+                    : "Next manager fired odds"
+                }
+              >
+                {m.firedOddsAmerican}
+              </span>
+            )}
           </div>
         </div>
         <span className="numeral hidden text-[12px] text-[#8b93a7] sm:inline">

@@ -56,7 +56,7 @@ export default function HeroGameCard({
         ) : (
           <>
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-6">
-              <HeroSide side={game.away} align="left" />
+              <HeroSide side={game.away} align="left" accent={accent} />
               <div className="text-center">
                 <p className="font-display text-cream text-[40px] leading-none tabular-nums sm:text-[52px]">
                   {game.away.score ?? "–"}
@@ -72,7 +72,7 @@ export default function HeroGameCard({
                   </p>
                 )}
               </div>
-              <HeroSide side={game.home} align="right" />
+              <HeroSide side={game.home} align="right" accent={accent} />
             </div>
 
             <div className="mt-5 flex flex-wrap items-end justify-between gap-3 border-t border-white/10 pt-4">
@@ -98,7 +98,7 @@ function PregameLayout({ game, accent }: { game: MlbScoreGame; accent: string })
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
-        <HeroSide side={game.away} align="left" compact />
+        <HeroSide side={game.away} align="left" compact accent={accent} />
         <div className="px-1 text-center">
           <p className="font-display text-cream text-[42px] leading-none tracking-tight sm:text-[56px]">
             {game.whenShort ?? "TBD"}
@@ -107,7 +107,7 @@ function PregameLayout({ game, accent }: { game: MlbScoreGame; accent: string })
             {game.when?.replace(/\s+at\s+.+$/i, "") ?? "First pitch"}
           </p>
         </div>
-        <HeroSide side={game.home} align="right" compact />
+        <HeroSide side={game.home} align="right" compact accent={accent} />
       </div>
 
       <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-4 sm:px-5">
@@ -200,10 +200,12 @@ function HeroSide({
   side,
   align,
   compact,
+  accent,
 }: {
   side: MlbScoreGame["away"];
   align: "left" | "right";
   compact?: boolean;
+  accent: string;
 }) {
   return (
     <div
@@ -216,9 +218,13 @@ function HeroSide({
       <Link
         to={teamPagePath(side.teamId)}
         onClick={(e) => e.stopPropagation()}
-        className="transition hover:scale-[1.03]"
+        className="relative transition hover:scale-[1.03]"
       >
-        <TeamMark teamId={side.teamId} size={compact ? "lg" : "xl"} />
+        <span
+          className="pointer-events-none absolute -inset-3 rounded-full opacity-70 blur-xl"
+          style={{ background: `radial-gradient(circle, ${accent}88, transparent 70%)` }}
+        />
+        <TeamMark teamId={side.teamId} size={compact ? "lg" : "xl"} className="relative" />
       </Link>
       <div
         className={cn(

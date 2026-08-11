@@ -487,15 +487,23 @@ function parseBbrefInt(raw: string): number | null {
 }
 
 function extractBbrefManagerPhoto(html: string): string | null {
-  const photoRaw =
-    html.match(
-      /src="(https?:\/\/www\.baseball-reference\.com\/req\/[^"]+headshots\/[^"]+\.jpg)"/i,
-    )?.[1] ??
-    html.match(
-      /content="(https?:\/\/www\.baseball-reference\.com\/req\/[^"]+headshots\/[^"]+\.jpg)"/i,
-    )?.[1] ??
-    html.match(/og:image"\s+content="([^"]+)"/i)?.[1] ??
-    null;
+  const candidates = [
+    ...html.matchAll(
+      /(?:src|content)="(https?:\/\/(?:www\.)?baseball-reference\.com\/req\/[^"]+headshots\/[^"]+\.jpe?g)"/gi,
+    ),
+    ...html.matchAll(
+      /(?:src|content)="(https?:\/\/cdn\.ssref\.net\/[^"]+headshots\/[^"]+\.jpe?g)"/gi,
+    ),
+  ].map((m) => m[1]);
+  let photoRaw =
+    candidates.find((u) => !/favicon|apple-touch|icon-/i.test(u)) ?? null;
+  // Never fall back to site icons / generic og:image marks.
+  if (!photoRaw) {
+    const og = html.match(/og:image"\s+content="([^"]+)"/i)?.[1] ?? null;
+    if (og && /headshots?\//i.test(og) && !/favicon|apple-touch|icon-/i.test(og)) {
+      photoRaw = og;
+    }
+  }
   if (!photoRaw) return null;
   if (photoRaw.includes("image_resize.cgi")) {
     return photoRaw.match(/url=(https?:\/\/[^&]+)/i)?.[1] ?? photoRaw;
@@ -905,14 +913,126 @@ async function scrapeBbrefManagerPhoto(name: string) {
     })
   ).text();
   const leash = detectManagerLeash(html);
+  const year = new Date().getFullYear();
+  let yearWins: number | null = null;
+  let yearLosses: number | null = null;
+  const i = html.indexOf('id="div_manager_stats"');
+  const chunk = i >= 0 ? html.slice(i, i + 25000) : html.slice(0, 40000);
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rm: RegExpExecArray | null;
+  while ((rm = rowRe.exec(chunk))) {
+    const row = rm[1];
+    const y = stripTags(row.match(/data-stat="year_ID"[^>]*>([\s\S]*?)<\/t/i)?.[1] ?? "");
+    if (y !== String(year)) continue;
+    const wRaw = stripTags(row.match(/data-stat="W"[^>]*>([\s\S]*?)<\/t/i)?.[1] ?? "");
+    const lRaw = stripTags(row.match(/data-stat="L"[^>]*>([\s\S]*?)<\/t/i)?.[1] ?? "");
+    if (!/^\d+$/.test(wRaw) || !/^\d+$/.test(lRaw)) continue;
+    yearWins = Number(wRaw);
+    yearLosses = Number(lRaw);
+    break;
+  }
   return {
     source: "baseball-reference",
     url,
     name,
     photo: extractBbrefManagerPhoto(html),
+    yearWins,
+    yearLosses,
+    yearSeason: yearWins != null ? year : null,
     ...leash,
   };
 }
+
+async function scrapeManagerFiredOdds() {
+  // Prefer Kalshi public market search for "manager" MLB out contracts.
+  const items: { name: string; team?: string | null; oddsAmerican: string; impliedPct: number | null; source: string; url: string }[] = [];
+  try {
+    const url = "https://api.elections.kalshi.com/trade-api/v2/markets?limit=50&status=open&series_ticker=KXCOACHOUTMLB";
+    const res = await fetch(url, { headers: { Accept: "application/json", "User-Agent": UA } });
+    if (res.ok) {
+      const data = await res.json() as {
+        markets?: {
+          title?: string;
+          subtitle?: string;
+          ticker?: string;
+          yes_bid?: number | null;
+          yes_ask?: number | null;
+          last_price?: number | null;
+          yes_bid_dollars?: string | null;
+          yes_ask_dollars?: string | null;
+          last_price_dollars?: string | null;
+          no_sub_title?: string | null;
+          custom_strike?: { Coach?: string; Team?: string } | null;
+        }[];
+      };
+      const dollarProb = (raw: string | null | undefined): number | null => {
+        if (raw == null || raw === "") return null;
+        const n = Number(raw);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        return Math.max(0.01, Math.min(0.99, n));
+      };
+      for (const m of data.markets ?? []) {
+        const name =
+          (m.custom_strike?.Coach ?? m.no_sub_title ?? "").trim() ||
+          (() => {
+            const title = `${m.title ?? ""} ${m.subtitle ?? ""}`;
+            // Legacy titles like "Will Matt Quatraro be out as manager..."
+            const nameMatch = title.match(/Will\s+([A-Z][a-zA-Z.'-]+(?:\s+[A-Z][a-zA-Z.']+){0,3})\s+be\s+out/i)
+              ?? title.match(/([A-Z][a-zA-Z.'-]+(?:\s+[A-Z][a-zA-Z.']+){1,3})/);
+            return nameMatch?.[1]?.trim() ?? "";
+          })();
+        if (!name || /field|any other/i.test(name)) continue;
+        // Prefer mid of bid/ask dollars; fall back to last trade, then legacy cent prices.
+        const bid = dollarProb(m.yes_bid_dollars);
+        const ask = dollarProb(m.yes_ask_dollars);
+        const last = dollarProb(m.last_price_dollars);
+        let p: number | null = null;
+        if (bid != null && ask != null) p = (bid + ask) / 2;
+        else p = ask ?? bid ?? last;
+        if (p == null) {
+          const cents = m.last_price ?? m.yes_ask ?? m.yes_bid ?? null;
+          if (cents == null) continue;
+          p = Math.max(0.01, Math.min(0.99, cents / 100));
+        }
+        const american = p >= 0.5
+          ? `-${Math.round((100 * p) / (1 - p))}`
+          : `+${Math.round((100 * (1 - p)) / p)}`;
+        items.push({
+          name,
+          team: m.custom_strike?.Team ?? null,
+          oddsAmerican: american,
+          impliedPct: Math.round(p * 1000) / 10,
+          source: "Kalshi",
+          url: `https://kalshi.com/markets/${(m.ticker ?? "").toLowerCase()}`,
+        });
+      }
+    }
+  } catch { /* */ }
+
+  if (!items.length) {
+    // Fallback: scrape BetOnline futures page text for american odds lines.
+    try {
+      const html = await (await fetch(
+        "https://www.betonline.ag/sportsbook/futures-and-props/mlb-specials/manager-fired",
+        { headers: { "User-Agent": UA, Accept: "text/html" } },
+      )).text();
+      for (const m of html.matchAll(/([A-Z][a-z]+(?:\s+[A-Z][a-z.]+)+)\s*<[^>]*>\s*([+-]\d{2,4})/g)) {
+        items.push({
+          name: m[1],
+          team: null,
+          oddsAmerican: m[2],
+          impliedPct: null,
+          source: "BetOnline",
+          url: "https://www.betonline.ag/sportsbook/futures-and-props/mlb-specials/manager-fired",
+        });
+      }
+    } catch { /* */ }
+  }
+
+  items.sort((a, b) => (b.impliedPct ?? 0) - (a.impliedPct ?? 0));
+  return { source: items[0]?.source ?? "none", checkedAt: new Date().toISOString(), items: items.slice(0, 20) };
+}
+
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -968,6 +1088,13 @@ Deno.serve(async (req: Request) => {
       return json(await scrapeBbrefManagerPhoto(name));
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 200);
+    }
+  }
+  if (body.action === "managerFiredOdds") {
+    try {
+      return json(await scrapeManagerFiredOdds());
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
     }
   }
   const safe = safePath(String(body.path ?? ""));

@@ -215,11 +215,16 @@ export type MlbManager = {
   teamName: string;
   teamAbbrev: string;
   record: string;
+  /** "Team" for full-season skippers; "As manager" for interim stint W–L. */
+  recordLabel: "Team" | "As manager";
   wins: number;
   losses: number;
   winPct: number;
   gb: string;
   playoffOdds: number | null;
+  /** American odds to be next manager fired (Kalshi / sportsbooks), when available. */
+  firedOddsAmerican: string | null;
+  firedOddsPct: number | null;
   divisionRank: number | null;
   contractNote: string | null;
   /** Higher = hotter seat (more likely to be fired). */
@@ -354,7 +359,9 @@ export function parseEspnRecapHtml(
       .replace(/\u00a0/g, " ")
       .replace(/—\s*—/g, "—")
       .replace(/[ \t\f\v]+/g, " ")
-      .replace(/\n+/g, " ");
+      // Keep paragraph breaks from ESPN </p> → \n\n (stripHtml).
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/[^\S\n]+/g, " ");
     if (text) parts.push({ kind: "text", text });
   };
   while ((m = re.exec(html))) {
@@ -761,6 +768,10 @@ export type MlbBoxscoreSide = {
   runs: number;
   hits: number;
   errors: number;
+  record: string | null;
+  probablePitcher: string | null;
+  probablePitcherId: number | null;
+  primaryColor: string;
   batters: MlbBoxscoreBatter[];
   pitchers: MlbBoxscorePitcher[];
 };
@@ -768,7 +779,10 @@ export type MlbBoxscoreSide = {
 export type MlbBoxscore = {
   gamePk: number;
   status: string;
+  /** True when the game has not started (Scheduled / Preview / Warmup). */
+  pregame: boolean;
   when: string | null;
+  whenShort: string | null;
   venue: string | null;
   attendance: number | null;
   gameDurationMinutes: number | null;
@@ -862,13 +876,18 @@ function mapBoxSide(
     })
     .filter((x): x is MlbBoxscorePitcher => x != null);
 
+  const teamId = team?.id ?? 0;
   return {
-    teamId: team?.id ?? 0,
+    teamId,
     name: team?.name ?? "—",
     abbrev: team?.abbreviation ?? teamAbbrev(team),
     runs: rh?.runs ?? Number(raw?.teamStats?.batting?.runs ?? 0),
     hits: rh?.hits ?? Number(raw?.teamStats?.batting?.hits ?? 0),
     errors: rh?.errors ?? Number(raw?.teamStats?.fielding?.errors ?? 0),
+    record: null,
+    probablePitcher: null,
+    probablePitcherId: null,
+    primaryColor: TEAM_COLORS[teamId] ?? "d9515c",
     batters,
     pitchers,
   };
@@ -884,14 +903,28 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null) as Promise<{
       gameData?: {
-        status?: { detailedState?: string };
+        status?: { detailedState?: string; abstractGameState?: string };
         datetime?: { dateTime?: string; officialDate?: string };
         venue?: { name?: string };
         weather?: { condition?: string; temp?: string; wind?: string };
         gameInfo?: { attendance?: number; gameDurationMinutes?: number };
+        probablePitchers?: {
+          away?: { id?: number; fullName?: string };
+          home?: { id?: number; fullName?: string };
+        };
         teams?: {
-          away?: { id?: number; name?: string; abbreviation?: string };
-          home?: { id?: number; name?: string; abbreviation?: string };
+          away?: {
+            id?: number;
+            name?: string;
+            abbreviation?: string;
+            record?: { wins?: number; losses?: number; leagueRecord?: { wins?: number; losses?: number } };
+          };
+          home?: {
+            id?: number;
+            name?: string;
+            abbreviation?: string;
+            record?: { wins?: number; losses?: number; leagueRecord?: { wins?: number; losses?: number } };
+          };
         };
       };
       liveData?: {
@@ -913,10 +946,33 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
         .filter(Boolean)
         .join(" · ")
     : null;
+  const status = live?.gameData?.status?.detailedState ?? "Final";
+  const abstract = live?.gameData?.status?.abstractGameState ?? "";
+  const pregame = /preview|scheduled|pre[- ]?game|warmup/i.test(`${status} ${abstract}`);
+  const away = mapBoxSide(box.teams?.away, live?.gameData?.teams?.away, ls?.teams?.away);
+  const home = mapBoxSide(box.teams?.home, live?.gameData?.teams?.home, ls?.teams?.home);
+  const sideRecord = (
+    t: { record?: { wins?: number; losses?: number; leagueRecord?: { wins?: number; losses?: number } } } | undefined,
+  ): string | null => {
+    const lr = t?.record?.leagueRecord;
+    const w = lr?.wins ?? t?.record?.wins;
+    const l = lr?.losses ?? t?.record?.losses;
+    return w != null && l != null ? `${w}-${l}` : null;
+  };
+  away.record = sideRecord(live?.gameData?.teams?.away);
+  home.record = sideRecord(live?.gameData?.teams?.home);
+  const probs = live?.gameData?.probablePitchers;
+  away.probablePitcher = probs?.away?.fullName ?? null;
+  away.probablePitcherId = probs?.away?.id ?? null;
+  home.probablePitcher = probs?.home?.fullName ?? null;
+  home.probablePitcherId = probs?.home?.id ?? null;
+  const whenIso = live?.gameData?.datetime?.dateTime ?? null;
   return {
     gamePk: Number(pk),
-    status: live?.gameData?.status?.detailedState ?? "Final",
-    when: fmtWhen(live?.gameData?.datetime?.dateTime),
+    status,
+    pregame,
+    when: fmtWhen(whenIso),
+    whenShort: fmtWhenShort(whenIso),
     venue: live?.gameData?.venue?.name ?? null,
     attendance: live?.gameData?.gameInfo?.attendance ?? null,
     gameDurationMinutes: live?.gameData?.gameInfo?.gameDurationMinutes ?? null,
@@ -927,8 +983,8 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
       away: i.away?.runs ?? null,
       home: i.home?.runs ?? null,
     })),
-    away: mapBoxSide(box.teams?.away, live?.gameData?.teams?.away, ls?.teams?.away),
-    home: mapBoxSide(box.teams?.home, live?.gameData?.teams?.home, ls?.teams?.home),
+    away,
+    home,
   };
 }
 
@@ -2733,11 +2789,15 @@ async function fetchManagerPhotoMeta(name: string): Promise<{
   photo: string | null;
   interim: boolean;
   shortLeash: boolean;
+  yearWins: number | null;
+  yearLosses: number | null;
 }> {
   const data = await invokeSports<{
     photo?: string | null;
     interim?: boolean;
     shortLeash?: boolean;
+    yearWins?: number | null;
+    yearLosses?: number | null;
   }>({
     action: "managerPhoto",
     name,
@@ -2746,11 +2806,60 @@ async function fetchManagerPhotoMeta(name: string): Promise<{
     photo: data?.photo ?? null,
     interim: Boolean(data?.interim),
     shortLeash: Boolean(data?.shortLeash),
+    yearWins: typeof data?.yearWins === "number" ? data.yearWins : null,
+    yearLosses: typeof data?.yearLosses === "number" ? data.yearLosses : null,
   };
 }
 
 async function fetchManagerPhoto(name: string): Promise<string | null> {
   return (await fetchManagerPhotoMeta(name)).photo;
+}
+
+export type MlbManagerFiredOdds = {
+  source: string;
+  checkedAt: string | null;
+  items: {
+    name: string;
+    team?: string | null;
+    oddsAmerican: string;
+    impliedPct: number | null;
+    source: string;
+    url: string;
+  }[];
+};
+
+export async function fetchManagerFiredOdds(): Promise<MlbManagerFiredOdds> {
+  const data = await invokeSports<{
+    source?: string;
+    checkedAt?: string;
+    items?: MlbManagerFiredOdds["items"];
+  }>({ action: "managerFiredOdds" });
+  return {
+    source: data?.source ?? "none",
+    checkedAt: data?.checkedAt ?? null,
+    items: data?.items ?? [],
+  };
+}
+
+function matchFiredOdds(
+  managerName: string,
+  items: MlbManagerFiredOdds["items"],
+): { american: string; pct: number | null } | null {
+  const want = normalizePersonName(managerName);
+  const last = want.split(" ").slice(-1)[0] ?? "";
+  const hit =
+    items.find((it) => normalizePersonName(it.name) === want) ??
+    items.find((it) => {
+      const n = normalizePersonName(it.name);
+      return last.length >= 4 && (n.endsWith(last) || n.includes(want));
+    });
+  if (!hit) return null;
+  return { american: hit.oddsAmerican, pct: hit.impliedPct };
+}
+
+function isGenericMlbHeadshot(url: string | null | undefined): boolean {
+  if (!url) return true;
+  return /people:generic:headshot|\/generic\//i.test(url) || !/^https?:/i.test(url);
 }
 
 type CoachMgr = {
@@ -3205,11 +3314,14 @@ function ordinalSuffix(n: number): string {
 /** All 30 MLB managers with a computed hot-seat ranking. */
 export async function fetchMlbManagers(): Promise<MlbManager[]> {
   const season = currentSeason();
-  const [teamsRaw, standings] = await Promise.all([
+  const [teamsRaw, standings, firedOdds] = await Promise.all([
     mlbGet("teams", { sportId: "1", season: String(season) }) as Promise<{
       teams?: { id?: number; name?: string; abbreviation?: string }[];
     }>,
     fetchMlbStandings(),
+    fetchManagerFiredOdds().catch(
+      (): MlbManagerFiredOdds => ({ source: "none", checkedAt: null, items: [] }),
+    ),
   ]);
 
   const standingByTeam = new Map<
@@ -3243,7 +3355,7 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
         const mgrId = mgr?.person?.id;
         if (!mgrId || !mgr.person?.fullName) return;
         const role = coachRole(mgr);
-        const isInterim = isInterimManagerRole(role);
+        const mlbInterim = isInterimManagerRole(role);
 
         let yearsWithTeam = 1;
         for (let y = season - 1; y >= season - 20; y--) {
@@ -3253,25 +3365,42 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
         }
 
         const st = standingByTeam.get(team.id);
-        const wins = st?.wins ?? 0;
-        const losses = st?.losses ?? 0;
+        let wins = st?.wins ?? 0;
+        let losses = st?.losses ?? 0;
+        let recordLabel: MlbManager["recordLabel"] = "Team";
+
+        const [wiki, contractNote, photoMeta] = await Promise.all([
+          fetchWikipediaCard(mgr.person.fullName),
+          mlbInterim || yearsWithTeam <= 1
+            ? fetchManagerContractNote(mgr.person.fullName)
+            : Promise.resolve(null),
+          fetchManagerPhotoMeta(mgr.person.fullName),
+        ]);
+
+        const interim = mlbInterim || photoMeta.interim;
+        if (
+          interim &&
+          photoMeta.yearWins != null &&
+          photoMeta.yearLosses != null &&
+          photoMeta.yearWins + photoMeta.yearLosses > 0
+        ) {
+          wins = photoMeta.yearWins;
+          losses = photoMeta.yearLosses;
+          recordLabel = "As manager";
+        }
+
         const gp = wins + losses;
         const winPct = gp > 0 ? wins / gp : 0.5;
         const playoff = parseOddsPercent(st?.playoff);
 
-        // Keep the list light — avoid 30 parallel BBRef scrapes (they starve
-        // managerCareer on the detail page). Detail fetches the real portrait.
-        const [wiki, contractNote] = await Promise.all([
-          fetchWikipediaCard(mgr.person.fullName),
-          isInterim || yearsWithTeam <= 1
-            ? fetchManagerContractNote(mgr.person.fullName)
-            : Promise.resolve(null),
-        ]);
-        const headshot = wiki.image || mlbHeadshot(mgrId, 213);
-        const interim = isInterim;
-        // 1-year deals, explicit interim, or year-1 skippers deep under .500 = always hot.
+        const headshot =
+          photoMeta.photo ||
+          (!isGenericMlbHeadshot(wiki.image) && wiki.image) ||
+          mlbHeadshot(mgrId, 213);
+
         const shortLeash =
           interim ||
+          photoMeta.shortLeash ||
           isShortLeashContract(contractNote) ||
           (yearsWithTeam <= 1 && winPct < 0.42);
 
@@ -3286,6 +3415,8 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
           shortLeash,
         });
 
+        const odds = matchFiredOdds(mgr.person.fullName, firedOdds.items);
+
         managers.push({
           id: mgrId,
           name: mgr.person.fullName,
@@ -3293,11 +3424,14 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
           teamName: team.name ?? "—",
           teamAbbrev: team.abbreviation ?? "—",
           record: `${wins}-${losses}`,
+          recordLabel,
           wins,
           losses,
           winPct,
           gb: st?.gb ?? "—",
           playoffOdds: playoff,
+          firedOddsAmerican: odds?.american ?? null,
+          firedOddsPct: odds?.pct ?? null,
           divisionRank: st?.rank ? Number(st.rank) : null,
           contractNote,
           hotSeatScore: heat.score,
