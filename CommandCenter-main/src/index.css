@@ -415,6 +415,43 @@
       opacity: 1;
     }
   }
+
+  /* Dispatch reader — stylized tweet / pull-quote (Instapaper-style). */
+  .rss-reader blockquote {
+    margin: 1.75rem 0;
+    padding: 0.15rem 0 0.15rem 1.15rem;
+    border-left: 2px solid var(--color-accent-dark);
+    font-family: var(--font-rss);
+    font-style: italic;
+    font-size: 1.02em;
+    line-height: 1.75;
+    color: rgba(196, 205, 220, 0.82);
+    background: transparent;
+  }
+  .rss-reader blockquote p {
+    margin: 0 0 0.65rem;
+  }
+  .rss-reader blockquote p:last-child {
+    margin-bottom: 0;
+  }
+  .rss-reader blockquote footer,
+  .rss-reader blockquote cite,
+  .rss-reader blockquote .rss-tweet-meta {
+    display: block;
+    margin-top: 0.85rem;
+    font-style: normal;
+    font-size: 0.9em;
+    line-height: 1.45;
+    color: rgba(196, 205, 220, 0.78);
+  }
+  .rss-reader blockquote footer a,
+  .rss-reader blockquote cite a,
+  .rss-reader blockquote .rss-tweet-meta a {
+    color: var(--color-accent);
+    font-style: normal;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
 }
 
 /* iOS Safari zooms the page whenever a focused input has a font-size below
