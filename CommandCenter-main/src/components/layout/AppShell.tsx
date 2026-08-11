@@ -26,6 +26,11 @@ import {
   markSportsSolo,
   prefersSportsHome,
 } from "@/lib/sports-home";
+import {
+  clearRssSolo,
+  markRssSolo,
+  prefersRssHome,
+} from "@/lib/rss-home";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -33,7 +38,7 @@ const NAV = [
   { to: "/todos", label: "Todos", short: "Todos", Icon: ListChecks },
   { to: "/habits", label: "Habits", short: "Habits", Icon: Repeat },
   { to: "/reading", label: "Reading", short: "Reading", Icon: BookOpen },
-  { to: "/rss", label: "RSS", short: "RSS", Icon: Newspaper },
+  { to: "/rss", label: "Dispatch", short: "News", Icon: Newspaper },
   { to: "/sports", label: "Sports", short: "Sports", Icon: Trophy },
 ];
 
@@ -73,11 +78,13 @@ export default function AppShell() {
   const soloParam = searchParams.get("solo") === "1";
   const onReading = pathname.startsWith("/reading");
   const onSports = pathname.startsWith("/sports");
+  const onRss = pathname.startsWith("/rss");
 
   const [soloSession, setSoloSession] = useState(
     () =>
       soloParam ||
       (onSports && prefersSportsHome()) ||
+      (onRss && prefersRssHome()) ||
       (onReading && prefersReadingHome()),
   );
 
@@ -90,6 +97,7 @@ export default function AppShell() {
       if (soloParam || (isStandaloneApp() && readingManifest)) {
         markReadingSolo();
         clearSportsSolo();
+        clearRssSolo();
         setSoloSession(true);
       }
       return;
@@ -105,24 +113,39 @@ export default function AppShell() {
       if (soloParam || (isStandaloneApp() && sportsManifest)) {
         markSportsSolo();
         clearReadingSolo();
+        clearRssSolo();
         setSoloSession(true);
       }
       return;
     }
 
-    // Leaving Sports/Reading for the rest of Command Center clears solo prefs
+    if (onRss) {
+      const rssManifest = document
+        .querySelector('link[rel="manifest"]')
+        ?.getAttribute("href")
+        ?.includes("rss.webmanifest");
+      if (soloParam || (isStandaloneApp() && rssManifest)) {
+        markRssSolo();
+        clearReadingSolo();
+        clearSportsSolo();
+        setSoloSession(true);
+      }
+      return;
+    }
+
+    // Leaving Sports/Reading/Dispatch for the rest of Command Center clears solo prefs
     // so the main icon keeps opening the dashboard.
     if (
       pathname.startsWith("/dashboard") ||
       pathname.startsWith("/todos") ||
-      pathname.startsWith("/habits") ||
-      pathname.startsWith("/rss")
+      pathname.startsWith("/habits")
     ) {
       clearReadingSolo();
       clearSportsSolo();
+      clearRssSolo();
       setSoloSession(false);
     }
-  }, [soloParam, onReading, onSports, pathname]);
+  }, [soloParam, onReading, onSports, onRss, pathname]);
 
   const readingOnly = useMemo(
     () => onReading && (soloParam || soloSession),
@@ -132,7 +155,11 @@ export default function AppShell() {
     () => onSports && (soloParam || soloSession),
     [onSports, soloParam, soloSession],
   );
-  const hideMainChrome = readingOnly || sportsOnly;
+  const rssOnly = useMemo(
+    () => onRss && (soloParam || soloSession),
+    [onRss, soloParam, soloSession],
+  );
+  const hideMainChrome = readingOnly || sportsOnly || rssOnly;
 
   const today = new Date().toLocaleDateString("en-US", {
     timeZone: "America/Chicago",
@@ -145,6 +172,8 @@ export default function AppShell() {
     <span className="text-accent">Reading</span>
   ) : sportsOnly || onSports ? (
     <span className="text-accent">Sports</span>
+  ) : rssOnly || onRss ? (
+    <span className="text-accent">Dispatch</span>
   ) : (
     <>
       Command <span className="text-accent">Center</span>
@@ -229,8 +258,8 @@ export default function AppShell() {
         <main
           className={cn(
             "min-w-0 flex-1 overflow-x-hidden md:pb-0",
-            // Reading solo: no bottom bar. Sports solo + full app: pad for tabs.
-            readingOnly ? "pb-0" : "pb-[76px] md:pb-0",
+            // Reading/Dispatch solo: no bottom bar. Sports solo + full app: pad for tabs.
+            readingOnly || rssOnly ? "pb-0" : "pb-[76px] md:pb-0",
           )}
         >
           <Outlet />

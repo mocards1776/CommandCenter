@@ -503,6 +503,52 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["sports_person_notes"]["Insert"]>;
         Relationships: [];
       };
+      rss_reads: {
+        Row: {
+          id: string;
+          user_id: string;
+          article_url: string;
+          article_title: string | null;
+          feed_url: string | null;
+          read_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          article_url: string;
+          article_title?: string | null;
+          feed_url?: string | null;
+          read_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rss_reads"]["Insert"]>;
+        Relationships: [];
+      };
+      rss_highlights: {
+        Row: {
+          id: string;
+          user_id: string;
+          article_url: string;
+          article_title: string | null;
+          feed_url: string | null;
+          quote_text: string;
+          note: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          article_url: string;
+          article_title?: string | null;
+          feed_url?: string | null;
+          quote_text: string;
+          note?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rss_highlights"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };

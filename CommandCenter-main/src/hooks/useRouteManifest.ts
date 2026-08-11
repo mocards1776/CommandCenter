@@ -2,8 +2,8 @@ import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 
 /**
- * Lets one app produce multiple Home Screen icons: Reading, Sports, or full
- * Command Center — depending on which route you’re on when you Add.
+ * Lets one app produce multiple Home Screen icons: Reading, Sports, Dispatch,
+ * or full Command Center — depending on which route you’re on when you Add.
  *
  * iOS reads all of this at the moment you tap "Add to Home Screen". Crucially
  * it takes the icon from <link rel="apple-touch-icon">, NOT from the
@@ -15,28 +15,42 @@ export function useRouteManifest() {
   useEffect(() => {
     const reading = pathname.startsWith("/reading");
     const sports = pathname.startsWith("/sports");
+    const rss = pathname.startsWith("/rss");
 
-    const mode = reading ? "reading" : sports ? "sports" : "app";
+    const mode = reading ? "reading" : sports ? "sports" : rss ? "rss" : "app";
 
     const manifest =
       mode === "reading"
         ? "/reading.webmanifest"
         : mode === "sports"
           ? "/sports.webmanifest"
-          : "/manifest.webmanifest";
+          : mode === "rss"
+            ? "/rss.webmanifest"
+            : "/manifest.webmanifest";
     const icon192 =
       mode === "reading"
         ? "/icon-books-192.png"
         : mode === "sports"
           ? "/icon-mlb-192.png"
-          : "/icon-192.png";
+          : mode === "rss"
+            ? "/icon-rss-192.png"
+            : "/icon-192.png";
     const icon512 =
       mode === "reading"
         ? "/icon-books-512.png"
         : mode === "sports"
           ? "/icon-mlb-512.png"
-          : "/icon-512.png";
-    const title = mode === "reading" ? "Reading" : mode === "sports" ? "Sports" : "Command";
+          : mode === "rss"
+            ? "/icon-rss-512.png"
+            : "/icon-512.png";
+    const title =
+      mode === "reading"
+        ? "Reading"
+        : mode === "sports"
+          ? "Sports"
+          : mode === "rss"
+            ? "Dispatch"
+            : "Command";
 
     const oldManifest = document.querySelector('link[rel="manifest"]');
     if (!oldManifest || !oldManifest.getAttribute("href")?.endsWith(manifest)) {
@@ -68,6 +82,12 @@ export function useRouteManifest() {
     if (titleMeta) titleMeta.content = title;
 
     document.title =
-      mode === "reading" ? "Reading" : mode === "sports" ? "Sports" : "🇺🇸 Josh's Command Center";
+      mode === "reading"
+        ? "Reading"
+        : mode === "sports"
+          ? "Sports"
+          : mode === "rss"
+            ? "Dispatch"
+            : "🇺🇸 Josh's Command Center";
   }, [pathname]);
 }

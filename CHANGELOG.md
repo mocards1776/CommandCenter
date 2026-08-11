@@ -2,6 +2,16 @@
 
 ---
 
+## Dispatch (RSS) standalone — August 11, 2026
+
+- Standalone **Dispatch** PWA (`/rss.html`, patriotic icon) like Reading/Sports.
+- Second feed: STL Today Cardinals (`rss.app` NY6044…); TownNews subscriber
+  cipher unlocked in the `rss` edge function so full text extracts.
+- Highlights + comments (`rss_highlights`), read/unread (`rss_reads`).
+- Feed thumbnails are clickable; Notes tab across articles.
+
+---
+
 ## RSS reader — August 11, 2026
 
 - Added `/rss` page with Missouri Scout feed (`rss.app` XML).

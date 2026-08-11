@@ -37,6 +37,12 @@ export function homePath(): string {
     ) {
       return "/sports?solo=1";
     }
+    if (
+      localStorage.getItem("rss-solo") === "1" ||
+      sessionStorage.getItem("rss-solo") === "1"
+    ) {
+      return "/rss?solo=1";
+    }
   } catch {
     // private mode
   }

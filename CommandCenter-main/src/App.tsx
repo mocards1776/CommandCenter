@@ -19,6 +19,7 @@ import MlbManagerPage from "@/pages/MlbManagerPage";
 import RssPage from "@/pages/RssPage";
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
 import { markSportsSolo } from "@/lib/sports-home";
+import { markRssSolo } from "@/lib/rss-home";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,7 +38,9 @@ function captureSoloFromUrl() {
   const path = window.location.pathname;
   if (path.startsWith("/sports")) {
     markSportsSolo();
-  } else {
+  } else if (path.startsWith("/rss")) {
+    markRssSolo();
+  } else if (path.startsWith("/reading")) {
     markReadingSolo();
   }
 }

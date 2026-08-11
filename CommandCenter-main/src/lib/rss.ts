@@ -1,7 +1,24 @@
-import { supabase } from "./supabase";
+import { supabase, requireUserId } from "./supabase";
 
-/** Default Missouri Scout feed (rss.app). */
-export const DEFAULT_RSS_FEED = "https://rss.app/feeds/nG7WGKJTs5LOQjxd.xml";
+/** Configured feeds — Missouri Scout first, then Cardinals (STL Today). */
+export const RSS_FEEDS = [
+  {
+    id: "moscout",
+    title: "Missouri Scout",
+    short: "Scout",
+    url: "https://rss.app/feeds/nG7WGKJTs5LOQjxd.xml",
+  },
+  {
+    id: "cardinals",
+    title: "Cardinals",
+    short: "Cards",
+    url: "https://rss.app/feeds/NY6044y6TPBMOdru.xml",
+  },
+] as const;
+
+export type RssFeedId = (typeof RSS_FEEDS)[number]["id"];
+
+export const DEFAULT_RSS_FEED = RSS_FEEDS[0].url;
 
 export type RssFeedItem = {
   id: string;
@@ -29,6 +46,17 @@ export type RssArticle = {
   contentHtml: string;
   contentText: string;
   wordCount: number;
+};
+
+export type RssHighlight = {
+  id: string;
+  articleUrl: string;
+  articleTitle: string | null;
+  feedUrl: string | null;
+  quoteText: string;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 async function invokeRss<T>(body: Record<string, string>): Promise<T> {
@@ -59,4 +87,118 @@ export function formatFeedDate(raw: string | null): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+export async function fetchRssReads(): Promise<Set<string>> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("rss_reads")
+    .select("article_url")
+    .eq("user_id", userId);
+  if (error) throw error;
+  return new Set((data ?? []).map((r) => r.article_url));
+}
+
+export async function markRssRead(input: {
+  articleUrl: string;
+  articleTitle?: string | null;
+  feedUrl?: string | null;
+}): Promise<void> {
+  const userId = await requireUserId();
+  const { error } = await supabase.from("rss_reads").upsert(
+    {
+      user_id: userId,
+      article_url: input.articleUrl,
+      article_title: input.articleTitle ?? null,
+      feed_url: input.feedUrl ?? null,
+      read_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id,article_url" },
+  );
+  if (error) throw error;
+}
+
+export async function markRssUnread(articleUrl: string): Promise<void> {
+  const userId = await requireUserId();
+  const { error } = await supabase
+    .from("rss_reads")
+    .delete()
+    .eq("user_id", userId)
+    .eq("article_url", articleUrl);
+  if (error) throw error;
+}
+
+export async function fetchRssHighlights(articleUrl?: string): Promise<RssHighlight[]> {
+  const userId = await requireUserId();
+  let q = supabase
+    .from("rss_highlights")
+    .select("*")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false });
+  if (articleUrl) q = q.eq("article_url", articleUrl);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    articleUrl: r.article_url,
+    articleTitle: r.article_title,
+    feedUrl: r.feed_url,
+    quoteText: r.quote_text,
+    note: r.note,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export async function createRssHighlight(input: {
+  articleUrl: string;
+  articleTitle?: string | null;
+  feedUrl?: string | null;
+  quoteText: string;
+  note?: string;
+}): Promise<RssHighlight> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("rss_highlights")
+    .insert({
+      user_id: userId,
+      article_url: input.articleUrl,
+      article_title: input.articleTitle ?? null,
+      feed_url: input.feedUrl ?? null,
+      quote_text: input.quoteText.trim(),
+      note: (input.note ?? "").trim(),
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    articleUrl: data.article_url,
+    articleTitle: data.article_title,
+    feedUrl: data.feed_url,
+    quoteText: data.quote_text,
+    note: data.note,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at,
+  };
+}
+
+export async function updateRssHighlightNote(id: string, note: string): Promise<void> {
+  const userId = await requireUserId();
+  const { error } = await supabase
+    .from("rss_highlights")
+    .update({ note: note.trim(), updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteRssHighlight(id: string): Promise<void> {
+  const userId = await requireUserId();
+  const { error } = await supabase
+    .from("rss_highlights")
+    .delete()
+    .eq("user_id", userId)
+    .eq("id", id);
+  if (error) throw error;
 }

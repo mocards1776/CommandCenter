@@ -1,0 +1,16 @@
+{
+  "name": "Dispatch",
+  "short_name": "Dispatch",
+  "description": "RSS reader with full-text extraction, highlights, and notes.",
+  "start_url": "/rss.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0A1730",
+  "theme_color": "#081228",
+  "icons": [
+    { "src": "/icon-rss-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-rss-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-rss-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
