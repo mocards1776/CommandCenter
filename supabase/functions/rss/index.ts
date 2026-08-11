@@ -194,12 +194,78 @@ function stripNoise(html: string): string {
     .replace(/<!--[\s\S]*?-->/g, "");
 }
 
+/** TownNews / BLOX subscriber-only bodies ship ROT-47-style scrambled. */
+function decryptTownNews(s: string): string {
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 33 && c <= 126) {
+      out += String.fromCharCode(33 + ((c - 33 + 47) % 94));
+    } else {
+      out += s[i];
+    }
+  }
+  return out;
+}
+
+/** Unlock STL Today (and similar) encrypted subscriber paragraphs before extract. */
+function unlockEncryptedContent(html: string): string {
+  return html.replace(
+    /<(p|div)([^>]*class="[^"]*encrypted-content[^"]*"[^>]*)>([\s\S]*?)<\/\1>/gi,
+    (_m, tag: string, attrs: string, inner: string) => {
+      const decoded = decryptTownNews(decodeEntities(inner));
+      const cleanAttrs = String(attrs)
+        .replace(/\bencrypted-content\b/g, "")
+        .replace(/\bsubscriber-only\b/g, "")
+        .replace(/\s*style\s*=\s*"display:\s*none"/gi, "");
+      return "<" + tag + cleanAttrs + ">" + decoded + "</" + tag + ">";
+    },
+  );
+}
+
+/** Match a full nested <div>…</div> (non-greedy patterns stop at the first child close). */
+function sliceBalancedDiv(html: string, openRe: RegExp): string | null {
+  const m = openRe.exec(html);
+  if (!m) return null;
+  const start = m.index + m[0].length;
+  const lower = html.toLowerCase();
+  let depth = 1;
+  let i = start;
+  while (i < html.length && depth > 0) {
+    const open = lower.indexOf("<div", i);
+    const close = lower.indexOf("</div>", i);
+    if (close === -1) return null;
+    if (open !== -1 && open < close) {
+      const boundary = lower[open + 4] ?? "";
+      if (!boundary || /[\s>/]/.test(boundary)) depth++;
+      i = open + 4;
+      continue;
+    }
+    depth--;
+    if (depth === 0) return html.slice(start, close);
+    i = close + 6;
+  }
+  return null;
+}
+
 function extractFragment(html: string): string | null {
+  // TownNews / BLOX: prefer balanced article body so unlocked subscriber paragraphs are kept.
+  const balancedOpeners = [
+    /<div[^>]*itemprop="articleBody"[^>]*>/i,
+    /<div[^>]*class="[^"]*asset-content[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*subscriber-premium[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*lee-article-body[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*blog-item-content[^"]*e-content[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*e-content[^"]*"[^>]*>/i,
+  ];
+  for (const re of balancedOpeners) {
+    const frag = sliceBalancedDiv(html, re);
+    if (frag && stripTags(frag).length > 200) return frag;
+  }
+
   const patterns = [
     /<div[^>]*class="[^"]*blog-item-content[^"]*e-content[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<div[^>]*class="[^"]*blog-item-author-profile/i,
-    /<div[^>]*class="[^"]*e-content[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*itemprop="articleBody"[^>]*>([\s\S]*?)<\/div>/i,
-    /<(?:div|section|article)[^>]*class="[^"]*(?:post-content|entry-content|article-content|article-body|post-body|rich-text)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|section|article)>/i,
+    /<(?:div|section|article)[^>]*class="[^"]*(?:post-content|entry-content|article-content|article-body|post-body|rich-text|subscriber-premium)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|section|article)>/i,
     /<article[^>]*>([\s\S]*?)<\/article>/i,
     /<main[^>]*>([\s\S]*?)<\/main>/i,
   ];
@@ -312,7 +378,7 @@ async function handleFeed(feedUrl: string) {
 
 async function handleRead(url: string) {
   if (!isPublicHttpUrl(url)) return json({ error: "Invalid article URL" }, 400);
-  const html = stripNoise(await fetchText(url));
+  const html = unlockEncryptedContent(stripNoise(await fetchText(url)));
   const frag = extractFragment(html);
   if (!frag) return json({ error: "Could not extract article text", url }, 422);
   const contentHtml = sanitizeHtml(frag);
