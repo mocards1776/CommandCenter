@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueries, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Ban,
   CheckCheck,
   ChevronLeft,
   ChevronRight,
@@ -19,11 +20,15 @@ import {
 import toast from "react-hot-toast";
 import {
   RSS_FEEDS,
+  addRssFilter,
+  applyRssFilters,
   createRssHighlight,
   dedupeArticles,
+  deleteRssFilter,
   deleteRssHighlight,
   fetchRssArticle,
   fetchRssFeed,
+  fetchRssFilters,
   fetchRssHighlights,
   fetchRssReads,
   formatFeedDate,
@@ -33,6 +38,8 @@ import {
   type RssFeedId,
   type RssFeedItem,
   type RssFeedItemRef,
+  type RssFilter,
+  type RssFilterKind,
   type RssHighlight,
 } from "@/lib/rss";
 import {
@@ -44,7 +51,7 @@ import {
 } from "@/lib/mlb";
 import { cn } from "@/lib/utils";
 
-type NavView = "unread" | RssFeedId | "notes";
+type NavView = "unread" | RssFeedId | "notes" | "filters";
 
 function readingMinutes(words: number): string {
   const m = Math.max(1, Math.round(words / 220));
@@ -526,61 +533,72 @@ function ArticleRow({
   item,
   read,
   onOpen,
+  onBlockUrl,
 }: {
   item: RssFeedItem;
   read: boolean;
   onOpen: () => void;
+  onBlockUrl: () => void;
 }) {
   return (
     <li>
-      <button
-        type="button"
-        onClick={onOpen}
+      <div
         className={cn(
-          "hover:bg-white/[0.03] flex w-full items-start gap-3 border-b border-white/[0.06] px-3 py-3.5 text-left transition-colors",
+          "hover:bg-white/[0.03] flex w-full items-start gap-3 border-b border-white/[0.06] px-3 py-3.5 transition-colors",
           read && "opacity-50",
         )}
       >
-        <span
-          className={cn(
-            "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
-            read ? "bg-white/15" : "bg-accent",
-          )}
-          aria-hidden
-        />
-        {item.image ? (
-          <img
-            src={item.image}
-            alt=""
-            className="bg-hero h-14 w-[4.5rem] shrink-0 object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className="bg-hero text-chalk-dim grid h-14 w-[4.5rem] shrink-0 place-items-center text-[10px] uppercase tracking-wider">
-            —
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="label-caps text-chalk-dim mb-1">
-            {formatFeedDate(item.publishedAt)}
-            {item.author ? ` · ${item.author}` : ""}
-          </div>
-          <h3
+        <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 text-left">
+          <span
             className={cn(
-              "font-rss text-[17px] leading-snug font-medium md:text-[18px]",
-              read ? "text-chalk" : "text-cream",
+              "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
+              read ? "bg-white/15" : "bg-accent",
             )}
-          >
-            {item.title}
-          </h3>
-          {item.snippet ? (
-            <p className="font-rss text-chalk mt-1 line-clamp-2 text-[14px] leading-relaxed">
-              {item.snippet}
-            </p>
-          ) : null}
-        </div>
+            aria-hidden
+          />
+          {item.image ? (
+            <img
+              src={item.image}
+              alt=""
+              className="bg-hero h-14 w-[4.5rem] shrink-0 object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <div className="bg-hero text-chalk-dim grid h-14 w-[4.5rem] shrink-0 place-items-center text-[10px] uppercase tracking-wider">
+              —
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="label-caps text-chalk-dim mb-1">
+              {formatFeedDate(item.publishedAt)}
+              {item.author ? ` · ${item.author}` : ""}
+            </div>
+            <h3
+              className={cn(
+                "font-rss text-[17px] leading-snug font-medium md:text-[18px]",
+                read ? "text-chalk" : "text-cream",
+              )}
+            >
+              {item.title}
+            </h3>
+            {item.snippet ? (
+              <p className="font-rss text-chalk mt-1 line-clamp-2 text-[14px] leading-relaxed">
+                {item.snippet}
+              </p>
+            ) : null}
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={onBlockUrl}
+          title="Blacklist this site"
+          className="text-chalk-dim hover:text-alert mt-1 shrink-0"
+          aria-label="Blacklist site"
+        >
+          <Ban size={15} />
+        </button>
         <ChevronRight size={16} className="text-chalk-dim mt-1 shrink-0" />
-      </button>
+      </div>
     </li>
   );
 }
@@ -598,6 +616,13 @@ export default function RssPage() {
   });
   const readUrls = reads.data ?? new Set<string>();
 
+  const filtersQuery = useQuery({
+    queryKey: ["rss-filters"],
+    queryFn: fetchRssFilters,
+    staleTime: 60_000,
+  });
+  const filters = filtersQuery.data ?? [];
+
   const feedQueries = useQueries({
     queries: RSS_FEEDS.map((f) => ({
       queryKey: ["rss-feed", f.url],
@@ -612,18 +637,34 @@ export default function RssPage() {
     enabled: nav === "notes",
   });
 
+  const addFilterMut = useMutation({
+    mutationFn: ({ kind, value }: { kind: RssFilterKind; value: string }) =>
+      addRssFilter(kind, value),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["rss-filters"] });
+      toast.success("Filter added");
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Could not add filter"),
+  });
+
+  const deleteFilterMut = useMutation({
+    mutationFn: deleteRssFilter,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["rss-filters"] }),
+  });
+
   const feedById = useMemo(() => {
     const map = new Map<string, { items: RssFeedItem[]; title: string; url: string }>();
     RSS_FEEDS.forEach((f, i) => {
       const data = feedQueries[i]?.data;
+      const items = applyRssFilters(dedupeArticles(data?.items ?? []), filters);
       map.set(f.id, {
-        items: dedupeArticles(data?.items ?? []),
+        items,
         title: data?.title || f.title,
         url: f.url,
       });
     });
     return map;
-  }, [feedQueries]);
+  }, [feedQueries, filters]);
 
   const unreadByFeed = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -635,7 +676,7 @@ export default function RssPage() {
   }, [feedById, readUrls]);
 
   const listItems = useMemo(() => {
-    if (nav === "notes") return [] as RssFeedItemRef[];
+    if (nav === "notes" || nav === "filters") return [] as RssFeedItemRef[];
     if (nav === "unread") {
       const merged: RssFeedItemRef[] = [];
       for (const f of RSS_FEEDS) {
@@ -682,7 +723,9 @@ export default function RssPage() {
       ? "Unread"
       : nav === "notes"
         ? "Notes"
-        : RSS_FEEDS.find((f) => f.id === nav)?.title ?? "Feed";
+        : nav === "filters"
+          ? "Filters"
+          : RSS_FEEDS.find((f) => f.id === nav)?.title ?? "Feed";
 
   const feedsLoading = feedQueries.some((q) => q.isLoading);
   const feedsFetching = feedQueries.some((q) => q.isFetching);
@@ -759,7 +802,7 @@ export default function RssPage() {
         </div>
 
         <div className="px-2 pb-2">
-          <p className="label-caps text-chalk-dim px-2 py-2">Filters</p>
+          <p className="label-caps text-chalk-dim px-2 py-2">Inbox</p>
           <button
             type="button"
             onClick={() => selectNav("unread")}
@@ -817,6 +860,23 @@ export default function RssPage() {
                 <ChevronRight size={14} className="opacity-50" />
               </button>
             </li>
+            <li>
+              <button
+                type="button"
+                onClick={() => selectNav("filters")}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2.5 text-left transition-colors",
+                  nav === "filters"
+                    ? "bg-accent/15 text-cream"
+                    : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+                )}
+              >
+                <Ban size={16} className="text-accent shrink-0" />
+                <span className="min-w-0 flex-1 text-[13.5px]">Filters</span>
+                <span className="text-chalk tabular-nums text-[12px]">{filters.length}</span>
+                <ChevronRight size={14} className="opacity-50" />
+              </button>
+            </li>
           </ul>
         </div>
 
@@ -851,12 +911,22 @@ export default function RssPage() {
             <p className="text-chalk-dim text-[11px] uppercase tracking-[0.14em]">
               {nav === "notes"
                 ? `${allNotes.data?.length ?? 0} highlights`
-                : `${listItems.length} articles`}
+                : nav === "filters"
+                  ? `${filters.length} rules`
+                  : `${listItems.length} articles`}
             </p>
           </div>
         </div>
 
-        {nav === "notes" ? (
+        {nav === "filters" ? (
+          <FiltersPanel
+            filters={filters}
+            loading={filtersQuery.isLoading}
+            onAdd={(kind, value) => addFilterMut.mutate({ kind, value })}
+            onDelete={(id) => deleteFilterMut.mutate(id)}
+            saving={addFilterMut.isPending}
+          />
+        ) : nav === "notes" ? (
           <div className="p-4 md:p-5">
             {allNotes.isLoading ? (
               <p className="label-caps animate-pulse">Loading notes</p>
@@ -894,11 +964,133 @@ export default function RssPage() {
                 item={item}
                 read={readUrls.has(item.link)}
                 onOpen={() => openArticle(item)}
+                onBlockUrl={() => {
+                  try {
+                    const host = new URL(item.link).hostname.replace(/^www\./, "");
+                    addFilterMut.mutate({ kind: "url", value: host });
+                  } catch {
+                    addFilterMut.mutate({ kind: "url", value: item.link });
+                  }
+                }}
               />
             ))}
           </ul>
         )}
       </section>
+    </div>
+  );
+}
+
+function FiltersPanel({
+  filters,
+  loading,
+  onAdd,
+  onDelete,
+  saving,
+}: {
+  filters: RssFilter[];
+  loading: boolean;
+  onAdd: (kind: RssFilterKind, value: string) => void;
+  onDelete: (id: string) => void;
+  saving: boolean;
+}) {
+  const [kind, setKind] = useState<RssFilterKind>("phrase");
+  const [value, setValue] = useState("");
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const v = value.trim();
+    if (!v) return;
+    onAdd(kind, v);
+    setValue("");
+  }
+
+  const phrases = filters.filter((f) => f.kind === "phrase");
+  const urls = filters.filter((f) => f.kind === "url");
+
+  return (
+    <div className="flex flex-col gap-5 p-4 md:p-5">
+      <p className="text-chalk font-rss text-[14px] leading-relaxed">
+        Hide stories that match a phrase (title/snippet) or a URL fragment (host or path).
+      </p>
+      <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row">
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as RssFilterKind)}
+          className="bg-panel text-cream rounded-sm border border-white/10 px-3 py-2.5 text-[13px] outline-none focus:border-accent/50"
+        >
+          <option value="phrase">Phrase</option>
+          <option value="url">URL</option>
+        </select>
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={kind === "phrase" ? "e.g. Liberatore" : "e.g. heavy.com"}
+          className="bg-panel placeholder:text-chalk-dim text-cream min-w-0 flex-1 rounded-sm border border-white/10 px-3 py-2.5 text-[13px] outline-none focus:border-accent/50"
+        />
+        <button
+          type="submit"
+          disabled={saving || !value.trim()}
+          className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] disabled:opacity-40"
+        >
+          Add
+        </button>
+      </form>
+
+      {loading ? (
+        <p className="label-caps animate-pulse">Loading filters</p>
+      ) : filters.length === 0 ? (
+        <p className="text-chalk font-rss text-sm">No filters yet.</p>
+      ) : (
+        <div className="flex flex-col gap-5">
+          {phrases.length > 0 && (
+            <div>
+              <div className="rule-head mb-3">Blocked phrases</div>
+              <ul className="flex flex-col gap-2">
+                {phrases.map((f) => (
+                  <li
+                    key={f.id}
+                    className="border-white/[0.06] flex items-center justify-between gap-3 border-b pb-2"
+                  >
+                    <span className="font-rss text-cream text-[15px]">{f.value}</span>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(f.id)}
+                      className="text-chalk-dim hover:text-alert"
+                      aria-label="Remove phrase"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {urls.length > 0 && (
+            <div>
+              <div className="rule-head mb-3">Blocked URLs</div>
+              <ul className="flex flex-col gap-2">
+                {urls.map((f) => (
+                  <li
+                    key={f.id}
+                    className="border-white/[0.06] flex items-center justify-between gap-3 border-b pb-2"
+                  >
+                    <span className="font-rss text-cream break-all text-[15px]">{f.value}</span>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(f.id)}
+                      className="text-chalk-dim hover:text-alert"
+                      aria-label="Remove URL"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

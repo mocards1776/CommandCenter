@@ -549,6 +549,24 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["rss_highlights"]["Insert"]>;
         Relationships: [];
       };
+      rss_filters: {
+        Row: {
+          id: string;
+          user_id: string;
+          kind: "phrase" | "url";
+          value: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          kind: "phrase" | "url";
+          value: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rss_filters"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };

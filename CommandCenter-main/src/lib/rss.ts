@@ -1,6 +1,6 @@
 import { supabase, requireUserId } from "./supabase";
 
-/** Configured feeds — Missouri Scout first, then Cardinals (STL Today). */
+/** Configured feeds — Missouri Scout, STL Today Cardinals, Cardinals wire. */
 export const RSS_FEEDS = [
   {
     id: "moscout",
@@ -11,8 +11,14 @@ export const RSS_FEEDS = [
   {
     id: "cardinals",
     title: "Cardinals",
-    short: "Cards",
+    short: "STL Today",
     url: "https://rss.app/feeds/NY6044y6TPBMOdru.xml",
+  },
+  {
+    id: "cardinals-wire",
+    title: "Cardinals Wire",
+    short: "Wire",
+    url: "https://rss.app/feeds/tdKZI96hgDCSMd6o.xml",
   },
 ] as const;
 
@@ -56,21 +62,122 @@ export function articleDedupeKey(item: Pick<RssFeedItem, "link" | "title">): str
     const path = u.pathname.replace(/\/+$/, "").toLowerCase();
     return `url:${host}${path}`;
   } catch {
-    return `title:${item.title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}`;
+    return `title:${normalizeTitleKey(item.title)}`;
   }
+}
+
+export function normalizeTitleKey(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/['']/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 /** Keep first occurrence when the same article appears in multiple feeds. */
 export function dedupeArticles<T extends Pick<RssFeedItem, "link" | "title">>(items: T[]): T[] {
-  const seen = new Set<string>();
+  const seenUrl = new Set<string>();
+  const seenTitle = new Set<string>();
   const out: T[] = [];
   for (const item of items) {
-    const key = articleDedupeKey(item);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    const urlKey = articleDedupeKey(item);
+    const titleKey = normalizeTitleKey(item.title);
+    if (seenUrl.has(urlKey)) continue;
+    // Soft-dedupe: identical titles across hosts (same wire story).
+    if (titleKey.length >= 24 && seenTitle.has(titleKey)) continue;
+    seenUrl.add(urlKey);
+    if (titleKey) seenTitle.add(titleKey);
     out.push(item);
   }
   return out;
+}
+
+export type RssFilterKind = "phrase" | "url";
+
+export type RssFilter = {
+  id: string;
+  kind: RssFilterKind;
+  value: string;
+  createdAt: string;
+};
+
+export function articleMatchesFilters(
+  item: Pick<RssFeedItem, "link" | "title" | "snippet">,
+  filters: RssFilter[],
+): boolean {
+  if (!filters.length) return false;
+  const hayTitle = item.title.toLowerCase();
+  const haySnippet = (item.snippet ?? "").toLowerCase();
+  const hayLink = item.link.toLowerCase();
+  for (const f of filters) {
+    const v = f.value.trim().toLowerCase();
+    if (!v) continue;
+    if (f.kind === "phrase") {
+      if (hayTitle.includes(v) || haySnippet.includes(v)) return true;
+    } else if (f.kind === "url") {
+      if (hayLink.includes(v)) return true;
+    }
+  }
+  return false;
+}
+
+export function applyRssFilters<T extends Pick<RssFeedItem, "link" | "title" | "snippet">>(
+  items: T[],
+  filters: RssFilter[],
+): T[] {
+  if (!filters.length) return items;
+  return items.filter((item) => !articleMatchesFilters(item, filters));
+}
+
+export async function fetchRssFilters(): Promise<RssFilter[]> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("rss_filters")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    kind: r.kind as RssFilterKind,
+    value: r.value,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function addRssFilter(kind: RssFilterKind, value: string): Promise<RssFilter> {
+  const userId = await requireUserId();
+  const cleaned = value.trim();
+  if (!cleaned) throw new Error("Filter value is empty");
+  const { data, error } = await supabase
+    .from("rss_filters")
+    .upsert(
+      {
+        user_id: userId,
+        kind,
+        value: cleaned,
+      },
+      { onConflict: "user_id,kind,value" },
+    )
+    .select("*")
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    kind: data.kind as RssFilterKind,
+    value: data.value,
+    createdAt: data.created_at,
+  };
+}
+
+export async function deleteRssFilter(id: string): Promise<void> {
+  const userId = await requireUserId();
+  const { error } = await supabase
+    .from("rss_filters")
+    .delete()
+    .eq("user_id", userId)
+    .eq("id", id);
+  if (error) throw error;
 }
 
 export type RssArticle = {
