@@ -2,6 +2,15 @@
 
 ---
 
+## Dispatch reader UX — August 11, 2026
+
+- Player names open an in-app peek (article stays open); any MLB player can link,
+  not just Cardinals.
+- Select text → small **Block** on the highlight sheet adds a phrase filter.
+- Desktop ←/→ moves between articles; **Mark all read** for the visible list.
+
+---
+
 ## Dispatch feed + filters — August 11, 2026
 
 - Third feed: **Cardinals Wire** (`rss.app` tdKZI96…).

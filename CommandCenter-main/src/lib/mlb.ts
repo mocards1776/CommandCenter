@@ -438,17 +438,58 @@ export function normalizePersonName(name: string): string {
 
 export function buildPlayerNameIndex(
   players: { id: number; name: string }[],
+  opts: { bareLastNames?: boolean } = {},
 ): Map<string, number> {
+  const bareLastNames = opts.bareLastNames ?? true;
   const map = new Map<string, number>();
   for (const p of players) {
     map.set(normalizePersonName(p.name), p.id);
-    const bits = p.name.split(/\s+/);
+    const bits = p.name.split(/\s+/).filter(Boolean);
     if (bits.length >= 2) {
       map.set(normalizePersonName(`${bits[0][0]} ${bits[bits.length - 1]}`), p.id);
-      map.set(normalizePersonName(bits[bits.length - 1]), p.id);
+      if (bareLastNames) {
+        map.set(normalizePersonName(bits[bits.length - 1]), p.id);
+      }
     }
   }
   return map;
+}
+
+const NON_PLAYER_NAME_HINTS = new Set(
+  [
+    "st louis",
+    "new york",
+    "los angeles",
+    "san francisco",
+    "san diego",
+    "kansas city",
+    "tampa bay",
+    "major league",
+    "opening day",
+    "world series",
+    "all star",
+    "home run",
+    "spring training",
+    "general manager",
+    "national league",
+    "american league",
+  ].map(normalizePersonName),
+);
+
+/** Pull likely "First Last" mentions from article prose for MLB people search. */
+export function extractPlayerNameCandidates(text: string, limit = 48): string[] {
+  if (!text) return [];
+  const matches = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z.'-]+){1,2}\b/g) ?? [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of matches) {
+    const key = normalizePersonName(raw);
+    if (key.length < 5 || seen.has(key) || NON_PLAYER_NAME_HINTS.has(key)) continue;
+    seen.add(key);
+    out.push(raw.replace(/\s+/g, " ").trim());
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 export async function fetchMlbTeamRoster(
@@ -468,25 +509,36 @@ export async function fetchMlbTeamRoster(
 /** Resolve bare "First Last" mentions via MLB people search (capped). */
 export async function searchMlbPlayersByNames(
   names: string[],
+  limit = 48,
 ): Promise<Map<string, number>> {
   const found = new Map<string, number>();
-  const unique = [...new Set(names.map((n) => n.trim()).filter(Boolean))].slice(0, 16);
-  await Promise.all(
-    unique.map(async (name) => {
-      try {
-        const raw = (await mlbGet("people/search", { names: name })) as {
-          people?: { id?: number; fullName?: string }[];
-        };
-        const hit =
-          (raw.people ?? []).find(
-            (p) => normalizePersonName(p.fullName ?? "") === normalizePersonName(name),
-          ) ?? raw.people?.[0];
-        if (hit?.id) found.set(normalizePersonName(name), hit.id);
-      } catch {
-        // ignore
-      }
-    }),
-  );
+  const unique = [...new Set(names.map((n) => n.trim()).filter(Boolean))].slice(0, limit);
+  const chunkSize = 8;
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(async (name) => {
+        try {
+          const raw = (await mlbGet("people/search", { names: name })) as {
+            people?: { id?: number; fullName?: string }[];
+          };
+          const want = normalizePersonName(name);
+          const hit =
+            (raw.people ?? []).find((p) => normalizePersonName(p.fullName ?? "") === want) ??
+            (raw.people ?? []).find((p) => {
+              const full = normalizePersonName(p.fullName ?? "");
+              return full.endsWith(` ${want.split(" ").slice(-1)[0]}`) && full.startsWith(want.split(" ")[0]);
+            });
+          if (hit?.id && hit.fullName) {
+            found.set(want, hit.id);
+            found.set(normalizePersonName(hit.fullName), hit.id);
+          }
+        } catch {
+          // ignore
+        }
+      }),
+    );
+  }
   return found;
 }
 

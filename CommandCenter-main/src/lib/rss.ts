@@ -246,17 +246,29 @@ export async function markRssRead(input: {
   articleTitle?: string | null;
   feedUrl?: string | null;
 }): Promise<void> {
+  await markRssReadMany([input]);
+}
+
+export async function markRssReadMany(
+  inputs: {
+    articleUrl: string;
+    articleTitle?: string | null;
+    feedUrl?: string | null;
+  }[],
+): Promise<void> {
+  if (!inputs.length) return;
   const userId = await requireUserId();
-  const { error } = await supabase.from("rss_reads").upsert(
-    {
-      user_id: userId,
-      article_url: input.articleUrl,
-      article_title: input.articleTitle ?? null,
-      feed_url: input.feedUrl ?? null,
-      read_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id,article_url" },
-  );
+  const readAt = new Date().toISOString();
+  const rows = inputs.map((input) => ({
+    user_id: userId,
+    article_url: input.articleUrl,
+    article_title: input.articleTitle ?? null,
+    feed_url: input.feedUrl ?? null,
+    read_at: readAt,
+  }));
+  const { error } = await supabase.from("rss_reads").upsert(rows, {
+    onConflict: "user_id,article_url",
+  });
   if (error) throw error;
 }
 

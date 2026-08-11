@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type TouchEvent } from "react";
-import { useNavigate } from "react-router-dom";
 import { useQueries, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -18,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import PlayerPeek from "@/components/rss/PlayerPeek";
 import {
   RSS_FEEDS,
   addRssFilter,
@@ -33,6 +33,7 @@ import {
   fetchRssReads,
   formatFeedDate,
   markRssRead,
+  markRssReadMany,
   markRssUnread,
   updateRssHighlightNote,
   type RssFeedId,
@@ -44,9 +45,9 @@ import {
 } from "@/lib/rss";
 import {
   buildPlayerNameIndex,
+  extractPlayerNameCandidates,
   fetchMlbTeamRoster,
   linkifyMlbPlayersInHtml,
-  normalizePersonName,
   searchMlbPlayersByNames,
 } from "@/lib/mlb";
 import { cn } from "@/lib/utils";
@@ -62,18 +63,34 @@ function HighlightComposer({
   quote,
   onSave,
   onCancel,
+  onBlock,
   saving,
+  blocking,
 }: {
   quote: string;
   onSave: (note: string) => void;
   onCancel: () => void;
+  onBlock: () => void;
   saving: boolean;
+  blocking: boolean;
 }) {
   const [note, setNote] = useState("");
   return (
     <div className="bg-panel border-accent/40 fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-50 mx-auto max-w-lg rounded border p-4 shadow-2xl md:inset-x-auto md:right-6 md:bottom-6">
       <div className="mb-3 flex items-start justify-between gap-3">
-        <div className="label-caps text-accent">New highlight</div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onBlock}
+            disabled={blocking}
+            title="Block this phrase"
+            className="text-chalk-dim hover:text-alert inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
+          >
+            <Ban size={12} />
+            Block
+          </button>
+          <div className="label-caps text-accent">New highlight</div>
+        </div>
         <button type="button" onClick={onCancel} className="text-chalk-dim hover:text-cream">
           <X size={16} />
         </button>
@@ -227,11 +244,11 @@ function ReaderView({
   onToggleRead: () => void;
 }) {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const articleBodyRef = useRef<HTMLDivElement>(null);
   const [pendingQuote, setPendingQuote] = useState<string | null>(null);
   const [showNotes, setShowNotes] = useState(false);
   const [linkedHtml, setLinkedHtml] = useState<string>("");
+  const [peekPlayerId, setPeekPlayerId] = useState<number | null>(null);
 
   const article = useQuery({
     queryKey: ["rss-article", item.link],
@@ -244,6 +261,7 @@ function ReaderView({
     queryFn: () => fetchRssHighlights(item.link),
   });
 
+  // Seed with Cardinals roster for fast local matches; search fills in any MLB player.
   const roster = useQuery({
     queryKey: ["mlb-roster-stl"],
     queryFn: () => fetchMlbTeamRoster(138),
@@ -278,7 +296,26 @@ function ReaderView({
       .catch(() => {});
   }, [item.link, item.title, feedUrl, qc]);
 
-  // Link MLB player names → Sports player profiles.
+  // Arrow keys: previous / next article (desktop).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (peekPlayerId != null || pendingQuote) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if ((e.target as HTMLElement | null)?.isContentEditable) return;
+      if (e.key === "ArrowLeft" && hasPrev) {
+        e.preventDefault();
+        onPrev();
+      } else if (e.key === "ArrowRight" && hasNext) {
+        e.preventDefault();
+        onNext();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hasPrev, hasNext, onPrev, onNext, peekPlayerId, pendingQuote]);
+
+  // Link any MLB player names → in-app player peek.
   useEffect(() => {
     const html = article.data?.contentHtml;
     if (!html) {
@@ -288,18 +325,10 @@ function ReaderView({
     let cancelled = false;
     (async () => {
       const players = roster.data ?? [];
-      const index = buildPlayerNameIndex(players);
-      // Pull "First Last" candidates from the article for people/search fill-in.
-      const text = article.data?.contentText ?? "";
-      const candidates = [
-        ...new Set(
-          (text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z.'-]+){1,2}\b/g) ?? []).filter(
-            (n) => !index.has(normalizePersonName(n)),
-          ),
-        ),
-      ].slice(0, 12);
+      const index = buildPlayerNameIndex(players, { bareLastNames: true });
+      const candidates = extractPlayerNameCandidates(article.data?.contentText ?? "", 48);
       if (candidates.length) {
-        const found = await searchMlbPlayersByNames(candidates);
+        const found = await searchMlbPlayersByNames(candidates, 48);
         for (const [k, id] of found) index.set(k, id);
       }
       if (cancelled) return;
@@ -329,6 +358,16 @@ function ReaderView({
       setShowNotes(true);
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Could not save"),
+  });
+
+  const blockPhraseMut = useMutation({
+    mutationFn: (phrase: string) => addRssFilter("phrase", phrase),
+    onSuccess: () => {
+      setPendingQuote(null);
+      void qc.invalidateQueries({ queryKey: ["rss-filters"] });
+      toast.success("Phrase blocked");
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Could not add filter"),
   });
 
   const deleteMut = useMutation({
@@ -361,7 +400,7 @@ function ReaderView({
   }
 
   const swipe = useSwipeNav({
-    enabled: !pendingQuote,
+    enabled: !pendingQuote && peekPlayerId == null,
     onBack: () => {
       const st = (history.state as { dispatchArticle?: string } | null) ?? {};
       if (st.dispatchArticle) history.back();
@@ -457,13 +496,14 @@ function ReaderView({
               window.setTimeout(captureSelection, 50);
             }}
             onClick={(e) => {
-              const a = (e.target as HTMLElement).closest("a.rss-player-link") as HTMLAnchorElement | null;
+              const a = (e.target as HTMLElement).closest(
+                "a.rss-player-link",
+              ) as HTMLAnchorElement | null;
               if (!a) return;
               e.preventDefault();
-              const href = a.getAttribute("href");
-              if (href?.startsWith("/sports/mlb/player/")) {
-                navigate(`${href}?solo=1`);
-              }
+              const href = a.getAttribute("href") ?? "";
+              const m = href.match(/\/sports\/mlb\/player\/(\d+)/);
+              if (m) setPeekPlayerId(Number(m[1]));
             }}
             className="rss-reader max-w-none text-[20px] leading-[1.8] text-[#eceef4] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_a.rss-player-link]:text-accent [&_a.rss-player-link]:decoration-accent/40 [&_a.rss-player-link]:underline-offset-[3px] [&_blockquote]:border-l-2 [&_blockquote]:border-accent/40 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-chalk [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5"
             dangerouslySetInnerHTML={{ __html: linkedHtml || article.data?.contentHtml || "" }}
@@ -521,9 +561,18 @@ function ReaderView({
         <HighlightComposer
           quote={pendingQuote}
           saving={createMut.isPending}
+          blocking={blockPhraseMut.isPending}
           onCancel={() => setPendingQuote(null)}
           onSave={(note) => createMut.mutate(note)}
+          onBlock={() => {
+            const phrase = pendingQuote.trim().slice(0, 120);
+            if (phrase) blockPhraseMut.mutate(phrase);
+          }}
         />
+      ) : null}
+
+      {peekPlayerId != null ? (
+        <PlayerPeek playerId={peekPlayerId} onClose={() => setPeekPlayerId(null)} />
       ) : null}
     </div>
   );
@@ -730,6 +779,32 @@ export default function RssPage() {
   const feedsLoading = feedQueries.some((q) => q.isLoading);
   const feedsFetching = feedQueries.some((q) => q.isFetching);
 
+  const unreadInList = useMemo(
+    () => listItems.filter((it) => !readUrls.has(it.link)),
+    [listItems, readUrls],
+  );
+
+  const markAllReadMut = useMutation({
+    mutationFn: () =>
+      markRssReadMany(
+        unreadInList.map((it) => ({
+          articleUrl: it.link,
+          articleTitle: it.title,
+          feedUrl: it.feedUrl,
+        })),
+      ),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["rss-reads"] });
+      toast.success(
+        unreadInList.length === 1
+          ? "Marked 1 article read"
+          : `Marked ${unreadInList.length} articles read`,
+      );
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : "Could not mark articles read"),
+  });
+
   async function toggleRead(item: RssFeedItem) {
     try {
       if (readUrls.has(item.link)) await markRssUnread(item.link);
@@ -916,6 +991,18 @@ export default function RssPage() {
                   : `${listItems.length} articles`}
             </p>
           </div>
+          {nav !== "notes" && nav !== "filters" && unreadInList.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => markAllReadMut.mutate()}
+              disabled={markAllReadMut.isPending}
+              className="text-chalk hover:text-cream inline-flex shrink-0 items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] disabled:opacity-40"
+              title="Mark all visible articles as read"
+            >
+              <CheckCheck size={14} />
+              <span className="hidden sm:inline">Mark all read</span>
+            </button>
+          ) : null}
         </div>
 
         {nav === "filters" ? (
