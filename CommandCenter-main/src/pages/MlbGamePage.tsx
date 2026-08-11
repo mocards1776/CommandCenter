@@ -9,6 +9,7 @@ import {
   fetchEspnGameRecap,
   fetchMlbBoxscore,
   fetchMlbGameHighlights,
+  fetchMlbGamePreview,
   formatGameDuration,
   mlbHeadshot,
   parseEspnRecapHtml,
@@ -19,6 +20,9 @@ import {
   type MlbBoxscorePitcher,
   type MlbBoxscoreSide,
   type MlbGameRecap,
+  type MlbLineupHitter,
+  type MlbPitcherSeasonLine,
+  type MlbPreviewLeaderRow,
   type RecapInline,
 } from "@/lib/mlb";
 import { cn } from "@/lib/utils";
@@ -36,6 +40,13 @@ export default function MlbGamePage() {
       q.state.data?.status && /progress|live|in progress/i.test(q.state.data.status)
         ? 20_000
         : false,
+  });
+
+  const preview = useQuery({
+    queryKey: ["mlb-game-preview-stats", gamePk],
+    queryFn: () => fetchMlbGamePreview(gamePk!),
+    enabled: Boolean(gamePk),
+    staleTime: 120_000,
   });
 
   const highlights = useQuery({
@@ -115,9 +126,45 @@ export default function MlbGamePage() {
 
       <GameMatchupHeader game={g} />
 
-      {(g.away.probablePitcher || g.home.probablePitcher) && (
-        <ProbablePitchers away={g.away} home={g.home} />
+      {(g.away.probablePitcher ||
+        g.home.probablePitcher ||
+        preview.data?.awayPitcher ||
+        preview.data?.homePitcher) && (
+        <ProbablePitchers
+          away={g.away}
+          home={g.home}
+          awayStats={preview.data?.awayPitcher ?? null}
+          homeStats={preview.data?.homePitcher ?? null}
+          loading={preview.isPending}
+        />
       )}
+
+      {preview.isPending && g.pregame && (
+        <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+          <Loader2 size={14} className="animate-spin" /> Loading preview stats…
+        </p>
+      )}
+
+      {preview.data &&
+        (preview.data.awayLineup.length > 0 || preview.data.homeLineup.length > 0) && (
+          <PreviewLineups
+            awayAbbrev={g.away.abbrev}
+            homeAbbrev={g.home.abbrev}
+            away={preview.data.awayLineup}
+            home={preview.data.homeLineup}
+          />
+        )}
+
+      {preview.data &&
+        (preview.data.battingLeaders.some((r) => r.away || r.home) ||
+          preview.data.pitchingLeaders.some((r) => r.away || r.home)) && (
+          <PreviewLeaders
+            awayAbbrev={g.away.abbrev}
+            homeAbbrev={g.home.abbrev}
+            batting={preview.data.battingLeaders}
+            pitching={preview.data.pitchingLeaders}
+          />
+        )}
 
       {g.innings.length > 0 && !g.pregame && (
         <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
@@ -271,44 +318,147 @@ function EspnTeam({ side, align }: { side: MlbBoxscoreSide; align: "left" | "rig
 function ProbablePitchers({
   away,
   home,
+  awayStats,
+  homeStats,
+  loading,
 }: {
   away: MlbBoxscoreSide;
   home: MlbBoxscoreSide;
+  awayStats: MlbPitcherSeasonLine | null;
+  homeStats: MlbPitcherSeasonLine | null;
+  loading: boolean;
 }) {
+  const rows = [
+    { side: away, stats: awayStats },
+    { side: home, stats: homeStats },
+  ].filter((r) => r.side.probablePitcher || r.stats);
+
   return (
     <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
       <p className="border-b border-white/[0.07] px-4 py-2.5 text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
         Probable pitchers
       </p>
+      <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2">
+        <div className="flex items-center gap-2">
+          <TeamMark teamId={away.teamId} size="xs" />
+          <span className="text-[11px] font-semibold text-white/70">{away.abbrev}</span>
+        </div>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35">
+          Pitchers
+        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold text-white/70">{home.abbrev}</span>
+          <TeamMark teamId={home.teamId} size="xs" />
+        </div>
+      </div>
       <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3 px-4 py-4 sm:gap-5">
-        <PitcherCard side={away} align="left" />
+        <PitcherCard side={away} stats={awayStats} align="left" />
         <span className="pb-8 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/30">
           vs
         </span>
-        <PitcherCard side={home} align="right" />
+        <PitcherCard side={home} stats={homeStats} align="right" />
       </div>
+      {(awayStats || homeStats || loading) && (
+        <div className="overflow-x-auto border-t border-white/[0.07]">
+          <table className="w-full min-w-[520px] text-[12px]">
+            <thead>
+              <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                <th className="px-3 py-2 text-left font-medium">Player</th>
+                <th className="numeral px-1.5 py-2 font-medium">W-L</th>
+                <th className="numeral px-1.5 py-2 font-medium">ERA</th>
+                <th className="numeral px-1.5 py-2 font-medium">WHIP</th>
+                <th className="numeral px-1.5 py-2 font-medium">IP</th>
+                <th className="numeral px-1.5 py-2 font-medium">H</th>
+                <th className="numeral px-1.5 py-2 font-medium">K</th>
+                <th className="numeral px-1.5 py-2 font-medium">BB</th>
+                <th className="numeral px-1.5 py-2 pr-3 font-medium">HR</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ side, stats }) => {
+                const id = stats?.id ?? side.probablePitcherId;
+                const label =
+                  stats?.shortName ||
+                  (side.probablePitcher
+                    ? side.probablePitcher
+                        .split(" ")
+                        .filter(Boolean)
+                        .map((p, i, arr) => (i === arr.length - 1 ? p : `${p[0]}.`))
+                        .join(" ")
+                    : "TBD");
+                const meta = [stats?.hand, stats?.number ? `#${stats.number}` : null]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <tr key={`${side.abbrev}-${id ?? label}`} className="border-t border-white/[0.05]">
+                    <td className="px-3 py-2.5 text-left">
+                      {id ? (
+                        <Link
+                          to={`/sports/mlb/player/${id}`}
+                          className="font-medium text-[#9ec1ff] hover:underline"
+                        >
+                          {label}
+                        </Link>
+                      ) : (
+                        <span className="text-cream">{label}</span>
+                      )}
+                      {meta && (
+                        <span className="mt-0.5 block text-[10px] text-[#8b93a7]">{meta}</span>
+                      )}
+                    </td>
+                    {stats ? (
+                      <>
+                        <td className="numeral px-1.5 py-2.5 text-center text-cream">
+                          {stats.wins}-{stats.losses}
+                        </td>
+                        <td className="numeral px-1.5 py-2.5 text-center text-cream">{stats.era}</td>
+                        <td className="numeral px-1.5 py-2.5 text-center text-cream">{stats.whip}</td>
+                        <td className="numeral px-1.5 py-2.5 text-center text-cream">{stats.ip}</td>
+                        <td className="numeral px-1.5 py-2.5 text-center text-cream">{stats.h}</td>
+                        <td className="numeral px-1.5 py-2.5 text-center text-cream">{stats.k}</td>
+                        <td className="numeral px-1.5 py-2.5 text-center text-cream">{stats.bb}</td>
+                        <td className="numeral px-1.5 py-2.5 pr-3 text-center text-cream">
+                          {stats.hr}
+                        </td>
+                      </>
+                    ) : (
+                      <td colSpan={8} className="px-1.5 py-2.5 text-center text-[#8b93a7]">
+                        {loading ? "Loading…" : "—"}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
 
 function PitcherCard({
   side,
+  stats,
   align,
 }: {
   side: MlbBoxscoreSide;
+  stats: MlbPitcherSeasonLine | null;
   align: "left" | "right";
 }) {
-  const name = side.probablePitcher ?? "TBD";
+  const name = stats?.name ?? side.probablePitcher ?? "TBD";
   const parts = name.split(" ");
   const last = parts.length > 1 ? parts[parts.length - 1] : name;
   const first = parts.length > 1 ? parts.slice(0, -1).join(" ") : "";
-  const href = side.probablePitcherId ? `/sports/mlb/player/${side.probablePitcherId}` : null;
+  const id = stats?.id ?? side.probablePitcherId;
+  const href = id ? `/sports/mlb/player/${id}` : null;
+  const meta = [stats?.hand, stats?.number ? `#${stats.number}` : null].filter(Boolean).join(" · ");
   const body = (
     <>
-      {side.probablePitcherId ? (
+      {id ? (
         <div className="relative h-[84px] w-[70px] overflow-hidden rounded-lg bg-[#dfe6f2] ring-1 ring-white/20 sm:h-[96px] sm:w-[78px]">
           <img
-            src={mlbHeadshot(side.probablePitcherId, 426)}
+            src={mlbHeadshot(id, 426)}
             alt=""
             className="absolute inset-0 h-full w-full scale-[1.1] object-cover object-[center_12%]"
           />
@@ -322,6 +472,7 @@ function PitcherCard({
         <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-white/50">{first}</p>
       )}
       <p className="text-[16px] font-semibold leading-tight text-white sm:text-[18px]">{last}</p>
+      {meta && <p className="text-[10px] text-[#8b93a7]">{meta}</p>}
     </>
   );
   const cls = cn(
@@ -332,6 +483,201 @@ function PitcherCard({
   return (
     <Link to={href} className={cn(cls, "transition hover:opacity-95")}>
       {body}
+    </Link>
+  );
+}
+
+function PreviewLineups({
+  awayAbbrev,
+  homeAbbrev,
+  away,
+  home,
+}: {
+  awayAbbrev: string;
+  homeAbbrev: string;
+  away: MlbLineupHitter[];
+  home: MlbLineupHitter[];
+}) {
+  const [tab, setTab] = useState<"away" | "home">("away");
+  const rows = tab === "away" ? away : home;
+  if (!away.length && !home.length) return null;
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+      <div className="flex border-b border-white/[0.07]">
+        {(
+          [
+            ["away", awayAbbrev, away.length],
+            ["home", homeAbbrev, home.length],
+          ] as const
+        ).map(([key, abbrev, count]) => (
+          <button
+            key={key}
+            type="button"
+            disabled={!count}
+            onClick={() => setTab(key)}
+            className={cn(
+              "flex-1 px-3 py-2.5 text-[12px] font-semibold uppercase tracking-[0.12em] transition",
+              tab === key
+                ? "border-b-2 border-accent text-cream"
+                : "text-[#8b93a7] hover:text-cream disabled:opacity-30",
+            )}
+          >
+            {abbrev} Lineup
+          </button>
+        ))}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[480px] text-[12px]">
+          <thead>
+            <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+              <th className="px-3 py-2 text-left font-medium">Hitters</th>
+              <th className="numeral px-1.5 py-2 font-medium">H-AB</th>
+              <th className="numeral px-1.5 py-2 font-medium">HR</th>
+              <th className="numeral px-1.5 py-2 font-medium">RBI</th>
+              <th className="numeral px-1.5 py-2 font-medium">SB</th>
+              <th className="numeral px-1.5 py-2 pr-3 font-medium">AVG</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((h) => (
+              <tr key={h.id} className="border-t border-white/[0.05]">
+                <td className="px-3 py-2.5 text-left">
+                  <Link
+                    to={`/sports/mlb/player/${h.id}`}
+                    className="font-medium text-[#9ec1ff] hover:underline"
+                  >
+                    {h.shortName}
+                  </Link>
+                  <span className="ml-1.5 text-[10px] text-[#8b93a7]">{h.position}</span>
+                </td>
+                <td className="numeral px-1.5 py-2.5 text-center text-cream">
+                  {h.hits}-{h.atBats}
+                </td>
+                <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.hr}</td>
+                <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.rbi}</td>
+                <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.sb}</td>
+                <td className="numeral px-1.5 py-2.5 pr-3 text-center text-cream">{h.avg}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function PreviewLeaders({
+  awayAbbrev,
+  homeAbbrev,
+  batting,
+  pitching,
+}: {
+  awayAbbrev: string;
+  homeAbbrev: string;
+  batting: MlbPreviewLeaderRow[];
+  pitching: MlbPreviewLeaderRow[];
+}) {
+  const [tab, setTab] = useState<"batting" | "pitching">("batting");
+  const rows = tab === "batting" ? batting : pitching;
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+      <div className="flex border-b border-white/[0.07]">
+        {(
+          [
+            ["batting", "Batting Leaders"],
+            ["pitching", "Pitching Leaders"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={cn(
+              "flex-1 px-3 py-2.5 text-[12px] font-semibold uppercase tracking-[0.12em] transition",
+              tab === key
+                ? "border-b-2 border-accent text-cream"
+                : "text-[#8b93a7] hover:text-cream",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="divide-y divide-white/[0.06]">
+        {rows.map((row) => (
+          <div key={row.category} className="px-3 py-3 sm:px-4">
+            <p className="mb-2.5 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+              {row.category}
+            </p>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <LeaderSide
+                side={row.away}
+                abbrev={awayAbbrev}
+                align="left"
+                statLabel={row.statLabel}
+              />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/25">
+                {row.statLabel}
+              </span>
+              <LeaderSide
+                side={row.home}
+                abbrev={homeAbbrev}
+                align="right"
+                statLabel={row.statLabel}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LeaderSide({
+  side,
+  abbrev,
+  align,
+  statLabel,
+}: {
+  side: MlbPreviewLeaderRow["away"];
+  abbrev: string;
+  align: "left" | "right";
+  statLabel: string;
+}) {
+  if (!side) {
+    return (
+      <div className={cn("text-[12px] text-[#8b93a7]", align === "right" && "text-right")}>—</div>
+    );
+  }
+  return (
+    <Link
+      to={`/sports/mlb/player/${side.id}`}
+      className={cn(
+        "flex min-w-0 items-center gap-2 transition hover:opacity-95",
+        align === "right" && "flex-row-reverse text-right",
+      )}
+    >
+      <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full bg-[#dfe6f2] ring-1 ring-white/15">
+        <img
+          src={mlbHeadshot(side.id, 213)}
+          alt=""
+          className="absolute inset-0 h-full w-full scale-[1.15] object-cover object-[center_10%]"
+        />
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-[13px] font-semibold text-cream">{side.shortName}</p>
+        <p className="numeral text-[15px] font-semibold text-white">
+          {side.value}
+          <span className="ml-1 text-[10px] font-medium tracking-wide text-[#8b93a7]">
+            {statLabel}
+          </span>
+        </p>
+        <p className="truncate text-[10px] text-[#8b93a7]">
+          {abbrev} · {side.detail}
+        </p>
+      </div>
     </Link>
   );
 }

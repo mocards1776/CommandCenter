@@ -990,6 +990,435 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
   };
 }
 
+/** Season line for a probable pitcher on the game preview. */
+export type MlbPitcherSeasonLine = {
+  id: number;
+  name: string;
+  shortName: string;
+  number: string | null;
+  hand: string | null;
+  wins: number;
+  losses: number;
+  era: string;
+  whip: string;
+  ip: string;
+  h: number;
+  k: number;
+  bb: number;
+  hr: number;
+};
+
+/** Projected/confirmed lineup hitter with season batting line. */
+export type MlbLineupHitter = {
+  id: number;
+  name: string;
+  shortName: string;
+  position: string;
+  hits: number;
+  atBats: number;
+  hr: number;
+  rbi: number;
+  sb: number;
+  avg: string;
+};
+
+export type MlbPreviewLeaderSide = {
+  id: number;
+  name: string;
+  shortName: string;
+  value: string;
+  detail: string;
+};
+
+/** Head-to-head category leader (one player per side). */
+export type MlbPreviewLeaderRow = {
+  category: string;
+  statLabel: string;
+  away: MlbPreviewLeaderSide | null;
+  home: MlbPreviewLeaderSide | null;
+};
+
+export type MlbGamePreview = {
+  awayPitcher: MlbPitcherSeasonLine | null;
+  homePitcher: MlbPitcherSeasonLine | null;
+  awayLineup: MlbLineupHitter[];
+  homeLineup: MlbLineupHitter[];
+  battingLeaders: MlbPreviewLeaderRow[];
+  pitchingLeaders: MlbPreviewLeaderRow[];
+};
+
+function shortPlayerName(
+  fullName: string,
+  opts?: { useName?: string | null; lastName?: string | null },
+): string {
+  const last = (opts?.lastName || "").trim();
+  if (last) {
+    const first = (opts?.useName || fullName.replace(last, "").trim().split(/\s+/)[0] || "").trim();
+    if (!first) return last;
+    return `${first[0]!.toUpperCase()}. ${last}`;
+  }
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return fullName;
+  return `${parts[0]![0]!.toUpperCase()}. ${parts[parts.length - 1]}`;
+}
+
+function numStat(stat: Record<string, unknown> | undefined, key: string): number {
+  const v = stat?.[key];
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function strStat(stat: Record<string, unknown> | undefined, key: string, fallback = "—"): string {
+  const v = stat?.[key];
+  if (v == null || v === "") return fallback;
+  return String(v);
+}
+
+type PeopleHydrateRaw = {
+  people?: {
+    id?: number;
+    fullName?: string;
+    useName?: string;
+    firstName?: string;
+    lastName?: string;
+    primaryNumber?: string;
+    pitchHand?: { code?: string };
+    primaryPosition?: { abbreviation?: string };
+    stats?: { splits?: { stat?: Record<string, unknown> }[] }[];
+  }[];
+};
+
+async function fetchPeopleWithSeasonStats(
+  ids: number[],
+  group: "hitting" | "pitching",
+): Promise<PeopleHydrateRaw["people"]> {
+  const uniq = [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))];
+  if (!uniq.length) return [];
+  const season = currentSeason();
+  const raw = (await mlbGet("people", {
+    personIds: uniq.join(","),
+    hydrate: `stats(group=[${group}],type=[season],season=${season})`,
+  })) as PeopleHydrateRaw;
+  return raw.people ?? [];
+}
+
+function mapPitcherSeasonLine(
+  p: NonNullable<PeopleHydrateRaw["people"]>[number],
+): MlbPitcherSeasonLine {
+  const stat = p.stats?.[0]?.splits?.[0]?.stat ?? {};
+  const name = p.fullName || "Pitcher";
+  const handCode = p.pitchHand?.code?.toUpperCase() || null;
+  return {
+    id: p.id ?? 0,
+    name,
+    shortName: shortPlayerName(name, { useName: p.useName, lastName: p.lastName }),
+    number: p.primaryNumber ? String(p.primaryNumber) : null,
+    hand: handCode ? `${handCode}HP` : null,
+    wins: numStat(stat, "wins"),
+    losses: numStat(stat, "losses"),
+    era: strStat(stat, "era"),
+    whip: strStat(stat, "whip"),
+    ip: strStat(stat, "inningsPitched", "0.0"),
+    h: numStat(stat, "hits"),
+    k: numStat(stat, "strikeOuts"),
+    bb: numStat(stat, "baseOnBalls"),
+    hr: numStat(stat, "homeRuns"),
+  };
+}
+
+function mapLineupHitter(
+  p: NonNullable<PeopleHydrateRaw["people"]>[number],
+  fallbackPos: string,
+): MlbLineupHitter {
+  const stat = p.stats?.[0]?.splits?.[0]?.stat ?? {};
+  const name = p.fullName || "Hitter";
+  return {
+    id: p.id ?? 0,
+    name,
+    shortName: shortPlayerName(name, { useName: p.useName, lastName: p.lastName }),
+    position: p.primaryPosition?.abbreviation || fallbackPos || "—",
+    hits: numStat(stat, "hits"),
+    atBats: numStat(stat, "atBats"),
+    hr: numStat(stat, "homeRuns"),
+    rbi: numStat(stat, "rbi"),
+    sb: numStat(stat, "stolenBases"),
+    avg: strStat(stat, "avg", ".000"),
+  };
+}
+
+async function fetchTeamCategoryLeader(
+  teamId: number,
+  group: "hitting" | "pitching",
+  sortStat: string,
+  order: "asc" | "desc",
+  minQualifier: { key: string; min: number },
+  format: (stat: Record<string, unknown>, player: { id: number; name: string; shortName: string }) => {
+    value: string;
+    detail: string;
+  },
+): Promise<MlbPreviewLeaderSide | null> {
+  const season = currentSeason();
+  try {
+    const raw = (await mlbGet("stats", {
+      stats: "season",
+      group,
+      season: String(season),
+      sportIds: "1",
+      teamIds: String(teamId),
+      playerPool: "all",
+      limit: "40",
+      sortStat,
+      order,
+    })) as {
+      stats?: {
+        splits?: {
+          player?: { id?: number; fullName?: string; useName?: string; lastName?: string };
+          stat?: Record<string, unknown>;
+        }[];
+      }[];
+    };
+    for (const split of raw.stats?.[0]?.splits ?? []) {
+      const stat = split.stat ?? {};
+      if (numStat(stat, minQualifier.key) < minQualifier.min) continue;
+      const id = split.player?.id ?? 0;
+      if (!id) continue;
+      const name = split.player?.fullName || "Player";
+      const shortName = shortPlayerName(name, {
+        useName: split.player?.useName,
+        lastName: split.player?.lastName,
+      });
+      const formatted = format(stat, { id, name, shortName });
+      return { id, name, shortName, value: formatted.value, detail: formatted.detail };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/**
+ * ESPN-style preview payload: probable pitcher season lines, lineups with
+ * season batting, and head-to-head batting/pitching category leaders.
+ */
+export async function fetchMlbGamePreview(gamePk: number | string): Promise<MlbGamePreview> {
+  const pk = String(gamePk);
+  const schedule = (await mlbGet("schedule", {
+    gamePk: pk,
+    hydrate: "probablePitcher,lineups,team",
+  })) as {
+    dates?: {
+      games?: {
+        teams?: {
+          away?: { team?: { id?: number }; probablePitcher?: { id?: number; fullName?: string } };
+          home?: { team?: { id?: number }; probablePitcher?: { id?: number; fullName?: string } };
+        };
+        lineups?: {
+          awayPlayers?: {
+            id?: number;
+            primaryPosition?: { abbreviation?: string };
+          }[];
+          homePlayers?: {
+            id?: number;
+            primaryPosition?: { abbreviation?: string };
+          }[];
+        };
+      }[];
+    }[];
+  };
+
+  const game = schedule.dates?.[0]?.games?.[0];
+  const awayTeamId = game?.teams?.away?.team?.id ?? 0;
+  const homeTeamId = game?.teams?.home?.team?.id ?? 0;
+  const awayPitcherId = game?.teams?.away?.probablePitcher?.id ?? null;
+  const homePitcherId = game?.teams?.home?.probablePitcher?.id ?? null;
+  const awayLineupRaw = game?.lineups?.awayPlayers ?? [];
+  const homeLineupRaw = game?.lineups?.homePlayers ?? [];
+
+  const pitcherIds = [awayPitcherId, homePitcherId].filter((id): id is number => id != null);
+  const lineupIds = [...awayLineupRaw, ...homeLineupRaw]
+    .map((p) => p.id)
+    .filter((id): id is number => id != null);
+
+  const [pitchers, hitters, ...leaderPairs] = await Promise.all([
+    fetchPeopleWithSeasonStats(pitcherIds, "pitching"),
+    fetchPeopleWithSeasonStats(lineupIds, "hitting"),
+    // Batting leaders: HR, AVG, RBI, SB
+    Promise.all([
+      awayTeamId
+        ? fetchTeamCategoryLeader(awayTeamId, "hitting", "homeRuns", "desc", { key: "atBats", min: 50 }, (s, p) => ({
+            value: String(numStat(s, "homeRuns")),
+            detail: `${strStat(s, "avg")} AVG · ${numStat(s, "rbi")} RBI`,
+          }))
+        : Promise.resolve(null),
+      homeTeamId
+        ? fetchTeamCategoryLeader(homeTeamId, "hitting", "homeRuns", "desc", { key: "atBats", min: 50 }, (s) => ({
+            value: String(numStat(s, "homeRuns")),
+            detail: `${strStat(s, "avg")} AVG · ${numStat(s, "rbi")} RBI`,
+          }))
+        : Promise.resolve(null),
+    ]),
+    Promise.all([
+      awayTeamId
+        ? fetchTeamCategoryLeader(awayTeamId, "hitting", "avg", "desc", { key: "atBats", min: 100 }, (s) => ({
+            value: strStat(s, "avg"),
+            detail: `${numStat(s, "homeRuns")} HR · ${numStat(s, "rbi")} RBI`,
+          }))
+        : Promise.resolve(null),
+      homeTeamId
+        ? fetchTeamCategoryLeader(homeTeamId, "hitting", "avg", "desc", { key: "atBats", min: 100 }, (s) => ({
+            value: strStat(s, "avg"),
+            detail: `${numStat(s, "homeRuns")} HR · ${numStat(s, "rbi")} RBI`,
+          }))
+        : Promise.resolve(null),
+    ]),
+    Promise.all([
+      awayTeamId
+        ? fetchTeamCategoryLeader(awayTeamId, "hitting", "rbi", "desc", { key: "atBats", min: 50 }, (s) => ({
+            value: String(numStat(s, "rbi")),
+            detail: `${numStat(s, "homeRuns")} HR · ${strStat(s, "avg")} AVG`,
+          }))
+        : Promise.resolve(null),
+      homeTeamId
+        ? fetchTeamCategoryLeader(homeTeamId, "hitting", "rbi", "desc", { key: "atBats", min: 50 }, (s) => ({
+            value: String(numStat(s, "rbi")),
+            detail: `${numStat(s, "homeRuns")} HR · ${strStat(s, "avg")} AVG`,
+          }))
+        : Promise.resolve(null),
+    ]),
+    Promise.all([
+      awayTeamId
+        ? fetchTeamCategoryLeader(awayTeamId, "hitting", "stolenBases", "desc", { key: "atBats", min: 30 }, (s) => ({
+            value: String(numStat(s, "stolenBases")),
+            detail: `${strStat(s, "avg")} AVG · ${numStat(s, "homeRuns")} HR`,
+          }))
+        : Promise.resolve(null),
+      homeTeamId
+        ? fetchTeamCategoryLeader(homeTeamId, "hitting", "stolenBases", "desc", { key: "atBats", min: 30 }, (s) => ({
+            value: String(numStat(s, "stolenBases")),
+            detail: `${strStat(s, "avg")} AVG · ${numStat(s, "homeRuns")} HR`,
+          }))
+        : Promise.resolve(null),
+    ]),
+    // Pitching leaders: ERA, SO, W, WHIP
+    Promise.all([
+      awayTeamId
+        ? fetchTeamCategoryLeader(awayTeamId, "pitching", "era", "asc", { key: "inningsPitched", min: 40 }, (s) => ({
+            value: strStat(s, "era"),
+            detail: `${numStat(s, "strikeOuts")} SO · ${strStat(s, "inningsPitched")} IP`,
+          }))
+        : Promise.resolve(null),
+      homeTeamId
+        ? fetchTeamCategoryLeader(homeTeamId, "pitching", "era", "asc", { key: "inningsPitched", min: 40 }, (s) => ({
+            value: strStat(s, "era"),
+            detail: `${numStat(s, "strikeOuts")} SO · ${strStat(s, "inningsPitched")} IP`,
+          }))
+        : Promise.resolve(null),
+    ]),
+    Promise.all([
+      awayTeamId
+        ? fetchTeamCategoryLeader(awayTeamId, "pitching", "strikeOuts", "desc", { key: "inningsPitched", min: 20 }, (s) => ({
+            value: String(numStat(s, "strikeOuts")),
+            detail: `${strStat(s, "era")} ERA · ${strStat(s, "inningsPitched")} IP`,
+          }))
+        : Promise.resolve(null),
+      homeTeamId
+        ? fetchTeamCategoryLeader(homeTeamId, "pitching", "strikeOuts", "desc", { key: "inningsPitched", min: 20 }, (s) => ({
+            value: String(numStat(s, "strikeOuts")),
+            detail: `${strStat(s, "era")} ERA · ${strStat(s, "inningsPitched")} IP`,
+          }))
+        : Promise.resolve(null),
+    ]),
+    Promise.all([
+      awayTeamId
+        ? fetchTeamCategoryLeader(awayTeamId, "pitching", "wins", "desc", { key: "inningsPitched", min: 20 }, (s) => ({
+            value: String(numStat(s, "wins")),
+            detail: `${numStat(s, "wins")}-${numStat(s, "losses")} · ${strStat(s, "era")} ERA`,
+          }))
+        : Promise.resolve(null),
+      homeTeamId
+        ? fetchTeamCategoryLeader(homeTeamId, "pitching", "wins", "desc", { key: "inningsPitched", min: 20 }, (s) => ({
+            value: String(numStat(s, "wins")),
+            detail: `${numStat(s, "wins")}-${numStat(s, "losses")} · ${strStat(s, "era")} ERA`,
+          }))
+        : Promise.resolve(null),
+    ]),
+    Promise.all([
+      awayTeamId
+        ? fetchTeamCategoryLeader(awayTeamId, "pitching", "whip", "asc", { key: "inningsPitched", min: 40 }, (s) => ({
+            value: strStat(s, "whip"),
+            detail: `${strStat(s, "era")} ERA · ${numStat(s, "strikeOuts")} SO`,
+          }))
+        : Promise.resolve(null),
+      homeTeamId
+        ? fetchTeamCategoryLeader(homeTeamId, "pitching", "whip", "asc", { key: "inningsPitched", min: 40 }, (s) => ({
+            value: strStat(s, "whip"),
+            detail: `${strStat(s, "era")} ERA · ${numStat(s, "strikeOuts")} SO`,
+          }))
+        : Promise.resolve(null),
+    ]),
+  ]);
+
+  const pitcherById = new Map((pitchers ?? []).map((p) => [p.id ?? 0, p]));
+  const hitterById = new Map((hitters ?? []).map((p) => [p.id ?? 0, p]));
+
+  const mapLineup = (
+    rows: { id?: number; primaryPosition?: { abbreviation?: string } }[],
+  ): MlbLineupHitter[] =>
+    rows
+      .map((row) => {
+        const id = row.id;
+        if (id == null) return null;
+        const person = hitterById.get(id);
+        if (!person) {
+          return {
+            id,
+            name: "Player",
+            shortName: "Player",
+            position: row.primaryPosition?.abbreviation || "—",
+            hits: 0,
+            atBats: 0,
+            hr: 0,
+            rbi: 0,
+            sb: 0,
+            avg: ".000",
+          } satisfies MlbLineupHitter;
+        }
+        return mapLineupHitter(person, row.primaryPosition?.abbreviation || "—");
+      })
+      .filter((x): x is MlbLineupHitter => x != null);
+
+  const battingDefs: { category: string; statLabel: string }[] = [
+    { category: "Home Runs", statLabel: "HR" },
+    { category: "Batting Average", statLabel: "AVG" },
+    { category: "RBI", statLabel: "RBI" },
+    { category: "Stolen Bases", statLabel: "SB" },
+  ];
+  const pitchingDefs: { category: string; statLabel: string }[] = [
+    { category: "ERA", statLabel: "ERA" },
+    { category: "Strikeouts", statLabel: "SO" },
+    { category: "Wins", statLabel: "W" },
+    { category: "WHIP", statLabel: "WHIP" },
+  ];
+
+  const battingLeaders: MlbPreviewLeaderRow[] = battingDefs.map((def, i) => {
+    const pair = leaderPairs[i] as [MlbPreviewLeaderSide | null, MlbPreviewLeaderSide | null];
+    return { category: def.category, statLabel: def.statLabel, away: pair[0], home: pair[1] };
+  });
+  const pitchingLeaders: MlbPreviewLeaderRow[] = pitchingDefs.map((def, i) => {
+    const pair = leaderPairs[i + 4] as [MlbPreviewLeaderSide | null, MlbPreviewLeaderSide | null];
+    return { category: def.category, statLabel: def.statLabel, away: pair[0], home: pair[1] };
+  });
+
+  return {
+    awayPitcher: awayPitcherId ? mapPitcherSeasonLine(pitcherById.get(awayPitcherId) ?? { id: awayPitcherId, fullName: game?.teams?.away?.probablePitcher?.fullName }) : null,
+    homePitcher: homePitcherId ? mapPitcherSeasonLine(pitcherById.get(homePitcherId) ?? { id: homePitcherId, fullName: game?.teams?.home?.probablePitcher?.fullName }) : null,
+    awayLineup: mapLineup(awayLineupRaw),
+    homeLineup: mapLineup(homeLineupRaw),
+    battingLeaders,
+    pitchingLeaders,
+  };
+}
+
 function stripHtml(html: string): string {
   // Do not trim — callers that parse inline HTML need leading/trailing spaces
   // so linked names don't run into neighboring words.
