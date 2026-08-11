@@ -2,6 +2,15 @@
 
 ---
 
+## Dispatch cleanup — August 11, 2026
+
+- Strip STL Today share/gift/follow/notification chrome from extracted HTML;
+  prefer `lee-article-text` paragraphs after TownNews decrypt.
+- Reader UI: sidebar with Unread + feed folders and unread counts (classic
+  RSS-reader layout).
+
+---
+
 ## Dispatch (RSS) standalone — August 11, 2026
 
 - Standalone **Dispatch** PWA (`/rss.html`, patriotic icon) like Reading/Sports.
