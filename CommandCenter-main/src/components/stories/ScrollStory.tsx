@@ -45,14 +45,19 @@ function streetViewSrc(story: ClientStory) {
   return `https://www.google.com/maps?layer=c&cbll=${lat},${lng}&cbp=12,0,0,0,0&output=svembed`;
 }
 
+function scrollToId(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+}
+
 export default function ScrollStory({ story, clientMode = true, label }: Props) {
-  const [active, setActive] = useState("hero");
+  const [active, setActive] = useState("open");
   const [mapProvider, setMapProvider] = useState<"google" | "osm">("google");
   const rootRef = useRef<HTMLDivElement>(null);
 
   const toc = useMemo(
     () => [
-      { id: "hero", label: "Open" },
+      { id: "open", label: "Open" },
+      { id: "brief", label: "Brief" },
       ...story.chapters.map((c) => ({ id: c.id, label: c.eyebrow })),
       { id: "comps", label: "Comps" },
       { id: "range", label: "Range" },
@@ -63,6 +68,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
 
   const maxComp = Math.max(...story.comps.map((c) => c.price ?? 0), story.valuation.offer);
   const gap = story.valuation.mid - story.valuation.offer;
+  const gapPct = Math.round((1 - story.valuation.offer / story.valuation.mid) * 100);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -89,17 +95,61 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
     <div ref={rootRef} className="story-root">
       <style>{STORY_CSS}</style>
 
-      <header className="letterhead">
-        <TurnerLogo className="letterhead-logo" />
-        <div className="letterhead-meta">
-          <span>{story.brandTag}</span>
-          <span>{story.researchDate}</span>
+      {/* Almanac-style title / scroll cover */}
+      <section className="title-cover" id="open" data-chapter>
+        <div className="title-blobs" aria-hidden>
+          <span className="blob blob-a" />
+          <span className="blob blob-b" />
+          <span className="blob blob-c" />
         </div>
-      </header>
+
+        <div className="title-inner">
+          <TurnerLogo stacked className="title-logo reveal" />
+
+          <p className="title-kicker reveal delay-1">{story.cityLine}</p>
+          <h1 className="title-display reveal delay-2">
+            Buena Vista
+          </h1>
+          <p className="title-sub reveal delay-2">Offer Brief</p>
+          <p className="title-meta reveal delay-3">
+            1715 E. Buena Vista St · Springfield, MO 65804
+          </p>
+
+          <div className="title-stat reveal delay-4">
+            <strong>−{gapPct}%</strong>
+            <span>vs fair mid-point</span>
+          </div>
+
+          <p className="title-compare reveal delay-4">
+            <em className="is-warn">{money(story.valuation.offer)} offer</em>
+            <span aria-hidden> → </span>
+            <em className="is-good">{money(story.valuation.mid)} mid-point</em>
+          </p>
+
+          <p className="title-tagline reveal delay-5">{story.heroLine}</p>
+
+          <button
+            type="button"
+            className="scroll-cue reveal delay-5"
+            onClick={() => scrollToId("brief")}
+          >
+            <span>Scroll</span>
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
+              <path
+                d="M6 9l6 6 6-6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </section>
 
       {clientMode ? (
-        <nav className="story-rail" aria-label="Chapters">
-          <TurnerLogo compact className="rail-mark" />
+        <nav className="story-dock" aria-label="Chapters">
           {toc.map((t) => (
             <a
               key={t.id}
@@ -107,7 +157,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               className={active === t.id ? "is-active" : undefined}
               onClick={(e) => {
                 e.preventDefault();
-                document.getElementById(t.id)?.scrollIntoView({ behavior: "smooth" });
+                scrollToId(t.id);
               }}
             >
               {t.label}
@@ -116,7 +166,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
         </nav>
       ) : null}
 
-      <header className="story-hero" id="hero" data-chapter>
+      <header className="story-hero" id="brief" data-chapter>
         <div className="hero-map">
           <iframe
             title={`Map of ${story.address}`}
@@ -135,7 +185,8 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
           </button>
         </div>
         <div className="hero-copy">
-          <p className="story-kicker reveal">{story.cityLine}</p>
+          <TurnerLogo className="hero-brand reveal" />
+          <p className="story-kicker reveal delay-1">{story.cityLine}</p>
           <h1 className="reveal delay-1">{story.address}</h1>
           <p className="story-lede reveal delay-2">{story.heroLine}</p>
           <p className="story-support reveal delay-3">{story.support}</p>
@@ -445,7 +496,7 @@ const STORY_CSS = `
     --navy: #143356;
     --copper: #c45c26;
     --copper-deep: #a3481c;
-    --paper: #f5f7fa;
+    --paper: #f3f5f8;
     --wash: #e7edf4;
     --muted: #5e6b7c;
     --line: rgba(11, 31, 58, 0.12);
@@ -453,51 +504,165 @@ const STORY_CSS = `
     --warn: #b42318;
     --font-display: "Playfair Display", Georgia, serif;
     --font-body: "Libre Franklin", system-ui, sans-serif;
-    background:
-      radial-gradient(ellipse 80% 40% at 100% 0%, rgba(196,92,38,0.06), transparent 50%),
-      var(--paper);
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--paper);
     color: var(--ink);
     font-family: var(--font-body);
     min-height: 100vh;
+    padding-bottom: 4.5rem;
   }
   .story-root * { box-sizing: border-box; }
 
-  .letterhead {
-    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-    padding: 1rem clamp(1.25rem, 4vw, 2.5rem);
-    border-bottom: 1px solid var(--line);
-    background: rgba(245,247,250,0.92);
-    position: sticky; top: 0; z-index: 40;
-    backdrop-filter: blur(8px);
+  /* Logo */
+  .turner-logo {
+    display: inline-flex; align-items: center; gap: 0.75rem;
   }
-  .letterhead-logo { width: min(280px, 70vw); height: auto; }
-  .letterhead-meta {
-    display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem;
-    font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+  .turner-logo.is-stacked {
+    flex-direction: column; text-align: center; gap: 0.85rem;
+  }
+  .turner-logo.is-compact { display: inline-flex; }
+  .turner-photo {
+    width: 52px; height: 52px; border-radius: 999px; object-fit: cover;
+    border: 2px solid rgba(11,31,58,0.12);
+    box-shadow: 0 6px 18px rgba(11,31,58,0.12);
+    flex-shrink: 0;
+  }
+  .turner-logo.is-compact .turner-photo { width: 36px; height: 36px; }
+  .turner-logo.is-stacked .turner-photo {
+    width: 72px; height: 72px; border-width: 3px;
+  }
+  .turner-text { display: flex; flex-direction: column; gap: 0.12rem; line-height: 1.05; }
+  .turner-text strong {
+    font-family: var(--font-display); font-size: 1.2rem; letter-spacing: -0.01em;
+  }
+  .turner-text span {
+    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--muted); font-weight: 700;
+  }
+  .turner-logo.is-stacked .turner-text strong { font-size: 1.35rem; }
+  .hero-brand { margin-bottom: 1rem; }
+
+  /* Title cover */
+  .title-cover {
+    position: relative; min-height: 100svh;
+    display: grid; place-items: center;
+    overflow: hidden; text-align: center;
+    padding: 2.5rem 1.25rem 5.5rem;
+  }
+  .title-blobs { position: absolute; inset: 0; pointer-events: none; }
+  .blob {
+    position: absolute; border-radius: 999px; filter: blur(48px); opacity: 0.55;
+  }
+  .blob-a {
+    width: 280px; height: 280px; left: -60px; top: 12%;
+    background: rgba(180, 35, 24, 0.18);
+  }
+  .blob-b {
+    width: 320px; height: 320px; right: -80px; top: 28%;
+    background: rgba(20, 51, 86, 0.16);
+  }
+  .blob-c {
+    width: 220px; height: 220px; left: 30%; bottom: 8%;
+    background: rgba(196, 92, 38, 0.12);
+  }
+  .title-inner {
+    position: relative; z-index: 1;
+    max-width: 34rem; width: 100%;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .title-logo { margin-bottom: 2rem; }
+  .title-kicker {
+    margin: 0 0 0.65rem;
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
     color: var(--muted); font-weight: 600;
   }
+  .title-display {
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: clamp(3rem, 12vw, 4.6rem);
+    font-weight: 800; letter-spacing: -0.04em; line-height: 0.95;
+    color: var(--ink);
+  }
+  .title-sub {
+    margin: 0.45rem 0 0.85rem;
+    font-family: var(--font-display);
+    font-size: clamp(1.55rem, 4.5vw, 2.1rem);
+    color: #8b3d28; font-weight: 600;
+  }
+  .title-meta {
+    margin: 0 0 1.6rem;
+    font-family: var(--font-mono);
+    font-size: 11px; letter-spacing: 0.04em;
+    color: #8b3d28;
+  }
+  .title-stat {
+    display: flex; align-items: baseline; gap: 0.55rem;
+    margin-bottom: 0.55rem;
+  }
+  .title-stat strong {
+    font-family: var(--font-body);
+    font-size: clamp(2.8rem, 10vw, 3.8rem);
+    font-weight: 800; color: var(--warn); letter-spacing: -0.03em; line-height: 1;
+  }
+  .title-stat span {
+    font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+  }
+  .title-compare {
+    margin: 0 0 1.1rem; font-size: 0.95rem; color: var(--muted);
+  }
+  .title-compare em { font-style: normal; font-weight: 700; }
+  .title-compare .is-warn { color: var(--warn); }
+  .title-compare .is-good { color: var(--navy); }
+  .title-tagline {
+    margin: 0 0 2.25rem; max-width: 26rem;
+    font-family: var(--font-display);
+    font-size: 1.05rem; line-height: 1.45; color: #394556;
+  }
+  .scroll-cue {
+    display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+    background: none; border: 0; cursor: pointer; color: #9aa3b2;
+    animation: cue-bob 2.2s ease-in-out infinite;
+  }
+  .scroll-cue span {
+    font-size: 11px; letter-spacing: 0.42em; text-transform: uppercase; font-weight: 600;
+    padding-left: 0.42em;
+  }
+  @keyframes cue-bob {
+    0%, 100% { transform: translateY(0); opacity: 0.7; }
+    50% { transform: translateY(6px); opacity: 1; }
+  }
 
-  .story-rail { display: none; }
-  @media (min-width: 1240px) {
-    .story-rail {
-      display: flex; flex-direction: column; gap: 0.5rem;
-      position: fixed; top: 5.5rem; left: 1rem; width: 8rem; z-index: 30;
-    }
-    .rail-mark { width: 36px; height: 36px; margin-bottom: 0.4rem; }
-    .story-rail a {
-      color: var(--muted); text-decoration: none; font-size: 12px;
-      letter-spacing: 0.03em; border-left: 2px solid transparent; padding-left: 0.6rem;
-    }
-    .story-rail a.is-active { color: var(--ink); border-left-color: var(--copper); font-weight: 600; }
+  /* Bottom dock (Almanac-style) */
+  .story-dock {
+    position: fixed; left: 50%; bottom: 0.85rem; transform: translateX(-50%);
+    z-index: 50; display: flex; gap: 0.15rem; flex-wrap: nowrap;
+    max-width: calc(100vw - 1.25rem); overflow-x: auto;
+    padding: 0.35rem; border-radius: 999px;
+    background: rgba(255,255,255,0.88);
+    border: 1px solid rgba(11,31,58,0.08);
+    box-shadow: 0 10px 30px rgba(11,31,58,0.12);
+    backdrop-filter: blur(10px);
+    -webkit-overflow-scrolling: touch;
+  }
+  .story-dock a {
+    flex: 0 0 auto;
+    text-decoration: none; color: var(--muted);
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    font-weight: 700; padding: 0.55rem 0.7rem; border-radius: 999px;
+    white-space: nowrap;
+  }
+  .story-dock a.is-active {
+    background: rgba(20, 51, 86, 0.1); color: var(--ink);
   }
 
   .story-hero {
-    position: relative; min-height: calc(100svh - 72px); display: grid;
+    position: relative; min-height: 100svh; display: grid;
     grid-template-columns: 1fr; overflow: hidden;
   }
   @media (min-width: 960px) {
     .story-hero { grid-template-columns: 1.05fr 0.95fr; }
-    .hero-map { order: 2; min-height: calc(100svh - 72px); }
+    .hero-map { order: 2; min-height: 100svh; }
   }
   .hero-map { position: relative; min-height: 40svh; background: #c9d2e0; }
   .hero-map iframe, .street-frame iframe, .mini-map iframe {
