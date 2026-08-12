@@ -56,19 +56,29 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
   const [mapProvider, setMapProvider] = useState<"google" | "osm">("google");
   const rootRef = useRef<HTMLDivElement>(null);
 
+  const isProceeds = story.layout === "proceeds";
+
   const toc = useMemo(
     () => [
       { id: "open", label: "Open" },
       { id: "brief", label: "Brief" },
       ...story.chapters.map((c) => ({ id: c.id, label: c.eyebrow })),
-      { id: "comps", label: "Comps" },
-      { id: "range", label: "Range" },
-      { id: "notebook", label: "Math" },
+      ...(isProceeds
+        ? []
+        : [
+            { id: "comps", label: "Comps" },
+            { id: "range", label: "Range" },
+          ]),
+      { id: "notebook", label: isProceeds ? "Notes" : "Math" },
     ],
-    [story.chapters],
+    [story.chapters, isProceeds],
   );
 
-  const maxComp = Math.max(...story.comps.map((c) => c.price ?? 0), story.valuation.offer);
+  const maxComp = Math.max(
+    1,
+    ...story.comps.map((c) => c.price ?? 0),
+    story.valuation.offer || 0,
+  );
   const gap = story.valuation.mid - story.valuation.offer;
 
   useEffect(() => {
@@ -113,23 +123,19 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
           />
 
           <p className="title-kicker reveal delay-1">{story.cityLine}</p>
-          <h1 className="title-display reveal delay-2">
-            Buena Vista
-          </h1>
-          <p className="title-sub reveal delay-2">Tree damage · Inspection · Offer</p>
-          <p className="title-meta reveal delay-3">
-            1715 E. Buena Vista St · Springfield, MO 65804
-          </p>
+          <h1 className="title-display reveal delay-2">{story.cover.display}</h1>
+          <p className="title-sub reveal delay-2">{story.cover.sub}</p>
+          <p className="title-meta reveal delay-3">{story.cover.meta}</p>
 
           <div className="title-stat reveal delay-4">
-            <strong>$230k</strong>
-            <span>as-is · pricing leftover risk</span>
+            <strong>{story.cover.statValue}</strong>
+            <span>{story.cover.statLabel}</span>
           </div>
 
           <p className="title-compare reveal delay-4">
-            <em className="is-warn">no inspection · no realtor</em>
+            <em className="is-warn">{story.cover.compareWarn}</em>
             <span aria-hidden> · </span>
-            <em className="is-good">clean mid ~{money(story.valuation.mid)}</em>
+            <em className="is-good">{story.cover.compareGood}</em>
           </p>
 
           <p className="title-tagline reveal delay-5">{story.heroLine}</p>
@@ -172,24 +178,35 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
         </nav>
       ) : null}
 
-      <header className="story-hero" id="brief" data-chapter>
-        <div className="hero-map">
-          <iframe
-            title={`Map of ${story.address}`}
-            src={mapProvider === "google" ? mapsEmbedSrc(story) : osmEmbedSrc(story)}
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-            allowFullScreen
-          />
-          <div className="hero-map-veil" />
-          <button
-            type="button"
-            className="map-swap"
-            onClick={() => setMapProvider((p) => (p === "google" ? "osm" : "google"))}
-          >
-            {mapProvider === "google" ? "OSM map" : "Google map"}
-          </button>
-        </div>
+      <header className={`story-hero ${isProceeds ? "is-proceeds" : ""}`} id="brief" data-chapter>
+        {isProceeds ? (
+          <div className="hero-proceeds-panel" aria-hidden>
+            <div className="proceeds-hero big">
+              <strong>2</strong>
+              <span>of</span>
+              <em>3</em>
+              <p>Shared approval before sale proceeds move</p>
+            </div>
+          </div>
+        ) : (
+          <div className="hero-map">
+            <iframe
+              title={`Map of ${story.address}`}
+              src={mapProvider === "google" ? mapsEmbedSrc(story) : osmEmbedSrc(story)}
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              allowFullScreen
+            />
+            <div className="hero-map-veil" />
+            <button
+              type="button"
+              className="map-swap"
+              onClick={() => setMapProvider((p) => (p === "google" ? "osm" : "google"))}
+            >
+              {mapProvider === "google" ? "OSM map" : "Google map"}
+            </button>
+          </div>
+        )}
         <div className="hero-copy">
           <TurnerLogo className="hero-brand reveal" brand={story.brand} markSrc={story.markSrc} />
           <p className="story-kicker reveal delay-1">{story.cityLine}</p>
@@ -202,20 +219,37 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
             <strong>{story.valuation.recommendation}</strong>
           </div>
 
-          <div className="hero-offer reveal delay-5">
-            <div className="is-warn">
-              <span className="hero-offer-label">As-is offer</span>
-              <strong>{money(story.valuation.offer)}</strong>
+          {isProceeds ? (
+            <div className="hero-offer reveal delay-5">
+              <div className="is-warn">
+                <span className="hero-offer-label">People</span>
+                <strong>3</strong>
+              </div>
+              <div>
+                <span className="hero-offer-label">Approvals</span>
+                <strong>2</strong>
+              </div>
+              <div>
+                <span className="hero-offer-label">Vehicle</span>
+                <strong className="accent">Trust</strong>
+              </div>
             </div>
-            <div>
-              <span className="hero-offer-label">Clean mid</span>
-              <strong>{money(story.valuation.mid)}</strong>
+          ) : (
+            <div className="hero-offer reveal delay-5">
+              <div className="is-warn">
+                <span className="hero-offer-label">As-is offer</span>
+                <strong>{money(story.valuation.offer)}</strong>
+              </div>
+              <div>
+                <span className="hero-offer-label">Clean mid</span>
+                <strong>{money(story.valuation.mid)}</strong>
+              </div>
+              <div>
+                <span className="hero-offer-label">Vs clean</span>
+                <strong className="accent">−{money(gap)}</strong>
+              </div>
             </div>
-            <div>
-              <span className="hero-offer-label">Vs clean</span>
-              <strong className="accent">−{money(gap)}</strong>
-            </div>
-          </div>
+          )}
 
           <dl className="story-facts reveal delay-5">
             {story.facts.map((f) => (
@@ -242,6 +276,8 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     ch.id === "repairs" ||
                     ch.id === "offer" ||
                     ch.id === "proceeds" ||
+                    ch.id === "rule" ||
+                    ch.id === "bank" ||
                     ch.id === "call"
                       ? "is-warn"
                       : ""
@@ -367,23 +403,34 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     <article key={n.label} className={`net-card ${n.highlight ? "is-offer" : ""}`}>
                       <header>
                         <h3>{n.label}</h3>
-                        {n.highlight ? <em>On the table</em> : null}
+                        {n.highlight ? <em>{isProceeds ? "Preferred" : "On the table"}</em> : null}
                       </header>
-                      <div className="net-row">
-                        <span>Sale price</span>
-                        <strong>{money(n.salePrice)}</strong>
-                      </div>
-                      <div className="net-row">
-                        <span>
-                          Realtor fees
-                          {n.realtorFeePct > 0 ? ` (~${(n.realtorFeePct * 100).toFixed(1)}%)` : ""}
-                        </span>
-                        <strong>{n.realtorFee ? `−${money(n.realtorFee)}` : "$0"}</strong>
-                      </div>
-                      <div className="net-row is-total">
-                        <span>You keep (before other closing costs)</span>
-                        <strong>{money(n.estimatedNet)}</strong>
-                      </div>
+                      {isProceeds ? (
+                        <div className="net-row is-total">
+                          <span>Path</span>
+                          <strong>{n.note.split(".")[0]}</strong>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="net-row">
+                            <span>Sale price</span>
+                            <strong>{money(n.salePrice)}</strong>
+                          </div>
+                          <div className="net-row">
+                            <span>
+                              Realtor fees
+                              {n.realtorFeePct > 0
+                                ? ` (~${(n.realtorFeePct * 100).toFixed(1)}%)`
+                                : ""}
+                            </span>
+                            <strong>{n.realtorFee ? `−${money(n.realtorFee)}` : "$0"}</strong>
+                          </div>
+                          <div className="net-row is-total">
+                            <span>You keep (before other closing costs)</span>
+                            <strong>{money(n.estimatedNet)}</strong>
+                          </div>
+                        </>
+                      )}
                       <p>{n.note}</p>
                     </article>
                   ))}
@@ -416,6 +463,8 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
         </section>
       ))}
 
+      {!isProceeds ? (
+        <>
       <section id="comps" className="story-chapter story-wide" data-chapter>
         <p className="story-eyebrow">Nearby homes</p>
         <h2>What similar houses suggest.</h2>
@@ -529,9 +578,11 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
           </div>
         </div>
       </section>
+        </>
+      ) : null}
 
       <section id="notebook" className="story-chapter story-notebook" data-chapter>
-        <p className="story-eyebrow">The math</p>
+        <p className="story-eyebrow">{isProceeds ? "Notes" : "The math"}</p>
         <h2>{story.notebook.title}</h2>
         {story.notebook.paragraphs.map((p) => (
           <p key={p.slice(0, 48)} className="story-body notebook-p">
@@ -729,6 +780,25 @@ const STORY_CSS = `
     .hero-map { order: 2; min-height: 100svh; }
   }
   .hero-map { position: relative; min-height: 40svh; background: #c9d2e0; }
+  .hero-proceeds-panel {
+    position: relative; min-height: 40svh;
+    display: grid; place-items: center;
+    padding: 2rem;
+    background:
+      linear-gradient(160deg, #0b1f3a 0%, #143356 48%, #1a4060 100%);
+  }
+  .proceeds-hero.big {
+    width: min(100%, 28rem);
+    border-color: rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.06);
+    color: #f5f7fa;
+  }
+  .proceeds-hero.big strong, .proceeds-hero.big em { color: #f5f7fa; }
+  .proceeds-hero.big em { color: #e8a87c; }
+  .proceeds-hero.big span, .proceeds-hero.big p { color: rgba(245,247,250,0.72); }
+  @media (min-width: 960px) {
+    .story-hero.is-proceeds .hero-proceeds-panel { order: 2; min-height: 100svh; }
+  }
   .hero-map iframe, .street-frame iframe, .mini-map iframe {
     position: absolute; inset: 0; width: 100%; height: 100%; border: 0;
     filter: grayscale(0.2) contrast(1.05) saturate(0.9);
