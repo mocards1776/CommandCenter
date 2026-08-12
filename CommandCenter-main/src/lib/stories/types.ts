@@ -52,7 +52,14 @@ export type StoryChapter = {
   body: string;
   bullets?: string[];
   stat?: { value: string; label: string };
-  visual?: "map" | "condition" | "schools" | "nets" | "repairs" | "proceeds" | "none";
+  visual?: "map" | "condition" | "schools" | "nets" | "repairs" | "proceeds" | "compare" | "none";
+};
+
+export type CompareCard = {
+  title: string;
+  cost: string;
+  answers: string;
+  doesNot: string;
 };
 
 export type ClientStory = {
@@ -76,6 +83,11 @@ export type ClientStory = {
   cityLine: string;
   heroLine: string;
   support: string;
+  /** Big numbers strip under the hero (optional) */
+  keyNumbers?: { label: string; value: string; tone?: "warn" | "good" | "neutral" }[];
+  /** Hard callouts to reduce repeat questions */
+  callouts?: { title: string; body: string }[];
+  compareCards?: CompareCard[];
   geo: { lat: number; lng: number; label: string };
   facts: { label: string; value: string }[];
   condition: ConditionItem[];
@@ -125,18 +137,52 @@ export const STORIES: Record<string, ClientStory> = {
     layout: "property",
     cover: {
       display: "Buena Vista",
-      sub: "Tree damage · Inspection · Offer",
+      sub: "$230k as-is vs ~$310k clean",
       meta: "1715 E. Buena Vista St · Springfield, MO 65804",
-      statValue: "$230k",
-      statLabel: "as-is · pricing leftover risk",
-      compareWarn: "no inspection · no realtor",
+      statValue: "−$80k",
+      statLabel: "gap · offer vs clean mid",
+      compareWarn: "$230,000 as-is · no inspection",
       compareGood: "clean mid ~$310,000",
     },
     address: "1715 E. Buena Vista St",
     cityLine: "Springfield, MO 65804 · Ravenwood",
-    heroLine: "A 1976 ranch that was open to the weather after a tree hit — the offer is pricing inspection risk.",
+    heroLine: "Big numbers first: $230,000 as-is offer · ~$310,000 clean mid · about $61,000 of repairs before $230k wins on math.",
     support:
-      "You already paid for the big visible work: new roof, about half rebuilt open-concept, half new siding, newer HVAC. What is left is the usual question for a house this age that sat open after catastrophic damage — what will a careful inspection still find, and what does that cost to make right?",
+      "Tree damage, weather exposure, and a tougher inspection are why the offer is low. Your private inspection is for you — this as-is buyer is not owed that report.",
+    keyNumbers: [
+      { label: "As-is offer", value: "$230,000", tone: "warn" },
+      { label: "Clean mid", value: "~$310,000", tone: "good" },
+      { label: "Gap", value: "−$80,000", tone: "warn" },
+      { label: "Break-even repairs", value: "~$61,000", tone: "neutral" },
+      { label: "Private inspection", value: "~$400–$900", tone: "neutral" },
+      { label: "Private appraisal", value: "~$350–$600", tone: "neutral" },
+    ],
+    callouts: [
+      {
+        title: "This as-is buyer is not owed your inspection",
+        body:
+          "They waived inspection and buy as-is. Your private report is yours — for deciding whether $230,000 is smart. You do not have to hand it to them. (A later retail listing is different: then plan to share what you know.)",
+      },
+      {
+        title: "Hammer the math",
+        body:
+          "List near $310,000 with ~6% fees ≈ $291,000 before repairs. $230,000 as-is has $0 realtor fee. Headroom ≈ $61,000. Under that in fixes → counter or list. Over that (and you will not fix) → $230k can win.",
+      },
+    ],
+    compareCards: [
+      {
+        title: "Home inspection",
+        cost: "~$350–$550 · package ~$400–$900",
+        answers: "What is wrong / what may cost money (condition)",
+        doesNot: "Does not set the sale price",
+      },
+      {
+        title: "Appraisal",
+        cost: "~$350–$600 typical",
+        answers: "What the house is worth in today’s market (value opinion)",
+        doesNot: "Does not find crawl / moisture problems for you",
+      },
+    ],
     geo: {
       lat: 37.1323354,
       lng: -93.2652218,
@@ -233,11 +279,28 @@ export const STORIES: Record<string, ClientStory> = {
     ],
     chapters: [
       {
+        id: "numbers",
+        eyebrow: "The numbers",
+        title: "Three figures decide most of this.",
+        body:
+          "$230,000 is the as-is offer (no inspection, no realtor). ~$310,000 is the clean mid-point from nearby comps. ~$61,000 is how much repair spend it takes before the list path falls behind $230k after fees.",
+        visual: "none",
+        bullets: [
+          "$230,000 — as-is offer on the table",
+          "~$310,000 — clean mid (nearby peers often ~$305k–$320k)",
+          "−$80,000 — gap vs clean mid",
+          `~${money(BREAKEVEN_REPAIRS)} — repair headroom before $230k ties a clean list (~$310k − 6% fees ≈ ${money(LIST_NET_BEFORE_REPAIRS)})`,
+          "As-is band if risk stays unresolved: about $230,000–$280,000",
+          "Clean / fixed band: about $275,000–$345,000",
+        ],
+        stat: { value: "−$80k", label: "Offer vs clean mid — the gap to beat" },
+      },
+      {
         id: "place",
         eyebrow: "Where it is",
-        title: "Location supports a mid-$300,000 story.",
+        title: "Location supports the mid-$300,000s when clean.",
         body:
-          "Ravenwood is a solid Springfield neighborhood with strong schools. Same-street peers often read near $310,000–$320,000 when the house shows clean. The question is not the street — it is how much unfinished risk remains after the tree and the rebuild.",
+          "Ravenwood / 65804 is solid. Schools are strong. Same-street peers often read near $310,000–$320,000 when the house shows clean. The street is not the problem — leftover post-tree risk is.",
         visual: "map",
         bullets: [
           "65804 homes have been selling in about ~10 days",
@@ -247,74 +310,93 @@ export const STORIES: Record<string, ClientStory> = {
       },
       {
         id: "risk",
-        eyebrow: "Inspection risk",
-        title: "Open to the elements changes what buyers assume.",
+        eyebrow: "Why the offer is low",
+        title: "Open to the weather = tougher inspection assumptions.",
         body:
-          "A 1976 crawl-space ranch that took catastrophic tree damage — and sat open to weather during that chapter — invites a tougher inspection. Moisture, crawl conditions, insulation, and related cleanup (including mold when it shows up) are the usual suspects. The $230,000 as-is, no-inspection bid is the buyer saying they will own whatever is still hiding.",
+          "1976 crawl-space ranch · catastrophic tree damage · open to weather during that chapter. Inspectors look hard at moisture, crawl, insulation, age systems — and mold when it shows up. The $230k bid skips inspection on purpose.",
         visual: "condition",
         bullets: [
-          "Upgrades already done: roof, half remodel, half siding, newer HVAC",
-          "Still unknown: crawl, moisture history, age systems behind the new work",
-          "As-is + no inspection = buyer prices the unknown, not the kitchen",
+          "Already done: new roof, ~½ open-concept rebuild, ~½ new siding, newer HVAC",
+          "Still unknown: crawl, moisture history, systems behind the new work",
+          "As-is + no inspection = buyer prices the unknown",
         ],
-        stat: { value: "As-is", label: "Offer skips inspection on purpose" },
+        stat: { value: "As-is", label: "Buyer skipped inspection on purpose" },
       },
       {
         id: "look",
-        eyebrow: "Know before you answer",
-        title: "A cheap private look beats guessing on $230,000.",
+        eyebrow: "Your private look",
+        title: "Pay for an inspection. Keep the report.",
         body:
-          "Hire your own inspector — paid by you, for you. A standard home inspection on a house this size usually runs about $350–$550. If you want a deeper crawl or moisture look, figure roughly $150–$400 more (mold sampling, if you choose it, can add a few hundred on top). All-in, a solid private package is often about $400–$900 — small money next to an $80,000 gap versus a clean mid-point. That report is not the buyer’s inspection. This offer is as-is with no inspection, so you are not obligated to hand them your private results; they already agreed to take condition risk without one. Use the look to decide whether $230,000 is smart for you. (If you later list to a normal retail buyer, plan to share what you know — that is a different path.)",
+          "Hire your own inspector — for you. Standard visit ~$350–$550. Add crawl/moisture and you are often ~$400–$900 total. Tiny vs an $80,000 gap.",
         visual: "none",
         bullets: [
-          "Typical cost: ~$350–$550 for a home inspection; ~$400–$900 if you add crawl/moisture work",
-          "As-is, no-inspection buyer: you do not have to give them your private report",
-          "Retail listing later is different — then what you know usually gets disclosed",
+          "Cost: ~$350–$550 standard · ~$400–$900 with crawl/moisture",
+          "THIS AS-IS BUYER IS NOT OWED YOUR REPORT",
+          "They waived inspection — your look is only to decide on their price",
+          "Retail listing later is different — then plan to share what you know",
         ],
-        stat: { value: "~$400–900", label: "Typical private inspection package to size the risk" },
+        stat: { value: "Not owed", label: "As-is buyer does not get your private report" },
+      },
+      {
+        id: "appraisal",
+        eyebrow: "Appraisal?",
+        title: "Inspection ≠ appraisal. Different questions.",
+        body:
+          "An inspection answers “what is wrong?” An appraisal answers “what is it worth?” A private appraisal usually runs about $350–$600. It will not replace a crawl/moisture look. It can help if you want a third-party value number before you counter or list — especially after you know condition.",
+        visual: "compare",
+        bullets: [
+          "Appraisal cost: ~$350–$600 typical (ballpark)",
+          "Useful now if: you want a value opinion vs the $230k / $310k story",
+          "Less useful alone if: you still do not know repair scope — value assumes a condition story",
+          "Best pair: inspection first (or with it), then appraisal if you still need a value stamp",
+          "Relative to −$80k gap: cheap; not a substitute for knowing repair dollars",
+        ],
+        stat: { value: "~$350–600", label: "Typical private appraisal cost · value, not condition" },
       },
       {
         id: "repairs",
         eyebrow: "Repair math",
-        title: "When fixing still beats $230,000 — and when it does not.",
+        title: "Under ~$61k in fixes, listing still beats $230k.",
         body:
-          `List near ${money(LIST_CLEAN)} with about 6% realtor fees and you keep roughly ${money(LIST_NET_BEFORE_REPAIRS)} before repair spend. The as-is offer is ${money(OFFER_AS_IS)} with no realtor fee. That leaves about ${money(BREAKEVEN_REPAIRS)} of headroom for fixes before the list path falls behind $230,000 on pure cash. Under that line, fixing (or a modest credit) still wins. Over it — or if you will not fix and will not wait — the as-is check starts to make sense.`,
+          `List ~${money(LIST_CLEAN)} − ~6% fees ≈ ${money(LIST_NET_BEFORE_REPAIRS)} before repairs. As-is ${money(OFFER_AS_IS)} has $0 realtor fee. Headroom ≈ ${money(BREAKEVEN_REPAIRS)}.`,
         visual: "repairs",
         bullets: [
-          `Repairs under ~$25,000: listing path still clearly ahead of $230,000`,
-          `Repairs ~$40,000–$50,000: gap shrinks; stress and time start to matter`,
-          `Repairs over ~${money(BREAKEVEN_REPAIRS)}: $230,000 as-is can win on math alone`,
+          "Repairs under ~$25,000 → listing path clearly ahead",
+          "Repairs ~$40,000–$50,000 → still often ahead; closer",
+          `Repairs over ~${money(BREAKEVEN_REPAIRS)} → $230k can win on math alone`,
+          "Ballparks: contained moisture ~$2.5k–$8k · crawl/widespread ~$15k–$40k · crawl/vapor ~$4k–$18k · electrical/plumbing ~$2k–$12k · punch list ~$3k–$15k · “a few things” stack ~$15k–$35k",
         ],
-        stat: { value: money(BREAKEVEN_REPAIRS), label: "Approx. repair spend where $230k ties a clean list" },
+        stat: { value: money(BREAKEVEN_REPAIRS), label: "Repair spend where $230k ties a clean list" },
       },
       {
         id: "worth",
         eyebrow: "Price bands",
-        title: "Retail if clean enough — risk price if not.",
+        title: "Clean band vs as-is band.",
         body:
-          "If leftover issues are ordinary and handled, a fair sale still looks about $275,000–$345,000 (mid near $310,000). If inspection fallout is heavy and you sell as-is with no work, buyers discount into a lower band — closer to $230,000–$280,000 — because they own the cleanup and the unknown.",
-        stat: { value: "$230–280k", label: "As-is band when inspection risk stays with the buyer" },
+          "Clean / fixed: about $275,000–$345,000 (mid ~$310,000). Heavy unresolved risk sold as-is: about $230,000–$280,000. $230k is the floor of that risk band.",
+        stat: { value: "$230–280k", label: "As-is band if inspection risk stays with the buyer" },
         visual: "schools",
       },
       {
         id: "offer",
         eyebrow: "The offer",
-        title: "$230,000 is pricing unfinished risk — not the remodel.",
+        title: "$230,000 prices unfinished risk.",
         body:
-          "No realtor fee and no inspection only make sense if the buyer expects real findings. Against a clean mid-point it looks low. Against “tree-damage ranch, unknown leftovers, sell today,” it sits near the bottom of a hard as-is band — not a retail bid, but not random either.",
-        stat: { value: "−$80k", label: "vs clean mid-point · near as-is floor" },
+          "No realtor · no inspection. Low vs clean mid (−$80k). Inside a hard as-is band if leftovers are ugly and you will not fix them.",
+        stat: { value: "−$80k", label: "vs clean mid · near as-is floor" },
         visual: "nets",
       },
       {
         id: "call",
         eyebrow: "Bottom line",
-        title: "Get a private scope. Then pick the lane.",
+        title: "Inspect for you. Keep the report. Then pick a lane.",
         body:
-          "Do not accept or reject $230,000 on vibe. Spend a little on your own inspection math. If the stack of fixes is modest, counter or list. If the stack is large and you want out without more work, $230,000 as-is becomes a rational exit — especially with no realtor fee.",
+          "Do not answer $230,000 on vibe. Private inspection first (buyer is not owed it). Optional appraisal if you still want a value number. Then: modest fixes → counter/list; huge fixes you will not do → $230k can be fair.",
         bullets: [
-          "Next step: private inspection (~$350–$550, or ~$400–$900 with crawl/moisture) — keep the report; this buyer is not owed it",
-          "If total fix-up stays well under ~$60,000: push past $230,000 or list",
-          "If fixes clear ~$60,000+ and you will not do them: $230,000 as-is can be fair",
+          "Private inspection ~$400–$900 — KEEP IT; as-is buyer is not owed it",
+          "Optional appraisal ~$350–$600 — value opinion, not a condition report",
+          "Fixes well under ~$61,000 → push past $230k or list",
+          "Fixes over ~$61,000 and you will not do them → $230k as-is can win",
         ],
       },
     ],
@@ -431,20 +513,21 @@ export const STORIES: Record<string, ClientStory> = {
       offer: 230000,
       zest: 304900,
       thesis:
-        "Clean enough after ordinary post-damage catch-up: about $275,000–$345,000 (mid near $310,000). Heavy unresolved inspection risk sold as-is: about $230,000–$280,000. The $230,000 offer is the floor of that risk band — fair when repair math turns negative, low when leftovers are modest.",
+        "Clean / fixed: about $275,000–$345,000 (mid ~$310,000). As-is with heavy unresolved risk: about $230,000–$280,000. $230,000 is the floor of the as-is band — low if repairs are modest, fairer if they clear ~$61,000 and you will not fix them.",
       recommendation:
-        "Spend ~$400–$900 on a private inspection package first (you keep the report; this as-is buyer is not owed it). If total fix-up stays well under ~$60,000, push past $230,000 or list. If repairs clear that line and you will not do them, the as-is offer is in range.",
+        "Private inspection first (~$400–$900). Keep the report — this as-is buyer is not owed it. Optional appraisal (~$350–$600) if you want a value opinion. If fixes stay well under ~$61,000, push past $230k or list. If not, and you will not fix, $230k can be in range.",
     },
     notebook: {
-      title: "Repair headroom vs. the as-is check",
+      title: "The math board",
       paragraphs: [
-        "Clean-house story: nearby sales and estimates still point near $305,000–$320,000. New roof and remodel support that when the house inspects like a finished project.",
-        "Risk story: a 1976 ranch open to weather after a tree invites inspection attention — crawl, moisture, insulation, age systems, and sometimes mold. That is normal for this history, not a separate mystery.",
-        `List path math: ${money(LIST_CLEAN)} sale − ~6% fees ≈ ${money(LIST_NET_BEFORE_REPAIRS)} before repairs. As-is path: ${money(OFFER_AS_IS)} with $0 realtor fee. Headroom for fixes before $230,000 wins: about ${money(BREAKEVEN_REPAIRS)}.`,
-        "Example stacks (ballparks, not quotes): light moisture + punch list ~$8,000–$20,000 → list path still much better. Crawl/moisture work + systems catch-up ~$25,000–$45,000 → still often ahead, but closer. Wide remediation + structural/systems pile ~$60,000–$80,000+ → $230,000 can be the better cash answer.",
-        "How to know without guessing: pay for your own inspector (about $350–$550 for a standard visit on this size home) and, if needed, a crawl/moisture add-on (often putting a fuller package around $400–$900). That look is for your decision on this offer.",
-        "This buyer waived inspection and is buying as-is. You are not obligated to provide them your private inspection results — the report is yours. They already priced unknowns without seeing it. (Listing to a normal retail buyer later is a different lane; then plan to share what you know.)",
-        "Recommendation: private scope → total the likely fixes → if you are clearly under the ~$60,000 headroom and willing to finish, counter or list; if you are over it (or unwilling), $230,000 as-is is a rational exit.",
+        "Clean mid ~$310,000. As-is offer $230,000. Gap −$80,000.",
+        `List path: ${money(LIST_CLEAN)} − ~6% ≈ ${money(LIST_NET_BEFORE_REPAIRS)} before repairs. As-is path: ${money(OFFER_AS_IS)} with $0 realtor. Break-even repair spend ≈ ${money(BREAKEVEN_REPAIRS)}.`,
+        "Repair ballparks (not quotes): contained moisture ~$2.5k–$8k; crawl/widespread ~$15k–$40k; crawl/vapor ~$4k–$18k; electrical/plumbing ~$2k–$12k; punch list ~$3k–$15k; stacked “a few things” ~$15k–$35k.",
+        "Private inspection ~$350–$550 (or ~$400–$900 with crawl/moisture). AS-IS BUYER IS NOT OWED YOUR REPORT.",
+        "Private appraisal ~$350–$600. Answers value, not condition. Useful after (or with) inspection if you still want a third-party number vs $230k / $310k.",
+        "65804: ~10-day market, typical sale ~$291k. Same-street peers often ~$310k–$320k when clean. Schools: Disney 10, Cherokee 8, Kickapoo 8.",
+        "Upgrades already paid: new roof, ~½ open rebuild, ~½ siding, newer HVAC. Risk: weather exposure + crawl/moisture/age systems.",
+        "Lane: inspect → total fixes → under ~$61k and willing → counter/list; over ~$61k and unwilling → $230k as-is can be rational.",
       ],
     },
     researchDate: "August 12, 2026",
@@ -454,6 +537,7 @@ export const STORIES: Record<string, ClientStory> = {
       "Recent area sales reported through public listing sites",
       "Typical residential repair / remediation cost ranges (industry ballparks; not a quote)",
       "Typical Springfield-area home inspection fee ranges (industry ballparks; not a quote)",
+      "Typical residential appraisal fee ranges (industry ballparks; not a quote)",
     ],
   },
   "1715-e-buena-vista-financial": {

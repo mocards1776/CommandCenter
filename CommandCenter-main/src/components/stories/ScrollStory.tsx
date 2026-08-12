@@ -259,6 +259,28 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               </div>
             ))}
           </dl>
+
+          {story.keyNumbers?.length ? (
+            <div className="key-numbers reveal delay-5">
+              {story.keyNumbers.map((n) => (
+                <div key={n.label} className={`key-number is-${n.tone ?? "neutral"}`}>
+                  <span>{n.label}</span>
+                  <strong>{n.value}</strong>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {story.callouts?.length ? (
+            <div className="story-callouts reveal delay-5">
+              {story.callouts.map((c) => (
+                <aside key={c.title} className="story-callout">
+                  <strong>{c.title}</strong>
+                  <p>{c.body}</p>
+                </aside>
+              ))}
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -272,7 +294,10 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               {ch.stat ? (
                 <div
                   className={`story-stat ${
+                    ch.id === "numbers" ||
                     ch.id === "risk" ||
+                    ch.id === "look" ||
+                    ch.id === "appraisal" ||
                     ch.id === "repairs" ||
                     ch.id === "offer" ||
                     ch.id === "proceeds" ||
@@ -393,6 +418,27 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     <strong>{money(Math.round(story.valuation.mid * 0.94))}</strong> before repairs.
                     About <strong>$61k</strong> of fix-up is the rough line where $230k ties that path.
                   </p>
+                </div>
+              </aside>
+            ) : null}
+
+            {ch.visual === "compare" ? (
+              <aside className="visual-pane">
+                <div className="compare-grid">
+                  {(story.compareCards ?? []).map((card) => (
+                    <article key={card.title} className="compare-card">
+                      <h3>{card.title}</h3>
+                      <p className="compare-cost">{card.cost}</p>
+                      <p>
+                        <span>Answers</span>
+                        {card.answers}
+                      </p>
+                      <p>
+                        <span>Does not</span>
+                        {card.doesNot}
+                      </p>
+                    </article>
+                  ))}
                 </div>
               </aside>
             ) : null}
@@ -877,6 +923,65 @@ const STORY_CSS = `
     color: var(--muted); margin: 0 0 0.12rem;
   }
   .story-facts dd { margin: 0; font-size: 0.92rem; font-weight: 600; }
+
+  .key-numbers {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem; margin: 1.1rem 0 0.85rem;
+  }
+  @media (min-width: 720px) {
+    .key-numbers { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  .key-number {
+    border: 1px solid var(--line); background: rgba(255,255,255,0.65);
+    padding: 0.7rem 0.75rem;
+  }
+  .key-number span {
+    display: block; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 0.2rem; font-weight: 700;
+  }
+  .key-number strong {
+    font-family: var(--font-display); font-size: 1.15rem; color: var(--navy);
+  }
+  .key-number.is-warn {
+    border-color: rgba(180,35,24,0.35); background: rgba(180,35,24,0.07);
+  }
+  .key-number.is-warn strong { color: var(--warn); }
+  .key-number.is-good {
+    border-color: rgba(47,107,79,0.35); background: rgba(47,107,79,0.08);
+  }
+  .key-number.is-good strong { color: var(--good); }
+
+  .story-callouts { display: grid; gap: 0.55rem; margin-top: 0.35rem; }
+  .story-callout {
+    border-left: 4px solid var(--warn);
+    background: rgba(180,35,24,0.07);
+    padding: 0.85rem 0.95rem;
+  }
+  .story-callout strong {
+    display: block; font-size: 0.92rem; margin-bottom: 0.3rem; color: var(--warn);
+  }
+  .story-callout p {
+    margin: 0; font-size: 0.9rem; line-height: 1.45; color: var(--navy);
+  }
+
+  .compare-grid { display: grid; gap: 0.65rem; }
+  .compare-card {
+    border: 1px solid var(--line); background: rgba(255,255,255,0.55);
+    padding: 0.9rem 1rem;
+  }
+  .compare-card h3 {
+    margin: 0 0 0.25rem; font-family: var(--font-body); font-size: 1rem; font-weight: 700;
+  }
+  .compare-cost {
+    margin: 0 0 0.65rem; font-family: var(--font-mono); font-size: 0.78rem; color: var(--copper-deep);
+  }
+  .compare-card p {
+    margin: 0 0 0.45rem; font-size: 0.88rem; line-height: 1.4; color: var(--muted);
+  }
+  .compare-card p span {
+    display: block; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    font-weight: 700; color: var(--navy); margin-bottom: 0.15rem;
+  }
 
   .story-chapter {
     padding: clamp(2.5rem, 6vw, 5rem) clamp(1.25rem, 5vw, 3.25rem);
