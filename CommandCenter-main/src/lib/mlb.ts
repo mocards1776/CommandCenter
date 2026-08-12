@@ -1510,13 +1510,21 @@ export async function fetchEspnGameRecap(
       };
     };
     const article = sum.article;
-    if (!article?.headline || !article.story) return null;
+    if (!article?.headline) return null;
+    const storyHtml =
+      article.story?.trim() ||
+      (article.description
+        ? `<p>${article.description.replace(/^—\s*/, "")}</p>`
+        : "");
+    if (!storyHtml) return null;
+    const storyText = stripHtml(storyHtml).trim();
+    if (storyText.length < 40) return null;
     return {
       espnEventId: event.id,
       headline: article.headline,
       description: article.description ?? null,
-      storyHtml: article.story,
-      storyText: stripHtml(article.story).trim(),
+      storyHtml,
+      storyText,
       url:
         article.links?.web?.href ??
         `https://www.espn.com/mlb/recap/_/gameId/${event.id}`,
@@ -2105,6 +2113,17 @@ export async function fetchPlayerContract(
 
   if (!names.length) return null;
 
+  const cacheKey = `mlb-contract-v1:${names[0]!.toLowerCase()}`;
+  try {
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached) as { at: number; data: MlbPlayerContract };
+      if (Date.now() - parsed.at < 24 * 60 * 60_000 && parsed.data) return parsed.data;
+    }
+  } catch {
+    /* ignore cache */
+  }
+
   const hint =
     (opts?.url && opts.url.trim()) ||
     spotracHintForName(playerName) ||
@@ -2120,7 +2139,14 @@ export async function fetchPlayerContract(
     for (const body of attempts) {
       try {
         const mapped = await invokeSportsContract(body);
-        if (mapped) return mapped;
+        if (mapped) {
+          try {
+            sessionStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), data: mapped }));
+          } catch {
+            /* quota */
+          }
+          return mapped;
+        }
       } catch (e) {
         lastError = e instanceof Error ? e : new Error(String(e));
       }

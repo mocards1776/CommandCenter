@@ -127,7 +127,7 @@ export default function MlbGamePage() {
 
       <GameMatchupHeader game={g} />
 
-      {/* Final: game wrap first and expanded. Live: box first. */}
+      {/* Final: game wrap first and expanded. Live: box first. Pregame: preview text. */}
       {!g.pregame && isFinal && (
         <>
           {recap.isPending && (
@@ -139,17 +139,25 @@ export default function MlbGamePage() {
         </>
       )}
 
-      {!g.pregame && g.innings.length > 0 && (
-        <EspnBoxBoard game={g} metaBits={metaBits} />
+      {g.pregame && (
+        <>
+          {recap.isPending && (
+            <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+              <Loader2 size={14} className="animate-spin" /> Loading preview…
+            </p>
+          )}
+          {recap.data && <GameWrap recap={recap.data} box={g} defaultOpen />}
+          <PreviewStack
+            game={g}
+            preview={preview.data}
+            loading={preview.isPending}
+            metaBits={metaBits}
+          />
+        </>
       )}
 
-      {g.pregame && (
-        <PreviewStack
-          game={g}
-          preview={preview.data}
-          loading={preview.isPending}
-          metaBits={metaBits}
-        />
+      {!g.pregame && g.innings.length > 0 && (
+        <EspnBoxBoard game={g} metaBits={metaBits} />
       )}
 
       {!g.pregame && !isFinal && (
@@ -529,7 +537,7 @@ function PitcherCard({
           <img
             src={mlbHeadshot(id, 426)}
             alt=""
-            className="absolute inset-0 h-full w-full scale-[1.1] object-cover object-[center_12%]"
+            className="absolute inset-0 h-full w-full object-cover object-[center_15%]"
           />
         </div>
       ) : (
@@ -732,7 +740,7 @@ function LeaderSide({
         <img
           src={mlbHeadshot(side.id, 213)}
           alt=""
-          className="absolute inset-0 h-full w-full scale-[1.15] object-cover object-[center_10%]"
+          className="absolute inset-0 h-full w-full object-cover object-[center_15%]"
         />
       </div>
       <div className="min-w-0">

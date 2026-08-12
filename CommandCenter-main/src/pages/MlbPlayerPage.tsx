@@ -81,8 +81,10 @@ export default function MlbPlayerPage() {
         lastName: player.data!.lastName,
       }),
     enabled: Boolean(player.data?.name),
-    staleTime: 120_000,
-    retry: 3,
+    staleTime: 24 * 60 * 60_000,
+    gcTime: 7 * 24 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
 
   const brief = useQuery({

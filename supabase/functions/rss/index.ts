@@ -230,7 +230,7 @@ function decryptTownNews(s: string): string {
 /** Unlock STL Today (and similar) encrypted subscriber paragraphs before extract. */
 function unlockEncryptedContent(html: string): string {
   return html.replace(
-    /<(p|div)([^>]*class="[^"]*encrypted-content[^"]*"[^>]*)>([\s\S]*?)<\/\1>/gi,
+    /<(p|div|section|span)([^>]*(?:class|data-type)=["'][^"']*encrypted-content[^"']*["'][^>]*)>([\s\S]*?)<\/\1>/gi,
     (_m, tag: string, attrs: string, inner: string) => {
       const decoded = decryptTownNews(decodeEntities(inner));
       const cleanAttrs = String(attrs)
@@ -300,7 +300,9 @@ function extractTownNewsParagraphs(html: string): string | null {
   }
   if (!parts.length) return null;
   const joined = parts.join("\n");
-  return stripTags(joined).length > 200 ? joined : null;
+  // STL Today / TownNews often yields thinner first extracts after unlock — still usable.
+  const minLen = /stltoday\.com|lee\.net|townnews/i.test(html) ? 80 : 200;
+  return stripTags(joined).length > minLen ? joined : null;
 }
 
 /** Match a full nested <div>…</div> (non-greedy patterns stop at the first child close). */
@@ -768,11 +770,13 @@ type EspnCompetitor = {
 type EspnEvent = {
   id?: string;
   date?: string;
-  status?: { type?: { state?: string; completed?: boolean } };
+  name?: string;
+  shortName?: string;
+  status?: { type?: { state?: string; completed?: boolean; name?: string } };
   competitions?: {
     id?: string;
     date?: string;
-    status?: { type?: { state?: string; completed?: boolean } };
+    status?: { type?: { state?: string; completed?: boolean; name?: string } };
     competitors?: EspnCompetitor[];
   }[];
 };
@@ -789,6 +793,17 @@ function isFinalGame(
 ): boolean {
   const status = comp.status?.type ?? event.status?.type;
   return status?.state === "post" || status?.completed === true;
+}
+
+function isPreviewGame(
+  comp: { status?: { type?: { state?: string; completed?: boolean; name?: string } } },
+  event: EspnEvent,
+): boolean {
+  const status = comp.status?.type ?? event.status?.type;
+  return (
+    status?.state === "pre" ||
+    /STATUS_SCHEDULED|STATUS_PRE/i.test(String(status?.name ?? ""))
+  );
 }
 
 async function handleCardinalsWrapsFeed(): Promise<Response> {
@@ -808,7 +823,10 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
 
     for (const event of scoreboard.events) {
       const comp = event.competitions?.[0];
-      if (!comp || !isCardinalsGame(comp) || !isFinalGame(comp, event)) continue;
+      if (!comp || !isCardinalsGame(comp)) continue;
+      const isFinal = isFinalGame(comp, event);
+      const isPreview = isPreviewGame(comp, event);
+      if (!isFinal && !isPreview) continue;
 
       const eventId = event.id ?? comp.id;
       if (!eventId || seen.has(eventId)) continue;
@@ -825,20 +843,37 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
       } | null;
 
       const article = summary?.article;
-      if (!article?.headline || !article?.story) continue;
-
-      const snippet =
-        article.description?.trim() || stripTags(article.story).slice(0, 200);
-
-      items.push({
-        id: eventId,
-        title: article.headline,
-        link: espnRecapUrl(eventId),
-        author: "ESPN",
-        publishedAt: event.date ?? comp.date ?? null,
-        image: null,
-        snippet,
-      });
+      const matchup = event.shortName || event.name || "Cardinals game";
+      if (isFinal) {
+        if (!article?.headline) continue;
+        const snippet =
+          article.description?.trim() ||
+          (article.story ? stripTags(article.story).slice(0, 200) : "");
+        items.push({
+          id: eventId,
+          title: article.headline,
+          link: espnRecapUrl(eventId),
+          author: "ESPN",
+          publishedAt: event.date ?? comp.date ?? null,
+          image: null,
+          snippet,
+        });
+      } else {
+        const headline = article?.headline || `Preview: ${matchup}`;
+        const snippet =
+          article?.description?.trim() ||
+          (article?.story ? stripTags(article.story).slice(0, 200) : "") ||
+          `Game preview for ${matchup}.`;
+        items.push({
+          id: `preview-${eventId}`,
+          title: article?.headline ? headline : `Preview: ${matchup}`,
+          link: `https://www.espn.com/mlb/preview/_/gameId/${eventId}`,
+          author: "ESPN",
+          publishedAt: event.date ?? comp.date ?? null,
+          image: null,
+          snippet,
+        });
+      }
     }
   }
 
@@ -849,8 +884,8 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
   });
 
   return json({
-    title: "Cardinals wraps",
-    description: "Recent St. Louis Cardinals game recaps from ESPN",
+    title: "Cardinals wraps & previews",
+    description: "St. Louis Cardinals game wraps and previews from ESPN",
     link: "https://www.espn.com/mlb/",
     feedUrl: SYNTHETIC_CARDINALS_WRAPS,
     items,
@@ -930,8 +965,20 @@ async function handleRead(url: string) {
   if (!frag) return json({ error: "Could not extract article text", url }, 422);
   let contentHtml = scrubContentHtml(sanitizeHtml(stripArticleChrome(frag)), meta.image);
   // Video pages can be short on text but still valid.
-  const contentText = stripTags(contentHtml);
+  let contentText = stripTags(contentHtml);
   const hasVideo = /<video\b/i.test(contentHtml);
+  // Soft fallback when extract shrinks below threshold (common on STL Today paywall HTML).
+  if (contentText.length < 80 && !hasVideo && !isMlbVideoUrl(url)) {
+    const desc =
+      html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+      html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+      null;
+    if (desc && stripTags(desc).length > 40) {
+      const fallback = `<p>${desc}</p><p><a href="${url}">Open original article</a></p>`;
+      contentHtml = scrubContentHtml(sanitizeHtml(fallback), meta.image);
+      contentText = stripTags(contentHtml);
+    }
+  }
   if (contentText.length < 80 && !hasVideo && !isMlbVideoUrl(url)) {
     return json({ error: "Extracted text too short", url }, 422);
   }
@@ -955,7 +1002,7 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
   image: string | null;
   html: string;
 } | null> {
-  if (!/espn\.com\/mlb\/recap/i.test(url) && !/espn\.com\/mlb\/game\?.*gameId=/i.test(url)) {
+  if (!/espn\.com\/mlb\/(?:recap|preview|game)/i.test(url) && !/espn\.com\/mlb\/game\?.*gameId=/i.test(url)) {
     return null;
   }
   const id =

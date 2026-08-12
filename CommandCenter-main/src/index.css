@@ -116,10 +116,11 @@
     border-radius: 1px;
   }
 
-  /* Display numerals — serif, tabular so they don't jitter as they tick. */
+  /* Tabular body numerals — readable in dense stat tables (not display serif). */
   .numeral {
-    font-family: var(--font-display);
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font-body);
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "tnum" 1, "lnum" 1;
   }
 
   /* The flag: canton, star, stripes. Small enough to need real proportions. */

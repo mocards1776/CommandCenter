@@ -53,7 +53,9 @@ export default function PlayerPeek({
         lastName: p!.lastName,
       }),
     enabled: Boolean(p?.name),
-    staleTime: 120_000,
+    staleTime: 24 * 60 * 60_000,
+    gcTime: 7 * 24 * 60 * 60_000,
+    refetchOnWindowFocus: false,
     retry: 1,
   });
 
