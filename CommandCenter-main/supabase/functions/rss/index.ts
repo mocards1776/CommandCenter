@@ -16,6 +16,7 @@ const CORS: Record<string, string> = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const UA =
 const UA = "Mozilla/5.0 (compatible; CommandCenterRSS/1.0)";
 
 const DEFAULT_FEED = "https://rss.app/feeds/nG7WGKJTs5LOQjxd.xml";
@@ -825,10 +826,12 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
       } | null;
 
       const article = summary?.article;
-      if (!article?.headline || !article?.story) continue;
-
+      // Prefer full story, but still publish headline-only wraps when ESPN is thin.
+      if (!article?.headline) continue;
+      const storyHtml = article.story ?? "";
       const snippet =
-        article.description?.trim() || stripTags(article.story).slice(0, 200);
+        (article.description ?? "").replace(/^—\s*/, "").trim() ||
+        stripTags(storyHtml).slice(0, 220);
 
       items.push({
         id: eventId,

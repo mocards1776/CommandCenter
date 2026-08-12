@@ -29,7 +29,7 @@ function heatLabel(rank: number): string {
 export default function MlbManagersPage() {
   const { user } = useAuth();
   const managers = useQuery({
-    queryKey: ["mlb-managers-v8"],
+    queryKey: ["mlb-managers-v9"],
     queryFn: fetchMlbManagers,
     staleTime: 180_000,
   });
@@ -64,7 +64,12 @@ export default function MlbManagersPage() {
         <section>
           <h2 className="rule-head mb-3">Your managers</h2>
           <div className="flex gap-3 overflow-x-auto pb-1">
-            {favorites.data.map((f) => (
+            {favorites.data.map((f) => {
+              const resolved = managers.data?.find((m) => String(m.id) === String(f.playerId));
+              const src =
+                resolved?.headshot ||
+                `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${f.playerId}/headshot/67/current`;
+              return (
               <Link
                 key={f.id}
                 to={`/sports/mlb/managers/${f.playerId}`}
@@ -72,9 +77,9 @@ export default function MlbManagersPage() {
               >
                 <div className="from-accent-dark/80 absolute inset-0 bg-gradient-to-t to-transparent opacity-80" />
                 <img
-                  src={`https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_213,q_auto:best/v1/people/${f.playerId}/headshot/67/current`}
+                  src={src}
                   alt=""
-                  className="aspect-[3/4] w-full object-cover object-top"
+                  className="aspect-[3/4] w-full object-cover object-[center_18%]"
                   loading="lazy"
                 />
                 <div className="absolute inset-x-0 bottom-0 p-2.5">
@@ -90,7 +95,8 @@ export default function MlbManagersPage() {
                   className="text-accent absolute top-2 right-2 fill-current drop-shadow"
                 />
               </Link>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -154,10 +160,11 @@ export default function MlbManagersPage() {
           </section>
 
           <p className="text-[11px] leading-relaxed text-[#8b93a7]">
-            Heat is driven hardest by live next-fired market prices (Kalshi), then win
-            percentage, games back, playoff odds, and division place — scaled by tenure.
-            Interim / short-leash skippers skip the first-year cushion. When MLB still
-            lists a fired manager beside an interim, we show the interim only.
+            Heat is driven hardest by live <span className="text-amber-200">Kalshi %</span>{" "}
+            (next-fired market), then win percentage, games back, playoff odds, and division
+            place — scaled by tenure. Interim / short-leash skippers skip the first-year
+            cushion. When MLB still lists a fired manager beside an interim, we show the
+            interim only.
           </p>
         </>
       )}
@@ -285,27 +292,42 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
               )}
             </span>
             <span className="text-[#a8b0c2]">
-              {m.yearsWithTeam} yr{m.yearsWithTeam === 1 ? "" : "s"}
+              {m.contractTerm?.of != null
+                ? `Y${m.contractTerm.yearOf}/${m.contractTerm.of}`
+                : `${m.yearsWithTeam} yr${m.yearsWithTeam === 1 ? "" : "s"}`}
             </span>
             <span className="text-[#a8b0c2]">{m.gb === "—" ? "—" : `${m.gb} GB`}</span>
             {m.playoffOdds != null && (
               <span className="text-[#a8b0c2]">{m.playoffOdds.toFixed(0)}% PO</span>
             )}
-            {m.firedOddsAmerican && (
+            {m.firedOddsPct != null ? (
+              <span
+                className="numeral rounded-sm bg-amber-400/15 px-1.5 py-0.5 text-[11px] font-semibold text-amber-200"
+                title={
+                  m.firedOddsAmerican
+                    ? `Kalshi weight · ${m.firedOddsAmerican}`
+                    : "Kalshi implied next-fired %"
+                }
+              >
+                {m.firedOddsPct.toFixed(1)}%
+                {m.firedOddsAmerican ? (
+                  <span className="ml-1 text-[10px] font-medium text-amber-200/70">
+                    {m.firedOddsAmerican}
+                  </span>
+                ) : null}
+              </span>
+            ) : m.firedOddsAmerican ? (
               <span
                 className="numeral rounded-sm bg-white/[0.06] px-1.5 py-0.5 text-[11px] font-semibold text-amber-200"
-                title={
-                  m.firedOddsPct != null
-                    ? `Market weight · ~${m.firedOddsPct}% next fired`
-                    : "Next-fired market price"
-                }
+                title="Next-fired market price"
               >
                 {m.firedOddsAmerican}
               </span>
-            )}
+            ) : null}
           </div>
           {m.contractNote ? (
             <p className="mt-1 line-clamp-1 text-[11px] text-[#8b93a7]" title={m.contractNote}>
+              {m.contractTerm?.label ? `${m.contractTerm.label} · ` : ""}
               {m.contractNote}
             </p>
           ) : null}

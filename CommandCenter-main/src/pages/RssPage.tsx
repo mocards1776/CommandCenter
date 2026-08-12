@@ -934,6 +934,8 @@ export default function RssPage() {
 
   const feedsLoading = feedQueries.some((q) => q.isLoading);
   const feedsFetching = feedQueries.some((q) => q.isFetching);
+  const feedsError = feedQueries.find((q) => q.isError)?.error;
+  const feedsFailed = feedQueries.filter((q) => q.isError).length;
 
   const unreadInList = useMemo(
     () => listItems.filter((it) => !readUrls.has(it.link)),
@@ -1252,6 +1254,24 @@ export default function RssPage() {
           </div>
         ) : feedsLoading ? (
           <p className="label-caps animate-pulse p-5">Loading feeds</p>
+        ) : feedsFailed > 0 && listItems.length === 0 ? (
+          <div className="space-y-3 p-5">
+            <p className="text-alert font-rss text-sm">
+              Couldn&apos;t load feeds
+              {feedsFailed === RSS_FEEDS.length ? "" : ` (${feedsFailed} of ${RSS_FEEDS.length} failed)`}
+              .
+            </p>
+            <p className="text-chalk font-rss text-sm">
+              {feedsError instanceof Error ? feedsError.message : "Check your connection and try refresh."}
+            </p>
+            <button
+              type="button"
+              onClick={() => void Promise.all(feedQueries.map((q) => q.refetch()))}
+              className="text-accent text-[12px] font-semibold uppercase tracking-[0.14em] hover:underline"
+            >
+              Retry feeds
+            </button>
+          </div>
         ) : listItems.length === 0 ? (
           <p className="text-chalk font-rss p-5 text-sm">
             {nav === "unread"

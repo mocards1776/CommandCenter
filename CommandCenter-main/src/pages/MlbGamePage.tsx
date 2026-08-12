@@ -260,23 +260,31 @@ function PreviewStack({
 }
 
 function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
+  const awayWins = !g.pregame && g.away.runs > g.home.runs;
+  const homeWins = !g.pregame && g.home.runs > g.away.runs;
   return (
-    <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d]">
+    <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
       <div
-        className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-80"
+        className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-90"
         style={{
-          background: `radial-gradient(ellipse at 20% 45%, #${g.away.primaryColor}66, transparent 58%)`,
+          background: `radial-gradient(ellipse at 20% 45%, #${g.away.primaryColor}88, transparent 58%)`,
         }}
       />
       <div
-        className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-80"
+        className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-90"
         style={{
-          background: `radial-gradient(ellipse at 80% 45%, #${g.home.primaryColor}66, transparent 58%)`,
+          background: `radial-gradient(ellipse at 80% 45%, #${g.home.primaryColor}88, transparent 58%)`,
         }}
       />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.06),transparent_45%)]" />
 
       <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.07] px-4 py-2.5">
-        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#a8b0c2]">
+        <p
+          className={cn(
+            "text-[11px] font-bold uppercase tracking-[0.16em]",
+            g.status === "Final" ? "text-cream" : "text-[#a8b0c2]",
+          )}
+        >
           {g.pregame ? "Preview" : g.status}
         </p>
         {g.officialDate && (
@@ -290,8 +298,8 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
         )}
       </div>
 
-      <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-6 sm:gap-4 sm:px-6">
-        <EspnTeam side={g.away} align="left" />
+      <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-7 sm:gap-4 sm:px-6">
+        <EspnTeam side={g.away} align="left" winner={awayWins} loser={homeWins} />
         <div className="px-1 text-center">
           {g.pregame ? (
             <>
@@ -304,39 +312,68 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
             </>
           ) : (
             <>
-              <p className="font-display text-[44px] leading-none tabular-nums text-white sm:text-[56px]">
-                <span className={g.away.runs > g.home.runs ? "text-white" : "text-white/55"}>
-                  {g.away.runs}
-                </span>
+              <p className="font-display text-[48px] leading-none tabular-nums text-white sm:text-[60px]">
+                <span className={awayWins ? "text-white" : "text-white/50"}>{g.away.runs}</span>
                 <span className="mx-2 text-[22px] text-white/25 sm:mx-3">-</span>
-                <span className={g.home.runs > g.away.runs ? "text-white" : "text-white/55"}>
-                  {g.home.runs}
-                </span>
+                <span className={homeWins ? "text-white" : "text-white/50"}>{g.home.runs}</span>
               </p>
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
                 {g.status === "Final" ? "Final" : g.status}
               </p>
+              {(g.away.hits != null || g.home.hits != null) && (
+                <p className="mt-2 text-[11px] uppercase tracking-[0.12em] text-white/45">
+                  H {g.away.hits ?? "–"}–{g.home.hits ?? "–"}
+                  {g.away.errors != null
+                    ? ` · E ${g.away.errors}–${g.home.errors ?? 0}`
+                    : ""}
+                </p>
+              )}
             </>
           )}
         </div>
-        <EspnTeam side={g.home} align="right" />
+        <EspnTeam side={g.home} align="right" winner={homeWins} loser={awayWins} />
       </div>
     </header>
   );
 }
 
-function EspnTeam({ side, align }: { side: MlbBoxscoreSide; align: "left" | "right" }) {
+function EspnTeam({
+  side,
+  align,
+  winner,
+  loser,
+}: {
+  side: MlbBoxscoreSide;
+  align: "left" | "right";
+  winner?: boolean;
+  loser?: boolean;
+}) {
   return (
     <Link
       to={teamPagePath(side.teamId)}
       className={cn(
         "flex min-w-0 flex-col items-center gap-2.5 transition hover:opacity-90",
         align === "left" ? "sm:items-start" : "sm:items-end",
+        loser && "opacity-70",
       )}
     >
-      <TeamMark teamId={side.teamId} size="xl" className="shadow-[0_8px_28px_rgba(0,0,0,0.45)]" />
+      <TeamMark
+        teamId={side.teamId}
+        size="xl"
+        className={cn(
+          "shadow-[0_8px_28px_rgba(0,0,0,0.45)]",
+          winner && "ring-2 ring-white/35",
+        )}
+      />
       <div className={cn("text-center", align === "left" ? "sm:text-left" : "sm:text-right")}>
-        <p className="text-[18px] font-bold tracking-wide text-white sm:text-[22px]">{side.abbrev}</p>
+        <p
+          className={cn(
+            "text-[18px] font-bold tracking-wide sm:text-[22px]",
+            winner ? "text-white" : loser ? "text-white/55" : "text-white",
+          )}
+        >
+          {side.abbrev}
+        </p>
         {side.record ? (
           <p className="numeral mt-1 text-[13px] font-medium text-white/70">{side.record}</p>
         ) : (
@@ -765,22 +802,22 @@ function GameWrap({
   );
 
   return (
-    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
       <div className="border-b border-white/[0.06] px-4 py-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
           {box.away.batters.length || box.home.batters.length ? "Game wrap" : "Game preview"}
         </p>
-        <h2 className="mt-1 text-[20px] font-semibold leading-snug text-cream sm:text-[22px]">
+        <h2 className="font-rss mt-1 text-[20px] font-semibold leading-snug text-cream sm:text-[22px]">
           {recap.headline}
         </h2>
         {showDesc && (
-          <p className="mt-2 text-[14px] leading-relaxed text-[#c8cdd8]">{desc}</p>
+          <p className="font-rss mt-2 text-[14px] leading-relaxed text-[#c8cdd8]">{desc}</p>
         )}
       </div>
       <div className="px-4 py-4">
         <div
           className={cn(
-            "text-[15px] leading-[1.7] text-[#d5dae6]",
+            "font-rss text-[15px] leading-[1.75] text-[#d5dae6]",
             !open && long && "line-clamp-[12]",
           )}
         >
