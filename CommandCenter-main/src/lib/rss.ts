@@ -439,13 +439,50 @@ export type RssHighlight = {
   updatedAt: string;
 };
 
-async function invokeRss<T>(body: Record<string, string>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke("rss", { body });
-  if (error) throw new Error(error.message);
-  if (data && typeof data === "object" && "error" in data && (data as { error?: string }).error) {
-    throw new Error(String((data as { error: string }).error));
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readFunctionsErrorDetail(error: {
+  message: string;
+  context?: Response;
+}): Promise<{ status: number | null; detail: string }> {
+  const status =
+    error.context && typeof error.context.status === "number" ? error.context.status : null;
+  let detail = error.message;
+  if (error.context) {
+    try {
+      const body = (await error.context.clone().json()) as { error?: string };
+      if (body?.error) detail = String(body.error);
+    } catch {
+      // keep generic message
+    }
   }
-  return data as T;
+  return { status, detail };
+}
+
+async function invokeRss<T>(body: Record<string, string>): Promise<T> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data, error } = await supabase.functions.invoke("rss", { body });
+    if (!error) {
+      if (data && typeof data === "object" && "error" in data && (data as { error?: string }).error) {
+        throw new Error(String((data as { error: string }).error));
+      }
+      return data as T;
+    }
+    const { status, detail } = await readFunctionsErrorDetail(error);
+    lastError = new Error(detail);
+    // Retry transient gateway / rate-limit failures; skip hard extract failures (422).
+    const retryable =
+      status === 429 ||
+      status === 502 ||
+      status === 503 ||
+      (status == null && /non-2xx|rate.?limit|timeout/i.test(error.message));
+    if (!retryable || attempt === 2) break;
+    await sleep(450 * 2 ** attempt);
+  }
+  throw lastError ?? new Error("RSS request failed");
 }
 
 export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFeed> {
@@ -460,8 +497,13 @@ export function formatFeedDate(raw: string | null): string {
   if (!raw) return "";
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return raw;
+  // MLB Film Room / video items often publish as midnight UTC calendar labels
+  // ("Tue, 11 Aug 2026 00:00:00 GMT"). Formatting in America/Chicago shifts
+  // those to the previous evening and shows "yesterday".
+  const isMidnightUtc =
+    d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
   return d.toLocaleDateString("en-US", {
-    timeZone: "America/Chicago",
+    timeZone: isMidnightUtc ? "UTC" : "America/Chicago",
     weekday: "short",
     month: "short",
     day: "numeric",
