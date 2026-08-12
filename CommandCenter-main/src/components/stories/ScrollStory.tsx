@@ -111,18 +111,18 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
           <h1 className="title-display reveal delay-2">
             Buena Vista
           </h1>
-          <p className="title-sub reveal delay-2">Mold · Inspection · Offer</p>
+          <p className="title-sub reveal delay-2">Tree damage · Inspection · Offer</p>
           <p className="title-meta reveal delay-3">
             1715 E. Buena Vista St · Springfield, MO 65804
           </p>
 
           <div className="title-stat reveal delay-4">
-            <strong>Mold</strong>
-            <span>and inspection risk set the price</span>
+            <strong>$230k</strong>
+            <span>as-is · pricing leftover risk</span>
           </div>
 
           <p className="title-compare reveal delay-4">
-            <em className="is-warn">{money(story.valuation.offer)} as-is · no inspection</em>
+            <em className="is-warn">no inspection · no realtor</em>
             <span aria-hidden> · </span>
             <em className="is-good">clean mid ~{money(story.valuation.mid)}</em>
           </p>
@@ -233,7 +233,9 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               {ch.stat ? (
                 <div
                   className={`story-stat ${
-                    ch.id === "mold" || ch.id === "offer" || ch.id === "call" ? "is-warn" : ""
+                    ch.id === "risk" || ch.id === "repairs" || ch.id === "offer" || ch.id === "call"
+                      ? "is-warn"
+                      : ""
                   }`}
                 >
                   <span className="story-stat-value">{ch.stat.value}</span>
@@ -271,12 +273,12 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               <aside className="visual-pane">
                 <div className="floor-split" aria-hidden>
                   <div className="floor-new">
-                    <span>Upgrades</span>
-                    <em>Roof · remodel · HVAC help value</em>
+                    <span>Already done</span>
+                    <em>Roof · half remodel · HVAC</em>
                   </div>
                   <div className="floor-old is-risk">
-                    <span>Risk</span>
-                    <em>Mold · crawl · inspection unknowns</em>
+                    <span>Still open</span>
+                    <em>Crawl · moisture · age systems</em>
                   </div>
                 </div>
                 <div className="condition-grid">
@@ -316,8 +318,34 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                 </div>
                 <div className="highlight-band">
                   <p>
-                    Clean comps sit near <strong>{money(story.valuation.mid)}</strong>. Mold risk can pull
-                    an as-is sale down toward <strong>{money(story.valuation.offer)}</strong>–$280k.
+                    Clean comps sit near <strong>{money(story.valuation.mid)}</strong>. Heavy leftover
+                    inspection risk can pull an as-is sale toward{" "}
+                    <strong>{money(story.valuation.offer)}</strong>–$280k.
+                  </p>
+                </div>
+              </aside>
+            ) : null}
+
+            {ch.visual === "repairs" ? (
+              <aside className="visual-pane">
+                <div className="repair-list">
+                  {story.repairs.map((r) => (
+                    <article key={r.issue} className="repair-card">
+                      <header>
+                        <h3>{r.issue}</h3>
+                        <strong>
+                          {money(r.low)}–{money(r.high)}
+                        </strong>
+                      </header>
+                      <p>{r.note}</p>
+                    </article>
+                  ))}
+                </div>
+                <div className="highlight-band">
+                  <p>
+                    List at {money(story.valuation.mid)} with ~6% fees keeps about{" "}
+                    <strong>{money(Math.round(story.valuation.mid * 0.94))}</strong> before repairs.
+                    About <strong>$61k</strong> of fix-up is the rough line where $230k ties that path.
                   </p>
                 </div>
               </aside>
@@ -361,8 +389,8 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
         <p className="story-eyebrow">Nearby homes</p>
         <h2>What similar houses suggest.</h2>
         <p className="story-body narrow">
-          Same-street homes look like the low-to-mid $300,000s when they are healthy. Mold and a hard
-          inspection can knock this out of that retail lane and into as-is pricing.
+          Same-street homes look like the low-to-mid $300,000s when they inspect clean. Leftover risk
+          from age and the tree-damage chapter is what can knock this into as-is pricing.
         </p>
 
         <div className="comps-layout">
@@ -432,8 +460,8 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
 
         <div className="range-cards">
           {[
-            ["As-is offer", story.valuation.offer, "warn"],
-            ["As-is floor", story.valuation.low, ""],
+            ["Offer", story.valuation.offer, "warn"],
+            ["Risk low", story.valuation.low, ""],
             ["Clean mid", story.valuation.mid, "good"],
             ["Clean high", story.valuation.high, ""],
           ].map(([label, value, tone]) => (
@@ -856,6 +884,23 @@ const STORY_CSS = `
   }
   .condition-card.is-concern em { color: var(--warn); }
   .condition-card.is-original em { color: var(--muted); }
+
+  .repair-list { display: grid; gap: 0.5rem; }
+  .repair-card {
+    border: 1px solid var(--line); background: rgba(255,255,255,0.55);
+    padding: 0.75rem 0.85rem;
+  }
+  .repair-card header {
+    display: flex; justify-content: space-between; gap: 0.75rem; align-items: baseline;
+    margin-bottom: 0.25rem;
+  }
+  .repair-card h3 {
+    font-family: var(--font-body); font-size: 0.9rem; margin: 0; font-weight: 700;
+  }
+  .repair-card strong {
+    font-family: var(--font-mono); font-size: 0.78rem; color: var(--navy); white-space: nowrap;
+  }
+  .repair-card p { margin: 0; font-size: 0.82rem; line-height: 1.4; color: var(--muted); }
 
   .school-stack { display: grid; gap: 0.55rem; }
   .school-card {

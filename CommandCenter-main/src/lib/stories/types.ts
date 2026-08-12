@@ -22,6 +22,13 @@ export type ConditionItem = {
   detail: string;
 };
 
+export type RepairEstimate = {
+  issue: string;
+  low: number;
+  high: number;
+  note: string;
+};
+
 export type NetScenario = {
   label: string;
   salePrice: number;
@@ -39,7 +46,7 @@ export type StoryChapter = {
   body: string;
   bullets?: string[];
   stat?: { value: string; label: string };
-  visual?: "map" | "condition" | "schools" | "nets" | "none";
+  visual?: "map" | "condition" | "schools" | "nets" | "repairs" | "none";
 };
 
 export type ClientStory = {
@@ -54,6 +61,7 @@ export type ClientStory = {
   geo: { lat: number; lng: number; label: string };
   facts: { label: string; value: string }[];
   condition: ConditionItem[];
+  repairs: RepairEstimate[];
   schools: { name: string; grades: string; rating: number; miles: string }[];
   chapters: StoryChapter[];
   comps: StoryComp[];
@@ -82,6 +90,12 @@ function fee(price: number, pct: number) {
   return Math.round(price * pct);
 }
 
+const LIST_CLEAN = 310000;
+const LIST_FEE = 0.06;
+const LIST_NET_BEFORE_REPAIRS = LIST_CLEAN - fee(LIST_CLEAN, LIST_FEE); // ~291400
+const OFFER_AS_IS = 230000;
+const BREAKEVEN_REPAIRS = LIST_NET_BEFORE_REPAIRS - OFFER_AS_IS; // ~61400
+
 export const STORIES: Record<string, ClientStory> = {
   "1715-e-buena-vista": {
     slug: "1715-e-buena-vista",
@@ -90,9 +104,9 @@ export const STORIES: Record<string, ClientStory> = {
     brandTag: "Independent housing brief",
     address: "1715 E. Buena Vista St",
     cityLine: "Springfield, MO 65804 · Ravenwood",
-    heroLine: "Mold and inspection risk change the math on $230,000.",
+    heroLine: "A 1976 ranch that was open to the weather after a tree hit — the offer is pricing inspection risk.",
     support:
-      "The house has real upgrades — new roof after a tree hit, about half rebuilt open-concept, half new siding, newer HVAC. It also has serious mold and inspection concerns. Those two stories pull the price in opposite directions.",
+      "You already paid for the big visible work: new roof, about half rebuilt open-concept, half new siding, newer HVAC. What is left is the usual question for a house this age that sat open after catastrophic damage — what will a careful inspection still find, and what does that cost to make right?",
     geo: {
       lat: 37.1323354,
       lng: -93.2652218,
@@ -105,31 +119,31 @@ export const STORIES: Record<string, ClientStory> = {
       { label: "Built", value: "1976 ranch" },
       { label: "Roof", value: "Brand new" },
       { label: "HVAC", value: "Under ~10 yrs" },
-      { label: "Mold", value: "Major concern" },
-      { label: "Inspection", value: "High risk" },
+      { label: "Tree damage", value: "Catastrophic · rebuilt" },
+      { label: "Offer", value: "$230k as-is" },
     ],
     condition: [
       {
-        label: "Mold",
+        label: "Tree / weather exposure",
         status: "concern",
         detail:
-          "This is the main issue. Mold can mean cleanup, dry-out, new insulation, and sometimes opening walls or the crawl. Buyers and lenders care a lot.",
+          "The house was open after a catastrophic tree hit. Even with a rebuild, inspectors look hard at what water and weather may have done in the crawl, walls, and insulation.",
       },
       {
-        label: "Inspection risk",
-        status: "concern",
+        label: "Age-related systems",
+        status: "partial",
         detail:
-          "A normal inspection will dig into moisture, crawl space, air quality, and repairs. Surprises here can kill a full-price deal.",
+          "1976 ranch means some original pieces can still hide behind the remodel — plumbing, wiring, vapor barrier, foundation vents. Normal for the era; still on an inspector’s checklist.",
       },
       {
         label: "Roof",
         status: "new",
-        detail: "Full new roof after a tree hit the house — a big cost already paid.",
+        detail: "Full new roof after the tree — a major cost already behind you.",
       },
       {
         label: "Open-concept half",
         status: "new",
-        detail: "About half the home was rebuilt open and modern after that damage.",
+        detail: "About half the home was rebuilt open and modern after the damage.",
       },
       {
         label: "Siding / HVAC",
@@ -137,10 +151,48 @@ export const STORIES: Record<string, ClientStory> = {
         detail: "About half new siding. Heating and cooling look recent (likely under ten years).",
       },
       {
-        label: "Crawl space",
+        label: "Moisture / mold risk",
         status: "concern",
         detail:
-          "Crawl-space ranch + past water/tree damage is where mold often hides. This needs a hard look, not a shrug.",
+          "One common leftover after weather exposure — not unique to this house, but worth pricing. Can be a small cleanup or a bigger crawl/insulation job.",
+      },
+    ],
+    repairs: [
+      {
+        issue: "Moisture / mold (contained)",
+        low: 2500,
+        high: 8000,
+        note: "Spot cleanup, dry-out, limited materials",
+      },
+      {
+        issue: "Moisture / mold (crawl or widespread)",
+        low: 15000,
+        high: 40000,
+        note: "Remediation, insulation, vapor work, repairs",
+      },
+      {
+        issue: "Crawl space / vapor / insulation",
+        low: 4000,
+        high: 18000,
+        note: "Common on ranches after water exposure",
+      },
+      {
+        issue: "Electrical or plumbing catch-up",
+        low: 2000,
+        high: 12000,
+        note: "Age + remodel transitions",
+      },
+      {
+        issue: "Finish / cosmetic punch list",
+        low: 3000,
+        high: 15000,
+        note: "Older half, trim, paint, small systems",
+      },
+      {
+        issue: "Stack of “a few things”",
+        low: 15000,
+        high: 35000,
+        note: "Typical bundled inspection fallout — not a disaster",
       },
     ],
     schools: [
@@ -152,66 +204,86 @@ export const STORIES: Record<string, ClientStory> = {
       {
         id: "place",
         eyebrow: "Where it is",
-        title: "A good street — that is not the problem.",
+        title: "Location supports a mid-$300,000 story.",
         body:
-          "Ravenwood is a solid Springfield neighborhood with strong schools. Nearby homes support mid-$300,000 values when condition is clean. Location is not what is holding this deal back. Mold and inspection risk are.",
+          "Ravenwood is a solid Springfield neighborhood with strong schools. Same-street peers often read near $310,000–$320,000 when the house shows clean. The question is not the street — it is how much unfinished risk remains after the tree and the rebuild.",
         visual: "map",
         bullets: [
           "65804 homes have been selling in about ~10 days",
           "Typical sale price in the zip: around $291,000",
-          "Same-street peers often read near $310,000–$320,000 when healthy",
+          "Healthy comps nearby still cluster in the low-to-mid $300,000s",
         ],
       },
       {
-        id: "mold",
-        eyebrow: "The real issue",
-        title: "Mold and inspection risk have to lead the decision.",
+        id: "risk",
+        eyebrow: "Inspection risk",
+        title: "Open to the elements changes what buyers assume.",
         body:
-          "If a buyer walks through with an inspector, mold and moisture are likely to show up as red flags. That can mean a lower price, big repair credits, or a canceled contract. An as-is offer with no inspection is the buyer saying: “I will take that risk.”",
+          "A 1976 crawl-space ranch that took catastrophic tree damage — and sat open to weather during that chapter — invites a tougher inspection. Moisture, crawl conditions, insulation, and related cleanup (including mold when it shows up) are the usual suspects. The $230,000 as-is, no-inspection bid is the buyer saying they will own whatever is still hiding.",
         visual: "condition",
         bullets: [
-          "Small / contained mold jobs often run a few thousand dollars",
-          "Crawl-space or widespread mold can run into the tens of thousands",
-          "Until someone measures the problem, the safe price assumes the worse case",
+          "Upgrades already done: roof, half remodel, half siding, newer HVAC",
+          "Still unknown: crawl, moisture history, age systems behind the new work",
+          "As-is + no inspection = buyer prices the unknown, not the kitchen",
         ],
-        stat: { value: "As-is", label: "Buyer is pricing unknown mold risk" },
+        stat: { value: "As-is", label: "Offer skips inspection on purpose" },
       },
       {
-        id: "condition",
-        eyebrow: "What was fixed",
-        title: "Upgrades help — they do not erase mold.",
+        id: "look",
+        eyebrow: "Know before you answer",
+        title: "You can size the problem without selling through it.",
         body:
-          "New roof, open-concept rebuild, partial new siding, and newer HVAC are real value. They support a higher price if the house is clean. They do not cancel a mold problem. A buyer can love the kitchen and still walk over the crawl space.",
+          "For this decision, hire your own look — home inspector, crawl specialist, and/or moisture assessment — paid by you, for you. That is not the buyer’s inspection. It tells you whether leftover issues are small, medium, or ugly so you can answer $230,000 with numbers. Selling as-is to a no-inspection buyer means they already agreed to take condition risk; your private report is mainly so you do not guess. If you later list to a normal retail buyer, what you have learned usually has to be shared under disclosure rules — so use a private look first to choose the path (as-is exit vs fix-and-list), not as a way to hide findings on a public listing.",
         visual: "none",
+        bullets: [
+          "Private inspection / crawl look: for your price decision",
+          "This as-is buyer waived their inspection — they are pricing unknowns",
+          "If you list retail later, plan to disclose what you know; that path is different",
+        ],
+        stat: { value: "Private look", label: "Sizes the problem before you choose a lane" },
+      },
+      {
+        id: "repairs",
+        eyebrow: "Repair math",
+        title: "When fixing still beats $230,000 — and when it does not.",
+        body:
+          `List near ${money(LIST_CLEAN)} with about 6% realtor fees and you keep roughly ${money(LIST_NET_BEFORE_REPAIRS)} before repair spend. The as-is offer is ${money(OFFER_AS_IS)} with no realtor fee. That leaves about ${money(BREAKEVEN_REPAIRS)} of headroom for fixes before the list path falls behind $230,000 on pure cash. Under that line, fixing (or a modest credit) still wins. Over it — or if you will not fix and will not wait — the as-is check starts to make sense.`,
+        visual: "repairs",
+        bullets: [
+          `Repairs under ~$25,000: listing path still clearly ahead of $230,000`,
+          `Repairs ~$40,000–$50,000: gap shrinks; stress and time start to matter`,
+          `Repairs over ~${money(BREAKEVEN_REPAIRS)}: $230,000 as-is can win on math alone`,
+        ],
+        stat: { value: money(BREAKEVEN_REPAIRS), label: "Approx. repair spend where $230k ties a clean list" },
       },
       {
         id: "worth",
-        eyebrow: "Two price stories",
-        title: "Clean house vs. problem house.",
+        eyebrow: "Price bands",
+        title: "Retail if clean enough — risk price if not.",
         body:
-          "If mold is minor and fixed, a fair sale still looks about $275,000–$345,000 (mid near $310,000). If mold is major and the sale is as-is, the honest range drops — closer to $230,000–$280,000 — because the next owner owns the cleanup and the unknown.",
-        stat: { value: "$230–280k", label: "As-is range with serious mold risk" },
+          "If leftover issues are ordinary and handled, a fair sale still looks about $275,000–$345,000 (mid near $310,000). If inspection fallout is heavy and you sell as-is with no work, buyers discount into a lower band — closer to $230,000–$280,000 — because they own the cleanup and the unknown.",
+        stat: { value: "$230–280k", label: "As-is band when inspection risk stays with the buyer" },
         visual: "schools",
       },
       {
         id: "offer",
         eyebrow: "The offer",
-        title: "$230,000 is a risk price — not a retail price.",
+        title: "$230,000 is pricing unfinished risk — not the remodel.",
         body:
-          "This bid skips realtor fees and skips inspection. That only makes sense if the buyer expects expensive findings. Compared with a clean $310,000 sale, it looks low. Compared with “major mold, sell today, no inspection,” it is inside a hard as-is band — near the bottom, but not nonsense.",
+          "No realtor fee and no inspection only make sense if the buyer expects real findings. Against a clean mid-point it looks low. Against “tree-damage ranch, unknown leftovers, sell today,” it sits near the bottom of a hard as-is band — not a retail bid, but not random either.",
         stat: { value: "−$80k", label: "vs clean mid-point · near as-is floor" },
         visual: "nets",
       },
       {
         id: "call",
         eyebrow: "Bottom line",
-        title: "Get the mold facts. Then pick a lane.",
+        title: "Get a private scope. Then pick the lane.",
         body:
-          "Do not accept or reject $230,000 in the dark. First decide how bad the mold is. If it is limited and fixable, counter higher or list. If it is widespread and you want out without repairs, $230,000 as-is becomes much more reasonable — especially with no realtor fee.",
+          "Do not accept or reject $230,000 on vibe. Spend a little on your own inspection math. If the stack of fixes is modest, counter or list. If the stack is large and you want out without more work, $230,000 as-is becomes a rational exit — especially with no realtor fee.",
         bullets: [
-          "Best next step: mold inspection / crawl assessment with a real scope and cost",
-          "If cleanup is small: counter toward the mid/high $200,000s or list near $300,000",
-          "If cleanup is large and you will not fix it: $230,000 as-is can be a fair exit",
+          "Next step: private inspection / crawl / moisture scope with cost ranges",
+          "If total fix-up stays well under ~$60,000: push past $230,000 or list",
+          "If fixes clear ~$60,000+ and you will not do them: $230,000 as-is can be fair",
         ],
       },
     ],
@@ -293,32 +365,32 @@ export const STORIES: Record<string, ClientStory> = {
         realtorFeePct: 0,
         realtorFee: 0,
         estimatedNet: 230000,
-        note: "Buyer eats mold/inspection risk. Fast exit.",
+        note: "Buyer owns leftover inspection risk. Fast exit.",
         highlight: true,
       },
       {
-        label: "Private as-is at $260k",
-        salePrice: 260000,
-        realtorFeePct: 0,
-        realtorFee: 0,
-        estimatedNet: 260000,
-        note: "Still as-is, but closer to a fair risk price.",
-      },
-      {
-        label: "Fix mold, then list clean",
+        label: "Fix ~$20k, then list clean",
         salePrice: 310000,
         realtorFeePct: 0.06,
         realtorFee: fee(310000, 0.06),
-        estimatedNet: 310000 - fee(310000, 0.06),
-        note: "Gross keep ~$291k before mold repair cost. Subtract cleanup from this.",
+        estimatedNet: LIST_NET_BEFORE_REPAIRS - 20000,
+        note: `Keep ~${money(LIST_NET_BEFORE_REPAIRS)} after fees, minus ~$20k fixes → still ~$61k above $230k.`,
       },
       {
-        label: "List with issues disclosed",
-        salePrice: 275000,
-        realtorFeePct: 0.055,
-        realtorFee: fee(275000, 0.055),
-        estimatedNet: 275000 - fee(275000, 0.055),
-        note: "Assumes buyers discount for known problems; ~5.5% fees.",
+        label: "Fix ~$45k, then list clean",
+        salePrice: 310000,
+        realtorFeePct: 0.06,
+        realtorFee: fee(310000, 0.06),
+        estimatedNet: LIST_NET_BEFORE_REPAIRS - 45000,
+        note: "Still ahead of $230k on paper, but closer — time and hassle count.",
+      },
+      {
+        label: "Heavy fixes ~$65k, then list",
+        salePrice: 310000,
+        realtorFeePct: 0.06,
+        realtorFee: fee(310000, 0.06),
+        estimatedNet: LIST_NET_BEFORE_REPAIRS - 65000,
+        note: "Net slips under the as-is offer — this is where $230k wins on math.",
       },
     ],
     valuation: {
@@ -328,28 +400,28 @@ export const STORIES: Record<string, ClientStory> = {
       offer: 230000,
       zest: 304900,
       thesis:
-        "Mold and inspection risk split this into two bands. Clean / fixed: about $275,000–$345,000 (mid near $310,000). As-is with major mold: about $230,000–$280,000. The $230,000 offer is the floor of that as-is band — harsh if mold is small, fairer if mold is large and unresolved.",
+        "Clean enough after ordinary post-damage catch-up: about $275,000–$345,000 (mid near $310,000). Heavy unresolved inspection risk sold as-is: about $230,000–$280,000. The $230,000 offer is the floor of that risk band — fair when repair math turns negative, low when leftovers are modest.",
       recommendation:
-        "Get a mold/crawl scope before you answer $230,000. If mold is major and you will sell as-is, this offer is in range. If mold is limited, push for more money.",
+        "Get a private inspection scope first. If total fix-up stays well under ~$60,000, push past $230,000 or list. If repairs clear that line and you will not do them, the as-is offer is in range.",
     },
     notebook: {
-      title: "Simple math with mold in the room",
+      title: "Repair headroom vs. the as-is check",
       paragraphs: [
-        "Healthy-house story: nearby sales and estimates still point near $305,000–$320,000. New roof and remodel support that — if the house is clean.",
-        "Problem-house story: major mold plus a tough inspection changes who will buy and what they will pay. Many retail buyers drop out. Investors and as-is buyers stay, and they discount hard.",
-        "What mold can cost: small jobs may be a few thousand dollars. Crawl-space or widespread mold can land in the $15,000–$40,000+ range once you add dry-out, remediation, insulation, and repairs. Until you have a written scope, assume the buyer is pricing something ugly.",
-        "Offer at $230,000 with no inspection and no realtor: that is a risk-transfer price. It is about $80,000 under a clean mid-point — and near the floor of a serious as-is band ($230,000–$280,000).",
-        "Realtor fees still matter on the other path: list clean at $310,000 with ~6% fees and you keep about $291,000 — but only after you pay to fix mold (and only if the house then appraises/inspects clean). If cleanup costs $25,000, your net is closer to $266,000. If cleanup costs $50,000, your net is closer to $241,000 — near this offer.",
-        "So the fork is simple: (1) Learn the mold cost. (2) If cheap to fix, do not take $230,000 — counter or list. (3) If expensive and you will not fix it, $230,000 as-is can be a rational exit, not a gift.",
-        "Recommendation: get a mold/crawl assessment first. Let that number choose between “counter higher” and “take the sure as-is check.”",
+        "Clean-house story: nearby sales and estimates still point near $305,000–$320,000. New roof and remodel support that when the house inspects like a finished project.",
+        "Risk story: a 1976 ranch open to weather after a tree invites inspection attention — crawl, moisture, insulation, age systems, and sometimes mold. That is normal for this history, not a separate mystery.",
+        `List path math: ${money(LIST_CLEAN)} sale − ~6% fees ≈ ${money(LIST_NET_BEFORE_REPAIRS)} before repairs. As-is path: ${money(OFFER_AS_IS)} with $0 realtor fee. Headroom for fixes before $230,000 wins: about ${money(BREAKEVEN_REPAIRS)}.`,
+        "Example stacks (ballparks, not quotes): light moisture + punch list ~$8,000–$20,000 → list path still much better. Crawl/moisture work + systems catch-up ~$25,000–$45,000 → still often ahead, but closer. Wide remediation + structural/systems pile ~$60,000–$80,000+ → $230,000 can be the better cash answer.",
+        "How to know without guessing: pay for your own inspector and, if needed, a crawl/moisture specialist. That look is for your decision on this offer. The current buyer waived inspection and is buying as-is — they are already pricing unknowns. Your private report is so you know whether their price is smart for you.",
+        "Disclosure in plain terms: an as-is, no-inspection buyer is accepting condition risk in the deal. That is different from listing to retail buyers later — if you go that route, plan to share what you have learned. Use the private look to choose the lane; do not treat it as a way around a future listing disclosure.",
+        "Recommendation: private scope → total the likely fixes → if you are clearly under the ~$60,000 headroom and willing to finish, counter or list; if you are over it (or unwilling), $230,000 as-is is a rational exit.",
       ],
     },
     researchDate: "August 12, 2026",
     sources: [
-      "Property condition notes (roof, remodel, siding, HVAC, mold/inspection concerns)",
+      "Property condition notes (tree damage, roof, remodel, siding, HVAC)",
       "Public estimate and tax data (Zillow)",
       "Recent area sales reported through public listing sites",
-      "Typical residential mold remediation cost ranges (industry ballparks; not a quote)",
+      "Typical residential repair / remediation cost ranges (industry ballparks; not a quote)",
     ],
   },
 };

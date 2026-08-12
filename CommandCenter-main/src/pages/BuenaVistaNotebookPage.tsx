@@ -150,6 +150,38 @@ export default function BuenaVistaNotebookPage() {
 
       <section className="mb-10">
         <div className="rule-head mb-4">
+          <span>Repair ballparks</span>
+        </div>
+        <ul className="space-y-2">
+          {story.repairs.map((r) => (
+            <li
+              key={r.issue}
+              className="border border-white/10 rounded-sm p-3 bg-field/60 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1"
+            >
+              <div>
+                <div className="text-cream text-sm font-medium">{r.issue}</div>
+                <p className="text-chalk text-xs leading-relaxed">{r.note}</p>
+              </div>
+              <div className="text-sm text-cream font-mono whitespace-nowrap">
+                {r.low.toLocaleString("en-US", {
+                  style: "currency",
+                  currency: "USD",
+                  maximumFractionDigits: 0,
+                })}
+                –
+                {r.high.toLocaleString("en-US", {
+                  style: "currency",
+                  currency: "USD",
+                  maximumFractionDigits: 0,
+                })}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="mb-10">
+        <div className="rule-head mb-4">
           <span>Valuation range</span>
         </div>
         <p className="text-chalk text-sm leading-relaxed mb-4">{story.valuation.thesis}</p>
