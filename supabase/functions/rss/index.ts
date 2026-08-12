@@ -4,7 +4,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 // browser never hits third-party origins directly.
 //
 // Deploy: supabase functions deploy rss
-// Auth: verify_jwt on — signed-in Command Center users only.
+// Auth: verify_jwt on \u2014 signed-in Command Center users only.
 //
 // POST body:
 //   { mode: "feed", feedUrl?: string }
@@ -275,9 +275,9 @@ function stripArticleChrome(html: string): string {
   return out;
 }
 
-/** Prefer TownNews article paragraphs only — avoids gift/share chrome in asset-content. */
+/** Prefer TownNews article paragraphs only \u2014 avoids gift/share chrome in asset-content. */
 function extractTownNewsParagraphs(html: string): string | null {
-  // Tweet embeds live outside lee-article-text <p>s — use the full body path instead.
+  // Tweet embeds live outside lee-article-text <p>s \u2014 use the full body path instead.
   if (TWEET_EMBED_RE.test(html) || TWEET_URL_RE.test(html)) return null;
 
   const parts: string[] = [];
@@ -301,7 +301,7 @@ function extractTownNewsParagraphs(html: string): string | null {
   return stripTags(joined).length > 200 ? joined : null;
 }
 
-/** Match a full nested <div>…</div> (non-greedy patterns stop at the first child close). */
+/** Match a full nested <div>\u2026</div> (non-greedy patterns stop at the first child close). */
 function sliceBalancedDiv(html: string, openRe: RegExp): string | null {
   const m = openRe.exec(html);
   if (!m) return null;
@@ -327,7 +327,7 @@ function sliceBalancedDiv(html: string, openRe: RegExp): string | null {
 }
 
 function extractFragment(html: string, pageUrl = ""): string | null {
-  // MLB Film Room / video pages — prefer mp4 autoplay card over chrome soup.
+  // MLB Film Room / video pages \u2014 prefer mp4 autoplay card over chrome soup.
   const mlbVideo = extractMlbVideoFragment(html, pageUrl);
   if (mlbVideo) return mlbVideo;
 
@@ -353,7 +353,7 @@ function extractFragment(html: string, pageUrl = ""): string | null {
     if (frag && stripTags(frag).length > 200) return frag;
   }
 
-  // ESPN often uses <aside>/<section> wrappers — try class-based slice too.
+  // ESPN often uses <aside>/<section> wrappers \u2014 try class-based slice too.
   const espn = html.match(
     /<(?:div|section|article)[^>]*class="[^"]*Story__Body[^"]*"[^>]*>([\s\S]*?)<\/(?:div|section|article)>/i,
   );
@@ -584,21 +584,21 @@ function stylizeTweetBlockquotes(html: string): string {
     const isTweet =
       TWEET_EMBED_RE.test(hay) ||
       TWEET_URL_RE.test(hay) ||
-      /(?:^|[\s>])(?:—|&mdash;)\s*[^<]+?\(@\w+\)/i.test(stripTags(inner));
+      /(?:^|[\s>])(?:\u2014|&mdash;)\s*[^<]+?\(@\w+\)/i.test(stripTags(inner));
 
     let body = String(inner)
       .replace(/<script[\s\S]*?<\/script>/gi, "")
       .replace(/pic\.twitter\.com\/\w+/gi, "")
       .trim();
 
-    // Already has a footer — keep structure, mark as tweet when applicable.
+    // Already has a footer \u2014 keep structure, mark as tweet when applicable.
     if (/<footer\b/i.test(body)) {
       return `<blockquote${isTweet ? ' class="rss-tweet"' : ""}>${body}</blockquote>`;
     }
 
-    // Common embed shape: <p>…</p> — Name (@handle) <a>Date</a>
+    // Common embed shape: <p>\u2026</p> \u2014 Name (@handle) <a>Date</a>
     const metaMatch = body.match(
-      /(?:<br\s*\/?>|\n|\s)*(?:—|&mdash;|–|&ndash;)\s*([\s\S]*?)(<a\b[^>]*>[\s\S]*?<\/a>)\s*$/i,
+      /(?:<br\s*\/?>|\n|\s)*(?:\u2014|&mdash;|\u2013|&ndash;)\s*([\s\S]*?)(<a\b[^>]*>[\s\S]*?<\/a>)\s*$/i,
     );
     if (metaMatch && (isTweet || /\(@\w+\)/.test(metaMatch[1]))) {
       const before = body.slice(0, metaMatch.index).trim();
@@ -606,7 +606,7 @@ function stylizeTweetBlockquotes(html: string): string {
       const link = metaMatch[2];
       body =
         before +
-        `<footer class="rss-tweet-meta">— ${who} ${link}</footer>`;
+        `<footer class="rss-tweet-meta">\u2014 ${who} ${link}</footer>`;
       return `<blockquote class="rss-tweet">${body}</blockquote>`;
     }
 
@@ -827,7 +827,7 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
       if (!article?.headline) continue;
       const storyHtml = article.story ?? "";
       const snippet =
-        (article.description ?? "").replace(/^—\s*/, "").trim() ||
+        (article.description ?? "").replace(/^\u2014\s*/, "").trim() ||
         stripTags(storyHtml).slice(0, 220);
 
       items.push({
@@ -892,7 +892,7 @@ async function handleRead(url: string) {
   try {
     rawHtml = await fetchText(url);
   } catch (err) {
-    // MLB video pages often 403/502 from edge IPs — return a soft watch link instead of 502.
+    // MLB video pages often 403/502 from edge IPs \u2014 return a soft watch link instead of 502.
     if (isMlbVideoUrl(url)) {
       const contentHtml = sanitizeHtml(mlbVideoFallbackHtml(url));
       const contentText = stripTags(contentHtml);
