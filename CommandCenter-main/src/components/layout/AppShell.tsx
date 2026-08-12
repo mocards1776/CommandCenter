@@ -209,9 +209,18 @@ export default function AppShell() {
           type="button"
           onClick={() => {
             const info = getAppBuildInfo();
-            toast(info.label, { duration: 5000, icon: "🇺🇸" });
+            const last = (window as unknown as { __ccLogoTap?: number }).__ccLogoTap ?? 0;
+            const now = Date.now();
+            (window as unknown as { __ccLogoTap?: number }).__ccLogoTap = now;
+            // Double-tap within 600ms → hard reload so PWA/React Query pick up new deploys.
+            if (now - last < 600) {
+              toast.success("Reloading…");
+              window.setTimeout(() => window.location.reload(), 250);
+              return;
+            }
+            toast(info.label + " · tap again to reload", { duration: 5000, icon: "🇺🇸" });
           }}
-          title="Show app version"
+          title="Show app version (double-tap to reload)"
           className="relative z-10 flex items-center gap-3 md:gap-4 text-left"
         >
           <span className="flag-mark" />

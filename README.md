@@ -57,9 +57,29 @@ npm run lint
   variable changes do *not* apply to existing deployments; redeploy after
   editing them.
 - **Edge functions** — `supabase functions deploy <name>` (`todoist`,
-  `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`, `sports`, `rss`)
+  `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`, `sports`, `rss`).
+  Canonical source: `supabase/functions/`. Keep the mirror in sync with
+  `scripts/sync-edge-copies.sh` (CI fails on drift). On `main`, GitHub Actions
+  deploys `rss` / `sports` when that tree changes — requires repo secrets
+  `SUPABASE_ACCESS_TOKEN` (and optional `SUPABASE_PROJECT_REF`).
 - **Migrations** — applied to the Supabase project; `supabase/migrations/`
   is the record.
+
+### Why changes can feel “stuck”
+
+1. **Two ships** — Vercel updates the UI; Supabase edge updates feed extraction /
+   contracts / Kalshi proxies. Merging a PR is not enough if edge wasn’t deployed.
+2. **Twin source trees** — `supabase/functions` and
+   `CommandCenter-main/supabase/functions` must match. Edit one, deploy the other,
+   and production stays on old behavior.
+3. **Client caches** — Dispatch/React Query keep feeds for ~90s and articles longer;
+   contract lookups cache up to 24h in `sessionStorage`. Tap the logo twice to
+   hard-reload the PWA after a deploy.
+4. **Open PR sprawl** — work sitting on agent branches never reaches the Vercel
+   production branch until it merges to `main`.
+
+**Ship checklist:** merge to `main` → confirm Vercel deploy → confirm edge
+workflow (or run `supabase functions deploy rss sports`) → hard-reload the app.
 
 ## Things that will bite you
 
