@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import TurnerLogo from "@/components/stories/TurnerLogo";
 import type { ClientStory, ConditionItem } from "@/lib/stories/types";
 
 function money(n: number) {
@@ -24,13 +25,12 @@ function statusTone(status: ConditionItem["status"]) {
     case "partial":
       return { chip: "Partial", className: "is-partial" };
     default:
-      return { chip: "Original", className: "is-original" };
+      return { chip: "Older", className: "is-original" };
   }
 }
 
 function mapsEmbedSrc(story: ClientStory) {
-  const q = encodeURIComponent(story.geo.label);
-  return `https://maps.google.com/maps?q=${q}&z=15&output=embed`;
+  return `https://maps.google.com/maps?q=${encodeURIComponent(story.geo.label)}&z=15&output=embed`;
 }
 
 function osmEmbedSrc(story: ClientStory) {
@@ -42,14 +42,9 @@ function osmEmbedSrc(story: ClientStory) {
 
 function streetViewSrc(story: ClientStory) {
   const { lat, lng } = story.geo;
-  // Query-based Street View embed — no API key required for basic iframe use.
   return `https://www.google.com/maps?layer=c&cbll=${lat},${lng}&cbp=12,0,0,0,0&output=svembed`;
 }
 
-/**
- * Full-bleed chapter scroll for client presentations.
- * Capitol brand on paper — navy ink, red accent, Playfair display.
- */
 export default function ScrollStory({ story, clientMode = true, label }: Props) {
   const [active, setActive] = useState("hero");
   const [mapProvider, setMapProvider] = useState<"google" | "osm">("google");
@@ -61,12 +56,13 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
       ...story.chapters.map((c) => ({ id: c.id, label: c.eyebrow })),
       { id: "comps", label: "Comps" },
       { id: "range", label: "Range" },
-      { id: "notebook", label: "Notebook" },
+      { id: "notebook", label: "Math" },
     ],
     [story.chapters],
   );
 
   const maxComp = Math.max(...story.comps.map((c) => c.price ?? 0), story.valuation.offer);
+  const gap = story.valuation.mid - story.valuation.offer;
 
   useEffect(() => {
     const root = rootRef.current;
@@ -93,9 +89,17 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
     <div ref={rootRef} className="story-root">
       <style>{STORY_CSS}</style>
 
+      <header className="letterhead">
+        <TurnerLogo className="letterhead-logo" />
+        <div className="letterhead-meta">
+          <span>{story.brandTag}</span>
+          <span>{story.researchDate}</span>
+        </div>
+      </header>
+
       {clientMode ? (
         <nav className="story-rail" aria-label="Chapters">
-          <div className="story-rail-brand">{story.brand}</div>
+          <TurnerLogo compact className="rail-mark" />
           {toc.map((t) => (
             <a
               key={t.id}
@@ -112,9 +116,8 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
         </nav>
       ) : null}
 
-      {/* ── Hero: brand + map plane ─────────────────────────────────────── */}
       <header className="story-hero" id="hero" data-chapter>
-        <div className="hero-map" aria-hidden={false}>
+        <div className="hero-map">
           <iframe
             title={`Map of ${story.address}`}
             src={mapProvider === "google" ? mapsEmbedSrc(story) : osmEmbedSrc(story)}
@@ -132,27 +135,31 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
           </button>
         </div>
         <div className="hero-copy">
-          <p className="story-brand reveal">{story.brand}</p>
-          <p className="story-kicker reveal delay-1">{story.cityLine}</p>
-          <h1 className="reveal delay-2">{story.address}</h1>
-          <p className="story-lede reveal delay-3">{story.heroLine}</p>
-          <p className="story-support reveal delay-4">{story.support}</p>
+          <p className="story-kicker reveal">{story.cityLine}</p>
+          <h1 className="reveal delay-1">{story.address}</h1>
+          <p className="story-lede reveal delay-2">{story.heroLine}</p>
+          <p className="story-support reveal delay-3">{story.support}</p>
+
+          <div className="verdict reveal delay-4">
+            <span className="verdict-flag">Recommendation</span>
+            <strong>{story.valuation.recommendation}</strong>
+          </div>
+
           <div className="hero-offer reveal delay-5">
-            <div>
-              <span className="hero-offer-label">Offer on the table</span>
+            <div className="is-warn">
+              <span className="hero-offer-label">Current offer</span>
               <strong>{money(story.valuation.offer)}</strong>
             </div>
             <div>
-              <span className="hero-offer-label">Market mid</span>
-              <strong className="muted">{money(story.valuation.mid)}</strong>
+              <span className="hero-offer-label">Fair mid-point</span>
+              <strong>{money(story.valuation.mid)}</strong>
             </div>
             <div>
-              <span className="hero-offer-label">vs Zestimate</span>
-              <strong className="accent">
-                −{Math.round((1 - story.valuation.offer / story.valuation.zest) * 100)}%
-              </strong>
+              <span className="hero-offer-label">Gap</span>
+              <strong className="accent">−{money(gap)}</strong>
             </div>
           </div>
+
           <dl className="story-facts reveal delay-5">
             {story.facts.map((f) => (
               <div key={f.label}>
@@ -172,7 +179,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               <h2>{ch.title}</h2>
               <p className="story-body">{ch.body}</p>
               {ch.stat ? (
-                <div className="story-stat">
+                <div className={`story-stat ${ch.id === "offer" || ch.id === "call" ? "is-warn" : ""}`}>
                   <span className="story-stat-value">{ch.stat.value}</span>
                   <span className="story-stat-label">{ch.stat.label}</span>
                 </div>
@@ -197,14 +204,9 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     allowFullScreen
                   />
                 </div>
-                <p className="visual-caption">Street-level look · Ravenwood block</p>
+                <p className="visual-caption">Street view · Ravenwood</p>
                 <div className="mini-map">
-                  <iframe
-                    title="Neighborhood map"
-                    src={osmEmbedSrc(story)}
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
+                  <iframe title="Neighborhood map" src={osmEmbedSrc(story)} loading="lazy" />
                 </div>
               </aside>
             ) : null}
@@ -218,7 +220,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                   </div>
                   <div className="floor-old">
                     <span>Original</span>
-                    <em>1970s half · residual</em>
+                    <em>Older half · still fine, less finished</em>
                   </div>
                 </div>
                 <div className="condition-grid">
@@ -243,7 +245,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                 <div className="school-stack">
                   {story.schools.map((s) => (
                     <div key={s.name} className="school-card">
-                      <div className="school-rating" aria-label={`Rated ${s.rating} of 10`}>
+                      <div className="school-rating">
                         {s.rating}
                         <span>/10</span>
                       </div>
@@ -256,19 +258,42 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     </div>
                   ))}
                 </div>
-                <div className="market-chips">
-                  <div>
-                    <strong>~10</strong>
-                    <span>Days on market</span>
-                  </div>
-                  <div>
-                    <strong>95%</strong>
-                    <span>Sale / list</span>
-                  </div>
-                  <div>
-                    <strong>Seller</strong>
-                    <span>Market lean</span>
-                  </div>
+                <div className="highlight-band">
+                  <p>
+                    Nearby sales and estimates cluster near <strong>{money(story.valuation.mid)}</strong> —
+                    not {money(story.valuation.offer)}.
+                  </p>
+                </div>
+              </aside>
+            ) : null}
+
+            {ch.visual === "nets" ? (
+              <aside className="visual-pane">
+                <div className="net-list">
+                  {story.netScenarios.map((n) => (
+                    <article key={n.label} className={`net-card ${n.highlight ? "is-offer" : ""}`}>
+                      <header>
+                        <h3>{n.label}</h3>
+                        {n.highlight ? <em>On the table</em> : null}
+                      </header>
+                      <div className="net-row">
+                        <span>Sale price</span>
+                        <strong>{money(n.salePrice)}</strong>
+                      </div>
+                      <div className="net-row">
+                        <span>
+                          Realtor fees
+                          {n.realtorFeePct > 0 ? ` (~${(n.realtorFeePct * 100).toFixed(1)}%)` : ""}
+                        </span>
+                        <strong>{n.realtorFee ? `−${money(n.realtorFee)}` : "$0"}</strong>
+                      </div>
+                      <div className="net-row is-total">
+                        <span>You keep (before other closing costs)</span>
+                        <strong>{money(n.estimatedNet)}</strong>
+                      </div>
+                      <p>{n.note}</p>
+                    </article>
+                  ))}
                 </div>
               </aside>
             ) : null}
@@ -276,21 +301,20 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
         </section>
       ))}
 
-      {/* ── Comps ──────────────────────────────────────────────────────── */}
       <section id="comps" className="story-chapter story-wide" data-chapter>
-        <p className="story-eyebrow">Comparables</p>
-        <h2>What nearby houses say about price.</h2>
+        <p className="story-eyebrow">Nearby homes</p>
+        <h2>What similar houses suggest.</h2>
         <p className="story-body narrow">
-          Same-street peers sit near $310–320k. Updated Ravenwood sales set the ceiling. The $115k
-          fixer is a floor, not a peer.
+          Same-street homes look like the low-to-mid $300,000s. Updated sales nearby sold higher. The
+          cheap fixer on the street is not a match for this house.
         </p>
 
         <div className="comps-layout">
           <div className="comp-map" role="img" aria-label="Approximate neighborhood comps map">
             <div className="comp-map-grid" />
             <div className="comp-pin is-subject" style={{ left: "52%", top: "50%" }}>
-              <span>Subject</span>
-              <strong>$230k</strong>
+              <span>This home</span>
+              <strong>Offer {money(story.valuation.offer)}</strong>
             </div>
             {story.comps
               .filter((c) => c.map)
@@ -302,47 +326,59 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                   title={c.address}
                 >
                   <span>{c.address.split(" ")[0]}</span>
-                  <strong>{c.priceLabel.replace(" Zest.", "")}</strong>
+                  <strong>{c.priceLabel.replace(" est.", "")}</strong>
                 </div>
               ))}
-            <p className="comp-map-legend">Schematic neighborhood · pins are approximate</p>
+            <p className="comp-map-legend">Sketch map · pins are approximate</p>
           </div>
 
           <div className="comp-bars">
-            {[{ address: "Offer · this house", price: story.valuation.offer, kind: "offer" as const }, ...story.comps].map(
-              (c) => {
-                const price = "price" in c && c.price != null ? c.price : story.valuation.offer;
-                const width = Math.max(8, Math.round((price / maxComp) * 100));
-                return (
-                  <div key={c.address} className={`comp-bar-row ${"kind" in c && c.kind === "offer" ? "is-offer" : ""}`}>
-                    <div className="comp-bar-meta">
-                      <strong>{c.address}</strong>
-                      {"note" in c && c.note ? <span>{c.note}</span> : null}
-                    </div>
-                    <div className="comp-bar-track">
-                      <span style={{ width: `${width}%` }} />
-                    </div>
-                    <div className="comp-bar-price">
-                      {"priceLabel" in c ? c.priceLabel : money(price)}
-                    </div>
+            {[
+              { address: "Offer · this house", price: story.valuation.offer, kind: "offer" as const },
+              ...story.comps,
+            ].map((c) => {
+              const price = "price" in c && c.price != null ? c.price : story.valuation.offer;
+              const width = Math.max(8, Math.round((price / maxComp) * 100));
+              return (
+                <div
+                  key={c.address}
+                  className={`comp-bar-row ${"kind" in c && c.kind === "offer" ? "is-offer" : ""}`}
+                >
+                  <div className="comp-bar-meta">
+                    <strong>{c.address}</strong>
+                    {"note" in c && c.note ? <span>{c.note}</span> : null}
                   </div>
-                );
-              },
-            )}
+                  <div className="comp-bar-track">
+                    <span style={{ width: `${width}%` }} />
+                  </div>
+                  <div className="comp-bar-price">
+                    {"priceLabel" in c ? c.priceLabel : money(price)}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
 
-      {/* ── Range ──────────────────────────────────────────────────────── */}
       <section id="range" className="story-chapter" data-chapter>
-        <p className="story-eyebrow">Valuation</p>
-        <h2>A wide but honest band.</h2>
+        <p className="story-eyebrow">Value range</p>
+        <h2>Where a fair deal should land.</h2>
         <p className="story-body">{story.valuation.thesis}</p>
+
+        <div className="callout-strip">
+          <div>
+            <span>Pass</span>
+            <strong>{money(story.valuation.offer)}</strong>
+          </div>
+          <p>{story.valuation.recommendation}</p>
+        </div>
+
         <div className="range-cards">
           {[
-            ["Offer", story.valuation.offer, "accent"],
+            ["Offer", story.valuation.offer, "warn"],
             ["Low", story.valuation.low, ""],
-            ["Mid", story.valuation.mid, ""],
+            ["Mid", story.valuation.mid, "good"],
             ["High", story.valuation.high, ""],
           ].map(([label, value, tone]) => (
             <div key={String(label)} className={`range-card ${tone}`}>
@@ -380,7 +416,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
       </section>
 
       <section id="notebook" className="story-chapter story-notebook" data-chapter>
-        <p className="story-eyebrow">Notebook</p>
+        <p className="story-eyebrow">The math</p>
         <h2>{story.notebook.title}</h2>
         {story.notebook.paragraphs.map((p) => (
           <p key={p.slice(0, 48)} className="story-body notebook-p">
@@ -388,7 +424,14 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
           </p>
         ))}
         <footer className="story-footer">
-          <p>Research dated {story.researchDate}. Not an appraisal.</p>
+          <div className="footer-brand">
+            <TurnerLogo compact />
+            <div>
+              <strong>{story.brand}</strong>
+              <span>{story.brandTag}</span>
+            </div>
+          </div>
+          <p>Research dated {story.researchDate}. This is not an appraisal or legal advice.</p>
           <p className="story-sources">{story.sources.join(" · ")}</p>
         </footer>
       </section>
@@ -398,192 +441,205 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
 
 const STORY_CSS = `
   .story-root {
-    --story-ink: #081228;
-    --story-navy: #0d1d3c;
-    --story-red: #c0303b;
-    --story-paper: #f3f5f8;
-    --story-wash: #e4e8ef;
-    --story-muted: #5c6578;
-    --story-line: rgba(8, 18, 40, 0.12);
-    --story-good: #2f6b4f;
+    --ink: #0b1f3a;
+    --navy: #143356;
+    --copper: #c45c26;
+    --copper-deep: #a3481c;
+    --paper: #f5f7fa;
+    --wash: #e7edf4;
+    --muted: #5e6b7c;
+    --line: rgba(11, 31, 58, 0.12);
+    --good: #2f6b4f;
+    --warn: #b42318;
     --font-display: "Playfair Display", Georgia, serif;
     --font-body: "Libre Franklin", system-ui, sans-serif;
-    background: var(--story-paper);
-    color: var(--story-ink);
+    background:
+      radial-gradient(ellipse 80% 40% at 100% 0%, rgba(196,92,38,0.06), transparent 50%),
+      var(--paper);
+    color: var(--ink);
     font-family: var(--font-body);
     min-height: 100vh;
   }
   .story-root * { box-sizing: border-box; }
-  .story-rail { display: none; }
-  @media (min-width: 1180px) {
-    .story-rail {
-      display: flex; flex-direction: column; gap: 0.55rem;
-      position: fixed; top: 2.25rem; left: 1.25rem; width: 8.25rem; z-index: 30;
-    }
-    .story-rail-brand {
-      font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
-      color: var(--story-red); margin-bottom: 0.75rem; font-weight: 600;
-    }
-    .story-rail a {
-      color: var(--story-muted); text-decoration: none; font-size: 12px;
-      letter-spacing: 0.04em; border-left: 2px solid transparent; padding-left: 0.65rem;
-      transition: color 180ms ease, border-color 180ms ease;
-    }
-    .story-rail a.is-active { color: var(--story-ink); border-left-color: var(--story-red); }
+
+  .letterhead {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 1rem clamp(1.25rem, 4vw, 2.5rem);
+    border-bottom: 1px solid var(--line);
+    background: rgba(245,247,250,0.92);
+    position: sticky; top: 0; z-index: 40;
+    backdrop-filter: blur(8px);
+  }
+  .letterhead-logo { width: min(280px, 70vw); height: auto; }
+  .letterhead-meta {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem;
+    font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
   }
 
-  /* Hero — full-bleed map plane */
+  .story-rail { display: none; }
+  @media (min-width: 1240px) {
+    .story-rail {
+      display: flex; flex-direction: column; gap: 0.5rem;
+      position: fixed; top: 5.5rem; left: 1rem; width: 8rem; z-index: 30;
+    }
+    .rail-mark { width: 36px; height: 36px; margin-bottom: 0.4rem; }
+    .story-rail a {
+      color: var(--muted); text-decoration: none; font-size: 12px;
+      letter-spacing: 0.03em; border-left: 2px solid transparent; padding-left: 0.6rem;
+    }
+    .story-rail a.is-active { color: var(--ink); border-left-color: var(--copper); font-weight: 600; }
+  }
+
   .story-hero {
-    position: relative; min-height: 100svh; display: grid;
+    position: relative; min-height: calc(100svh - 72px); display: grid;
     grid-template-columns: 1fr; overflow: hidden;
   }
   @media (min-width: 960px) {
     .story-hero { grid-template-columns: 1.05fr 0.95fr; }
+    .hero-map { order: 2; min-height: calc(100svh - 72px); }
   }
-  .hero-map {
-    position: relative; min-height: 42svh; background: #c9d2e0;
-  }
-  @media (min-width: 960px) {
-    .hero-map { min-height: 100svh; order: 2; }
-  }
+  .hero-map { position: relative; min-height: 40svh; background: #c9d2e0; }
   .hero-map iframe, .street-frame iframe, .mini-map iframe {
     position: absolute; inset: 0; width: 100%; height: 100%; border: 0;
-    filter: grayscale(0.25) contrast(1.05) saturate(0.85);
+    filter: grayscale(0.2) contrast(1.05) saturate(0.9);
   }
   .hero-map-veil {
     position: absolute; inset: 0; pointer-events: none;
     background:
-      linear-gradient(90deg, rgba(8,18,40,0.18), transparent 40%),
-      linear-gradient(0deg, rgba(8,18,40,0.25), transparent 35%);
+      linear-gradient(90deg, rgba(11,31,58,0.2), transparent 42%),
+      linear-gradient(0deg, rgba(11,31,58,0.22), transparent 40%);
   }
   .map-swap {
-    position: absolute; right: 0.85rem; bottom: 0.85rem; z-index: 2;
-    border: 0; background: rgba(247,244,236,0.92); color: var(--story-ink);
+    position: absolute; right: 0.8rem; bottom: 0.8rem; z-index: 2;
+    border: 0; background: rgba(245,247,250,0.94); color: var(--ink);
     font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
     font-weight: 700; padding: 0.55rem 0.7rem; cursor: pointer;
   }
   .hero-copy {
-    position: relative; z-index: 1;
     display: flex; flex-direction: column; justify-content: flex-end;
-    padding: clamp(1.75rem, 5vw, 3.5rem);
+    padding: clamp(1.5rem, 4.5vw, 3.25rem);
     background:
-      radial-gradient(ellipse 90% 70% at 0% 100%, rgba(192,48,59,0.08), transparent 55%),
-      linear-gradient(165deg, #e8edf5 0%, var(--story-paper) 45%, var(--story-wash) 100%);
-  }
-  .story-brand {
-    font-size: 11px; letter-spacing: 0.28em; text-transform: uppercase;
-    color: var(--story-red); font-weight: 700; margin: 0 0 1rem;
+      linear-gradient(165deg, #e8eef6 0%, var(--paper) 48%, #eef1f5 100%);
   }
   .story-kicker {
-    font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
-    color: var(--story-muted); margin: 0 0 0.65rem;
+    font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 0.55rem; font-weight: 600;
   }
   .story-hero h1 {
     font-family: var(--font-display);
-    font-size: clamp(2.35rem, 5.5vw, 3.8rem);
-    line-height: 0.98; margin: 0 0 0.9rem; letter-spacing: -0.02em;
+    font-size: clamp(2.3rem, 5.2vw, 3.6rem);
+    line-height: 0.98; margin: 0 0 0.85rem; letter-spacing: -0.02em;
   }
   .story-lede {
     font-family: var(--font-display);
-    font-size: clamp(1.15rem, 2.2vw, 1.45rem);
-    line-height: 1.35; margin: 0 0 0.75rem; max-width: 34rem;
+    font-size: clamp(1.2rem, 2.3vw, 1.55rem);
+    line-height: 1.3; margin: 0 0 0.75rem; max-width: 34rem;
   }
   .story-support {
-    color: var(--story-muted); font-size: 0.98rem; line-height: 1.55;
-    margin: 0 0 1.35rem; max-width: 36rem;
+    color: var(--muted); font-size: 0.98rem; line-height: 1.55;
+    margin: 0 0 1.2rem; max-width: 36rem;
+  }
+  .verdict {
+    border-left: 4px solid var(--copper);
+    background: rgba(196,92,38,0.08);
+    padding: 0.85rem 1rem; margin: 0 0 1.2rem; max-width: 38rem;
+  }
+  .verdict-flag {
+    display: block; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--copper-deep); font-weight: 700; margin-bottom: 0.3rem;
+  }
+  .verdict strong {
+    font-family: var(--font-body); font-size: 0.98rem; font-weight: 600; line-height: 1.45;
   }
   .hero-offer {
     display: grid; grid-template-columns: repeat(3, minmax(0,1fr));
-    gap: 0.75rem; margin: 0 0 1.35rem; padding: 0.9rem 0;
-    border-top: 1px solid var(--story-line); border-bottom: 1px solid var(--story-line);
+    gap: 0.65rem; margin: 0 0 1.25rem; padding: 0.85rem 0;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
   }
   .hero-offer-label {
-    display: block; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
-    color: var(--story-muted); margin-bottom: 0.25rem;
+    display: block; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 0.2rem;
   }
   .hero-offer strong {
-    font-family: var(--font-display); font-size: clamp(1.15rem, 2vw, 1.45rem);
+    font-family: var(--font-display); font-size: clamp(1.1rem, 2vw, 1.4rem);
   }
-  .hero-offer strong.muted { color: var(--story-navy); }
-  .hero-offer strong.accent { color: var(--story-red); }
+  .hero-offer .is-warn strong, .hero-offer strong.accent { color: var(--warn); }
   .story-facts {
     display: grid; grid-template-columns: repeat(2, minmax(0,1fr));
-    gap: 0.75rem 1rem; margin: 0;
+    gap: 0.7rem 1rem; margin: 0;
   }
   @media (min-width: 720px) {
     .story-facts { grid-template-columns: repeat(4, minmax(0,1fr)); }
   }
   .story-facts dt {
-    font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
-    color: var(--story-muted); margin: 0 0 0.15rem;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 0.12rem;
   }
   .story-facts dd { margin: 0; font-size: 0.92rem; font-weight: 600; }
 
   .story-chapter {
-    padding: clamp(2.75rem, 7vw, 5.5rem) clamp(1.25rem, 5vw, 3.5rem);
-    border-top: 1px solid var(--story-line);
-    scroll-snap-align: start;
+    padding: clamp(2.5rem, 6vw, 5rem) clamp(1.25rem, 5vw, 3.25rem);
+    border-top: 1px solid var(--line);
   }
   .story-wide { max-width: 72rem; margin: 0 auto; }
-  .chapter-grid {
-    max-width: 68rem; margin: 0 auto;
-    display: grid; gap: 2rem;
-  }
+  .chapter-grid { max-width: 68rem; margin: 0 auto; display: grid; gap: 1.75rem; }
   @media (min-width: 900px) {
-    .chapter-grid { grid-template-columns: 1fr 1.05fr; align-items: center; gap: 2.75rem; }
+    .chapter-grid { grid-template-columns: 1fr 1.05fr; align-items: center; gap: 2.5rem; }
   }
   .chapter-copy { max-width: 34rem; }
   .story-eyebrow {
-    font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase;
-    color: var(--story-red); font-weight: 700; margin: 0 0 0.75rem;
+    font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--copper); font-weight: 700; margin: 0 0 0.7rem;
   }
   .story-chapter h2 {
     font-family: var(--font-display);
-    font-size: clamp(1.75rem, 3.6vw, 2.55rem);
-    line-height: 1.12; margin: 0 0 1rem; letter-spacing: -0.015em;
+    font-size: clamp(1.7rem, 3.4vw, 2.45rem);
+    line-height: 1.12; margin: 0 0 0.95rem; letter-spacing: -0.015em;
   }
   .story-body {
-    font-size: 1.05rem; line-height: 1.65; color: #1c2436; margin: 0 0 1.15rem;
+    font-size: 1.04rem; line-height: 1.65; color: #1d2736; margin: 0 0 1.1rem;
   }
   .story-body.narrow { max-width: 40rem; }
   .story-stat {
-    display: flex; flex-direction: column; gap: 0.2rem;
-    margin: 0.35rem 0 1.25rem; padding: 0.95rem 0;
-    border-top: 1px solid var(--story-line); border-bottom: 1px solid var(--story-line);
+    display: flex; flex-direction: column; gap: 0.15rem;
+    margin: 0.3rem 0 1.15rem; padding: 0.9rem 0;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
     width: fit-content; min-width: 11rem;
   }
   .story-stat-value {
-    font-family: var(--font-display); font-size: clamp(2.2rem, 4.5vw, 3.1rem);
-    line-height: 1; color: var(--story-navy);
+    font-family: var(--font-display); font-size: clamp(2.1rem, 4.2vw, 3rem);
+    line-height: 1; color: var(--navy);
   }
+  .story-stat.is-warn .story-stat-value { color: var(--warn); }
   .story-stat-label {
-    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--story-muted);
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
   }
-  .story-bullets { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.55rem; }
+  .story-bullets { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
   .story-bullets li {
-    padding-left: 0.9rem; border-left: 2px solid var(--story-red);
-    color: var(--story-navy); line-height: 1.45; font-size: 0.95rem;
+    padding: 0.55rem 0.75rem; background: rgba(255,255,255,0.55);
+    border-left: 3px solid var(--copper); color: var(--navy); line-height: 1.4; font-size: 0.95rem;
   }
 
-  .visual-pane { display: grid; gap: 0.85rem; }
+  .visual-pane { display: grid; gap: 0.8rem; }
   .street-frame, .mini-map {
     position: relative; overflow: hidden; background: #cfd6e2;
-    border: 1px solid var(--story-line);
+    border: 1px solid var(--line);
   }
-  .street-frame { aspect-ratio: 16 / 11; min-height: 220px; }
-  .mini-map { aspect-ratio: 16 / 8; min-height: 140px; }
+  .street-frame { aspect-ratio: 16 / 11; min-height: 210px; }
+  .mini-map { aspect-ratio: 16 / 8; min-height: 130px; }
   .visual-caption {
-    margin: -0.35rem 0 0; font-size: 11px; letter-spacing: 0.12em;
-    text-transform: uppercase; color: var(--story-muted);
+    margin: -0.25rem 0 0; font-size: 11px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted);
   }
 
   .floor-split {
-    display: grid; grid-template-columns: 1fr 1fr; min-height: 120px;
-    border: 1px solid var(--story-line); overflow: hidden;
+    display: grid; grid-template-columns: 1fr 1fr; min-height: 118px;
+    border: 1px solid var(--line); overflow: hidden;
   }
   .floor-new, .floor-old {
     display: flex; flex-direction: column; justify-content: flex-end;
-    padding: 1rem; gap: 0.2rem;
+    padding: 0.95rem; gap: 0.15rem;
   }
   .floor-new {
     background:
@@ -592,187 +648,227 @@ const STORY_CSS = `
   }
   .floor-old {
     background:
-      linear-gradient(145deg, rgba(8,18,40,0.1), rgba(8,18,40,0.03)),
-      repeating-linear-gradient(35deg, transparent, transparent 10px, rgba(8,18,40,0.06) 10px, rgba(8,18,40,0.06) 11px);
+      linear-gradient(145deg, rgba(11,31,58,0.1), rgba(11,31,58,0.03)),
+      repeating-linear-gradient(35deg, transparent, transparent 10px, rgba(11,31,58,0.05) 10px, rgba(11,31,58,0.05) 11px);
   }
   .floor-new span, .floor-old span {
-    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 700;
+    font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700;
   }
-  .floor-new span { color: var(--story-good); }
-  .floor-old span { color: var(--story-navy); }
-  .floor-new em, .floor-old em { font-style: normal; font-size: 0.9rem; color: var(--story-muted); }
+  .floor-new span { color: var(--good); }
+  .floor-old span { color: var(--navy); }
+  .floor-new em, .floor-old em { font-style: normal; font-size: 0.88rem; color: var(--muted); }
 
-  .condition-grid {
-    display: grid; grid-template-columns: 1fr; gap: 0.55rem;
-  }
-  @media (min-width: 560px) {
-    .condition-grid { grid-template-columns: 1fr 1fr; }
-  }
+  .condition-grid { display: grid; grid-template-columns: 1fr; gap: 0.5rem; }
+  @media (min-width: 560px) { .condition-grid { grid-template-columns: 1fr 1fr; } }
   .condition-card {
-    border: 1px solid var(--story-line); background: rgba(255,255,255,0.45);
-    padding: 0.85rem 0.9rem;
+    border: 1px solid var(--line); background: rgba(255,255,255,0.55);
+    padding: 0.8rem 0.85rem;
   }
   .condition-card header {
-    display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline;
-    margin-bottom: 0.35rem;
+    display: flex; justify-content: space-between; gap: 0.45rem; align-items: baseline;
+    margin-bottom: 0.3rem;
   }
-  .condition-card h3 {
-    font-family: var(--font-body); font-size: 0.95rem; margin: 0; font-weight: 700;
-  }
+  .condition-card h3 { font-family: var(--font-body); font-size: 0.92rem; margin: 0; font-weight: 700; }
   .condition-card em {
-    font-style: normal; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
-    font-weight: 700;
+    font-style: normal; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700;
   }
-  .condition-card p { margin: 0; font-size: 0.86rem; line-height: 1.45; color: var(--story-muted); }
-  .condition-card.is-new em, .condition-card.is-recent em { color: var(--story-good); }
+  .condition-card p { margin: 0; font-size: 0.84rem; line-height: 1.4; color: var(--muted); }
+  .condition-card.is-new, .condition-card.is-recent {
+    border-color: rgba(47,107,79,0.28); background: rgba(47,107,79,0.07);
+  }
+  .condition-card.is-new em, .condition-card.is-recent em { color: var(--good); }
   .condition-card.is-partial em { color: #9a6b1f; }
-  .condition-card.is-original em { color: var(--story-muted); }
-  .condition-card.is-new { border-color: rgba(47,107,79,0.28); background: rgba(47,107,79,0.06); }
-  .condition-card.is-recent { border-color: rgba(47,107,79,0.2); }
+  .condition-card.is-original em { color: var(--muted); }
 
-  .school-stack { display: grid; gap: 0.65rem; }
+  .school-stack { display: grid; gap: 0.55rem; }
   .school-card {
-    display: flex; gap: 0.9rem; align-items: center;
-    border: 1px solid var(--story-line); padding: 0.85rem 0.95rem;
-    background: rgba(255,255,255,0.4);
+    display: flex; gap: 0.85rem; align-items: center;
+    border: 1px solid var(--line); padding: 0.8rem 0.9rem;
+    background: rgba(255,255,255,0.5);
   }
   .school-rating {
-    width: 3.4rem; height: 3.4rem; border-radius: 999px;
+    width: 3.3rem; height: 3.3rem; border-radius: 999px;
     display: grid; place-content: center; text-align: center;
-    background: var(--story-navy); color: #f7f4ec;
-    font-family: var(--font-display); font-size: 1.35rem; line-height: 1;
-    flex-shrink: 0;
+    background: var(--ink); color: #f5f7fa;
+    font-family: var(--font-display); font-size: 1.3rem; line-height: 1; flex-shrink: 0;
   }
-  .school-rating span { display: block; font-size: 9px; letter-spacing: 0.08em; opacity: 0.7; font-family: var(--font-body); }
-  .school-card h3 { margin: 0 0 0.15rem; font-size: 0.98rem; font-family: var(--font-body); }
-  .school-card p { margin: 0; font-size: 0.84rem; color: var(--story-muted); }
-  .market-chips {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.55rem; margin-top: 0.25rem;
+  .school-rating span {
+    display: block; font-size: 9px; letter-spacing: 0.08em; opacity: 0.7; font-family: var(--font-body);
   }
-  .market-chips > div {
-    border: 1px solid var(--story-line); padding: 0.75rem 0.55rem; text-align: center;
-    background: rgba(255,255,255,0.35);
+  .school-card h3 { margin: 0 0 0.12rem; font-size: 0.95rem; font-family: var(--font-body); }
+  .school-card p { margin: 0; font-size: 0.82rem; color: var(--muted); }
+  .highlight-band {
+    border: 1px solid rgba(196,92,38,0.28);
+    background: linear-gradient(120deg, rgba(196,92,38,0.12), rgba(196,92,38,0.04));
+    padding: 0.95rem 1rem;
   }
-  .market-chips strong {
-    display: block; font-family: var(--font-display); font-size: 1.2rem; margin-bottom: 0.15rem;
-  }
-  .market-chips span {
-    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--story-muted);
-  }
+  .highlight-band p { margin: 0; font-size: 0.98rem; line-height: 1.45; }
+  .highlight-band strong { color: var(--copper-deep); }
 
-  .comps-layout {
-    display: grid; gap: 1.5rem; margin-top: 1.25rem;
+  .net-list { display: grid; gap: 0.65rem; }
+  .net-card {
+    border: 1px solid var(--line); background: rgba(255,255,255,0.6);
+    padding: 0.9rem 1rem;
   }
+  .net-card.is-offer {
+    border-color: rgba(180,35,24,0.35);
+    background: rgba(180,35,24,0.06);
+  }
+  .net-card header {
+    display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline;
+    margin-bottom: 0.55rem;
+  }
+  .net-card h3 { margin: 0; font-size: 0.95rem; font-family: var(--font-body); }
+  .net-card header em {
+    font-style: normal; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--warn); font-weight: 700;
+  }
+  .net-row {
+    display: flex; justify-content: space-between; gap: 0.75rem;
+    font-size: 0.86rem; padding: 0.2rem 0; color: var(--muted);
+  }
+  .net-row strong { color: var(--ink); font-weight: 600; }
+  .net-row.is-total {
+    margin-top: 0.35rem; padding-top: 0.45rem; border-top: 1px solid var(--line);
+    color: var(--ink); font-weight: 600;
+  }
+  .net-row.is-total strong {
+    font-family: var(--font-display); font-size: 1.15rem;
+  }
+  .net-card.is-offer .net-row.is-total strong { color: var(--warn); }
+  .net-card > p { margin: 0.45rem 0 0; font-size: 0.82rem; color: var(--muted); line-height: 1.4; }
+
+  .comps-layout { display: grid; gap: 1.4rem; margin-top: 1.15rem; }
   @media (min-width: 900px) {
-    .comps-layout { grid-template-columns: 0.95fr 1.15fr; gap: 2rem; align-items: start; }
+    .comps-layout { grid-template-columns: 0.95fr 1.15fr; gap: 1.85rem; align-items: start; }
   }
   .comp-map {
-    position: relative; aspect-ratio: 1 / 1; min-height: 280px;
-    border: 1px solid var(--story-line); overflow: hidden;
+    position: relative; aspect-ratio: 1; min-height: 270px;
+    border: 1px solid var(--line); overflow: hidden;
     background:
-      radial-gradient(circle at 52% 50%, rgba(192,48,59,0.12), transparent 28%),
-      linear-gradient(180deg, #d7dfeb 0%, #c4cfde 100%);
+      radial-gradient(circle at 52% 50%, rgba(196,92,38,0.14), transparent 28%),
+      linear-gradient(180deg, #d5deeb 0%, #c2cedd 100%);
   }
   .comp-map-grid {
     position: absolute; inset: 0;
     background-image:
-      linear-gradient(rgba(8,18,40,0.06) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(8,18,40,0.06) 1px, transparent 1px);
+      linear-gradient(rgba(11,31,58,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(11,31,58,0.06) 1px, transparent 1px);
     background-size: 12.5% 12.5%;
   }
   .comp-pin {
     position: absolute; transform: translate(-50%, -50%);
-    display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
+    display: flex; flex-direction: column; align-items: center; gap: 0.08rem;
     white-space: nowrap; pointer-events: none;
   }
   .comp-pin::before {
     content: ""; width: 10px; height: 10px; border-radius: 999px;
-    background: var(--story-navy); border: 2px solid #f7f4ec;
-    box-shadow: 0 0 0 1px rgba(8,18,40,0.2);
+    background: var(--navy); border: 2px solid #f5f7fa;
   }
   .comp-pin span {
-    font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--story-muted);
+    font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
   }
   .comp-pin strong {
-    font-size: 11px; font-family: var(--font-display); color: var(--story-ink);
-    background: rgba(247,244,236,0.92); padding: 0.1rem 0.3rem;
+    font-size: 11px; font-family: var(--font-display); color: var(--ink);
+    background: rgba(245,247,250,0.94); padding: 0.1rem 0.28rem;
   }
   .comp-pin.is-subject { z-index: 2; }
-  .comp-pin.is-subject::before { background: var(--story-red); width: 14px; height: 14px; }
-  .comp-pin.is-subject strong { color: var(--story-red); }
+  .comp-pin.is-subject::before { background: var(--warn); width: 14px; height: 14px; }
+  .comp-pin.is-subject strong { color: var(--warn); }
   .comp-map-legend {
-    position: absolute; left: 0.75rem; bottom: 0.65rem; margin: 0;
-    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--story-muted);
+    position: absolute; left: 0.7rem; bottom: 0.6rem; margin: 0;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
   }
-  .comp-bars { display: grid; gap: 0.7rem; }
+  .comp-bars { display: grid; gap: 0.65rem; }
   .comp-bar-row {
-    display: grid; grid-template-columns: 1.2fr 1.4fr auto; gap: 0.65rem; align-items: center;
+    display: grid; grid-template-columns: 1.2fr 1.4fr auto; gap: 0.6rem; align-items: center;
   }
   @media (max-width: 640px) {
-    .comp-bar-row { grid-template-columns: 1fr; gap: 0.25rem; }
+    .comp-bar-row { grid-template-columns: 1fr; gap: 0.22rem; }
   }
-  .comp-bar-meta strong { display: block; font-size: 0.88rem; }
-  .comp-bar-meta span { font-size: 0.78rem; color: var(--story-muted); }
-  .comp-bar-track {
-    height: 8px; background: var(--story-wash); overflow: hidden;
-  }
+  .comp-bar-meta strong { display: block; font-size: 0.86rem; }
+  .comp-bar-meta span { font-size: 0.76rem; color: var(--muted); }
+  .comp-bar-track { height: 8px; background: var(--wash); overflow: hidden; }
   .comp-bar-track span {
-    display: block; height: 100%; background: linear-gradient(90deg, #8fa3c2, var(--story-navy));
+    display: block; height: 100%; background: linear-gradient(90deg, #8fa3c2, var(--navy));
   }
-  .comp-bar-row.is-offer .comp-bar-track span { background: var(--story-red); }
+  .comp-bar-row.is-offer .comp-bar-track span { background: var(--warn); }
   .comp-bar-price {
-    font-family: var(--font-display); font-size: 0.98rem; text-align: right; white-space: nowrap;
+    font-family: var(--font-display); font-size: 0.95rem; text-align: right; white-space: nowrap;
   }
 
-  .range-cards {
-    display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.65rem;
-    max-width: 36rem; margin: 1rem 0 1.5rem;
+  .callout-strip {
+    display: grid; gap: 0.75rem; max-width: 40rem;
+    margin: 0 0 1.25rem; padding: 1rem 1.1rem;
+    border: 1px solid rgba(180,35,24,0.28);
+    background:
+      linear-gradient(120deg, rgba(180,35,24,0.08), rgba(180,35,24,0.02));
   }
   @media (min-width: 640px) {
-    .range-cards { grid-template-columns: repeat(4, 1fr); }
+    .callout-strip { grid-template-columns: auto 1fr; align-items: center; }
   }
+  .callout-strip span {
+    display: block; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--warn); font-weight: 700;
+  }
+  .callout-strip strong {
+    font-family: var(--font-display); font-size: 1.6rem; color: var(--warn);
+  }
+  .callout-strip p { margin: 0; font-size: 0.95rem; line-height: 1.45; }
+
+  .range-cards {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.55rem;
+    max-width: 36rem; margin: 0 0 1.35rem;
+  }
+  @media (min-width: 640px) { .range-cards { grid-template-columns: repeat(4, 1fr); } }
   .range-card {
-    border: 1px solid var(--story-line); padding: 0.9rem 0.75rem;
-    background: rgba(255,255,255,0.4);
+    border: 1px solid var(--line); padding: 0.85rem 0.7rem; background: rgba(255,255,255,0.5);
   }
-  .range-card.accent {
-    border-color: rgba(192,48,59,0.35); background: rgba(192,48,59,0.06);
-  }
+  .range-card.warn { border-color: rgba(180,35,24,0.3); background: rgba(180,35,24,0.06); }
+  .range-card.good { border-color: rgba(47,107,79,0.3); background: rgba(47,107,79,0.07); }
   .range-card span {
-    display: block; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
-    color: var(--story-muted); margin-bottom: 0.25rem;
+    display: block; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 0.2rem;
   }
-  .range-card strong { font-family: var(--font-display); font-size: 1.25rem; }
-  .range-card.accent strong { color: var(--story-red); }
+  .range-card strong { font-family: var(--font-display); font-size: 1.2rem; }
+  .range-card.warn strong { color: var(--warn); }
+  .range-card.good strong { color: var(--good); }
   .range-bar { max-width: 40rem; }
   .range-track {
-    position: relative; height: 10px; background: var(--story-wash); margin: 2.4rem 0 0.75rem;
+    position: relative; height: 10px; background: var(--wash); margin: 2.3rem 0 0.7rem;
   }
   .range-fill {
     position: absolute; inset: 0 6% 0 18%;
-    background: linear-gradient(90deg, #9db0d0, var(--story-navy));
+    background: linear-gradient(90deg, #9db0d0, var(--navy));
   }
   .range-offer {
-    position: absolute; top: -1.85rem; transform: translateX(-50%);
-    font-size: 11px; font-weight: 700; color: var(--story-red); letter-spacing: 0.08em;
+    position: absolute; top: -1.8rem; transform: translateX(-50%);
+    font-size: 11px; font-weight: 700; color: var(--warn); letter-spacing: 0.08em;
     text-transform: uppercase;
   }
   .range-offer::after {
-    content: ""; position: absolute; left: 50%; top: 100%; width: 2px; height: 1.4rem;
-    background: var(--story-red); transform: translateX(-50%);
+    content: ""; position: absolute; left: 50%; top: 100%; width: 2px; height: 1.35rem;
+    background: var(--warn); transform: translateX(-50%);
   }
   .range-labels {
     display: flex; justify-content: space-between;
-    font-size: 0.88rem; font-weight: 600; color: var(--story-navy);
+    font-size: 0.86rem; font-weight: 600; color: var(--navy);
   }
 
   .story-notebook { max-width: 44rem; margin: 0 auto; }
-  .notebook-p + .notebook-p { margin-top: 1rem; }
+  .notebook-p + .notebook-p { margin-top: 0.95rem; }
   .story-footer {
-    margin-top: 2.25rem; padding-top: 1.1rem; border-top: 1px solid var(--story-line);
-    color: var(--story-muted); font-size: 0.84rem; line-height: 1.5;
+    margin-top: 2.1rem; padding-top: 1.1rem; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 0.84rem; line-height: 1.5;
   }
-  .story-sources { margin-top: 0.45rem; font-size: 0.76rem; }
+  .footer-brand {
+    display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.85rem; color: var(--ink);
+  }
+  .footer-brand strong { display: block; font-size: 0.92rem; }
+  .footer-brand span {
+    display: block; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+  }
+  .story-sources { margin-top: 0.4rem; font-size: 0.75rem; }
 
   .reveal { animation: story-in 720ms cubic-bezier(0.22, 1, 0.36, 1) both; }
   .delay-1 { animation-delay: 70ms; }
@@ -781,10 +877,8 @@ const STORY_CSS = `
   .delay-4 { animation-delay: 280ms; }
   .delay-5 { animation-delay: 350ms; }
   @keyframes story-in {
-    from { opacity: 0; transform: translateY(16px); }
+    from { opacity: 0; transform: translateY(14px); }
     to { opacity: 1; transform: translateY(0); }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .reveal { animation: none; }
-  }
+  @media (prefers-reduced-motion: reduce) { .reveal { animation: none; } }
 `;
