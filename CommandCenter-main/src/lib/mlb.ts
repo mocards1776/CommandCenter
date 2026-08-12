@@ -3637,12 +3637,15 @@ function buildHotSeat(
       ? Math.max(0, Math.min(99, input.firedOddsPct))
       : null;
   if (marketPct != null && marketPct > 0) {
-    const marketPts = Math.round(marketPct * 0.95 * 10) / 10; // 50% → 47.5 heat
+    // Kalshi must dominate the board — a 75% next-fired favorite should never
+    // sit at #7 behind interims stacking win%/GB/playoff points (~150 max).
+    // 50% → 150 heat, 75% → 225 heat.
+    const marketPts = Math.round(marketPct * 3 * 10) / 10;
     factors.push({
       key: "market",
       label: "Next-fired market",
       points: marketPts,
-      detail: `Kalshi ~${marketPct}% implied → +${marketPts.toFixed(1)} heat`,
+      detail: `Kalshi ~${marketPct.toFixed(1)}% next-fired → +${marketPts.toFixed(1)} heat (dominates ranking)`,
     });
   }
 
@@ -3925,7 +3928,16 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
     }),
   );
 
-  managers.sort((a, b) => b.hotSeatScore - a.hotSeatScore);
+  // Kalshi next-fired % is the primary rank key when present — market favorite = #1.
+  managers.sort((a, b) => {
+    const aKalshi = a.firedOddsPct;
+    const bKalshi = b.firedOddsPct;
+    const aHas = aKalshi != null && Number.isFinite(aKalshi);
+    const bHas = bKalshi != null && Number.isFinite(bKalshi);
+    if (aHas && bHas && aKalshi !== bKalshi) return (bKalshi as number) - (aKalshi as number);
+    if (aHas !== bHas) return aHas ? -1 : 1;
+    return b.hotSeatScore - a.hotSeatScore;
+  });
   return managers.map((m, i) => ({ ...m, hotSeatRank: i + 1 }));
 }
 

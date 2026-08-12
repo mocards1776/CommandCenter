@@ -29,7 +29,7 @@ function heatLabel(rank: number): string {
 export default function MlbManagersPage() {
   const { user } = useAuth();
   const managers = useQuery({
-    queryKey: ["mlb-managers-v8"],
+    queryKey: ["mlb-managers-v9"],
     queryFn: fetchMlbManagers,
     staleTime: 180_000,
   });
@@ -154,10 +154,11 @@ export default function MlbManagersPage() {
           </section>
 
           <p className="text-[11px] leading-relaxed text-[#8b93a7]">
-            Heat is driven hardest by live next-fired market prices (Kalshi), then win
-            percentage, games back, playoff odds, and division place — scaled by tenure.
-            Interim / short-leash skippers skip the first-year cushion. When MLB still
-            lists a fired manager beside an interim, we show the interim only.
+            Hot seat ranks by <span className="text-amber-200">Kalshi next-fired %</span>{" "}
+            first (market favorite = #1), then by heat score. Heat itself is dominated by
+            Kalshi, then win percentage, games back, playoff odds, and division place —
+            scaled by tenure. Interim / short-leash skippers skip the first-year cushion.
+            When MLB still lists a fired manager beside an interim, we show the interim only.
           </p>
         </>
       )}
