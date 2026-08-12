@@ -28,5 +28,11 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
 9. `rss_filters` — per-user phrase / URL blacklist for Dispatch (`kind` in
    `phrase|url`, unique `(user_id, kind, value)`, owner-scoped RLS).
 
+10. `story_links` — secret client scroll-story tokens (`token`, `slug`,
+    optional `label`, soft-revoke via `revoked_at`). Unique partial index on
+    active slug. RLS on with no anon/authenticated table policies; writes go
+    through the `story-link` edge function (service role). Public resolve via
+    `resolve_story_link(token)` SECURITY DEFINER RPC (returns slug/label only).
+
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.

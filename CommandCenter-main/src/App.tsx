@@ -17,6 +17,8 @@ import MlbGamePage from "@/pages/MlbGamePage";
 import MlbManagersPage from "@/pages/MlbManagersPage";
 import MlbManagerPage from "@/pages/MlbManagerPage";
 import RssPage from "@/pages/RssPage";
+import PublicStoryPage from "@/pages/PublicStoryPage";
+import BuenaVistaNotebookPage from "@/pages/BuenaVistaNotebookPage";
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
 import { markSportsSolo } from "@/lib/sports-home";
 import { markRssSolo } from "@/lib/rss-home";
@@ -101,6 +103,8 @@ export default function App() {
                 </PublicOnly>
               }
             />
+            {/* Token-gated client presentations — public, no app chrome */}
+            <Route path="/story/:token" element={<PublicStoryPage />} />
             <Route element={<Protected />}>
               <Route path="/" element={<HomeRedirect />} />
               <Route path="/dashboard" element={<DashboardPage />} />
@@ -114,6 +118,7 @@ export default function App() {
               <Route path="/sports/mlb/player/:playerId" element={<MlbPlayerPage />} />
               <Route path="/sports/mlb/game/:gamePk" element={<MlbGamePage />} />
               <Route path="/rss" element={<RssPage />} />
+              <Route path="/notebook/1715-e-buena-vista" element={<BuenaVistaNotebookPage />} />
             </Route>
             <Route path="*" element={<HomeRedirect />} />
           </Routes>
