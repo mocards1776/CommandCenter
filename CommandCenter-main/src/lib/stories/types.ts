@@ -56,6 +56,8 @@ export type RepairOdds = {
   amount: number;
   pct: number;
   note?: string;
+  /** What would have to be wrong for spend to reach this level */
+  wrongIf?: string;
 };
 
 export type StoryChapter = {
@@ -441,25 +443,63 @@ export const STORIES: Record<string, ClientStory> = {
         eyebrow: "Repair odds",
         title: "Estimated chance repairs hit at least this much.",
         body:
-          "Judgment odds only — not a contractor bid. Based on what is known so far: 1976 crawl-space ranch, catastrophic tree damage, open to weather, partial rebuild, and the usual moisture / systems catch-up pattern. Read each line as: “chance total leftover repairs land at or above this number.”",
+          "Judgment odds only — not a contractor bid. Based on what is known so far: 1976 crawl-space ranch, catastrophic tree damage, open to weather, partial rebuild, and the usual moisture / systems catch-up pattern. Read each line as: “chance total leftover repairs land at or above this number.” The high-dollar rows are rare — and each one lists what would have to be wrong to get there.",
         visual: "odds",
         bullets: [
           "Nearly certain you face some real catch-up cost (not $0)",
-          "Mid five figures are plausible, not exotic, for this history",
-          "Crossing the ~$61,000 break-even line is the minority case — but not fantasy",
+          "Mid five figures need a real moisture/crawl or multi-system stack — plausible, not automatic",
+          "Hitting ~$61,000+ needs several ugly findings at once — minority case",
+          "$80,000+ needs cascading failure (structure + widespread remediation + major systems) — uncommon",
           "Private inspection is how you replace these odds with a real scope",
         ],
-        stat: { value: "Judgment", label: "P(repairs ≥ $X) · update after your private look" },
+        stat: { value: "~4%", label: "Judgment odds of an $80k+ cascading worst case" },
       },
     ],
     repairOdds: [
-      { amount: 5000, pct: 95, note: "Almost sure some punch-list / moisture work" },
-      { amount: 10000, pct: 82, note: "Likely beyond tiny fixes" },
-      { amount: 15000, pct: 70, note: "Common stacked catch-up territory" },
-      { amount: 25000, pct: 55, note: "Coin-flip-ish for a meaningful stack" },
-      { amount: 40000, pct: 35, note: "Crawl / widespread moisture path" },
-      { amount: 61000, pct: 22, note: "Around the list vs $230k break-even" },
-      { amount: 80000, pct: 10, note: "Ugly worst-case pile-up" },
+      {
+        amount: 5000,
+        pct: 95,
+        note: "Almost sure some punch-list / spot work",
+        wrongIf: "Normal leftover trim, seal, or small moisture touch-up after a weather/rebuild chapter.",
+      },
+      {
+        amount: 10000,
+        pct: 80,
+        note: "Likely beyond tiny fixes",
+        wrongIf: "More than cosmetics — e.g. limited dry-out, insulation patches, a few electrical/plumbing catch-ups.",
+      },
+      {
+        amount: 15000,
+        pct: 65,
+        note: "Common stacked catch-up",
+        wrongIf: "Several small jobs land together: punch list + crawl vapor work + one age-system fix.",
+      },
+      {
+        amount: 25000,
+        pct: 45,
+        note: "Meaningful multi-item stack",
+        wrongIf: "Documented crawl moisture or mold in a contained area, plus systems/finish work — not a single surprise.",
+      },
+      {
+        amount: 40000,
+        pct: 22,
+        note: "Heavy crawl / moisture path",
+        wrongIf: "Widespread crawl moisture or mold needing remediation, insulation replacement, and related repairs — not spot cleanup.",
+      },
+      {
+        amount: 61000,
+        pct: 10,
+        note: "Around list vs $230k break-even",
+        wrongIf:
+          "Heavy remediation plus major systems (e.g. HVAC or plumbing redo) and a big finish stack — several hard findings, not one.",
+      },
+      {
+        amount: 80000,
+        pct: 4,
+        note: "Cascading worst case",
+        wrongIf:
+          "Would need a pile-up: structural or framing damage from the tree/water chapter, widespread mold/crawl rebuild, and major mechanical replacement all at once. Uncommon if the visible rebuild was done soundly — inspection is how you rule it in or out.",
+      },
     ],
     comps: [
       {
@@ -589,7 +629,7 @@ export const STORIES: Record<string, ClientStory> = {
         "65804: median days on market ~30 days recently; Springfield metro ~44 days. More listings citywide can feel slow, but homes are still closing. Same-street peers often ~$310k–$320k when clean. Typical zip sale ~$291k. Schools: Disney 10, Cherokee 8, Kickapoo 8.",
         "Upgrades already paid: new roof, ~½ open rebuild, ~½ siding, newer HVAC. Risk: weather exposure + crawl/moisture/age systems.",
         "Lane: inspect → total fixes → under ~$61k and willing → counter/list; over ~$61k and unwilling → $230k as-is can be rational.",
-        "Repair odds (judgment, P(cost ≥ X)): ≥$5k ~95% · ≥$10k ~82% · ≥$15k ~70% · ≥$25k ~55% · ≥$40k ~35% · ≥$61k ~22% · ≥$80k ~10%. Replace with a private scope.",
+        "Repair odds (judgment, P(cost ≥ X)): ≥$5k ~95% · ≥$10k ~80% · ≥$15k ~65% · ≥$25k ~45% · ≥$40k ~22% · ≥$61k ~10% · ≥$80k ~4%. High-dollar rows need stacked failures (widespread crawl remediation, major systems, or structural) — see Repair odds chapter. Replace with a private scope.",
       ],
     },
     researchDate: "August 12, 2026",

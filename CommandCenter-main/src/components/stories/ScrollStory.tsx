@@ -458,6 +458,12 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                         <span style={{ width: `${row.pct}%` }} />
                       </div>
                       <div className="odds-pct">{row.pct}%</div>
+                      {row.wrongIf ? (
+                        <p className="odds-wrong">
+                          <em>What would have to be wrong</em>
+                          {row.wrongIf}
+                        </p>
+                      ) : null}
                     </article>
                   ))}
                 </div>
@@ -1027,6 +1033,14 @@ const STORY_CSS = `
   .odds-pct {
     font-family: var(--font-mono); font-size: 0.95rem; font-weight: 700; color: var(--warn);
     min-width: 3rem; text-align: right;
+  }
+  .odds-wrong {
+    grid-column: 1 / -1; margin: 0.15rem 0 0;
+    font-size: 0.8rem; line-height: 1.4; color: var(--muted);
+  }
+  .odds-wrong em {
+    display: block; font-style: normal; font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; font-weight: 700; color: var(--copper-deep); margin-bottom: 0.15rem;
   }
 
   .story-chapter {
