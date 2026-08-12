@@ -1464,6 +1464,86 @@ function stripHtml(html: string): string {
     .replace(/\n{3,}/g, "\n\n");
 }
 
+/** Pull ESPN `gameId` from mlb recap / preview / game URLs. */
+export function parseEspnGameIdFromUrl(url: string): string | null {
+  const m = url.match(/gameId\/(\d+)/i) || url.match(/[?&]gameId=(\d+)/i);
+  return m?.[1] ?? null;
+}
+
+/**
+ * Map an ESPN event id → MLB Stats API `gamePk` via competition date + home/away teams.
+ * Returns null when the summary or schedule lookup fails / no match.
+ */
+export async function resolveMlbGamePkFromEspnEvent(eventId: string): Promise<number | null> {
+  if (!eventId) return null;
+  try {
+    const sumRes = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${encodeURIComponent(eventId)}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!sumRes.ok) return null;
+    const sum = (await sumRes.json()) as {
+      header?: {
+        competitions?: {
+          date?: string;
+          competitors?: { homeAway?: string; team?: { abbreviation?: string; id?: string } }[];
+        }[];
+      };
+      competitions?: {
+        date?: string;
+        competitors?: { homeAway?: string; team?: { abbreviation?: string; id?: string } }[];
+      }[];
+    };
+    const comp = sum.header?.competitions?.[0] ?? sum.competitions?.[0];
+    const competitors = comp?.competitors ?? [];
+    const homeAbbrev = competitors.find((c) => c.homeAway === "home")?.team?.abbreviation;
+    const awayAbbrev = competitors.find((c) => c.homeAway === "away")?.team?.abbreviation;
+    if (!comp?.date || !homeAbbrev || !awayAbbrev) return null;
+
+    const date = new Date(comp.date).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+
+    const homeId = mlbTeamIdFromEspnAbbrev(homeAbbrev);
+    const awayId = mlbTeamIdFromEspnAbbrev(awayAbbrev);
+    const homeKey = homeAbbrev.toUpperCase();
+    const awayKey = awayAbbrev.toUpperCase();
+
+    const schedule = (await mlbGet("schedule", {
+      sportId: "1",
+      date,
+      hydrate: "team",
+    })) as {
+      dates?: {
+        games?: {
+          gamePk?: number;
+          teams?: {
+            away?: { team?: { id?: number; abbreviation?: string } };
+            home?: { team?: { id?: number; abbreviation?: string } };
+          };
+        }[];
+      }[];
+    };
+
+    const games = schedule.dates?.[0]?.games ?? [];
+    for (const g of games) {
+      const hAbb = (g.teams?.home?.team?.abbreviation ?? "").toUpperCase();
+      const aAbb = (g.teams?.away?.team?.abbreviation ?? "").toUpperCase();
+      const hId = g.teams?.home?.team?.id;
+      const aId = g.teams?.away?.team?.id;
+      const abbrevMatch = hAbb === homeKey && aAbb === awayKey;
+      const idMatch =
+        homeId != null &&
+        awayId != null &&
+        hId === homeId &&
+        aId === awayId;
+      if ((abbrevMatch || idMatch) && g.gamePk != null) return g.gamePk;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** ESPN game wrap / recap for an MLB game (matched by date + team abbrevs). */
 export async function fetchEspnGameRecap(
   officialDate: string | null | undefined,
