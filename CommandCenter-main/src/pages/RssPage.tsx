@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type TouchEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useQueries, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
   ArrowLeft,
   Ban,
   CheckCheck,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   Circle,
@@ -14,12 +15,14 @@ import {
   Inbox,
   RefreshCw,
   Share,
+  Square,
   Layers,
   Trash2,
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import PlayerPeek from "@/components/rss/PlayerPeek";
+import DispatchEspnGameReader from "@/components/rss/DispatchEspnGameReader";
 import {
   RSS_FEEDS,
   addDedupeKeepHost,
@@ -28,7 +31,9 @@ import {
   articleSourceHost,
   createRssHighlight,
   dedupeArticles,
+  encodeFeedDomainFilter,
   loadDedupeKeepHosts,
+  parseFeedScopedFilter,
   partitionDedupedArticles,
   deleteRssFilter,
   deleteRssHighlight,
@@ -56,6 +61,7 @@ import {
   extractPlayerNameCandidates,
   fetchMlbTeamRoster,
   linkifyMlbPlayersInHtml,
+  parseEspnGameIdFromUrl,
   searchMlbPlayersByNames,
 } from "@/lib/mlb";
 import { cn } from "@/lib/utils";
@@ -210,29 +216,54 @@ function useSwipeNav(opts: {
   enabled: boolean;
 }) {
   const start = useRef<{ x: number; y: number; t: number } | null>(null);
+  const optsRef = useRef(opts);
+  optsRef.current = opts;
+  const [node, setNode] = useState<HTMLElement | null>(null);
 
-  return {
-    onTouchStart: (e: TouchEvent) => {
-      if (!opts.enabled) return;
+  useEffect(() => {
+    if (!node) return;
+
+    const onTouchStart = (e: globalThis.TouchEvent) => {
+      if (!optsRef.current.enabled) return;
       const t = e.changedTouches[0] ?? e.touches[0];
+      if (!t) return;
       start.current = { x: t.clientX, y: t.clientY, t: Date.now() };
-    },
-    onTouchEnd: (e: TouchEvent) => {
-      if (!opts.enabled || !start.current) return;
+    };
+
+    const onTouchEnd = (e: globalThis.TouchEvent) => {
+      const o = optsRef.current;
+      if (!o.enabled || !start.current) return;
       const t = e.changedTouches[0];
+      if (!t) return;
       const dx = t.clientX - start.current.x;
       const dy = t.clientY - start.current.y;
+      const startX = start.current.x;
       const held = Date.now() - start.current.t;
       start.current = null;
-      // Selecting text to mute/highlight should never navigate.
+
       const sel = window.getSelection();
       if (sel && !sel.isCollapsed && (sel.toString() || "").trim().length >= 2) return;
-      if (held > 450) return;
-      if (Math.abs(dx) < 72 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
-      if (dx < 0) opts.onBack();
-      else if (opts.onNext) opts.onNext();
-    },
-  };
+      if (held > 700) return;
+      if (Math.abs(dx) < 48) return;
+      if (Math.abs(dx) < Math.abs(dy) * 1.05) return;
+
+      // Swipe left → previous screen. Also honor iOS-style edge swipe right.
+      if (dx < 0 || (startX < 36 && dx > 0)) {
+        o.onBack();
+        return;
+      }
+      if (o.onNext) o.onNext();
+    };
+
+    node.addEventListener("touchstart", onTouchStart, { passive: true, capture: true });
+    node.addEventListener("touchend", onTouchEnd, { passive: true, capture: true });
+    return () => {
+      node.removeEventListener("touchstart", onTouchStart, true);
+      node.removeEventListener("touchend", onTouchEnd, true);
+    };
+  }, [node]);
+
+  return setNode;
 }
 
 /** Turn `.rss-tweet` blockquotes into a compact X/Twitter feed card. */
@@ -313,6 +344,136 @@ function ReaderView({
   onNext: () => void;
   onToggleRead: () => void;
 }) {
+  const isEspnGame =
+    Boolean(parseEspnGameIdFromUrl(item.link)) ||
+    feedUrl === "synthetic:cardinals-wraps" ||
+    /espn\.com\/mlb\/(?:recap|preview|game)/i.test(item.link);
+
+  // Cardinals wraps/previews → exact sports game UI (matchup + wrap + stats).
+  if (isEspnGame) {
+    return (
+      <EspnGameReaderShell
+        item={item}
+        feedUrl={feedUrl}
+        hasPrev={hasPrev}
+        hasNext={hasNext}
+        onClose={onBack}
+        onPrev={onPrev}
+        onNext={onNext}
+      />
+    );
+  }
+
+  return (
+    <ArticleReaderShell
+      item={item}
+      feedUrl={feedUrl}
+      isRead={isRead}
+      hasPrev={hasPrev}
+      hasNext={hasNext}
+      onClose={onBack}
+      onPrev={onPrev}
+      onNext={onNext}
+      onToggleRead={onToggleRead}
+    />
+  );
+}
+
+function EspnGameReaderShell({
+  item,
+  feedUrl,
+  hasPrev,
+  hasNext,
+  onClose,
+  onPrev,
+  onNext,
+}: {
+  item: RssFeedItem;
+  feedUrl: string;
+  hasPrev: boolean;
+  hasNext: boolean;
+  onClose: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const qc = useQueryClient();
+
+  const leave = () => {
+    onClose();
+    const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+    if (st.dispatchArticle) history.back();
+  };
+
+  const swipeRef = useSwipeNav({
+    enabled: true,
+    onBack: leave,
+    onNext: hasNext ? onNext : null,
+  });
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [item.link]);
+
+  useEffect(() => {
+    const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+    if (!st.dispatchArticle) {
+      history.pushState({ ...st, dispatchArticle: item.link }, "", window.location.href);
+    } else if (st.dispatchArticle !== item.link) {
+      history.replaceState({ ...st, dispatchArticle: item.link }, "", window.location.href);
+    }
+    const onPop = () => {
+      onClose();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [item.link, onClose]);
+
+  useEffect(() => {
+    void markRssRead({
+      articleUrl: item.link,
+      articleTitle: item.title,
+      feedUrl,
+    })
+      .then(() => qc.invalidateQueries({ queryKey: ["rss-reads"] }))
+      .catch(() => {});
+  }, [item.link, item.title, feedUrl, qc]);
+
+  return (
+    <div ref={swipeRef} style={{ touchAction: "pan-y" }}>
+      <DispatchEspnGameReader
+        url={item.link}
+        title={item.title}
+        onBack={leave}
+        onPrev={hasPrev ? onPrev : undefined}
+        onNext={hasNext ? onNext : undefined}
+        hasPrev={hasPrev}
+        hasNext={hasNext}
+      />
+    </div>
+  );
+}
+
+function ArticleReaderShell({
+  item,
+  feedUrl,
+  isRead,
+  hasPrev,
+  hasNext,
+  onClose,
+  onPrev,
+  onNext,
+  onToggleRead,
+}: {
+  item: RssFeedItem;
+  feedUrl: string;
+  isRead: boolean;
+  hasPrev: boolean;
+  hasNext: boolean;
+  onClose: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onToggleRead: () => void;
+}) {
   const qc = useQueryClient();
   const articleBodyRef = useRef<HTMLDivElement>(null);
   const titleSelectRef = useRef<HTMLElement>(null);
@@ -325,7 +486,7 @@ function ReaderView({
   const article = useQuery({
     queryKey: ["rss-article", item.link],
     queryFn: () => fetchRssArticle(item.link),
-    staleTime: 30 * 60_000,
+    staleTime: 10 * 60_000,
   });
 
   const highlights = useQuery({
@@ -354,11 +515,11 @@ function ReaderView({
       history.replaceState({ ...st, dispatchArticle: item.link }, "", window.location.href);
     }
     const onPop = () => {
-      onBack();
+      onClose();
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [item.link, onBack]);
+  }, [item.link, onClose]);
 
   useEffect(() => {
     void markRssRead({
@@ -519,14 +680,15 @@ function ReaderView({
     sel.removeAllRanges();
   }
 
-  const swipe = useSwipeNav({
+  const leave = () => {
+    onClose();
+    const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+    if (st.dispatchArticle) history.back();
+  };
+
+  const swipeRef = useSwipeNav({
     enabled: !pendingQuote && peekPlayerId == null && !lightboxSrc,
-    onBack: () => {
-      // Leave the reader immediately — don't walk stacked article history.
-      onBack();
-      const st = (history.state as { dispatchArticle?: string } | null) ?? {};
-      if (st.dispatchArticle) history.back();
-    },
+    onBack: leave,
     onNext: hasNext ? onNext : null,
   });
 
@@ -555,19 +717,15 @@ function ReaderView({
 
   return (
     <div
+      ref={swipeRef}
       className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,42rem)_minmax(15rem,1fr)]"
-      onTouchStart={swipe.onTouchStart}
-      onTouchEnd={swipe.onTouchEnd}
+      style={{ touchAction: "pan-y" }}
     >
       <article className="font-rss min-w-0">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => {
-              onBack();
-              const st = (history.state as { dispatchArticle?: string } | null) ?? {};
-              if (st.dispatchArticle) history.back();
-            }}
+            onClick={leave}
             className="font-body text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] transition-colors"
           >
             <ArrowLeft size={14} />
@@ -772,6 +930,8 @@ function ArticleRow({
   onKeepSource,
   keptSource,
   onArchive,
+  batchMode,
+  batchSelected,
 }: {
   item: RssFeedItem;
   read: boolean;
@@ -781,6 +941,8 @@ function ArticleRow({
   onKeepSource?: () => void;
   keptSource?: boolean;
   onArchive?: () => void;
+  batchMode?: boolean;
+  batchSelected?: boolean;
 }) {
   return (
     <li>
@@ -789,16 +951,33 @@ function ArticleRow({
           "hover:bg-white/[0.03] flex w-full items-start gap-3 border-b border-white/[0.06] px-3 py-3.5 transition-colors",
           read && "opacity-50",
           highlighted && "border-l-accent border-l-2",
+          batchSelected && "bg-accent/10",
         )}
       >
-        <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 text-left">
-          <span
-            className={cn(
-              "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
-              read ? "bg-white/15" : "bg-accent",
+        {batchMode ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="text-chalk hover:text-cream mt-1.5 shrink-0"
+            aria-label={batchSelected ? "Deselect" : "Select"}
+          >
+            {batchSelected ? (
+              <CheckSquare size={18} className="text-accent" />
+            ) : (
+              <Square size={18} />
             )}
-            aria-hidden
-          />
+          </button>
+        ) : null}
+        <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 text-left">
+          {!batchMode ? (
+            <span
+              className={cn(
+                "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
+                read ? "bg-white/15" : "bg-accent",
+              )}
+              aria-hidden
+            />
+          ) : null}
           {item.image ? (
             <img
               src={item.image}
@@ -835,7 +1014,7 @@ function ArticleRow({
             ) : null}
           </div>
         </button>
-        {onArchive && !read ? (
+        {!batchMode && onArchive && !read ? (
           <button
             type="button"
             onClick={onArchive}
@@ -846,7 +1025,7 @@ function ArticleRow({
             <Archive size={15} />
           </button>
         ) : null}
-        {onKeepSource ? (
+        {!batchMode && onKeepSource ? (
           <button
             type="button"
             onClick={onKeepSource}
@@ -860,16 +1039,18 @@ function ArticleRow({
             Keep
           </button>
         ) : null}
-        <button
-          type="button"
-          onClick={onBlockUrl}
-          title="Blacklist this URL section"
-          className="text-chalk-dim hover:text-alert mt-1 shrink-0"
-          aria-label="Blacklist URL"
-        >
-          <Ban size={15} />
-        </button>
-        <ChevronRight size={16} className="text-chalk-dim mt-1 shrink-0" />
+        {!batchMode ? (
+          <button
+            type="button"
+            onClick={onBlockUrl}
+            title="Block domain / URL"
+            className="text-chalk-dim hover:text-alert mt-1 shrink-0"
+            aria-label="Block domain"
+          >
+            <Ban size={15} />
+          </button>
+        ) : null}
+        {!batchMode ? <ChevronRight size={16} className="text-chalk-dim mt-1 shrink-0" /> : null}
       </div>
     </li>
   );
@@ -884,6 +1065,8 @@ export default function RssPage() {
   const [keepHosts, setKeepHosts] = useState<string[]>(() =>
     typeof window !== "undefined" ? loadDedupeKeepHosts() : [],
   );
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchSelected, setBatchSelected] = useState<Set<string>>(() => new Set());
 
   const reads = useQuery({
     queryKey: ["rss-reads"],
@@ -901,9 +1084,9 @@ export default function RssPage() {
 
   const feedQueries = useQueries({
     queries: RSS_FEEDS.map((f) => ({
-      queryKey: ["rss-feed", f.url],
+      queryKey: ["rss-feed-v2", f.url],
       queryFn: () => fetchRssFeed(f.url),
-      staleTime: 5 * 60_000,
+      staleTime: 90_000,
     })),
   });
 
@@ -937,7 +1120,7 @@ export default function RssPage() {
     const map = new Map<string, { items: RssFeedItem[]; title: string; url: string }>();
     RSS_FEEDS.forEach((f, i) => {
       const data = feedQueries[i]?.data;
-      const items = applyRssFilters(dedupeArticles(data?.items ?? [], keepHosts), filters);
+      const items = applyRssFilters(dedupeArticles(data?.items ?? [], keepHosts), filters, f.id);
       map.set(f.id, {
         items,
         title: data?.title || f.title,
@@ -952,7 +1135,7 @@ export default function RssPage() {
     const merged: RssFeedItemRef[] = [];
     RSS_FEEDS.forEach((f, i) => {
       const data = feedQueries[i]?.data;
-      const filtered = applyRssFilters(data?.items ?? [], filters);
+      const filtered = applyRssFilters(data?.items ?? [], filters, f.id);
       for (const it of filtered) {
         merged.push({ ...it, feedId: f.id, feedUrl: f.url });
       }
@@ -1103,9 +1286,20 @@ export default function RssPage() {
     setSelected(null);
     setReaderQueue(null);
     setMobilePane("list");
+    setBatchMode(false);
+    setBatchSelected(new Set());
   }
 
   function openArticle(item: RssFeedItemRef) {
+    if (batchMode) {
+      setBatchSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(item.link)) next.delete(item.link);
+        else next.add(item.link);
+        return next;
+      });
+      return;
+    }
     // Snapshot the list so unread mark-read doesn't kill swipe next/prev.
     setReaderQueue(listItems);
     setSelected(item);
@@ -1117,11 +1311,36 @@ export default function RssPage() {
     if (next) setSelected(next);
   }
 
+  const batchArchiveMut = useMutation({
+    mutationFn: () => {
+      const targets = listItems.filter((it) => batchSelected.has(it.link) && !readUrls.has(it.link));
+      return markRssReadMany(
+        targets.map((it) => ({
+          articleUrl: it.link,
+          articleTitle: it.title,
+          feedUrl: it.feedUrl,
+        })),
+      );
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["rss-reads"] });
+      const n = batchSelected.size;
+      setBatchSelected(new Set());
+      setBatchMode(false);
+      toast.success(n === 1 ? "Archived 1 article" : `Archived ${n} articles`);
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : "Could not archive selection"),
+  });
+
   const listSwipe = useSwipeNav({
-    enabled: !selected && mobilePane === "list",
+    enabled: !selected && mobilePane === "list" && !batchMode,
     onBack: () => setMobilePane("sidebar"),
     onNext: null,
   });
+
+  const canBatch =
+    nav === "duplicates" || nav === "unread" || RSS_FEEDS.some((f) => f.id === nav);
 
   if (selected) {
     return (
@@ -1273,12 +1492,12 @@ export default function RssPage() {
       </aside>
 
       <section
+        ref={listSwipe}
         className={cn(
           "bg-field min-w-0 flex-1",
           mobilePane === "sidebar" ? "hidden md:block" : "block",
         )}
-        onTouchStart={listSwipe.onTouchStart}
-        onTouchEnd={listSwipe.onTouchEnd}
+        style={{ touchAction: "pan-y" }}
       >
         <div className="border-white/[0.06] flex items-center gap-3 border-b px-4 py-3.5">
           <button
@@ -1301,7 +1520,38 @@ export default function RssPage() {
                     : `${listItems.length} articles`}
             </p>
           </div>
-          {nav === "duplicates" &&
+          {canBatch ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (batchMode) {
+                  setBatchMode(false);
+                  setBatchSelected(new Set());
+                } else {
+                  setBatchMode(true);
+                }
+              }}
+              className="text-chalk hover:text-cream inline-flex shrink-0 items-center gap-1.5 text-[11px] uppercase tracking-[0.14em]"
+              title={batchMode ? "Cancel selection" : "Select articles"}
+            >
+              {batchMode ? <X size={14} /> : <CheckSquare size={14} />}
+              <span className="hidden sm:inline">{batchMode ? "Cancel" : "Select"}</span>
+            </button>
+          ) : null}
+          {batchMode && batchSelected.size > 0 ? (
+            <button
+              type="button"
+              onClick={() => batchArchiveMut.mutate()}
+              disabled={batchArchiveMut.isPending}
+              className="text-accent hover:text-cream inline-flex shrink-0 items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] disabled:opacity-40"
+              title="Archive selected"
+            >
+              <Archive size={14} />
+              <span className="hidden sm:inline">Archive {batchSelected.size}</span>
+            </button>
+          ) : null}
+          {!batchMode &&
+          nav === "duplicates" &&
           duplicateItems.some((it) => !readUrls.has(it.link)) ? (
             <button
               type="button"
@@ -1314,7 +1564,11 @@ export default function RssPage() {
               <span className="hidden sm:inline">Archive all</span>
             </button>
           ) : null}
-          {nav !== "notes" && nav !== "filters" && nav !== "duplicates" && unreadInList.length > 0 ? (
+          {!batchMode &&
+          nav !== "notes" &&
+          nav !== "filters" &&
+          nav !== "duplicates" &&
+          unreadInList.length > 0 ? (
             <button
               type="button"
               onClick={() => markAllReadMut.mutate()}
@@ -1393,15 +1647,26 @@ export default function RssPage() {
             {listItems.map((item) => {
               const host = articleSourceHost(item.link);
               const kept = Boolean(host && keepHosts.includes(host));
-              const canArchive = nav === "unread" || RSS_FEEDS.some((f) => f.id === nav);
+              const canArchive =
+                nav === "unread" || nav === "duplicates" || RSS_FEEDS.some((f) => f.id === nav);
+              const feedScoped = RSS_FEEDS.some((f) => f.id === nav);
               return (
               <ArticleRow
                 key={item.id + item.link}
                 item={item}
                 read={readUrls.has(item.link)}
                 highlighted={highlightUrls.has(item.link)}
+                batchMode={batchMode}
+                batchSelected={batchSelected.has(item.link)}
                 onOpen={() => openArticle(item)}
                 onBlockUrl={() => {
+                  if (feedScoped && host) {
+                    addFilterMut.mutate({
+                      kind: "url",
+                      value: encodeFeedDomainFilter(nav as string, host),
+                    });
+                    return;
+                  }
                   addFilterMut.mutate({
                     kind: "url",
                     value: suggestUrlFilterValue(item.link),
@@ -1460,50 +1725,80 @@ function FiltersPanel({
   onDelete: (id: string) => void;
   saving: boolean;
 }) {
-  const [kind, setKind] = useState<RssFilterKind>("phrase");
+  const [kind, setKind] = useState<RssFilterKind | "feed-domain">("phrase");
+  const [feedId, setFeedId] = useState<RssFeedId>(RSS_FEEDS[0].id);
   const [value, setValue] = useState("");
 
   function submit(e: FormEvent) {
     e.preventDefault();
     const v = value.trim();
     if (!v) return;
-    onAdd(kind, v);
+    if (kind === "feed-domain") {
+      onAdd("url", encodeFeedDomainFilter(feedId, v));
+    } else {
+      onAdd(kind, v);
+    }
     setValue("");
   }
 
   const phrases = filters.filter((f) => f.kind === "phrase");
-  const urls = filters.filter((f) => f.kind === "url");
+  const globalUrls = filters.filter(
+    (f) => f.kind === "url" && !parseFeedScopedFilter(f.value).feedId,
+  );
+  const feedDomains = filters.filter(
+    (f) => f.kind === "url" && Boolean(parseFeedScopedFilter(f.value).feedId),
+  );
 
   return (
     <div className="flex flex-col gap-5 p-4 md:p-5">
       <p className="text-chalk font-rss text-[14px] leading-relaxed">
-        Hide stories that match a phrase (title/snippet) or a URL fragment (host or path).
-        MLS / City SC pieces on the STL Today Cardinals feed are auto-hidden — use a phrase
-        like <span className="text-cream">City SC</span> only if you want an explicit rule;
-        bare “city” is too broad.
+        Hide stories that match a phrase (title/snippet), a URL fragment, or a domain inside one
+        feed. MLS / City SC pieces on the STL Today Cardinals feed are auto-hidden.
       </p>
-      <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row">
-        <select
-          value={kind}
-          onChange={(e) => setKind(e.target.value as RssFilterKind)}
-          className="bg-panel text-cream rounded-sm border border-white/10 px-3 py-2.5 text-[13px] outline-none focus:border-accent/50"
-        >
-          <option value="phrase">Phrase</option>
-          <option value="url">URL</option>
-        </select>
-        <input
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={kind === "phrase" ? "e.g. City SC" : "e.g. mls/city-sc"}
-          className="bg-panel placeholder:text-chalk-dim text-cream min-w-0 flex-1 rounded-sm border border-white/10 px-3 py-2.5 text-[13px] outline-none focus:border-accent/50"
-        />
-        <button
-          type="submit"
-          disabled={saving || !value.trim()}
-          className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] disabled:opacity-40"
-        >
-          Add
-        </button>
+      <form onSubmit={submit} className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value as RssFilterKind | "feed-domain")}
+            className="bg-panel text-cream rounded-sm border border-white/10 px-3 py-2.5 text-[13px] outline-none focus:border-accent/50"
+          >
+            <option value="phrase">Phrase</option>
+            <option value="url">URL (all feeds)</option>
+            <option value="feed-domain">Domain in feed</option>
+          </select>
+          {kind === "feed-domain" ? (
+            <select
+              value={feedId}
+              onChange={(e) => setFeedId(e.target.value as RssFeedId)}
+              className="bg-panel text-cream rounded-sm border border-white/10 px-3 py-2.5 text-[13px] outline-none focus:border-accent/50"
+            >
+              {RSS_FEEDS.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.title}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={
+              kind === "phrase"
+                ? "e.g. City SC"
+                : kind === "feed-domain"
+                  ? "e.g. fox2now.com"
+                  : "e.g. mls/city-sc"
+            }
+            className="bg-panel placeholder:text-chalk-dim text-cream min-w-0 flex-1 rounded-sm border border-white/10 px-3 py-2.5 text-[13px] outline-none focus:border-accent/50"
+          />
+          <button
+            type="submit"
+            disabled={saving || !value.trim()}
+            className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] disabled:opacity-40"
+          >
+            Add
+          </button>
+        </div>
       </form>
 
       {loading ? (
@@ -1535,11 +1830,11 @@ function FiltersPanel({
               </ul>
             </div>
           )}
-          {urls.length > 0 && (
+          {globalUrls.length > 0 && (
             <div>
               <div className="rule-head mb-3">Blocked URLs</div>
               <ul className="flex flex-col gap-2">
-                {urls.map((f) => (
+                {globalUrls.map((f) => (
                   <li
                     key={f.id}
                     className="border-white/[0.06] flex items-center justify-between gap-3 border-b pb-2"
@@ -1555,6 +1850,38 @@ function FiltersPanel({
                     </button>
                   </li>
                 ))}
+              </ul>
+            </div>
+          )}
+          {feedDomains.length > 0 && (
+            <div>
+              <div className="rule-head mb-3">Blocked domains by feed</div>
+              <ul className="flex flex-col gap-2">
+                {feedDomains.map((f) => {
+                  const scoped = parseFeedScopedFilter(f.value);
+                  const feedTitle =
+                    RSS_FEEDS.find((x) => x.id === scoped.feedId)?.title ?? scoped.feedId;
+                  return (
+                    <li
+                      key={f.id}
+                      className="border-white/[0.06] flex items-center justify-between gap-3 border-b pb-2"
+                    >
+                      <span className="font-rss text-cream break-all text-[15px]">
+                        <span className="text-accent">{feedTitle}</span>
+                        {" · "}
+                        {scoped.pattern}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(f.id)}
+                        className="text-chalk-dim hover:text-alert"
+                        aria-label="Remove feed domain block"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}

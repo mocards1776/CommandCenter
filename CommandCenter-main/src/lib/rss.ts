@@ -345,32 +345,50 @@ export function suggestUrlFilterValue(articleUrl: string): string {
   }
 }
 
+/** Encode a domain/path block scoped to one feed: `feed:cardinals|stltoday.com`. */
+export function encodeFeedDomainFilter(feedId: string, domainOrPath: string): string {
+  const cleaned = domainOrPath.replace(/^www\./i, "").replace(/^\/+|\/+$/g, "").toLowerCase();
+  return `feed:${feedId}|${cleaned}`;
+}
+
+export function parseFeedScopedFilter(value: string): {
+  feedId: string | null;
+  pattern: string;
+} {
+  const m = value.trim().match(/^feed:([a-z0-9-]+)\|(.+)$/i);
+  if (m) return { feedId: m[1].toLowerCase(), pattern: m[2].trim().toLowerCase() };
+  return { feedId: null, pattern: value.trim().toLowerCase() };
+}
+
 export function articleMatchesFilters(
-  item: Pick<RssFeedItem, "link" | "title" | "snippet">,
+  item: Pick<RssFeedItem, "link" | "title" | "snippet"> & { feedId?: string },
   filters: RssFilter[],
+  feedId?: string,
 ): boolean {
   if (isSoccerBleedArticle(item)) return true;
   if (!filters.length) return false;
+  const effectiveFeed = (feedId ?? item.feedId)?.toLowerCase() ?? null;
   const hayTitle = item.title.toLowerCase();
   const haySnippet = (item.snippet ?? "").toLowerCase();
   const hayLink = item.link.toLowerCase();
   for (const f of filters) {
-    const v = f.value.trim().toLowerCase();
-    if (!v) continue;
+    const { feedId: scoped, pattern } = parseFeedScopedFilter(f.value);
+    if (!pattern) continue;
+    // Feed-scoped rules only apply inside that feed (or unread rows from it).
+    if (scoped && scoped !== effectiveFeed) continue;
     if (f.kind === "phrase") {
-      if (hayTitle.includes(v) || haySnippet.includes(v)) return true;
+      if (hayTitle.includes(pattern) || haySnippet.includes(pattern)) return true;
     } else if (f.kind === "url") {
-      if (hayLink.includes(v)) return true;
+      if (hayLink.includes(pattern)) return true;
     }
   }
   return false;
 }
 
-export function applyRssFilters<T extends Pick<RssFeedItem, "link" | "title" | "snippet">>(
-  items: T[],
-  filters: RssFilter[],
-): T[] {
-  return items.filter((item) => !articleMatchesFilters(item, filters));
+export function applyRssFilters<
+  T extends Pick<RssFeedItem, "link" | "title" | "snippet"> & { feedId?: string },
+>(items: T[], filters: RssFilter[], feedId?: string): T[] {
+  return items.filter((item) => !articleMatchesFilters(item, filters, feedId ?? item.feedId));
 }
 
 export async function fetchRssFilters(): Promise<RssFilter[]> {

@@ -1,8 +1,39 @@
+import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, Loader2, Share } from "lucide-react";
 import toast from "react-hot-toast";
 import { MlbGameDetail } from "@/pages/MlbGamePage";
 import { parseEspnGameIdFromUrl, resolveMlbGamePkFromEspnEvent } from "@/lib/mlb";
+/** Client fallback when MLB gamePk can't be resolved — still show ESPN story HTML. */
+async function fetchEspnStoryFallback(eventId: string): Promise<{
+  headline: string;
+  html: string;
+  url: string;
+} | null> {
+  const res = await fetch(
+    `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${encodeURIComponent(eventId)}`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) return null;
+  const sum = (await res.json()) as {
+    article?: {
+      headline?: string;
+      description?: string;
+      story?: string;
+      links?: { web?: { href?: string } };
+    };
+  };
+  const article = sum.article;
+  const html =
+    article?.story?.trim() ||
+    (article?.description ? `<p>${article.description.replace(/^—\s*/, "")}</p>` : "");
+  if (!html || html.replace(/<[^>]+>/g, "").trim().length < 40) return null;
+  return {
+    headline: article?.headline || "Game story",
+    html,
+    url: article?.links?.web?.href || `https://www.espn.com/mlb/preview/_/gameId/${eventId}`,
+  };
+}
 
 export default function DispatchEspnGameReader({
   url,
@@ -22,6 +53,7 @@ export default function DispatchEspnGameReader({
   hasNext?: boolean;
 }) {
   const eventId = parseEspnGameIdFromUrl(url);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   const resolved = useQuery({
     queryKey: ["mlb-gamepk-from-espn", eventId],
@@ -30,6 +62,22 @@ export default function DispatchEspnGameReader({
     staleTime: 300_000,
     retry: 1,
   });
+
+  const fallback = useQuery({
+    queryKey: ["espn-story-fallback", eventId],
+    queryFn: () => fetchEspnStoryFallback(eventId!),
+    enabled: Boolean(eventId) && resolved.isSuccess && resolved.data == null,
+    staleTime: 300_000,
+  });
+
+  useEffect(() => {
+    const root = bodyRef.current;
+    if (!root || !fallback.data?.html) return;
+    root.querySelectorAll("a").forEach((a) => {
+      a.setAttribute("target", "_blank");
+      a.setAttribute("rel", "noopener noreferrer");
+    });
+  }, [fallback.data?.html]);
 
   async function shareLink() {
     const shareTitle = title || "MLB game";
@@ -96,40 +144,24 @@ export default function DispatchEspnGameReader({
     </div>
   );
 
-  if (!eventId || resolved.isError || (resolved.isSuccess && resolved.data == null)) {
+  if (!eventId) {
     return (
       <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
         {chrome}
-        <div className="space-y-3">
-          <p className="text-alert text-[13px]">
-            {!eventId
-              ? "Couldn’t find an ESPN game id in this link."
-              : "Couldn’t match this ESPN game to an MLB box score."}
-          </p>
-          <a
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[12px] underline-offset-2 hover:underline"
-          >
-            Open original <ExternalLink size={12} />
-          </a>
-          <div>
-            <button
-              type="button"
-              onClick={onBack}
-              className="font-body text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em]"
-            >
-              <ArrowLeft size={14} />
-              Back
-            </button>
-          </div>
-        </div>
+        <p className="text-alert text-[13px]">Couldn’t find an ESPN game id in this link.</p>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[12px] underline-offset-2 hover:underline"
+        >
+          Open original <ExternalLink size={12} />
+        </a>
       </div>
     );
   }
 
-  if (resolved.isPending || resolved.data == null) {
+  if (resolved.isPending) {
     return (
       <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
         {chrome}
@@ -141,10 +173,73 @@ export default function DispatchEspnGameReader({
     );
   }
 
+  if (resolved.data != null) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+        {chrome}
+        <MlbGameDetail gamePk={String(resolved.data)} />
+      </div>
+    );
+  }
+
+  // Resolve failed — still extract ESPN story client-side (no edge scrape).
+  if (fallback.isPending) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+        {chrome}
+        <div className="text-chalk flex min-h-[30vh] items-center justify-center gap-2">
+          <Loader2 size={18} className="animate-spin" />
+          Extracting preview…
+        </div>
+      </div>
+    );
+  }
+
+  if (fallback.data) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+        {chrome}
+        <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
+          <div className="border-b border-white/[0.06] px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+              Game preview
+            </p>
+            <h2 className="font-rss mt-1 text-[20px] font-semibold leading-snug text-cream sm:text-[22px]">
+              {fallback.data.headline}
+            </h2>
+          </div>
+          <div
+            ref={bodyRef}
+            className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-medium [&_a]:text-[#9ec1ff] [&_p]:my-3.5"
+            dangerouslySetInnerHTML={{ __html: fallback.data.html }}
+          />
+          <div className="px-4 pb-4">
+            <a
+              href={fallback.data.url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-chalk-dim hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em]"
+            >
+              ESPN <ExternalLink size={11} />
+            </a>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
       {chrome}
-      <MlbGameDetail gamePk={String(resolved.data)} />
+      <p className="text-alert text-[13px]">Couldn’t extract this ESPN game story.</p>
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className="text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[12px] underline-offset-2 hover:underline"
+      >
+        Open original <ExternalLink size={12} />
+      </a>
     </div>
   );
 }

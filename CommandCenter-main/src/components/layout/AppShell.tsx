@@ -12,11 +12,13 @@ import {
   Flame,
   NotebookPen,
 } from "lucide-react";
+import toast from "react-hot-toast";
 import { useAuth } from "@/lib/auth-context";
 import StarField from "@/components/StarField";
 import InstallHint from "@/components/InstallHint";
 import PagesTodayBadge from "@/components/PagesTodayBadge";
 import { useRouteManifest } from "@/hooks/useRouteManifest";
+import { getAppBuildInfo } from "@/lib/build-info";
 import {
   clearReadingSolo,
   markReadingSolo,
@@ -203,12 +205,20 @@ export default function AppShell() {
         }}
       >
         <StarField count={26} seed={3} />
-        <div className="relative z-10 flex items-center gap-3 md:gap-4">
+        <button
+          type="button"
+          onClick={() => {
+            const info = getAppBuildInfo();
+            toast(info.label, { duration: 5000, icon: "🇺🇸" });
+          }}
+          title="Show app version"
+          className="relative z-10 flex items-center gap-3 md:gap-4 text-left"
+        >
           <span className="flag-mark" />
           <h1 className="font-display text-cream text-[19px] tracking-[0.05em] md:text-[25px]">
             {brand}
           </h1>
-        </div>
+        </button>
         {onReading ? (
           <PagesTodayBadge />
         ) : (
