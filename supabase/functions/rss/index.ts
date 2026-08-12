@@ -74,15 +74,15 @@ function json(body: unknown, status = 200): Response {
 
 function decodeEntities(s: string): string {
   return s
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(new RegExp("<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>", "g"), "$1")
     .replace(/&nbsp;/gi, " ")
-    .replace(/&mdash;/gi, "—")
-    .replace(/&ndash;/gi, "–")
-    .replace(/&rsquo;/gi, "’")
-    .replace(/&lsquo;/gi, "‘")
-    .replace(/&rdquo;/gi, "”")
-    .replace(/&ldquo;/gi, "“")
-    .replace(/&hellip;/gi, "…")
+    .replace(/&mdash;/gi, "\u2014")
+    .replace(/&ndash;/gi, "\u2013")
+    .replace(/&rsquo;/gi, "\u2019")
+    .replace(/&lsquo;/gi, "\u2018")
+    .replace(/&rdquo;/gi, "\u201d")
+    .replace(/&ldquo;/gi, "\u201c")
+    .replace(/&hellip;/gi, "\u2026")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
@@ -180,10 +180,7 @@ function parseFeed(xml: string, feedUrl: string) {
     const itemLink = tag(block, "link");
     const guid = tag(block, "guid") || itemLink;
     const descHtml = tag(block, "description");
-    const contentEncoded =
-      tag(block, "content:encoded") ||
-      block.match(/<content:encoded[\s\S]*?<!\[CDATA\[([\s\S]*?)\]\]>/i)?.[1] ||
-      "";
+    const contentEncoded = tag(block, "content:encoded") || "";
     const image =
       attr(block, "media:content", "url") ||
       attr(block, "enclosure", "url") ||
@@ -399,7 +396,7 @@ function cleanMediaUrl(raw: string): string {
 function mlbVideoFallbackHtml(url: string, title?: string | null): string {
   const label = title ? stripTags(title) : "Watch on MLB.com";
   return (
-    `<p>This MLB.com item is a video clip. Playback couldn’t be embedded here.</p>` +
+    `<p>This MLB.com item is a video clip. Playback couldn't be embedded here.</p>` +
     `<p><a href="${url.replace(/"/g, "")}" target="_blank" rel="noopener noreferrer">${label}</a></p>`
   );
 }
@@ -734,7 +731,7 @@ async function fetchText(url: string, attempt = 0): Promise<string> {
   return await res.text();
 }
 
-const CARDINALS_TEAM_ID = "138";
+const CARDINALS_TEAM_ID = "24"; // ESPN team id (MLB.com uses 138)
 const CARDINALS_ABBREV = "STL";
 const SYNTHETIC_CARDINALS_WRAPS = "synthetic:cardinals-wraps";
 
@@ -826,10 +823,12 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
       } | null;
 
       const article = summary?.article;
-      if (!article?.headline || !article?.story) continue;
-
+      // Prefer full story, but still publish headline-only wraps when ESPN is thin.
+      if (!article?.headline) continue;
+      const storyHtml = article.story ?? "";
       const snippet =
-        article.description?.trim() || stripTags(article.story).slice(0, 200);
+        (article.description ?? "").replace(/^—\s*/, "").trim() ||
+        stripTags(storyHtml).slice(0, 220);
 
       items.push({
         id: eventId,
