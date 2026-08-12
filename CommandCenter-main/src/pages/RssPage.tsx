@@ -484,7 +484,7 @@ function ArticleReaderShell({
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   const article = useQuery({
-    queryKey: ["rss-article", item.link],
+    queryKey: ["rss-article-v2", item.link],
     queryFn: () => fetchRssArticle(item.link),
     staleTime: 10 * 60_000,
   });

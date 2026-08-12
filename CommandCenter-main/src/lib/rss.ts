@@ -655,7 +655,88 @@ async function fetchCardinalsWrapsFeed(): Promise<RssFeed> {
 }
 
 export function fetchRssArticle(url: string): Promise<RssArticle> {
-  return invokeRss<RssArticle>({ mode: "read", url });
+  return invokeRss<RssArticle>({ mode: "read", url }).catch(async (err) => {
+    // Edge IPs often get thin STL Today shells — decrypt in the browser as fallback.
+    if (/stltoday\.com/i.test(url)) {
+      const local = await extractStlTodayInBrowser(url).catch(() => null);
+      if (local) return local;
+    }
+    throw err;
+  });
+}
+
+/** Browser-side TownNews unlock for STL Today when the edge extract fails. */
+async function extractStlTodayInBrowser(url: string): Promise<RssArticle | null> {
+  const res = await fetch(url, {
+    headers: { Accept: "text/html" },
+    credentials: "omit",
+  });
+  if (!res.ok) return null;
+  const raw = await res.text();
+  const decodeEntities = (s: string) =>
+    s
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&mdash;/gi, "—")
+      .replace(/&rsquo;/gi, "'");
+  const decrypt = (s: string) => {
+    let out = "";
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      out +=
+        c >= 33 && c <= 126 ? String.fromCharCode(33 + ((c - 33 + 47) % 94)) : s[i];
+    }
+    return out;
+  };
+  const unlocked = raw.replace(
+    /<(p|div|section|span)([^>]*(?:class|data-type)=["'][^"']*encrypted-content[^"']*["'][^>]*)>([\s\S]*?)<\/\1>/gi,
+    (_m, tag: string, attrs: string, inner: string) => {
+      const decoded = decrypt(decodeEntities(inner));
+      const cleanAttrs = String(attrs)
+        .replace(/\bencrypted-content\b/g, "")
+        .replace(/\bsubscriber-only\b/g, "")
+        .replace(/\s*style\s*=\s*"display:\s*none"/gi, "");
+      return `<${tag}${cleanAttrs}>${decoded}</${tag}>`;
+    },
+  );
+  const parts: string[] = [];
+  const re =
+    /<(p|div|blockquote)([^>]*class="[^"]*(?:subscriber-preview|lee-article-text|article-body)[^"]*"[^>]*)>([\s\S]*?)<\/\1>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(unlocked))) {
+    const attrs = m[2] || "";
+    if (/subscriber-hide|trinity|inline-relcontent/i.test(attrs)) continue;
+    if (/subscriber-preview/i.test(attrs) && !/lee-article-text|first-p|article-body/i.test(attrs)) {
+      continue;
+    }
+    const inner = m[3].trim();
+    const text = inner.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    if (text.length < 12) continue;
+    parts.push(/^\s*<p[\s>]/i.test(inner) ? inner : `<p>${inner}</p>`);
+  }
+  if (!parts.length) return null;
+  const contentHtml = parts.join("\n");
+  const contentText = contentHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  if (contentText.length < 40) return null;
+  const title =
+    unlocked.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    null;
+  const image =
+    unlocked.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    null;
+  return {
+    url,
+    title,
+    byline: "Post-Dispatch",
+    image,
+    contentHtml,
+    contentText,
+    wordCount: contentText.split(/\s+/).filter(Boolean).length,
+  };
 }
 
 export function formatFeedDate(raw: string | null): string {
