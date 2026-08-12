@@ -130,6 +130,23 @@ export default function BuenaVistaNotebookPage() {
 
       <section className="mb-10">
         <div className="rule-head mb-4">
+          <span>Condition</span>
+        </div>
+        <ul className="grid sm:grid-cols-2 gap-3">
+          {story.condition.map((c) => (
+            <li key={c.label} className="border border-white/10 rounded-sm p-3 bg-field/60">
+              <div className="flex items-baseline justify-between gap-2 mb-1">
+                <span className="text-cream font-medium text-sm">{c.label}</span>
+                <span className="label-caps">{c.status}</span>
+              </div>
+              <p className="text-chalk text-xs leading-relaxed">{c.detail}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="mb-10">
+        <div className="rule-head mb-4">
           <span>Valuation range</span>
         </div>
         <p className="text-chalk text-sm leading-relaxed mb-4">{story.valuation.thesis}</p>
