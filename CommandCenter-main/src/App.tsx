@@ -127,6 +127,9 @@ export default function App() {
         <Toaster
           position="bottom-right"
           toastOptions={{
+            duration: 2800,
+            success: { duration: 2200 },
+            error: { duration: 4000 },
             style: {
               background: "var(--color-panel)",
               color: "var(--color-cream)",
@@ -134,6 +137,7 @@ export default function App() {
               borderRadius: "3px",
             },
           }}
+          containerStyle={{ pointerEvents: "none" }}
         />
       </AuthProvider>
     </QueryClientProvider>

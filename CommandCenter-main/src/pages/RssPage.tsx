@@ -23,6 +23,7 @@ import {
 import toast from "react-hot-toast";
 import PlayerPeek from "@/components/rss/PlayerPeek";
 import DispatchEspnGameReader from "@/components/rss/DispatchEspnGameReader";
+import NlCentralStandingsCard from "@/components/rss/NlCentralStandingsCard";
 import {
   RSS_FEEDS,
   addDedupeKeepHost,
@@ -33,6 +34,7 @@ import {
   dedupeArticles,
   encodeFeedDomainFilter,
   loadDedupeKeepHosts,
+  markQuotesInHtml,
   parseFeedScopedFilter,
   partitionDedupedArticles,
   deleteRssFilter,
@@ -47,6 +49,7 @@ import {
   markRssReadMany,
   markRssUnread,
   removeDedupeKeepHost,
+  splitTextByQuotes,
   suggestUrlFilterValue,
   updateRssHighlightNote,
   type RssFeedId,
@@ -555,6 +558,19 @@ function ArticleReaderShell({
     return () => window.removeEventListener("keydown", onKey);
   }, [hasPrev, hasNext, onPrev, onNext, peekPlayerId, pendingQuote, lightboxSrc]);
 
+  const title = article.data?.title || item.title;
+  const byline = article.data?.byline || item.author;
+  const image = article.data?.image || item.image;
+  const quoteTexts = useMemo(
+    () => (highlights.data ?? []).map((h) => h.quoteText).filter(Boolean),
+    [highlights.data],
+  );
+  const titleParts = useMemo(() => splitTextByQuotes(title, quoteTexts), [title, quoteTexts]);
+  const displayHtml = useMemo(() => {
+    const base = linkedHtml || article.data?.contentHtml || "";
+    return markQuotesInHtml(base, quoteTexts);
+  }, [linkedHtml, article.data?.contentHtml, quoteTexts]);
+
   // Click images in article body → fullscreen lightbox.
   useEffect(() => {
     const root = articleBodyRef.current;
@@ -570,7 +586,7 @@ function ArticleReaderShell({
     };
     root.addEventListener("click", onImgClick);
     return () => root.removeEventListener("click", onImgClick);
-  }, [linkedHtml, article.data?.contentHtml]);
+  }, [displayHtml]);
 
   // Link any MLB player names → in-app player peek; stylize tweet cards.
   useEffect(() => {
@@ -617,7 +633,7 @@ function ArticleReaderShell({
       if (v.readyState >= 2) play();
       else v.addEventListener("loadeddata", play, { once: true });
     });
-  }, [linkedHtml, article.data?.contentHtml]);
+  }, [displayHtml]);
 
   const createMut = useMutation({
     mutationFn: (note: string) =>
@@ -632,7 +648,9 @@ function ArticleReaderShell({
       setPendingQuote(null);
       void qc.invalidateQueries({ queryKey: ["rss-highlights", item.link] });
       void qc.invalidateQueries({ queryKey: ["rss-highlights-all"] });
-      toast.success("Highlight saved");
+      const toastId = toast.success("Highlight saved", { duration: 2000 });
+      // Belt-and-suspenders: force-clear even if the toaster pause timer stalls.
+      window.setTimeout(() => toast.dismiss(toastId), 2400);
       setShowNotes(true);
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Could not save"),
@@ -691,10 +709,6 @@ function ArticleReaderShell({
     onBack: leave,
     onNext: hasNext ? onNext : null,
   });
-
-  const title = article.data?.title || item.title;
-  const byline = article.data?.byline || item.author;
-  const image = article.data?.image || item.image;
 
   async function shareArticle() {
     try {
@@ -771,7 +785,15 @@ function ArticleReaderShell({
             {article.data?.wordCount ? ` · ${readingMinutes(article.data.wordCount)}` : ""}
           </div>
           <h2 className="text-cream text-[32px] leading-[1.15] font-semibold md:text-[40px]">
-            {title}
+            {titleParts.map((part, i) =>
+              part.highlighted ? (
+                <mark key={i} className="rss-hl">
+                  {part.text}
+                </mark>
+              ) : (
+                <span key={i}>{part.text}</span>
+              ),
+            )}
           </h2>
           <a
             href={item.link}
@@ -784,7 +806,7 @@ function ArticleReaderShell({
           </a>
         </header>
 
-        {image && !(linkedHtml || article.data?.contentHtml || "").includes("<video") ? (
+        {image && !displayHtml.includes("<video") ? (
           <button
             type="button"
             onClick={() => setLightboxSrc(image)}
@@ -824,7 +846,7 @@ function ArticleReaderShell({
               if (m) setPeekPlayerId(Number(m[1]));
             }}
             className="rss-reader max-w-none text-[20px] leading-[1.8] text-[#eceef4] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_a.rss-player-link]:text-accent [&_a.rss-player-link]:decoration-accent/40 [&_a.rss-player-link]:underline-offset-[3px] [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5 [&_video.rss-video]:my-6 [&_video.rss-video]:aspect-video [&_video.rss-video]:w-full [&_video.rss-video]:rounded-lg [&_video.rss-video]:bg-black [&_figcaption]:hidden [&_figure]:my-6"
-            dangerouslySetInnerHTML={{ __html: linkedHtml || article.data?.contentHtml || "" }}
+            dangerouslySetInnerHTML={{ __html: displayHtml }}
           />
         )}
 
@@ -873,6 +895,9 @@ function ArticleReaderShell({
             ))}
           </ul>
         )}
+        <div className="hidden lg:block">
+          <NlCentralStandingsCard />
+        </div>
       </aside>
 
       {pendingQuote ? (

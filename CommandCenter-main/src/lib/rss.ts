@@ -328,6 +328,115 @@ export function isSoccerBleedArticle(
   return false;
 }
 
+/**
+ * MLB Film Room / clip pages (`/video/…`), not written mlb.com news.
+ * Cardinals Wire syndicates these heavily; we hide them only in that feed.
+ */
+export function isMlbFilmRoomArticle(item: Pick<RssFeedItem, "link" | "title">): boolean {
+  try {
+    const u = new URL(item.link);
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+    if (host !== "mlb.com" && !host.endsWith(".mlb.com")) return false;
+    // /video/slug or /cardinals/video/slug — not /news/…
+    return /(?:^|\/)video(?:\/|$)/i.test(u.pathname);
+  } catch {
+    return /mlb\.com\/(?:[a-z-]+\/)?video\//i.test(item.link);
+  }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Collapse whitespace the same way selection capture does. */
+export function normalizeHighlightQuote(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+/** Build a regex that matches a saved quote across ordinary HTML whitespace. */
+function quoteMatchPattern(quote: string): RegExp | null {
+  const normalized = normalizeHighlightQuote(quote);
+  if (normalized.length < 2) return null;
+  const parts = normalized.split(" ").map(escapeRegExp).filter(Boolean);
+  if (!parts.length) return null;
+  return new RegExp(parts.join("\\s+"), "gi");
+}
+
+/**
+ * Wrap saved highlight quotes in `<mark class="rss-hl">` inside article HTML.
+ * Operates only on text nodes (between tags) so attributes/links stay intact.
+ */
+export function markQuotesInHtml(html: string, quotes: string[]): string {
+  const patterns = [...new Set(quotes.map(normalizeHighlightQuote).filter((q) => q.length >= 2))]
+    .sort((a, b) => b.length - a.length)
+    .map(quoteMatchPattern)
+    .filter((re): re is RegExp => Boolean(re));
+  if (!html || !patterns.length) return html;
+
+  const wrapUnmarked = (text: string, re: RegExp): string =>
+    text
+      .split(/(<mark class="rss-hl">[\s\S]*?<\/mark>)/g)
+      .map((chunk) => {
+        if (!chunk || chunk.startsWith('<mark class="rss-hl">')) return chunk;
+        re.lastIndex = 0;
+        return chunk.replace(re, (match) => `<mark class="rss-hl">${match}</mark>`);
+      })
+      .join("");
+
+  return html
+    .split(/(<[^>]+>)/g)
+    .map((part) => {
+      if (!part || part.startsWith("<")) return part;
+      let out = part;
+      for (const re of patterns) out = wrapUnmarked(out, re);
+      return out;
+    })
+    .join("");
+}
+
+/** Split plain text into highlighted / plain segments for React title rendering. */
+export function splitTextByQuotes(
+  text: string,
+  quotes: string[],
+): { text: string; highlighted: boolean }[] {
+  const patterns = [...new Set(quotes.map(normalizeHighlightQuote).filter((q) => q.length >= 2))]
+    .sort((a, b) => b.length - a.length)
+    .map(quoteMatchPattern)
+    .filter((re): re is RegExp => Boolean(re));
+  if (!text || !patterns.length) return [{ text, highlighted: false }];
+
+  type Hit = { start: number; end: number };
+  const hits: Hit[] = [];
+  for (const re of patterns) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) != null) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (!hits.some((h) => start < h.end && end > h.start)) {
+        hits.push({ start, end });
+      }
+      if (m[0].length === 0) re.lastIndex += 1;
+    }
+  }
+  hits.sort((a, b) => a.start - b.start);
+  if (!hits.length) return [{ text, highlighted: false }];
+
+  const parts: { text: string; highlighted: boolean }[] = [];
+  let cursor = 0;
+  for (const hit of hits) {
+    if (hit.start > cursor) {
+      parts.push({ text: text.slice(cursor, hit.start), highlighted: false });
+    }
+    parts.push({ text: text.slice(hit.start, hit.end), highlighted: true });
+    cursor = hit.end;
+  }
+  if (cursor < text.length) {
+    parts.push({ text: text.slice(cursor), highlighted: false });
+  }
+  return parts;
+}
+
 /** Prefer a sectional path over the whole host when blacklisting from a row. */
 export function suggestUrlFilterValue(articleUrl: string): string {
   try {
@@ -366,8 +475,10 @@ export function articleMatchesFilters(
   feedId?: string,
 ): boolean {
   if (isSoccerBleedArticle(item)) return true;
-  if (!filters.length) return false;
   const effectiveFeed = (feedId ?? item.feedId)?.toLowerCase() ?? null;
+  // Wire-only: drop MLB Film Room clips; keep mlb.com/news and other hosts.
+  if (effectiveFeed === "cardinals-wire" && isMlbFilmRoomArticle(item)) return true;
+  if (!filters.length) return false;
   const hayTitle = item.title.toLowerCase();
   const haySnippet = (item.snippet ?? "").toLowerCase();
   const hayLink = item.link.toLowerCase();

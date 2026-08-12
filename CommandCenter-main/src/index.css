@@ -532,6 +532,32 @@
   .rss-reader .rss-tweet-card__foot a:hover {
     text-decoration: underline;
   }
+
+  /* Saved highlight quotes — distinct from surrounding article text. */
+  .rss-reader mark.rss-hl {
+    background: rgba(217, 81, 92, 0.28);
+    color: #fff6f0;
+    border-radius: 2px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    padding: 0.05em 0.12em;
+  }
+}
+
+mark.rss-hl {
+  background: rgba(217, 81, 92, 0.28);
+  color: #fff6f0;
+  border-radius: 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  padding: 0.05em 0.12em;
+}
+
+/* Toasts are informational only. Blocking pointer events prevents react-hot-toast
+   from pausing on hover/touch (which can leave "Highlight saved" stuck on mobile). */
+[data-rht-toaster],
+[data-rht-toaster] * {
+  pointer-events: none !important;
 }
 
 /* iOS Safari zooms the page whenever a focused input has a font-size below
@@ -551,5 +577,15 @@
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /* react-hot-toast relies on enter/exit animations to finish removing toasts.
+     Keep its timing intact so "Highlight saved" (and others) actually clear. */
+  [data-rht-toaster],
+  [data-rht-toaster] *,
+  [data-rht-toaster] *::before,
+  [data-rht-toaster] *::after {
+    animation-duration: revert !important;
+    transition-duration: revert !important;
   }
 }

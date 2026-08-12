@@ -2,6 +2,17 @@
 
 ---
 
+## Dispatch reader polish — August 12, 2026
+
+- “Highlight saved” toast now auto-dismisses (no hover/touch pause; reduced-motion
+  no longer freezes react-hot-toast exit).
+- Saved highlights are painted in the article body (and title) with a red mark.
+- Large-screen notes column includes a compact **NL Central** standings table
+  that scrolls with the page.
+- Cardinals Wire auto-hides MLB Film Room `/video/` clips; `mlb.com/news` stays.
+
+---
+
 ## Hide City SC soccer bleed — August 11, 2026
 
 - Auto-hide clear MLS / City SC stories that leak into the STL Today Cardinals
