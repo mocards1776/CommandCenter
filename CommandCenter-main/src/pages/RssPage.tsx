@@ -342,15 +342,17 @@ function ReaderView({
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [item.link]);
 
-  // iOS edge-swipe / browser back returns to the feed list.
+  // Browser / iOS back: one history entry for the reader; article changes replace it
+  // so back always returns to the feed list (not the previous article).
   useEffect(() => {
     const st = (history.state as { dispatchArticle?: string } | null) ?? {};
-    if (st.dispatchArticle !== item.link) {
+    if (!st.dispatchArticle) {
       history.pushState({ ...st, dispatchArticle: item.link }, "", window.location.href);
+    } else if (st.dispatchArticle !== item.link) {
+      history.replaceState({ ...st, dispatchArticle: item.link }, "", window.location.href);
     }
-    const onPop = (e: PopStateEvent) => {
-      const next = (e.state as { dispatchArticle?: string } | null) ?? {};
-      if (!next.dispatchArticle) onBack();
+    const onPop = () => {
+      onBack();
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -496,9 +498,10 @@ function ReaderView({
   const swipe = useSwipeNav({
     enabled: !pendingQuote && peekPlayerId == null,
     onBack: () => {
+      // Leave the reader immediately — don't walk stacked article history.
+      onBack();
       const st = (history.state as { dispatchArticle?: string } | null) ?? {};
       if (st.dispatchArticle) history.back();
-      else onBack();
     },
     onNext: hasNext ? onNext : null,
   });
@@ -518,9 +521,9 @@ function ReaderView({
           <button
             type="button"
             onClick={() => {
+              onBack();
               const st = (history.state as { dispatchArticle?: string } | null) ?? {};
               if (st.dispatchArticle) history.back();
-              else onBack();
             }}
             className="font-body text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] transition-colors"
           >

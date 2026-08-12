@@ -329,9 +329,9 @@ function sliceBalancedDiv(html: string, openRe: RegExp): string | null {
   return null;
 }
 
-function extractFragment(html: string): string | null {
+function extractFragment(html: string, pageUrl = ""): string | null {
   // MLB Film Room / video pages — prefer mp4 autoplay card over chrome soup.
-  const mlbVideo = extractMlbVideoFragment(html);
+  const mlbVideo = extractMlbVideoFragment(html, pageUrl);
   if (mlbVideo) return mlbVideo;
 
   const townNews = extractTownNewsParagraphs(html);
@@ -383,26 +383,70 @@ function extractFragment(html: string): string | null {
   return best.length > 200 ? best : null;
 }
 
+function isMlbVideoUrl(url: string): boolean {
+  return /mlb\.com/i.test(url) && /\/video\//i.test(url);
+}
+
+function cleanMediaUrl(raw: string): string {
+  return raw
+    .replace(/\\u002F/gi, "/")
+    .replace(/\\\//g, "/")
+    .replace(/\\+$/g, "")
+    .replace(/&amp;/g, "&")
+    .trim();
+}
+
+function mlbVideoFallbackHtml(url: string, title?: string | null): string {
+  const label = title ? stripTags(title) : "Watch on MLB.com";
+  return (
+    `<p>This MLB.com item is a video clip. Playback couldn’t be embedded here.</p>` +
+    `<p><a href="${url.replace(/"/g, "")}" target="_blank" rel="noopener noreferrer">${label}</a></p>`
+  );
+}
+
 /** Pull a clean autoplay video card out of MLB.com Film Room / clip pages. */
-function extractMlbVideoFragment(html: string): string | null {
-  const mp4 =
-    html.match(/https:\/\/darkroom-clips\.mlb\.com\/[0-9a-f-]+\.mp4/i)?.[0] ||
-    html.match(/https:\/\/mlb-cuts-diamond\.mlb\.com\/[^"'\s]+\.mp4/i)?.[0] ||
-    html.match(/https:\/\/[^"'\s]+mp4Avc[^"'\s]*\.mp4/i)?.[0] ||
-    html.match(/"(https:\/\/[^"]+\.mp4)"/i)?.[1] ||
-    html.match(/content=["'](https:\/\/[^"']+\.mp4)["']/i)?.[1] ||
+function extractMlbVideoFragment(html: string, pageUrl = ""): string | null {
+  const diamondMatches = [
+    ...html.matchAll(/https:\/\/mlb-cuts-diamond\.mlb\.com\/[^"'\\\s>]+\.mp4/gi),
+  ].map((m) => cleanMediaUrl(m[0]));
+  // Prefer mid-bitrate diamond cuts when several qualities are present.
+  const diamond =
+    diamondMatches.find((u) => /_4000K\.mp4/i.test(u)) ||
+    diamondMatches.find((u) => /_2500K\.mp4/i.test(u)) ||
+    diamondMatches[0] ||
     null;
 
-  const ogVideo =
-    html.match(/<meta[^>]+property=["']og:video(?::url)?["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
-    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:video(?::url)?["']/i)?.[1] ||
+  const mp4 =
+    diamond ||
+    (html.match(/https:\/\/darkroom-clips\.mlb\.com\/[0-9a-f-]+\.mp4/i)?.[0]
+      ? cleanMediaUrl(html.match(/https:\/\/darkroom-clips\.mlb\.com\/[0-9a-f-]+\.mp4/i)![0])
+      : null) ||
+    (html.match(/https:\/\/[^"'\\\s>]+mp4Avc[^"'\\\s>]*\.mp4/i)?.[0]
+      ? cleanMediaUrl(html.match(/https:\/\/[^"'\\\s>]+mp4Avc[^"'\\\s>]*\.mp4/i)![0])
+      : null) ||
+    (html.match(/"mp4Avc"\s*:\s*"((?:\\.|[^"\\])*)"/i)?.[1]
+      ? cleanMediaUrl(html.match(/"mp4Avc"\s*:\s*"((?:\\.|[^"\\])*)"/i)![1])
+      : null) ||
+    (html.match(/"(https:\/\/[^"]+\.mp4)"/i)?.[1]
+      ? cleanMediaUrl(html.match(/"(https:\/\/[^"]+\.mp4)"/i)![1])
+      : null) ||
+    (html.match(/content=["'](https:\/\/[^"']+\.mp4)["']/i)?.[1]
+      ? cleanMediaUrl(html.match(/content=["'](https:\/\/[^"']+\.mp4)["']/i)![1])
+      : null) ||
     null;
+
+  const ogVideoRaw =
+    html.match(/<meta[^>]+property=["']og:video(?::secure_url|:url)?["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:video(?::secure_url|:url)?["']/i)?.[1] ||
+    null;
+  const ogVideo = ogVideoRaw ? cleanMediaUrl(ogVideoRaw) : null;
 
   const src = mp4 || (ogVideo && /\.mp4(\?|$)/i.test(ogVideo) ? ogVideo : null);
   if (!src) return null;
 
   const isVideoPage =
-    /film.?room|darkroom-clips|mp4Avc|HTTP_CLOUD_WIRED|og:video/i.test(html) ||
+    isMlbVideoUrl(pageUrl) ||
+    /film.?room|darkroom-clips|mlb-cuts-diamond|mp4Avc|HTTP_CLOUD_WIRED|og:video/i.test(html) ||
     /mlb\.com\/[^"'\s]*\/video\//i.test(html) ||
     /mlb\.com\/video\//i.test(html);
   if (!isVideoPage && !mp4) return null;
@@ -667,15 +711,24 @@ function pageMeta(html: string) {
   };
 }
 
-async function fetchText(url: string): Promise<string> {
+async function fetchText(url: string, attempt = 0): Promise<string> {
   const res = await fetch(url, {
     headers: {
       "User-Agent": UA,
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      ...(isMlbVideoUrl(url) || /mlb\.com/i.test(url)
+        ? { Referer: "https://www.mlb.com/" }
+        : {}),
     },
     redirect: "follow",
   });
   if (!res.ok) {
+    // Soft retry for rate limits / transient CDN failures.
+    if ((res.status === 429 || res.status === 503 || res.status === 502) && attempt < 2) {
+      await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
+      return fetchText(url, attempt + 1);
+    }
     throw new Error("Upstream " + res.status + " for " + url);
   }
   return await res.text();
@@ -706,10 +759,30 @@ async function handleRead(url: string) {
     });
   }
 
-  const rawHtml = await fetchText(url);
+  let rawHtml = "";
+  try {
+    rawHtml = await fetchText(url);
+  } catch (err) {
+    // MLB video pages often 403/502 from edge IPs — return a soft watch link instead of 502.
+    if (isMlbVideoUrl(url)) {
+      const contentHtml = sanitizeHtml(mlbVideoFallbackHtml(url));
+      const contentText = stripTags(contentHtml);
+      return json({
+        url,
+        title: null,
+        byline: "MLB.com",
+        image: null,
+        contentHtml,
+        contentText,
+        wordCount: contentText.split(/\s+/).filter(Boolean).length,
+      });
+    }
+    throw err;
+  }
+
   const html = unlockEncryptedContent(stripNoise(rawHtml));
   const meta = pageMeta(html);
-  let frag = extractFragment(html);
+  let frag = extractFragment(html, url);
 
   // Soft fallback: og:description / meta description when the body is SPA-only.
   if (!frag) {
@@ -717,8 +790,9 @@ async function handleRead(url: string) {
       html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
       html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
       null;
-    const mlbVideo = extractMlbVideoFragment(html);
+    const mlbVideo = extractMlbVideoFragment(html, url);
     if (mlbVideo) frag = mlbVideo;
+    else if (isMlbVideoUrl(url)) frag = mlbVideoFallbackHtml(url, meta.title);
     else if (desc && stripTags(desc).length > 40) {
       frag = `<p>${desc}</p><p><a href="${url}">Open original article</a></p>`;
     }
@@ -729,7 +803,7 @@ async function handleRead(url: string) {
   // Video pages can be short on text but still valid.
   const contentText = stripTags(contentHtml);
   const hasVideo = /<video\b/i.test(contentHtml);
-  if (contentText.length < 80 && !hasVideo) {
+  if (contentText.length < 80 && !hasVideo && !isMlbVideoUrl(url)) {
     return json({ error: "Extracted text too short", url }, 422);
   }
   // Prefer no hero image when the body already embeds a video (Film Room).
