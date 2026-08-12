@@ -1,6 +1,6 @@
 import { supabase, requireUserId } from "./supabase";
 
-/** Configured feeds — Missouri Scout, STL Today Cardinals, Cardinals wire. */
+/** Configured feeds — Missouri Scout, STL Today Cardinals, Cardinals wire, game wraps. */
 export const RSS_FEEDS = [
   {
     id: "moscout",
@@ -19,6 +19,12 @@ export const RSS_FEEDS = [
     title: "Cardinals Wire",
     short: "Wire",
     url: "https://rss.app/feeds/tdKZI96hgDCSMd6o.xml",
+  },
+  {
+    id: "cardinals-wraps",
+    title: "Cardinals wraps",
+    short: "Wraps",
+    url: "synthetic:cardinals-wraps",
   },
 ] as const;
 
@@ -486,7 +492,113 @@ async function invokeRss<T>(body: Record<string, string>): Promise<T> {
 }
 
 export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFeed> {
+  if (feedUrl === "synthetic:cardinals-wraps") {
+    return fetchCardinalsWrapsFeed();
+  }
   return invokeRss<RssFeed>({ mode: "feed", feedUrl });
+}
+
+/** Client-side Cardinals game-recap feed (ESPN is reachable from the browser). */
+async function fetchCardinalsWrapsFeed(): Promise<RssFeed> {
+  const items: RssFeedItem[] = [];
+  const seen = new Set<string>();
+  const today = new Date();
+
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const dateStr = `${y}${m}${day}`;
+    try {
+      const boardRes = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${dateStr}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!boardRes.ok) continue;
+      const board = (await boardRes.json()) as {
+        events?: {
+          id?: string;
+          date?: string;
+          competitions?: {
+            id?: string;
+            status?: { type?: { state?: string; completed?: boolean } };
+            competitors?: {
+              team?: { id?: string; abbreviation?: string };
+            }[];
+          }[];
+          status?: { type?: { state?: string; completed?: boolean } };
+        }[];
+      };
+
+      for (const event of board.events ?? []) {
+        const comp = event.competitions?.[0];
+        if (!comp) continue;
+        const isStl = (comp.competitors ?? []).some(
+          (c) => c.team?.abbreviation === "STL" || c.team?.id === "24",
+        );
+        if (!isStl) continue;
+        const status = comp.status?.type ?? event.status?.type;
+        if (!(status?.state === "post" || status?.completed)) continue;
+        const eventId = event.id ?? comp.id;
+        if (!eventId || seen.has(eventId)) continue;
+        seen.add(eventId);
+
+        const sumRes = await fetch(
+          `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${eventId}`,
+          { headers: { Accept: "application/json" } },
+        );
+        if (!sumRes.ok) continue;
+        const sum = (await sumRes.json()) as {
+          article?: {
+            headline?: string;
+            description?: string;
+            story?: string;
+            images?: { url?: string }[];
+          };
+        };
+        const article = sum.article;
+        if (!article?.headline) continue;
+        const storyText = (article.story ?? "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        const snippet =
+          (article.description ?? "").replace(/^—\s*/, "").trim() ||
+          storyText.slice(0, 220);
+        const link = `https://www.espn.com/mlb/recap/_/gameId/${eventId}`;
+        const publishedAt =
+          event.date ||
+          `${y}-${m}-${day}T17:00:00Z`;
+        items.push({
+          id: `wrap-${eventId}`,
+          title: article.headline,
+          link,
+          author: "ESPN",
+          publishedAt,
+          image: article.images?.[0]?.url ?? null,
+          snippet,
+        });
+      }
+    } catch {
+      /* skip day */
+    }
+  }
+
+  items.sort((a, b) => {
+    const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
+    const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
+    return db - da;
+  });
+
+  return {
+    title: "Cardinals wraps",
+    description: "Recent St. Louis Cardinals game recaps from the sports app / ESPN",
+    link: "https://www.espn.com/mlb/",
+    feedUrl: "synthetic:cardinals-wraps",
+    items,
+  };
 }
 
 export function fetchRssArticle(url: string): Promise<RssArticle> {

@@ -733,7 +733,7 @@ async function fetchText(url: string, attempt = 0): Promise<string> {
   return await res.text();
 }
 
-const CARDINALS_TEAM_ID = "138";
+const CARDINALS_TEAM_ID = "24"; // ESPN team id (MLB.com uses 138)
 const CARDINALS_ABBREV = "STL";
 const SYNTHETIC_CARDINALS_WRAPS = "synthetic:cardinals-wraps";
 

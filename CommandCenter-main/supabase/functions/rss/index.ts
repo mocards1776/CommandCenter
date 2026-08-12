@@ -17,7 +17,7 @@ const CORS: Record<string, string> = {
 };
 
 const UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const UA = "Mozilla/5.0 (compatible; CommandCenterRSS/1.0)";
 
 const DEFAULT_FEED = "https://rss.app/feeds/nG7WGKJTs5LOQjxd.xml";
 
@@ -734,7 +734,7 @@ async function fetchText(url: string, attempt = 0): Promise<string> {
   return await res.text();
 }
 
-const CARDINALS_TEAM_ID = "138";
+const CARDINALS_TEAM_ID = "24"; // ESPN team id (MLB.com uses 138)
 const CARDINALS_ABBREV = "STL";
 const SYNTHETIC_CARDINALS_WRAPS = "synthetic:cardinals-wraps";
 
@@ -826,10 +826,12 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
       } | null;
 
       const article = summary?.article;
-      if (!article?.headline || !article?.story) continue;
-
+      // Prefer full story, but still publish headline-only wraps when ESPN is thin.
+      if (!article?.headline) continue;
+      const storyHtml = article.story ?? "";
       const snippet =
-        article.description?.trim() || stripTags(article.story).slice(0, 200);
+        (article.description ?? "").replace(/^—\s*/, "").trim() ||
+        stripTags(storyHtml).slice(0, 220);
 
       items.push({
         id: eventId,
