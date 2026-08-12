@@ -13,7 +13,6 @@ export type StoryComp = {
   priceLabel: string;
   date?: string;
   kind: "sold" | "estimate" | "active";
-  /** Rough map offset from subject, in percent of the local map (x right, y down). */
   map?: { x: number; y: number };
 };
 
@@ -23,6 +22,16 @@ export type ConditionItem = {
   detail: string;
 };
 
+export type NetScenario = {
+  label: string;
+  salePrice: number;
+  realtorFeePct: number;
+  realtorFee: number;
+  estimatedNet: number;
+  note: string;
+  highlight?: boolean;
+};
+
 export type StoryChapter = {
   id: string;
   eyebrow: string;
@@ -30,24 +39,25 @@ export type StoryChapter = {
   body: string;
   bullets?: string[];
   stat?: { value: string; label: string };
-  visual?: "map" | "condition" | "schools" | "none";
+  visual?: "map" | "condition" | "schools" | "nets" | "none";
 };
 
 export type ClientStory = {
   slug: string;
   metaTitle: string;
   brand: string;
+  brandTag: string;
   address: string;
   cityLine: string;
   heroLine: string;
   support: string;
-  /** WGS84 for map embeds */
   geo: { lat: number; lng: number; label: string };
   facts: { label: string; value: string }[];
   condition: ConditionItem[];
   schools: { name: string; grades: string; rating: number; miles: string }[];
   chapters: StoryChapter[];
   comps: StoryComp[];
+  netScenarios: NetScenario[];
   valuation: {
     low: number;
     mid: number;
@@ -55,6 +65,7 @@ export type ClientStory = {
     offer: number;
     zest: number;
     thesis: string;
+    recommendation: string;
   };
   notebook: {
     title: string;
@@ -67,16 +78,22 @@ export type ClientStory = {
 const money = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
+/** Round to nearest dollar for fee math shown to clients. */
+function fee(price: number, pct: number) {
+  return Math.round(price * pct);
+}
+
 export const STORIES: Record<string, ClientStory> = {
   "1715-e-buena-vista": {
     slug: "1715-e-buena-vista",
-    metaTitle: "1715 E. Buena Vista — Offer Brief",
-    brand: "Command Center",
+    metaTitle: "1715 E. Buena Vista — Market Brief",
+    brand: "Mark Turner Market Research",
+    brandTag: "Independent housing brief",
     address: "1715 E. Buena Vista St",
-    cityLine: "Springfield, MO 65804 · Ravenwood / Southside",
-    heroLine: "$230,000 as-is — with a new roof, open-concept half, and recent HVAC.",
+    cityLine: "Springfield, MO 65804 · Ravenwood",
+    heroLine: "The $230,000 offer is well below what this house should bring.",
     support:
-      "1976 ranch, 3 bed / 2 bath, 2,154 sq ft on a third of an acre. Tree damage forced a brand-new roof and rebuilt roughly half the house into open concept. Half the exterior has new siding. HVAC likely under ten years.",
+      "A 1976 ranch with a brand-new roof, roughly half the home rebuilt open-concept, half new siding, and HVAC likely under ten years old. Nearby sales and estimates point much higher than this bid.",
     geo: {
       lat: 37.1323354,
       lng: -93.2652218,
@@ -84,11 +101,11 @@ export const STORIES: Record<string, ClientStory> = {
     },
     facts: [
       { label: "Beds / baths", value: "3 / 2" },
-      { label: "Living area", value: "2,154 sq ft" },
-      { label: "Lot", value: "0.30 ac" },
-      { label: "Built", value: "1976 · ranch" },
+      { label: "Size", value: "2,154 sq ft" },
+      { label: "Lot", value: "0.30 acre" },
+      { label: "Built", value: "1976 ranch" },
       { label: "Roof", value: "Brand new" },
-      { label: "HVAC", value: "< 10 years" },
+      { label: "HVAC", value: "Under ~10 yrs" },
       { label: "Interior", value: "~½ open concept" },
       { label: "Siding", value: "~½ new" },
     ],
@@ -96,32 +113,32 @@ export const STORIES: Record<string, ClientStory> = {
       {
         label: "Roof",
         status: "new",
-        detail: "Replaced after a tree fell on the house — full new roof, not a patch.",
+        detail: "Full new roof after a tree hit the house — a major cost already paid.",
       },
       {
         label: "Open-concept half",
         status: "new",
-        detail: "Roughly half the home rebuilt open and modern after the tree damage.",
+        detail: "About half the home was rebuilt open and modern after that damage.",
       },
       {
         label: "Siding",
         status: "partial",
-        detail: "About half the exterior has new siding; the rest is original.",
+        detail: "Roughly half the outside has new siding.",
       },
       {
         label: "HVAC",
         status: "recent",
-        detail: "Likely under ten years old — not a 1976 furnace waiting to die.",
+        detail: "Heating and cooling look recent — likely under ten years old.",
       },
       {
-        label: "Unrenovated half",
+        label: "Other half",
         status: "original",
-        detail: "Remaining rooms still carry 1970s layout and finishes — the residual work.",
+        detail: "The untouched side still has older layout and finishes.",
       },
       {
-        label: "Crawl / systems",
+        label: "Crawl space",
         status: "original",
-        detail: "Crawl-space ranch: moisture, plumbing, and panel quirks are the leftover risks.",
+        detail: "Still a crawl-space ranch — worth a careful look, but not a reason to gift $50k+.",
       },
     ],
     schools: [
@@ -132,65 +149,71 @@ export const STORIES: Record<string, ClientStory> = {
     chapters: [
       {
         id: "place",
-        eyebrow: "Location",
-        title: "Ravenwood, south Springfield — quiet and convenient.",
+        eyebrow: "Where it is",
+        title: "A quiet Ravenwood street with strong schools.",
         body:
-          "E. Buena Vista sits in Ravenwood off Republic Road: mature trees, car-dependent but calm, Kickapoo feeders. The lot is about a third of an acre with a circular drive. This is not a flip-street — it’s a hold neighborhood.",
+          "This home sits in Ravenwood on Springfield’s south side. Homes here tend to hold value. Schools nearby rate well. The lot is about a third of an acre with mature trees.",
         visual: "map",
         bullets: [
-          "Parcel · Lot 63, Ravenwood Sub",
-          "Walk Score 43 · Noise score ~9.7/10",
-          "2025 taxes $1,990 · HOA $2/mo",
+          "65804 homes have been selling in roughly ~10 days",
+          "Typical sale price in the zip lately: around $291,000",
+          "Yearly tax bill: about $1,990",
         ],
       },
       {
         id: "condition",
-        eyebrow: "Condition",
-        title: "The expensive surprises already happened.",
+        eyebrow: "What was fixed",
+        title: "The big-ticket items are already done.",
         body:
-          "A tree took out part of the house. Insurance-era work left a brand-new roof, roughly half the floor plan rebuilt as open concept, and about half the siding replaced. HVAC is probably under a decade old. What’s left is unfinished potential — not a full gut.",
+          "A tree damaged the house. That led to a brand-new roof and a rebuild of about half the home into open concept. About half the siding is new. The heating and cooling system looks recent. Buyers usually pay more for that kind of work — not less.",
         visual: "condition",
       },
       {
-        id: "market",
-        eyebrow: "The zip",
-        title: "65804 still clears in about ten days.",
+        id: "worth",
+        eyebrow: "What it’s worth",
+        title: "A fair range is about $275,000 to $345,000.",
         body:
-          "July 2026 Zillow read: median sale near $291k, ~10 days on market, sale-to-list around 95%. Updated product on good streets gets chased. An off-market as-is write at $230k skips the retail scrum.",
-        stat: { value: "$291k", label: "65804 median sale (Jul 2026)" },
+          "Online estimates put the home near $305,000. Similar homes on the same street read about $310,000–$320,000. Updated homes nearby have sold higher. Given the new roof and remodel work, a mid-point near $310,000 is reasonable.",
+        stat: { value: "$310k", label: "Best mid-point estimate" },
         visual: "schools",
       },
       {
         id: "offer",
         eyebrow: "The offer",
-        title: "Twenty-five points under the model — with systems already paid.",
+        title: "$230,000 is a low bid — even before realtor fees.",
         body:
-          "Zestimate sits near $305k ($277–$329k). Same-street peers read ~$310–$320k. At $230k you’re buying ~$107/sq ft against a ~$142/sq ft model — and you are not starting from a dead roof or dead HVAC.",
-        stat: { value: "−24.5%", label: "Offer vs Zestimate" },
+          "Yes, this offer skips realtor commissions. That saves roughly $15,000–$19,000 compared with a normal listing. But the gap between $230,000 and a fair sale is much larger than that savings. You would still come out behind.",
+        stat: { value: "−$80k", label: "Offer vs ~$310k mid-point" },
+        visual: "nets",
       },
       {
         id: "call",
-        eyebrow: "Call",
-        title: "Take $230k. The haircut still dwarfs the leftovers.",
+        eyebrow: "Bottom line",
+        title: "Do not take $230,000.",
         body:
-          "Even if the original half needs paint, floors, bath refresh, and crawl work, that stack is usually far smaller than the $50k–$75k embedded in this price. Tree damage already forced the big-ticket spend.",
+          "Unless you need to sell in a hurry for personal reasons, this price leaves too much money on the table. A stronger private sale, or a normal listing after realtor fees, should still net tens of thousands more.",
+        bullets: [
+          "Counter toward the mid-$200,000s or higher",
+          "Or list near $300,000–$320,000 and negotiate",
+          "Only accept $230,000 if speed matters more than price",
+        ],
       },
     ],
     comps: [
       {
         address: "1703 E Buena Vista St",
-        note: "Same street, same year — closest peer",
+        note: "Same street — closest match",
         beds: 4,
         baths: 2,
         sqft: 2057,
         price: 319700,
-        priceLabel: money(319700) + " Zest.",
+        priceLabel: money(319700) + " est.",
         kind: "estimate",
         map: { x: 42, y: 48 },
       },
       {
         address: "1725 E Buena Vista St",
-        note: "Same street · 3/3",
+        note: "Same street",
         beds: 3,
         baths: 3,
         sqft: 1900,
@@ -201,7 +224,7 @@ export const STORIES: Record<string, ClientStory> = {
       },
       {
         address: "1933 E Buena Vista St",
-        note: "Updated Ravenwood — sold Jun 2026",
+        note: "Updated home nearby — sold",
         beds: 4,
         baths: 3,
         sqft: 2874,
@@ -213,7 +236,7 @@ export const STORIES: Record<string, ClientStory> = {
       },
       {
         address: "1880 E Cardinal St",
-        note: "Larger updated walk-out",
+        note: "Larger updated home — sold",
         beds: 5,
         baths: 3.5,
         sqft: 4286,
@@ -225,7 +248,7 @@ export const STORIES: Record<string, ClientStory> = {
       },
       {
         address: "1424 E Buena Vista St",
-        note: "1942 fixer — floor, not peer",
+        note: "Old fixer — not a fair match",
         beds: 3,
         baths: 1,
         sqft: 1707,
@@ -237,14 +260,49 @@ export const STORIES: Record<string, ClientStory> = {
       },
       {
         address: "4832 S Warwick Ave",
-        note: "Similar size · 1980",
+        note: "Similar size",
         beds: 3,
         baths: 2,
         sqft: 2018,
         price: 360100,
-        priceLabel: money(360100) + " Zest.",
+        priceLabel: money(360100) + " est.",
         kind: "estimate",
         map: { x: 55, y: 78 },
+      },
+    ],
+    netScenarios: [
+      {
+        label: "Take the $230k offer",
+        salePrice: 230000,
+        realtorFeePct: 0,
+        realtorFee: 0,
+        estimatedNet: 230000,
+        note: "No realtor. Fast, but far below market.",
+        highlight: true,
+      },
+      {
+        label: "Private sale at $280k",
+        salePrice: 280000,
+        realtorFeePct: 0,
+        realtorFee: 0,
+        estimatedNet: 280000,
+        note: "No realtor. Still ~$50k more than the offer.",
+      },
+      {
+        label: "List near mid-point",
+        salePrice: 310000,
+        realtorFeePct: 0.06,
+        realtorFee: fee(310000, 0.06),
+        estimatedNet: 310000 - fee(310000, 0.06),
+        note: "Assumes ~6% total realtor cost. You still keep far more.",
+      },
+      {
+        label: "Soft listing price",
+        salePrice: 290000,
+        realtorFeePct: 0.055,
+        realtorFee: fee(290000, 0.055),
+        estimatedNet: 290000 - fee(290000, 0.055),
+        note: "Assumes ~5.5% total realtor cost on a softer price.",
       },
     ],
     valuation: {
@@ -254,24 +312,28 @@ export const STORIES: Record<string, ClientStory> = {
       offer: 230000,
       zest: 304900,
       thesis:
-        "With a new roof, open-concept rebuild on half the house, partial new siding, and recent HVAC, as-is fair value likely sits nearer $275k–$345k. $230k is a clear buy — residual work is finishes and crawl, not catastrophe.",
+        "After the tree rebuild — new roof, open-concept half, partial new siding, and recent HVAC — a fair sale looks closer to $275,000–$345,000. The $230,000 offer sits well under that band.",
+      recommendation:
+        "Pass on $230,000 unless you must sell immediately. Even after typical realtor fees, a normal sale should put more money in your pocket.",
     },
     notebook: {
-      title: "Notebook — inspection vs. haircut",
+      title: "Simple math",
       paragraphs: [
-        "Assumption: waive inspection at $230,000. Market model without the remodel story already said ~$277k–$329k (Zestimate ~$305k). Same-street estimates ~$310–$320k. Condition update moves the realistic band up — call it roughly $275k–$345k depending on how the unrenovated half shows.",
-        "What already got paid: brand-new roof after tree damage, roughly half the house rebuilt open concept, about half the siding new, HVAC likely under ten years. Those are the line items that usually wreck a 1976 as-is underwrite.",
-        "What can still bite: crawl moisture, older plumbing/electrical on the untouched side, unfinished baths/kitchen zones, completing siding, cosmetic continuity between the new half and the old half. A blunt residual budget of $15k–$40k is more honest than the $40k–$75k full-systems stack we would have assumed before knowing about the tree rebuild.",
-        "Haircut math still wins: $230k is ~$75k under the Zestimate and ~$45k+ under a conservative post-remodel low. Almost any inspection finding short of foundation failure or mold is cheaper than giving that cushion back.",
-        "Bottom line: take the number. Title, insurance bindability, and a walk for smell/soft floors remain the non-negotiables — not a formal inspection contingency.",
+        "What buyers nearby are paying: online tools say about $305,000. Homes on the same street look like $310,000–$320,000. We use a mid-point of about $310,000.",
+        "What this offer pays: $230,000. That is about $80,000 under the mid-point — roughly 26% low.",
+        "Realtor fees: a normal listing often costs about 5.5%–6% of the sale price in total commissions (shared across agents; exact splits vary). On a $310,000 sale, that is about $17,000–$19,000. On a $290,000 sale at 5.5%, about $16,000.",
+        "Why “no realtor” does not rescue this offer: skipping a $17,000–$19,000 fee only helps if the sale price is close to fair value. Here the discount is much larger than the fee. Example: list at $310,000, pay 6% ($18,600), keep about $291,400 — still roughly $61,000 more than $230,000.",
+        "Even a softer path wins: sell privately at $280,000 with no realtor and you are still about $50,000 ahead of this offer. List at $290,000 with 5.5% fees and keep about $274,000 — still about $44,000 ahead.",
+        "What could still need work: the older half of the house, crawl space, and finishing touches. Those jobs matter, but they do not usually erase an $80,000 price gap.",
+        "Recommendation: do not accept $230,000. Counter higher, seek another private buyer, or list. Choose $230,000 only if speed is the top goal.",
       ],
     },
     researchDate: "August 12, 2026",
     sources: [
-      "Owner/buyer condition notes (roof, open-concept half, siding, HVAC)",
-      "Zillow (Zestimate, tax history, school ratings)",
-      "SOMO MLS solds via public listing mirrors",
-      "OpenStreetMap geocode · 65804 market snapshot Jul 2026",
+      "Property condition notes (roof, remodel, siding, HVAC)",
+      "Public estimate and tax data (Zillow)",
+      "Recent area sales reported through public listing sites",
+      "OpenStreetMap location · 65804 market snapshot",
     ],
   },
 };

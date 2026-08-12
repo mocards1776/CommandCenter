@@ -117,7 +117,10 @@ export default function BuenaVistaNotebookPage() {
           <span>Offer brief</span>
         </div>
         <p className="text-cream/90 leading-relaxed mb-3">{story.heroLine}</p>
-        <p className="text-chalk text-sm leading-relaxed mb-6">{story.support}</p>
+        <p className="text-chalk text-sm leading-relaxed mb-4">{story.support}</p>
+        <p className="text-sm text-accent mb-6 border-l-2 border-accent pl-3">
+          {story.valuation.recommendation}
+        </p>
         <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {story.facts.map((f) => (
             <div key={f.label} className="border border-white/10 rounded-sm p-3 bg-field/60">
@@ -150,7 +153,7 @@ export default function BuenaVistaNotebookPage() {
           <span>Valuation range</span>
         </div>
         <p className="text-chalk text-sm leading-relaxed mb-4">{story.valuation.thesis}</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center mb-6">
           {[
             ["Offer", story.valuation.offer],
             ["Low", story.valuation.low],
@@ -169,6 +172,41 @@ export default function BuenaVistaNotebookPage() {
             </div>
           ))}
         </div>
+        <div className="rule-head mb-4">
+          <span>Net after realtor fees</span>
+        </div>
+        <ul className="space-y-3">
+          {story.netScenarios.map((n) => (
+            <li key={n.label} className="border border-white/10 rounded-sm p-3 bg-field/60 text-sm">
+              <div className="flex justify-between gap-3 text-cream font-medium mb-1">
+                <span>{n.label}</span>
+                <span>
+                  {n.estimatedNet.toLocaleString("en-US", {
+                    style: "currency",
+                    currency: "USD",
+                    maximumFractionDigits: 0,
+                  })}
+                </span>
+              </div>
+              <p className="text-chalk text-xs leading-relaxed">
+                Sale{" "}
+                {n.salePrice.toLocaleString("en-US", {
+                  style: "currency",
+                  currency: "USD",
+                  maximumFractionDigits: 0,
+                })}
+                {n.realtorFee
+                  ? ` · fees −${n.realtorFee.toLocaleString("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                      maximumFractionDigits: 0,
+                    })}`
+                  : " · no realtor"}
+                . {n.note}
+              </p>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="mb-10">
