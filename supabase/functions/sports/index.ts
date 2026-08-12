@@ -560,6 +560,50 @@ function detectManagerLeash(html: string): { interim: boolean; shortLeash: boole
   return { interim, shortLeash };
 }
 
+/** Pull a short contract blurb from a BBRef manager page when present. */
+function extractBbrefManagerContract(html: string): string | null {
+  const head = stripTags(html.slice(0, 18000)).replace(/\s+/g, " ");
+  const comments = [...html.matchAll(/data-stat="comments"[^>]*>([\s\S]*?)<\/t/gi)]
+    .map((m) => stripTags(m[1]))
+    .join(" · ");
+  const blob = `${head} ${comments}`;
+  const patterns = [
+    /\b(?:signed|agreed to|on)\s+a[n]?\s+(\d+\s*-\s*year[^.·]{0,80}(?:contract|deal|extension)[^.·]{0,60})/i,
+    /\b(\d+\s*-\s*year[^.·]{0,40}(?:contract|deal|extension)(?:\s+through\s+20\d{2})?[^.·]{0,40})/i,
+    /\b((?:contract|deal)\s+through\s+20\d{2}[^.·]{0,40})/i,
+    /\b(final year of (?:his |the )?(?:contract|deal)[^.·]{0,40})/i,
+    /\b(club option for 20\d{2}[^.·]{0,40})/i,
+    /\b(interim manager[^.·]{0,60})/i,
+  ];
+  for (const re of patterns) {
+    const m = blob.match(re);
+    if (!m?.[1]) continue;
+    const note = m[1].replace(/\s+/g, " ").trim().replace(/[.,;]+$/, "");
+    if (note.length >= 12 && note.length <= 160) return note[0]!.toUpperCase() + note.slice(1);
+  }
+  return null;
+}
+
+function extractBbrefInterimRecord(html: string): { yearWins: number | null; yearLosses: number | null } {
+  const year = new Date().getFullYear();
+  // Current-season row with interim comment.
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(html))) {
+    const row = m[1];
+    const y = stripTags(row.match(/data-stat="year_ID"[^>]*>([\s\S]*?)<\/t/i)?.[1] ?? "");
+    if (y !== String(year)) continue;
+    const comments = stripTags(row.match(/data-stat="comments"[^>]*>([\s\S]*?)<\/t/i)?.[1] ?? "");
+    if (!/interim/i.test(comments) && !/interim/i.test(stripTags(row))) continue;
+    const wins = parseBbrefInt(stripTags(row.match(/data-stat="W"[^>]*>([\s\S]*?)<\/t/i)?.[1] ?? ""));
+    const losses = parseBbrefInt(stripTags(row.match(/data-stat="L"[^>]*>([\s\S]*?)<\/t/i)?.[1] ?? ""));
+    if (wins != null && losses != null && wins + losses > 0) {
+      return { yearWins: wins, yearLosses: losses };
+    }
+  }
+  return { yearWins: null, yearLosses: null };
+}
+
 async function scrapeBbrefManager(name: string) {
   const url = await findBbrefManagerUrl(name);
   if (!url) return { error: "Manager page not found", name };
@@ -944,6 +988,9 @@ async function scrapeBbrefManagerPhoto(name: string) {
       photo: null as string | null,
       interim: false,
       shortLeash: false,
+      contractNote: null as string | null,
+      yearWins: null as number | null,
+      yearLosses: null as number | null,
     };
   }
   const html = await (
@@ -952,12 +999,15 @@ async function scrapeBbrefManagerPhoto(name: string) {
     })
   ).text();
   const leash = detectManagerLeash(html);
+  const interimRecord = extractBbrefInterimRecord(html);
   return {
     source: "baseball-reference",
     url,
     name,
     photo: extractBbrefManagerPhoto(html),
+    contractNote: extractBbrefManagerContract(html),
     ...leash,
+    ...interimRecord,
   };
 }
 

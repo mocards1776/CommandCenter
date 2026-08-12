@@ -30,7 +30,7 @@ export default function MlbManagerPage() {
   const qc = useQueryClient();
 
   const detail = useQuery({
-    queryKey: ["mlb-manager-v6", managerId],
+    queryKey: ["mlb-manager-v8", managerId],
     queryFn: () => fetchMlbManagerDetail(managerId!),
     enabled: Boolean(managerId),
     staleTime: 180_000,
@@ -130,7 +130,6 @@ export default function MlbManagerPage() {
             alt=""
             width={140}
             height={140}
-            referrerPolicy="no-referrer"
             className="mx-auto h-[128px] w-[128px] rounded-xl bg-[#0c1a2e] object-cover object-top ring-2 ring-white/20 shadow-xl sm:mx-0"
             onError={(e) => {
               const el = e.currentTarget;
@@ -287,12 +286,23 @@ export default function MlbManagerPage() {
             </li>
           ))}
         </ul>
-        {m.contractNote && (
-          <p className="text-cream mt-4 text-[13.5px] leading-relaxed">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
-              Contract{" "}
-            </span>
-            {m.contractNote}
+      </section>
+
+      <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+        <h2 className="rule-head mb-2">Contract</h2>
+        {m.contractNote ? (
+          <p className="text-cream text-[14px] leading-relaxed">{m.contractNote}</p>
+        ) : (
+          <p className="text-chalk-dim text-[13px]">
+            No published manager contract terms found yet.
+          </p>
+        )}
+        {m.firedOddsAmerican && (
+          <p className="mt-3 text-[12.5px] text-[#c8cdd8]">
+            Market:{" "}
+            <span className="numeral font-semibold text-amber-200">{m.firedOddsAmerican}</span>
+            {m.firedOddsPct != null ? ` · ~${m.firedOddsPct}% next fired` : ""}
+            <span className="text-[#8b93a7]"> (weighted into heat)</span>
           </p>
         )}
       </section>
