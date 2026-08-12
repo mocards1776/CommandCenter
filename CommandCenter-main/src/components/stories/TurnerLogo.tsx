@@ -1,4 +1,4 @@
-/** Mark Turner Market Research wordmark with portrait mark. */
+/** Mark Turner Market Research — stylized portrait mark + wordmark. */
 export default function TurnerLogo({
   className = "",
   compact = false,
@@ -8,20 +8,20 @@ export default function TurnerLogo({
   compact?: boolean;
   stacked?: boolean;
 }) {
-  const photo = (
+  const mark = (
     <img
       src="/brand/mark-turner.png"
       alt=""
-      className="turner-photo"
-      width={compact ? 40 : 52}
-      height={compact ? 40 : 52}
+      className="turner-mark"
+      width={compact ? 40 : stacked ? 88 : 56}
+      height={compact ? 40 : stacked ? 88 : 56}
     />
   );
 
   if (compact) {
     return (
       <span className={`turner-logo is-compact ${className}`} aria-label="Mark Turner Market Research">
-        {photo}
+        {mark}
       </span>
     );
   }
@@ -29,7 +29,7 @@ export default function TurnerLogo({
   if (stacked) {
     return (
       <div className={`turner-logo is-stacked ${className}`}>
-        {photo}
+        {mark}
         <div className="turner-text">
           <strong>Mark Turner</strong>
           <span>Market Research</span>
@@ -40,7 +40,7 @@ export default function TurnerLogo({
 
   return (
     <div className={`turner-logo ${className}`} aria-label="Mark Turner Market Research">
-      {photo}
+      {mark}
       <div className="turner-text">
         <strong>Mark Turner</strong>
         <span>Market Research</span>

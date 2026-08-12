@@ -513,33 +513,30 @@ const STORY_CSS = `
   }
   .story-root * { box-sizing: border-box; }
 
-  /* Logo */
+  /* Logo — stylized mark already includes ring; no extra border */
   .turner-logo {
-    display: inline-flex; align-items: center; gap: 0.75rem;
+    display: inline-flex; align-items: center; gap: 0.8rem;
   }
   .turner-logo.is-stacked {
-    flex-direction: column; text-align: center; gap: 0.85rem;
+    flex-direction: column; text-align: center; gap: 0.9rem;
   }
   .turner-logo.is-compact { display: inline-flex; }
-  .turner-photo {
-    width: 52px; height: 52px; border-radius: 999px; object-fit: cover;
-    border: 2px solid rgba(11,31,58,0.12);
-    box-shadow: 0 6px 18px rgba(11,31,58,0.12);
+  .turner-mark {
+    width: 56px; height: 56px; object-fit: contain;
     flex-shrink: 0;
+    filter: drop-shadow(0 8px 18px rgba(11,31,58,0.16));
   }
-  .turner-logo.is-compact .turner-photo { width: 36px; height: 36px; }
-  .turner-logo.is-stacked .turner-photo {
-    width: 72px; height: 72px; border-width: 3px;
-  }
-  .turner-text { display: flex; flex-direction: column; gap: 0.12rem; line-height: 1.05; }
+  .turner-logo.is-compact .turner-mark { width: 38px; height: 38px; filter: none; }
+  .turner-logo.is-stacked .turner-mark { width: 96px; height: 96px; }
+  .turner-text { display: flex; flex-direction: column; gap: 0.14rem; line-height: 1.05; }
   .turner-text strong {
-    font-family: var(--font-display); font-size: 1.2rem; letter-spacing: -0.01em;
+    font-family: var(--font-display); font-size: 1.25rem; letter-spacing: -0.01em;
   }
   .turner-text span {
-    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
     color: var(--muted); font-weight: 700;
   }
-  .turner-logo.is-stacked .turner-text strong { font-size: 1.35rem; }
+  .turner-logo.is-stacked .turner-text strong { font-size: 1.45rem; }
   .hero-brand { margin-bottom: 1rem; }
 
   /* Title cover */
