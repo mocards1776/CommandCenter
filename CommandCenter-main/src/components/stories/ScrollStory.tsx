@@ -37,7 +37,7 @@ function mapsEmbedSrc(story: ClientStory) {
 
 function osmEmbedSrc(story: ClientStory) {
   const { lat, lng } = story.geo;
-  const d = 0.012;
+  const d = story.layout === "land" ? 0.045 : 0.012;
   const bbox = `${lng - d}%2C${lat - d * 0.7}%2C${lng + d}%2C${lat + d * 0.7}`;
   return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat}%2C${lng}`;
 }
@@ -57,6 +57,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
   const rootRef = useRef<HTMLDivElement>(null);
 
   const isProceeds = story.layout === "proceeds";
+  const isLand = story.layout === "land";
 
   const toc = useMemo(
     () => [
@@ -478,12 +479,19 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     <article key={n.label} className={`net-card ${n.highlight ? "is-offer" : ""}`}>
                       <header>
                         <h3>{n.label}</h3>
-                        {n.highlight ? <em>{isProceeds ? "Preferred" : "On the table"}</em> : null}
+                        {n.highlight ? (
+                          <em>{isProceeds ? "Preferred" : isLand ? "Base path" : "On the table"}</em>
+                        ) : null}
                       </header>
                       {isProceeds ? (
                         <div className="net-row is-total">
                           <span>Path</span>
                           <strong>{n.note.split(".")[0]}</strong>
+                        </div>
+                      ) : n.salePrice <= 0 ? (
+                        <div className="net-row is-total">
+                          <span>Illustrative annual / hold cash</span>
+                          <strong>{money(n.estimatedNet)}</strong>
                         </div>
                       ) : (
                         <>
@@ -513,14 +521,16 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               </aside>
             ) : null}
 
-            {ch.visual === "proceeds" ? (
+            {ch.visual === "proceeds" || ch.visual === "options" ? (
               <aside className="visual-pane">
-                <div className="proceeds-hero" aria-hidden>
-                  <strong>2</strong>
-                  <span>of</span>
-                  <em>3</em>
-                  <p>People named · two must agree before money moves</p>
-                </div>
+                {ch.visual === "proceeds" ? (
+                  <div className="proceeds-hero" aria-hidden>
+                    <strong>2</strong>
+                    <span>of</span>
+                    <em>3</em>
+                    <p>People named · two must agree before money moves</p>
+                  </div>
+                ) : null}
                 <div className="proceeds-list">
                   {(story.proceedsOptions ?? []).map((opt) => (
                     <article key={opt.title} className="proceeds-card">
@@ -541,19 +551,22 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
       {!isProceeds ? (
         <>
       <section id="comps" className="story-chapter story-wide" data-chapter>
-        <p className="story-eyebrow">Nearby homes</p>
-        <h2>What similar houses suggest.</h2>
+        <p className="story-eyebrow">{isLand ? "Nearby tracts" : "Nearby homes"}</p>
+        <h2>{isLand ? "What similar acreage suggests." : "What similar houses suggest."}</h2>
         <p className="story-body narrow">
-          Same-street homes look like the low-to-mid $300,000s when they inspect clean. Leftover risk
-          from age and the tree-damage chapter is what can knock this into as-is pricing.
+          {isLand
+            ? "Peers in the 50–80 acre band set the neighborhood. Raw timber asks sit softer; hay, frontage, and utilities push the top of the band."
+            : "Same-street homes look like the low-to-mid $300,000s when they inspect clean. Leftover risk from age and the tree-damage chapter is what can knock this into as-is pricing."}
         </p>
 
         <div className="comps-layout">
-          <div className="comp-map" role="img" aria-label="Approximate neighborhood comps map">
+          <div className="comp-map" role="img" aria-label="Approximate comps map">
             <div className="comp-map-grid" />
             <div className="comp-pin is-subject" style={{ left: "52%", top: "50%" }}>
-              <span>This home</span>
-              <strong>Offer {money(story.valuation.offer)}</strong>
+              <span>{isLand ? "This tract" : "This home"}</span>
+              <strong>
+                {isLand ? "Mid" : "Offer"} {money(story.valuation.offer)}
+              </strong>
             </div>
             {story.comps
               .filter((c) => c.map)
@@ -565,7 +578,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                   title={c.address}
                 >
                   <span>{c.address.split(" ")[0]}</span>
-                  <strong>{c.priceLabel.replace(" est.", "")}</strong>
+                  <strong>{c.priceLabel.replace(" est.", "").replace(" ask", "").replace(" idx", "")}</strong>
                 </div>
               ))}
             <p className="comp-map-legend">Sketch map · pins are approximate</p>
@@ -573,7 +586,11 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
 
           <div className="comp-bars">
             {[
-              { address: "Offer · this house", price: story.valuation.offer, kind: "offer" as const },
+              {
+                address: isLand ? "Indicated mid · this tract" : "Offer · this house",
+                price: story.valuation.offer,
+                kind: "offer" as const,
+              },
               ...story.comps,
             ].map((c) => {
               const price = "price" in c && c.price != null ? c.price : story.valuation.offer;
@@ -602,24 +619,32 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
 
       <section id="range" className="story-chapter" data-chapter>
         <p className="story-eyebrow">Value range</p>
-        <h2>Where a fair deal should land.</h2>
+        <h2>{isLand ? "Where fair market should land." : "Where a fair deal should land."}</h2>
         <p className="story-body">{story.valuation.thesis}</p>
 
         <div className="callout-strip">
           <div>
-            <span>As-is offer</span>
+            <span>{isLand ? "Indicated mid" : "As-is offer"}</span>
             <strong>{money(story.valuation.offer)}</strong>
           </div>
           <p>{story.valuation.recommendation}</p>
         </div>
 
         <div className="range-cards">
-          {[
-            ["Offer", story.valuation.offer, "warn"],
-            ["Risk low", story.valuation.low, ""],
-            ["Clean mid", story.valuation.mid, "good"],
-            ["Clean high", story.valuation.high, ""],
-          ].map(([label, value, tone]) => (
+          {(isLand
+            ? [
+                ["Low", story.valuation.low, ""],
+                ["Mid", story.valuation.mid, "good"],
+                ["High", story.valuation.high, ""],
+                ["Index", story.valuation.zest, "warn"],
+              ]
+            : [
+                ["Offer", story.valuation.offer, "warn"],
+                ["Risk low", story.valuation.low, ""],
+                ["Clean mid", story.valuation.mid, "good"],
+                ["Clean high", story.valuation.high, ""],
+              ]
+          ).map(([label, value, tone]) => (
             <div key={String(label)} className={`range-card ${tone}`}>
               <span>{label}</span>
               <strong>{money(Number(value))}</strong>
@@ -674,7 +699,11 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
           </div>
           <p>
             Research dated {story.researchDate}. This is not an appraisal, legal advice, or tax advice.
-            Trust and account setups should be confirmed with an attorney and the bank.
+            {isProceeds
+              ? " Trust and account setups should be confirmed with an attorney and the bank."
+              : isLand
+                ? " Land values depend on survey, access, timber/pasture mix, and site improvements — confirm before a financed deal."
+                : ""}
           </p>
           <p className="story-sources">{story.sources.join(" · ")}</p>
         </footer>

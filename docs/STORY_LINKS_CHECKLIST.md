@@ -1,12 +1,18 @@
 # Client story links — manual test checklist
 
 ## Wiring
-- Slug: `1715-e-buena-vista`
-- Internal page: `/notebook/1715-e-buena-vista`
+- Slugs: `1715-e-buena-vista`, `1715-e-buena-vista-financial`, `evans-road-webster-land`
+- Internal pages: `/notebook/:slug`
 - Public page: `/story/:token`
 - Story source: `CommandCenter-main/src/lib/stories/types.ts`
 - API: Supabase edge function `story-link` (POST mint / DELETE revoke / GET resolve)
 - Optional env: `VITE_CLIENT_SHARE_ORIGIN` (absolute origin, no trailing slash)
+
+### Evans Road land (Thompson Brothers)
+- Slug: `evans-road-webster-land`
+- Internal: `/notebook/evans-road-webster-land`
+- Brand: Thompson Brothers Market Research (`/brand/thompson-brothers-market.png`)
+- Layout: `land` — comps, FMV range, 1/5/10-yr forecast, non-sale revenue options
 
 ## Checklist
 1. Sign in → open **Buena Vista** in nav (`/notebook/1715-e-buena-vista`).

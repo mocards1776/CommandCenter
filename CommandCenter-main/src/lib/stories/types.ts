@@ -9,6 +9,8 @@ export type StoryComp = {
   beds: number;
   baths: number;
   sqft: number;
+  /** When set, notebook / land briefs show acres instead of beds·baths·sqft */
+  acres?: number;
   price: number | null;
   priceLabel: string;
   date?: string;
@@ -74,6 +76,7 @@ export type StoryChapter = {
     | "nets"
     | "repairs"
     | "proceeds"
+    | "options"
     | "compare"
     | "odds"
     | "none";
@@ -85,8 +88,8 @@ export type ClientStory = {
   brand: string;
   brandTag: string;
   markSrc: string;
-  /** property = house brief; proceeds = sale-money / control brief only */
-  layout: "property" | "proceeds";
+  /** property = house brief; proceeds = sale-money / control; land = acreage / FMV brief */
+  layout: "property" | "proceeds" | "land";
   cover: {
     display: string;
     sub: string;
@@ -888,6 +891,449 @@ export const STORIES: Record<string, ClientStory> = {
       "General trust / multi-signer account patterns (educational overview; not legal or tax advice)",
       "Typical dual-authorization / co-trustee banking practices (confirm with the holding bank)",
       "General Medicaid resource / look-back concepts for trusts (educational overview; state rules vary — confirm with an elder-law attorney)",
+    ],
+  },
+
+  "evans-road-webster-land": {
+    slug: "evans-road-webster-land",
+    metaTitle: "Evans Road Tract — Land Market Brief",
+    brand: "Thompson Brothers Market Research",
+    brandTag: "Independent land & acreage brief",
+    markSrc: "/brand/thompson-brothers-market.png",
+    layout: "land",
+    cover: {
+      display: "Evans Road",
+      sub: "69.8 acres · indicated mid ~$365k",
+      meta: "Evans Road · Niangua / East Ozark Twp · Webster County, MO 65713",
+      statValue: "~$5,200",
+      statLabel: "per acre · indicated mid",
+      compareWarn: "Raw timber / rec band ~$4,000/ac",
+      compareGood: "Improved pasture / frontage ~$6,500/ac",
+    },
+    address: "Evans Road Tract",
+    cityLine: "Niangua area · Webster County, MO 65713",
+    heroLine:
+      "About 69.8 acres on Evans Road. Indicated fair-market mid ~$365,000 (~$5,200/ac). Holding can pay through leases and timber without a sale.",
+    support:
+      "Pin from the shared map (≈37.3546, −92.8402). Rural Webster County north of Marshfield / near Niangua — Ozark timber, pasture, and recreational demand, with Springfield metro drive-time still in play.",
+    keyNumbers: [
+      { label: "Acres (stated)", value: "69.8", tone: "neutral" },
+      { label: "Indicated mid", value: "~$365,000", tone: "good" },
+      { label: "Per acre mid", value: "~$5,200", tone: "good" },
+      { label: "FMV low", value: "~$280,000", tone: "warn" },
+      { label: "FMV high", value: "~$455,000", tone: "good" },
+      { label: "County farm avg", value: "~$5,011/ac", tone: "neutral" },
+      { label: "1-yr base", value: "~$376k", tone: "neutral" },
+      { label: "10-yr base", value: "~$490k", tone: "good" },
+    ],
+    callouts: [
+      {
+        title: "This is land math — not a house brief",
+        body:
+          "Value rides on acreage quality (timber vs pasture), road frontage, utilities, water, and how buildable the ridges are. A survey and soil / timber walk change the number more than city comps ever will.",
+      },
+      {
+        title: "You do not have to sell to monetize",
+        body:
+          "Hunting leases, pasture or hay leases, selective timber, and (site-dependent) recreation or solar can throw cash while you keep the dirt. See the hold-income chapter.",
+      },
+    ],
+    compareCards: [
+      {
+        title: "County farmland index",
+        cost: "~$5,011 / acre · Q2 2025",
+        answers: "Broad Webster County farm real-estate average",
+        doesNot: "Does not price a specific timber-vs-pasture mix or frontage",
+      },
+      {
+        title: "SW Missouri rec / timber survey",
+        cost: "Timber ~$6,760 · hunt/rec ~$6,003 (MU 2025 SW)",
+        answers: "Regional opinion values for timber and recreational tracts",
+        doesNot: "Listing comps nearby still trade softer on raw timber",
+      },
+    ],
+    geo: {
+      lat: 37.3545517,
+      lng: -92.8401542,
+      label: "Evans Road, Webster County, MO 65713",
+    },
+    facts: [
+      { label: "Acres", value: "69.8 (stated)" },
+      { label: "County", value: "Webster, MO" },
+      { label: "Area", value: "Niangua / East Ozark Twp" },
+      { label: "Access", value: "Evans Road" },
+      { label: "Zip", value: "65713" },
+      { label: "Drive context", value: "~Marshfield · Springfield metro reach" },
+      { label: "Land class (working)", value: "Ozark timber / pasture / rec" },
+      { label: "Indicated mid", value: "~$365,000" },
+    ],
+    condition: [
+      {
+        label: "Size / shape",
+        status: "recent",
+        detail:
+          "Stated ~69.8 acres — large enough for a hunting lease, livestock paddocks, or a homesite-plus-buffer without needing to assemble neighbors.",
+      },
+      {
+        label: "Location / demand",
+        status: "new",
+        detail:
+          "Webster sits in MU’s Southwest district. Recreational and lifestyle buyers are a meaningful share of Missouri land purchases; Springfield reach supports that bid.",
+      },
+      {
+        label: "Timber vs open",
+        status: "partial",
+        detail:
+          "Satellite / road context reads as typical Ozark mix. Confirm canopy, pasture openings, and water on a walk — that split drives whether you price closer to timber/rec or pasture comps.",
+      },
+      {
+        label: "Improvements",
+        status: "concern",
+        detail:
+          "No dwelling assumed in this brief. Electric at road, interior access, fencing, and ponds (if any) are upside. Absence keeps you in the raw-land band.",
+      },
+      {
+        label: "Survey / title",
+        status: "concern",
+        detail:
+          "Acreage is stated (~69.8). A current survey, access easements, and clean title are part of any sale or lease that outsiders will underwrite.",
+      },
+    ],
+    repairs: [
+      {
+        issue: "Boundary survey (if stale)",
+        low: 2500,
+        high: 8000,
+        note: "Typical rural survey ballpark — confirm with a local surveyor",
+      },
+      {
+        issue: "Interior / access lane work",
+        low: 3000,
+        high: 15000,
+        note: "Depends on topography and whether a lane already exists",
+      },
+      {
+        issue: "Perimeter fence catch-up",
+        low: 8000,
+        high: 35000,
+        note: "Livestock use needs fence; hunt leases often do not",
+      },
+      {
+        issue: "Food plots / wildlife setup",
+        low: 1500,
+        high: 8000,
+        note: "Common recreational upgrade that supports lease rates",
+      },
+      {
+        issue: "Selective timber cruise + harvest plan",
+        low: 500,
+        high: 2500,
+        note: "Cruise fee only — harvest revenue is separate and episodic",
+      },
+    ],
+    proceedsOptions: [
+      {
+        title: "Hunting / recreational lease",
+        summary: "Often ~$15–$40+/ac · year",
+        detail:
+          "On ~70 acres that is roughly $1,000–$2,800+/yr for a basic deer/turkey lease, more if habitat work and exclusivity are strong. Lowest-friction cash while you keep title.",
+      },
+      {
+        title: "Pasture or hay lease",
+        summary: "Cash rent · if open acres exist",
+        detail:
+          "Southwest Missouri pasture cash rents are typically a few tens of dollars per open acre when fenced and watered. Works best if a meaningful share is already pasture or can be opened.",
+      },
+      {
+        title: "Selective timber harvest",
+        summary: "Lump sum · not annual",
+        detail:
+          "A cruise decides volume and species. Ozark hardwood cuts are episodic income — useful for a capital event, not a paycheck. Leave seed trees and access so residual land value holds.",
+      },
+      {
+        title: "Homesite + keep the rest",
+        summary: "Split use · not a full sale",
+        detail:
+          "Build or place a dwelling on a ridge with road/power, keep timber as privacy and recreation. You monetize lifestyle value without liquidating the whole tract.",
+      },
+      {
+        title: "Cabin / short-stay recreation",
+        summary: "Requires a structure + access",
+        detail:
+          "If you add a cabin or RV pad with legal access, weekend hunting and Ozark getaway demand can support nightly or seasonal rentals. Higher work and compliance than a simple hunt lease.",
+      },
+      {
+        title: "Solar or specialty lease (site-dependent)",
+        summary: "Only if the site fits",
+        detail:
+          "Utility-scale solar needs transmission proximity, slope, and a willing lessee — uncommon on every tract. Treat as optionality after a developer screen, not a base case.",
+      },
+    ],
+    schools: [],
+    chapters: [
+      {
+        id: "place",
+        eyebrow: "The tract",
+        title: "69.8 acres on Evans Road, Webster County.",
+        body:
+          "Shared map pin ≈37.3546, −92.8402 — Evans Road in the Niangua / East Ozark Township area (65713). Rural Ozark ground with Marshfield nearby and Springfield metro still in the lifestyle-buyer radius.",
+        visual: "map",
+        bullets: [
+          "Stated size: about 69.8 acres",
+          "County: Webster, Missouri (Southwest MU survey district)",
+          "Nearest market towns: Niangua · Marshfield corridor",
+          "Working land class: timber / pasture / recreational — confirm mix on foot",
+          "No house value included in this brief",
+        ],
+        stat: { value: "69.8 ac", label: "Stated acreage · survey to confirm" },
+      },
+      {
+        id: "market",
+        eyebrow: "Market read",
+        title: "Rec and timber demand are the tailwind; farm income is the headwind.",
+        body:
+          "Missouri’s 2025 opinion survey showed timberland up sharply statewide (+14.7% to ~$5,185/ac) and hunting/rec land up ~7.7% to ~$5,073/ac. Webster County’s farm index sat near ~$5,011/ac in Q2 2025. Southwest district survey marks for timber/rec run higher — but raw listing comps near Niangua still show timber tracts trading nearer the mid-$4,000s per acre.",
+        visual: "compare",
+        bullets: [
+          "Webster County farm avg ≈ $5,011/ac (Q2 2025 index)",
+          "MU Southwest timber ≈ $6,760/ac · hunt/rec ≈ $6,003/ac (2025 opinion)",
+          "Nearby active timber peer (~70 ac, Old Luthy Rd): ask ~$4,286/ac",
+          "Improved hay / frontage peers (Webster 80-class): often ~$6,500/ac+",
+          "Buyers statewide: local farmers ~35% · rec/lifestyle ~25% · investors ~23%",
+        ],
+        stat: { value: "~$5.0k", label: "Webster farm index · per acre · Q2 2025" },
+      },
+      {
+        id: "site",
+        eyebrow: "What moves the number",
+        title: "Frontage, utilities, water, and the timber–pasture split.",
+        body:
+          "Same acreage can clear $4,000/ac or $6,500/ac. Walk the ridges, note canopy vs openings, water, and whether power is at the road. That is the appraisal — indexes only set the neighborhood.",
+        visual: "condition",
+        bullets: [
+          "Plus: county road access (Evans Road), ~70-acre scale, Springfield drive-time",
+          "Unknown until walked: exact timber volume, pasture %, ponds, interior roads",
+          "Upside levers: electric at road, buildable ridge, fence, water",
+          "Drag: landlocked feel, steep draws only, no survey, title/access clouds",
+        ],
+      },
+      {
+        id: "fmv",
+        eyebrow: "Fair market value",
+        title: "Indicated band: about $280,000–$455,000.",
+        body:
+          "Blending the Webster farm index, Southwest timber/rec opinion values, and nearby listing comps for ~50–80 acre Ozark tracts. Midpoint ~$365,000 ≈ $5,200 per acre — a fair working FMV if the tract is typical mixed timber/pasture without a dwelling.",
+        visual: "none",
+        bullets: [
+          "Low ~$280,000 (~$4,000/ac) — raw timber/rec, limited improvements",
+          "Mid ~$365,000 (~$5,200/ac) — indicated fair market for a typical mix",
+          "High ~$455,000 (~$6,500/ac) — stronger pasture, frontage, utilities, build site",
+          "Index check: $5,011 × 69.8 ≈ $350,000 — sits under our mid on purpose (rec upside)",
+          "Not an appraisal — a market brief pending survey and site walk",
+        ],
+        stat: { value: "~$365k", label: "Indicated fair-market mid · whole tract" },
+      },
+      {
+        id: "forecast",
+        eyebrow: "1 · 5 · 10 year",
+        title: "Base case: modest compounding, not 2020–2025 rocket fuel.",
+        body:
+          "Webster farm values roughly doubled from 2020→2025. That pace does not repeat. MU respondents still expect South-Central/Southwest “other” land up a few percent in 2026, while farm-income forecasts look softer — so we use conservative CAGRs on the $365k mid.",
+        visual: "none",
+        bullets: [
+          "1 year (base +3%): ~$376,000 · bull +5% ~$383k · bear flat ~$358k",
+          "5 years (base 3.5% CAGR): ~$433,000 · bull 5% ~$466k · bear 1.5% ~$393k",
+          "10 years (base 3% CAGR): ~$490,000 · bull 4.5% ~$567k · bear 1.5% ~$424k",
+          "What breaks bull: sustained rec/lifestyle demand + limited supply",
+          "What breaks bear: higher rates + weak farm income + thick local inventory",
+        ],
+        stat: { value: "~$490k", label: "10-year base on today’s mid (≈3% CAGR)" },
+      },
+      {
+        id: "income",
+        eyebrow: "Hold income",
+        title: "Ways to earn without selling the land.",
+        body:
+          "Title stays with you. Cash comes from leases, timber events, or light improvements. Stack carefully — a hunt lease and a timber cut can coexist; a solar pad and a homesite may not.",
+        visual: "options",
+        bullets: [
+          "Hunting lease: often the simplest annual check on timbered Ozark ground",
+          "Pasture / hay: only where open, fenced, and watered acres exist",
+          "Selective timber: lump-sum capital, planned with a forester",
+          "Homesite or cabin: lifestyle monetization; higher CapEx",
+          "Solar / specialty: screen first — not a default assumption",
+        ],
+        stat: { value: "$1–3k+", label: "Illustrative annual hunt-lease band on ~70 ac" },
+      },
+      {
+        id: "paths",
+        eyebrow: "Money paths",
+        title: "Sell, hold+lease, or improve then sell.",
+        body:
+          "Net of a typical land-broker fee, a mid sale still clears well into the $340k area before taxes and closing costs. Holding with a lease keeps optionality if you believe the 5–10 year path.",
+        visual: "nets",
+        bullets: [
+          "Sell at mid with ~6% fee → keep roughly ~$343k before other costs",
+          "Hold + hunt lease → small annual yield, full upside retained",
+          "Improve access/fence then re-rate toward the high band",
+          "Partial sale (homesite carve) is a planning conversation with survey + counsel",
+        ],
+      },
+      {
+        id: "call",
+        eyebrow: "Bottom line",
+        title: "Treat ~$5,200/ac as the working mid until the walk.",
+        body:
+          "Order a survey if needed, walk timber vs pasture, note power and water, then pick a lane: lease for income, light improvements toward the high band, or list near the mid with comps in hand.",
+        bullets: [
+          "Working FMV: ~$280k–$455k (mid ~$365k)",
+          "1 / 5 / 10 yr base: ~$376k / ~$433k / ~$490k",
+          "Non-sale income: hunt lease first; pasture/timber if the ground supports it",
+          "Replace this brief with a site-specific appraisal before a financed deal",
+        ],
+      },
+    ],
+    repairOdds: [],
+    comps: [
+      {
+        address: "Old Luthy Rd · Niangua",
+        note: "Active ~70 ac timber / creek · closest size peer",
+        beds: 0,
+        baths: 0,
+        sqft: 0,
+        acres: 70,
+        price: 299999,
+        priceLabel: money(299999) + " ask",
+        kind: "active",
+        map: { x: 72, y: 28 },
+      },
+      {
+        address: "Beach Rd · Conway (Webster 80)",
+        note: "Active 80 ac hay + frontage + electric",
+        beds: 0,
+        baths: 0,
+        sqft: 0,
+        acres: 80,
+        price: 522900,
+        priceLabel: money(522900) + " ask",
+        kind: "active",
+        map: { x: 30, y: 62 },
+      },
+      {
+        address: "Webster · 76 ac peer",
+        note: "Listed peer · higher improvement / utility read",
+        beds: 0,
+        baths: 0,
+        sqft: 0,
+        acres: 76,
+        price: 600000,
+        priceLabel: money(600000) + " ask",
+        kind: "active",
+        map: { x: 40, y: 40 },
+      },
+      {
+        address: "Hwy 32 · Buffalo area",
+        note: "Dallas Co · 56.74 ac river / highway (off-market ask)",
+        beds: 0,
+        baths: 0,
+        sqft: 0,
+        acres: 56.74,
+        price: 283700,
+        priceLabel: money(283700),
+        kind: "estimate",
+        map: { x: 18, y: 30 },
+      },
+      {
+        address: "Bobcat Trl · Tunas",
+        note: "Dallas Co · 80 ac timber + river touch",
+        beds: 0,
+        baths: 0,
+        sqft: 0,
+        acres: 80,
+        price: 299500,
+        priceLabel: money(299500) + " ask",
+        kind: "active",
+        map: { x: 22, y: 18 },
+      },
+      {
+        address: "Webster farm index",
+        note: "County avg × 69.8 ac (Q2 2025)",
+        beds: 0,
+        baths: 0,
+        sqft: 0,
+        acres: 69.8,
+        price: 350000,
+        priceLabel: money(350000) + " idx",
+        kind: "estimate",
+        map: { x: 55, y: 55 },
+      },
+    ],
+    netScenarios: [
+      {
+        label: "Sell at indicated mid (~$365k)",
+        salePrice: 365000,
+        realtorFeePct: 0.06,
+        realtorFee: fee(365000, 0.06),
+        estimatedNet: 365000 - fee(365000, 0.06),
+        note: "Typical land-broker fee ballpark. Before taxes, survey, and closing costs.",
+        highlight: true,
+      },
+      {
+        label: "Sell at high band (~$455k)",
+        salePrice: 455000,
+        realtorFeePct: 0.06,
+        realtorFee: fee(455000, 0.06),
+        estimatedNet: 455000 - fee(455000, 0.06),
+        note: "Needs the improvement / pasture / utility story to stick with buyers.",
+      },
+      {
+        label: "Hold + hunt lease (illustrative)",
+        salePrice: 0,
+        realtorFeePct: 0,
+        realtorFee: 0,
+        estimatedNet: 2000,
+        note: "~$2,000/yr illustrative lease (~$29/ac). Keeps 5–10 year appreciation.",
+      },
+      {
+        label: "Hold 10 yrs at base path",
+        salePrice: 490000,
+        realtorFeePct: 0.06,
+        realtorFee: fee(490000, 0.06),
+        estimatedNet: 490000 - fee(490000, 0.06),
+        note: "Sells the ~$490k 10-year base later — not a promise, a compounding sketch.",
+      },
+    ],
+    valuation: {
+      low: 280000,
+      mid: 365000,
+      high: 455000,
+      offer: 365000,
+      zest: 350000,
+      thesis:
+        "Indicated fair market for this ~69.8-acre Evans Road tract: about $280,000–$455,000. Working mid ~$365,000 (~$5,200/ac), above the Webster farm index (~$350k on 69.8 ac) and below improved hay/frontage asks. Raw timber peers near Niangua still list nearer ~$4,300/ac.",
+      recommendation:
+        "Walk the ground, confirm acres with survey, then choose: lease for hold income, light improvements toward the high band, or list near the mid with the comps in this brief. Commission a site-specific appraisal before any financed purchase or estate valuation.",
+    },
+    notebook: {
+      title: "Land math board",
+      paragraphs: [
+        "Subject: Evans Road tract, Webster County MO (Niangua / East Ozark Twp, 65713). Map pin ≈37.3546, −92.8402. Stated size ~69.8 acres. No dwelling in this valuation.",
+        "Indicated FMV: low ~$280,000 (~$4,000/ac) · mid ~$365,000 (~$5,200/ac) · high ~$455,000 (~$6,500/ac). Index check: Webster farm avg ~$5,011/ac × 69.8 ≈ $350,000.",
+        "Comps: Old Luthy Rd ~70 ac timber ask $299,999 (~$4,286/ac); Webster 80 Beach Rd ask $522,900 (~$6,536/ac); 76 ac peer ask $600,000; Dallas river/timber peers often ~$3,700–$5,000/ac.",
+        "Forecast on $365k mid — 1 yr base +3% ≈ $376k; 5 yr @3.5% CAGR ≈ $433k; 10 yr @3% CAGR ≈ $490k. Bull/bear bands in the forecast chapter. Past 2020–2025 doubling does not repeat.",
+        "Hold income (non-sale): hunting lease first (~$15–$40+/ac illustrative); pasture/hay if open acres; selective timber as lump sum; homesite/cabin or solar only after site fit.",
+        "Sell path: mid − ~6% fee ≈ $343k before other costs. Improve-then-sell only if the CapEx clearly buys you into the high band.",
+        "Firm: Thompson Brothers Market Research. Independent land brief — not an appraisal, legal advice, or tax advice.",
+      ],
+    },
+    researchDate: "August 12, 2026",
+    sources: [
+      "Shared Google Maps pin (Evans Road / Webster County, MO ≈37.3546, −92.8402)",
+      "OpenStreetMap / reverse geocode (Evans Road, Webster County, 65713)",
+      "FarmlandIntel Webster County farmland average (Q2 2025 ≈ $5,011/ac)",
+      "University of Missouri Extension Farmland Values Opinion Survey (G401, 2025) — SW timber/rec & 2026 outlook",
+      "Public land listings: Old Luthy Rd Niangua ~70 ac; Beach Rd Conway Webster 80; area 50–80 ac peers",
+      "Industry ballparks for rural survey, fence, hunt-lease, and land-broker fees (not quotes)",
     ],
   },
 };

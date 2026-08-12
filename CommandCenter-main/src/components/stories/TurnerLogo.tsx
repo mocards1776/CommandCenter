@@ -1,4 +1,4 @@
-/** Mark Turner brand mark + wordmark (Market or Financial Research). */
+/** Brand mark + wordmark (Mark Turner or Thompson Brothers; Market or Financial). */
 export default function TurnerLogo({
   className = "",
   compact = false,
@@ -13,7 +13,8 @@ export default function TurnerLogo({
   markSrc?: string;
 }) {
   const financial = /financial research/i.test(brand);
-  const name = "Mark Turner";
+  const thompson = /thompson brothers/i.test(brand);
+  const name = thompson ? "Thompson Brothers" : "Mark Turner";
   const line2 = financial ? "Financial Research" : "Market Research";
 
   const mark = (

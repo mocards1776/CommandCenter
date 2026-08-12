@@ -55,6 +55,12 @@ const NAV = [
     short: "Funds",
     Icon: NotebookPen,
   },
+  {
+    to: "/notebook/evans-road-webster-land",
+    label: "Evans Road",
+    short: "Land",
+    Icon: NotebookPen,
+  },
 ];
 const SPORTS_NAV = [
   { to: "/sports?solo=1", match: (p: string) => p === "/sports", label: "Teams", Icon: Users },

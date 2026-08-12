@@ -7,7 +7,7 @@ import { getStory } from "@/lib/stories/types";
 import { mintStoryLink, storyShareUrl } from "@/lib/stories/share";
 
 /**
- * Internal notebook / report page for 1715 E. Buena Vista stories.
+ * Internal notebook / report page for client scroll stories.
  * Staff can mint a client scroll-presentation URL from here.
  */
 export default function BuenaVistaNotebookPage() {
@@ -21,9 +21,14 @@ export default function BuenaVistaNotebookPage() {
   if (!story) return <Navigate to="/notebook/1715-e-buena-vista" replace />;
 
   const storySlug = story.slug;
-  const mintLabel = story.brand.includes("Financial")
-    ? "1715 E. Buena Vista · Financial"
-    : "1715 E. Buena Vista";
+  const mintLabel =
+    story.layout === "land"
+      ? story.address
+      : story.brand.includes("Financial")
+        ? "1715 E. Buena Vista · Financial"
+        : story.slug.includes("buena-vista")
+          ? "1715 E. Buena Vista"
+          : story.address;
 
   async function onMint() {
     setBusy(true);
@@ -189,7 +194,7 @@ export default function BuenaVistaNotebookPage() {
       {story.proceedsOptions.length ? (
         <section className="mb-10">
           <div className="rule-head mb-4">
-            <span>Proceeds control</span>
+            <span>{story.layout === "land" ? "Hold income (non-sale)" : "Proceeds control"}</span>
           </div>
           <ul className="space-y-2">
             {story.proceedsOptions.map((opt) => (
@@ -211,12 +216,20 @@ export default function BuenaVistaNotebookPage() {
         </div>
         <p className="text-chalk text-sm leading-relaxed mb-4">{story.valuation.thesis}</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center mb-6">
-          {[
-            ["Offer", story.valuation.offer],
-            ["Low", story.valuation.low],
-            ["Mid", story.valuation.mid],
-            ["High", story.valuation.high],
-          ].map(([label, value]) => (
+          {(story.layout === "land"
+            ? [
+                ["Low", story.valuation.low],
+                ["Mid", story.valuation.mid],
+                ["High", story.valuation.high],
+                ["Index", story.valuation.zest],
+              ]
+            : [
+                ["Offer", story.valuation.offer],
+                ["Low", story.valuation.low],
+                ["Mid", story.valuation.mid],
+                ["High", story.valuation.high],
+              ]
+          ).map(([label, value]) => (
             <div key={String(label)} className="border border-white/10 rounded-sm p-3 bg-field/60">
               <div className="label-caps mb-1">{label}</div>
               <div className="text-lg text-cream font-[family-name:var(--font-display)]">
@@ -230,7 +243,7 @@ export default function BuenaVistaNotebookPage() {
           ))}
         </div>
         <div className="rule-head mb-4">
-          <span>Net after realtor fees</span>
+          <span>{story.layout === "land" ? "Sale / hold paths" : "Net after realtor fees"}</span>
         </div>
         <ul className="space-y-3">
           {story.netScenarios.map((n) => (
@@ -246,20 +259,26 @@ export default function BuenaVistaNotebookPage() {
                 </span>
               </div>
               <p className="text-chalk text-xs leading-relaxed">
-                Sale{" "}
-                {n.salePrice.toLocaleString("en-US", {
-                  style: "currency",
-                  currency: "USD",
-                  maximumFractionDigits: 0,
-                })}
-                {n.realtorFee
-                  ? ` · fees −${n.realtorFee.toLocaleString("en-US", {
+                {n.salePrice <= 0 ? (
+                  <>Hold / lease path. {n.note}</>
+                ) : (
+                  <>
+                    Sale{" "}
+                    {n.salePrice.toLocaleString("en-US", {
                       style: "currency",
                       currency: "USD",
                       maximumFractionDigits: 0,
-                    })}`
-                  : " · no realtor"}
-                . {n.note}
+                    })}
+                    {n.realtorFee
+                      ? ` · fees −${n.realtorFee.toLocaleString("en-US", {
+                          style: "currency",
+                          currency: "USD",
+                          maximumFractionDigits: 0,
+                        })}`
+                      : " · no realtor"}
+                    . {n.note}
+                  </>
+                )}
               </p>
             </li>
           ))}
@@ -289,7 +308,9 @@ export default function BuenaVistaNotebookPage() {
               <div>
                 <div className="text-cream font-medium">{c.address}</div>
                 <div className="text-chalk text-xs mt-0.5">
-                  {c.beds}/{c.baths} · {c.sqft.toLocaleString()} sq ft · {c.note}
+                  {c.acres != null
+                    ? `${c.acres} ac · ${c.note}`
+                    : `${c.beds}/${c.baths} · ${c.sqft.toLocaleString()} sq ft · ${c.note}`}
                 </div>
               </div>
               <div className="text-right shrink-0">
