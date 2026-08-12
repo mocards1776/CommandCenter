@@ -2,6 +2,20 @@
 
 ---
 
+## Health page — August 12, 2026
+
+- New **/health** page: daily calorie budget, food log (with optional macros),
+  and today’s steps / burned / weight chips.
+- **Withings**: OAuth edge function (`withings`) syncs weight, steps, and
+  activity calories. Secrets: `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET`,
+  `WITHINGS_REDIRECT_URI` (callback → `/health`).
+- **Apple Health**: no public web API — import Health Auto Export JSON or a
+  modest `export.xml` via the `apple-health` edge function.
+- Tables: `health_settings`, `calorie_entries`, `health_metrics`,
+  `health_connections` (tokens stay server-side).
+
+---
+
 ## Hide City SC soccer bleed — August 11, 2026
 
 - Auto-hide clear MLS / City SC stories that leak into the STL Today Cardinals

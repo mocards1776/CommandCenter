@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   ListChecks,
   Repeat,
+  HeartPulse,
   BookOpen,
   Trophy,
   Newspaper,
@@ -38,6 +39,7 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard", short: "Today", Icon: LayoutDashboard },
   { to: "/todos", label: "Todos", short: "Todos", Icon: ListChecks },
   { to: "/habits", label: "Habits", short: "Habits", Icon: Repeat },
+  { to: "/health", label: "Health", short: "Health", Icon: HeartPulse },
   { to: "/reading", label: "Reading", short: "Reading", Icon: BookOpen },
   { to: "/rss", label: "Dispatch", short: "News", Icon: Newspaper },
   { to: "/sports", label: "Sports", short: "Sports", Icon: Trophy },
@@ -151,6 +153,7 @@ export default function AppShell() {
       pathname.startsWith("/dashboard") ||
       pathname.startsWith("/todos") ||
       pathname.startsWith("/habits") ||
+      pathname.startsWith("/health") ||
       pathname.startsWith("/notebook")
     ) {
       clearReadingSolo();

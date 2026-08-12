@@ -34,5 +34,11 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
     through the `story-link` edge function (service role). Public resolve via
     `resolve_story_link(token)` SECURITY DEFINER RPC (returns slug/label only).
 
+11. `health` — calorie log (`calorie_entries`), daily goal (`health_settings`),
+    synced metrics (`health_metrics`), and OAuth token vault
+    (`health_connections`, service-role only). Apple Health has no public web
+    API — imports go through the `apple-health` edge function; Withings uses
+    the `withings` edge function.
+
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.
