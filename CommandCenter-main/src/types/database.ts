@@ -567,9 +567,36 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["rss_filters"]["Insert"]>;
         Relationships: [];
       };
+      story_links: {
+        Row: {
+          id: string;
+          token: string;
+          slug: string;
+          label: string | null;
+          revoked_at: string | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          token: string;
+          slug: string;
+          label?: string | null;
+          revoked_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["story_links"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
-    Functions: { [_ in never]: never };
+    Functions: {
+      resolve_story_link: {
+        Args: { p_token: string };
+        Returns: { slug: string; label: string | null }[];
+      };
+    };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
   };

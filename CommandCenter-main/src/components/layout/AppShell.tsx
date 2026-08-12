@@ -10,6 +10,7 @@ import {
   LogOut,
   Users,
   Flame,
+  NotebookPen,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import StarField from "@/components/StarField";
@@ -40,8 +41,13 @@ const NAV = [
   { to: "/reading", label: "Reading", short: "Reading", Icon: BookOpen },
   { to: "/rss", label: "Dispatch", short: "News", Icon: Newspaper },
   { to: "/sports", label: "Sports", short: "Sports", Icon: Trophy },
+  {
+    to: "/notebook/1715-e-buena-vista",
+    label: "Buena Vista",
+    short: "House",
+    Icon: NotebookPen,
+  },
 ];
-
 const SPORTS_NAV = [
   { to: "/sports?solo=1", match: (p: string) => p === "/sports", label: "Teams", Icon: Users },
   {
@@ -138,7 +144,8 @@ export default function AppShell() {
     if (
       pathname.startsWith("/dashboard") ||
       pathname.startsWith("/todos") ||
-      pathname.startsWith("/habits")
+      pathname.startsWith("/habits") ||
+      pathname.startsWith("/notebook")
     ) {
       clearReadingSolo();
       clearSportsSolo();
