@@ -120,7 +120,7 @@ export const STORIES: Record<string, ClientStory> = {
       { label: "Roof", value: "Brand new" },
       { label: "HVAC", value: "Under ~10 yrs" },
       { label: "Tree damage", value: "Catastrophic · rebuilt" },
-      { label: "Offer", value: "$230k as-is" },
+      { label: "Private inspection", value: "~$350–$550" },
     ],
     condition: [
       {
@@ -231,16 +231,16 @@ export const STORIES: Record<string, ClientStory> = {
       {
         id: "look",
         eyebrow: "Know before you answer",
-        title: "You can size the problem without selling through it.",
+        title: "A cheap private look beats guessing on $230,000.",
         body:
-          "For this decision, hire your own look — home inspector, crawl specialist, and/or moisture assessment — paid by you, for you. That is not the buyer’s inspection. It tells you whether leftover issues are small, medium, or ugly so you can answer $230,000 with numbers. Selling as-is to a no-inspection buyer means they already agreed to take condition risk; your private report is mainly so you do not guess. If you later list to a normal retail buyer, what you have learned usually has to be shared under disclosure rules — so use a private look first to choose the path (as-is exit vs fix-and-list), not as a way to hide findings on a public listing.",
+          "Hire your own inspector — paid by you, for you. A standard home inspection on a house this size usually runs about $350–$550. If you want a deeper crawl or moisture look, figure roughly $150–$400 more (mold sampling, if you choose it, can add a few hundred on top). All-in, a solid private package is often about $400–$900 — small money next to an $80,000 gap versus a clean mid-point. That report is not the buyer’s inspection. This offer is as-is with no inspection, so you are not obligated to hand them your private results; they already agreed to take condition risk without one. Use the look to decide whether $230,000 is smart for you. (If you later list to a normal retail buyer, plan to share what you know — that is a different path.)",
         visual: "none",
         bullets: [
-          "Private inspection / crawl look: for your price decision",
-          "This as-is buyer waived their inspection — they are pricing unknowns",
-          "If you list retail later, plan to disclose what you know; that path is different",
+          "Typical cost: ~$350–$550 for a home inspection; ~$400–$900 if you add crawl/moisture work",
+          "As-is, no-inspection buyer: you do not have to give them your private report",
+          "Retail listing later is different — then what you know usually gets disclosed",
         ],
-        stat: { value: "Private look", label: "Sizes the problem before you choose a lane" },
+        stat: { value: "~$400–900", label: "Typical private inspection package to size the risk" },
       },
       {
         id: "repairs",
@@ -281,7 +281,7 @@ export const STORIES: Record<string, ClientStory> = {
         body:
           "Do not accept or reject $230,000 on vibe. Spend a little on your own inspection math. If the stack of fixes is modest, counter or list. If the stack is large and you want out without more work, $230,000 as-is becomes a rational exit — especially with no realtor fee.",
         bullets: [
-          "Next step: private inspection / crawl / moisture scope with cost ranges",
+          "Next step: private inspection (~$350–$550, or ~$400–$900 with crawl/moisture) — keep the report; this buyer is not owed it",
           "If total fix-up stays well under ~$60,000: push past $230,000 or list",
           "If fixes clear ~$60,000+ and you will not do them: $230,000 as-is can be fair",
         ],
@@ -402,7 +402,7 @@ export const STORIES: Record<string, ClientStory> = {
       thesis:
         "Clean enough after ordinary post-damage catch-up: about $275,000–$345,000 (mid near $310,000). Heavy unresolved inspection risk sold as-is: about $230,000–$280,000. The $230,000 offer is the floor of that risk band — fair when repair math turns negative, low when leftovers are modest.",
       recommendation:
-        "Get a private inspection scope first. If total fix-up stays well under ~$60,000, push past $230,000 or list. If repairs clear that line and you will not do them, the as-is offer is in range.",
+        "Spend ~$400–$900 on a private inspection package first (you keep the report; this as-is buyer is not owed it). If total fix-up stays well under ~$60,000, push past $230,000 or list. If repairs clear that line and you will not do them, the as-is offer is in range.",
     },
     notebook: {
       title: "Repair headroom vs. the as-is check",
@@ -411,8 +411,8 @@ export const STORIES: Record<string, ClientStory> = {
         "Risk story: a 1976 ranch open to weather after a tree invites inspection attention — crawl, moisture, insulation, age systems, and sometimes mold. That is normal for this history, not a separate mystery.",
         `List path math: ${money(LIST_CLEAN)} sale − ~6% fees ≈ ${money(LIST_NET_BEFORE_REPAIRS)} before repairs. As-is path: ${money(OFFER_AS_IS)} with $0 realtor fee. Headroom for fixes before $230,000 wins: about ${money(BREAKEVEN_REPAIRS)}.`,
         "Example stacks (ballparks, not quotes): light moisture + punch list ~$8,000–$20,000 → list path still much better. Crawl/moisture work + systems catch-up ~$25,000–$45,000 → still often ahead, but closer. Wide remediation + structural/systems pile ~$60,000–$80,000+ → $230,000 can be the better cash answer.",
-        "How to know without guessing: pay for your own inspector and, if needed, a crawl/moisture specialist. That look is for your decision on this offer. The current buyer waived inspection and is buying as-is — they are already pricing unknowns. Your private report is so you know whether their price is smart for you.",
-        "Disclosure in plain terms: an as-is, no-inspection buyer is accepting condition risk in the deal. That is different from listing to retail buyers later — if you go that route, plan to share what you have learned. Use the private look to choose the lane; do not treat it as a way around a future listing disclosure.",
+        "How to know without guessing: pay for your own inspector (about $350–$550 for a standard visit on this size home) and, if needed, a crawl/moisture add-on (often putting a fuller package around $400–$900). That look is for your decision on this offer.",
+        "This buyer waived inspection and is buying as-is. You are not obligated to provide them your private inspection results — the report is yours. They already priced unknowns without seeing it. (Listing to a normal retail buyer later is a different lane; then plan to share what you know.)",
         "Recommendation: private scope → total the likely fixes → if you are clearly under the ~$60,000 headroom and willing to finish, counter or list; if you are over it (or unwilling), $230,000 as-is is a rational exit.",
       ],
     },
@@ -422,6 +422,7 @@ export const STORIES: Record<string, ClientStory> = {
       "Public estimate and tax data (Zillow)",
       "Recent area sales reported through public listing sites",
       "Typical residential repair / remediation cost ranges (industry ballparks; not a quote)",
+      "Typical Springfield-area home inspection fee ranges (industry ballparks; not a quote)",
     ],
   },
 };
