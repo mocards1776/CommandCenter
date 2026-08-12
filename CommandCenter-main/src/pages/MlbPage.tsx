@@ -11,6 +11,7 @@ import TeamMark from "@/components/sports/TeamMark";
 import {
   fetchFavoritePlayersYesterday,
   fetchMlbLeaders,
+  fetchMlbManagers,
   fetchMlbScoreboard,
   fetchMlbStandings,
   mlbHeadshot,
@@ -56,6 +57,16 @@ export default function MlbPage() {
     queryFn: () => listFavoritePlayers(user!.id),
     enabled: Boolean(user?.id),
     staleTime: 30_000,
+  });
+
+  const hasManagerFavs = Boolean(
+    favorites.data?.some((f) => (f.position ?? "").toLowerCase() === "manager"),
+  );
+  const managers = useQuery({
+    queryKey: ["mlb-managers-v9"],
+    queryFn: fetchMlbManagers,
+    enabled: hasManagerFavs,
+    staleTime: 180_000,
   });
 
   const playerFavs = useMemo(
@@ -240,7 +251,10 @@ export default function MlbPage() {
           <div className="flex gap-3 overflow-x-auto pb-1">
             {favorites.data
               .filter((f) => (f.position ?? "").toLowerCase() === "manager")
-              .map((f) => (
+              .map((f) => {
+                const resolved = managers.data?.find((m) => String(m.id) === String(f.playerId));
+                const src = resolved?.headshot ?? mlbHeadshot(f.playerId, 213);
+                return (
                 <Link
                   key={f.id}
                   to={`/sports/mlb/managers/${f.playerId}`}
@@ -248,9 +262,9 @@ export default function MlbPage() {
                 >
                   <div className="from-accent-dark/80 absolute inset-0 bg-gradient-to-t to-transparent opacity-80" />
                   <img
-                    src={mlbHeadshot(f.playerId, 213)}
+                    src={src}
                     alt=""
-                    className="aspect-[3/4] w-full object-cover object-top"
+                    className="aspect-[3/4] w-full object-cover object-[center_18%]"
                     loading="lazy"
                   />
                   <div className="absolute inset-x-0 bottom-0 p-2.5">
@@ -266,7 +280,8 @@ export default function MlbPage() {
                     className="text-accent absolute top-2 right-2 fill-current drop-shadow"
                   />
                 </Link>
-              ))}
+                );
+              })}
           </div>
         </section>
       )}
@@ -379,20 +394,20 @@ function ScoreCard({ game }: { game: MlbScoreGame }) {
     <Link
       to={`/sports/mlb/game/${game.id}`}
       className={cn(
-        "relative block overflow-hidden rounded-lg border bg-[#07101d] transition hover:border-accent/40",
+        "relative block overflow-hidden rounded-lg border bg-[#07101d] transition hover:border-accent/40 hover:shadow-[0_12px_36px_rgba(0,0,0,0.35)]",
         game.live ? "border-alert/45" : "border-white/[0.08]",
       )}
     >
       <div
-        className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-70"
+        className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-80"
         style={{
-          background: `radial-gradient(ellipse at 15% 50%, #${game.away.primaryColor}55, transparent 65%)`,
+          background: `radial-gradient(ellipse at 15% 50%, #${game.away.primaryColor}66, transparent 65%)`,
         }}
       />
       <div
-        className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-70"
+        className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-80"
         style={{
-          background: `radial-gradient(ellipse at 85% 50%, #${game.home.primaryColor}55, transparent 65%)`,
+          background: `radial-gradient(ellipse at 85% 50%, #${game.home.primaryColor}66, transparent 65%)`,
         }}
       />
       {game.live && (
@@ -402,7 +417,7 @@ function ScoreCard({ game }: { game: MlbScoreGame }) {
         <span
           className={cn(
             "text-[10px] font-bold uppercase tracking-[0.14em]",
-            game.live ? "text-alert" : "text-[#8b93a7]",
+            game.live ? "text-alert" : game.final ? "text-cream" : "text-[#8b93a7]",
           )}
         >
           {game.live ? (
@@ -432,9 +447,25 @@ function ScoreCard({ game }: { game: MlbScoreGame }) {
           <ScorePreviewTeam side={game.home} align="right" />
         </div>
       ) : (
-        <div className="relative z-10 space-y-0.5 px-3 py-2.5">
-          <TeamScoreLine side={game.away} emphasize={awayWins} muted={homeWins} />
-          <TeamScoreLine side={game.home} emphasize={homeWins} muted={awayWins} />
+        <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
+          <ScorePreviewTeam side={game.away} align="left" muted={homeWins} winner={awayWins} />
+          <div className="text-center">
+            <p className="font-display text-[34px] leading-none tabular-nums text-white">
+              <span className={awayWins ? "text-white" : homeWins ? "text-white/45" : "text-white"}>
+                {game.away.score ?? "—"}
+              </span>
+              <span className="mx-1.5 text-[16px] text-white/30">-</span>
+              <span className={homeWins ? "text-white" : awayWins ? "text-white/45" : "text-white"}>
+                {game.home.score ?? "—"}
+              </span>
+            </p>
+            {(game.away.hits != null || game.home.hits != null) && (
+              <p className="mt-1.5 text-[10px] uppercase tracking-[0.12em] text-white/45">
+                H {game.away.hits ?? "–"}–{game.home.hits ?? "–"}
+              </p>
+            )}
+          </div>
+          <ScorePreviewTeam side={game.home} align="right" muted={awayWins} winner={homeWins} />
         </div>
       )}
 
@@ -451,76 +482,36 @@ function ScoreCard({ game }: { game: MlbScoreGame }) {
 function ScorePreviewTeam({
   side,
   align,
+  muted,
+  winner,
 }: {
   side: MlbScoreGame["away"];
   align: "left" | "right";
+  muted?: boolean;
+  winner?: boolean;
 }) {
   return (
     <div
       className={cn(
         "flex min-w-0 flex-col items-center gap-1.5",
         align === "left" ? "sm:items-start" : "sm:items-end",
+        muted && "opacity-60",
       )}
     >
       {side.teamId ? <TeamMark teamId={side.teamId} size="md" /> : null}
       <div className={cn("text-center", align === "left" ? "sm:text-left" : "sm:text-right")}>
-        <p className="text-[15px] font-bold tracking-wide text-white">{side.abbrev}</p>
+        <p
+          className={cn(
+            "text-[15px] font-bold tracking-wide",
+            winner ? "text-white" : "text-white",
+          )}
+        >
+          {side.abbrev}
+        </p>
         {side.record && (
           <p className="numeral mt-0.5 text-[12px] font-medium text-white/70">{side.record}</p>
         )}
       </div>
-    </div>
-  );
-}
-
-function TeamScoreLine({
-  side,
-  emphasize,
-  muted,
-}: {
-  side: MlbScoreGame["away"];
-  emphasize?: boolean;
-  muted?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 py-1">
-      <div className="flex min-w-0 items-center gap-2">
-        {side.teamId ? <TeamMark teamId={side.teamId} size="sm" /> : null}
-        <div className="min-w-0">
-          {side.teamId ? (
-            <Link
-              to={teamPagePath(side.teamId)}
-              onClick={(e) => e.stopPropagation()}
-              className={cn(
-                "block text-[15px] font-semibold tracking-wide hover:underline",
-                emphasize ? "text-white" : muted ? "text-white/45" : "text-[#d5dae6]",
-              )}
-            >
-              {side.abbrev}
-            </Link>
-          ) : (
-            <span
-              className={cn(
-                "block text-[15px] font-semibold tracking-wide",
-                emphasize ? "text-white" : muted ? "text-white/45" : "text-[#d5dae6]",
-              )}
-            >
-              {side.abbrev}
-            </span>
-          )}
-          {side.record && (
-            <span className="numeral text-[11px] text-white/65">{side.record}</span>
-          )}
-        </div>
-      </div>
-      <span
-        className={cn(
-          "numeral text-[26px] leading-none",
-          emphasize ? "text-white" : muted ? "text-white/40" : "text-white",
-        )}
-      >
-        {side.score ?? "—"}
-      </span>
     </div>
   );
 }

@@ -236,7 +236,7 @@ export default function MlbPlayerPage() {
         onToggleFavorite={() => toggleFav.mutate()}
       />
 
-      {(brief.data || brief.isPending) && (
+      {(brief.data || brief.isPending || brief.isFetched) && (
         <RotoWireBriefCard brief={brief.data ?? null} loading={brief.isPending} />
       )}
 
@@ -391,25 +391,48 @@ function RotoWireBriefCard({
 }
 
 function PerformanceSummaryCard({ summary }: { summary: MlbPerformanceSummary }) {
+  const tone =
+    summary.latestIsWin === true
+      ? "from-emerald-500/20 via-transparent to-transparent"
+      : summary.latestIsWin === false
+        ? "from-alert/20 via-transparent to-transparent"
+        : "from-accent/15 via-transparent to-transparent";
   return (
-    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-      <div className="border-b border-white/[0.06] px-4 py-3">
+    <section className="bg-panel relative overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className={cn("pointer-events-none absolute inset-0 bg-gradient-to-br", tone)} />
+      <div className="relative border-b border-white/[0.06] flex items-center justify-between gap-3 px-4 py-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
           Form
         </p>
+        {summary.latestIsWin != null && (
+          <span
+            className={cn(
+              "rounded-sm px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em]",
+              summary.latestIsWin
+                ? "bg-emerald-400/15 text-emerald-300"
+                : "bg-alert/15 text-alert",
+            )}
+          >
+            {summary.latestIsWin ? "Win" : "Loss"}
+          </span>
+        )}
       </div>
-      <div className="grid gap-0 sm:grid-cols-2">
-        <div className="border-b border-white/[0.06] px-4 py-3 sm:border-r sm:border-b-0">
+      <div className="relative grid gap-0 sm:grid-cols-2">
+        <div className="border-b border-white/[0.06] px-4 py-3.5 sm:border-r sm:border-b-0">
           <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
             {summary.latestTitle}
           </p>
-          <p className="text-cream mt-1.5 text-[14px] leading-relaxed">{summary.latestLine}</p>
+          <p className="text-cream mt-1.5 text-[15px] font-medium leading-relaxed">
+            {summary.latestLine}
+          </p>
         </div>
-        <div className="px-4 py-3">
+        <div className="px-4 py-3.5">
           <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
             {summary.recentTitle}
           </p>
-          <p className="text-cream mt-1.5 text-[14px] leading-relaxed">{summary.recentLine}</p>
+          <p className="text-cream mt-1.5 text-[15px] font-medium leading-relaxed">
+            {summary.recentLine}
+          </p>
         </div>
       </div>
     </section>
