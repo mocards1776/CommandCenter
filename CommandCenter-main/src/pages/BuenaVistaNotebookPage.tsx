@@ -182,6 +182,23 @@ export default function BuenaVistaNotebookPage() {
 
       <section className="mb-10">
         <div className="rule-head mb-4">
+          <span>Proceeds control</span>
+        </div>
+        <ul className="space-y-2">
+          {story.proceedsOptions.map((opt) => (
+            <li key={opt.title} className="border border-white/10 rounded-sm p-3 bg-field/60">
+              <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 mb-1">
+                <span className="text-cream text-sm font-medium">{opt.title}</span>
+                <span className="label-caps">{opt.summary}</span>
+              </div>
+              <p className="text-chalk text-xs leading-relaxed">{opt.detail}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="mb-10">
+        <div className="rule-head mb-4">
           <span>Valuation range</span>
         </div>
         <p className="text-chalk text-sm leading-relaxed mb-4">{story.valuation.thesis}</p>

@@ -39,6 +39,12 @@ export type NetScenario = {
   highlight?: boolean;
 };
 
+export type ProceedsOption = {
+  title: string;
+  summary: string;
+  detail: string;
+};
+
 export type StoryChapter = {
   id: string;
   eyebrow: string;
@@ -46,7 +52,7 @@ export type StoryChapter = {
   body: string;
   bullets?: string[];
   stat?: { value: string; label: string };
-  visual?: "map" | "condition" | "schools" | "nets" | "repairs" | "none";
+  visual?: "map" | "condition" | "schools" | "nets" | "repairs" | "proceeds" | "none";
 };
 
 export type ClientStory = {
@@ -62,6 +68,7 @@ export type ClientStory = {
   facts: { label: string; value: string }[];
   condition: ConditionItem[];
   repairs: RepairEstimate[];
+  proceedsOptions: ProceedsOption[];
   schools: { name: string; grades: string; rating: number; miles: string }[];
   chapters: StoryChapter[];
   comps: StoryComp[];
@@ -100,8 +107,8 @@ export const STORIES: Record<string, ClientStory> = {
   "1715-e-buena-vista": {
     slug: "1715-e-buena-vista",
     metaTitle: "1715 E. Buena Vista — Market Brief",
-    brand: "Mark Turner Market Research",
-    brandTag: "Independent housing brief",
+    brand: "Mark Turner Financial Research",
+    brandTag: "Independent housing & proceeds brief",
     address: "1715 E. Buena Vista St",
     cityLine: "Springfield, MO 65804 · Ravenwood",
     heroLine: "A 1976 ranch that was open to the weather after a tree hit — the offer is pricing inspection risk.",
@@ -195,6 +202,32 @@ export const STORIES: Record<string, ClientStory> = {
         note: "Typical bundled inspection fallout — not a disaster",
       },
     ],
+    proceedsOptions: [
+      {
+        title: "Living trust + three co-trustees",
+        summary: "Best fit for two-of-three control",
+        detail:
+          "Sale proceeds go into a revocable living trust. Name three co-trustees. The trust document says distributions or large transfers need agreement of any two of the three. The bank account is titled to the trust, not to one person alone.",
+      },
+      {
+        title: "Trust bank / brokerage signature card",
+        summary: "Where the dual control is enforced",
+        detail:
+          "Once funds sit in a trust-titled account, set the bank or brokerage signature rules to dual authorization — often “any two of three.” Ordinary personal joint accounts usually let any one owner move money; that is why the trust + signature card matters.",
+      },
+      {
+        title: "Attorney escrow (short-term)",
+        summary: "Park funds while paperwork catches up",
+        detail:
+          "Closing proceeds can sit briefly in a lawyer’s trust / escrow account while the lasting trust and bank setup are finished. Useful as a bridge, not usually the long-term home for the money.",
+      },
+      {
+        title: "What usually does not create two-of-three",
+        summary: "Plain joint accounts & TOD alone",
+        detail:
+          "A normal joint bank account often allows any single owner to withdraw. Transfer-on-death / payable-on-death designations help after death, but they do not create shared approval while everyone is living. Ask the bank specifically for dual-control language.",
+      },
+    ],
     schools: [
       { name: "Walt Disney Elementary", grades: "K–5", rating: 10, miles: "0.6 mi" },
       { name: "Cherokee Middle", grades: "6–8", rating: 8, miles: "1.8 mi" },
@@ -275,15 +308,30 @@ export const STORIES: Record<string, ClientStory> = {
         visual: "nets",
       },
       {
+        id: "proceeds",
+        eyebrow: "After a sale",
+        title: "Hold the proceeds with shared approval.",
+        body:
+          "If the house sells, the next question is how the money is held so more than one person is involved before funds move. A common setup is three people on the arrangement, with any two required to agree. That is usually done with a living trust and a bank or brokerage account titled to the trust — not a plain joint checking account.",
+        visual: "proceeds",
+        bullets: [
+          "Aim: three named people; two must agree before money moves",
+          "Usual tool: living trust with three co-trustees + dual-control signature card",
+          "Plain joint accounts often let one person act alone — ask the bank for dual control",
+        ],
+        stat: { value: "2 of 3", label: "Common shared-approval rule for sale proceeds" },
+      },
+      {
         id: "call",
         eyebrow: "Bottom line",
         title: "Get a private scope. Then pick the lane.",
         body:
-          "Do not accept or reject $230,000 on vibe. Spend a little on your own inspection math. If the stack of fixes is modest, counter or list. If the stack is large and you want out without more work, $230,000 as-is becomes a rational exit — especially with no realtor fee.",
+          "Do not accept or reject $230,000 on vibe. Spend a little on your own inspection math. If the stack of fixes is modest, counter or list. If the stack is large and you want out without more work, $230,000 as-is becomes a rational exit — especially with no realtor fee. If a sale happens, set up shared control of the proceeds before the wire hits a single-name account.",
         bullets: [
           "Next step: private inspection (~$350–$550, or ~$400–$900 with crawl/moisture) — keep the report; this buyer is not owed it",
           "If total fix-up stays well under ~$60,000: push past $230,000 or list",
           "If fixes clear ~$60,000+ and you will not do them: $230,000 as-is can be fair",
+          "Before closing funds arrive: trust + two-of-three approval with your attorney / bank",
         ],
       },
     ],
@@ -413,7 +461,8 @@ export const STORIES: Record<string, ClientStory> = {
         "Example stacks (ballparks, not quotes): light moisture + punch list ~$8,000–$20,000 → list path still much better. Crawl/moisture work + systems catch-up ~$25,000–$45,000 → still often ahead, but closer. Wide remediation + structural/systems pile ~$60,000–$80,000+ → $230,000 can be the better cash answer.",
         "How to know without guessing: pay for your own inspector (about $350–$550 for a standard visit on this size home) and, if needed, a crawl/moisture add-on (often putting a fuller package around $400–$900). That look is for your decision on this offer.",
         "This buyer waived inspection and is buying as-is. You are not obligated to provide them your private inspection results — the report is yours. They already priced unknowns without seeing it. (Listing to a normal retail buyer later is a different lane; then plan to share what you know.)",
-        "Recommendation: private scope → total the likely fixes → if you are clearly under the ~$60,000 headroom and willing to finish, counter or list; if you are over it (or unwilling), $230,000 as-is is a rational exit.",
+        "If a sale closes: park proceeds with shared control. Practical pattern — revocable living trust naming three co-trustees, written so any two must agree to distribute or move money; fund a bank/brokerage account titled to that trust with a dual-authorization signature card. Attorney escrow can hold funds briefly while that is set up. Ordinary joint accounts and TOD/POD designations usually do not create two-of-three control by themselves.",
+        "Recommendation: private scope → total the likely fixes → if you are clearly under the ~$60,000 headroom and willing to finish, counter or list; if you are over it (or unwilling), $230,000 as-is is a rational exit. In parallel, ask an estate attorney and the bank how to title sale proceeds for two-of-three approval.",
       ],
     },
     researchDate: "August 12, 2026",
@@ -423,6 +472,7 @@ export const STORIES: Record<string, ClientStory> = {
       "Recent area sales reported through public listing sites",
       "Typical residential repair / remediation cost ranges (industry ballparks; not a quote)",
       "Typical Springfield-area home inspection fee ranges (industry ballparks; not a quote)",
+      "General trust / multi-signer account patterns (educational overview; not legal or tax advice)",
     ],
   },
 };

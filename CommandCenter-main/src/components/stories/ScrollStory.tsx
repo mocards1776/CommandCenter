@@ -233,7 +233,11 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               {ch.stat ? (
                 <div
                   className={`story-stat ${
-                    ch.id === "risk" || ch.id === "repairs" || ch.id === "offer" || ch.id === "call"
+                    ch.id === "risk" ||
+                    ch.id === "repairs" ||
+                    ch.id === "offer" ||
+                    ch.id === "proceeds" ||
+                    ch.id === "call"
                       ? "is-warn"
                       : ""
                   }`}
@@ -381,6 +385,28 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                 </div>
               </aside>
             ) : null}
+
+            {ch.visual === "proceeds" ? (
+              <aside className="visual-pane">
+                <div className="proceeds-hero" aria-hidden>
+                  <strong>2</strong>
+                  <span>of</span>
+                  <em>3</em>
+                  <p>People named · two must agree before money moves</p>
+                </div>
+                <div className="proceeds-list">
+                  {story.proceedsOptions.map((opt) => (
+                    <article key={opt.title} className="proceeds-card">
+                      <header>
+                        <h3>{opt.title}</h3>
+                        <em>{opt.summary}</em>
+                      </header>
+                      <p>{opt.detail}</p>
+                    </article>
+                  ))}
+                </div>
+              </aside>
+            ) : null}
           </div>
         </section>
       ))}
@@ -515,7 +541,10 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               <span>{story.brandTag}</span>
             </div>
           </div>
-          <p>Research dated {story.researchDate}. This is not an appraisal or legal advice.</p>
+          <p>
+            Research dated {story.researchDate}. This is not an appraisal, legal advice, or tax advice.
+            Trust and account setups should be confirmed with an attorney and the bank.
+          </p>
           <p className="story-sources">{story.sources.join(" · ")}</p>
         </footer>
       </section>
@@ -901,6 +930,41 @@ const STORY_CSS = `
     font-family: var(--font-mono); font-size: 0.78rem; color: var(--navy); white-space: nowrap;
   }
   .repair-card p { margin: 0; font-size: 0.82rem; line-height: 1.4; color: var(--muted); }
+
+  .proceeds-hero {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.45rem 0.55rem;
+    border: 1px solid var(--line); padding: 1rem 1.1rem;
+    background:
+      linear-gradient(145deg, rgba(20,51,86,0.1), rgba(196,92,38,0.08)),
+      rgba(255,255,255,0.55);
+  }
+  .proceeds-hero strong, .proceeds-hero em {
+    font-family: var(--font-display); font-style: normal;
+    font-size: clamp(2.4rem, 5vw, 3.2rem); line-height: 1; color: var(--navy);
+  }
+  .proceeds-hero em { color: var(--copper-deep); }
+  .proceeds-hero span {
+    font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase;
+    font-weight: 700; color: var(--muted);
+  }
+  .proceeds-hero p {
+    flex: 1 1 100%; margin: 0.25rem 0 0;
+    font-size: 0.9rem; color: var(--muted); line-height: 1.4;
+  }
+  .proceeds-list { display: grid; gap: 0.5rem; }
+  .proceeds-card {
+    border: 1px solid var(--line); background: rgba(255,255,255,0.55);
+    padding: 0.8rem 0.9rem;
+  }
+  .proceeds-card header { margin-bottom: 0.3rem; }
+  .proceeds-card h3 {
+    font-family: var(--font-body); font-size: 0.92rem; margin: 0 0 0.15rem; font-weight: 700;
+  }
+  .proceeds-card em {
+    font-style: normal; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    font-weight: 700; color: var(--copper-deep);
+  }
+  .proceeds-card p { margin: 0; font-size: 0.84rem; line-height: 1.45; color: var(--muted); }
 
   .school-stack { display: grid; gap: 0.55rem; }
   .school-card {

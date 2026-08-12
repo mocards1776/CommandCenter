@@ -1,4 +1,4 @@
-/** Mark Turner Market Research — stylized portrait mark + wordmark. */
+/** Mark Turner Financial Research — stylized portrait mark + wordmark. */
 export default function TurnerLogo({
   className = "",
   compact = false,
@@ -20,7 +20,7 @@ export default function TurnerLogo({
 
   if (compact) {
     return (
-      <span className={`turner-logo is-compact ${className}`} aria-label="Mark Turner Market Research">
+      <span className={`turner-logo is-compact ${className}`} aria-label="Mark Turner Financial Research">
         {mark}
       </span>
     );
@@ -32,18 +32,18 @@ export default function TurnerLogo({
         {mark}
         <div className="turner-text">
           <strong>Mark Turner</strong>
-          <span>Market Research</span>
+          <span>Financial Research</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`turner-logo ${className}`} aria-label="Mark Turner Market Research">
+    <div className={`turner-logo ${className}`} aria-label="Mark Turner Financial Research">
       {mark}
       <div className="turner-text">
         <strong>Mark Turner</strong>
-        <span>Market Research</span>
+        <span>Financial Research</span>
       </div>
     </div>
   );
