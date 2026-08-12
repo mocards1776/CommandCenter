@@ -45,7 +45,7 @@ export default function PublicStoryPage() {
       <div className="min-h-screen grid place-items-center bg-[#f7f4ec] text-[#081228] px-6">
         <div className="text-center max-w-md">
           <p className="text-[11px] tracking-[0.22em] uppercase text-[#c45c26] font-semibold mb-3">
-            Mark Turner Financial Research
+            Mark Turner Research
           </p>
           <h1 className="font-[family-name:var(--font-display)] text-3xl mb-3">Link unavailable</h1>
           <p className="text-[#5c6578] text-sm leading-relaxed mb-6">

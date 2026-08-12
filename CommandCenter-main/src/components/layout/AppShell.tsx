@@ -47,6 +47,12 @@ const NAV = [
     short: "House",
     Icon: NotebookPen,
   },
+  {
+    to: "/notebook/1715-e-buena-vista-financial",
+    label: "BV Financial",
+    short: "Funds",
+    Icon: NotebookPen,
+  },
 ];
 const SPORTS_NAV = [
   { to: "/sports?solo=1", match: (p: string) => p === "/sports", label: "Teams", Icon: Users },

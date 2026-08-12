@@ -19,7 +19,7 @@ const CORS: Record<string, string> = {
 };
 
 /** Known scroll-story slugs. Keep in sync with frontend story registry. */
-const KNOWN_SLUGS = new Set(["1715-e-buena-vista"]);
+const KNOWN_SLUGS = new Set(["1715-e-buena-vista", "1715-e-buena-vista-financial"]);
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

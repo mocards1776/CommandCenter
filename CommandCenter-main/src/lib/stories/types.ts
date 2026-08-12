@@ -60,6 +60,7 @@ export type ClientStory = {
   metaTitle: string;
   brand: string;
   brandTag: string;
+  markSrc: string;
   address: string;
   cityLine: string;
   heroLine: string;
@@ -107,8 +108,339 @@ export const STORIES: Record<string, ClientStory> = {
   "1715-e-buena-vista": {
     slug: "1715-e-buena-vista",
     metaTitle: "1715 E. Buena Vista — Market Brief",
+    brand: "Mark Turner Market Research",
+    brandTag: "Independent housing brief",
+    markSrc: "/brand/mark-turner-market.png",
+    address: "1715 E. Buena Vista St",
+    cityLine: "Springfield, MO 65804 · Ravenwood",
+    heroLine: "A 1976 ranch that was open to the weather after a tree hit — the offer is pricing inspection risk.",
+    support:
+      "You already paid for the big visible work: new roof, about half rebuilt open-concept, half new siding, newer HVAC. What is left is the usual question for a house this age that sat open after catastrophic damage — what will a careful inspection still find, and what does that cost to make right?",
+    geo: {
+      lat: 37.1323354,
+      lng: -93.2652218,
+      label: "1715 E Buena Vista St, Springfield, MO 65804",
+    },
+    facts: [
+      { label: "Beds / baths", value: "3 / 2" },
+      { label: "Size", value: "2,154 sq ft" },
+      { label: "Lot", value: "0.30 acre" },
+      { label: "Built", value: "1976 ranch" },
+      { label: "Roof", value: "Brand new" },
+      { label: "HVAC", value: "Under ~10 yrs" },
+      { label: "Tree damage", value: "Catastrophic · rebuilt" },
+      { label: "Private inspection", value: "~$350–$550" },
+    ],
+    condition: [
+      {
+        label: "Tree / weather exposure",
+        status: "concern",
+        detail:
+          "The house was open after a catastrophic tree hit. Even with a rebuild, inspectors look hard at what water and weather may have done in the crawl, walls, and insulation.",
+      },
+      {
+        label: "Age-related systems",
+        status: "partial",
+        detail:
+          "1976 ranch means some original pieces can still hide behind the remodel — plumbing, wiring, vapor barrier, foundation vents. Normal for the era; still on an inspector’s checklist.",
+      },
+      {
+        label: "Roof",
+        status: "new",
+        detail: "Full new roof after the tree — a major cost already behind you.",
+      },
+      {
+        label: "Open-concept half",
+        status: "new",
+        detail: "About half the home was rebuilt open and modern after the damage.",
+      },
+      {
+        label: "Siding / HVAC",
+        status: "partial",
+        detail: "About half new siding. Heating and cooling look recent (likely under ten years).",
+      },
+      {
+        label: "Moisture / mold risk",
+        status: "concern",
+        detail:
+          "One common leftover after weather exposure — not unique to this house, but worth pricing. Can be a small cleanup or a bigger crawl/insulation job.",
+      },
+    ],
+    repairs: [
+      {
+        issue: "Moisture / mold (contained)",
+        low: 2500,
+        high: 8000,
+        note: "Spot cleanup, dry-out, limited materials",
+      },
+      {
+        issue: "Moisture / mold (crawl or widespread)",
+        low: 15000,
+        high: 40000,
+        note: "Remediation, insulation, vapor work, repairs",
+      },
+      {
+        issue: "Crawl space / vapor / insulation",
+        low: 4000,
+        high: 18000,
+        note: "Common on ranches after water exposure",
+      },
+      {
+        issue: "Electrical or plumbing catch-up",
+        low: 2000,
+        high: 12000,
+        note: "Age + remodel transitions",
+      },
+      {
+        issue: "Finish / cosmetic punch list",
+        low: 3000,
+        high: 15000,
+        note: "Older half, trim, paint, small systems",
+      },
+      {
+        issue: "Stack of “a few things”",
+        low: 15000,
+        high: 35000,
+        note: "Typical bundled inspection fallout — not a disaster",
+      },
+    ],
+    proceedsOptions: [],
+    schools: [
+      { name: "Walt Disney Elementary", grades: "K–5", rating: 10, miles: "0.6 mi" },
+      { name: "Cherokee Middle", grades: "6–8", rating: 8, miles: "1.8 mi" },
+      { name: "Kickapoo High", grades: "9–12", rating: 8, miles: "1.7 mi" },
+    ],
+    chapters: [
+      {
+        id: "place",
+        eyebrow: "Where it is",
+        title: "Location supports a mid-$300,000 story.",
+        body:
+          "Ravenwood is a solid Springfield neighborhood with strong schools. Same-street peers often read near $310,000–$320,000 when the house shows clean. The question is not the street — it is how much unfinished risk remains after the tree and the rebuild.",
+        visual: "map",
+        bullets: [
+          "65804 homes have been selling in about ~10 days",
+          "Typical sale price in the zip: around $291,000",
+          "Healthy comps nearby still cluster in the low-to-mid $300,000s",
+        ],
+      },
+      {
+        id: "risk",
+        eyebrow: "Inspection risk",
+        title: "Open to the elements changes what buyers assume.",
+        body:
+          "A 1976 crawl-space ranch that took catastrophic tree damage — and sat open to weather during that chapter — invites a tougher inspection. Moisture, crawl conditions, insulation, and related cleanup (including mold when it shows up) are the usual suspects. The $230,000 as-is, no-inspection bid is the buyer saying they will own whatever is still hiding.",
+        visual: "condition",
+        bullets: [
+          "Upgrades already done: roof, half remodel, half siding, newer HVAC",
+          "Still unknown: crawl, moisture history, age systems behind the new work",
+          "As-is + no inspection = buyer prices the unknown, not the kitchen",
+        ],
+        stat: { value: "As-is", label: "Offer skips inspection on purpose" },
+      },
+      {
+        id: "look",
+        eyebrow: "Know before you answer",
+        title: "A cheap private look beats guessing on $230,000.",
+        body:
+          "Hire your own inspector — paid by you, for you. A standard home inspection on a house this size usually runs about $350–$550. If you want a deeper crawl or moisture look, figure roughly $150–$400 more (mold sampling, if you choose it, can add a few hundred on top). All-in, a solid private package is often about $400–$900 — small money next to an $80,000 gap versus a clean mid-point. That report is not the buyer’s inspection. This offer is as-is with no inspection, so you are not obligated to hand them your private results; they already agreed to take condition risk without one. Use the look to decide whether $230,000 is smart for you. (If you later list to a normal retail buyer, plan to share what you know — that is a different path.)",
+        visual: "none",
+        bullets: [
+          "Typical cost: ~$350–$550 for a home inspection; ~$400–$900 if you add crawl/moisture work",
+          "As-is, no-inspection buyer: you do not have to give them your private report",
+          "Retail listing later is different — then what you know usually gets disclosed",
+        ],
+        stat: { value: "~$400–900", label: "Typical private inspection package to size the risk" },
+      },
+      {
+        id: "repairs",
+        eyebrow: "Repair math",
+        title: "When fixing still beats $230,000 — and when it does not.",
+        body:
+          `List near ${money(LIST_CLEAN)} with about 6% realtor fees and you keep roughly ${money(LIST_NET_BEFORE_REPAIRS)} before repair spend. The as-is offer is ${money(OFFER_AS_IS)} with no realtor fee. That leaves about ${money(BREAKEVEN_REPAIRS)} of headroom for fixes before the list path falls behind $230,000 on pure cash. Under that line, fixing (or a modest credit) still wins. Over it — or if you will not fix and will not wait — the as-is check starts to make sense.`,
+        visual: "repairs",
+        bullets: [
+          `Repairs under ~$25,000: listing path still clearly ahead of $230,000`,
+          `Repairs ~$40,000–$50,000: gap shrinks; stress and time start to matter`,
+          `Repairs over ~${money(BREAKEVEN_REPAIRS)}: $230,000 as-is can win on math alone`,
+        ],
+        stat: { value: money(BREAKEVEN_REPAIRS), label: "Approx. repair spend where $230k ties a clean list" },
+      },
+      {
+        id: "worth",
+        eyebrow: "Price bands",
+        title: "Retail if clean enough — risk price if not.",
+        body:
+          "If leftover issues are ordinary and handled, a fair sale still looks about $275,000–$345,000 (mid near $310,000). If inspection fallout is heavy and you sell as-is with no work, buyers discount into a lower band — closer to $230,000–$280,000 — because they own the cleanup and the unknown.",
+        stat: { value: "$230–280k", label: "As-is band when inspection risk stays with the buyer" },
+        visual: "schools",
+      },
+      {
+        id: "offer",
+        eyebrow: "The offer",
+        title: "$230,000 is pricing unfinished risk — not the remodel.",
+        body:
+          "No realtor fee and no inspection only make sense if the buyer expects real findings. Against a clean mid-point it looks low. Against “tree-damage ranch, unknown leftovers, sell today,” it sits near the bottom of a hard as-is band — not a retail bid, but not random either.",
+        stat: { value: "−$80k", label: "vs clean mid-point · near as-is floor" },
+        visual: "nets",
+      },
+      {
+        id: "call",
+        eyebrow: "Bottom line",
+        title: "Get a private scope. Then pick the lane.",
+        body:
+          "Do not accept or reject $230,000 on vibe. Spend a little on your own inspection math. If the stack of fixes is modest, counter or list. If the stack is large and you want out without more work, $230,000 as-is becomes a rational exit — especially with no realtor fee.",
+        bullets: [
+          "Next step: private inspection (~$350–$550, or ~$400–$900 with crawl/moisture) — keep the report; this buyer is not owed it",
+          "If total fix-up stays well under ~$60,000: push past $230,000 or list",
+          "If fixes clear ~$60,000+ and you will not do them: $230,000 as-is can be fair",
+        ],
+      },
+    ],
+    comps: [
+      {
+        address: "1703 E Buena Vista St",
+        note: "Same street — closest match (healthy)",
+        beds: 4,
+        baths: 2,
+        sqft: 2057,
+        price: 319700,
+        priceLabel: money(319700) + " est.",
+        kind: "estimate",
+        map: { x: 42, y: 48 },
+      },
+      {
+        address: "1725 E Buena Vista St",
+        note: "Same street",
+        beds: 3,
+        baths: 3,
+        sqft: 1900,
+        price: 317900,
+        priceLabel: money(317900),
+        kind: "estimate",
+        map: { x: 62, y: 46 },
+      },
+      {
+        address: "1933 E Buena Vista St",
+        note: "Updated home nearby — sold",
+        beds: 4,
+        baths: 3,
+        sqft: 2874,
+        price: 389000,
+        priceLabel: money(389000),
+        date: "Jun 2026",
+        kind: "sold",
+        map: { x: 78, y: 38 },
+      },
+      {
+        address: "1880 E Cardinal St",
+        note: "Larger updated home — sold",
+        beds: 5,
+        baths: 3.5,
+        sqft: 4286,
+        price: 435000,
+        priceLabel: money(435000),
+        date: "Oct 2025",
+        kind: "sold",
+        map: { x: 70, y: 62 },
+      },
+      {
+        address: "1424 E Buena Vista St",
+        note: "Fixer sale — shows distress pricing",
+        beds: 3,
+        baths: 1,
+        sqft: 1707,
+        price: 115000,
+        priceLabel: money(115000),
+        date: "May 2025",
+        kind: "sold",
+        map: { x: 22, y: 55 },
+      },
+      {
+        address: "4832 S Warwick Ave",
+        note: "Similar size",
+        beds: 3,
+        baths: 2,
+        sqft: 2018,
+        price: 360100,
+        priceLabel: money(360100) + " est.",
+        kind: "estimate",
+        map: { x: 55, y: 78 },
+      },
+    ],
+    netScenarios: [
+      {
+        label: "Take $230k as-is (no realtor)",
+        salePrice: 230000,
+        realtorFeePct: 0,
+        realtorFee: 0,
+        estimatedNet: 230000,
+        note: "Buyer owns leftover inspection risk. Fast exit.",
+        highlight: true,
+      },
+      {
+        label: "Fix ~$20k, then list clean",
+        salePrice: 310000,
+        realtorFeePct: 0.06,
+        realtorFee: fee(310000, 0.06),
+        estimatedNet: LIST_NET_BEFORE_REPAIRS - 20000,
+        note: `Keep ~${money(LIST_NET_BEFORE_REPAIRS)} after fees, minus ~$20k fixes → still ~$61k above $230k.`,
+      },
+      {
+        label: "Fix ~$45k, then list clean",
+        salePrice: 310000,
+        realtorFeePct: 0.06,
+        realtorFee: fee(310000, 0.06),
+        estimatedNet: LIST_NET_BEFORE_REPAIRS - 45000,
+        note: "Still ahead of $230k on paper, but closer — time and hassle count.",
+      },
+      {
+        label: "Heavy fixes ~$65k, then list",
+        salePrice: 310000,
+        realtorFeePct: 0.06,
+        realtorFee: fee(310000, 0.06),
+        estimatedNet: LIST_NET_BEFORE_REPAIRS - 65000,
+        note: "Net slips under the as-is offer — this is where $230k wins on math.",
+      },
+    ],
+    valuation: {
+      low: 230000,
+      mid: 310000,
+      high: 345000,
+      offer: 230000,
+      zest: 304900,
+      thesis:
+        "Clean enough after ordinary post-damage catch-up: about $275,000–$345,000 (mid near $310,000). Heavy unresolved inspection risk sold as-is: about $230,000–$280,000. The $230,000 offer is the floor of that risk band — fair when repair math turns negative, low when leftovers are modest.",
+      recommendation:
+        "Spend ~$400–$900 on a private inspection package first (you keep the report; this as-is buyer is not owed it). If total fix-up stays well under ~$60,000, push past $230,000 or list. If repairs clear that line and you will not do them, the as-is offer is in range.",
+    },
+    notebook: {
+      title: "Repair headroom vs. the as-is check",
+      paragraphs: [
+        "Clean-house story: nearby sales and estimates still point near $305,000–$320,000. New roof and remodel support that when the house inspects like a finished project.",
+        "Risk story: a 1976 ranch open to weather after a tree invites inspection attention — crawl, moisture, insulation, age systems, and sometimes mold. That is normal for this history, not a separate mystery.",
+        `List path math: ${money(LIST_CLEAN)} sale − ~6% fees ≈ ${money(LIST_NET_BEFORE_REPAIRS)} before repairs. As-is path: ${money(OFFER_AS_IS)} with $0 realtor fee. Headroom for fixes before $230,000 wins: about ${money(BREAKEVEN_REPAIRS)}.`,
+        "Example stacks (ballparks, not quotes): light moisture + punch list ~$8,000–$20,000 → list path still much better. Crawl/moisture work + systems catch-up ~$25,000–$45,000 → still often ahead, but closer. Wide remediation + structural/systems pile ~$60,000–$80,000+ → $230,000 can be the better cash answer.",
+        "How to know without guessing: pay for your own inspector (about $350–$550 for a standard visit on this size home) and, if needed, a crawl/moisture add-on (often putting a fuller package around $400–$900). That look is for your decision on this offer.",
+        "This buyer waived inspection and is buying as-is. You are not obligated to provide them your private inspection results — the report is yours. They already priced unknowns without seeing it. (Listing to a normal retail buyer later is a different lane; then plan to share what you know.)",
+        "Recommendation: private scope → total the likely fixes → if you are clearly under the ~$60,000 headroom and willing to finish, counter or list; if you are over it (or unwilling), $230,000 as-is is a rational exit.",
+      ],
+    },
+    researchDate: "August 12, 2026",
+    sources: [
+      "Property condition notes (tree damage, roof, remodel, siding, HVAC)",
+      "Public estimate and tax data (Zillow)",
+      "Recent area sales reported through public listing sites",
+      "Typical residential repair / remediation cost ranges (industry ballparks; not a quote)",
+      "Typical Springfield-area home inspection fee ranges (industry ballparks; not a quote)",
+    ],
+  },
+  "1715-e-buena-vista-financial": {
+    slug: "1715-e-buena-vista-financial",
+    metaTitle: "1715 E. Buena Vista — Financial Brief",
     brand: "Mark Turner Financial Research",
     brandTag: "Independent housing & proceeds brief",
+    markSrc: "/brand/mark-turner-financial.png",
     address: "1715 E. Buena Vista St",
     cityLine: "Springfield, MO 65804 · Ravenwood",
     heroLine: "A 1976 ranch that was open to the weather after a tree hit — the offer is pricing inspection risk.",

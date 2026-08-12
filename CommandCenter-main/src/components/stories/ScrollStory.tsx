@@ -105,7 +105,12 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
         </div>
 
         <div className="title-inner">
-          <TurnerLogo stacked className="title-logo reveal" />
+          <TurnerLogo
+            stacked
+            className="title-logo reveal"
+            brand={story.brand}
+            markSrc={story.markSrc}
+          />
 
           <p className="title-kicker reveal delay-1">{story.cityLine}</p>
           <h1 className="title-display reveal delay-2">
@@ -186,7 +191,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
           </button>
         </div>
         <div className="hero-copy">
-          <TurnerLogo className="hero-brand reveal" />
+          <TurnerLogo className="hero-brand reveal" brand={story.brand} markSrc={story.markSrc} />
           <p className="story-kicker reveal delay-1">{story.cityLine}</p>
           <h1 className="reveal delay-1">{story.address}</h1>
           <p className="story-lede reveal delay-2">{story.heroLine}</p>
@@ -395,7 +400,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                   <p>People named · two must agree before money moves</p>
                 </div>
                 <div className="proceeds-list">
-                  {story.proceedsOptions.map((opt) => (
+                  {(story.proceedsOptions ?? []).map((opt) => (
                     <article key={opt.title} className="proceeds-card">
                       <header>
                         <h3>{opt.title}</h3>
@@ -535,7 +540,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
         ))}
         <footer className="story-footer">
           <div className="footer-brand">
-            <TurnerLogo compact />
+            <TurnerLogo compact brand={story.brand} markSrc={story.markSrc} />
             <div>
               <strong>{story.brand}</strong>
               <span>{story.brandTag}</span>

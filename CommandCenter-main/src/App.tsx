@@ -118,7 +118,7 @@ export default function App() {
               <Route path="/sports/mlb/player/:playerId" element={<MlbPlayerPage />} />
               <Route path="/sports/mlb/game/:gamePk" element={<MlbGamePage />} />
               <Route path="/rss" element={<RssPage />} />
-              <Route path="/notebook/1715-e-buena-vista" element={<BuenaVistaNotebookPage />} />
+              <Route path="/notebook/:slug" element={<BuenaVistaNotebookPage />} />
             </Route>
             <Route path="*" element={<HomeRedirect />} />
           </Routes>

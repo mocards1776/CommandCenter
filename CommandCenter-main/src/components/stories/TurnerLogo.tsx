@@ -1,16 +1,24 @@
-/** Mark Turner Financial Research — stylized portrait mark + wordmark. */
+/** Mark Turner brand mark + wordmark (Market or Financial Research). */
 export default function TurnerLogo({
   className = "",
   compact = false,
   stacked = false,
+  brand = "Mark Turner Market Research",
+  markSrc = "/brand/mark-turner-market.png",
 }: {
   className?: string;
   compact?: boolean;
   stacked?: boolean;
+  brand?: string;
+  markSrc?: string;
 }) {
+  const financial = /financial research/i.test(brand);
+  const name = "Mark Turner";
+  const line2 = financial ? "Financial Research" : "Market Research";
+
   const mark = (
     <img
-      src="/brand/mark-turner.png"
+      src={markSrc}
       alt=""
       className="turner-mark"
       width={compact ? 40 : stacked ? 88 : 56}
@@ -20,7 +28,7 @@ export default function TurnerLogo({
 
   if (compact) {
     return (
-      <span className={`turner-logo is-compact ${className}`} aria-label="Mark Turner Financial Research">
+      <span className={`turner-logo is-compact ${className}`} aria-label={brand}>
         {mark}
       </span>
     );
@@ -31,19 +39,19 @@ export default function TurnerLogo({
       <div className={`turner-logo is-stacked ${className}`}>
         {mark}
         <div className="turner-text">
-          <strong>Mark Turner</strong>
-          <span>Financial Research</span>
+          <strong>{name}</strong>
+          <span>{line2}</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`turner-logo ${className}`} aria-label="Mark Turner Financial Research">
+    <div className={`turner-logo ${className}`} aria-label={brand}>
       {mark}
       <div className="turner-text">
-        <strong>Mark Turner</strong>
-        <span>Financial Research</span>
+        <strong>{name}</strong>
+        <span>{line2}</span>
       </div>
     </div>
   );

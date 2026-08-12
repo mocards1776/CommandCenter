@@ -1,28 +1,34 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Check, Copy, Link2, Presentation } from "lucide-react";
 import ScrollStory from "@/components/stories/ScrollStory";
 import { getStory } from "@/lib/stories/types";
 import { mintStoryLink, storyShareUrl } from "@/lib/stories/share";
 
-const SLUG = "1715-e-buena-vista";
-
 /**
- * Internal notebook / report page for 1715 E. Buena Vista.
+ * Internal notebook / report page for 1715 E. Buena Vista stories.
  * Staff can mint a client scroll-presentation URL from here.
  */
 export default function BuenaVistaNotebookPage() {
-  const story = getStory(SLUG)!;
+  const { slug = "1715-e-buena-vista" } = useParams();
+  const story = getStory(slug);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [preview, setPreview] = useState(false);
 
+  if (!story) return <Navigate to="/notebook/1715-e-buena-vista" replace />;
+
+  const storySlug = story.slug;
+  const mintLabel = story.brand.includes("Financial")
+    ? "1715 E. Buena Vista · Financial"
+    : "1715 E. Buena Vista";
+
   async function onMint() {
     setBusy(true);
     try {
-      const token = await mintStoryLink(SLUG, "1715 E. Buena Vista");
+      const token = await mintStoryLink(storySlug, mintLabel);
       const url = storyShareUrl(token);
       setShareUrl(url);
       await navigator.clipboard.writeText(url);
@@ -180,22 +186,24 @@ export default function BuenaVistaNotebookPage() {
         </ul>
       </section>
 
-      <section className="mb-10">
-        <div className="rule-head mb-4">
-          <span>Proceeds control</span>
-        </div>
-        <ul className="space-y-2">
-          {story.proceedsOptions.map((opt) => (
-            <li key={opt.title} className="border border-white/10 rounded-sm p-3 bg-field/60">
-              <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 mb-1">
-                <span className="text-cream text-sm font-medium">{opt.title}</span>
-                <span className="label-caps">{opt.summary}</span>
-              </div>
-              <p className="text-chalk text-xs leading-relaxed">{opt.detail}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {story.proceedsOptions.length ? (
+        <section className="mb-10">
+          <div className="rule-head mb-4">
+            <span>Proceeds control</span>
+          </div>
+          <ul className="space-y-2">
+            {story.proceedsOptions.map((opt) => (
+              <li key={opt.title} className="border border-white/10 rounded-sm p-3 bg-field/60">
+                <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 mb-1">
+                  <span className="text-cream text-sm font-medium">{opt.title}</span>
+                  <span className="label-caps">{opt.summary}</span>
+                </div>
+                <p className="text-chalk text-xs leading-relaxed">{opt.detail}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="mb-10">
         <div className="rule-head mb-4">
