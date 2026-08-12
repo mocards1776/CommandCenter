@@ -156,6 +156,7 @@ export const STORIES: Record<string, ClientStory> = {
       { label: "Break-even repairs", value: "~$61,000", tone: "neutral" },
       { label: "Private inspection", value: "~$400–$900", tone: "neutral" },
       { label: "Private appraisal", value: "~$350–$600", tone: "neutral" },
+      { label: "65804 days on market", value: "~30 days", tone: "good" },
     ],
     callouts: [
       {
@@ -303,10 +304,29 @@ export const STORIES: Record<string, ClientStory> = {
           "Ravenwood / 65804 is solid. Schools are strong. Same-street peers often read near $310,000–$320,000 when the house shows clean. The street is not the problem — leftover post-tree risk is.",
         visual: "map",
         bullets: [
-          "65804 homes have been selling in about ~10 days",
+          "65804 median days on market recently ~30 days (not months)",
+          "Springfield metro median days on market ~44 days",
           "Typical sale price in the zip: around $291,000",
           "Healthy comps nearby still cluster in the low-to-mid $300,000s",
         ],
+      },
+      {
+        id: "tempo",
+        eyebrow: "Are houses sitting?",
+        title: "More listings ≠ a dead market.",
+        body:
+          "You may hear “nothing is moving.” Citywide, inventory is higher than a year ago, so the street can feel slower. The market report still shows homes trading — not freezing. In 65804, median time on market has recently been about ~30 days. Springfield metro sits around ~44 days. That is weeks, not a year on the lawn. Sale-to-list prices near asking also say buyers are still closing deals.",
+        visual: "none",
+        bullets: [
+          "65804: median days on market ≈ 30 days (recent Realtor.com zip read)",
+          "Springfield metro: median days on market ≈ 44 days (Jun 2026)",
+          "Citywide active listings up sharply YoY — more choice, so it can feel “stuck” even while sales continue",
+          "Sale-to-list near ~100% recently — not a fire-sale market",
+          "What people notice: more for-sale signs + some price cuts (~20%+ of listings in some local reads)",
+          "What the data still says: median homes are going pending in about a month in 65804",
+          "For this offer: market tempo does not erase the −$80k gap or the ~$61k repair break-even math",
+        ],
+        stat: { value: "~30 days", label: "65804 median days on market · still turning over" },
       },
       {
         id: "risk",
@@ -525,7 +545,7 @@ export const STORIES: Record<string, ClientStory> = {
         "Repair ballparks (not quotes): contained moisture ~$2.5k–$8k; crawl/widespread ~$15k–$40k; crawl/vapor ~$4k–$18k; electrical/plumbing ~$2k–$12k; punch list ~$3k–$15k; stacked “a few things” ~$15k–$35k.",
         "Private inspection ~$350–$550 (or ~$400–$900 with crawl/moisture). AS-IS BUYER IS NOT OWED YOUR REPORT.",
         "Private appraisal ~$350–$600. Answers value, not condition. Useful after (or with) inspection if you still want a third-party number vs $230k / $310k.",
-        "65804: ~10-day market, typical sale ~$291k. Same-street peers often ~$310k–$320k when clean. Schools: Disney 10, Cherokee 8, Kickapoo 8.",
+        "65804: median days on market ~30 days recently; Springfield metro ~44 days. More listings citywide can feel slow, but homes are still closing. Same-street peers often ~$310k–$320k when clean. Typical zip sale ~$291k. Schools: Disney 10, Cherokee 8, Kickapoo 8.",
         "Upgrades already paid: new roof, ~½ open rebuild, ~½ siding, newer HVAC. Risk: weather exposure + crawl/moisture/age systems.",
         "Lane: inspect → total fixes → under ~$61k and willing → counter/list; over ~$61k and unwilling → $230k as-is can be rational.",
       ],
@@ -538,6 +558,7 @@ export const STORIES: Record<string, ClientStory> = {
       "Typical residential repair / remediation cost ranges (industry ballparks; not a quote)",
       "Typical Springfield-area home inspection fee ranges (industry ballparks; not a quote)",
       "Typical residential appraisal fee ranges (industry ballparks; not a quote)",
+      "Realtor.com / FRED market tempo (65804 & Springfield MO days on market, inventory — mid-2026 reads)",
     ],
   },
   "1715-e-buena-vista-financial": {

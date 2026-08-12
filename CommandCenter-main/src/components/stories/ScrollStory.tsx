@@ -295,6 +295,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                 <div
                   className={`story-stat ${
                     ch.id === "numbers" ||
+                    ch.id === "tempo" ||
                     ch.id === "risk" ||
                     ch.id === "look" ||
                     ch.id === "appraisal" ||
