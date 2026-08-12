@@ -45,7 +45,7 @@ export default function PlayerPeek({
   });
 
   const contract = useQuery({
-    queryKey: ["mlb-player-contract-v8", p?.name, p?.useName, p?.firstName, p?.lastName],
+    queryKey: ["mlb-player-contract-v9", p?.name, p?.useName, p?.firstName, p?.lastName],
     queryFn: () =>
       fetchPlayerContract(p!.name, {
         useName: p!.useName,
@@ -53,10 +53,10 @@ export default function PlayerPeek({
         lastName: p!.lastName,
       }),
     enabled: Boolean(p?.name),
-    staleTime: 24 * 60 * 60_000,
-    gcTime: 7 * 24 * 60 * 60_000,
+    staleTime: 60 * 60_000,
+    gcTime: 24 * 60 * 60_000,
     refetchOnWindowFocus: false,
-    retry: 1,
+    retry: 2,
   });
 
   const latestGame = useQuery({
@@ -288,37 +288,39 @@ export default function PlayerPeek({
                 </div>
               ) : null}
 
-              {(contract.data || contract.isPending) && (
-                <section className="rounded-xl border border-white/[0.08] bg-black/20 px-3.5 py-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                    Contract
+              <section className="rounded-xl border border-white/[0.08] bg-black/20 px-3.5 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                  Contract
+                </p>
+                {contract.isPending ? (
+                  <p className="text-chalk-dim mt-2 flex items-center gap-2 text-[13px]">
+                    <Loader2 size={14} className="animate-spin" /> Looking up…
                   </p>
-                  {contract.isPending ? (
-                    <p className="text-chalk-dim mt-2 flex items-center gap-2 text-[13px]">
-                      <Loader2 size={14} className="animate-spin" /> Looking up…
-                    </p>
-                  ) : contract.data ? (
-                    <p className="text-cream mt-1.5 text-[14px] leading-relaxed">
-                      {[
-                        contract.data.currentSalary?.display,
-                        contract.data.currentSalary?.year &&
-                        contract.data.currentSalary.year !== "Total"
-                          ? contract.data.currentSalary.year
-                          : null,
-                        contract.data.totalValue &&
-                        contract.data.totalValue !== contract.data.currentSalary?.display
-                          ? `Total ${contract.data.totalValue}`
-                          : null,
-                        contract.data.contractStatus,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || "Details on full profile"}
-                    </p>
-                  ) : (
-                    <p className="text-chalk-dim mt-1.5 text-[13px]">No contract line found.</p>
-                  )}
-                </section>
-              )}
+                ) : contract.data ? (
+                  <p className="text-cream mt-1.5 text-[14px] leading-relaxed">
+                    {[
+                      contract.data.currentSalary?.display,
+                      contract.data.currentSalary?.year &&
+                      contract.data.currentSalary.year !== "Total"
+                        ? contract.data.currentSalary.year
+                        : null,
+                      contract.data.totalValue &&
+                      contract.data.totalValue !== contract.data.currentSalary?.display
+                        ? `Total ${contract.data.totalValue}`
+                        : null,
+                      contract.data.contractStatus,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "Details on full profile"}
+                  </p>
+                ) : (
+                  <p className="text-chalk-dim mt-1.5 text-[13px]">
+                    {contract.isError
+                      ? "Couldn't load contract — open full profile to retry."
+                      : "No contract line found."}
+                  </p>
+                )}
+              </section>
 
               {(p.birthPlace || p.mlbDebut || p.draft?.display || p.school) && (
                 <div>

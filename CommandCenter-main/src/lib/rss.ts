@@ -348,50 +348,221 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Decode common HTML entities so saved quotes can match article markup. */
+export function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&#0*39;/g, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&rsquo;/gi, "\u2019")
+    .replace(/&lsquo;/gi, "\u2018")
+    .replace(/&rdquo;/gi, "\u201D")
+    .replace(/&ldquo;/gi, "\u201C")
+    .replace(/&mdash;/gi, "\u2014")
+    .replace(/&ndash;/gi, "\u2013")
+    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => {
+      try {
+        return String.fromCodePoint(parseInt(h, 16));
+      } catch {
+        return "";
+      }
+    })
+    .replace(/&#(\d+);/g, (_, n: string) => {
+      try {
+        return String.fromCodePoint(Number(n));
+      } catch {
+        return "";
+      }
+    });
+}
+
 /** Collapse whitespace the same way selection capture does. */
 export function normalizeHighlightQuote(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
+  return decodeHtmlEntities(value)
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Build a regex that matches a saved quote across ordinary HTML whitespace. */
 function quoteMatchPattern(quote: string): RegExp | null {
   const normalized = normalizeHighlightQuote(quote);
   if (normalized.length < 2) return null;
-  const parts = normalized.split(" ").map(escapeRegExp).filter(Boolean);
+  const parts = normalized
+    .split(" ")
+    .map((word) =>
+      escapeRegExp(word)
+        // Treat curly / straight quotes as equivalent in the article body.
+        .replace(/'/g, "['\u2018\u2019]")
+        .replace(/"/g, '["\u201C\u201D]'),
+    )
+    .filter(Boolean);
   if (!parts.length) return null;
   return new RegExp(parts.join("\\s+"), "gi");
 }
 
 /**
  * Wrap saved highlight quotes in `<mark class="rss-hl">` inside article HTML.
- * Operates only on text nodes (between tags) so attributes/links stay intact.
+ * Matches across tags (e.g. player links) by searching decoded plain text and
+ * projecting ranges back onto the original markup.
  */
 export function markQuotesInHtml(html: string, quotes: string[]): string {
-  const patterns = [...new Set(quotes.map(normalizeHighlightQuote).filter((q) => q.length >= 2))]
-    .sort((a, b) => b.length - a.length)
-    .map(quoteMatchPattern)
-    .filter((re): re is RegExp => Boolean(re));
-  if (!html || !patterns.length) return html;
+  const needles = [...new Set(quotes.map(normalizeHighlightQuote).filter((q) => q.length >= 2))].sort(
+    (a, b) => b.length - a.length,
+  );
+  if (!html || !needles.length) return html;
 
-  const wrapUnmarked = (text: string, re: RegExp): string =>
-    text
-      .split(/(<mark class="rss-hl">[\s\S]*?<\/mark>)/g)
-      .map((chunk) => {
-        if (!chunk || chunk.startsWith('<mark class="rss-hl">')) return chunk;
-        re.lastIndex = 0;
-        return chunk.replace(re, (match) => `<mark class="rss-hl">${match}</mark>`);
-      })
-      .join("");
+  type Piece = { kind: "tag" | "text"; raw: string };
+  const pieces: Piece[] = html.split(/(<[^>]+>)/g).filter(Boolean).map((raw) => ({
+    kind: raw.startsWith("<") ? "tag" : "text",
+    // Decode text nodes up front so plain offsets stay 1:1 with piece contents.
+    raw: raw.startsWith("<") ? raw : decodeHtmlEntities(raw),
+  }));
 
-  return html
-    .split(/(<[^>]+>)/g)
-    .map((part) => {
-      if (!part || part.startsWith("<")) return part;
-      let out = part;
-      for (const re of patterns) out = wrapUnmarked(out, re);
-      return out;
-    })
-    .join("");
+  type MapEntry = { pieceIndex: number; start: number; end: number };
+  const map: MapEntry[] = [];
+  let plain = "";
+  pieces.forEach((piece, pieceIndex) => {
+    if (piece.kind !== "text") return;
+    const start = plain.length;
+    plain += piece.raw;
+    map.push({ pieceIndex, start, end: plain.length });
+  });
+  if (!plain) return html;
+
+  type Range = { start: number; end: number };
+  const ranges: Range[] = [];
+  for (const needle of needles) {
+    const re = quoteMatchPattern(needle);
+    if (!re) continue;
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(plain)) != null) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (!ranges.some((r) => start < r.end && end > r.start)) ranges.push({ start, end });
+      if (m[0].length === 0) re.lastIndex += 1;
+    }
+  }
+  if (!ranges.length) return html;
+
+  // Wrap each text piece independently so marks never straddle real tags
+  // (`<a>…</a>`). Adjacent marks still read as one highlight visually.
+  for (const entry of map) {
+    const piece = pieces[entry.pieceIndex]!;
+    const local = piece.raw;
+    const locals = ranges
+      .map((r) => ({
+        start: Math.max(0, r.start - entry.start),
+        end: Math.min(local.length, r.end - entry.start),
+      }))
+      .filter((r) => r.end > r.start)
+      .sort((a, b) => b.start - a.start);
+    if (!locals.length) continue;
+    let out = local;
+    for (const r of locals) {
+      out =
+        out.slice(0, r.start) +
+        `<mark class="rss-hl">${out.slice(r.start, r.end)}</mark>` +
+        out.slice(r.end);
+    }
+    piece.raw = out;
+  }
+
+  return pieces.map((p) => p.raw).join("");
+}
+
+/** Remove previously painted highlight marks (DOM path). */
+export function clearRssHighlights(root: Element | null | undefined): void {
+  if (!root) return;
+  root.querySelectorAll("mark.rss-hl").forEach((mark) => {
+    const parent = mark.parentNode;
+    if (!parent) return;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+    parent.normalize();
+  });
+}
+
+/**
+ * Paint a saved quote into a live DOM tree (handles player links / nested tags).
+ * Returns true when at least one range was wrapped.
+ */
+export function paintQuoteInElement(root: Element, quote: string): boolean {
+  if (typeof document === "undefined") return false;
+  const needle = normalizeHighlightQuote(quote);
+  const re = quoteMatchPattern(needle);
+  if (!re) return false;
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = (node as Text).parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (parent.closest("mark.rss-hl, script, style")) return NodeFilter.FILTER_REJECT;
+      if (!(node.nodeValue ?? "").trim()) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const nodes: Text[] = [];
+  let current: Node | null;
+  while ((current = walker.nextNode())) nodes.push(current as Text);
+  if (!nodes.length) return false;
+
+  type MapEntry = { node: Text; start: number; end: number };
+  const map: MapEntry[] = [];
+  let hay = "";
+  for (const node of nodes) {
+    const start = hay.length;
+    hay += node.nodeValue ?? "";
+    map.push({ node, start, end: hay.length });
+  }
+
+  re.lastIndex = 0;
+  const match = re.exec(hay);
+  if (!match) return false;
+  const matchStart = match.index;
+  const matchEnd = matchStart + match[0].length;
+
+  // Wrap from the end so earlier offsets stay valid.
+  for (let i = map.length - 1; i >= 0; i--) {
+    const entry = map[i]!;
+    if (entry.end <= matchStart || entry.start >= matchEnd) continue;
+    const localStart = Math.max(0, matchStart - entry.start);
+    const localEnd = Math.min(entry.node.nodeValue?.length ?? 0, matchEnd - entry.start);
+    if (localEnd <= localStart) continue;
+
+    const text = entry.node.nodeValue ?? "";
+    const before = text.slice(0, localStart);
+    const mid = text.slice(localStart, localEnd);
+    const after = text.slice(localEnd);
+    const mark = document.createElement("mark");
+    mark.className = "rss-hl";
+    mark.textContent = mid;
+
+    const parent = entry.node.parentNode;
+    if (!parent) continue;
+    const frag = document.createDocumentFragment();
+    if (before) frag.appendChild(document.createTextNode(before));
+    frag.appendChild(mark);
+    if (after) frag.appendChild(document.createTextNode(after));
+    parent.replaceChild(frag, entry.node);
+  }
+  return true;
+}
+
+/** Clear + paint all quotes into a reader root. */
+export function paintQuotesInElement(root: Element | null | undefined, quotes: string[]): void {
+  if (!root) return;
+  clearRssHighlights(root);
+  const unique = [...new Set(quotes.map(normalizeHighlightQuote).filter((q) => q.length >= 2))].sort(
+    (a, b) => b.length - a.length,
+  );
+  for (const q of unique) paintQuoteInElement(root, q);
 }
 
 /** Split plain text into highlighted / plain segments for React title rendering. */

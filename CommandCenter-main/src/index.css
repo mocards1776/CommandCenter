@@ -535,22 +535,24 @@
 
   /* Saved highlight quotes — distinct from surrounding article text. */
   .rss-reader mark.rss-hl {
-    background: rgba(217, 81, 92, 0.28);
-    color: #fff6f0;
+    background: rgba(217, 81, 92, 0.45);
+    color: #fffaf5;
     border-radius: 2px;
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
-    padding: 0.05em 0.12em;
+    padding: 0.08em 0.14em;
+    box-shadow: inset 0 -0.08em 0 rgba(217, 81, 92, 0.65);
   }
 }
 
 mark.rss-hl {
-  background: rgba(217, 81, 92, 0.28);
-  color: #fff6f0;
+  background: rgba(217, 81, 92, 0.45);
+  color: #fffaf5;
   border-radius: 2px;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  padding: 0.05em 0.12em;
+  padding: 0.08em 0.14em;
+  box-shadow: inset 0 -0.08em 0 rgba(217, 81, 92, 0.65);
 }
 
 /* Toasts are informational only. Blocking pointer events prevents react-hot-toast

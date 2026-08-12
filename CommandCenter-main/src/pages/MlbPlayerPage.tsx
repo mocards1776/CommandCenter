@@ -18,6 +18,7 @@ import {
   fetchMlbPlayerRecent,
   fetchMlbPlayerSplits,
   fetchMlbPlayerTransactions,
+  clearPlayerContractCache,
   fetchPlayerBrief,
   fetchPlayerContract,
   teamPagePath,
@@ -68,7 +69,7 @@ export default function MlbPlayerPage() {
 
   const contract = useQuery({
     queryKey: [
-      "mlb-player-contract-v8",
+      "mlb-player-contract-v9",
       player.data?.name,
       player.data?.useName,
       player.data?.firstName,
@@ -81,10 +82,10 @@ export default function MlbPlayerPage() {
         lastName: player.data!.lastName,
       }),
     enabled: Boolean(player.data?.name),
-    staleTime: 24 * 60 * 60_000,
-    gcTime: 7 * 24 * 60 * 60_000,
+    staleTime: 60 * 60_000,
+    gcTime: 24 * 60 * 60_000,
     refetchOnWindowFocus: false,
-    retry: 1,
+    retry: 2,
   });
 
   const brief = useQuery({
@@ -324,7 +325,10 @@ export default function MlbPlayerPage() {
         contract={contract.data ?? null}
         loading={contract.isPending}
         error={contract.isError ? contract.error : null}
-        onRetry={() => void contract.refetch()}
+        onRetry={() => {
+          clearPlayerContractCache(p.name);
+          void contract.refetch();
+        }}
         transactions={transactions.data ?? []}
         teamName={p.teamName}
         player={p}

@@ -10,9 +10,9 @@ const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 /** Hard caps so hung scrapes can't pin edge workers (504/546 after ~150s). */
-const FETCH_MS = 8_000;
-const SEARCH_MS = 5_000;
-const HEAVY_MS = 20_000;
+const FETCH_MS = 12_000;
+const SEARCH_MS = 7_000;
+const HEAVY_MS = 28_000;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -220,9 +220,31 @@ function slugifyName(name: string): string {
 
 /** Known Spotrac MLB ids — search engines often miss market-value URLs. */
 const SPOTRAC_IDS: Record<string, { id: string; slug: string }> = {
+  "alec burleson": { id: "48426", slug: "alec-burleson" },
   "andre pallante": { id: "30525", slug: "andre-pallante" },
   "neil pallante": { id: "30525", slug: "andre-pallante" },
   pallante: { id: "30525", slug: "andre-pallante" },
+  "blake snell": { id: "18356", slug: "blake-snell" },
+  "ivan herrera": { id: "20857", slug: "ivan-herrera" },
+  "iván herrera": { id: "20857", slug: "ivan-herrera" },
+  "jojo romero": { id: "20195", slug: "jojo-romero" },
+  "jordan walker": { id: "48376", slug: "jordan-walker" },
+  "kyle leahy": { id: "26606", slug: "kyle-leahy" },
+  "lars nootbaar": { id: "26276", slug: "lars-nootbaar" },
+  "masyn winn": { id: "48410", slug: "masyn-winn" },
+  "matthew liberatore": { id: "26039", slug: "matthew-liberatore" },
+  liberatore: { id: "26039", slug: "matthew-liberatore" },
+  "miles mikolas": { id: "11497", slug: "miles-mikolas" },
+  "nolan arenado": { id: "12643", slug: "nolan-arenado" },
+  "nolan gorman": { id: "26042", slug: "nolan-gorman" },
+  "pedro pages": { id: "31125", slug: "pedro-pages" },
+  "sonny gray": { id: "14331", slug: "sonny-gray" },
+  "willson contreras": { id: "18368", slug: "willson-contreras" },
+  "yohel pozo": { id: "70734", slug: "yohel-pozo" },
+  "victor scott ii": { id: "78741", slug: "victor-scott-ii" },
+  "thomas saggese": { id: "48501", slug: "thomas-saggese" },
+  "ryan fernandez": { id: "27319", slug: "ryan-fernandez" },
+  "michael mcgreevy": { id: "73280", slug: "michael-mcgreevy" },
 };
 
 const SPOTRAC_PLAYER_RE =
@@ -235,8 +257,13 @@ function normalizeSpotracUrl(raw: string): string | null {
 }
 
 function spotracUrlForName(name: string): string | null {
-  const key = name.trim().toLowerCase().replace(/\s+/g, " ");
-  const hit = SPOTRAC_IDS[key];
+  const key = name
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+  const hit = SPOTRAC_IDS[key] ?? SPOTRAC_IDS[name.trim().toLowerCase().replace(/\s+/g, " ")];
   if (!hit) return null;
   return `https://www.spotrac.com/mlb/player/_/id/${hit.id}/${hit.slug}`;
 }
@@ -399,7 +426,27 @@ async function scrapeContract(name: string, hintUrl?: string | null) {
         if (!bb.aav && spotrac.aav) bb.aav = spotrac.aav;
         if (!bb.totalValue && spotrac.totalValue) bb.totalValue = spotrac.totalValue;
         if (!bb.contractStatus && spotrac.contractStatus) bb.contractStatus = spotrac.contractStatus;
-        if (!bb.currentSalary && spotrac.currentSalary) bb.currentSalary = spotrac.currentSalary;
+        // Prefer Spotrac "this season" when BBRef salary table is a year behind.
+        const year = new Date().getFullYear();
+        const bbYear = Number(bb.currentSalary?.year || 0);
+        if (
+          spotrac.currentSalary &&
+          (!bb.currentSalary || bbYear < year)
+        ) {
+          if (spotrac.aav && bbYear < year) {
+            const amt = parseMoney(spotrac.aav.replace(/[$,]/g, ""));
+            bb.currentSalary = {
+              year: String(year),
+              amount: amt ?? spotrac.currentSalary.amount,
+              display: spotrac.aav,
+              team: spotrac.currentSalary.team,
+            };
+          } else {
+            bb.currentSalary = spotrac.currentSalary;
+          }
+        } else if (!bb.currentSalary && spotrac.currentSalary) {
+          bb.currentSalary = spotrac.currentSalary;
+        }
         for (const line of spotrac.acquisition ?? []) {
           if (!bb.acquisition.includes(line)) bb.acquisition.push(line);
         }

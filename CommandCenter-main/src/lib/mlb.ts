@@ -1276,7 +1276,7 @@ export async function fetchMlbGamePreview(gamePk: number | string): Promise<MlbG
     // Batting leaders: HR, AVG, RBI, SB
     Promise.all([
       awayTeamId
-        ? fetchTeamCategoryLeader(awayTeamId, "hitting", "homeRuns", "desc", { key: "atBats", min: 50 }, (s, p) => ({
+        ? fetchTeamCategoryLeader(awayTeamId, "hitting", "homeRuns", "desc", { key: "atBats", min: 50 }, (s) => ({
             value: String(numStat(s, "homeRuns")),
             detail: `${strStat(s, "avg")} AVG · ${numStat(s, "rbi")} RBI`,
           }))
@@ -2107,13 +2107,38 @@ function mapContractPayload(data: unknown): MlbPlayerContract | null {
 
 /** Spotrac ids we already know — skip search entirely when BBRef blips. */
 const SPOTRAC_PLAYER_HINTS: Record<string, string> = {
+  "alec burleson": "https://www.spotrac.com/mlb/player/_/id/48426/alec-burleson",
   "andre pallante": "https://www.spotrac.com/mlb/player/_/id/30525/andre-pallante",
   "neil pallante": "https://www.spotrac.com/mlb/player/_/id/30525/andre-pallante",
   pallante: "https://www.spotrac.com/mlb/player/_/id/30525/andre-pallante",
+  "blake snell": "https://www.spotrac.com/mlb/player/_/id/18356/blake-snell",
+  "ivan herrera": "https://www.spotrac.com/mlb/player/_/id/20857/ivan-herrera",
+  "iván herrera": "https://www.spotrac.com/mlb/player/_/id/20857/ivan-herrera",
+  "jojo romero": "https://www.spotrac.com/mlb/player/_/id/20195/jojo-romero",
+  "jordan walker": "https://www.spotrac.com/mlb/player/_/id/48376/jordan-walker",
+  "kyle leahy": "https://www.spotrac.com/mlb/player/_/id/26606/kyle-leahy",
+  "lars nootbaar": "https://www.spotrac.com/mlb/player/_/id/26276/lars-nootbaar",
+  "masyn winn": "https://www.spotrac.com/mlb/player/_/id/48410/masyn-winn",
+  "matthew liberatore": "https://www.spotrac.com/mlb/player/_/id/26039/matthew-liberatore",
+  liberatore: "https://www.spotrac.com/mlb/player/_/id/26039/matthew-liberatore",
+  "miles mikolas": "https://www.spotrac.com/mlb/player/_/id/11497/miles-mikolas",
+  "nolan arenado": "https://www.spotrac.com/mlb/player/_/id/12643/nolan-arenado",
+  "nolan gorman": "https://www.spotrac.com/mlb/player/_/id/26042/nolan-gorman",
+  "pedro pages": "https://www.spotrac.com/mlb/player/_/id/31125/pedro-pages",
+  "sonny gray": "https://www.spotrac.com/mlb/player/_/id/14331/sonny-gray",
+  "willson contreras": "https://www.spotrac.com/mlb/player/_/id/18368/willson-contreras",
+  "yohel pozo": "https://www.spotrac.com/mlb/player/_/id/70734/yohel-pozo",
+  "victor scott ii": "https://www.spotrac.com/mlb/player/_/id/78741/victor-scott-ii",
+  "thomas saggese": "https://www.spotrac.com/mlb/player/_/id/48501/thomas-saggese",
 };
 
 function spotracHintForName(name: string): string | null {
-  const key = name.trim().toLowerCase().replace(/\s+/g, " ");
+  const key = name
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
   return SPOTRAC_PLAYER_HINTS[key] ?? null;
 }
 
@@ -2145,34 +2170,62 @@ export function contractLookupNames(input: {
 }
 
 async function invokeSportsContract(body: Record<string, unknown>): Promise<MlbPlayerContract | null> {
-  // Prefer usable JSON even when supabase-js also sets `error` (common on edge 2xx quirks).
-  try {
-    const { data, error } = await supabase.functions.invoke("sports", { body });
-    const mapped = mapContractPayload(data);
-    if (mapped) return mapped;
-    if (error && !data) {
-      /* fall through */
+  const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+  // Direct fetch first — supabase-js invoke has dropped bodies / hung in the browser.
+  if (base && key) {
+    try {
+      const ctl = new AbortController();
+      const timer = window.setTimeout(() => ctl.abort(), 35_000);
+      try {
+        const res = await fetch(`${base}/functions/v1/sports`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+            apikey: key,
+          },
+          body: JSON.stringify(body),
+          signal: ctl.signal,
+        });
+        if (res.ok) {
+          const mapped = mapContractPayload(await res.json());
+          if (mapped) return mapped;
+        }
+      } finally {
+        window.clearTimeout(timer);
+      }
+    } catch {
+      /* fall through to supabase-js */
     }
-  } catch {
-    /* fall through */
   }
+
   try {
-    const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-    const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-    if (!base || !key) return null;
-    const res = await fetch(`${base}/functions/v1/sports`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-        apikey: key,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) return null;
-    return mapContractPayload(await res.json());
+    const { data } = await supabase.functions.invoke("sports", { body });
+    return mapContractPayload(data);
   } catch {
     return null;
+  }
+}
+
+export function clearPlayerContractCache(playerName?: string): void {
+  try {
+    if (playerName) {
+      const key = `mlb-contract-v3:${playerName.trim().toLowerCase()}`;
+      sessionStorage.removeItem(key);
+      sessionStorage.removeItem(`mlb-contract-v1:${playerName.trim().toLowerCase()}`);
+      sessionStorage.removeItem(`mlb-contract-v2:${playerName.trim().toLowerCase()}`);
+      return;
+    }
+    const doomed: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && /^mlb-contract-v\d+:/.test(k)) doomed.push(k);
+    }
+    doomed.forEach((k) => sessionStorage.removeItem(k));
+  } catch {
+    /* private mode */
   }
 }
 
@@ -2193,12 +2246,14 @@ export async function fetchPlayerContract(
 
   if (!names.length) return null;
 
-  const cacheKey = `mlb-contract-v1:${names[0]!.toLowerCase()}`;
+  const cacheKey = `mlb-contract-v3:${names[0]!.toLowerCase()}`;
   try {
     const cached = sessionStorage.getItem(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached) as { at: number; data: MlbPlayerContract };
-      if (Date.now() - parsed.at < 24 * 60 * 60_000 && parsed.data) return parsed.data;
+      if (Date.now() - parsed.at < 24 * 60 * 60_000 && parsed.data?.currentSalary?.display) {
+        return parsed.data;
+      }
     }
   } catch {
     /* ignore cache */
@@ -3067,6 +3122,106 @@ export function playoffOddsFromStandings(tables: MlbDivisionTable[]): MlbPlayoff
   const num = (s: string) => parseFloat(s.replace("%", "")) || 0;
   rows.sort((a, b) => num(b.playoffPercent) - num(a.playoffPercent));
   return rows;
+}
+
+export type MlbWildCardRow = {
+  rank: string;
+  teamId: number;
+  team: string;
+  abbrev: string;
+  wins: number;
+  losses: number;
+  pct: string;
+  wcgb: string;
+};
+
+/** NL or AL wild-card board from MLB Stats API. */
+export async function fetchMlbWildCardStandings(
+  leagueId: 103 | 104 = 104,
+): Promise<MlbWildCardRow[]> {
+  const season = currentSeason();
+  const raw = (await mlbGet("standings", {
+    leagueId: String(leagueId),
+    season: String(season),
+    standingsTypes: "wildCard",
+    hydrate: "team",
+  })) as {
+    records?: {
+      teamRecords?: {
+        wildCardRank?: string;
+        wildCardGamesBack?: string;
+        leagueRecord?: { wins?: number; losses?: number; pct?: string };
+        team?: { id?: number; name?: string; abbreviation?: string; teamName?: string };
+        winningPercentage?: string;
+      }[];
+    }[];
+  };
+
+  const rows: MlbWildCardRow[] = [];
+  for (const block of raw.records ?? []) {
+    for (const r of block.teamRecords ?? []) {
+      const name = r.team?.name ?? "—";
+      const wcgb = r.wildCardGamesBack;
+      rows.push({
+        rank: String(r.wildCardRank ?? ""),
+        teamId: r.team?.id ?? 0,
+        team: name.replace(
+          /^(St\. Louis|Chicago|New York|Los Angeles|Tampa Bay|Kansas City|San Francisco|San Diego|Toronto) /,
+          "",
+        ),
+        abbrev: r.team?.abbreviation ?? "",
+        wins: r.leagueRecord?.wins ?? 0,
+        losses: r.leagueRecord?.losses ?? 0,
+        pct: r.winningPercentage ?? r.leagueRecord?.pct ?? "",
+        wcgb: !wcgb || wcgb === "-" || wcgb === "0" || wcgb === "0.0" ? "—" : String(wcgb),
+      });
+    }
+  }
+  rows.sort((a, b) => Number(a.rank || 99) - Number(b.rank || 99));
+  return rows;
+}
+
+/** Featured game plus the next unfinished Cardinals (or any team) matchup. */
+export async function fetchTeamCurrentAndNextGames(teamId: number): Promise<{
+  current: MlbScoreGame | null;
+  next: MlbScoreGame | null;
+}> {
+  const current = await fetchTeamCurrentGame(teamId);
+  const date = chicagoToday();
+  const season = currentSeason();
+  const raw = (await mlbGet("schedule", {
+    sportId: "1",
+    teamId: String(teamId),
+    startDate: date,
+    endDate: `${season}-11-15`,
+    hydrate: "linescore,team,probablePitcher,venue",
+  })) as {
+    dates?: {
+      date?: string;
+      games?: {
+        gamePk?: number;
+        status?: { abstractGameState?: string };
+      }[];
+    }[];
+  };
+
+  let next: MlbScoreGame | null = null;
+  for (const day of raw.dates ?? []) {
+    if (!day.date) continue;
+    for (const g of day.games ?? []) {
+      if (!g.gamePk) continue;
+      if (current && String(g.gamePk) === current.id) continue;
+      if (g.status?.abstractGameState === "Final") continue;
+      const board = await fetchMlbScoreboard(day.date);
+      const hit = board.find((x) => x.id === String(g.gamePk) && !x.final);
+      if (hit) {
+        next = hit;
+        break;
+      }
+    }
+    if (next) break;
+  }
+  return { current, next };
 }
 
 export async function fetchMlbPlayerGameLog(

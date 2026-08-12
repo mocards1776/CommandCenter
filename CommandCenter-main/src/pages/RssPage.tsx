@@ -23,7 +23,7 @@ import {
 import toast from "react-hot-toast";
 import PlayerPeek from "@/components/rss/PlayerPeek";
 import DispatchEspnGameReader from "@/components/rss/DispatchEspnGameReader";
-import NlCentralStandingsCard from "@/components/rss/NlCentralStandingsCard";
+import DispatchNotesAside from "@/components/rss/DispatchNotesAside";
 import {
   RSS_FEEDS,
   addDedupeKeepHost,
@@ -34,7 +34,7 @@ import {
   dedupeArticles,
   encodeFeedDomainFilter,
   loadDedupeKeepHosts,
-  markQuotesInHtml,
+  paintQuotesInElement,
   parseFeedScopedFilter,
   partitionDedupedArticles,
   deleteRssFilter,
@@ -566,10 +566,8 @@ function ArticleReaderShell({
     [highlights.data],
   );
   const titleParts = useMemo(() => splitTextByQuotes(title, quoteTexts), [title, quoteTexts]);
-  const displayHtml = useMemo(() => {
-    const base = linkedHtml || article.data?.contentHtml || "";
-    return markQuotesInHtml(base, quoteTexts);
-  }, [linkedHtml, article.data?.contentHtml, quoteTexts]);
+  // Body highlights are painted into the live DOM after linkify (see effect below).
+  const displayHtml = linkedHtml || article.data?.contentHtml || "";
 
   // Click images in article body → fullscreen lightbox.
   useEffect(() => {
@@ -634,6 +632,14 @@ function ArticleReaderShell({
       else v.addEventListener("loadeddata", play, { once: true });
     });
   }, [displayHtml]);
+
+  // Paint saved quotes into the live DOM so marks survive player-link wraps.
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => {
+      paintQuotesInElement(articleBodyRef.current, quoteTexts);
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [displayHtml, quoteTexts]);
 
   const createMut = useMutation({
     mutationFn: (note: string) =>
@@ -895,9 +901,7 @@ function ArticleReaderShell({
             ))}
           </ul>
         )}
-        <div className="hidden lg:block">
-          <NlCentralStandingsCard />
-        </div>
+        <DispatchNotesAside />
       </aside>
 
       {pendingQuote ? (

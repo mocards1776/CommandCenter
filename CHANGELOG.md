@@ -2,6 +2,18 @@
 
 ---
 
+## Dispatch notes rail + contracts — August 12, 2026
+
+- Notes sidebar (large screens): Cardinals current/next game, weather for
+  **65706**, NL Central, and NL Wild Card standings.
+- In-article highlights painted via DOM text walk (survives player-name links);
+  curly quotes / entities normalized.
+- Player contracts: direct edge fetch with timeout, Spotrac ID hints for the
+  Cardinals roster, prefer Spotrac AAV when BBRef salary year is stale, cache
+  bust (`v3` / query `v9`), Retry clears session cache. Redeploy `sports`.
+
+---
+
 ## Dispatch reader polish — August 12, 2026
 
 - “Highlight saved” toast now auto-dismisses (no hover/touch pause; reduced-motion
