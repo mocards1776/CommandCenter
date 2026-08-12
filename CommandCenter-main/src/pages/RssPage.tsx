@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type TouchEvent } from "react";
 import { useQueries, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  Archive,
   ArrowLeft,
   Ban,
   CheckCheck,
@@ -228,7 +229,7 @@ function useSwipeNav(opts: {
       if (sel && !sel.isCollapsed && (sel.toString() || "").trim().length >= 2) return;
       if (held > 450) return;
       if (Math.abs(dx) < 72 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
-      if (dx > 0) opts.onBack();
+      if (dx < 0) opts.onBack();
       else if (opts.onNext) opts.onNext();
     },
   };
@@ -319,6 +320,7 @@ function ReaderView({
   const [showNotes, setShowNotes] = useState(false);
   const [linkedHtml, setLinkedHtml] = useState<string>("");
   const [peekPlayerId, setPeekPlayerId] = useState<number | null>(null);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   const article = useQuery({
     queryKey: ["rss-article", item.link],
@@ -368,10 +370,15 @@ function ReaderView({
       .catch(() => {});
   }, [item.link, item.title, feedUrl, qc]);
 
-  // Arrow keys: previous / next article (desktop).
+  // Arrow keys: previous / next article (desktop). Escape closes lightbox.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (peekPlayerId != null || pendingQuote) return;
+      if (e.key === "Escape" && lightboxSrc) {
+        e.preventDefault();
+        setLightboxSrc(null);
+        return;
+      }
+      if (peekPlayerId != null || pendingQuote || lightboxSrc) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if ((e.target as HTMLElement | null)?.isContentEditable) return;
@@ -385,7 +392,24 @@ function ReaderView({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hasPrev, hasNext, onPrev, onNext, peekPlayerId, pendingQuote]);
+  }, [hasPrev, hasNext, onPrev, onNext, peekPlayerId, pendingQuote, lightboxSrc]);
+
+  // Click images in article body → fullscreen lightbox.
+  useEffect(() => {
+    const root = articleBodyRef.current;
+    if (!root) return;
+    const onImgClick = (e: MouseEvent) => {
+      const img = (e.target as HTMLElement | null)?.closest("img");
+      if (!img || !root.contains(img)) return;
+      const src = img.getAttribute("src");
+      if (!src) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLightboxSrc(src);
+    };
+    root.addEventListener("click", onImgClick);
+    return () => root.removeEventListener("click", onImgClick);
+  }, [linkedHtml, article.data?.contentHtml]);
 
   // Link any MLB player names → in-app player peek; stylize tweet cards.
   useEffect(() => {
@@ -496,7 +520,7 @@ function ReaderView({
   }
 
   const swipe = useSwipeNav({
-    enabled: !pendingQuote && peekPlayerId == null,
+    enabled: !pendingQuote && peekPlayerId == null && !lightboxSrc,
     onBack: () => {
       // Leave the reader immediately — don't walk stacked article history.
       onBack();
@@ -509,6 +533,25 @@ function ReaderView({
   const title = article.data?.title || item.title;
   const byline = article.data?.byline || item.author;
   const image = article.data?.image || item.image;
+
+  async function shareArticle() {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, url: item.link, text: title });
+      } else {
+        await navigator.clipboard.writeText(item.link);
+        toast.success("Link copied");
+      }
+    } catch (e) {
+      if ((e as Error)?.name === "AbortError") return;
+      try {
+        await navigator.clipboard.writeText(item.link);
+        toast.success("Link copied");
+      } catch {
+        toast.error("Couldn't share");
+      }
+    }
+  }
 
   return (
     <div
@@ -537,6 +580,14 @@ function ReaderView({
           >
             {isRead ? <CheckCheck size={14} className="text-turf" /> : <Circle size={14} />}
             {isRead ? "Read" : "Mark read"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void shareArticle()}
+            className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
+          >
+            <Share size={14} />
+            Share
           </button>
           <button
             type="button"
@@ -578,7 +629,7 @@ function ReaderView({
         {image && !(linkedHtml || article.data?.contentHtml || "").includes("<video") ? (
           <button
             type="button"
-            onClick={() => window.open(item.link, "_blank", "noopener,noreferrer")}
+            onClick={() => setLightboxSrc(image)}
             className="mb-8 block w-full"
           >
             <img
@@ -683,6 +734,31 @@ function ReaderView({
       {peekPlayerId != null ? (
         <PlayerPeek playerId={peekPlayerId} onClose={() => setPeekPlayerId(null)} />
       ) : null}
+
+      {lightboxSrc ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image preview"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setLightboxSrc(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxSrc(null)}
+            className="text-cream absolute top-4 right-4 rounded-sm p-2 hover:bg-white/10"
+            aria-label="Close"
+          >
+            <X size={22} />
+          </button>
+          <img
+            src={lightboxSrc}
+            alt=""
+            className="max-h-full max-w-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -690,17 +766,21 @@ function ReaderView({
 function ArticleRow({
   item,
   read,
+  highlighted,
   onOpen,
   onBlockUrl,
   onKeepSource,
   keptSource,
+  onArchive,
 }: {
   item: RssFeedItem;
   read: boolean;
+  highlighted?: boolean;
   onOpen: () => void;
   onBlockUrl: () => void;
   onKeepSource?: () => void;
   keptSource?: boolean;
+  onArchive?: () => void;
 }) {
   return (
     <li>
@@ -708,6 +788,7 @@ function ArticleRow({
         className={cn(
           "hover:bg-white/[0.03] flex w-full items-start gap-3 border-b border-white/[0.06] px-3 py-3.5 transition-colors",
           read && "opacity-50",
+          highlighted && "border-l-accent border-l-2",
         )}
       >
         <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 text-left">
@@ -731,10 +812,13 @@ function ArticleRow({
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <div className="label-caps text-chalk-dim mb-1">
+            <div className="label-caps text-chalk-dim mb-1 flex items-center gap-1.5">
               {formatFeedDate(item.publishedAt)}
               {item.author ? ` · ${item.author}` : ""}
               {keptSource ? " · Kept source" : ""}
+              {highlighted ? (
+                <Highlighter size={12} className="text-accent shrink-0" aria-label="Has highlights" />
+              ) : null}
             </div>
             <h3
               className={cn(
@@ -751,6 +835,17 @@ function ArticleRow({
             ) : null}
           </div>
         </button>
+        {onArchive && !read ? (
+          <button
+            type="button"
+            onClick={onArchive}
+            title="Archive (mark read)"
+            className="text-chalk-dim hover:text-cream mt-1 shrink-0"
+            aria-label="Archive"
+          >
+            <Archive size={15} />
+          </button>
+        ) : null}
         {onKeepSource ? (
           <button
             type="button"
@@ -815,8 +910,13 @@ export default function RssPage() {
   const allNotes = useQuery({
     queryKey: ["rss-highlights-all"],
     queryFn: () => fetchRssHighlights(),
-    enabled: nav === "notes",
+    enabled: true,
   });
+
+  const highlightUrls = useMemo(
+    () => new Set((allNotes.data ?? []).map((h) => h.articleUrl)),
+    [allNotes.data],
+  );
 
   const addFilterMut = useMutation({
     mutationFn: ({ kind, value }: { kind: RssFilterKind; value: string }) =>
@@ -934,6 +1034,8 @@ export default function RssPage() {
 
   const feedsLoading = feedQueries.some((q) => q.isLoading);
   const feedsFetching = feedQueries.some((q) => q.isFetching);
+  const feedsError = feedQueries.find((q) => q.isError)?.error;
+  const feedsFailed = feedQueries.filter((q) => q.isError).length;
 
   const unreadInList = useMemo(
     () => listItems.filter((it) => !readUrls.has(it.link)),
@@ -1014,6 +1116,12 @@ export default function RssPage() {
     const next = navItems[selectedIndex + delta];
     if (next) setSelected(next);
   }
+
+  const listSwipe = useSwipeNav({
+    enabled: !selected && mobilePane === "list",
+    onBack: () => setMobilePane("sidebar"),
+    onNext: null,
+  });
 
   if (selected) {
     return (
@@ -1169,6 +1277,8 @@ export default function RssPage() {
           "bg-field min-w-0 flex-1",
           mobilePane === "sidebar" ? "hidden md:block" : "block",
         )}
+        onTouchStart={listSwipe.onTouchStart}
+        onTouchEnd={listSwipe.onTouchEnd}
       >
         <div className="border-white/[0.06] flex items-center gap-3 border-b px-4 py-3.5">
           <button
@@ -1252,6 +1362,24 @@ export default function RssPage() {
           </div>
         ) : feedsLoading ? (
           <p className="label-caps animate-pulse p-5">Loading feeds</p>
+        ) : feedsFailed > 0 && listItems.length === 0 ? (
+          <div className="space-y-3 p-5">
+            <p className="text-alert font-rss text-sm">
+              Couldn&apos;t load feeds
+              {feedsFailed === RSS_FEEDS.length ? "" : ` (${feedsFailed} of ${RSS_FEEDS.length} failed)`}
+              .
+            </p>
+            <p className="text-chalk font-rss text-sm">
+              {feedsError instanceof Error ? feedsError.message : "Check your connection and try refresh."}
+            </p>
+            <button
+              type="button"
+              onClick={() => void Promise.all(feedQueries.map((q) => q.refetch()))}
+              className="text-accent text-[12px] font-semibold uppercase tracking-[0.14em] hover:underline"
+            >
+              Retry feeds
+            </button>
+          </div>
         ) : listItems.length === 0 ? (
           <p className="text-chalk font-rss p-5 text-sm">
             {nav === "unread"
@@ -1265,11 +1393,13 @@ export default function RssPage() {
             {listItems.map((item) => {
               const host = articleSourceHost(item.link);
               const kept = Boolean(host && keepHosts.includes(host));
+              const canArchive = nav === "unread" || RSS_FEEDS.some((f) => f.id === nav);
               return (
               <ArticleRow
                 key={item.id + item.link}
                 item={item}
                 read={readUrls.has(item.link)}
+                highlighted={highlightUrls.has(item.link)}
                 onOpen={() => openArticle(item)}
                 onBlockUrl={() => {
                   addFilterMut.mutate({
@@ -1277,6 +1407,20 @@ export default function RssPage() {
                     value: suggestUrlFilterValue(item.link),
                   });
                 }}
+                onArchive={
+                  canArchive
+                    ? () => {
+                        void markRssRead({
+                          articleUrl: item.link,
+                          articleTitle: item.title,
+                          feedUrl: item.feedUrl,
+                        }).then(() => {
+                          void qc.invalidateQueries({ queryKey: ["rss-reads"] });
+                          toast.success("Archived");
+                        });
+                      }
+                    : undefined
+                }
                 onKeepSource={
                   nav === "duplicates"
                     ? () => {

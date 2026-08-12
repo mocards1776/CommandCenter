@@ -200,7 +200,11 @@ export type MlbManagerCareer = {
   divisionTitles: number;
   postseasonAppearances: number;
   worldSeriesAppearances: number;
+  /** Years the skipper won (or appeared in) the World Series as manager. */
+  worldSeriesYears: number[];
   managerOfYear: number;
+  /** MoY seasons when known. */
+  managerOfYearYears: number[];
 };
 
 export type MlbManagerRumor = {
@@ -208,6 +212,14 @@ export type MlbManagerRumor = {
   url: string;
   source: string;
   channel?: string;
+};
+
+export type MlbManagerContractTerm = {
+  yearOf: number | null;
+  of: number | null;
+  throughYear: number | null;
+  /** e.g. "Year 2 of 4 · through 2028" */
+  label: string | null;
 };
 
 export type MlbManager = {
@@ -229,6 +241,8 @@ export type MlbManager = {
   firedOddsPct: number | null;
   divisionRank: number | null;
   contractNote: string | null;
+  /** Parsed "year X of Y" estimate when we can infer it. */
+  contractTerm: MlbManagerContractTerm | null;
   /** Higher = hotter seat (more likely to be fired). */
   hotSeatScore: number;
   hotSeatRank: number;
@@ -1496,13 +1510,21 @@ export async function fetchEspnGameRecap(
       };
     };
     const article = sum.article;
-    if (!article?.headline || !article.story) return null;
+    if (!article?.headline) return null;
+    const storyHtml =
+      article.story?.trim() ||
+      (article.description
+        ? `<p>${article.description.replace(/^—\s*/, "")}</p>`
+        : "");
+    if (!storyHtml) return null;
+    const storyText = stripHtml(storyHtml).trim();
+    if (storyText.length < 40) return null;
     return {
       espnEventId: event.id,
       headline: article.headline,
       description: article.description ?? null,
-      storyHtml: article.story,
-      storyText: stripHtml(article.story).trim(),
+      storyHtml,
+      storyText,
       url:
         article.links?.web?.href ??
         `https://www.espn.com/mlb/recap/_/gameId/${event.id}`,
@@ -2091,6 +2113,17 @@ export async function fetchPlayerContract(
 
   if (!names.length) return null;
 
+  const cacheKey = `mlb-contract-v1:${names[0]!.toLowerCase()}`;
+  try {
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached) as { at: number; data: MlbPlayerContract };
+      if (Date.now() - parsed.at < 24 * 60 * 60_000 && parsed.data) return parsed.data;
+    }
+  } catch {
+    /* ignore cache */
+  }
+
   const hint =
     (opts?.url && opts.url.trim()) ||
     spotracHintForName(playerName) ||
@@ -2106,7 +2139,14 @@ export async function fetchPlayerContract(
     for (const body of attempts) {
       try {
         const mapped = await invokeSportsContract(body);
-        if (mapped) return mapped;
+        if (mapped) {
+          try {
+            sessionStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), data: mapped }));
+          } catch {
+            /* quota */
+          }
+          return mapped;
+        }
       } catch (e) {
         lastError = e instanceof Error ? e : new Error(String(e));
       }
@@ -3004,6 +3044,9 @@ export type MlbPerformanceSummary = {
   latestLine: string;
   recentTitle: string;
   recentLine: string;
+  isPitcher: boolean;
+  latestIsWin: boolean | null;
+  spark: { label: string; good: boolean | null }[];
 };
 
 function fmtGameDateLabel(iso: string): string {
@@ -3106,7 +3149,15 @@ export function buildPlayerPerformanceSummary(input: {
     }
   }
 
-  return { latestTitle, latestLine, recentTitle, recentLine };
+  return {
+    latestTitle,
+    latestLine,
+    recentTitle,
+    recentLine,
+    isPitcher: input.isPitcher,
+    latestIsWin: latest?.isWin ?? null,
+    spark: [],
+  };
 }
 
 async function invokeSports<T extends Record<string, unknown>>(
@@ -3152,6 +3203,222 @@ async function invokeSports<T extends Record<string, unknown>>(
 function isShortLeashContract(note: string | null | undefined): boolean {
   if (!note) return false;
   return /\b(1[\s-]?year|one[\s-]?year|1\s*yr\b|single[\s-]?year|interim)\b/i.test(note);
+}
+
+/** Public-reporting estimates when BBRef/Spotrac blurbs are thin. */
+const KNOWN_MANAGER_CONTRACTS: Record<
+  string,
+  { note: string; startYear?: number; endYear?: number; totalYears?: number }
+> = {
+  "dave roberts": {
+    note: "Leads the industry at roughly $8.1–8.3M per year on a four-year Dodgers extension through 2028.",
+    startYear: 2025,
+    endYear: 2028,
+    totalYears: 4,
+  },
+  "craig counsell": {
+    note: "Second-highest at $8M annually via a historic five-year, $40M Cubs deal through 2028.",
+    startYear: 2024,
+    endYear: 2028,
+    totalYears: 5,
+  },
+  "alex cora": {
+    note: "Earns about $7.3M annually on a Red Sox extension through the 2027 season.",
+    startYear: 2025,
+    endYear: 2027,
+    totalYears: 3,
+  },
+  "torey lovullo": {
+    note: "Makes roughly $5M per year on a multi-year Diamondbacks extension through 2026.",
+    startYear: 2023,
+    endYear: 2026,
+    totalYears: 4,
+  },
+  "bruce bochy": {
+    note: "Sits around $4.5M annually with the Rangers (deal runs through 2026).",
+    startYear: 2023,
+    endYear: 2026,
+    totalYears: 4,
+  },
+  "aaron boone": {
+    note: "Sits around $4.5M annually with the Yankees on a multi-year extension through 2027.",
+    startYear: 2025,
+    endYear: 2027,
+    totalYears: 3,
+  },
+  "terry francona": {
+    note: "Multi-year Reds deal reported around $4M+ annually; in the early years of the Cincinnati stint.",
+    startYear: 2025,
+    endYear: 2027,
+    totalYears: 3,
+  },
+  "oliver marmol": {
+    note: "Cardinals skipper on a club-friendly extension; roughly mid-tier AAV with years remaining through 2026.",
+    startYear: 2024,
+    endYear: 2026,
+    totalYears: 3,
+  },
+  "rob thomson": {
+    note: "Phillies manager on a multi-year extension after the 2022–23 title run; deal through 2026.",
+    startYear: 2023,
+    endYear: 2026,
+    totalYears: 4,
+  },
+  "aj hinch": {
+    note: "Astros manager under a multi-year Houston deal.",
+    startYear: 2025,
+    endYear: 2027,
+    totalYears: 3,
+  },
+  "a.j. hinch": {
+    note: "Astros manager under a multi-year Houston deal.",
+    startYear: 2025,
+    endYear: 2027,
+    totalYears: 3,
+  },
+  "john schneider": {
+    note: "Blue Jays skipper on a multi-year extension; still early in the Toronto deal.",
+    startYear: 2024,
+    endYear: 2027,
+    totalYears: 4,
+  },
+  "brandon hyde": {
+    note: "Orioles manager on a multi-year extension after the AL East turnaround.",
+    startYear: 2023,
+    endYear: 2026,
+    totalYears: 4,
+  },
+  "stephen vogt": {
+    note: "Guardians first-time skipper on an initial multi-year deal.",
+    startYear: 2024,
+    endYear: 2026,
+    totalYears: 3,
+  },
+  "pat murphy": {
+    note: "Brewers manager on a multi-year deal after succeeding Counsell.",
+    startYear: 2024,
+    endYear: 2026,
+    totalYears: 3,
+  },
+  "matt quatraro": {
+    note: "Royals manager on a multi-year Kansas City deal.",
+    startYear: 2023,
+    endYear: 2026,
+    totalYears: 4,
+  },
+  "skip schumaker": {
+    note: "Rangers skipper; contract terms vary by club reporting — treated as multi-year when listed.",
+    startYear: 2026,
+    endYear: 2027,
+    totalYears: 2,
+  },
+};
+
+function normalizeManagerKey(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9.\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function knownManagerContract(
+  name: string,
+): { note: string; startYear?: number; endYear?: number; totalYears?: number } | null {
+  const key = normalizeManagerKey(name);
+  return KNOWN_MANAGER_CONTRACTS[key] ?? null;
+}
+
+/** Infer "Year X of Y" from a free-text contract note + tenure. */
+export function parseManagerContractTerm(
+  note: string | null | undefined,
+  season: number,
+  yearsWithTeam: number,
+  known?: { startYear?: number; endYear?: number; totalYears?: number } | null,
+): MlbManagerContractTerm | null {
+  const text = (note ?? "").trim();
+  const yearsMatch = text.match(/(\d+)\s*-\s*year/i);
+  const through = text.match(/through(?:\s+the)?\s+(20\d{2})/i);
+  const finalYear = /\bfinal year\b/i.test(text);
+  const interim = /\binterim\b/i.test(text);
+
+  let totalYears =
+    known?.totalYears ?? (yearsMatch ? Number(yearsMatch[1]) : null);
+  let endYear =
+    known?.endYear ?? (through ? Number(through[1]) : finalYear ? season : null);
+  let startYear = known?.startYear ?? null;
+
+  if (interim) {
+    return {
+      yearOf: 1,
+      of: 1,
+      throughYear: season,
+      label: "Interim · year 1 of 1",
+    };
+  }
+
+  if (startYear == null && endYear != null && totalYears != null) {
+    startYear = endYear - totalYears + 1;
+  }
+  if (startYear == null && totalYears != null) {
+    // Fall back: assume current tenure tracks the deal so far.
+    startYear = season - Math.min(yearsWithTeam, totalYears) + 1;
+  }
+  if (startYear == null && yearsWithTeam > 0 && endYear != null) {
+    startYear = Math.max(endYear - 9, season - yearsWithTeam + 1);
+  }
+  if (startYear == null && totalYears == null && endYear == null) {
+    if (!text && !known) return null;
+    return {
+      yearOf: yearsWithTeam,
+      of: null,
+      throughYear: null,
+      label: `Year ${yearsWithTeam} with club`,
+    };
+  }
+
+  if (totalYears == null && startYear != null && endYear != null) {
+    totalYears = endYear - startYear + 1;
+  }
+  if (endYear == null && startYear != null && totalYears != null) {
+    endYear = startYear + totalYears - 1;
+  }
+
+  const yearOf =
+    startYear != null
+      ? Math.min(
+          Math.max(1, season - startYear + 1),
+          totalYears ?? Math.max(1, season - startYear + 1),
+        )
+      : yearsWithTeam;
+
+  const parts: string[] = [];
+  if (totalYears != null) parts.push(`Year ${yearOf} of ${totalYears}`);
+  else parts.push(`Year ${yearOf}`);
+  if (endYear != null) parts.push(`through ${endYear}`);
+
+  return {
+    yearOf,
+    of: totalYears,
+    throughYear: endYear,
+    label: parts.join(" · "),
+  };
+}
+
+function resolveManagerContractNote(
+  name: string,
+  scraped: string | null,
+): { note: string | null; known: ReturnType<typeof knownManagerContract> } {
+  const known = knownManagerContract(name);
+  const scrapedTrim = scraped?.trim() || null;
+  if (scrapedTrim && scrapedTrim.length >= 20) {
+    // Prefer scraped when it's substantive; still keep known dates for year math.
+    return { note: scrapedTrim, known };
+  }
+  if (known) return { note: known.note, known };
+  return { note: scrapedTrim, known: null };
 }
 
 async function fetchManagerContractNote(name: string): Promise<string | null> {
@@ -3534,6 +3801,7 @@ type BbrefManagerCareerPayload = {
   divisionTitles?: number;
   postseasonAppearances?: number;
   worldSeriesAppearances?: number;
+  worldSeriesYears?: number[];
   managerOfYearWins?: number;
 };
 
@@ -3643,7 +3911,7 @@ function buildHotSeat(
     const marketPts = Math.round(marketPct * 3 * 10) / 10;
     factors.push({
       key: "market",
-      label: "Next-fired market",
+      label: "Kalshi %",
       points: marketPts,
       detail: `Kalshi ~${marketPct.toFixed(1)}% next-fired → +${marketPts.toFixed(1)} heat (dominates ranking)`,
     });
@@ -3852,8 +4120,17 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
           fetchManagerContractNote(mgr.person.fullName).catch(() => null),
         ]);
 
-        const contractNote =
-          photoMeta.contractNote || spotracNote || null;
+        const resolved = resolveManagerContractNote(
+          mgr.person.fullName,
+          photoMeta.contractNote || spotracNote || null,
+        );
+        const contractNote = resolved.note;
+        const contractTerm = parseManagerContractTerm(
+          contractNote,
+          season,
+          yearsWithTeam,
+          resolved.known,
+        );
 
         const interim = mlbInterim || photoMeta.interim;
         if (
@@ -3871,10 +4148,10 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
         const winPct = gp > 0 ? wins / gp : 0.5;
         const playoff = parseOddsPercent(st?.playoff);
 
-        // Prefer Wikipedia (loads reliably) over BBRef (often blocked in-browser).
+        // Prefer BBRef manager mugshots (real faces) over Wiki crops / MLB generics.
         const headshot =
-          (!isGenericMlbHeadshot(wiki.image) && wiki.image) ||
           photoMeta.photo ||
+          (!isGenericMlbHeadshot(wiki.image) && wiki.image) ||
           mlbHeadshot(mgrId, 213);
 
         const odds = matchFiredOdds(mgr.person.fullName, firedOdds.items);
@@ -3914,6 +4191,7 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
           firedOddsPct: odds?.pct ?? null,
           divisionRank: st?.rank ? Number(st.rank) : null,
           contractNote,
+          contractTerm,
           hotSeatScore: heat.score,
           headshot,
           primaryColor: TEAM_COLORS[team.id] ?? "d9515c",
@@ -3950,7 +4228,7 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
   const season = currentSeason();
   // Career seasons: prefer BBRef, but always also scan MLB coaches across clubs
   // so prior years still show when the edge scrape is slow/blocked.
-  const [person, contractNote, wiki, txRaw, fallbackRecords, careerRaw, rumorsRaw, mlbSeasons] =
+  const [person, scrapedContract, wiki, txRaw, fallbackRecords, careerRaw, rumorsRaw, mlbSeasons] =
     await Promise.all([
       mlbGet(`people/${id}`, {
         hydrate: "currentTeam,education,awards,stats(group=[hitting],type=[yearByYear])",
@@ -3994,6 +4272,12 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
   const place = [p?.birthCity, p?.birthStateProvince, p?.birthCountry].filter(Boolean).join(", ");
   const school =
     p?.education?.colleges?.[0]?.name ?? p?.education?.highschools?.[0]?.name ?? null;
+
+  const resolvedContract = resolveManagerContractNote(
+    base.name,
+    scrapedContract || base.contractNote,
+  );
+  const contractNote = resolvedContract.note;
 
   const bbSeasons = cleanCareerSeasons(careerRaw?.seasons).map((s) => ({
     season: s.season,
@@ -4074,6 +4358,19 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
     stints = built;
   }
 
+  const wsYearsFromCareer = (careerRaw?.worldSeriesYears ?? []).filter((y) =>
+    Number.isFinite(y),
+  );
+  const wsYears = [
+    ...new Set([
+      ...wsYearsFromCareer,
+      ...wsAwards.map((a) => Number(a.season)).filter((y) => Number.isFinite(y)),
+    ]),
+  ].sort((a, b) => a - b);
+  const moyYears = [
+    ...new Set(moyAwards.map((a) => Number(a.season)).filter((y) => Number.isFinite(y))),
+  ].sort((a, b) => a - b);
+
   const careerTotals =
     careerRaw?.career && careerRaw.career.wins + careerRaw.career.losses > 0
       ? careerRaw.career
@@ -4091,9 +4388,12 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
         postseasonAppearances: careerRaw?.postseasonAppearances ?? 0,
         worldSeriesAppearances: Math.max(
           careerRaw?.worldSeriesAppearances ?? 0,
+          wsYears.length,
           wsAwards.length,
         ),
+        worldSeriesYears: wsYears,
         managerOfYear: Math.max(careerRaw?.managerOfYearWins ?? 0, moyAwards.length),
+        managerOfYearYears: moyYears,
       }
     : seasonRecords.length
       ? {
@@ -4111,8 +4411,10 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
           divisionTitles: seasonRecords.filter((r) => r.divisionRank === 1).length,
           postseasonAppearances: seasonRecords.filter((r) => r.postWins + r.postLosses > 0)
             .length,
-          worldSeriesAppearances: wsAwards.length,
+          worldSeriesAppearances: wsYears.length || wsAwards.length,
+          worldSeriesYears: wsYears,
           managerOfYear: moyAwards.length,
+          managerOfYearYears: moyYears,
         }
       : null;
 
@@ -4130,6 +4432,12 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
       new RegExp(base.teamName.split(" ").pop() ?? "", "i").test(r.team),
     ).length,
     1,
+  );
+  const contractTerm = parseManagerContractTerm(
+    contractNote,
+    season,
+    yearsWithTeam,
+    resolvedContract.known,
   );
 
   const interimFromCareer =
@@ -4250,9 +4558,9 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
   ].filter(Boolean);
 
   let headshot =
-    (!isGenericMlbHeadshot(wiki.image) && wiki.image) ||
     careerRaw?.photo ||
     (base.headshot && !isGenericMlbHeadshot(base.headshot) ? base.headshot : null) ||
+    (!isGenericMlbHeadshot(wiki.image) && wiki.image) ||
     null;
   if (!headshot || isGenericMlbHeadshot(headshot)) {
     const bbPhoto = await fetchManagerPhoto(base.name);
@@ -4272,6 +4580,7 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
     ...base,
     yearsWithTeam,
     contractNote,
+    contractTerm,
     isInterim,
     shortLeash,
     hotSeatScore: heat.score,

@@ -130,7 +130,7 @@ export default function MlbManagerPage() {
             alt=""
             width={140}
             height={140}
-            className="mx-auto h-[128px] w-[128px] rounded-xl bg-[#0c1a2e] object-cover object-top ring-2 ring-white/20 shadow-xl sm:mx-0"
+            className="mx-auto h-[128px] w-[128px] rounded-xl bg-[#0c1a2e] object-cover object-[center_12%] ring-2 ring-white/20 shadow-xl sm:mx-0"
             onError={(e) => {
               const el = e.currentTarget;
               const mlb = `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_426,q_auto:best/v1/people/${m.id}/headshot/67/current`;
@@ -164,6 +164,7 @@ export default function MlbManagerPage() {
                   {" · "}
                   {m.teamAbbrev} · {m.yearsWithTeam} season
                   {m.yearsWithTeam === 1 ? "" : "s"} with club
+                  {m.contractTerm?.label ? ` · ${m.contractTerm.label}` : ""}
                 </p>
               </div>
               {m.age != null && (
@@ -223,20 +224,84 @@ export default function MlbManagerPage() {
       </article>
 
       {career && (
-        <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+        <section id="mgr-resume" className="bg-panel rounded-xl border border-white/[0.08] p-4">
           <h2 className="rule-head mb-3">Career résumé</h2>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatChip label="Record" value={`${career.wins}-${career.losses}`} />
             <StatChip label="Seasons" value={String(career.seasons)} />
-            <StatChip label="Division titles" value={String(career.divisionTitles)} />
-            <StatChip label="Postseason" value={String(career.postseasonAppearances)} />
+            <StatChip
+              label="Division titles"
+              value={String(career.divisionTitles)}
+              detail={
+                m.seasonRecords
+                  .filter((r) => r.divisionRank === 1)
+                  .map((r) => `${r.season} ${r.team}`)
+                  .join(" · ") || undefined
+              }
+              onClick={() =>
+                document.getElementById("mgr-seasons")?.scrollIntoView({ behavior: "smooth" })
+              }
+            />
+            <StatChip
+              label="Postseason"
+              value={String(career.postseasonAppearances)}
+              detail={
+                m.seasonRecords
+                  .filter((r) => r.postWins + r.postLosses > 0)
+                  .map((r) => `${r.season} ${r.team} (${r.postWins}-${r.postLosses})`)
+                  .join(" · ") || undefined
+              }
+              onClick={() =>
+                document.getElementById("mgr-seasons")?.scrollIntoView({ behavior: "smooth" })
+              }
+            />
             <StatChip label="Playoff W-L" value={`${career.postWins}-${career.postLosses}`} />
-            <StatChip label="World Series" value={String(career.worldSeriesAppearances)} />
-            <StatChip label="Mgr of the Year" value={String(career.managerOfYear)} />
+            <StatChip
+              label="World Series"
+              value={String(career.worldSeriesAppearances)}
+              detail={
+                career.worldSeriesYears.length
+                  ? career.worldSeriesYears
+                      .map((y) => {
+                        const award = m.awards.find(
+                          (a) => Number(a.season) === y && /world series/i.test(a.name),
+                        );
+                        const season = m.seasonRecords.find((r) => r.season === y);
+                        return award
+                          ? `${y} · ${award.name}${season ? ` (${season.team})` : ""}`
+                          : season
+                            ? `${y} · ${season.team}`
+                            : String(y);
+                      })
+                      .join(" · ")
+                  : m.awards
+                      .filter((a) => /world series/i.test(a.name))
+                      .map((a) => `${a.season} · ${a.name}`)
+                      .join(" · ") || undefined
+              }
+              onClick={() =>
+                document.getElementById("mgr-awards")?.scrollIntoView({ behavior: "smooth" })
+              }
+            />
+            <StatChip
+              label="Mgr of the Year"
+              value={String(career.managerOfYear)}
+              detail={
+                career.managerOfYearYears.length
+                  ? career.managerOfYearYears.join(", ")
+                  : m.awards
+                      .filter((a) => /manager of the year/i.test(a.name))
+                      .map((a) => a.season)
+                      .join(", ") || undefined
+              }
+              onClick={() =>
+                document.getElementById("mgr-awards")?.scrollIntoView({ behavior: "smooth" })
+              }
+            />
             <StatChip label="Win %" value={career.pct} />
           </div>
           {m.awards.length > 0 && (
-            <ul className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3">
+            <ul id="mgr-awards" className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3">
               {m.awards.map((a) => (
                 <li key={`${a.season}-${a.name}`} className="text-[13px] text-[#c8cdd8]">
                   <span className="numeral text-accent mr-2">{a.season}</span>
@@ -290,6 +355,11 @@ export default function MlbManagerPage() {
 
       <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
         <h2 className="rule-head mb-2">Contract</h2>
+        {m.contractTerm?.label ? (
+          <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-amber-200/90">
+            {m.contractTerm.label}
+          </p>
+        ) : null}
         {m.contractNote ? (
           <p className="text-cream text-[14px] leading-relaxed">{m.contractNote}</p>
         ) : (
@@ -297,14 +367,23 @@ export default function MlbManagerPage() {
             No published manager contract terms found yet.
           </p>
         )}
-        {m.firedOddsAmerican && (
+        {m.firedOddsPct != null || m.firedOddsAmerican ? (
           <p className="mt-3 text-[12.5px] text-[#c8cdd8]">
-            Market:{" "}
-            <span className="numeral font-semibold text-amber-200">{m.firedOddsAmerican}</span>
-            {m.firedOddsPct != null ? ` · ~${m.firedOddsPct}% next fired` : ""}
-            <span className="text-[#8b93a7]"> (weighted into heat)</span>
+            Kalshi:{" "}
+            {m.firedOddsPct != null ? (
+              <span className="numeral font-semibold text-amber-200">
+                {m.firedOddsPct.toFixed(1)}%
+              </span>
+            ) : null}
+            {m.firedOddsAmerican ? (
+              <span className="numeral text-amber-200/80">
+                {m.firedOddsPct != null ? " · " : ""}
+                {m.firedOddsAmerican}
+              </span>
+            ) : null}
+            <span className="text-[#8b93a7]"> (heaviest hot-seat weight)</span>
           </p>
-        )}
+        ) : null}
       </section>
 
       {m.rumors.length > 0 && (
@@ -386,7 +465,7 @@ export default function MlbManagerPage() {
         </section>
       )}
 
-      <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <section id="mgr-seasons" className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
         <div className="border-b border-white/[0.06] px-4 py-2.5">
           <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
             Season-by-season record
@@ -551,11 +630,44 @@ function Meta({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StatChip({ label, value }: { label: string; value: string }) {
+function StatChip({
+  label,
+  value,
+  detail,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  onClick?: () => void;
+}) {
+  const clickable = Boolean(onClick) && Boolean(detail || Number(value) > 0);
+  const inner = (
+    <>
+      <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
+        {label}
+        {clickable ? <span className="ml-1 text-accent/80">›</span> : null}
+      </p>
+      <p className="numeral text-cream mt-1 text-[18px] leading-none">{value}</p>
+      {detail ? (
+        <p className="mt-1.5 text-[11px] leading-snug text-[#8b93a7]">{detail}</p>
+      ) : null}
+    </>
+  );
+  if (clickable) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="rounded-md border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-left transition hover:border-accent/40 hover:bg-white/[0.05]"
+      >
+        {inner}
+      </button>
+    );
+  }
   return (
     <div className="rounded-md border border-white/[0.08] bg-white/[0.03] px-3 py-2.5">
-      <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">{label}</p>
-      <p className="numeral text-cream mt-1 text-[18px] leading-none">{value}</p>
+      {inner}
     </div>
   );
 }

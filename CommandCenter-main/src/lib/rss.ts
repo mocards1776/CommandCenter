@@ -1,6 +1,6 @@
 import { supabase, requireUserId } from "./supabase";
 
-/** Configured feeds — Missouri Scout, STL Today Cardinals, Cardinals wire. */
+/** Configured feeds — Missouri Scout, STL Today Cardinals, Cardinals wire, game wraps. */
 export const RSS_FEEDS = [
   {
     id: "moscout",
@@ -19,6 +19,12 @@ export const RSS_FEEDS = [
     title: "Cardinals Wire",
     short: "Wire",
     url: "https://rss.app/feeds/tdKZI96hgDCSMd6o.xml",
+  },
+  {
+    id: "cardinals-wraps",
+    title: "Cardinals wraps & previews",
+    short: "Wraps",
+    url: "synthetic:cardinals-wraps",
   },
 ] as const;
 
@@ -486,7 +492,148 @@ async function invokeRss<T>(body: Record<string, string>): Promise<T> {
 }
 
 export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFeed> {
+  if (feedUrl === "synthetic:cardinals-wraps") {
+    return fetchCardinalsWrapsFeed();
+  }
   return invokeRss<RssFeed>({ mode: "feed", feedUrl });
+}
+
+/** Client-side Cardinals game wrap + preview feed (ESPN is reachable from the browser). */
+async function fetchCardinalsWrapsFeed(): Promise<RssFeed> {
+  const items: RssFeedItem[] = [];
+  const seen = new Set<string>();
+  const today = new Date();
+
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const dateStr = `${y}${m}${day}`;
+    try {
+      const boardRes = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${dateStr}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!boardRes.ok) continue;
+      const board = (await boardRes.json()) as {
+        events?: {
+          id?: string;
+          date?: string;
+          name?: string;
+          shortName?: string;
+          competitions?: {
+            id?: string;
+            status?: { type?: { state?: string; completed?: boolean; name?: string } };
+            competitors?: {
+              homeAway?: string;
+              team?: { id?: string; abbreviation?: string; displayName?: string };
+              score?: string;
+            }[];
+          }[];
+          status?: { type?: { state?: string; completed?: boolean; name?: string } };
+        }[];
+      };
+
+      for (const event of board.events ?? []) {
+        const comp = event.competitions?.[0];
+        if (!comp) continue;
+        const isStl = (comp.competitors ?? []).some(
+          (c) => c.team?.abbreviation === "STL" || c.team?.id === "24",
+        );
+        if (!isStl) continue;
+        const status = comp.status?.type ?? event.status?.type;
+        const isFinal = status?.state === "post" || status?.completed === true;
+        const isPreview =
+          status?.state === "pre" ||
+          /STATUS_SCHEDULED|STATUS_PRE/i.test(status?.name ?? "");
+        if (!isFinal && !isPreview) continue;
+        const eventId = event.id ?? comp.id;
+        if (!eventId || seen.has(eventId)) continue;
+        seen.add(eventId);
+
+        const sumRes = await fetch(
+          `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${eventId}`,
+          { headers: { Accept: "application/json" } },
+        );
+        if (!sumRes.ok) continue;
+        const sum = (await sumRes.json()) as {
+          article?: {
+            headline?: string;
+            description?: string;
+            story?: string;
+            images?: { url?: string }[];
+          };
+        };
+        const article = sum.article;
+        const home = (comp.competitors ?? []).find((c) => c.homeAway === "home");
+        const away = (comp.competitors ?? []).find((c) => c.homeAway === "away");
+        const matchup =
+          event.shortName ||
+          `${away?.team?.abbreviation ?? "AWAY"} @ ${home?.team?.abbreviation ?? "HOME"}`;
+        const publishedAt = event.date || `${y}-${m}-${day}T17:00:00Z`;
+
+        if (isFinal) {
+          if (!article?.headline) continue;
+          const storyText = (article.story ?? "")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+          const snippet =
+            (article.description ?? "").replace(/^—\s*/, "").trim() ||
+            storyText.slice(0, 220);
+          items.push({
+            id: `wrap-${eventId}`,
+            title: article.headline,
+            link: `https://www.espn.com/mlb/recap/_/gameId/${eventId}`,
+            author: "ESPN",
+            publishedAt,
+            image: article.images?.[0]?.url ?? null,
+            snippet,
+          });
+        } else {
+          // Game preview — use ESPN article when present, else a synthetic preview blurb.
+          const headline =
+            article?.headline ||
+            `Preview: ${matchup}`;
+          const storyText = (article?.story ?? "")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+          const snippet =
+            (article?.description ?? "").replace(/^—\s*/, "").trim() ||
+            storyText.slice(0, 220) ||
+            `Game preview for ${matchup} at ${publishedAt.slice(0, 10)}.`;
+          items.push({
+            id: `preview-${eventId}`,
+            title: article?.headline ? headline : `Preview: ${matchup}`,
+            link: `https://www.espn.com/mlb/preview/_/gameId/${eventId}`,
+            author: "ESPN",
+            publishedAt,
+            image: article?.images?.[0]?.url ?? null,
+            snippet,
+          });
+        }
+      }
+    } catch {
+      /* skip day */
+    }
+  }
+
+  items.sort((a, b) => {
+    const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
+    const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
+    return db - da;
+  });
+
+  return {
+    title: "Cardinals wraps & previews",
+    description: "St. Louis Cardinals game wraps and previews from ESPN",
+    link: "https://www.espn.com/mlb/",
+    feedUrl: "synthetic:cardinals-wraps",
+    items,
+  };
 }
 
 export function fetchRssArticle(url: string): Promise<RssArticle> {
