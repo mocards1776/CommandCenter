@@ -54,13 +54,16 @@ const TWEET_URL_RE = /(?:twitter\.com|x\.com)\/\w+\/status(?:es)?\/\d+/i;
 const TWEET_EMBED_RE = /twitter-tweet|rss-tweet|data-tweet|twt-embed|twitter-video/i;
 
 const PROMO_LINK_RE =
-  /(?:get tickets|ticket package|star wars|jersey with|subscribe|newsletter|sign up|fantasy baseball|betmgm|draftkings|fanduel|promo code|bonus bets|specials\/|shop\.mlb|mlb\.com\/tickets)/i;
+  /(?:get tickets|ticket package|star wars|jersey with|subscribe|newsletter|sign up|fantasy baseball|betmgm|draftkings|fanduel|promo code|bonus bets|specials\/|shop\.mlb|mlb\.com\/tickets|more mlb on heavy|more from heavy|advertisement)/i;
 
 const CAPTION_RE =
   /(?:mandatory credit|imagn images|via reuters|getty images|photo by|ap photo|usa today sports|\bwp-caption\b)/i;
 
 const FILM_ROOM_CHROME_RE =
   /(?:film room powered by|google cloud|grid-\d+|channels?reels|arrow-expand|add-reel|share-square|dot-menu-\d+|more from this game|data visualization)/i;
+
+const BYLINE_NOISE_RE =
+  /^(?:story by|by)\s+.+|(?:[A-Z][a-z]+(?:\s+[A-Z][a-z.'-]+)+)\s*\|\s*(?:post-dispatch|st\.?\s*louis post-dispatch|associated press|ap|reuters|espn|mlb\.com|heavy|yahoo sports)\s*$/i;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -334,9 +337,10 @@ function extractFragment(html: string): string | null {
   const townNews = extractTownNewsParagraphs(html);
   if (townNews) return townNews;
 
-  // TownNews / BLOX + Yahoo + Heavy + SI-style bodies.
+  // TownNews / BLOX + Yahoo + Heavy + SI + ESPN-style bodies.
   const balancedOpeners = [
     /<div[^>]*itemprop="articleBody"[^>]*>/i,
+    /<div[^>]*class="[^"]*Story__Body[^"]*"[^>]*>/i,
     /<div[^>]*class="[^"]*lee-article-body[^"]*"[^>]*>/i,
     /<div[^>]*class="[^"]*blog-item-content[^"]*e-content[^"]*"[^>]*>/i,
     /<div[^>]*class="[^"]*e-content[^"]*"[^>]*>/i,
@@ -352,9 +356,15 @@ function extractFragment(html: string): string | null {
     if (frag && stripTags(frag).length > 200) return frag;
   }
 
+  // ESPN often uses <aside>/<section> wrappers — try class-based slice too.
+  const espn = html.match(
+    /<(?:div|section|article)[^>]*class="[^"]*Story__Body[^"]*"[^>]*>([\s\S]*?)<\/(?:div|section|article)>/i,
+  );
+  if (espn?.[1] && stripTags(espn[1]).length > 200) return espn[1];
+
   const patterns = [
     /<div[^>]*class="[^"]*blog-item-content[^"]*e-content[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<div[^>]*class="[^"]*blog-item-author-profile/i,
-    /<(?:div|section|article)[^>]*class="[^"]*(?:post-content|entry-content|article-content|article-body|post-body|rich-text|content-body|caas-body)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|section|article)>/i,
+    /<(?:div|section|article)[^>]*class="[^"]*(?:post-content|entry-content|article-content|article-body|post-body|rich-text|content-body|caas-body|Story__Body)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|section|article)>/i,
     /<article[^>]*>([\s\S]*?)<\/article>/i,
     /<main[^>]*>([\s\S]*?)<\/main>/i,
   ];
@@ -377,28 +387,39 @@ function extractFragment(html: string): string | null {
 function extractMlbVideoFragment(html: string): string | null {
   const mp4 =
     html.match(/https:\/\/darkroom-clips\.mlb\.com\/[0-9a-f-]+\.mp4/i)?.[0] ||
+    html.match(/https:\/\/mlb-cuts-diamond\.mlb\.com\/[^"'\s]+\.mp4/i)?.[0] ||
     html.match(/https:\/\/[^"'\s]+mp4Avc[^"'\s]*\.mp4/i)?.[0] ||
     html.match(/"(https:\/\/[^"]+\.mp4)"/i)?.[1] ||
+    html.match(/content=["'](https:\/\/[^"']+\.mp4)["']/i)?.[1] ||
     null;
-  if (!mp4) return null;
-  // Only treat as a video page when Film Room / clip chrome is present or path-like signals exist.
+
+  const ogVideo =
+    html.match(/<meta[^>]+property=["']og:video(?::url)?["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:video(?::url)?["']/i)?.[1] ||
+    null;
+
+  const src = mp4 || (ogVideo && /\.mp4(\?|$)/i.test(ogVideo) ? ogVideo : null);
+  if (!src) return null;
+
   const isVideoPage =
-    /film.?room|darkroom-clips|mp4Avc|HTTP_CLOUD_WIRED/i.test(html) ||
-    /mlb\.com\/[^"'\s]*\/video\//i.test(html);
-  if (!isVideoPage) return null;
+    /film.?room|darkroom-clips|mp4Avc|HTTP_CLOUD_WIRED|og:video/i.test(html) ||
+    /mlb\.com\/[^"'\s]*\/video\//i.test(html) ||
+    /mlb\.com\/video\//i.test(html);
+  if (!isVideoPage && !mp4) return null;
+
   const title =
     html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
     html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ||
     "Highlight";
-  const cleanTitle = stripTags(title).replace(/\s*\|\s*0?8\/\d+.*/i, "").trim();
+  const cleanTitle = stripTags(title).replace(/\s*\|\s*0?\d+\/\d+.*/i, "").trim();
   return (
-    `<p><video class="rss-video" src="${mp4}" controls autoplay muted playsinline loop></video></p>` +
+    `<p><video class="rss-video" src="${src}" controls autoplay muted playsinline loop preload="auto"></video></p>` +
     (cleanTitle ? `<p>${cleanTitle}</p>` : "")
   );
 }
 
 const JUNK_TEXT_RE =
-  /(?:get email notifications|your notification has been saved|problem saving your notification|followed notifications|please log in to use this feature|don't have an account|sign up today|gift this article|new subscriber benefit|copied to clipboard|out of gifts for the month|share this article paywall|prefer us on google|preferred news source|author twitter|author email|follow [\w .|/-]+ post-dispatch|manage followed notifications|facebook|twitter|bluesky|whatsapp|\bsms\b|copy (?:article )?link|copy link|\bprint\b|\{\{[^}]+\}\}|data-(?:html|toggle|placement|trigger)|aria-label="tooltip|tabindex="0"|role="button"|story by|appeared first on|film room powered by)/i;
+  /(?:get email notifications|your notification has been saved|problem saving your notification|followed notifications|please log in to use this feature|don't have an account|sign up today|gift this article|new subscriber benefit|copied to clipboard|out of gifts for the month|share this article paywall|prefer us on google|preferred news source|author twitter|author email|follow [\w .|/-]+ post-dispatch|manage followed notifications|facebook|twitter|bluesky|whatsapp|\bsms\b|copy (?:article )?link|copy link|\bprint\b|\{\{[^}]+\}\}|data-(?:html|toggle|placement|trigger)|aria-label="tooltip|tabindex="0"|role="button"|story by|appeared first on|film room powered by|advertisement|more mlb on heavy)/i;
 
 /** Drop leftover chrome paragraphs and leaked attribute debris after sanitize. */
 function scrubContentHtml(html: string, heroImage: string | null = null): string {
@@ -420,6 +441,8 @@ function scrubContentHtml(html: string, heroImage: string | null = null): string
     if (CAPTION_RE.test(text) && text.length < 420) return "";
     if (FILM_ROOM_CHROME_RE.test(text) && text.length < 280) return "";
     if (PROMO_LINK_RE.test(text) && text.length < 220) return "";
+    if (BYLINE_NOISE_RE.test(text) && text.length < 160) return "";
+    if (/^(?:advertisement)+$/i.test(text.replace(/\s+/g, ""))) return "";
     if (text.length < 120 && JUNK_TEXT_RE.test(text)) return "";
     if (/^(?:facebook|twitter|bluesky|whatsapp|sms|email|print|copy link|save|close|log in|story by)$/i.test(text)) {
       return "";
@@ -441,6 +464,16 @@ function scrubContentHtml(html: string, heroImage: string | null = null): string
 
   out = dedupeImages(out, heroImage);
 
+  // Smash leftover ad markers / byline promo lines that survive tag filters.
+  out = out
+    .replace(/(?:<p[^>]*>\s*)?(?:Advertisement\s*){1,}(?:<\/p>)?/gi, "")
+    .replace(/<a\b[^>]*>\s*More MLB on Heavy:[\s\S]*?<\/a>/gi, "")
+    .replace(/<p\b[^>]*>\s*More MLB on Heavy:[\s\S]*?<\/p>/gi, "")
+    .replace(
+      /<(?:p|li|h[1-6])\b[^>]*>\s*(?:<a\b[^>]*>)?\s*[A-Z][a-z]+(?:\s+[A-Z][a-z.'-]+)+\s*\|\s*(?:Post-Dispatch|Associated Press|AP|Reuters|ESPN|Heavy|Yahoo Sports)[^<]*(?:<\/a>)?\s*<\/(?:p|li|h[1-6])>/gi,
+      "",
+    );
+
   // Orphaned chrome lines not wrapped in p
   out = out
     .split(/\n+/)
@@ -449,6 +482,8 @@ function scrubContentHtml(html: string, heroImage: string | null = null): string
       if (!t) return true;
       if (CAPTION_RE.test(t) && t.length < 420) return false;
       if (FILM_ROOM_CHROME_RE.test(t) && t.length < 280) return false;
+      if (BYLINE_NOISE_RE.test(t) && t.length < 160) return false;
+      if (/^(?:advertisement)+$/i.test(t.replace(/\s+/g, ""))) return false;
       if (t.length < 160 && JUNK_TEXT_RE.test(t)) return false;
       return true;
     })
@@ -576,9 +611,10 @@ function sanitizeHtml(frag: string): string {
         }
         keep.push("controls");
         keep.push("playsinline");
+        keep.push("muted");
+        keep.push("autoplay");
+        keep.push('preload="auto"');
         keep.push('class="rss-video"');
-        if (/\bautoplay\b/i.test(attrs)) keep.push("autoplay");
-        if (/\bmuted\b/i.test(attrs)) keep.push("muted");
         if (/\bloop\b/i.test(attrs)) keep.push("loop");
       }
       if (name === "source") {
@@ -653,10 +689,41 @@ async function handleFeed(feedUrl: string) {
 
 async function handleRead(url: string) {
   if (!isPublicHttpUrl(url)) return json({ error: "Invalid article URL" }, 400);
+
+  // ESPN game recaps: prefer the public summary API over brittle HTML scrapes.
+  const espnStory = await extractEspnRecapFromUrl(url).catch(() => null);
+  if (espnStory) {
+    let contentHtml = scrubContentHtml(sanitizeHtml(espnStory.html), espnStory.image);
+    const contentText = stripTags(contentHtml);
+    return json({
+      url,
+      title: espnStory.title,
+      byline: espnStory.byline,
+      image: espnStory.image,
+      contentHtml,
+      contentText,
+      wordCount: contentText.split(/\s+/).filter(Boolean).length,
+    });
+  }
+
   const rawHtml = await fetchText(url);
   const html = unlockEncryptedContent(stripNoise(rawHtml));
   const meta = pageMeta(html);
-  const frag = extractFragment(html);
+  let frag = extractFragment(html);
+
+  // Soft fallback: og:description / meta description when the body is SPA-only.
+  if (!frag) {
+    const desc =
+      html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+      html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+      null;
+    const mlbVideo = extractMlbVideoFragment(html);
+    if (mlbVideo) frag = mlbVideo;
+    else if (desc && stripTags(desc).length > 40) {
+      frag = `<p>${desc}</p><p><a href="${url}">Open original article</a></p>`;
+    }
+  }
+
   if (!frag) return json({ error: "Could not extract article text", url }, 422);
   let contentHtml = scrubContentHtml(sanitizeHtml(stripArticleChrome(frag)), meta.image);
   // Video pages can be short on text but still valid.
@@ -677,6 +744,44 @@ async function handleRead(url: string) {
     contentText,
     wordCount: contentText.split(/\s+/).filter(Boolean).length,
   });
+}
+
+async function extractEspnRecapFromUrl(url: string): Promise<{
+  title: string | null;
+  byline: string | null;
+  image: string | null;
+  html: string;
+} | null> {
+  if (!/espn\.com\/mlb\/recap/i.test(url) && !/espn\.com\/mlb\/game\?.*gameId=/i.test(url)) {
+    return null;
+  }
+  const id =
+    url.match(/gameId\/(\d+)/i)?.[1] ||
+    url.match(/[?&]gameId=(\d+)/i)?.[1] ||
+    null;
+  if (!id) return null;
+  const res = await fetch(
+    `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${id}`,
+    { headers: { Accept: "application/json", "User-Agent": UA } },
+  );
+  if (!res.ok) return null;
+  const sum = await res.json() as {
+    article?: {
+      headline?: string;
+      description?: string;
+      story?: string;
+      byline?: string;
+      images?: { url?: string }[];
+    };
+  };
+  const article = sum.article;
+  if (!article?.story || stripTags(article.story).length < 80) return null;
+  return {
+    title: article.headline ?? null,
+    byline: article.byline ?? null,
+    image: article.images?.[0]?.url ?? null,
+    html: article.story,
+  };
 }
 
 Deno.serve(async (req: Request) => {

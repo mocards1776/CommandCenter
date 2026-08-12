@@ -21,10 +21,13 @@ import toast from "react-hot-toast";
 import PlayerPeek from "@/components/rss/PlayerPeek";
 import {
   RSS_FEEDS,
+  addDedupeKeepHost,
   addRssFilter,
   applyRssFilters,
+  articleSourceHost,
   createRssHighlight,
   dedupeArticles,
+  loadDedupeKeepHosts,
   partitionDedupedArticles,
   deleteRssFilter,
   deleteRssHighlight,
@@ -37,6 +40,7 @@ import {
   markRssRead,
   markRssReadMany,
   markRssUnread,
+  removeDedupeKeepHost,
   suggestUrlFilterValue,
   updateRssHighlightNote,
   type RssFeedId,
@@ -204,25 +208,87 @@ function useSwipeNav(opts: {
   onNext: (() => void) | null;
   enabled: boolean;
 }) {
-  const start = useRef<{ x: number; y: number } | null>(null);
+  const start = useRef<{ x: number; y: number; t: number } | null>(null);
 
   return {
     onTouchStart: (e: TouchEvent) => {
       if (!opts.enabled) return;
       const t = e.changedTouches[0] ?? e.touches[0];
-      start.current = { x: t.clientX, y: t.clientY };
+      start.current = { x: t.clientX, y: t.clientY, t: Date.now() };
     },
     onTouchEnd: (e: TouchEvent) => {
       if (!opts.enabled || !start.current) return;
       const t = e.changedTouches[0];
       const dx = t.clientX - start.current.x;
       const dy = t.clientY - start.current.y;
+      const held = Date.now() - start.current.t;
       start.current = null;
+      // Selecting text to mute/highlight should never navigate.
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && (sel.toString() || "").trim().length >= 2) return;
+      if (held > 450) return;
       if (Math.abs(dx) < 72 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
       if (dx > 0) opts.onBack();
       else if (opts.onNext) opts.onNext();
     },
   };
+}
+
+/** Turn `.rss-tweet` blockquotes into a compact X/Twitter feed card. */
+function stylizeTweetCardsInHtml(html: string): string {
+  if (!html || typeof DOMParser === "undefined") return html;
+  const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, "text/html");
+  const root = doc.getElementById("root");
+  if (!root) return html;
+  root.querySelectorAll("blockquote.rss-tweet, blockquote").forEach((bq) => {
+    const hay = `${bq.className} ${bq.textContent ?? ""}`;
+    const isTweet =
+      /rss-tweet|twitter-tweet/i.test(bq.className) ||
+      /@\w+/.test(hay) ||
+      /(?:twitter\.com|x\.com)\/\w+\/status/i.test(bq.innerHTML);
+    if (!isTweet) return;
+    if (bq.closest(".rss-tweet-card")) return;
+
+    const meta =
+      bq.querySelector("footer, cite, .rss-tweet-meta")?.textContent?.replace(/\s+/g, " ").trim() ||
+      "";
+    const handleMatch = meta.match(/@(\w+)/);
+    const nameMatch = meta.match(/—\s*([^(@]+)/);
+    const handle = handleMatch?.[1] ?? "user";
+    const display = (nameMatch?.[1] ?? handle).trim();
+    const link = bq.querySelector("footer a, cite a, .rss-tweet-meta a") as HTMLAnchorElement | null;
+    const dateLabel = link?.textContent?.trim() || "";
+    const href = link?.href || "";
+
+    const bodyClone = bq.cloneNode(true) as HTMLElement;
+    bodyClone.querySelectorAll("footer, cite, .rss-tweet-meta, script").forEach((n) => n.remove());
+    const bodyHtml = bodyClone.innerHTML.trim();
+
+    const card = doc.createElement("figure");
+    card.className = "rss-tweet-card";
+    card.innerHTML = `
+      <div class="rss-tweet-card__head">
+        <span class="rss-tweet-card__avatar" aria-hidden="true">${(display[0] || "X").toUpperCase()}</span>
+        <div class="rss-tweet-card__who">
+          <span class="rss-tweet-card__name">${display}</span>
+          <span class="rss-tweet-card__handle">@${handle}</span>
+        </div>
+        <span class="rss-tweet-card__mark" aria-hidden="true">𝕏</span>
+      </div>
+      <div class="rss-tweet-card__body">${bodyHtml}</div>
+      ${
+        dateLabel
+          ? `<div class="rss-tweet-card__foot">${
+              href
+                ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${dateLabel}</a>`
+                : dateLabel
+            }</div>`
+          : ""
+      }
+    `;
+    bq.replaceWith(card);
+  });
+  return root.innerHTML;
 }
 
 function ReaderView({
@@ -248,6 +314,7 @@ function ReaderView({
 }) {
   const qc = useQueryClient();
   const articleBodyRef = useRef<HTMLDivElement>(null);
+  const titleSelectRef = useRef<HTMLElement>(null);
   const [pendingQuote, setPendingQuote] = useState<string | null>(null);
   const [showNotes, setShowNotes] = useState(false);
   const [linkedHtml, setLinkedHtml] = useState<string>("");
@@ -318,7 +385,7 @@ function ReaderView({
     return () => window.removeEventListener("keydown", onKey);
   }, [hasPrev, hasNext, onPrev, onNext, peekPlayerId, pendingQuote]);
 
-  // Link any MLB player names → in-app player peek.
+  // Link any MLB player names → in-app player peek; stylize tweet cards.
   useEffect(() => {
     const html = article.data?.contentHtml;
     if (!html) {
@@ -335,14 +402,35 @@ function ReaderView({
         for (const [k, id] of found) index.set(k, id);
       }
       if (cancelled) return;
-      setLinkedHtml(linkifyMlbPlayersInHtml(html, index));
+      const linked = linkifyMlbPlayersInHtml(html, index);
+      setLinkedHtml(stylizeTweetCardsInHtml(linked));
     })().catch(() => {
-      if (!cancelled) setLinkedHtml(html);
+      if (!cancelled) setLinkedHtml(stylizeTweetCardsInHtml(html));
     });
     return () => {
       cancelled = true;
     };
   }, [article.data?.contentHtml, article.data?.contentText, roster.data]);
+
+  // Film Room / highlight videos: force muted autoplay after mount.
+  useEffect(() => {
+    const root = articleBodyRef.current;
+    if (!root) return;
+    const videos = root.querySelectorAll<HTMLVideoElement>("video.rss-video");
+    videos.forEach((v) => {
+      v.muted = true;
+      v.defaultMuted = true;
+      v.playsInline = true;
+      v.setAttribute("playsinline", "");
+      v.setAttribute("muted", "");
+      v.setAttribute("autoplay", "");
+      const play = () => {
+        void v.play().catch(() => {});
+      };
+      if (v.readyState >= 2) play();
+      else v.addEventListener("loadeddata", play, { once: true });
+    });
+  }, [linkedHtml, article.data?.contentHtml]);
 
   const createMut = useMutation({
     mutationFn: (note: string) =>
@@ -395,9 +483,12 @@ function ReaderView({
     const text = sel.toString().replace(/\s+/g, " ").trim();
     if (text.length < 2) return;
     const root = articleBodyRef.current;
-    if (!root) return;
+    const header = titleSelectRef.current;
     const anchor = sel.anchorNode;
-    if (!anchor || !root.contains(anchor)) return;
+    if (!anchor) return;
+    const inBody = Boolean(root && root.contains(anchor));
+    const inTitle = Boolean(header && header.contains(anchor));
+    if (!inBody && !inTitle) return;
     setPendingQuote(text.slice(0, 2000));
     sel.removeAllRanges();
   }
@@ -419,7 +510,8 @@ function ReaderView({
   return (
     <div
       className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,42rem)_minmax(15rem,1fr)]"
-      {...swipe}
+      onTouchStart={swipe.onTouchStart}
+      onTouchEnd={swipe.onTouchEnd}
     >
       <article className="font-rss min-w-0">
         <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -453,7 +545,14 @@ function ReaderView({
           </button>
         </div>
 
-        <header className="mb-8">
+        <header
+          ref={titleSelectRef}
+          className="mb-8"
+          onMouseUp={captureSelection}
+          onTouchEnd={() => {
+            window.setTimeout(captureSelection, 50);
+          }}
+        >
           <div className="label-caps font-body text-accent mb-3">
             {formatFeedDate(item.publishedAt)}
             {byline ? ` · ${byline}` : ""}
@@ -499,8 +598,7 @@ function ReaderView({
           <div
             ref={articleBodyRef}
             onMouseUp={captureSelection}
-            onTouchEnd={(e) => {
-              swipe.onTouchEnd(e);
+            onTouchEnd={() => {
               window.setTimeout(captureSelection, 50);
             }}
             onClick={(e) => {
@@ -591,11 +689,15 @@ function ArticleRow({
   read,
   onOpen,
   onBlockUrl,
+  onKeepSource,
+  keptSource,
 }: {
   item: RssFeedItem;
   read: boolean;
   onOpen: () => void;
   onBlockUrl: () => void;
+  onKeepSource?: () => void;
+  keptSource?: boolean;
 }) {
   return (
     <li>
@@ -629,6 +731,7 @@ function ArticleRow({
             <div className="label-caps text-chalk-dim mb-1">
               {formatFeedDate(item.publishedAt)}
               {item.author ? ` · ${item.author}` : ""}
+              {keptSource ? " · Kept source" : ""}
             </div>
             <h3
               className={cn(
@@ -645,6 +748,20 @@ function ArticleRow({
             ) : null}
           </div>
         </button>
+        {onKeepSource ? (
+          <button
+            type="button"
+            onClick={onKeepSource}
+            title={keptSource ? "Source already white-labeled" : "White-label this source (never soft-dedupe)"}
+            className={cn(
+              "mt-1 shrink-0 text-[10px] uppercase tracking-[0.12em]",
+              keptSource ? "text-turf" : "text-chalk-dim hover:text-cream",
+            )}
+            aria-label="Keep source"
+          >
+            Keep
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onBlockUrl}
@@ -666,6 +783,9 @@ export default function RssPage() {
   const [selected, setSelected] = useState<RssFeedItemRef | null>(null);
   const [readerQueue, setReaderQueue] = useState<RssFeedItemRef[] | null>(null);
   const [mobilePane, setMobilePane] = useState<"sidebar" | "list">("sidebar");
+  const [keepHosts, setKeepHosts] = useState<string[]>(() =>
+    typeof window !== "undefined" ? loadDedupeKeepHosts() : [],
+  );
 
   const reads = useQuery({
     queryKey: ["rss-reads"],
@@ -714,7 +834,7 @@ export default function RssPage() {
     const map = new Map<string, { items: RssFeedItem[]; title: string; url: string }>();
     RSS_FEEDS.forEach((f, i) => {
       const data = feedQueries[i]?.data;
-      const items = applyRssFilters(dedupeArticles(data?.items ?? []), filters);
+      const items = applyRssFilters(dedupeArticles(data?.items ?? [], keepHosts), filters);
       map.set(f.id, {
         items,
         title: data?.title || f.title,
@@ -722,7 +842,7 @@ export default function RssPage() {
       });
     });
     return map;
-  }, [feedQueries, filters]);
+  }, [feedQueries, filters, keepHosts]);
 
   /** Cross-feed soft duplicates (e.g. FOX 2 vs MLB.com) — hidden from main/unread. */
   const duplicateItems = useMemo(() => {
@@ -734,8 +854,8 @@ export default function RssPage() {
         merged.push({ ...it, feedId: f.id, feedUrl: f.url });
       }
     });
-    return partitionDedupedArticles(merged).duplicates;
-  }, [feedQueries, filters]);
+    return partitionDedupedArticles(merged, keepHosts).duplicates;
+  }, [feedQueries, filters, keepHosts]);
 
   const unreadByFeed = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -767,7 +887,7 @@ export default function RssPage() {
           }
         }
       }
-      const deduped = dedupeArticles(merged);
+      const deduped = dedupeArticles(merged, keepHosts);
       deduped.sort((a, b) => {
         const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
         const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
@@ -781,7 +901,7 @@ export default function RssPage() {
       feedId: nav,
       feedUrl: pack?.url ?? "",
     }));
-  }, [nav, feedById, readUrls, duplicateItems]);
+  }, [nav, feedById, readUrls, duplicateItems, keepHosts]);
 
   const totalUnread = useMemo(() => {
     const merged: RssFeedItem[] = [];
@@ -790,8 +910,8 @@ export default function RssPage() {
         if (!readUrls.has(it.link)) merged.push(it);
       }
     }
-    return dedupeArticles(merged).length;
-  }, [feedById, readUrls]);
+    return dedupeArticles(merged, keepHosts).length;
+  }, [feedById, readUrls, keepHosts]);
 
   const navItems = readerQueue ?? listItems;
   const selectedIndex = selected
@@ -1139,7 +1259,10 @@ export default function RssPage() {
           </p>
         ) : (
           <ul>
-            {listItems.map((item) => (
+            {listItems.map((item) => {
+              const host = articleSourceHost(item.link);
+              const kept = Boolean(host && keepHosts.includes(host));
+              return (
               <ArticleRow
                 key={item.id + item.link}
                 item={item}
@@ -1151,8 +1274,25 @@ export default function RssPage() {
                     value: suggestUrlFilterValue(item.link),
                   });
                 }}
+                onKeepSource={
+                  nav === "duplicates"
+                    ? () => {
+                        const next = kept && host
+                          ? removeDedupeKeepHost(host)
+                          : addDedupeKeepHost(item.link);
+                        setKeepHosts(next);
+                        toast.success(
+                          kept
+                            ? "Removed white-label"
+                            : `Keeping ${articleSourceHost(item.link) ?? "source"} in the main feed`,
+                        );
+                      }
+                    : undefined
+                }
+                keptSource={kept}
               />
-            ))}
+            );
+            })}
           </ul>
         )}
       </section>

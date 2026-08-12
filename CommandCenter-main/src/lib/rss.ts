@@ -79,6 +79,7 @@ export function sourcePreferenceScore(link: string): number {
   try {
     const host = new URL(link).hostname.replace(/^www\./, "").toLowerCase();
     if (host === "mlb.com" || host.endsWith(".mlb.com")) return 100;
+    if (host.includes("vivaelbirdos") || host.includes("sbnation")) return 70;
     if (host.includes("espn.")) return 55;
     if (host.includes("stltoday")) return 50;
     if (host.includes("fox") || host.includes("yahoo") || host.includes("heavy")) return 25;
@@ -86,6 +87,59 @@ export function sourcePreferenceScore(link: string): number {
   } catch {
     return 0;
   }
+}
+
+export function articleSourceHost(link: string): string | null {
+  try {
+    return new URL(link).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+const DEDUPE_KEEP_KEY = "rss-dedupe-keep-hosts";
+
+/** Hosts the user has white-labeled — never soft-hidden as duplicates. */
+export function loadDedupeKeepHosts(): string[] {
+  try {
+    const raw = localStorage.getItem(DEDUPE_KEEP_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.map((x) => String(x).toLowerCase()).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveDedupeKeepHosts(hosts: string[]): void {
+  localStorage.setItem(
+    DEDUPE_KEEP_KEY,
+    JSON.stringify([...new Set(hosts.map((h) => h.toLowerCase()).filter(Boolean))]),
+  );
+}
+
+export function addDedupeKeepHost(linkOrHost: string): string[] {
+  const host = linkOrHost.includes("://")
+    ? articleSourceHost(linkOrHost)
+    : linkOrHost.replace(/^www\./, "").toLowerCase();
+  if (!host) return loadDedupeKeepHosts();
+  const next = [...loadDedupeKeepHosts(), host];
+  saveDedupeKeepHosts(next);
+  return loadDedupeKeepHosts();
+}
+
+export function removeDedupeKeepHost(host: string): string[] {
+  const next = loadDedupeKeepHosts().filter((h) => h !== host.toLowerCase());
+  saveDedupeKeepHosts(next);
+  return next;
+}
+
+function isKeepHost(link: string, keepHosts: string[]): boolean {
+  const host = articleSourceHost(link);
+  if (!host || !keepHosts.length) return false;
+  return keepHosts.some((k) => host === k || host.endsWith(`.${k}`));
 }
 
 const STOP_TITLE = new Set([
@@ -100,7 +154,8 @@ const STOP_TITLE = new Set([
   "before",
   "against",
   "game",
-  "games",
+  "recap",
+  "team",
   "series",
   "season",
   "mlb",
@@ -113,6 +168,12 @@ const STOP_TITLE = new Set([
   "that",
   "have",
   "been",
+  "aug",
+  "august",
+  "sep",
+  "september",
+  "oct",
+  "october",
 ]);
 
 const TITLE_ALIASES: Record<string, string[]> = {
@@ -129,6 +190,7 @@ export function titlesLikelySameStory(a: string, b: string): boolean {
     const out = new Set<string>();
     for (const w of normalizeTitleKey(title).split(" ")) {
       if (w.length <= 2 || STOP_TITLE.has(w)) continue;
+      if (/^\d+$/.test(w)) continue;
       out.add(w);
       for (const alias of TITLE_ALIASES[w] ?? []) out.add(alias);
     }
@@ -143,7 +205,11 @@ export function titlesLikelySameStory(a: string, b: string): boolean {
   if (union <= 0) return false;
   const jaccard = inter / union;
   const coverage = inter / Math.min(setA.size, setB.size);
-  return (jaccard >= 0.4 && inter >= 4) || coverage >= 0.62;
+  // Box-score / game-recap headlines need stronger overlap so ESPN
+  // "Cards 2-0 Phillies Game Recap" doesn't eat a feature writeup.
+  const recapish = /game recap|box score|final score|\b\d+\s*[-–]\s*\d+\b/i.test(`${a} ${b}`);
+  if (recapish) return jaccard >= 0.55 && inter >= 5;
+  return (jaccard >= 0.45 && inter >= 4) || coverage >= 0.7;
 }
 
 export type DedupePartition<T> = {
@@ -155,9 +221,11 @@ export type DedupePartition<T> = {
 /**
  * Keep first occurrence when the same article appears in multiple feeds.
  * Prefer mlb.com when titles collide. Soft-dedupe near-identical headlines.
+ * `keepHosts` are white-labeled sources that always stay in the main feed.
  */
 export function partitionDedupedArticles<T extends Pick<RssFeedItem, "link" | "title">>(
   items: T[],
+  keepHosts: string[] = [],
 ): DedupePartition<T> {
   const ranked = [...items].sort(
     (a, b) => sourcePreferenceScore(b.link) - sourcePreferenceScore(a.link),
@@ -179,6 +247,11 @@ export function partitionDedupedArticles<T extends Pick<RssFeedItem, "link" | "t
       return titlesLikelySameStory(k.title, item.title);
     });
     if (softHit) {
+      if (isKeepHost(item.link, keepHosts)) {
+        seenUrl.add(urlKey);
+        kept.push(item);
+        continue;
+      }
       duplicates.push(item);
       continue;
     }
@@ -186,7 +259,6 @@ export function partitionDedupedArticles<T extends Pick<RssFeedItem, "link" | "t
     kept.push(item);
   }
 
-  // Restore chronological order among kept items (prefer original feed order when possible).
   const order = new Map(items.map((it, i) => [it.link, i]));
   kept.sort((a, b) => (order.get(a.link) ?? 0) - (order.get(b.link) ?? 0));
   duplicates.sort((a, b) => (order.get(a.link) ?? 0) - (order.get(b.link) ?? 0));
@@ -194,8 +266,11 @@ export function partitionDedupedArticles<T extends Pick<RssFeedItem, "link" | "t
 }
 
 /** Keep first occurrence when the same article appears in multiple feeds. */
-export function dedupeArticles<T extends Pick<RssFeedItem, "link" | "title">>(items: T[]): T[] {
-  return partitionDedupedArticles(items).kept;
+export function dedupeArticles<T extends Pick<RssFeedItem, "link" | "title">>(
+  items: T[],
+  keepHosts: string[] = [],
+): T[] {
+  return partitionDedupedArticles(items, keepHosts).kept;
 }
 
 export type RssFilterKind = "phrase" | "url";

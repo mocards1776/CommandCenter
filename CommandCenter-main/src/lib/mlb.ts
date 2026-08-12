@@ -745,8 +745,12 @@ export type MlbBoxscoreBatter = {
   r: number;
   h: number;
   rbi: number;
+  hr: number;
   bb: number;
   so: number;
+  avg: string | null;
+  obp: string | null;
+  slg: string | null;
   summary: string;
 };
 
@@ -851,8 +855,12 @@ function mapBoxSide(
         r: Number(b.runs ?? 0),
         h: Number(b.hits ?? 0),
         rbi: Number(b.rbi ?? 0),
+        hr: Number(b.homeRuns ?? 0),
         bb: Number(b.baseOnBalls ?? 0),
         so: Number(b.strikeOuts ?? 0),
+        avg: b.avg != null ? String(b.avg) : null,
+        obp: b.obp != null ? String(b.obp) : null,
+        slg: b.slg != null ? String(b.slg) : null,
         summary: String(b.summary ?? ""),
       } satisfies MlbBoxscoreBatter;
     })
