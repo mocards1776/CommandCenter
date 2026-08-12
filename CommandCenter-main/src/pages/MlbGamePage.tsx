@@ -32,7 +32,7 @@ export default function MlbGamePage() {
   const navigate = useNavigate();
 
   const box = useQuery({
-    queryKey: ["mlb-boxscore-v2", gamePk],
+    queryKey: ["mlb-boxscore-v3", gamePk],
     queryFn: () => fetchMlbBoxscore(gamePk!),
     enabled: Boolean(gamePk),
     staleTime: 30_000,

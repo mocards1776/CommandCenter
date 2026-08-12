@@ -29,7 +29,7 @@ function heatLabel(rank: number): string {
 export default function MlbManagersPage() {
   const { user } = useAuth();
   const managers = useQuery({
-    queryKey: ["mlb-managers-v7"],
+    queryKey: ["mlb-managers-v8"],
     queryFn: fetchMlbManagers,
     staleTime: 180_000,
   });
@@ -126,43 +126,6 @@ export default function MlbManagersPage() {
         </section>
       )}
 
-      {managers.data && managers.data.some((m) => m.firedOddsAmerican) && (
-        <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
-          <h2 className="rule-head mb-3">Next manager fired</h2>
-          <ol className="grid gap-2 sm:grid-cols-2">
-            {managers.data
-              .filter((m) => m.firedOddsAmerican)
-              .slice()
-              .sort((a, b) => (b.firedOddsPct ?? -1) - (a.firedOddsPct ?? -1))
-              .slice(0, 8)
-              .map((m) => (
-                <li key={`odds-${m.id}`}>
-                  <Link
-                    to={`/sports/mlb/managers/${m.id}`}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] px-3 py-2.5 transition hover:border-white/20 hover:bg-white/[0.03]"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-[13px] font-semibold text-cream">
-                        {m.name}
-                      </span>
-                      <span className="text-[11px] text-[#8b93a7]">
-                        {m.teamAbbrev}
-                        {m.firedOddsPct != null ? ` · ${m.firedOddsPct}%` : ""}
-                      </span>
-                    </span>
-                    <span className="numeral shrink-0 text-[15px] font-semibold text-amber-200">
-                      {m.firedOddsAmerican}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-          </ol>
-          <p className="mt-2 text-[10.5px] text-[#8b93a7]">
-            Live Kalshi prices when the market is open — not a sportsbook ticket.
-          </p>
-        </section>
-      )}
-
       {managers.isPending && (
         <p className="text-chalk-dim flex items-center gap-2 text-[13px]">
           <Loader2 size={16} className="animate-spin" /> Loading managers…
@@ -191,10 +154,10 @@ export default function MlbManagersPage() {
           </section>
 
           <p className="text-[11px] leading-relaxed text-[#8b93a7]">
-            Heat scores win percentage, games back, playoff odds, and division place — then
-            scales by tenure. Interim and short-leash (1-year / year-1 under .420) skippers
-            always take full pressure. “Next fired” prices come from Kalshi when the market
-            is open. Interim records are the skipper’s own W–L, not the full team season.
+            Heat is driven hardest by live next-fired market prices (Kalshi), then win
+            percentage, games back, playoff odds, and division place — scaled by tenure.
+            Interim / short-leash skippers skip the first-year cushion. When MLB still
+            lists a fired manager beside an interim, we show the interim only.
           </p>
         </>
       )}
@@ -272,7 +235,6 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
           alt=""
           width={48}
           height={48}
-          referrerPolicy="no-referrer"
           className="h-12 w-12 shrink-0 rounded-md bg-[#0c1a2e] object-cover object-top ring-1 ring-white/10"
           onError={(e) => {
             const el = e.currentTarget;
@@ -334,14 +296,19 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
                 className="numeral rounded-sm bg-white/[0.06] px-1.5 py-0.5 text-[11px] font-semibold text-amber-200"
                 title={
                   m.firedOddsPct != null
-                    ? `Next manager fired · ~${m.firedOddsPct}% (Kalshi)`
-                    : "Next manager fired odds"
+                    ? `Market weight · ~${m.firedOddsPct}% next fired`
+                    : "Next-fired market price"
                 }
               >
                 {m.firedOddsAmerican}
               </span>
             )}
           </div>
+          {m.contractNote ? (
+            <p className="mt-1 line-clamp-1 text-[11px] text-[#8b93a7]" title={m.contractNote}>
+              {m.contractNote}
+            </p>
+          ) : null}
         </div>
         <span className="numeral hidden text-[12px] text-[#8b93a7] sm:inline">
           {m.hotSeatScore.toFixed(1)}
