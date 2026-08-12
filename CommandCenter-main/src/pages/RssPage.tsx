@@ -13,6 +13,7 @@ import {
   Inbox,
   RefreshCw,
   Share,
+  Layers,
   Trash2,
   X,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import {
   applyRssFilters,
   createRssHighlight,
   dedupeArticles,
+  partitionDedupedArticles,
   deleteRssFilter,
   deleteRssHighlight,
   fetchRssArticle,
@@ -53,7 +55,7 @@ import {
 } from "@/lib/mlb";
 import { cn } from "@/lib/utils";
 
-type NavView = "unread" | RssFeedId | "notes" | "filters";
+type NavView = "unread" | RssFeedId | "notes" | "filters" | "duplicates";
 
 function readingMinutes(words: number): string {
   const m = Math.max(1, Math.round(words / 220));
@@ -471,13 +473,18 @@ function ReaderView({
           </a>
         </header>
 
-        {image ? (
+        {image && !(linkedHtml || article.data?.contentHtml || "").includes("<video") ? (
           <button
             type="button"
             onClick={() => window.open(item.link, "_blank", "noopener,noreferrer")}
             className="mb-8 block w-full"
           >
-            <img src={image} alt="" className="max-h-[320px] w-full object-cover" />
+            <img
+              src={image}
+              alt=""
+              referrerPolicy="no-referrer"
+              className="max-h-[320px] w-full object-cover"
+            />
           </button>
         ) : null}
 
@@ -506,7 +513,7 @@ function ReaderView({
               const m = href.match(/\/sports\/mlb\/player\/(\d+)/);
               if (m) setPeekPlayerId(Number(m[1]));
             }}
-            className="rss-reader max-w-none text-[20px] leading-[1.8] text-[#eceef4] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_a.rss-player-link]:text-accent [&_a.rss-player-link]:decoration-accent/40 [&_a.rss-player-link]:underline-offset-[3px] [&_blockquote]:border-l-2 [&_blockquote]:border-accent/40 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-chalk [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5"
+            className="rss-reader max-w-none text-[20px] leading-[1.8] text-[#eceef4] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_a.rss-player-link]:text-accent [&_a.rss-player-link]:decoration-accent/40 [&_a.rss-player-link]:underline-offset-[3px] [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5 [&_video.rss-video]:my-6 [&_video.rss-video]:aspect-video [&_video.rss-video]:w-full [&_video.rss-video]:rounded-lg [&_video.rss-video]:bg-black [&_figcaption]:hidden [&_figure]:my-6"
             dangerouslySetInnerHTML={{ __html: linkedHtml || article.data?.contentHtml || "" }}
           />
         )}
@@ -657,6 +664,7 @@ export default function RssPage() {
   const qc = useQueryClient();
   const [nav, setNav] = useState<NavView>("unread");
   const [selected, setSelected] = useState<RssFeedItemRef | null>(null);
+  const [readerQueue, setReaderQueue] = useState<RssFeedItemRef[] | null>(null);
   const [mobilePane, setMobilePane] = useState<"sidebar" | "list">("sidebar");
 
   const reads = useQuery({
@@ -716,6 +724,19 @@ export default function RssPage() {
     return map;
   }, [feedQueries, filters]);
 
+  /** Cross-feed soft duplicates (e.g. FOX 2 vs MLB.com) — hidden from main/unread. */
+  const duplicateItems = useMemo(() => {
+    const merged: RssFeedItemRef[] = [];
+    RSS_FEEDS.forEach((f, i) => {
+      const data = feedQueries[i]?.data;
+      const filtered = applyRssFilters(data?.items ?? [], filters);
+      for (const it of filtered) {
+        merged.push({ ...it, feedId: f.id, feedUrl: f.url });
+      }
+    });
+    return partitionDedupedArticles(merged).duplicates;
+  }, [feedQueries, filters]);
+
   const unreadByFeed = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const f of RSS_FEEDS) {
@@ -727,6 +748,15 @@ export default function RssPage() {
 
   const listItems = useMemo(() => {
     if (nav === "notes" || nav === "filters") return [] as RssFeedItemRef[];
+    if (nav === "duplicates") {
+      const rows = [...duplicateItems];
+      rows.sort((a, b) => {
+        const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
+        const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
+        return db - da;
+      });
+      return rows;
+    }
     if (nav === "unread") {
       const merged: RssFeedItemRef[] = [];
       for (const f of RSS_FEEDS) {
@@ -751,10 +781,9 @@ export default function RssPage() {
       feedId: nav,
       feedUrl: pack?.url ?? "",
     }));
-  }, [nav, feedById, readUrls]);
+  }, [nav, feedById, readUrls, duplicateItems]);
 
   const totalUnread = useMemo(() => {
-    // Deduped unread across feeds so the same story isn't double-counted.
     const merged: RssFeedItem[] = [];
     for (const f of RSS_FEEDS) {
       for (const it of feedById.get(f.id)?.items ?? []) {
@@ -764,8 +793,9 @@ export default function RssPage() {
     return dedupeArticles(merged).length;
   }, [feedById, readUrls]);
 
+  const navItems = readerQueue ?? listItems;
   const selectedIndex = selected
-    ? listItems.findIndex((it) => it.link === selected.link)
+    ? navItems.findIndex((it) => it.link === selected.link)
     : -1;
 
   const listTitle =
@@ -775,7 +805,9 @@ export default function RssPage() {
         ? "Notes"
         : nav === "filters"
           ? "Filters"
-          : RSS_FEEDS.find((f) => f.id === nav)?.title ?? "Feed";
+          : nav === "duplicates"
+            ? "Duplicates"
+            : RSS_FEEDS.find((f) => f.id === nav)?.title ?? "Feed";
 
   const feedsLoading = feedQueries.some((q) => q.isLoading);
   const feedsFetching = feedQueries.some((q) => q.isFetching);
@@ -806,6 +838,25 @@ export default function RssPage() {
       toast.error(err instanceof Error ? err.message : "Could not mark articles read"),
   });
 
+  const archiveDupesMut = useMutation({
+    mutationFn: () =>
+      markRssReadMany(
+        duplicateItems
+          .filter((it) => !readUrls.has(it.link))
+          .map((it) => ({
+            articleUrl: it.link,
+            articleTitle: it.title,
+            feedUrl: it.feedUrl,
+          })),
+      ),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["rss-reads"] });
+      toast.success("Archived duplicate articles");
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : "Could not archive duplicates"),
+  });
+
   async function toggleRead(item: RssFeedItem) {
     try {
       if (readUrls.has(item.link)) await markRssUnread(item.link);
@@ -825,16 +876,19 @@ export default function RssPage() {
   function selectNav(next: NavView) {
     setNav(next);
     setSelected(null);
+    setReaderQueue(null);
     setMobilePane("list");
   }
 
   function openArticle(item: RssFeedItemRef) {
+    // Snapshot the list so unread mark-read doesn't kill swipe next/prev.
+    setReaderQueue(listItems);
     setSelected(item);
   }
 
   function goRelative(delta: number) {
     if (selectedIndex < 0) return;
-    const next = listItems[selectedIndex + delta];
+    const next = navItems[selectedIndex + delta];
     if (next) setSelected(next);
   }
 
@@ -846,8 +900,11 @@ export default function RssPage() {
           feedUrl={selected.feedUrl}
           isRead={readUrls.has(selected.link)}
           hasPrev={selectedIndex > 0}
-          hasNext={selectedIndex >= 0 && selectedIndex < listItems.length - 1}
-          onBack={() => setSelected(null)}
+          hasNext={selectedIndex >= 0 && selectedIndex < navItems.length - 1}
+          onBack={() => {
+            setSelected(null);
+            setReaderQueue(null);
+          }}
           onPrev={() => goRelative(-1)}
           onNext={() => goRelative(1)}
           onToggleRead={() => void toggleRead(selected)}
@@ -923,6 +980,23 @@ export default function RssPage() {
             <li>
               <button
                 type="button"
+                onClick={() => selectNav("duplicates")}
+                className={cn(
+                  "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2.5 text-left transition-colors",
+                  nav === "duplicates"
+                    ? "bg-accent/15 text-cream"
+                    : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+                )}
+              >
+                <Layers size={16} className="text-accent shrink-0" />
+                <span className="min-w-0 flex-1 text-[13.5px]">Duplicates</span>
+                <span className="text-chalk tabular-nums text-[12px]">{duplicateItems.length}</span>
+                <ChevronRight size={14} className="opacity-50" />
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
                 onClick={() => selectNav("notes")}
                 className={cn(
                   "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2.5 text-left transition-colors",
@@ -989,10 +1063,25 @@ export default function RssPage() {
                 ? `${allNotes.data?.length ?? 0} highlights`
                 : nav === "filters"
                   ? `${filters.length} rules`
-                  : `${listItems.length} articles`}
+                  : nav === "duplicates"
+                    ? `${duplicateItems.length} filtered · MLB preferred`
+                    : `${listItems.length} articles`}
             </p>
           </div>
-          {nav !== "notes" && nav !== "filters" && unreadInList.length > 0 ? (
+          {nav === "duplicates" &&
+          duplicateItems.some((it) => !readUrls.has(it.link)) ? (
+            <button
+              type="button"
+              onClick={() => archiveDupesMut.mutate()}
+              disabled={archiveDupesMut.isPending}
+              className="text-chalk hover:text-cream inline-flex shrink-0 items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] disabled:opacity-40"
+              title="Mark all duplicates as read"
+            >
+              <CheckCheck size={14} />
+              <span className="hidden sm:inline">Archive all</span>
+            </button>
+          ) : null}
+          {nav !== "notes" && nav !== "filters" && nav !== "duplicates" && unreadInList.length > 0 ? (
             <button
               type="button"
               onClick={() => markAllReadMut.mutate()}
@@ -1042,7 +1131,11 @@ export default function RssPage() {
           <p className="label-caps animate-pulse p-5">Loading feeds</p>
         ) : listItems.length === 0 ? (
           <p className="text-chalk font-rss p-5 text-sm">
-            {nav === "unread" ? "You're caught up." : "No articles in this feed."}
+            {nav === "unread"
+              ? "You're caught up."
+              : nav === "duplicates"
+                ? "No duplicate stories right now."
+                : "No articles in this feed."}
           </p>
         ) : (
           <ul>

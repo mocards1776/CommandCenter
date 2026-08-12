@@ -74,22 +74,128 @@ export function normalizeTitleKey(title: string): string {
     .trim();
 }
 
-/** Keep first occurrence when the same article appears in multiple feeds. */
-export function dedupeArticles<T extends Pick<RssFeedItem, "link" | "title">>(items: T[]): T[] {
+/** Prefer official MLB.com writeups when the same story is syndicated elsewhere. */
+export function sourcePreferenceScore(link: string): number {
+  try {
+    const host = new URL(link).hostname.replace(/^www\./, "").toLowerCase();
+    if (host === "mlb.com" || host.endsWith(".mlb.com")) return 100;
+    if (host.includes("espn.")) return 55;
+    if (host.includes("stltoday")) return 50;
+    if (host.includes("fox") || host.includes("yahoo") || host.includes("heavy")) return 25;
+    return 40;
+  } catch {
+    return 0;
+  }
+}
+
+const STOP_TITLE = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "into",
+  "over",
+  "after",
+  "before",
+  "against",
+  "game",
+  "games",
+  "series",
+  "season",
+  "mlb",
+  "news",
+  "update",
+  "report",
+  "will",
+  "their",
+  "this",
+  "that",
+  "have",
+  "been",
+]);
+
+const TITLE_ALIASES: Record<string, string[]> = {
+  cards: ["cardinals", "cards", "redbirds"],
+  cardinals: ["cardinals", "cards", "redbirds"],
+  redbirds: ["cardinals", "cards", "redbirds"],
+  phils: ["phillies", "phils"],
+  phillies: ["phillies", "phils"],
+};
+
+/** Soft title match for the same wire story across publishers. */
+export function titlesLikelySameStory(a: string, b: string): boolean {
+  const expand = (title: string) => {
+    const out = new Set<string>();
+    for (const w of normalizeTitleKey(title).split(" ")) {
+      if (w.length <= 2 || STOP_TITLE.has(w)) continue;
+      out.add(w);
+      for (const alias of TITLE_ALIASES[w] ?? []) out.add(alias);
+    }
+    return out;
+  };
+  const setA = expand(a);
+  const setB = expand(b);
+  if (setA.size < 4 || setB.size < 4) return false;
+  let inter = 0;
+  for (const w of setA) if (setB.has(w)) inter++;
+  const union = setA.size + setB.size - inter;
+  if (union <= 0) return false;
+  const jaccard = inter / union;
+  const coverage = inter / Math.min(setA.size, setB.size);
+  return (jaccard >= 0.4 && inter >= 4) || coverage >= 0.62;
+}
+
+export type DedupePartition<T> = {
+  kept: T[];
+  /** Stories hidden from the main/unread feeds because a preferred copy won. */
+  duplicates: T[];
+};
+
+/**
+ * Keep first occurrence when the same article appears in multiple feeds.
+ * Prefer mlb.com when titles collide. Soft-dedupe near-identical headlines.
+ */
+export function partitionDedupedArticles<T extends Pick<RssFeedItem, "link" | "title">>(
+  items: T[],
+): DedupePartition<T> {
+  const ranked = [...items].sort(
+    (a, b) => sourcePreferenceScore(b.link) - sourcePreferenceScore(a.link),
+  );
   const seenUrl = new Set<string>();
-  const seenTitle = new Set<string>();
-  const out: T[] = [];
-  for (const item of items) {
+  const kept: T[] = [];
+  const duplicates: T[] = [];
+
+  for (const item of ranked) {
     const urlKey = articleDedupeKey(item);
     const titleKey = normalizeTitleKey(item.title);
-    if (seenUrl.has(urlKey)) continue;
-    // Soft-dedupe: identical titles across hosts (same wire story).
-    if (titleKey.length >= 24 && seenTitle.has(titleKey)) continue;
+    if (seenUrl.has(urlKey)) {
+      duplicates.push(item);
+      continue;
+    }
+    const softHit = kept.find((k) => {
+      const kt = normalizeTitleKey(k.title);
+      if (titleKey.length >= 24 && kt === titleKey) return true;
+      return titlesLikelySameStory(k.title, item.title);
+    });
+    if (softHit) {
+      duplicates.push(item);
+      continue;
+    }
     seenUrl.add(urlKey);
-    if (titleKey) seenTitle.add(titleKey);
-    out.push(item);
+    kept.push(item);
   }
-  return out;
+
+  // Restore chronological order among kept items (prefer original feed order when possible).
+  const order = new Map(items.map((it, i) => [it.link, i]));
+  kept.sort((a, b) => (order.get(a.link) ?? 0) - (order.get(b.link) ?? 0));
+  duplicates.sort((a, b) => (order.get(a.link) ?? 0) - (order.get(b.link) ?? 0));
+  return { kept, duplicates };
+}
+
+/** Keep first occurrence when the same article appears in multiple feeds. */
+export function dedupeArticles<T extends Pick<RssFeedItem, "link" | "title">>(items: T[]): T[] {
+  return partitionDedupedArticles(items).kept;
 }
 
 export type RssFilterKind = "phrase" | "url";

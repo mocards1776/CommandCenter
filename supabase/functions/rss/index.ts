@@ -42,9 +42,25 @@ const ALLOWED_TAGS = new Set([
   "img",
   "figure",
   "figcaption",
+  "footer",
+  "cite",
   "hr",
   "span",
+  "video",
+  "source",
 ]);
+
+const TWEET_URL_RE = /(?:twitter\.com|x\.com)\/\w+\/status(?:es)?\/\d+/i;
+const TWEET_EMBED_RE = /twitter-tweet|rss-tweet|data-tweet|twt-embed|twitter-video/i;
+
+const PROMO_LINK_RE =
+  /(?:get tickets|ticket package|star wars|jersey with|subscribe|newsletter|sign up|fantasy baseball|betmgm|draftkings|fanduel|promo code|bonus bets|specials\/|shop\.mlb|mlb\.com\/tickets)/i;
+
+const CAPTION_RE =
+  /(?:mandatory credit|imagn images|via reuters|getty images|photo by|ap photo|usa today sports|\bwp-caption\b)/i;
+
+const FILM_ROOM_CHROME_RE =
+  /(?:film room powered by|google cloud|grid-\d+|channels?reels|arrow-expand|add-reel|share-square|dot-menu-\d+|more from this game|data visualization)/i;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -225,7 +241,7 @@ function unlockEncryptedContent(html: string): string {
 }
 
 const CHROME_CLASS_RE =
-  /(?:subscriber-hide|tnt-gift|gift-|share-tools|share-bar|social-share|social-links|follow-this|follow-author|author-card|asset-user|asset-meta|asset-tags|asset-comments|comments-|newsletter|notification|modal-|dropdown-menu|preferred-source|google-preferred|paywall|clipboard|subscribe-promo|inline-relcontent|tnt-inline|trinity|audio-player|related-articles|read-more|promo-)/i;
+  /(?:subscriber-hide|tnt-gift|gift-|share-tools|share-bar|social-share|social-links|follow-this|follow-author|author-card|asset-user|asset-meta|asset-tags|asset-comments|comments-|newsletter|notification|modal-|dropdown-menu|preferred-source|google-preferred|paywall|clipboard|subscribe-promo|inline-relcontent|tnt-inline|trinity|audio-player|related-articles|read-more|promo-|story-cover|caas-readmore|caas-da|bodyad|body-ads|taboola|outbrain|film-room-branding|powered-by)/i;
 
 /** Drop share/gift/follow/modals and other newspaper chrome before sanitize. */
 function stripArticleChrome(html: string): string {
@@ -236,6 +252,10 @@ function stripArticleChrome(html: string): string {
     const next = out.replace(
       /<(div|section|aside|nav|ul|form|button|figure)([^>]*)>([\s\S]*?)<\/\1>/gi,
       (full, tag: string, attrs: string, inner: string) => {
+        // Keep tweet embeds even when wrapped in share/social chrome.
+        if (TWEET_EMBED_RE.test(attrs) || TWEET_EMBED_RE.test(inner) || TWEET_URL_RE.test(inner)) {
+          return full;
+        }
         const hay = (attrs + " " + inner.slice(0, 240)).toLowerCase();
         if (CHROME_CLASS_RE.test(attrs) || CHROME_CLASS_RE.test(hay)) return "";
         if (/id="[^"]*(?:gift|follow|share|modal|notification|clipboard)[^"]*"/i.test(attrs)) {
@@ -257,16 +277,24 @@ function stripArticleChrome(html: string): string {
 
 /** Prefer TownNews article paragraphs only — avoids gift/share chrome in asset-content. */
 function extractTownNewsParagraphs(html: string): string | null {
+  // Tweet embeds live outside lee-article-text <p>s — use the full body path instead.
+  if (TWEET_EMBED_RE.test(html) || TWEET_URL_RE.test(html)) return null;
+
   const parts: string[] = [];
   const re =
-    /<(p|div)([^>]*class="[^"]*(?:subscriber-preview|lee-article-text|article-body)[^"]*"[^>]*)>([\s\S]*?)<\/\1>/gi;
+    /<(p|div|blockquote)([^>]*class="[^"]*(?:subscriber-preview|lee-article-text|article-body|twitter-tweet)[^"]*"[^>]*)>([\s\S]*?)<\/\1>/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) {
+    const tag = m[1].toLowerCase();
     const attrs = m[2] || "";
     if (/subscriber-hide|trinity|inline-relcontent/i.test(attrs)) continue;
     const inner = m[3].trim();
     if (stripTags(inner).length < 20) continue;
-    parts.push("<p>" + inner + "</p>");
+    if (tag === "blockquote" || TWEET_EMBED_RE.test(attrs)) {
+      parts.push("<blockquote>" + inner + "</blockquote>");
+    } else {
+      parts.push("<p>" + inner + "</p>");
+    }
   }
   if (!parts.length) return null;
   const joined = parts.join("\n");
@@ -299,10 +327,14 @@ function sliceBalancedDiv(html: string, openRe: RegExp): string | null {
 }
 
 function extractFragment(html: string): string | null {
+  // MLB Film Room / video pages — prefer mp4 autoplay card over chrome soup.
+  const mlbVideo = extractMlbVideoFragment(html);
+  if (mlbVideo) return mlbVideo;
+
   const townNews = extractTownNewsParagraphs(html);
   if (townNews) return townNews;
 
-  // TownNews / BLOX: prefer balanced article body so unlocked subscriber paragraphs are kept.
+  // TownNews / BLOX + Yahoo + Heavy + SI-style bodies.
   const balancedOpeners = [
     /<div[^>]*itemprop="articleBody"[^>]*>/i,
     /<div[^>]*class="[^"]*lee-article-body[^"]*"[^>]*>/i,
@@ -310,6 +342,10 @@ function extractFragment(html: string): string | null {
     /<div[^>]*class="[^"]*e-content[^"]*"[^>]*>/i,
     /<div[^>]*class="[^"]*asset-content[^"]*"[^>]*>/i,
     /<div[^>]*class="[^"]*subscriber-premium[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*content-body[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*caas-body[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*l-article__content[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*c-content[^"]*entry-content[^"]*"[^>]*>/i,
   ];
   for (const re of balancedOpeners) {
     const frag = sliceBalancedDiv(html, re);
@@ -318,7 +354,7 @@ function extractFragment(html: string): string | null {
 
   const patterns = [
     /<div[^>]*class="[^"]*blog-item-content[^"]*e-content[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<div[^>]*class="[^"]*blog-item-author-profile/i,
-    /<(?:div|section|article)[^>]*class="[^"]*(?:post-content|entry-content|article-content|article-body|post-body|rich-text)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|section|article)>/i,
+    /<(?:div|section|article)[^>]*class="[^"]*(?:post-content|entry-content|article-content|article-body|post-body|rich-text|content-body|caas-body)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|section|article)>/i,
     /<article[^>]*>([\s\S]*?)<\/article>/i,
     /<main[^>]*>([\s\S]*?)<\/main>/i,
   ];
@@ -337,26 +373,73 @@ function extractFragment(html: string): string | null {
   return best.length > 200 ? best : null;
 }
 
+/** Pull a clean autoplay video card out of MLB.com Film Room / clip pages. */
+function extractMlbVideoFragment(html: string): string | null {
+  const mp4 =
+    html.match(/https:\/\/darkroom-clips\.mlb\.com\/[0-9a-f-]+\.mp4/i)?.[0] ||
+    html.match(/https:\/\/[^"'\s]+mp4Avc[^"'\s]*\.mp4/i)?.[0] ||
+    html.match(/"(https:\/\/[^"]+\.mp4)"/i)?.[1] ||
+    null;
+  if (!mp4) return null;
+  // Only treat as a video page when Film Room / clip chrome is present or path-like signals exist.
+  const isVideoPage =
+    /film.?room|darkroom-clips|mp4Avc|HTTP_CLOUD_WIRED/i.test(html) ||
+    /mlb\.com\/[^"'\s]*\/video\//i.test(html);
+  if (!isVideoPage) return null;
+  const title =
+    html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ||
+    "Highlight";
+  const cleanTitle = stripTags(title).replace(/\s*\|\s*0?8\/\d+.*/i, "").trim();
+  return (
+    `<p><video class="rss-video" src="${mp4}" controls autoplay muted playsinline loop></video></p>` +
+    (cleanTitle ? `<p>${cleanTitle}</p>` : "")
+  );
+}
+
 const JUNK_TEXT_RE =
-  /(?:get email notifications|your notification has been saved|problem saving your notification|followed notifications|please log in to use this feature|don't have an account|sign up today|gift this article|new subscriber benefit|copied to clipboard|out of gifts for the month|share this article paywall|prefer us on google|preferred news source|author twitter|author email|follow [\w .|/-]+ post-dispatch|manage followed notifications|facebook|twitter|bluesky|whatsapp|\bsms\b|copy (?:article )?link|copy link|\bprint\b|\{\{[^}]+\}\}|data-(?:html|toggle|placement|trigger)|aria-label="tooltip|tabindex="0"|role="button")/i;
+  /(?:get email notifications|your notification has been saved|problem saving your notification|followed notifications|please log in to use this feature|don't have an account|sign up today|gift this article|new subscriber benefit|copied to clipboard|out of gifts for the month|share this article paywall|prefer us on google|preferred news source|author twitter|author email|follow [\w .|/-]+ post-dispatch|manage followed notifications|facebook|twitter|bluesky|whatsapp|\bsms\b|copy (?:article )?link|copy link|\bprint\b|\{\{[^}]+\}\}|data-(?:html|toggle|placement|trigger)|aria-label="tooltip|tabindex="0"|role="button"|story by|appeared first on|film room powered by)/i;
 
 /** Drop leftover chrome paragraphs and leaked attribute debris after sanitize. */
-function scrubContentHtml(html: string): string {
+function scrubContentHtml(html: string, heroImage: string | null = null): string {
   let out = html
     .replace(/\s*data-[a-z0-9-]+="[^"]*"/gi, "")
     .replace(/\s*(?:role|aria-label|tabindex|data-placement|data-trigger|data-toggle|data-html)="[^"]*"/gi, "")
     .replace(/\{\{[^}]+\}\}/g, "")
-    .replace(/"[^"]*data-html="true"[^<]*/gi, "");
+    .replace(/"[^"]*data-html="true"[^<]*/gi, "")
+    // Drop captions / photo credits entirely.
+    .replace(/<figcaption\b[^>]*>[\s\S]*?<\/figcaption>/gi, "")
+    .replace(/<figure\b[^>]*>\s*<\/figure>/gi, "");
 
   out = out.replace(/<(p|li|h[1-6]|blockquote)(\b[^>]*)>([\s\S]*?)<\/\1>/gi, (full, tag, attrs, inner) => {
+    if (tag === "blockquote" && (TWEET_EMBED_RE.test(attrs) || TWEET_URL_RE.test(inner))) {
+      return "<" + tag + attrs + ">" + inner + "</" + tag + ">";
+    }
     const text = stripTags(inner).replace(/\s+/g, " ").trim();
     if (!text) return "";
+    if (CAPTION_RE.test(text) && text.length < 420) return "";
+    if (FILM_ROOM_CHROME_RE.test(text) && text.length < 280) return "";
+    if (PROMO_LINK_RE.test(text) && text.length < 220) return "";
     if (text.length < 120 && JUNK_TEXT_RE.test(text)) return "";
-    if (/^(?:facebook|twitter|bluesky|whatsapp|sms|email|print|copy link|save|close|log in)$/i.test(text)) {
+    if (/^(?:facebook|twitter|bluesky|whatsapp|sms|email|print|copy link|save|close|log in|story by)$/i.test(text)) {
       return "";
+    }
+    // Promo bullets that are mostly a single link.
+    if (tag === "li" || tag === "p") {
+      const onlyLink = inner.replace(/<a\b[^>]*>[\s\S]*?<\/a>/gi, "").replace(/<[^>]+>/g, "").trim();
+      if (!onlyLink && /<a\b/i.test(inner) && PROMO_LINK_RE.test(inner)) return "";
     }
     return "<" + tag + attrs + ">" + inner + "</" + tag + ">";
   });
+
+  // Drop promo anchors that sit alone in lists.
+  out = out.replace(/<li\b[^>]*>\s*<a\b[^>]*>([\s\S]*?)<\/a>\s*<\/li>/gi, (full, label) => {
+    const t = stripTags(label);
+    if (PROMO_LINK_RE.test(t) || /get tickets|ticket package|star wars/i.test(t)) return "";
+    return full;
+  });
+
+  out = dedupeImages(out, heroImage);
 
   // Orphaned chrome lines not wrapped in p
   out = out
@@ -364,6 +447,8 @@ function scrubContentHtml(html: string): string {
     .filter((line) => {
       const t = stripTags(line).replace(/\s+/g, " ").trim();
       if (!t) return true;
+      if (CAPTION_RE.test(t) && t.length < 420) return false;
+      if (FILM_ROOM_CHROME_RE.test(t) && t.length < 280) return false;
       if (t.length < 160 && JUNK_TEXT_RE.test(t)) return false;
       return true;
     })
@@ -371,9 +456,38 @@ function scrubContentHtml(html: string): string {
 
   return out
     .replace(/<p>\s*<\/p>/gi, "")
+    .replace(/<ul>\s*<\/ul>/gi, "")
     .replace(/(?:\s*<br>\s*){3,}/gi, "<br><br>")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function normalizeImgKey(src: string): string {
+  try {
+    const u = new URL(src);
+    u.hash = "";
+    ["w", "h", "width", "height", "quality", "format", "fit", "crop"].forEach((k) =>
+      u.searchParams.delete(k),
+    );
+    // Collapse common CDN resize prefixes; keep path basename identity.
+    const path = u.pathname.replace(/\/+$/, "").toLowerCase();
+    return `${u.hostname.replace(/^www\./, "")}${path}`;
+  } catch {
+    return src.split("?")[0]!.toLowerCase();
+  }
+}
+
+function dedupeImages(html: string, heroImage: string | null): string {
+  const seen = new Set<string>();
+  if (heroImage) seen.add(normalizeImgKey(heroImage));
+  return html.replace(/<img\b([^>]*)>/gi, (full, attrs) => {
+    const src = attrValue(String(attrs), "src");
+    if (!src) return "";
+    const key = normalizeImgKey(src);
+    if (seen.has(key)) return "";
+    seen.add(key);
+    return full;
+  });
 }
 
 function attrValue(attrs: string, name: string): string | null {
@@ -385,6 +499,46 @@ function attrValue(attrs: string, name: string): string | null {
     new RegExp("\\b" + name + "\\s*=\\s*'([^']*)'", "i"),
   );
   return sq ? sq[1] : null;
+}
+
+/** Turn twitter-tweet markup into a clean quote + attribution footer. */
+function stylizeTweetBlockquotes(html: string): string {
+  return html.replace(/<blockquote\b([^>]*)>([\s\S]*?)<\/blockquote>/gi, (_full, attrs, inner) => {
+    const hay = String(attrs) + " " + String(inner);
+    const isTweet =
+      TWEET_EMBED_RE.test(hay) ||
+      TWEET_URL_RE.test(hay) ||
+      /(?:^|[\s>])(?:—|&mdash;)\s*[^<]+?\(@\w+\)/i.test(stripTags(inner));
+
+    let body = String(inner)
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/pic\.twitter\.com\/\w+/gi, "")
+      .trim();
+
+    // Already has a footer — keep structure, mark as tweet when applicable.
+    if (/<footer\b/i.test(body)) {
+      return `<blockquote${isTweet ? ' class="rss-tweet"' : ""}>${body}</blockquote>`;
+    }
+
+    // Common embed shape: <p>…</p> — Name (@handle) <a>Date</a>
+    const metaMatch = body.match(
+      /(?:<br\s*\/?>|\n|\s)*(?:—|&mdash;|–|&ndash;)\s*([\s\S]*?)(<a\b[^>]*>[\s\S]*?<\/a>)\s*$/i,
+    );
+    if (metaMatch && (isTweet || /\(@\w+\)/.test(metaMatch[1]))) {
+      const before = body.slice(0, metaMatch.index).trim();
+      const who = stripTags(metaMatch[1]).replace(/\s+/g, " ").trim();
+      const link = metaMatch[2];
+      body =
+        before +
+        `<footer class="rss-tweet-meta">— ${who} ${link}</footer>`;
+      return `<blockquote class="rss-tweet">${body}</blockquote>`;
+    }
+
+    if (isTweet) {
+      return `<blockquote class="rss-tweet">${body}</blockquote>`;
+    }
+    return `<blockquote>${body}</blockquote>`;
+  });
 }
 
 function sanitizeHtml(frag: string): string {
@@ -400,13 +554,11 @@ function sanitizeHtml(frag: string): string {
       const keep: string[] = [];
       if (name === "a") {
         const href = attrValue(attrs, "href");
-        if (href && /^(https?:|mailto:|\/)/i.test(href)) {
-          keep.push('href="' + href.replace(/"/g, "") + '"');
-          keep.push('target="_blank"');
-          keep.push('rel="noopener noreferrer"');
-        } else {
-          return "";
-        }
+        if (!href || !/^(https?:|mailto:|\/)/i.test(href)) return "";
+        if (/tickets|specials|shop\.mlb|ticket.?package|star.?wars/i.test(href)) return "";
+        keep.push('href="' + href.replace(/"/g, "") + '"');
+        keep.push('target="_blank"');
+        keep.push('rel="noopener noreferrer"');
       }
       if (name === "img") {
         const src = attrValue(attrs, "src");
@@ -415,16 +567,47 @@ function sanitizeHtml(frag: string): string {
         const alt = attrValue(attrs, "alt");
         if (alt) keep.push('alt="' + alt.replace(/"/g, "&quot;") + '"');
         keep.push('loading="lazy"');
+        keep.push('referrerpolicy="no-referrer"');
+      }
+      if (name === "video") {
+        const src = attrValue(attrs, "src");
+        if (src && /^https?:/i.test(src)) {
+          keep.push('src="' + src.replace(/"/g, "") + '"');
+        }
+        keep.push("controls");
+        keep.push("playsinline");
+        keep.push('class="rss-video"');
+        if (/\bautoplay\b/i.test(attrs)) keep.push("autoplay");
+        if (/\bmuted\b/i.test(attrs)) keep.push("muted");
+        if (/\bloop\b/i.test(attrs)) keep.push("loop");
+      }
+      if (name === "source") {
+        const src = attrValue(attrs, "src");
+        if (!src || !/^https?:/i.test(src)) return "";
+        keep.push('src="' + src.replace(/"/g, "") + '"');
+        const type = attrValue(attrs, "type");
+        if (type) keep.push('type="' + type.replace(/"/g, "") + '"');
+      }
+      if (name === "blockquote") {
+        const cls = attrValue(attrs, "class") || "";
+        if (TWEET_EMBED_RE.test(cls) || TWEET_EMBED_RE.test(attrs)) {
+          keep.push('class="rss-tweet"');
+        }
+      }
+      if (name === "footer" || name === "cite") {
+        keep.push('class="rss-tweet-meta"');
       }
       return "<" + name + (keep.length ? " " + keep.join(" ") : "") + ">";
     },
   );
 
-  return cleaned
-    .replace(/\u200d|\ufeff/g, "")
-    .replace(/<p>\s*<\/p>/gi, "")
-    .replace(/(?:\s*<br>\s*){3,}/gi, "<br><br>")
-    .trim();
+  return stylizeTweetBlockquotes(
+    cleaned
+      .replace(/\u200d|\ufeff/g, "")
+      .replace(/<p>\s*<\/p>/gi, "")
+      .replace(/(?:\s*<br>\s*){3,}/gi, "<br><br>")
+      .trim(),
+  );
 }
 
 function pageMeta(html: string) {
@@ -470,20 +653,26 @@ async function handleFeed(feedUrl: string) {
 
 async function handleRead(url: string) {
   if (!isPublicHttpUrl(url)) return json({ error: "Invalid article URL" }, 400);
-  const html = unlockEncryptedContent(stripNoise(await fetchText(url)));
+  const rawHtml = await fetchText(url);
+  const html = unlockEncryptedContent(stripNoise(rawHtml));
+  const meta = pageMeta(html);
   const frag = extractFragment(html);
   if (!frag) return json({ error: "Could not extract article text", url }, 422);
-  const contentHtml = scrubContentHtml(sanitizeHtml(stripArticleChrome(frag)));
+  let contentHtml = scrubContentHtml(sanitizeHtml(stripArticleChrome(frag)), meta.image);
+  // Video pages can be short on text but still valid.
   const contentText = stripTags(contentHtml);
-  if (contentText.length < 80) {
+  const hasVideo = /<video\b/i.test(contentHtml);
+  if (contentText.length < 80 && !hasVideo) {
     return json({ error: "Extracted text too short", url }, 422);
   }
-  const meta = pageMeta(html);
+  // Prefer no hero image when the body already embeds a video (Film Room).
+  const image = hasVideo ? null : meta.image;
+  if (image) contentHtml = dedupeImages(contentHtml, image);
   return json({
     url,
     title: meta.title,
     byline: meta.byline,
-    image: meta.image,
+    image,
     contentHtml,
     contentText,
     wordCount: contentText.split(/\s+/).filter(Boolean).length,

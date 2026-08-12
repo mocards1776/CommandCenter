@@ -126,47 +126,8 @@ export default function MlbGamePage() {
 
       <GameMatchupHeader game={g} />
 
-      {(g.away.probablePitcher ||
-        g.home.probablePitcher ||
-        preview.data?.awayPitcher ||
-        preview.data?.homePitcher) && (
-        <ProbablePitchers
-          away={g.away}
-          home={g.home}
-          awayStats={preview.data?.awayPitcher ?? null}
-          homeStats={preview.data?.homePitcher ?? null}
-          loading={preview.isPending}
-        />
-      )}
-
-      {preview.isPending && g.pregame && (
-        <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
-          <Loader2 size={14} className="animate-spin" /> Loading preview stats…
-        </p>
-      )}
-
-      {preview.data &&
-        (preview.data.awayLineup.length > 0 || preview.data.homeLineup.length > 0) && (
-          <PreviewLineups
-            awayAbbrev={g.away.abbrev}
-            homeAbbrev={g.home.abbrev}
-            away={preview.data.awayLineup}
-            home={preview.data.homeLineup}
-          />
-        )}
-
-      {preview.data &&
-        (preview.data.battingLeaders.some((r) => r.away || r.home) ||
-          preview.data.pitchingLeaders.some((r) => r.away || r.home)) && (
-          <PreviewLeaders
-            awayAbbrev={g.away.abbrev}
-            homeAbbrev={g.home.abbrev}
-            batting={preview.data.battingLeaders}
-            pitching={preview.data.pitchingLeaders}
-          />
-        )}
-
-      {g.innings.length > 0 && !g.pregame && (
+      {/* Live/final: box score first. Preview stack drops to the bottom. */}
+      {!g.pregame && g.innings.length > 0 && (
         <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[440px] text-center text-[12px]">
@@ -199,8 +160,20 @@ export default function MlbGamePage() {
         </div>
       )}
 
-      {g.pregame && metaBits.length > 0 && (
-        <p className="text-[12px] text-[#a8b0c2]">{metaBits.join(" · ")}</p>
+      {!g.pregame && (
+        <>
+          <BoxSide title={g.away.name} side={g.away} />
+          <BoxSide title={g.home.name} side={g.home} />
+        </>
+      )}
+
+      {g.pregame && (
+        <PreviewStack
+          game={g}
+          preview={preview.data}
+          loading={preview.isPending}
+          metaBits={metaBits}
+        />
       )}
 
       {recap.isPending && (
@@ -215,13 +188,92 @@ export default function MlbGamePage() {
           <Loader2 size={14} className="animate-spin" /> Loading highlights…
         </p>
       )}
-      <HighlightReel highlights={highlights.data ?? []} title="Game highlights" />
+      <HighlightReel
+        highlights={highlights.data ?? []}
+        title="Game highlights"
+        defaultOpen={!g.pregame}
+      />
 
       {!g.pregame && (
-        <>
-          <BoxSide title={g.away.name} side={g.away} />
-          <BoxSide title={g.home.name} side={g.home} />
-        </>
+        <PreviewStack
+          game={g}
+          preview={preview.data}
+          loading={preview.isPending}
+          metaBits={[]}
+          bottom
+        />
+      )}
+    </div>
+  );
+}
+
+function PreviewStack({
+  game: g,
+  preview,
+  loading,
+  metaBits,
+  bottom = false,
+}: {
+  game: MlbBoxscore;
+  preview: Awaited<ReturnType<typeof fetchMlbGamePreview>> | undefined;
+  loading: boolean;
+  metaBits: (string | null)[];
+  bottom?: boolean;
+}) {
+  const hasPitchers =
+    g.away.probablePitcher ||
+    g.home.probablePitcher ||
+    preview?.awayPitcher ||
+    preview?.homePitcher;
+  const hasLineups = Boolean(
+    preview && (preview.awayLineup.length > 0 || preview.homeLineup.length > 0),
+  );
+  const hasLeaders = Boolean(
+    preview &&
+      (preview.battingLeaders.some((r) => r.away || r.home) ||
+        preview.pitchingLeaders.some((r) => r.away || r.home)),
+  );
+  if (!hasPitchers && !hasLineups && !hasLeaders && !loading && !metaBits.length) return null;
+
+  return (
+    <div className="space-y-5">
+      {bottom && (hasPitchers || hasLineups || hasLeaders) && (
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+          Preview notes
+        </p>
+      )}
+      {hasPitchers && (
+        <ProbablePitchers
+          away={g.away}
+          home={g.home}
+          awayStats={preview?.awayPitcher ?? null}
+          homeStats={preview?.homePitcher ?? null}
+          loading={loading}
+        />
+      )}
+      {loading && g.pregame && (
+        <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+          <Loader2 size={14} className="animate-spin" /> Loading preview stats…
+        </p>
+      )}
+      {hasLineups && preview && (
+        <PreviewLineups
+          awayAbbrev={g.away.abbrev}
+          homeAbbrev={g.home.abbrev}
+          away={preview.awayLineup}
+          home={preview.homeLineup}
+        />
+      )}
+      {hasLeaders && preview && (
+        <PreviewLeaders
+          awayAbbrev={g.away.abbrev}
+          homeAbbrev={g.home.abbrev}
+          batting={preview.battingLeaders}
+          pitching={preview.pitchingLeaders}
+        />
+      )}
+      {g.pregame && metaBits.length > 0 && (
+        <p className="text-[12px] text-[#a8b0c2]">{metaBits.filter(Boolean).join(" · ")}</p>
       )}
     </div>
   );
