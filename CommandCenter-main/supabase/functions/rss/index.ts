@@ -17,6 +17,9 @@ const CORS: Record<string, string> = {
 };
 
 const UA = "Mozilla/5.0 (compatible; CommandCenterRSS/1.0)";
+/** Real browser UA — STL Today / TownNews often serve thin shells to bot UAs. */
+const BROWSER_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
 
 const DEFAULT_FEED = "https://rss.app/feeds/nG7WGKJTs5LOQjxd.xml";
 
@@ -280,7 +283,10 @@ function stripArticleChrome(html: string): string {
 /** Prefer TownNews article paragraphs only — avoids gift/share chrome in asset-content. */
 function extractTownNewsParagraphs(html: string): string | null {
   // Tweet embeds live outside lee-article-text <p>s — use the full body path instead.
-  if (TWEET_EMBED_RE.test(html) || TWEET_URL_RE.test(html)) return null;
+  // Only treat real status embeds as tweets (not share intent links).
+  if (TWEET_EMBED_RE.test(html) || /(?:twitter\.com|x\.com)\/\w+\/status(?:es)?\/\d+/i.test(html)) {
+    return null;
+  }
 
   const parts: string[] = [];
   const re =
@@ -290,19 +296,28 @@ function extractTownNewsParagraphs(html: string): string | null {
     const tag = m[1].toLowerCase();
     const attrs = m[2] || "";
     if (/subscriber-hide|trinity|inline-relcontent/i.test(attrs)) continue;
+    // Photo captions use bare subscriber-preview — keep article first-p + unlocked body.
+    if (
+      /subscriber-preview/i.test(attrs) &&
+      !/lee-article-text|first-p|article-body/i.test(attrs)
+    ) {
+      continue;
+    }
     const inner = m[3].trim();
-    if (stripTags(inner).length < 20) continue;
+    if (stripTags(inner).length < 12) continue;
     if (tag === "blockquote" || TWEET_EMBED_RE.test(attrs)) {
       parts.push("<blockquote>" + inner + "</blockquote>");
     } else {
-      parts.push("<p>" + inner + "</p>");
+      // Inner is often already <p>…</p> after ROT47 unlock — don't double-wrap.
+      if (/^\s*<p[\s>]/i.test(inner)) parts.push(inner);
+      else parts.push("<p>" + inner + "</p>");
     }
   }
   if (!parts.length) return null;
   const joined = parts.join("\n");
-  // STL Today / TownNews often yields thinner first extracts after unlock — still usable.
-  const minLen = /stltoday\.com|lee\.net|townnews/i.test(html) ? 80 : 200;
-  return stripTags(joined).length > minLen ? joined : null;
+  // Any unlocked paragraph is enough — prefer a usable story over a hard failure.
+  const minLen = /stltoday\.com|lee\.net|townnews|blox/i.test(html) ? 40 : 200;
+  return stripTags(joined).length >= minLen ? joined : null;
 }
 
 /** Match a full nested <div>…</div> (non-greedy patterns stop at the first child close). */
@@ -332,8 +347,11 @@ function sliceBalancedDiv(html: string, openRe: RegExp): string | null {
 
 function extractFragment(html: string, pageUrl = ""): string | null {
   // MLB Film Room / video pages — prefer mp4 autoplay card over chrome soup.
-  const mlbVideo = extractMlbVideoFragment(html, pageUrl);
-  if (mlbVideo) return mlbVideo;
+  // Do NOT run this on newspapers (STL Today embeds promo .mp4s that stole the body).
+  if (isMlbVideoUrl(pageUrl) || /mlb\.com/i.test(pageUrl)) {
+    const mlbVideo = extractMlbVideoFragment(html, pageUrl);
+    if (mlbVideo) return mlbVideo;
+  }
 
   const townNews = extractTownNewsParagraphs(html);
   if (townNews) return townNews;
@@ -428,10 +446,11 @@ function extractMlbVideoFragment(html: string, pageUrl = ""): string | null {
     (html.match(/"mp4Avc"\s*:\s*"((?:\\.|[^"\\])*)"/i)?.[1]
       ? cleanMediaUrl(html.match(/"mp4Avc"\s*:\s*"((?:\\.|[^"\\])*)"/i)![1])
       : null) ||
-    (html.match(/"(https:\/\/[^"]+\.mp4)"/i)?.[1]
+    // Generic .mp4 only on MLB pages — newspapers embed unrelated promo clips.
+    (/mlb\.com/i.test(pageUrl) && html.match(/"(https:\/\/[^"]+\.mp4)"/i)?.[1]
       ? cleanMediaUrl(html.match(/"(https:\/\/[^"]+\.mp4)"/i)![1])
       : null) ||
-    (html.match(/content=["'](https:\/\/[^"']+\.mp4)["']/i)?.[1]
+    (/mlb\.com/i.test(pageUrl) && html.match(/content=["'](https:\/\/[^"']+\.mp4)["']/i)?.[1]
       ? cleanMediaUrl(html.match(/content=["'](https:\/\/[^"']+\.mp4)["']/i)![1])
       : null) ||
     null;
@@ -713,11 +732,21 @@ function pageMeta(html: string) {
 }
 
 async function fetchText(url: string, attempt = 0): Promise<string> {
+  const isTownNews = /stltoday\.com|lee\.net|townnews/i.test(url);
   const res = await fetch(url, {
     headers: {
-      "User-Agent": UA,
+      "User-Agent": isTownNews ? BROWSER_UA : UA,
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
+      ...(isTownNews
+        ? {
+            Referer: "https://www.stltoday.com/",
+            "Cache-Control": "no-cache",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+          }
+        : {}),
       ...(isMlbVideoUrl(url) || /mlb\.com/i.test(url)
         ? { Referer: "https://www.mlb.com/" }
         : {}),
@@ -963,23 +992,46 @@ async function handleRead(url: string) {
   }
 
   if (!frag) return json({ error: "Could not extract article text", url }, 422);
-  let contentHtml = scrubContentHtml(sanitizeHtml(stripArticleChrome(frag)), meta.image);
+  const isTownNews = /stltoday\.com|lee\.net|townnews/i.test(url);
+  // TownNews: keep unlocked body intact — chrome/caption scrubbing was wiping columns.
+  let contentHtml = isTownNews
+    ? sanitizeHtml(frag)
+    : scrubContentHtml(sanitizeHtml(stripArticleChrome(frag)), meta.image);
   // Video pages can be short on text but still valid.
   let contentText = stripTags(contentHtml);
   const hasVideo = /<video\b/i.test(contentHtml);
   // Soft fallback when extract shrinks below threshold (common on STL Today paywall HTML).
-  if (contentText.length < 80 && !hasVideo && !isMlbVideoUrl(url)) {
+  const minOk = isTownNews ? 40 : 80;
+  if (contentText.length < minOk && !hasVideo && !isMlbVideoUrl(url)) {
+    // Retry TownNews with unlock only — no chrome strip.
+    if (isTownNews) {
+      const retry = extractTownNewsParagraphs(html);
+      if (retry && stripTags(retry).length >= 40) {
+        contentHtml = sanitizeHtml(retry);
+        contentText = stripTags(contentHtml);
+      }
+    }
+  }
+  if (contentText.length < minOk && !hasVideo && !isMlbVideoUrl(url)) {
     const desc =
       html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
       html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:description["']/i)?.[1] ||
       null;
-    if (desc && stripTags(desc).length > 40) {
-      const fallback = `<p>${desc}</p><p><a href="${url}">Open original article</a></p>`;
-      contentHtml = scrubContentHtml(sanitizeHtml(fallback), meta.image);
+    const firstP =
+      html.match(
+        /class="[^"]*subscriber-preview[^"]*lee-article-text[^"]*first-p[^"]*"[^>]*>\s*<p[^>]*>([\s\S]*?)<\/p>/i,
+      )?.[1] || null;
+    const bits = [firstP, desc]
+      .filter(Boolean)
+      .map((t) => `<p>${String(t).replace(/^—\s*/, "")}</p>`);
+    if (bits.length) {
+      bits.push(`<p><a href="${url}">Open original article</a></p>`);
+      contentHtml = sanitizeHtml(bits.join("\n"));
       contentText = stripTags(contentHtml);
     }
   }
-  if (contentText.length < 80 && !hasVideo && !isMlbVideoUrl(url)) {
+  if (contentText.length < minOk && !hasVideo && !isMlbVideoUrl(url)) {
     return json({ error: "Extracted text too short", url }, 422);
   }
   // Prefer no hero image when the body already embeds a video (Film Room).
