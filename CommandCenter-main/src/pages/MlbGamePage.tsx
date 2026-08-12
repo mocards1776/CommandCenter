@@ -27,13 +27,10 @@ import {
 } from "@/lib/mlb";
 import { cn } from "@/lib/utils";
 
-export default function MlbGamePage() {
-  const { gamePk } = useParams<{ gamePk: string }>();
-  const navigate = useNavigate();
-
+export function MlbGameDetail({ gamePk }: { gamePk: string }) {
   const box = useQuery({
     queryKey: ["mlb-boxscore-v3", gamePk],
-    queryFn: () => fetchMlbBoxscore(gamePk!),
+    queryFn: () => fetchMlbBoxscore(gamePk),
     enabled: Boolean(gamePk),
     staleTime: 30_000,
     refetchInterval: (q) =>
@@ -44,14 +41,14 @@ export default function MlbGamePage() {
 
   const preview = useQuery({
     queryKey: ["mlb-game-preview-stats", gamePk],
-    queryFn: () => fetchMlbGamePreview(gamePk!),
+    queryFn: () => fetchMlbGamePreview(gamePk),
     enabled: Boolean(gamePk),
     staleTime: 120_000,
   });
 
   const highlights = useQuery({
     queryKey: ["mlb-game-highlights", gamePk],
-    queryFn: () => fetchMlbGameHighlights(gamePk!),
+    queryFn: () => fetchMlbGameHighlights(gamePk),
     enabled: Boolean(gamePk),
     staleTime: 60_000,
   });
@@ -81,18 +78,9 @@ export default function MlbGamePage() {
 
   if (box.isError || !box.data) {
     return (
-      <div className="p-6">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="text-chalk hover:text-cream mb-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <p className="text-alert text-[13px]">
-          {box.error instanceof Error ? box.error.message : "Box score unavailable"}
-        </p>
-      </div>
+      <p className="text-alert text-[13px]">
+        {box.error instanceof Error ? box.error.message : "Box score unavailable"}
+      </p>
     );
   }
 
@@ -108,23 +96,7 @@ export default function MlbGamePage() {
   ].filter(Boolean);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="text-chalk hover:text-cream flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <Link
-          to="/sports/mlb"
-          className="text-chalk-dim hover:text-cream text-[11px] uppercase tracking-[0.14em]"
-        >
-          MLB hub
-        </Link>
-      </div>
-
+    <div className="space-y-5">
       <GameMatchupHeader game={g} />
 
       {/* Final: game wrap first and expanded. Live: box first. Pregame: preview text. */}
@@ -191,6 +163,47 @@ export default function MlbGamePage() {
           bottom
         />
       )}
+    </div>
+  );
+}
+
+export default function MlbGamePage() {
+  const { gamePk } = useParams<{ gamePk: string }>();
+  const navigate = useNavigate();
+
+  if (!gamePk) {
+    return (
+      <div className="p-6">
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="text-chalk hover:text-cream mb-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
+        >
+          <ArrowLeft size={14} /> Back
+        </button>
+        <p className="text-alert text-[13px]">Game not found</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+      <div className="flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="text-chalk hover:text-cream flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
+        >
+          <ArrowLeft size={14} /> Back
+        </button>
+        <Link
+          to="/sports/mlb"
+          className="text-chalk-dim hover:text-cream text-[11px] uppercase tracking-[0.14em]"
+        >
+          MLB hub
+        </Link>
+      </div>
+      <MlbGameDetail gamePk={gamePk} />
     </div>
   );
 }
