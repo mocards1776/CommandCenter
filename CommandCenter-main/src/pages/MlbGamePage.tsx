@@ -97,6 +97,7 @@ export default function MlbGamePage() {
   }
 
   const g = box.data;
+  const isFinal = /final|game over|completed/i.test(g.status);
   const duration = formatGameDuration(g.gameDurationMinutes);
   const metaBits = [
     g.venue,
@@ -126,45 +127,20 @@ export default function MlbGamePage() {
 
       <GameMatchupHeader game={g} />
 
-      {/* Live/final: box score first. Preview stack drops to the bottom. */}
-      {!g.pregame && g.innings.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[440px] text-center text-[12px]">
-              <thead>
-                <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                  <th className="px-3 py-2 text-left font-medium"> </th>
-                  {g.innings.map((i) => (
-                    <th key={i.num} className="numeral px-1 py-2 font-medium">
-                      {i.num}
-                    </th>
-                  ))}
-                  <th className="numeral px-2 py-2 font-semibold text-white/70">R</th>
-                  <th className="numeral px-2 py-2 font-medium">H</th>
-                  <th className="numeral px-2 py-2 font-medium">E</th>
-                </tr>
-              </thead>
-              <tbody>
-                <InningRow side={g.away} innings={g.innings} which="away" />
-                <InningRow side={g.home} innings={g.innings} which="home" />
-              </tbody>
-            </table>
-          </div>
-          {metaBits.length > 0 && (
-            <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-white/[0.07] px-4 py-3 text-[11.5px] text-[#a8b0c2]">
-              {metaBits.map((bit) => (
-                <span key={String(bit)}>{bit}</span>
-              ))}
-            </div>
+      {/* Final: game wrap first and expanded. Live: box first. */}
+      {!g.pregame && isFinal && (
+        <>
+          {recap.isPending && (
+            <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+              <Loader2 size={14} className="animate-spin" /> Loading game wrap…
+            </p>
           )}
-        </div>
+          {recap.data && <GameWrap recap={recap.data} box={g} defaultOpen />}
+        </>
       )}
 
-      {!g.pregame && (
-        <>
-          <BoxSide title={g.away.name} side={g.away} />
-          <BoxSide title={g.home.name} side={g.home} />
-        </>
+      {!g.pregame && g.innings.length > 0 && (
+        <EspnBoxBoard game={g} metaBits={metaBits} />
       )}
 
       {g.pregame && (
@@ -176,12 +152,16 @@ export default function MlbGamePage() {
         />
       )}
 
-      {recap.isPending && (
-        <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
-          <Loader2 size={14} className="animate-spin" /> Loading game wrap…
-        </p>
+      {!g.pregame && !isFinal && (
+        <>
+          {recap.isPending && (
+            <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+              <Loader2 size={14} className="animate-spin" /> Loading game wrap…
+            </p>
+          )}
+          {recap.data && <GameWrap recap={recap.data} box={g} defaultOpen />}
+        </>
       )}
-      {recap.data && <GameWrap recap={recap.data} box={g} />}
 
       {highlights.isPending && (
         <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
@@ -737,15 +717,21 @@ function LeaderSide({
 function GameWrap({
   recap,
   box,
+  defaultOpen = false,
 }: {
   recap: MlbGameRecap;
   box: {
     away: MlbBoxscoreSide;
     home: MlbBoxscoreSide;
   };
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [segments, setSegments] = useState<RecapInline[]>([]);
+
+  useEffect(() => {
+    setOpen(defaultOpen);
+  }, [defaultOpen, recap.espnEventId]);
 
   const nameIndex = useMemo(() => {
     const players = [
@@ -829,6 +815,7 @@ function RecapBody({ segments }: { segments: RecapInline[] }) {
     "font-medium text-[#9ec1ff] decoration-transparent underline-offset-[3px] transition hover:underline hover:decoration-[#9ec1ff]/55";
 
   // Split on paragraph breaks preserved in text segments.
+  // Keep edge spaces — trim() was gluing linked names into neighboring words.
   const paragraphs: RecapInline[][] = [[]];
   for (const seg of segments) {
     if (seg.kind !== "text") {
@@ -838,7 +825,12 @@ function RecapBody({ segments }: { segments: RecapInline[] }) {
     const chunks = seg.text.split(/\n{2,}/);
     chunks.forEach((chunk, i) => {
       if (i > 0) paragraphs.push([]);
-      if (chunk) paragraphs[paragraphs.length - 1].push({ kind: "text", text: chunk.trim() });
+      if (chunk && /[^\s]/.test(chunk)) {
+        paragraphs[paragraphs.length - 1].push({
+          kind: "text",
+          text: chunk.replace(/[^\S\n]+/g, " "),
+        });
+      }
     });
   }
 
@@ -891,7 +883,11 @@ function InningRow({
   return (
     <tr className="border-t border-white/[0.05]">
       <td className="px-3 py-2 text-left text-[12px] font-semibold text-white">
-        <Link to={teamPagePath(side.teamId)} className="hover:text-accent hover:underline">
+        <Link
+          to={teamPagePath(side.teamId)}
+          className="inline-flex items-center gap-2 hover:text-accent hover:underline"
+        >
+          <TeamMark teamId={side.teamId} size="sm" />
           {side.abbrev}
         </Link>
       </td>
@@ -907,82 +903,269 @@ function InningRow({
   );
 }
 
-function BoxSide({ title, side }: { title: string; side: MlbBoxscoreSide }) {
+function pitcherDecision(
+  note: string | null | undefined,
+): "W" | "L" | "S" | "H" | "BS" | null {
+  if (!note) return null;
+  const m = note.match(/\b(W|L|S|H|BS)\b/i);
+  return m ? (m[1].toUpperCase() as "W" | "L" | "S" | "H" | "BS") : null;
+}
+
+function shortPitcherName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length < 2) return name;
+  return `${parts[0]![0]}. ${parts[parts.length - 1]}`;
+}
+
+function EspnBoxBoard({
+  game,
+  metaBits,
+}: {
+  game: MlbBoxscore;
+  metaBits: (string | null)[];
+}) {
+  const [tab, setTab] = useState<"away" | "home">("home");
+  const side = tab === "home" ? game.home : game.away;
+  const decisions = useMemo(() => {
+    const all = [...game.away.pitchers, ...game.home.pitchers];
+    const find = (code: "W" | "L" | "S") =>
+      all.find((p) => pitcherDecision(p.note) === code) ?? null;
+    return { win: find("W"), loss: find("L"), save: find("S") };
+  }, [game]);
+
+  const battingNotes = useMemo(() => {
+    const notes: { label: string; text: string }[] = [];
+    const hrs = side.batters.filter((b) => b.hr > 0);
+    if (hrs.length) {
+      notes.push({
+        label: "HR",
+        text: hrs.map((b) => `${shortPitcherName(b.name)} (${b.hr})`).join(", "),
+      });
+    }
+    const rbis = side.batters.filter((b) => b.rbi > 0);
+    if (rbis.length) {
+      notes.push({
+        label: "RBI",
+        text: rbis.map((b) => `${shortPitcherName(b.name)} ${b.rbi}`).join(", "),
+      });
+    }
+    return notes;
+  }, [side]);
+
+  const totals = useMemo(() => {
+    return side.batters.reduce(
+      (acc, b) => ({
+        ab: acc.ab + b.ab,
+        r: acc.r + b.r,
+        h: acc.h + b.h,
+        rbi: acc.rbi + b.rbi,
+        hr: acc.hr + b.hr,
+        bb: acc.bb + b.bb,
+        so: acc.so + b.so,
+      }),
+      { ab: 0, r: 0, h: 0, rbi: 0, hr: 0, bb: 0, so: 0 },
+    );
+  }, [side]);
+
   return (
-    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-      <div className="flex items-center gap-2 border-b border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
-        <TeamMark teamId={side.teamId} size="sm" />
-        <Link
-          to={teamPagePath(side.teamId)}
-          className="text-[14px] font-bold tracking-wide text-white hover:text-accent hover:underline"
-        >
-          {title}
-        </Link>
-        {side.record && <span className="numeral text-[12px] text-[#8b93a7]">{side.record}</span>}
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[520px] text-left text-[12px]">
-          <thead>
-            <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-              <th className="px-3 py-2 font-medium">Batter</th>
-              <th className="numeral px-2 py-2 font-medium">AB</th>
-              <th className="numeral px-2 py-2 font-medium">R</th>
-              <th className="numeral px-2 py-2 font-medium">H</th>
-              <th className="numeral px-2 py-2 font-medium">RBI</th>
-              <th className="numeral px-2 py-2 font-medium">BB</th>
-              <th className="numeral px-2 py-2 font-medium">SO</th>
-            </tr>
-          </thead>
-          <tbody>
-            {side.batters.map((b) => (
-              <BatterRow key={b.id} b={b} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {side.pitchers.length > 0 && (
-        <div className="overflow-x-auto border-t border-white/[0.06]">
-          <table className="w-full min-w-[520px] text-left text-[12px]">
+    <div className="space-y-3">
+      <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[440px] text-center text-[12px]">
             <thead>
-              <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                <th className="px-3 py-2 font-medium">Pitcher</th>
-                <th className="numeral px-2 py-2 font-medium">IP</th>
+              <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                <th className="px-3 py-2 text-left font-medium"> </th>
+                {game.innings.map((i) => (
+                  <th key={i.num} className="numeral px-1 py-2 font-medium">
+                    {i.num}
+                  </th>
+                ))}
+                <th className="numeral px-2 py-2 font-semibold text-white/70">R</th>
                 <th className="numeral px-2 py-2 font-medium">H</th>
-                <th className="numeral px-2 py-2 font-medium">R</th>
-                <th className="numeral px-2 py-2 font-medium">ER</th>
-                <th className="numeral px-2 py-2 font-medium">BB</th>
-                <th className="numeral px-2 py-2 font-medium">SO</th>
+                <th className="numeral px-2 py-2 font-medium">E</th>
               </tr>
             </thead>
             <tbody>
-              {side.pitchers.map((p) => (
-                <PitcherRow key={p.id} p={p} />
-              ))}
+              <InningRow side={game.away} innings={game.innings} which="away" />
+              <InningRow side={game.home} innings={game.innings} which="home" />
             </tbody>
           </table>
         </div>
-      )}
-    </section>
+        {(decisions.win || decisions.loss || decisions.save) && (
+          <div className="grid grid-cols-3 gap-2 border-t border-white/[0.07] px-3 py-3">
+            {(
+              [
+                ["WIN", decisions.win],
+                ["LOSS", decisions.loss],
+                ["SAVE", decisions.save],
+              ] as const
+            ).map(([label, p]) => (
+              <div key={label} className="min-w-0">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                  {label}
+                </p>
+                {p ? (
+                  <>
+                    <Link
+                      to={`/sports/mlb/player/${p.id}`}
+                      className="mt-0.5 block truncate text-[13px] font-semibold text-[#9ec1ff] hover:underline"
+                    >
+                      {shortPitcherName(p.name)}
+                    </Link>
+                    <p className="numeral mt-0.5 text-[11px] text-[#a8b0c2]">
+                      {p.ip} IP · {p.h} H · {p.er} ER · {p.so} K · {p.bb} BB
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-0.5 text-[13px] text-[#6b7386]">—</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {metaBits.length > 0 && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-white/[0.07] px-4 py-3 text-[11.5px] text-[#a8b0c2]">
+            {metaBits.map((bit) => (
+              <span key={String(bit)}>{bit}</span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {(
+          [
+            ["away", game.away],
+            ["home", game.home],
+          ] as const
+        ).map(([key, s]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={cn(
+              "rounded-full px-3 py-2.5 text-[13px] font-semibold tracking-wide transition",
+              tab === key
+                ? "bg-white text-[#0a1424]"
+                : "bg-white/[0.06] text-[#c8cdd8] hover:bg-white/[0.1]",
+            )}
+          >
+            {s.abbrev}
+          </button>
+        ))}
+      </div>
+
+      <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+        <div className="flex items-center gap-2 border-b border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
+          <TeamMark teamId={side.teamId} size="sm" />
+          <Link
+            to={teamPagePath(side.teamId)}
+            className="text-[14px] font-bold tracking-wide text-white hover:text-accent hover:underline"
+          >
+            {side.name}
+          </Link>
+          {side.record && <span className="numeral text-[12px] text-[#8b93a7]">{side.record}</span>}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[620px] text-left text-[12px]">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                <th className="px-3 py-2 font-medium">Hitters</th>
+                <th className="numeral px-1.5 py-2 font-medium">AB</th>
+                <th className="numeral px-1.5 py-2 font-medium">R</th>
+                <th className="numeral px-1.5 py-2 font-medium">H</th>
+                <th className="numeral px-1.5 py-2 font-medium">RBI</th>
+                <th className="numeral px-1.5 py-2 font-medium">HR</th>
+                <th className="numeral px-1.5 py-2 font-medium">BB</th>
+                <th className="numeral px-1.5 py-2 font-medium">K</th>
+                <th className="numeral px-1.5 py-2 font-medium">AVG</th>
+                <th className="numeral px-1.5 py-2 font-medium">OBP</th>
+                <th className="numeral px-1.5 py-2 font-medium">SLG</th>
+              </tr>
+            </thead>
+            <tbody>
+              {side.batters.map((b, i) => (
+                <BatterRow key={b.id} b={b} zebra={i % 2 === 1} />
+              ))}
+              <tr className="border-t border-white/[0.1] bg-white/[0.03] font-semibold">
+                <td className="px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-white">
+                  Team
+                </td>
+                <td className="numeral px-1.5 py-2 text-white">{totals.ab}</td>
+                <td className="numeral px-1.5 py-2 text-white">{totals.r}</td>
+                <td className="numeral px-1.5 py-2 text-white">{totals.h}</td>
+                <td className="numeral px-1.5 py-2 text-white">{totals.rbi}</td>
+                <td className="numeral px-1.5 py-2 text-white">{totals.hr}</td>
+                <td className="numeral px-1.5 py-2 text-white">{totals.bb}</td>
+                <td className="numeral px-1.5 py-2 text-white">{totals.so}</td>
+                <td className="numeral px-1.5 py-2 text-[#8b93a7]">—</td>
+                <td className="numeral px-1.5 py-2 text-[#8b93a7]">—</td>
+                <td className="numeral px-1.5 py-2 text-[#8b93a7]">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {battingNotes.length > 0 && (
+          <div className="space-y-1.5 border-t border-white/[0.06] px-3 py-3 text-[12.5px] leading-relaxed text-[#c8cdd8]">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+              Batting
+            </p>
+            {battingNotes.map((n) => (
+              <p key={n.label}>
+                <span className="font-semibold text-cream">{n.label}:</span> {n.text}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {side.pitchers.length > 0 && (
+          <div className="overflow-x-auto border-t border-white/[0.06]">
+            <table className="w-full min-w-[520px] text-left text-[12px]">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                  <th className="px-3 py-2 font-medium">Pitcher</th>
+                  <th className="numeral px-2 py-2 font-medium">IP</th>
+                  <th className="numeral px-2 py-2 font-medium">H</th>
+                  <th className="numeral px-2 py-2 font-medium">R</th>
+                  <th className="numeral px-2 py-2 font-medium">ER</th>
+                  <th className="numeral px-2 py-2 font-medium">BB</th>
+                  <th className="numeral px-2 py-2 font-medium">SO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {side.pitchers.map((p) => (
+                  <PitcherRow key={p.id} p={p} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
-function BatterRow({ b }: { b: MlbBoxscoreBatter }) {
+function BatterRow({ b, zebra }: { b: MlbBoxscoreBatter; zebra?: boolean }) {
   return (
-    <tr className="border-t border-white/[0.04]">
+    <tr className={cn("border-t border-white/[0.04]", zebra && "bg-white/[0.02]")}>
       <td className="px-3 py-1.5">
         <Link to={`/sports/mlb/player/${b.id}`} className="text-cream hover:text-accent hover:underline">
           {b.name}
         </Link>
         {b.position && <span className="ml-1 text-[10px] text-[#8b93a7]">{b.position}</span>}
       </td>
-      <td className="numeral px-2 py-1.5 text-[#c8cdd8]">{b.ab}</td>
-      <td className="numeral px-2 py-1.5 text-[#c8cdd8]">{b.r}</td>
-      <td className="numeral px-2 py-1.5 text-[#c8cdd8]">{b.h}</td>
-      <td className="numeral px-2 py-1.5 text-[#c8cdd8]">{b.rbi}</td>
-      <td className="numeral px-2 py-1.5 text-[#c8cdd8]">{b.bb}</td>
-      <td className="numeral px-2 py-1.5 text-[#c8cdd8]">{b.so}</td>
+      <td className="numeral px-1.5 py-1.5 text-[#c8cdd8]">{b.ab}</td>
+      <td className="numeral px-1.5 py-1.5 text-[#c8cdd8]">{b.r}</td>
+      <td className="numeral px-1.5 py-1.5 text-[#c8cdd8]">{b.h}</td>
+      <td className="numeral px-1.5 py-1.5 text-[#c8cdd8]">{b.rbi}</td>
+      <td className="numeral px-1.5 py-1.5 text-[#c8cdd8]">{b.hr}</td>
+      <td className="numeral px-1.5 py-1.5 text-[#c8cdd8]">{b.bb}</td>
+      <td className="numeral px-1.5 py-1.5 text-[#c8cdd8]">{b.so}</td>
+      <td className="numeral px-1.5 py-1.5 text-[#c8cdd8]">{b.avg ?? "—"}</td>
+      <td className="numeral px-1.5 py-1.5 text-[#c8cdd8]">{b.obp ?? "—"}</td>
+      <td className="numeral px-1.5 py-1.5 text-[#c8cdd8]">{b.slg ?? "—"}</td>
     </tr>
   );
 }

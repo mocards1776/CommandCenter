@@ -452,6 +452,85 @@
     text-decoration: underline;
     text-underline-offset: 3px;
   }
+
+  /* X/Twitter feed-look card for Dispatch embeds. */
+  .rss-reader .rss-tweet-card {
+    margin: 1.75rem 0;
+    padding: 1rem 1.05rem 0.95rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  }
+  .rss-reader .rss-tweet-card__head {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    margin-bottom: 0.75rem;
+  }
+  .rss-reader .rss-tweet-card__avatar {
+    display: grid;
+    place-items: center;
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 999px;
+    background: #1d9bf0;
+    color: #fff;
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    font-weight: 700;
+  }
+  .rss-reader .rss-tweet-card__who {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+  }
+  .rss-reader .rss-tweet-card__name {
+    color: #f2f5fb;
+    font-family: var(--font-body);
+    font-size: 0.92rem;
+    font-weight: 700;
+    font-style: normal;
+    line-height: 1.2;
+  }
+  .rss-reader .rss-tweet-card__handle {
+    color: rgba(196, 205, 220, 0.72);
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    font-style: normal;
+  }
+  .rss-reader .rss-tweet-card__mark {
+    color: rgba(242, 245, 251, 0.9);
+    font-size: 1.05rem;
+    line-height: 1;
+  }
+  .rss-reader .rss-tweet-card__body {
+    font-family: var(--font-rss);
+    font-style: normal;
+    font-size: 1.02em;
+    line-height: 1.55;
+    color: rgba(236, 238, 244, 0.95);
+  }
+  .rss-reader .rss-tweet-card__body p {
+    margin: 0 0 0.55rem;
+  }
+  .rss-reader .rss-tweet-card__body p:last-child {
+    margin-bottom: 0;
+  }
+  .rss-reader .rss-tweet-card__foot {
+    margin-top: 0.85rem;
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    color: rgba(196, 205, 220, 0.72);
+  }
+  .rss-reader .rss-tweet-card__foot a {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+  .rss-reader .rss-tweet-card__foot a:hover {
+    text-decoration: underline;
+  }
 }
 
 /* iOS Safari zooms the page whenever a focused input has a font-size below
