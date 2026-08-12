@@ -9,6 +9,7 @@ import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
 import TodosPage from "@/pages/TodosPage";
 import HabitsPage from "@/pages/HabitsPage";
+import HealthPage from "@/pages/HealthPage";
 import ReadingPage from "@/pages/ReadingPage";
 import SportsPage from "@/pages/SportsPage";
 import MlbPage from "@/pages/MlbPage";
@@ -110,6 +111,7 @@ export default function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/todos" element={<TodosPage />} />
               <Route path="/habits" element={<HabitsPage />} />
+              <Route path="/health" element={<HealthPage />} />
               <Route path="/reading" element={<ReadingPage />} />
               <Route path="/sports" element={<SportsPage />} />
               <Route path="/sports/mlb" element={<MlbPage />} />

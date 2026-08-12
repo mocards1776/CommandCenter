@@ -589,6 +589,112 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["story_links"]["Insert"]>;
         Relationships: [];
       };
+      health_settings: {
+        Row: {
+          user_id: string;
+          daily_calorie_goal: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          daily_calorie_goal?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["health_settings"]["Insert"]>;
+        Relationships: [];
+      };
+      calorie_entries: {
+        Row: {
+          id: string;
+          user_id: string;
+          logged_date: string;
+          meal_type: string;
+          name: string;
+          calories: number;
+          protein_g: number | null;
+          carbs_g: number | null;
+          fat_g: number | null;
+          source: string;
+          external_id: string | null;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          logged_date: string;
+          meal_type?: string;
+          name: string;
+          calories: number;
+          protein_g?: number | null;
+          carbs_g?: number | null;
+          fat_g?: number | null;
+          source?: string;
+          external_id?: string | null;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["calorie_entries"]["Insert"]>;
+        Relationships: [];
+      };
+      health_metrics: {
+        Row: {
+          id: string;
+          user_id: string;
+          metric_date: string;
+          metric_type: string;
+          value: number;
+          unit: string;
+          source: string;
+          external_id: string | null;
+          recorded_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          metric_date: string;
+          metric_type: string;
+          value: number;
+          unit: string;
+          source: string;
+          external_id?: string | null;
+          recorded_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["health_metrics"]["Insert"]>;
+        Relationships: [];
+      };
+      health_connections: {
+        Row: {
+          user_id: string;
+          provider: string;
+          status: string;
+          access_token: string | null;
+          refresh_token: string | null;
+          expires_at: string | null;
+          provider_user_id: string | null;
+          detail: Record<string, unknown>;
+          connected_at: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          provider: string;
+          status?: string;
+          access_token?: string | null;
+          refresh_token?: string | null;
+          expires_at?: string | null;
+          provider_user_id?: string | null;
+          detail?: Record<string, unknown>;
+          connected_at?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["health_connections"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {

@@ -30,6 +30,21 @@ export type HabitWithStatus = Habit & {
   dueToday: boolean;
 };
 
+export type HealthSettings = Tables<"health_settings">;
+export type CalorieEntry = Tables<"calorie_entries">;
+export type CalorieEntryInsert = TablesInsert<"calorie_entries">;
+export type HealthMetric = Tables<"health_metrics">;
+export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
+export type HealthMetricType =
+  | "weight_kg"
+  | "steps"
+  | "active_calories"
+  | "total_calories"
+  | "heart_rate"
+  | "body_fat_pct"
+  | "distance_m";
+
+
 // ─── Todoist (unified /api/v1) ────────────────────────────────────────────
 // Todoist priority is inverted from what you'd expect: 4 is urgent, 1 is none.
 export type TodoistPriority = 1 | 2 | 3 | 4;

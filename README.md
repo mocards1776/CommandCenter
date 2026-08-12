@@ -8,6 +8,7 @@ Personal dashboard: tasks, habits, and time tracking.
 | --- | --- | --- |
 | Frontend | `CommandCenter-main/` | Vite + React 19 + TypeScript, Tailwind v4, TanStack Query, React Router |
 | Database + auth | Supabase project `esdgrgulaxnewmhjuyzh` | Postgres 17, Supabase Auth, row-level security |
+| Health | `/health` + `withings` / `apple-health` functions | Calorie log; Withings OAuth; Apple Health file import (no public HealthKit web API) |
 | Todoist proxy | `supabase/functions/todoist/` | Deno edge function |
 | Book lookup / enrichment | `supabase/functions/book-lookup/`, `supabase/functions/backfill-covers/` | Deno edge functions |
 | Highlights | `supabase/functions/readwise-sync/` | Readwise API v2 |
@@ -57,9 +58,16 @@ npm run lint
   variable changes do *not* apply to existing deployments; redeploy after
   editing them.
 - **Edge functions** — `supabase functions deploy <name>` (`todoist`,
-  `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`, `sports`, `rss`)
+  `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`, `sports`, `rss`,
+  `withings`, `apple-health`)
 - **Migrations** — applied to the Supabase project; `supabase/migrations/`
   is the record.
+- **Withings** — register an app at [developer.withings.com](https://developer.withings.com/),
+  set callback to your deployed `/health` URL, then add
+  `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET`, and `WITHINGS_REDIRECT_URI`
+  as Supabase Edge Function secrets (not Vercel).
+- **Apple Health** — HealthKit has no public REST API. Use Health Auto Export
+  JSON or unzip `export.xml` from the Health app and import on `/health`.
 
 ## Things that will bite you
 
