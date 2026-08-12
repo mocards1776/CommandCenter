@@ -45,6 +45,19 @@ export type ProceedsOption = {
   detail: string;
 };
 
+export type CompareCard = {
+  title: string;
+  cost: string;
+  answers: string;
+  doesNot: string;
+};
+
+export type RepairOdds = {
+  amount: number;
+  pct: number;
+  note?: string;
+};
+
 export type StoryChapter = {
   id: string;
   eyebrow: string;
@@ -52,14 +65,16 @@ export type StoryChapter = {
   body: string;
   bullets?: string[];
   stat?: { value: string; label: string };
-  visual?: "map" | "condition" | "schools" | "nets" | "repairs" | "proceeds" | "compare" | "none";
-};
-
-export type CompareCard = {
-  title: string;
-  cost: string;
-  answers: string;
-  doesNot: string;
+  visual?:
+    | "map"
+    | "condition"
+    | "schools"
+    | "nets"
+    | "repairs"
+    | "proceeds"
+    | "compare"
+    | "odds"
+    | "none";
 };
 
 export type ClientStory = {
@@ -88,6 +103,8 @@ export type ClientStory = {
   /** Hard callouts to reduce repeat questions */
   callouts?: { title: string; body: string }[];
   compareCards?: CompareCard[];
+  /** Estimated P(repair spend ≥ amount) — judgment, not a bid */
+  repairOdds?: RepairOdds[];
   geo: { lat: number; lng: number; label: string };
   facts: { label: string; value: string }[];
   condition: ConditionItem[];
@@ -419,6 +436,30 @@ export const STORIES: Record<string, ClientStory> = {
           "Fixes over ~$61,000 and you will not do them → $230k as-is can win",
         ],
       },
+      {
+        id: "odds",
+        eyebrow: "Repair odds",
+        title: "Estimated chance repairs hit at least this much.",
+        body:
+          "Judgment odds only — not a contractor bid. Based on what is known so far: 1976 crawl-space ranch, catastrophic tree damage, open to weather, partial rebuild, and the usual moisture / systems catch-up pattern. Read each line as: “chance total leftover repairs land at or above this number.”",
+        visual: "odds",
+        bullets: [
+          "Nearly certain you face some real catch-up cost (not $0)",
+          "Mid five figures are plausible, not exotic, for this history",
+          "Crossing the ~$61,000 break-even line is the minority case — but not fantasy",
+          "Private inspection is how you replace these odds with a real scope",
+        ],
+        stat: { value: "Judgment", label: "P(repairs ≥ $X) · update after your private look" },
+      },
+    ],
+    repairOdds: [
+      { amount: 5000, pct: 95, note: "Almost sure some punch-list / moisture work" },
+      { amount: 10000, pct: 82, note: "Likely beyond tiny fixes" },
+      { amount: 15000, pct: 70, note: "Common stacked catch-up territory" },
+      { amount: 25000, pct: 55, note: "Coin-flip-ish for a meaningful stack" },
+      { amount: 40000, pct: 35, note: "Crawl / widespread moisture path" },
+      { amount: 61000, pct: 22, note: "Around the list vs $230k break-even" },
+      { amount: 80000, pct: 10, note: "Ugly worst-case pile-up" },
     ],
     comps: [
       {
@@ -548,6 +589,7 @@ export const STORIES: Record<string, ClientStory> = {
         "65804: median days on market ~30 days recently; Springfield metro ~44 days. More listings citywide can feel slow, but homes are still closing. Same-street peers often ~$310k–$320k when clean. Typical zip sale ~$291k. Schools: Disney 10, Cherokee 8, Kickapoo 8.",
         "Upgrades already paid: new roof, ~½ open rebuild, ~½ siding, newer HVAC. Risk: weather exposure + crawl/moisture/age systems.",
         "Lane: inspect → total fixes → under ~$61k and willing → counter/list; over ~$61k and unwilling → $230k as-is can be rational.",
+        "Repair odds (judgment, P(cost ≥ X)): ≥$5k ~95% · ≥$10k ~82% · ≥$15k ~70% · ≥$25k ~55% · ≥$40k ~35% · ≥$61k ~22% · ≥$80k ~10%. Replace with a private scope.",
       ],
     },
     researchDate: "August 12, 2026",

@@ -301,6 +301,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     ch.id === "appraisal" ||
                     ch.id === "repairs" ||
                     ch.id === "offer" ||
+                    ch.id === "odds" ||
                     ch.id === "proceeds" ||
                     ch.id === "rule" ||
                     ch.id === "medicaid" ||
@@ -441,6 +442,26 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     </article>
                   ))}
                 </div>
+              </aside>
+            ) : null}
+
+            {ch.visual === "odds" ? (
+              <aside className="visual-pane">
+                <div className="odds-list">
+                  {(story.repairOdds ?? []).map((row) => (
+                    <article key={row.amount} className="odds-row">
+                      <div className="odds-meta">
+                        <strong>≥ {money(row.amount)}</strong>
+                        <span>{row.note}</span>
+                      </div>
+                      <div className="odds-track" aria-hidden>
+                        <span style={{ width: `${row.pct}%` }} />
+                      </div>
+                      <div className="odds-pct">{row.pct}%</div>
+                    </article>
+                  ))}
+                </div>
+                <p className="visual-caption">Judgment odds · not a contractor bid</p>
               </aside>
             ) : null}
 
@@ -982,6 +1003,30 @@ const STORY_CSS = `
   .compare-card p span {
     display: block; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
     font-weight: 700; color: var(--navy); margin-bottom: 0.15rem;
+  }
+
+  .odds-list { display: grid; gap: 0.55rem; }
+  .odds-row {
+    display: grid; grid-template-columns: 1fr auto; gap: 0.35rem 0.75rem;
+    align-items: center;
+    border: 1px solid var(--line); background: rgba(255,255,255,0.55);
+    padding: 0.7rem 0.8rem;
+  }
+  .odds-meta { grid-column: 1 / -1; }
+  .odds-meta strong {
+    display: block; font-family: var(--font-display); font-size: 1.05rem; color: var(--navy);
+  }
+  .odds-meta span { font-size: 0.78rem; color: var(--muted); line-height: 1.35; }
+  .odds-track {
+    height: 0.55rem; border-radius: 999px; background: rgba(11,31,58,0.08); overflow: hidden;
+  }
+  .odds-track span {
+    display: block; height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--copper), var(--warn));
+  }
+  .odds-pct {
+    font-family: var(--font-mono); font-size: 0.95rem; font-weight: 700; color: var(--warn);
+    min-width: 3rem; text-align: right;
   }
 
   .story-chapter {
