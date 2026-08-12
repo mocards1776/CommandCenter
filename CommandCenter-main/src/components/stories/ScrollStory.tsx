@@ -277,6 +277,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     ch.id === "offer" ||
                     ch.id === "proceeds" ||
                     ch.id === "rule" ||
+                    ch.id === "medicaid" ||
                     ch.id === "bank" ||
                     ch.id === "call"
                       ? "is-warn"

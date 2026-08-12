@@ -514,10 +514,10 @@ export const STORIES: Record<string, ClientStory> = {
           "Closing proceeds can sit briefly in a lawyer’s trust / escrow account while the lasting trust and bank setup are finished. Useful as a bridge — not usually the long-term home for the money.",
       },
       {
-        title: "What usually does not create two-of-three",
-        summary: "Plain joint accounts & TOD alone",
+        title: "Medicaid vs. this control plan",
+        summary: "Different jobs — do not confuse them",
         detail:
-          "A normal joint bank account often allows any single owner to withdraw. Transfer-on-death / payable-on-death designations help after death, but they do not create shared approval while everyone is living. Ask the bank for dual-control language specifically.",
+          "The revocable trust + two-of-three setup is for shared approval of transfers. It generally does not remove assets from Medicaid resource counting. Irrevocable Medicaid planning trusts are a separate design with look-back rules — use an elder-law attorney if that is the goal.",
       },
     ],
     schools: [],
@@ -562,6 +562,21 @@ export const STORIES: Record<string, ClientStory> = {
           "Co-trustees follow the written two-of-three rule",
           "Bank / brokerage enforces dual authorization on the account",
         ],
+      },
+      {
+        id: "medicaid",
+        eyebrow: "Medicaid",
+        title: "Shared control is not the same as Medicaid planning.",
+        body:
+          "A revocable living trust is a great tool for two-of-three approval — and a weak shield for Medicaid. If the person who sold the house can still revoke the trust or benefit from the money, Medicaid usually still counts those assets when someone applies for long-term care help. Moving sale proceeds into a revocable trust does not hide them.",
+        visual: "none",
+        bullets: [
+          "Revocable living trust: usually still “your money” for Medicaid resource tests",
+          "Home sale cash often becomes a countable asset once it is proceeds in the bank",
+          "Irrevocable trusts are a different tool — and transfers can trigger a look-back (often ~5 years) and a penalty period",
+          "If Medicaid eligibility matters, talk to an elder-law attorney before you retitle large sums",
+        ],
+        stat: { value: "Not a shield", label: "Revocable trust ≠ Medicaid asset protection" },
       },
       {
         id: "bank",
@@ -611,11 +626,12 @@ export const STORIES: Record<string, ClientStory> = {
         eyebrow: "Bottom line",
         title: "Control the landing pad for the proceeds.",
         body:
-          "The financial job after a sale is simple: do not let the full proceeds sit where one person can move them alone. Use a living trust with three co-trustees, a two-of-three approval rule, and a bank card that matches. Confirm the details with an attorney and the bank — this is a map, not a form.",
+          "The financial job after a sale is simple: do not let the full proceeds sit where one person can move them alone. Use a living trust with three co-trustees, a two-of-three approval rule, and a bank card that matches. That plan is about control — not Medicaid eligibility. Confirm both the documents and any Medicaid questions with the right attorney.",
         bullets: [
           "Structure: living trust + three co-trustees",
           "Rule: any two of three to move money",
           "Account: trust-titled with dual authorization",
+          "Medicaid: revocable trust usually still counts — ask an elder-law attorney if that matters",
           "Bridge: attorney escrow only if the setup is not ready at closing",
         ],
       },
@@ -665,7 +681,7 @@ export const STORIES: Record<string, ClientStory> = {
       thesis:
         "This brief does not price the house. It maps where sale proceeds should land and how three people can share control so any two must agree before money moves.",
       recommendation:
-        "Before closing, set a living trust with three co-trustees and a two-of-three rule, open a trust-titled dual-control account, and give title those payee instructions — or park briefly in attorney escrow until that is ready.",
+        "Before closing, set a living trust with three co-trustees and a two-of-three rule, open a trust-titled dual-control account, and give title those payee instructions — or park briefly in attorney escrow until that is ready. Treat Medicaid as a separate question: a revocable control trust usually still counts as an available resource.",
     },
     notebook: {
       title: "Sale proceeds — money control only",
@@ -674,15 +690,17 @@ export const STORIES: Record<string, ClientStory> = {
         "Target setup: revocable living trust · three co-trustees · written rule that any two must approve distributions or large transfers · bank/brokerage account titled to the trust with dual authorization on the signature card.",
         "Why not a normal joint account? Because many joint accounts allow any one owner to withdraw. That fails the two-of-three goal even if three names appear on the statement.",
         "Why not TOD/POD alone? Those designations usually matter after death. They do not create shared living approval for moving money today.",
+        "Medicaid in plain terms: if the seller can revoke the trust or still benefit from the money, long-term care Medicaid usually still treats those assets as available. A revocable living trust built for two-of-three control is not an asset-protection vault. Home-sale proceeds sitting in cash are often countable. Irrevocable trusts and gifts can start a look-back clock (commonly about five years) and may cause a penalty period if someone applies for Medicaid too soon — that is specialized elder-law work, not a side effect of the control plan above.",
         "Timing: finish the trust and account before closing when you can. If you cannot, use attorney escrow as a short bridge, then move funds into the dual-control trust account.",
         "Closing instructions: the payee name on the wire / check should match the trust (or escrow), not an individual’s everyday account.",
-        "Not legal or tax advice — confirm the document language and bank card with an attorney and the institution that will hold the funds.",
+        "Not legal or tax advice — confirm the document language, bank card, and any Medicaid questions with an attorney (estate counsel for control; elder-law counsel if eligibility matters).",
       ],
     },
     researchDate: "August 12, 2026",
     sources: [
       "General trust / multi-signer account patterns (educational overview; not legal or tax advice)",
       "Typical dual-authorization / co-trustee banking practices (confirm with the holding bank)",
+      "General Medicaid resource / look-back concepts for trusts (educational overview; state rules vary — confirm with an elder-law attorney)",
     ],
   },
 };
