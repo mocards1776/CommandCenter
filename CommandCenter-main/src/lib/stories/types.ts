@@ -18,7 +18,7 @@ export type StoryComp = {
 
 export type ConditionItem = {
   label: string;
-  status: "new" | "recent" | "partial" | "original";
+  status: "new" | "recent" | "partial" | "original" | "concern";
   detail: string;
 };
 
@@ -78,7 +78,6 @@ export type ClientStory = {
 const money = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
-/** Round to nearest dollar for fee math shown to clients. */
 function fee(price: number, pct: number) {
   return Math.round(price * pct);
 }
@@ -91,9 +90,9 @@ export const STORIES: Record<string, ClientStory> = {
     brandTag: "Independent housing brief",
     address: "1715 E. Buena Vista St",
     cityLine: "Springfield, MO 65804 · Ravenwood",
-    heroLine: "The $230,000 offer is well below what this house should bring.",
+    heroLine: "Mold and inspection risk change the math on $230,000.",
     support:
-      "A 1976 ranch with a brand-new roof, roughly half the home rebuilt open-concept, half new siding, and HVAC likely under ten years old. Nearby sales and estimates point much higher than this bid.",
+      "The house has real upgrades — new roof after a tree hit, about half rebuilt open-concept, half new siding, newer HVAC. It also has serious mold and inspection concerns. Those two stories pull the price in opposite directions.",
     geo: {
       lat: 37.1323354,
       lng: -93.2652218,
@@ -106,14 +105,26 @@ export const STORIES: Record<string, ClientStory> = {
       { label: "Built", value: "1976 ranch" },
       { label: "Roof", value: "Brand new" },
       { label: "HVAC", value: "Under ~10 yrs" },
-      { label: "Interior", value: "~½ open concept" },
-      { label: "Siding", value: "~½ new" },
+      { label: "Mold", value: "Major concern" },
+      { label: "Inspection", value: "High risk" },
     ],
     condition: [
       {
+        label: "Mold",
+        status: "concern",
+        detail:
+          "This is the main issue. Mold can mean cleanup, dry-out, new insulation, and sometimes opening walls or the crawl. Buyers and lenders care a lot.",
+      },
+      {
+        label: "Inspection risk",
+        status: "concern",
+        detail:
+          "A normal inspection will dig into moisture, crawl space, air quality, and repairs. Surprises here can kill a full-price deal.",
+      },
+      {
         label: "Roof",
         status: "new",
-        detail: "Full new roof after a tree hit the house — a major cost already paid.",
+        detail: "Full new roof after a tree hit the house — a big cost already paid.",
       },
       {
         label: "Open-concept half",
@@ -121,24 +132,15 @@ export const STORIES: Record<string, ClientStory> = {
         detail: "About half the home was rebuilt open and modern after that damage.",
       },
       {
-        label: "Siding",
+        label: "Siding / HVAC",
         status: "partial",
-        detail: "Roughly half the outside has new siding.",
-      },
-      {
-        label: "HVAC",
-        status: "recent",
-        detail: "Heating and cooling look recent — likely under ten years old.",
-      },
-      {
-        label: "Other half",
-        status: "original",
-        detail: "The untouched side still has older layout and finishes.",
+        detail: "About half new siding. Heating and cooling look recent (likely under ten years).",
       },
       {
         label: "Crawl space",
-        status: "original",
-        detail: "Still a crawl-space ranch — worth a careful look, but not a reason to gift $50k+.",
+        status: "concern",
+        detail:
+          "Crawl-space ranch + past water/tree damage is where mold often hides. This needs a hard look, not a shrug.",
       },
     ],
     schools: [
@@ -150,59 +152,73 @@ export const STORIES: Record<string, ClientStory> = {
       {
         id: "place",
         eyebrow: "Where it is",
-        title: "A quiet Ravenwood street with strong schools.",
+        title: "A good street — that is not the problem.",
         body:
-          "This home sits in Ravenwood on Springfield’s south side. Homes here tend to hold value. Schools nearby rate well. The lot is about a third of an acre with mature trees.",
+          "Ravenwood is a solid Springfield neighborhood with strong schools. Nearby homes support mid-$300,000 values when condition is clean. Location is not what is holding this deal back. Mold and inspection risk are.",
         visual: "map",
         bullets: [
-          "65804 homes have been selling in roughly ~10 days",
-          "Typical sale price in the zip lately: around $291,000",
-          "Yearly tax bill: about $1,990",
+          "65804 homes have been selling in about ~10 days",
+          "Typical sale price in the zip: around $291,000",
+          "Same-street peers often read near $310,000–$320,000 when healthy",
         ],
+      },
+      {
+        id: "mold",
+        eyebrow: "The real issue",
+        title: "Mold and inspection risk have to lead the decision.",
+        body:
+          "If a buyer walks through with an inspector, mold and moisture are likely to show up as red flags. That can mean a lower price, big repair credits, or a canceled contract. An as-is offer with no inspection is the buyer saying: “I will take that risk.”",
+        visual: "condition",
+        bullets: [
+          "Small / contained mold jobs often run a few thousand dollars",
+          "Crawl-space or widespread mold can run into the tens of thousands",
+          "Until someone measures the problem, the safe price assumes the worse case",
+        ],
+        stat: { value: "As-is", label: "Buyer is pricing unknown mold risk" },
       },
       {
         id: "condition",
         eyebrow: "What was fixed",
-        title: "The big-ticket items are already done.",
+        title: "Upgrades help — they do not erase mold.",
         body:
-          "A tree damaged the house. That led to a brand-new roof and a rebuild of about half the home into open concept. About half the siding is new. The heating and cooling system looks recent. Buyers usually pay more for that kind of work — not less.",
-        visual: "condition",
+          "New roof, open-concept rebuild, partial new siding, and newer HVAC are real value. They support a higher price if the house is clean. They do not cancel a mold problem. A buyer can love the kitchen and still walk over the crawl space.",
+        visual: "none",
       },
       {
         id: "worth",
-        eyebrow: "What it’s worth",
-        title: "A fair range is about $275,000 to $345,000.",
+        eyebrow: "Two price stories",
+        title: "Clean house vs. problem house.",
         body:
-          "Online estimates put the home near $305,000. Similar homes on the same street read about $310,000–$320,000. Updated homes nearby have sold higher. Given the new roof and remodel work, a mid-point near $310,000 is reasonable.",
-        stat: { value: "$310k", label: "Best mid-point estimate" },
+          "If mold is minor and fixed, a fair sale still looks about $275,000–$345,000 (mid near $310,000). If mold is major and the sale is as-is, the honest range drops — closer to $230,000–$280,000 — because the next owner owns the cleanup and the unknown.",
+        stat: { value: "$230–280k", label: "As-is range with serious mold risk" },
         visual: "schools",
       },
       {
         id: "offer",
         eyebrow: "The offer",
-        title: "$230,000 is a low bid — even before realtor fees.",
+        title: "$230,000 is a risk price — not a retail price.",
         body:
-          "Yes, this offer skips realtor commissions. That saves roughly $15,000–$19,000 compared with a normal listing. But the gap between $230,000 and a fair sale is much larger than that savings. You would still come out behind.",
-        stat: { value: "−$80k", label: "Offer vs ~$310k mid-point" },
+          "This bid skips realtor fees and skips inspection. That only makes sense if the buyer expects expensive findings. Compared with a clean $310,000 sale, it looks low. Compared with “major mold, sell today, no inspection,” it is inside a hard as-is band — near the bottom, but not nonsense.",
+        stat: { value: "−$80k", label: "vs clean mid-point · near as-is floor" },
         visual: "nets",
       },
       {
         id: "call",
         eyebrow: "Bottom line",
-        title: "Do not take $230,000.",
+        title: "Get the mold facts. Then pick a lane.",
         body:
-          "Unless you need to sell in a hurry for personal reasons, this price leaves too much money on the table. A stronger private sale, or a normal listing after realtor fees, should still net tens of thousands more.",
+          "Do not accept or reject $230,000 in the dark. First decide how bad the mold is. If it is limited and fixable, counter higher or list. If it is widespread and you want out without repairs, $230,000 as-is becomes much more reasonable — especially with no realtor fee.",
         bullets: [
-          "Counter toward the mid-$200,000s or higher",
-          "Or list near $300,000–$320,000 and negotiate",
-          "Only accept $230,000 if speed matters more than price",
+          "Best next step: mold inspection / crawl assessment with a real scope and cost",
+          "If cleanup is small: counter toward the mid/high $200,000s or list near $300,000",
+          "If cleanup is large and you will not fix it: $230,000 as-is can be a fair exit",
         ],
       },
     ],
     comps: [
       {
         address: "1703 E Buena Vista St",
-        note: "Same street — closest match",
+        note: "Same street — closest match (healthy)",
         beds: 4,
         baths: 2,
         sqft: 2057,
@@ -248,7 +264,7 @@ export const STORIES: Record<string, ClientStory> = {
       },
       {
         address: "1424 E Buena Vista St",
-        note: "Old fixer — not a fair match",
+        note: "Fixer sale — shows distress pricing",
         beds: 3,
         baths: 1,
         sqft: 1707,
@@ -272,68 +288,68 @@ export const STORIES: Record<string, ClientStory> = {
     ],
     netScenarios: [
       {
-        label: "Take the $230k offer",
+        label: "Take $230k as-is (no realtor)",
         salePrice: 230000,
         realtorFeePct: 0,
         realtorFee: 0,
         estimatedNet: 230000,
-        note: "No realtor. Fast, but far below market.",
+        note: "Buyer eats mold/inspection risk. Fast exit.",
         highlight: true,
       },
       {
-        label: "Private sale at $280k",
-        salePrice: 280000,
+        label: "Private as-is at $260k",
+        salePrice: 260000,
         realtorFeePct: 0,
         realtorFee: 0,
-        estimatedNet: 280000,
-        note: "No realtor. Still ~$50k more than the offer.",
+        estimatedNet: 260000,
+        note: "Still as-is, but closer to a fair risk price.",
       },
       {
-        label: "List near mid-point",
+        label: "Fix mold, then list clean",
         salePrice: 310000,
         realtorFeePct: 0.06,
         realtorFee: fee(310000, 0.06),
         estimatedNet: 310000 - fee(310000, 0.06),
-        note: "Assumes ~6% total realtor cost. You still keep far more.",
+        note: "Gross keep ~$291k before mold repair cost. Subtract cleanup from this.",
       },
       {
-        label: "Soft listing price",
-        salePrice: 290000,
+        label: "List with issues disclosed",
+        salePrice: 275000,
         realtorFeePct: 0.055,
-        realtorFee: fee(290000, 0.055),
-        estimatedNet: 290000 - fee(290000, 0.055),
-        note: "Assumes ~5.5% total realtor cost on a softer price.",
+        realtorFee: fee(275000, 0.055),
+        estimatedNet: 275000 - fee(275000, 0.055),
+        note: "Assumes buyers discount for known problems; ~5.5% fees.",
       },
     ],
     valuation: {
-      low: 275000,
+      low: 230000,
       mid: 310000,
       high: 345000,
       offer: 230000,
       zest: 304900,
       thesis:
-        "After the tree rebuild — new roof, open-concept half, partial new siding, and recent HVAC — a fair sale looks closer to $275,000–$345,000. The $230,000 offer sits well under that band.",
+        "Mold and inspection risk split this into two bands. Clean / fixed: about $275,000–$345,000 (mid near $310,000). As-is with major mold: about $230,000–$280,000. The $230,000 offer is the floor of that as-is band — harsh if mold is small, fairer if mold is large and unresolved.",
       recommendation:
-        "Pass on $230,000 unless you must sell immediately. Even after typical realtor fees, a normal sale should put more money in your pocket.",
+        "Get a mold/crawl scope before you answer $230,000. If mold is major and you will sell as-is, this offer is in range. If mold is limited, push for more money.",
     },
     notebook: {
-      title: "Simple math",
+      title: "Simple math with mold in the room",
       paragraphs: [
-        "What buyers nearby are paying: online tools say about $305,000. Homes on the same street look like $310,000–$320,000. We use a mid-point of about $310,000.",
-        "What this offer pays: $230,000. That is about $80,000 under the mid-point — roughly 26% low.",
-        "Realtor fees: a normal listing often costs about 5.5%–6% of the sale price in total commissions (shared across agents; exact splits vary). On a $310,000 sale, that is about $17,000–$19,000. On a $290,000 sale at 5.5%, about $16,000.",
-        "Why “no realtor” does not rescue this offer: skipping a $17,000–$19,000 fee only helps if the sale price is close to fair value. Here the discount is much larger than the fee. Example: list at $310,000, pay 6% ($18,600), keep about $291,400 — still roughly $61,000 more than $230,000.",
-        "Even a softer path wins: sell privately at $280,000 with no realtor and you are still about $50,000 ahead of this offer. List at $290,000 with 5.5% fees and keep about $274,000 — still about $44,000 ahead.",
-        "What could still need work: the older half of the house, crawl space, and finishing touches. Those jobs matter, but they do not usually erase an $80,000 price gap.",
-        "Recommendation: do not accept $230,000. Counter higher, seek another private buyer, or list. Choose $230,000 only if speed is the top goal.",
+        "Healthy-house story: nearby sales and estimates still point near $305,000–$320,000. New roof and remodel support that — if the house is clean.",
+        "Problem-house story: major mold plus a tough inspection changes who will buy and what they will pay. Many retail buyers drop out. Investors and as-is buyers stay, and they discount hard.",
+        "What mold can cost: small jobs may be a few thousand dollars. Crawl-space or widespread mold can land in the $15,000–$40,000+ range once you add dry-out, remediation, insulation, and repairs. Until you have a written scope, assume the buyer is pricing something ugly.",
+        "Offer at $230,000 with no inspection and no realtor: that is a risk-transfer price. It is about $80,000 under a clean mid-point — and near the floor of a serious as-is band ($230,000–$280,000).",
+        "Realtor fees still matter on the other path: list clean at $310,000 with ~6% fees and you keep about $291,000 — but only after you pay to fix mold (and only if the house then appraises/inspects clean). If cleanup costs $25,000, your net is closer to $266,000. If cleanup costs $50,000, your net is closer to $241,000 — near this offer.",
+        "So the fork is simple: (1) Learn the mold cost. (2) If cheap to fix, do not take $230,000 — counter or list. (3) If expensive and you will not fix it, $230,000 as-is can be a rational exit, not a gift.",
+        "Recommendation: get a mold/crawl assessment first. Let that number choose between “counter higher” and “take the sure as-is check.”",
       ],
     },
     researchDate: "August 12, 2026",
     sources: [
-      "Property condition notes (roof, remodel, siding, HVAC)",
+      "Property condition notes (roof, remodel, siding, HVAC, mold/inspection concerns)",
       "Public estimate and tax data (Zillow)",
       "Recent area sales reported through public listing sites",
-      "OpenStreetMap location · 65804 market snapshot",
+      "Typical residential mold remediation cost ranges (industry ballparks; not a quote)",
     ],
   },
 };

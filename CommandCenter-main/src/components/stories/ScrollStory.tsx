@@ -24,6 +24,8 @@ function statusTone(status: ConditionItem["status"]) {
       return { chip: "Recent", className: "is-recent" };
     case "partial":
       return { chip: "Partial", className: "is-partial" };
+    case "concern":
+      return { chip: "Concern", className: "is-concern" };
     default:
       return { chip: "Older", className: "is-original" };
   }
@@ -68,7 +70,6 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
 
   const maxComp = Math.max(...story.comps.map((c) => c.price ?? 0), story.valuation.offer);
   const gap = story.valuation.mid - story.valuation.offer;
-  const gapPct = Math.round((1 - story.valuation.offer / story.valuation.mid) * 100);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -110,20 +111,20 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
           <h1 className="title-display reveal delay-2">
             Buena Vista
           </h1>
-          <p className="title-sub reveal delay-2">Offer Brief</p>
+          <p className="title-sub reveal delay-2">Mold · Inspection · Offer</p>
           <p className="title-meta reveal delay-3">
             1715 E. Buena Vista St · Springfield, MO 65804
           </p>
 
           <div className="title-stat reveal delay-4">
-            <strong>−{gapPct}%</strong>
-            <span>vs fair mid-point</span>
+            <strong>Mold</strong>
+            <span>and inspection risk set the price</span>
           </div>
 
           <p className="title-compare reveal delay-4">
-            <em className="is-warn">{money(story.valuation.offer)} offer</em>
-            <span aria-hidden> → </span>
-            <em className="is-good">{money(story.valuation.mid)} mid-point</em>
+            <em className="is-warn">{money(story.valuation.offer)} as-is · no inspection</em>
+            <span aria-hidden> · </span>
+            <em className="is-good">clean mid ~{money(story.valuation.mid)}</em>
           </p>
 
           <p className="title-tagline reveal delay-5">{story.heroLine}</p>
@@ -198,15 +199,15 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
 
           <div className="hero-offer reveal delay-5">
             <div className="is-warn">
-              <span className="hero-offer-label">Current offer</span>
+              <span className="hero-offer-label">As-is offer</span>
               <strong>{money(story.valuation.offer)}</strong>
             </div>
             <div>
-              <span className="hero-offer-label">Fair mid-point</span>
+              <span className="hero-offer-label">Clean mid</span>
               <strong>{money(story.valuation.mid)}</strong>
             </div>
             <div>
-              <span className="hero-offer-label">Gap</span>
+              <span className="hero-offer-label">Vs clean</span>
               <strong className="accent">−{money(gap)}</strong>
             </div>
           </div>
@@ -230,7 +231,11 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               <h2>{ch.title}</h2>
               <p className="story-body">{ch.body}</p>
               {ch.stat ? (
-                <div className={`story-stat ${ch.id === "offer" || ch.id === "call" ? "is-warn" : ""}`}>
+                <div
+                  className={`story-stat ${
+                    ch.id === "mold" || ch.id === "offer" || ch.id === "call" ? "is-warn" : ""
+                  }`}
+                >
                   <span className="story-stat-value">{ch.stat.value}</span>
                   <span className="story-stat-label">{ch.stat.label}</span>
                 </div>
@@ -266,12 +271,12 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               <aside className="visual-pane">
                 <div className="floor-split" aria-hidden>
                   <div className="floor-new">
-                    <span>Rebuilt</span>
-                    <em>Open concept · new work</em>
+                    <span>Upgrades</span>
+                    <em>Roof · remodel · HVAC help value</em>
                   </div>
-                  <div className="floor-old">
-                    <span>Original</span>
-                    <em>Older half · still fine, less finished</em>
+                  <div className="floor-old is-risk">
+                    <span>Risk</span>
+                    <em>Mold · crawl · inspection unknowns</em>
                   </div>
                 </div>
                 <div className="condition-grid">
@@ -311,8 +316,8 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                 </div>
                 <div className="highlight-band">
                   <p>
-                    Nearby sales and estimates cluster near <strong>{money(story.valuation.mid)}</strong> —
-                    not {money(story.valuation.offer)}.
+                    Clean comps sit near <strong>{money(story.valuation.mid)}</strong>. Mold risk can pull
+                    an as-is sale down toward <strong>{money(story.valuation.offer)}</strong>–$280k.
                   </p>
                 </div>
               </aside>
@@ -356,8 +361,8 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
         <p className="story-eyebrow">Nearby homes</p>
         <h2>What similar houses suggest.</h2>
         <p className="story-body narrow">
-          Same-street homes look like the low-to-mid $300,000s. Updated sales nearby sold higher. The
-          cheap fixer on the street is not a match for this house.
+          Same-street homes look like the low-to-mid $300,000s when they are healthy. Mold and a hard
+          inspection can knock this out of that retail lane and into as-is pricing.
         </p>
 
         <div className="comps-layout">
@@ -419,7 +424,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
 
         <div className="callout-strip">
           <div>
-            <span>Pass</span>
+            <span>As-is offer</span>
             <strong>{money(story.valuation.offer)}</strong>
           </div>
           <p>{story.valuation.recommendation}</p>
@@ -427,10 +432,10 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
 
         <div className="range-cards">
           {[
-            ["Offer", story.valuation.offer, "warn"],
-            ["Low", story.valuation.low, ""],
-            ["Mid", story.valuation.mid, "good"],
-            ["High", story.valuation.high, ""],
+            ["As-is offer", story.valuation.offer, "warn"],
+            ["As-is floor", story.valuation.low, ""],
+            ["Clean mid", story.valuation.mid, "good"],
+            ["Clean high", story.valuation.high, ""],
           ].map(([label, value, tone]) => (
             <div key={String(label)} className={`range-card ${tone}`}>
               <span>{label}</span>
@@ -813,11 +818,17 @@ const STORY_CSS = `
       linear-gradient(145deg, rgba(11,31,58,0.1), rgba(11,31,58,0.03)),
       repeating-linear-gradient(35deg, transparent, transparent 10px, rgba(11,31,58,0.05) 10px, rgba(11,31,58,0.05) 11px);
   }
+  .floor-old.is-risk {
+    background:
+      linear-gradient(145deg, rgba(180,35,24,0.16), rgba(180,35,24,0.05)),
+      repeating-linear-gradient(35deg, transparent, transparent 10px, rgba(180,35,24,0.08) 10px, rgba(180,35,24,0.08) 11px);
+  }
   .floor-new span, .floor-old span {
     font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700;
   }
   .floor-new span { color: var(--good); }
   .floor-old span { color: var(--navy); }
+  .floor-old.is-risk span { color: var(--warn); }
   .floor-new em, .floor-old em { font-style: normal; font-size: 0.88rem; color: var(--muted); }
 
   .condition-grid { display: grid; grid-template-columns: 1fr; gap: 0.5rem; }
@@ -840,6 +851,10 @@ const STORY_CSS = `
   }
   .condition-card.is-new em, .condition-card.is-recent em { color: var(--good); }
   .condition-card.is-partial em { color: #9a6b1f; }
+  .condition-card.is-concern {
+    border-color: rgba(180,35,24,0.4); background: rgba(180,35,24,0.08);
+  }
+  .condition-card.is-concern em { color: var(--warn); }
   .condition-card.is-original em { color: var(--muted); }
 
   .school-stack { display: grid; gap: 0.55rem; }
