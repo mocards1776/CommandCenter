@@ -1025,12 +1025,17 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
     };
   };
   const article = sum.article;
-  if (!article?.story || stripTags(article.story).length < 80) return null;
+  const storyHtml =
+    article?.story?.trim() ||
+    (article?.description
+      ? `<p>${article.description.replace(/^—\s*/, "")}</p>`
+      : "");
+  if (!storyHtml || stripTags(storyHtml).length < 40) return null;
   return {
-    title: article.headline ?? null,
-    byline: article.byline ?? null,
-    image: article.images?.[0]?.url ?? null,
-    html: article.story,
+    title: article?.headline ?? null,
+    byline: article?.byline ?? null,
+    image: article?.images?.[0]?.url ?? null,
+    html: storyHtml,
   };
 }
 
