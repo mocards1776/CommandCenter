@@ -2,6 +2,15 @@
 
 ---
 
+<<<<<<< HEAD
+## Dispatch quotes, saves, MLB wraps — August 13, 2026
+
+- Saved notes are stylized quote cards; tap opens a shareable PNG card.
+- **Save for later** inbox (`rss_saves`) with row + reader toggles.
+- Archive from the reader (mark read, advance to next).
+- Separate **MLB wraps & previews** feed (league-wide ESPN), kept out of Unread.
+- In-article highlight marks are baked into HTML so they no longer vanish on scroll.
+=======
 ## Reading: covers, page counts, tags — August 13, 2026
 
 - Catalog add keeps the search jacket, ISBN, and page count (then enriches).
@@ -10,6 +19,7 @@
 - Recent week cells show historical week rank (same idea as day/month).
 - Home Tags section + manage: rename/merge, mark as Came from vs Subject.
 - DB: `profiles.tag_kinds` jsonb. Redeploy `book-ai` for richer catalog fields.
+>>>>>>> origin/main
 
 ---
 
