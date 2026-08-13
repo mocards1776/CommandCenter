@@ -1,6 +1,7 @@
 /** MLB Stats API helpers — scoreboard, standings, leaders, player cards. */
 
 import { supabase } from "./supabase";
+import { formatSportsDateLong } from "./utils";
 
 const MLB = "https://statsapi.mlb.com/api/v1";
 const ESPN_STANDINGS = "https://site.api.espn.com/apis/v2/sports/baseball/mlb/standings";
@@ -1245,6 +1246,19 @@ function mapPitcherSeasonLine(
     bb: numStat(stat, "baseOnBalls"),
     hr: numStat(stat, "homeRuns"),
   };
+}
+
+/** Season lines for probable pitchers (hero / RUWT cards). */
+export async function fetchPitcherSeasonLines(
+  ids: number[],
+): Promise<Map<number, MlbPitcherSeasonLine>> {
+  const people = await fetchPeopleWithSeasonStats(ids, "pitching");
+  const map = new Map<number, MlbPitcherSeasonLine>();
+  for (const p of people ?? []) {
+    if (p.id == null) continue;
+    map.set(p.id, mapPitcherSeasonLine(p));
+  }
+  return map;
 }
 
 function mapLineupHitter(
@@ -2785,6 +2799,160 @@ export async function fetchMlbPlayerLeagueRanks(
   return ranks.filter((r): r is MlbLeagueRank => r != null);
 }
 
+/** Team-relative ranks for career-table leader styling. */
+export async function fetchMlbPlayerTeamRanks(
+  playerId: number | string,
+  teamId: number,
+  group: "hitting" | "pitching",
+  season = currentSeason(),
+): Promise<MlbLeagueRank[]> {
+  const id = Number(playerId);
+  if (!Number.isFinite(id) || !Number.isFinite(teamId) || teamId <= 0) return [];
+  const defs = group === "pitching" ? PITCH_RANK_DEFS : HIT_RANK_DEFS;
+  const ranks = await Promise.all(
+    defs.map(async (def) => {
+      try {
+        const raw = (await mlbGet("stats", {
+          stats: "season",
+          group,
+          season: String(season),
+          sportId: "1",
+          teamId: String(teamId),
+          playerPool: "all",
+          limit: "60",
+          sortStat: def.sortStat,
+          order: def.order,
+        })) as {
+          stats?: {
+            splits?: {
+              player?: { id?: number };
+              stat?: Record<string, unknown>;
+            }[];
+          }[];
+        };
+        const splits = raw.stats?.[0]?.splits ?? [];
+        const idx = splits.findIndex((s) => s.player?.id === id);
+        if (idx < 0) return null;
+        const value = splits[idx]?.stat?.[def.statKey];
+        if (value == null || value === "") return null;
+        return {
+          label: def.label,
+          value: String(value),
+          rank: idx + 1,
+          of: splits.length,
+          display: ordinal(idx + 1),
+        } satisfies MlbLeagueRank;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return ranks.filter((r): r is MlbLeagueRank => r != null);
+}
+
+export type MlbPlayerBio = {
+  fullName: string | null;
+  html: string;
+  text: string;
+  url: string;
+};
+
+/** Narrative bio from MLB.com “More Bio Info” modal. */
+export async function fetchMlbPlayerBio(
+  playerId: number | string,
+  playerName: string,
+): Promise<MlbPlayerBio | null> {
+  const id = Number(playerId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  try {
+    const { data, error } = await supabase.functions.invoke("sports", {
+      body: { action: "playerBio", playerId: id, name: playerName },
+    });
+    if (error) throw error;
+    const payload = data as (MlbPlayerBio & { error?: string; found?: boolean }) | null;
+    if (!payload || payload.error || !payload.text) return null;
+    return {
+      fullName: payload.fullName ?? null,
+      html: payload.html ?? "",
+      text: payload.text,
+      url: payload.url ?? `https://www.mlb.com/player/${id}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export type MlbPlayerExtras = {
+  serviceTime: string | null;
+  seasonWar: number | null;
+  careerWar: number | null;
+  warRank: number | null;
+  warOf: number | null;
+  url: string | null;
+};
+
+/** Service time + WAR from Baseball Reference (via sports edge). */
+export async function fetchMlbPlayerExtras(
+  playerName: string,
+  opts?: { isPitcher?: boolean },
+): Promise<MlbPlayerExtras | null> {
+  const name = playerName.trim();
+  if (name.length < 3) return null;
+  try {
+    const { data, error } = await supabase.functions.invoke("sports", {
+      body: {
+        action: "playerExtras",
+        name,
+        isPitcher: Boolean(opts?.isPitcher),
+      },
+    });
+    if (error) throw error;
+    const payload = data as (Partial<MlbPlayerExtras> & { error?: string }) | null;
+    if (!payload || payload.error) return null;
+    return {
+      serviceTime: payload.serviceTime ?? null,
+      seasonWar: payload.seasonWar ?? null,
+      careerWar: payload.careerWar ?? null,
+      warRank: payload.warRank ?? null,
+      warOf: payload.warOf ?? null,
+      url: payload.url ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Lower-is-better rate stats when marking career highs. */
+const CAREER_HIGH_LOWER_BETTER = new Set(["ERA", "WHIP", "AVG_ALLOWED"]);
+
+export function careerHighLabels(
+  rows: MlbPlayerSeasonRow[],
+  labels: string[],
+): Set<string> {
+  const highs = new Set<string>();
+  for (const label of labels) {
+    let best: number | null = null;
+    let bestKey: string | null = null;
+    const lower = CAREER_HIGH_LOWER_BETTER.has(label);
+    for (const row of rows) {
+      const raw = row.stats.find((s) => s.label === label)?.value;
+      if (raw == null || raw === "" || raw === "—") continue;
+      const n = Number(String(raw).replace(/[^0-9.+-]/g, ""));
+      if (!Number.isFinite(n)) continue;
+      if (
+        best == null ||
+        (lower ? n < best : n > best) ||
+        (n === best && bestKey != null && row.season > Number(bestKey.split(":")[0]))
+      ) {
+        best = n;
+        bestKey = `${row.season}:${row.teamId ?? row.team}:${label}`;
+      }
+    }
+    if (bestKey) highs.add(bestKey);
+  }
+  return highs;
+}
+
 /** Season situational splits (home/away, vs L/R, day/night). */
 export async function fetchMlbPlayerSplits(
   playerId: number | string,
@@ -3695,25 +3863,8 @@ export type MlbPerformanceSummary = {
 
 function fmtGameDateLabel(iso: string): string {
   if (!iso) return "Latest game";
-  try {
-    const d = new Date(`${iso}T12:00:00`);
-    const weekday = d.toLocaleDateString("en-GB", {
-      timeZone: "America/Chicago",
-      weekday: "short",
-    });
-    const parts = new Intl.DateTimeFormat("en-GB", {
-      timeZone: "America/Chicago",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }).formatToParts(d);
-    const day = parts.find((p) => p.type === "day")?.value ?? "01";
-    const month = parts.find((p) => p.type === "month")?.value ?? "01";
-    const year = parts.find((p) => p.type === "year")?.value ?? "1970";
-    return `${weekday}, ${day}-${month}-${year}`;
-  } catch {
-    return iso;
-  }
+  const label = formatSportsDateLong(iso);
+  return label || iso;
 }
 
 function statValue(stats: MlbPlayerStatLine[], label: string): string | null {

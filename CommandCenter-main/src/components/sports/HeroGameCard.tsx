@@ -1,6 +1,14 @@
-import { Link } from "react-router-dom";
-import { mlbHeadshot, teamPagePath, type MlbScoreGame } from "@/lib/mlb";
+import { Link, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
 import TeamMark from "@/components/sports/TeamMark";
+import {
+  fetchPitcherSeasonLines,
+  mlbHeadshot,
+  teamPagePath,
+  type MlbPitcherSeasonLine,
+  type MlbScoreGame,
+} from "@/lib/mlb";
 import { cn } from "@/lib/utils";
 
 export default function HeroGameCard({
@@ -12,14 +20,39 @@ export default function HeroGameCard({
   accent?: string;
   label?: string;
 }) {
+  const navigate = useNavigate();
   const pregame = !game.final && !game.live;
+  const pitcherIds = [game.away.probablePitcherId, game.home.probablePitcherId].filter(
+    (id): id is number => id != null,
+  );
+
+  const pitcherLines = useQuery({
+    queryKey: ["hero-pitcher-lines", game.id, pitcherIds.join(",")],
+    queryFn: () => fetchPitcherSeasonLines(pitcherIds),
+    enabled: pregame && pitcherIds.length > 0,
+    staleTime: 120_000,
+  });
+
+  const awayLine = game.away.probablePitcherId
+    ? pitcherLines.data?.get(game.away.probablePitcherId) ?? null
+    : null;
+  const homeLine = game.home.probablePitcherId
+    ? pitcherLines.data?.get(game.home.probablePitcherId) ?? null
+    : null;
 
   return (
-    <Link
-      to={`/sports/mlb/game/${game.id}`}
-      className="group relative block overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.35)]"
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={() => navigate(`/sports/mlb/game/${game.id}`)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          navigate(`/sports/mlb/game/${game.id}`);
+        }
+      }}
+      className="group relative block cursor-pointer overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.35)]"
     >
-      {/* Dual team color washes — ESPN-style matchup plane */}
       <div className="absolute inset-0 bg-[#07101d]" />
       <div
         className="absolute inset-y-0 left-0 w-[55%] opacity-90"
@@ -60,7 +93,12 @@ export default function HeroGameCard({
         </div>
 
         {pregame ? (
-          <PregameLayout game={game} accent={accent} />
+          <PregameLayout
+            game={game}
+            accent={accent}
+            awayLine={awayLine}
+            homeLine={homeLine}
+          />
         ) : (
           <>
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-6">
@@ -85,7 +123,7 @@ export default function HeroGameCard({
 
             {game.live && game.situation ? (
               <div className="mt-5 border-t border-white/10 pt-4">
-                <LiveStrip game={game} />
+                <LiveSituationStrip game={game} linkPlayers />
               </div>
             ) : null}
 
@@ -104,77 +142,21 @@ export default function HeroGameCard({
           </>
         )}
       </div>
-    </Link>
-  );
-}
-
-function LiveStrip({ game }: { game: MlbScoreGame }) {
-  const sit = game.situation;
-  if (!sit) return null;
-  const short = (name: string) => {
-    const parts = name.trim().split(/\s+/);
-    if (parts.length < 2) return name;
-    return `${parts[0]![0]}. ${parts[parts.length - 1]}`;
-  };
-  const bag = (on: boolean) =>
-    on ? "bg-cream shadow-[0_0_0_1px_rgba(255,255,255,0.35)]" : "bg-white/15";
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="min-w-0 space-y-0.5 text-[12px] text-white/80">
-        {sit.batter ? (
-          <p className="truncate">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
-              Batter{" "}
-            </span>
-            {short(sit.batter.name)}
-          </p>
-        ) : null}
-        {sit.pitcher ? (
-          <p className="truncate">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
-              Pitcher{" "}
-            </span>
-            {short(sit.pitcher.name)}
-          </p>
-        ) : null}
-      </div>
-      <div className="flex items-center gap-3">
-        <div className="relative h-9 w-9" aria-hidden>
-          <span
-            className={cn(
-              "absolute top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45",
-              bag(sit.onSecond),
-            )}
-          />
-          <span
-            className={cn(
-              "absolute top-1/2 left-0 h-2.5 w-2.5 -translate-y-1/2 rotate-45",
-              bag(sit.onThird),
-            )}
-          />
-          <span
-            className={cn(
-              "absolute top-1/2 right-0 h-2.5 w-2.5 -translate-y-1/2 rotate-45",
-              bag(sit.onFirst),
-            )}
-          />
-        </div>
-        <div className="text-right">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">
-            {game.inning || "Live"}
-          </p>
-          <p className="numeral mt-0.5 text-[14px] text-cream">
-            {sit.balls}-{sit.strikes}
-            <span className="mx-1 text-white/30">·</span>
-            {sit.outs} out{sit.outs === 1 ? "" : "s"}
-          </p>
-        </div>
-      </div>
     </div>
   );
 }
 
-function PregameLayout({ game, accent }: { game: MlbScoreGame; accent: string }) {
+function PregameLayout({
+  game,
+  accent,
+  awayLine,
+  homeLine,
+}: {
+  game: MlbScoreGame;
+  accent: string;
+  awayLine: MlbPitcherSeasonLine | null;
+  homeLine: MlbPitcherSeasonLine | null;
+}) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
@@ -195,11 +177,11 @@ function PregameLayout({ game, accent }: { game: MlbScoreGame; accent: string })
           Probable pitchers
         </p>
         <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2 sm:gap-4">
-          <PitcherStack side={game.away} align="left" />
+          <PitcherStack side={game.away} align="left" line={awayLine} />
           <span className="pb-6 text-[12px] font-semibold uppercase tracking-[0.18em] text-white/35">
             vs
           </span>
-          <PitcherStack side={game.home} align="right" />
+          <PitcherStack side={game.home} align="right" line={homeLine} />
         </div>
       </div>
 
@@ -222,9 +204,11 @@ function PregameLayout({ game, accent }: { game: MlbScoreGame; accent: string })
 function PitcherStack({
   side,
   align,
+  line,
 }: {
   side: MlbScoreGame["away"];
   align: "left" | "right";
+  line: MlbPitcherSeasonLine | null;
 }) {
   const name = side.probablePitcher ?? "TBD";
   const parts = name.split(" ");
@@ -253,6 +237,11 @@ function PitcherStack({
         <p className="text-[12px] font-medium uppercase tracking-[0.08em] text-white/55">{first}</p>
       )}
       <p className="font-display text-cream text-[22px] leading-none sm:text-[26px]">{last}</p>
+      {line ? (
+        <p className="numeral text-[11px] text-white/65">
+          {line.wins}-{line.losses} · {line.era} ERA · {line.whip} WHIP
+        </p>
+      ) : null}
     </>
   );
 

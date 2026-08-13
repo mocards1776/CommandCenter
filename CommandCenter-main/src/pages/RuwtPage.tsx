@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, Radio, RefreshCw, Settings2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Radio, RefreshCw, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
+import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
 import StarField from "@/components/StarField";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
@@ -10,7 +11,9 @@ import { listFavoritePlayers } from "@/lib/favorite-players";
 import {
   fetchMlbScoreboard,
   fetchMlbStandings,
+  fetchPitcherSeasonLines,
   mlbHeadshot,
+  type MlbPitcherSeasonLine,
   type MlbScoreGame,
   type MlbScoredGame,
 } from "@/lib/mlb";
@@ -20,6 +23,7 @@ import {
   setTeamInterestRating,
   type RuwtTeamInterest,
 } from "@/lib/ruwt";
+import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
 
@@ -60,6 +64,7 @@ export default function RuwtPage() {
   const { user } = useAuth();
   const [interest, setInterest] = useState<RuwtTeamInterest>(() => loadTeamInterest());
   const [editing, setEditing] = useState(false);
+  const [showFinals, setShowFinals] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -86,6 +91,13 @@ export default function RuwtPage() {
     staleTime: 60_000,
   });
 
+  const taggedIds = useQuery({
+    queryKey: ["sports-player-tags-ids", user?.id],
+    queryFn: () => fetchTaggedPlayerIds(),
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+  });
+
   const playoffOddsByTeam = useMemo(() => {
     const out: Record<number, number> = {};
     for (const div of standings.data ?? []) {
@@ -102,10 +114,25 @@ export default function RuwtPage() {
     const set = new Set<number>();
     for (const f of favorites.data ?? []) {
       if (f.position === "manager") continue;
+      if (f.sport && f.sport !== "baseball") continue;
       const id = Number(f.playerId);
       if (Number.isFinite(id)) set.add(id);
     }
+    for (const id of taggedIds.data ?? []) set.add(id);
     return set;
+  }, [favorites.data, taggedIds.data]);
+
+  const watchPlayerNames = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const f of favorites.data ?? []) {
+      if (f.position === "manager") continue;
+      if (f.sport && f.sport !== "baseball") continue;
+      const id = Number(f.playerId);
+      if (!Number.isFinite(id)) continue;
+      const parts = f.playerName.trim().split(/\s+/);
+      map.set(id, parts[parts.length - 1] || f.playerName);
+    }
+    return map;
   }, [favorites.data]);
 
   const watchManagerIds = useMemo(() => {
@@ -136,20 +163,25 @@ export default function RuwtPage() {
       {
         teamInterest: interest,
         watchPlayerIds,
+        watchPlayerNames,
         watchManagerIds,
         managerTeamById,
         playoffOddsByTeam,
       },
-      20,
+      30,
     );
   }, [
     scoreboard.data,
     interest,
     watchPlayerIds,
+    watchPlayerNames,
     watchManagerIds,
     managerTeamById,
     playoffOddsByTeam,
   ]);
+
+  const activeGames = useMemo(() => ranked.filter((g) => !g.final), [ranked]);
+  const finalGames = useMemo(() => ranked.filter((g) => g.final), [ranked]);
 
   const refresh = () => {
     void Promise.all([scoreboard.refetch(), standings.refetch()]).then(() =>
@@ -250,20 +282,96 @@ export default function RuwtPage() {
       ) : ranked.length === 0 ? (
         <p className="text-chalk-dim text-[13px]">No games on today’s slate.</p>
       ) : (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {ranked.map((g, i) => (
-            <RuwtCard key={g.id} game={g} rank={i + 1} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {activeGames.map((g, i) => (
+              <RuwtCard key={g.id} game={g} rank={i + 1} />
+            ))}
+          </div>
+
+          {finalGames.length > 0 && (
+            <section className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setShowFinals((v) => !v)}
+                className="text-chalk hover:text-cream flex w-full items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left transition hover:border-white/10"
+              >
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em]">
+                  Finals minimized · {finalGames.length}
+                </span>
+                {showFinals ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              {showFinals ? (
+                <div className="grid grid-cols-1 gap-2 opacity-70 sm:grid-cols-2 xl:grid-cols-3">
+                  {finalGames.map((g, i) => (
+                    <RuwtCard key={g.id} game={g} rank={activeGames.length + i + 1} compactFinal />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {finalGames.slice(0, 8).map((g) => (
+                    <Link
+                      key={g.id}
+                      to={`/sports/mlb/game/${g.id}`}
+                      className="text-chalk-dim hover:text-cream inline-flex items-center gap-1.5 rounded-md border border-white/[0.06] px-2.5 py-1.5 text-[11px] transition hover:border-white/15"
+                    >
+                      <span className="text-cream/80">
+                        {g.away.abbrev} {g.away.score}-{g.home.score} {g.home.abbrev}
+                      </span>
+                      <span className="text-[10px] uppercase tracking-[0.12em]">Final</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+        </>
       )}
     </div>
   );
 }
 
-function RuwtCard({ game, rank }: { game: MlbScoredGame; rank: number }) {
+function RuwtCard({
+  game,
+  rank,
+  compactFinal,
+}: {
+  game: MlbScoredGame;
+  rank: number;
+  compactFinal?: boolean;
+}) {
   const pregame = !game.live && !game.final;
   const awayWins = game.final && (game.away.score ?? 0) > (game.home.score ?? 0);
   const homeWins = game.final && (game.home.score ?? 0) > (game.away.score ?? 0);
+  const pitcherIds = [game.away.probablePitcherId, game.home.probablePitcherId].filter(
+    (id): id is number => id != null,
+  );
+
+  const pitcherLines = useQuery({
+    queryKey: ["ruwt-pitcher-lines", game.id, pitcherIds.join(",")],
+    queryFn: () => fetchPitcherSeasonLines(pitcherIds),
+    enabled: pregame && pitcherIds.length > 0,
+    staleTime: 120_000,
+  });
+
+  if (compactFinal) {
+    return (
+      <Link
+        to={`/sports/mlb/game/${game.id}`}
+        className="relative block overflow-hidden rounded-lg border border-white/[0.06] bg-[#07101d]/80 px-3 py-2.5 transition hover:border-accent/30"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">
+            #{rank} Final
+          </span>
+          <span className="text-[10px] text-[#8b93a7]">Heat {game.score}</span>
+        </div>
+        <p className="mt-1 text-[13px] text-cream">
+          {game.away.abbrev} {game.away.score} · {game.home.score} {game.home.abbrev}
+        </p>
+      </Link>
+    );
+  }
 
   return (
     <Link
@@ -322,17 +430,39 @@ function RuwtCard({ game, rank }: { game: MlbScoredGame; rank: number }) {
         </div>
       )}
 
+      {game.live && game.situation ? (
+        <div className="relative z-10 border-t border-white/[0.06] px-3 py-2.5">
+          <LiveSituationStrip game={game} compact />
+        </div>
+      ) : null}
+
       {pregame && (game.away.probablePitcherId || game.home.probablePitcherId) ? (
         <div className="relative z-10 border-t border-white/[0.06] px-3 py-2.5">
           <p className="mb-2 text-center text-[9px] font-semibold uppercase tracking-[0.16em] text-white/45">
             Probable pitchers
           </p>
           <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
-            <RuwtPitcherCard side={game.away} align="left" />
+            <RuwtPitcherCard
+              side={game.away}
+              align="left"
+              line={
+                game.away.probablePitcherId
+                  ? pitcherLines.data?.get(game.away.probablePitcherId) ?? null
+                  : null
+              }
+            />
             <span className="pb-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35">
               vs
             </span>
-            <RuwtPitcherCard side={game.home} align="right" />
+            <RuwtPitcherCard
+              side={game.home}
+              align="right"
+              line={
+                game.home.probablePitcherId
+                  ? pitcherLines.data?.get(game.home.probablePitcherId) ?? null
+                  : null
+              }
+            />
           </div>
         </div>
       ) : null}
@@ -349,9 +479,11 @@ function RuwtCard({ game, rank }: { game: MlbScoredGame; rank: number }) {
 function RuwtPitcherCard({
   side,
   align,
+  line,
 }: {
   side: MlbScoreGame["away"];
   align: "left" | "right";
+  line: MlbPitcherSeasonLine | null;
 }) {
   const name = side.probablePitcher ?? "TBD";
   const parts = name.split(" ");
@@ -383,6 +515,11 @@ function RuwtPitcherCard({
         </p>
       ) : null}
       <p className="font-display text-cream truncate text-[16px] leading-none">{last}</p>
+      {line ? (
+        <p className="numeral text-[10px] text-white/60">
+          {line.wins}-{line.losses} · {line.era} ERA
+        </p>
+      ) : null}
     </div>
   );
 }

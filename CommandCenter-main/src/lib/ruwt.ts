@@ -12,6 +12,8 @@ export type RuwtScoreContext = {
   teamInterest: RuwtTeamInterest;
   /** Favorite / tagged player ids. */
   watchPlayerIds: Set<number>;
+  /** Optional short labels for watch players (for ranking reasons). */
+  watchPlayerNames?: Map<number, string>;
   /** Favorite manager person ids. */
   watchManagerIds: Set<number>;
   /** Manager → current team id. */
@@ -89,9 +91,28 @@ export function scoreRuwtGame(g: MlbScoreGame, ctx?: RuwtScoreContext): MlbGameI
   const pitcherIds = [g.away.probablePitcherId, g.home.probablePitcherId].filter(
     (id): id is number => id != null,
   );
-  if (pitcherIds.some((id) => ctx.watchPlayerIds.has(id))) {
+  const watchedPitchers = pitcherIds.filter((id) => ctx.watchPlayerIds.has(id));
+  if (watchedPitchers.length) {
     score += 28;
-    reasons.push("Favorite pitcher");
+    const names = watchedPitchers
+      .map((id) => ctx.watchPlayerNames?.get(id))
+      .filter((n): n is string => Boolean(n));
+    if (names.length) {
+      reasons.push(names.length === 1 ? `${names[0]} watched` : `${names.join(" · ")} watched`);
+    } else {
+      reasons.push(watchedPitchers.length > 1 ? "Favorite pitchers" : "Favorite pitcher");
+    }
+  }
+
+  // Live: favorite / tagged batter or pitcher in the game.
+  if (g.live && g.situation) {
+    const liveIds = [g.situation.batter?.id, g.situation.pitcher?.id].filter(
+      (id): id is number => id != null,
+    );
+    if (liveIds.some((id) => ctx.watchPlayerIds.has(id))) {
+      score += 18;
+      reasons.push("Watch player live");
+    }
   }
 
   if (ctx.managerTeamById && ctx.watchManagerIds.size) {

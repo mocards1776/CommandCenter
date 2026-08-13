@@ -13,6 +13,7 @@ import {
   NotebookPen,
   Sprout,
   Radio,
+  Flag,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/lib/auth-context";
@@ -37,7 +38,7 @@ import {
   prefersRssHome,
 } from "@/lib/rss-home";
 import DispatchScoreTicker from "@/components/rss/DispatchScoreTicker";
-import { cn } from "@/lib/utils";
+import { cn, formatSportsDateLong } from "@/lib/utils";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", short: "Today", Icon: LayoutDashboard },
@@ -93,6 +94,12 @@ const SPORTS_NAV = [
     match: (p: string) => p.startsWith("/sports/mlb/managers"),
     label: "Managers",
     Icon: Flame,
+  },
+  {
+    to: "/sports?solo=1&golf=1",
+    match: (p: string) => p.startsWith("/sports/golf"),
+    label: "Golf",
+    Icon: Flag,
   },
 ];
 
@@ -199,22 +206,7 @@ export default function AppShell() {
 
   const today = (() => {
     if (onSports || sportsOnly) {
-      // Sports surfaces use dd-mm-yyyy.
-      const d = new Date();
-      const weekday = d.toLocaleDateString("en-GB", {
-        timeZone: "America/Chicago",
-        weekday: "long",
-      });
-      const parts = new Intl.DateTimeFormat("en-GB", {
-        timeZone: "America/Chicago",
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      }).formatToParts(d);
-      const day = parts.find((p) => p.type === "day")?.value ?? "01";
-      const month = parts.find((p) => p.type === "month")?.value ?? "01";
-      const year = parts.find((p) => p.type === "year")?.value ?? "1970";
-      return `${weekday} ${day}-${month}-${year}`;
+      return formatSportsDateLong(new Date());
     }
     return new Date().toLocaleDateString("en-US", {
       timeZone: "America/Chicago",

@@ -48,7 +48,7 @@ export function fmtTime(iso: string): string {
   });
 }
 
-/** Sports-app display date: dd-mm-yyyy in Central time. */
+/** Sports-app display date: MM-DD-YYYY in Central time (US sports / MLB.com style). */
 export function formatSportsDate(raw: string | Date | null | undefined): string {
   if (raw == null || raw === "") return "";
   try {
@@ -57,7 +57,7 @@ export function formatSportsDate(raw: string | Date | null | undefined): string 
         ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : raw)
         : raw;
     if (Number.isNaN(d.getTime())) return String(raw);
-    const parts = new Intl.DateTimeFormat("en-GB", {
+    const parts = new Intl.DateTimeFormat("en-US", {
       timeZone: TZ,
       day: "2-digit",
       month: "2-digit",
@@ -66,13 +66,13 @@ export function formatSportsDate(raw: string | Date | null | undefined): string 
     const day = parts.find((p) => p.type === "day")?.value ?? "01";
     const month = parts.find((p) => p.type === "month")?.value ?? "01";
     const year = parts.find((p) => p.type === "year")?.value ?? "1970";
-    return `${day}-${month}-${year}`;
+    return `${month}-${day}-${year}`;
   } catch {
     return String(raw);
   }
 }
 
-/** Weekday + dd-mm-yyyy for sports headers. */
+/** Weekday + MM-DD-YYYY for sports headers. */
 export function formatSportsDateLong(raw: string | Date | null | undefined): string {
   if (raw == null || raw === "") return "";
   try {
@@ -81,9 +81,9 @@ export function formatSportsDateLong(raw: string | Date | null | undefined): str
         ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : raw)
         : raw;
     if (Number.isNaN(d.getTime())) return String(raw);
-    const weekday = d.toLocaleDateString("en-GB", {
+    const weekday = d.toLocaleDateString("en-US", {
       timeZone: TZ,
-      weekday: "long",
+      weekday: "short",
     });
     return `${weekday} ${formatSportsDate(d)}`;
   } catch {

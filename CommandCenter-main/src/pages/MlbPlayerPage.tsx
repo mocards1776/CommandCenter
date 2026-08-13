@@ -11,14 +11,18 @@ import { isFavoritePlayer } from "@/lib/favorite-players";
 import {
   buildAcquisitionStory,
   buildPlayerPerformanceSummary,
+  careerHighLabels,
   fetchMlbPipelineScoutingReport,
   fetchMlbPlayer,
+  fetchMlbPlayerBio,
+  fetchMlbPlayerExtras,
   mlbHeadshotFallbacks,
   fetchMlbPlayerGameLog,
   fetchMlbPlayerHighlights,
   fetchMlbPlayerLeagueRanks,
   fetchMlbPlayerRecent,
   fetchMlbPlayerSplits,
+  fetchMlbPlayerTeamRanks,
   fetchMlbPlayerTransactions,
   clearPlayerContractCache,
   fetchPlayerBrief,
@@ -34,7 +38,7 @@ import {
   type MlbPlayerStatLine,
   type MlbSplitRow,
 } from "@/lib/mlb";
-import { cn } from "@/lib/utils";
+import { cn, formatSportsDate } from "@/lib/utils";
 
 export default function MlbPlayerPage() {
   const { playerId } = useParams<{ playerId: string }>();
@@ -52,7 +56,7 @@ export default function MlbPlayerPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-7">
+    <div className="mx-auto max-w-6xl space-y-6 p-4 md:p-7">
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
@@ -196,6 +200,42 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
     staleTime: 300_000,
   });
 
+  const teamRanks = useQuery({
+    queryKey: [
+      "mlb-player-team-ranks",
+      playerId,
+      player.data?.teamId,
+      splitGroup,
+      player.data?.season,
+    ],
+    queryFn: () =>
+      fetchMlbPlayerTeamRanks(
+        player.data!.id,
+        player.data!.teamId!,
+        splitGroup,
+        player.data!.season,
+      ),
+    enabled: Boolean(player.data?.teamId),
+    staleTime: 300_000,
+  });
+
+  const mlbBio = useQuery({
+    queryKey: ["mlb-player-bio", playerId, player.data?.name],
+    queryFn: () => fetchMlbPlayerBio(playerId, player.data!.name),
+    enabled: Boolean(player.data?.name),
+    staleTime: 24 * 60 * 60_000,
+    retry: 1,
+  });
+
+  const extras = useQuery({
+    queryKey: ["mlb-player-extras", player.data?.name, isPitcherPreview],
+    queryFn: () =>
+      fetchMlbPlayerExtras(player.data!.name, { isPitcher: isPitcherPreview }),
+    enabled: Boolean(player.data?.name),
+    staleTime: 6 * 60 * 60_000,
+    retry: 1,
+  });
+
   if (player.isPending) {
     return (
       <div className="text-chalk flex min-h-[40vh] items-center justify-center gap-2">
@@ -253,7 +293,18 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         </a>
       </div>
 
-      <PlayerHeader player={p} accent={accent} isFavorite={isFav} />
+      <PlayerHeader
+        player={p}
+        accent={accent}
+        isFavorite={isFav}
+        serviceTime={extras.data?.serviceTime ?? null}
+        seasonWar={extras.data?.seasonWar ?? null}
+        careerWar={extras.data?.careerWar ?? null}
+        warRank={extras.data?.warRank ?? null}
+        warOf={extras.data?.warOf ?? null}
+        mlbBio={mlbBio.data ?? null}
+        mlbBioLoading={mlbBio.isPending}
+      />
 
       {showLevelSelector && (
         <div className="flex flex-wrap items-center gap-2">
@@ -343,6 +394,9 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
           title={showLevelSelector ? `Career by year · ${levelLabel}` : "Career by year"}
           rows={yearRows}
           isPitcher={isPitcher}
+          season={p.season}
+          leagueRanks={activeLevel === "mlb" ? (ranks.data ?? []) : []}
+          teamRanks={activeLevel === "mlb" ? (teamRanks.data ?? []) : []}
         />
       )}
       {!isPitcher &&
@@ -355,6 +409,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
               activeLevel === "minors" ? r.sportId !== 1 : r.sportId === 1,
             )}
             isPitcher
+            season={p.season}
           />
         )}
       {isPitcher &&
@@ -367,6 +422,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
               activeLevel === "minors" ? r.sportId !== 1 : r.sportId === 1,
             )}
             isPitcher={false}
+            season={p.season}
           />
         )}
 
@@ -585,10 +641,24 @@ function PlayerHeader({
   player,
   accent,
   isFavorite,
+  serviceTime,
+  seasonWar,
+  careerWar,
+  warRank,
+  warOf,
+  mlbBio,
+  mlbBioLoading,
 }: {
   player: MlbPlayerCard;
   accent: string;
   isFavorite: boolean;
+  serviceTime?: string | null;
+  seasonWar?: number | null;
+  careerWar?: number | null;
+  warRank?: number | null;
+  warOf?: number | null;
+  mlbBio?: Awaited<ReturnType<typeof fetchMlbPlayerBio>>;
+  mlbBioLoading?: boolean;
 }) {
   const htWt = [player.height, player.weight ? `${player.weight} lb` : null]
     .filter(Boolean)
@@ -621,15 +691,15 @@ function PlayerHeader({
       <div className="absolute inset-0 bg-gradient-to-r from-[#07101f] via-[#07101f]/75 to-[#07101f]/35" />
       <div className="absolute inset-0 bg-gradient-to-t from-[#07101f] via-transparent to-[#07101f]/40" />
 
-      <div className="relative z-10 flex flex-col gap-5 p-5 sm:flex-row sm:items-end sm:p-7">
+      <div className="relative z-10 flex flex-col gap-5 p-5 lg:flex-row lg:items-end lg:gap-8 lg:p-8">
         <div className="relative mx-auto shrink-0 sm:mx-0">
           <div className="overflow-hidden rounded-xl bg-[#dfe6f2] p-1 shadow-2xl ring-2 ring-white/30">
             <img
               src={player.headshot}
               alt=""
-              width={176}
-              height={176}
-              className="h-[150px] w-[150px] rounded-[10px] object-cover object-[center_12%] sm:h-[176px] sm:w-[176px]"
+              width={220}
+              height={220}
+              className="h-[170px] w-[170px] rounded-[10px] object-cover object-[center_12%] sm:h-[200px] sm:w-[200px] lg:h-[220px] lg:w-[220px]"
               data-fallback-idx="0"
               onError={(e) => {
                 const el = e.currentTarget;
@@ -671,7 +741,7 @@ function PlayerHeader({
               <p className="mt-1 text-[13px] font-medium uppercase tracking-[0.08em] text-white/65">
                 {player.firstName}
               </p>
-              <h1 className="font-display text-[38px] leading-[0.92] text-white sm:text-[48px]">
+              <h1 className="font-display text-[40px] leading-[0.92] text-white sm:text-[52px] lg:text-[56px]">
                 {player.lastName || player.name}
               </h1>
               {(player.number || player.position) && (
@@ -683,15 +753,32 @@ function PlayerHeader({
               )}
             </div>
 
-            {player.age != null && (
-              <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
-                <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">Age</p>
-                <p className="numeral text-[30px] leading-none text-white">{player.age}</p>
-              </div>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {player.age != null && (
+                <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">Age</p>
+                  <p className="numeral text-[30px] leading-none text-white">{player.age}</p>
+                </div>
+              )}
+              {(seasonWar != null || careerWar != null) && (
+                <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">WAR</p>
+                  <p className="numeral text-[26px] leading-none text-white">
+                    {seasonWar != null ? seasonWar.toFixed(1) : "—"}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-white/55">
+                    {warRank != null
+                      ? `${warRank}${warOf != null ? `/${warOf}` : ""}`
+                      : careerWar != null
+                        ? `Career ${careerWar.toFixed(1)}`
+                        : "Season"}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
-          <dl className="mt-4 grid grid-cols-2 gap-2.5 text-[12.5px] sm:grid-cols-4">
+          <dl className="mt-4 grid grid-cols-2 gap-2.5 text-[12.5px] sm:grid-cols-3 lg:grid-cols-6">
             {htWt && (
               <div>
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">HT / WT</dt>
@@ -702,17 +789,7 @@ function PlayerHeader({
               <div>
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Birthdate</dt>
                 <dd className="mt-0.5 text-white">
-                  {(() => {
-                    const parts = new Intl.DateTimeFormat("en-GB", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                    }).formatToParts(new Date(`${player.birthDate}T12:00:00`));
-                    const day = parts.find((p) => p.type === "day")?.value ?? "01";
-                    const month = parts.find((p) => p.type === "month")?.value ?? "01";
-                    const year = parts.find((p) => p.type === "year")?.value ?? "1970";
-                    return `${day}-${month}-${year}`;
-                  })()}
+                  {formatSportsDate(player.birthDate)}
                   {player.age != null ? ` (${player.age})` : ""}
                 </dd>
               </div>
@@ -726,17 +803,33 @@ function PlayerHeader({
             {player.mlbDebut && (
               <div>
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">MLB debut</dt>
-                <dd className="mt-0.5 text-white">{player.mlbDebut}</dd>
+                <dd className="mt-0.5 text-white">{formatSportsDate(player.mlbDebut)}</dd>
+              </div>
+            )}
+            {serviceTime && (
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">
+                  Service time
+                </dt>
+                <dd className="mt-0.5 text-white">{serviceTime}</dd>
+              </div>
+            )}
+            {careerWar != null && (
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">
+                  Career WAR
+                </dt>
+                <dd className="numeral mt-0.5 text-white">{careerWar.toFixed(1)}</dd>
               </div>
             )}
             {player.birthPlace && (
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-2 lg:col-span-3">
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Born</dt>
                 <dd className="mt-0.5 text-white">{player.birthPlace}</dd>
               </div>
             )}
             {player.school && (
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-2 lg:col-span-3">
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">School</dt>
                 <dd className="mt-0.5 text-white">{player.school}</dd>
               </div>
@@ -751,6 +844,48 @@ function PlayerHeader({
           />
         </div>
       </div>
+
+      {(mlbBio?.text || mlbBioLoading) && (
+        <div className="relative z-10 border-t border-white/10 bg-black/25 px-5 py-4 sm:px-8">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
+              MLB.com bio
+            </p>
+            {mlbBio?.url && (
+              <a
+                href={mlbBio.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] uppercase tracking-[0.12em] text-white/45 hover:text-white/80"
+              >
+                Source
+              </a>
+            )}
+          </div>
+          {mlbBioLoading && !mlbBio?.text ? (
+            <p className="flex items-center gap-2 text-[12px] text-white/55">
+              <Loader2 size={13} className="animate-spin" /> Loading bio…
+            </p>
+          ) : (
+            <div className="max-h-[220px] space-y-2 overflow-y-auto text-[12.5px] leading-relaxed text-white/80">
+              {(mlbBio?.html || mlbBio?.text || "")
+                .split(/\n{2,}/)
+                .map((p) => p.trim())
+                .filter(Boolean)
+                .slice(0, 12)
+                .map((p, i) =>
+                  /^\d{4}$/.test(p) ? (
+                    <p key={i} className="font-display pt-1 text-[16px] text-white">
+                      {p}
+                    </p>
+                  ) : (
+                    <p key={i}>{p}</p>
+                  ),
+                )}
+            </div>
+          )}
+        </div>
+      )}
     </article>
   );
 }
@@ -973,21 +1108,39 @@ function YearByYearTable({
   title,
   rows,
   isPitcher,
+  season,
+  leagueRanks = [],
+  teamRanks = [],
 }: {
   title: string;
   rows: MlbPlayerSeasonRow[];
   isPitcher: boolean;
+  season?: number;
+  leagueRanks?: MlbLeagueRank[];
+  teamRanks?: MlbLeagueRank[];
 }) {
   const labels = isPitcher
     ? ["W", "L", "ERA", "IP", "SO", "WHIP", "SV"]
     : ["G", "AB", "AVG", "HR", "RBI", "OPS", "SB"];
+  const highs = careerHighLabels(rows, labels);
+  const leagueLead = new Set(
+    leagueRanks.filter((r) => r.rank === 1).map((r) => r.label),
+  );
+  const teamLead = new Set(teamRanks.filter((r) => r.rank === 1).map((r) => r.label));
 
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] px-4 py-2.5">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
-          {title}
-        </h3>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+            {title}
+          </h3>
+          <p className="text-[10px] text-[#8b93a7]">
+            <span className="font-bold text-cream">Bold</span> career high ·{" "}
+            <span className="font-bold underline text-cream">Team lead</span> ·{" "}
+            <span className="font-bold text-alert">League lead</span>
+          </p>
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-left text-[12px]">
@@ -1005,6 +1158,7 @@ function YearByYearTable({
           <tbody>
             {rows.map((row) => {
               const map = new Map(row.stats.map((s) => [s.label, s.value]));
+              const current = season != null && row.season === season && row.sportId === 1;
               return (
                 <tr
                   key={`${row.season}-${row.sportId}-${row.teamId ?? row.team}`}
@@ -1028,11 +1182,26 @@ function YearByYearTable({
                       </span>
                     ) : null}
                   </td>
-                  {labels.map((l) => (
-                    <td key={l} className="numeral text-cream px-2 py-2 text-center">
-                      {map.get(l) ?? "—"}
-                    </td>
-                  ))}
+                  {labels.map((l) => {
+                    const value = map.get(l) ?? "—";
+                    const key = `${row.season}:${row.teamId ?? row.team}:${l}`;
+                    const isHigh = highs.has(key);
+                    const isLeague = current && leagueLead.has(l);
+                    const isTeam = current && teamLead.has(l) && !isLeague;
+                    return (
+                      <td
+                        key={l}
+                        className={cn(
+                          "numeral px-2 py-2 text-center text-cream",
+                          (isHigh || isTeam || isLeague) && "font-bold",
+                          isTeam && "underline decoration-white/70 underline-offset-2",
+                          isLeague && "text-alert",
+                        )}
+                      >
+                        {value}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}
@@ -1140,9 +1309,15 @@ function BioAndOrigin({ player }: { player: MlbPlayerCard }) {
       <h3 className="rule-head mb-3">Bio</h3>
       <dl className="grid grid-cols-2 gap-3 text-[13px] sm:grid-cols-3">
         <BioItem label="Full name" value={player.name} />
-        <BioItem label="Born" value={player.birthDate ?? "—"} />
+        <BioItem
+          label="Born"
+          value={player.birthDate ? formatSportsDate(player.birthDate) : "—"}
+        />
         <BioItem label="Birthplace" value={player.birthPlace ?? "—"} />
-        <BioItem label="Debut" value={player.mlbDebut ?? "—"} />
+        <BioItem
+          label="Debut"
+          value={player.mlbDebut ? formatSportsDate(player.mlbDebut) : "—"}
+        />
         <BioItem label="Draft" value={draftValue} />
         {player.draft?.signingBonus && (
           <BioItem label="Signing bonus" value={player.draft.signingBonus} />

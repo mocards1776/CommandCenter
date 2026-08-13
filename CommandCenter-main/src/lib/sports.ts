@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { fetchMlbTeamGeneralManager, fetchMlbTeamManager } from "./mlb";
+import { formatSportsDateLong } from "./utils";
 
 /** A favorite franchise or tour the dashboard can show. */
 export type SportsFavorite = {
@@ -47,12 +48,23 @@ export type GameChip = {
   live?: boolean;
 };
 
+export type TourLeader = {
+  id: string | null;
+  name: string;
+  score: string;
+  detail: string | null;
+  position: string | null;
+};
+
 export type TourSnapshot = {
   key: string;
   name: string;
   eventName: string | null;
+  eventId: string | null;
   status: string | null;
-  leaders: { name: string; score: string; detail: string | null }[];
+  leaders: TourLeader[];
+  /** Full field when available (for expandable leaderboard). */
+  field: TourLeader[];
 };
 
 export type StandingRow = {
@@ -412,25 +424,8 @@ function fmtWhen(iso: string | null | undefined): string | null {
 
 function fmtDay(iso: string | null | undefined): string | null {
   if (!iso) return null;
-  try {
-    const d = new Date(iso.includes("T") ? iso : `${iso}T12:00:00`);
-    const weekday = d.toLocaleDateString("en-GB", {
-      timeZone: "America/Chicago",
-      weekday: "short",
-    });
-    const parts = new Intl.DateTimeFormat("en-GB", {
-      timeZone: "America/Chicago",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }).formatToParts(d);
-    const day = parts.find((p) => p.type === "day")?.value ?? "01";
-    const month = parts.find((p) => p.type === "month")?.value ?? "01";
-    const year = parts.find((p) => p.type === "year")?.value ?? "1970";
-    return `${weekday} ${day}-${month}-${year}`;
-  } catch {
-    return null;
-  }
+  const label = formatSportsDateLong(iso);
+  return label || null;
 }
 
 function currentSeason(): number {
@@ -554,14 +549,17 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
 export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapshot> {
   const raw = (await espnGet(fav.espnPath)) as {
     events?: {
+      id?: string;
       name?: string;
       status?: string;
       competitions?: {
         status?: { type?: { description?: string; detail?: string } };
         competitors?: {
-          athlete?: { displayName?: string };
+          id?: string;
+          athlete?: { id?: string; displayName?: string };
           score?: unknown;
-          status?: { type?: { description?: string } };
+          status?: { type?: { description?: string }; displayValue?: string };
+          linescores?: { displayValue?: string }[];
         }[];
       }[];
     }[];
@@ -569,18 +567,126 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
 
   const event = raw.events?.[0];
   const comp = event?.competitions?.[0];
-  const leaders = (comp?.competitors ?? []).slice(0, 5).map((c) => ({
+  const field: TourLeader[] = (comp?.competitors ?? []).map((c, i) => ({
+    id: c.athlete?.id != null ? String(c.athlete.id) : c.id != null ? String(c.id) : null,
     name: c.athlete?.displayName ?? "—",
     score: scoreText(c.score) || "—",
     detail: c.status?.type?.description ?? null,
+    position: c.status?.displayValue ?? String(i + 1),
   }));
 
   return {
     key: fav.key,
     name: fav.name,
     eventName: event?.name ?? null,
+    eventId: event?.id != null ? String(event.id) : null,
     status: comp?.status?.type?.detail ?? comp?.status?.type?.description ?? event?.status ?? null,
-    leaders,
+    leaders: field.slice(0, 5),
+    field,
+  };
+}
+
+export type GolferProfile = {
+  id: string;
+  name: string;
+  age: number | null;
+  birthPlace: string | null;
+  college: string | null;
+  citizenship: string | null;
+  headshot: string | null;
+  bio: string | null;
+  seasonStats: { label: string; value: string }[];
+  recentNews: { headline: string; description: string }[];
+};
+
+/** ESPN golfer card — stats + short bio bits. */
+export async function fetchGolferProfile(golferId: string): Promise<GolferProfile> {
+  const id = String(golferId);
+  const overviewPath = `https://site.web.api.espn.com/apis/common/v3/sports/golf/athletes/${id}/overview`;
+  const athletePath = `https://site.web.api.espn.com/apis/common/v3/sports/golf/pga/athletes/${id}`;
+
+  let athlete: Record<string, unknown> = {};
+  let overview: Record<string, unknown> = {};
+
+  try {
+    const res = await fetch(athletePath, { headers: { Accept: "application/json" } });
+    if (res.ok) {
+      const data = (await res.json()) as { athlete?: Record<string, unknown> };
+      athlete = data.athlete ?? {};
+    }
+  } catch {
+    /* edge fallback below */
+  }
+
+  if (!athlete.id) {
+    try {
+      const proxied = (await espnGet(`golf/athletes/${id}`)) as Record<string, unknown>;
+      athlete = (proxied.athlete as Record<string, unknown>) ?? proxied;
+    } catch {
+      /* continue */
+    }
+  }
+
+  try {
+    const res = await fetch(overviewPath, { headers: { Accept: "application/json" } });
+    if (res.ok) overview = (await res.json()) as Record<string, unknown>;
+  } catch {
+    /* optional */
+  }
+
+  const birth = athlete.birthPlace as
+    | { city?: string; state?: string; country?: string }
+    | undefined;
+  const birthPlace = birth
+    ? [birth.city, birth.state?.trim(), birth.country].filter(Boolean).join(", ")
+    : null;
+  const college = (athlete.college as { name?: string } | undefined)?.name ?? null;
+
+  const seasonStats: { label: string; value: string }[] = [];
+  const statsBlock = overview.statistics as
+    | {
+        labels?: string[];
+        splits?: { stats?: string[] }[];
+      }
+    | undefined;
+  const labels = statsBlock?.labels ?? [];
+  const values = statsBlock?.splits?.[0]?.stats ?? [];
+  for (let i = 0; i < labels.length; i++) {
+    seasonStats.push({ label: labels[i]!, value: values[i] ?? "—" });
+  }
+
+  const newsRaw = (overview.news ?? athlete.news ?? []) as {
+    headline?: string;
+    description?: string;
+  }[];
+  const recentNews = (Array.isArray(newsRaw) ? newsRaw : [])
+    .slice(0, 5)
+    .map((n) => ({
+      headline: n.headline ?? "",
+      description: n.description ?? "",
+    }))
+    .filter((n) => n.headline);
+
+  const displayName = String(athlete.displayName ?? athlete.fullName ?? "Golfer");
+  const bioParts = [
+    college ? `College: ${college}.` : null,
+    birthPlace ? `From ${birthPlace}.` : null,
+    athlete.citizenship ? `Represents ${String(athlete.citizenship)}.` : null,
+  ].filter(Boolean);
+
+  return {
+    id,
+    name: displayName,
+    age: typeof athlete.age === "number" ? athlete.age : null,
+    birthPlace,
+    college,
+    citizenship: athlete.citizenship != null ? String(athlete.citizenship) : null,
+    headshot:
+      (athlete.headshot as { href?: string } | undefined)?.href ??
+      `https://a.espncdn.com/i/headshots/golf/players/full/${id}.png`,
+    bio: bioParts.length ? bioParts.join(" ") : null,
+    seasonStats,
+    recentNews,
   };
 }
 

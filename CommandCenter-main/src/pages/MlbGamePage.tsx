@@ -28,7 +28,7 @@ import {
   type MlbPreviewLeaderRow,
   type RecapInline,
 } from "@/lib/mlb";
-import { cn } from "@/lib/utils";
+import { cn, formatSportsDateLong } from "@/lib/utils";
 
 export function MlbGameDetail({ gamePk }: { gamePk: string }) {
   const { user } = useAuth();
@@ -423,21 +423,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
           {g.pregame ? "Preview" : g.live ? g.inning || g.status : g.status}
         </p>
         {g.officialDate && (
-          <p className="text-[11px] text-[#8b93a7]">
-            {(() => {
-              const d = new Date(`${g.officialDate}T12:00:00`);
-              const weekday = d.toLocaleDateString("en-GB", { weekday: "short" });
-              const parts = new Intl.DateTimeFormat("en-GB", {
-                day: "2-digit",
-                month: "2-digit",
-                year: "numeric",
-              }).formatToParts(d);
-              const day = parts.find((p) => p.type === "day")?.value ?? "01";
-              const month = parts.find((p) => p.type === "month")?.value ?? "01";
-              const year = parts.find((p) => p.type === "year")?.value ?? "1970";
-              return `${weekday} ${day}-${month}-${year}`;
-            })()}
-          </p>
+          <p className="text-[11px] text-[#8b93a7]">{formatSportsDateLong(g.officialDate)}</p>
         )}
       </div>
 

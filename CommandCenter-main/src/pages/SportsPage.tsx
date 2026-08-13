@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
+import GolfSidebar from "@/components/sports/GolfSidebar";
 import HeroGameCard from "@/components/sports/HeroGameCard";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
@@ -144,29 +145,77 @@ function TeamCard({
   );
 }
 
-function TourCard({ snap, accent }: { snap: TourSnapshot; accent?: string }) {
+function TourCard({
+  snap,
+  accent,
+  onOpenGolf,
+}: {
+  snap: TourSnapshot;
+  accent?: string;
+  onOpenGolf?: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
   const bar = accent ? `#${accent}` : "var(--color-accent)";
+  const rows = expanded ? snap.field : snap.leaders;
   return (
     <article className="bg-panel relative overflow-hidden rounded border border-white/[0.07] sm:col-span-2">
       <div className="absolute inset-x-0 top-0 h-[3px]" style={{ background: bar }} />
       <div className="p-4 pt-5">
-        <div className="rule-head mb-1">PGA Tour</div>
-        <h3 className="font-display text-cream text-[22px] leading-tight">
-          {snap.eventName ?? "This week’s event"}
-        </h3>
-        {snap.status && <p className="text-chalk mt-1 text-[12px]">{snap.status}</p>}
-        {snap.leaders.length > 0 ? (
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <div className="rule-head mb-1">PGA Tour</div>
+            <h3 className="font-display text-cream text-[22px] leading-tight">
+              {snap.eventName ?? "This week’s event"}
+            </h3>
+            {snap.status && <p className="text-chalk mt-1 text-[12px]">{snap.status}</p>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {onOpenGolf && (
+              <button
+                type="button"
+                onClick={onOpenGolf}
+                className="text-chalk hover:text-cream rounded-sm border border-white/10 px-2.5 py-1.5 text-[10px] uppercase tracking-[0.14em] transition hover:border-emerald-500/40"
+              >
+                Golf sidebar
+              </button>
+            )}
+            {snap.field.length > 5 && (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="text-chalk hover:text-cream rounded-sm border border-white/10 px-2.5 py-1.5 text-[10px] uppercase tracking-[0.14em]"
+              >
+                {expanded ? "Top 5" : "Expand field"}
+              </button>
+            )}
+          </div>
+        </div>
+        {rows.length > 0 ? (
           <ol className="mt-4 flex flex-col gap-2">
-            {snap.leaders.map((l, i) => (
+            {rows.map((l, i) => (
               <li
-                key={`${l.name}-${i}`}
+                key={`${l.id ?? l.name}-${i}`}
                 className="flex items-baseline justify-between gap-3 border-b border-white/[0.05] pb-2 last:border-0"
               >
-                <span className="text-cream text-[13px]">
-                  <span className="text-chalk-dim numeral mr-2 text-[12px]">{i + 1}</span>
-                  {l.name}
-                </span>
-                <span className="numeral text-accent text-[16px]">{l.score}</span>
+                {l.id ? (
+                  <Link
+                    to={`/sports/golf/player/${l.id}`}
+                    className="text-cream min-w-0 truncate text-[13px] hover:underline"
+                  >
+                    <span className="text-chalk-dim numeral mr-2 text-[12px]">
+                      {l.position ?? i + 1}
+                    </span>
+                    {l.name}
+                  </Link>
+                ) : (
+                  <span className="text-cream text-[13px]">
+                    <span className="text-chalk-dim numeral mr-2 text-[12px]">
+                      {l.position ?? i + 1}
+                    </span>
+                    {l.name}
+                  </span>
+                )}
+                <span className="numeral text-accent shrink-0 text-[16px]">{l.score}</span>
               </li>
             ))}
           </ol>
@@ -298,10 +347,12 @@ export default function SportsPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(
     () => searchParams.get("team") || null,
   );
+  const [golfOpen, setGolfOpen] = useState(false);
 
   useEffect(() => {
     const team = searchParams.get("team");
     if (team) setSelectedKey(team);
+    if (searchParams.get("golf") === "1") setGolfOpen(true);
   }, [searchParams]);
 
   useEffect(() => {
@@ -476,7 +527,8 @@ export default function SportsPage() {
         </p>
       )}
 
-      {cardsHero.data && (
+      {/* Hide board hero while team detail is open — panel covers the right half otherwise. */}
+      {cardsHero.data && !selectedKey && (
         <HeroGameCard
           game={cardsHero.data}
           accent="#be0a14"
@@ -499,7 +551,14 @@ export default function SportsPage() {
             if (q?.isError || !q?.data) {
               return <ErrorCard key={fav.key} fav={fav} message={errorMessage(q?.error)} />;
             }
-            return <TourCard key={fav.key} snap={q.data} accent={fav.color} />;
+            return (
+              <TourCard
+                key={fav.key}
+                snap={q.data}
+                accent={fav.color}
+                onOpenGolf={() => setGolfOpen(true)}
+              />
+            );
           }
           const qi = teamFavs.findIndex((f) => f.key === fav.key);
           const q = teamQueries[qi];
@@ -538,6 +597,8 @@ export default function SportsPage() {
           onClose={closeTeam}
         />
       )}
+
+      <GolfSidebar open={golfOpen} onClose={() => setGolfOpen(false)} />
     </div>
   );
 }

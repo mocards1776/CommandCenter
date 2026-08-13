@@ -1201,6 +1201,178 @@ function parsePipelineBio(contentText: string): {
   return { gradesLine, grades, paragraphs };
 }
 
+function slugifyPlayer(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/** MLB.com “More Bio Info” narrative modal body. */
+async function scrapeMlbPlayerBio(
+  playerId: number,
+  name: string,
+): Promise<Record<string, unknown>> {
+  const slug = slugifyPlayer(name || String(playerId));
+  const url = `https://www.mlb.com/player/${slug}-${playerId}`;
+  const res = await timedFetch(url, {
+    headers: { "User-Agent": UA, Accept: "text/html" },
+  });
+  const html = await res.text();
+  const bodyMatch =
+    html.match(
+      /id=["']playerBioModalBody["'][^>]*>\s*([\s\S]*?)\s*<\/div>\s*(?:<\/div>\s*)?(?:<footer|<\/section|<aside|$)/i,
+    ) ??
+    html.match(/id=["']playerBioModalBody["'][^>]*>\s*([\s\S]*?)\s*<\/div>/i);
+  let raw = bodyMatch?.[1] ?? "";
+  if (!raw || raw.length < 40) {
+    return { error: "Bio not found", found: false, url };
+  }
+  // Keep year headings + paragraphs; strip scripts/styles.
+  raw = raw
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .trim();
+  const fullNameMatch = html.match(
+    /class="[^"]*p-modal__title[^"]*"[^>]*>([^<]+)</i,
+  );
+  const text = stripTags(raw).replace(/\s+/g, " ").trim();
+  // Light HTML cleanup for client rendering
+  const cleanHtml = raw
+    .replace(/<\/?(?:span|font)[^>]*>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<p[^>]*>/gi, "")
+    .replace(/<h\d[^>]*>/gi, "\n\n")
+    .replace(/<\/h\d>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return {
+    found: true,
+    fullName: fullNameMatch ? stripTags(fullNameMatch[1]).trim() : null,
+    html: cleanHtml,
+    text,
+    url,
+  };
+}
+
+/** Resolve BBRef player page HTML (shared with contract scrape). */
+async function loadBbrefPlayerHtml(name: string): Promise<{ url: string; html: string } | null> {
+  const q = encodeURIComponent(name.trim());
+  const searchUrl = `https://www.baseball-reference.com/search/search.fcgi?search=${q}`;
+  const searchRes = await timedFetch(searchUrl, {
+    headers: { "User-Agent": UA, Accept: "text/html" },
+    redirect: "follow",
+  });
+  let html = await searchRes.text();
+  let playerUrl = searchRes.url;
+  const want = name.trim().toLowerCase();
+  if (!/\/players\/[a-z]\/[a-z0-9]+\.shtml/i.test(playerUrl)) {
+    const linkRe = /href="(\/players\/[a-z]\/[a-z0-9]+\.shtml)"[^>]*>([^<]{2,80})<\/a>/gi;
+    let best: { path: string; score: number } | null = null;
+    let m: RegExpExecArray | null;
+    while ((m = linkRe.exec(html))) {
+      const label = stripTags(m[2]).toLowerCase();
+      let score = 0;
+      if (label === want) score = 100;
+      else if (label.startsWith(want) || want.startsWith(label)) score = 80;
+      else if (label.includes(want.split(/\s+/).slice(-1)[0] ?? "")) score = 40;
+      if (!best || score > best.score) best = { path: m[1], score };
+    }
+    const fallback = html.match(/href="(\/players\/[a-z]\/[a-z0-9]+\.shtml)"/i);
+    const path = (best && best.score >= 40 ? best.path : null) ?? fallback?.[1];
+    if (!path) return null;
+    playerUrl = `https://www.baseball-reference.com${path}`;
+    html = await (
+      await timedFetch(playerUrl, {
+        headers: { "User-Agent": UA, Accept: "text/html", Referer: searchUrl },
+      })
+    ).text();
+  }
+  return { url: playerUrl, html };
+}
+
+/** Service time + WAR (+ optional league WAR rank) from Baseball Reference. */
+async function scrapePlayerExtras(
+  name: string,
+  isPitcher: boolean,
+): Promise<Record<string, unknown>> {
+  const page = await loadBbrefPlayerHtml(name);
+  if (!page) return { error: "Player not found on Baseball Reference", name };
+  const searchable = page.html.replace(/<!--([\s\S]*?)-->/g, "$1");
+  const stMatch =
+    searchable.match(/Service Time[^<]{0,40}<\/strong>\s*:?\s*([0-9.]+)/i) ??
+    searchable.match(/Service Time[^:]*:\s*([0-9.]+)/i);
+  const serviceTime = stMatch?.[1] ?? null;
+  const warStat = isPitcher ? "p_war" : "b_war";
+  const wars = [...searchable.matchAll(new RegExp(`data-stat="${warStat}"[^>]*>([^<]*)`, "gi"))]
+    .map((m) => m[1].trim())
+    .filter((v) => v && v !== "WAR" && /^-?[0-9.]+$/.test(v))
+    .map(Number)
+    .filter((n) => Number.isFinite(n));
+  // Year rows then often duplicated in other tables — take unique trailing season values carefully.
+  const seasonWar = wars.length ? wars[wars.length - 1]! : null;
+  let careerWar: number | null = null;
+  const foot = searchable.match(
+    new RegExp(`<tfoot>[\\s\\S]*?data-stat="${warStat}"[^>]*>([^<]*)`, "i"),
+  );
+  if (foot && /^-?[0-9.]+$/.test(foot[1].trim())) careerWar = Number(foot[1].trim());
+  if (careerWar == null && wars.length) {
+    careerWar = Math.round(wars.reduce((a, b) => a + b, 0) * 10) / 10;
+  }
+
+  let warRank: number | null = null;
+  let warOf: number | null = null;
+  const year = new Date().getFullYear();
+  const valuePath = isPitcher
+    ? `/leagues/majors/${year}-value-pitching.shtml`
+    : `/leagues/majors/${year}-value-batting.shtml`;
+  try {
+    const valueHtml = await (
+      await timedFetch(`https://www.baseball-reference.com${valuePath}`, {
+        headers: { "User-Agent": UA, Accept: "text/html", Referer: page.url },
+      })
+    ).text();
+    const valueSearch = valueHtml.replace(/<!--([\s\S]*?)-->/g, "$1");
+    const last = name.trim().split(/\s+/).slice(-1)[0] ?? "";
+    const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let rank = 0;
+    let m: RegExpExecArray | null;
+    const playerKey = page.url.match(/\/players\/[a-z]\/([a-z0-9]+)\.shtml/i)?.[1] ?? "";
+    while ((m = rowRe.exec(valueSearch))) {
+      const row = m[1];
+      if (!/data-stat="ranker"/i.test(row)) continue;
+      if (playerKey && row.includes(playerKey)) {
+        const rk = row.match(/data-stat="ranker"[^>]*>(\d+)/i);
+        warRank = rk ? Number(rk[1]) : rank + 1;
+        break;
+      }
+      if (last && new RegExp(`>${last}<`, "i").test(row) && /players\//i.test(row)) {
+        const rk = row.match(/data-stat="ranker"[^>]*>(\d+)/i);
+        warRank = rk ? Number(rk[1]) : rank + 1;
+        break;
+      }
+      rank += 1;
+    }
+    const ranks = [...valueSearch.matchAll(/data-stat="ranker"[^>]*>(\d+)/gi)];
+    if (ranks.length) warOf = Number(ranks[ranks.length - 1]![1]);
+  } catch {
+    /* optional */
+  }
+
+  return {
+    source: "baseball-reference",
+    url: page.url,
+    name,
+    serviceTime,
+    seasonWar,
+    careerWar,
+    warRank,
+    warOf,
+  };
+}
+
 /** MLB Pipeline scouting grades + narrative for a prospect (hide when absent). */
 async function scrapePipelineScouting(playerId: number): Promise<Record<string, unknown>> {
   const year = new Date().getFullYear();
@@ -1383,6 +1555,37 @@ Deno.serve(async (req: Request) => {
       );
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e), found: false }, 200);
+    }
+  }
+  if (body.action === "playerBio") {
+    const playerId = Number(body.playerId);
+    const name = String(body.name ?? "").trim();
+    if (!Number.isFinite(playerId) || playerId <= 0) return json({ error: "Bad playerId" }, 400);
+    try {
+      return json(
+        await withBudget(
+          HEAVY_MS,
+          () => scrapeMlbPlayerBio(playerId, name),
+          { error: "Player bio timed out", found: false },
+        ),
+      );
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), found: false }, 200);
+    }
+  }
+  if (body.action === "playerExtras") {
+    const name = String(body.name ?? "").trim();
+    if (name.length < 3 || name.length > 80) return json({ error: "Bad name" }, 400);
+    try {
+      return json(
+        await withBudget(
+          HEAVY_MS,
+          () => scrapePlayerExtras(name, Boolean(body.isPitcher)),
+          { error: "Player extras timed out" },
+        ),
+      );
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 200);
     }
   }
   const safe = safePath(String(body.path ?? ""));
