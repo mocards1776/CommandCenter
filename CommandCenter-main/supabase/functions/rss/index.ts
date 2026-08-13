@@ -660,13 +660,24 @@ function sanitizeHtml(frag: string): string {
         keep.push('rel="noopener noreferrer"');
       }
       if (name === "img") {
-        const src = attrValue(attrs, "src");
+        let src =
+          attrValue(attrs, "src") ||
+          attrValue(attrs, "data-src") ||
+          attrValue(attrs, "data-lazy-src") ||
+          attrValue(attrs, "data-original") ||
+          "";
+        const srcset =
+          attrValue(attrs, "srcset") || attrValue(attrs, "data-srcset") || "";
+        if ((!src || src.startsWith("data:")) && srcset) {
+          src = srcset.split(",")[0]?.trim().split(/\s+/)[0] || src;
+        }
+        if (src.startsWith("//")) src = "https:" + src;
         if (!src || !/^(https?:|\/)/i.test(src)) return "";
         keep.push('src="' + src.replace(/"/g, "") + '"');
         const alt = attrValue(attrs, "alt");
         if (alt) keep.push('alt="' + alt.replace(/"/g, "&quot;") + '"');
         keep.push('loading="lazy"');
-        keep.push('referrerpolicy="no-referrer"');
+        keep.push('referrerpolicy="no-referrer-when-downgrade"');
       }
       if (name === "video") {
         const src = attrValue(attrs, "src");

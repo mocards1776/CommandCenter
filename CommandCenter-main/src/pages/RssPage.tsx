@@ -37,6 +37,8 @@ import {
   applyRssFilters,
   articleSourceHost,
   createRssHighlight,
+  feedSourceLabel,
+  repairRssContentImages,
   dedupeArticles,
   encodeFeedDomainFilter,
   loadDedupeKeepHosts,
@@ -76,6 +78,9 @@ import {
   parseEspnGameIdFromUrl,
   searchMlbPlayersByNames,
 } from "@/lib/mlb";
+import { listFavoritePlayers } from "@/lib/favorite-players";
+import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
 type NavView = "unread" | "saved" | RssFeedId | "notes" | "filters" | "duplicates";
@@ -172,33 +177,53 @@ function HighlightCard({
     setEditing(false);
   }
 
+  const source = feedSourceLabel(highlight.feedUrl);
+
   return (
     <li className="border-white/[0.08] border-b pb-4 last:border-0">
       <button
         type="button"
         onClick={onShare}
-        className="group relative w-full overflow-hidden rounded-sm border border-white/[0.08] bg-gradient-to-br from-[#0c1a36] via-[#081228] to-[#1a0e14] px-4 pt-5 pb-4 text-left transition-transform hover:scale-[1.01]"
+        className="group relative w-full overflow-hidden rounded-sm border border-white/[0.08] bg-gradient-to-br from-[#0c1a36] via-[#081228] to-[#1a0e14] text-left transition-transform hover:scale-[1.01]"
       >
-        <span
-          aria-hidden
-          className="font-rss text-accent/50 pointer-events-none absolute top-1 left-2 text-[56px] leading-none"
-        >
-          “
-        </span>
-        <p className="text-accent mb-2 text-[9px] font-semibold uppercase tracking-[0.22em]">
-          Dispatch quote
-        </p>
-        <blockquote className="font-rss text-cream relative z-[1] pl-1 text-[16px] leading-relaxed italic">
-          {highlight.quoteText}
-        </blockquote>
-        {highlight.note ? (
-          <p className="font-rss text-chalk mt-3 border-t border-white/10 pt-2 text-[13px] leading-relaxed">
-            {highlight.note}
-          </p>
+        {highlight.articleImage ? (
+          <div className="relative aspect-[16/7] w-full overflow-hidden">
+            <img
+              src={highlight.articleImage}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              loading="lazy"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#081228] via-[#081228]/55 to-transparent" />
+          </div>
         ) : null}
-        <p className="text-chalk-dim mt-3 text-[10px] uppercase tracking-[0.16em] opacity-70 group-hover:opacity-100">
-          Tap to share
-        </p>
+        <div className="relative px-4 pt-4 pb-4">
+          <span
+            aria-hidden
+            className="font-rss text-accent/50 pointer-events-none absolute top-1 left-2 text-[56px] leading-none"
+          >
+            “
+          </span>
+          <p className="text-accent mb-1 text-[9px] font-semibold uppercase tracking-[0.22em]">
+            Dispatch quote · {source}
+          </p>
+          {highlight.articleTitle ? (
+            <p className="text-chalk relative z-[1] mb-2 line-clamp-2 text-[12px] leading-snug">
+              {highlight.articleTitle}
+            </p>
+          ) : null}
+          <blockquote className="font-rss text-cream relative z-[1] pl-1 text-[16px] leading-relaxed italic">
+            {highlight.quoteText}
+          </blockquote>
+          {highlight.note ? (
+            <p className="font-rss text-chalk mt-3 border-t border-white/10 pt-2 text-[13px] leading-relaxed">
+              {highlight.note}
+            </p>
+          ) : null}
+          <p className="text-chalk-dim mt-3 text-[10px] uppercase tracking-[0.16em] opacity-70 group-hover:opacity-100">
+            Tap to share
+          </p>
+        </div>
       </button>
       {editing ? (
         <form onSubmit={save} className="mt-2 flex flex-col gap-2">
@@ -609,12 +634,39 @@ function ArticleReaderShell({
     queryFn: () => fetchRssHighlights(item.link),
   });
 
+  const { user } = useAuth();
+
   // Seed with Cardinals roster for fast local matches; search fills in any MLB player.
   const roster = useQuery({
     queryKey: ["mlb-roster-stl"],
     queryFn: () => fetchMlbTeamRoster(138),
     staleTime: 30 * 60_000,
   });
+
+  const favPlayers = useQuery({
+    queryKey: ["favorite-players", user?.id],
+    queryFn: () => listFavoritePlayers(user!.id),
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+  });
+
+  const taggedPlayers = useQuery({
+    queryKey: ["sports-player-tags-ids", user?.id],
+    queryFn: fetchTaggedPlayerIds,
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+  });
+
+  const watchPlayerIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const f of favPlayers.data ?? []) {
+      if (f.position === "manager") continue;
+      const id = Number(f.playerId);
+      if (Number.isFinite(id)) set.add(id);
+    }
+    for (const id of taggedPlayers.data ?? []) set.add(id);
+    return set;
+  }, [favPlayers.data, taggedPlayers.data]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -710,7 +762,7 @@ function ArticleReaderShell({
     return () => root.removeEventListener("click", onImgClick);
   }, [displayHtml]);
 
-  // Link any MLB player names → in-app player peek; stylize tweet cards.
+  // Link any MLB player names → in-app player peek; stylize tweet cards; repair imgs.
   useEffect(() => {
     const html = article.data?.contentHtml;
     if (!html) {
@@ -719,6 +771,7 @@ function ArticleReaderShell({
     }
     let cancelled = false;
     (async () => {
+      const repaired = repairRssContentImages(html, item.link);
       const players = roster.data ?? [];
       const index = buildPlayerNameIndex(players, { bareLastNames: true });
       const candidates = extractPlayerNameCandidates(article.data?.contentText ?? "", 48);
@@ -727,15 +780,19 @@ function ArticleReaderShell({
         for (const [k, id] of found) index.set(k, id);
       }
       if (cancelled) return;
-      const linked = linkifyMlbPlayersInHtml(html, index);
+      const linked = linkifyMlbPlayersInHtml(repaired, index, watchPlayerIds);
       setLinkedHtml(stylizeTweetCardsInHtml(linked));
     })().catch(() => {
-      if (!cancelled) setLinkedHtml(stylizeTweetCardsInHtml(html));
+      if (!cancelled) {
+        setLinkedHtml(
+          stylizeTweetCardsInHtml(repairRssContentImages(html, item.link)),
+        );
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [article.data?.contentHtml, article.data?.contentText, roster.data]);
+  }, [article.data?.contentHtml, article.data?.contentText, roster.data, watchPlayerIds, item.link]);
 
   // Film Room / highlight videos: force muted autoplay after mount.
   useEffect(() => {
@@ -761,8 +818,9 @@ function ArticleReaderShell({
     mutationFn: (note: string) =>
       createRssHighlight({
         articleUrl: item.link,
-        articleTitle: article.data?.title || item.title,
+        articleTitle: (article.data?.title || item.title || "").trim() || "Untitled",
         feedUrl,
+        articleImage: article.data?.image || item.image || null,
         quoteText: pendingQuote ?? "",
         note,
       }),
@@ -1972,28 +2030,44 @@ export default function RssPage() {
                     <button
                       type="button"
                       onClick={() => setShareHighlight(h)}
-                      className="group relative w-full overflow-hidden rounded-sm border border-white/[0.08] bg-gradient-to-br from-[#0c1a36] via-[#081228] to-[#1a0e14] px-5 pt-5 pb-4 text-left transition-transform hover:scale-[1.01]"
+                      className="group relative w-full overflow-hidden rounded-sm border border-white/[0.08] bg-gradient-to-br from-[#0c1a36] via-[#081228] to-[#1a0e14] text-left transition-transform hover:scale-[1.01]"
                     >
-                      <span
-                        aria-hidden
-                        className="font-rss text-accent/45 pointer-events-none absolute top-0 left-3 text-[64px] leading-none"
-                      >
-                        “
-                      </span>
-                      <div className="label-caps text-accent mb-2 relative z-[1]">
-                        {h.articleTitle || h.articleUrl}
-                      </div>
-                      <blockquote className="font-rss text-cream relative z-[1] text-[17px] leading-relaxed italic md:text-[18px]">
-                        {h.quoteText}
-                      </blockquote>
-                      {h.note ? (
-                        <p className="font-rss text-chalk mt-3 border-t border-white/10 pt-2 text-[14px]">
-                          {h.note}
-                        </p>
+                      {h.articleImage ? (
+                        <div className="relative aspect-[16/7] w-full overflow-hidden">
+                          <img
+                            src={h.articleImage}
+                            alt=""
+                            className="absolute inset-0 h-full w-full object-cover"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#081228] via-[#081228]/50 to-transparent" />
+                        </div>
                       ) : null}
-                      <p className="text-chalk-dim mt-3 text-[10px] uppercase tracking-[0.16em] opacity-70 group-hover:opacity-100">
-                        Tap to share
-                      </p>
+                      <div className="relative px-5 pt-5 pb-4">
+                        <span
+                          aria-hidden
+                          className="font-rss text-accent/45 pointer-events-none absolute top-0 left-3 text-[64px] leading-none"
+                        >
+                          “
+                        </span>
+                        <div className="label-caps text-accent mb-1 relative z-[1]">
+                          {feedSourceLabel(h.feedUrl)}
+                        </div>
+                        <p className="text-chalk relative z-[1] mb-2 line-clamp-2 text-[13px]">
+                          {h.articleTitle || h.articleUrl}
+                        </p>
+                        <blockquote className="font-rss text-cream relative z-[1] text-[17px] leading-relaxed italic md:text-[18px]">
+                          {h.quoteText}
+                        </blockquote>
+                        {h.note ? (
+                          <p className="font-rss text-chalk mt-3 border-t border-white/10 pt-2 text-[14px]">
+                            {h.note}
+                          </p>
+                        ) : null}
+                        <p className="text-chalk-dim mt-3 text-[10px] uppercase tracking-[0.16em] opacity-70 group-hover:opacity-100">
+                          Tap to share
+                        </p>
+                      </div>
                     </button>
                   </li>
                 ))}

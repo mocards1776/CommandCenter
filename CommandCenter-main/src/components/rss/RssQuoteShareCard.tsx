@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Share2, X } from "lucide-react";
 import toast from "react-hot-toast";
-import type { RssHighlight } from "@/lib/rss";
+import { feedSourceLabel, type RssHighlight } from "@/lib/rss";
 
 const W = 1080;
 const H = 1350;
@@ -24,12 +24,45 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): st
   return lines;
 }
 
+async function loadImage(url: string): Promise<HTMLImageElement | null> {
+  try {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("img"));
+      img.src = url;
+    });
+    return img;
+  } catch {
+    return null;
+  }
+}
+
+function drawCover(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  const scale = Math.max(w / img.width, h / img.height);
+  const sw = w / scale;
+  const sh = h / scale;
+  const sx = (img.width - sw) / 2;
+  const sy = (img.height - sh) / 2;
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
 async function paint(canvas: HTMLCanvasElement, highlight: RssHighlight) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   canvas.width = W;
   canvas.height = H;
   await document.fonts?.ready;
+
+  const photo = highlight.articleImage ? await loadImage(highlight.articleImage) : null;
 
   const bg = ctx.createLinearGradient(0, 0, W, H);
   bg.addColorStop(0, "#0c1a36");
@@ -38,7 +71,18 @@ async function paint(canvas: HTMLCanvasElement, highlight: RssHighlight) {
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  // Soft accent wash
+  if (photo) {
+    ctx.save();
+    ctx.globalAlpha = 0.42;
+    drawCover(ctx, photo, 0, 0, W, H * 0.62);
+    ctx.restore();
+    const fade = ctx.createLinearGradient(0, H * 0.28, 0, H * 0.72);
+    fade.addColorStop(0, "rgba(8,18,40,0)");
+    fade.addColorStop(1, "rgba(8,18,40,0.96)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, 0, W, H * 0.72);
+  }
+
   const wash = ctx.createRadialGradient(W * 0.2, H * 0.15, 40, W * 0.2, H * 0.15, 520);
   wash.addColorStop(0, "rgba(217,81,92,0.28)");
   wash.addColorStop(1, "rgba(217,81,92,0)");
@@ -57,47 +101,97 @@ async function paint(canvas: HTMLCanvasElement, highlight: RssHighlight) {
   ctx.fillText("DISPATCH", margin, 150);
   ctx.letterSpacing = "0px";
 
-  // Giant opening quote
+  const source = feedSourceLabel(highlight.feedUrl);
+  ctx.font = `600 22px "Libre Franklin", system-ui, sans-serif`;
+  ctx.fillStyle = "rgba(245,241,232,0.7)";
+  ctx.fillText(source.toUpperCase(), margin, 196);
+
   ctx.font = `120px "Playfair Display", Georgia, serif`;
   ctx.fillStyle = "rgba(217,81,92,0.55)";
-  ctx.fillText("“", margin - 10, 280);
+  ctx.fillText("“", margin - 10, 310);
 
   ctx.font = `48px "Playfair Display", Georgia, serif`;
   ctx.fillStyle = "#f5f1e8";
-  const quoteLines = wrap(ctx, highlight.quoteText, maxWidth).slice(0, 10);
-  let y = 300;
+  const quoteLines = wrap(ctx, highlight.quoteText, maxWidth).slice(0, 9);
+  let y = 330;
   for (const line of quoteLines) {
     ctx.fillText(line, margin, y);
     y += 62;
   }
 
   if (highlight.note) {
-    y += 28;
+    y += 24;
     ctx.fillStyle = "rgba(245,241,232,0.18)";
     ctx.fillRect(margin, y, 80, 3);
-    y += 48;
+    y += 44;
     ctx.font = `28px "Libre Franklin", system-ui, sans-serif`;
     ctx.fillStyle = "rgba(245,241,232,0.78)";
-    for (const line of wrap(ctx, highlight.note, maxWidth).slice(0, 4)) {
+    for (const line of wrap(ctx, highlight.note, maxWidth).slice(0, 3)) {
       ctx.fillText(line, margin, y);
-      y += 40;
+      y += 38;
     }
   }
 
-  // Footer
-  const footerY = H - 140;
+  const footerY = H - 150;
   ctx.fillStyle = "rgba(245,241,232,0.14)";
-  ctx.fillRect(margin, footerY - 40, maxWidth, 1);
+  ctx.fillRect(margin, footerY - 36, maxWidth, 1);
 
-  ctx.font = `600 22px "Libre Franklin", system-ui, sans-serif`;
-  ctx.fillStyle = "rgba(217,81,92,0.95)";
-  ctx.fillText("FROM", margin, footerY);
+  if (photo) {
+    const thumb = 120;
+    ctx.save();
+    roundRect(ctx, margin, footerY - 10, thumb, thumb, 10);
+    ctx.clip();
+    drawCover(ctx, photo, margin, footerY - 10, thumb, thumb);
+    ctx.restore();
+    ctx.strokeStyle = "rgba(245,241,232,0.25)";
+    ctx.lineWidth = 2;
+    roundRect(ctx, margin, footerY - 10, thumb, thumb, 10);
+    ctx.stroke();
 
-  ctx.font = `32px "Playfair Display", Georgia, serif`;
-  ctx.fillStyle = "#f5f1e8";
-  const title =
-    wrap(ctx, highlight.articleTitle || "Article", maxWidth).slice(0, 2).join(" ") || "Article";
-  ctx.fillText(title.slice(0, 72), margin, footerY + 44);
+    ctx.font = `600 20px "Libre Franklin", system-ui, sans-serif`;
+    ctx.fillStyle = "rgba(217,81,92,0.95)";
+    ctx.fillText("FROM", margin + thumb + 28, footerY + 28);
+
+    ctx.font = `34px "Playfair Display", Georgia, serif`;
+    ctx.fillStyle = "#f5f1e8";
+    const titleLines = wrap(
+      ctx,
+      highlight.articleTitle || "Article",
+      maxWidth - thumb - 36,
+    ).slice(0, 2);
+    let ty = footerY + 72;
+    for (const line of titleLines) {
+      ctx.fillText(line, margin + thumb + 28, ty);
+      ty += 40;
+    }
+  } else {
+    ctx.font = `600 22px "Libre Franklin", system-ui, sans-serif`;
+    ctx.fillStyle = "rgba(217,81,92,0.95)";
+    ctx.fillText("FROM", margin, footerY);
+
+    ctx.font = `32px "Playfair Display", Georgia, serif`;
+    ctx.fillStyle = "#f5f1e8";
+    const title =
+      wrap(ctx, highlight.articleTitle || "Article", maxWidth).slice(0, 2).join(" ") || "Article";
+    ctx.fillText(title.slice(0, 72), margin, footerY + 44);
+  }
+}
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
 
 async function canvasBlob(highlight: RssHighlight): Promise<Blob> {
@@ -180,6 +274,8 @@ export default function RssQuoteShareCard({
     }
   }, [highlight, canShare, save]);
 
+  const source = feedSourceLabel(highlight.feedUrl);
+
   return (
     <div
       className="fixed inset-0 z-[120] flex items-end justify-center overflow-y-auto bg-black/75 backdrop-blur-sm sm:items-center"
@@ -202,8 +298,13 @@ export default function RssQuoteShareCard({
         </button>
         <div className="bg-[#081228] px-5 pt-6 pb-4">
           <p className="text-accent text-[10px] font-semibold uppercase tracking-[0.2em]">
-            Dispatch quote
+            Dispatch quote · {source}
           </p>
+          {highlight.articleTitle ? (
+            <p className="text-chalk mt-1 line-clamp-2 text-[12px] leading-snug">
+              {highlight.articleTitle}
+            </p>
+          ) : null}
           <canvas ref={canvasRef} className="mt-4 w-full rounded-lg shadow-lg" />
         </div>
         <div className="flex gap-2 p-4">

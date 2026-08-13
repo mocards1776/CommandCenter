@@ -70,6 +70,25 @@ export async function fetchPlayersWithTag(tag: string): Promise<SportsPlayerTag[
   }));
 }
 
+/** All player ids the user has tagged (any label). */
+export async function fetchTaggedPlayerIds(): Promise<number[]> {
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr) throw userErr;
+  const userId = userData.user?.id;
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from("sports_player_tags")
+    .select("player_id")
+    .eq("user_id", userId);
+  if (error) throw error;
+  const ids = new Set<number>();
+  for (const r of data ?? []) {
+    const n = Number(r.player_id);
+    if (Number.isFinite(n)) ids.add(n);
+  }
+  return [...ids];
+}
+
 export async function addPlayerTag(
   playerId: string | number,
   tag: string,
