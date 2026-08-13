@@ -20,6 +20,8 @@ import {
   Layers,
   Maximize2,
   ChartColumn,
+  Tags,
+  Pencil,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -59,6 +61,11 @@ import {
   titleKey,
   findDuplicateBooks,
   mergeBooks,
+  addBookFromSuggestion,
+  fetchTagKinds,
+  setTagKind,
+  renameTag,
+  type TagKind,
   type Suggestion,
   fetchHighlights,
   fetchHighlightCounts,
@@ -598,17 +605,7 @@ function LibrarySearch({
   }, [catalog.data, owned]);
 
   const add = useMutation({
-    mutationFn: async (s: Suggestion) => {
-      const year = Number.parseInt(s.year, 10);
-      const book = await createBook({
-        title: s.title,
-        authors: s.author || null,
-        status: "to-read",
-        published_year: Number.isFinite(year) ? year : null,
-      });
-      await enrichBook(book.id).catch(() => {});
-      return book;
-    },
+    mutationFn: (s: Suggestion) => addBookFromSuggestion(s),
     onSuccess: (book) => {
       qc.invalidateQueries({ queryKey: ["books"] });
       toast.success(`Added ${book.title}`);
@@ -801,17 +798,7 @@ function SearchResultsPage({
   }, [catalog.data, owned]);
 
   const add = useMutation({
-    mutationFn: async (s: Suggestion) => {
-      const year = Number.parseInt(s.year, 10);
-      const book = await createBook({
-        title: s.title,
-        authors: s.author || null,
-        status: "to-read",
-        published_year: Number.isFinite(year) ? year : null,
-      });
-      await enrichBook(book.id).catch(() => {});
-      return book;
-    },
+    mutationFn: (s: Suggestion) => addBookFromSuggestion(s),
     onSuccess: (book) => {
       qc.invalidateQueries({ queryKey: ["books"] });
       toast.success(`Added ${book.title}`);
@@ -1674,11 +1661,18 @@ function BookDetail({
   const [coverToolsOpen, setCoverToolsOpen] = useState(false);
   // img onError — storage can hold a Google "no cover" stub that still 200s.
   const [coverBroken, setCoverBroken] = useState(false);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const pullStartY = useRef<number | null>(null);
+  const pullDelta = useRef(0);
+  const [pullY, setPullY] = useState(0);
 
   useEffect(() => {
     setCoverToolsOpen(false);
     setCoverLink("");
     setCoverBroken(false);
+    setPullY(0);
+    pullStartY.current = null;
+    pullDelta.current = 0;
   }, [book.id]);
 
   const findCover = useMutation({
@@ -1727,13 +1721,52 @@ function BookDetail({
   return (
     <div className="book-sheet-scrim fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-md" onClick={onClose}>
       <aside
+        ref={panelRef}
         className="book-sheet-panel bg-field/95 h-full w-full max-w-md overflow-y-auto overscroll-contain border-l border-white/[0.07] shadow-[-32px_0_100px_rgba(0,0,0,.55)] backdrop-blur-xl"
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 0.5rem)",
           paddingBottom: "calc(env(safe-area-inset-bottom) + 5rem)",
+          transform: pullY > 0 ? `translateY(${pullY}px)` : undefined,
+          transition: pullStartY.current === null ? "transform 220ms ease-out" : undefined,
+          opacity: pullY > 0 ? Math.max(0.45, 1 - pullY / 420) : undefined,
         }}
         onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => {
+          const el = panelRef.current;
+          if (!el || el.scrollTop > 2) {
+            pullStartY.current = null;
+            return;
+          }
+          pullStartY.current = e.touches[0]?.clientY ?? null;
+          pullDelta.current = 0;
+        }}
+        onTouchMove={(e) => {
+          if (pullStartY.current === null) return;
+          const el = panelRef.current;
+          if (!el || el.scrollTop > 2) {
+            pullStartY.current = null;
+            setPullY(0);
+            return;
+          }
+          const y = e.touches[0]?.clientY ?? pullStartY.current;
+          const delta = Math.max(0, y - pullStartY.current);
+          pullDelta.current = delta;
+          // Rubber-band so a casual scroll doesn't feel sticky.
+          setPullY(Math.min(180, delta * 0.72));
+          if (delta > 8) e.preventDefault();
+        }}
+        onTouchEnd={() => {
+          if (pullDelta.current > 110) onClose();
+          pullStartY.current = null;
+          pullDelta.current = 0;
+          setPullY(0);
+        }}
       >
+        {/* Pull-down affordance — same idea as iOS sheets. */}
+        <div className="sticky top-0 z-30 flex justify-center pb-1 pt-1" aria-hidden>
+          <div className="h-1 w-10 rounded-full bg-white/25" />
+        </div>
+
         {/* Immersive cover hero — one composition, jacket as the plane. */}
         <div className="relative mb-1 overflow-hidden px-6 pb-8 pt-2">
           {cover && (
@@ -1912,7 +1945,20 @@ function BookDetail({
               )}
 
               <div className="text-chalk-dim mt-5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[12.5px] tracking-[0.02em]">
-                {book.page_count != null && <span>{book.page_count} pages</span>}
+                <Editable
+                  value={book.page_count}
+                  placeholder="Add page count"
+                  numeric
+                  onSave={(v) => {
+                    const n = Number.parseInt(v.trim(), 10);
+                    patch.mutate({
+                      page_count: Number.isFinite(n) && n > 0 ? n : null,
+                    });
+                  }}
+                  className="text-chalk-dim hover:text-cream text-center"
+                  inputClassName="w-24 text-center text-[12.5px]"
+                />
+                {book.page_count != null && <span className="-ml-1">pages</span>}
                 {book.published_year != null && (
                   <>
                     <span className="text-white/20">·</span>
@@ -2383,18 +2429,7 @@ function AskAI({
   }, []);
 
   const add = useMutation({
-    mutationFn: async (s: Suggestion) => {
-      const year = Number.parseInt(s.year, 10);
-      const book = await createBook({
-        title: s.title,
-        authors: s.author || null,
-        status: "to-read",
-        published_year: Number.isFinite(year) ? year : null,
-      });
-      // Go straight for the cover and blurb so it doesn't land on the shelf bare.
-      await enrichBook(book.id).catch(() => {});
-      return book;
-    },
+    mutationFn: (s: Suggestion) => addBookFromSuggestion(s),
     onSuccess: (book, s) => {
       setAdded((a) => ({ ...a, [s.title]: book.id }));
       qc.invalidateQueries({ queryKey: ["books"] });
@@ -2830,17 +2865,7 @@ function NewPopularPanel({
   });
 
   const add = useMutation({
-    mutationFn: async (s: Suggestion) => {
-      const year = Number.parseInt(s.year, 10);
-      const book = await createBook({
-        title: s.title,
-        authors: s.author || null,
-        status: "to-read",
-        published_year: Number.isFinite(year) ? year : null,
-      });
-      await enrichBook(book.id).catch(() => {});
-      return book;
-    },
+    mutationFn: (s: Suggestion) => addBookFromSuggestion(s),
     onSuccess: (book, s) => {
       setAdded((a) => ({ ...a, [s.title]: book.id }));
       qc.invalidateQueries({ queryKey: ["books"] });
@@ -3200,6 +3225,182 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
 
 
 /* ── Now reading hero ───────────────────────────────────────────────── */
+/** Tiny inline progress / page-count editor — stays quiet until you tap it. */
+function NowReadingProgress({ book }: { book: Book }) {
+  const qc = useQueryClient();
+  const { burst } = useCelebration();
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"pages" | "percent" | "count">(
+    book.page_count ? "pages" : "count",
+  );
+  const [value, setValue] = useState("");
+
+  const pct = book.page_count
+    ? Math.min(100, (book.current_page / book.page_count) * 100)
+    : null;
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const n = Number.parseFloat(value);
+      if (!Number.isFinite(n) || n < 0) throw new Error("Enter a number");
+      if (mode === "count") {
+        const pages = Math.round(n);
+        if (pages <= 0) throw new Error("Page count must be positive");
+        await updateBook(book.id, { page_count: pages });
+        return { kind: "count" as const };
+      }
+      if (mode === "pages") {
+        if (n <= 0) throw new Error("Enter pages read");
+        return {
+          kind: "log" as const,
+          ...(await logPages({
+            bookId: book.id,
+            pages: Math.round(n),
+            date: todayStr(),
+            currentPage: book.current_page,
+            pageCount: book.page_count,
+            status: book.status,
+          })),
+        };
+      }
+      const target = percentToPage(n, book.page_count);
+      if (target === null) throw new Error("Add a page count first");
+      return {
+        kind: "log" as const,
+        ...(await setProgress({
+          bookId: book.id,
+          toPage: target,
+          date: todayStr(),
+          currentPage: book.current_page,
+          pageCount: book.page_count,
+          status: book.status,
+        })),
+      };
+    },
+    onSuccess: () => {
+      setValue("");
+      setOpen(false);
+      qc.invalidateQueries({ queryKey: ["books"] });
+      qc.invalidateQueries({ queryKey: ["reading-sessions"] });
+      toast.success(mode === "count" ? "Page count saved" : "Progress updated");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
+  });
+
+  return (
+    <div
+      className="mt-4"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      {pct !== null ? (
+        <button
+          type="button"
+          onClick={() => {
+            setMode("pages");
+            setOpen((o) => !o);
+          }}
+          className="w-full text-left"
+          title="Update progress"
+        >
+          <div className="flex items-baseline gap-2">
+            <span className="numeral text-accent text-[26px] leading-none">
+              {Math.round(pct)}%
+            </span>
+            <span className="text-chalk-dim text-[11px]">
+              page {book.current_page} of {book.page_count}
+            </span>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-sm bg-black/30">
+            <div
+              className="from-accent-deep to-accent h-full bg-gradient-to-r transition-[width] duration-500"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <p className="text-chalk-dim mt-1.5 text-[10.5px] uppercase tracking-[0.14em]">
+            {book.page_count! - book.current_page} pages to go
+            <span className="text-chalk-dim/70 normal-case tracking-normal"> · tap to log</span>
+          </p>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setMode("count");
+            setOpen(true);
+          }}
+          className="text-chalk-dim hover:text-chalk text-[10.5px] uppercase tracking-[0.14em] transition"
+        >
+          add a page count to track progress
+        </button>
+      )}
+
+      {open && (
+        <form
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            const r = (e.currentTarget as HTMLFormElement).getBoundingClientRect();
+            burst(r.left + r.width / 2, r.top + r.height / 2);
+            save.mutate();
+          }}
+          className="mt-2.5 flex flex-wrap items-center gap-1.5"
+        >
+          {book.page_count != null && (
+            <div className="flex gap-0.5">
+              {(
+                [
+                  ["pages", "+p"],
+                  ["percent", "%"],
+                  ["count", "len"],
+                ] as const
+              ).map(([m, label]) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  className={cn(
+                    "rounded px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em]",
+                    mode === m ? "text-accent bg-accent/15" : "text-chalk-dim hover:text-chalk",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <input
+            autoFocus
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            inputMode="decimal"
+            placeholder={
+              mode === "percent" ? "%" : mode === "count" ? "pages" : "+ pages"
+            }
+            className="bg-black/30 text-cream w-16 rounded border border-white/15 px-2 py-1 text-[12px] outline-none focus:border-accent/50"
+          />
+          <button
+            type="submit"
+            disabled={save.isPending || !value.trim()}
+            className="text-accent hover:text-cream text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
+          >
+            {save.isPending ? "…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setValue("");
+            }}
+            className="text-chalk-dim hover:text-chalk text-[10px] uppercase tracking-[0.14em]"
+          >
+            Cancel
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 function NowReading({
   books,
   sessions,
@@ -3236,7 +3437,6 @@ function NowReading({
       <div className="flex flex-col gap-4">
         {reading.map((b) => {
           const cover = coverSrc(b);
-          const pct = b.page_count ? Math.min(100, (b.current_page / b.page_count) * 100) : null;
           return (
             <button
               key={b.id}
@@ -3278,31 +3478,7 @@ function NowReading({
                   </p>
                 )}
 
-                {pct !== null ? (
-                  <div className="mt-4">
-                    <div className="flex items-baseline gap-2">
-                      <span className="numeral text-accent text-[26px] leading-none">
-                        {Math.round(pct)}%
-                      </span>
-                      <span className="text-chalk-dim text-[11px]">
-                        page {b.current_page} of {b.page_count}
-                      </span>
-                    </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-sm bg-black/30">
-                      <div
-                        className="from-accent-deep to-accent h-full bg-gradient-to-r transition-[width] duration-500"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    <p className="text-chalk-dim mt-1.5 text-[10.5px] uppercase tracking-[0.14em]">
-                      {b.page_count! - b.current_page} pages to go
-                    </p>
-                  </div>
-                ) : (
-                  <p className="text-chalk-dim mt-4 text-[10.5px] uppercase tracking-[0.14em]">
-                    add a page count to track progress
-                  </p>
-                )}
+                <NowReadingProgress book={b} />
               </div>
             </button>
           );
@@ -3612,6 +3788,8 @@ function PeriodTotals({
 
   const monthRankLabel =
     s.monthRank != null ? `#${s.monthRank} of ${s.monthTotal} months` : null;
+  const weekRankLabel =
+    s.weekRank != null ? `#${s.weekRank} of ${s.weekTotal} weeks` : null;
 
   return (
     <div>
@@ -3621,6 +3799,7 @@ function PeriodTotals({
           label="This week"
           value={s.pagesWeek}
           sub="pages"
+          rank={weekRankLabel}
           onClick={() =>
             onBreakdown({
               kind: "pages",
@@ -3634,6 +3813,7 @@ function PeriodTotals({
           label="This week"
           value={s.booksWeek}
           sub={s.booksWeek === 1 ? "book" : "books"}
+          rank={weekRankLabel}
           onClick={() =>
             onBreakdown({
               kind: "finished",
@@ -3661,6 +3841,7 @@ function PeriodTotals({
           label="This month"
           value={s.booksMonth}
           sub={s.booksMonth === 1 ? "book" : "books"}
+          rank={monthRankLabel}
           onClick={() =>
             onBreakdown({
               kind: "finished",
@@ -3681,38 +3862,40 @@ function PeriodTotals({
 }
 
 /* ── Stats by tag ───────────────────────────────────────────────────── */
+function tagCounts(books: Book[]) {
+  const agg = new Map<string, { count: number; rated: number; sum: number }>();
+  for (const b of books) {
+    for (const t of b.tags) {
+      const r = agg.get(t) ?? { count: 0, rated: 0, sum: 0 };
+      r.count++;
+      if (b.star_rating !== null) {
+        r.rated++;
+        r.sum += b.star_rating;
+      }
+      agg.set(t, r);
+    }
+  }
+  return [...agg.entries()]
+    .map(([tag, r]) => ({
+      tag,
+      count: r.count,
+      avg: r.rated > 0 ? r.sum / r.rated : null,
+    }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+}
+
 function TagStats({
   books,
   active,
   onPick,
+  kinds,
 }: {
   books: Book[];
   active: string | null;
   onPick: (t: string) => void;
+  kinds?: Record<string, TagKind>;
 }) {
-  const rows = useMemo(() => {
-    const agg = new Map<string, { count: number; rated: number; sum: number; pages: number }>();
-    for (const b of books) {
-      for (const t of b.tags) {
-        const r = agg.get(t) ?? { count: 0, rated: 0, sum: 0, pages: 0 };
-        r.count++;
-        if (b.star_rating !== null) {
-          r.rated++;
-          r.sum += b.star_rating;
-        }
-        if (b.page_count) r.pages += b.page_count;
-        agg.set(t, r);
-      }
-    }
-    return [...agg.entries()]
-      .map(([tag, r]) => ({
-        tag,
-        count: r.count,
-        avg: r.rated > 0 ? r.sum / r.rated : null,
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 18);
-  }, [books]);
+  const rows = useMemo(() => tagCounts(books).slice(0, 18), [books]);
 
   if (rows.length === 0) return null;
   const max = Math.max(...rows.map((r) => r.count));
@@ -3731,7 +3914,14 @@ function TagStats({
             )}
           >
             <div className="flex items-baseline gap-2 text-[12px]">
-              <span className="min-w-0 flex-1 truncate">{r.tag}</span>
+              <span className="min-w-0 flex-1 truncate">
+                {r.tag}
+                {kinds?.[r.tag] && (
+                  <span className="text-chalk-dim ml-1.5 text-[9.5px] uppercase tracking-[0.12em]">
+                    · {kinds[r.tag] === "source" ? "from" : "subject"}
+                  </span>
+                )}
+              </span>
               {r.avg !== null && (
                 <span className="text-chalk-dim shrink-0 text-[10.5px]">★ {r.avg.toFixed(2)}</span>
               )}
@@ -3750,6 +3940,255 @@ function TagStats({
         ))}
       </div>
     </div>
+  );
+}
+
+/* ── Home tags + manage ─────────────────────────────────────────────── */
+function TagsManagePanel({
+  books,
+  kinds,
+  onClose,
+  onKindsChange,
+}: {
+  books: Book[];
+  kinds: Record<string, TagKind>;
+  onClose: () => void;
+  onKindsChange: (next: Record<string, TagKind>) => void;
+}) {
+  const qc = useQueryClient();
+  const rows = useMemo(() => tagCounts(books), [books]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+
+  const rename = useMutation({
+    mutationFn: ({ from, to }: { from: string; to: string }) => renameTag(from, to),
+    onSuccess: (r, { from, to }) => {
+      qc.invalidateQueries({ queryKey: ["books"] });
+      qc.invalidateQueries({ queryKey: ["tag-kinds"] });
+      setEditing(null);
+      toast.success(
+        from.trim().toLowerCase() === to.trim().toLowerCase() || r.updated === 0
+          ? `Renamed to “${to.trim()}”`
+          : `Merged into “${to.trim()}” · ${r.updated} book${r.updated === 1 ? "" : "s"}`,
+      );
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not rename"),
+  });
+
+  const kindMut = useMutation({
+    mutationFn: ({ tag, kind }: { tag: string; kind: TagKind | null }) => setTagKind(tag, kind),
+    onSuccess: (next) => {
+      onKindsChange(next);
+      qc.invalidateQueries({ queryKey: ["tag-kinds"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not update"),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 sm:items-center" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label="Manage tags"
+        className="bg-field max-h-[88vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-t-xl border border-accent/25 p-5 shadow-2xl sm:rounded-xl"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.25rem)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-display text-cream text-[22px] leading-tight">
+              Manage <span className="text-accent">tags</span>
+            </h2>
+            <p className="text-chalk-dim mt-1 text-[11.5px] leading-relaxed">
+              Rename to merge lookalikes. Mark each as where books came from, or subject.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="text-chalk hover:text-cream rounded-full p-1.5"
+          >
+            <X size={17} />
+          </button>
+        </div>
+
+        {rows.length === 0 ? (
+          <p className="text-chalk-dim text-[13px]">No tags yet — add some on a book.</p>
+        ) : (
+          <ul className="flex flex-col gap-2.5">
+            {rows.map((r) => {
+              const kind = kinds[r.tag] ?? null;
+              const isEditing = editing === r.tag;
+              return (
+                <li
+                  key={r.tag}
+                  className="bg-panel rounded-xl border border-white/[0.06] px-3.5 py-3"
+                >
+                  <div className="flex items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                      {isEditing ? (
+                        <form
+                          onSubmit={(e: FormEvent) => {
+                            e.preventDefault();
+                            const to = draft.trim();
+                            if (!to || to === r.tag) {
+                              setEditing(null);
+                              return;
+                            }
+                            rename.mutate({ from: r.tag, to });
+                          }}
+                          className="flex gap-2"
+                        >
+                          <input
+                            autoFocus
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            className="bg-field text-cream min-w-0 flex-1 rounded-lg border border-white/15 px-2.5 py-1.5 text-[13px] outline-none focus:border-accent/50"
+                          />
+                          <button
+                            type="submit"
+                            disabled={rename.isPending}
+                            className="text-accent text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditing(null)}
+                            className="text-chalk-dim text-[10px] uppercase tracking-[0.14em]"
+                          >
+                            Cancel
+                          </button>
+                        </form>
+                      ) : (
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-cream truncate text-[14px]">{r.tag}</span>
+                          <span className="numeral text-chalk-dim shrink-0 text-[12px]">
+                            {r.count}
+                          </span>
+                        </div>
+                      )}
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {(
+                          [
+                            [null, "Unsorted"],
+                            ["source", "Came from"],
+                            ["subject", "Subject"],
+                          ] as const
+                        ).map(([k, label]) => (
+                          <button
+                            key={label}
+                            type="button"
+                            disabled={kindMut.isPending}
+                            onClick={() => kindMut.mutate({ tag: r.tag, kind: k })}
+                            className={cn(
+                              "rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.12em] transition",
+                              kind === k
+                                ? "bg-accent/20 text-accent border border-accent/40"
+                                : "text-chalk-dim hover:text-chalk border border-white/10",
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {!isEditing && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditing(r.tag);
+                          setDraft(r.tag);
+                        }}
+                        aria-label={`Rename ${r.tag}`}
+                        title="Rename (same name merges)"
+                        className="text-chalk-dim hover:text-cream shrink-0 rounded-full p-1.5"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HomeTags({
+  books,
+  kinds,
+  active,
+  onPick,
+  onManage,
+}: {
+  books: Book[];
+  kinds: Record<string, TagKind>;
+  active: string | null;
+  onPick: (t: string) => void;
+  onManage: () => void;
+}) {
+  const rows = useMemo(() => tagCounts(books), [books]);
+  if (rows.length === 0) return null;
+
+  const source = rows.filter((r) => kinds[r.tag] === "source");
+  const subject = rows.filter((r) => kinds[r.tag] === "subject");
+  const other = rows.filter((r) => !kinds[r.tag]);
+
+  const Chip = ({ tag, count }: { tag: string; count: number }) => (
+    <button
+      type="button"
+      onClick={() => onPick(tag)}
+      className={cn(
+        "rounded-full px-2.5 py-1 text-[11.5px] transition",
+        active === tag
+          ? "bg-accent/20 text-accent border border-accent/45"
+          : "text-chalk hover:text-cream border border-white/10 bg-white/[0.03]",
+      )}
+    >
+      {tag}
+      <span className="text-chalk-dim ml-1.5 text-[10px]">{count}</span>
+    </button>
+  );
+
+  const Group = ({
+    title,
+    items,
+  }: {
+    title: string;
+    items: { tag: string; count: number }[];
+  }) =>
+    items.length === 0 ? null : (
+      <div className="mb-3.5">
+        <div className="label-caps mb-2">{title}</div>
+        <div className="flex flex-wrap gap-1.5">
+          {items.map((r) => (
+            <Chip key={r.tag} tag={r.tag} count={r.count} />
+          ))}
+        </div>
+      </div>
+    );
+
+  return (
+    <section className="border-t border-accent/15 pt-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="rule-head mb-0">Tags</h2>
+        <button
+          type="button"
+          onClick={onManage}
+          className="text-chalk-dim hover:text-cream inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] transition"
+        >
+          <Tags size={12} />
+          Manage
+        </button>
+      </div>
+      <Group title="Where books came from" items={source} />
+      <Group title="Subject" items={subject} />
+      <Group title={source.length || subject.length ? "Unsorted" : "All tags"} items={other} />
+    </section>
   );
 }
 
@@ -4162,16 +4601,20 @@ function StatsPopover({
   books,
   sessions,
   filter,
+  kinds,
   onClose,
   onDrill,
   onTag,
+  onManageTags,
 }: {
   books: Book[];
   sessions: ReadingSession[];
   filter: Filter | null;
+  kinds: Record<string, TagKind>;
   onClose: () => void;
   onDrill: (period: string) => void;
   onTag: (t: string) => void;
+  onManageTags: () => void;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center" onClick={onClose}>
@@ -4211,14 +4654,25 @@ function StatsPopover({
               onClose();
             }}
           />
-          <TagStats
-            books={books}
-            active={filter?.type === "tag" ? filter.value : null}
-            onPick={(t) => {
-              onTag(t);
-              onClose();
-            }}
-          />
+          <div>
+            <TagStats
+              books={books}
+              kinds={kinds}
+              active={filter?.type === "tag" ? filter.value : null}
+              onPick={(t) => {
+                onTag(t);
+                onClose();
+              }}
+            />
+            <button
+              type="button"
+              onClick={onManageTags}
+              className="text-chalk-dim hover:text-cream mt-3 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em]"
+            >
+              <Tags size={12} />
+              Manage tags
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -4271,11 +4725,18 @@ export default function ReadingPage() {
   const [breakdown, setBreakdown] = useState<BreakdownFocus | null>(null);
   const [askSeed, setAskSeed] = useState<{ query: string; mode: "catalog" | "search" } | undefined>();
   const [statsOpen, setStatsOpen] = useState(false);
+  const [tagsManageOpen, setTagsManageOpen] = useState(false);
   const [searchPage, setSearchPage] = useState<string | null>(null);
   // Jackets or details — remembered, because it's a taste thing, not a mode.
   const [view, setView] = useState<"list" | "grid">(
     () => (localStorage.getItem("reading-view") as "list" | "grid" | null) ?? "list",
   );
+
+  const { data: tagKinds = {} } = useQuery({
+    queryKey: ["tag-kinds"],
+    queryFn: fetchTagKinds,
+    staleTime: 60_000,
+  });
 
   type ReadingHistory = {
     readingBook?: string;
@@ -4601,6 +5062,18 @@ export default function ReadingPage() {
             onOpen={openBookDrawer}
             onFilter={setFilter}
           />
+
+          <HomeTags
+            books={books ?? []}
+            kinds={tagKinds}
+            active={filter?.type === "tag" ? filter.value : null}
+            onPick={(t) =>
+              setFilter(
+                filter?.type === "tag" && filter.value === t ? null : { type: "tag", value: t },
+              )
+            }
+            onManage={() => setTagsManageOpen(true)}
+          />
         </div>
 
         <aside className="bg-ink hidden flex-col gap-6 border-accent/15 p-4 md:p-6 lg:flex lg:border-l">
@@ -4612,6 +5085,7 @@ export default function ReadingPage() {
           />
           <TagStats
             books={books ?? []}
+            kinds={tagKinds}
             active={filter?.type === "tag" ? filter.value : null}
             onPick={(t) =>
               setFilter(
@@ -4619,6 +5093,14 @@ export default function ReadingPage() {
               )
             }
           />
+          <button
+            type="button"
+            onClick={() => setTagsManageOpen(true)}
+            className="text-chalk-dim hover:text-cream -mt-2 inline-flex items-center gap-1.5 self-start text-[10px] uppercase tracking-[0.14em]"
+          >
+            <Tags size={12} />
+            Manage tags
+          </button>
         </aside>
       </div>
 
@@ -4678,6 +5160,7 @@ export default function ReadingPage() {
           books={books ?? []}
           sessions={sessions ?? []}
           filter={filter}
+          kinds={tagKinds}
           onClose={() => setStatsOpen(false)}
           onDrill={(y) => setFilter({ type: "year", value: y })}
           onTag={(t) =>
@@ -4685,6 +5168,20 @@ export default function ReadingPage() {
               filter?.type === "tag" && filter.value === t ? null : { type: "tag", value: t },
             )
           }
+          onManageTags={() => {
+            setStatsOpen(false);
+            setTagsManageOpen(true);
+          }}
+        />
+      )}
+      {tagsManageOpen && (
+        <TagsManagePanel
+          books={books ?? []}
+          kinds={tagKinds}
+          onClose={() => setTagsManageOpen(false)}
+          onKindsChange={() => {
+            qc.invalidateQueries({ queryKey: ["tag-kinds"] });
+          }}
         />
       )}
     </div>

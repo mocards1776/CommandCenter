@@ -2,6 +2,17 @@
 
 ---
 
+## Reading: covers, page counts, tags — August 13, 2026
+
+- Catalog add keeps the search jacket, ISBN, and page count (then enriches).
+- Book detail: editable page count; pull down on the sheet to close.
+- Now Reading: subtle tap-to-log pages/% or add a page count.
+- Recent week cells show historical week rank (same idea as day/month).
+- Home Tags section + manage: rename/merge, mark as Came from vs Subject.
+- DB: `profiles.tag_kinds` jsonb. Redeploy `book-ai` for richer catalog fields.
+
+---
+
 ## Dispatch notes rail + contracts — August 12, 2026
 
 - Notes sidebar (large screens): Cardinals current/next game, weather for

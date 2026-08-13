@@ -38,6 +38,8 @@ type Suggestion = {
   year: string;
   reason: string;
   cover_url?: string | null;
+  isbn?: string | null;
+  page_count?: number | null;
 };
 
 const UA = "CommandCenter/1.0 (personal reading tracker)";
@@ -702,13 +704,30 @@ async function classify(
  * Free catalog search — Google Books + Open Library. No Anthropic spend.
  * Used for "Find similar" and the Ask panel's Catalog tab.
  */
+function googleIsbn(v: Record<string, unknown>): string | null {
+  const ids = v.industryIdentifiers as { type?: string; identifier?: string }[] | undefined;
+  if (!Array.isArray(ids)) return null;
+  const isbn13 = ids.find((i) => i.type === "ISBN_13")?.identifier;
+  const isbn10 = ids.find((i) => i.type === "ISBN_10")?.identifier;
+  const raw = String(isbn13 || isbn10 || "").replace(/[^0-9Xx]/g, "");
+  return raw.length === 10 || raw.length === 13 ? raw : null;
+}
+
 async function catalogSearch(query: string): Promise<Suggestion[]> {
   const q = query.trim().slice(0, 200);
   if (!q) return [];
   const out: Suggestion[] = [];
   const seen = new Set<string>();
 
-  const push = (title: string, author: string, year: string, reason: string, cover: string | null) => {
+  const push = (
+    title: string,
+    author: string,
+    year: string,
+    reason: string,
+    cover: string | null,
+    isbn: string | null = null,
+    pageCount: number | null = null,
+  ) => {
     const key = title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     if (!key || seen.has(key)) return;
     seen.add(key);
@@ -717,7 +736,9 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
       author,
       year,
       reason,
-      cover_url: cover,
+      cover_url: cover ? upgradeGoogleCover(cover) : null,
+      isbn,
+      page_count: pageCount && pageCount > 0 ? pageCount : null,
     });
   };
 
@@ -733,17 +754,20 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
     if (res.ok) {
       const items = (await res.json())?.items ?? [];
       for (const it of items) {
-        const v = it.volumeInfo ?? {};
+        const v = (it.volumeInfo ?? {}) as Record<string, unknown>;
         const title = String(v.title ?? "").trim();
         if (!title) continue;
-        const authors = Array.isArray(v.authors) ? v.authors.join(", ") : "";
+        const authors = Array.isArray(v.authors) ? (v.authors as string[]).join(", ") : "";
         const year = String(v.publishedDate ?? "").slice(0, 4);
         const links = v.imageLinks as Record<string, string> | undefined;
         const cover = links?.thumbnail || links?.smallThumbnail
           ? String(links.thumbnail ?? links.smallThumbnail).replace(/^http:/, "https:")
           : null;
-        const cats = Array.isArray(v.categories) ? v.categories.slice(0, 2).join(" · ") : "";
-        push(title, authors, year, cats || "Google Books", cover);
+        const cats = Array.isArray(v.categories)
+          ? (v.categories as string[]).slice(0, 2).join(" · ")
+          : "";
+        const pages = typeof v.pageCount === "number" ? v.pageCount : null;
+        push(title, authors, year, cats || "Google Books", cover, googleIsbn(v), pages);
       }
     }
   } catch {
@@ -756,7 +780,7 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), 9000);
       const res = await fetch(
-        `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=12&fields=title,author_name,first_publish_year,cover_i,subject`,
+        `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=12&fields=title,author_name,first_publish_year,cover_i,subject,isbn,number_of_pages_median`,
         { signal: ctl.signal, headers: { "User-Agent": UA } },
       ).finally(() => clearTimeout(t));
       if (res.ok) {
@@ -766,10 +790,18 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
           const author = Array.isArray(doc.author_name) ? doc.author_name.slice(0, 2).join(", ") : "";
           const year = doc.first_publish_year ? String(doc.first_publish_year) : "";
           const cover = typeof doc.cover_i === "number"
-            ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
+            ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`
             : null;
           const sub = Array.isArray(doc.subject) ? String(doc.subject[0] ?? "") : "";
-          push(title, author, year, sub || "Open Library", cover);
+          const isbnRaw = Array.isArray(doc.isbn)
+            ? String(doc.isbn.find((x: string) => String(x).replace(/[^0-9Xx]/g, "").length === 13) ??
+                doc.isbn[0] ??
+                "").replace(/[^0-9Xx]/g, "")
+            : "";
+          const isbn = isbnRaw.length === 10 || isbnRaw.length === 13 ? isbnRaw : null;
+          const pages =
+            typeof doc.number_of_pages_median === "number" ? doc.number_of_pages_median : null;
+          push(title, author, year, sub || "Open Library", cover, isbn, pages);
           if (out.length >= 12) break;
         }
       }
