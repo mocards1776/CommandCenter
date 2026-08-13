@@ -10,6 +10,7 @@ import { listFavoritePlayers } from "@/lib/favorite-players";
 import {
   fetchMlbScoreboard,
   fetchMlbStandings,
+  mlbHeadshot,
   type MlbScoreGame,
   type MlbScoredGame,
 } from "@/lib/mlb";
@@ -321,12 +322,68 @@ function RuwtCard({ game, rank }: { game: MlbScoredGame; rank: number }) {
         </div>
       )}
 
+      {pregame && (game.away.probablePitcherId || game.home.probablePitcherId) ? (
+        <div className="relative z-10 border-t border-white/[0.06] px-3 py-2.5">
+          <p className="mb-2 text-center text-[9px] font-semibold uppercase tracking-[0.16em] text-white/45">
+            Probable pitchers
+          </p>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+            <RuwtPitcherCard side={game.away} align="left" />
+            <span className="pb-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35">
+              vs
+            </span>
+            <RuwtPitcherCard side={game.home} align="right" />
+          </div>
+        </div>
+      ) : null}
+
       {game.reasons.length > 0 && (
         <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
           {game.reasons.join(" · ")}
         </p>
       )}
     </Link>
+  );
+}
+
+function RuwtPitcherCard({
+  side,
+  align,
+}: {
+  side: MlbScoreGame["away"];
+  align: "left" | "right";
+}) {
+  const name = side.probablePitcher ?? "TBD";
+  const parts = name.split(" ");
+  const last = parts.length > 1 ? parts[parts.length - 1] : name;
+  const first = parts.length > 1 ? parts.slice(0, -1).join(" ") : "";
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 flex-col gap-1.5",
+        align === "right" ? "items-end text-right" : "items-start text-left",
+      )}
+    >
+      {side.probablePitcherId ? (
+        <div className="relative h-[72px] w-[58px] overflow-hidden rounded-lg bg-[#dfe6f2] ring-2 ring-white/25">
+          <img
+            src={mlbHeadshot(side.probablePitcherId, 213)}
+            alt=""
+            className="absolute inset-0 h-full w-full scale-[1.12] object-cover object-[center_12%]"
+          />
+        </div>
+      ) : (
+        <div className="grid h-[72px] w-[58px] place-items-center rounded-lg bg-white/10 text-[10px] text-white/40">
+          TBD
+        </div>
+      )}
+      {first ? (
+        <p className="truncate text-[10px] font-medium uppercase tracking-[0.08em] text-white/55">
+          {first}
+        </p>
+      ) : null}
+      <p className="font-display text-cream truncate text-[16px] leading-none">{last}</p>
+    </div>
   );
 }
 

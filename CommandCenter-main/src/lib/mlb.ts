@@ -664,7 +664,7 @@ export function linkifyMlbPlayersInHtml(
           mark.className = "rss-player-watch";
           mark.title = "Favorite or tagged";
           mark.setAttribute("aria-label", "Favorite or tagged");
-          mark.textContent = "⋆";
+          mark.textContent = "★";
           frag.appendChild(mark);
         }
       } else {
@@ -716,7 +716,7 @@ export async function resolveMissingRecapPlayers(
   );
 }
 
-function chicagoToday(): string {
+export function chicagoToday(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
 }
 
@@ -3372,16 +3372,9 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
   const minorsHitting = minorsHittingRaw;
   const minorsPitching = minorsPitchingRaw;
 
-  const hasMlbStats =
-    mlbHitting.length > 0 ||
-    mlbPitching.length > 0 ||
-    yearByYearHitting.some((r) => r.sportId === 1) ||
-    yearByYearPitching.some((r) => r.sportId === 1);
-  const hasMinorsStats =
-    minorsHitting.length > 0 ||
-    minorsPitching.length > 0 ||
-    yearByYearHitting.some((r) => r.sportId !== 1) ||
-    yearByYearPitching.some((r) => r.sportId !== 1);
+  // Level toggle only when the player has current-season lines in both.
+  const hasMlbStats = mlbHitting.length > 0 || mlbPitching.length > 0;
+  const hasMinorsStats = minorsHitting.length > 0 || minorsPitching.length > 0;
 
   const defaultLevel: MlbPlayerLevel = isMinorsNow
     ? "minors"

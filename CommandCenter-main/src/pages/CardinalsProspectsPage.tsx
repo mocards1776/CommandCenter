@@ -18,7 +18,6 @@ import {
   fetchUserTagNames,
 } from "@/lib/sports-player-tags";
 import { useAuth } from "@/lib/auth-context";
-import { cn } from "@/lib/utils";
 
 function AffiliateRoster({ teamId }: { teamId: number }) {
   const roster = useQuery({
@@ -134,60 +133,53 @@ export default function CardinalsProspectsPage() {
             {watch.error instanceof Error ? watch.error.message : "Couldn't load watch list"}
           </p>
         ) : (
-          <ol className="flex flex-col gap-2">
-            {watch.data?.map((p) => (
-              <li key={`${p.rank}-${p.name}`}>
-                <div
-                  className={cn(
-                    "bg-panel flex items-center gap-3 rounded-xl border border-white/[0.08] p-3",
-                    !p.playerId && "opacity-70",
-                  )}
-                >
-                  <span className="numeral text-accent w-7 text-center text-[18px]">{p.rank}</span>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {watch.data?.map((p) => {
+              const last = p.name.split(" ").slice(-1)[0] ?? p.name;
+              const body = (
+                <>
+                  <div className="from-accent-dark/80 absolute inset-0 bg-gradient-to-t to-transparent opacity-80" />
                   {p.playerId ? (
                     <PlayerHeadshot
                       playerId={p.playerId}
-                      className="h-12 w-12 rounded-full"
+                      size={213}
+                      className="aspect-[3/4] w-full object-cover object-top"
                     />
                   ) : (
-                    <div className="bg-hero text-chalk-dim grid h-12 w-12 place-items-center rounded-full text-[10px]">
+                    <div className="bg-hero text-chalk-dim grid aspect-[3/4] w-full place-items-center text-[10px]">
                       —
                     </div>
                   )}
-                  <div className="min-w-0 flex-1">
-                    {p.playerId ? (
-                      <Link
-                        to={`/sports/mlb/player/${p.playerId}`}
-                        className="text-cream hover:text-accent text-[16px] font-medium"
-                      >
-                        {p.name}
-                      </Link>
-                    ) : (
-                      <p className="text-cream text-[16px] font-medium">{p.name}</p>
-                    )}
-                    <p className="text-chalk-dim text-[11px] uppercase tracking-[0.12em]">
+                  <div className="absolute inset-x-0 bottom-0 p-2.5">
+                    <p className="numeral text-accent text-[11px] font-semibold">#{p.rank}</p>
+                    <p className="font-display text-cream text-[15px] leading-tight drop-shadow">
+                      {last}
+                    </p>
+                    <p className="text-chalk-dim mt-0.5 text-[10px] uppercase tracking-[0.12em]">
                       {p.position}
                       {p.level ? ` · ${p.level}` : ""}
-                      {p.teamId && p.teamName ? (
-                        <>
-                          {" · "}
-                          <Link
-                            to={teamPagePath(p.teamId)}
-                            className="text-accent hover:underline"
-                          >
-                            {p.teamName}
-                          </Link>
-                        </>
-                      ) : p.teamName ? (
-                        ` · ${p.teamName}`
-                      ) : null}
-                      {p.pipelineNote ? ` · ${p.pipelineNote}` : ""}
                     </p>
                   </div>
+                </>
+              );
+              return p.playerId ? (
+                <Link
+                  key={`${p.rank}-${p.name}`}
+                  to={`/sports/mlb/player/${p.playerId}`}
+                  className="bg-panel group relative w-[148px] shrink-0 overflow-hidden rounded-lg border border-white/[0.08] transition hover:border-accent/40"
+                >
+                  {body}
+                </Link>
+              ) : (
+                <div
+                  key={`${p.rank}-${p.name}`}
+                  className="bg-panel relative w-[148px] shrink-0 overflow-hidden rounded-lg border border-white/[0.08] opacity-70"
+                >
+                  {body}
                 </div>
-              </li>
-            ))}
-          </ol>
+              );
+            })}
+          </div>
         )}
       </section>
 
@@ -217,52 +209,39 @@ export default function CardinalsProspectsPage() {
               follow list.
             </p>
           ) : (
-            <ul className="flex flex-col gap-2">
+            <div className="flex gap-3 overflow-x-auto pb-1">
               {tagged.data?.map((t) => {
                 const id = Number(t.playerId);
                 const person = people.data?.get(id);
+                const name = person?.name ?? `Player #${t.playerId}`;
+                const last = name.split(" ").slice(-1)[0] ?? name;
                 return (
-                  <li key={t.id}>
-                    <div className="bg-panel flex items-center gap-3 rounded-xl border border-white/[0.08] p-3">
-                      <PlayerHeadshot
-                        playerId={t.playerId}
-                        className="h-10 w-10 rounded-full"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <Link
-                          to={`/sports/mlb/player/${t.playerId}`}
-                          className="text-cream hover:text-accent text-[14px] font-medium"
-                        >
-                          {person?.name ?? `Player #${t.playerId}`}
-                        </Link>
-                        <p className="text-chalk-dim text-[11px] uppercase tracking-[0.12em]">
-                          {[person?.position, person?.number ? `#${person.number}` : null]
-                            .filter(Boolean)
-                            .join(" · ") || "—"}
-                          {person?.teamId && person.teamName ? (
-                            <>
-                              {" · "}
-                              <Link
-                                to={teamPagePath(person.teamId)}
-                                className="text-accent hover:underline"
-                              >
-                                {person.teamName}
-                              </Link>
-                            </>
-                          ) : null}
-                        </p>
-                      </div>
-                      <Link
-                        to={`/sports/mlb/player/${t.playerId}`}
-                        className="text-accent text-[12px]"
-                      >
-                        Open
-                      </Link>
+                  <Link
+                    key={t.id}
+                    to={`/sports/mlb/player/${t.playerId}`}
+                    className="bg-panel group relative w-[148px] shrink-0 overflow-hidden rounded-lg border border-white/[0.08] transition hover:border-accent/40"
+                  >
+                    <div className="from-accent-dark/80 absolute inset-0 bg-gradient-to-t to-transparent opacity-80" />
+                    <PlayerHeadshot
+                      playerId={t.playerId}
+                      size={213}
+                      className="aspect-[3/4] w-full object-cover object-top"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 p-2.5">
+                      <p className="font-display text-cream text-[15px] leading-tight drop-shadow">
+                        {last}
+                      </p>
+                      <p className="text-chalk-dim mt-0.5 text-[10px] uppercase tracking-[0.12em]">
+                        {[person?.position, person?.number ? `#${person.number}` : null]
+                          .filter(Boolean)
+                          .join(" · ") || "—"}
+                        {person?.teamName ? ` · ${person.teamName}` : ""}
+                      </p>
                     </div>
-                  </li>
+                  </Link>
                 );
               })}
-            </ul>
+            </div>
           )}
         </section>
       ) : null}

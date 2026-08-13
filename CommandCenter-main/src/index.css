@@ -536,11 +536,11 @@
   /* Saved highlight quotes — distinct from surrounding article text. */
   .rss-reader .rss-player-watch {
     color: #d9515c;
-    font-size: 0.52em;
-    margin-left: 0.1em;
-    vertical-align: 0.2em;
-    font-weight: 600;
-    opacity: 0.8;
+    font-size: 0.78em;
+    margin-left: 0.12em;
+    vertical-align: 0.15em;
+    font-weight: 700;
+    opacity: 0.95;
     letter-spacing: 0;
   }
 

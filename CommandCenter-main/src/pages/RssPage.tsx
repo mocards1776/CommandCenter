@@ -15,7 +15,9 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  ChevronDown,
   Folder,
+  Hash,
   Highlighter,
   Inbox,
   RefreshCw,
@@ -1072,11 +1074,11 @@ function ArticleReaderShell({
 
   return (
     <div
-      className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,42rem)_minmax(15rem,1fr)]"
+      className="grid w-full gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
       style={{ touchAction: "pan-y" }}
       onClick={onDoubleTap}
     >
-      <article className="font-rss min-w-0">
+      <article className="font-rss min-w-0 max-w-3xl justify-self-start lg:pl-2">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -1235,7 +1237,7 @@ function ArticleReaderShell({
 
       <aside
         className={cn(
-          "bg-panel border-white/[0.06] min-w-0 rounded border p-4 md:p-5",
+          "bg-panel border-white/[0.06] min-w-0 border-y border-l p-4 md:p-5 lg:rounded-none lg:border-r-0",
           showNotes ? "block" : "hidden lg:block",
         )}
       >
@@ -1477,6 +1479,10 @@ export default function RssPage() {
   );
   const [batchMode, setBatchMode] = useState(false);
   const [batchSelected, setBatchSelected] = useState<Set<string>>(() => new Set());
+  const [tagsOpen, setTagsOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem("dispatch-tags-folder-open") !== "0";
+  });
   const [hideRead, setHideRead] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("dispatch-hide-read") === "1";
@@ -1509,15 +1515,17 @@ export default function RssPage() {
     staleTime: 60_000,
   });
 
-  const allFeeds: RssFeedDef[] = useMemo(() => {
-    const tagFeeds: RssFeedDef[] = (userTags.data ?? []).map((tag) => ({
-      id: tagFeedId(tag),
-      title: `${displayPlayerTag(tag)} · RotoWire`,
-      short: displayPlayerTag(tag).replace(/^#/, "") || tag,
-      url: tagFeedUrl(tag),
-    }));
-    return [...RSS_FEEDS, ...tagFeeds];
-  }, [userTags.data]);
+  const tagFeeds: RssFeedDef[] = useMemo(
+    () =>
+      (userTags.data ?? []).map((tag) => ({
+        id: tagFeedId(tag),
+        title: `${displayPlayerTag(tag)} · RotoWire`,
+        short: displayPlayerTag(tag).replace(/^#/, "") || tag,
+        url: tagFeedUrl(tag),
+      })),
+    [userTags.data],
+  );
+  const allFeeds: RssFeedDef[] = useMemo(() => [...RSS_FEEDS, ...tagFeeds], [tagFeeds]);
 
   const feedQueries = useQueries({
     queries: allFeeds.map((f) => ({
@@ -1890,7 +1898,7 @@ export default function RssPage() {
 
   if (selected) {
     return (
-      <div className="p-4 md:p-6">
+      <div className="px-4 py-4 md:py-6 md:pl-6 lg:pr-0">
         <ReaderView
           item={selected}
           feedUrl={selected.feedUrl}
@@ -1969,7 +1977,7 @@ export default function RssPage() {
         <div className="flex-1 px-2 pb-4">
           <p className="label-caps text-chalk-dim px-2 py-2">Feeds</p>
           <ul className="flex flex-col gap-0.5">
-            {allFeeds.map((f) => (
+            {RSS_FEEDS.map((f) => (
               <li key={f.id}>
                 <button
                   type="button"
@@ -1990,6 +1998,65 @@ export default function RssPage() {
                 </button>
               </li>
             ))}
+            {tagFeeds.length > 0 ? (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTagsOpen((v) => {
+                      const next = !v;
+                      window.localStorage.setItem(
+                        "dispatch-tags-folder-open",
+                        next ? "1" : "0",
+                      );
+                      return next;
+                    });
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2.5 text-left transition-colors",
+                    tagFeeds.some((f) => f.id === nav)
+                      ? "bg-accent/10 text-cream"
+                      : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+                  )}
+                >
+                  <Folder size={16} className="text-accent shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-[13.5px]">Tags</span>
+                  <span className="text-chalk tabular-nums text-[12px]">
+                    {tagFeeds.reduce((sum, f) => sum + (unreadByFeed[f.id] ?? 0), 0)}
+                  </span>
+                  {tagsOpen ? (
+                    <ChevronDown size={14} className="opacity-50" />
+                  ) : (
+                    <ChevronRight size={14} className="opacity-50" />
+                  )}
+                </button>
+                {tagsOpen ? (
+                  <ul className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-white/[0.08] pl-2">
+                    {tagFeeds.map((f) => (
+                      <li key={f.id}>
+                        <button
+                          type="button"
+                          onClick={() => selectNav(f.id)}
+                          className={cn(
+                            "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left transition-colors",
+                            nav === f.id
+                              ? "bg-accent/15 text-cream"
+                              : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+                          )}
+                        >
+                          <Hash size={14} className="text-accent shrink-0" />
+                          <span className="min-w-0 flex-1 truncate text-[13px]">{f.title}</span>
+                          <span className="text-chalk tabular-nums text-[12px]">
+                            {unreadByFeed[f.id] ?? 0}
+                          </span>
+                          <ChevronRight size={14} className="opacity-50" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            ) : null}
             <li>
               <button
                 type="button"
