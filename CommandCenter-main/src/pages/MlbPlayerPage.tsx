@@ -5,6 +5,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Loader2, Star } fro
 import toast from "react-hot-toast";
 import HighlightReel from "@/components/sports/HighlightReel";
 import SportsNotesPanel from "@/components/sports/SportsNotesPanel";
+import PlayerTagsPanel from "@/components/sports/PlayerTagsPanel";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
 import { addFavoritePlayer, isFavoritePlayer, removeFavoritePlayer } from "@/lib/favorite-players";
@@ -318,6 +319,8 @@ export default function MlbPlayerPage() {
       )}
 
       <BioAndOrigin player={p} />
+
+      <PlayerTagsPanel playerId={p.id} playerName={p.name} />
 
       <SportsNotesPanel entityType="player" entityId={p.id} entityName={p.name} />
 

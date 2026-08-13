@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { fetchMlbTeamGeneralManager, fetchMlbTeamManager } from "./mlb";
 
 /** A favorite franchise or tour the dashboard can show. */
 export type SportsFavorite = {
@@ -105,6 +106,8 @@ export type TeamDetail = {
   standing: string | null;
   playoffOdds: string | null;
   wildCardOdds: string | null;
+  manager: { id: number; name: string; title: string } | null;
+  generalManager: { name: string; title: string } | null;
   division: StandingRow[];
   upcoming: ScheduleGame[];
   recent: ScheduleGame[];
@@ -721,6 +724,8 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     standing: odds.standing ?? snap.standing,
     playoffOdds: odds.playoff,
     wildCardOdds: odds.wildCard,
+    manager: null,
+    generalManager: null,
     division,
     upcoming: upcoming.slice(0, 12),
     recent: recent.slice(0, 8),
@@ -742,24 +747,35 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
   const snap = await fetchTeamSnapshot(fav).catch(() => null);
   const odds = await fetchEspnPlayoffOdds(fav, espnTeamId);
 
-  const [standingsRaw, rosterRaw, scheduleRaw, hitTeam, pitchTeam, hitLeaders, pitchLeaders] =
-    await Promise.all([
-      mlbGet(
-        `standings?leagueId=103,104&season=${season}&standingsTypes=regularSeason&hydrate=division`,
-      ),
-      mlbGet(`teams/${teamId}/roster?rosterType=active`),
-      mlbGet(
-        `schedule?teamId=${teamId}&sportId=1&startDate=${season}-03-01&endDate=${season}-11-15&hydrate=probablePitcher,team`,
-      ),
-      mlbGet(`teams/${teamId}/stats?season=${season}&group=hitting&stats=season`),
-      mlbGet(`teams/${teamId}/stats?season=${season}&group=pitching&stats=season`),
-      mlbGet(
-        `stats?stats=season&group=hitting&season=${season}&sportIds=1&teamIds=${teamId}&playerPool=all&limit=40&sortStat=ops&order=desc`,
-      ),
-      mlbGet(
-        `stats?stats=season&group=pitching&season=${season}&sportIds=1&teamIds=${teamId}&playerPool=all&limit=40&sortStat=era&order=asc`,
-      ),
-    ]);
+  const [
+    standingsRaw,
+    rosterRaw,
+    scheduleRaw,
+    hitTeam,
+    pitchTeam,
+    hitLeaders,
+    pitchLeaders,
+    manager,
+    generalManager,
+  ] = await Promise.all([
+    mlbGet(
+      `standings?leagueId=103,104&season=${season}&standingsTypes=regularSeason&hydrate=division`,
+    ),
+    mlbGet(`teams/${teamId}/roster?rosterType=active`),
+    mlbGet(
+      `schedule?teamId=${teamId}&sportId=1&startDate=${season}-03-01&endDate=${season}-11-15&hydrate=probablePitcher,team`,
+    ),
+    mlbGet(`teams/${teamId}/stats?season=${season}&group=hitting&stats=season`),
+    mlbGet(`teams/${teamId}/stats?season=${season}&group=pitching&stats=season`),
+    mlbGet(
+      `stats?stats=season&group=hitting&season=${season}&sportIds=1&teamIds=${teamId}&playerPool=all&limit=40&sortStat=ops&order=desc`,
+    ),
+    mlbGet(
+      `stats?stats=season&group=pitching&season=${season}&sportIds=1&teamIds=${teamId}&playerPool=all&limit=40&sortStat=era&order=asc`,
+    ),
+    fetchMlbTeamManager(teamId).catch(() => null),
+    fetchMlbTeamGeneralManager(teamId).catch(() => null),
+  ]);
 
   // Division standings (NL Central)
   const division: StandingRow[] = [];
@@ -947,6 +963,12 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     standing: odds.standing ?? myStanding,
     playoffOdds: odds.playoff,
     wildCardOdds: odds.wildCard,
+    manager: manager
+      ? { id: manager.id, name: manager.name, title: manager.title }
+      : null,
+    generalManager: generalManager
+      ? { name: generalManager.name, title: generalManager.title }
+      : null,
     division,
     upcoming: upcoming.slice(0, 15),
     recent: recent.slice(0, 10),

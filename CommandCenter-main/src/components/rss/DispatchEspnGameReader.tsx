@@ -38,6 +38,7 @@ async function fetchEspnStoryFallback(eventId: string): Promise<{
 export default function DispatchEspnGameReader({
   url,
   title,
+  heroImage,
   onBack,
   onPrev,
   onNext,
@@ -46,6 +47,8 @@ export default function DispatchEspnGameReader({
 }: {
   url: string;
   title?: string;
+  /** ESPN article / wrap photo for a full-bleed header. */
+  heroImage?: string | null;
   onBack: () => void;
   onPrev?: () => void;
   onNext?: () => void;
@@ -144,6 +147,30 @@ export default function DispatchEspnGameReader({
     </div>
   );
 
+  const hero = heroImage ? (
+    <div className="relative -mx-4 mb-4 overflow-hidden md:-mx-7">
+      <div className="relative aspect-[16/9] max-h-[280px] w-full md:aspect-[21/9] md:max-h-[340px]">
+        <img
+          src={heroImage}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover object-center"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#07101f] via-[#07101f]/45 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0c1a36]/55 via-transparent to-[#1a0e14]/35" />
+        <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 md:px-7">
+          <p className="text-accent text-[10px] font-semibold uppercase tracking-[0.2em]">
+            Game wrap
+          </p>
+          {title ? (
+            <h2 className="font-rss text-cream mt-1 max-w-2xl text-[22px] font-semibold leading-snug md:text-[28px]">
+              {title}
+            </h2>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (!eventId) {
     return (
       <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
@@ -177,6 +204,7 @@ export default function DispatchEspnGameReader({
     return (
       <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
         {chrome}
+        {hero}
         <MlbGameDetail gamePk={String(resolved.data)} />
       </div>
     );
@@ -199,6 +227,7 @@ export default function DispatchEspnGameReader({
     return (
       <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
         {chrome}
+        {hero}
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
           <div className="border-b border-white/[0.06] px-4 py-3">
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">

@@ -12,6 +12,8 @@ import {
   ChevronRight,
   Circle,
   ExternalLink,
+  Eye,
+  EyeOff,
   Folder,
   Highlighter,
   Inbox,
@@ -301,6 +303,24 @@ function useSwipeNav(opts: {
   return setNode;
 }
 
+/** Double-tap (not on controls) advances to the next article. */
+function useDoubleTapNext(onNext: (() => void) | null, enabled: boolean) {
+  const lastTap = useRef(0);
+  return (e: { target: EventTarget | null }) => {
+    if (!enabled || !onNext) return;
+    const el = e.target as HTMLElement | null;
+    if (!el) return;
+    if (el.closest("a, button, input, textarea, select, [role='dialog'], video")) return;
+    const now = Date.now();
+    if (now - lastTap.current < 320) {
+      lastTap.current = 0;
+      onNext();
+    } else {
+      lastTap.current = now;
+    }
+  };
+}
+
 /** Turn `.rss-tweet` blockquotes into a compact X/Twitter feed card. */
 function stylizeTweetCardsInHtml(html: string): string {
   if (!html || typeof DOMParser === "undefined") return html;
@@ -409,6 +429,8 @@ function ReaderView({
     );
   }
 
+  // Synthetic digests (stats board) skip the ESPN path.
+
   return (
     <ArticleReaderShell
       item={item}
@@ -458,11 +480,7 @@ function EspnGameReaderShell({
     if (st.dispatchArticle) history.back();
   };
 
-  const swipeRef = useSwipeNav({
-    enabled: true,
-    onBack: leave,
-    onNext: hasNext ? onNext : null,
-  });
+  const onDoubleTap = useDoubleTapNext(hasNext ? onNext : null, true);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -493,7 +511,7 @@ function EspnGameReaderShell({
   }, [item.link, item.title, feedUrl, qc]);
 
   return (
-    <div ref={swipeRef} style={{ touchAction: "pan-y" }}>
+    <div style={{ touchAction: "pan-y" }} onClick={onDoubleTap}>
       <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
         <button
           type="button"
@@ -519,6 +537,7 @@ function EspnGameReaderShell({
       <DispatchEspnGameReader
         url={item.link}
         title={item.title}
+        heroImage={item.image}
         onBack={leave}
         onPrev={hasPrev ? onPrev : undefined}
         onNext={hasNext ? onNext : undefined}
@@ -568,7 +587,20 @@ function ArticleReaderShell({
 
   const article = useQuery({
     queryKey: ["rss-article-v2", item.link],
-    queryFn: () => fetchRssArticle(item.link),
+    queryFn: async () => {
+      if (item.contentHtml) {
+        return {
+          url: item.link,
+          title: item.title,
+          byline: item.author,
+          image: item.image,
+          contentHtml: item.contentHtml,
+          contentText: item.snippet,
+          wordCount: item.snippet.split(/\s+/).filter(Boolean).length,
+        };
+      }
+      return fetchRssArticle(item.link);
+    },
     staleTime: 10 * 60_000,
   });
 
@@ -586,18 +618,27 @@ function ArticleReaderShell({
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
+    setPeekPlayerId(null);
   }, [item.link]);
 
-  // Browser / iOS back: one history entry for the reader; article changes replace it
-  // so back always returns to the feed list (not the previous article).
+  const peekPlayerIdRef = useRef<number | null>(null);
+  peekPlayerIdRef.current = peekPlayerId;
+
+  // Browser / iOS back: article gets one history entry; player peek stacks on top so
+  // back closes the peek and returns to the article (not the feed list).
   useEffect(() => {
-    const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+    type Hist = { dispatchArticle?: string; dispatchPlayerPeek?: number };
+    const st = (history.state as Hist | null) ?? {};
     if (!st.dispatchArticle) {
-      history.pushState({ ...st, dispatchArticle: item.link }, "", window.location.href);
+      history.pushState({ dispatchArticle: item.link }, "", window.location.href);
     } else if (st.dispatchArticle !== item.link) {
-      history.replaceState({ ...st, dispatchArticle: item.link }, "", window.location.href);
+      history.replaceState({ dispatchArticle: item.link }, "", window.location.href);
     }
     const onPop = () => {
+      if (peekPlayerIdRef.current != null) {
+        setPeekPlayerId(null);
+        return;
+      }
       onClose();
     };
     window.addEventListener("popstate", onPop);
@@ -779,17 +820,38 @@ function ArticleReaderShell({
     sel.removeAllRanges();
   }
 
+  const closePeek = () => {
+    type Hist = { dispatchArticle?: string; dispatchPlayerPeek?: number };
+    const st = (history.state as Hist | null) ?? {};
+    if (st.dispatchPlayerPeek != null) history.back();
+    else setPeekPlayerId(null);
+  };
+
+  const openPeek = (id: number) => {
+    type Hist = { dispatchArticle?: string; dispatchPlayerPeek?: number };
+    setPeekPlayerId(id);
+    const st = (history.state as Hist | null) ?? {};
+    history.pushState(
+      { ...st, dispatchArticle: item.link, dispatchPlayerPeek: id },
+      "",
+      window.location.href,
+    );
+  };
+
   const leave = () => {
+    if (peekPlayerId != null) {
+      closePeek();
+      return;
+    }
     onClose();
     const st = (history.state as { dispatchArticle?: string } | null) ?? {};
     if (st.dispatchArticle) history.back();
   };
 
-  const swipeRef = useSwipeNav({
-    enabled: !pendingQuote && peekPlayerId == null && !lightboxSrc,
-    onBack: leave,
-    onNext: hasNext ? onNext : null,
-  });
+  const onDoubleTap = useDoubleTapNext(
+    hasNext ? onNext : null,
+    !pendingQuote && peekPlayerId == null && !lightboxSrc,
+  );
 
   async function shareArticle() {
     try {
@@ -812,9 +874,9 @@ function ArticleReaderShell({
 
   return (
     <div
-      ref={swipeRef}
       className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[minmax(0,42rem)_minmax(15rem,1fr)]"
       style={{ touchAction: "pan-y" }}
+      onClick={onDoubleTap}
     >
       <article className="font-rss min-w-0">
         <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -944,9 +1006,9 @@ function ArticleReaderShell({
               e.preventDefault();
               const href = a.getAttribute("href") ?? "";
               const m = href.match(/\/sports\/mlb\/player\/(\d+)/);
-              if (m) setPeekPlayerId(Number(m[1]));
+              if (m) openPeek(Number(m[1]));
             }}
-            className="rss-reader max-w-none text-[20px] leading-[1.8] text-[#eceef4] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_a.rss-player-link]:text-accent [&_a.rss-player-link]:decoration-accent/40 [&_a.rss-player-link]:underline-offset-[3px] [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5 [&_video.rss-video]:my-6 [&_video.rss-video]:aspect-video [&_video.rss-video]:w-full [&_video.rss-video]:rounded-lg [&_video.rss-video]:bg-black [&_figcaption]:hidden [&_figure]:my-6"
+            className="rss-reader max-w-none text-[20px] leading-[1.8] text-[#eceef4] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_a.rss-player-link]:text-accent [&_a.rss-player-link]:decoration-accent/40 [&_a.rss-player-link]:underline-offset-[3px] [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_table]:my-4 [&_table]:w-full [&_table]:text-left [&_table]:text-[15px] [&_td]:border-b [&_td]:border-white/10 [&_td]:px-2 [&_td]:py-1.5 [&_th]:border-b [&_th]:border-white/20 [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-[11px] [&_th]:uppercase [&_th]:tracking-[0.12em] [&_th]:text-chalk-dim [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5 [&_video.rss-video]:my-6 [&_video.rss-video]:aspect-video [&_video.rss-video]:w-full [&_video.rss-video]:rounded-lg [&_video.rss-video]:bg-black [&_figcaption]:hidden [&_figure]:my-6"
             dangerouslySetInnerHTML={{ __html: displayHtml }}
           />
         )}
@@ -1019,7 +1081,7 @@ function ArticleReaderShell({
       ) : null}
 
       {peekPlayerId != null ? (
-        <PlayerPeek playerId={peekPlayerId} onClose={() => setPeekPlayerId(null)} />
+        <PlayerPeek playerId={peekPlayerId} onClose={closePeek} />
       ) : null}
 
       {lightboxSrc ? (
@@ -1218,6 +1280,10 @@ export default function RssPage() {
   );
   const [batchMode, setBatchMode] = useState(false);
   const [batchSelected, setBatchSelected] = useState<Set<string>>(() => new Set());
+  const [hideRead, setHideRead] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("dispatch-hide-read") === "1";
+  });
 
   const reads = useQuery({
     queryKey: ["rss-reads"],
@@ -1361,7 +1427,8 @@ export default function RssPage() {
     if (nav === "notes" || nav === "filters") return [] as RssFeedItemRef[];
     if (nav === "saved") return savedListItems;
     if (nav === "duplicates") {
-      const rows = [...duplicateItems];
+      let rows = [...duplicateItems];
+      if (hideRead) rows = rows.filter((it) => !readUrls.has(it.link));
       rows.sort((a, b) => {
         const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
         const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
@@ -1389,12 +1456,14 @@ export default function RssPage() {
       return deduped;
     }
     const pack = feedById.get(nav);
-    return (pack?.items ?? []).map((it) => ({
+    let rows = (pack?.items ?? []).map((it) => ({
       ...it,
-      feedId: nav,
+      feedId: nav as RssFeedId,
       feedUrl: pack?.url ?? "",
     }));
-  }, [nav, feedById, readUrls, duplicateItems, keepHosts, savedListItems]);
+    if (hideRead) rows = rows.filter((it) => !readUrls.has(it.link));
+    return rows;
+  }, [nav, feedById, readUrls, duplicateItems, keepHosts, savedListItems, hideRead]);
 
   const totalUnread = useMemo(() => {
     const merged: RssFeedItem[] = [];
@@ -1790,9 +1859,35 @@ export default function RssPage() {
                     ? `${filters.length} rules`
                     : nav === "duplicates"
                       ? `${duplicateItems.length} filtered · MLB preferred`
-                      : `${listItems.length} articles`}
+                      : `${listItems.length} articles${hideRead && RSS_FEEDS.some((f) => f.id === nav) ? " · unread only" : ""}`}
             </p>
           </div>
+          {RSS_FEEDS.some((f) => f.id === nav) || nav === "duplicates" ? (
+            <button
+              type="button"
+              onClick={() => {
+                setHideRead((v) => {
+                  const next = !v;
+                  window.localStorage.setItem("dispatch-hide-read", next ? "1" : "0");
+                  return next;
+                });
+              }}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 text-[11px] uppercase tracking-[0.14em]",
+                hideRead ? "text-accent" : "text-chalk hover:text-cream",
+              )}
+              title={hideRead ? "Show read stories" : "Hide read stories"}
+              aria-pressed={hideRead}
+            >
+              {hideRead ? (
+                <span className="bg-accent inline-block h-2.5 w-2.5 rounded-full" />
+              ) : (
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-white/25" />
+              )}
+              {hideRead ? <EyeOff size={14} /> : <Eye size={14} />}
+              <span className="hidden sm:inline">{hideRead ? "Unread only" : "Hide read"}</span>
+            </button>
+          ) : null}
           {canBatch ? (
             <button
               type="button"

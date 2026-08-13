@@ -507,6 +507,24 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["sports_person_notes"]["Insert"]>;
         Relationships: [];
       };
+      sports_player_tags: {
+        Row: {
+          id: string;
+          user_id: string;
+          player_id: string;
+          tag: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          player_id: string;
+          tag: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["sports_player_tags"]["Insert"]>;
+        Relationships: [];
+      };
       rss_reads: {
         Row: {
           id: string;
