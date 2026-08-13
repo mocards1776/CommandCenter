@@ -686,7 +686,17 @@ function PlayerHeader({
               <div>
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Birthdate</dt>
                 <dd className="mt-0.5 text-white">
-                  {player.birthDate}
+                  {(() => {
+                    const parts = new Intl.DateTimeFormat("en-GB", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                    }).formatToParts(new Date(`${player.birthDate}T12:00:00`));
+                    const day = parts.find((p) => p.type === "day")?.value ?? "01";
+                    const month = parts.find((p) => p.type === "month")?.value ?? "01";
+                    const year = parts.find((p) => p.type === "year")?.value ?? "1970";
+                    return `${day}-${month}-${year}`;
+                  })()}
                   {player.age != null ? ` (${player.age})` : ""}
                 </dd>
               </div>
