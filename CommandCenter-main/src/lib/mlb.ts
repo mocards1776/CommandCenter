@@ -105,8 +105,13 @@ export type MlbPlayerSeasonRow = {
   season: number;
   teamId: number | null;
   team: string;
+  /** 1 = MLB; 11–16 = MiLB levels. */
+  sportId: number;
+  sportAbbrev: string;
   stats: MlbPlayerStatLine[];
 };
+
+export type MlbPlayerLevel = "mlb" | "minors";
 
 export type MlbPlayerCard = {
   id: number;
@@ -133,6 +138,14 @@ export type MlbPlayerCard = {
   teamId: number | null;
   teamName: string | null;
   teamAbbrev: string | null;
+  /** Current club sport id (1 = MLB). */
+  sportId: number | null;
+  sportName: string | null;
+  sportAbbrev: string | null;
+  /** Default level to show — current club. */
+  defaultLevel: MlbPlayerLevel;
+  hasMlbStats: boolean;
+  hasMinorsStats: boolean;
   primaryColor: string | null;
   headshot: string;
   actionShot: string;
@@ -140,6 +153,11 @@ export type MlbPlayerCard = {
   heroBackdrop: string;
   hitting: MlbPlayerStatLine[];
   pitching: MlbPlayerStatLine[];
+  /** Season lines by level (current season). */
+  mlbHitting: MlbPlayerStatLine[];
+  mlbPitching: MlbPlayerStatLine[];
+  minorsHitting: MlbPlayerStatLine[];
+  minorsPitching: MlbPlayerStatLine[];
   careerHitting: MlbPlayerStatLine[];
   careerPitching: MlbPlayerStatLine[];
   yearByYearHitting: MlbPlayerSeasonRow[];
@@ -1736,11 +1754,118 @@ function teamInGame(g: MlbScoreGame, teamId: number): boolean {
   return g.away.teamId === teamId || g.home.teamId === teamId;
 }
 
-/** Live first, else today's unfinished, else latest final. */
+export type MlbGameInterest = {
+  score: number;
+  reasons: string[];
+};
+
+const CARDINALS_TEAM_ID = 138;
+
+/** RUWT-style interest score — higher = more worth turning on. */
+export function scoreGameInterest(g: MlbScoreGame): MlbGameInterest {
+  const reasons: string[] = [];
+  let score = 0;
+  const away = g.away.score;
+  const home = g.home.score;
+  const hasScore = away != null && home != null;
+  const diff = hasScore ? Math.abs(away - home) : null;
+  const total = hasScore ? away + home : null;
+
+  if (g.live) {
+    score += 42;
+    reasons.push("Live now");
+  } else if (g.final) {
+    score += 8;
+  } else {
+    score += 4;
+  }
+
+  if (teamInGame(g, CARDINALS_TEAM_ID)) {
+    score += 18;
+    reasons.push("Cardinals");
+  }
+
+  if (diff != null) {
+    if (diff === 0) {
+      score += 28;
+      reasons.push("Tied");
+    } else if (diff === 1) {
+      score += 24;
+      reasons.push("One-run game");
+    } else if (diff === 2) {
+      score += 14;
+      reasons.push("Within two");
+    } else if (diff <= 3) {
+      score += 8;
+      reasons.push("Tight");
+    } else if (diff >= 7) {
+      score -= 16;
+      reasons.push("Blowout");
+    } else if (diff >= 5) {
+      score -= 8;
+    }
+  }
+
+  const inn = (g.inning ?? "").toLowerCase();
+  if (/extra|10th|11th|12th|13th|14th|15th/.test(inn)) {
+    score += 32;
+    reasons.push("Extras");
+  } else if (/\b(7th|8th|9th)\b/.test(inn) || /mid\s*7|top\s*7|bot\s*7|end\s*7|mid\s*8|top\s*8|bot\s*8|end\s*8|mid\s*9|top\s*9|bot\s*9|end\s*9/.test(inn)) {
+    score += 18;
+    reasons.push("Late innings");
+  }
+
+  if (total != null && total >= 12) {
+    score += 12;
+    reasons.push("Slugfest");
+  } else if (total != null && total >= 9) {
+    score += 6;
+    reasons.push("High scoring");
+  }
+
+  const parseRecord = (r: string | null): number | null => {
+    if (!r) return null;
+    const m = r.match(/^(\d+)-(\d+)/);
+    if (!m) return null;
+    const w = Number(m[1]);
+    const l = Number(m[2]);
+    if (!Number.isFinite(w) || !Number.isFinite(l) || w + l === 0) return null;
+    return w / (w + l);
+  };
+  const aw = parseRecord(g.away.record);
+  const hw = parseRecord(g.home.record);
+  if (aw != null && hw != null && aw >= 0.55 && hw >= 0.55) {
+    score += 10;
+    reasons.push("Contenders");
+  }
+
+  if (g.final && diff === 1) {
+    score += 10;
+    if (!reasons.includes("One-run game")) reasons.push("One-run final");
+  }
+
+  return { score: Math.max(0, score), reasons: reasons.slice(0, 4) };
+}
+
+export type MlbScoredGame = MlbScoreGame & MlbGameInterest;
+
+/** Rank slate by interest — live close games float to the top. */
+export function rankBestGames(games: MlbScoreGame[], limit = 10): MlbScoredGame[] {
+  return [...games]
+    .map((g) => {
+      const { score, reasons } = scoreGameInterest(g);
+      return { ...g, score, reasons };
+    })
+    .sort((a, b) => b.score - a.score || Number(b.id) - Number(a.id))
+    .slice(0, limit);
+}
+
+/** Live first by interest, else today's unfinished, else latest final. */
 export function pickHeroGame(games: MlbScoreGame[]): MlbScoreGame | null {
   if (!games.length) return null;
+  const live = games.filter((g) => g.live);
+  if (live.length) return rankBestGames(live, 1)[0] ?? live[0];
   return (
-    games.find((g) => g.live) ??
     games.find((g) => !g.final && g.abstractState !== "Final") ??
     [...games].reverse().find((g) => g.final) ??
     games[0]
@@ -2881,20 +3006,24 @@ function formatDraft(d: {
   return { year, round, pick, team, school, signingBonus, display };
 }
 
-async function fetchYearByYearRows(
+const MILB_SPORT_IDS = [11, 12, 13, 14, 15, 16] as const;
+
+async function fetchYearByYearForSport(
   playerId: number,
   group: "hitting" | "pitching",
+  sportId: number,
 ): Promise<MlbPlayerSeasonRow[]> {
   try {
     const raw = (await mlbGet(`people/${playerId}/stats`, {
       stats: "yearByYear",
       group,
-      sportId: "1",
+      sportId: String(sportId),
     })) as {
       stats?: {
         splits?: {
           season?: string;
           team?: { id?: number; name?: string; abbreviation?: string };
+          sport?: { id?: number; abbreviation?: string; name?: string };
           stat?: Record<string, unknown>;
         }[];
       }[];
@@ -2910,14 +3039,73 @@ async function fetchYearByYearRows(
         season,
         teamId: s.team?.id ?? null,
         team: s.team?.abbreviation || s.team?.name || "—",
+        sportId: s.sport?.id ?? sportId,
+        sportAbbrev: s.sport?.abbreviation || (sportId === 1 ? "MLB" : "MiLB"),
         stats,
       });
     }
-    // Newest first for the table
-    rows.sort((a, b) => b.season - a.season);
     return rows;
   } catch {
     return [];
+  }
+}
+
+async function fetchYearByYearRows(
+  playerId: number,
+  group: "hitting" | "pitching",
+): Promise<MlbPlayerSeasonRow[]> {
+  const parts = await Promise.all([
+    fetchYearByYearForSport(playerId, group, 1),
+    ...MILB_SPORT_IDS.map((sid) => fetchYearByYearForSport(playerId, group, sid)),
+  ]);
+  const rows = parts.flat();
+  rows.sort(
+    (a, b) =>
+      b.season - a.season ||
+      a.sportId - b.sportId ||
+      a.team.localeCompare(b.team),
+  );
+  return rows;
+}
+
+async function fetchSeasonStatLines(
+  playerId: number,
+  group: "hitting" | "pitching",
+  season: number,
+  sportId: number,
+): Promise<MlbPlayerStatLine[]> {
+  try {
+    const raw = (await mlbGet(`people/${playerId}/stats`, {
+      stats: "season",
+      group,
+      season: String(season),
+      sportId: String(sportId),
+    })) as {
+      stats?: { splits?: { stat?: Record<string, unknown> }[] }[];
+    };
+    const keys = group === "pitching" ? PITCH_KEYS : HIT_KEYS;
+    return pickStats(raw.stats?.[0]?.splits?.[0]?.stat, keys);
+  } catch {
+    return [];
+  }
+}
+
+async function resolveTeamSport(
+  teamId: number | null,
+): Promise<{ sportId: number | null; sportName: string | null; sportAbbrev: string | null }> {
+  if (teamId == null) return { sportId: null, sportName: null, sportAbbrev: null };
+  try {
+    const raw = (await mlbGet(`teams/${teamId}`, { hydrate: "sport" })) as {
+      teams?: { sport?: { id?: number; name?: string; abbreviation?: string } }[];
+    };
+    const sport = raw.teams?.[0]?.sport;
+    return {
+      sportId: sport?.id ?? null,
+      sportName: sport?.name ?? null,
+      sportAbbrev: sport?.abbreviation ?? null,
+    };
+  } catch {
+    return { sportId: null, sportName: null, sportAbbrev: null };
   }
 }
 
@@ -2960,7 +3148,12 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
           highschools?: { name?: string; city?: string; state?: string }[];
           colleges?: { name?: string }[];
         };
-        currentTeam?: { id?: number; name?: string; abbreviation?: string };
+        currentTeam?: {
+          id?: number;
+          name?: string;
+          abbreviation?: string;
+          sport?: { id?: number; name?: string; abbreviation?: string };
+        };
         stats?: {
           group?: { displayName?: string };
           type?: { displayName?: string };
@@ -2996,6 +3189,69 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
 
   const place = [p.birthCity, p.birthStateProvince, p.birthCountry].filter(Boolean).join(", ");
   const teamId = p.currentTeam?.id ?? null;
+  const teamSport =
+    p.currentTeam?.sport?.id != null
+      ? {
+          sportId: p.currentTeam.sport.id,
+          sportName: p.currentTeam.sport.name ?? null,
+          sportAbbrev: p.currentTeam.sport.abbreviation ?? null,
+        }
+      : await resolveTeamSport(teamId);
+
+  const currentSportId = teamSport.sportId;
+  const isMinorsNow = currentSportId != null && currentSportId !== 1;
+
+  const [mlbHitting, mlbPitching, minorsHittingRaw, minorsPitchingRaw] = await Promise.all([
+    hitting.length && !isMinorsNow
+      ? Promise.resolve(hitting)
+      : fetchSeasonStatLines(id, "hitting", season, 1),
+    pitching.length && !isMinorsNow
+      ? Promise.resolve(pitching)
+      : fetchSeasonStatLines(id, "pitching", season, 1),
+    isMinorsNow
+      ? fetchSeasonStatLines(id, "hitting", season, currentSportId)
+      : (async () => {
+          for (const sid of MILB_SPORT_IDS) {
+            const rows = await fetchSeasonStatLines(id, "hitting", season, sid);
+            if (rows.length) return rows;
+          }
+          return [] as MlbPlayerStatLine[];
+        })(),
+    isMinorsNow
+      ? fetchSeasonStatLines(id, "pitching", season, currentSportId)
+      : (async () => {
+          for (const sid of MILB_SPORT_IDS) {
+            const rows = await fetchSeasonStatLines(id, "pitching", season, sid);
+            if (rows.length) return rows;
+          }
+          return [] as MlbPlayerStatLine[];
+        })(),
+  ]);
+
+  const minorsHitting = minorsHittingRaw;
+  const minorsPitching = minorsPitchingRaw;
+
+  const hasMlbStats =
+    mlbHitting.length > 0 ||
+    mlbPitching.length > 0 ||
+    yearByYearHitting.some((r) => r.sportId === 1) ||
+    yearByYearPitching.some((r) => r.sportId === 1);
+  const hasMinorsStats =
+    minorsHitting.length > 0 ||
+    minorsPitching.length > 0 ||
+    yearByYearHitting.some((r) => r.sportId !== 1) ||
+    yearByYearPitching.some((r) => r.sportId !== 1);
+
+  const defaultLevel: MlbPlayerLevel = isMinorsNow
+    ? "minors"
+    : hasMlbStats || !hasMinorsStats
+      ? "mlb"
+      : "minors";
+
+  // Surface current-level season lines as the primary strip.
+  hitting = defaultLevel === "minors" ? minorsHitting : mlbHitting;
+  pitching = defaultLevel === "minors" ? minorsPitching : mlbPitching;
+
   const hs = p.education?.highschools?.[0];
   const college = p.education?.colleges?.[0];
   let draft = formatDraft(p.drafts?.[0]);
@@ -3084,12 +3340,22 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
     teamId,
     teamName: p.currentTeam?.name ?? null,
     teamAbbrev: p.currentTeam?.abbreviation ?? null,
+    sportId: currentSportId,
+    sportName: teamSport.sportName,
+    sportAbbrev: teamSport.sportAbbrev,
+    defaultLevel,
+    hasMlbStats,
+    hasMinorsStats,
     primaryColor: teamId != null ? TEAM_COLORS[teamId] ?? "d9515c" : "d9515c",
     headshot: mlbHeadshot(p.id ?? id, 426),
     actionShot: mlbActionShot(p.id ?? id),
     heroBackdrop: mlbHeroBackdrop(p.id ?? id),
     hitting,
     pitching,
+    mlbHitting,
+    mlbPitching,
+    minorsHitting,
+    minorsPitching,
     careerHitting,
     careerPitching,
     yearByYearHitting,
@@ -5205,4 +5471,316 @@ export async function fetchFarmRoster(teamId: number): Promise<MlbFarmRosterPlay
       position: r.position?.abbreviation ?? null,
       number: r.jerseyNumber ?? null,
     }));
+}
+
+export type MlbFarmGameWrap = {
+  gamePk: number;
+  title: string;
+  snippet: string;
+  contentHtml: string;
+  publishedAt: string;
+  level: string;
+  affiliateTeamId: number;
+  officialDate: string;
+};
+
+function escHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Box-score digests for Cardinals affiliates over the last N days. */
+export async function fetchCardinalsFarmGameWraps(days = 5): Promise<MlbFarmGameWrap[]> {
+  const affiliates = await fetchCardinalsFarmAffiliates();
+  if (!affiliates.length) return [];
+
+  const end = chicagoToday();
+  const start = addDaysIso(end, -(Math.max(1, days) - 1));
+  const affiliateIds = new Set(affiliates.map((a) => a.teamId));
+  const levelByTeam = new Map(affiliates.map((a) => [a.teamId, a]));
+
+  type SchedGame = {
+    gamePk: number;
+    officialDate: string;
+    gameDate: string | null;
+    status: string;
+    abstract: string;
+    awayName: string;
+    homeName: string;
+    awayAbbrev: string;
+    homeAbbrev: string;
+    awayId: number;
+    homeId: number;
+    awayScore: number | null;
+    homeScore: number | null;
+    sportId: number;
+  };
+
+  const games: SchedGame[] = [];
+  const seen = new Set<number>();
+
+  await Promise.all(
+    affiliates.map(async (aff) => {
+      if (!aff.sportId) return;
+      try {
+        const raw = (await mlbGet("schedule", {
+          sportId: String(aff.sportId),
+          teamId: String(aff.teamId),
+          startDate: start,
+          endDate: end,
+          hydrate: "linescore,team,decisions",
+        })) as {
+          dates?: {
+            date?: string;
+            games?: {
+              gamePk?: number;
+              gameDate?: string;
+              officialDate?: string;
+              status?: { detailedState?: string; abstractGameState?: string };
+              teams?: {
+                away?: {
+                  score?: number;
+                  team?: { id?: number; name?: string; abbreviation?: string };
+                };
+                home?: {
+                  score?: number;
+                  team?: { id?: number; name?: string; abbreviation?: string };
+                };
+              };
+              linescore?: {
+                teams?: {
+                  away?: { runs?: number };
+                  home?: { runs?: number };
+                };
+              };
+            }[];
+          }[];
+        };
+        for (const day of raw.dates ?? []) {
+          for (const g of day.games ?? []) {
+            const pk = g.gamePk;
+            if (!pk || seen.has(pk)) continue;
+            const abstract = g.status?.abstractGameState ?? "";
+            if (abstract !== "Final" && abstract !== "Live") continue;
+            seen.add(pk);
+            const away = g.teams?.away;
+            const home = g.teams?.home;
+            games.push({
+              gamePk: pk,
+              officialDate: g.officialDate ?? day.date ?? end,
+              gameDate: g.gameDate ?? null,
+              status: g.status?.detailedState ?? abstract,
+              abstract,
+              awayName: away?.team?.name ?? "Away",
+              homeName: home?.team?.name ?? "Home",
+              awayAbbrev: away?.team?.abbreviation ?? "AWAY",
+              homeAbbrev: home?.team?.abbreviation ?? "HOME",
+              awayId: away?.team?.id ?? 0,
+              homeId: home?.team?.id ?? 0,
+              awayScore: g.linescore?.teams?.away?.runs ?? away?.score ?? null,
+              homeScore: g.linescore?.teams?.home?.runs ?? home?.score ?? null,
+              sportId: aff.sportId,
+            });
+          }
+        }
+      } catch {
+        /* skip affiliate day */
+      }
+    }),
+  );
+
+  games.sort((a, b) => {
+    const da = a.gameDate ? Date.parse(a.gameDate) : Date.parse(a.officialDate);
+    const db = b.gameDate ? Date.parse(b.gameDate) : Date.parse(b.officialDate);
+    return db - da;
+  });
+
+  const limited = games.slice(0, 28);
+  const wraps: MlbFarmGameWrap[] = [];
+
+  const concurrency = 3;
+  for (let i = 0; i < limited.length; i += concurrency) {
+    const chunk = limited.slice(i, i + concurrency);
+    const settled = await Promise.all(
+      chunk.map(async (g) => {
+        const affiliateTeamId = affiliateIds.has(g.awayId)
+          ? g.awayId
+          : affiliateIds.has(g.homeId)
+            ? g.homeId
+            : g.awayId;
+        const aff = levelByTeam.get(affiliateTeamId);
+        const level = aff?.level ?? "MiLB";
+        const scoreLine =
+          g.awayScore != null && g.homeScore != null
+            ? `${g.awayAbbrev} ${g.awayScore}, ${g.homeAbbrev} ${g.homeScore}`
+            : `${g.awayAbbrev} @ ${g.homeAbbrev}`;
+        const title = `${level}: ${scoreLine}`;
+
+        let snippet = `${g.status} — ${g.awayName} at ${g.homeName}.`;
+        let contentHtml = `<p>${escHtml(snippet)}</p><p><a href="/sports/mlb/game/${g.gamePk}">Open box score</a></p>`;
+
+        try {
+          const live = (await fetch(
+            `https://statsapi.mlb.com/api/v1.1/game/${g.gamePk}/feed/live`,
+            { headers: { Accept: "application/json" } },
+          ).then((r) => (r.ok ? r.json() : null))) as {
+            liveData?: {
+              decisions?: {
+                winner?: { fullName?: string };
+                loser?: { fullName?: string };
+                save?: { fullName?: string };
+              };
+              plays?: {
+                allPlays?: {
+                  about?: { isScoringPlay?: boolean };
+                  result?: { description?: string };
+                }[];
+              };
+            };
+            gameData?: { venue?: { name?: string } };
+          } | null;
+
+          const box = (await mlbGet(`game/${g.gamePk}/boxscore`)) as {
+            teams?: {
+              away?: {
+                teamStats?: { batting?: { runs?: number; hits?: number; errors?: number } };
+                batters?: number[];
+                players?: Record<
+                  string,
+                  {
+                    person?: { fullName?: string };
+                    stats?: { batting?: { summary?: string; hits?: number; atBats?: number } };
+                  }
+                >;
+              };
+              home?: {
+                teamStats?: { batting?: { runs?: number; hits?: number; errors?: number } };
+                batters?: number[];
+                players?: Record<
+                  string,
+                  {
+                    person?: { fullName?: string };
+                    stats?: { batting?: { summary?: string; hits?: number; atBats?: number } };
+                  }
+                >;
+              };
+            };
+          };
+
+          const decisions = live?.liveData?.decisions;
+          const wp = decisions?.winner?.fullName;
+          const lp = decisions?.loser?.fullName;
+          const sv = decisions?.save?.fullName;
+          const venue = live?.gameData?.venue?.name;
+
+          const scoring = (live?.liveData?.plays?.allPlays ?? [])
+            .filter((p) => p.about?.isScoringPlay && p.result?.description)
+            .map((p) => p.result!.description!.trim())
+            .slice(0, 8);
+
+          const topBatters = (side: "away" | "home") => {
+            const t = box.teams?.[side];
+            if (!t) return [];
+            const out: string[] = [];
+            for (const id of t.batters ?? []) {
+              const p = t.players?.[`ID${id}`];
+              const b = p?.stats?.batting;
+              if (!p?.person?.fullName || !b) continue;
+              const hits = Number(b.hits ?? 0);
+              if (hits < 1) continue;
+              out.push(
+                `${p.person.fullName} (${b.summary || `${hits}-${b.atBats ?? "?"}`})`,
+              );
+              if (out.length >= 3) break;
+            }
+            return out;
+          };
+
+          const awayBat = box.teams?.away?.teamStats?.batting;
+          const homeBat = box.teams?.home?.teamStats?.batting;
+          const rhes =
+            awayBat && homeBat
+              ? `${g.awayAbbrev} ${awayBat.runs ?? g.awayScore ?? "—"}-${awayBat.hits ?? "—"}-${awayBat.errors ?? "—"} · ${g.homeAbbrev} ${homeBat.runs ?? g.homeScore ?? "—"}-${homeBat.hits ?? "—"}-${homeBat.errors ?? "—"}`
+              : scoreLine;
+
+          const parts: string[] = [];
+          if (g.abstract === "Final") {
+            const winner =
+              (g.awayScore ?? 0) > (g.homeScore ?? 0) ? g.awayName : g.homeName;
+            const loser =
+              (g.awayScore ?? 0) > (g.homeScore ?? 0) ? g.homeName : g.awayName;
+            const margin = Math.abs((g.awayScore ?? 0) - (g.homeScore ?? 0));
+            parts.push(
+              margin === 0
+                ? `${g.awayName} and ${g.homeName} finished tied ${scoreLine}.`
+                : `${winner} beat ${loser}, ${scoreLine}.`,
+            );
+          } else {
+            parts.push(`Live: ${scoreLine}.`);
+          }
+          if (wp || lp) {
+            parts.push(
+              [wp ? `WP ${wp}` : null, lp ? `LP ${lp}` : null, sv ? `SV ${sv}` : null]
+                .filter(Boolean)
+                .join(" · ") + ".",
+            );
+          }
+          const hitNotes = [...topBatters("away"), ...topBatters("home")].slice(0, 4);
+          if (hitNotes.length) parts.push(`Key bats: ${hitNotes.join("; ")}.`);
+          if (scoring.length) {
+            parts.push(`Scoring: ${scoring.slice(0, 3).join(" ")}`);
+          }
+
+          snippet = parts.join(" ").slice(0, 280);
+
+          const scoringHtml = scoring.length
+            ? `<h3>Scoring plays</h3><ul>${scoring.map((s) => `<li>${escHtml(s)}</li>`).join("")}</ul>`
+            : "";
+          const decisionsHtml =
+            wp || lp || sv
+              ? `<p>${escHtml(
+                  [wp ? `WP: ${wp}` : null, lp ? `LP: ${lp}` : null, sv ? `SV: ${sv}` : null]
+                    .filter(Boolean)
+                    .join(" · "),
+                )}</p>`
+              : "";
+
+          contentHtml = `
+            <p><strong>${escHtml(level)}</strong> · ${escHtml(rhes)}${venue ? ` · ${escHtml(venue)}` : ""}</p>
+            <p>${escHtml(parts[0] ?? snippet)}</p>
+            ${decisionsHtml}
+            ${hitNotes.length ? `<p><strong>Key bats</strong> — ${escHtml(hitNotes.join("; "))}.</p>` : ""}
+            ${scoringHtml}
+            <p><a href="/sports/mlb/game/${g.gamePk}">Full box score</a></p>
+          `.trim();
+        } catch {
+          /* keep schedule fallback */
+        }
+
+        const publishedAt =
+          g.gameDate ||
+          `${g.officialDate}T23:00:00-05:00`;
+
+        return {
+          gamePk: g.gamePk,
+          title,
+          snippet,
+          contentHtml,
+          publishedAt,
+          level,
+          affiliateTeamId,
+          officialDate: g.officialDate,
+        } satisfies MlbFarmGameWrap;
+      }),
+    );
+    for (const w of settled) {
+      if (w) wraps.push(w);
+    }
+  }
+
+  wraps.sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
+  return wraps;
 }

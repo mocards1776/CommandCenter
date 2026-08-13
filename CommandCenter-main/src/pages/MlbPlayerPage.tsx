@@ -1,14 +1,13 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Loader2, Star } from "lucide-react";
-import toast from "react-hot-toast";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Loader2 } from "lucide-react";
 import HighlightReel from "@/components/sports/HighlightReel";
 import SportsNotesPanel from "@/components/sports/SportsNotesPanel";
 import PlayerTagsPanel from "@/components/sports/PlayerTagsPanel";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
-import { addFavoritePlayer, isFavoritePlayer, removeFavoritePlayer } from "@/lib/favorite-players";
+import { isFavoritePlayer } from "@/lib/favorite-players";
 import {
   buildAcquisitionStory,
   buildPlayerPerformanceSummary,
@@ -28,6 +27,7 @@ import {
   type MlbPerformanceSummary,
   type MlbPlayerBrief,
   type MlbPlayerCard,
+  type MlbPlayerLevel,
   type MlbPlayerSeasonRow,
   type MlbPlayerStatLine,
   type MlbSplitRow,
@@ -38,10 +38,10 @@ export default function MlbPlayerPage() {
   const { playerId } = useParams<{ playerId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const qc = useQueryClient();
+  const [level, setLevel] = useState<MlbPlayerLevel | null>(null);
 
   const player = useQuery({
-    queryKey: ["mlb-player-v4", playerId],
+    queryKey: ["mlb-player-v5", playerId],
     queryFn: () => fetchMlbPlayer(playerId!),
     enabled: Boolean(playerId),
     staleTime: 120_000,
@@ -52,6 +52,10 @@ export default function MlbPlayerPage() {
     queryFn: () => isFavoritePlayer(user!.id, playerId!),
     enabled: Boolean(user?.id && playerId),
   });
+
+  useEffect(() => {
+    setLevel(null);
+  }, [playerId]);
 
   const highlights = useQuery({
     queryKey: ["mlb-player-highlights", playerId, player.data?.teamId],
@@ -140,31 +144,6 @@ export default function MlbPlayerPage() {
     staleTime: 300_000,
   });
 
-  const toggleFav = useMutation({
-    mutationFn: async () => {
-      if (!user?.id || !player.data) throw new Error("Not signed in");
-      if (favQuery.data) {
-        await removeFavoritePlayer(user.id, String(player.data.id));
-        return false;
-      }
-      await addFavoritePlayer({
-        userId: user.id,
-        playerId: String(player.data.id),
-        playerName: player.data.name,
-        teamName: player.data.teamName,
-        teamId: player.data.teamId != null ? String(player.data.teamId) : null,
-        position: player.data.position,
-      });
-      return true;
-    },
-    onSuccess: (nowFav) => {
-      void qc.invalidateQueries({ queryKey: ["favorite-player", user?.id, playerId] });
-      void qc.invalidateQueries({ queryKey: ["favorite-players", user?.id] });
-      toast.success(nowFav ? "Added to favorites" : "Removed from favorites");
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't update favorite"),
-  });
-
   useEffect(() => {
     const st = (history.state as { mlbPlayer?: string } | null) ?? {};
     if (playerId && st.mlbPlayer !== playerId) {
@@ -201,16 +180,30 @@ export default function MlbPlayerPage() {
   const p = player.data;
   const accent = `#${p.primaryColor ?? "d9515c"}`;
   const isFav = Boolean(favQuery.data);
+  const activeLevel: MlbPlayerLevel = level ?? p.defaultLevel;
+  const showLevelSelector = p.hasMlbStats && p.hasMinorsStats;
+  const levelHitting = activeLevel === "minors" ? p.minorsHitting : p.mlbHitting;
+  const levelPitching = activeLevel === "minors" ? p.minorsPitching : p.mlbPitching;
   const isPitcher =
-    (p.pitching.length > 0 && p.position === "P") || p.pitching.length > p.hitting.length;
-  const seasonStats = isPitcher ? p.pitching : p.hitting;
+    (levelPitching.length > 0 && p.position === "P") || levelPitching.length > levelHitting.length;
+  const seasonStats = isPitcher ? levelPitching : levelHitting;
   const careerStats = isPitcher ? p.careerPitching : p.careerHitting;
+  const yearRowsAll = isPitcher ? p.yearByYearPitching : p.yearByYearHitting;
+  const yearRows = yearRowsAll.filter((r) =>
+    activeLevel === "minors" ? r.sportId !== 1 : r.sportId === 1,
+  );
   const mlbUrl = `https://www.mlb.com/player/${slugify(p.name)}-${p.id}`;
   const performance = buildPlayerPerformanceSummary({
     isPitcher,
     latest: latestGame.data?.[0],
     last5: last5.data,
   });
+  const levelLabel =
+    activeLevel === "minors"
+      ? p.sportName && p.sportId !== 1
+        ? p.sportName
+        : "Minors"
+      : "Major League";
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-7">
@@ -232,13 +225,37 @@ export default function MlbPlayerPage() {
         </a>
       </div>
 
-      <PlayerHeader
-        player={p}
-        accent={accent}
-        isFavorite={isFav}
-        favoriting={toggleFav.isPending}
-        onToggleFavorite={() => toggleFav.mutate()}
-      />
+      <PlayerHeader player={p} accent={accent} isFavorite={isFav} />
+
+      {showLevelSelector && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            Level
+          </p>
+          <div className="inline-flex rounded-md border border-white/10 bg-black/20 p-0.5">
+            {(
+              [
+                ["mlb", "Majors"],
+                ["minors", p.sportName && p.sportId !== 1 ? p.sportName : "Minors"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setLevel(id)}
+                className={cn(
+                  "rounded-sm px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] transition",
+                  activeLevel === id
+                    ? "bg-accent/20 text-cream"
+                    : "text-chalk hover:text-cream",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {(brief.data || brief.isPending || brief.isFetched) && (
         <RotoWireBriefCard brief={brief.data ?? null} loading={brief.isPending} />
@@ -250,13 +267,18 @@ export default function MlbPlayerPage() {
         <SeasonStatsStrip
           season={p.season}
           stats={seasonStats}
-          ranks={ranks.data ?? []}
+          ranks={activeLevel === "mlb" ? (ranks.data ?? []) : []}
           isPitcher={isPitcher}
+          levelLabel={showLevelSelector ? levelLabel : undefined}
         />
       )}
 
       {seasonStats.length > 0 && (
-        <StatTable title={`${p.season} Regular Season`} stats={seasonStats} accent={accent} />
+        <StatTable
+          title={`${p.season} ${showLevelSelector ? levelLabel : "Regular Season"}`}
+          stats={seasonStats}
+          accent={accent}
+        />
       )}
 
       {(last5.data || last10.data) && (
@@ -286,27 +308,45 @@ export default function MlbPlayerPage() {
         <StatTable title="Career Regular Season" stats={careerStats} accent={accent} />
       )}
 
-      {(isPitcher ? p.yearByYearPitching : p.yearByYearHitting).length > 0 && (
+      {yearRows.length > 0 && (
         <YearByYearTable
-          title="Career by year"
-          rows={isPitcher ? p.yearByYearPitching : p.yearByYearHitting}
+          title={showLevelSelector ? `Career by year · ${levelLabel}` : "Career by year"}
+          rows={yearRows}
           isPitcher={isPitcher}
         />
       )}
-      {!isPitcher && p.yearByYearPitching.length > 0 && (
-        <YearByYearTable title="Pitching by year" rows={p.yearByYearPitching} isPitcher />
-      )}
-      {isPitcher && p.yearByYearHitting.length > 0 && (
-        <YearByYearTable title="Batting by year" rows={p.yearByYearHitting} isPitcher={false} />
-      )}
+      {!isPitcher &&
+        (activeLevel === "mlb" ? p.yearByYearPitching : p.yearByYearPitching).filter((r) =>
+          activeLevel === "minors" ? r.sportId !== 1 : r.sportId === 1,
+        ).length > 0 && (
+          <YearByYearTable
+            title="Pitching by year"
+            rows={p.yearByYearPitching.filter((r) =>
+              activeLevel === "minors" ? r.sportId !== 1 : r.sportId === 1,
+            )}
+            isPitcher
+          />
+        )}
+      {isPitcher &&
+        p.yearByYearHitting.filter((r) =>
+          activeLevel === "minors" ? r.sportId !== 1 : r.sportId === 1,
+        ).length > 0 && (
+          <YearByYearTable
+            title="Batting by year"
+            rows={p.yearByYearHitting.filter((r) =>
+              activeLevel === "minors" ? r.sportId !== 1 : r.sportId === 1,
+            )}
+            isPitcher={false}
+          />
+        )}
 
-      {!isPitcher && p.pitching.length > 0 && (
-        <StatTable title={`${p.season} Pitching`} stats={p.pitching} accent={accent} />
+      {!isPitcher && levelPitching.length > 0 && (
+        <StatTable title={`${p.season} Pitching`} stats={levelPitching} accent={accent} />
       )}
       {isPitcher &&
-        p.hitting.length > 0 &&
-        p.hitting.some((s) => s.label === "AB" || s.label === "G") && (
-          <StatTable title={`${p.season} Batting`} stats={p.hitting} accent={accent} />
+        levelHitting.length > 0 &&
+        levelHitting.some((s) => s.label === "AB" || s.label === "G") && (
+          <StatTable title={`${p.season} Batting`} stats={levelHitting} accent={accent} />
         )}
 
       {splits.isPending && (
@@ -319,8 +359,6 @@ export default function MlbPlayerPage() {
       )}
 
       <BioAndOrigin player={p} />
-
-      <PlayerTagsPanel playerId={p.id} playerName={p.name} />
 
       <SportsNotesPanel entityType="player" entityId={p.id} entityName={p.name} />
 
@@ -452,20 +490,22 @@ function PlayerHeader({
   player,
   accent,
   isFavorite,
-  favoriting,
-  onToggleFavorite,
 }: {
   player: MlbPlayerCard;
   accent: string;
   isFavorite: boolean;
-  favoriting: boolean;
-  onToggleFavorite: () => void;
 }) {
   const htWt = [player.height, player.weight ? `${player.weight} lb` : null]
     .filter(Boolean)
     .join(" · ");
   const batThr =
     player.bats && player.throws ? `${player.bats}/${player.throws}` : player.bats ?? player.throws;
+  const levelChip =
+    player.sportAbbrev && player.sportId != null
+      ? player.sportId === 1
+        ? "MLB"
+        : player.sportAbbrev
+      : null;
 
   return (
     <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
@@ -492,9 +532,9 @@ function PlayerHeader({
             <img
               src={player.headshot}
               alt=""
-              width={160}
-              height={160}
-              className="h-[140px] w-[140px] rounded-[10px] object-cover object-[center_12%] sm:h-[160px] sm:w-[160px]"
+              width={176}
+              height={176}
+              className="h-[150px] w-[150px] rounded-[10px] object-cover object-[center_12%] sm:h-[176px] sm:w-[176px]"
             />
           </div>
           {player.teamId != null && (
@@ -507,14 +547,21 @@ function PlayerHeader({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              {player.teamId != null && player.teamName && (
-                <Link
-                  to={teamPagePath(player.teamId)}
-                  className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/70 transition hover:text-white"
-                >
-                  {player.teamName}
-                </Link>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {player.teamId != null && player.teamName && (
+                  <Link
+                    to={teamPagePath(player.teamId)}
+                    className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/70 transition hover:text-white"
+                  >
+                    {player.teamName}
+                  </Link>
+                )}
+                {levelChip && (
+                  <span className="rounded-sm border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                    {levelChip}
+                  </span>
+                )}
+              </div>
               <p className="mt-1 text-[13px] font-medium uppercase tracking-[0.08em] text-white/65">
                 {player.firstName}
               </p>
@@ -538,7 +585,7 @@ function PlayerHeader({
             )}
           </div>
 
-          <dl className="mt-4 grid grid-cols-1 gap-2.5 text-[12.5px] sm:grid-cols-3">
+          <dl className="mt-4 grid grid-cols-2 gap-2.5 text-[12.5px] sm:grid-cols-4">
             {htWt && (
               <div>
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">HT / WT</dt>
@@ -560,23 +607,32 @@ function PlayerHeader({
                 <dd className="mt-0.5 text-white">{batThr}</dd>
               </div>
             )}
+            {player.mlbDebut && (
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">MLB debut</dt>
+                <dd className="mt-0.5 text-white">{player.mlbDebut}</dd>
+              </div>
+            )}
+            {player.birthPlace && (
+              <div className="sm:col-span-2">
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Born</dt>
+                <dd className="mt-0.5 text-white">{player.birthPlace}</dd>
+              </div>
+            )}
+            {player.school && (
+              <div className="sm:col-span-2">
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">School</dt>
+                <dd className="mt-0.5 text-white">{player.school}</dd>
+              </div>
+            )}
           </dl>
 
-          <button
-            type="button"
-            onClick={onToggleFavorite}
-            disabled={favoriting}
-            className={cn(
-              "mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition disabled:opacity-50 sm:w-auto",
-              isFavorite
-                ? "border border-white/30 bg-white/10 text-white"
-                : "text-cream",
-            )}
-            style={isFavorite ? undefined : { background: accent }}
-          >
-            <Star size={14} className={isFavorite ? "fill-current text-accent" : ""} />
-            {isFavorite ? "Favorited" : "Add favorite"}
-          </button>
+          <PlayerTagsPanel
+            playerId={player.id}
+            playerName={player.name}
+            variant="hero"
+            isFavorite={isFavorite}
+          />
         </div>
       </div>
     </article>
@@ -590,11 +646,13 @@ function SeasonStatsStrip({
   stats,
   ranks,
   isPitcher,
+  levelLabel,
 }: {
   season: number;
   stats: MlbPlayerStatLine[];
   ranks: MlbLeagueRank[];
   isPitcher: boolean;
+  levelLabel?: string;
 }) {
   const keyStats: KeyStat[] = isPitcher ? buildPitcherKeyStats(stats) : buildHitterKeyStats(stats);
 
@@ -602,7 +660,7 @@ function SeasonStatsStrip({
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
-          {season} Season Stats
+          {season} Season Stats{levelLabel ? ` · ${levelLabel}` : ""}
         </h2>
       </div>
       <div className="grid grid-cols-2 divide-x divide-white/[0.06] sm:grid-cols-4">
@@ -830,7 +888,10 @@ function YearByYearTable({
             {rows.map((row) => {
               const map = new Map(row.stats.map((s) => [s.label, s.value]));
               return (
-                <tr key={`${row.season}-${row.team}`} className="border-t border-white/[0.05]">
+                <tr
+                  key={`${row.season}-${row.sportId}-${row.teamId ?? row.team}`}
+                  className="border-t border-white/[0.05]"
+                >
                   <td className="numeral text-cream px-3 py-2">{row.season}</td>
                   <td className="px-3 py-2 text-[#c8cdd8]">
                     {row.teamId != null ? (
@@ -843,6 +904,11 @@ function YearByYearTable({
                     ) : (
                       row.team
                     )}
+                    {row.sportAbbrev && row.sportId !== 1 ? (
+                      <span className="text-chalk-dim ml-1.5 text-[10px] uppercase tracking-[0.12em]">
+                        {row.sportAbbrev}
+                      </span>
+                    ) : null}
                   </td>
                   {labels.map((l) => (
                     <td key={l} className="numeral text-cream px-2 py-2 text-center">

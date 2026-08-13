@@ -38,6 +38,12 @@ export const RSS_FEEDS = [
     short: "MLB stats",
     url: "synthetic:mlb-stats",
   },
+  {
+    id: "cardinals-farm",
+    title: "Cardinals farm wraps",
+    short: "Farm",
+    url: "synthetic:cardinals-farm",
+  },
 ] as const;
 
 export type RssFeedId = (typeof RSS_FEEDS)[number]["id"];
@@ -830,6 +836,9 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
   if (feedUrl === "synthetic:mlb-stats") {
     return fetchMlbStatsDigestFeed();
   }
+  if (feedUrl === "synthetic:cardinals-farm") {
+    return fetchCardinalsFarmWrapsFeed();
+  }
   return invokeRss<RssFeed>({ mode: "feed", feedUrl });
 }
 
@@ -978,23 +987,31 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             } satisfies RssFeedItem;
           }
 
-          const headline = article?.headline || `Preview: ${matchup}`;
+          // Hold hollow previews ("No Story Available" / placeholder blurbs) until ESPN
+          // publishes real preview copy.
+          const headline = article?.headline?.trim() ?? "";
           const storyText = (article?.story ?? "")
             .replace(/<[^>]+>/g, " ")
             .replace(/\s+/g, " ")
             .trim();
-          const snippet =
-            (article?.description ?? "").replace(/^—\s*/, "").trim() ||
-            storyText.slice(0, 220) ||
-            `Game preview for ${matchup} at ${publishedAt.slice(0, 10)}.`;
+          const description = (article?.description ?? "").replace(/^—\s*/, "").trim();
+          const body = description || storyText;
+          const hollow =
+            !headline ||
+            !body ||
+            body.length < 40 ||
+            /no story available/i.test(`${headline} ${body}`) ||
+            /^game preview for\b/i.test(body);
+          if (hollow) return null;
+
           return {
             id: `preview-${c.eventId}`,
-            title: article?.headline ? headline : `Preview: ${matchup}`,
+            title: headline,
             link: `https://www.espn.com/mlb/preview/_/gameId/${c.eventId}`,
             author: "ESPN",
             publishedAt,
             image: article?.images?.[0]?.url ?? null,
-            snippet,
+            snippet: body.slice(0, 220),
           } satisfies RssFeedItem;
         } catch {
           return null;
@@ -1121,6 +1138,30 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
     description: "Once-a-day division standings, wild cards, and league leaders",
     link: "https://www.mlb.com/standings",
     feedUrl: "synthetic:mlb-stats",
+    items,
+  };
+}
+
+/** Cardinals MiLB affiliate box-score wraps (Memphis → DSL). */
+async function fetchCardinalsFarmWrapsFeed(): Promise<RssFeed> {
+  const { fetchCardinalsFarmGameWraps } = await import("./mlb");
+  const wraps = await fetchCardinalsFarmGameWraps(5);
+  const items: RssFeedItem[] = wraps.map((w) => ({
+    id: `farm-wrap-${w.gamePk}`,
+    title: w.title,
+    link: `/sports/mlb/game/${w.gamePk}`,
+    author: w.level,
+    publishedAt: w.publishedAt,
+    image: null,
+    snippet: w.snippet,
+    contentHtml: w.contentHtml,
+  }));
+
+  return {
+    title: "Cardinals farm wraps",
+    description: "Box scores and summaries for St. Louis Cardinals minor-league affiliates",
+    link: "/sports/mlb/prospects",
+    feedUrl: "synthetic:cardinals-farm",
     items,
   };
 }
@@ -1440,4 +1481,8 @@ export async function unsaveRssArticle(articleUrl: string): Promise<void> {
 }
 
 /** Feeds that stay out of the cross-feed Unread inbox (browse them on their own). */
-export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>(["mlb-wraps", "mlb-stats"]);
+export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>([
+  "mlb-wraps",
+  "mlb-stats",
+  "cardinals-farm",
+]);
