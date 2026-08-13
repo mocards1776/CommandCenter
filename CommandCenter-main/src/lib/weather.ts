@@ -90,7 +90,7 @@ export async function fetchZipWeather(zip = DEFAULT_WEATHER_ZIP): Promise<ZipWea
     `&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m` +
     `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max` +
     `&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=${encodeURIComponent(geo.timezone)}` +
-    `&forecast_days=3`;
+    `&forecast_days=10`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Weather failed (${res.status})`);
   const data = (await res.json()) as {

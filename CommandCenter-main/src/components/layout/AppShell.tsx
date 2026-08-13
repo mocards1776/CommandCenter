@@ -36,6 +36,7 @@ import {
   markRssSolo,
   prefersRssHome,
 } from "@/lib/rss-home";
+import DispatchScoreTicker from "@/components/rss/DispatchScoreTicker";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -275,6 +276,7 @@ export default function AppShell() {
         )}
       </header>
       <div className="rule-flag" />
+      {onRss ? <DispatchScoreTicker /> : null}
 
       <div className="flex min-h-0 flex-1">
         {!hideMainChrome && (

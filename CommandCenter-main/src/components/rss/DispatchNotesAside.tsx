@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import TeamMark from "@/components/sports/TeamMark";
 import {
+  chicagoToday,
   fetchMlbStandings,
   fetchMlbWildCardStandings,
   fetchTeamCurrentAndNextGames,
@@ -13,11 +14,37 @@ import { cn } from "@/lib/utils";
 
 const STL_TEAM_ID = 138;
 
+function shortPitcher(name: string | null): string {
+  if (!name) return "TBD";
+  const parts = name.trim().split(/\s+/);
+  return parts[parts.length - 1] ?? name;
+}
+
+function gameDateLabel(game: MlbScoreGame, fallback: string): string {
+  if (game.live) return "Now";
+  if (game.final) return "Latest";
+  const date = game.officialDate;
+  if (!date) return fallback;
+  if (date === chicagoToday()) return "Today";
+  try {
+    return new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
+      timeZone: "America/Chicago",
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return fallback;
+  }
+}
+
 function GameChip({ game, label }: { game: MlbScoreGame; label: string }) {
   const stlHome = game.home.teamId === STL_TEAM_ID;
   const us = stlHome ? game.home : game.away;
   const them = stlHome ? game.away : game.home;
   const vs = stlHome ? "vs" : "@";
+  const showProbables =
+    !game.live && !game.final && (game.away.probablePitcher || game.home.probablePitcher);
   return (
     <Link
       to={`/sports/mlb/game/${game.id}`}
@@ -40,6 +67,11 @@ function GameChip({ game, label }: { game: MlbScoreGame; label: string }) {
           </span>
         )}
       </div>
+      {showProbables ? (
+        <p className="text-chalk-dim mt-1.5 truncate text-[11px]">
+          {shortPitcher(game.away.probablePitcher)} vs {shortPitcher(game.home.probablePitcher)}
+        </p>
+      ) : null}
     </Link>
   );
 }
@@ -63,7 +95,7 @@ export default function DispatchNotesAside() {
     refetchInterval: 90_000,
   });
   const weather = useQuery({
-    queryKey: ["weather-zip", DEFAULT_WEATHER_ZIP],
+    queryKey: ["weather-zip", DEFAULT_WEATHER_ZIP, 10],
     queryFn: () => fetchZipWeather(DEFAULT_WEATHER_ZIP),
     staleTime: 15 * 60_000,
   });
@@ -84,16 +116,12 @@ export default function DispatchNotesAside() {
             {games.data.current ? (
               <GameChip
                 game={games.data.current}
-                label={
-                  games.data.current.live
-                    ? "Now"
-                    : games.data.current.final
-                      ? "Latest"
-                      : "Today"
-                }
+                label={gameDateLabel(games.data.current, "Next")}
               />
             ) : null}
-            {games.data.next ? <GameChip game={games.data.next} label="Next" /> : null}
+            {games.data.next ? (
+              <GameChip game={games.data.next} label={gameDateLabel(games.data.next, "Next")} />
+            ) : null}
           </div>
         )}
       </section>
@@ -115,7 +143,7 @@ export default function DispatchNotesAside() {
               {weather.data.current.windMph} mph · Humidity {weather.data.current.humidity}%
             </p>
             <ul className="mt-3 flex flex-col gap-1.5">
-              {weather.data.daily.slice(0, 3).map((d) => {
+              {weather.data.daily.slice(0, 10).map((d) => {
                 const day = new Date(`${d.date}T12:00:00`).toLocaleDateString("en-US", {
                   weekday: "short",
                   month: "short",
@@ -125,12 +153,15 @@ export default function DispatchNotesAside() {
                 return (
                   <li
                     key={d.date}
-                    className="text-chalk flex items-baseline justify-between gap-2 text-[12px]"
+                    className="text-chalk flex items-center justify-between gap-2 text-[12px]"
                   >
-                    <span className="text-cream/90">{day}</span>
-                    <span className="text-chalk-dim truncate">{d.summary}</span>
-                    <span className="numeral text-cream shrink-0">
+                    <span className="min-w-0 flex-1 truncate">{day}</span>
+                    <span className="text-chalk-dim shrink-0 text-[11px]">{d.summary}</span>
+                    <span className="numeral text-cream shrink-0 tabular-nums">
                       {d.highF}°/{d.lowF}°
+                    </span>
+                    <span className="text-chalk-dim w-8 shrink-0 text-right text-[11px] tabular-nums">
+                      {d.precipChance}%
                     </span>
                   </li>
                 );
