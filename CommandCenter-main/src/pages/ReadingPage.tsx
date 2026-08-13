@@ -3438,10 +3438,18 @@ function NowReading({
         {reading.map((b) => {
           const cover = coverSrc(b);
           return (
-            <button
+            <div
               key={b.id}
+              role="button"
+              tabIndex={0}
               onClick={() => onOpen(b)}
-              className="from-hero-lift to-hero group relative flex items-start gap-5 overflow-hidden rounded-lg border border-accent/30 bg-gradient-to-br p-5 text-left transition hover:border-accent/70 sm:gap-7 sm:p-7"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onOpen(b);
+                }
+              }}
+              className="from-hero-lift to-hero group relative flex cursor-pointer items-start gap-5 overflow-hidden rounded-lg border border-accent/30 bg-gradient-to-br p-5 text-left transition hover:border-accent/70 sm:gap-7 sm:p-7"
             >
               <StarField count={26} seed={31} />
 
@@ -3480,7 +3488,7 @@ function NowReading({
 
                 <NowReadingProgress book={b} />
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
