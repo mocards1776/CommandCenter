@@ -281,12 +281,28 @@ export function mlbTeamFavorite(teamId: number): SportsFavorite | undefined {
   };
 }
 
+/** Stub favorite for MiLB / unknown MLB ids — detail fetch hydrates the name. */
+export function milbTeamFavorite(teamId: number, name = "MiLB club"): SportsFavorite {
+  return {
+    key: `mlb-${teamId}`,
+    name,
+    shortName: name.replace(/\s+Cardinals$/i, "").trim() || name,
+    sport: "Baseball",
+    league: "MiLB",
+    espnPath: "",
+    mlbTeamId: teamId,
+    kind: "team",
+    color: "d9515c",
+  };
+}
+
 export function favoriteByKey(key: string): SportsFavorite | undefined {
   const known = DEFAULT_FAVORITES.find((f) => f.key === key);
   if (known) return known;
   const m = /^mlb-(\d+)$/.exec(key);
-  if (m) return mlbTeamFavorite(Number(m[1]));
-  return undefined;
+  if (!m) return undefined;
+  const id = Number(m[1]);
+  return mlbTeamFavorite(id) ?? milbTeamFavorite(id);
 }
 
 export function loadSportsLayout(): SportsLayout {
@@ -397,12 +413,21 @@ function fmtWhen(iso: string | null | undefined): string | null {
 function fmtDay(iso: string | null | undefined): string | null {
   if (!iso) return null;
   try {
-    return new Date(iso.includes("T") ? iso : `${iso}T12:00:00`).toLocaleDateString("en-US", {
+    const d = new Date(iso.includes("T") ? iso : `${iso}T12:00:00`);
+    const weekday = d.toLocaleDateString("en-GB", {
       timeZone: "America/Chicago",
       weekday: "short",
-      month: "short",
-      day: "numeric",
     });
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/Chicago",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).formatToParts(d);
+    const day = parts.find((p) => p.type === "day")?.value ?? "01";
+    const month = parts.find((p) => p.type === "month")?.value ?? "01";
+    const year = parts.find((p) => p.type === "year")?.value ?? "1970";
+    return `${weekday} ${day}-${month}-${year}`;
   } catch {
     return null;
   }
@@ -741,11 +766,39 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
 async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
   const teamId = fav.mlbTeamId!;
   const season = currentSeason();
-  const espnTeamId = fav.espnPath.split("/").pop() ?? "24";
+  const espnTeamId = fav.espnPath ? fav.espnPath.split("/").pop() ?? "" : "";
 
-  // Logo/color from ESPN (MLB API logos are less convenient).
-  const snap = await fetchTeamSnapshot(fav).catch(() => null);
-  const odds = await fetchEspnPlayoffOdds(fav, espnTeamId);
+  // Resolve club + sport (MiLB affiliates need sportId ≠ 1 for schedule/stats).
+  const teamMeta = (await mlbGet(`teams/${teamId}?hydrate=sport`).catch(() => null)) as {
+    teams?: {
+      id?: number;
+      name?: string;
+      teamName?: string;
+      sport?: { id?: number; name?: string };
+      parentOrgId?: number;
+      parentOrgName?: string;
+    }[];
+  } | null;
+  const club = teamMeta?.teams?.[0];
+  const sportId = club?.sport?.id && club.sport.id > 0 ? club.sport.id : 1;
+  const isMilb = sportId !== 1 || fav.league === "MiLB";
+  const resolvedName = club?.name ?? fav.name;
+  const resolvedShort = club?.teamName ?? fav.shortName;
+
+  // Logo/color from ESPN when available; MiLB falls back to parent/org mark.
+  const snap = fav.espnPath
+    ? await fetchTeamSnapshot(fav).catch(() => null)
+    : null;
+  const odds = espnTeamId
+    ? await fetchEspnPlayoffOdds(fav, espnTeamId).catch(() => ({
+        standing: null as string | null,
+        playoff: null as string | null,
+        wildCard: null as string | null,
+      }))
+    : { standing: null as string | null, playoff: null as string | null, wildCard: null as string | null };
+
+  const scheduleStart = isMilb ? `${season}-04-01` : `${season}-03-01`;
+  const scheduleEnd = isMilb ? `${season}-09-30` : `${season}-11-15`;
 
   const [
     standingsRaw,
@@ -758,23 +811,29 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     manager,
     generalManager,
   ] = await Promise.all([
-    mlbGet(
-      `standings?leagueId=103,104&season=${season}&standingsTypes=regularSeason&hydrate=division`,
-    ),
+    isMilb
+      ? Promise.resolve({ records: [] })
+      : mlbGet(
+          `standings?leagueId=103,104&season=${season}&standingsTypes=regularSeason&hydrate=division`,
+        ),
     mlbGet(`teams/${teamId}/roster?rosterType=active`),
     mlbGet(
-      `schedule?teamId=${teamId}&sportId=1&startDate=${season}-03-01&endDate=${season}-11-15&hydrate=probablePitcher,team`,
+      `schedule?teamId=${teamId}&sportId=${sportId}&startDate=${scheduleStart}&endDate=${scheduleEnd}&hydrate=probablePitcher,team`,
     ),
-    mlbGet(`teams/${teamId}/stats?season=${season}&group=hitting&stats=season`),
-    mlbGet(`teams/${teamId}/stats?season=${season}&group=pitching&stats=season`),
+    mlbGet(`teams/${teamId}/stats?season=${season}&group=hitting&stats=season&sportIds=${sportId}`).catch(
+      () => ({}),
+    ),
+    mlbGet(`teams/${teamId}/stats?season=${season}&group=pitching&stats=season&sportIds=${sportId}`).catch(
+      () => ({}),
+    ),
     mlbGet(
-      `stats?stats=season&group=hitting&season=${season}&sportIds=1&teamIds=${teamId}&playerPool=all&limit=40&sortStat=ops&order=desc`,
-    ),
+      `stats?stats=season&group=hitting&season=${season}&sportIds=${sportId}&teamIds=${teamId}&playerPool=all&limit=40&sortStat=ops&order=desc`,
+    ).catch(() => ({})),
     mlbGet(
-      `stats?stats=season&group=pitching&season=${season}&sportIds=1&teamIds=${teamId}&playerPool=all&limit=40&sortStat=era&order=asc`,
-    ),
-    fetchMlbTeamManager(teamId).catch(() => null),
-    fetchMlbTeamGeneralManager(teamId).catch(() => null),
+      `stats?stats=season&group=pitching&season=${season}&sportIds=${sportId}&teamIds=${teamId}&playerPool=all&limit=40&sortStat=era&order=asc`,
+    ).catch(() => ({})),
+    isMilb ? Promise.resolve(null) : fetchMlbTeamManager(teamId).catch(() => null),
+    isMilb ? Promise.resolve(null) : fetchMlbTeamGeneralManager(teamId).catch(() => null),
   ]);
 
   // Division standings (NL Central)
@@ -953,14 +1012,22 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     return `${s.era ?? "—"} ERA · ${s.strikeOuts ?? 0} SO · ${s.inningsPitched ?? "—"} IP`;
   }).slice(0, 6);
 
+  const milbStanding = isMilb
+    ? [club?.sport?.name, club?.parentOrgName].filter(Boolean).join(" · ") || "Minor League"
+    : null;
+
   return {
     key: fav.key,
-    name: snap?.name ?? fav.name,
-    shortName: snap?.shortName ?? fav.shortName,
-    logo: snap?.logo ?? null,
+    name: snap?.name ?? resolvedName,
+    shortName: snap?.shortName ?? resolvedShort,
+    logo:
+      snap?.logo ??
+      (isMilb
+        ? `https://www.mlbstatic.com/team-logos/${club?.parentOrgId ?? teamId}.svg`
+        : `https://www.mlbstatic.com/team-logos/${teamId}.svg`),
     color: snap?.color ?? fav.color ?? null,
     record: myRecord,
-    standing: odds.standing ?? myStanding,
+    standing: odds.standing ?? myStanding ?? milbStanding,
     playoffOdds: odds.playoff,
     wildCardOdds: odds.wildCard,
     manager: manager

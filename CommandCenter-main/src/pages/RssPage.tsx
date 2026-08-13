@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import DispatchEspnGameReader from "@/components/rss/DispatchEspnGameReader";
+import DispatchPlayerReader from "@/components/rss/DispatchPlayerReader";
 import DispatchNotesAside from "@/components/rss/DispatchNotesAside";
 import RssQuoteShareCard from "@/components/rss/RssQuoteShareCard";
 import {
@@ -46,6 +47,7 @@ import {
   loadDedupeKeepHosts,
   markQuotesInHtml,
   parseFeedScopedFilter,
+  parsePlayerArticleLink,
   partitionDedupedArticles,
   deleteRssFilter,
   deleteRssHighlight,
@@ -65,6 +67,7 @@ import {
   suggestUrlFilterValue,
   unsaveRssArticle,
   updateRssHighlightNote,
+  type RssFeedDef,
   type RssFeedId,
   type RssFeedItem,
   type RssFeedItemRef,
@@ -72,6 +75,12 @@ import {
   type RssFilterKind,
   type RssHighlight,
 } from "@/lib/rss";
+import {
+  displayPlayerTag,
+  fetchUserTagNames,
+  tagFeedId,
+  tagFeedUrl,
+} from "@/lib/sports-player-tags";
 
 const DISPATCH_OPEN_KEY = "dispatch-open-article-v1";
 
@@ -464,6 +473,24 @@ function ReaderView({
   onToggleSave: () => void;
   onArchive: () => void;
 }) {
+  const playerArticleId = parsePlayerArticleLink(item.link);
+  if (playerArticleId != null) {
+    return (
+      <PlayerArticleShell
+        item={item}
+        playerId={playerArticleId}
+        isSaved={isSaved}
+        hasPrev={hasPrev}
+        hasNext={hasNext}
+        onClose={onBack}
+        onPrev={onPrev}
+        onNext={onNext}
+        onToggleSave={onToggleSave}
+        onArchive={onArchive}
+      />
+    );
+  }
+
   const isEspnGame =
     Boolean(parseEspnGameIdFromUrl(item.link)) ||
     feedUrl === "synthetic:cardinals-wraps" ||
@@ -597,6 +624,101 @@ function EspnGameReaderShell({
         url={item.link}
         title={item.title}
         heroImage={item.image}
+        onBack={leave}
+        onPrev={hasPrev ? onPrev : undefined}
+        onNext={hasNext ? onNext : undefined}
+        hasPrev={hasPrev}
+        hasNext={hasNext}
+      />
+    </div>
+  );
+}
+
+function PlayerArticleShell({
+  item,
+  playerId,
+  isSaved,
+  hasPrev,
+  hasNext,
+  onClose,
+  onPrev,
+  onNext,
+  onToggleSave,
+  onArchive,
+}: {
+  item: RssFeedItem;
+  playerId: number;
+  isSaved: boolean;
+  hasPrev: boolean;
+  hasNext: boolean;
+  onClose: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onToggleSave: () => void;
+  onArchive: () => void;
+}) {
+  const qc = useQueryClient();
+  const feedUrl = item.link.startsWith("app:") ? `synthetic:tag-player` : item.link;
+
+  const leave = () => {
+    onClose();
+    const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+    if (st.dispatchArticle) history.back();
+  };
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [item.link]);
+
+  useEffect(() => {
+    const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+    if (!st.dispatchArticle) {
+      history.pushState({ ...st, dispatchArticle: item.link }, "", window.location.href);
+    } else if (st.dispatchArticle !== item.link) {
+      history.replaceState({ ...st, dispatchArticle: item.link }, "", window.location.href);
+    }
+    const onPop = () => onClose();
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [item.link, onClose]);
+
+  useEffect(() => {
+    void markRssRead({
+      articleUrl: item.link,
+      articleTitle: item.title,
+      feedUrl,
+    })
+      .then(() => qc.invalidateQueries({ queryKey: ["rss-reads"] }))
+      .catch(() => {});
+  }, [item.link, item.title, feedUrl, qc]);
+
+  return (
+    <div style={{ touchAction: "pan-y" }}>
+      <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
+        <button
+          type="button"
+          onClick={onToggleSave}
+          className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
+        >
+          {isSaved ? (
+            <BookmarkCheck size={14} className="text-accent" />
+          ) : (
+            <Bookmark size={14} />
+          )}
+          {isSaved ? "Saved" : "Save for later"}
+        </button>
+        <button
+          type="button"
+          onClick={onArchive}
+          className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
+        >
+          <Archive size={14} />
+          Archive
+        </button>
+      </div>
+      <DispatchPlayerReader
+        playerId={playerId}
+        title={item.title}
         onBack={leave}
         onPrev={hasPrev ? onPrev : undefined}
         onNext={hasNext ? onNext : undefined}
@@ -1379,8 +1501,26 @@ export default function RssPage() {
   });
   const filters = filtersQuery.data ?? [];
 
+  const { user } = useAuth();
+  const userTags = useQuery({
+    queryKey: ["sports-player-tags-names", user?.id],
+    queryFn: fetchUserTagNames,
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+  });
+
+  const allFeeds: RssFeedDef[] = useMemo(() => {
+    const tagFeeds: RssFeedDef[] = (userTags.data ?? []).map((tag) => ({
+      id: tagFeedId(tag),
+      title: `${displayPlayerTag(tag)} · RotoWire`,
+      short: displayPlayerTag(tag).replace(/^#/, "") || tag,
+      url: tagFeedUrl(tag),
+    }));
+    return [...RSS_FEEDS, ...tagFeeds];
+  }, [userTags.data]);
+
   const feedQueries = useQueries({
-    queries: RSS_FEEDS.map((f) => ({
+    queries: allFeeds.map((f) => ({
       queryKey: ["rss-feed-v2", f.url],
       queryFn: () => fetchRssFeed(f.url),
       staleTime: 90_000,
@@ -1452,7 +1592,7 @@ export default function RssPage() {
 
   const feedById = useMemo(() => {
     const map = new Map<string, { items: RssFeedItem[]; title: string; url: string }>();
-    RSS_FEEDS.forEach((f, i) => {
+    allFeeds.forEach((f, i) => {
       const data = feedQueries[i]?.data;
       const items = applyRssFilters(dedupeArticles(data?.items ?? [], keepHosts), filters, f.id);
       map.set(f.id, {
@@ -1462,12 +1602,12 @@ export default function RssPage() {
       });
     });
     return map;
-  }, [feedQueries, filters, keepHosts]);
+  }, [allFeeds, feedQueries, filters, keepHosts]);
 
   /** Cross-feed soft duplicates (e.g. FOX 2 vs MLB.com) — hidden from main/unread. */
   const duplicateItems = useMemo(() => {
     const merged: RssFeedItemRef[] = [];
-    RSS_FEEDS.forEach((f, i) => {
+    allFeeds.forEach((f, i) => {
       const data = feedQueries[i]?.data;
       const filtered = applyRssFilters(data?.items ?? [], filters, f.id);
       for (const it of filtered) {
@@ -1475,20 +1615,20 @@ export default function RssPage() {
       }
     });
     return partitionDedupedArticles(merged, keepHosts).duplicates;
-  }, [feedQueries, filters, keepHosts]);
+  }, [allFeeds, feedQueries, filters, keepHosts]);
 
   const unreadByFeed = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const f of RSS_FEEDS) {
+    for (const f of allFeeds) {
       const items = feedById.get(f.id)?.items ?? [];
       counts[f.id] = items.filter((it) => !readUrls.has(it.link)).length;
     }
     return counts;
-  }, [feedById, readUrls]);
+  }, [allFeeds, feedById, readUrls]);
 
   const savedListItems = useMemo((): RssFeedItemRef[] => {
     return (savesQuery.data ?? []).map((s) => {
-      const feed = RSS_FEEDS.find((f) => f.url === s.feedUrl);
+      const feed = allFeeds.find((f) => f.url === s.feedUrl) ?? RSS_FEEDS.find((f) => f.url === s.feedUrl);
       return {
         id: s.id,
         title: s.articleTitle || s.articleUrl,
@@ -1501,7 +1641,7 @@ export default function RssPage() {
         feedUrl: s.feedUrl || feed?.url || RSS_FEEDS[0].url,
       };
     });
-  }, [savesQuery.data]);
+  }, [savesQuery.data, allFeeds]);
 
   const listItems = useMemo(() => {
     if (nav === "notes" || nav === "filters") return [] as RssFeedItemRef[];
@@ -1518,8 +1658,8 @@ export default function RssPage() {
     }
     if (nav === "unread") {
       const merged: RssFeedItemRef[] = [];
-      for (const f of RSS_FEEDS) {
-        if (RSS_SEPARATE_FEEDS.has(f.id)) continue;
+      for (const f of allFeeds) {
+        if (RSS_SEPARATE_FEEDS.has(f.id) || f.id.startsWith("tag:")) continue;
         const pack = feedById.get(f.id);
         for (const it of pack?.items ?? []) {
           if (!readUrls.has(it.link)) {
@@ -1543,18 +1683,18 @@ export default function RssPage() {
     }));
     if (hideRead) rows = rows.filter((it) => !readUrls.has(it.link));
     return rows;
-  }, [nav, feedById, readUrls, duplicateItems, keepHosts, savedListItems, hideRead]);
+  }, [nav, allFeeds, feedById, readUrls, duplicateItems, keepHosts, savedListItems, hideRead]);
 
   const totalUnread = useMemo(() => {
     const merged: RssFeedItem[] = [];
-    for (const f of RSS_FEEDS) {
-      if (RSS_SEPARATE_FEEDS.has(f.id)) continue;
+    for (const f of allFeeds) {
+      if (RSS_SEPARATE_FEEDS.has(f.id) || f.id.startsWith("tag:")) continue;
       for (const it of feedById.get(f.id)?.items ?? []) {
         if (!readUrls.has(it.link)) merged.push(it);
       }
     }
     return dedupeArticles(merged, keepHosts).length;
-  }, [feedById, readUrls, keepHosts]);
+  }, [allFeeds, feedById, readUrls, keepHosts]);
 
   const navItems = readerQueue ?? listItems;
   const selectedIndex = selected
@@ -1572,7 +1712,7 @@ export default function RssPage() {
             ? "Filters"
             : nav === "duplicates"
               ? "Duplicates"
-              : RSS_FEEDS.find((f) => f.id === nav)?.title ?? "Feed";
+              : allFeeds.find((f) => f.id === nav)?.title ?? "Feed";
 
   const feedsLoading = feedQueries.some((q) => q.isLoading);
   const feedsFetching = feedQueries.some((q) => q.isFetching);
@@ -1746,7 +1886,7 @@ export default function RssPage() {
     nav === "duplicates" ||
     nav === "unread" ||
     nav === "saved" ||
-    RSS_FEEDS.some((f) => f.id === nav);
+    allFeeds.some((f) => f.id === nav);
 
   if (selected) {
     return (
@@ -1829,7 +1969,7 @@ export default function RssPage() {
         <div className="flex-1 px-2 pb-4">
           <p className="label-caps text-chalk-dim px-2 py-2">Feeds</p>
           <ul className="flex flex-col gap-0.5">
-            {RSS_FEEDS.map((f) => (
+            {allFeeds.map((f) => (
               <li key={f.id}>
                 <button
                   type="button"
@@ -1942,10 +2082,10 @@ export default function RssPage() {
                     ? `${filters.length} rules`
                     : nav === "duplicates"
                       ? `${duplicateItems.length} filtered · MLB preferred`
-                      : `${listItems.length} articles${hideRead && RSS_FEEDS.some((f) => f.id === nav) ? " · unread only" : ""}`}
+                      : `${listItems.length} articles${hideRead && allFeeds.some((f) => f.id === nav) ? " · unread only" : ""}`}
             </p>
           </div>
-          {RSS_FEEDS.some((f) => f.id === nav) || nav === "duplicates" ? (
+          {allFeeds.some((f) => f.id === nav) || nav === "duplicates" ? (
             <button
               type="button"
               onClick={() => {
@@ -2111,7 +2251,7 @@ export default function RssPage() {
           <div className="space-y-3 p-5">
             <p className="text-alert font-rss text-sm">
               Couldn&apos;t load feeds
-              {feedsFailed === RSS_FEEDS.length ? "" : ` (${feedsFailed} of ${RSS_FEEDS.length} failed)`}
+              {feedsFailed === allFeeds.length ? "" : ` (${feedsFailed} of ${allFeeds.length} failed)`}
               .
             </p>
             <p className="text-chalk font-rss text-sm">
@@ -2144,8 +2284,8 @@ export default function RssPage() {
                 nav === "unread" ||
                 nav === "duplicates" ||
                 nav === "saved" ||
-                RSS_FEEDS.some((f) => f.id === nav);
-              const feedScoped = RSS_FEEDS.some((f) => f.id === nav);
+                allFeeds.some((f) => f.id === nav);
+              const feedScoped = allFeeds.some((f) => f.id === nav);
               return (
               <ArticleRow
                 key={item.id + item.link}

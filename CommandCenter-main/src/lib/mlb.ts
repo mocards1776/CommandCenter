@@ -765,14 +765,22 @@ async function mlbGet(path: string, params?: Record<string, string>): Promise<un
   return res.json();
 }
 
-/** Primary headshot (MLB CDN — works for most MiLB person ids too). */
+/**
+ * Primary headshot URL — real 67 mug first (404 when missing) so callers can
+ * fall back to silo / generic. Prefer `PlayerHeadshot` or `mlbHeadshotFallbacks`.
+ */
 export function mlbHeadshot(playerId: number | string, size: 213 | 426 = 213): string {
-  return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_${size},q_auto:best/v1/people/${playerId}/headshot/67/current`;
+  return `https://img.mlbstatic.com/mlb-photos/image/upload/w_${size},q_auto:best/v1/people/${playerId}/headshot/67/current`;
 }
 
-/** Silhouette/action cut often present when the 67 headshot is generic for MiLB. */
+/** Silhouette/action cut often present when the 67 headshot is missing for MiLB. */
 export function mlbHeadshotSilo(playerId: number | string, size = 180): string {
   return `https://img.mlbstatic.com/mlb-photos/image/upload/w_${size},q_auto:best/v1/people/${playerId}/headshot/silo/current`;
+}
+
+/** Last-resort CDN placeholder (always returns an image). */
+export function mlbHeadshotGeneric(playerId: number | string, size: 213 | 426 = 213): string {
+  return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_${size},q_auto:best/v1/people/${playerId}/headshot/67/current`;
 }
 
 /** Ordered headshot candidates for <img onError> fallbacks. */
@@ -783,7 +791,8 @@ export function mlbHeadshotFallbacks(
   return [
     mlbHeadshot(playerId, size),
     mlbHeadshotSilo(playerId, size === 426 ? 360 : 180),
-    `https://img.mlbstatic.com/mlb-photos/image/upload/w_${size},q_auto:best/v1/people/${playerId}/headshot/67/current`,
+    `https://img.mlbstatic.com/mlb-photos/image/upload/w_${size},q_auto:best/v1/people/${playerId}/headshot/83/current`,
+    mlbHeadshotGeneric(playerId, size),
   ];
 }
 
@@ -3691,11 +3700,21 @@ export type MlbPerformanceSummary = {
 function fmtGameDateLabel(iso: string): string {
   if (!iso) return "Latest game";
   try {
-    return new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", {
+    const d = new Date(`${iso}T12:00:00`);
+    const weekday = d.toLocaleDateString("en-GB", {
+      timeZone: "America/Chicago",
       weekday: "short",
-      month: "short",
-      day: "numeric",
     });
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/Chicago",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).formatToParts(d);
+    const day = parts.find((p) => p.type === "day")?.value ?? "01";
+    const month = parts.find((p) => p.type === "month")?.value ?? "01";
+    const year = parts.find((p) => p.type === "year")?.value ?? "1970";
+    return `${weekday}, ${day}-${month}-${year}`;
   } catch {
     return iso;
   }
@@ -5606,6 +5625,151 @@ export async function fetchFarmRoster(teamId: number): Promise<MlbFarmRosterPlay
       position: r.position?.abbreviation ?? null,
       number: r.jerseyNumber ?? null,
     }));
+}
+
+export type MlbPersonLite = {
+  id: number;
+  name: string;
+  firstName: string;
+  lastName: string;
+  position: string | null;
+  number: string | null;
+  teamId: number | null;
+  teamName: string | null;
+  sportId: number | null;
+  sportName: string | null;
+};
+
+/** Batch-resolve people ids → names/teams (for tagged prospect lists). */
+export async function fetchMlbPeopleByIds(
+  ids: Array<number | string>,
+): Promise<Map<number, MlbPersonLite>> {
+  const unique = [
+    ...new Set(
+      ids.map((id) => Number(id)).filter((n) => Number.isFinite(n) && n > 0),
+    ),
+  ].slice(0, 80);
+  const out = new Map<number, MlbPersonLite>();
+  if (!unique.length) return out;
+  // Stats API accepts comma-separated personIds.
+  const chunkSize = 40;
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize);
+    try {
+      const raw = (await mlbGet("people", {
+        personIds: chunk.join(","),
+        hydrate: "currentTeam,currentTeam.sport",
+      })) as {
+        people?: {
+          id?: number;
+          fullName?: string;
+          firstName?: string;
+          lastName?: string;
+          primaryNumber?: string;
+          primaryPosition?: { abbreviation?: string };
+          currentTeam?: {
+            id?: number;
+            name?: string;
+            sport?: { id?: number; name?: string };
+          };
+        }[];
+      };
+      for (const p of raw.people ?? []) {
+        if (!p.id) continue;
+        out.set(p.id, {
+          id: p.id,
+          name: p.fullName ?? `Player #${p.id}`,
+          firstName: p.firstName ?? "",
+          lastName: p.lastName ?? "",
+          position: p.primaryPosition?.abbreviation ?? null,
+          number: p.primaryNumber ?? null,
+          teamId: p.currentTeam?.id ?? null,
+          teamName: p.currentTeam?.name ?? null,
+          sportId: p.currentTeam?.sport?.id ?? null,
+          sportName: p.currentTeam?.sport?.name ?? null,
+        });
+      }
+    } catch {
+      /* skip chunk */
+    }
+  }
+  return out;
+}
+
+export type MlbScoutingReport = {
+  playerId: number;
+  summary: string;
+  bullets: string[];
+  pipelineRank: number | null;
+  pipelineUrl: string;
+  draftLine: string | null;
+};
+
+/** Lightweight scouting snapshot for prospects (Stats API + Pipeline watch list). */
+export function buildProspectScoutingReport(
+  player: Pick<
+    MlbPlayerCard,
+    | "id"
+    | "name"
+    | "position"
+    | "bats"
+    | "throws"
+    | "height"
+    | "weight"
+    | "age"
+    | "draft"
+    | "school"
+    | "teamName"
+    | "sportName"
+    | "sportId"
+  >,
+): MlbScoutingReport {
+  const seed = CARDINALS_PROSPECT_SEEDS.find(
+    (s) => normalizePersonName(s.name) === normalizePersonName(player.name),
+  );
+  const pipelineRank = seed?.rank ?? null;
+  const slug = player.name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const pipelineUrl = `https://www.mlb.com/milb/prospects/cardinals/${slug}-${player.id}`;
+  const bullets: string[] = [];
+  if (player.position) {
+    bullets.push(
+      `${player.position}${player.bats || player.throws ? ` · ${[player.bats, player.throws].filter(Boolean).join("/")}` : ""}`,
+    );
+  }
+  const body = [player.height, player.weight ? `${player.weight} lb` : null, player.age != null ? `Age ${player.age}` : null]
+    .filter(Boolean)
+    .join(" · ");
+  if (body) bullets.push(body);
+  if (player.teamName) {
+    bullets.push(
+      `${player.teamName}${player.sportName && player.sportId !== 1 ? ` (${player.sportName})` : ""}`,
+    );
+  }
+  if (player.school) bullets.push(player.school);
+  if (seed?.pipelineNote) bullets.push(seed.pipelineNote);
+
+  const draftLine = player.draft?.display ?? null;
+  const summaryParts = [
+    pipelineRank != null ? `Cardinals Pipeline watch #${pipelineRank}` : null,
+    draftLine ? `Draft: ${draftLine}` : null,
+    player.sportId && player.sportId !== 1
+      ? "Minor-league prospect — open Pipeline for full tool grades."
+      : "See Pipeline for the latest organizational scouting grades.",
+  ].filter(Boolean);
+
+  return {
+    playerId: player.id,
+    summary: summaryParts.join(" · "),
+    bullets,
+    pipelineRank,
+    pipelineUrl,
+    draftLine,
+  };
 }
 
 export type MlbFarmGameWrap = {

@@ -11,6 +11,7 @@ import { isFavoritePlayer } from "@/lib/favorite-players";
 import {
   buildAcquisitionStory,
   buildPlayerPerformanceSummary,
+  buildProspectScoutingReport,
   fetchMlbPlayer,
   mlbHeadshotFallbacks,
   fetchMlbPlayerGameLog,
@@ -38,12 +39,42 @@ import { cn } from "@/lib/utils";
 export default function MlbPlayerPage() {
   const { playerId } = useParams<{ playerId: string }>();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const st = (history.state as { mlbPlayer?: string } | null) ?? {};
+    if (playerId && st.mlbPlayer !== playerId) {
+      history.replaceState({ ...st, mlbPlayer: playerId }, "", window.location.href);
+    }
+  }, [playerId]);
+
+  if (!playerId) {
+    return <p className="text-alert p-6 text-[13px]">Missing player id</p>;
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-7">
+      <div className="flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
+          className="text-chalk hover:text-cream flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
+        >
+          <ArrowLeft size={14} /> Back
+        </button>
+      </div>
+      <MlbPlayerDetail playerId={playerId} />
+    </div>
+  );
+}
+
+/** Full player page body — also embedded in Dispatch tag-feed articles. */
+export function MlbPlayerDetail({ playerId }: { playerId: string }) {
   const { user } = useAuth();
   const [level, setLevel] = useState<MlbPlayerLevel | null>(null);
 
   const player = useQuery({
     queryKey: ["mlb-player-v5", playerId],
-    queryFn: () => fetchMlbPlayer(playerId!),
+    queryFn: () => fetchMlbPlayer(playerId),
     enabled: Boolean(playerId),
     staleTime: 120_000,
   });
@@ -157,16 +188,9 @@ export default function MlbPlayerPage() {
     staleTime: 300_000,
   });
 
-  useEffect(() => {
-    const st = (history.state as { mlbPlayer?: string } | null) ?? {};
-    if (playerId && st.mlbPlayer !== playerId) {
-      history.replaceState({ ...st, mlbPlayer: playerId }, "", window.location.href);
-    }
-  }, [playerId]);
-
   if (player.isPending) {
     return (
-      <div className="text-chalk flex min-h-[50vh] items-center justify-center gap-2">
+      <div className="text-chalk flex min-h-[40vh] items-center justify-center gap-2">
         <Loader2 size={18} className="animate-spin" />
         Loading player…
       </div>
@@ -175,18 +199,9 @@ export default function MlbPlayerPage() {
 
   if (player.isError || !player.data) {
     return (
-      <div className="p-6">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="text-chalk hover:text-cream mb-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <p className="text-alert text-[13px]">
-          {player.error instanceof Error ? player.error.message : "Player not found"}
-        </p>
-      </div>
+      <p className="text-alert text-[13px]">
+        {player.error instanceof Error ? player.error.message : "Player not found"}
+      </p>
     );
   }
 
@@ -217,17 +232,15 @@ export default function MlbPlayerPage() {
         ? p.sportName
         : "Minors"
       : "Major League";
+  const isProspect =
+    (p.sportId != null && p.sportId !== 1) ||
+    Boolean(p.draft) ||
+    !p.mlbDebut;
+  const scouting = isProspect ? buildProspectScoutingReport(p) : null;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-7">
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="text-chalk hover:text-cream flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
+    <div className="space-y-6">
+      <div className="flex justify-end">
         <a
           href={mlbUrl}
           target="_blank"
@@ -396,7 +409,58 @@ export default function MlbPlayerPage() {
         </p>
       )}
       <HighlightReel highlights={highlights.data ?? []} title="Player highlights" defaultOpen={false} />
+
+      {scouting ? <ScoutingReportCard report={scouting} /> : null}
+
+      <PlayerTagsPanel
+        playerId={p.id}
+        playerName={p.name}
+        variant="panel"
+        isFavorite={isFav}
+      />
     </div>
+  );
+}
+
+function ScoutingReportCard({
+  report,
+}: {
+  report: ReturnType<typeof buildProspectScoutingReport>;
+}) {
+  return (
+    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+          Scouting report
+        </p>
+        {report.pipelineRank != null ? (
+          <span className="text-accent text-[11px] font-semibold uppercase tracking-[0.14em]">
+            Pipeline #{report.pipelineRank}
+          </span>
+        ) : null}
+      </div>
+      <div className="space-y-3 px-4 py-3">
+        <p className="text-cream text-[14px] leading-relaxed">{report.summary}</p>
+        {report.bullets.length > 0 ? (
+          <ul className="space-y-1.5 text-[13px] leading-relaxed text-[#c8cdd8]">
+            {report.bullets.map((b) => (
+              <li key={b}>· {b}</li>
+            ))}
+          </ul>
+        ) : null}
+        {report.draftLine ? (
+          <p className="text-[12px] text-[#8b93a7]">Draft · {report.draftLine}</p>
+        ) : null}
+        <a
+          href={report.pipelineUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="text-accent inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.14em] hover:underline"
+        >
+          Full report on MLB Pipeline <ExternalLink size={11} />
+        </a>
+      </div>
+    </section>
   );
 }
 
@@ -622,7 +686,17 @@ function PlayerHeader({
               <div>
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Birthdate</dt>
                 <dd className="mt-0.5 text-white">
-                  {player.birthDate}
+                  {(() => {
+                    const parts = new Intl.DateTimeFormat("en-GB", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                    }).formatToParts(new Date(`${player.birthDate}T12:00:00`));
+                    const day = parts.find((p) => p.type === "day")?.value ?? "01";
+                    const month = parts.find((p) => p.type === "month")?.value ?? "01";
+                    const year = parts.find((p) => p.type === "year")?.value ?? "1970";
+                    return `${day}-${month}-${year}`;
+                  })()}
                   {player.age != null ? ` (${player.age})` : ""}
                 </dd>
               </div>

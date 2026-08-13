@@ -1,7 +1,14 @@
 import { supabase, requireUserId } from "./supabase";
 
+export type RssFeedDef = {
+  id: string;
+  title: string;
+  short: string;
+  url: string;
+};
+
 /** Configured feeds — Missouri Scout, STL Today Cardinals, Cardinals wire, game wraps. */
-export const RSS_FEEDS = [
+export const RSS_FEEDS: readonly RssFeedDef[] = [
   {
     id: "moscout",
     title: "Missouri Scout",
@@ -44,9 +51,18 @@ export const RSS_FEEDS = [
     short: "Farm",
     url: "synthetic:cardinals-farm",
   },
-] as const;
+];
 
-export type RssFeedId = (typeof RSS_FEEDS)[number]["id"];
+export type RssFeedId = string;
+
+export function isTagFeedId(id: string): boolean {
+  return id.startsWith("tag:");
+}
+
+export function parsePlayerArticleLink(link: string): number | null {
+  const m = /^app:mlb-player\/(\d+)$/.exec(link);
+  return m ? Number(m[1]) : null;
+}
 
 export const DEFAULT_RSS_FEED = RSS_FEEDS[0].url;
 
@@ -1135,7 +1151,58 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
   if (feedUrl === "synthetic:cardinals-farm") {
     return fetchCardinalsFarmWrapsFeed();
   }
+  if (feedUrl.startsWith("synthetic:tag:")) {
+    return fetchTagPlayerFeed(feedUrl);
+  }
   return invokeRss<RssFeed>({ mode: "feed", feedUrl });
+}
+
+/** Dispatch feed of tagged players who have a RotoWire note — opens as player page. */
+export async function fetchTagPlayerFeed(feedUrl: string): Promise<RssFeed> {
+  const { fetchPlayersWithTag, normalizeTag, parseTagFeedUrl, displayPlayerTag } =
+    await import("./sports-player-tags");
+  const { fetchMlbPeopleByIds, fetchPlayerBrief, mlbHeadshot } = await import("./mlb");
+
+  const tag = parseTagFeedUrl(feedUrl) ?? normalizeTag(feedUrl.replace(/^synthetic:tag:/, ""));
+  const label = displayPlayerTag(tag) || `#${tag}`;
+  const rows = await fetchPlayersWithTag(tag);
+  const people = await fetchMlbPeopleByIds(rows.map((r) => r.playerId));
+
+  const items: RssFeedItem[] = [];
+  // Cap concurrency — RotoWire lookups hit the sports edge function.
+  const queue = rows.slice(0, 24);
+  await Promise.all(
+    queue.map(async (row) => {
+      const id = Number(row.playerId);
+      const person = people.get(id);
+      const name = person?.name ?? `Player #${row.playerId}`;
+      const brief = await fetchPlayerBrief(name).catch(() => null);
+      if (!brief?.headline && !brief?.story && !(brief?.news?.length)) return;
+      const headline = brief.headline || brief.news?.[0]?.headline || "RotoWire update";
+      const story = brief.story || brief.description || brief.news?.[0]?.description || "";
+      const publishedAt = brief.published || row.createdAt || new Date().toISOString();
+      items.push({
+        id: `tag-${tag}-${id}-${publishedAt}`,
+        title: `${name}: ${headline}`,
+        link: `app:mlb-player/${id}`,
+        author: "RotoWire",
+        publishedAt,
+        image: mlbHeadshot(id, 426),
+        snippet: story.slice(0, 280),
+        contentHtml: "",
+      });
+    }),
+  );
+
+  items.sort((a, b) => String(b.publishedAt).localeCompare(String(a.publishedAt)));
+
+  return {
+    title: `${label} · RotoWire`,
+    description: `Player pages for ${label} when RotoWire posts a note`,
+    link: feedUrl,
+    feedUrl,
+    items,
+  };
 }
 
 type EspnWrapsOpts = {
