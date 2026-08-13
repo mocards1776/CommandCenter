@@ -874,7 +874,188 @@ export type Suggestion = {
   year: string;
   reason: string;
   cover_url?: string | null;
+  isbn?: string | null;
+  page_count?: number | null;
 };
+
+/** Best-effort ISBN / page count when catalog search omitted them (CORS-friendly). */
+async function openLibraryExtras(
+  title: string,
+  author: string,
+): Promise<{ isbn: string | null; page_count: number | null; cover_url: string | null }> {
+  try {
+    const params = new URLSearchParams({
+      title: title.slice(0, 120),
+      limit: "1",
+      fields: "isbn,number_of_pages_median,cover_i",
+    });
+    if (author) params.set("author", author.split(",")[0].trim().slice(0, 80));
+    const ctl = new AbortController();
+    const t = window.setTimeout(() => ctl.abort(), 8000);
+    const res = await fetch(`https://openlibrary.org/search.json?${params}`, {
+      signal: ctl.signal,
+    }).finally(() => window.clearTimeout(t));
+    if (!res.ok) return { isbn: null, page_count: null, cover_url: null };
+    const doc = (await res.json())?.docs?.[0];
+    if (!doc) return { isbn: null, page_count: null, cover_url: null };
+    const isbnRaw = Array.isArray(doc.isbn)
+      ? String(
+          doc.isbn.find((x: string) => String(x).replace(/[^0-9Xx]/g, "").length === 13) ??
+            doc.isbn[0] ??
+            "",
+        ).replace(/[^0-9Xx]/g, "")
+      : "";
+    const isbn = isbnRaw.length === 10 || isbnRaw.length === 13 ? isbnRaw : null;
+    const page_count =
+      typeof doc.number_of_pages_median === "number" && doc.number_of_pages_median > 0
+        ? Math.round(doc.number_of_pages_median)
+        : null;
+    const cover_url =
+      typeof doc.cover_i === "number"
+        ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`
+        : null;
+    return { isbn, page_count, cover_url };
+  } catch {
+    return { isbn: null, page_count: null, cover_url: null };
+  }
+}
+
+/**
+ * Add a catalog / AI suggestion and keep the jacket + page count that search
+ * already found. Enrich still runs for blurb/subjects, but we no longer discard
+ * the cover URL the user just saw in results.
+ */
+export async function addBookFromSuggestion(
+  s: Suggestion,
+  overrides: Partial<BookInsert> = {},
+): Promise<Book> {
+  const year = Number.parseInt(s.year, 10);
+  let cover = upgradeCoverUrl(s.cover_url) ?? s.cover_url ?? null;
+  let isbn = s.isbn?.replace(/[^0-9Xx]/g, "") || null;
+  let pages =
+    typeof s.page_count === "number" && s.page_count > 0 ? Math.round(s.page_count) : null;
+
+  if (!isbn || !pages || !cover) {
+    const extra = await openLibraryExtras(s.title, s.author ?? "");
+    if (!isbn) isbn = extra.isbn;
+    if (!pages) pages = extra.page_count;
+    if (!cover) cover = extra.cover_url;
+  }
+
+  let book = await createBook({
+    title: s.title.trim() || "Untitled",
+    authors: s.author?.trim() || null,
+    status: "to-read",
+    published_year: Number.isFinite(year) ? year : null,
+    cover_url: cover,
+    isbn: isbn && (isbn.length === 10 || isbn.length === 13) ? isbn : null,
+    page_count: pages,
+    ...overrides,
+  });
+
+  // Persist the search jacket immediately so enrich misses don't leave a blank.
+  if (cover) {
+    try {
+      const pulled = await pullCover(book.id, cover);
+      if (pulled.found) {
+        book = await updateBook(book.id, {
+          cover_path: pulled.cover_path ?? book.cover_path,
+          cover_url: pulled.cover_url ?? cover,
+          locked_at: new Date().toISOString(),
+        });
+      }
+    } catch {
+      book = await updateBook(book.id, {
+        cover_url: cover,
+        locked_at: new Date().toISOString(),
+      });
+    }
+  }
+
+  await enrichBook(book.id).catch(() => {});
+
+  const { data: fresh } = await supabase.from("books").select("*").eq("id", book.id).single();
+  if (!fresh) return book;
+
+  // Enrich can clear a Google stub; if we still have nothing, re-apply search art.
+  const hasJacket =
+    (fresh.cover_path && fresh.cover_path.length > 0) ||
+    (fresh.cover_url && !/[?&]vid=ISBN/i.test(fresh.cover_url));
+  if (!hasJacket && cover) {
+    return updateBook(fresh.id, { cover_url: cover, locked_at: new Date().toISOString() });
+  }
+  // Keep a page count from search when catalogs had none.
+  if ((!fresh.page_count || fresh.page_count <= 0) && pages) {
+    return updateBook(fresh.id, { page_count: pages });
+  }
+  return fresh;
+}
+
+export type TagKind = "source" | "subject";
+
+/** Per-user tag → kind map (source = where it came from, subject = topic). */
+export async function fetchTagKinds(): Promise<Record<string, TagKind>> {
+  const { data, error } = await supabase.from("profiles").select("tag_kinds").maybeSingle();
+  if (error) throw error;
+  const raw = (data?.tag_kinds ?? {}) as Record<string, string>;
+  const out: Record<string, TagKind> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (v === "source" || v === "subject") out[k] = v;
+  }
+  return out;
+}
+
+export async function saveTagKinds(kinds: Record<string, TagKind>): Promise<void> {
+  const userId = await requireUserId();
+  const { error } = await supabase.from("profiles").update({ tag_kinds: kinds }).eq("id", userId);
+  if (error) throw error;
+}
+
+export async function setTagKind(tag: string, kind: TagKind | null): Promise<Record<string, TagKind>> {
+  const kinds = await fetchTagKinds();
+  if (kind === null) delete kinds[tag];
+  else kinds[tag] = kind;
+  await saveTagKinds(kinds);
+  return kinds;
+}
+
+/**
+ * Rename a tag across the library. Renaming to an existing tag merges
+ * (books keep a single copy of the target name).
+ */
+export async function renameTag(from: string, to: string): Promise<{ updated: number }> {
+  const src = from.trim();
+  const dest = to.trim();
+  if (!src || !dest) throw new Error("Tag name required");
+  if (src === dest) return { updated: 0 };
+
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("books")
+    .select("id, tags")
+    .eq("user_id", userId)
+    .contains("tags", [src]);
+  if (error) throw error;
+
+  let updated = 0;
+  for (const row of data ?? []) {
+    const next = [...new Set((row.tags ?? []).map((t) => (t === src ? dest : t)))];
+    const { error: uErr } = await supabase.from("books").update({ tags: next }).eq("id", row.id);
+    if (uErr) throw uErr;
+    updated++;
+  }
+
+  // Move the kind label with the rename (merge kinds if both existed).
+  const kinds = await fetchTagKinds();
+  if (kinds[src] || kinds[dest]) {
+    const kind = kinds[dest] ?? kinds[src];
+    delete kinds[src];
+    if (kind) kinds[dest] = kind;
+    await saveTagKinds(kinds);
+  }
+
+  return { updated };
+}
 
 export type ClassifyResult = { processed: number; series: number; remaining: number };
 
@@ -1564,6 +1745,9 @@ export type PeriodStats = {
   /** 1 = best month ever by pages logged; null when this month has no pages. */
   monthRank: number | null;
   monthTotal: number;
+  /** 1 = best week ever by pages logged; null when this week has no pages. */
+  weekRank: number | null;
+  weekTotal: number;
   weekStart: string;
   monthStart: string;
   today: string;
@@ -1720,6 +1904,12 @@ export function buildFinishCard(
   };
 }
 
+/** Monday-start ISO week key (YYYY-MM-DD of that week's Monday). */
+export function weekKeyFor(date: string): string {
+  const { weekStart } = periodBounds(date);
+  return weekStart;
+}
+
 /** Monday-start week; both windows in Central time to match everything else. */
 export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodStats {
   const { today, weekStart: weekStartIso, monthStart: monthStartIso } = periodBounds();
@@ -1728,14 +1918,18 @@ export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodSt
   let pagesWeek = 0;
   let pagesMonth = 0;
   const byMonth = new Map<string, number>();
+  const byWeek = new Map<string, number>();
   for (const s of sessions) {
     if (s.session_date >= monthStartIso) pagesMonth += s.pages_read;
     if (s.session_date >= weekStartIso) pagesWeek += s.pages_read;
     const mk = s.session_date.slice(0, 7);
     byMonth.set(mk, (byMonth.get(mk) ?? 0) + s.pages_read);
+    const wk = weekKeyFor(s.session_date);
+    byWeek.set(wk, (byWeek.get(wk) ?? 0) + s.pages_read);
   }
-  // Ensure the current month is ranked even when empty.
+  // Ensure the current month/week is ranked even when empty.
   if (!byMonth.has(monthKey)) byMonth.set(monthKey, pagesMonth);
+  if (!byWeek.has(weekStartIso)) byWeek.set(weekStartIso, pagesWeek);
 
   let booksWeek = 0;
   let booksMonth = 0;
@@ -1750,6 +1944,7 @@ export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodSt
   }
 
   const monthRank = rankDescending(byMonth.get(monthKey) ?? 0, [...byMonth.values()]);
+  const weekRank = rankDescending(byWeek.get(weekStartIso) ?? 0, [...byWeek.values()]);
   return {
     pagesWeek,
     pagesMonth,
@@ -1757,6 +1952,8 @@ export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodSt
     booksMonth,
     monthRank: pagesMonth > 0 ? monthRank : null,
     monthTotal: byMonth.size,
+    weekRank: pagesWeek > 0 ? weekRank : null,
+    weekTotal: byWeek.size,
     weekStart: weekStartIso,
     monthStart: monthStartIso,
     today,
