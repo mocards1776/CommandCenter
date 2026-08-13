@@ -1,16 +1,22 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Loader2, Sprout } from "lucide-react";
 import TeamMark from "@/components/sports/TeamMark";
+import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import {
   fetchCardinalsFarmAffiliates,
   fetchCardinalsProspectWatch,
   fetchFarmRoster,
+  fetchMlbPeopleByIds,
   mlbClubSlug,
-  mlbHeadshot,
-  mlbHeadshotFallbacks,
+  teamPagePath,
 } from "@/lib/mlb";
-import { fetchPlayersWithTag } from "@/lib/sports-player-tags";
+import {
+  displayPlayerTag,
+  fetchPlayersWithTag,
+  fetchUserTagNames,
+} from "@/lib/sports-player-tags";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -38,22 +44,7 @@ function AffiliateRoster({ teamId }: { teamId: number }) {
             to={`/sports/mlb/player/${p.id}`}
             className="hover:bg-white/[0.04] flex items-center gap-2 rounded-sm px-2 py-1.5"
           >
-            <img
-              src={mlbHeadshot(p.id, 213)}
-              alt=""
-              className="h-8 w-8 rounded-full bg-black/30 object-cover"
-              loading="lazy"
-              data-fallback-idx="0"
-              onError={(e) => {
-                const el = e.currentTarget;
-                const idx = Number(el.dataset.fallbackIdx ?? "0");
-                const next = mlbHeadshotFallbacks(p.id, 213)[idx + 1];
-                if (next) {
-                  el.dataset.fallbackIdx = String(idx + 1);
-                  el.src = next;
-                }
-              }}
-            />
+            <PlayerHeadshot playerId={p.id} className="h-8 w-8 rounded-full" />
             <span className="text-cream min-w-0 flex-1 truncate text-[13px]">{p.name}</span>
             <span className="text-chalk-dim text-[11px] tabular-nums">
               {p.position ?? "—"}
@@ -68,6 +59,9 @@ function AffiliateRoster({ teamId }: { teamId: number }) {
 
 export default function CardinalsProspectsPage() {
   const { user } = useAuth();
+  const [params] = useSearchParams();
+  const focusTag = params.get("tag") || "Prospect";
+
   const watch = useQuery({
     queryKey: ["cardinals-prospect-watch-v1"],
     queryFn: fetchCardinalsProspectWatch,
@@ -79,13 +73,29 @@ export default function CardinalsProspectsPage() {
     staleTime: 600_000,
   });
   const tagged = useQuery({
-    queryKey: ["sports-player-tags-by-tag", user?.id, "Prospect"],
-    queryFn: () => fetchPlayersWithTag("Prospect"),
+    queryKey: ["sports-player-tags-by-tag", user?.id, focusTag],
+    queryFn: () => fetchPlayersWithTag(focusTag),
     enabled: Boolean(user?.id),
     staleTime: 60_000,
   });
+  const tagNames = useQuery({
+    queryKey: ["sports-player-tags-names", user?.id],
+    queryFn: fetchUserTagNames,
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+  });
+  const people = useQuery({
+    queryKey: ["mlb-people-by-ids", (tagged.data ?? []).map((t) => t.playerId).join(",")],
+    queryFn: () => fetchMlbPeopleByIds((tagged.data ?? []).map((t) => t.playerId)),
+    enabled: Boolean(tagged.data?.length),
+    staleTime: 300_000,
+  });
 
   const pipelineUrl = `https://www.mlb.com/${mlbClubSlug(138) ?? "cardinals"}/prospects`;
+  const otherTags = useMemo(
+    () => (tagNames.data ?? []).filter((t) => t.toLowerCase() !== focusTag.toLowerCase()),
+    [tagNames.data, focusTag],
+  );
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-4 md:p-7">
@@ -100,8 +110,7 @@ export default function CardinalsProspectsPage() {
         </h1>
         <p className="text-chalk mt-2 max-w-xl text-[14px] leading-relaxed">
           Follow the top of the Cardinals farm with a Pipeline-oriented watch list, your tagged
-          #Prospect players, and live MiLB affiliate rosters. Rankings update as names resolve from
-          the Stats API — open{" "}
+          players, and live MiLB affiliate rosters. Open{" "}
           <a
             href={pipelineUrl}
             target="_blank"
@@ -110,7 +119,7 @@ export default function CardinalsProspectsPage() {
           >
             MLB Pipeline <ExternalLink size={11} />
           </a>{" "}
-          for scouting reports.
+          for full scouting grades.
         </p>
       </header>
 
@@ -136,10 +145,9 @@ export default function CardinalsProspectsPage() {
                 >
                   <span className="numeral text-accent w-7 text-center text-[18px]">{p.rank}</span>
                   {p.playerId ? (
-                    <img
-                      src={mlbHeadshot(p.playerId, 213)}
-                      alt=""
-                      className="h-12 w-12 rounded-full bg-black/30 object-cover"
+                    <PlayerHeadshot
+                      playerId={p.playerId}
+                      className="h-12 w-12 rounded-full"
                     />
                   ) : (
                     <div className="bg-hero text-chalk-dim grid h-12 w-12 place-items-center rounded-full text-[10px]">
@@ -160,7 +168,19 @@ export default function CardinalsProspectsPage() {
                     <p className="text-chalk-dim text-[11px] uppercase tracking-[0.12em]">
                       {p.position}
                       {p.level ? ` · ${p.level}` : ""}
-                      {p.teamName ? ` · ${p.teamName}` : ""}
+                      {p.teamId && p.teamName ? (
+                        <>
+                          {" · "}
+                          <Link
+                            to={teamPagePath(p.teamId)}
+                            className="text-accent hover:underline"
+                          >
+                            {p.teamName}
+                          </Link>
+                        </>
+                      ) : p.teamName ? (
+                        ` · ${p.teamName}`
+                      ) : null}
                       {p.pipelineNote ? ` · ${p.pipelineNote}` : ""}
                     </p>
                   </div>
@@ -173,31 +193,75 @@ export default function CardinalsProspectsPage() {
 
       {user ? (
         <section className="space-y-3">
-          <h2 className="rule-head">Your #Prospect tags</h2>
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <h2 className="rule-head">Your {displayPlayerTag(focusTag)} tags</h2>
+            {otherTags.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {otherTags.slice(0, 6).map((t) => (
+                  <Link
+                    key={t}
+                    to={`/sports/mlb/tags/${encodeURIComponent(t)}`}
+                    className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/70 hover:text-white"
+                  >
+                    {displayPlayerTag(t)}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </div>
           {tagged.isPending ? (
             <p className="text-chalk-dim text-[12px]">Loading…</p>
           ) : (tagged.data?.length ?? 0) === 0 ? (
             <p className="text-chalk text-[13px]">
-              Tag players with #Prospect on their player page to build a personal follow list.
+              Tag players with {displayPlayerTag(focusTag)} on their player page to build a personal
+              follow list.
             </p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {tagged.data?.map((t) => (
-                <li key={t.id}>
-                  <Link
-                    to={`/sports/mlb/player/${t.playerId}`}
-                    className="bg-panel hover:border-accent/40 flex items-center gap-3 rounded-xl border border-white/[0.08] p-3"
-                  >
-                    <img
-                      src={mlbHeadshot(t.playerId, 213)}
-                      alt=""
-                      className="h-10 w-10 rounded-full object-cover"
-                    />
-                    <span className="text-cream text-[14px]">Player #{t.playerId}</span>
-                    <span className="text-accent ml-auto text-[12px]">Open</span>
-                  </Link>
-                </li>
-              ))}
+              {tagged.data?.map((t) => {
+                const id = Number(t.playerId);
+                const person = people.data?.get(id);
+                return (
+                  <li key={t.id}>
+                    <div className="bg-panel flex items-center gap-3 rounded-xl border border-white/[0.08] p-3">
+                      <PlayerHeadshot
+                        playerId={t.playerId}
+                        className="h-10 w-10 rounded-full"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <Link
+                          to={`/sports/mlb/player/${t.playerId}`}
+                          className="text-cream hover:text-accent text-[14px] font-medium"
+                        >
+                          {person?.name ?? `Player #${t.playerId}`}
+                        </Link>
+                        <p className="text-chalk-dim text-[11px] uppercase tracking-[0.12em]">
+                          {[person?.position, person?.number ? `#${person.number}` : null]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
+                          {person?.teamId && person.teamName ? (
+                            <>
+                              {" · "}
+                              <Link
+                                to={teamPagePath(person.teamId)}
+                                className="text-accent hover:underline"
+                              >
+                                {person.teamName}
+                              </Link>
+                            </>
+                          ) : null}
+                        </p>
+                      </div>
+                      <Link
+                        to={`/sports/mlb/player/${t.playerId}`}
+                        className="text-accent text-[12px]"
+                      >
+                        Open
+                      </Link>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -220,9 +284,16 @@ export default function CardinalsProspectsPage() {
                   <p className="text-accent text-[10px] font-semibold uppercase tracking-[0.16em]">
                     {a.level}
                   </p>
-                  <h3 className="text-cream text-[18px] font-semibold">{a.name}</h3>
+                  <Link
+                    to={teamPagePath(a.teamId)}
+                    className="text-cream hover:text-accent text-[18px] font-semibold hover:underline"
+                  >
+                    {a.name}
+                  </Link>
                 </div>
-                <TeamMark teamId={138} size="xs" />
+                <Link to={teamPagePath(a.teamId)} aria-label={`Open ${a.name}`}>
+                  <TeamMark teamId={138} size="xs" />
+                </Link>
               </div>
               <AffiliateRoster teamId={a.teamId} />
             </div>

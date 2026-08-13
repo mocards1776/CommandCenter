@@ -16,7 +16,7 @@ export type SportsPlayerTag = {
   createdAt: string;
 };
 
-function normalizeTag(raw: string): string {
+export function normalizeTag(raw: string): string {
   return raw
     .trim()
     .replace(/^#+/, "")
@@ -27,6 +27,23 @@ function normalizeTag(raw: string): string {
 export function displayPlayerTag(tag: string): string {
   const t = tag.replace(/^#+/, "").trim();
   return t ? `#${t.replace(/\s+/g, "")}` : "";
+}
+
+export function tagFeedId(tag: string): string {
+  return `tag:${normalizeTag(tag)}`;
+}
+
+export function tagFeedUrl(tag: string): string {
+  return `synthetic:tag:${encodeURIComponent(normalizeTag(tag))}`;
+}
+
+export function parseTagFeedUrl(feedUrl: string): string | null {
+  if (!feedUrl.startsWith("synthetic:tag:")) return null;
+  try {
+    return normalizeTag(decodeURIComponent(feedUrl.slice("synthetic:tag:".length)));
+  } catch {
+    return normalizeTag(feedUrl.slice("synthetic:tag:".length));
+  }
 }
 
 export async function fetchPlayerTags(playerId: string | number): Promise<SportsPlayerTag[]> {
@@ -87,6 +104,26 @@ export async function fetchTaggedPlayerIds(): Promise<number[]> {
     if (Number.isFinite(n)) ids.add(n);
   }
   return [...ids];
+}
+
+/** Distinct tags this user has applied (for reuse chips + Dispatch feeds). */
+export async function fetchUserTagNames(): Promise<string[]> {
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+  if (userErr) throw userErr;
+  const userId = userData.user?.id;
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from("sports_player_tags")
+    .select("tag")
+    .eq("user_id", userId);
+  if (error) throw error;
+  const set = new Set<string>();
+  for (const r of data ?? []) {
+    const t = normalizeTag(String(r.tag ?? ""));
+    if (t) set.add(t);
+  }
+  for (const s of SUGGESTED_PLAYER_TAGS) set.add(s);
+  return [...set].sort((a, b) => a.localeCompare(b));
 }
 
 export async function addPlayerTag(

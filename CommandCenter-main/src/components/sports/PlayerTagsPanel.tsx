@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, Star, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -8,9 +9,14 @@ import {
   addPlayerTag,
   displayPlayerTag,
   fetchPlayerTags,
+  fetchUserTagNames,
   removePlayerTag,
 } from "@/lib/sports-player-tags";
 import { cn } from "@/lib/utils";
+
+function tagPath(tag: string): string {
+  return `/sports/mlb/tags/${encodeURIComponent(tag)}`;
+}
 
 export default function PlayerTagsPanel({
   playerId,
@@ -20,14 +26,13 @@ export default function PlayerTagsPanel({
 }: {
   playerId: string | number;
   playerName: string;
-  /** Compact labels for the player hero card. */
+  /** Compact presentation labels for the player hero card. */
   variant?: "panel" | "hero";
   isFavorite?: boolean;
 }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [draft, setDraft] = useState("");
-  const [openAdd, setOpenAdd] = useState(false);
 
   const tags = useQuery({
     queryKey: ["sports-player-tags", user?.id, String(playerId)],
@@ -35,15 +40,24 @@ export default function PlayerTagsPanel({
     enabled: Boolean(user?.id && playerId),
   });
 
+  const allTags = useQuery({
+    queryKey: ["sports-player-tags-names", user?.id],
+    queryFn: fetchUserTagNames,
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+  });
+
   const addMut = useMutation({
     mutationFn: (tag: string) => addPlayerTag(playerId, tag),
     onSuccess: async () => {
       setDraft("");
-      setOpenAdd(false);
       await qc.invalidateQueries({
         queryKey: ["sports-player-tags", user?.id, String(playerId)],
       });
       await qc.invalidateQueries({ queryKey: ["sports-player-tags-by-tag"] });
+      await qc.invalidateQueries({ queryKey: ["sports-player-tags-names"] });
+      await qc.invalidateQueries({ queryKey: ["sports-player-tags-ids"] });
+      await qc.invalidateQueries({ queryKey: ["rss-feed-v2"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't add tag"),
   });
@@ -55,6 +69,9 @@ export default function PlayerTagsPanel({
         queryKey: ["sports-player-tags", user?.id, String(playerId)],
       });
       await qc.invalidateQueries({ queryKey: ["sports-player-tags-by-tag"] });
+      await qc.invalidateQueries({ queryKey: ["sports-player-tags-names"] });
+      await qc.invalidateQueries({ queryKey: ["sports-player-tags-ids"] });
+      await qc.invalidateQueries({ queryKey: ["rss-feed-v2"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't remove tag"),
   });
@@ -68,6 +85,9 @@ export default function PlayerTagsPanel({
 
   const have = new Set((tags.data ?? []).map((t) => t.tag.toLowerCase()));
   const tagList = tags.data ?? [];
+  const suggestionPool = [
+    ...new Set([...(allTags.data ?? []), ...SUGGESTED_PLAYER_TAGS]),
+  ].filter((s) => !have.has(s.toLowerCase()));
 
   if (variant === "hero") {
     if (!user) {
@@ -80,90 +100,28 @@ export default function PlayerTagsPanel({
     }
 
     return (
-      <div className="mt-4 space-y-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] uppercase tracking-[0.14em] text-white/45">Labels</p>
-          {tags.isFetching && <Loader2 size={12} className="animate-spin text-white/40" />}
-        </div>
+      <div className="mt-4 space-y-2">
+        <p className="text-[11px] uppercase tracking-[0.14em] text-white/45">Labels</p>
         <div className="flex flex-wrap gap-1.5">
           {isFavorite && (
-            <span className="inline-flex items-center gap-1 rounded-sm border border-amber-300/35 bg-amber-400/15 px-2 py-1 text-[11px] font-medium text-amber-100">
+            <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/30 bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-amber-100">
               <Star size={11} className="fill-current" />
               Favorite
             </span>
           )}
           {tagList.map((t) => (
-            <span
+            <Link
               key={t.id}
-              className="inline-flex items-center gap-1 rounded-sm border border-white/20 bg-white/10 px-2 py-1 text-[11px] font-medium text-white"
+              to={tagPath(t.tag)}
+              className="inline-flex items-center rounded-full border border-white/25 bg-white/[0.08] px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white transition hover:border-white/45 hover:bg-white/[0.14]"
             >
               {displayPlayerTag(t.tag)}
-              <button
-                type="button"
-                onClick={() => removeMut.mutate(t.id)}
-                className="text-white/55 hover:text-white"
-                aria-label={`Remove ${t.tag}`}
-              >
-                <X size={11} />
-              </button>
-            </span>
+            </Link>
           ))}
           {!isFavorite && tagList.length === 0 && (
-            <span className="text-[12px] text-white/45">No labels yet</span>
-          )}
-          {!openAdd && (
-            <button
-              type="button"
-              onClick={() => setOpenAdd(true)}
-              className="inline-flex items-center gap-1 rounded-sm border border-dashed border-white/25 px-2 py-1 text-[11px] text-white/70 hover:border-white/45 hover:text-white"
-            >
-              <Plus size={11} />
-              Tag
-            </button>
+            <span className="text-[12px] text-white/45">No labels yet — manage below</span>
           )}
         </div>
-        {openAdd && (
-          <div className="space-y-2 rounded-lg border border-white/15 bg-black/25 p-2.5 backdrop-blur-sm">
-            <div className="flex flex-wrap gap-1.5">
-              {SUGGESTED_PLAYER_TAGS.filter((s) => !have.has(s.toLowerCase())).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  disabled={addMut.isPending}
-                  onClick={() => addMut.mutate(s)}
-                  className="rounded-sm border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-white/75 hover:text-white"
-                >
-                  {displayPlayerTag(s)}
-                </button>
-              ))}
-            </div>
-            <form onSubmit={submit} className="flex gap-2">
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Custom tag…"
-                className="min-w-0 flex-1 rounded-md border border-white/15 bg-black/30 px-2.5 py-1.5 text-[12px] text-white outline-none placeholder:text-white/35 focus:border-white/40"
-              />
-              <button
-                type="submit"
-                disabled={addMut.isPending || !draft.trim()}
-                className="rounded-md bg-white/15 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white disabled:opacity-40"
-              >
-                Add
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenAdd(false);
-                  setDraft("");
-                }}
-                className="rounded-md px-2 py-1.5 text-[11px] text-white/55 hover:text-white"
-              >
-                Close
-              </button>
-            </form>
-          </div>
-        )}
       </div>
     );
   }
@@ -171,7 +129,7 @@ export default function PlayerTagsPanel({
   if (!user) {
     return (
       <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
-        <h2 className="rule-head mb-2">Tags</h2>
+        <h2 className="rule-head mb-2">Manage tags</h2>
         <p className="text-[13px] text-[#8b93a7]">Sign in to tag {playerName}.</p>
       </section>
     );
@@ -180,11 +138,13 @@ export default function PlayerTagsPanel({
   return (
     <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="rule-head">Tags</h2>
-        {tags.isFetching && <Loader2 size={14} className="text-chalk-dim animate-spin" />}
+        <h2 className="rule-head">Manage tags</h2>
+        {(tags.isFetching || allTags.isFetching) && (
+          <Loader2 size={14} className="text-chalk-dim animate-spin" />
+        )}
       </div>
       <p className="mb-3 text-[12px] text-[#8b93a7]">
-        Private labels like #FormerCardinal — only you see these.
+        Add or remove private labels. Tap a tag on the player card to see everyone with it.
       </p>
       <div className="mb-3 flex flex-wrap gap-2">
         {isFavorite && (
@@ -201,7 +161,9 @@ export default function PlayerTagsPanel({
               key={t.id}
               className="bg-accent/15 text-accent inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-[12px] font-medium"
             >
-              {displayPlayerTag(t.tag)}
+              <Link to={tagPath(t.tag)} className="hover:underline">
+                {displayPlayerTag(t.tag)}
+              </Link>
               <button
                 type="button"
                 onClick={() => removeMut.mutate(t.id)}
@@ -215,7 +177,7 @@ export default function PlayerTagsPanel({
         )}
       </div>
       <div className="mb-3 flex flex-wrap gap-1.5">
-        {SUGGESTED_PLAYER_TAGS.filter((s) => !have.has(s.toLowerCase())).map((s) => (
+        {suggestionPool.map((s) => (
           <button
             key={s}
             type="button"
