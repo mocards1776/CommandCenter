@@ -11,7 +11,7 @@ import { isFavoritePlayer } from "@/lib/favorite-players";
 import {
   buildAcquisitionStory,
   buildPlayerPerformanceSummary,
-  buildProspectScoutingReport,
+  fetchMlbPipelineScoutingReport,
   fetchMlbPlayer,
   mlbHeadshotFallbacks,
   fetchMlbPlayerGameLog,
@@ -133,6 +133,14 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
     retry: 1,
   });
 
+  const scouting = useQuery({
+    queryKey: ["mlb-pipeline-scouting", playerId],
+    queryFn: () => fetchMlbPipelineScoutingReport(playerId),
+    enabled: Boolean(playerId),
+    staleTime: 30 * 60_000,
+    retry: 1,
+  });
+
   const isPitcherPreview =
     Boolean(player.data) &&
     ((player.data!.pitching.length > 0 && player.data!.position === "P") ||
@@ -232,12 +240,6 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         ? p.sportName
         : "Minors"
       : "Major League";
-  const isProspect =
-    (p.sportId != null && p.sportId !== 1) ||
-    Boolean(p.draft) ||
-    !p.mlbDebut;
-  const scouting = isProspect ? buildProspectScoutingReport(p) : null;
-
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
@@ -410,7 +412,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
       )}
       <HighlightReel highlights={highlights.data ?? []} title="Player highlights" defaultOpen={false} />
 
-      {scouting ? <ScoutingReportCard report={scouting} /> : null}
+      {scouting.data ? <ScoutingReportCard report={scouting.data} /> : null}
 
       <PlayerTagsPanel
         playerId={p.id}
@@ -425,32 +427,46 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
 function ScoutingReportCard({
   report,
 }: {
-  report: ReturnType<typeof buildProspectScoutingReport>;
+  report: NonNullable<Awaited<ReturnType<typeof fetchMlbPipelineScoutingReport>>>;
 }) {
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-      <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
           Scouting report
         </p>
-        {report.pipelineRank != null ? (
-          <span className="text-accent text-[11px] font-semibold uppercase tracking-[0.14em]">
-            Pipeline #{report.pipelineRank}
-          </span>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {report.pipelineRank != null ? (
+            <span className="text-accent text-[11px] font-semibold uppercase tracking-[0.14em]">
+              Pipeline #{report.pipelineRank}
+            </span>
+          ) : null}
+          {report.eta ? (
+            <span className="text-[11px] uppercase tracking-[0.12em] text-[#8b93a7]">
+              ETA {report.eta}
+            </span>
+          ) : null}
+        </div>
       </div>
       <div className="space-y-3 px-4 py-3">
-        <p className="text-cream text-[14px] leading-relaxed">{report.summary}</p>
-        {report.bullets.length > 0 ? (
-          <ul className="space-y-1.5 text-[13px] leading-relaxed text-[#c8cdd8]">
-            {report.bullets.map((b) => (
-              <li key={b}>· {b}</li>
-            ))}
-          </ul>
+        {report.gradesLine ? (
+          <p className="text-cream text-[13.5px] leading-relaxed">
+            <span className="font-semibold">Scouting grades: </span>
+            {report.grades.length > 0
+              ? report.grades.map((g, i) => (
+                  <span key={g.label}>
+                    {i > 0 ? " | " : null}
+                    {g.label}: {g.value}
+                  </span>
+                ))
+              : report.gradesLine}
+          </p>
         ) : null}
-        {report.draftLine ? (
-          <p className="text-[12px] text-[#8b93a7]">Draft · {report.draftLine}</p>
-        ) : null}
+        {report.paragraphs.map((para) => (
+          <p key={para.slice(0, 48)} className="text-[13.5px] leading-relaxed text-[#c8cdd8]">
+            {para}
+          </p>
+        ))}
         <a
           href={report.pipelineUrl}
           target="_blank"
