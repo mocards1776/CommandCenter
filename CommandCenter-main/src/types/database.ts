@@ -577,14 +577,14 @@ export type Database = {
         Row: {
           id: string;
           user_id: string;
-          kind: "phrase" | "url";
+          kind: "phrase" | "url" | "content";
           value: string;
           created_at: string;
         };
         Insert: {
           id?: string;
           user_id: string;
-          kind: "phrase" | "url";
+          kind: "phrase" | "url" | "content";
           value: string;
           created_at?: string;
         };

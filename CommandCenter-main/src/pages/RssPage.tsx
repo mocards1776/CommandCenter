@@ -36,8 +36,10 @@ import {
   addRssFilter,
   applyRssFilters,
   articleSourceHost,
+  contentHidePhrases,
   createRssHighlight,
   feedSourceLabel,
+  hidePhrasesInHtml,
   repairRssContentImages,
   dedupeArticles,
   encodeFeedDomainFilter,
@@ -114,11 +116,11 @@ function HighlightComposer({
             type="button"
             onClick={onBlock}
             disabled={blocking}
-            title="Block this phrase"
+            title="Hide this text in articles (keeps the story)"
             className="text-chalk-dim hover:text-alert inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
           >
-            <Ban size={12} />
-            Block
+            <EyeOff size={12} />
+            Hide
           </button>
           <div className="label-caps text-accent">New highlight</div>
         </div>
@@ -739,11 +741,25 @@ function ArticleReaderShell({
     [highlights.data],
   );
   const titleParts = useMemo(() => splitTextByQuotes(title, quoteTexts), [title, quoteTexts]);
+
+  const contentFilters = useQuery({
+    queryKey: ["rss-filters"],
+    queryFn: fetchRssFilters,
+    staleTime: 60_000,
+  });
+
+  const hidePhrases = useMemo(
+    () => contentHidePhrases(contentFilters.data ?? []),
+    [contentFilters.data],
+  );
+
   // Bake marks into the HTML string so React re-renders / scroll don't wipe them.
+  // Content hides (MLB signup chrome + user “Hide” phrases) collapse clutter blocks.
   const displayHtml = useMemo(() => {
     const base = linkedHtml || article.data?.contentHtml || "";
-    return markQuotesInHtml(base, quoteTexts);
-  }, [linkedHtml, article.data?.contentHtml, quoteTexts]);
+    const cleaned = hidePhrasesInHtml(base, hidePhrases);
+    return markQuotesInHtml(cleaned, quoteTexts);
+  }, [linkedHtml, article.data?.contentHtml, quoteTexts, hidePhrases]);
 
   // Click images in article body → fullscreen lightbox.
   useEffect(() => {
@@ -836,14 +852,14 @@ function ArticleReaderShell({
     onError: (err) => toast.error(err instanceof Error ? err.message : "Could not save"),
   });
 
-  const blockPhraseMut = useMutation({
-    mutationFn: (phrase: string) => addRssFilter("phrase", phrase),
+  const hideContentMut = useMutation({
+    mutationFn: (phrase: string) => addRssFilter("content", phrase),
     onSuccess: () => {
       setPendingQuote(null);
       void qc.invalidateQueries({ queryKey: ["rss-filters"] });
-      toast.success("Phrase blocked");
+      toast.success("Hidden in articles");
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Could not add filter"),
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Could not hide text"),
   });
 
   const deleteMut = useMutation({
@@ -1128,12 +1144,12 @@ function ArticleReaderShell({
         <HighlightComposer
           quote={pendingQuote}
           saving={createMut.isPending}
-          blocking={blockPhraseMut.isPending}
+          blocking={hideContentMut.isPending}
           onCancel={() => setPendingQuote(null)}
           onSave={(note) => createMut.mutate(note)}
           onBlock={() => {
-            const phrase = pendingQuote.trim().slice(0, 120);
-            if (phrase) blockPhraseMut.mutate(phrase);
+            const phrase = pendingQuote.trim().slice(0, 160);
+            if (phrase) hideContentMut.mutate(phrase);
           }}
         />
       ) : null}
@@ -2222,6 +2238,7 @@ function FiltersPanel({
   }
 
   const phrases = filters.filter((f) => f.kind === "phrase");
+  const contentHides = filters.filter((f) => f.kind === "content");
   const globalUrls = filters.filter(
     (f) => f.kind === "url" && !parseFeedScopedFilter(f.value).feedId,
   );
@@ -2232,8 +2249,9 @@ function FiltersPanel({
   return (
     <div className="flex flex-col gap-5 p-4 md:p-5">
       <p className="text-chalk font-rss text-[14px] leading-relaxed">
-        Hide stories that match a phrase (title/snippet), a URL fragment, or a domain inside one
-        feed. MLS / City SC pieces on the STL Today Cardinals feed are auto-hidden.
+        Hide whole stories by phrase/URL, or hide in-article clutter (keeps the story). MLB
+        “Get the Latest… Sign up” / Morning Lineup blocks are auto-hidden. Select text in an
+        article and tap Hide to scrub more noise.
       </p>
       <form onSubmit={submit} className="flex flex-col gap-2">
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -2242,7 +2260,8 @@ function FiltersPanel({
             onChange={(e) => setKind(e.target.value as RssFilterKind | "feed-domain")}
             className="bg-panel text-cream rounded-sm border border-white/10 px-3 py-2.5 text-[13px] outline-none focus:border-accent/50"
           >
-            <option value="phrase">Phrase</option>
+            <option value="content">Hide in article</option>
+            <option value="phrase">Hide story (phrase)</option>
             <option value="url">URL (all feeds)</option>
             <option value="feed-domain">Domain in feed</option>
           </select>
@@ -2263,11 +2282,13 @@ function FiltersPanel({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder={
-              kind === "phrase"
-                ? "e.g. City SC"
-                : kind === "feed-domain"
-                  ? "e.g. fox2now.com"
-                  : "e.g. mls/city-sc"
+              kind === "content"
+                ? "e.g. Get the Latest From MLB"
+                : kind === "phrase"
+                  ? "e.g. City SC"
+                  : kind === "feed-domain"
+                    ? "e.g. fox2now.com"
+                    : "e.g. mls/city-sc"
             }
             className="bg-panel placeholder:text-chalk-dim text-cream min-w-0 flex-1 rounded-sm border border-white/10 px-3 py-2.5 text-[13px] outline-none focus:border-accent/50"
           />
@@ -2287,9 +2308,32 @@ function FiltersPanel({
         <p className="text-chalk font-rss text-sm">No filters yet.</p>
       ) : (
         <div className="flex flex-col gap-5">
+          {contentHides.length > 0 && (
+            <div>
+              <div className="rule-head mb-3">Hidden in articles</div>
+              <ul className="flex flex-col gap-2">
+                {contentHides.map((f) => (
+                  <li
+                    key={f.id}
+                    className="border-white/[0.06] flex items-center justify-between gap-3 border-b pb-2"
+                  >
+                    <span className="font-rss text-cream text-[15px]">{f.value}</span>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(f.id)}
+                      className="text-chalk-dim hover:text-alert"
+                      aria-label="Remove content hide"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {phrases.length > 0 && (
             <div>
-              <div className="rule-head mb-3">Blocked phrases</div>
+              <div className="rule-head mb-3">Hidden stories (phrase)</div>
               <ul className="flex flex-col gap-2">
                 {phrases.map((f) => (
                   <li
