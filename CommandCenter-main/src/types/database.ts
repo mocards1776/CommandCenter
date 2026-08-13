@@ -567,6 +567,34 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["rss_filters"]["Insert"]>;
         Relationships: [];
       };
+      rss_saves: {
+        Row: {
+          id: string;
+          user_id: string;
+          article_url: string;
+          article_title: string | null;
+          feed_url: string | null;
+          image: string | null;
+          snippet: string | null;
+          author: string | null;
+          published_at: string | null;
+          saved_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          article_url: string;
+          article_title?: string | null;
+          feed_url?: string | null;
+          image?: string | null;
+          snippet?: string | null;
+          author?: string | null;
+          published_at?: string | null;
+          saved_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rss_saves"]["Insert"]>;
+        Relationships: [];
+      };
       story_links: {
         Row: {
           id: string;

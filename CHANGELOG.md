@@ -2,6 +2,16 @@
 
 ---
 
+## Dispatch quotes, saves, MLB wraps — August 13, 2026
+
+- Saved notes are stylized quote cards; tap opens a shareable PNG card.
+- **Save for later** inbox (`rss_saves`) with row + reader toggles.
+- Archive from the reader (mark read, advance to next).
+- Separate **MLB wraps & previews** feed (league-wide ESPN), kept out of Unread.
+- In-article highlight marks are baked into HTML so they no longer vanish on scroll.
+
+---
+
 ## Dispatch notes rail + contracts — August 12, 2026
 
 - Notes sidebar (large screens): Cardinals current/next game, weather for

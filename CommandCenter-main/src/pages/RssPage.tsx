@@ -4,6 +4,8 @@ import {
   Archive,
   ArrowLeft,
   Ban,
+  Bookmark,
+  BookmarkCheck,
   CheckCheck,
   CheckSquare,
   ChevronLeft,
@@ -24,8 +26,10 @@ import toast from "react-hot-toast";
 import PlayerPeek from "@/components/rss/PlayerPeek";
 import DispatchEspnGameReader from "@/components/rss/DispatchEspnGameReader";
 import DispatchNotesAside from "@/components/rss/DispatchNotesAside";
+import RssQuoteShareCard from "@/components/rss/RssQuoteShareCard";
 import {
   RSS_FEEDS,
+  RSS_SEPARATE_FEEDS,
   addDedupeKeepHost,
   addRssFilter,
   applyRssFilters,
@@ -34,7 +38,7 @@ import {
   dedupeArticles,
   encodeFeedDomainFilter,
   loadDedupeKeepHosts,
-  paintQuotesInElement,
+  markQuotesInHtml,
   parseFeedScopedFilter,
   partitionDedupedArticles,
   deleteRssFilter,
@@ -44,13 +48,16 @@ import {
   fetchRssFilters,
   fetchRssHighlights,
   fetchRssReads,
+  fetchRssSaves,
   formatFeedDate,
   markRssRead,
   markRssReadMany,
   markRssUnread,
   removeDedupeKeepHost,
+  saveRssArticle,
   splitTextByQuotes,
   suggestUrlFilterValue,
+  unsaveRssArticle,
   updateRssHighlightNote,
   type RssFeedId,
   type RssFeedItem,
@@ -69,7 +76,7 @@ import {
 } from "@/lib/mlb";
 import { cn } from "@/lib/utils";
 
-type NavView = "unread" | RssFeedId | "notes" | "filters" | "duplicates";
+type NavView = "unread" | "saved" | RssFeedId | "notes" | "filters" | "duplicates";
 
 function readingMinutes(words: number): string {
   const m = Math.max(1, Math.round(words / 220));
@@ -147,10 +154,12 @@ function HighlightCard({
   highlight,
   onDelete,
   onUpdateNote,
+  onShare,
 }: {
   highlight: RssHighlight;
   onDelete: () => void;
   onUpdateNote: (note: string) => void;
+  onShare: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(highlight.note);
@@ -163,9 +172,32 @@ function HighlightCard({
 
   return (
     <li className="border-white/[0.08] border-b pb-4 last:border-0">
-      <blockquote className="font-rss text-cream border-accent/50 border-l-2 pl-3 text-[16px] leading-relaxed">
-        {highlight.quoteText}
-      </blockquote>
+      <button
+        type="button"
+        onClick={onShare}
+        className="group relative w-full overflow-hidden rounded-sm border border-white/[0.08] bg-gradient-to-br from-[#0c1a36] via-[#081228] to-[#1a0e14] px-4 pt-5 pb-4 text-left transition-transform hover:scale-[1.01]"
+      >
+        <span
+          aria-hidden
+          className="font-rss text-accent/50 pointer-events-none absolute top-1 left-2 text-[56px] leading-none"
+        >
+          “
+        </span>
+        <p className="text-accent mb-2 text-[9px] font-semibold uppercase tracking-[0.22em]">
+          Dispatch quote
+        </p>
+        <blockquote className="font-rss text-cream relative z-[1] pl-1 text-[16px] leading-relaxed italic">
+          {highlight.quoteText}
+        </blockquote>
+        {highlight.note ? (
+          <p className="font-rss text-chalk mt-3 border-t border-white/10 pt-2 text-[13px] leading-relaxed">
+            {highlight.note}
+          </p>
+        ) : null}
+        <p className="text-chalk-dim mt-3 text-[10px] uppercase tracking-[0.16em] opacity-70 group-hover:opacity-100">
+          Tap to share
+        </p>
+      </button>
       {editing ? (
         <form onSubmit={save} className="mt-2 flex flex-col gap-2">
           <textarea
@@ -330,39 +362,49 @@ function ReaderView({
   item,
   feedUrl,
   isRead,
+  isSaved,
   hasPrev,
   hasNext,
   onBack,
   onPrev,
   onNext,
   onToggleRead,
+  onToggleSave,
+  onArchive,
 }: {
   item: RssFeedItem;
   feedUrl: string;
   isRead: boolean;
+  isSaved: boolean;
   hasPrev: boolean;
   hasNext: boolean;
   onBack: () => void;
   onPrev: () => void;
   onNext: () => void;
   onToggleRead: () => void;
+  onToggleSave: () => void;
+  onArchive: () => void;
 }) {
   const isEspnGame =
     Boolean(parseEspnGameIdFromUrl(item.link)) ||
     feedUrl === "synthetic:cardinals-wraps" ||
+    feedUrl === "synthetic:mlb-wraps" ||
     /espn\.com\/mlb\/(?:recap|preview|game)/i.test(item.link);
 
-  // Cardinals wraps/previews → exact sports game UI (matchup + wrap + stats).
+  // ESPN wraps/previews → sports game UI (matchup + wrap + stats).
   if (isEspnGame) {
     return (
       <EspnGameReaderShell
         item={item}
         feedUrl={feedUrl}
+        isSaved={isSaved}
         hasPrev={hasPrev}
         hasNext={hasNext}
         onClose={onBack}
         onPrev={onPrev}
         onNext={onNext}
+        onToggleSave={onToggleSave}
+        onArchive={onArchive}
       />
     );
   }
@@ -372,12 +414,15 @@ function ReaderView({
       item={item}
       feedUrl={feedUrl}
       isRead={isRead}
+      isSaved={isSaved}
       hasPrev={hasPrev}
       hasNext={hasNext}
       onClose={onBack}
       onPrev={onPrev}
       onNext={onNext}
       onToggleRead={onToggleRead}
+      onToggleSave={onToggleSave}
+      onArchive={onArchive}
     />
   );
 }
@@ -385,19 +430,25 @@ function ReaderView({
 function EspnGameReaderShell({
   item,
   feedUrl,
+  isSaved,
   hasPrev,
   hasNext,
   onClose,
   onPrev,
   onNext,
+  onToggleSave,
+  onArchive,
 }: {
   item: RssFeedItem;
   feedUrl: string;
+  isSaved: boolean;
   hasPrev: boolean;
   hasNext: boolean;
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
+  onToggleSave: () => void;
+  onArchive: () => void;
 }) {
   const qc = useQueryClient();
 
@@ -443,6 +494,28 @@ function EspnGameReaderShell({
 
   return (
     <div ref={swipeRef} style={{ touchAction: "pan-y" }}>
+      <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
+        <button
+          type="button"
+          onClick={onToggleSave}
+          className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
+        >
+          {isSaved ? (
+            <BookmarkCheck size={14} className="text-accent" />
+          ) : (
+            <Bookmark size={14} />
+          )}
+          {isSaved ? "Saved" : "Save for later"}
+        </button>
+        <button
+          type="button"
+          onClick={onArchive}
+          className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
+        >
+          <Archive size={14} />
+          Archive
+        </button>
+      </div>
       <DispatchEspnGameReader
         url={item.link}
         title={item.title}
@@ -460,22 +533,28 @@ function ArticleReaderShell({
   item,
   feedUrl,
   isRead,
+  isSaved,
   hasPrev,
   hasNext,
   onClose,
   onPrev,
   onNext,
   onToggleRead,
+  onToggleSave,
+  onArchive,
 }: {
   item: RssFeedItem;
   feedUrl: string;
   isRead: boolean;
+  isSaved: boolean;
   hasPrev: boolean;
   hasNext: boolean;
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
   onToggleRead: () => void;
+  onToggleSave: () => void;
+  onArchive: () => void;
 }) {
   const qc = useQueryClient();
   const articleBodyRef = useRef<HTMLDivElement>(null);
@@ -485,6 +564,7 @@ function ArticleReaderShell({
   const [linkedHtml, setLinkedHtml] = useState<string>("");
   const [peekPlayerId, setPeekPlayerId] = useState<number | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [shareHighlight, setShareHighlight] = useState<RssHighlight | null>(null);
 
   const article = useQuery({
     queryKey: ["rss-article-v2", item.link],
@@ -566,8 +646,11 @@ function ArticleReaderShell({
     [highlights.data],
   );
   const titleParts = useMemo(() => splitTextByQuotes(title, quoteTexts), [title, quoteTexts]);
-  // Body highlights are painted into the live DOM after linkify (see effect below).
-  const displayHtml = linkedHtml || article.data?.contentHtml || "";
+  // Bake marks into the HTML string so React re-renders / scroll don't wipe them.
+  const displayHtml = useMemo(() => {
+    const base = linkedHtml || article.data?.contentHtml || "";
+    return markQuotesInHtml(base, quoteTexts);
+  }, [linkedHtml, article.data?.contentHtml, quoteTexts]);
 
   // Click images in article body → fullscreen lightbox.
   useEffect(() => {
@@ -632,14 +715,6 @@ function ArticleReaderShell({
       else v.addEventListener("loadeddata", play, { once: true });
     });
   }, [displayHtml]);
-
-  // Paint saved quotes into the live DOM so marks survive player-link wraps.
-  useEffect(() => {
-    const id = window.requestAnimationFrame(() => {
-      paintQuotesInElement(articleBodyRef.current, quoteTexts);
-    });
-    return () => window.cancelAnimationFrame(id);
-  }, [displayHtml, quoteTexts]);
 
   const createMut = useMutation({
     mutationFn: (note: string) =>
@@ -758,6 +833,26 @@ function ArticleReaderShell({
           >
             {isRead ? <CheckCheck size={14} className="text-turf" /> : <Circle size={14} />}
             {isRead ? "Read" : "Mark read"}
+          </button>
+          <button
+            type="button"
+            onClick={onToggleSave}
+            className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
+          >
+            {isSaved ? (
+              <BookmarkCheck size={14} className="text-accent" />
+            ) : (
+              <Bookmark size={14} />
+            )}
+            {isSaved ? "Saved" : "Save for later"}
+          </button>
+          <button
+            type="button"
+            onClick={onArchive}
+            className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
+          >
+            <Archive size={14} />
+            Archive
           </button>
           <button
             type="button"
@@ -895,6 +990,7 @@ function ArticleReaderShell({
               <HighlightCard
                 key={h.id}
                 highlight={h}
+                onShare={() => setShareHighlight(h)}
                 onDelete={() => deleteMut.mutate(h.id)}
                 onUpdateNote={(note) => noteMut.mutate({ id: h.id, note })}
               />
@@ -903,6 +999,10 @@ function ArticleReaderShell({
         )}
         <DispatchNotesAside />
       </aside>
+
+      {shareHighlight ? (
+        <RssQuoteShareCard highlight={shareHighlight} onClose={() => setShareHighlight(null)} />
+      ) : null}
 
       {pendingQuote ? (
         <HighlightComposer
@@ -954,22 +1054,26 @@ function ArticleRow({
   item,
   read,
   highlighted,
+  saved,
   onOpen,
   onBlockUrl,
   onKeepSource,
   keptSource,
   onArchive,
+  onToggleSave,
   batchMode,
   batchSelected,
 }: {
   item: RssFeedItem;
   read: boolean;
   highlighted?: boolean;
+  saved?: boolean;
   onOpen: () => void;
   onBlockUrl: () => void;
   onKeepSource?: () => void;
   keptSource?: boolean;
   onArchive?: () => void;
+  onToggleSave?: () => void;
   batchMode?: boolean;
   batchSelected?: boolean;
 }) {
@@ -1027,6 +1131,9 @@ function ArticleRow({
               {highlighted ? (
                 <Highlighter size={12} className="text-accent shrink-0" aria-label="Has highlights" />
               ) : null}
+              {saved ? (
+                <BookmarkCheck size={12} className="text-accent shrink-0" aria-label="Saved" />
+              ) : null}
             </div>
             <h3
               className={cn(
@@ -1043,13 +1150,28 @@ function ArticleRow({
             ) : null}
           </div>
         </button>
-        {!batchMode && onArchive && !read ? (
+        {!batchMode && onToggleSave ? (
+          <button
+            type="button"
+            onClick={onToggleSave}
+            title={saved ? "Remove from saved" : "Save for later"}
+            className="text-chalk-dim hover:text-cream mt-1 shrink-0"
+            aria-label={saved ? "Unsave" : "Save for later"}
+          >
+            {saved ? (
+              <BookmarkCheck size={15} className="text-accent" />
+            ) : (
+              <Bookmark size={15} />
+            )}
+          </button>
+        ) : null}
+        {!batchMode && onArchive && (!read || saved) ? (
           <button
             type="button"
             onClick={onArchive}
-            title="Archive (mark read)"
+            title={saved && read ? "Remove from saved" : "Archive (mark read)"}
             className="text-chalk-dim hover:text-cream mt-1 shrink-0"
-            aria-label="Archive"
+            aria-label={saved && read ? "Remove from saved" : "Archive"}
           >
             <Archive size={15} />
           </button>
@@ -1125,10 +1247,47 @@ export default function RssPage() {
     enabled: true,
   });
 
+  const savesQuery = useQuery({
+    queryKey: ["rss-saves"],
+    queryFn: fetchRssSaves,
+    staleTime: 30_000,
+  });
+  const savedUrls = useMemo(
+    () => new Set((savesQuery.data ?? []).map((s) => s.articleUrl)),
+    [savesQuery.data],
+  );
+
+  const [shareHighlight, setShareHighlight] = useState<RssHighlight | null>(null);
+
   const highlightUrls = useMemo(
     () => new Set((allNotes.data ?? []).map((h) => h.articleUrl)),
     [allNotes.data],
   );
+
+  const toggleSaveMut = useMutation({
+    mutationFn: async (item: RssFeedItemRef) => {
+      if (savedUrls.has(item.link)) {
+        await unsaveRssArticle(item.link);
+        return { saved: false as const };
+      }
+      await saveRssArticle({
+        articleUrl: item.link,
+        articleTitle: item.title,
+        feedUrl: item.feedUrl,
+        image: item.image,
+        snippet: item.snippet,
+        author: item.author,
+        publishedAt: item.publishedAt,
+      });
+      return { saved: true as const };
+    },
+    onSuccess: async (result) => {
+      await qc.invalidateQueries({ queryKey: ["rss-saves"] });
+      toast.success(result.saved ? "Saved for later" : "Removed from saved");
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : "Could not update saved articles"),
+  });
 
   const addFilterMut = useMutation({
     mutationFn: ({ kind, value }: { kind: RssFilterKind; value: string }) =>
@@ -1181,8 +1340,26 @@ export default function RssPage() {
     return counts;
   }, [feedById, readUrls]);
 
+  const savedListItems = useMemo((): RssFeedItemRef[] => {
+    return (savesQuery.data ?? []).map((s) => {
+      const feed = RSS_FEEDS.find((f) => f.url === s.feedUrl);
+      return {
+        id: s.id,
+        title: s.articleTitle || s.articleUrl,
+        link: s.articleUrl,
+        author: s.author,
+        publishedAt: s.publishedAt,
+        image: s.image,
+        snippet: s.snippet || "",
+        feedId: feed?.id ?? RSS_FEEDS[0].id,
+        feedUrl: s.feedUrl || feed?.url || RSS_FEEDS[0].url,
+      };
+    });
+  }, [savesQuery.data]);
+
   const listItems = useMemo(() => {
     if (nav === "notes" || nav === "filters") return [] as RssFeedItemRef[];
+    if (nav === "saved") return savedListItems;
     if (nav === "duplicates") {
       const rows = [...duplicateItems];
       rows.sort((a, b) => {
@@ -1195,6 +1372,7 @@ export default function RssPage() {
     if (nav === "unread") {
       const merged: RssFeedItemRef[] = [];
       for (const f of RSS_FEEDS) {
+        if (RSS_SEPARATE_FEEDS.has(f.id)) continue;
         const pack = feedById.get(f.id);
         for (const it of pack?.items ?? []) {
           if (!readUrls.has(it.link)) {
@@ -1216,11 +1394,12 @@ export default function RssPage() {
       feedId: nav,
       feedUrl: pack?.url ?? "",
     }));
-  }, [nav, feedById, readUrls, duplicateItems, keepHosts]);
+  }, [nav, feedById, readUrls, duplicateItems, keepHosts, savedListItems]);
 
   const totalUnread = useMemo(() => {
     const merged: RssFeedItem[] = [];
     for (const f of RSS_FEEDS) {
+      if (RSS_SEPARATE_FEEDS.has(f.id)) continue;
       for (const it of feedById.get(f.id)?.items ?? []) {
         if (!readUrls.has(it.link)) merged.push(it);
       }
@@ -1236,13 +1415,15 @@ export default function RssPage() {
   const listTitle =
     nav === "unread"
       ? "Unread"
-      : nav === "notes"
-        ? "Notes"
-        : nav === "filters"
-          ? "Filters"
-          : nav === "duplicates"
-            ? "Duplicates"
-            : RSS_FEEDS.find((f) => f.id === nav)?.title ?? "Feed";
+      : nav === "saved"
+        ? "Saved for later"
+        : nav === "notes"
+          ? "Notes"
+          : nav === "filters"
+            ? "Filters"
+            : nav === "duplicates"
+              ? "Duplicates"
+              : RSS_FEEDS.find((f) => f.id === nav)?.title ?? "Feed";
 
   const feedsLoading = feedQueries.some((q) => q.isLoading);
   const feedsFetching = feedQueries.some((q) => q.isFetching);
@@ -1340,23 +1521,61 @@ export default function RssPage() {
     if (next) setSelected(next);
   }
 
+  async function archiveSelected() {
+    if (!selected) return;
+    try {
+      await markRssRead({
+        articleUrl: selected.link,
+        articleTitle: selected.title,
+        feedUrl: selected.feedUrl,
+      });
+      await qc.invalidateQueries({ queryKey: ["rss-reads"] });
+      toast.success("Archived");
+      if (selectedIndex >= 0 && selectedIndex < navItems.length - 1) {
+        goRelative(1);
+      } else {
+        setSelected(null);
+        setReaderQueue(null);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not archive");
+    }
+  }
+
   const batchArchiveMut = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
+      if (nav === "saved") {
+        const targets = listItems.filter((it) => batchSelected.has(it.link));
+        await Promise.all(targets.map((it) => unsaveRssArticle(it.link)));
+        return { mode: "saved" as const, n: targets.length };
+      }
       const targets = listItems.filter((it) => batchSelected.has(it.link) && !readUrls.has(it.link));
-      return markRssReadMany(
+      await markRssReadMany(
         targets.map((it) => ({
           articleUrl: it.link,
           articleTitle: it.title,
           feedUrl: it.feedUrl,
         })),
       );
+      return { mode: "read" as const, n: targets.length };
     },
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["rss-reads"] });
-      const n = batchSelected.size;
+    onSuccess: async (result) => {
+      if (result.mode === "saved") {
+        await qc.invalidateQueries({ queryKey: ["rss-saves"] });
+      } else {
+        await qc.invalidateQueries({ queryKey: ["rss-reads"] });
+      }
       setBatchSelected(new Set());
       setBatchMode(false);
-      toast.success(n === 1 ? "Archived 1 article" : `Archived ${n} articles`);
+      toast.success(
+        result.mode === "saved"
+          ? result.n === 1
+            ? "Removed 1 saved article"
+            : `Removed ${result.n} saved articles`
+          : result.n === 1
+            ? "Archived 1 article"
+            : `Archived ${result.n} articles`,
+      );
     },
     onError: (err) =>
       toast.error(err instanceof Error ? err.message : "Could not archive selection"),
@@ -1369,7 +1588,10 @@ export default function RssPage() {
   });
 
   const canBatch =
-    nav === "duplicates" || nav === "unread" || RSS_FEEDS.some((f) => f.id === nav);
+    nav === "duplicates" ||
+    nav === "unread" ||
+    nav === "saved" ||
+    RSS_FEEDS.some((f) => f.id === nav);
 
   if (selected) {
     return (
@@ -1378,6 +1600,7 @@ export default function RssPage() {
           item={selected}
           feedUrl={selected.feedUrl}
           isRead={readUrls.has(selected.link)}
+          isSaved={savedUrls.has(selected.link)}
           hasPrev={selectedIndex > 0}
           hasNext={selectedIndex >= 0 && selectedIndex < navItems.length - 1}
           onBack={() => {
@@ -1387,6 +1610,8 @@ export default function RssPage() {
           onPrev={() => goRelative(-1)}
           onNext={() => goRelative(1)}
           onToggleRead={() => void toggleRead(selected)}
+          onToggleSave={() => toggleSaveMut.mutate(selected)}
+          onArchive={() => void archiveSelected()}
         />
       </div>
     );
@@ -1428,6 +1653,23 @@ export default function RssPage() {
             <Inbox size={16} className="text-accent shrink-0" />
             <span className="min-w-0 flex-1 text-[13.5px]">Unread Articles</span>
             <span className="text-chalk tabular-nums text-[12px]">{totalUnread}</span>
+            <ChevronRight size={14} className="opacity-50" />
+          </button>
+          <button
+            type="button"
+            onClick={() => selectNav("saved")}
+            className={cn(
+              "mt-0.5 flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2.5 text-left transition-colors",
+              nav === "saved"
+                ? "bg-accent/15 text-cream"
+                : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+            )}
+          >
+            <Bookmark size={16} className="text-accent shrink-0" />
+            <span className="min-w-0 flex-1 text-[13.5px]">Saved for later</span>
+            <span className="text-chalk tabular-nums text-[12px]">
+              {savesQuery.data?.length ?? 0}
+            </span>
             <ChevronRight size={14} className="opacity-50" />
           </button>
         </div>
@@ -1542,11 +1784,13 @@ export default function RssPage() {
             <p className="text-chalk-dim text-[11px] uppercase tracking-[0.14em]">
               {nav === "notes"
                 ? `${allNotes.data?.length ?? 0} highlights`
-                : nav === "filters"
-                  ? `${filters.length} rules`
-                  : nav === "duplicates"
-                    ? `${duplicateItems.length} filtered · MLB preferred`
-                    : `${listItems.length} articles`}
+                : nav === "saved"
+                  ? `${savedListItems.length} saved`
+                  : nav === "filters"
+                    ? `${filters.length} rules`
+                    : nav === "duplicates"
+                      ? `${duplicateItems.length} filtered · MLB preferred`
+                      : `${listItems.length} articles`}
             </p>
           </div>
           {canBatch ? (
@@ -1595,6 +1839,7 @@ export default function RssPage() {
           ) : null}
           {!batchMode &&
           nav !== "notes" &&
+          nav !== "saved" &&
           nav !== "filters" &&
           nav !== "duplicates" &&
           unreadInList.length > 0 ? (
@@ -1628,20 +1873,43 @@ export default function RssPage() {
             ) : (
               <ul className="flex flex-col gap-5">
                 {allNotes.data?.map((h) => (
-                  <li key={h.id} className="border-white/[0.06] border-b pb-4 last:border-0">
-                    <div className="label-caps text-accent mb-1">
-                      {h.articleTitle || h.articleUrl}
-                    </div>
-                    <blockquote className="font-rss text-cream border-accent/40 border-l-2 pl-3 text-[16px] leading-relaxed">
-                      {h.quoteText}
-                    </blockquote>
-                    {h.note ? (
-                      <p className="font-rss text-chalk mt-2 text-[14px]">{h.note}</p>
-                    ) : null}
+                  <li key={h.id}>
+                    <button
+                      type="button"
+                      onClick={() => setShareHighlight(h)}
+                      className="group relative w-full overflow-hidden rounded-sm border border-white/[0.08] bg-gradient-to-br from-[#0c1a36] via-[#081228] to-[#1a0e14] px-5 pt-5 pb-4 text-left transition-transform hover:scale-[1.01]"
+                    >
+                      <span
+                        aria-hidden
+                        className="font-rss text-accent/45 pointer-events-none absolute top-0 left-3 text-[64px] leading-none"
+                      >
+                        “
+                      </span>
+                      <div className="label-caps text-accent mb-2 relative z-[1]">
+                        {h.articleTitle || h.articleUrl}
+                      </div>
+                      <blockquote className="font-rss text-cream relative z-[1] text-[17px] leading-relaxed italic md:text-[18px]">
+                        {h.quoteText}
+                      </blockquote>
+                      {h.note ? (
+                        <p className="font-rss text-chalk mt-3 border-t border-white/10 pt-2 text-[14px]">
+                          {h.note}
+                        </p>
+                      ) : null}
+                      <p className="text-chalk-dim mt-3 text-[10px] uppercase tracking-[0.16em] opacity-70 group-hover:opacity-100">
+                        Tap to share
+                      </p>
+                    </button>
                   </li>
                 ))}
               </ul>
             )}
+            {shareHighlight ? (
+              <RssQuoteShareCard
+                highlight={shareHighlight}
+                onClose={() => setShareHighlight(null)}
+              />
+            ) : null}
           </div>
         ) : feedsLoading ? (
           <p className="label-caps animate-pulse p-5">Loading feeds</p>
@@ -1667,9 +1935,11 @@ export default function RssPage() {
           <p className="text-chalk font-rss p-5 text-sm">
             {nav === "unread"
               ? "You're caught up."
-              : nav === "duplicates"
-                ? "No duplicate stories right now."
-                : "No articles in this feed."}
+              : nav === "saved"
+                ? "Nothing saved for later."
+                : nav === "duplicates"
+                  ? "No duplicate stories right now."
+                  : "No articles in this feed."}
           </p>
         ) : (
           <ul>
@@ -1677,7 +1947,10 @@ export default function RssPage() {
               const host = articleSourceHost(item.link);
               const kept = Boolean(host && keepHosts.includes(host));
               const canArchive =
-                nav === "unread" || nav === "duplicates" || RSS_FEEDS.some((f) => f.id === nav);
+                nav === "unread" ||
+                nav === "duplicates" ||
+                nav === "saved" ||
+                RSS_FEEDS.some((f) => f.id === nav);
               const feedScoped = RSS_FEEDS.some((f) => f.id === nav);
               return (
               <ArticleRow
@@ -1685,6 +1958,7 @@ export default function RssPage() {
                 item={item}
                 read={readUrls.has(item.link)}
                 highlighted={highlightUrls.has(item.link)}
+                saved={savedUrls.has(item.link)}
                 batchMode={batchMode}
                 batchSelected={batchSelected.has(item.link)}
                 onOpen={() => openArticle(item)}
@@ -1701,9 +1975,17 @@ export default function RssPage() {
                     value: suggestUrlFilterValue(item.link),
                   });
                 }}
+                onToggleSave={() => toggleSaveMut.mutate(item)}
                 onArchive={
                   canArchive
                     ? () => {
+                        if (nav === "saved") {
+                          void unsaveRssArticle(item.link).then(() => {
+                            void qc.invalidateQueries({ queryKey: ["rss-saves"] });
+                            toast.success("Removed from saved");
+                          });
+                          return;
+                        }
                         void markRssRead({
                           articleUrl: item.link,
                           articleTitle: item.title,

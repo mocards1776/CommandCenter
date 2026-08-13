@@ -23,8 +23,14 @@ export const RSS_FEEDS = [
   {
     id: "cardinals-wraps",
     title: "Cardinals wraps & previews",
-    short: "Wraps",
+    short: "STL wraps",
     url: "synthetic:cardinals-wraps",
+  },
+  {
+    id: "mlb-wraps",
+    title: "MLB wraps & previews",
+    short: "MLB wraps",
+    url: "synthetic:mlb-wraps",
   },
 ] as const;
 
@@ -793,18 +799,72 @@ async function invokeRss<T>(body: Record<string, string>): Promise<T> {
 
 export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFeed> {
   if (feedUrl === "synthetic:cardinals-wraps") {
-    return fetchCardinalsWrapsFeed();
+    return fetchEspnWrapsFeed({
+      feedUrl,
+      title: "Cardinals wraps & previews",
+      description: "St. Louis Cardinals game wraps and previews from ESPN",
+      teamFilter: { espnId: "24", abbrev: "STL" },
+      days: 14,
+      maxItems: 40,
+    });
+  }
+  if (feedUrl === "synthetic:mlb-wraps") {
+    return fetchEspnWrapsFeed({
+      feedUrl,
+      title: "MLB wraps & previews",
+      description: "League-wide MLB game wraps and previews from ESPN",
+      days: 3,
+      maxItems: 48,
+      // League volume is high — prefer finals + today's previews.
+      preferFinals: true,
+    });
   }
   return invokeRss<RssFeed>({ mode: "feed", feedUrl });
 }
 
-/** Client-side Cardinals game wrap + preview feed (ESPN is reachable from the browser). */
-async function fetchCardinalsWrapsFeed(): Promise<RssFeed> {
+type EspnWrapsOpts = {
+  feedUrl: string;
+  title: string;
+  description: string;
+  teamFilter?: { espnId: string; abbrev: string };
+  days?: number;
+  maxItems?: number;
+  preferFinals?: boolean;
+};
+
+/** Client-side ESPN game wrap + preview feed (reachable from the browser). */
+async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
+  const days = opts.days ?? 7;
+  const maxItems = opts.maxItems ?? 40;
   const items: RssFeedItem[] = [];
   const seen = new Set<string>();
   const today = new Date();
+  const candidates: {
+    eventId: string;
+    dateStr: string;
+    y: number;
+    m: string;
+    day: string;
+    event: {
+      id?: string;
+      date?: string;
+      shortName?: string;
+      competitions?: {
+        id?: string;
+        status?: { type?: { state?: string; completed?: boolean; name?: string } };
+        competitors?: {
+          homeAway?: string;
+          team?: { id?: string; abbreviation?: string };
+          score?: string;
+        }[];
+      }[];
+      status?: { type?: { state?: string; completed?: boolean; name?: string } };
+    };
+    isFinal: boolean;
+    isPreview: boolean;
+  }[] = [];
 
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < days; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const y = d.getFullYear();
@@ -818,85 +878,96 @@ async function fetchCardinalsWrapsFeed(): Promise<RssFeed> {
       );
       if (!boardRes.ok) continue;
       const board = (await boardRes.json()) as {
-        events?: {
-          id?: string;
-          date?: string;
-          name?: string;
-          shortName?: string;
-          competitions?: {
-            id?: string;
-            status?: { type?: { state?: string; completed?: boolean; name?: string } };
-            competitors?: {
-              homeAway?: string;
-              team?: { id?: string; abbreviation?: string; displayName?: string };
-              score?: string;
-            }[];
-          }[];
-          status?: { type?: { state?: string; completed?: boolean; name?: string } };
-        }[];
+        events?: (typeof candidates)[number]["event"][];
       };
 
       for (const event of board.events ?? []) {
         const comp = event.competitions?.[0];
         if (!comp) continue;
-        const isStl = (comp.competitors ?? []).some(
-          (c) => c.team?.abbreviation === "STL" || c.team?.id === "24",
-        );
-        if (!isStl) continue;
+        if (opts.teamFilter) {
+          const hit = (comp.competitors ?? []).some(
+            (c) =>
+              c.team?.abbreviation === opts.teamFilter!.abbrev ||
+              c.team?.id === opts.teamFilter!.espnId,
+          );
+          if (!hit) continue;
+        }
         const status = comp.status?.type ?? event.status?.type;
         const isFinal = status?.state === "post" || status?.completed === true;
         const isPreview =
           status?.state === "pre" ||
           /STATUS_SCHEDULED|STATUS_PRE/i.test(status?.name ?? "");
         if (!isFinal && !isPreview) continue;
+        // League feed: skip future previews except for today.
+        if (opts.preferFinals && isPreview && i > 0) continue;
         const eventId = event.id ?? comp.id;
         if (!eventId || seen.has(eventId)) continue;
         seen.add(eventId);
+        candidates.push({ eventId, dateStr, y, m, day, event, isFinal, isPreview });
+      }
+    } catch {
+      /* skip day */
+    }
+  }
 
-        const sumRes = await fetch(
-          `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${eventId}`,
-          { headers: { Accept: "application/json" } },
-        );
-        if (!sumRes.ok) continue;
-        const sum = (await sumRes.json()) as {
-          article?: {
-            headline?: string;
-            description?: string;
-            story?: string;
-            images?: { url?: string }[];
+  // Newest first; cap before summary fetches.
+  candidates.sort((a, b) => {
+    const da = a.event.date ? Date.parse(a.event.date) : 0;
+    const db = b.event.date ? Date.parse(b.event.date) : 0;
+    return db - da;
+  });
+  const limited = candidates.slice(0, maxItems);
+
+  // Fetch summaries with modest concurrency.
+  const concurrency = 4;
+  for (let i = 0; i < limited.length; i += concurrency) {
+    const chunk = limited.slice(i, i + concurrency);
+    const settled = await Promise.all(
+      chunk.map(async (c) => {
+        try {
+          const sumRes = await fetch(
+            `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${c.eventId}`,
+            { headers: { Accept: "application/json" } },
+          );
+          if (!sumRes.ok) return null;
+          const sum = (await sumRes.json()) as {
+            article?: {
+              headline?: string;
+              description?: string;
+              story?: string;
+              images?: { url?: string }[];
+            };
           };
-        };
-        const article = sum.article;
-        const home = (comp.competitors ?? []).find((c) => c.homeAway === "home");
-        const away = (comp.competitors ?? []).find((c) => c.homeAway === "away");
-        const matchup =
-          event.shortName ||
-          `${away?.team?.abbreviation ?? "AWAY"} @ ${home?.team?.abbreviation ?? "HOME"}`;
-        const publishedAt = event.date || `${y}-${m}-${day}T17:00:00Z`;
+          const article = sum.article;
+          const comp = c.event.competitions?.[0];
+          const home = (comp?.competitors ?? []).find((x) => x.homeAway === "home");
+          const away = (comp?.competitors ?? []).find((x) => x.homeAway === "away");
+          const matchup =
+            c.event.shortName ||
+            `${away?.team?.abbreviation ?? "AWAY"} @ ${home?.team?.abbreviation ?? "HOME"}`;
+          const publishedAt = c.event.date || `${c.y}-${c.m}-${c.day}T17:00:00Z`;
 
-        if (isFinal) {
-          if (!article?.headline) continue;
-          const storyText = (article.story ?? "")
-            .replace(/<[^>]+>/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-          const snippet =
-            (article.description ?? "").replace(/^—\s*/, "").trim() ||
-            storyText.slice(0, 220);
-          items.push({
-            id: `wrap-${eventId}`,
-            title: article.headline,
-            link: `https://www.espn.com/mlb/recap/_/gameId/${eventId}`,
-            author: "ESPN",
-            publishedAt,
-            image: article.images?.[0]?.url ?? null,
-            snippet,
-          });
-        } else {
-          // Game preview — use ESPN article when present, else a synthetic preview blurb.
-          const headline =
-            article?.headline ||
-            `Preview: ${matchup}`;
+          if (c.isFinal) {
+            if (!article?.headline) return null;
+            const storyText = (article.story ?? "")
+              .replace(/<[^>]+>/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+            const snippet =
+              (article.description ?? "").replace(/^—\s*/, "").trim() ||
+              storyText.slice(0, 220);
+            return {
+              id: `wrap-${c.eventId}`,
+              title: article.headline,
+              link: `https://www.espn.com/mlb/recap/_/gameId/${c.eventId}`,
+              author: "ESPN",
+              publishedAt,
+              image: article.images?.[0]?.url ?? null,
+              snippet,
+            } satisfies RssFeedItem;
+          }
+
+          const headline = article?.headline || `Preview: ${matchup}`;
           const storyText = (article?.story ?? "")
             .replace(/<[^>]+>/g, " ")
             .replace(/\s+/g, " ")
@@ -905,19 +976,22 @@ async function fetchCardinalsWrapsFeed(): Promise<RssFeed> {
             (article?.description ?? "").replace(/^—\s*/, "").trim() ||
             storyText.slice(0, 220) ||
             `Game preview for ${matchup} at ${publishedAt.slice(0, 10)}.`;
-          items.push({
-            id: `preview-${eventId}`,
+          return {
+            id: `preview-${c.eventId}`,
             title: article?.headline ? headline : `Preview: ${matchup}`,
-            link: `https://www.espn.com/mlb/preview/_/gameId/${eventId}`,
+            link: `https://www.espn.com/mlb/preview/_/gameId/${c.eventId}`,
             author: "ESPN",
             publishedAt,
             image: article?.images?.[0]?.url ?? null,
             snippet,
-          });
+          } satisfies RssFeedItem;
+        } catch {
+          return null;
         }
-      }
-    } catch {
-      /* skip day */
+      }),
+    );
+    for (const item of settled) {
+      if (item) items.push(item);
     }
   }
 
@@ -928,10 +1002,10 @@ async function fetchCardinalsWrapsFeed(): Promise<RssFeed> {
   });
 
   return {
-    title: "Cardinals wraps & previews",
-    description: "St. Louis Cardinals game wraps and previews from ESPN",
+    title: opts.title,
+    description: opts.description,
     link: "https://www.espn.com/mlb/",
-    feedUrl: "synthetic:cardinals-wraps",
+    feedUrl: opts.feedUrl,
     items,
   };
 }
@@ -1164,3 +1238,91 @@ export async function deleteRssHighlight(id: string): Promise<void> {
     .eq("id", id);
   if (error) throw error;
 }
+
+export type RssSave = {
+  id: string;
+  articleUrl: string;
+  articleTitle: string | null;
+  feedUrl: string | null;
+  image: string | null;
+  snippet: string | null;
+  author: string | null;
+  publishedAt: string | null;
+  savedAt: string;
+};
+
+export async function fetchRssSaves(): Promise<RssSave[]> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("rss_saves")
+    .select("*")
+    .eq("user_id", userId)
+    .order("saved_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    articleUrl: r.article_url,
+    articleTitle: r.article_title,
+    feedUrl: r.feed_url,
+    image: r.image,
+    snippet: r.snippet,
+    author: r.author,
+    publishedAt: r.published_at,
+    savedAt: r.saved_at,
+  }));
+}
+
+export async function saveRssArticle(input: {
+  articleUrl: string;
+  articleTitle?: string | null;
+  feedUrl?: string | null;
+  image?: string | null;
+  snippet?: string | null;
+  author?: string | null;
+  publishedAt?: string | null;
+}): Promise<RssSave> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("rss_saves")
+    .upsert(
+      {
+        user_id: userId,
+        article_url: input.articleUrl,
+        article_title: input.articleTitle ?? null,
+        feed_url: input.feedUrl ?? null,
+        image: input.image ?? null,
+        snippet: input.snippet ?? null,
+        author: input.author ?? null,
+        published_at: input.publishedAt ?? null,
+        saved_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,article_url" },
+    )
+    .select("*")
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    articleUrl: data.article_url,
+    articleTitle: data.article_title,
+    feedUrl: data.feed_url,
+    image: data.image,
+    snippet: data.snippet,
+    author: data.author,
+    publishedAt: data.published_at,
+    savedAt: data.saved_at,
+  };
+}
+
+export async function unsaveRssArticle(articleUrl: string): Promise<void> {
+  const userId = await requireUserId();
+  const { error } = await supabase
+    .from("rss_saves")
+    .delete()
+    .eq("user_id", userId)
+    .eq("article_url", articleUrl);
+  if (error) throw error;
+}
+
+/** Feeds that stay out of the cross-feed Unread inbox (browse them on their own). */
+export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>(["mlb-wraps"]);
