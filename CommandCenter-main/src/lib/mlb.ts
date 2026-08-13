@@ -486,9 +486,12 @@ export function ensureRecapSegmentSpacing(parts: RecapInline[]): RecapInline[] {
 export function normalizePersonName(name: string): string {
   return name
     .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/\./g, "")
     .replace(/\b(jr|sr|ii|iii|iv)\b/g, "")
     .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -5494,69 +5497,131 @@ export type MlbProspectSeed = {
   name: string;
   position: string;
   pipelineNote?: string;
+  /** Stable Stats API person id when name search is unreliable. */
+  playerId?: number;
+  /** Alternate search names (accents, short forms, Pipeline spelling). */
+  aliases?: string[];
 };
 
 /** Pipeline-oriented Cardinals watch list (resolved against Stats API). */
 export const CARDINALS_PROSPECT_SEEDS: MlbProspectSeed[] = [
-  { rank: 1, name: "JJ Wetherholt", position: "SS", pipelineNote: "MLB Pipeline Top 100" },
-  { rank: 2, name: "Liam Doyle", position: "LHP", pipelineNote: "MLB Pipeline Top 100" },
-  { rank: 3, name: "Rainiel Rodriguez", position: "C", pipelineNote: "MLB Pipeline Top 100" },
-  { rank: 4, name: "Joshua Baez", position: "OF", pipelineNote: "MLB Pipeline Top 100" },
-  { rank: 5, name: "Jurrangelo Cijntje", position: "RHP", pipelineNote: "MLB Pipeline Top 100" },
-  { rank: 6, name: "Leonardo Bernal", position: "C", pipelineNote: "MLB Pipeline Top 100" },
-  { rank: 7, name: "Jimmy Crooks", position: "C" },
-  { rank: 8, name: "Quinn Mathews", position: "LHP" },
-  { rank: 9, name: "Tai Peete", position: "OF" },
-  { rank: 10, name: "Tanner Franklin", position: "RHP" },
-  { rank: 11, name: "Brandon Clarke", position: "LHP" },
-  { rank: 12, name: "Yohiker Fajardo", position: "RHP" },
+  {
+    rank: 1,
+    name: "JJ Wetherholt",
+    position: "SS",
+    playerId: 802139,
+    pipelineNote: "MLB Pipeline Top 100",
+  },
+  {
+    rank: 2,
+    name: "Liam Doyle",
+    position: "LHP",
+    playerId: 824604,
+    pipelineNote: "MLB Pipeline Top 100",
+  },
+  {
+    rank: 3,
+    name: "Rainiel Rodriguez",
+    position: "C",
+    playerId: 823787,
+    pipelineNote: "MLB Pipeline Top 100",
+  },
+  {
+    rank: 4,
+    name: "Joshua Baez",
+    position: "OF",
+    playerId: 695491,
+    aliases: ["Joshua Báez"],
+    pipelineNote: "MLB Pipeline Top 100",
+  },
+  {
+    rank: 5,
+    name: "Jurrangelo Cijntje",
+    position: "RHP",
+    playerId: 701388,
+    pipelineNote: "MLB Pipeline Top 100",
+  },
+  {
+    rank: 6,
+    name: "Leonardo Bernal",
+    position: "C",
+    playerId: 699024,
+    aliases: ["Leo Bernal"],
+    pipelineNote: "MLB Pipeline Top 100",
+  },
+  { rank: 7, name: "Jimmy Crooks", position: "C", playerId: 699625 },
+  { rank: 8, name: "Quinn Mathews", position: "LHP", playerId: 687273 },
+  { rank: 9, name: "Tai Peete", position: "OF", playerId: 806191 },
+  { rank: 10, name: "Tanner Franklin", position: "RHP", playerId: 815119 },
+  { rank: 11, name: "Brandon Clarke", position: "LHP", playerId: 700251 },
+  {
+    rank: 12,
+    name: "Yohiker Fajardo",
+    position: "RHP",
+    playerId: 823369,
+    aliases: ["Yhoiker Fajardo"],
+  },
 ];
 
-export type MlbProspectCard = MlbProspectSeed & {
+export type MlbProspectCard = Omit<MlbProspectSeed, "playerId"> & {
   playerId: number | null;
   teamName: string | null;
   teamId: number | null;
   level: string | null;
 };
 
+async function resolveProspectPerson(
+  playerId: number,
+): Promise<{ teamName: string | null; teamId: number | null; level: string | null }> {
+  try {
+    const person = (await mlbGet(`people/${playerId}`, {
+      hydrate: "currentTeam,currentTeam.sport",
+    })) as {
+      people?: {
+        currentTeam?: {
+          id?: number;
+          name?: string;
+          sport?: { name?: string };
+        };
+      }[];
+    };
+    const team = person.people?.[0]?.currentTeam;
+    return {
+      teamId: team?.id ?? null,
+      teamName: team?.name ?? null,
+      level: team?.sport?.name ?? null,
+    };
+  } catch {
+    return { teamName: null, teamId: null, level: null };
+  }
+}
+
 export async function fetchCardinalsProspectWatch(): Promise<MlbProspectCard[]> {
-  const ids = await searchMlbPlayersByNames(
-    CARDINALS_PROSPECT_SEEDS.map((p) => p.name),
-    24,
-  );
+  const searchNames = CARDINALS_PROSPECT_SEEDS.flatMap((p) => [p.name, ...(p.aliases ?? [])]);
+  const ids = await searchMlbPlayersByNames(searchNames, 40);
   const out: MlbProspectCard[] = [];
   for (const seed of CARDINALS_PROSPECT_SEEDS) {
-    const id = ids.get(normalizePersonName(seed.name)) ?? null;
-    let teamName: string | null = null;
-    let teamId: number | null = null;
-    let level: string | null = null;
-    if (id) {
-      try {
-        const person = (await mlbGet(`people/${id}`, {
-          hydrate: "currentTeam",
-        })) as {
-          people?: {
-            currentTeam?: {
-              id?: number;
-              name?: string;
-              sport?: { name?: string };
-            };
-          }[];
-        };
-        const team = person.people?.[0]?.currentTeam;
-        teamId = team?.id ?? null;
-        teamName = team?.name ?? null;
-        level = team?.sport?.name ?? null;
-      } catch {
-        /* keep nulls */
+    let id =
+      seed.playerId ??
+      ids.get(normalizePersonName(seed.name)) ??
+      null;
+    if (id == null) {
+      for (const alias of seed.aliases ?? []) {
+        id = ids.get(normalizePersonName(alias)) ?? null;
+        if (id != null) break;
       }
     }
+    const team = id != null ? await resolveProspectPerson(id) : {
+      teamName: null,
+      teamId: null,
+      level: null,
+    };
     out.push({
       ...seed,
       playerId: id,
-      teamName,
-      teamId,
-      level,
+      teamName: team.teamName,
+      teamId: team.teamId,
+      level: team.level,
     });
   }
   return out;
@@ -5691,77 +5756,47 @@ export async function fetchMlbPeopleByIds(
 
 export type MlbScoutingReport = {
   playerId: number;
-  summary: string;
-  bullets: string[];
+  playerName: string;
   pipelineRank: number | null;
+  eta: string | null;
+  position: string | null;
+  gradesLine: string | null;
+  grades: { label: string; value: string }[];
+  paragraphs: string[];
   pipelineUrl: string;
-  draftLine: string | null;
 };
 
-/** Lightweight scouting snapshot for prospects (Stats API + Pipeline watch list). */
-export function buildProspectScoutingReport(
-  player: Pick<
-    MlbPlayerCard,
-    | "id"
-    | "name"
-    | "position"
-    | "bats"
-    | "throws"
-    | "height"
-    | "weight"
-    | "age"
-    | "draft"
-    | "school"
-    | "teamName"
-    | "sportName"
-    | "sportId"
-  >,
-): MlbScoutingReport {
-  const seed = CARDINALS_PROSPECT_SEEDS.find(
-    (s) => normalizePersonName(s.name) === normalizePersonName(player.name),
-  );
-  const pipelineRank = seed?.rank ?? null;
-  const slug = player.name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  const pipelineUrl = `https://www.mlb.com/milb/prospects/cardinals/${slug}-${player.id}`;
-  const bullets: string[] = [];
-  if (player.position) {
-    bullets.push(
-      `${player.position}${player.bats || player.throws ? ` · ${[player.bats, player.throws].filter(Boolean).join("/")}` : ""}`,
-    );
-  }
-  const body = [player.height, player.weight ? `${player.weight} lb` : null, player.age != null ? `Age ${player.age}` : null]
-    .filter(Boolean)
-    .join(" · ");
-  if (body) bullets.push(body);
-  if (player.teamName) {
-    bullets.push(
-      `${player.teamName}${player.sportName && player.sportId !== 1 ? ` (${player.sportName})` : ""}`,
-    );
-  }
-  if (player.school) bullets.push(player.school);
-  if (seed?.pipelineNote) bullets.push(seed.pipelineNote);
-
-  const draftLine = player.draft?.display ?? null;
-  const summaryParts = [
-    pipelineRank != null ? `Cardinals Pipeline watch #${pipelineRank}` : null,
-    draftLine ? `Draft: ${draftLine}` : null,
-    player.sportId && player.sportId !== 1
-      ? "Minor-league prospect — open Pipeline for full tool grades."
-      : "See Pipeline for the latest organizational scouting grades.",
-  ].filter(Boolean);
-
+/** MLB Pipeline grades + narrative. Returns null for vets / players without a report. */
+export async function fetchMlbPipelineScoutingReport(
+  playerId: number | string,
+): Promise<MlbScoutingReport | null> {
+  const id = Number(playerId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const data = await invokeSports<{
+    found?: boolean;
+    playerId?: number;
+    playerName?: string;
+    rank?: number | null;
+    eta?: string | null;
+    position?: string | null;
+    gradesLine?: string | null;
+    grades?: { label: string; value: string }[];
+    paragraphs?: string[];
+    pipelineUrl?: string;
+  }>({ action: "pipelineScouting", playerId: id });
+  if (!data?.found || !data.gradesLine) return null;
   return {
-    playerId: player.id,
-    summary: summaryParts.join(" · "),
-    bullets,
-    pipelineRank,
-    pipelineUrl,
-    draftLine,
+    playerId: data.playerId ?? id,
+    playerName: data.playerName ?? "",
+    pipelineRank: data.rank ?? null,
+    eta: data.eta ?? null,
+    position: data.position ?? null,
+    gradesLine: data.gradesLine,
+    grades: data.grades ?? [],
+    paragraphs: data.paragraphs ?? [],
+    pipelineUrl:
+      data.pipelineUrl ??
+      `https://www.mlb.com/prospects/${id}`,
   };
 }
 

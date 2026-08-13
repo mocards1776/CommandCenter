@@ -1149,6 +1149,156 @@ async function scrapeManagerFiredOdds() {
   return { source: items[0]?.source ?? "none", checkedAt: new Date().toISOString(), items: items.slice(0, 20) };
 }
 
+type PipelineBio = { contentTitle?: string | null; contentText?: string | null };
+type PipelineRow = {
+  rank?: number | null;
+  playerEntity?: {
+    position?: string | null;
+    eta?: string | null;
+    player?: { id?: number | null; fullName?: string | null } | null;
+    prospectBio?: PipelineBio[] | null;
+  } | null;
+};
+
+function decodeHtmlEntities(raw: string): string {
+  return raw
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\u202f/g, " ");
+}
+
+function parsePipelineBio(contentText: string): {
+  gradesLine: string | null;
+  grades: { label: string; value: string }[];
+  paragraphs: string[];
+} {
+  const html = decodeHtmlEntities(contentText);
+  const gradeMatch = html.match(
+    /Scouting grades:\s*<\/strong>\s*([^<]+)/i,
+  ) || html.match(/<strong>\s*Scouting grades:?\s*<\/strong>\s*([^<]+)/i);
+  const gradesLine = gradeMatch?.[1]?.replace(/\s+/g, " ").trim() || null;
+  const grades: { label: string; value: string }[] = [];
+  if (gradesLine) {
+    for (const part of gradesLine.split("|")) {
+      const m = part.trim().match(/^([^:]+):\s*(\d+)\s*$/);
+      if (m) grades.push({ label: m[1].trim(), value: m[2] });
+    }
+  }
+  const paragraphs: string[] = [];
+  for (const block of html.matchAll(/<p>([\s\S]*?)<\/p>/gi)) {
+    const text = stripTags(block[1] ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!text) continue;
+    if (/^scouting grades:/i.test(text)) continue;
+    if (/^video scouting report/i.test(text)) continue;
+    paragraphs.push(text);
+  }
+  return { gradesLine, grades, paragraphs };
+}
+
+/** MLB Pipeline scouting grades + narrative for a prospect (hide when absent). */
+async function scrapePipelineScouting(playerId: number): Promise<Record<string, unknown>> {
+  const year = new Date().getFullYear();
+  const query = `
+    query PipelineSelection($slug: String!, $limit: Int) {
+      getPlayerRankingsFromSelection(slug: $slug, limit: $limit) {
+        rank
+        playerEntity {
+          position
+          eta
+          player { id fullName }
+          prospectBio { contentTitle contentText }
+        }
+      }
+    }
+  `;
+  const slugs = [
+    `sel-pr-${year}-cardinals`,
+    `sel-pr-${year}-top100`,
+    `sel-pr-${year - 1}-cardinals`,
+  ];
+
+  let hit: PipelineRow | null = null;
+  let sourceSlug: string | null = null;
+  for (const slug of slugs) {
+    const res = await timedFetch(
+      "https://data-graph.mlb.com/graphql",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Origin: "https://www.mlb.com",
+          Referer: "https://www.mlb.com/cardinals/prospects",
+          "User-Agent": UA,
+        },
+        body: JSON.stringify({
+          query,
+          variables: { slug, limit: 100 },
+        }),
+      },
+      FETCH_MS,
+    );
+    if (!res.ok) continue;
+    const payload = (await res.json()) as {
+      data?: { getPlayerRankingsFromSelection?: PipelineRow[] };
+    };
+    const rows = payload.data?.getPlayerRankingsFromSelection ?? [];
+    const found = rows.find((r) => Number(r.playerEntity?.player?.id) === playerId);
+    if (found) {
+      hit = found;
+      sourceSlug = slug;
+      break;
+    }
+  }
+
+  if (!hit?.playerEntity?.player?.id) {
+    return { found: false, playerId };
+  }
+
+  const bios = hit.playerEntity.prospectBio ?? [];
+  const preferred =
+    bios.find((b) => String(b.contentTitle ?? "") === String(year)) ??
+    [...bios].reverse().find((b) => (b.contentText ?? "").toLowerCase().includes("scouting grades")) ??
+    bios[bios.length - 1] ??
+    null;
+  if (!preferred?.contentText) {
+    return { found: false, playerId };
+  }
+  const parsed = parsePipelineBio(preferred.contentText);
+  if (!parsed.gradesLine && parsed.paragraphs.length === 0) {
+    return { found: false, playerId };
+  }
+
+  const fullName = hit.playerEntity.player.fullName ?? "";
+  const slug = fullName
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  return {
+    found: true,
+    playerId,
+    playerName: fullName,
+    rank: hit.rank ?? null,
+    eta: hit.playerEntity.eta ?? null,
+    position: hit.playerEntity.position ?? null,
+    gradesLine: parsed.gradesLine,
+    grades: parsed.grades,
+    paragraphs: parsed.paragraphs,
+    bioYear: preferred.contentTitle ?? null,
+    sourceSlug,
+    pipelineUrl: `https://www.mlb.com/prospects/${slug}-${playerId}`,
+  };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -1216,6 +1366,23 @@ Deno.serve(async (req: Request) => {
       return json(await scrapeManagerFiredOdds());
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
+    }
+  }
+  if (body.action === "pipelineScouting") {
+    const playerId = Number(body.playerId);
+    if (!Number.isFinite(playerId) || playerId <= 0) {
+      return json({ error: "Bad playerId" }, 400);
+    }
+    try {
+      return json(
+        await withBudget(
+          HEAVY_MS,
+          () => scrapePipelineScouting(playerId),
+          { error: "Pipeline scouting timed out", playerId, found: false },
+        ),
+      );
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), found: false }, 200);
     }
   }
   const safe = safePath(String(body.path ?? ""));
