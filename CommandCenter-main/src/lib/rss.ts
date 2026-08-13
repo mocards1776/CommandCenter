@@ -299,7 +299,7 @@ export function dedupeArticles<T extends Pick<RssFeedItem, "link" | "title">>(
   return partitionDedupedArticles(items, keepHosts).kept;
 }
 
-export type RssFilterKind = "phrase" | "url";
+export type RssFilterKind = "phrase" | "url" | "content";
 
 export type RssFilter = {
   id: string;
@@ -307,6 +307,121 @@ export type RssFilter = {
   value: string;
   createdAt: string;
 };
+
+/**
+ * Always scrubbed from article bodies (MLB newsletter / signup chrome).
+ * Matched case-insensitively against element text.
+ */
+export const DEFAULT_CONTENT_HIDES = [
+  "get the latest from mlb",
+  "get the latest from mlb sign up",
+  "morning lineup",
+] as const;
+
+/** Collect user content-hide phrases plus built-in MLB clutter patterns. */
+export function contentHidePhrases(filters: RssFilter[]): string[] {
+  const out = new Set<string>();
+  for (const p of DEFAULT_CONTENT_HIDES) out.add(p.toLowerCase());
+  for (const f of filters) {
+    if (f.kind !== "content") continue;
+    const v = f.value.trim().toLowerCase();
+    if (v.length >= 3) out.add(v);
+  }
+  return [...out].sort((a, b) => b.length - a.length);
+}
+
+const BLOCK_TAGS = new Set([
+  "P",
+  "DIV",
+  "FIGURE",
+  "SECTION",
+  "ASIDE",
+  "BLOCKQUOTE",
+  "LI",
+  "ARTICLE",
+  "HEADER",
+  "FOOTER",
+  "TABLE",
+]);
+
+/**
+ * Remove in-article clutter blocks whose text matches hide phrases.
+ * Prefer removing the nearest block ancestor so signup chrome collapses
+ * (no empty reserved space).
+ */
+export function hidePhrasesInHtml(html: string, phrases: string[]): string {
+  if (!html || !phrases.length || typeof DOMParser === "undefined") return html;
+  const needles = [...new Set(phrases.map((p) => p.trim().toLowerCase()).filter((p) => p.length >= 3))];
+  if (!needles.length) return html;
+
+  const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, "text/html");
+  const root = doc.getElementById("root");
+  if (!root) return html;
+
+  const matchesPhrase = (text: string) => {
+    const t = text.replace(/\s+/g, " ").trim().toLowerCase();
+    if (!t) return false;
+    return needles.some((n) => t.includes(n));
+  };
+
+  const toRemove = new Set<Element>();
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    const value = node.nodeValue ?? "";
+    if (matchesPhrase(value)) {
+      let el: Element | null = node.parentElement;
+      let block: Element | null = null;
+      while (el && el !== root) {
+        if (BLOCK_TAGS.has(el.tagName)) {
+          block = el;
+          // Prefer a compact promo container: if a parent block is still mostly
+          // the same promo (short), keep walking up a bit.
+          const parentEl: Element | null = el.parentElement;
+          if (
+            parentEl &&
+            parentEl !== root &&
+            BLOCK_TAGS.has(parentEl.tagName) &&
+            matchesPhrase(parentEl.textContent ?? "") &&
+            (parentEl.textContent ?? "").replace(/\s+/g, " ").trim().length < 220
+          ) {
+            el = parentEl;
+            continue;
+          }
+          break;
+        }
+        el = el.parentElement;
+      }
+      if (block) toRemove.add(block);
+    }
+    node = walker.nextNode();
+  }
+
+  for (const el of toRemove) {
+    // Also drop a following empty sibling spacer if present.
+    const next = el.nextElementSibling;
+    el.remove();
+    if (
+      next &&
+      !next.textContent?.replace(/\s+/g, "").trim() &&
+      !next.querySelector("img,video,iframe,table")
+    ) {
+      next.remove();
+    }
+  }
+
+  // Collapse leftover empty paragraphs/divs created by cleanup.
+  root.querySelectorAll("p,div").forEach((el) => {
+    if (
+      !el.textContent?.replace(/\s+/g, "").trim() &&
+      !el.querySelector("img,video,iframe,table,br")
+    ) {
+      el.remove();
+    }
+  });
+
+  return root.innerHTML;
+}
 
 /**
  * STL Today’s Cardinals rss.app feed also carries MLS / City SC stories.
