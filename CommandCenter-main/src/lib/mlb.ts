@@ -5,6 +5,17 @@ import { supabase } from "./supabase";
 const MLB = "https://statsapi.mlb.com/api/v1";
 const ESPN_STANDINGS = "https://site.api.espn.com/apis/v2/sports/baseball/mlb/standings";
 
+export type MlbLiveSituation = {
+  balls: number;
+  strikes: number;
+  outs: number;
+  batter: { id: number; name: string } | null;
+  pitcher: { id: number; name: string } | null;
+  onFirst: boolean;
+  onSecond: boolean;
+  onThird: boolean;
+};
+
 export type MlbScoreGame = {
   id: string;
   status: string;
@@ -20,6 +31,8 @@ export type MlbScoreGame = {
   venue: string | null;
   officialDate: string | null;
   gameDate: string | null;
+  /** Present while the game is in progress. */
+  situation: MlbLiveSituation | null;
 };
 
 export type MlbScoreSide = {
@@ -651,7 +664,7 @@ export function linkifyMlbPlayersInHtml(
           mark.className = "rss-player-watch";
           mark.title = "Favorite or tagged";
           mark.setAttribute("aria-label", "Favorite or tagged");
-          mark.textContent = "★";
+          mark.textContent = "⋆";
           frag.appendChild(mark);
         }
       } else {
@@ -846,6 +859,9 @@ export type MlbBoxscore = {
   status: string;
   /** True when the game has not started (Scheduled / Preview / Warmup). */
   pregame: boolean;
+  /** True while abstract state is Live. */
+  live: boolean;
+  inning: string | null;
   when: string | null;
   whenShort: string | null;
   venue: string | null;
@@ -856,6 +872,7 @@ export type MlbBoxscore = {
   innings: { num: number; away: number | null; home: number | null }[];
   away: MlbBoxscoreSide;
   home: MlbBoxscoreSide;
+  situation: MlbLiveSituation | null;
 };
 
 export type MlbGameRecap = {
@@ -1008,6 +1025,13 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
       };
       liveData?: {
         linescore?: {
+          currentInningOrdinal?: string;
+          inningState?: string;
+          balls?: number;
+          strikes?: number;
+          outs?: number;
+          offense?: LinescoreOffense;
+          defense?: LinescoreDefense;
           innings?: { num?: number; away?: { runs?: number }; home?: { runs?: number } }[];
           teams?: {
             away?: { runs?: number; hits?: number; errors?: number };
@@ -1028,6 +1052,11 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
   const status = live?.gameData?.status?.detailedState ?? "Final";
   const abstract = live?.gameData?.status?.abstractGameState ?? "";
   const pregame = /preview|scheduled|pre[- ]?game|warmup/i.test(`${status} ${abstract}`);
+  const isLive = abstract === "Live" || /in progress|manager challenge|delayed/i.test(status);
+  const inn =
+    isLive && ls
+      ? `${ls.inningState ?? ""} ${ls.currentInningOrdinal ?? ""}`.trim() || null
+      : null;
   const away = mapBoxSide(box.teams?.away, live?.gameData?.teams?.away, ls?.teams?.away);
   const home = mapBoxSide(box.teams?.home, live?.gameData?.teams?.home, ls?.teams?.home);
   const sideRecord = (
@@ -1050,6 +1079,8 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
     gamePk: Number(pk),
     status,
     pregame,
+    live: isLive,
+    inning: inn,
     when: fmtWhen(whenIso),
     whenShort: fmtWhenShort(whenIso),
     venue: live?.gameData?.venue?.name ?? null,
@@ -1064,6 +1095,7 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
     })),
     away,
     home,
+    situation: mapLiveSituation(ls, isLive),
   };
 }
 
@@ -1689,6 +1721,53 @@ function teamAbbrev(team: { abbreviation?: string; teamName?: string; name?: str
   return team?.abbreviation || team?.teamName || team?.name || "—";
 }
 
+type LinescorePerson = { id?: number; fullName?: string };
+type LinescoreOffense = {
+  batter?: LinescorePerson;
+  pitcher?: LinescorePerson;
+  first?: LinescorePerson | null;
+  second?: LinescorePerson | null;
+  third?: LinescorePerson | null;
+};
+type LinescoreDefense = {
+  pitcher?: LinescorePerson;
+  batter?: LinescorePerson;
+};
+
+function mapLiveSituation(
+  ls:
+    | {
+        balls?: number;
+        strikes?: number;
+        outs?: number;
+        offense?: LinescoreOffense;
+        defense?: LinescoreDefense;
+      }
+    | null
+    | undefined,
+  live: boolean,
+): MlbLiveSituation | null {
+  if (!live || !ls) return null;
+  const batter = ls.offense?.batter;
+  const pitcher = ls.defense?.pitcher ?? ls.offense?.pitcher;
+  return {
+    balls: Number(ls.balls ?? 0),
+    strikes: Number(ls.strikes ?? 0),
+    outs: Number(ls.outs ?? 0),
+    batter:
+      batter?.id != null
+        ? { id: batter.id, name: batter.fullName ?? "Batter" }
+        : null,
+    pitcher:
+      pitcher?.id != null
+        ? { id: pitcher.id, name: pitcher.fullName ?? "Pitcher" }
+        : null,
+    onFirst: Boolean(ls.offense?.first?.id),
+    onSecond: Boolean(ls.offense?.second?.id),
+    onThird: Boolean(ls.offense?.third?.id),
+  };
+}
+
 export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScoreGame[]> {
   const raw = (await mlbGet("schedule", {
     sportId: "1",
@@ -1706,6 +1785,11 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
         linescore?: {
           currentInningOrdinal?: string;
           inningState?: string;
+          balls?: number;
+          strikes?: number;
+          outs?: number;
+          offense?: LinescoreOffense;
+          defense?: LinescoreDefense;
           teams?: {
             away?: { runs?: number; hits?: number; errors?: number };
             home?: { runs?: number; hits?: number; errors?: number };
@@ -1773,6 +1857,7 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
       venue: g.venue?.name ?? null,
       officialDate: g.officialDate ?? raw.dates?.[0]?.date ?? null,
       gameDate: g.gameDate ?? null,
+      situation: mapLiveSituation(g.linescore, live),
     };
   });
 }

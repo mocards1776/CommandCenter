@@ -310,6 +310,90 @@ function PreviewStack({
   );
 }
 
+function BaseDiamond({
+  onFirst,
+  onSecond,
+  onThird,
+}: {
+  onFirst: boolean;
+  onSecond: boolean;
+  onThird: boolean;
+}) {
+  const bag = (on: boolean) => (on ? "bg-cream shadow-[0_0_0_1px_rgba(255,255,255,0.35)]" : "bg-white/15");
+  return (
+    <div className="relative mx-auto h-11 w-11" aria-hidden>
+      <span className={cn("absolute top-0 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45", bag(onSecond))} />
+      <span className={cn("absolute top-1/2 left-0 h-3 w-3 -translate-y-1/2 rotate-45", bag(onThird))} />
+      <span className={cn("absolute top-1/2 right-0 h-3 w-3 -translate-y-1/2 rotate-45", bag(onFirst))} />
+    </div>
+  );
+}
+
+function LiveSituationBar({
+  inning,
+  situation,
+}: {
+  inning: string | null;
+  situation: NonNullable<MlbBoxscore["situation"]>;
+}) {
+  const short = (name: string) => {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length < 2) return name;
+    return `${parts[0]![0]}. ${parts[parts.length - 1]}`;
+  };
+  return (
+    <div className="relative z-10 border-t border-white/[0.08] px-3 py-3 sm:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-1">
+          {situation.batter ? (
+            <p className="truncate text-[13px] text-white/85">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                Batter{" "}
+              </span>
+              <Link
+                to={`/sports/mlb/player/${situation.batter.id}`}
+                className="font-medium text-[#9ec1ff] hover:underline"
+              >
+                {short(situation.batter.name)}
+              </Link>
+            </p>
+          ) : null}
+          {situation.pitcher ? (
+            <p className="truncate text-[13px] text-white/85">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                Pitcher{" "}
+              </span>
+              <Link
+                to={`/sports/mlb/player/${situation.pitcher.id}`}
+                className="font-medium text-[#9ec1ff] hover:underline"
+              >
+                {short(situation.pitcher.name)}
+              </Link>
+            </p>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-4">
+          <BaseDiamond
+            onFirst={situation.onFirst}
+            onSecond={situation.onSecond}
+            onThird={situation.onThird}
+          />
+          <div className="text-right">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/70">
+              {inning || "Live"}
+            </p>
+            <p className="numeral mt-1 text-[15px] text-cream">
+              {situation.balls}-{situation.strikes}
+              <span className="mx-1.5 text-white/30">·</span>
+              {situation.outs} out{situation.outs === 1 ? "" : "s"}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
   const awayWins = !g.pregame && g.away.runs > g.home.runs;
   const homeWins = !g.pregame && g.home.runs > g.away.runs;
@@ -333,10 +417,10 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
         <p
           className={cn(
             "text-[11px] font-bold uppercase tracking-[0.16em]",
-            g.status === "Final" ? "text-cream" : "text-[#a8b0c2]",
+            g.status === "Final" ? "text-cream" : g.live ? "text-alert" : "text-[#a8b0c2]",
           )}
         >
-          {g.pregame ? "Preview" : g.status}
+          {g.pregame ? "Preview" : g.live ? g.inning || g.status : g.status}
         </p>
         {g.officialDate && (
           <p className="text-[11px] text-[#8b93a7]">
@@ -369,7 +453,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
                 <span className={homeWins ? "text-white" : "text-white/50"}>{g.home.runs}</span>
               </p>
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                {g.status === "Final" ? "Final" : g.status}
+                {g.status === "Final" ? "Final" : g.inning || g.status}
               </p>
               {(g.away.hits != null || g.home.hits != null) && (
                 <p className="mt-2 text-[11px] uppercase tracking-[0.12em] text-white/45">
@@ -384,6 +468,10 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
         </div>
         <EspnTeam side={g.home} align="right" winner={homeWins} loser={awayWins} />
       </div>
+
+      {g.live && g.situation ? (
+        <LiveSituationBar inning={g.inning} situation={g.situation} />
+      ) : null}
     </header>
   );
 }

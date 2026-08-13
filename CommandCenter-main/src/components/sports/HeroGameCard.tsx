@@ -83,6 +83,12 @@ export default function HeroGameCard({
               <HeroSide side={game.home} align="right" />
             </div>
 
+            {game.live && game.situation ? (
+              <div className="mt-5 border-t border-white/10 pt-4">
+                <LiveStrip game={game} />
+              </div>
+            ) : null}
+
             <div className="mt-5 flex flex-wrap items-end justify-between gap-3 border-t border-white/10 pt-4">
               <div className="min-w-0 text-[12px] text-white/55">
                 {game.venue && <p className="truncate">{game.venue}</p>}
@@ -99,6 +105,72 @@ export default function HeroGameCard({
         )}
       </div>
     </Link>
+  );
+}
+
+function LiveStrip({ game }: { game: MlbScoreGame }) {
+  const sit = game.situation;
+  if (!sit) return null;
+  const short = (name: string) => {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length < 2) return name;
+    return `${parts[0]![0]}. ${parts[parts.length - 1]}`;
+  };
+  const bag = (on: boolean) =>
+    on ? "bg-cream shadow-[0_0_0_1px_rgba(255,255,255,0.35)]" : "bg-white/15";
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0 space-y-0.5 text-[12px] text-white/80">
+        {sit.batter ? (
+          <p className="truncate">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+              Batter{" "}
+            </span>
+            {short(sit.batter.name)}
+          </p>
+        ) : null}
+        {sit.pitcher ? (
+          <p className="truncate">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+              Pitcher{" "}
+            </span>
+            {short(sit.pitcher.name)}
+          </p>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="relative h-9 w-9" aria-hidden>
+          <span
+            className={cn(
+              "absolute top-0 left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45",
+              bag(sit.onSecond),
+            )}
+          />
+          <span
+            className={cn(
+              "absolute top-1/2 left-0 h-2.5 w-2.5 -translate-y-1/2 rotate-45",
+              bag(sit.onThird),
+            )}
+          />
+          <span
+            className={cn(
+              "absolute top-1/2 right-0 h-2.5 w-2.5 -translate-y-1/2 rotate-45",
+              bag(sit.onFirst),
+            )}
+          />
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">
+            {game.inning || "Live"}
+          </p>
+          <p className="numeral mt-0.5 text-[14px] text-cream">
+            {sit.balls}-{sit.strikes}
+            <span className="mx-1 text-white/30">·</span>
+            {sit.outs} out{sit.outs === 1 ? "" : "s"}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
