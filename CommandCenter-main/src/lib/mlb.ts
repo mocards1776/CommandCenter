@@ -5081,7 +5081,6 @@ export type MlbProspectSeed = {
   name: string;
   position: string;
   pipelineNote?: string;
-  playerId?: number;
 };
 
 /** Pipeline-oriented Cardinals watch list (resolved against Stats API). */
