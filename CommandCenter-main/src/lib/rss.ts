@@ -310,21 +310,23 @@ export type RssFilter = {
 
 /**
  * Always scrubbed from article bodies (MLB newsletter / signup chrome).
- * Matched case-insensitively against element text.
+ * Matched case-insensitively against normalized element text.
  */
 export const DEFAULT_CONTENT_HIDES = [
   "get the latest from mlb",
   "get the latest from mlb sign up",
+  "get the latest from mlb signup",
   "morning lineup",
+  "mlb morning lineup",
 ] as const;
 
 /** Collect user content-hide phrases plus built-in MLB clutter patterns. */
 export function contentHidePhrases(filters: RssFilter[]): string[] {
   const out = new Set<string>();
-  for (const p of DEFAULT_CONTENT_HIDES) out.add(p.toLowerCase());
+  for (const p of DEFAULT_CONTENT_HIDES) out.add(normalizeHideText(p));
   for (const f of filters) {
     if (f.kind !== "content") continue;
-    const v = f.value.trim().toLowerCase();
+    const v = normalizeHideText(f.value);
     if (v.length >= 3) out.add(v);
   }
   return [...out].sort((a, b) => b.length - a.length);
@@ -344,69 +346,118 @@ const BLOCK_TAGS = new Set([
   "TABLE",
 ]);
 
+/** Collapse whitespace/punctuation so split MLB promo copy still matches. */
+export function normalizeHideText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[\u00a0\u2000-\u200b\u202f\u205f\u3000]/g, " ")
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pickPromoBlock(start: Element, root: Element): Element | null {
+  let el: Element | null = start;
+  let block: Element | null = null;
+  while (el && el !== root) {
+    if (BLOCK_TAGS.has(el.tagName)) {
+      block = el;
+      const parentEl: Element | null = el.parentElement;
+      const parentText = normalizeHideText(parentEl?.textContent ?? "");
+      if (
+        parentEl &&
+        parentEl !== root &&
+        BLOCK_TAGS.has(parentEl.tagName) &&
+        parentText.length > 0 &&
+        parentText.length < 280
+      ) {
+        el = parentEl;
+        continue;
+      }
+      break;
+    }
+    el = el.parentElement;
+  }
+  return block;
+}
+
 /**
  * Remove in-article clutter blocks whose text matches hide phrases.
  * Prefer removing the nearest block ancestor so signup chrome collapses
- * (no empty reserved space).
+ * (no empty reserved space). Also drops bare "Follow" links.
  */
 export function hidePhrasesInHtml(html: string, phrases: string[]): string {
-  if (!html || !phrases.length || typeof DOMParser === "undefined") return html;
-  const needles = [...new Set(phrases.map((p) => p.trim().toLowerCase()).filter((p) => p.length >= 3))];
-  if (!needles.length) return html;
+  if (!html || typeof DOMParser === "undefined") return html;
+  const needles = [
+    ...new Set(phrases.map((p) => normalizeHideText(p)).filter((p) => p.length >= 3)),
+  ];
 
   const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, "text/html");
   const root = doc.getElementById("root");
   if (!root) return html;
 
   const matchesPhrase = (text: string) => {
-    const t = text.replace(/\s+/g, " ").trim().toLowerCase();
+    const t = normalizeHideText(text);
     if (!t) return false;
     return needles.some((n) => t.includes(n));
   };
 
   const toRemove = new Set<Element>();
-  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let node = walker.nextNode();
-  while (node) {
-    const value = node.nodeValue ?? "";
-    if (matchesPhrase(value)) {
-      let el: Element | null = node.parentElement;
-      let block: Element | null = null;
-      while (el && el !== root) {
-        if (BLOCK_TAGS.has(el.tagName)) {
-          block = el;
-          // Prefer a compact promo container: if a parent block is still mostly
-          // the same promo (short), keep walking up a bit.
-          const parentEl: Element | null = el.parentElement;
-          if (
-            parentEl &&
-            parentEl !== root &&
-            BLOCK_TAGS.has(parentEl.tagName) &&
-            matchesPhrase(parentEl.textContent ?? "") &&
-            (parentEl.textContent ?? "").replace(/\s+/g, " ").trim().length < 220
-          ) {
-            el = parentEl;
-            continue;
-          }
-          break;
-        }
-        el = el.parentElement;
+
+  // 1) Text-node hits (user highlight / partial copy).
+  if (needles.length) {
+    const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node) {
+      const value = node.nodeValue ?? "";
+      if (matchesPhrase(value) && node.parentElement) {
+        const block = pickPromoBlock(node.parentElement, root);
+        if (block) toRemove.add(block);
       }
-      if (block) toRemove.add(block);
+      node = walker.nextNode();
     }
-    node = walker.nextNode();
+
+    // 2) Block-level scan — catches promo copy split across nested spans/links.
+    root.querySelectorAll([...BLOCK_TAGS].map((t) => t.toLowerCase()).join(",")).forEach((el) => {
+      const text = normalizeHideText(el.textContent ?? "");
+      if (!text || text.length > 280) return;
+      if (!matchesPhrase(text)) return;
+      const block = pickPromoBlock(el, root) ?? el;
+      toRemove.add(block);
+    });
   }
 
+  // 3) Bare social "Follow" links (and their tiny wrappers).
+  root.querySelectorAll("a").forEach((a) => {
+    const label = normalizeHideText(a.textContent ?? "");
+    if (label !== "follow") return;
+    const parent = a.parentElement;
+    if (
+      parent &&
+      parent !== root &&
+      BLOCK_TAGS.has(parent.tagName) &&
+      normalizeHideText(parent.textContent ?? "") === "follow"
+    ) {
+      toRemove.add(parent);
+    } else {
+      toRemove.add(a);
+    }
+  });
+
   for (const el of toRemove) {
-    // Also drop a following empty sibling spacer if present.
+    if (!el.isConnected) continue;
+    const prev = el.previousElementSibling;
     const next = el.nextElementSibling;
     el.remove();
-    if (
-      next &&
-      !next.textContent?.replace(/\s+/g, "").trim() &&
-      !next.querySelector("img,video,iframe,table")
-    ) {
-      next.remove();
+    for (const sib of [prev, next]) {
+      if (!sib || !sib.isConnected) continue;
+      const t = normalizeHideText(sib.textContent ?? "");
+      const onlyMedia =
+        !t && Boolean(sib.querySelector("img,svg")) && !sib.querySelector("p,li,table,video");
+      const empty =
+        !t && !sib.querySelector("img,video,iframe,table,svg");
+      if (empty || onlyMedia) sib.remove();
     }
   }
 
@@ -414,7 +465,7 @@ export function hidePhrasesInHtml(html: string, phrases: string[]): string {
   root.querySelectorAll("p,div").forEach((el) => {
     if (
       !el.textContent?.replace(/\s+/g, "").trim() &&
-      !el.querySelector("img,video,iframe,table,br")
+      !el.querySelector("img,video,iframe,table,br,svg")
     ) {
       el.remove();
     }
@@ -897,6 +948,54 @@ export function feedSourceLabel(feedUrl: string | null | undefined): string {
   }
 }
 
+/** Score image URLs so blur/LQIP placeholders lose to the real asset. */
+function scoreImageUrl(raw: string): number {
+  const u = raw.toLowerCase();
+  if (!u || u.startsWith("data:")) return -1000;
+  let score = 10;
+  if (/(?:blur|lqip|placeholder|spacer|pixel|transparent|1x1|dummy)/i.test(u)) score -= 80;
+  if (/[?&](?:w|width)=(?:[1-9]|[1-9]\d|1\d\d)(?:&|$)/i.test(u)) score -= 40;
+  if (/\/(?:w_|w=)(?:[1-9]|[1-9]\d|1\d\d)(?:\/|,|$)/i.test(u)) score -= 35;
+  if (/[?&](?:w|width)=(?:[5-9]\d{2}|\d{4,})(?:&|$)/i.test(u)) score += 40;
+  if (/\/(?:w_|w=)(?:[5-9]\d{2}|\d{4,})(?:\/|,|$)/i.test(u)) score += 35;
+  if (/\.(?:jpe?g|png|webp)(?:$|\?)/i.test(u)) score += 8;
+  if (/mlbstatic|mlbinfra|espncdn|cloudinary|imgix|wp\.com|twimg/i.test(u)) score += 6;
+  score += Math.min(raw.length / 40, 12);
+  return score;
+}
+
+function largestFromSrcset(srcset: string): string | null {
+  let best: string | null = null;
+  let bestW = -1;
+  for (const part of srcset.split(",")) {
+    const bits = part.trim().split(/\s+/);
+    const url = bits[0];
+    if (!url) continue;
+    const wMark = bits.find((b) => /^\d+w$/i.test(b));
+    const w = wMark ? Number(wMark.replace(/\D/g, "")) : 0;
+    if (w > bestW) {
+      bestW = w;
+      best = url;
+    } else if (best == null) {
+      best = url;
+    }
+  }
+  return best;
+}
+
+function absolutizeImgUrl(src: string, base: URL | null): string {
+  let out = src.trim();
+  if (out.startsWith("//")) out = `https:${out}`;
+  if (out.startsWith("/") && base) {
+    try {
+      out = new URL(out, base).toString();
+    } catch {
+      /* keep */
+    }
+  }
+  return out;
+}
+
 /** Fix lazy/relative secondary images in reader HTML. */
 export function repairRssContentImages(html: string, pageUrl?: string | null): string {
   if (!html || typeof DOMParser === "undefined") return html;
@@ -910,32 +1009,49 @@ export function repairRssContentImages(html: string, pageUrl?: string | null): s
   const root = doc.getElementById("root");
   if (!root) return html;
 
+  // Promote <picture><source srcset> into the nested img when needed.
+  root.querySelectorAll("picture").forEach((pic) => {
+    const img = pic.querySelector("img");
+    if (!img) return;
+    const sources = [...pic.querySelectorAll("source")];
+    for (const source of sources) {
+      const ss = source.getAttribute("srcset") || source.getAttribute("data-srcset");
+      if (!ss) continue;
+      const large = largestFromSrcset(ss);
+      if (large) {
+        img.setAttribute("data-srcset-promoted", large);
+        break;
+      }
+    }
+  });
+
   root.querySelectorAll("img").forEach((img) => {
     const attrs = img as HTMLImageElement;
     const candidates = [
-      attrs.getAttribute("src"),
       attrs.getAttribute("data-src"),
       attrs.getAttribute("data-lazy-src"),
       attrs.getAttribute("data-original"),
       attrs.getAttribute("data-url"),
+      attrs.getAttribute("data-image"),
+      attrs.getAttribute("data-img-url"),
+      attrs.getAttribute("data-srcset-promoted"),
+      attrs.getAttribute("src"),
     ].filter(Boolean) as string[];
     const srcset = attrs.getAttribute("srcset") || attrs.getAttribute("data-srcset");
     if (srcset) {
-      const first = srcset.split(",")[0]?.trim().split(/\s+/)[0];
-      if (first) candidates.push(first);
+      const large = largestFromSrcset(srcset);
+      if (large) candidates.unshift(large);
     }
-    let src = candidates.find((c) => c && !/^data:image\/svg/i.test(c)) ?? "";
-    if (src && src.startsWith("//")) src = `https:${src}`;
-    if (src && src.startsWith("/") && base) {
-      try {
-        src = new URL(src, base).toString();
-      } catch {
-        /* keep */
-      }
-    }
-    if (src && /^https?:/i.test(src)) {
+    const ranked = candidates
+      .map((c) => absolutizeImgUrl(c, base))
+      .filter((c) => /^https?:/i.test(c) && !/^data:image\/svg/i.test(c))
+      .sort((a, b) => scoreImageUrl(b) - scoreImageUrl(a));
+    const src = ranked[0] ?? "";
+    if (src) {
       attrs.setAttribute("src", src);
       attrs.removeAttribute("srcset");
+      attrs.removeAttribute("data-srcset");
+      attrs.removeAttribute("data-srcset-promoted");
       attrs.loading = "lazy";
       // Some CDNs block no-referrer; prefer origin when loading inline.
       attrs.referrerPolicy = "no-referrer-when-downgrade";

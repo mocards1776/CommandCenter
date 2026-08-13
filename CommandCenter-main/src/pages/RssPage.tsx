@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQueries, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
@@ -25,7 +26,6 @@ import {
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import PlayerPeek from "@/components/rss/PlayerPeek";
 import DispatchEspnGameReader from "@/components/rss/DispatchEspnGameReader";
 import DispatchNotesAside from "@/components/rss/DispatchNotesAside";
 import RssQuoteShareCard from "@/components/rss/RssQuoteShareCard";
@@ -72,6 +72,38 @@ import {
   type RssFilterKind,
   type RssHighlight,
 } from "@/lib/rss";
+
+const DISPATCH_OPEN_KEY = "dispatch-open-article-v1";
+
+type DispatchOpenSnapshot = {
+  item: RssFeedItemRef;
+  queue: RssFeedItemRef[] | null;
+};
+
+function persistDispatchOpen(item: RssFeedItemRef | null, queue: RssFeedItemRef[] | null) {
+  try {
+    if (!item) {
+      sessionStorage.removeItem(DISPATCH_OPEN_KEY);
+      return;
+    }
+    const snap: DispatchOpenSnapshot = { item, queue };
+    sessionStorage.setItem(DISPATCH_OPEN_KEY, JSON.stringify(snap));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function loadDispatchOpen(): DispatchOpenSnapshot | null {
+  try {
+    const raw = sessionStorage.getItem(DISPATCH_OPEN_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as DispatchOpenSnapshot;
+    if (!parsed?.item?.link || !parsed.item.feedUrl) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 import {
   buildPlayerNameIndex,
   extractPlayerNameCandidates,
@@ -603,12 +635,12 @@ function ArticleReaderShell({
   onArchive: () => void;
 }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const articleBodyRef = useRef<HTMLDivElement>(null);
   const titleSelectRef = useRef<HTMLElement>(null);
   const [pendingQuote, setPendingQuote] = useState<string | null>(null);
   const [showNotes, setShowNotes] = useState(false);
   const [linkedHtml, setLinkedHtml] = useState<string>("");
-  const [peekPlayerId, setPeekPlayerId] = useState<number | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [shareHighlight, setShareHighlight] = useState<RssHighlight | null>(null);
 
@@ -672,16 +704,12 @@ function ArticleReaderShell({
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
-    setPeekPlayerId(null);
   }, [item.link]);
 
-  const peekPlayerIdRef = useRef<number | null>(null);
-  peekPlayerIdRef.current = peekPlayerId;
-
-  // Browser / iOS back: article gets one history entry; player peek stacks on top so
-  // back closes the peek and returns to the article (not the feed list).
+  // Browser / iOS back from the article returns to the feed list.
+  // Player names link to the real player page; session restore reopens this article.
   useEffect(() => {
-    type Hist = { dispatchArticle?: string; dispatchPlayerPeek?: number };
+    type Hist = { dispatchArticle?: string };
     const st = (history.state as Hist | null) ?? {};
     if (!st.dispatchArticle) {
       history.pushState({ dispatchArticle: item.link }, "", window.location.href);
@@ -689,10 +717,6 @@ function ArticleReaderShell({
       history.replaceState({ dispatchArticle: item.link }, "", window.location.href);
     }
     const onPop = () => {
-      if (peekPlayerIdRef.current != null) {
-        setPeekPlayerId(null);
-        return;
-      }
       onClose();
     };
     window.addEventListener("popstate", onPop);
@@ -717,7 +741,7 @@ function ArticleReaderShell({
         setLightboxSrc(null);
         return;
       }
-      if (peekPlayerId != null || pendingQuote || lightboxSrc) return;
+      if (pendingQuote || lightboxSrc) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if ((e.target as HTMLElement | null)?.isContentEditable) return;
@@ -731,7 +755,7 @@ function ArticleReaderShell({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hasPrev, hasNext, onPrev, onNext, peekPlayerId, pendingQuote, lightboxSrc]);
+  }, [hasPrev, hasNext, onPrev, onNext, pendingQuote, lightboxSrc]);
 
   const title = article.data?.title || item.title;
   const byline = article.data?.byline || item.author;
@@ -778,7 +802,7 @@ function ArticleReaderShell({
     return () => root.removeEventListener("click", onImgClick);
   }, [displayHtml]);
 
-  // Link any MLB player names → in-app player peek; stylize tweet cards; repair imgs.
+  // Link any MLB player names → player page; stylize tweet cards; repair imgs.
   useEffect(() => {
     const html = article.data?.contentHtml;
     if (!html) {
@@ -894,29 +918,7 @@ function ArticleReaderShell({
     sel.removeAllRanges();
   }
 
-  const closePeek = () => {
-    type Hist = { dispatchArticle?: string; dispatchPlayerPeek?: number };
-    const st = (history.state as Hist | null) ?? {};
-    if (st.dispatchPlayerPeek != null) history.back();
-    else setPeekPlayerId(null);
-  };
-
-  const openPeek = (id: number) => {
-    type Hist = { dispatchArticle?: string; dispatchPlayerPeek?: number };
-    setPeekPlayerId(id);
-    const st = (history.state as Hist | null) ?? {};
-    history.pushState(
-      { ...st, dispatchArticle: item.link, dispatchPlayerPeek: id },
-      "",
-      window.location.href,
-    );
-  };
-
   const leave = () => {
-    if (peekPlayerId != null) {
-      closePeek();
-      return;
-    }
     onClose();
     const st = (history.state as { dispatchArticle?: string } | null) ?? {};
     if (st.dispatchArticle) history.back();
@@ -924,7 +926,7 @@ function ArticleReaderShell({
 
   const onDoubleTap = useDoubleTapNext(
     hasNext ? onNext : null,
-    !pendingQuote && peekPlayerId == null && !lightboxSrc,
+    !pendingQuote && !lightboxSrc,
   );
 
   async function shareArticle() {
@@ -1077,10 +1079,10 @@ function ArticleReaderShell({
                 "a.rss-player-link",
               ) as HTMLAnchorElement | null;
               if (!a) return;
-              e.preventDefault();
               const href = a.getAttribute("href") ?? "";
-              const m = href.match(/\/sports\/mlb\/player\/(\d+)/);
-              if (m) openPeek(Number(m[1]));
+              if (!/\/sports\/mlb\/player\/\d+/.test(href)) return;
+              e.preventDefault();
+              navigate(href);
             }}
             className="rss-reader max-w-none text-[20px] leading-[1.8] text-[#eceef4] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_a.rss-player-link]:text-accent [&_a.rss-player-link]:decoration-accent/40 [&_a.rss-player-link]:underline-offset-[3px] [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_table]:my-4 [&_table]:w-full [&_table]:text-left [&_table]:text-[15px] [&_td]:border-b [&_td]:border-white/10 [&_td]:px-2 [&_td]:py-1.5 [&_th]:border-b [&_th]:border-white/20 [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-[11px] [&_th]:uppercase [&_th]:tracking-[0.12em] [&_th]:text-chalk-dim [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5 [&_video.rss-video]:my-6 [&_video.rss-video]:aspect-video [&_video.rss-video]:w-full [&_video.rss-video]:rounded-lg [&_video.rss-video]:bg-black [&_figcaption]:hidden [&_figure]:my-6"
             dangerouslySetInnerHTML={{ __html: displayHtml }}
@@ -1152,10 +1154,6 @@ function ArticleReaderShell({
             if (phrase) hideContentMut.mutate(phrase);
           }}
         />
-      ) : null}
-
-      {peekPlayerId != null ? (
-        <PlayerPeek playerId={peekPlayerId} onClose={closePeek} />
       ) : null}
 
       {lightboxSrc ? (
@@ -1346,8 +1344,11 @@ function ArticleRow({
 export default function RssPage() {
   const qc = useQueryClient();
   const [nav, setNav] = useState<NavView>("unread");
-  const [selected, setSelected] = useState<RssFeedItemRef | null>(null);
-  const [readerQueue, setReaderQueue] = useState<RssFeedItemRef[] | null>(null);
+  const restored = typeof window !== "undefined" ? loadDispatchOpen() : null;
+  const [selected, setSelected] = useState<RssFeedItemRef | null>(() => restored?.item ?? null);
+  const [readerQueue, setReaderQueue] = useState<RssFeedItemRef[] | null>(
+    () => restored?.queue ?? null,
+  );
   const [mobilePane, setMobilePane] = useState<"sidebar" | "list">("sidebar");
   const [keepHosts, setKeepHosts] = useState<string[]>(() =>
     typeof window !== "undefined" ? loadDedupeKeepHosts() : [],
@@ -1358,6 +1359,11 @@ export default function RssPage() {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("dispatch-hide-read") === "1";
   });
+
+  // Keep the open article across navigations to the player page so back returns here.
+  useEffect(() => {
+    persistDispatchOpen(selected, readerQueue);
+  }, [selected, readerQueue]);
 
   const reads = useQuery({
     queryKey: ["rss-reads"],
@@ -1656,6 +1662,13 @@ export default function RssPage() {
     // Snapshot the list so unread mark-read doesn't kill swipe next/prev.
     setReaderQueue(listItems);
     setSelected(item);
+    persistDispatchOpen(item, listItems);
+  }
+
+  function closeArticle() {
+    setSelected(null);
+    setReaderQueue(null);
+    persistDispatchOpen(null, null);
   }
 
   function goRelative(delta: number) {
@@ -1677,8 +1690,7 @@ export default function RssPage() {
       if (selectedIndex >= 0 && selectedIndex < navItems.length - 1) {
         goRelative(1);
       } else {
-        setSelected(null);
-        setReaderQueue(null);
+        closeArticle();
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not archive");
@@ -1746,10 +1758,7 @@ export default function RssPage() {
           isSaved={savedUrls.has(selected.link)}
           hasPrev={selectedIndex > 0}
           hasNext={selectedIndex >= 0 && selectedIndex < navItems.length - 1}
-          onBack={() => {
-            setSelected(null);
-            setReaderQueue(null);
-          }}
+          onBack={closeArticle}
           onPrev={() => goRelative(-1)}
           onNext={() => goRelative(1)}
           onToggleRead={() => void toggleRead(selected)}
