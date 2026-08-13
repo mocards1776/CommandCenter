@@ -1,0 +1,169 @@
+/** Are You Watching This — interest rankings and scoring context. */
+
+import type { MlbScoreGame, MlbGameInterest, MlbScoredGame } from "./mlb";
+import { scoreGameInterest as baseScoreGameInterest } from "./mlb";
+
+const STORAGE_KEY = "ruwt-team-interest-v1";
+
+export type RuwtTeamInterest = Record<string, number>; // mlb teamId → 0–10
+
+export type RuwtScoreContext = {
+  /** Per-team interest 0–10 (10 = must-watch franchise). */
+  teamInterest: RuwtTeamInterest;
+  /** Favorite / tagged player ids. */
+  watchPlayerIds: Set<number>;
+  /** Favorite manager person ids. */
+  watchManagerIds: Set<number>;
+  /** Manager → current team id. */
+  managerTeamById?: Map<number, number>;
+  /** Playoff make-% by team id (0–100). */
+  playoffOddsByTeam?: Record<number, number>;
+};
+
+export function loadTeamInterest(): RuwtTeamInterest {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as RuwtTeamInterest;
+    const out: RuwtTeamInterest = {};
+    for (const [k, v] of Object.entries(parsed ?? {})) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) continue;
+      out[String(k)] = Math.max(0, Math.min(10, Math.round(n)));
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function saveTeamInterest(map: RuwtTeamInterest): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+}
+
+export function setTeamInterestRating(
+  map: RuwtTeamInterest,
+  teamId: number,
+  rating: number,
+): RuwtTeamInterest {
+  const next = { ...map };
+  const clamped = Math.max(0, Math.min(10, Math.round(rating)));
+  if (clamped <= 0) delete next[String(teamId)];
+  else next[String(teamId)] = clamped;
+  saveTeamInterest(next);
+  return next;
+}
+
+function parseWinPct(record: string | null): number | null {
+  if (!record) return null;
+  const m = record.match(/^(\d+)-(\d+)/);
+  if (!m) return null;
+  const w = Number(m[1]);
+  const l = Number(m[2]);
+  if (!Number.isFinite(w) || !Number.isFinite(l) || w + l === 0) return null;
+  return w / (w + l);
+}
+
+/** Full RUWT score: base drama + personal interest + matchup / playoff. */
+export function scoreRuwtGame(g: MlbScoreGame, ctx?: RuwtScoreContext): MlbGameInterest {
+  const base = baseScoreGameInterest(g);
+  if (!ctx) return base;
+
+  let score = base.score;
+  const reasons = [...base.reasons];
+
+  const awayInterest = ctx.teamInterest[String(g.away.teamId)] ?? 0;
+  const homeInterest = ctx.teamInterest[String(g.home.teamId)] ?? 0;
+  const topInterest = Math.max(awayInterest, homeInterest);
+  if (topInterest > 0) {
+    score += Math.round(topInterest * 4.2);
+    if (topInterest >= 9) reasons.push("Your #1 team");
+    else if (topInterest >= 7) reasons.push("High interest team");
+    else if (topInterest >= 4) reasons.push("On your board");
+  }
+  if (awayInterest >= 5 && homeInterest >= 5) {
+    score += 12;
+    reasons.push("Both teams ranked");
+  }
+
+  const pitcherIds = [g.away.probablePitcherId, g.home.probablePitcherId].filter(
+    (id): id is number => id != null,
+  );
+  if (pitcherIds.some((id) => ctx.watchPlayerIds.has(id))) {
+    score += 28;
+    reasons.push("Favorite pitcher");
+  }
+
+  if (ctx.managerTeamById && ctx.watchManagerIds.size) {
+    for (const mid of ctx.watchManagerIds) {
+      const teamId = ctx.managerTeamById.get(mid);
+      if (teamId && (teamId === g.away.teamId || teamId === g.home.teamId)) {
+        score += 22;
+        reasons.push("Favorite manager");
+        break;
+      }
+    }
+  }
+
+  const pregame = !g.live && !g.final;
+  if (pregame) {
+    if (g.away.probablePitcher && g.home.probablePitcher) {
+      score += 10;
+      reasons.push("Pitching set");
+    }
+    const aw = parseWinPct(g.away.record);
+    const hw = parseWinPct(g.home.record);
+    if (aw != null && hw != null) {
+      const gap = Math.abs(aw - hw);
+      const avg = (aw + hw) / 2;
+      if (avg >= 0.52 && gap <= 0.08) {
+        score += 14;
+        reasons.push("Even records");
+      } else if (avg >= 0.55) {
+        score += 8;
+        reasons.push("Strong clubs");
+      } else if (gap <= 0.05) {
+        score += 6;
+        reasons.push("Matched records");
+      }
+    }
+  }
+
+  if (ctx.playoffOddsByTeam) {
+    const ao = ctx.playoffOddsByTeam[g.away.teamId];
+    const ho = ctx.playoffOddsByTeam[g.home.teamId];
+    if (ao != null && ho != null) {
+      const race =
+        (ao >= 8 && ao <= 55 && ho >= 8 && ho <= 55) ||
+        (Math.abs(ao - ho) <= 12 && Math.min(ao, ho) >= 15);
+      if (race) {
+        score += 16;
+        reasons.push("Playoff race");
+      } else if (Math.max(ao, ho) >= 70 && Math.min(ao, ho) >= 25) {
+        score += 8;
+        reasons.push("October teams");
+      }
+    }
+  }
+
+  // Dedupe reasons, keep the sharpest handful.
+  const unique: string[] = [];
+  for (const r of reasons) {
+    if (!unique.includes(r)) unique.push(r);
+  }
+  return { score: Math.max(0, score), reasons: unique.slice(0, 5) };
+}
+
+export function rankRuwtGames(
+  games: MlbScoreGame[],
+  ctx?: RuwtScoreContext,
+  limit = 16,
+): MlbScoredGame[] {
+  return [...games]
+    .map((g) => {
+      const { score, reasons } = scoreRuwtGame(g, ctx);
+      return { ...g, score, reasons };
+    })
+    .sort((a, b) => b.score - a.score || Number(b.id) - Number(a.id))
+    .slice(0, limit);
+}

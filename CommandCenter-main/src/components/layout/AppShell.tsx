@@ -12,6 +12,7 @@ import {
   Flame,
   NotebookPen,
   Sprout,
+  Radio,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/lib/auth-context";
@@ -73,6 +74,12 @@ const SPORTS_NAV = [
       p.startsWith("/sports/mlb/player"),
     label: "MLB",
     Icon: Trophy,
+  },
+  {
+    to: "/sports/ruwt?solo=1",
+    match: (p: string) => p.startsWith("/sports/ruwt"),
+    label: "RUWT",
+    Icon: Radio,
   },
   {
     to: "/sports/mlb/prospects?solo=1",

@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2, Star } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
+import { listFavoritePlayers } from "@/lib/favorite-players";
+import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import HighlightReel from "@/components/sports/HighlightReel";
 import TeamMark from "@/components/sports/TeamMark";
 import {
@@ -28,6 +31,8 @@ import {
 import { cn } from "@/lib/utils";
 
 export function MlbGameDetail({ gamePk }: { gamePk: string }) {
+  const { user } = useAuth();
+
   const box = useQuery({
     queryKey: ["mlb-boxscore-v3", gamePk],
     queryFn: () => fetchMlbBoxscore(gamePk),
@@ -66,6 +71,31 @@ export function MlbGameDetail({ gamePk }: { gamePk: string }) {
     enabled: Boolean(box.data?.officialDate && box.data.home.abbrev && box.data.away.abbrev),
     staleTime: 300_000,
   });
+
+  const favPlayers = useQuery({
+    queryKey: ["favorite-players", user?.id],
+    queryFn: () => listFavoritePlayers(user!.id),
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+  });
+
+  const taggedPlayers = useQuery({
+    queryKey: ["sports-player-tags-ids", user?.id],
+    queryFn: fetchTaggedPlayerIds,
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+  });
+
+  const watchPlayerIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const f of favPlayers.data ?? []) {
+      if (f.position === "manager") continue;
+      const id = Number(f.playerId);
+      if (Number.isFinite(id)) set.add(id);
+    }
+    for (const id of taggedPlayers.data ?? []) set.add(id);
+    return set;
+  }, [favPlayers.data, taggedPlayers.data]);
 
   if (box.isPending) {
     return (
@@ -129,7 +159,7 @@ export function MlbGameDetail({ gamePk }: { gamePk: string }) {
       )}
 
       {!g.pregame && g.innings.length > 0 && (
-        <EspnBoxBoard game={g} metaBits={metaBits} />
+        <EspnBoxBoard game={g} metaBits={metaBits} watchPlayerIds={watchPlayerIds} />
       )}
 
       {!g.pregame && !isFinal && (
@@ -978,12 +1008,12 @@ function shortPitcherName(name: string): string {
 function EspnBoxBoard({
   game,
   metaBits,
+  watchPlayerIds,
 }: {
   game: MlbBoxscore;
   metaBits: (string | null)[];
+  watchPlayerIds?: Set<number>;
 }) {
-  const [tab, setTab] = useState<"away" | "home">("home");
-  const side = tab === "home" ? game.home : game.away;
   const decisions = useMemo(() => {
     const all = [...game.away.pitchers, ...game.home.pitchers];
     const find = (code: "W" | "L" | "S") =>
@@ -991,42 +1021,8 @@ function EspnBoxBoard({
     return { win: find("W"), loss: find("L"), save: find("S") };
   }, [game]);
 
-  const battingNotes = useMemo(() => {
-    const notes: { label: string; text: string }[] = [];
-    const hrs = side.batters.filter((b) => b.hr > 0);
-    if (hrs.length) {
-      notes.push({
-        label: "HR",
-        text: hrs.map((b) => `${shortPitcherName(b.name)} (${b.hr})`).join(", "),
-      });
-    }
-    const rbis = side.batters.filter((b) => b.rbi > 0);
-    if (rbis.length) {
-      notes.push({
-        label: "RBI",
-        text: rbis.map((b) => `${shortPitcherName(b.name)} ${b.rbi}`).join(", "),
-      });
-    }
-    return notes;
-  }, [side]);
-
-  const totals = useMemo(() => {
-    return side.batters.reduce(
-      (acc, b) => ({
-        ab: acc.ab + b.ab,
-        r: acc.r + b.r,
-        h: acc.h + b.h,
-        rbi: acc.rbi + b.rbi,
-        hr: acc.hr + b.hr,
-        bb: acc.bb + b.bb,
-        so: acc.so + b.so,
-      }),
-      { ab: 0, r: 0, h: 0, rbi: 0, hr: 0, bb: 0, so: 0 },
-    );
-  }, [side]);
-
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[440px] text-center text-[12px]">
@@ -1066,9 +1062,12 @@ function EspnBoxBoard({
                   <>
                     <Link
                       to={`/sports/mlb/player/${p.id}`}
-                      className="mt-0.5 block truncate text-[13px] font-semibold text-[#9ec1ff] hover:underline"
+                      className="mt-0.5 inline-flex items-center gap-1 truncate text-[13px] font-semibold text-[#9ec1ff] hover:underline"
                     >
                       {shortPitcherName(p.name)}
+                      {watchPlayerIds?.has(p.id) ? (
+                        <Star size={11} className="text-accent fill-current" />
+                      ) : null}
                     </Link>
                     <p className="numeral mt-0.5 text-[11px] text-[#a8b0c2]">
                       {p.ip} IP · {p.h} H · {p.er} ER · {p.so} K · {p.bb} BB
@@ -1090,127 +1089,163 @@ function EspnBoxBoard({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        {(
-          [
-            ["away", game.away],
-            ["home", game.home],
-          ] as const
-        ).map(([key, s]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setTab(key)}
-            className={cn(
-              "rounded-full px-3 py-2.5 text-[13px] font-semibold tracking-wide transition",
-              tab === key
-                ? "bg-white text-[#0a1424]"
-                : "bg-white/[0.06] text-[#c8cdd8] hover:bg-white/[0.1]",
-            )}
-          >
-            {s.abbrev}
-          </button>
-        ))}
-      </div>
-
-      <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-        <div className="flex items-center gap-2 border-b border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
-          <TeamMark teamId={side.teamId} size="sm" />
-          <Link
-            to={teamPagePath(side.teamId)}
-            className="text-[14px] font-bold tracking-wide text-white hover:text-accent hover:underline"
-          >
-            {side.name}
-          </Link>
-          {side.record && <span className="numeral text-[12px] text-[#8b93a7]">{side.record}</span>}
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[620px] text-left text-[12px]">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                <th className="px-3 py-2 font-medium">Hitters</th>
-                <th className="numeral px-1.5 py-2 font-medium">AB</th>
-                <th className="numeral px-1.5 py-2 font-medium">R</th>
-                <th className="numeral px-1.5 py-2 font-medium">H</th>
-                <th className="numeral px-1.5 py-2 font-medium">RBI</th>
-                <th className="numeral px-1.5 py-2 font-medium">HR</th>
-                <th className="numeral px-1.5 py-2 font-medium">BB</th>
-                <th className="numeral px-1.5 py-2 font-medium">K</th>
-                <th className="numeral px-1.5 py-2 font-medium">AVG</th>
-                <th className="numeral px-1.5 py-2 font-medium">OBP</th>
-                <th className="numeral px-1.5 py-2 font-medium">SLG</th>
-              </tr>
-            </thead>
-            <tbody>
-              {side.batters.map((b, i) => (
-                <BatterRow key={b.id} b={b} zebra={i % 2 === 1} />
-              ))}
-              <tr className="border-t border-white/[0.1] bg-white/[0.03] font-semibold">
-                <td className="px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-white">
-                  Team
-                </td>
-                <td className="numeral px-1.5 py-2 text-white">{totals.ab}</td>
-                <td className="numeral px-1.5 py-2 text-white">{totals.r}</td>
-                <td className="numeral px-1.5 py-2 text-white">{totals.h}</td>
-                <td className="numeral px-1.5 py-2 text-white">{totals.rbi}</td>
-                <td className="numeral px-1.5 py-2 text-white">{totals.hr}</td>
-                <td className="numeral px-1.5 py-2 text-white">{totals.bb}</td>
-                <td className="numeral px-1.5 py-2 text-white">{totals.so}</td>
-                <td className="numeral px-1.5 py-2 text-[#8b93a7]">—</td>
-                <td className="numeral px-1.5 py-2 text-[#8b93a7]">—</td>
-                <td className="numeral px-1.5 py-2 text-[#8b93a7]">—</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        {battingNotes.length > 0 && (
-          <div className="space-y-1.5 border-t border-white/[0.06] px-3 py-3 text-[12.5px] leading-relaxed text-[#c8cdd8]">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-              Batting
-            </p>
-            {battingNotes.map((n) => (
-              <p key={n.label}>
-                <span className="font-semibold text-cream">{n.label}:</span> {n.text}
-              </p>
-            ))}
-          </div>
-        )}
-
-        {side.pitchers.length > 0 && (
-          <div className="overflow-x-auto border-t border-white/[0.06]">
-            <table className="w-full min-w-[520px] text-left text-[12px]">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                  <th className="px-3 py-2 font-medium">Pitcher</th>
-                  <th className="numeral px-2 py-2 font-medium">IP</th>
-                  <th className="numeral px-2 py-2 font-medium">H</th>
-                  <th className="numeral px-2 py-2 font-medium">R</th>
-                  <th className="numeral px-2 py-2 font-medium">ER</th>
-                  <th className="numeral px-2 py-2 font-medium">BB</th>
-                  <th className="numeral px-2 py-2 font-medium">SO</th>
-                </tr>
-              </thead>
-              <tbody>
-                {side.pitchers.map((p) => (
-                  <PitcherRow key={p.id} p={p} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <TeamBoxSection side={game.away} watchPlayerIds={watchPlayerIds} />
+      <TeamBoxSection side={game.home} watchPlayerIds={watchPlayerIds} />
     </div>
   );
 }
 
-function BatterRow({ b, zebra }: { b: MlbBoxscoreBatter; zebra?: boolean }) {
+function TeamBoxSection({
+  side,
+  watchPlayerIds,
+}: {
+  side: MlbBoxscoreSide;
+  watchPlayerIds?: Set<number>;
+}) {
+  const battingNotes = useMemo(() => {
+    const notes: { label: string; text: string }[] = [];
+    const hrs = side.batters.filter((b) => b.hr > 0);
+    if (hrs.length) {
+      notes.push({
+        label: "HR",
+        text: hrs.map((b) => `${shortPitcherName(b.name)} (${b.hr})`).join(", "),
+      });
+    }
+    const rbis = side.batters.filter((b) => b.rbi > 0);
+    if (rbis.length) {
+      notes.push({
+        label: "RBI",
+        text: rbis.map((b) => `${shortPitcherName(b.name)} ${b.rbi}`).join(", "),
+      });
+    }
+    return notes;
+  }, [side]);
+
+  const totals = useMemo(() => {
+    return side.batters.reduce(
+      (acc, b) => ({
+        ab: acc.ab + b.ab,
+        r: acc.r + b.r,
+        h: acc.h + b.h,
+        rbi: acc.rbi + b.rbi,
+        hr: acc.hr + b.hr,
+        bb: acc.bb + b.bb,
+        so: acc.so + b.so,
+      }),
+      { ab: 0, r: 0, h: 0, rbi: 0, hr: 0, bb: 0, so: 0 },
+    );
+  }, [side]);
+
+  return (
+    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="flex items-center gap-2 border-b border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
+        <TeamMark teamId={side.teamId} size="sm" />
+        <Link
+          to={teamPagePath(side.teamId)}
+          className="text-[14px] font-bold tracking-wide text-white hover:text-accent hover:underline"
+        >
+          {side.name}
+        </Link>
+        {side.record && <span className="numeral text-[12px] text-[#8b93a7]">{side.record}</span>}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[620px] text-left text-[12px]">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+              <th className="px-3 py-2 font-medium">Hitters</th>
+              <th className="numeral px-1.5 py-2 font-medium">AB</th>
+              <th className="numeral px-1.5 py-2 font-medium">R</th>
+              <th className="numeral px-1.5 py-2 font-medium">H</th>
+              <th className="numeral px-1.5 py-2 font-medium">RBI</th>
+              <th className="numeral px-1.5 py-2 font-medium">HR</th>
+              <th className="numeral px-1.5 py-2 font-medium">BB</th>
+              <th className="numeral px-1.5 py-2 font-medium">K</th>
+              <th className="numeral px-1.5 py-2 font-medium">AVG</th>
+              <th className="numeral px-1.5 py-2 font-medium">OBP</th>
+              <th className="numeral px-1.5 py-2 font-medium">SLG</th>
+            </tr>
+          </thead>
+          <tbody>
+            {side.batters.map((b, i) => (
+              <BatterRow key={b.id} b={b} zebra={i % 2 === 1} watched={watchPlayerIds?.has(b.id)} />
+            ))}
+            <tr className="border-t border-white/[0.1] bg-white/[0.03] font-semibold">
+              <td className="px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-white">
+                Team
+              </td>
+              <td className="numeral px-1.5 py-2 text-white">{totals.ab}</td>
+              <td className="numeral px-1.5 py-2 text-white">{totals.r}</td>
+              <td className="numeral px-1.5 py-2 text-white">{totals.h}</td>
+              <td className="numeral px-1.5 py-2 text-white">{totals.rbi}</td>
+              <td className="numeral px-1.5 py-2 text-white">{totals.hr}</td>
+              <td className="numeral px-1.5 py-2 text-white">{totals.bb}</td>
+              <td className="numeral px-1.5 py-2 text-white">{totals.so}</td>
+              <td className="numeral px-1.5 py-2 text-[#8b93a7]">—</td>
+              <td className="numeral px-1.5 py-2 text-[#8b93a7]">—</td>
+              <td className="numeral px-1.5 py-2 text-[#8b93a7]">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {battingNotes.length > 0 && (
+        <div className="space-y-1.5 border-t border-white/[0.06] px-3 py-3 text-[12.5px] leading-relaxed text-[#c8cdd8]">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            Batting
+          </p>
+          {battingNotes.map((n) => (
+            <p key={n.label}>
+              <span className="font-semibold text-cream">{n.label}:</span> {n.text}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {side.pitchers.length > 0 && (
+        <div className="overflow-x-auto border-t border-white/[0.06]">
+          <table className="w-full min-w-[520px] text-left text-[12px]">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                <th className="px-3 py-2 font-medium">Pitcher</th>
+                <th className="numeral px-2 py-2 font-medium">IP</th>
+                <th className="numeral px-2 py-2 font-medium">H</th>
+                <th className="numeral px-2 py-2 font-medium">R</th>
+                <th className="numeral px-2 py-2 font-medium">ER</th>
+                <th className="numeral px-2 py-2 font-medium">BB</th>
+                <th className="numeral px-2 py-2 font-medium">SO</th>
+              </tr>
+            </thead>
+            <tbody>
+              {side.pitchers.map((p) => (
+                <PitcherRow key={p.id} p={p} watched={watchPlayerIds?.has(p.id)} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BatterRow({
+  b,
+  zebra,
+  watched,
+}: {
+  b: MlbBoxscoreBatter;
+  zebra?: boolean;
+  watched?: boolean;
+}) {
   return (
     <tr className={cn("border-t border-white/[0.04]", zebra && "bg-white/[0.02]")}>
       <td className="px-3 py-1.5">
-        <Link to={`/sports/mlb/player/${b.id}`} className="text-cream hover:text-accent hover:underline">
+        <Link
+          to={`/sports/mlb/player/${b.id}`}
+          className="text-cream inline-flex items-center gap-1 hover:text-accent hover:underline"
+        >
           {b.name}
+          {watched ? <Star size={11} className="text-accent fill-current" /> : null}
         </Link>
         {b.position && <span className="ml-1 text-[10px] text-[#8b93a7]">{b.position}</span>}
       </td>
@@ -1228,12 +1263,16 @@ function BatterRow({ b, zebra }: { b: MlbBoxscoreBatter; zebra?: boolean }) {
   );
 }
 
-function PitcherRow({ p }: { p: MlbBoxscorePitcher }) {
+function PitcherRow({ p, watched }: { p: MlbBoxscorePitcher; watched?: boolean }) {
   return (
     <tr className="border-t border-white/[0.04]">
       <td className="px-3 py-1.5">
-        <Link to={`/sports/mlb/player/${p.id}`} className="text-cream hover:text-accent hover:underline">
+        <Link
+          to={`/sports/mlb/player/${p.id}`}
+          className="text-cream inline-flex items-center gap-1 hover:text-accent hover:underline"
+        >
           {p.name}
+          {watched ? <Star size={11} className="text-accent fill-current" /> : null}
         </Link>
         {p.note && <span className="ml-1 text-[10px] text-[#8b93a7]">({p.note})</span>}
       </td>
@@ -1246,3 +1285,4 @@ function PitcherRow({ p }: { p: MlbBoxscorePitcher }) {
     </tr>
   );
 }
+

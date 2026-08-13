@@ -8,6 +8,7 @@ import {
   fetchFarmRoster,
   mlbClubSlug,
   mlbHeadshot,
+  mlbHeadshotFallbacks,
 } from "@/lib/mlb";
 import { fetchPlayersWithTag } from "@/lib/sports-player-tags";
 import { useAuth } from "@/lib/auth-context";
@@ -42,6 +43,16 @@ function AffiliateRoster({ teamId }: { teamId: number }) {
               alt=""
               className="h-8 w-8 rounded-full bg-black/30 object-cover"
               loading="lazy"
+              data-fallback-idx="0"
+              onError={(e) => {
+                const el = e.currentTarget;
+                const idx = Number(el.dataset.fallbackIdx ?? "0");
+                const next = mlbHeadshotFallbacks(p.id, 213)[idx + 1];
+                if (next) {
+                  el.dataset.fallbackIdx = String(idx + 1);
+                  el.src = next;
+                }
+              }}
             />
             <span className="text-cream min-w-0 flex-1 truncate text-[13px]">{p.name}</span>
             <span className="text-chalk-dim text-[11px] tabular-nums">

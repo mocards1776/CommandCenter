@@ -759,11 +759,76 @@ export type RssHighlight = {
   articleUrl: string;
   articleTitle: string | null;
   feedUrl: string | null;
+  articleImage: string | null;
   quoteText: string;
   note: string;
   createdAt: string;
   updatedAt: string;
 };
+
+/** Human source label for a highlight/feed URL. */
+export function feedSourceLabel(feedUrl: string | null | undefined): string {
+  if (!feedUrl) return "Dispatch";
+  const hit = RSS_FEEDS.find((f) => f.url === feedUrl);
+  if (hit) return hit.title;
+  try {
+    const host = new URL(feedUrl).hostname.replace(/^www\./, "");
+    if (/stltoday/i.test(host)) return "STL Today";
+    if (/espn\.com/i.test(host)) return "ESPN";
+    if (/mlb\.com/i.test(host)) return "MLB.com";
+    return host;
+  } catch {
+    return "Dispatch";
+  }
+}
+
+/** Fix lazy/relative secondary images in reader HTML. */
+export function repairRssContentImages(html: string, pageUrl?: string | null): string {
+  if (!html || typeof DOMParser === "undefined") return html;
+  let base: URL | null = null;
+  try {
+    if (pageUrl) base = new URL(pageUrl);
+  } catch {
+    base = null;
+  }
+  const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, "text/html");
+  const root = doc.getElementById("root");
+  if (!root) return html;
+
+  root.querySelectorAll("img").forEach((img) => {
+    const attrs = img as HTMLImageElement;
+    const candidates = [
+      attrs.getAttribute("src"),
+      attrs.getAttribute("data-src"),
+      attrs.getAttribute("data-lazy-src"),
+      attrs.getAttribute("data-original"),
+      attrs.getAttribute("data-url"),
+    ].filter(Boolean) as string[];
+    const srcset = attrs.getAttribute("srcset") || attrs.getAttribute("data-srcset");
+    if (srcset) {
+      const first = srcset.split(",")[0]?.trim().split(/\s+/)[0];
+      if (first) candidates.push(first);
+    }
+    let src = candidates.find((c) => c && !/^data:image\/svg/i.test(c)) ?? "";
+    if (src && src.startsWith("//")) src = `https:${src}`;
+    if (src && src.startsWith("/") && base) {
+      try {
+        src = new URL(src, base).toString();
+      } catch {
+        /* keep */
+      }
+    }
+    if (src && /^https?:/i.test(src)) {
+      attrs.setAttribute("src", src);
+      attrs.removeAttribute("srcset");
+      attrs.loading = "lazy";
+      // Some CDNs block no-referrer; prefer origin when loading inline.
+      attrs.referrerPolicy = "no-referrer-when-downgrade";
+    }
+  });
+
+  return root.innerHTML;
+}
 
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -1335,6 +1400,7 @@ export async function fetchRssHighlights(articleUrl?: string): Promise<RssHighli
     articleUrl: r.article_url,
     articleTitle: r.article_title,
     feedUrl: r.feed_url,
+    articleImage: (r as { article_image?: string | null }).article_image ?? null,
     quoteText: r.quote_text,
     note: r.note,
     createdAt: r.created_at,
@@ -1346,6 +1412,7 @@ export async function createRssHighlight(input: {
   articleUrl: string;
   articleTitle?: string | null;
   feedUrl?: string | null;
+  articleImage?: string | null;
   quoteText: string;
   note?: string;
 }): Promise<RssHighlight> {
@@ -1357,6 +1424,7 @@ export async function createRssHighlight(input: {
       article_url: input.articleUrl,
       article_title: input.articleTitle ?? null,
       feed_url: input.feedUrl ?? null,
+      article_image: input.articleImage ?? null,
       quote_text: input.quoteText.trim(),
       note: (input.note ?? "").trim(),
     })
@@ -1368,6 +1436,7 @@ export async function createRssHighlight(input: {
     articleUrl: data.article_url,
     articleTitle: data.article_title,
     feedUrl: data.feed_url,
+    articleImage: (data as { article_image?: string | null }).article_image ?? null,
     quoteText: data.quote_text,
     note: data.note,
     createdAt: data.created_at,

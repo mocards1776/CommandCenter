@@ -552,6 +552,7 @@ export type Database = {
           article_url: string;
           article_title: string | null;
           feed_url: string | null;
+          article_image: string | null;
           quote_text: string;
           note: string;
           created_at: string;
@@ -563,6 +564,7 @@ export type Database = {
           article_url: string;
           article_title?: string | null;
           feed_url?: string | null;
+          article_image?: string | null;
           quote_text: string;
           note?: string;
           created_at?: string;

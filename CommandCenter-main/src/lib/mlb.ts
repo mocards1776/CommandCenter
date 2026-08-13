@@ -592,6 +592,7 @@ export async function searchMlbPlayersByNames(
 export function linkifyMlbPlayersInHtml(
   html: string,
   nameToId: Map<string, number>,
+  watchPlayerIds?: Set<number>,
 ): string {
   if (!html || !nameToId.size || typeof DOMParser === "undefined") return html;
   const names = [...nameToId.keys()]
@@ -645,6 +646,14 @@ export function linkifyMlbPlayersInHtml(
         a.className = "rss-player-link";
         a.textContent = matched;
         frag.appendChild(a);
+        if (watchPlayerIds?.has(id)) {
+          const mark = doc.createElement("span");
+          mark.className = "rss-player-watch";
+          mark.title = "Favorite or tagged";
+          mark.setAttribute("aria-label", "Favorite or tagged");
+          mark.textContent = "★";
+          frag.appendChild(mark);
+        }
       } else {
         frag.appendChild(doc.createTextNode(matched));
       }
@@ -743,8 +752,26 @@ async function mlbGet(path: string, params?: Record<string, string>): Promise<un
   return res.json();
 }
 
+/** Primary headshot (MLB CDN — works for most MiLB person ids too). */
 export function mlbHeadshot(playerId: number | string, size: 213 | 426 = 213): string {
   return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_${size},q_auto:best/v1/people/${playerId}/headshot/67/current`;
+}
+
+/** Silhouette/action cut often present when the 67 headshot is generic for MiLB. */
+export function mlbHeadshotSilo(playerId: number | string, size = 180): string {
+  return `https://img.mlbstatic.com/mlb-photos/image/upload/w_${size},q_auto:best/v1/people/${playerId}/headshot/silo/current`;
+}
+
+/** Ordered headshot candidates for <img onError> fallbacks. */
+export function mlbHeadshotFallbacks(
+  playerId: number | string,
+  size: 213 | 426 = 213,
+): string[] {
+  return [
+    mlbHeadshot(playerId, size),
+    mlbHeadshotSilo(playerId, size === 426 ? 360 : 180),
+    `https://img.mlbstatic.com/mlb-photos/image/upload/w_${size},q_auto:best/v1/people/${playerId}/headshot/67/current`,
+  ];
 }
 
 /**
@@ -2528,17 +2555,20 @@ export async function fetchMlbPlayerRecent(
   group: "hitting" | "pitching",
   games: 5 | 10,
   season = currentSeason(),
+  sportId?: number | null,
 ): Promise<MlbRecentBlock | null> {
   const id = Number(playerId);
   const keys = group === "pitching" ? SPLIT_PITCH_KEYS : SPLIT_HIT_KEYS;
   try {
-    const raw = (await mlbGet(`people/${id}/stats`, {
+    const params: Record<string, string> = {
       stats: "lastXGames",
       group,
       season: String(season),
       limit: String(games),
       gameType: "R",
-    })) as {
+    };
+    if (sportId != null && sportId > 0) params.sportId = String(sportId);
+    const raw = (await mlbGet(`people/${id}/stats`, params)) as {
       stats?: { splits?: { stat?: Record<string, unknown> }[] }[];
     };
     const stat = raw.stats?.[0]?.splits?.[0]?.stat;
@@ -2663,14 +2693,17 @@ export async function fetchMlbPlayerSplits(
   playerId: number | string,
   group: "hitting" | "pitching",
   season = currentSeason(),
+  sportId?: number | null,
 ): Promise<MlbSplitRow[]> {
   const id = Number(playerId);
-  const raw = (await mlbGet(`people/${id}/stats`, {
+  const params: Record<string, string> = {
     stats: "statSplits",
     group,
     season: String(season),
     sitCodes: "h,a,vl,vr,d,n",
-  })) as {
+  };
+  if (sportId != null && sportId > 0) params.sportId = String(sportId);
+  const raw = (await mlbGet(`people/${id}/stats`, params)) as {
     stats?: {
       splits?: {
         split?: { code?: string; description?: string };
@@ -3053,11 +3086,19 @@ async function fetchYearByYearForSport(
 async function fetchYearByYearRows(
   playerId: number,
   group: "hitting" | "pitching",
+  preferSportId?: number | null,
 ): Promise<MlbPlayerSeasonRow[]> {
-  const parts = await Promise.all([
-    fetchYearByYearForSport(playerId, group, 1),
-    ...MILB_SPORT_IDS.map((sid) => fetchYearByYearForSport(playerId, group, sid)),
-  ]);
+  // Prefer current club sport + MLB first so MiLB cards populate even if later
+  // league calls are slow/empty.
+  const order = [
+    preferSportId && preferSportId !== 1 ? preferSportId : null,
+    1,
+    ...MILB_SPORT_IDS.filter((sid) => sid !== preferSportId),
+  ].filter((sid): sid is number => sid != null);
+
+  const parts = await Promise.all(
+    order.map((sid) => fetchYearByYearForSport(playerId, group, sid)),
+  );
   const rows = parts.flat();
   rows.sort(
     (a, b) =>
@@ -3112,58 +3153,54 @@ async function resolveTeamSport(
 export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlayerCard> {
   const season = currentSeason();
   const id = Number(playerId);
-  const [raw, yearByYearHitting, yearByYearPitching] = await Promise.all([
-    mlbGet(`people/${id}`, {
-      hydrate: `currentTeam,draft,education,stats(group=[hitting,pitching],type=[season,career],season=${season})`,
-    }) as Promise<{
-      people?: {
-        id?: number;
-        fullName?: string;
-        firstName?: string;
-        useName?: string;
-        middleName?: string;
-        lastName?: string;
-        primaryNumber?: string;
-        primaryPosition?: { abbreviation?: string; name?: string };
-        batSide?: { code?: string; description?: string };
-        pitchHand?: { code?: string; description?: string };
-        height?: string;
-        weight?: number;
-        birthDate?: string;
-        currentAge?: number;
-        birthCity?: string;
-        birthStateProvince?: string;
-        birthCountry?: string;
-        mlbDebutDate?: string;
-        draftYear?: number;
-        drafts?: {
-          year?: string | number;
-          pickRound?: string;
-          pickNumber?: number;
-          signingBonus?: string;
-          school?: { name?: string };
-          team?: { name?: string; abbreviation?: string };
-        }[];
-        education?: {
-          highschools?: { name?: string; city?: string; state?: string }[];
-          colleges?: { name?: string }[];
-        };
-        currentTeam?: {
-          id?: number;
-          name?: string;
-          abbreviation?: string;
-          sport?: { id?: number; name?: string; abbreviation?: string };
-        };
-        stats?: {
-          group?: { displayName?: string };
-          type?: { displayName?: string };
-          splits?: { stat?: Record<string, unknown> }[];
-        }[];
+  const raw = (await mlbGet(`people/${id}`, {
+    hydrate: `currentTeam,draft,education,stats(group=[hitting,pitching],type=[season,career],season=${season})`,
+  })) as {
+    people?: {
+      id?: number;
+      fullName?: string;
+      firstName?: string;
+      useName?: string;
+      middleName?: string;
+      lastName?: string;
+      primaryNumber?: string;
+      primaryPosition?: { abbreviation?: string; name?: string };
+      batSide?: { code?: string; description?: string };
+      pitchHand?: { code?: string; description?: string };
+      height?: string;
+      weight?: number;
+      birthDate?: string;
+      currentAge?: number;
+      birthCity?: string;
+      birthStateProvince?: string;
+      birthCountry?: string;
+      mlbDebutDate?: string;
+      draftYear?: number;
+      drafts?: {
+        year?: string | number;
+        pickRound?: string;
+        pickNumber?: number;
+        signingBonus?: string;
+        school?: { name?: string };
+        team?: { name?: string; abbreviation?: string };
       }[];
-    }>,
-    fetchYearByYearRows(id, "hitting"),
-    fetchYearByYearRows(id, "pitching"),
-  ]);
+      education?: {
+        highschools?: { name?: string; city?: string; state?: string }[];
+        colleges?: { name?: string }[];
+      };
+      currentTeam?: {
+        id?: number;
+        name?: string;
+        abbreviation?: string;
+        sport?: { id?: number; name?: string; abbreviation?: string };
+      };
+      stats?: {
+        group?: { displayName?: string };
+        type?: { displayName?: string };
+        splits?: { stat?: Record<string, unknown> }[];
+      }[];
+    }[];
+  };
 
   const p = raw.people?.[0];
   if (!p) throw new Error("Player not found");
@@ -3201,32 +3238,42 @@ export async function fetchMlbPlayer(playerId: number | string): Promise<MlbPlay
   const currentSportId = teamSport.sportId;
   const isMinorsNow = currentSportId != null && currentSportId !== 1;
 
-  const [mlbHitting, mlbPitching, minorsHittingRaw, minorsPitchingRaw] = await Promise.all([
-    hitting.length && !isMinorsNow
-      ? Promise.resolve(hitting)
-      : fetchSeasonStatLines(id, "hitting", season, 1),
-    pitching.length && !isMinorsNow
-      ? Promise.resolve(pitching)
-      : fetchSeasonStatLines(id, "pitching", season, 1),
-    isMinorsNow
-      ? fetchSeasonStatLines(id, "hitting", season, currentSportId)
-      : (async () => {
-          for (const sid of MILB_SPORT_IDS) {
-            const rows = await fetchSeasonStatLines(id, "hitting", season, sid);
-            if (rows.length) return rows;
-          }
-          return [] as MlbPlayerStatLine[];
-        })(),
-    isMinorsNow
-      ? fetchSeasonStatLines(id, "pitching", season, currentSportId)
-      : (async () => {
-          for (const sid of MILB_SPORT_IDS) {
-            const rows = await fetchSeasonStatLines(id, "pitching", season, sid);
-            if (rows.length) return rows;
-          }
-          return [] as MlbPlayerStatLine[];
-        })(),
-  ]);
+  // Clear hydrate season lines when the player is on a MiLB club — those splits are
+  // usually empty/MLB-scoped and would mask real affiliate stats.
+  if (isMinorsNow) {
+    hitting = [];
+    pitching = [];
+  }
+
+  const [yearByYearHitting, yearByYearPitching, mlbHitting, mlbPitching, minorsHittingRaw, minorsPitchingRaw] =
+    await Promise.all([
+      fetchYearByYearRows(id, "hitting", currentSportId),
+      fetchYearByYearRows(id, "pitching", currentSportId),
+      hitting.length && !isMinorsNow
+        ? Promise.resolve(hitting)
+        : fetchSeasonStatLines(id, "hitting", season, 1),
+      pitching.length && !isMinorsNow
+        ? Promise.resolve(pitching)
+        : fetchSeasonStatLines(id, "pitching", season, 1),
+      isMinorsNow && currentSportId
+        ? fetchSeasonStatLines(id, "hitting", season, currentSportId)
+        : (async () => {
+            for (const sid of MILB_SPORT_IDS) {
+              const rows = await fetchSeasonStatLines(id, "hitting", season, sid);
+              if (rows.length) return rows;
+            }
+            return [] as MlbPlayerStatLine[];
+          })(),
+      isMinorsNow && currentSportId
+        ? fetchSeasonStatLines(id, "pitching", season, currentSportId)
+        : (async () => {
+            for (const sid of MILB_SPORT_IDS) {
+              const rows = await fetchSeasonStatLines(id, "pitching", season, sid);
+              if (rows.length) return rows;
+            }
+            return [] as MlbPlayerStatLine[];
+          })(),
+    ]);
 
   const minorsHitting = minorsHittingRaw;
   const minorsPitching = minorsPitchingRaw;
@@ -3498,15 +3545,18 @@ export async function fetchMlbPlayerGameLog(
   group: "hitting" | "pitching",
   limit = 10,
   season = currentSeason(),
+  sportId?: number | null,
 ): Promise<MlbGameLogEntry[]> {
   const id = Number(playerId);
   const keys = group === "pitching" ? SPLIT_PITCH_KEYS : SPLIT_HIT_KEYS;
-  const raw = (await mlbGet(`people/${id}/stats`, {
+  const params: Record<string, string> = {
     stats: "gameLog",
     group,
     season: String(season),
     gameType: "R",
-  })) as {
+  };
+  if (sportId != null && sportId > 0) params.sportId = String(sportId);
+  const raw = (await mlbGet(`people/${id}/stats`, params)) as {
     stats?: {
       splits?: {
         date?: string;

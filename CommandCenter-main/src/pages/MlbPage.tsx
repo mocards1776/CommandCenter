@@ -17,11 +17,9 @@ import {
   mlbHeadshot,
   pickHeroGame,
   playoffOddsFromStandings,
-  rankBestGames,
   teamPagePath,
   type MlbLeaderBoard,
   type MlbScoreGame,
-  type MlbScoredGame,
 } from "@/lib/mlb";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
@@ -29,7 +27,6 @@ import { cn } from "@/lib/utils";
 export default function MlbPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState<"board" | "standings" | "leaders" | "odds">("board");
-  const [boardMode, setBoardMode] = useState<"best" | "all">("best");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -91,10 +88,6 @@ export default function MlbPage() {
 
   const liveCount = scoreboard.data?.filter((g) => g.live).length ?? 0;
   const hero = scoreboard.data ? pickHeroGame(scoreboard.data) : null;
-  const bestGames = useMemo(
-    () => (scoreboard.data ? rankBestGames(scoreboard.data, 8) : []),
-    [scoreboard.data],
-  );
   const refreshing =
     scoreboard.isFetching || standings.isFetching || leaders.isFetching;
 
@@ -115,11 +108,14 @@ export default function MlbPage() {
           <div>
             <div className="rule-head mb-2">Major League Baseball</div>
             <h2 className="font-display text-cream text-[28px] leading-tight sm:text-[34px]">
-              Are You <span className="text-accent">Watching</span>
+              Live <span className="text-accent">MLB</span>
             </h2>
             <p className="text-chalk mt-2 max-w-lg text-[13px] leading-relaxed">
-              Best games ranked by drama — live, close, late, Cardinals, contenders. Full
-              scoreboard, standings, and leaders still one tap away.
+              Scoreboard, standings, league leaders, playoff odds — and{" "}
+              <Link to="/sports/ruwt?solo=1" className="text-accent hover:underline">
+                RUWT
+              </Link>{" "}
+              for the best games to turn on.
             </p>
             {liveCount > 0 && (
               <p className="text-alert mt-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
@@ -321,9 +317,6 @@ export default function MlbPage() {
       {tab === "board" && (
         <ScoreboardSection
           games={scoreboard.data ?? []}
-          bestGames={bestGames}
-          mode={boardMode}
-          onModeChange={setBoardMode}
           loading={scoreboard.isPending}
           error={scoreboard.isError ? "Couldn’t load scoreboard." : null}
         />
@@ -355,16 +348,10 @@ export default function MlbPage() {
 
 function ScoreboardSection({
   games,
-  bestGames,
-  mode,
-  onModeChange,
   loading,
   error,
 }: {
   games: MlbScoreGame[];
-  bestGames: MlbScoredGame[];
-  mode: "best" | "all";
-  onModeChange: (mode: "best" | "all") => void;
   loading: boolean;
   error: string | null;
 }) {
@@ -372,88 +359,42 @@ function ScoreboardSection({
   if (error) return <ErrorLine>{error}</ErrorLine>;
   if (games.length === 0) return <EmptyLine>No games on today’s slate.</EmptyLine>;
 
+  const live = games.filter((g) => g.live);
+  const rest = games.filter((g) => !g.live);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="rule-head">
-            {mode === "best" ? "Best games" : "Full scoreboard"}
-          </h3>
-          <p className="text-chalk-dim mt-1 text-[12px]">
-            {mode === "best"
-              ? "Ranked by live action, close scores, late innings, Cardinals, and contenders."
-              : "Every game on today’s slate."}
-          </p>
-        </div>
-        <div className="inline-flex rounded-md border border-white/10 bg-black/20 p-0.5">
-          {(
-            [
-              ["best", "RUWT"],
-              ["all", "All"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onModeChange(id)}
-              className={cn(
-                "rounded-sm px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] transition",
-                mode === id ? "bg-accent/20 text-cream" : "text-chalk hover:text-cream",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <h3 className="rule-head">{live.length ? "Live" : "Today"}</h3>
+        <Link
+          to="/sports/ruwt?solo=1"
+          className="text-accent text-[10.5px] font-semibold uppercase tracking-[0.14em] hover:underline"
+        >
+          Open RUWT →
+        </Link>
       </div>
-
-      {mode === "best" ? (
+      {live.length > 0 && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {bestGames.map((g, i) => (
-            <ScoreCard key={g.id} game={g} interestRank={i + 1} interest={g} />
+          {live.map((g) => (
+            <ScoreCard key={g.id} game={g} />
           ))}
         </div>
-      ) : (
-        (() => {
-          const live = games.filter((g) => g.live);
-          const rest = games.filter((g) => !g.live);
-          return (
-            <>
-              {live.length > 0 && (
-                <div>
-                  <h3 className="rule-head mb-3">Live</h3>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                    {live.map((g) => (
-                      <ScoreCard key={g.id} game={g} />
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div>
-                <h3 className="rule-head mb-3">{live.length ? "Also today" : "Today"}</h3>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  {rest.map((g) => (
-                    <ScoreCard key={g.id} game={g} />
-                  ))}
-                </div>
-              </div>
-            </>
-          );
-        })()
+      )}
+      {rest.length > 0 && (
+        <div>
+          {live.length > 0 && <h3 className="rule-head mb-3">Also today</h3>}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {rest.map((g) => (
+              <ScoreCard key={g.id} game={g} />
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-function ScoreCard({
-  game,
-  interestRank,
-  interest,
-}: {
-  game: MlbScoreGame;
-  interestRank?: number;
-  interest?: MlbScoredGame;
-}) {
+function ScoreCard({ game }: { game: MlbScoreGame }) {
   const awayWins =
     game.final && (game.away.score ?? 0) > (game.home.score ?? 0);
   const homeWins =
@@ -490,21 +431,7 @@ function ScoreCard({
             game.live ? "text-alert" : game.final ? "text-cream" : "text-[#8b93a7]",
           )}
         >
-          {interestRank != null ? (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="text-accent">#{interestRank}</span>
-              {game.live ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-alert" />
-                  {game.inning || "Live"}
-                </span>
-              ) : game.final ? (
-                "Final"
-              ) : (
-                "Preview"
-              )}
-            </span>
-          ) : game.live ? (
+          {game.live ? (
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-alert" />
               {game.inning || "Live"}
@@ -516,11 +443,7 @@ function ScoreCard({
           )}
         </span>
         <span className="truncate text-[10.5px] text-[#8b93a7]">
-          {interest
-            ? `Heat ${interest.score}`
-            : pregame
-              ? game.whenShort ?? game.when
-              : game.venue ?? "Box score"}
+          {pregame ? game.whenShort ?? game.when : game.venue ?? "Box score"}
         </span>
       </div>
 
@@ -557,16 +480,12 @@ function ScoreCard({
         </div>
       )}
 
-      {interest?.reasons?.length ? (
-        <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
-          {interest.reasons.join(" · ")}
-        </p>
-      ) : (game.away.probablePitcher || game.home.probablePitcher) && pregame ? (
+      {(game.away.probablePitcher || game.home.probablePitcher) && pregame && (
         <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
           {game.away.probablePitcher?.split(" ").slice(-1)[0] ?? "TBD"} vs{" "}
           {game.home.probablePitcher?.split(" ").slice(-1)[0] ?? "TBD"}
         </p>
-      ) : null}
+      )}
     </Link>
   );
 }

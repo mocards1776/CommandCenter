@@ -12,6 +12,7 @@ import {
   buildAcquisitionStory,
   buildPlayerPerformanceSummary,
   fetchMlbPlayer,
+  mlbHeadshotFallbacks,
   fetchMlbPlayerGameLog,
   fetchMlbPlayerHighlights,
   fetchMlbPlayerLeagueRanks,
@@ -107,31 +108,43 @@ export default function MlbPlayerPage() {
       player.data!.pitching.length > player.data!.hitting.length);
   const splitGroup = isPitcherPreview ? "pitching" : "hitting";
 
+  const statsSportId =
+    player.data == null
+      ? null
+      : (level ?? player.data.defaultLevel) === "minors"
+        ? player.data.sportId && player.data.sportId !== 1
+          ? player.data.sportId
+          : 11
+        : 1;
+
   const latestGame = useQuery({
-    queryKey: ["mlb-player-latest-game", playerId, splitGroup, player.data?.season],
-    queryFn: () => fetchMlbPlayerGameLog(player.data!.id, splitGroup, 1, player.data!.season),
+    queryKey: ["mlb-player-latest-game", playerId, splitGroup, player.data?.season, statsSportId],
+    queryFn: () =>
+      fetchMlbPlayerGameLog(player.data!.id, splitGroup, 1, player.data!.season, statsSportId),
     enabled: Boolean(player.data),
     staleTime: 120_000,
   });
 
   const splits = useQuery({
-    queryKey: ["mlb-player-splits", playerId, splitGroup, player.data?.season],
+    queryKey: ["mlb-player-splits", playerId, splitGroup, player.data?.season, statsSportId],
     queryFn: () =>
-      fetchMlbPlayerSplits(player.data!.id, splitGroup, player.data!.season),
+      fetchMlbPlayerSplits(player.data!.id, splitGroup, player.data!.season, statsSportId),
     enabled: Boolean(player.data),
     staleTime: 120_000,
   });
 
   const last5 = useQuery({
-    queryKey: ["mlb-player-last5", playerId, splitGroup, player.data?.season],
-    queryFn: () => fetchMlbPlayerRecent(player.data!.id, splitGroup, 5, player.data!.season),
+    queryKey: ["mlb-player-last5", playerId, splitGroup, player.data?.season, statsSportId],
+    queryFn: () =>
+      fetchMlbPlayerRecent(player.data!.id, splitGroup, 5, player.data!.season, statsSportId),
     enabled: Boolean(player.data),
     staleTime: 120_000,
   });
 
   const last10 = useQuery({
-    queryKey: ["mlb-player-last10", playerId, splitGroup, player.data?.season],
-    queryFn: () => fetchMlbPlayerRecent(player.data!.id, splitGroup, 10, player.data!.season),
+    queryKey: ["mlb-player-last10", playerId, splitGroup, player.data?.season, statsSportId],
+    queryFn: () =>
+      fetchMlbPlayerRecent(player.data!.id, splitGroup, 10, player.data!.season, statsSportId),
     enabled: Boolean(player.data),
     staleTime: 120_000,
   });
@@ -290,6 +303,7 @@ export default function MlbPlayerPage() {
               group={splitGroup}
               recent={last5.data}
               accent={accent}
+              sportId={statsSportId}
             />
           )}
           {last10.data && (
@@ -299,6 +313,7 @@ export default function MlbPlayerPage() {
               group={splitGroup}
               recent={last10.data}
               accent={accent}
+              sportId={statsSportId}
             />
           )}
         </div>
@@ -535,6 +550,17 @@ function PlayerHeader({
               width={176}
               height={176}
               className="h-[150px] w-[150px] rounded-[10px] object-cover object-[center_12%] sm:h-[176px] sm:w-[176px]"
+              data-fallback-idx="0"
+              onError={(e) => {
+                const el = e.currentTarget;
+                const idx = Number(el.dataset.fallbackIdx ?? "0");
+                const chain = mlbHeadshotFallbacks(player.id, 426);
+                const next = chain[idx + 1];
+                if (next && el.src !== next) {
+                  el.dataset.fallbackIdx = String(idx + 1);
+                  el.src = next;
+                }
+              }}
             />
           </div>
           {player.teamId != null && (
@@ -719,19 +745,21 @@ function RecentGamesSection({
   group,
   recent,
   accent,
+  sportId,
 }: {
   playerId: number;
   season: number;
   group: "hitting" | "pitching";
   recent: { label: string; games: number; stats: MlbPlayerStatLine[] };
   accent: string;
+  sportId?: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const limit = recent.label.includes("10") ? 10 : 5;
 
   const gameLog = useQuery({
-    queryKey: ["mlb-player-gamelog", playerId, group, limit, season],
-    queryFn: () => fetchMlbPlayerGameLog(playerId, group, limit, season),
+    queryKey: ["mlb-player-gamelog", playerId, group, limit, season, sportId],
+    queryFn: () => fetchMlbPlayerGameLog(playerId, group, limit, season, sportId),
     enabled: open,
     staleTime: 120_000,
   });

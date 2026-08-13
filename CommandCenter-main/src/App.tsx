@@ -12,6 +12,7 @@ import HabitsPage from "@/pages/HabitsPage";
 import ReadingPage from "@/pages/ReadingPage";
 import SportsPage from "@/pages/SportsPage";
 import MlbPage from "@/pages/MlbPage";
+import RuwtPage from "@/pages/RuwtPage";
 import CardinalsProspectsPage from "@/pages/CardinalsProspectsPage";
 import MlbPlayerPage from "@/pages/MlbPlayerPage";
 import MlbGamePage from "@/pages/MlbGamePage";
@@ -114,6 +115,7 @@ export default function App() {
               <Route path="/reading" element={<ReadingPage />} />
               <Route path="/sports" element={<SportsPage />} />
               <Route path="/sports/mlb" element={<MlbPage />} />
+              <Route path="/sports/ruwt" element={<RuwtPage />} />
               <Route path="/sports/mlb/prospects" element={<CardinalsProspectsPage />} />
               <Route path="/sports/mlb/managers" element={<MlbManagersPage />} />
               <Route path="/sports/mlb/managers/:managerId" element={<MlbManagerPage />} />

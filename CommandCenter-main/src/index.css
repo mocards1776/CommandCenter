@@ -534,6 +534,14 @@
   }
 
   /* Saved highlight quotes — distinct from surrounding article text. */
+  .rss-reader .rss-player-watch {
+    color: #d9515c;
+    font-size: 0.75em;
+    margin-left: 0.15em;
+    vertical-align: super;
+    font-weight: 700;
+  }
+
   .rss-reader mark.rss-hl {
     background: rgba(217, 81, 92, 0.45);
     color: #fffaf5;
