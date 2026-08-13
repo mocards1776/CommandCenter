@@ -56,7 +56,7 @@ const TWEET_URL_RE = /(?:twitter\.com|x\.com)\/\w+\/status(?:es)?\/\d+/i;
 const TWEET_EMBED_RE = /twitter-tweet|rss-tweet|data-tweet|twt-embed|twitter-video/i;
 
 const PROMO_LINK_RE =
-  /(?:get tickets|ticket package|star wars|jersey with|subscribe|newsletter|sign up|fantasy baseball|betmgm|draftkings|fanduel|promo code|bonus bets|specials\/|shop\.mlb|mlb\.com\/tickets|more mlb on heavy|more from heavy|advertisement)/i;
+  /(?:get tickets|ticket package|star wars|jersey with|subscribe|newsletter|sign up|fantasy baseball|betmgm|draftkings|fanduel|promo code|bonus bets|specials\/|shop\.mlb|mlb\.com\/tickets|more mlb on heavy|more from heavy|advertisement|get the latest from mlb|morning lineup)/i;
 
 const CAPTION_RE =
   /(?:mandatory credit|imagn images|via reuters|getty images|photo by|ap photo|usa today sports|\bwp-caption\b)/i;
@@ -526,6 +526,14 @@ function scrubContentHtml(html: string, heroImage: string | null = null): string
     return full;
   });
 
+  // Bare "Follow" CTAs + MLB Morning Lineup signup chrome.
+  out = out
+    .replace(/<a\b[^>]*>\s*Follow\s*<\/a>/gi, "")
+    .replace(
+      /<(?:p|div|section|aside)\b[^>]*>[\s\S]*?(?:get the latest from mlb|morning lineup)[\s\S]*?<\/(?:p|div|section|aside)>/gi,
+      (full) => (stripTags(full).replace(/\s+/g, " ").trim().length < 280 ? "" : full),
+    );
+
   out = dedupeImages(out, heroImage);
 
   // Smash leftover ad markers / byline promo lines that survive tag filters.
@@ -660,13 +668,60 @@ function sanitizeHtml(frag: string): string {
         keep.push('rel="noopener noreferrer"');
       }
       if (name === "img") {
-        const src = attrValue(attrs, "src");
+        const scoreUrl = (raw: string): number => {
+          const u = raw.toLowerCase();
+          if (!u || u.startsWith("data:")) return -1000;
+          let score = 10;
+          if (/(?:blur|lqip|placeholder|spacer|pixel|transparent|1x1|dummy)/i.test(u)) {
+            score -= 80;
+          }
+          if (/[?&](?:w|width)=(?:[1-9]|[1-9]\d|1\d\d)(?:&|$)/i.test(u)) score -= 40;
+          if (/[?&](?:w|width)=(?:[5-9]\d{2}|\d{4,})(?:&|$)/i.test(u)) score += 40;
+          if (/\.(?:jpe?g|png|webp)(?:$|\?)/i.test(u)) score += 8;
+          score += Math.min(raw.length / 40, 12);
+          return score;
+        };
+        const largestSrcset = (srcset: string): string => {
+          let best = "";
+          let bestW = -1;
+          for (const part of srcset.split(",")) {
+            const bits = part.trim().split(/\s+/);
+            const url = bits[0] || "";
+            if (!url) continue;
+            const wMark = bits.find((b) => /^\d+w$/i.test(b));
+            const w = wMark ? Number(wMark.replace(/\D/g, "")) : 0;
+            if (w > bestW) {
+              bestW = w;
+              best = url;
+            } else if (!best) best = url;
+          }
+          return best;
+        };
+        const candidates = [
+          attrValue(attrs, "data-src"),
+          attrValue(attrs, "data-lazy-src"),
+          attrValue(attrs, "data-original"),
+          attrValue(attrs, "data-url"),
+          attrValue(attrs, "data-image"),
+          attrValue(attrs, "src"),
+        ].filter((v): v is string => Boolean(v));
+        const srcset =
+          attrValue(attrs, "srcset") || attrValue(attrs, "data-srcset") || "";
+        if (srcset) {
+          const large = largestSrcset(srcset);
+          if (large) candidates.unshift(large);
+        }
+        let src =
+          candidates
+            .map((c) => (c.startsWith("//") ? "https:" + c : c))
+            .filter((c) => /^(https?:|\/)/i.test(c) && !c.startsWith("data:"))
+            .sort((a, b) => scoreUrl(b) - scoreUrl(a))[0] || "";
         if (!src || !/^(https?:|\/)/i.test(src)) return "";
         keep.push('src="' + src.replace(/"/g, "") + '"');
         const alt = attrValue(attrs, "alt");
         if (alt) keep.push('alt="' + alt.replace(/"/g, "&quot;") + '"');
         keep.push('loading="lazy"');
-        keep.push('referrerpolicy="no-referrer"');
+        keep.push('referrerpolicy="no-referrer-when-downgrade"');
       }
       if (name === "video") {
         const src = attrValue(attrs, "src");
