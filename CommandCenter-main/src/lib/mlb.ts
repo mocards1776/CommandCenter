@@ -820,6 +820,7 @@ export type MlbGameRecap = {
   storyHtml: string;
   storyText: string;
   url: string;
+  image: string | null;
 };
 
 export type MlbRecentBlock = {
@@ -1587,6 +1588,7 @@ export async function fetchEspnGameRecap(
         description?: string;
         story?: string;
         links?: { web?: { href?: string } };
+        images?: { url?: string }[];
       };
     };
     const article = sum.article;
@@ -1608,6 +1610,7 @@ export async function fetchEspnGameRecap(
       url:
         article.links?.web?.href ??
         `https://www.espn.com/mlb/recap/_/gameId/${event.id}`,
+      image: article.images?.[0]?.url ?? null,
     };
   } catch {
     return null;
@@ -4917,4 +4920,290 @@ export async function fetchFavoritePlayersYesterday(
   );
 
   return { date, lines };
+}
+
+/** MLB.com club site slug for front-office / prospects pages. */
+const MLB_CLUB_SLUG: Record<number, string> = {
+  108: "angels",
+  109: "dbacks",
+  110: "orioles",
+  111: "redsox",
+  112: "cubs",
+  113: "reds",
+  114: "guardians",
+  115: "rockies",
+  116: "tigers",
+  117: "astros",
+  118: "royals",
+  119: "dodgers",
+  120: "nationals",
+  121: "mets",
+  133: "athletics",
+  134: "pirates",
+  135: "padres",
+  136: "mariners",
+  137: "giants",
+  138: "cardinals",
+  139: "rays",
+  140: "rangers",
+  141: "bluejays",
+  142: "twins",
+  143: "phillies",
+  144: "braves",
+  145: "whitesox",
+  146: "marlins",
+  147: "yankees",
+  158: "brewers",
+};
+
+export function mlbClubSlug(teamId: number): string | null {
+  return MLB_CLUB_SLUG[teamId] ?? null;
+}
+
+export type MlbTeamExec = {
+  title: string;
+  name: string;
+};
+
+function scoreFrontOfficeTitle(title: string): number {
+  const t = title.toLowerCase().replace(/\s+/g, " ").trim();
+  if (
+    /assistant|special assistant|florida|spring training|north port|advisor|legal|amateur|player development|executive assistant/.test(
+      t,
+    )
+  ) {
+    return 0;
+  }
+  if (t.includes("president of baseball operations") && t.includes("general manager")) return 100;
+  if (t.includes("president of baseball operations")) return 98;
+  if (t.includes("president, baseball operations") && t.includes("general manager")) return 97;
+  if (t.includes("senior vice president") && t.includes("general manager")) return 94;
+  if (t.includes("executive vice president") && t.includes("general manager")) return 93;
+  if (t.includes("vice president") && t.includes("general manager")) return 90;
+  if (t === "general manager") return 88;
+  if (/\bgeneral manager\b/.test(t)) return 80;
+  return 0;
+}
+
+/** Best-effort GM / President of Baseball Ops from the club front-office page. */
+export async function fetchMlbTeamGeneralManager(
+  teamId: number,
+): Promise<MlbTeamExec | null> {
+  const slug = mlbClubSlug(teamId);
+  if (!slug) return null;
+  try {
+    const res = await fetch(`https://www.mlb.com/${slug}/team/front-office`, {
+      headers: { Accept: "text/html", "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) return null;
+    let html = await res.text();
+    html = html
+      .replace(/\\u003c/g, "<")
+      .replace(/\\u003e/g, ">")
+      .replace(/\\u0026/g, "&")
+      .replace(/\\"/g, '"');
+    html = html
+      .replace(/&amp;/g, "&")
+      .replace(/&#x27;/g, "'")
+      .replace(/&apos;/g, "'");
+
+    type Cand = { score: number; title: string; name: string };
+    const cands: Cand[] = [];
+
+    const rowRe =
+      /<tr[^>]*>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<\/tr>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = rowRe.exec(html)) != null) {
+      const left = m[1]!.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      const right = m[2]!.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      for (const [title, name] of [
+        [left, right],
+        [right, left],
+      ] as const) {
+        const score = scoreFrontOfficeTitle(title);
+        if (score > 0 && name && /^[A-ZÁÉÍÓÚ]/.test(name) && name.length < 60) {
+          cands.push({ score, title, name });
+        }
+      }
+    }
+
+    const pRe =
+      /(President of Baseball Operations[^:<]{0,60}|Executive Vice President\s*&\s*General Manager|Senior Vice President,?\s*General Manager|General Manager)\s*:\s*<strong[^>]*>\s*(?:<a[^>]*>)?\s*([^<]{2,60})/gi;
+    while ((m = pRe.exec(html)) != null) {
+      const title = m[1]!.replace(/\s+/g, " ").trim();
+      const name = m[2]!.replace(/\s+/g, " ").trim();
+      const score = scoreFrontOfficeTitle(title);
+      if (score > 0) cands.push({ score, title, name });
+    }
+
+    cands.sort((a, b) => b.score - a.score);
+    return cands[0] ? { title: cands[0].title, name: cands[0].name } : null;
+  } catch {
+    return null;
+  }
+}
+
+export type MlbTeamManagerInfo = {
+  id: number;
+  name: string;
+  title: string;
+};
+
+export async function fetchMlbTeamManager(
+  teamId: number,
+): Promise<MlbTeamManagerInfo | null> {
+  try {
+    const coaches = (await mlbGet(`teams/${teamId}/coaches`, {
+      season: String(currentSeason()),
+    })) as { roster?: CoachMgr[] };
+    const mgr = pickTeamManager(coaches.roster ?? []);
+    if (!mgr?.person?.id || !mgr.person.fullName) return null;
+    return {
+      id: mgr.person.id,
+      name: mgr.person.fullName,
+      title: (mgr.title || mgr.job || "Manager").trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export type MlbFarmAffiliate = {
+  teamId: number;
+  name: string;
+  shortName: string;
+  level: string;
+  sportId: number;
+};
+
+export type MlbProspectSeed = {
+  rank: number;
+  name: string;
+  position: string;
+  pipelineNote?: string;
+  playerId?: number;
+};
+
+/** Pipeline-oriented Cardinals watch list (resolved against Stats API). */
+export const CARDINALS_PROSPECT_SEEDS: MlbProspectSeed[] = [
+  { rank: 1, name: "JJ Wetherholt", position: "SS", pipelineNote: "MLB Pipeline Top 100" },
+  { rank: 2, name: "Liam Doyle", position: "LHP", pipelineNote: "MLB Pipeline Top 100" },
+  { rank: 3, name: "Rainiel Rodriguez", position: "C", pipelineNote: "MLB Pipeline Top 100" },
+  { rank: 4, name: "Joshua Baez", position: "OF", pipelineNote: "MLB Pipeline Top 100" },
+  { rank: 5, name: "Jurrangelo Cijntje", position: "RHP", pipelineNote: "MLB Pipeline Top 100" },
+  { rank: 6, name: "Leonardo Bernal", position: "C", pipelineNote: "MLB Pipeline Top 100" },
+  { rank: 7, name: "Jimmy Crooks", position: "C" },
+  { rank: 8, name: "Quinn Mathews", position: "LHP" },
+  { rank: 9, name: "Tai Peete", position: "OF" },
+  { rank: 10, name: "Tanner Franklin", position: "RHP" },
+  { rank: 11, name: "Brandon Clarke", position: "LHP" },
+  { rank: 12, name: "Yohiker Fajardo", position: "RHP" },
+];
+
+export type MlbProspectCard = MlbProspectSeed & {
+  playerId: number | null;
+  teamName: string | null;
+  teamId: number | null;
+  level: string | null;
+};
+
+export async function fetchCardinalsProspectWatch(): Promise<MlbProspectCard[]> {
+  const ids = await searchMlbPlayersByNames(
+    CARDINALS_PROSPECT_SEEDS.map((p) => p.name),
+    24,
+  );
+  const out: MlbProspectCard[] = [];
+  for (const seed of CARDINALS_PROSPECT_SEEDS) {
+    const id = ids.get(normalizePersonName(seed.name)) ?? null;
+    let teamName: string | null = null;
+    let teamId: number | null = null;
+    let level: string | null = null;
+    if (id) {
+      try {
+        const person = (await mlbGet(`people/${id}`, {
+          hydrate: "currentTeam",
+        })) as {
+          people?: {
+            currentTeam?: {
+              id?: number;
+              name?: string;
+              sport?: { name?: string };
+            };
+          }[];
+        };
+        const team = person.people?.[0]?.currentTeam;
+        teamId = team?.id ?? null;
+        teamName = team?.name ?? null;
+        level = team?.sport?.name ?? null;
+      } catch {
+        /* keep nulls */
+      }
+    }
+    out.push({
+      ...seed,
+      playerId: id,
+      teamName,
+      teamId,
+      level,
+    });
+  }
+  return out;
+}
+
+export async function fetchCardinalsFarmAffiliates(): Promise<MlbFarmAffiliate[]> {
+  const season = currentSeason();
+  const raw = (await mlbGet("teams", {
+    sportIds: "11,12,13,14,15,16",
+    season: String(season),
+    hydrate: "sport",
+  })) as {
+    teams?: {
+      id?: number;
+      name?: string;
+      teamName?: string;
+      parentOrgId?: number;
+      sport?: { id?: number; name?: string };
+    }[];
+  };
+  const levelOrder = ["Triple-A", "Double-A", "High-A", "Single-A", "Rookie"];
+  const affiliates = (raw.teams ?? [])
+    .filter((t) => t.parentOrgId === 138 && t.id)
+    .map((t) => ({
+      teamId: t.id!,
+      name: t.name ?? "Affiliate",
+      shortName: t.teamName ?? t.name ?? "Affiliate",
+      level: t.sport?.name ?? "MiLB",
+      sportId: t.sport?.id ?? 0,
+    }));
+  affiliates.sort((a, b) => {
+    const ia = levelOrder.findIndex((l) => a.level.includes(l));
+    const ib = levelOrder.findIndex((l) => b.level.includes(l));
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.name.localeCompare(b.name);
+  });
+  return affiliates;
+}
+
+export type MlbFarmRosterPlayer = {
+  id: number;
+  name: string;
+  position: string | null;
+  number: string | null;
+};
+
+export async function fetchFarmRoster(teamId: number): Promise<MlbFarmRosterPlayer[]> {
+  const raw = (await mlbGet(`teams/${teamId}/roster`, { rosterType: "active" })) as {
+    roster?: {
+      person?: { id?: number; fullName?: string };
+      jerseyNumber?: string;
+      position?: { abbreviation?: string };
+    }[];
+  };
+  return (raw.roster ?? [])
+    .filter((r) => r.person?.id && r.person.fullName)
+    .map((r) => ({
+      id: r.person!.id!,
+      name: r.person!.fullName!,
+      position: r.position?.abbreviation ?? null,
+      number: r.jerseyNumber ?? null,
+    }));
 }

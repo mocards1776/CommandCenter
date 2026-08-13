@@ -1,0 +1,134 @@
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, Plus, X } from "lucide-react";
+import toast from "react-hot-toast";
+import { useAuth } from "@/lib/auth-context";
+import {
+  SUGGESTED_PLAYER_TAGS,
+  addPlayerTag,
+  displayPlayerTag,
+  fetchPlayerTags,
+  removePlayerTag,
+} from "@/lib/sports-player-tags";
+
+export default function PlayerTagsPanel({
+  playerId,
+  playerName,
+}: {
+  playerId: string | number;
+  playerName: string;
+}) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [draft, setDraft] = useState("");
+
+  const tags = useQuery({
+    queryKey: ["sports-player-tags", user?.id, String(playerId)],
+    queryFn: () => fetchPlayerTags(playerId),
+    enabled: Boolean(user?.id && playerId),
+  });
+
+  const addMut = useMutation({
+    mutationFn: (tag: string) => addPlayerTag(playerId, tag),
+    onSuccess: async () => {
+      setDraft("");
+      await qc.invalidateQueries({
+        queryKey: ["sports-player-tags", user?.id, String(playerId)],
+      });
+      await qc.invalidateQueries({ queryKey: ["sports-player-tags-by-tag"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't add tag"),
+  });
+
+  const removeMut = useMutation({
+    mutationFn: (id: string) => removePlayerTag(id),
+    onSuccess: async () => {
+      await qc.invalidateQueries({
+        queryKey: ["sports-player-tags", user?.id, String(playerId)],
+      });
+      await qc.invalidateQueries({ queryKey: ["sports-player-tags-by-tag"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't remove tag"),
+  });
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const v = draft.trim();
+    if (!v) return;
+    addMut.mutate(v);
+  }
+
+  const have = new Set((tags.data ?? []).map((t) => t.tag.toLowerCase()));
+
+  if (!user) {
+    return (
+      <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+        <h2 className="rule-head mb-2">Tags</h2>
+        <p className="text-[13px] text-[#8b93a7]">Sign in to tag {playerName}.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="rule-head">Tags</h2>
+        {tags.isFetching && <Loader2 size={14} className="text-chalk-dim animate-spin" />}
+      </div>
+      <p className="mb-3 text-[12px] text-[#8b93a7]">
+        Private labels like #FormerCardinal — only you see these.
+      </p>
+      <div className="mb-3 flex flex-wrap gap-2">
+        {(tags.data ?? []).length === 0 ? (
+          <span className="text-chalk-dim text-[12px]">No tags yet.</span>
+        ) : (
+          tags.data?.map((t) => (
+            <span
+              key={t.id}
+              className="bg-accent/15 text-accent inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-[12px] font-medium"
+            >
+              {displayPlayerTag(t.tag)}
+              <button
+                type="button"
+                onClick={() => removeMut.mutate(t.id)}
+                className="hover:text-cream"
+                aria-label={`Remove ${t.tag}`}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))
+        )}
+      </div>
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {SUGGESTED_PLAYER_TAGS.filter((s) => !have.has(s.toLowerCase())).map((s) => (
+          <button
+            key={s}
+            type="button"
+            disabled={addMut.isPending}
+            onClick={() => addMut.mutate(s)}
+            className="text-chalk hover:text-cream border-white/10 rounded-sm border px-2 py-1 text-[11px] uppercase tracking-[0.12em]"
+          >
+            {displayPlayerTag(s)}
+          </button>
+        ))}
+      </div>
+      <form onSubmit={submit} className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Custom tag…"
+          className="bg-ink/40 text-cream placeholder:text-chalk-dim min-w-0 flex-1 rounded-lg border border-white/10 px-3 py-2 text-[13px] outline-none focus:border-accent/50"
+        />
+        <button
+          type="submit"
+          disabled={addMut.isPending || !draft.trim()}
+          className="from-accent-deep to-accent-dark text-cream inline-flex items-center gap-1 rounded-sm bg-gradient-to-b px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] disabled:opacity-40"
+        >
+          <Plus size={12} />
+          Add
+        </button>
+      </form>
+    </section>
+  );
+}

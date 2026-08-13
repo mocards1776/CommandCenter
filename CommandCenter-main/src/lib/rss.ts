@@ -32,6 +32,12 @@ export const RSS_FEEDS = [
     short: "MLB wraps",
     url: "synthetic:mlb-wraps",
   },
+  {
+    id: "mlb-stats",
+    title: "MLB stats & standings",
+    short: "MLB stats",
+    url: "synthetic:mlb-stats",
+  },
 ] as const;
 
 export type RssFeedId = (typeof RSS_FEEDS)[number]["id"];
@@ -46,6 +52,8 @@ export type RssFeedItem = {
   publishedAt: string | null;
   image: string | null;
   snippet: string;
+  /** Prebuilt reader HTML for synthetic digests (skips edge extract). */
+  contentHtml?: string;
 };
 
 export type RssFeedItemRef = RssFeedItem & {
@@ -819,6 +827,9 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       preferFinals: true,
     });
   }
+  if (feedUrl === "synthetic:mlb-stats") {
+    return fetchMlbStatsDigestFeed();
+  }
   return invokeRss<RssFeed>({ mode: "feed", feedUrl });
 }
 
@@ -1006,6 +1017,110 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
     description: opts.description,
     link: "https://www.espn.com/mlb/",
     feedUrl: opts.feedUrl,
+    items,
+  };
+}
+
+/** Once-per-day standings + wild card + league leaders digest. */
+async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
+  const { fetchMlbStandings, fetchMlbWildCardStandings, fetchMlbLeaders } = await import("./mlb");
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, "0");
+  const d = String(today.getDate()).padStart(2, "0");
+  const dateKey = `${y}-${m}-${d}`;
+  const publishedAt = `${dateKey}T12:00:00-05:00`;
+
+  const [standings, nlWc, alWc, leaders] = await Promise.all([
+    fetchMlbStandings(),
+    fetchMlbWildCardStandings(104),
+    fetchMlbWildCardStandings(103),
+    fetchMlbLeaders(8),
+  ]);
+
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const divisionHtml = standings
+    .map((div) => {
+      const rows = div.rows
+        .map(
+          (r) =>
+            `<tr><td>${esc(r.rank)}. ${esc(r.team)}</td><td>${r.wins}-${r.losses}</td><td>${esc(r.pct)}</td><td>${esc(r.gb)}</td><td>${esc(r.playoffPercent ?? "—")}</td></tr>`,
+        )
+        .join("");
+      return `<h2>${esc(div.name)}</h2><table><thead><tr><th>Team</th><th>W-L</th><th>Pct</th><th>GB</th><th>Playoff%</th></tr></thead><tbody>${rows}</tbody></table>`;
+    })
+    .join("");
+
+  const wcBlock = (title: string, rows: Awaited<ReturnType<typeof fetchMlbWildCardStandings>>) => {
+    const body = rows
+      .slice(0, 10)
+      .map(
+        (r) =>
+          `<tr><td>${esc(r.rank)}. ${esc(r.team)}</td><td>${r.wins}-${r.losses}</td><td>${esc(r.wcgb)}</td></tr>`,
+      )
+      .join("");
+    return `<h2>${esc(title)}</h2><table><thead><tr><th>Team</th><th>W-L</th><th>WCGB</th></tr></thead><tbody>${body}</tbody></table>`;
+  };
+
+  const leadersHtml = leaders
+    .map((board) => {
+      const rows = board.leaders
+        .map(
+          (l) =>
+            `<tr><td>${l.rank}. ${esc(l.name)}</td><td>${esc(l.team)}</td><td>${esc(l.value)}</td></tr>`,
+        )
+        .join("");
+      return `<h3>${esc(board.label)}</h3><table><thead><tr><th>Player</th><th>Team</th><th>Stat</th></tr></thead><tbody>${rows}</tbody></table>`;
+    })
+    .join("");
+
+  const contentHtml = `
+    <p>Daily MLB board — division standings, wild cards, and league leaders for ${esc(dateKey)}.</p>
+    <h2>Division standings</h2>
+    ${divisionHtml}
+    ${wcBlock("NL Wild Card", nlWc)}
+    ${wcBlock("AL Wild Card", alWc)}
+    <h2>League leaders</h2>
+    ${leadersHtml}
+  `.trim();
+
+  const snippet = `Division standings, NL/AL wild card, and league leaders for ${dateKey}.`;
+
+  // Keep a short rolling history (today + prior 6 days) so the feed isn't a single row forever.
+  const items: RssFeedItem[] = [];
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(today);
+    day.setDate(today.getDate() - i);
+    const yy = day.getFullYear();
+    const mm = String(day.getMonth() + 1).padStart(2, "0");
+    const dd = String(day.getDate()).padStart(2, "0");
+    const key = `${yy}-${mm}-${dd}`;
+    const isToday = i === 0;
+    items.push({
+      id: `mlb-stats-${key}`,
+      title: isToday
+        ? `MLB stats digest — ${key}`
+        : `MLB stats digest — ${key} (archive)`,
+      link: `dispatch://mlb-stats/${key}`,
+      author: "MLB Stats API",
+      publishedAt: `${key}T12:00:00-05:00`,
+      image: null,
+      snippet: isToday
+        ? snippet
+        : `Archived daily digest placeholder for ${key}. Open today's digest for live boards.`,
+      contentHtml: isToday
+        ? contentHtml
+        : `<p>This archive day is listed for history. Switch to today's digest for live standings and leaders.</p>`,
+    });
+  }
+
+  return {
+    title: "MLB stats & standings",
+    description: "Once-a-day division standings, wild cards, and league leaders",
+    link: "https://www.mlb.com/standings",
+    feedUrl: "synthetic:mlb-stats",
     items,
   };
 }
@@ -1325,4 +1440,4 @@ export async function unsaveRssArticle(articleUrl: string): Promise<void> {
 }
 
 /** Feeds that stay out of the cross-feed Unread inbox (browse them on their own). */
-export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>(["mlb-wraps"]);
+export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>(["mlb-wraps", "mlb-stats"]);

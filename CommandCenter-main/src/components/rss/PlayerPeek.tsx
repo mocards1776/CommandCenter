@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Loader2, X } from "lucide-react";
 import TeamMark from "@/components/sports/TeamMark";
+import PlayerTagsPanel from "@/components/sports/PlayerTagsPanel";
 import {
   buildPlayerPerformanceSummary,
   fetchMlbPlayer,
@@ -287,6 +288,8 @@ export default function PlayerPeek({
                   </dl>
                 </div>
               ) : null}
+
+              <PlayerTagsPanel playerId={p.id} playerName={p.name} />
 
               <section className="rounded-xl border border-white/[0.08] bg-black/20 px-3.5 py-3">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">

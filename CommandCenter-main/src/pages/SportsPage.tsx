@@ -608,6 +608,34 @@ function TeamDetailPanel({
               )}
             </div>
           )}
+          {detail && (detail.manager || detail.generalManager) ? (
+            <div className="mt-3 flex flex-col gap-1 border-t border-white/[0.06] pt-3">
+              {detail.manager ? (
+                <p className="text-chalk text-[12px]">
+                  <span className="text-chalk-dim uppercase tracking-[0.12em]">
+                    {detail.manager.title || "Manager"}
+                  </span>
+                  {" · "}
+                  <Link
+                    to={`/sports/mlb/managers/${detail.manager.id}`}
+                    className="text-cream hover:text-accent"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {detail.manager.name}
+                  </Link>
+                </p>
+              ) : null}
+              {detail.generalManager ? (
+                <p className="text-chalk text-[12px]">
+                  <span className="text-chalk-dim uppercase tracking-[0.12em]">
+                    {detail.generalManager.title || "GM"}
+                  </span>
+                  {" · "}
+                  <span className="text-cream">{detail.generalManager.name}</span>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5">
