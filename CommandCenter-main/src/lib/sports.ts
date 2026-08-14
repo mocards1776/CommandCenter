@@ -51,9 +51,17 @@ export type GameChip = {
 export type TourLeader = {
   id: string | null;
   name: string;
+  /** Short display name when available (e.g. J. Spieth). */
+  shortName: string | null;
   score: string;
   detail: string | null;
   position: string | null;
+  /** Thru holes or "F" when round complete. */
+  thru: string | null;
+  /** Round 1 to-par display (e.g. "-5"). */
+  r1: string | null;
+  /** Additional round scores R2+ when present. */
+  roundScores: string[];
 };
 
 export type TourSnapshot = {
@@ -556,10 +564,22 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
         status?: { type?: { description?: string; detail?: string } };
         competitors?: {
           id?: string;
-          athlete?: { id?: string; displayName?: string };
+          order?: number;
+          athlete?: { id?: string; displayName?: string; shortName?: string };
           score?: unknown;
-          status?: { type?: { description?: string }; displayValue?: string };
-          linescores?: { displayValue?: string }[];
+          status?: {
+            type?: { description?: string; state?: string; completed?: boolean };
+            displayValue?: string;
+            thru?: number;
+            period?: number;
+            position?: { displayName?: string };
+          };
+          linescores?: {
+            displayValue?: string;
+            value?: number;
+            period?: number;
+            linescores?: unknown[];
+          }[];
         }[];
       }[];
     }[];
@@ -567,13 +587,54 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
 
   const event = raw.events?.[0];
   const comp = event?.competitions?.[0];
-  const field: TourLeader[] = (comp?.competitors ?? []).map((c, i) => ({
-    id: c.athlete?.id != null ? String(c.athlete.id) : c.id != null ? String(c.id) : null,
-    name: c.athlete?.displayName ?? "—",
-    score: scoreText(c.score) || "—",
-    detail: c.status?.type?.description ?? null,
-    position: c.status?.displayValue ?? String(i + 1),
-  }));
+  const competitors = comp?.competitors ?? [];
+
+  // Tie-aware positions from score order.
+  const sorted = [...competitors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const positions: string[] = [];
+  let i = 0;
+  while (i < sorted.length) {
+    const score = scoreText(sorted[i]!.score);
+    let j = i + 1;
+    while (j < sorted.length && scoreText(sorted[j]!.score) === score) j++;
+    const label = j - i > 1 ? `T${i + 1}` : String(i + 1);
+    for (let k = i; k < j; k++) positions[k] = label;
+    i = j;
+  }
+
+  const field: TourLeader[] = sorted.map((c, idx) => {
+    const lines = c.linescores ?? [];
+    const roundScores = lines
+      .map((r) => r.displayValue)
+      .filter((v): v is string => Boolean(v));
+    const r1 = roundScores[0] ?? null;
+    let thru: string | null = null;
+    if (c.status?.thru != null && c.status.thru > 0) {
+      thru = String(c.status.thru);
+    } else {
+      const lastRound = lines[lines.length - 1];
+      const holes = Array.isArray(lastRound?.linescores) ? lastRound!.linescores!.length : 0;
+      if (holes >= 18 || c.status?.type?.completed) thru = "F";
+      else if (holes > 0) thru = String(holes);
+      else if (roundScores.length > 0) thru = "F";
+      else thru = "—";
+    }
+    return {
+      id: c.athlete?.id != null ? String(c.athlete.id) : c.id != null ? String(c.id) : null,
+      name: c.athlete?.displayName ?? "—",
+      shortName: c.athlete?.shortName ?? null,
+      score: scoreText(c.score) || "—",
+      detail: c.status?.type?.description ?? null,
+      position:
+        c.status?.position?.displayName ??
+        c.status?.displayValue ??
+        positions[idx] ??
+        String(idx + 1),
+      thru,
+      r1,
+      roundScores,
+    };
+  });
 
   return {
     key: fav.key,
@@ -590,12 +651,22 @@ export type GolferProfile = {
   id: string;
   name: string;
   age: number | null;
+  height: string | null;
   birthPlace: string | null;
   college: string | null;
   citizenship: string | null;
+  flagUrl: string | null;
+  turnedPro: number | null;
   headshot: string | null;
   bio: string | null;
+  /** Ranking chips — FedEx Cup, OWGR, etc. */
+  rankings: { label: string; rank: string; detail: string | null }[];
+  career: { label: string; value: string; icon?: string }[];
+  season: { label: string; value: string; icon?: string }[];
+  bioFacts: { label: string; value: string }[];
+  performance: { label: string; value: string }[];
   seasonStats: { label: string; value: string }[];
+  highlights: { headline: string; image: string | null; href: string | null }[];
   recentNews: { headline: string; description: string }[];
 };
 
@@ -637,29 +708,166 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
   const birth = athlete.birthPlace as
     | { city?: string; state?: string; country?: string }
     | undefined;
-  const birthPlace = birth
-    ? [birth.city, birth.state?.trim(), birth.country].filter(Boolean).join(", ")
-    : null;
+  const birthPlace =
+    (athlete.displayBirthPlace as string | undefined)?.trim() ||
+    (birth ? [birth.city, birth.state?.trim(), birth.country].filter(Boolean).join(", ") : null);
   const college = (athlete.college as { name?: string } | undefined)?.name ?? null;
+  const height = (athlete.displayHeight as string | undefined) ?? null;
+  const turnedPro =
+    typeof athlete.turnedPro === "number"
+      ? athlete.turnedPro
+      : typeof athlete.debutYear === "number"
+        ? (athlete.debutYear as number)
+        : null;
+  const flagUrl = (athlete.flag as { href?: string } | undefined)?.href ?? null;
+  const citizenship =
+    athlete.citizenship != null
+      ? String(athlete.citizenship)
+      : (athlete.flag as { alt?: string } | undefined)?.alt ?? null;
 
   const seasonStats: { label: string; value: string }[] = [];
   const statsBlock = overview.statistics as
     | {
         labels?: string[];
-        splits?: { stats?: string[] }[];
+        splits?: { displayName?: string; stats?: string[] }[];
       }
     | undefined;
+  const pgaSplit =
+    statsBlock?.splits?.find((s) => /pga/i.test(s.displayName ?? "")) ??
+    statsBlock?.splits?.[0];
   const labels = statsBlock?.labels ?? [];
-  const values = statsBlock?.splits?.[0]?.stats ?? [];
+  const values = pgaSplit?.stats ?? [];
   for (let i = 0; i < labels.length; i++) {
     seasonStats.push({ label: labels[i]!, value: values[i] ?? "—" });
+  }
+
+  const pickStat = (key: string) =>
+    seasonStats.find((s) => s.label.toUpperCase() === key.toUpperCase())?.value ?? null;
+
+  const summaryStats = (
+    (athlete.statsSummary as { statistics?: { name?: string; shortDisplayName?: string; displayValue?: string; rankDisplayValue?: string; abbreviation?: string }[] })
+      ?.statistics ?? []
+  );
+
+  const rankings: GolferProfile["rankings"] = [];
+  const fedex = summaryStats.find((s) => /cup|fedex/i.test(`${s.name} ${s.shortDisplayName}`));
+  if (fedex) {
+    rankings.push({
+      label: "FedEx Cup",
+      rank: (fedex.rankDisplayValue ?? "").replace(/th|st|nd|rd/i, "") || "—",
+      detail: fedex.displayValue ? `PTS: ${fedex.displayValue}` : null,
+    });
+  }
+  const owgr = summaryStats.find((s) => /world|owgr/i.test(`${s.name} ${s.shortDisplayName}`));
+  if (owgr) {
+    rankings.push({
+      label: "World Rank",
+      rank: (owgr.rankDisplayValue ?? owgr.displayValue ?? "—").replace(/th|st|nd|rd/i, ""),
+      detail: null,
+    });
+  } else if (rankings.length) {
+    // Placeholder slot keeps the three-card rhythm when OWGR is absent.
+    const earningsRank = summaryStats.find((s) => /earn|amount/i.test(`${s.name}`));
+    if (earningsRank?.rankDisplayValue) {
+      rankings.push({
+        label: "Earnings rank",
+        rank: earningsRank.rankDisplayValue.replace(/th|st|nd|rd/i, ""),
+        detail: earningsRank.displayValue ?? null,
+      });
+    }
+  }
+
+  const season: GolferProfile["season"] = [
+    { label: "Wins", value: pickStat("WINS") ?? "0" },
+    {
+      label: "Top 10",
+      value: pickStat("TOP10") ?? pickStat("TOP 10") ?? "—",
+    },
+    {
+      label: "Cuts Made",
+      value:
+        pickStat("CUTS") && pickStat("EVENTS")
+          ? `${pickStat("CUTS")}/${pickStat("EVENTS")}`
+          : pickStat("CUTS") ?? "—",
+    },
+  ];
+
+  const career: GolferProfile["career"] = [
+    {
+      label: "Wins",
+      value: pickStat("WINS") ?? "—",
+    },
+    {
+      label: "Earnings",
+      value: pickStat("EARNINGS") ?? summaryStats.find((s) => /earn|amount/i.test(`${s.name}`))?.displayValue ?? "—",
+    },
+    {
+      label: "Cuts Made",
+      value:
+        pickStat("CUTS") && pickStat("EVENTS")
+          ? `${pickStat("CUTS")}/${pickStat("EVENTS")}`
+          : "—",
+    },
+  ];
+
+  // Prefer season labels that read like career when only season is available.
+  if (pgaSplit?.displayName) {
+    career[0] = { ...career[0]!, label: "Season wins" };
+  }
+
+  const bioFacts: GolferProfile["bioFacts"] = [
+    ...(height ? [{ label: "Height", value: height }] : []),
+    ...(typeof athlete.age === "number" ? [{ label: "Age", value: String(athlete.age) }] : []),
+    ...(turnedPro != null ? [{ label: "Turned Pro", value: String(turnedPro) }] : []),
+  ];
+
+  const rankCats = (
+    (overview.seasonRankings as { categories?: { name?: string; abbreviation?: string; shortDisplayName?: string; rankDisplayValue?: string; displayName?: string }[] })
+      ?.categories ?? []
+  );
+  const findRank = (...needles: string[]) =>
+    rankCats.find((c) =>
+      needles.some((n) =>
+        new RegExp(n, "i").test(`${c.name} ${c.abbreviation} ${c.shortDisplayName} ${c.displayName}`),
+      ),
+    );
+
+  const performance: GolferProfile["performance"] = [];
+  const sgTotal = findRank("sg.?total", "strokes gained total", "scoring average");
+  const sgPutt = findRank("sg.?putt", "putting", "putts");
+  const sgTee = findRank("tee.to.green", "sg.?t2g", "driving distance", "yardsPerDrive");
+  if (sgTotal?.rankDisplayValue)
+    performance.push({
+      label: /scoring/i.test(`${sgTotal.name}`) ? "Scoring Avg" : "SG: Total",
+      value: sgTotal.rankDisplayValue,
+    });
+  if (sgPutt?.rankDisplayValue)
+    performance.push({ label: "SG: Putting", value: sgPutt.rankDisplayValue });
+  if (sgTee?.rankDisplayValue)
+    performance.push({
+      label: /driv/i.test(`${sgTee.name}`) ? "Driving Dist." : "SG: Tee-to-Green",
+      value: sgTee.rankDisplayValue,
+    });
+
+  // Fill from summary if performance empty.
+  if (performance.length === 0) {
+    for (const s of summaryStats.slice(0, 3)) {
+      if (!s.rankDisplayValue) continue;
+      performance.push({
+        label: s.shortDisplayName ?? s.abbreviation ?? "Stat",
+        value: s.rankDisplayValue,
+      });
+    }
   }
 
   const newsRaw = (overview.news ?? athlete.news ?? []) as {
     headline?: string;
     description?: string;
+    images?: { url?: string }[];
+    links?: { web?: { href?: string } };
   }[];
-  const recentNews = (Array.isArray(newsRaw) ? newsRaw : [])
+  const newsList = Array.isArray(newsRaw) ? newsRaw : [];
+  const recentNews = newsList
     .slice(0, 5)
     .map((n) => ({
       headline: n.headline ?? "",
@@ -667,25 +875,43 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
     }))
     .filter((n) => n.headline);
 
+  const highlights = newsList
+    .slice(0, 8)
+    .map((n) => ({
+      headline: n.headline ?? "",
+      image: n.images?.[0]?.url ?? null,
+      href: n.links?.web?.href ?? null,
+    }))
+    .filter((n) => n.headline);
+
   const displayName = String(athlete.displayName ?? athlete.fullName ?? "Golfer");
   const bioParts = [
     college ? `College: ${college}.` : null,
     birthPlace ? `From ${birthPlace}.` : null,
-    athlete.citizenship ? `Represents ${String(athlete.citizenship)}.` : null,
+    citizenship ? `Represents ${citizenship}.` : null,
   ].filter(Boolean);
 
   return {
     id,
     name: displayName,
     age: typeof athlete.age === "number" ? athlete.age : null,
+    height,
     birthPlace,
     college,
-    citizenship: athlete.citizenship != null ? String(athlete.citizenship) : null,
+    citizenship,
+    flagUrl,
+    turnedPro,
     headshot:
       (athlete.headshot as { href?: string } | undefined)?.href ??
       `https://a.espncdn.com/i/headshots/golf/players/full/${id}.png`,
     bio: bioParts.length ? bioParts.join(" ") : null,
+    rankings,
+    career,
+    season,
+    bioFacts,
+    performance,
     seasonStats,
+    highlights,
     recentNews,
   };
 }

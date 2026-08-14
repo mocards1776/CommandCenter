@@ -20,6 +20,9 @@ import MlbGamePage from "@/pages/MlbGamePage";
 import MlbManagersPage from "@/pages/MlbManagersPage";
 import MlbManagerPage from "@/pages/MlbManagerPage";
 import GolferPage from "@/pages/GolferPage";
+import NflPage from "@/pages/NflPage";
+import NflGamePage from "@/pages/NflGamePage";
+import NflPlayerPage from "@/pages/NflPlayerPage";
 import RssPage from "@/pages/RssPage";
 import PublicStoryPage from "@/pages/PublicStoryPage";
 import BuenaVistaNotebookPage from "@/pages/BuenaVistaNotebookPage";
@@ -125,6 +128,9 @@ export default function App() {
               <Route path="/sports/mlb/player/:playerId" element={<MlbPlayerPage />} />
               <Route path="/sports/mlb/game/:gamePk" element={<MlbGamePage />} />
               <Route path="/sports/golf/player/:golferId" element={<GolferPage />} />
+              <Route path="/sports/nfl" element={<NflPage />} />
+              <Route path="/sports/nfl/game/:eventId" element={<NflGamePage />} />
+              <Route path="/sports/nfl/player/:playerId" element={<NflPlayerPage />} />
               <Route path="/rss" element={<RssPage />} />
               <Route path="/notebook/:slug" element={<BuenaVistaNotebookPage />} />
             </Route>

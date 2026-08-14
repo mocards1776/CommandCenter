@@ -191,34 +191,52 @@ function TourCard({
           </div>
         </div>
         {rows.length > 0 ? (
-          <ol className="mt-4 flex flex-col gap-2">
-            {rows.map((l, i) => (
-              <li
-                key={`${l.id ?? l.name}-${i}`}
-                className="flex items-baseline justify-between gap-3 border-b border-white/[0.05] pb-2 last:border-0"
-              >
-                {l.id ? (
-                  <Link
-                    to={`/sports/golf/player/${l.id}`}
-                    className="text-cream min-w-0 truncate text-[13px] hover:underline"
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[300px] text-left">
+              <thead>
+                <tr className="border-b border-white/[0.1] text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                  <th className="py-2 pr-2 font-medium">Pos</th>
+                  <th className="py-2 pr-2 font-medium">Player</th>
+                  <th className="py-2 pr-2 text-right font-medium">Tot</th>
+                  <th className="py-2 pr-2 text-right font-medium">Thru</th>
+                  <th className="py-2 text-right font-medium">R1</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((l, i) => (
+                  <tr
+                    key={`${l.id ?? l.name}-${i}`}
+                    className="border-b border-white/[0.05] last:border-0"
                   >
-                    <span className="text-chalk-dim numeral mr-2 text-[12px]">
+                    <td className="numeral text-chalk-dim py-2.5 pr-2 text-[12px]">
                       {l.position ?? i + 1}
-                    </span>
-                    {l.name}
-                  </Link>
-                ) : (
-                  <span className="text-cream text-[13px]">
-                    <span className="text-chalk-dim numeral mr-2 text-[12px]">
-                      {l.position ?? i + 1}
-                    </span>
-                    {l.name}
-                  </span>
-                )}
-                <span className="numeral text-accent shrink-0 text-[16px]">{l.score}</span>
-              </li>
-            ))}
-          </ol>
+                    </td>
+                    <td className="py-2.5 pr-2">
+                      {l.id ? (
+                        <Link
+                          to={`/sports/golf/player/${l.id}`}
+                          className="text-cream text-[13px] hover:underline"
+                        >
+                          {l.shortName ?? l.name}
+                        </Link>
+                      ) : (
+                        <span className="text-cream text-[13px]">{l.shortName ?? l.name}</span>
+                      )}
+                    </td>
+                    <td className="numeral py-2.5 pr-2 text-right text-[15px] font-semibold text-[#ff6b6b]">
+                      {l.score}
+                    </td>
+                    <td className="numeral text-chalk py-2.5 pr-2 text-right text-[12px]">
+                      {l.thru ?? "—"}
+                    </td>
+                    <td className="numeral text-chalk py-2.5 text-right text-[12px]">
+                      {l.r1 ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <p className="text-chalk-dim mt-4 text-[12.5px]">No leaderboard right now.</p>
         )}
@@ -846,6 +864,13 @@ function TeamDetailPanel({
                     {detail.roster.map((p) => {
                       const mlbClickable =
                         detail.source === "mlb" && /^\d+$/.test(String(p.id));
+                      const nflClickable =
+                        fav.league === "NFL" && /^\d+$/.test(String(p.id));
+                      const href = mlbClickable
+                        ? `/sports/mlb/player/${p.id}`
+                        : nflClickable
+                          ? `/sports/nfl/player/${p.id}`
+                          : null;
                       const row = (
                         <>
                           <span className="text-chalk-dim numeral w-8 shrink-0 text-[11px]">
@@ -861,9 +886,9 @@ function TeamDetailPanel({
                       );
                       return (
                         <li key={p.id}>
-                          {mlbClickable ? (
+                          {href ? (
                             <Link
-                              to={`/sports/mlb/player/${p.id}`}
+                              to={href}
                               className="group flex items-baseline gap-2 px-3 py-2 text-[12.5px] hover:bg-white/[0.03]"
                               onClick={(e) => e.stopPropagation()}
                             >

@@ -2,10 +2,17 @@
 
 import type { MlbScoreGame, MlbGameInterest, MlbScoredGame } from "./mlb";
 import { scoreGameInterest as baseScoreGameInterest } from "./mlb";
+import {
+  rankNflRuwtGames,
+  type NflRuwtContext,
+  type NflScoreGame,
+  type NflScoredGame,
+} from "./nfl";
 
 const STORAGE_KEY = "ruwt-team-interest-v1";
+const NFL_STORAGE_KEY = "ruwt-nfl-team-interest-v1";
 
-export type RuwtTeamInterest = Record<string, number>; // mlb teamId → 0–10
+export type RuwtTeamInterest = Record<string, number>; // teamId → 0–10
 
 export type RuwtScoreContext = {
   /** Per-team interest 0–10 (10 = must-watch franchise). */
@@ -22,9 +29,9 @@ export type RuwtScoreContext = {
   playoffOddsByTeam?: Record<number, number>;
 };
 
-export function loadTeamInterest(): RuwtTeamInterest {
+function loadInterestMap(key: string): RuwtTeamInterest {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as RuwtTeamInterest;
     const out: RuwtTeamInterest = {};
@@ -37,6 +44,10 @@ export function loadTeamInterest(): RuwtTeamInterest {
   } catch {
     return {};
   }
+}
+
+export function loadTeamInterest(): RuwtTeamInterest {
+  return loadInterestMap(STORAGE_KEY);
 }
 
 export function saveTeamInterest(map: RuwtTeamInterest): void {
@@ -54,6 +65,36 @@ export function setTeamInterestRating(
   else next[String(teamId)] = clamped;
   saveTeamInterest(next);
   return next;
+}
+
+export function loadNflTeamInterest(): RuwtTeamInterest {
+  return loadInterestMap(NFL_STORAGE_KEY);
+}
+
+export function saveNflTeamInterest(map: RuwtTeamInterest): void {
+  localStorage.setItem(NFL_STORAGE_KEY, JSON.stringify(map));
+}
+
+export function setNflTeamInterestRating(
+  map: RuwtTeamInterest,
+  teamId: number,
+  rating: number,
+): RuwtTeamInterest {
+  const next = { ...map };
+  const clamped = Math.max(0, Math.min(10, Math.round(rating)));
+  if (clamped <= 0) delete next[String(teamId)];
+  else next[String(teamId)] = clamped;
+  saveNflTeamInterest(next);
+  return next;
+}
+
+export function rankRuwtNflGames(
+  games: NflScoreGame[],
+  interest: RuwtTeamInterest,
+  limit = 20,
+): NflScoredGame[] {
+  const ctx: NflRuwtContext = { teamInterest: interest, watchPlayerIds: new Set() };
+  return rankNflRuwtGames(games, ctx, limit);
 }
 
 function parseWinPct(record: string | null): number | null {
@@ -104,7 +145,6 @@ export function scoreRuwtGame(g: MlbScoreGame, ctx?: RuwtScoreContext): MlbGameI
     }
   }
 
-  // Live: favorite / tagged batter or pitcher in the game.
   if (g.live && g.situation) {
     const liveIds = [g.situation.batter?.id, g.situation.pitcher?.id].filter(
       (id): id is number => id != null,
@@ -167,7 +207,6 @@ export function scoreRuwtGame(g: MlbScoreGame, ctx?: RuwtScoreContext): MlbGameI
     }
   }
 
-  // Dedupe reasons, keep the sharpest handful.
   const unique: string[] = [];
   for (const r of reasons) {
     if (!unique.includes(r)) unique.push(r);
