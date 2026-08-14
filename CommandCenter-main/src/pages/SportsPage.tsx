@@ -234,7 +234,7 @@ function TourCard({
                     </td>
                     <td
                       className={cn(
-                        "numeral py-2.5 pr-2 text-right text-[14px] font-semibold",
+                        "numeral py-2.5 pr-2 text-right text-[15px] font-bold tabular-nums",
                         !l.today || l.today === "—" || l.today === "E"
                           ? "text-chalk"
                           : l.today.startsWith("-")

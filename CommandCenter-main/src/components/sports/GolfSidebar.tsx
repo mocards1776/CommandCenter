@@ -71,7 +71,7 @@ function LeaderTable({
                 </td>
                 <td
                   className={cn(
-                    "numeral py-2 pr-2 text-right text-[14px] font-semibold",
+                    "numeral py-2 pr-2 text-right text-[15px] font-bold tabular-nums",
                     todayTone(l.today),
                   )}
                 >

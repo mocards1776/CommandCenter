@@ -301,6 +301,8 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         accent={accent}
         isFavorite={isFav}
         serviceTime={extras.data?.serviceTime ?? contract.data?.serviceTime ?? null}
+        extrasPending={extras.isPending || extras.isFetching}
+        contractPending={contract.isPending || contract.isFetching}
         salary={contract.data?.currentSalary?.display ?? null}
         salaryYear={contract.data?.currentSalary?.year ?? null}
         contractStatus={contract.data?.contractStatus ?? null}
@@ -706,6 +708,8 @@ function PlayerHeader({
   accent,
   isFavorite,
   serviceTime,
+  extrasPending,
+  contractPending,
   salary,
   salaryYear,
   contractStatus,
@@ -719,6 +723,8 @@ function PlayerHeader({
   accent: string;
   isFavorite: boolean;
   serviceTime?: string | null;
+  extrasPending?: boolean;
+  contractPending?: boolean;
   salary?: string | null;
   salaryYear?: string | null;
   contractStatus?: string | null;
@@ -883,7 +889,14 @@ function PlayerHeader({
               <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">
                 Service time
               </dt>
-              <dd className="mt-0.5 text-white">{serviceTime ?? "—"}</dd>
+              <dd className="mt-0.5 text-white">
+                {serviceTime ??
+                  (extrasPending || contractPending ? (
+                    <span className="text-white/40">…</span>
+                  ) : (
+                    "—"
+                  ))}
+              </dd>
             </div>
             {(salary || contractStatus) && (
               <div>

@@ -150,7 +150,9 @@ export function NflScoreRow({
             {game.shortDetail}
           </p>
           {heat != null ? (
-            <p className="mt-1.5 text-[10.5px] font-semibold text-[#8b93a7]">Heat {heat}</p>
+            <p className="mt-1.5 inline-flex items-center rounded-sm bg-accent/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-accent">
+              Heat {heat}
+            </p>
           ) : null}
         </div>
       </div>

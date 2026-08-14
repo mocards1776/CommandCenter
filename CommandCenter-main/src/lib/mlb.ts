@@ -796,11 +796,20 @@ function addDaysIso(isoDate: string, delta: number): string {
 function fmtWhenShort(iso: string | null | undefined): string | null {
   if (!iso) return null;
   try {
-    return new Date(iso).toLocaleString("en-US", {
+    const time = new Date(iso).toLocaleString("en-US", {
       timeZone: "America/Chicago",
       hour: "numeric",
       minute: "2-digit",
     });
+    // Always label Central so cards don't look "wrong" vs EDT article copy.
+    const zone = new Date(iso)
+      .toLocaleTimeString("en-US", {
+        timeZone: "America/Chicago",
+        timeZoneName: "short",
+      })
+      .split(" ")
+      .pop();
+    return zone ? `${time} ${zone}` : time;
   } catch {
     return null;
   }
@@ -2608,12 +2617,17 @@ export async function fetchPlayerContract(
 
   if (!names.length) return null;
 
-  const cacheKey = `mlb-contract-v4:${names[0]!.toLowerCase()}`;
+  const cacheKey = `mlb-contract-v5:${names[0]!.toLowerCase()}`;
   try {
     const cached = sessionStorage.getItem(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached) as { at: number; data: MlbPlayerContract };
-      if (Date.now() - parsed.at < 24 * 60 * 60_000 && parsed.data?.currentSalary?.display) {
+      // Require serviceTime in cache hits so older Spotrac-only payloads get refreshed.
+      if (
+        Date.now() - parsed.at < 24 * 60 * 60_000 &&
+        parsed.data?.currentSalary?.display &&
+        parsed.data?.serviceTime
+      ) {
         return parsed.data;
       }
     }
@@ -3011,6 +3025,47 @@ function mapPlayerExtrasPayload(data: unknown): MlbPlayerExtras | null {
   };
 }
 
+/** ESPN "11th Season" style experience — fallback when BBRef service time is down. */
+async function fetchEspnExperienceFallback(playerName: string): Promise<string | null> {
+  try {
+    const searchUrl =
+      "https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&type=player&limit=8&query=" +
+      encodeURIComponent(playerName.trim());
+    const searchRes = await fetch(searchUrl, { headers: { Accept: "application/json" } });
+    if (!searchRes.ok) return null;
+    const searchJson = (await searchRes.json()) as {
+      items?: { id?: string; displayName?: string; league?: string; type?: string }[];
+    };
+    const want = playerName.trim().toLowerCase().replace(/\./g, "");
+    const mlb = (searchJson.items ?? []).filter(
+      (it) => String(it.league ?? "").toLowerCase() === "mlb" || it.type === "player",
+    );
+    const hit =
+      mlb.find((it) => (it.displayName ?? "").toLowerCase().replace(/\./g, "") === want) ??
+      mlb.find((it) =>
+        (it.displayName ?? "")
+          .toLowerCase()
+          .replace(/\./g, "")
+          .includes(want.split(/\s+/).slice(-1)[0] ?? ""),
+      ) ??
+      mlb[0];
+    if (!hit?.id) return null;
+    const athRes = await fetch(
+      `https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${hit.id}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!athRes.ok) return null;
+    const ath = (await athRes.json()) as {
+      athlete?: { displayExperience?: string };
+      displayExperience?: string;
+    };
+    const exp = ath.athlete?.displayExperience ?? ath.displayExperience ?? null;
+    return exp && exp.trim() ? exp.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Service time + WAR from Baseball Reference (via sports edge). */
 export async function fetchMlbPlayerExtras(
   playerName: string,
@@ -3026,6 +3081,8 @@ export async function fetchMlbPlayerExtras(
 
   const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+  let mapped: MlbPlayerExtras | null = null;
 
   // Direct fetch first — supabase-js invoke has dropped bodies / hung in the browser
   // (same pattern as contract lookups). Soft-timeout responses may still carry serviceTime.
@@ -3044,24 +3101,40 @@ export async function fetchMlbPlayerExtras(
           body: JSON.stringify(body),
           signal: ctl.signal,
         });
-        if (res.ok) {
-          const mapped = mapPlayerExtrasPayload(await res.json());
-          if (mapped) return mapped;
-        }
+        if (res.ok) mapped = mapPlayerExtrasPayload(await res.json());
       } finally {
         window.clearTimeout(timer);
       }
     } catch {
-      /* fall through to supabase-js */
+      /* fall through */
     }
   }
 
-  try {
-    const { data } = await supabase.functions.invoke("sports", { body });
-    return mapPlayerExtrasPayload(data);
-  } catch {
-    return null;
+  if (!mapped) {
+    try {
+      const { data } = await supabase.functions.invoke("sports", { body });
+      mapped = mapPlayerExtrasPayload(data);
+    } catch {
+      mapped = null;
+    }
   }
+
+  // BBRef often times out from edge IPs — fall back to ESPN season experience.
+  if (!mapped?.serviceTime) {
+    const exp = await fetchEspnExperienceFallback(name);
+    if (exp) {
+      mapped = {
+        serviceTime: exp,
+        seasonWar: mapped?.seasonWar ?? null,
+        careerWar: mapped?.careerWar ?? null,
+        warRank: mapped?.warRank ?? null,
+        warOf: mapped?.warOf ?? null,
+        url: mapped?.url ?? null,
+      };
+    }
+  }
+
+  return mapped;
 }
 
 /** Lower-is-better rate stats when marking career highs. */
