@@ -34,6 +34,7 @@ import DispatchNotesAside from "@/components/rss/DispatchNotesAside";
 import RssQuoteShareCard from "@/components/rss/RssQuoteShareCard";
 import {
   RSS_FEEDS,
+  RSS_FEED_FOLDERS,
   RSS_SEPARATE_FEEDS,
   addDedupeKeepHost,
   addRssFilter,
@@ -50,9 +51,12 @@ import {
   markQuotesInHtml,
   parseFeedScopedFilter,
   parsePlayerArticleLink,
+  parseMlbGameArticleLink,
   partitionDedupedArticles,
   deleteRssFilter,
   deleteRssHighlight,
+  feedIdsForFolder,
+  isFeedFolderId,
   fetchRssArticle,
   fetchRssFeed,
   fetchRssFilters,
@@ -70,6 +74,7 @@ import {
   unsaveRssArticle,
   updateRssHighlightNote,
   type RssFeedDef,
+  type RssFeedFolder,
   type RssFeedId,
   type RssFeedItem,
   type RssFeedItemRef,
@@ -123,12 +128,13 @@ import {
   parseEspnGameIdFromUrl,
   searchMlbPlayersByNames,
 } from "@/lib/mlb";
+import { MlbGameDetail } from "@/pages/MlbGamePage";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
-type NavView = "unread" | "saved" | RssFeedId | "notes" | "filters" | "duplicates";
+type NavView = "unread" | "saved" | RssFeedId | "notes" | "filters" | "duplicates" | "folder:tags";
 
 function readingMinutes(words: number): string {
   const m = Math.max(1, Math.round(words / 220));
@@ -493,6 +499,25 @@ function ReaderView({
     );
   }
 
+  const mlbGamePk = parseMlbGameArticleLink(item.link);
+  if (mlbGamePk != null) {
+    return (
+      <MlbGameArticleShell
+        item={item}
+        gamePk={mlbGamePk}
+        feedUrl={feedUrl}
+        isSaved={isSaved}
+        hasPrev={hasPrev}
+        hasNext={hasNext}
+        onClose={onBack}
+        onPrev={onPrev}
+        onNext={onNext}
+        onToggleSave={onToggleSave}
+        onArchive={onArchive}
+      />
+    );
+  }
+
   const isEspnGame =
     Boolean(parseEspnGameIdFromUrl(item.link)) ||
     feedUrl === "synthetic:cardinals-wraps" ||
@@ -633,6 +658,138 @@ function EspnGameReaderShell({
         hasPrev={hasPrev}
         hasNext={hasNext}
       />
+    </div>
+  );
+}
+
+function MlbGameArticleShell({
+  item,
+  gamePk,
+  feedUrl,
+  isSaved,
+  hasPrev,
+  hasNext,
+  onClose,
+  onPrev,
+  onNext,
+  onToggleSave,
+  onArchive,
+}: {
+  item: RssFeedItem;
+  gamePk: number;
+  feedUrl: string;
+  isSaved: boolean;
+  hasPrev: boolean;
+  hasNext: boolean;
+  onClose: () => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onToggleSave: () => void;
+  onArchive: () => void;
+}) {
+  const qc = useQueryClient();
+
+  const leave = () => {
+    onClose();
+    const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+    if (st.dispatchArticle) history.back();
+  };
+
+  const onDoubleTap = useDoubleTapNext(hasNext ? onNext : null, true);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [item.link]);
+
+  useEffect(() => {
+    const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+    if (!st.dispatchArticle) {
+      history.pushState({ ...st, dispatchArticle: item.link }, "", window.location.href);
+    } else if (st.dispatchArticle !== item.link) {
+      history.replaceState({ ...st, dispatchArticle: item.link }, "", window.location.href);
+    }
+    const onPop = () => onClose();
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [item.link, onClose]);
+
+  useEffect(() => {
+    void markRssRead({
+      articleUrl: item.link,
+      articleTitle: item.title,
+      feedUrl,
+    })
+      .then(() => qc.invalidateQueries({ queryKey: ["rss-reads"] }))
+      .catch(() => {});
+  }, [item.link, item.title, feedUrl, qc]);
+
+  return (
+    <div style={{ touchAction: "pan-y" }} onClick={onDoubleTap}>
+      <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
+        <button
+          type="button"
+          onClick={onToggleSave}
+          className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
+        >
+          {isSaved ? (
+            <BookmarkCheck size={14} className="text-accent" />
+          ) : (
+            <Bookmark size={14} />
+          )}
+          {isSaved ? "Saved" : "Save for later"}
+        </button>
+        <button
+          type="button"
+          onClick={onArchive}
+          className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
+        >
+          <Archive size={14} />
+          Archive
+        </button>
+      </div>
+      <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-7">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={leave}
+            className="font-body text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em]"
+          >
+            <ArrowLeft size={14} />
+            Back
+          </button>
+          {(hasPrev || hasNext) && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={!hasPrev}
+                onClick={onPrev}
+                className="font-body text-chalk hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.16em] disabled:opacity-30"
+              >
+                <ChevronLeft size={14} />
+                Prev
+              </button>
+              <button
+                type="button"
+                disabled={!hasNext}
+                onClick={onNext}
+                className="font-body text-chalk hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.16em] disabled:opacity-30"
+              >
+                Next
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+        <div>
+          <p className="text-accent text-[10px] font-semibold uppercase tracking-[0.2em]">
+            {item.author || "Farm wrap"}
+          </p>
+          <h2 className="font-rss text-cream mt-1 text-[22px] font-semibold leading-snug md:text-[26px]">
+            {item.title}
+          </h2>
+        </div>
+        <MlbGameDetail gamePk={String(gamePk)} boxFirst />
+      </div>
     </div>
   );
 }
@@ -1484,6 +1641,27 @@ export default function RssPage() {
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem("dispatch-tags-folder-open") !== "0";
   });
+  const [folderOpen, setFolderOpen] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      const raw = window.localStorage.getItem("dispatch-feed-folders-open");
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  function toggleFolderOpen(folderId: string) {
+    setFolderOpen((prev) => {
+      const next = { ...prev, [folderId]: !(prev[folderId] ?? false) };
+      window.localStorage.setItem("dispatch-feed-folders-open", JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function folderUnread(folder: RssFeedFolder): number {
+    return folder.feedIds.reduce((sum, id) => sum + (unreadByFeed[id] ?? 0), 0);
+  }
   const [hideRead, setHideRead] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("dispatch-hide-read") === "1";
@@ -1684,6 +1862,31 @@ export default function RssPage() {
       });
       return deduped;
     }
+
+    // Folder combined feeds (Cardinals / MLB / NFL / Scout / Tags).
+    if (nav === "folder:tags" || isFeedFolderId(nav)) {
+      const ids =
+        nav === "folder:tags"
+          ? tagFeeds.map((f) => f.id)
+          : feedIdsForFolder(nav);
+      const merged: RssFeedItemRef[] = [];
+      for (const id of ids) {
+        const pack = feedById.get(id);
+        const def = allFeeds.find((f) => f.id === id);
+        for (const it of pack?.items ?? []) {
+          merged.push({ ...it, feedId: id, feedUrl: pack?.url ?? def?.url ?? "" });
+        }
+      }
+      let rows = dedupeArticles(merged, keepHosts);
+      if (hideRead) rows = rows.filter((it) => !readUrls.has(it.link));
+      rows.sort((a, b) => {
+        const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
+        const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
+        return db - da;
+      });
+      return rows;
+    }
+
     const pack = feedById.get(nav);
     let rows = (pack?.items ?? []).map((it) => ({
       ...it,
@@ -1692,7 +1895,17 @@ export default function RssPage() {
     }));
     if (hideRead) rows = rows.filter((it) => !readUrls.has(it.link));
     return rows;
-  }, [nav, allFeeds, feedById, readUrls, duplicateItems, keepHosts, savedListItems, hideRead]);
+  }, [
+    nav,
+    allFeeds,
+    feedById,
+    readUrls,
+    duplicateItems,
+    keepHosts,
+    savedListItems,
+    hideRead,
+    tagFeeds,
+  ]);
 
   const totalUnread = useMemo(() => {
     const merged: RssFeedItem[] = [];
@@ -1721,7 +1934,11 @@ export default function RssPage() {
             ? "Filters"
             : nav === "duplicates"
               ? "Duplicates"
-              : allFeeds.find((f) => f.id === nav)?.title ?? "Feed";
+              : nav === "folder:tags"
+                ? "Tags"
+                : RSS_FEED_FOLDERS.find((f) => f.id === nav)?.title ??
+                  allFeeds.find((f) => f.id === nav)?.title ??
+                  "Feed";
 
   const feedsLoading = feedQueries.some((q) => q.isLoading);
   const feedsFetching = feedQueries.some((q) => q.isFetching);
@@ -1895,6 +2112,8 @@ export default function RssPage() {
     nav === "duplicates" ||
     nav === "unread" ||
     nav === "saved" ||
+    nav === "folder:tags" ||
+    isFeedFolderId(nav) ||
     allFeeds.some((f) => f.id === nav);
 
   if (selected) {
@@ -1978,59 +2197,112 @@ export default function RssPage() {
         <div className="flex-1 px-2 pb-4">
           <p className="label-caps text-chalk-dim px-2 py-2">Feeds</p>
           <ul className="flex flex-col gap-0.5">
-            {RSS_FEEDS.map((f) => (
-              <li key={f.id}>
-                <button
-                  type="button"
-                  onClick={() => selectNav(f.id)}
+            {RSS_FEED_FOLDERS.map((folder) => {
+              const open = folderOpen[folder.id] ?? false;
+              const childFeeds = folder.feedIds
+                .map((id) => RSS_FEEDS.find((f) => f.id === id))
+                .filter(Boolean) as RssFeedDef[];
+              const active =
+                nav === folder.id || folder.feedIds.some((id) => id === nav);
+              return (
+                <li key={folder.id}>
+                  <div
+                    className={cn(
+                      "flex w-full items-center gap-1 rounded-sm transition-colors",
+                      active
+                        ? "bg-accent/15 text-cream"
+                        : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => selectNav(folder.id)}
+                      className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-2.5 text-left"
+                    >
+                      <Folder size={16} className="text-accent shrink-0" />
+                      <span className="min-w-0 flex-1 truncate text-[13.5px]">
+                        {folder.title}
+                      </span>
+                      <span className="text-chalk tabular-nums text-[12px]">
+                        {folderUnread(folder)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={open ? "Collapse folder" : "Expand folder"}
+                      onClick={() => toggleFolderOpen(folder.id)}
+                      className="shrink-0 px-2 py-2.5 opacity-50 hover:opacity-100"
+                    >
+                      {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                  </div>
+                  {open ? (
+                    <ul className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-white/[0.08] pl-2">
+                      {childFeeds.map((f) => (
+                        <li key={f.id}>
+                          <button
+                            type="button"
+                            onClick={() => selectNav(f.id)}
+                            className={cn(
+                              "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left transition-colors",
+                              nav === f.id
+                                ? "bg-accent/15 text-cream"
+                                : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+                            )}
+                          >
+                            <Hash size={14} className="text-accent shrink-0" />
+                            <span className="min-w-0 flex-1 truncate text-[13px]">{f.title}</span>
+                            <span className="text-chalk tabular-nums text-[12px]">
+                              {unreadByFeed[f.id] ?? 0}
+                            </span>
+                            <ChevronRight size={14} className="opacity-50" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              );
+            })}
+            {tagFeeds.length > 0 ? (
+              <li>
+                <div
                   className={cn(
-                    "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2.5 text-left transition-colors",
-                    nav === f.id
+                    "flex w-full items-center gap-1 rounded-sm transition-colors",
+                    nav === "folder:tags" || tagFeeds.some((f) => f.id === nav)
                       ? "bg-accent/15 text-cream"
                       : "text-chalk hover:bg-white/[0.04] hover:text-cream",
                   )}
                 >
-                  <Folder size={16} className="text-accent shrink-0" />
-                  <span className="min-w-0 flex-1 truncate text-[13.5px]">{f.title}</span>
-                  <span className="text-chalk tabular-nums text-[12px]">
-                    {unreadByFeed[f.id] ?? 0}
-                  </span>
-                  <ChevronRight size={14} className="opacity-50" />
-                </button>
-              </li>
-            ))}
-            {tagFeeds.length > 0 ? (
-              <li>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTagsOpen((v) => {
-                      const next = !v;
-                      window.localStorage.setItem(
-                        "dispatch-tags-folder-open",
-                        next ? "1" : "0",
-                      );
-                      return next;
-                    });
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2.5 text-left transition-colors",
-                    tagFeeds.some((f) => f.id === nav)
-                      ? "bg-accent/10 text-cream"
-                      : "text-chalk hover:bg-white/[0.04] hover:text-cream",
-                  )}
-                >
-                  <Folder size={16} className="text-accent shrink-0" />
-                  <span className="min-w-0 flex-1 truncate text-[13.5px]">Tags</span>
-                  <span className="text-chalk tabular-nums text-[12px]">
-                    {tagFeeds.reduce((sum, f) => sum + (unreadByFeed[f.id] ?? 0), 0)}
-                  </span>
-                  {tagsOpen ? (
-                    <ChevronDown size={14} className="opacity-50" />
-                  ) : (
-                    <ChevronRight size={14} className="opacity-50" />
-                  )}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => selectNav("folder:tags")}
+                    className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-2.5 text-left"
+                  >
+                    <Folder size={16} className="text-accent shrink-0" />
+                    <span className="min-w-0 flex-1 truncate text-[13.5px]">Tags</span>
+                    <span className="text-chalk tabular-nums text-[12px]">
+                      {tagFeeds.reduce((sum, f) => sum + (unreadByFeed[f.id] ?? 0), 0)}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={tagsOpen ? "Collapse tags" : "Expand tags"}
+                    onClick={() => {
+                      setTagsOpen((v) => {
+                        const next = !v;
+                        window.localStorage.setItem(
+                          "dispatch-tags-folder-open",
+                          next ? "1" : "0",
+                        );
+                        return next;
+                      });
+                    }}
+                    className="shrink-0 px-2 py-2.5 opacity-50 hover:opacity-100"
+                  >
+                    {tagsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  </button>
+                </div>
                 {tagsOpen ? (
                   <ul className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-white/[0.08] pl-2">
                     {tagFeeds.map((f) => (
@@ -2150,10 +2422,13 @@ export default function RssPage() {
                     ? `${filters.length} rules`
                     : nav === "duplicates"
                       ? `${duplicateItems.length} filtered · MLB preferred`
-                      : `${listItems.length} articles${hideRead && allFeeds.some((f) => f.id === nav) ? " · unread only" : ""}`}
+                      : `${listItems.length} articles${hideRead && (allFeeds.some((f) => f.id === nav) || nav === "folder:tags" || isFeedFolderId(nav)) ? " · unread only" : ""}`}
             </p>
           </div>
-          {allFeeds.some((f) => f.id === nav) || nav === "duplicates" ? (
+          {allFeeds.some((f) => f.id === nav) ||
+          nav === "duplicates" ||
+          nav === "folder:tags" ||
+          isFeedFolderId(nav) ? (
             <button
               type="button"
               onClick={() => {
@@ -2352,6 +2627,8 @@ export default function RssPage() {
                 nav === "unread" ||
                 nav === "duplicates" ||
                 nav === "saved" ||
+                nav === "folder:tags" ||
+                isFeedFolderId(nav) ||
                 allFeeds.some((f) => f.id === nav);
               const feedScoped = allFeeds.some((f) => f.id === nav);
               return (

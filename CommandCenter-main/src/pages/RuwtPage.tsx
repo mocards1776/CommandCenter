@@ -32,6 +32,21 @@ import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
 
+function ordinalPlace(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
 type RuwtSportFilter = "all" | "mlb" | "nfl";
 
 type UnifiedRuwtItem =
@@ -125,6 +140,19 @@ export default function RuwtPage() {
         if (!row.playoffPercent) continue;
         const n = parseFloat(row.playoffPercent.replace("%", ""));
         if (Number.isFinite(n)) out[row.teamId] = n;
+      }
+    }
+    return out;
+  }, [standings.data]);
+
+  const divisionPlaceByTeam = useMemo(() => {
+    const out: Record<number, string> = {};
+    for (const div of standings.data ?? []) {
+      const divName = div.shortName || div.name || "division";
+      for (const row of div.rows) {
+        const n = Number.parseInt(String(row.rank), 10);
+        const place = Number.isFinite(n) && n > 0 ? `${ordinalPlace(n)} in ${divName}` : divName;
+        out[row.teamId] = place;
       }
     }
     return out;
@@ -414,7 +442,12 @@ export default function RuwtPage() {
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {activeGames.map((item, i) =>
                 item.sport === "mlb" ? (
-                  <RuwtCard key={item.id} game={item.game} rank={i + 1} />
+                  <RuwtCard
+                    key={item.id}
+                    game={item.game}
+                    rank={i + 1}
+                    placeByTeam={divisionPlaceByTeam}
+                  />
                 ) : (
                   <NflRuwtCard key={item.id} game={item.game} rank={i + 1} />
                 ),
@@ -445,6 +478,7 @@ export default function RuwtPage() {
                         game={item.game}
                         rank={activeGames.length + i + 1}
                         compactFinal
+                        placeByTeam={divisionPlaceByTeam}
                       />
                     ) : (
                       <NflRuwtCard key={item.id} game={item.game} rank={activeGames.length + i + 1} />
@@ -554,10 +588,12 @@ function RuwtCard({
   game,
   rank,
   compactFinal,
+  placeByTeam,
 }: {
   game: MlbScoredGame;
   rank: number;
   compactFinal?: boolean;
+  placeByTeam?: Record<number, string>;
 }) {
   const pregame = !game.live && !game.final;
   const awayWins = game.final && (game.away.score ?? 0) > (game.home.score ?? 0);
@@ -631,21 +667,39 @@ function RuwtCard({
 
       {pregame ? (
         <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
-          <Side side={game.away} align="left" />
+          <Side
+            side={game.away}
+            align="left"
+            place={placeByTeam?.[game.away.teamId ?? -1]}
+          />
           <p className="font-display text-center text-[26px] text-white">
             {game.whenShort ?? "TBD"}
           </p>
-          <Side side={game.home} align="right" />
+          <Side
+            side={game.home}
+            align="right"
+            place={placeByTeam?.[game.home.teamId ?? -1]}
+          />
         </div>
       ) : (
         <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
-          <Side side={game.away} align="left" muted={homeWins} />
+          <Side
+            side={game.away}
+            align="left"
+            muted={homeWins}
+            place={placeByTeam?.[game.away.teamId ?? -1]}
+          />
           <p className="font-display text-center text-[32px] tabular-nums text-white">
             {game.away.score ?? "—"}
             <span className="mx-1.5 text-[16px] text-white/30">-</span>
             {game.home.score ?? "—"}
           </p>
-          <Side side={game.home} align="right" muted={awayWins} />
+          <Side
+            side={game.home}
+            align="right"
+            muted={awayWins}
+            place={placeByTeam?.[game.home.teamId ?? -1]}
+          />
         </div>
       )}
 
@@ -747,10 +801,12 @@ function Side({
   side,
   align,
   muted,
+  place,
 }: {
   side: MlbScoreGame["away"];
   align: "left" | "right";
   muted?: boolean;
+  place?: string;
 }) {
   return (
     <div
@@ -765,6 +821,9 @@ function Side({
       {side.record && (
         <p className="numeral text-[12px] font-medium text-white/70">{side.record}</p>
       )}
+      {place ? (
+        <p className="max-w-[9rem] truncate text-[10px] leading-tight text-white/45">{place}</p>
+      ) : null}
     </div>
   );
 }

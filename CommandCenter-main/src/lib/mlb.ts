@@ -1648,40 +1648,58 @@ export async function resolveMlbGamePkFromEspnEvent(eventId: string): Promise<nu
   }
 }
 
-/** ESPN game wrap / recap for an MLB game (matched by date + team abbrevs). */
+/** Normalize MLB / ESPN abbrev aliases so CWS↔CHW, AZ↔ARI, etc. match. */
+function mlbAbbrevAliases(abbrev: string): Set<string> {
+  const u = abbrev.toUpperCase();
+  const id = ESPN_ABBREV_TO_TEAM_ID[u];
+  const out = new Set<string>([u]);
+  if (id == null) return out;
+  for (const [k, v] of Object.entries(ESPN_ABBREV_TO_TEAM_ID)) {
+    if (v === id) out.add(k);
+  }
+  return out;
+}
+
+/** ESPN game wrap / recap for an MLB game (matched by date + team ids/abbrevs). */
 export async function fetchEspnGameRecap(
   officialDate: string | null | undefined,
   homeAbbrev: string,
   awayAbbrev: string,
+  opts?: { espnEventId?: string | null },
 ): Promise<MlbGameRecap | null> {
-  if (!officialDate) return null;
-  const ymd = officialDate.replace(/-/g, "");
+  if (!officialDate && !opts?.espnEventId) return null;
   try {
-    const boardRes = await fetch(
-      `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${ymd}`,
-      { headers: { Accept: "application/json" } },
-    );
-    if (!boardRes.ok) return null;
-    const board = (await boardRes.json()) as {
-      events?: {
-        id?: string;
-        competitions?: {
-          competitors?: { homeAway?: string; team?: { abbreviation?: string } }[];
+    let eventId = opts?.espnEventId?.trim() || null;
+
+    if (!eventId && officialDate) {
+      const ymd = officialDate.replace(/-/g, "");
+      const boardRes = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${ymd}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!boardRes.ok) return null;
+      const board = (await boardRes.json()) as {
+        events?: {
+          id?: string;
+          competitions?: {
+            competitors?: { homeAway?: string; team?: { abbreviation?: string } }[];
+          }[];
         }[];
-      }[];
-    };
-    const home = homeAbbrev.toUpperCase();
-    const away = awayAbbrev.toUpperCase();
-    const event = (board.events ?? []).find((e) => {
-      const comps = e.competitions?.[0]?.competitors ?? [];
-      const h = comps.find((c) => c.homeAway === "home")?.team?.abbreviation?.toUpperCase();
-      const a = comps.find((c) => c.homeAway === "away")?.team?.abbreviation?.toUpperCase();
-      return h === home && a === away;
-    });
-    if (!event?.id) return null;
+      };
+      const homeKeys = mlbAbbrevAliases(homeAbbrev);
+      const awayKeys = mlbAbbrevAliases(awayAbbrev);
+      const event = (board.events ?? []).find((e) => {
+        const comps = e.competitions?.[0]?.competitors ?? [];
+        const h = comps.find((c) => c.homeAway === "home")?.team?.abbreviation?.toUpperCase();
+        const a = comps.find((c) => c.homeAway === "away")?.team?.abbreviation?.toUpperCase();
+        return Boolean(h && a && homeKeys.has(h) && awayKeys.has(a));
+      });
+      eventId = event?.id ?? null;
+    }
+    if (!eventId) return null;
 
     const sumRes = await fetch(
-      `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${event.id}`,
+      `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${eventId}`,
       { headers: { Accept: "application/json" } },
     );
     if (!sumRes.ok) return null;
@@ -1703,16 +1721,16 @@ export async function fetchEspnGameRecap(
         : "");
     if (!storyHtml) return null;
     const storyText = stripHtml(storyHtml).trim();
-    if (storyText.length < 40) return null;
+    if (storyText.length < 20) return null;
     return {
-      espnEventId: event.id,
+      espnEventId: eventId,
       headline: article.headline,
       description: article.description ?? null,
       storyHtml,
       storyText,
       url:
         article.links?.web?.href ??
-        `https://www.espn.com/mlb/recap/_/gameId/${event.id}`,
+        `https://www.espn.com/mlb/recap/_/gameId/${eventId}`,
       image: article.images?.[0]?.url ?? null,
     };
   } catch {
@@ -6042,7 +6060,7 @@ export async function fetchCardinalsFarmGameWraps(days = 5): Promise<MlbFarmGame
             const pk = g.gamePk;
             if (!pk || seen.has(pk)) continue;
             const abstract = g.status?.abstractGameState ?? "";
-            if (abstract !== "Final" && abstract !== "Live") continue;
+            if (abstract !== "Final") continue;
             seen.add(pk);
             const away = g.teams?.away;
             const home = g.teams?.home;
@@ -6097,8 +6115,9 @@ export async function fetchCardinalsFarmGameWraps(days = 5): Promise<MlbFarmGame
             : `${g.awayAbbrev} @ ${g.homeAbbrev}`;
         const title = `${level}: ${scoreLine}`;
 
-        let snippet = `${g.status} — ${g.awayName} at ${g.homeName}.`;
-        let contentHtml = `<p>${escHtml(snippet)}</p><p><a href="/sports/mlb/game/${g.gamePk}">Open box score</a></p>`;
+        let snippet = `Final — ${g.awayName} at ${g.homeName}. Full box score.`;
+        // Reader opens the live box via app:mlb-game — keep HTML as a short fallback only.
+        let contentHtml = `<p><strong>${escHtml(level)}</strong> · ${escHtml(scoreLine)}</p><p>Open for the full box score.</p>`;
 
         try {
           const live = (await fetch(
@@ -6111,12 +6130,6 @@ export async function fetchCardinalsFarmGameWraps(days = 5): Promise<MlbFarmGame
                 loser?: { fullName?: string };
                 save?: { fullName?: string };
               };
-              plays?: {
-                allPlays?: {
-                  about?: { isScoringPlay?: boolean };
-                  result?: { description?: string };
-                }[];
-              };
             };
             gameData?: { venue?: { name?: string } };
           } | null;
@@ -6125,25 +6138,9 @@ export async function fetchCardinalsFarmGameWraps(days = 5): Promise<MlbFarmGame
             teams?: {
               away?: {
                 teamStats?: { batting?: { runs?: number; hits?: number; errors?: number } };
-                batters?: number[];
-                players?: Record<
-                  string,
-                  {
-                    person?: { fullName?: string };
-                    stats?: { batting?: { summary?: string; hits?: number; atBats?: number } };
-                  }
-                >;
               };
               home?: {
                 teamStats?: { batting?: { runs?: number; hits?: number; errors?: number } };
-                batters?: number[];
-                players?: Record<
-                  string,
-                  {
-                    person?: { fullName?: string };
-                    stats?: { batting?: { summary?: string; hits?: number; atBats?: number } };
-                  }
-                >;
               };
             };
           };
@@ -6154,29 +6151,6 @@ export async function fetchCardinalsFarmGameWraps(days = 5): Promise<MlbFarmGame
           const sv = decisions?.save?.fullName;
           const venue = live?.gameData?.venue?.name;
 
-          const scoring = (live?.liveData?.plays?.allPlays ?? [])
-            .filter((p) => p.about?.isScoringPlay && p.result?.description)
-            .map((p) => p.result!.description!.trim())
-            .slice(0, 8);
-
-          const topBatters = (side: "away" | "home") => {
-            const t = box.teams?.[side];
-            if (!t) return [];
-            const out: string[] = [];
-            for (const id of t.batters ?? []) {
-              const p = t.players?.[`ID${id}`];
-              const b = p?.stats?.batting;
-              if (!p?.person?.fullName || !b) continue;
-              const hits = Number(b.hits ?? 0);
-              if (hits < 1) continue;
-              out.push(
-                `${p.person.fullName} (${b.summary || `${hits}-${b.atBats ?? "?"}`})`,
-              );
-              if (out.length >= 3) break;
-            }
-            return out;
-          };
-
           const awayBat = box.teams?.away?.teamStats?.batting;
           const homeBat = box.teams?.home?.teamStats?.batting;
           const rhes =
@@ -6184,54 +6158,14 @@ export async function fetchCardinalsFarmGameWraps(days = 5): Promise<MlbFarmGame
               ? `${g.awayAbbrev} ${awayBat.runs ?? g.awayScore ?? "—"}-${awayBat.hits ?? "—"}-${awayBat.errors ?? "—"} · ${g.homeAbbrev} ${homeBat.runs ?? g.homeScore ?? "—"}-${homeBat.hits ?? "—"}-${homeBat.errors ?? "—"}`
               : scoreLine;
 
-          const parts: string[] = [];
-          if (g.abstract === "Final") {
-            const winner =
-              (g.awayScore ?? 0) > (g.homeScore ?? 0) ? g.awayName : g.homeName;
-            const loser =
-              (g.awayScore ?? 0) > (g.homeScore ?? 0) ? g.homeName : g.awayName;
-            const margin = Math.abs((g.awayScore ?? 0) - (g.homeScore ?? 0));
-            parts.push(
-              margin === 0
-                ? `${g.awayName} and ${g.homeName} finished tied ${scoreLine}.`
-                : `${winner} beat ${loser}, ${scoreLine}.`,
-            );
-          } else {
-            parts.push(`Live: ${scoreLine}.`);
-          }
-          if (wp || lp) {
-            parts.push(
-              [wp ? `WP ${wp}` : null, lp ? `LP ${lp}` : null, sv ? `SV ${sv}` : null]
-                .filter(Boolean)
-                .join(" · ") + ".",
-            );
-          }
-          const hitNotes = [...topBatters("away"), ...topBatters("home")].slice(0, 4);
-          if (hitNotes.length) parts.push(`Key bats: ${hitNotes.join("; ")}.`);
-          if (scoring.length) {
-            parts.push(`Scoring: ${scoring.slice(0, 3).join(" ")}`);
-          }
+          const decisionsLine = [wp ? `WP ${wp}` : null, lp ? `LP ${lp}` : null, sv ? `SV ${sv}` : null]
+            .filter(Boolean)
+            .join(" · ");
 
-          snippet = parts.join(" ").slice(0, 280);
-
-          const scoringHtml = scoring.length
-            ? `<h3>Scoring plays</h3><ul>${scoring.map((s) => `<li>${escHtml(s)}</li>`).join("")}</ul>`
-            : "";
-          const decisionsHtml =
-            wp || lp || sv
-              ? `<p>${escHtml(
-                  [wp ? `WP: ${wp}` : null, lp ? `LP: ${lp}` : null, sv ? `SV: ${sv}` : null]
-                    .filter(Boolean)
-                    .join(" · "),
-                )}</p>`
-              : "";
-
+          snippet = [rhes, decisionsLine, venue].filter(Boolean).join(" · ").slice(0, 280);
           contentHtml = `
             <p><strong>${escHtml(level)}</strong> · ${escHtml(rhes)}${venue ? ` · ${escHtml(venue)}` : ""}</p>
-            <p>${escHtml(parts[0] ?? snippet)}</p>
-            ${decisionsHtml}
-            ${hitNotes.length ? `<p><strong>Key bats</strong> — ${escHtml(hitNotes.join("; "))}.</p>` : ""}
-            ${scoringHtml}
+            ${decisionsLine ? `<p>${escHtml(decisionsLine)}</p>` : ""}
             <p><a href="/sports/mlb/game/${g.gamePk}">Full box score</a></p>
           `.trim();
         } catch {

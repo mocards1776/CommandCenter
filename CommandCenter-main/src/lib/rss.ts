@@ -61,6 +61,46 @@ export const RSS_FEEDS: readonly RssFeedDef[] = [
 
 export type RssFeedId = string;
 
+/** Sidebar folders — left/middle opens a combined feed; chevron expands children. */
+export type RssFeedFolder = {
+  id: string;
+  title: string;
+  feedIds: readonly string[];
+};
+
+export const RSS_FEED_FOLDERS: readonly RssFeedFolder[] = [
+  {
+    id: "folder:cardinals",
+    title: "Cardinals",
+    feedIds: ["cardinals", "cardinals-wire", "cardinals-wraps", "cardinals-farm"],
+  },
+  {
+    id: "folder:mlb",
+    title: "MLB",
+    feedIds: ["mlb-wraps", "mlb-stats"],
+  },
+  {
+    id: "folder:nfl",
+    title: "NFL",
+    feedIds: ["nfl-wraps"],
+  },
+  {
+    id: "folder:scout",
+    title: "Missouri Scout",
+    feedIds: ["moscout"],
+  },
+];
+
+export function isFeedFolderId(id: string): boolean {
+  return id.startsWith("folder:");
+}
+
+export function feedIdsForFolder(folderId: string): string[] {
+  if (folderId === "folder:tags") return [];
+  const folder = RSS_FEED_FOLDERS.find((f) => f.id === folderId);
+  return folder ? [...folder.feedIds] : [];
+}
+
 export function isTagFeedId(id: string): boolean {
   return id.startsWith("tag:");
 }
@@ -68,6 +108,13 @@ export function isTagFeedId(id: string): boolean {
 export function parsePlayerArticleLink(link: string): number | null {
   const m = /^app:mlb-player\/(\d+)$/.exec(link);
   return m ? Number(m[1]) : null;
+}
+
+export function parseMlbGameArticleLink(link: string): number | null {
+  const app = /^app:mlb-game\/(\d+)$/.exec(link);
+  if (app) return Number(app[1]);
+  const path = /\/sports\/mlb\/game\/(\d+)/.exec(link);
+  return path ? Number(path[1]) : null;
 }
 
 export const DEFAULT_RSS_FEED = RSS_FEEDS[0].url;
@@ -1162,9 +1209,12 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       description: "League-wide NFL game wraps and previews from ESPN",
       sportPath: "football/nfl",
       linkSport: "nfl",
-      days: 7,
-      maxItems: 40,
-      preferFinals: true,
+      // Preseason/regular slate is sparse — look further back and keep live + thin stubs.
+      days: 21,
+      maxItems: 48,
+      preferFinals: false,
+      includeLive: true,
+      stubWithoutArticle: true,
     });
   }
   if (feedUrl === "synthetic:mlb-stats") {
@@ -1239,6 +1289,10 @@ type EspnWrapsOpts = {
   days?: number;
   maxItems?: number;
   preferFinals?: boolean;
+  /** Include in-progress games (useful for sparse NFL slates). */
+  includeLive?: boolean;
+  /** Emit score/matchup stubs when ESPN has no article (NFL preseason). */
+  stubWithoutArticle?: boolean;
 };
 
 /** Client-side ESPN game wrap + preview feed (reachable from the browser). */
@@ -1266,13 +1320,14 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
         competitors?: {
           homeAway?: string;
           team?: { id?: string; abbreviation?: string };
-          score?: string;
+          score?: string | number;
         }[];
       }[];
       status?: { type?: { state?: string; completed?: boolean; name?: string } };
     };
     isFinal: boolean;
     isPreview: boolean;
+    isLive: boolean;
   }[] = [];
 
   for (let i = 0; i < days; i++) {
@@ -1308,13 +1363,14 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
         const isPreview =
           status?.state === "pre" ||
           /STATUS_SCHEDULED|STATUS_PRE/i.test(status?.name ?? "");
-        if (!isFinal && !isPreview) continue;
+        const isLive = status?.state === "in" || (!isFinal && !isPreview);
+        if (!isFinal && !isPreview && !(opts.includeLive && isLive)) continue;
         // League feed: skip future previews except for today.
         if (opts.preferFinals && isPreview && i > 0) continue;
         const eventId = event.id ?? comp.id;
         if (!eventId || seen.has(eventId)) continue;
         seen.add(eventId);
-        candidates.push({ eventId, dateStr, y, m, day, event, isFinal, isPreview });
+        candidates.push({ eventId, dateStr, y, m, day, event, isFinal, isPreview, isLive });
       }
     } catch {
       /* skip day */
@@ -1357,9 +1413,45 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             c.event.shortName ||
             `${away?.team?.abbreviation ?? "AWAY"} @ ${home?.team?.abbreviation ?? "HOME"}`;
           const publishedAt = c.event.date || `${c.y}-${c.m}-${c.day}T17:00:00Z`;
+          const homeScore = home?.score;
+          const awayScore = away?.score;
+          const scoreBit =
+            homeScore != null && awayScore != null
+              ? `${away?.team?.abbreviation ?? "AWAY"} ${awayScore}, ${home?.team?.abbreviation ?? "HOME"} ${homeScore}`
+              : matchup;
+
+          const stubItem = (kind: "wrap" | "preview" | "live", title: string, snippet: string) =>
+            ({
+              id: `${kind}-${c.eventId}`,
+              title,
+              link:
+                kind === "preview"
+                  ? `https://www.espn.com/${linkSport}/preview/_/gameId/${c.eventId}`
+                  : `https://www.espn.com/${linkSport}/recap/_/gameId/${c.eventId}`,
+              author: "ESPN",
+              publishedAt,
+              image: article?.images?.[0]?.url ?? null,
+              snippet,
+            }) satisfies RssFeedItem;
+
+          if (c.isLive) {
+            return stubItem(
+              "live",
+              `Live: ${scoreBit}`,
+              article?.description?.replace(/^—\s*/, "").trim() ||
+                `In progress — ${matchup}.`,
+            );
+          }
 
           if (c.isFinal) {
-            if (!article?.headline) return null;
+            if (!article?.headline) {
+              if (!opts.stubWithoutArticle) return null;
+              return stubItem(
+                "wrap",
+                `Final: ${scoreBit}`,
+                `Final — ${matchup}.`,
+              );
+            }
             const storyText = (article.story ?? "")
               .replace(/<[^>]+>/g, " ")
               .replace(/\s+/g, " ")
@@ -1394,17 +1486,13 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             /no story available/i.test(`${headline} ${body}`) ||
             /^game preview for\b/i.test(body);
           if (hollow) {
-            // NFL previews are often thin — still surface a matchup stub.
-            if (linkSport === "nfl" && matchup) {
-              return {
-                id: `preview-${c.eventId}`,
-                title: `Preview: ${matchup}`,
-                link: `https://www.espn.com/${linkSport}/preview/_/gameId/${c.eventId}`,
-                author: "ESPN",
-                publishedAt,
-                image: article?.images?.[0]?.url ?? null,
-                snippet: body.slice(0, 220) || `Game preview for ${matchup}.`,
-              } satisfies RssFeedItem;
+            // NFL (and stub mode) — still surface a matchup card.
+            if ((opts.stubWithoutArticle || linkSport === "nfl") && matchup) {
+              return stubItem(
+                "preview",
+                `Preview: ${matchup}`,
+                body.slice(0, 220) || `Game preview for ${matchup}.`,
+              );
             }
             return null;
           }
@@ -1554,7 +1642,7 @@ async function fetchCardinalsFarmWrapsFeed(): Promise<RssFeed> {
   const items: RssFeedItem[] = wraps.map((w) => ({
     id: `farm-wrap-${w.gamePk}`,
     title: w.title,
-    link: `/sports/mlb/game/${w.gamePk}`,
+    link: `app:mlb-game/${w.gamePk}`,
     author: w.level,
     publishedAt: w.publishedAt,
     image: null,
