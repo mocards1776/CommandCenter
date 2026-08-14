@@ -2,6 +2,21 @@
 
 ---
 
+## Sports UI + feed polish — August 14, 2026
+
+- Quote share cards size to the full quote; brand with the article publisher (no “Dispatch”).
+- Article reader chrome uses the publisher (The Athletic, ESPN, …) instead of “Dispatch” / “Original”.
+- Always show an article header image (content image, team logos, or branded fallback); strip duplicate body images.
+- Cardinals Wire filters out stories that never mention the Cardinals.
+- ESPN wraps: team-logo thumbnails when story art is missing or fails to load.
+- Game hero cards: L5 / L10 / L20 under each record; remove the separate Standings & form pair on MLB game pages.
+- Sports home: move the “Your board” intro card to the bottom.
+- Golf leaderboard: show next-round tee times instead of a premature “F”.
+- Golfer cards: clearer hero portrait; remove overview article circles.
+- Prospects: Yesterday lines for tagged players (same shape as MLB favorites).
+
+---
+
 ## Team pages: BR summary, payroll, leaders — August 14, 2026
 
 - MLB team drawer: Baseball-Reference-style org summary (manager, president, farm/scouting directors, ballpark, attendance, park factors, Pythagorean W-L).

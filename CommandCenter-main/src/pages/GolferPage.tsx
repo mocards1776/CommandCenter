@@ -213,40 +213,58 @@ export default function GolferPage() {
         <p className="text-alert text-[13px]">Couldn’t load this golfer.</p>
       ) : (
         <>
-          <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] bg-[#0b0e14]">
-            {p.headshot && (
-              <div className="pointer-events-none absolute inset-0 opacity-35">
+          <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] bg-[#070b12]">
+            <div className="pointer-events-none absolute inset-0">
+              {p.headshot ? (
                 <img
                   src={p.headshot}
                   alt=""
-                  className="h-full w-full object-cover object-[center_20%] blur-[1px]"
+                  className="h-full w-full scale-105 object-cover object-[center_18%] opacity-55"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0b0e14] via-[#0b0e14]/85 to-[#0b0e14]/40" />
+              ) : null}
+              <div className="absolute inset-0 bg-gradient-to-r from-[#070b12] via-[#070b12]/75 to-[#070b12]/25" />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#070b12] via-transparent to-[#070b12]/40" />
+              <div className="absolute -left-10 top-8 h-40 w-40 rounded-full bg-[#024731]/35 blur-3xl" />
+              <div className="absolute right-0 bottom-0 h-48 w-48 rounded-full bg-[#4ea1ff]/20 blur-3xl" />
+            </div>
+            <div className="relative z-10 grid gap-5 px-5 py-7 sm:grid-cols-[auto_1fr] sm:items-end sm:px-8 sm:py-9">
+              <div className="relative mx-auto h-36 w-36 overflow-hidden rounded-2xl border border-white/20 bg-[#101822] shadow-[0_20px_50px_rgba(0,0,0,0.45)] sm:mx-0 sm:h-44 sm:w-44">
+                {p.headshot ? (
+                  <img
+                    src={p.headshot}
+                    alt=""
+                    className="h-full w-full object-cover object-[center_15%]"
+                  />
+                ) : (
+                  <div className="grid h-full place-items-center text-white/30">
+                    <Flag size={28} />
+                  </div>
+                )}
               </div>
-            )}
-            <div className="relative z-10 px-5 pb-6 pt-8 text-center sm:px-8">
-              <div className="mb-4 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => void toggleFav()}
-                  className={cn(
-                    "rounded-full border p-2 transition",
-                    fav.data
-                      ? "border-[#4ea1ff]/50 bg-[#4ea1ff]/15 text-[#4ea1ff]"
-                      : "border-white/20 text-white/70 hover:text-white",
-                  )}
-                  aria-label={fav.data ? "Unfavorite" : "Favorite"}
-                >
-                  <Star size={16} className={fav.data ? "fill-[#4ea1ff]" : ""} />
-                </button>
+              <div className="text-center sm:pb-1 sm:text-left">
+                <div className="mb-3 flex justify-center gap-2 sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void toggleFav()}
+                    className={cn(
+                      "rounded-full border p-2 transition",
+                      fav.data
+                        ? "border-[#4ea1ff]/50 bg-[#4ea1ff]/15 text-[#4ea1ff]"
+                        : "border-white/20 text-white/70 hover:text-white",
+                    )}
+                    aria-label={fav.data ? "Unfavorite" : "Favorite"}
+                  >
+                    <Star size={16} className={fav.data ? "fill-[#4ea1ff]" : ""} />
+                  </button>
+                </div>
+                <h1 className="font-display text-[36px] leading-tight text-white sm:text-[48px]">
+                  {p.name}
+                </h1>
+                <p className="mt-2 inline-flex items-center justify-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70 sm:justify-start">
+                  {p.flagUrl && <img src={p.flagUrl} alt="" className="h-3.5 w-5 object-cover" />}
+                  {p.citizenship ?? "PGA Tour"}
+                </p>
               </div>
-              <h1 className="font-display text-[36px] leading-tight text-white sm:text-[44px]">
-                {p.name}
-              </h1>
-              <p className="mt-2 inline-flex items-center justify-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                {p.flagUrl && <img src={p.flagUrl} alt="" className="h-3.5 w-5 object-cover" />}
-                {p.citizenship ?? "PGA Tour"}
-              </p>
             </div>
           </article>
 
@@ -288,44 +306,6 @@ export default function GolferPage() {
                       )}
                     </div>
                   ))}
-                </div>
-              )}
-
-              {p.highlights.length > 0 && (
-                <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
-                  {p.highlights.map((h) => {
-                    const inner = (
-                      <>
-                        <div className="h-20 w-20 overflow-hidden rounded-full border border-white/15 bg-[#1a2030]">
-                          {h.image ? (
-                            <img src={h.image} alt="" className="h-full w-full object-cover" />
-                          ) : (
-                            <div className="flex h-full items-center justify-center text-white/30">
-                              <Flag size={18} />
-                            </div>
-                          )}
-                        </div>
-                        <p className="mt-2 line-clamp-2 max-w-[5.5rem] text-center text-[10px] leading-snug text-white/70">
-                          {h.headline}
-                        </p>
-                      </>
-                    );
-                    return h.href ? (
-                      <a
-                        key={h.headline}
-                        href={h.href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex w-[5.5rem] shrink-0 flex-col items-center"
-                      >
-                        {inner}
-                      </a>
-                    ) : (
-                      <div key={h.headline} className="flex w-[5.5rem] shrink-0 flex-col items-center">
-                        {inner}
-                      </div>
-                    );
-                  })}
                 </div>
               )}
 

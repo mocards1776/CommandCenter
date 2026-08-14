@@ -31,7 +31,7 @@ function LeaderTable({
             <th className="py-2 pr-2 font-medium">Pos</th>
             <th className="py-2 pr-2 font-medium">Player</th>
             <th className="py-2 pr-2 text-right font-medium">Tot</th>
-            <th className="py-2 pr-2 text-right font-medium">Thru</th>
+            <th className="py-2 pr-2 text-right font-medium">Tee/Thru</th>
             <th className="py-2 text-right font-medium">R1</th>
           </tr>
         </thead>

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Share2, X } from "lucide-react";
 import toast from "react-hot-toast";
-import { feedSourceLabel, type RssHighlight } from "@/lib/rss";
+import { articlePublisherLabel, type RssHighlight } from "@/lib/rss";
 
 const W = 1080;
-const H = 1350;
+const MIN_H = 1080;
+const MAX_H = 2200;
 
 function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const lines: string[] = [];
@@ -55,14 +56,46 @@ function drawCover(
   ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
 }
 
+function publisherFor(highlight: RssHighlight): string {
+  return articlePublisherLabel(highlight.articleUrl, null);
+}
+
 async function paint(canvas: HTMLCanvasElement, highlight: RssHighlight) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-  canvas.width = W;
-  canvas.height = H;
   await document.fonts?.ready;
 
   const photo = highlight.articleImage ? await loadImage(highlight.articleImage) : null;
+  const margin = 96;
+  const maxWidth = W - margin * 2;
+  const source = publisherFor(highlight).toUpperCase();
+
+  // Size the quote font so the full text fits; grow the canvas as needed.
+  let quoteSize = 52;
+  let quoteLines: string[] = [];
+  let lineH = 66;
+  for (; quoteSize >= 32; quoteSize -= 2) {
+    ctx.font = `${quoteSize}px "Playfair Display", Georgia, serif`;
+    quoteLines = wrap(ctx, highlight.quoteText, maxWidth);
+    lineH = Math.round(quoteSize * 1.28);
+    const quoteBlock = quoteLines.length * lineH;
+    const estimated =
+      330 + quoteBlock + (highlight.note ? 140 : 40) + 220;
+    if (quoteLines.length <= 16 && estimated <= MAX_H) break;
+  }
+
+  const quoteBlockH = quoteLines.length * lineH;
+  const noteLines = highlight.note
+    ? (() => {
+        ctx.font = `28px "Libre Franklin", system-ui, sans-serif`;
+        return wrap(ctx, highlight.note, maxWidth).slice(0, 5);
+      })()
+    : [];
+  const noteBlock = noteLines.length ? 56 + noteLines.length * 38 : 0;
+  const H = Math.min(MAX_H, Math.max(MIN_H, 330 + quoteBlockH + noteBlock + 240));
+
+  canvas.width = W;
+  canvas.height = H;
 
   const bg = ctx.createLinearGradient(0, 0, W, H);
   bg.addColorStop(0, "#0c1a36");
@@ -74,13 +107,13 @@ async function paint(canvas: HTMLCanvasElement, highlight: RssHighlight) {
   if (photo) {
     ctx.save();
     ctx.globalAlpha = 0.42;
-    drawCover(ctx, photo, 0, 0, W, H * 0.62);
+    drawCover(ctx, photo, 0, 0, W, Math.min(H * 0.55, 720));
     ctx.restore();
-    const fade = ctx.createLinearGradient(0, H * 0.28, 0, H * 0.72);
+    const fade = ctx.createLinearGradient(0, H * 0.22, 0, H * 0.62);
     fade.addColorStop(0, "rgba(8,18,40,0)");
     fade.addColorStop(1, "rgba(8,18,40,0.96)");
     ctx.fillStyle = fade;
-    ctx.fillRect(0, 0, W, H * 0.72);
+    ctx.fillRect(0, 0, W, H * 0.65);
   }
 
   const wash = ctx.createRadialGradient(W * 0.2, H * 0.15, 40, W * 0.2, H * 0.15, 520);
@@ -89,44 +122,35 @@ async function paint(canvas: HTMLCanvasElement, highlight: RssHighlight) {
   ctx.fillStyle = wash;
   ctx.fillRect(0, 0, W, H);
 
-  const margin = 96;
-  const maxWidth = W - margin * 2;
-
   ctx.fillStyle = "#d9515c";
   ctx.fillRect(margin, 96, 120, 7);
 
   ctx.font = `700 26px "Libre Franklin", system-ui, sans-serif`;
   ctx.fillStyle = "#d9515c";
   ctx.letterSpacing = "4px";
-  ctx.fillText("DISPATCH", margin, 150);
+  ctx.fillText(source, margin, 150);
   ctx.letterSpacing = "0px";
-
-  const source = feedSourceLabel(highlight.feedUrl);
-  ctx.font = `600 22px "Libre Franklin", system-ui, sans-serif`;
-  ctx.fillStyle = "rgba(245,241,232,0.7)";
-  ctx.fillText(source.toUpperCase(), margin, 196);
 
   ctx.font = `120px "Playfair Display", Georgia, serif`;
   ctx.fillStyle = "rgba(217,81,92,0.55)";
-  ctx.fillText("“", margin - 10, 310);
+  ctx.fillText("“", margin - 10, 280);
 
-  ctx.font = `48px "Playfair Display", Georgia, serif`;
+  ctx.font = `${quoteSize}px "Playfair Display", Georgia, serif`;
   ctx.fillStyle = "#f5f1e8";
-  const quoteLines = wrap(ctx, highlight.quoteText, maxWidth).slice(0, 9);
-  let y = 330;
+  let y = 300;
   for (const line of quoteLines) {
     ctx.fillText(line, margin, y);
-    y += 62;
+    y += lineH;
   }
 
-  if (highlight.note) {
+  if (noteLines.length) {
     y += 24;
     ctx.fillStyle = "rgba(245,241,232,0.18)";
     ctx.fillRect(margin, y, 80, 3);
     y += 44;
     ctx.font = `28px "Libre Franklin", system-ui, sans-serif`;
     ctx.fillStyle = "rgba(245,241,232,0.78)";
-    for (const line of wrap(ctx, highlight.note, maxWidth).slice(0, 3)) {
+    for (const line of noteLines) {
       ctx.fillText(line, margin, y);
       y += 38;
     }
@@ -202,7 +226,7 @@ async function canvasBlob(highlight: RssHighlight): Promise<Blob> {
   return blob;
 }
 
-/** Stylized quote share sheet for Dispatch highlights. */
+/** Stylized quote share sheet — sized to the quote, branded with the publisher. */
 export default function RssQuoteShareCard({
   highlight,
   onClose,
@@ -238,7 +262,7 @@ export default function RssQuoteShareCard({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `dispatch-quote-${highlight.id.slice(0, 8)}.png`;
+      a.download = `quote-${highlight.id.slice(0, 8)}.png`;
       a.click();
       URL.revokeObjectURL(url);
       toast.success("Saved");
@@ -253,12 +277,12 @@ export default function RssQuoteShareCard({
     setBusy(true);
     try {
       const blob = await canvasBlob(highlight);
-      const file = new File([blob], `dispatch-quote-${highlight.id.slice(0, 8)}.png`, {
+      const file = new File([blob], `quote-${highlight.id.slice(0, 8)}.png`, {
         type: "image/png",
       });
       const data = {
         files: [file],
-        title: highlight.articleTitle || "Dispatch note",
+        title: highlight.articleTitle || "Quote",
         text: highlight.quoteText.slice(0, 180),
       };
       if (canShare && navigator.canShare(data)) {
@@ -274,7 +298,7 @@ export default function RssQuoteShareCard({
     }
   }, [highlight, canShare, save]);
 
-  const source = feedSourceLabel(highlight.feedUrl);
+  const source = publisherFor(highlight);
 
   return (
     <div
@@ -298,7 +322,7 @@ export default function RssQuoteShareCard({
         </button>
         <div className="bg-[#081228] px-5 pt-6 pb-4">
           <p className="text-accent text-[10px] font-semibold uppercase tracking-[0.2em]">
-            Dispatch quote · {source}
+            {source}
           </p>
           {highlight.articleTitle ? (
             <p className="text-chalk mt-1 line-clamp-2 text-[12px] leading-snug">

@@ -38,6 +38,10 @@ import {
   markRssSolo,
   prefersRssHome,
 } from "@/lib/rss-home";
+import {
+  getRssReaderBrand,
+  subscribeRssReaderBrand,
+} from "@/lib/rss-brand";
 import DispatchScoreTicker from "@/components/rss/DispatchScoreTicker";
 import { cn, formatSportsDateLong } from "@/lib/utils";
 
@@ -46,7 +50,7 @@ const NAV = [
   { to: "/todos", label: "Todos", short: "Todos", Icon: ListChecks },
   { to: "/habits", label: "Habits", short: "Habits", Icon: Repeat },
   { to: "/reading", label: "Reading", short: "Reading", Icon: BookOpen },
-  { to: "/rss", label: "Dispatch", short: "News", Icon: Newspaper },
+  { to: "/rss", label: "News", short: "News", Icon: Newspaper },
   { to: "/sports", label: "Sports", short: "Sports", Icon: Trophy },
   {
     to: "/notebook/1715-e-buena-vista",
@@ -224,12 +228,15 @@ export default function AppShell() {
     });
   })();
 
+  const [rssBrand, setRssBrand] = useState<string | null>(() => getRssReaderBrand());
+  useEffect(() => subscribeRssReaderBrand(setRssBrand), []);
+
   const brand = onReading ? (
     <span className="text-accent">Reading</span>
   ) : sportsOnly || onSports ? (
     <span className="text-accent">Sports</span>
   ) : rssOnly || onRss ? (
-    <span className="text-accent">Dispatch</span>
+    <span className="text-accent">{rssBrand || "News"}</span>
   ) : (
     <>
       Command <span className="text-accent">Center</span>

@@ -567,7 +567,9 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
 }
 
 export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapshot> {
-  const raw = (await espnGet(fav.espnPath)) as {
+  // Prefer the golf leaderboard payload — it includes tee times when a player
+  // hasn't started the current round (scoreboard alone shows hollow "F").
+  let raw: {
     events?: {
       id?: string;
       name?: string;
@@ -577,13 +579,17 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
         competitors?: {
           id?: string;
           order?: number;
+          sortOrder?: number;
           athlete?: { id?: string; displayName?: string; shortName?: string };
           score?: unknown;
           status?: {
-            type?: { description?: string; state?: string; completed?: boolean };
+            type?: { description?: string; state?: string; completed?: boolean; name?: string };
             displayValue?: string;
             thru?: number;
+            displayThru?: string;
             period?: number;
+            teeTime?: string;
+            detail?: string;
             position?: { displayName?: string };
           };
           linescores?: {
@@ -595,14 +601,27 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
         }[];
       }[];
     }[];
-  };
+  } | null = null;
+
+  if (/golf/i.test(fav.espnPath)) {
+    try {
+      raw = (await espnGet("golf/leaderboard")) as typeof raw;
+    } catch {
+      raw = null;
+    }
+  }
+  if (!raw?.events?.length) {
+    raw = (await espnGet(fav.espnPath)) as typeof raw;
+  }
 
   const event = raw.events?.[0];
   const comp = event?.competitions?.[0];
   const competitors = comp?.competitors ?? [];
 
-  // Tie-aware positions from score order.
-  const sorted = [...competitors].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  // Tie-aware positions from score / leaderboard order.
+  const sorted = [...competitors].sort(
+    (a, b) => (a.sortOrder ?? a.order ?? 0) - (b.sortOrder ?? b.order ?? 0),
+  );
   const positions: string[] = [];
   let i = 0;
   while (i < sorted.length) {
@@ -618,17 +637,28 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
     const lines = c.linescores ?? [];
     const roundScores = lines
       .map((r) => r.displayValue)
-      .filter((v): v is string => Boolean(v));
+      .filter((v): v is string => Boolean(v) && v !== "-");
     const r1 = roundScores[0] ?? null;
+    const st = c.status;
     let thru: string | null = null;
-    if (c.status?.thru != null && c.status.thru > 0) {
-      thru = String(c.status.thru);
+    const thruNum = st?.thru;
+    if (thruNum != null && thruNum > 0 && thruNum < 18) {
+      thru = st?.displayThru || String(thruNum);
+    } else if (thruNum != null && thruNum >= 18) {
+      thru = "F";
+    } else if (st?.type?.completed) {
+      thru = "F";
+    } else if (st?.teeTime || (st?.detail && /\d/.test(st.detail) && /am|pm/i.test(st.detail))) {
+      // Next-round tee time (e.g. "12:10 PM ET") instead of a premature "F".
+      thru = formatGolfTeeTime(st.detail || st.displayValue || st.teeTime || "");
+    } else if (st?.thru === 0 && st?.detail) {
+      thru = formatGolfTeeTime(st.detail);
     } else {
       const lastRound = lines[lines.length - 1];
       const holes = Array.isArray(lastRound?.linescores) ? lastRound!.linescores!.length : 0;
-      if (holes >= 18 || c.status?.type?.completed) thru = "F";
+      if (holes >= 18) thru = "F";
       else if (holes > 0) thru = String(holes);
-      else if (roundScores.length > 0) thru = "F";
+      else if (st?.type?.state === "pre" || holes === 0) thru = st?.detail ? formatGolfTeeTime(st.detail) : "—";
       else thru = "—";
     }
     return {
@@ -665,6 +695,24 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
     leaders: field.slice(0, 5),
     field,
   };
+}
+
+function formatGolfTeeTime(raw: string): string {
+  const s = raw.trim();
+  if (!s) return "—";
+  // Already a friendly clock: "12:10 PM ET"
+  const clock = s.match(/(\d{1,2}:\d{2}\s*[AP]M)/i);
+  if (clock) return clock[1]!.replace(/\s+/g, " ");
+  // ISO tee time
+  const iso = Date.parse(s);
+  if (Number.isFinite(iso)) {
+    return new Date(iso).toLocaleTimeString("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+  return s.length > 14 ? s.slice(0, 14) : s;
 }
 
 async function fetchFedExCupRanksForAthletes(ids: string[]): Promise<Map<string, number>> {
@@ -1128,8 +1176,11 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
     flagUrl,
     turnedPro,
     headshot:
-      (athlete.headshot as { href?: string } | undefined)?.href ??
-      `https://a.espncdn.com/i/headshots/golf/players/full/${id}.png`,
+      (athlete.headshot as { href?: string } | undefined)?.href?.replace(
+        /\/players\/(?:full|medium)\//,
+        "/players/full/",
+      ) ??
+      `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/full/${id}.png&w=600&h=434&scale=crop`,
     bio: bioParts.length ? bioParts.join(" ") : null,
     rankings,
     career,

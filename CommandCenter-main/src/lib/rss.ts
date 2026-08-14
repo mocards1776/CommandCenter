@@ -129,6 +129,10 @@ export type RssFeedItem = {
   snippet: string;
   /** Prebuilt reader HTML for synthetic digests (skips edge extract). */
   contentHtml?: string;
+  /** MLB team ids for logo fallbacks when the story image is missing (wraps). */
+  logoTeamIds?: number[];
+  /** NFL (or other) ESPN logo abbrevs when MLB ids are unavailable. */
+  logoAbbrevs?: string[];
 };
 
 export type RssFeedItemRef = RssFeedItem & {
@@ -190,6 +194,41 @@ export function articleSourceHost(link: string): string | null {
   } catch {
     return null;
   }
+}
+
+const PUBLISHER_BY_HOST: { test: RegExp; label: string }[] = [
+  { test: /nytimes|theathletic|athletic\.com/i, label: "The Athletic" },
+  { test: /espn\.com/i, label: "ESPN" },
+  { test: /mlb\.com/i, label: "MLB" },
+  { test: /stltoday|post-dispatch/i, label: "STL Today" },
+  { test: /fox2|ktvi|foxsports/i, label: "FOX" },
+  { test: /yahoo/i, label: "Yahoo" },
+  { test: /cbssports|cbs\.com/i, label: "CBS Sports" },
+  { test: /nbcsports|nbc\.com/i, label: "NBC Sports" },
+  { test: /si\.com|sportsillustrated/i, label: "SI" },
+  { test: /bleacherreport/i, label: "B/R" },
+  { test: /rotowire/i, label: "RotoWire" },
+  { test: /heavy\.com/i, label: "Heavy" },
+];
+
+/** Publisher label for an article URL (not the feed folder title). */
+export function articlePublisherLabel(
+  link: string | null | undefined,
+  fallback?: string | null,
+): string {
+  const host = link ? articleSourceHost(link) : null;
+  if (host) {
+    for (const row of PUBLISHER_BY_HOST) {
+      if (row.test.test(host)) return row.label;
+    }
+  }
+  const fb = (fallback ?? "").trim();
+  if (fb && !/^dispatch$/i.test(fb)) return fb;
+  if (host) {
+    const base = host.split(".")[0] ?? host;
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  }
+  return "Article";
 }
 
 const DEDUPE_KEEP_KEY = "rss-dedupe-keep-hosts";
@@ -952,6 +991,8 @@ export function articleMatchesFilters(
   const effectiveFeed = (feedId ?? item.feedId)?.toLowerCase() ?? null;
   // Wire-only: drop MLB Film Room clips; keep mlb.com/news and other hosts.
   if (effectiveFeed === "cardinals-wire" && isMlbFilmRoomArticle(item)) return true;
+  // Wire-only: drop league filler that never mentions the Cardinals.
+  if (effectiveFeed === "cardinals-wire" && !articleMentionsCardinals(item)) return true;
   if (!filters.length) return false;
   const hayTitle = item.title.toLowerCase();
   const haySnippet = (item.snippet ?? "").toLowerCase();
@@ -1049,20 +1090,87 @@ export type RssHighlight = {
   updatedAt: string;
 };
 
-/** Human source label for a highlight/feed URL. */
+/** Human source label for a highlight/feed URL. Prefer publisher hosts over feed titles. */
 export function feedSourceLabel(feedUrl: string | null | undefined): string {
-  if (!feedUrl) return "Dispatch";
+  if (!feedUrl) return "Article";
+  if (/^https?:/i.test(feedUrl)) {
+    const pub = articlePublisherLabel(feedUrl);
+    if (pub !== "Article") return pub;
+  }
   const hit = RSS_FEEDS.find((f) => f.url === feedUrl);
-  if (hit) return hit.title;
+  if (hit) return hit.short || hit.title;
   try {
     const host = new URL(feedUrl).hostname.replace(/^www\./, "");
-    if (/stltoday/i.test(host)) return "STL Today";
-    if (/espn\.com/i.test(host)) return "ESPN";
-    if (/mlb\.com/i.test(host)) return "MLB.com";
-    return host;
+    return articlePublisherLabel(`https://${host}/`);
   } catch {
-    return "Dispatch";
+    return "Article";
   }
+}
+
+/** True when title/snippet clearly references the Cardinals. */
+export function articleMentionsCardinals(
+  item: Pick<RssFeedItem, "title" | "snippet" | "link">,
+): boolean {
+  const hay = `${item.title} ${item.snippet ?? ""} ${item.link ?? ""}`.toLowerCase();
+  return (
+    /cardinals?\b|redbirds?\b|\bstl\b|st\.?\s*louis(?:\s+cardinals)?\b|\/cardinals\b|teamid=138\b/.test(
+      hay,
+    )
+  );
+}
+
+function normalizeImgKeyClient(src: string): string {
+  try {
+    const u = new URL(src, "https://example.invalid");
+    const path = u.pathname.replace(/\/+$/, "").toLowerCase();
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+    // Drop size/query noise so CDN variants still match.
+    const bare = path.replace(/\/(?:w_|w=)\d+/g, "").replace(/_\d+x\d+/g, "");
+    return `${host}${bare}`;
+  } catch {
+    return src.split("?")[0]!.toLowerCase();
+  }
+}
+
+/** Remove duplicate &lt;img&gt; tags (same asset twice, or matching the hero). */
+export function stripDuplicateContentImages(
+  html: string,
+  heroImage?: string | null,
+): string {
+  if (!html || typeof DOMParser === "undefined") return html;
+  const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, "text/html");
+  const root = doc.getElementById("root");
+  if (!root) return html;
+  const seen = new Set<string>();
+  if (heroImage) seen.add(normalizeImgKeyClient(heroImage));
+  root.querySelectorAll("img").forEach((img) => {
+    const src = img.getAttribute("src") || "";
+    if (!src) {
+      img.remove();
+      return;
+    }
+    const key = normalizeImgKeyClient(src);
+    if (seen.has(key)) {
+      const fig = img.closest("figure");
+      (fig ?? img).remove();
+      return;
+    }
+    seen.add(key);
+  });
+  return root.innerHTML;
+}
+
+/** First usable content image URL from article HTML. */
+export function firstContentImageUrl(html: string | null | undefined): string | null {
+  if (!html || typeof DOMParser === "undefined") return null;
+  const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, "text/html");
+  const root = doc.getElementById("root");
+  if (!root) return null;
+  for (const img of root.querySelectorAll("img")) {
+    const src = img.getAttribute("src") || "";
+    if (/^https?:/i.test(src) && scoreImageUrl(src) > 0) return src;
+  }
+  return null;
 }
 
 /** Score image URLs so blur/LQIP placeholders lose to the real asset. */
@@ -1352,6 +1460,61 @@ type EspnWrapsOpts = {
   stubWithoutArticle?: boolean;
 };
 
+const ESPN_ABBREV_TO_MLB_ID: Record<string, number> = {
+  LAA: 108,
+  ANA: 108,
+  AZ: 109,
+  ARI: 109,
+  BAL: 110,
+  BOS: 111,
+  CHC: 112,
+  CIN: 113,
+  CLE: 114,
+  COL: 115,
+  DET: 116,
+  HOU: 117,
+  KC: 118,
+  KCR: 118,
+  LAD: 119,
+  LA: 119,
+  WSH: 120,
+  WAS: 120,
+  NYM: 121,
+  ATH: 133,
+  OAK: 133,
+  PIT: 134,
+  SD: 135,
+  SDP: 135,
+  SEA: 136,
+  SF: 137,
+  SFG: 137,
+  STL: 138,
+  TB: 139,
+  TBR: 139,
+  TAM: 139,
+  TEX: 140,
+  TOR: 141,
+  MIN: 142,
+  PHI: 143,
+  ATL: 144,
+  CWS: 145,
+  CHW: 145,
+  MIA: 146,
+  FLA: 146,
+  NYY: 147,
+  MIL: 158,
+};
+
+function mlbIdsFromEspnAbbrevs(abbrevs: (string | null | undefined)[]): number[] {
+  const out: number[] = [];
+  for (const a of abbrevs) {
+    if (!a) continue;
+    const id = ESPN_ABBREV_TO_MLB_ID[a.toUpperCase()];
+    if (id && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
 /** Client-side ESPN game wrap + preview feed (reachable from the browser). */
 async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   const days = opts.days ?? 7;
@@ -1522,6 +1685,14 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             homeScore != null && awayScore != null
               ? `${away?.team?.abbreviation ?? "AWAY"} ${awayScore}, ${home?.team?.abbreviation ?? "HOME"} ${homeScore}`
               : matchup;
+          const awayAbbr = away?.team?.abbreviation ?? null;
+          const homeAbbr = home?.team?.abbreviation ?? null;
+          const logoTeamIds =
+            linkSport === "mlb" ? mlbIdsFromEspnAbbrevs([awayAbbr, homeAbbr]) : undefined;
+          const logoAbbrevs =
+            linkSport === "nfl"
+              ? [awayAbbr, homeAbbr].filter((x): x is string => Boolean(x))
+              : undefined;
 
           const stubItem = (kind: "wrap" | "preview" | "live", title: string, snippet: string) =>
             ({
@@ -1535,6 +1706,8 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
               publishedAt,
               image: article?.images?.[0]?.url ?? null,
               snippet,
+              logoTeamIds,
+              logoAbbrevs,
             }) satisfies RssFeedItem;
 
           if (c.isLive) {
@@ -1572,6 +1745,8 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
               publishedAt,
               image: article.images?.[0]?.url ?? null,
               snippet,
+              logoTeamIds,
+              logoAbbrevs,
             } satisfies RssFeedItem;
           }
 
@@ -1610,6 +1785,8 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             publishedAt,
             image: article?.images?.[0]?.url ?? null,
             snippet: body.slice(0, 220),
+            logoTeamIds,
+            logoAbbrevs,
           } satisfies RssFeedItem;
         } catch {
           return null;

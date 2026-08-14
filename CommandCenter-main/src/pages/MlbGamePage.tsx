@@ -7,8 +7,8 @@ import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import HighlightReel from "@/components/sports/HighlightReel";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
-import { MlbTeamFormPair } from "@/components/sports/TeamFormPair";
 import TeamMark from "@/components/sports/TeamMark";
+import { fetchMlbTeamForm, type TeamFormStrip } from "@/lib/team-form";
 import {
   buildPlayerNameIndex,
   fetchEspnGameRecap,
@@ -153,7 +153,6 @@ export function MlbGameDetail({
   return (
     <div className="space-y-5">
       <GameMatchupHeader game={g} />
-      <MlbTeamFormPair awayId={g.away.teamId} homeId={g.home.teamId} />
 
       {/* Final: wrap first (default) or box first for farm digests. Live: box first. Pregame: preview. */}
       {!g.pregame && isFinal && !boxFirst && (
@@ -439,6 +438,18 @@ function LiveSituationBar({
 function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
   const awayWins = !g.pregame && g.away.runs > g.home.runs;
   const homeWins = !g.pregame && g.home.runs > g.away.runs;
+  const awayForm = useQuery({
+    queryKey: ["mlb-team-form", g.away.teamId],
+    queryFn: () => fetchMlbTeamForm(g.away.teamId),
+    enabled: g.away.teamId > 0,
+    staleTime: 120_000,
+  });
+  const homeForm = useQuery({
+    queryKey: ["mlb-team-form", g.home.teamId],
+    queryFn: () => fetchMlbTeamForm(g.home.teamId),
+    enabled: g.home.teamId > 0,
+    staleTime: 120_000,
+  });
   return (
     <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
       <div
@@ -470,7 +481,13 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
       </div>
 
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-7 sm:gap-4 sm:px-6">
-        <EspnTeam side={g.away} align="left" winner={awayWins} loser={homeWins} />
+        <EspnTeam
+          side={g.away}
+          align="left"
+          winner={awayWins}
+          loser={homeWins}
+          form={awayForm.data ?? null}
+        />
         <div className="px-1 text-center">
           {g.pregame ? (
             <>
@@ -502,7 +519,13 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
             </>
           )}
         </div>
-        <EspnTeam side={g.home} align="right" winner={homeWins} loser={awayWins} />
+        <EspnTeam
+          side={g.home}
+          align="right"
+          winner={homeWins}
+          loser={awayWins}
+          form={homeForm.data ?? null}
+        />
       </div>
 
       {g.live && g.situation ? (
@@ -517,11 +540,13 @@ function EspnTeam({
   align,
   winner,
   loser,
+  form,
 }: {
   side: MlbBoxscoreSide;
   align: "left" | "right";
   winner?: boolean;
   loser?: boolean;
+  form?: TeamFormStrip | null;
 }) {
   return (
     <Link
@@ -554,6 +579,15 @@ function EspnTeam({
         ) : (
           <p className="mt-1 truncate text-[11px] text-[#8b93a7]">{side.name}</p>
         )}
+        {form ? (
+          <p className="numeral mt-0.5 text-[11px] leading-snug text-white/55">
+            L10: {form.last10}
+            <span className="text-white/35">
+              {" "}
+              · L5 {form.last5} · L20 {form.last20}
+            </span>
+          </p>
+        ) : null}
       </div>
     </Link>
   );

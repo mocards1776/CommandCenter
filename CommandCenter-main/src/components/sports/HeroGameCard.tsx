@@ -9,6 +9,7 @@ import {
   type MlbPitcherSeasonLine,
   type MlbScoreGame,
 } from "@/lib/mlb";
+import { fetchMlbTeamForm, type TeamFormStrip } from "@/lib/team-form";
 import { cn } from "@/lib/utils";
 
 export default function HeroGameCard({
@@ -30,6 +31,19 @@ export default function HeroGameCard({
     queryKey: ["hero-pitcher-lines", game.id, pitcherIds.join(",")],
     queryFn: () => fetchPitcherSeasonLines(pitcherIds),
     enabled: pregame && pitcherIds.length > 0,
+    staleTime: 120_000,
+  });
+
+  const awayForm = useQuery({
+    queryKey: ["mlb-team-form", game.away.teamId],
+    queryFn: () => fetchMlbTeamForm(game.away.teamId),
+    enabled: game.away.teamId > 0,
+    staleTime: 120_000,
+  });
+  const homeForm = useQuery({
+    queryKey: ["mlb-team-form", game.home.teamId],
+    queryFn: () => fetchMlbTeamForm(game.home.teamId),
+    enabled: game.home.teamId > 0,
     staleTime: 120_000,
   });
 
@@ -98,11 +112,13 @@ export default function HeroGameCard({
             accent={accent}
             awayLine={awayLine}
             homeLine={homeLine}
+            awayForm={awayForm.data ?? null}
+            homeForm={homeForm.data ?? null}
           />
         ) : (
           <>
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-6">
-              <HeroSide side={game.away} align="left" />
+              <HeroSide side={game.away} align="left" form={awayForm.data ?? null} />
               <div className="text-center">
                 <p className="font-display text-cream text-[40px] leading-none tabular-nums sm:text-[52px]">
                   {game.away.score ?? "–"}
@@ -118,7 +134,7 @@ export default function HeroGameCard({
                   </p>
                 )}
               </div>
-              <HeroSide side={game.home} align="right" />
+              <HeroSide side={game.home} align="right" form={homeForm.data ?? null} />
             </div>
 
             {game.live && game.situation ? (
@@ -151,16 +167,20 @@ function PregameLayout({
   accent,
   awayLine,
   homeLine,
+  awayForm,
+  homeForm,
 }: {
   game: MlbScoreGame;
   accent: string;
   awayLine: MlbPitcherSeasonLine | null;
   homeLine: MlbPitcherSeasonLine | null;
+  awayForm: TeamFormStrip | null;
+  homeForm: TeamFormStrip | null;
 }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4">
-        <HeroSide side={game.away} align="left" />
+        <HeroSide side={game.away} align="left" form={awayForm} />
         <div className="px-1 text-center">
           <p className="font-display text-cream text-[42px] leading-none tracking-tight sm:text-[56px]">
             {game.whenShort ?? "TBD"}
@@ -169,7 +189,7 @@ function PregameLayout({
             First pitch
           </p>
         </div>
-        <HeroSide side={game.home} align="right" />
+        <HeroSide side={game.home} align="right" form={homeForm} />
       </div>
 
       <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-4 sm:px-5">
@@ -265,12 +285,27 @@ function PitcherStack({
   );
 }
 
+function FormLine({ form }: { form: TeamFormStrip | null }) {
+  if (!form) return null;
+  return (
+    <p className="numeral mt-0.5 text-[12px] leading-snug text-white/55">
+      L10: {form.last10}
+      <span className="text-white/35">
+        {" "}
+        · L5 {form.last5} · L20 {form.last20}
+      </span>
+    </p>
+  );
+}
+
 function HeroSide({
   side,
   align,
+  form,
 }: {
   side: MlbScoreGame["away"];
   align: "left" | "right";
+  form?: TeamFormStrip | null;
 }) {
   return (
     <div
@@ -316,6 +351,7 @@ function HeroSide({
         ) : (
           <p className="mt-1 truncate text-[11px] text-white/45">{side.name}</p>
         )}
+        <FormLine form={form ?? null} />
       </div>
     </div>
   );

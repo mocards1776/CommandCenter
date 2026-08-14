@@ -203,7 +203,7 @@ function TourCard({
                   <th className="py-2 pr-2 font-medium">Pos</th>
                   <th className="py-2 pr-2 font-medium">Player</th>
                   <th className="py-2 pr-2 text-right font-medium">Tot</th>
-                  <th className="py-2 pr-2 text-right font-medium">Thru</th>
+                  <th className="py-2 pr-2 text-right font-medium">Tee/Thru</th>
                   <th className="py-2 text-right font-medium">R1</th>
                 </tr>
               </thead>
@@ -497,53 +497,6 @@ export default function SportsPage() {
 
   return (
     <div className="flex min-h-0 flex-col gap-5 p-4 md:p-7">
-      <div className="relative overflow-hidden rounded-lg border border-accent/25 bg-gradient-to-br from-hero-lift to-hero p-5 sm:p-7">
-        <StarField count={28} seed={19} />
-        <div className="relative z-10 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div className="rule-head mb-2">Sports</div>
-            <h2 className="font-display text-cream text-[28px] leading-tight sm:text-[34px]">
-              Your <span className="text-accent">board</span>
-            </h2>
-            <p className="text-chalk mt-2 max-w-lg text-[13px] leading-relaxed">
-              Tap a team for standings, schedule, roster, stats, and playoff odds.
-              Or open the full MLB hub for live scores and league leaders.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              to="/sports/mlb"
-              className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
-            >
-              MLB hub
-            </Link>
-            <a
-              href="/sports.html"
-              className="text-chalk hover:text-cream rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
-            >
-              Sports Home Screen
-            </a>
-            <button
-              type="button"
-              onClick={refreshAll}
-              disabled={refreshing}
-              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40 disabled:opacity-40"
-            >
-              <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
-              Refresh
-            </button>
-            <button
-              type="button"
-              onClick={() => setCustomizing(true)}
-              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
-            >
-              <Settings2 size={13} />
-              Customize
-            </button>
-          </div>
-        </div>
-      </div>
-
       {seed.isError && (
         <p className="text-chalk-dim text-[11.5px]">
           Couldn’t sync favorites to the cloud — using your local board.
@@ -606,6 +559,53 @@ export default function SportsPage() {
           Everything’s hidden. Open Customize to bring teams back.
         </p>
       )}
+
+      <div className="relative overflow-hidden rounded-lg border border-accent/25 bg-gradient-to-br from-hero-lift to-hero p-5 sm:p-7">
+        <StarField count={28} seed={19} />
+        <div className="relative z-10 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="rule-head mb-2">Sports</div>
+            <h2 className="font-display text-cream text-[28px] leading-tight sm:text-[34px]">
+              Your <span className="text-accent">board</span>
+            </h2>
+            <p className="text-chalk mt-2 max-w-lg text-[13px] leading-relaxed">
+              Tap a team for standings, schedule, roster, stats, and playoff odds.
+              Or open the full MLB hub for live scores and league leaders.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/sports/mlb"
+              className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
+            >
+              MLB hub
+            </Link>
+            <a
+              href="/sports.html"
+              className="text-chalk hover:text-cream rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
+            >
+              Sports Home Screen
+            </a>
+            <button
+              type="button"
+              onClick={refreshAll}
+              disabled={refreshing}
+              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40 disabled:opacity-40"
+            >
+              <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => setCustomizing(true)}
+              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
+            >
+              <Settings2 size={13} />
+              Customize
+            </button>
+          </div>
+        </div>
+      </div>
 
       {customizing && (
         <CustomizePanel layout={layout} onChange={updateLayout} onClose={closeCustomize} />

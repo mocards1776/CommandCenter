@@ -44,12 +44,15 @@ import {
   addDedupeKeepHost,
   addRssFilter,
   applyRssFilters,
+  articlePublisherLabel,
   articleSourceHost,
   contentHidePhrases,
   createRssHighlight,
   feedSourceLabel,
+  firstContentImageUrl,
   hidePhrasesInHtml,
   repairRssContentImages,
+  stripDuplicateContentImages,
   dedupeArticles,
   encodeFeedDomainFilter,
   loadDedupeKeepHosts,
@@ -93,6 +96,9 @@ import {
   tagFeedId,
   tagFeedUrl,
 } from "@/lib/sports-player-tags";
+import { setRssReaderBrand } from "@/lib/rss-brand";
+import { nflTeamLogo } from "@/lib/nfl";
+import TeamMark from "@/components/sports/TeamMark";
 
 const DISPATCH_OPEN_KEY = "dispatch-open-article-v1";
 
@@ -130,6 +136,7 @@ import {
   extractPlayerNameCandidates,
   fetchMlbTeamRoster,
   linkifyMlbPlayersInHtml,
+  mlbTeamLogo,
   parseEspnGameIdFromUrl,
   searchMlbPlayersByNames,
 } from "@/lib/mlb";
@@ -233,7 +240,7 @@ function HighlightCard({
     setEditing(false);
   }
 
-  const source = feedSourceLabel(highlight.feedUrl);
+  const source = articlePublisherLabel(highlight.articleUrl);
 
   return (
     <li className="border-white/[0.08] border-b pb-4 last:border-0">
@@ -261,14 +268,9 @@ function HighlightCard({
             “
           </span>
           <p className="text-accent mb-1 text-[9px] font-semibold uppercase tracking-[0.22em]">
-            Dispatch quote · {source}
+            {source}
           </p>
-          {highlight.articleTitle ? (
-            <p className="text-chalk relative z-[1] mb-2 line-clamp-2 text-[12px] leading-snug">
-              {highlight.articleTitle}
-            </p>
-          ) : null}
-          <blockquote className="font-rss text-cream relative z-[1] pl-1 text-[16px] leading-relaxed italic">
+          <blockquote className="font-rss text-cream relative z-[1] whitespace-pre-wrap pl-1 text-[18px] leading-relaxed italic sm:text-[20px]">
             {highlight.quoteText}
           </blockquote>
           {highlight.note ? (
@@ -1046,12 +1048,23 @@ function ArticleReaderShell({
 
   const title = article.data?.title || item.title;
   const byline = article.data?.byline || item.author;
-  const image = article.data?.image || item.image;
+  const publisher = articlePublisherLabel(item.link, byline);
+  const rawImage = article.data?.image || item.image;
+  const contentImage = useMemo(
+    () => firstContentImageUrl(linkedHtml || article.data?.contentHtml),
+    [linkedHtml, article.data?.contentHtml],
+  );
+  const image = rawImage || contentImage;
   const quoteTexts = useMemo(
     () => (highlights.data ?? []).map((h) => h.quoteText).filter(Boolean),
     [highlights.data],
   );
   const titleParts = useMemo(() => splitTextByQuotes(title, quoteTexts), [title, quoteTexts]);
+
+  useEffect(() => {
+    setRssReaderBrand(publisher);
+    return () => setRssReaderBrand(null);
+  }, [publisher]);
 
   const contentFilters = useQuery({
     queryKey: ["rss-filters"],
@@ -1066,11 +1079,13 @@ function ArticleReaderShell({
 
   // Bake marks into the HTML string so React re-renders / scroll don't wipe them.
   // Content hides (MLB signup chrome + user “Hide” phrases) collapse clutter blocks.
+  // Strip hero duplicates so the header photo isn't repeated in the body.
   const displayHtml = useMemo(() => {
     const base = linkedHtml || article.data?.contentHtml || "";
     const cleaned = hidePhrasesInHtml(base, hidePhrases);
-    return markQuotesInHtml(cleaned, quoteTexts);
-  }, [linkedHtml, article.data?.contentHtml, quoteTexts, hidePhrases]);
+    const deduped = stripDuplicateContentImages(cleaned, image);
+    return markQuotesInHtml(deduped, quoteTexts);
+  }, [linkedHtml, article.data?.contentHtml, quoteTexts, hidePhrases, image]);
 
   // Click images in article body → fullscreen lightbox.
   useEffect(() => {
@@ -1307,7 +1322,7 @@ function ArticleReaderShell({
         >
           <div className="label-caps font-body text-accent mb-3">
             {formatFeedDate(item.publishedAt)}
-            {byline ? ` · ${byline}` : ""}
+            {` · ${publisher}`}
             {article.data?.wordCount ? ` · ${readingMinutes(article.data.wordCount)}` : ""}
           </div>
           <h2 className="text-cream text-[32px] leading-[1.15] font-semibold md:text-[40px]">
@@ -1327,24 +1342,57 @@ function ArticleReaderShell({
             rel="noopener noreferrer"
             className="font-body text-chalk hover:text-accent mt-4 inline-flex items-center gap-1.5 text-[12px] transition-colors"
           >
-            Original
+            {publisher}
             <ExternalLink size={12} />
           </a>
         </header>
 
-        {image && !displayHtml.includes("<video") ? (
-          <button
-            type="button"
-            onClick={() => setLightboxSrc(image)}
-            className="mb-8 block w-full"
-          >
-            <img
-              src={image}
-              alt=""
-              referrerPolicy="no-referrer"
-              className="max-h-[320px] w-full object-cover"
-            />
-          </button>
+        {!displayHtml.includes("<video") ? (
+          image ? (
+            <button
+              type="button"
+              onClick={() => setLightboxSrc(image)}
+              className="mb-8 block w-full overflow-hidden rounded-sm"
+            >
+              <img
+                src={image}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="max-h-[320px] w-full object-cover"
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  if (item.logoTeamIds?.length) {
+                    el.src = mlbTeamLogo(item.logoTeamIds[0]!);
+                    el.className = "mx-auto h-40 w-40 object-contain bg-white p-4";
+                  } else if (item.logoAbbrevs?.length) {
+                    el.src = nflTeamLogo(item.logoAbbrevs[0]!);
+                    el.className = "mx-auto h-40 w-40 object-contain";
+                  }
+                }}
+              />
+            </button>
+          ) : item.logoTeamIds?.length ? (
+            <div className="mb-8 flex items-center justify-center gap-6 rounded-sm bg-white/[0.04] py-8">
+              {item.logoTeamIds.map((id) => (
+                <TeamMark key={id} teamId={id} size="xl" />
+              ))}
+            </div>
+          ) : item.logoAbbrevs?.length ? (
+            <div className="mb-8 flex items-center justify-center gap-6 rounded-sm bg-white/[0.04] py-8">
+              {item.logoAbbrevs.map((ab) => (
+                <img
+                  key={ab}
+                  src={nflTeamLogo(ab)}
+                  alt={ab}
+                  className="h-20 w-20 object-contain"
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="from-hero-lift to-hero mb-8 flex min-h-[160px] items-end rounded-sm bg-gradient-to-br px-5 py-6">
+              <p className="font-rss text-cream/90 text-[18px] leading-snug">{publisher}</p>
+            </div>
+          )
         ) : null}
 
         {article.isLoading ? (
@@ -1538,7 +1586,44 @@ function ArticleRow({
               alt=""
               className="bg-hero h-14 w-[4.5rem] shrink-0 object-cover"
               loading="lazy"
+              onError={(e) => {
+                const el = e.currentTarget;
+                if (item.logoTeamIds?.[0]) {
+                  el.src = mlbTeamLogo(item.logoTeamIds[0]);
+                  el.className =
+                    "bg-white h-14 w-[4.5rem] shrink-0 object-contain p-1.5";
+                } else if (item.logoAbbrevs?.[0]) {
+                  el.src = nflTeamLogo(item.logoAbbrevs[0]);
+                  el.className = "bg-hero h-14 w-[4.5rem] shrink-0 object-contain p-1";
+                } else {
+                  el.style.display = "none";
+                }
+              }}
             />
+          ) : item.logoTeamIds?.length ? (
+            <div className="bg-white flex h-14 w-[4.5rem] shrink-0 items-center justify-center gap-0.5 rounded-sm p-1">
+              {item.logoTeamIds.slice(0, 2).map((id) => (
+                <img
+                  key={id}
+                  src={mlbTeamLogo(id)}
+                  alt=""
+                  className="h-10 w-10 object-contain"
+                  loading="lazy"
+                />
+              ))}
+            </div>
+          ) : item.logoAbbrevs?.length ? (
+            <div className="bg-hero flex h-14 w-[4.5rem] shrink-0 items-center justify-center gap-0.5 rounded-sm p-1">
+              {item.logoAbbrevs.slice(0, 2).map((ab) => (
+                <img
+                  key={ab}
+                  src={nflTeamLogo(ab)}
+                  alt=""
+                  className="h-10 w-10 object-contain"
+                  loading="lazy"
+                />
+              ))}
+            </div>
           ) : (
             <div className="bg-hero text-chalk-dim grid h-14 w-[4.5rem] shrink-0 place-items-center text-[10px] uppercase tracking-wider">
               —
@@ -2182,7 +2267,7 @@ export default function RssPage() {
         )}
       >
         <div className="flex items-center justify-between px-4 pt-5 pb-3">
-          <h2 className="font-rss text-cream text-[26px] font-semibold tracking-tight">Dispatch</h2>
+          <h2 className="font-rss text-cream text-[26px] font-semibold tracking-tight">News</h2>
           <button
             type="button"
             onClick={() => void Promise.all(feedQueries.map((q) => q.refetch()))}

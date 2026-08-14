@@ -8,8 +8,10 @@ import {
   fetchCardinalsFarmAffiliates,
   fetchCardinalsProspectWatch,
   fetchFarmRoster,
+  fetchFavoritePlayersYesterday,
   fetchMlbPeopleByIds,
   mlbClubSlug,
+  mlbHeadshot,
   teamPagePath,
 } from "@/lib/mlb";
 import {
@@ -18,6 +20,7 @@ import {
   fetchUserTagNames,
 } from "@/lib/sports-player-tags";
 import { useAuth } from "@/lib/auth-context";
+import { cn } from "@/lib/utils";
 
 function AffiliateRoster({ teamId }: { teamId: number }) {
   const roster = useQuery({
@@ -88,6 +91,30 @@ export default function CardinalsProspectsPage() {
     queryFn: () => fetchMlbPeopleByIds((tagged.data ?? []).map((t) => t.playerId)),
     enabled: Boolean(tagged.data?.length),
     staleTime: 300_000,
+  });
+
+  const yesterdayInputs = useMemo(() => {
+    return (tagged.data ?? []).map((t) => {
+      const id = Number(t.playerId);
+      const person = people.data?.get(id);
+      return {
+        playerId: String(t.playerId),
+        playerName: person?.name ?? `Player #${t.playerId}`,
+        teamName: person?.teamName ?? null,
+        position: person?.position ?? null,
+      };
+    });
+  }, [tagged.data, people.data]);
+
+  const yesterday = useQuery({
+    queryKey: [
+      "prospect-players-yesterday",
+      user?.id,
+      yesterdayInputs.map((p) => p.playerId).join(","),
+    ],
+    queryFn: () => fetchFavoritePlayersYesterday(yesterdayInputs),
+    enabled: yesterdayInputs.length > 0 && Boolean(people.data),
+    staleTime: 120_000,
   });
 
   const pipelineUrl = `https://www.mlb.com/${mlbClubSlug(138) ?? "cardinals"}/prospects`;
@@ -218,39 +245,95 @@ export default function CardinalsProspectsPage() {
               follow list.
             </p>
           ) : (
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {tagged.data?.map((t) => {
-                const id = Number(t.playerId);
-                const person = people.data?.get(id);
-                const name = person?.name ?? `Player #${t.playerId}`;
-                const last = name.split(" ").slice(-1)[0] ?? name;
-                return (
-                  <Link
-                    key={t.id}
-                    to={`/sports/mlb/player/${t.playerId}`}
-                    className="bg-panel group relative w-[148px] shrink-0 overflow-hidden rounded-lg border border-white/[0.08] transition hover:border-accent/40"
-                  >
-                    <div className="from-accent-dark/80 absolute inset-0 bg-gradient-to-t to-transparent opacity-80" />
-                    <PlayerHeadshot
-                      playerId={t.playerId}
-                      size={213}
-                      className="aspect-[3/4] w-full object-cover object-top"
-                    />
-                    <div className="absolute inset-x-0 bottom-0 p-2.5">
-                      <p className="font-display text-cream text-[15px] leading-tight drop-shadow">
-                        {last}
-                      </p>
-                      <p className="text-chalk-dim mt-0.5 text-[10px] uppercase tracking-[0.12em]">
-                        {[person?.position, person?.number ? `#${person.number}` : null]
-                          .filter(Boolean)
-                          .join(" · ") || "—"}
-                        {person?.teamName ? ` · ${person.teamName}` : ""}
-                      </p>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
+            <>
+              {yesterday.data && yesterday.data.lines.length > 0 ? (
+                <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+                  <div className="mb-3 flex items-baseline justify-between gap-3">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                      Yesterday
+                    </h3>
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                      {yesterday.data.date}
+                    </p>
+                  </div>
+                  <ul className="space-y-3">
+                    {yesterday.data.lines.map((line) => (
+                      <li key={line.playerId}>
+                        <Link
+                          to={`/sports/mlb/player/${line.playerId}`}
+                          className="flex items-start gap-3 rounded-lg border border-white/[0.05] px-2 py-2 transition hover:bg-white/[0.03]"
+                        >
+                          <img
+                            src={mlbHeadshot(line.playerId, 213)}
+                            alt=""
+                            className="h-12 w-10 shrink-0 rounded-md bg-[#dfe6f2] object-cover object-[center_15%]"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-baseline gap-x-2">
+                              <p className="text-cream text-[14px] font-semibold">
+                                {line.playerName}
+                              </p>
+                              {line.played && line.isWin != null && (
+                                <span
+                                  className={cn(
+                                    "text-[10px] font-bold uppercase tracking-[0.12em]",
+                                    line.isWin ? "text-emerald-300" : "text-alert",
+                                  )}
+                                >
+                                  {line.isWin ? "W" : "L"}
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-0.5 text-[12px] text-[#a8b0c2]">
+                              {line.played
+                                ? `${line.isHome ? "vs" : "@"} ${line.opponent}`
+                                : "No game / DNP"}
+                            </p>
+                            <p className="numeral text-cream mt-1 text-[13px] leading-snug">
+                              {line.played ? line.summary || "—" : "Did not play"}
+                            </p>
+                          </div>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {tagged.data?.map((t) => {
+                  const id = Number(t.playerId);
+                  const person = people.data?.get(id);
+                  const name = person?.name ?? `Player #${t.playerId}`;
+                  const last = name.split(" ").slice(-1)[0] ?? name;
+                  return (
+                    <Link
+                      key={t.id}
+                      to={`/sports/mlb/player/${t.playerId}`}
+                      className="bg-panel group relative w-[148px] shrink-0 overflow-hidden rounded-lg border border-white/[0.08] transition hover:border-accent/40"
+                    >
+                      <div className="from-accent-dark/80 absolute inset-0 bg-gradient-to-t to-transparent opacity-80" />
+                      <PlayerHeadshot
+                        playerId={t.playerId}
+                        size={213}
+                        className="aspect-[3/4] w-full object-cover object-top"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 p-2.5">
+                        <p className="font-display text-cream text-[15px] leading-tight drop-shadow">
+                          {last}
+                        </p>
+                        <p className="text-chalk-dim mt-0.5 text-[10px] uppercase tracking-[0.12em]">
+                          {[person?.position, person?.number ? `#${person.number}` : null]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
+                          {person?.teamName ? ` · ${person.teamName}` : ""}
+                        </p>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </>
           )}
         </section>
       ) : null}
