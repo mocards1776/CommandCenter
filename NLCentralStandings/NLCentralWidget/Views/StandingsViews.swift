@@ -1,7 +1,7 @@
 import SwiftUI
 import WidgetKit
 
-/// Compact table for `systemMedium` — fits five NL Central clubs on a Mac desktop widget.
+/// Compact table for `systemMedium` — fits five NL Central clubs on Home Screen / desktop.
 struct StandingsMediumView: View {
     let entry: StandingsEntry
 
@@ -13,7 +13,11 @@ struct StandingsMediumView: View {
                 StandingsRowView(row: row, compact: true)
             }
         }
+        #if os(iOS)
+        .padding(12)
+        #else
         .padding(14)
+        #endif
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .containerBackground(for: .widget) {
             ScoreboardBackground()
@@ -54,7 +58,7 @@ struct StandingsMediumView: View {
     }
 }
 
-/// Roomier table for `systemLarge` / Extra Large — adds PCT + streak for a 16" desktop.
+/// Roomier table for `systemLarge` / Extra Large — adds PCT + streak.
 struct StandingsLargeView: View {
     let entry: StandingsEntry
 

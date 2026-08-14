@@ -20,7 +20,8 @@ struct NLCentralStandingsWidget: Widget {
         .supportedFamilies(Self.supportedFamilies)
     }
 
-    /// Medium + large fit a five-team table on a 16" MacBook Pro desktop.
+    /// Medium + large fit the five-team table on iPhone Home Screen and Mac desktop.
+    /// Extra Large is macOS-only (Notification Center / desktop).
     private static var supportedFamilies: [WidgetFamily] {
         #if os(macOS)
         [.systemMedium, .systemLarge, .systemExtraLarge]
