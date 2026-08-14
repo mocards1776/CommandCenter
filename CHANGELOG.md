@@ -2,6 +2,15 @@
 
 ---
 
+## NFL scoreboard, golf profiles, Dispatch NFL wraps — August 14, 2026
+
+- Sports: full **NFL** scoreboard, live field map + play-by-play, and clickable player pages with favorites.
+- Dispatch: **NFL wraps & previews** feed (same pattern as MLB wraps).
+- Golf: Favorites leaderboard (POS / Player / Tot / Thru / R1) and richer golfer profiles (rankings, career/season/bio/stats cards, highlights).
+- RUWT: NFL games ranked alongside MLB, with separate NFL team interest sliders.
+
+---
+
 ## Dispatch peeks, prospects, stats feed — August 13, 2026
 
 - Player peek back/gesture returns to the article (history stack), not the feed.

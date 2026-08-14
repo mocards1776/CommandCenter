@@ -497,7 +497,8 @@ function ReaderView({
     Boolean(parseEspnGameIdFromUrl(item.link)) ||
     feedUrl === "synthetic:cardinals-wraps" ||
     feedUrl === "synthetic:mlb-wraps" ||
-    /espn\.com\/mlb\/(?:recap|preview|game)/i.test(item.link);
+    feedUrl === "synthetic:nfl-wraps" ||
+    /espn\.com\/(?:mlb|nfl)\/(?:recap|preview|game)/i.test(item.link);
 
   // ESPN wraps/previews → sports game UI (matchup + wrap + stats).
   if (isEspnGame) {

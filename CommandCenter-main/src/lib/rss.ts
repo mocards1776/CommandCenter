@@ -40,6 +40,12 @@ export const RSS_FEEDS: readonly RssFeedDef[] = [
     url: "synthetic:mlb-wraps",
   },
   {
+    id: "nfl-wraps",
+    title: "NFL wraps & previews",
+    short: "NFL wraps",
+    url: "synthetic:nfl-wraps",
+  },
+  {
     id: "mlb-stats",
     title: "MLB stats & standings",
     short: "MLB stats",
@@ -1129,6 +1135,8 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       feedUrl,
       title: "Cardinals wraps & previews",
       description: "St. Louis Cardinals game wraps and previews from ESPN",
+      sportPath: "baseball/mlb",
+      linkSport: "mlb",
       teamFilter: { espnId: "24", abbrev: "STL" },
       days: 14,
       maxItems: 40,
@@ -1139,9 +1147,23 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       feedUrl,
       title: "MLB wraps & previews",
       description: "League-wide MLB game wraps and previews from ESPN",
+      sportPath: "baseball/mlb",
+      linkSport: "mlb",
       days: 3,
       maxItems: 48,
       // League volume is high — prefer finals + today's previews.
+      preferFinals: true,
+    });
+  }
+  if (feedUrl === "synthetic:nfl-wraps") {
+    return fetchEspnWrapsFeed({
+      feedUrl,
+      title: "NFL wraps & previews",
+      description: "League-wide NFL game wraps and previews from ESPN",
+      sportPath: "football/nfl",
+      linkSport: "nfl",
+      days: 7,
+      maxItems: 40,
       preferFinals: true,
     });
   }
@@ -1209,6 +1231,10 @@ type EspnWrapsOpts = {
   feedUrl: string;
   title: string;
   description: string;
+  /** ESPN site path, e.g. baseball/mlb or football/nfl */
+  sportPath?: string;
+  /** Link slug under espn.com — mlb or nfl */
+  linkSport?: "mlb" | "nfl";
   teamFilter?: { espnId: string; abbrev: string };
   days?: number;
   maxItems?: number;
@@ -1219,6 +1245,8 @@ type EspnWrapsOpts = {
 async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   const days = opts.days ?? 7;
   const maxItems = opts.maxItems ?? 40;
+  const sportPath = opts.sportPath ?? "baseball/mlb";
+  const linkSport = opts.linkSport ?? "mlb";
   const items: RssFeedItem[] = [];
   const seen = new Set<string>();
   const today = new Date();
@@ -1256,7 +1284,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
     const dateStr = `${y}${m}${day}`;
     try {
       const boardRes = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${dateStr}`,
+        `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard?dates=${dateStr}`,
         { headers: { Accept: "application/json" } },
       );
       if (!boardRes.ok) continue;
@@ -1309,7 +1337,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
       chunk.map(async (c) => {
         try {
           const sumRes = await fetch(
-            `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${c.eventId}`,
+            `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/summary?event=${c.eventId}`,
             { headers: { Accept: "application/json" } },
           );
           if (!sumRes.ok) return null;
@@ -1342,7 +1370,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             return {
               id: `wrap-${c.eventId}`,
               title: article.headline,
-              link: `https://www.espn.com/mlb/recap/_/gameId/${c.eventId}`,
+              link: `https://www.espn.com/${linkSport}/recap/_/gameId/${c.eventId}`,
               author: "ESPN",
               publishedAt,
               image: article.images?.[0]?.url ?? null,
@@ -1365,12 +1393,26 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             body.length < 40 ||
             /no story available/i.test(`${headline} ${body}`) ||
             /^game preview for\b/i.test(body);
-          if (hollow) return null;
+          if (hollow) {
+            // NFL previews are often thin — still surface a matchup stub.
+            if (linkSport === "nfl" && matchup) {
+              return {
+                id: `preview-${c.eventId}`,
+                title: `Preview: ${matchup}`,
+                link: `https://www.espn.com/${linkSport}/preview/_/gameId/${c.eventId}`,
+                author: "ESPN",
+                publishedAt,
+                image: article?.images?.[0]?.url ?? null,
+                snippet: body.slice(0, 220) || `Game preview for ${matchup}.`,
+              } satisfies RssFeedItem;
+            }
+            return null;
+          }
 
           return {
             id: `preview-${c.eventId}`,
             title: headline,
-            link: `https://www.espn.com/mlb/preview/_/gameId/${c.eventId}`,
+            link: `https://www.espn.com/${linkSport}/preview/_/gameId/${c.eventId}`,
             author: "ESPN",
             publishedAt,
             image: article?.images?.[0]?.url ?? null,
@@ -1395,7 +1437,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   return {
     title: opts.title,
     description: opts.description,
-    link: "https://www.espn.com/mlb/",
+    link: `https://www.espn.com/${linkSport}/`,
     feedUrl: opts.feedUrl,
     items,
   };
@@ -1850,6 +1892,7 @@ export async function unsaveRssArticle(articleUrl: string): Promise<void> {
 /** Feeds that stay out of the cross-feed Unread inbox (browse them on their own). */
 export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>([
   "mlb-wraps",
+  "nfl-wraps",
   "mlb-stats",
   "cardinals-farm",
 ]);

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Loader2, Radio, RefreshCw, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
+import NflFieldMap from "@/components/sports/NflFieldMap";
 import StarField from "@/components/StarField";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
@@ -17,9 +18,13 @@ import {
   type MlbScoreGame,
   type MlbScoredGame,
 } from "@/lib/mlb";
+import { fetchNflScoreboard, NFL_TEAMS, type NflScoredGame } from "@/lib/nfl";
 import {
+  loadNflTeamInterest,
   loadTeamInterest,
   rankRuwtGames,
+  rankRuwtNflGames,
+  setNflTeamInterestRating,
   setTeamInterestRating,
   type RuwtTeamInterest,
 } from "@/lib/ruwt";
@@ -63,6 +68,7 @@ const MLB_TEAMS: { id: number; name: string; abbrev: string }[] = [
 export default function RuwtPage() {
   const { user } = useAuth();
   const [interest, setInterest] = useState<RuwtTeamInterest>(() => loadTeamInterest());
+  const [nflInterest, setNflInterest] = useState<RuwtTeamInterest>(() => loadNflTeamInterest());
   const [editing, setEditing] = useState(false);
   const [showFinals, setShowFinals] = useState(false);
 
@@ -76,6 +82,13 @@ export default function RuwtPage() {
     queryFn: () => fetchMlbScoreboard(),
     refetchInterval: 30_000,
     staleTime: 15_000,
+  });
+
+  const nflBoard = useQuery({
+    queryKey: ["nfl-scoreboard"],
+    queryFn: () => fetchNflScoreboard(),
+    refetchInterval: 20_000,
+    staleTime: 10_000,
   });
 
   const standings = useQuery({
@@ -180,11 +193,18 @@ export default function RuwtPage() {
     playoffOddsByTeam,
   ]);
 
+  const nflRanked = useMemo(() => {
+    if (!nflBoard.data) return [] as NflScoredGame[];
+    return rankRuwtNflGames(nflBoard.data, nflInterest, 24);
+  }, [nflBoard.data, nflInterest]);
+
   const activeGames = useMemo(() => ranked.filter((g) => !g.final), [ranked]);
   const finalGames = useMemo(() => ranked.filter((g) => g.final), [ranked]);
+  const nflActive = useMemo(() => nflRanked.filter((g) => !g.final), [nflRanked]);
+  const nflFinals = useMemo(() => nflRanked.filter((g) => g.final), [nflRanked]);
 
   const refresh = () => {
-    void Promise.all([scoreboard.refetch(), standings.refetch()]).then(() =>
+    void Promise.all([scoreboard.refetch(), standings.refetch(), nflBoard.refetch()]).then(() =>
       toast.success("RUWT updated"),
     );
   };
@@ -203,8 +223,8 @@ export default function RuwtPage() {
               Best games <span className="text-accent">right now</span>
             </h2>
             <p className="text-chalk mt-2 max-w-xl text-[13px] leading-relaxed">
-              Ranked by drama, your team interest, favorites, pitching matchups, records, and
-              playoff stakes — so you know what to turn on.
+              MLB and NFL ranked by drama, your team interest, favorites, and stakes — so you know
+              what to turn on.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -219,12 +239,21 @@ export default function RuwtPage() {
             <button
               type="button"
               onClick={refresh}
-              disabled={scoreboard.isFetching}
+              disabled={scoreboard.isFetching || nflBoard.isFetching}
               className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40 disabled:opacity-40"
             >
-              <RefreshCw size={13} className={scoreboard.isFetching ? "animate-spin" : ""} />
+              <RefreshCw
+                size={13}
+                className={scoreboard.isFetching || nflBoard.isFetching ? "animate-spin" : ""}
+              />
               Refresh
             </button>
+            <Link
+              to="/sports/nfl?solo=1"
+              className="text-chalk hover:text-cream rounded-sm border border-white/10 px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
+            >
+              NFL board
+            </Link>
             <Link
               to="/sports/mlb?solo=1"
               className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
@@ -236,88 +265,110 @@ export default function RuwtPage() {
       </div>
 
       {editing && (
-        <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
-          <h3 className="rule-head mb-1">Team interest</h3>
-          <p className="text-chalk-dim mb-4 text-[12px]">
-            10 = favorite must-watch · 7 = follow closely · 0 = ignore for RUWT.
-          </p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {MLB_TEAMS.map((t) => {
-              const value = interest[String(t.id)] ?? 0;
-              return (
-                <label
-                  key={t.id}
-                  className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
-                >
-                  <TeamMark teamId={t.id} size="sm" />
-                  <span className="text-cream min-w-0 flex-1 truncate text-[13px]">
-                    {t.abbrev} · {t.name}
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={10}
-                    value={value}
-                    onChange={(e) =>
-                      setInterest(setTeamInterestRating(interest, t.id, Number(e.target.value)))
-                    }
-                    className="w-24 accent-[var(--accent,#d9515c)]"
-                  />
-                  <span className="numeral text-accent w-5 text-right text-[13px] font-semibold">
-                    {value}
-                  </span>
-                </label>
-              );
-            })}
+        <section className="bg-panel space-y-6 rounded-xl border border-white/[0.08] p-4">
+          <div>
+            <h3 className="rule-head mb-1">MLB team interest</h3>
+            <p className="text-chalk-dim mb-4 text-[12px]">
+              10 = favorite must-watch · 7 = follow closely · 0 = ignore for RUWT.
+            </p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {MLB_TEAMS.map((t) => {
+                const value = interest[String(t.id)] ?? 0;
+                return (
+                  <label
+                    key={t.id}
+                    className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
+                  >
+                    <TeamMark teamId={t.id} size="sm" />
+                    <span className="text-cream min-w-0 flex-1 truncate text-[13px]">
+                      {t.abbrev} · {t.name}
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={10}
+                      value={value}
+                      onChange={(e) =>
+                        setInterest(setTeamInterestRating(interest, t.id, Number(e.target.value)))
+                      }
+                      className="w-24 accent-[var(--accent,#d9515c)]"
+                    />
+                    <span className="numeral text-accent w-5 text-right text-[13px] font-semibold">
+                      {value}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <h3 className="rule-head mb-1">NFL team interest</h3>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {NFL_TEAMS.map((t) => {
+                const value = nflInterest[String(t.id)] ?? 0;
+                return (
+                  <label
+                    key={t.id}
+                    className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
+                  >
+                    <img
+                      src={`https://a.espncdn.com/i/teamlogos/nfl/500/${t.abbrev.toLowerCase()}.png`}
+                      alt=""
+                      className="h-6 w-6 object-contain"
+                    />
+                    <span className="text-cream min-w-0 flex-1 truncate text-[13px]">
+                      {t.abbrev} · {t.name}
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={10}
+                      value={value}
+                      onChange={(e) =>
+                        setNflInterest(
+                          setNflTeamInterestRating(nflInterest, t.id, Number(e.target.value)),
+                        )
+                      }
+                      className="w-24 accent-[var(--accent,#d9515c)]"
+                    />
+                    <span className="numeral text-accent w-5 text-right text-[13px] font-semibold">
+                      {value}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
         </section>
       )}
 
-      {scoreboard.isPending ? (
+      {scoreboard.isPending && nflBoard.isPending ? (
         <p className="text-chalk flex items-center gap-2 text-[13px]">
           <Loader2 size={14} className="animate-spin" /> Loading slate…
         </p>
-      ) : scoreboard.isError ? (
-        <p className="text-alert text-[13px]">Couldn’t load today’s games.</p>
-      ) : ranked.length === 0 ? (
-        <p className="text-chalk-dim text-[13px]">No games on today’s slate.</p>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {activeGames.map((g, i) => (
-              <RuwtCard key={g.id} game={g} rank={i + 1} />
-            ))}
-          </div>
-
-          {finalGames.length > 0 && (
-            <section className="space-y-2">
-              <button
-                type="button"
-                onClick={() => setShowFinals((v) => !v)}
-                className="text-chalk hover:text-cream flex w-full items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left transition hover:border-white/10"
-              >
-                <span className="text-[11px] font-semibold uppercase tracking-[0.16em]">
-                  Finals minimized · {finalGames.length}
-                </span>
-                {showFinals ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              </button>
-              {showFinals ? (
-                <div className="grid grid-cols-1 gap-2 opacity-70 sm:grid-cols-2 xl:grid-cols-3">
-                  {finalGames.map((g, i) => (
-                    <RuwtCard key={g.id} game={g} rank={activeGames.length + i + 1} compactFinal />
+          {(nflActive.length > 0 || (!nflBoard.isPending && (nflBoard.data?.length ?? 0) > 0)) && (
+            <section className="space-y-3">
+              <h3 className="rule-head">NFL</h3>
+              {nflActive.length > 0 ? (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {nflActive.map((g, i) => (
+                    <NflRuwtCard key={g.id} game={g} rank={i + 1} />
                   ))}
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  {finalGames.slice(0, 8).map((g) => (
+                <p className="text-chalk-dim text-[13px]">No live/upcoming NFL games — finals below.</p>
+              )}
+              {nflFinals.length > 0 && (
+                <div className="flex flex-wrap gap-2 opacity-70">
+                  {nflFinals.slice(0, 8).map((g) => (
                     <Link
                       key={g.id}
-                      to={`/sports/mlb/game/${g.id}`}
-                      className="text-chalk-dim hover:text-cream inline-flex items-center gap-1.5 rounded-md border border-white/[0.06] px-2.5 py-1.5 text-[11px] transition hover:border-white/15"
+                      to={`/sports/nfl/game/${g.id}`}
+                      className="text-chalk-dim hover:text-cream inline-flex items-center gap-1.5 rounded-md border border-white/[0.06] px-2.5 py-1.5 text-[11px]"
                     >
-                      <span className="text-cream/80">
-                        {g.away.abbrev} {g.away.score}-{g.home.score} {g.home.abbrev}
-                      </span>
+                      {g.away.abbrev} {g.away.score}-{g.home.score} {g.home.abbrev}
                       <span className="text-[10px] uppercase tracking-[0.12em]">Final</span>
                     </Link>
                   ))}
@@ -325,9 +376,137 @@ export default function RuwtPage() {
               )}
             </section>
           )}
+
+          <section className="space-y-3">
+            <h3 className="rule-head">MLB</h3>
+            {scoreboard.isError ? (
+              <p className="text-alert text-[13px]">Couldn’t load today’s MLB games.</p>
+            ) : ranked.length === 0 && !scoreboard.isPending ? (
+              <p className="text-chalk-dim text-[13px]">No MLB games on today’s slate.</p>
+            ) : scoreboard.isPending ? (
+              <p className="text-chalk flex items-center gap-2 text-[13px]">
+                <Loader2 size={14} className="animate-spin" /> Loading MLB…
+              </p>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {activeGames.map((g, i) => (
+                    <RuwtCard key={g.id} game={g} rank={i + 1} />
+                  ))}
+                </div>
+
+                {finalGames.length > 0 && (
+                  <section className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowFinals((v) => !v)}
+                      className="text-chalk hover:text-cream flex w-full items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left transition hover:border-white/10"
+                    >
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em]">
+                        Finals minimized · {finalGames.length}
+                      </span>
+                      {showFinals ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                    {showFinals ? (
+                      <div className="grid grid-cols-1 gap-2 opacity-70 sm:grid-cols-2 xl:grid-cols-3">
+                        {finalGames.map((g, i) => (
+                          <RuwtCard
+                            key={g.id}
+                            game={g}
+                            rank={activeGames.length + i + 1}
+                            compactFinal
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {finalGames.slice(0, 8).map((g) => (
+                          <Link
+                            key={g.id}
+                            to={`/sports/mlb/game/${g.id}`}
+                            className="text-chalk-dim hover:text-cream inline-flex items-center gap-1.5 rounded-md border border-white/[0.06] px-2.5 py-1.5 text-[11px] transition hover:border-white/15"
+                          >
+                            <span className="text-cream/80">
+                              {g.away.abbrev} {g.away.score}-{g.home.score} {g.home.abbrev}
+                            </span>
+                            <span className="text-[10px] uppercase tracking-[0.12em]">Final</span>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
+              </>
+            )}
+          </section>
         </>
       )}
     </div>
+  );
+}
+
+function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
+  return (
+    <Link
+      to={`/sports/nfl/game/${game.id}`}
+      className={cn(
+        "relative block overflow-hidden rounded-lg border bg-[#07101d] transition hover:border-accent/40",
+        game.live ? "border-alert/45" : "border-white/[0.08]",
+      )}
+    >
+      <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
+        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-cream">
+          <span className="text-accent">#{rank}</span>{" "}
+          {game.live ? (
+            <span className="text-alert">
+              <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-alert" />
+              {game.shortDetail || "Live"}
+            </span>
+          ) : game.final ? (
+            "Final"
+          ) : (
+            "Preview"
+          )}
+        </span>
+        <span className="text-[10.5px] text-[#8b93a7]">Heat {game.score}</span>
+      </div>
+      <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
+        <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
+          {game.away.logo && <img src={game.away.logo} alt="" className="h-8 w-8 object-contain" />}
+          <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
+        </div>
+        <p className="font-display text-center text-[28px] tabular-nums text-white">
+          {game.live || game.final ? (
+            <>
+              {game.away.score ?? "—"}
+              <span className="mx-1.5 text-[16px] text-white/30">-</span>
+              {game.home.score ?? "—"}
+            </>
+          ) : (
+            <span className="text-[20px]">{game.whenShort ?? "TBD"}</span>
+          )}
+        </p>
+        <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
+          {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
+          <p className="text-[15px] font-bold text-white">{game.home.abbrev}</p>
+        </div>
+      </div>
+      {game.live && game.situation && (
+        <div className="relative z-10 border-t border-white/[0.06] px-2 py-2">
+          <NflFieldMap
+            game={game}
+            homeYardLine={game.situation.yardLine}
+            possessionTeamId={game.situation.possessionTeamId}
+            downDistanceText={game.situation.downDistanceText}
+          />
+        </div>
+      )}
+      {game.reasons.length > 0 && (
+        <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
+          {game.reasons.join(" · ")}
+        </p>
+      )}
+    </Link>
   );
 }
 
