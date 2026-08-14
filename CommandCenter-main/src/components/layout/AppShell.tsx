@@ -97,9 +97,10 @@ const SPORTS_NAV = [
     Icon: Sprout,
   },
   {
-    to: "/sports/mlb/managers?solo=1",
-    match: (p: string) => p.startsWith("/sports/mlb/managers"),
-    label: "Managers",
+    to: "/sports/hot-seat?solo=1",
+    match: (p: string) =>
+      p.startsWith("/sports/hot-seat") || p.startsWith("/sports/mlb/managers"),
+    label: "Hot Seat",
     Icon: Flame,
   },
   {

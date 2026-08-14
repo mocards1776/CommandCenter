@@ -32,6 +32,12 @@ import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
 
+type RuwtSportFilter = "all" | "mlb" | "nfl";
+
+type UnifiedRuwtItem =
+  | { sport: "mlb"; score: number; id: string; game: MlbScoredGame }
+  | { sport: "nfl"; score: number; id: string; game: NflScoredGame };
+
 const MLB_TEAMS: { id: number; name: string; abbrev: string }[] = [
   { id: 108, name: "Angels", abbrev: "LAA" },
   { id: 109, name: "D-backs", abbrev: "AZ" },
@@ -71,6 +77,7 @@ export default function RuwtPage() {
   const [nflInterest, setNflInterest] = useState<RuwtTeamInterest>(() => loadNflTeamInterest());
   const [editing, setEditing] = useState(false);
   const [showFinals, setShowFinals] = useState(false);
+  const [sportFilter, setSportFilter] = useState<RuwtSportFilter>("all");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -198,10 +205,31 @@ export default function RuwtPage() {
     return rankRuwtNflGames(nflBoard.data, nflInterest, 24);
   }, [nflBoard.data, nflInterest]);
 
-  const activeGames = useMemo(() => ranked.filter((g) => !g.final), [ranked]);
-  const finalGames = useMemo(() => ranked.filter((g) => g.final), [ranked]);
-  const nflActive = useMemo(() => nflRanked.filter((g) => !g.final), [nflRanked]);
-  const nflFinals = useMemo(() => nflRanked.filter((g) => g.final), [nflRanked]);
+  const unified = useMemo((): UnifiedRuwtItem[] => {
+    const mlbItems: UnifiedRuwtItem[] = ranked.map((g) => ({
+      sport: "mlb",
+      score: g.score,
+      id: `mlb-${g.id}`,
+      game: g,
+    }));
+    const nflItems: UnifiedRuwtItem[] = nflRanked.map((g) => ({
+      sport: "nfl",
+      score: g.score,
+      id: `nfl-${g.id}`,
+      game: g,
+    }));
+    return [...mlbItems, ...nflItems].sort(
+      (a, b) => b.score - a.score || a.id.localeCompare(b.id),
+    );
+  }, [ranked, nflRanked]);
+
+  const filtered = useMemo(() => {
+    if (sportFilter === "all") return unified;
+    return unified.filter((g) => g.sport === sportFilter);
+  }, [unified, sportFilter]);
+
+  const activeGames = useMemo(() => filtered.filter((g) => !g.game.final), [filtered]);
+  const finalGames = useMemo(() => filtered.filter((g) => g.game.final), [filtered]);
 
   const refresh = () => {
     void Promise.all([scoreboard.refetch(), standings.refetch(), nflBoard.refetch()]).then(() =>
@@ -264,81 +292,109 @@ export default function RuwtPage() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        {(
+          [
+            ["all", "All"],
+            ["mlb", "MLB"],
+            ["nfl", "NFL"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setSportFilter(id)}
+            className={cn(
+              "rounded-sm border px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] transition",
+              sportFilter === id
+                ? "border-accent/50 bg-accent/15 text-cream"
+                : "border-white/10 text-chalk hover:border-accent/40 hover:text-cream",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {editing && (
         <section className="bg-panel space-y-6 rounded-xl border border-white/[0.08] p-4">
-          <div>
-            <h3 className="rule-head mb-1">MLB team interest</h3>
-            <p className="text-chalk-dim mb-4 text-[12px]">
-              10 = favorite must-watch · 7 = follow closely · 0 = ignore for RUWT.
-            </p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {MLB_TEAMS.map((t) => {
-                const value = interest[String(t.id)] ?? 0;
-                return (
-                  <label
-                    key={t.id}
-                    className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
-                  >
-                    <TeamMark teamId={t.id} size="sm" />
-                    <span className="text-cream min-w-0 flex-1 truncate text-[13px]">
-                      {t.abbrev} · {t.name}
-                    </span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={10}
-                      value={value}
-                      onChange={(e) =>
-                        setInterest(setTeamInterestRating(interest, t.id, Number(e.target.value)))
-                      }
-                      className="w-24 accent-[var(--accent,#d9515c)]"
-                    />
-                    <span className="numeral text-accent w-5 text-right text-[13px] font-semibold">
-                      {value}
-                    </span>
-                  </label>
-                );
-              })}
+          {(sportFilter === "all" || sportFilter === "mlb") && (
+            <div>
+              <h3 className="rule-head mb-1">MLB team interest</h3>
+              <p className="text-chalk-dim mb-4 text-[12px]">
+                10 = favorite must-watch · 7 = follow closely · 0 = ignore for RUWT.
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {MLB_TEAMS.map((t) => {
+                  const value = interest[String(t.id)] ?? 0;
+                  return (
+                    <label
+                      key={t.id}
+                      className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
+                    >
+                      <TeamMark teamId={t.id} size="sm" />
+                      <span className="text-cream min-w-0 flex-1 truncate text-[13px]">
+                        {t.abbrev} · {t.name}
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={10}
+                        value={value}
+                        onChange={(e) =>
+                          setInterest(setTeamInterestRating(interest, t.id, Number(e.target.value)))
+                        }
+                        className="w-24 accent-[var(--accent,#d9515c)]"
+                      />
+                      <span className="numeral text-accent w-5 text-right text-[13px] font-semibold">
+                        {value}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-          <div>
-            <h3 className="rule-head mb-1">NFL team interest</h3>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {NFL_TEAMS.map((t) => {
-                const value = nflInterest[String(t.id)] ?? 0;
-                return (
-                  <label
-                    key={t.id}
-                    className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
-                  >
-                    <img
-                      src={`https://a.espncdn.com/i/teamlogos/nfl/500/${t.abbrev.toLowerCase()}.png`}
-                      alt=""
-                      className="h-6 w-6 object-contain"
-                    />
-                    <span className="text-cream min-w-0 flex-1 truncate text-[13px]">
-                      {t.abbrev} · {t.name}
-                    </span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={10}
-                      value={value}
-                      onChange={(e) =>
-                        setNflInterest(
-                          setNflTeamInterestRating(nflInterest, t.id, Number(e.target.value)),
-                        )
-                      }
-                      className="w-24 accent-[var(--accent,#d9515c)]"
-                    />
-                    <span className="numeral text-accent w-5 text-right text-[13px] font-semibold">
-                      {value}
-                    </span>
-                  </label>
-                );
-              })}
+          )}
+          {(sportFilter === "all" || sportFilter === "nfl") && (
+            <div>
+              <h3 className="rule-head mb-1">NFL team interest</h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {NFL_TEAMS.map((t) => {
+                  const value = nflInterest[String(t.id)] ?? 0;
+                  return (
+                    <label
+                      key={t.id}
+                      className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
+                    >
+                      <img
+                        src={`https://a.espncdn.com/i/teamlogos/nfl/500/${t.abbrev.toLowerCase()}.png`}
+                        alt=""
+                        className="h-6 w-6 object-contain"
+                      />
+                      <span className="text-cream min-w-0 flex-1 truncate text-[13px]">
+                        {t.abbrev} · {t.name}
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={10}
+                        value={value}
+                        onChange={(e) =>
+                          setNflInterest(
+                            setNflTeamInterestRating(nflInterest, t.id, Number(e.target.value)),
+                          )
+                        }
+                        className="w-24 accent-[var(--accent,#d9515c)]"
+                      />
+                      <span className="numeral text-accent w-5 text-right text-[13px] font-semibold">
+                        {value}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </section>
       )}
 
@@ -346,100 +402,84 @@ export default function RuwtPage() {
         <p className="text-chalk flex items-center gap-2 text-[13px]">
           <Loader2 size={14} className="animate-spin" /> Loading slate…
         </p>
+      ) : activeGames.length === 0 && finalGames.length === 0 ? (
+        <p className="text-chalk-dim text-[13px]">
+          {scoreboard.isError && sportFilter !== "nfl"
+            ? "Couldn’t load today’s MLB games."
+            : "No games on the board for this filter."}
+        </p>
       ) : (
-        <>
-          {(nflActive.length > 0 || (!nflBoard.isPending && (nflBoard.data?.length ?? 0) > 0)) && (
-            <section className="space-y-3">
-              <h3 className="rule-head">NFL</h3>
-              {nflActive.length > 0 ? (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  {nflActive.map((g, i) => (
-                    <NflRuwtCard key={g.id} game={g} rank={i + 1} />
-                  ))}
+        <section className="space-y-3">
+          {activeGames.length > 0 ? (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {activeGames.map((item, i) =>
+                item.sport === "mlb" ? (
+                  <RuwtCard key={item.id} game={item.game} rank={i + 1} />
+                ) : (
+                  <NflRuwtCard key={item.id} game={item.game} rank={i + 1} />
+                ),
+              )}
+            </div>
+          ) : (
+            <p className="text-chalk-dim text-[13px]">No live/upcoming games — finals below.</p>
+          )}
+
+          {finalGames.length > 0 && (
+            <section className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setShowFinals((v) => !v)}
+                className="text-chalk hover:text-cream flex w-full items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left transition hover:border-white/10"
+              >
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em]">
+                  Finals minimized · {finalGames.length}
+                </span>
+                {showFinals ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+              {showFinals ? (
+                <div className="grid grid-cols-1 gap-2 opacity-70 sm:grid-cols-2 xl:grid-cols-3">
+                  {finalGames.map((item, i) =>
+                    item.sport === "mlb" ? (
+                      <RuwtCard
+                        key={item.id}
+                        game={item.game}
+                        rank={activeGames.length + i + 1}
+                        compactFinal
+                      />
+                    ) : (
+                      <NflRuwtCard key={item.id} game={item.game} rank={activeGames.length + i + 1} />
+                    ),
+                  )}
                 </div>
               ) : (
-                <p className="text-chalk-dim text-[13px]">No live/upcoming NFL games — finals below.</p>
-              )}
-              {nflFinals.length > 0 && (
-                <div className="flex flex-wrap gap-2 opacity-70">
-                  {nflFinals.slice(0, 8).map((g) => (
-                    <Link
-                      key={g.id}
-                      to={`/sports/nfl/game/${g.id}`}
-                      className="text-chalk-dim hover:text-cream inline-flex items-center gap-1.5 rounded-md border border-white/[0.06] px-2.5 py-1.5 text-[11px]"
-                    >
-                      {g.away.abbrev} {g.away.score}-{g.home.score} {g.home.abbrev}
-                      <span className="text-[10px] uppercase tracking-[0.12em]">Final</span>
-                    </Link>
-                  ))}
+                <div className="flex flex-wrap gap-2">
+                  {finalGames.slice(0, 10).map((item) => {
+                    const g = item.game;
+                    const href =
+                      item.sport === "mlb"
+                        ? `/sports/mlb/game/${g.id}`
+                        : `/sports/nfl/game/${g.id}`;
+                    return (
+                      <Link
+                        key={item.id}
+                        to={href}
+                        className="text-chalk-dim hover:text-cream inline-flex items-center gap-1.5 rounded-md border border-white/[0.06] px-2.5 py-1.5 text-[11px] transition hover:border-white/15"
+                      >
+                        <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-accent/80">
+                          {item.sport}
+                        </span>
+                        <span className="text-cream/80">
+                          {g.away.abbrev} {g.away.score}-{g.home.score} {g.home.abbrev}
+                        </span>
+                        <span className="text-[10px] uppercase tracking-[0.12em]">Final</span>
+                      </Link>
+                    );
+                  })}
                 </div>
               )}
             </section>
           )}
-
-          <section className="space-y-3">
-            <h3 className="rule-head">MLB</h3>
-            {scoreboard.isError ? (
-              <p className="text-alert text-[13px]">Couldn’t load today’s MLB games.</p>
-            ) : ranked.length === 0 && !scoreboard.isPending ? (
-              <p className="text-chalk-dim text-[13px]">No MLB games on today’s slate.</p>
-            ) : scoreboard.isPending ? (
-              <p className="text-chalk flex items-center gap-2 text-[13px]">
-                <Loader2 size={14} className="animate-spin" /> Loading MLB…
-              </p>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  {activeGames.map((g, i) => (
-                    <RuwtCard key={g.id} game={g} rank={i + 1} />
-                  ))}
-                </div>
-
-                {finalGames.length > 0 && (
-                  <section className="space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowFinals((v) => !v)}
-                      className="text-chalk hover:text-cream flex w-full items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-left transition hover:border-white/10"
-                    >
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em]">
-                        Finals minimized · {finalGames.length}
-                      </span>
-                      {showFinals ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    </button>
-                    {showFinals ? (
-                      <div className="grid grid-cols-1 gap-2 opacity-70 sm:grid-cols-2 xl:grid-cols-3">
-                        {finalGames.map((g, i) => (
-                          <RuwtCard
-                            key={g.id}
-                            game={g}
-                            rank={activeGames.length + i + 1}
-                            compactFinal
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {finalGames.slice(0, 8).map((g) => (
-                          <Link
-                            key={g.id}
-                            to={`/sports/mlb/game/${g.id}`}
-                            className="text-chalk-dim hover:text-cream inline-flex items-center gap-1.5 rounded-md border border-white/[0.06] px-2.5 py-1.5 text-[11px] transition hover:border-white/15"
-                          >
-                            <span className="text-cream/80">
-                              {g.away.abbrev} {g.away.score}-{g.home.score} {g.home.abbrev}
-                            </span>
-                            <span className="text-[10px] uppercase tracking-[0.12em]">Final</span>
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-                  </section>
-                )}
-              </>
-            )}
-          </section>
-        </>
+        </section>
       )}
     </div>
   );

@@ -6,6 +6,7 @@ import HighlightReel from "@/components/sports/HighlightReel";
 import SportsNotesPanel from "@/components/sports/SportsNotesPanel";
 import PlayerTagsPanel from "@/components/sports/PlayerTagsPanel";
 import TeamMark from "@/components/sports/TeamMark";
+import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { useAuth } from "@/lib/auth-context";
 import { isFavoritePlayer } from "@/lib/favorite-players";
 import {
@@ -43,6 +44,7 @@ import { cn, formatSportsDate } from "@/lib/utils";
 export default function MlbPlayerPage() {
   const { playerId } = useParams<{ playerId: string }>();
   const navigate = useNavigate();
+  const swipeRef = useSwipeBack(() => navigate(-1));
 
   useEffect(() => {
     const st = (history.state as { mlbPlayer?: string } | null) ?? {};
@@ -56,7 +58,7 @@ export default function MlbPlayerPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-4 md:p-7">
+    <div ref={swipeRef} className="mx-auto max-w-6xl space-y-6 p-4 md:p-7">
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
@@ -302,8 +304,6 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         careerWar={extras.data?.careerWar ?? null}
         warRank={extras.data?.warRank ?? null}
         warOf={extras.data?.warOf ?? null}
-        mlbBio={mlbBio.data ?? null}
-        mlbBioLoading={mlbBio.isPending}
       />
 
       {showLevelSelector && (
@@ -445,6 +445,50 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
       )}
 
       <BioAndOrigin player={p} />
+
+      {(() => {
+        const bio = mlbBio.data;
+        if (!bio?.text && !mlbBio.isPending) return null;
+        return (
+          <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="rule-head">Bio</h3>
+              {bio?.url && (
+                <a
+                  href={bio.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-chalk-dim hover:text-cream text-[10px] uppercase tracking-[0.12em]"
+                >
+                  MLB.com
+                </a>
+              )}
+            </div>
+            {mlbBio.isPending && !bio?.text ? (
+              <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+                <Loader2 size={13} className="animate-spin" /> Loading bio…
+              </p>
+            ) : (
+              <div className="space-y-2 text-[13px] leading-relaxed text-[#c8cdd8]">
+                {(bio?.html || bio?.text || "")
+                  .split(/\n{2,}/)
+                  .map((para) => para.trim())
+                  .filter(Boolean)
+                  .slice(0, 16)
+                  .map((para, i) =>
+                    /^\d{4}$/.test(para) ? (
+                      <p key={i} className="font-display pt-1 text-[18px] text-cream">
+                        {para}
+                      </p>
+                    ) : (
+                      <p key={i}>{para}</p>
+                    ),
+                  )}
+              </div>
+            )}
+          </section>
+        );
+      })()}
 
       <SportsNotesPanel entityType="player" entityId={p.id} entityName={p.name} />
 
@@ -646,8 +690,6 @@ function PlayerHeader({
   careerWar,
   warRank,
   warOf,
-  mlbBio,
-  mlbBioLoading,
 }: {
   player: MlbPlayerCard;
   accent: string;
@@ -657,8 +699,6 @@ function PlayerHeader({
   careerWar?: number | null;
   warRank?: number | null;
   warOf?: number | null;
-  mlbBio?: Awaited<ReturnType<typeof fetchMlbPlayerBio>>;
-  mlbBioLoading?: boolean;
 }) {
   const htWt = [player.height, player.weight ? `${player.weight} lb` : null]
     .filter(Boolean)
@@ -844,48 +884,6 @@ function PlayerHeader({
           />
         </div>
       </div>
-
-      {(mlbBio?.text || mlbBioLoading) && (
-        <div className="relative z-10 border-t border-white/10 bg-black/25 px-5 py-4 sm:px-8">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
-              MLB.com bio
-            </p>
-            {mlbBio?.url && (
-              <a
-                href={mlbBio.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[10px] uppercase tracking-[0.12em] text-white/45 hover:text-white/80"
-              >
-                Source
-              </a>
-            )}
-          </div>
-          {mlbBioLoading && !mlbBio?.text ? (
-            <p className="flex items-center gap-2 text-[12px] text-white/55">
-              <Loader2 size={13} className="animate-spin" /> Loading bio…
-            </p>
-          ) : (
-            <div className="max-h-[220px] space-y-2 overflow-y-auto text-[12.5px] leading-relaxed text-white/80">
-              {(mlbBio?.html || mlbBio?.text || "")
-                .split(/\n{2,}/)
-                .map((p) => p.trim())
-                .filter(Boolean)
-                .slice(0, 12)
-                .map((p, i) =>
-                  /^\d{4}$/.test(p) ? (
-                    <p key={i} className="font-display pt-1 text-[16px] text-white">
-                      {p}
-                    </p>
-                  ) : (
-                    <p key={i}>{p}</p>
-                  ),
-                )}
-            </div>
-          )}
-        </div>
-      )}
     </article>
   );
 }
@@ -1306,7 +1304,7 @@ function BioAndOrigin({ player }: { player: MlbPlayerCard }) {
     player.draft?.display ?? (player.draftYear != null ? String(player.draftYear) : "—");
   return (
     <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
-      <h3 className="rule-head mb-3">Bio</h3>
+      <h3 className="rule-head mb-3">Origin</h3>
       <dl className="grid grid-cols-2 gap-3 text-[13px] sm:grid-cols-3">
         <BioItem label="Full name" value={player.name} />
         <BioItem

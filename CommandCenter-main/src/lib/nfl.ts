@@ -135,16 +135,25 @@ export type NflPlayerProfile = {
   name: string;
   number: string | null;
   position: string | null;
+  positionName: string | null;
   teamId: string | null;
   teamName: string | null;
   teamAbbrev: string | null;
+  teamColor: string | null;
+  teamLogo: string | null;
   headshot: string | null;
   height: string | null;
   weight: string | null;
   age: number | null;
+  dob: string | null;
+  birthPlace: string | null;
   college: string | null;
   experience: string | null;
+  draft: string | null;
   seasonStats: { label: string; value: string }[];
+  statCategories: { name: string; stats: { label: string; value: string }[] }[];
+  recentGames: { label: string; result: string; line: string }[];
+  news: { headline: string; description: string; image: string | null; href: string | null }[];
 };
 
 export function nflHeadshot(playerId: string | number, size = 423): string {
@@ -189,17 +198,19 @@ function sideFromCompetitor(c: {
 }
 
 function mapSituation(
-  sit: {
-    downDistanceText?: string;
-    possessionText?: string;
-    yardLine?: number;
-    isRedZone?: boolean;
-    possession?: string;
-    lastPlay?: { text?: string; team?: { id?: string } };
-    homeTimeouts?: number;
-    awayTimeouts?: number;
-  } | null
-  | undefined,
+  sit:
+    | {
+        downDistanceText?: string;
+        possessionText?: string;
+        yardLine?: number;
+        isRedZone?: boolean;
+        possession?: string;
+        lastPlay?: { text?: string; team?: { id?: string } };
+        homeTimeouts?: number;
+        awayTimeouts?: number;
+      }
+    | null
+    | undefined,
   live: boolean,
 ): NflLiveSituation | null {
   if (!live || !sit) return null;
@@ -247,7 +258,16 @@ type EspnEvent = {
     }[];
     situation?: Parameters<typeof mapSituation>[0];
   }[];
-  status?: { type?: { state?: string; completed?: boolean; description?: string; detail?: string; shortDetail?: string; name?: string } };
+  status?: {
+    type?: {
+      state?: string;
+      completed?: boolean;
+      description?: string;
+      detail?: string;
+      shortDetail?: string;
+      name?: string;
+    };
+  };
 };
 
 function mapEvent(event: EspnEvent): NflScoreGame | null {
@@ -263,9 +283,7 @@ function mapEvent(event: EspnEvent): NflScoreGame | null {
 
   const whenDate = event.date ? new Date(event.date) : null;
   const when =
-    whenDate && !Number.isNaN(whenDate.getTime())
-      ? formatSportsDateLong(whenDate)
-      : null;
+    whenDate && !Number.isNaN(whenDate.getTime()) ? formatSportsDateLong(whenDate) : null;
   const whenShort =
     whenDate && !Number.isNaN(whenDate.getTime())
       ? whenDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
@@ -273,14 +291,15 @@ function mapEvent(event: EspnEvent): NflScoreGame | null {
 
   return {
     id: String(event.id ?? comp.id ?? ""),
-    status: status?.description ?? status?.name ?? (live ? "Live" : final ? "Final" : "Scheduled"),
+    status:
+      status?.description ?? status?.name ?? (live ? "Live" : final ? "Final" : "Scheduled"),
     shortDetail: status?.shortDetail ?? status?.detail ?? null,
     live,
     final,
     away: sideFromCompetitor(away),
     home: sideFromCompetitor(home),
-    when: final || live ? status?.shortDetail ?? when : when,
-    whenShort: live || final ? status?.shortDetail ?? null : whenShort,
+    when: final || live ? (status?.shortDetail ?? when) : when,
+    whenShort: live || final ? (status?.shortDetail ?? null) : whenShort,
     venue: comp.venue?.fullName ?? null,
     situation: mapSituation(comp.situation, live),
     homeWinPct: null,
@@ -409,7 +428,6 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
     base = { ...base, homeWinPct: Math.round(lastWin.homeWinPercentage * 1000) / 10 };
   }
 
-  // Refresh situation from header if present
   if (headerComp?.situation && base.live) {
     base = { ...base, situation: mapSituation(headerComp.situation, true) };
   }
@@ -476,49 +494,433 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
 
 export async function fetchNflPlayerProfile(playerId: string): Promise<NflPlayerProfile> {
   const id = String(playerId);
-  const res = await fetch(`${ESPN_WEB}/athletes/${id}`, {
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`NFL player ${res.status}`);
-  const raw = (await res.json()) as {
-    athlete?: {
-      id?: string;
-      displayName?: string;
-      displayJersey?: string;
-      jersey?: string;
-      position?: { abbreviation?: string };
-      team?: { id?: string; displayName?: string; abbreviation?: string };
-      headshot?: { href?: string };
-      displayHeight?: string;
-      displayWeight?: string;
-      age?: number;
-      college?: { name?: string };
-      displayExperience?: string;
-      statsSummary?: {
-        statistics?: { shortDisplayName?: string; displayValue?: string }[];
-      };
-    };
+  const [athleteRes, overviewRes] = await Promise.all([
+    fetch(`${ESPN_WEB}/athletes/${id}`, { headers: { Accept: "application/json" } }),
+    fetch(`${ESPN_WEB}/athletes/${id}/overview`, { headers: { Accept: "application/json" } }),
+  ]);
+  if (!athleteRes.ok) throw new Error(`NFL player ${athleteRes.status}`);
+  const raw = (await athleteRes.json()) as { athlete?: Record<string, unknown> };
+  const overview = overviewRes.ok ? ((await overviewRes.json()) as Record<string, unknown>) : {};
+  const a = (raw.athlete ?? {}) as Record<string, unknown>;
+  const team = (a.team ?? {}) as {
+    id?: string;
+    displayName?: string;
+    abbreviation?: string;
+    color?: string;
+    logos?: { href?: string }[];
   };
-  const a = raw.athlete ?? {};
+  const position = (a.position ?? {}) as { abbreviation?: string; displayName?: string };
+  const college = (a.college as { name?: string } | undefined)?.name ?? null;
+  const draft = a.displayDraft != null ? String(a.displayDraft) : null;
+  const birthPlace =
+    (a.displayBirthPlace as string | undefined)?.trim() ||
+    (() => {
+      const bp = a.birthPlace as { city?: string; state?: string; country?: string } | undefined;
+      return bp ? [bp.city, bp.state?.trim(), bp.country].filter(Boolean).join(", ") : null;
+    })();
+
+  const summaryStats = (
+    (a.statsSummary as { statistics?: { shortDisplayName?: string; displayValue?: string }[] })
+      ?.statistics ?? []
+  ).map((s) => ({ label: s.shortDisplayName ?? "Stat", value: s.displayValue ?? "—" }));
+
+  const statistics = overview.statistics as
+    | {
+        labels?: string[];
+        categories?: { name?: string; displayName?: string; count?: number }[];
+        splits?: { stats?: string[] }[];
+      }
+    | undefined;
+  const labels = statistics?.labels ?? [];
+  const values = statistics?.splits?.[0]?.stats ?? [];
+  const catsMeta = statistics?.categories ?? [];
+  let offset = 0;
+  const statCategories: NflPlayerProfile["statCategories"] = [];
+  for (const cat of catsMeta) {
+    const count = cat.count ?? 0;
+    const sliceLabels = labels.slice(offset, offset + count);
+    const sliceValues = values.slice(offset, offset + count);
+    offset += count;
+    statCategories.push({
+      name: cat.displayName ?? cat.name ?? "Stats",
+      stats: sliceLabels.map((label, i) => ({ label, value: sliceValues[i] ?? "—" })),
+    });
+  }
+
+  const seasonStats =
+    summaryStats.length > 0 ? summaryStats : (statCategories[0]?.stats.slice(0, 8) ?? []);
+
+  const gameLog = overview.gameLog as
+    | {
+        events?: {
+          week?: number;
+          atVs?: string;
+          opponent?: { abbreviation?: string };
+          score?: string;
+          gameResult?: string;
+          stats?: string[];
+        }[];
+      }
+    | undefined;
+  const recentGames: NflPlayerProfile["recentGames"] = (gameLog?.events ?? []).slice(0, 8).map((g) => ({
+    label: `Wk ${g.week ?? "—"} ${g.atVs ?? ""} ${g.opponent?.abbreviation ?? ""}`.trim(),
+    result: `${g.gameResult ?? ""} ${g.score ?? ""}`.trim() || "—",
+    line: (g.stats ?? []).slice(0, 5).join(" · "),
+  }));
+
+  const newsRaw = (overview.news ?? []) as {
+    headline?: string;
+    description?: string;
+    images?: { url?: string }[];
+    links?: { web?: { href?: string } };
+  }[];
+  const news = (Array.isArray(newsRaw) ? newsRaw : [])
+    .slice(0, 8)
+    .map((n) => ({
+      headline: n.headline ?? "",
+      description: n.description ?? "",
+      image: n.images?.[0]?.url ?? null,
+      href: n.links?.web?.href ?? null,
+    }))
+    .filter((n) => n.headline);
+
   return {
     id,
-    name: a.displayName ?? "Player",
-    number: a.displayJersey ?? a.jersey ?? null,
-    position: a.position?.abbreviation ?? null,
-    teamId: a.team?.id ?? null,
-    teamName: a.team?.displayName ?? null,
-    teamAbbrev: a.team?.abbreviation ?? null,
-    headshot: a.headshot?.href ?? nflHeadshot(id),
-    height: a.displayHeight ?? null,
-    weight: a.displayWeight ?? null,
+    name: String(a.displayName ?? a.fullName ?? "Player"),
+    number: (a.displayJersey as string | undefined) ?? (a.jersey != null ? String(a.jersey) : null),
+    position: position.abbreviation ?? null,
+    positionName: position.displayName ?? null,
+    teamId: team.id ?? null,
+    teamName: team.displayName ?? null,
+    teamAbbrev: team.abbreviation ?? null,
+    teamColor: team.color ?? null,
+    teamLogo: team.logos?.[0]?.href ?? (team.abbreviation ? nflTeamLogo(team.abbreviation) : null),
+    headshot: (a.headshot as { href?: string } | undefined)?.href ?? nflHeadshot(id),
+    height: (a.displayHeight as string | undefined) ?? null,
+    weight: (a.displayWeight as string | undefined) ?? null,
     age: typeof a.age === "number" ? a.age : null,
-    college: a.college?.name ?? null,
-    experience: a.displayExperience ?? null,
-    seasonStats: (a.statsSummary?.statistics ?? []).map((s) => ({
-      label: s.shortDisplayName ?? "Stat",
-      value: s.displayValue ?? "—",
-    })),
+    dob: (a.displayDOB as string | undefined) ?? null,
+    birthPlace,
+    college,
+    experience: (a.displayExperience as string | undefined) ?? null,
+    draft,
+    seasonStats,
+    statCategories,
+    recentGames,
+    news,
   };
+}
+
+export type NflTeamPage = {
+  id: string;
+  name: string;
+  shortName: string;
+  abbrev: string;
+  color: string;
+  logo: string | null;
+  record: string | null;
+  standing: string | null;
+  venueName: string | null;
+  venueCity: string | null;
+  venueImage: string | null;
+  coachName: string | null;
+  coachId: string | null;
+  coachExperience: number | null;
+  nextEvent: { id: string; name: string; date: string | null } | null;
+  statGroups: { name: string; stats: { label: string; value: string }[] }[];
+  roster: {
+    id: string;
+    name: string;
+    number: string | null;
+    position: string | null;
+    headshot: string | null;
+  }[];
+};
+
+export async function fetchNflTeamPage(teamId: string): Promise<NflTeamPage> {
+  const id = String(teamId);
+  const season =
+    new Date().getMonth() >= 7 ? new Date().getFullYear() : new Date().getFullYear() - 1;
+  const [teamRes, rosterRes, statsRes, standingsRes] = await Promise.all([
+    fetch(`${ESPN}/teams/${id}`, { headers: { Accept: "application/json" } }),
+    fetch(`${ESPN}/teams/${id}/roster`, { headers: { Accept: "application/json" } }),
+    fetch(`${ESPN}/teams/${id}/statistics?season=${season}`, { headers: { Accept: "application/json" } }),
+    fetch("https://site.api.espn.com/apis/v2/sports/football/nfl/standings", {
+      headers: { Accept: "application/json" },
+    }),
+  ]);
+  if (!teamRes.ok) throw new Error(`NFL team ${teamRes.status}`);
+  const teamJson = (await teamRes.json()) as {
+    team?: {
+      id?: string;
+      displayName?: string;
+      shortDisplayName?: string;
+      abbreviation?: string;
+      color?: string;
+      logos?: { href?: string }[];
+      record?: { items?: { type?: string; summary?: string }[] };
+      franchise?: {
+        venue?: {
+          fullName?: string;
+          address?: { city?: string; state?: string };
+          images?: { href?: string; rel?: string[] }[];
+        };
+      };
+      nextEvent?: { id?: string; name?: string; date?: string }[];
+    };
+  };
+  const t = teamJson.team ?? {};
+  const venue = t.franchise?.venue;
+  const venueImage =
+    venue?.images?.find((i) => i.rel?.includes("day") && !i.rel?.includes("interior"))?.href ??
+    venue?.images?.[0]?.href ??
+    null;
+
+  let coachName: string | null = null;
+  let coachId: string | null = null;
+  let coachExperience: number | null = null;
+  const rosterPlayers: NflTeamPage["roster"] = [];
+  if (rosterRes.ok) {
+    const rosterJson = (await rosterRes.json()) as {
+      coach?: { id?: string; firstName?: string; lastName?: string; experience?: number }[];
+      athletes?: {
+        items?: {
+          id?: string;
+          displayName?: string;
+          jersey?: string;
+          position?: { abbreviation?: string };
+          headshot?: { href?: string };
+        }[];
+      }[];
+    };
+    const coach = rosterJson.coach?.[0];
+    if (coach) {
+      coachId = coach.id != null ? String(coach.id) : null;
+      coachName = [coach.firstName, coach.lastName].filter(Boolean).join(" ") || null;
+      coachExperience = typeof coach.experience === "number" ? coach.experience : null;
+    }
+    for (const group of rosterJson.athletes ?? []) {
+      for (const a of group.items ?? []) {
+        rosterPlayers.push({
+          id: String(a.id ?? a.displayName),
+          name: a.displayName ?? "—",
+          number: a.jersey ?? null,
+          position: a.position?.abbreviation ?? null,
+          headshot: a.headshot?.href ?? (a.id ? nflHeadshot(a.id, 200) : null),
+        });
+      }
+    }
+  }
+
+  const statGroups: NflTeamPage["statGroups"] = [];
+  if (statsRes.ok) {
+    const statsJson = (await statsRes.json()) as {
+      results?: {
+        stats?: {
+          categories?: {
+            displayName?: string;
+            stats?: { shortDisplayName?: string; abbreviation?: string; displayValue?: string }[];
+          }[];
+        };
+      };
+    };
+    for (const cat of statsJson.results?.stats?.categories ?? []) {
+      statGroups.push({
+        name: cat.displayName ?? "Stats",
+        stats: (cat.stats ?? []).slice(0, 10).map((s) => ({
+          label: s.shortDisplayName ?? s.abbreviation ?? "—",
+          value: s.displayValue ?? "—",
+        })),
+      });
+    }
+  }
+
+  let standing: string | null = null;
+  if (standingsRes.ok) {
+    const standings = (await standingsRes.json()) as {
+      children?: {
+        name?: string;
+        children?: {
+          name?: string;
+          standings?: {
+            entries?: { team?: { id?: string }; stats?: { name?: string; displayValue?: string }[] }[];
+          };
+        }[];
+        standings?: {
+          entries?: { team?: { id?: string }; stats?: { name?: string; displayValue?: string }[] }[];
+        };
+      }[];
+    };
+    outer: for (const conf of standings.children ?? []) {
+      const divisions = conf.children?.length ? conf.children : [conf];
+      for (const div of divisions) {
+        for (const entry of div.standings?.entries ?? []) {
+          if (String(entry.team?.id) !== id) continue;
+          const get = (n: string) => entry.stats?.find((s) => s.name === n)?.displayValue;
+          const rank = get("playoffSeed") || get("rank");
+          standing = [rank ? `#${rank}` : null, div.name ?? conf.name].filter(Boolean).join(" · ");
+          break outer;
+        }
+      }
+    }
+  }
+
+  const overall = (t.record?.items ?? []).find((r) => r.type === "total")?.summary ?? null;
+  const next = t.nextEvent?.[0];
+
+  return {
+    id,
+    name: t.displayName ?? "Team",
+    shortName: t.shortDisplayName ?? t.abbreviation ?? "Team",
+    abbrev: t.abbreviation ?? "—",
+    color: (t.color ?? "333333").replace(/^#/, ""),
+    logo: t.logos?.[0]?.href ?? nflTeamLogo(t.abbreviation ?? "nfl"),
+    record: overall,
+    standing,
+    venueName: venue?.fullName ?? null,
+    venueCity: venue?.address
+      ? [venue.address.city, venue.address.state].filter(Boolean).join(", ")
+      : null,
+    venueImage,
+    coachName,
+    coachId,
+    coachExperience,
+    nextEvent: next?.id
+      ? { id: String(next.id), name: next.name ?? "Next game", date: next.date ?? null }
+      : null,
+    statGroups,
+    roster: rosterPlayers,
+  };
+}
+
+export type NflCoach = {
+  id: string;
+  name: string;
+  teamId: string;
+  teamName: string;
+  teamAbbrev: string;
+  teamColor: string;
+  logo: string | null;
+  experience: number;
+  record: string | null;
+  wins: number;
+  losses: number;
+  ties: number;
+  winPct: number | null;
+  pointDiff: number | null;
+  hotSeatScore: number;
+  hotSeatRank: number;
+  factors: { label: string; points: number; detail: string }[];
+};
+
+export async function fetchNflCoaches(): Promise<NflCoach[]> {
+  const teamsRes = await fetch(`${ESPN}/teams`, { headers: { Accept: "application/json" } });
+  if (!teamsRes.ok) throw new Error(`NFL teams ${teamsRes.status}`);
+  const teamsJson = (await teamsRes.json()) as {
+    sports?: {
+      leagues?: {
+        teams?: {
+          team?: {
+            id?: string;
+            displayName?: string;
+            abbreviation?: string;
+            color?: string;
+            logos?: { href?: string }[];
+            record?: {
+              items?: {
+                type?: string;
+                summary?: string;
+                stats?: { name?: string; value?: number }[];
+              }[];
+            };
+          };
+        }[];
+      }[];
+    }[];
+  };
+  const teams = teamsJson.sports?.[0]?.leagues?.[0]?.teams ?? [];
+  const coaches: Omit<NflCoach, "hotSeatRank">[] = [];
+  const concurrency = 6;
+  for (let i = 0; i < teams.length; i += concurrency) {
+    const chunk = teams.slice(i, i + concurrency);
+    await Promise.all(
+      chunk.map(async (row) => {
+        const team = row.team;
+        if (!team?.id) return;
+        try {
+          const roster = (await (
+            await fetch(`${ESPN}/teams/${team.id}/roster`, { headers: { Accept: "application/json" } })
+          ).json()) as {
+            coach?: { id?: string; firstName?: string; lastName?: string; experience?: number }[];
+          };
+          const coach = roster.coach?.[0];
+          if (!coach?.id) return;
+          const total = (team.record?.items ?? []).find((r) => r.type === "total");
+          const stat = (n: string) => total?.stats?.find((s) => s.name === n)?.value ?? 0;
+          const wins = Number(stat("wins")) || 0;
+          const losses = Number(stat("losses")) || 0;
+          const ties = Number(stat("ties")) || 0;
+          const games = wins + losses + ties;
+          const winPct = games > 0 ? wins / games : null;
+          const pointDiff = Number(stat("pointDifferential")) || 0;
+          const experience = typeof coach.experience === "number" ? coach.experience : 0;
+          const factors: NflCoach["factors"] = [];
+          let score = 40;
+          if (experience <= 0) {
+            score -= 18;
+            factors.push({ label: "First year", points: -18, detail: "Grace period" });
+          } else if (experience === 1) {
+            score -= 10;
+            factors.push({ label: "Year two", points: -10, detail: "Still settling" });
+          } else if (experience >= 8) {
+            score += 8;
+            factors.push({ label: "Long tenure", points: 8, detail: `${experience} seasons` });
+          }
+          if (winPct != null) {
+            if (winPct < 0.35) {
+              score += 22;
+              factors.push({ label: "Poor record", points: 22, detail: total?.summary ?? "" });
+            } else if (winPct < 0.45) {
+              score += 12;
+              factors.push({ label: "Below .500", points: 12, detail: total?.summary ?? "" });
+            } else if (winPct >= 0.6) {
+              score -= 14;
+              factors.push({ label: "Winning club", points: -14, detail: total?.summary ?? "" });
+            }
+          }
+          if (pointDiff <= -60) {
+            score += 14;
+            factors.push({ label: "Point drain", points: 14, detail: String(pointDiff) });
+          } else if (pointDiff >= 60) {
+            score -= 10;
+            factors.push({ label: "Point edge", points: -10, detail: `+${pointDiff}` });
+          }
+          coaches.push({
+            id: String(coach.id),
+            name: [coach.firstName, coach.lastName].filter(Boolean).join(" "),
+            teamId: String(team.id),
+            teamName: team.displayName ?? "Team",
+            teamAbbrev: team.abbreviation ?? "—",
+            teamColor: (team.color ?? "333").replace(/^#/, ""),
+            logo: team.logos?.[0]?.href ?? nflTeamLogo(team.abbreviation ?? "nfl"),
+            experience,
+            record: total?.summary ?? null,
+            wins,
+            losses,
+            ties,
+            winPct,
+            pointDiff,
+            hotSeatScore: Math.max(0, Math.min(100, Math.round(score))),
+            factors,
+          });
+        } catch {
+          /* skip */
+        }
+      }),
+    );
+  }
+  coaches.sort((a, b) => b.hotSeatScore - a.hotSeatScore || a.name.localeCompare(b.name));
+  return coaches.map((c, i) => ({ ...c, hotSeatRank: i + 1 }));
 }
 
 /**
