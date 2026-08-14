@@ -402,29 +402,48 @@ export function parseEspnRecapHtml(
   let last = 0;
   let m: RegExpExecArray | null;
   // Keep edge spaces — stripHtml used to .trim(), which glued "Name"+"hit" → "Namehit".
+  const scrubApPromo = (text: string) =>
+    text
+      .replace(/\bSee AP['’]?s full MLB coverage here\.?/gi, "")
+      .replace(/\bSee AP['’]?s full MLB coverage\.?/gi, "")
+      .replace(/\bAP['’]?s full MLB coverage here\.?/gi, "");
   const pushText = (raw: string) => {
-    const text = stripHtml(raw)
-      .replace(/\u00a0/g, " ")
-      .replace(/—\s*—/g, "—")
-      .replace(/[ \t\f\v]+/g, " ")
-      // Keep paragraph breaks from ESPN </p> → \n\n (stripHtml).
-      .replace(/\n{3,}/g, "\n\n")
-      .replace(/[^\S\n]+/g, " ");
-    if (text) parts.push({ kind: "text", text });
+    const text = scrubApPromo(
+      stripHtml(raw)
+        .replace(/\u00a0/g, " ")
+        .replace(/—\s*—/g, "—")
+        .replace(/[ \t\f\v]+/g, " ")
+        // Keep paragraph breaks from ESPN </p> → \n\n (stripHtml).
+        .replace(/\n{3,}/g, "\n\n")
+        .replace(/[^\S\n]+/g, " "),
+    );
+    if (text && /[^\s]/.test(text)) parts.push({ kind: "text", text });
   };
   while ((m = re.exec(html))) {
     if (m.index > last) pushText(html.slice(last, m.index));
     const href = m[1];
     const label = stripHtml(m[2]).replace(/\s+/g, " ").trim();
-    const playerMatch = href.match(/\/mlb\/player\/_\/id\/(\d+)\//i);
+    const mlbComMatch =
+      href.match(/mlb\.com\/player\/[^/?#]*-(\d+)/i) || href.match(/mlb\.com\/player\/(\d+)/i);
+    const espnPlayerMatch = href.match(/\/mlb\/player\/_\/id\/(\d+)/i);
     const teamMatch = href.match(/\/mlb\/team\/_\/name\/([a-z0-9]+)\//i);
-    if (playerMatch) {
+    if (mlbComMatch) {
+      const key = normalizePersonName(label);
+      const mlbId = Number(mlbComMatch[1]);
+      parts.push({
+        kind: "player",
+        text: label,
+        playerId: nameToPlayerId.get(key) ?? (Number.isFinite(mlbId) ? mlbId : null),
+        espnId: null,
+      });
+    } else if (espnPlayerMatch) {
       const key = normalizePersonName(label);
       parts.push({
         kind: "player",
         text: label,
+        // ESPN ids are not MLB people ids — only link when the box/index resolves the name.
         playerId: nameToPlayerId.get(key) ?? null,
-        espnId: playerMatch[1],
+        espnId: espnPlayerMatch[1],
       });
     } else if (teamMatch) {
       parts.push({
@@ -432,6 +451,9 @@ export function parseEspnRecapHtml(
         text: label,
         teamId: mlbTeamIdFromEspnAbbrev(teamMatch[1]),
       });
+    } else if (/apnews\.com\/hub\/mlb|See AP.?s? full MLB coverage/i.test(`${href} ${label}`)) {
+      // Drop AP promo links — they shouldn't leave the reader.
+      pushText("");
     } else if (/^https?:/i.test(href) && !/apnews\.com\/hub\/mlb/i.test(href)) {
       parts.push({ kind: "ext", text: label, href });
     } else {
@@ -611,11 +633,43 @@ export function linkifyMlbPlayersInHtml(
   nameToId: Map<string, number>,
   watchPlayerIds?: Set<number>,
 ): string {
-  if (!html || !nameToId.size || typeof DOMParser === "undefined") return html;
+  if (!html || typeof DOMParser === "undefined") return html;
+
+  const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, "text/html");
+  const root = doc.getElementById("root");
+  if (!root) return html;
+
+  // Always rewrite existing mlb.com player anchors to in-app pages (MLB id in the URL).
+  // ESPN /mlb/player/_/id/ links use ESPN ids — only rewrite when we can map the name.
+  root.querySelectorAll("a[href]").forEach((a) => {
+    const href = a.getAttribute("href") ?? "";
+    const mlbId =
+      href.match(/mlb\.com\/player\/[^/?#]*-(\d+)/i)?.[1] ||
+      href.match(/mlb\.com\/player\/(\d+)/i)?.[1];
+    if (mlbId) {
+      const id = Number(mlbId);
+      if (!Number.isFinite(id)) return;
+      a.setAttribute("href", `/sports/mlb/player/${id}`);
+      a.classList.add("rss-player-link");
+      a.removeAttribute("target");
+      a.removeAttribute("rel");
+      return;
+    }
+    if (/\/mlb\/player\/_\/id\/\d+/i.test(href)) {
+      const label = normalizePersonName(a.textContent ?? "");
+      const mapped = label ? nameToId.get(label) : undefined;
+      if (mapped == null) return;
+      a.setAttribute("href", `/sports/mlb/player/${mapped}`);
+      a.classList.add("rss-player-link");
+      a.removeAttribute("target");
+      a.removeAttribute("rel");
+    }
+  });
+
   const names = [...nameToId.keys()]
     .filter((n) => n.length >= 3)
     .sort((a, b) => b.length - a.length);
-  if (!names.length) return html;
+  if (!names.length) return root.innerHTML;
 
   const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // Allow flexible whitespace/punctuation between name parts as in the index key.
@@ -627,10 +681,6 @@ export function linkifyMlbPlayersInHtml(
     )
     .join("|");
   const re = new RegExp(`\\b(?:${pattern})\\b`, "gi");
-
-  const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, "text/html");
-  const root = doc.getElementById("root");
-  if (!root) return html;
 
   const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const textNodes: Text[] = [];
@@ -835,6 +885,8 @@ export type MlbBoxscoreBatter = {
   h: number;
   rbi: number;
   hr: number;
+  /** Season home-run total when available (for HR notes under the box). */
+  seasonHr: number | null;
   bb: number;
   so: number;
   avg: string | null;
@@ -950,6 +1002,11 @@ function mapBoxSide(
       const avg = b.avg ?? season.avg;
       const obp = b.obp ?? season.obp;
       const slg = b.slg ?? season.slg;
+      const seasonHrRaw = season.homeRuns;
+      const seasonHr =
+        seasonHrRaw != null && seasonHrRaw !== ""
+          ? Number(seasonHrRaw)
+          : null;
       return {
         id,
         name: p.person?.fullName ?? "—",
@@ -959,6 +1016,7 @@ function mapBoxSide(
         h: Number(b.hits ?? 0),
         rbi: Number(b.rbi ?? 0),
         hr: Number(b.homeRuns ?? 0),
+        seasonHr: Number.isFinite(seasonHr) ? seasonHr : null,
         bb: Number(b.baseOnBalls ?? 0),
         so: Number(b.strikeOuts ?? 0),
         avg: avg != null && avg !== "" ? String(avg) : null,
@@ -2164,11 +2222,14 @@ export async function fetchMlbGameHighlights(gamePk: number | string): Promise<M
   const out: MlbHighlight[] = [];
   for (const v of items) {
     if (v.type !== "video") continue;
+    const title = v.title || v.headline || "Highlight";
+    // Skip ABS / automated ball-strike system clips.
+    if (/\babs\b/i.test(title)) continue;
     const url = pickPlayback(v.playbacks);
     if (!url) continue;
     out.push({
       id: String(v.id ?? v.slug ?? v.title),
-      title: v.title || v.headline || "Highlight",
+      title,
       description: v.description ?? null,
       duration: v.duration ?? null,
       thumb: highlightThumb(v.image),
@@ -2231,8 +2292,10 @@ export async function fetchMlbPlayerHighlights(
     for (const g of [...(day.games ?? [])].reverse()) {
       for (const v of g.content?.highlights?.highlights?.items ?? []) {
         if (v.type !== "video") continue;
+        const title = v.title || v.headline || "Highlight";
+        if (/\babs\b/i.test(title)) continue;
         const blob = [
-          v.title,
+          title,
           v.headline,
           v.description,
           ...(v.keywordsAll ?? []).map((k) => `${k.value ?? ""} ${k.displayName ?? ""}`),
@@ -2245,7 +2308,7 @@ export async function fetchMlbPlayerHighlights(
         seen.add(id);
         out.push({
           id,
-          title: v.title || v.headline || "Highlight",
+          title,
           description: v.description ?? null,
           duration: v.duration ?? null,
           thumb: highlightThumb(v.image),

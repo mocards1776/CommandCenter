@@ -947,11 +947,25 @@ function TeamDetailPanel({
                 <DetailSection title="Leaders">
                   <div className="flex flex-col gap-4">
                     {detail.hittingLeaders.length > 0 && (
-                      <LeaderList title="Hitting" leaders={detail.hittingLeaders} />
+                      <LeaderList title="Hitting" leaders={detail.hittingLeaders} sport="mlb" />
                     )}
                     {detail.pitchingLeaders.length > 0 && (
-                      <LeaderList title="Pitching" leaders={detail.pitchingLeaders} />
+                      <LeaderList title="Pitching" leaders={detail.pitchingLeaders} sport="mlb" />
                     )}
+                  </div>
+                </DetailSection>
+              )}
+
+              {detail.playerTables.length > 0 && (
+                <DetailSection title="Player stats">
+                  <div className="flex flex-col gap-4">
+                    {detail.playerTables.map((table) => (
+                      <PlayerStatTable
+                        key={table.name}
+                        table={table}
+                        sport={detail.source === "mlb" ? "mlb" : "nfl"}
+                      />
+                    ))}
                   </div>
                 </DetailSection>
               )}
@@ -1126,32 +1140,46 @@ function StatGrid({
 function LeaderList({
   title,
   leaders,
+  sport = "mlb",
 }: {
   title: string;
   leaders: { id?: string; name: string; line: string }[];
+  sport?: "mlb" | "nfl";
 }) {
   return (
     <div>
       <p className="text-chalk-dim mb-2 text-[10.5px] uppercase tracking-[0.14em]">{title}</p>
       <ul className="flex flex-col gap-2">
         {leaders.map((l) => {
+          const href =
+            l.id && sport === "mlb"
+              ? `/sports/mlb/player/${l.id}`
+              : l.id && sport === "nfl"
+                ? `/sports/nfl/player/${l.id}`
+                : null;
           const body = (
-            <>
-              <p className="text-cream text-[13px] group-hover:underline">{l.name}</p>
-              <p className="text-chalk-dim numeral mt-0.5 text-[11.5px]">{l.line}</p>
-            </>
+            <span className="flex items-center gap-2.5">
+              {l.id && sport === "mlb" ? (
+                <img
+                  src={mlbHeadshot(Number(l.id), 213)}
+                  alt=""
+                  className="h-9 w-9 shrink-0 rounded-full bg-[#0c1a2e] object-cover object-top ring-1 ring-white/15"
+                  loading="lazy"
+                />
+              ) : null}
+              <span className="min-w-0">
+                <p className="text-cream text-[13px] group-hover:underline">{l.name}</p>
+                <p className="text-chalk-dim numeral mt-0.5 text-[11.5px]">{l.line}</p>
+              </span>
+            </span>
           );
           return (
             <li
               key={`${title}-${l.id ?? l.name}-${l.line}`}
               className="border-b border-white/[0.05] pb-2 last:border-0"
             >
-              {l.id ? (
-                <Link
-                  to={`/sports/mlb/player/${l.id}`}
-                  className="group block"
-                  onClick={(e) => e.stopPropagation()}
-                >
+              {href ? (
+                <Link to={href} className="group block" onClick={(e) => e.stopPropagation()}>
                   {body}
                 </Link>
               ) : (
@@ -1161,6 +1189,73 @@ function LeaderList({
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+function PlayerStatTable({
+  table,
+  sport,
+}: {
+  table: { name: string; labels: string[]; rows: { id: string; name: string; stats: string[] }[] };
+  sport: "mlb" | "nfl";
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-white/[0.08]">
+      <div className="border-b border-white/[0.06] px-3 py-2">
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[#e8e4d9]">
+          {table.name}
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[360px] text-left text-[12px]">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+              <th className="px-3 py-2 font-medium">Player</th>
+              {table.labels.map((lab) => (
+                <th key={lab} className="numeral px-2 py-2 text-right font-medium">
+                  {lab}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row) => (
+              <tr key={`${table.name}-${row.id}`} className="border-t border-white/[0.05]">
+                <td className="px-3 py-1.5">
+                  <Link
+                    to={
+                      sport === "mlb"
+                        ? `/sports/mlb/player/${row.id}`
+                        : `/sports/nfl/player/${row.id}`
+                    }
+                    className="text-cream inline-flex items-center gap-2 hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {sport === "mlb" ? (
+                      <img
+                        src={mlbHeadshot(Number(row.id), 213)}
+                        alt=""
+                        className="h-7 w-7 rounded-full object-cover object-top"
+                        loading="lazy"
+                      />
+                    ) : null}
+                    {row.name}
+                  </Link>
+                </td>
+                {row.stats.map((val, i) => (
+                  <td
+                    key={`${row.id}-${table.labels[i] ?? i}`}
+                    className="numeral px-2 py-1.5 text-right text-white/90"
+                  >
+                    {val}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

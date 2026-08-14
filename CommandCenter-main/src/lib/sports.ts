@@ -118,6 +118,12 @@ export type LeaderStat = {
   line: string;
 };
 
+export type TeamPlayerStatTable = {
+  name: string;
+  labels: string[];
+  rows: { id: string; name: string; stats: string[] }[];
+};
+
 export type TeamDetail = {
   key: string;
   name: string;
@@ -138,6 +144,8 @@ export type TeamDetail = {
   pitchingLeaders: LeaderStat[];
   teamHitting: { label: string; value: string }[];
   teamPitching: { label: string; value: string }[];
+  /** ESPN-style player stat tables (MLB / NFL). */
+  playerTables: TeamPlayerStatTable[];
   source: "mlb" | "espn";
 };
 
@@ -718,7 +726,13 @@ export type GolferProfile = {
   performance: { label: string; value: string }[];
   seasonStats: { label: string; value: string }[];
   highlights: { headline: string; image: string | null; href: string | null }[];
-  recentNews: { headline: string; description: string }[];
+  recentNews: {
+    headline: string;
+    description: string;
+    image: string | null;
+    href: string | null;
+    type: "news" | "video";
+  }[];
   /** This season's tournament finishes. */
   seasonResults: {
     event: string;
@@ -925,16 +939,26 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
   const newsRaw = (overview.news ?? athlete.news ?? []) as {
     headline?: string;
     description?: string;
+    type?: string;
     images?: { url?: string }[];
     links?: { web?: { href?: string } };
   }[];
   const newsList = Array.isArray(newsRaw) ? newsRaw : [];
   const recentNews = newsList
-    .slice(0, 5)
-    .map((n) => ({
-      headline: n.headline ?? "",
-      description: n.description ?? "",
-    }))
+    .slice(0, 16)
+    .map((n) => {
+      const href = n.links?.web?.href ?? null;
+      const isVideo =
+        /video|highlight/i.test(`${n.type ?? ""} ${n.headline ?? ""} ${href ?? ""}`) ||
+        /\/video\//i.test(href ?? "");
+      return {
+        headline: n.headline ?? "",
+        description: n.description ?? "",
+        image: n.images?.[0]?.url ?? null,
+        href,
+        type: (isVideo ? "video" : "news") as "news" | "video",
+      };
+    })
     .filter((n) => n.headline);
 
   const highlights = newsList
@@ -1383,6 +1407,7 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     pitchingLeaders: [],
     teamHitting: [],
     teamPitching: [],
+    playerTables: await fetchEspnTeamPlayerTables(fav).catch(() => []),
     source: "espn",
   };
 }
@@ -1636,6 +1661,32 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     return `${s.era ?? "—"} ERA · ${s.strikeOuts ?? 0} SO · ${s.inningsPitched ?? "—"} IP`;
   }).slice(0, 6);
 
+  const playerTables: TeamPlayerStatTable[] = [];
+  const hitRows = mlbStatTableRows(hitLeaders, (s) => {
+    const ab = Number(s.atBats ?? 0);
+    if (ab < 25) return null;
+    return [String(s.gamesPlayed ?? "—"), String(s.atBats ?? "—"), String(s.avg ?? "—"), String(s.homeRuns ?? "—"), String(s.rbi ?? "—"), String(s.ops ?? "—")];
+  });
+  if (hitRows.length) {
+    playerTables.push({
+      name: "Batting",
+      labels: ["G", "AB", "AVG", "HR", "RBI", "OPS"],
+      rows: hitRows.slice(0, 15),
+    });
+  }
+  const pitchRows = mlbStatTableRows(pitchLeaders, (s) => {
+    const ip = parseFloat(String(s.inningsPitched ?? 0));
+    if (ip < 5) return null;
+    return [String(s.wins ?? "—"), String(s.losses ?? "—"), String(s.era ?? "—"), String(s.inningsPitched ?? "—"), String(s.strikeOuts ?? "—"), String(s.whip ?? "—")];
+  });
+  if (pitchRows.length) {
+    playerTables.push({
+      name: "Pitching",
+      labels: ["W", "L", "ERA", "IP", "SO", "WHIP"],
+      rows: pitchRows.slice(0, 15),
+    });
+  }
+
   const milbStanding = isMilb
     ? [club?.sport?.name, club?.parentOrgName].filter(Boolean).join(" · ") || "Minor League"
     : null;
@@ -1668,6 +1719,7 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     pitchingLeaders,
     teamHitting,
     teamPitching,
+    playerTables,
     source: "mlb",
   };
 }
@@ -1706,6 +1758,47 @@ function mlbLeaders(
     });
   }
   return out;
+}
+
+function mlbStatTableRows(
+  raw: unknown,
+  cols: (stat: Record<string, unknown>) => string[] | null,
+): TeamPlayerStatTable["rows"] {
+  const splits =
+    (raw as {
+      stats?: {
+        splits?: { player?: { id?: number; fullName?: string }; stat?: Record<string, unknown> }[];
+      }[];
+    }).stats?.[0]?.splits ?? [];
+  const out: TeamPlayerStatTable["rows"] = [];
+  for (const s of splits) {
+    const stats = cols(s.stat ?? {});
+    if (!stats || s.player?.id == null) continue;
+    out.push({
+      id: String(s.player.id),
+      name: s.player.fullName ?? "—",
+      stats,
+    });
+  }
+  return out;
+}
+
+/** NFL (and other ESPN) team player stat tables — mirrors ESPN team/stats. */
+async function fetchEspnTeamPlayerTables(fav: SportsFavorite): Promise<TeamPlayerStatTable[]> {
+  if (!/football\/nfl/i.test(fav.espnPath)) return [];
+  const teamId = fav.espnPath.split("/").pop();
+  if (!teamId) return [];
+  try {
+    const { fetchNflTeamPage } = await import("./nfl");
+    const page = await fetchNflTeamPage(teamId);
+    return page.playerTables.map((t) => ({
+      name: t.name,
+      labels: t.labels,
+      rows: t.rows,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 function shortDiv(name?: string): string {

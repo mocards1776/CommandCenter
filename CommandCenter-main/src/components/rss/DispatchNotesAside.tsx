@@ -6,10 +6,12 @@ import {
   fetchMlbStandings,
   fetchMlbWildCardStandings,
   fetchTeamCurrentAndNextGames,
+  mlbHeadshot,
   teamPagePath,
   type MlbScoreGame,
 } from "@/lib/mlb";
-import { DEFAULT_WEATHER_ZIP, fetchZipWeather } from "@/lib/weather";
+import { fetchMlbTeamCategoryLeaders } from "@/lib/team-form";
+import { DEFAULT_WEATHER_ZIP, fetchZipWeather, weatherGlyph } from "@/lib/weather";
 import { cn } from "@/lib/utils";
 
 const STL_TEAM_ID = 138;
@@ -99,6 +101,11 @@ export default function DispatchNotesAside() {
     queryFn: () => fetchZipWeather(DEFAULT_WEATHER_ZIP),
     staleTime: 15 * 60_000,
   });
+  const leaders = useQuery({
+    queryKey: ["mlb-stl-category-leaders", STL_TEAM_ID],
+    queryFn: () => fetchMlbTeamCategoryLeaders(STL_TEAM_ID, "STL"),
+    staleTime: 30 * 60_000,
+  });
 
   const central = (standings.data ?? []).find((t) => t.shortName === "NL Central");
   const wcRows = (wildCard.data ?? []).slice(0, 8);
@@ -134,14 +141,30 @@ export default function DispatchNotesAside() {
           <p className="text-chalk font-body text-[12px]">Couldn’t load weather.</p>
         ) : (
           <div>
-            <p className="text-cream text-[15px] font-medium">
-              <span className="numeral text-[22px]">{weather.data.current.tempF}°</span>
-              <span className="text-chalk ml-2 text-[13px]">{weather.data.current.summary}</span>
-            </p>
-            <p className="text-chalk-dim mt-1 text-[11px]">
-              {weather.data.label} · Feels {weather.data.current.feelsLikeF}° · Wind{" "}
-              {weather.data.current.windMph} mph · Humidity {weather.data.current.humidity}%
-            </p>
+            <div className="relative overflow-hidden rounded-xl border border-sky-400/20 bg-gradient-to-br from-sky-500/15 via-[#0c1a2e] to-amber-400/10 px-3 py-3">
+              <div className="pointer-events-none absolute -right-2 -top-4 text-[64px] leading-none opacity-25">
+                {weatherGlyph(weather.data.current.code)}
+              </div>
+              <div className="relative flex items-end gap-3">
+                <span className="text-[36px] leading-none drop-shadow-sm">
+                  {weatherGlyph(weather.data.current.code)}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-cream text-[15px] font-medium">
+                    <span className="numeral text-[28px] leading-none">
+                      {weather.data.current.tempF}°
+                    </span>
+                    <span className="text-chalk ml-2 text-[13px]">
+                      {weather.data.current.summary}
+                    </span>
+                  </p>
+                  <p className="text-chalk-dim mt-1 text-[11px]">
+                    {weather.data.label} · Feels {weather.data.current.feelsLikeF}° · Wind{" "}
+                    {weather.data.current.windMph} mph · Humidity {weather.data.current.humidity}%
+                  </p>
+                </div>
+              </div>
+            </div>
             <ul className="mt-3 flex flex-col gap-1.5">
               {weather.data.daily.slice(0, 10).map((d) => {
                 const day = new Date(`${d.date}T12:00:00`).toLocaleDateString("en-US", {
@@ -155,8 +178,13 @@ export default function DispatchNotesAside() {
                     key={d.date}
                     className="text-chalk flex items-center justify-between gap-2 text-[12px]"
                   >
+                    <span className="w-4 shrink-0 text-center text-[14px]" title={d.summary}>
+                      {weatherGlyph(d.code)}
+                    </span>
                     <span className="min-w-0 flex-1 truncate">{day}</span>
-                    <span className="text-chalk-dim shrink-0 text-[11px]">{d.summary}</span>
+                    <span className="text-chalk-dim hidden shrink-0 text-[11px] sm:inline">
+                      {d.summary}
+                    </span>
                     <span className="numeral text-cream shrink-0 tabular-nums">
                       {d.highF}°/{d.lowF}°
                     </span>
@@ -168,6 +196,82 @@ export default function DispatchNotesAside() {
               })}
             </ul>
           </div>
+        )}
+      </section>
+
+      <section className="border-white/[0.08] mt-6 border-t pt-5">
+        <div className="rule-head mb-3">Batting leaders</div>
+        {leaders.isPending ? (
+          <p className="label-caps font-body animate-pulse text-[11px]">Loading leaders</p>
+        ) : leaders.isError || !(leaders.data?.batting.length) ? (
+          <p className="text-chalk font-body text-[12px]">Couldn’t load batting leaders.</p>
+        ) : (
+          <ul className="divide-y divide-white/[0.06]">
+            {leaders.data.batting.map((l) => (
+              <li key={`bat-${l.category}-${l.playerId}`} className="py-2.5 first:pt-0">
+                <Link
+                  to={`/sports/mlb/player/${l.playerId}`}
+                  className="flex items-center gap-3 hover:opacity-90"
+                >
+                  <img
+                    src={mlbHeadshot(l.playerId, 213)}
+                    alt=""
+                    className="h-11 w-11 shrink-0 rounded-full bg-[#0c1a2e] object-cover object-top ring-1 ring-white/15"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-cream truncate text-[13px] font-semibold">{l.shortName}</p>
+                    <p className="mt-0.5">
+                      <span className="numeral text-cream text-[18px] font-bold leading-none">
+                        {l.value}
+                      </span>{" "}
+                      <span className="text-chalk-dim text-[11px] uppercase tracking-[0.12em]">
+                        {l.abbrev}
+                      </span>
+                    </p>
+                    <p className="text-chalk-dim mt-0.5 truncate text-[11px]">{l.line}</p>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="border-white/[0.08] mt-6 border-t pt-5">
+        <div className="rule-head mb-3">Pitching leaders</div>
+        {leaders.isPending ? (
+          <p className="label-caps font-body animate-pulse text-[11px]">Loading leaders</p>
+        ) : leaders.isError || !(leaders.data?.pitching.length) ? (
+          <p className="text-chalk font-body text-[12px]">Couldn’t load pitching leaders.</p>
+        ) : (
+          <ul className="divide-y divide-white/[0.06]">
+            {leaders.data.pitching.map((l) => (
+              <li key={`pit-${l.category}-${l.playerId}`} className="py-2.5 first:pt-0">
+                <Link
+                  to={`/sports/mlb/player/${l.playerId}`}
+                  className="flex items-center gap-3 hover:opacity-90"
+                >
+                  <img
+                    src={mlbHeadshot(l.playerId, 213)}
+                    alt=""
+                    className="h-11 w-11 shrink-0 rounded-full bg-[#0c1a2e] object-cover object-top ring-1 ring-white/15"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-cream truncate text-[13px] font-semibold">{l.shortName}</p>
+                    <p className="mt-0.5">
+                      <span className="numeral text-cream text-[18px] font-bold leading-none">
+                        {l.value}
+                      </span>{" "}
+                      <span className="text-chalk-dim text-[11px] uppercase tracking-[0.12em]">
+                        {l.abbrev}
+                      </span>
+                    </p>
+                    <p className="text-chalk-dim mt-0.5 truncate text-[11px]">{l.line}</p>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 

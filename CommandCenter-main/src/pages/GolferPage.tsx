@@ -1,5 +1,6 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import {
   ArrowLeft,
   Cake,
@@ -11,6 +12,7 @@ import {
   Flag,
   Loader2,
   Medal,
+  Play,
   Ruler,
   Star,
   Trophy,
@@ -25,6 +27,15 @@ import {
 } from "@/lib/favorite-players";
 import { fetchGolferProfile } from "@/lib/sports";
 import { cn } from "@/lib/utils";
+
+type GolferTab = "overview" | "news" | "bio" | "results";
+
+const TABS: { id: GolferTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "news", label: "News & Video" },
+  { id: "bio", label: "Bio" },
+  { id: "results", label: "Results" },
+];
 
 function InfoCard({
   title,
@@ -54,12 +65,82 @@ function InfoCard({
   );
 }
 
+function MediaRow({
+  item,
+}: {
+  item: {
+    headline: string;
+    description: string;
+    image: string | null;
+    href: string | null;
+    type: "news" | "video";
+  };
+}) {
+  const body = (
+    <div className="flex items-start gap-3 border-b border-white/[0.08] py-3 last:border-0">
+      <div className="min-w-0 flex-1">
+        <p className="text-[14px] font-semibold leading-snug text-white">{item.headline}</p>
+        <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-white/45">
+          {item.type === "video" ? "Highlights" : item.description?.slice(0, 48) || "News"}
+        </p>
+      </div>
+      <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-md bg-[#1a2030]">
+        {item.image ? (
+          <img src={item.image} alt="" className="h-full w-full object-cover" />
+        ) : null}
+        {item.type === "video" ? (
+          <span className="absolute inset-0 grid place-items-center bg-black/35">
+            <Play size={18} className="fill-white text-white" />
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+  return item.href ? (
+    <a href={item.href} target="_blank" rel="noreferrer" className="block hover:opacity-90">
+      {body}
+    </a>
+  ) : (
+    body
+  );
+}
+
+function MediaSection({
+  title,
+  items,
+}: {
+  title: string;
+  items: {
+    headline: string;
+    description: string;
+    image: string | null;
+    href: string | null;
+    type: "news" | "video";
+  }[];
+}) {
+  if (!items.length) return null;
+  return (
+    <section>
+      <div className="mb-1 flex items-center justify-between gap-3 border-b border-white/[0.08] pb-2">
+        <h2 className="text-[15px] font-semibold text-white">{title}</h2>
+        <span className="text-[11px] uppercase tracking-[0.14em] text-white/40">View all</span>
+      </div>
+      <div>
+        {items.map((n) => (
+          <MediaRow key={`${n.type}-${n.headline}`} item={n} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function GolferPage() {
   const { golferId } = useParams<{ golferId: string }>();
   const navigate = useNavigate();
   const swipeRef = useSwipeBack(() => navigate(-1));
   const { user } = useAuth();
   const qc = useQueryClient();
+  const [tab, setTab] = useState<GolferTab>("overview");
 
   const profile = useQuery({
     queryKey: ["golfer-profile", golferId],
@@ -103,6 +184,8 @@ export default function GolferPage() {
   }
 
   const p = profile.data;
+  const videos = (p?.recentNews ?? []).filter((n) => n.type === "video");
+  const news = (p?.recentNews ?? []).filter((n) => n.type !== "video");
 
   return (
     <div ref={swipeRef} className="mx-auto max-w-4xl space-y-5 p-4 md:p-7">
@@ -167,193 +250,240 @@ export default function GolferPage() {
             </div>
           </article>
 
-          {p.rankings.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {p.rankings.map((r) => (
-                <div
-                  key={r.label}
-                  className="min-w-[7.5rem] flex-1 rounded-xl border border-white/[0.1] bg-[#12151c] px-3 py-3"
-                >
-                  <p className="flex items-center gap-1 text-[10px] uppercase tracking-[0.12em] text-white/45">
-                    <Trophy size={11} /> {r.label}
-                  </p>
-                  <p className="numeral mt-1 text-[28px] leading-none text-white">{r.rank}</p>
-                  {r.detail && (
-                    <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-white/45">
-                      {r.detail}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {p.highlights.length > 0 && (
-            <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
-              {p.highlights.map((h) => {
-                const inner = (
-                  <>
-                    <div className="h-20 w-20 overflow-hidden rounded-full border border-white/15 bg-[#1a2030]">
-                      {h.image ? (
-                        <img src={h.image} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-white/30">
-                          <Flag size={18} />
-                        </div>
-                      )}
-                    </div>
-                    <p className="mt-2 line-clamp-2 max-w-[5.5rem] text-center text-[10px] leading-snug text-white/70">
-                      {h.headline}
-                    </p>
-                  </>
-                );
-                return h.href ? (
-                  <a
-                    key={h.headline}
-                    href={h.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex w-[5.5rem] shrink-0 flex-col items-center"
-                  >
-                    {inner}
-                  </a>
-                ) : (
-                  <div key={h.headline} className="flex w-[5.5rem] shrink-0 flex-col items-center">
-                    {inner}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <InfoCard
-              title="Career (PGA TOUR)"
-              rows={[
-                { label: "Wins", value: p.career[0]?.value ?? "—", Icon: Trophy },
-                { label: "Earnings", value: p.career[1]?.value ?? "—", Icon: DollarSign },
-                { label: "Cuts Made", value: p.career[2]?.value ?? "—", Icon: CheckCircle2 },
-              ]}
-            />
-            <InfoCard
-              title={`Season (${new Date().getFullYear()})`}
-              rows={[
-                { label: "Wins", value: p.season[0]?.value ?? "—", Icon: Trophy },
-                { label: "Top 10", value: p.season[1]?.value ?? "—", Icon: Medal },
-                { label: "Cuts Made", value: p.season[2]?.value ?? "—", Icon: CheckCircle2 },
-              ]}
-            />
-            <InfoCard
-              title="Bio"
-              rows={p.bioFacts.map((f) => ({
-                label: f.label === "Height" ? "" : f.label,
-                value: f.value,
-                Icon: f.label === "Height" ? Ruler : f.label === "Age" ? Cake : Calendar,
-              }))}
-            />
-            <InfoCard
-              title="Stats"
-              rows={p.performance.map((s) => ({
-                label: s.label,
-                value: s.value,
-                Icon: /putt/i.test(s.label)
-                  ? Flag
-                  : /tee|driv/i.test(s.label)
-                    ? Flag
-                    : ChartNoAxesColumn,
-              }))}
-            />
+          <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "shrink-0 border-b-2 px-3 py-2 text-[12px] font-semibold tracking-[0.04em] transition",
+                  tab === t.id
+                    ? "border-white text-white"
+                    : "border-transparent text-white/45 hover:text-white/75",
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
 
-          {p.seasonStats.length > 0 && (
-            <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
-              <div className="border-b border-white/[0.06] px-4 py-2.5">
-                <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                  Season overview
-                </h2>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6">
-                {p.seasonStats.map((s) => (
-                  <div
-                    key={s.label}
-                    className="border-b border-r border-white/[0.05] px-3 py-4 text-center"
-                  >
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
-                      {s.label}
-                    </p>
-                    <p className="numeral mt-1 text-[20px] text-white">{s.value}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {p.lastWin && (
-            <section className="rounded-xl border border-white/[0.08] bg-[#12151c] px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                Last win
-              </p>
-              <p className="mt-1 text-[15px] text-white">
-                {p.lastWin.event}{" "}
-                <span className="text-white/45">· {p.lastWin.year}</span>
-                {p.lastWin.score ? (
-                  <span className="numeral text-[#ff6b6b]"> · {p.lastWin.score}</span>
-                ) : null}
-              </p>
-            </section>
-          )}
-
-          {p.seasonResults.length > 0 && (
-            <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
-              <div className="border-b border-white/[0.06] px-4 py-2.5">
-                <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                  Season results ({p.seasonResults.length})
-                </h2>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[320px] text-left text-[12px]">
-                  <thead>
-                    <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                      <th className="px-4 py-2 font-medium">Tournament</th>
-                      <th className="px-2 py-2 font-medium">Pos</th>
-                      <th className="px-4 py-2 text-right font-medium">Score</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {p.seasonResults.map((r) => (
-                      <tr key={`${r.event}-${r.date}`} className="border-b border-white/[0.05]">
-                        <td className="px-4 py-2.5">
-                          <p className="text-[13px] text-white">{r.event}</p>
-                          {r.date && (
-                            <p className="text-[10px] text-white/40">{r.date}</p>
-                          )}
-                        </td>
-                        <td className="numeral px-2 py-2.5 text-white/80">{r.position}</td>
-                        <td className="numeral px-4 py-2.5 text-right text-[#ff6b6b]">
-                          {r.score ?? "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-
-          {p.recentNews.length > 0 && (
-            <section className="space-y-3 rounded-xl border border-white/[0.08] bg-[#12151c] p-4">
-              <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                Recent
-              </h2>
-              {p.recentNews.map((n) => (
-                <div key={n.headline} className="border-t border-white/[0.05] pt-3 first:border-0 first:pt-0">
-                  <p className="text-[13px] font-medium text-white">{n.headline}</p>
-                  {n.description && (
-                    <p className="mt-1 text-[12px] leading-relaxed text-white/55">{n.description}</p>
-                  )}
+          {tab === "overview" && (
+            <div className="space-y-5">
+              {p.rankings.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {p.rankings.map((r) => (
+                    <div
+                      key={r.label}
+                      className="min-w-[7.5rem] flex-1 rounded-xl border border-white/[0.1] bg-[#12151c] px-3 py-3"
+                    >
+                      <p className="flex items-center gap-1 text-[10px] uppercase tracking-[0.12em] text-white/45">
+                        <Trophy size={11} /> {r.label}
+                      </p>
+                      <p className="numeral mt-1 text-[28px] leading-none text-white">{r.rank}</p>
+                      {r.detail && (
+                        <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-white/45">
+                          {r.detail}
+                        </p>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </section>
+              )}
+
+              {p.highlights.length > 0 && (
+                <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
+                  {p.highlights.map((h) => {
+                    const inner = (
+                      <>
+                        <div className="h-20 w-20 overflow-hidden rounded-full border border-white/15 bg-[#1a2030]">
+                          {h.image ? (
+                            <img src={h.image} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-white/30">
+                              <Flag size={18} />
+                            </div>
+                          )}
+                        </div>
+                        <p className="mt-2 line-clamp-2 max-w-[5.5rem] text-center text-[10px] leading-snug text-white/70">
+                          {h.headline}
+                        </p>
+                      </>
+                    );
+                    return h.href ? (
+                      <a
+                        key={h.headline}
+                        href={h.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex w-[5.5rem] shrink-0 flex-col items-center"
+                      >
+                        {inner}
+                      </a>
+                    ) : (
+                      <div key={h.headline} className="flex w-[5.5rem] shrink-0 flex-col items-center">
+                        {inner}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <InfoCard
+                  title="Career (PGA TOUR)"
+                  rows={[
+                    { label: "Wins", value: p.career[0]?.value ?? "—", Icon: Trophy },
+                    { label: "Earnings", value: p.career[1]?.value ?? "—", Icon: DollarSign },
+                    { label: "Cuts Made", value: p.career[2]?.value ?? "—", Icon: CheckCircle2 },
+                  ]}
+                />
+                <InfoCard
+                  title={`Season (${new Date().getFullYear()})`}
+                  rows={[
+                    { label: "Wins", value: p.season[0]?.value ?? "—", Icon: Trophy },
+                    { label: "Top 10", value: p.season[1]?.value ?? "—", Icon: Medal },
+                    { label: "Cuts Made", value: p.season[2]?.value ?? "—", Icon: CheckCircle2 },
+                  ]}
+                />
+                <InfoCard
+                  title="Stats"
+                  rows={p.performance.map((s) => ({
+                    label: s.label,
+                    value: s.value,
+                    Icon: /putt/i.test(s.label)
+                      ? Flag
+                      : /tee|driv/i.test(s.label)
+                        ? Flag
+                        : ChartNoAxesColumn,
+                  }))}
+                />
+              </div>
+
+              {p.seasonStats.length > 0 && (
+                <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
+                  <div className="border-b border-white/[0.06] px-4 py-2.5">
+                    <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                      Season overview
+                    </h2>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6">
+                    {p.seasonStats.map((s) => (
+                      <div
+                        key={s.label}
+                        className="border-b border-r border-white/[0.05] px-3 py-4 text-center"
+                      >
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                          {s.label}
+                        </p>
+                        <p className="numeral mt-1 text-[20px] text-white">{s.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {p.lastWin && (
+                <section className="rounded-xl border border-white/[0.08] bg-[#12151c] px-4 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                    Last win
+                  </p>
+                  <p className="mt-1 text-[15px] text-white">
+                    {p.lastWin.event}{" "}
+                    <span className="text-white/45">· {p.lastWin.year}</span>
+                    {p.lastWin.score ? (
+                      <span className="numeral text-[#ff6b6b]"> · {p.lastWin.score}</span>
+                    ) : null}
+                  </p>
+                </section>
+              )}
+            </div>
+          )}
+
+          {tab === "news" && (
+            <div className="space-y-6">
+              {videos.length === 0 && news.length === 0 ? (
+                <p className="text-chalk-dim text-[13px]">No recent news or video.</p>
+              ) : (
+                <>
+                  <MediaSection title="Video" items={videos} />
+                  <MediaSection title="News" items={news} />
+                </>
+              )}
+            </div>
+          )}
+
+          {tab === "bio" && (
+            <div className="space-y-4">
+              <InfoCard
+                title="Bio"
+                rows={[
+                  ...p.bioFacts.map((f) => ({
+                    label: f.label === "Height" ? "" : f.label,
+                    value: f.value,
+                    Icon: f.label === "Height" ? Ruler : f.label === "Age" ? Cake : Calendar,
+                  })),
+                  ...(p.birthPlace
+                    ? [{ label: "Birthplace", value: p.birthPlace, Icon: Flag }]
+                    : []),
+                  ...(p.college ? [{ label: "College", value: p.college, Icon: Medal }] : []),
+                  ...(p.turnedPro != null
+                    ? [{ label: "Turned Pro", value: String(p.turnedPro), Icon: Calendar }]
+                    : []),
+                ]}
+              />
+              {p.bio ? (
+                <section className="rounded-xl border border-white/[0.08] bg-[#12151c] p-4">
+                  <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                    About
+                  </h2>
+                  <p className="text-[14px] leading-relaxed text-white/80">{p.bio}</p>
+                </section>
+              ) : null}
+            </div>
+          )}
+
+          {tab === "results" && (
+            <div className="space-y-4">
+              {p.seasonResults.length === 0 ? (
+                <p className="text-chalk-dim text-[13px]">No season results yet.</p>
+              ) : (
+                <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
+                  <div className="border-b border-white/[0.06] px-4 py-2.5">
+                    <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                      Season results ({p.seasonResults.length})
+                    </h2>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[320px] text-left text-[12px]">
+                      <thead>
+                        <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                          <th className="px-4 py-2 font-medium">Tournament</th>
+                          <th className="px-2 py-2 font-medium">Pos</th>
+                          <th className="px-4 py-2 text-right font-medium">Score</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {p.seasonResults.map((r) => (
+                          <tr key={`${r.event}-${r.date}`} className="border-b border-white/[0.05]">
+                            <td className="px-4 py-2.5">
+                              <p className="text-[13px] text-white">{r.event}</p>
+                              {r.date && (
+                                <p className="text-[10px] text-white/40">{r.date}</p>
+                              )}
+                            </td>
+                            <td className="numeral px-2 py-2.5 text-white/80">{r.position}</td>
+                            <td className="numeral px-4 py-2.5 text-right text-[#ff6b6b]">
+                              {r.score ?? "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+            </div>
           )}
         </>
       )}

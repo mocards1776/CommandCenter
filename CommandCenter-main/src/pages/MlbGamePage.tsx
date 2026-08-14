@@ -7,6 +7,7 @@ import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import HighlightReel from "@/components/sports/HighlightReel";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
+import { MlbTeamFormPair } from "@/components/sports/TeamFormPair";
 import TeamMark from "@/components/sports/TeamMark";
 import {
   buildPlayerNameIndex,
@@ -30,6 +31,7 @@ import {
   type MlbPreviewLeaderRow,
   type RecapInline,
 } from "@/lib/mlb";
+import { contentHidePhrases, fetchRssFilters } from "@/lib/rss";
 import { cn, formatSportsDateLong } from "@/lib/utils";
 
 export function MlbGameDetail({
@@ -151,6 +153,7 @@ export function MlbGameDetail({
   return (
     <div className="space-y-5">
       <GameMatchupHeader game={g} />
+      <MlbTeamFormPair awayId={g.away.teamId} homeId={g.home.teamId} />
 
       {/* Final: wrap first (default) or box first for farm digests. Live: box first. Pregame: preview. */}
       {!g.pregame && isFinal && !boxFirst && (
@@ -938,6 +941,16 @@ function GameWrap({
   const [open, setOpen] = useState(defaultOpen);
   const [segments, setSegments] = useState<RecapInline[]>([]);
 
+  const contentFilters = useQuery({
+    queryKey: ["rss-filters"],
+    queryFn: fetchRssFilters,
+    staleTime: 60_000,
+  });
+  const hidePhrases = useMemo(
+    () => contentHidePhrases(contentFilters.data ?? []),
+    [contentFilters.data],
+  );
+
   useEffect(() => {
     setOpen(defaultOpen);
   }, [defaultOpen, recap.espnEventId]);
@@ -979,7 +992,10 @@ function GameWrap({
         !open && long && "line-clamp-[12]",
       )}
     >
-      <RecapBody segments={segments.length ? segments : [{ kind: "text", text: storyText }]} />
+      <RecapBody
+        segments={segments.length ? segments : [{ kind: "text", text: storyText }]}
+        hidePhrases={hidePhrases}
+      />
     </SelectableHighlightRegion>
   );
 
@@ -1022,14 +1038,47 @@ function GameWrap({
   );
 }
 
-function RecapBody({ segments }: { segments: RecapInline[] }) {
+function RecapBody({
+  segments,
+  hidePhrases = [],
+}: {
+  segments: RecapInline[];
+  hidePhrases?: string[];
+}) {
   const linkClass =
     "font-medium text-[#9ec1ff] decoration-transparent underline-offset-[3px] transition hover:underline hover:decoration-[#9ec1ff]/55";
+
+  const needles = hidePhrases
+    .map((p) => p.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim())
+    .filter((p) => p.length >= 3);
+
+  const visible = segments
+    .map((seg) => {
+      if (seg.kind !== "text" && seg.kind !== "ext") return seg;
+      const norm = seg.text
+        .toLowerCase()
+        .replace(/['’]/g, "")
+        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (needles.some((n) => norm === n || (norm.includes(n) && norm.length <= n.length + 48))) {
+        return null;
+      }
+      if (seg.kind === "text") {
+        let text = seg.text
+          .replace(/\bSee AP['’]?s full MLB coverage here\.?/gi, "")
+          .replace(/\bSee AP['’]?s full MLB coverage\.?/gi, "");
+        if (!/[^\s]/.test(text)) return null;
+        return { ...seg, text };
+      }
+      return seg;
+    })
+    .filter((s): s is RecapInline => s != null);
 
   // Split on paragraph breaks preserved in text segments.
   // Keep edge spaces — trim() was gluing linked names into neighboring words.
   const paragraphs: RecapInline[][] = [[]];
-  for (const seg of segments) {
+  for (const seg of visible) {
     if (seg.kind !== "text") {
       paragraphs[paragraphs.length - 1].push(seg);
       continue;
@@ -1236,7 +1285,12 @@ function TeamBoxSection({
     if (hrs.length) {
       notes.push({
         label: "HR",
-        text: hrs.map((b) => `${shortPitcherName(b.name)} (${b.hr})`).join(", "),
+        text: hrs
+          .map((b) => {
+            const season = b.seasonHr != null && b.seasonHr > 0 ? b.seasonHr : b.hr;
+            return `${shortPitcherName(b.name)} (${season})`;
+          })
+          .join(", "),
       });
     }
     const rbis = side.batters.filter((b) => b.rbi > 0);

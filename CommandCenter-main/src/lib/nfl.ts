@@ -136,11 +136,32 @@ export type NflBoxLeader = {
   line: string;
 };
 
+export type NflBoxPlayerRow = {
+  id: string;
+  name: string;
+  stats: string[];
+};
+
+export type NflBoxStatGroup = {
+  teamAbbrev: string;
+  name: string;
+  labels: string[];
+  athletes: NflBoxPlayerRow[];
+};
+
+export type NflTeamGameStat = {
+  teamAbbrev: string;
+  label: string;
+  value: string;
+};
+
 export type NflGameDetail = NflScoreGame & {
   drives: NflDrive[];
   recentPlays: NflPlay[];
   scoringPlays: { id: string; text: string; clock: string | null; teamAbbrev: string | null }[];
   leaders: NflBoxLeader[];
+  boxGroups: NflBoxStatGroup[];
+  teamStats: NflTeamGameStat[];
   article: { headline: string; description: string | null; storyHtml: string | null } | null;
 };
 
@@ -410,6 +431,15 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
       team?: { abbreviation?: string };
     }[];
     boxscore?: {
+      teams?: {
+        team?: { abbreviation?: string };
+        statistics?: {
+          name?: string;
+          displayValue?: string;
+          label?: string;
+          abbreviation?: string;
+        }[];
+      }[];
       players?: {
         team?: { abbreviation?: string };
         statistics?: {
@@ -468,21 +498,50 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
     .reverse();
 
   const leaders: NflBoxLeader[] = [];
+  const boxGroups: NflBoxStatGroup[] = [];
   for (const side of raw.boxscore?.players ?? []) {
     const abbrev = side.team?.abbreviation ?? "—";
     for (const group of side.statistics ?? []) {
       const gname = group.name ?? "stats";
-      for (const row of (group.athletes ?? []).slice(0, 3)) {
+      const labels = group.labels ?? [];
+      const athletes: NflBoxPlayerRow[] = [];
+      for (const row of group.athletes ?? []) {
         const id = row.athlete?.id;
         if (!id) continue;
-        leaders.push({
+        athletes.push({
           id: String(id),
           name: row.athlete?.displayName ?? "—",
+          stats: row.stats ?? [],
+        });
+        if (athletes.length <= 3) {
+          leaders.push({
+            id: String(id),
+            name: row.athlete?.displayName ?? "—",
+            teamAbbrev: abbrev,
+            group: gname,
+            line: (row.stats ?? []).slice(0, 4).join(" · "),
+          });
+        }
+      }
+      if (athletes.length) {
+        boxGroups.push({
           teamAbbrev: abbrev,
-          group: gname,
-          line: (row.stats ?? []).slice(0, 4).join(" · "),
+          name: gname,
+          labels,
+          athletes,
         });
       }
+    }
+  }
+
+  const teamStats: NflTeamGameStat[] = [];
+  for (const side of raw.boxscore?.teams ?? []) {
+    const abbrev = side.team?.abbreviation ?? "—";
+    for (const s of side.statistics ?? []) {
+      const label = s.label ?? s.abbreviation ?? s.name ?? "Stat";
+      const value = s.displayValue ?? "—";
+      if (!value || value === "—") continue;
+      teamStats.push({ teamAbbrev: abbrev, label, value });
     }
   }
 
@@ -497,6 +556,8 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
       teamAbbrev: s.team?.abbreviation ?? null,
     })),
     leaders,
+    boxGroups,
+    teamStats,
     article: raw.article?.headline
       ? {
           headline: raw.article.headline,
@@ -643,6 +704,12 @@ export type NflTeamPage = {
   coachExperience: number | null;
   nextEvent: { id: string; name: string; date: string | null } | null;
   statGroups: { name: string; stats: { label: string; value: string }[] }[];
+  /** ESPN-style player tables (Passing / Rushing / Receiving / Defense). */
+  playerTables: {
+    name: string;
+    labels: string[];
+    rows: { id: string; name: string; stats: string[] }[];
+  }[];
   roster: {
     id: string;
     name: string;
@@ -656,13 +723,17 @@ export async function fetchNflTeamPage(teamId: string): Promise<NflTeamPage> {
   const id = String(teamId);
   const season =
     new Date().getMonth() >= 7 ? new Date().getFullYear() : new Date().getFullYear() - 1;
-  const [teamRes, rosterRes, statsRes, standingsRes] = await Promise.all([
+  const priorSeason = season - 1;
+  const playerStatsUrl = (yr: number) =>
+    `https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/statistics/byathlete?region=us&lang=en&contentorigin=espn&isqualified=false&page=1&limit=50&sort=passing.passingYards%3Adesc&season=${yr}&seasontype=2&team=${id}`;
+  const [teamRes, rosterRes, statsRes, standingsRes, playerStatsRes] = await Promise.all([
     fetch(`${ESPN}/teams/${id}`, { headers: { Accept: "application/json" } }),
     fetch(`${ESPN}/teams/${id}/roster`, { headers: { Accept: "application/json" } }),
     fetch(`${ESPN}/teams/${id}/statistics?season=${season}`, { headers: { Accept: "application/json" } }),
     fetch("https://site.api.espn.com/apis/v2/sports/football/nfl/standings", {
       headers: { Accept: "application/json" },
     }),
+    fetch(playerStatsUrl(season), { headers: { Accept: "application/json" } }).catch(() => null),
   ]);
   if (!teamRes.ok) throw new Error(`NFL team ${teamRes.status}`);
   const teamJson = (await teamRes.json()) as {
@@ -783,6 +854,105 @@ export async function fetchNflTeamPage(teamId: string): Promise<NflTeamPage> {
   const overall = (t.record?.items ?? []).find((r) => r.type === "total")?.summary ?? null;
   const next = t.nextEvent?.[0];
 
+  const playerTables: NflTeamPage["playerTables"] = [];
+  type PlayerStatsPayload = {
+    categories?: { name?: string; displayName?: string; labels?: string[]; names?: string[] }[];
+    athletes?: {
+      athlete?: { id?: string; displayName?: string };
+      categories?: { name?: string; totals?: string[] }[];
+    }[];
+  };
+  let playerJson: PlayerStatsPayload | null = null;
+  if (playerStatsRes && playerStatsRes.ok) {
+    playerJson = (await playerStatsRes.json()) as PlayerStatsPayload;
+  }
+  if (!(playerJson?.athletes?.length)) {
+    try {
+      const fallback = await fetch(playerStatsUrl(priorSeason), {
+        headers: { Accept: "application/json" },
+      });
+      if (fallback.ok) {
+        playerJson = (await fallback.json()) as PlayerStatsPayload;
+      }
+    } catch {
+      /* optional */
+    }
+  }
+  if (playerJson?.athletes?.length) {
+    try {
+      const glossary = playerJson.categories ?? [];
+      const tableSpecs: {
+        key: string;
+        title: string;
+        labelKeys: string[];
+        /** Index within selected labels used for sorting / min filter. */
+        sortLabel: string;
+      }[] = [
+        {
+          key: "passing",
+          title: "Passing",
+          labelKeys: ["CMP", "ATT", "YDS", "TD", "INT", "RTG"],
+          sortLabel: "YDS",
+        },
+        {
+          key: "rushing",
+          title: "Rushing",
+          labelKeys: ["CAR", "YDS", "AVG", "TD", "LNG"],
+          sortLabel: "YDS",
+        },
+        {
+          key: "receiving",
+          title: "Receiving",
+          labelKeys: ["REC", "YDS", "AVG", "TD", "LNG"],
+          sortLabel: "YDS",
+        },
+        {
+          key: "defensive",
+          title: "Defense",
+          labelKeys: ["SOLO", "AST", "TOT", "SACK", "TFL", "PD"],
+          sortLabel: "TOT",
+        },
+      ];
+      for (const spec of tableSpecs) {
+        const catMeta = glossary.find((c) => c.name === spec.key);
+        const allLabels = catMeta?.labels ?? [];
+        const idxs = spec.labelKeys
+          .map((lab) => allLabels.findIndex((l) => l.toUpperCase() === lab.toUpperCase()))
+          .filter((i) => i >= 0);
+        const labels = idxs.length ? idxs.map((i) => allLabels[i]!) : spec.labelKeys;
+        const sortPos = Math.max(
+          0,
+          labels.findIndex((l) => l.toUpperCase() === spec.sortLabel.toUpperCase()),
+        );
+        const rows: NflTeamPage["playerTables"][number]["rows"] = [];
+        for (const row of playerJson.athletes ?? []) {
+          const ath = row.athlete;
+          if (!ath?.id || !ath.displayName) continue;
+          const cat = (row.categories ?? []).find((c) => c.name === spec.key);
+          const totals = cat?.totals ?? [];
+          if (!totals.length) continue;
+          const primaryRaw = idxs.length ? totals[idxs[sortPos] ?? idxs[0]!] : totals[sortPos];
+          const primary = parseFloat(String(primaryRaw ?? "0").replace(/,/g, ""));
+          if (!(primary > 0)) continue;
+          const stats = (idxs.length ? idxs : spec.labelKeys.map((_, i) => i)).map(
+            (i) => totals[i] ?? "—",
+          );
+          rows.push({ id: String(ath.id), name: ath.displayName, stats });
+        }
+        rows.sort((a, b) => {
+          const av = parseFloat(String(a.stats[sortPos] ?? "0").replace(/,/g, "")) || 0;
+          const bv = parseFloat(String(b.stats[sortPos] ?? "0").replace(/,/g, "")) || 0;
+          return bv - av;
+        });
+        if (rows.length) {
+          playerTables.push({ name: spec.title, labels, rows: rows.slice(0, 12) });
+        }
+      }
+    } catch {
+      /* optional */
+    }
+  }
+
   return {
     id,
     name: t.displayName ?? "Team",
@@ -804,6 +974,7 @@ export async function fetchNflTeamPage(teamId: string): Promise<NflTeamPage> {
       ? { id: String(next.id), name: next.name ?? "Next game", date: next.date ?? null }
       : null,
     statGroups,
+    playerTables,
     roster: rosterPlayers,
   };
 }

@@ -83,6 +83,66 @@ export default function NflTeamPage() {
             </div>
           )}
 
+          {t.playerTables.length > 0 && (
+            <section className="space-y-4">
+              <h2 className="rule-head">Player stats</h2>
+              {t.playerTables.map((table) => (
+                <div
+                  key={table.name}
+                  className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]"
+                >
+                  <div className="border-b border-white/[0.06] px-4 py-2.5">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+                      {table.name}
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[420px] text-left text-[12px]">
+                      <thead>
+                        <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                          <th className="px-4 py-2 font-medium">Player</th>
+                          {table.labels.map((lab) => (
+                            <th key={lab} className="numeral px-2 py-2 text-right font-medium">
+                              {lab}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {table.rows.map((row) => (
+                          <tr key={`${table.name}-${row.id}`} className="border-t border-white/[0.05]">
+                            <td className="px-4 py-2">
+                              <Link
+                                to={`/sports/nfl/player/${row.id}`}
+                                className="text-cream inline-flex items-center gap-2 font-medium hover:underline"
+                              >
+                                <img
+                                  src={nflHeadshot(row.id, 80)}
+                                  alt=""
+                                  className="h-7 w-7 rounded-full bg-[#1a2030] object-cover object-top"
+                                  loading="lazy"
+                                />
+                                {row.name}
+                              </Link>
+                            </td>
+                            {row.stats.map((val, i) => (
+                              <td
+                                key={`${row.id}-${table.labels[i] ?? i}`}
+                                className="numeral px-2 py-2 text-right text-white/90"
+                              >
+                                {val}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </section>
+          )}
+
           <section>
             <h2 className="rule-head mb-3">Roster</h2>
             {t.roster.length === 0 ? (

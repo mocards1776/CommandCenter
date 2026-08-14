@@ -51,23 +51,23 @@ function LeaderTable({
                   if (l.id) navigate(`/sports/golf/player/${l.id}`);
                 }}
               >
-                <td className="numeral py-3 pr-2 text-[12px] text-white/45">{l.position ?? i + 1}</td>
-                <td className="py-3 pr-2">
+                <td className="numeral py-1.5 pr-2 text-[12px] text-white/45">{l.position ?? i + 1}</td>
+                <td className="py-1.5 pr-2">
                   <span className="inline-flex max-w-[14rem] items-center gap-1.5 sm:max-w-[18rem]">
                     {watched && <Star size={12} className="shrink-0 fill-[#4ea1ff] text-[#4ea1ff]" />}
                     <span className="truncate text-[13px] font-medium text-white">{name}</span>
                     {l.fedexCupRank != null && l.fedexCupRank > 0 ? (
-                      <span className="numeral shrink-0 text-[10px] font-medium text-[#d4a574]/90">
+                      <span className="numeral ml-0.5 shrink-0 text-[10px] font-medium text-[#d4a574]/90">
                         {l.fedexCupRank}
                       </span>
                     ) : null}
                   </span>
                 </td>
-                <td className="numeral py-3 pr-2 text-right text-[14px] font-semibold text-[#ff6b6b]">
+                <td className="numeral py-1.5 pr-2 text-right text-[14px] font-semibold text-[#ff6b6b]">
                   {l.score}
                 </td>
-                <td className="numeral py-3 pr-2 text-right text-[12px] text-white/70">{l.thru ?? "—"}</td>
-                <td className="numeral py-3 text-right text-[12px] text-white/70">{l.r1 ?? "—"}</td>
+                <td className="numeral py-1.5 pr-2 text-right text-[12px] text-white/70">{l.thru ?? "—"}</td>
+                <td className="numeral py-1.5 text-right text-[12px] text-white/70">{l.r1 ?? "—"}</td>
               </tr>
             );
           })}
@@ -195,9 +195,9 @@ export default function GolfSidebar({
           {tour.isPending ? (
             <p className="text-[12px] text-white/50">Loading tournament…</p>
           ) : (
-            <div className="space-y-8">
+            <div className="space-y-5">
               <section>
-                <div className="mb-2 flex items-baseline justify-between gap-2">
+                <div className="mb-1.5 flex items-baseline justify-between gap-2">
                   <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">
                     Favorites
                   </h3>
@@ -209,7 +209,7 @@ export default function GolfSidebar({
                   </Link>
                 </div>
                 {favRows.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-white/15 px-3 py-4 text-[12px] text-white/45">
+                  <p className="rounded-lg border border-dashed border-white/15 px-3 py-3 text-[12px] text-white/45">
                     Star golfers on their profile — they’ll pin here above the field.
                   </p>
                 ) : (
@@ -218,7 +218,7 @@ export default function GolfSidebar({
               </section>
 
               <section>
-                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">
+                <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">
                   Leaderboard
                 </h3>
                 <LeaderTable rows={field} favIds={favGolferIds} highlightFavs />

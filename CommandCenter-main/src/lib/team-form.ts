@@ -1,0 +1,359 @@
+/** Recent W-L form for teams (MLB via Stats API, NFL via ESPN scoreboard history). */
+
+import { chicagoToday } from "./mlb";
+
+export type TeamFormStrip = {
+  teamId: number | string;
+  abbrev: string;
+  name: string;
+  record: string | null;
+  standing: string | null;
+  last5: string;
+  last10: string;
+  last20: string;
+};
+
+function formRecord(results: boolean[], n: number): string {
+  const slice = results.slice(-n);
+  if (!slice.length) return "—";
+  const w = slice.filter(Boolean).length;
+  return `${w}-${slice.length - w}`;
+}
+
+function addDaysIso(iso: string, delta: number): string {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + delta);
+  return d.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+}
+
+/** MLB team form from recent finals on the schedule. */
+export async function fetchMlbTeamForm(teamId: number): Promise<TeamFormStrip> {
+  const end = chicagoToday();
+  const start = addDaysIso(end, -45);
+  const [schedRes, standRes] = await Promise.all([
+    fetch(
+      `https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${teamId}&startDate=${start}&endDate=${end}`,
+      { headers: { Accept: "application/json" } },
+    ),
+    fetch(
+      `https://statsapi.mlb.com/api/v1/standings?leagueId=103,104&season=${end.slice(0, 4)}&standingsTypes=regularSeason`,
+      { headers: { Accept: "application/json" } },
+    ),
+  ]);
+  const wins: boolean[] = [];
+  let abbrev = "—";
+  let name = "Team";
+  let record: string | null = null;
+  if (schedRes.ok) {
+    const sched = (await schedRes.json()) as {
+      dates?: {
+        games?: {
+          officialDate?: string;
+          status?: { abstractGameState?: string };
+          teams?: {
+            away?: {
+              team?: { id?: number; name?: string; abbreviation?: string };
+              isWinner?: boolean;
+              leagueRecord?: { wins?: number; losses?: number };
+            };
+            home?: {
+              team?: { id?: number; name?: string; abbreviation?: string };
+              isWinner?: boolean;
+              leagueRecord?: { wins?: number; losses?: number };
+            };
+          };
+        }[];
+      }[];
+    };
+    const rows: { date: string; won: boolean }[] = [];
+    for (const day of sched.dates ?? []) {
+      for (const g of day.games ?? []) {
+        if (g.status?.abstractGameState !== "Final") continue;
+        const home = g.teams?.home;
+        const away = g.teams?.away;
+        if (!home || !away) continue;
+        const us = home.team?.id === teamId ? home : away;
+        if (us.team?.id !== teamId) continue;
+        abbrev = us.team?.abbreviation ?? abbrev;
+        name = us.team?.name ?? name;
+        if (us.leagueRecord) {
+          record = `${us.leagueRecord.wins ?? 0}-${us.leagueRecord.losses ?? 0}`;
+        }
+        rows.push({
+          date: g.officialDate ?? "",
+          won: Boolean(us.isWinner),
+        });
+      }
+    }
+    rows.sort((a, b) => a.date.localeCompare(b.date));
+    for (const r of rows) wins.push(r.won);
+  }
+
+  let standing: string | null = null;
+  if (standRes.ok) {
+    const stand = (await standRes.json()) as {
+      records?: {
+        division?: { name?: string };
+        teamRecords?: {
+          team?: { id?: number };
+          divisionRank?: string;
+          leagueRecord?: { wins?: number; losses?: number };
+        }[];
+      }[];
+    };
+    for (const block of stand.records ?? []) {
+      for (const row of block.teamRecords ?? []) {
+        if (row.team?.id !== teamId) continue;
+        const div = (block.division?.name ?? "")
+          .replace("National League ", "NL ")
+          .replace("American League ", "AL ");
+        standing = row.divisionRank ? `${row.divisionRank} · ${div}` : div || null;
+        if (!record && row.leagueRecord) {
+          record = `${row.leagueRecord.wins ?? 0}-${row.leagueRecord.losses ?? 0}`;
+        }
+      }
+    }
+  }
+
+  return {
+    teamId,
+    abbrev,
+    name,
+    record,
+    standing,
+    last5: formRecord(wins, 5),
+    last10: formRecord(wins, 10),
+    last20: formRecord(wins, 20),
+  };
+}
+
+/** NFL team form from recent ESPN scoreboard days. */
+export async function fetchNflTeamForm(
+  teamId: number | string,
+  abbrevHint?: string,
+): Promise<TeamFormStrip> {
+  const id = String(teamId);
+  const wins: boolean[] = [];
+  let abbrev = abbrevHint ?? "—";
+  let name = "Team";
+  let record: string | null = null;
+  const today = new Date();
+  for (let i = 0; i < 28; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    try {
+      const res = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${y}${m}${day}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!res.ok) continue;
+      const board = (await res.json()) as {
+        events?: {
+          competitions?: {
+            status?: { type?: { state?: string; completed?: boolean } };
+            competitors?: {
+              homeAway?: string;
+              winner?: boolean;
+              score?: string | number;
+              records?: { type?: string; summary?: string }[];
+              team?: { id?: string; abbreviation?: string; displayName?: string };
+            }[];
+          }[];
+        }[];
+      };
+      for (const event of board.events ?? []) {
+        const comp = event.competitions?.[0];
+        const status = comp?.status?.type;
+        const final = status?.state === "post" || status?.completed === true;
+        if (!final) continue;
+        const us = (comp?.competitors ?? []).find((c) => String(c.team?.id) === id);
+        if (!us) continue;
+        abbrev = us.team?.abbreviation ?? abbrev;
+        name = us.team?.displayName ?? name;
+        const rec = (us.records ?? []).find((r) => r.type === "total")?.summary;
+        if (rec) record = rec;
+        wins.push(Boolean(us.winner));
+      }
+    } catch {
+      /* skip day */
+    }
+  }
+  // wins collected newest-first from the loop — reverse to chronological.
+  wins.reverse();
+  return {
+    teamId: id,
+    abbrev,
+    name,
+    record,
+    standing: null,
+    last5: formRecord(wins, 5),
+    last10: formRecord(wins, 10),
+    last20: formRecord(wins, 20),
+  };
+}
+
+export type CategoryLeader = {
+  category: string;
+  abbrev: string;
+  playerId: number;
+  name: string;
+  shortName: string;
+  value: string;
+  line: string;
+};
+
+/** Cardinals-style batting / pitching category leaders (with photos). */
+export async function fetchMlbTeamCategoryLeaders(
+  teamId: number,
+  abbrev: string,
+): Promise<{ batting: CategoryLeader[]; pitching: CategoryLeader[] }> {
+  const season = Number(chicagoToday().slice(0, 4));
+  async function topHit(
+    sortStat: string,
+    category: string,
+    abbrevLabel: string,
+    format: (stat: Record<string, unknown>) => { value: string; line: string } | null,
+    opts?: { minAb?: number },
+  ): Promise<CategoryLeader | null> {
+    const url =
+      `https://statsapi.mlb.com/api/v1/stats?stats=season&group=hitting&season=${season}` +
+      `&teamIds=${teamId}&sportIds=1&playerPool=all&limit=12&order=desc&sortStat=${sortStat}`;
+    const raw = (await fetch(url, { headers: { Accept: "application/json" } }).then((r) =>
+      r.json(),
+    )) as {
+      stats?: {
+        splits?: {
+          player?: { id?: number; fullName?: string };
+          stat?: Record<string, unknown>;
+        }[];
+      }[];
+    };
+    for (const s of raw.stats?.[0]?.splits ?? []) {
+      const ab = Number(s.stat?.atBats ?? 0);
+      if (opts?.minAb != null && ab < opts.minAb) continue;
+      const formatted = format(s.stat ?? {});
+      if (!formatted || !s.player?.id) continue;
+      const full = s.player.fullName ?? "—";
+      const parts = full.trim().split(/\s+/);
+      const short =
+        parts.length >= 2
+          ? `${parts[0]![0]}. ${parts[parts.length - 1]}`
+          : full;
+      return {
+        category,
+        abbrev: abbrevLabel,
+        playerId: s.player.id,
+        name: full,
+        shortName: short,
+        value: formatted.value,
+        line: `${abbrev} · ${formatted.line}`,
+      };
+    }
+    return null;
+  }
+
+  async function topPitch(
+    sortStat: string,
+    category: string,
+    abbrevLabel: string,
+    order: "asc" | "desc",
+    format: (stat: Record<string, unknown>) => { value: string; line: string } | null,
+    opts?: { minIp?: number },
+  ): Promise<CategoryLeader | null> {
+    const url =
+      `https://statsapi.mlb.com/api/v1/stats?stats=season&group=pitching&season=${season}` +
+      `&teamIds=${teamId}&sportIds=1&playerPool=all&limit=12&order=${order}&sortStat=${sortStat}`;
+    const raw = (await fetch(url, { headers: { Accept: "application/json" } }).then((r) =>
+      r.json(),
+    )) as {
+      stats?: {
+        splits?: {
+          player?: { id?: number; fullName?: string };
+          stat?: Record<string, unknown>;
+        }[];
+      }[];
+    };
+    for (const s of raw.stats?.[0]?.splits ?? []) {
+      const ip = parseFloat(String(s.stat?.inningsPitched ?? 0));
+      if (opts?.minIp != null && !(ip >= opts.minIp)) continue;
+      const formatted = format(s.stat ?? {});
+      if (!formatted || !s.player?.id) continue;
+      const full = s.player.fullName ?? "—";
+      const parts = full.trim().split(/\s+/);
+      const short =
+        parts.length >= 2
+          ? `${parts[0]![0]}. ${parts[parts.length - 1]}`
+          : full;
+      return {
+        category,
+        abbrev: abbrevLabel,
+        playerId: s.player.id,
+        name: full,
+        shortName: short,
+        value: formatted.value,
+        line: `${abbrev} · ${formatted.line}`,
+      };
+    }
+    return null;
+  }
+
+  const batting = (
+    await Promise.all([
+      topHit("homeRuns", "Home runs", "HR", (s) => ({
+        value: String(s.homeRuns ?? 0),
+        line: `${s.avg ?? "—"} AVG · ${s.rbi ?? 0} RBI`,
+      })),
+      topHit(
+        "avg",
+        "Average",
+        "AVG",
+        (s) => ({
+          value: String(s.avg ?? "—"),
+          line: `${s.homeRuns ?? 0} HR · ${s.rbi ?? 0} RBI`,
+        }),
+        { minAb: 100 },
+      ),
+      topHit("rbi", "RBI", "RBI", (s) => ({
+        value: String(s.rbi ?? 0),
+        line: `${s.homeRuns ?? 0} HR · ${s.avg ?? "—"} AVG`,
+      })),
+      topHit("stolenBases", "Stolen bases", "SB", (s) => ({
+        value: String(s.stolenBases ?? 0),
+        line: `${s.avg ?? "—"} AVG · ${s.homeRuns ?? 0} HR`,
+      })),
+    ])
+  ).filter((x): x is CategoryLeader => Boolean(x));
+
+  const pitching = (
+    await Promise.all([
+      topPitch(
+        "era",
+        "ERA",
+        "ERA",
+        "asc",
+        (s) => ({
+          value: String(s.era ?? "—"),
+          line: `${s.wins ?? 0}-${s.losses ?? 0} · ${s.inningsPitched ?? "—"} IP`,
+        }),
+        { minIp: 40 },
+      ),
+      topPitch("strikeOuts", "Strikeouts", "SO", "desc", (s) => ({
+        value: String(s.strikeOuts ?? 0),
+        line: `${s.era ?? "—"} ERA · ${s.inningsPitched ?? "—"} IP`,
+      })),
+      topPitch("wins", "Wins", "W", "desc", (s) => ({
+        value: String(s.wins ?? 0),
+        line: `${s.era ?? "—"} ERA · ${s.strikeOuts ?? 0} SO`,
+      })),
+      topPitch("saves", "Saves", "SV", "desc", (s) => ({
+        value: String(s.saves ?? 0),
+        line: `${s.era ?? "—"} ERA · ${s.strikeOuts ?? 0} SO`,
+      })),
+    ])
+  ).filter((x): x is CategoryLeader => Boolean(x));
+
+  return { batting, pitching };
+}

@@ -387,6 +387,10 @@ export const DEFAULT_CONTENT_HIDES = [
   "get the latest from mlb signup",
   "morning lineup",
   "mlb morning lineup",
+  "see aps full mlb coverage here",
+  "see ap s full mlb coverage here",
+  "see aps full mlb coverage",
+  "full mlb coverage here",
 ] as const;
 
 /** Collect user content-hide phrases plus built-in MLB clutter patterns. */
@@ -439,7 +443,7 @@ function pickPromoBlock(start: Element, root: Element): Element | null {
         parentEl !== root &&
         BLOCK_TAGS.has(parentEl.tagName) &&
         parentText.length > 0 &&
-        parentText.length < 280
+        parentText.length < 480
       ) {
         el = parentEl;
         continue;
@@ -449,6 +453,27 @@ function pickPromoBlock(start: Element, root: Element): Element | null {
     el = el.parentElement;
   }
   return block;
+}
+
+/** Prefer the smallest element that fully contains the hide phrase. */
+function pickHideTarget(start: Element, root: Element, needle: string): Element | null {
+  let el: Element | null = start;
+  let best: Element | null = null;
+  while (el && el !== root) {
+    const text = normalizeHideText(el.textContent ?? "");
+    if (text.includes(needle)) {
+      best = el;
+      // Stop climbing once the parent balloons past a short promo blurb.
+      const parent = el.parentElement;
+      if (parent && parent !== root) {
+        const parentText = normalizeHideText(parent.textContent ?? "");
+        if (parentText.length > Math.max(needle.length + 80, 320)) break;
+      }
+    }
+    el = el.parentElement;
+  }
+  if (best && BLOCK_TAGS.has(best.tagName)) return best;
+  return best ? pickPromoBlock(best, root) ?? best : null;
 }
 
 /**
@@ -472,6 +497,12 @@ export function hidePhrasesInHtml(html: string, phrases: string[]): string {
     return needles.some((n) => t.includes(n));
   };
 
+  const matchingNeedle = (text: string) => {
+    const t = normalizeHideText(text);
+    if (!t) return null;
+    return needles.find((n) => t.includes(n)) ?? null;
+  };
+
   const toRemove = new Set<Element>();
 
   // 1) Text-node hits (user highlight / partial copy).
@@ -480,17 +511,34 @@ export function hidePhrasesInHtml(html: string, phrases: string[]): string {
     let node = walker.nextNode();
     while (node) {
       const value = node.nodeValue ?? "";
-      if (matchesPhrase(value) && node.parentElement) {
-        const block = pickPromoBlock(node.parentElement, root);
-        if (block) toRemove.add(block);
+      const needle = matchingNeedle(value);
+      if (needle && node.parentElement) {
+        const target = pickHideTarget(node.parentElement, root, needle);
+        if (target) {
+          toRemove.add(target);
+        } else if (normalizeHideText(value).length <= needle.length + 48) {
+          // Phrase is the whole text node inside a longer story block — drop it.
+          node.nodeValue = "";
+        }
       }
       node = walker.nextNode();
     }
 
-    // 2) Block-level scan — catches promo copy split across nested spans/links.
+    // 2) Inline / anchor hits — AP promo footers are often a lone <a> in a long column.
+    root.querySelectorAll("a, span, em, strong, small").forEach((el) => {
+      const text = normalizeHideText(el.textContent ?? "");
+      if (!text || text.length > 240) return;
+      const needle = matchingNeedle(text);
+      if (!needle) return;
+      // Only remove when the element is mostly the promo phrase.
+      if (text.length > needle.length + 48) return;
+      toRemove.add(el);
+    });
+
+    // 3) Block-level scan — catches promo copy split across nested spans/links.
     root.querySelectorAll([...BLOCK_TAGS].map((t) => t.toLowerCase()).join(",")).forEach((el) => {
       const text = normalizeHideText(el.textContent ?? "");
-      if (!text || text.length > 280) return;
+      if (!text || text.length > 480) return;
       if (!matchesPhrase(text)) return;
       const block = pickPromoBlock(el, root) ?? el;
       toRemove.add(block);
@@ -1210,11 +1258,11 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       sportPath: "football/nfl",
       linkSport: "nfl",
       days: 14,
-      maxItems: 40,
-      // Same bar as MLB: finals (and today's previews) only when ESPN has real copy.
+      maxItems: 48,
       preferFinals: true,
-      includeLive: false,
-      stubWithoutArticle: false,
+      includeLive: true,
+      // Preseason often lags on recap copy — still surface finals with a score stub.
+      stubWithoutArticle: true,
     });
   }
   if (feedUrl === "synthetic:mlb-stats") {
@@ -1383,6 +1431,52 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
       }
     } catch {
       /* skip day */
+    }
+  }
+
+  // NFL: also pull the undated "current week" scoreboard so preseason / bye weeks aren't missed.
+  if (linkSport === "nfl" && candidates.length < 8) {
+    try {
+      const boardRes = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (boardRes.ok) {
+        const board = (await boardRes.json()) as {
+          events?: (typeof candidates)[number]["event"][];
+        };
+        for (const event of board.events ?? []) {
+          const comp = event.competitions?.[0];
+          if (!comp) continue;
+          const status = comp.status?.type ?? event.status?.type;
+          const isFinal = status?.state === "post" || status?.completed === true;
+          const isPreview =
+            status?.state === "pre" ||
+            /STATUS_SCHEDULED|STATUS_PRE/i.test(status?.name ?? "");
+          const isLive = status?.state === "in" || (!isFinal && !isPreview);
+          if (!isFinal && !isPreview && !(opts.includeLive && isLive)) continue;
+          const eventId = event.id ?? comp.id;
+          if (!eventId || seen.has(eventId)) continue;
+          seen.add(eventId);
+          const when = event.date ? new Date(event.date) : today;
+          const y = when.getFullYear();
+          const m = String(when.getMonth() + 1).padStart(2, "0");
+          const day = String(when.getDate()).padStart(2, "0");
+          candidates.push({
+            eventId,
+            dateStr: `${y}${m}${day}`,
+            y,
+            m,
+            day,
+            event,
+            isFinal,
+            isPreview,
+            isLive,
+          });
+        }
+      }
+    } catch {
+      /* optional */
     }
   }
 

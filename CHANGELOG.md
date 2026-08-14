@@ -2,6 +2,20 @@
 
 ---
 
+## Wraps, sidebar leaders, golf tabs, NFL team stats — August 14, 2026
+
+- MLB player links in Dispatch/wraps go to in-app player pages (mlb.com anchors rewritten even before name index loads).
+- Dispatch notes aside: weather glyphs + Cardinals batting/pitching leaders with headshots.
+- MLB highlight videos with “ABS” in the title are hidden.
+- Box score HR notes use season totals.
+- “See AP’s full MLB coverage” is stripped by default and can be hidden without wiping the whole wrap.
+- Game wraps/previews: team form with L5 / L10 / L20.
+- Golf leaderboard row spacing tightened; golfer cards get Overview / News & Video / Bio / Results tabs.
+- NFL game wraps: ESPN-style recap + team stats + full boxscore; wraps feed stubs finals without articles + current-week scoreboard fallback.
+- NFL + MLB team pages: ESPN-style player stats tables (passing/rushing/receiving/defense; batting/pitching).
+
+---
+
 ## Golf FedEx polish, Hot Seat edge, RuWT today — August 14, 2026
 
 - Golf leaderboard: subtle FedEx rank number after the name (not FX#).

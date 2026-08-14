@@ -4,7 +4,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, Loader2, Share } fr
 import toast from "react-hot-toast";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import { MlbGameDetail } from "@/pages/MlbGamePage";
-import NflFieldMap from "@/components/sports/NflFieldMap";
+import { NflGameDetailView } from "@/pages/NflGamePage";
 import { parseEspnGameIdFromUrl, resolveMlbGamePkFromEspnEvent } from "@/lib/mlb";
 import { fetchNflGameDetail } from "@/lib/nfl";
 
@@ -210,77 +210,12 @@ export default function DispatchEspnGameReader({
         </div>
       );
     }
-    if (nflGame.data) {
-      const g = nflGame.data;
+    if (nflGame.data || eventId) {
       return (
         <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
           {chrome}
           {hero}
-          <div className="bg-panel overflow-hidden rounded-xl border border-white/[0.1]">
-            <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
-                {g.shortDetail ?? g.status}
-              </p>
-              <Link
-                to={`/sports/nfl/game/${g.id}`}
-                className="text-accent text-[11px] uppercase tracking-[0.14em] hover:underline"
-              >
-                Open game
-              </Link>
-            </div>
-            <div className="grid grid-cols-2 gap-3 p-4">
-              {[g.away, g.home].map((s) => (
-                <div key={s.teamId} className="flex items-center gap-2">
-                  {s.logo && <img src={s.logo} alt="" className="h-8 w-8 object-contain" />}
-                  <span className="text-cream text-[14px] font-semibold">{s.abbrev}</span>
-                  <span className="numeral text-cream ml-auto text-[24px]">{s.score ?? "—"}</span>
-                </div>
-              ))}
-            </div>
-            {(g.live || g.situation) && (
-              <div className="px-3 pb-3">
-                <NflFieldMap
-                  game={g}
-                  homeYardLine={g.situation?.yardLine ?? null}
-                  possessionTeamId={g.situation?.possessionTeamId ?? null}
-                  downDistanceText={g.situation?.downDistanceText}
-                />
-              </div>
-            )}
-          </div>
-          {g.article?.storyHtml ? (
-            <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
-              <div className="border-b border-white/[0.06] px-4 py-3">
-                <h2 className="font-rss text-[20px] font-semibold leading-snug text-cream">
-                  {g.article.headline}
-                </h2>
-              </div>
-              <SelectableHighlightRegion
-                articleUrl={url}
-                articleTitle={g.article.headline || title || "Game wrap"}
-                feedUrl="synthetic:nfl-wraps"
-                articleImage={heroImage ?? null}
-                html={g.article.storyHtml}
-                className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-medium [&_a]:text-[#9ec1ff] [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
-              />
-            </section>
-          ) : fallback.data ? (
-            <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
-              <div className="border-b border-white/[0.06] px-4 py-3">
-                <h2 className="font-rss text-[20px] font-semibold leading-snug text-cream">
-                  {fallback.data.headline}
-                </h2>
-              </div>
-              <SelectableHighlightRegion
-                articleUrl={url}
-                articleTitle={fallback.data.headline || title || "Game story"}
-                feedUrl={nfl ? "synthetic:nfl-wraps" : "synthetic:mlb-wraps"}
-                articleImage={heroImage ?? null}
-                html={fallback.data.html}
-                className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-medium [&_a]:text-[#9ec1ff] [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
-              />
-            </section>
-          ) : null}
+          <NflGameDetailView eventId={eventId!} />
         </div>
       );
     }
