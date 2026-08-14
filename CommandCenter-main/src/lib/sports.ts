@@ -1358,7 +1358,7 @@ export async function fetchGolferScorecard(
 
   let raw: PlayerSummaryPayload | null = null;
 
-  // site.api first (same host as the rest of sports); web.api as backup.
+  // site.api first (same host as the rest of sports); web.api + edge as backup.
   try {
     raw = (await espnGet(summaryPath)) as PlayerSummaryPayload;
   } catch {
@@ -1371,6 +1371,20 @@ export async function fetchGolferScorecard(
         { headers: { Accept: "application/json" } },
       );
       if (res.ok) raw = (await res.json()) as PlayerSummaryPayload;
+    } catch {
+      /* none */
+    }
+  }
+  if (!raw?.rounds?.length) {
+    try {
+      const { data } = await supabase.functions.invoke("sports", {
+        body: { action: "golferScorecard", golferId: playerId, eventId, season },
+      });
+      const payload = data as (PlayerSummaryPayload & { eventName?: string | null }) | null;
+      if (payload?.rounds?.length) {
+        raw = payload;
+        if (payload.eventName) eventName = payload.eventName;
+      }
     } catch {
       /* none */
     }

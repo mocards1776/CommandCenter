@@ -33,14 +33,15 @@ import {
   scoreTypeColor,
   type GolfHoleScore,
   type GolfRoundScorecard,
+  type GolferTournamentScorecard,
 } from "@/lib/sports";
 import { cn } from "@/lib/utils";
 
 type GolferTab = "overview" | "scorecard" | "news" | "bio" | "results";
 
 const TABS: { id: GolferTab; label: string }[] = [
+  { id: "scorecard", label: "Hole map" },
   { id: "overview", label: "Overview" },
-  { id: "scorecard", label: "Scorecard" },
   { id: "news", label: "News & Video" },
   { id: "bio", label: "Bio" },
   { id: "results", label: "Results" },
@@ -151,6 +152,26 @@ function MediaSection({
   );
 }
 
+function holeResultLabel(h: GolfHoleScore | undefined): string {
+  if (!h || h.strokes == null) return "—";
+  if (h.scoreType) return h.scoreType;
+  if (h.toPar == null) return `${h.strokes}`;
+  if (h.toPar <= -3) return "Albatross";
+  if (h.toPar === -2) return "Eagle";
+  if (h.toPar === -1) return "Birdie";
+  if (h.toPar === 0) return "Par";
+  if (h.toPar === 1) return "Bogey";
+  if (h.toPar === 2) return "Double";
+  return `+${h.toPar}`;
+}
+
+function toParText(toPar: number | null): string {
+  if (toPar == null) return "";
+  if (toPar === 0) return "E";
+  if (toPar > 0) return `+${toPar}`;
+  return String(toPar);
+}
+
 function HoleMap({
   holes,
   currentHole,
@@ -173,9 +194,9 @@ function HoleMap({
           <div
             key={hole}
             className={cn(
-              "relative flex aspect-square flex-col items-center justify-center rounded-md border text-center",
+              "relative flex min-h-[3.25rem] flex-col items-center justify-center rounded-md border text-center sm:min-h-[3.75rem]",
               played ? "border-white/15 bg-[#0f1520]" : "border-dashed border-white/10 bg-transparent",
-              active && "ring-1 ring-[#4ea1ff]/70",
+              active && "ring-2 ring-[#4ea1ff]",
             )}
             title={
               h
@@ -185,7 +206,7 @@ function HoleMap({
           >
             <span className="text-[9px] uppercase tracking-[0.08em] text-white/40">{hole}</span>
             <span
-              className="numeral text-[14px] font-semibold leading-none"
+              className="numeral text-[16px] font-semibold leading-none sm:text-[18px]"
               style={{
                 color: played ? scoreTypeColor(h?.scoreType ?? null, h?.toPar ?? null) : "#64748b",
               }}
@@ -199,6 +220,116 @@ function HoleMap({
         );
       })}
     </div>
+  );
+}
+
+/** Hole-by-hole play-by-play list (result on each hole). */
+function HolePlayByPlay({
+  holes,
+  currentHole,
+}: {
+  holes: GolfHoleScore[];
+  currentHole: number | null;
+}) {
+  const byHole = new Map(holes.map((h) => [h.hole, h]));
+  return (
+    <ol className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0b1220]">
+      {Array.from({ length: 18 }, (_, i) => {
+        const hole = i + 1;
+        const h = byHole.get(hole);
+        const played = h?.strokes != null;
+        const active = currentHole === hole;
+        const label = holeResultLabel(h);
+        return (
+          <li
+            key={hole}
+            className={cn(
+              "flex items-center gap-3 border-b border-white/[0.06] px-3 py-2.5 last:border-b-0",
+              active && "bg-[#4ea1ff]/12",
+              !played && "opacity-45",
+            )}
+          >
+            <span className="numeral w-10 shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">
+              H{hole}
+            </span>
+            <span className="min-w-0 flex-1 text-[13px] text-white">
+              {h?.par != null ? `Par ${h.par}` : "Par —"}
+              <span
+                className="ml-2 font-semibold"
+                style={{ color: played ? scoreTypeColor(h?.scoreType ?? null, h?.toPar ?? null) : undefined }}
+              >
+                {label}
+              </span>
+            </span>
+            <span
+              className="numeral shrink-0 text-[15px] font-semibold tabular-nums"
+              style={{ color: played ? scoreTypeColor(h?.scoreType ?? null, h?.toPar ?? null) : "#64748b" }}
+            >
+              {played ? h!.strokes : "·"}
+            </span>
+            <span className="numeral w-8 shrink-0 text-right text-[12px] text-white/45">
+              {played ? toParText(h!.toPar) : ""}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function pickLiveRound(card: GolferTournamentScorecard): GolfRoundScorecard {
+  return (
+    [...card.rounds]
+      .sort((a, b) => b.round - a.round)
+      .find((r) => r.holes.some((h) => h.strokes != null)) ?? card.rounds[card.rounds.length - 1]!
+  );
+}
+
+function LiveHoleBoard({
+  card,
+  showPlayByPlay = true,
+}: {
+  card: GolferTournamentScorecard;
+  showPlayByPlay?: boolean;
+}) {
+  const live = pickLiveRound(card);
+  return (
+    <section className="space-y-3 rounded-xl border border-white/[0.12] bg-[#12151c] p-4">
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+          Hole map · play-by-play · Round {live.round}
+        </p>
+        <p className="mt-1 text-[15px] text-white">
+          {card.eventName ?? "Current tournament"}
+          {card.totalToPar ? (
+            <span className="numeral text-[#4ade80]"> · {card.totalToPar}</span>
+          ) : null}
+          {card.position ? <span className="text-white/50"> · Pos {card.position}</span> : null}
+          {card.currentHole != null ? (
+            <span className="text-white/50"> · hole {card.currentHole}</span>
+          ) : null}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.12em] text-white/45">
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-[#38bdf8]" /> Eagle+
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-[#4ade80]" /> Birdie
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-[#e8e4d9]" /> Par
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-[#fbbf24]" /> Bogey
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-[#f87171]" /> Double+
+        </span>
+      </div>
+      <HoleMap holes={live.holes} currentHole={card.currentHole} />
+      {showPlayByPlay ? <HolePlayByPlay holes={live.holes} currentHole={card.currentHole} /> : null}
+    </section>
   );
 }
 
@@ -227,6 +358,12 @@ function RoundScorecard({
         </p>
       </div>
       <HoleMap holes={round.holes} currentHole={currentHole} />
+      <div className="mt-4">
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+          Hole play-by-play
+        </p>
+        <HolePlayByPlay holes={round.holes} currentHole={currentHole} />
+      </div>
       {(front.length > 0 || back.length > 0) && (
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[520px] text-center text-[11px]">
@@ -329,7 +466,7 @@ export default function GolferPage() {
   const swipeRef = useSwipeBack(() => navigate(-1));
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<GolferTab>("overview");
+  const [tab, setTab] = useState<GolferTab>("scorecard");
 
   const profile = useQuery({
     queryKey: ["golfer-profile", golferId],
@@ -493,6 +630,27 @@ export default function GolferPage() {
 
           {tab === "overview" && (
             <div className="space-y-5">
+              {scorecard.data?.rounds?.length ? (
+                <div className="space-y-2">
+                  <LiveHoleBoard card={scorecard.data} showPlayByPlay />
+                  <button
+                    type="button"
+                    onClick={() => setTab("scorecard")}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#4ea1ff]"
+                  >
+                    All rounds <ChevronRight size={14} />
+                  </button>
+                </div>
+              ) : scorecard.isPending ? (
+                <p className="text-chalk flex items-center gap-2 text-[13px]">
+                  <Loader2 size={14} className="animate-spin" /> Loading hole map…
+                </p>
+              ) : (
+                <p className="rounded-xl border border-dashed border-white/15 px-4 py-3 text-[13px] text-white/45">
+                  No live hole map for this golfer in the current event.
+                </p>
+              )}
+
               {p.rankings.length > 0 && (
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {p.rankings.map((r) => (
@@ -583,56 +741,6 @@ export default function GolferPage() {
                 </section>
               )}
 
-              {scorecard.data?.rounds?.length ? (
-                <section className="rounded-xl border border-white/[0.1] bg-[#12151c] p-4">
-                  {(() => {
-                    const live =
-                      [...scorecard.data.rounds]
-                        .sort((a, b) => b.round - a.round)
-                        .find((r) => r.holes.some((h) => h.strokes != null)) ??
-                      scorecard.data.rounds[scorecard.data.rounds.length - 1]!;
-                    return (
-                      <>
-                        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-                          <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                              Hole map · Round {live.round}
-                            </p>
-                            <p className="mt-1 text-[14px] text-white">
-                              {scorecard.data.eventName ?? "This week"}
-                              {scorecard.data.totalToPar ? (
-                                <span className="numeral text-[#4ade80]">
-                                  {" "}
-                                  · {scorecard.data.totalToPar}
-                                </span>
-                              ) : null}
-                              {scorecard.data.currentHole != null ? (
-                                <span className="text-white/45">
-                                  {" "}
-                                  · hole {scorecard.data.currentHole}
-                                </span>
-                              ) : null}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setTab("scorecard")}
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#4ea1ff]"
-                          >
-                            Full card <ChevronRight size={14} />
-                          </button>
-                        </div>
-                        <HoleMap holes={live.holes} currentHole={scorecard.data.currentHole} />
-                      </>
-                    );
-                  })()}
-                </section>
-              ) : scorecard.isFetched && !scorecard.isPending ? (
-                <p className="text-[12px] text-white/40">
-                  No live hole map for this golfer in the current event.
-                </p>
-              ) : null}
-
               <PlayerTagsPanel
                 playerId={golferId!}
                 playerName={p.name}
@@ -648,11 +756,11 @@ export default function GolferPage() {
             <div className="space-y-4">
               {scorecard.isPending ? (
                 <p className="text-chalk flex items-center gap-2 text-[13px]">
-                  <Loader2 size={14} className="animate-spin" /> Loading scorecard…
+                  <Loader2 size={14} className="animate-spin" /> Loading hole map…
                 </p>
               ) : scorecard.isError || !scorecard.data?.rounds?.length ? (
                 <p className="text-chalk-dim text-[13px]">
-                  No live scorecard for this golfer in the current event.
+                  No live hole map / play-by-play for this golfer in the current event.
                 </p>
               ) : (
                 <>
@@ -670,30 +778,11 @@ export default function GolferPage() {
                         ? ` · playing hole ${scorecard.data.currentHole}`
                         : ""}
                     </p>
-                    <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.12em] text-white/45">
-                      <span className="inline-flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full bg-[#38bdf8]" /> Eagle+
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full bg-[#4ade80]" /> Birdie
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full bg-[#e8e4d9]" /> Par
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full bg-[#fbbf24]" /> Bogey
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full bg-[#f87171]" /> Double+
-                      </span>
-                    </div>
                   </div>
                   {[...scorecard.data.rounds]
                     .sort((a, b) => b.round - a.round)
                     .map((r) => {
-                      const liveRoundNum = [...scorecard.data!.rounds]
-                        .sort((a, b) => b.round - a.round)
-                        .find((x) => x.holes.some((h) => h.strokes != null))?.round;
+                      const liveRoundNum = pickLiveRound(scorecard.data!).round;
                       return (
                         <RoundScorecard
                           key={r.round}

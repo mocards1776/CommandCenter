@@ -1931,6 +1931,44 @@ Deno.serve(async (req: Request) => {
       return json({ error: e instanceof Error ? e.message : String(e), results: [] }, 200);
     }
   }
+  if (body.action === "golferScorecard") {
+    const golferId = String(body.golferId ?? "").trim();
+    const season = Number(body.season) || new Date().getUTCFullYear();
+    let eventId = String(body.eventId ?? "").trim();
+    if (!/^\d+$/.test(golferId)) return json({ error: "Bad golferId" }, 400);
+    try {
+      if (!eventId) {
+        const lbRes = await timedFetch(
+          `${ESPN}/golf/leaderboard`,
+          { headers: { Accept: "application/json" } },
+          FETCH_MS,
+        );
+        if (lbRes.ok) {
+          const lb = (await lbRes.json()) as { events?: { id?: string | number; name?: string }[] };
+          const ev = lb.events?.[0];
+          if (ev?.id != null) eventId = String(ev.id);
+          if (ev?.name) body.eventName = ev.name;
+        }
+      }
+      if (!eventId) return json({ error: "No event", rounds: [] }, 200);
+      const url =
+        `${ESPN}/golf/pga/leaderboard/${eventId}/playersummary?season=${season}&player=${golferId}`;
+      const res = await timedFetch(url, { headers: { Accept: "application/json" } }, FETCH_MS);
+      const text = await res.text();
+      if (!res.ok) {
+        return json({ error: `ESPN ${res.status}`, detail: text.slice(0, 200), rounds: [] }, 200);
+      }
+      const raw = JSON.parse(text) as Record<string, unknown>;
+      return json({
+        eventId,
+        eventName: body.eventName ?? null,
+        playerId: golferId,
+        ...raw,
+      });
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), rounds: [] }, 200);
+    }
+  }
   if (body.action === "golferLastWin") {
     const golferId = String(body.golferId ?? "").trim();
     if (!/^\d+$/.test(golferId)) return json({ error: "Bad golferId" }, 400);
