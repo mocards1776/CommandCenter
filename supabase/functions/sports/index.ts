@@ -382,6 +382,7 @@ async function scrapeSpotrac(name: string, hintUrl?: string | null) {
     url: playerUrl,
     name,
     contractStatus,
+    serviceTime: null as string | null,
     currentSalary:
       currentAmount != null
         ? { year, amount: currentAmount, display: moneyDisplay(currentAmount), team: null }
@@ -457,11 +458,22 @@ async function scrapeContract(name: string, hintUrl?: string | null) {
         }
         // Prefer Spotrac player URL when we have one (canonical contract page).
         if (spotrac.url) bb.url = spotrac.url;
+        // Always keep BBRef service time — Spotrac never carries it.
+        if (!bb.serviceTime && spotrac.serviceTime) bb.serviceTime = spotrac.serviceTime;
         bb.source = "spotrac+baseball-reference";
       }
       return bb;
     }
-    if (spotrac && hasContractBits(spotrac)) return spotrac;
+    if (spotrac && hasContractBits(spotrac)) {
+      // Spotrac-only wins still need BBRef service time when we scraped it.
+      if (bb?.serviceTime && !spotrac.serviceTime) {
+        spotrac.serviceTime = bb.serviceTime;
+        spotrac.source = spotrac.source
+          ? `${spotrac.source}+service-time`
+          : "spotrac+baseball-reference";
+      }
+      return spotrac;
+    }
     if (bb) return bb;
     return {
       error:
@@ -1957,13 +1969,43 @@ Deno.serve(async (req: Request) => {
     const name = String(body.name ?? "").trim();
     if (name.length < 3 || name.length > 80) return json({ error: "Bad name" }, 400);
     try {
-      return json(
-        await withBudget(
-          HEAVY_MS,
-          () => scrapePlayerExtras(name, Boolean(body.isPitcher)),
-          { error: "Player extras timed out" },
-        ),
+      // Prefer a soft timeout that still returns serviceTime/WAR when the
+      // optional league-rank scrape is what hung — never blank the whole card.
+      const partial: Record<string, unknown> = {
+        error: "Player extras timed out",
+        name,
+        serviceTime: null,
+        seasonWar: null,
+        careerWar: null,
+        warRank: null,
+        warOf: null,
+        url: null,
+      };
+      const result = await withBudget(
+        HEAVY_MS,
+        async () => {
+          const full = await scrapePlayerExtras(name, Boolean(body.isPitcher));
+          // Mirror core fields onto the soft-timeout shell so a late race still
+          // leaves something useful if the race resolves oddly.
+          for (const k of [
+            "serviceTime",
+            "seasonWar",
+            "careerWar",
+            "warRank",
+            "warOf",
+            "url",
+            "source",
+          ] as const) {
+            if (full[k] != null) partial[k] = full[k];
+          }
+          if (full.serviceTime || full.seasonWar != null || full.careerWar != null) {
+            delete partial.error;
+          }
+          return full;
+        },
+        partial,
       );
+      return json(result);
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 200);
     }
