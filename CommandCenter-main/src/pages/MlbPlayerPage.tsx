@@ -444,6 +444,37 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         <SplitsTable title={`${p.season} Splits`} rows={splits.data!} accent={accent} />
       )}
 
+      <SportsNotesPanel entityType="player" entityId={p.id} entityName={p.name} />
+
+      <ContractBlock
+        contract={contract.data ?? null}
+        loading={contract.isPending}
+        error={contract.isError ? contract.error : null}
+        onRetry={() => {
+          clearPlayerContractCache(p.name);
+          void contract.refetch();
+        }}
+        transactions={transactions.data ?? []}
+        teamName={p.teamName}
+        player={p}
+      />
+
+      {highlights.isPending && (
+        <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+          <Loader2 size={14} className="animate-spin" /> Loading highlights…
+        </p>
+      )}
+      <HighlightReel highlights={highlights.data ?? []} title="Player highlights" defaultOpen={false} />
+
+      {scouting.data ? <ScoutingReportCard report={scouting.data} /> : null}
+
+      <PlayerTagsPanel
+        playerId={p.id}
+        playerName={p.name}
+        variant="panel"
+        isFavorite={isFav}
+      />
+
       <BioAndOrigin player={p} />
 
       {(() => {
@@ -489,37 +520,6 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
           </section>
         );
       })()}
-
-      <SportsNotesPanel entityType="player" entityId={p.id} entityName={p.name} />
-
-      <ContractBlock
-        contract={contract.data ?? null}
-        loading={contract.isPending}
-        error={contract.isError ? contract.error : null}
-        onRetry={() => {
-          clearPlayerContractCache(p.name);
-          void contract.refetch();
-        }}
-        transactions={transactions.data ?? []}
-        teamName={p.teamName}
-        player={p}
-      />
-
-      {highlights.isPending && (
-        <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
-          <Loader2 size={14} className="animate-spin" /> Loading highlights…
-        </p>
-      )}
-      <HighlightReel highlights={highlights.data ?? []} title="Player highlights" defaultOpen={false} />
-
-      {scouting.data ? <ScoutingReportCard report={scouting.data} /> : null}
-
-      <PlayerTagsPanel
-        playerId={p.id}
-        playerName={p.name}
-        variant="panel"
-        isFavorite={isFav}
-      />
     </div>
   );
 }
