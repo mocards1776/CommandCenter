@@ -2,6 +2,13 @@
 
 ---
 
+## Highlight → save / hide text / block article — August 14, 2026
+
+- Selection sheet in the article reader now offers three clear actions: **Save quote**, **Hide text**, or **Block article**.
+- Block article adds a URL filter for that story and closes the reader.
+
+---
+
 ## Sports UI + feed polish — August 14, 2026
 
 - Quote share cards size to the full quote; brand with the article publisher (no “Dispatch”).

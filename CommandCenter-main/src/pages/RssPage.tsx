@@ -157,35 +157,39 @@ function HighlightComposer({
   quote,
   onSave,
   onCancel,
-  onBlock,
+  onHideText,
+  onBlockArticle,
   saving,
+  hiding,
   blocking,
 }: {
   quote: string;
   onSave: (note: string) => void;
   onCancel: () => void;
-  onBlock: () => void;
+  onHideText: () => void;
+  onBlockArticle: () => void;
   saving: boolean;
+  hiding: boolean;
   blocking: boolean;
 }) {
   const [note, setNote] = useState("");
+  const busy = saving || hiding || blocking;
   return (
     <div className="bg-panel border-accent/40 fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-50 mx-auto max-w-lg rounded border p-4 shadow-2xl md:inset-x-auto md:right-6 md:bottom-6">
       <div className="mb-3 flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onBlock}
-            disabled={blocking}
-            title="Hide this text in articles (keeps the story)"
-            className="text-chalk-dim hover:text-alert inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
-          >
-            <EyeOff size={12} />
-            Hide
-          </button>
-          <div className="label-caps text-accent">New highlight</div>
+        <div>
+          <div className="label-caps text-accent">Selection</div>
+          <p className="text-chalk-dim mt-1 text-[11px] leading-snug">
+            Save the quote, hide this text in articles, or block the whole story.
+          </p>
         </div>
-        <button type="button" onClick={onCancel} className="text-chalk-dim hover:text-cream">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={busy}
+          className="text-chalk-dim hover:text-cream disabled:opacity-40"
+          aria-label="Close"
+        >
           <X size={16} />
         </button>
       </div>
@@ -195,25 +199,50 @@ function HighlightComposer({
       <textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
-        placeholder="Add a note (optional)"
+        placeholder="Add a note (optional — for Save quote)"
         rows={3}
-        className="font-rss bg-field placeholder:text-chalk-dim text-cream mb-3 w-full resize-none rounded-sm border border-white/10 px-3 py-2 text-[15px] outline-none focus:border-accent/50"
+        disabled={busy}
+        className="font-rss bg-field placeholder:text-chalk-dim text-cream mb-3 w-full resize-none rounded-sm border border-white/10 px-3 py-2 text-[15px] outline-none focus:border-accent/50 disabled:opacity-50"
       />
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onSave(note)}
+          className="from-accent-deep to-accent-dark text-cream inline-flex w-full items-center justify-center gap-2 rounded-sm bg-gradient-to-b px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] disabled:opacity-40"
+        >
+          <Highlighter size={13} />
+          Save quote
+        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onHideText}
+            title="Remove this text wherever it appears — keep the article"
+            className="text-chalk hover:text-cream inline-flex items-center justify-center gap-1.5 rounded-sm border border-white/10 px-3 py-2.5 text-[11px] uppercase tracking-[0.14em] disabled:opacity-40"
+          >
+            <EyeOff size={13} />
+            Hide text
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onBlockArticle}
+            title="Block this article from feeds"
+            className="text-alert hover:bg-alert/10 inline-flex items-center justify-center gap-1.5 rounded-sm border border-alert/40 px-3 py-2.5 text-[11px] uppercase tracking-[0.14em] disabled:opacity-40"
+          >
+            <Ban size={13} />
+            Block article
+          </button>
+        </div>
         <button
           type="button"
           onClick={onCancel}
-          className="text-chalk hover:text-cream px-3 py-2 text-[11px] uppercase tracking-[0.16em]"
+          disabled={busy}
+          className="text-chalk hover:text-cream px-3 py-2 text-center text-[11px] uppercase tracking-[0.16em] disabled:opacity-40"
         >
           Cancel
-        </button>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => onSave(note)}
-          className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] disabled:opacity-40"
-        >
-          Save
         </button>
       </div>
     </div>
@@ -1188,6 +1217,19 @@ function ArticleReaderShell({
     onError: (err) => toast.error(err instanceof Error ? err.message : "Could not hide text"),
   });
 
+  const blockArticleMut = useMutation({
+    mutationFn: () => addRssFilter("url", item.link),
+    onSuccess: () => {
+      setPendingQuote(null);
+      void qc.invalidateQueries({ queryKey: ["rss-filters"] });
+      toast.success("Article blocked");
+      onClose();
+      const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+      if (st.dispatchArticle) history.back();
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Could not block article"),
+  });
+
   const deleteMut = useMutation({
     mutationFn: deleteRssHighlight,
     onSuccess: () => {
@@ -1481,13 +1523,15 @@ function ArticleReaderShell({
         <HighlightComposer
           quote={pendingQuote}
           saving={createMut.isPending}
-          blocking={hideContentMut.isPending}
+          hiding={hideContentMut.isPending}
+          blocking={blockArticleMut.isPending}
           onCancel={() => setPendingQuote(null)}
           onSave={(note) => createMut.mutate(note)}
-          onBlock={() => {
+          onHideText={() => {
             const phrase = pendingQuote.trim().slice(0, 160);
             if (phrase) hideContentMut.mutate(phrase);
           }}
+          onBlockArticle={() => blockArticleMut.mutate()}
         />
       ) : null}
 
