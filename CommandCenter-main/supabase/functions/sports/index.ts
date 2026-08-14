@@ -1149,6 +1149,151 @@ async function scrapeManagerFiredOdds() {
   return { source: items[0]?.source ?? "none", checkedAt: new Date().toISOString(), items: items.slice(0, 20) };
 }
 
+async function scrapeNflCoachFiredOdds() {
+  const items: {
+    name: string;
+    teamHint: string | null;
+    oddsAmerican: string;
+    impliedPct: number;
+    ticker: string;
+    url: string;
+  }[] = [];
+  const url =
+    "https://api.elections.kalshi.com/trade-api/v2/markets?limit=50&status=open&series_ticker=KXCOACHOUTNFL";
+  const res = await timedFetch(url, {
+    headers: { Accept: "application/json", "User-Agent": UA },
+  });
+  if (!res.ok) throw new Error(`Kalshi NFL coaches ${res.status}`);
+  const data = (await res.json()) as {
+    markets?: {
+      title?: string;
+      subtitle?: string;
+      ticker?: string;
+      yes_sub_title?: string | null;
+      no_sub_title?: string | null;
+      yes_bid_dollars?: string | null;
+      yes_ask_dollars?: string | null;
+      last_price_dollars?: string | null;
+      custom_strike?: { Coach?: string; Team?: string } | null;
+    }[];
+  };
+  const dollarProb = (raw: string | null | undefined): number | null => {
+    if (raw == null || raw === "") return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return null;
+    if (n === 0) return 0;
+    return Math.max(0.01, Math.min(0.99, n));
+  };
+  for (const m of data.markets ?? []) {
+    const name =
+      (m.custom_strike?.Coach ?? m.yes_sub_title ?? m.no_sub_title ?? "").trim() || "";
+    if (!name || /field|any other/i.test(name)) continue;
+    const bid = dollarProb(m.yes_bid_dollars);
+    const ask = dollarProb(m.yes_ask_dollars);
+    const last = dollarProb(m.last_price_dollars);
+    let p: number | null = null;
+    if (bid != null && ask != null && (bid > 0 || ask > 0)) p = (bid + ask) / 2;
+    else p = (ask && ask > 0 ? ask : null) ?? (bid && bid > 0 ? bid : null) ?? last;
+    if (p == null || p <= 0) continue;
+    const american =
+      p >= 0.5
+        ? `-${Math.round((100 * p) / (1 - p))}`
+        : `+${Math.round((100 * (1 - p)) / p)}`;
+    const subtitle = (m.subtitle ?? "").replace(/^:+\s*/, "").trim();
+    items.push({
+      name,
+      teamHint: subtitle || m.custom_strike?.Team || null,
+      oddsAmerican: american,
+      impliedPct: Math.round(p * 1000) / 10,
+      ticker: m.ticker ?? "",
+      url: `https://kalshi.com/markets/${(m.ticker ?? "").toLowerCase()}`,
+    });
+  }
+  items.sort((a, b) => b.impliedPct - a.impliedPct);
+  return {
+    source: items.length ? "Kalshi" : "none",
+    checkedAt: new Date().toISOString(),
+    items,
+  };
+}
+
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
+async function scrapeGolferSeasonResults(golferId: string, year: number) {
+  const url = `https://www.espn.com/golf/player/results/_/id/${encodeURIComponent(golferId)}/year/${year}`;
+  const html = await (
+    await timedFetch(url, {
+      headers: { "User-Agent": UA, Accept: "text/html", Referer: "https://www.espn.com/" },
+    })
+  ).text();
+  const results: {
+    event: string;
+    date: string | null;
+    position: string;
+    score: string | null;
+    tournamentId: string | null;
+  }[] = [];
+  const rowRe =
+    /leaderboard\?tournamentId=(\d+)[^>]*>([^<]+)<\/a>[\s\S]*?<td class="Table__TD">([^<]*)<\/td>[\s\S]*?\((?:<!-- -->)?([-+]?\d+|E)(?:<!-- -->)?\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(html))) {
+    const pos = (m[3] ?? "").trim();
+    if (!pos) continue;
+    results.push({
+      event: decodeHtmlEntities((m[2] ?? "").trim()),
+      date: null,
+      position: pos,
+      score: m[4] === "E" ? "E" : m[4] ?? null,
+      tournamentId: m[1] ?? null,
+    });
+  }
+  // Fallback without score capture (CUT/WD rows).
+  if (!results.length) {
+    const loose =
+      /leaderboard\?tournamentId=(\d+)[^>]*>([^<]+)<\/a>[\s\S]*?<td class="Table__TD">([^<]*)<\/td>/g;
+    while ((m = loose.exec(html))) {
+      const pos = (m[3] ?? "").trim();
+      if (!pos || /Table__TD/.test(pos)) continue;
+      results.push({
+        event: decodeHtmlEntities((m[2] ?? "").trim()),
+        date: null,
+        position: pos,
+        score: null,
+        tournamentId: m[1] ?? null,
+      });
+    }
+  }
+  return { year, results };
+}
+
+async function scrapeGolferLastWin(golferId: string) {
+  const yearNow = new Date().getUTCFullYear();
+  for (let y = yearNow; y >= yearNow - 12; y--) {
+    const { results } = await scrapeGolferSeasonResults(golferId, y);
+    // ESPN lists chronologically — last win in a year is the latest 1/T1.
+    const wins = results.filter((r) => /^(?:x)?1$/i.test(r.position));
+    if (wins.length) {
+      const last = wins[wins.length - 1]!;
+      return {
+        event: last.event,
+        year: y,
+        position: last.position,
+        score: last.score,
+        tournamentId: last.tournamentId,
+      };
+    }
+  }
+  return null;
+}
+
 type PipelineBio = { contentTitle?: string | null; contentText?: string | null };
 type PipelineRow = {
   rank?: number | null;
@@ -1160,16 +1305,7 @@ type PipelineRow = {
   } | null;
 };
 
-function decodeHtmlEntities(raw: string): string {
-  return raw
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\u202f/g, " ");
-}
+
 
 function parsePipelineBio(contentText: string): {
   gradesLine: string | null;
@@ -1538,6 +1674,32 @@ Deno.serve(async (req: Request) => {
       return json(await scrapeManagerFiredOdds());
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
+    }
+  }
+  if (body.action === "nflCoachFiredOdds") {
+    try {
+      return json(await scrapeNflCoachFiredOdds());
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
+    }
+  }
+  if (body.action === "golferSeasonResults") {
+    const golferId = String(body.golferId ?? "").trim();
+    const year = Number(body.year) || new Date().getUTCFullYear();
+    if (!/^\d+$/.test(golferId)) return json({ error: "Bad golferId" }, 400);
+    try {
+      return json(await scrapeGolferSeasonResults(golferId, year));
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), results: [] }, 200);
+    }
+  }
+  if (body.action === "golferLastWin") {
+    const golferId = String(body.golferId ?? "").trim();
+    if (!/^\d+$/.test(golferId)) return json({ error: "Bad golferId" }, 400);
+    try {
+      return json({ lastWin: await scrapeGolferLastWin(golferId) });
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), lastWin: null }, 200);
     }
   }
   if (body.action === "pipelineScouting") {
