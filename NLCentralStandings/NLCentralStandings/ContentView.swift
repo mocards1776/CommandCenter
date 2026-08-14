@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Lightweight host app — widgets require a containing macOS app.
-/// Open this once after install, then add the widget from Notification Center / desktop.
+/// Lightweight host app — widgets require a containing app.
+/// Open this once after install, then add the widget from the Home Screen (iOS)
+/// or Notification Center / desktop (macOS).
 struct ContentView: View {
     @State private var standings: DivisionStandings = .placeholder
     @State private var status: String = "Loading…"
@@ -15,7 +16,14 @@ struct ContentView: View {
             Divider().overlay(Scoreboard.chalkDim.opacity(0.4))
             footer
         }
+        #if os(macOS)
         .frame(width: 400)
+        #else
+        .frame(maxWidth: 480)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 24)
+        #endif
         .background(Scoreboard.field)
         .preferredColorScheme(.dark)
         .task { await refresh() }
@@ -28,7 +36,7 @@ struct ContentView: View {
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .tracking(1.6)
                     .foregroundStyle(Scoreboard.accent)
-                Text("Desktop widget host")
+                Text(hostSubtitle)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(Scoreboard.chalk)
             }
@@ -72,12 +80,28 @@ struct ContentView: View {
             Text(status)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(Scoreboard.chalk)
-            Text("Add to desktop: right-click wallpaper → Edit Widgets → search “NL Central”.")
+            Text(addWidgetHint)
                 .font(.system(size: 11))
                 .foregroundStyle(Scoreboard.chalkDim)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
+    }
+
+    private var hostSubtitle: String {
+        #if os(iOS)
+        "Home Screen widget host"
+        #else
+        "Desktop widget host"
+        #endif
+    }
+
+    private var addWidgetHint: String {
+        #if os(iOS)
+        "Add to Home Screen: long-press the wallpaper → Edit → Add Widget → search “NL Central”."
+        #else
+        "Add to desktop: right-click wallpaper → Edit Widgets → search “NL Central”."
+        #endif
     }
 
     @MainActor

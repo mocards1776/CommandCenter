@@ -2,6 +2,14 @@
 
 ---
 
+## NL Central iOS widget — August 14, 2026
+
+- `NLCentralStandings/` now builds for **iPhone / iPad (iOS 17+)** as well as Mac.
+- Home Screen Medium / Large widgets reuse the same MLB Stats API fetch + Fenway UI.
+- Host app copy and layout adapted for iOS; README covers device install steps.
+
+---
+
 ## Sports polish: iPad golf, Hot Seat, NFL cards — August 14, 2026
 
 - Golf (iPad): wider leaderboard drawer; **Favorites** pinned above the full field (no separate tab).
