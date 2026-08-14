@@ -16,6 +16,7 @@ import {
   Trophy,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { useAuth } from "@/lib/auth-context";
 import {
   addFavoritePlayer,
@@ -56,6 +57,7 @@ function InfoCard({
 export default function GolferPage() {
   const { golferId } = useParams<{ golferId: string }>();
   const navigate = useNavigate();
+  const swipeRef = useSwipeBack(() => navigate(-1));
   const { user } = useAuth();
   const qc = useQueryClient();
 
@@ -103,7 +105,7 @@ export default function GolferPage() {
   const p = profile.data;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5 p-4 md:p-7">
+    <div ref={swipeRef} className="mx-auto max-w-4xl space-y-5 p-4 md:p-7">
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"

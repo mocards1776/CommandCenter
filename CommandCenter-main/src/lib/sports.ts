@@ -792,28 +792,25 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
     },
   ];
 
+  // True career totals — sum ESPN season statistics log (not the current-year overview).
+  const careerTotals = await fetchGolferCareerTotals(id);
   const career: GolferProfile["career"] = [
-    {
-      label: "Wins",
-      value: pickStat("WINS") ?? "—",
-    },
+    { label: "Wins", value: careerTotals.wins != null ? String(careerTotals.wins) : "—" },
     {
       label: "Earnings",
-      value: pickStat("EARNINGS") ?? summaryStats.find((s) => /earn|amount/i.test(`${s.name}`))?.displayValue ?? "—",
+      value:
+        careerTotals.earningsDisplay ??
+        summaryStats.find((s) => /earn|amount/i.test(`${s.name}`))?.displayValue ??
+        "—",
     },
     {
       label: "Cuts Made",
       value:
-        pickStat("CUTS") && pickStat("EVENTS")
-          ? `${pickStat("CUTS")}/${pickStat("EVENTS")}`
+        careerTotals.cuts != null && careerTotals.events != null
+          ? `${careerTotals.cuts}/${careerTotals.events}`
           : "—",
     },
   ];
-
-  // Prefer season labels that read like career when only season is available.
-  if (pgaSplit?.displayName) {
-    career[0] = { ...career[0]!, label: "Season wins" };
-  }
 
   const bioFacts: GolferProfile["bioFacts"] = [
     ...(height ? [{ label: "Height", value: height }] : []),
@@ -914,6 +911,96 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
     highlights,
     recentNews,
   };
+}
+
+/** Sum PGA Tour season stats into career wins / earnings / cuts. */
+async function fetchGolferCareerTotals(golferId: string): Promise<{
+  wins: number | null;
+  earnings: number | null;
+  earningsDisplay: string | null;
+  cuts: number | null;
+  events: number | null;
+}> {
+  try {
+    const logRes = await fetch(
+      `https://sports.core.api.espn.com/v2/sports/golf/athletes/${golferId}/statisticslog`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!logRes.ok) return { wins: null, earnings: null, earningsDisplay: null, cuts: null, events: null };
+    const log = (await logRes.json()) as {
+      entries?: {
+        season?: { $ref?: string };
+        statistics?: { statistics?: { $ref?: string } }[];
+      }[];
+    };
+
+    let wins = 0;
+    let earnings = 0;
+    let cuts = 0;
+    let events = 0;
+    let saw = false;
+
+    const entries = log.entries ?? [];
+    // Cap concurrency — career log can span 15+ seasons.
+    const concurrency = 4;
+    for (let i = 0; i < entries.length; i += concurrency) {
+      const chunk = entries.slice(i, i + concurrency);
+      await Promise.all(
+        chunk.map(async (entry) => {
+          const href = entry.statistics?.[0]?.statistics?.$ref;
+          if (!href) return;
+          const url = href.replace("http://", "https://");
+          try {
+            const res = await fetch(url, { headers: { Accept: "application/json" } });
+            if (!res.ok) return;
+            const data = (await res.json()) as {
+              splits?: {
+                categories?: { stats?: { name?: string; value?: number; displayValue?: string }[] }[];
+              };
+            };
+            const found: Record<string, { value?: number; displayValue?: string }> = {};
+            for (const cat of data.splits?.categories ?? []) {
+              for (const s of cat.stats ?? []) {
+                if (s.name) found[s.name] = s;
+              }
+            }
+            const w = found.wins?.value ?? found.tournamentWins?.value;
+            const earn = found.amount?.value ?? found.earnings?.value ?? found.officialMoney?.value;
+            const ev = found.tournamentsPlayed?.value ?? found.events?.value;
+            const cu = found.cutsMade?.value ?? found.cuts?.value;
+            if (w != null || earn != null || ev != null || cu != null) saw = true;
+            if (typeof w === "number") wins += w;
+            if (typeof earn === "number") earnings += earn;
+            if (typeof ev === "number") events += ev;
+            if (typeof cu === "number") cuts += cu;
+          } catch {
+            /* skip season */
+          }
+        }),
+      );
+    }
+
+    if (!saw) return { wins: null, earnings: null, earningsDisplay: null, cuts: null, events: null };
+
+    const earningsDisplay =
+      earnings > 0
+        ? new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: "USD",
+            maximumFractionDigits: 0,
+          }).format(earnings)
+        : null;
+
+    return {
+      wins: Math.round(wins),
+      earnings,
+      earningsDisplay,
+      cuts: Math.round(cuts),
+      events: Math.round(events),
+    };
+  } catch {
+    return { wins: null, earnings: null, earningsDisplay: null, cuts: null, events: null };
+  }
 }
 
 function espnSportRoot(espnPath: string): string {

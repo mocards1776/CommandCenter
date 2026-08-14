@@ -2,6 +2,18 @@
 
 ---
 
+## Sports polish: iPad golf, Hot Seat, NFL cards — August 14, 2026
+
+- Golf (iPad): wider leaderboard drawer; **Favorites** pinned above the full field (no separate tab).
+- Golfer cards: career totals from ESPN season log (fixes Spieth wins/earnings).
+- RUWT: mixed MLB + NFL heat board with All / MLB / NFL selector.
+- NFL: full player cards and team pages (roster, stats, graphics).
+- **Hot Seat** (was Managers): MLB managers + NFL coaches with sport selector.
+- MLB player cards: Origin + Bio moved to the bottom.
+- iPad: edge swipe-to-back on player/team/golf panels.
+
+---
+
 ## NFL scoreboard, golf profiles, Dispatch NFL wraps — August 14, 2026
 
 - Sports: full **NFL** scoreboard, live field map + play-by-play, and clickable player pages with favorites.

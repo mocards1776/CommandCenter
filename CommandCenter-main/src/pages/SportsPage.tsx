@@ -616,7 +616,14 @@ export default function SportsPage() {
         />
       )}
 
-      <GolfSidebar open={golfOpen} onClose={() => setGolfOpen(false)} />
+      <GolfSidebar
+        open={golfOpen}
+        onClose={() => {
+          const st = (history.state as { sportsGolf?: boolean } | null) ?? {};
+          if (st.sportsGolf) history.back();
+          else setGolfOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -637,6 +644,8 @@ function TeamDetailPanel({
   const accent = fav.color ? `#${fav.color}` : "var(--color-accent)";
   const title = detail?.shortName ?? fav.shortName;
   const mlbTeamId = fav.mlbTeamId;
+  const nflTeamId =
+    fav.league === "NFL" ? (fav.espnPath.split("/").pop() ?? null) : null;
 
   const hero = useQuery({
     queryKey: ["team-detail-hero", mlbTeamId],
@@ -686,6 +695,15 @@ function TeamDetailPanel({
                 <span className="text-chalk text-[12px]">{detail.standing}</span>
               )}
             </div>
+          )}
+          {nflTeamId && /^\d+$/.test(nflTeamId) && (
+            <Link
+              to={`/sports/nfl/team/${nflTeamId}`}
+              className="text-accent mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Full team page
+            </Link>
           )}
           {detail && (detail.manager || detail.generalManager) ? (
             <div className="mt-3 flex flex-col gap-1 border-t border-white/[0.06] pt-3">
