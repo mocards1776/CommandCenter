@@ -566,52 +566,54 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
   };
 }
 
-export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapshot> {
-  // Prefer the golf leaderboard payload — it includes tee times when a player
-  // hasn't started the current round (scoreboard alone shows hollow "F").
-  let raw: {
-    events?: {
-      id?: string;
-      name?: string;
-      status?: string;
-      competitions?: {
-        status?: { type?: { description?: string; detail?: string } };
-        competitors?: {
-          id?: string;
-          order?: number;
-          sortOrder?: number;
-          athlete?: { id?: string; displayName?: string; shortName?: string };
-          score?: unknown;
-          status?: {
-            type?: { description?: string; state?: string; completed?: boolean; name?: string };
-            displayValue?: string;
-            thru?: number;
-            displayThru?: string;
-            period?: number;
-            teeTime?: string;
-            detail?: string;
-            position?: { displayName?: string };
-          };
-          linescores?: {
-            displayValue?: string;
-            value?: number;
-            period?: number;
-            linescores?: unknown[];
-          }[];
+type EspnTourPayload = {
+  events?: {
+    id?: string;
+    name?: string;
+    status?: string;
+    competitions?: {
+      status?: { type?: { description?: string; detail?: string } };
+      competitors?: {
+        id?: string;
+        order?: number;
+        sortOrder?: number;
+        athlete?: { id?: string; displayName?: string; shortName?: string };
+        score?: unknown;
+        status?: {
+          type?: { description?: string; state?: string; completed?: boolean; name?: string };
+          displayValue?: string;
+          thru?: number;
+          displayThru?: string;
+          period?: number;
+          teeTime?: string;
+          detail?: string;
+          position?: { displayName?: string };
+        };
+        linescores?: {
+          displayValue?: string;
+          value?: number;
+          period?: number;
+          linescores?: unknown[];
         }[];
       }[];
     }[];
-  } | null = null;
+  }[];
+};
+
+export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapshot> {
+  // Prefer the golf leaderboard payload — it includes tee times when a player
+  // hasn't started the current round (scoreboard alone shows hollow "F").
+  let raw: EspnTourPayload | null = null;
 
   if (/golf/i.test(fav.espnPath)) {
     try {
-      raw = (await espnGet("golf/leaderboard")) as typeof raw;
+      raw = (await espnGet("golf/leaderboard")) as EspnTourPayload;
     } catch {
       raw = null;
     }
   }
   if (!raw?.events?.length) {
-    raw = (await espnGet(fav.espnPath)) as typeof raw;
+    raw = (await espnGet(fav.espnPath)) as EspnTourPayload;
   }
 
   const event = raw.events?.[0];
@@ -636,8 +638,8 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
   const field: TourLeader[] = sorted.map((c, idx) => {
     const lines = c.linescores ?? [];
     const roundScores = lines
-      .map((r) => r.displayValue)
-      .filter((v): v is string => Boolean(v) && v !== "-");
+      .map((r: { displayValue?: string }) => r.displayValue)
+      .filter((v: string | undefined): v is string => Boolean(v) && v !== "-");
     const r1 = roundScores[0] ?? null;
     const st = c.status;
     let thru: string | null = null;
@@ -669,7 +671,7 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
       detail: c.status?.type?.description ?? null,
       position:
         c.status?.position?.displayName ??
-        c.status?.displayValue ??
+        (st?.thru != null && st.thru > 0 ? st.displayValue : null) ??
         positions[idx] ??
         String(idx + 1),
       thru,
