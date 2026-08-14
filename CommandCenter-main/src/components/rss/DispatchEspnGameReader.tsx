@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, Loader2, Share } from "lucide-react";
 import toast from "react-hot-toast";
+import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import { MlbGameDetail } from "@/pages/MlbGamePage";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import { parseEspnGameIdFromUrl, resolveMlbGamePkFromEspnEvent } from "@/lib/mlb";
@@ -65,7 +65,6 @@ export default function DispatchEspnGameReader({
 }) {
   const eventId = parseEspnGameIdFromUrl(url);
   const nfl = isNflEspnUrl(url);
-  const bodyRef = useRef<HTMLDivElement>(null);
 
   const resolved = useQuery({
     queryKey: ["mlb-gamepk-from-espn", eventId],
@@ -92,15 +91,6 @@ export default function DispatchEspnGameReader({
         : resolved.isSuccess && resolved.data == null),
     staleTime: 300_000,
   });
-
-  useEffect(() => {
-    const root = bodyRef.current;
-    if (!root || !fallback.data?.html) return;
-    root.querySelectorAll("a").forEach((a) => {
-      a.setAttribute("target", "_blank");
-      a.setAttribute("rel", "noopener noreferrer");
-    });
-  }, [fallback.data?.html]);
 
   async function shareLink() {
     const shareTitle = title || (nfl ? "NFL game" : "MLB game");
@@ -265,9 +255,13 @@ export default function DispatchEspnGameReader({
                   {g.article.headline}
                 </h2>
               </div>
-              <div
-                className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-medium [&_a]:text-[#9ec1ff] [&_p]:my-3.5"
-                dangerouslySetInnerHTML={{ __html: g.article.storyHtml }}
+              <SelectableHighlightRegion
+                articleUrl={url}
+                articleTitle={g.article.headline || title || "Game wrap"}
+                feedUrl="synthetic:nfl-wraps"
+                articleImage={heroImage ?? null}
+                html={g.article.storyHtml}
+                className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-medium [&_a]:text-[#9ec1ff] [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
               />
             </section>
           ) : fallback.data ? (
@@ -277,10 +271,13 @@ export default function DispatchEspnGameReader({
                   {fallback.data.headline}
                 </h2>
               </div>
-              <div
-                ref={bodyRef}
-                className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-medium [&_a]:text-[#9ec1ff] [&_p]:my-3.5"
-                dangerouslySetInnerHTML={{ __html: fallback.data.html }}
+              <SelectableHighlightRegion
+                articleUrl={url}
+                articleTitle={fallback.data.headline || title || "Game story"}
+                feedUrl={nfl ? "synthetic:nfl-wraps" : "synthetic:mlb-wraps"}
+                articleImage={heroImage ?? null}
+                html={fallback.data.html}
+                className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-medium [&_a]:text-[#9ec1ff] [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
               />
             </section>
           ) : null}
@@ -337,10 +334,13 @@ export default function DispatchEspnGameReader({
               {fallback.data.headline}
             </h2>
           </div>
-          <div
-            ref={bodyRef}
-            className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-medium [&_a]:text-[#9ec1ff] [&_p]:my-3.5"
-            dangerouslySetInnerHTML={{ __html: fallback.data.html }}
+          <SelectableHighlightRegion
+            articleUrl={url}
+            articleTitle={fallback.data.headline || title || "Game preview"}
+            feedUrl={nfl ? "synthetic:nfl-wraps" : "synthetic:mlb-wraps"}
+            articleImage={heroImage ?? null}
+            html={fallback.data.html}
+            className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-medium [&_a]:text-[#9ec1ff] [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
           />
           <div className="px-4 pb-4">
             <a

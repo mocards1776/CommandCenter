@@ -1229,15 +1229,9 @@ function decodeHtmlEntities(s: string): string {
 
 async function scrapeGolferSeasonResults(golferId: string, year: number) {
   const url = `https://www.espn.com/golf/player/results/_/id/${encodeURIComponent(golferId)}/year/${year}`;
-  // ESPN bot-walls full Chrome UAs with a tiny 202 page; a short Mozilla/5.0 UA returns the SSR table.
   const html = await (
     await timedFetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        Accept: "text/html,application/xhtml+xml",
-        "Accept-Language": "en-US,en;q=0.9",
-        Referer: "https://www.espn.com/",
-      },
+      headers: { "User-Agent": UA, Accept: "text/html", Referer: "https://www.espn.com/" },
     })
   ).text();
   const results: {
@@ -1311,7 +1305,16 @@ type PipelineRow = {
   } | null;
 };
 
-
+function decodeHtmlEntities(raw: string): string {
+  return raw
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\u202f/g, " ");
+}
 
 function parsePipelineBio(contentText: string): {
   gradesLine: string | null;

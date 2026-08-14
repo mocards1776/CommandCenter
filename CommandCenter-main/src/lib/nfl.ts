@@ -1,9 +1,21 @@
 /** NFL via ESPN site API — scoreboard, live field, plays, players, RUWT. */
 
+import { supabase } from "./supabase";
 import { formatSportsDateLong } from "./utils";
 
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl";
 const ESPN_WEB = "https://site.web.api.espn.com/apis/common/v3/sports/football/nfl";
+
+function chicagoDateFromIso(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+}
+
+export function chicagoTodayNfl(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+}
 
 export const NFL_TEAMS: { id: number; name: string; abbrev: string }[] = [
   { id: 22, name: "Cardinals", abbrev: "ARI" },
@@ -75,6 +87,8 @@ export type NflScoreGame = {
   situation: NflLiveSituation | null;
   /** 0–100 home win % when ESPN provides it. */
   homeWinPct: number | null;
+  /** Chicago calendar date (YYYY-MM-DD) for the kickoff. */
+  date: string | null;
 };
 
 export type NflScoredGame = NflScoreGame & {
@@ -303,6 +317,7 @@ function mapEvent(event: EspnEvent): NflScoreGame | null {
     venue: comp.venue?.fullName ?? null,
     situation: mapSituation(comp.situation, live),
     homeWinPct: null,
+    date: chicagoDateFromIso(event.date),
   };
 }
 
@@ -891,50 +906,126 @@ type KalshiCoachMarket = {
 
 /** Kalshi “coach out before Sep 1” markets — primary NFL hot-seat signal. */
 export async function fetchNflCoachFiredOdds(): Promise<KalshiCoachMarket[]> {
-  const res = await fetch(
-    "https://api.elections.kalshi.com/trade-api/v2/markets?limit=50&status=open&series_ticker=KXCOACHOUTNFL",
-    { headers: { Accept: "application/json" } },
-  );
-  if (!res.ok) throw new Error(`Kalshi NFL coaches ${res.status}`);
-  const data = (await res.json()) as {
-    markets?: {
-      title?: string;
-      subtitle?: string;
-      ticker?: string;
-      yes_sub_title?: string | null;
-      no_sub_title?: string | null;
-      yes_bid_dollars?: string | null;
-      yes_ask_dollars?: string | null;
-      last_price_dollars?: string | null;
-      custom_strike?: { Coach?: string; Team?: string } | null;
-    }[];
+  type EdgeItem = {
+    name?: string;
+    teamHint?: string | null;
+    oddsAmerican?: string;
+    impliedPct?: number;
+    ticker?: string;
+    url?: string;
   };
-  const items: KalshiCoachMarket[] = [];
-  for (const m of data.markets ?? []) {
-    const name =
-      (m.custom_strike?.Coach ?? m.yes_sub_title ?? m.no_sub_title ?? "").trim() ||
-      "";
-    if (!name || /field|any other/i.test(name)) continue;
-    const bid = dollarProb(m.yes_bid_dollars);
-    const ask = dollarProb(m.yes_ask_dollars);
-    const last = dollarProb(m.last_price_dollars);
-    let p: number | null = null;
-    if (bid != null && ask != null && (bid > 0 || ask > 0)) p = (bid + ask) / 2;
-    else p = ask ?? bid ?? last;
-    if (p == null || p <= 0) continue;
-    const subtitle = (m.subtitle ?? "").replace(/^:+\s*/, "").trim();
-    items.push({
+
+  const usable = (data: unknown): data is { items?: EdgeItem[] } =>
+    Boolean(data) &&
+    typeof data === "object" &&
+    Array.isArray((data as { items?: unknown }).items) &&
+    !(data as { error?: string }).error;
+
+  let items: EdgeItem[] = [];
+  try {
+    const { data } = await supabase.functions.invoke("sports", {
+      body: { action: "nflCoachFiredOdds" },
+    });
+    if (usable(data) && (data.items?.length ?? 0) > 0) {
+      items = data.items ?? [];
+    }
+  } catch {
+    /* fall through */
+  }
+
+  if (!items.length) {
+    try {
+      const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+      const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+      if (base && key) {
+        const res = await fetch(`${base}/functions/v1/sports`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+            apikey: key,
+          },
+          body: JSON.stringify({ action: "nflCoachFiredOdds" }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { items?: EdgeItem[]; error?: string };
+          if (!data.error && data.items?.length) items = data.items;
+        }
+      }
+    } catch {
+      /* fall through to direct (often CORS-blocked in browser) */
+    }
+  }
+
+  if (!items.length) {
+    // Direct Kalshi — works in Node / some environments; browsers usually get 403.
+    try {
+      const res = await fetch(
+        "https://api.elections.kalshi.com/trade-api/v2/markets?limit=50&status=open&series_ticker=KXCOACHOUTNFL",
+        { headers: { Accept: "application/json" } },
+      );
+      if (res.ok) {
+        const data = (await res.json()) as {
+          markets?: {
+            title?: string;
+            subtitle?: string;
+            ticker?: string;
+            yes_sub_title?: string | null;
+            no_sub_title?: string | null;
+            yes_bid_dollars?: string | null;
+            yes_ask_dollars?: string | null;
+            last_price_dollars?: string | null;
+            custom_strike?: { Coach?: string; Team?: string } | null;
+          }[];
+        };
+        for (const m of data.markets ?? []) {
+          const name =
+            (m.custom_strike?.Coach ?? m.yes_sub_title ?? m.no_sub_title ?? "").trim() || "";
+          if (!name || /field|any other/i.test(name)) continue;
+          const bid = dollarProb(m.yes_bid_dollars);
+          const ask = dollarProb(m.yes_ask_dollars);
+          const last = dollarProb(m.last_price_dollars);
+          let p: number | null = null;
+          if (bid != null && ask != null && (bid > 0 || ask > 0)) p = (bid + ask) / 2;
+          else p = (ask && ask > 0 ? ask : null) ?? (bid && bid > 0 ? bid : null) ?? last;
+          if (p == null || p <= 0) continue;
+          const subtitle = (m.subtitle ?? "").replace(/^:+\s*/, "").trim();
+          items.push({
+            name,
+            teamHint: subtitle || null,
+            oddsAmerican: americanFromProb(p),
+            impliedPct: Math.round(p * 1000) / 10,
+            ticker: m.ticker ?? "",
+            url: `https://kalshi.com/markets/${(m.ticker ?? "").toLowerCase()}`,
+          });
+        }
+      }
+    } catch {
+      /* */
+    }
+  }
+
+  const out: KalshiCoachMarket[] = [];
+  for (const m of items) {
+    const name = (m.name ?? "").trim();
+    if (!name) continue;
+    const pct = typeof m.impliedPct === "number" ? m.impliedPct : null;
+    if (pct == null || !Number.isFinite(pct) || pct <= 0) continue;
+    const hint = m.teamHint ?? null;
+    const p = Math.max(0.01, Math.min(0.99, pct > 1 ? pct / 100 : pct));
+    out.push({
       name,
-      teamAbbrev: nflAbbrevFromKalshiSubtitle(m.subtitle) ?? nflAbbrevFromKalshiSubtitle(subtitle),
-      teamHint: subtitle || null,
-      impliedPct: Math.round(p * 1000) / 10,
-      american: americanFromProb(p),
+      teamAbbrev: nflAbbrevFromKalshiSubtitle(hint),
+      teamHint: hint,
+      impliedPct: pct > 1 ? pct : Math.round(pct * 1000) / 10,
+      american: m.oddsAmerican || americanFromProb(p),
       ticker: m.ticker ?? "",
-      url: `https://kalshi.com/markets/${(m.ticker ?? "").toLowerCase()}`,
+      url: m.url ?? "",
     });
   }
-  items.sort((a, b) => b.impliedPct - a.impliedPct);
-  return items;
+
+  out.sort((a, b) => b.impliedPct - a.impliedPct);
+  return out;
 }
 
 /**
@@ -1026,7 +1117,11 @@ export async function fetchNflCoaches(): Promise<NflCoach[]> {
   }
 
   const kalshi = await fetchNflCoachFiredOdds();
-  if (!kalshi.length) throw new Error("Kalshi returned no NFL coach-out markets.");
+  if (!kalshi.length) {
+    throw new Error(
+      "Couldn't load Kalshi coach markets. Check network / sports function deploy.",
+    );
+  }
 
   const coaches: Omit<NflCoach, "hotSeatRank">[] = [];
   for (const m of kalshi) {

@@ -726,6 +726,13 @@ export type GolferProfile = {
     position: string;
     score: string | null;
   }[];
+  /** Most recent tournament win (any season). */
+  lastWin: {
+    event: string;
+    year: number;
+    position: string;
+    score: string | null;
+  } | null;
 };
 
 /** ESPN golfer card — stats + short bio bits. */
@@ -941,39 +948,140 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
 
   const seasonResults: GolferProfile["seasonResults"] = [];
   const year = new Date().getFullYear();
-  const recentGroups = (overview.recentTournaments ?? []) as {
-    displayName?: string;
-    name?: string;
-    eventsStats?: {
-      date?: string;
+
+  // Prefer full season from sports edge (ESPN HTML results page).
+  try {
+    const { data } = await supabase.functions.invoke("sports", {
+      body: { action: "golferSeasonResults", golferId: id, year },
+    });
+    const rows = (data as { results?: GolferProfile["seasonResults"] } | null)?.results;
+    if (Array.isArray(rows) && rows.length) {
+      for (const r of rows) {
+        if (!r?.event) continue;
+        seasonResults.push({
+          event: r.event,
+          date: r.date ?? null,
+          position: r.position || "—",
+          score: r.score ?? null,
+        });
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+
+  if (!seasonResults.length) {
+    try {
+      const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+      const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+      if (base && key) {
+        const res = await fetch(`${base}/functions/v1/sports`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+            apikey: key,
+          },
+          body: JSON.stringify({ action: "golferSeasonResults", golferId: id, year }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { results?: GolferProfile["seasonResults"] };
+          for (const r of data.results ?? []) {
+            if (!r?.event) continue;
+            seasonResults.push({
+              event: r.event,
+              date: r.date ?? null,
+              position: r.position || "—",
+              score: r.score ?? null,
+            });
+          }
+        }
+      }
+    } catch {
+      /* */
+    }
+  }
+
+  if (!seasonResults.length) {
+    const recentGroups = (overview.recentTournaments ?? []) as {
+      displayName?: string;
       name?: string;
-      shortName?: string;
-      competitions?: {
-        competitors?: {
-          score?: { displayValue?: string };
-          status?: { position?: { displayName?: string } };
-          place?: { displayName?: string };
+      eventsStats?: {
+        date?: string;
+        name?: string;
+        shortName?: string;
+        competitions?: {
+          competitors?: {
+            score?: { displayValue?: string };
+            status?: { position?: { displayName?: string } };
+            place?: { displayName?: string };
+          }[];
         }[];
       }[];
     }[];
-  }[];
-  for (const group of recentGroups) {
-    const label = `${group.displayName ?? ""} ${group.name ?? ""}`;
-    const isCurrent =
-      /pga/i.test(label) &&
-      (label.includes(String(year)) || /recent/i.test(label));
-    if (!isCurrent && seasonResults.length) continue;
-    for (const ev of group.eventsStats ?? []) {
-      const me = ev.competitions?.[0]?.competitors?.[0];
-      const pos = me?.status?.position?.displayName ?? me?.place?.displayName ?? "—";
-      seasonResults.push({
-        event: ev.shortName || ev.name || "Tournament",
-        date: ev.date ? ev.date.slice(0, 10) : null,
-        position: pos && pos !== "-" ? pos : "—",
-        score: me?.score?.displayValue ?? null,
-      });
+    for (const group of recentGroups) {
+      const label = `${group.displayName ?? ""} ${group.name ?? ""}`;
+      const isCurrent =
+        /pga/i.test(label) && (label.includes(String(year)) || /recent/i.test(label));
+      if (!isCurrent && seasonResults.length) continue;
+      for (const ev of group.eventsStats ?? []) {
+        const me = ev.competitions?.[0]?.competitors?.[0];
+        const pos = me?.status?.position?.displayName ?? me?.place?.displayName ?? "—";
+        seasonResults.push({
+          event: ev.shortName || ev.name || "Tournament",
+          date: ev.date ? ev.date.slice(0, 10) : null,
+          position: pos && pos !== "-" ? pos : "—",
+          score: me?.score?.displayValue ?? null,
+        });
+      }
+      if (seasonResults.length) break;
     }
-    if (seasonResults.length) break;
+  }
+
+  let lastWin: GolferProfile["lastWin"] = null;
+  try {
+    const { data } = await supabase.functions.invoke("sports", {
+      body: { action: "golferLastWin", golferId: id },
+    });
+    const win = (data as { lastWin?: GolferProfile["lastWin"] } | null)?.lastWin;
+    if (win?.event) lastWin = win;
+  } catch {
+    /* */
+  }
+  if (!lastWin) {
+    try {
+      const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+      const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+      if (base && key) {
+        const res = await fetch(`${base}/functions/v1/sports`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+            apikey: key,
+          },
+          body: JSON.stringify({ action: "golferLastWin", golferId: id }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { lastWin?: GolferProfile["lastWin"] };
+          if (data.lastWin?.event) lastWin = data.lastWin;
+        }
+      }
+    } catch {
+      /* */
+    }
+  }
+  // Fallback: infer from this season's results.
+  if (!lastWin) {
+    const win = [...seasonResults].reverse().find((r) => /^(?:x)?1$/i.test(r.position));
+    if (win) {
+      lastWin = {
+        event: win.event,
+        year,
+        position: win.position,
+        score: win.score,
+      };
+    }
   }
 
   const displayName = String(athlete.displayName ?? athlete.fullName ?? "Golfer");
@@ -1006,6 +1114,7 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
     highlights,
     recentNews,
     seasonResults,
+    lastWin,
   };
 }
 

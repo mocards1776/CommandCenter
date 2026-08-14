@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import HighlightReel from "@/components/sports/HighlightReel";
+import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import TeamMark from "@/components/sports/TeamMark";
 import {
   buildPlayerNameIndex,
@@ -969,7 +970,17 @@ function GameWrap({
   const long = storyText.length > 420;
 
   const rendered = (
-    <RecapBody segments={segments.length ? segments : [{ kind: "text", text: storyText }]} />
+    <SelectableHighlightRegion
+      articleUrl={recap.url || `app:mlb-game/${recap.espnEventId ?? "wrap"}`}
+      articleTitle={recap.headline || "Game wrap"}
+      feedUrl="synthetic:mlb-wraps"
+      className={cn(
+        "font-rss text-[15px] leading-[1.75] text-[#d5dae6] [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream",
+        !open && long && "line-clamp-[12]",
+      )}
+    >
+      <RecapBody segments={segments.length ? segments : [{ kind: "text", text: storyText }]} />
+    </SelectableHighlightRegion>
   );
 
   return (
@@ -986,14 +997,7 @@ function GameWrap({
         )}
       </div>
       <div className="px-4 py-4">
-        <div
-          className={cn(
-            "font-rss text-[15px] leading-[1.75] text-[#d5dae6]",
-            !open && long && "line-clamp-[12]",
-          )}
-        >
-          {rendered}
-        </div>
+        {rendered}
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {long && (
             <button

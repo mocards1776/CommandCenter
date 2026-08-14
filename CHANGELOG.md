@@ -2,6 +2,18 @@
 
 ---
 
+## Golf FedEx polish, Hot Seat edge, RuWT today — August 14, 2026
+
+- Golf leaderboard: subtle FedEx rank number after the name (not FX#).
+- Golfer cards: full-season results + last win (via sports edge scrape).
+- NFL Hot Seat: Kalshi coach markets fetched through the sports edge function (fixes browser CORS / Load failed).
+- RuWT: today's games only (MLB + NFL, Chicago date).
+- Highlights + hide-words on player RotoWire cards and game wraps/previews.
+- Tagged-player RotoWire feeds: only notes published after the tag was added.
+- Dispatch Favorites: collapsible folder.
+
+---
+
 ## Prospects, Kalshi Hot Seat, golf results — August 14, 2026
 
 - MiLB player photos: fall back to Pipeline `/headshot/milb` before the grey silhouette.

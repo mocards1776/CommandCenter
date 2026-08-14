@@ -10,6 +10,7 @@ import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import {
+  chicagoToday,
   fetchMlbScoreboard,
   fetchMlbStandings,
   fetchPitcherSeasonLines,
@@ -18,7 +19,7 @@ import {
   type MlbScoreGame,
   type MlbScoredGame,
 } from "@/lib/mlb";
-import { fetchNflScoreboard, NFL_TEAMS, type NflScoredGame } from "@/lib/nfl";
+import { fetchNflScoreboard, chicagoTodayNfl, NFL_TEAMS, type NflScoredGame } from "@/lib/nfl";
 import {
   loadNflTeamInterest,
   loadTeamInterest,
@@ -100,15 +101,21 @@ export default function RuwtPage() {
   }, []);
 
   const scoreboard = useQuery({
-    queryKey: ["mlb-scoreboard"],
-    queryFn: () => fetchMlbScoreboard(),
+    queryKey: ["mlb-scoreboard", "today", chicagoToday()],
+    queryFn: () => fetchMlbScoreboard(chicagoToday()),
     refetchInterval: 30_000,
     staleTime: 15_000,
   });
 
   const nflBoard = useQuery({
-    queryKey: ["nfl-scoreboard"],
-    queryFn: () => fetchNflScoreboard(),
+    queryKey: ["nfl-scoreboard", "today", chicagoTodayNfl()],
+    queryFn: async () => {
+      const today = chicagoTodayNfl();
+      // ESPN week boards mix days — pin to Chicago today.
+      const ymd = today.replace(/-/g, "");
+      const board = await fetchNflScoreboard(ymd).catch(() => fetchNflScoreboard());
+      return board.filter((g) => !g.date || g.date === today);
+    },
     refetchInterval: 20_000,
     staleTime: 10_000,
   });
@@ -279,8 +286,8 @@ export default function RuwtPage() {
               Best games <span className="text-accent">right now</span>
             </h2>
             <p className="text-chalk mt-2 max-w-xl text-[13px] leading-relaxed">
-              MLB and NFL ranked by drama, your team interest, favorites, and stakes — so you know
-              what to turn on.
+              Today&apos;s MLB and NFL games, ranked by drama, your team interest, favorites, and
+              stakes — so you know what to turn on.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

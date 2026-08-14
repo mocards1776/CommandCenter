@@ -356,7 +356,7 @@ function NflHotSeat() {
       )}
       {coaches.isError && (
         <p className="text-alert text-[13px]">
-          {coaches.error instanceof Error ? coaches.error.message : "Couldn't load coaches"}
+          {coaches.error instanceof Error ? coaches.error.message : "Load failed"}
         </p>
       )}
       {coaches.data && (

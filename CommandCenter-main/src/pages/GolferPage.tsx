@@ -288,11 +288,26 @@ export default function GolferPage() {
             </section>
           )}
 
+          {p.lastWin && (
+            <section className="rounded-xl border border-white/[0.08] bg-[#12151c] px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                Last win
+              </p>
+              <p className="mt-1 text-[15px] text-white">
+                {p.lastWin.event}{" "}
+                <span className="text-white/45">· {p.lastWin.year}</span>
+                {p.lastWin.score ? (
+                  <span className="numeral text-[#ff6b6b]"> · {p.lastWin.score}</span>
+                ) : null}
+              </p>
+            </section>
+          )}
+
           {p.seasonResults.length > 0 && (
             <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
               <div className="border-b border-white/[0.06] px-4 py-2.5">
                 <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                  Season results
+                  Season results ({p.seasonResults.length})
                 </h2>
               </div>
               <div className="overflow-x-auto">

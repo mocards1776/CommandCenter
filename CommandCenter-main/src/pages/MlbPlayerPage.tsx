@@ -6,6 +6,7 @@ import HighlightReel from "@/components/sports/HighlightReel";
 import SportsNotesPanel from "@/components/sports/SportsNotesPanel";
 import PlayerTagsPanel from "@/components/sports/PlayerTagsPanel";
 import TeamMark from "@/components/sports/TeamMark";
+import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { useAuth } from "@/lib/auth-context";
 import { isFavoritePlayer } from "@/lib/favorite-players";
@@ -338,7 +339,12 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
       )}
 
       {(brief.data || brief.isPending || brief.isFetched) && (
-        <RotoWireBriefCard brief={brief.data ?? null} loading={brief.isPending} />
+        <RotoWireBriefCard
+          playerId={p.id}
+          playerName={p.name}
+          brief={brief.data ?? null}
+          loading={brief.isPending}
+        />
       )}
 
       {performance && <PerformanceSummaryCard summary={performance} />}
@@ -582,12 +588,17 @@ function ScoutingReportCard({
 }
 
 function RotoWireBriefCard({
+  playerId,
+  playerName,
   brief,
   loading,
 }: {
+  playerId: number;
+  playerName: string;
   brief: MlbPlayerBrief | null;
   loading: boolean;
 }) {
+  const articleUrl = `app:mlb-player/${playerId}`;
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] flex items-center justify-between gap-3 px-4 py-3">
@@ -612,7 +623,12 @@ function RotoWireBriefCard({
             Loading brief…
           </div>
         ) : brief?.story || brief?.headline ? (
-          <div className="space-y-2">
+          <SelectableHighlightRegion
+            articleUrl={articleUrl}
+            articleTitle={`${playerName}: ${brief.headline || "RotoWire"}`}
+            feedUrl="synthetic:player-card"
+            className="space-y-2"
+          >
             {brief.headline ? (
               <p className="text-cream text-[15px] font-medium leading-snug">{brief.headline}</p>
             ) : null}
@@ -624,7 +640,7 @@ function RotoWireBriefCard({
                 {brief.published}
               </p>
             ) : null}
-          </div>
+          </SelectableHighlightRegion>
         ) : (
           <p className="text-chalk-dim text-[13px]">No RotoWire note available right now.</p>
         )}

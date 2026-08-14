@@ -1687,9 +1687,9 @@ export default function RssPage() {
     }, 520);
   }
 
-  function toggleFolderOpen(folderId: string) {
+  function toggleFolderOpen(folderId: string, defaultOpen = false) {
     setFolderOpen((prev) => {
-      const next = { ...prev, [folderId]: !(prev[folderId] ?? false) };
+      const next = { ...prev, [folderId]: !(prev[folderId] ?? defaultOpen) };
       window.localStorage.setItem("dispatch-feed-folders-open", JSON.stringify(next));
       return next;
     });
@@ -2235,45 +2235,64 @@ export default function RssPage() {
           <ul className="flex flex-col gap-0.5">
             {favoriteFeedIds.length > 0 ? (
               <li className="mb-1">
-                <p className="text-chalk-dim px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
-                  Favorites
-                </p>
-                <ul className="flex flex-col gap-0.5">
-                  {favoriteFeedIds.map((id) => {
-                    const feed = RSS_FEEDS.find((f) => f.id === id);
-                    const folder = RSS_FEED_FOLDERS.find((f) => f.id === id);
-                    const title = feed?.title ?? folder?.title ?? id;
-                    return (
-                      <li key={`fav-${id}`}>
-                        <button
-                          type="button"
-                          onClick={() => selectNav(id)}
-                          onContextMenu={(e) => onFeedContextMenu(e, id, title)}
-                          onTouchStart={() => onFeedPointerDown(id, title)}
-                          onTouchEnd={clearLongPress}
-                          onTouchMove={clearLongPress}
-                          onTouchCancel={clearLongPress}
-                          className={cn(
-                            "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left transition-colors",
-                            nav === id
-                              ? "bg-accent/15 text-cream"
-                              : "text-chalk hover:bg-white/[0.04] hover:text-cream",
-                          )}
-                        >
-                          <Star size={14} className="text-accent shrink-0 fill-current" />
-                          <span className="min-w-0 flex-1 truncate text-[13px]">{title}</span>
-                          <span className="text-chalk tabular-nums text-[12px]">
-                            {feed
-                              ? (unreadByFeed[feed.id] ?? 0)
-                              : folder
-                                ? folderUnread(folder)
-                                : 0}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <div className="flex w-full items-center gap-1 rounded-sm text-chalk hover:bg-white/[0.04] hover:text-cream">
+                  <button
+                    type="button"
+                    onClick={() => toggleFolderOpen("__favorites__", true)}
+                    className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm px-2.5 py-2 text-left"
+                  >
+                    {(folderOpen["__favorites__"] ?? true) ? (
+                      <ChevronDown size={14} className="opacity-60" />
+                    ) : (
+                      <ChevronRight size={14} className="opacity-60" />
+                    )}
+                    <Star size={14} className="text-accent shrink-0 fill-current" />
+                    <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">
+                      Favorites
+                    </span>
+                    <span className="text-chalk tabular-nums text-[12px]">
+                      {favoriteFeedIds.length}
+                    </span>
+                  </button>
+                </div>
+                {(folderOpen["__favorites__"] ?? true) ? (
+                  <ul className="mt-0.5 flex flex-col gap-0.5 border-l border-white/[0.06] ml-4 pl-1">
+                    {favoriteFeedIds.map((id) => {
+                      const feed = RSS_FEEDS.find((f) => f.id === id);
+                      const folder = RSS_FEED_FOLDERS.find((f) => f.id === id);
+                      const title = feed?.title ?? folder?.title ?? id;
+                      return (
+                        <li key={`fav-${id}`}>
+                          <button
+                            type="button"
+                            onClick={() => selectNav(id)}
+                            onContextMenu={(e) => onFeedContextMenu(e, id, title)}
+                            onTouchStart={() => onFeedPointerDown(id, title)}
+                            onTouchEnd={clearLongPress}
+                            onTouchMove={clearLongPress}
+                            onTouchCancel={clearLongPress}
+                            className={cn(
+                              "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left transition-colors",
+                              nav === id
+                                ? "bg-accent/15 text-cream"
+                                : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+                            )}
+                          >
+                            <Star size={12} className="text-accent shrink-0 fill-current opacity-80" />
+                            <span className="min-w-0 flex-1 truncate text-[13px]">{title}</span>
+                            <span className="text-chalk tabular-nums text-[12px]">
+                              {feed
+                                ? (unreadByFeed[feed.id] ?? 0)
+                                : folder
+                                  ? folderUnread(folder)
+                                  : 0}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
               </li>
             ) : null}
             {RSS_FEED_FOLDERS.map((folder) => {

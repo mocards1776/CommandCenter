@@ -1252,7 +1252,16 @@ export async function fetchTagPlayerFeed(feedUrl: string): Promise<RssFeed> {
       if (!brief?.headline && !brief?.story && !(brief?.news?.length)) return;
       const headline = brief.headline || brief.news?.[0]?.headline || "RotoWire update";
       const story = brief.story || brief.description || brief.news?.[0]?.description || "";
-      const publishedAt = brief.published || row.createdAt || new Date().toISOString();
+      const publishedAt = brief.published || null;
+      // Only surface notes posted on/after the player was tagged.
+      if (publishedAt && row.createdAt) {
+        const pub = Date.parse(publishedAt);
+        const tagged = Date.parse(row.createdAt);
+        if (Number.isFinite(pub) && Number.isFinite(tagged) && pub < tagged) return;
+      } else if (!publishedAt) {
+        // No publish date → skip so we don't backfill old notes.
+        return;
+      }
       items.push({
         id: `tag-${tag}-${id}-${publishedAt}`,
         title: `${name}: ${headline}`,
