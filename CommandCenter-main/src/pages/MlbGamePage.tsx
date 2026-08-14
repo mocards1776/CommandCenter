@@ -30,7 +30,16 @@ import {
 } from "@/lib/mlb";
 import { cn, formatSportsDateLong } from "@/lib/utils";
 
-export function MlbGameDetail({ gamePk }: { gamePk: string }) {
+export function MlbGameDetail({
+  gamePk,
+  espnEventId,
+  boxFirst = false,
+}: {
+  gamePk: string;
+  espnEventId?: string | null;
+  /** Prefer full box score above the written wrap (farm feeds). */
+  boxFirst?: boolean;
+}) {
   const { user } = useAuth();
 
   const box = useQuery({
@@ -60,15 +69,21 @@ export function MlbGameDetail({ gamePk }: { gamePk: string }) {
 
   const recap = useQuery({
     queryKey: [
-      "mlb-game-recap",
+      "mlb-game-recap-v2",
       gamePk,
+      espnEventId ?? null,
       box.data?.officialDate,
       box.data?.home.abbrev,
       box.data?.away.abbrev,
     ],
     queryFn: () =>
-      fetchEspnGameRecap(box.data!.officialDate, box.data!.home.abbrev, box.data!.away.abbrev),
-    enabled: Boolean(box.data?.officialDate && box.data.home.abbrev && box.data.away.abbrev),
+      fetchEspnGameRecap(box.data!.officialDate, box.data!.home.abbrev, box.data!.away.abbrev, {
+        espnEventId,
+      }),
+    enabled: Boolean(
+      espnEventId ||
+        (box.data?.officialDate && box.data.home.abbrev && box.data.away.abbrev),
+    ),
     staleTime: 300_000,
   });
 
@@ -129,8 +144,8 @@ export function MlbGameDetail({ gamePk }: { gamePk: string }) {
     <div className="space-y-5">
       <GameMatchupHeader game={g} />
 
-      {/* Final: game wrap first and expanded. Live: box first. Pregame: preview text. */}
-      {!g.pregame && isFinal && (
+      {/* Final: wrap first (default) or box first for farm digests. Live: box first. Pregame: preview. */}
+      {!g.pregame && isFinal && !boxFirst && (
         <>
           {recap.isPending && (
             <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
@@ -160,6 +175,17 @@ export function MlbGameDetail({ gamePk }: { gamePk: string }) {
 
       {!g.pregame && g.innings.length > 0 && (
         <EspnBoxBoard game={g} metaBits={metaBits} watchPlayerIds={watchPlayerIds} />
+      )}
+
+      {!g.pregame && isFinal && boxFirst && (
+        <>
+          {recap.isPending && (
+            <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+              <Loader2 size={14} className="animate-spin" /> Loading game wrap…
+            </p>
+          )}
+          {recap.data && <GameWrap recap={recap.data} box={g} defaultOpen={false} />}
+        </>
       )}
 
       {!g.pregame && !isFinal && (

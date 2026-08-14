@@ -2,6 +2,18 @@
 
 ---
 
+## Dispatch folders, NFL wraps, full-screen drawers — August 14, 2026
+
+- Sports drawers (golf, team detail, customize board) open **full screen**.
+- Dispatch: feed **folders** — tap left/middle for a combined feed; chevron expands children (Cardinals, MLB, NFL, Scout, Tags).
+- NFL wraps & previews: include live games + score stubs when ESPN has no article (preseason-safe).
+- Hot Seat NFL: resilient coach fetch (roster + core API fallback).
+- Farm wraps: **finals only**, open full box score in-reader.
+- Game wraps: fix missing ESPN story when MLB/ESPN abbrevs differ (CWS↔CHW); pass ESPN event id into recap.
+- RUWT previews: division place under the record (e.g. 1st in NL Central).
+
+---
+
 ## Sports polish: iPad golf, Hot Seat, NFL cards — August 14, 2026
 
 - Golf (iPad): wider leaderboard drawer; **Favorites** pinned above the full field (no separate tab).

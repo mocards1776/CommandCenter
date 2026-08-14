@@ -276,7 +276,7 @@ function CustomizePanel({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
       <aside
-        className="bg-field h-full w-full max-w-md overflow-y-auto overscroll-contain border-l border-accent/25 p-6"
+        className="bg-field h-full w-full max-w-full overflow-y-auto overscroll-contain border-l border-accent/25 p-6"
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)",
           paddingBottom: "calc(env(safe-area-inset-bottom) + 5rem)",
@@ -658,7 +658,7 @@ function TeamDetailPanel({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/55" onClick={onClose}>
       <aside
-        className="bg-field flex h-full w-full max-w-lg flex-col overflow-hidden border-l border-accent/25"
+        className="bg-field flex h-full w-full max-w-full flex-col overflow-hidden border-l border-accent/25"
         style={{
           paddingTop: "env(safe-area-inset-top)",
           paddingBottom: "env(safe-area-inset-bottom)",

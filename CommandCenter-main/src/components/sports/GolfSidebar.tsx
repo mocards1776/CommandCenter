@@ -146,7 +146,7 @@ export default function GolfSidebar({
     <div className="fixed inset-0 z-50 flex justify-end bg-black/55" onClick={handleClose}>
       <aside
         ref={swipeRef}
-        className="flex h-full w-full max-w-full flex-col overflow-hidden border-l border-white/10 bg-black sm:max-w-xl md:max-w-2xl lg:max-w-3xl"
+        className="flex h-full w-full max-w-full flex-col overflow-hidden border-l border-white/10 bg-black"
         style={{
           paddingTop: "env(safe-area-inset-top)",
           paddingBottom: "env(safe-area-inset-bottom)",

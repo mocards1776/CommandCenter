@@ -814,110 +814,199 @@ export type NflCoach = {
 };
 
 export async function fetchNflCoaches(): Promise<NflCoach[]> {
-  const teamsRes = await fetch(`${ESPN}/teams`, { headers: { Accept: "application/json" } });
-  if (!teamsRes.ok) throw new Error(`NFL teams ${teamsRes.status}`);
-  const teamsJson = (await teamsRes.json()) as {
-    sports?: {
-      leagues?: {
-        teams?: {
-          team?: {
-            id?: string;
-            displayName?: string;
-            abbreviation?: string;
-            color?: string;
-            logos?: { href?: string }[];
-            record?: {
-              items?: {
-                type?: string;
-                summary?: string;
-                stats?: { name?: string; value?: number }[];
-              }[];
-            };
-          };
-        }[];
-      }[];
-    }[];
+  type TeamRow = {
+    id: string;
+    displayName: string;
+    abbreviation: string;
+    color: string;
+    logo: string | null;
+    recordSummary: string | null;
+    wins: number;
+    losses: number;
+    ties: number;
+    pointDiff: number;
   };
-  const teams = teamsJson.sports?.[0]?.leagues?.[0]?.teams ?? [];
+
+  const teams: TeamRow[] = [];
+
+  try {
+    const teamsRes = await fetch(`${ESPN}/teams?limit=32`, {
+      headers: { Accept: "application/json" },
+    });
+    if (teamsRes.ok) {
+      const teamsJson = (await teamsRes.json()) as {
+        sports?: {
+          leagues?: {
+            teams?: {
+              team?: {
+                id?: string;
+                displayName?: string;
+                abbreviation?: string;
+                color?: string;
+                logos?: { href?: string }[];
+                record?: {
+                  items?: {
+                    type?: string;
+                    summary?: string;
+                    stats?: { name?: string; value?: number }[];
+                  }[];
+                };
+              };
+            }[];
+          }[];
+        }[];
+      };
+      for (const row of teamsJson.sports?.[0]?.leagues?.[0]?.teams ?? []) {
+        const team = row.team;
+        if (!team?.id) continue;
+        const total = (team.record?.items ?? []).find((r) => r.type === "total");
+        const stat = (n: string) => total?.stats?.find((s) => s.name === n)?.value ?? 0;
+        teams.push({
+          id: String(team.id),
+          displayName: team.displayName ?? "Team",
+          abbreviation: team.abbreviation ?? "—",
+          color: (team.color ?? "333").replace(/^#/, ""),
+          logo: team.logos?.[0]?.href ?? nflTeamLogo(team.abbreviation ?? "nfl"),
+          recordSummary: total?.summary ?? null,
+          wins: Number(stat("wins")) || 0,
+          losses: Number(stat("losses")) || 0,
+          ties: Number(stat("ties")) || 0,
+          pointDiff: Number(stat("pointDifferential")) || 0,
+        });
+      }
+    }
+  } catch {
+    /* fall through to NFL_TEAMS */
+  }
+
+  if (!teams.length) {
+    for (const t of NFL_TEAMS) {
+      teams.push({
+        id: String(t.id),
+        displayName: t.name,
+        abbreviation: t.abbrev,
+        color: "333",
+        logo: nflTeamLogo(t.abbrev),
+        recordSummary: null,
+        wins: 0,
+        losses: 0,
+        ties: 0,
+        pointDiff: 0,
+      });
+    }
+  }
+
   const coaches: Omit<NflCoach, "hotSeatRank">[] = [];
-  const concurrency = 6;
+  const concurrency = 4;
   for (let i = 0; i < teams.length; i += concurrency) {
     const chunk = teams.slice(i, i + concurrency);
     await Promise.all(
-      chunk.map(async (row) => {
-        const team = row.team;
-        if (!team?.id) return;
+      chunk.map(async (team) => {
+        let coach: { id?: string; firstName?: string; lastName?: string; experience?: number } | null =
+          null;
         try {
-          const roster = (await (
-            await fetch(`${ESPN}/teams/${team.id}/roster`, { headers: { Accept: "application/json" } })
-          ).json()) as {
-            coach?: { id?: string; firstName?: string; lastName?: string; experience?: number }[];
-          };
-          const coach = roster.coach?.[0];
-          if (!coach?.id) return;
-          const total = (team.record?.items ?? []).find((r) => r.type === "total");
-          const stat = (n: string) => total?.stats?.find((s) => s.name === n)?.value ?? 0;
-          const wins = Number(stat("wins")) || 0;
-          const losses = Number(stat("losses")) || 0;
-          const ties = Number(stat("ties")) || 0;
-          const games = wins + losses + ties;
-          const winPct = games > 0 ? wins / games : null;
-          const pointDiff = Number(stat("pointDifferential")) || 0;
-          const experience = typeof coach.experience === "number" ? coach.experience : 0;
-          const factors: NflCoach["factors"] = [];
-          let score = 40;
-          if (experience <= 0) {
-            score -= 18;
-            factors.push({ label: "First year", points: -18, detail: "Grace period" });
-          } else if (experience === 1) {
-            score -= 10;
-            factors.push({ label: "Year two", points: -10, detail: "Still settling" });
-          } else if (experience >= 8) {
-            score += 8;
-            factors.push({ label: "Long tenure", points: 8, detail: `${experience} seasons` });
-          }
-          if (winPct != null) {
-            if (winPct < 0.35) {
-              score += 22;
-              factors.push({ label: "Poor record", points: 22, detail: total?.summary ?? "" });
-            } else if (winPct < 0.45) {
-              score += 12;
-              factors.push({ label: "Below .500", points: 12, detail: total?.summary ?? "" });
-            } else if (winPct >= 0.6) {
-              score -= 14;
-              factors.push({ label: "Winning club", points: -14, detail: total?.summary ?? "" });
-            }
-          }
-          if (pointDiff <= -60) {
-            score += 14;
-            factors.push({ label: "Point drain", points: 14, detail: String(pointDiff) });
-          } else if (pointDiff >= 60) {
-            score -= 10;
-            factors.push({ label: "Point edge", points: -10, detail: `+${pointDiff}` });
-          }
-          coaches.push({
-            id: String(coach.id),
-            name: [coach.firstName, coach.lastName].filter(Boolean).join(" "),
-            teamId: String(team.id),
-            teamName: team.displayName ?? "Team",
-            teamAbbrev: team.abbreviation ?? "—",
-            teamColor: (team.color ?? "333").replace(/^#/, ""),
-            logo: team.logos?.[0]?.href ?? nflTeamLogo(team.abbreviation ?? "nfl"),
-            experience,
-            record: total?.summary ?? null,
-            wins,
-            losses,
-            ties,
-            winPct,
-            pointDiff,
-            hotSeatScore: Math.max(0, Math.min(100, Math.round(score))),
-            factors,
+          const rosterRes = await fetch(`${ESPN}/teams/${team.id}/roster`, {
+            headers: { Accept: "application/json" },
           });
+          if (rosterRes.ok) {
+            const roster = (await rosterRes.json()) as {
+              coach?: { id?: string; firstName?: string; lastName?: string; experience?: number }[];
+            };
+            coach = roster.coach?.[0] ?? null;
+          }
         } catch {
-          /* skip */
+          /* try core API */
         }
+        if (!coach?.id) {
+          try {
+            const core = (await (
+              await fetch(
+                `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/${team.id}/coaches`,
+                { headers: { Accept: "application/json" } },
+              )
+            ).json()) as { items?: { $ref?: string }[] };
+            const ref = core.items?.[0]?.$ref;
+            if (ref) {
+              const href = ref.replace(/^http:/, "https:");
+              const detail = (await (await fetch(href, { headers: { Accept: "application/json" } })).json()) as {
+                id?: string | number;
+                firstName?: string;
+                lastName?: string;
+                experience?: number;
+              };
+              if (detail?.id != null) {
+                coach = {
+                  id: String(detail.id),
+                  firstName: detail.firstName,
+                  lastName: detail.lastName,
+                  experience: detail.experience,
+                };
+              }
+            }
+          } catch {
+            /* skip team */
+          }
+        }
+        if (!coach?.id) return;
+
+        const games = team.wins + team.losses + team.ties;
+        const winPct = games > 0 ? team.wins / games : null;
+        const experience = typeof coach.experience === "number" ? coach.experience : 0;
+        const factors: NflCoach["factors"] = [];
+        let score = 40;
+        if (experience <= 0) {
+          score -= 18;
+          factors.push({ label: "First year", points: -18, detail: "Grace period" });
+        } else if (experience === 1) {
+          score -= 10;
+          factors.push({ label: "Year two", points: -10, detail: "Still settling" });
+        } else if (experience >= 8) {
+          score += 8;
+          factors.push({ label: "Long tenure", points: 8, detail: `${experience} seasons` });
+        }
+        if (winPct != null) {
+          if (winPct < 0.35) {
+            score += 22;
+            factors.push({ label: "Poor record", points: 22, detail: team.recordSummary ?? "" });
+          } else if (winPct < 0.45) {
+            score += 12;
+            factors.push({ label: "Below .500", points: 12, detail: team.recordSummary ?? "" });
+          } else if (winPct >= 0.6) {
+            score -= 14;
+            factors.push({ label: "Winning club", points: -14, detail: team.recordSummary ?? "" });
+          }
+        }
+        if (team.pointDiff <= -60) {
+          score += 14;
+          factors.push({ label: "Point drain", points: 14, detail: String(team.pointDiff) });
+        } else if (team.pointDiff >= 60) {
+          score -= 10;
+          factors.push({ label: "Point edge", points: -10, detail: `+${team.pointDiff}` });
+        }
+        coaches.push({
+          id: String(coach.id),
+          name: [coach.firstName, coach.lastName].filter(Boolean).join(" ") || "Head coach",
+          teamId: team.id,
+          teamName: team.displayName,
+          teamAbbrev: team.abbreviation,
+          teamColor: team.color,
+          logo: team.logo,
+          experience,
+          record: team.recordSummary,
+          wins: team.wins,
+          losses: team.losses,
+          ties: team.ties,
+          winPct,
+          pointDiff: team.pointDiff,
+          hotSeatScore: Math.max(0, Math.min(100, Math.round(score))),
+          factors,
+        });
       }),
     );
+  }
+
+  if (!coaches.length) {
+    throw new Error("Couldn't load NFL coaches — ESPN returned no head coaches.");
   }
   coaches.sort((a, b) => b.hotSeatScore - a.hotSeatScore || a.name.localeCompare(b.name));
   return coaches.map((c, i) => ({ ...c, hotSeatRank: i + 1 }));

@@ -306,7 +306,7 @@ export default function DispatchEspnGameReader({
       <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
         {chrome}
         {hero}
-        <MlbGameDetail gamePk={String(resolved.data)} />
+        <MlbGameDetail gamePk={String(resolved.data)} espnEventId={eventId} />
       </div>
     );
   }

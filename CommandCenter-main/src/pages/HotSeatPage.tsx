@@ -341,9 +341,10 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
 
 function NflHotSeat() {
   const coaches = useQuery({
-    queryKey: ["nfl-coaches-v1"],
+    queryKey: ["nfl-coaches-v2"],
     queryFn: fetchNflCoaches,
     staleTime: 300_000,
+    retry: 2,
   });
 
   return (
