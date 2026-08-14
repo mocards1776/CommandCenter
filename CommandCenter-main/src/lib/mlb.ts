@@ -2437,7 +2437,13 @@ function mapContractPayload(data: unknown): MlbPlayerContract | null {
     totalValue?: string | null;
     serviceTime?: string | null;
   };
-  if (d.error && !d.contractStatus && !d.currentSalary && !(d.salaryHistory?.length)) {
+  if (
+    d.error &&
+    !d.contractStatus &&
+    !d.currentSalary &&
+    !d.serviceTime &&
+    !(d.salaryHistory?.length)
+  ) {
     return null;
   }
   const hasAnything =
