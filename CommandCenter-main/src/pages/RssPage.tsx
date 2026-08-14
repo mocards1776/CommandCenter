@@ -146,7 +146,15 @@ import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
-type NavView = "unread" | "saved" | RssFeedId | "notes" | "filters" | "duplicates" | "folder:tags";
+type NavView =
+  | "unread"
+  | "saved"
+  | RssFeedId
+  | "notes"
+  | "filters"
+  | "duplicates"
+  | "folder:tags"
+  | "folder:favorites";
 
 function readingMinutes(words: number): string {
   const m = Math.max(1, Math.round(words / 220));
@@ -1827,6 +1835,20 @@ export default function RssPage() {
   function folderUnread(folder: RssFeedFolder): number {
     return folder.feedIds.reduce((sum, id) => sum + (unreadByFeed[id] ?? 0), 0);
   }
+
+  function favoriteUnread(): number {
+    let sum = 0;
+    for (const id of favoriteFeedIds) {
+      const feed = allFeeds.find((f) => f.id === id);
+      if (feed) {
+        sum += unreadByFeed[feed.id] ?? 0;
+        continue;
+      }
+      const folder = RSS_FEED_FOLDERS.find((f) => f.id === id);
+      if (folder) sum += folderUnread(folder);
+    }
+    return sum;
+  }
   const [hideRead, setHideRead] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("dispatch-hide-read") === "1";
@@ -2028,14 +2050,23 @@ export default function RssPage() {
       return deduped;
     }
 
-    // Folder combined feeds (Cardinals / MLB / NFL / Scout / Tags).
-    if (nav === "folder:tags" || isFeedFolderId(nav)) {
+    // Folder combined feeds (Favorites / Cardinals / MLB / NFL / Scout / Tags).
+    if (nav === "folder:favorites" || nav === "folder:tags" || isFeedFolderId(nav)) {
       const ids =
-        nav === "folder:tags"
-          ? tagFeeds.map((f) => f.id)
-          : feedIdsForFolder(nav);
+        nav === "folder:favorites"
+          ? favoriteFeedIds.flatMap((id) => {
+              const folder = RSS_FEED_FOLDERS.find((f) => f.id === id);
+              if (folder) return folder.feedIds;
+              return [id];
+            })
+          : nav === "folder:tags"
+            ? tagFeeds.map((f) => f.id)
+            : feedIdsForFolder(nav);
+      const seen = new Set<string>();
       const merged: RssFeedItemRef[] = [];
       for (const id of ids) {
+        if (seen.has(id)) continue;
+        seen.add(id);
         const pack = feedById.get(id);
         const def = allFeeds.find((f) => f.id === id);
         for (const it of pack?.items ?? []) {
@@ -2070,6 +2101,7 @@ export default function RssPage() {
     savedListItems,
     hideRead,
     tagFeeds,
+    favoriteFeedIds,
   ]);
 
   const totalUnread = useMemo(() => {
@@ -2101,9 +2133,11 @@ export default function RssPage() {
               ? "Duplicates"
               : nav === "folder:tags"
                 ? "Tags"
-                : RSS_FEED_FOLDERS.find((f) => f.id === nav)?.title ??
-                  allFeeds.find((f) => f.id === nav)?.title ??
-                  "Feed";
+                : nav === "folder:favorites"
+                  ? "Favorites"
+                  : RSS_FEED_FOLDERS.find((f) => f.id === nav)?.title ??
+                    allFeeds.find((f) => f.id === nav)?.title ??
+                    "Feed";
 
   const feedsLoading = feedQueries.some((q) => q.isLoading);
   const feedsFetching = feedQueries.some((q) => q.isFetching);
@@ -2278,6 +2312,7 @@ export default function RssPage() {
     nav === "unread" ||
     nav === "saved" ||
     nav === "folder:tags" ||
+    nav === "folder:favorites" ||
     isFeedFolderId(nav) ||
     allFeeds.some((f) => f.id === nav);
 
@@ -2364,24 +2399,38 @@ export default function RssPage() {
           <ul className="flex flex-col gap-0.5">
             {favoriteFeedIds.length > 0 ? (
               <li className="mb-1">
-                <div className="flex w-full items-center gap-1 rounded-sm text-chalk hover:bg-white/[0.04] hover:text-cream">
+                <div
+                  className={cn(
+                    "flex w-full items-center gap-1 rounded-sm transition-colors",
+                    nav === "folder:favorites"
+                      ? "bg-accent/15 text-cream"
+                      : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+                  )}
+                >
                   <button
                     type="button"
-                    onClick={() => toggleFolderOpen("__favorites__", true)}
+                    onClick={() => selectNav("folder:favorites")}
                     className="flex min-w-0 flex-1 items-center gap-2.5 rounded-sm px-2.5 py-2 text-left"
                   >
-                    {(folderOpen["__favorites__"] ?? true) ? (
-                      <ChevronDown size={14} className="opacity-60" />
-                    ) : (
-                      <ChevronRight size={14} className="opacity-60" />
-                    )}
                     <Star size={14} className="text-accent shrink-0 fill-current" />
                     <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">
                       Favorites
                     </span>
-                    <span className="text-chalk tabular-nums text-[12px]">
-                      {favoriteFeedIds.length}
-                    </span>
+                    <span className="text-chalk tabular-nums text-[12px]">{favoriteUnread()}</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={
+                      (folderOpen["__favorites__"] ?? true) ? "Collapse favorites" : "Expand favorites"
+                    }
+                    onClick={() => toggleFolderOpen("__favorites__", true)}
+                    className="shrink-0 px-2 py-2 opacity-50 hover:opacity-100"
+                  >
+                    {(folderOpen["__favorites__"] ?? true) ? (
+                      <ChevronDown size={14} />
+                    ) : (
+                      <ChevronRight size={14} />
+                    )}
                   </button>
                 </div>
                 {(folderOpen["__favorites__"] ?? true) ? (
@@ -2587,7 +2636,6 @@ export default function RssPage() {
               >
                 <Layers size={16} className="text-accent shrink-0" />
                 <span className="min-w-0 flex-1 text-[13.5px]">Duplicates</span>
-                <span className="text-chalk tabular-nums text-[12px]">{duplicateItems.length}</span>
                 <ChevronRight size={14} className="opacity-50" />
               </button>
             </li>
@@ -2620,7 +2668,6 @@ export default function RssPage() {
               >
                 <Ban size={16} className="text-accent shrink-0" />
                 <span className="min-w-0 flex-1 text-[13.5px]">Filters</span>
-                <span className="text-chalk tabular-nums text-[12px]">{filters.length}</span>
                 <ChevronRight size={14} className="opacity-50" />
               </button>
             </li>
@@ -2666,12 +2713,13 @@ export default function RssPage() {
                     ? `${filters.length} rules`
                     : nav === "duplicates"
                       ? `${duplicateItems.length} filtered · MLB preferred`
-                      : `${listItems.length} articles${hideRead && (allFeeds.some((f) => f.id === nav) || nav === "folder:tags" || isFeedFolderId(nav)) ? " · unread only" : ""}`}
+                      : `${listItems.length} articles${hideRead && (allFeeds.some((f) => f.id === nav) || nav === "folder:tags" || nav === "folder:favorites" || isFeedFolderId(nav)) ? " · unread only" : ""}`}
             </p>
           </div>
           {allFeeds.some((f) => f.id === nav) ||
           nav === "duplicates" ||
           nav === "folder:tags" ||
+          nav === "folder:favorites" ||
           isFeedFolderId(nav) ? (
             <button
               type="button"
@@ -2872,6 +2920,7 @@ export default function RssPage() {
                 nav === "duplicates" ||
                 nav === "saved" ||
                 nav === "folder:tags" ||
+                nav === "folder:favorites" ||
                 isFeedFolderId(nav) ||
                 allFeeds.some((f) => f.id === nav);
               const feedScoped = allFeeds.some((f) => f.id === nav);

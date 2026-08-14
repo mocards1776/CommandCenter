@@ -113,9 +113,13 @@ export function NflLiveStrip({ game }: { game: NflScoreGame }) {
 export function NflScoreRow({
   game,
   to,
+  heat,
+  reasons,
 }: {
   game: NflScoreGame;
   to?: string;
+  heat?: number | null;
+  reasons?: string[];
 }) {
   const body = (
     <>
@@ -145,11 +149,17 @@ export function NflScoreRow({
           <p className="text-chalk-dim mt-1 max-w-[7rem] text-[10px] leading-snug">
             {game.shortDetail}
           </p>
+          {heat != null ? (
+            <p className="mt-1.5 text-[10.5px] font-semibold text-[#8b93a7]">Heat {heat}</p>
+          ) : null}
         </div>
       </div>
       {game.live && game.situation?.downDistanceText && (
         <p className="text-chalk mt-2 truncate text-[11px]">{game.situation.downDistanceText}</p>
       )}
+      {reasons && reasons.length > 0 ? (
+        <p className="text-chalk-dim mt-2 truncate text-[10px]">{reasons.join(" · ")}</p>
+      ) : null}
     </>
   );
 

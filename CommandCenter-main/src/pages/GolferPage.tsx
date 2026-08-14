@@ -18,6 +18,8 @@ import {
   Trophy,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import PlayerTagsPanel from "@/components/sports/PlayerTagsPanel";
+import SportsNotesPanel from "@/components/sports/SportsNotesPanel";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -25,17 +27,32 @@ import {
   isFavoritePlayer,
   removeFavoritePlayer,
 } from "@/lib/favorite-players";
-import { fetchGolferProfile } from "@/lib/sports";
+import {
+  fetchGolferProfile,
+  fetchGolferScorecard,
+  scoreTypeColor,
+  type GolfHoleScore,
+  type GolfRoundScorecard,
+} from "@/lib/sports";
 import { cn } from "@/lib/utils";
 
-type GolferTab = "overview" | "news" | "bio" | "results";
+type GolferTab = "overview" | "scorecard" | "news" | "bio" | "results";
 
 const TABS: { id: GolferTab; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "scorecard", label: "Scorecard" },
   { id: "news", label: "News & Video" },
   { id: "bio", label: "Bio" },
   { id: "results", label: "Results" },
 ];
+
+const GOLF_TAG_SUGGESTIONS = [
+  "Watch",
+  "Favorite",
+  "Contender",
+  "Long shot",
+  "Cut watch",
+] as const;
 
 function InfoCard({
   title,
@@ -134,6 +151,178 @@ function MediaSection({
   );
 }
 
+function HoleMap({
+  holes,
+  currentHole,
+}: {
+  holes: GolfHoleScore[];
+  currentHole: number | null;
+}) {
+  const byHole = new Map(holes.map((h) => [h.hole, h]));
+  const playedCount = holes.filter((x) => x.strokes != null).length;
+  return (
+    <div className="grid grid-cols-9 gap-1.5 sm:gap-2">
+      {Array.from({ length: 18 }, (_, i) => {
+        const hole = i + 1;
+        const h = byHole.get(hole);
+        const played = h?.strokes != null;
+        const active =
+          currentHole === hole ||
+          (!played && currentHole == null && hole === playedCount + 1 && playedCount < 18);
+        return (
+          <div
+            key={hole}
+            className={cn(
+              "relative flex aspect-square flex-col items-center justify-center rounded-md border text-center",
+              played ? "border-white/15 bg-[#0f1520]" : "border-dashed border-white/10 bg-transparent",
+              active && "ring-1 ring-[#4ea1ff]/70",
+            )}
+            title={
+              h
+                ? `Hole ${hole}${h.par != null ? ` · Par ${h.par}` : ""}${h.strokes != null ? ` · ${h.strokes}` : ""}${h.scoreType ? ` · ${h.scoreType}` : ""}`
+                : `Hole ${hole}`
+            }
+          >
+            <span className="text-[9px] uppercase tracking-[0.08em] text-white/40">{hole}</span>
+            <span
+              className="numeral text-[14px] font-semibold leading-none"
+              style={{
+                color: played ? scoreTypeColor(h?.scoreType ?? null, h?.toPar ?? null) : "#64748b",
+              }}
+            >
+              {played ? h!.strokes : h?.par != null ? h.par : "·"}
+            </span>
+            {h?.par != null ? (
+              <span className="mt-0.5 text-[8px] text-white/35">p{h.par}</span>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RoundScorecard({
+  round,
+  currentHole,
+}: {
+  round: GolfRoundScorecard;
+  currentHole: number | null;
+}) {
+  const front = round.holes.filter((h) => h.hole <= 9);
+  const back = round.holes.filter((h) => h.hole > 9);
+  return (
+    <section className="rounded-xl border border-white/[0.1] bg-[#12151c] p-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-[13px] font-semibold text-white">Round {round.round}</h3>
+        <p className="numeral text-[13px] text-white/70">
+          {round.toPar ?? "—"}
+          {round.outScore != null || round.inScore != null ? (
+            <span className="ml-2 text-[11px] text-white/40">
+              {round.outScore != null ? `Out ${round.outScore}` : ""}
+              {round.outScore != null && round.inScore != null ? " · " : ""}
+              {round.inScore != null ? `In ${round.inScore}` : ""}
+            </span>
+          ) : null}
+        </p>
+      </div>
+      <HoleMap holes={round.holes} currentHole={currentHole} />
+      {(front.length > 0 || back.length > 0) && (
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[520px] text-center text-[11px]">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-[0.12em] text-white/40">
+                <th className="px-1 py-1 text-left font-medium">Hole</th>
+                {Array.from({ length: 9 }, (_, i) => (
+                  <th key={`h${i + 1}`} className="px-1 py-1 font-medium">
+                    {i + 1}
+                  </th>
+                ))}
+                <th className="px-1 py-1 font-medium">Out</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-white/[0.06] text-white/50">
+                <td className="px-1 py-1.5 text-left">Par</td>
+                {Array.from({ length: 9 }, (_, i) => (
+                  <td key={`p${i + 1}`} className="numeral px-1 py-1.5">
+                    {front.find((h) => h.hole === i + 1)?.par ?? "—"}
+                  </td>
+                ))}
+                <td className="numeral px-1 py-1.5">
+                  {front.reduce((s, h) => s + (h.par ?? 0), 0) || "—"}
+                </td>
+              </tr>
+              <tr className="border-t border-white/[0.06] text-white">
+                <td className="px-1 py-1.5 text-left">Score</td>
+                {Array.from({ length: 9 }, (_, i) => {
+                  const h = front.find((x) => x.hole === i + 1);
+                  return (
+                    <td
+                      key={`s${i + 1}`}
+                      className="numeral px-1 py-1.5 font-semibold"
+                      style={{ color: scoreTypeColor(h?.scoreType ?? null, h?.toPar ?? null) }}
+                    >
+                      {h?.strokes ?? "—"}
+                    </td>
+                  );
+                })}
+                <td className="numeral px-1 py-1.5 font-semibold">
+                  {round.outScore ??
+                    (front.every((h) => h.strokes != null)
+                      ? front.reduce((s, h) => s + (h.strokes ?? 0), 0)
+                      : "—")}
+                </td>
+              </tr>
+              <tr className="border-t border-white/[0.06] text-[10px] uppercase tracking-[0.12em] text-white/40">
+                <th className="px-1 py-1 text-left font-medium">Hole</th>
+                {Array.from({ length: 9 }, (_, i) => (
+                  <th key={`hb${i + 10}`} className="px-1 py-1 font-medium">
+                    {i + 10}
+                  </th>
+                ))}
+                <th className="px-1 py-1 font-medium">In</th>
+              </tr>
+              <tr className="border-t border-white/[0.06] text-white/50">
+                <td className="px-1 py-1.5 text-left">Par</td>
+                {Array.from({ length: 9 }, (_, i) => (
+                  <td key={`pb${i + 10}`} className="numeral px-1 py-1.5">
+                    {back.find((h) => h.hole === i + 10)?.par ?? "—"}
+                  </td>
+                ))}
+                <td className="numeral px-1 py-1.5">
+                  {back.reduce((s, h) => s + (h.par ?? 0), 0) || "—"}
+                </td>
+              </tr>
+              <tr className="border-t border-white/[0.06] text-white">
+                <td className="px-1 py-1.5 text-left">Score</td>
+                {Array.from({ length: 9 }, (_, i) => {
+                  const h = back.find((x) => x.hole === i + 10);
+                  return (
+                    <td
+                      key={`sb${i + 10}`}
+                      className="numeral px-1 py-1.5 font-semibold"
+                      style={{ color: scoreTypeColor(h?.scoreType ?? null, h?.toPar ?? null) }}
+                    >
+                      {h?.strokes ?? "—"}
+                    </td>
+                  );
+                })}
+                <td className="numeral px-1 py-1.5 font-semibold">
+                  {round.inScore ??
+                    (back.every((h) => h.strokes != null)
+                      ? back.reduce((s, h) => s + (h.strokes ?? 0), 0)
+                      : "—")}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function GolferPage() {
   const { golferId } = useParams<{ golferId: string }>();
   const navigate = useNavigate();
@@ -147,6 +336,14 @@ export default function GolferPage() {
     queryFn: () => fetchGolferProfile(golferId!),
     enabled: Boolean(golferId),
     staleTime: 120_000,
+  });
+
+  const scorecard = useQuery({
+    queryKey: ["golfer-scorecard", golferId],
+    queryFn: () => fetchGolferScorecard(golferId!),
+    enabled: Boolean(golferId),
+    staleTime: 45_000,
+    refetchInterval: tab === "scorecard" ? 60_000 : false,
   });
 
   const fav = useQuery({
@@ -264,6 +461,14 @@ export default function GolferPage() {
                   {p.flagUrl && <img src={p.flagUrl} alt="" className="h-3.5 w-5 object-cover" />}
                   {p.citizenship ?? "PGA Tour"}
                 </p>
+                <PlayerTagsPanel
+                  playerId={golferId!}
+                  playerName={p.name}
+                  variant="hero"
+                  isFavorite={Boolean(fav.data)}
+                  linkTags={false}
+                  suggestions={GOLF_TAG_SUGGESTIONS}
+                />
               </div>
             </div>
           </article>
@@ -376,6 +581,101 @@ export default function GolferPage() {
                     ) : null}
                   </p>
                 </section>
+              )}
+
+              {scorecard.data?.rounds?.length ? (
+                <button
+                  type="button"
+                  onClick={() => setTab("scorecard")}
+                  className="flex w-full items-center justify-between rounded-xl border border-white/[0.1] bg-[#12151c] px-4 py-3 text-left transition hover:border-white/20"
+                >
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                      This week
+                    </p>
+                    <p className="mt-1 text-[14px] text-white">
+                      {scorecard.data.eventName ?? "Tournament scorecard"}
+                      {scorecard.data.totalToPar ? (
+                        <span className="numeral text-[#4ade80]"> · {scorecard.data.totalToPar}</span>
+                      ) : null}
+                      {scorecard.data.currentHole != null ? (
+                        <span className="text-white/45"> · thru {scorecard.data.currentHole}</span>
+                      ) : null}
+                    </p>
+                  </div>
+                  <ChevronRight size={16} className="text-white/40" />
+                </button>
+              ) : null}
+
+              <PlayerTagsPanel
+                playerId={golferId!}
+                playerName={p.name}
+                isFavorite={Boolean(fav.data)}
+                linkTags={false}
+                suggestions={GOLF_TAG_SUGGESTIONS}
+              />
+              <SportsNotesPanel entityType="player" entityId={golferId!} entityName={p.name} />
+            </div>
+          )}
+
+          {tab === "scorecard" && (
+            <div className="space-y-4">
+              {scorecard.isPending ? (
+                <p className="text-chalk flex items-center gap-2 text-[13px]">
+                  <Loader2 size={14} className="animate-spin" /> Loading scorecard…
+                </p>
+              ) : scorecard.isError || !scorecard.data?.rounds?.length ? (
+                <p className="text-chalk-dim text-[13px]">
+                  No live scorecard for this golfer in the current event.
+                </p>
+              ) : (
+                <>
+                  <div className="rounded-xl border border-white/[0.1] bg-[#0b1220] px-4 py-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                      Hole map · play-by-play
+                    </p>
+                    <p className="mt-1 text-[15px] text-white">
+                      {scorecard.data.eventName ?? "Current tournament"}
+                    </p>
+                    <p className="mt-1 text-[12px] text-white/55">
+                      {scorecard.data.position ? `Pos ${scorecard.data.position}` : "In field"}
+                      {scorecard.data.totalToPar ? ` · ${scorecard.data.totalToPar}` : ""}
+                      {scorecard.data.currentHole != null
+                        ? ` · playing hole ${scorecard.data.currentHole}`
+                        : ""}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.12em] text-white/45">
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-[#38bdf8]" /> Eagle+
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-[#4ade80]" /> Birdie
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-[#e8e4d9]" /> Par
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-[#fbbf24]" /> Bogey
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-[#f87171]" /> Double+
+                      </span>
+                    </div>
+                  </div>
+                  {[...scorecard.data.rounds]
+                    .sort((a, b) => b.round - a.round)
+                    .map((r) => (
+                      <RoundScorecard
+                        key={r.round}
+                        round={r}
+                        currentHole={
+                          r.round === Math.max(...scorecard.data!.rounds.map((x) => x.round))
+                            ? scorecard.data!.currentHole
+                            : null
+                        }
+                      />
+                    ))}
+                </>
               )}
             </div>
           )}

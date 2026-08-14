@@ -1179,7 +1179,7 @@ function YearByYearTable({
           </h3>
           <p className="text-[10px] text-[#8b93a7]">
             <span className="font-bold text-cream">Bold</span> career high ·{" "}
-            <span className="font-bold underline text-cream">Team lead</span> ·{" "}
+            <span className="font-bold italic text-cream">Team lead</span> ·{" "}
             <span className="font-bold text-alert">League lead</span>
           </p>
         </div>
@@ -1236,7 +1236,7 @@ function YearByYearTable({
                         className={cn(
                           "numeral px-2 py-2 text-center text-cream",
                           (isHigh || isTeam || isLeague) && "font-bold",
-                          isTeam && "underline decoration-white/70 underline-offset-2",
+                          isTeam && "italic",
                           isLeague && "text-alert",
                         )}
                       >

@@ -8,6 +8,13 @@ import { listFavoritePlayers } from "@/lib/favorite-players";
 import { DEFAULT_FAVORITES, fetchTourSnapshot, type TourLeader } from "@/lib/sports";
 import { cn } from "@/lib/utils";
 
+function todayTone(today: string | null): string {
+  if (!today || today === "—" || today === "E") return "text-white/80";
+  if (today.startsWith("-")) return "text-[#4ade80]";
+  if (today.startsWith("+")) return "text-[#f87171]";
+  return "text-white/80";
+}
+
 function LeaderTable({
   rows,
   favIds,
@@ -25,13 +32,14 @@ function LeaderTable({
   }
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[340px] text-left">
+      <table className="w-full min-w-[380px] text-left">
         <thead>
           <tr className="border-b border-white/20 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">
             <th className="py-2 pr-2 font-medium">Pos</th>
             <th className="py-2 pr-2 font-medium">Player</th>
             <th className="py-2 pr-2 text-right font-medium">Tot</th>
-            <th className="py-2 pr-2 text-right font-medium">Tee/Thru</th>
+            <th className="py-2 pr-2 text-right font-medium">Today</th>
+            <th className="py-2 pr-2 text-right font-medium">Thru</th>
             <th className="py-2 text-right font-medium">R1</th>
           </tr>
         </thead>
@@ -51,23 +59,26 @@ function LeaderTable({
                   if (l.id) navigate(`/sports/golf/player/${l.id}`);
                 }}
               >
-                <td className="numeral py-1.5 pr-2 text-[12px] text-white/45">{l.position ?? i + 1}</td>
-                <td className="py-1.5 pr-2">
-                  <span className="inline-flex max-w-[14rem] items-center gap-1.5 sm:max-w-[18rem]">
+                <td className="numeral py-2 pr-2 text-[12px] text-white/55">{l.position ?? i + 1}</td>
+                <td className="py-2 pr-2">
+                  <span className="inline-flex max-w-[12rem] items-center gap-1.5 sm:max-w-[16rem]">
                     {watched && <Star size={12} className="shrink-0 fill-[#4ea1ff] text-[#4ea1ff]" />}
                     <span className="truncate text-[13px] font-medium text-white">{name}</span>
-                    {l.fedexCupRank != null && l.fedexCupRank > 0 ? (
-                      <span className="numeral ml-0.5 shrink-0 text-[10px] font-medium text-[#d4a574]/90">
-                        {l.fedexCupRank}
-                      </span>
-                    ) : null}
                   </span>
                 </td>
-                <td className="numeral py-1.5 pr-2 text-right text-[14px] font-semibold text-[#ff6b6b]">
+                <td className="numeral py-2 pr-2 text-right text-[15px] font-semibold text-white">
                   {l.score}
                 </td>
-                <td className="numeral py-1.5 pr-2 text-right text-[12px] text-white/70">{l.thru ?? "—"}</td>
-                <td className="numeral py-1.5 text-right text-[12px] text-white/70">{l.r1 ?? "—"}</td>
+                <td
+                  className={cn(
+                    "numeral py-2 pr-2 text-right text-[14px] font-semibold",
+                    todayTone(l.today),
+                  )}
+                >
+                  {l.today ?? "—"}
+                </td>
+                <td className="numeral py-2 pr-2 text-right text-[12px] text-white/65">{l.thru ?? "—"}</td>
+                <td className="numeral py-2 text-right text-[12px] text-white/55">{l.r1 ?? "—"}</td>
               </tr>
             );
           })}

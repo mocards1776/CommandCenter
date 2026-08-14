@@ -23,12 +23,17 @@ export default function PlayerTagsPanel({
   playerName,
   variant = "panel",
   isFavorite = false,
+  /** When false, tags are not links (e.g. golfers without a tag directory). */
+  linkTags = true,
+  suggestions,
 }: {
   playerId: string | number;
   playerName: string;
   /** Compact presentation labels for the player hero card. */
   variant?: "panel" | "hero";
   isFavorite?: boolean;
+  linkTags?: boolean;
+  suggestions?: readonly string[];
 }) {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -86,7 +91,7 @@ export default function PlayerTagsPanel({
   const have = new Set((tags.data ?? []).map((t) => t.tag.toLowerCase()));
   const tagList = tags.data ?? [];
   const suggestionPool = [
-    ...new Set([...(allTags.data ?? []), ...SUGGESTED_PLAYER_TAGS]),
+    ...new Set([...(allTags.data ?? []), ...(suggestions ?? SUGGESTED_PLAYER_TAGS)]),
   ].filter((s) => !have.has(s.toLowerCase()));
 
   if (variant === "hero") {
@@ -109,15 +114,24 @@ export default function PlayerTagsPanel({
               Favorite
             </span>
           )}
-          {tagList.map((t) => (
-            <Link
-              key={t.id}
-              to={tagPath(t.tag)}
-              className="inline-flex items-center rounded-full border border-white/25 bg-white/[0.08] px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white transition hover:border-white/45 hover:bg-white/[0.14]"
-            >
-              {displayPlayerTag(t.tag)}
-            </Link>
-          ))}
+          {tagList.map((t) =>
+            linkTags ? (
+              <Link
+                key={t.id}
+                to={tagPath(t.tag)}
+                className="inline-flex items-center rounded-full border border-white/25 bg-white/[0.08] px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white transition hover:border-white/45 hover:bg-white/[0.14]"
+              >
+                {displayPlayerTag(t.tag)}
+              </Link>
+            ) : (
+              <span
+                key={t.id}
+                className="inline-flex items-center rounded-full border border-white/25 bg-white/[0.08] px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white"
+              >
+                {displayPlayerTag(t.tag)}
+              </span>
+            ),
+          )}
           {!isFavorite && tagList.length === 0 && (
             <span className="text-[12px] text-white/45">No labels yet — manage below</span>
           )}
@@ -161,9 +175,13 @@ export default function PlayerTagsPanel({
               key={t.id}
               className="bg-accent/15 text-accent inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1 text-[12px] font-medium"
             >
-              <Link to={tagPath(t.tag)} className="hover:underline">
-                {displayPlayerTag(t.tag)}
-              </Link>
+              {linkTags ? (
+                <Link to={tagPath(t.tag)} className="hover:underline">
+                  {displayPlayerTag(t.tag)}
+                </Link>
+              ) : (
+                <span>{displayPlayerTag(t.tag)}</span>
+              )}
               <button
                 type="button"
                 onClick={() => removeMut.mutate(t.id)}

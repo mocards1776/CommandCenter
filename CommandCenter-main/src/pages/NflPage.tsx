@@ -5,11 +5,16 @@ import { Loader2, RefreshCw, Share } from "lucide-react";
 import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
 import NflFieldMap, { NflScoreRow } from "@/components/sports/NflFieldMap";
-import { fetchNflScoreboard, pickNflHeroGame } from "@/lib/nfl";
+import { useAuth } from "@/lib/auth-context";
+import { listFavoritePlayers } from "@/lib/favorite-players";
+import { fetchNflScoreboard, pickNflHeroGame, rankNflRuwtGames } from "@/lib/nfl";
+import { loadNflTeamInterest } from "@/lib/ruwt";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
 
 export default function NflPage() {
+  const { user } = useAuth();
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("solo") === "1") markSportsSolo();
@@ -22,7 +27,42 @@ export default function NflPage() {
     staleTime: 10_000,
   });
 
+  const favorites = useQuery({
+    queryKey: ["favorite-players", user?.id],
+    queryFn: () => listFavoritePlayers(user!.id),
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+  });
+
+  const nflInterest = useMemo(() => loadNflTeamInterest(), []);
+
+  const nflWatchTeamIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of favorites.data ?? []) {
+      const sport = (f.sport ?? "").toLowerCase();
+      const league = (f.league ?? "").toLowerCase();
+      if (sport !== "football" && sport !== "nfl" && league !== "nfl") continue;
+      if (f.teamId) set.add(String(f.teamId));
+    }
+    return set;
+  }, [favorites.data]);
+
   const games = scoreboard.data ?? [];
+  const heatById = useMemo(() => {
+    const ranked = rankNflRuwtGames(
+      games,
+      {
+        teamInterest: nflInterest,
+        watchPlayerIds: new Set(),
+        watchTeamIds: nflWatchTeamIds,
+      },
+      Math.max(games.length, 1),
+    );
+    const map = new Map<string, { score: number; reasons: string[] }>();
+    for (const g of ranked) map.set(String(g.id), { score: g.score, reasons: g.reasons });
+    return map;
+  }, [games, nflInterest, nflWatchTeamIds]);
+
   const live = useMemo(() => games.filter((g) => g.live), [games]);
   const upcoming = useMemo(() => games.filter((g) => !g.live && !g.final), [games]);
   const finals = useMemo(() => games.filter((g) => g.final), [games]);
@@ -132,7 +172,13 @@ export default function NflPage() {
               <h3 className="rule-head mb-3">In progress</h3>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {live.map((g) => (
-                  <NflScoreRow key={g.id} game={g} to={`/sports/nfl/game/${g.id}`} />
+                  <NflScoreRow
+                    key={g.id}
+                    game={g}
+                    to={`/sports/nfl/game/${g.id}`}
+                    heat={heatById.get(String(g.id))?.score}
+                    reasons={heatById.get(String(g.id))?.reasons}
+                  />
                 ))}
               </div>
             </section>
@@ -142,7 +188,13 @@ export default function NflPage() {
               <h3 className="rule-head mb-3">Upcoming</h3>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {upcoming.map((g) => (
-                  <NflScoreRow key={g.id} game={g} to={`/sports/nfl/game/${g.id}`} />
+                  <NflScoreRow
+                    key={g.id}
+                    game={g}
+                    to={`/sports/nfl/game/${g.id}`}
+                    heat={heatById.get(String(g.id))?.score}
+                    reasons={heatById.get(String(g.id))?.reasons}
+                  />
                 ))}
               </div>
             </section>
@@ -152,7 +204,13 @@ export default function NflPage() {
               <h3 className="rule-head mb-3">Final</h3>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {finals.map((g) => (
-                  <NflScoreRow key={g.id} game={g} to={`/sports/nfl/game/${g.id}`} />
+                  <NflScoreRow
+                    key={g.id}
+                    game={g}
+                    to={`/sports/nfl/game/${g.id}`}
+                    heat={heatById.get(String(g.id))?.score}
+                    reasons={heatById.get(String(g.id))?.reasons}
+                  />
                 ))}
               </div>
             </section>

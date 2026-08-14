@@ -1452,6 +1452,8 @@ export function pickNflHeroGame(games: NflScoreGame[]): NflScoreGame | null {
 export type NflRuwtContext = {
   teamInterest: Record<string, number>;
   watchPlayerIds: Set<string>;
+  /** Favorite player/coach team ids — boosts matchups involving those clubs. */
+  watchTeamIds?: Set<string>;
 };
 
 /** Drama + interest score for RUWT (parallel to MLB). */
@@ -1502,6 +1504,22 @@ export function scoreNflRuwtGame(g: NflScoreGame, ctx?: NflRuwtContext): { score
     if (ai >= 5 && hi >= 5) {
       score += 12;
       reasons.push("Both teams ranked");
+    }
+
+    const watchTeams = ctx.watchTeamIds;
+    if (watchTeams?.size) {
+      const awayWatched = watchTeams.has(String(g.away.teamId));
+      const homeWatched = watchTeams.has(String(g.home.teamId));
+      if (awayWatched || homeWatched) {
+        score += awayWatched && homeWatched ? 26 : 18;
+        reasons.push(
+          awayWatched && homeWatched ? "Favorite players both sides" : "Favorite player team",
+        );
+      }
+    }
+    if (ctx.watchPlayerIds.size) {
+      // Reserved for future athlete-id matching on box scores / PBP.
+      void ctx.watchPlayerIds;
     }
   }
 

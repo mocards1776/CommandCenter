@@ -288,12 +288,10 @@ function PitcherStack({
 function FormLine({ form }: { form: TeamFormStrip | null }) {
   if (!form) return null;
   return (
-    <p className="numeral mt-0.5 text-[12px] leading-snug text-white/55">
-      L10: {form.last10}
-      <span className="text-white/35">
-        {" "}
-        · L5 {form.last5} · L20 {form.last20}
-      </span>
+    <p className="numeral mt-0.5 space-y-0.5 text-[11px] leading-tight text-white/55">
+      <span className="block">L10: {form.last10}</span>
+      <span className="block text-white/40">L5: {form.last5}</span>
+      <span className="block text-white/40">L20: {form.last20}</span>
     </p>
   );
 }

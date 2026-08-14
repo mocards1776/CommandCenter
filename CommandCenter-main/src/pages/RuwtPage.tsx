@@ -168,7 +168,7 @@ export default function RuwtPage() {
   const watchPlayerIds = useMemo(() => {
     const set = new Set<number>();
     for (const f of favorites.data ?? []) {
-      if (f.position === "manager") continue;
+      if ((f.position ?? "").toLowerCase() === "manager") continue;
       if (f.sport && f.sport !== "baseball") continue;
       const id = Number(f.playerId);
       if (Number.isFinite(id)) set.add(id);
@@ -180,7 +180,7 @@ export default function RuwtPage() {
   const watchPlayerNames = useMemo(() => {
     const map = new Map<number, string>();
     for (const f of favorites.data ?? []) {
-      if (f.position === "manager") continue;
+      if ((f.position ?? "").toLowerCase() === "manager") continue;
       if (f.sport && f.sport !== "baseball") continue;
       const id = Number(f.playerId);
       if (!Number.isFinite(id)) continue;
@@ -193,7 +193,7 @@ export default function RuwtPage() {
   const watchManagerIds = useMemo(() => {
     const set = new Set<number>();
     for (const f of favorites.data ?? []) {
-      if (f.position !== "manager") continue;
+      if ((f.position ?? "").toLowerCase() !== "manager") continue;
       const id = Number(f.playerId);
       if (Number.isFinite(id)) set.add(id);
     }
@@ -203,12 +203,35 @@ export default function RuwtPage() {
   const managerTeamById = useMemo(() => {
     const map = new Map<number, number>();
     for (const f of favorites.data ?? []) {
-      if (f.position !== "manager") continue;
+      if ((f.position ?? "").toLowerCase() !== "manager") continue;
       const mid = Number(f.playerId);
       const tid = f.teamId != null ? Number(f.teamId) : NaN;
       if (Number.isFinite(mid) && Number.isFinite(tid)) map.set(mid, tid);
     }
     return map;
+  }, [favorites.data]);
+
+  const nflWatchTeamIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of favorites.data ?? []) {
+      const sport = (f.sport ?? "").toLowerCase();
+      const league = (f.league ?? "").toLowerCase();
+      if (sport !== "football" && sport !== "nfl" && league !== "nfl") continue;
+      if (f.teamId) set.add(String(f.teamId));
+    }
+    return set;
+  }, [favorites.data]);
+
+  const nflWatchPlayerIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of favorites.data ?? []) {
+      const sport = (f.sport ?? "").toLowerCase();
+      const league = (f.league ?? "").toLowerCase();
+      if (sport !== "football" && sport !== "nfl" && league !== "nfl") continue;
+      if ((f.position ?? "").toLowerCase() === "coach") continue;
+      set.add(String(f.playerId));
+    }
+    return set;
   }, [favorites.data]);
 
   const ranked = useMemo(() => {
@@ -237,8 +260,11 @@ export default function RuwtPage() {
 
   const nflRanked = useMemo(() => {
     if (!nflBoard.data) return [] as NflScoredGame[];
-    return rankRuwtNflGames(nflBoard.data, nflInterest, 24);
-  }, [nflBoard.data, nflInterest]);
+    return rankRuwtNflGames(nflBoard.data, nflInterest, 24, {
+      watchPlayerIds: nflWatchPlayerIds,
+      watchTeamIds: nflWatchTeamIds,
+    });
+  }, [nflBoard.data, nflInterest, nflWatchPlayerIds, nflWatchTeamIds]);
 
   const unified = useMemo((): UnifiedRuwtItem[] => {
     const mlbItems: UnifiedRuwtItem[] = ranked.map((g) => ({

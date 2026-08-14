@@ -92,8 +92,13 @@ export function rankRuwtNflGames(
   games: NflScoreGame[],
   interest: RuwtTeamInterest,
   limit = 20,
+  opts?: { watchPlayerIds?: Set<string>; watchTeamIds?: Set<string> },
 ): NflScoredGame[] {
-  const ctx: NflRuwtContext = { teamInterest: interest, watchPlayerIds: new Set() };
+  const ctx: NflRuwtContext = {
+    teamInterest: interest,
+    watchPlayerIds: opts?.watchPlayerIds ?? new Set(),
+    watchTeamIds: opts?.watchTeamIds ?? new Set(),
+  };
   return rankNflRuwtGames(games, ctx, limit);
 }
 

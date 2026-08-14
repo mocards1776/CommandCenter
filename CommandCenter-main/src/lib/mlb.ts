@@ -2987,6 +2987,30 @@ export type MlbPlayerExtras = {
   url: string | null;
 };
 
+function mapPlayerExtrasPayload(data: unknown): MlbPlayerExtras | null {
+  if (!data || typeof data !== "object") return null;
+  const root = data as Record<string, unknown>;
+  const nested =
+    root.data && typeof root.data === "object" && !Array.isArray(root.data)
+      ? (root.data as Record<string, unknown>)
+      : root;
+  const d = nested as Partial<MlbPlayerExtras> & { error?: string };
+  const hasBits =
+    Boolean(d.serviceTime) ||
+    d.seasonWar != null ||
+    d.careerWar != null ||
+    d.warRank != null;
+  if (!hasBits) return null;
+  return {
+    serviceTime: d.serviceTime ?? null,
+    seasonWar: d.seasonWar ?? null,
+    careerWar: d.careerWar ?? null,
+    warRank: d.warRank ?? null,
+    warOf: d.warOf ?? null,
+    url: d.url ?? null,
+  };
+}
+
 /** Service time + WAR from Baseball Reference (via sports edge). */
 export async function fetchMlbPlayerExtras(
   playerName: string,
@@ -2994,25 +3018,47 @@ export async function fetchMlbPlayerExtras(
 ): Promise<MlbPlayerExtras | null> {
   const name = playerName.trim();
   if (name.length < 3) return null;
+  const body = {
+    action: "playerExtras",
+    name,
+    isPitcher: Boolean(opts?.isPitcher),
+  };
+
+  const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+  // Direct fetch first — supabase-js invoke has dropped bodies / hung in the browser
+  // (same pattern as contract lookups). Soft-timeout responses may still carry serviceTime.
+  if (base && key) {
+    try {
+      const ctl = new AbortController();
+      const timer = window.setTimeout(() => ctl.abort(), 35_000);
+      try {
+        const res = await fetch(`${base}/functions/v1/sports`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+            apikey: key,
+          },
+          body: JSON.stringify(body),
+          signal: ctl.signal,
+        });
+        if (res.ok) {
+          const mapped = mapPlayerExtrasPayload(await res.json());
+          if (mapped) return mapped;
+        }
+      } finally {
+        window.clearTimeout(timer);
+      }
+    } catch {
+      /* fall through to supabase-js */
+    }
+  }
+
   try {
-    const { data, error } = await supabase.functions.invoke("sports", {
-      body: {
-        action: "playerExtras",
-        name,
-        isPitcher: Boolean(opts?.isPitcher),
-      },
-    });
-    if (error) throw error;
-    const payload = data as (Partial<MlbPlayerExtras> & { error?: string }) | null;
-    if (!payload || payload.error) return null;
-    return {
-      serviceTime: payload.serviceTime ?? null,
-      seasonWar: payload.seasonWar ?? null,
-      careerWar: payload.careerWar ?? null,
-      warRank: payload.warRank ?? null,
-      warOf: payload.warOf ?? null,
-      url: payload.url ?? null,
-    };
+    const { data } = await supabase.functions.invoke("sports", { body });
+    return mapPlayerExtrasPayload(data);
   } catch {
     return null;
   }

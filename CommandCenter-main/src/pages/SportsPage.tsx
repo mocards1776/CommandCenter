@@ -197,13 +197,14 @@ function TourCard({
         </div>
         {rows.length > 0 ? (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[300px] text-left">
+            <table className="w-full min-w-[360px] text-left">
               <thead>
                 <tr className="border-b border-white/[0.1] text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
                   <th className="py-2 pr-2 font-medium">Pos</th>
                   <th className="py-2 pr-2 font-medium">Player</th>
                   <th className="py-2 pr-2 text-right font-medium">Tot</th>
-                  <th className="py-2 pr-2 text-right font-medium">Tee/Thru</th>
+                  <th className="py-2 pr-2 text-right font-medium">Today</th>
+                  <th className="py-2 pr-2 text-right font-medium">Thru</th>
                   <th className="py-2 text-right font-medium">R1</th>
                 </tr>
               </thead>
@@ -228,8 +229,22 @@ function TourCard({
                         <span className="text-cream text-[13px]">{l.shortName ?? l.name}</span>
                       )}
                     </td>
-                    <td className="numeral py-2.5 pr-2 text-right text-[15px] font-semibold text-[#ff6b6b]">
+                    <td className="numeral py-2.5 pr-2 text-right text-[15px] font-semibold text-cream">
                       {l.score}
+                    </td>
+                    <td
+                      className={cn(
+                        "numeral py-2.5 pr-2 text-right text-[14px] font-semibold",
+                        !l.today || l.today === "—" || l.today === "E"
+                          ? "text-chalk"
+                          : l.today.startsWith("-")
+                            ? "text-[#4ade80]"
+                            : l.today.startsWith("+")
+                              ? "text-[#f87171]"
+                              : "text-chalk",
+                      )}
+                    >
+                      {l.today ?? "—"}
                     </td>
                     <td className="numeral text-chalk py-2.5 pr-2 text-right text-[12px]">
                       {l.thru ?? "—"}
