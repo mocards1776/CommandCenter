@@ -186,11 +186,16 @@ async function scrapeBbref(name: string) {
   }
   const latest = pickCurrentSalary(uniqueSalaries, contractStatus);
   const totals = parseBbrefTotals(contractStatus);
+  const stMatch =
+    searchable.match(
+      /Service Time(?:\s*\([^)]*\))?\s*<\/strong>\s*:?\s*([0-9]+(?:\.[0-9]+)?)/i,
+    ) ?? searchable.match(/Service Time[^:]*:\s*([0-9]+(?:\.[0-9]+)?)/i);
   return {
     source: "baseball-reference",
     url: playerUrl,
     name,
     contractStatus,
+    serviceTime: stMatch?.[1] ?? null,
     currentSalary: latest
       ? {
           year: latest.year,
@@ -1149,6 +1154,157 @@ async function scrapeManagerFiredOdds() {
   return { source: items[0]?.source ?? "none", checkedAt: new Date().toISOString(), items: items.slice(0, 20) };
 }
 
+async function scrapeNflCoachFiredOdds() {
+  const items: {
+    name: string;
+    teamHint: string | null;
+    oddsAmerican: string;
+    impliedPct: number;
+    ticker: string;
+    url: string;
+  }[] = [];
+  const url =
+    "https://api.elections.kalshi.com/trade-api/v2/markets?limit=50&status=open&series_ticker=KXCOACHOUTNFL";
+  const res = await timedFetch(url, {
+    headers: { Accept: "application/json", "User-Agent": UA },
+  });
+  if (!res.ok) throw new Error(`Kalshi NFL coaches ${res.status}`);
+  const data = (await res.json()) as {
+    markets?: {
+      title?: string;
+      subtitle?: string;
+      ticker?: string;
+      yes_sub_title?: string | null;
+      no_sub_title?: string | null;
+      yes_bid_dollars?: string | null;
+      yes_ask_dollars?: string | null;
+      last_price_dollars?: string | null;
+      custom_strike?: { Coach?: string; Team?: string } | null;
+    }[];
+  };
+  const dollarProb = (raw: string | null | undefined): number | null => {
+    if (raw == null || raw === "") return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return null;
+    if (n === 0) return 0;
+    return Math.max(0.01, Math.min(0.99, n));
+  };
+  for (const m of data.markets ?? []) {
+    const name =
+      (m.custom_strike?.Coach ?? m.yes_sub_title ?? m.no_sub_title ?? "").trim() || "";
+    if (!name || /field|any other/i.test(name)) continue;
+    const bid = dollarProb(m.yes_bid_dollars);
+    const ask = dollarProb(m.yes_ask_dollars);
+    const last = dollarProb(m.last_price_dollars);
+    let p: number | null = null;
+    if (bid != null && ask != null && (bid > 0 || ask > 0)) p = (bid + ask) / 2;
+    else p = (ask && ask > 0 ? ask : null) ?? (bid && bid > 0 ? bid : null) ?? last;
+    if (p == null || p <= 0) continue;
+    const american =
+      p >= 0.5
+        ? `-${Math.round((100 * p) / (1 - p))}`
+        : `+${Math.round((100 * (1 - p)) / p)}`;
+    const subtitle = (m.subtitle ?? "").replace(/^:+\s*/, "").trim();
+    items.push({
+      name,
+      teamHint: subtitle || m.custom_strike?.Team || null,
+      oddsAmerican: american,
+      impliedPct: Math.round(p * 1000) / 10,
+      ticker: m.ticker ?? "",
+      url: `https://kalshi.com/markets/${(m.ticker ?? "").toLowerCase()}`,
+    });
+  }
+  items.sort((a, b) => b.impliedPct - a.impliedPct);
+  return {
+    source: items.length ? "Kalshi" : "none",
+    checkedAt: new Date().toISOString(),
+    items,
+  };
+}
+
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
+async function scrapeGolferSeasonResults(golferId: string, year: number) {
+  const url = `https://www.espn.com/golf/player/results/_/id/${encodeURIComponent(golferId)}/year/${year}`;
+  // ESPN bot-walls full Chrome UAs with a tiny 202 page; a short Mozilla/5.0 UA returns the SSR table.
+  const html = await (
+    await timedFetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+        Referer: "https://www.espn.com/",
+      },
+    })
+  ).text();
+  const results: {
+    event: string;
+    date: string | null;
+    position: string;
+    score: string | null;
+    tournamentId: string | null;
+  }[] = [];
+  const rowRe =
+    /leaderboard\?tournamentId=(\d+)[^>]*>([^<]+)<\/a>[\s\S]*?<td class="Table__TD">([^<]*)<\/td>[\s\S]*?\((?:<!-- -->)?([-+]?\d+|E)(?:<!-- -->)?\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(html))) {
+    const pos = (m[3] ?? "").trim();
+    if (!pos) continue;
+    results.push({
+      event: decodeHtmlEntities((m[2] ?? "").trim()),
+      date: null,
+      position: pos,
+      score: m[4] === "E" ? "E" : m[4] ?? null,
+      tournamentId: m[1] ?? null,
+    });
+  }
+  // Fallback without score capture (CUT/WD rows).
+  if (!results.length) {
+    const loose =
+      /leaderboard\?tournamentId=(\d+)[^>]*>([^<]+)<\/a>[\s\S]*?<td class="Table__TD">([^<]*)<\/td>/g;
+    while ((m = loose.exec(html))) {
+      const pos = (m[3] ?? "").trim();
+      if (!pos || /Table__TD/.test(pos)) continue;
+      results.push({
+        event: decodeHtmlEntities((m[2] ?? "").trim()),
+        date: null,
+        position: pos,
+        score: null,
+        tournamentId: m[1] ?? null,
+      });
+    }
+  }
+  return { year, results };
+}
+
+async function scrapeGolferLastWin(golferId: string) {
+  const yearNow = new Date().getUTCFullYear();
+  for (let y = yearNow; y >= yearNow - 12; y--) {
+    const { results } = await scrapeGolferSeasonResults(golferId, y);
+    // ESPN lists chronologically — last win in a year is the latest 1/T1.
+    const wins = results.filter((r) => /^(?:x)?1$/i.test(r.position));
+    if (wins.length) {
+      const last = wins[wins.length - 1]!;
+      return {
+        event: last.event,
+        year: y,
+        position: last.position,
+        score: last.score,
+        tournamentId: last.tournamentId,
+      };
+    }
+  }
+  return null;
+}
+
 type PipelineBio = { contentTitle?: string | null; contentText?: string | null };
 type PipelineRow = {
   rank?: number | null;
@@ -1160,16 +1316,7 @@ type PipelineRow = {
   } | null;
 };
 
-function decodeHtmlEntities(raw: string): string {
-  return raw
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\u202f/g, " ");
-}
+
 
 function parsePipelineBio(contentText: string): {
   gradesLine: string | null;
@@ -1302,8 +1449,11 @@ async function scrapePlayerExtras(
   if (!page) return { error: "Player not found on Baseball Reference", name };
   const searchable = page.html.replace(/<!--([\s\S]*?)-->/g, "$1");
   const stMatch =
-    searchable.match(/Service Time[^<]{0,40}<\/strong>\s*:?\s*([0-9.]+)/i) ??
-    searchable.match(/Service Time[^:]*:\s*([0-9.]+)/i);
+    searchable.match(
+      /Service Time(?:\s*\([^)]*\))?\s*<\/strong>\s*:?\s*([0-9]+(?:\.[0-9]+)?)/i,
+    ) ??
+    searchable.match(/Service Time[^<]{0,60}<\/strong>\s*:?\s*([0-9]+(?:\.[0-9]+)?)/i) ??
+    searchable.match(/Service Time[^:]*:\s*([0-9]+(?:\.[0-9]+)?)/i);
   const serviceTime = stMatch?.[1] ?? null;
   const warStat = isPitcher ? "p_war" : "b_war";
   const wars = [...searchable.matchAll(new RegExp(`data-stat="${warStat}"[^>]*>([^<]*)`, "gi"))]
@@ -1322,17 +1472,31 @@ async function scrapePlayerExtras(
     careerWar = Math.round(wars.reduce((a, b) => a + b, 0) * 10) / 10;
   }
 
-  let warRank: number | null = null;
-  let warOf: number | null = null;
+  // Return core fields immediately — WAR rank is optional and often the timeout culprit.
+  const base = {
+    source: "baseball-reference",
+    url: page.url,
+    name,
+    serviceTime,
+    seasonWar,
+    careerWar,
+    warRank: null as number | null,
+    warOf: null as number | null,
+  };
+
   const year = new Date().getFullYear();
   const valuePath = isPitcher
     ? `/leagues/majors/${year}-value-pitching.shtml`
     : `/leagues/majors/${year}-value-batting.shtml`;
   try {
     const valueHtml = await (
-      await timedFetch(`https://www.baseball-reference.com${valuePath}`, {
-        headers: { "User-Agent": UA, Accept: "text/html", Referer: page.url },
-      })
+      await timedFetch(
+        `https://www.baseball-reference.com${valuePath}`,
+        {
+          headers: { "User-Agent": UA, Accept: "text/html", Referer: page.url },
+        },
+        8_000,
+      )
     ).text();
     const valueSearch = valueHtml.replace(/<!--([\s\S]*?)-->/g, "$1");
     const last = name.trim().split(/\s+/).slice(-1)[0] ?? "";
@@ -1345,31 +1509,221 @@ async function scrapePlayerExtras(
       if (!/data-stat="ranker"/i.test(row)) continue;
       if (playerKey && row.includes(playerKey)) {
         const rk = row.match(/data-stat="ranker"[^>]*>(\d+)/i);
-        warRank = rk ? Number(rk[1]) : rank + 1;
+        base.warRank = rk ? Number(rk[1]) : rank + 1;
         break;
       }
       if (last && new RegExp(`>${last}<`, "i").test(row) && /players\//i.test(row)) {
         const rk = row.match(/data-stat="ranker"[^>]*>(\d+)/i);
-        warRank = rk ? Number(rk[1]) : rank + 1;
+        base.warRank = rk ? Number(rk[1]) : rank + 1;
         break;
       }
       rank += 1;
     }
     const ranks = [...valueSearch.matchAll(/data-stat="ranker"[^>]*>(\d+)/gi)];
-    if (ranks.length) warOf = Number(ranks[ranks.length - 1]![1]);
+    if (ranks.length) base.warOf = Number(ranks[ranks.length - 1]![1]);
   } catch {
     /* optional */
   }
 
+  return base;
+}
+
+function decodeHtmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+}
+
+function parseCompactMoney(raw: string): number | null {
+  const t = decodeHtmlEntities(raw).replace(/,/g, "").trim();
+  if (!t || t === "—" || t === "-" || /^free/i.test(t)) return null;
+  const m = t.match(/^\$?\s*([\d.]+)\s*([kmb])?/i);
+  if (!m) return parseMoney(t);
+  const n = Number(m[1]);
+  if (!Number.isFinite(n)) return null;
+  const unit = (m[2] ?? "").toLowerCase();
+  if (unit === "k") return Math.round(n * 1_000);
+  if (unit === "m") return Math.round(n * 1_000_000);
+  if (unit === "b") return Math.round(n * 1_000_000_000);
+  return Math.round(n);
+}
+
+/** Baseball-Reference team season summary (org / park / pythag). */
+async function scrapeTeamBbrefSummary(
+  abbrev: string,
+  season: number,
+): Promise<Record<string, unknown>> {
+  const abbr = abbrev.toUpperCase();
+  const url = `https://www.baseball-reference.com/teams/${abbr}/${season}.shtml`;
+  const res = await timedFetch(url, {
+    headers: { "User-Agent": UA, Accept: "text/html" },
+  });
+  if (!res.ok) return { error: `BBRef team ${res.status}`, abbrev: abbr, season };
+  const html = (await res.text()).replace(/<!--([\s\S]*?)-->/g, "$1");
+  const pickStrong = (label: string) => {
+    const re = new RegExp(
+      `<strong>${label}:</strong>\\s*([\\s\\S]*?)(?:</p>|<p>|$)`,
+      "i",
+    );
+    const m = html.match(re);
+    if (!m) return null;
+    return decodeHtmlEntities(stripTags(m[1])).replace(/\s+/g, " ").trim() || null;
+  };
+  const managerRaw = pickStrong("Manager");
+  const managerMatch = managerRaw?.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+  const recordBlock = html.match(/Record:<\/strong>\s*([\s\S]{0,280}?)<\/p>/i);
+  const recordText = recordBlock
+    ? decodeHtmlEntities(stripTags(recordBlock[1])).replace(/\s+/g, " ").trim()
+    : null;
+  const recordMatch = recordText?.match(/(\d+-\d+)/);
+  const placeMatch = recordText?.match(/(\d+(?:st|nd|rd|th)\s+place\s+in\s+[^,]+)/i);
+  const pythagBlock = html.match(/Pythagorean W-L:?\s*([\s\S]{0,120}??)(?:More team|<\/)/i);
+  const pythagText = pythagBlock
+    ? decodeHtmlEntities(stripTags(pythagBlock[1])).replace(/\s+/g, " ").trim()
+    : null;
+  const pythagRecord = pythagText?.match(/(\d+-\d+)/)?.[1] ?? null;
+  const runsScored = pythagText?.match(/(\d+)\s*Runs/i)?.[1] ?? null;
+  const runsAllowed = pythagText?.match(/(\d+)\s*Runs Allowed/i)?.[1] ?? null;
+  const multi = html.match(
+    /Multi-year:<\/strong>\s*Batting\s*-\s*(\d+)[,\s]*Pitching\s*-\s*(\d+)/i,
+  );
+  const oneYear = html.match(
+    /One-year:<\/strong>\s*Batting\s*-\s*(\d+)[,\s]*Pitching\s*-\s*(\d+)/i,
+  );
+  const attendanceRaw = pickStrong("Attendance");
+  const salaryHref =
+    html.match(/href="(\/teams\/[^"]*salaries[^"]*)"/i)?.[1] ??
+    `/teams/${abbr}/${abbr.toLowerCase()}-salaries-and-contracts.shtml`;
+
   return {
     source: "baseball-reference",
-    url: page.url,
-    name,
-    serviceTime,
-    seasonWar,
-    careerWar,
-    warRank,
-    warOf,
+    url,
+    salariesUrl: salaryHref.startsWith("http")
+      ? salaryHref
+      : `https://www.baseball-reference.com${salaryHref}`,
+    season,
+    abbrev: abbr,
+    record: recordMatch?.[1] ?? null,
+    standing: placeMatch?.[1] ?? null,
+    manager: managerMatch
+      ? { name: managerMatch[1]!.trim(), record: managerMatch[2]!.trim() }
+      : managerRaw
+        ? { name: managerRaw, record: null }
+        : null,
+    president: pickStrong("President"),
+    farmDirector: pickStrong("Farm Director"),
+    scoutingDirector: pickStrong("Scouting Director"),
+    ballpark: pickStrong("Ballpark"),
+    attendance: attendanceRaw,
+    parkFactors: {
+      multiYear: multi
+        ? { batting: Number(multi[1]), pitching: Number(multi[2]) }
+        : null,
+      oneYear: oneYear
+        ? { batting: Number(oneYear[1]), pitching: Number(oneYear[2]) }
+        : null,
+      note: "Over 100 favors batters, under 100 favors pitchers.",
+    },
+    pythagorean: {
+      record: pythagRecord,
+      runsScored: runsScored ? Number(runsScored) : null,
+      runsAllowed: runsAllowed ? Number(runsAllowed) : null,
+    },
+  };
+}
+
+/** Team payroll / contracts table from Baseball-Reference. */
+async function scrapeTeamPayroll(abbrev: string): Promise<Record<string, unknown>> {
+  const abbr = abbrev.toUpperCase();
+  // Resolve salaries URL from the current season team page when possible.
+  const season = new Date().getFullYear();
+  let salariesUrl: string | null = null;
+  try {
+    const teamPage = await timedFetch(
+      `https://www.baseball-reference.com/teams/${abbr}/${season}.shtml`,
+      { headers: { "User-Agent": UA, Accept: "text/html" } },
+      10_000,
+    );
+    if (teamPage.ok) {
+      const teamHtml = await teamPage.text();
+      const href = teamHtml.match(/href="(\/teams\/[^"]*salaries[^"]*)"/i)?.[1];
+      if (href) {
+        salariesUrl = href.startsWith("http")
+          ? href
+          : `https://www.baseball-reference.com${href}`;
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+  if (!salariesUrl) {
+    return { error: "Could not resolve salaries URL", abbrev: abbr };
+  }
+
+  const res = await timedFetch(salariesUrl, {
+    headers: { "User-Agent": UA, Accept: "text/html" },
+  });
+  if (!res.ok) return { error: `BBRef payroll ${res.status}`, abbrev: abbr };
+  let html = (await res.text()).replace(/<!--([\s\S]*?)-->/g, "$1");
+  if (!/id="payroll"/i.test(html)) {
+    return { error: "Payroll table not found", abbrev: abbr, url: salariesUrl };
+  }
+
+  const table = html.match(/<table[^>]*id="payroll"[\s\S]*?<\/table>/i)?.[0] ?? "";
+  const rows: {
+    name: string;
+    age: string | null;
+    experience: string | null;
+    serviceTime: string | null;
+    acquired: string | null;
+    contractStatus: string | null;
+    salary: string | null;
+    salaryAmount: number | null;
+    bbrefId: string | null;
+  }[] = [];
+  const year = String(new Date().getFullYear());
+  for (const rowHtml of table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const row = rowHtml[1];
+    if (/data-stat="player"[^>]*scope="col"/i.test(row) || !/data-stat="player"/i.test(row)) {
+      continue;
+    }
+    const cell = (stat: string) => {
+      const m = row.match(
+        new RegExp(`data-stat="${stat}"[^>]*>([\\s\\S]*?)</t[dh]`, "i"),
+      );
+      return m ? decodeHtmlEntities(stripTags(m[1])).replace(/\s+/g, " ").trim() : null;
+    };
+    const name = cell("player");
+    if (!name || /^(name|player)$/i.test(name)) continue;
+    const salaryRaw = cell("contract_y0") ?? cell(`salary_${year}`) ?? cell("salary");
+    const bbrefId = row.match(/\/players\/[a-z]\/([a-z0-9]+)\.shtml/i)?.[1] ?? null;
+    rows.push({
+      name,
+      age: cell("age"),
+      experience: cell("experience"),
+      serviceTime: cell("service_time"),
+      acquired: cell("how_acquired"),
+      contractStatus: cell("contract_summary"),
+      salary: salaryRaw,
+      salaryAmount: salaryRaw ? parseCompactMoney(salaryRaw) : null,
+      bbrefId,
+    });
+  }
+
+  const payrollTotal = rows.reduce((sum, r) => sum + (r.salaryAmount ?? 0), 0);
+
+  return {
+    source: "baseball-reference",
+    url: salariesUrl,
+    abbrev: abbr,
+    season: year,
+    payrollTotal,
+    payrollTotalDisplay: payrollTotal ? moneyDisplay(payrollTotal) : null,
+    rows,
   };
 }
 
@@ -1540,6 +1894,32 @@ Deno.serve(async (req: Request) => {
       return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
     }
   }
+  if (body.action === "nflCoachFiredOdds") {
+    try {
+      return json(await scrapeNflCoachFiredOdds());
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
+    }
+  }
+  if (body.action === "golferSeasonResults") {
+    const golferId = String(body.golferId ?? "").trim();
+    const year = Number(body.year) || new Date().getUTCFullYear();
+    if (!/^\d+$/.test(golferId)) return json({ error: "Bad golferId" }, 400);
+    try {
+      return json(await scrapeGolferSeasonResults(golferId, year));
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), results: [] }, 200);
+    }
+  }
+  if (body.action === "golferLastWin") {
+    const golferId = String(body.golferId ?? "").trim();
+    if (!/^\d+$/.test(golferId)) return json({ error: "Bad golferId" }, 400);
+    try {
+      return json({ lastWin: await scrapeGolferLastWin(golferId) });
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), lastWin: null }, 200);
+    }
+  }
   if (body.action === "pipelineScouting") {
     const playerId = Number(body.playerId);
     if (!Number.isFinite(playerId) || playerId <= 0) {
@@ -1582,6 +1962,37 @@ Deno.serve(async (req: Request) => {
           HEAVY_MS,
           () => scrapePlayerExtras(name, Boolean(body.isPitcher)),
           { error: "Player extras timed out" },
+        ),
+      );
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 200);
+    }
+  }
+  if (body.action === "teamBbrefSummary") {
+    const abbrev = String(body.abbrev ?? "").trim().toUpperCase();
+    const season = Number(body.season) || new Date().getFullYear();
+    if (!/^[A-Z0-9]{2,3}$/.test(abbrev)) return json({ error: "Bad abbrev" }, 400);
+    try {
+      return json(
+        await withBudget(
+          HEAVY_MS,
+          () => scrapeTeamBbrefSummary(abbrev, season),
+          { error: "Team summary timed out", abbrev, season },
+        ),
+      );
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 200);
+    }
+  }
+  if (body.action === "teamPayroll") {
+    const abbrev = String(body.abbrev ?? "").trim().toUpperCase();
+    if (!/^[A-Z0-9]{2,3}$/.test(abbrev)) return json({ error: "Bad abbrev" }, 400);
+    try {
+      return json(
+        await withBudget(
+          HEAVY_MS,
+          () => scrapeTeamPayroll(abbrev),
+          { error: "Team payroll timed out", abbrev },
         ),
       );
     } catch (e) {

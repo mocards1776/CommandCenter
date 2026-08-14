@@ -300,7 +300,10 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         player={p}
         accent={accent}
         isFavorite={isFav}
-        serviceTime={extras.data?.serviceTime ?? null}
+        serviceTime={extras.data?.serviceTime ?? contract.data?.serviceTime ?? null}
+        salary={contract.data?.currentSalary?.display ?? null}
+        salaryYear={contract.data?.currentSalary?.year ?? null}
+        contractStatus={contract.data?.contractStatus ?? null}
         seasonWar={extras.data?.seasonWar ?? null}
         careerWar={extras.data?.careerWar ?? null}
         warRank={extras.data?.warRank ?? null}
@@ -703,6 +706,9 @@ function PlayerHeader({
   accent,
   isFavorite,
   serviceTime,
+  salary,
+  salaryYear,
+  contractStatus,
   seasonWar,
   careerWar,
   warRank,
@@ -713,6 +719,9 @@ function PlayerHeader({
   accent: string;
   isFavorite: boolean;
   serviceTime?: string | null;
+  salary?: string | null;
+  salaryYear?: string | null;
+  contractStatus?: string | null;
   seasonWar?: number | null;
   careerWar?: number | null;
   warRank?: number | null;
@@ -870,12 +879,23 @@ function PlayerHeader({
                 <dd className="mt-0.5 text-white">{formatSportsDate(player.mlbDebut)}</dd>
               </div>
             )}
-            {serviceTime && (
+            <div>
+              <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">
+                Service time
+              </dt>
+              <dd className="mt-0.5 text-white">{serviceTime ?? "—"}</dd>
+            </div>
+            {(salary || contractStatus) && (
               <div>
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">
-                  Service time
+                  {salaryYear && salaryYear !== "Total" ? `${salaryYear} salary` : "Salary"}
                 </dt>
-                <dd className="mt-0.5 text-white">{serviceTime}</dd>
+                <dd className="mt-0.5 text-white">
+                  {salary ?? "—"}
+                  {contractStatus ? (
+                    <span className="mt-0.5 block text-[11px] text-white/55">{contractStatus}</span>
+                  ) : null}
+                </dd>
               </div>
             )}
             {careerWar != null && (

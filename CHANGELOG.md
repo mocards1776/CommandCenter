@@ -2,6 +2,16 @@
 
 ---
 
+## Team pages: BR summary, payroll, leaders — August 14, 2026
+
+- MLB team drawer: Baseball-Reference-style org summary (manager, president, farm/scouting directors, ballpark, attendance, park factors, Pythagorean W-L).
+- Team salaries & contracts table from BBRef payroll pages.
+- Team Leaders cards (Hitting / Pitching / Fielding) with headshots — Cardinals-style layout.
+- MLB player hero: always shows service time; current salary + contract status on the hero.
+- Sports edge: `teamBbrefSummary` + `teamPayroll` actions; more reliable service-time scrape.
+
+---
+
 ## Wraps, sidebar leaders, golf tabs, NFL team stats — August 14, 2026
 
 - MLB player links in Dispatch/wraps go to in-app player pages (mlb.com anchors rewritten even before name index loads).

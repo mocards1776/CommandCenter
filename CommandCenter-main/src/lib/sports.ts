@@ -128,6 +128,8 @@ export type TeamDetail = {
   key: string;
   name: string;
   shortName: string;
+  /** MLB / ESPN team abbreviation when known (STL, DET, …). */
+  abbrev: string | null;
   logo: string | null;
   color: string | null;
   record: string | null;
@@ -1391,6 +1393,7 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     key: fav.key,
     name: snap.name,
     shortName: snap.shortName,
+    abbrev: snap.abbreviation || null,
     logo: snap.logo,
     color: snap.color,
     record: snap.record,
@@ -1423,6 +1426,7 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
       id?: number;
       name?: string;
       teamName?: string;
+      abbreviation?: string;
       sport?: { id?: number; name?: string };
       parentOrgId?: number;
       parentOrgName?: string;
@@ -1433,6 +1437,8 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
   const isMilb = sportId !== 1 || fav.league === "MiLB";
   const resolvedName = club?.name ?? fav.name;
   const resolvedShort = club?.teamName ?? fav.shortName;
+  const resolvedAbbrev =
+    club?.abbreviation ?? MLB_TEAM_META[teamId]?.abbrev ?? null;
 
   // Logo/color from ESPN when available; MiLB falls back to parent/org mark.
   const snap = fav.espnPath
@@ -1695,6 +1701,7 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     key: fav.key,
     name: snap?.name ?? resolvedName,
     shortName: snap?.shortName ?? resolvedShort,
+    abbrev: resolvedAbbrev ?? snap?.abbreviation ?? null,
     logo:
       snap?.logo ??
       (isMilb

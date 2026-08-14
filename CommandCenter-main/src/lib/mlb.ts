@@ -320,6 +320,8 @@ export type MlbPlayerContract = {
   source: string;
   aav?: string | null;
   totalValue?: string | null;
+  /** MLB service time (YY.DDD) when scraped from BBRef. */
+  serviceTime?: string | null;
 };
 
 function currentSeason(): number {
@@ -2433,6 +2435,7 @@ function mapContractPayload(data: unknown): MlbPlayerContract | null {
     source?: string;
     aav?: string | null;
     totalValue?: string | null;
+    serviceTime?: string | null;
   };
   if (d.error && !d.contractStatus && !d.currentSalary && !(d.salaryHistory?.length)) {
     return null;
@@ -2442,6 +2445,7 @@ function mapContractPayload(data: unknown): MlbPlayerContract | null {
     Boolean(d.currentSalary?.display) ||
     Boolean(d.totalValue) ||
     Boolean(d.aav) ||
+    Boolean(d.serviceTime) ||
     (d.salaryHistory?.length ?? 0) > 0;
   if (!hasAnything) return null;
   return {
@@ -2453,6 +2457,7 @@ function mapContractPayload(data: unknown): MlbPlayerContract | null {
     source: d.source ?? "baseball-reference",
     aav: d.aav ?? null,
     totalValue: d.totalValue ?? null,
+    serviceTime: d.serviceTime ?? null,
   };
 }
 
@@ -2597,7 +2602,7 @@ export async function fetchPlayerContract(
 
   if (!names.length) return null;
 
-  const cacheKey = `mlb-contract-v3:${names[0]!.toLowerCase()}`;
+  const cacheKey = `mlb-contract-v4:${names[0]!.toLowerCase()}`;
   try {
     const cached = sessionStorage.getItem(cacheKey);
     if (cached) {

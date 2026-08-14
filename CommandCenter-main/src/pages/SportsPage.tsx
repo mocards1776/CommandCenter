@@ -16,6 +16,11 @@ import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
 import GolfSidebar from "@/components/sports/GolfSidebar";
 import HeroGameCard from "@/components/sports/HeroGameCard";
+import {
+  MlbTeamLeadersSection,
+  MlbTeamOrgSummary,
+  MlbTeamPayrollTable,
+} from "@/components/sports/MlbTeamExtras";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
 import { fetchTeamCurrentGame, mlbHeadshot, teamPagePath } from "@/lib/mlb";
@@ -760,6 +765,26 @@ function TeamDetailPanel({
                   }
                 />
               )}
+
+              {mlbTeamId && detail.source === "mlb" && detail.abbrev && (
+                <MlbTeamOrgSummary
+                  abbrev={detail.abbrev}
+                  accent={accent}
+                  playoffOdds={formatOdds(detail.playoffOdds)}
+                  wildCardOdds={
+                    detail.wildCardOdds ? formatOdds(detail.wildCardOdds) : null
+                  }
+                />
+              )}
+
+              {mlbTeamId && detail.source === "mlb" && (
+                <MlbTeamLeadersSection teamId={mlbTeamId} accent={accent} />
+              )}
+
+              {mlbTeamId && detail.source === "mlb" && detail.abbrev && (
+                <MlbTeamPayrollTable abbrev={detail.abbrev} />
+              )}
+
               <DetailSection title="Playoff odds">
                 {detail.playoffOdds || detail.wildCardOdds ? (
                   <div className="bg-panel rounded border border-white/[0.07] p-4">
