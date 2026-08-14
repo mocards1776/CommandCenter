@@ -2026,17 +2026,17 @@ export function topReadingDays(sessions: ReadingSession[], limit = 10): TopReadi
   const out: TopReadingDay[] = [];
   let i = 0;
   while (i < ranked.length && out.length < limit) {
-    const pages = ranked[i][1];
+    const pages = ranked[i]![1];
     // Ties share a rank (1, 1, 3…) matching rankDescending used for today's badge.
     const rank = i + 1;
     let j = i;
-    while (j < ranked.length && ranked[j][1] === pages) {
+    while (j < ranked.length && ranked[j]![1] === pages) {
       if (out.length < limit) {
         out.push({
-          date: ranked[j][0],
+          date: ranked[j]![0],
           pages,
           rank,
-          isToday: ranked[j][0] === today,
+          isToday: ranked[j]![0] === today,
         });
       }
       j += 1;
@@ -2044,6 +2044,125 @@ export function topReadingDays(sessions: ReadingSession[], limit = 10): TopReadi
     i = j;
   }
   return out;
+}
+
+export type TopReadingPeriod = {
+  /** Week Monday (YYYY-MM-DD) or month key (YYYY-MM). */
+  key: string;
+  label: string;
+  pages: number;
+  rank: number;
+  isCurrent: boolean;
+  from: string;
+  to: string;
+};
+
+function monthLabel(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  if (!y || !m) return ym;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function weekRangeLabel(weekStart: string): string {
+  const end = shiftDay(weekStart, 6);
+  const a = new Date(`${weekStart}T12:00:00`);
+  const b = new Date(`${end}T12:00:00`);
+  const sameMonth = a.getMonth() === b.getMonth();
+  const left = a.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const right = b.toLocaleDateString("en-US", {
+    month: sameMonth ? undefined : "short",
+    day: "numeric",
+    year: a.getFullYear() === b.getFullYear() ? undefined : "numeric",
+  });
+  const year =
+    a.getFullYear() === new Date().getFullYear() ? "" : `, ${a.getFullYear()}`;
+  return `${left} – ${right}${year}`;
+}
+
+function lastDayOfMonth(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  if (!y || !m) return `${ym}-28`;
+  // Day 0 of next month = last day of this month.
+  const d = new Date(Date.UTC(y, m, 0));
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${ym}-${dd}`;
+}
+
+function rankPeriodMap(
+  byKey: Map<string, number>,
+  currentKey: string,
+  limit: number,
+  labelFor: (key: string) => string,
+  rangeFor: (key: string) => { from: string; to: string },
+): TopReadingPeriod[] {
+  const ranked = [...byKey.entries()]
+    .filter(([, pages]) => pages > 0)
+    .sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]));
+
+  const out: TopReadingPeriod[] = [];
+  let i = 0;
+  while (i < ranked.length && out.length < limit) {
+    const pages = ranked[i]![1];
+    const rank = i + 1;
+    let j = i;
+    while (j < ranked.length && ranked[j]![1] === pages) {
+      if (out.length < limit) {
+        const key = ranked[j]![0];
+        const { from, to } = rangeFor(key);
+        out.push({
+          key,
+          label: labelFor(key),
+          pages,
+          rank,
+          isCurrent: key === currentKey,
+          from,
+          to,
+        });
+      }
+      j += 1;
+    }
+    i = j;
+  }
+  return out;
+}
+
+/** Best weeks by pages logged — used for the week-rank drill-down. */
+export function topReadingWeeks(sessions: ReadingSession[], limit = 10): TopReadingPeriod[] {
+  const byWeek = new Map<string, number>();
+  for (const s of sessions) {
+    const wk = weekKeyFor(s.session_date);
+    byWeek.set(wk, (byWeek.get(wk) ?? 0) + s.pages_read);
+  }
+  const { weekStart } = periodBounds();
+  return rankPeriodMap(
+    byWeek,
+    weekStart,
+    limit,
+    weekRangeLabel,
+    (key) => ({ from: key, to: shiftDay(key, 6) }),
+  );
+}
+
+/** Best months by pages logged — used for the month-rank drill-down. */
+export function topReadingMonths(sessions: ReadingSession[], limit = 10): TopReadingPeriod[] {
+  const byMonth = new Map<string, number>();
+  for (const s of sessions) {
+    const mk = s.session_date.slice(0, 7);
+    byMonth.set(mk, (byMonth.get(mk) ?? 0) + s.pages_read);
+  }
+  const { today } = periodBounds();
+  const monthKey = today.slice(0, 7);
+  return rankPeriodMap(
+    byMonth,
+    monthKey,
+    limit,
+    monthLabel,
+    (key) => ({ from: `${key}-01`, to: lastDayOfMonth(key) }),
+  );
 }
 
 export function dailyProgress(sessions: ReadingSession[], goal: number | null): DailyProgress {

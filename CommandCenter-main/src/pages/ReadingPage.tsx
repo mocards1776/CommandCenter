@@ -89,6 +89,8 @@ import {
   saveDailyGoal,
   dailyProgress,
   topReadingDays,
+  topReadingWeeks,
+  topReadingMonths,
   buildFinishCard,
   type ReadingSession,
 } from "@/lib/books";
@@ -2626,11 +2628,13 @@ function AskAI({
   );
 }
 
-/* ── Stats breakdown (today / week / month / top days) ──────────────── */
+/* ── Stats breakdown (today / week / month / top days|weeks|months) ─── */
 export type BreakdownFocus =
   | { kind: "pages"; label: string; from: string; to: string }
   | { kind: "finished"; label: string; from: string; to: string }
-  | { kind: "top-days"; label: string; limit?: number };
+  | { kind: "top-days"; label: string; limit?: number }
+  | { kind: "top-weeks"; label: string; limit?: number }
+  | { kind: "top-months"; label: string; limit?: number };
 
 function StatsBreakdown({
   focus,
@@ -2665,6 +2669,14 @@ function StatsBreakdown({
     () => (focus.kind === "top-days" ? topReadingDays(sessions, focus.limit ?? 10) : []),
     [focus, sessions],
   );
+  const topWeeks = useMemo(
+    () => (focus.kind === "top-weeks" ? topReadingWeeks(sessions, focus.limit ?? 10) : []),
+    [focus, sessions],
+  );
+  const topMonths = useMemo(
+    () => (focus.kind === "top-months" ? topReadingMonths(sessions, focus.limit ?? 10) : []),
+    [focus, sessions],
+  );
   const totalPages = pageRows.reduce((n, r) => n + r.pages, 0);
 
   const subtitle =
@@ -2672,7 +2684,11 @@ function StatsBreakdown({
       ? `${totalPages.toLocaleString()} page${totalPages === 1 ? "" : "s"} across ${pageRows.length} book${pageRows.length === 1 ? "" : "s"}`
       : focus.kind === "finished"
         ? `${finished.length} finished`
-        : `Top ${topDays.length} day${topDays.length === 1 ? "" : "s"} by pages`;
+        : focus.kind === "top-days"
+          ? `Top ${topDays.length} day${topDays.length === 1 ? "" : "s"} by pages`
+          : focus.kind === "top-weeks"
+            ? `Top ${topWeeks.length} week${topWeeks.length === 1 ? "" : "s"} by pages`
+            : `Top ${topMonths.length} month${topMonths.length === 1 ? "" : "s"} by pages`;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
@@ -2707,6 +2723,12 @@ function StatsBreakdown({
         )}
         {focus.kind === "top-days" && topDays.length === 0 && (
           <p className="text-chalk-dim text-[13px]">No reading days logged yet.</p>
+        )}
+        {focus.kind === "top-weeks" && topWeeks.length === 0 && (
+          <p className="text-chalk-dim text-[13px]">No reading weeks logged yet.</p>
+        )}
+        {focus.kind === "top-months" && topMonths.length === 0 && (
+          <p className="text-chalk-dim text-[13px]">No reading months logged yet.</p>
         )}
 
         {focus.kind === "pages" && pageRows.length > 0 && (
@@ -2832,6 +2854,54 @@ function StatsBreakdown({
             ))}
           </ul>
         )}
+
+        {(focus.kind === "top-weeks" || focus.kind === "top-months") &&
+          (focus.kind === "top-weeks" ? topWeeks : topMonths).length > 0 && (
+            <ul className="flex flex-col gap-2">
+              {(focus.kind === "top-weeks" ? topWeeks : topMonths).map((p) => (
+                <li key={p.key}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onDrill?.({
+                        kind: "pages",
+                        label: p.label,
+                        from: p.from,
+                        to: p.to,
+                      })
+                    }
+                    className={cn(
+                      "bg-panel hover:border-accent/40 flex w-full items-center gap-3 rounded border px-3 py-2.5 text-left transition",
+                      p.isCurrent ? "border-accent/45" : "border-white/[0.07]",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "numeral w-8 shrink-0 text-center text-[18px]",
+                        p.rank <= 3 ? "text-accent" : "text-chalk-dim",
+                      )}
+                    >
+                      #{p.rank}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-cream text-[13px]">{p.label}</p>
+                      {p.isCurrent && (
+                        <p className="text-accent text-[10.5px] uppercase tracking-[0.14em]">
+                          {focus.kind === "top-weeks" ? "This week" : "This month"}
+                        </p>
+                      )}
+                    </div>
+                    <span className="numeral text-accent shrink-0 text-[18px]">
+                      {p.pages}
+                      <span className="text-chalk-dim ml-1 text-[11px] font-sans tracking-normal">
+                        p
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
       </aside>
     </div>
   );
@@ -3225,14 +3295,16 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
 
 
 /* ── Now reading hero ───────────────────────────────────────────────── */
-/** Tiny inline progress / page-count editor — stays quiet until you tap it. */
+/** Tiny inline progress editor — page, %, or +pages from the home card. */
 function NowReadingProgress({ book }: { book: Book }) {
   const qc = useQueryClient();
   const { burst } = useCelebration();
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<"pages" | "percent" | "count">(
-    book.page_count ? "pages" : "count",
-  );
+  const defaultMode =
+    book.page_count == null
+      ? ("count" as const)
+      : ((book.progress_mode as "pages" | "percent" | "page") ?? "pages");
+  const [mode, setMode] = useState<"pages" | "percent" | "page" | "count">(defaultMode);
   const [value, setValue] = useState("");
 
   const pct = book.page_count
@@ -3263,8 +3335,11 @@ function NowReadingProgress({ book }: { book: Book }) {
           })),
         };
       }
-      const target = percentToPage(n, book.page_count);
+      // percent → absolute page; page → jump to page N
+      const target =
+        mode === "percent" ? percentToPage(n, book.page_count) : Math.round(n);
       if (target === null) throw new Error("Add a page count first");
+      if (target < 0) throw new Error("Enter a page number");
       return {
         kind: "log" as const,
         ...(await setProgress({
@@ -3277,7 +3352,14 @@ function NowReadingProgress({ book }: { book: Book }) {
         })),
       };
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      if (mode !== "count" && mode !== book.progress_mode) {
+        try {
+          await updateBook(book.id, { progress_mode: mode });
+        } catch {
+          /* non-fatal */
+        }
+      }
       setValue("");
       setOpen(false);
       qc.invalidateQueries({ queryKey: ["books"] });
@@ -3297,7 +3379,12 @@ function NowReadingProgress({ book }: { book: Book }) {
         <button
           type="button"
           onClick={() => {
-            setMode("pages");
+            setMode(
+              (book.progress_mode as "pages" | "percent" | "page") === "percent" ||
+                (book.progress_mode as string) === "page"
+                ? (book.progress_mode as "pages" | "percent" | "page")
+                : "pages",
+            );
             setOpen((o) => !o);
           }}
           className="w-full text-left"
@@ -3343,15 +3430,15 @@ function NowReadingProgress({ book }: { book: Book }) {
             burst(r.left + r.width / 2, r.top + r.height / 2);
             save.mutate();
           }}
-          className="mt-2.5 flex flex-wrap items-center gap-1.5"
+          className="mt-2.5 space-y-2"
         >
           {book.page_count != null && (
-            <div className="flex gap-0.5">
+            <div className="flex flex-wrap gap-1">
               {(
                 [
-                  ["pages", "+p"],
-                  ["percent", "%"],
-                  ["count", "len"],
+                  ["pages", "+ pages"],
+                  ["percent", "% done"],
+                  ["page", "on page"],
                 ] as const
               ).map(([m, label]) => (
                 <button
@@ -3359,7 +3446,7 @@ function NowReadingProgress({ book }: { book: Book }) {
                   type="button"
                   onClick={() => setMode(m)}
                   className={cn(
-                    "rounded px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em]",
+                    "rounded px-2 py-1 text-[10px] uppercase tracking-[0.12em]",
                     mode === m ? "text-accent bg-accent/15" : "text-chalk-dim hover:text-chalk",
                   )}
                 >
@@ -3368,33 +3455,53 @@ function NowReadingProgress({ book }: { book: Book }) {
               ))}
             </div>
           )}
-          <input
-            autoFocus
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            inputMode="decimal"
-            placeholder={
-              mode === "percent" ? "%" : mode === "count" ? "pages" : "+ pages"
-            }
-            className="bg-black/30 text-cream w-16 rounded border border-white/15 px-2 py-1 text-[12px] outline-none focus:border-accent/50"
-          />
-          <button
-            type="submit"
-            disabled={save.isPending || !value.trim()}
-            className="text-accent hover:text-cream text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
-          >
-            {save.isPending ? "…" : "Save"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              setValue("");
-            }}
-            className="text-chalk-dim hover:text-chalk text-[10px] uppercase tracking-[0.14em]"
-          >
-            Cancel
-          </button>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input
+              autoFocus
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              inputMode="decimal"
+              placeholder={
+                mode === "percent"
+                  ? "%"
+                  : mode === "page"
+                    ? "Page #"
+                    : mode === "count"
+                      ? "Total pages"
+                      : "+ pages"
+              }
+              className="bg-black/30 text-cream w-20 rounded border border-white/15 px-2 py-1.5 text-[12px] outline-none focus:border-accent/50"
+            />
+            <button
+              type="submit"
+              disabled={save.isPending || !value.trim()}
+              className="text-accent hover:text-cream text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
+            >
+              {save.isPending ? "…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setValue("");
+              }}
+              className="text-chalk-dim hover:text-chalk text-[10px] uppercase tracking-[0.14em]"
+            >
+              Cancel
+            </button>
+          </div>
+          {book.page_count != null && mode === "percent" && Number.isFinite(Number.parseFloat(value)) && (
+            <p className="text-chalk-dim text-[10.5px]">
+              {Math.round(Number.parseFloat(value))}% ≈ page{" "}
+              {percentToPage(Number.parseFloat(value), book.page_count)} of {book.page_count}
+            </p>
+          )}
+          {book.page_count != null && mode === "page" && Number.isFinite(Number.parseFloat(value)) && (
+            <p className="text-chalk-dim text-[10.5px]">
+              Page {Math.round(Number.parseFloat(value))} ≈{" "}
+              {pageToPercent(Math.round(Number.parseFloat(value)), book.page_count)}%
+            </p>
+          )}
         </form>
       )}
     </div>
@@ -3772,26 +3879,37 @@ function PeriodTotals({
     value,
     sub,
     rank,
-    onClick,
+    onValueClick,
+    onRankClick,
   }: {
     label: string;
     value: number;
     sub: string;
     rank?: string | null;
-    onClick: () => void;
+    onValueClick: () => void;
+    onRankClick?: () => void;
   }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className="bg-panel hover:bg-panel/80 px-4 py-3 text-left transition"
-    >
-      <div className="label-caps text-[9.5px] tracking-[0.17em]">{label}</div>
-      <div className="numeral text-cream mt-1 text-[27px] leading-none">
-        {value.toLocaleString()}
-      </div>
-      <div className="text-chalk-dim mt-1 text-[9.5px] uppercase tracking-[0.12em]">{sub}</div>
-      {rank && <div className="text-accent mt-1 text-[10px]">{rank}</div>}
-    </button>
+    <div className="bg-panel px-4 py-3">
+      <button type="button" onClick={onValueClick} className="w-full text-left transition hover:opacity-90">
+        <div className="label-caps text-[9.5px] tracking-[0.17em]">{label}</div>
+        <div className="numeral text-cream mt-1 text-[27px] leading-none">
+          {value.toLocaleString()}
+        </div>
+        <div className="text-chalk-dim mt-1 text-[9.5px] uppercase tracking-[0.12em]">{sub}</div>
+      </button>
+      {rank && onRankClick ? (
+        <button
+          type="button"
+          onClick={onRankClick}
+          className="text-accent hover:text-cream mt-1 text-[10px] transition"
+          aria-label={`${rank} — compare periods`}
+        >
+          {rank}
+        </button>
+      ) : rank ? (
+        <div className="text-accent mt-1 text-[10px]">{rank}</div>
+      ) : null}
+    </div>
   );
 
   const monthRankLabel =
@@ -3808,12 +3926,19 @@ function PeriodTotals({
           value={s.pagesWeek}
           sub="pages"
           rank={weekRankLabel}
-          onClick={() =>
+          onValueClick={() =>
             onBreakdown({
               kind: "pages",
               label: "This week · pages",
               from: s.weekStart,
               to: s.today,
+            })
+          }
+          onRankClick={() =>
+            onBreakdown({
+              kind: "top-weeks",
+              label: "Best reading weeks",
+              limit: 10,
             })
           }
         />
@@ -3822,12 +3947,19 @@ function PeriodTotals({
           value={s.booksWeek}
           sub={s.booksWeek === 1 ? "book" : "books"}
           rank={weekRankLabel}
-          onClick={() =>
+          onValueClick={() =>
             onBreakdown({
               kind: "finished",
               label: "This week · finished",
               from: s.weekStart,
               to: s.today,
+            })
+          }
+          onRankClick={() =>
+            onBreakdown({
+              kind: "top-weeks",
+              label: "Best reading weeks",
+              limit: 10,
             })
           }
         />
@@ -3836,12 +3968,19 @@ function PeriodTotals({
           value={s.pagesMonth}
           sub="pages"
           rank={monthRankLabel}
-          onClick={() =>
+          onValueClick={() =>
             onBreakdown({
               kind: "pages",
               label: "This month · pages",
               from: s.monthStart,
               to: s.today,
+            })
+          }
+          onRankClick={() =>
+            onBreakdown({
+              kind: "top-months",
+              label: "Best reading months",
+              limit: 10,
             })
           }
         />
@@ -3850,12 +3989,19 @@ function PeriodTotals({
           value={s.booksMonth}
           sub={s.booksMonth === 1 ? "book" : "books"}
           rank={monthRankLabel}
-          onClick={() =>
+          onValueClick={() =>
             onBreakdown({
               kind: "finished",
               label: "This month · finished",
               from: s.monthStart,
               to: s.today,
+            })
+          }
+          onRankClick={() =>
+            onBreakdown({
+              kind: "top-months",
+              label: "Best reading months",
+              limit: 10,
             })
           }
         />
