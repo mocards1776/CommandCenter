@@ -1209,12 +1209,12 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       description: "League-wide NFL game wraps and previews from ESPN",
       sportPath: "football/nfl",
       linkSport: "nfl",
-      // Preseason/regular slate is sparse — look further back and keep live + thin stubs.
-      days: 21,
-      maxItems: 48,
-      preferFinals: false,
-      includeLive: true,
-      stubWithoutArticle: true,
+      days: 14,
+      maxItems: 40,
+      // Same bar as MLB: finals (and today's previews) only when ESPN has real copy.
+      preferFinals: true,
+      includeLive: false,
+      stubWithoutArticle: false,
     });
   }
   if (feedUrl === "synthetic:mlb-stats") {
@@ -1459,6 +1459,8 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             const snippet =
               (article.description ?? "").replace(/^—\s*/, "").trim() ||
               storyText.slice(0, 220);
+            // Wait for real wrap copy — same bar as MLB (no headline-only shells).
+            if (!opts.stubWithoutArticle && (!snippet || snippet.length < 40)) return null;
             return {
               id: `wrap-${c.eventId}`,
               title: article.headline,

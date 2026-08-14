@@ -13,6 +13,7 @@ import {
   fetchMlbBoxscore,
   fetchMlbGameHighlights,
   fetchMlbGamePreview,
+  fetchCardinalsPipelineRankMap,
   formatGameDuration,
   mlbHeadshot,
   parseEspnRecapHtml,
@@ -112,6 +113,12 @@ export function MlbGameDetail({
     return set;
   }, [favPlayers.data, taggedPlayers.data]);
 
+  const pipelineRanks = useQuery({
+    queryKey: ["cardinals-pipeline-ranks"],
+    queryFn: fetchCardinalsPipelineRankMap,
+    staleTime: 30 * 60_000,
+  });
+
   if (box.isPending) {
     return (
       <div className="text-chalk flex min-h-[50vh] items-center justify-center gap-2">
@@ -174,7 +181,12 @@ export function MlbGameDetail({
       )}
 
       {!g.pregame && g.innings.length > 0 && (
-        <EspnBoxBoard game={g} metaBits={metaBits} watchPlayerIds={watchPlayerIds} />
+        <EspnBoxBoard
+          game={g}
+          metaBits={metaBits}
+          watchPlayerIds={watchPlayerIds}
+          prospectRanks={pipelineRanks.data}
+        />
       )}
 
       {!g.pregame && isFinal && boxFirst && (
@@ -1117,10 +1129,12 @@ function EspnBoxBoard({
   game,
   metaBits,
   watchPlayerIds,
+  prospectRanks,
 }: {
   game: MlbBoxscore;
   metaBits: (string | null)[];
   watchPlayerIds?: Set<number>;
+  prospectRanks?: Map<number, number>;
 }) {
   const decisions = useMemo(() => {
     const all = [...game.away.pitchers, ...game.home.pitchers];
@@ -1197,8 +1211,8 @@ function EspnBoxBoard({
         )}
       </div>
 
-      <TeamBoxSection side={game.away} watchPlayerIds={watchPlayerIds} />
-      <TeamBoxSection side={game.home} watchPlayerIds={watchPlayerIds} />
+      <TeamBoxSection side={game.away} watchPlayerIds={watchPlayerIds} prospectRanks={prospectRanks} />
+      <TeamBoxSection side={game.home} watchPlayerIds={watchPlayerIds} prospectRanks={prospectRanks} />
     </div>
   );
 }
@@ -1206,9 +1220,11 @@ function EspnBoxBoard({
 function TeamBoxSection({
   side,
   watchPlayerIds,
+  prospectRanks,
 }: {
   side: MlbBoxscoreSide;
   watchPlayerIds?: Set<number>;
+  prospectRanks?: Map<number, number>;
 }) {
   const battingNotes = useMemo(() => {
     const notes: { label: string; text: string }[] = [];
@@ -1276,7 +1292,13 @@ function TeamBoxSection({
           </thead>
           <tbody>
             {side.batters.map((b, i) => (
-              <BatterRow key={b.id} b={b} zebra={i % 2 === 1} watched={watchPlayerIds?.has(b.id)} />
+              <BatterRow
+                key={b.id}
+                b={b}
+                zebra={i % 2 === 1}
+                watched={watchPlayerIds?.has(b.id)}
+                pipelineRank={prospectRanks?.get(b.id)}
+              />
             ))}
             <tr className="border-t border-white/[0.1] bg-white/[0.03] font-semibold">
               <td className="px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-white">
@@ -1326,7 +1348,12 @@ function TeamBoxSection({
             </thead>
             <tbody>
               {side.pitchers.map((p) => (
-                <PitcherRow key={p.id} p={p} watched={watchPlayerIds?.has(p.id)} />
+                <PitcherRow
+                  key={p.id}
+                  p={p}
+                  watched={watchPlayerIds?.has(p.id)}
+                  pipelineRank={prospectRanks?.get(p.id)}
+                />
               ))}
             </tbody>
           </table>
@@ -1340,10 +1367,12 @@ function BatterRow({
   b,
   zebra,
   watched,
+  pipelineRank,
 }: {
   b: MlbBoxscoreBatter;
   zebra?: boolean;
   watched?: boolean;
+  pipelineRank?: number;
 }) {
   return (
     <tr className={cn("border-t border-white/[0.04]", zebra && "bg-white/[0.02]")}>
@@ -1352,6 +1381,9 @@ function BatterRow({
           to={`/sports/mlb/player/${b.id}`}
           className="text-cream inline-flex items-center gap-1 hover:text-accent hover:underline"
         >
+          {pipelineRank != null && pipelineRank > 0 ? (
+            <span className="text-accent numeral text-[10px] font-bold">#{pipelineRank}</span>
+          ) : null}
           {b.name}
           {watched ? <Star size={11} className="text-accent fill-current" /> : null}
         </Link>
@@ -1371,7 +1403,15 @@ function BatterRow({
   );
 }
 
-function PitcherRow({ p, watched }: { p: MlbBoxscorePitcher; watched?: boolean }) {
+function PitcherRow({
+  p,
+  watched,
+  pipelineRank,
+}: {
+  p: MlbBoxscorePitcher;
+  watched?: boolean;
+  pipelineRank?: number;
+}) {
   return (
     <tr className="border-t border-white/[0.04]">
       <td className="px-3 py-1.5">
@@ -1379,6 +1419,9 @@ function PitcherRow({ p, watched }: { p: MlbBoxscorePitcher; watched?: boolean }
           to={`/sports/mlb/player/${p.id}`}
           className="text-cream inline-flex items-center gap-1 hover:text-accent hover:underline"
         >
+          {pipelineRank != null && pipelineRank > 0 ? (
+            <span className="text-accent numeral text-[10px] font-bold">#{pipelineRank}</span>
+          ) : null}
           {p.name}
           {watched ? <Star size={11} className="text-accent fill-current" /> : null}
         </Link>

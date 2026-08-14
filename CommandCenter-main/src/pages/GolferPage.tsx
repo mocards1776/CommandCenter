@@ -288,6 +288,43 @@ export default function GolferPage() {
             </section>
           )}
 
+          {p.seasonResults.length > 0 && (
+            <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
+              <div className="border-b border-white/[0.06] px-4 py-2.5">
+                <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                  Season results
+                </h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[320px] text-left text-[12px]">
+                  <thead>
+                    <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                      <th className="px-4 py-2 font-medium">Tournament</th>
+                      <th className="px-2 py-2 font-medium">Pos</th>
+                      <th className="px-4 py-2 text-right font-medium">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {p.seasonResults.map((r) => (
+                      <tr key={`${r.event}-${r.date}`} className="border-b border-white/[0.05]">
+                        <td className="px-4 py-2.5">
+                          <p className="text-[13px] text-white">{r.event}</p>
+                          {r.date && (
+                            <p className="text-[10px] text-white/40">{r.date}</p>
+                          )}
+                        </td>
+                        <td className="numeral px-2 py-2.5 text-white/80">{r.position}</td>
+                        <td className="numeral px-4 py-2.5 text-right text-[#ff6b6b]">
+                          {r.score ?? "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
           {p.recentNews.length > 0 && (
             <section className="space-y-3 rounded-xl border border-white/[0.08] bg-[#12151c] p-4">
               <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">

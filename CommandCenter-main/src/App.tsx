@@ -25,6 +25,7 @@ import NflPage from "@/pages/NflPage";
 import NflGamePage from "@/pages/NflGamePage";
 import NflPlayerPage from "@/pages/NflPlayerPage";
 import NflTeamPage from "@/pages/NflTeamPage";
+import NflCoachPage from "@/pages/NflCoachPage";
 import RssPage from "@/pages/RssPage";
 import PublicStoryPage from "@/pages/PublicStoryPage";
 import BuenaVistaNotebookPage from "@/pages/BuenaVistaNotebookPage";
@@ -135,6 +136,7 @@ export default function App() {
               <Route path="/sports/nfl/game/:eventId" element={<NflGamePage />} />
               <Route path="/sports/nfl/player/:playerId" element={<NflPlayerPage />} />
               <Route path="/sports/nfl/team/:teamId" element={<NflTeamPage />} />
+              <Route path="/sports/nfl/coach/:coachId" element={<NflCoachPage />} />
               <Route path="/rss" element={<RssPage />} />
               <Route path="/notebook/:slug" element={<BuenaVistaNotebookPage />} />
             </Route>

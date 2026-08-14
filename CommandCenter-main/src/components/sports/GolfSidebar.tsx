@@ -55,6 +55,11 @@ function LeaderTable({
                 <td className="py-3 pr-2">
                   <span className="inline-flex max-w-[14rem] items-center gap-1.5 sm:max-w-[18rem]">
                     {watched && <Star size={12} className="shrink-0 fill-[#4ea1ff] text-[#4ea1ff]" />}
+                    {l.fedexCupRank != null && l.fedexCupRank > 0 ? (
+                      <span className="numeral shrink-0 text-[10px] font-bold text-[#4ea1ff]/90">
+                        FX#{l.fedexCupRank}
+                      </span>
+                    ) : null}
                     <span className="truncate text-[13px] font-medium text-white">{name}</span>
                   </span>
                 </td>

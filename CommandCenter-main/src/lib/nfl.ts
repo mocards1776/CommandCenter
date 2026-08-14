@@ -801,6 +801,7 @@ export type NflCoach = {
   teamAbbrev: string;
   teamColor: string;
   logo: string | null;
+  headshot: string | null;
   experience: number;
   record: string | null;
   wins: number;
@@ -810,9 +811,137 @@ export type NflCoach = {
   pointDiff: number | null;
   hotSeatScore: number;
   hotSeatRank: number;
+  firedOddsAmerican: string | null;
+  firedOddsPct: number | null;
+  kalshiUrl: string | null;
   factors: { label: string; points: number; detail: string }[];
 };
 
+const KALSHI_NFL_TEAM_HINTS: { hint: string; abbrev: string }[] = [
+  { hint: "arizona", abbrev: "ARI" },
+  { hint: "atlanta", abbrev: "ATL" },
+  { hint: "baltimore", abbrev: "BAL" },
+  { hint: "buffalo", abbrev: "BUF" },
+  { hint: "carolina", abbrev: "CAR" },
+  { hint: "chicago", abbrev: "CHI" },
+  { hint: "cincinnati", abbrev: "CIN" },
+  { hint: "cleveland", abbrev: "CLE" },
+  { hint: "dallas", abbrev: "DAL" },
+  { hint: "denver", abbrev: "DEN" },
+  { hint: "detroit", abbrev: "DET" },
+  { hint: "green bay", abbrev: "GB" },
+  { hint: "houston", abbrev: "HOU" },
+  { hint: "indianapolis", abbrev: "IND" },
+  { hint: "jacksonville", abbrev: "JAX" },
+  { hint: "kansas city", abbrev: "KC" },
+  { hint: "las vegas", abbrev: "LV" },
+  { hint: "los angeles c", abbrev: "LAC" },
+  { hint: "los angeles r", abbrev: "LAR" },
+  { hint: "miami", abbrev: "MIA" },
+  { hint: "minnesota", abbrev: "MIN" },
+  { hint: "new england", abbrev: "NE" },
+  { hint: "new orleans", abbrev: "NO" },
+  { hint: "new york g", abbrev: "NYG" },
+  { hint: "new york j", abbrev: "NYJ" },
+  { hint: "philadelphia", abbrev: "PHI" },
+  { hint: "pittsburgh", abbrev: "PIT" },
+  { hint: "san francisco", abbrev: "SF" },
+  { hint: "seattle", abbrev: "SEA" },
+  { hint: "tampa bay", abbrev: "TB" },
+  { hint: "tennessee", abbrev: "TEN" },
+  { hint: "washington", abbrev: "WSH" },
+];
+
+function nflAbbrevFromKalshiSubtitle(subtitle: string | null | undefined): string | null {
+  const raw = (subtitle ?? "").replace(/^:+\s*/, "").trim().toLowerCase();
+  if (!raw) return null;
+  // Prefer longer / more specific hints first (Los Angeles C vs R, New York J vs G).
+  const sorted = [...KALSHI_NFL_TEAM_HINTS].sort((a, b) => b.hint.length - a.hint.length);
+  for (const row of sorted) {
+    if (raw.includes(row.hint) || row.hint.includes(raw)) return row.abbrev;
+  }
+  // City-only leftovers
+  if (raw === "los angeles") return null;
+  if (raw === "new york") return null;
+  return null;
+}
+
+function dollarProb(raw: string | null | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  if (n === 0) return 0;
+  return Math.max(0.01, Math.min(0.99, n));
+}
+
+function americanFromProb(p: number): string {
+  if (p >= 0.5) return `-${Math.round((100 * p) / (1 - p))}`;
+  return `+${Math.round((100 * (1 - p)) / p)}`;
+}
+
+type KalshiCoachMarket = {
+  name: string;
+  teamAbbrev: string | null;
+  teamHint: string | null;
+  impliedPct: number;
+  american: string;
+  ticker: string;
+  url: string;
+};
+
+/** Kalshi “coach out before Sep 1” markets — primary NFL hot-seat signal. */
+export async function fetchNflCoachFiredOdds(): Promise<KalshiCoachMarket[]> {
+  const res = await fetch(
+    "https://api.elections.kalshi.com/trade-api/v2/markets?limit=50&status=open&series_ticker=KXCOACHOUTNFL",
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) throw new Error(`Kalshi NFL coaches ${res.status}`);
+  const data = (await res.json()) as {
+    markets?: {
+      title?: string;
+      subtitle?: string;
+      ticker?: string;
+      yes_sub_title?: string | null;
+      no_sub_title?: string | null;
+      yes_bid_dollars?: string | null;
+      yes_ask_dollars?: string | null;
+      last_price_dollars?: string | null;
+      custom_strike?: { Coach?: string; Team?: string } | null;
+    }[];
+  };
+  const items: KalshiCoachMarket[] = [];
+  for (const m of data.markets ?? []) {
+    const name =
+      (m.custom_strike?.Coach ?? m.yes_sub_title ?? m.no_sub_title ?? "").trim() ||
+      "";
+    if (!name || /field|any other/i.test(name)) continue;
+    const bid = dollarProb(m.yes_bid_dollars);
+    const ask = dollarProb(m.yes_ask_dollars);
+    const last = dollarProb(m.last_price_dollars);
+    let p: number | null = null;
+    if (bid != null && ask != null && (bid > 0 || ask > 0)) p = (bid + ask) / 2;
+    else p = ask ?? bid ?? last;
+    if (p == null || p <= 0) continue;
+    const subtitle = (m.subtitle ?? "").replace(/^:+\s*/, "").trim();
+    items.push({
+      name,
+      teamAbbrev: nflAbbrevFromKalshiSubtitle(m.subtitle) ?? nflAbbrevFromKalshiSubtitle(subtitle),
+      teamHint: subtitle || null,
+      impliedPct: Math.round(p * 1000) / 10,
+      american: americanFromProb(p),
+      ticker: m.ticker ?? "",
+      url: `https://kalshi.com/markets/${(m.ticker ?? "").toLowerCase()}`,
+    });
+  }
+  items.sort((a, b) => b.impliedPct - a.impliedPct);
+  return items;
+}
+
+/**
+ * NFL hot seat — ranked by Kalshi coach-out %, with ESPN team records for context.
+ * ESPN roster.coach is unreliable (scrambled HCs), so Kalshi is the source of truth for who
+ * coaches which team.
+ */
 export async function fetchNflCoaches(): Promise<NflCoach[]> {
   type TeamRow = {
     id: string;
@@ -827,7 +956,7 @@ export async function fetchNflCoaches(): Promise<NflCoach[]> {
     pointDiff: number;
   };
 
-  const teams: TeamRow[] = [];
+  const byAbbrev = new Map<string, TeamRow>();
 
   try {
     const teamsRes = await fetch(`${ESPN}/teams?limit=32`, {
@@ -858,15 +987,15 @@ export async function fetchNflCoaches(): Promise<NflCoach[]> {
       };
       for (const row of teamsJson.sports?.[0]?.leagues?.[0]?.teams ?? []) {
         const team = row.team;
-        if (!team?.id) continue;
+        if (!team?.id || !team.abbreviation) continue;
         const total = (team.record?.items ?? []).find((r) => r.type === "total");
         const stat = (n: string) => total?.stats?.find((s) => s.name === n)?.value ?? 0;
-        teams.push({
+        byAbbrev.set(team.abbreviation.toUpperCase(), {
           id: String(team.id),
           displayName: team.displayName ?? "Team",
-          abbreviation: team.abbreviation ?? "—",
+          abbreviation: team.abbreviation,
           color: (team.color ?? "333").replace(/^#/, ""),
-          logo: team.logos?.[0]?.href ?? nflTeamLogo(team.abbreviation ?? "nfl"),
+          logo: team.logos?.[0]?.href ?? nflTeamLogo(team.abbreviation),
           recordSummary: total?.summary ?? null,
           wins: Number(stat("wins")) || 0,
           losses: Number(stat("losses")) || 0,
@@ -876,12 +1005,12 @@ export async function fetchNflCoaches(): Promise<NflCoach[]> {
       }
     }
   } catch {
-    /* fall through to NFL_TEAMS */
+    /* Kalshi-only still works */
   }
 
-  if (!teams.length) {
+  if (!byAbbrev.size) {
     for (const t of NFL_TEAMS) {
-      teams.push({
+      byAbbrev.set(t.abbrev, {
         id: String(t.id),
         displayName: t.name,
         abbreviation: t.abbrev,
@@ -896,120 +1025,139 @@ export async function fetchNflCoaches(): Promise<NflCoach[]> {
     }
   }
 
+  const kalshi = await fetchNflCoachFiredOdds();
+  if (!kalshi.length) throw new Error("Kalshi returned no NFL coach-out markets.");
+
   const coaches: Omit<NflCoach, "hotSeatRank">[] = [];
-  const concurrency = 4;
-  for (let i = 0; i < teams.length; i += concurrency) {
-    const chunk = teams.slice(i, i + concurrency);
-    await Promise.all(
-      chunk.map(async (team) => {
-        let coach: { id?: string; firstName?: string; lastName?: string; experience?: number } | null =
-          null;
-        try {
-          const rosterRes = await fetch(`${ESPN}/teams/${team.id}/roster`, {
-            headers: { Accept: "application/json" },
-          });
-          if (rosterRes.ok) {
-            const roster = (await rosterRes.json()) as {
-              coach?: { id?: string; firstName?: string; lastName?: string; experience?: number }[];
-            };
-            coach = roster.coach?.[0] ?? null;
-          }
-        } catch {
-          /* try core API */
-        }
-        if (!coach?.id) {
-          try {
-            const core = (await (
-              await fetch(
-                `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/${team.id}/coaches`,
-                { headers: { Accept: "application/json" } },
-              )
-            ).json()) as { items?: { $ref?: string }[] };
-            const ref = core.items?.[0]?.$ref;
-            if (ref) {
-              const href = ref.replace(/^http:/, "https:");
-              const detail = (await (await fetch(href, { headers: { Accept: "application/json" } })).json()) as {
-                id?: string | number;
-                firstName?: string;
-                lastName?: string;
-                experience?: number;
-              };
-              if (detail?.id != null) {
-                coach = {
-                  id: String(detail.id),
-                  firstName: detail.firstName,
-                  lastName: detail.lastName,
-                  experience: detail.experience,
-                };
-              }
-            }
-          } catch {
-            /* skip team */
-          }
-        }
-        if (!coach?.id) return;
-
-        const games = team.wins + team.losses + team.ties;
-        const winPct = games > 0 ? team.wins / games : null;
-        const experience = typeof coach.experience === "number" ? coach.experience : 0;
-        const factors: NflCoach["factors"] = [];
-        let score = 40;
-        if (experience <= 0) {
-          score -= 18;
-          factors.push({ label: "First year", points: -18, detail: "Grace period" });
-        } else if (experience === 1) {
-          score -= 10;
-          factors.push({ label: "Year two", points: -10, detail: "Still settling" });
-        } else if (experience >= 8) {
-          score += 8;
-          factors.push({ label: "Long tenure", points: 8, detail: `${experience} seasons` });
-        }
-        if (winPct != null) {
-          if (winPct < 0.35) {
-            score += 22;
-            factors.push({ label: "Poor record", points: 22, detail: team.recordSummary ?? "" });
-          } else if (winPct < 0.45) {
-            score += 12;
-            factors.push({ label: "Below .500", points: 12, detail: team.recordSummary ?? "" });
-          } else if (winPct >= 0.6) {
-            score -= 14;
-            factors.push({ label: "Winning club", points: -14, detail: team.recordSummary ?? "" });
-          }
-        }
-        if (team.pointDiff <= -60) {
-          score += 14;
-          factors.push({ label: "Point drain", points: 14, detail: String(team.pointDiff) });
-        } else if (team.pointDiff >= 60) {
-          score -= 10;
-          factors.push({ label: "Point edge", points: -10, detail: `+${team.pointDiff}` });
-        }
-        coaches.push({
-          id: String(coach.id),
-          name: [coach.firstName, coach.lastName].filter(Boolean).join(" ") || "Head coach",
-          teamId: team.id,
-          teamName: team.displayName,
-          teamAbbrev: team.abbreviation,
-          teamColor: team.color,
-          logo: team.logo,
-          experience,
-          record: team.recordSummary,
-          wins: team.wins,
-          losses: team.losses,
-          ties: team.ties,
-          winPct,
-          pointDiff: team.pointDiff,
-          hotSeatScore: Math.max(0, Math.min(100, Math.round(score))),
-          factors,
-        });
-      }),
-    );
+  for (const m of kalshi) {
+    const team =
+      (m.teamAbbrev ? byAbbrev.get(m.teamAbbrev) : null) ??
+      [...byAbbrev.values()].find((t) =>
+        (m.teamHint ?? "").toLowerCase().includes(t.displayName.toLowerCase().split(" ").slice(-1)[0] ?? "___"),
+      ) ??
+      null;
+    const games = team ? team.wins + team.losses + team.ties : 0;
+    const winPct = games > 0 && team ? team.wins / games : null;
+    const marketPct = m.impliedPct;
+    // Kalshi dominates — mirror MLB hot seat weighting.
+    const marketPts = Math.round(marketPct * 0.85 * 10) / 10;
+    const factors: NflCoach["factors"] = [
+      {
+        label: "Kalshi %",
+        points: marketPts,
+        detail: `Kalshi ~${marketPct.toFixed(1)}% coach-out → +${marketPts} heat`,
+      },
+    ];
+    let score = 20 + marketPts;
+    if (winPct != null && team) {
+      if (winPct < 0.35) {
+        score += 8;
+        factors.push({ label: "Poor record", points: 8, detail: team.recordSummary ?? "" });
+      } else if (winPct >= 0.6) {
+        score -= 6;
+        factors.push({ label: "Winning club", points: -6, detail: team.recordSummary ?? "" });
+      }
+    }
+    const id =
+      m.ticker.replace(/^KXCOACHOUTNFL-[^-]+-/, "") ||
+      m.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    coaches.push({
+      id,
+      name: m.name,
+      teamId: team?.id ?? "0",
+      teamName: team?.displayName ?? m.teamHint ?? "NFL",
+      teamAbbrev: team?.abbreviation ?? m.teamAbbrev ?? "—",
+      teamColor: team?.color ?? "333",
+      logo: team?.logo ?? (m.teamAbbrev ? nflTeamLogo(m.teamAbbrev) : null),
+      headshot: null,
+      experience: 0,
+      record: team?.recordSummary ?? null,
+      wins: team?.wins ?? 0,
+      losses: team?.losses ?? 0,
+      ties: team?.ties ?? 0,
+      winPct,
+      pointDiff: team?.pointDiff ?? null,
+      hotSeatScore: Math.max(0, Math.min(100, Math.round(score))),
+      firedOddsAmerican: m.american,
+      firedOddsPct: marketPct,
+      kalshiUrl: m.url,
+      factors,
+    });
   }
 
-  if (!coaches.length) {
-    throw new Error("Couldn't load NFL coaches — ESPN returned no head coaches.");
-  }
-  coaches.sort((a, b) => b.hotSeatScore - a.hotSeatScore || a.name.localeCompare(b.name));
+  coaches.sort((a, b) => {
+    const ap = a.firedOddsPct ?? -1;
+    const bp = b.firedOddsPct ?? -1;
+    if (ap !== bp) return bp - ap;
+    return b.hotSeatScore - a.hotSeatScore || a.name.localeCompare(b.name);
+  });
   return coaches.map((c, i) => ({ ...c, hotSeatRank: i + 1 }));
+}
+
+export type NflCoachProfile = NflCoach & {
+  bio: string | null;
+  careerHighlights: string[];
+};
+
+export async function fetchNflCoachProfile(coachId: string): Promise<NflCoachProfile> {
+  const all = await fetchNflCoaches();
+  const base =
+    all.find((c) => c.id === coachId) ??
+    all.find((c) => c.id.toLowerCase() === coachId.toLowerCase()) ??
+    all.find((c) => c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") === coachId.toLowerCase());
+  if (!base) throw new Error("Coach not found");
+
+  let bio: string | null = null;
+  let headshot: string | null = base.headshot;
+  try {
+    const search = await fetch(
+      `https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&limit=8&query=${encodeURIComponent(base.name)}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (search.ok) {
+      const data = (await search.json()) as {
+        items?: {
+          id?: string;
+          displayName?: string;
+          type?: string;
+          sport?: string;
+          headshot?: { href?: string };
+          description?: string;
+        }[];
+      };
+      const hit =
+        (data.items ?? []).find(
+          (it) =>
+            /coach|person/i.test(it.type ?? "") &&
+            /football|nfl/i.test(it.sport ?? "nfl") &&
+            (it.displayName ?? "").toLowerCase().includes(base.name.split(" ").slice(-1)[0]!.toLowerCase()),
+        ) ??
+        (data.items ?? []).find((it) =>
+          (it.displayName ?? "").toLowerCase() === base.name.toLowerCase(),
+        );
+      if (hit?.headshot?.href) headshot = hit.headshot.href;
+      if (hit?.description) bio = hit.description;
+    }
+  } catch {
+    /* optional */
+  }
+
+  const careerHighlights = [
+    base.firedOddsPct != null
+      ? `Kalshi coach-out: ${base.firedOddsPct.toFixed(1)}% (${base.firedOddsAmerican})`
+      : null,
+    base.record ? `Team record: ${base.record}` : null,
+    base.pointDiff != null ? `Point differential: ${base.pointDiff > 0 ? "+" : ""}${base.pointDiff}` : null,
+  ].filter(Boolean) as string[];
+
+  return {
+    ...base,
+    headshot,
+    bio:
+      bio ??
+      `${base.name} is the head coach of the ${base.teamName}. Hot seat ranking is driven by Kalshi coach-out markets.`,
+    careerHighlights,
+  };
 }
 
 /**

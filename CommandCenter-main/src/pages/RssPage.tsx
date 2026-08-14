@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent, type TouchEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueries, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -23,6 +23,7 @@ import {
   RefreshCw,
   Share,
   Square,
+  Star,
   Layers,
   Trash2,
   X,
@@ -32,6 +33,10 @@ import DispatchEspnGameReader from "@/components/rss/DispatchEspnGameReader";
 import DispatchPlayerReader from "@/components/rss/DispatchPlayerReader";
 import DispatchNotesAside from "@/components/rss/DispatchNotesAside";
 import RssQuoteShareCard from "@/components/rss/RssQuoteShareCard";
+import {
+  loadFavoriteFeedIds,
+  toggleFavoriteFeed,
+} from "@/lib/favorite-feeds";
 import {
   RSS_FEEDS,
   RSS_FEED_FOLDERS,
@@ -1650,6 +1655,37 @@ export default function RssPage() {
       return {};
     }
   });
+  const [favoriteFeedIds, setFavoriteFeedIds] = useState<string[]>(() =>
+    typeof window !== "undefined" ? loadFavoriteFeedIds() : [],
+  );
+  const longPressTimer = useRef<number | null>(null);
+
+  function clearLongPress() {
+    if (longPressTimer.current != null) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
+  function toggleFeedFavorite(feedId: string, label: string) {
+    const nowFav = toggleFavoriteFeed(feedId);
+    setFavoriteFeedIds(loadFavoriteFeedIds());
+    toast.success(nowFav ? `Favorited ${label}` : `Removed ${label} from favorites`);
+  }
+
+  function onFeedContextMenu(e: ReactMouseEvent | TouchEvent, feedId: string, label: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleFeedFavorite(feedId, label);
+  }
+
+  function onFeedPointerDown(feedId: string, label: string) {
+    clearLongPress();
+    longPressTimer.current = window.setTimeout(() => {
+      longPressTimer.current = null;
+      toggleFeedFavorite(feedId, label);
+    }, 520);
+  }
 
   function toggleFolderOpen(folderId: string) {
     setFolderOpen((prev) => {
@@ -2197,6 +2233,49 @@ export default function RssPage() {
         <div className="flex-1 px-2 pb-4">
           <p className="label-caps text-chalk-dim px-2 py-2">Feeds</p>
           <ul className="flex flex-col gap-0.5">
+            {favoriteFeedIds.length > 0 ? (
+              <li className="mb-1">
+                <p className="text-chalk-dim px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                  Favorites
+                </p>
+                <ul className="flex flex-col gap-0.5">
+                  {favoriteFeedIds.map((id) => {
+                    const feed = RSS_FEEDS.find((f) => f.id === id);
+                    const folder = RSS_FEED_FOLDERS.find((f) => f.id === id);
+                    const title = feed?.title ?? folder?.title ?? id;
+                    return (
+                      <li key={`fav-${id}`}>
+                        <button
+                          type="button"
+                          onClick={() => selectNav(id)}
+                          onContextMenu={(e) => onFeedContextMenu(e, id, title)}
+                          onTouchStart={() => onFeedPointerDown(id, title)}
+                          onTouchEnd={clearLongPress}
+                          onTouchMove={clearLongPress}
+                          onTouchCancel={clearLongPress}
+                          className={cn(
+                            "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left transition-colors",
+                            nav === id
+                              ? "bg-accent/15 text-cream"
+                              : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+                          )}
+                        >
+                          <Star size={14} className="text-accent shrink-0 fill-current" />
+                          <span className="min-w-0 flex-1 truncate text-[13px]">{title}</span>
+                          <span className="text-chalk tabular-nums text-[12px]">
+                            {feed
+                              ? (unreadByFeed[feed.id] ?? 0)
+                              : folder
+                                ? folderUnread(folder)
+                                : 0}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </li>
+            ) : null}
             {RSS_FEED_FOLDERS.map((folder) => {
               const open = folderOpen[folder.id] ?? false;
               const childFeeds = folder.feedIds
@@ -2204,6 +2283,7 @@ export default function RssPage() {
                 .filter(Boolean) as RssFeedDef[];
               const active =
                 nav === folder.id || folder.feedIds.some((id) => id === nav);
+              const folderFav = favoriteFeedIds.includes(folder.id);
               return (
                 <li key={folder.id}>
                   <div
@@ -2217,12 +2297,20 @@ export default function RssPage() {
                     <button
                       type="button"
                       onClick={() => selectNav(folder.id)}
+                      onContextMenu={(e) => onFeedContextMenu(e, folder.id, folder.title)}
+                      onTouchStart={() => onFeedPointerDown(folder.id, folder.title)}
+                      onTouchEnd={clearLongPress}
+                      onTouchMove={clearLongPress}
+                      onTouchCancel={clearLongPress}
                       className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-2.5 text-left"
                     >
                       <Folder size={16} className="text-accent shrink-0" />
                       <span className="min-w-0 flex-1 truncate text-[13.5px]">
                         {folder.title}
                       </span>
+                      {folderFav ? (
+                        <Star size={12} className="text-accent shrink-0 fill-current" />
+                      ) : null}
                       <span className="text-chalk tabular-nums text-[12px]">
                         {folderUnread(folder)}
                       </span>
@@ -2243,6 +2331,11 @@ export default function RssPage() {
                           <button
                             type="button"
                             onClick={() => selectNav(f.id)}
+                            onContextMenu={(e) => onFeedContextMenu(e, f.id, f.title)}
+                            onTouchStart={() => onFeedPointerDown(f.id, f.title)}
+                            onTouchEnd={clearLongPress}
+                            onTouchMove={clearLongPress}
+                            onTouchCancel={clearLongPress}
                             className={cn(
                               "flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left transition-colors",
                               nav === f.id
@@ -2252,6 +2345,9 @@ export default function RssPage() {
                           >
                             <Hash size={14} className="text-accent shrink-0" />
                             <span className="min-w-0 flex-1 truncate text-[13px]">{f.title}</span>
+                            {favoriteFeedIds.includes(f.id) ? (
+                              <Star size={11} className="text-accent shrink-0 fill-current" />
+                            ) : null}
                             <span className="text-chalk tabular-nums text-[12px]">
                               {unreadByFeed[f.id] ?? 0}
                             </span>

@@ -62,6 +62,8 @@ export type TourLeader = {
   r1: string | null;
   /** Additional round scores R2+ when present. */
   roundScores: string[];
+  /** FedEx Cup rank when known. */
+  fedexCupRank: number | null;
 };
 
 export type TourSnapshot = {
@@ -633,8 +635,16 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
       thru,
       r1,
       roundScores,
+      fedexCupRank: null,
     };
   });
+
+  // Enrich FedEx Cup ranks (small concurrency — used for leaderboard badges).
+  const ids = field.map((f) => f.id).filter((id): id is string => Boolean(id));
+  const fedexById = await fetchFedExCupRanksForAthletes(ids.slice(0, 60));
+  for (const row of field) {
+    if (row.id && fedexById.has(row.id)) row.fedexCupRank = fedexById.get(row.id) ?? null;
+  }
 
   return {
     key: fav.key,
@@ -645,6 +655,47 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
     leaders: field.slice(0, 5),
     field,
   };
+}
+
+async function fetchFedExCupRanksForAthletes(ids: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const concurrency = 6;
+  for (let i = 0; i < ids.length; i += concurrency) {
+    const chunk = ids.slice(i, i + concurrency);
+    await Promise.all(
+      chunk.map(async (id) => {
+        try {
+          const res = await fetch(
+            `https://site.web.api.espn.com/apis/common/v3/sports/golf/pga/athletes/${id}`,
+            { headers: { Accept: "application/json" } },
+          );
+          if (!res.ok) return;
+          const data = (await res.json()) as {
+            athlete?: {
+              statsSummary?: {
+                statistics?: {
+                  name?: string;
+                  rank?: number;
+                  rankDisplayValue?: string;
+                }[];
+              };
+            };
+          };
+          const cup = (data.athlete?.statsSummary?.statistics ?? []).find((s) =>
+            /cup|fedex/i.test(s.name ?? ""),
+          );
+          const rank =
+            typeof cup?.rank === "number"
+              ? cup.rank
+              : Number.parseInt(String(cup?.rankDisplayValue ?? "").replace(/\D/g, ""), 10);
+          if (Number.isFinite(rank) && rank > 0) out.set(id, rank);
+        } catch {
+          /* skip */
+        }
+      }),
+    );
+  }
+  return out;
 }
 
 export type GolferProfile = {
@@ -668,6 +719,13 @@ export type GolferProfile = {
   seasonStats: { label: string; value: string }[];
   highlights: { headline: string; image: string | null; href: string | null }[];
   recentNews: { headline: string; description: string }[];
+  /** This season's tournament finishes. */
+  seasonResults: {
+    event: string;
+    date: string | null;
+    position: string;
+    score: string | null;
+  }[];
 };
 
 /** ESPN golfer card — stats + short bio bits. */
@@ -881,6 +939,43 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
     }))
     .filter((n) => n.headline);
 
+  const seasonResults: GolferProfile["seasonResults"] = [];
+  const year = new Date().getFullYear();
+  const recentGroups = (overview.recentTournaments ?? []) as {
+    displayName?: string;
+    name?: string;
+    eventsStats?: {
+      date?: string;
+      name?: string;
+      shortName?: string;
+      competitions?: {
+        competitors?: {
+          score?: { displayValue?: string };
+          status?: { position?: { displayName?: string } };
+          place?: { displayName?: string };
+        }[];
+      }[];
+    }[];
+  }[];
+  for (const group of recentGroups) {
+    const label = `${group.displayName ?? ""} ${group.name ?? ""}`;
+    const isCurrent =
+      /pga/i.test(label) &&
+      (label.includes(String(year)) || /recent/i.test(label));
+    if (!isCurrent && seasonResults.length) continue;
+    for (const ev of group.eventsStats ?? []) {
+      const me = ev.competitions?.[0]?.competitors?.[0];
+      const pos = me?.status?.position?.displayName ?? me?.place?.displayName ?? "—";
+      seasonResults.push({
+        event: ev.shortName || ev.name || "Tournament",
+        date: ev.date ? ev.date.slice(0, 10) : null,
+        position: pos && pos !== "-" ? pos : "—",
+        score: me?.score?.displayValue ?? null,
+      });
+    }
+    if (seasonResults.length) break;
+  }
+
   const displayName = String(athlete.displayName ?? athlete.fullName ?? "Golfer");
   const bioParts = [
     college ? `College: ${college}.` : null,
@@ -910,6 +1005,7 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
     seasonStats,
     highlights,
     recentNews,
+    seasonResults,
   };
 }
 

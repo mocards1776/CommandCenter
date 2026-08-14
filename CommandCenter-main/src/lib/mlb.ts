@@ -792,8 +792,12 @@ export function mlbHeadshotFallbacks(
   playerId: number | string,
   size: 213 | 426 = 213,
 ): string[] {
+  const milb = `https://img.mlbstatic.com/mlb-photos/image/upload/c_fill,g_auto/w_${size === 426 ? 360 : 180}/v1/people/${playerId}/headshot/milb/current`;
+  const milbSimple = `https://img.mlbstatic.com/mlb-photos/image/upload/w_${size},q_auto:best/v1/people/${playerId}/headshot/milb/current`;
   return [
     mlbHeadshot(playerId, size),
+    milb,
+    milbSimple,
     mlbHeadshotSilo(playerId, size === 426 ? 360 : 180),
     `https://img.mlbstatic.com/mlb-photos/image/upload/w_${size},q_auto:best/v1/people/${playerId}/headshot/83/current`,
     mlbHeadshotGeneric(playerId, size),
@@ -5674,63 +5678,89 @@ export type MlbProspectSeed = {
 
 /** Pipeline-oriented Cardinals watch list (resolved against Stats API). */
 export const CARDINALS_PROSPECT_SEEDS: MlbProspectSeed[] = [
-  {
-    rank: 1,
-    name: "JJ Wetherholt",
-    position: "SS",
-    playerId: 802139,
-    pipelineNote: "MLB Pipeline Top 100",
-  },
-  {
-    rank: 2,
-    name: "Liam Doyle",
-    position: "LHP",
-    playerId: 824604,
-    pipelineNote: "MLB Pipeline Top 100",
-  },
-  {
-    rank: 3,
-    name: "Rainiel Rodriguez",
-    position: "C",
-    playerId: 823787,
-    pipelineNote: "MLB Pipeline Top 100",
-  },
-  {
-    rank: 4,
-    name: "Joshua Baez",
-    position: "OF",
-    playerId: 695491,
-    aliases: ["Joshua Báez"],
-    pipelineNote: "MLB Pipeline Top 100",
-  },
-  {
-    rank: 5,
-    name: "Jurrangelo Cijntje",
-    position: "RHP",
-    playerId: 701388,
-    pipelineNote: "MLB Pipeline Top 100",
-  },
-  {
-    rank: 6,
-    name: "Leonardo Bernal",
-    position: "C",
-    playerId: 699024,
-    aliases: ["Leo Bernal"],
-    pipelineNote: "MLB Pipeline Top 100",
-  },
-  { rank: 7, name: "Jimmy Crooks", position: "C", playerId: 699625 },
+  { rank: 1, name: "Rainiel Rodriguez", position: "C", playerId: 823787, pipelineNote: "MLB Pipeline" },
+  { rank: 2, name: "Liam Doyle", position: "LHP", playerId: 824604, pipelineNote: "MLB Pipeline" },
+  { rank: 3, name: "Joshua Baez", position: "OF", playerId: 695491, aliases: ["Joshua Báez"], pipelineNote: "MLB Pipeline" },
+  { rank: 4, name: "Alexander Frias", position: "OF", playerId: 825484 },
+  { rank: 5, name: "Tanner Franklin", position: "RHP", playerId: 815119 },
+  { rank: 6, name: "Trevor Condon", position: "OF", playerId: 825891 },
+  { rank: 7, name: "Leonardo Bernal", position: "C", playerId: 699024, aliases: ["Leo Bernal"] },
   { rank: 8, name: "Quinn Mathews", position: "LHP", playerId: 687273 },
-  { rank: 9, name: "Tai Peete", position: "OF", playerId: 806191 },
-  { rank: 10, name: "Tanner Franklin", position: "RHP", playerId: 815119 },
-  { rank: 11, name: "Brandon Clarke", position: "LHP", playerId: 700251 },
+  { rank: 9, name: "Brandon Clarke", position: "LHP", playerId: 700251 },
+  { rank: 10, name: "Tegan Kuhns", position: "RHP", playerId: 815158 },
+  { rank: 11, name: "Josiah Ragsdale", position: "OF", playerId: 828824 },
+  { rank: 12, name: "Jurrangelo Cijntje", position: "RHP", playerId: 701388 },
+  { rank: 13, name: "Yohiker Fajardo", position: "RHP", playerId: 823369, aliases: ["Yhoiker Fajardo"] },
+  { rank: 14, name: "Tekoah Roby", position: "RHP", playerId: 694358 },
   {
-    rank: 12,
-    name: "Yohiker Fajardo",
-    position: "RHP",
-    playerId: 823369,
-    aliases: ["Yhoiker Fajardo"],
+    rank: 15,
+    name: "Jesus Baez",
+    position: "SS",
+    playerId: 800305,
+    aliases: ["Jesús Báez", "Jesús  Báez", "Jesus Báez"],
+    pipelineNote: "MLB Pipeline",
   },
+  { rank: 16, name: "Rocco Maniscalco", position: "SS", playerId: 836548 },
+  { rank: 17, name: "Tai Peete", position: "OF", playerId: 806191 },
+  { rank: 18, name: "Cooper Hjerpe", position: "LHP", playerId: 687309 },
+  { rank: 19, name: "Yairo Padilla", position: "SS", playerId: 821107 },
+  { rank: 20, name: "Sebastian Dos Santos", position: "SS", playerId: 829741 },
 ];
+
+/** Live Cardinals Pipeline ranks (playerId → org rank). Falls back to seeds. */
+export async function fetchCardinalsPipelineRankMap(): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  for (const seed of CARDINALS_PROSPECT_SEEDS) {
+    if (seed.playerId) out.set(seed.playerId, seed.rank);
+  }
+  const year = new Date().getFullYear();
+  const slugs = [`sel-pr-${year}-cardinals`, `sel-pr-${year - 1}-cardinals`];
+  const query = `
+    query PipelineSelection($slug: String!, $limit: Int) {
+      getPlayerRankingsFromSelection(slug: $slug, limit: $limit) {
+        rank
+        playerEntity { player { id } }
+      }
+    }
+  `;
+  for (const slug of slugs) {
+    try {
+      const res = await fetch("https://data-graph.mlb.com/graphql", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Origin: typeof window !== "undefined" ? window.location.origin : "https://www.mlb.com",
+          Referer: "https://www.mlb.com/cardinals/prospects",
+        },
+        body: JSON.stringify({ query, variables: { slug, limit: 40 } }),
+      });
+      if (!res.ok) continue;
+      const payload = (await res.json()) as {
+        data?: {
+          getPlayerRankingsFromSelection?: {
+            rank?: number | null;
+            playerEntity?: { player?: { id?: number | null } | null } | null;
+          }[];
+        };
+      };
+      const rows = payload.data?.getPlayerRankingsFromSelection ?? [];
+      if (!rows.length) continue;
+      out.clear();
+      for (const row of rows) {
+        const id = Number(row.playerEntity?.player?.id);
+        const rank = Number(row.rank);
+        if (Number.isFinite(id) && id > 0 && Number.isFinite(rank) && rank > 0) {
+          out.set(id, rank);
+        }
+      }
+      if (out.size) return out;
+    } catch {
+      /* try next slug / keep seeds */
+    }
+  }
+  return out;
+}
 
 export type MlbProspectCard = Omit<MlbProspectSeed, "playerId"> & {
   playerId: number | null;

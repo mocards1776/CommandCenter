@@ -304,6 +304,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         careerWar={extras.data?.careerWar ?? null}
         warRank={extras.data?.warRank ?? null}
         warOf={extras.data?.warOf ?? null}
+        pipelineRank={scouting.data?.pipelineRank ?? null}
       />
 
       {showLevelSelector && (
@@ -690,6 +691,7 @@ function PlayerHeader({
   careerWar,
   warRank,
   warOf,
+  pipelineRank,
 }: {
   player: MlbPlayerCard;
   accent: string;
@@ -699,6 +701,7 @@ function PlayerHeader({
   careerWar?: number | null;
   warRank?: number | null;
   warOf?: number | null;
+  pipelineRank?: number | null;
 }) {
   const htWt = [player.height, player.weight ? `${player.weight} lb` : null]
     .filter(Boolean)
@@ -775,6 +778,11 @@ function PlayerHeader({
                 {levelChip && (
                   <span className="rounded-sm border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
                     {levelChip}
+                  </span>
+                )}
+                {pipelineRank != null && pipelineRank > 0 && (
+                  <span className="rounded-sm border border-accent/40 bg-accent/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
+                    Pipeline #{pipelineRank}
                   </span>
                 )}
               </div>

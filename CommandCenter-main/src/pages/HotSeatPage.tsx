@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Flame, Loader2, Star } from "lucide-react";
 import TeamMark from "@/components/sports/TeamMark";
@@ -341,9 +341,9 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
 
 function NflHotSeat() {
   const coaches = useQuery({
-    queryKey: ["nfl-coaches-v2"],
+    queryKey: ["nfl-coaches-v3-kalshi"],
     queryFn: fetchNflCoaches,
-    staleTime: 300_000,
+    staleTime: 180_000,
     retry: 2,
   });
 
@@ -351,7 +351,7 @@ function NflHotSeat() {
     <>
       {coaches.isPending && (
         <p className="text-chalk-dim flex items-center gap-2 text-[13px]">
-          <Loader2 size={16} className="animate-spin" /> Loading coaches…
+          <Loader2 size={16} className="animate-spin" /> Loading Kalshi coach markets…
         </p>
       )}
       {coaches.isError && (
@@ -375,8 +375,7 @@ function NflHotSeat() {
             </ol>
           </section>
           <p className="text-[11px] leading-relaxed text-[#8b93a7]">
-            NFL heat blends tenure cushion, win percentage, and point differential. Tap a card to
-            expand the factor breakdown.
+            Ranked by Kalshi coach-out markets (KXCOACHOUTNFL). Tap a coach for the full profile.
           </p>
         </>
       )}
@@ -385,7 +384,6 @@ function NflHotSeat() {
 }
 
 function CoachRow({ coach: c }: { coach: NflCoach }) {
-  const [open, setOpen] = useState(false);
   const chips = useMemo(
     () =>
       c.factors
@@ -397,11 +395,9 @@ function CoachRow({ coach: c }: { coach: NflCoach }) {
 
   return (
     <li>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
+      <Link
+        to={`/sports/nfl/coach/${c.id}`}
         className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-white/[0.03] sm:gap-4 sm:px-4"
-        aria-expanded={open}
       >
         <span
           className={cn(
@@ -433,19 +429,15 @@ function CoachRow({ coach: c }: { coach: NflCoach }) {
             </span>
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-[#c8cdd8]">
-            <Link
-              to={`/sports/nfl/team/${c.teamId}`}
-              className="hover:text-cream hover:underline"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {c.teamAbbrev}
-            </Link>
+            <span>{c.teamAbbrev}</span>
             {c.record && <span className="numeral font-medium text-cream">{c.record}</span>}
-            <span className="text-[#a8b0c2]">
-              {c.experience} yr{c.experience === 1 ? "" : "s"}
-            </span>
+            {c.firedOddsPct != null && (
+              <span className="text-alert/90 numeral font-semibold">
+                Kalshi {c.firedOddsPct.toFixed(1)}%
+              </span>
+            )}
           </div>
-          {!open && chips.length > 0 && (
+          {chips.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {chips.map((f) => (
                 <span
@@ -466,38 +458,10 @@ function CoachRow({ coach: c }: { coach: NflCoach }) {
             </div>
           )}
         </div>
-        <span className="numeral shrink-0 text-[12px] text-[#8b93a7]">{c.hotSeatScore}</span>
-      </button>
-      {open && (
-        <div className="border-t border-white/[0.05] bg-white/[0.02] px-4 py-3">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#e8e4d9]">
-            Score breakdown · {c.hotSeatScore}
-          </p>
-          <ul className="space-y-2">
-            {c.factors.map((f) => (
-              <li key={f.label} className="text-[11.5px] leading-snug">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-[#c8cdd8]">{f.label}</span>
-                  <span
-                    className={cn(
-                      "numeral",
-                      f.points > 0
-                        ? "text-alert"
-                        : f.points < 0
-                          ? "text-emerald-300"
-                          : "text-[#8b93a7]",
-                    )}
-                  >
-                    {f.points > 0 ? "+" : ""}
-                    {f.points}
-                  </span>
-                </div>
-                <p className="mt-0.5 text-[10.5px] text-[#8b93a7]">{f.detail}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+        <span className="numeral shrink-0 text-[12px] text-[#8b93a7]">
+          {c.firedOddsPct != null ? `${c.firedOddsPct.toFixed(1)}` : c.hotSeatScore}
+        </span>
+      </Link>
     </li>
   );
 }

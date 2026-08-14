@@ -2,6 +2,19 @@
 
 ---
 
+## Prospects, Kalshi Hot Seat, golf results — August 14, 2026
+
+- MiLB player photos: fall back to Pipeline `/headshot/milb` before the grey silhouette.
+- Prospect **Pipeline #** on player hero cards and next to names in box scores.
+- NFL wraps: finals only when ESPN has real summary text (same bar as MLB).
+- Dispatch: long-press or right-click a feed/folder to favorite it.
+- NFL Hot Seat: ranked by **Kalshi** coach-out markets (fixes scrambled ESPN coach/team data).
+- NFL coaches: clickable full profile pages at `/sports/nfl/coach/:id`.
+- Golfer cards: season tournament results table.
+- Golf leaderboard: FedEx Cup rank badge next to players.
+
+---
+
 ## Dispatch folders, NFL wraps, full-screen drawers — August 14, 2026
 
 - Sports drawers (golf, team detail, customize board) open **full screen**.
