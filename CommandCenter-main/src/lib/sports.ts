@@ -1304,22 +1304,33 @@ export async function fetchGolferScorecard(
   let eventName: string | null = null;
 
   if (!eventId) {
+    // Prefer the light leaderboard payload for event id (avoids heavy tour snapshot).
+    try {
+      const lb = (await espnGet("golf/leaderboard")) as {
+        events?: { id?: string | number; name?: string }[];
+      };
+      const ev = lb.events?.[0];
+      if (ev?.id != null) {
+        eventId = String(ev.id);
+        eventName = ev.name ?? null;
+      }
+    } catch {
+      eventId = null;
+    }
+  }
+  if (!eventId) {
     try {
       const pga = DEFAULT_FAVORITES.find((f) => f.key === "pga-tour");
       if (pga) {
         const snap = await fetchTourSnapshot(pga);
         eventId = snap.eventId;
-        eventName = snap.eventName;
+        eventName = snap.eventName ?? eventName;
       }
     } catch {
       eventId = null;
     }
   }
   if (!eventId) return null;
-
-  const url =
-    `https://site.web.api.espn.com/apis/site/v2/sports/golf/pga/leaderboard/${eventId}/playersummary` +
-    `?season=${season}&player=${playerId}`;
 
   type PlayerSummaryPayload = {
     profile?: { displayName?: string };
@@ -1342,62 +1353,81 @@ export async function fetchGolferScorecard(
     stats?: { name?: string; displayName?: string; displayValue?: string }[];
   };
 
+  const summaryPath =
+    `golf/pga/leaderboard/${eventId}/playersummary?season=${season}&player=${playerId}`;
+
   let raw: PlayerSummaryPayload | null = null;
 
+  // site.api first (same host as the rest of sports); web.api as backup.
   try {
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
-    if (res.ok) raw = (await res.json()) as PlayerSummaryPayload;
+    raw = (await espnGet(summaryPath)) as PlayerSummaryPayload;
   } catch {
-    /* proxy below */
+    raw = null;
   }
   if (!raw?.rounds?.length) {
     try {
-      raw = (await espnGet(
-        `golf/pga/leaderboard/${eventId}/playersummary?season=${season}&player=${playerId}`,
-      )) as PlayerSummaryPayload;
+      const res = await fetch(
+        `https://site.web.api.espn.com/apis/site/v2/sports/${summaryPath}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (res.ok) raw = (await res.json()) as PlayerSummaryPayload;
     } catch {
-      return null;
+      /* none */
     }
   }
   if (!raw?.rounds?.length) return null;
 
-  const rounds: GolfRoundScorecard[] = raw.rounds.map((r) => {
-    const holes: GolfHoleScore[] = (r.linescores ?? []).map((h, i) => {
-      const strokes = typeof h.value === "number" ? h.value : Number(h.displayValue);
-      const par = typeof h.par === "number" ? h.par : null;
-      const toPar =
-        Number.isFinite(strokes) && par != null ? strokes - par : null;
+  const rounds: GolfRoundScorecard[] = raw.rounds
+    .map((r) => {
+      const holes: GolfHoleScore[] = (r.linescores ?? []).map((h, i) => {
+        const strokes = typeof h.value === "number" ? h.value : Number(h.displayValue);
+        const par = typeof h.par === "number" ? h.par : null;
+        const toPar =
+          Number.isFinite(strokes) && par != null ? strokes - par : null;
+        return {
+          hole: h.period ?? i + 1,
+          par,
+          strokes: Number.isFinite(strokes) ? strokes : null,
+          toPar,
+          scoreType: h.scoreType?.displayName ?? h.scoreType?.name ?? null,
+        };
+      });
       return {
-        hole: h.period ?? i + 1,
-        par,
-        strokes: Number.isFinite(strokes) ? strokes : null,
-        toPar,
-        scoreType: h.scoreType?.displayName ?? h.scoreType?.name ?? null,
+        round: r.period ?? 0,
+        toPar: r.displayValue ?? (r.value != null ? formatGolfToPar(r.value) : null),
+        strokes: typeof r.value === "number" ? r.value : null,
+        outScore: r.outScore ?? null,
+        inScore: r.inScore ?? null,
+        teeTime: r.teeTime ? formatGolfTeeTime(r.teeTime) : null,
+        currentPosition: r.currentPosition != null ? String(r.currentPosition) : null,
+        holes,
       };
-    });
-    return {
-      round: r.period ?? 0,
-      toPar: r.displayValue ?? (r.value != null ? formatGolfToPar(r.value) : null),
-      strokes: typeof r.value === "number" ? r.value : null,
-      outScore: r.outScore ?? null,
-      inScore: r.inScore ?? null,
-      teeTime: r.teeTime ? formatGolfTeeTime(r.teeTime) : null,
-      currentPosition: r.currentPosition != null ? String(r.currentPosition) : null,
-      holes,
-    };
-  });
+    })
+    // Drop shell rounds ESPN pads before tee-off (no holes / no score).
+    .filter((r) => r.holes.some((h) => h.strokes != null || h.par != null) || r.toPar != null);
+
+  if (!rounds.length) return null;
 
   const totalStat = (raw.stats ?? []).find((s) =>
     /score|to.?par|total/i.test(`${s.name} ${s.displayName}`),
   );
   const posStat = (raw.stats ?? []).find((s) => /position|pos/i.test(`${s.name} ${s.displayName}`));
 
+  // Live round = highest round that actually has hole scores.
   let currentHole: number | null = null;
-  const liveRound = [...rounds].reverse().find((r) => r.holes.some((h) => h.strokes != null));
+  const liveRound = [...rounds]
+    .sort((a, b) => b.round - a.round)
+    .find((r) => r.holes.some((h) => h.strokes != null));
   if (liveRound) {
-    const played = liveRound.holes.filter((h) => h.strokes != null).length;
-    if (played > 0 && played < 18) currentHole = played;
-    else if (played >= 18) currentHole = null;
+    const playedHoles = liveRound.holes
+      .filter((h) => h.strokes != null)
+      .map((h) => h.hole)
+      .sort((a, b) => a - b);
+    const played = playedHoles.length;
+    if (played > 0 && played < 18) {
+      const last = playedHoles[playedHoles.length - 1] ?? played;
+      currentHole = Math.min(18, last + 1);
+    }
   }
 
   return {

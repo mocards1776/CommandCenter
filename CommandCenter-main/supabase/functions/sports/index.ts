@@ -53,9 +53,17 @@ async function withBudget<T>(ms: number, work: () => Promise<T>, fallback: T): P
   }
 }
 function safePath(raw: string): string | null {
-  const p = raw.replace(/^\/+/, "").split("?")[0];
-  if (!/^[a-z0-9._/-]+$/i.test(p) || p.includes("..") || p.length > 180) return null;
-  return p;
+  const cleaned = raw.replace(/^\/+/, "");
+  const qIdx = cleaned.indexOf("?");
+  const pathPart = qIdx >= 0 ? cleaned.slice(0, qIdx) : cleaned;
+  const queryPart = qIdx >= 0 ? cleaned.slice(qIdx + 1) : "";
+  if (!pathPart || !/^[a-z0-9._/-]+$/i.test(pathPart) || pathPart.includes("..") || pathPart.length > 180) {
+    return null;
+  }
+  if (!queryPart) return pathPart;
+  // Allow ESPN query params (player, season, dates, etc.)
+  if (!/^[a-z0-9._&=%-]+$/i.test(queryPart) || queryPart.length > 160) return pathPart;
+  return `${pathPart}?${queryPart}`;
 }
 function stripTags(html: string): string {
   return html

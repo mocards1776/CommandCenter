@@ -584,27 +584,53 @@ export default function GolferPage() {
               )}
 
               {scorecard.data?.rounds?.length ? (
-                <button
-                  type="button"
-                  onClick={() => setTab("scorecard")}
-                  className="flex w-full items-center justify-between rounded-xl border border-white/[0.1] bg-[#12151c] px-4 py-3 text-left transition hover:border-white/20"
-                >
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                      This week
-                    </p>
-                    <p className="mt-1 text-[14px] text-white">
-                      {scorecard.data.eventName ?? "Tournament scorecard"}
-                      {scorecard.data.totalToPar ? (
-                        <span className="numeral text-[#4ade80]"> · {scorecard.data.totalToPar}</span>
-                      ) : null}
-                      {scorecard.data.currentHole != null ? (
-                        <span className="text-white/45"> · thru {scorecard.data.currentHole}</span>
-                      ) : null}
-                    </p>
-                  </div>
-                  <ChevronRight size={16} className="text-white/40" />
-                </button>
+                <section className="rounded-xl border border-white/[0.1] bg-[#12151c] p-4">
+                  {(() => {
+                    const live =
+                      [...scorecard.data.rounds]
+                        .sort((a, b) => b.round - a.round)
+                        .find((r) => r.holes.some((h) => h.strokes != null)) ??
+                      scorecard.data.rounds[scorecard.data.rounds.length - 1]!;
+                    return (
+                      <>
+                        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                              Hole map · Round {live.round}
+                            </p>
+                            <p className="mt-1 text-[14px] text-white">
+                              {scorecard.data.eventName ?? "This week"}
+                              {scorecard.data.totalToPar ? (
+                                <span className="numeral text-[#4ade80]">
+                                  {" "}
+                                  · {scorecard.data.totalToPar}
+                                </span>
+                              ) : null}
+                              {scorecard.data.currentHole != null ? (
+                                <span className="text-white/45">
+                                  {" "}
+                                  · hole {scorecard.data.currentHole}
+                                </span>
+                              ) : null}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setTab("scorecard")}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#4ea1ff]"
+                          >
+                            Full card <ChevronRight size={14} />
+                          </button>
+                        </div>
+                        <HoleMap holes={live.holes} currentHole={scorecard.data.currentHole} />
+                      </>
+                    );
+                  })()}
+                </section>
+              ) : scorecard.isFetched && !scorecard.isPending ? (
+                <p className="text-[12px] text-white/40">
+                  No live hole map for this golfer in the current event.
+                </p>
               ) : null}
 
               <PlayerTagsPanel
@@ -664,17 +690,18 @@ export default function GolferPage() {
                   </div>
                   {[...scorecard.data.rounds]
                     .sort((a, b) => b.round - a.round)
-                    .map((r) => (
-                      <RoundScorecard
-                        key={r.round}
-                        round={r}
-                        currentHole={
-                          r.round === Math.max(...scorecard.data!.rounds.map((x) => x.round))
-                            ? scorecard.data!.currentHole
-                            : null
-                        }
-                      />
-                    ))}
+                    .map((r) => {
+                      const liveRoundNum = [...scorecard.data!.rounds]
+                        .sort((a, b) => b.round - a.round)
+                        .find((x) => x.holes.some((h) => h.strokes != null))?.round;
+                      return (
+                        <RoundScorecard
+                          key={r.round}
+                          round={r}
+                          currentHole={r.round === liveRoundNum ? scorecard.data!.currentHole : null}
+                        />
+                      );
+                    })}
                 </>
               )}
             </div>
