@@ -35,6 +35,7 @@ import {
   saveSportsLayout,
   visibleFavorites,
   type GameChip,
+  type RosterPlayer,
   type ScheduleGame,
   type SportsFavorite,
   type SportsLayout,
@@ -43,6 +44,84 @@ import {
   type TourSnapshot,
 } from "@/lib/sports";
 import { cn } from "@/lib/utils";
+import { fetchChampionshipPromotionOdds } from "@/lib/soccer";
+
+function ordinalSuffixLocal(n: number): string {
+  const v = Math.abs(n) % 100;
+  if (v >= 11 && v <= 13) return "th";
+  switch (v % 10) {
+    case 1:
+      return "st";
+    case 2:
+      return "nd";
+    case 3:
+      return "rd";
+    default:
+      return "th";
+  }
+}
+
+function SoccerRosterList({ roster }: { roster: RosterPlayer[] }) {
+  const groups = useMemo(() => {
+    const order = ["Goalkeeper", "Defender", "Midfielder", "Forward", "Other"];
+    const map = new Map<string, RosterPlayer[]>();
+    for (const p of roster) {
+      const g = p.positionGroup || "Other";
+      if (!map.has(g)) map.set(g, []);
+      map.get(g)!.push(p);
+    }
+    return order
+      .filter((g) => map.has(g))
+      .concat([...map.keys()].filter((g) => !order.includes(g)))
+      .map((g) => ({ name: g, players: map.get(g)! }));
+  }, [roster]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      {groups.map((g) => (
+        <div key={g.name}>
+          <p className="text-chalk-dim mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]">
+            {g.name}
+            <span className="text-chalk-dim/70 ml-1.5 font-normal normal-case tracking-normal">
+              {g.players.length}
+            </span>
+          </p>
+          <ul className="bg-panel divide-y divide-white/[0.05] rounded border border-white/[0.07]">
+            {g.players.map((p) => (
+              <li key={p.id} className="flex items-center gap-2.5 px-3 py-2">
+                {p.headshot ? (
+                  <img
+                    src={p.headshot}
+                    alt=""
+                    className="h-8 w-8 shrink-0 rounded-full object-cover bg-white/5"
+                    loading="lazy"
+                  />
+                ) : (
+                  <span className="bg-white/5 text-chalk-dim grid h-8 w-8 shrink-0 place-items-center rounded-full text-[10px]">
+                    {p.position ?? "?"}
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-cream truncate text-[12.5px]">
+                    {p.number ? (
+                      <span className="text-chalk-dim numeral mr-1.5 text-[11px]">#{p.number}</span>
+                    ) : null}
+                    {p.name}
+                  </p>
+                  <p className="text-chalk-dim truncate text-[10px]">
+                    {[p.position, p.nationality, p.age != null ? `Age ${p.age}` : null]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function GameLine({
   label,
@@ -93,11 +172,14 @@ function TeamCard({
   accent,
   mlbTeamId,
   onOpen,
+  promotionLine,
 }: {
   snap: TeamSnapshot;
   accent?: string;
   mlbTeamId?: number;
   onOpen: () => void;
+  /** e.g. "Promotion 86% (−614)" for Championship clubs. */
+  promotionLine?: string | null;
 }) {
   const bar = accent ? `#${accent}` : "var(--color-accent)";
   const logo =
@@ -137,6 +219,11 @@ function TeamCard({
               <span className="text-chalk text-[11.5px]">{snap.standing}</span>
             )}
           </div>
+          {promotionLine ? (
+            <p className="text-accent/90 mt-1.5 text-[11px] font-medium tracking-wide">
+              {promotionLine}
+            </p>
+          ) : null}
         </div>
         <span className="text-chalk-dim group-hover:text-accent shrink-0 self-center text-[10px] uppercase tracking-[0.14em] opacity-0 transition group-hover:opacity-100">
           Open
@@ -475,6 +562,27 @@ export default function SportsPage() {
     })),
   });
 
+  const promotionOdds = useQuery({
+    queryKey: ["championship-promotion-odds"],
+    queryFn: fetchChampionshipPromotionOdds,
+    staleTime: 30 * 60_000,
+    retry: 1,
+  });
+
+  const promotionByTeamId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of promotionOdds.data ?? []) {
+      const pct = row.percent != null ? `${row.percent}%` : null;
+      const am = row.american;
+      if (!pct && !am) continue;
+      map.set(
+        String(row.teamId),
+        `Promotion ${[pct, am ? `(${am})` : null].filter(Boolean).join(" ")}`,
+      );
+    }
+    return map;
+  }, [promotionOdds.data]);
+
   const seed = useQuery({
     queryKey: ["sports-seed", user?.id],
     queryFn: async () => {
@@ -565,6 +673,11 @@ export default function SportsPage() {
               snap={q.data}
               accent={byKeyFav.get(fav.key)?.color}
               mlbTeamId={byKeyFav.get(fav.key)?.mlbTeamId}
+              promotionLine={
+                /soccer\/eng\.2/i.test(fav.espnPath)
+                  ? promotionByTeamId.get(fav.espnPath.split("/").pop() ?? "") ?? null
+                  : null
+              }
               onOpen={() => setSelectedKey(fav.key)}
             />
           );
@@ -586,7 +699,7 @@ export default function SportsPage() {
               Your <span className="text-accent">board</span>
             </h2>
             <p className="text-chalk mt-2 max-w-lg text-[13px] leading-relaxed">
-              Tap a team for standings, schedule, roster, stats, and playoff odds.
+              Tap a team for standings, schedule, roster, and odds.
               Or open the full MLB hub for live scores and league leaders.
             </p>
           </div>
@@ -668,6 +781,7 @@ function TeamDetailPanel({
   const mlbTeamId = fav.mlbTeamId;
   const nflTeamId =
     fav.league === "NFL" ? (fav.espnPath.split("/").pop() ?? null) : null;
+  const isSoccer = /soccer\//i.test(fav.espnPath);
 
   const hero = useQuery({
     queryKey: ["team-detail-hero", mlbTeamId],
@@ -803,9 +917,18 @@ function TeamDetailPanel({
                       <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
                         <tr className="border-b border-white/[0.06]">
                           <th className="px-3 py-2 font-medium">Team</th>
-                          <th className="px-2 py-2 font-medium">Rec</th>
-                          <th className="px-2 py-2 font-medium">Pct</th>
-                          <th className="px-2 py-2 font-medium">GB</th>
+                          <th className="px-2 py-2 font-medium">{isSoccer ? "Pld" : "Rec"}</th>
+                          {isSoccer ? (
+                            <>
+                              <th className="px-2 py-2 font-medium">GD</th>
+                              <th className="px-2 py-2 font-medium">Pts</th>
+                            </>
+                          ) : (
+                            <>
+                              <th className="px-2 py-2 font-medium">Pct</th>
+                              <th className="px-2 py-2 font-medium">GB</th>
+                            </>
+                          )}
                         </tr>
                       </thead>
                       <tbody>
@@ -815,6 +938,16 @@ function TeamDetailPanel({
                             className={cn(
                               "border-t border-white/[0.04]",
                               row.isMe && "bg-white/[0.04]",
+                              isSoccer &&
+                                Number(row.rank) <= 2 &&
+                                "bg-emerald-500/[0.04]",
+                              isSoccer &&
+                                Number(row.rank) >= 3 &&
+                                Number(row.rank) <= 6 &&
+                                "bg-sky-500/[0.03]",
+                              isSoccer &&
+                                Number(row.rank) >= 22 &&
+                                "bg-rose-500/[0.04]",
                             )}
                           >
                             <td className={cn("px-3 py-2", row.isMe ? "text-cream font-medium" : "text-chalk")}>
@@ -822,6 +955,13 @@ function TeamDetailPanel({
                                 <span className="text-chalk-dim numeral w-3">{row.rank}</span>
                                 {detail.source === "mlb" && row.teamId ? (
                                   <TeamMark teamId={row.teamId} size="xs" />
+                                ) : row.teamId && isSoccer ? (
+                                  <img
+                                    src={`https://a.espncdn.com/i/teamlogos/soccer/500/${row.teamId}.png`}
+                                    alt=""
+                                    className="h-4 w-4 object-contain"
+                                    loading="lazy"
+                                  />
                                 ) : null}
                                 {detail.source === "mlb" && row.teamId ? (
                                   <Link
@@ -840,13 +980,31 @@ function TeamDetailPanel({
                                 )}
                               </span>
                             </td>
-                            <td className="numeral text-cream px-2 py-2">{row.record}</td>
-                            <td className="numeral text-chalk px-2 py-2">{row.pct || "—"}</td>
-                            <td className="numeral text-chalk px-2 py-2">{row.gb}</td>
+                            <td className="numeral text-cream px-2 py-2">
+                              {isSoccer ? row.record : row.record}
+                            </td>
+                            {isSoccer ? (
+                              <>
+                                <td className="numeral text-chalk px-2 py-2">{row.gd || "—"}</td>
+                                <td className="numeral text-cream px-2 py-2 font-medium">
+                                  {row.pts || "—"}
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="numeral text-chalk px-2 py-2">{row.pct || "—"}</td>
+                                <td className="numeral text-chalk px-2 py-2">{row.gb}</td>
+                              </>
+                            )}
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                    {isSoccer ? (
+                      <p className="text-chalk-dim border-t border-white/[0.05] px-3 py-2 text-[10px]">
+                        Green = auto-promotion (1–2) · Blue = playoffs (3–6) · Red = relegation
+                      </p>
+                    ) : null}
                   </div>
                 )}
               </DetailSection>
@@ -859,8 +1017,98 @@ function TeamDetailPanel({
                 <MlbTeamPayrollTable abbrev={detail.abbrev} />
               )}
 
-              <DetailSection title="Playoff odds">
-                {detail.playoffOdds || detail.wildCardOdds ? (
+              {isSoccer && detail.teamFacts.length > 0 ? (
+                <DetailSection title="Club form">
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                    {detail.teamFacts.map((f) => (
+                      <div
+                        key={f.label}
+                        className="bg-panel rounded border border-white/[0.07] px-2.5 py-2 text-center"
+                      >
+                        <p className="text-chalk-dim text-[9px] uppercase tracking-[0.14em]">
+                          {f.label}
+                        </p>
+                        <p className="numeral text-cream mt-1 text-[16px] leading-none">{f.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </DetailSection>
+              ) : null}
+
+              <DetailSection title={isSoccer ? "Promotion odds" : "Playoff odds"}>
+                {isSoccer && detail.soccerPromotion ? (
+                  <div className="bg-panel rounded border border-white/[0.07] p-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
+                          To be promoted
+                        </p>
+                        <p
+                          className="numeral text-cream mt-1 text-[36px] leading-none"
+                          style={{ color: accent }}
+                        >
+                          {detail.soccerPromotion.percent != null
+                            ? `${detail.soccerPromotion.percent}%`
+                            : "—"}
+                        </p>
+                      </div>
+                      {detail.soccerPromotion.american ? (
+                        <div className="text-right">
+                          <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
+                            American
+                          </p>
+                          <p className="numeral text-cream mt-1 text-[22px]">
+                            {detail.soccerPromotion.american}
+                          </p>
+                        </div>
+                      ) : null}
+                      {detail.soccerPromotion.projectedPlace != null ? (
+                        <div className="text-right">
+                          <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
+                            ESPN project
+                          </p>
+                          <p className="numeral text-cream mt-1 text-[22px]">
+                            {detail.soccerPromotion.projectedPlace}
+                            {ordinalSuffixLocal(detail.soccerPromotion.projectedPlace)}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                    {detail.soccerPromotion.percent != null ? (
+                      <div className="bg-field mt-3 h-1.5 overflow-hidden rounded-full">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, detail.soccerPromotion.percent))}%`,
+                            background: accent,
+                          }}
+                        />
+                      </div>
+                    ) : null}
+                    <p className="text-chalk-dim mt-2 text-[11px]">
+                      {detail.soccerPromotion.source
+                        ? `${detail.soccerPromotion.source}`
+                        : "Promotion markets"}
+                      {detail.soccerPromotion.zone
+                        ? ` · currently ${detail.soccerPromotion.zone === "auto" ? "auto-promotion" : detail.soccerPromotion.zone === "playoff" ? "playoff places" : detail.soccerPromotion.zone === "relegation" ? "relegation zone" : "mid-table"}`
+                        : ""}
+                      {detail.soccerPromotion.url ? (
+                        <>
+                          {" · "}
+                          <a
+                            href={detail.soccerPromotion.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-accent hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Source
+                          </a>
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                ) : detail.playoffOdds || detail.wildCardOdds ? (
                   <div className="bg-panel rounded border border-white/[0.07] p-4">
                     <div className="flex flex-wrap items-end justify-between gap-3">
                       <div>
@@ -896,7 +1144,9 @@ function TeamDetailPanel({
                     <p className="text-chalk-dim mt-2 text-[11px]">ESPN projections</p>
                   </div>
                 ) : (
-                  <EmptyLine>Playoff odds not available yet.</EmptyLine>
+                  <EmptyLine>
+                    {isSoccer ? "Promotion odds not available yet." : "Playoff odds not available yet."}
+                  </EmptyLine>
                 )}
               </DetailSection>
 
@@ -919,6 +1169,8 @@ function TeamDetailPanel({
               <DetailSection title="Roster">
                 {detail.roster.length === 0 ? (
                   <EmptyLine>Roster unavailable.</EmptyLine>
+                ) : isSoccer ? (
+                  <SoccerRosterList roster={detail.roster} />
                 ) : (
                   <ul className="bg-panel divide-y divide-white/[0.05] rounded border border-white/[0.07]">
                     {detail.roster.map((p) => {
@@ -966,6 +1218,7 @@ function TeamDetailPanel({
                 )}
               </DetailSection>
 
+              {!isSoccer ? (
               <DetailSection title="Team stats">
                 {(detail.teamHitting.length > 0 || detail.teamPitching.length > 0) ? (
                   <div className="flex flex-col gap-3">
@@ -984,6 +1237,7 @@ function TeamDetailPanel({
                   </EmptyLine>
                 )}
               </DetailSection>
+              ) : null}
 
               {(detail.hittingLeaders.length > 0 || detail.pitchingLeaders.length > 0) && (
                 <DetailSection title="Leaders">

@@ -91,6 +91,11 @@ export type StandingRow = {
   gb: string;
   pct: string;
   isMe: boolean;
+  /** Soccer table extras when available. */
+  pts?: string;
+  gf?: string;
+  ga?: string;
+  gd?: string;
 };
 
 export type ScheduleGame = {
@@ -116,6 +121,11 @@ export type RosterPlayer = {
   number: string | null;
   position: string | null;
   batsThrows?: string | null;
+  /** Soccer: Goalkeeper / Defender / … */
+  positionGroup?: string | null;
+  age?: number | null;
+  nationality?: string | null;
+  headshot?: string | null;
 };
 
 export type LeaderStat = {
@@ -130,6 +140,20 @@ export type TeamPlayerStatTable = {
   rows: { id: string; name: string; stats: string[] }[];
 };
 
+export type SoccerPromotionInfo = {
+  percent: number | null;
+  american: string | null;
+  projectedPlace: number | null;
+  source: string | null;
+  url: string | null;
+  zone: "auto" | "playoff" | "mid" | "relegation" | null;
+  pts: string | null;
+  gf: string | null;
+  ga: string | null;
+  gd: string | null;
+  played: string | null;
+};
+
 export type TeamDetail = {
   key: string;
   name: string;
@@ -142,6 +166,8 @@ export type TeamDetail = {
   standing: string | null;
   playoffOdds: string | null;
   wildCardOdds: string | null;
+  /** Championship / soccer promotion market or projection. */
+  soccerPromotion: SoccerPromotionInfo | null;
   manager: { id: number; name: string; title: string } | null;
   generalManager: { name: string; title: string } | null;
   division: StandingRow[];
@@ -154,6 +180,8 @@ export type TeamDetail = {
   teamPitching: { label: string; value: string }[];
   /** ESPN-style player stat tables (MLB / NFL). */
   playerTables: TeamPlayerStatTable[];
+  /** Club form / table chips for soccer. */
+  teamFacts: { label: string; value: string }[];
   source: "mlb" | "espn";
 };
 
@@ -1132,6 +1160,8 @@ export type GolferProfile = {
     description: string;
     image: string | null;
     href: string | null;
+    /** Direct MP4 when ESPN exposes one — prefer for in-app playback. */
+    mp4: string | null;
     durationSec: number | null;
   }[];
   /** This season's tournament finishes. */
@@ -1379,11 +1409,20 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
         thumbnail?: string;
         images?: { url?: string }[];
         posterImages?: { default?: { href?: string } };
-        links?: { web?: { href?: string } };
+        links?: {
+          web?: { href?: string };
+          source?: { href?: string };
+          mobile?: { source?: { href?: string } };
+        };
       };
       const id = v.id != null ? String(v.id) : "";
       const headline = (v.headline || v.title || "").trim();
       if (!id || !headline) return null;
+      const mp4 =
+        v.links?.mobile?.source?.href ||
+        v.links?.source?.href ||
+        null;
+      const mp4Ok = mp4 && /\.mp4(\?|$)/i.test(mp4) ? mp4 : null;
       return {
         id,
         headline,
@@ -1394,6 +1433,7 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
           v.images?.[0]?.url ??
           null,
         href: v.links?.web?.href ?? `https://www.espn.com/video/clip?id=${id}`,
+        mp4: mp4Ok,
         durationSec: typeof v.duration === "number" ? v.duration : null,
       };
     })
@@ -2058,25 +2098,41 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
 
   // Roster
   const roster: RosterPlayer[] = [];
+  const isSoccer = /soccer\//i.test(fav.espnPath);
   try {
     const raw = (await espnGet(`${fav.espnPath}/roster`)) as {
       athletes?: {
         position?: string;
+        displayName?: string;
         items?: {
           id?: string;
           displayName?: string;
           jersey?: string;
-          position?: { abbreviation?: string };
+          age?: number;
+          citizenship?: string;
+          flag?: { alt?: string };
+          headshot?: { href?: string };
+          position?: { abbreviation?: string; displayName?: string };
         }[];
       }[];
+      coach?: { id?: string; firstName?: string; lastName?: string; experience?: number }[];
     };
+    const seenPlayer = new Set<string>();
     for (const group of raw.athletes ?? []) {
+      const groupName = group.displayName ?? group.position ?? null;
       for (const a of group.items ?? []) {
+        const id = String(a.id ?? a.displayName ?? "");
+        if (!id || seenPlayer.has(id)) continue;
+        seenPlayer.add(id);
         roster.push({
-          id: String(a.id ?? a.displayName),
+          id,
           name: a.displayName ?? "—",
           number: a.jersey ?? null,
           position: a.position?.abbreviation ?? group.position ?? null,
+          positionGroup: groupName,
+          age: typeof a.age === "number" ? a.age : null,
+          nationality: a.flag?.alt ?? a.citizenship ?? null,
+          headshot: a.headshot?.href ?? null,
         });
       }
     }
@@ -2086,6 +2142,14 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
 
   // Division standings from ESPN v2 when possible
   const division: StandingRow[] = [];
+  let myTable: {
+    pts: string | null;
+    gf: string | null;
+    ga: string | null;
+    gd: string | null;
+    played: string | null;
+    rank: number | null;
+  } = { pts: null, gf: null, ga: null, gd: null, played: null, rank: null };
   try {
     const root = espnSportRoot(fav.espnPath);
     const res = await fetch(`https://site.api.espn.com/apis/v2/sports/${root}/standings`, {
@@ -2109,21 +2173,134 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
         if (!mine) continue;
         for (const e of entries) {
           const stat = (n: string) => e.stats?.find((s) => s.name === n)?.displayValue ?? "";
-          division.push({
+          const isMe = String(e.team?.id) === String(espnTeamId);
+          const row: StandingRow = {
             rank: stat("rank") || String(division.length + 1),
             team: e.team?.shortDisplayName || e.team?.displayName || "—",
             teamId: e.team?.id ? String(e.team.id) : null,
-            record: stat("overall") || `${stat("wins")}-${stat("losses")}`,
+            record:
+              stat("overall") ||
+              (isSoccer
+                ? `${stat("wins")}-${stat("ties")}-${stat("losses")}`
+                : `${stat("wins")}-${stat("losses")}`),
             gb: stat("gamesBehind") || "—",
             pct: stat("winPercent") || "",
-            isMe: String(e.team?.id) === String(espnTeamId),
-          });
+            isMe,
+            pts: stat("points") || undefined,
+            gf: stat("pointsFor") || undefined,
+            ga: stat("pointsAgainst") || undefined,
+            gd: stat("pointDifferential") || undefined,
+          };
+          division.push(row);
+          if (isMe) {
+            myTable = {
+              pts: row.pts ?? null,
+              gf: row.gf ?? null,
+              ga: row.ga ?? null,
+              gd: row.gd ?? null,
+              played: stat("gamesPlayed") || null,
+              rank: Number(row.rank) || null,
+            };
+          }
         }
         break;
       }
     }
   } catch {
     // optional
+  }
+
+  // Soccer: seed upcoming from nextEvent when schedule endpoint is empty (common on eng.2).
+  if (isSoccer && upcoming.length === 0) {
+    try {
+      const raw = (await espnGet(fav.espnPath)) as {
+        team?: {
+          nextEvent?: {
+            id?: string;
+            date?: string;
+            competitions?: EspnComp[];
+          }[];
+        };
+      };
+      for (const ev of raw.team?.nextEvent ?? []) {
+        const chip = competitionChip(ev.competitions?.[0] ?? null, espnTeamId);
+        if (!chip) continue;
+        upcoming.push({
+          id: String(ev.id ?? `${ev.date}-${chip.label}`),
+          when: fmtWhen(ev.date),
+          label: chip.label,
+          detail: chip.detail,
+          status: chip.live ? "Live" : "Scheduled",
+          won: null,
+          live: Boolean(chip.live),
+        });
+      }
+    } catch {
+      /* optional */
+    }
+  }
+
+  let soccerPromotion: SoccerPromotionInfo | null = null;
+  const teamFacts: { label: string; value: string }[] = [];
+  if (isSoccer) {
+    const { championshipZone, zoneLabel, fetchChampionshipPromotionOdds } = await import(
+      "@/lib/soccer"
+    );
+    const zone = championshipZone(myTable.rank);
+    if (myTable.pts != null) teamFacts.push({ label: "Points", value: myTable.pts });
+    if (myTable.played != null) teamFacts.push({ label: "Played", value: myTable.played });
+    if (myTable.gf != null) teamFacts.push({ label: "GF", value: myTable.gf });
+    if (myTable.ga != null) teamFacts.push({ label: "GA", value: myTable.ga });
+    if (myTable.gd != null) teamFacts.push({ label: "GD", value: myTable.gd });
+    if (zone) teamFacts.push({ label: "Zone", value: zoneLabel(zone) });
+
+    if (/eng\.2/i.test(fav.espnPath) || espnTeamId === "352" || espnTeamId === "380") {
+      try {
+        const oddsRows = await fetchChampionshipPromotionOdds();
+        const mine = oddsRows.find((r) => String(r.teamId) === String(espnTeamId));
+        soccerPromotion = {
+          percent: mine?.percent ?? null,
+          american: mine?.american ?? null,
+          projectedPlace: mine?.projectedPlace ?? null,
+          source: mine?.source ?? null,
+          url: mine?.url ?? null,
+          zone,
+          pts: myTable.pts,
+          gf: myTable.gf,
+          ga: myTable.ga,
+          gd: myTable.gd,
+          played: myTable.played,
+        };
+      } catch {
+        soccerPromotion = {
+          percent: null,
+          american: null,
+          projectedPlace: null,
+          source: null,
+          url: null,
+          zone,
+          pts: myTable.pts,
+          gf: myTable.gf,
+          ga: myTable.ga,
+          gd: myTable.gd,
+          played: myTable.played,
+        };
+      }
+    } else {
+      soccerPromotion = {
+        percent: null,
+        american: null,
+        projectedPlace: null,
+        source: null,
+        url: null,
+        zone,
+        pts: myTable.pts,
+        gf: myTable.gf,
+        ga: myTable.ga,
+        gd: myTable.gd,
+        played: myTable.played,
+      };
+    }
   }
 
   return {
@@ -2135,8 +2312,9 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     color: snap.color,
     record: snap.record,
     standing: odds.standing ?? snap.standing,
-    playoffOdds: odds.playoff,
-    wildCardOdds: odds.wildCard,
+    playoffOdds: soccerPromotion?.percent != null ? `${soccerPromotion.percent}%` : odds.playoff,
+    wildCardOdds: soccerPromotion?.american ?? odds.wildCard,
+    soccerPromotion,
     manager: null,
     generalManager: null,
     division,
@@ -2147,7 +2325,8 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     pitchingLeaders: [],
     teamHitting: [],
     teamPitching: [],
-    playerTables: await fetchEspnTeamPlayerTables(fav).catch(() => []),
+    playerTables: isSoccer ? [] : await fetchEspnTeamPlayerTables(fav).catch(() => []),
+    teamFacts,
     source: "espn",
   };
 }
@@ -2449,6 +2628,7 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     standing: odds.standing ?? myStanding ?? milbStanding,
     playoffOdds: odds.playoff,
     wildCardOdds: odds.wildCard,
+    soccerPromotion: null,
     manager: manager
       ? { id: manager.id, name: manager.name, title: manager.title }
       : null,
@@ -2464,6 +2644,7 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     teamHitting,
     teamPitching,
     playerTables,
+    teamFacts: [],
     source: "mlb",
   };
 }

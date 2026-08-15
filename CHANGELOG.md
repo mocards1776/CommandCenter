@@ -2,6 +2,16 @@
 
 ---
 
+## WAR, soccer RUWT, golf embeds, promotion odds — August 15, 2026
+
+- MLB player WAR: resolve Baseball Reference via MLB id redirect, parse current-season WAR from year rows, and skip the slow league-rank scrape so the hero chip stops timing out to `—`.
+- Golfer ESPN clips embed in-app from MP4 sources (tap to play) instead of only linking out.
+- Soccer RUWT: resilient ESPN fetch, multi-day + open slate when today is empty, and always include Wrexham / Wolves next fixtures.
+- Wrexham & Wolves show Championship promotion odds (Polymarket when live, else ESPN projected finish → implied odds) on board cards and team drawers.
+- Soccer team drawers: table with GD/Pts + promotion zones, club form chips, promotion odds panel, and roster grouped with headshots.
+
+---
+
 ## Soccer feeds, RUWT, golf cleanup — August 15, 2026
 
 - Wrexham / Wolves favorites use Championship (`eng.2`) paths; team cards hide hollow `0-0-0`, fill standings from the table, and backfill last/next from schedule + scoreboard days.
