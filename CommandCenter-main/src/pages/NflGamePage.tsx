@@ -5,7 +5,7 @@ import { ArrowLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import NflFieldMap from "@/components/sports/NflFieldMap";
-import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChips";
+import { TeamStandingLine } from "@/components/sports/TeamFormChips";
 import { fetchNflTeamForm, type TeamFormStrip } from "@/lib/team-form";
 import { fetchNflGameDetail, type NflScoreSide } from "@/lib/nfl";
 import { cn, formatSportsDateLong } from "@/lib/utils";
@@ -462,7 +462,6 @@ function NflMatchupSide({
           <p className="mt-1 truncate text-[11px] text-[#8b93a7]">{side.name}</p>
         )}
         <TeamStandingLine standing={form?.standing} />
-        <TeamFormChips form={form} className="mt-1.5 w-[9rem]" align={align === "right" ? "right" : "left"} />
       </div>
     </Link>
   );

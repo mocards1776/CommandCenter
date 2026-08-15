@@ -486,13 +486,16 @@ export function ensureRecapSegmentSpacing(parts: RecapInline[]): RecapInline[] {
     }
     const left = prevText[prevText.length - 1];
     const right = curText[0];
+    // Space after closing punctuation / letters before the next word or digit
+    // (fixes "ball,Zac" / "Freelandpitched" / "Giants5-2").
     const needsSpace =
       !/\s/.test(left) &&
       !/\s/.test(right) &&
-      // Don't insert before/after punctuation that shouldn't be spaced that way
-      !/^[.,;:!?)\]}]/.test(right) &&
+      !/^[.,;:!?)\]}'"]/.test(right) &&
       !/[(["']$/.test(left) &&
-      (/[A-Za-z0-9)]$/.test(left) || /[A-Za-z0-9]/.test(right));
+      (/[A-Za-z0-9)]$/.test(left) ||
+        /[.,;:!?)]$/.test(left) ||
+        /[A-Za-z0-9]/.test(right));
     if (needsSpace) {
       if (prev.kind === "text") {
         out[out.length - 1] = { ...prev, text: `${prevText} ` };
@@ -630,10 +633,23 @@ export async function searchMlbPlayersByNames(
  * Wrap player names in article HTML with links to `/sports/mlb/player/:id`.
  * Longer names win so "Hunter Dobbins" matches before "Dobbins".
  */
+export type PlayerWatchKind = "favorite" | "tagged";
+
+/** Favorite takes precedence when a player is both favorited and tagged. */
+export function playerWatchKind(
+  playerId: number,
+  favoriteIds?: Set<number> | null,
+  taggedIds?: Set<number> | null,
+): PlayerWatchKind | null {
+  if (favoriteIds?.has(playerId)) return "favorite";
+  if (taggedIds?.has(playerId)) return "tagged";
+  return null;
+}
+
 export function linkifyMlbPlayersInHtml(
   html: string,
   nameToId: Map<string, number>,
-  watchPlayerIds?: Set<number>,
+  watchMarks?: Map<number, PlayerWatchKind> | Set<number>,
 ): string {
   if (!html || typeof DOMParser === "undefined") return html;
 
@@ -641,13 +657,38 @@ export function linkifyMlbPlayersInHtml(
   const root = doc.getElementById("root");
   if (!root) return html;
 
-  // Always rewrite existing mlb.com player anchors to in-app pages (MLB id in the URL).
+  const markFor = (id: number): PlayerWatchKind | null => {
+    if (!watchMarks) return null;
+    if (watchMarks instanceof Set) return watchMarks.has(id) ? "favorite" : null;
+    return watchMarks.get(id) ?? null;
+  };
+
+  const appendWatchMark = (frag: DocumentFragment, id: number) => {
+    const kind = markFor(id);
+    if (!kind) return;
+    const mark = doc.createElement("span");
+    if (kind === "favorite") {
+      mark.className = "rss-player-watch rss-player-watch--favorite";
+      mark.title = "Favorite";
+      mark.setAttribute("aria-label", "Favorite");
+      mark.textContent = "★";
+    } else {
+      mark.className = "rss-player-watch rss-player-watch--tagged";
+      mark.title = "Tagged";
+      mark.setAttribute("aria-label", "Tagged");
+      mark.textContent = "●";
+    }
+    frag.appendChild(mark);
+  };
+
+  // Always rewrite existing mlb.com / in-app player anchors to in-app pages.
   // ESPN /mlb/player/_/id/ links use ESPN ids — only rewrite when we can map the name.
   root.querySelectorAll("a[href]").forEach((a) => {
     const href = a.getAttribute("href") ?? "";
     const mlbId =
       href.match(/mlb\.com\/player\/[^/?#]*-(\d+)/i)?.[1] ||
-      href.match(/mlb\.com\/player\/(\d+)/i)?.[1];
+      href.match(/mlb\.com\/player\/(\d+)/i)?.[1] ||
+      href.match(/\/sports\/mlb\/player\/(\d+)/i)?.[1];
     if (mlbId) {
       const id = Number(mlbId);
       if (!Number.isFinite(id)) return;
@@ -715,14 +756,7 @@ export function linkifyMlbPlayersInHtml(
         a.className = "rss-player-link";
         a.textContent = matched;
         frag.appendChild(a);
-        if (watchPlayerIds?.has(id)) {
-          const mark = doc.createElement("span");
-          mark.className = "rss-player-watch";
-          mark.title = "Favorite or tagged";
-          mark.setAttribute("aria-label", "Favorite or tagged");
-          mark.textContent = "★";
-          frag.appendChild(mark);
-        }
+        appendWatchMark(frag, id);
       } else {
         frag.appendChild(doc.createTextNode(matched));
       }
@@ -3364,8 +3398,12 @@ const LEADER_DEFS: { key: string; label: string; category: string; group: "hitti
     { key: "whip", label: "WHIP", category: "walksAndHitsPerInningPitched", group: "pitching" },
   ];
 
-export async function fetchMlbLeaders(limit = 8): Promise<MlbLeaderBoard[]> {
+export async function fetchMlbLeaders(
+  limit = 8,
+  opts?: { leagueId?: 103 | 104 },
+): Promise<MlbLeaderBoard[]> {
   const season = String(currentSeason());
+  const leagueId = opts?.leagueId;
   const boards = await Promise.all(
     LEADER_DEFS.map(async (def) => {
       try {
@@ -3375,6 +3413,7 @@ export async function fetchMlbLeaders(limit = 8): Promise<MlbLeaderBoard[]> {
           sportId: "1",
           statGroup: def.group,
           limit: String(limit),
+          ...(leagueId != null ? { leagueId: String(leagueId) } : {}),
         })) as {
           leagueLeaders?: {
             leaders?: {
@@ -3396,9 +3435,19 @@ export async function fetchMlbLeaders(limit = 8): Promise<MlbLeaderBoard[]> {
           teamId: l.team?.id ?? null,
           value: String(l.value ?? "—"),
         }));
-        return { key: def.key, label: def.label, group: def.group, leaders };
+        return {
+          key: leagueId != null ? `${def.key}-${leagueId}` : def.key,
+          label: def.label,
+          group: def.group,
+          leaders,
+        };
       } catch {
-        return { key: def.key, label: def.label, group: def.group, leaders: [] as MlbLeader[] };
+        return {
+          key: leagueId != null ? `${def.key}-${leagueId}` : def.key,
+          label: def.label,
+          group: def.group,
+          leaders: [] as MlbLeader[],
+        };
       }
     }),
   );
@@ -3447,6 +3496,12 @@ const TEAM_COLORS: Record<number, string> = {
   147: "0c2340", // NYY
   158: "12284b", // MIL
 };
+
+/** Hex color (no #) for team-accent leader cards. */
+export function mlbTeamAccent(teamId: number | null | undefined): string {
+  if (teamId == null) return "d9515c";
+  return TEAM_COLORS[teamId] ?? "d9515c";
+}
 
 const HIT_KEYS: [string, string][] = [
   ["gamesPlayed", "G"],

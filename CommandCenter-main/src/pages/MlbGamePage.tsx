@@ -20,6 +20,7 @@ import {
   formatGameDuration,
   mlbHeadshot,
   parseEspnRecapHtml,
+  playerWatchKind,
   resolveMissingRecapPlayers,
   teamPagePath,
   type MlbBoxscore,
@@ -30,6 +31,7 @@ import {
   type MlbLineupHitter,
   type MlbPitcherSeasonLine,
   type MlbPreviewLeaderRow,
+  type PlayerWatchKind,
   type RecapInline,
 } from "@/lib/mlb";
 import { contentHidePhrases, fetchRssFilters } from "@/lib/rss";
@@ -109,16 +111,21 @@ export function MlbGameDetail({
     staleTime: 60_000,
   });
 
-  const watchPlayerIds = useMemo(() => {
+  const favoritePlayerIds = useMemo(() => {
     const set = new Set<number>();
     for (const f of favPlayers.data ?? []) {
       if (f.position === "manager") continue;
       const id = Number(f.playerId);
       if (Number.isFinite(id)) set.add(id);
     }
+    return set;
+  }, [favPlayers.data]);
+
+  const taggedPlayerIds = useMemo(() => {
+    const set = new Set<number>();
     for (const id of taggedPlayers.data ?? []) set.add(id);
     return set;
-  }, [favPlayers.data, taggedPlayers.data]);
+  }, [taggedPlayers.data]);
 
   const pipelineRanks = useQuery({
     queryKey: ["cardinals-pipeline-ranks"],
@@ -200,7 +207,8 @@ export function MlbGameDetail({
         <EspnBoxBoard
           game={g}
           metaBits={metaBits}
-          watchPlayerIds={watchPlayerIds}
+          watchPlayerIds={favoritePlayerIds}
+          taggedPlayerIds={taggedPlayerIds}
           prospectRanks={pipelineRanks.data}
           awayForm={awayForm.data ?? null}
           homeForm={homeForm.data ?? null}
@@ -1179,9 +1187,12 @@ function RecapBody({
           const re = new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"), "ig");
           text = text.replace(re, " ");
         }
-        text = text.replace(/\s{2,}/g, " ").trim();
+        text = text.replace(/[^\S\n]{2,}/g, " ");
         if (!/[^\s]/.test(text)) return null;
-        return { ...seg, text };
+        // Keep a single edge space so linked names don't glue to neighbors.
+        const lead = /^\s/.test(text) ? " " : "";
+        const trail = /\s$/.test(text) ? " " : "";
+        return { ...seg, text: `${lead}${text.trim()}${trail}` };
       }
       return seg;
     })
@@ -1294,6 +1305,7 @@ function EspnBoxBoard({
   game,
   metaBits,
   watchPlayerIds,
+  taggedPlayerIds,
   prospectRanks,
   awayForm,
   homeForm,
@@ -1302,6 +1314,7 @@ function EspnBoxBoard({
   game: MlbBoxscore;
   metaBits: (string | null)[];
   watchPlayerIds?: Set<number>;
+  taggedPlayerIds?: Set<number>;
   prospectRanks?: Map<number, number>;
   awayForm?: TeamFormStrip | null;
   homeForm?: TeamFormStrip | null;
@@ -1359,9 +1372,9 @@ function EspnBoxBoard({
                       className="mt-0.5 inline-flex items-center gap-1 truncate text-[13px] font-semibold text-[#9ec1ff] hover:underline"
                     >
                       {shortPitcherName(p.name)}
-                      {watchPlayerIds?.has(p.id) ? (
-                        <Star size={11} className="text-accent fill-current" />
-                      ) : null}
+                      <PlayerWatchMark
+                        kind={playerWatchKind(p.id, watchPlayerIds, taggedPlayerIds)}
+                      />
                     </Link>
                     <p className="numeral mt-0.5 text-[11px] text-[#a8b0c2]">
                       {p.ip} IP · {p.h} H · {p.er} ER · {p.so} K · {p.bb} BB
@@ -1383,17 +1396,25 @@ function EspnBoxBoard({
         )}
       </div>
 
+      <TopPerformersSummary
+        game={game}
+        favoriteIds={watchPlayerIds}
+        taggedIds={taggedPlayerIds}
+      />
+
       {afterLinescore}
 
       <TeamBoxSection
         side={game.away}
         watchPlayerIds={watchPlayerIds}
+        taggedPlayerIds={taggedPlayerIds}
         prospectRanks={prospectRanks}
         form={awayForm}
       />
       <TeamBoxSection
         side={game.home}
         watchPlayerIds={watchPlayerIds}
+        taggedPlayerIds={taggedPlayerIds}
         prospectRanks={prospectRanks}
         form={homeForm}
       />
@@ -1401,14 +1422,126 @@ function EspnBoxBoard({
   );
 }
 
+function PlayerWatchMark({ kind }: { kind: PlayerWatchKind | null }) {
+  if (kind === "favorite") {
+    return <Star size={11} className="text-accent fill-current" aria-label="Favorite" />;
+  }
+  if (kind === "tagged") {
+    return (
+      <span
+        className="inline-block h-1.5 w-1.5 rounded-full bg-[#7eb6ff]"
+        title="Tagged"
+        aria-label="Tagged"
+      />
+    );
+  }
+  return null;
+}
+
+function TopPerformersSummary({
+  game,
+  favoriteIds,
+  taggedIds,
+}: {
+  game: MlbBoxscore;
+  favoriteIds?: Set<number>;
+  taggedIds?: Set<number>;
+}) {
+  const batters = [...game.away.batters, ...game.home.batters];
+  const pitchers = [...game.away.pitchers, ...game.home.pitchers];
+  if (!batters.length && !pitchers.length) return null;
+
+  const batterScore = (b: MlbBoxscoreBatter) => b.h * 2 + b.rbi * 2 + b.hr * 3 + b.r;
+  const topBatters = [...batters]
+    .filter((b) => batterScore(b) > 0)
+    .sort((a, b) => batterScore(b) - batterScore(a))
+    .slice(0, 3);
+  const winPitcher =
+    pitchers.find((p) => pitcherDecision(p.note) === "W") ??
+    [...pitchers].sort((a, b) => b.so - a.so || Number(b.ip) - Number(a.ip))[0] ??
+    null;
+
+  if (!topBatters.length && !winPitcher) return null;
+
+  const sideFor = (id: number) =>
+    game.away.batters.some((b) => b.id === id) || game.away.pitchers.some((p) => p.id === id)
+      ? game.away
+      : game.home;
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+      <div className="border-b border-white/[0.07] px-4 py-2.5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+          Top performers
+        </h3>
+      </div>
+      <ul className="divide-y divide-white/[0.06]">
+        {topBatters.map((b) => {
+          const side = sideFor(b.id);
+          const line = [
+            b.h ? `${b.h} H` : null,
+            b.hr ? `${b.hr} HR` : null,
+            b.rbi ? `${b.rbi} RBI` : null,
+            b.r ? `${b.r} R` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          return (
+            <li key={`bat-${b.id}`} className="flex items-center gap-3 px-4 py-2.5">
+              <TeamMark teamId={side.teamId} size="xs" />
+              <div className="min-w-0 flex-1">
+                <Link
+                  to={`/sports/mlb/player/${b.id}`}
+                  className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#9ec1ff] hover:underline"
+                >
+                  {b.name}
+                  <PlayerWatchMark kind={playerWatchKind(b.id, favoriteIds, taggedIds)} />
+                </Link>
+                <p className="numeral text-[11px] text-[#a8b0c2]">
+                  {side.abbrev}
+                  {b.position ? ` · ${b.position}` : ""}
+                  {line ? ` · ${line}` : ""}
+                </p>
+              </div>
+            </li>
+          );
+        })}
+        {winPitcher ? (
+          <li className="flex items-center gap-3 px-4 py-2.5">
+            <TeamMark teamId={sideFor(winPitcher.id).teamId} size="xs" />
+            <div className="min-w-0 flex-1">
+              <Link
+                to={`/sports/mlb/player/${winPitcher.id}`}
+                className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#9ec1ff] hover:underline"
+              >
+                {winPitcher.name}
+                <PlayerWatchMark
+                  kind={playerWatchKind(winPitcher.id, favoriteIds, taggedIds)}
+                />
+              </Link>
+              <p className="numeral text-[11px] text-[#a8b0c2]">
+                {sideFor(winPitcher.id).abbrev} · {winPitcher.ip} IP · {winPitcher.h} H ·{" "}
+                {winPitcher.er} ER · {winPitcher.so} K
+                {pitcherDecision(winPitcher.note) === "W" ? " · W" : ""}
+              </p>
+            </div>
+          </li>
+        ) : null}
+      </ul>
+    </section>
+  );
+}
+
 function TeamBoxSection({
   side,
   watchPlayerIds,
+  taggedPlayerIds,
   prospectRanks,
   form,
 }: {
   side: MlbBoxscoreSide;
   watchPlayerIds?: Set<number>;
+  taggedPlayerIds?: Set<number>;
   prospectRanks?: Map<number, number>;
   form?: TeamFormStrip | null;
 }) {
@@ -1495,7 +1628,7 @@ function TeamBoxSection({
                 key={b.id}
                 b={b}
                 zebra={i % 2 === 1}
-                watched={watchPlayerIds?.has(b.id)}
+                watchKind={playerWatchKind(b.id, watchPlayerIds, taggedPlayerIds)}
                 pipelineRank={prospectRanks?.get(b.id)}
               />
             ))}
@@ -1550,7 +1683,7 @@ function TeamBoxSection({
                 <PitcherRow
                   key={p.id}
                   p={p}
-                  watched={watchPlayerIds?.has(p.id)}
+                  watchKind={playerWatchKind(p.id, watchPlayerIds, taggedPlayerIds)}
                   pipelineRank={prospectRanks?.get(p.id)}
                 />
               ))}
@@ -1565,12 +1698,12 @@ function TeamBoxSection({
 function BatterRow({
   b,
   zebra,
-  watched,
+  watchKind,
   pipelineRank,
 }: {
   b: MlbBoxscoreBatter;
   zebra?: boolean;
-  watched?: boolean;
+  watchKind?: PlayerWatchKind | null;
   pipelineRank?: number;
 }) {
   return (
@@ -1584,7 +1717,7 @@ function BatterRow({
             <span className="text-accent numeral text-[10px] font-bold">#{pipelineRank}</span>
           ) : null}
           {b.name}
-          {watched ? <Star size={11} className="text-accent fill-current" /> : null}
+          <PlayerWatchMark kind={watchKind ?? null} />
         </Link>
         {b.position && <span className="ml-1 text-[10px] text-[#8b93a7]">{b.position}</span>}
       </td>
@@ -1604,11 +1737,11 @@ function BatterRow({
 
 function PitcherRow({
   p,
-  watched,
+  watchKind,
   pipelineRank,
 }: {
   p: MlbBoxscorePitcher;
-  watched?: boolean;
+  watchKind?: PlayerWatchKind | null;
   pipelineRank?: number;
 }) {
   return (
@@ -1622,7 +1755,7 @@ function PitcherRow({
             <span className="text-accent numeral text-[10px] font-bold">#{pipelineRank}</span>
           ) : null}
           {p.name}
-          {watched ? <Star size={11} className="text-accent fill-current" /> : null}
+          <PlayerWatchMark kind={watchKind ?? null} />
         </Link>
         {p.note && <span className="ml-1 text-[10px] text-[#8b93a7]">({p.note})</span>}
       </td>

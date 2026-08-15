@@ -47,9 +47,15 @@ export const RSS_FEEDS: readonly RssFeedDef[] = [
   },
   {
     id: "mlb-stats",
-    title: "MLB stats & standings",
-    short: "MLB stats",
+    title: "MLB standings & leaders",
+    short: "MLB boards",
     url: "synthetic:mlb-stats",
+  },
+  {
+    id: "mlb-form",
+    title: "MLB form standings",
+    short: "Form",
+    url: "synthetic:mlb-form",
   },
   {
     id: "cardinals-farm",
@@ -77,7 +83,7 @@ export const RSS_FEED_FOLDERS: readonly RssFeedFolder[] = [
   {
     id: "folder:mlb",
     title: "MLB",
-    feedIds: ["mlb-wraps", "mlb-stats"],
+    feedIds: ["mlb-wraps", "mlb-stats", "mlb-form"],
   },
   {
     id: "folder:nfl",
@@ -1593,6 +1599,9 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
   if (feedUrl === "synthetic:mlb-stats") {
     return fetchMlbStatsDigestFeed();
   }
+  if (feedUrl === "synthetic:mlb-form") {
+    return fetchMlbFormStandingsFeed();
+  }
   if (feedUrl === "synthetic:cardinals-farm") {
     return fetchCardinalsFarmWrapsFeed();
   }
@@ -1968,7 +1977,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
           }
 
           // Hold hollow previews ("No Story Available" / placeholder blurbs) until ESPN
-          // publishes real preview copy.
+          // publishes real preview copy — MLB and NFL both wait for real text.
           const headline = article?.headline?.trim() ?? "";
           const storyText = (article?.story ?? "")
             .replace(/<[^>]+>/g, " ")
@@ -1982,17 +1991,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             body.length < 40 ||
             /no story available/i.test(`${headline} ${body}`) ||
             /^game preview for\b/i.test(body);
-          if (hollow) {
-            // NFL (and stub mode) — still surface a matchup card.
-            if ((opts.stubWithoutArticle || linkSport === "nfl") && matchup) {
-              return stubItem(
-                "preview",
-                `Preview: ${matchup}`,
-                body.slice(0, 220) || `Game preview for ${matchup}.`,
-              );
-            }
-            return null;
-          }
+          if (hollow) return null;
 
           return {
             id: `preview-${c.eventId}`,
@@ -2030,20 +2029,29 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   };
 }
 
-/** Once-per-day standings + wild card + league leaders digest. */
+/** Once-per-day standings + wild card, and a separate league-leaders article. */
 async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
-  const { fetchMlbStandings, fetchMlbWildCardStandings, fetchMlbLeaders } = await import("./mlb");
+  const {
+    fetchMlbStandings,
+    fetchMlbWildCardStandings,
+    fetchMlbLeaders,
+    mlbTeamLogo,
+    mlbHeadshot,
+    mlbTeamAccent,
+    teamPagePath,
+  } = await import("./mlb");
   const today = new Date();
   const y = today.getFullYear();
   const m = String(today.getMonth() + 1).padStart(2, "0");
   const d = String(today.getDate()).padStart(2, "0");
   const dateKey = `${y}-${m}-${d}`;
 
-  const [standings, nlWc, alWc, leaders] = await Promise.all([
+  const [standings, nlWc, alWc, alLeaders, nlLeaders] = await Promise.all([
     fetchMlbStandings(),
     fetchMlbWildCardStandings(104),
     fetchMlbWildCardStandings(103),
-    fetchMlbLeaders(8),
+    fetchMlbLeaders(5, { leagueId: 103 }),
+    fetchMlbLeaders(5, { leagueId: 104 }),
   ]);
 
   const esc = (s: string) =>
@@ -2052,51 +2060,223 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
   const divisionHtml = standings
     .map((div) => {
       const rows = div.rows
-        .map(
-          (r) =>
-            `<tr><td>${esc(r.rank)}. ${esc(r.team)}</td><td>${r.wins}-${r.losses}</td><td>${esc(r.pct)}</td><td>${esc(r.gb)}</td><td>${esc(r.playoffPercent ?? "—")}</td></tr>`,
-        )
+        .map((r) => {
+          const logo = r.teamId
+            ? `<img class="mlb-standings-logo" src="${esc(mlbTeamLogo(r.teamId))}" alt="" width="22" height="22" loading="lazy" />`
+            : "";
+          const name = r.teamId
+            ? `<a class="mlb-standings-team" href="${esc(teamPagePath(r.teamId))}">${esc(r.team)}</a>`
+            : esc(r.team);
+          return `<tr>
+            <td class="mlb-standings-team-cell"><span class="mlb-standings-rank">${esc(r.rank)}</span>${logo}${name}</td>
+            <td class="mlb-standings-wl numeral">${r.wins}&ndash;${r.losses}</td>
+            <td class="numeral">${esc(r.pct)}</td>
+            <td class="numeral">${esc(r.gb)}</td>
+            <td class="numeral mlb-standings-po">${esc(r.playoffPercent ?? "—")}</td>
+          </tr>`;
+        })
         .join("");
-      return `<h2>${esc(div.name)}</h2><table><thead><tr><th>Team</th><th>W-L</th><th>Pct</th><th>GB</th><th>Playoff%</th></tr></thead><tbody>${rows}</tbody></table>`;
+      return `<section class="mlb-standings-block">
+        <h2>${esc(div.name)}</h2>
+        <table class="mlb-standings-table">
+          <thead><tr><th>Team</th><th>W-L</th><th>Pct</th><th>GB</th><th>Playoff%</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </section>`;
     })
     .join("");
 
   const wcBlock = (title: string, rows: Awaited<ReturnType<typeof fetchMlbWildCardStandings>>) => {
     const body = rows
       .slice(0, 10)
-      .map(
-        (r) =>
-          `<tr><td>${esc(r.rank)}. ${esc(r.team)}</td><td>${r.wins}-${r.losses}</td><td>${esc(r.wcgb)}</td></tr>`,
-      )
+      .map((r) => {
+        const logo = r.teamId
+          ? `<img class="mlb-standings-logo" src="${esc(mlbTeamLogo(r.teamId))}" alt="" width="22" height="22" loading="lazy" />`
+          : "";
+        const name = r.teamId
+          ? `<a class="mlb-standings-team" href="${esc(teamPagePath(r.teamId))}">${esc(r.team)}</a>`
+          : esc(r.team);
+        return `<tr>
+          <td class="mlb-standings-team-cell"><span class="mlb-standings-rank">${esc(String(r.rank))}</span>${logo}${name}</td>
+          <td class="mlb-standings-wl numeral">${r.wins}&ndash;${r.losses}</td>
+          <td class="numeral">${esc(r.wcgb)}</td>
+        </tr>`;
+      })
       .join("");
-    return `<h2>${esc(title)}</h2><table><thead><tr><th>Team</th><th>W-L</th><th>WCGB</th></tr></thead><tbody>${body}</tbody></table>`;
+    return `<section class="mlb-standings-block">
+      <h2>${esc(title)}</h2>
+      <table class="mlb-standings-table">
+        <thead><tr><th>Team</th><th>W-L</th><th>WCGB</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </section>`;
   };
 
-  const leadersHtml = leaders
-    .map((board) => {
-      const rows = board.leaders
-        .map(
-          (l) =>
-            `<tr><td>${l.rank}. ${esc(l.name)}</td><td>${esc(l.team)}</td><td>${esc(l.value)}</td></tr>`,
-        )
-        .join("");
-      return `<h3>${esc(board.label)}</h3><table><thead><tr><th>Player</th><th>Team</th><th>Stat</th></tr></thead><tbody>${rows}</tbody></table>`;
-    })
-    .join("");
+  const shortName = (name: string) => {
+    const bits = name.trim().split(/\s+/);
+    if (bits.length < 2) return name;
+    return `${bits[0]![0]}. ${bits[bits.length - 1]}`;
+  };
 
-  const contentHtml = `
-    <p>Daily MLB board — division standings, wild cards, and league leaders for ${esc(dateKey)}.</p>
-    <h2>Division standings</h2>
-    ${divisionHtml}
-    ${wcBlock("NL Wild Card", nlWc)}
-    ${wcBlock("AL Wild Card", alWc)}
-    <h2>League leaders</h2>
-    ${leadersHtml}
+  const leaderCardsHtml = (
+    leagueLabel: string,
+    boards: Awaited<ReturnType<typeof fetchMlbLeaders>>,
+  ) => {
+    const hitting = boards.filter((b) => b.group === "hitting");
+    const pitching = boards.filter((b) => b.group === "pitching");
+    const renderGroup = (title: string, group: typeof boards) => {
+      if (!group.length) return "";
+      const cards = group
+        .map((board) => {
+          const top = board.leaders[0];
+          if (!top) return "";
+          const accent = mlbTeamAccent(top.teamId);
+          const rest = board.leaders
+            .slice(1)
+            .map(
+              (l) => `<li class="mlb-leader-card__row">
+                <img src="${esc(mlbHeadshot(l.playerId, 213))}" alt="" width="32" height="32" loading="lazy" />
+                <a class="rss-player-link" href="/sports/mlb/player/${l.playerId}">${esc(shortName(l.name))}</a>
+                <span class="numeral">${esc(l.value)}</span>
+              </li>`,
+            )
+            .join("");
+          return `<article class="mlb-leader-card">
+            <div class="mlb-leader-card__hero" style="background:#${accent}">
+              <p class="mlb-leader-card__cat">${esc(board.label)}</p>
+              <p class="mlb-leader-card__val numeral">${esc(top.value)}</p>
+              <div class="mlb-leader-card__who">
+                <a class="rss-player-link" href="/sports/mlb/player/${top.playerId}">${esc(top.name)}</a>
+                <p>${esc(top.team || "—")}</p>
+              </div>
+              <img class="mlb-leader-card__shot" src="${esc(mlbHeadshot(top.playerId, 426))}" alt="" loading="lazy" />
+            </div>
+            ${rest ? `<ul class="mlb-leader-card__list">${rest}</ul>` : ""}
+          </article>`;
+        })
+        .join("");
+      return `<h3>${esc(title)}</h3><div class="mlb-leader-grid">${cards}</div>`;
+    };
+    return `<section class="mlb-leaders-league">
+      <h2>${esc(leagueLabel)}</h2>
+      ${renderGroup("Hitting", hitting)}
+      ${renderGroup("Pitching", pitching)}
+    </section>`;
+  };
+
+  const standingsHtml = `
+    <p class="mlb-digest-lede">Division standings and wild-card boards for ${esc(dateKey)}.</p>
+    <div class="mlb-standings-feed">
+      ${divisionHtml}
+      ${wcBlock("NL Wild Card", nlWc)}
+      ${wcBlock("AL Wild Card", alWc)}
+    </div>
   `.trim();
 
-  const snippet = `Division standings, NL/AL wild card, and league leaders for ${dateKey}.`;
+  const leadersHtml = `
+    <p class="mlb-digest-lede">American League and National League leaders for ${esc(dateKey)}.</p>
+    ${leaderCardsHtml("American League", alLeaders)}
+    ${leaderCardsHtml("National League", nlLeaders)}
+  `.trim();
 
-  // Keep a short rolling history (today + prior 6 days) so the feed isn't a single row forever.
+  const items: RssFeedItem[] = [];
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(today);
+    day.setDate(today.getDate() - i);
+    const yy = day.getFullYear();
+    const mm = String(day.getMonth() + 1).padStart(2, "0");
+    const dd = String(day.getDate()).padStart(2, "0");
+    const key = `${yy}-${mm}-${dd}`;
+    const isToday = i === 0;
+    const archiveNote = `<p>This archive day is listed for history. Switch to today's article for live boards.</p>`;
+    items.push({
+      id: `mlb-standings-${key}`,
+      title: isToday ? `MLB standings — ${key}` : `MLB standings — ${key} (archive)`,
+      link: `dispatch://mlb-standings/${key}`,
+      author: "MLB Stats API",
+      publishedAt: `${key}T12:00:00-05:00`,
+      image: null,
+      snippet: isToday
+        ? `Division standings and NL/AL wild cards for ${dateKey}.`
+        : `Archived standings placeholder for ${key}.`,
+      contentHtml: isToday ? standingsHtml : archiveNote,
+    });
+    items.push({
+      id: `mlb-leaders-${key}`,
+      title: isToday ? `MLB league leaders — ${key}` : `MLB league leaders — ${key} (archive)`,
+      link: `dispatch://mlb-leaders/${key}`,
+      author: "MLB Stats API",
+      // Slightly later so leaders sort under standings when same day.
+      publishedAt: `${key}T12:05:00-05:00`,
+      image: null,
+      snippet: isToday
+        ? `AL and NL hitting/pitching leaders for ${dateKey}.`
+        : `Archived leaders placeholder for ${key}.`,
+      contentHtml: isToday ? leadersHtml : archiveNote,
+    });
+  }
+
+  items.sort((a, b) => {
+    const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
+    const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
+    return db - da;
+  });
+
+  return {
+    title: "MLB standings & leaders",
+    description: "Daily division standings and AL/NL league leaders as separate articles",
+    link: "https://www.mlb.com/standings",
+    feedUrl: "synthetic:mlb-stats",
+    items,
+  };
+}
+
+/** Form standings over the last 5 / 10 / 20 / 30 / 40 / 50 games. */
+async function fetchMlbFormStandingsFeed(): Promise<RssFeed> {
+  const { mlbTeamLogo, teamPagePath } = await import("./mlb");
+  const { fetchMlbFormStandings } = await import("./team-form");
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, "0");
+  const d = String(today.getDate()).padStart(2, "0");
+  const dateKey = `${y}-${m}-${d}`;
+
+  const boards = await fetchMlbFormStandings([5, 10, 20, 30, 40, 50]);
+  const esc = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const contentHtml = `
+    <p class="mlb-digest-lede">Entire league ranked by record over recent games — ${esc(dateKey)}.</p>
+    <div class="mlb-standings-feed">
+      ${boards
+        .map((board) => {
+          const rows = board.rows
+            .map((r) => {
+              const logo = r.teamId
+                ? `<img class="mlb-standings-logo" src="${esc(mlbTeamLogo(r.teamId))}" alt="" width="22" height="22" loading="lazy" />`
+                : "";
+              const name = r.teamId
+                ? `<a class="mlb-standings-team" href="${esc(teamPagePath(r.teamId))}">${esc(r.team)}</a>`
+                : esc(r.team);
+              return `<tr>
+                <td class="mlb-standings-team-cell"><span class="mlb-standings-rank">${r.rank}</span>${logo}${name}</td>
+                <td class="mlb-standings-wl numeral">${r.wins}&ndash;${r.losses}</td>
+                <td class="numeral">${esc(r.pct)}</td>
+              </tr>`;
+            })
+            .join("");
+          return `<section class="mlb-standings-block">
+            <h2>${esc(board.label)} games</h2>
+            <table class="mlb-standings-table">
+              <thead><tr><th>Team</th><th>W-L</th><th>Pct</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </section>`;
+        })
+        .join("")}
+    </div>
+  `.trim();
+
   const items: RssFeedItem[] = [];
   for (let i = 0; i < 7; i++) {
     const day = new Date(today);
@@ -2107,28 +2287,26 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
     const key = `${yy}-${mm}-${dd}`;
     const isToday = i === 0;
     items.push({
-      id: `mlb-stats-${key}`,
-      title: isToday
-        ? `MLB stats digest — ${key}`
-        : `MLB stats digest — ${key} (archive)`,
-      link: `dispatch://mlb-stats/${key}`,
+      id: `mlb-form-${key}`,
+      title: isToday ? `MLB form standings — ${key}` : `MLB form standings — ${key} (archive)`,
+      link: `dispatch://mlb-form/${key}`,
       author: "MLB Stats API",
-      publishedAt: `${key}T12:00:00-05:00`,
+      publishedAt: `${key}T12:10:00-05:00`,
       image: null,
       snippet: isToday
-        ? snippet
-        : `Archived daily digest placeholder for ${key}. Open today's digest for live boards.`,
+        ? `League standings for the last 5, 10, 20, 30, 40, and 50 games (${dateKey}).`
+        : `Archived form standings placeholder for ${key}.`,
       contentHtml: isToday
         ? contentHtml
-        : `<p>This archive day is listed for history. Switch to today's digest for live standings and leaders.</p>`,
+        : `<p>This archive day is listed for history. Open today's form standings for live boards.</p>`,
     });
   }
 
   return {
-    title: "MLB stats & standings",
-    description: "Once-a-day division standings, wild cards, and league leaders",
+    title: "MLB form standings",
+    description: "League standings by last 5 / 10 / 20 / 30 / 40 / 50 games",
     link: "https://www.mlb.com/standings",
-    feedUrl: "synthetic:mlb-stats",
+    feedUrl: "synthetic:mlb-form",
     items,
   };
 }
@@ -2480,5 +2658,6 @@ export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>([
   "mlb-wraps",
   "nfl-wraps",
   "mlb-stats",
+  "mlb-form",
   "cardinals-farm",
 ]);

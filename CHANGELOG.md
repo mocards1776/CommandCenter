@@ -2,6 +2,18 @@
 
 ---
 
+## Standings feeds, wrap spacing, tags — August 15, 2026
+
+- MLB standings and league leaders are separate Dispatch articles; standings tables include team logos and fixed W-L columns.
+- League leaders render as team-leader-style cards, split by AL/NL, with clickable player links.
+- New **MLB form standings** feed ranks the full league over the last 5 / 10 / 20 / 30 / 40 / 50 games.
+- Game headers use league rank (“12th in National League”) instead of a vague “in league” division place.
+- Game wrap spacing no longer eats spaces around linked names; top performers sit under the linescore.
+- Favorite vs tag markers differ (star vs blue dot / sky pills); team-lead stats are italic blue, not bold.
+- Player hero always shows a WAR chip; NFL previews wait for real copy and drop Last 5/10/20 chips.
+
+---
+
 ## Sports polish batch — August 15, 2026
 
 - Yesterday favorites on the MLB board are baseball-only (golf stars no longer show as DNP).

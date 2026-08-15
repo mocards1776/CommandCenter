@@ -139,7 +139,9 @@ import {
   linkifyMlbPlayersInHtml,
   mlbTeamLogo,
   parseEspnGameIdFromUrl,
+  playerWatchKind,
   searchMlbPlayersByNames,
+  type PlayerWatchKind,
 } from "@/lib/mlb";
 import { MlbGameDetail } from "@/pages/MlbGamePage";
 import { listFavoritePlayers } from "@/lib/favorite-players";
@@ -1025,16 +1027,31 @@ function ArticleReaderShell({
     staleTime: 60_000,
   });
 
-  const watchPlayerIds = useMemo(() => {
+  const favoritePlayerIds = useMemo(() => {
     const set = new Set<number>();
     for (const f of favPlayers.data ?? []) {
       if (f.position === "manager") continue;
       const id = Number(f.playerId);
       if (Number.isFinite(id)) set.add(id);
     }
+    return set;
+  }, [favPlayers.data]);
+
+  const taggedPlayerIds = useMemo(() => {
+    const set = new Set<number>();
     for (const id of taggedPlayers.data ?? []) set.add(id);
     return set;
-  }, [favPlayers.data, taggedPlayers.data]);
+  }, [taggedPlayers.data]);
+
+  const watchMarks = useMemo(() => {
+    const map = new Map<number, PlayerWatchKind>();
+    for (const id of taggedPlayerIds) {
+      const kind = playerWatchKind(id, favoritePlayerIds, taggedPlayerIds);
+      if (kind) map.set(id, kind);
+    }
+    for (const id of favoritePlayerIds) map.set(id, "favorite");
+    return map;
+  }, [favoritePlayerIds, taggedPlayerIds]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -1168,7 +1185,7 @@ function ArticleReaderShell({
         for (const [k, id] of found) index.set(k, id);
       }
       if (cancelled) return;
-      const linked = linkifyMlbPlayersInHtml(repaired, index, watchPlayerIds);
+      const linked = linkifyMlbPlayersInHtml(repaired, index, watchMarks);
       setLinkedHtml(stylizeTweetCardsInHtml(linked));
     })().catch(() => {
       if (!cancelled) {
@@ -1180,7 +1197,7 @@ function ArticleReaderShell({
     return () => {
       cancelled = true;
     };
-  }, [article.data?.contentHtml, article.data?.contentText, roster.data, watchPlayerIds, item.link]);
+  }, [article.data?.contentHtml, article.data?.contentText, roster.data, watchMarks, item.link]);
 
   // Film Room / highlight videos: force muted autoplay after mount.
   useEffect(() => {
@@ -1469,14 +1486,13 @@ function ArticleReaderShell({
               window.setTimeout(captureSelection, 50);
             }}
             onClick={(e) => {
-              const a = (e.target as HTMLElement).closest(
-                "a.rss-player-link",
-              ) as HTMLAnchorElement | null;
-              if (!a) return;
+              const a = (e.target as HTMLElement).closest("a") as HTMLAnchorElement | null;
+              if (!a || !articleBodyRef.current?.contains(a)) return;
               const href = a.getAttribute("href") ?? "";
-              if (!/\/sports\/mlb\/player\/\d+/.test(href)) return;
-              e.preventDefault();
-              navigate(href);
+              if (/\/sports\/mlb\/player\/\d+/.test(href) || /^\/sports(\?|$)/.test(href)) {
+                e.preventDefault();
+                navigate(href);
+              }
             }}
             className="rss-reader max-w-none text-[20px] leading-[1.8] text-[#eceef4] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_a.rss-player-link]:text-accent [&_a.rss-player-link]:decoration-accent/40 [&_a.rss-player-link]:underline-offset-[3px] [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_table]:my-4 [&_table]:w-full [&_table]:text-left [&_table]:text-[15px] [&_td]:border-b [&_td]:border-white/10 [&_td]:px-2 [&_td]:py-1.5 [&_th]:border-b [&_th]:border-white/20 [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-[11px] [&_th]:uppercase [&_th]:tracking-[0.12em] [&_th]:text-chalk-dim [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5 [&_video.rss-video]:my-6 [&_video.rss-video]:aspect-video [&_video.rss-video]:w-full [&_video.rss-video]:rounded-lg [&_video.rss-video]:bg-black [&_figcaption]:hidden [&_figure]:my-6"
             dangerouslySetInnerHTML={{ __html: displayHtml }}

@@ -108,10 +108,12 @@ export async function fetchMlbTeamForm(teamId: number): Promise<TeamFormStrip> {
   if (standRes.ok) {
     const stand = (await standRes.json()) as {
       records?: {
+        league?: { id?: number; name?: string };
         division?: { name?: string };
         teamRecords?: {
           team?: { id?: number };
           divisionRank?: string;
+          leagueRank?: string;
           leagueRecord?: { wins?: number; losses?: number };
         }[];
       }[];
@@ -120,24 +122,23 @@ export async function fetchMlbTeamForm(teamId: number): Promise<TeamFormStrip> {
       for (const row of block.teamRecords ?? []) {
         if (row.team?.id !== teamId) continue;
         const rawDiv = block.division?.name ?? "";
-        const league = /national/i.test(rawDiv)
-          ? "National League"
-          : /american/i.test(rawDiv)
-            ? "American League"
-            : rawDiv.replace(/\s+Division$/i, "") || "league";
-        const divPart = rawDiv
-          .replace(/^National League\s+/i, "")
-          .replace(/^American League\s+/i, "")
-          .trim();
-        const place =
-          divPart && !/^league$/i.test(divPart) ? `${league} ${divPart}` : league;
-        const rankNum = Number.parseInt(String(row.divisionRank ?? ""), 10);
+        const leagueName =
+          block.league?.id === 104 || /national/i.test(rawDiv) || /national/i.test(block.league?.name ?? "")
+            ? "National League"
+            : block.league?.id === 103 || /american/i.test(rawDiv) || /american/i.test(block.league?.name ?? "")
+              ? "American League"
+              : /national/i.test(rawDiv)
+                ? "National League"
+                : /american/i.test(rawDiv)
+                  ? "American League"
+                  : "league";
+        const rankNum = Number.parseInt(String(row.leagueRank ?? ""), 10);
         standing =
           Number.isFinite(rankNum) && rankNum > 0
-            ? `${ordinalPlace(rankNum)} in ${place}`
-            : row.divisionRank
-              ? `${row.divisionRank} in ${place}`
-              : place || null;
+            ? `${ordinalPlace(rankNum)} in ${leagueName}`
+            : row.leagueRank
+              ? `${row.leagueRank} in ${leagueName}`
+              : null;
         if (!record && row.leagueRecord) {
           record = `${row.leagueRecord.wins ?? 0}-${row.leagueRecord.losses ?? 0}`;
         }
@@ -155,6 +156,137 @@ export async function fetchMlbTeamForm(teamId: number): Promise<TeamFormStrip> {
     last10: formRecord(wins, 10),
     last20: formRecord(wins, 20),
   };
+}
+
+export type MlbFormStandingRow = {
+  rank: number;
+  teamId: number;
+  team: string;
+  abbrev: string;
+  wins: number;
+  losses: number;
+  pct: string;
+};
+
+export type MlbFormStandingsBoard = {
+  window: number;
+  label: string;
+  rows: MlbFormStandingRow[];
+};
+
+function pctString(wins: number, losses: number): string {
+  const g = wins + losses;
+  if (!g) return "—";
+  return (wins / g).toFixed(3).replace(/^0/, "");
+}
+
+/** League-wide standings by record over the last N games (5…50). */
+export async function fetchMlbFormStandings(
+  windows: number[] = [5, 10, 20, 30, 40, 50],
+): Promise<MlbFormStandingsBoard[]> {
+  const end = chicagoToday();
+  const span = Math.max(...windows, 50) + 10;
+  const start = addDaysIso(end, -Math.ceil(span * 1.6));
+  const res = await fetch(
+    `https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=${start}&endDate=${end}&gameType=R`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) throw new Error(`Form standings schedule failed (${res.status})`);
+  const sched = (await res.json()) as {
+    dates?: {
+      games?: {
+        officialDate?: string;
+        status?: { abstractGameState?: string };
+        teams?: {
+          away?: {
+            team?: { id?: number; name?: string; abbreviation?: string; teamName?: string };
+            isWinner?: boolean;
+          };
+          home?: {
+            team?: { id?: number; name?: string; abbreviation?: string; teamName?: string };
+            isWinner?: boolean;
+          };
+        };
+      }[];
+    }[];
+  };
+
+  type TeamAcc = {
+    teamId: number;
+    name: string;
+    abbrev: string;
+    results: boolean[];
+  };
+  const byTeam = new Map<number, TeamAcc>();
+  const dayRows: { date: string; teamId: number; won: boolean; name: string; abbrev: string }[] =
+    [];
+
+  for (const day of sched.dates ?? []) {
+    for (const g of day.games ?? []) {
+      if (g.status?.abstractGameState !== "Final") continue;
+      const date = g.officialDate ?? "";
+      for (const side of [g.teams?.away, g.teams?.home]) {
+        const id = side?.team?.id;
+        if (!id || side?.isWinner == null) continue;
+        const full = side.team?.name ?? "Team";
+        const short = (side.team?.teamName ?? full).replace(
+          /^(St\. Louis|Chicago|New York|Los Angeles|Tampa Bay|Kansas City|San Francisco|San Diego|Toronto) /,
+          "",
+        );
+        dayRows.push({
+          date,
+          teamId: id,
+          won: Boolean(side.isWinner),
+          name: short,
+          abbrev: side.team?.abbreviation ?? "—",
+        });
+      }
+    }
+  }
+  dayRows.sort((a, b) => a.date.localeCompare(b.date));
+  for (const r of dayRows) {
+    let acc = byTeam.get(r.teamId);
+    if (!acc) {
+      acc = { teamId: r.teamId, name: r.name, abbrev: r.abbrev, results: [] };
+      byTeam.set(r.teamId, acc);
+    }
+    acc.results.push(r.won);
+    acc.name = r.name;
+    acc.abbrev = r.abbrev;
+  }
+
+  return windows.map((window) => {
+    const rows: MlbFormStandingRow[] = [...byTeam.values()]
+      .map((t) => {
+        const slice = t.results.slice(-window);
+        const wins = slice.filter(Boolean).length;
+        const losses = slice.length - wins;
+        return {
+          rank: 0,
+          teamId: t.teamId,
+          team: t.name,
+          abbrev: t.abbrev,
+          wins,
+          losses,
+          pct: pctString(wins, losses),
+        };
+      })
+      .filter((r) => r.wins + r.losses > 0)
+      .sort((a, b) => {
+        const pa = a.wins + a.losses ? a.wins / (a.wins + a.losses) : 0;
+        const pb = b.wins + b.losses ? b.wins / (b.wins + b.losses) : 0;
+        if (pb !== pa) return pb - pa;
+        if (b.wins !== a.wins) return b.wins - a.wins;
+        return a.team.localeCompare(b.team);
+      })
+      .map((r, i) => ({ ...r, rank: i + 1 }));
+
+    return {
+      window,
+      label: `Last ${window}`,
+      rows,
+    };
+  });
 }
 
 /** NFL team form from recent ESPN scoreboard days. */

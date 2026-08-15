@@ -839,21 +839,23 @@ function PlayerHeader({
                   <p className="numeral text-[30px] leading-none text-white">{player.age}</p>
                 </div>
               )}
-              {(seasonWar != null || careerWar != null) && (
-                <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
-                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">WAR</p>
-                  <p className="numeral text-[26px] leading-none text-white">
-                    {seasonWar != null ? seasonWar.toFixed(1) : "—"}
-                  </p>
-                  <p className="mt-0.5 text-[10px] text-white/55">
-                    {warRank != null
-                      ? `${warRank}${warOf != null ? `/${warOf}` : ""}`
-                      : careerWar != null
-                        ? `Career ${careerWar.toFixed(1)}`
-                        : "Season"}
-                  </p>
-                </div>
-              )}
+              <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
+                <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">WAR</p>
+                <p className="numeral text-[26px] leading-none text-white">
+                  {seasonWar != null
+                    ? seasonWar.toFixed(1)
+                    : extrasPending
+                      ? "…"
+                      : "—"}
+                </p>
+                <p className="mt-0.5 text-[10px] text-white/55">
+                  {warRank != null
+                    ? `${warRank}${warOf != null ? `/${warOf}` : ""}`
+                    : careerWar != null
+                      ? `Career ${careerWar.toFixed(1)}`
+                      : "Season"}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -1192,7 +1194,7 @@ function YearByYearTable({
           </h3>
           <p className="text-[10px] text-[#8b93a7]">
             <span className="font-bold text-cream">Bold</span> career high ·{" "}
-            <span className="font-bold italic text-cream">Team lead</span> ·{" "}
+            <span className="italic text-[#9ec1ff]">Team lead</span> ·{" "}
             <span className="font-bold text-alert">League lead</span>
           </p>
         </div>
@@ -1248,9 +1250,9 @@ function YearByYearTable({
                         key={l}
                         className={cn(
                           "numeral px-2 py-2 text-center text-cream",
-                          (isHigh || isTeam || isLeague) && "font-bold",
-                          isTeam && "italic",
-                          isLeague && "text-alert",
+                          isHigh && "font-bold",
+                          isTeam && "italic font-normal text-[#9ec1ff]",
+                          isLeague && "font-bold text-alert not-italic",
                         )}
                       >
                         {value}
