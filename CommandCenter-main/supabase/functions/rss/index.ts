@@ -56,7 +56,7 @@ const TWEET_URL_RE = /(?:twitter\.com|x\.com)\/\w+\/status(?:es)?\/\d+/i;
 const TWEET_EMBED_RE = /twitter-tweet|rss-tweet|data-tweet|twt-embed|twitter-video/i;
 
 const PROMO_LINK_RE =
-  /(?:get tickets|ticket package|star wars|jersey with|subscribe|newsletter|sign up|fantasy baseball|betmgm|draftkings|fanduel|promo code|bonus bets|specials\/|shop\.mlb|mlb\.com\/tickets|more mlb on heavy|more from heavy|advertisement|get the latest from mlb|morning lineup)/i;
+  /(?:get tickets|ticket package|star wars|jersey with|subscribe|newsletter|sign up|fantasy baseball|betmgm|draftkings|fanduel|promo code|bonus bets|specials\/|shop\.mlb|mlb\.com\/tickets|more mlb on heavy|more from heavy|advertisement|get the latest from mlb|morning lineup|share on x|share on twitter|email a link to a friend|opens in new window)/i;
 
 const CAPTION_RE =
   /(?:mandatory credit|imagn images|via reuters|getty images|photo by|ap photo|usa today sports|\bwp-caption\b)/i;
@@ -483,7 +483,7 @@ function extractMlbVideoFragment(html: string, pageUrl = ""): string | null {
 }
 
 const JUNK_TEXT_RE =
-  /(?:get email notifications|your notification has been saved|problem saving your notification|followed notifications|please log in to use this feature|don't have an account|sign up today|gift this article|new subscriber benefit|copied to clipboard|out of gifts for the month|share this article paywall|prefer us on google|preferred news source|author twitter|author email|follow [\w .|/-]+ post-dispatch|manage followed notifications|facebook|twitter|bluesky|whatsapp|\bsms\b|copy (?:article )?link|copy link|\bprint\b|\{\{[^}]+\}\}|data-(?:html|toggle|placement|trigger)|aria-label="tooltip|tabindex="0"|role="button"|story by|appeared first on|film room powered by|advertisement|more mlb on heavy)/i;
+  /(?:get email notifications|your notification has been saved|problem saving your notification|followed notifications|please log in to use this feature|don't have an account|sign up today|gift this article|new subscriber benefit|copied to clipboard|out of gifts for the month|share this article paywall|prefer us on google|preferred news source|author twitter|author email|follow [\w .|/-]+ post-dispatch|manage followed notifications|facebook|twitter|bluesky|whatsapp|\bsms\b|copy (?:article )?link|copy link|\bprint\b|\{\{[^}]+\}\}|data-(?:html|toggle|placement|trigger)|aria-label="tooltip|tabindex="0"|role="button"|story by|appeared first on|film room powered by|advertisement|more mlb on heavy|share on x|opens in new window|email a link to a friend|sports\s*mlb)/i;
 
 /** Drop leftover chrome paragraphs and leaked attribute debris after sanitize. */
 function scrubContentHtml(html: string, heroImage: string | null = null): string {
@@ -532,6 +532,19 @@ function scrubContentHtml(html: string, heroImage: string | null = null): string
     .replace(
       /<(?:p|div|section|aside)\b[^>]*>[\s\S]*?(?:get the latest from mlb|morning lineup)[\s\S]*?<\/(?:p|div|section|aside)>/gi,
       (full) => (stripTags(full).replace(/\s+/g, " ").trim().length < 280 ? "" : full),
+    )
+    // Mashed section breadcrumbs like "SportsMLBCubs" / "Sports MLB Chicago Cubs".
+    .replace(
+      /<(?:p|li|nav|a|span|div)\b[^>]*>\s*(?:Sports\s*)?MLB\s*(?:Chicago\s*)?Cubs\s*<\/(?:p|li|nav|a|span|div)>/gi,
+      "",
+    )
+    .replace(
+      /<(?:p|li|nav|a|span|div)\b[^>]*>\s*Sports\s*MLB\s*[A-Za-z][A-Za-z\s]{0,32}\s*<\/(?:p|li|nav|a|span|div)>/gi,
+      "",
+    )
+    .replace(
+      /<(?:p|li|a|span)\b[^>]*>\s*SportsMLB[A-Za-z]{2,24}\s*<\/(?:p|li|a|span)>/gi,
+      "",
     );
 
   out = dedupeImages(out, heroImage);

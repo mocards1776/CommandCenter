@@ -12,6 +12,7 @@ import {
   fetchRssHighlights,
   hidePhrasesInHtml,
   markQuotesInHtml,
+  scrubReaderChrome,
   type RssHighlight,
 } from "@/lib/rss";
 
@@ -126,7 +127,10 @@ export function SelectableHighlightRegion({
 
   const displayHtml = useMemo(() => {
     if (!html) return null;
-    return markQuotesInHtml(hidePhrasesInHtml(html, hidePhrases), quoteTexts);
+    return markQuotesInHtml(
+      hidePhrasesInHtml(scrubReaderChrome(html), hidePhrases),
+      quoteTexts,
+    );
   }, [html, hidePhrases, quoteTexts]);
 
   const createMut = useMutation({
@@ -183,8 +187,12 @@ export function SelectableHighlightRegion({
       <div
         ref={rootRef}
         className={className}
+        data-no-double-tap
         onMouseUp={captureSelection}
-        onTouchEnd={captureSelection}
+        onTouchEnd={() => {
+          // Wait for the browser to finalize the selection range on iOS.
+          window.setTimeout(captureSelection, 30);
+        }}
         {...(displayHtml
           ? { dangerouslySetInnerHTML: { __html: displayHtml } }
           : { children })}

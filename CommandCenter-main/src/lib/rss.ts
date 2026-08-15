@@ -159,6 +159,15 @@ export function articleDedupeKey(item: Pick<RssFeedItem, "link" | "title">): str
     );
     const host = u.hostname.replace(/^www\./, "").toLowerCase();
     const path = u.pathname.replace(/\/+$/, "").toLowerCase();
+    // ESPN recap/preview/game for the same event are one story.
+    const espnGame =
+      path.match(/\/(?:mlb|nfl)\/(?:recap|preview|game)\/_\/gameid\/(\d+)/i) ||
+      item.link.match(/[?&]gameId=(\d+)/i) ||
+      item.link.match(/gameId\/(\d+)/i);
+    if (espnGame?.[1] && (host === "espn.com" || host.endsWith(".espn.com") || host.includes("espn."))) {
+      const sport = /\/nfl\//i.test(path) || /espn\.com\/nfl/i.test(item.link) ? "nfl" : "mlb";
+      return `espn-game:${sport}:${espnGame[1]}`;
+    }
     return `url:${host}${path}`;
   } catch {
     return `title:${normalizeTitleKey(item.title)}`;
@@ -332,7 +341,11 @@ export function titlesLikelySameStory(a: string, b: string): boolean {
   };
   const setA = expand(a);
   const setB = expand(b);
-  if (setA.size < 4 || setB.size < 4) return false;
+  if (setA.size < 4 || setB.size < 4) {
+    // Same-game recap shells: "Cubs 3-0 Cardinals Game Recap" vs feature writeups.
+    if (sameGameRecapTitles(a, b)) return true;
+    return false;
+  }
   let inter = 0;
   for (const w of setA) if (setB.has(w)) inter++;
   const union = setA.size + setB.size - inter;
@@ -340,10 +353,115 @@ export function titlesLikelySameStory(a: string, b: string): boolean {
   const jaccard = inter / union;
   const coverage = inter / Math.min(setA.size, setB.size);
   // Box-score / game-recap headlines need stronger overlap so ESPN
-  // "Cards 2-0 Phillies Game Recap" doesn't eat a feature writeup.
+  // "Cards 2-0 Phillies Game Recap" doesn't eat a feature writeup —
+  // unless both clearly name the same final scoreline.
+  if (sameGameRecapTitles(a, b)) return true;
   const recapish = /game recap|box score|final score|\b\d+\s*[-–]\s*\d+\b/i.test(`${a} ${b}`);
   if (recapish) return jaccard >= 0.55 && inter >= 5;
   return (jaccard >= 0.45 && inter >= 4) || coverage >= 0.7;
+}
+
+const TEAM_TITLE_TOKENS = [
+  "cubs",
+  "cardinals",
+  "cards",
+  "redbirds",
+  "yankees",
+  "mets",
+  "red sox",
+  "sox",
+  "dodgers",
+  "giants",
+  "padres",
+  "rockies",
+  "diamondbacks",
+  "dbacks",
+  "braves",
+  "phillies",
+  "phils",
+  "nationals",
+  "marlins",
+  "pirates",
+  "brewers",
+  "reds",
+  "astros",
+  "rangers",
+  "athletics",
+  "mariners",
+  "angels",
+  "twins",
+  "guardians",
+  "tigers",
+  "royals",
+  "white sox",
+  "orioles",
+  "rays",
+  "blue jays",
+  "jays",
+  "broncos",
+  "falcons",
+  "bears",
+  "packers",
+  "vikings",
+  "lions",
+  "chiefs",
+  "raiders",
+  "chargers",
+  "rams",
+  "49ers",
+  "seahawks",
+  "cardinals",
+  "cowboys",
+  "eagles",
+  "giants",
+  "commanders",
+  "buccaneers",
+  "saints",
+  "panthers",
+  "falcons",
+  "jets",
+  "patriots",
+  "bills",
+  "dolphins",
+  "bengals",
+  "browns",
+  "steelers",
+  "ravens",
+  "texans",
+  "colts",
+  "jaguars",
+  "titans",
+];
+
+/** Detect two headlines about the same final scoreline (even if one is a feature). */
+export function sameGameRecapTitles(a: string, b: string): boolean {
+  const scoreRe = /(\d{1,2})\s*[-–]\s*(\d{1,2})/;
+  const sa = a.match(scoreRe);
+  const sb = b.match(scoreRe);
+  const na = normalizeTitleKey(a);
+  const nb = normalizeTitleKey(b);
+  const teamsA = TEAM_TITLE_TOKENS.filter((t) => na.includes(t));
+  const teamsB = TEAM_TITLE_TOKENS.filter((t) => nb.includes(t));
+  const shared = teamsA.filter((t) => teamsB.includes(t));
+  const uniqShared = [...new Set(shared)];
+
+  if (sa && sb) {
+    const scoresMatch =
+      (sa[1] === sb[1] && sa[2] === sb[2]) || (sa[1] === sb[2] && sa[2] === sb[1]);
+    if (!scoresMatch) return false;
+    if (uniqShared.length < 1) return false;
+    return /game recap|final|wins?|beat|defeat|blank|shutout|walk.?off|\bvs\.?\b|\bat\b/i.test(
+      `${a} ${b}`,
+    );
+  }
+
+  // ESPN "Team A X-Y Team B Game Recap" vs a feature about the same matchup.
+  const aRecap = /game recap/i.test(a);
+  const bRecap = /game recap/i.test(b);
+  if (!(aRecap || bRecap)) return false;
+  if (!(sa || sb)) return false;
+  // Prefer two shared team tokens; allow one when both titles name the same club heavily.
+  return uniqShared.length >= 2 || (uniqShared.length >= 1 && teamsA.length + teamsB.length >= 3);
 }
 
 export type DedupePartition<T> = {
@@ -430,6 +548,16 @@ export const DEFAULT_CONTENT_HIDES = [
   "see ap s full mlb coverage here",
   "see aps full mlb coverage",
   "full mlb coverage here",
+  "share on x",
+  "share on x opens in new window",
+  "opens in new window",
+  "email a link to a friend",
+  "email a link to a friend opens in new window",
+  "sports mlb chicago cubs",
+  "sports mlb cubs",
+  "sportsmlbcubschicago cubs",
+  "sportsmlbcubs",
+  "sports mlbchicago cubs",
 ] as const;
 
 /** Collect user content-hide phrases plus built-in MLB clutter patterns. */
@@ -456,6 +584,15 @@ const BLOCK_TAGS = new Set([
   "HEADER",
   "FOOTER",
   "TABLE",
+  "UL",
+  "OL",
+  "NAV",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
 ]);
 
 /** Collapse whitespace/punctuation so split MLB promo copy still matches. */
@@ -502,11 +639,15 @@ function pickHideTarget(start: Element, root: Element, needle: string): Element 
     const text = normalizeHideText(el.textContent ?? "");
     if (text.includes(needle)) {
       best = el;
-      // Stop climbing once the parent balloons past a short promo blurb.
+      // Allow climbing further for short chrome (share/breadcrumb) so the
+      // whole list item / nav crumb is removed, not just a child <a>.
       const parent = el.parentElement;
       if (parent && parent !== root) {
         const parentText = normalizeHideText(parent.textContent ?? "");
-        if (parentText.length > Math.max(needle.length + 80, 320)) break;
+        const chrome =
+          parentText.length <= Math.max(needle.length + 120, 220) ||
+          /share on|opens in new window|email a link|sports ?mlb/i.test(parentText);
+        if (!chrome && parentText.length > Math.max(needle.length + 80, 320)) break;
       }
     }
     el = el.parentElement;
@@ -601,6 +742,23 @@ export function hidePhrasesInHtml(html: string, phrases: string[]): string {
     }
   });
 
+  // 4) Built-in share / breadcrumb chrome even before a user hide is saved.
+  root.querySelectorAll("a, li, p, nav, span").forEach((el) => {
+    const text = normalizeHideText(el.textContent ?? "");
+    if (!text || text.length > 180) return;
+    if (
+      /^(?:share on x|share on twitter|email a link to a friend)(?: opens in new window)?(?: x| email)?$/.test(
+        text,
+      ) ||
+      /^opens in new window$/.test(text) ||
+      /^sports ?mlb ?[a-z ]{0,40}$/.test(text) ||
+      /^sportsmlb/.test(text.replace(/\s+/g, ""))
+    ) {
+      const block = pickPromoBlock(el, root) ?? el;
+      toRemove.add(block);
+    }
+  });
+
   for (const el of toRemove) {
     if (!el.isConnected) continue;
     const prev = el.previousElementSibling;
@@ -628,6 +786,58 @@ export function hidePhrasesInHtml(html: string, phrases: string[]): string {
   });
 
   return root.innerHTML;
+}
+
+/**
+ * Client-side pass for leftover newspaper chrome the edge extract missed:
+ * mashed breadcrumbs ("SportsMLBCubs"), share intents, empty placeholders.
+ */
+export function scrubReaderChrome(html: string): string {
+  if (!html || typeof DOMParser === "undefined") return html;
+  const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, "text/html");
+  const root = doc.getElementById("root");
+  if (!root) return html;
+
+  const kill = new Set<Element>();
+  root.querySelectorAll("a, li, p, nav, span, div").forEach((el) => {
+    const raw = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+    const text = normalizeHideText(raw);
+    if (!text || text.length > 200) return;
+    if (
+      /share on (?:x|twitter|facebook|linkedin)/i.test(raw) ||
+      /opens in new window/i.test(raw) ||
+      /email a link to a friend/i.test(raw) ||
+      /^sports\s*mlb\s*/i.test(raw.replace(/\s+/g, "")) ||
+      /^sportsmlb/i.test(text.replace(/\s+/g, "")) ||
+      /^(?:facebook|twitter|bluesky|whatsapp|sms|email|print|copy link|save|close|log in)$/i.test(
+        raw,
+      )
+    ) {
+      kill.add(el);
+    }
+  });
+
+  // Silhouette / empty placeholder images with no useful src.
+  root.querySelectorAll("img").forEach((img) => {
+    const src = (img.getAttribute("src") ?? "").toLowerCase();
+    const alt = (img.getAttribute("alt") ?? "").toLowerCase();
+    if (
+      !src ||
+      src.startsWith("data:image/svg") ||
+      /placeholder|default[-_]user|avatar[-_]empty|silhouette|1x1\./i.test(src) ||
+      (/placeholder|default/.test(alt) && img.naturalWidth === 0)
+    ) {
+      const fig = img.closest("figure, picture, p, div");
+      if (fig && normalizeHideText(fig.textContent ?? "").length < 40) kill.add(fig);
+      else kill.add(img);
+    }
+  });
+
+  for (const el of kill) {
+    if (el.isConnected) el.remove();
+  }
+
+  return hidePhrasesInHtml(root.innerHTML, [...DEFAULT_CONTENT_HIDES]);
 }
 
 /**
@@ -1821,7 +2031,6 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
   const m = String(today.getMonth() + 1).padStart(2, "0");
   const d = String(today.getDate()).padStart(2, "0");
   const dateKey = `${y}-${m}-${d}`;
-  const publishedAt = `${dateKey}T12:00:00-05:00`;
 
   const [standings, nlWc, alWc, leaders] = await Promise.all([
     fetchMlbStandings(),

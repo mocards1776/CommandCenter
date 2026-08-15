@@ -2,6 +2,17 @@
 
 ---
 
+## Dispatch box score, hide, dedupe, taps — August 15, 2026
+
+- NFL game wraps use the MLB-style matchup header (logos, centered score, no “Final · Final”).
+- Box score (team logo circles / linescore) sits above wrap text; hero no longer repeats the wrap headline.
+- L5 / L10 / L20 move into the teams box-score area; league rank sits under each record (9px).
+- Soft-dedupe catches ESPN same-gameId URLs and same-scoreline recap vs feature pairs.
+- Reader scrub strips share chrome, “Opens in new window”, and mashed breadcrumbs like SportsMLBCubs; hide phrases work on short list/nav chrome.
+- Article list uses a full-row hit target; swipe listeners no longer capture touches ahead of taps.
+
+---
+
 ## Highlight → save / hide text / block article — August 14, 2026
 
 - Selection sheet in the article reader now offers three clear actions: **Save quote**, **Hide text**, or **Block article**.

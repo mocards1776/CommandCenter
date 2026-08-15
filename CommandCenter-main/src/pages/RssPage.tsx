@@ -51,6 +51,7 @@ import {
   feedSourceLabel,
   firstContentImageUrl,
   hidePhrasesInHtml,
+  scrubReaderChrome,
   repairRssContentImages,
   stripDuplicateContentImages,
   dedupeArticles,
@@ -412,11 +413,11 @@ function useSwipeNav(opts: {
       if (o.onNext) o.onNext();
     };
 
-    node.addEventListener("touchstart", onTouchStart, { passive: true, capture: true });
-    node.addEventListener("touchend", onTouchEnd, { passive: true, capture: true });
+    node.addEventListener("touchstart", onTouchStart, { passive: true });
+    node.addEventListener("touchend", onTouchEnd, { passive: true });
     return () => {
-      node.removeEventListener("touchstart", onTouchStart, true);
-      node.removeEventListener("touchend", onTouchEnd, true);
+      node.removeEventListener("touchstart", onTouchStart);
+      node.removeEventListener("touchend", onTouchEnd);
     };
   }, [node]);
 
@@ -430,9 +431,16 @@ function useDoubleTapNext(onNext: (() => void) | null, enabled: boolean) {
     if (!enabled || !onNext) return;
     const el = e.target as HTMLElement | null;
     if (!el) return;
-    if (el.closest("a, button, input, textarea, select, [role='dialog'], video")) return;
+    // Ignore interactive targets and in-article selection handles.
+    if (
+      el.closest(
+        "a, button, input, textarea, select, [role='dialog'], video, label, summary, [data-no-double-tap]",
+      )
+    ) {
+      return;
+    }
     const now = Date.now();
-    if (now - lastTap.current < 320) {
+    if (now - lastTap.current < 280) {
       lastTap.current = 0;
       onNext();
     } else {
@@ -1119,7 +1127,8 @@ function ArticleReaderShell({
   // Strip hero duplicates so the header photo isn't repeated in the body.
   const displayHtml = useMemo(() => {
     const base = linkedHtml || article.data?.contentHtml || "";
-    const cleaned = hidePhrasesInHtml(base, hidePhrases);
+    const scrubbed = scrubReaderChrome(base);
+    const cleaned = hidePhrasesInHtml(scrubbed, hidePhrases);
     const deduped = stripDuplicateContentImages(cleaned, image);
     return markQuotesInHtml(deduped, quoteTexts);
   }, [linkedHtml, article.data?.contentHtml, quoteTexts, hidePhrases, image]);
@@ -1601,119 +1610,133 @@ function ArticleRow({
   return (
     <li>
       <div
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          // Action icons stopPropagation; everything else opens the story.
+          if ((e.target as HTMLElement).closest("[data-row-action]")) return;
+          onOpen();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
         className={cn(
-          "hover:bg-white/[0.03] flex w-full items-start gap-3 border-b border-white/[0.06] px-3 py-3.5 transition-colors",
+          "hover:bg-white/[0.03] flex w-full cursor-pointer items-start gap-3 border-b border-white/[0.06] px-3 py-3.5 transition-colors",
           read && "opacity-50",
           highlighted && "border-l-accent border-l-2",
           batchSelected && "bg-accent/10",
         )}
       >
         {batchMode ? (
-          <button
-            type="button"
-            onClick={onOpen}
-            className="text-chalk hover:text-cream mt-1.5 shrink-0"
-            aria-label={batchSelected ? "Deselect" : "Select"}
+          <span
+            data-row-action
+            className="text-chalk mt-1.5 shrink-0"
+            aria-hidden
           >
             {batchSelected ? (
               <CheckSquare size={18} className="text-accent" />
             ) : (
               <Square size={18} />
             )}
-          </button>
-        ) : null}
-        <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-start gap-3 text-left">
-          {!batchMode ? (
-            <span
-              className={cn(
-                "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
-                read ? "bg-white/15" : "bg-accent",
-              )}
-              aria-hidden
-            />
-          ) : null}
-          {item.image ? (
-            <img
-              src={item.image}
-              alt=""
-              className="bg-hero h-14 w-[4.5rem] shrink-0 object-cover"
-              loading="lazy"
-              onError={(e) => {
-                const el = e.currentTarget;
-                if (item.logoTeamIds?.[0]) {
-                  el.src = mlbTeamLogo(item.logoTeamIds[0]);
-                  el.className =
-                    "bg-white h-14 w-[4.5rem] shrink-0 object-contain p-1.5";
-                } else if (item.logoAbbrevs?.[0]) {
-                  el.src = nflTeamLogo(item.logoAbbrevs[0]);
-                  el.className = "bg-hero h-14 w-[4.5rem] shrink-0 object-contain p-1";
-                } else {
-                  el.style.display = "none";
-                }
-              }}
-            />
-          ) : item.logoTeamIds?.length ? (
-            <div className="bg-white flex h-14 w-[4.5rem] shrink-0 items-center justify-center gap-0.5 rounded-sm p-1">
-              {item.logoTeamIds.slice(0, 2).map((id) => (
-                <img
-                  key={id}
-                  src={mlbTeamLogo(id)}
-                  alt=""
-                  className="h-10 w-10 object-contain"
-                  loading="lazy"
-                />
-              ))}
-            </div>
-          ) : item.logoAbbrevs?.length ? (
-            <div className="bg-hero flex h-14 w-[4.5rem] shrink-0 items-center justify-center gap-0.5 rounded-sm p-1">
-              {item.logoAbbrevs.slice(0, 2).map((ab) => (
-                <img
-                  key={ab}
-                  src={nflTeamLogo(ab)}
-                  alt=""
-                  className="h-10 w-10 object-contain"
-                  loading="lazy"
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="bg-hero text-chalk-dim grid h-14 w-[4.5rem] shrink-0 place-items-center text-[10px] uppercase tracking-wider">
-              —
-            </div>
-          )}
-          <div className="min-w-0 flex-1">
-            <div className="label-caps text-chalk-dim mb-1 flex items-center gap-1.5">
-              {formatFeedDate(item.publishedAt)}
-              {item.author ? ` · ${item.author}` : ""}
-              {keptSource ? " · Kept source" : ""}
-              {highlighted ? (
-                <Highlighter size={12} className="text-accent shrink-0" aria-label="Has highlights" />
-              ) : null}
-              {saved ? (
-                <BookmarkCheck size={12} className="text-accent shrink-0" aria-label="Saved" />
-              ) : null}
-            </div>
-            <h3
-              className={cn(
-                "font-rss text-[17px] leading-snug font-medium md:text-[18px]",
-                read ? "text-chalk" : "text-cream",
-              )}
-            >
-              {item.title}
-            </h3>
-            {item.snippet ? (
-              <p className="font-rss text-chalk mt-1 line-clamp-2 text-[14px] leading-relaxed">
-                {item.snippet}
-              </p>
+          </span>
+        ) : (
+          <span
+            className={cn(
+              "mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full",
+              read ? "bg-white/15" : "bg-accent",
+            )}
+            aria-hidden
+          />
+        )}
+        {item.image ? (
+          <img
+            src={item.image}
+            alt=""
+            className="bg-hero pointer-events-none h-14 w-[4.5rem] shrink-0 object-cover"
+            loading="lazy"
+            onError={(e) => {
+              const el = e.currentTarget;
+              if (item.logoTeamIds?.[0]) {
+                el.src = mlbTeamLogo(item.logoTeamIds[0]);
+                el.className =
+                  "bg-white pointer-events-none h-14 w-[4.5rem] shrink-0 object-contain p-1.5";
+              } else if (item.logoAbbrevs?.[0]) {
+                el.src = nflTeamLogo(item.logoAbbrevs[0]);
+                el.className =
+                  "bg-hero pointer-events-none h-14 w-[4.5rem] shrink-0 object-contain p-1";
+              } else {
+                el.style.display = "none";
+              }
+            }}
+          />
+        ) : item.logoTeamIds?.length ? (
+          <div className="bg-white pointer-events-none flex h-14 w-[4.5rem] shrink-0 items-center justify-center gap-0.5 rounded-sm p-1">
+            {item.logoTeamIds.slice(0, 2).map((id) => (
+              <img
+                key={id}
+                src={mlbTeamLogo(id)}
+                alt=""
+                className="h-10 w-10 object-contain"
+                loading="lazy"
+              />
+            ))}
+          </div>
+        ) : item.logoAbbrevs?.length ? (
+          <div className="bg-hero pointer-events-none flex h-14 w-[4.5rem] shrink-0 items-center justify-center gap-0.5 rounded-sm p-1">
+            {item.logoAbbrevs.slice(0, 2).map((ab) => (
+              <img
+                key={ab}
+                src={nflTeamLogo(ab)}
+                alt=""
+                className="h-10 w-10 object-contain"
+                loading="lazy"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="bg-hero text-chalk-dim pointer-events-none grid h-14 w-[4.5rem] shrink-0 place-items-center text-[10px] uppercase tracking-wider">
+            —
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="label-caps text-chalk-dim mb-1 flex items-center gap-1.5">
+            {formatFeedDate(item.publishedAt)}
+            {item.author ? ` · ${item.author}` : ""}
+            {keptSource ? " · Kept source" : ""}
+            {highlighted ? (
+              <Highlighter size={12} className="text-accent shrink-0" aria-label="Has highlights" />
+            ) : null}
+            {saved ? (
+              <BookmarkCheck size={12} className="text-accent shrink-0" aria-label="Saved" />
             ) : null}
           </div>
-        </button>
+          <h3
+            className={cn(
+              "font-rss text-[17px] leading-snug font-medium md:text-[18px]",
+              read ? "text-chalk" : "text-cream",
+            )}
+          >
+            {item.title}
+          </h3>
+          {item.snippet ? (
+            <p className="font-rss text-chalk mt-1 line-clamp-2 text-[14px] leading-relaxed">
+              {item.snippet}
+            </p>
+          ) : null}
+        </div>
         {!batchMode && onToggleSave ? (
           <button
             type="button"
-            onClick={onToggleSave}
+            data-row-action
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSave();
+            }}
             title={saved ? "Remove from saved" : "Save for later"}
-            className="text-chalk-dim hover:text-cream mt-1 shrink-0"
+            className="text-chalk-dim hover:text-cream mt-1 shrink-0 p-1"
             aria-label={saved ? "Unsave" : "Save for later"}
           >
             {saved ? (
@@ -1726,9 +1749,13 @@ function ArticleRow({
         {!batchMode && onArchive && (!read || saved) ? (
           <button
             type="button"
-            onClick={onArchive}
+            data-row-action
+            onClick={(e) => {
+              e.stopPropagation();
+              onArchive();
+            }}
             title={saved && read ? "Remove from saved" : "Archive (mark read)"}
-            className="text-chalk-dim hover:text-cream mt-1 shrink-0"
+            className="text-chalk-dim hover:text-cream mt-1 shrink-0 p-1"
             aria-label={saved && read ? "Remove from saved" : "Archive"}
           >
             <Archive size={15} />
@@ -1737,10 +1764,14 @@ function ArticleRow({
         {!batchMode && onKeepSource ? (
           <button
             type="button"
-            onClick={onKeepSource}
+            data-row-action
+            onClick={(e) => {
+              e.stopPropagation();
+              onKeepSource();
+            }}
             title={keptSource ? "Source already white-labeled" : "White-label this source (never soft-dedupe)"}
             className={cn(
-              "mt-1 shrink-0 text-[10px] uppercase tracking-[0.12em]",
+              "mt-1 shrink-0 px-1 text-[10px] uppercase tracking-[0.12em]",
               keptSource ? "text-turf" : "text-chalk-dim hover:text-cream",
             )}
             aria-label="Keep source"
@@ -1751,15 +1782,21 @@ function ArticleRow({
         {!batchMode ? (
           <button
             type="button"
-            onClick={onBlockUrl}
+            data-row-action
+            onClick={(e) => {
+              e.stopPropagation();
+              onBlockUrl();
+            }}
             title="Block domain / URL"
-            className="text-chalk-dim hover:text-alert mt-1 shrink-0"
+            className="text-chalk-dim hover:text-alert mt-1 shrink-0 p-1"
             aria-label="Block domain"
           >
             <Ban size={15} />
           </button>
         ) : null}
-        {!batchMode ? <ChevronRight size={16} className="text-chalk-dim mt-1 shrink-0" /> : null}
+        {!batchMode ? (
+          <ChevronRight size={16} className="text-chalk-dim pointer-events-none mt-1 shrink-0" />
+        ) : null}
       </div>
     </li>
   );
