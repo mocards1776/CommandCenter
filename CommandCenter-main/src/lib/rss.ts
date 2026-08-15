@@ -63,6 +63,18 @@ export const RSS_FEEDS: readonly RssFeedDef[] = [
     short: "Farm",
     url: "synthetic:cardinals-farm",
   },
+  {
+    id: "soccer-clubs-wraps",
+    title: "Wrexham & Wolves wraps",
+    short: "Clubs",
+    url: "synthetic:soccer-clubs-wraps",
+  },
+  {
+    id: "epl-wraps",
+    title: "Premier League wraps & previews",
+    short: "EPL wraps",
+    url: "synthetic:epl-wraps",
+  },
 ];
 
 export type RssFeedId = string;
@@ -89,6 +101,11 @@ export const RSS_FEED_FOLDERS: readonly RssFeedFolder[] = [
     id: "folder:nfl",
     title: "NFL",
     feedIds: ["nfl-wraps"],
+  },
+  {
+    id: "folder:soccer",
+    title: "Soccer",
+    feedIds: ["soccer-clubs-wraps", "epl-wraps"],
   },
   {
     id: "folder:scout",
@@ -139,6 +156,8 @@ export type RssFeedItem = {
   logoTeamIds?: number[];
   /** NFL (or other) ESPN logo abbrevs when MLB ids are unavailable. */
   logoAbbrevs?: string[];
+  /** ESPN soccer team ids for logo fallbacks. */
+  logoSoccerIds?: string[];
 };
 
 export type RssFeedItemRef = RssFeedItem & {
@@ -165,13 +184,18 @@ export function articleDedupeKey(item: Pick<RssFeedItem, "link" | "title">): str
     );
     const host = u.hostname.replace(/^www\./, "").toLowerCase();
     const path = u.pathname.replace(/\/+$/, "").toLowerCase();
-    // ESPN recap/preview/game for the same event are one story.
+    // ESPN recap/preview/game/match for the same event are one story.
     const espnGame =
       path.match(/\/(?:mlb|nfl)\/(?:recap|preview|game)\/_\/gameid\/(\d+)/i) ||
+      path.match(/\/soccer\/(?:match|recap|preview)\/_\/gameid\/(\d+)/i) ||
       item.link.match(/[?&]gameId=(\d+)/i) ||
       item.link.match(/gameId\/(\d+)/i);
     if (espnGame?.[1] && (host === "espn.com" || host.endsWith(".espn.com") || host.includes("espn."))) {
-      const sport = /\/nfl\//i.test(path) || /espn\.com\/nfl/i.test(item.link) ? "nfl" : "mlb";
+      const sport = /\/soccer\//i.test(path) || /espn\.com\/soccer/i.test(item.link)
+        ? "soccer"
+        : /\/nfl\//i.test(path) || /espn\.com\/nfl/i.test(item.link)
+          ? "nfl"
+          : "mlb";
       return `espn-game:${sport}:${espnGame[1]}`;
     }
     return `url:${host}${path}`;
@@ -1596,6 +1620,37 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       stubWithoutArticle: true,
     });
   }
+  if (feedUrl === "synthetic:soccer-clubs-wraps") {
+    return fetchEspnWrapsFeed({
+      feedUrl,
+      title: "Wrexham & Wolves wraps",
+      description: "Wrexham and Wolverhampton game wraps and previews from ESPN",
+      sportPath: "soccer/eng.2",
+      linkSport: "soccer",
+      teamFilters: [
+        { espnId: "352", abbrev: "WXM" },
+        { espnId: "380", abbrev: "WOL" },
+      ],
+      days: 21,
+      maxItems: 40,
+      preferFinals: true,
+      stubWithoutArticle: true,
+    });
+  }
+  if (feedUrl === "synthetic:epl-wraps") {
+    return fetchEspnWrapsFeed({
+      feedUrl,
+      title: "Premier League wraps & previews",
+      description: "Premier League game wraps and previews from ESPN",
+      sportPath: "soccer/eng.1",
+      linkSport: "soccer",
+      // Same rules as MLB wraps: short window, finals + today's previews,
+      // hold hollow stubs until real copy lands (news.articles counts).
+      days: 3,
+      maxItems: 48,
+      preferFinals: true,
+    });
+  }
   if (feedUrl === "synthetic:mlb-stats") {
     return fetchMlbStatsDigestFeed();
   }
@@ -1672,17 +1727,19 @@ type EspnWrapsOpts = {
   feedUrl: string;
   title: string;
   description: string;
-  /** ESPN site path, e.g. baseball/mlb or football/nfl */
+  /** ESPN site path, e.g. baseball/mlb or football/nfl or soccer/eng.1 */
   sportPath?: string;
-  /** Link slug under espn.com — mlb or nfl */
-  linkSport?: "mlb" | "nfl";
+  /** Link slug under espn.com — mlb, nfl, or soccer */
+  linkSport?: "mlb" | "nfl" | "soccer";
   teamFilter?: { espnId: string; abbrev: string };
+  /** Multi-club filter (OR). Takes precedence over teamFilter when set. */
+  teamFilters?: { espnId: string; abbrev: string }[];
   days?: number;
   maxItems?: number;
   preferFinals?: boolean;
   /** Include in-progress games (useful for sparse NFL slates). */
   includeLive?: boolean;
-  /** Emit score/matchup stubs when ESPN has no article (NFL preseason). */
+  /** Emit score/matchup stubs when ESPN has no article (NFL preseason / soccer). */
   stubWithoutArticle?: boolean;
 };
 
@@ -1796,11 +1853,17 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
       for (const event of board.events ?? []) {
         const comp = event.competitions?.[0];
         if (!comp) continue;
-        if (opts.teamFilter) {
-          const hit = (comp.competitors ?? []).some(
-            (c) =>
-              c.team?.abbreviation === opts.teamFilter!.abbrev ||
-              c.team?.id === opts.teamFilter!.espnId,
+        if (opts.teamFilters?.length || opts.teamFilter) {
+          const filters = opts.teamFilters?.length
+            ? opts.teamFilters
+            : opts.teamFilter
+              ? [opts.teamFilter]
+              : [];
+          const hit = (comp.competitors ?? []).some((c) =>
+            filters.some(
+              (f) =>
+                c.team?.abbreviation === f.abbrev || c.team?.id === f.espnId,
+            ),
           );
           if (!hit) continue;
         }
@@ -1895,9 +1958,31 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
               description?: string;
               story?: string;
               images?: { url?: string }[];
+              links?: { href?: string }[];
+            };
+            news?: {
+              articles?: {
+                headline?: string;
+                description?: string;
+                story?: string;
+                images?: { url?: string }[];
+                links?: { href?: string }[];
+              }[];
             };
           };
-          const article = sum.article;
+          // Soccer (and some other sports) put wrap copy in news.articles, not article.
+          const newsArticle = sum.news?.articles?.[0];
+          const article = sum.article?.headline
+            ? sum.article
+            : newsArticle?.headline
+              ? {
+                  headline: newsArticle.headline,
+                  description: newsArticle.description,
+                  story: newsArticle.story,
+                  images: newsArticle.images,
+                  links: newsArticle.links,
+                }
+              : sum.article;
           const comp = c.event.competitions?.[0];
           const home = (comp?.competitors ?? []).find((x) => x.homeAway === "home");
           const away = (comp?.competitors ?? []).find((x) => x.homeAway === "away");
@@ -1919,21 +2004,35 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             linkSport === "nfl"
               ? [awayAbbr, homeAbbr].filter((x): x is string => Boolean(x))
               : undefined;
+          const logoSoccerIds =
+            linkSport === "soccer"
+              ? [away?.team?.id, home?.team?.id].filter((x): x is string => Boolean(x))
+              : undefined;
+
+          const storyLink =
+            article?.links?.find((l) => /espn\.com/i.test(l.href ?? ""))?.href ?? null;
+          const gameLink = (kind: "wrap" | "preview" | "live") => {
+            if (linkSport === "soccer") {
+              if (storyLink) return storyLink;
+              return `https://www.espn.com/soccer/match/_/gameId/${c.eventId}`;
+            }
+            return kind === "preview"
+              ? `https://www.espn.com/${linkSport}/preview/_/gameId/${c.eventId}`
+              : `https://www.espn.com/${linkSport}/recap/_/gameId/${c.eventId}`;
+          };
 
           const stubItem = (kind: "wrap" | "preview" | "live", title: string, snippet: string) =>
             ({
               id: `${kind}-${c.eventId}`,
               title,
-              link:
-                kind === "preview"
-                  ? `https://www.espn.com/${linkSport}/preview/_/gameId/${c.eventId}`
-                  : `https://www.espn.com/${linkSport}/recap/_/gameId/${c.eventId}`,
+              link: gameLink(kind),
               author: "ESPN",
               publishedAt,
               image: article?.images?.[0]?.url ?? null,
               snippet,
               logoTeamIds,
               logoAbbrevs,
+              logoSoccerIds,
             }) satisfies RssFeedItem;
 
           if (c.isLive) {
@@ -1966,13 +2065,14 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             return {
               id: `wrap-${c.eventId}`,
               title: article.headline,
-              link: `https://www.espn.com/${linkSport}/recap/_/gameId/${c.eventId}`,
+              link: gameLink("wrap"),
               author: "ESPN",
               publishedAt,
               image: article.images?.[0]?.url ?? null,
               snippet,
               logoTeamIds,
               logoAbbrevs,
+              logoSoccerIds,
             } satisfies RssFeedItem;
           }
 
@@ -1996,13 +2096,14 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
           return {
             id: `preview-${c.eventId}`,
             title: headline,
-            link: `https://www.espn.com/${linkSport}/preview/_/gameId/${c.eventId}`,
+            link: gameLink("preview"),
             author: "ESPN",
             publishedAt,
             image: article?.images?.[0]?.url ?? null,
             snippet: body.slice(0, 220),
             logoTeamIds,
             logoAbbrevs,
+            logoSoccerIds,
           } satisfies RssFeedItem;
         } catch {
           return null;
@@ -2659,5 +2760,7 @@ export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>([
   "nfl-wraps",
   "mlb-stats",
   "mlb-form",
+  "soccer-clubs-wraps",
+  "epl-wraps",
   "cardinals-farm",
 ]);

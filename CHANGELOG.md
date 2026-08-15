@@ -2,6 +2,15 @@
 
 ---
 
+## Soccer feeds, RUWT, golf cleanup — August 15, 2026
+
+- Wrexham / Wolves favorites use Championship (`eng.2`) paths; team cards hide hollow `0-0-0`, fill standings from the table, and backfill last/next from schedule + scoreboard days.
+- New Dispatch **Soccer** folder: Wrexham & Wolves wraps/previews, plus Premier League wraps using the same rules as MLB wraps.
+- RUWT adds a Soccer filter with Premier League interest sliders plus seeded Wrexham / Wolves.
+- Golfer cards: headshot URL fallbacks, most-recent round/event for scorecards, scorecard removed from Overview, hole play-by-play list removed.
+
+---
+
 ## Standings feeds, wrap spacing, tags — August 15, 2026
 
 - MLB standings and league leaders are separate Dispatch articles; standings tables include team logos and fixed W-L columns.
