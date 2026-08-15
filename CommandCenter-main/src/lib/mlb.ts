@@ -3103,7 +3103,7 @@ async function fetchEspnExperienceFallback(playerName: string): Promise<string |
 /** Service time + WAR from Baseball Reference (via sports edge). */
 export async function fetchMlbPlayerExtras(
   playerName: string,
-  opts?: { isPitcher?: boolean },
+  opts?: { isPitcher?: boolean; mlbId?: number | null },
 ): Promise<MlbPlayerExtras | null> {
   const name = playerName.trim();
   if (name.length < 3) return null;
@@ -3111,6 +3111,7 @@ export async function fetchMlbPlayerExtras(
     action: "playerExtras",
     name,
     isPitcher: Boolean(opts?.isPitcher),
+    mlbId: opts?.mlbId ?? null,
   };
 
   const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;

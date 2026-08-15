@@ -162,13 +162,50 @@ function VideoCard({
     description: string;
     image: string | null;
     href: string | null;
+    mp4?: string | null;
     durationSec: number | null;
   };
 }) {
+  const [playing, setPlaying] = useState(false);
   const mins =
     item.durationSec != null
       ? `${Math.floor(item.durationSec / 60)}:${String(item.durationSec % 60).padStart(2, "0")}`
       : null;
+  const canEmbed = Boolean(item.mp4);
+
+  if (playing && item.mp4) {
+    return (
+      <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0b1220]">
+        <div className="relative aspect-video bg-black">
+          <video
+            key={item.mp4}
+            src={item.mp4}
+            controls
+            autoPlay
+            playsInline
+            poster={item.image ?? undefined}
+            className="h-full w-full object-contain"
+          />
+        </div>
+        <div className="flex items-start justify-between gap-2 px-3 py-2.5">
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold leading-snug text-white">{item.headline}</p>
+            {item.description ? (
+              <p className="mt-1 line-clamp-2 text-[11px] text-white/50">{item.description}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => setPlaying(false)}
+            className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-white/45 hover:text-white/80"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const inner = (
     <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0b1220]">
       <div className="relative aspect-video bg-black/50">
@@ -198,6 +235,18 @@ function VideoCard({
       </div>
     </div>
   );
+
+  if (canEmbed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setPlaying(true)}
+        className="block w-full text-left transition hover:opacity-95"
+      >
+        {inner}
+      </button>
+    );
+  }
   if (!item.href) return inner;
   return (
     <a href={item.href} target="_blank" rel="noreferrer" className="block transition hover:opacity-95">

@@ -1522,7 +1522,33 @@ async function scrapeMlbPlayerBio(
 }
 
 /** Resolve BBRef player page HTML (shared with contract scrape). */
-async function loadBbrefPlayerHtml(name: string): Promise<{ url: string; html: string } | null> {
+async function loadBbrefPlayerHtml(
+  name: string,
+  mlbId?: number | null,
+): Promise<{ url: string; html: string } | null> {
+  // Direct MLB id redirect is far faster/more reliable than search (and avoids
+  // soft-timeouts that blank season WAR on the player card).
+  if (mlbId != null && Number.isFinite(mlbId) && mlbId > 0) {
+    try {
+      const directUrl =
+        `https://www.baseball-reference.com/redirect.fcgi?player=1&mlb_ID=${Math.trunc(mlbId)}`;
+      const directRes = await timedFetch(directUrl, {
+        headers: { "User-Agent": UA, Accept: "text/html" },
+        redirect: "follow",
+      });
+      const html = await directRes.text();
+      if (
+        /\/players\/[a-z]\/[a-z0-9]+\.shtml/i.test(directRes.url) &&
+        html.length > 20_000 &&
+        !/just a moment|cf-browser-verification/i.test(html)
+      ) {
+        return { url: directRes.url, html };
+      }
+    } catch {
+      /* fall through to name search */
+    }
+  }
+
   const q = encodeURIComponent(name.trim());
   const searchUrl = `https://www.baseball-reference.com/search/search.fcgi?search=${q}`;
   const searchRes = await timedFetch(searchUrl, {
@@ -1557,12 +1583,56 @@ async function loadBbrefPlayerHtml(name: string): Promise<{ url: string; html: s
   return { url: playerUrl, html };
 }
 
+/** Prefer current-season WAR from a year+stat table instead of the last numeric cell sitewide. */
+function parseBbrefSeasonAndCareerWar(
+  searchable: string,
+  warStat: string,
+): { seasonWar: number | null; careerWar: number | null } {
+  const year = new Date().getFullYear();
+  const yearWars: { year: number; war: number }[] = [];
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(searchable))) {
+    const row = m[1];
+    if (/thead|colhead|over_header/i.test(row)) continue;
+    const y =
+      row.match(/data-stat="year_id"[^>]*>\s*(?:<[^>]+>)?\s*(\d{4})/i)?.[1] ??
+      row.match(/href="\/players\/gl\.fcgi[^"]*year=(\d{4})/i)?.[1];
+    const w = row.match(new RegExp(`data-stat="${warStat}"[^>]*>([^<]*)`, "i"))?.[1]?.trim();
+    if (!y || !w || !/^-?[0-9.]+$/.test(w)) continue;
+    yearWars.push({ year: Number(y), war: Number(w) });
+  }
+  const seasonRows = yearWars.filter((r) => r.year === year);
+  const seasonWar = seasonRows.length
+    ? seasonRows[seasonRows.length - 1]!.war
+    : yearWars.length
+      ? yearWars[yearWars.length - 1]!.war
+      : null;
+
+  let careerWar: number | null = null;
+  const foot = searchable.match(
+    new RegExp(`<tfoot>[\\s\\S]*?data-stat="${warStat}"[^>]*>([^<]*)`, "i"),
+  );
+  if (foot && /^-?[0-9.]+$/.test(foot[1].trim())) careerWar = Number(foot[1].trim());
+  if (careerWar == null) {
+    // Unique years only — avoid double-counting value + standard tables.
+    const byYear = new Map<number, number>();
+    for (const r of yearWars) byYear.set(r.year, r.war);
+    if (byYear.size) {
+      careerWar =
+        Math.round([...byYear.values()].reduce((a, b) => a + b, 0) * 10) / 10;
+    }
+  }
+  return { seasonWar, careerWar };
+}
+
 /** Service time + WAR (+ optional league WAR rank) from Baseball Reference. */
 async function scrapePlayerExtras(
   name: string,
   isPitcher: boolean,
+  mlbId?: number | null,
 ): Promise<Record<string, unknown>> {
-  const page = await loadBbrefPlayerHtml(name);
+  const page = await loadBbrefPlayerHtml(name, mlbId);
   if (!page) return { error: "Player not found on Baseball Reference", name };
   const searchable = page.html.replace(/<!--([\s\S]*?)-->/g, "$1");
   const stMatch =
@@ -1573,24 +1643,10 @@ async function scrapePlayerExtras(
     searchable.match(/Service Time[^:]*:\s*([0-9]+(?:\.[0-9]+)?)/i);
   const serviceTime = stMatch?.[1] ?? null;
   const warStat = isPitcher ? "p_war" : "b_war";
-  const wars = [...searchable.matchAll(new RegExp(`data-stat="${warStat}"[^>]*>([^<]*)`, "gi"))]
-    .map((m) => m[1].trim())
-    .filter((v) => v && v !== "WAR" && /^-?[0-9.]+$/.test(v))
-    .map(Number)
-    .filter((n) => Number.isFinite(n));
-  // Year rows then often duplicated in other tables — take unique trailing season values carefully.
-  const seasonWar = wars.length ? wars[wars.length - 1]! : null;
-  let careerWar: number | null = null;
-  const foot = searchable.match(
-    new RegExp(`<tfoot>[\\s\\S]*?data-stat="${warStat}"[^>]*>([^<]*)`, "i"),
-  );
-  if (foot && /^-?[0-9.]+$/.test(foot[1].trim())) careerWar = Number(foot[1].trim());
-  if (careerWar == null && wars.length) {
-    careerWar = Math.round(wars.reduce((a, b) => a + b, 0) * 10) / 10;
-  }
+  const { seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(searchable, warStat);
 
-  // Return core fields immediately — WAR rank is optional and often the timeout culprit.
-  const base = {
+  // Core fields only — skip league-rank scrape (extra BBRef page) so WAR survives soft timeouts.
+  return {
     source: "baseball-reference",
     url: page.url,
     name,
@@ -1600,49 +1656,6 @@ async function scrapePlayerExtras(
     warRank: null as number | null,
     warOf: null as number | null,
   };
-
-  const year = new Date().getFullYear();
-  const valuePath = isPitcher
-    ? `/leagues/majors/${year}-value-pitching.shtml`
-    : `/leagues/majors/${year}-value-batting.shtml`;
-  try {
-    const valueHtml = await (
-      await timedFetch(
-        `https://www.baseball-reference.com${valuePath}`,
-        {
-          headers: { "User-Agent": UA, Accept: "text/html", Referer: page.url },
-        },
-        8_000,
-      )
-    ).text();
-    const valueSearch = valueHtml.replace(/<!--([\s\S]*?)-->/g, "$1");
-    const last = name.trim().split(/\s+/).slice(-1)[0] ?? "";
-    const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-    let rank = 0;
-    let m: RegExpExecArray | null;
-    const playerKey = page.url.match(/\/players\/[a-z]\/([a-z0-9]+)\.shtml/i)?.[1] ?? "";
-    while ((m = rowRe.exec(valueSearch))) {
-      const row = m[1];
-      if (!/data-stat="ranker"/i.test(row)) continue;
-      if (playerKey && row.includes(playerKey)) {
-        const rk = row.match(/data-stat="ranker"[^>]*>(\d+)/i);
-        base.warRank = rk ? Number(rk[1]) : rank + 1;
-        break;
-      }
-      if (last && new RegExp(`>${last}<`, "i").test(row) && /players\//i.test(row)) {
-        const rk = row.match(/data-stat="ranker"[^>]*>(\d+)/i);
-        base.warRank = rk ? Number(rk[1]) : rank + 1;
-        break;
-      }
-      rank += 1;
-    }
-    const ranks = [...valueSearch.matchAll(/data-stat="ranker"[^>]*>(\d+)/gi)];
-    if (ranks.length) base.warOf = Number(ranks[ranks.length - 1]![1]);
-  } catch {
-    /* optional */
-  }
-
-  return base;
 }
 
 function decodeHtmlEntities(s: string): string {
@@ -1942,6 +1955,216 @@ async function scrapePipelineScouting(playerId: number): Promise<Record<string, 
   };
 }
 
+/** Implied promotion % from ESPN projected Championship finish. */
+function promotionProbFromProjectedPlace(place: number): number {
+  if (place <= 1) return 0.92;
+  if (place === 2) return 0.86;
+  if (place === 3) return 0.48;
+  if (place === 4) return 0.38;
+  if (place === 5) return 0.32;
+  if (place === 6) return 0.28;
+  if (place <= 8) return 0.14;
+  if (place <= 10) return 0.08;
+  if (place <= 14) return 0.04;
+  return 0.015;
+}
+
+function americanFromProb(p: number): string {
+  const clamped = Math.min(0.98, Math.max(0.02, p));
+  if (clamped >= 0.5) {
+    return String(Math.round((-100 * clamped) / (1 - clamped)));
+  }
+  return `+${Math.round((100 * (1 - clamped)) / clamped)}`;
+}
+
+type SoccerPromotionOdd = {
+  teamId: string;
+  name: string;
+  percent: number;
+  american: string;
+  projectedPlace: number | null;
+  source: string;
+  url: string | null;
+};
+
+/** Polymarket (when open) + ESPN projected finishes → Championship promotion odds. */
+async function scrapeChampionshipPromotionOdds(): Promise<Record<string, unknown>> {
+  const byId = new Map<string, SoccerPromotionOdd>();
+
+  // Polymarket — prefer live markets for the current season when listed.
+  try {
+    const searchUrl =
+      "https://gamma-api.polymarket.com/public-search?q=" +
+      encodeURIComponent("efl championship team promoted");
+    const search = (await (
+      await timedFetch(searchUrl, { headers: { Accept: "application/json", "User-Agent": UA } }, 8_000)
+    ).json()) as {
+      events?: { slug?: string; title?: string; closed?: boolean }[];
+    };
+    const slug =
+      (search.events ?? []).find(
+        (e) =>
+          /championship/i.test(e.title ?? "") &&
+          /promot/i.test(e.title ?? "") &&
+          e.closed === false &&
+          e.slug,
+      )?.slug ??
+      (search.events ?? []).find((e) => e.slug && /championship.*promot|promot.*championship/i.test(e.slug))
+        ?.slug ??
+      "efl-championship-team-promoted-to-epl";
+
+    const evRes = await timedFetch(
+      `https://gamma-api.polymarket.com/events?slug=${encodeURIComponent(slug)}`,
+      { headers: { Accept: "application/json", "User-Agent": UA } },
+      8_000,
+    );
+    if (evRes.ok) {
+      const events = (await evRes.json()) as {
+        title?: string;
+        closed?: boolean;
+        markets?: {
+          groupItemTitle?: string;
+          question?: string;
+          closed?: boolean;
+          active?: boolean;
+          outcomePrices?: string | string[];
+          outcomes?: string | string[];
+        }[];
+      }[];
+      const ev = Array.isArray(events) ? events[0] : null;
+      if (ev && ev.closed !== true) {
+        const nameToId: Record<string, string> = {
+          wrexham: "352",
+          "wolverhampton wanderers": "380",
+          wolves: "380",
+        };
+        for (const m of ev.markets ?? []) {
+          if (m.closed === true) continue;
+          const label = (m.groupItemTitle || m.question || "").trim();
+          const key = label.toLowerCase().replace(/\s+fc$/i, "").trim();
+          let teamId: string | null = null;
+          let name = label;
+          for (const [n, id] of Object.entries(nameToId)) {
+            if (key === n || key.includes(n)) {
+              teamId = id;
+              name = n === "wolves" || n.includes("wolverhampton") ? "Wolves" : "Wrexham";
+              break;
+            }
+          }
+          if (!teamId) continue;
+          let prices = m.outcomePrices;
+          if (typeof prices === "string") {
+            try {
+              prices = JSON.parse(prices) as string[];
+            } catch {
+              prices = [];
+            }
+          }
+          const yes = Number((prices as string[])?.[0]);
+          if (!Number.isFinite(yes) || yes <= 0) continue;
+          byId.set(teamId, {
+            teamId,
+            name,
+            percent: Math.round(yes * 1000) / 10,
+            american: americanFromProb(yes),
+            projectedPlace: null,
+            source: "Polymarket",
+            url: `https://polymarket.com/event/${slug}`,
+          });
+        }
+      }
+    }
+  } catch {
+    /* optional */
+  }
+
+  // ESPN projected finishes for clubs still missing market odds.
+  try {
+    const storyIds: number[] = [];
+    try {
+      const news = (await (
+        await timedFetch(
+          "https://now.core.api.espn.com/v1/sports/news?limit=50&league=eng.2",
+          { headers: { Accept: "application/json", "User-Agent": UA } },
+          8_000,
+        )
+      ).json()) as { headlines?: { id?: number; headline?: string }[] };
+      for (const h of news.headlines ?? []) {
+        if (
+          h.id &&
+          /predict|projected finish|guide to new season|every club/i.test(h.headline ?? "")
+        ) {
+          storyIds.push(h.id);
+        }
+      }
+    } catch {
+      /* known id below */
+    }
+    if (!storyIds.includes(49583537)) storyIds.push(49583537);
+
+    for (const storyId of storyIds) {
+      const storyPayload = (await (
+        await timedFetch(
+          `https://now.core.api.espn.com/v1/sports/news/${storyId}`,
+          { headers: { Accept: "application/json", "User-Agent": UA } },
+          8_000,
+        )
+      ).json()) as { headlines?: { story?: string; links?: { web?: { href?: string } } }[] };
+      const storyHtml = storyPayload.headlines?.[0]?.story ?? "";
+      const storyText = stripTags(storyHtml);
+      if (!/Wrexham|Wolves/i.test(storyText)) continue;
+      const url = storyPayload.headlines?.[0]?.links?.web?.href ?? null;
+      const targets: { teamId: string; name: string; patterns: RegExp[] }[] = [
+        {
+          teamId: "352",
+          name: "Wrexham",
+          patterns: [/Wrexham\s*[—–-]+\s*(\d+)(?:st|nd|rd|th)?/i],
+        },
+        {
+          teamId: "380",
+          name: "Wolves",
+          patterns: [
+            /Wolves\s*[—–-]+\s*(\d+)(?:st|nd|rd|th)?/i,
+            /Wolverhampton Wanderers\s*[—–-]+\s*(\d+)(?:st|nd|rd|th)?/i,
+          ],
+        },
+      ];
+      for (const t of targets) {
+        if (byId.has(t.teamId)) continue;
+        let place: number | null = null;
+        for (const re of t.patterns) {
+          const m = storyText.match(re);
+          if (m) {
+            place = Number(m[1]);
+            break;
+          }
+        }
+        if (place == null || !Number.isFinite(place)) continue;
+        const p = promotionProbFromProjectedPlace(place);
+        byId.set(t.teamId, {
+          teamId: t.teamId,
+          name: t.name,
+          percent: Math.round(p * 1000) / 10,
+          american: americanFromProb(p),
+          projectedPlace: place,
+          source: "ESPN projection",
+          url,
+        });
+      }
+      if (byId.size >= 2) break;
+    }
+  } catch {
+    /* optional */
+  }
+
+  const items = [...byId.values()];
+  return {
+    league: "eng.2",
+    items,
+    source: items[0]?.source ?? "none",
+  };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -2014,6 +2237,19 @@ Deno.serve(async (req: Request) => {
   if (body.action === "nflCoachFiredOdds") {
     try {
       return json(await scrapeNflCoachFiredOdds());
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
+    }
+  }
+  if (body.action === "championshipPromotionOdds") {
+    try {
+      return json(
+        await withBudget(
+          18_000,
+          () => scrapeChampionshipPromotionOdds(),
+          { error: "Promotion odds timed out", league: "eng.2", items: [] },
+        ),
+      );
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
     }
@@ -2129,9 +2365,15 @@ Deno.serve(async (req: Request) => {
   if (body.action === "playerExtras") {
     const name = String(body.name ?? "").trim();
     if (name.length < 3 || name.length > 80) return json({ error: "Bad name" }, 400);
+    const mlbIdRaw = body.mlbId ?? body.playerId;
+    const mlbId =
+      typeof mlbIdRaw === "number"
+        ? mlbIdRaw
+        : typeof mlbIdRaw === "string" && /^\d+$/.test(mlbIdRaw)
+          ? Number(mlbIdRaw)
+          : null;
     try {
-      // Prefer a soft timeout that still returns serviceTime/WAR when the
-      // optional league-rank scrape is what hung — never blank the whole card.
+      // Soft timeout still returns whatever core fields we managed to scrape.
       const partial: Record<string, unknown> = {
         error: "Player extras timed out",
         name,
@@ -2145,9 +2387,7 @@ Deno.serve(async (req: Request) => {
       const result = await withBudget(
         HEAVY_MS,
         async () => {
-          const full = await scrapePlayerExtras(name, Boolean(body.isPitcher));
-          // Mirror core fields onto the soft-timeout shell so a late race still
-          // leaves something useful if the race resolves oddly.
+          const full = await scrapePlayerExtras(name, Boolean(body.isPitcher), mlbId);
           for (const k of [
             "serviceTime",
             "seasonWar",

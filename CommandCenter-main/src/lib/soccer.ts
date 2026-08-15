@@ -1,5 +1,7 @@
 /** ESPN soccer helpers — Premier League + Championship scoreboards for RUWT / cards. */
 
+import { supabase } from "@/lib/supabase";
+
 export function soccerTeamLogo(teamId: string | number): string {
   return `https://a.espncdn.com/i/teamlogos/soccer/500/${teamId}.png`;
 }
@@ -39,6 +41,29 @@ export type SoccerTeamMeta = {
   abbrev: string;
   logo: string | null;
   leagueSlug: string;
+};
+
+export type SoccerPromotionOdd = {
+  teamId: string;
+  name: string;
+  percent: number;
+  american: string;
+  projectedPlace: number | null;
+  source: string;
+  url: string | null;
+};
+
+export type SoccerClubForm = {
+  pts: number | null;
+  gf: number | null;
+  ga: number | null;
+  gd: number | null;
+  rank: number | null;
+  played: number | null;
+  wins: number | null;
+  draws: number | null;
+  losses: number | null;
+  zone: "auto" | "playoff" | "mid" | "relegation" | null;
 };
 
 /** Clubs we always surface on RUWT (Championship). */
@@ -114,27 +139,17 @@ function sideFromCompetitor(c: {
   };
 }
 
-async function fetchSoccerScoreboardDay(
-  leagueSlug: string,
-  dateYmd?: string,
-): Promise<SoccerScoreGame[]> {
-  const leagueName =
-    leagueSlug === "eng.1"
-      ? "Premier League"
-      : leagueSlug === "eng.2"
-        ? "EFL Championship"
-        : leagueSlug;
-  const url = dateYmd
-    ? `https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueSlug}/scoreboard?dates=${dateYmd}`
-    : `https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueSlug}/scoreboard`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) return [];
-  const board = (await res.json()) as {
+function leagueDisplayName(leagueSlug: string): string {
+  if (leagueSlug === "eng.1") return "Premier League";
+  if (leagueSlug === "eng.2") return "EFL Championship";
+  return leagueSlug;
+}
+
+function parseScoreboardPayload(
+  board: {
     events?: {
       id?: string;
       date?: string;
-      name?: string;
-      shortName?: string;
       competitions?: {
         venue?: { fullName?: string };
         status?: {
@@ -162,8 +177,10 @@ async function fetchSoccerScoreboardDay(
         }[];
       }[];
     }[];
-  };
-
+  },
+  leagueSlug: string,
+): SoccerScoreGame[] {
+  const leagueName = leagueDisplayName(leagueSlug);
   const out: SoccerScoreGame[] = [];
   for (const event of board.events ?? []) {
     const comp = event.competitions?.[0];
@@ -193,62 +210,350 @@ async function fetchSoccerScoreboardDay(
   return out;
 }
 
-/** Today’s Premier League board + Championship games involving focus clubs. */
+/** Resilient ESPN site fetch — mirrors sports.ts espnGet (direct → web host → edge). */
+async function soccerEspnGet(path: string): Promise<unknown> {
+  const clean = path.replace(/^\/+/, "");
+  const headers = { Accept: "application/json" };
+  const hosts = [
+    "https://site.api.espn.com/apis/site/v2/sports",
+    "https://site.web.api.espn.com/apis/site/v2/sports",
+  ];
+  for (const host of hosts) {
+    try {
+      const ctl = new AbortController();
+      const t = window.setTimeout(() => ctl.abort(), 12_000);
+      const res = await fetch(`${host}/${clean}`, {
+        signal: ctl.signal,
+        headers,
+      }).finally(() => window.clearTimeout(t));
+      if (res.ok) return await res.json();
+    } catch {
+      /* try next */
+    }
+  }
+  const { data, error } = await supabase.functions.invoke("sports", {
+    body: { path: clean },
+  });
+  if (error) throw new Error(error.message);
+  if (data && typeof data === "object" && "error" in data && (data as { error?: string }).error) {
+    throw new Error(String((data as { error: string }).error));
+  }
+  return data;
+}
+
+async function fetchSoccerScoreboardDay(
+  leagueSlug: string,
+  dateYmd?: string,
+): Promise<SoccerScoreGame[]> {
+  const path = dateYmd
+    ? `soccer/${leagueSlug}/scoreboard?dates=${dateYmd}`
+    : `soccer/${leagueSlug}/scoreboard`;
+  try {
+    const board = (await soccerEspnGet(path)) as Parameters<typeof parseScoreboardPayload>[0];
+    return parseScoreboardPayload(board, leagueSlug);
+  } catch {
+    return [];
+  }
+}
+
+function ymdOffsetChicago(baseYmd: string, dayDelta: number): string {
+  const [y, m, d] = baseYmd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d!));
+  dt.setUTCDate(dt.getUTCDate() + dayDelta);
+  return dt.toISOString().slice(0, 10);
+}
+
+async function fetchFocusClubGames(): Promise<SoccerScoreGame[]> {
+  const out: SoccerScoreGame[] = [];
+  await Promise.all(
+    RUWT_SOCCER_FOCUS.map(async (club) => {
+      try {
+        const raw = (await soccerEspnGet(
+          `soccer/${club.leagueSlug}/teams/${club.id}`,
+        )) as {
+          team?: {
+            nextEvent?: {
+              id?: string;
+              date?: string;
+              name?: string;
+              shortName?: string;
+              competitions?: {
+                venue?: { fullName?: string };
+                status?: {
+                  type?: {
+                    state?: string;
+                    completed?: boolean;
+                    description?: string;
+                    shortDetail?: string;
+                    detail?: string;
+                  };
+                };
+                competitors?: {
+                  homeAway?: string;
+                  score?: string | number;
+                  records?: { type?: string; summary?: string }[];
+                  team?: {
+                    id?: string;
+                    abbreviation?: string;
+                    displayName?: string;
+                    shortDisplayName?: string;
+                    logo?: string;
+                    logos?: { href?: string }[];
+                  };
+                }[];
+              }[];
+            }[];
+          };
+        };
+        for (const event of raw.team?.nextEvent ?? []) {
+          const parsed = parseScoreboardPayload(
+            { events: [event] },
+            club.leagueSlug,
+          );
+          out.push(...parsed);
+        }
+      } catch {
+        /* optional */
+      }
+    }),
+  );
+  return out;
+}
+
+/** Today’s boards + near-term slate + always-on focus club fixtures. */
 export async function fetchSoccerRuwtBoard(todayYmd: string): Promise<SoccerScoreGame[]> {
   const ymd = todayYmd.replace(/-/g, "");
-  const [pl, champ] = await Promise.all([
+  const windowDays = [0, 1, 2, 3, -1];
+  const datedPaths = windowDays.flatMap((delta) => {
+    const day = ymdOffsetChicago(todayYmd, delta).replace(/-/g, "");
+    return [
+      fetchSoccerScoreboardDay("eng.1", day),
+      fetchSoccerScoreboardDay("eng.2", day),
+    ];
+  });
+
+  const [plToday, champToday, plOpen, champOpen, focusGames, ...windowBoards] = await Promise.all([
     fetchSoccerScoreboardDay("eng.1", ymd).catch(() => [] as SoccerScoreGame[]),
     fetchSoccerScoreboardDay("eng.2", ymd).catch(() => [] as SoccerScoreGame[]),
+    // Undated scoreboard = ESPN's "current" slate (often next matchday when today is empty).
+    fetchSoccerScoreboardDay("eng.1").catch(() => [] as SoccerScoreGame[]),
+    fetchSoccerScoreboardDay("eng.2").catch(() => [] as SoccerScoreGame[]),
+    fetchFocusClubGames().catch(() => [] as SoccerScoreGame[]),
+    ...datedPaths,
   ]);
+
   const focus = new Set(RUWT_SOCCER_FOCUS.map((t) => t.id));
-  const champFocus = champ.filter(
-    (g) => focus.has(g.away.teamId) || focus.has(g.home.teamId),
+  const champFocus = [...champToday, ...champOpen, ...windowBoards.flat()].filter(
+    (g) => g.leagueSlug === "eng.2" && (focus.has(g.away.teamId) || focus.has(g.home.teamId)),
   );
+
+  // When PL has a quiet midweek, still show the open slate so Soccer RUWT isn't empty.
+  const plGames = plToday.length ? plToday : plOpen;
+
   const seen = new Set<string>();
   const out: SoccerScoreGame[] = [];
-  for (const g of [...pl, ...champFocus]) {
+  for (const g of [...plGames, ...champFocus, ...focusGames]) {
     if (!g.id || seen.has(g.id)) continue;
     seen.add(g.id);
     out.push(g);
+  }
+  // If still empty, fall back to full Championship day board so the filter isn't blank.
+  if (!out.length) {
+    for (const g of champToday.length ? champToday : champOpen) {
+      if (!g.id || seen.has(g.id)) continue;
+      seen.add(g.id);
+      out.push(g);
+    }
   }
   return out;
 }
 
 export async function fetchPremierLeagueTeams(): Promise<SoccerTeamMeta[]> {
-  const res = await fetch(
-    "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/teams",
-    { headers: { Accept: "application/json" } },
-  );
-  if (!res.ok) return [];
-  const data = (await res.json()) as {
-    sports?: {
-      leagues?: {
-        teams?: {
-          team?: {
-            id?: string;
-            abbreviation?: string;
-            displayName?: string;
-            shortDisplayName?: string;
-            logos?: { href?: string }[];
-          };
+  try {
+    const data = (await soccerEspnGet("soccer/eng.1/teams")) as {
+      sports?: {
+        leagues?: {
+          teams?: {
+            team?: {
+              id?: string;
+              abbreviation?: string;
+              displayName?: string;
+              shortDisplayName?: string;
+              logos?: { href?: string }[];
+            };
+          }[];
         }[];
       }[];
-    }[];
+    };
+    const teams = data.sports?.[0]?.leagues?.[0]?.teams ?? [];
+    return teams
+      .map((row) => {
+        const t = row.team;
+        if (!t?.id) return null;
+        return {
+          id: String(t.id),
+          name: t.shortDisplayName ?? t.displayName ?? "Club",
+          abbrev: t.abbreviation ?? "—",
+          logo: t.logos?.[0]?.href ?? null,
+          leagueSlug: "eng.1",
+        } satisfies SoccerTeamMeta;
+      })
+      .filter((t): t is SoccerTeamMeta => Boolean(t));
+  } catch {
+    return [];
+  }
+}
+
+/** Championship promotion odds (Polymarket when live, else ESPN projection). */
+export async function fetchChampionshipPromotionOdds(): Promise<SoccerPromotionOdd[]> {
+  const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  const body = { action: "championshipPromotionOdds" };
+
+  const mapItems = (data: unknown): SoccerPromotionOdd[] => {
+    const root = data as { items?: SoccerPromotionOdd[] } | null;
+    return Array.isArray(root?.items) ? root!.items! : [];
   };
-  const teams = data.sports?.[0]?.leagues?.[0]?.teams ?? [];
-  return teams
-    .map((row) => {
-      const t = row.team;
-      if (!t?.id) return null;
-      return {
-        id: String(t.id),
-        name: t.shortDisplayName ?? t.displayName ?? "Club",
-        abbrev: t.abbreviation ?? "—",
-        logo: t.logos?.[0]?.href ?? null,
-        leagueSlug: "eng.1",
-      } satisfies SoccerTeamMeta;
-    })
-    .filter((t): t is SoccerTeamMeta => Boolean(t));
+
+  if (base && key) {
+    try {
+      const ctl = new AbortController();
+      const timer = window.setTimeout(() => ctl.abort(), 20_000);
+      try {
+        const res = await fetch(`${base}/functions/v1/sports`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+            apikey: key,
+          },
+          body: JSON.stringify(body),
+          signal: ctl.signal,
+        });
+        if (res.ok) {
+          const items = mapItems(await res.json());
+          if (items.length) return items;
+        }
+      } finally {
+        window.clearTimeout(timer);
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  try {
+    const { data } = await supabase.functions.invoke("sports", { body });
+    const items = mapItems(data);
+    if (items.length) return items;
+  } catch {
+    /* fall through to client ESPN projection */
+  }
+
+  return fetchEspnProjectedPromotionOdds();
+}
+
+function americanFromProb(p: number): string {
+  const clamped = Math.min(0.98, Math.max(0.02, p));
+  if (clamped >= 0.5) return String(Math.round((-100 * clamped) / (1 - clamped)));
+  return `+${Math.round((100 * (1 - clamped)) / clamped)}`;
+}
+
+function promotionProbFromPlace(place: number): number {
+  if (place <= 1) return 0.92;
+  if (place === 2) return 0.86;
+  if (place === 3) return 0.48;
+  if (place === 4) return 0.38;
+  if (place === 5) return 0.32;
+  if (place === 6) return 0.28;
+  if (place <= 8) return 0.14;
+  if (place <= 10) return 0.08;
+  if (place <= 14) return 0.04;
+  return 0.015;
+}
+
+/** Client fallback — ESPN Championship projected finishes → promotion odds. */
+async function fetchEspnProjectedPromotionOdds(): Promise<SoccerPromotionOdd[]> {
+  try {
+    const storyIds: number[] = [];
+    try {
+      const newsRes = await fetch(
+        "https://now.core.api.espn.com/v1/sports/news?limit=50&league=eng.2",
+        { headers: { Accept: "application/json" } },
+      );
+      if (newsRes.ok) {
+        const news = (await newsRes.json()) as {
+          headlines?: { id?: number; headline?: string }[];
+        };
+        for (const h of news.headlines ?? []) {
+          if (
+            h.id &&
+            /predict|projected finish|guide to new season|every club/i.test(h.headline ?? "")
+          ) {
+            storyIds.push(h.id);
+          }
+        }
+      }
+    } catch {
+      /* known id below */
+    }
+    // Stable season-preview story used when the league feed rotates it out.
+    if (!storyIds.includes(49583537)) storyIds.push(49583537);
+
+    for (const id of storyIds) {
+      const storyRes = await fetch(`https://now.core.api.espn.com/v1/sports/news/${id}`, {
+        headers: { Accept: "application/json" },
+      });
+      if (!storyRes.ok) continue;
+      const storyPayload = (await storyRes.json()) as {
+        headlines?: { story?: string; links?: { web?: { href?: string } } }[];
+      };
+      const story = (storyPayload.headlines?.[0]?.story ?? "").replace(/<[^>]+>/g, " ");
+      if (!/Wrexham|Wolves/i.test(story)) continue;
+      const url = storyPayload.headlines?.[0]?.links?.web?.href ?? null;
+      const targets: { teamId: string; name: string; re: RegExp }[] = [
+        { teamId: "352", name: "Wrexham", re: /Wrexham\s*[—–-]+\s*(\d+)(?:st|nd|rd|th)?/i },
+        { teamId: "380", name: "Wolves", re: /Wolves\s*[—–-]+\s*(\d+)(?:st|nd|rd|th)?/i },
+      ];
+      const out: SoccerPromotionOdd[] = [];
+      for (const t of targets) {
+        const m = story.match(t.re);
+        if (!m) continue;
+        const place = Number(m[1]);
+        if (!Number.isFinite(place)) continue;
+        const p = promotionProbFromPlace(place);
+        out.push({
+          teamId: t.teamId,
+          name: t.name,
+          percent: Math.round(p * 1000) / 10,
+          american: americanFromProb(p),
+          projectedPlace: place,
+          source: "ESPN projection",
+          url,
+        });
+      }
+      if (out.length) return out;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export function championshipZone(rank: number | null): SoccerClubForm["zone"] {
+  if (rank == null || !Number.isFinite(rank)) return null;
+  if (rank <= 2) return "auto";
+  if (rank <= 6) return "playoff";
+  if (rank >= 22) return "relegation";
+  return "mid";
+}
+
+export function zoneLabel(zone: SoccerClubForm["zone"]): string {
+  if (zone === "auto") return "Auto-promotion";
+  if (zone === "playoff") return "Playoff places";
+  if (zone === "relegation") return "Relegation zone";
+  if (zone === "mid") return "Mid-table";
+  return "";
 }
 
 /** Simple drama + personal interest ranking for soccer. */
