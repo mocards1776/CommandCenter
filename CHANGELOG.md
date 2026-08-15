@@ -2,6 +2,14 @@
 
 ---
 
+## Golf: kill fake map, videos, RotoWire notes — August 15, 2026
+
+- Removed the fake hole-map / play-by-play board from golfer cards (no TourCast shot-trail data in public APIs). Scorecard tab is traditional front/back-9 tables only.
+- Wired ESPN golfer highlight clips into Overview + News & Video.
+- Added after-round RotoWire notes on the golfer Overview (sports edge scrape of rotowire.com/golf).
+
+---
+
 ## Highlight → save / hide text / block article — August 14, 2026
 
 - Selection sheet in the article reader now offers three clear actions: **Save quote**, **Hide text**, or **Block article**.

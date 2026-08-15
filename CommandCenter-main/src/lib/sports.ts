@@ -839,6 +839,15 @@ export type GolferProfile = {
     href: string | null;
     type: "news" | "video";
   }[];
+  /** ESPN highlight clips for this golfer (when available). */
+  videos: {
+    id: string;
+    headline: string;
+    description: string;
+    image: string | null;
+    href: string | null;
+    durationSec: number | null;
+  }[];
   /** This season's tournament finishes. */
   seasonResults: {
     event: string;
@@ -863,12 +872,17 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
 
   let athlete: Record<string, unknown> = {};
   let overview: Record<string, unknown> = {};
+  let athleteVideos: unknown[] = [];
 
   try {
     const res = await fetch(athletePath, { headers: { Accept: "application/json" } });
     if (res.ok) {
-      const data = (await res.json()) as { athlete?: Record<string, unknown> };
+      const data = (await res.json()) as {
+        athlete?: Record<string, unknown>;
+        videos?: unknown[];
+      };
       athlete = data.athlete ?? {};
+      if (Array.isArray(data.videos)) athleteVideos = data.videos;
     }
   } catch {
     /* edge fallback below */
@@ -1067,14 +1081,57 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
     })
     .filter((n) => n.headline);
 
-  const highlights = newsList
+  const videos = athleteVideos
+    .map((raw) => {
+      const v = raw as {
+        id?: string | number;
+        headline?: string;
+        title?: string;
+        description?: string;
+        caption?: string;
+        duration?: number;
+        thumbnail?: string;
+        images?: { url?: string }[];
+        posterImages?: { default?: { href?: string } };
+        links?: { web?: { href?: string } };
+      };
+      const id = v.id != null ? String(v.id) : "";
+      const headline = (v.headline || v.title || "").trim();
+      if (!id || !headline) return null;
+      return {
+        id,
+        headline,
+        description: (v.description || v.caption || "").trim(),
+        image:
+          v.posterImages?.default?.href ??
+          v.thumbnail ??
+          v.images?.[0]?.url ??
+          null,
+        href: v.links?.web?.href ?? `https://www.espn.com/video/clip?id=${id}`,
+        durationSec: typeof v.duration === "number" ? v.duration : null,
+      };
+    })
+    .filter((v): v is NonNullable<typeof v> => Boolean(v));
+
+  const highlights = (videos.length ? videos : newsList)
     .slice(0, 8)
-    .map((n) => ({
-      headline: n.headline ?? "",
-      image: n.images?.[0]?.url ?? null,
-      href: n.links?.web?.href ?? null,
-    }))
-    .filter((n) => n.headline);
+    .map((n) => {
+      const headline =
+        ("headline" in n ? n.headline : "")?.trim() ||
+        ("title" in n ? String((n as { title?: string }).title ?? "") : "").trim();
+      return {
+        headline,
+        image:
+          "image" in n
+            ? n.image
+            : ((n as { images?: { url?: string }[] }).images?.[0]?.url ?? null),
+        href:
+          "href" in n
+            ? n.href
+            : ((n as { links?: { web?: { href?: string } } }).links?.web?.href ?? null),
+      };
+    })
+    .filter((n) => Boolean(n.headline));
 
   const seasonResults: GolferProfile["seasonResults"] = [];
   const year = new Date().getFullYear();
@@ -1246,6 +1303,7 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
     seasonStats,
     highlights,
     recentNews,
+    videos,
     seasonResults,
     lastWin,
   };
@@ -1454,6 +1512,59 @@ export async function fetchGolferScorecard(
     currentHole,
     rounds,
   };
+}
+
+export type GolferRotoNote = {
+  headline: string;
+  body: string;
+  date: string | null;
+};
+
+export type GolferRotoNotes = {
+  name: string;
+  url: string | null;
+  notes: GolferRotoNote[];
+  error?: string;
+};
+
+/** After-round RotoWire blurbs for a golfer (edge scrape of rotowire.com/golf). */
+export async function fetchGolferRotoNotes(golferName: string): Promise<GolferRotoNotes> {
+  const name = golferName.trim();
+  if (name.length < 3) return { name, url: null, notes: [], error: "Bad name" };
+
+  try {
+    const { data } = await supabase.functions.invoke("sports", {
+      body: { action: "golferRotoNotes", name },
+    });
+    const payload = data as GolferRotoNotes | null;
+    if (payload && Array.isArray(payload.notes)) return payload;
+  } catch {
+    /* fall through */
+  }
+
+  try {
+    const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    if (base && key) {
+      const res = await fetch(`${base}/functions/v1/sports`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+          apikey: key,
+        },
+        body: JSON.stringify({ action: "golferRotoNotes", name }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as GolferRotoNotes;
+        if (Array.isArray(data.notes)) return data;
+      }
+    }
+  } catch {
+    /* */
+  }
+
+  return { name, url: null, notes: [], error: "Could not load RotoWire notes" };
 }
 
 /** Sum PGA Tour season stats into career wins / earnings / cuts. */

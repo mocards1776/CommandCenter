@@ -1325,6 +1325,103 @@ async function scrapeGolferLastWin(golferId: string) {
   return null;
 }
 
+/** Resolve a RotoWire golf player page from display name. */
+async function resolveGolferRotoWireUrl(name: string): Promise<string | null> {
+  const want = normPerson(name);
+  const slugWant = want.replace(/\s+/g, "-");
+  const last = want.split(" ").slice(-1)[0] ?? "";
+  const newsUrl =
+    `https://www.rotowire.com/golf/news.php?player=` + encodeURIComponent(name.trim());
+  const html = await (
+    await timedFetch(newsUrl, {
+      headers: {
+        "User-Agent": UA,
+        Accept: "text/html",
+        Referer: "https://www.rotowire.com/golf/",
+      },
+    }, SEARCH_MS)
+  ).text();
+
+  const re =
+    /href="(?:https:\/\/www\.rotowire\.com)?(\/golf\/player\/([a-z0-9-]+-\d+))"[^>]*>([^<]+)</gi;
+  let m: RegExpExecArray | null;
+  let soft: string | null = null;
+  while ((m = re.exec(html))) {
+    const path = m[1]!;
+    const slug = (m[2] ?? "").toLowerCase();
+    const label = normPerson(m[3] ?? "");
+    if (
+      label === want ||
+      slug === slugWant ||
+      slug.startsWith(`${slugWant}-`)
+    ) {
+      return `https://www.rotowire.com${path}`;
+    }
+    if (
+      !soft &&
+      last &&
+      (label.includes(want) || want.includes(label) || slug.includes(last))
+    ) {
+      soft = `https://www.rotowire.com${path}`;
+    }
+  }
+
+  const slugHit = html.match(new RegExp(`/golf/player/(${slugWant}-\\d+)`, "i"));
+  if (slugHit?.[1]) return `https://www.rotowire.com/golf/player/${slugHit[1]}`;
+  return soft;
+}
+
+/** After-round RotoWire blurbs for a golfer (player page scrape). */
+async function scrapeGolferRotoNotes(name: string) {
+  const trimmed = name.trim();
+  if (trimmed.length < 3) return { name: trimmed, url: null, notes: [], error: "Bad name" };
+
+  const url = await resolveGolferRotoWireUrl(trimmed);
+  if (!url) {
+    return { name: trimmed, url: null, notes: [], error: "Golfer not found on RotoWire" };
+  }
+
+  const html = await (
+    await timedFetch(url, {
+      headers: {
+        "User-Agent": UA,
+        Accept: "text/html",
+        Referer: "https://www.rotowire.com/golf/news.php",
+      },
+    }, HEAVY_MS)
+  ).text();
+
+  const notes: { headline: string; body: string; date: string | null }[] = [];
+  const seen = new Set<string>();
+  const itemRe =
+    /<div class="news-update__headline">([\s\S]*?)<\/div>[\s\S]*?<div class="news-update__timestamp">([\s\S]*?)<\/div>[\s\S]*?<div class="news-update__news">([\s\S]*?)<\/div>(?:[\s\S]*?<div class="news-update__analysis">([\s\S]*?)<\/div>)?/gi;
+  let m: RegExpExecArray | null;
+  while ((m = itemRe.exec(html))) {
+    const headline = decodeHtmlEntities(stripTags(m[1] ?? "")).replace(/\s+/g, " ").trim();
+    const date = decodeHtmlEntities(stripTags(m[2] ?? "")).replace(/\s+/g, " ").trim() || null;
+    const news = decodeHtmlEntities(stripTags(m[3] ?? "")).replace(/\s+/g, " ").trim();
+    const analysisRaw = decodeHtmlEntities(stripTags(m[4] ?? ""))
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/^ANALYSIS\s*/i, "")
+      .trim();
+    const analysis =
+      analysisRaw && !/subscribe now/i.test(analysisRaw) ? analysisRaw : "";
+    const body = [news, analysis].filter(Boolean).join(" ").trim();
+    if (!headline || !body) continue;
+    const key = headline.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    notes.push({ headline, body, date });
+    if (notes.length >= 8) break;
+  }
+
+  if (!notes.length) {
+    return { name: trimmed, url, notes: [], error: "No RotoWire notes found" };
+  }
+  return { name: trimmed, url, notes };
+}
+
 type PipelineBio = { contentTitle?: string | null; contentText?: string | null };
 type PipelineRow = {
   rank?: number | null;
@@ -1976,6 +2073,24 @@ Deno.serve(async (req: Request) => {
       return json({ lastWin: await scrapeGolferLastWin(golferId) });
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e), lastWin: null }, 200);
+    }
+  }
+  if (body.action === "golferRotoNotes") {
+    const name = String(body.name ?? "").trim();
+    if (name.length < 3 || name.length > 80) return json({ error: "Bad name" }, 400);
+    try {
+      return json(
+        await withBudget(
+          HEAVY_MS,
+          () => scrapeGolferRotoNotes(name),
+          { error: "RotoWire notes timed out", name, url: null, notes: [] },
+        ),
+      );
+    } catch (e) {
+      return json(
+        { error: e instanceof Error ? e.message : String(e), name, url: null, notes: [] },
+        200,
+      );
     }
   }
   if (body.action === "pipelineScouting") {
