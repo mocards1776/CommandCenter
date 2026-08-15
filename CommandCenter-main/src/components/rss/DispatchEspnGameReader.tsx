@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, Loader2, Share } from "lucide-react";
 import toast from "react-hot-toast";
@@ -215,7 +214,7 @@ export default function DispatchEspnGameReader({
         <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
           {chrome}
           {hero}
-          <NflGameDetailView eventId={eventId!} />
+          <NflGameDetailView eventId={eventId!} suppressStoryHeader={Boolean(heroImage || title)} />
         </div>
       );
     }
@@ -238,7 +237,11 @@ export default function DispatchEspnGameReader({
       <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
         {chrome}
         {hero}
-        <MlbGameDetail gamePk={String(resolved.data)} espnEventId={eventId} />
+        <MlbGameDetail
+          gamePk={String(resolved.data)}
+          espnEventId={eventId}
+          suppressWrapHeader={Boolean(heroImage || title)}
+        />
       </div>
     );
   }
