@@ -1748,6 +1748,12 @@ export type PeriodStats = {
   /** 1 = best week ever by pages logged; null when this week has no pages. */
   weekRank: number | null;
   weekTotal: number;
+  /** 1 = best month ever by books finished; null when this month has none. */
+  booksMonthRank: number | null;
+  booksMonthTotal: number;
+  /** 1 = best week ever by books finished; null when this week has none. */
+  booksWeekRank: number | null;
+  booksWeekTotal: number;
   weekStart: string;
   monthStart: string;
   today: string;
@@ -1910,6 +1916,27 @@ export function weekKeyFor(date: string): string {
   return weekStart;
 }
 
+/** Finished read-through counts keyed by week Monday / month YYYY-MM. */
+function finishedCountsByPeriod(books: Book[]): {
+  byWeek: Map<string, number>;
+  byMonth: Map<string, number>;
+} {
+  const byWeek = new Map<string, number>();
+  const byMonth = new Map<string, number>();
+  for (const b of books) {
+    // Count every read-through that finished, not just the book's latest
+    // finish — a re-read in a period is a book finished in that period.
+    for (const r of b.read_log ?? []) {
+      if (!r.end) continue;
+      const wk = weekKeyFor(r.end);
+      byWeek.set(wk, (byWeek.get(wk) ?? 0) + 1);
+      const mk = r.end.slice(0, 7);
+      byMonth.set(mk, (byMonth.get(mk) ?? 0) + 1);
+    }
+  }
+  return { byWeek, byMonth };
+}
+
 /** Monday-start week; both windows in Central time to match everything else. */
 export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodStats {
   const { today, weekStart: weekStartIso, monthStart: monthStartIso } = periodBounds();
@@ -1931,20 +1958,17 @@ export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodSt
   if (!byMonth.has(monthKey)) byMonth.set(monthKey, pagesMonth);
   if (!byWeek.has(weekStartIso)) byWeek.set(weekStartIso, pagesWeek);
 
-  let booksWeek = 0;
-  let booksMonth = 0;
-  for (const b of books) {
-    // Count every read-through that finished in the window, not just the
-    // book's latest finish — a re-read this month is a book read this month.
-    for (const r of b.read_log ?? []) {
-      if (!r.end) continue;
-      if (r.end >= monthStartIso) booksMonth++;
-      if (r.end >= weekStartIso) booksWeek++;
-    }
-  }
+  const finished = finishedCountsByPeriod(books);
+  const booksWeek = finished.byWeek.get(weekStartIso) ?? 0;
+  const booksMonth = finished.byMonth.get(monthKey) ?? 0;
+  // Ensure the current month/week is ranked even when empty.
+  if (!finished.byMonth.has(monthKey)) finished.byMonth.set(monthKey, booksMonth);
+  if (!finished.byWeek.has(weekStartIso)) finished.byWeek.set(weekStartIso, booksWeek);
 
   const monthRank = rankDescending(byMonth.get(monthKey) ?? 0, [...byMonth.values()]);
   const weekRank = rankDescending(byWeek.get(weekStartIso) ?? 0, [...byWeek.values()]);
+  const booksMonthRank = rankDescending(booksMonth, [...finished.byMonth.values()]);
+  const booksWeekRank = rankDescending(booksWeek, [...finished.byWeek.values()]);
   return {
     pagesWeek,
     pagesMonth,
@@ -1954,6 +1978,10 @@ export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodSt
     monthTotal: byMonth.size,
     weekRank: pagesWeek > 0 ? weekRank : null,
     weekTotal: byWeek.size,
+    booksMonthRank: booksMonth > 0 ? booksMonthRank : null,
+    booksMonthTotal: finished.byMonth.size,
+    booksWeekRank: booksWeek > 0 ? booksWeekRank : null,
+    booksWeekTotal: finished.byWeek.size,
     weekStart: weekStartIso,
     monthStart: monthStartIso,
     today,
@@ -2154,6 +2182,33 @@ export function topReadingMonths(sessions: ReadingSession[], limit = 10): TopRea
     const mk = s.session_date.slice(0, 7);
     byMonth.set(mk, (byMonth.get(mk) ?? 0) + s.pages_read);
   }
+  const { today } = periodBounds();
+  const monthKey = today.slice(0, 7);
+  return rankPeriodMap(
+    byMonth,
+    monthKey,
+    limit,
+    monthLabel,
+    (key) => ({ from: `${key}-01`, to: lastDayOfMonth(key) }),
+  );
+}
+
+/** Best weeks by books finished — used for the books week-rank drill-down. */
+export function topFinishedWeeks(books: Book[], limit = 10): TopReadingPeriod[] {
+  const { byWeek } = finishedCountsByPeriod(books);
+  const { weekStart } = periodBounds();
+  return rankPeriodMap(
+    byWeek,
+    weekStart,
+    limit,
+    weekRangeLabel,
+    (key) => ({ from: key, to: shiftDay(key, 6) }),
+  );
+}
+
+/** Best months by books finished — used for the books month-rank drill-down. */
+export function topFinishedMonths(books: Book[], limit = 10): TopReadingPeriod[] {
+  const { byMonth } = finishedCountsByPeriod(books);
   const { today } = periodBounds();
   const monthKey = today.slice(0, 7);
   return rankPeriodMap(

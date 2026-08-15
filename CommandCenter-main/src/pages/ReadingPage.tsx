@@ -91,6 +91,8 @@ import {
   topReadingDays,
   topReadingWeeks,
   topReadingMonths,
+  topFinishedWeeks,
+  topFinishedMonths,
   buildFinishCard,
   type ReadingSession,
 } from "@/lib/books";
@@ -2634,7 +2636,9 @@ export type BreakdownFocus =
   | { kind: "finished"; label: string; from: string; to: string }
   | { kind: "top-days"; label: string; limit?: number }
   | { kind: "top-weeks"; label: string; limit?: number }
-  | { kind: "top-months"; label: string; limit?: number };
+  | { kind: "top-months"; label: string; limit?: number }
+  | { kind: "top-finished-weeks"; label: string; limit?: number }
+  | { kind: "top-finished-months"; label: string; limit?: number };
 
 function StatsBreakdown({
   focus,
@@ -2677,6 +2681,20 @@ function StatsBreakdown({
     () => (focus.kind === "top-months" ? topReadingMonths(sessions, focus.limit ?? 10) : []),
     [focus, sessions],
   );
+  const topFinishedWeekRows = useMemo(
+    () =>
+      focus.kind === "top-finished-weeks"
+        ? topFinishedWeeks(books, focus.limit ?? 10)
+        : [],
+    [focus, books],
+  );
+  const topFinishedMonthRows = useMemo(
+    () =>
+      focus.kind === "top-finished-months"
+        ? topFinishedMonths(books, focus.limit ?? 10)
+        : [],
+    [focus, books],
+  );
   const totalPages = pageRows.reduce((n, r) => n + r.pages, 0);
 
   const subtitle =
@@ -2688,7 +2706,11 @@ function StatsBreakdown({
           ? `Top ${topDays.length} day${topDays.length === 1 ? "" : "s"} by pages`
           : focus.kind === "top-weeks"
             ? `Top ${topWeeks.length} week${topWeeks.length === 1 ? "" : "s"} by pages`
-            : `Top ${topMonths.length} month${topMonths.length === 1 ? "" : "s"} by pages`;
+            : focus.kind === "top-months"
+              ? `Top ${topMonths.length} month${topMonths.length === 1 ? "" : "s"} by pages`
+              : focus.kind === "top-finished-weeks"
+                ? `Top ${topFinishedWeekRows.length} week${topFinishedWeekRows.length === 1 ? "" : "s"} by books finished`
+                : `Top ${topFinishedMonthRows.length} month${topFinishedMonthRows.length === 1 ? "" : "s"} by books finished`;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
@@ -2729,6 +2751,12 @@ function StatsBreakdown({
         )}
         {focus.kind === "top-months" && topMonths.length === 0 && (
           <p className="text-chalk-dim text-[13px]">No reading months logged yet.</p>
+        )}
+        {focus.kind === "top-finished-weeks" && topFinishedWeekRows.length === 0 && (
+          <p className="text-chalk-dim text-[13px]">No finished weeks yet.</p>
+        )}
+        {focus.kind === "top-finished-months" && topFinishedMonthRows.length === 0 && (
+          <p className="text-chalk-dim text-[13px]">No finished months yet.</p>
         )}
 
         {focus.kind === "pages" && pageRows.length > 0 && (
@@ -2895,6 +2923,58 @@ function StatsBreakdown({
                       {p.pages}
                       <span className="text-chalk-dim ml-1 text-[11px] font-sans tracking-normal">
                         p
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+        {(focus.kind === "top-finished-weeks" || focus.kind === "top-finished-months") &&
+          (focus.kind === "top-finished-weeks" ? topFinishedWeekRows : topFinishedMonthRows)
+            .length > 0 && (
+            <ul className="flex flex-col gap-2">
+              {(focus.kind === "top-finished-weeks"
+                ? topFinishedWeekRows
+                : topFinishedMonthRows
+              ).map((p) => (
+                <li key={p.key}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onDrill?.({
+                        kind: "finished",
+                        label: p.label,
+                        from: p.from,
+                        to: p.to,
+                      })
+                    }
+                    className={cn(
+                      "bg-panel hover:border-accent/40 flex w-full items-center gap-3 rounded border px-3 py-2.5 text-left transition",
+                      p.isCurrent ? "border-accent/45" : "border-white/[0.07]",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "numeral w-8 shrink-0 text-center text-[18px]",
+                        p.rank <= 3 ? "text-accent" : "text-chalk-dim",
+                      )}
+                    >
+                      #{p.rank}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-cream text-[13px]">{p.label}</p>
+                      {p.isCurrent && (
+                        <p className="text-accent text-[10.5px] uppercase tracking-[0.14em]">
+                          {focus.kind === "top-finished-weeks" ? "This week" : "This month"}
+                        </p>
+                      )}
+                    </div>
+                    <span className="numeral text-accent shrink-0 text-[18px]">
+                      {p.pages}
+                      <span className="text-chalk-dim ml-1 text-[11px] font-sans tracking-normal">
+                        {p.pages === 1 ? "book" : "books"}
                       </span>
                     </span>
                   </button>
@@ -3295,36 +3375,34 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
 
 
 /* ── Now reading hero ───────────────────────────────────────────────── */
-/** Tiny inline progress editor — page, %, or +pages from the home card. */
+/** Tiny inline progress editor — +pages and % done boxes from the home card. */
 function NowReadingProgress({ book }: { book: Book }) {
   const qc = useQueryClient();
   const { burst } = useCelebration();
   const [open, setOpen] = useState(false);
-  const defaultMode =
-    book.page_count == null
-      ? ("count" as const)
-      : ((book.progress_mode as "pages" | "percent" | "page") ?? "pages");
-  const [mode, setMode] = useState<"pages" | "percent" | "page" | "count">(defaultMode);
-  const [value, setValue] = useState("");
+  const [pagesValue, setPagesValue] = useState("");
+  const [percentValue, setPercentValue] = useState("");
+  const [countValue, setCountValue] = useState("");
+  const [pendingMode, setPendingMode] = useState<"pages" | "percent" | "count" | null>(null);
 
   const pct = book.page_count
     ? Math.min(100, (book.current_page / book.page_count) * 100)
     : null;
 
   const save = useMutation({
-    mutationFn: async () => {
-      const n = Number.parseFloat(value);
-      if (!Number.isFinite(n) || n < 0) throw new Error("Enter a number");
+    mutationFn: async (mode: "pages" | "percent" | "count") => {
       if (mode === "count") {
-        const pages = Math.round(n);
-        if (pages <= 0) throw new Error("Page count must be positive");
-        await updateBook(book.id, { page_count: pages });
-        return { kind: "count" as const };
+        const n = Number.parseFloat(countValue);
+        if (!Number.isFinite(n) || n <= 0) throw new Error("Page count must be positive");
+        await updateBook(book.id, { page_count: Math.round(n) });
+        return { kind: "count" as const, mode };
       }
       if (mode === "pages") {
-        if (n <= 0) throw new Error("Enter pages read");
+        const n = Number.parseFloat(pagesValue);
+        if (!Number.isFinite(n) || n <= 0) throw new Error("Enter pages read");
         return {
           kind: "log" as const,
+          mode,
           ...(await logPages({
             bookId: book.id,
             pages: Math.round(n),
@@ -3335,13 +3413,13 @@ function NowReadingProgress({ book }: { book: Book }) {
           })),
         };
       }
-      // percent → absolute page; page → jump to page N
-      const target =
-        mode === "percent" ? percentToPage(n, book.page_count) : Math.round(n);
+      const n = Number.parseFloat(percentValue);
+      if (!Number.isFinite(n) || n < 0) throw new Error("Enter a percent");
+      const target = percentToPage(n, book.page_count);
       if (target === null) throw new Error("Add a page count first");
-      if (target < 0) throw new Error("Enter a page number");
       return {
         kind: "log" as const,
+        mode,
         ...(await setProgress({
           bookId: book.id,
           toPage: target,
@@ -3352,22 +3430,36 @@ function NowReadingProgress({ book }: { book: Book }) {
         })),
       };
     },
-    onSuccess: async () => {
-      if (mode !== "count" && mode !== book.progress_mode) {
+    onSuccess: async (result) => {
+      if (result.mode !== "count" && result.mode !== book.progress_mode) {
         try {
-          await updateBook(book.id, { progress_mode: mode });
+          await updateBook(book.id, { progress_mode: result.mode });
         } catch {
           /* non-fatal */
         }
       }
-      setValue("");
+      setPagesValue("");
+      setPercentValue("");
+      setCountValue("");
+      setPendingMode(null);
       setOpen(false);
       qc.invalidateQueries({ queryKey: ["books"] });
       qc.invalidateQueries({ queryKey: ["reading-sessions"] });
-      toast.success(mode === "count" ? "Page count saved" : "Progress updated");
+      toast.success(result.mode === "count" ? "Page count saved" : "Progress updated");
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
+    onError: (e) => {
+      setPendingMode(null);
+      toast.error(e instanceof Error ? e.message : "Could not save");
+    },
   });
+
+  const closeEditor = () => {
+    setOpen(false);
+    setPagesValue("");
+    setPercentValue("");
+    setCountValue("");
+    setPendingMode(null);
+  };
 
   return (
     <div
@@ -3378,15 +3470,7 @@ function NowReadingProgress({ book }: { book: Book }) {
       {pct !== null ? (
         <button
           type="button"
-          onClick={() => {
-            setMode(
-              (book.progress_mode as "pages" | "percent" | "page") === "percent" ||
-                (book.progress_mode as string) === "page"
-                ? (book.progress_mode as "pages" | "percent" | "page")
-                : "pages",
-            );
-            setOpen((o) => !o);
-          }}
+          onClick={() => setOpen((o) => !o)}
           className="w-full text-left"
           title="Update progress"
         >
@@ -3412,97 +3496,140 @@ function NowReadingProgress({ book }: { book: Book }) {
       ) : (
         <button
           type="button"
-          onClick={() => {
-            setMode("count");
-            setOpen(true);
-          }}
+          onClick={() => setOpen(true)}
           className="text-chalk-dim hover:text-chalk text-[10.5px] uppercase tracking-[0.14em] transition"
         >
           add a page count to track progress
         </button>
       )}
 
-      {open && (
+      {open && book.page_count == null && (
         <form
           onSubmit={(e: FormEvent) => {
             e.preventDefault();
             const r = (e.currentTarget as HTMLFormElement).getBoundingClientRect();
             burst(r.left + r.width / 2, r.top + r.height / 2);
-            save.mutate();
+            setPendingMode("count");
+            save.mutate("count");
           }}
           className="mt-2.5 space-y-2"
         >
-          {book.page_count != null && (
-            <div className="flex flex-wrap gap-1">
-              {(
-                [
-                  ["pages", "+ pages"],
-                  ["percent", "% done"],
-                  ["page", "on page"],
-                ] as const
-              ).map(([m, label]) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setMode(m)}
-                  className={cn(
-                    "rounded px-2 py-1 text-[10px] uppercase tracking-[0.12em]",
-                    mode === m ? "text-accent bg-accent/15" : "text-chalk-dim hover:text-chalk",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <label className="block">
+            <span className="text-chalk-dim mb-1 block text-[10px] uppercase tracking-[0.12em]">
+              Total pages
+            </span>
             <input
               autoFocus
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
+              value={countValue}
+              onChange={(e) => setCountValue(e.target.value)}
               inputMode="decimal"
-              placeholder={
-                mode === "percent"
-                  ? "%"
-                  : mode === "page"
-                    ? "Page #"
-                    : mode === "count"
-                      ? "Total pages"
-                      : "+ pages"
-              }
-              className="bg-black/30 text-cream w-20 rounded border border-white/15 px-2 py-1.5 text-[12px] outline-none focus:border-accent/50"
+              placeholder="Pages"
+              className="bg-black/30 text-cream w-full rounded border border-accent/45 px-2.5 py-2 text-[12px] outline-none focus:border-accent"
             />
+          </label>
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="submit"
-              disabled={save.isPending || !value.trim()}
+              disabled={save.isPending || !countValue.trim()}
               className="text-accent hover:text-cream text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
             >
-              {save.isPending ? "…" : "Save"}
+              {save.isPending && pendingMode === "count" ? "…" : "Save"}
             </button>
             <button
               type="button"
-              onClick={() => {
-                setOpen(false);
-                setValue("");
-              }}
+              onClick={closeEditor}
               className="text-chalk-dim hover:text-chalk text-[10px] uppercase tracking-[0.14em]"
             >
               Cancel
             </button>
           </div>
-          {book.page_count != null && mode === "percent" && Number.isFinite(Number.parseFloat(value)) && (
-            <p className="text-chalk-dim text-[10.5px]">
-              {Math.round(Number.parseFloat(value))}% ≈ page{" "}
-              {percentToPage(Number.parseFloat(value), book.page_count)} of {book.page_count}
-            </p>
-          )}
-          {book.page_count != null && mode === "page" && Number.isFinite(Number.parseFloat(value)) && (
-            <p className="text-chalk-dim text-[10.5px]">
-              Page {Math.round(Number.parseFloat(value))} ≈{" "}
-              {pageToPercent(Math.round(Number.parseFloat(value)), book.page_count)}%
-            </p>
-          )}
         </form>
+      )}
+
+      {open && book.page_count != null && (
+        <div className="mt-2.5 space-y-2.5">
+          <form
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault();
+              const r = (e.currentTarget as HTMLFormElement).getBoundingClientRect();
+              burst(r.left + r.width / 2, r.top + r.height / 2);
+              setPendingMode("pages");
+              save.mutate("pages");
+            }}
+            className="space-y-1.5"
+          >
+            <label className="block">
+              <span className="text-chalk-dim mb-1 block text-[10px] uppercase tracking-[0.12em]">
+                + Pages
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={pagesValue}
+                  onChange={(e) => setPagesValue(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="Pages"
+                  className="bg-black/30 text-cream w-24 rounded border border-accent/45 px-2.5 py-2 text-[12px] outline-none focus:border-accent"
+                />
+                <button
+                  type="submit"
+                  disabled={save.isPending || !pagesValue.trim()}
+                  className="text-accent hover:text-cream text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
+                >
+                  {save.isPending && pendingMode === "pages" ? "…" : "Save"}
+                </button>
+              </div>
+            </label>
+          </form>
+
+          <form
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault();
+              const r = (e.currentTarget as HTMLFormElement).getBoundingClientRect();
+              burst(r.left + r.width / 2, r.top + r.height / 2);
+              setPendingMode("percent");
+              save.mutate("percent");
+            }}
+            className="space-y-1.5"
+          >
+            <label className="block">
+              <span className="text-chalk-dim mb-1 block text-[10px] uppercase tracking-[0.12em]">
+                % Done
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <input
+                  value={percentValue}
+                  onChange={(e) => setPercentValue(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="%"
+                  className="bg-black/30 text-cream w-24 rounded border border-accent/45 px-2.5 py-2 text-[12px] outline-none focus:border-accent"
+                />
+                <button
+                  type="submit"
+                  disabled={save.isPending || !percentValue.trim()}
+                  className="text-accent hover:text-cream text-[10px] uppercase tracking-[0.14em] disabled:opacity-40"
+                >
+                  {save.isPending && pendingMode === "percent" ? "…" : "Save"}
+                </button>
+              </div>
+            </label>
+            {Number.isFinite(Number.parseFloat(percentValue)) && (
+              <p className="text-chalk-dim text-[10.5px]">
+                {Math.round(Number.parseFloat(percentValue))}% ≈ page{" "}
+                {percentToPage(Number.parseFloat(percentValue), book.page_count)} of{" "}
+                {book.page_count}
+              </p>
+            )}
+          </form>
+
+          <button
+            type="button"
+            onClick={closeEditor}
+            className="text-chalk-dim hover:text-chalk text-[10px] uppercase tracking-[0.14em]"
+          >
+            Cancel
+          </button>
+        </div>
       )}
     </div>
   );
@@ -3916,6 +4043,10 @@ function PeriodTotals({
     s.monthRank != null ? `#${s.monthRank} of ${s.monthTotal} months` : null;
   const weekRankLabel =
     s.weekRank != null ? `#${s.weekRank} of ${s.weekTotal} weeks` : null;
+  const booksMonthRankLabel =
+    s.booksMonthRank != null ? `#${s.booksMonthRank} of ${s.booksMonthTotal} months` : null;
+  const booksWeekRankLabel =
+    s.booksWeekRank != null ? `#${s.booksWeekRank} of ${s.booksWeekTotal} weeks` : null;
 
   return (
     <div>
@@ -3946,7 +4077,7 @@ function PeriodTotals({
           label="This week"
           value={s.booksWeek}
           sub={s.booksWeek === 1 ? "book" : "books"}
-          rank={weekRankLabel}
+          rank={booksWeekRankLabel}
           onValueClick={() =>
             onBreakdown({
               kind: "finished",
@@ -3957,8 +4088,8 @@ function PeriodTotals({
           }
           onRankClick={() =>
             onBreakdown({
-              kind: "top-weeks",
-              label: "Best reading weeks",
+              kind: "top-finished-weeks",
+              label: "Best weeks by books",
               limit: 10,
             })
           }
@@ -3988,7 +4119,7 @@ function PeriodTotals({
           label="This month"
           value={s.booksMonth}
           sub={s.booksMonth === 1 ? "book" : "books"}
-          rank={monthRankLabel}
+          rank={booksMonthRankLabel}
           onValueClick={() =>
             onBreakdown({
               kind: "finished",
@@ -3999,8 +4130,8 @@ function PeriodTotals({
           }
           onRankClick={() =>
             onBreakdown({
-              kind: "top-months",
-              label: "Best reading months",
+              kind: "top-finished-months",
+              label: "Best months by books",
               limit: 10,
             })
           }
