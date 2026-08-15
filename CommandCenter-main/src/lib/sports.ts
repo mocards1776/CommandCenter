@@ -239,8 +239,8 @@ export const DEFAULT_FAVORITES: SportsFavorite[] = [
     name: "Wolverhampton",
     shortName: "Wolves",
     sport: "Soccer",
-    league: "Premier League",
-    espnPath: "soccer/eng.1/teams/380",
+    league: "EFL Championship",
+    espnPath: "soccer/eng.2/teams/380",
     kind: "team",
     color: "fdb913",
   },
@@ -516,8 +516,10 @@ function competitionChip(comp: EspnComp | null, myId: string): GameChip | null {
 }
 
 export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapshot> {
-  const teamId = fav.espnPath.split("/").pop() ?? "";
-  const raw = (await espnGet(fav.espnPath)) as {
+  let espnPath = fav.espnPath;
+  let teamId = espnPath.split("/").pop() ?? "";
+
+  type TeamPayload = {
     team?: {
       id?: string;
       displayName?: string;
@@ -525,9 +527,22 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
       abbreviation?: string;
       color?: string;
       logos?: { href?: string; rel?: string[] }[];
-      record?: { items?: { summary?: string; description?: string; type?: string }[] };
+      record?: {
+        items?: {
+          summary?: string;
+          description?: string;
+          type?: string;
+          stats?: { name?: string; value?: number }[];
+        }[];
+      };
       standingSummary?: string;
+      defaultLeague?: { slug?: string; name?: string; shortName?: string };
       nextEvent?: {
+        name?: string;
+        date?: string;
+        competitions?: EspnComp[];
+      }[];
+      previousEvent?: {
         name?: string;
         date?: string;
         competitions?: EspnComp[];
@@ -535,10 +550,76 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
     };
   };
 
+  let raw = (await espnGet(espnPath)) as TeamPayload;
+  // Soccer clubs move leagues — follow ESPN's defaultLeague when the configured
+  // path returns an empty stub (e.g. Wolves still pointed at eng.1 after relegation).
+  const defaultSlug = raw.team?.defaultLeague?.slug;
+  if (
+    /soccer\//i.test(espnPath) &&
+    defaultSlug &&
+    !espnPath.includes(`/${defaultSlug}/`) &&
+    !(raw.team?.record?.items?.length) &&
+    !(raw.team?.nextEvent?.length)
+  ) {
+    const id = raw.team?.id ?? teamId;
+    espnPath = `soccer/${defaultSlug}/teams/${id}`;
+    teamId = id;
+    raw = (await espnGet(espnPath)) as TeamPayload;
+  }
+
   const t = raw.team ?? {};
   const records = t.record?.items ?? [];
   const overall =
     records.find((r) => r.type === "total" || /overall/i.test(r.description ?? "")) ?? records[0];
+  const gamesPlayed =
+    overall?.stats?.find((s) => /gamesplayed|gamesPlayed/i.test(s.name ?? ""))?.value ?? null;
+  // Preseason / not started — don't show hollow 0-0-0 as a real record.
+  const recordSummary =
+    overall?.summary &&
+    !(gamesPlayed === 0 && /^0-0(?:-0)?$/.test(overall.summary.trim()))
+      ? overall.summary
+      : overall?.summary && gamesPlayed == null && /^0-0(?:-0)?$/.test(overall.summary.trim())
+        ? null
+        : overall?.summary ?? null;
+
+  let standing = t.standingSummary ?? null;
+
+  // Prefer standings table rank when standingSummary is missing (common on eng.2).
+  if (!standing && /soccer\//i.test(espnPath)) {
+    const leagueSlug =
+      defaultSlug ||
+      espnPath.match(/soccer\/([^/]+)\//)?.[1] ||
+      null;
+    if (leagueSlug) {
+      standing = await fetchSoccerStandingLine(leagueSlug, teamId).catch(() => null);
+    }
+  }
+
+  // Last resort: rank buried in the team record stats payload.
+  if (!standing && /soccer\//i.test(espnPath)) {
+    const rankVal = overall?.stats?.find((s) => s.name === "rank")?.value;
+    if (typeof rankVal === "number" && rankVal > 0) {
+      const leagueSlug =
+        defaultSlug || espnPath.match(/soccer\/([^/]+)\//)?.[1] || "";
+      const leagueName =
+        leagueSlug === "eng.1"
+          ? "Premier League"
+          : leagueSlug === "eng.2"
+            ? "English League Championship"
+            : "league";
+      const j = Math.round(rankVal) % 10;
+      const k = Math.round(rankVal) % 100;
+      const ord =
+        j === 1 && k !== 11
+          ? `${Math.round(rankVal)}st`
+          : j === 2 && k !== 12
+            ? `${Math.round(rankVal)}nd`
+            : j === 3 && k !== 13
+              ? `${Math.round(rankVal)}rd`
+              : `${Math.round(rankVal)}th`;
+      standing = `${ord} in ${leagueName}`;
+    }
+  }
 
   let nextGame: GameChip | null = null;
   const next = t.nextEvent?.[0];
@@ -548,23 +629,63 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
   }
 
   let lastGame: GameChip | null = null;
+  const prev = t.previousEvent?.[0];
+  if (prev?.competitions?.[0]) {
+    const st = prev.competitions[0].status?.type;
+    if (st?.completed || st?.state === "post") {
+      lastGame = competitionChip(prev.competitions[0], teamId);
+      if (lastGame) lastGame.when = fmtWhen(prev.date) ?? lastGame.when;
+    }
+  }
+
   try {
-    const sched = (await espnGet(`${fav.espnPath}/schedule`)) as {
+    const sched = (await espnGet(`${espnPath}/schedule`)) as {
       events?: { date?: string; competitions?: EspnComp[] }[];
     };
-    const events = [...(sched.events ?? [])].reverse();
-    for (const ev of events) {
-      const comp = ev.competitions?.[0];
-      if (!comp?.status?.type?.completed && comp?.status?.type?.state !== "post") continue;
-      lastGame = competitionChip(comp, teamId);
-      if (lastGame) {
-        lastGame.when = fmtWhen(ev.date) ?? lastGame.when;
-        break;
+    const events = [...(sched.events ?? [])];
+    // Prefer chronological last completed for lastGame; first upcoming for nextGame.
+    const sorted = events.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    if (!lastGame) {
+      for (let i = sorted.length - 1; i >= 0; i--) {
+        const ev = sorted[i]!;
+        const comp = ev.competitions?.[0];
+        if (!comp?.status?.type?.completed && comp?.status?.type?.state !== "post") continue;
+        lastGame = competitionChip(comp, teamId);
+        if (lastGame) {
+          lastGame.when = fmtWhen(ev.date) ?? lastGame.when;
+          break;
+        }
+      }
+    }
+    if (!nextGame) {
+      for (const ev of sorted) {
+        const comp = ev.competitions?.[0];
+        const st = comp?.status?.type;
+        if (!comp || st?.completed || st?.state === "post") continue;
+        nextGame = competitionChip(comp, teamId);
+        if (nextGame) {
+          nextGame.when = fmtWhen(ev.date) ?? nextGame.when;
+          break;
+        }
       }
     }
   } catch {
     // schedule is optional
   }
+
+  // Soccer schedules are often empty early — scan recent/upcoming scoreboard days.
+  if (/soccer\//i.test(espnPath) && (!lastGame || !nextGame)) {
+    const leagueSlug =
+      espnPath.match(/soccer\/([^/]+)\//)?.[1] ?? defaultSlug ?? "eng.2";
+    const filled = await fillSoccerGamesFromScoreboard(leagueSlug, teamId, {
+      needLast: !lastGame,
+      needNext: !nextGame,
+    }).catch(() => ({ last: null, next: null }));
+    if (!lastGame && filled.last) lastGame = filled.last;
+    if (!nextGame && filled.next) nextGame = filled.next;
+  }
+
+  // If we hid 0-0-0 but have a standing line, keep standing.
 
   return {
     key: fav.key,
@@ -573,11 +694,146 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
     abbreviation: t.abbreviation ?? "",
     logo: pickLogo(t.logos),
     color: t.color ?? fav.color ?? null,
-    record: overall?.summary ?? null,
-    standing: t.standingSummary ?? null,
+    record: recordSummary,
+    standing,
     nextGame,
     lastGame,
   };
+}
+
+async function fetchSoccerStandingLine(
+  leagueSlug: string,
+  teamId: string,
+): Promise<string | null> {
+  const res = await fetch(
+    `https://site.api.espn.com/apis/v2/sports/soccer/${leagueSlug}/standings`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as {
+    name?: string;
+    children?: {
+      name?: string;
+      standings?: {
+        entries?: {
+          team?: { id?: string };
+          stats?: { name?: string; value?: number; displayValue?: string }[];
+        }[];
+      };
+    }[];
+    standings?: {
+      entries?: {
+        team?: { id?: string };
+        stats?: { name?: string; value?: number; displayValue?: string }[];
+      }[];
+    };
+  };
+  const leagueName =
+    leagueSlug === "eng.1"
+      ? "Premier League"
+      : leagueSlug === "eng.2"
+        ? "English League Championship"
+        : data.name ?? "league";
+  const blocks = data.children?.length
+    ? data.children
+    : [{ name: leagueName, standings: data.standings }];
+  for (const block of blocks) {
+    for (const entry of block.standings?.entries ?? []) {
+      if (String(entry.team?.id) !== String(teamId)) continue;
+      const rankStat = (entry.stats ?? []).find((s) => s.name === "rank");
+      const rank = Number(rankStat?.value ?? rankStat?.displayValue ?? NaN);
+      if (!Number.isFinite(rank) || rank <= 0) return leagueName;
+      const j = rank % 10;
+      const k = rank % 100;
+      const ord =
+        j === 1 && k !== 11
+          ? `${rank}st`
+          : j === 2 && k !== 12
+            ? `${rank}nd`
+            : j === 3 && k !== 13
+              ? `${rank}rd`
+              : `${rank}th`;
+      return `${ord} in ${leagueName}`;
+    }
+  }
+  return null;
+}
+
+async function fillSoccerGamesFromScoreboard(
+  leagueSlug: string,
+  teamId: string,
+  opts: { needLast: boolean; needNext: boolean },
+): Promise<{ last: GameChip | null; next: GameChip | null }> {
+  let last: GameChip | null = null;
+  let next: GameChip | null = null;
+  const today = new Date();
+
+  const dayBoard = async (offset: number) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + offset);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueSlug}/scoreboard?dates=${y}${m}${day}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return [] as { date?: string; competitions?: EspnComp[] }[];
+    const board = (await res.json()) as {
+      events?: { date?: string; competitions?: EspnComp[] }[];
+    };
+    return board.events ?? [];
+  };
+
+  // Most recent completed first (yesterday → 14 days back).
+  if (opts.needLast) {
+    for (let i = -1; i >= -14; i--) {
+      try {
+        for (const ev of await dayBoard(i)) {
+          const comp = ev.competitions?.[0];
+          if (!comp) continue;
+          const hit = (comp.competitors ?? []).some((c) => String(c.team?.id) === String(teamId));
+          if (!hit) continue;
+          const st = comp.status?.type;
+          if (!(st?.completed || st?.state === "post")) continue;
+          const chip = competitionChip(comp, teamId);
+          if (!chip) continue;
+          chip.when = fmtWhen(ev.date) ?? chip.when;
+          last = chip;
+          break;
+        }
+      } catch {
+        /* skip day */
+      }
+      if (last) break;
+    }
+  }
+
+  // Soonest upcoming (today → 14 days ahead).
+  if (opts.needNext) {
+    for (let i = 0; i <= 14; i++) {
+      try {
+        for (const ev of await dayBoard(i)) {
+          const comp = ev.competitions?.[0];
+          if (!comp) continue;
+          const hit = (comp.competitors ?? []).some((c) => String(c.team?.id) === String(teamId));
+          if (!hit) continue;
+          const st = comp.status?.type;
+          if (st?.completed || st?.state === "post") continue;
+          const chip = competitionChip(comp, teamId);
+          if (!chip) continue;
+          chip.when = fmtWhen(ev.date) ?? chip.when;
+          next = chip;
+          break;
+        }
+      } catch {
+        /* skip day */
+      }
+      if (next) break;
+    }
+  }
+
+  return { last, next };
 }
 
 type EspnTourPayload = {
@@ -851,6 +1107,8 @@ export type GolferProfile = {
   flagUrl: string | null;
   turnedPro: number | null;
   headshot: string | null;
+  /** Extra headshot URLs tried via onError when the primary 404s. */
+  headshotFallbacks?: string[];
   bio: string | null;
   /** Ranking chips — FedEx Cup, OWGR, etc. */
   rankings: { label: string; rank: string; detail: string | null }[];
@@ -1306,6 +1564,9 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
     citizenship ? `Represents ${citizenship}.` : null,
   ].filter(Boolean);
 
+  const headshotHref = (athlete.headshot as { href?: string } | undefined)?.href ?? null;
+  const headshotCandidates = golferHeadshotCandidates(id, headshotHref);
+
   return {
     id,
     name: displayName,
@@ -1316,12 +1577,8 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
     citizenship,
     flagUrl,
     turnedPro,
-    headshot:
-      (athlete.headshot as { href?: string } | undefined)?.href?.replace(
-        /\/players\/(?:full|medium)\//,
-        "/players/full/",
-      ) ??
-      `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/full/${id}.png&w=600&h=434&scale=crop`,
+    headshot: headshotCandidates[0] ?? null,
+    headshotFallbacks: headshotCandidates.slice(1),
     bio: bioParts.length ? bioParts.join(" ") : null,
     rankings,
     career,
@@ -1335,6 +1592,22 @@ export async function fetchGolferProfile(golferId: string): Promise<GolferProfil
     seasonResults,
     lastWin,
   };
+}
+
+/** Ordered golfer headshot URLs for <img onError> fallbacks. */
+export function golferHeadshotCandidates(
+  golferId: string | number,
+  primaryHref?: string | null,
+): string[] {
+  const id = String(golferId);
+  const normalized = primaryHref
+    ? primaryHref.replace(/\/players\/(?:full|medium)\//, "/players/full/")
+    : null;
+  const full = `https://a.espncdn.com/i/headshots/golf/players/full/${id}.png`;
+  const medium = `https://a.espncdn.com/i/headshots/golf/players/medium/${id}.png`;
+  const combinerFull = `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/full/${id}.png&w=600&h=434&scale=crop`;
+  const combinerMed = `https://a.espncdn.com/combiner/i?img=/i/headshots/golf/players/medium/${id}.png&w=350&h=254&scale=crop`;
+  return [...new Set([normalized, full, combinerFull, medium, combinerMed].filter(Boolean))] as string[];
 }
 
 export type GolfHoleScore = {
@@ -1393,9 +1666,22 @@ export async function fetchGolferScorecard(
     // Prefer the light leaderboard payload for event id (avoids heavy tour snapshot).
     try {
       const lb = (await espnGet("golf/leaderboard")) as {
-        events?: { id?: string | number; name?: string }[];
+        events?: {
+          id?: string | number;
+          name?: string;
+          competitions?: {
+            competitors?: { athlete?: { id?: string | number }; id?: string | number }[];
+          }[];
+        }[];
       };
-      const ev = lb.events?.[0];
+      // Prefer an event that actually includes this golfer (most recent first).
+      const events = lb.events ?? [];
+      const withPlayer = events.find((ev) =>
+        (ev.competitions?.[0]?.competitors ?? []).some(
+          (c) => String(c.athlete?.id ?? c.id) === playerId,
+        ),
+      );
+      const ev = withPlayer ?? events[0];
       if (ev?.id != null) {
         eventId = String(ev.id);
         eventName = ev.name ?? null;

@@ -33,7 +33,6 @@ import {
   fetchGolferRotoNotes,
   fetchGolferScorecard,
   scoreTypeColor,
-  type GolfHoleScore,
   type GolfRoundScorecard,
   type GolferTournamentScorecard,
 } from "@/lib/sports";
@@ -207,75 +206,6 @@ function VideoCard({
   );
 }
 
-function holeResultLabel(h: GolfHoleScore | undefined): string {
-  if (!h || h.strokes == null) return "—";
-  if (h.scoreType) return h.scoreType;
-  if (h.toPar == null) return `${h.strokes}`;
-  if (h.toPar <= -3) return "Albatross";
-  if (h.toPar === -2) return "Eagle";
-  if (h.toPar === -1) return "Birdie";
-  if (h.toPar === 0) return "Par";
-  if (h.toPar === 1) return "Bogey";
-  if (h.toPar === 2) return "Double";
-  return `+${h.toPar}`;
-}
-
-function toParText(toPar: number | null): string {
-  if (toPar == null) return "";
-  if (toPar === 0) return "E";
-  if (toPar > 0) return `+${toPar}`;
-  return String(toPar);
-}
-
-/** Hole-by-hole results (no map / no shot GPS — ESPN only gives score types). */
-function HolePlayByPlay({ holes }: { holes: GolfHoleScore[] }) {
-  const byHole = new Map(holes.map((h) => [h.hole, h]));
-  const played = holes.filter((h) => h.strokes != null);
-  if (!played.length) return null;
-  return (
-    <div className="mt-4">
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
-        Hole play-by-play
-      </p>
-      <ol className="overflow-hidden rounded-lg border border-white/[0.08] bg-[#0b1220]">
-        {Array.from({ length: 18 }, (_, i) => {
-          const hole = i + 1;
-          const h = byHole.get(hole);
-          if (h?.strokes == null) return null;
-          return (
-            <li
-              key={hole}
-              className="flex items-center gap-3 border-b border-white/[0.06] px-3 py-2 last:border-b-0"
-            >
-              <span className="numeral w-10 shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">
-                H{hole}
-              </span>
-              <span className="min-w-0 flex-1 text-[13px] text-white">
-                {h.par != null ? `Par ${h.par}` : "Par —"}
-                <span
-                  className="ml-2 font-semibold"
-                  style={{ color: scoreTypeColor(h.scoreType ?? null, h.toPar ?? null) }}
-                >
-                  {holeResultLabel(h)}
-                </span>
-              </span>
-              <span
-                className="numeral shrink-0 text-[15px] font-semibold tabular-nums"
-                style={{ color: scoreTypeColor(h.scoreType ?? null, h.toPar ?? null) }}
-              >
-                {h.strokes}
-              </span>
-              <span className="numeral w-8 shrink-0 text-right text-[12px] text-white/45">
-                {toParText(h.toPar)}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
-  );
-}
-
 function pickLiveRound(card: GolferTournamentScorecard): GolfRoundScorecard {
   return (
     [...card.rounds]
@@ -398,8 +328,41 @@ function RoundScorecard({
           </table>
         </div>
       )}
-      <HolePlayByPlay holes={round.holes} />
     </section>
+  );
+}
+
+function GolferHeadshot({
+  src,
+  fallbacks = [],
+  className,
+  alt = "",
+}: {
+  src: string | null;
+  fallbacks?: string[];
+  className?: string;
+  alt?: string;
+}) {
+  const [idx, setIdx] = useState(0);
+  const candidates = [src, ...fallbacks].filter((u): u is string => Boolean(u));
+  const current = candidates[idx] ?? null;
+  if (!current) {
+    return (
+      <div className={cn("grid place-items-center text-white/30", className)}>
+        <Flag size={28} />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={current}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      className={className}
+      onError={() => {
+        if (idx < candidates.length - 1) setIdx((v) => v + 1);
+      }}
+    />
   );
 }
 
@@ -498,12 +461,12 @@ export default function GolferPage() {
         <p className="text-alert text-[13px]">Couldn’t load this golfer.</p>
       ) : (
         <>
-          <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] bg-[#070b12]">
+          <article className="relative isolate overflow-hidden rounded-2xl border border-white/[0.1] bg-[#070b12]">
             <div className="pointer-events-none absolute inset-0">
               {p.headshot ? (
-                <img
+                <GolferHeadshot
                   src={p.headshot}
-                  alt=""
+                  fallbacks={p.headshotFallbacks}
                   className="h-full w-full scale-105 object-cover object-[center_18%] opacity-55"
                 />
               ) : null}
@@ -514,17 +477,11 @@ export default function GolferPage() {
             </div>
             <div className="relative z-10 grid gap-5 px-5 py-7 sm:grid-cols-[auto_1fr] sm:items-end sm:px-8 sm:py-9">
               <div className="relative mx-auto h-36 w-36 overflow-hidden rounded-2xl border border-white/20 bg-[#101822] shadow-[0_20px_50px_rgba(0,0,0,0.45)] sm:mx-0 sm:h-44 sm:w-44">
-                {p.headshot ? (
-                  <img
-                    src={p.headshot}
-                    alt=""
-                    className="h-full w-full object-cover object-[center_15%]"
-                  />
-                ) : (
-                  <div className="grid h-full place-items-center text-white/30">
-                    <Flag size={28} />
-                  </div>
-                )}
+                <GolferHeadshot
+                  src={p.headshot}
+                  fallbacks={p.headshotFallbacks}
+                  className="h-full w-full object-cover object-[center_15%]"
+                />
               </div>
               <div className="text-center sm:pb-1 sm:text-left">
                 <div className="mb-3 flex justify-center gap-2 sm:justify-end">
@@ -625,27 +582,6 @@ export default function GolferPage() {
                   </ul>
                 </section>
               ) : null}
-
-              {scorecard.data?.rounds?.length ? (
-                <div className="space-y-2">
-                  <RoundScorecard round={pickLiveRound(scorecard.data)} />
-                  <button
-                    type="button"
-                    onClick={() => setTab("scorecard")}
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#4ea1ff]"
-                  >
-                    All rounds <ChevronRight size={14} />
-                  </button>
-                </div>
-              ) : scorecard.isPending ? (
-                <p className="text-chalk flex items-center gap-2 text-[13px]">
-                  <Loader2 size={14} className="animate-spin" /> Loading scorecard…
-                </p>
-              ) : (
-                <p className="rounded-xl border border-dashed border-white/15 px-4 py-3 text-[13px] text-white/45">
-                  No live scorecard for this golfer in the current event.
-                </p>
-              )}
 
               {clipVideos.length > 0 ? (
                 <section className="space-y-3">
@@ -782,19 +718,20 @@ export default function GolferPage() {
                 </p>
               ) : (
                 <>
-                  <div className="rounded-xl border border-white/[0.1] bg-[#0b1220] px-4 py-3">
+                  <div className="relative z-10 rounded-xl border border-white/[0.1] bg-[#0b1220] px-4 py-3">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
                       Scorecard
                     </p>
-                    <p className="mt-1 text-[15px] text-white">
+                    <p className="mt-1 truncate text-[15px] text-white">
                       {scorecard.data.eventName ?? "Current tournament"}
                     </p>
                     <p className="mt-1 text-[12px] text-white/55">
                       {scorecard.data.position ? `Pos ${scorecard.data.position}` : "In field"}
                       {scorecard.data.totalToPar ? ` · ${scorecard.data.totalToPar}` : ""}
-                      {scorecard.data.currentHole != null
-                        ? ` · playing hole ${scorecard.data.currentHole}`
-                        : ""}
+                      {(() => {
+                        const live = pickLiveRound(scorecard.data);
+                        return live ? ` · Round ${live.round}` : "";
+                      })()}
                     </p>
                   </div>
                   {[...scorecard.data.rounds]

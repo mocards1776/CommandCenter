@@ -99,6 +99,7 @@ import {
 } from "@/lib/sports-player-tags";
 import { setRssReaderBrand } from "@/lib/rss-brand";
 import { nflTeamLogo } from "@/lib/nfl";
+import { soccerTeamLogo } from "@/lib/soccer";
 import TeamMark from "@/components/sports/TeamMark";
 
 const DISPATCH_OPEN_KEY = "dispatch-open-article-v1";
@@ -572,12 +573,17 @@ function ReaderView({
     );
   }
 
+  // MLB/NFL wraps open the sports game reader. Soccer match/story links use
+  // the normal article reader (soccer gameIds must not resolve as MLB).
   const isEspnGame =
-    Boolean(parseEspnGameIdFromUrl(item.link)) ||
     feedUrl === "synthetic:cardinals-wraps" ||
     feedUrl === "synthetic:mlb-wraps" ||
     feedUrl === "synthetic:nfl-wraps" ||
-    /espn\.com\/(?:mlb|nfl)\/(?:recap|preview|game)/i.test(item.link);
+    /espn\.com\/(?:mlb|nfl)\/(?:recap|preview|game)/i.test(item.link) ||
+    (Boolean(parseEspnGameIdFromUrl(item.link)) &&
+      !/espn\.com\/soccer\//i.test(item.link) &&
+      feedUrl !== "synthetic:soccer-clubs-wraps" &&
+      feedUrl !== "synthetic:epl-wraps");
 
   // ESPN wraps/previews → sports game UI (matchup + wrap + stats).
   if (isEspnGame) {
@@ -1443,6 +1449,9 @@ function ArticleReaderShell({
                   } else if (item.logoAbbrevs?.length) {
                     el.src = nflTeamLogo(item.logoAbbrevs[0]!);
                     el.className = "mx-auto h-40 w-40 object-contain";
+                  } else if (item.logoSoccerIds?.length) {
+                    el.src = soccerTeamLogo(item.logoSoccerIds[0]!);
+                    el.className = "mx-auto h-40 w-40 object-contain";
                   }
                 }}
               />
@@ -1460,6 +1469,17 @@ function ArticleReaderShell({
                   key={ab}
                   src={nflTeamLogo(ab)}
                   alt={ab}
+                  className="h-20 w-20 object-contain"
+                />
+              ))}
+            </div>
+          ) : item.logoSoccerIds?.length ? (
+            <div className="mb-8 flex items-center justify-center gap-6 rounded-sm bg-white/[0.04] py-8">
+              {item.logoSoccerIds.map((id) => (
+                <img
+                  key={id}
+                  src={soccerTeamLogo(id)}
+                  alt=""
                   className="h-20 w-20 object-contain"
                 />
               ))}
@@ -1683,6 +1703,10 @@ function ArticleRow({
                 el.src = nflTeamLogo(item.logoAbbrevs[0]);
                 el.className =
                   "bg-hero pointer-events-none h-14 w-[4.5rem] shrink-0 object-contain p-1";
+              } else if (item.logoSoccerIds?.[0]) {
+                el.src = soccerTeamLogo(item.logoSoccerIds[0]);
+                el.className =
+                  "bg-hero pointer-events-none h-14 w-[4.5rem] shrink-0 object-contain p-1";
               } else {
                 el.style.display = "none";
               }
@@ -1706,6 +1730,18 @@ function ArticleRow({
               <img
                 key={ab}
                 src={nflTeamLogo(ab)}
+                alt=""
+                className="h-10 w-10 object-contain"
+                loading="lazy"
+              />
+            ))}
+          </div>
+        ) : item.logoSoccerIds?.length ? (
+          <div className="bg-hero pointer-events-none flex h-14 w-[4.5rem] shrink-0 items-center justify-center gap-0.5 rounded-sm p-1">
+            {item.logoSoccerIds.slice(0, 2).map((id) => (
+              <img
+                key={id}
+                src={soccerTeamLogo(id)}
                 alt=""
                 className="h-10 w-10 object-contain"
                 loading="lazy"
