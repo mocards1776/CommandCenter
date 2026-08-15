@@ -121,19 +121,36 @@ export default function HeroGameCard({
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-6">
               <HeroSide side={game.away} align="left" form={awayForm.data ?? null} />
               <div className="text-center">
-                <p className="font-display text-cream text-[40px] leading-none tabular-nums sm:text-[52px]">
-                  {game.away.score ?? "–"}
-                  <span className="mx-2 text-[22px] text-white/35 sm:mx-3">:</span>
-                  {game.home.score ?? "–"}
+                <p className="font-display text-cream text-[44px] leading-none tabular-nums tracking-tight sm:text-[58px]">
+                  <span className="drop-shadow-[0_0_24px_rgba(255,255,255,0.18)]">
+                    {game.away.score ?? "–"}
+                  </span>
+                  <span className="mx-2 text-[20px] font-light text-white/30 sm:mx-3">–</span>
+                  <span className="drop-shadow-[0_0_24px_rgba(255,255,255,0.18)]">
+                    {game.home.score ?? "–"}
+                  </span>
                 </p>
-                {(game.away.hits != null || game.home.hits != null) && (
-                  <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-white/45">
-                    H {game.away.hits ?? "–"}–{game.home.hits ?? "–"}
-                    {game.away.errors != null
-                      ? ` · E ${game.away.errors}–${game.home.errors ?? 0}`
-                      : ""}
-                  </p>
-                )}
+                <p
+                  className={cn(
+                    "mt-2.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]",
+                    game.live
+                      ? "bg-alert/90 text-ink"
+                      : game.final
+                        ? "bg-white/12 text-white/80"
+                        : "bg-white/10 text-white/70",
+                  )}
+                >
+                  {game.live ? (
+                    <>
+                      <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />
+                      {game.inning || "Live"}
+                    </>
+                  ) : game.final ? (
+                    "Final"
+                  ) : (
+                    game.inning || "Scheduled"
+                  )}
+                </p>
               </div>
               <HeroSide side={game.home} align="right" form={homeForm.data ?? null} />
             </div>
@@ -288,7 +305,7 @@ function PitcherStack({
 
 function FormLine({ form }: { form: TeamFormStrip | null }) {
   if (!form) return null;
-  return <TeamFormChips form={form} className="mt-1.5 w-[9rem]" align="center" />;
+  return <TeamFormChips form={form} className="mt-1.5 w-[13rem]" align="center" />;
 }
 
 function HeroSide({

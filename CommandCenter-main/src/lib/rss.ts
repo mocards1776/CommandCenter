@@ -1201,8 +1201,15 @@ export function articleMatchesFilters(
   const effectiveFeed = (feedId ?? item.feedId)?.toLowerCase() ?? null;
   // Wire-only: drop MLB Film Room clips; keep mlb.com/news and other hosts.
   if (effectiveFeed === "cardinals-wire" && isMlbFilmRoomArticle(item)) return true;
-  // Wire-only: drop league filler that never mentions the Cardinals.
-  if (effectiveFeed === "cardinals-wire" && !articleMentionsCardinals(item)) return true;
+  // Cardinals folder feeds: drop league filler that never mentions the club.
+  if (
+    (effectiveFeed === "cardinals-wire" ||
+      effectiveFeed === "cardinals" ||
+      effectiveFeed === "folder:cardinals") &&
+    !articleMentionsCardinals(item)
+  ) {
+    return true;
+  }
   if (!filters.length) return false;
   const hayTitle = item.title.toLowerCase();
   const haySnippet = (item.snippet ?? "").toLowerCase();

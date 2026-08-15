@@ -1005,7 +1005,9 @@ async function handleRead(url: string) {
   if (!isPublicHttpUrl(url)) return json({ error: "Invalid article URL" }, 400);
 
   // ESPN game recaps: prefer the public summary API over brittle HTML scrapes.
-  const espnStory = await extractEspnRecapFromUrl(url).catch(() => null);
+  const espnStory =
+    (await extractEspnRecapFromUrl(url).catch(() => null)) ||
+    (await extractEspnNewsStoryFromUrl(url).catch(() => null));
   if (espnStory) {
     let contentHtml = scrubContentHtml(sanitizeHtml(espnStory.html), espnStory.image);
     const contentText = stripTags(contentHtml);
@@ -1114,6 +1116,41 @@ async function handleRead(url: string) {
     contentText,
     wordCount: contentText.split(/\s+/).filter(Boolean).length,
   });
+}
+
+async function extractEspnNewsStoryFromUrl(url: string): Promise<{
+  title: string | null;
+  byline: string | null;
+  image: string | null;
+  html: string;
+} | null> {
+  const id =
+    url.match(/\/(?:story|report)\/_\/id\/(\d+)/i)?.[1] ||
+    url.match(/[?&]id=(\d+)/i)?.[1] ||
+    null;
+  if (!id || !/espn\.com/i.test(url)) return null;
+  const res = await fetch(`https://now.core.api.espn.com/v1/sports/news/${id}`, {
+    headers: { Accept: "application/json", "User-Agent": UA },
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as {
+    headlines?: {
+      headline?: string;
+      description?: string;
+      story?: string;
+      byline?: string;
+      images?: { url?: string }[];
+    }[];
+  };
+  const hl = data.headlines?.[0];
+  const story = (hl?.story ?? "").trim();
+  if (!story || stripTags(story).length < 80) return null;
+  return {
+    title: hl?.headline ?? null,
+    byline: hl?.byline ?? null,
+    image: hl?.images?.[0]?.url ?? null,
+    html: story.startsWith("<") ? story : `<p>${story}</p>`,
+  };
 }
 
 async function extractEspnRecapFromUrl(url: string): Promise<{

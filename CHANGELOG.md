@@ -2,6 +2,19 @@
 
 ---
 
+## Sports polish batch — August 15, 2026
+
+- Yesterday favorites on the MLB board are baseball-only (golf stars no longer show as DNP).
+- Golf leaderboard: Today shows the most recent completed round between rounds; Thru shows F when play is complete; Rn column tracks the latest round.
+- Golfer cards: scorecard tables + hole play-by-play results (Par/Birdie/…) without the fake map; shot yardage isn’t in public ESPN data.
+- NFL player cards pull a fuller ESPN/core bio when available.
+- Manager detail no longer rebuilds the full 30-team hot-seat board first (cache + lite path); tenure probes run in parallel.
+- Dispatch: ESPN story URLs load full `now.core` body text; Cardinals feeds drop articles that never mention the club.
+- Team sidebar: Standings above Leaders; standing text uses “3rd in National League Central”; form chips spell out Last 5 / Last 10 / Last 20.
+- MLB game: wrap sits under the linescore; hero drops H/E for a cleaner score focus.
+
+---
+
 ## Golf: kill fake map, videos, RotoWire notes — August 15, 2026
 
 - Removed the fake hole-map / play-by-play board from golfer cards (no TourCast shot-trail data in public APIs). Scorecard tab is traditional front/back-9 tables only.

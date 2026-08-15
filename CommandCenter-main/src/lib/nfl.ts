@@ -185,6 +185,9 @@ export type NflPlayerProfile = {
   college: string | null;
   experience: string | null;
   draft: string | null;
+  /** Long-form bio when ESPN provides one. */
+  bio: string | null;
+  status: string | null;
   seasonStats: { label: string; value: string }[];
   statCategories: { name: string; stats: { label: string; value: string }[] }[];
   recentGames: { label: string; result: string; line: string }[];
@@ -570,14 +573,19 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
 
 export async function fetchNflPlayerProfile(playerId: string): Promise<NflPlayerProfile> {
   const id = String(playerId);
-  const [athleteRes, overviewRes] = await Promise.all([
+  const [athleteRes, overviewRes, coreRes] = await Promise.all([
     fetch(`${ESPN_WEB}/athletes/${id}`, { headers: { Accept: "application/json" } }),
     fetch(`${ESPN_WEB}/athletes/${id}/overview`, { headers: { Accept: "application/json" } }),
+    fetch(
+      `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/${id}?lang=en&region=us`,
+      { headers: { Accept: "application/json" } },
+    ).catch(() => null),
   ]);
   if (!athleteRes.ok) throw new Error(`NFL player ${athleteRes.status}`);
   const raw = (await athleteRes.json()) as { athlete?: Record<string, unknown> };
   const overview = overviewRes.ok ? ((await overviewRes.json()) as Record<string, unknown>) : {};
-  const a = (raw.athlete ?? {}) as Record<string, unknown>;
+  const core = coreRes && coreRes.ok ? ((await coreRes.json()) as Record<string, unknown>) : {};
+  const a = { ...core, ...(raw.athlete ?? {}) } as Record<string, unknown>;
   const team = (a.team ?? {}) as {
     id?: string;
     displayName?: string;
@@ -594,6 +602,17 @@ export async function fetchNflPlayerProfile(playerId: string): Promise<NflPlayer
       const bp = a.birthPlace as { city?: string; state?: string; country?: string } | undefined;
       return bp ? [bp.city, bp.state?.trim(), bp.country].filter(Boolean).join(", ") : null;
     })();
+
+  const bio =
+    (typeof a.bio === "string" && a.bio.trim()) ||
+    (typeof a.description === "string" && a.description.trim()) ||
+    (typeof overview.description === "string" && String(overview.description).trim()) ||
+    null;
+  const status =
+    (a.injuries as { status?: string; longComment?: string }[] | undefined)?.[0]?.status ||
+    (a.status as { name?: string; type?: string } | undefined)?.type ||
+    (a.status as { name?: string } | undefined)?.name ||
+    null;
 
   const summaryStats = (
     (a.statsSummary as { statistics?: { shortDisplayName?: string; displayValue?: string }[] })
@@ -680,6 +699,8 @@ export async function fetchNflPlayerProfile(playerId: string): Promise<NflPlayer
     college,
     experience: (a.displayExperience as string | undefined) ?? null,
     draft,
+    bio,
+    status: status ? String(status) : null,
     seasonStats,
     statCategories,
     recentGames,

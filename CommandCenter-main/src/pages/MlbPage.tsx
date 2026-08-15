@@ -70,7 +70,13 @@ export default function MlbPage() {
   });
 
   const playerFavs = useMemo(
-    () => (favorites.data ?? []).filter((f) => (f.position ?? "").toLowerCase() !== "manager"),
+    () =>
+      (favorites.data ?? []).filter((f) => {
+        if ((f.position ?? "").toLowerCase() === "manager") return false;
+        const sport = (f.sport ?? "").toLowerCase();
+        // MLB board: baseball only — golf/NFL favorites belong on their own boards.
+        return !sport || sport === "baseball" || sport === "mlb";
+      }),
     [favorites.data],
   );
 

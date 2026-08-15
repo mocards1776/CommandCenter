@@ -1,7 +1,7 @@
 import type { TeamFormStrip } from "@/lib/team-form";
 import { cn } from "@/lib/utils";
 
-/** Compact L5 / L10 / L20 chips for team box-score headers. */
+/** Compact Last 5 / Last 10 / Last 20 chips for team box-score headers. */
 export function TeamFormChips({
   form,
   className,
@@ -15,7 +15,7 @@ export function TeamFormChips({
   return (
     <dl
       className={cn(
-        "mt-1.5 grid grid-cols-3 gap-1",
+        "mt-1.5 grid grid-cols-3 gap-1.5",
         align === "right" && "ml-auto",
         align === "center" && "mx-auto",
         className,
@@ -23,13 +23,13 @@ export function TeamFormChips({
     >
       {(
         [
-          ["L5", form.last5],
-          ["L10", form.last10],
-          ["L20", form.last20],
+          ["Last 5", form.last5],
+          ["Last 10", form.last10],
+          ["Last 20", form.last20],
         ] as const
       ).map(([label, value]) => (
-        <div key={label} className="rounded-md bg-white/[0.05] px-1 py-1 text-center">
-          <dt className="text-[8px] font-semibold uppercase tracking-[0.12em] text-[#8b93a7]">
+        <div key={label} className="rounded-md bg-white/[0.05] px-1.5 py-1.5 text-center">
+          <dt className="text-[8px] font-semibold uppercase tracking-[0.1em] text-[#8b93a7]">
             {label}
           </dt>
           <dd className="numeral text-cream mt-0.5 text-[11px] leading-none">{value}</dd>

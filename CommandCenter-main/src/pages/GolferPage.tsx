@@ -33,6 +33,7 @@ import {
   fetchGolferRotoNotes,
   fetchGolferScorecard,
   scoreTypeColor,
+  type GolfHoleScore,
   type GolfRoundScorecard,
   type GolferTournamentScorecard,
 } from "@/lib/sports";
@@ -206,6 +207,75 @@ function VideoCard({
   );
 }
 
+function holeResultLabel(h: GolfHoleScore | undefined): string {
+  if (!h || h.strokes == null) return "—";
+  if (h.scoreType) return h.scoreType;
+  if (h.toPar == null) return `${h.strokes}`;
+  if (h.toPar <= -3) return "Albatross";
+  if (h.toPar === -2) return "Eagle";
+  if (h.toPar === -1) return "Birdie";
+  if (h.toPar === 0) return "Par";
+  if (h.toPar === 1) return "Bogey";
+  if (h.toPar === 2) return "Double";
+  return `+${h.toPar}`;
+}
+
+function toParText(toPar: number | null): string {
+  if (toPar == null) return "";
+  if (toPar === 0) return "E";
+  if (toPar > 0) return `+${toPar}`;
+  return String(toPar);
+}
+
+/** Hole-by-hole results (no map / no shot GPS — ESPN only gives score types). */
+function HolePlayByPlay({ holes }: { holes: GolfHoleScore[] }) {
+  const byHole = new Map(holes.map((h) => [h.hole, h]));
+  const played = holes.filter((h) => h.strokes != null);
+  if (!played.length) return null;
+  return (
+    <div className="mt-4">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+        Hole play-by-play
+      </p>
+      <ol className="overflow-hidden rounded-lg border border-white/[0.08] bg-[#0b1220]">
+        {Array.from({ length: 18 }, (_, i) => {
+          const hole = i + 1;
+          const h = byHole.get(hole);
+          if (h?.strokes == null) return null;
+          return (
+            <li
+              key={hole}
+              className="flex items-center gap-3 border-b border-white/[0.06] px-3 py-2 last:border-b-0"
+            >
+              <span className="numeral w-10 shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">
+                H{hole}
+              </span>
+              <span className="min-w-0 flex-1 text-[13px] text-white">
+                {h.par != null ? `Par ${h.par}` : "Par —"}
+                <span
+                  className="ml-2 font-semibold"
+                  style={{ color: scoreTypeColor(h.scoreType ?? null, h.toPar ?? null) }}
+                >
+                  {holeResultLabel(h)}
+                </span>
+              </span>
+              <span
+                className="numeral shrink-0 text-[15px] font-semibold tabular-nums"
+                style={{ color: scoreTypeColor(h.scoreType ?? null, h.toPar ?? null) }}
+              >
+                {h.strokes}
+              </span>
+              <span className="numeral w-8 shrink-0 text-right text-[12px] text-white/45">
+                {toParText(h.toPar)}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
 function pickLiveRound(card: GolferTournamentScorecard): GolfRoundScorecard {
   return (
     [...card.rounds]
@@ -328,6 +398,7 @@ function RoundScorecard({
           </table>
         </div>
       )}
+      <HolePlayByPlay holes={round.holes} />
     </section>
   );
 }

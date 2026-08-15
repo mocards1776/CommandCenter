@@ -25,6 +25,7 @@ function LeaderTable({
   highlightFavs?: boolean;
 }) {
   const navigate = useNavigate();
+  const roundLabel = rows.find((r) => r.latestRoundNum)?.latestRoundNum ?? 1;
   if (rows.length === 0) {
     return (
       <p className="px-1 py-6 text-center text-[12px] text-white/45">No players in this list.</p>
@@ -40,13 +41,14 @@ function LeaderTable({
             <th className="py-2 pr-2 text-right font-medium">Tot</th>
             <th className="py-2 pr-2 text-right font-medium">Today</th>
             <th className="py-2 pr-2 text-right font-medium">Thru</th>
-            <th className="py-2 text-right font-medium">R1</th>
+            <th className="py-2 text-right font-medium">R{roundLabel}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((l, i) => {
             const watched = l.id != null && favIds.has(l.id);
             const name = l.shortName ?? l.name;
+            const roundScore = l.latestRound ?? l.r1;
             return (
               <tr
                 key={`${l.id ?? l.name}-${i}`}
@@ -78,7 +80,7 @@ function LeaderTable({
                   {l.today ?? "—"}
                 </td>
                 <td className="numeral py-2 pr-2 text-right text-[12px] text-white/65">{l.thru ?? "—"}</td>
-                <td className="numeral py-2 text-right text-[12px] text-white/55">{l.r1 ?? "—"}</td>
+                <td className="numeral py-2 text-right text-[12px] text-white/55">{roundScore ?? "—"}</td>
               </tr>
             );
           })}

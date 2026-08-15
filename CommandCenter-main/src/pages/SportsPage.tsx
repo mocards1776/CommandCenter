@@ -205,7 +205,9 @@ function TourCard({
                   <th className="py-2 pr-2 text-right font-medium">Tot</th>
                   <th className="py-2 pr-2 text-right font-medium">Today</th>
                   <th className="py-2 pr-2 text-right font-medium">Thru</th>
-                  <th className="py-2 text-right font-medium">R1</th>
+                  <th className="py-2 text-right font-medium">
+                    R{rows.find((r) => r.latestRoundNum)?.latestRoundNum ?? 1}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -250,7 +252,7 @@ function TourCard({
                       {l.thru ?? "—"}
                     </td>
                     <td className="numeral text-chalk py-2.5 text-right text-[12px]">
-                      {l.r1 ?? "—"}
+                      {l.latestRound ?? l.r1 ?? "—"}
                     </td>
                   </tr>
                 ))}
@@ -792,55 +794,6 @@ function TeamDetailPanel({
                 />
               )}
 
-              {mlbTeamId && detail.source === "mlb" && (
-                <MlbTeamLeadersSection teamId={mlbTeamId} accent={accent} />
-              )}
-
-              {mlbTeamId && detail.source === "mlb" && detail.abbrev && (
-                <MlbTeamPayrollTable abbrev={detail.abbrev} />
-              )}
-
-              <DetailSection title="Playoff odds">
-                {detail.playoffOdds || detail.wildCardOdds ? (
-                  <div className="bg-panel rounded border border-white/[0.07] p-4">
-                    <div className="flex flex-wrap items-end justify-between gap-3">
-                      <div>
-                        <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
-                          Make playoffs
-                        </p>
-                        <p className="numeral text-cream mt-1 text-[36px] leading-none" style={{ color: accent }}>
-                          {formatOdds(detail.playoffOdds)}
-                        </p>
-                      </div>
-                      {detail.wildCardOdds && (
-                        <div className="text-right">
-                          <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
-                            Wild card
-                          </p>
-                          <p className="numeral text-cream mt-1 text-[22px]">
-                            {formatOdds(detail.wildCardOdds)}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                    {pctNumber(detail.playoffOdds) != null && (
-                      <div className="bg-field mt-3 h-1.5 overflow-hidden rounded-full">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${Math.min(100, Math.max(0, pctNumber(detail.playoffOdds)!))}%`,
-                            background: accent,
-                          }}
-                        />
-                      </div>
-                    )}
-                    <p className="text-chalk-dim mt-2 text-[11px]">ESPN projections</p>
-                  </div>
-                ) : (
-                  <EmptyLine>Playoff odds not available yet.</EmptyLine>
-                )}
-              </DetailSection>
-
               <DetailSection title="Standings">
                 {detail.division.length === 0 ? (
                   <EmptyLine>No standings available.</EmptyLine>
@@ -895,6 +848,55 @@ function TeamDetailPanel({
                       </tbody>
                     </table>
                   </div>
+                )}
+              </DetailSection>
+
+              {mlbTeamId && detail.source === "mlb" && (
+                <MlbTeamLeadersSection teamId={mlbTeamId} accent={accent} />
+              )}
+
+              {mlbTeamId && detail.source === "mlb" && detail.abbrev && (
+                <MlbTeamPayrollTable abbrev={detail.abbrev} />
+              )}
+
+              <DetailSection title="Playoff odds">
+                {detail.playoffOdds || detail.wildCardOdds ? (
+                  <div className="bg-panel rounded border border-white/[0.07] p-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
+                          Make playoffs
+                        </p>
+                        <p className="numeral text-cream mt-1 text-[36px] leading-none" style={{ color: accent }}>
+                          {formatOdds(detail.playoffOdds)}
+                        </p>
+                      </div>
+                      {detail.wildCardOdds && (
+                        <div className="text-right">
+                          <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
+                            Wild card
+                          </p>
+                          <p className="numeral text-cream mt-1 text-[22px]">
+                            {formatOdds(detail.wildCardOdds)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    {pctNumber(detail.playoffOdds) != null && (
+                      <div className="bg-field mt-3 h-1.5 overflow-hidden rounded-full">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, pctNumber(detail.playoffOdds)!))}%`,
+                            background: accent,
+                          }}
+                        />
+                      </div>
+                    )}
+                    <p className="text-chalk-dim mt-2 text-[11px]">ESPN projections</p>
+                  </div>
+                ) : (
+                  <EmptyLine>Playoff odds not available yet.</EmptyLine>
                 )}
               </DetailSection>
 

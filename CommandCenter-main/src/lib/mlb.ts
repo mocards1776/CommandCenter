@@ -5077,7 +5077,13 @@ function ordinalSuffix(n: number): string {
 }
 
 /** All 30 MLB managers with a computed hot-seat ranking. */
+let managersListCache: { at: number; data: MlbManager[] } | null = null;
+
 export async function fetchMlbManagers(): Promise<MlbManager[]> {
+  const now = Date.now();
+  if (managersListCache && now - managersListCache.at < 180_000) {
+    return managersListCache.data;
+  }
   const season = currentSeason();
   const [teamsRaw, standings, firedOdds] = await Promise.all([
     mlbGet("teams", { sportId: "1", season: String(season) }) as Promise<{
@@ -5123,8 +5129,12 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
         const mlbInterim = isInterimManagerRole(role);
 
         let yearsWithTeam = 1;
-        for (let y = season - 1; y >= season - 20; y--) {
-          const prev = await managerIdForTeamSeason(team.id, y);
+        // Parallel tenure probe (recent seasons) instead of serial year-by-year walks.
+        const tenureYears = Array.from({ length: 8 }, (_, i) => season - 1 - i);
+        const tenureHits = await Promise.all(
+          tenureYears.map((y) => managerIdForTeamSeason(team.id!, y)),
+        );
+        for (const prev of tenureHits) {
           if (prev !== mgrId) break;
           yearsWithTeam += 1;
         }
@@ -5236,13 +5246,126 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
     if (aHas !== bHas) return aHas ? -1 : 1;
     return b.hotSeatScore - a.hotSeatScore;
   });
-  return managers.map((m, i) => ({ ...m, hotSeatRank: i + 1 }));
+  const ranked = managers.map((m, i) => ({ ...m, hotSeatRank: i + 1 }));
+  managersListCache = { at: Date.now(), data: ranked };
+  return ranked;
 }
+
+/** Fast path for a single manager page — avoids rebuilding the full 30-team board. */
+async function fetchMlbManagerBaseLite(managerId: number): Promise<MlbManager> {
+  const season = currentSeason();
+  const [person, standings, firedOdds] = await Promise.all([
+    mlbGet(`people/${managerId}`, { hydrate: "currentTeam" }) as Promise<{
+      people?: {
+        id?: number;
+        fullName?: string;
+        currentTeam?: { id?: number; name?: string; abbreviation?: string };
+      }[];
+    }>,
+    fetchMlbStandings(),
+    fetchManagerFiredOdds().catch(
+      (): MlbManagerFiredOdds => ({ source: "none", checkedAt: null, items: [] }),
+    ),
+  ]);
+  const p = person.people?.[0];
+  if (!p?.fullName) throw new Error("Manager not found");
+  let teamId = p.currentTeam?.id ?? 0;
+  let teamName = p.currentTeam?.name ?? "—";
+  let teamAbbrev = p.currentTeam?.abbreviation ?? "—";
+
+  if (teamId) {
+    try {
+      const coaches = (await mlbGet(`teams/${teamId}/coaches`, {
+        season: String(season),
+      })) as { roster?: CoachMgr[] };
+      const mgr = pickTeamManager(coaches.roster ?? []);
+      if (mgr?.person?.id && mgr.person.id !== managerId) {
+        // Person may have moved — keep currentTeam from people hydrate.
+      }
+    } catch {
+      /* optional */
+    }
+  }
+
+  const st = standings
+    .flatMap((d) => d.rows.map((r) => ({ ...r, div: d })))
+    .find((r) => r.teamId === teamId);
+  const wins = st?.wins ?? 0;
+  const losses = st?.losses ?? 0;
+  const gp = wins + losses;
+  const winPct = gp > 0 ? wins / gp : 0.5;
+  const playoff = parseOddsPercent(st?.playoffPercent);
+  const [wiki, photoMeta, spotracNote] = await Promise.all([
+    fetchWikipediaCard(p.fullName),
+    fetchManagerPhotoMeta(p.fullName),
+    fetchManagerContractNote(p.fullName).catch(() => null),
+  ]);
+  const resolved = resolveManagerContractNote(
+    p.fullName,
+    photoMeta.contractNote || spotracNote || null,
+  );
+  const contractNote = resolved.note;
+  const yearsWithTeam = 1;
+  const contractTerm = parseManagerContractTerm(
+    contractNote,
+    season,
+    yearsWithTeam,
+    resolved.known,
+  );
+  const interim = photoMeta.interim;
+  const odds = matchFiredOdds(p.fullName, firedOdds.items);
+  const shortLeash =
+    isShortLeashContract(contractNote) || interim || (yearsWithTeam <= 1 && winPct < 0.42);
+  const heat = buildHotSeat({
+    winPct,
+    gb: st?.gb ?? "—",
+    playoff,
+    divisionRank: st?.rank != null ? Number(st.rank) : null,
+    yearsWithTeam,
+    contractNote,
+    interim,
+    shortLeash,
+    firedOddsPct: odds?.pct ?? null,
+  });
+  const headshot =
+    photoMeta.photo ||
+    (!isGenericMlbHeadshot(wiki.image) && wiki.image) ||
+    mlbHeadshot(managerId, 213);
+  return {
+    id: managerId,
+    name: p.fullName,
+    teamId,
+    teamName,
+    teamAbbrev,
+    record: `${wins}-${losses}`,
+    recordLabel: interim ? "As manager" : "Team",
+    wins,
+    losses,
+    winPct,
+    gb: st?.gb ?? "—",
+    playoffOdds: playoff,
+    firedOddsAmerican: odds?.american ?? null,
+    firedOddsPct: odds?.pct ?? null,
+    divisionRank: st?.rank != null ? Number(st.rank) : null,
+    contractNote,
+    contractTerm,
+    hotSeatScore: heat.score,
+    hotSeatRank: 0,
+    headshot,
+    primaryColor: "ba0c2f",
+    yearsWithTeam,
+    heatFactors: heat.factors,
+    isInterim: interim,
+    shortLeash,
+  };
+}
+
+// NOTE: keep ranked return below for the original function body end.
 
 export async function fetchMlbManagerDetail(managerId: number | string): Promise<MlbManagerDetail> {
   const id = Number(managerId);
-  const all = await fetchMlbManagers();
-  const base = all.find((m) => m.id === id);
+  const cached = managersListCache?.data.find((m) => m.id === id);
+  const base = cached ?? (await fetchMlbManagerBaseLite(id));
   if (!base) throw new Error("Manager not found");
 
   const season = currentSeason();

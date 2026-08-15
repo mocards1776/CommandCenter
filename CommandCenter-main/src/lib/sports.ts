@@ -62,6 +62,10 @@ export type TourLeader = {
   today: string | null;
   /** Round 1 to-par display (e.g. "-5"). */
   r1: string | null;
+  /** Most recent completed round to-par (same as Today when between rounds). */
+  latestRound: string | null;
+  /** 1-based index of most recent completed round. */
+  latestRoundNum: number | null;
   /** Additional round scores R2+ when present. */
   roundScores: string[];
   /** FedEx Cup rank when known. */
@@ -376,16 +380,24 @@ export function visibleFavorites(layout: SportsLayout): SportsFavorite[] {
 
 async function espnGet(path: string): Promise<unknown> {
   const clean = path.replace(/^\/+/, "");
-  try {
-    const ctl = new AbortController();
-    const t = window.setTimeout(() => ctl.abort(), 12000);
-    const res = await fetch(`${ESPN}/${clean}`, {
-      signal: ctl.signal,
-      headers: { Accept: "application/json" },
-    }).finally(() => window.clearTimeout(t));
-    if (res.ok) return await res.json();
-  } catch {
-    // fall through to edge proxy
+  const headers = { Accept: "application/json" };
+  const hosts = [
+    ESPN,
+    // site.api is often bot-walled; site.web still serves golf/leaderboards.
+    "https://site.web.api.espn.com/apis/site/v2/sports",
+  ];
+  for (const host of hosts) {
+    try {
+      const ctl = new AbortController();
+      const t = window.setTimeout(() => ctl.abort(), 12000);
+      const res = await fetch(`${host}/${clean}`, {
+        signal: ctl.signal,
+        headers,
+      }).finally(() => window.clearTimeout(t));
+      if (res.ok) return await res.json();
+    } catch {
+      /* try next */
+    }
   }
 
   const { data, error } = await supabase.functions.invoke("sports", {
@@ -574,7 +586,9 @@ type EspnTourPayload = {
     name?: string;
     status?: string;
     competitions?: {
-      status?: { type?: { description?: string; detail?: string } };
+      status?: {
+        type?: { description?: string; detail?: string; state?: string; completed?: boolean };
+      };
       competitors?: {
         id?: string;
         order?: number;
@@ -639,12 +653,18 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
     i = j;
   }
 
+  const dayPlayComplete = /play complete/i.test(
+    `${comp?.status?.type?.description ?? ""} ${comp?.status?.type?.detail ?? ""}`,
+  );
+
   const field: TourLeader[] = sorted.map((c, idx) => {
     const lines = c.linescores ?? [];
     const roundScores = lines
       .map((r: { displayValue?: string }) => r.displayValue)
       .filter((v: string | undefined): v is string => Boolean(v) && v !== "-");
     const r1 = roundScores[0] ?? null;
+    const latestRound = roundScores.length ? roundScores[roundScores.length - 1]! : null;
+    const latestRoundNum = roundScores.length ? roundScores.length : null;
     const st = c.status;
     let thru: string | null = null;
     const thruNum = st?.thru;
@@ -653,6 +673,9 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
     } else if (thruNum != null && thruNum >= 18) {
       thru = "F";
     } else if (st?.type?.completed) {
+      thru = "F";
+    } else if (dayPlayComplete && st?.type?.state === "pre" && roundScores.length > 0) {
+      // Day's round finished — show F instead of tomorrow's tee time in Thru.
       thru = "F";
     } else if (st?.teeTime || (st?.detail && /\d/.test(st.detail) && /am|pm/i.test(st.detail))) {
       // Next-round tee time (e.g. "12:10 PM ET") instead of a premature "F".
@@ -684,6 +707,8 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
       thru,
       today: parseGolfToday(st, roundScores),
       r1,
+      latestRound,
+      latestRoundNum,
       roundScores,
       fedexCupRank: null,
     };
@@ -739,7 +764,7 @@ function formatGolfToPar(raw: unknown): string | null {
   return token === "E" ? "E" : token.startsWith("+") || token.startsWith("-") ? token : token;
 }
 
-/** Today's round score from ESPN status / latest linescore. */
+/** Today's / most recent round score from ESPN status / latest linescore. */
 function parseGolfToday(
   st:
     | {
@@ -752,7 +777,8 @@ function parseGolfToday(
     | undefined,
   roundScores: string[],
 ): string | null {
-  if (!st) return roundScores.length ? roundScores[roundScores.length - 1]! : null;
+  const latest = roundScores.length ? roundScores[roundScores.length - 1]! : null;
+  if (!st) return latest;
   const fromToday = formatGolfToPar(st.today);
   if (fromToday) return fromToday;
   if (st.todayDetail) {
@@ -761,14 +787,16 @@ function parseGolfToday(
     if (m) return formatGolfToPar(m[1]);
   }
   // In progress: last posted round score is today's card.
-  if (st.thru != null && st.thru > 0 && st.thru < 18 && roundScores.length) {
-    return roundScores[roundScores.length - 1] ?? null;
+  if (st.thru != null && st.thru > 0 && st.thru < 18 && latest) {
+    return latest;
   }
-  if (st.type?.completed && roundScores.length) {
-    return roundScores[roundScores.length - 1] ?? null;
+  if (st.type?.completed && latest) {
+    return latest;
   }
-  if (st.type?.state === "pre") return "—";
-  return roundScores.length ? roundScores[roundScores.length - 1]! : null;
+  // Between rounds ESPN marks the next round as "pre" with today=null —
+  // still show the most recent completed round (e.g. R2 after play complete).
+  if (st.type?.state === "pre") return latest ?? "—";
+  return latest;
 }
 
 async function fetchFedExCupRanksForAthletes(ids: string[]): Promise<Map<string, number>> {
@@ -2231,14 +2259,10 @@ async function fetchEspnTeamPlayerTables(fav: SportsFavorite): Promise<TeamPlaye
   }
 }
 
+/** Full league + division label (e.g. "National League Central"). */
 function shortDiv(name?: string): string {
-  if (!name) return "division";
-  return name
-    .replace("National League ", "NL ")
-    .replace("American League ", "AL ")
-    .replace("Central", "Cent")
-    .replace("East", "East")
-    .replace("West", "West");
+  if (!name) return "league";
+  return name.trim();
 }
 
 function ordinalSuffix(n: number): string {

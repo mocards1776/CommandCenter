@@ -119,16 +119,25 @@ export async function fetchMlbTeamForm(teamId: number): Promise<TeamFormStrip> {
     for (const block of stand.records ?? []) {
       for (const row of block.teamRecords ?? []) {
         if (row.team?.id !== teamId) continue;
-        const div = (block.division?.name ?? "")
-          .replace("National League ", "NL ")
-          .replace("American League ", "AL ");
+        const rawDiv = block.division?.name ?? "";
+        const league = /national/i.test(rawDiv)
+          ? "National League"
+          : /american/i.test(rawDiv)
+            ? "American League"
+            : rawDiv.replace(/\s+Division$/i, "") || "league";
+        const divPart = rawDiv
+          .replace(/^National League\s+/i, "")
+          .replace(/^American League\s+/i, "")
+          .trim();
+        const place =
+          divPart && !/^league$/i.test(divPart) ? `${league} ${divPart}` : league;
         const rankNum = Number.parseInt(String(row.divisionRank ?? ""), 10);
         standing =
-          Number.isFinite(rankNum) && rankNum > 0 && div
-            ? `${ordinalPlace(rankNum)} in ${div}`
+          Number.isFinite(rankNum) && rankNum > 0
+            ? `${ordinalPlace(rankNum)} in ${place}`
             : row.divisionRank
-              ? `${row.divisionRank} in ${div || "division"}`
-              : div || null;
+              ? `${row.divisionRank} in ${place}`
+              : place || null;
         if (!record && row.leagueRecord) {
           record = `${row.leagueRecord.wins ?? 0}-${row.leagueRecord.losses ?? 0}`;
         }

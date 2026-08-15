@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Loader2, Star } from "lucide-react";
@@ -204,10 +204,27 @@ export function MlbGameDetail({
           prospectRanks={pipelineRanks.data}
           awayForm={awayForm.data ?? null}
           homeForm={homeForm.data ?? null}
+          afterLinescore={
+            <>
+              {recap.isPending && (
+                <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+                  <Loader2 size={14} className="animate-spin" /> Loading game wrap…
+                </p>
+              )}
+              {recap.data ? (
+                <GameWrap
+                  recap={recap.data}
+                  box={g}
+                  defaultOpen={!boxFirst || !isFinal}
+                  suppressHeader={suppressWrapHeader}
+                />
+              ) : null}
+            </>
+          }
         />
       )}
 
-      {!g.pregame && (
+      {!g.pregame && g.innings.length === 0 && (
         <>
           {recap.isPending && (
             <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
@@ -512,22 +529,42 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
             </>
           ) : (
             <>
-              <p className="font-display text-[48px] leading-none tabular-nums text-white sm:text-[60px]">
-                <span className={awayWins ? "text-white" : "text-white/50"}>{g.away.runs}</span>
-                <span className="mx-2 text-[22px] text-white/25 sm:mx-3">-</span>
-                <span className={homeWins ? "text-white" : "text-white/50"}>{g.home.runs}</span>
+              <p className="font-display text-[52px] leading-none tabular-nums tracking-tight text-white sm:text-[64px]">
+                <span
+                  className={cn(
+                    "drop-shadow-[0_0_28px_rgba(255,255,255,0.16)]",
+                    awayWins ? "text-white" : "text-white/45",
+                  )}
+                >
+                  {g.away.runs}
+                </span>
+                <span className="mx-2 text-[22px] font-light text-white/25 sm:mx-3">–</span>
+                <span
+                  className={cn(
+                    "drop-shadow-[0_0_28px_rgba(255,255,255,0.16)]",
+                    homeWins ? "text-white" : "text-white/45",
+                  )}
+                >
+                  {g.home.runs}
+                </span>
               </p>
-              <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                {g.status === "Final" ? "Final" : g.inning || g.status}
+              <p
+                className={cn(
+                  "mt-2.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]",
+                  g.live ? "bg-alert/90 text-ink" : "bg-white/10 text-[#c8cdd8]",
+                )}
+              >
+                {g.live ? (
+                  <>
+                    <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />
+                    {g.inning || "Live"}
+                  </>
+                ) : g.status === "Final" ? (
+                  "Final"
+                ) : (
+                  g.inning || g.status
+                )}
               </p>
-              {(g.away.hits != null || g.home.hits != null) && (
-                <p className="mt-2 text-[11px] uppercase tracking-[0.12em] text-white/45">
-                  H {g.away.hits ?? "–"}–{g.home.hits ?? "–"}
-                  {g.away.errors != null
-                    ? ` · E ${g.away.errors}–${g.home.errors ?? 0}`
-                    : ""}
-                </p>
-              )}
             </>
           )}
         </div>
@@ -1260,6 +1297,7 @@ function EspnBoxBoard({
   prospectRanks,
   awayForm,
   homeForm,
+  afterLinescore,
 }: {
   game: MlbBoxscore;
   metaBits: (string | null)[];
@@ -1267,6 +1305,8 @@ function EspnBoxBoard({
   prospectRanks?: Map<number, number>;
   awayForm?: TeamFormStrip | null;
   homeForm?: TeamFormStrip | null;
+  /** Inserted below linescore / decisions (e.g. game wrap). */
+  afterLinescore?: ReactNode;
 }) {
   const decisions = useMemo(() => {
     const all = [...game.away.pitchers, ...game.home.pitchers];
@@ -1342,6 +1382,8 @@ function EspnBoxBoard({
           </div>
         )}
       </div>
+
+      {afterLinescore}
 
       <TeamBoxSection
         side={game.away}
@@ -1427,7 +1469,7 @@ function TeamBoxSection({
           </div>
           <TeamStandingLine standing={form?.standing} className="text-[#8b93a7]" />
         </div>
-        <TeamFormChips form={form} className="w-[9.5rem] shrink-0" />
+        <TeamFormChips form={form} className="w-[13rem] shrink-0" />
       </div>
 
       <div className="overflow-x-auto">

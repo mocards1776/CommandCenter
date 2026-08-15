@@ -94,6 +94,18 @@ export default function NflPlayerPage() {
         <>
           <PlayerHero player={p} accent={accent} isFavorite={Boolean(fav.data)} onToggleFav={toggleFav} />
 
+          {p.bio ? (
+            <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+              <h3 className="rule-head mb-2">Bio</h3>
+              {p.status ? (
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                  Status · {p.status}
+                </p>
+              ) : null}
+              <p className="text-cream/90 text-[14px] leading-relaxed">{p.bio}</p>
+            </section>
+          ) : null}
+
           {p.seasonStats.length > 0 && (
             <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
               <div className="border-b border-white/[0.06] bg-white/[0.02] px-4 py-2.5">

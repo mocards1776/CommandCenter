@@ -39,12 +39,12 @@ function FormCard({
       </div>
       <dl className="mt-2.5 grid grid-cols-3 gap-2 text-center">
         {[
-          ["L5", form.last5],
-          ["L10", form.last10],
-          ["L20", form.last20],
+          ["Last 5", form.last5],
+          ["Last 10", form.last10],
+          ["Last 20", form.last20],
         ].map(([label, value]) => (
           <div key={label} className="rounded-md bg-white/[0.03] px-1 py-1.5">
-            <dt className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+            <dt className="text-[9px] font-semibold uppercase tracking-[0.12em] text-[#8b93a7]">
               {label}
             </dt>
             <dd className="numeral text-cream mt-0.5 text-[13px]">{value}</dd>
