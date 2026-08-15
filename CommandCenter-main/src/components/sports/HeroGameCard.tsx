@@ -10,6 +10,7 @@ import {
   type MlbScoreGame,
 } from "@/lib/mlb";
 import { fetchMlbTeamForm, type TeamFormStrip } from "@/lib/team-form";
+import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChips";
 import { cn } from "@/lib/utils";
 
 export default function HeroGameCard({
@@ -287,13 +288,7 @@ function PitcherStack({
 
 function FormLine({ form }: { form: TeamFormStrip | null }) {
   if (!form) return null;
-  return (
-    <p className="numeral mt-0.5 space-y-0.5 text-[11px] leading-tight text-white/55">
-      <span className="block">L5: {form.last5}</span>
-      <span className="block text-white/40">L10: {form.last10}</span>
-      <span className="block text-white/40">L20: {form.last20}</span>
-    </p>
-  );
+  return <TeamFormChips form={form} className="mt-1.5 w-[9rem]" align="center" />;
 }
 
 function HeroSide({
@@ -349,6 +344,7 @@ function HeroSide({
         ) : (
           <p className="mt-1 truncate text-[11px] text-white/45">{side.name}</p>
         )}
+        <TeamStandingLine standing={form?.standing} />
         <FormLine form={form ?? null} />
       </div>
     </div>

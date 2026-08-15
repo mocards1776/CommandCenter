@@ -8,6 +8,7 @@ import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import HighlightReel from "@/components/sports/HighlightReel";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import TeamMark from "@/components/sports/TeamMark";
+import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChips";
 import { fetchMlbTeamForm, type TeamFormStrip } from "@/lib/team-form";
 import {
   buildPlayerNameIndex,
@@ -38,11 +39,14 @@ export function MlbGameDetail({
   gamePk,
   espnEventId,
   boxFirst = false,
+  suppressWrapHeader = false,
 }: {
   gamePk: string;
   espnEventId?: string | null;
   /** Prefer full box score above the written wrap (farm feeds). */
   boxFirst?: boolean;
+  /** Parent hero already shows the wrap headline. */
+  suppressWrapHeader?: boolean;
 }) {
   const { user } = useAuth();
 
@@ -122,6 +126,19 @@ export function MlbGameDetail({
     staleTime: 30 * 60_000,
   });
 
+  const awayForm = useQuery({
+    queryKey: ["mlb-team-form", box.data?.away.teamId],
+    queryFn: () => fetchMlbTeamForm(box.data!.away.teamId),
+    enabled: Boolean(box.data?.away.teamId),
+    staleTime: 120_000,
+  });
+  const homeForm = useQuery({
+    queryKey: ["mlb-team-form", box.data?.home.teamId],
+    queryFn: () => fetchMlbTeamForm(box.data!.home.teamId),
+    enabled: Boolean(box.data?.home.teamId),
+    staleTime: 120_000,
+  });
+
   if (box.isPending) {
     return (
       <div className="text-chalk flex min-h-[50vh] items-center justify-center gap-2">
@@ -154,18 +171,7 @@ export function MlbGameDetail({
     <div className="space-y-5">
       <GameMatchupHeader game={g} />
 
-      {/* Final: wrap first (default) or box first for farm digests. Live: box first. Pregame: preview. */}
-      {!g.pregame && isFinal && !boxFirst && (
-        <>
-          {recap.isPending && (
-            <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
-              <Loader2 size={14} className="animate-spin" /> Loading game wrap…
-            </p>
-          )}
-          {recap.data && <GameWrap recap={recap.data} box={g} defaultOpen />}
-        </>
-      )}
-
+      {/* Box score (with team circles) sits above wrap text. Pregame: preview story first. */}
       {g.pregame && (
         <>
           {recap.isPending && (
@@ -173,7 +179,14 @@ export function MlbGameDetail({
               <Loader2 size={14} className="animate-spin" /> Loading preview…
             </p>
           )}
-          {recap.data && <GameWrap recap={recap.data} box={g} defaultOpen />}
+          {recap.data && (
+            <GameWrap
+              recap={recap.data}
+              box={g}
+              defaultOpen
+              suppressHeader={suppressWrapHeader}
+            />
+          )}
           <PreviewStack
             game={g}
             preview={preview.data}
@@ -189,28 +202,26 @@ export function MlbGameDetail({
           metaBits={metaBits}
           watchPlayerIds={watchPlayerIds}
           prospectRanks={pipelineRanks.data}
+          awayForm={awayForm.data ?? null}
+          homeForm={homeForm.data ?? null}
         />
       )}
 
-      {!g.pregame && isFinal && boxFirst && (
+      {!g.pregame && (
         <>
           {recap.isPending && (
             <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
               <Loader2 size={14} className="animate-spin" /> Loading game wrap…
             </p>
           )}
-          {recap.data && <GameWrap recap={recap.data} box={g} defaultOpen={false} />}
-        </>
-      )}
-
-      {!g.pregame && !isFinal && (
-        <>
-          {recap.isPending && (
-            <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
-              <Loader2 size={14} className="animate-spin" /> Loading game wrap…
-            </p>
+          {recap.data && (
+            <GameWrap
+              recap={recap.data}
+              box={g}
+              defaultOpen={!boxFirst || !isFinal}
+              suppressHeader={suppressWrapHeader}
+            />
           )}
-          {recap.data && <GameWrap recap={recap.data} box={g} defaultOpen />}
         </>
       )}
 
@@ -487,6 +498,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
           winner={awayWins}
           loser={homeWins}
           form={awayForm.data ?? null}
+          showForm={g.pregame}
         />
         <div className="px-1 text-center">
           {g.pregame ? (
@@ -525,6 +537,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
           winner={homeWins}
           loser={awayWins}
           form={homeForm.data ?? null}
+          showForm={g.pregame}
         />
       </div>
 
@@ -541,12 +554,14 @@ function EspnTeam({
   winner,
   loser,
   form,
+  showForm = false,
 }: {
   side: MlbBoxscoreSide;
   align: "left" | "right";
   winner?: boolean;
   loser?: boolean;
   form?: TeamFormStrip | null;
+  showForm?: boolean;
 }) {
   return (
     <Link
@@ -579,12 +594,13 @@ function EspnTeam({
         ) : (
           <p className="mt-1 truncate text-[11px] text-[#8b93a7]">{side.name}</p>
         )}
-        {form ? (
-          <p className="numeral mt-0.5 space-y-0.5 text-[10px] leading-tight text-white/55">
-            <span className="block">L5: {form.last5}</span>
-            <span className="block text-white/40">L10: {form.last10}</span>
-            <span className="block text-white/40">L20: {form.last20}</span>
-          </p>
+        <TeamStandingLine standing={form?.standing} />
+        {showForm ? (
+          <TeamFormChips
+            form={form}
+            className="mt-1.5 w-[9rem]"
+            align={align === "right" ? "right" : "left"}
+          />
         ) : null}
       </div>
     </Link>
@@ -962,6 +978,7 @@ function GameWrap({
   recap,
   box,
   defaultOpen = false,
+  suppressHeader = false,
 }: {
   recap: MlbGameRecap;
   box: {
@@ -969,6 +986,7 @@ function GameWrap({
     home: MlbBoxscoreSide;
   };
   defaultOpen?: boolean;
+  suppressHeader?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [segments, setSegments] = useState<RecapInline[]>([]);
@@ -1033,17 +1051,23 @@ function GameWrap({
 
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
-      <div className="border-b border-white/[0.06] px-4 py-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
-          {box.away.batters.length || box.home.batters.length ? "Game wrap" : "Game preview"}
-        </p>
-        <h2 className="font-rss mt-1 text-[20px] font-semibold leading-snug text-cream sm:text-[22px]">
-          {recap.headline}
-        </h2>
-        {showDesc && (
-          <p className="font-rss mt-2 text-[14px] leading-relaxed text-[#c8cdd8]">{desc}</p>
-        )}
-      </div>
+      {!suppressHeader ? (
+        <div className="border-b border-white/[0.06] px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+            {box.away.batters.length || box.home.batters.length ? "Game wrap" : "Game preview"}
+          </p>
+          <h2 className="font-rss mt-1 text-[20px] font-semibold leading-snug text-cream sm:text-[22px]">
+            {recap.headline}
+          </h2>
+          {showDesc && (
+            <p className="font-rss mt-2 text-[14px] leading-relaxed text-[#c8cdd8]">{desc}</p>
+          )}
+        </div>
+      ) : showDesc ? (
+        <div className="border-b border-white/[0.06] px-4 py-3">
+          <p className="font-rss text-[14px] leading-relaxed text-[#c8cdd8]">{desc}</p>
+        </div>
+      ) : null}
       <div className="px-4 py-4">
         {rendered}
         <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -1093,13 +1117,32 @@ function RecapBody({
         .replace(/[^a-z0-9]+/g, " ")
         .replace(/\s+/g, " ")
         .trim();
-      if (needles.some((n) => norm === n || (norm.includes(n) && norm.length <= n.length + 48))) {
+      // Drop the whole segment when it is (or mostly is) a hide phrase,
+      // or when a short chrome line contains the phrase.
+      if (
+        needles.some(
+          (n) =>
+            norm === n ||
+            (norm.includes(n) && (norm.length <= n.length + 80 || norm.length < 160)),
+        )
+      ) {
         return null;
       }
       if (seg.kind === "text") {
         let text = seg.text
           .replace(/\bSee AP['’]?s full MLB coverage here\.?/gi, "")
-          .replace(/\bSee AP['’]?s full MLB coverage\.?/gi, "");
+          .replace(/\bSee AP['’]?s full MLB coverage\.?/gi, "")
+          .replace(/\bShare on X\b[^.]*\.?/gi, "")
+          .replace(/\bEmail a link to a friend\b[^.]*\.?/gi, "")
+          .replace(/\(\s*Opens in new window\s*\)/gi, "")
+          .replace(/\bSports\s*MLB\s*[A-Za-z ]+/gi, "");
+        // Strip hide phrases embedded mid-paragraph.
+        for (const n of needles) {
+          if (n.length < 3) continue;
+          const re = new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"), "ig");
+          text = text.replace(re, " ");
+        }
+        text = text.replace(/\s{2,}/g, " ").trim();
         if (!/[^\s]/.test(text)) return null;
         return { ...seg, text };
       }
@@ -1215,11 +1258,15 @@ function EspnBoxBoard({
   metaBits,
   watchPlayerIds,
   prospectRanks,
+  awayForm,
+  homeForm,
 }: {
   game: MlbBoxscore;
   metaBits: (string | null)[];
   watchPlayerIds?: Set<number>;
   prospectRanks?: Map<number, number>;
+  awayForm?: TeamFormStrip | null;
+  homeForm?: TeamFormStrip | null;
 }) {
   const decisions = useMemo(() => {
     const all = [...game.away.pitchers, ...game.home.pitchers];
@@ -1296,8 +1343,18 @@ function EspnBoxBoard({
         )}
       </div>
 
-      <TeamBoxSection side={game.away} watchPlayerIds={watchPlayerIds} prospectRanks={prospectRanks} />
-      <TeamBoxSection side={game.home} watchPlayerIds={watchPlayerIds} prospectRanks={prospectRanks} />
+      <TeamBoxSection
+        side={game.away}
+        watchPlayerIds={watchPlayerIds}
+        prospectRanks={prospectRanks}
+        form={awayForm}
+      />
+      <TeamBoxSection
+        side={game.home}
+        watchPlayerIds={watchPlayerIds}
+        prospectRanks={prospectRanks}
+        form={homeForm}
+      />
     </div>
   );
 }
@@ -1306,10 +1363,12 @@ function TeamBoxSection({
   side,
   watchPlayerIds,
   prospectRanks,
+  form,
 }: {
   side: MlbBoxscoreSide;
   watchPlayerIds?: Set<number>;
   prospectRanks?: Map<number, number>;
+  form?: TeamFormStrip | null;
 }) {
   const battingNotes = useMemo(() => {
     const notes: { label: string; text: string }[] = [];
@@ -1352,15 +1411,23 @@ function TeamBoxSection({
 
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-      <div className="flex items-center gap-2 border-b border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
         <TeamMark teamId={side.teamId} size="sm" />
-        <Link
-          to={teamPagePath(side.teamId)}
-          className="text-[14px] font-bold tracking-wide text-white hover:text-accent hover:underline"
-        >
-          {side.name}
-        </Link>
-        {side.record && <span className="numeral text-[12px] text-[#8b93a7]">{side.record}</span>}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <Link
+              to={teamPagePath(side.teamId)}
+              className="text-[14px] font-bold tracking-wide text-white hover:text-accent hover:underline"
+            >
+              {side.name}
+            </Link>
+            {side.record && (
+              <span className="numeral text-[12px] text-[#8b93a7]">{side.record}</span>
+            )}
+          </div>
+          <TeamStandingLine standing={form?.standing} className="text-[#8b93a7]" />
+        </div>
+        <TeamFormChips form={form} className="w-[9.5rem] shrink-0" />
       </div>
 
       <div className="overflow-x-auto">
