@@ -1714,7 +1714,7 @@ async function scrapeTeamBbrefSummary(
     : null;
   const recordMatch = recordText?.match(/(\d+-\d+)/);
   const placeMatch = recordText?.match(/(\d+(?:st|nd|rd|th)\s+place\s+in\s+[^,]+)/i);
-  const pythagBlock = html.match(/Pythagorean W-L:?\s*([\s\S]{0,120}??)(?:More team|<\/)/i);
+  const pythagBlock = html.match(/Pythagorean W-L:?\s*([\s\S]{0,120}?)(?:More team|<\/)/i);
   const pythagText = pythagBlock
     ? decodeHtmlEntities(stripTags(pythagBlock[1])).replace(/\s+/g, " ").trim()
     : null;
