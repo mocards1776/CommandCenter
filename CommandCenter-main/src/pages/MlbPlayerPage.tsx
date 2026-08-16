@@ -314,6 +314,10 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         warRank={extras.data?.warRank ?? null}
         warOf={extras.data?.warOf ?? null}
         pipelineRank={scouting.data?.pipelineRank ?? null}
+        seasonStats={seasonStats}
+        seasonRanks={activeLevel === "mlb" ? (ranks.data ?? []) : []}
+        isPitcher={isPitcher}
+        levelLabel={showLevelSelector ? levelLabel : undefined}
       />
 
       {showLevelSelector && (
@@ -356,16 +360,6 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
       )}
 
       {performance && <PerformanceSummaryCard summary={performance} />}
-
-      {seasonStats.length > 0 && (
-        <SeasonStatsStrip
-          season={p.season}
-          stats={seasonStats}
-          ranks={activeLevel === "mlb" ? (ranks.data ?? []) : []}
-          isPitcher={isPitcher}
-          levelLabel={showLevelSelector ? levelLabel : undefined}
-        />
-      )}
 
       {seasonStats.length > 0 && (
         <StatTable
@@ -724,6 +718,10 @@ function PlayerHeader({
   warRank,
   warOf,
   pipelineRank,
+  seasonStats,
+  seasonRanks,
+  isPitcher,
+  levelLabel,
 }: {
   player: MlbPlayerCard;
   accent: string;
@@ -739,6 +737,10 @@ function PlayerHeader({
   warRank?: number | null;
   warOf?: number | null;
   pipelineRank?: number | null;
+  seasonStats: MlbPlayerStatLine[];
+  seasonRanks: MlbLeagueRank[];
+  isPitcher: boolean;
+  levelLabel?: string;
 }) {
   const htWt = [player.height, player.weight ? `${player.weight} lb` : null]
     .filter(Boolean)
@@ -751,6 +753,7 @@ function PlayerHeader({
         ? "MLB"
         : player.sportAbbrev
       : null;
+  const school = player.school ?? player.draft?.school ?? null;
 
   return (
     <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
@@ -862,49 +865,20 @@ function PlayerHeader({
                       : "Season"}
                 </p>
               </div>
-              {htWt && (
-                <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
-                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">
-                    HT / WT
-                  </p>
-                  <p className="mt-0.5 text-[13px] leading-snug font-semibold text-white">{htWt}</p>
-                </div>
-              )}
-              {batThr && (
-                <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
-                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">
-                    Bat / Thr
-                  </p>
-                  <p className="numeral mt-0.5 text-[22px] leading-none text-white">{batThr}</p>
-                </div>
-              )}
-              {player.birthDate && (
-                <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
-                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">
-                    Birthdate
-                  </p>
-                  <p className="mt-0.5 text-[13px] leading-snug font-semibold text-white">
-                    {formatSportsDate(player.birthDate)}
-                    {player.age != null ? ` (${player.age})` : ""}
-                  </p>
-                </div>
-              )}
-              {player.birthPlace && (
-                <div className="max-w-[11rem] shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
-                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">Born</p>
-                  <p className="mt-0.5 text-[12px] leading-snug font-semibold text-white">
-                    {player.birthPlace}
-                  </p>
-                </div>
-              )}
             </div>
           </div>
 
-          <dl className="mt-4 grid grid-cols-2 gap-2.5 text-[12.5px] sm:grid-cols-3 lg:grid-cols-4">
-            {player.mlbDebut && (
+          <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 text-[12.5px]">
+            {htWt && (
               <div>
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">MLB debut</dt>
-                <dd className="mt-0.5 text-white">{formatSportsDate(player.mlbDebut)}</dd>
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">HT / WT</dt>
+                <dd className="mt-0.5 text-white">{htWt}</dd>
+              </div>
+            )}
+            {batThr && (
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Bat / Thr</dt>
+                <dd className="mt-0.5 text-white">{batThr}</dd>
               </div>
             )}
             <div>
@@ -920,6 +894,36 @@ function PlayerHeader({
                   ))}
               </dd>
             </div>
+            <div>
+              <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">School</dt>
+              <dd className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-white">
+                <span>{school ?? "—"}</span>
+                <PlayerTagsPanel
+                  playerId={player.id}
+                  playerName={player.name}
+                  variant="inline"
+                  isFavorite={isFavorite}
+                  teamName={player.teamName}
+                  teamId={player.teamId}
+                  position={player.position}
+                />
+              </dd>
+            </div>
+            {player.birthDate && (
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Birthdate</dt>
+                <dd className="mt-0.5 text-white">
+                  {formatSportsDate(player.birthDate)}
+                  {player.age != null ? ` (${player.age})` : ""}
+                </dd>
+              </div>
+            )}
+            {player.mlbDebut && (
+              <div>
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">MLB debut</dt>
+                <dd className="mt-0.5 text-white">{formatSportsDate(player.mlbDebut)}</dd>
+              </div>
+            )}
             {(salary || contractStatus) && (
               <div>
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">
@@ -941,20 +945,26 @@ function PlayerHeader({
                 <dd className="numeral mt-0.5 text-white">{careerWar.toFixed(1)}</dd>
               </div>
             )}
-            <div className="col-span-2 sm:col-span-2 lg:col-span-2">
-              <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">School</dt>
-              <dd className="mt-0.5 text-white">{player.school ?? "—"}</dd>
-              <PlayerTagsPanel
-                playerId={player.id}
-                playerName={player.name}
-                variant="inline"
-                isFavorite={isFavorite}
-                teamName={player.teamName}
-                teamId={player.teamId}
-                position={player.position}
+            {player.birthPlace && (
+              <div className="col-span-2">
+                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Born</dt>
+                <dd className="mt-0.5 text-white">{player.birthPlace}</dd>
+              </div>
+            )}
+          </dl>
+
+          {seasonStats.length > 0 && (
+            <div className="mt-4">
+              <SeasonStatsStrip
+                season={player.season}
+                stats={seasonStats}
+                ranks={seasonRanks}
+                isPitcher={isPitcher}
+                levelLabel={levelLabel}
+                embedded
               />
             </div>
-          </dl>
+          )}
         </div>
       </div>
     </article>
@@ -969,35 +979,76 @@ function SeasonStatsStrip({
   ranks,
   isPitcher,
   levelLabel,
+  embedded = false,
 }: {
   season: number;
   stats: MlbPlayerStatLine[];
   ranks: MlbLeagueRank[];
   isPitcher: boolean;
   levelLabel?: string;
+  /** Render inside the hero card (dark translucent panel). */
+  embedded?: boolean;
 }) {
   const keyStats: KeyStat[] = isPitcher ? buildPitcherKeyStats(stats) : buildHitterKeyStats(stats);
 
   return (
-    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-      <div className="border-b border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+    <section
+      className={
+        embedded
+          ? "overflow-hidden rounded-lg border border-white/10 bg-black/30"
+          : "bg-panel overflow-hidden rounded-xl border border-white/[0.08]"
+      }
+    >
+      <div
+        className={
+          embedded
+            ? "border-b border-white/10 px-3 py-2"
+            : "border-b border-white/[0.06] bg-white/[0.02] px-4 py-2.5"
+        }
+      >
+        <h2
+          className={
+            embedded
+              ? "font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-white/55"
+              : "text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]"
+          }
+        >
           {season} Season Stats{levelLabel ? ` · ${levelLabel}` : ""}
         </h2>
       </div>
-      <div className="grid grid-cols-2 divide-x divide-white/[0.06] sm:grid-cols-4">
+      <div className="grid grid-cols-2 divide-x divide-y divide-white/[0.08]">
         {keyStats.map((s) => {
           const rank = s.rankLabel ? findRank(ranks, s.rankLabel) : undefined;
           return (
-            <div key={s.label} className="px-3 py-4 text-center">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+            <div key={s.label} className={embedded ? "px-3 py-3.5" : "px-3 py-4 text-center"}>
+              <p
+                className={
+                  embedded
+                    ? "text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50"
+                    : "text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]"
+                }
+              >
                 {s.label}
               </p>
-              <p className="numeral text-cream mt-1 text-[26px] leading-none sm:text-[28px]">
+              <p
+                className={
+                  embedded
+                    ? "numeral mt-1 text-[26px] leading-none text-white"
+                    : "numeral text-cream mt-1 text-[26px] leading-none sm:text-[28px]"
+                }
+              >
                 {s.value}
               </p>
               {rank && (
-                <p className="mt-1.5 text-[12px] font-medium text-[#b8c0d2]">{rank.display}</p>
+                <p
+                  className={
+                    embedded
+                      ? "mt-1 text-[11px] font-medium text-white/55"
+                      : "mt-1.5 text-[12px] font-medium text-[#b8c0d2]"
+                  }
+                >
+                  {rank.display}
+                </p>
               )}
             </div>
           );

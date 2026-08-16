@@ -2,6 +2,14 @@
 
 ---
 
+## Player hero: tags on School, season stats in card — August 16, 2026
+
+- Restore bio grid on the hero (HT/WT, Bat/Thr, etc.) with Age + WAR chips only.
+- Tags sit on the same line as School (no separate Labels block under the card).
+- Top-four season stats (W-L/ERA/SO/WHIP or AVG/HR/RBI/OPS) embed in the hero below Born.
+
+---
+
 ## Pre-extract Dispatch articles — August 16, 2026
 
 - Idle feed lists warm the next ~10 extracts into React Query (unread first).

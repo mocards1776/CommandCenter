@@ -223,7 +223,9 @@ export default function PlayerTagsPanel({
   if (variant === "inline") {
     if (!user) return null;
     if (!showFavorite && otherTags.length === 0) return null;
-    return <div className="mt-1 flex flex-wrap items-center gap-1.5">{renderTagPills({ compact: true })}</div>;
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5">{renderTagPills({ compact: true })}</span>
+    );
   }
 
   if (variant === "hero") {
