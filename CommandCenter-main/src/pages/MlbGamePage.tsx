@@ -221,6 +221,8 @@ export function MlbGameDetail({
               box={g}
               defaultOpen
               suppressHeader={suppressWrapHeader}
+              favoriteIds={favoritePlayerIds}
+              taggedIds={taggedPlayerIds}
             />
           )}
           <PreviewStack
@@ -262,6 +264,8 @@ export function MlbGameDetail({
                   box={g}
                   defaultOpen={!boxFirst || !isFinal}
                   suppressHeader={suppressWrapHeader}
+                  favoriteIds={favoritePlayerIds}
+                  taggedIds={taggedPlayerIds}
                 />
               ) : null}
             </>
@@ -282,6 +286,8 @@ export function MlbGameDetail({
               box={g}
               defaultOpen={!boxFirst || !isFinal}
               suppressHeader={suppressWrapHeader}
+              favoriteIds={favoritePlayerIds}
+              taggedIds={taggedPlayerIds}
             />
           )}
         </>
@@ -1348,6 +1354,8 @@ function GameWrap({
   box,
   defaultOpen = false,
   suppressHeader = false,
+  favoriteIds,
+  taggedIds,
 }: {
   recap: MlbGameRecap;
   box: {
@@ -1356,6 +1364,8 @@ function GameWrap({
   };
   defaultOpen?: boolean;
   suppressHeader?: boolean;
+  favoriteIds?: Set<number>;
+  taggedIds?: Set<number>;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [segments, setSegments] = useState<RecapInline[]>([]);
@@ -1414,6 +1424,8 @@ function GameWrap({
       <RecapBody
         segments={segments.length ? segments : [{ kind: "text", text: storyText }]}
         hidePhrases={hidePhrases}
+        favoriteIds={favoriteIds}
+        taggedIds={taggedIds}
       />
     </SelectableHighlightRegion>
   );
@@ -1466,9 +1478,13 @@ function GameWrap({
 function RecapBody({
   segments,
   hidePhrases = [],
+  favoriteIds,
+  taggedIds,
 }: {
   segments: RecapInline[];
   hidePhrases?: string[];
+  favoriteIds?: Set<number>;
+  taggedIds?: Set<number>;
 }) {
   const linkClass =
     "font-medium text-[#9ec1ff] decoration-transparent underline-offset-[3px] transition hover:underline hover:decoration-[#9ec1ff]/55";
@@ -1552,9 +1568,14 @@ function RecapBody({
               if (seg.kind === "text") return <span key={i}>{seg.text}</span>;
               if (seg.kind === "player" && seg.playerId != null) {
                 return (
-                  <Link key={i} to={`/sports/mlb/player/${seg.playerId}`} className={linkClass}>
-                    {seg.text}
-                  </Link>
+                  <span key={i} className="inline">
+                    <Link to={`/sports/mlb/player/${seg.playerId}`} className={linkClass}>
+                      {seg.text}
+                    </Link>
+                    <PlayerWatchMark
+                      kind={playerWatchKind(seg.playerId, favoriteIds, taggedIds)}
+                    />
+                  </span>
                 );
               }
               if (seg.kind === "team" && seg.teamId != null) {
@@ -1848,16 +1869,22 @@ function TopProspectsInGame({
 
 function PlayerWatchMark({ kind }: { kind: PlayerWatchKind | null }) {
   if (kind === "favorite") {
-    return <Star size={11} className="text-accent fill-current" aria-label="Favorite" />;
+    return (
+      <Star
+        size={12}
+        className="ml-0.5 inline text-[#f0b429] fill-current align-[-0.05em]"
+        aria-label="Favorite"
+      />
+    );
   }
   if (kind === "tagged") {
     return (
       <span
-        className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-violet-400/20 text-violet-200"
+        className="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-violet-400/20 text-violet-200 align-[-0.05em]"
         title="Watch / tagged"
         aria-label="Tagged"
       >
-        <Eye size={10} strokeWidth={2.6} />
+        <Eye size={9} strokeWidth={2.6} />
       </span>
     );
   }

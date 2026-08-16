@@ -142,6 +142,7 @@ import {
   fetchMlbTeamRoster,
   linkifyMlbPlayersInHtml,
   mlbTeamLogo,
+  normalizePersonName,
   parseEspnGameIdFromUrl,
   playerWatchKind,
   searchMlbPlayersByNames,
@@ -1082,6 +1083,16 @@ function ArticleReaderShell({
     return set;
   }, [favPlayers.data]);
 
+  const favoritePlayerNames = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of favPlayers.data ?? []) {
+      if (f.position === "manager") continue;
+      const n = normalizePersonName(f.playerName);
+      if (n) set.add(n);
+    }
+    return set;
+  }, [favPlayers.data]);
+
   const taggedPlayerIds = useMemo(() => {
     const set = new Set<number>();
     for (const id of taggedPlayers.data ?? []) set.add(id);
@@ -1230,7 +1241,12 @@ function ArticleReaderShell({
         for (const [k, id] of found) index.set(k, id);
       }
       if (cancelled) return;
-      const linked = linkifyMlbPlayersInHtml(repaired, index, watchMarks);
+      const linked = linkifyMlbPlayersInHtml(
+        repaired,
+        index,
+        watchMarks,
+        favoritePlayerNames,
+      );
       setLinkedHtml(stylizeTweetCardsInHtml(linked));
     })().catch(() => {
       if (!cancelled) {
@@ -1242,7 +1258,14 @@ function ArticleReaderShell({
     return () => {
       cancelled = true;
     };
-  }, [article.data?.contentHtml, article.data?.contentText, roster.data, watchMarks, item.link]);
+  }, [
+    article.data?.contentHtml,
+    article.data?.contentText,
+    roster.data,
+    watchMarks,
+    favoritePlayerNames,
+    item.link,
+  ]);
 
   // Film Room / highlight videos: force muted autoplay after mount.
   useEffect(() => {

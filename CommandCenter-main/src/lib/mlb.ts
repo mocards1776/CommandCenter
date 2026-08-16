@@ -685,6 +685,7 @@ export function linkifyMlbPlayersInHtml(
   html: string,
   nameToId: Map<string, number>,
   watchMarks?: Map<number, PlayerWatchKind> | Set<number>,
+  favoriteNames?: Set<string> | null,
 ): string {
   if (!html || typeof DOMParser === "undefined") return html;
 
@@ -692,28 +693,81 @@ export function linkifyMlbPlayersInHtml(
   const root = doc.getElementById("root");
   if (!root) return html;
 
-  const markFor = (id: number): PlayerWatchKind | null => {
-    if (!watchMarks) return null;
-    if (watchMarks instanceof Set) return watchMarks.has(id) ? "favorite" : null;
-    return watchMarks.get(id) ?? null;
+  const markFor = (id: number, nameHint?: string): PlayerWatchKind | null => {
+    const byId = (() => {
+      if (!watchMarks) return null;
+      if (watchMarks instanceof Set) return watchMarks.has(id) ? ("favorite" as const) : null;
+      return watchMarks.get(id) ?? null;
+    })();
+    if (byId === "favorite") return "favorite";
+    // Name fallback: favorited under a different/stale player id still gets a star.
+    if (nameHint && favoriteNames?.has(normalizePersonName(nameHint))) return "favorite";
+    return byId;
   };
 
-  const appendWatchMark = (frag: DocumentFragment, id: number) => {
-    const kind = markFor(id);
-    if (!kind) return;
+  const starSvg = () => {
+    const svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("class", "rss-player-watch__icon");
+    const path = doc.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute(
+      "d",
+      "M12 2.5l2.9 6.1 6.6.7-4.9 4.5 1.4 6.5L12 16.9 5.99 20.3l1.4-6.5L2.5 9.3l6.6-.7L12 2.5z",
+    );
+    path.setAttribute("fill", "currentColor");
+    svg.appendChild(path);
+    return svg;
+  };
+
+  const makeWatchMark = (kind: PlayerWatchKind) => {
     const mark = doc.createElement("span");
     if (kind === "favorite") {
       mark.className = "rss-player-watch rss-player-watch--favorite";
       mark.title = "Favorite";
       mark.setAttribute("aria-label", "Favorite");
-      mark.textContent = "★";
+      mark.appendChild(starSvg());
     } else {
       mark.className = "rss-player-watch rss-player-watch--tagged";
       mark.title = "Tagged";
       mark.setAttribute("aria-label", "Tagged");
-      mark.textContent = "●";
+      // Hollow eye-like dot is too easy to confuse with a star — keep a clear tagged cue.
+      mark.textContent = "◈";
     }
-    frag.appendChild(mark);
+    return mark;
+  };
+
+  const appendWatchMarkToFrag = (frag: DocumentFragment, id: number, nameHint?: string) => {
+    const kind = markFor(id, nameHint);
+    if (!kind) return;
+    frag.appendChild(makeWatchMark(kind));
+  };
+
+  const insertWatchMarkAfter = (anchor: Element, id: number, nameHint?: string) => {
+    const kind = markFor(id, nameHint);
+    if (!kind) return;
+    const mark = makeWatchMark(kind);
+    anchor.parentNode?.insertBefore(mark, anchor.nextSibling);
+  };
+
+  const stripAdjacentWatchMarks = (anchor: Element) => {
+    let sib = anchor.nextSibling;
+    while (sib) {
+      const next = sib.nextSibling;
+      if (sib.nodeType === 3 && !/\S/.test(sib.textContent ?? "")) {
+        sib = next;
+        continue;
+      }
+      if (
+        sib.nodeType === 1 &&
+        (sib as Element).classList?.contains("rss-player-watch")
+      ) {
+        sib.parentNode?.removeChild(sib);
+        sib = next;
+        continue;
+      }
+      break;
+    }
   };
 
   // Always rewrite existing mlb.com / in-app player anchors to in-app pages.
@@ -747,59 +801,69 @@ export function linkifyMlbPlayersInHtml(
   const names = [...nameToId.keys()]
     .filter((n) => n.length >= 3)
     .sort((a, b) => b.length - a.length);
-  if (!names.length) return root.innerHTML;
+  if (names.length) {
+    const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Allow flexible whitespace/punctuation between name parts as in the index key.
+    const pattern = names
+      .map((n) =>
+        escapeRe(n)
+          .split(/\s+/)
+          .join("[\\s.\\-]+"),
+      )
+      .join("|");
+    const re = new RegExp(`\\b(?:${pattern})\\b`, "gi");
 
-  const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // Allow flexible whitespace/punctuation between name parts as in the index key.
-  const pattern = names
-    .map((n) =>
-      escapeRe(n)
-        .split(/\s+/)
-        .join("[\\s.\\-]+"),
-    )
-    .join("|");
-  const re = new RegExp(`\\b(?:${pattern})\\b`, "gi");
-
-  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const textNodes: Text[] = [];
-  let node = walker.nextNode();
-  while (node) {
-    const parent = node.parentElement;
-    if (parent && !["A", "SCRIPT", "STYLE", "CODE", "PRE"].includes(parent.tagName)) {
-      textNodes.push(node as Text);
-    }
-    node = walker.nextNode();
-  }
-
-  for (const textNode of textNodes) {
-    const value = textNode.nodeValue ?? "";
-    if (!re.test(value)) {
-      re.lastIndex = 0;
-      continue;
-    }
-    re.lastIndex = 0;
-    const frag = doc.createDocumentFragment();
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(value))) {
-      if (m.index > last) frag.appendChild(doc.createTextNode(value.slice(last, m.index)));
-      const matched = m[0];
-      const id = nameToId.get(normalizePersonName(matched));
-      if (id) {
-        const a = doc.createElement("a");
-        a.href = `/sports/mlb/player/${id}`;
-        a.className = "rss-player-link";
-        a.textContent = matched;
-        frag.appendChild(a);
-        appendWatchMark(frag, id);
-      } else {
-        frag.appendChild(doc.createTextNode(matched));
+    const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const textNodes: Text[] = [];
+    let node = walker.nextNode();
+    while (node) {
+      const parent = node.parentElement;
+      if (parent && !["A", "SCRIPT", "STYLE", "CODE", "PRE"].includes(parent.tagName)) {
+        textNodes.push(node as Text);
       }
-      last = m.index + matched.length;
+      node = walker.nextNode();
     }
-    if (last < value.length) frag.appendChild(doc.createTextNode(value.slice(last)));
-    textNode.parentNode?.replaceChild(frag, textNode);
+
+    for (const textNode of textNodes) {
+      const value = textNode.nodeValue ?? "";
+      if (!re.test(value)) {
+        re.lastIndex = 0;
+        continue;
+      }
+      re.lastIndex = 0;
+      const frag = doc.createDocumentFragment();
+      let last = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(value))) {
+        if (m.index > last) frag.appendChild(doc.createTextNode(value.slice(last, m.index)));
+        const matched = m[0];
+        const id = nameToId.get(normalizePersonName(matched));
+        if (id) {
+          const a = doc.createElement("a");
+          a.href = `/sports/mlb/player/${id}`;
+          a.className = "rss-player-link";
+          a.textContent = matched;
+          frag.appendChild(a);
+          appendWatchMarkToFrag(frag, id, matched);
+        } else {
+          frag.appendChild(doc.createTextNode(matched));
+        }
+        last = m.index + matched.length;
+      }
+      if (last < value.length) frag.appendChild(doc.createTextNode(value.slice(last)));
+      textNode.parentNode?.replaceChild(frag, textNode);
+    }
   }
+
+  // Ensure every in-app player link has the correct favorite/tagged mark
+  // (covers ESPN-prelinked names that skipped the text pass).
+  root.querySelectorAll("a.rss-player-link").forEach((a) => {
+    const href = a.getAttribute("href") ?? "";
+    const id = Number(href.match(/\/sports\/mlb\/player\/(\d+)/i)?.[1]);
+    if (!Number.isFinite(id) || id <= 0) return;
+    stripAdjacentWatchMarks(a);
+    insertWatchMarkAfter(a, id, a.textContent ?? undefined);
+  });
 
   return root.innerHTML;
 }

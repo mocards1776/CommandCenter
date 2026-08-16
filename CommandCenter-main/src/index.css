@@ -533,23 +533,30 @@
     text-decoration: underline;
   }
 
-  /* Saved highlight quotes — distinct from surrounding article text. */
+  /* Favorite / tagged marks after linked player names in Dispatch articles. */
   .rss-reader .rss-player-watch {
-    font-size: 0.78em;
-    margin-left: 0.12em;
-    vertical-align: 0.15em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.18em;
+    vertical-align: 0.12em;
+    line-height: 1;
+    font-family: ui-sans-serif, system-ui, sans-serif;
     font-weight: 700;
-    opacity: 0.95;
-    letter-spacing: 0;
+  }
+  .rss-reader .rss-player-watch__icon {
+    width: 0.85em;
+    height: 0.85em;
+    display: block;
   }
   .rss-reader .rss-player-watch--favorite {
-    color: #d9515c;
+    color: #f0b429;
+    filter: drop-shadow(0 0 4px rgba(240, 180, 41, 0.45));
   }
   .rss-reader .rss-player-watch--tagged {
     color: #7eb6ff;
-    font-size: 0.62em;
-    vertical-align: 0.22em;
-    font-weight: 600;
+    font-size: 0.72em;
+    vertical-align: 0.18em;
   }
 
   .rss-reader .mlb-digest-lede {
