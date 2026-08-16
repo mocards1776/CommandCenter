@@ -1,7 +1,11 @@
 /** ESPN soccer game summary → typed preview/detail for Dispatch reader. */
 
-import { soccerTeamLogo } from "@/lib/soccer";
 import { formatSportsDateLong, fmtTime } from "@/lib/utils";
+
+/** Same CDN path as `soccerTeamLogo` — kept local to avoid pulling supabase via soccer.ts. */
+function teamLogo(teamId: string | number): string {
+  return `https://a.espncdn.com/i/teamlogos/soccer/500/${teamId}.png`;
+}
 
 export type SoccerGameSide = {
   id: string;
@@ -121,12 +125,15 @@ type EspnSummary = {
     groups?: {
       standings?: {
         entries?: {
-          team?: {
-            id?: string;
-            displayName?: string;
-            shortDisplayName?: string;
-            abbreviation?: string;
-          };
+          id?: string;
+          team?:
+            | string
+            | {
+                id?: string;
+                displayName?: string;
+                shortDisplayName?: string;
+                abbreviation?: string;
+              };
           stats?: {
             name?: string;
             abbreviation?: string;
@@ -326,7 +333,7 @@ function parseSide(
   const logo =
     c?.team?.logo ||
     c?.team?.logos?.[0]?.href ||
-    (id ? soccerTeamLogo(id) : null);
+    (id ? teamLogo(id) : null);
   return {
     id,
     name: c?.team?.displayName || c?.team?.shortDisplayName || "Team",
@@ -532,12 +539,22 @@ function parseStandings(
 ): SoccerGameDetail["standings"] {
   const entries = raw?.groups?.[0]?.standings?.entries ?? [];
   return entries.map((e) => {
-    const teamId = String(e.team?.id ?? "");
+    const teamObj = typeof e.team === "object" && e.team ? e.team : null;
+    const teamId = String(teamObj?.id ?? e.id ?? "");
+    const name =
+      (typeof e.team === "string" ? e.team : null) ||
+      teamObj?.displayName ||
+      teamObj?.shortDisplayName ||
+      "Team";
+    const abbrev =
+      teamObj?.abbreviation ||
+      abbrevFromName(name) ||
+      "—";
     return {
       rank: statValue(e.stats, ["rank", "Rank"]),
       teamId,
-      name: e.team?.displayName || e.team?.shortDisplayName || "Team",
-      abbrev: e.team?.abbreviation || "—",
+      name,
+      abbrev,
       gp: statValue(e.stats, ["gamesPlayed", "GP", "Games Played"]),
       w: statValue(e.stats, ["wins", "W", "Wins"]),
       d: statValue(e.stats, ["ties", "draws", "D", "Draws", "Ties"]),
@@ -547,6 +564,23 @@ function parseStandings(
       highlight: teamId === awayId || teamId === homeId,
     };
   });
+}
+
+function abbrevFromName(name: string): string | null {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return null;
+  if (parts.length >= 3) {
+    return parts
+      .map((p) => p[0] ?? "")
+      .join("")
+      .toUpperCase()
+      .slice(0, 3);
+  }
+  if (parts.length === 2) {
+    const a = (parts[0] ?? "").slice(0, 3).toUpperCase();
+    return a || null;
+  }
+  return parts[0]!.slice(0, 3).toUpperCase();
 }
 
 function parseHeadToHead(
