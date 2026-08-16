@@ -576,20 +576,21 @@ function ReaderView({
     );
   }
 
-  // MLB/NFL wraps open the sports game reader. Soccer match/story links use
-  // the normal article reader (soccer gameIds must not resolve as MLB).
+  // MLB/NFL/soccer wraps open the sports game reader.
   const isEspnGame =
     feedUrl === "synthetic:cardinals-wraps" ||
     feedUrl === "synthetic:mlb-wraps" ||
     feedUrl === "synthetic:nfl-wraps" ||
     /espn\.com\/(?:mlb|nfl)\/(?:recap|preview|game)/i.test(item.link) ||
-    (Boolean(parseEspnGameIdFromUrl(item.link)) &&
-      !/espn\.com\/soccer\//i.test(item.link) &&
-      feedUrl !== "synthetic:soccer-clubs-wraps" &&
-      feedUrl !== "synthetic:epl-wraps");
+    Boolean(parseEspnGameIdFromUrl(item.link));
+
+  const isSoccerGame =
+    feedUrl === "synthetic:soccer-clubs-wraps" ||
+    feedUrl === "synthetic:epl-wraps" ||
+    /espn\.com\/soccer\/(?:match|preview|report|recap)/i.test(item.link);
 
   // ESPN wraps/previews → sports game UI (matchup + wrap + stats).
-  if (isEspnGame) {
+  if (isEspnGame || isSoccerGame) {
     return (
       <EspnGameReaderShell
         item={item}
@@ -720,6 +721,13 @@ function EspnGameReaderShell({
           url={item.link}
           title={item.title}
           heroImage={item.image}
+          leagueHint={
+            feedUrl === "synthetic:epl-wraps"
+              ? "eng.1"
+              : feedUrl === "synthetic:soccer-clubs-wraps"
+                ? "eng.2"
+                : null
+          }
           onBack={leave}
           onPrev={hasPrev ? onPrev : undefined}
           onNext={hasNext ? onNext : undefined}

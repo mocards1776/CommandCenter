@@ -4,11 +4,24 @@ import toast from "react-hot-toast";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import { MlbGameDetail } from "@/pages/MlbGamePage";
 import { NflGameDetailView } from "@/pages/NflGamePage";
+import { SoccerGameDetailView } from "@/pages/SoccerGamePage";
 import { parseEspnGameIdFromUrl, resolveMlbGamePkFromEspnEvent } from "@/lib/mlb";
 import { fetchNflGameDetail } from "@/lib/nfl";
 
 function isNflEspnUrl(url: string): boolean {
   return /espn\.com\/nfl\//i.test(url);
+}
+
+function isSoccerEspnUrl(url: string): boolean {
+  return /espn\.com\/soccer\//i.test(url);
+}
+
+function soccerLeagueHintFromUrl(url: string): string | null {
+  const m =
+    url.match(/[?&]league=([a-z0-9.]+)/i) ||
+    url.match(/\/league\/_\/name\/([a-z0-9.]+)/i) ||
+    url.match(/soccer\/([a-z]{2,}\.\d+)\//i);
+  return m?.[1]?.toLowerCase() ?? null;
 }
 
 async function fetchEspnStoryFallback(
@@ -47,6 +60,7 @@ export default function DispatchEspnGameReader({
   url,
   title,
   heroImage,
+  leagueHint,
   onBack,
   onPrev,
   onNext,
@@ -56,6 +70,8 @@ export default function DispatchEspnGameReader({
   url: string;
   title?: string;
   heroImage?: string | null;
+  /** Preferred ESPN soccer league slug (e.g. eng.1 / eng.2). */
+  leagueHint?: string | null;
   onBack: () => void;
   onPrev?: () => void;
   onNext?: () => void;
@@ -64,11 +80,13 @@ export default function DispatchEspnGameReader({
 }) {
   const eventId = parseEspnGameIdFromUrl(url);
   const nfl = isNflEspnUrl(url);
+  const soccer = isSoccerEspnUrl(url);
+  const soccerLeagueHint = leagueHint || (soccer ? soccerLeagueHintFromUrl(url) : null);
 
   const resolved = useQuery({
     queryKey: ["mlb-gamepk-from-espn", eventId],
     queryFn: () => resolveMlbGamePkFromEspnEvent(eventId!),
-    enabled: Boolean(eventId) && !nfl,
+    enabled: Boolean(eventId) && !nfl && !soccer,
     staleTime: 300_000,
     retry: 1,
   });
@@ -85,6 +103,7 @@ export default function DispatchEspnGameReader({
     queryFn: () => fetchEspnStoryFallback(eventId!, nfl ? "nfl" : "mlb"),
     enabled:
       Boolean(eventId) &&
+      !soccer &&
       (nfl
         ? nflGame.isSuccess && !nflGame.data?.article?.storyHtml
         : resolved.isSuccess && resolved.data == null),
@@ -92,7 +111,7 @@ export default function DispatchEspnGameReader({
   });
 
   async function shareLink() {
-    const shareTitle = title || (nfl ? "NFL game" : "MLB game");
+    const shareTitle = title || (soccer ? "Soccer match" : nfl ? "NFL game" : "MLB game");
     try {
       if (navigator.share) {
         await navigator.share({ title: shareTitle, url, text: shareTitle });
@@ -197,6 +216,21 @@ export default function DispatchEspnGameReader({
     );
   }
 
+  if (soccer) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+        {chrome}
+        {hero}
+        <SoccerGameDetailView
+          eventId={eventId!}
+          leagueHint={soccerLeagueHint}
+          title={title}
+          espnUrl={url}
+        />
+      </div>
+    );
+  }
+
   if (nfl) {
     if (nflGame.isPending) {
       return (
@@ -220,7 +254,7 @@ export default function DispatchEspnGameReader({
     }
   }
 
-  if (!nfl && resolved.isPending) {
+  if (!nfl && !soccer && resolved.isPending) {
     return (
       <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
         {chrome}
@@ -232,7 +266,7 @@ export default function DispatchEspnGameReader({
     );
   }
 
-  if (!nfl && resolved.data != null) {
+  if (!nfl && !soccer && resolved.data != null) {
     return (
       <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
         {chrome}
