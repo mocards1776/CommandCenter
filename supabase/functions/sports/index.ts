@@ -114,39 +114,11 @@ function parseBbrefTotals(contractStatus: string | null) {
   return { aav, totalValue };
 }
 
-async function scrapeBbref(name: string) {
-  const q = encodeURIComponent(name.trim());
-  const searchUrl = `https://www.baseball-reference.com/search/search.fcgi?search=${q}`;
-  const searchRes = await timedFetch(searchUrl, {
-    headers: { "User-Agent": UA, Accept: "text/html" },
-    redirect: "follow",
-  });
-  let html = await searchRes.text();
-  let playerUrl = searchRes.url;
-  const want = name.trim().toLowerCase();
-  if (!/\/players\/[a-z]\/[a-z0-9]+\.shtml/i.test(playerUrl)) {
-    // Prefer an anchor whose link text matches the player name.
-    const linkRe = /href="(\/players\/[a-z]\/[a-z0-9]+\.shtml)"[^>]*>([^<]{2,80})<\/a>/gi;
-    let best: { path: string; score: number } | null = null;
-    let m: RegExpExecArray | null;
-    while ((m = linkRe.exec(html))) {
-      const label = stripTags(m[2]).toLowerCase();
-      let score = 0;
-      if (label === want) score = 100;
-      else if (label.startsWith(want) || want.startsWith(label)) score = 80;
-      else if (label.includes(want.split(/\s+/).slice(-1)[0] ?? "")) score = 40;
-      if (!best || score > best.score) best = { path: m[1], score };
-    }
-    const fallback = html.match(/href="(\/players\/[a-z]\/[a-z0-9]+\.shtml)"/i);
-    const path = (best && best.score >= 40 ? best.path : null) ?? fallback?.[1];
-    if (!path) return { error: "Player not found on Baseball Reference", name };
-    playerUrl = `https://www.baseball-reference.com${path}`;
-    html = await (
-      await timedFetch(playerUrl, {
-        headers: { "User-Agent": UA, Accept: "text/html", Referer: searchUrl },
-      })
-    ).text();
-  }
+async function scrapeBbref(name: string, mlbId?: number | null) {
+  const page = await loadBbrefPlayerHtml(name, mlbId);
+  if (!page) return { error: "Player not found on Baseball Reference", name };
+  const html = page.html;
+  const playerUrl = page.url;
   const salaries: { year: string; amount: number; team: string | null }[] = [];
   // BBRef often wraps tables in HTML comments — search the raw markup either way.
   const searchable = html.replace(/<!--([\s\S]*?)-->/g, "$1");
@@ -258,6 +230,11 @@ const SPOTRAC_IDS: Record<string, { id: string; slug: string }> = {
   "thomas saggese": { id: "48501", slug: "thomas-saggese" },
   "ryan fernandez": { id: "27319", slug: "ryan-fernandez" },
   "michael mcgreevy": { id: "73280", slug: "michael-mcgreevy" },
+  "michael soroka": { id: "17596", slug: "michael-soroka" },
+  "mike soroka": { id: "17596", slug: "michael-soroka" },
+  soroka: { id: "17596", slug: "michael-soroka" },
+  "eury perez": { id: "31667", slug: "eury-perez" },
+  "eury pérez": { id: "31667", slug: "eury-perez" },
 };
 
 const SPOTRAC_PLAYER_RE =
@@ -420,12 +397,12 @@ function hasContractBits(c: {
   );
 }
 
-async function scrapeContract(name: string, hintUrl?: string | null) {
+async function scrapeContract(name: string, hintUrl?: string | null, mlbId?: number | null) {
   const fallback = { error: "Contract lookup timed out", name };
   return withBudget(HEAVY_MS, async () => {
     // Pull BBRef + Spotrac together so a Spotrac miss or BBRef blip still fills the card.
     const [bbSettled, spotracSettled] = await Promise.allSettled([
-      scrapeBbref(name),
+      scrapeBbref(name, mlbId),
       scrapeSpotrac(name, hintUrl),
     ]);
     const bb =
@@ -1521,6 +1498,37 @@ async function scrapeMlbPlayerBio(
   };
 }
 
+/** True when a BBRef player page title roughly matches the requested name. */
+function bbrefPageMatchesName(html: string, name: string): boolean {
+  const want = name
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!want) return true;
+  const h1 =
+    html.match(/<h1[^>]*>\s*([\s\S]*?)\s*<\/h1>/i)?.[1] ??
+    html.match(/property="og:title"\s+content="([^"]+)"/i)?.[1] ??
+    "";
+  const got = stripTags(h1)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!got) return false;
+  if (got === want || got.includes(want) || want.includes(got)) return true;
+  const wantLast = want.split(/\s+/).slice(-1)[0] ?? "";
+  const gotLast = got.split(/\s+/).slice(-1)[0] ?? "";
+  const wantFirst = want.split(/\s+/)[0] ?? "";
+  const gotFirst = got.split(/\s+/)[0] ?? "";
+  return Boolean(wantLast && gotLast === wantLast && wantFirst && gotFirst.startsWith(wantFirst[0]!));
+}
+
 /** Resolve BBRef player page HTML (shared with contract scrape). */
 async function loadBbrefPlayerHtml(
   name: string,
@@ -1540,7 +1548,8 @@ async function loadBbrefPlayerHtml(
       if (
         /\/players\/[a-z]\/[a-z0-9]+\.shtml/i.test(directRes.url) &&
         html.length > 20_000 &&
-        !/just a moment|cf-browser-verification/i.test(html)
+        !/just a moment|cf-browser-verification/i.test(html) &&
+        bbrefPageMatchesName(html, name)
       ) {
         return { url: directRes.url, html };
       }
@@ -1580,7 +1589,250 @@ async function loadBbrefPlayerHtml(
       })
     ).text();
   }
+  if (/just a moment|cf-browser-verification/i.test(html)) return null;
+  if (name && !bbrefPageMatchesName(html, name)) return null;
   return { url: playerUrl, html };
+}
+
+/** Stats API / ESPN abbrev → Baseball-Reference preview URL team code. */
+const PREVIEW_TEAM_CODE: Record<string, string> = {
+  AZ: "ARI",
+  ARI: "ARI",
+  ATL: "ATL",
+  BAL: "BAL",
+  BOS: "BOS",
+  CHC: "CHN",
+  CWS: "CHA",
+  CHW: "CHA",
+  CIN: "CIN",
+  CLE: "CLE",
+  COL: "COL",
+  DET: "DET",
+  HOU: "HOU",
+  KC: "KCA",
+  KCR: "KCA",
+  LAA: "ANA",
+  ANA: "ANA",
+  LAD: "LAN",
+  MIA: "MIA",
+  MIL: "MIL",
+  MIN: "MIN",
+  NYM: "NYN",
+  NYY: "NYA",
+  OAK: "ATH",
+  ATH: "ATH",
+  PHI: "PHI",
+  PIT: "PIT",
+  SD: "SDN",
+  SDP: "SDN",
+  SEA: "SEA",
+  SF: "SFN",
+  SFG: "SFN",
+  STL: "SLN",
+  TB: "TBA",
+  TBR: "TBA",
+  TEX: "TEX",
+  TOR: "TOR",
+  WSH: "WSN",
+  WSN: "WSN",
+};
+
+function previewTeamCode(abbrev: string): string | null {
+  const key = abbrev.trim().toUpperCase();
+  return PREVIEW_TEAM_CODE[key] ?? (key.length === 3 ? key : null);
+}
+
+function stripCell(raw: string): string {
+  return decodeHtmlEntities(stripTags(raw)).replace(/\s+/g, " ").trim();
+}
+
+function parseBbrefPreviewTeamSummary(chunk: string): Record<string, string | null> {
+  const pick = (label: string) => {
+    const re = new RegExp(
+      `${label}\\s*</t[dh]>\\s*<t[dh][^>]*>\\s*([\\s\\S]*?)\\s*</t[dh]>`,
+      "i",
+    );
+    const m = chunk.match(re) ?? chunk.match(new RegExp(`${label}\\s+([\\dA-Za-z().\\-/# ]{1,40})`, "i"));
+    if (!m) return null;
+    return stripCell(m[1]).replace(/^[:\s]+/, "") || null;
+  };
+  // Plain-text fallback after tags stripped (div_teamdata_* markup varies).
+  const plain = stripCell(chunk);
+  const plainPick = (label: string) => {
+    const m = plain.match(new RegExp(`${label}\\s+([\\dA-Za-z().\\-/#][\\dA-Za-z().\\-/# ]{0,36})`, "i"));
+    return m?.[1]?.trim() || null;
+  };
+  return {
+    record: pick("Record") ?? plainPick("Record"),
+    manager: pick("Manager") ?? plainPick("Manager"),
+    gameNumber: pick("Game #") ?? plainPick("Game #"),
+    standing: pick("Standing") ?? plainPick("Standing"),
+    last10: pick("Last 10") ?? plainPick("Last 10"),
+    last20: pick("Last 20") ?? plainPick("Last 20"),
+    last30: pick("Last 30") ?? plainPick("Last 30"),
+    home: pick("Home") ?? plainPick("Home"),
+    away: pick("Away") ?? plainPick("Away"),
+    extraInnings: pick("Extra Innings") ?? plainPick("Extra Innings"),
+    vsRhp: pick("vs\\. RHP") ?? plainPick("vs. RHP"),
+    vsLhp: pick("vs\\. LHP") ?? plainPick("vs. LHP"),
+    oneRun: pick("1-Run Games") ?? plainPick("1-Run Games"),
+  };
+}
+
+function parseBbrefPreviewTable(
+  html: string,
+  tableId: string,
+  wanted: string[],
+  limit = 14,
+): Record<string, string>[] {
+  const block =
+    html.match(new RegExp(`<table[^>]*id="${tableId}"[^>]*>([\\s\\S]*?)</table>`, "i"))?.[1] ??
+    null;
+  if (!block) return [];
+
+  const headerCells = [
+    ...block.matchAll(/<thead>[\s\S]*?<tr[^>]*>([\s\S]*?)<\/tr>/i),
+  ];
+  const headerRow = headerCells[0]?.[1] ?? "";
+  const headers = [...headerRow.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/gi)].map((m) =>
+    stripCell(m[1]).replace(/\s+/g, " "),
+  );
+
+  const alias: Record<string, string[]> = {
+    name: ["Batter", "Pitcher", "Player", "Name"],
+    PA: ["PA"],
+    BA: ["BA", "AVG"],
+    OBP: ["OBP"],
+    SLG: ["SLG"],
+    OPS: ["OPS"],
+    opsVr: ["OPS vRH", "OPS vRH"],
+    opsVl: ["OPS vLH", "OPS vLH"],
+    ops28: ["OPS Last 28d", "OPS last 28 days"],
+    HR: ["HR"],
+    SB: ["SB"],
+    IP: ["IP"],
+    ERA: ["ERA"],
+    K9: ["K/9"],
+    BF: ["BF"],
+  };
+
+  const indexFor = (key: string): number => {
+    const names = alias[key] ?? [key];
+    for (const n of names) {
+      const i = headers.findIndex((h) => h.toLowerCase() === n.toLowerCase());
+      if (i >= 0) return i;
+    }
+    // data-stat fallback
+    return -1;
+  };
+
+  const rows: Record<string, string>[] = [];
+  const body = block.match(/<tbody>([\s\S]*?)<\/tbody>/i)?.[1] ?? block;
+  for (const row of body.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...row[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((m) =>
+      stripCell(m[1]),
+    );
+    if (!cells.length) continue;
+
+    const out: Record<string, string> = {};
+    // Prefer data-stat when present
+    let usedDataStat = false;
+    for (const m of row[1].matchAll(/data-stat="([^"]+)"[^>]*>([\s\S]*?)<\/t[dh]>/gi)) {
+      usedDataStat = true;
+      const stat = m[1];
+      const val = stripCell(m[2]);
+      if (stat === "player" || stat === "name_display") out.name = val.replace(/^\d+\.\s*/, "");
+      else out[stat] = val;
+    }
+    if (!usedDataStat) {
+      for (const key of wanted) {
+        const idx = indexFor(key);
+        if (idx < 0 || idx >= cells.length) continue;
+        const val = cells[idx] ?? "";
+        if (key === "name") out.name = val.replace(/^\d+\.\s*/, "");
+        else out[key] = val;
+      }
+    }
+    const name = out.name ?? "";
+    if (!name || /^(player|pitcher|batter|total)$/i.test(name)) continue;
+    rows.push(out);
+    if (rows.length >= limit) break;
+  }
+  return rows;
+}
+
+/** Baseball-Reference daily matchup preview (season series, splits, batter/pitcher tables). */
+async function scrapeBbrefGamePreview(opts: {
+  homeAbbrev: string;
+  awayAbbrev: string;
+  date: string; // YYYY-MM-DD
+  gameNumber?: number;
+}): Promise<Record<string, unknown>> {
+  const homeCode = previewTeamCode(opts.homeAbbrev);
+  const awayCode = previewTeamCode(opts.awayAbbrev);
+  if (!homeCode) return { error: "Unknown home team abbrev", ...opts };
+  const date = opts.date.replace(/-/g, "");
+  if (!/^\d{8}$/.test(date)) return { error: "Bad date", ...opts };
+  const gameNum = opts.gameNumber && opts.gameNumber > 1 ? String(opts.gameNumber) : "0";
+  const year = date.slice(0, 4);
+  const url =
+    `https://www.baseball-reference.com/previews/${year}/${homeCode}${date}${gameNum}.shtml`;
+  const res = await timedFetch(url, {
+    headers: { "User-Agent": UA, Accept: "text/html" },
+  }, 18_000);
+  if (!res.ok) return { error: `BBRef preview ${res.status}`, url, homeCode, awayCode };
+  const html = (await res.text()).replace(/<!--([\s\S]*?)-->/g, "$1");
+  if (/just a moment|cf-browser-verification/i.test(html) || html.length < 5_000) {
+    return { error: "BBRef preview blocked or empty", url };
+  }
+
+  const awayAbbrev = (opts.awayAbbrev || "").toUpperCase();
+  const homeAbbrev = (opts.homeAbbrev || "").toUpperCase();
+  const awayChunk =
+    html.match(new RegExp(`id="div_teamdata_${awayAbbrev}"([\\s\\S]*?)id="all_last10_`, "i"))?.[1] ??
+    html.match(new RegExp(`id="div_teamdata_${awayAbbrev}"([\\s\\S]{0,3500})`, "i"))?.[1] ??
+    "";
+  const homeChunk =
+    html.match(new RegExp(`id="div_teamdata_${homeAbbrev}"([\\s\\S]*?)id="all_last10_`, "i"))?.[1] ??
+    html.match(new RegExp(`id="div_teamdata_${homeAbbrev}"([\\s\\S]{0,3500})`, "i"))?.[1] ??
+    "";
+
+  const series: { date: string; result: string }[] = [];
+  const seriesBlock =
+    html.match(/<h2[^>]*>\s*Season Series\s*<\/h2>([\s\S]*?)(?:<h2|Last 10 games head-to-head)/i)?.[1] ??
+    "";
+  for (const row of seriesBlock.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const text = stripCell(row[1]);
+    if (!text || /^date\b/i.test(text) || text.length < 8) continue;
+    if (!/\d{4}|@|vs/i.test(text) && !/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/i.test(text)) {
+      continue;
+    }
+    series.push({ date: text.slice(0, 32), result: text });
+  }
+
+  const batterWanted = ["name", "PA", "BA", "OBP", "SLG", "OPS", "opsVr", "opsVl", "ops28", "HR", "SB"];
+  const pitcherWanted = ["name", "IP", "ERA", "K9", "BA", "OPS", "ops28", "HR"];
+
+  const awayBatters = parseBbrefPreviewTable(html, `batters_${awayAbbrev}`, batterWanted);
+  const homeBatters = parseBbrefPreviewTable(html, `batters_${homeAbbrev}`, batterWanted);
+  const awayPitchers = parseBbrefPreviewTable(html, `pitchers_${awayAbbrev}`, pitcherWanted);
+  const homePitchers = parseBbrefPreviewTable(html, `pitchers_${homeAbbrev}`, pitcherWanted);
+
+  return {
+    source: "baseball-reference",
+    url,
+    homeAbbrev,
+    awayAbbrev,
+    homeCode,
+    awayCode: awayCode ?? awayAbbrev,
+    awaySummary: parseBbrefPreviewTeamSummary(awayChunk),
+    homeSummary: parseBbrefPreviewTeamSummary(homeChunk),
+    seasonSeries: series.slice(0, 20),
+    awayBatters,
+    homeBatters,
+    awayPitchers,
+    homePitchers,
+  };
 }
 
 /** Prefer current-season WAR from a year+stat table instead of the last numeric cell sitewide. */
@@ -2181,10 +2433,19 @@ Deno.serve(async (req: Request) => {
   if (body.action === "bbref" || body.action === "contract") {
     const name = String(body.name ?? "").trim();
     const hintUrl = body.url != null ? String(body.url) : null;
+    const mlbIdRaw = body.mlbId ?? body.playerId;
+    const mlbId =
+      typeof mlbIdRaw === "number"
+        ? mlbIdRaw
+        : typeof mlbIdRaw === "string" && /^\d+$/.test(mlbIdRaw)
+          ? Number(mlbIdRaw)
+          : null;
     if (name.length < 3 || name.length > 80) return json({ error: "Bad name" }, 400);
     try {
       const data =
-        body.action === "bbref" ? await scrapeBbref(name) : await scrapeContract(name, hintUrl);
+        body.action === "bbref"
+          ? await scrapeBbref(name, mlbId)
+          : await scrapeContract(name, hintUrl, mlbId);
       return json(data);
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 200);
@@ -2425,6 +2686,26 @@ Deno.serve(async (req: Request) => {
           HEAVY_MS,
           () => scrapeTeamBbrefSummary(abbrev, season),
           { error: "Team summary timed out", abbrev, season },
+        ),
+      );
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 200);
+    }
+  }
+  if (body.action === "bbrefGamePreview") {
+    const homeAbbrev = String(body.homeAbbrev ?? "").trim().toUpperCase();
+    const awayAbbrev = String(body.awayAbbrev ?? "").trim().toUpperCase();
+    const date = String(body.date ?? "").trim();
+    const gameNumber = Number(body.gameNumber) || 0;
+    if (!homeAbbrev || !awayAbbrev || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return json({ error: "homeAbbrev, awayAbbrev, and date (YYYY-MM-DD) required" }, 400);
+    }
+    try {
+      return json(
+        await withBudget(
+          HEAVY_MS,
+          () => scrapeBbrefGamePreview({ homeAbbrev, awayAbbrev, date, gameNumber }),
+          { error: "BBRef game preview timed out", homeAbbrev, awayAbbrev, date },
         ),
       );
     } catch (e) {

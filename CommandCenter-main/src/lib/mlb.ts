@@ -1661,6 +1661,160 @@ export async function fetchMlbGamePreview(gamePk: number | string): Promise<MlbG
   };
 }
 
+export type MlbBbrefPreviewSummary = {
+  record: string | null;
+  manager: string | null;
+  gameNumber: string | null;
+  standing: string | null;
+  last10: string | null;
+  last20: string | null;
+  last30: string | null;
+  home: string | null;
+  away: string | null;
+  extraInnings: string | null;
+  vsRhp: string | null;
+  vsLhp: string | null;
+  oneRun: string | null;
+};
+
+export type MlbBbrefGamePreview = {
+  url: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
+  awaySummary: MlbBbrefPreviewSummary;
+  homeSummary: MlbBbrefPreviewSummary;
+  seasonSeries: { date: string; result: string }[];
+  awayBatters: Record<string, string>[];
+  homeBatters: Record<string, string>[];
+  awayPitchers: Record<string, string>[];
+  homePitchers: Record<string, string>[];
+};
+
+function emptyBbrefSummary(): MlbBbrefPreviewSummary {
+  return {
+    record: null,
+    manager: null,
+    gameNumber: null,
+    standing: null,
+    last10: null,
+    last20: null,
+    last30: null,
+    home: null,
+    away: null,
+    extraInnings: null,
+    vsRhp: null,
+    vsLhp: null,
+    oneRun: null,
+  };
+}
+
+function mapBbrefPreviewSummary(raw: unknown): MlbBbrefPreviewSummary {
+  const s = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const str = (k: string) => {
+    const v = s[k];
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+  };
+  return {
+    record: str("record"),
+    manager: str("manager"),
+    gameNumber: str("gameNumber"),
+    standing: str("standing"),
+    last10: str("last10"),
+    last20: str("last20"),
+    last30: str("last30"),
+    home: str("home"),
+    away: str("away"),
+    extraInnings: str("extraInnings"),
+    vsRhp: str("vsRhp"),
+    vsLhp: str("vsLhp"),
+    oneRun: str("oneRun"),
+  };
+}
+
+/** Baseball-Reference pregame preview tables via sports edge. */
+export async function fetchBbrefGamePreview(opts: {
+  homeAbbrev: string;
+  awayAbbrev: string;
+  date: string; // YYYY-MM-DD
+}): Promise<MlbBbrefGamePreview | null> {
+  const homeAbbrev = opts.homeAbbrev.trim().toUpperCase();
+  const awayAbbrev = opts.awayAbbrev.trim().toUpperCase();
+  const date = opts.date.trim();
+  if (!homeAbbrev || !awayAbbrev || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+
+  const body = {
+    action: "bbrefGamePreview",
+    homeAbbrev,
+    awayAbbrev,
+    date,
+  };
+
+  const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+  let raw: unknown = null;
+  if (base && key) {
+    try {
+      const ctl = new AbortController();
+      const timer = window.setTimeout(() => ctl.abort(), 35_000);
+      try {
+        const res = await fetch(`${base}/functions/v1/sports`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+            apikey: key,
+          },
+          body: JSON.stringify(body),
+          signal: ctl.signal,
+        });
+        if (res.ok) raw = await res.json();
+      } finally {
+        window.clearTimeout(timer);
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  if (!raw) {
+    try {
+      const { data } = await supabase.functions.invoke("sports", { body });
+      raw = data;
+    } catch {
+      return null;
+    }
+  }
+
+  if (!raw || typeof raw !== "object") return null;
+  const d = raw as Record<string, unknown>;
+  if (d.error && !d.url) return null;
+
+  const rows = (v: unknown): Record<string, string>[] =>
+    Array.isArray(v)
+      ? v.filter((r): r is Record<string, string> => Boolean(r) && typeof r === "object")
+      : [];
+
+  const series = Array.isArray(d.seasonSeries)
+    ? d.seasonSeries
+        .filter((r): r is { date?: string; result?: string } => Boolean(r) && typeof r === "object")
+        .map((r) => ({ date: String(r.date ?? ""), result: String(r.result ?? "") }))
+    : [];
+
+  return {
+    url: typeof d.url === "string" ? d.url : "",
+    awayAbbrev: typeof d.awayAbbrev === "string" ? d.awayAbbrev : awayAbbrev,
+    homeAbbrev: typeof d.homeAbbrev === "string" ? d.homeAbbrev : homeAbbrev,
+    awaySummary: d.awaySummary ? mapBbrefPreviewSummary(d.awaySummary) : emptyBbrefSummary(),
+    homeSummary: d.homeSummary ? mapBbrefPreviewSummary(d.homeSummary) : emptyBbrefSummary(),
+    seasonSeries: series,
+    awayBatters: rows(d.awayBatters),
+    homeBatters: rows(d.homeBatters),
+    awayPitchers: rows(d.awayPitchers),
+    homePitchers: rows(d.homePitchers),
+  };
+}
+
 function stripHtml(html: string): string {
   // Do not trim — callers that parse inline HTML need leading/trailing spaces
   // so linked names don't run into neighboring words.
@@ -2367,15 +2521,15 @@ export async function fetchMlbPlayerHighlights(
   return out;
 }
 
-/** Word-boundary match — "Assigned" must NOT match "Signed". */
+/** Prefix match — "Signed as Free Agent" ok; "Assigned" must NOT match "Signed". */
 const ACQUISITION_TYPE =
-  /^(Drafted|Trade|Traded|Signed|Claimed|Selected|Purchase|Purchased|Free Agent|Rule 5|Waivers)$/i;
+  /^(Drafted|Trade|Traded|Signed|Claimed|Selected|Purchase|Purchased|Free Agent|Declared Free Agency|Rule 5|Waivers)/i;
 
 function txPriority(type: string): number {
   if (/^trade/i.test(type)) return 0;
   if (/^draft/i.test(type)) return 1;
   if (/^sign/i.test(type)) return 2;
-  if (/^selected|purchase|claim|rule\s*5|waiver|free agent/i.test(type)) return 3;
+  if (/^selected|purchase|claim|rule\s*5|waiver|free agent|declared free agency/i.test(type)) return 3;
   return 9;
 }
 
@@ -2407,45 +2561,62 @@ export async function fetchMlbPlayerTransactions(playerId: number): Promise<MlbT
     });
 }
 
+/** Team-name tokens used to detect “brought here” acquisitions. */
+function acquisitionTeamHints(teamName?: string | null): string[] {
+  const raw = (teamName ?? "").trim();
+  if (!raw) return [];
+  const withoutSt = raw.replace(/\bSt\.\s*/gi, "");
+  const words = withoutSt.split(/\s+/).filter(Boolean);
+  const hints = new Set<string>();
+  for (const w of words) {
+    if (w.length >= 3) hints.add(w);
+  }
+  // Nickname / last word is the strongest signal (Cardinals, Diamondbacks).
+  const last = words[words.length - 1];
+  if (last && last.length >= 3) hints.add(last);
+  return [...hints];
+}
+
+function descriptionMatchesTeamHint(description: string, hints: string[]): boolean {
+  if (!hints.length) return false;
+  return hints.some((h) => new RegExp(`\\b${h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(description));
+}
+
 /**
- * Curated “how he got here” story — trade to current club first,
- * then draft / original signing. Never bury the trade under minor-league assignments.
+ * Curated “how he got here” story — prefer the most recent transaction that
+ * brought the player TO the current club. Never fall back to an unrelated trade.
  */
 export function buildAcquisitionStory(
   transactions: MlbTransaction[],
   extras: string[] = [],
   teamName?: string | null,
 ): { headline: string | null; lines: string[] } {
-  const teamHint = (teamName ?? "").replace(/^St\.\s*/i, "").split(/\s+/)[0] || "";
-  const trade =
-    transactions.find(
-      (t) =>
-        /^trade/i.test(t.type) &&
-        (!teamHint || new RegExp(teamHint, "i").test(t.description)),
-    ) ?? transactions.find((t) => /^trade/i.test(t.type));
-  const draft = transactions.find((t) => /^draft/i.test(t.type));
-  const signed = transactions.find((t) => /^sign/i.test(t.type));
-  const selected = transactions.find((t) => /selected|purchase|claim|rule\s*5/i.test(t.type));
+  const hints = acquisitionTeamHints(teamName);
+  const byDateDesc = [...transactions].sort((a, b) => b.date.localeCompare(a.date));
+
+  let currentTeamAcq: MlbTransaction | null = null;
+  for (const t of byDateDesc) {
+    const type = t.type || "";
+    const desc = t.description || "";
+    if (/^trade/i.test(type)) {
+      const dest = desc.match(/traded .+ to (.+?)(?:\s+for\b|\.|$)/i)?.[1]?.trim() ?? "";
+      if (dest && descriptionMatchesTeamHint(dest, hints)) {
+        currentTeamAcq = t;
+        break;
+      }
+      continue;
+    }
+    if (/^(signed|claimed|selected)/i.test(type) || /signed as free agent/i.test(type)) {
+      if (descriptionMatchesTeamHint(desc, hints)) {
+        currentTeamAcq = t;
+        break;
+      }
+    }
+  }
 
   const lines: string[] = [];
-  let headline: string | null = null;
-
-  if (trade) {
-    headline = `${trade.date}: ${trade.description}`;
-    lines.push(headline);
-  }
-  if (draft) {
-    const line = `${draft.date}: ${draft.description}`;
-    if (!lines.includes(line)) lines.push(line);
-    if (!headline) headline = line;
-  }
-  if (signed) {
-    const line = `${signed.date}: ${signed.description}`;
-    if (!lines.includes(line)) lines.push(line);
-    if (!headline) headline = line;
-  }
-  if (selected) {
-    const line = `${selected.date}: ${selected.description}`;
+  for (const t of byDateDesc) {
+    const line = `${t.date}: ${t.description}`;
     if (!lines.includes(line)) lines.push(line);
   }
 
@@ -2456,8 +2627,19 @@ export function buildAcquisitionStory(
     }
   }
 
-  // Cap secondary noise
-  return { headline, lines: lines.slice(0, 8) };
+  let headline: string | null = null;
+  if (currentTeamAcq) {
+    headline = `${currentTeamAcq.date}: ${currentTeamAcq.description}`;
+  } else {
+    // Draft / sign / selected without claiming a trade brought him here.
+    const draft = byDateDesc.find((t) => /^draft/i.test(t.type));
+    const signed = byDateDesc.find((t) => /^sign/i.test(t.type));
+    const selected = byDateDesc.find((t) => /selected|purchase|claim|rule\s*5/i.test(t.type));
+    const fallback = draft ?? signed ?? selected ?? null;
+    if (fallback) headline = `${fallback.date}: ${fallback.description}`;
+  }
+
+  return { headline, lines: lines.slice(0, 16) };
 }
 
 function mapContractPayload(data: unknown): MlbPlayerContract | null {
@@ -2535,6 +2717,11 @@ const SPOTRAC_PLAYER_HINTS: Record<string, string> = {
   "yohel pozo": "https://www.spotrac.com/mlb/player/_/id/70734/yohel-pozo",
   "victor scott ii": "https://www.spotrac.com/mlb/player/_/id/78741/victor-scott-ii",
   "thomas saggese": "https://www.spotrac.com/mlb/player/_/id/48501/thomas-saggese",
+  "michael soroka": "https://www.spotrac.com/mlb/player/_/id/17596/michael-soroka",
+  "mike soroka": "https://www.spotrac.com/mlb/player/_/id/17596/michael-soroka",
+  soroka: "https://www.spotrac.com/mlb/player/_/id/17596/michael-soroka",
+  "eury perez": "https://www.spotrac.com/mlb/player/_/id/31667/eury-perez",
+  "eury pérez": "https://www.spotrac.com/mlb/player/_/id/31667/eury-perez",
 };
 
 function spotracHintForName(name: string): string | null {
@@ -2636,7 +2823,14 @@ export function clearPlayerContractCache(playerName?: string): void {
 
 export async function fetchPlayerContract(
   playerName: string,
-  opts?: { url?: string | null; altNames?: string[]; useName?: string; firstName?: string; lastName?: string },
+  opts?: {
+    url?: string | null;
+    altNames?: string[];
+    useName?: string;
+    firstName?: string;
+    lastName?: string;
+    mlbId?: number | null;
+  },
 ): Promise<MlbPlayerContract | null> {
   const names = contractLookupNames({
     name: playerName,
@@ -2651,7 +2845,11 @@ export async function fetchPlayerContract(
 
   if (!names.length) return null;
 
-  const cacheKey = `mlb-contract-v5:${names[0]!.toLowerCase()}`;
+  const mlbId =
+    opts?.mlbId != null && Number.isFinite(Number(opts.mlbId)) && Number(opts.mlbId) > 0
+      ? Number(opts.mlbId)
+      : null;
+  const cacheKey = `mlb-contract-v5:${names[0]!.toLowerCase()}${mlbId ? `:id${mlbId}` : ""}`;
   try {
     const cached = sessionStorage.getItem(cacheKey);
     if (cached) {
@@ -2678,8 +2876,13 @@ export async function fetchPlayerContract(
   let lastError: Error | null = null;
   for (const name of names) {
     const attempts: Record<string, unknown>[] = [
-      { action: "contract", name, ...(hint ? { url: hint } : {}) },
-      { action: "bbref", name },
+      {
+        action: "contract",
+        name,
+        ...(hint ? { url: hint } : {}),
+        ...(mlbId != null ? { mlbId } : {}),
+      },
+      { action: "bbref", name, ...(mlbId != null ? { mlbId } : {}) },
     ];
     for (const body of attempts) {
       try {
@@ -2885,13 +3088,14 @@ async function rankForStat(
   season: number,
 ): Promise<MlbLeagueRank | null> {
   try {
+    // Prefer full pool so bad / unqualified seasons still get a rank.
     const raw = (await mlbGet("stats", {
       stats: "season",
       group,
       season: String(season),
       sportId: "1",
-      playerPool: "qualified",
-      limit: "400",
+      playerPool: "all",
+      limit: "500",
       sortStat: def.sortStat,
       order: def.order,
     })) as {

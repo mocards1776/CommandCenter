@@ -117,6 +117,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
   const contract = useQuery({
     queryKey: [
       "mlb-player-contract-v9",
+      playerId,
       player.data?.name,
       player.data?.useName,
       player.data?.firstName,
@@ -127,6 +128,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         useName: player.data!.useName,
         firstName: player.data!.firstName,
         lastName: player.data!.lastName,
+        mlbId: Number(playerId),
       }),
     enabled: Boolean(player.data?.name),
     staleTime: 60 * 60_000,
@@ -934,18 +936,7 @@ function PlayerHeader({
             </div>
             <div>
               <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">School</dt>
-              <dd className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-white">
-                <span>{school ?? "—"}</span>
-                <PlayerTagsPanel
-                  playerId={player.id}
-                  playerName={player.name}
-                  variant="inline"
-                  isFavorite={isFavorite}
-                  teamName={player.teamName}
-                  teamId={player.teamId}
-                  position={player.position}
-                />
-              </dd>
+              <dd className="mt-0.5 text-white">{school ?? "—"}</dd>
             </div>
             {player.birthDate && (
               <div>
@@ -990,6 +981,18 @@ function PlayerHeader({
               </div>
             )}
           </dl>
+
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <PlayerTagsPanel
+              playerId={player.id}
+              playerName={player.name}
+              variant="inline"
+              isFavorite={isFavorite}
+              teamName={player.teamName}
+              teamId={player.teamId}
+              position={player.position}
+            />
+          </div>
 
           {seasonStats.length > 0 && (
             <div className="mt-4">

@@ -65,7 +65,7 @@ export const RSS_FEEDS: readonly RssFeedDef[] = [
   },
   {
     id: "soccer-clubs-wraps",
-    title: "Wrexham & Wolves wraps",
+    title: "Wrexham, Wolves & Arsenal wraps",
     short: "Clubs",
     url: "synthetic:soccer-clubs-wraps",
   },
@@ -1688,18 +1688,19 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
     });
   }
   if (feedUrl === "synthetic:soccer-clubs-wraps") {
-    // Wrexham (Championship) + Wolves (often PL) — pull both league scoreboards.
+    // Wrexham (Championship) + Wolves / Arsenal (PL) — pull both league scoreboards.
     return fetchMergedEspnWrapsFeeds(
       [
         {
           feedUrl,
-          title: "Wrexham & Wolves wraps",
-          description: "Wrexham and Wolverhampton game wraps and previews from ESPN",
+          title: "Wrexham, Wolves & Arsenal wraps",
+          description: "Wrexham, Wolverhampton, and Arsenal game wraps and previews from ESPN",
           sportPath: "soccer/eng.2",
           linkSport: "soccer",
           teamFilters: [
             { espnId: "352", abbrev: "WXM" },
             { espnId: "380", abbrev: "WOL" },
+            { espnId: "359", abbrev: "ARS" },
           ],
           days: 21,
           maxItems: 40,
@@ -1708,13 +1709,14 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
         },
         {
           feedUrl,
-          title: "Wrexham & Wolves wraps",
-          description: "Wrexham and Wolverhampton game wraps and previews from ESPN",
+          title: "Wrexham, Wolves & Arsenal wraps",
+          description: "Wrexham, Wolverhampton, and Arsenal game wraps and previews from ESPN",
           sportPath: "soccer/eng.1",
           linkSport: "soccer",
           teamFilters: [
             { espnId: "352", abbrev: "WXM" },
             { espnId: "380", abbrev: "WOL" },
+            { espnId: "359", abbrev: "ARS" },
           ],
           days: 14,
           maxItems: 40,
@@ -1723,8 +1725,8 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
         },
       ],
       {
-        title: "Wrexham & Wolves wraps",
-        description: "Wrexham and Wolverhampton game wraps and previews from ESPN",
+        title: "Wrexham, Wolves & Arsenal wraps",
+        description: "Wrexham, Wolverhampton, and Arsenal game wraps and previews from ESPN",
         feedUrl,
         link: "https://www.espn.com/soccer/",
       },
@@ -1989,6 +1991,8 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   const items: RssFeedItem[] = [];
   const seen = new Set<string>();
   const today = new Date();
+  const hasTeamFilter = Boolean(opts.teamFilters?.length || opts.teamFilter);
+  const lookAheadDays = hasTeamFilter ? 7 : 0;
   const candidates: {
     eventId: string;
     dateStr: string;
@@ -2015,7 +2019,8 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
     isLive: boolean;
   }[] = [];
 
-  for (let i = 0; i < days; i++) {
+  // Past `days` (incl. today) plus optional look-ahead for team-filtered club feeds.
+  for (let i = -lookAheadDays; i < days; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const y = d.getFullYear();
@@ -2055,8 +2060,15 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
           /STATUS_SCHEDULED|STATUS_PRE/i.test(status?.name ?? "");
         const isLive = status?.state === "in" || (!isFinal && !isPreview);
         if (!isFinal && !isPreview && !(opts.includeLive && isLive)) continue;
-        // League feed: skip future previews except for today.
-        if (opts.preferFinals && isPreview && i > 0) continue;
+        // League-wide: skip future/past-day previews except today (preferFinals).
+        // Team-filtered: allow upcoming previews (i < 0), still skip past-day previews.
+        if (opts.preferFinals && isPreview) {
+          if (hasTeamFilter) {
+            if (i > 0) continue;
+          } else if (i > 0) {
+            continue;
+          }
+        }
         const eventId = event.id ?? comp.id;
         if (!eventId || seen.has(eventId)) continue;
         seen.add(eventId);

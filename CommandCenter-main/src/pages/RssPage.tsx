@@ -688,39 +688,52 @@ function EspnGameReaderShell({
   }, [item.link, item.title, feedUrl, qc]);
 
   return (
-    <div style={{ touchAction: "pan-y" }} onClick={onDoubleTap}>
-      <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
-        <button
-          type="button"
-          onClick={onToggleSave}
-          className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
-        >
-          {isSaved ? (
-            <BookmarkCheck size={14} className="text-accent" />
-          ) : (
-            <Bookmark size={14} />
-          )}
-          {isSaved ? "Saved" : "Save for later"}
-        </button>
-        <button
-          type="button"
-          onClick={onArchive}
-          className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
-        >
-          <Archive size={14} />
-          Archive
-        </button>
+    <div
+      className="grid w-full gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
+      style={{ touchAction: "pan-y" }}
+      onClick={onDoubleTap}
+    >
+      <div className="min-w-0 max-w-3xl justify-self-start lg:pl-2">
+        <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
+          <button
+            type="button"
+            onClick={onToggleSave}
+            className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
+          >
+            {isSaved ? (
+              <BookmarkCheck size={14} className="text-accent" />
+            ) : (
+              <Bookmark size={14} />
+            )}
+            {isSaved ? "Saved" : "Save for later"}
+          </button>
+          <button
+            type="button"
+            onClick={onArchive}
+            className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
+          >
+            <Archive size={14} />
+            Archive
+          </button>
+        </div>
+        <DispatchEspnGameReader
+          url={item.link}
+          title={item.title}
+          heroImage={item.image}
+          onBack={leave}
+          onPrev={hasPrev ? onPrev : undefined}
+          onNext={hasNext ? onNext : undefined}
+          hasPrev={hasPrev}
+          hasNext={hasNext}
+        />
       </div>
-      <DispatchEspnGameReader
-        url={item.link}
-        title={item.title}
-        heroImage={item.image}
-        onBack={leave}
-        onPrev={hasPrev ? onPrev : undefined}
-        onNext={hasNext ? onNext : undefined}
-        hasPrev={hasPrev}
-        hasNext={hasNext}
-      />
+      <aside className="bg-panel border-white/[0.06] hidden min-w-0 border-y border-l p-4 md:p-5 lg:block lg:rounded-none lg:border-r-0">
+        <div className="rule-head mb-4">Notes</div>
+        <p className="text-chalk font-rss text-[15px] leading-relaxed">
+          Game wraps open here — highlights live on article readers.
+        </p>
+        <DispatchNotesAside />
+      </aside>
     </div>
   );
 }
@@ -787,72 +800,85 @@ function MlbGameArticleShell({
   }, [item.link, item.title, feedUrl, qc]);
 
   return (
-    <div style={{ touchAction: "pan-y" }} onClick={onDoubleTap}>
-      <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
-        <button
-          type="button"
-          onClick={onToggleSave}
-          className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
-        >
-          {isSaved ? (
-            <BookmarkCheck size={14} className="text-accent" />
-          ) : (
-            <Bookmark size={14} />
-          )}
-          {isSaved ? "Saved" : "Save for later"}
-        </button>
-        <button
-          type="button"
-          onClick={onArchive}
-          className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
-        >
-          <Archive size={14} />
-          Archive
-        </button>
-      </div>
-      <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-7">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+    <div
+      className="grid w-full gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
+      style={{ touchAction: "pan-y" }}
+      onClick={onDoubleTap}
+    >
+      <div className="min-w-0 max-w-3xl justify-self-start lg:pl-2">
+        <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
           <button
             type="button"
-            onClick={leave}
-            className="font-body text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em]"
+            onClick={onToggleSave}
+            className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
           >
-            <ArrowLeft size={14} />
-            Back
+            {isSaved ? (
+              <BookmarkCheck size={14} className="text-accent" />
+            ) : (
+              <Bookmark size={14} />
+            )}
+            {isSaved ? "Saved" : "Save for later"}
           </button>
-          {(hasPrev || hasNext) && (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={!hasPrev}
-                onClick={onPrev}
-                className="font-body text-chalk hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.16em] disabled:opacity-30"
-              >
-                <ChevronLeft size={14} />
-                Prev
-              </button>
-              <button
-                type="button"
-                disabled={!hasNext}
-                onClick={onNext}
-                className="font-body text-chalk hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.16em] disabled:opacity-30"
-              >
-                Next
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={onArchive}
+            className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em]"
+          >
+            <Archive size={14} />
+            Archive
+          </button>
         </div>
-        <div>
-          <p className="text-accent text-[10px] font-semibold uppercase tracking-[0.2em]">
-            {item.author || "Farm wrap"}
-          </p>
-          <h2 className="font-rss text-cream mt-1 text-[22px] font-semibold leading-snug md:text-[26px]">
-            {cleanArticleTitle(item.title)}
-          </h2>
+        <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-7">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={leave}
+              className="font-body text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em]"
+            >
+              <ArrowLeft size={14} />
+              Back
+            </button>
+            {(hasPrev || hasNext) && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!hasPrev}
+                  onClick={onPrev}
+                  className="font-body text-chalk hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.16em] disabled:opacity-30"
+                >
+                  <ChevronLeft size={14} />
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  disabled={!hasNext}
+                  onClick={onNext}
+                  className="font-body text-chalk hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.16em] disabled:opacity-30"
+                >
+                  Next
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+          <div>
+            <p className="text-accent text-[10px] font-semibold uppercase tracking-[0.2em]">
+              {item.author || "Farm wrap"}
+            </p>
+            <h2 className="font-rss text-cream mt-1 text-[22px] font-semibold leading-snug md:text-[26px]">
+              {cleanArticleTitle(item.title)}
+            </h2>
+          </div>
+          <MlbGameDetail gamePk={String(gamePk)} boxFirst />
         </div>
-        <MlbGameDetail gamePk={String(gamePk)} boxFirst />
       </div>
+      <aside className="bg-panel border-white/[0.06] hidden min-w-0 border-y border-l p-4 md:p-5 lg:block lg:rounded-none lg:border-r-0">
+        <div className="rule-head mb-4">Notes</div>
+        <p className="text-chalk font-rss text-[15px] leading-relaxed">
+          Game wraps open here — highlights live on article readers.
+        </p>
+        <DispatchNotesAside />
+      </aside>
     </div>
   );
 }

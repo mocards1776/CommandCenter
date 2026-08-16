@@ -7,6 +7,7 @@ import {
   fetchMlbWildCardStandings,
   fetchTeamCurrentAndNextGames,
   mlbHeadshot,
+  playoffOddsFromStandings,
   teamPagePath,
   type MlbScoreGame,
 } from "@/lib/mlb";
@@ -109,6 +110,11 @@ export default function DispatchNotesAside() {
 
   const central = (standings.data ?? []).find((t) => t.shortName === "NL Central");
   const wcRows = (wildCard.data ?? []).slice(0, 8);
+  const odds = standings.data ? playoffOddsFromStandings(standings.data) : [];
+  const stlOdds = odds.find((r) => r.teamId === STL_TEAM_ID);
+  const stlPlayoffPct = stlOdds
+    ? parseFloat(String(stlOdds.playoffPercent).replace("%", ""))
+    : NaN;
 
   return (
     <div className="hidden lg:block">
@@ -131,6 +137,34 @@ export default function DispatchNotesAside() {
             ) : null}
           </div>
         )}
+        {stlOdds && Number.isFinite(stlPlayoffPct) ? (
+          <div className="mt-4">
+            <p className="text-chalk-dim text-[10px] uppercase tracking-[0.14em]">Playoff odds</p>
+            <div className="mt-1.5 flex items-end justify-between gap-2">
+              <p className="numeral text-cream text-[22px] leading-none">
+                {stlOdds.playoffPercent.includes("%")
+                  ? stlOdds.playoffPercent
+                  : `${stlOdds.playoffPercent}%`}
+              </p>
+              {stlOdds.wildCardPercent ? (
+                <p className="text-chalk-dim text-[11px]">
+                  WC{" "}
+                  {stlOdds.wildCardPercent.includes("%")
+                    ? stlOdds.wildCardPercent
+                    : `${stlOdds.wildCardPercent}%`}
+                </p>
+              ) : null}
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
+              <div
+                className="bg-accent h-full rounded-full"
+                style={{
+                  width: `${Math.min(100, Math.max(0, stlPlayoffPct))}%`,
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="border-white/[0.08] mt-6 border-t pt-5">

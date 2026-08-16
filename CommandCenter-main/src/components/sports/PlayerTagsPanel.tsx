@@ -103,6 +103,7 @@ export default function PlayerTagsPanel({
       setDraft("");
       if (result.kind === "favorite") {
         await qc.invalidateQueries({ queryKey: ["favorite-sports-players"] });
+        await qc.invalidateQueries({ queryKey: ["favorite-players"] });
         await qc.invalidateQueries({ queryKey: ["favorite-player"] });
         toast.success("Favorited");
         return;
@@ -160,12 +161,13 @@ export default function PlayerTagsPanel({
     );
     return (
       <>
-        {/* Star Favorite: real favorite and/or legacy #Favorite tag — never a sky #Favorite pill */}
+        {/* Star Favorite: one pill when favorited — avoid duplicate with legacy #Favorite tags */}
         {isFavorite && <FavoritePill compact={compact} />}
         {!isFavorite && !withRemove && favoriteTags.length > 0 && (
           <FavoritePill compact={compact} />
         )}
-        {withRemove &&
+        {!isFavorite &&
+          withRemove &&
           favoriteTags.map((t) => (
             <span
               key={t.id}

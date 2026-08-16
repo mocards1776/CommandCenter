@@ -1214,20 +1214,38 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
   image: string | null;
   html: string;
 } | null> {
-  if (!/espn\.com\/mlb\/(?:recap|preview|game)/i.test(url) && !/espn\.com\/mlb\/game\?.*gameId=/i.test(url)) {
-    return null;
-  }
+  const isMlb =
+    /espn\.com\/mlb\/(?:recap|preview|game)/i.test(url) ||
+    /espn\.com\/mlb\/game\?.*gameId=/i.test(url);
+  const isSoccer = /espn\.com\/soccer\/(?:match|preview|report|recap)/i.test(url);
+  if (!isMlb && !isSoccer) return null;
+
   const id =
     url.match(/gameId\/(\d+)/i)?.[1] ||
     url.match(/[?&]gameId=(\d+)/i)?.[1] ||
     null;
   if (!id) return null;
-  const res = await fetch(
-    `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${id}`,
-    { headers: { Accept: "application/json", "User-Agent": UA } },
-  );
-  if (!res.ok) return null;
-  const sum = await res.json() as {
+
+  type EspnSummary = {
+    header?: {
+      competitions?: {
+        status?: { type?: { description?: string; detail?: string; state?: string } };
+        venue?: { fullName?: string };
+        competitors?: {
+          homeAway?: string;
+          score?: string | number;
+          winner?: boolean;
+          form?: string;
+          records?: { type?: string; summary?: string }[];
+          team?: {
+            displayName?: string;
+            shortDisplayName?: string;
+            abbreviation?: string;
+            logos?: { href?: string }[];
+          };
+        }[];
+      }[];
+    };
     article?: {
       headline?: string;
       description?: string;
@@ -1235,19 +1253,132 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
       byline?: string;
       images?: { url?: string }[];
     };
+    news?: {
+      articles?: {
+        headline?: string;
+        description?: string;
+        story?: string;
+        byline?: string;
+        images?: { url?: string }[];
+      }[];
+    };
   };
-  const article = sum.article;
+
+  async function fetchSummary(leaguePath: string): Promise<EspnSummary | null> {
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/${leaguePath}/summary?event=${id}`,
+      { headers: { Accept: "application/json", "User-Agent": UA } },
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as EspnSummary;
+  }
+
+  let sum: EspnSummary | null = null;
+  if (isMlb) {
+    sum = await fetchSummary("baseball/mlb");
+  } else {
+    const leagueFromUrl =
+      url.match(/\/league\/_\/([^/?#]+)/i)?.[1] ||
+      url.match(/[?&]league=([^&#]+)/i)?.[1] ||
+      null;
+    const leagues = [
+      ...(leagueFromUrl ? [`soccer/${leagueFromUrl}`] : []),
+      "soccer/eng.1",
+      "soccer/eng.2",
+    ];
+    for (const path of leagues) {
+      sum = await fetchSummary(path);
+      if (sum?.article?.headline || sum?.news?.articles?.[0]?.headline || sum?.header?.competitions?.[0]) {
+        break;
+      }
+      sum = null;
+    }
+  }
+  if (!sum) return null;
+
+  const newsArticle = sum.news?.articles?.[0];
+  const article = sum.article?.headline
+    ? sum.article
+    : newsArticle?.headline
+      ? {
+          headline: newsArticle.headline,
+          description: newsArticle.description,
+          story: newsArticle.story,
+          byline: newsArticle.byline,
+          images: newsArticle.images,
+        }
+      : sum.article;
+
   const storyHtml =
     article?.story?.trim() ||
     (article?.description
       ? `<p>${article.description.replace(/^—\s*/, "")}</p>`
       : "");
-  if (!storyHtml || stripTags(storyHtml).length < 40) return null;
+
+  if (storyHtml && stripTags(storyHtml).length >= 40) {
+    return {
+      title: article?.headline ?? null,
+      byline: article?.byline ?? null,
+      image: article?.images?.[0]?.url ?? null,
+      html: storyHtml,
+    };
+  }
+
+  // Soccer (and thin MLB previews): build a readable match header — never return the mashed competitor blob.
+  if (!isSoccer) return null;
+  const comp = sum.header?.competitions?.[0];
+  const competitors = comp?.competitors ?? [];
+  const home = competitors.find((c) => c.homeAway === "home");
+  const away = competitors.find((c) => c.homeAway === "away");
+  if (!home?.team && !away?.team) return null;
+
+  const nameOf = (c: (typeof competitors)[number] | undefined) =>
+    c?.team?.displayName || c?.team?.shortDisplayName || c?.team?.abbreviation || "TBD";
+  const scoreOf = (c: (typeof competitors)[number] | undefined) =>
+    c?.score != null && String(c.score).length ? String(c.score) : null;
+  const recordOf = (c: (typeof competitors)[number] | undefined) =>
+    c?.records?.find((r) => r.type === "total")?.summary ||
+    c?.records?.[0]?.summary ||
+    null;
+
+  const awayName = nameOf(away);
+  const homeName = nameOf(home);
+  const awayScore = scoreOf(away);
+  const homeScore = scoreOf(home);
+  const status =
+    comp?.status?.type?.detail ||
+    comp?.status?.type?.description ||
+    "Scheduled";
+  const venue = comp?.venue?.fullName ?? null;
+  const title =
+    awayScore != null && homeScore != null
+      ? `${awayName} ${awayScore}, ${homeName} ${homeScore}`
+      : `${awayName} at ${homeName}`;
+
+  const bits: string[] = [];
+  bits.push(`<h2>${title}</h2>`);
+  bits.push(`<p><strong>${status}</strong>${venue ? ` · ${venue}` : ""}</p>`);
+  bits.push("<ul>");
+  bits.push(
+    `<li>${awayName}${recordOf(away) ? ` (${recordOf(away)})` : ""}${
+      away?.form ? ` · Form ${away.form}` : ""
+    }${awayScore != null ? ` — ${awayScore}` : ""}</li>`,
+  );
+  bits.push(
+    `<li>${homeName}${recordOf(home) ? ` (${recordOf(home)})` : ""}${
+      home?.form ? ` · Form ${home.form}` : ""
+    }${homeScore != null ? ` — ${homeScore}` : ""}</li>`,
+  );
+  bits.push("</ul>");
+  bits.push(`<p><a href="${url}">Open on ESPN</a></p>`);
+
+  const html = bits.join("\n");
+  if (stripTags(html).length < 40) return null;
   return {
-    title: article?.headline ?? null,
-    byline: article?.byline ?? null,
-    image: article?.images?.[0]?.url ?? null,
-    html: storyHtml,
+    title,
+    byline: "ESPN",
+    image: home?.team?.logos?.[0]?.href ?? away?.team?.logos?.[0]?.href ?? null,
+    html,
   };
 }
 
