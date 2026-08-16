@@ -1270,13 +1270,11 @@ export function articleMatchesFilters(
   const effectiveFeed = (feedId ?? item.feedId)?.toLowerCase() ?? null;
   // Wire-only: drop MLB Film Room clips; keep mlb.com/news and other hosts.
   if (effectiveFeed === "cardinals-wire" && isMlbFilmRoomArticle(item)) return true;
-  // Auto-generated AP / Data Skrive wires + FanDuel game stubs.
+  // Auto-generated AP / Data Skrive wires + FanDuel game stubs (news wires only).
   if (
     (effectiveFeed === "cardinals-wire" ||
       effectiveFeed === "cardinals" ||
-      effectiveFeed === "folder:cardinals" ||
-      effectiveFeed === "mlb" ||
-      effectiveFeed === "folder:mlb") &&
+      effectiveFeed === "folder:cardinals") &&
     isDataSkriveArticle(item)
   ) {
     return true;
@@ -1647,6 +1645,8 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       teamFilter: { espnId: "24", abbrev: "STL" },
       days: 14,
       maxItems: 40,
+      // Always surface finals even when ESPN lags on recap copy.
+      stubWithoutArticle: true,
     });
   }
   if (feedUrl === "synthetic:mlb-wraps") {
@@ -1656,10 +1656,12 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       description: "League-wide MLB game wraps and previews from ESPN",
       sportPath: "baseball/mlb",
       linkSport: "mlb",
-      days: 3,
+      days: 5,
       maxItems: 48,
       // League volume is high — prefer finals + today's previews.
       preferFinals: true,
+      // Don't leave the feed empty when ESPN article copy is thin/late.
+      stubWithoutArticle: true,
     });
   }
   if (feedUrl === "synthetic:nfl-wraps") {
@@ -1727,11 +1729,11 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       description: "Premier League game wraps and previews from ESPN",
       sportPath: "soccer/eng.1",
       linkSport: "soccer",
-      // Same rules as MLB wraps: short window, finals + today's previews,
-      // hold hollow stubs until real copy lands (news.articles counts).
-      days: 3,
+      // Same rules as MLB wraps: short window, finals + today's previews.
+      days: 5,
       maxItems: 48,
       preferFinals: true,
+      stubWithoutArticle: true,
     });
   }
   if (feedUrl === "synthetic:mlb-stats") {
@@ -1911,14 +1913,63 @@ function mlbIdsFromEspnAbbrevs(abbrevs: (string | null | undefined)[]): number[]
   return out;
 }
 
-/** ESPN scoreboard/summary via sports.ts (edge proxy when Akamai blocks the browser). */
+/** ESPN site JSON for wraps — prefer direct hosts, then sports-edge proxy.
+ * Kept local to rss.ts (do not import sports.ts — that pulls mlb and can stall the feed). */
 async function espnSiteJson(path: string): Promise<unknown | null> {
-  try {
-    const { espnGet } = await import("./sports");
-    return await espnGet(path);
-  } catch {
-    return null;
+  const clean = path.replace(/^\/+/, "");
+  const hosts = [
+    "https://site.api.espn.com/apis/site/v2/sports",
+    "https://site.web.api.espn.com/apis/site/v2/sports",
+  ];
+  for (const host of hosts) {
+    try {
+      const ctl = new AbortController();
+      const timer = window.setTimeout(() => ctl.abort(), 12_000);
+      try {
+        const res = await fetch(`${host}/${clean}`, {
+          headers: { Accept: "application/json" },
+          signal: ctl.signal,
+        });
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (data && typeof data === "object") return data;
+      } finally {
+        window.clearTimeout(timer);
+      }
+    } catch {
+      /* try next host */
+    }
   }
+
+  try {
+    const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    if (!base || !key) return null;
+    const ctl = new AbortController();
+    const timer = window.setTimeout(() => ctl.abort(), 20_000);
+    try {
+      const res = await fetch(`${base}/functions/v1/sports`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+          apikey: key,
+        },
+        body: JSON.stringify({ path: clean }),
+        signal: ctl.signal,
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data && typeof data === "object" && !(data as { error?: string }).error) {
+        return data;
+      }
+    } finally {
+      window.clearTimeout(timer);
+    }
+  } catch {
+    /* give up */
+  }
+  return null;
 }
 
 /** Client-side ESPN game wrap + preview feed (reachable from the browser). */
