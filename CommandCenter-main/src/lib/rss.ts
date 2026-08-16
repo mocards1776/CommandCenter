@@ -1266,8 +1266,16 @@ export function articleMatchesFilters(
   filters: RssFilter[],
   feedId?: string,
 ): boolean {
-  if (isSoccerBleedArticle(item)) return true;
   const effectiveFeed = (feedId ?? item.feedId)?.toLowerCase() ?? null;
+  // Soccer bleed is for news wires only — never strip dedicated soccer wrap feeds.
+  const isWrapFeed =
+    effectiveFeed === "soccer-clubs-wraps" ||
+    effectiveFeed === "epl-wraps" ||
+    effectiveFeed === "mlb-wraps" ||
+    effectiveFeed === "nfl-wraps" ||
+    effectiveFeed === "cardinals-wraps" ||
+    effectiveFeed === "cardinals-farm";
+  if (!isWrapFeed && isSoccerBleedArticle(item)) return true;
   // Wire-only: drop MLB Film Room clips; keep mlb.com/news and other hosts.
   if (effectiveFeed === "cardinals-wire" && isMlbFilmRoomArticle(item)) return true;
   // Auto-generated AP / Data Skrive wires + FanDuel game stubs (news wires only).
@@ -2116,6 +2124,74 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
     const chunk = limited.slice(i, i + concurrency);
     const settled = await Promise.all(
       chunk.map(async (c) => {
+        const comp = c.event.competitions?.[0];
+        const home = (comp?.competitors ?? []).find((x) => x.homeAway === "home");
+        const away = (comp?.competitors ?? []).find((x) => x.homeAway === "away");
+        const matchup =
+          c.event.shortName ||
+          `${away?.team?.abbreviation ?? "AWAY"} @ ${home?.team?.abbreviation ?? "HOME"}`;
+        const publishedAt = c.event.date || `${c.y}-${c.m}-${c.day}T17:00:00Z`;
+        const homeScore = home?.score;
+        const awayScore = away?.score;
+        const scoreBit =
+          homeScore != null && awayScore != null
+            ? `${away?.team?.abbreviation ?? "AWAY"} ${awayScore}, ${home?.team?.abbreviation ?? "HOME"} ${homeScore}`
+            : matchup;
+        const awayAbbr = away?.team?.abbreviation ?? null;
+        const homeAbbr = home?.team?.abbreviation ?? null;
+        const logoTeamIds =
+          linkSport === "mlb" ? mlbIdsFromEspnAbbrevs([awayAbbr, homeAbbr]) : undefined;
+        const logoAbbrevs =
+          linkSport === "nfl"
+            ? [awayAbbr, homeAbbr].filter((x): x is string => Boolean(x))
+            : undefined;
+        const logoSoccerIds =
+          linkSport === "soccer"
+            ? [away?.team?.id, home?.team?.id].filter((x): x is string => Boolean(x))
+            : undefined;
+
+        const gameLink = (kind: "wrap" | "preview" | "live", storyHref?: string | null) => {
+          if (linkSport === "soccer") {
+            if (storyHref) return storyHref;
+            return `https://www.espn.com/soccer/match/_/gameId/${c.eventId}`;
+          }
+          return kind === "preview"
+            ? `https://www.espn.com/${linkSport}/preview/_/gameId/${c.eventId}`
+            : `https://www.espn.com/${linkSport}/recap/_/gameId/${c.eventId}`;
+        };
+
+        const stubItem = (
+          kind: "wrap" | "preview" | "live",
+          title: string,
+          snippet: string,
+          image?: string | null,
+          storyHref?: string | null,
+        ) =>
+          ({
+            id: `${kind}-${c.eventId}`,
+            title,
+            link: gameLink(kind, storyHref),
+            author: "ESPN",
+            publishedAt,
+            image: image ?? null,
+            snippet,
+            logoTeamIds,
+            logoAbbrevs,
+            logoSoccerIds,
+          }) satisfies RssFeedItem;
+
+        // Scoreboard-only fallback — never leave the feed empty when recap fetch fails.
+        const scoreboardStub = () => {
+          if (!opts.stubWithoutArticle) return null;
+          if (c.isLive) {
+            return stubItem("live", `Live: ${scoreBit}`, `In progress — ${matchup}.`);
+          }
+          if (c.isFinal) {
+            return stubItem("wrap", `Final: ${scoreBit}`, `Final — ${matchup}.`);
+          }
+          return stubItem("preview", `Preview: ${matchup}`, `Preview — ${matchup}.`);
+        };
+
         try {
           const sum = (await espnSiteJson(
             `${sportPath}/summary?event=${c.eventId}`,
@@ -2138,7 +2214,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             };
             error?: string;
           } | null;
-          if (!sum || sum.error) return null;
+          if (!sum || sum.error) return scoreboardStub();
           // Soccer (and some other sports) put wrap copy in news.articles, not article.
           const newsArticle = sum.news?.articles?.[0];
           const article = sum.article?.headline
@@ -2152,57 +2228,10 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
                   links: newsArticle.links,
                 }
               : sum.article;
-          const comp = c.event.competitions?.[0];
-          const home = (comp?.competitors ?? []).find((x) => x.homeAway === "home");
-          const away = (comp?.competitors ?? []).find((x) => x.homeAway === "away");
-          const matchup =
-            c.event.shortName ||
-            `${away?.team?.abbreviation ?? "AWAY"} @ ${home?.team?.abbreviation ?? "HOME"}`;
-          const publishedAt = c.event.date || `${c.y}-${c.m}-${c.day}T17:00:00Z`;
-          const homeScore = home?.score;
-          const awayScore = away?.score;
-          const scoreBit =
-            homeScore != null && awayScore != null
-              ? `${away?.team?.abbreviation ?? "AWAY"} ${awayScore}, ${home?.team?.abbreviation ?? "HOME"} ${homeScore}`
-              : matchup;
-          const awayAbbr = away?.team?.abbreviation ?? null;
-          const homeAbbr = home?.team?.abbreviation ?? null;
-          const logoTeamIds =
-            linkSport === "mlb" ? mlbIdsFromEspnAbbrevs([awayAbbr, homeAbbr]) : undefined;
-          const logoAbbrevs =
-            linkSport === "nfl"
-              ? [awayAbbr, homeAbbr].filter((x): x is string => Boolean(x))
-              : undefined;
-          const logoSoccerIds =
-            linkSport === "soccer"
-              ? [away?.team?.id, home?.team?.id].filter((x): x is string => Boolean(x))
-              : undefined;
 
           const storyLink =
             article?.links?.find((l) => /espn\.com/i.test(l.href ?? ""))?.href ?? null;
-          const gameLink = (kind: "wrap" | "preview" | "live") => {
-            if (linkSport === "soccer") {
-              if (storyLink) return storyLink;
-              return `https://www.espn.com/soccer/match/_/gameId/${c.eventId}`;
-            }
-            return kind === "preview"
-              ? `https://www.espn.com/${linkSport}/preview/_/gameId/${c.eventId}`
-              : `https://www.espn.com/${linkSport}/recap/_/gameId/${c.eventId}`;
-          };
-
-          const stubItem = (kind: "wrap" | "preview" | "live", title: string, snippet: string) =>
-            ({
-              id: `${kind}-${c.eventId}`,
-              title,
-              link: gameLink(kind),
-              author: "ESPN",
-              publishedAt,
-              image: article?.images?.[0]?.url ?? null,
-              snippet,
-              logoTeamIds,
-              logoAbbrevs,
-              logoSoccerIds,
-            }) satisfies RssFeedItem;
+          const image = article?.images?.[0]?.url ?? null;
 
           if (c.isLive) {
             return stubItem(
@@ -2210,17 +2239,14 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
               `Live: ${scoreBit}`,
               article?.description?.replace(/^—\s*/, "").trim() ||
                 `In progress — ${matchup}.`,
+              image,
+              storyLink,
             );
           }
 
           if (c.isFinal) {
             if (!article?.headline) {
-              if (!opts.stubWithoutArticle) return null;
-              return stubItem(
-                "wrap",
-                `Final: ${scoreBit}`,
-                `Final — ${matchup}.`,
-              );
+              return scoreboardStub();
             }
             const storyText = (article.story ?? "")
               .replace(/<[^>]+>/g, " ")
@@ -2229,15 +2255,18 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             const snippet =
               (article.description ?? "").replace(/^—\s*/, "").trim() ||
               storyText.slice(0, 220);
-            // Wait for real wrap copy — same bar as MLB (no headline-only shells).
+            // Wait for real wrap copy unless stubs are allowed.
             if (!opts.stubWithoutArticle && (!snippet || snippet.length < 40)) return null;
+            if (opts.stubWithoutArticle && (!snippet || snippet.length < 40)) {
+              return stubItem("wrap", article.headline, `Final — ${matchup}.`, image, storyLink);
+            }
             return {
               id: `wrap-${c.eventId}`,
               title: article.headline,
-              link: gameLink("wrap"),
+              link: gameLink("wrap", storyLink),
               author: "ESPN",
               publishedAt,
-              image: article.images?.[0]?.url ?? null,
+              image,
               snippet,
               logoTeamIds,
               logoAbbrevs,
@@ -2245,8 +2274,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             } satisfies RssFeedItem;
           }
 
-          // Hold hollow previews ("No Story Available" / placeholder blurbs) until ESPN
-          // publishes real preview copy — MLB and NFL both wait for real text.
+          // Hold hollow previews until ESPN publishes real copy — unless stubs are on.
           const headline = article?.headline?.trim() ?? "";
           const storyText = (article?.story ?? "")
             .replace(/<[^>]+>/g, " ")
@@ -2260,22 +2288,22 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             body.length < 40 ||
             /no story available/i.test(`${headline} ${body}`) ||
             /^game preview for\b/i.test(body);
-          if (hollow) return null;
+          if (hollow) return scoreboardStub();
 
           return {
             id: `preview-${c.eventId}`,
             title: headline,
-            link: gameLink("preview"),
+            link: gameLink("preview", storyLink),
             author: "ESPN",
             publishedAt,
-            image: article?.images?.[0]?.url ?? null,
+            image,
             snippet: body.slice(0, 220),
             logoTeamIds,
             logoAbbrevs,
             logoSoccerIds,
           } satisfies RssFeedItem;
         } catch {
-          return null;
+          return scoreboardStub();
         }
       }),
     );
