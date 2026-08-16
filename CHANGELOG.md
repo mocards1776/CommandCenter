@@ -2,6 +2,13 @@
 
 ---
 
+## Harden wraps so feeds never go empty — August 16, 2026
+
+- If an ESPN summary fetch fails or preview copy is hollow, wrap feeds still emit scoreboard stubs (Final / Preview / Live) instead of dropping the game.
+- Soccer-bleed filter no longer runs on wrap feeds (it was meant for news wires only).
+
+---
+
 ## Restore MLB wraps & previews feed — August 16, 2026
 
 - Wrap feeds no longer import the heavy sports module (that path could stall and return 0 articles).
