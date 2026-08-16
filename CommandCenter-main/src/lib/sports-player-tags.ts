@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 
 export const SUGGESTED_PLAYER_TAGS = [
+  "Favorite",
   "Former Cardinal",
   "Prospect",
   "Watch",

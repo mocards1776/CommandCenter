@@ -2554,11 +2554,7 @@ export async function fetchMlbPlayerTransactions(playerId: number): Promise<MlbT
       type: t.typeDesc || t.typeCode || "Transaction",
       description: t.description ?? "",
     }))
-    .sort((a, b) => {
-      const pd = txPriority(a.type) - txPriority(b.type);
-      if (pd !== 0) return pd;
-      return b.date.localeCompare(a.date);
-    });
+    .sort((a, b) => b.date.localeCompare(a.date));
 }
 
 /** Team-name tokens used to detect “brought here” acquisitions. */

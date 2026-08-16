@@ -1637,6 +1637,16 @@ function ContractBlock({
               <p className="text-cream mt-1.5 text-[13.5px] leading-relaxed">{story.headline}</p>
             </div>
           )}
+          {story.headline &&
+            !/trade/i.test(story.headline) &&
+            /signed|claimed|selected/i.test(story.headline) && (
+              <div className="mb-3 rounded-lg border border-accent/35 bg-accent/10 px-3 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
+                  How he arrived
+                </p>
+                <p className="text-cream mt-1.5 text-[13.5px] leading-relaxed">{story.headline}</p>
+              </div>
+            )}
           <ul className="space-y-2">
             {story.lines.map((line) => (
               <li

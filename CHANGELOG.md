@@ -2,6 +2,17 @@
 
 ---
 
+## MLB previews, player WAR/tags, soccer extracts, sidebar odds — August 16, 2026
+
+- MLB game previews keep existing ESPN stats and add Baseball-Reference matchups: team form splits, season series, batter/pitcher tables, and a link to the full BBRef preview.
+- Player hero: Favorite/tags sit on the open line under Born (School is text-only); Favorite always uses the starred pill; favorite query keys invalidate correctly.
+- WAR/contract scrapes validate BBRef player pages against the requested name and pass MLB ids; acquisition story prefers the trade/signing that brought the player to his **current** team; transaction list includes “Signed as Free Agent” and sorts newest-first.
+- Season-stat ranks use the full player pool so poor ranks still show.
+- Soccer match/preview extracts use ESPN summary APIs (real copy or structured match card — not mashed scoreboard text). Club wraps include Arsenal and look ahead for upcoming previews.
+- Dispatch wrap/preview readers keep the Notes sidebar; Cardinals playoff odds sit under Cardinals games.
+
+---
+
 ## Org + Top-100 prospect ranks, MLB Top Prospects section — August 16, 2026
 
 - Keep organization Pipeline ranks and MLB Top-100 ranks separate on players (hero, scouting, box scores).

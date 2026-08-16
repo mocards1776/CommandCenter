@@ -12,6 +12,7 @@ import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChi
 import { fetchMlbTeamForm, type TeamFormStrip } from "@/lib/team-form";
 import {
   buildPlayerNameIndex,
+  fetchBbrefGamePreview,
   fetchEspnGameRecap,
   fetchMlbBoxscore,
   fetchMlbGameHighlights,
@@ -25,6 +26,8 @@ import {
   prospectRanksFor,
   resolveMissingRecapPlayers,
   teamPagePath,
+  type MlbBbrefGamePreview,
+  type MlbBbrefPreviewSummary,
   type MlbBoxscore,
   type MlbBoxscoreBatter,
   type MlbBoxscorePitcher,
@@ -71,6 +74,23 @@ export function MlbGameDetail({
     queryFn: () => fetchMlbGamePreview(gamePk),
     enabled: Boolean(gamePk),
     staleTime: 120_000,
+  });
+
+  const bbrefPreview = useQuery({
+    queryKey: [
+      "mlb-bbref-game-preview",
+      box.data?.officialDate,
+      box.data?.home.abbrev,
+      box.data?.away.abbrev,
+    ],
+    queryFn: () =>
+      fetchBbrefGamePreview({
+        homeAbbrev: box.data!.home.abbrev,
+        awayAbbrev: box.data!.away.abbrev,
+        date: box.data!.officialDate!,
+      }),
+    enabled: Boolean(box.data?.officialDate && box.data?.home.abbrev && box.data?.away.abbrev),
+    staleTime: 30 * 60_000,
   });
 
   const highlights = useQuery({
@@ -207,6 +227,12 @@ export function MlbGameDetail({
             loading={preview.isPending}
             metaBits={metaBits}
           />
+          <BbrefPreviewStack
+            awayAbbrev={g.away.abbrev}
+            homeAbbrev={g.home.abbrev}
+            data={bbrefPreview.data}
+            loading={bbrefPreview.isPending}
+          />
         </>
       )}
 
@@ -269,13 +295,21 @@ export function MlbGameDetail({
       />
 
       {!g.pregame && (
-        <PreviewStack
-          game={g}
-          preview={preview.data}
-          loading={preview.isPending}
-          metaBits={[]}
-          bottom
-        />
+        <>
+          <PreviewStack
+            game={g}
+            preview={preview.data}
+            loading={preview.isPending}
+            metaBits={[]}
+            bottom
+          />
+          <BbrefPreviewStack
+            awayAbbrev={g.away.abbrev}
+            homeAbbrev={g.home.abbrev}
+            data={bbrefPreview.data}
+            loading={bbrefPreview.isPending}
+          />
+        </>
       )}
     </div>
   );
@@ -391,6 +425,228 @@ function PreviewStack({
         <p className="text-[12px] text-[#a8b0c2]">{metaBits.filter(Boolean).join(" · ")}</p>
       )}
     </div>
+  );
+}
+
+function summaryBits(s: MlbBbrefPreviewSummary | null | undefined): string[] {
+  if (!s) return [];
+  return [
+    s.record ? `Rec ${s.record}` : null,
+    s.standing,
+    s.manager ? `Mgr ${s.manager}` : null,
+    s.last10 ? `L10 ${s.last10}` : null,
+    s.last20 ? `L20 ${s.last20}` : null,
+    s.last30 ? `L30 ${s.last30}` : null,
+    s.home ? `Home ${s.home}` : null,
+    s.away ? `Away ${s.away}` : null,
+    s.vsRhp ? `vs RHP ${s.vsRhp}` : null,
+    s.vsLhp ? `vs LHP ${s.vsLhp}` : null,
+    s.oneRun ? `1-run ${s.oneRun}` : null,
+    s.extraInnings ? `XI ${s.extraInnings}` : null,
+  ].filter((x): x is string => Boolean(x));
+}
+
+function BbrefPreviewStack({
+  awayAbbrev,
+  homeAbbrev,
+  data,
+  loading,
+}: {
+  awayAbbrev: string;
+  homeAbbrev: string;
+  data: MlbBbrefGamePreview | null | undefined;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+        <Loader2 size={14} className="animate-spin" /> Loading Baseball Reference matchups…
+      </p>
+    );
+  }
+  if (!data) return null;
+
+  const awayBits = summaryBits(data.awaySummary);
+  const homeBits = summaryBits(data.homeSummary);
+  const hasSeries = data.seasonSeries.length > 0;
+  const hasBatters = data.awayBatters.length > 0 || data.homeBatters.length > 0;
+  const hasPitchers = data.awayPitchers.length > 0 || data.homePitchers.length > 0;
+  if (!awayBits.length && !homeBits.length && !hasSeries && !hasBatters && !hasPitchers) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+          Baseball Reference matchups
+        </p>
+        {data.url ? (
+          <a
+            href={data.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-chalk-dim hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] hover:underline"
+          >
+            Full preview <ExternalLink size={11} />
+          </a>
+        ) : null}
+      </div>
+
+      {(awayBits.length > 0 || homeBits.length > 0) && (
+        <section className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-white/[0.1] bg-[#0a1424] px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/60">
+              {awayAbbrev} form
+            </p>
+            <p className="text-cream mt-2 text-[12.5px] leading-relaxed">
+              {awayBits.join(" · ") || "—"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/[0.1] bg-[#0a1424] px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/60">
+              {homeAbbrev} form
+            </p>
+            <p className="text-cream mt-2 text-[12.5px] leading-relaxed">
+              {homeBits.join(" · ") || "—"}
+            </p>
+          </div>
+        </section>
+      )}
+
+      {hasSeries && (
+        <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+          <p className="border-b border-white/[0.07] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+            Season series
+          </p>
+          <ul className="divide-y divide-white/[0.06]">
+            {data.seasonSeries.map((row) => (
+              <li
+                key={row.result}
+                className="px-4 py-2 text-[12.5px] leading-relaxed text-[#c8cdd8]"
+              >
+                {row.result}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {hasBatters && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <BbrefStatTable
+            title={`${awayAbbrev} batters`}
+            rows={data.awayBatters}
+            columns={[
+              { key: "name", label: "Batter" },
+              { key: "PA", label: "PA" },
+              { key: "BA", label: "BA" },
+              { key: "OPS", label: "OPS" },
+              { key: "ops28", label: "28d" },
+              { key: "HR", label: "HR" },
+            ]}
+          />
+          <BbrefStatTable
+            title={`${homeAbbrev} batters`}
+            rows={data.homeBatters}
+            columns={[
+              { key: "name", label: "Batter" },
+              { key: "PA", label: "PA" },
+              { key: "BA", label: "BA" },
+              { key: "OPS", label: "OPS" },
+              { key: "ops28", label: "28d" },
+              { key: "HR", label: "HR" },
+            ]}
+          />
+        </div>
+      )}
+
+      {hasPitchers && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <BbrefStatTable
+            title={`${awayAbbrev} pitchers`}
+            rows={data.awayPitchers}
+            columns={[
+              { key: "name", label: "Pitcher" },
+              { key: "IP", label: "IP" },
+              { key: "ERA", label: "ERA" },
+              { key: "OPS", label: "OPS" },
+              { key: "ops28", label: "28d" },
+              { key: "HR", label: "HR" },
+            ]}
+          />
+          <BbrefStatTable
+            title={`${homeAbbrev} pitchers`}
+            rows={data.homePitchers}
+            columns={[
+              { key: "name", label: "Pitcher" },
+              { key: "IP", label: "IP" },
+              { key: "ERA", label: "ERA" },
+              { key: "OPS", label: "OPS" },
+              { key: "ops28", label: "28d" },
+              { key: "HR", label: "HR" },
+            ]}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BbrefStatTable({
+  title,
+  rows,
+  columns,
+}: {
+  title: string;
+  rows: Record<string, string>[];
+  columns: { key: string; label: string }[];
+}) {
+  if (!rows.length) return null;
+  return (
+    <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+      <p className="border-b border-white/[0.07] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+        {title}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[320px] text-[12px]">
+          <thead>
+            <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+              {columns.map((c) => (
+                <th
+                  key={c.key}
+                  className={cn(
+                    "px-2 py-2 font-medium",
+                    c.key === "name" ? "text-left" : "numeral text-center",
+                  )}
+                >
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={`${title}-${row.name}`} className="border-t border-white/[0.05]">
+                {columns.map((c) => (
+                  <td
+                    key={c.key}
+                    className={cn(
+                      "px-2 py-1.5",
+                      c.key === "name"
+                        ? "text-left text-cream"
+                        : "numeral text-center text-[#c8cdd8]",
+                    )}
+                  >
+                    {row[c.key] || "—"}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
