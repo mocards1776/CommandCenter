@@ -6,7 +6,6 @@ export const SUGGESTED_PLAYER_TAGS = [
   "Watch",
   "Trade candidate",
   "Free agent target",
-  "Favorite",
 ] as const;
 
 export type SportsPlayerTag = {
@@ -22,6 +21,11 @@ export function normalizeTag(raw: string): string {
     .replace(/^#+/, "")
     .replace(/\s+/g, " ")
     .slice(0, 40);
+}
+
+/** "#Favorite" tags share the starred Favorite pill — not a separate sky label. */
+export function isFavoriteTagName(tag: string): boolean {
+  return normalizeTag(tag).toLowerCase() === "favorite";
 }
 
 export function displayPlayerTag(tag: string): string {

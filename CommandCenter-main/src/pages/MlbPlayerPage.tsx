@@ -488,6 +488,9 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         playerName={p.name}
         variant="panel"
         isFavorite={isFav}
+        teamName={p.teamName}
+        teamId={p.teamId}
+        position={p.position}
       />
 
       <BioAndOrigin player={p} />
@@ -859,31 +862,45 @@ function PlayerHeader({
                       : "Season"}
                 </p>
               </div>
+              {htWt && (
+                <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">
+                    HT / WT
+                  </p>
+                  <p className="mt-0.5 text-[13px] leading-snug font-semibold text-white">{htWt}</p>
+                </div>
+              )}
+              {batThr && (
+                <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">
+                    Bat / Thr
+                  </p>
+                  <p className="numeral mt-0.5 text-[22px] leading-none text-white">{batThr}</p>
+                </div>
+              )}
+              {player.birthDate && (
+                <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">
+                    Birthdate
+                  </p>
+                  <p className="mt-0.5 text-[13px] leading-snug font-semibold text-white">
+                    {formatSportsDate(player.birthDate)}
+                    {player.age != null ? ` (${player.age})` : ""}
+                  </p>
+                </div>
+              )}
+              {player.birthPlace && (
+                <div className="max-w-[11rem] shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">Born</p>
+                  <p className="mt-0.5 text-[12px] leading-snug font-semibold text-white">
+                    {player.birthPlace}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
-          <dl className="mt-4 grid grid-cols-2 gap-2.5 text-[12.5px] sm:grid-cols-3 lg:grid-cols-6">
-            {htWt && (
-              <div>
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">HT / WT</dt>
-                <dd className="mt-0.5 text-white">{htWt}</dd>
-              </div>
-            )}
-            {player.birthDate && (
-              <div>
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Birthdate</dt>
-                <dd className="mt-0.5 text-white">
-                  {formatSportsDate(player.birthDate)}
-                  {player.age != null ? ` (${player.age})` : ""}
-                </dd>
-              </div>
-            )}
-            {batThr && (
-              <div>
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Bat / Thr</dt>
-                <dd className="mt-0.5 text-white">{batThr}</dd>
-              </div>
-            )}
+          <dl className="mt-4 grid grid-cols-2 gap-2.5 text-[12.5px] sm:grid-cols-3 lg:grid-cols-4">
             {player.mlbDebut && (
               <div>
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">MLB debut</dt>
@@ -924,26 +941,20 @@ function PlayerHeader({
                 <dd className="numeral mt-0.5 text-white">{careerWar.toFixed(1)}</dd>
               </div>
             )}
-            {player.birthPlace && (
-              <div className="sm:col-span-2 lg:col-span-3">
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Born</dt>
-                <dd className="mt-0.5 text-white">{player.birthPlace}</dd>
-              </div>
-            )}
-            {player.school && (
-              <div className="sm:col-span-2 lg:col-span-3">
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">School</dt>
-                <dd className="mt-0.5 text-white">{player.school}</dd>
-              </div>
-            )}
+            <div className="col-span-2 sm:col-span-2 lg:col-span-2">
+              <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">School</dt>
+              <dd className="mt-0.5 text-white">{player.school ?? "—"}</dd>
+              <PlayerTagsPanel
+                playerId={player.id}
+                playerName={player.name}
+                variant="inline"
+                isFavorite={isFavorite}
+                teamName={player.teamName}
+                teamId={player.teamId}
+                position={player.position}
+              />
+            </div>
           </dl>
-
-          <PlayerTagsPanel
-            playerId={player.id}
-            playerName={player.name}
-            variant="hero"
-            isFavorite={isFavorite}
-          />
         </div>
       </div>
     </article>

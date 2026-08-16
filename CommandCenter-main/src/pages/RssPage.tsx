@@ -886,6 +886,8 @@ function PlayerArticleShell({
     if (st.dispatchArticle) history.back();
   };
 
+  const onDoubleTap = useDoubleTapNext(hasNext ? onNext : null, true);
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [item.link]);
@@ -913,7 +915,7 @@ function PlayerArticleShell({
   }, [item.link, item.title, feedUrl, qc]);
 
   return (
-    <div style={{ touchAction: "pan-y" }}>
+    <div style={{ touchAction: "pan-y" }} onClick={onDoubleTap}>
       <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
         <button
           type="button"

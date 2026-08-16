@@ -2,6 +2,15 @@
 
 ---
 
+## Player profile: WAR deploy, tags, double-tap — August 16, 2026
+
+- Deploy sports edge WAR scrape (MLB id redirect + year-row parse; skip league-rank timeout) so hero WAR stops showing `—`.
+- Tagged RotoWire player articles: double-tap advances to the next item (same as other Dispatch readers).
+- `#Favorite` merges with the starred Favorite pill; adding “Favorite” favorites the player instead of a sky tag.
+- Player hero: HT/WT, Bat/Thr, Birthdate, and Born move into hero chips; labels sit inline under School.
+
+---
+
 ## WAR, soccer RUWT, golf embeds, promotion odds — August 15, 2026
 
 - MLB player WAR: resolve Baseball Reference via MLB id redirect, parse current-season WAR from year rows, and skip the slow league-rank scrape so the hero chip stops timing out to `—`.
