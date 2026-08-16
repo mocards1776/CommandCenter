@@ -29,6 +29,9 @@ import {
   clearPlayerContractCache,
   fetchPlayerBrief,
   fetchPlayerContract,
+  fetchProspectRankMaps,
+  prospectRankLabels,
+  prospectRanksFor,
   teamPagePath,
   type MlbGameLogEntry,
   type MlbLeagueRank,
@@ -146,6 +149,16 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
     enabled: Boolean(playerId),
     staleTime: 30 * 60_000,
     retry: 1,
+  });
+
+  const prospectRanks = useQuery({
+    queryKey: ["prospect-rank-maps", player.data?.teamId ?? 138],
+    queryFn: () =>
+      fetchProspectRankMaps({
+        teamIds: [player.data?.teamId ?? 138, 138].filter(Boolean) as number[],
+      }),
+    enabled: Boolean(player.data),
+    staleTime: 30 * 60_000,
   });
 
   const isPitcherPreview =
@@ -314,6 +327,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         warRank={extras.data?.warRank ?? null}
         warOf={extras.data?.warOf ?? null}
         pipelineRank={scouting.data?.pipelineRank ?? null}
+        prospectRankPair={prospectRanksFor(prospectRanks.data, p.id)}
         seasonStats={seasonStats}
         seasonRanks={activeLevel === "mlb" ? (ranks.data ?? []) : []}
         isPitcher={isPitcher}
@@ -475,7 +489,12 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
       )}
       <HighlightReel highlights={highlights.data ?? []} title="Player highlights" defaultOpen={false} />
 
-      {scouting.data ? <ScoutingReportCard report={scouting.data} /> : null}
+      {scouting.data ? (
+        <ScoutingReportCard
+          report={scouting.data}
+          prospectRankPair={prospectRanksFor(prospectRanks.data, p.id)}
+        />
+      ) : null}
 
       <PlayerTagsPanel
         playerId={p.id}
@@ -538,9 +557,17 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
 
 function ScoutingReportCard({
   report,
+  prospectRankPair,
 }: {
   report: NonNullable<Awaited<ReturnType<typeof fetchMlbPipelineScoutingReport>>>;
+  prospectRankPair?: { orgRank: number | null; top100Rank: number | null };
 }) {
+  const rankLabels = prospectRankLabels(
+    prospectRankPair ?? {
+      orgRank: report.pipelineRank,
+      top100Rank: null,
+    },
+  );
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
@@ -548,11 +575,14 @@ function ScoutingReportCard({
           Scouting report
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          {report.pipelineRank != null ? (
-            <span className="text-accent text-[11px] font-semibold uppercase tracking-[0.14em]">
-              Pipeline #{report.pipelineRank}
+          {rankLabels.map((label) => (
+            <span
+              key={label}
+              className="text-accent text-[11px] font-semibold uppercase tracking-[0.14em]"
+            >
+              {label}
             </span>
-          ) : null}
+          ))}
           {report.eta ? (
             <span className="text-[11px] uppercase tracking-[0.12em] text-[#8b93a7]">
               ETA {report.eta}
@@ -718,6 +748,7 @@ function PlayerHeader({
   warRank,
   warOf,
   pipelineRank,
+  prospectRankPair,
   seasonStats,
   seasonRanks,
   isPitcher,
@@ -737,6 +768,7 @@ function PlayerHeader({
   warRank?: number | null;
   warOf?: number | null;
   pipelineRank?: number | null;
+  prospectRankPair?: { orgRank: number | null; top100Rank: number | null };
   seasonStats: MlbPlayerStatLine[];
   seasonRanks: MlbLeagueRank[];
   isPitcher: boolean;
@@ -754,6 +786,9 @@ function PlayerHeader({
         : player.sportAbbrev
       : null;
   const school = player.school ?? player.draft?.school ?? null;
+  const rankLabels = prospectRankLabels(
+    prospectRankPair ?? { orgRank: pipelineRank ?? null, top100Rank: null },
+  );
 
   return (
     <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
@@ -820,11 +855,14 @@ function PlayerHeader({
                     {levelChip}
                   </span>
                 )}
-                {pipelineRank != null && pipelineRank > 0 && (
-                  <span className="rounded-sm border border-accent/40 bg-accent/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
-                    Pipeline #{pipelineRank}
+                {rankLabels.map((label) => (
+                  <span
+                    key={label}
+                    className="rounded-sm border border-accent/40 bg-accent/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-accent"
+                  >
+                    {label}
                   </span>
-                )}
+                ))}
               </div>
               <p className="mt-1 text-[13px] font-medium uppercase tracking-[0.08em] text-white/65">
                 {player.firstName}

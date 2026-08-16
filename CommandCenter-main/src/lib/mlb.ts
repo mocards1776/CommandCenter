@@ -6079,73 +6079,193 @@ export const CARDINALS_PROSPECT_SEEDS: MlbProspectSeed[] = [
   { rank: 20, name: "Sebastian Dos Santos", position: "SS", playerId: 829741 },
 ];
 
-/** Live prospect ranks: prefer MLB Top-100 league-wide, else Cardinals org Pipeline. */
-export async function fetchCardinalsPipelineRankMap(): Promise<Map<number, number>> {
-  const out = new Map<number, number>();
-  // Seed org ranks so Top-30 prospects always have a number even if GraphQL fails.
-  for (const seed of CARDINALS_PROSPECT_SEEDS) {
-    if (seed.playerId) out.set(seed.playerId, seed.rank);
-  }
-  const year = new Date().getFullYear();
+/** Live prospect ranks: org Pipeline and MLB Top-100 kept separate (never overwrite). */
+export type MlbProspectRankMaps = {
+  /** Club Pipeline ranks keyed by player id. */
+  org: Map<number, number>;
+  /** MLB Pipeline Top-100 ranks keyed by player id. */
+  top100: Map<number, number>;
+};
+
+export type MlbProspectRankPair = {
+  orgRank: number | null;
+  top100Rank: number | null;
+};
+
+export function prospectRanksFor(
+  maps: MlbProspectRankMaps | null | undefined,
+  playerId: number,
+): MlbProspectRankPair {
+  return {
+    orgRank: maps?.org.get(playerId) ?? null,
+    top100Rank: maps?.top100.get(playerId) ?? null,
+  };
+}
+
+/** Compact labels for hero / lineup chips. */
+export function prospectRankLabels(pair: MlbProspectRankPair): string[] {
+  const out: string[] = [];
+  if (pair.orgRank != null && pair.orgRank > 0) out.push(`Org #${pair.orgRank}`);
+  if (pair.top100Rank != null && pair.top100Rank > 0) out.push(`Top 100 #${pair.top100Rank}`);
+  return out;
+}
+
+async function loadPipelineSelectionSlug(
+  slug: string,
+  limit: number,
+): Promise<
+  {
+    rank: number;
+    playerId: number;
+    name: string | null;
+    position: string | null;
+  }[]
+> {
   const query = `
     query PipelineSelection($slug: String!, $limit: Int) {
       getPlayerRankingsFromSelection(slug: $slug, limit: $limit) {
         rank
-        playerEntity { player { id } }
+        playerEntity {
+          player {
+            id
+            fullName
+            primaryPosition { abbreviation }
+          }
+        }
       }
     }
   `;
-
-  async function loadSlug(slug: string, limit: number): Promise<Map<number, number>> {
-    const map = new Map<number, number>();
-    try {
-      const res = await fetch("https://data-graph.mlb.com/graphql", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          Origin: typeof window !== "undefined" ? window.location.origin : "https://www.mlb.com",
-          Referer: "https://www.mlb.com/prospects",
-        },
-        body: JSON.stringify({ query, variables: { slug, limit } }),
-      });
-      if (!res.ok) return map;
-      const payload = (await res.json()) as {
-        data?: {
-          getPlayerRankingsFromSelection?: {
-            rank?: number | null;
-            playerEntity?: { player?: { id?: number | null } | null } | null;
-          }[];
-        };
+  try {
+    const res = await fetch("https://data-graph.mlb.com/graphql", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Origin: typeof window !== "undefined" ? window.location.origin : "https://www.mlb.com",
+        Referer: "https://www.mlb.com/prospects",
+      },
+      body: JSON.stringify({ query, variables: { slug, limit } }),
+    });
+    if (!res.ok) return [];
+    const payload = (await res.json()) as {
+      data?: {
+        getPlayerRankingsFromSelection?: {
+          rank?: number | null;
+          playerEntity?: {
+            player?: {
+              id?: number | null;
+              fullName?: string | null;
+              primaryPosition?: { abbreviation?: string | null } | null;
+            } | null;
+          } | null;
+        }[];
       };
-      for (const row of payload.data?.getPlayerRankingsFromSelection ?? []) {
-        const id = Number(row.playerEntity?.player?.id);
-        const rank = Number(row.rank);
-        if (Number.isFinite(id) && id > 0 && Number.isFinite(rank) && rank > 0) {
-          map.set(id, rank);
-        }
-      }
-    } catch {
-      /* keep empty */
+    };
+    const out: {
+      rank: number;
+      playerId: number;
+      name: string | null;
+      position: string | null;
+    }[] = [];
+    for (const row of payload.data?.getPlayerRankingsFromSelection ?? []) {
+      const id = Number(row.playerEntity?.player?.id);
+      const rank = Number(row.rank);
+      if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(rank) || rank <= 0) continue;
+      out.push({
+        rank,
+        playerId: id,
+        name: row.playerEntity?.player?.fullName ?? null,
+        position: row.playerEntity?.player?.primaryPosition?.abbreviation ?? null,
+      });
     }
-    return map;
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+async function loadOrgRankMap(teamId: number, year: number): Promise<Map<number, number>> {
+  const map = new Map<number, number>();
+  let orgId = teamId;
+  if (!mlbClubSlug(orgId)) {
+    try {
+      const raw = (await mlbGet(`teams/${teamId}`)) as {
+        teams?: { parentOrgId?: number }[];
+      };
+      const parent = Number(raw.teams?.[0]?.parentOrgId);
+      if (Number.isFinite(parent) && parent > 0 && mlbClubSlug(parent)) orgId = parent;
+    } catch {
+      /* keep teamId */
+    }
+  }
+  const club = mlbClubSlug(orgId);
+  if (!club) return map;
+  for (const slug of [`sel-pr-${year}-${club}`, `sel-pr-${year - 1}-${club}`]) {
+    const rows = await loadPipelineSelectionSlug(slug, 40);
+    if (!rows.length) continue;
+    for (const row of rows) map.set(row.playerId, row.rank);
+    break;
+  }
+  return map;
+}
+
+async function loadTop100RankRows(
+  year: number,
+  limit = 100,
+): Promise<
+  {
+    rank: number;
+    playerId: number;
+    name: string | null;
+    position: string | null;
+  }[]
+> {
+  for (const slug of [`sel-pr-${year}-top100`, `sel-pr-${year - 1}-top100`]) {
+    const rows = await loadPipelineSelectionSlug(slug, limit);
+    if (rows.length) return rows;
+  }
+  return [];
+}
+
+/**
+ * Org Pipeline ranks for the given clubs + league Top-100.
+ * Org and Top-100 stay in separate maps so both can be shown on a player.
+ */
+export async function fetchProspectRankMaps(opts?: {
+  teamIds?: number[];
+}): Promise<MlbProspectRankMaps> {
+  const year = new Date().getFullYear();
+  const teamIds = [...new Set((opts?.teamIds ?? [138]).filter((id) => Number.isFinite(id) && id > 0))];
+  const org = new Map<number, number>();
+
+  // Cardinals seeds fill org ranks when GraphQL lags.
+  if (teamIds.includes(138)) {
+    for (const seed of CARDINALS_PROSPECT_SEEDS) {
+      if (seed.playerId) org.set(seed.playerId, seed.rank);
+    }
   }
 
-  // Org list first (fills Top-30), then overlay Top-100 so league-wide numbers win.
-  for (const slug of [`sel-pr-${year}-cardinals`, `sel-pr-${year - 1}-cardinals`]) {
-    const org = await loadSlug(slug, 40);
-    if (org.size) {
-      for (const [id, rank] of org) out.set(id, rank);
-      break;
-    }
+  await Promise.all(
+    teamIds.map(async (teamId) => {
+      const map = await loadOrgRankMap(teamId, year);
+      for (const [id, rank] of map) org.set(id, rank);
+    }),
+  );
+
+  const top100 = new Map<number, number>();
+  for (const row of await loadTop100RankRows(year, 100)) {
+    top100.set(row.playerId, row.rank);
   }
-  for (const slug of [`sel-pr-${year}-top100`, `sel-pr-${year - 1}-top100`]) {
-    const top = await loadSlug(slug, 100);
-    if (top.size) {
-      for (const [id, rank] of top) out.set(id, rank);
-      break;
-    }
-  }
+
+  return { org, top100 };
+}
+
+/** @deprecated Prefer fetchProspectRankMaps — kept for older call sites. */
+export async function fetchCardinalsPipelineRankMap(): Promise<Map<number, number>> {
+  const maps = await fetchProspectRankMaps({ teamIds: [138] });
+  // Prefer Top-100 display number when present, else org (legacy single-number callers).
+  const out = new Map<number, number>(maps.org);
+  for (const [id, rank] of maps.top100) out.set(id, rank);
   return out;
 }
 
@@ -6172,19 +6292,44 @@ async function resolveProspectPerson(
       }[];
     };
     const team = person.people?.[0]?.currentTeam;
-    return {
-      teamId: team?.id ?? null,
-      teamName: team?.name ?? null,
-      level: team?.sport?.name ?? null,
-    };
+  return {
+    teamId: team?.id ?? null,
+    teamName: team?.name ?? null,
+    level: team?.sport?.name ?? null,
+  };
   } catch {
     return { teamName: null, teamId: null, level: null };
   }
 }
 
+/** MLB Pipeline Top-100 list for the Prospects page. */
+export async function fetchMlbTop100Prospects(limit = 100): Promise<MlbProspectCard[]> {
+  const year = new Date().getFullYear();
+  const rows = await loadTop100RankRows(year, limit);
+  if (!rows.length) return [];
+
+  const people = await fetchMlbPeopleByIds(rows.map((r) => r.playerId));
+  return rows.map((row) => {
+    const person = people.get(row.playerId);
+    return {
+      rank: row.rank,
+      name: row.name ?? person?.name ?? `Player #${row.playerId}`,
+      position: row.position ?? person?.position ?? "—",
+      playerId: row.playerId,
+      teamName: person?.teamName ?? null,
+      teamId: person?.teamId ?? null,
+      level: person?.sportName ?? null,
+      pipelineNote: "MLB Top 100",
+    } satisfies MlbProspectCard;
+  });
+}
+
 export async function fetchCardinalsProspectWatch(): Promise<MlbProspectCard[]> {
   const searchNames = CARDINALS_PROSPECT_SEEDS.flatMap((p) => [p.name, ...(p.aliases ?? [])]);
-  const ids = await searchMlbPlayersByNames(searchNames, 40);
+  const [ids, ranks] = await Promise.all([
+    searchMlbPlayersByNames(searchNames, 40),
+    fetchProspectRankMaps({ teamIds: [138] }),
+  ]);
   const out: MlbProspectCard[] = [];
   for (const seed of CARDINALS_PROSPECT_SEEDS) {
     let id =
@@ -6202,14 +6347,19 @@ export async function fetchCardinalsProspectWatch(): Promise<MlbProspectCard[]> 
       teamId: null,
       level: null,
     };
+    const orgRank = id != null ? ranks.org.get(id) ?? seed.rank : seed.rank;
+    const top100Rank = id != null ? ranks.top100.get(id) ?? null : null;
     out.push({
       ...seed,
+      rank: orgRank,
       playerId: id,
       teamName: team.teamName,
       teamId: team.teamId,
       level: team.level,
+      pipelineNote: top100Rank != null ? `Top 100 #${top100Rank}` : seed.pipelineNote,
     });
   }
+  out.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
   return out;
 }
 

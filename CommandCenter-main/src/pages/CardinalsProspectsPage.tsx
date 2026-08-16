@@ -10,6 +10,7 @@ import {
   fetchFarmRoster,
   fetchFavoritePlayersYesterday,
   fetchMlbPeopleByIds,
+  fetchMlbTop100Prospects,
   mlbClubSlug,
   mlbHeadshot,
   teamPagePath,
@@ -65,8 +66,13 @@ export default function CardinalsProspectsPage() {
   const focusTag = params.get("tag") || "Prospect";
 
   const watch = useQuery({
-    queryKey: ["cardinals-prospect-watch-v2"],
+    queryKey: ["cardinals-prospect-watch-v3"],
     queryFn: fetchCardinalsProspectWatch,
+    staleTime: 600_000,
+  });
+  const top100 = useQuery({
+    queryKey: ["mlb-top100-prospects"],
+    queryFn: () => fetchMlbTop100Prospects(100),
     staleTime: 600_000,
   });
   const affiliates = useQuery({
@@ -135,8 +141,8 @@ export default function CardinalsProspectsPage() {
           Prospects
         </h1>
         <p className="text-chalk mt-2 max-w-xl text-[14px] leading-relaxed">
-          Follow the top of the Cardinals farm with a Pipeline-oriented watch list, your tagged
-          players, and live MiLB affiliate rosters. Open{" "}
+          Follow the Cardinals org Pipeline, the MLB Top 100, your tagged players, and live MiLB
+          affiliate rosters. Open{" "}
           <a
             href={pipelineUrl}
             target="_blank"
@@ -150,7 +156,10 @@ export default function CardinalsProspectsPage() {
       </header>
 
       <section className="space-y-3">
-        <h2 className="rule-head">Watch list</h2>
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <h2 className="rule-head">Cardinals org rankings</h2>
+          <p className="text-[11px] text-[#8b93a7]">Org # · Top 100 when listed</p>
+        </div>
         {watch.isPending ? (
           <p className="text-chalk flex items-center gap-2 text-[13px]">
             <Loader2 size={14} className="animate-spin" /> Loading prospects…
@@ -210,6 +219,78 @@ export default function CardinalsProspectsPage() {
                         </>
                       ) : null}
                       {p.pipelineNote ? ` · ${p.pipelineNote}` : ""}
+                    </p>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <h2 className="rule-head">MLB Top Prospects</h2>
+          <a
+            href="https://www.mlb.com/prospects/top100"
+            target="_blank"
+            rel="noreferrer"
+            className="text-accent inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.12em] hover:underline"
+          >
+            Pipeline Top 100 <ExternalLink size={11} />
+          </a>
+        </div>
+        {top100.isPending ? (
+          <p className="text-chalk flex items-center gap-2 text-[13px]">
+            <Loader2 size={14} className="animate-spin" /> Loading Top 100…
+          </p>
+        ) : top100.isError ? (
+          <p className="text-alert text-[13px]">
+            {top100.error instanceof Error ? top100.error.message : "Couldn't load Top 100"}
+          </p>
+        ) : (
+          <ol className="flex flex-col gap-2">
+            {top100.data?.map((p) => (
+              <li key={`top100-${p.rank}-${p.playerId ?? p.name}`}>
+                <div className="bg-panel flex items-center gap-3 rounded-xl border border-white/[0.08] p-3">
+                  <span className="numeral text-accent w-7 text-center text-[18px]">{p.rank}</span>
+                  {p.playerId ? (
+                    <PlayerHeadshot playerId={p.playerId} className="h-12 w-12 rounded-full" />
+                  ) : (
+                    <div className="bg-hero text-chalk-dim grid h-12 w-12 place-items-center rounded-full text-[10px]">
+                      —
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    {p.playerId ? (
+                      <Link
+                        to={`/sports/mlb/player/${p.playerId}`}
+                        className="text-cream hover:text-accent text-[16px] font-medium"
+                      >
+                        {p.name}
+                      </Link>
+                    ) : (
+                      <p className="text-cream text-[16px] font-medium">{p.name}</p>
+                    )}
+                    <p className="text-chalk-dim text-[11px] uppercase tracking-[0.12em]">
+                      {p.position}
+                      {p.teamId && p.teamName ? (
+                        <>
+                          {" · "}
+                          <Link
+                            to={teamPagePath(p.teamId)}
+                            className="text-accent hover:underline"
+                          >
+                            {p.teamName}
+                          </Link>
+                        </>
+                      ) : p.teamName ? (
+                        <>
+                          {" · "}
+                          <span className="text-accent">{p.teamName}</span>
+                        </>
+                      ) : null}
+                      {p.level ? ` · ${p.level}` : ""}
                     </p>
                   </div>
                 </div>

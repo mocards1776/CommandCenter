@@ -16,11 +16,13 @@ import {
   fetchMlbBoxscore,
   fetchMlbGameHighlights,
   fetchMlbGamePreview,
-  fetchCardinalsPipelineRankMap,
+  fetchProspectRankMaps,
   formatGameDuration,
   mlbHeadshot,
   parseEspnRecapHtml,
   playerWatchKind,
+  prospectRankLabels,
+  prospectRanksFor,
   resolveMissingRecapPlayers,
   teamPagePath,
   type MlbBoxscore,
@@ -31,6 +33,7 @@ import {
   type MlbLineupHitter,
   type MlbPitcherSeasonLine,
   type MlbPreviewLeaderRow,
+  type MlbProspectRankMaps,
   type PlayerWatchKind,
   type RecapInline,
 } from "@/lib/mlb";
@@ -128,8 +131,12 @@ export function MlbGameDetail({
   }, [taggedPlayers.data]);
 
   const pipelineRanks = useQuery({
-    queryKey: ["cardinals-pipeline-ranks"],
-    queryFn: fetchCardinalsPipelineRankMap,
+    queryKey: ["prospect-rank-maps", box.data?.away.teamId, box.data?.home.teamId],
+    queryFn: () =>
+      fetchProspectRankMaps({
+        teamIds: [box.data!.away.teamId, box.data!.home.teamId].filter(Boolean),
+      }),
+    enabled: Boolean(box.data?.away.teamId && box.data?.home.teamId),
     staleTime: 30 * 60_000,
   });
 
@@ -1315,7 +1322,7 @@ function EspnBoxBoard({
   metaBits: (string | null)[];
   watchPlayerIds?: Set<number>;
   taggedPlayerIds?: Set<number>;
-  prospectRanks?: Map<number, number>;
+  prospectRanks?: MlbProspectRankMaps;
   awayForm?: TeamFormStrip | null;
   homeForm?: TeamFormStrip | null;
   /** Inserted below linescore / decisions (e.g. game wrap). */
@@ -1429,17 +1436,18 @@ function TopProspectsInGame({
   prospectRanks,
 }: {
   game: MlbBoxscore;
-  prospectRanks?: Map<number, number>;
+  prospectRanks?: MlbProspectRankMaps;
 }) {
   const prospects = useMemo(() => {
-    if (!prospectRanks?.size) return [];
+    if (!prospectRanks) return [];
     type Row = {
       id: number;
       name: string;
       teamId: number;
       teamAbbrev: string;
       position: string | null;
-      rank: number;
+      orgRank: number | null;
+      top100Rank: number | null;
     };
     const byId = new Map<number, Row>();
     const consider = (
@@ -1449,12 +1457,9 @@ function TopProspectsInGame({
       teamAbbrev: string,
       position: string | null,
     ) => {
-      const rank = prospectRanks.get(id);
-      if (rank == null || rank <= 0) return;
-      const prev = byId.get(id);
-      if (!prev || rank < prev.rank) {
-        byId.set(id, { id, name, teamId, teamAbbrev, position, rank });
-      }
+      const { orgRank, top100Rank } = prospectRanksFor(prospectRanks, id);
+      if ((orgRank == null || orgRank <= 0) && (top100Rank == null || top100Rank <= 0)) return;
+      byId.set(id, { id, name, teamId, teamAbbrev, position, orgRank, top100Rank });
     };
     for (const side of [game.away, game.home]) {
       for (const b of side.batters) {
@@ -1464,7 +1469,14 @@ function TopProspectsInGame({
         consider(p.id, p.name, side.teamId, side.abbrev, "P");
       }
     }
-    return [...byId.values()].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+    return [...byId.values()].sort((a, b) => {
+      const aTop = a.top100Rank ?? 999;
+      const bTop = b.top100Rank ?? 999;
+      if (aTop !== bTop) return aTop - bTop;
+      const aOrg = a.orgRank ?? 999;
+      const bOrg = b.orgRank ?? 999;
+      return aOrg - bOrg || a.name.localeCompare(b.name);
+    });
   }, [game, prospectRanks]);
 
   if (!prospects.length) return null;
@@ -1477,31 +1489,41 @@ function TopProspectsInGame({
         </h2>
       </div>
       <ul className="divide-y divide-white/[0.06]">
-        {prospects.map((p) => (
-          <li key={p.id} className="flex items-center gap-3 px-4 py-2.5">
-            <img
-              src={mlbHeadshot(p.id, 213)}
-              alt=""
-              width={36}
-              height={36}
-              className="h-9 w-9 rounded-full bg-white/10 object-cover object-top"
-              loading="lazy"
-            />
-            <div className="min-w-0 flex-1">
-              <Link
-                to={`/sports/mlb/player/${p.id}`}
-                className="text-cream inline-flex items-center gap-1.5 text-[14px] font-semibold hover:text-accent hover:underline"
-              >
-                <span className="text-accent numeral text-[12px] font-bold">#{p.rank}</span>
-                {p.name}
-              </Link>
-              <p className="text-[11px] text-[#8b93a7]">
-                {p.teamAbbrev}
-                {p.position ? ` · ${p.position}` : ""}
-              </p>
-            </div>
-          </li>
-        ))}
+        {prospects.map((p) => {
+          const labels = prospectRankLabels({
+            orgRank: p.orgRank,
+            top100Rank: p.top100Rank,
+          });
+          return (
+            <li key={p.id} className="flex items-center gap-3 px-4 py-2.5">
+              <img
+                src={mlbHeadshot(p.id, 213)}
+                alt=""
+                width={36}
+                height={36}
+                className="h-9 w-9 rounded-full bg-white/10 object-cover object-top"
+                loading="lazy"
+              />
+              <div className="min-w-0 flex-1">
+                <Link
+                  to={`/sports/mlb/player/${p.id}`}
+                  className="text-cream inline-flex flex-wrap items-center gap-1.5 text-[14px] font-semibold hover:text-accent hover:underline"
+                >
+                  {labels.map((label) => (
+                    <span key={label} className="text-accent numeral text-[11px] font-bold">
+                      {label}
+                    </span>
+                  ))}
+                  {p.name}
+                </Link>
+                <p className="text-[11px] text-[#8b93a7]">
+                  {p.teamAbbrev}
+                  {p.position ? ` · ${p.position}` : ""}
+                </p>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
@@ -1627,7 +1649,7 @@ function TeamBoxSection({
   side: MlbBoxscoreSide;
   watchPlayerIds?: Set<number>;
   taggedPlayerIds?: Set<number>;
-  prospectRanks?: Map<number, number>;
+  prospectRanks?: MlbProspectRankMaps;
   form?: TeamFormStrip | null;
 }) {
   const battingNotes = useMemo(() => {
@@ -1714,7 +1736,7 @@ function TeamBoxSection({
                 b={b}
                 zebra={i % 2 === 1}
                 watchKind={playerWatchKind(b.id, watchPlayerIds, taggedPlayerIds)}
-                pipelineRank={prospectRanks?.get(b.id)}
+                prospectRanks={prospectRanksFor(prospectRanks, b.id)}
               />
             ))}
             <tr className="border-t border-white/[0.1] bg-white/[0.03] font-semibold">
@@ -1769,7 +1791,7 @@ function TeamBoxSection({
                   key={p.id}
                   p={p}
                   watchKind={playerWatchKind(p.id, watchPlayerIds, taggedPlayerIds)}
-                  pipelineRank={prospectRanks?.get(p.id)}
+                  prospectRanks={prospectRanksFor(prospectRanks, p.id)}
                 />
               ))}
             </tbody>
@@ -1784,23 +1806,26 @@ function BatterRow({
   b,
   zebra,
   watchKind,
-  pipelineRank,
+  prospectRanks,
 }: {
   b: MlbBoxscoreBatter;
   zebra?: boolean;
   watchKind?: PlayerWatchKind | null;
-  pipelineRank?: number;
+  prospectRanks?: { orgRank: number | null; top100Rank: number | null };
 }) {
+  const labels = prospectRankLabels(prospectRanks ?? { orgRank: null, top100Rank: null });
   return (
     <tr className={cn("border-t border-white/[0.04]", zebra && "bg-white/[0.02]")}>
       <td className="px-3 py-1.5">
         <Link
           to={`/sports/mlb/player/${b.id}`}
-          className="text-cream inline-flex items-center gap-1 hover:text-accent hover:underline"
+          className="text-cream inline-flex flex-wrap items-center gap-1 hover:text-accent hover:underline"
         >
-          {pipelineRank != null && pipelineRank > 0 ? (
-            <span className="text-accent numeral text-[10px] font-bold">#{pipelineRank}</span>
-          ) : null}
+          {labels.map((label) => (
+            <span key={label} className="text-accent numeral text-[10px] font-bold">
+              {label}
+            </span>
+          ))}
           {b.name}
           <PlayerWatchMark kind={watchKind ?? null} />
         </Link>
@@ -1823,22 +1848,25 @@ function BatterRow({
 function PitcherRow({
   p,
   watchKind,
-  pipelineRank,
+  prospectRanks,
 }: {
   p: MlbBoxscorePitcher;
   watchKind?: PlayerWatchKind | null;
-  pipelineRank?: number;
+  prospectRanks?: { orgRank: number | null; top100Rank: number | null };
 }) {
+  const labels = prospectRankLabels(prospectRanks ?? { orgRank: null, top100Rank: null });
   return (
     <tr className="border-t border-white/[0.04]">
       <td className="px-3 py-1.5">
         <Link
           to={`/sports/mlb/player/${p.id}`}
-          className="text-cream inline-flex items-center gap-1 hover:text-accent hover:underline"
+          className="text-cream inline-flex flex-wrap items-center gap-1 hover:text-accent hover:underline"
         >
-          {pipelineRank != null && pipelineRank > 0 ? (
-            <span className="text-accent numeral text-[10px] font-bold">#{pipelineRank}</span>
-          ) : null}
+          {labels.map((label) => (
+            <span key={label} className="text-accent numeral text-[10px] font-bold">
+              {label}
+            </span>
+          ))}
           {p.name}
           <PlayerWatchMark kind={watchKind ?? null} />
         </Link>

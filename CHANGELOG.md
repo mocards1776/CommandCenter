@@ -2,6 +2,13 @@
 
 ---
 
+## Org + Top-100 prospect ranks, MLB Top Prospects section — August 16, 2026
+
+- Keep organization Pipeline ranks and MLB Top-100 ranks separate on players (hero, scouting, box scores).
+- Prospects page: Cardinals org rankings plus a full **MLB Top Prospects** (Top 100) section.
+
+---
+
 ## Player hero: tags on School, season stats in card — August 16, 2026
 
 - Restore bio grid on the hero (HT/WT, Bat/Thr, etc.) with Age + WAR chips only.
