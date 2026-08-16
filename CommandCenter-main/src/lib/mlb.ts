@@ -6,6 +6,37 @@ import { formatSportsDateLong } from "./utils";
 const MLB = "https://statsapi.mlb.com/api/v1";
 const ESPN_STANDINGS = "https://site.api.espn.com/apis/v2/sports/baseball/mlb/standings";
 
+/** One pitch in the current PA — plate coords in feet (catcher's view). */
+export type MlbPitchPlot = {
+  number: number;
+  pX: number;
+  pZ: number;
+  /** B = ball, S = strike/foul/whiff, X = in play, O = other */
+  call: "B" | "S" | "X" | "O";
+  callLabel: string;
+  pitchType: string | null;
+  speed: number | null;
+  zoneTop: number;
+  zoneBottom: number;
+};
+
+export type MlbLivePlayerCard = {
+  id: number;
+  name: string;
+  shortName: string;
+  number: string | null;
+  position: string | null;
+  /** Batter: "L"/"R"/"S". Pitcher: "LHP"/"RHP". */
+  hand: string | null;
+  teamAbbrev: string | null;
+  wins: number | null;
+  losses: number | null;
+  era: string | null;
+  avg: string | null;
+  hr: number | null;
+  rbi: number | null;
+};
+
 export type MlbLiveSituation = {
   balls: number;
   strikes: number;
@@ -15,6 +46,10 @@ export type MlbLiveSituation = {
   onFirst: boolean;
   onSecond: boolean;
   onThird: boolean;
+  /** Current PA pitch locations for the strike-zone plot. */
+  pitches: MlbPitchPlot[];
+  batterCard: MlbLivePlayerCard | null;
+  pitcherCard: MlbLivePlayerCard | null;
 };
 
 export type MlbScoreGame = {
@@ -1005,6 +1040,22 @@ export type MlbRecentBlock = {
   stats: MlbPlayerStatLine[];
 };
 
+type BoxPlayerRaw = {
+  person?: { id?: number; fullName?: string; boxscoreName?: string };
+  jerseyNumber?: string;
+  position?: { abbreviation?: string };
+  battingOrder?: string;
+  stats?: {
+    batting?: Record<string, unknown>;
+    pitching?: Record<string, unknown>;
+  };
+  /** Season averages live here — game `stats.batting` has no AVG/OBP/SLG. */
+  seasonStats?: {
+    batting?: Record<string, unknown>;
+    pitching?: Record<string, unknown>;
+  };
+};
+
 type BoxTeamRaw = {
   team?: { id?: number; name?: string; abbreviation?: string };
   teamStats?: {
@@ -1013,22 +1064,7 @@ type BoxTeamRaw = {
   };
   batters?: number[];
   pitchers?: number[];
-  players?: Record<
-    string,
-    {
-      person?: { fullName?: string };
-      position?: { abbreviation?: string };
-      stats?: {
-        batting?: Record<string, unknown>;
-        pitching?: Record<string, unknown>;
-      };
-      /** Season averages live here — game `stats.batting` has no AVG/OBP/SLG. */
-      seasonStats?: {
-        batting?: Record<string, unknown>;
-        pitching?: Record<string, unknown>;
-      };
-    }
-  >;
+  players?: Record<string, BoxPlayerRaw>;
 };
 
 function mapBoxSide(
@@ -1109,6 +1145,35 @@ function mapBoxSide(
   };
 }
 
+type LiveFeedPitchEvent = {
+  isPitch?: boolean;
+  pitchNumber?: number;
+  details?: {
+    call?: { code?: string; description?: string };
+    description?: string;
+    type?: { code?: string; description?: string };
+    isBall?: boolean;
+    isStrike?: boolean;
+    isInPlay?: boolean;
+  };
+  pitchData?: {
+    startSpeed?: number;
+    strikeZoneTop?: number;
+    strikeZoneBottom?: number;
+    coordinates?: { pX?: number; pZ?: number };
+  };
+};
+
+type LiveFeedCurrentPlay = {
+  matchup?: {
+    batter?: { id?: number; fullName?: string };
+    pitcher?: { id?: number; fullName?: string };
+    batSide?: { code?: string };
+    pitchHand?: { code?: string };
+  };
+  playEvents?: LiveFeedPitchEvent[];
+};
+
 export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxscore> {
   const pk = String(gamePk);
   const [box, live] = await Promise.all([
@@ -1158,6 +1223,7 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
             home?: { runs?: number; hits?: number; errors?: number };
           };
         };
+        plays?: { currentPlay?: LiveFeedCurrentPlay };
       };
     } | null>,
   ]);
@@ -1173,9 +1239,12 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
   const abstract = live?.gameData?.status?.abstractGameState ?? "";
   const pregame = /preview|scheduled|pre[- ]?game|warmup/i.test(`${status} ${abstract}`);
   const isLive = abstract === "Live" || /in progress|manager challenge|delayed/i.test(status);
+  /** Warmup still surfaces batter/pitcher + empty zone like ESPN Live. */
+  const trackAtBat = isLive || /warmup/i.test(status);
   const inn =
-    isLive && ls
-      ? `${ls.inningState ?? ""} ${ls.currentInningOrdinal ?? ""}`.trim() || null
+    (isLive || /warmup/i.test(status)) && ls
+      ? `${ls.inningState ?? ""} ${ls.currentInningOrdinal ?? ""}`.trim() ||
+        (/warmup/i.test(status) ? "Warmup" : null)
       : null;
   const away = mapBoxSide(box.teams?.away, live?.gameData?.teams?.away, ls?.teams?.away);
   const home = mapBoxSide(box.teams?.home, live?.gameData?.teams?.home, ls?.teams?.home);
@@ -1195,6 +1264,7 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
   home.probablePitcher = probs?.home?.fullName ?? null;
   home.probablePitcherId = probs?.home?.id ?? null;
   const whenIso = live?.gameData?.datetime?.dateTime ?? null;
+  const currentPlay = live?.liveData?.plays?.currentPlay;
   return {
     gamePk: Number(pk),
     status,
@@ -1215,7 +1285,11 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
     })),
     away,
     home,
-    situation: mapLiveSituation(ls, isLive),
+    situation: mapLiveSituation(ls, trackAtBat, {
+      currentPlay,
+      awayRaw: box.teams?.away,
+      homeRaw: box.teams?.home,
+    }),
   };
 }
 
@@ -2039,6 +2113,109 @@ type LinescoreDefense = {
   batter?: LinescorePerson;
 };
 
+function pitchCallKind(ev: LiveFeedPitchEvent): MlbPitchPlot["call"] {
+  const code = (ev.details?.call?.code ?? "").toUpperCase();
+  if (code === "B" || ev.details?.isBall) return "B";
+  if (code === "X" || ev.details?.isInPlay) return "X";
+  if (
+    code === "S" ||
+    code === "C" ||
+    code === "F" ||
+    code === "T" ||
+    code === "W" ||
+    code === "M" ||
+    ev.details?.isStrike
+  ) {
+    return "S";
+  }
+  return "O";
+}
+
+function mapCurrentPitches(play: LiveFeedCurrentPlay | null | undefined): MlbPitchPlot[] {
+  const out: MlbPitchPlot[] = [];
+  for (const ev of play?.playEvents ?? []) {
+    if (!ev?.isPitch) continue;
+    const coords = ev.pitchData?.coordinates;
+    const pX = coords?.pX;
+    const pZ = coords?.pZ;
+    if (pX == null || pZ == null || !Number.isFinite(pX) || !Number.isFinite(pZ)) continue;
+    out.push({
+      number: Number(ev.pitchNumber ?? out.length + 1),
+      pX,
+      pZ,
+      call: pitchCallKind(ev),
+      callLabel: ev.details?.call?.description || ev.details?.description || "Pitch",
+      pitchType: ev.details?.type?.description ?? ev.details?.type?.code ?? null,
+      speed: ev.pitchData?.startSpeed ?? null,
+      zoneTop: ev.pitchData?.strikeZoneTop ?? 3.5,
+      zoneBottom: ev.pitchData?.strikeZoneBottom ?? 1.5,
+    });
+  }
+  return out;
+}
+
+function lookupBoxPlayer(
+  awayRaw: BoxTeamRaw | undefined,
+  homeRaw: BoxTeamRaw | undefined,
+  playerId: number,
+): { player: BoxPlayerRaw; abbrev: string } | null {
+  const key = `ID${playerId}`;
+  const awayP = awayRaw?.players?.[key];
+  if (awayP) {
+    return {
+      player: awayP,
+      abbrev: awayRaw?.team?.abbreviation ?? teamAbbrev(awayRaw?.team),
+    };
+  }
+  const homeP = homeRaw?.players?.[key];
+  if (homeP) {
+    return {
+      player: homeP,
+      abbrev: homeRaw?.team?.abbreviation ?? teamAbbrev(homeRaw?.team),
+    };
+  }
+  return null;
+}
+
+function buildLivePlayerCard(
+  id: number,
+  name: string,
+  role: "batter" | "pitcher",
+  handCode: string | null | undefined,
+  awayRaw: BoxTeamRaw | undefined,
+  homeRaw: BoxTeamRaw | undefined,
+): MlbLivePlayerCard {
+  const hit = lookupBoxPlayer(awayRaw, homeRaw, id);
+  const seasonBat = hit?.player.seasonStats?.batting ?? {};
+  const seasonPit = hit?.player.seasonStats?.pitching ?? {};
+  const hand =
+    role === "pitcher"
+      ? handCode
+        ? `${handCode.toUpperCase()}HP`
+        : null
+      : handCode
+        ? handCode.toUpperCase()
+        : null;
+  return {
+    id,
+    name,
+    shortName: shortPlayerName(name),
+    number: hit?.player.jerseyNumber ? String(hit.player.jerseyNumber) : null,
+    position:
+      role === "pitcher"
+        ? "P"
+        : hit?.player.position?.abbreviation || null,
+    hand,
+    teamAbbrev: hit?.abbrev ?? null,
+    wins: role === "pitcher" ? numStat(seasonPit, "wins") : null,
+    losses: role === "pitcher" ? numStat(seasonPit, "losses") : null,
+    era: role === "pitcher" ? strStat(seasonPit, "era") || null : null,
+    avg: role === "batter" ? strStat(seasonBat, "avg") || null : null,
+    hr: role === "batter" ? numStat(seasonBat, "homeRuns") : null,
+    rbi: role === "batter" ? numStat(seasonBat, "rbi") : null,
+  };
+}
+
 function mapLiveSituation(
   ls:
     | {
@@ -2051,25 +2228,104 @@ function mapLiveSituation(
     | null
     | undefined,
   live: boolean,
+  extras?: {
+    currentPlay?: LiveFeedCurrentPlay | null;
+    awayRaw?: BoxTeamRaw;
+    homeRaw?: BoxTeamRaw;
+  },
 ): MlbLiveSituation | null {
   if (!live || !ls) return null;
-  const batter = ls.offense?.batter;
-  const pitcher = ls.defense?.pitcher ?? ls.offense?.pitcher;
+  const matchup = extras?.currentPlay?.matchup;
+  const batter = ls.offense?.batter ?? matchup?.batter;
+  const pitcher = ls.defense?.pitcher ?? ls.offense?.pitcher ?? matchup?.pitcher;
+  const batterId = batter?.id;
+  const pitcherId = pitcher?.id;
+  const batterName = batter?.fullName ?? "Batter";
+  const pitcherName = pitcher?.fullName ?? "Pitcher";
   return {
     balls: Number(ls.balls ?? 0),
     strikes: Number(ls.strikes ?? 0),
     outs: Number(ls.outs ?? 0),
     batter:
-      batter?.id != null
-        ? { id: batter.id, name: batter.fullName ?? "Batter" }
+      batterId != null
+        ? { id: batterId, name: batterName }
         : null,
     pitcher:
-      pitcher?.id != null
-        ? { id: pitcher.id, name: pitcher.fullName ?? "Pitcher" }
+      pitcherId != null
+        ? { id: pitcherId, name: pitcherName }
         : null,
     onFirst: Boolean(ls.offense?.first?.id),
     onSecond: Boolean(ls.offense?.second?.id),
     onThird: Boolean(ls.offense?.third?.id),
+    pitches: mapCurrentPitches(extras?.currentPlay),
+    batterCard:
+      batterId != null
+        ? buildLivePlayerCard(
+            batterId,
+            batterName,
+            "batter",
+            matchup?.batSide?.code,
+            extras?.awayRaw,
+            extras?.homeRaw,
+          )
+        : null,
+    pitcherCard:
+      pitcherId != null
+        ? buildLivePlayerCard(
+            pitcherId,
+            pitcherName,
+            "pitcher",
+            matchup?.pitchHand?.code,
+            extras?.awayRaw,
+            extras?.homeRaw,
+          )
+        : null,
+  };
+}
+
+/** Career H-AB / AVG for batter vs this pitcher, plus season AVG vs LHP/RHP. */
+export async function fetchMlbLiveMatchupExtras(
+  batterId: number,
+  pitcherId: number,
+  pitchHand: string | null | undefined,
+): Promise<{
+  vsPitcher: { hits: number; atBats: number; avg: string } | null;
+  vsHandAvg: string | null;
+  vsHandLabel: string | null;
+}> {
+  const handCode = (pitchHand || "").replace(/HP$/i, "").charAt(0).toUpperCase();
+  const sitCode = handCode === "L" ? "vl" : handCode === "R" ? "vr" : null;
+
+  const [vsRaw, splits] = await Promise.all([
+    mlbGet(`people/${batterId}/stats`, {
+      stats: "vsPlayerTotal",
+      group: "hitting",
+      opposingPlayerId: String(pitcherId),
+    }).catch(() => null) as Promise<{
+      stats?: { splits?: { stat?: Record<string, unknown> }[] }[];
+    } | null>,
+    sitCode
+      ? fetchMlbPlayerSplits(batterId, "hitting").catch(() => [] as MlbSplitRow[])
+      : Promise.resolve([] as MlbSplitRow[]),
+  ]);
+
+  const vsStat = vsRaw?.stats?.[0]?.splits?.[0]?.stat;
+  const vsPitcher =
+    vsStat && (numStat(vsStat, "atBats") > 0 || numStat(vsStat, "plateAppearances") > 0)
+      ? {
+          hits: numStat(vsStat, "hits"),
+          atBats: numStat(vsStat, "atBats"),
+          avg: strStat(vsStat, "avg", ".000"),
+        }
+      : null;
+
+  const split = sitCode ? splits.find((s) => s.code === sitCode) : null;
+  const vsHandAvg = split?.stats.find((s) => s.label === "AVG")?.value ?? null;
+
+  return {
+    vsPitcher,
+    vsHandAvg,
+    vsHandLabel: handCode === "L" ? "vs LHP" : handCode === "R" ? "vs RHP" : null,
   };
 }
 

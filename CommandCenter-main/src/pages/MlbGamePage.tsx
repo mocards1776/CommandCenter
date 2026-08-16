@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Loader2, Star } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2, Star, Tag } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import HighlightReel from "@/components/sports/HighlightReel";
+import MlbLiveMatchupPanel from "@/components/sports/MlbLiveMatchupPanel";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import TeamMark from "@/components/sports/TeamMark";
 import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChips";
@@ -226,6 +227,8 @@ export function MlbGameDetail({
             preview={preview.data}
             loading={preview.isPending}
             metaBits={metaBits}
+            watchPlayerIds={favoritePlayerIds}
+            taggedPlayerIds={taggedPlayerIds}
           />
           <BbrefPreviewStack
             awayAbbrev={g.away.abbrev}
@@ -302,6 +305,8 @@ export function MlbGameDetail({
             loading={preview.isPending}
             metaBits={[]}
             bottom
+            watchPlayerIds={favoritePlayerIds}
+            taggedPlayerIds={taggedPlayerIds}
           />
           <BbrefPreviewStack
             awayAbbrev={g.away.abbrev}
@@ -362,12 +367,16 @@ function PreviewStack({
   loading,
   metaBits,
   bottom = false,
+  watchPlayerIds,
+  taggedPlayerIds,
 }: {
   game: MlbBoxscore;
   preview: Awaited<ReturnType<typeof fetchMlbGamePreview>> | undefined;
   loading: boolean;
   metaBits: (string | null)[];
   bottom?: boolean;
+  watchPlayerIds?: Set<number>;
+  taggedPlayerIds?: Set<number>;
 }) {
   const hasPitchers =
     g.away.probablePitcher ||
@@ -398,6 +407,8 @@ function PreviewStack({
           awayStats={preview?.awayPitcher ?? null}
           homeStats={preview?.homePitcher ?? null}
           loading={loading}
+          watchPlayerIds={watchPlayerIds}
+          taggedPlayerIds={taggedPlayerIds}
         />
       )}
       {loading && g.pregame && (
@@ -411,6 +422,8 @@ function PreviewStack({
           homeAbbrev={g.home.abbrev}
           away={preview.awayLineup}
           home={preview.homeLineup}
+          watchPlayerIds={watchPlayerIds}
+          taggedPlayerIds={taggedPlayerIds}
         />
       )}
       {hasLeaders && preview && (
@@ -419,6 +432,8 @@ function PreviewStack({
           homeAbbrev={g.home.abbrev}
           batting={preview.battingLeaders}
           pitching={preview.pitchingLeaders}
+          watchPlayerIds={watchPlayerIds}
+          taggedPlayerIds={taggedPlayerIds}
         />
       )}
       {g.pregame && metaBits.length > 0 && (
@@ -749,6 +764,8 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
     enabled: g.home.teamId > 0,
     staleTime: 120_000,
   });
+  const showLiveMatchup =
+    Boolean(g.situation) && (g.live || /warmup|in progress/i.test(g.status));
   return (
     <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
       <div
@@ -772,7 +789,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
             g.status === "Final" ? "text-cream" : g.live ? "text-alert" : "text-[#a8b0c2]",
           )}
         >
-          {g.pregame ? "Preview" : g.live ? g.inning || g.status : g.status}
+          {g.pregame ? (/warmup/i.test(g.status) ? g.status : "Preview") : g.live ? g.inning || g.status : g.status}
         </p>
         {g.officialDate && (
           <p className="text-[11px] text-[#8b93a7]">{formatSportsDateLong(g.officialDate)}</p>
@@ -786,10 +803,10 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
           winner={awayWins}
           loser={homeWins}
           form={awayForm.data ?? null}
-          showForm={g.pregame}
+          showForm={g.pregame && !/warmup/i.test(g.status)}
         />
         <div className="px-1 text-center">
-          {g.pregame ? (
+          {g.pregame && !/warmup/i.test(g.status) ? (
             <>
               <p className="font-display text-[40px] leading-none tracking-tight text-white sm:text-[52px]">
                 {g.whenShort ?? "TBD"}
@@ -822,13 +839,13 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
               <p
                 className={cn(
                   "mt-2.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]",
-                  g.live ? "bg-alert/90 text-ink" : "bg-white/10 text-[#c8cdd8]",
+                  g.live || /warmup/i.test(g.status) ? "bg-alert/90 text-ink" : "bg-white/10 text-[#c8cdd8]",
                 )}
               >
-                {g.live ? (
+                {g.live || /warmup/i.test(g.status) ? (
                   <>
                     <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />
-                    {g.inning || "Live"}
+                    {g.inning || g.status || "Live"}
                   </>
                 ) : g.status === "Final" ? (
                   "Final"
@@ -845,11 +862,13 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
           winner={homeWins}
           loser={awayWins}
           form={homeForm.data ?? null}
-          showForm={g.pregame}
+          showForm={g.pregame && !/warmup/i.test(g.status)}
         />
       </div>
 
-      {g.live && g.situation ? (
+      {showLiveMatchup && g.situation ? (
+        <MlbLiveMatchupPanel game={g} situation={g.situation} />
+      ) : g.live && g.situation ? (
         <LiveSituationBar inning={g.inning} situation={g.situation} />
       ) : null}
     </header>
@@ -921,12 +940,16 @@ function ProbablePitchers({
   awayStats,
   homeStats,
   loading,
+  watchPlayerIds,
+  taggedPlayerIds,
 }: {
   away: MlbBoxscoreSide;
   home: MlbBoxscoreSide;
   awayStats: MlbPitcherSeasonLine | null;
   homeStats: MlbPitcherSeasonLine | null;
   loading: boolean;
+  watchPlayerIds?: Set<number>;
+  taggedPlayerIds?: Set<number>;
 }) {
   const rows = [
     { side: away, stats: awayStats },
@@ -989,15 +1012,18 @@ function ProbablePitchers({
                 const meta = [stats?.hand, stats?.number ? `#${stats.number}` : null]
                   .filter(Boolean)
                   .join(" · ");
+                const watchKind =
+                  id != null ? playerWatchKind(id, watchPlayerIds, taggedPlayerIds) : null;
                 return (
                   <tr key={`${side.abbrev}-${id ?? label}`} className="border-t border-white/[0.05]">
                     <td className="px-3 py-2.5 text-left">
                       {id ? (
                         <Link
                           to={`/sports/mlb/player/${id}`}
-                          className="font-medium text-[#9ec1ff] hover:underline"
+                          className="inline-flex items-center gap-1.5 font-medium text-[#9ec1ff] hover:underline"
                         >
                           {label}
+                          <PlayerWatchMark kind={watchKind} />
                         </Link>
                       ) : (
                         <span className="text-cream">{label}</span>
@@ -1092,11 +1118,15 @@ function PreviewLineups({
   homeAbbrev,
   away,
   home,
+  watchPlayerIds,
+  taggedPlayerIds,
 }: {
   awayAbbrev: string;
   homeAbbrev: string;
   away: MlbLineupHitter[];
   home: MlbLineupHitter[];
+  watchPlayerIds?: Set<number>;
+  taggedPlayerIds?: Set<number>;
 }) {
   const [tab, setTab] = useState<"away" | "home">("away");
   const rows = tab === "away" ? away : home;
@@ -1140,26 +1170,37 @@ function PreviewLineups({
             </tr>
           </thead>
           <tbody>
-            {rows.map((h) => (
-              <tr key={h.id} className="border-t border-white/[0.05]">
-                <td className="px-3 py-2.5 text-left">
-                  <Link
-                    to={`/sports/mlb/player/${h.id}`}
-                    className="font-medium text-[#9ec1ff] hover:underline"
-                  >
-                    {h.shortName}
-                  </Link>
-                  <span className="ml-1.5 text-[10px] text-[#8b93a7]">{h.position}</span>
-                </td>
-                <td className="numeral px-1.5 py-2.5 text-center text-cream">
-                  {h.hits}-{h.atBats}
-                </td>
-                <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.hr}</td>
-                <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.rbi}</td>
-                <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.sb}</td>
-                <td className="numeral px-1.5 py-2.5 pr-3 text-center text-cream">{h.avg}</td>
-              </tr>
-            ))}
+            {rows.map((h) => {
+              const watchKind = playerWatchKind(h.id, watchPlayerIds, taggedPlayerIds);
+              return (
+                <tr
+                  key={h.id}
+                  className={cn(
+                    "border-t border-white/[0.05]",
+                    watchKind === "favorite" && "bg-accent/[0.06]",
+                    watchKind === "tagged" && "bg-[#7eb6ff]/[0.06]",
+                  )}
+                >
+                  <td className="px-3 py-2.5 text-left">
+                    <Link
+                      to={`/sports/mlb/player/${h.id}`}
+                      className="inline-flex items-center gap-1.5 font-medium text-[#9ec1ff] hover:underline"
+                    >
+                      {h.shortName}
+                      <PlayerWatchMark kind={watchKind} />
+                    </Link>
+                    <span className="ml-1.5 text-[10px] text-[#8b93a7]">{h.position}</span>
+                  </td>
+                  <td className="numeral px-1.5 py-2.5 text-center text-cream">
+                    {h.hits}-{h.atBats}
+                  </td>
+                  <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.hr}</td>
+                  <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.rbi}</td>
+                  <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.sb}</td>
+                  <td className="numeral px-1.5 py-2.5 pr-3 text-center text-cream">{h.avg}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -1172,11 +1213,15 @@ function PreviewLeaders({
   homeAbbrev,
   batting,
   pitching,
+  watchPlayerIds,
+  taggedPlayerIds,
 }: {
   awayAbbrev: string;
   homeAbbrev: string;
   batting: MlbPreviewLeaderRow[];
   pitching: MlbPreviewLeaderRow[];
+  watchPlayerIds?: Set<number>;
+  taggedPlayerIds?: Set<number>;
 }) {
   const [tab, setTab] = useState<"batting" | "pitching">("batting");
   const rows = tab === "batting" ? batting : pitching;
@@ -1217,6 +1262,11 @@ function PreviewLeaders({
                 abbrev={awayAbbrev}
                 align="left"
                 statLabel={row.statLabel}
+                watchKind={
+                  row.away
+                    ? playerWatchKind(row.away.id, watchPlayerIds, taggedPlayerIds)
+                    : null
+                }
               />
               <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/25">
                 {row.statLabel}
@@ -1226,6 +1276,11 @@ function PreviewLeaders({
                 abbrev={homeAbbrev}
                 align="right"
                 statLabel={row.statLabel}
+                watchKind={
+                  row.home
+                    ? playerWatchKind(row.home.id, watchPlayerIds, taggedPlayerIds)
+                    : null
+                }
               />
             </div>
           </div>
@@ -1240,11 +1295,13 @@ function LeaderSide({
   abbrev,
   align,
   statLabel,
+  watchKind,
 }: {
   side: MlbPreviewLeaderRow["away"];
   abbrev: string;
   align: "left" | "right";
   statLabel: string;
+  watchKind?: PlayerWatchKind | null;
 }) {
   if (!side) {
     return (
@@ -1267,7 +1324,10 @@ function LeaderSide({
         />
       </div>
       <div className="min-w-0">
-        <p className="truncate text-[13px] font-semibold text-cream">{side.shortName}</p>
+        <p className="inline-flex items-center gap-1.5 truncate text-[13px] font-semibold text-cream">
+          {side.shortName}
+          <PlayerWatchMark kind={watchKind ?? null} />
+        </p>
         <p className="numeral text-[15px] font-semibold text-white">
           {side.value}
           <span className="ml-1 text-[10px] font-medium tracking-wide text-[#8b93a7]">
@@ -1792,10 +1852,13 @@ function PlayerWatchMark({ kind }: { kind: PlayerWatchKind | null }) {
   if (kind === "tagged") {
     return (
       <span
-        className="inline-block h-1.5 w-1.5 rounded-full bg-[#7eb6ff]"
+        className="inline-flex items-center gap-0.5 rounded-sm bg-[#7eb6ff]/15 px-1 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[#7eb6ff]"
         title="Tagged"
         aria-label="Tagged"
-      />
+      >
+        <Tag size={9} strokeWidth={2.5} />
+        Tag
+      </span>
     );
   }
   return null;
