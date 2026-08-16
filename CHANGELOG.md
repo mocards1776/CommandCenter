@@ -2,6 +2,13 @@
 
 ---
 
+## Restore MLB wraps & previews feed — August 16, 2026
+
+- Wrap feeds no longer import the heavy sports module (that path could stall and return 0 articles).
+- ESPN scoreboards try site.api → site.web → sports-edge; MLB/Cardinals/EPL wraps keep score stubs when recap copy lags.
+
+---
+
 ## Dispatch wraps, MiLB, prospects, standings — August 16, 2026
 
 - Filter AP/Data Skrive auto-wires (and FanDuel game-update stubs) out of Cardinals/MLB feeds.
