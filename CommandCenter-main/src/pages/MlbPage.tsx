@@ -108,15 +108,36 @@ export default function MlbPage() {
 
   return (
     <div className="flex min-h-0 flex-col gap-5 p-4 md:p-7">
-      <div className="relative overflow-hidden rounded-lg border border-accent/25 bg-gradient-to-br from-hero-lift to-hero p-5 sm:p-7">
-        <StarField count={32} seed={42} />
-        <div className="relative z-10 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div className="rule-head mb-2">Major League Baseball</div>
-            <h2 className="font-display text-cream text-[28px] leading-tight sm:text-[34px]">
+      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#050b16] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] sm:p-7">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-90"
+          style={{
+            background:
+              "radial-gradient(ellipse at 12% 20%, rgba(190,10,20,0.35), transparent 42%), radial-gradient(ellipse at 88% 10%, rgba(56,120,220,0.22), transparent 40%), linear-gradient(160deg, #0a1628 0%, #07101d 55%, #12080c 100%)",
+          }}
+        />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.14]"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",
+            backgroundSize: "48px 48px",
+            maskImage: "radial-gradient(ellipse at center, black 20%, transparent 75%)",
+          }}
+        />
+        <StarField count={40} seed={42} />
+        <div className="relative z-10 flex flex-wrap items-end justify-between gap-5">
+          <div className="max-w-xl">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_12px_rgba(190,10,20,0.9)]" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">
+                Major League Baseball
+              </span>
+            </div>
+            <h2 className="font-display text-[34px] leading-[0.95] tracking-tight text-cream sm:text-[44px]">
               Live <span className="text-accent">MLB</span>
             </h2>
-            <p className="text-chalk mt-2 max-w-lg text-[13px] leading-relaxed">
+            <p className="mt-3 text-[14px] leading-relaxed text-[#b7c0d0]">
               Scoreboard, standings, league leaders, playoff odds — and{" "}
               <Link to="/sports/ruwt?solo=1" className="text-accent hover:underline">
                 RUWT
@@ -124,8 +145,8 @@ export default function MlbPage() {
               for the best games to turn on.
             </p>
             {liveCount > 0 && (
-              <p className="text-alert mt-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
-                <span className="bg-alert mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full" />
+              <p className="text-alert mt-3 inline-flex items-center gap-2 rounded-full bg-alert/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                <span className="bg-alert inline-block h-1.5 w-1.5 animate-pulse rounded-full" />
                 {liveCount} live now
               </p>
             )}
@@ -133,7 +154,7 @@ export default function MlbPage() {
           <div className="flex flex-wrap items-center gap-2">
             <a
               href="/sports.html"
-              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
+              className="text-chalk hover:text-cream flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.03] px-3.5 py-2 text-[10.5px] uppercase tracking-[0.14em] backdrop-blur-sm transition hover:border-accent/40"
             >
               <Share size={13} />
               Home Screen
@@ -142,14 +163,14 @@ export default function MlbPage() {
               type="button"
               onClick={refresh}
               disabled={refreshing}
-              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40 disabled:opacity-40"
+              className="text-chalk hover:text-cream flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.03] px-3.5 py-2 text-[10.5px] uppercase tracking-[0.14em] backdrop-blur-sm transition hover:border-accent/40 disabled:opacity-40"
             >
               <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
               Refresh
             </button>
             <Link
               to="/sports"
-              className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
+              className="from-accent-deep to-accent-dark text-cream rounded-full bg-gradient-to-b px-4 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] shadow-[0_8px_24px_rgba(190,10,20,0.35)]"
             >
               My teams
             </Link>
@@ -164,7 +185,7 @@ export default function MlbPage() {
         />
       )}
 
-      {yesterday.data && yesterday.data.lines.length > 0 && (
+      {yesterday.data && yesterday.data.lines.some((l) => l.played) && (
         <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
           <div className="mb-3 flex items-baseline justify-between gap-3">
             <h3 className="rule-head">Yesterday</h3>
@@ -173,7 +194,7 @@ export default function MlbPage() {
             </p>
           </div>
           <ul className="space-y-3">
-            {yesterday.data.lines.map((line) => (
+            {yesterday.data.lines.filter((l) => l.played).map((line) => (
               <li key={line.playerId}>
                 <Link
                   to={`/sports/mlb/player/${line.playerId}`}
@@ -187,7 +208,7 @@ export default function MlbPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-x-2">
                       <p className="text-cream text-[14px] font-semibold">{line.playerName}</p>
-                      {line.played && line.isWin != null && (
+                      {line.isWin != null && (
                         <span
                           className={cn(
                             "text-[10px] font-bold uppercase tracking-[0.12em]",
@@ -199,12 +220,10 @@ export default function MlbPage() {
                       )}
                     </div>
                     <p className="mt-0.5 text-[12px] text-[#a8b0c2]">
-                      {line.played
-                        ? `${line.isHome ? "vs" : "@"} ${line.opponent}`
-                        : "No game / DNP"}
+                      {`${line.isHome ? "vs" : "@"} ${line.opponent}`}
                     </p>
                     <p className="numeral text-cream mt-1 text-[13px] leading-snug">
-                      {line.played ? line.summary || "—" : "Did not play"}
+                      {line.summary || "—"}
                     </p>
                   </div>
                 </Link>

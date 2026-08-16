@@ -34,6 +34,69 @@ export function displayPlayerTag(tag: string): string {
   return t ? `#${t.replace(/\s+/g, "")}` : "";
 }
 
+/** Short label without the leading # (for icon chips). */
+export function playerTagLabel(tag: string): string {
+  return normalizeTag(tag) || "Tag";
+}
+
+export type PlayerTagVisualKind =
+  | "watch"
+  | "prospect"
+  | "former"
+  | "trade"
+  | "freeAgent"
+  | "custom";
+
+/** Distinct color + icon kind per known tag — prefer icons over "#Watch" text. */
+export function playerTagVisual(tag: string): {
+  kind: PlayerTagVisualKind;
+  label: string;
+  className: string;
+} {
+  const label = playerTagLabel(tag);
+  const key = label.toLowerCase();
+  if (key === "watch") {
+    return {
+      kind: "watch",
+      label: "Watch",
+      className: "border-violet-300/35 bg-violet-400/15 text-violet-100",
+    };
+  }
+  if (key === "prospect") {
+    return {
+      kind: "prospect",
+      label: "Prospect",
+      className: "border-emerald-300/35 bg-emerald-400/15 text-emerald-100",
+    };
+  }
+  if (key.includes("former")) {
+    return {
+      kind: "former",
+      label,
+      className: "border-rose-300/35 bg-rose-400/15 text-rose-100",
+    };
+  }
+  if (key.includes("trade")) {
+    return {
+      kind: "trade",
+      label,
+      className: "border-amber-300/35 bg-amber-400/15 text-amber-100",
+    };
+  }
+  if (key.includes("free agent") || key.includes("freeagent")) {
+    return {
+      kind: "freeAgent",
+      label,
+      className: "border-cyan-300/35 bg-cyan-400/15 text-cyan-100",
+    };
+  }
+  return {
+    kind: "custom",
+    label,
+    className: "border-sky-300/30 bg-sky-400/10 text-sky-100",
+  };
+}
+
 export function tagFeedId(tag: string): string {
   return `tag:${normalizeTag(tag)}`;
 }

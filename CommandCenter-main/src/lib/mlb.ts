@@ -960,6 +960,9 @@ export type MlbBoxscoreBatter = {
   id: number;
   name: string;
   position: string;
+  /** Parent side for this box (avoids wrong-team lookup in Top Performers). */
+  teamId: number;
+  teamAbbrev: string;
   ab: number;
   r: number;
   h: number;
@@ -978,6 +981,8 @@ export type MlbBoxscoreBatter = {
 export type MlbBoxscorePitcher = {
   id: number;
   name: string;
+  teamId: number;
+  teamAbbrev: string;
   note: string | null;
   ip: string;
   h: number;
@@ -1074,6 +1079,8 @@ function mapBoxSide(
 ): MlbBoxscoreSide {
   const team = raw?.team ?? fallback;
   const players = raw?.players ?? {};
+  const sideTeamId = team?.id ?? 0;
+  const sideAbbrev = team?.abbreviation ?? teamAbbrev(team);
   const batters = (raw?.batters ?? [])
     .map((id) => {
       const p = players[`ID${id}`];
@@ -1092,6 +1099,8 @@ function mapBoxSide(
         id,
         name: p.person?.fullName ?? "—",
         position: p.position?.abbreviation ?? "",
+        teamId: sideTeamId,
+        teamAbbrev: sideAbbrev,
         ab: Number(b.atBats ?? 0),
         r: Number(b.runs ?? 0),
         h: Number(b.hits ?? 0),
@@ -1116,6 +1125,8 @@ function mapBoxSide(
       return {
         id,
         name: p.person?.fullName ?? "—",
+        teamId: sideTeamId,
+        teamAbbrev: sideAbbrev,
         note: s.note ? String(s.note) : null,
         ip: String(s.inningsPitched ?? "0.0"),
         h: Number(s.hits ?? 0),
@@ -1128,18 +1139,17 @@ function mapBoxSide(
     })
     .filter((x): x is MlbBoxscorePitcher => x != null);
 
-  const teamId = team?.id ?? 0;
   return {
-    teamId,
+    teamId: sideTeamId,
     name: team?.name ?? "—",
-    abbrev: team?.abbreviation ?? teamAbbrev(team),
+    abbrev: sideAbbrev,
     runs: rh?.runs ?? Number(raw?.teamStats?.batting?.runs ?? 0),
     hits: rh?.hits ?? Number(raw?.teamStats?.batting?.hits ?? 0),
     errors: rh?.errors ?? Number(raw?.teamStats?.fielding?.errors ?? 0),
     record: null,
     probablePitcher: null,
     probablePitcherId: null,
-    primaryColor: TEAM_COLORS[teamId] ?? "d9515c",
+    primaryColor: TEAM_COLORS[sideTeamId] ?? "d9515c",
     batters,
     pitchers,
   };
@@ -6341,24 +6351,15 @@ export async function fetchFavoritePlayersYesterday(
           /* try next group */
         }
       }
-      return {
-        playerId: f.playerId,
-        playerName: f.playerName,
-        teamName: f.teamName ?? null,
-        position: f.position ?? null,
-        date,
-        summary: "Did not play",
-        opponent: "—",
-        isHome: true,
-        isWin: null,
-        stats: [],
-        group: isPitcher ? "pitching" : "hitting",
-        played: false,
-      } satisfies FavoriteYesterdayLine;
+      // Kill hollow DNP stubs universally — only surface players who actually played.
+      return null;
     }),
   );
 
-  return { date, lines };
+  return {
+    date,
+    lines: lines.filter((l): l is FavoriteYesterdayLine => l != null),
+  };
 }
 
 /** MLB.com club site slug for front-office / prospects pages. */
@@ -6588,7 +6589,7 @@ export function prospectRankLabels(pair: MlbProspectRankPair): string[] {
   return out;
 }
 
-async function loadPipelineSelectionSlug(
+async function loadPipelineSelectionSlugDirect(
   slug: string,
   limit: number,
 ): Promise<
@@ -6604,6 +6605,7 @@ async function loadPipelineSelectionSlug(
       getPlayerRankingsFromSelection(slug: $slug, limit: $limit) {
         rank
         playerEntity {
+          position
           player {
             id
             fullName
@@ -6619,7 +6621,7 @@ async function loadPipelineSelectionSlug(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        Origin: typeof window !== "undefined" ? window.location.origin : "https://www.mlb.com",
+        Origin: typeof window !== "undefined" ? "https://www.mlb.com" : "https://www.mlb.com",
         Referer: "https://www.mlb.com/prospects",
       },
       body: JSON.stringify({ query, variables: { slug, limit } }),
@@ -6630,6 +6632,7 @@ async function loadPipelineSelectionSlug(
         getPlayerRankingsFromSelection?: {
           rank?: number | null;
           playerEntity?: {
+            position?: string | null;
             player?: {
               id?: number | null;
               fullName?: string | null;
@@ -6653,13 +6656,55 @@ async function loadPipelineSelectionSlug(
         rank,
         playerId: id,
         name: row.playerEntity?.player?.fullName ?? null,
-        position: row.playerEntity?.player?.primaryPosition?.abbreviation ?? null,
+        position:
+          row.playerEntity?.position ??
+          row.playerEntity?.player?.primaryPosition?.abbreviation ??
+          null,
       });
     }
     return out;
   } catch {
     return [];
   }
+}
+
+async function loadPipelineSelectionSlug(
+  slug: string,
+  limit: number,
+): Promise<
+  {
+    rank: number;
+    playerId: number;
+    name: string | null;
+    position: string | null;
+  }[]
+> {
+  // Browser CORS blocks data-graph.mlb.com — prefer the sports edge proxy.
+  const proxied = await invokeSports<{
+    rows?: {
+      rank?: number;
+      playerId?: number;
+      name?: string | null;
+      position?: string | null;
+    }[];
+  }>({ action: "pipelineSelection", slug, limit });
+  if (proxied?.rows?.length) {
+    return proxied.rows
+      .map((r) => ({
+        rank: Number(r.rank),
+        playerId: Number(r.playerId),
+        name: r.name ?? null,
+        position: r.position ?? null,
+      }))
+      .filter(
+        (r) =>
+          Number.isFinite(r.rank) &&
+          r.rank > 0 &&
+          Number.isFinite(r.playerId) &&
+          r.playerId > 0,
+      );
+  }
+  return loadPipelineSelectionSlugDirect(slug, limit);
 }
 
 async function loadOrgRankMap(teamId: number, year: number): Promise<Map<number, number>> {
@@ -6789,17 +6834,145 @@ export async function fetchMlbTop100Prospects(limit = 100): Promise<MlbProspectC
   const people = await fetchMlbPeopleByIds(rows.map((r) => r.playerId));
   return rows.map((row) => {
     const person = people.get(row.playerId);
+    const orgId = person?.parentOrgId ?? person?.teamId ?? null;
     return {
       rank: row.rank,
       name: row.name ?? person?.name ?? `Player #${row.playerId}`,
       position: row.position ?? person?.position ?? "—",
       playerId: row.playerId,
-      teamName: person?.teamName ?? null,
-      teamId: person?.teamId ?? null,
+      teamName: orgId ? teamNameFromId(orgId) ?? person?.teamName ?? null : person?.teamName ?? null,
+      teamId: orgId,
       level: person?.sportName ?? null,
       pipelineNote: "MLB Top 100",
     } satisfies MlbProspectCard;
   });
+}
+
+export type MlbFarmSystemRow = {
+  rank: number;
+  teamId: number;
+  teamName: string;
+  abbrev: string;
+  top100Count: number;
+  bestRank: number | null;
+};
+
+const MLB_TEAM_ABBREV: Record<number, string> = {
+  108: "LAA",
+  109: "AZ",
+  110: "BAL",
+  111: "BOS",
+  112: "CHC",
+  113: "CIN",
+  114: "CLE",
+  115: "COL",
+  116: "DET",
+  117: "HOU",
+  118: "KC",
+  119: "LAD",
+  120: "WSH",
+  121: "NYM",
+  133: "OAK",
+  134: "PIT",
+  135: "SD",
+  136: "SEA",
+  137: "SF",
+  138: "STL",
+  139: "TB",
+  140: "TEX",
+  141: "TOR",
+  142: "MIN",
+  143: "PHI",
+  144: "ATL",
+  145: "CWS",
+  146: "MIA",
+  147: "NYY",
+  158: "MIL",
+};
+
+function teamNameFromId(teamId: number): string | null {
+  const names: Record<number, string> = {
+    108: "Los Angeles Angels",
+    109: "Arizona Diamondbacks",
+    110: "Baltimore Orioles",
+    111: "Boston Red Sox",
+    112: "Chicago Cubs",
+    113: "Cincinnati Reds",
+    114: "Cleveland Guardians",
+    115: "Colorado Rockies",
+    116: "Detroit Tigers",
+    117: "Houston Astros",
+    118: "Kansas City Royals",
+    119: "Los Angeles Dodgers",
+    120: "Washington Nationals",
+    121: "New York Mets",
+    133: "Athletics",
+    134: "Pittsburgh Pirates",
+    135: "San Diego Padres",
+    136: "Seattle Mariners",
+    137: "San Francisco Giants",
+    138: "St. Louis Cardinals",
+    139: "Tampa Bay Rays",
+    140: "Texas Rangers",
+    141: "Toronto Blue Jays",
+    142: "Minnesota Twins",
+    143: "Philadelphia Phillies",
+    144: "Atlanta Braves",
+    145: "Chicago White Sox",
+    146: "Miami Marlins",
+    147: "New York Yankees",
+    158: "Milwaukee Brewers",
+  };
+  return names[teamId] ?? null;
+}
+
+/**
+ * Farm-system board derived from MLB Pipeline Top 100 occupancy.
+ * Orgs ranked by Top-100 count, then by best (lowest) prospect rank.
+ */
+export async function fetchMlbFarmSystemRankings(): Promise<MlbFarmSystemRow[]> {
+  const top = await fetchMlbTop100Prospects(100);
+  const byOrg = new Map<
+    number,
+    { count: number; best: number; name: string }
+  >();
+  for (const p of top) {
+    const orgId = p.teamId;
+    if (orgId == null || !mlbClubSlug(orgId)) continue;
+    const cur = byOrg.get(orgId) ?? {
+      count: 0,
+      best: 999,
+      name: p.teamName || teamNameFromId(orgId) || `Team ${orgId}`,
+    };
+    cur.count += 1;
+    cur.best = Math.min(cur.best, p.rank);
+    if (p.teamName) cur.name = teamNameFromId(orgId) || p.teamName;
+    byOrg.set(orgId, cur);
+  }
+
+  // Include clubs with zero Top-100 reps so every org has a farm rank slot.
+  for (const teamId of Object.keys(MLB_TEAM_ABBREV).map(Number)) {
+    if (byOrg.has(teamId)) continue;
+    byOrg.set(teamId, {
+      count: 0,
+      best: 999,
+      name: teamNameFromId(teamId) ?? `Team ${teamId}`,
+    });
+  }
+
+  const sorted = [...byOrg.entries()].sort((a, b) => {
+    if (b[1].count !== a[1].count) return b[1].count - a[1].count;
+    return a[1].best - b[1].best || a[1].name.localeCompare(b[1].name);
+  });
+
+  return sorted.map(([teamId, info], i) => ({
+    rank: i + 1,
+    teamId,
+    teamName: info.name,
+    abbrev: MLB_TEAM_ABBREV[teamId] ?? String(teamId),
+    top100Count: info.count,
+    bestRank: info.count > 0 ? info.best : null,
+  }));
 }
 
 export async function fetchCardinalsProspectWatch(): Promise<MlbProspectCard[]> {
@@ -6913,6 +7086,8 @@ export type MlbPersonLite = {
   number: string | null;
   teamId: number | null;
   teamName: string | null;
+  /** MLB club when currentTeam is a farm affiliate. */
+  parentOrgId: number | null;
   sportId: number | null;
   sportName: string | null;
 };
@@ -6925,7 +7100,7 @@ export async function fetchMlbPeopleByIds(
     ...new Set(
       ids.map((id) => Number(id)).filter((n) => Number.isFinite(n) && n > 0),
     ),
-  ].slice(0, 80);
+  ].slice(0, 120);
   const out = new Map<number, MlbPersonLite>();
   if (!unique.length) return out;
   // Stats API accepts comma-separated personIds.
@@ -6947,12 +7122,15 @@ export async function fetchMlbPeopleByIds(
           currentTeam?: {
             id?: number;
             name?: string;
+            parentOrgId?: number;
             sport?: { id?: number; name?: string };
           };
         }[];
       };
       for (const p of raw.people ?? []) {
         if (!p.id) continue;
+        const teamId = p.currentTeam?.id ?? null;
+        const parent = p.currentTeam?.parentOrgId ?? null;
         out.set(p.id, {
           id: p.id,
           name: p.fullName ?? `Player #${p.id}`,
@@ -6960,8 +7138,14 @@ export async function fetchMlbPeopleByIds(
           lastName: p.lastName ?? "",
           position: p.primaryPosition?.abbreviation ?? null,
           number: p.primaryNumber ?? null,
-          teamId: p.currentTeam?.id ?? null,
+          teamId,
           teamName: p.currentTeam?.name ?? null,
+          parentOrgId:
+            parent && Number.isFinite(parent) && parent > 0
+              ? parent
+              : teamId && mlbClubSlug(teamId)
+                ? teamId
+                : parent ?? null,
           sportId: p.currentTeam?.sport?.id ?? null,
           sportName: p.currentTeam?.sport?.name ?? null,
         });

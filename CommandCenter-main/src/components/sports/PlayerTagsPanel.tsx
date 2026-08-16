@@ -1,23 +1,44 @@
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, Star, X } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Crosshair,
+  Eye,
+  History,
+  Loader2,
+  Plus,
+  Sprout,
+  Star,
+  Tag,
+  X,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/lib/auth-context";
 import { addFavoritePlayer } from "@/lib/favorite-players";
 import {
   SUGGESTED_PLAYER_TAGS,
   addPlayerTag,
-  displayPlayerTag,
   fetchPlayerTags,
   fetchUserTagNames,
   isFavoriteTagName,
+  playerTagVisual,
   removePlayerTag,
+  type PlayerTagVisualKind,
 } from "@/lib/sports-player-tags";
 import { cn } from "@/lib/utils";
 
 function tagPath(tag: string): string {
   return `/sports/mlb/tags/${encodeURIComponent(tag)}`;
+}
+
+function TagKindIcon({ kind, size = 11 }: { kind: PlayerTagVisualKind; size?: number }) {
+  if (kind === "watch") return <Eye size={size} strokeWidth={2.4} />;
+  if (kind === "prospect") return <Sprout size={size} strokeWidth={2.4} />;
+  if (kind === "former") return <History size={size} strokeWidth={2.4} />;
+  if (kind === "trade") return <ArrowLeftRight size={size} strokeWidth={2.4} />;
+  if (kind === "freeAgent") return <Crosshair size={size} strokeWidth={2.4} />;
+  return <Tag size={size} strokeWidth={2.4} />;
 }
 
 function FavoritePill({ compact = false }: { compact?: boolean }) {
@@ -32,6 +53,54 @@ function FavoritePill({ compact = false }: { compact?: boolean }) {
     >
       <Star size={compact ? 10 : 11} className="fill-current" />
       Favorite
+    </span>
+  );
+}
+
+function TagPill({
+  tag,
+  compact,
+  withRemove,
+  onRemove,
+  linkTags,
+}: {
+  tag: string;
+  compact?: boolean;
+  withRemove?: boolean;
+  onRemove?: () => void;
+  linkTags?: boolean;
+}) {
+  const visual = playerTagVisual(tag);
+  const pillClass = cn(
+    "inline-flex items-center gap-1 border font-semibold tracking-wide",
+    visual.className,
+    compact ? "rounded-md px-2 py-0.5 text-[11px]" : "rounded-md px-2.5 py-1 text-[11px]",
+  );
+  const label: ReactNode = (
+    <>
+      <TagKindIcon kind={visual.kind} size={compact ? 10 : 11} />
+      {visual.label}
+    </>
+  );
+  return (
+    <span className={pillClass}>
+      {linkTags ? (
+        <Link to={tagPath(tag)} className="inline-flex items-center gap-1 transition hover:underline">
+          {label}
+        </Link>
+      ) : (
+        <span className="inline-flex items-center gap-1">{label}</span>
+      )}
+      {withRemove && onRemove ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="rounded p-0.5 opacity-70 transition hover:bg-white/10 hover:opacity-100"
+          aria-label={`Remove ${visual.label}`}
+        >
+          <X size={12} />
+        </button>
+      ) : null}
     </span>
   );
 }
@@ -155,10 +224,6 @@ export default function PlayerTagsPanel({
   function renderTagPills(opts?: { compact?: boolean; withRemove?: boolean }) {
     const compact = Boolean(opts?.compact);
     const withRemove = Boolean(opts?.withRemove);
-    const pillClass = cn(
-      "inline-flex items-center gap-1 border border-sky-300/25 bg-sky-400/10 font-medium tracking-wide text-sky-100",
-      compact ? "rounded-md px-2 py-0.5 text-[11px]" : "rounded-md px-2.5 py-1 text-[11px]",
-    );
     return (
       <>
         {/* Star Favorite: one pill when favorited — avoid duplicate with legacy #Favorite tags */}
@@ -185,39 +250,16 @@ export default function PlayerTagsPanel({
               </button>
             </span>
           ))}
-        {otherTags.map((t) =>
-          linkTags ? (
-            <span key={t.id} className={pillClass}>
-              <Link to={tagPath(t.tag)} className="transition hover:underline">
-                {displayPlayerTag(t.tag)}
-              </Link>
-              {withRemove && (
-                <button
-                  type="button"
-                  onClick={() => removeMut.mutate(t.id)}
-                  className="rounded p-0.5 text-sky-100/70 transition hover:bg-sky-300/15 hover:text-sky-50"
-                  aria-label={`Remove ${t.tag}`}
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </span>
-          ) : (
-            <span key={t.id} className={pillClass}>
-              {displayPlayerTag(t.tag)}
-              {withRemove && (
-                <button
-                  type="button"
-                  onClick={() => removeMut.mutate(t.id)}
-                  className="rounded p-0.5 text-sky-100/70 transition hover:bg-sky-300/15 hover:text-sky-50"
-                  aria-label={`Remove ${t.tag}`}
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </span>
-          ),
-        )}
+        {otherTags.map((t) => (
+          <TagPill
+            key={t.id}
+            tag={t.tag}
+            compact={compact}
+            withRemove={withRemove}
+            linkTags={linkTags}
+            onRemove={() => removeMut.mutate(t.id)}
+          />
+        ))}
       </>
     );
   }
@@ -295,7 +337,10 @@ export default function PlayerTagsPanel({
                 <Star size={10} className="fill-current" /> Favorite
               </span>
             ) : (
-              displayPlayerTag(s)
+              <span className="inline-flex items-center gap-1 normal-case tracking-normal">
+                <TagKindIcon kind={playerTagVisual(s).kind} size={10} />
+                {playerTagVisual(s).label}
+              </span>
             )}
           </button>
         ))}

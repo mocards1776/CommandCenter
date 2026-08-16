@@ -15,7 +15,8 @@ export function TeamFormChips({
   return (
     <dl
       className={cn(
-        "mt-1.5 grid grid-cols-3 gap-1.5",
+        // Hide Last 5/10/20 on phones; keep on iPad / desktop.
+        "mt-1.5 hidden grid-cols-3 gap-1.5 md:grid",
         align === "right" && "ml-auto",
         align === "center" && "mx-auto",
         className,

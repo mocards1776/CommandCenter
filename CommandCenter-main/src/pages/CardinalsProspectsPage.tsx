@@ -1,5 +1,5 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Loader2, Sprout } from "lucide-react";
 import TeamMark from "@/components/sports/TeamMark";
@@ -9,6 +9,7 @@ import {
   fetchCardinalsProspectWatch,
   fetchFarmRoster,
   fetchFavoritePlayersYesterday,
+  fetchMlbFarmSystemRankings,
   fetchMlbPeopleByIds,
   fetchMlbTop100Prospects,
   mlbClubSlug,
@@ -64,6 +65,7 @@ export default function CardinalsProspectsPage() {
   const { user } = useAuth();
   const [params] = useSearchParams();
   const focusTag = params.get("tag") || "Prospect";
+  const [showFullTop100, setShowFullTop100] = useState(false);
 
   const watch = useQuery({
     queryKey: ["cardinals-prospect-watch-v3"],
@@ -71,8 +73,13 @@ export default function CardinalsProspectsPage() {
     staleTime: 600_000,
   });
   const top100 = useQuery({
-    queryKey: ["mlb-top100-prospects"],
+    queryKey: ["mlb-top100-prospects-v2"],
     queryFn: () => fetchMlbTop100Prospects(100),
+    staleTime: 600_000,
+  });
+  const farmRanks = useQuery({
+    queryKey: ["mlb-farm-system-ranks"],
+    queryFn: fetchMlbFarmSystemRankings,
     staleTime: 600_000,
   });
   const affiliates = useQuery({
@@ -248,52 +255,107 @@ export default function CardinalsProspectsPage() {
           <p className="text-alert text-[13px]">
             {top100.error instanceof Error ? top100.error.message : "Couldn't load Top 100"}
           </p>
+        ) : !(top100.data?.length) ? (
+          <p className="text-chalk text-[13px]">
+            Top 100 unavailable right now. Try again shortly or open Pipeline.
+          </p>
         ) : (
-          <ol className="flex flex-col gap-2">
-            {top100.data?.map((p) => (
-              <li key={`top100-${p.rank}-${p.playerId ?? p.name}`}>
-                <div className="bg-panel flex items-center gap-3 rounded-xl border border-white/[0.08] p-3">
-                  <span className="numeral text-accent w-7 text-center text-[18px]">{p.rank}</span>
-                  {p.playerId ? (
-                    <PlayerHeadshot playerId={p.playerId} className="h-12 w-12 rounded-full" />
-                  ) : (
-                    <div className="bg-hero text-chalk-dim grid h-12 w-12 place-items-center rounded-full text-[10px]">
-                      —
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
+          <>
+            <ol className="flex flex-col gap-2">
+              {(showFullTop100 ? top100.data : top100.data.slice(0, 10)).map((p) => (
+                <li key={`top100-${p.rank}-${p.playerId ?? p.name}`}>
+                  <div className="bg-panel flex items-center gap-3 rounded-xl border border-white/[0.08] p-3">
+                    <span className="numeral text-accent w-7 text-center text-[18px]">{p.rank}</span>
                     {p.playerId ? (
-                      <Link
-                        to={`/sports/mlb/player/${p.playerId}`}
-                        className="text-cream hover:text-accent text-[16px] font-medium"
-                      >
-                        {p.name}
-                      </Link>
+                      <PlayerHeadshot playerId={p.playerId} className="h-12 w-12 rounded-full" />
                     ) : (
-                      <p className="text-cream text-[16px] font-medium">{p.name}</p>
+                      <div className="bg-hero text-chalk-dim grid h-12 w-12 place-items-center rounded-full text-[10px]">
+                        —
+                      </div>
                     )}
-                    <p className="text-chalk-dim text-[11px] uppercase tracking-[0.12em]">
-                      {p.position}
-                      {p.teamId && p.teamName ? (
-                        <>
-                          {" · "}
-                          <Link
-                            to={teamPagePath(p.teamId)}
-                            className="text-accent hover:underline"
-                          >
-                            {p.teamName}
-                          </Link>
-                        </>
-                      ) : p.teamName ? (
-                        <>
-                          {" · "}
-                          <span className="text-accent">{p.teamName}</span>
-                        </>
-                      ) : null}
-                      {p.level ? ` · ${p.level}` : ""}
+                    <div className="min-w-0 flex-1">
+                      {p.playerId ? (
+                        <Link
+                          to={`/sports/mlb/player/${p.playerId}`}
+                          className="text-cream hover:text-accent text-[16px] font-medium"
+                        >
+                          {p.name}
+                        </Link>
+                      ) : (
+                        <p className="text-cream text-[16px] font-medium">{p.name}</p>
+                      )}
+                      <p className="text-chalk-dim text-[11px] uppercase tracking-[0.12em]">
+                        {p.position}
+                        {p.teamId && p.teamName ? (
+                          <>
+                            {" · "}
+                            <Link
+                              to={teamPagePath(p.teamId)}
+                              className="text-accent hover:underline"
+                            >
+                              {p.teamName}
+                            </Link>
+                          </>
+                        ) : p.teamName ? (
+                          <>
+                            {" · "}
+                            <span className="text-accent">{p.teamName}</span>
+                          </>
+                        ) : null}
+                        {p.level ? ` · ${p.level}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            {top100.data.length > 10 ? (
+              <button
+                type="button"
+                onClick={() => setShowFullTop100((v) => !v)}
+                className="text-accent w-full rounded-lg border border-accent/30 bg-accent/10 px-3 py-2.5 text-[12px] font-semibold uppercase tracking-[0.14em] transition hover:bg-accent/15"
+              >
+                {showFullTop100
+                  ? "Show top 10 only"
+                  : `View full Top 100 (${top100.data.length})`}
+              </button>
+            ) : null}
+          </>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <h2 className="rule-head">Farm system rankings</h2>
+          <p className="text-[11px] text-[#8b93a7]">By Pipeline Top 100 depth</p>
+        </div>
+        {farmRanks.isPending ? (
+          <p className="text-chalk flex items-center gap-2 text-[13px]">
+            <Loader2 size={14} className="animate-spin" /> Loading farm ranks…
+          </p>
+        ) : farmRanks.isError || !(farmRanks.data?.length) ? (
+          <p className="text-chalk text-[13px]">Farm rankings unavailable.</p>
+        ) : (
+          <ol className="bg-panel divide-y divide-white/[0.06] overflow-hidden rounded-xl border border-white/[0.08]">
+            {farmRanks.data.map((row) => (
+              <li key={row.teamId}>
+                <Link
+                  to={teamPagePath(row.teamId)}
+                  className="flex items-center gap-3 px-3 py-2.5 transition hover:bg-white/[0.03]"
+                >
+                  <span className="numeral text-accent w-7 text-center text-[15px] font-semibold">
+                    {row.rank}
+                  </span>
+                  <TeamMark teamId={row.teamId} size="xs" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-cream truncate text-[14px] font-medium">{row.teamName}</p>
+                    <p className="text-[11px] text-[#8b93a7]">
+                      {row.top100Count} in Top 100
+                      {row.bestRank != null ? ` · best #${row.bestRank}` : ""}
                     </p>
                   </div>
-                </div>
+                  <span className="numeral text-[12px] text-white/45">{row.abbrev}</span>
+                </Link>
               </li>
             ))}
           </ol>
@@ -327,7 +389,7 @@ export default function CardinalsProspectsPage() {
             </p>
           ) : (
             <>
-              {yesterday.data && yesterday.data.lines.length > 0 ? (
+              {yesterday.data && yesterday.data.lines.some((l) => l.played) ? (
                 <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
                   <div className="mb-3 flex items-baseline justify-between gap-3">
                     <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
@@ -338,7 +400,7 @@ export default function CardinalsProspectsPage() {
                     </p>
                   </div>
                   <ul className="space-y-3">
-                    {yesterday.data.lines.map((line) => (
+                    {yesterday.data.lines.filter((l) => l.played).map((line) => (
                       <li key={line.playerId}>
                         <Link
                           to={`/sports/mlb/player/${line.playerId}`}
@@ -354,7 +416,7 @@ export default function CardinalsProspectsPage() {
                               <p className="text-cream text-[14px] font-semibold">
                                 {line.playerName}
                               </p>
-                              {line.played && line.isWin != null && (
+                              {line.isWin != null && (
                                 <span
                                   className={cn(
                                     "text-[10px] font-bold uppercase tracking-[0.12em]",
@@ -366,12 +428,10 @@ export default function CardinalsProspectsPage() {
                               )}
                             </div>
                             <p className="mt-0.5 text-[12px] text-[#a8b0c2]">
-                              {line.played
-                                ? `${line.isHome ? "vs" : "@"} ${line.opponent}`
-                                : "No game / DNP"}
+                              {`${line.isHome ? "vs" : "@"} ${line.opponent}`}
                             </p>
                             <p className="numeral text-cream mt-1 text-[13px] leading-snug">
-                              {line.played ? line.summary || "—" : "Did not play"}
+                              {line.summary || "—"}
                             </p>
                           </div>
                         </Link>

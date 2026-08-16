@@ -2611,6 +2611,85 @@ Deno.serve(async (req: Request) => {
       return json({ error: e instanceof Error ? e.message : String(e), found: false }, 200);
     }
   }
+  if (body.action === "pipelineSelection") {
+    const slug = String(body.slug ?? "").trim();
+    const limit = Math.min(Math.max(Number(body.limit ?? 100) || 100, 1), 100);
+    if (!/^sel-pr-\d{4}-[a-z0-9-]+$/i.test(slug)) {
+      return json({ error: "Bad slug", rows: [] }, 400);
+    }
+    const query = `
+      query PipelineSelection($slug: String!, $limit: Int) {
+        getPlayerRankingsFromSelection(slug: $slug, limit: $limit) {
+          rank
+          playerEntity {
+            position
+            player {
+              id
+              fullName
+              primaryPosition { abbreviation }
+            }
+          }
+        }
+      }
+    `;
+    try {
+      const res = await timedFetch(
+        "https://data-graph.mlb.com/graphql",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            Origin: "https://www.mlb.com",
+            Referer: "https://www.mlb.com/prospects",
+            "User-Agent": UA,
+          },
+          body: JSON.stringify({ query, variables: { slug, limit } }),
+        },
+        FETCH_MS,
+      );
+      if (!res.ok) return json({ rows: [], status: res.status }, 200);
+      const payload = (await res.json()) as {
+        data?: {
+          getPlayerRankingsFromSelection?: {
+            rank?: number | null;
+            playerEntity?: {
+              position?: string | null;
+              player?: {
+                id?: number | null;
+                fullName?: string | null;
+                primaryPosition?: { abbreviation?: string | null } | null;
+              } | null;
+            } | null;
+          }[];
+        };
+      };
+      const rows = (payload.data?.getPlayerRankingsFromSelection ?? [])
+        .map((row) => {
+          const playerId = Number(row.playerEntity?.player?.id);
+          const rank = Number(row.rank);
+          if (!Number.isFinite(playerId) || playerId <= 0 || !Number.isFinite(rank) || rank <= 0) {
+            return null;
+          }
+          return {
+            rank,
+            playerId,
+            name: row.playerEntity?.player?.fullName ?? null,
+            position:
+              row.playerEntity?.position ??
+              row.playerEntity?.player?.primaryPosition?.abbreviation ??
+              null,
+          };
+        })
+        .filter(Boolean);
+      return json({ rows, slug });
+    } catch (e) {
+      return json(
+        { error: e instanceof Error ? e.message : String(e), rows: [] },
+        200,
+      );
+    }
+  }
   if (body.action === "playerBio") {
     const playerId = Number(body.playerId);
     const name = String(body.name ?? "").trim();

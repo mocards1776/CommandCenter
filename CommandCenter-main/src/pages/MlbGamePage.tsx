@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Loader2, Star, Tag } from "lucide-react";
+import { ArrowLeft, ExternalLink, Eye, Loader2, Star } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import HighlightReel from "@/components/sports/HighlightReel";
 import MlbLiveMatchupPanel from "@/components/sports/MlbLiveMatchupPanel";
+import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import TeamMark from "@/components/sports/TeamMark";
 import { TeamFormChips, TeamStandingLine } from "@/components/sports/TeamFormChips";
@@ -1852,12 +1853,11 @@ function PlayerWatchMark({ kind }: { kind: PlayerWatchKind | null }) {
   if (kind === "tagged") {
     return (
       <span
-        className="inline-flex items-center gap-0.5 rounded-sm bg-[#7eb6ff]/15 px-1 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-[#7eb6ff]"
-        title="Tagged"
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-violet-400/20 text-violet-200"
+        title="Watch / tagged"
         aria-label="Tagged"
       >
-        <Tag size={9} strokeWidth={2.5} />
-        Tag
+        <Eye size={10} strokeWidth={2.6} />
       </span>
     );
   }
@@ -1889,11 +1889,6 @@ function TopPerformersSummary({
 
   if (!topBatters.length && !winPitcher) return null;
 
-  const sideFor = (id: number) =>
-    game.away.batters.some((b) => b.id === id) || game.away.pitchers.some((p) => p.id === id)
-      ? game.away
-      : game.home;
-
   return (
     <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
       <div className="border-b border-white/[0.07] px-4 py-2.5">
@@ -1903,7 +1898,6 @@ function TopPerformersSummary({
       </div>
       <ul className="divide-y divide-white/[0.06]">
         {topBatters.map((b) => {
-          const side = sideFor(b.id);
           const line = [
             b.h ? `${b.h} H` : null,
             b.hr ? `${b.hr} HR` : null,
@@ -1914,7 +1908,12 @@ function TopPerformersSummary({
             .join(" · ");
           return (
             <li key={`bat-${b.id}`} className="flex items-center gap-3 px-4 py-2.5">
-              <TeamMark teamId={side.teamId} size="xs" />
+              <PlayerHeadshot
+                playerId={b.id}
+                size={213}
+                className="h-10 w-10 shrink-0 rounded-full ring-1 ring-white/15"
+                alt=""
+              />
               <div className="min-w-0 flex-1">
                 <Link
                   to={`/sports/mlb/player/${b.id}`}
@@ -1924,7 +1923,7 @@ function TopPerformersSummary({
                   <PlayerWatchMark kind={playerWatchKind(b.id, favoriteIds, taggedIds)} />
                 </Link>
                 <p className="numeral text-[11px] text-[#a8b0c2]">
-                  {side.abbrev}
+                  {b.teamAbbrev}
                   {b.position ? ` · ${b.position}` : ""}
                   {line ? ` · ${line}` : ""}
                 </p>
@@ -1934,7 +1933,12 @@ function TopPerformersSummary({
         })}
         {winPitcher ? (
           <li className="flex items-center gap-3 px-4 py-2.5">
-            <TeamMark teamId={sideFor(winPitcher.id).teamId} size="xs" />
+            <PlayerHeadshot
+              playerId={winPitcher.id}
+              size={213}
+              className="h-10 w-10 shrink-0 rounded-full ring-1 ring-white/15"
+              alt=""
+            />
             <div className="min-w-0 flex-1">
               <Link
                 to={`/sports/mlb/player/${winPitcher.id}`}
@@ -1946,7 +1950,7 @@ function TopPerformersSummary({
                 />
               </Link>
               <p className="numeral text-[11px] text-[#a8b0c2]">
-                {sideFor(winPitcher.id).abbrev} · {winPitcher.ip} IP · {winPitcher.h} H ·{" "}
+                {winPitcher.teamAbbrev} · {winPitcher.ip} IP · {winPitcher.h} H ·{" "}
                 {winPitcher.er} ER · {winPitcher.so} K
                 {pitcherDecision(winPitcher.note) === "W" ? " · W" : ""}
               </p>

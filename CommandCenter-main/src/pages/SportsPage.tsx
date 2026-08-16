@@ -23,7 +23,7 @@ import {
 } from "@/components/sports/MlbTeamExtras";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
-import { fetchTeamCurrentGame, mlbHeadshot, teamPagePath } from "@/lib/mlb";
+import { fetchMlbFarmSystemRankings, fetchTeamCurrentGame, mlbHeadshot, teamPagePath } from "@/lib/mlb";
 import {
   DEFAULT_FAVORITES,
   ensureFavoriteTeamsSeeded,
@@ -173,6 +173,7 @@ function TeamCard({
   mlbTeamId,
   onOpen,
   promotionLine,
+  farmRank,
 }: {
   snap: TeamSnapshot;
   accent?: string;
@@ -180,6 +181,8 @@ function TeamCard({
   onOpen: () => void;
   /** e.g. "Promotion 86% (−614)" for Championship clubs. */
   promotionLine?: string | null;
+  /** Pipeline Top-100 farm system rank, e.g. 4. */
+  farmRank?: number | null;
 }) {
   const bar = accent ? `#${accent}` : "var(--color-accent)";
   const logo =
@@ -219,6 +222,11 @@ function TeamCard({
               <span className="text-chalk text-[11.5px]">{snap.standing}</span>
             )}
           </div>
+          {farmRank != null && farmRank > 0 ? (
+            <p className="mt-1.5 text-[11px] font-medium tracking-wide text-emerald-300/90">
+              Farm #{farmRank}
+            </p>
+          ) : null}
           {promotionLine ? (
             <p className="text-accent/90 mt-1.5 text-[11px] font-medium tracking-wide">
               {promotionLine}
@@ -569,6 +577,19 @@ export default function SportsPage() {
     retry: 1,
   });
 
+  const farmRanks = useQuery({
+    queryKey: ["mlb-farm-system-ranks"],
+    queryFn: fetchMlbFarmSystemRankings,
+    staleTime: 600_000,
+    retry: 1,
+  });
+
+  const farmRankByTeamId = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const row of farmRanks.data ?? []) map.set(row.teamId, row.rank);
+    return map;
+  }, [farmRanks.data]);
+
   const promotionByTeamId = useMemo(() => {
     const map = new Map<string, string>();
     for (const row of promotionOdds.data ?? []) {
@@ -673,6 +694,11 @@ export default function SportsPage() {
               snap={q.data}
               accent={byKeyFav.get(fav.key)?.color}
               mlbTeamId={byKeyFav.get(fav.key)?.mlbTeamId}
+              farmRank={
+                byKeyFav.get(fav.key)?.mlbTeamId
+                  ? farmRankByTeamId.get(byKeyFav.get(fav.key)!.mlbTeamId!) ?? null
+                  : null
+              }
               promotionLine={
                 /soccer\/eng\.2/i.test(fav.espnPath)
                   ? promotionByTeamId.get(fav.espnPath.split("/").pop() ?? "") ?? null
