@@ -792,8 +792,14 @@ function pageMeta(html: string) {
     html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
     html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1] ||
     null;
+  const cleanTitle = title
+    ? stripTags(title)
+        .replace(/https?:\/\/\S+/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    : null;
   return {
-    title: title ? stripTags(title) : null,
+    title: cleanTitle,
     byline: byline ? stripTags(byline) : null,
     image,
   };

@@ -406,7 +406,8 @@ export function visibleFavorites(layout: SportsLayout): SportsFavorite[] {
     .filter((f): f is SportsFavorite => f != null && !hidden.has(f.key));
 }
 
-async function espnGet(path: string): Promise<unknown> {
+/** ESPN site API with direct hosts first, then sports-edge proxy (Akamai/CORS safe). */
+export async function espnGet(path: string): Promise<unknown> {
   const clean = path.replace(/^\/+/, "");
   const headers = { Accept: "application/json" };
   const hosts = [
@@ -426,6 +427,38 @@ async function espnGet(path: string): Promise<unknown> {
     } catch {
       /* try next */
     }
+  }
+
+  // Prefer direct fetch to the edge (supabase-js invoke can drop large scoreboards).
+  try {
+    const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    if (base && key) {
+      const ctl = new AbortController();
+      const t = window.setTimeout(() => ctl.abort(), 20000);
+      try {
+        const res = await fetch(`${base}/functions/v1/sports`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+            apikey: key,
+          },
+          body: JSON.stringify({ path: clean }),
+          signal: ctl.signal,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && typeof data === "object" && !(data as { error?: string }).error) {
+            return data;
+          }
+        }
+      } finally {
+        window.clearTimeout(t);
+      }
+    }
+  } catch {
+    /* fall through */
   }
 
   const { data, error } = await supabase.functions.invoke("sports", {

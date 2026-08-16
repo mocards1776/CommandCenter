@@ -608,8 +608,9 @@
     font-size: 0.85em;
   }
   .rss-reader .mlb-standings-logo {
-    width: 22px;
-    height: 22px;
+    width: 22px !important;
+    height: 22px !important;
+    max-width: 22px !important;
     flex: 0 0 auto;
     object-fit: contain;
     background: #fff;

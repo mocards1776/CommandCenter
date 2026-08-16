@@ -1402,6 +1402,8 @@ function EspnBoxBoard({
         taggedIds={taggedPlayerIds}
       />
 
+      <TopProspectsInGame game={game} prospectRanks={prospectRanks} />
+
       {afterLinescore}
 
       <TeamBoxSection
@@ -1419,6 +1421,89 @@ function EspnBoxBoard({
         form={homeForm}
       />
     </div>
+  );
+}
+
+function TopProspectsInGame({
+  game,
+  prospectRanks,
+}: {
+  game: MlbBoxscore;
+  prospectRanks?: Map<number, number>;
+}) {
+  const prospects = useMemo(() => {
+    if (!prospectRanks?.size) return [];
+    type Row = {
+      id: number;
+      name: string;
+      teamId: number;
+      teamAbbrev: string;
+      position: string | null;
+      rank: number;
+    };
+    const byId = new Map<number, Row>();
+    const consider = (
+      id: number,
+      name: string,
+      teamId: number,
+      teamAbbrev: string,
+      position: string | null,
+    ) => {
+      const rank = prospectRanks.get(id);
+      if (rank == null || rank <= 0) return;
+      const prev = byId.get(id);
+      if (!prev || rank < prev.rank) {
+        byId.set(id, { id, name, teamId, teamAbbrev, position, rank });
+      }
+    };
+    for (const side of [game.away, game.home]) {
+      for (const b of side.batters) {
+        consider(b.id, b.name, side.teamId, side.abbrev, b.position);
+      }
+      for (const p of side.pitchers) {
+        consider(p.id, p.name, side.teamId, side.abbrev, "P");
+      }
+    }
+    return [...byId.values()].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+  }, [game, prospectRanks]);
+
+  if (!prospects.length) return null;
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+      <div className="border-b border-white/[0.07] px-4 py-2.5">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+          Top prospects in this game
+        </h2>
+      </div>
+      <ul className="divide-y divide-white/[0.06]">
+        {prospects.map((p) => (
+          <li key={p.id} className="flex items-center gap-3 px-4 py-2.5">
+            <img
+              src={mlbHeadshot(p.id, 213)}
+              alt=""
+              width={36}
+              height={36}
+              className="h-9 w-9 rounded-full bg-white/10 object-cover object-top"
+              loading="lazy"
+            />
+            <div className="min-w-0 flex-1">
+              <Link
+                to={`/sports/mlb/player/${p.id}`}
+                className="text-cream inline-flex items-center gap-1.5 text-[14px] font-semibold hover:text-accent hover:underline"
+              >
+                <span className="text-accent numeral text-[12px] font-bold">#{p.rank}</span>
+                {p.name}
+              </Link>
+              <p className="text-[11px] text-[#8b93a7]">
+                {p.teamAbbrev}
+                {p.position ? ` · ${p.position}` : ""}
+              </p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

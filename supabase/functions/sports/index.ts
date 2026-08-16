@@ -1877,8 +1877,9 @@ async function scrapePipelineScouting(playerId: number): Promise<Record<string, 
     }
   `;
   const slugs = [
-    `sel-pr-${year}-cardinals`,
     `sel-pr-${year}-top100`,
+    `sel-pr-${year}-cardinals`,
+    `sel-pr-${year - 1}-top100`,
     `sel-pr-${year - 1}-cardinals`,
   ];
 

@@ -2,6 +2,17 @@
 
 ---
 
+## Dispatch wraps, MiLB, prospects, standings — August 16, 2026
+
+- Filter AP/Data Skrive auto-wires (and FanDuel game-update stubs) out of Cardinals/MLB feeds.
+- Clean mashed article titles (trailing URLs) and scrub Pre-Gamin / game-thread chrome.
+- MLB standings digest: keep team logos tiny (no full-bleed hero from the first logo).
+- MLB / NFL / soccer wraps route ESPN scoreboards through the sports edge when Akamai blocks the browser; Wrexham & Wolves pull Championship + PL boards.
+- Farm wraps: Single-A and up only; affiliate logos on every recap; L5/L10/L20 works for MiLB teams.
+- Prospects: prefer league Top-100 ranks (org Top-30 always has a fallback number); new “Top prospects in this game” section on box scores.
+
+---
+
 ## Player profile: WAR deploy, tags, double-tap — August 16, 2026
 
 - Deploy sports edge WAR scrape (MLB id redirect + year-row parse; skip league-rank timeout) so hero WAR stops showing `—`.

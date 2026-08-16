@@ -46,6 +46,7 @@ import {
   applyRssFilters,
   articlePublisherLabel,
   articleSourceHost,
+  cleanArticleTitle,
   contentHidePhrases,
   createRssHighlight,
   feedSourceLabel,
@@ -845,7 +846,7 @@ function MlbGameArticleShell({
             {item.author || "Farm wrap"}
           </p>
           <h2 className="font-rss text-cream mt-1 text-[22px] font-semibold leading-snug md:text-[26px]">
-            {item.title}
+            {cleanArticleTitle(item.title)}
           </h2>
         </div>
         <MlbGameDetail gamePk={String(gamePk)} boxFirst />
@@ -1116,7 +1117,7 @@ function ArticleReaderShell({
     return () => window.removeEventListener("keydown", onKey);
   }, [hasPrev, hasNext, onPrev, onNext, pendingQuote, lightboxSrc]);
 
-  const title = article.data?.title || item.title;
+  const title = cleanArticleTitle(article.data?.title || item.title);
   const byline = article.data?.byline || item.author;
   const publisher = articlePublisherLabel(item.link, byline);
   const rawImage = article.data?.image || item.image;
@@ -1773,7 +1774,7 @@ function ArticleRow({
               read ? "text-chalk" : "text-cream",
             )}
           >
-            {item.title}
+            {cleanArticleTitle(item.title)}
           </h3>
           {item.snippet ? (
             <p className="font-rss text-chalk mt-1 line-clamp-2 text-[14px] leading-relaxed">

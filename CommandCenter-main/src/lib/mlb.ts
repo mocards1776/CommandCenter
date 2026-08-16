@@ -6079,14 +6079,14 @@ export const CARDINALS_PROSPECT_SEEDS: MlbProspectSeed[] = [
   { rank: 20, name: "Sebastian Dos Santos", position: "SS", playerId: 829741 },
 ];
 
-/** Live Cardinals Pipeline ranks (playerId → org rank). Falls back to seeds. */
+/** Live prospect ranks: prefer MLB Top-100 league-wide, else Cardinals org Pipeline. */
 export async function fetchCardinalsPipelineRankMap(): Promise<Map<number, number>> {
   const out = new Map<number, number>();
+  // Seed org ranks so Top-30 prospects always have a number even if GraphQL fails.
   for (const seed of CARDINALS_PROSPECT_SEEDS) {
     if (seed.playerId) out.set(seed.playerId, seed.rank);
   }
   const year = new Date().getFullYear();
-  const slugs = [`sel-pr-${year}-cardinals`, `sel-pr-${year - 1}-cardinals`];
   const query = `
     query PipelineSelection($slug: String!, $limit: Int) {
       getPlayerRankingsFromSelection(slug: $slug, limit: $limit) {
@@ -6095,7 +6095,9 @@ export async function fetchCardinalsPipelineRankMap(): Promise<Map<number, numbe
       }
     }
   `;
-  for (const slug of slugs) {
+
+  async function loadSlug(slug: string, limit: number): Promise<Map<number, number>> {
+    const map = new Map<number, number>();
     try {
       const res = await fetch("https://data-graph.mlb.com/graphql", {
         method: "POST",
@@ -6103,11 +6105,11 @@ export async function fetchCardinalsPipelineRankMap(): Promise<Map<number, numbe
           "Content-Type": "application/json",
           Accept: "application/json",
           Origin: typeof window !== "undefined" ? window.location.origin : "https://www.mlb.com",
-          Referer: "https://www.mlb.com/cardinals/prospects",
+          Referer: "https://www.mlb.com/prospects",
         },
-        body: JSON.stringify({ query, variables: { slug, limit: 40 } }),
+        body: JSON.stringify({ query, variables: { slug, limit } }),
       });
-      if (!res.ok) continue;
+      if (!res.ok) return map;
       const payload = (await res.json()) as {
         data?: {
           getPlayerRankingsFromSelection?: {
@@ -6116,19 +6118,32 @@ export async function fetchCardinalsPipelineRankMap(): Promise<Map<number, numbe
           }[];
         };
       };
-      const rows = payload.data?.getPlayerRankingsFromSelection ?? [];
-      if (!rows.length) continue;
-      out.clear();
-      for (const row of rows) {
+      for (const row of payload.data?.getPlayerRankingsFromSelection ?? []) {
         const id = Number(row.playerEntity?.player?.id);
         const rank = Number(row.rank);
         if (Number.isFinite(id) && id > 0 && Number.isFinite(rank) && rank > 0) {
-          out.set(id, rank);
+          map.set(id, rank);
         }
       }
-      if (out.size) return out;
     } catch {
-      /* try next slug / keep seeds */
+      /* keep empty */
+    }
+    return map;
+  }
+
+  // Org list first (fills Top-30), then overlay Top-100 so league-wide numbers win.
+  for (const slug of [`sel-pr-${year}-cardinals`, `sel-pr-${year - 1}-cardinals`]) {
+    const org = await loadSlug(slug, 40);
+    if (org.size) {
+      for (const [id, rank] of org) out.set(id, rank);
+      break;
+    }
+  }
+  for (const slug of [`sel-pr-${year}-top100`, `sel-pr-${year - 1}-top100`]) {
+    const top = await loadSlug(slug, 100);
+    if (top.size) {
+      for (const [id, rank] of top) out.set(id, rank);
+      break;
     }
   }
   return out;
@@ -6200,8 +6215,9 @@ export async function fetchCardinalsProspectWatch(): Promise<MlbProspectCard[]> 
 
 export async function fetchCardinalsFarmAffiliates(): Promise<MlbFarmAffiliate[]> {
   const season = currentSeason();
+  // Single-A and up only (skip Rookie / complex: 15, 16).
   const raw = (await mlbGet("teams", {
-    sportIds: "11,12,13,14,15,16",
+    sportIds: "11,12,13,14",
     season: String(season),
     hydrate: "sport",
   })) as {
@@ -6213,9 +6229,13 @@ export async function fetchCardinalsFarmAffiliates(): Promise<MlbFarmAffiliate[]
       sport?: { id?: number; name?: string };
     }[];
   };
-  const levelOrder = ["Triple-A", "Double-A", "High-A", "Single-A", "Rookie"];
+  const levelOrder = ["Triple-A", "Double-A", "High-A", "Single-A"];
   const affiliates = (raw.teams ?? [])
     .filter((t) => t.parentOrgId === 138 && t.id)
+    .filter((t) => {
+      const level = t.sport?.name ?? "";
+      return !/rookie|complex|dsl|acl|fcl/i.test(level);
+    })
     .map((t) => ({
       teamId: t.id!,
       name: t.name ?? "Affiliate",
@@ -6380,6 +6400,9 @@ export type MlbFarmGameWrap = {
   level: string;
   affiliateTeamId: number;
   officialDate: string;
+  /** Away + home MLB team ids for list thumbnails. */
+  logoTeamIds: number[];
+  image: string | null;
 };
 
 function escHtml(s: string): string {
@@ -6463,6 +6486,9 @@ export async function fetchCardinalsFarmGameWraps(days = 5): Promise<MlbFarmGame
             if (!pk || seen.has(pk)) continue;
             const abstract = g.status?.abstractGameState ?? "";
             if (abstract !== "Final") continue;
+            // Belt-and-suspenders: never surface Rookie / complex wraps.
+            if (aff.sportId === 15 || aff.sportId === 16) continue;
+            if (/rookie|complex|dsl|acl|fcl/i.test(aff.level)) continue;
             seen.add(pk);
             const away = g.teams?.away;
             const home = g.teams?.home;
@@ -6587,6 +6613,8 @@ export async function fetchCardinalsFarmGameWraps(days = 5): Promise<MlbFarmGame
           level,
           affiliateTeamId,
           officialDate: g.officialDate,
+          logoTeamIds: [g.awayId, g.homeId].filter((id) => id > 0),
+          image: mlbTeamLogo(affiliateTeamId),
         } satisfies MlbFarmGameWrap;
       }),
     );

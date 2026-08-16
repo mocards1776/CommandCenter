@@ -588,6 +588,9 @@ export const DEFAULT_CONTENT_HIDES = [
   "sportsmlbcubschicago cubs",
   "sportsmlbcubs",
   "sports mlbchicago cubs",
+  "the associated press created this story using technology provided by data skrive",
+  "created this story using technology provided by data skrive",
+  "data from sportradar",
 ] as const;
 
 /** Collect user content-hide phrases plus built-in MLB clutter patterns. */
@@ -841,7 +844,11 @@ export function scrubReaderChrome(html: string): string {
       /^sportsmlb/i.test(text.replace(/\s+/g, "")) ||
       /^(?:facebook|twitter|bluesky|whatsapp|sms|email|print|copy link|save|close|log in)$/i.test(
         raw,
-      )
+      ) ||
+      // Bare URL chrome, or Pre-Gamin / game-thread title with a glued URL.
+      /^https?:\/\/\S+$/i.test(raw) ||
+      (/https?:\/\/\S+/i.test(raw) &&
+        /pre-?gamin|game\s*thread|lineups?,?\s*broadcast/i.test(raw))
     ) {
       kill.add(el);
     }
@@ -924,6 +931,38 @@ export function isMlbFilmRoomArticle(item: Pick<RssFeedItem, "link" | "title">):
   } catch {
     return /mlb\.com\/(?:[a-z-]+\/)?video\//i.test(item.link);
   }
+}
+
+/**
+ * AP / Data Skrive / Sportradar auto-wires (e.g. "rookie makes history with 3 HRs").
+ * Drop from Wire / Cardinals folder — not real reporting.
+ */
+export function isDataSkriveArticle(
+  item: Pick<RssFeedItem, "link" | "title" | "snippet"> & { author?: string | null },
+): boolean {
+  const hay = `${item.title} ${item.snippet ?? ""} ${item.author ?? ""} ${item.link}`.toLowerCase();
+  if (/data[\s-]?skrive|sportradar/.test(hay)) return true;
+  if (/associated press created this story/i.test(hay)) return true;
+  // FanDuel / DraftKings auto game-update stubs.
+  if (/fanduel\.com\/research\/mlb\/player-news\/game-updates/i.test(item.link)) return true;
+  // Classic Skrive headline templates on ESPN / AP wires.
+  if (
+    /\bmakes history with\b/i.test(item.title) ||
+    /\bsets (?:an )?mlb record\b/i.test(item.title) ||
+    /\bsets a(?:n)? (?:mlb|major league) record\b/i.test(item.title)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Strip a trailing URL accidentally glued onto a title (Bleacher Nation etc.). */
+export function cleanArticleTitle(title: string | null | undefined): string {
+  if (!title) return "";
+  return title
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function escapeRegExp(value: string): string {
@@ -1231,6 +1270,17 @@ export function articleMatchesFilters(
   const effectiveFeed = (feedId ?? item.feedId)?.toLowerCase() ?? null;
   // Wire-only: drop MLB Film Room clips; keep mlb.com/news and other hosts.
   if (effectiveFeed === "cardinals-wire" && isMlbFilmRoomArticle(item)) return true;
+  // Auto-generated AP / Data Skrive wires + FanDuel game stubs.
+  if (
+    (effectiveFeed === "cardinals-wire" ||
+      effectiveFeed === "cardinals" ||
+      effectiveFeed === "folder:cardinals" ||
+      effectiveFeed === "mlb" ||
+      effectiveFeed === "folder:mlb") &&
+    isDataSkriveArticle(item)
+  ) {
+    return true;
+  }
   // Cardinals folder feeds: drop league filler that never mentions the club.
   if (
     (effectiveFeed === "cardinals-wire" ||
@@ -1414,6 +1464,13 @@ export function firstContentImageUrl(html: string | null | undefined): string | 
   const root = doc.getElementById("root");
   if (!root) return null;
   for (const img of root.querySelectorAll("img")) {
+    // Tiny standings / leaderboard logos must not become the article hero.
+    if (
+      img.classList.contains("mlb-standings-logo") ||
+      img.closest(".mlb-standings-table, .mlb-standings-feed, .mlb-leader-card")
+    ) {
+      continue;
+    }
     const src = img.getAttribute("src") || "";
     if (/^https?:/i.test(src) && scoreImageUrl(src) > 0) return src;
   }
@@ -1621,21 +1678,47 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
     });
   }
   if (feedUrl === "synthetic:soccer-clubs-wraps") {
-    return fetchEspnWrapsFeed({
-      feedUrl,
-      title: "Wrexham & Wolves wraps",
-      description: "Wrexham and Wolverhampton game wraps and previews from ESPN",
-      sportPath: "soccer/eng.2",
-      linkSport: "soccer",
-      teamFilters: [
-        { espnId: "352", abbrev: "WXM" },
-        { espnId: "380", abbrev: "WOL" },
+    // Wrexham (Championship) + Wolves (often PL) — pull both league scoreboards.
+    return fetchMergedEspnWrapsFeeds(
+      [
+        {
+          feedUrl,
+          title: "Wrexham & Wolves wraps",
+          description: "Wrexham and Wolverhampton game wraps and previews from ESPN",
+          sportPath: "soccer/eng.2",
+          linkSport: "soccer",
+          teamFilters: [
+            { espnId: "352", abbrev: "WXM" },
+            { espnId: "380", abbrev: "WOL" },
+          ],
+          days: 21,
+          maxItems: 40,
+          preferFinals: true,
+          stubWithoutArticle: true,
+        },
+        {
+          feedUrl,
+          title: "Wrexham & Wolves wraps",
+          description: "Wrexham and Wolverhampton game wraps and previews from ESPN",
+          sportPath: "soccer/eng.1",
+          linkSport: "soccer",
+          teamFilters: [
+            { espnId: "352", abbrev: "WXM" },
+            { espnId: "380", abbrev: "WOL" },
+          ],
+          days: 14,
+          maxItems: 40,
+          preferFinals: true,
+          stubWithoutArticle: true,
+        },
       ],
-      days: 21,
-      maxItems: 40,
-      preferFinals: true,
-      stubWithoutArticle: true,
-    });
+      {
+        title: "Wrexham & Wolves wraps",
+        description: "Wrexham and Wolverhampton game wraps and previews from ESPN",
+        feedUrl,
+        link: "https://www.espn.com/soccer/",
+      },
+    );
   }
   if (feedUrl === "synthetic:epl-wraps") {
     return fetchEspnWrapsFeed({
@@ -1723,6 +1806,36 @@ export async function fetchTagPlayerFeed(feedUrl: string): Promise<RssFeed> {
   };
 }
 
+/** Merge multiple ESPN wrap feeds (dedupe by link/id) — used for multi-league club boards. */
+async function fetchMergedEspnWrapsFeeds(
+  optsList: EspnWrapsOpts[],
+  meta: { title: string; description: string; feedUrl: string; link: string },
+): Promise<RssFeed> {
+  const feeds = await Promise.all(optsList.map((o) => fetchEspnWrapsFeed(o)));
+  const seen = new Set<string>();
+  const items: RssFeedItem[] = [];
+  for (const feed of feeds) {
+    for (const item of feed.items) {
+      const key = item.link || item.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push(item);
+    }
+  }
+  items.sort((a, b) => {
+    const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
+    const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
+    return db - da;
+  });
+  return {
+    title: meta.title,
+    description: meta.description,
+    link: meta.link,
+    feedUrl: meta.feedUrl,
+    items: items.slice(0, 48),
+  };
+}
+
 type EspnWrapsOpts = {
   feedUrl: string;
   title: string;
@@ -1798,6 +1911,16 @@ function mlbIdsFromEspnAbbrevs(abbrevs: (string | null | undefined)[]): number[]
   return out;
 }
 
+/** ESPN scoreboard/summary via sports.ts (edge proxy when Akamai blocks the browser). */
+async function espnSiteJson(path: string): Promise<unknown | null> {
+  try {
+    const { espnGet } = await import("./sports");
+    return await espnGet(path);
+  } catch {
+    return null;
+  }
+}
+
 /** Client-side ESPN game wrap + preview feed (reachable from the browser). */
 async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   const days = opts.days ?? 7;
@@ -1841,14 +1964,13 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
     const day = String(d.getDate()).padStart(2, "0");
     const dateStr = `${y}${m}${day}`;
     try {
-      const boardRes = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard?dates=${dateStr}`,
-        { headers: { Accept: "application/json" } },
-      );
-      if (!boardRes.ok) continue;
-      const board = (await boardRes.json()) as {
+      const board = (await espnSiteJson(
+        `${sportPath}/scoreboard?dates=${dateStr}`,
+      )) as {
         events?: (typeof candidates)[number]["event"][];
-      };
+        error?: string;
+      } | null;
+      if (!board || board.error) continue;
 
       for (const event of board.events ?? []) {
         const comp = event.competitions?.[0];
@@ -1889,14 +2011,11 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   // NFL: also pull the undated "current week" scoreboard so preseason / bye weeks aren't missed.
   if (linkSport === "nfl" && candidates.length < 8) {
     try {
-      const boardRes = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard`,
-        { headers: { Accept: "application/json" } },
-      );
-      if (boardRes.ok) {
-        const board = (await boardRes.json()) as {
-          events?: (typeof candidates)[number]["event"][];
-        };
+      const board = (await espnSiteJson(`${sportPath}/scoreboard`)) as {
+        events?: (typeof candidates)[number]["event"][];
+        error?: string;
+      } | null;
+      if (board && !board.error) {
         for (const event of board.events ?? []) {
           const comp = event.competitions?.[0];
           if (!comp) continue;
@@ -1947,12 +2066,9 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
     const settled = await Promise.all(
       chunk.map(async (c) => {
         try {
-          const sumRes = await fetch(
-            `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/summary?event=${c.eventId}`,
-            { headers: { Accept: "application/json" } },
-          );
-          if (!sumRes.ok) return null;
-          const sum = (await sumRes.json()) as {
+          const sum = (await espnSiteJson(
+            `${sportPath}/summary?event=${c.eventId}`,
+          )) as {
             article?: {
               headline?: string;
               description?: string;
@@ -1969,7 +2085,9 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
                 links?: { href?: string }[];
               }[];
             };
-          };
+            error?: string;
+          } | null;
+          if (!sum || sum.error) return null;
           // Soccer (and some other sports) put wrap copy in news.articles, not article.
           const newsArticle = sum.news?.articles?.[0];
           const article = sum.article?.headline
@@ -2412,9 +2530,9 @@ async function fetchMlbFormStandingsFeed(): Promise<RssFeed> {
   };
 }
 
-/** Cardinals MiLB affiliate box-score wraps (Memphis → DSL). */
+/** Cardinals MiLB affiliate box-score wraps (Single-A and up). */
 async function fetchCardinalsFarmWrapsFeed(): Promise<RssFeed> {
-  const { fetchCardinalsFarmGameWraps } = await import("./mlb");
+  const { fetchCardinalsFarmGameWraps, mlbTeamLogo } = await import("./mlb");
   const wraps = await fetchCardinalsFarmGameWraps(5);
   const items: RssFeedItem[] = wraps.map((w) => ({
     id: `farm-wrap-${w.gamePk}`,
@@ -2422,14 +2540,15 @@ async function fetchCardinalsFarmWrapsFeed(): Promise<RssFeed> {
     link: `app:mlb-game/${w.gamePk}`,
     author: w.level,
     publishedAt: w.publishedAt,
-    image: null,
+    image: w.image ?? (w.logoTeamIds[0] != null ? mlbTeamLogo(w.logoTeamIds[0]) : null),
     snippet: w.snippet,
     contentHtml: w.contentHtml,
+    logoTeamIds: w.logoTeamIds,
   }));
 
   return {
     title: "Cardinals farm wraps",
-    description: "Box scores and summaries for St. Louis Cardinals minor-league affiliates",
+    description: "Box scores and summaries for St. Louis Cardinals affiliates (Single-A and up)",
     link: "/sports/mlb/prospects",
     feedUrl: "synthetic:cardinals-farm",
     items,

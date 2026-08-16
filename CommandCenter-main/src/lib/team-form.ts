@@ -41,19 +41,29 @@ function addDaysIso(iso: string, delta: number): string {
   return d.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
 }
 
-/** MLB team form from recent finals on the schedule. */
-export async function fetchMlbTeamForm(teamId: number): Promise<TeamFormStrip> {
+/** MLB / MiLB team form from recent finals on the schedule. */
+export async function fetchMlbTeamForm(
+  teamId: number,
+  sportId?: number | null,
+): Promise<TeamFormStrip> {
   const end = chicagoToday();
   const start = addDaysIso(end, -45);
+  // Include Single-A → MLB so farm game pages get L5/L10/L20.
+  const sportIds =
+    sportId != null && sportId > 0 && sportId !== 1
+      ? String(sportId)
+      : "1,11,12,13,14";
   const [schedRes, standRes] = await Promise.all([
     fetch(
-      `https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${teamId}&startDate=${start}&endDate=${end}`,
+      `https://statsapi.mlb.com/api/v1/schedule?sportIds=${sportIds}&teamId=${teamId}&startDate=${start}&endDate=${end}`,
       { headers: { Accept: "application/json" } },
     ),
-    fetch(
-      `https://statsapi.mlb.com/api/v1/standings?leagueId=103,104&season=${end.slice(0, 4)}&standingsTypes=regularSeason`,
-      { headers: { Accept: "application/json" } },
-    ),
+    sportId != null && sportId > 1
+      ? Promise.resolve(null)
+      : fetch(
+          `https://statsapi.mlb.com/api/v1/standings?leagueId=103,104&season=${end.slice(0, 4)}&standingsTypes=regularSeason`,
+          { headers: { Accept: "application/json" } },
+        ),
   ]);
   const wins: boolean[] = [];
   let abbrev = "—";
@@ -105,7 +115,7 @@ export async function fetchMlbTeamForm(teamId: number): Promise<TeamFormStrip> {
   }
 
   let standing: string | null = null;
-  if (standRes.ok) {
+  if (standRes?.ok) {
     const stand = (await standRes.json()) as {
       records?: {
         league?: { id?: number; name?: string };
