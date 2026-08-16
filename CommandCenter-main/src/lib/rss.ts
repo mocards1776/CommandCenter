@@ -2634,15 +2634,120 @@ async function fetchCardinalsFarmWrapsFeed(): Promise<RssFeed> {
   };
 }
 
-export function fetchRssArticle(url: string): Promise<RssArticle> {
-  return invokeRss<RssArticle>({ mode: "read", url }).catch(async (err) => {
+const EXTRACT_SESSION_PREFIX = "rss-extract-v1:";
+const EXTRACT_SESSION_TTL_MS = 45 * 60_000;
+const EXTRACT_SESSION_MAX = 28;
+const EXTRACT_SESSION_MAX_BYTES = 180_000;
+
+type ExtractSessionEntry = { at: number; data: RssArticle };
+
+function readExtractSession(url: string): RssArticle | null {
+  try {
+    const raw = sessionStorage.getItem(EXTRACT_SESSION_PREFIX + url);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ExtractSessionEntry;
+    if (!parsed?.data?.contentHtml || typeof parsed.at !== "number") return null;
+    if (Date.now() - parsed.at > EXTRACT_SESSION_TTL_MS) {
+      sessionStorage.removeItem(EXTRACT_SESSION_PREFIX + url);
+      return null;
+    }
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeExtractSession(article: RssArticle): void {
+  try {
+    if (!article?.url || !article.contentHtml) return;
+    if (article.contentHtml.length > EXTRACT_SESSION_MAX_BYTES) return;
+    const entry: ExtractSessionEntry = { at: Date.now(), data: article };
+    sessionStorage.setItem(EXTRACT_SESSION_PREFIX + article.url, JSON.stringify(entry));
+    // Bound growth — drop oldest extract keys first.
+    const keys: { key: string; at: number }[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (!key?.startsWith(EXTRACT_SESSION_PREFIX)) continue;
+      try {
+        const parsed = JSON.parse(sessionStorage.getItem(key) ?? "") as { at?: number };
+        keys.push({ key, at: typeof parsed.at === "number" ? parsed.at : 0 });
+      } catch {
+        keys.push({ key, at: 0 });
+      }
+    }
+    if (keys.length <= EXTRACT_SESSION_MAX) return;
+    keys.sort((a, b) => a.at - b.at);
+    for (const row of keys.slice(0, keys.length - EXTRACT_SESSION_MAX)) {
+      sessionStorage.removeItem(row.key);
+    }
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+/** True when opening this row needs the rss edge extract (not prebuilt / game UI). */
+export function articleNeedsEdgeExtract(
+  item: Pick<RssFeedItem, "link" | "contentHtml">,
+): boolean {
+  if (item.contentHtml) return false;
+  if (/espn\.com\/(?:mlb|nfl)\/(?:recap|preview|game)\b/i.test(item.link)) return false;
+  if (/espn\.com\/soccer\/(?:match|report|story)\b/i.test(item.link)) return false;
+  return /^https?:\/\//i.test(item.link);
+}
+
+export async function fetchRssArticle(url: string): Promise<RssArticle> {
+  const cached = readExtractSession(url);
+  if (cached) return cached;
+
+  try {
+    const article = await invokeRss<RssArticle>({ mode: "read", url });
+    writeExtractSession(article);
+    return article;
+  } catch (err) {
     // Edge IPs often get thin STL Today shells — decrypt in the browser as fallback.
     if (/stltoday\.com/i.test(url)) {
       const local = await extractStlTodayInBrowser(url).catch(() => null);
-      if (local) return local;
+      if (local) {
+        writeExtractSession(local);
+        return local;
+      }
     }
     throw err;
-  });
+  }
+}
+
+/**
+ * Warm extracts into the React Query cache (idle list / next-up reader).
+ * Limited concurrency so we don't stampede the edge function.
+ */
+export async function prefetchRssArticles(
+  urls: string[],
+  opts?: {
+    concurrency?: number;
+    signal?: AbortSignal;
+    prefetch?: (url: string) => Promise<unknown>;
+  },
+): Promise<void> {
+  const concurrency = Math.max(1, Math.min(opts?.concurrency ?? 2, 4));
+  const unique = [...new Set(urls.filter((u) => /^https?:\/\//i.test(u)))];
+  let cursor = 0;
+
+  const worker = async () => {
+    while (cursor < unique.length) {
+      if (opts?.signal?.aborted) return;
+      const idx = cursor++;
+      const url = unique[idx]!;
+      if (readExtractSession(url)) continue;
+      try {
+        if (opts?.prefetch) await opts.prefetch(url);
+        else await fetchRssArticle(url);
+      } catch {
+        /* best-effort warm */
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, unique.length) }, () => worker()));
 }
 
 /** Browser-side TownNews unlock for STL Today when the edge extract fails. */

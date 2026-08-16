@@ -67,12 +67,14 @@ import {
   deleteRssHighlight,
   feedIdsForFolder,
   isFeedFolderId,
+  articleNeedsEdgeExtract,
   fetchRssArticle,
   fetchRssFeed,
   fetchRssFilters,
   fetchRssHighlights,
   fetchRssReads,
   fetchRssSaves,
+  prefetchRssArticles,
   formatFeedDate,
   markRssRead,
   markRssReadMany,
@@ -2240,6 +2242,62 @@ export default function RssPage() {
     () => listItems.filter((it) => !readUrls.has(it.link)),
     [listItems, readUrls],
   );
+
+  // Pre-extract upcoming articles so opens / next-swipes don't wait on a cold scrape.
+  useEffect(() => {
+    const ac = new AbortController();
+    const warm = (urls: string[]) =>
+      prefetchRssArticles(urls, {
+        concurrency: 2,
+        signal: ac.signal,
+        prefetch: (url) =>
+          qc.prefetchQuery({
+            queryKey: ["rss-article-v2", url],
+            queryFn: () => fetchRssArticle(url),
+            staleTime: 10 * 60_000,
+          }),
+      });
+
+    const run = () => {
+      if (selected && selectedIndex >= 0) {
+        const neighbors = [1, 2, -1, 3]
+          .map((d) => navItems[selectedIndex + d])
+          .filter((it): it is RssFeedItemRef => Boolean(it))
+          .filter(articleNeedsEdgeExtract)
+          .map((it) => it.link);
+        void warm(neighbors);
+        return;
+      }
+      // Idle list: prefer unread rows, then the visible head of the feed.
+      const pool = (unreadInList.length ? unreadInList : listItems)
+        .filter(articleNeedsEdgeExtract)
+        .slice(0, 10)
+        .map((it) => it.link);
+      void warm(pool);
+    };
+
+    const ric = (
+      window as Window & {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+        cancelIdleCallback?: (id: number) => void;
+      }
+    ).requestIdleCallback;
+    const cic = (
+      window as Window & { cancelIdleCallback?: (id: number) => void }
+    ).cancelIdleCallback;
+    let idleId: number | null = null;
+    let timeoutId: number | null = null;
+    if (typeof ric === "function") {
+      idleId = ric(run, { timeout: 1500 });
+    } else {
+      timeoutId = window.setTimeout(run, 350);
+    }
+    return () => {
+      ac.abort();
+      if (idleId != null && typeof cic === "function") cic(idleId);
+      if (timeoutId != null) window.clearTimeout(timeoutId);
+    };
+  }, [selected, selectedIndex, navItems, listItems, unreadInList, qc]);
 
   const markAllReadMut = useMutation({
     mutationFn: () =>

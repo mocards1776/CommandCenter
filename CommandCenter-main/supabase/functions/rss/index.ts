@@ -9,6 +9,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 // POST body:
 //   { mode: "feed", feedUrl?: string }
 //   { mode: "read", url: string }
+// Successful extracts are kept in-memory briefly so idle prefetches make opens instant.
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -22,6 +23,45 @@ const BROWSER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
 
 const DEFAULT_FEED = "https://rss.app/feeds/nG7WGKJTs5LOQjxd.xml";
+
+/** Per-isolate extract cache — warms shared across concurrent / repeat reads. */
+const EXTRACT_MEM = new Map<string, { at: number; body: string }>();
+const EXTRACT_MEM_TTL_MS = 45 * 60_000;
+const EXTRACT_MEM_MAX = 220;
+
+function readExtractMem(url: string): Response | null {
+  const hit = EXTRACT_MEM.get(url);
+  if (!hit) return null;
+  if (Date.now() - hit.at > EXTRACT_MEM_TTL_MS) {
+    EXTRACT_MEM.delete(url);
+    return null;
+  }
+  return new Response(hit.body, {
+    status: 200,
+    headers: {
+      ...CORS,
+      "Content-Type": "application/json",
+      "Cache-Control": "private, max-age=120",
+      "X-Extract-Cache": "HIT",
+    },
+  });
+}
+
+function writeExtractMem(url: string, payload: unknown): void {
+  try {
+    const body = JSON.stringify(payload);
+    if (body.length > 400_000) return;
+    EXTRACT_MEM.set(url, { at: Date.now(), body });
+    if (EXTRACT_MEM.size <= EXTRACT_MEM_MAX) return;
+    // Drop oldest entries.
+    const ranked = [...EXTRACT_MEM.entries()].sort((a, b) => a[1].at - b[1].at);
+    for (const [key] of ranked.slice(0, EXTRACT_MEM.size - EXTRACT_MEM_MAX)) {
+      EXTRACT_MEM.delete(key);
+    }
+  } catch {
+    /* ignore */
+  }
+}
 
 const ALLOWED_TAGS = new Set([
   "p",
@@ -1010,6 +1050,9 @@ async function handleFeed(feedUrl: string) {
 async function handleRead(url: string) {
   if (!isPublicHttpUrl(url)) return json({ error: "Invalid article URL" }, 400);
 
+  const cached = readExtractMem(url);
+  if (cached) return cached;
+
   // ESPN game recaps: prefer the public summary API over brittle HTML scrapes.
   const espnStory =
     (await extractEspnRecapFromUrl(url).catch(() => null)) ||
@@ -1017,7 +1060,7 @@ async function handleRead(url: string) {
   if (espnStory) {
     let contentHtml = scrubContentHtml(sanitizeHtml(espnStory.html), espnStory.image);
     const contentText = stripTags(contentHtml);
-    return json({
+    const payload = {
       url,
       title: espnStory.title,
       byline: espnStory.byline,
@@ -1025,7 +1068,9 @@ async function handleRead(url: string) {
       contentHtml,
       contentText,
       wordCount: contentText.split(/\s+/).filter(Boolean).length,
-    });
+    };
+    writeExtractMem(url, payload);
+    return json(payload);
   }
 
   let rawHtml = "";
@@ -1036,7 +1081,7 @@ async function handleRead(url: string) {
     if (isMlbVideoUrl(url)) {
       const contentHtml = sanitizeHtml(mlbVideoFallbackHtml(url));
       const contentText = stripTags(contentHtml);
-      return json({
+      const payload = {
         url,
         title: null,
         byline: "MLB.com",
@@ -1044,7 +1089,9 @@ async function handleRead(url: string) {
         contentHtml,
         contentText,
         wordCount: contentText.split(/\s+/).filter(Boolean).length,
-      });
+      };
+      writeExtractMem(url, payload);
+      return json(payload);
     }
     throw err;
   }
@@ -1113,7 +1160,7 @@ async function handleRead(url: string) {
   // Prefer no hero image when the body already embeds a video (Film Room).
   const image = hasVideo ? null : meta.image;
   if (image) contentHtml = dedupeImages(contentHtml, image);
-  return json({
+  const payload = {
     url,
     title: meta.title,
     byline: meta.byline,
@@ -1121,7 +1168,9 @@ async function handleRead(url: string) {
     contentHtml,
     contentText,
     wordCount: contentText.split(/\s+/).filter(Boolean).length,
-  });
+  };
+  writeExtractMem(url, payload);
+  return json(payload);
 }
 
 async function extractEspnNewsStoryFromUrl(url: string): Promise<{

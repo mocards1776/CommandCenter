@@ -2,6 +2,14 @@
 
 ---
 
+## Pre-extract Dispatch articles — August 16, 2026
+
+- Idle feed lists warm the next ~10 extracts into React Query (unread first).
+- While reading, next/prev neighbors are prefetched so swipe-next is already cached.
+- Client sessionStorage + edge in-memory extract cache (~45 min) so repeat opens skip a cold scrape.
+
+---
+
 ## Harden wraps so feeds never go empty — August 16, 2026
 
 - If an ESPN summary fetch fails or preview copy is hollow, wrap feeds still emit scoreboard stubs (Final / Preview / Live) instead of dropping the game.
