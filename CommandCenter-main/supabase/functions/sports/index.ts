@@ -1670,15 +1670,6 @@ async function scrapePlayerExtras(
   };
 }
 
-function decodeHtmlEntities(s: string): string {
-  return s
-    .replace(/&amp;/g, "&")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#x27;/g, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
-}
 
 function parseCompactMoney(raw: string): number | null {
   const t = decodeHtmlEntities(raw).replace(/,/g, "").trim();
