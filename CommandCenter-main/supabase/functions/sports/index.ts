@@ -1594,9 +1594,16 @@ function parseBbrefSeasonAndCareerWar(
   let m: RegExpExecArray | null;
   while ((m = rowRe.exec(searchable))) {
     const row = m[1];
-    if (/thead|colhead|over_header/i.test(row)) continue;
+    // Skip headers + summary rows (162 Game Avg, multi-year team/league totals).
+    if (
+      /thead|colhead|over_header|162\s*Game|colspan\s*=\s*["']?\d/i.test(row) ||
+      /data-stat="year_id"[^>]*>\s*(?:<[^>]+>)?\s*Yrs\b/i.test(row)
+    ) {
+      continue;
+    }
     const y =
-      row.match(/data-stat="year_id"[^>]*>\s*(?:<[^>]+>)?\s*(\d{4})/i)?.[1] ??
+      row.match(/data-stat="year_id"[^>]*>\s*(?:<a[^>]*>)?\s*(\d{4})/i)?.[1] ??
+      row.match(/data-stat="year_id"[^>]*\bcsk="(\d{4})"/i)?.[1] ??
       row.match(/href="\/players\/gl\.fcgi[^"]*year=(\d{4})/i)?.[1];
     const w = row.match(new RegExp(`data-stat="${warStat}"[^>]*>([^<]*)`, "i"))?.[1]?.trim();
     if (!y || !w || !/^-?[0-9.]+$/.test(w)) continue;
@@ -1642,8 +1649,13 @@ async function scrapePlayerExtras(
     searchable.match(/Service Time[^<]{0,60}<\/strong>\s*:?\s*([0-9]+(?:\.[0-9]+)?)/i) ??
     searchable.match(/Service Time[^:]*:\s*([0-9]+(?:\.[0-9]+)?)/i);
   const serviceTime = stMatch?.[1] ?? null;
-  const warStat = isPitcher ? "p_war" : "b_war";
-  const { seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(searchable, warStat);
+  const primary = isPitcher ? "p_war" : "b_war";
+  const secondary = isPitcher ? "b_war" : "p_war";
+  let { seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(searchable, primary);
+  // Two-way players / misclassified pitchers: fall back to the other WAR column.
+  if (seasonWar == null && careerWar == null) {
+    ({ seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(searchable, secondary));
+  }
 
   // Core fields only — skip league-rank scrape (extra BBRef page) so WAR survives soft timeouts.
   return {
