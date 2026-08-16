@@ -6322,44 +6322,45 @@ export async function fetchFavoritePlayersYesterday(
     (f) => (f.position ?? "").toLowerCase() !== "manager",
   );
 
-  const lines = await Promise.all(
-    players.map(async (f) => {
-      const isPitcher = /^(p|pitcher|sp|rp|cl)$/i.test(f.position ?? "");
-      const groups: ("hitting" | "pitching")[] = isPitcher
-        ? ["pitching", "hitting"]
-        : ["hitting", "pitching"];
-      for (const group of groups) {
-        try {
-          const log = await fetchMlbPlayerGameLog(f.playerId, group, 5, season);
-          const game = log.find((g) => g.date === date);
-          if (!game) continue;
-          return {
-            playerId: f.playerId,
-            playerName: f.playerName,
-            teamName: f.teamName ?? null,
-            position: f.position ?? null,
-            date,
-            summary: game.summary || `${game.stats.map((s) => `${s.label} ${s.value}`).join(" · ")}`,
-            opponent: game.opponent,
-            isHome: game.isHome,
-            isWin: game.isWin,
-            stats: game.stats.slice(0, 6),
-            group,
-            played: true,
-          } satisfies FavoriteYesterdayLine;
-        } catch {
-          /* try next group */
+  const lines = (
+    await Promise.all(
+      players.map(async (f): Promise<FavoriteYesterdayLine | null> => {
+        const isPitcher = /^(p|pitcher|sp|rp|cl)$/i.test(f.position ?? "");
+        const groups: ("hitting" | "pitching")[] = isPitcher
+          ? ["pitching", "hitting"]
+          : ["hitting", "pitching"];
+        for (const group of groups) {
+          try {
+            const log = await fetchMlbPlayerGameLog(f.playerId, group, 5, season);
+            const game = log.find((g) => g.date === date);
+            if (!game) continue;
+            return {
+              playerId: f.playerId,
+              playerName: f.playerName,
+              teamName: f.teamName ?? null,
+              position: f.position ?? null,
+              date,
+              summary:
+                game.summary ||
+                `${game.stats.map((s) => `${s.label} ${s.value}`).join(" · ")}`,
+              opponent: game.opponent,
+              isHome: game.isHome,
+              isWin: game.isWin,
+              stats: game.stats.slice(0, 6),
+              group,
+              played: true,
+            };
+          } catch {
+            /* try next group */
+          }
         }
-      }
-      // Kill hollow DNP stubs universally — only surface players who actually played.
-      return null;
-    }),
-  );
+        // Kill hollow DNP stubs universally — only surface players who actually played.
+        return null;
+      }),
+    )
+  ).filter((l): l is FavoriteYesterdayLine => l != null);
 
-  return {
-    date,
-    lines: lines.filter((l): l is FavoriteYesterdayLine => l != null),
-  };
+  return { date, lines };
 }
 
 /** MLB.com club site slug for front-office / prospects pages. */
