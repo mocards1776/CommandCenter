@@ -1315,7 +1315,13 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
       ? `<p>${article.description.replace(/^—\s*/, "")}</p>`
       : "");
 
-  if (storyHtml && stripTags(storyHtml).length >= 40) {
+  const storyText = stripTags(storyHtml);
+  const mashedEspnBlob =
+    /[a-z][A-Z]/.test(storyText) || // EndPreston
+    /[A-Z]{2,}\d-\d-\d/.test(storyText) || // PNE0-0-1
+    (/\d\s*PTS\b/i.test(storyText) && !/\.\s/.test(storyText) && storyText.length < 120);
+
+  if (storyHtml && storyText.length >= 40 && !mashedEspnBlob) {
     return {
       title: article?.headline ?? null,
       byline: article?.byline ?? null,
@@ -1350,6 +1356,11 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
     comp?.status?.type?.description ||
     "Scheduled";
   const venue = comp?.venue?.fullName ?? null;
+  const leagueName =
+    (sum as { header?: { league?: { name?: string; shortName?: string } } }).header?.league
+      ?.shortName ||
+    (sum as { header?: { league?: { name?: string } } }).header?.league?.name ||
+    "Soccer";
   const title =
     awayScore != null && homeScore != null
       ? `${awayName} ${awayScore}, ${homeName} ${homeScore}`
@@ -1357,7 +1368,9 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
 
   const bits: string[] = [];
   bits.push(`<h2>${title}</h2>`);
-  bits.push(`<p><strong>${status}</strong>${venue ? ` · ${venue}` : ""}</p>`);
+  bits.push(
+    `<p><strong>${leagueName}</strong> · ${status}${venue ? ` · ${venue}` : ""}</p>`,
+  );
   bits.push("<ul>");
   bits.push(
     `<li>${awayName}${recordOf(away) ? ` (${recordOf(away)})` : ""}${
@@ -1370,6 +1383,11 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
     }${homeScore != null ? ` — ${homeScore}` : ""}</li>`,
   );
   bits.push("</ul>");
+  bits.push(
+    `<p>${awayName} and ${homeName} meet in ${leagueName}${
+      venue ? ` at ${venue}` : ""
+    }. ${status}.</p>`,
+  );
   bits.push(`<p><a href="${url}">Open on ESPN</a></p>`);
 
   const html = bits.join("\n");

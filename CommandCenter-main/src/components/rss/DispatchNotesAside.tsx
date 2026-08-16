@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Fragment } from "react";
 import { Link } from "react-router-dom";
 import TeamMark from "@/components/sports/TeamMark";
 import {
@@ -10,6 +11,7 @@ import {
   playoffOddsFromStandings,
   teamPagePath,
   type MlbScoreGame,
+  type MlbWildCardRow,
 } from "@/lib/mlb";
 import { fetchMlbTeamCategoryLeaders } from "@/lib/team-form";
 import { DEFAULT_WEATHER_ZIP, fetchZipWeather, weatherGlyph } from "@/lib/weather";
@@ -86,9 +88,14 @@ export default function DispatchNotesAside() {
     queryFn: () => fetchMlbStandings(),
     staleTime: 15 * 60_000,
   });
-  const wildCard = useQuery({
-    queryKey: ["mlb-wildcard-nl"],
+  const wildCardNl = useQuery({
+    queryKey: ["mlb-wildcard-nl-v2"],
     queryFn: () => fetchMlbWildCardStandings(104),
+    staleTime: 15 * 60_000,
+  });
+  const wildCardAl = useQuery({
+    queryKey: ["mlb-wildcard-al-v2"],
+    queryFn: () => fetchMlbWildCardStandings(103),
     staleTime: 15 * 60_000,
   });
   const games = useQuery({
@@ -109,7 +116,8 @@ export default function DispatchNotesAside() {
   });
 
   const central = (standings.data ?? []).find((t) => t.shortName === "NL Central");
-  const wcRows = (wildCard.data ?? []).slice(0, 8);
+  const nlWcRows = (wildCardNl.data ?? []).slice(0, 10);
+  const alWcRows = (wildCardAl.data ?? []).slice(0, 10);
   const odds = standings.data ? playoffOddsFromStandings(standings.data) : [];
   const stlOdds = odds.find((r) => r.teamId === STL_TEAM_ID);
   const stlPlayoffPct = stlOdds
@@ -361,63 +369,116 @@ export default function DispatchNotesAside() {
         )}
       </section>
 
-      <section className="border-white/[0.08] mt-6 border-t pt-5">
-        <div className="rule-head mb-3">NL Wild Card</div>
-        {wildCard.isPending ? (
-          <p className="label-caps font-body animate-pulse text-[11px]">Loading wild card</p>
-        ) : wildCard.isError || !wcRows.length ? (
-          <p className="text-chalk font-body text-[12px]">Couldn’t load wild card.</p>
-        ) : (
-          <table className="w-full text-left text-[12px]">
-            <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+      <WildCardBoard title="NL Wild Card" rows={nlWcRows} pending={wildCardNl.isPending} errored={wildCardNl.isError} />
+      <WildCardBoard title="AL Wild Card" rows={alWcRows} pending={wildCardAl.isPending} errored={wildCardAl.isError} />
+    </div>
+  );
+}
+
+function WildCardBoard({
+  title,
+  rows,
+  pending,
+  errored,
+}: {
+  title: string;
+  rows: MlbWildCardRow[];
+  pending: boolean;
+  errored: boolean;
+}) {
+  return (
+    <section className="border-white/[0.08] mt-6 border-t pt-5">
+      <div className="rule-head mb-3">{title}</div>
+      {pending ? (
+        <p className="label-caps font-body animate-pulse text-[11px]">Loading wild card</p>
+      ) : errored || !rows.length ? (
+        <p className="text-chalk font-body text-[12px]">Couldn’t load wild card.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[420px] text-left text-[11px]">
+            <thead className="text-chalk-dim text-[9px] uppercase tracking-[0.12em]">
               <tr>
                 <th className="pb-2 pr-1 font-medium">Team</th>
                 <th className="numeral px-1 pb-2 font-medium">W</th>
                 <th className="numeral px-1 pb-2 font-medium">L</th>
+                <th className="numeral px-1 pb-2 font-medium">PCT</th>
                 <th className="numeral px-1 pb-2 font-medium">WCGB</th>
+                <th className="numeral px-1 pb-2 font-medium">L10</th>
+                <th className="numeral px-1 pb-2 font-medium">STRK</th>
+                <th className="numeral px-1 pb-2 font-medium">DIFF</th>
               </tr>
             </thead>
             <tbody>
-              {wcRows.map((r) => {
+              {rows.map((r, i) => {
                 const isStl = r.teamId === STL_TEAM_ID;
                 const clinchedSpot = Number(r.rank) <= 3;
+                const showCut = i === 3;
                 return (
-                  <tr
-                    key={r.teamId || r.team}
-                    className={cn("border-t border-white/[0.05]", isStl && "bg-accent/10")}
-                  >
-                    <td className="py-1.5 pr-1">
-                      <span className="inline-flex min-w-0 items-center gap-1.5">
-                        <span
-                          className={cn(
-                            "numeral w-3 shrink-0 text-[11px]",
-                            clinchedSpot ? "text-turf" : "text-chalk-dim",
-                          )}
-                        >
-                          {r.rank}
+                  <Fragment key={r.teamId || r.team}>
+                    {showCut ? (
+                      <tr aria-hidden>
+                        <td colSpan={8} className="py-1">
+                          <div className="border-t border-dashed border-white/25" />
+                        </td>
+                      </tr>
+                    ) : null}
+                    <tr
+                      className={cn(
+                        "border-t border-white/[0.05]",
+                        isStl && "bg-accent/10",
+                        i % 2 === 1 && !isStl && "bg-white/[0.02]",
+                      )}
+                    >
+                      <td className="py-1.5 pr-1">
+                        <span className="inline-flex min-w-0 items-center gap-1.5">
+                          <span
+                            className={cn(
+                              "numeral w-3 shrink-0 text-[10px]",
+                              clinchedSpot ? "text-turf" : "text-chalk-dim",
+                            )}
+                          >
+                            {r.rank}
+                          </span>
+                          {r.teamId ? <TeamMark teamId={r.teamId} size="xs" /> : null}
+                          <Link
+                            to={teamPagePath(r.teamId)}
+                            className={cn(
+                              "truncate hover:underline",
+                              isStl ? "text-cream font-semibold" : "text-cream/90 hover:text-accent",
+                            )}
+                          >
+                            {r.abbrev || r.team}
+                          </Link>
                         </span>
-                        {r.teamId ? <TeamMark teamId={r.teamId} size="xs" /> : null}
-                        <Link
-                          to={teamPagePath(r.teamId)}
-                          className={cn(
-                            "truncate hover:underline",
-                            isStl ? "text-cream font-semibold" : "text-cream/90 hover:text-accent",
-                          )}
-                        >
-                          {r.abbrev || r.team}
-                        </Link>
-                      </span>
-                    </td>
-                    <td className="numeral text-cream px-1 py-1.5">{r.wins}</td>
-                    <td className="numeral text-chalk px-1 py-1.5">{r.losses}</td>
-                    <td className="numeral text-chalk px-1 py-1.5">{r.wcgb}</td>
-                  </tr>
+                      </td>
+                      <td className="numeral text-cream px-1 py-1.5">{r.wins}</td>
+                      <td className="numeral text-chalk px-1 py-1.5">{r.losses}</td>
+                      <td className="numeral text-chalk px-1 py-1.5">
+                        {r.pct ? (r.pct.startsWith(".") ? r.pct : r.pct.replace(/^0/, "")) : "—"}
+                      </td>
+                      <td className="numeral text-chalk px-1 py-1.5">{r.wcgb}</td>
+                      <td className="numeral text-chalk px-1 py-1.5">{r.l10}</td>
+                      <td className="numeral text-chalk px-1 py-1.5">{r.streak}</td>
+                      <td
+                        className={cn(
+                          "numeral px-1 py-1.5",
+                          r.runDiff > 0
+                            ? "text-emerald-400"
+                            : r.runDiff < 0
+                              ? "text-alert"
+                              : "text-chalk",
+                        )}
+                      >
+                        {r.runDiff > 0 ? `+${r.runDiff}` : r.runDiff}
+                      </td>
+                    </tr>
+                  </Fragment>
                 );
               })}
             </tbody>
           </table>
-        )}
-      </section>
-    </div>
+        </div>
+      )}
+    </section>
   );
 }

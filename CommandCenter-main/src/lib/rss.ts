@@ -2193,15 +2193,17 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
           }) satisfies RssFeedItem;
 
         // Scoreboard-only fallback — never leave the feed empty when recap fetch fails.
+        // Previews without real copy are dropped (no "Preview — STL @ PHI." stubs).
         const scoreboardStub = () => {
           if (!opts.stubWithoutArticle) return null;
+          if (c.isPreview) return null;
           if (c.isLive) {
             return stubItem("live", `Live: ${scoreBit}`, `In progress — ${matchup}.`);
           }
           if (c.isFinal) {
             return stubItem("wrap", `Final: ${scoreBit}`, `Final — ${matchup}.`);
           }
-          return stubItem("preview", `Preview: ${matchup}`, `Preview — ${matchup}.`);
+          return null;
         };
 
         try {
@@ -2286,7 +2288,8 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             } satisfies RssFeedItem;
           }
 
-          // Hold hollow previews until ESPN publishes real copy — unless stubs are on.
+          // Hollow previews: never list stubs like "Preview — STL @ PHI."
+          // Finals/live may still stub when stubWithoutArticle is on.
           const headline = article?.headline?.trim() ?? "";
           const storyText = (article?.story ?? "")
             .replace(/<[^>]+>/g, " ")
@@ -2299,8 +2302,12 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             !body ||
             body.length < 40 ||
             /no story available/i.test(`${headline} ${body}`) ||
-            /^game preview for\b/i.test(body);
-          if (hollow) return scoreboardStub();
+            /^game preview for\b/i.test(body) ||
+            /^preview\s*[—–-]/i.test(body);
+          if (hollow) {
+            if (c.isPreview) return null;
+            return scoreboardStub();
+          }
 
           return {
             id: `preview-${c.eventId}`,
@@ -2330,12 +2337,25 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
     return db - da;
   });
 
+  // Drop hollow preview stubs that slipped through (e.g. "Preview — STL @ PHI.").
+  const filtered = items.filter((it) => {
+    const snip = (it.snippet ?? "").trim();
+    const title = (it.title ?? "").trim();
+    if (/^Preview\s*[—–-]/i.test(title) || /^Preview\s*[—–-]/i.test(snip)) {
+      // Keep only if snippet has real prose beyond the stub pattern.
+      if (/^Preview\s*[—–-].{0,80}$/i.test(snip) && !/[.!?].*\s\w{4,}/.test(snip.slice(20))) {
+        return false;
+      }
+    }
+    return true;
+  });
+
   return {
     title: opts.title,
     description: opts.description,
     link: `https://www.espn.com/${linkSport}/`,
     feedUrl: opts.feedUrl,
-    items,
+    items: filtered,
   };
 }
 

@@ -4178,6 +4178,11 @@ export type MlbWildCardRow = {
   losses: number;
   pct: string;
   wcgb: string;
+  l10: string;
+  streak: string;
+  runsScored: number;
+  runsAllowed: number;
+  runDiff: number;
 };
 
 /** NL or AL wild-card board from MLB Stats API. */
@@ -4195,9 +4200,18 @@ export async function fetchMlbWildCardStandings(
       teamRecords?: {
         wildCardRank?: string;
         wildCardGamesBack?: string;
+        wins?: number;
+        losses?: number;
         leagueRecord?: { wins?: number; losses?: number; pct?: string };
         team?: { id?: number; name?: string; abbreviation?: string; teamName?: string };
         winningPercentage?: string;
+        streak?: { streakCode?: string };
+        runsScored?: number;
+        runsAllowed?: number;
+        runDifferential?: number;
+        records?: {
+          splitRecords?: { type?: string; wins?: number; losses?: number; pct?: string }[];
+        };
       }[];
     }[];
   };
@@ -4207,6 +4221,9 @@ export async function fetchMlbWildCardStandings(
     for (const r of block.teamRecords ?? []) {
       const name = r.team?.name ?? "—";
       const wcgb = r.wildCardGamesBack;
+      const lastTen = r.records?.splitRecords?.find((s) => s.type === "lastTen");
+      const rs = r.runsScored ?? 0;
+      const ra = r.runsAllowed ?? 0;
       rows.push({
         rank: String(r.wildCardRank ?? ""),
         teamId: r.team?.id ?? 0,
@@ -4215,10 +4232,15 @@ export async function fetchMlbWildCardStandings(
           "",
         ),
         abbrev: r.team?.abbreviation ?? "",
-        wins: r.leagueRecord?.wins ?? 0,
-        losses: r.leagueRecord?.losses ?? 0,
+        wins: r.wins ?? r.leagueRecord?.wins ?? 0,
+        losses: r.losses ?? r.leagueRecord?.losses ?? 0,
         pct: r.winningPercentage ?? r.leagueRecord?.pct ?? "",
         wcgb: !wcgb || wcgb === "-" || wcgb === "0" || wcgb === "0.0" ? "—" : String(wcgb),
+        l10: lastTen ? `${lastTen.wins ?? 0}-${lastTen.losses ?? 0}` : "—",
+        streak: r.streak?.streakCode ?? "—",
+        runsScored: rs,
+        runsAllowed: ra,
+        runDiff: r.runDifferential ?? rs - ra,
       });
     }
   }

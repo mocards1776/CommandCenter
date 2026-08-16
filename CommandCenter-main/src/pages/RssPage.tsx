@@ -1309,6 +1309,18 @@ function ArticleReaderShell({
     onError: (err) => toast.error(err instanceof Error ? err.message : "Could not block article"),
   });
 
+  const blockDomainMut = useMutation({
+    mutationFn: (value: string) => addRssFilter("url", value),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["rss-filters"] });
+      toast.success("Domain blocked");
+      onClose();
+      const st = (history.state as { dispatchArticle?: string } | null) ?? {};
+      if (st.dispatchArticle) history.back();
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Could not block domain"),
+  });
+
   const deleteMut = useMutation({
     mutationFn: deleteRssHighlight,
     onSuccess: () => {
@@ -1457,15 +1469,39 @@ function ArticleReaderShell({
               ),
             )}
           </h2>
-          <a
-            href={item.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-body text-chalk hover:text-accent mt-4 inline-flex items-center gap-1.5 text-[12px] transition-colors"
-          >
-            {publisher}
-            <ExternalLink size={12} />
-          </a>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <a
+              href={item.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-body text-chalk hover:text-accent inline-flex items-center gap-1.5 text-[12px] transition-colors"
+            >
+              {publisher}
+              <ExternalLink size={12} />
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                const host = articleSourceHost(item.link);
+                const feedId =
+                  RSS_FEEDS.find((f) => f.url === feedUrl)?.id ??
+                  (feedUrl.startsWith("synthetic:")
+                    ? feedUrl.replace(/^synthetic:/, "")
+                    : null);
+                if (feedId && host) {
+                  blockDomainMut.mutate(encodeFeedDomainFilter(feedId, host));
+                } else {
+                  blockDomainMut.mutate(suggestUrlFilterValue(item.link));
+                }
+              }}
+              disabled={blockDomainMut.isPending}
+              title="Block this domain"
+              className="font-body text-chalk-dim hover:text-alert inline-flex items-center gap-1 text-[12px] transition-colors disabled:opacity-40"
+            >
+              <Ban size={12} />
+              Block domain
+            </button>
+          </div>
         </header>
 
         {!displayHtml.includes("<video") ? (

@@ -21,7 +21,22 @@ import {
 import { loadSportsLayout, visibleFavorites } from "@/lib/sports";
 import { cn } from "@/lib/utils";
 
-const HOT_SCORE = 70;
+const HOT_SCORE_LIVE = 78;
+const HOT_SCORE_PREGAME = 96;
+
+function isTickerHot(g: MlbScoredGame): boolean {
+  if (g.final) return false;
+  const drama = g.reasons.some((r) =>
+    /Tied|One-run|Extras|Late innings|Watch player|Cardinals/i.test(r),
+  );
+  if (g.live) {
+    // Live close/late games only — not every red-tinted chip.
+    return g.score >= HOT_SCORE_LIVE && drama;
+  }
+  // Pregame: require real heat (favorites + matchup), not "Pitching set" alone.
+  if (g.score >= HOT_SCORE_PREGAME) return true;
+  return g.score >= 88 && g.reasons.includes("Cardinals") && drama;
+}
 
 function shortPitcher(name: string | null): string {
   if (!name) return "TBD";
@@ -263,7 +278,7 @@ export default function DispatchScoreTicker() {
     <div className="hidden border-b border-white/10 bg-white md:block">
       <div className="flex overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {ordered.map((g) => (
-          <TickerModule key={g.id} game={g} hot={g.score >= HOT_SCORE} />
+          <TickerModule key={g.id} game={g} hot={isTickerHot(g)} />
         ))}
       </div>
     </div>
