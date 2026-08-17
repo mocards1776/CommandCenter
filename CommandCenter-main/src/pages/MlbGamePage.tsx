@@ -802,7 +802,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
         )}
       </div>
 
-      <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-7 sm:gap-4 sm:px-6">
+      <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-5 sm:gap-4 sm:px-6 sm:py-7">
         <EspnTeam
           side={g.away}
           align="left"
@@ -811,10 +811,10 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
           form={awayForm.data ?? null}
           showForm={g.pregame && !/warmup/i.test(g.status)}
         />
-        <div className="px-1 text-center">
+        <div className="min-w-0 shrink px-0.5 text-center sm:px-1">
           {g.pregame && !/warmup/i.test(g.status) ? (
             <>
-              <p className="font-display text-[40px] leading-none tracking-tight text-white sm:text-[52px]">
+              <p className="font-display text-[32px] leading-none tracking-tight text-white sm:text-[52px]">
                 {g.whenShort ?? "TBD"}
               </p>
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
@@ -823,7 +823,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
             </>
           ) : (
             <>
-              <p className="font-display text-[52px] leading-none tabular-nums tracking-tight text-white sm:text-[64px]">
+              <p className="font-display text-[34px] leading-none tabular-nums tracking-tight text-white sm:text-[52px] md:text-[64px]">
                 <span
                   className={cn(
                     "drop-shadow-[0_0_28px_rgba(255,255,255,0.16)]",
@@ -832,7 +832,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
                 >
                   {g.away.runs}
                 </span>
-                <span className="mx-2 text-[22px] font-light text-white/25 sm:mx-3">–</span>
+                <span className="mx-1.5 text-[18px] font-light text-white/25 sm:mx-3 sm:text-[22px]">–</span>
                 <span
                   className={cn(
                     "drop-shadow-[0_0_28px_rgba(255,255,255,0.16)]",
@@ -844,7 +844,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
               </p>
               <p
                 className={cn(
-                  "mt-2.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]",
+                  "mt-2.5 inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em] sm:px-2.5",
                   g.live || /warmup/i.test(g.status) ? "bg-alert/90 text-ink" : "bg-white/10 text-[#c8cdd8]",
                 )}
               >
@@ -900,30 +900,30 @@ function EspnTeam({
     <Link
       to={teamPagePath(side.teamId)}
       className={cn(
-        "flex min-w-0 flex-col items-center gap-2.5 transition hover:opacity-90",
+        "flex min-w-0 flex-col items-center gap-2 transition hover:opacity-90 sm:gap-2.5",
         align === "left" ? "sm:items-start" : "sm:items-end",
         loser && "opacity-70",
       )}
     >
       <TeamMark
         teamId={side.teamId}
-        size="xl"
+        size="lg"
         className={cn(
           "shadow-[0_8px_28px_rgba(0,0,0,0.45)]",
           winner && "ring-2 ring-white/35",
         )}
       />
-      <div className={cn("text-center", align === "left" ? "sm:text-left" : "sm:text-right")}>
+      <div className={cn("min-w-0 max-w-full text-center", align === "left" ? "sm:text-left" : "sm:text-right")}>
         <p
           className={cn(
-            "text-[18px] font-bold tracking-wide sm:text-[22px]",
+            "truncate text-[16px] font-bold tracking-wide sm:text-[22px]",
             winner ? "text-white" : loser ? "text-white/55" : "text-white",
           )}
         >
           {side.abbrev}
         </p>
         {side.record ? (
-          <p className="numeral mt-1 text-[13px] font-medium text-white/70">{side.record}</p>
+          <p className="numeral mt-1 text-[12px] font-medium text-white/70 sm:text-[13px]">{side.record}</p>
         ) : (
           <p className="mt-1 truncate text-[11px] text-[#8b93a7]">{side.name}</p>
         )}
@@ -931,7 +931,7 @@ function EspnTeam({
         {showForm ? (
           <TeamFormChips
             form={form}
-            className="mt-1.5 w-[9rem]"
+            className="mt-1.5 max-w-full sm:w-[9rem]"
             align={align === "right" ? "right" : "left"}
           />
         ) : null}
@@ -1620,23 +1620,23 @@ function InningRow({
 }) {
   return (
     <tr className="border-t border-white/[0.05]">
-      <td className="px-3 py-2 text-left text-[12px] font-semibold text-white">
+      <td className="sticky left-0 z-[1] bg-[#0a1424] px-2 py-2 text-left text-[12px] font-semibold text-white sm:px-3">
         <Link
           to={teamPagePath(side.teamId)}
-          className="inline-flex items-center gap-2 hover:text-accent hover:underline"
+          className="inline-flex items-center gap-1.5 hover:text-accent hover:underline sm:gap-2"
         >
           <TeamMark teamId={side.teamId} size="sm" />
           {side.abbrev}
         </Link>
       </td>
       {innings.map((i) => (
-        <td key={i.num} className="numeral px-1 py-2 text-[#c8cdd8]">
+        <td key={i.num} className="numeral px-0.5 py-2 text-[#c8cdd8] sm:px-1">
           {i[which] ?? "—"}
         </td>
       ))}
-      <td className="numeral px-2 py-2 font-bold text-white">{side.runs}</td>
-      <td className="numeral px-2 py-2 text-[#c8cdd8]">{side.hits}</td>
-      <td className="numeral px-2 py-2 text-[#c8cdd8]">{side.errors}</td>
+      <td className="numeral px-1.5 py-2 font-bold text-white sm:px-2">{side.runs}</td>
+      <td className="numeral px-1.5 py-2 text-[#c8cdd8] sm:px-2">{side.hits}</td>
+      <td className="numeral px-1.5 py-2 text-[#c8cdd8] sm:px-2">{side.errors}</td>
     </tr>
   );
 }
@@ -1685,19 +1685,19 @@ function EspnBoxBoard({
   return (
     <div className="space-y-4">
       <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-center text-[12px]">
+        <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+          <table className="w-full min-w-[300px] text-center text-[11px] sm:min-w-[440px] sm:text-[12px]">
             <thead>
               <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                <th className="px-3 py-2 text-left font-medium"> </th>
+                <th className="sticky left-0 z-[1] bg-[#0a1424] px-2 py-2 text-left font-medium sm:px-3"> </th>
                 {game.innings.map((i) => (
-                  <th key={i.num} className="numeral px-1 py-2 font-medium">
+                  <th key={i.num} className="numeral px-0.5 py-2 font-medium sm:px-1">
                     {i.num}
                   </th>
                 ))}
-                <th className="numeral px-2 py-2 font-semibold text-white/70">R</th>
-                <th className="numeral px-2 py-2 font-medium">H</th>
-                <th className="numeral px-2 py-2 font-medium">E</th>
+                <th className="numeral px-1.5 py-2 font-semibold text-white/70 sm:px-2">R</th>
+                <th className="numeral px-1.5 py-2 font-medium sm:px-2">H</th>
+                <th className="numeral px-1.5 py-2 font-medium sm:px-2">E</th>
               </tr>
             </thead>
             <tbody>
@@ -1742,9 +1742,11 @@ function EspnBoxBoard({
           </div>
         )}
         {metaBits.length > 0 && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-white/[0.07] px-4 py-3 text-[11.5px] text-[#a8b0c2]">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-white/[0.07] px-3 py-3 text-[11px] leading-snug text-[#a8b0c2] sm:gap-x-4 sm:px-4 sm:text-[11.5px]">
             {metaBits.map((bit) => (
-              <span key={String(bit)}>{bit}</span>
+              <span key={String(bit)} className="min-w-0 break-words">
+                {bit}
+              </span>
             ))}
           </div>
         )}
@@ -1911,6 +1913,36 @@ function PlayerWatchMark({ kind }: { kind: PlayerWatchKind | null }) {
   return null;
 }
 
+function parseIpOuts(ip: string): number {
+  const m = String(ip ?? "0").trim().match(/^(\d+)(?:\.(\d))?$/);
+  if (!m) return 0;
+  const innings = Number(m[1]) || 0;
+  const partial = Number(m[2]) || 0;
+  return innings * 3 + Math.min(partial, 2);
+}
+
+/** Boxscore batter impact score (higher = bigger game). */
+function batterGameScore(b: MlbBoxscoreBatter): number {
+  return Math.max(0, 40 + 3 * b.hr + 2 * b.h + 2 * b.rbi + b.r + b.bb - b.so);
+}
+
+/** Bill James pitching game score from boxscore line. */
+function pitcherGameScore(p: MlbBoxscorePitcher): number {
+  return 50 + parseIpOuts(p.ip) + p.so - 2 * p.h - 4 * p.er - 2 * p.bb;
+}
+
+function GameScoreBadge({ score, title }: { score: number; title: string }) {
+  return (
+    <div
+      className="shrink-0 rounded-md border border-white/[0.1] bg-white/[0.04] px-2 py-1 text-center"
+      title={title}
+    >
+      <p className="text-[8px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">GS</p>
+      <p className="numeral text-[15px] font-bold leading-none text-cream">{score}</p>
+    </div>
+  );
+}
+
 function TopPerformersSummary({
   game,
   favoriteIds,
@@ -1924,17 +1956,17 @@ function TopPerformersSummary({
   const pitchers = [...game.away.pitchers, ...game.home.pitchers];
   if (!batters.length && !pitchers.length) return null;
 
-  const batterScore = (b: MlbBoxscoreBatter) => b.h * 2 + b.rbi * 2 + b.hr * 3 + b.r;
   const topBatters = [...batters]
-    .filter((b) => batterScore(b) > 0)
-    .sort((a, b) => batterScore(b) - batterScore(a))
+    .filter((b) => batterGameScore(b) > 40 || b.h > 0 || b.hr > 0 || b.rbi > 0)
+    .sort((a, b) => batterGameScore(b) - batterGameScore(a))
     .slice(0, 3);
-  const winPitcher =
-    pitchers.find((p) => pitcherDecision(p.note) === "W") ??
-    [...pitchers].sort((a, b) => b.so - a.so || Number(b.ip) - Number(a.ip))[0] ??
+  const winPitcher = pitchers.find((p) => pitcherDecision(p.note) === "W") ?? null;
+  const topPitcher =
+    winPitcher ??
+    [...pitchers].sort((a, b) => pitcherGameScore(b) - pitcherGameScore(a))[0] ??
     null;
 
-  if (!topBatters.length && !winPitcher) return null;
+  if (!topBatters.length && !topPitcher) return null;
 
   return (
     <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
@@ -1945,11 +1977,13 @@ function TopPerformersSummary({
       </div>
       <ul className="divide-y divide-white/[0.06]">
         {topBatters.map((b) => {
+          const gs = batterGameScore(b);
           const line = [
             b.h ? `${b.h} H` : null,
             b.hr ? `${b.hr} HR` : null,
             b.rbi ? `${b.rbi} RBI` : null,
             b.r ? `${b.r} R` : null,
+            b.bb ? `${b.bb} BB` : null,
           ]
             .filter(Boolean)
             .join(" · ");
@@ -1962,46 +1996,60 @@ function TopPerformersSummary({
                 alt=""
               />
               <div className="min-w-0 flex-1">
-                <Link
-                  to={`/sports/mlb/player/${b.id}`}
-                  className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-accent hover:underline"
-                >
-                  {b.name}
-                  <PlayerWatchMark kind={playerWatchKind(b.id, favoriteIds, taggedIds)} />
-                </Link>
-                <p className="numeral text-[11px] text-[#a8b0c2]">
-                  {b.teamAbbrev}
-                  {b.position ? ` · ${b.position}` : ""}
-                  {line ? ` · ${line}` : ""}
-                </p>
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                  <Link
+                    to={`/sports/mlb/player/${b.id}`}
+                    className="inline-flex max-w-full items-center gap-1.5 truncate text-[13px] font-semibold text-accent hover:underline"
+                  >
+                    <span className="truncate">{b.name}</span>
+                    <PlayerWatchMark kind={playerWatchKind(b.id, favoriteIds, taggedIds)} />
+                  </Link>
+                  <span className="numeral shrink-0 text-[11px] text-[#a8b0c2]">
+                    · {b.teamAbbrev}
+                    {b.position ? ` · ${b.position}` : ""}
+                  </span>
+                </div>
+                {line ? (
+                  <p className="numeral mt-0.5 text-[11px] text-[#a8b0c2]">{line}</p>
+                ) : null}
               </div>
+              <GameScoreBadge score={gs} title="Batter game score from this box score" />
             </li>
           );
         })}
-        {winPitcher ? (
+        {topPitcher ? (
           <li className="flex items-center gap-3 px-4 py-2.5">
             <PlayerHeadshot
-              playerId={winPitcher.id}
+              playerId={topPitcher.id}
               size={213}
               className="h-10 w-10 shrink-0 rounded-full ring-1 ring-white/15"
               alt=""
             />
             <div className="min-w-0 flex-1">
-              <Link
-                to={`/sports/mlb/player/${winPitcher.id}`}
-                className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-accent hover:underline"
-              >
-                {winPitcher.name}
-                <PlayerWatchMark
-                  kind={playerWatchKind(winPitcher.id, favoriteIds, taggedIds)}
-                />
-              </Link>
-              <p className="numeral text-[11px] text-[#a8b0c2]">
-                {winPitcher.teamAbbrev} · {winPitcher.ip} IP · {winPitcher.h} H ·{" "}
-                {winPitcher.er} ER · {winPitcher.so} K
-                {pitcherDecision(winPitcher.note) === "W" ? " · W" : ""}
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                <Link
+                  to={`/sports/mlb/player/${topPitcher.id}`}
+                  className="inline-flex max-w-full items-center gap-1.5 truncate text-[13px] font-semibold text-accent hover:underline"
+                >
+                  <span className="truncate">{topPitcher.name}</span>
+                  <PlayerWatchMark
+                    kind={playerWatchKind(topPitcher.id, favoriteIds, taggedIds)}
+                  />
+                </Link>
+                <span className="numeral shrink-0 text-[11px] text-[#a8b0c2]">
+                  · {topPitcher.teamAbbrev}
+                  {pitcherDecision(topPitcher.note) === "W" ? " · W" : " · P"}
+                </span>
+              </div>
+              <p className="numeral mt-0.5 text-[11px] text-[#a8b0c2]">
+                {topPitcher.ip} IP · {topPitcher.h} H · {topPitcher.er} ER · {topPitcher.so} K
+                {topPitcher.bb ? ` · ${topPitcher.bb} BB` : ""}
               </p>
             </div>
+            <GameScoreBadge
+              score={pitcherGameScore(topPitcher)}
+              title="Bill James pitching game score"
+            />
           </li>
         ) : null}
       </ul>

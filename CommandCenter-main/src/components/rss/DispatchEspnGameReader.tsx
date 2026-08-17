@@ -268,7 +268,7 @@ export default function DispatchEspnGameReader({
 
   if (!nfl && !soccer && resolved.data != null) {
     return (
-      <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+      <div className="mx-auto max-w-3xl space-y-5 px-3 py-4 sm:p-4 md:p-7">
         {chrome}
         {hero}
         <MlbGameDetail
