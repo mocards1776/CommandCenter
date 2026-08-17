@@ -981,7 +981,10 @@ export function mlbHeadshotGeneric(playerId: number | string, size: 213 | 426 = 
   return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_${size},q_auto:best/v1/people/${playerId}/headshot/67/current`;
 }
 
-/** Ordered headshot candidates for <img onError> fallbacks. */
+/** Ordered headshot candidates for <img onError> fallbacks.
+ * MiLB mugshots often live under `/headshot/milb/` when the MLB 67 mug 404s —
+ * try those before the generic blue placeholder.
+ */
 export function mlbHeadshotFallbacks(
   playerId: number | string,
   size: 213 | 426 = 213,
@@ -1057,6 +1060,10 @@ export type MlbBoxscorePitcher = {
   bb: number;
   so: number;
   summary: string;
+  /** Season pitching totals from the boxscore (when MLB includes them). */
+  seasonWins: number | null;
+  seasonLosses: number | null;
+  seasonSaves: number | null;
 };
 
 export type MlbBoxscoreSide = {
@@ -1188,12 +1195,19 @@ function mapBoxSide(
       const p = players[`ID${id}`];
       const s = p?.stats?.pitching;
       if (!p || !s) return null;
+      const season = p?.seasonStats?.pitching ?? {};
       const gsRaw = s.gamesStarted;
       const started =
         gsRaw === true ||
         gsRaw === 1 ||
         gsRaw === "1" ||
         Number(gsRaw) > 0;
+      const readSeason = (key: string): number | null => {
+        const v = season[key];
+        if (v == null || v === "") return null;
+        const n = typeof v === "number" ? v : Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
       return {
         id,
         name: p.person?.fullName ?? "—",
@@ -1208,6 +1222,9 @@ function mapBoxSide(
         bb: Number(s.baseOnBalls ?? 0),
         so: Number(s.strikeOuts ?? 0),
         summary: String(s.summary ?? ""),
+        seasonWins: readSeason("wins"),
+        seasonLosses: readSeason("losses"),
+        seasonSaves: readSeason("saves"),
       } satisfies MlbBoxscorePitcher;
     })
     .filter((x): x is MlbBoxscorePitcher => x != null);

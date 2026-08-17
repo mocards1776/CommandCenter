@@ -1658,6 +1658,34 @@ function pitcherDecision(
   return m ? (m[1].toUpperCase() as "W" | "L" | "S" | "H" | "BS") : null;
 }
 
+/** Prefer boxscore season totals; fall back to `(W, 12-4)` / `(S, 30)` in the note. */
+function pitcherSeasonRecord(p: MlbBoxscorePitcher): {
+  wins: number | null;
+  losses: number | null;
+  saves: number | null;
+} {
+  let wins = p.seasonWins;
+  let losses = p.seasonLosses;
+  let saves = p.seasonSaves;
+  const note = p.note ?? "";
+  if (wins == null || losses == null) {
+    const wl = note.match(/\(\s*[WL]\s*,\s*(\d+)\s*-\s*(\d+)\s*\)/i);
+    if (wl) {
+      wins = wins ?? Number(wl[1]);
+      losses = losses ?? Number(wl[2]);
+    }
+  }
+  if (saves == null) {
+    const sv = note.match(/\(\s*S\s*,\s*(\d+)\s*\)/i);
+    if (sv) saves = Number(sv[1]);
+  }
+  return {
+    wins: wins != null && Number.isFinite(wins) ? wins : null,
+    losses: losses != null && Number.isFinite(losses) ? losses : null,
+    saves: saves != null && Number.isFinite(saves) ? saves : null,
+  };
+}
+
 function shortPitcherName(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length < 2) return name;
@@ -1725,31 +1753,60 @@ function EspnBoxBoard({
                 ["LOSS", decisions.loss],
                 ["SAVE", decisions.save],
               ] as const
-            ).map(([label, p]) => (
-              <div key={label} className="min-w-0">
-                <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                  {label}
-                </p>
-                {p ? (
-                  <>
-                    <Link
-                      to={`/sports/mlb/player/${p.id}`}
-                      className="mt-0.5 inline-flex max-w-full items-center gap-1 truncate text-[13px] font-semibold text-accent hover:underline"
-                    >
-                      {shortPitcherName(p.name)}
-                      <PlayerWatchMark
-                        kind={playerWatchKind(p.id, watchPlayerIds, taggedPlayerIds)}
+            ).map(([label, p]) => {
+              const season = p ? pitcherSeasonRecord(p) : null;
+              const recordBits: string[] = [];
+              if (season && season.wins != null && season.losses != null) {
+                recordBits.push(`${season.wins}-${season.losses}`);
+              }
+              if (label === "SAVE" && season?.saves != null) {
+                recordBits.push(`${season.saves} SV`);
+              } else if (
+                label !== "SAVE" &&
+                season?.saves != null &&
+                season.saves > 0
+              ) {
+                recordBits.push(`${season.saves} SV`);
+              }
+              return (
+                <div key={label} className="min-w-0">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                    {label}
+                  </p>
+                  {p ? (
+                    <div className="mt-1.5 flex min-w-0 items-start gap-2">
+                      <PlayerHeadshot
+                        playerId={p.id}
+                        size={213}
+                        className="h-9 w-9 shrink-0 rounded-full ring-1 ring-white/15"
+                        alt=""
                       />
-                    </Link>
-                    <p className="numeral mt-0.5 break-words text-[10px] leading-snug text-[#a8b0c2] sm:text-[11px]">
-                      {p.ip} IP · {p.h} H · {p.er} ER · {p.so} K · {p.bb} BB
-                    </p>
-                  </>
-                ) : (
-                  <p className="mt-0.5 text-[13px] text-[#6b7386]">—</p>
-                )}
-              </div>
-            ))}
+                      <div className="min-w-0 flex-1">
+                        <Link
+                          to={`/sports/mlb/player/${p.id}`}
+                          className="inline-flex max-w-full items-center gap-1 truncate text-[13px] font-semibold text-accent hover:underline"
+                        >
+                          {shortPitcherName(p.name)}
+                          <PlayerWatchMark
+                            kind={playerWatchKind(p.id, watchPlayerIds, taggedPlayerIds)}
+                          />
+                        </Link>
+                        {recordBits.length > 0 ? (
+                          <p className="numeral mt-0.5 text-[11px] font-semibold text-cream/85">
+                            {recordBits.join(" · ")}
+                          </p>
+                        ) : null}
+                        <p className="numeral mt-0.5 break-words text-[10px] leading-snug text-[#a8b0c2] sm:text-[11px]">
+                          {p.ip} IP · {p.h} H · {p.er} ER · {p.so} K · {p.bb} BB
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-0.5 text-[13px] text-[#6b7386]">—</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
         {metaBits.length > 0 && (
@@ -1867,13 +1924,11 @@ function TopProspectsInGame({
           });
           return (
             <li key={p.id} className="flex items-center gap-3 px-4 py-2.5">
-              <img
-                src={mlbHeadshot(p.id, 213)}
+              <PlayerHeadshot
+                playerId={p.id}
+                size={213}
+                className="h-9 w-9 shrink-0 rounded-full ring-1 ring-white/15"
                 alt=""
-                width={36}
-                height={36}
-                className="h-9 w-9 rounded-full bg-white/10 object-cover object-top"
-                loading="lazy"
               />
               <div className="min-w-0 flex-1">
                 <Link
