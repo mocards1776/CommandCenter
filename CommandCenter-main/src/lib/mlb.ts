@@ -6499,6 +6499,39 @@ const MLB_CLUB_SLUG: Record<number, string> = {
   158: "brewers",
 };
 
+const MLB_TEAM_ABBREV: Record<number, string> = {
+  108: "LAA",
+  109: "AZ",
+  110: "BAL",
+  111: "BOS",
+  112: "CHC",
+  113: "CIN",
+  114: "CLE",
+  115: "COL",
+  116: "DET",
+  117: "HOU",
+  118: "KC",
+  119: "LAD",
+  120: "WSH",
+  121: "NYM",
+  133: "OAK",
+  134: "PIT",
+  135: "SD",
+  136: "SEA",
+  137: "SF",
+  138: "STL",
+  139: "TB",
+  140: "TEX",
+  141: "TOR",
+  142: "MIN",
+  143: "PHI",
+  144: "ATL",
+  145: "CWS",
+  146: "MIA",
+  147: "NYY",
+  158: "MIL",
+};
+
 export function mlbClubSlug(teamId: number): string | null {
   return MLB_CLUB_SLUG[teamId] ?? null;
 }
@@ -6667,11 +6700,15 @@ export type MlbProspectRankMaps = {
   org: Map<number, number>;
   /** MLB Pipeline Top-100 ranks keyed by player id. */
   top100: Map<number, number>;
+  /** Parent MLB club id for each org-ranked player (MiLB matchups span two orgs). */
+  orgClubId: Map<number, number>;
 };
 
 export type MlbProspectRankPair = {
   orgRank: number | null;
   top100Rank: number | null;
+  /** Parent MLB club id when orgRank came from that club's Pipeline list. */
+  orgClubId?: number | null;
 };
 
 export function prospectRanksFor(
@@ -6681,13 +6718,18 @@ export function prospectRanksFor(
   return {
     orgRank: maps?.org.get(playerId) ?? null,
     top100Rank: maps?.top100.get(playerId) ?? null,
+    orgClubId: maps?.orgClubId.get(playerId) ?? null,
   };
 }
 
-/** Compact labels for hero / lineup chips. */
+/** Compact labels for hero / lineup chips. Prefer "STL #3" when org club is known. */
 export function prospectRankLabels(pair: MlbProspectRankPair): string[] {
   const out: string[] = [];
-  if (pair.orgRank != null && pair.orgRank > 0) out.push(`Org #${pair.orgRank}`);
+  if (pair.orgRank != null && pair.orgRank > 0) {
+    const abbr =
+      pair.orgClubId != null ? MLB_TEAM_ABBREV[pair.orgClubId] ?? null : null;
+    out.push(abbr ? `${abbr} #${pair.orgRank}` : `Org #${pair.orgRank}`);
+  }
   if (pair.top100Rank != null && pair.top100Rank > 0) out.push(`Top 100 #${pair.top100Rank}`);
   return out;
 }
@@ -6826,8 +6868,9 @@ async function loadOrgRankMap(teamId: number, year: number): Promise<Map<number,
   }
   const club = mlbClubSlug(orgId);
   if (!club) return map;
+  // Full org Top-30 (+ buffer) so AAA/AA/High-A/A matchups catch ranked prospects.
   for (const slug of [`sel-pr-${year}-${club}`, `sel-pr-${year - 1}-${club}`]) {
-    const rows = await loadPipelineSelectionSlug(slug, 40);
+    const rows = await loadPipelineSelectionSlug(slug, 50);
     if (!rows.length) continue;
     for (const row of rows) map.set(row.playerId, row.rank);
     break;
@@ -6877,24 +6920,37 @@ export async function fetchProspectRankMaps(opts?: {
   const year = new Date().getFullYear();
   const teamIds = [...new Set((opts?.teamIds ?? [138]).filter((id) => Number.isFinite(id) && id > 0))];
   const org = new Map<number, number>();
+  const orgClubId = new Map<number, number>();
 
+  // Resolve every club to its MLB parent so MiLB games load BOTH orgs' Pipeline lists
+  // (e.g. Memphis → STL and Durham → TB), not only Cardinals seeds.
   const parentOrgs = (
     await Promise.all(teamIds.map((id) => resolveMlbParentOrgId(id)))
   ).filter((id): id is number => id != null);
-  const orgIds = [...new Set([...teamIds, ...parentOrgs].filter((id) => mlbClubSlug(id)))];
+  const mlbOrgIds = [
+    ...new Set([...teamIds, ...parentOrgs].filter((id) => Boolean(mlbClubSlug(id)))),
+  ];
 
   await Promise.all(
-    teamIds.map(async (teamId) => {
-      const map = await loadOrgRankMap(teamId, year);
-      for (const [id, rank] of map) org.set(id, rank);
+    mlbOrgIds.map(async (mlbOrgId) => {
+      const map = await loadOrgRankMap(mlbOrgId, year);
+      for (const [playerId, rank] of map) {
+        const prev = org.get(playerId);
+        if (prev == null || rank < prev) {
+          org.set(playerId, rank);
+          orgClubId.set(playerId, mlbOrgId);
+        }
+      }
     }),
   );
 
-  // Cardinals seeds fill org ranks when GraphQL lags — include farm affiliates
-  // whose parent org is STL (e.g. Memphis), not only MLB team id 138.
-  if (orgIds.includes(138) || teamIds.includes(138) || parentOrgs.includes(138)) {
+  // Cardinals seeds fill gaps when GraphQL lags (STL MLB or any Cardinals affiliate).
+  if (mlbOrgIds.includes(138)) {
     for (const seed of CARDINALS_PROSPECT_SEEDS) {
-      if (seed.playerId && !org.has(seed.playerId)) org.set(seed.playerId, seed.rank);
+      if (seed.playerId && !org.has(seed.playerId)) {
+        org.set(seed.playerId, seed.rank);
+        orgClubId.set(seed.playerId, 138);
+      }
     }
   }
 
@@ -6903,7 +6959,7 @@ export async function fetchProspectRankMaps(opts?: {
     top100.set(row.playerId, row.rank);
   }
 
-  return { org, top100 };
+  return { org, top100, orgClubId };
 }
 
 /** @deprecated Prefer fetchProspectRankMaps — kept for older call sites. */
@@ -6978,39 +7034,6 @@ export type MlbFarmSystemRow = {
   abbrev: string;
   top100Count: number;
   bestRank: number | null;
-};
-
-const MLB_TEAM_ABBREV: Record<number, string> = {
-  108: "LAA",
-  109: "AZ",
-  110: "BAL",
-  111: "BOS",
-  112: "CHC",
-  113: "CIN",
-  114: "CLE",
-  115: "COL",
-  116: "DET",
-  117: "HOU",
-  118: "KC",
-  119: "LAD",
-  120: "WSH",
-  121: "NYM",
-  133: "OAK",
-  134: "PIT",
-  135: "SD",
-  136: "SEA",
-  137: "SF",
-  138: "STL",
-  139: "TB",
-  140: "TEX",
-  141: "TOR",
-  142: "MIN",
-  143: "PHI",
-  144: "ATL",
-  145: "CWS",
-  146: "MIA",
-  147: "NYY",
-  158: "MIL",
 };
 
 function teamNameFromId(teamId: number): string | null {

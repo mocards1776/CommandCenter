@@ -1795,6 +1795,7 @@ function TopProspectsInGame({
       position: string | null;
       orgRank: number | null;
       top100Rank: number | null;
+      orgClubId: number | null;
     };
     const byId = new Map<number, Row>();
     const consider = (
@@ -1804,9 +1805,18 @@ function TopProspectsInGame({
       teamAbbrev: string,
       position: string | null,
     ) => {
-      const { orgRank, top100Rank } = prospectRanksFor(prospectRanks, id);
+      const { orgRank, top100Rank, orgClubId } = prospectRanksFor(prospectRanks, id);
       if ((orgRank == null || orgRank <= 0) && (top100Rank == null || top100Rank <= 0)) return;
-      byId.set(id, { id, name, teamId, teamAbbrev, position, orgRank, top100Rank });
+      byId.set(id, {
+        id,
+        name,
+        teamId,
+        teamAbbrev,
+        position,
+        orgRank,
+        top100Rank,
+        orgClubId: orgClubId ?? null,
+      });
     };
     for (const side of [game.away, game.home]) {
       for (const b of side.batters) {
@@ -1840,6 +1850,7 @@ function TopProspectsInGame({
           const labels = prospectRankLabels({
             orgRank: p.orgRank,
             top100Rank: p.top100Rank,
+            orgClubId: p.orgClubId,
           });
           return (
             <li key={p.id} className="flex items-center gap-3 px-4 py-2.5">
