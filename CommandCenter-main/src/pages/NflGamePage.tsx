@@ -355,7 +355,7 @@ export function NflGameDetailView({
               articleTitle={g.article.headline}
               feedUrl="synthetic:nfl-wraps"
               html={g.article.storyHtml}
-              className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-semibold [&_a]:text-[#eef3ff] [&_a]:underline [&_a]:decoration-accent/40 [&_a]:underline-offset-[3px] [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
+              className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-semibold [&_a]:text-accent [&_a]:hover:underline [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
             />
           ) : null}
         </section>

@@ -713,7 +713,7 @@ function LiveSituationBar({
               </span>
               <Link
                 to={`/sports/mlb/player/${situation.batter.id}`}
-                className="font-semibold text-[#eef3ff] underline decoration-accent/40 underline-offset-[3px] hover:text-cream"
+                className="font-semibold text-accent hover:underline"
               >
                 {short(situation.batter.name)}
               </Link>
@@ -726,7 +726,7 @@ function LiveSituationBar({
               </span>
               <Link
                 to={`/sports/mlb/player/${situation.pitcher.id}`}
-                className="font-semibold text-[#eef3ff] underline decoration-accent/40 underline-offset-[3px] hover:text-cream"
+                className="font-semibold text-accent hover:underline"
               >
                 {short(situation.pitcher.name)}
               </Link>
@@ -802,7 +802,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
         )}
       </div>
 
-      <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-5 sm:gap-4 sm:px-6 sm:py-7">
+      <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-7 sm:gap-4 sm:px-6">
         <EspnTeam
           side={g.away}
           align="left"
@@ -811,10 +811,10 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
           form={awayForm.data ?? null}
           showForm={g.pregame && !/warmup/i.test(g.status)}
         />
-        <div className="min-w-0 px-0.5 text-center sm:px-1">
+        <div className="px-1 text-center">
           {g.pregame && !/warmup/i.test(g.status) ? (
             <>
-              <p className="font-display text-[32px] leading-none tracking-tight text-white sm:text-[52px]">
+              <p className="font-display text-[40px] leading-none tracking-tight text-white sm:text-[52px]">
                 {g.whenShort ?? "TBD"}
               </p>
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
@@ -823,7 +823,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
             </>
           ) : (
             <>
-              <p className="font-display text-[34px] leading-none tabular-nums tracking-tight text-white sm:text-[52px] md:text-[64px]">
+              <p className="font-display text-[52px] leading-none tabular-nums tracking-tight text-white sm:text-[64px]">
                 <span
                   className={cn(
                     "drop-shadow-[0_0_28px_rgba(255,255,255,0.16)]",
@@ -832,7 +832,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
                 >
                   {g.away.runs}
                 </span>
-                <span className="mx-1.5 text-[18px] font-light text-white/25 sm:mx-3 sm:text-[22px]">–</span>
+                <span className="mx-2 text-[22px] font-light text-white/25 sm:mx-3">–</span>
                 <span
                   className={cn(
                     "drop-shadow-[0_0_28px_rgba(255,255,255,0.16)]",
@@ -907,27 +907,27 @@ function EspnTeam({
     >
       <TeamMark
         teamId={side.teamId}
-        size="lg"
+        size="xl"
         className={cn(
-          "shadow-[0_8px_28px_rgba(0,0,0,0.45)] sm:h-20 sm:w-20 sm:p-2",
+          "shadow-[0_8px_28px_rgba(0,0,0,0.45)]",
           winner && "ring-2 ring-white/35",
         )}
       />
-      <div className={cn("min-w-0 text-center", align === "left" ? "sm:text-left" : "sm:text-right")}>
+      <div className={cn("text-center", align === "left" ? "sm:text-left" : "sm:text-right")}>
         <p
           className={cn(
-            "text-[16px] font-bold tracking-wide sm:text-[22px]",
+            "text-[18px] font-bold tracking-wide sm:text-[22px]",
             winner ? "text-white" : loser ? "text-white/55" : "text-white",
           )}
         >
           {side.abbrev}
         </p>
         {side.record ? (
-          <p className="numeral mt-1 text-[12px] font-medium text-white/70 sm:text-[13px]">{side.record}</p>
+          <p className="numeral mt-1 text-[13px] font-medium text-white/70">{side.record}</p>
         ) : (
           <p className="mt-1 truncate text-[11px] text-[#8b93a7]">{side.name}</p>
         )}
-        <TeamStandingLine standing={form?.standing} className="px-0.5" />
+        <TeamStandingLine standing={form?.standing} />
         {showForm ? (
           <TeamFormChips
             form={form}
@@ -1026,7 +1026,7 @@ function ProbablePitchers({
                       {id ? (
                         <Link
                           to={`/sports/mlb/player/${id}`}
-                          className="inline-flex items-center gap-1.5 font-semibold text-[#eef3ff] underline decoration-accent/40 underline-offset-[3px] hover:text-cream"
+                          className="inline-flex items-center gap-1.5 font-semibold text-accent hover:underline"
                         >
                           {label}
                           <PlayerWatchMark kind={watchKind} />
@@ -1190,7 +1190,7 @@ function PreviewLineups({
                   <td className="px-3 py-2.5 text-left">
                     <Link
                       to={`/sports/mlb/player/${h.id}`}
-                      className="inline-flex items-center gap-1.5 font-semibold text-[#eef3ff] underline decoration-accent/40 underline-offset-[3px] hover:text-cream"
+                      className="inline-flex items-center gap-1.5 font-semibold text-accent hover:underline"
                     >
                       {h.shortName}
                       <PlayerWatchMark kind={watchKind} />
@@ -1496,7 +1496,7 @@ function RecapBody({
   taggedIds?: Set<number>;
 }) {
   const linkClass =
-    "font-semibold text-[#eef3ff] underline decoration-accent/45 underline-offset-[3px] transition hover:text-cream hover:decoration-accent";
+    "font-semibold text-accent underline-offset-[3px] transition hover:underline";
 
   const needles = hidePhrases
     .map((p) => p.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim())
@@ -1686,18 +1686,18 @@ function EspnBoxBoard({
     <div className="space-y-4">
       <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[320px] text-center text-[11px] sm:min-w-[440px] sm:text-[12px]">
+          <table className="w-full min-w-[520px] text-center text-[12px]">
             <thead>
               <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                <th className="px-2 py-2 text-left font-medium sm:px-3"> </th>
+                <th className="px-3 py-2 text-left font-medium"> </th>
                 {game.innings.map((i) => (
-                  <th key={i.num} className="numeral px-0.5 py-2 font-medium sm:px-1">
+                  <th key={i.num} className="numeral px-1 py-2 font-medium">
                     {i.num}
                   </th>
                 ))}
-                <th className="numeral px-1.5 py-2 font-semibold text-white/70 sm:px-2">R</th>
-                <th className="numeral px-1.5 py-2 font-medium sm:px-2">H</th>
-                <th className="numeral px-1.5 py-2 font-medium sm:px-2">E</th>
+                <th className="numeral px-2 py-2 font-semibold text-white/70">R</th>
+                <th className="numeral px-2 py-2 font-medium">H</th>
+                <th className="numeral px-2 py-2 font-medium">E</th>
               </tr>
             </thead>
             <tbody>
@@ -1723,7 +1723,7 @@ function EspnBoxBoard({
                   <>
                     <Link
                       to={`/sports/mlb/player/${p.id}`}
-                      className="mt-0.5 inline-flex items-center gap-1 truncate text-[13px] font-semibold text-[#eef3ff] underline decoration-accent/40 underline-offset-[3px] hover:text-cream"
+                      className="mt-0.5 inline-flex items-center gap-1 truncate text-[13px] font-semibold text-accent hover:underline"
                     >
                       {shortPitcherName(p.name)}
                       <PlayerWatchMark
@@ -1964,7 +1964,7 @@ function TopPerformersSummary({
               <div className="min-w-0 flex-1">
                 <Link
                   to={`/sports/mlb/player/${b.id}`}
-                  className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#eef3ff] underline decoration-accent/40 underline-offset-[3px] hover:text-cream"
+                  className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-accent hover:underline"
                 >
                   {b.name}
                   <PlayerWatchMark kind={playerWatchKind(b.id, favoriteIds, taggedIds)} />
@@ -1989,7 +1989,7 @@ function TopPerformersSummary({
             <div className="min-w-0 flex-1">
               <Link
                 to={`/sports/mlb/player/${winPitcher.id}`}
-                className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#eef3ff] underline decoration-accent/40 underline-offset-[3px] hover:text-cream"
+                className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-accent hover:underline"
               >
                 {winPitcher.name}
                 <PlayerWatchMark

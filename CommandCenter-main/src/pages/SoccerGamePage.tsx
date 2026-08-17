@@ -281,7 +281,7 @@ function PreviewSection({
       />
       {storyHtml ? (
         <div
-          className="rss-reader border-t border-white/[0.06] px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-semibold [&_a]:text-[#eef3ff] [&_a]:underline [&_a]:decoration-accent/40 [&_a]:underline-offset-[3px] [&_p]:my-3.5"
+          className="rss-reader border-t border-white/[0.06] px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-semibold [&_a]:text-accent [&_a]:hover:underline [&_p]:my-3.5"
           dangerouslySetInnerHTML={{ __html: storyHtml }}
         />
       ) : null}

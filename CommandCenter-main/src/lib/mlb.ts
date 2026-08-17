@@ -6716,9 +6716,9 @@ export function prospectRanksFor(
   playerId: number,
 ): MlbProspectRankPair {
   return {
-    orgRank: maps?.org.get(playerId) ?? null,
-    top100Rank: maps?.top100.get(playerId) ?? null,
-    orgClubId: maps?.orgClubId.get(playerId) ?? null,
+    orgRank: maps?.org?.get(playerId) ?? null,
+    top100Rank: maps?.top100?.get(playerId) ?? null,
+    orgClubId: maps?.orgClubId?.get(playerId) ?? null,
   };
 }
 
