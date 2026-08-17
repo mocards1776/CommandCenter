@@ -2120,27 +2120,65 @@ export async function fetchEspnGameRecap(
         links?: { web?: { href?: string } };
         images?: { url?: string }[];
       };
+      news?: {
+        articles?: {
+          headline?: string;
+          description?: string;
+          story?: string;
+          links?: { web?: { href?: string } };
+          images?: { url?: string }[];
+        }[];
+      };
     };
-    const article = sum.article;
-    if (!article?.headline) return null;
-    const storyHtml =
-      article.story?.trim() ||
-      (article.description
-        ? `<p>${article.description.replace(/^—\s*/, "")}</p>`
-        : "");
-    if (!storyHtml) return null;
-    const storyText = stripHtml(storyHtml).trim();
-    if (storyText.length < 20) return null;
+
+    type StorySrc = {
+      headline?: string;
+      description?: string;
+      story?: string;
+      links?: { web?: { href?: string } };
+      images?: { url?: string }[];
+    };
+
+    const candidates: StorySrc[] = [];
+    if (sum.article) candidates.push(sum.article);
+    for (const a of sum.news?.articles ?? []) candidates.push(a);
+
+    const bodyOf = (a: StorySrc | undefined) => {
+      const story = a?.story?.trim() || "";
+      const desc = (a?.description ?? "").replace(/^—\s*/, "").trim();
+      if (story && stripHtml(story).trim().length >= 40) return story;
+      if (desc.length >= 40) return `<p>${desc}</p>`;
+      return story || (desc ? `<p>${desc}</p>` : "");
+    };
+
+    // Prefer the richest story body — ESPN often parks wrap copy under news.articles.
+    let best: StorySrc | null = null;
+    let bestHtml = "";
+    let bestLen = 0;
+    for (const c of candidates) {
+      if (!c?.headline && !c?.story && !c?.description) continue;
+      const html = bodyOf(c);
+      const len = stripHtml(html).trim().length;
+      if (len > bestLen) {
+        best = c;
+        bestHtml = html;
+        bestLen = len;
+      }
+    }
+    if (!best || !bestHtml || bestLen < 20) return null;
+
+    const storyText = stripHtml(bestHtml).trim();
     return {
       espnEventId: eventId,
-      headline: article.headline,
-      description: article.description ?? null,
-      storyHtml,
+      headline: best.headline || sum.article?.headline || "Game wrap",
+      description: best.description ?? sum.article?.description ?? null,
+      storyHtml: bestHtml,
       storyText,
       url:
-        article.links?.web?.href ??
+        best.links?.web?.href ??
+        sum.article?.links?.web?.href ??
         `https://www.espn.com/mlb/recap/_/gameId/${eventId}`,
-      image: article.images?.[0]?.url ?? null,
+      image: best.images?.[0]?.url ?? sum.article?.images?.[0]?.url ?? null,
     };
   } catch {
     return null;
@@ -6819,6 +6857,20 @@ async function loadTop100RankRows(
  * Org Pipeline ranks for the given clubs + league Top-100.
  * Org and Top-100 stay in separate maps so both can be shown on a player.
  */
+async function resolveMlbParentOrgId(teamId: number): Promise<number | null> {
+  if (mlbClubSlug(teamId)) return teamId;
+  try {
+    const raw = (await mlbGet(`teams/${teamId}`)) as {
+      teams?: { parentOrgId?: number }[];
+    };
+    const parent = Number(raw.teams?.[0]?.parentOrgId);
+    if (Number.isFinite(parent) && parent > 0 && mlbClubSlug(parent)) return parent;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 export async function fetchProspectRankMaps(opts?: {
   teamIds?: number[];
 }): Promise<MlbProspectRankMaps> {
@@ -6826,12 +6878,10 @@ export async function fetchProspectRankMaps(opts?: {
   const teamIds = [...new Set((opts?.teamIds ?? [138]).filter((id) => Number.isFinite(id) && id > 0))];
   const org = new Map<number, number>();
 
-  // Cardinals seeds fill org ranks when GraphQL lags.
-  if (teamIds.includes(138)) {
-    for (const seed of CARDINALS_PROSPECT_SEEDS) {
-      if (seed.playerId) org.set(seed.playerId, seed.rank);
-    }
-  }
+  const parentOrgs = (
+    await Promise.all(teamIds.map((id) => resolveMlbParentOrgId(id)))
+  ).filter((id): id is number => id != null);
+  const orgIds = [...new Set([...teamIds, ...parentOrgs].filter((id) => mlbClubSlug(id)))];
 
   await Promise.all(
     teamIds.map(async (teamId) => {
@@ -6839,6 +6889,14 @@ export async function fetchProspectRankMaps(opts?: {
       for (const [id, rank] of map) org.set(id, rank);
     }),
   );
+
+  // Cardinals seeds fill org ranks when GraphQL lags — include farm affiliates
+  // whose parent org is STL (e.g. Memphis), not only MLB team id 138.
+  if (orgIds.includes(138) || teamIds.includes(138) || parentOrgs.includes(138)) {
+    for (const seed of CARDINALS_PROSPECT_SEEDS) {
+      if (seed.playerId && !org.has(seed.playerId)) org.set(seed.playerId, seed.rank);
+    }
+  }
 
   const top100 = new Map<number, number>();
   for (const row of await loadTop100RankRows(year, 100)) {
