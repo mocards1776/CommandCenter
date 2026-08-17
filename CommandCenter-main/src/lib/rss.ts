@@ -1,4 +1,5 @@
 import { supabase, requireUserId } from "./supabase";
+import { formatCentralDateTime, parsePublishedAt } from "./utils";
 
 export type RssFeedDef = {
   id: string;
@@ -1787,8 +1788,9 @@ export async function fetchTagPlayerFeed(feedUrl: string): Promise<RssFeed> {
       const publishedAt = brief.published || null;
       // Only surface notes posted on/after the player was tagged.
       if (publishedAt && row.createdAt) {
-        const pub = Date.parse(publishedAt);
+        const pubDate = parsePublishedAt(publishedAt);
         const tagged = Date.parse(row.createdAt);
+        const pub = pubDate?.getTime() ?? Date.parse(publishedAt);
         if (Number.isFinite(pub) && Number.isFinite(tagged) && pub < tagged) return;
       } else if (!publishedAt) {
         // No publish date → skip so we don't backfill old notes.
@@ -1807,7 +1809,11 @@ export async function fetchTagPlayerFeed(feedUrl: string): Promise<RssFeed> {
     }),
   );
 
-  items.sort((a, b) => String(b.publishedAt).localeCompare(String(a.publishedAt)));
+  items.sort((a, b) => {
+    const da = parsePublishedAt(a.publishedAt)?.getTime() ?? 0;
+    const db = parsePublishedAt(b.publishedAt)?.getTime() ?? 0;
+    return db - da;
+  });
 
   return {
     title: `${label} · RotoWire`,
@@ -2858,6 +2864,10 @@ async function extractStlTodayInBrowser(url: string): Promise<RssArticle | null>
 
 export function formatFeedDate(raw: string | null): string {
   if (!raw) return "";
+  // ESPN RotoWire stamps like "Sun Aug 16 16:41:53 PDT 2026" → Central clock.
+  if (/\b(?:PDT|PST|EDT|EST|CDT|CST|MDT|MST)\b/i.test(raw)) {
+    return formatCentralDateTime(raw);
+  }
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return raw;
   // MLB Film Room / video items often publish as midnight UTC calendar labels

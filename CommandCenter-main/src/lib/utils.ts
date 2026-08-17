@@ -91,6 +91,91 @@ export function formatSportsDateLong(raw: string | Date | null | undefined): str
   }
 }
 
+/**
+ * Parse ESPN / RotoWire timestamps like "Sun Aug 16 16:41:53 PDT 2026".
+ * Falls back to Date.parse for ISO / RFC strings.
+ */
+export function parsePublishedAt(raw: string | null | undefined): Date | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const espn = trimmed.match(
+    /^[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s+([A-Za-z]{2,4})\s+(\d{4})$/,
+  );
+  if (espn) {
+    const months: Record<string, number> = {
+      jan: 0,
+      feb: 1,
+      mar: 2,
+      apr: 3,
+      may: 4,
+      jun: 5,
+      jul: 6,
+      aug: 7,
+      sep: 8,
+      oct: 9,
+      nov: 10,
+      dec: 11,
+    };
+    const offsets: Record<string, number> = {
+      PDT: -7,
+      PST: -8,
+      EDT: -4,
+      EST: -5,
+      CDT: -5,
+      CST: -6,
+      MDT: -6,
+      MST: -7,
+      UTC: 0,
+      GMT: 0,
+    };
+    const mon = months[espn[1]!.toLowerCase()];
+    const off = offsets[espn[6]!.toUpperCase()];
+    if (mon != null && off != null) {
+      const utcMs = Date.UTC(
+        Number(espn[7]),
+        mon,
+        Number(espn[2]),
+        Number(espn[3]) - off,
+        Number(espn[4]),
+        Number(espn[5]),
+      );
+      const d = new Date(utcMs);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+  }
+
+  const d = new Date(trimmed);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** RotoWire / Dispatch timestamps in Central (e.g. "Sun, Aug 16 · 6:41 PM CT"). */
+export function formatCentralDateTime(raw: string | null | undefined): string {
+  const d = parsePublishedAt(raw);
+  if (!d) return raw?.trim() || "";
+  const date = d.toLocaleDateString("en-US", {
+    timeZone: TZ,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  const time = d.toLocaleTimeString("en-US", {
+    timeZone: TZ,
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${date} · ${time} CT`;
+}
+
+/** True when the publish instant falls on today's calendar day in America/Chicago. */
+export function isPublishedTodayCentral(raw: string | null | undefined): boolean {
+  const d = parsePublishedAt(raw);
+  if (!d) return false;
+  const day = d.toLocaleDateString("en-CA", { timeZone: TZ });
+  return day === todayStr();
+}
+
 /** Day of week 0-6 (Sun-Sat) in Central time. */
 export function todayDow(): number {
   const s = new Date().toLocaleDateString("en-US", { timeZone: TZ, weekday: "short" });

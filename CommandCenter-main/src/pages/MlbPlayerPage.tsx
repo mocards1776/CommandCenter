@@ -43,7 +43,7 @@ import {
   type MlbPlayerStatLine,
   type MlbSplitRow,
 } from "@/lib/mlb";
-import { cn, formatSportsDate } from "@/lib/utils";
+import { cn, formatCentralDateTime, formatSportsDate, isPublishedTodayCentral } from "@/lib/utils";
 
 export default function MlbPlayerPage() {
   const { playerId } = useParams<{ playerId: string }>();
@@ -636,12 +636,21 @@ function RotoWireBriefCard({
   loading: boolean;
 }) {
   const articleUrl = `app:mlb-player/${playerId}`;
+  const isNew = isPublishedTodayCentral(brief?.published);
+  const publishedLabel = brief?.published ? formatCentralDateTime(brief.published) : null;
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] flex items-center justify-between gap-3 px-4 py-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-          RotoWire
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            RotoWire
+          </p>
+          {isNew ? (
+            <span className="rounded-sm bg-accent/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-accent">
+              New
+            </span>
+          ) : null}
+        </div>
         {brief?.url ? (
           <a
             href={brief.url}
@@ -672,9 +681,9 @@ function RotoWireBriefCard({
             {brief.story ? (
               <p className="text-chalk text-[14px] leading-relaxed">{brief.story}</p>
             ) : null}
-            {brief.published ? (
+            {publishedLabel ? (
               <p className="text-[11px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                {brief.published}
+                {publishedLabel}
               </p>
             ) : null}
           </SelectableHighlightRegion>

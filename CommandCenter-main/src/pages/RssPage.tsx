@@ -152,7 +152,7 @@ import { MlbGameDetail } from "@/pages/MlbGamePage";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { useAuth } from "@/lib/auth-context";
-import { cn } from "@/lib/utils";
+import { cn, isPublishedTodayCentral } from "@/lib/utils";
 
 type NavView =
   | "unread"
@@ -1480,6 +1480,12 @@ function ArticleReaderShell({
             {formatFeedDate(item.publishedAt)}
             {` · ${publisher}`}
             {article.data?.wordCount ? ` · ${readingMinutes(article.data.wordCount)}` : ""}
+            {/rotowire/i.test(item.author ?? publisher) &&
+            isPublishedTodayCentral(item.publishedAt) ? (
+              <span className="ml-2 inline-flex rounded-sm bg-accent/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-accent">
+                New
+              </span>
+            ) : null}
           </div>
           <h2 className="text-cream text-[32px] leading-[1.15] font-semibold md:text-[40px]">
             {titleParts.map((part, i) =>
@@ -1852,10 +1858,15 @@ function ArticleRow({
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="label-caps text-chalk-dim mb-1 flex items-center gap-1.5">
+          <div className="label-caps text-chalk-dim mb-1 flex flex-wrap items-center gap-1.5">
             {formatFeedDate(item.publishedAt)}
             {item.author ? ` · ${item.author}` : ""}
             {keptSource ? " · Kept source" : ""}
+            {/rotowire/i.test(item.author ?? "") && isPublishedTodayCentral(item.publishedAt) ? (
+              <span className="rounded-sm bg-accent/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-accent">
+                New
+              </span>
+            ) : null}
             {highlighted ? (
               <Highlighter size={12} className="text-accent shrink-0" aria-label="Has highlights" />
             ) : null}
