@@ -1974,6 +1974,17 @@ function TopPerformersSummary({
   const pitchers = [...game.away.pitchers, ...game.home.pitchers];
   if (!batters.length && !pitchers.length) return null;
 
+  // Old selection: top 3 batters by boxscore impact + the win pitcher (else best arm).
+  const batterPickScore = (b: MlbBoxscoreBatter) => b.h * 2 + b.rbi * 2 + b.hr * 3 + b.r;
+  const topBatters = [...batters]
+    .filter((b) => batterPickScore(b) > 0)
+    .sort((a, b) => batterPickScore(b) - batterPickScore(a))
+    .slice(0, 3);
+  const topPitcher =
+    pitchers.find((p) => pitcherDecision(p.note) === "W") ??
+    [...pitchers].sort((a, b) => b.so - a.so || Number(b.ip) - Number(a.ip))[0] ??
+    null;
+
   type Performer = {
     key: string;
     id: number;
@@ -1985,9 +1996,8 @@ function TopPerformersSummary({
     title: string;
   };
 
-  const batterRows: Performer[] = batters
-    .filter((b) => batterGameScore(b) > 40 || b.h > 0 || b.hr > 0 || b.rbi > 0)
-    .map((b) => ({
+  const rows: Performer[] = [
+    ...topBatters.map((b) => ({
       key: `bat-${b.id}`,
       id: b.id,
       name: b.name,
@@ -2004,36 +2014,38 @@ function TopPerformersSummary({
         .join(" · "),
       gs: batterGameScore(b),
       title: "Batter game score from this box score",
-    }));
-
-  const pitcherRows: Performer[] = pitchers
-    .filter((p) => pitcherGameScore(p) >= 50 || pitcherDecision(p.note) === "W" || p.started)
-    .map((p) => {
-      const decision = pitcherDecision(p.note);
-      return {
-        key: `pit-${p.id}`,
-        id: p.id,
-        name: p.name,
-        teamAbbrev: p.teamAbbrev,
-        role: pitcherRoleLabel(p),
-        line: [
-          `${p.ip} IP`,
-          `${p.h} H`,
-          `${p.er} ER`,
-          `${p.so} K`,
-          p.bb ? `${p.bb} BB` : null,
-          decision === "W" ? "W" : decision === "L" ? "L" : decision === "S" ? "SV" : null,
+    })),
+    ...(topPitcher
+      ? [
+          {
+            key: `pit-${topPitcher.id}`,
+            id: topPitcher.id,
+            name: topPitcher.name,
+            teamAbbrev: topPitcher.teamAbbrev,
+            role: pitcherRoleLabel(topPitcher),
+            line: [
+              `${topPitcher.ip} IP`,
+              `${topPitcher.h} H`,
+              `${topPitcher.er} ER`,
+              `${topPitcher.so} K`,
+              topPitcher.bb ? `${topPitcher.bb} BB` : null,
+              pitcherDecision(topPitcher.note) === "W"
+                ? "W"
+                : pitcherDecision(topPitcher.note) === "S"
+                  ? "SV"
+                  : null,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            gs: pitcherGameScore(topPitcher),
+            title: "Bill James pitching game score",
+          } satisfies Performer,
         ]
-          .filter(Boolean)
-          .join(" · "),
-        gs: pitcherGameScore(p),
-        title: "Bill James pitching game score",
-      };
-    });
+      : []),
+  ];
 
-  const top = [...batterRows, ...pitcherRows]
-    .sort((a, b) => b.gs - a.gs || a.name.localeCompare(b.name))
-    .slice(0, 4);
+  // Display order: highest GS among the selected performers.
+  const top = [...rows].sort((a, b) => b.gs - a.gs || a.name.localeCompare(b.name));
 
   if (!top.length) return null;
 
