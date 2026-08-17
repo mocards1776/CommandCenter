@@ -30,6 +30,7 @@ import {
   fetchPlayerBrief,
   fetchPlayerContract,
   fetchProspectRankMaps,
+  playerNewsSourceLabel,
   prospectRankLabels,
   prospectRanksFor,
   teamPagePath,
@@ -39,6 +40,7 @@ import {
   type MlbPlayerBrief,
   type MlbPlayerCard,
   type MlbPlayerLevel,
+  type MlbPlayerNewsNote,
   type MlbPlayerSeasonRow,
   type MlbPlayerStatLine,
   type MlbSplitRow,
@@ -138,7 +140,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
   });
 
   const brief = useQuery({
-    queryKey: ["mlb-player-brief-v1", player.data?.name],
+    queryKey: ["mlb-player-brief-v2", player.data?.name],
     queryFn: () => fetchPlayerBrief(player.data!.name),
     enabled: Boolean(player.data?.name),
     staleTime: 300_000,
@@ -367,7 +369,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
       )}
 
       {(brief.data || brief.isPending || brief.isFetched) && (
-        <RotoWireBriefCard
+        <PlayerNewsBriefCards
           playerId={p.id}
           playerName={p.name}
           brief={brief.data ?? null}
@@ -624,7 +626,7 @@ function ScoutingReportCard({
   );
 }
 
-function RotoWireBriefCard({
+function PlayerNewsBriefCards({
   playerId,
   playerName,
   brief,
@@ -635,15 +637,86 @@ function RotoWireBriefCard({
   brief: MlbPlayerBrief | null;
   loading: boolean;
 }) {
+  const notes: MlbPlayerNewsNote[] =
+    brief?.notes?.length
+      ? brief.notes
+      : brief?.headline || brief?.story
+        ? [
+            {
+              source: brief.source || "rotowire",
+              headline: brief.headline,
+              story: brief.story,
+              description: brief.description,
+              published: brief.published,
+              url: brief.url,
+            },
+          ]
+        : [];
+
+  if (loading) {
+    return (
+      <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+        <div className="border-b border-white/[0.06] px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            Player news
+          </p>
+        </div>
+        <div className="text-chalk-dim flex items-center gap-2 px-4 py-3 text-[13px]">
+          <Loader2 size={14} className="animate-spin" />
+          Loading RotoWire & RotoWorld…
+        </div>
+      </section>
+    );
+  }
+
+  if (!notes.length) {
+    return (
+      <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+        <div className="border-b border-white/[0.06] px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            Player news
+          </p>
+        </div>
+        <p className="text-chalk-dim px-4 py-3 text-[13px]">
+          No RotoWire or RotoWorld note available right now.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {notes.map((note) => (
+        <PlayerNewsNoteCard
+          key={`${note.source}-${note.published ?? ""}-${note.headline ?? ""}`}
+          playerId={playerId}
+          playerName={playerName}
+          note={note}
+        />
+      ))}
+    </div>
+  );
+}
+
+function PlayerNewsNoteCard({
+  playerId,
+  playerName,
+  note,
+}: {
+  playerId: number;
+  playerName: string;
+  note: MlbPlayerNewsNote;
+}) {
   const articleUrl = `app:mlb-player/${playerId}`;
-  const isNew = isPublishedTodayCentral(brief?.published);
-  const publishedLabel = brief?.published ? formatCentralDateTime(brief.published) : null;
+  const label = playerNewsSourceLabel(note.source);
+  const isNew = isPublishedTodayCentral(note.published);
+  const publishedLabel = note.published ? formatCentralDateTime(note.published) : null;
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] flex items-center justify-between gap-3 px-4 py-3">
         <div className="flex items-center gap-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-            RotoWire
+            {label}
           </p>
           {isNew ? (
             <span className="rounded-sm bg-accent/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-accent">
@@ -651,9 +724,9 @@ function RotoWireBriefCard({
             </span>
           ) : null}
         </div>
-        {brief?.url ? (
+        {note.url ? (
           <a
-            href={brief.url}
+            href={note.url}
             target="_blank"
             rel="noreferrer"
             className="text-chalk-dim hover:text-chalk inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em]"
@@ -663,33 +736,24 @@ function RotoWireBriefCard({
         ) : null}
       </div>
       <div className="px-4 py-3">
-        {loading ? (
-          <div className="text-chalk-dim flex items-center gap-2 text-[13px]">
-            <Loader2 size={14} className="animate-spin" />
-            Loading brief…
-          </div>
-        ) : brief?.story || brief?.headline ? (
-          <SelectableHighlightRegion
-            articleUrl={articleUrl}
-            articleTitle={`${playerName}: ${brief.headline || "RotoWire"}`}
-            feedUrl="synthetic:player-card"
-            className="space-y-2"
-          >
-            {brief.headline ? (
-              <p className="text-cream text-[15px] font-medium leading-snug">{brief.headline}</p>
-            ) : null}
-            {brief.story ? (
-              <p className="text-chalk text-[14px] leading-relaxed">{brief.story}</p>
-            ) : null}
-            {publishedLabel ? (
-              <p className="text-[11px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                {publishedLabel}
-              </p>
-            ) : null}
-          </SelectableHighlightRegion>
-        ) : (
-          <p className="text-chalk-dim text-[13px]">No RotoWire note available right now.</p>
-        )}
+        <SelectableHighlightRegion
+          articleUrl={articleUrl}
+          articleTitle={`${playerName}: ${note.headline || label}`}
+          feedUrl="synthetic:player-card"
+          className="space-y-2"
+        >
+          {note.headline ? (
+            <p className="text-cream text-[15px] font-medium leading-snug">{note.headline}</p>
+          ) : null}
+          {note.story ? (
+            <p className="text-chalk text-[14px] leading-relaxed">{note.story}</p>
+          ) : null}
+          {publishedLabel ? (
+            <p className="text-[11px] uppercase tracking-[0.12em] text-[#8b93a7]">
+              {publishedLabel}
+            </p>
+          ) : null}
+        </SelectableHighlightRegion>
       </div>
     </section>
   );

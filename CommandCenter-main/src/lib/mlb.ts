@@ -3269,6 +3269,15 @@ export async function fetchPlayerContract(
   throw new Error("No salary table came back from Baseball Reference / Spotrac yet");
 }
 
+export type MlbPlayerNewsNote = {
+  source: "rotowire" | "rotoworld" | string;
+  headline: string | null;
+  story: string | null;
+  description: string | null;
+  published: string | null;
+  url: string | null;
+};
+
 export type MlbPlayerBrief = {
   source: string;
   name: string;
@@ -3279,7 +3288,66 @@ export type MlbPlayerBrief = {
   published: string | null;
   news: { headline: string; description: string }[];
   url: string | null;
+  /** RotoWire + RotoWorld blurbs when available (newest first). */
+  notes: MlbPlayerNewsNote[];
 };
+
+function normalizePlayerBrief(
+  payload: Partial<MlbPlayerBrief> & {
+    error?: string;
+    rotowire?: MlbPlayerNewsNote | null;
+    rotoworld?: MlbPlayerNewsNote | null;
+  },
+  fallbackName: string,
+): MlbPlayerBrief | null {
+  if (payload.error) return null;
+  const notes: MlbPlayerNewsNote[] = [];
+  if (Array.isArray(payload.notes)) {
+    for (const n of payload.notes) {
+      if (!n || !(n.headline || n.story)) continue;
+      notes.push({
+        source: n.source || "rotowire",
+        headline: n.headline ?? null,
+        story: n.story ?? null,
+        description: n.description ?? null,
+        published: n.published ?? null,
+        url: n.url ?? null,
+      });
+    }
+  }
+  if (!notes.length && payload.rotowire && (payload.rotowire.headline || payload.rotowire.story)) {
+    notes.push({ ...payload.rotowire, source: payload.rotowire.source || "rotowire" });
+  }
+  if (!notes.length && payload.rotoworld && (payload.rotoworld.headline || payload.rotoworld.story)) {
+    notes.push({ ...payload.rotoworld, source: payload.rotoworld.source || "rotoworld" });
+  }
+  if (!notes.length && (payload.headline || payload.story)) {
+    notes.push({
+      source: payload.source?.includes("rotoworld") && !payload.source.includes("rotowire")
+        ? "rotoworld"
+        : "rotowire",
+      headline: payload.headline ?? null,
+      story: payload.story ?? null,
+      description: payload.description ?? null,
+      published: payload.published ?? null,
+      url: payload.url ?? null,
+    });
+  }
+  if (!notes.length && !(payload.news?.length)) return null;
+  const primary = notes[0];
+  return {
+    source: payload.source ?? (notes.map((n) => n.source).join("+") || "rotowire"),
+    name: payload.name ?? fallbackName,
+    espnId: payload.espnId ?? null,
+    headline: primary?.headline ?? payload.headline ?? null,
+    story: primary?.story ?? payload.story ?? null,
+    description: primary?.description ?? payload.description ?? null,
+    published: primary?.published ?? payload.published ?? null,
+    news: payload.news ?? [],
+    url: primary?.url ?? payload.url ?? null,
+    notes,
+  };
+}
 
 export async function fetchPlayerBrief(playerName: string): Promise<MlbPlayerBrief | null> {
   const name = playerName.trim();
@@ -3289,20 +3357,15 @@ export async function fetchPlayerBrief(playerName: string): Promise<MlbPlayerBri
       body: { action: "playerBrief", name },
     });
     const payload = (data ?? null) as
-      | (Partial<MlbPlayerBrief> & { error?: string })
+      | (Partial<MlbPlayerBrief> & {
+          error?: string;
+          rotowire?: MlbPlayerNewsNote | null;
+          rotoworld?: MlbPlayerNewsNote | null;
+        })
       | null;
-    if (payload && !payload.error && (payload.headline || payload.story || payload.news?.length)) {
-      return {
-        source: payload.source ?? "rotowire",
-        name: payload.name ?? name,
-        espnId: payload.espnId ?? null,
-        headline: payload.headline ?? null,
-        story: payload.story ?? null,
-        description: payload.description ?? null,
-        published: payload.published ?? null,
-        news: payload.news ?? [],
-        url: payload.url ?? null,
-      };
+    if (payload) {
+      const normalized = normalizePlayerBrief(payload, name);
+      if (normalized) return normalized;
     }
     if (error && !payload) throw error;
   } catch {
@@ -3324,22 +3387,24 @@ export async function fetchPlayerBrief(playerName: string): Promise<MlbPlayerBri
       body: JSON.stringify({ action: "playerBrief", name }),
     });
     if (!res.ok) return null;
-    const payload = (await res.json()) as Partial<MlbPlayerBrief> & { error?: string };
-    if (payload.error || !(payload.headline || payload.story || payload.news?.length)) return null;
-    return {
-      source: payload.source ?? "rotowire",
-      name: payload.name ?? name,
-      espnId: payload.espnId ?? null,
-      headline: payload.headline ?? null,
-      story: payload.story ?? null,
-      description: payload.description ?? null,
-      published: payload.published ?? null,
-      news: payload.news ?? [],
-      url: payload.url ?? null,
+    const payload = (await res.json()) as Partial<MlbPlayerBrief> & {
+      error?: string;
+      rotowire?: MlbPlayerNewsNote | null;
+      rotoworld?: MlbPlayerNewsNote | null;
     };
+    return normalizePlayerBrief(payload, name);
   } catch {
     return null;
   }
+}
+
+export function playerNewsSourceLabel(source: string | null | undefined): string {
+  const s = (source ?? "").toLowerCase();
+  if (s === "rotoworld") return "RotoWorld";
+  if (s === "rotowire") return "RotoWire";
+  if (s.includes("rotoworld") && s.includes("rotowire")) return "RotoWire · RotoWorld";
+  if (s.includes("rotoworld")) return "RotoWorld";
+  return "RotoWire";
 }
 
 const SPLIT_HIT_KEYS: [string, string][] = [

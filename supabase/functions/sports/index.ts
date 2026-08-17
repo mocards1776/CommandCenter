@@ -481,16 +481,39 @@ function normPerson(s: string): string {
     .trim();
 }
 
+type PlayerNewsNote = {
+  source: "rotowire" | "rotoworld";
+  headline: string | null;
+  story: string | null;
+  description: string | null;
+  published: string | null;
+  url: string | null;
+};
+
+function notePublishedMs(published: string | null | undefined): number {
+  if (!published) return 0;
+  const t = Date.parse(published);
+  return Number.isFinite(t) ? t : 0;
+}
+
 /** RotoWire write-up via ESPN athlete overview (plus a couple news headlines). */
-async function scrapePlayerBrief(name: string) {
+async function scrapeRotoWireNote(name: string): Promise<{
+  note: PlayerNewsNote | null;
+  news: { headline: string; description: string }[];
+  displayName: string | null;
+  espnId: string | null;
+  error?: string;
+}> {
   const want = normPerson(name);
   const searchUrl =
     `https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&type=player&limit=8&query=` +
     encodeURIComponent(name.trim());
   const searchRes = await timedFetch(searchUrl, {
     headers: { Accept: "application/json", "User-Agent": UA, Referer: "https://www.espn.com/" },
-  });
-  if (!searchRes.ok) return { error: `ESPN search ${searchRes.status}`, name };
+  }, SEARCH_MS);
+  if (!searchRes.ok) {
+    return { note: null, news: [], displayName: null, espnId: null, error: `ESPN search ${searchRes.status}` };
+  }
   const searchJson = (await searchRes.json()) as {
     items?: { id?: string; displayName?: string; league?: string; type?: string }[];
   };
@@ -501,13 +524,23 @@ async function scrapePlayerBrief(name: string) {
     mlb.find((it) => normPerson(it.displayName ?? "") === want) ??
     mlb.find((it) => normPerson(it.displayName ?? "").includes(want.split(" ").slice(-1)[0] ?? "")) ??
     mlb[0];
-  if (!hit?.id) return { error: "Player not found on ESPN", name };
+  if (!hit?.id) {
+    return { note: null, news: [], displayName: null, espnId: null, error: "Player not found on ESPN" };
+  }
 
   const ovRes = await timedFetch(
     `https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${hit.id}/overview`,
     { headers: { Accept: "application/json", "User-Agent": UA, Referer: "https://www.espn.com/" } },
   );
-  if (!ovRes.ok) return { error: `ESPN overview ${ovRes.status}`, name, espnId: hit.id };
+  if (!ovRes.ok) {
+    return {
+      note: null,
+      news: [],
+      displayName: hit.displayName ?? null,
+      espnId: String(hit.id),
+      error: `ESPN overview ${ovRes.status}`,
+    };
+  }
   const ov = (await ovRes.json()) as {
     rotowire?: {
       headline?: string;
@@ -525,20 +558,164 @@ async function scrapePlayerBrief(name: string) {
       headline: n.headline ?? "",
       description: n.description ?? "",
     }));
-  if (!rw.headline && !rw.story && !news.length) {
-    return { error: "No RotoWire brief available", name, espnId: hit.id };
+  const headline = rw.headline ?? rw.description ?? null;
+  const story = rw.story ?? null;
+  if (!headline && !story) {
+    return {
+      note: null,
+      news,
+      displayName: hit.displayName ?? null,
+      espnId: String(hit.id),
+    };
   }
   return {
-    source: "rotowire",
-    provider: "espn",
-    name: hit.displayName ?? name,
-    espnId: String(hit.id),
-    headline: rw.headline ?? rw.description ?? null,
-    story: rw.story ?? null,
-    description: rw.description ?? null,
-    published: rw.published ?? null,
+    note: {
+      source: "rotowire",
+      headline,
+      story,
+      description: rw.description ?? null,
+      published: rw.published ?? null,
+      url: `https://www.espn.com/mlb/player/_/id/${hit.id}`,
+    },
     news,
-    url: `https://www.espn.com/mlb/player/_/id/${hit.id}`,
+    displayName: hit.displayName ?? null,
+    espnId: String(hit.id),
+  };
+}
+
+/** RotoWorld (NBC Sports) player-news blurb for an MLB player. */
+async function scrapeRotoWorldNote(name: string): Promise<PlayerNewsNote | null> {
+  const want = normPerson(name);
+  const parts = want.split(" ").filter(Boolean);
+  const first = parts[0] ?? "";
+  const last = parts[parts.length - 1] ?? "";
+  const slugWant = parts.join("-");
+
+  const searchRes = await timedFetch(
+    `https://www.nbcsports.com/search?q=${encodeURIComponent(name.trim())}`,
+    {
+      headers: {
+        "User-Agent": UA,
+        Accept: "text/html",
+        Referer: "https://www.nbcsports.com/",
+      },
+    },
+    SEARCH_MS,
+  );
+  if (!searchRes.ok) return null;
+  const searchHtml = await searchRes.text();
+  const linkRe = /https:\/\/www\.nbcsports\.com\/mlb\/([a-z0-9-]+)\/(\d+)/gi;
+  const candidates: { slug: string; id: string }[] = [];
+  const seen = new Set<string>();
+  for (const m of searchHtml.matchAll(linkRe)) {
+    const slug = m[1] ?? "";
+    const id = m[2] ?? "";
+    if (!/^\d{4,7}$/.test(id)) continue;
+    const key = `${slug}/${id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push({ slug, id });
+  }
+  const pick =
+    candidates.find((c) => c.slug === slugWant) ??
+    candidates.find((c) => first && last && c.slug.includes(first) && c.slug.includes(last)) ??
+    candidates.find((c) => last && c.slug.includes(last)) ??
+    null;
+  if (!pick) return null;
+
+  const newsUrl = `https://www.nbcsports.com/mlb/${pick.slug}/${pick.id}/news`;
+  const newsRes = await timedFetch(
+    newsUrl,
+    {
+      headers: {
+        "User-Agent": UA,
+        Accept: "text/html",
+        Referer: "https://www.nbcsports.com/",
+      },
+    },
+    HEAVY_MS,
+  );
+  if (!newsRes.ok) return null;
+  const html = await newsRes.text();
+  const posts = html.split(/<div class="PlayerNewsPost"/i).slice(1);
+  for (const raw of posts) {
+    const block = `<div class="PlayerNewsPost"${raw}`;
+    const firstName = stripTags(block.match(/PlayerNewsPost-firstName[^>]*>([\s\S]*?)<\//i)?.[1] ?? "");
+    const lastName = stripTags(block.match(/PlayerNewsPost-lastName[^>]*>([\s\S]*?)<\//i)?.[1] ?? "");
+    const postName = normPerson(`${firstName} ${lastName}`);
+    if (!postName) continue;
+    if (postName !== want && !postName.includes(last) && !want.includes(postName)) continue;
+
+    const headline = decodeHtmlEntities(
+      stripTags(block.match(/PlayerNewsPost-headline[^>]*>([\s\S]*?)<\//i)?.[1] ?? ""),
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+    const story = decodeHtmlEntities(
+      stripTags(block.match(/PlayerNewsPost-analysis[^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? ""),
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+    const published =
+      block.match(/PlayerNewsPost-date[^>]*data-date="([^"]+)"/i)?.[1]?.trim() ||
+      block.match(/data-share-url="[^"]*\/(\d{4}-\d{2}-\d{2})\//i)?.[1] ||
+      null;
+    const shareUrl = block.match(/data-share-url="([^"]+)"/i)?.[1]?.trim() || newsUrl;
+    if (!headline && !story) continue;
+    return {
+      source: "rotoworld",
+      headline: headline || null,
+      story: story || null,
+      description: story || null,
+      published,
+      url: shareUrl,
+    };
+  }
+  return null;
+}
+
+/** Combined RotoWire (ESPN) + RotoWorld (NBC Sports) player news. */
+async function scrapePlayerBrief(name: string) {
+  const [rwPack, rotoworld] = await Promise.all([
+    scrapeRotoWireNote(name).catch((e) => ({
+      note: null as PlayerNewsNote | null,
+      news: [] as { headline: string; description: string }[],
+      displayName: null as string | null,
+      espnId: null as string | null,
+      error: String(e),
+    })),
+    scrapeRotoWorldNote(name).catch(() => null),
+  ]);
+
+  const notes: PlayerNewsNote[] = [];
+  if (rwPack.note) notes.push(rwPack.note);
+  if (rotoworld) notes.push(rotoworld);
+  notes.sort((a, b) => notePublishedMs(b.published) - notePublishedMs(a.published));
+
+  if (!notes.length && !rwPack.news.length) {
+    return {
+      error: rwPack.error || "No RotoWire or RotoWorld brief available",
+      name,
+      espnId: rwPack.espnId,
+    };
+  }
+
+  const primary = notes[0] ?? null;
+  const sources = notes.map((n) => n.source);
+  return {
+    source: sources.length ? sources.join("+") : "rotowire",
+    provider: "espn+nbcsports",
+    name: rwPack.displayName ?? name,
+    espnId: rwPack.espnId,
+    headline: primary?.headline ?? null,
+    story: primary?.story ?? null,
+    description: primary?.description ?? null,
+    published: primary?.published ?? null,
+    url: primary?.url ?? (rwPack.espnId ? `https://www.espn.com/mlb/player/_/id/${rwPack.espnId}` : null),
+    news: rwPack.news,
+    notes,
+    rotowire: rwPack.note,
+    rotoworld,
   };
 }
 

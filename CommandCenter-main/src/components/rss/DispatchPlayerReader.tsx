@@ -2,7 +2,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Share } from "lucide-react";
 import toast from "react-hot-toast";
 import { MlbPlayerDetail } from "@/pages/MlbPlayerPage";
 
-/** Present a full player page inside Dispatch when a tag-feed RotoWire item opens. */
+/** Present a full player page inside Dispatch when a tag-feed player-news item opens. */
 export default function DispatchPlayerReader({
   playerId,
   title,
@@ -87,7 +87,7 @@ export default function DispatchPlayerReader({
       </div>
       {title ? (
         <p className="text-accent text-[10px] font-semibold uppercase tracking-[0.18em]">
-          RotoWire · Player page
+          Player news · Player page
         </p>
       ) : null}
       <MlbPlayerDetail playerId={String(playerId)} />

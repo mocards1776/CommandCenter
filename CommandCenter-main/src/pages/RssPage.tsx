@@ -1480,7 +1480,7 @@ function ArticleReaderShell({
             {formatFeedDate(item.publishedAt)}
             {` · ${publisher}`}
             {article.data?.wordCount ? ` · ${readingMinutes(article.data.wordCount)}` : ""}
-            {/rotowire/i.test(item.author ?? publisher) &&
+            {/rotowire|rotoworld/i.test(item.author ?? publisher) &&
             isPublishedTodayCentral(item.publishedAt) ? (
               <span className="ml-2 inline-flex rounded-sm bg-accent/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-accent">
                 New
@@ -1862,7 +1862,7 @@ function ArticleRow({
             {formatFeedDate(item.publishedAt)}
             {item.author ? ` · ${item.author}` : ""}
             {keptSource ? " · Kept source" : ""}
-            {/rotowire/i.test(item.author ?? "") && isPublishedTodayCentral(item.publishedAt) ? (
+            {/rotowire|rotoworld/i.test(item.author ?? "") && isPublishedTodayCentral(item.publishedAt) ? (
               <span className="rounded-sm bg-accent/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-accent">
                 New
               </span>
@@ -2083,7 +2083,7 @@ export default function RssPage() {
     () =>
       (userTags.data ?? []).map((tag) => ({
         id: tagFeedId(tag),
-        title: `${displayPlayerTag(tag)} · RotoWire`,
+        title: `${displayPlayerTag(tag)} · Player news`,
         short: displayPlayerTag(tag).replace(/^#/, "") || tag,
         url: tagFeedUrl(tag),
       })),

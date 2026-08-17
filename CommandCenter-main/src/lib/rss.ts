@@ -248,6 +248,7 @@ const PUBLISHER_BY_HOST: { test: RegExp; label: string }[] = [
   { test: /si\.com|sportsillustrated/i, label: "SI" },
   { test: /bleacherreport/i, label: "B/R" },
   { test: /rotowire/i, label: "RotoWire" },
+  { test: /rotoworld/i, label: "RotoWorld" },
   { test: /heavy\.com/i, label: "Heavy" },
 ];
 
@@ -1762,11 +1763,12 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
   return invokeRss<RssFeed>({ mode: "feed", feedUrl });
 }
 
-/** Dispatch feed of tagged players who have a RotoWire note — opens as player page. */
+/** Dispatch feed of tagged players who have RotoWire / RotoWorld notes — opens as player page. */
 export async function fetchTagPlayerFeed(feedUrl: string): Promise<RssFeed> {
   const { fetchPlayersWithTag, normalizeTag, parseTagFeedUrl, displayPlayerTag } =
     await import("./sports-player-tags");
-  const { fetchMlbPeopleByIds, fetchPlayerBrief, mlbHeadshot } = await import("./mlb");
+  const { fetchMlbPeopleByIds, fetchPlayerBrief, mlbHeadshot, playerNewsSourceLabel } =
+    await import("./mlb");
 
   const tag = parseTagFeedUrl(feedUrl) ?? normalizeTag(feedUrl.replace(/^synthetic:tag:/, ""));
   const label = displayPlayerTag(tag) || `#${tag}`;
@@ -1774,7 +1776,7 @@ export async function fetchTagPlayerFeed(feedUrl: string): Promise<RssFeed> {
   const people = await fetchMlbPeopleByIds(rows.map((r) => r.playerId));
 
   const items: RssFeedItem[] = [];
-  // Cap concurrency — RotoWire lookups hit the sports edge function.
+  // Cap concurrency — brief lookups hit the sports edge function.
   const queue = rows.slice(0, 24);
   await Promise.all(
     queue.map(async (row) => {
@@ -1782,30 +1784,63 @@ export async function fetchTagPlayerFeed(feedUrl: string): Promise<RssFeed> {
       const person = people.get(id);
       const name = person?.name ?? `Player #${row.playerId}`;
       const brief = await fetchPlayerBrief(name).catch(() => null);
-      if (!brief?.headline && !brief?.story && !(brief?.news?.length)) return;
-      const headline = brief.headline || brief.news?.[0]?.headline || "RotoWire update";
-      const story = brief.story || brief.description || brief.news?.[0]?.description || "";
-      const publishedAt = brief.published || null;
-      // Only surface notes posted on/after the player was tagged.
-      if (publishedAt && row.createdAt) {
-        const pubDate = parsePublishedAt(publishedAt);
-        const tagged = Date.parse(row.createdAt);
-        const pub = pubDate?.getTime() ?? Date.parse(publishedAt);
-        if (Number.isFinite(pub) && Number.isFinite(tagged) && pub < tagged) return;
-      } else if (!publishedAt) {
-        // No publish date → skip so we don't backfill old notes.
-        return;
+      const notes =
+        brief?.notes?.length
+          ? brief.notes
+          : brief?.headline || brief?.story
+            ? [
+                {
+                  source: brief.source || "rotowire",
+                  headline: brief.headline,
+                  story: brief.story,
+                  description: brief.description,
+                  published: brief.published,
+                  url: brief.url,
+                },
+              ]
+            : [];
+      if (!notes.length && !(brief?.news?.length)) return;
+
+      const entries =
+        notes.length > 0
+          ? notes
+          : [
+              {
+                source: "rotowire",
+                headline: brief?.news?.[0]?.headline ?? null,
+                story: brief?.news?.[0]?.description ?? null,
+                description: brief?.news?.[0]?.description ?? null,
+                published: brief?.published ?? null,
+                url: brief?.url ?? null,
+              },
+            ];
+
+      for (const note of entries) {
+        const headline = note.headline || "Player news update";
+        const story = note.story || note.description || "";
+        const publishedAt = note.published || null;
+        // Only surface notes posted on/after the player was tagged.
+        if (publishedAt && row.createdAt) {
+          const pubDate = parsePublishedAt(publishedAt);
+          const tagged = Date.parse(row.createdAt);
+          const pub = pubDate?.getTime() ?? Date.parse(publishedAt);
+          if (Number.isFinite(pub) && Number.isFinite(tagged) && pub < tagged) continue;
+        } else if (!publishedAt) {
+          // No publish date → skip so we don't backfill old notes.
+          continue;
+        }
+        const sourceLabel = playerNewsSourceLabel(note.source);
+        items.push({
+          id: `tag-${tag}-${id}-${note.source}-${publishedAt}`,
+          title: `${name}: ${headline}`,
+          link: `app:mlb-player/${id}`,
+          author: sourceLabel,
+          publishedAt,
+          image: mlbHeadshot(id, 426),
+          snippet: story.slice(0, 280),
+          contentHtml: "",
+        });
       }
-      items.push({
-        id: `tag-${tag}-${id}-${publishedAt}`,
-        title: `${name}: ${headline}`,
-        link: `app:mlb-player/${id}`,
-        author: "RotoWire",
-        publishedAt,
-        image: mlbHeadshot(id, 426),
-        snippet: story.slice(0, 280),
-        contentHtml: "",
-      });
     }),
   );
 
@@ -1816,8 +1851,8 @@ export async function fetchTagPlayerFeed(feedUrl: string): Promise<RssFeed> {
   });
 
   return {
-    title: `${label} · RotoWire`,
-    description: `Player pages for ${label} when RotoWire posts a note`,
+    title: `${label} · Player news`,
+    description: `Player pages for ${label} when RotoWire or RotoWorld posts a note`,
     link: feedUrl,
     feedUrl,
     items,
