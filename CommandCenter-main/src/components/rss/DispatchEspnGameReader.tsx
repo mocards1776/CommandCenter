@@ -201,7 +201,7 @@ export default function DispatchEspnGameReader({
 
   if (!eventId) {
     return (
-      <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
         {chrome}
         <p className="text-alert text-[13px]">Couldn’t find an ESPN game id in this link.</p>
         <a
@@ -218,7 +218,7 @@ export default function DispatchEspnGameReader({
 
   if (soccer) {
     return (
-      <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
         {chrome}
         {hero}
         <SoccerGameDetailView
@@ -234,7 +234,7 @@ export default function DispatchEspnGameReader({
   if (nfl) {
     if (nflGame.isPending) {
       return (
-        <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+        <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
           {chrome}
           <div className="text-chalk flex min-h-[40vh] items-center justify-center gap-2">
             <Loader2 size={18} className="animate-spin" />
@@ -245,7 +245,7 @@ export default function DispatchEspnGameReader({
     }
     if (nflGame.data || eventId) {
       return (
-        <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+        <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
           {chrome}
           {hero}
           <NflGameDetailView eventId={eventId!} suppressStoryHeader={Boolean(heroImage || title)} />
@@ -256,7 +256,7 @@ export default function DispatchEspnGameReader({
 
   if (!nfl && !soccer && resolved.isPending) {
     return (
-      <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
         {chrome}
         <div className="text-chalk flex min-h-[40vh] items-center justify-center gap-2">
           <Loader2 size={18} className="animate-spin" />
@@ -268,7 +268,7 @@ export default function DispatchEspnGameReader({
 
   if (!nfl && !soccer && resolved.data != null) {
     return (
-      <div className="mx-auto max-w-3xl space-y-5 px-3 py-4 sm:p-4 md:p-7">
+      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
         {chrome}
         {hero}
         <MlbGameDetail
@@ -282,7 +282,7 @@ export default function DispatchEspnGameReader({
 
   if (fallback.isPending) {
     return (
-      <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
         {chrome}
         <div className="text-chalk flex min-h-[30vh] items-center justify-center gap-2">
           <Loader2 size={18} className="animate-spin" />
@@ -294,7 +294,7 @@ export default function DispatchEspnGameReader({
 
   if (fallback.data) {
     return (
-      <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
         {chrome}
         {hero}
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
@@ -330,7 +330,7 @@ export default function DispatchEspnGameReader({
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+    <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
       {chrome}
       <p className="text-alert text-[13px]">Couldn’t extract this ESPN game story.</p>
       <a

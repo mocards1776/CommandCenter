@@ -691,11 +691,10 @@ function EspnGameReaderShell({
 
   return (
     <div
-      className="grid w-full gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
-      style={{ touchAction: "pan-y" }}
+      className="grid w-full max-w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
       onClick={onDoubleTap}
     >
-      <div className="min-w-0 max-w-3xl justify-self-start lg:pl-2">
+      <div className="w-full max-w-3xl min-w-0 justify-self-start overflow-x-hidden lg:pl-2">
         <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
           <button
             type="button"
@@ -810,11 +809,10 @@ function MlbGameArticleShell({
 
   return (
     <div
-      className="grid w-full gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
-      style={{ touchAction: "pan-y" }}
+      className="grid w-full max-w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
       onClick={onDoubleTap}
     >
-      <div className="min-w-0 max-w-3xl justify-self-start lg:pl-2">
+      <div className="w-full max-w-3xl min-w-0 justify-self-start overflow-x-hidden lg:pl-2">
         <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
           <button
             type="button"
@@ -837,7 +835,7 @@ function MlbGameArticleShell({
             Archive
           </button>
         </div>
-        <div className="mx-auto max-w-3xl space-y-4 px-3 py-4 sm:p-4 md:p-7">
+        <div className="mx-auto w-full max-w-3xl min-w-0 space-y-4 px-3 py-4 sm:p-4 md:p-7">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
             <button
               type="button"

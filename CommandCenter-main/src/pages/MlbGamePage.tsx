@@ -203,7 +203,7 @@ export function MlbGameDetail({
   ].filter(Boolean);
 
   return (
-    <div className="space-y-5">
+    <div className="w-full max-w-full min-w-0 space-y-5 overflow-x-hidden">
       <GameMatchupHeader game={g} />
 
       {/* Box score (with team circles) sits above wrap text. Pregame: preview story first. */}
@@ -772,8 +772,9 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
   });
   const showLiveMatchup =
     Boolean(g.situation) && (g.live || /warmup|in progress/i.test(g.status));
+  const pregameClock = g.pregame && !/warmup/i.test(g.status);
   return (
-    <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
+    <header className="relative w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
       <div
         className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-90"
         style={{
@@ -788,42 +789,43 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
       />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.06),transparent_45%)]" />
 
-      <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.07] px-4 py-2.5">
+      <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.07] px-3 py-2.5 sm:px-4">
         <p
           className={cn(
-            "text-[11px] font-bold uppercase tracking-[0.16em]",
+            "min-w-0 truncate text-[11px] font-bold uppercase tracking-[0.16em]",
             g.status === "Final" ? "text-cream" : g.live ? "text-alert" : "text-[#a8b0c2]",
           )}
         >
           {g.pregame ? (/warmup/i.test(g.status) ? g.status : "Preview") : g.live ? g.inning || g.status : g.status}
         </p>
         {g.officialDate && (
-          <p className="text-[11px] text-[#8b93a7]">{formatSportsDateLong(g.officialDate)}</p>
+          <p className="shrink-0 text-[11px] text-[#8b93a7]">{formatSportsDateLong(g.officialDate)}</p>
         )}
       </div>
 
-      <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 px-2.5 py-5 sm:gap-4 sm:px-6 sm:py-7">
+      {/* Compact flex scoreboard — cannot outgrow the phone width. */}
+      <div className="relative z-10 flex w-full min-w-0 items-center gap-2 px-2.5 py-4 sm:gap-4 sm:px-6 sm:py-7">
         <EspnTeam
           side={g.away}
           align="left"
           winner={awayWins}
           loser={homeWins}
           form={awayForm.data ?? null}
-          showForm={g.pregame && !/warmup/i.test(g.status)}
+          showForm={pregameClock}
         />
-        <div className="min-w-0 shrink px-0.5 text-center sm:px-1">
-          {g.pregame && !/warmup/i.test(g.status) ? (
+        <div className="w-[5.5rem] shrink-0 text-center sm:w-auto sm:min-w-[7.5rem] sm:px-1">
+          {pregameClock ? (
             <>
-              <p className="font-display text-[32px] leading-none tracking-tight text-white sm:text-[52px]">
+              <p className="font-display text-[26px] leading-none tracking-tight text-white sm:text-[52px]">
                 {g.whenShort ?? "TBD"}
               </p>
-              <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+              <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7] sm:mt-2 sm:text-[10px] sm:tracking-[0.16em]">
                 First pitch
               </p>
             </>
           ) : (
             <>
-              <p className="font-display text-[34px] leading-none tabular-nums tracking-tight text-white sm:text-[52px] md:text-[64px]">
+              <p className="font-display text-[28px] leading-none tabular-nums tracking-tight text-white sm:text-[52px] md:text-[64px]">
                 <span
                   className={cn(
                     "drop-shadow-[0_0_28px_rgba(255,255,255,0.16)]",
@@ -832,7 +834,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
                 >
                   {g.away.runs}
                 </span>
-                <span className="mx-1.5 text-[18px] font-light text-white/25 sm:mx-3 sm:text-[22px]">–</span>
+                <span className="mx-1 text-[16px] font-light text-white/25 sm:mx-3 sm:text-[22px]">–</span>
                 <span
                   className={cn(
                     "drop-shadow-[0_0_28px_rgba(255,255,255,0.16)]",
@@ -844,19 +846,19 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
               </p>
               <p
                 className={cn(
-                  "mt-2.5 inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em] sm:px-2.5",
+                  "mt-1.5 inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] sm:mt-2.5 sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.16em]",
                   g.live || /warmup/i.test(g.status) ? "bg-alert/90 text-ink" : "bg-white/10 text-[#c8cdd8]",
                 )}
               >
                 {g.live || /warmup/i.test(g.status) ? (
                   <>
                     <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />
-                    {g.inning || g.status || "Live"}
+                    <span className="truncate">{g.inning || g.status || "Live"}</span>
                   </>
                 ) : g.status === "Final" ? (
                   "Final"
                 ) : (
-                  g.inning || g.status
+                  <span className="truncate">{g.inning || g.status}</span>
                 )}
               </p>
             </>
@@ -868,7 +870,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
           winner={homeWins}
           loser={awayWins}
           form={homeForm.data ?? null}
-          showForm={g.pregame && !/warmup/i.test(g.status)}
+          showForm={pregameClock}
         />
       </div>
 
@@ -900,34 +902,41 @@ function EspnTeam({
     <Link
       to={teamPagePath(side.teamId)}
       className={cn(
-        "flex min-w-0 flex-col items-center gap-2 transition hover:opacity-90 sm:gap-2.5",
+        "flex min-w-0 flex-1 flex-col items-center gap-1.5 transition hover:opacity-90 sm:gap-2.5",
         align === "left" ? "sm:items-start" : "sm:items-end",
         loser && "opacity-70",
       )}
     >
       <TeamMark
         teamId={side.teamId}
-        size="lg"
+        size="md"
         className={cn(
-          "shadow-[0_8px_28px_rgba(0,0,0,0.45)]",
+          "shadow-[0_8px_28px_rgba(0,0,0,0.45)] sm:!h-16 sm:!w-16 sm:!p-2",
           winner && "ring-2 ring-white/35",
         )}
       />
-      <div className={cn("min-w-0 max-w-full text-center", align === "left" ? "sm:text-left" : "sm:text-right")}>
+      <div
+        className={cn(
+          "w-full min-w-0 max-w-full text-center",
+          align === "left" ? "sm:text-left" : "sm:text-right",
+        )}
+      >
         <p
           className={cn(
-            "truncate text-[16px] font-bold tracking-wide sm:text-[22px]",
+            "truncate text-[15px] font-bold tracking-wide sm:text-[22px]",
             winner ? "text-white" : loser ? "text-white/55" : "text-white",
           )}
         >
           {side.abbrev}
         </p>
         {side.record ? (
-          <p className="numeral mt-1 text-[12px] font-medium text-white/70 sm:text-[13px]">{side.record}</p>
+          <p className="numeral mt-0.5 truncate text-[11px] font-medium text-white/70 sm:mt-1 sm:text-[13px]">
+            {side.record}
+          </p>
         ) : (
-          <p className="mt-1 truncate text-[11px] text-[#8b93a7]">{side.name}</p>
+          <p className="mt-0.5 truncate text-[10px] text-[#8b93a7] sm:mt-1 sm:text-[11px]">{side.name}</p>
         )}
-        <TeamStandingLine standing={form?.standing} />
+        <TeamStandingLine standing={form?.standing} className="truncate" />
         {showForm ? (
           <TeamFormChips
             form={form}
@@ -1630,13 +1639,13 @@ function InningRow({
         </Link>
       </td>
       {innings.map((i) => (
-        <td key={i.num} className="numeral px-0.5 py-2 text-[#c8cdd8] sm:px-1">
+        <td key={i.num} className="numeral px-1 py-2 text-[#c8cdd8]">
           {i[which] ?? "—"}
         </td>
       ))}
-      <td className="numeral px-1.5 py-2 font-bold text-white sm:px-2">{side.runs}</td>
-      <td className="numeral px-1.5 py-2 text-[#c8cdd8] sm:px-2">{side.hits}</td>
-      <td className="numeral px-1.5 py-2 text-[#c8cdd8] sm:px-2">{side.errors}</td>
+      <td className="numeral px-2 py-2 font-bold text-white">{side.runs}</td>
+      <td className="numeral px-2 py-2 text-[#c8cdd8]">{side.hits}</td>
+      <td className="numeral px-2 py-2 text-[#c8cdd8]">{side.errors}</td>
     </tr>
   );
 }
@@ -1683,21 +1692,23 @@ function EspnBoxBoard({
   }, [game]);
 
   return (
-    <div className="space-y-4">
-      <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
-        <div className="overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
-          <table className="w-full min-w-[300px] text-center text-[11px] sm:min-w-[440px] sm:text-[12px]">
+    <div className="w-full max-w-full min-w-0 space-y-4">
+      <div className="w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+        <div
+          className="w-full max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [touch-action:pan-x_pan-y]"
+        >
+          <table className="w-max min-w-full text-center text-[11px] sm:text-[12px]">
             <thead>
               <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
                 <th className="sticky left-0 z-[1] bg-[#0a1424] px-2 py-2 text-left font-medium sm:px-3"> </th>
                 {game.innings.map((i) => (
-                  <th key={i.num} className="numeral px-0.5 py-2 font-medium sm:px-1">
+                  <th key={i.num} className="numeral px-1 py-2 font-medium">
                     {i.num}
                   </th>
                 ))}
-                <th className="numeral px-1.5 py-2 font-semibold text-white/70 sm:px-2">R</th>
-                <th className="numeral px-1.5 py-2 font-medium sm:px-2">H</th>
-                <th className="numeral px-1.5 py-2 font-medium sm:px-2">E</th>
+                <th className="numeral px-2 py-2 font-semibold text-white/70">R</th>
+                <th className="numeral px-2 py-2 font-medium">H</th>
+                <th className="numeral px-2 py-2 font-medium">E</th>
               </tr>
             </thead>
             <tbody>
@@ -1723,14 +1734,14 @@ function EspnBoxBoard({
                   <>
                     <Link
                       to={`/sports/mlb/player/${p.id}`}
-                      className="mt-0.5 inline-flex items-center gap-1 truncate text-[13px] font-semibold text-accent hover:underline"
+                      className="mt-0.5 inline-flex max-w-full items-center gap-1 truncate text-[13px] font-semibold text-accent hover:underline"
                     >
                       {shortPitcherName(p.name)}
                       <PlayerWatchMark
                         kind={playerWatchKind(p.id, watchPlayerIds, taggedPlayerIds)}
                       />
                     </Link>
-                    <p className="numeral mt-0.5 text-[11px] text-[#a8b0c2]">
+                    <p className="numeral mt-0.5 break-words text-[10px] leading-snug text-[#a8b0c2] sm:text-[11px]">
                       {p.ip} IP · {p.h} H · {p.er} ER · {p.so} K · {p.bb} BB
                     </p>
                   </>
@@ -1742,9 +1753,9 @@ function EspnBoxBoard({
           </div>
         )}
         {metaBits.length > 0 && (
-          <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-white/[0.07] px-3 py-3 text-[11px] leading-snug text-[#a8b0c2] sm:gap-x-4 sm:px-4 sm:text-[11.5px]">
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5 border-t border-white/[0.07] px-3 py-3 text-[11px] leading-snug text-[#a8b0c2] sm:gap-x-4 sm:px-4 sm:text-[11.5px]">
             {metaBits.map((bit) => (
-              <span key={String(bit)} className="min-w-0 break-words">
+              <span key={String(bit)} className="max-w-full break-words">
                 {bit}
               </span>
             ))}
