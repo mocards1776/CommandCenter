@@ -61,7 +61,7 @@ export function MlbGameDetail({
   const { user } = useAuth();
 
   const box = useQuery({
-    queryKey: ["mlb-boxscore-v3", gamePk],
+    queryKey: ["mlb-boxscore-v4", gamePk],
     queryFn: () => fetchMlbBoxscore(gamePk),
     enabled: Boolean(gamePk),
     staleTime: 30_000,
