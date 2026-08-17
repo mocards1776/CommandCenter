@@ -2809,7 +2809,7 @@ async function fetchCardinalsSavantFeed(): Promise<RssFeed> {
   };
 }
 
-const EXTRACT_SESSION_PREFIX = "rss-extract-v1:";
+const EXTRACT_SESSION_PREFIX = "rss-extract-v2:";
 const EXTRACT_SESSION_TTL_MS = 45 * 60_000;
 const EXTRACT_SESSION_MAX = 28;
 const EXTRACT_SESSION_MAX_BYTES = 180_000;
@@ -2872,16 +2872,51 @@ export function articleNeedsEdgeExtract(
 
 export async function fetchRssArticle(url: string): Promise<RssArticle> {
   const cached = readExtractSession(url);
-  if (cached) return cached;
+  if (cached) {
+    // Drop stale Savant nav-chrome extracts from older edge deploys.
+    const { isSavantPreviewUrl, isSavantNavSoup } = await import("./savant-preview");
+    if (!(isSavantPreviewUrl(url) && isSavantNavSoup(cached.contentHtml || cached.contentText || ""))) {
+      return cached;
+    }
+  }
+
+  // Prefer browser rebuild for Savant — edge often lags redeploys and returns SPA nav.
+  if (/baseballsavant\.mlb\.com/i.test(url) && /\/preview(?:\?|#|$)/i.test(url)) {
+    const { extractSavantPreviewInBrowser } = await import("./savant-preview");
+    const local = await extractSavantPreviewInBrowser(url).catch(() => null);
+    if (local) {
+      writeExtractSession(local);
+      return local;
+    }
+  }
 
   try {
     const article = await invokeRss<RssArticle>({ mode: "read", url });
+    if (/baseballsavant\.mlb\.com/i.test(url)) {
+      const { isSavantNavSoup, extractSavantPreviewInBrowser } = await import("./savant-preview");
+      if (isSavantNavSoup(article.contentHtml || article.contentText || "")) {
+        const local = await extractSavantPreviewInBrowser(url).catch(() => null);
+        if (local) {
+          writeExtractSession(local);
+          return local;
+        }
+        throw new Error("Savant preview extract returned navigation chrome");
+      }
+    }
     writeExtractSession(article);
     return article;
   } catch (err) {
     // Edge IPs often get thin STL Today shells — decrypt in the browser as fallback.
     if (/stltoday\.com/i.test(url)) {
       const local = await extractStlTodayInBrowser(url).catch(() => null);
+      if (local) {
+        writeExtractSession(local);
+        return local;
+      }
+    }
+    if (/baseballsavant\.mlb\.com/i.test(url)) {
+      const { extractSavantPreviewInBrowser } = await import("./savant-preview");
+      const local = await extractSavantPreviewInBrowser(url).catch(() => null);
       if (local) {
         writeExtractSession(local);
         return local;

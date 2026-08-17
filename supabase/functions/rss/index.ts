@@ -1471,6 +1471,13 @@ async function handleRead(url: string) {
   if (savantStory) {
     const contentHtml = scrubContentHtml(sanitizeHtml(savantStory.html), savantStory.image);
     const contentText = stripTags(contentHtml);
+    // Never cache / return Savant site nav if the table rebuild somehow failed.
+    if (
+      /League Batting|Leaderboards|Statcast Search|Metric Documentation/i.test(contentText) &&
+      !/<h3>Hitters<\/h3>/i.test(contentHtml)
+    ) {
+      return json({ error: "Savant preview extract returned navigation chrome", url }, 422);
+    }
     const payload = {
       url,
       title: savantStory.title,
@@ -1482,6 +1489,10 @@ async function handleRead(url: string) {
     };
     writeExtractMem(url, payload);
     return json(payload);
+  }
+  // Do not fall through to generic HTML extract — Savant pages are nav-only SPAs.
+  if (isSavantPreviewUrl(url) || isBaseballSavantUrl(url)) {
+    return json({ error: "Could not extract Statcast preview tables", url }, 422);
   }
 
   let rawHtml = "";
