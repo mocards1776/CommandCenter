@@ -1048,6 +1048,8 @@ export type MlbBoxscorePitcher = {
   teamId: number;
   teamAbbrev: string;
   note: string | null;
+  /** True when this pitcher started the game. */
+  started: boolean;
   ip: string;
   h: number;
   r: number;
@@ -1186,12 +1188,19 @@ function mapBoxSide(
       const p = players[`ID${id}`];
       const s = p?.stats?.pitching;
       if (!p || !s) return null;
+      const gsRaw = s.gamesStarted;
+      const started =
+        gsRaw === true ||
+        gsRaw === 1 ||
+        gsRaw === "1" ||
+        Number(gsRaw) > 0;
       return {
         id,
         name: p.person?.fullName ?? "—",
         teamId: sideTeamId,
         teamAbbrev: sideAbbrev,
         note: s.note ? String(s.note) : null,
+        started,
         ip: String(s.inningsPitched ?? "0.0"),
         h: Number(s.hits ?? 0),
         r: Number(s.runs ?? 0),

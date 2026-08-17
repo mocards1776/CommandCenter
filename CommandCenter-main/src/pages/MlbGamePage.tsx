@@ -1945,13 +1945,20 @@ function pitcherGameScore(p: MlbBoxscorePitcher): number {
 function GameScoreBadge({ score, title }: { score: number; title: string }) {
   return (
     <div
-      className="shrink-0 rounded-md border border-white/[0.1] bg-white/[0.04] px-2 py-1 text-center"
+      className="shrink-0 rounded-md border border-white/[0.1] bg-white/[0.04] px-1.5 py-1 text-center"
       title={title}
     >
       <p className="text-[8px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">GS</p>
-      <p className="numeral text-[15px] font-bold leading-none text-cream">{score}</p>
+      <p className="numeral text-[12px] font-bold leading-none text-cream sm:text-[13px]">{score}</p>
     </div>
   );
+}
+
+function pitcherRoleLabel(p: MlbBoxscorePitcher): string {
+  if (p.started) return "SP";
+  const decision = pitcherDecision(p.note);
+  if (decision === "S") return "CL";
+  return "RP";
 }
 
 function TopPerformersSummary({
@@ -1967,17 +1974,68 @@ function TopPerformersSummary({
   const pitchers = [...game.away.pitchers, ...game.home.pitchers];
   if (!batters.length && !pitchers.length) return null;
 
-  const topBatters = [...batters]
-    .filter((b) => batterGameScore(b) > 40 || b.h > 0 || b.hr > 0 || b.rbi > 0)
-    .sort((a, b) => batterGameScore(b) - batterGameScore(a))
-    .slice(0, 3);
-  const winPitcher = pitchers.find((p) => pitcherDecision(p.note) === "W") ?? null;
-  const topPitcher =
-    winPitcher ??
-    [...pitchers].sort((a, b) => pitcherGameScore(b) - pitcherGameScore(a))[0] ??
-    null;
+  type Performer = {
+    key: string;
+    id: number;
+    name: string;
+    teamAbbrev: string;
+    role: string;
+    line: string;
+    gs: number;
+    title: string;
+  };
 
-  if (!topBatters.length && !topPitcher) return null;
+  const batterRows: Performer[] = batters
+    .filter((b) => batterGameScore(b) > 40 || b.h > 0 || b.hr > 0 || b.rbi > 0)
+    .map((b) => ({
+      key: `bat-${b.id}`,
+      id: b.id,
+      name: b.name,
+      teamAbbrev: b.teamAbbrev,
+      role: b.position || "—",
+      line: [
+        b.h ? `${b.h} H` : null,
+        b.hr ? `${b.hr} HR` : null,
+        b.rbi ? `${b.rbi} RBI` : null,
+        b.r ? `${b.r} R` : null,
+        b.bb ? `${b.bb} BB` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      gs: batterGameScore(b),
+      title: "Batter game score from this box score",
+    }));
+
+  const pitcherRows: Performer[] = pitchers
+    .filter((p) => pitcherGameScore(p) >= 50 || pitcherDecision(p.note) === "W" || p.started)
+    .map((p) => {
+      const decision = pitcherDecision(p.note);
+      return {
+        key: `pit-${p.id}`,
+        id: p.id,
+        name: p.name,
+        teamAbbrev: p.teamAbbrev,
+        role: pitcherRoleLabel(p),
+        line: [
+          `${p.ip} IP`,
+          `${p.h} H`,
+          `${p.er} ER`,
+          `${p.so} K`,
+          p.bb ? `${p.bb} BB` : null,
+          decision === "W" ? "W" : decision === "L" ? "L" : decision === "S" ? "SV" : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        gs: pitcherGameScore(p),
+        title: "Bill James pitching game score",
+      };
+    });
+
+  const top = [...batterRows, ...pitcherRows]
+    .sort((a, b) => b.gs - a.gs || a.name.localeCompare(b.name))
+    .slice(0, 4);
+
+  if (!top.length) return null;
 
   return (
     <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
@@ -1987,51 +2045,10 @@ function TopPerformersSummary({
         </h3>
       </div>
       <ul className="divide-y divide-white/[0.06]">
-        {topBatters.map((b) => {
-          const gs = batterGameScore(b);
-          const line = [
-            b.h ? `${b.h} H` : null,
-            b.hr ? `${b.hr} HR` : null,
-            b.rbi ? `${b.rbi} RBI` : null,
-            b.r ? `${b.r} R` : null,
-            b.bb ? `${b.bb} BB` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ");
-          return (
-            <li key={`bat-${b.id}`} className="flex items-center gap-3 px-4 py-2.5">
-              <PlayerHeadshot
-                playerId={b.id}
-                size={213}
-                className="h-10 w-10 shrink-0 rounded-full ring-1 ring-white/15"
-                alt=""
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                  <Link
-                    to={`/sports/mlb/player/${b.id}`}
-                    className="inline-flex max-w-full items-center gap-1.5 truncate text-[13px] font-semibold text-accent hover:underline"
-                  >
-                    <span className="truncate">{b.name}</span>
-                    <PlayerWatchMark kind={playerWatchKind(b.id, favoriteIds, taggedIds)} />
-                  </Link>
-                  <span className="numeral shrink-0 text-[11px] text-[#a8b0c2]">
-                    · {b.teamAbbrev}
-                    {b.position ? ` · ${b.position}` : ""}
-                  </span>
-                </div>
-                {line ? (
-                  <p className="numeral mt-0.5 text-[11px] text-[#a8b0c2]">{line}</p>
-                ) : null}
-              </div>
-              <GameScoreBadge score={gs} title="Batter game score from this box score" />
-            </li>
-          );
-        })}
-        {topPitcher ? (
-          <li className="flex items-center gap-3 px-4 py-2.5">
+        {top.map((row) => (
+          <li key={row.key} className="flex items-center gap-3 px-4 py-2.5">
             <PlayerHeadshot
-              playerId={topPitcher.id}
+              playerId={row.id}
               size={213}
               className="h-10 w-10 shrink-0 rounded-full ring-1 ring-white/15"
               alt=""
@@ -2039,30 +2056,23 @@ function TopPerformersSummary({
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
                 <Link
-                  to={`/sports/mlb/player/${topPitcher.id}`}
+                  to={`/sports/mlb/player/${row.id}`}
                   className="inline-flex max-w-full items-center gap-1.5 truncate text-[13px] font-semibold text-accent hover:underline"
                 >
-                  <span className="truncate">{topPitcher.name}</span>
-                  <PlayerWatchMark
-                    kind={playerWatchKind(topPitcher.id, favoriteIds, taggedIds)}
-                  />
+                  <span className="truncate">{row.name}</span>
+                  <PlayerWatchMark kind={playerWatchKind(row.id, favoriteIds, taggedIds)} />
                 </Link>
                 <span className="numeral shrink-0 text-[11px] text-[#a8b0c2]">
-                  · {topPitcher.teamAbbrev}
-                  {pitcherDecision(topPitcher.note) === "W" ? " · W" : " · P"}
+                  · {row.teamAbbrev} · {row.role}
                 </span>
               </div>
-              <p className="numeral mt-0.5 text-[11px] text-[#a8b0c2]">
-                {topPitcher.ip} IP · {topPitcher.h} H · {topPitcher.er} ER · {topPitcher.so} K
-                {topPitcher.bb ? ` · ${topPitcher.bb} BB` : ""}
-              </p>
+              {row.line ? (
+                <p className="numeral mt-0.5 text-[11px] text-[#a8b0c2]">{row.line}</p>
+              ) : null}
             </div>
-            <GameScoreBadge
-              score={pitcherGameScore(topPitcher)}
-              title="Bill James pitching game score"
-            />
+            <GameScoreBadge score={row.gs} title={row.title} />
           </li>
-        ) : null}
+        ))}
       </ul>
     </section>
   );
