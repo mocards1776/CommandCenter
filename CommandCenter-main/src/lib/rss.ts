@@ -65,6 +65,12 @@ export const RSS_FEEDS: readonly RssFeedDef[] = [
     url: "synthetic:cardinals-farm",
   },
   {
+    id: "cardinals-savant",
+    title: "Cardinals Baseball Savant",
+    short: "Savant",
+    url: "synthetic:cardinals-savant",
+  },
+  {
     id: "soccer-clubs-wraps",
     title: "Wrexham, Wolves & Arsenal wraps",
     short: "Clubs",
@@ -91,7 +97,7 @@ export const RSS_FEED_FOLDERS: readonly RssFeedFolder[] = [
   {
     id: "folder:cardinals",
     title: "Cardinals",
-    feedIds: ["cardinals", "cardinals-wire", "cardinals-wraps", "cardinals-farm"],
+    feedIds: ["cardinals", "cardinals-wire", "cardinals-wraps", "cardinals-farm", "cardinals-savant"],
   },
   {
     id: "folder:mlb",
@@ -1404,6 +1410,19 @@ export function feedSourceLabel(feedUrl: string | null | undefined): string {
   }
   const hit = RSS_FEEDS.find((f) => f.url === feedUrl);
   if (hit) return hit.short || hit.title;
+  if (typeof window !== "undefined") {
+    try {
+      // Lazy require pattern avoided — sync localStorage lookup via dynamic function.
+      const stored = window.localStorage.getItem("dispatch-custom-feeds-v1");
+      if (stored) {
+        const parsed = JSON.parse(stored) as { url?: string; short?: string; title?: string }[];
+        const custom = parsed.find((f) => f.url === feedUrl);
+        if (custom) return custom.short || custom.title || "Custom feed";
+      }
+    } catch {
+      /* ignore */
+    }
+  }
   try {
     const host = new URL(feedUrl).hostname.replace(/^www\./, "");
     return articlePublisherLabel(`https://${host}/`);
@@ -1756,6 +1775,9 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
   }
   if (feedUrl === "synthetic:cardinals-farm") {
     return fetchCardinalsFarmWrapsFeed();
+  }
+  if (feedUrl === "synthetic:cardinals-savant") {
+    return fetchCardinalsSavantFeed();
   }
   if (feedUrl.startsWith("synthetic:tag:")) {
     return fetchTagPlayerFeed(feedUrl);
@@ -2707,6 +2729,86 @@ async function fetchCardinalsFarmWrapsFeed(): Promise<RssFeed> {
   };
 }
 
+/** Cardinals Baseball Savant Statcast preview pages (recent + upcoming). */
+async function fetchCardinalsSavantFeed(): Promise<RssFeed> {
+  const { mlbTeamLogo } = await import("./mlb");
+  const { formatSportsDateLong } = await import("./utils");
+
+  const CARDINALS_ID = 138;
+  const today = new Date();
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const start = new Date(today);
+  start.setDate(start.getDate() - 5);
+  const end = new Date(today);
+  end.setDate(end.getDate() + 7);
+
+  const url =
+    `https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${CARDINALS_ID}` +
+    `&startDate=${iso(start)}&endDate=${iso(end)}&hydrate=team`;
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`Cardinals schedule ${res.status}`);
+  const data = (await res.json()) as {
+    dates?: {
+      date?: string;
+      games?: {
+        gamePk?: number;
+        officialDate?: string;
+        status?: { detailedState?: string; abstractGameState?: string };
+        teams?: {
+          away?: { team?: { id?: number; abbreviation?: string; name?: string } };
+          home?: { team?: { id?: number; abbreviation?: string; name?: string } };
+        };
+      }[];
+    }[];
+  };
+
+  const items: RssFeedItem[] = [];
+  const seen = new Set<number>();
+  for (const day of data.dates ?? []) {
+    for (const g of day.games ?? []) {
+      const pk = Number(g.gamePk);
+      if (!Number.isFinite(pk) || seen.has(pk)) continue;
+      seen.add(pk);
+      const away = g.teams?.away?.team;
+      const home = g.teams?.home?.team;
+      const awayAbbr = away?.abbreviation ?? "AWAY";
+      const homeAbbr = home?.abbreviation ?? "HOME";
+      const status = g.status?.detailedState ?? g.status?.abstractGameState ?? "";
+      const date = g.officialDate ?? day.date ?? "";
+      const dateLabel = date ? formatSportsDateLong(date) : "";
+      const isFinal = /final|completed/i.test(status);
+      const title = isFinal
+        ? `Statcast wrap-up: ${awayAbbr} @ ${homeAbbr}${dateLabel ? ` · ${dateLabel}` : ""}`
+        : `Statcast preview: ${awayAbbr} @ ${homeAbbr}${dateLabel ? ` · ${dateLabel}` : ""}`;
+      const logoId = away?.id === CARDINALS_ID ? home?.id : away?.id;
+      items.push({
+        id: `savant-stl-${pk}`,
+        title,
+        link: `https://baseballsavant.mlb.com/preview?game_pk=${pk}&teamId=${CARDINALS_ID}`,
+        author: "Baseball Savant",
+        publishedAt: date ? `${date}T17:00:00Z` : null,
+        image: logoId != null ? mlbTeamLogo(logoId) : mlbTeamLogo(CARDINALS_ID),
+        snippet: `${status || "Game"} · Cardinals Statcast matchup tables from Baseball Savant`,
+        logoTeamIds: [away?.id, home?.id].filter((x): x is number => typeof x === "number"),
+      });
+    }
+  }
+
+  items.sort((a, b) => {
+    const da = Date.parse(a.publishedAt ?? "") || 0;
+    const db = Date.parse(b.publishedAt ?? "") || 0;
+    return db - da;
+  });
+
+  return {
+    title: "Cardinals Baseball Savant",
+    description: "Statcast previews for upcoming and recent St. Louis Cardinals games",
+    link: "https://baseballsavant.mlb.com/",
+    feedUrl: "synthetic:cardinals-savant",
+    items,
+  };
+}
+
 const EXTRACT_SESSION_PREFIX = "rss-extract-v1:";
 const EXTRACT_SESSION_TTL_MS = 45 * 60_000;
 const EXTRACT_SESSION_MAX = 28;
@@ -3143,4 +3245,5 @@ export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>([
   "soccer-clubs-wraps",
   "epl-wraps",
   "cardinals-farm",
+  "cardinals-savant",
 ]);

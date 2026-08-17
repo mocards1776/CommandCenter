@@ -25,6 +25,7 @@ import {
   Square,
   Star,
   Layers,
+  Plus,
   Trash2,
   X,
 } from "lucide-react";
@@ -33,6 +34,12 @@ import DispatchEspnGameReader from "@/components/rss/DispatchEspnGameReader";
 import DispatchPlayerReader from "@/components/rss/DispatchPlayerReader";
 import DispatchNotesAside from "@/components/rss/DispatchNotesAside";
 import RssQuoteShareCard from "@/components/rss/RssQuoteShareCard";
+import {
+  addCustomFeed,
+  loadCustomFeeds,
+  removeCustomFeed,
+  type CustomRssFeed,
+} from "@/lib/custom-feeds";
 import {
   loadFavoriteFeedIds,
   toggleFavoriteFeed,
@@ -2087,7 +2094,20 @@ export default function RssPage() {
       })),
     [userTags.data],
   );
-  const allFeeds: RssFeedDef[] = useMemo(() => [...RSS_FEEDS, ...tagFeeds], [tagFeeds]);
+
+  const [customFeeds, setCustomFeeds] = useState<CustomRssFeed[]>(() => loadCustomFeeds());
+  const [addingFeed, setAddingFeed] = useState(false);
+  const [newFeedTitle, setNewFeedTitle] = useState("");
+  const [newFeedUrl, setNewFeedUrl] = useState("");
+  const [savingFeed, setSavingFeed] = useState(false);
+
+  const allFeeds: RssFeedDef[] = useMemo(
+    () => [...RSS_FEEDS, ...customFeeds, ...tagFeeds],
+    [customFeeds, tagFeeds],
+  );
+
+  const resolveFeed = (id: string) =>
+    allFeeds.find((f) => f.id === id) ?? RSS_FEEDS.find((f) => f.id === id);
 
   const feedQueries = useQueries({
     queries: allFeeds.map((f) => ({
@@ -2350,7 +2370,7 @@ export default function RssPage() {
     const ac = new AbortController();
     const warm = (urls: string[]) =>
       prefetchRssArticles(urls, {
-        concurrency: 2,
+        concurrency: 3,
         signal: ac.signal,
         prefetch: (url) =>
           qc.prefetchQuery({
@@ -2362,7 +2382,7 @@ export default function RssPage() {
 
     const run = () => {
       if (selected && selectedIndex >= 0) {
-        const neighbors = [1, 2, -1, 3]
+        const neighbors = [1, 2, -1, 3, 4, -2]
           .map((d) => navItems[selectedIndex + d])
           .filter((it): it is RssFeedItemRef => Boolean(it))
           .filter(articleNeedsEdgeExtract)
@@ -2373,7 +2393,7 @@ export default function RssPage() {
       // Idle list: prefer unread rows, then the visible head of the feed.
       const pool = (unreadInList.length ? unreadInList : listItems)
         .filter(articleNeedsEdgeExtract)
-        .slice(0, 10)
+        .slice(0, 18)
         .map((it) => it.link);
       void warm(pool);
     };
@@ -2390,9 +2410,9 @@ export default function RssPage() {
     let idleId: number | null = null;
     let timeoutId: number | null = null;
     if (typeof ric === "function") {
-      idleId = ric(run, { timeout: 1500 });
+      idleId = ric(run, { timeout: 1200 });
     } else {
-      timeoutId = window.setTimeout(run, 350);
+      timeoutId = window.setTimeout(run, 250);
     }
     return () => {
       ac.abort();
@@ -2400,6 +2420,39 @@ export default function RssPage() {
       if (timeoutId != null) window.clearTimeout(timeoutId);
     };
   }, [selected, selectedIndex, navItems, listItems, unreadInList, qc]);
+
+  // When feeds finish loading, warm the first extractable articles across them.
+  useEffect(() => {
+    const ready = feedQueries.every((q) => !q.isLoading);
+    if (!ready) return;
+    const urls: string[] = [];
+    for (const q of feedQueries) {
+      const items = q.data?.items ?? [];
+      for (const it of items.slice(0, 4)) {
+        if (articleNeedsEdgeExtract(it)) urls.push(it.link);
+      }
+    }
+    if (!urls.length) return;
+    const ac = new AbortController();
+    const t = window.setTimeout(() => {
+      void prefetchRssArticles(urls.slice(0, 24), {
+        concurrency: 3,
+        signal: ac.signal,
+        prefetch: (url) =>
+          qc.prefetchQuery({
+            queryKey: ["rss-article-v2", url],
+            queryFn: () => fetchRssArticle(url),
+            staleTime: 10 * 60_000,
+          }),
+      });
+    }, 400);
+    return () => {
+      ac.abort();
+      window.clearTimeout(t);
+    };
+    // Intentionally depend on fetch status, not full query objects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedQueries.map((q) => `${q.isLoading}:${q.dataUpdatedAt}`).join("|"), qc]);
 
   const markAllReadMut = useMutation({
     mutationFn: () =>
@@ -2647,8 +2700,128 @@ export default function RssPage() {
         </div>
 
         <div className="flex-1 px-2 pb-4">
-          <p className="label-caps text-chalk-dim px-2 py-2">Feeds</p>
+          <div className="flex items-center justify-between gap-2 px-2 py-2">
+            <p className="label-caps text-chalk-dim">Feeds</p>
+            <button
+              type="button"
+              onClick={() => setAddingFeed((v) => !v)}
+              className="text-chalk hover:text-cream inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] uppercase tracking-[0.12em]"
+            >
+              <Plus size={12} />
+              Add
+            </button>
+          </div>
+          {addingFeed ? (
+            <form
+              className="mb-2 space-y-2 rounded-md border border-white/[0.08] bg-white/[0.03] p-2.5"
+              onSubmit={(e: FormEvent) => {
+                e.preventDefault();
+                void (async () => {
+                  setSavingFeed(true);
+                  try {
+                    const title = newFeedTitle.trim();
+                    const url = newFeedUrl.trim();
+                    if (title.length < 2) throw new Error("Give the feed a name");
+                    if (!/^https?:\/\//i.test(url)) {
+                      throw new Error("Feed URL must start with http(s)://");
+                    }
+                    if (RSS_FEEDS.some((f) => f.url === url)) {
+                      throw new Error("That feed is already built in");
+                    }
+                    // Probe before persisting so broken URLs never land in the sidebar.
+                    await fetchRssFeed(url);
+                    const created = addCustomFeed({ title, url });
+                    setCustomFeeds(loadCustomFeeds());
+                    setNewFeedTitle("");
+                    setNewFeedUrl("");
+                    setAddingFeed(false);
+                    selectNav(created.id);
+                    toast.success("Feed added");
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Could not add feed");
+                  } finally {
+                    setSavingFeed(false);
+                  }
+                })();
+              }}
+            >
+              <input
+                value={newFeedTitle}
+                onChange={(e) => setNewFeedTitle(e.target.value)}
+                placeholder="Feed name"
+                className="bg-ink/40 text-cream placeholder:text-chalk-dim w-full rounded-md border border-white/10 px-2.5 py-1.5 text-[13px] outline-none focus:border-accent/50"
+              />
+              <input
+                value={newFeedUrl}
+                onChange={(e) => setNewFeedUrl(e.target.value)}
+                placeholder="https://…/feed.xml"
+                className="bg-ink/40 text-cream placeholder:text-chalk-dim w-full rounded-md border border-white/10 px-2.5 py-1.5 text-[13px] outline-none focus:border-accent/50"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={savingFeed}
+                  className="bg-accent/90 text-ink hover:bg-accent rounded-md px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] disabled:opacity-50"
+                >
+                  {savingFeed ? "Checking…" : "Save feed"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddingFeed(false);
+                    setNewFeedTitle("");
+                    setNewFeedUrl("");
+                  }}
+                  className="text-chalk hover:text-cream text-[11px] uppercase tracking-[0.12em]"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : null}
           <ul className="flex flex-col gap-0.5">
+            {customFeeds.length > 0 ? (
+              <li className="mb-1">
+                <p className="label-caps text-chalk-dim px-2 py-1.5">Your feeds</p>
+                <ul className="flex flex-col gap-0.5">
+                  {customFeeds.map((f) => (
+                    <li key={f.id}>
+                      <div
+                        className={cn(
+                          "flex w-full items-center gap-1 rounded-sm transition-colors",
+                          nav === f.id
+                            ? "bg-accent/15 text-cream"
+                            : "text-chalk hover:bg-white/[0.04] hover:text-cream",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => selectNav(f.id)}
+                          onContextMenu={(e) => onFeedContextMenu(e, f.id, f.title)}
+                          className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-2 text-left"
+                        >
+                          <Hash size={14} className="text-accent shrink-0" />
+                          <span className="min-w-0 flex-1 truncate text-[13px]">{f.title}</span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${f.title}`}
+                          onClick={() => {
+                            removeCustomFeed(f.id);
+                            setCustomFeeds(loadCustomFeeds());
+                            if (nav === f.id) selectNav("unread");
+                            toast.success("Feed removed");
+                          }}
+                          className="text-chalk hover:text-alert shrink-0 px-2 py-2"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ) : null}
             {favoriteFeedIds.length > 0 ? (
               <li className="mb-1">
                 <div
@@ -2688,7 +2861,7 @@ export default function RssPage() {
                 {(folderOpen["__favorites__"] ?? true) ? (
                   <ul className="mt-0.5 flex flex-col gap-0.5 border-l border-white/[0.06] ml-4 pl-1">
                     {favoriteFeedIds.map((id) => {
-                      const feed = RSS_FEEDS.find((f) => f.id === id);
+                      const feed = resolveFeed(id);
                       const folder = RSS_FEED_FOLDERS.find((f) => f.id === id);
                       const title = feed?.title ?? folder?.title ?? id;
                       return (
