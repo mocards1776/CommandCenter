@@ -248,15 +248,15 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
   });
 
   const extras = useQuery({
-    queryKey: ["mlb-player-extras", playerId, player.data?.name, isPitcherPreview],
+    queryKey: ["mlb-player-extras-v2", playerId, player.data?.name, isPitcherPreview],
     queryFn: () =>
       fetchMlbPlayerExtras(player.data!.name, {
         isPitcher: isPitcherPreview,
         mlbId: Number(playerId) || null,
       }),
     enabled: Boolean(player.data?.name),
-    staleTime: 6 * 60 * 60_000,
-    retry: 1,
+    staleTime: 60 * 60_000,
+    retry: 2,
   });
 
   if (player.isPending) {

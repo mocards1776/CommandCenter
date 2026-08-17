@@ -2955,6 +2955,26 @@ function descriptionMatchesTeamHint(description: string, hints: string[]): boole
   return hints.some((h) => new RegExp(`\\b${h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(description));
 }
 
+/** Extract the destination club from an MLB trade description. */
+function tradeDestinationClub(description: string): string {
+  const desc = description.trim();
+  // Non-greedy so we stop at the first "to" (not "Player To Be Named Later").
+  // Prefer the standard "traded … to TEAM for …" shape.
+  const withFor = desc.match(/\btraded\b.+?\bto\b\s+(.+?)\s+for\b/i)?.[1]?.trim();
+  if (withFor) return withFor;
+  const withEnd = desc.match(/\btraded\b.+?\bto\b\s+(.+?)(?:\.|$)/i)?.[1]?.trim();
+  return withEnd ?? "";
+}
+
+/** Signing/claim actor or "by TEAM" destination. */
+function acquisitionActorClub(description: string): string {
+  const desc = description.trim();
+  const by = desc.match(/\b(?:claimed|selected|purchased).*?\bby\b\s+([^,.]+)/i)?.[1]?.trim();
+  if (by) return by;
+  const lead = desc.match(/^([^,.]+?)(?:\s+signed|\s+claimed|\s+selected|\s+purchased)/i)?.[1]?.trim();
+  return lead ?? "";
+}
+
 /**
  * Curated “how he got here” story — prefer the most recent transaction that
  * brought the player TO the current club. Never fall back to an unrelated trade.
@@ -2972,15 +2992,19 @@ export function buildAcquisitionStory(
     const type = t.type || "";
     const desc = t.description || "";
     if (/^trade/i.test(type)) {
-      const dest = desc.match(/traded .+ to (.+?)(?:\s+for\b|\.|$)/i)?.[1]?.trim() ?? "";
+      const dest = tradeDestinationClub(desc);
       if (dest && descriptionMatchesTeamHint(dest, hints)) {
         currentTeamAcq = t;
         break;
       }
       continue;
     }
-    if (/^(signed|claimed|selected)/i.test(type) || /signed as free agent/i.test(type)) {
-      if (descriptionMatchesTeamHint(desc, hints)) {
+    if (/^(signed|claimed|selected|purchase)/i.test(type) || /signed as free agent/i.test(type)) {
+      const actor = acquisitionActorClub(desc);
+      if (
+        (actor && descriptionMatchesTeamHint(actor, hints)) ||
+        (!actor && descriptionMatchesTeamHint(desc, hints))
+      ) {
         currentTeamAcq = t;
         break;
       }
@@ -3003,8 +3027,11 @@ export function buildAcquisitionStory(
   let headline: string | null = null;
   if (currentTeamAcq) {
     headline = `${currentTeamAcq.date}: ${currentTeamAcq.description}`;
+  } else if (hints.length) {
+    // Still on this club but no inbound tx matched — do not invent an old signing.
+    headline = null;
   } else {
-    // Draft / sign / selected without claiming a trade brought him here.
+    // No team context: career-origin draft/sign.
     const draft = byDateDesc.find((t) => /^draft/i.test(t.type));
     const signed = byDateDesc.find((t) => /^sign/i.test(t.type));
     const selected = byDateDesc.find((t) => /selected|purchase|claim|rule\s*5/i.test(t.type));
@@ -3766,7 +3793,7 @@ export async function fetchMlbPlayerExtras(
   if (base && key) {
     try {
       const ctl = new AbortController();
-      const timer = window.setTimeout(() => ctl.abort(), 35_000);
+      const timer = window.setTimeout(() => ctl.abort(), 50_000);
       try {
         const res = await fetch(`${base}/functions/v1/sports`, {
           method: "POST",
