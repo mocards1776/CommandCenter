@@ -837,7 +837,7 @@ function MlbGameArticleShell({
             Archive
           </button>
         </div>
-        <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-7">
+        <div className="mx-auto max-w-3xl space-y-4 px-3 py-4 sm:p-4 md:p-7">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
             <button
               type="button"
