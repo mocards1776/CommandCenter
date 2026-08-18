@@ -15,6 +15,7 @@ import { fetchMlbTeamForm, type TeamFormStrip } from "@/lib/team-form";
 import {
   buildPlayerNameIndex,
   fetchBbrefGamePreview,
+  fetchEspnGameExtras,
   fetchEspnGameRecap,
   fetchMlbBoxscore,
   fetchMlbGameHighlights,
@@ -34,6 +35,7 @@ import {
   type MlbBoxscoreBatter,
   type MlbBoxscorePitcher,
   type MlbBoxscoreSide,
+  type MlbEspnGameExtras,
   type MlbGameRecap,
   type MlbLineupHitter,
   type MlbPitcherSeasonLine,
@@ -113,6 +115,26 @@ export function MlbGameDetail({
     ],
     queryFn: () =>
       fetchEspnGameRecap(box.data!.officialDate, box.data!.home.abbrev, box.data!.away.abbrev, {
+        espnEventId,
+      }),
+    enabled: Boolean(
+      espnEventId ||
+        (box.data?.officialDate && box.data.home.abbrev && box.data.away.abbrev),
+    ),
+    staleTime: 300_000,
+  });
+
+  const espnExtras = useQuery({
+    queryKey: [
+      "mlb-espn-game-extras-v1",
+      gamePk,
+      espnEventId ?? null,
+      box.data?.officialDate,
+      box.data?.home.abbrev,
+      box.data?.away.abbrev,
+    ],
+    queryFn: () =>
+      fetchEspnGameExtras(box.data!.officialDate, box.data!.home.abbrev, box.data!.away.abbrev, {
         espnEventId,
       }),
     enabled: Boolean(
@@ -206,9 +228,17 @@ export function MlbGameDetail({
     <div className="w-full max-w-full min-w-0 space-y-5 overflow-x-hidden">
       <GameMatchupHeader game={g} />
 
-      {/* Box score (with team circles) sits above wrap text. Pregame: preview story first. */}
+      {/* Pregame: probables/leaders first, then preview text, then ESPN extras + BBRef. */}
       {g.pregame && (
         <>
+          <PreviewStack
+            game={g}
+            preview={preview.data}
+            loading={preview.isPending}
+            metaBits={metaBits}
+            watchPlayerIds={favoritePlayerIds}
+            taggedPlayerIds={taggedPlayerIds}
+          />
           {recap.isPending && (
             <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
               <Loader2 size={14} className="animate-spin" /> Loading preview…
@@ -224,13 +254,11 @@ export function MlbGameDetail({
               taggedIds={taggedPlayerIds}
             />
           )}
-          <PreviewStack
-            game={g}
-            preview={preview.data}
-            loading={preview.isPending}
-            metaBits={metaBits}
-            watchPlayerIds={favoritePlayerIds}
-            taggedPlayerIds={taggedPlayerIds}
+          <EspnPreviewExtras
+            awayAbbrev={g.away.abbrev}
+            homeAbbrev={g.home.abbrev}
+            data={espnExtras.data}
+            loading={espnExtras.isPending}
           />
           <BbrefPreviewStack
             awayAbbrev={g.away.abbrev}
@@ -313,6 +341,12 @@ export function MlbGameDetail({
             bottom
             watchPlayerIds={favoritePlayerIds}
             taggedPlayerIds={taggedPlayerIds}
+          />
+          <EspnPreviewExtras
+            awayAbbrev={g.away.abbrev}
+            homeAbbrev={g.home.abbrev}
+            data={espnExtras.data}
+            loading={espnExtras.isPending}
           />
           <BbrefPreviewStack
             awayAbbrev={g.away.abbrev}
@@ -465,6 +499,261 @@ function summaryBits(s: MlbBbrefPreviewSummary | null | undefined): string[] {
     s.oneRun ? `1-run ${s.oneRun}` : null,
     s.extraInnings ? `XI ${s.extraInnings}` : null,
   ].filter((x): x is string => Boolean(x));
+}
+
+function EspnPreviewExtras({
+  awayAbbrev,
+  homeAbbrev,
+  data,
+  loading,
+}: {
+  awayAbbrev: string;
+  homeAbbrev: string;
+  data: MlbEspnGameExtras | null | undefined;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+        <Loader2 size={14} className="animate-spin" /> Loading ESPN matchup extras…
+      </p>
+    );
+  }
+  if (!data) return null;
+
+  const awayL5 =
+    data.lastFive.find((b) => b.abbrev === awayAbbrev.toUpperCase()) ??
+    data.lastFive.find((b) => mlbAbbrevMatch(b.abbrev, awayAbbrev));
+  const homeL5 =
+    data.lastFive.find((b) => b.abbrev === homeAbbrev.toUpperCase()) ??
+    data.lastFive.find((b) => mlbAbbrevMatch(b.abbrev, homeAbbrev));
+  const hasL5 = Boolean(awayL5?.games.length || homeL5?.games.length);
+  const hasStats = data.teamStats.length > 0;
+  const hasSeries = Boolean(data.seasonSeries?.summary || data.seasonSeries?.games.length);
+  const hasInj = data.injuries.some((b) => b.players.length > 0);
+  if (!data.predictor && !hasL5 && !hasStats && !hasSeries && !hasInj) return null;
+
+  const awayPct = data.predictor?.awayPct ?? null;
+  const homePct = data.predictor?.homePct ?? null;
+
+  return (
+    <div className="space-y-5">
+      {data.predictor && awayPct != null && homePct != null && (
+        <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+          <p className="border-b border-white/[0.07] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+            Matchup predictor
+          </p>
+          <div className="space-y-3 px-4 py-4">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.14em] text-white/55">{awayAbbrev}</p>
+                <p className="numeral text-[28px] leading-none text-white">{Math.round(awayPct)}%</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-white/55">{homeAbbrev}</p>
+                <p className="numeral text-[28px] leading-none text-white">{Math.round(homePct)}%</p>
+              </div>
+            </div>
+            <div className="flex h-2.5 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full bg-cream/90"
+                style={{ width: `${Math.max(0, Math.min(100, awayPct))}%` }}
+              />
+              <div
+                className="h-full bg-accent/80"
+                style={{ width: `${Math.max(0, Math.min(100, homePct))}%` }}
+              />
+            </div>
+          </div>
+        </section>
+      )}
+
+      {hasL5 && (
+        <section className="grid gap-3 sm:grid-cols-2">
+          {[
+            { abbrev: awayAbbrev, block: awayL5 },
+            { abbrev: homeAbbrev, block: homeL5 },
+          ].map(({ abbrev, block }) => (
+            <div
+              key={abbrev}
+              className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]"
+            >
+              <p className="border-b border-white/[0.07] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+                {abbrev} last 5
+              </p>
+              {block?.games.length ? (
+                <ul className="divide-y divide-white/[0.06]">
+                  {block.games.map((g, i) => (
+                    <li
+                      key={`${abbrev}-${g.date}-${g.opponent}-${i}`}
+                      className="flex items-center justify-between gap-2 px-4 py-2 text-[12.5px]"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-cream">
+                          <span
+                            className={cn(
+                              "numeral mr-2 inline-block w-4 font-semibold",
+                              g.result === "W"
+                                ? "text-emerald-400"
+                                : g.result === "L"
+                                  ? "text-alert"
+                                  : "text-white/60",
+                            )}
+                          >
+                            {g.result || "—"}
+                          </span>
+                          {g.atVs} {g.opponent}
+                        </p>
+                        {g.date ? (
+                          <p className="mt-0.5 text-[11px] text-[#8b93a7]">{g.date}</p>
+                        ) : null}
+                      </div>
+                      <p className="numeral shrink-0 text-white/85">{g.score}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="px-4 py-3 text-[12px] text-[#8b93a7]">Data unavailable</p>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {hasSeries && data.seasonSeries && (
+        <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+          <p className="border-b border-white/[0.07] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+            Season series
+          </p>
+          <p className="border-b border-white/[0.06] px-4 py-2.5 text-[13px] text-cream">
+            {data.seasonSeries.summary}
+          </p>
+          {data.seasonSeries.games.length > 0 && (
+            <ul className="divide-y divide-white/[0.06]">
+              {data.seasonSeries.games.map((g, i) => (
+                <li
+                  key={`${g.date}-${g.label}-${i}`}
+                  className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2.5"
+                >
+                  <p className="text-[13px] text-cream">
+                    {g.label}{" "}
+                    <span className="numeral font-semibold text-white">{g.score}</span>
+                  </p>
+                  <p className="text-[11px] text-[#8b93a7]">{g.date}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {hasStats && (
+        <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+          <p className="border-b border-white/[0.07] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+            Team stats
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[520px] border-collapse text-[12px]">
+              <thead>
+                <tr className="border-b border-white/[0.07] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                  <th className="px-3 py-2 text-left font-semibold">Team</th>
+                  {(
+                    [
+                      ["AVG", "avg"],
+                      ["R", "runs"],
+                      ["H", "hits"],
+                      ["HR", "hr"],
+                      ["OBP", "obp"],
+                      ["SLG", "slg"],
+                      ["ERA", "era"],
+                      ["WHIP", "whip"],
+                      ["BB", "bb"],
+                      ["K", "k"],
+                      ["OBA", "oba"],
+                      ["Day", "day"],
+                    ] as const
+                  ).map(([label]) => (
+                    <th key={label} className="px-1.5 py-2 text-right font-semibold">
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.teamStats.map((row) => (
+                  <tr key={row.abbrev} className="border-b border-white/[0.05] last:border-0">
+                    <td className="px-3 py-2 font-semibold text-white">{row.abbrev}</td>
+                    {(
+                      [
+                        row.avg,
+                        row.runs,
+                        row.hits,
+                        row.hr,
+                        row.obp,
+                        row.slg,
+                        row.era,
+                        row.whip,
+                        row.bb,
+                        row.k,
+                        row.oba,
+                        row.day,
+                      ] as string[]
+                    ).map((val, i) => (
+                      <td key={i} className="numeral px-1.5 py-2 text-right text-white/85">
+                        {val}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {hasInj && (
+        <section className="grid gap-3 sm:grid-cols-2">
+          {data.injuries.map((block) => (
+            <div
+              key={block.abbrev}
+              className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]"
+            >
+              <p className="border-b border-white/[0.07] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+                {block.abbrev} injuries
+              </p>
+              {block.players.length ? (
+                <ul className="divide-y divide-white/[0.06]">
+                  {block.players.map((p, i) => (
+                    <li
+                      key={`${block.abbrev}-${p.name}-${i}`}
+                      className="flex items-start justify-between gap-2 px-4 py-2.5 text-[12.5px]"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-cream">
+                          {p.name}{" "}
+                          <span className="text-white/45">{p.pos}</span>
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-[#8b93a7]">{p.status}</p>
+                      </div>
+                      {p.returnDate ? (
+                        <p className="shrink-0 text-[11px] text-white/55">{p.returnDate}</p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="px-4 py-3 text-[12px] text-[#8b93a7]">None listed</p>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function mlbAbbrevMatch(a: string, b: string): boolean {
+  return a.toUpperCase() === b.toUpperCase();
 }
 
 function BbrefPreviewStack({

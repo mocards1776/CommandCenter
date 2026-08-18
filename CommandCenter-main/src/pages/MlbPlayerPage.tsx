@@ -248,7 +248,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
   });
 
   const extras = useQuery({
-    queryKey: ["mlb-player-extras-v3", playerId, player.data?.name, isPitcherPreview],
+    queryKey: ["mlb-player-extras-v4", playerId, player.data?.name, isPitcherPreview],
     queryFn: () =>
       fetchMlbPlayerExtras(player.data!.name, {
         isPitcher: isPitcherPreview,
@@ -966,16 +966,22 @@ function PlayerHeader({
                 <p className="numeral text-[26px] leading-none text-white">
                   {seasonWar != null
                     ? seasonWar.toFixed(1)
-                    : extrasPending
-                      ? "…"
-                      : "—"}
+                    : careerWar != null
+                      ? careerWar.toFixed(1)
+                      : extrasPending
+                        ? "…"
+                        : "—"}
                 </p>
                 <p className="mt-0.5 text-[10px] text-white/55">
                   {warRank != null
                     ? `${warRank}${warOf != null ? `/${warOf}` : ""}`
-                    : careerWar != null
+                    : seasonWar != null && careerWar != null
                       ? `Career ${careerWar.toFixed(1)}`
-                      : "Season"}
+                      : seasonWar != null
+                        ? "Season"
+                        : careerWar != null
+                          ? "Career"
+                          : "Season"}
                 </p>
               </div>
             </div>

@@ -2173,6 +2173,7 @@ type EspnGameSummary = {
       competitors?: {
         homeAway?: string;
         team?: {
+          id?: string;
           displayName?: string;
           abbreviation?: string;
         };
@@ -2181,6 +2182,62 @@ type EspnGameSummary = {
   };
   article?: EspnStorySrc;
   news?: { articles?: EspnStorySrc[] };
+  predictor?: {
+    homeTeam?: { gameProjection?: string };
+    awayTeam?: { gameProjection?: string };
+  };
+  seasonseries?: {
+    type?: string;
+    summary?: string;
+    events?: {
+      date?: string;
+      status?: string;
+      statusType?: { state?: string };
+      competitors?: {
+        homeAway?: string;
+        score?: string | number;
+        winner?: boolean;
+        team?: { abbreviation?: string; displayName?: string };
+      }[];
+    }[];
+  }[];
+  lastFiveGames?: {
+    team?: { id?: string; abbreviation?: string };
+    events?: {
+      atVs?: string;
+      score?: string;
+      gameResult?: string;
+      gameDate?: string;
+      opponent?: { abbreviation?: string };
+    }[];
+  }[];
+  boxscore?: {
+    teams?: {
+      team?: { id?: string; abbreviation?: string };
+      statistics?: {
+        name?: string;
+        stats?: {
+          name?: string;
+          abbreviation?: string;
+          shortDisplayName?: string;
+          displayValue?: string;
+        }[];
+      }[];
+    }[];
+  };
+  injuries?: {
+    team?: { abbreviation?: string };
+    injuries?: {
+      status?: string;
+      athlete?: {
+        displayName?: string;
+        shortName?: string;
+        position?: { abbreviation?: string };
+      };
+      type?: { description?: string };
+      details?: { returnDate?: string };
+    }[];
+  }[];
 };
 
 /**
@@ -2321,6 +2378,219 @@ export async function fetchEspnGameRecap(
 
     // Pregame without a written ESPN article: no preview card (probables/leaders still show).
     return null;
+  } catch {
+    return null;
+  }
+}
+
+export type MlbEspnLastFiveGame = {
+  result: string;
+  atVs: string;
+  opponent: string;
+  score: string;
+  date: string;
+};
+
+export type MlbEspnSeasonSeriesGame = {
+  date: string;
+  label: string;
+  score: string;
+};
+
+export type MlbEspnInjuryRow = {
+  name: string;
+  pos: string;
+  status: string;
+  returnDate: string | null;
+};
+
+export type MlbEspnTeamStatLine = {
+  abbrev: string;
+  avg: string;
+  runs: string;
+  hits: string;
+  hr: string;
+  obp: string;
+  slg: string;
+  era: string;
+  whip: string;
+  bb: string;
+  k: string;
+  oba: string;
+  day: string;
+};
+
+export type MlbEspnGameExtras = {
+  espnEventId: string;
+  predictor: { awayPct: number; homePct: number } | null;
+  lastFive: { abbrev: string; teamId: string; games: MlbEspnLastFiveGame[] }[];
+  seasonSeries: { summary: string; games: MlbEspnSeasonSeriesGame[] } | null;
+  teamStats: MlbEspnTeamStatLine[];
+  injuries: { abbrev: string; players: MlbEspnInjuryRow[] }[];
+};
+
+function espnStatValue(
+  groups: NonNullable<NonNullable<EspnGameSummary["boxscore"]>["teams"]>[number]["statistics"],
+  groupName: string,
+  statName: string,
+): string {
+  const group = (groups ?? []).find((g) => (g.name ?? "").toLowerCase() === groupName.toLowerCase());
+  const hit = (group?.stats ?? []).find((s) => s.name === statName);
+  return hit?.displayValue?.trim() || "—";
+}
+
+function parseEspnGameExtrasFromSummary(
+  sum: EspnGameSummary,
+  eventId: string,
+): MlbEspnGameExtras {
+  const comp = sum.header?.competitions?.[0];
+  const competitors = comp?.competitors ?? [];
+  const home = competitors.find((c) => c.homeAway === "home");
+  const away = competitors.find((c) => c.homeAway === "away");
+
+  const awayPct = Number(sum.predictor?.awayTeam?.gameProjection);
+  const homePct = Number(sum.predictor?.homeTeam?.gameProjection);
+  const predictor =
+    Number.isFinite(awayPct) && Number.isFinite(homePct)
+      ? { awayPct, homePct }
+      : null;
+
+  const lastFive = (sum.lastFiveGames ?? []).map((block) => ({
+    abbrev: block.team?.abbreviation?.toUpperCase() || "—",
+    teamId: String(block.team?.id ?? ""),
+    games: (block.events ?? []).slice(0, 5).map((ev) => ({
+      result: (ev.gameResult || "").toUpperCase(),
+      atVs: ev.atVs === "@" ? "@" : "vs",
+      opponent: ev.opponent?.abbreviation?.toUpperCase() || "—",
+      score: ev.score || "—",
+      date: ev.gameDate ? formatSportsDateLong(ev.gameDate) || ev.gameDate.slice(0, 10) : "",
+    })),
+  }));
+
+  const seriesBlock =
+    (sum.seasonseries ?? []).find(
+      (s) => s.summary && /season/i.test(s.type ?? "") && !/preseason/i.test(s.type ?? ""),
+    ) ??
+    (sum.seasonseries ?? []).find((s) => s.summary && !/preseason/i.test(s.type ?? "")) ??
+    null;
+  const seasonSeries = seriesBlock?.summary
+    ? {
+        summary: seriesBlock.summary,
+        games: (seriesBlock.events ?? [])
+          .filter((ev) => (ev.statusType?.state ?? ev.status) === "post" || ev.status === "post")
+          .slice(-8)
+          .reverse()
+          .map((ev) => {
+            const h = (ev.competitors ?? []).find((c) => c.homeAway === "home");
+            const a = (ev.competitors ?? []).find((c) => c.homeAway === "away");
+            const ha = a?.team?.abbreviation || "?";
+            const hh = h?.team?.abbreviation || "?";
+            const as = a?.score != null ? String(a.score) : "—";
+            const hs = h?.score != null ? String(h.score) : "—";
+            return {
+              date: ev.date ? formatSportsDateLong(ev.date) || ev.date.slice(0, 10) : "",
+              label: `${ha} @ ${hh}`,
+              score: `${as}–${hs}`,
+            };
+          }),
+      }
+    : null;
+
+  const teamOrder = [away?.team?.abbreviation, home?.team?.abbreviation]
+    .filter(Boolean)
+    .map((a) => String(a).toUpperCase());
+  const teamStats: MlbEspnTeamStatLine[] = [];
+  for (const side of sum.boxscore?.teams ?? []) {
+    const abbrev = side.team?.abbreviation?.toUpperCase() || "—";
+    const stats = side.statistics;
+    teamStats.push({
+      abbrev,
+      avg: espnStatValue(stats, "batting", "avg"),
+      runs: espnStatValue(stats, "batting", "runs"),
+      hits: espnStatValue(stats, "batting", "hits"),
+      hr: espnStatValue(stats, "batting", "homeRuns"),
+      obp: espnStatValue(stats, "batting", "onBasePct"),
+      slg: espnStatValue(stats, "batting", "slugAvg"),
+      era: espnStatValue(stats, "pitching", "ERA"),
+      whip: espnStatValue(stats, "pitching", "WHIP"),
+      bb: espnStatValue(stats, "pitching", "walks"),
+      k: espnStatValue(stats, "pitching", "strikeouts"),
+      oba: espnStatValue(stats, "pitching", "opponentAvg"),
+      day: espnStatValue(stats, "records", "Day"),
+    });
+  }
+  teamStats.sort((a, b) => {
+    const ai = teamOrder.indexOf(a.abbrev);
+    const bi = teamOrder.indexOf(b.abbrev);
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+  });
+
+  const injuries = (sum.injuries ?? []).map((block) => ({
+    abbrev: block.team?.abbreviation?.toUpperCase() || "—",
+    players: (block.injuries ?? []).slice(0, 8).map((row) => ({
+      name: row.athlete?.displayName || row.athlete?.shortName || "—",
+      pos: row.athlete?.position?.abbreviation || "—",
+      status: row.type?.description || row.status || "IL",
+      returnDate: row.details?.returnDate
+        ? formatSportsDateLong(row.details.returnDate) || row.details.returnDate.slice(0, 10)
+        : null,
+    })),
+  }));
+
+  return {
+    espnEventId: eventId,
+    predictor,
+    lastFive,
+    seasonSeries,
+    teamStats,
+    injuries,
+  };
+}
+
+/** ESPN matchup predictor, last 5, team stats, season series, injuries for a game page. */
+export async function fetchEspnGameExtras(
+  officialDate: string | null | undefined,
+  homeAbbrev: string,
+  awayAbbrev: string,
+  opts?: { espnEventId?: string | null },
+): Promise<MlbEspnGameExtras | null> {
+  if (!officialDate && !opts?.espnEventId) return null;
+  try {
+    let eventId = opts?.espnEventId?.trim() || null;
+    if (!eventId && officialDate) {
+      const ymd = officialDate.replace(/-/g, "");
+      const board = await fetchEspnSiteJson<{
+        events?: {
+          id?: string;
+          competitions?: {
+            competitors?: { homeAway?: string; team?: { abbreviation?: string } }[];
+          }[];
+        }[];
+      }>(`baseball/mlb/scoreboard?dates=${ymd}`);
+      const homeKeys = mlbAbbrevAliases(homeAbbrev);
+      const awayKeys = mlbAbbrevAliases(awayAbbrev);
+      const event = (board?.events ?? []).find((e) => {
+        const comps = e.competitions?.[0]?.competitors ?? [];
+        const h = comps.find((c) => c.homeAway === "home")?.team?.abbreviation?.toUpperCase();
+        const a = comps.find((c) => c.homeAway === "away")?.team?.abbreviation?.toUpperCase();
+        return Boolean(h && a && homeKeys.has(h) && awayKeys.has(a));
+      });
+      eventId = event?.id ?? null;
+    }
+    if (!eventId) return null;
+
+    const sum = await fetchEspnSiteJson<EspnGameSummary>(
+      `baseball/mlb/summary?event=${eventId}`,
+    );
+    if (!sum) return null;
+    const extras = parseEspnGameExtrasFromSummary(sum, eventId);
+    const hasBits =
+      extras.predictor ||
+      extras.lastFive.some((b) => b.games.length > 0) ||
+      extras.seasonSeries ||
+      extras.teamStats.length > 0 ||
+      extras.injuries.some((b) => b.players.length > 0);
+    return hasBits ? extras : null;
   } catch {
     return null;
   }
@@ -4064,8 +4334,9 @@ function parseBbrefWarFromHtml(
     let m: RegExpExecArray | null;
     while ((m = rowRe.exec(slice))) {
       const row = m[1];
+      // Do NOT skip on bare colspan= — BBRef year rows use colspan on spacers.
       if (
-        /thead|colhead|over_header|scope="col"|162\s*Game|colspan\s*=\s*["']?\d/i.test(row) ||
+        /thead|colhead|over_header|scope="col"|162\s*Game\s*Avg/i.test(row) ||
         /data-stat="year_id"[^>]*>\s*(?:<[^>]+>)?\s*Yrs\b/i.test(row) ||
         /\(\s*\d+\s*Yrs?\s*\)/i.test(row)
       ) {

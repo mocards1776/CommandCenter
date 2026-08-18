@@ -2,6 +2,13 @@
 
 ---
 
+## MLB WAR + ESPN game preview extras — August 18, 2026
+
+- WAR: stop skipping Baseball-Reference year rows that use `colspan` spacers (that blanked season WAR); hero chip falls back to career WAR when season is missing; extras cache key bumped to `v4`.
+- Game preview order: probables / lineups / leaders first, then ESPN preview text, then ESPN extras (matchup predictor, last 5, season series, team stats, injuries), then Baseball-Reference matchups.
+
+---
+
 ## Dispatch: center articles, standings leaders, RotoWorld, results cards — August 18, 2026
 
 - Article / ESPN game / MLB game reader shells center with `mx-auto` + `justify-self-center` (sidebar stays put); arrow-key prev/next via `useArticleNavKeys` on article, ESPN game, MLB game, and player shells (blocked when lightbox/quote open).

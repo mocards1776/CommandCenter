@@ -2351,8 +2351,10 @@ function parseBbrefSeasonAndCareerWar(
   while ((m = rowRe.exec(searchable))) {
     const row = m[1];
     // Skip headers + summary / multi-year aggregate rows.
+    // Do NOT skip on bare colspan= — BBRef year rows use colspan on spacer cells,
+    // and that filter was blanking season WAR while the footer career row still matched.
     if (
-      /thead|colhead|over_header|scope="col"|162\s*Game|colspan\s*=\s*["']?\d/i.test(row) ||
+      /thead|colhead|over_header|scope="col"|162\s*Game\s*Avg/i.test(row) ||
       /data-stat="year_id"[^>]*>\s*(?:<[^>]+>)?\s*Yrs\b/i.test(row) ||
       /\(\s*\d+\s*Yrs?\s*\)/i.test(row)
     ) {
