@@ -501,6 +501,71 @@ function normPerson(s: string): string {
     .trim();
 }
 
+/** Common English first-name nickname groups (any member matches any other). */
+const FIRST_NAME_ALIAS_GROUPS: string[][] = [
+  ["james", "jimmy", "jim"],
+  ["michael", "mike"],
+  ["william", "will", "bill", "billy"],
+  ["robert", "rob", "bob", "bobby"],
+  ["richard", "rick", "dick"],
+  ["anthony", "tony"],
+  ["joseph", "joe"],
+  ["thomas", "tom", "tommy"],
+  ["christopher", "chris"],
+  ["alexander", "alex"],
+  ["nicholas", "nick"],
+  ["benjamin", "ben"],
+  ["samuel", "sam"],
+  ["matthew", "matt"],
+  ["jonathan", "john", "jon"],
+  ["patrick", "pat"],
+  ["gregory", "greg"],
+  ["edward", "ed", "eddie"],
+  ["charles", "chuck", "charlie"],
+  ["stephen", "steve"],
+  ["andrew", "andy", "drew"],
+];
+const FIRST_NAME_ALIAS_MAP: Record<string, Set<string>> = {};
+for (const group of FIRST_NAME_ALIAS_GROUPS) {
+  const set = new Set(group);
+  for (const n of group) FIRST_NAME_ALIAS_MAP[n] = set;
+}
+
+function firstNamesMatch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const group = FIRST_NAME_ALIAS_MAP[a];
+  return Boolean(group && group.has(b));
+}
+
+/** `normPerson` already strips jr/sr/ii/iii/iv suffixes before we split first/last. */
+function splitPersonName(name: string): { first: string; last: string } {
+  const parts = normPerson(name).split(" ").filter(Boolean);
+  return { first: parts[0] ?? "", last: parts[parts.length - 1] ?? "" };
+}
+
+/** Same last name + first-name alias match (James ↔ Jimmy ↔ Jim, Mike ↔ Michael, etc). */
+function peopleMatch(a: string, b: string): boolean {
+  const pa = splitPersonName(a);
+  const pb = splitPersonName(b);
+  if (!pa.last || !pb.last || pa.last !== pb.last) return false;
+  return firstNamesMatch(pa.first, pb.first);
+}
+
+/** Does a RotoWorld URL slug (e.g. "jimmy-crooks-iii") refer to this player name? */
+function slugMatchesName(slug: string, name: string): boolean {
+  const slugParts = slug
+    .toLowerCase()
+    .split("-")
+    .filter((p) => p && !/^(jr|sr|ii|iii|iv)$/.test(p));
+  if (slugParts.length < 2) return false;
+  const slugFirst = slugParts[0];
+  const slugLast = slugParts[slugParts.length - 1];
+  const { first, last } = splitPersonName(name);
+  if (!last || slugLast !== last) return false;
+  return firstNamesMatch(slugFirst, first);
+}
+
 type PlayerNewsNote = {
   source: "rotowire" | "rotoworld";
   headline: string | null;
@@ -603,8 +668,112 @@ async function scrapeRotoWireNote(name: string): Promise<{
   };
 }
 
+type RotoWorldFeedItem = PlayerNewsNote & {
+  firstName: string | null;
+  lastName: string | null;
+};
+
+/** Parse `<div class="PlayerNewsPost" ...>` blocks out of an NBC Sports RotoWorld page. */
+function parseRotoWorldPosts(html: string, fallbackUrl: string): RotoWorldFeedItem[] {
+  const posts = html.split(/<div class="PlayerNewsPost"/i).slice(1);
+  const items: RotoWorldFeedItem[] = [];
+  for (const raw of posts) {
+    const block = `<div class="PlayerNewsPost"${raw}`;
+    const firstName =
+      stripTags(block.match(/PlayerNewsPost-firstName[^>]*>([\s\S]*?)<\//i)?.[1] ?? "").trim() ||
+      null;
+    const lastName =
+      stripTags(block.match(/PlayerNewsPost-lastName[^>]*>([\s\S]*?)<\//i)?.[1] ?? "").trim() ||
+      null;
+    const headline = decodeHtmlEntities(
+      stripTags(block.match(/PlayerNewsPost-headline[^>]*>([\s\S]*?)<\//i)?.[1] ?? ""),
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+    const story = decodeHtmlEntities(
+      stripTags(block.match(/PlayerNewsPost-analysis[^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? ""),
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+    const published =
+      block.match(/PlayerNewsPost-date[^>]*data-date="([^"]+)"/i)?.[1]?.trim() ||
+      block.match(/data-share-url="[^"]*\/(\d{4}-\d{2}-\d{2})\//i)?.[1] ||
+      null;
+    const shareUrl = block.match(/data-share-url="([^"]+)"/i)?.[1]?.trim() || fallbackUrl;
+    if (!headline && !story) continue;
+    items.push({
+      source: "rotoworld",
+      firstName,
+      lastName,
+      headline: headline || null,
+      story: story || null,
+      description: story || null,
+      published,
+      url: shareUrl,
+    });
+  }
+  return items;
+}
+
+/** League-wide RotoWorld (NBC Sports) MLB player-news feed, paginated. */
+async function scrapeRotoWorldFeed(maxPages = 3): Promise<RotoWorldFeedItem[]> {
+  const items: RotoWorldFeedItem[] = [];
+  const seen = new Set<string>();
+  for (let page = 1; page <= Math.max(1, maxPages); page++) {
+    const url =
+      page === 1
+        ? "https://www.nbcsports.com/fantasy/baseball/player-news"
+        : `https://www.nbcsports.com/fantasy/baseball/player-news?p=${page}`;
+    try {
+      const res = await timedFetch(
+        url,
+        {
+          headers: {
+            "User-Agent": UA,
+            Accept: "text/html",
+            Referer: "https://www.nbcsports.com/",
+          },
+        },
+        HEAVY_MS,
+      );
+      if (!res.ok) break;
+      const html = await res.text();
+      const pagePosts = parseRotoWorldPosts(html, url);
+      if (!pagePosts.length) break;
+      for (const post of pagePosts) {
+        const key = `${post.source}|${post.headline ?? ""}|${post.url ?? ""}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push(post);
+      }
+    } catch {
+      break;
+    }
+  }
+  return items;
+}
+
 /** RotoWorld (NBC Sports) player-news blurb for an MLB player. */
 async function scrapeRotoWorldNote(name: string): Promise<PlayerNewsNote | null> {
+  const toNote = (post: RotoWorldFeedItem): PlayerNewsNote => ({
+    source: "rotoworld",
+    headline: post.headline,
+    story: post.story,
+    description: post.description,
+    published: post.published,
+    url: post.url,
+  });
+
+  // 1) The league-wide feed listing (first 2 pages) is fast and usually has the
+  // freshest note — check it before falling back to per-player search.
+  try {
+    const feed = await scrapeRotoWorldFeed(2);
+    const hit = feed.find((post) => peopleMatch(`${post.firstName ?? ""} ${post.lastName ?? ""}`, name));
+    if (hit) return toNote(hit);
+  } catch {
+    /* fall through to search */
+  }
+
   const want = normPerson(name);
   const parts = want.split(" ").filter(Boolean);
   const first = parts[0] ?? "";
@@ -624,7 +793,7 @@ async function scrapeRotoWorldNote(name: string): Promise<PlayerNewsNote | null>
   );
   if (!searchRes.ok) return null;
   const searchHtml = await searchRes.text();
-  const linkRe = /https:\/\/www\.nbcsports\.com\/mlb\/([a-z0-9-]+)\/(\d+)/gi;
+  const linkRe = /\/(?:https:)?\/\/www\.nbcsports\.com\/mlb\/([a-z0-9-]+)\/(\d+)/gi;
   const candidates: { slug: string; id: string }[] = [];
   const seen = new Set<string>();
   for (const m of searchHtml.matchAll(linkRe)) {
@@ -638,6 +807,7 @@ async function scrapeRotoWorldNote(name: string): Promise<PlayerNewsNote | null>
   }
   const pick =
     candidates.find((c) => c.slug === slugWant) ??
+    candidates.find((c) => slugMatchesName(c.slug, name)) ??
     candidates.find((c) => first && last && c.slug.includes(first) && c.slug.includes(last)) ??
     candidates.find((c) => last && c.slug.includes(last)) ??
     null;
@@ -657,41 +827,15 @@ async function scrapeRotoWorldNote(name: string): Promise<PlayerNewsNote | null>
   );
   if (!newsRes.ok) return null;
   const html = await newsRes.text();
-  const posts = html.split(/<div class="PlayerNewsPost"/i).slice(1);
-  for (const raw of posts) {
-    const block = `<div class="PlayerNewsPost"${raw}`;
-    const firstName = stripTags(block.match(/PlayerNewsPost-firstName[^>]*>([\s\S]*?)<\//i)?.[1] ?? "");
-    const lastName = stripTags(block.match(/PlayerNewsPost-lastName[^>]*>([\s\S]*?)<\//i)?.[1] ?? "");
-    const postName = normPerson(`${firstName} ${lastName}`);
-    if (!postName) continue;
-    if (postName !== want && !postName.includes(last) && !want.includes(postName)) continue;
-
-    const headline = decodeHtmlEntities(
-      stripTags(block.match(/PlayerNewsPost-headline[^>]*>([\s\S]*?)<\//i)?.[1] ?? ""),
-    )
-      .replace(/\s+/g, " ")
-      .trim();
-    const story = decodeHtmlEntities(
-      stripTags(block.match(/PlayerNewsPost-analysis[^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? ""),
-    )
-      .replace(/\s+/g, " ")
-      .trim();
-    const published =
-      block.match(/PlayerNewsPost-date[^>]*data-date="([^"]+)"/i)?.[1]?.trim() ||
-      block.match(/data-share-url="[^"]*\/(\d{4}-\d{2}-\d{2})\//i)?.[1] ||
-      null;
-    const shareUrl = block.match(/data-share-url="([^"]+)"/i)?.[1]?.trim() || newsUrl;
-    if (!headline && !story) continue;
-    return {
-      source: "rotoworld",
-      headline: headline || null,
-      story: story || null,
-      description: story || null,
-      published,
-      url: shareUrl,
-    };
-  }
-  return null;
+  const posts = parseRotoWorldPosts(html, newsUrl);
+  const hit =
+    posts.find((post) => peopleMatch(`${post.firstName ?? ""} ${post.lastName ?? ""}`, name)) ??
+    posts.find((post) => {
+      const postName = normPerson(`${post.firstName ?? ""} ${post.lastName ?? ""}`);
+      return Boolean(postName) && (postName.includes(last) || want.includes(postName));
+    }) ??
+    null;
+  return hit ? toNote(hit) : null;
 }
 
 /** Combined RotoWire (ESPN) + RotoWorld (NBC Sports) player news. */
@@ -2843,6 +2987,13 @@ Deno.serve(async (req: Request) => {
     if (name.length < 3 || name.length > 80) return json({ error: "Bad name" }, 400);
     try {
       return json(await scrapePlayerBrief(name));
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 200);
+    }
+  }
+  if (body.action === "rotoWorldNews") {
+    try {
+      return json({ items: await scrapeRotoWorldFeed(3) });
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 200);
     }

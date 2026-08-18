@@ -29,31 +29,39 @@ async function fetchEspnStoryFallback(
   sport: "mlb" | "nfl",
 ): Promise<{ headline: string; html: string; url: string } | null> {
   const path = sport === "nfl" ? "football/nfl" : "baseball/mlb";
-  const res = await fetch(
-    `https://site.api.espn.com/apis/site/v2/sports/${path}/summary?event=${encodeURIComponent(eventId)}`,
-    { headers: { Accept: "application/json" } },
-  );
-  if (!res.ok) return null;
-  const sum = (await res.json()) as {
-    article?: {
-      headline?: string;
-      description?: string;
-      story?: string;
-      links?: { web?: { href?: string } };
-    };
-  };
-  const article = sum.article;
-  const html =
-    article?.story?.trim() ||
-    (article?.description ? `<p>${article.description.replace(/^—\s*/, "")}</p>` : "");
-  if (!html || html.replace(/<[^>]+>/g, "").trim().length < 40) return null;
-  return {
-    headline: article?.headline || "Game story",
-    html,
-    url:
-      article?.links?.web?.href ||
-      `https://www.espn.com/${sport}/preview/_/gameId/${eventId}`,
-  };
+  const hosts = ["https://site.web.api.espn.com", "https://site.api.espn.com"];
+  for (const host of hosts) {
+    try {
+      const res = await fetch(
+        `${host}/apis/site/v2/sports/${path}/summary?event=${encodeURIComponent(eventId)}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!res.ok) continue;
+      const sum = (await res.json()) as {
+        article?: {
+          headline?: string;
+          description?: string;
+          story?: string;
+          links?: { web?: { href?: string } };
+        };
+      };
+      const article = sum.article;
+      const html =
+        article?.story?.trim() ||
+        (article?.description ? `<p>${article.description.replace(/^—\s*/, "")}</p>` : "");
+      if (!html || html.replace(/<[^>]+>/g, "").trim().length < 40) continue;
+      return {
+        headline: article?.headline || "Game story",
+        html,
+        url:
+          article?.links?.web?.href ||
+          `https://www.espn.com/${sport}/preview/_/gameId/${eventId}`,
+      };
+    } catch {
+      /* try next host */
+    }
+  }
+  return null;
 }
 
 export default function DispatchEspnGameReader({
@@ -99,7 +107,7 @@ export default function DispatchEspnGameReader({
   });
 
   const fallback = useQuery({
-    queryKey: ["espn-story-fallback", nfl ? "nfl" : "mlb", eventId],
+    queryKey: ["espn-story-fallback-v2", nfl ? "nfl" : "mlb", eventId],
     queryFn: () => fetchEspnStoryFallback(eventId!, nfl ? "nfl" : "mlb"),
     enabled:
       Boolean(eventId) &&
@@ -186,7 +194,7 @@ export default function DispatchEspnGameReader({
         <div className="absolute inset-0 bg-gradient-to-t from-[#07101f] via-[#07101f]/45 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0c1a36]/55 via-transparent to-[#1a0e14]/35" />
         <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 md:px-7">
-          <p className="text-accent text-[10px] font-semibold uppercase tracking-[0.2em]">
+          <p className="text-cream text-[10px] font-semibold uppercase tracking-[0.2em]">
             Game wrap
           </p>
           {title ? (
@@ -299,7 +307,7 @@ export default function DispatchEspnGameReader({
         {hero}
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
           <div className="border-b border-white/[0.06] px-4 py-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cream">
               Game preview
             </p>
             <h2 className="font-rss mt-1 text-[20px] font-semibold leading-snug text-cream sm:text-[22px]">

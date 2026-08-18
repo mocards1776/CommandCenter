@@ -2,6 +2,18 @@
 
 ---
 
+## Dispatch: center articles, standings leaders, RotoWorld, results cards — August 18, 2026
+
+- Article / ESPN game / MLB game reader shells center with `mx-auto` + `justify-self-center` (sidebar stays put); arrow-key prev/next via `useArticleNavKeys` on article, ESPN game, MLB game, and player shells (blocked when lightbox/quote open).
+- Notes aside: NL/AL division leaders (`- E` / `- C` / `- W`) above wild-card tables; standings rows carry WCGB / L10 / run diff.
+- Reader body links, player links, and game/player kickers use bold cream (`#fffaf5`); chrome accent red unchanged. Recap/story cache keys bumped (`mlb-game-recap-v5`, `espn-story-fallback-v2`).
+- New **RotoWorld player news** feed (MLB folder, Unread) from NBC Sports listing HTML (`PlayerNewsPost`); `rotoWorldNews` sports action; tag feeds merge board notes with unique `app:mlb-player/{id}?n=…` links (RotoWire vs RotoWorld no longer soft-hide each other).
+- MLB daily **results** as ESPN-style cards: logos beside names, R/H/E, extras, W/L/S mugs + season lines, cream Watch/Wrap/Box/Story; hero uses MLB league logo (results logos/mugs skipped by `firstContentImageUrl`).
+- ESPN fetches prefer `site.web.api` then `site.api` (longer story wins); preview candidates sliced before finals so `maxItems` does not drop today; hollow vs/records stubs rejected.
+- Soccer: standings logos in white discs; wraps `lookAheadDays: 1`; preview shows full ESPN story alone when long enough (cream header).
+
+---
+
 ## MLB previews require ESPN text — August 18, 2026
 
 - MLB wraps/previews feeds only list a preview when ESPN has written preview copy (no scoreboard pitcher/time stubs).

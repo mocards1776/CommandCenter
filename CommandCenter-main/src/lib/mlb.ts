@@ -107,6 +107,9 @@ export type MlbStandingRow = {
   streak: string;
   playoffPercent: string | null;
   wildCardPercent: string | null;
+  wcgb: string;
+  l10: string;
+  runDiff: number;
 };
 
 export type MlbDivisionTable = {
@@ -1013,6 +1016,10 @@ export function mlbHeadshotFallbacks(
  */
 export function mlbTeamLogo(teamId: number | string): string {
   return `https://www.mlbstatic.com/team-logos/team-primary-on-light/${teamId}.svg`;
+}
+
+export function mlbLeagueLogo(): string {
+  return "https://www.mlbstatic.com/team-logos/league-on-light/1.svg";
 }
 
 /** Simpler cap mark — useful at very small sizes. */
@@ -2022,12 +2029,7 @@ export function parseEspnGameIdFromUrl(url: string): string | null {
 export async function resolveMlbGamePkFromEspnEvent(eventId: string): Promise<number | null> {
   if (!eventId) return null;
   try {
-    const sumRes = await fetch(
-      `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${encodeURIComponent(eventId)}`,
-      { headers: { Accept: "application/json" } },
-    );
-    if (!sumRes.ok) return null;
-    const sum = (await sumRes.json()) as {
+    const sum = await fetchEspnSiteJson<{
       header?: {
         competitions?: {
           date?: string;
@@ -2038,7 +2040,8 @@ export async function resolveMlbGamePkFromEspnEvent(eventId: string): Promise<nu
         date?: string;
         competitors?: { homeAway?: string; team?: { abbreviation?: string; id?: string } }[];
       }[];
-    };
+    }>(`baseball/mlb/summary?event=${encodeURIComponent(eventId)}`);
+    if (!sum) return null;
     const comp = sum.header?.competitions?.[0] ?? sum.competitions?.[0];
     const competitors = comp?.competitors ?? [];
     const homeAbbrev = competitors.find((c) => c.homeAway === "home")?.team?.abbreviation;
@@ -2101,24 +2104,49 @@ function mlbAbbrevAliases(abbrev: string): Set<string> {
   return out;
 }
 
-/** ESPN site JSON — `site.api` 403s from some edges; `site.web.api` is the fallback. */
+/**
+ * ESPN site JSON — `site.web.api` is tried first (more reliable from some edges),
+ * `site.api` is the fallback. For `summary` endpoints we keep checking hosts and
+ * prefer whichever response carries the longer `article.story` (ESPN sometimes
+ * serves a fuller story from one host and a stub from the other).
+ */
 async function fetchEspnSiteJson<T>(pathAfterSports: string): Promise<T | null> {
   const hosts = [
-    "https://site.api.espn.com/apis/site/v2/sports",
     "https://site.web.api.espn.com/apis/site/v2/sports",
+    "https://site.api.espn.com/apis/site/v2/sports",
   ];
+  const isSummary = /\/summary(?:[/?]|$)/.test(pathAfterSports);
+  const path = pathAfterSports.replace(/^\/+/, "");
+
+  let best: T | null = null;
+  let bestStoryLen = -1;
   for (const host of hosts) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
     try {
-      const res = await fetch(`${host}/${pathAfterSports.replace(/^\/+/, "")}`, {
+      const res = await fetch(`${host}/${path}`, {
         headers: { Accept: "application/json" },
+        signal: controller.signal,
       });
       if (!res.ok) continue;
-      return (await res.json()) as T;
+      const json = (await res.json()) as T;
+      if (!isSummary) return json;
+
+      const storyLen = stripHtml(
+        (json as { article?: { story?: string } } | null)?.article?.story ?? "",
+      ).trim().length;
+      if (storyLen > bestStoryLen) {
+        best = json;
+        bestStoryLen = storyLen;
+      }
+      if (bestStoryLen >= 200) return best;
     } catch {
       /* next host */
+    } finally {
+      clearTimeout(timer);
     }
   }
-  return null;
+  return best;
 }
 
 /** League-wide ESPN promo / fantasy copy — never treat as a game preview. */
@@ -2155,12 +2183,23 @@ type EspnGameSummary = {
   news?: { articles?: EspnStorySrc[] };
 };
 
+/**
+ * ESPN sometimes stubs a preview with a bare "Team (W-L) vs. Team (W-L)" line —
+ * records-only, no actual preview copy. Treat that as hollow/empty.
+ */
+function isHollowEspnMatchupText(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  return /^[A-Za-z .]+\s*\(\d+-\d+\)\s+vs\.?\s+[A-Za-z .]+\s*\(\d+-\d+\)$/i.test(t);
+}
+
 function espnStoryBodyHtml(a: EspnStorySrc | undefined): string {
   const story = a?.story?.trim() || "";
   const desc = (a?.description ?? "").replace(/^—\s*/, "").trim();
-  if (story && stripHtml(story).trim().length >= 40) return story;
-  if (desc.length >= 40) return `<p>${desc}</p>`;
-  return story || (desc ? `<p>${desc}</p>` : "");
+  const storyText = stripHtml(story).trim();
+  if (story && storyText.length >= 40 && !isHollowEspnMatchupText(storyText)) return story;
+  if (desc.length >= 40 && !isHollowEspnMatchupText(desc)) return `<p>${desc}</p>`;
+  return "";
 }
 
 function espnStoryMentionsMatchup(
@@ -2258,7 +2297,10 @@ export async function fetchEspnGameRecap(
       if (isEspnGamePromoCopy(a.headline, a.description, a.story)) return false;
       const html = espnStoryBodyHtml(a);
       const text = stripHtml(html).trim();
-      if (text.length < minLen) return false;
+      // Typed "Preview" articles are held to the same bar as pregame — a short
+      // stub isn't a real preview even if the caller passed a lower minLen.
+      const effectiveMinLen = /^preview$/i.test(a.type ?? "") ? Math.max(minLen, 80) : minLen;
+      if (text.length < effectiveMinLen) return false;
       if (requireMatchup && !espnStoryMentionsMatchup(text, homeAbbrev, awayAbbrev, homeName, awayName)) {
         return false;
       }
@@ -2266,7 +2308,8 @@ export async function fetchEspnGameRecap(
     };
 
     // Official recap/preview only — never the league news rail (fantasy promo, talking-head clips).
-    if (usable(sum.article, false, 40)) {
+    // Pregame stubs are often just a bare matchup line, so require a real preview (>=80 chars).
+    if (usable(sum.article, false, isPregame ? 80 : 40)) {
       return recapFromEspnStory(eventId, sum.article!, isPregame ? "preview" : "recap");
     }
 
@@ -3451,10 +3494,12 @@ function normalizePlayerBrief(
       });
     }
   }
-  if (!notes.length && payload.rotowire && (payload.rotowire.headline || payload.rotowire.story)) {
+  // Always merge in rotowire + rotoworld (even when `notes` already has entries
+  // from another source) so a player can carry blurbs from both services.
+  if (payload.rotowire && (payload.rotowire.headline || payload.rotowire.story)) {
     notes.push({ ...payload.rotowire, source: payload.rotowire.source || "rotowire" });
   }
-  if (!notes.length && payload.rotoworld && (payload.rotoworld.headline || payload.rotoworld.story)) {
+  if (payload.rotoworld && (payload.rotoworld.headline || payload.rotoworld.story)) {
     notes.push({ ...payload.rotoworld, source: payload.rotoworld.source || "rotoworld" });
   }
   if (!notes.length && (payload.headline || payload.story)) {
@@ -3469,10 +3514,20 @@ function normalizePlayerBrief(
       url: payload.url ?? null,
     });
   }
-  if (!notes.length && !(payload.news?.length)) return null;
-  const primary = notes[0];
+
+  const seen = new Set<string>();
+  const dedupedNotes: MlbPlayerNewsNote[] = [];
+  for (const n of notes) {
+    const key = `${n.source}|${n.headline ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    dedupedNotes.push(n);
+  }
+
+  if (!dedupedNotes.length && !(payload.news?.length)) return null;
+  const primary = dedupedNotes[0];
   return {
-    source: payload.source ?? (notes.map((n) => n.source).join("+") || "rotowire"),
+    source: payload.source ?? (dedupedNotes.map((n) => n.source).join("+") || "rotowire"),
     name: payload.name ?? fallbackName,
     espnId: payload.espnId ?? null,
     headline: primary?.headline ?? payload.headline ?? null,
@@ -3481,8 +3536,104 @@ function normalizePlayerBrief(
     published: primary?.published ?? payload.published ?? null,
     news: payload.news ?? [],
     url: primary?.url ?? payload.url ?? null,
-    notes,
+    notes: dedupedNotes,
   };
+}
+
+/** First-name aliases we care about for RotoWorld name matching (James ↔ Jimmy ↔ Jim, etc). */
+const ROTOWORLD_FIRST_NAME_ALIASES: Record<string, string[]> = {
+  james: ["jimmy", "jim"],
+  jimmy: ["james", "jim"],
+  jim: ["james", "jimmy"],
+};
+
+function stripNameSuffix(name: string): string {
+  return name.replace(/\s+(jr\.?|sr\.?|ii|iii|iv)\s*$/i, "").trim();
+}
+
+/**
+ * Loose player-name match tolerant of RotoWorld's nickname quirks
+ * (e.g. "Jimmy Crooks III" vs MLB's "James Crooks").
+ */
+export function rotoworldPlayerMatch(a: string, b: string): boolean {
+  const an = stripNameSuffix(a).toLowerCase().trim();
+  const bn = stripNameSuffix(b).toLowerCase().trim();
+  if (!an || !bn) return false;
+  if (an === bn) return true;
+  const aParts = an.split(/\s+/).filter(Boolean);
+  const bParts = bn.split(/\s+/).filter(Boolean);
+  if (!aParts.length || !bParts.length) return false;
+  const aLast = aParts[aParts.length - 1];
+  const bLast = bParts[bParts.length - 1];
+  if (aLast !== bLast) return false;
+  const aFirst = aParts[0];
+  const bFirst = bParts[0];
+  if (aFirst === bFirst) return true;
+  return (
+    (ROTOWORLD_FIRST_NAME_ALIASES[aFirst] ?? []).includes(bFirst) ||
+    (ROTOWORLD_FIRST_NAME_ALIASES[bFirst] ?? []).includes(aFirst)
+  );
+}
+
+export type MlbRotoWorldBoardItem = MlbPlayerNewsNote & {
+  name?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+};
+
+let rotoWorldNewsCache: { items: MlbRotoWorldBoardItem[]; fetchedAt: number } | null = null;
+const ROTOWORLD_NEWS_CACHE_MS = 2 * 60 * 1000;
+
+/** RotoWorld's league-wide news feed (NBC Sports fantasy player-news page), cached 2 min. */
+export async function fetchRotoWorldNews(): Promise<MlbRotoWorldBoardItem[]> {
+  const now = Date.now();
+  if (rotoWorldNewsCache && now - rotoWorldNewsCache.fetchedAt < ROTOWORLD_NEWS_CACHE_MS) {
+    return rotoWorldNewsCache.items;
+  }
+  const data = await invokeSports<{ items?: MlbRotoWorldBoardItem[] }>({ action: "rotoWorldNews" });
+  const items = Array.isArray(data?.items) ? data.items : [];
+  rotoWorldNewsCache = { items, fetchedAt: now };
+  return items;
+}
+
+/** Merge any RotoWorld feed items matching this player into `brief.notes` (deduped). */
+export function mergeRotoWorldBoard(
+  brief: MlbPlayerBrief,
+  boardItems: MlbRotoWorldBoardItem[],
+): MlbPlayerBrief {
+  if (!boardItems.length) return brief;
+  const matches = boardItems.filter((item) => {
+    const itemName = (item.name ?? [item.firstName, item.lastName].filter(Boolean).join(" ")).trim();
+    return itemName && rotoworldPlayerMatch(itemName, brief.name);
+  });
+  if (!matches.length) return brief;
+
+  const notes = [...brief.notes];
+  const seen = new Set(notes.map((n) => `${n.source}|${n.headline ?? ""}`));
+  for (const item of matches) {
+    const note: MlbPlayerNewsNote = {
+      source: item.source || "rotoworld",
+      headline: item.headline ?? null,
+      story: item.story ?? null,
+      description: item.description ?? null,
+      published: item.published ?? null,
+      url: item.url ?? null,
+    };
+    const key = `${note.source}|${note.headline ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    notes.push(note);
+  }
+  return { ...brief, notes };
+}
+
+async function withRotoWorldBoard(brief: MlbPlayerBrief): Promise<MlbPlayerBrief> {
+  try {
+    const items = await fetchRotoWorldNews();
+    return mergeRotoWorldBoard(brief, items);
+  } catch {
+    return brief;
+  }
 }
 
 export async function fetchPlayerBrief(playerName: string): Promise<MlbPlayerBrief | null> {
@@ -3501,7 +3652,7 @@ export async function fetchPlayerBrief(playerName: string): Promise<MlbPlayerBri
       | null;
     if (payload) {
       const normalized = normalizePlayerBrief(payload, name);
-      if (normalized) return normalized;
+      if (normalized) return await withRotoWorldBoard(normalized);
     }
     if (error && !payload) throw error;
   } catch {
@@ -3528,7 +3679,8 @@ export async function fetchPlayerBrief(playerName: string): Promise<MlbPlayerBri
       rotowire?: MlbPlayerNewsNote | null;
       rotoworld?: MlbPlayerNewsNote | null;
     };
-    return normalizePlayerBrief(payload, name);
+    const normalized = normalizePlayerBrief(payload, name);
+    return normalized ? await withRotoWorldBoard(normalized) : null;
   } catch {
     return null;
   }
@@ -4257,8 +4409,15 @@ export async function fetchMlbStandings(): Promise<MlbDivisionTable[]> {
         losses?: number;
         divisionRank?: string;
         gamesBack?: string;
+        wildCardGamesBack?: string;
         winningPercentage?: string;
         streak?: { streakCode?: string };
+        runsScored?: number;
+        runsAllowed?: number;
+        runDifferential?: number;
+        records?: {
+          splitRecords?: { type?: string; wins?: number; losses?: number; pct?: string }[];
+        };
       }[];
     };
     const rows: MlbStandingRow[] = (rec.teamRecords ?? []).map((r) => {
@@ -4267,6 +4426,10 @@ export async function fetchMlbStandings(): Promise<MlbDivisionTable[]> {
         oddsMap.get(name.toLowerCase()) ||
         oddsMap.get((r.team?.teamName ?? "").toLowerCase()) ||
         oddsMap.get((r.team?.abbreviation ?? "").toLowerCase());
+      const wcgb = r.wildCardGamesBack;
+      const lastTen = r.records?.splitRecords?.find((s) => s.type === "lastTen");
+      const rs = r.runsScored ?? 0;
+      const ra = r.runsAllowed ?? 0;
       return {
         rank: String(r.divisionRank ?? ""),
         teamId: r.team?.id ?? 0,
@@ -4279,6 +4442,9 @@ export async function fetchMlbStandings(): Promise<MlbDivisionTable[]> {
         streak: r.streak?.streakCode ?? "",
         playoffPercent: odds?.playoff ?? null,
         wildCardPercent: odds?.wildCard ?? null,
+        wcgb: !wcgb || wcgb === "-" || wcgb === "0" || wcgb === "0.0" ? "—" : String(wcgb),
+        l10: lastTen ? `${lastTen.wins ?? 0}-${lastTen.losses ?? 0}` : "—",
+        runDiff: r.runDifferential ?? rs - ra,
       };
     });
     tables.push({
@@ -4292,6 +4458,23 @@ export async function fetchMlbStandings(): Promise<MlbDivisionTable[]> {
   const order = ["AL East", "AL Central", "AL West", "NL East", "NL Central", "NL West"];
   tables.sort((a, b) => order.indexOf(a.shortName) - order.indexOf(b.shortName));
   return tables;
+}
+
+/** Current division leader (rank 1) for each of East/Central/West in a league. */
+export function divisionLeaders(
+  tables: MlbDivisionTable[],
+  league: "AL" | "NL",
+): Array<MlbStandingRow & { divisionLetter: "E" | "C" | "W" }> {
+  const letters: Array<"E" | "C" | "W"> = ["E", "C", "W"];
+  const names: Record<"E" | "C" | "W", string> = { E: "East", C: "Central", W: "West" };
+  const leaders: Array<MlbStandingRow & { divisionLetter: "E" | "C" | "W" }> = [];
+  for (const divisionLetter of letters) {
+    const table = tables.find((t) => t.shortName === `${league} ${names[divisionLetter]}`);
+    if (!table || table.rows.length === 0) continue;
+    const leader = table.rows.find((r) => r.rank === "1") ?? table.rows[0];
+    leaders.push({ ...leader, divisionLetter });
+  }
+  return leaders;
 }
 
 const LEADER_DEFS: { key: string; label: string; category: string; group: "hitting" | "pitching" }[] =

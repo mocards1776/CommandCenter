@@ -110,6 +110,7 @@ import {
   tagFeedUrl,
 } from "@/lib/sports-player-tags";
 import { setRssReaderBrand } from "@/lib/rss-brand";
+import { useArticleNavKeys } from "@/hooks/useArticleNavKeys";
 import { nflTeamLogo } from "@/lib/nfl";
 import { soccerTeamLogo } from "@/lib/soccer";
 import TeamMark from "@/components/sports/TeamMark";
@@ -670,6 +671,8 @@ function EspnGameReaderShell({
 
   const onDoubleTap = useDoubleTapNext(hasNext ? onNext : null, true);
 
+  useArticleNavKeys({ hasPrev, hasNext, onPrev, onNext });
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [item.link]);
@@ -703,7 +706,7 @@ function EspnGameReaderShell({
       className="grid w-full max-w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
       onClick={onDoubleTap}
     >
-      <div className="w-full max-w-3xl min-w-0 justify-self-start overflow-x-hidden lg:pl-2">
+      <div className="mx-auto w-full max-w-3xl min-w-0 justify-self-center overflow-x-hidden">
         <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
           <button
             type="button"
@@ -790,6 +793,8 @@ function MlbGameArticleShell({
 
   const onDoubleTap = useDoubleTapNext(hasNext ? onNext : null, true);
 
+  useArticleNavKeys({ hasPrev, hasNext, onPrev, onNext });
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [item.link]);
@@ -821,7 +826,7 @@ function MlbGameArticleShell({
       className="grid w-full max-w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
       onClick={onDoubleTap}
     >
-      <div className="w-full max-w-3xl min-w-0 justify-self-start overflow-x-hidden lg:pl-2">
+      <div className="mx-auto w-full max-w-3xl min-w-0 justify-self-center overflow-x-hidden">
         <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
           <button
             type="button"
@@ -878,7 +883,7 @@ function MlbGameArticleShell({
             )}
           </div>
           <div>
-            <p className="text-accent text-[10px] font-semibold uppercase tracking-[0.2em]">
+            <p className="text-cream text-[10px] font-semibold uppercase tracking-[0.2em]">
               {item.author || "Farm wrap"}
             </p>
             <h2 className="font-rss text-cream mt-1 text-[22px] font-semibold leading-snug md:text-[26px]">
@@ -932,6 +937,8 @@ function PlayerArticleShell({
   };
 
   const onDoubleTap = useDoubleTapNext(hasNext ? onNext : null, true);
+
+  useArticleNavKeys({ hasPrev, hasNext, onPrev, onNext });
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -1152,29 +1159,27 @@ function ArticleReaderShell({
       .catch(() => {});
   }, [item.link, item.title, feedUrl, qc]);
 
-  // Arrow keys: previous / next article (desktop). Escape closes lightbox.
+  // Escape closes the lightbox.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && lightboxSrc) {
         e.preventDefault();
         setLightboxSrc(null);
-        return;
-      }
-      if (pendingQuote || lightboxSrc) return;
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if ((e.target as HTMLElement | null)?.isContentEditable) return;
-      if (e.key === "ArrowLeft" && hasPrev) {
-        e.preventDefault();
-        onPrev();
-      } else if (e.key === "ArrowRight" && hasNext) {
-        e.preventDefault();
-        onNext();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [hasPrev, hasNext, onPrev, onNext, pendingQuote, lightboxSrc]);
+  }, [lightboxSrc]);
+
+  // Arrow keys: previous / next article (desktop). Blocked while the lightbox or
+  // quote-note picker is open so ArrowLeft/Right don't fight text selection/inputs.
+  useArticleNavKeys({
+    hasPrev,
+    hasNext,
+    onPrev,
+    onNext,
+    blocked: Boolean(pendingQuote || lightboxSrc),
+  });
 
   const title = cleanArticleTitle(article.data?.title || item.title);
   const byline = article.data?.byline || item.author;
@@ -1424,7 +1429,7 @@ function ArticleReaderShell({
       style={{ touchAction: "pan-y" }}
       onClick={onDoubleTap}
     >
-      <article className="font-rss min-w-0 max-w-3xl justify-self-start lg:pl-2">
+      <article className="font-rss mx-auto min-w-0 max-w-3xl justify-self-center">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -1659,12 +1664,16 @@ function ArticleReaderShell({
               const a = (e.target as HTMLElement).closest("a") as HTMLAnchorElement | null;
               if (!a || !articleBodyRef.current?.contains(a)) return;
               const href = a.getAttribute("href") ?? "";
-              if (/\/sports\/mlb\/player\/\d+/.test(href) || /^\/sports(\?|$)/.test(href)) {
+              if (
+                /\/sports\/mlb\/player\/\d+/.test(href) ||
+                /\/sports\/mlb\/game\/\d+/.test(href) ||
+                /^\/sports(\?|$)/.test(href)
+              ) {
                 e.preventDefault();
                 navigate(href);
               }
             }}
-            className="rss-reader max-w-none text-[20px] leading-[1.8] text-[#eceef4] [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_a.rss-player-link]:text-accent [&_a.rss-player-link]:decoration-accent/40 [&_a.rss-player-link]:underline-offset-[3px] [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_table]:my-4 [&_table]:w-full [&_table]:text-left [&_table]:text-[15px] [&_td]:border-b [&_td]:border-white/10 [&_td]:px-2 [&_td]:py-1.5 [&_th]:border-b [&_th]:border-white/20 [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-[11px] [&_th]:uppercase [&_th]:tracking-[0.12em] [&_th]:text-chalk-dim [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5 [&_video.rss-video]:my-6 [&_video.rss-video]:aspect-video [&_video.rss-video]:w-full [&_video.rss-video]:rounded-lg [&_video.rss-video]:bg-black [&_figcaption]:hidden [&_figure]:my-6 [&_img.rss-savant-mug]:my-0 [&_img.rss-savant-mug]:mr-0 [&_img.rss-savant-mug]:inline-block [&_img.rss-savant-mug]:h-7 [&_img.rss-savant-mug]:w-7 [&_img.rss-savant-mug]:max-h-7 [&_img.rss-savant-mug]:rounded-full [&_img.rss-savant-mug]:object-cover [&_img.rss-savant-logo]:my-0 [&_img.rss-savant-logo]:h-12 [&_img.rss-savant-logo]:w-12 [&_img.rss-savant-logo]:max-h-12 [&_img.rss-savant-logo]:object-contain [&_td]:text-[13px] [&_td]:leading-snug"
+            className="rss-reader max-w-none text-[20px] leading-[1.8] text-[#eceef4] [&_a]:text-cream [&_a]:font-semibold [&_a]:underline [&_a]:underline-offset-2 [&_a.rss-player-link]:text-[#fffaf5] [&_a.rss-player-link]:decoration-cream/40 [&_a.rss-player-link]:underline-offset-[3px] [&_em]:text-[#d9dce6] [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-[26px] [&_h2]:font-semibold [&_h2]:text-cream [&_h3]:mt-7 [&_h3]:mb-2 [&_h3]:text-[22px] [&_h3]:font-semibold [&_h3]:text-cream [&_img]:my-6 [&_img]:max-h-[360px] [&_img]:w-full [&_img]:object-contain [&_li]:my-1 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-4 [&_strong]:font-semibold [&_strong]:text-cream [&_table]:my-4 [&_table]:w-full [&_table]:text-left [&_table]:text-[15px] [&_td]:border-b [&_td]:border-white/10 [&_td]:px-2 [&_td]:py-1.5 [&_th]:border-b [&_th]:border-white/20 [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-[11px] [&_th]:uppercase [&_th]:tracking-[0.12em] [&_th]:text-chalk-dim [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-5 [&_video.rss-video]:my-6 [&_video.rss-video]:aspect-video [&_video.rss-video]:w-full [&_video.rss-video]:rounded-lg [&_video.rss-video]:bg-black [&_figcaption]:hidden [&_figure]:my-6 [&_img.rss-savant-mug]:my-0 [&_img.rss-savant-mug]:mr-0 [&_img.rss-savant-mug]:inline-block [&_img.rss-savant-mug]:h-7 [&_img.rss-savant-mug]:w-7 [&_img.rss-savant-mug]:max-h-7 [&_img.rss-savant-mug]:rounded-full [&_img.rss-savant-mug]:object-cover [&_img.rss-savant-logo]:my-0 [&_img.rss-savant-logo]:h-12 [&_img.rss-savant-logo]:w-12 [&_img.rss-savant-logo]:max-h-12 [&_img.rss-savant-logo]:object-contain [&_td]:text-[13px] [&_td]:leading-snug"
             dangerouslySetInnerHTML={{ __html: displayHtml }}
           />
         )}
@@ -2373,9 +2382,12 @@ export default function RssPage() {
   }, [allFeeds, feedById, readUrls, keepHosts]);
 
   const navItems = readerQueue ?? listItems;
-  const selectedIndex = selected
-    ? navItems.findIndex((it) => it.link === selected.link)
-    : -1;
+  const selectedIndex = useMemo(() => {
+    if (!selected) return -1;
+    const byId = navItems.findIndex((it) => it.id === selected.id);
+    if (byId >= 0) return byId;
+    return navItems.findIndex((it) => it.link === selected.link);
+  }, [selected, navItems]);
 
   const listTitle =
     nav === "unread"

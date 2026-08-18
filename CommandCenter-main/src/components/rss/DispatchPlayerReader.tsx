@@ -86,7 +86,7 @@ export default function DispatchPlayerReader({
         )}
       </div>
       {title ? (
-        <p className="text-accent text-[10px] font-semibold uppercase tracking-[0.18em]">
+        <p className="text-cream text-[10px] font-semibold uppercase tracking-[0.18em]">
           Player news · Player page
         </p>
       ) : null}
