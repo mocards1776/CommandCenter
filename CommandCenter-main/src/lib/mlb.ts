@@ -4950,7 +4950,12 @@ export function divisionLeaders(
   const names: Record<"E" | "C" | "W", string> = { E: "East", C: "Central", W: "West" };
   const leaders: Array<MlbStandingRow & { divisionLetter: "E" | "C" | "W" }> = [];
   for (const divisionLetter of letters) {
-    const table = tables.find((t) => t.shortName === `${league} ${names[divisionLetter]}`);
+    const want = `${league} ${names[divisionLetter]}`.toLowerCase();
+    const table = tables.find((t) => {
+      const short = (t.shortName || "").toLowerCase();
+      const full = (t.name || "").toLowerCase();
+      return short === want || full.includes(want) || short.endsWith(names[divisionLetter].toLowerCase()) && short.startsWith(league.toLowerCase());
+    });
     if (!table || table.rows.length === 0) continue;
     const leader = table.rows.find((r) => r.rank === "1") ?? table.rows[0];
     leaders.push({ ...leader, divisionLetter });
