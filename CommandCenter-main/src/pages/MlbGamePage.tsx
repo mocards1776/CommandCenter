@@ -1826,6 +1826,8 @@ function EspnBoxBoard({
         taggedIds={taggedPlayerIds}
       />
 
+      <FavoritePerformancesInGame game={game} favoriteIds={watchPlayerIds} />
+
       <TopProspectsInGame game={game} prospectRanks={prospectRanks} />
 
       {afterLinescore}
@@ -1845,6 +1847,123 @@ function EspnBoxBoard({
         form={homeForm}
       />
     </div>
+  );
+}
+
+function batterPerfLine(b: MlbBoxscoreBatter): string {
+  return [
+    b.h ? `${b.h} H` : null,
+    b.hr ? `${b.hr} HR` : null,
+    b.rbi ? `${b.rbi} RBI` : null,
+    b.r ? `${b.r} R` : null,
+    b.bb ? `${b.bb} BB` : null,
+    !b.h && !b.hr && !b.rbi && !b.r && !b.bb && b.ab ? `${b.ab} AB` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function pitcherPerfLine(p: MlbBoxscorePitcher): string {
+  return [
+    `${p.ip} IP`,
+    `${p.h} H`,
+    `${p.er} ER`,
+    `${p.so} K`,
+    p.bb ? `${p.bb} BB` : null,
+    pitcherDecision(p.note) === "W" ? "W" : pitcherDecision(p.note) === "S" ? "SV" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function FavoritePerformancesInGame({
+  game,
+  favoriteIds,
+}: {
+  game: MlbBoxscore;
+  favoriteIds?: Set<number>;
+}) {
+  const rows = useMemo(() => {
+    if (!favoriteIds?.size) return [];
+    type Row = {
+      id: number;
+      name: string;
+      teamAbbrev: string;
+      position: string | null;
+      line: string;
+    };
+    const byId = new Map<number, Row>();
+    for (const side of [game.away, game.home]) {
+      for (const b of side.batters) {
+        if (!favoriteIds.has(b.id)) continue;
+        byId.set(b.id, {
+          id: b.id,
+          name: b.name,
+          teamAbbrev: b.teamAbbrev,
+          position: b.position || null,
+          line: batterPerfLine(b),
+        });
+      }
+      for (const p of side.pitchers) {
+        if (!favoriteIds.has(p.id)) continue;
+        const existing = byId.get(p.id);
+        if (existing && parseIpOuts(p.ip) <= 0) continue;
+        byId.set(p.id, {
+          id: p.id,
+          name: p.name,
+          teamAbbrev: p.teamAbbrev,
+          position:
+            existing?.position && existing.position !== "P"
+              ? existing.position
+              : pitcherRoleLabel(p),
+          line: pitcherPerfLine(p),
+        });
+      }
+    }
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [game, favoriteIds]);
+
+  if (!rows.length) return null;
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
+      <div className="border-b border-white/[0.07] px-4 py-2.5">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+          Favorite players in this game
+        </h2>
+      </div>
+      <ul className="divide-y divide-white/[0.06]">
+        {rows.map((p) => (
+          <li key={p.id} className="flex items-center gap-3 px-4 py-2.5">
+            <PlayerHeadshot
+              playerId={p.id}
+              size={213}
+              className="h-9 w-9 shrink-0 rounded-full ring-1 ring-white/15"
+              alt=""
+            />
+            <div className="min-w-0 flex-1">
+              <Link
+                to={`/sports/mlb/player/${p.id}`}
+                className="text-cream inline-flex flex-wrap items-center gap-1.5 text-[14px] font-semibold hover:text-accent hover:underline"
+              >
+                <span className="text-[#f0b429] numeral text-[11px] font-bold">FAV</span>
+                {p.name}
+                <Star
+                  size={12}
+                  className="text-[#f0b429] fill-current"
+                  aria-hidden
+                />
+              </Link>
+              <p className="text-[11px] text-[#8b93a7]">
+                {p.teamAbbrev}
+                {p.position ? ` · ${p.position}` : ""}
+                {p.line ? ` · ${p.line}` : ""}
+              </p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

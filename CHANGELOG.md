@@ -11,7 +11,8 @@
 - MLB.com news extracts prefer the real article body (JSON-LD / AMP) instead of a one-paragraph teaser; the reader has a **Re-extract** button when a pull is thin or fails.
 - “How he arrived” is the signing, draft, or trade into the organization — not a later call-up. Call-ups stay on the transaction list.
 - Contract cards infer minor-league / selected-from-minors status when Spotrac/BBRef have no salary table, and scrape more salary shapes.
-- Manager of the Year on MLB manager pages counts AL/NL awards only (not Carolina / other minor-league MOTY).
+- Manager hero / résumé chips count AL/NL Manager of the Year only; the awards list under Career résumé still shows Carolina and other MiLB MOTY.
+- Game wraps add a **Favorite players in this game** card (same layout as top prospects) for favorited players who appeared.
 
 ---
 

@@ -289,10 +289,7 @@ export default function MlbManagerPage() {
               detail={
                 career.managerOfYearYears.length
                   ? career.managerOfYearYears.join(", ")
-                  : m.awards
-                      .filter((a) => /manager of the year/i.test(a.name))
-                      .map((a) => a.season)
-                      .join(", ") || undefined
+                  : undefined
               }
               onClick={() =>
                 document.getElementById("mgr-awards")?.scrollIntoView({ behavior: "smooth" })

@@ -6233,14 +6233,15 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
     .map((a) => ({ season: String(a.season), name: String(a.name) }))
     .filter((a) => {
       const yr = Number(a.season);
-      // Count only AL/NL Manager of the Year — not Carolina / International / etc.
-      if (/manager of the year/i.test(a.name)) return isMlbManagerOfTheYearAward(a.name);
+      // Keep every MOTY (including Carolina / other MiLB) on the awards list.
+      if (/manager of the year/i.test(a.name)) return true;
       if (/world series/i.test(a.name) && managedYears.has(yr)) return true;
       if (/pennant|championship series/i.test(a.name) && managedYears.has(yr)) return true;
       return false;
     });
 
-  const moyAwards = awards.filter((a) => /manager of the year/i.test(a.name));
+  // Hero / résumé chips count AL/NL only — MiLB MOTY stay in the list below.
+  const moyAwards = awards.filter((a) => isMlbManagerOfTheYearAward(a.name));
   const wsAwards = awards.filter((a) => /world series/i.test(a.name));
 
   let stints: MlbManagerStint[] = (careerRaw?.stints ?? [])
