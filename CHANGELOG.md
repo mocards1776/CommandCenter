@@ -2,6 +2,15 @@
 
 ---
 
+## Game preview + player card fixes — August 18, 2026
+
+- ESPN last-5: match AZ↔ARI (and other abbrev aliases) / team ids so both clubs load.
+- Player splits: keep all columns aligned when vs L/R omit `runs` (no more shifted HR/AVG).
+- “How he arrived”: prefer draft over same-club signing for draft signees.
+- Game preview: stack both lineups (with logos) and both batting + pitching leaders (no tabs).
+
+---
+
 ## Standings: Leaders above Wild Card (MLB.com layout) — August 18, 2026
 
 - Notes aside pairs **NL/AL Leaders** (E/C/W) directly above each league’s wild-card board.

@@ -1526,16 +1526,19 @@ function SplitsTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.code} className="border-t border-white/[0.05]">
-                <td className="text-cream px-2 py-2 text-left text-[12px]">{row.label}</td>
-                {row.stats.map((s) => (
-                  <td key={s.label} className="numeral text-cream px-2 py-2 text-[14px]">
-                    {s.value}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {rows.map((row) => {
+              const byLabel = new Map(row.stats.map((s) => [s.label, s.value]));
+              return (
+                <tr key={row.code} className="border-t border-white/[0.05]">
+                  <td className="text-cream px-2 py-2 text-left text-[12px]">{row.label}</td>
+                  {labels.map((label) => (
+                    <td key={label} className="numeral text-cream px-2 py-2 text-[14px]">
+                      {byLabel.get(label) ?? "—"}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

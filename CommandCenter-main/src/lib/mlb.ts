@@ -432,6 +432,20 @@ export function mlbTeamIdFromEspnAbbrev(abbrev: string | null | undefined): numb
   return ESPN_ABBREV_TO_TEAM_ID[abbrev.toUpperCase()] ?? null;
 }
 
+/** True when abbrevs refer to the same club (AZ↔ARI, CWS↔CHW, etc.). */
+export function mlbAbbrevsMatch(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  if (!a || !b) return false;
+  const au = a.toUpperCase();
+  const bu = b.toUpperCase();
+  if (au === bu) return true;
+  const idA = ESPN_ABBREV_TO_TEAM_ID[au];
+  const idB = ESPN_ABBREV_TO_TEAM_ID[bu];
+  return idA != null && idB != null && idA === idB;
+}
+
 export type RecapInline =
   | { kind: "text"; text: string }
   | { kind: "player"; text: string; playerId: number | null; espnId: string | null }
@@ -3598,6 +3612,9 @@ export function isIntraOrgTransaction(type: string, description: string): boolea
  * Curated “how he got here” story — the signing, draft, or trade that brought
  * the player into the current organization. Call-ups and other intra-org moves
  * stay on the transaction list but are not the arrival headline.
+ *
+ * Prefer draft over same-club signing (draft signees still get a “signed”
+ * transaction that should not beat the draft line).
  */
 export function buildAcquisitionStory(
   transactions: MlbTransaction[],
@@ -3607,7 +3624,17 @@ export function buildAcquisitionStory(
   const hints = acquisitionTeamHints(teamName);
   const byDateDesc = [...transactions].sort((a, b) => b.date.localeCompare(a.date));
 
+  const acqPriority = (type: string): number => {
+    if (/^trade/i.test(type)) return 40;
+    if (/^draft/i.test(type)) return 30;
+    if (/claim|purchase|rule\s*5|selected/i.test(type) && !/selected the contract/i.test(type))
+      return 20;
+    if (/^sign/i.test(type) || /signed as free agent/i.test(type)) return 10;
+    return 0;
+  };
+
   let currentTeamAcq: MlbTransaction | null = null;
+  let currentScore = -1;
   for (const t of byDateDesc) {
     const type = t.type || "";
     const desc = t.description || "";
@@ -3615,8 +3642,11 @@ export function buildAcquisitionStory(
     if (/^trade/i.test(type)) {
       const dest = tradeDestinationClub(desc);
       if (dest && descriptionMatchesTeamHint(dest, hints)) {
-        currentTeamAcq = t;
-        break;
+        const score = acqPriority(type);
+        if (score > currentScore) {
+          currentTeamAcq = t;
+          currentScore = score;
+        }
       }
       continue;
     }
@@ -3626,8 +3656,11 @@ export function buildAcquisitionStory(
         (actor && descriptionMatchesTeamHint(actor, hints)) ||
         (!actor && descriptionMatchesTeamHint(desc, hints))
       ) {
-        currentTeamAcq = t;
-        break;
+        const score = acqPriority(type);
+        if (score > currentScore) {
+          currentTeamAcq = t;
+          currentScore = score;
+        }
       }
     }
   }
@@ -3645,19 +3678,39 @@ export function buildAcquisitionStory(
     }
   }
 
+  const draftExtra =
+    extras.map((e) => e.trim()).find((e) => /^drafted:/i.test(e)) ?? null;
+
   let headline: string | null = null;
   if (currentTeamAcq) {
-    headline = `${currentTeamAcq.date}: ${currentTeamAcq.description}`;
+    // Same-org draft signing → prefer the draft display line when we have one.
+    if (
+      draftExtra &&
+      (/^sign/i.test(currentTeamAcq.type || "") || /signed as free agent/i.test(currentTeamAcq.type || ""))
+    ) {
+      headline = draftExtra;
+    } else {
+      headline = `${currentTeamAcq.date}: ${currentTeamAcq.description}`;
+    }
+  } else if (draftExtra && hints.length) {
+    // Drafted by this club but no matching tx type — still an arrival.
+    if (descriptionMatchesTeamHint(draftExtra, hints) || !hints.length) {
+      headline = draftExtra;
+    } else {
+      headline = null;
+    }
   } else if (hints.length) {
-    // Still on this club but no inbound tx matched — do not invent an old signing.
     headline = null;
   } else {
-    // No team context: career-origin draft/sign.
     const draft = byDateDesc.find((t) => /^draft/i.test(t.type));
     const signed = byDateDesc.find((t) => /^sign/i.test(t.type));
     const selected = byDateDesc.find((t) => /selected|purchase|claim|rule\s*5/i.test(t.type));
-    const fallback = draft ?? signed ?? selected ?? null;
-    if (fallback) headline = `${fallback.date}: ${fallback.description}`;
+    const fallback = draft ?? (draftExtra ? null : signed) ?? selected ?? null;
+    if (draftExtra && (!fallback || /^sign/i.test(fallback.type || ""))) {
+      headline = draftExtra;
+    } else if (fallback) {
+      headline = `${fallback.date}: ${fallback.description}`;
+    }
   }
 
   return { headline, lines: lines.slice(0, 16) };
@@ -4774,8 +4827,11 @@ export async function fetchMlbPlayerSplits(
     for (const sp of block.splits ?? []) {
       const code = (sp.split?.code ?? "").toLowerCase();
       const label = sp.split?.description ?? code.toUpperCase();
-      const stats = pickStats(sp.stat, keys);
-      if (!stats.length) continue;
+      // Always emit every column (use "—") so vs L/R rows missing `runs` don't shift.
+      const stats = keys.map(([k, lab]) => ({
+        label: lab,
+        value: sp.stat?.[k] != null && sp.stat[k] !== "" ? String(sp.stat[k]) : "—",
+      }));
       rows.push({ code, label, stats });
     }
   }

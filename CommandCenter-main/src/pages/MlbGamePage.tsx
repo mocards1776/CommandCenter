@@ -22,7 +22,9 @@ import {
   fetchMlbGamePreview,
   fetchProspectRankMaps,
   formatGameDuration,
+  mlbAbbrevsMatch,
   mlbHeadshot,
+  mlbTeamLogo,
   parseEspnRecapHtml,
   playerWatchKind,
   prospectRankLabels,
@@ -465,6 +467,8 @@ function PreviewStack({
         <PreviewLineups
           awayAbbrev={g.away.abbrev}
           homeAbbrev={g.home.abbrev}
+          awayTeamId={g.away.teamId}
+          homeTeamId={g.home.teamId}
           away={preview.awayLineup}
           home={preview.homeLineup}
           watchPlayerIds={watchPlayerIds}
@@ -475,6 +479,8 @@ function PreviewStack({
         <PreviewLeaders
           awayAbbrev={g.away.abbrev}
           homeAbbrev={g.home.abbrev}
+          awayTeamId={g.away.teamId}
+          homeTeamId={g.home.teamId}
           batting={preview.battingLeaders}
           pitching={preview.pitchingLeaders}
           watchPlayerIds={watchPlayerIds}
@@ -532,12 +538,11 @@ function EspnPreviewExtras({
 
   const awayId = awayTeamId || data.awayTeamId || null;
   const homeId = homeTeamId || data.homeTeamId || null;
-  const awayL5 =
-    data.lastFive.find((b) => b.abbrev === awayAbbrev.toUpperCase()) ??
-    data.lastFive.find((b) => mlbAbbrevMatch(b.abbrev, awayAbbrev));
-  const homeL5 =
-    data.lastFive.find((b) => b.abbrev === homeAbbrev.toUpperCase()) ??
-    data.lastFive.find((b) => mlbAbbrevMatch(b.abbrev, homeAbbrev));
+  const findLastFive = (abbrev: string, teamId: number | null) =>
+    data.lastFive.find((b) => teamId != null && b.teamId != null && b.teamId === teamId) ??
+    data.lastFive.find((b) => mlbAbbrevsMatch(b.abbrev, abbrev));
+  const awayL5 = findLastFive(awayAbbrev, awayId);
+  const homeL5 = findLastFive(homeAbbrev, homeId);
   const hasL5 = Boolean(awayL5?.games.length || homeL5?.games.length);
   const hasStats = data.teamStats.length > 0;
   const hasSeries = Boolean(data.seasonSeries?.summary || data.seasonSeries?.games.length);
@@ -824,11 +829,6 @@ function EspnPreviewExtras({
   );
 }
 
-function mlbAbbrevMatch(a: string, b: string): boolean {
-  return a.toUpperCase() === b.toUpperCase();
-}
-
-/** Last-five / season-series row → MLB game page (resolved gamePk or ESPN event lookup). */
 function EspnExtrasGameLink({
   gamePk,
   espnEventId,
@@ -1539,6 +1539,8 @@ function PitcherCard({
 function PreviewLineups({
   awayAbbrev,
   homeAbbrev,
+  awayTeamId,
+  homeTeamId,
   away,
   home,
   watchPlayerIds,
@@ -1546,94 +1548,91 @@ function PreviewLineups({
 }: {
   awayAbbrev: string;
   homeAbbrev: string;
+  awayTeamId?: number | null;
+  homeTeamId?: number | null;
   away: MlbLineupHitter[];
   home: MlbLineupHitter[];
   watchPlayerIds?: Set<number>;
   taggedPlayerIds?: Set<number>;
 }) {
-  const [tab, setTab] = useState<"away" | "home">("away");
-  const rows = tab === "away" ? away : home;
   if (!away.length && !home.length) return null;
 
+  const sides = [
+    { abbrev: awayAbbrev, teamId: awayTeamId ?? null, rows: away },
+    { abbrev: homeAbbrev, teamId: homeTeamId ?? null, rows: home },
+  ].filter((s) => s.rows.length > 0);
+
   return (
-    <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
-      <div className="flex border-b border-white/[0.07]">
-        {(
-          [
-            ["away", awayAbbrev, away.length],
-            ["home", homeAbbrev, home.length],
-          ] as const
-        ).map(([key, abbrev, count]) => (
-          <button
-            key={key}
-            type="button"
-            disabled={!count}
-            onClick={() => setTab(key)}
-            className={cn(
-              "flex-1 px-3 py-2.5 text-[12px] font-semibold uppercase tracking-[0.12em] transition",
-              tab === key
-                ? "border-b-2 border-accent text-cream"
-                : "text-[#8b93a7] hover:text-cream disabled:opacity-30",
-            )}
-          >
-            {abbrev} Lineup
-          </button>
-        ))}
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[480px] text-[12px]">
-          <thead>
-            <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-              <th className="px-3 py-2 text-left font-medium">Hitters</th>
-              <th className="numeral px-1.5 py-2 font-medium">H-AB</th>
-              <th className="numeral px-1.5 py-2 font-medium">HR</th>
-              <th className="numeral px-1.5 py-2 font-medium">RBI</th>
-              <th className="numeral px-1.5 py-2 font-medium">SB</th>
-              <th className="numeral px-1.5 py-2 pr-3 font-medium">AVG</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((h) => {
-              const watchKind = playerWatchKind(h.id, watchPlayerIds, taggedPlayerIds);
-              return (
-                <tr
-                  key={h.id}
-                  className={cn(
-                    "border-t border-white/[0.05]",
-                    watchKind === "favorite" && "bg-accent/[0.06]",
-                    watchKind === "tagged" && "bg-[#7eb6ff]/[0.06]",
-                  )}
-                >
-                  <td className="px-3 py-2.5 text-left">
-                    <Link
-                      to={`/sports/mlb/player/${h.id}`}
-                      className="inline-flex items-center gap-1.5 font-semibold text-accent hover:underline"
-                    >
-                      {h.shortName}
-                      <PlayerWatchMark kind={watchKind} />
-                    </Link>
-                    <span className="ml-1.5 text-[10px] text-[#8b93a7]">{h.position}</span>
-                  </td>
-                  <td className="numeral px-1.5 py-2.5 text-center text-cream">
-                    {h.hits}-{h.atBats}
-                  </td>
-                  <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.hr}</td>
-                  <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.rbi}</td>
-                  <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.sb}</td>
-                  <td className="numeral px-1.5 py-2.5 pr-3 text-center text-cream">{h.avg}</td>
+    <div className="space-y-3">
+      {sides.map(({ abbrev, teamId, rows }) => (
+        <section
+          key={abbrev}
+          className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]"
+        >
+          <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-2.5">
+            {teamId ? <TeamMark teamId={teamId} size="xs" /> : null}
+            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-cream">
+              {abbrev} Lineup
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] text-[12px]">
+              <thead>
+                <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                  <th className="px-3 py-2 text-left font-medium">Hitters</th>
+                  <th className="numeral px-1.5 py-2 font-medium">H-AB</th>
+                  <th className="numeral px-1.5 py-2 font-medium">HR</th>
+                  <th className="numeral px-1.5 py-2 font-medium">RBI</th>
+                  <th className="numeral px-1.5 py-2 font-medium">SB</th>
+                  <th className="numeral px-1.5 py-2 pr-3 font-medium">AVG</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
+              </thead>
+              <tbody>
+                {rows.map((h) => {
+                  const watchKind = playerWatchKind(h.id, watchPlayerIds, taggedPlayerIds);
+                  return (
+                    <tr
+                      key={h.id}
+                      className={cn(
+                        "border-t border-white/[0.05]",
+                        watchKind === "favorite" && "bg-accent/[0.06]",
+                        watchKind === "tagged" && "bg-[#7eb6ff]/[0.06]",
+                      )}
+                    >
+                      <td className="px-3 py-2.5 text-left">
+                        <Link
+                          to={`/sports/mlb/player/${h.id}`}
+                          className="inline-flex items-center gap-1.5 font-semibold text-accent hover:underline"
+                        >
+                          {h.shortName}
+                          <PlayerWatchMark kind={watchKind} />
+                        </Link>
+                        <span className="ml-1.5 text-[10px] text-[#8b93a7]">{h.position}</span>
+                      </td>
+                      <td className="numeral px-1.5 py-2.5 text-center text-cream">
+                        {h.hits}-{h.atBats}
+                      </td>
+                      <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.hr}</td>
+                      <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.rbi}</td>
+                      <td className="numeral px-1.5 py-2.5 text-center text-cream">{h.sb}</td>
+                      <td className="numeral px-1.5 py-2.5 pr-3 text-center text-cream">{h.avg}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }
 
 function PreviewLeaders({
   awayAbbrev,
   homeAbbrev,
+  awayTeamId,
+  homeTeamId,
   batting,
   pitching,
   watchPlayerIds,
@@ -1641,87 +1640,89 @@ function PreviewLeaders({
 }: {
   awayAbbrev: string;
   homeAbbrev: string;
+  awayTeamId?: number | null;
+  homeTeamId?: number | null;
   batting: MlbPreviewLeaderRow[];
   pitching: MlbPreviewLeaderRow[];
   watchPlayerIds?: Set<number>;
   taggedPlayerIds?: Set<number>;
 }) {
-  const [tab, setTab] = useState<"batting" | "pitching">("batting");
-  const rows = tab === "batting" ? batting : pitching;
+  const blocks = [
+    { key: "batting", label: "Batting Leaders", rows: batting },
+    { key: "pitching", label: "Pitching Leaders", rows: pitching },
+  ].filter((b) => b.rows.some((r) => r.away || r.home));
+
+  if (!blocks.length) return null;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
-      <div className="flex border-b border-white/[0.07]">
-        {(
-          [
-            ["batting", "Batting Leaders"],
-            ["pitching", "Pitching Leaders"],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setTab(key)}
-            className={cn(
-              "flex-1 px-3 py-2.5 text-[12px] font-semibold uppercase tracking-[0.12em] transition",
-              tab === key
-                ? "border-b-2 border-accent text-cream"
-                : "text-[#8b93a7] hover:text-cream",
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="divide-y divide-white/[0.06]">
-        {rows.map((row) => (
-          <div key={row.category} className="px-3 py-3 sm:px-4">
-            <p className="mb-2.5 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
-              {row.category}
+    <div className="space-y-3">
+      {blocks.map((block) => (
+        <section
+          key={block.key}
+          className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]"
+        >
+          <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-2.5">
+            {awayTeamId ? <TeamMark teamId={awayTeamId} size="xs" /> : null}
+            {homeTeamId ? <TeamMark teamId={homeTeamId} size="xs" /> : null}
+            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-cream">
+              {block.label}
             </p>
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-              <LeaderSide
-                side={row.away}
-                abbrev={awayAbbrev}
-                align="left"
-                statLabel={row.statLabel}
-                watchKind={
-                  row.away
-                    ? playerWatchKind(row.away.id, watchPlayerIds, taggedPlayerIds)
-                    : null
-                }
-              />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/25">
-                {row.statLabel}
-              </span>
-              <LeaderSide
-                side={row.home}
-                abbrev={homeAbbrev}
-                align="right"
-                statLabel={row.statLabel}
-                watchKind={
-                  row.home
-                    ? playerWatchKind(row.home.id, watchPlayerIds, taggedPlayerIds)
-                    : null
-                }
-              />
-            </div>
           </div>
-        ))}
-      </div>
-    </section>
+          <div className="divide-y divide-white/[0.06]">
+            {block.rows.map((row) => (
+              <div key={row.category} className="px-3 py-3 sm:px-4">
+                <p className="mb-2.5 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                  {row.category}
+                </p>
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                  <LeaderSide
+                    side={row.away}
+                    abbrev={awayAbbrev}
+                    teamId={awayTeamId ?? null}
+                    align="left"
+                    statLabel={row.statLabel}
+                    watchKind={
+                      row.away
+                        ? playerWatchKind(row.away.id, watchPlayerIds, taggedPlayerIds)
+                        : null
+                    }
+                  />
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/25">
+                    {row.statLabel}
+                  </span>
+                  <LeaderSide
+                    side={row.home}
+                    abbrev={homeAbbrev}
+                    teamId={homeTeamId ?? null}
+                    align="right"
+                    statLabel={row.statLabel}
+                    watchKind={
+                      row.home
+                        ? playerWatchKind(row.home.id, watchPlayerIds, taggedPlayerIds)
+                        : null
+                    }
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }
 
 function LeaderSide({
   side,
   abbrev,
+  teamId,
   align,
   statLabel,
   watchKind,
 }: {
   side: MlbPreviewLeaderRow["away"];
   abbrev: string;
+  teamId?: number | null;
   align: "left" | "right";
   statLabel: string;
   watchKind?: PlayerWatchKind | null;
@@ -1745,6 +1746,16 @@ function LeaderSide({
           alt=""
           className="absolute inset-0 h-full w-full object-cover object-[center_15%]"
         />
+        {teamId ? (
+          <span
+            className={cn(
+              "absolute -bottom-0.5 h-5 w-5 overflow-hidden rounded-full bg-white p-0.5 ring-1 ring-black/10",
+              align === "right" ? "-left-0.5" : "-right-0.5",
+            )}
+          >
+            <img src={mlbTeamLogo(teamId)} alt="" className="h-full w-full object-contain" />
+          </span>
+        ) : null}
       </div>
       <div className="min-w-0">
         <p className="inline-flex items-center gap-1.5 truncate text-[13px] font-semibold text-cream">
