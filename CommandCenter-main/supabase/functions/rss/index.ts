@@ -1820,6 +1820,7 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
           winner?: boolean;
           form?: string;
           records?: { type?: string; summary?: string }[];
+          probables?: { athlete?: { displayName?: string; shortName?: string } }[];
           team?: {
             displayName?: string;
             shortDisplayName?: string;
@@ -1829,6 +1830,9 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
         }[];
       }[];
     };
+    gameInfo?: { venue?: { fullName?: string }; weather?: { temperature?: number; precipitation?: number } };
+    seasonseries?: { type?: string; summary?: string }[];
+    predictor?: { homeTeam?: { gameProjection?: string }; awayTeam?: { gameProjection?: string } };
     article?: {
       headline?: string;
       description?: string;
@@ -1848,12 +1852,22 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
   };
 
   async function fetchSummary(leaguePath: string): Promise<EspnSummary | null> {
-    const res = await fetch(
+    const hosts = [
       `https://site.api.espn.com/apis/site/v2/sports/${leaguePath}/summary?event=${id}`,
-      { headers: { Accept: "application/json", "User-Agent": UA } },
-    );
-    if (!res.ok) return null;
-    return (await res.json()) as EspnSummary;
+      `https://site.web.api.espn.com/apis/site/v2/sports/${leaguePath}/summary?event=${id}`,
+    ];
+    for (const href of hosts) {
+      try {
+        const res = await fetch(href, {
+          headers: { Accept: "application/json", "User-Agent": UA },
+        });
+        if (!res.ok) continue;
+        return (await res.json()) as EspnSummary;
+      } catch {
+        /* next host */
+      }
+    }
+    return null;
   }
 
   let sum: EspnSummary | null = null;
@@ -1879,10 +1893,16 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
   }
   if (!sum) return null;
 
-  const newsArticle = sum.news?.articles?.[0];
-  const article = sum.article?.headline
+  const espnPromo =
+    /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook|team hitting ratings|pitcher projections/i;
+  const isPromo = (a?: { headline?: string; description?: string; story?: string } | null) =>
+    espnPromo.test(`${a?.headline ?? ""} ${a?.description ?? ""} ${a?.story ?? ""}`);
+
+  const newsArticle = (sum.news?.articles ?? []).find((a) => a.headline && !isPromo(a));
+  const officialOk = Boolean(sum.article?.headline) && !isPromo(sum.article);
+  const article = officialOk
     ? sum.article
-    : newsArticle?.headline
+    : !isMlb && newsArticle?.headline
       ? {
           headline: newsArticle.headline,
           description: newsArticle.description,
@@ -1890,7 +1910,7 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
           byline: newsArticle.byline,
           images: newsArticle.images,
         }
-      : sum.article;
+      : undefined;
 
   const storyHtml =
     article?.story?.trim() ||
@@ -1904,7 +1924,12 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
     /[A-Z]{2,}\d-\d-\d/.test(storyText) || // PNE0-0-1
     (/\d\s*PTS\b/i.test(storyText) && !/\.\s/.test(storyText) && storyText.length < 120);
 
-  if (storyHtml && storyText.length >= 40 && !mashedEspnBlob) {
+  if (
+    storyHtml &&
+    storyText.length >= 40 &&
+    !mashedEspnBlob &&
+    !espnPromo.test(`${article?.headline ?? ""} ${storyText}`)
+  ) {
     return {
       title: article?.headline ?? null,
       byline: article?.byline ?? null,
@@ -1913,8 +1938,8 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
     };
   }
 
-  // Soccer (and thin MLB previews): build a readable match header — never return the mashed competitor blob.
-  if (!isSoccer) return null;
+  // Soccer + thin MLB previews: build a readable match header — never the mashed competitor blob or fantasy promo.
+  if (!isSoccer && !isMlb) return null;
   const comp = sum.header?.competitions?.[0];
   const competitors = comp?.competitors ?? [];
   const home = competitors.find((c) => c.homeAway === "home");
@@ -1938,12 +1963,19 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
     comp?.status?.type?.detail ||
     comp?.status?.type?.description ||
     "Scheduled";
-  const venue = comp?.venue?.fullName ?? null;
+  const venue = comp?.venue?.fullName || sum.gameInfo?.venue?.fullName || null;
   const leagueName =
     (sum as { header?: { league?: { name?: string; shortName?: string } } }).header?.league
       ?.shortName ||
     (sum as { header?: { league?: { name?: string } } }).header?.league?.name ||
-    "Soccer";
+    (isMlb ? "MLB" : "Soccer");
+  const awayPitch = away?.probables?.[0]?.athlete?.displayName || away?.probables?.[0]?.athlete?.shortName;
+  const homePitch = home?.probables?.[0]?.athlete?.displayName || home?.probables?.[0]?.athlete?.shortName;
+  const series = (sum.seasonseries ?? []).find(
+    (s) => s.summary && /current|season/i.test(s.type ?? "") && !/preseason/i.test(s.type ?? ""),
+  );
+  const awayPct = Number(sum.predictor?.awayTeam?.gameProjection);
+  const homePct = Number(sum.predictor?.homeTeam?.gameProjection);
   const title =
     awayScore != null && homeScore != null
       ? `${awayName} ${awayScore}, ${homeName} ${homeScore}`
@@ -1971,6 +2003,22 @@ async function extractEspnRecapFromUrl(url: string): Promise<{
       venue ? ` at ${venue}` : ""
     }. ${status}.</p>`,
   );
+  if (isMlb && awayPitch && homePitch) {
+    bits.push(`<p>${awayPitch} is lined up against ${homePitch}.</p>`);
+  }
+  if (isMlb && series?.summary) {
+    bits.push(`<p>${series.summary.replace(/\.$/, "")}.</p>`);
+  }
+  if (isMlb && Number.isFinite(awayPct) && Number.isFinite(homePct)) {
+    const fav = awayPct >= homePct ? { name: awayName, pct: awayPct } : { name: homeName, pct: homePct };
+    bits.push(`<p>ESPN's matchup predictor gives ${fav.name} a ${Math.round(fav.pct)}% chance to win.</p>`);
+  }
+  const wx = sum.gameInfo?.weather;
+  if (isMlb && wx?.temperature != null) {
+    const rain =
+      wx.precipitation != null && wx.precipitation > 0 ? ` with a ${wx.precipitation}% chance of rain` : "";
+    bits.push(`<p>First-pitch forecast: ${wx.temperature}°${rain}.</p>`);
+  }
   bits.push(`<p><a href="${url}">Open on ESPN</a></p>`);
 
   const html = bits.join("\n");

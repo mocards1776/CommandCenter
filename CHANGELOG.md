@@ -2,6 +2,14 @@
 
 ---
 
+## MLB ESPN preview text — August 18, 2026
+
+- Stop treating ESPN's league news rail as a game preview (the fantasy-hitter "Stay ahead of the game…" blurb).
+- When ESPN has no written preview, build one from the summary: series, probables, last five, matchup predictor, weather, and recent availability.
+- Recap fetch falls back to `site.web.api.espn.com` when `site.api` is blocked.
+
+---
+
 ## MLB manager Kalshi odds — August 18, 2026
 
 - Restore **Next fired** Kalshi odds on MLB managers (list, hot seat, manager detail), with a direct Kalshi client fallback when the sports edge returns empty.

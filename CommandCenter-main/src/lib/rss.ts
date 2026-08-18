@@ -2339,10 +2339,21 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
           } | null;
           if (!sum || sum.error) return scoreboardStub();
           // Soccer (and some other sports) put wrap copy in news.articles, not article.
-          const newsArticle = sum.news?.articles?.[0];
-          const article = sum.article?.headline
+          // MLB previews: never promote the league news rail (fantasy promo, clips).
+          const espnPromo =
+            /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook|team hitting ratings|pitcher projections/i;
+          const newsArticle = (sum.news?.articles ?? []).find((a) => {
+            const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`;
+            return Boolean(a.headline) && !espnPromo.test(blob);
+          });
+          const officialOk =
+            Boolean(sum.article?.headline) &&
+            !espnPromo.test(
+              `${sum.article?.headline ?? ""} ${sum.article?.description ?? ""} ${sum.article?.story ?? ""}`,
+            );
+          const article = officialOk
             ? sum.article
-            : newsArticle?.headline
+            : linkSport !== "mlb" && newsArticle?.headline
               ? {
                   headline: newsArticle.headline,
                   description: newsArticle.description,
@@ -2350,7 +2361,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
                   images: newsArticle.images,
                   links: newsArticle.links,
                 }
-              : sum.article;
+              : undefined;
 
           const storyLink =
             article?.links?.find((l) => /espn\.com/i.test(l.href ?? ""))?.href ?? null;
@@ -2412,7 +2423,10 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             body.length < 40 ||
             /no story available/i.test(`${headline} ${body}`) ||
             /^game preview for\b/i.test(body) ||
-            /^preview\s*[—–-]/i.test(body);
+            /^preview\s*[—–-]/i.test(body) ||
+            /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook/i.test(
+              `${headline} ${body}`,
+            );
           if (hollow) return scoreboardStub();
 
           return {
