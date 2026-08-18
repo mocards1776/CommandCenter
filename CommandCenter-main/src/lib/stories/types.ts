@@ -144,6 +144,9 @@ export type StoryChapter = {
   body: string;
   bullets?: string[];
   stat?: { value: string; label: string };
+  /** Extra likeness for visual: "photo" — does not replace portraitSrc. */
+  imageSrc?: string;
+  imageCredit?: string;
   visual?:
     | "map"
     | "condition"
@@ -158,6 +161,7 @@ export type StoryChapter = {
     | "votes"
     | "family"
     | "portrait"
+    | "photo"
     | "elections"
     | "bills"
     | "ideology"

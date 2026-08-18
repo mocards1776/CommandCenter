@@ -550,6 +550,16 @@ export const FYAN_STORY: ClientStory = {
       ],
       stat: { value: "−0.335", label: "Same first-dimension score as Sen. Ron Wyden" },
     },
+    {
+      id: "likeness",
+      eyebrow: "The photograph",
+      title: "The other likeness.",
+      body:
+        "The Globe-Democrat sketch at the top of this scroll is the 1890 campaign drawing. This is the photograph — chest-up, looking slightly left, the same heavy beard. Two pictures of the same man.",
+      visual: "photo",
+      imageSrc: "/stories/robert-w-fyan-photo.jpg",
+      imageCredit: "Find A Grave memorial 23932295 · added by Linda Barnes, April 29, 2023",
+    },
   ],
   comps: [],
   netScenarios: [],
@@ -573,6 +583,7 @@ export const FYAN_STORY: ClientStory = {
       "Votes: Nay to table free silver (1892). Yea on Geary (1892). Nay on Sherman repeal (1893). Yea on Wilson tariff House passage (1894). Yea to forfeit Texas-Pacific grants (1884). DW-NOMINATE −0.335: middle of the Democrats, left of most of the House. Missed 42.3% of roll calls.",
       "Times: Arthur, Harrison, Cleveland II. Democratic House throughout his service. 1890 U.S. city milk about 14¢ a half-gallon.",
       "Presidential maps (appended): 1884 Cleveland 53.49%–46.02% statewide; Political Graveyard has no 1884 county plurality. 1888 and 1892 county fills: Cleveland over most of the state; Harrison in the Ozarks, German counties, St. Louis city and county — including Webster and Greene. 1892 Webster Harrison 45.38%–41.59%. 2024 Trump 58.49%; Harris only Jackson, Boone, St. Louis County, St. Louis city; Webster Trump 80.67%. Nominate analogue (119th Congress): Wyden −0.335, Courtney −0.337, Sykes −0.332; House Dem median −0.396. Missouri now: Cleaver −0.454, Bell −0.472; Wagner +0.392 through Burlison +0.734; Hawley +0.819, Schmitt +0.884.",
+      "Photograph (appended): chest-up studio likeness, distinct from the 1890 Globe-Democrat sketch. Find A Grave memorial 23932295, added by Linda Barnes, April 29, 2023.",
     ],
   },
   researchDate: "August 18, 2026",
@@ -589,5 +600,6 @@ export const FYAN_STORY: ClientStory = {
     "Political Graveyard, Missouri presidential county plurality winners, 1888 (St. Louis → St. Louis County; St. Louis city → St. Louis City). 1884 county page is “No data” for every county",
     "Wikipedia, 1884 / 1888 / 1892 / 2024 United States presidential election in Missouri (statewide totals; 1892 and 2024 county tables)",
     "VoteView HSall_members.csv, 119th Congress DW-NOMINATE first dimension (retrieved August 18, 2026)",
+    "Find A Grave memorial 23932295, photographic portrait added by Linda Barnes, April 29, 2023 (distinct from the Globe-Democrat sketch)",
   ],
 };

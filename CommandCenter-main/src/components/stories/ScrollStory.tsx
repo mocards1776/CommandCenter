@@ -543,6 +543,15 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               </aside>
             ) : null}
 
+            {ch.visual === "photo" && ch.imageSrc ? (
+              <aside className="visual-pane">
+                <div className="portrait-frame is-photo">
+                  <img src={ch.imageSrc} alt={`${story.address} · photograph`} />
+                </div>
+                {ch.imageCredit ? <p className="visual-caption">{ch.imageCredit}</p> : null}
+              </aside>
+            ) : null}
+
             {ch.visual === "family" && story.family ? (
               <aside className="visual-pane">
                 <div className="family-hero">
@@ -1227,6 +1236,15 @@ const STORY_CSS = `
   .portrait-frame img {
     width: 100%; height: 100%; object-fit: cover; object-position: center 15%;
     filter: grayscale(0.1) contrast(1.05);
+  }
+  .portrait-frame.is-photo {
+    background: #d8cfc4;
+    aspect-ratio: 2 / 3;
+    display: grid; place-items: center;
+  }
+  .portrait-frame.is-photo img {
+    object-fit: contain; object-position: center;
+    filter: none;
   }
   .family-hero {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.55rem;
