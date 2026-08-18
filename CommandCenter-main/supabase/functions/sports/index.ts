@@ -140,6 +140,15 @@ async function scrapeBbref(name: string, mlbId?: number | null) {
       salaries.push({ year: sm[1], team: stripTags(sm[2]) || null, amount });
     }
   }
+  if (!salaries.length) {
+    const textPay =
+      /data-stat="year_ID"[^>]*>\s*(\d{4})[\s\S]*?data-stat="(?:Salary|salary)"[^>]*>\s*\$?([\d,]+)/gi;
+    while ((sm = textPay.exec(searchable))) {
+      const amount = parseMoney(sm[2]);
+      if (amount == null) continue;
+      salaries.push({ year: sm[1], team: null, amount });
+    }
+  }
   // Dedupe by year (keep latest / highest amount when duplicated).
   const byYear = new Map<string, { year: string; amount: number; team: string | null }>();
   for (const s of salaries) {
@@ -150,9 +159,14 @@ async function scrapeBbref(name: string, mlbId?: number | null) {
   const statusMatch =
     searchable.match(/Contract Status<\/strong>\s*:?\s*([^<]+)/i) ??
     searchable.match(/(\d{4})\s*Contract Status<\/strong>\s*:?\s*([^<\n]+)/i);
-  const contractStatus = statusMatch
+  let contractStatus = statusMatch
     ? stripTags(statusMatch[statusMatch.length - 1] ?? "").replace(/\s+/g, " ").trim()
     : null;
+  if (!contractStatus && /pre-?arb/i.test(searchable)) {
+    contractStatus = "Pre-arbitration";
+  } else if (!contractStatus && /minor league contract/i.test(searchable)) {
+    contractStatus = "Minor league contract";
+  }
   const acquisition: string[] = [];
   for (const re of [
     /<p><strong>[^<]+<\/strong>\s*Drafted by[\s\S]*?<\/p>/gi,
@@ -258,7 +272,11 @@ function spotracUrlForName(name: string): string | null {
   return `https://www.spotrac.com/mlb/player/_/id/${hit.id}/${hit.slug}`;
 }
 
-async function findSpotracUrl(name: string, hintUrl?: string | null): Promise<string | null> {
+async function findSpotracUrl(
+  name: string,
+  hintUrl?: string | null,
+  mlbId?: number | null,
+): Promise<string | null> {
   if (hintUrl) {
     const normalized = normalizeSpotracUrl(hintUrl);
     if (normalized) return normalized;
@@ -268,8 +286,10 @@ async function findSpotracUrl(name: string, hintUrl?: string | null): Promise<st
 
   const slug = slugifyName(name);
   const last = slug.split("-").filter(Boolean).slice(-1)[0] ?? "";
+  const q = mlbId ? `${name} ${mlbId}` : name;
   const urls = [
-    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`site:spotrac.com/mlb/player ${name}`)}`,
+    `https://www.spotrac.com/search/?q=${encodeURIComponent(name)}`,
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`site:spotrac.com/mlb/player ${q}`)}`,
     `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`"${name}" site:spotrac.com/mlb/player/_/id`)}`,
     `https://www.bing.com/search?q=${encodeURIComponent(`"${name}" site:spotrac.com/mlb/player`)}`,
   ];
@@ -302,8 +322,8 @@ async function findSpotracUrl(name: string, hintUrl?: string | null): Promise<st
   return null;
 }
 
-async function scrapeSpotrac(name: string, hintUrl?: string | null) {
-  const playerUrl = await findSpotracUrl(name, hintUrl);
+async function scrapeSpotrac(name: string, hintUrl?: string | null, mlbId?: number | null) {
+  const playerUrl = await findSpotracUrl(name, hintUrl, mlbId);
   if (!playerUrl) return null;
   const html = await (
     await timedFetch(playerUrl, {
@@ -403,7 +423,7 @@ async function scrapeContract(name: string, hintUrl?: string | null, mlbId?: num
     // Pull BBRef + Spotrac together so a Spotrac miss or BBRef blip still fills the card.
     const [bbSettled, spotracSettled] = await Promise.allSettled([
       scrapeBbref(name, mlbId),
-      scrapeSpotrac(name, hintUrl),
+      scrapeSpotrac(name, hintUrl, mlbId),
     ]);
     const bb =
       bbSettled.status === "fulfilled" && bbSettled.value && !("error" in bbSettled.value)

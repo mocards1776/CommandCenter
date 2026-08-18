@@ -118,7 +118,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
 
   const contract = useQuery({
     queryKey: [
-      "mlb-player-contract-v9",
+      "mlb-player-contract-v10",
       playerId,
       player.data?.name,
       player.data?.useName,
@@ -1564,6 +1564,23 @@ function BioAndOrigin({ player }: { player: MlbPlayerCard }) {
   );
 }
 
+function inferContractStatus(
+  transactions: { date: string; type: string; description: string }[],
+): string | null {
+  if (!transactions.length) return null;
+  const latest = transactions[0];
+  if (/selected the contract/i.test(latest?.description ?? "")) {
+    return "Selected from minors · no published MLB salary table yet";
+  }
+  if (transactions.some((t) => /minor league contract/i.test(t.description))) {
+    return "Minor league contract";
+  }
+  if (transactions.some((t) => /signed as a? free agent/i.test(t.description))) {
+    return "Free-agent signing · salary not published yet";
+  }
+  return null;
+}
+
 function ContractBlock({
   contract,
   loading,
@@ -1587,6 +1604,7 @@ function ContractBlock({
   ].filter(Boolean);
 
   const story = buildAcquisitionStory(transactions, acquisitionExtras, teamName);
+  const inferredStatus = inferContractStatus(transactions);
   const hasContractDetails =
     Boolean(contract?.contractStatus) ||
     Boolean(contract?.currentSalary?.display) ||
@@ -1655,11 +1673,21 @@ function ContractBlock({
             </div>
           ) : (
             <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-4 py-3">
-              <p className="text-chalk-dim text-[13px]">
-                {error
-                  ? `Couldn't load contract details${error instanceof Error ? `: ${error.message}` : "."}`
-                  : "No salary table came back from Baseball Reference / Spotrac for this player yet."}
-              </p>
+              {inferredStatus ? (
+                <>
+                  <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">Status</p>
+                  <p className="text-cream mt-1 text-[14px] leading-snug">{inferredStatus}</p>
+                  <p className="text-chalk-dim mt-2 text-[12px]">
+                    Baseball Reference / Spotrac have not published a salary table for this player yet.
+                  </p>
+                </>
+              ) : (
+                <p className="text-chalk-dim text-[13px]">
+                  {error
+                    ? `Couldn't load contract details${error instanceof Error ? `: ${error.message}` : "."}`
+                    : "No salary table came back from Baseball Reference / Spotrac for this player yet."}
+                </p>
+              )}
               {onRetry && (
                 <button
                   type="button"

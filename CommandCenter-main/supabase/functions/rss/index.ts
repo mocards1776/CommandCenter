@@ -398,9 +398,15 @@ function extractFragment(html: string, pageUrl = ""): string | null {
     return null;
   }
 
+  // MLB.com news — never let an embedded clip steal the article body.
+  if (isMlbNewsUrl(pageUrl)) {
+    const news = extractMlbNewsFragment(html);
+    if (news) return news;
+  }
+
   // MLB Film Room / video pages — prefer mp4 autoplay card over chrome soup.
   // Do NOT run this on newspapers (STL Today embeds promo .mp4s that stole the body).
-  if (isMlbVideoUrl(pageUrl) || /mlb\.com/i.test(pageUrl)) {
+  if (isMlbVideoUrl(pageUrl)) {
     const mlbVideo = extractMlbVideoFragment(html, pageUrl);
     if (mlbVideo) return mlbVideo;
   }
@@ -456,6 +462,138 @@ function extractFragment(html: string, pageUrl = ""): string | null {
 
 function isMlbVideoUrl(url: string): boolean {
   return /mlb\.com/i.test(url) && /\/video\//i.test(url);
+}
+
+function isMlbNewsUrl(url: string): boolean {
+  return (
+    /mlb\.com/i.test(url) &&
+    !/baseballsavant/i.test(url) &&
+    !/\/video\//i.test(url) &&
+    /\/(?:news|gameday|article|press-release|story)\b/i.test(url)
+  );
+}
+
+function paragraphsFromText(text: string): string {
+  const cleaned = decodeEntities(text.replace(/\r/g, "").trim());
+  const bits = cleaned
+    .split(/\n{2,}/)
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter((p) => p.length > 40);
+  if (bits.length >= 2) return bits.map((p) => `<p>${p}</p>`).join("\n");
+  if (cleaned.length > 200) return `<p>${cleaned.replace(/\n/g, "</p><p>")}</p>`;
+  return "";
+}
+
+function findJsonArticleBody(node: unknown, depth = 0): string | null {
+  if (node == null || depth > 8) return null;
+  if (typeof node === "string") {
+    const t = node.trim();
+    if (t.length > 400 && /<(p|div|br)\b/i.test(t)) return t;
+    if (t.length > 600) return paragraphsFromText(t);
+    return null;
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const hit = findJsonArticleBody(item, depth + 1);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (typeof node !== "object") return null;
+  const rec = node as Record<string, unknown>;
+  for (const key of ["articleBody", "body", "content", "story", "html", "text"]) {
+    if (key in rec) {
+      const hit = findJsonArticleBody(rec[key], depth + 1);
+      if (hit) return hit;
+    }
+  }
+  if (rec["@type"] === "NewsArticle" || rec["@type"] === "Article") {
+    for (const key of ["articleBody", "text", "description"]) {
+      const hit = findJsonArticleBody(rec[key], depth + 1);
+      if (hit) return hit;
+    }
+  }
+  if (rec["@graph"]) {
+    const hit = findJsonArticleBody(rec["@graph"], depth + 1);
+    if (hit) return hit;
+  }
+  for (const val of Object.values(rec)) {
+    if (val && typeof val === "object") {
+      const hit = findJsonArticleBody(val, depth + 1);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+function extractMlbNewsFragment(html: string): string | null {
+  for (const m of html.matchAll(
+    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
+  )) {
+    try {
+      const data = JSON.parse(m[1] ?? "");
+      const body = findJsonArticleBody(data);
+      if (body && stripTags(body).length > 400) return body;
+    } catch {
+      /* next */
+    }
+  }
+
+  const next = html.match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+  if (next?.[1]) {
+    try {
+      const body = findJsonArticleBody(JSON.parse(next[1]));
+      if (body && stripTags(body).length > 400) return body;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const preloaded = html.match(/__PRELOADED_STATE__\s*=\s*(\{[\s\S]*?\});?\s*<\/script>/i);
+  if (preloaded?.[1]) {
+    try {
+      const body = findJsonArticleBody(JSON.parse(preloaded[1]));
+      if (body && stripTags(body).length > 400) return body;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const markdownParts = [
+    ...html.matchAll(
+      /<div[^>]*class="[^"]*story-part markdown[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    ),
+  ].map((m) => m[0]);
+  if (markdownParts.length >= 2) {
+    const joined = markdownParts.join("\n");
+    if (stripTags(joined).length > 400) return joined;
+  }
+
+  const openers = [
+    /<div[^>]*class="[^"]*MarkdownContainer[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*ArticleBody[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*article-body[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*ArticleTemplate[^"]*"[^>]*>/i,
+    /<div[^>]*data-testid="article-body"[^>]*>/i,
+    /<div[^>]*data-type="article-body"[^>]*>/i,
+    /<section[^>]*class="[^"]*article-body[^"]*"[^>]*>/i,
+  ];
+  for (const re of openers) {
+    const frag = /<section/i.test(re.source)
+      ? html.match(
+          /<section[^>]*class="[^"]*article-body[^"]*"[^>]*>([\s\S]*?)<\/section>/i,
+        )?.[1] ?? null
+      : sliceBalancedDiv(html, re);
+    if (frag && stripTags(frag).length > 400) return frag;
+  }
+
+  const ps = [...html.matchAll(/<p[^>]*class="[^"]*(?:ArticleBody|article-body|body-text)[^"]*"[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map((m) => m[0]);
+  if (ps.length >= 3) {
+    const joined = ps.join("\n");
+    if (stripTags(joined).length > 400) return joined;
+  }
+  return null;
 }
 
 function isBaseballSavantUrl(url: string): boolean {
@@ -1440,11 +1578,14 @@ async function handleFeed(feedUrl: string) {
   return json(parseFeed(xml, feedUrl));
 }
 
-async function handleRead(url: string) {
+async function handleRead(url: string, refresh = false) {
   if (!isPublicHttpUrl(url)) return json({ error: "Invalid article URL" }, 400);
 
-  const cached = readExtractMem(url);
-  if (cached) return cached;
+  if (refresh) EXTRACT_MEM.delete(url);
+  else {
+    const cached = readExtractMem(url);
+    if (cached) return cached;
+  }
 
   // ESPN game recaps: prefer the public summary API over brittle HTML scrapes.
   const espnStory =
@@ -1521,6 +1662,26 @@ async function handleRead(url: string) {
   const html = unlockEncryptedContent(stripNoise(rawHtml));
   const meta = pageMeta(html);
   let frag = extractFragment(html, url);
+
+  // MLB.com news is often a SPA — try the AMP shell before giving up.
+  if (isMlbNewsUrl(url) && (!frag || stripTags(frag).length < 400)) {
+    const ampUrls = [
+      url.includes("?") ? `${url}&amp=1` : `${url}?amp=1`,
+      url.replace(/\/news\//i, "/news/amp/"),
+    ];
+    for (const ampUrl of ampUrls) {
+      try {
+        const ampHtml = unlockEncryptedContent(stripNoise(await fetchText(ampUrl)));
+        const ampFrag = extractMlbNewsFragment(ampHtml) || extractFragment(ampHtml, url);
+        if (ampFrag && stripTags(ampFrag).length > (frag ? stripTags(frag).length : 0)) {
+          frag = ampFrag;
+          break;
+        }
+      } catch {
+        /* next amp shape */
+      }
+    }
+  }
 
   // Soft fallback: og:description / meta description when the body is SPA-only.
   if (!frag) {
@@ -1826,7 +1987,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
-  let body: { mode?: string; feedUrl?: string; url?: string };
+  let body: { mode?: string; feedUrl?: string; url?: string; refresh?: boolean | string };
   try {
     body = await req.json();
   } catch {
@@ -1839,7 +2000,8 @@ Deno.serve(async (req: Request) => {
     }
     if (body.mode === "read") {
       if (!body.url?.trim()) return json({ error: "url is required" }, 400);
-      return await handleRead(body.url.trim());
+      const refresh = body.refresh === true || body.refresh === "1" || body.refresh === "true";
+      return await handleRead(body.url.trim(), refresh);
     }
     return json({ error: "mode must be 'feed' or 'read'" }, 400);
   } catch (err) {
