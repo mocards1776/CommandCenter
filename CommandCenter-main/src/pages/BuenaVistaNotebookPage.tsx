@@ -127,7 +127,7 @@ export default function BuenaVistaNotebookPage() {
 
       <section className="mb-10">
         <div className="rule-head mb-4">
-          <span>Offer brief</span>
+          <span>{story.layout === "portrait" ? "Brief" : "Offer brief"}</span>
         </div>
         <p className="text-cream/90 leading-relaxed mb-3">{story.heroLine}</p>
         <p className="text-chalk text-sm leading-relaxed mb-4">{story.support}</p>

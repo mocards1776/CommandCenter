@@ -71,6 +71,8 @@ export type DistrictMapSpec = {
   congress: string;
   counties: string[];
   note: string;
+  /** Lewis/Martis county-fill plan: 48th, 50th–52nd, or 53rd (15 seats). */
+  plan?: "48" | "50" | "53";
 };
 
 export type VoteRow = {
@@ -79,6 +81,22 @@ export type VoteRow = {
   missed: number;
   pct: number;
   percentile?: string;
+};
+
+export type ElectionRow = {
+  year: string;
+  date: string;
+  result: "won" | "lost" | "out" | "retired";
+  headline: string;
+  detail: string;
+};
+
+export type BillVote = {
+  date: string;
+  congress: string;
+  cast: "Yea" | "Nay" | "Absent";
+  bill: string;
+  note: string;
 };
 
 export type StoryChapter = {
@@ -102,6 +120,8 @@ export type StoryChapter = {
     | "votes"
     | "family"
     | "portrait"
+    | "elections"
+    | "bills"
     | "none";
 };
 
@@ -117,6 +137,8 @@ export type ClientStory = {
   portraitCredit?: string;
   districtMaps?: DistrictMapSpec[];
   voteRows?: VoteRow[];
+  electionRows?: ElectionRow[];
+  billVotes?: BillVote[];
   family?: { names: string; relation: string; body: string };
   cover: {
     display: string;

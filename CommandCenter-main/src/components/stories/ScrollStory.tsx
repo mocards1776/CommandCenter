@@ -226,7 +226,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
           <p className="story-support reveal delay-3">{story.support}</p>
 
           <div className="verdict reveal delay-4">
-          <span className="verdict-flag">{isPortrait ? "Family" : "Recommendation"}</span>
+          <span className="verdict-flag">{isPortrait ? "The line" : "Recommendation"}</span>
             <strong>{story.valuation.recommendation}</strong>
           </div>
 
@@ -329,7 +329,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     ch.id === "call" ||
                     ch.id === "family" ||
                     ch.id === "votes" ||
-                    ch.id === "money" ||
+                    ch.id === "bills" ||
                     ch.id === "congress"
                       ? "is-warn"
                       : ""
@@ -348,7 +348,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               ) : null}
             </div>
 
-            {ch.visual === "map" ? (
+            {ch.visual === "map" && !isPortrait ? (
               <aside className="visual-pane">
                 <div className="street-frame">
                   <iframe
@@ -368,6 +368,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
 
             {ch.visual === "condition" ? (
               <aside className="visual-pane">
+                {!isPortrait ? (
                 <div className="floor-split" aria-hidden>
                   <div className="floor-new">
                     <span>Already done</span>
@@ -378,6 +379,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     <em>Crawl · moisture · age systems</em>
                   </div>
                 </div>
+                ) : null}
                 <div className="condition-grid">
                   {story.condition.map((item) => {
                     const tone = statusTone(item.status);
@@ -466,6 +468,44 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     </article>
                   ))}
                 </div>
+              </aside>
+            ) : null}
+
+            {ch.visual === "elections" && story.electionRows?.length ? (
+              <aside className="visual-pane">
+                <div className="election-list">
+                  {story.electionRows.map((row) => (
+                    <article key={row.year} className={`election-row is-${row.result}`}>
+                      <header>
+                        <strong>{row.year}</strong>
+                        <em>{row.result === "won" ? "Won" : row.result === "lost" ? "Lost nomination" : row.result === "retired" ? "Retired" : "Out"}</em>
+                      </header>
+                      <p className="election-head">{row.headline}</p>
+                      <p>{row.detail}</p>
+                    </article>
+                  ))}
+                </div>
+                <p className="visual-caption">Missouri 13th · year by year. Raw 1882 count from 1883; later years are vote shares.</p>
+              </aside>
+            ) : null}
+
+            {ch.visual === "bills" && story.billVotes?.length ? (
+              <aside className="visual-pane">
+                <div className="bill-list">
+                  {story.billVotes.map((v) => (
+                    <article key={`${v.date}-${v.bill}`} className={`bill-card is-${v.cast.toLowerCase()}`}>
+                      <header>
+                        <em>{v.cast}</em>
+                        <span>
+                          {v.congress} · {v.date}
+                        </span>
+                      </header>
+                      <h3>{v.bill}</h3>
+                      <p>{v.note}</p>
+                    </article>
+                  ))}
+                </div>
+                <p className="visual-caption">VoteView / GovTrack roll calls · Fyan, ICPSR 3418</p>
               </aside>
             ) : null}
 
@@ -1057,6 +1097,45 @@ const STORY_CSS = `
     font-size: 11px; letter-spacing: 0.04em; font-weight: 700;
     padding: 0.28rem 0.45rem; background: rgba(20,51,86,0.08); color: var(--navy);
   }
+  .district-legend {
+    display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.55rem 0 0; padding: 0;
+    list-style: none;
+  }
+  .district-legend li {
+    display: flex; align-items: center; gap: 0.28rem;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.04em; color: var(--navy);
+  }
+  .district-legend i {
+    width: 0.7rem; height: 0.7rem; display: inline-block; border: 1px solid rgba(11,31,58,0.25);
+  }
+  .district-legend li.is-home { color: var(--warn); }
+  .election-list, .bill-list { display: grid; gap: 0.55rem; }
+  .election-row, .bill-card {
+    border: 1px solid var(--line); background: rgba(255,255,255,0.7);
+    padding: 0.7rem 0.8rem;
+  }
+  .election-row header, .bill-card header {
+    display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline;
+    margin-bottom: 0.25rem;
+  }
+  .election-row header strong { font-size: 1.05rem; }
+  .election-row header em, .bill-card header em {
+    font-style: normal; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    font-weight: 800;
+  }
+  .election-row.is-won header em { color: var(--good); }
+  .election-row.is-lost header em, .bill-card.is-nay header em { color: var(--warn); }
+  .election-row.is-out header em, .election-row.is-retired header em { color: var(--muted); }
+  .bill-card.is-yea header em { color: var(--good); }
+  .bill-card.is-absent header em { color: var(--muted); }
+  .election-head { margin: 0 0 0.25rem; font-weight: 700; font-size: 0.88rem; line-height: 1.35; }
+  .election-row p, .bill-card p {
+    margin: 0; font-size: 0.8rem; line-height: 1.4; color: var(--muted);
+  }
+  .bill-card h3 {
+    margin: 0 0 0.3rem; font-family: var(--font-body); font-size: 0.92rem; font-weight: 700;
+  }
+  .bill-card header span { font-size: 11px; color: var(--muted); }
   .hero-map-veil {
     position: absolute; inset: 0; pointer-events: none;
     background:
