@@ -4028,6 +4028,131 @@ async function fetchEspnExperienceFallback(playerName: string): Promise<string |
   }
 }
 
+/** Parse season/career WAR from a Baseball-Reference player HTML page. */
+function parseBbrefWarFromHtml(
+  html: string,
+  isPitcher: boolean,
+): { seasonWar: number | null; careerWar: number | null; urlHint: string | null } {
+  const searchable = html.replace(/<!--([\s\S]*?)-->/g, "$1");
+  const strip = (s: string) => s.replace(/<[^>]+>/g, "");
+  const cellWar = (row: string, warStat: string): number | null => {
+    const raw = row.match(new RegExp(`data-stat="${warStat}"[^>]*>([\\s\\S]*?)</t[dh]>`, "i"))?.[1];
+    if (raw) {
+      const text = strip(raw).replace(/,/g, "").trim();
+      if (/^-?[0-9.]+$/.test(text)) {
+        const n = Number(text);
+        if (Number.isFinite(n)) return n;
+      }
+    }
+    const csk = row.match(new RegExp(`data-stat="${warStat}"[^>]*\\bcsk="(-?[0-9.]+)"`, "i"))?.[1];
+    if (csk && /^-?[0-9.]+$/.test(csk)) {
+      const n = Number(csk);
+      return Number.isFinite(n) ? Math.round(n * 10) / 10 : null;
+    }
+    return null;
+  };
+  const tables: string[] = [];
+  for (const id of [
+    "players_value_batting",
+    "players_value_pitching",
+    "players_standard_batting",
+    "players_standard_pitching",
+  ]) {
+    const m = searchable.match(
+      new RegExp(`<table[^>]*\\bid="${id}"[^>]*>[\\s\\S]*?<\\/table>`, "i"),
+    );
+    if (m) tables.push(m[0]);
+  }
+  const slice = tables.join("\n") || searchable;
+  const parseStat = (warStat: string) => {
+    const year = new Date().getFullYear();
+    const byYear = new Map<number, number>();
+    const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = rowRe.exec(slice))) {
+      const row = m[1];
+      if (
+        /thead|colhead|over_header|scope="col"|162\s*Game|colspan\s*=\s*["']?\d/i.test(row) ||
+        /data-stat="year_id"[^>]*>\s*(?:<[^>]+>)?\s*Yrs\b/i.test(row) ||
+        /\(\s*\d+\s*Yrs?\s*\)/i.test(row)
+      ) {
+        continue;
+      }
+      const yRaw =
+        row.match(/data-stat="year_id"[^>]*\bcsk="(\d{4})"/i)?.[1] ??
+        row.match(/data-stat="year_id"[^>]*>\s*(?:<a[^>]*>)?\s*(\d{4})/i)?.[1] ??
+        row.match(/href="\/players\/gl\.fcgi[^"]*year=(\d{4})/i)?.[1];
+      if (!yRaw) continue;
+      const w = cellWar(row, warStat);
+      if (w == null) continue;
+      const y = Number(yRaw);
+      if (!Number.isFinite(y)) continue;
+      const prev = byYear.get(y);
+      if (prev == null || Math.abs(w) >= Math.abs(prev)) byYear.set(y, w);
+    }
+    const seasonWar = byYear.has(year)
+      ? byYear.get(year)!
+      : byYear.size
+        ? [...byYear.entries()].sort((a, b) => b[0] - a[0])[0]![1]
+        : null;
+    let careerWar: number | null = null;
+    const foot = slice.match(/<tfoot>([\s\S]*?)<\/tfoot>/i)?.[1] ?? "";
+    const footRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let fr: RegExpExecArray | null;
+    while ((fr = footRe.exec(foot))) {
+      if (!/\bYrs\b/i.test(fr[1])) continue;
+      const w = cellWar(fr[1], warStat);
+      if (w != null) {
+        careerWar = w;
+        break;
+      }
+    }
+    if (careerWar == null && byYear.size) {
+      careerWar = Math.round([...byYear.values()].reduce((a, b) => a + b, 0) * 10) / 10;
+    }
+    return { seasonWar, careerWar };
+  };
+  const primary = isPitcher ? "p_war" : "b_war";
+  const secondary = isPitcher ? "b_war" : "p_war";
+  let out = parseStat(primary);
+  if (out.seasonWar == null && out.careerWar == null) out = parseStat(secondary);
+  const urlHint =
+    searchable.match(/canonical"\s+href="(https:\/\/www\.baseball-reference\.com\/players\/[^"]+)"/i)?.[1] ??
+    null;
+  return { ...out, urlHint };
+}
+
+/** Browser fallback when the sports edge returns service time but blank WAR. */
+async function fetchBbrefWarInBrowser(
+  name: string,
+  opts?: { isPitcher?: boolean; mlbId?: number | null },
+): Promise<Pick<MlbPlayerExtras, "seasonWar" | "careerWar" | "url"> | null> {
+  try {
+    const mlbId = opts?.mlbId;
+    const url =
+      mlbId != null && Number.isFinite(mlbId) && mlbId > 0
+        ? `https://www.baseball-reference.com/redirect.fcgi?player=1&mlb_ID=${Math.trunc(mlbId)}`
+        : `https://www.baseball-reference.com/search/search.fcgi?search=${encodeURIComponent(name)}`;
+    const res = await fetch(url, {
+      headers: { Accept: "text/html" },
+      credentials: "omit",
+      redirect: "follow",
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    if (html.length < 20_000 || /just a moment|cf-browser-verification/i.test(html)) return null;
+    const parsed = parseBbrefWarFromHtml(html, Boolean(opts?.isPitcher));
+    if (parsed.seasonWar == null && parsed.careerWar == null) return null;
+    return {
+      seasonWar: parsed.seasonWar,
+      careerWar: parsed.careerWar,
+      url: parsed.urlHint ?? (res.url.includes("/players/") ? res.url : null),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Service time + WAR from Baseball Reference (via sports edge). */
 export async function fetchMlbPlayerExtras(
   playerName: string,
@@ -4079,6 +4204,21 @@ export async function fetchMlbPlayerExtras(
       mapped = mapPlayerExtrasPayload(data);
     } catch {
       mapped = null;
+    }
+  }
+
+  // Edge used to truncate the WAR table on BBRef's entity-id= attribute — fill from the browser.
+  if (mapped?.seasonWar == null && mapped?.careerWar == null) {
+    const local = await fetchBbrefWarInBrowser(name, opts);
+    if (local) {
+      mapped = {
+        serviceTime: mapped?.serviceTime ?? null,
+        seasonWar: local.seasonWar,
+        careerWar: local.careerWar,
+        warRank: mapped?.warRank ?? null,
+        warOf: mapped?.warOf ?? null,
+        url: local.url ?? mapped?.url ?? null,
+      };
     }
   }
 

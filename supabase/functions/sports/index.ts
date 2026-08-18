@@ -1849,9 +1849,10 @@ async function loadBbrefPlayerHtml(
       if (
         /\/players\/[a-z]\/[a-z0-9]+\.shtml/i.test(directRes.url) &&
         html.length > 20_000 &&
-        !/just a moment|cf-browser-verification/i.test(html) &&
-        bbrefPageMatchesName(html, name)
+        !/just a moment|cf-browser-verification/i.test(html)
       ) {
+        // mlb_ID redirect is authoritative — don't drop the page on a brittle H1 name check
+        // (that used to blank WAR even when the right player loaded).
         return { url: directRes.url, html };
       }
     } catch {
@@ -2137,6 +2138,44 @@ async function scrapeBbrefGamePreview(opts: {
 }
 
 /** Prefer current-season WAR from a year+stat table instead of the last numeric cell sitewide. */
+function parseBbrefWarCell(row: string, warStat: string): number | null {
+  // Visible cell text first (matches BBRef's one-decimal display, including <strong> leaders).
+  const raw = row.match(
+    new RegExp(`data-stat="${warStat}"[^>]*>([\\s\\S]*?)</t[dh]>`, "i"),
+  )?.[1];
+  if (raw) {
+    const text = stripTags(raw).replace(/,/g, "").trim();
+    if (/^-?[0-9.]+$/.test(text)) {
+      const n = Number(text);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  // Fallback: csk is higher precision when the cell is empty/spacer.
+  const csk = row.match(new RegExp(`data-stat="${warStat}"[^>]*\\bcsk="(-?[0-9.]+)"`, "i"))?.[1];
+  if (csk && /^-?[0-9.]+$/.test(csk)) {
+    const n = Number(csk);
+    return Number.isFinite(n) ? Math.round(n * 10) / 10 : null;
+  }
+  return null;
+}
+
+/** Full WAR tables only — never slice on bare `id="` (matches entity-id= and truncates). */
+function extractBbrefWarTables(searchable: string): string {
+  const parts: string[] = [];
+  for (const id of [
+    "players_value_batting",
+    "players_value_pitching",
+    "players_standard_batting",
+    "players_standard_pitching",
+  ]) {
+    const m = searchable.match(
+      new RegExp(`<table[^>]*\\bid="${id}"[^>]*>[\\s\\S]*?<\\/table>`, "i"),
+    );
+    if (m) parts.push(m[0]);
+  }
+  return parts.length ? parts.join("\n") : searchable;
+}
+
 function parseBbrefSeasonAndCareerWar(
   searchable: string,
   warStat: string,
@@ -2149,23 +2188,24 @@ function parseBbrefSeasonAndCareerWar(
     const row = m[1];
     // Skip headers + summary / multi-year aggregate rows.
     if (
-      /thead|colhead|over_header|162\s*Game|colspan\s*=\s*["']?\d/i.test(row) ||
+      /thead|colhead|over_header|scope="col"|162\s*Game|colspan\s*=\s*["']?\d/i.test(row) ||
       /data-stat="year_id"[^>]*>\s*(?:<[^>]+>)?\s*Yrs\b/i.test(row) ||
       /\(\s*\d+\s*Yrs?\s*\)/i.test(row)
     ) {
       continue;
     }
     const yRaw =
-      row.match(/data-stat="year_id"[^>]*>\s*(?:<a[^>]*>)?\s*(\d{4})/i)?.[1] ??
       row.match(/data-stat="year_id"[^>]*\bcsk="(\d{4})"/i)?.[1] ??
+      row.match(/data-stat="year_id"[^>]*>\s*(?:<a[^>]*>)?\s*(\d{4})/i)?.[1] ??
       row.match(/href="\/players\/gl\.fcgi[^"]*year=(\d{4})/i)?.[1];
-    const wRaw = row.match(new RegExp(`data-stat="${warStat}"[^>]*>([^<]*)`, "i"))?.[1]?.trim();
-    if (!yRaw || !wRaw || !/^-?[0-9.]+$/.test(wRaw)) continue;
+    if (!yRaw) continue;
+    const w = parseBbrefWarCell(row, warStat);
+    if (w == null) continue;
     const y = Number(yRaw);
-    const w = Number(wRaw);
-    if (!Number.isFinite(y) || !Number.isFinite(w)) continue;
+    if (!Number.isFinite(y)) continue;
     const team =
-      row.match(/data-stat="team_id"[^>]*>\s*(?:<a[^>]*>)?\s*([^<]*)/i)?.[1]?.trim() ?? "";
+      row.match(/data-stat="(?:team_id|team_name_abbr)"[^>]*>\s*(?:<a[^>]*>)?\s*([^<]*)/i)?.[1]
+        ?.trim() ?? "";
     const isMultiTeam = /^(?:\d+TM)$/i.test(team);
     const prev = byYear.get(y);
     // Prefer 2TM/3TM totals; otherwise keep the larger value (totals beat splits).
@@ -2181,10 +2221,22 @@ function parseBbrefSeasonAndCareerWar(
       : null;
 
   let careerWar: number | null = null;
-  const foot = searchable.match(
-    new RegExp(`<tfoot>[\\s\\S]*?data-stat="${warStat}"[^>]*>([^<]*)`, "i"),
-  );
-  if (foot && /^-?[0-9.]+$/.test(foot[1].trim())) careerWar = Number(foot[1].trim());
+  const footBlock = searchable.match(/<tfoot>([\s\S]*?)<\/tfoot>/i)?.[1] ?? "";
+  if (footBlock) {
+    const footRowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let fr: RegExpExecArray | null;
+    while ((fr = footRowRe.exec(footBlock))) {
+      const row = fr[1];
+      if (!/data-stat="year_id"[^>]*>[\s\S]*?\bYrs\b/i.test(row) && !/\bYrs\b/i.test(row)) {
+        continue;
+      }
+      const w = parseBbrefWarCell(row, warStat);
+      if (w != null) {
+        careerWar = w;
+        break;
+      }
+    }
+  }
   if (careerWar == null && byYear.size) {
     careerWar =
       Math.round([...byYear.values()].reduce((a, b) => a + b, 0) * 10) / 10;
@@ -2210,13 +2262,8 @@ async function scrapePlayerExtras(
   const serviceTime = stMatch?.[1] ?? null;
   const primary = isPitcher ? "p_war" : "b_war";
   const secondary = isPitcher ? "b_war" : "p_war";
-  // Prefer the player value tables — less noise than scanning the whole page.
-  const valueSlice =
-    searchable.match(
-      /id="players_value_(?:batting|pitching)"[\s\S]*?(?=<table\b|id="[^"]+"|$)/i,
-    )?.[0] ??
-    searchable.match(/data-stat="(?:b_war|p_war)"[\s\S]{0,80000}/i)?.[0] ??
-    searchable;
+  // Prefer the player value/standard tables — never the truncated entity-id slice.
+  const valueSlice = extractBbrefWarTables(searchable);
   let { seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(valueSlice, primary);
   // Two-way players / misclassified pitchers: fall back to the other WAR column.
   if (seasonWar == null && careerWar == null) {

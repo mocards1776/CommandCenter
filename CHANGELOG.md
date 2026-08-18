@@ -2,6 +2,14 @@
 
 ---
 
+## MLB player WAR scrape — August 18, 2026
+
+- Fix Baseball-Reference WAR parsing: the value-table slice was truncating on `entity-id="…"`, so season/career WAR never loaded.
+- Read WAR from full value/standard tables (including bold leader cells) and trust the MLB-id redirect page.
+- Browser fallback fills WAR when the sports edge still returns blanks; player extras cache key bumped to v3.
+
+---
+
 ## MLB ESPN preview text — August 18, 2026
 
 - Stop treating ESPN's league news rail as a game preview (the fantasy-hitter "Stay ahead of the game…" blurb).
