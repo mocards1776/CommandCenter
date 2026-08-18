@@ -70,6 +70,12 @@ const NAV = [
     short: "Land",
     Icon: NotebookPen,
   },
+  {
+    to: "/notebook/robert-washington-fyan",
+    label: "Fyan",
+    short: "Fyan",
+    Icon: Users,
+  },
 ];
 const SPORTS_NAV = [
   { to: "/sports?solo=1", match: (p: string) => p === "/sports", label: "Teams", Icon: Users },

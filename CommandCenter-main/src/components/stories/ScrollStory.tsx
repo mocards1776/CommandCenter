@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import TurnerLogo from "@/components/stories/TurnerLogo";
+import Missouri13Map from "@/components/stories/Missouri13Map";
 import type { ClientStory, ConditionItem } from "@/lib/stories/types";
 
 function money(n: number) {
@@ -58,21 +59,23 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
 
   const isProceeds = story.layout === "proceeds";
   const isLand = story.layout === "land";
+  const isPortrait = story.layout === "portrait";
+  const skipValueChapters = isProceeds || isPortrait;
 
   const toc = useMemo(
     () => [
       { id: "open", label: "Open" },
       { id: "brief", label: "Brief" },
       ...story.chapters.map((c) => ({ id: c.id, label: c.eyebrow })),
-      ...(isProceeds
+      ...(skipValueChapters
         ? []
         : [
             { id: "comps", label: "Comps" },
             { id: "range", label: "Range" },
           ]),
-      { id: "notebook", label: isProceeds ? "Notes" : "Math" },
+      { id: "notebook", label: isProceeds ? "Notes" : isPortrait ? "Record" : "Math" },
     ],
-    [story.chapters, isProceeds],
+    [story.chapters, skipValueChapters, isProceeds, isPortrait],
   );
 
   const maxComp = Math.max(
@@ -179,7 +182,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
         </nav>
       ) : null}
 
-      <header className={`story-hero ${isProceeds ? "is-proceeds" : ""}`} id="brief" data-chapter>
+      <header className={`story-hero ${isProceeds ? "is-proceeds" : ""} ${isPortrait ? "is-portrait" : ""}`} id="brief" data-chapter>
         {isProceeds ? (
           <div className="hero-proceeds-panel" aria-hidden>
             <div className="proceeds-hero big">
@@ -188,6 +191,13 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               <em>3</em>
               <p>Shared approval before sale proceeds move</p>
             </div>
+          </div>
+        ) : isPortrait && story.portraitSrc ? (
+          <div className="hero-map hero-portrait">
+            <img src={story.portraitSrc} alt={story.address} />
+            {story.portraitCredit ? (
+              <p className="portrait-credit">{story.portraitCredit}</p>
+            ) : null}
           </div>
         ) : (
           <div className="hero-map">
@@ -216,11 +226,20 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
           <p className="story-support reveal delay-3">{story.support}</p>
 
           <div className="verdict reveal delay-4">
-            <span className="verdict-flag">Recommendation</span>
+          <span className="verdict-flag">{isPortrait ? "Family" : "Recommendation"}</span>
             <strong>{story.valuation.recommendation}</strong>
           </div>
 
-          {isProceeds ? (
+          {isPortrait ? (
+            <div className="hero-offer reveal delay-5">
+              {(story.keyNumbers ?? []).slice(0, 3).map((n) => (
+                <div key={n.label} className={n.tone === "warn" ? "is-warn" : undefined}>
+                  <span className="hero-offer-label">{n.label}</span>
+                  <strong>{n.value}</strong>
+                </div>
+              ))}
+            </div>
+          ) : isProceeds ? (
             <div className="hero-offer reveal delay-5">
               <div className="is-warn">
                 <span className="hero-offer-label">People</span>
@@ -307,7 +326,11 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     ch.id === "rule" ||
                     ch.id === "medicaid" ||
                     ch.id === "bank" ||
-                    ch.id === "call"
+                    ch.id === "call" ||
+                    ch.id === "family" ||
+                    ch.id === "votes" ||
+                    ch.id === "money" ||
+                    ch.id === "congress"
                       ? "is-warn"
                       : ""
                   }`}
@@ -336,7 +359,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     allowFullScreen
                   />
                 </div>
-                <p className="visual-caption">Street view · Ravenwood</p>
+                <p className="visual-caption">{isPortrait ? "Marshfield · Webster County" : "Street view · Ravenwood"}</p>
                 <div className="mini-map">
                   <iframe title="Neighborhood map" src={osmEmbedSrc(story)} loading="lazy" />
                 </div>
@@ -446,6 +469,63 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
               </aside>
             ) : null}
 
+            {ch.visual === "portrait" && story.portraitSrc ? (
+              <aside className="visual-pane">
+                <div className="portrait-frame">
+                  <img src={story.portraitSrc} alt={story.address} />
+                </div>
+                {story.portraitCredit ? (
+                  <p className="visual-caption">{story.portraitCredit}</p>
+                ) : null}
+              </aside>
+            ) : null}
+
+            {ch.visual === "family" && story.family ? (
+              <aside className="visual-pane">
+                <div className="family-hero">
+                  <strong>Ken</strong>
+                  <span>&amp;</span>
+                  <strong>Wally</strong>
+                  <span>&amp;</span>
+                  <strong>John</strong>
+                  <p>{story.family.relation} of Robert Washington Fyan</p>
+                </div>
+                <aside className="story-callout">
+                  <strong>{story.family.names}</strong>
+                  <p>{story.family.body}</p>
+                </aside>
+              </aside>
+            ) : null}
+
+            {ch.visual === "districtMap" && story.districtMaps?.length ? (
+              <aside className="visual-pane">
+                <Missouri13Map maps={story.districtMaps} />
+              </aside>
+            ) : null}
+
+            {ch.visual === "votes" && story.voteRows?.length ? (
+              <aside className="visual-pane">
+                <div className="odds-list">
+                  {story.voteRows.map((row) => (
+                    <article key={row.period} className="odds-row">
+                      <div className="odds-meta">
+                        <strong>{row.period}</strong>
+                        <span>
+                          Missed {row.missed} of {row.eligible}
+                          {row.percentile ? ` · ${row.percentile} percentile` : ""}
+                        </span>
+                      </div>
+                      <div className="odds-track" aria-hidden>
+                        <span style={{ width: `${Math.min(100, row.pct)}%` }} />
+                      </div>
+                      <div className="odds-pct">{row.pct}%</div>
+                    </article>
+                  ))}
+                </div>
+                <p className="visual-caption">GovTrack missed-vote share by session window</p>
+              </aside>
+            ) : null}
+
             {ch.visual === "odds" ? (
               <aside className="visual-pane">
                 <div className="odds-list">
@@ -548,7 +628,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
         </section>
       ))}
 
-      {!isProceeds ? (
+      {!skipValueChapters ? (
         <>
       <section id="comps" className="story-chapter story-wide" data-chapter>
         <p className="story-eyebrow">{isLand ? "Nearby tracts" : "Nearby homes"}</p>
@@ -682,7 +762,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
       ) : null}
 
       <section id="notebook" className="story-chapter story-notebook" data-chapter>
-        <p className="story-eyebrow">{isProceeds ? "Notes" : "The math"}</p>
+        <p className="story-eyebrow">{isProceeds ? "Notes" : isPortrait ? "The record" : "The math"}</p>
         <h2>{story.notebook.title}</h2>
         {story.notebook.paragraphs.map((p) => (
           <p key={p.slice(0, 48)} className="story-body notebook-p">
@@ -698,7 +778,10 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
             </div>
           </div>
           <p>
-            Research dated {story.researchDate}. This is not an appraisal, legal advice, or tax advice.
+            Research dated {story.researchDate}.
+            {isPortrait
+              ? " Family history brief — not a complete genealogy."
+              : " This is not an appraisal, legal advice, or tax advice."}
             {isProceeds
               ? " Trust and account setups should be confirmed with an attorney and the bank."
               : isLand
@@ -747,6 +830,10 @@ const STORY_CSS = `
     width: 56px; height: 56px; object-fit: contain;
     flex-shrink: 0;
     filter: drop-shadow(0 8px 18px rgba(11,31,58,0.16));
+  }
+  .turner-mark.is-photo {
+    object-fit: cover; border-radius: 50%;
+    border: 2px solid rgba(11,31,58,0.12);
   }
   .turner-logo.is-compact .turner-mark { width: 38px; height: 38px; filter: none; }
   .turner-logo.is-stacked .turner-mark { width: 96px; height: 96px; }
@@ -906,6 +993,69 @@ const STORY_CSS = `
   .hero-map iframe, .street-frame iframe, .mini-map iframe {
     position: absolute; inset: 0; width: 100%; height: 100%; border: 0;
     filter: grayscale(0.2) contrast(1.05) saturate(0.9);
+  }
+  .hero-portrait { background: #1a1a1a; }
+  .hero-portrait img {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; object-position: center 18%;
+    filter: grayscale(0.15) contrast(1.08);
+  }
+  .portrait-credit {
+    position: absolute; left: 0.8rem; bottom: 0.8rem; z-index: 2; margin: 0;
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: rgba(245,247,250,0.85); background: rgba(11,31,58,0.55);
+    padding: 0.35rem 0.55rem; max-width: calc(100% - 1.6rem);
+  }
+  .portrait-frame {
+    overflow: hidden; border: 1px solid var(--line); background: #1a1a1a;
+    aspect-ratio: 4 / 5; min-height: 280px;
+  }
+  .portrait-frame img {
+    width: 100%; height: 100%; object-fit: cover; object-position: center 15%;
+    filter: grayscale(0.1) contrast(1.05);
+  }
+  .family-hero {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.55rem;
+    border: 1px solid var(--line); padding: 1rem 1.1rem;
+    background:
+      linear-gradient(145deg, rgba(20,51,86,0.1), rgba(196,92,38,0.08)),
+      rgba(255,255,255,0.55);
+  }
+  .family-hero strong {
+    font-family: var(--font-display); font-size: clamp(1.8rem, 4vw, 2.6rem);
+    line-height: 1; color: var(--navy);
+  }
+  .family-hero span {
+    font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase;
+    font-weight: 700; color: var(--muted);
+  }
+  .family-hero p {
+    flex: 1 1 100%; margin: 0.25rem 0 0;
+    font-size: 0.9rem; color: var(--muted); line-height: 1.4;
+  }
+  .district-maps { display: grid; gap: 1.1rem; }
+  .district-map-card {
+    border: 1px solid var(--line); background: rgba(255,255,255,0.55);
+    padding: 0.85rem;
+  }
+  .district-map-card header { margin-bottom: 0.55rem; }
+  .district-map-card h3 {
+    margin: 0 0 0.15rem; font-family: var(--font-body); font-size: 1rem; font-weight: 700;
+  }
+  .district-map-card em {
+    font-style: normal; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    font-weight: 700; color: var(--copper-deep);
+  }
+  .district-svg { width: 100%; height: auto; border: 1px solid var(--line); display: block; }
+  .district-map-note {
+    margin: 0.65rem 0 0.45rem; font-size: 0.82rem; line-height: 1.45; color: var(--muted);
+  }
+  .district-counties {
+    display: flex; flex-wrap: wrap; gap: 0.3rem; margin: 0; padding: 0; list-style: none;
+  }
+  .district-counties li {
+    font-size: 11px; letter-spacing: 0.04em; font-weight: 700;
+    padding: 0.28rem 0.45rem; background: rgba(20,51,86,0.08); color: var(--navy);
   }
   .hero-map-veil {
     position: absolute; inset: 0; pointer-events: none;

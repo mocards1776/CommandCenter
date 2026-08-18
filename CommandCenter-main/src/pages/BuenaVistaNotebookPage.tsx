@@ -22,7 +22,9 @@ export default function BuenaVistaNotebookPage() {
 
   const storySlug = story.slug;
   const mintLabel =
-    story.layout === "land"
+    story.layout === "portrait"
+      ? story.address
+      : story.layout === "land"
       ? story.address
       : story.brand.includes("Financial")
         ? "1715 E. Buena Vista · Financial"
@@ -142,54 +144,58 @@ export default function BuenaVistaNotebookPage() {
         </dl>
       </section>
 
-      <section className="mb-10">
-        <div className="rule-head mb-4">
-          <span>Condition</span>
-        </div>
-        <ul className="grid sm:grid-cols-2 gap-3">
-          {story.condition.map((c) => (
-            <li key={c.label} className="border border-white/10 rounded-sm p-3 bg-field/60">
-              <div className="flex items-baseline justify-between gap-2 mb-1">
-                <span className="text-cream font-medium text-sm">{c.label}</span>
-                <span className="label-caps">{c.status}</span>
-              </div>
-              <p className="text-chalk text-xs leading-relaxed">{c.detail}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {story.condition.length ? (
+        <section className="mb-10">
+          <div className="rule-head mb-4">
+            <span>{story.layout === "portrait" ? "Life" : "Condition"}</span>
+          </div>
+          <ul className="grid sm:grid-cols-2 gap-3">
+            {story.condition.map((c) => (
+              <li key={c.label} className="border border-white/10 rounded-sm p-3 bg-field/60">
+                <div className="flex items-baseline justify-between gap-2 mb-1">
+                  <span className="text-cream font-medium text-sm">{c.label}</span>
+                  <span className="label-caps">{c.status}</span>
+                </div>
+                <p className="text-chalk text-xs leading-relaxed">{c.detail}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
-      <section className="mb-10">
-        <div className="rule-head mb-4">
-          <span>Repair ballparks</span>
-        </div>
-        <ul className="space-y-2">
-          {story.repairs.map((r) => (
-            <li
-              key={r.issue}
-              className="border border-white/10 rounded-sm p-3 bg-field/60 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1"
-            >
-              <div>
-                <div className="text-cream text-sm font-medium">{r.issue}</div>
-                <p className="text-chalk text-xs leading-relaxed">{r.note}</p>
-              </div>
-              <div className="text-sm text-cream font-mono whitespace-nowrap">
-                {r.low.toLocaleString("en-US", {
-                  style: "currency",
-                  currency: "USD",
-                  maximumFractionDigits: 0,
-                })}
-                –
-                {r.high.toLocaleString("en-US", {
-                  style: "currency",
-                  currency: "USD",
-                  maximumFractionDigits: 0,
-                })}
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {story.repairs.length ? (
+        <section className="mb-10">
+          <div className="rule-head mb-4">
+            <span>Repair ballparks</span>
+          </div>
+          <ul className="space-y-2">
+            {story.repairs.map((r) => (
+              <li
+                key={r.issue}
+                className="border border-white/10 rounded-sm p-3 bg-field/60 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1"
+              >
+                <div>
+                  <div className="text-cream text-sm font-medium">{r.issue}</div>
+                  <p className="text-chalk text-xs leading-relaxed">{r.note}</p>
+                </div>
+                <div className="text-sm text-cream font-mono whitespace-nowrap">
+                  {r.low.toLocaleString("en-US", {
+                    style: "currency",
+                    currency: "USD",
+                    maximumFractionDigits: 0,
+                  })}
+                  –
+                  {r.high.toLocaleString("en-US", {
+                    style: "currency",
+                    currency: "USD",
+                    maximumFractionDigits: 0,
+                  })}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {story.proceedsOptions.length ? (
         <section className="mb-10">
@@ -210,6 +216,7 @@ export default function BuenaVistaNotebookPage() {
         </section>
       ) : null}
 
+      {story.layout !== "portrait" ? (
       <section className="mb-10">
         <div className="rule-head mb-4">
           <span>Valuation range</span>
@@ -284,6 +291,7 @@ export default function BuenaVistaNotebookPage() {
           ))}
         </ul>
       </section>
+      ) : null}
 
       <section className="mb-10">
         <div className="rule-head mb-4">
@@ -298,6 +306,7 @@ export default function BuenaVistaNotebookPage() {
         </div>
       </section>
 
+      {story.comps.length ? (
       <section className="mb-10">
         <div className="rule-head mb-4">
           <span>Comps</span>
@@ -321,6 +330,7 @@ export default function BuenaVistaNotebookPage() {
           ))}
         </ul>
       </section>
+      ) : null}
 
       <p className="text-[11px] text-chalk-dim leading-relaxed">
         Research {story.researchDate}. Sources: {story.sources.join("; ")}.{" "}

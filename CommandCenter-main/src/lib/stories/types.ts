@@ -3,6 +3,8 @@
  * Slug must match KNOWN_SLUGS in supabase/functions/story-link.
  */
 
+import { FYAN_STORY } from "./fyan";
+
 export type StoryComp = {
   address: string;
   note: string;
@@ -62,6 +64,23 @@ export type RepairOdds = {
   wrongIf?: string;
 };
 
+export type DistrictMapSpec = {
+  id: string;
+  title: string;
+  years: string;
+  congress: string;
+  counties: string[];
+  note: string;
+};
+
+export type VoteRow = {
+  period: string;
+  eligible: number;
+  missed: number;
+  pct: number;
+  percentile?: string;
+};
+
 export type StoryChapter = {
   id: string;
   eyebrow: string;
@@ -79,6 +98,10 @@ export type StoryChapter = {
     | "options"
     | "compare"
     | "odds"
+    | "districtMap"
+    | "votes"
+    | "family"
+    | "portrait"
     | "none";
 };
 
@@ -88,8 +111,13 @@ export type ClientStory = {
   brand: string;
   brandTag: string;
   markSrc: string;
-  /** property = house brief; proceeds = sale-money / control; land = acreage / FMV brief */
-  layout: "property" | "proceeds" | "land";
+  /** property = house brief; proceeds = sale-money / control; land = acreage / FMV brief; portrait = family / biography */
+  layout: "property" | "proceeds" | "land" | "portrait";
+  portraitSrc?: string;
+  portraitCredit?: string;
+  districtMaps?: DistrictMapSpec[];
+  voteRows?: VoteRow[];
+  family?: { names: string; relation: string; body: string };
   cover: {
     display: string;
     sub: string;
@@ -1360,6 +1388,8 @@ export const STORIES: Record<string, ClientStory> = {
       "Industry ballparks for rural survey, fence, hunt-lease, and land-broker fees (not quotes)",
     ],
   },
+
+  "robert-washington-fyan": FYAN_STORY,
 
 };
 

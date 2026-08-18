@@ -1,7 +1,7 @@
 # Client story links — manual test checklist
 
 ## Wiring
-- Slugs: `1715-e-buena-vista`, `1715-e-buena-vista-financial`, `evans-road-webster-land`
+- Slugs: `1715-e-buena-vista`, `1715-e-buena-vista-financial`, `evans-road-webster-land`, `robert-washington-fyan`
 - Internal pages: `/notebook/:slug`
 - Public page: `/story/:token`
 - Story source: `CommandCenter-main/src/lib/stories/types.ts`
@@ -14,6 +14,13 @@
 - Brand: Thompson Brothers Market Research (`/brand/thompson-brothers-market.png`)
 - Layout: `land` — comps, FMV range, 1/5/10-yr forecast, non-sale revenue options
 - Source listing: Zillow Evans Rd Lot WP001, Marshfield MO 65706 (ZPID 2078063843) — 68.91 ac, last ask $339k (2021), off-market
+
+### Robert Washington Fyan (Thompson family)
+- Slug: `robert-washington-fyan`
+- Internal: `/notebook/robert-washington-fyan`
+- Brand: Thompson Family History (`/stories/robert-w-fyan.jpg`)
+- Layout: `portrait` — biography, 1883 MO-13 county map, VoteView/GovTrack, campaign-finance gap
+- Family line: great-great-great-grandfather of Ken, Wally and John Thompson
 
 ## Checklist
 1. Sign in → open **Buena Vista** in nav (`/notebook/1715-e-buena-vista`).

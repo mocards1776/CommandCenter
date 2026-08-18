@@ -1,4 +1,4 @@
-/** Brand mark + wordmark (Mark Turner or Thompson Brothers; Market or Financial). */
+/** Brand mark + wordmark (Mark Turner, Thompson Brothers, or family history). */
 export default function TurnerLogo({
   className = "",
   compact = false,
@@ -14,14 +14,16 @@ export default function TurnerLogo({
 }) {
   const financial = /financial research/i.test(brand);
   const thompson = /thompson brothers/i.test(brand);
-  const name = thompson ? "Thompson Brothers" : "Mark Turner";
-  const line2 = financial ? "Financial Research" : "Market Research";
+  const family = /family history/i.test(brand);
+  const name = family ? "Thompson Family" : thompson ? "Thompson Brothers" : "Mark Turner";
+  const line2 = family ? "History" : financial ? "Financial Research" : "Market Research";
+  const photoMark = /\/stories\//.test(markSrc);
 
   const mark = (
     <img
       src={markSrc}
       alt=""
-      className="turner-mark"
+      className={`turner-mark${photoMark ? " is-photo" : ""}`}
       width={compact ? 40 : stacked ? 88 : 56}
       height={compact ? 40 : stacked ? 88 : 56}
     />

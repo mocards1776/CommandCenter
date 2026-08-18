@@ -23,6 +23,7 @@ const KNOWN_SLUGS = new Set([
   "1715-e-buena-vista",
   "1715-e-buena-vista-financial",
   "evans-road-webster-land",
+  "robert-washington-fyan",
 ]);
 
 function json(body: unknown, status = 200): Response {
