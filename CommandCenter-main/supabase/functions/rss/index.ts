@@ -559,7 +559,18 @@ function extractMlbNewsFragment(html: string): string | null {
     }
   }
 
+  const markdownParts = [
+    ...html.matchAll(
+      /<div[^>]*class="[^"]*story-part markdown[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    ),
+  ].map((m) => m[0]);
+  if (markdownParts.length >= 2) {
+    const joined = markdownParts.join("\n");
+    if (stripTags(joined).length > 400) return joined;
+  }
+
   const openers = [
+    /<div[^>]*class="[^"]*MarkdownContainer[^"]*"[^>]*>/i,
     /<div[^>]*class="[^"]*ArticleBody[^"]*"[^>]*>/i,
     /<div[^>]*class="[^"]*article-body[^"]*"[^>]*>/i,
     /<div[^>]*class="[^"]*ArticleTemplate[^"]*"[^>]*>/i,

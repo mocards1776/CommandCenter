@@ -3304,6 +3304,14 @@ async function extractMlbNewsInBrowser(url: string): Promise<RssArticle | null> 
   }
   let htmlBody = bodies[0] ?? "";
   if (!htmlBody || htmlBody.replace(/<[^>]+>/g, " ").trim().length < 400) {
+    const markdown = [
+      ...html.matchAll(
+        /<div[^>]*class="[^"]*story-part markdown[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+      ),
+    ].map((m) => m[0]);
+    if (markdown.length >= 2) htmlBody = markdown.join("\n");
+  }
+  if (!htmlBody || htmlBody.replace(/<[^>]+>/g, " ").trim().length < 400) {
     const ps = [
       ...html.matchAll(
         /<p[^>]*class="[^"]*(?:ArticleBody|article-body|body-text)[^"]*"[^>]*>([\s\S]*?)<\/p>/gi,
