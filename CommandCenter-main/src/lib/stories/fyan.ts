@@ -1,5 +1,13 @@
 import type { ClientStory } from "./types";
 import { PLAN_48_D13, PLAN_50_D13, PLAN_15_D13 } from "./missouriCounties";
+import {
+  PRES_1888_DEM,
+  PRES_1888_GOP,
+  PRES_1892_DEM,
+  PRES_1892_GOP,
+  PRES_2024_DEM,
+  PRES_2024_GOP,
+} from "./missouriPres";
 
 const D13_48 = [...PLAN_48_D13];
 const D13_50 = [...PLAN_50_D13];
@@ -290,6 +298,151 @@ export const FYAN_STORY: ClientStory = {
     caption:
       "VoteView’s first dimension for the 53rd House (1893–95). Negative is the Democratic side of that Congress. Fyan sits left of most of the chamber and almost exactly in the middle of the Democrats.",
   },
+  presMaps: [
+    {
+      id: "pres-1888",
+      title: "Missouri · president · 1888",
+      year: "November 6, 1888",
+      subtitle: "Cleveland holds the state · Harrison takes Webster",
+      demLabel: "Cleveland",
+      gopLabel: "Harrison",
+      dem: [...PRES_1888_DEM],
+      gop: [...PRES_1888_GOP],
+      note:
+        "County plurality, Political Graveyard. Cleveland 261,943 (50.24%), Harrison 236,252 (45.31%), Streeter (Union Labor) 3.57%. Webster, Greene, St. Louis city, and the German counties go Harrison. Little Dixie and the Bootheel go Cleveland. Fyan is out of the House this year.",
+    },
+    {
+      id: "pres-1892",
+      title: "Missouri · president · 1892",
+      year: "November 8, 1892",
+      subtitle: "Cleveland’s comeback · Weaver in the mix · Webster still Harrison",
+      demLabel: "Cleveland",
+      gopLabel: "Harrison",
+      dem: [...PRES_1892_DEM],
+      gop: [...PRES_1892_GOP],
+      note:
+        "County plurality from the Wikipedia / Dave Leip table. Cleveland 268,400 (49.56%), Harrison 227,646 (42.03%), Weaver 41,204 (7.61%). Weaver takes no county plurality. Webster: Harrison 1,389 (45.38%), Cleveland 1,273 (41.59%), Weaver 382 (12.48%). Greene: Harrison 4,839 (45.81%) to Cleveland 4,051 (38.35%). Same day Fyan wins the 13th.",
+    },
+    {
+      id: "pres-2024",
+      title: "Missouri · president · 2024",
+      year: "November 5, 2024",
+      subtitle: "The old two-color state, collapsed",
+      demLabel: "Harris",
+      gopLabel: "Trump",
+      dem: [...PRES_2024_DEM],
+      gop: [...PRES_2024_GOP],
+      note:
+        "Trump 1,751,986 (58.49%), Harris 1,200,599 (40.08%). Harris carries four units: Jackson, Boone, St. Louis County, St. Louis city. Webster: Trump 15,984 (80.67%) to Harris 3,653 (18.44%). Greene: Trump 59.33%. Jackson stays Democratic; St. Louis city, Harrison country in 1892, is now the bluest unit on the map.",
+    },
+  ],
+  spectrum: {
+    score: -0.335,
+    axisLeft: "Democratic / more liberal on today’s party-line axis",
+    axisRight: "Republican / more conservative on today’s party-line axis",
+    caption:
+      "Same first-dimension scale as the earlier VoteView card, now with 119th Congress (2025–27) members placed on it. The number is comparable. The fight that produced it is not.",
+    peers: [
+      {
+        name: "Ron Wyden",
+        office: "Senate · Oregon",
+        score: -0.335,
+        note: "Exact match to three decimals — the closest living seat on this scale",
+      },
+      {
+        name: "Joe Courtney",
+        office: "House · Connecticut 2nd",
+        score: -0.337,
+        note: "Closest House Democrat",
+      },
+      {
+        name: "Emilia Sykes",
+        office: "House · Ohio 13th",
+        score: -0.332,
+        note: "A few thousandths the other way",
+      },
+      {
+        name: "House Democratic median",
+        office: "119th House · 222 Democrats",
+        score: -0.396,
+        note: "Fyan sits a little to the right of today’s Democratic middle",
+      },
+      {
+        name: "Jared Golden / Josh Gottheimer / Henry Cuellar",
+        office: "House Democrats · conservative edge",
+        score: -0.165,
+        note: "Golden −0.106, Gottheimer −0.165, Cuellar −0.225 — not where Fyan sits",
+      },
+      {
+        name: "Elizabeth Warren / Bernie Sanders",
+        office: "Senate · Massachusetts / Vermont",
+        score: -0.744,
+        note: "Warren −0.744, Sanders −0.546 — not where Fyan sits either",
+      },
+    ],
+    missouri: [
+      {
+        name: "Wesley Bell",
+        office: "House · Missouri 1st",
+        score: -0.472,
+        note: "To Fyan’s left",
+      },
+      {
+        name: "Emanuel Cleaver",
+        office: "House · Missouri 5th",
+        score: -0.454,
+        note: "To Fyan’s left",
+      },
+      {
+        name: "Ann Wagner",
+        office: "House · Missouri 2nd",
+        score: 0.392,
+        note: "Nearest Missouri Republican — still far to Fyan’s right",
+      },
+      {
+        name: "Sam Graves",
+        office: "House · Missouri 6th",
+        score: 0.449,
+        note: "Republican side of the chamber",
+      },
+      {
+        name: "Mark Alford",
+        office: "House · Missouri 4th",
+        score: 0.565,
+        note: "Includes much of the old Ozarks country",
+      },
+      {
+        name: "Jason Smith",
+        office: "House · Missouri 8th",
+        score: 0.578,
+        note: "Lead Belt / southeast — the 53rd-map 13th country",
+      },
+      {
+        name: "Robert Onder",
+        office: "House · Missouri 3rd",
+        score: 0.693,
+        note: "Far right of Fyan’s −0.335",
+      },
+      {
+        name: "Eric Burlison",
+        office: "House · Missouri 7th",
+        score: 0.734,
+        note: "Springfield–Ozarks seat that covers Greene",
+      },
+      {
+        name: "Josh Hawley",
+        office: "Senate · Missouri",
+        score: 0.819,
+        note: "Among the most conservative scores in the 119th Senate",
+      },
+      {
+        name: "Eric Schmitt",
+        office: "Senate · Missouri",
+        score: 0.884,
+        note: "The state’s other senator — further still",
+      },
+    ],
+  },
   chapters: [
     {
       id: "origin",
@@ -367,6 +520,36 @@ export const FYAN_STORY: ClientStory = {
         "He practiced there, buried Lizzie there after the 1880 cyclone, represented it in Washington, died there on July 28, 1896, and was taken to Lebanon Cemetery. Webster County is not an abstract district number. It is the ground under the three terms, the lost nomination, and the comeback.",
       visual: "none",
     },
+    {
+      id: "president",
+      eyebrow: "The presidential map",
+      title: "Missouri voted Cleveland. Webster voted Harrison.",
+      body:
+        "In the years around Fyan’s House service, Missouri was a Democratic presidential state with a real Republican geography underneath. Statewide: Cleveland 236,023 (53.49%) to Blaine 203,081 (46.02%) in 1884; Cleveland 261,943 (50.24%) to Harrison 236,252 (45.31%) in 1888; Cleveland 268,400 (49.56%) to Harrison 227,646 (42.03%) in 1892, with Weaver’s Populists at 7.61%. The county fills below are 1888 and 1892. Political Graveyard lists 1884 county plurality as “No data” for every county, so that year is statewide only — the map is not invented.\n\nThe local tell is the split ticket. Webster and Greene voted Harrison for president in both 1888 and 1892. In 1892 Webster was Harrison 1,389 (45.38%), Cleveland 1,273 (41.59%), Weaver 382 (12.48%). Greene was Harrison 4,839 (45.81%) to Cleveland 4,051 (38.35%). Those same counties sent a Democrat to the House in 1890 and 1892. Marshfield could vote Republican for president and still send Fyan to Washington.\n\nThe third map is 2024, so the old spectrum has something to sit against. Trump 1,751,986 (58.49%), Harris 1,200,599 (40.08%). Harris carried four units: Jackson, Boone, St. Louis County, and St. Louis city. Webster went Trump 15,984 to 3,653 — 80.67% to 18.44%. Greene went Trump 59.33%. Jackson, which Cleveland carried 55.90% in 1892, stayed Democratic. St. Louis city, which Harrison carried, is now the bluest unit on the map. The competitive statewide Democratic Missouri of Fyan’s lifetime is gone.",
+      visual: "presMap",
+      bullets: [
+        "1884: Cleveland 53.49% · Blaine 46.02% · county plurality not compiled",
+        "1888: Cleveland 50.24% · Harrison 45.31% · Webster and Greene Harrison",
+        "1892: Cleveland 49.56% · Harrison 42.03% · Weaver 7.61% · Webster Harrison by 116 votes",
+        "2024: Trump 58.49% · Harris 40.08% · Harris in four units · Webster Trump 80.67%",
+      ],
+      stat: { value: "Harrison", label: "Webster & Greene for president, 1888 and 1892" },
+    },
+    {
+      id: "spectrum",
+      eyebrow: "Then and now",
+      title: "The number is comparable. The fight is not.",
+      body:
+        "VoteView’s first dimension is a seating chart built from every recorded roll call. Fyan’s number on that chart, −0.335 in the 53rd House, can be set next to the 119th Congress (2025–27). The closest living match to three decimals is Sen. Ron Wyden of Oregon, also −0.335. In the House: Joe Courtney of Connecticut (−0.337) and Emilia Sykes of Ohio (−0.332). About 66% of today’s House Democrats sit to his left. About 67% of the whole House sits to his right.\n\nThat number is not an issue-by-issue twin. The 1890s axis was silver, the tariff, and sectional fights. The 2020s axis is almost entirely party-line. Modern Democrats are compressed into a tight band, which is why a member whose public reputation is far from a Marshfield silver Democrat can land near −0.33. He does not belong with today’s most conservative House Democrats — Jared Golden (−0.106), Josh Gottheimer (−0.165), Henry Cuellar (−0.225) — and he does not belong with Elizabeth Warren (−0.744) or Bernie Sanders (−0.546). He sits a little to the right of the current House Democratic median (−0.396).\n\nMissouri’s own 119th delegation makes the geographic collapse visible in people. The two Democrats, Emanuel Cleaver (−0.454) and Wesley Bell (−0.472), sit to Fyan’s left. Every Missouri Republican sits far to his right: Ann Wagner (+0.392), Sam Graves (+0.449), Mark Alford (+0.565), Jason Smith (+0.578), Robert Onder (+0.693), Eric Burlison of the Springfield–Ozarks 7th (+0.734), and Sens. Josh Hawley (+0.819) and Eric Schmitt (+0.884). A Union Democrat from a swing 13th does not have a seat in this state’s present congressional party.",
+      visual: "spectrum",
+      bullets: [
+        "Closest living scores: Wyden −0.335 · Courtney −0.337 · Sykes −0.332",
+        "House Democratic median today −0.396 — Fyan a notch to its right",
+        "Not the Blue Dog edge (Golden / Gottheimer / Cuellar) and not Warren / Sanders",
+        "Missouri now: Cleaver and Bell to his left; every Republican, including Burlison, Hawley, and Schmitt, far to his right",
+      ],
+      stat: { value: "−0.335", label: "Same first-dimension score as Sen. Ron Wyden" },
+    },
   ],
   comps: [],
   netScenarios: [],
@@ -389,6 +572,7 @@ export const FYAN_STORY: ClientStory = {
       "Maps: 48th 13th = Barry, Christian, Dallas, Greene, Jasper, Lawrence, McDonald, Newton, Polk, Stone, Taney, Webster. 50th–52nd drops Dallas, Jasper, Polk. 53rd keeps Webster, adds Wright, Texas, and the Lead Belt; Greene to the 7th.",
       "Votes: Nay to table free silver (1892). Yea on Geary (1892). Nay on Sherman repeal (1893). Yea on Wilson tariff House passage (1894). Yea to forfeit Texas-Pacific grants (1884). DW-NOMINATE −0.335: middle of the Democrats, left of most of the House. Missed 42.3% of roll calls.",
       "Times: Arthur, Harrison, Cleveland II. Democratic House throughout his service. 1890 U.S. city milk about 14¢ a half-gallon.",
+      "Presidential maps (appended): 1884 Cleveland 53.49%–46.02% statewide; Political Graveyard has no 1884 county plurality. 1888 and 1892 county fills: Cleveland over most of the state; Harrison in the Ozarks, German counties, St. Louis city and county — including Webster and Greene. 1892 Webster Harrison 45.38%–41.59%. 2024 Trump 58.49%; Harris only Jackson, Boone, St. Louis County, St. Louis city; Webster Trump 80.67%. Nominate analogue (119th Congress): Wyden −0.335, Courtney −0.337, Sykes −0.332; House Dem median −0.396. Missouri now: Cleaver −0.454, Bell −0.472; Wagner +0.392 through Burlison +0.734; Hawley +0.819, Schmitt +0.884.",
     ],
   },
   researchDate: "August 18, 2026",
@@ -402,5 +586,8 @@ export const FYAN_STORY: ClientStory = {
     "U.S. Bureau of Labor / Historical Statistics of the United States (1890 city food prices)",
     "State Historical Society of Missouri, Robert Washington Fyan Papers (R0567)",
     "St. Louis Daily Globe-Democrat portrait, November 6, 1890 (Wikimedia Commons)",
+    "Political Graveyard, Missouri presidential county plurality winners, 1888 (St. Louis → St. Louis County; St. Louis city → St. Louis City). 1884 county page is “No data” for every county",
+    "Wikipedia, 1884 / 1888 / 1892 / 2024 United States presidential election in Missouri (statewide totals; 1892 and 2024 county tables)",
+    "VoteView HSall_members.csv, 119th Congress DW-NOMINATE first dimension (retrieved August 18, 2026)",
   ],
 };

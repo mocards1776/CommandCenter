@@ -109,6 +109,34 @@ export type IdeologySpec = {
   caption: string;
 };
 
+export type PresMapSpec = {
+  id: string;
+  title: string;
+  year: string;
+  subtitle: string;
+  demLabel: string;
+  gopLabel: string;
+  note: string;
+  dem: string[];
+  gop: string[];
+};
+
+export type SpectrumPeer = {
+  name: string;
+  office: string;
+  score: number;
+  note: string;
+};
+
+export type SpectrumSpec = {
+  score: number;
+  axisLeft: string;
+  axisRight: string;
+  caption: string;
+  peers: SpectrumPeer[];
+  missouri: SpectrumPeer[];
+};
+
 export type StoryChapter = {
   id: string;
   eyebrow: string;
@@ -133,6 +161,8 @@ export type StoryChapter = {
     | "elections"
     | "bills"
     | "ideology"
+    | "presMap"
+    | "spectrum"
     | "none";
 };
 
@@ -151,6 +181,8 @@ export type ClientStory = {
   electionRows?: ElectionRow[];
   billVotes?: BillVote[];
   ideology?: IdeologySpec;
+  presMaps?: PresMapSpec[];
+  spectrum?: SpectrumSpec;
   family?: { names: string; relation: string; body: string };
   cover: {
     display: string;

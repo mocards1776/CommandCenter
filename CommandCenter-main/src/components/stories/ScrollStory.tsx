@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import TurnerLogo from "@/components/stories/TurnerLogo";
 import Missouri13Map from "@/components/stories/Missouri13Map";
+import MissouriPresMap from "@/components/stories/MissouriPresMap";
 import type { ClientStory, ConditionItem } from "@/lib/stories/types";
+
+function nomScore(n: number) {
+  return n > 0 ? `+${n.toFixed(3)}` : n.toFixed(3);
+}
 
 function money(n: number) {
   return n.toLocaleString("en-US", {
@@ -334,7 +339,9 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     ch.id === "family" ||
                     ch.id === "votes" ||
                     ch.id === "bills" ||
-                    ch.id === "congress"
+                    ch.id === "congress" ||
+                    ch.id === "president" ||
+                    ch.id === "spectrum"
                       ? "is-warn"
                       : ""
                   }`}
@@ -556,6 +563,71 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
             {ch.visual === "districtMap" && story.districtMaps?.length ? (
               <aside className="visual-pane">
                 <Missouri13Map maps={story.districtMaps} />
+              </aside>
+            ) : null}
+
+            {ch.visual === "presMap" && story.presMaps?.length ? (
+              <aside className="visual-pane">
+                <MissouriPresMap maps={story.presMaps} />
+              </aside>
+            ) : null}
+
+            {ch.visual === "spectrum" && story.spectrum ? (
+              <aside className="visual-pane">
+                <div className="ideology-card">
+                  <p className="ideology-score">
+                    <strong>{nomScore(story.spectrum.score)}</strong>
+                    <span>Fyan · 53rd House · first dimension</span>
+                  </p>
+                  <div className="ideology-axis" aria-hidden>
+                    <div className="ideology-ends">
+                      <span>{story.spectrum.axisLeft}</span>
+                      <span>{story.spectrum.axisRight}</span>
+                    </div>
+                    <div className="ideology-track">
+                      <i
+                        className="ideology-marker"
+                        style={{
+                          left: `${((story.spectrum.score + 1) / 2) * 100}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="ideology-ticks">
+                      <em>−1</em>
+                      <em>0</em>
+                      <em>+1</em>
+                    </div>
+                  </div>
+                  <p className="visual-caption">{story.spectrum.caption}</p>
+                </div>
+                <div className="spectrum-list">
+                  {story.spectrum.peers.map((p) => (
+                    <article key={p.name} className="spectrum-row">
+                      <header>
+                        <strong>{p.name}</strong>
+                        <em>{nomScore(p.score)}</em>
+                      </header>
+                      <p>
+                        {p.office} · {p.note}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+                <p className="visual-caption">Closest 119th Congress scores · VoteView common space</p>
+                <div className="spectrum-list">
+                  {story.spectrum.missouri.map((p) => (
+                    <article key={p.name} className="spectrum-row">
+                      <header>
+                        <strong>{p.name}</strong>
+                        <em>{nomScore(p.score)}</em>
+                      </header>
+                      <p>
+                        {p.office} · {p.note}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+                <p className="visual-caption">Missouri’s 119th Congress delegation on the same scale</p>
               </aside>
             ) : null}
 
@@ -1295,6 +1367,20 @@ const STORY_CSS = `
     display: block; height: 100%; background: var(--navy);
   }
   .ideology-ranks article.is-home .ideology-mini span { background: var(--warn); }
+  .spectrum-list { display: grid; gap: 0.45rem; margin-top: 0.85rem; }
+  .spectrum-row {
+    border: 1px solid var(--line); background: rgba(255,255,255,0.7);
+    padding: 0.6rem 0.75rem;
+  }
+  .spectrum-row header {
+    display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline;
+  }
+  .spectrum-row header strong { font-size: 0.92rem; }
+  .spectrum-row header em {
+    font-style: normal; font-family: var(--font-display);
+    font-size: 1.05rem; font-weight: 700; color: var(--navy);
+  }
+  .spectrum-row p { margin: 0.2rem 0 0; font-size: 0.8rem; line-height: 1.4; color: var(--muted); }
   .hero-map-veil {
     position: absolute; inset: 0; pointer-events: none;
     background:
