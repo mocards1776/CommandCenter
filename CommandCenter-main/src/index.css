@@ -873,23 +873,6 @@
   text-decoration: underline !important;
 }
 
-/* RotoWorld player-news note (kicker + headline + story). */
-.rss-reader .rotoworld-note__player {
-  margin: 0 0 0.25rem !important;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--color-accent);
-}
-.rss-reader .rotoworld-note h2 {
-  margin: 0 0 0.5rem !important;
-  font-family: var(--font-display), Georgia, serif;
-  font-size: 1.1rem !important;
-  font-weight: 600;
-  color: #fffaf5 !important;
-}
-
 .rss-reader a.rss-player-link {
   color: #fffaf5;
 }

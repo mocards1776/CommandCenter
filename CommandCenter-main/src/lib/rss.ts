@@ -88,12 +88,6 @@ export const RSS_FEEDS: readonly RssFeedDef[] = [
     short: "EPL wraps",
     url: "synthetic:epl-wraps",
   },
-  {
-    id: "rotoworld",
-    title: "RotoWorld player news",
-    short: "RotoWorld",
-    url: "synthetic:rotoworld",
-  },
 ];
 
 export type RssFeedId = string;
@@ -121,7 +115,7 @@ export const RSS_FEED_FOLDERS: readonly RssFeedFolder[] = [
   {
     id: "folder:mlb",
     title: "MLB",
-    feedIds: ["mlb-wraps", "mlb-stats", "mlb-form", "rotoworld"],
+    feedIds: ["mlb-wraps", "mlb-stats", "mlb-form"],
   },
   {
     id: "folder:nfl",
@@ -1823,9 +1817,6 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
   if (feedUrl === "synthetic:words-about-birds") {
     return invokeRss<RssFeed>({ mode: "feed", feedUrl });
   }
-  if (feedUrl === "synthetic:rotoworld") {
-    return fetchRotoWorldRssFeed();
-  }
   if (feedUrl.startsWith("synthetic:tag:")) {
     return fetchTagPlayerFeed(feedUrl);
   }
@@ -3387,59 +3378,6 @@ async function fetchCardinalsSavantFeed(): Promise<RssFeed> {
     description: "Statcast previews for upcoming and recent St. Louis Cardinals games",
     link: "https://baseballsavant.mlb.com/",
     feedUrl: "synthetic:cardinals-savant",
-    items,
-  };
-}
-
-/** RotoWorld's league-wide player-news board as its own Dispatch feed. */
-async function fetchRotoWorldRssFeed(): Promise<RssFeed> {
-  const { fetchRotoWorldNews } = await import("./mlb");
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const boardItems = await fetchRotoWorldNews();
-
-  const items: RssFeedItem[] = [];
-  const seenLinks = new Set<string>();
-  boardItems.forEach((item, idx) => {
-    const name =
-      (item.name ?? [item.firstName, item.lastName].filter(Boolean).join(" ")).trim() ||
-      "MLB player";
-    const headline = item.headline || item.description || "Player news update";
-    const story = item.story || item.description || "";
-    const publishedAt = item.published || new Date().toISOString();
-    const link =
-      item.url || `https://www.nbcsports.com/fantasy/baseball/player-news#${encodeURIComponent(`${name}-${idx}`)}`;
-    if (seenLinks.has(link)) return;
-    seenLinks.add(link);
-    const contentHtml = `
-      <div class="rotoworld-note">
-        <p class="rotoworld-note__player">${esc(name)}</p>
-        <h2>${esc(headline)}</h2>
-        ${story ? `<p>${esc(story)}</p>` : ""}
-      </div>
-    `.trim();
-    items.push({
-      id: `rotoworld-${idx}-${name}-${publishedAt}`,
-      title: `${name}: ${headline}`,
-      link,
-      author: "RotoWorld",
-      publishedAt,
-      image: null,
-      snippet: (story || headline).slice(0, 280),
-      contentHtml,
-    });
-  });
-
-  items.sort((a, b) => {
-    const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
-    const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
-    return db - da;
-  });
-
-  return {
-    title: "RotoWorld player news",
-    description: "NBC Sports fantasy baseball player-news board",
-    link: "https://www.nbcsports.com/fantasy/baseball/player-news",
-    feedUrl: "synthetic:rotoworld",
     items,
   };
 }
