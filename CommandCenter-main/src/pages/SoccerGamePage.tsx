@@ -268,23 +268,37 @@ function PreviewSection({
   html: string;
   storyHtml: string | null;
 }) {
+  const storyText = storyHtml ? storyHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "";
+  // A real ESPN story (≥80 chars of prose) is worth more than our generated stub —
+  // show it alone instead of the stub + story stacked.
+  const hasRealStory = storyText.length >= 80;
+
   return (
     <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424] font-rss">
       <div className="border-b border-white/[0.07] px-4 py-2.5">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
+        <p className="text-cream text-[10px] font-semibold uppercase tracking-[0.18em]">
           Match preview
         </p>
       </div>
-      <div
-        className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_p]:my-3.5 [&_strong]:text-cream"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
-      {storyHtml ? (
+      {hasRealStory ? (
         <div
-          className="rss-reader border-t border-white/[0.06] px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-semibold [&_a]:text-accent [&_a]:hover:underline [&_p]:my-3.5"
-          dangerouslySetInnerHTML={{ __html: storyHtml }}
+          className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-semibold [&_a]:text-accent [&_a]:hover:underline [&_p]:my-3.5 [&_strong]:text-cream"
+          dangerouslySetInnerHTML={{ __html: storyHtml as string }}
         />
-      ) : null}
+      ) : (
+        <>
+          <div
+            className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_p]:my-3.5 [&_strong]:text-cream"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+          {storyHtml ? (
+            <div
+              className="rss-reader border-t border-white/[0.06] px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-semibold [&_a]:text-accent [&_a]:hover:underline [&_p]:my-3.5"
+              dangerouslySetInnerHTML={{ __html: storyHtml }}
+            />
+          ) : null}
+        </>
+      )}
     </section>
   );
 }
@@ -508,7 +522,21 @@ function StandingsTable({ rows }: { rows: SoccerGameDetail["standings"] }) {
                 )}
               >
                 <td className="numeral px-3 py-1.5 text-[#8b93a7]">{r.rank}</td>
-                <td className={cn("px-2 py-1.5", r.highlight ? "font-semibold text-cream" : "text-white")}>
+                <td
+                  className={cn(
+                    "flex items-center gap-2 px-2 py-1.5",
+                    r.highlight ? "font-semibold text-cream" : "text-white",
+                  )}
+                >
+                  {r.teamId ? (
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white">
+                      <img
+                        src={soccerTeamLogo(r.teamId)}
+                        alt=""
+                        className="h-3.5 w-3.5 object-contain"
+                      />
+                    </span>
+                  ) : null}
                   {r.abbrev}
                 </td>
                 <td className="numeral px-1.5 py-1.5 text-right text-white/85">{r.gp}</td>

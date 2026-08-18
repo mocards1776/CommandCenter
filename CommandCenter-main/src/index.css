@@ -675,6 +675,225 @@
   color: var(--color-accent);
 }
 
+/* ESPN-like result cards (supersede the old plain mlb-results-table rows). */
+.rss-reader .mlb-results-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+}
+@media (min-width: 640px) {
+  .rss-reader .mlb-results-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.rss-reader .mlb-results-card {
+  overflow: hidden;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  margin: 0 !important;
+  display: flex;
+  flex-direction: column;
+}
+.rss-reader .mlb-results-card__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.rss-reader .mlb-results-status {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fffaf5;
+}
+.rss-reader .mlb-results-note {
+  font-size: 0.68rem;
+  color: rgba(196, 205, 220, 0.75);
+  text-align: right;
+}
+.rss-reader .mlb-results-teams {
+  display: flex;
+  flex-direction: column;
+  padding: 0.6rem 0.85rem 0.35rem;
+  gap: 0.4rem;
+}
+.rss-reader .mlb-results-team-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.rss-reader .mlb-results-team-id {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.rss-reader .mlb-results-team-names {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  overflow: hidden;
+}
+.rss-reader .mlb-results-abbr {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(168, 176, 194, 0.85);
+  flex: 0 0 auto;
+}
+.rss-reader .mlb-results-team-row .mlb-results-team {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none !important;
+  color: #eceef4 !important;
+  font-size: 0.92rem;
+}
+.rss-reader .mlb-results-team-row--win .mlb-results-team {
+  color: #fffaf5 !important;
+  font-weight: 650;
+}
+.rss-reader .mlb-results-team-row--win .mlb-results-runs {
+  color: #fffaf5 !important;
+}
+.rss-reader .mlb-results-record {
+  font-size: 0.72rem;
+  color: rgba(168, 176, 194, 0.75);
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+.rss-reader .mlb-results-runs {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: rgba(236, 238, 244, 0.85);
+  min-width: 1.4rem;
+  text-align: right;
+  flex: 0 0 auto;
+}
+.rss-reader .mlb-results-logo {
+  width: 24px !important;
+  height: 24px !important;
+  max-width: 24px !important;
+  max-height: 24px !important;
+  flex: 0 0 auto;
+  object-fit: contain !important;
+  background: #fff;
+  border-radius: 999px;
+  padding: 2px;
+  margin: 0 !important;
+}
+.rss-reader .mlb-results-rhe {
+  width: auto;
+  margin: 0.35rem 0.85rem 0 !important;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+.rss-reader .mlb-results-rhe th,
+.rss-reader .mlb-results-rhe td {
+  padding: 0.12rem 0.45rem !important;
+  text-align: right;
+  color: rgba(196, 205, 220, 0.85);
+}
+.rss-reader .mlb-results-rhe th:first-child,
+.rss-reader .mlb-results-rhe td:first-child {
+  text-align: left;
+  color: rgba(168, 176, 194, 0.8);
+}
+.rss-reader .mlb-results-pitchers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.5rem 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  margin-top: 0.35rem;
+}
+.rss-reader .mlb-results-pitcher {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.rss-reader .mlb-results-mug {
+  width: 32px !important;
+  height: 32px !important;
+  max-width: 32px !important;
+  max-height: 32px !important;
+  border-radius: 999px;
+  object-fit: cover !important;
+  object-position: top;
+  margin: 0 !important;
+  flex: 0 0 auto;
+}
+.rss-reader .mlb-results-pitcher-info {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.rss-reader .mlb-results-pitcher-role {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: rgba(168, 176, 194, 0.85);
+}
+.rss-reader .mlb-results-pitcher-name {
+  color: #fffaf5 !important;
+  text-decoration: none !important;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+.rss-reader .mlb-results-pitcher-line {
+  font-size: 0.72rem;
+  color: rgba(196, 205, 220, 0.75);
+}
+.rss-reader .mlb-results-links {
+  display: flex;
+  gap: 0.9rem;
+  padding: 0.55rem 0.85rem;
+  margin-top: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.02);
+}
+.rss-reader .mlb-results-links a {
+  color: #fffaf5 !important;
+  text-decoration: none !important;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.rss-reader .mlb-results-links a:hover {
+  text-decoration: underline !important;
+}
+
+/* RotoWorld player-news note (kicker + headline + story). */
+.rss-reader .rotoworld-note__player {
+  margin: 0 0 0.25rem !important;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+.rss-reader .rotoworld-note h2 {
+  margin: 0 0 0.5rem !important;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 1.1rem !important;
+  font-weight: 600;
+  color: #fffaf5 !important;
+}
+
+.rss-reader a.rss-player-link {
+  color: #fffaf5;
+}
+
 .rss-reader .mlb-leaders-league {
   margin-top: 1.15rem;
 }

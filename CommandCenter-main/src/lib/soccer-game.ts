@@ -98,6 +98,8 @@ type EspnSummary = {
     headline?: string;
     description?: string;
     story?: string;
+    /** ESPN marks video/photo stubs as type "Media" — never a text preview/wrap. */
+    type?: string;
     links?: { web?: { href?: string } };
   };
   pickcenter?: EspnPickCenter[];
@@ -165,7 +167,7 @@ type EspnSummary = {
     events?: { gameResult?: string }[];
   }[];
   news?: {
-    articles?: { headline?: string; description?: string; story?: string }[];
+    articles?: { headline?: string; description?: string; story?: string; type?: string }[];
   };
 };
 
@@ -239,8 +241,8 @@ async function espnSoccerSummary(
 ): Promise<EspnSummary | null> {
   const path = `soccer/${league}/summary?event=${encodeURIComponent(eventId)}`;
   const hosts = [
-    "https://site.api.espn.com/apis/site/v2/sports",
     "https://site.web.api.espn.com/apis/site/v2/sports",
+    "https://site.api.espn.com/apis/site/v2/sports",
   ];
   for (const host of hosts) {
     try {
@@ -704,26 +706,34 @@ function buildPreviewHtml(opts: {
   return paras.join("\n");
 }
 
+/** League-wide ESPN promo copy (fantasy, sportsbook) — never treat as a game story. */
+function isEspnPromoCopy(text: string): boolean {
+  return /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook|draftkings|fanduel|betmgm|promo code/i.test(
+    text,
+  );
+}
+
 function extractStoryHtml(sum: EspnSummary): string | null {
-  const article = sum.article;
-  if (article) {
-    const story = article.story?.trim();
-    if (story && !isMashedEspnBlob(story) && story.replace(/<[^>]+>/g, "").trim().length >= 40) {
-      return story;
-    }
-    const desc = article.description?.trim();
-    if (desc && !isMashedEspnBlob(desc) && desc.length >= 40) {
-      return `<p>${escapeHtml(desc.replace(/^—\s*/, ""))}</p>`;
-    }
+  type ArticleLike = { headline?: string; description?: string; story?: string; type?: string };
+  const candidates = [sum.article, sum.news?.articles?.[0]].filter(
+    (a): a is ArticleLike => Boolean(a) && !/media/i.test(a?.type ?? ""),
+  );
+
+  // Prefer a real story from either candidate before falling back to any description —
+  // a short/thin description on the "primary" article shouldn't beat a full story elsewhere.
+  for (const c of candidates) {
+    const story = c.story?.trim();
+    if (!story) continue;
+    const storyText = story.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    if (isEspnPromoCopy(`${c.headline ?? ""} ${storyText}`)) continue;
+    // A long real story is trustworthy even if it trips the "mashed" heuristic.
+    if (storyText.length >= 200) return story;
+    if (!isMashedEspnBlob(story) && storyText.length >= 40) return story;
   }
-  const news = sum.news?.articles?.[0];
-  if (news) {
-    const story = news.story?.trim();
-    if (story && !isMashedEspnBlob(story) && story.replace(/<[^>]+>/g, "").trim().length >= 40) {
-      return story;
-    }
-    const desc = news.description?.trim();
-    if (desc && !isMashedEspnBlob(desc) && desc.length >= 40) {
+
+  for (const c of candidates) {
+    const desc = c.description?.trim();
+    if (desc && !isEspnPromoCopy(desc) && !isMashedEspnBlob(desc) && desc.length >= 40) {
       return `<p>${escapeHtml(desc.replace(/^—\s*/, ""))}</p>`;
     }
   }

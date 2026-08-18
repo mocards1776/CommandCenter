@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import TeamMark from "@/components/sports/TeamMark";
 import {
   chicagoToday,
+  divisionLeaders,
   fetchMlbStandings,
   fetchMlbWildCardStandings,
   fetchTeamCurrentAndNextGames,
@@ -11,6 +12,7 @@ import {
   playoffOddsFromStandings,
   teamPagePath,
   type MlbScoreGame,
+  type MlbStandingRow,
   type MlbWildCardRow,
 } from "@/lib/mlb";
 import { fetchMlbTeamCategoryLeaders } from "@/lib/team-form";
@@ -116,6 +118,8 @@ export default function DispatchNotesAside() {
   });
 
   const central = (standings.data ?? []).find((t) => t.shortName === "NL Central");
+  const nlLeaders = standings.data ? divisionLeaders(standings.data, "NL") : [];
+  const alLeaders = standings.data ? divisionLeaders(standings.data, "AL") : [];
   const nlWcRows = (wildCardNl.data ?? []).slice(0, 10);
   const alWcRows = (wildCardAl.data ?? []).slice(0, 10);
   const odds = standings.data ? playoffOddsFromStandings(standings.data) : [];
@@ -369,9 +373,80 @@ export default function DispatchNotesAside() {
         )}
       </section>
 
+      <LeadersBoard title="NL Leaders" rows={nlLeaders} pending={standings.isPending} errored={standings.isError} />
+      <LeadersBoard title="AL Leaders" rows={alLeaders} pending={standings.isPending} errored={standings.isError} />
+
       <WildCardBoard title="NL Wild Card" rows={nlWcRows} pending={wildCardNl.isPending} errored={wildCardNl.isError} />
       <WildCardBoard title="AL Wild Card" rows={alWcRows} pending={wildCardAl.isPending} errored={wildCardAl.isError} />
     </div>
+  );
+}
+
+type MlbLeaderRow = MlbStandingRow & { divisionLetter: string };
+
+/** One row per division (E/C/W) showing that division's current leader. */
+function LeadersBoard({
+  title,
+  rows,
+  pending,
+  errored,
+}: {
+  title: string;
+  rows: MlbLeaderRow[];
+  pending: boolean;
+  errored: boolean;
+}) {
+  return (
+    <section className="border-white/[0.08] mt-6 border-t pt-5">
+      <div className="rule-head mb-3">{title}</div>
+      {pending ? (
+        <p className="label-caps font-body animate-pulse text-[11px]">Loading leaders</p>
+      ) : errored || !rows.length ? (
+        <p className="text-chalk font-body text-[12px]">Couldn’t load leaders.</p>
+      ) : (
+        <table className="w-full text-left text-[12px]">
+          <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+            <tr>
+              <th className="pb-2 pr-1 font-medium">Team</th>
+              <th className="numeral px-1 pb-2 font-medium">W</th>
+              <th className="numeral px-1 pb-2 font-medium">L</th>
+              <th className="numeral px-1 pb-2 font-medium">PCT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const isStl = r.teamId === STL_TEAM_ID;
+              return (
+                <tr
+                  key={`${r.teamId || r.team}-${r.divisionLetter}`}
+                  className={cn("border-t border-white/[0.05]", isStl && "bg-accent/10")}
+                >
+                  <td className="py-1.5 pr-1">
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      {r.teamId ? <TeamMark teamId={r.teamId} size="xs" /> : null}
+                      <Link
+                        to={teamPagePath(r.teamId)}
+                        className={cn(
+                          "truncate hover:underline",
+                          isStl ? "text-cream font-semibold" : "text-cream/90 hover:text-accent",
+                        )}
+                      >
+                        {r.abbrev || r.team} - {r.divisionLetter}
+                      </Link>
+                    </span>
+                  </td>
+                  <td className="numeral text-cream px-1 py-1.5">{r.wins}</td>
+                  <td className="numeral text-chalk px-1 py-1.5">{r.losses}</td>
+                  <td className="numeral text-chalk px-1 py-1.5">
+                    {r.pct ? (r.pct.startsWith(".") ? r.pct : r.pct.replace(/^0/, "")) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }
 
