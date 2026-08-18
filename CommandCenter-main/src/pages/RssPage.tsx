@@ -75,7 +75,9 @@ import {
   feedIdsForFolder,
   isFeedFolderId,
   articleNeedsEdgeExtract,
+  clearExtractSession,
   fetchRssArticle,
+  isThinRssExtract,
   fetchRssFeed,
   fetchRssFilters,
   fetchRssHighlights,
@@ -1030,6 +1032,7 @@ function ArticleReaderShell({
   const [linkedHtml, setLinkedHtml] = useState<string>("");
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [shareHighlight, setShareHighlight] = useState<RssHighlight | null>(null);
+  const refreshExtractRef = useRef(false);
 
   const article = useQuery({
     queryKey: ["rss-article-v2", item.link],
@@ -1045,10 +1048,14 @@ function ArticleReaderShell({
           wordCount: item.snippet.split(/\s+/).filter(Boolean).length,
         };
       }
-      return fetchRssArticle(item.link);
+      const refresh = refreshExtractRef.current;
+      refreshExtractRef.current = false;
+      return fetchRssArticle(item.link, { refresh });
     },
     staleTime: 10 * 60_000,
   });
+  const canReextract = articleNeedsEdgeExtract(item);
+  const extractLooksThin = Boolean(article.data && isThinRssExtract(article.data));
 
   const highlights = useQuery({
     queryKey: ["rss-highlights", item.link],
@@ -1463,6 +1470,22 @@ function ArticleReaderShell({
             <Share size={14} />
             Share
           </button>
+          {canReextract ? (
+            <button
+              type="button"
+              onClick={() => {
+                clearExtractSession(item.link);
+                refreshExtractRef.current = true;
+                void article.refetch();
+              }}
+              disabled={article.isFetching}
+              title="Clear the cached extract and pull the article again"
+              className="font-body text-chalk hover:text-cream inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] disabled:opacity-40"
+            >
+              <RefreshCw size={14} className={article.isFetching ? "animate-spin" : undefined} />
+              Re-extract
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setShowNotes((v) => !v)}
@@ -1606,8 +1629,26 @@ function ArticleReaderShell({
           <div className="bg-panel border-alert/40 font-body text-alert rounded border p-4 text-sm">
             Could not extract article text:{" "}
             {article.error instanceof Error ? article.error.message : String(article.error)}
+            {canReextract ? (
+              <button
+                type="button"
+                onClick={() => {
+                  clearExtractSession(item.link);
+                  refreshExtractRef.current = true;
+                  void article.refetch();
+                }}
+                className="text-cream mt-3 block text-[11px] font-semibold uppercase tracking-[0.14em] underline"
+              >
+                Try again
+              </button>
+            ) : null}
           </div>
-        ) : (
+        ) : extractLooksThin ? (
+          <div className="border-accent/40 bg-accent/10 font-body mb-5 rounded border px-3 py-2 text-[12px] text-[#f0d4d6]">
+            This extract looks short — MLB.com often only sends a teaser. Use Re-extract, or open the original.
+          </div>
+        ) : null}
+        {article.isLoading || article.isError ? null : (
           <div
             ref={articleBodyRef}
             onMouseUp={captureSelection}

@@ -2992,9 +2992,19 @@ function acquisitionActorClub(description: string): string {
   return lead ?? "";
 }
 
+/** Intra-org moves (call-up, option, IL) are still listed — they are not “how he arrived.” */
+export function isIntraOrgTransaction(type: string, description: string): boolean {
+  const blob = `${type} ${description}`;
+  if (/selected the contract\b/i.test(description) && /\bfrom\b/i.test(description)) return true;
+  return /recalled|optioned|assigned|transferred|outrighted|reinstated|activated|placed on|designated for assignment|invited to spring|sent to|returned to|rehab assignment/i.test(
+    blob,
+  );
+}
+
 /**
- * Curated “how he got here” story — prefer the most recent transaction that
- * brought the player TO the current club. Never fall back to an unrelated trade.
+ * Curated “how he got here” story — the signing, draft, or trade that brought
+ * the player into the current organization. Call-ups and other intra-org moves
+ * stay on the transaction list but are not the arrival headline.
  */
 export function buildAcquisitionStory(
   transactions: MlbTransaction[],
@@ -3008,6 +3018,7 @@ export function buildAcquisitionStory(
   for (const t of byDateDesc) {
     const type = t.type || "";
     const desc = t.description || "";
+    if (isIntraOrgTransaction(type, desc)) continue;
     if (/^trade/i.test(type)) {
       const dest = tradeDestinationClub(desc);
       if (dest && descriptionMatchesTeamHint(dest, hints)) {
@@ -3016,7 +3027,7 @@ export function buildAcquisitionStory(
       }
       continue;
     }
-    if (/^(signed|claimed|selected|purchase)/i.test(type) || /signed as free agent/i.test(type)) {
+    if (/^(signed|claimed|selected|purchase|draft)/i.test(type) || /signed as free agent/i.test(type)) {
       const actor = acquisitionActorClub(desc);
       if (
         (actor && descriptionMatchesTeamHint(actor, hints)) ||
@@ -3266,7 +3277,7 @@ export async function fetchPlayerContract(
     opts?.mlbId != null && Number.isFinite(Number(opts.mlbId)) && Number(opts.mlbId) > 0
       ? Number(opts.mlbId)
       : null;
-  const cacheKey = `mlb-contract-v5:${names[0]!.toLowerCase()}${mlbId ? `:id${mlbId}` : ""}`;
+  const cacheKey = `mlb-contract-v6:${names[0]!.toLowerCase()}${mlbId ? `:id${mlbId}` : ""}`;
   try {
     const cached = sessionStorage.getItem(cacheKey);
     if (cached) {
@@ -5589,6 +5600,12 @@ type BbrefManagerCareerPayload = {
   managerOfYearWins?: number;
 };
 
+/** AL/NL BBWAA Manager of the Year only — not Carolina, International, etc. */
+export function isMlbManagerOfTheYearAward(name: string): boolean {
+  const n = name.trim();
+  return /^(AL|NL|American League|National League)(?:\s+BBWAA)?\s+Manager of the Year\b/i.test(n);
+}
+
 function cleanCareerSeasons(
   seasons: BbrefManagerCareerPayload["seasons"],
 ): NonNullable<BbrefManagerCareerPayload["seasons"]> {
@@ -6216,7 +6233,8 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
     .map((a) => ({ season: String(a.season), name: String(a.name) }))
     .filter((a) => {
       const yr = Number(a.season);
-      if (/manager of the year/i.test(a.name)) return true;
+      // Count only AL/NL Manager of the Year — not Carolina / International / etc.
+      if (/manager of the year/i.test(a.name)) return isMlbManagerOfTheYearAward(a.name);
       if (/world series/i.test(a.name) && managedYears.has(yr)) return true;
       if (/pennant|championship series/i.test(a.name) && managedYears.has(yr)) return true;
       return false;

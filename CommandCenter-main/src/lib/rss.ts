@@ -1686,7 +1686,9 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       sportPath: "baseball/mlb",
       linkSport: "mlb",
       days: 5,
-      maxItems: 48,
+      maxItems: 60,
+      // Today + tomorrow so first-pitch previews aren't dropped after midnight.
+      lookAheadDays: 1,
       // League volume is high — prefer finals + today's previews.
       preferFinals: true,
       // Don't leave the feed empty when ESPN article copy is thin/late.
@@ -1929,6 +1931,8 @@ type EspnWrapsOpts = {
   includeLive?: boolean;
   /** Emit score/matchup stubs when ESPN has no article (NFL preseason / soccer). */
   stubWithoutArticle?: boolean;
+  /** Extra upcoming days to include (defaults to 7 for team feeds, 0 league-wide). */
+  lookAheadDays?: number;
 };
 
 const ESPN_ABBREV_TO_MLB_ID: Record<string, number> = {
@@ -2055,7 +2059,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   const seen = new Set<string>();
   const today = new Date();
   const hasTeamFilter = Boolean(opts.teamFilters?.length || opts.teamFilter);
-  const lookAheadDays = hasTeamFilter ? 7 : 0;
+  const lookAheadDays = opts.lookAheadDays ?? (hasTeamFilter ? 7 : 0);
   const candidates: {
     eventId: string;
     dateStr: string;
@@ -2071,8 +2075,10 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
         status?: { type?: { state?: string; completed?: boolean; name?: string } };
         competitors?: {
           homeAway?: string;
-          team?: { id?: string; abbreviation?: string };
+          team?: { id?: string; abbreviation?: string; displayName?: string; shortDisplayName?: string };
           score?: string | number;
+          records?: { type?: string; summary?: string }[];
+          probables?: { athlete?: { displayName?: string; shortName?: string } }[];
         }[];
       }[];
       status?: { type?: { state?: string; completed?: boolean; name?: string } };
@@ -2255,11 +2261,51 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             logoSoccerIds,
           }) satisfies RssFeedItem;
 
+        const recordOf = (
+          side: (typeof home) | (typeof away),
+        ) =>
+          side?.records?.find((r) => r.type === "total" || r.type === "vsconf")?.summary ||
+          side?.records?.[0]?.summary ||
+          null;
+        const pitcherOf = (
+          side: (typeof home) | (typeof away),
+        ) =>
+          side?.probables?.[0]?.athlete?.shortName ||
+          side?.probables?.[0]?.athlete?.displayName ||
+          null;
+        const previewCopy = () => {
+          const awayPitch = pitcherOf(away);
+          const homePitch = pitcherOf(home);
+          const pitchers =
+            awayPitch || homePitch
+              ? `${awayPitch ?? "TBD"} vs ${homePitch ?? "TBD"}`
+              : null;
+          const records = [awayAbbr && recordOf(away) ? `${awayAbbr} ${recordOf(away)}` : null, homeAbbr && recordOf(home) ? `${homeAbbr} ${recordOf(home)}` : null]
+            .filter(Boolean)
+            .join(" · ");
+          let when = "";
+          if (c.event.date) {
+            const t = Date.parse(c.event.date);
+            if (Number.isFinite(t)) {
+              when = new Date(t).toLocaleTimeString("en-US", {
+                timeZone: "America/Chicago",
+                hour: "numeric",
+                minute: "2-digit",
+              });
+              if (when) when = `${when} CT`;
+            }
+          }
+          return [pitchers, records || null, when].filter(Boolean).join(" · ") || `First pitch — ${matchup}.`;
+        };
+
         // Scoreboard-only fallback — never leave the feed empty when recap fetch fails.
-        // Previews without real copy are dropped (no "Preview — STL @ PHI." stubs).
+        // MLB previews still list from the scoreboard when ESPN has no story yet.
         const scoreboardStub = () => {
+          if (c.isPreview) {
+            if (linkSport !== "mlb" && !opts.stubWithoutArticle) return null;
+            return stubItem("preview", `Preview: ${matchup}`, previewCopy());
+          }
           if (!opts.stubWithoutArticle) return null;
-          if (c.isPreview) return null;
           if (c.isLive) {
             return stubItem("live", `Live: ${scoreBit}`, `In progress — ${matchup}.`);
           }
@@ -2367,10 +2413,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             /no story available/i.test(`${headline} ${body}`) ||
             /^game preview for\b/i.test(body) ||
             /^preview\s*[—–-]/i.test(body);
-          if (hollow) {
-            if (c.isPreview) return null;
-            return scoreboardStub();
-          }
+          if (hollow) return scoreboardStub();
 
           return {
             id: `preview-${c.eventId}`,
@@ -2422,6 +2465,128 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   };
 }
 
+type MlbDayResultGame = {
+  gamePk: number;
+  awayName: string;
+  homeName: string;
+  awayAbbr: string;
+  homeAbbr: string;
+  awayId: number | null;
+  homeId: number | null;
+  awayScore: number | null;
+  homeScore: number | null;
+  status: string;
+  isFinal: boolean;
+};
+
+async function fetchMlbResultsByDate(
+  start: string,
+  end: string,
+): Promise<Map<string, MlbDayResultGame[]>> {
+  const url =
+    `https://statsapi.mlb.com/api/v1/schedule?sportId=1` +
+    `&startDate=${start}&endDate=${end}&hydrate=linescore,team`;
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`MLB results ${res.status}`);
+  const data = (await res.json()) as {
+    dates?: {
+      date?: string;
+      games?: {
+        gamePk?: number;
+        status?: { detailedState?: string; abstractGameState?: string };
+        teams?: {
+          away?: {
+            score?: number;
+            team?: { id?: number; name?: string; abbreviation?: string };
+          };
+          home?: {
+            score?: number;
+            team?: { id?: number; name?: string; abbreviation?: string };
+          };
+        };
+      }[];
+    }[];
+  };
+  const byDay = new Map<string, MlbDayResultGame[]>();
+  for (const day of data.dates ?? []) {
+    const key = day.date ?? "";
+    if (!key) continue;
+    const games: MlbDayResultGame[] = [];
+    for (const g of day.games ?? []) {
+      const abstract = g.status?.abstractGameState ?? "";
+      const detailed = g.status?.detailedState ?? "";
+      games.push({
+        gamePk: Number(g.gamePk) || 0,
+        awayName: g.teams?.away?.team?.name ?? "Away",
+        homeName: g.teams?.home?.team?.name ?? "Home",
+        awayAbbr: g.teams?.away?.team?.abbreviation ?? "AWAY",
+        homeAbbr: g.teams?.home?.team?.abbreviation ?? "HOME",
+        awayId: g.teams?.away?.team?.id ?? null,
+        homeId: g.teams?.home?.team?.id ?? null,
+        awayScore: g.teams?.away?.score ?? null,
+        homeScore: g.teams?.home?.score ?? null,
+        status: detailed || abstract || "Scheduled",
+        isFinal: /final/i.test(detailed) || abstract === "Final",
+      });
+    }
+    byDay.set(key, games);
+  }
+  return byDay;
+}
+
+function renderMlbResultsHtml(
+  games: MlbDayResultGame[],
+  dateKey: string,
+  esc: (s: string) => string,
+  mlbTeamLogo: (id: number) => string,
+  teamPagePath: (id: number) => string,
+): string {
+  if (!games.length) {
+    return `<p class="mlb-digest-lede">No MLB games on ${esc(dateKey)}.</p>`;
+  }
+  const finals = games.filter((g) => g.isFinal);
+  const others = games.filter((g) => !g.isFinal);
+  const row = (g: MlbDayResultGame) => {
+    const awayLogo = g.awayId
+      ? `<img class="mlb-results-logo" src="${esc(mlbTeamLogo(g.awayId))}" alt="" width="18" height="18" loading="lazy" />`
+      : "";
+    const homeLogo = g.homeId
+      ? `<img class="mlb-results-logo" src="${esc(mlbTeamLogo(g.homeId))}" alt="" width="18" height="18" loading="lazy" />`
+      : "";
+    const awayName = g.awayId
+      ? `<a class="mlb-results-team" href="${esc(teamPagePath(g.awayId))}">${esc(g.awayAbbr)}</a>`
+      : esc(g.awayAbbr);
+    const homeName = g.homeId
+      ? `<a class="mlb-results-team" href="${esc(teamPagePath(g.homeId))}">${esc(g.homeAbbr)}</a>`
+      : esc(g.homeAbbr);
+    const score =
+      g.awayScore != null && g.homeScore != null
+        ? `${g.awayScore}&ndash;${g.homeScore}`
+        : g.status;
+    return `<tr>
+      <td class="mlb-results-matchup">${awayLogo}${awayName}<span>@</span>${homeLogo}${homeName}</td>
+      <td class="mlb-results-score numeral">${score}</td>
+    </tr>`;
+  };
+  const section = (title: string, list: MlbDayResultGame[]) => {
+    if (!list.length) return "";
+    return `<section class="mlb-results-block">
+      <h2>${esc(title)}</h2>
+      <table class="mlb-results-table">
+        <thead><tr><th>Matchup</th><th>Score</th></tr></thead>
+        <tbody>${list.map(row).join("")}</tbody>
+      </table>
+    </section>`;
+  };
+  return `
+    <p class="mlb-digest-lede">Every MLB final${others.length ? " and remaining game" : ""} for ${esc(dateKey)}.</p>
+    <div class="mlb-results-feed">
+      ${section("Finals", finals)}
+      ${section("Still to play", others)}
+    </div>
+  `.trim();
+}
+
 /** Once-per-day standings + wild card, and a separate league-leaders article. */
 async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
   const {
@@ -2439,12 +2604,17 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
   const d = String(today.getDate()).padStart(2, "0");
   const dateKey = `${y}-${m}-${d}`;
 
-  const [standings, nlWc, alWc, alLeaders, nlLeaders] = await Promise.all([
+  const startDay = new Date(today);
+  startDay.setDate(today.getDate() - 6);
+  const startKey = `${startDay.getFullYear()}-${String(startDay.getMonth() + 1).padStart(2, "0")}-${String(startDay.getDate()).padStart(2, "0")}`;
+
+  const [standings, nlWc, alWc, alLeaders, nlLeaders, resultsByDay] = await Promise.all([
     fetchMlbStandings(),
     fetchMlbWildCardStandings(104),
     fetchMlbWildCardStandings(103),
     fetchMlbLeaders(5, { leagueId: 103 }),
     fetchMlbLeaders(5, { leagueId: 104 }),
+    fetchMlbResultsByDate(startKey, dateKey).catch(() => new Map<string, MlbDayResultGame[]>()),
   ]);
 
   const esc = (s: string) =>
@@ -2528,9 +2698,9 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
             .slice(1)
             .map(
               (l) => `<li class="mlb-leader-card__row">
-                <img src="${esc(mlbHeadshot(l.playerId, 213))}" alt="" width="32" height="32" loading="lazy" />
-                <a class="rss-player-link" href="/sports/mlb/player/${l.playerId}">${esc(shortName(l.name))}</a>
-                <span class="numeral">${esc(l.value)}</span>
+                <img class="mlb-leader-card__mug" src="${esc(mlbHeadshot(l.playerId, 213))}" alt="" width="32" height="32" loading="lazy" />
+                <a class="rss-player-link mlb-leader-card__name" href="/sports/mlb/player/${l.playerId}">${esc(l.name || shortName(l.name))}</a>
+                <span class="numeral mlb-leader-card__stat">${esc(l.value)}</span>
               </li>`,
             )
             .join("");
@@ -2539,7 +2709,7 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
               <p class="mlb-leader-card__cat">${esc(board.label)}</p>
               <p class="mlb-leader-card__val numeral">${esc(top.value)}</p>
               <div class="mlb-leader-card__who">
-                <a class="rss-player-link" href="/sports/mlb/player/${top.playerId}">${esc(top.name)}</a>
+                <a class="rss-player-link mlb-leader-card__name" href="/sports/mlb/player/${top.playerId}">${esc(top.name)}</a>
                 <p>${esc(top.team || "—")}</p>
               </div>
               <img class="mlb-leader-card__shot" src="${esc(mlbHeadshot(top.playerId, 426))}" alt="" loading="lazy" />
@@ -2582,6 +2752,21 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
     const key = `${yy}-${mm}-${dd}`;
     const isToday = i === 0;
     const archiveNote = `<p>This archive day is listed for history. Switch to today's article for live boards.</p>`;
+    const dayGames = resultsByDay.get(key) ?? [];
+    const finals = dayGames.filter((g) => g.isFinal);
+    const resultsHtml = renderMlbResultsHtml(dayGames, key, esc, mlbTeamLogo, teamPagePath);
+    items.push({
+      id: `mlb-results-${key}`,
+      title: isToday ? `MLB results — ${key}` : `MLB results — ${key}`,
+      link: `dispatch://mlb-results/${key}`,
+      author: "MLB Stats API",
+      publishedAt: `${key}T20:00:00-05:00`,
+      image: null,
+      snippet: dayGames.length
+        ? `${finals.length} final${finals.length === 1 ? "" : "s"} · ${dayGames.length} game${dayGames.length === 1 ? "" : "s"} on ${key}.`
+        : `No MLB games on ${key}.`,
+      contentHtml: resultsHtml,
+    });
     items.push({
       id: `mlb-standings-${key}`,
       title: isToday ? `MLB standings — ${key}` : `MLB standings — ${key} (archive)`,
@@ -2617,7 +2802,7 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
 
   return {
     title: "MLB standings & leaders",
-    description: "Daily division standings and AL/NL league leaders as separate articles",
+    description: "Daily results, division standings, and AL/NL league leaders as separate articles",
     link: "https://www.mlb.com/standings",
     feedUrl: "synthetic:mlb-stats",
     items,
@@ -2809,7 +2994,7 @@ async function fetchCardinalsSavantFeed(): Promise<RssFeed> {
   };
 }
 
-const EXTRACT_SESSION_PREFIX = "rss-extract-v2:";
+const EXTRACT_SESSION_PREFIX = "rss-extract-v3:";
 const EXTRACT_SESSION_TTL_MS = 45 * 60_000;
 const EXTRACT_SESSION_MAX = 28;
 const EXTRACT_SESSION_MAX_BYTES = 180_000;
@@ -2870,8 +3055,36 @@ export function articleNeedsEdgeExtract(
   return /^https?:\/\//i.test(item.link);
 }
 
-export async function fetchRssArticle(url: string): Promise<RssArticle> {
-  const cached = readExtractSession(url);
+export function isThinRssExtract(article: Pick<RssArticle, "contentHtml" | "contentText" | "wordCount">): boolean {
+  const html = article.contentHtml ?? "";
+  const text = article.contentText ?? "";
+  const words = article.wordCount || text.split(/\s+/).filter(Boolean).length;
+  if (/Open original article/i.test(html) && words < 140) return true;
+  return words > 0 && words < 50 && /Open original article/i.test(html);
+}
+
+export function clearExtractSession(url?: string): void {
+  try {
+    if (url) {
+      sessionStorage.removeItem(EXTRACT_SESSION_PREFIX + url);
+      return;
+    }
+    const doomed: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k?.startsWith(EXTRACT_SESSION_PREFIX)) doomed.push(k);
+    }
+    doomed.forEach((k) => sessionStorage.removeItem(k));
+  } catch {
+    /* private mode */
+  }
+}
+
+export async function fetchRssArticle(
+  url: string,
+  opts?: { refresh?: boolean },
+): Promise<RssArticle> {
+  const cached = opts?.refresh ? null : readExtractSession(url);
   if (cached) {
     // Drop stale Savant nav-chrome extracts from older edge deploys.
     const { isSavantPreviewUrl, isSavantNavSoup } = await import("./savant-preview");
@@ -2891,7 +3104,18 @@ export async function fetchRssArticle(url: string): Promise<RssArticle> {
   }
 
   try {
-    const article = await invokeRss<RssArticle>({ mode: "read", url });
+    const article = await invokeRss<RssArticle>({
+      mode: "read",
+      url,
+      ...(opts?.refresh ? { refresh: "1" } : {}),
+    });
+    if (/mlb\.com\/(?:news|gameday|article|press-release|story)\b/i.test(url) && isThinRssExtract(article)) {
+      const local = await extractMlbNewsInBrowser(url).catch(() => null);
+      if (local && !isThinRssExtract(local)) {
+        writeExtractSession(local);
+        return local;
+      }
+    }
     if (/baseballsavant\.mlb\.com/i.test(url)) {
       const { isSavantNavSoup, extractSavantPreviewInBrowser } = await import("./savant-preview");
       if (isSavantNavSoup(article.contentHtml || article.contentText || "")) {
@@ -2907,6 +3131,13 @@ export async function fetchRssArticle(url: string): Promise<RssArticle> {
     return article;
   } catch (err) {
     // Edge IPs often get thin STL Today shells — decrypt in the browser as fallback.
+    if (/mlb\.com\/(?:news|gameday|article|press-release|story)\b/i.test(url)) {
+      const local = await extractMlbNewsInBrowser(url).catch(() => null);
+      if (local) {
+        writeExtractSession(local);
+        return local;
+      }
+    }
     if (/stltoday\.com/i.test(url)) {
       const local = await extractStlTodayInBrowser(url).catch(() => null);
       if (local) {
@@ -3027,6 +3258,76 @@ async function extractStlTodayInBrowser(url: string): Promise<RssArticle | null>
     url,
     title,
     byline: "Post-Dispatch",
+    image,
+    contentHtml,
+    contentText,
+    wordCount: contentText.split(/\s+/).filter(Boolean).length,
+  };
+}
+
+/** Browser-side MLB.com news extract when the edge only got a teaser. */
+async function extractMlbNewsInBrowser(url: string): Promise<RssArticle | null> {
+  const res = await fetch(url, { headers: { Accept: "text/html" }, credentials: "omit" });
+  if (!res.ok) return null;
+  const html = await res.text();
+  const decode = (s: string) =>
+    s
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&mdash;/gi, "—");
+
+  const bodies: string[] = [];
+  for (const m of html.matchAll(
+    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
+  )) {
+    try {
+      const data = JSON.parse(m[1] ?? "") as {
+        "@type"?: string;
+        "@graph"?: { "@type"?: string; articleBody?: string }[];
+        articleBody?: string;
+      };
+      const nodes = [
+        data,
+        ...(Array.isArray(data["@graph"]) ? data["@graph"] : []),
+      ];
+      for (const n of nodes) {
+        const body = typeof n?.articleBody === "string" ? n.articleBody.trim() : "";
+        if (body.length > 400) bodies.push(body);
+      }
+    } catch {
+      /* next */
+    }
+  }
+  let htmlBody = bodies[0] ?? "";
+  if (!htmlBody || htmlBody.replace(/<[^>]+>/g, " ").trim().length < 400) {
+    const ps = [
+      ...html.matchAll(
+        /<p[^>]*class="[^"]*(?:ArticleBody|article-body|body-text)[^"]*"[^>]*>([\s\S]*?)<\/p>/gi,
+      ),
+    ].map((m) => m[0]);
+    if (ps.length >= 3) htmlBody = ps.join("\n");
+  }
+  if (!htmlBody) return null;
+  const contentHtml = /<[a-z][\s\S]*>/i.test(htmlBody)
+    ? htmlBody
+    : htmlBody
+        .split(/\n{2,}/)
+        .map((p) => `<p>${decode(p).trim()}</p>`)
+        .join("\n");
+  const contentText = contentHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  if (contentText.length < 200) return null;
+  const title =
+    html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] || null;
+  const image =
+    html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] || null;
+  return {
+    url,
+    title,
+    byline: "MLB.com",
     image,
     contentHtml,
     contentText,

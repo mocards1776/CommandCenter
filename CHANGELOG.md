@@ -2,6 +2,19 @@
 
 ---
 
+## MLB feed, contracts, extracts — August 18, 2026
+
+- MLB wraps list today's (and tomorrow's) game previews from the scoreboard when ESPN has no story yet — probable pitchers, records, and first-pitch time.
+- League-leader cards keep player names readable (dark text on the white list; reader Tailwind no longer hides them).
+- Daily standings/results tables use tighter, even row spacing so division boards don't float apart on mobile.
+- The MLB folder gets a daily **MLB results** article with every final (and remaining games).
+- MLB.com news extracts prefer the real article body (JSON-LD / AMP) instead of a one-paragraph teaser; the reader has a **Re-extract** button when a pull is thin or fails.
+- “How he arrived” is the signing, draft, or trade into the organization — not a later call-up. Call-ups stay on the transaction list.
+- Contract cards infer minor-league / selected-from-minors status when Spotrac/BBRef have no salary table, and scrape more salary shapes.
+- Manager of the Year on MLB manager pages counts AL/NL awards only (not Carolina / other minor-league MOTY).
+
+---
+
 ## MLB previews, player WAR/tags, soccer extracts, sidebar odds — August 16, 2026
 
 - MLB game previews keep existing ESPN stats and add Baseball-Reference matchups: team form splits, season series, batter/pitcher tables, and a link to the full BBRef preview.
