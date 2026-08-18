@@ -19,7 +19,7 @@
 - Slug: `robert-washington-fyan`
 - Internal: `/notebook/robert-washington-fyan`
 - Brand: Thompson Family History (`/stories/robert-w-fyan.jpg`)
-- Layout: `portrait` — biography, 1883 MO-13 county map, VoteView/GovTrack, campaign-finance gap
+- Layout: `portrait` — biography, statewide filled-county maps (48th / 50th–52nd / 53rd), year-by-year elections, VoteView bills, period prices
 - Family line: great-great-great-grandfather of Ken, Wally and John Thompson
 
 ## Checklist
