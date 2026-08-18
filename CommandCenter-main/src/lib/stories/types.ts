@@ -99,6 +99,16 @@ export type BillVote = {
   note: string;
 };
 
+export type IdeologySpec = {
+  score: number;
+  dim2: number;
+  houseMoreLiberalThan: number;
+  demsMoreConservativeThan: number;
+  axisLeft: string;
+  axisRight: string;
+  caption: string;
+};
+
 export type StoryChapter = {
   id: string;
   eyebrow: string;
@@ -122,6 +132,7 @@ export type StoryChapter = {
     | "portrait"
     | "elections"
     | "bills"
+    | "ideology"
     | "none";
 };
 
@@ -139,6 +150,7 @@ export type ClientStory = {
   voteRows?: VoteRow[];
   electionRows?: ElectionRow[];
   billVotes?: BillVote[];
+  ideology?: IdeologySpec;
   family?: { names: string; relation: string; body: string };
   cover: {
     display: string;

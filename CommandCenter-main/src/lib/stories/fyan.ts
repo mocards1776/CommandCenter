@@ -17,8 +17,7 @@ export const FYAN_STORY: ClientStory = {
   family: {
     names: "Ken, Wally and John Thompson",
     relation: "Great-great-great-grandsons",
-    body:
-      "Robert Washington Fyan is the great-great-great-grandfather of Ken, Wally and John Thompson. Marshfield is the through-line.",
+    body: "Marshfield is the through-line.",
   },
   cover: {
     display: "Fyan",
@@ -26,49 +25,36 @@ export const FYAN_STORY: ClientStory = {
     meta: "Robert Washington Fyan · 1835–1896",
     statValue: "3 terms",
     statLabel: "U.S. House · 48th, 52nd, 53rd",
-    compareWarn: "Missed 42.3% of roll calls",
-    compareGood: "Silver Democrat · DW-NOMINATE −0.335",
+    compareWarn: "Missed about two votes in five",
+    compareGood: "A Democrat in the middle of his party",
   },
   address: "Robert Washington Fyan",
   cityLine: "Marshfield, Missouri · 13th Congressional District",
   heroLine:
-    "Robert Washington Fyan is the great-great-great-grandfather of Ken, Wally and John Thompson. Union major, 14th-circuit judge, and a three-term Democrat from a swing Ozarks seat.",
+    "Great-great-great-grandfather of Ken, Wally and John Thompson. A Union major who became the 14th-circuit judge, then a three-term Democrat in a district that could go either way.",
   support:
-    "Arthur, then Harrison, then Cleveland. A House that went Democratic in 1882, Democratic again in 1890, and stayed that way through the Panic of 1893. In U.S. cities in 1890 a half-gallon of milk ran about 14¢ — call it 27¢ a gallon — with eggs near 21¢ a dozen and butter 26¢ a pound.",
+    "He sat in the House under three presidents — Chester A. Arthur, then Benjamin Harrison, then Grover Cleveland again — and never under a Republican majority. The fights that defined those years were silver, the tariff, and, in 1893, a financial panic. The rest of this scroll is that story, in order.",
   keyNumbers: [
     { label: "House terms", value: "3", tone: "good" },
     { label: "District", value: "MO-13", tone: "neutral" },
     { label: "Party", value: "Democrat", tone: "neutral" },
-    { label: "Missed votes", value: "42.3%", tone: "warn" },
-    { label: "Ideology", value: "−0.335", tone: "good" },
-    { label: "1882 majority", value: "1,480", tone: "good" },
   ],
-  callouts: [
-    {
-      title: "The line",
-      body:
-        "Fyan is the great-great-great-grandfather of Ken, Wally and John Thompson. Webster County is where the public life happened.",
-    },
-    {
-      title: "The times",
-      body:
-        "First term under Chester A. Arthur, with Democrats running the House after the 1882 wave (about 196–117). Back in 1891 under Benjamin Harrison, in a House of 238 Democrats, 86 Republicans, and 8 Populists. Last term under Grover Cleveland’s second administration, Panic of 1893, Wilson–Gorman tariff, and a fight over silver.",
-    },
-  ],
+  callouts: [],
   compareCards: [
     {
-      title: "The country he walked into",
-      cost: "48th House · 1883–85 · Arthur",
+      title: "Who was in charge",
+      cost: "The White House and the House",
       answers:
-        "Democrats had just taken the House. Speaker John G. Carlisle. Pendleton civil-service reform was already law. The big remaining fights were tariff, railroad land grants, and pensions.",
-      doesNot: "Does not make him a Washington regular — he missed more than two in five roll calls over a lifetime",
+        "Arthur when Fyan first seated (1883). Harrison when he came back (1891). Cleveland when the crash hit (1893). Democrats ran the House all three of his terms — they had taken it in the 1882 wave, taken it again in 1890, and still held it in the 53rd Congress.",
+      doesNot:
+        "He was out of office for Cleveland’s entire first term (1885–89). William H. Wade of Springfield held the 13th those years.",
     },
     {
       title: "What a dollar bought",
-      cost: "U.S. city averages, 1890 · BLS / Historical Statistics",
+      cost: "U.S. city averages, 1890",
       answers:
-        "Milk ~13.6¢ a half-gallon (about 27¢ a gallon). Eggs ~21¢ a dozen. Butter ~26¢ a pound. Round steak ~12¢ a pound. A manufacturing day’s wage was in the neighborhood of a dollar and a half.",
-      doesNot: "Does not pin a Marshfield grocery ledger — these are national city averages, not a Webster County receipt",
+        "A half-gallon of milk was about 14¢, so a gallon ran roughly 27¢. Eggs were about 21¢ a dozen, butter 26¢ a pound, round steak 12¢ a pound. A factory hand made on the order of a dollar and a half a day. The point is scale: a congressional race in this country was still a world where a quarter bought a gallon of milk.",
+      doesNot: "These are national city averages from the Bureau of Labor / Historical Statistics — not a Marshfield grocer’s ledger.",
     },
   ],
   geo: {
@@ -96,30 +82,29 @@ export const FYAN_STORY: ClientStory = {
       label: "Union officer",
       status: "recent",
       detail:
-        "Webster County Home Guards, then captain of Co. B, 24th Missouri Infantry (major), and the 46th Missouri. Letter from Taney County after Pea Ridge, April 17, 1862.",
+        "Webster County Home Guards, then captain of Co. B, 24th Missouri Infantry (later major), and the 46th Missouri.",
     },
     {
       label: "Prosecutor",
       status: "partial",
       detail:
-        "Circuit attorney in Springfield, 1865–66. In July 1866 he prosecuted James Butler “Wild Bill” Hickok for killing Dave Tutt — and lost.",
+        "Circuit attorney in Springfield, 1865–66. Prosecuted Wild Bill Hickok for killing Dave Tutt in July 1866 — and lost.",
     },
     {
       label: "Circuit judge",
       status: "recent",
-      detail: "14th judicial circuit of Missouri, April 1866 to January 1883. 1875 state constitutional convention.",
+      detail: "14th judicial circuit, April 1866 to January 1883. Sat on the 1875 state constitutional convention.",
     },
     {
       label: "1880 cyclone",
       status: "concern",
-      detail:
-        "Wife Elizabeth “Lizzie” P. Hyer of Dent County died in the April 18, 1880 cyclone.",
+      detail: "Elizabeth “Lizzie” P. Hyer of Dent County, his wife, died in the April 18, 1880 cyclone.",
     },
     {
       label: "Congress",
       status: "new",
       detail:
-        "Democrat, Missouri’s 13th: 48th (1883–85), 52nd and 53rd (1891–95). Lost the 1884 nomination; beat Wade in 1890; retired in 1894.",
+        "Missouri’s 13th: 1883–85, then 1891–95. Lost the 1884 nomination, beat Wade in 1890, retired in 1894.",
     },
   ],
   repairs: [],
@@ -134,17 +119,17 @@ export const FYAN_STORY: ClientStory = {
       plan: "48",
       counties: D13_48,
       note:
-        "Whole counties, filled. The 13th is the red block: Springfield and Joplin-country with Webster, Christian, Taney, Stone, Polk, and Dallas. Henry, Bates, Vernon, and the western border counties sit in the 12th, not the 13th. St. Louis city was split among more than one seat; the independent city is shown as a single fill.",
+        "Each county is filled with its district color. The 13th is red: Springfield and Joplin-country with Webster, Christian, Taney, Stone, Polk, and Dallas. The western border counties — Henry, Bates, Vernon — sit in the 12th. St. Louis city was carved into more than one seat; it shows here as one fill.",
     },
     {
       id: "mo-50",
       title: "Missouri · 14 seats · 50th–52nd Congresses",
       years: "1887–1893",
-      congress: "1885 tweak · Fyan’s 1890 comeback",
+      congress: "After the 1885 tweak · the map of the 1890 comeback",
       plan: "50",
       counties: D13_50,
       note:
-        "Same fourteen-seat frame. The 1885 act pulled Dallas and Polk into the 6th and Jasper into the 12th. The 13th that sent Fyan back in 1890 is nine counties: Barry, Christian, Greene, Lawrence, McDonald, Newton, Stone, Taney, Webster. Springfield still in the district. Marshfield still the home pin.",
+        "Still fourteen seats. Dallas and Polk moved to the 6th; Jasper to the 12th. The 13th that sent Fyan back is nine counties, Springfield still in it, Marshfield still the home pin.",
     },
     {
       id: "mo-53",
@@ -154,7 +139,7 @@ export const FYAN_STORY: ClientStory = {
       plan: "53",
       counties: D13_53,
       note:
-        "The 1890 census added a fifteenth seat. Webster stays in the 13th. Greene does not — Springfield goes to the 7th. The new 13th runs Marshfield and Wright and Texas County east into the Lead Belt: Jefferson, St. Francois, Washington, Iron, Madison, Wayne. That is why John H. Raney of Piedmont is the next 13th-district man after Fyan retired.",
+        "The 1890 census added a fifteenth seat. Webster stays in the 13th. Greene does not — Springfield goes to the 7th. The new 13th runs Marshfield through Wright and Texas County into the Lead Belt. That is why the next man in the 13th is John H. Raney of Piedmont.",
     },
   ],
   voteRows: [
@@ -177,56 +162,56 @@ export const FYAN_STORY: ClientStory = {
       year: "1882",
       date: "November 7, 1882",
       result: "won",
-      headline: "Fyan (D) 13,904 · Cloud (R) 12,424 · Hazeltine (GB) 6,122",
+      headline: "Fyan 13,904 · Cloud 12,424 · Hazeltine 6,122",
       detail:
-        "New 14-district map. Majority 1,480. The Democratic cyclone year nationally. William W. Cloud (also listed as William T. Cloud) and Greenbacker J. S. / Ira S. Hazeltine. Source for the raw count: 1883 History of Henry County.",
+        "First race on the new 14-district map. He beat Republican William W. Cloud (also listed as William T. Cloud) by 1,480 votes — a plurality, not a majority of all ballots, because Greenbacker J. S. / Ira S. Hazeltine took 6,122. Nationally this was the Democratic wave year.",
     },
     {
       year: "1884",
       date: "November 4, 1884",
       result: "lost",
-      headline: "Lost the Democratic nomination. Wade (R) 50.3% · Thomas (D) 45.0% · Haseltine (GB) 4.7%",
+      headline: "Lost the nomination. Wade 50.3% · Thomas 45.0% · Haseltine 4.7%",
       detail:
-        "Cleveland beats Blaine for president the same day. A. L. Thomas is the Democratic nominee, not Fyan. Republican gain. William H. Wade of Springfield takes the seat.",
+        "Fyan was not on the November ballot. A. L. Thomas was the Democrat. Republican William H. Wade of Springfield won the same day Cleveland beat Blaine for president.",
     },
     {
       year: "1886",
       date: "November 2, 1886",
       result: "out",
-      headline: "Not a candidate. Wade (R) 51.8% · Cravens (D) 44.9% · Sobicski (GB) 3.3%",
-      detail: "Jeremiah C. Cravens is the Democrat. Wade holds. Cleveland still in the White House; Republicans pick up House seats nationally.",
+      headline: "Wade 51.8% · Cravens 44.9% · Sobicski 3.3%",
+      detail: "Fyan did not run. Jeremiah C. Cravens was the Democrat. Wade held.",
     },
     {
       year: "1888",
       date: "November 6, 1888",
       result: "out",
-      headline: "Not a candidate. Wade (R) 48.4% · Matclock (D) 40.0% · Alter (Union Labor) 11.1%",
+      headline: "Wade 48.4% · Matclock 40.0% · Alter 11.1%",
       detail:
-        "C. C. Matclock is the Democrat. Harrison beats Cleveland. Wade’s plurality is smaller; Union Labor takes a real bite.",
+        "Still out. C. C. Matclock was the Democrat. Union Labor took a real bite. Harrison beat Cleveland for president.",
     },
     {
       year: "1890",
       date: "November 4, 1890",
       result: "won",
-      headline: "Fyan (D) 49.9% · Wade (R) 41.6% · Vertrees (Union Labor) 8.5%",
+      headline: "Fyan 49.9% · Wade 41.6% · Vertrees 8.5%",
       detail:
-        "The McKinley-tariff midterm. Democrats take the House 238–86 with 8 Populists. Fyan beats the incumbent. Harrison still president when the 52nd sits.",
+        "The McKinley-tariff midterm. Democrats took the House 238–86, with 8 Populists. Fyan beat the incumbent. Harrison was still president when this Congress sat.",
     },
     {
       year: "1892",
       date: "November 8, 1892",
       result: "won",
-      headline: "Fyan (D) 57.05% · Whitledge (R) 42.82% · Harding (Ind.) 0.13%",
+      headline: "Fyan 57.05% · Whitledge 42.82% · Harding 0.13%",
       detail:
-        "Cleveland returns. Missouri now elects fifteen. Webster stays in the 13th; Springfield does not. Comfortable win over J. B. Whitledge.",
+        "Cleveland returned to the White House. Missouri now elected fifteen members. Webster stayed in the 13th; Springfield did not. Comfortable win over J. B. Whitledge.",
     },
     {
       year: "1894",
       date: "November 6, 1894",
       result: "retired",
-      headline: "Retired. Raney (R) 51.3% · Fox (D) 48.7%",
+      headline: "Raney 51.3% · Fox 48.7%",
       detail:
-        "Depression midterm after the Panic of 1893. John H. Raney of Piedmont takes the Lead-Belt 13th from James D. Fox. Republican gain on the new map.",
+        "Fyan did not run. After the Panic of 1893, John H. Raney of Piedmont took the Lead-Belt 13th from James D. Fox.",
     },
   ],
   billVotes: [
@@ -236,15 +221,15 @@ export const FYAN_STORY: ClientStory = {
       cast: "Yea",
       bill: "H.R. 3933 · Texas-Pacific land forfeiture",
       note:
-        "Voted to forfeit unused railroad land grants. The public record on railroads is this kind of vote — not a donor list. No railroad backing file survives, and this is not the vote of a man carrying water for the land-grant roads.",
+        "Voted to take back unused railroad land grants. No donor file names the Frisco or anyone else as a backer. This is the railroad vote that survives: against the giveaway, not for it.",
     },
     {
       date: "May 6, 1884",
       congress: "48th",
       cast: "Nay",
-      bill: "H.R. 5893 · strike the enacting clause (tariff reduction)",
+      bill: "H.R. 5893 · kill a tariff-cut bill",
       note:
-        "Nay on killing a bill to cut import duties and wartime tariff taxes. A Democrat in Arthur’s last full year, on the side of tariff reduction.",
+        "Nay on striking the enacting clause — that is, he voted against killing a bill to cut import duties. A Democrat for lower tariffs, in Arthur’s last full year.",
     },
     {
       date: "Dec 17, 1884",
@@ -252,7 +237,7 @@ export const FYAN_STORY: ClientStory = {
       cast: "Yea",
       bill: "H.R. 5461 · railroad passenger separation",
       note:
-        "On the interstate-commerce bill that died before the 1887 Act, he voted to let railroads separate white and colored passengers at their own discretion.",
+        "On a failed interstate-commerce bill, he voted to let railroads separate white and colored passengers at their own discretion.",
     },
     {
       date: "Mar 24, 1892",
@@ -260,15 +245,15 @@ export const FYAN_STORY: ClientStory = {
       cast: "Nay",
       bill: "H.R. 4426 · table free coinage of silver",
       note:
-        "Nay on tabling Bland free silver. He wanted the bill kept alive. That is the silver-Democrat tell, and it matches the Ozarks more than the Cleveland gold men.",
+        "To “table” a bill is to kill it without a vote on the merits. He voted Nay — keep Bland’s free-silver bill alive. That is the Ozarks silver-Democrat tell.",
     },
     {
       date: "Apr 4, 1892",
       congress: "52nd",
       cast: "Yea",
-      bill: "H.R. 6185 · Geary Act (Chinese exclusion)",
+      bill: "H.R. 6185 · Geary Act",
       note:
-        "Yea to suspend the rules and pass a bill absolutely prohibiting Chinese persons from coming into the United States — the Geary Act, extending and hardening the 1882 exclusion law.",
+        "Yea to extend and harden Chinese exclusion. The Geary Act made the 1882 ban harsher and required Chinese residents to carry residence papers.",
     },
     {
       date: "Aug 28, 1893",
@@ -276,67 +261,51 @@ export const FYAN_STORY: ClientStory = {
       cast: "Nay",
       bill: "H.R. 1 · repeal Sherman Silver Purchase Act",
       note:
-        "The vote of the term. Cleveland called a special session to stop Treasury silver purchases. House passed repeal 239–109. Fyan voted Nay, and Yea on the free-coinage ratio amendments that failed the same day. A Marshfield Democrat against his own president on money.",
+        "The vote of his career. Cleveland called a special session to stop the Treasury from buying silver. The House passed repeal 239–109. Fyan voted Nay, and Yea on every free-coinage ratio amendment that failed the same day. A Marshfield Democrat against his own president on money.",
     },
     {
       date: "Feb 1, 1894",
       congress: "53rd",
       cast: "Yea",
-      bill: "H.R. 4864 · Wilson tariff (House passage)",
+      bill: "H.R. 4864 · Wilson tariff, House passage",
       note:
-        "Yea to pass the Wilson bill — Democratic tariff reduction, later chewed up in the Senate into Wilson–Gorman (income tax, sugar deals) and signed August 27, 1894. He voted against some farm-product duty hikes on the way.",
+        "Yea to cut the McKinley tariff. The Senate later chewed it into Wilson–Gorman. He voted against some farm-product duty hikes on the way through.",
     },
     {
       date: "Apr 4, 1894",
       congress: "53rd",
       cast: "Absent",
-      bill: "H.R. 4956 · coin silver bullion (override)",
+      bill: "H.R. 4956 · coin silver bullion over Cleveland’s veto",
       note:
-        "Bland’s seigniorage bill to coin the Treasury’s silver, over Cleveland’s veto. Fyan had voted with Bland on the substitute in March, then missed the override. Attendance is the other half of the record.",
+        "He had voted with Richard Bland in March to coin the Treasury’s silver, then missed the veto override. Attendance is the other half of the record.",
     },
   ],
+  ideology: {
+    score: -0.335,
+    dim2: 0.46,
+    houseMoreLiberalThan: 69,
+    demsMoreConservativeThan: 51,
+    axisLeft: "Democratic / more for silver & lower tariffs",
+    axisRight: "Republican / more for gold & protection",
+    caption:
+      "VoteView’s first dimension for the 53rd House (1893–95). Negative is the Democratic side of that Congress. Fyan sits left of most of the chamber and almost exactly in the middle of the Democrats.",
+  },
   chapters: [
-    {
-      id: "family",
-      eyebrow: "The line",
-      title: "Great-great-great-grandfather of Ken, Wally and John Thompson.",
-      body:
-        "Bedford Springs to Marshfield to three Thompson brothers. The public story is a Union officer, a long-sitting circuit judge, and a Democrat who could win, lose, and win again in the same 13th.",
-      visual: "family",
-      bullets: [
-        "Ken Thompson · Wally Thompson · John Thompson",
-        "Relation: great-great-great-grandsons of Robert Washington Fyan (1835–1896)",
-        "Place: Marshfield / Webster County",
-      ],
-      stat: { value: "3g", label: "Great-great-great-grandsons · Ken, Wally, John" },
-    },
     {
       id: "origin",
       eyebrow: "Who he was",
       title: "Pennsylvania-born. Missouri-made.",
       body:
-        "Born March 11, 1835, at Bedford Springs, Pennsylvania. Common schools, the bar in 1858, then Marshfield. County attorney by 1859. Lebanon for a stretch around 1870; Webster County again before 1880. Died in Marshfield, July 28, 1896. Buried Lebanon Cemetery.",
+        "Robert Washington Fyan was born March 11, 1835, at Bedford Springs, Pennsylvania. Common schools, the bar in 1858, then Marshfield. By 1859 he was county attorney. He spent a stretch in Lebanon around 1870 and was back in Webster County before 1880. He died in Marshfield on July 28, 1896, and was buried at Lebanon Cemetery in Laclede County.",
       visual: "portrait",
-      bullets: [
-        "March 11, 1835 – July 28, 1896 (age 61)",
-        "Admitted to the bar 1858 · practice in Marshfield",
-        "Lived in Lebanon by 1870; back in Webster County before 1880",
-        "Buried Lebanon Cemetery, Laclede County",
-      ],
-      stat: { value: "1858", label: "Year he was admitted and opened in Marshfield" },
     },
     {
       id: "war",
       eyebrow: "The war",
       title: "A Union Democrat from a split state.",
       body:
-        "June 1861: into Federal service. Hampton’s regiment and the Webster County Home Guards, then captain of Company B, 24th Missouri Infantry — later major — and the 46th Missouri. After Pea Ridge he wrote home from Taney County (April 17, 1862). That Union record is why the later House Democrat from this country does not read like a Bourbon from the Deep South.",
+        "In June 1861 he went into Federal service: Hampton’s regiment and the Webster County Home Guards, then captain of Company B, 24th Missouri Infantry — later major — and the 46th Missouri. After the battle of Pea Ridge he wrote home from Taney County, April 17, 1862. That letter is still in the State Historical Society of Missouri’s Fyan papers, with clothing receipts and a deceased officer’s effects.\n\nThat Union record is why the later House Democrat from this country does not read like a Bourbon Democrat. “Bourbon” was the name for the conservative Southern Democrats after Reconstruction — men who wanted the old planter order restored, low taxes, and white rule, and who had generally been with the Confederacy. Fyan was a Democrat, but he had worn blue. In a state that had sent men both ways, that was a different kind of Democrat, and it is part of why a Republican like Wade could also win this seat.",
       visual: "none",
-      bullets: [
-        "24th Missouri Infantry · Co. B captain, then major",
-        "46th Missouri Infantry",
-        "SHSMO papers: clothing receipts, a deceased officer’s effects, and that 1862 letter",
-      ],
       stat: { value: "Union", label: "24th & 46th Missouri Infantry" },
     },
     {
@@ -344,120 +313,59 @@ export const FYAN_STORY: ClientStory = {
       eyebrow: "The bench",
       title: "Seventeen years as circuit judge — then Congress.",
       body:
-        "Circuit attorney in Springfield, 1865–66, including the failed Hickok prosecution. Circuit judge of the 14th judicial circuit from April 1866 to January 1883. In 1875 he sat on Missouri’s constitutional convention. In 1879 he presided over Laclede County’s first legal hanging (State v. Joseph Core). April 18, 1880: the cyclone killed Lizzie Hyer Fyan.",
+        "After the war he was circuit attorney in Springfield, 1865–66. In July 1866 that meant prosecuting James Butler “Wild Bill” Hickok for killing Dave Tutt on the square — and losing. Then the 14th judicial circuit, April 1866 to January 1883. He sat on Missouri’s 1875 constitutional convention. In 1879 he presided over Laclede County’s first legal hanging, State v. Joseph Core. On April 18, 1880, the cyclone killed Lizzie Hyer Fyan.",
       visual: "condition",
-      bullets: [
-        "Hickok–Tutt, July 1866 — prosecutor, not the winner",
-        "14th circuit judge, 1866–1883",
-        "1875 Missouri constitutional convention",
-        "Lizzie Hyer Fyan died in the 1880 cyclone",
-      ],
       stat: { value: "17 yrs", label: "On the 14th circuit before the House" },
     },
     {
       id: "era",
       eyebrow: "The times",
-      title: "Arthur. Then Harrison. Then Cleveland again.",
+      title: "Three presidents, a Democratic House, and 27¢ milk.",
       body:
-        "He seated in December 1883 with Chester A. Arthur in the White House and John G. Carlisle in the Speaker’s chair. Democrats had just taken the House in the 1882 wave, about 196 seats to 117 Republican. He was out for Cleveland’s whole first term. He came back in 1891 under Harrison, into a House of 238 Democrats, 86 Republicans, and 8 Populists — the McKinley-tariff hangover. His last term is Cleveland’s second: Panic of 1893, special session on silver, Wilson–Gorman in 1894. In U.S. cities in 1890 a half-gallon of milk was about 14¢ (roughly 27¢ a gallon), eggs about 21¢ a dozen, butter 26¢ a pound, round steak 12¢ a pound.",
+        "When he first took his seat in December 1883, Chester A. Arthur was president — a Republican who had succeeded the assassinated Garfield — and Democrats had just seized the House in the 1882 elections, about 196 seats to 117. John G. Carlisle of Kentucky was Speaker. Fyan’s first term is that Congress.\n\nHe was then out for six years. Grover Cleveland, the first Democratic president since the war, served 1885–89. Benjamin Harrison, a Republican, beat him in 1888. Fyan came back in March 1891, still under Harrison, into a House the Democrats had retaken in the 1890 midterm: 238 Democrats, 86 Republicans, 8 Populists. Voters had punished Harrison’s party for the McKinley tariff, a high-tax law on imports.\n\nHis last term is Cleveland’s second. In 1893 banks failed and unemployment spiked — the Panic of 1893. Cleveland called Congress back to stop the government from buying silver. That fight, and a new tariff bill, ate the 53rd House.\n\nTo put a dollar in scale: in U.S. cities in 1890, the government later figured, a half-gallon of milk cost about 14¢ — call it 27¢ a gallon. Eggs were about 21¢ a dozen. Butter was 26¢ a pound. Round steak was 12¢ a pound. A factory day’s wage was in the neighborhood of a dollar and a half. Those are national city averages, not a Webster County receipt, but they are why “a gallon of milk” is a fair way to feel the 1890s.",
       visual: "compare",
-      bullets: [
-        "48th House (1883–85): Arthur · Speaker Carlisle · Democratic majority after 1882",
-        "Out 1885–91: Cleveland I, then Harrison — Wade holds the 13th",
-        "52nd House (1891–93): Harrison · Democrats 238, Republicans 86, Populists 8",
-        "53rd House (1893–95): Cleveland II · Panic of 1893 · Democrats 218, Republicans 124, Populists 11",
-        "1890 city grocery: milk ~14¢ / ½ gal · eggs ~21¢ / doz · butter ~26¢ / lb",
-      ],
-      stat: { value: "27¢", label: "About a gallon of milk in U.S. cities, 1890" },
     },
     {
       id: "congress",
-      eyebrow: "The House",
-      title: "Win, lose the nomination, wait, win, win, retire.",
+      eyebrow: "The races",
+      title: "Win, lose the nomination, wait, win, win, walk away.",
       body:
-        "Elected in the 1882 Democratic wave: 13,904 to 12,424, Greenbacker on 6,122. In 1884 he lost the nomination; Wade took the seat with 50.3% while Cleveland was winning the presidency. Wade held in 1886 and 1888. Fyan came back in 1890 with 49.9% in the McKinley midterm, then 57% in 1892 on the new fifteen-seat map. He did not run in 1894. Raney of Piedmont won the depression-year 13th 51.3–48.7.",
+        "November 7, 1882: Fyan 13,904, Cloud 12,424, Hazeltine 6,122. The 1,480 is the gap between Fyan and Cloud — his winning margin over the Republican, not a majority of every ballot cast. Three men were on the ticket; Fyan had the most, not more than half.\n\nIn 1884 the Democrats nominated A. L. Thomas instead. Wade won with 50.3%. Fyan stayed out in 1886 and 1888 while Wade held on. He came back in 1890 with 49.9% to Wade’s 41.6%, then won easily in 1892, 57% to 43%, on a new fifteen-seat map. He did not run in 1894. Raney of Piedmont took the seat 51.3–48.7 in the depression midterm.",
       visual: "elections",
-      bullets: [
-        "1882: won · 13,904–12,424–6,122 · maj. 1,480",
-        "1884: lost nomination · Wade 50.3% / Thomas 45.0%",
-        "1886–88: out · Wade re-elected",
-        "1890: won · 49.9%–41.6%–8.5%",
-        "1892: won · 57.05%–42.82%",
-        "1894: retired · Raney (R) 51.3%",
-      ],
-      stat: { value: "1890", label: "The year he beat Wade and came back" },
     },
     {
       id: "maps",
       eyebrow: "The maps",
-      title: "The whole state, county by county.",
+      title: "Webster stays. Springfield does not.",
       body:
-        "Fourteen seats when he first went. Fifteen when he last sat. Webster is in the 13th on every map. Springfield is in it for the first two, then not. The 1883 13th is Ozarks plus Joplin-country. The 1892 13th is Marshfield east through Wright and Texas into the Lead Belt. That is the map change that turns a Springfield–Marshfield seat into a Piedmont seat.",
+        "Missouri had fourteen House seats when Fyan first went to Washington and fifteen when he last sat. The maps below fill every county in the state by district. The 13th is red.\n\nIn 1883 the 13th is Springfield to Joplin-country, with Webster, Christian, Taney, and Stone in it. After 1885, Jasper, Dallas, and Polk leave; Springfield stays. In 1892 the state adds a seat. Greene — Springfield — moves to the 7th. Webster stays in the 13th, which now runs east through Wright and Texas County into the Lead Belt. Marshfield remains home. The district around it changes.",
       visual: "districtMap",
-      bullets: [
-        "48th: twelve counties in the 13th, Greene to McDonald, including Jasper, Polk, Dallas",
-        "50th–52nd: Jasper, Dallas, and Polk leave · nine-county 13th · Springfield remains",
-        "53rd: fifteen seats · Greene to the 7th · Webster, Wright, Texas, and the Lead Belt",
-        "Filled counties from the Lewis–Martis digital boundaries, not dots on an outline",
-      ],
-      stat: { value: "15", label: "Seats in the 1892 map · Webster still 13th" },
     },
     {
       id: "bills",
       eyebrow: "The votes",
       title: "Silver over Cleveland. Tariff down. Exclusion up.",
       body:
-        "The interesting votes are not obscure. March 24, 1892: Nay on tabling free coinage. April 4, 1892: Yea on the Geary Chinese-exclusion bill. August 28, 1893: Nay on repealing the Sherman Silver Purchase Act — against the president of his own party, after voting Yea on every free-coinage ratio amendment that day. February 1, 1894: Yea on the Wilson tariff in the House. In 1884 he voted to forfeit unused Texas-Pacific land grants, which is the railroad story the paper trail will support. No itemized campaign file names the Frisco or anyone else as a backer.",
+        "The votes that still have color are few, and they are not obscure. In 1892 he voted against tabling free coinage of silver — he wanted the bill kept alive — and he voted Yea on the Geary Act, which made Chinese exclusion harsher. On August 28, 1893, with Cleveland demanding an end to Treasury silver purchases, he voted Nay on repeal and Yea on every free-coinage amendment that died the same day. In 1894 he voted Yea to cut the tariff in the House.\n\nIn 1884 he voted to forfeit unused Texas-Pacific land grants. That is the railroad story the paper trail will support. No itemized campaign file names a railroad as a backer.",
       visual: "bills",
-      bullets: [
-        "Silver Democrat: anti-table in 1892, anti-repeal in 1893",
-        "Wilson tariff: Yea on House passage, 1894",
-        "Geary Act: Yea, 1892",
-        "Railroad land grants: Yea to forfeit unused grants, 1884",
-        "1884 commerce bill: Yea to let railroads separate white and colored passengers",
-      ],
       stat: { value: "Nay", label: "On repealing Sherman silver, Aug 28, 1893" },
     },
     {
       id: "votes",
-      eyebrow: "The Grok read",
-      title: "Moderate Democrat. High absences. Occasional party breaks.",
+      eyebrow: "Where he sat",
+      title: "A Democrat in the middle of his party — who missed a lot of votes.",
       body:
-        "That is still the VoteView / GovTrack picture. Lifetime DW-NOMINATE first dimension −0.335: a Democrat, not a Republican, and not the most partisan Democrat in the room. On the 53rd House he sits more liberal than 69% of the chamber and more conservative than 51% of Democrats. Across three terms he missed 428 of 1,011 roll calls (42.3%), a little above the 37% median for members still serving in March 1895. Perfect in his first weeks, then long stretches above 50% missed, then 3.4% missed in winter 1893–94 — the silver-and-tariff winter.",
-      visual: "votes",
-      bullets: [
-        "DW-NOMINATE dim-1 −0.335 · dim-2 0.46 (VoteView, ICPSR 3418)",
-        "53rd House: more liberal than 69% of members · more conservative than 51% of Democrats",
-        "Missed 428 / 1,011 roll calls = 42.3% (GovTrack lifetime)",
-        "The party break that shows: Nay on Sherman repeal with a Democratic president pushing Yea",
-      ],
-      stat: { value: "42.3%", label: "Missed roll calls · three House terms" },
+        "Political scientists Keith Poole and Howard Rosenthal built a scoring system called DW-NOMINATE from every recorded House roll call. Think of it as a seating chart. Each member gets a number, usually between −1 and +1, on the main fight of that era. In the 1890s that fight was mostly money and the tariff: silver and lower duties on the Democratic side, gold and high protection on the Republican side. Negative is Democratic. Positive is Republican. Zero is the middle of the chamber.\n\nFyan’s score on that first dimension is −0.335. He is not a Republican. He is not a radical. On the 53rd House — his last term — VoteView places him left of 69% of all members (most of the people to his right are Republicans) and to the right of 51% of Democrats. That is the middle of his own party: more conservative than half the Democrats, more liberal than most of the House.\n\nA second number, +0.46 on “dimension 2,” picks up a weaker, cross-cutting axis — regional and sectional issues that were not simply gold versus silver. It is real in the math and less useful as a label. The number that tells you who he was in the room is −0.335.\n\nAttendance is the other score. He missed 428 of 1,011 roll calls, 42.3%. The median member still serving in March 1895 missed about 37%. He was perfect in his first weeks in 1883, then gone for long stretches, then almost always present in the silver-and-tariff winter of 1893–94, when it counted.",
+      visual: "ideology",
+      stat: { value: "−0.335", label: "DW-NOMINATE · Democratic side of the 1890s House" },
     },
     {
       id: "place",
       eyebrow: "Marshfield",
       title: "The town is the through-line.",
       body:
-        "He practiced there, buried a wife there after the 1880 cyclone, represented it in Washington, died there on July 28, 1896, and was taken to Lebanon Cemetery. For Ken, Wally and John Thompson, Webster County is not an abstract district number.",
+        "He practiced there, buried Lizzie there after the 1880 cyclone, represented it in Washington, died there on July 28, 1896, and was taken to Lebanon Cemetery. Webster County is not an abstract district number. It is the ground under the three terms, the lost nomination, and the comeback.",
       visual: "none",
-      bullets: [
-        "Marshfield, Webster County · 37.34° N, 92.91° W",
-        "Died in Marshfield, July 28, 1896",
-        "Interred Lebanon Cemetery, Laclede County",
-      ],
-    },
-    {
-      id: "call",
-      eyebrow: "Keep this",
-      title: "A Union judge from Marshfield who held a swing seat.",
-      body:
-        "Three House terms. Silver over Cleveland. A 13th that kept Webster and eventually dropped Springfield. Robert Washington Fyan is the great-great-great-grandfather of Ken, Wally and John Thompson.",
-      bullets: [
-        "Ken, Wally and John Thompson — great-great-great-grandsons",
-        "MO-13 Democrat · 1883–85 and 1891–95",
-        "Nay on Sherman silver repeal · Yea on Wilson tariff · Yea on Geary",
-        "Missed 42.3% of roll calls · DW-NOMINATE −0.335",
-      ],
     },
   ],
   comps: [],
@@ -471,28 +379,26 @@ export const FYAN_STORY: ClientStory = {
     thesis:
       "A Marshfield Union Democrat in a swing 13th. First term under Arthur, last terms under Harrison and Cleveland. The maps change around Webster; Webster does not leave the district.",
     recommendation:
-      "Three terms, a lost nomination, a comeback, and a silver vote against his own president. The line to Ken, Wally and John Thompson is great-great-great-grandfather.",
+      "Three terms, a lost nomination, a comeback, and a silver vote against his own president.",
   },
   notebook: {
     title: "The record",
     paragraphs: [
-      "Robert Washington Fyan (March 11, 1835 – July 28, 1896). Great-great-great-grandfather of Ken, Wally and John Thompson. Democrat of Marshfield. Missouri’s 13th congressional district, 48th Congress (1883–85) and 52nd–53rd (1891–95).",
-      "Elections: 1882 won 13,904–12,424–6,122 (maj. 1,480). 1884 lost the Democratic nomination; Wade 50.3%, A. L. Thomas 45.0%, Haseltine 4.7%. 1886 out (Wade 51.8%). 1888 out (Wade 48.4%). 1890 won 49.9%–41.6%–8.5%. 1892 won 57.05%–42.82%. 1894 retired; Raney 51.3%–Fox 48.7%. Percentages from the House-elections pages (Dubin via Wikipedia); 1882 raw count from the 1883 History of Henry County.",
-      "Maps (Lewis–Martis digital boundaries, counties filled): 48th 13th = Barry, Christian, Dallas, Greene, Jasper, Lawrence, McDonald, Newton, Polk, Stone, Taney, Webster. 50th–52nd drops Dallas, Jasper, Polk. 53rd (15 seats) keeps Webster and adds Wright, Texas, and the Lead Belt; Greene goes to the 7th.",
-      "Votes: Nay to table free silver (H.R. 4426, Mar 24, 1892). Yea on Geary exclusion (H.R. 6185, Apr 4, 1892). Nay on Sherman silver-purchase repeal (H.R. 1, Aug 28, 1893). Yea on Wilson tariff House passage (H.R. 4864, Feb 1, 1894). Yea to forfeit Texas-Pacific land grants (H.R. 3933, Jan 31, 1884). No itemized campaign contributions; no railroad donor file.",
-      "Times: Arthur / Harrison / Cleveland II. 48th House Democratic after 1882. 52nd House 238 D, 86 R, 8 Populist. 53rd House and the Panic of 1893. 1890 U.S. city milk about 14¢ a half-gallon.",
-      "Other marks: Union 24th/46th Missouri; Hickok–Tutt prosecution 1866; 14th circuit judge 1866–83; 1875 constitutional convention; Lizzie Hyer killed in the April 18, 1880 cyclone; died Marshfield, buried Lebanon Cemetery.",
+      "Robert Washington Fyan (March 11, 1835 – July 28, 1896). Great-great-great-grandfather of Ken, Wally and John Thompson. Democrat of Marshfield. Missouri’s 13th, 48th Congress (1883–85) and 52nd–53rd (1891–95).",
+      "Elections: 1882 won 13,904–12,424–6,122 (plurality 1,480 over Cloud). 1884 lost the nomination; Wade 50.3%, A. L. Thomas 45.0%. 1886–88 out. 1890 won 49.9%–41.6%–8.5%. 1892 won 57.05%–42.82%. 1894 retired; Raney 51.3%–Fox 48.7%.",
+      "Maps: 48th 13th = Barry, Christian, Dallas, Greene, Jasper, Lawrence, McDonald, Newton, Polk, Stone, Taney, Webster. 50th–52nd drops Dallas, Jasper, Polk. 53rd keeps Webster, adds Wright, Texas, and the Lead Belt; Greene to the 7th.",
+      "Votes: Nay to table free silver (1892). Yea on Geary (1892). Nay on Sherman repeal (1893). Yea on Wilson tariff House passage (1894). Yea to forfeit Texas-Pacific grants (1884). DW-NOMINATE −0.335: middle of the Democrats, left of most of the House. Missed 42.3% of roll calls.",
+      "Times: Arthur, Harrison, Cleveland II. Democratic House throughout his service. 1890 U.S. city milk about 14¢ a half-gallon.",
     ],
   },
   researchDate: "August 18, 2026",
   sources: [
     "VoteView ICPSR 3418 (DW-NOMINATE −0.335 / 0.46; roll calls including RH0530012 and H.R. 4426)",
-    "GovTrack member 404377 (missed-vote table, 428/1,011 = 42.3%; H.R. 4426 table vote)",
+    "GovTrack member 404377 (missed-vote table, 428/1,011 = 42.3%)",
     "Jeffrey B. Lewis, Brandon DeVine, Lincoln Pitcher, and Kenneth C. Martis, Digital Boundary Definitions of United States Congressional Districts, 1789–2012",
     "Biographical Directory of the U.S. Congress (F000436)",
     "1883 History of Henry County, Missouri (1882 13th-district tally)",
-    "Wikipedia U.S. House election pages 1882–1894 (Missouri 13th percentages; Dubin)",
-    "Political Graveyard, Missouri U.S. Representatives 1880s–1890s",
+    "Wikipedia U.S. House election pages 1882–1894 (Missouri 13th percentages)",
     "U.S. Bureau of Labor / Historical Statistics of the United States (1890 city food prices)",
     "State Historical Society of Missouri, Robert Washington Fyan Papers (R0567)",
     "St. Louis Daily Globe-Democrat portrait, November 6, 1890 (Wikimedia Commons)",

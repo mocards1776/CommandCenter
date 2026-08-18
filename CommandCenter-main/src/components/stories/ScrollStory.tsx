@@ -226,7 +226,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
           <p className="story-support reveal delay-3">{story.support}</p>
 
           <div className="verdict reveal delay-4">
-          <span className="verdict-flag">{isPortrait ? "The line" : "Recommendation"}</span>
+          <span className="verdict-flag">{isPortrait ? "In short" : "Recommendation"}</span>
             <strong>{story.valuation.recommendation}</strong>
           </div>
 
@@ -280,7 +280,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
             ))}
           </dl>
 
-          {story.keyNumbers?.length ? (
+          {story.keyNumbers?.length && !isPortrait ? (
             <div className="key-numbers reveal delay-5">
               {story.keyNumbers.map((n) => (
                 <div key={n.label} className={`key-number is-${n.tone ?? "neutral"}`}>
@@ -291,7 +291,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
             </div>
           ) : null}
 
-          {story.callouts?.length ? (
+          {story.callouts?.length && !isPortrait ? (
             <div className="story-callouts reveal delay-5">
               {story.callouts.map((c) => (
                 <aside key={c.title} className="story-callout">
@@ -310,7 +310,11 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
             <div className="chapter-copy">
               <p className="story-eyebrow">{ch.eyebrow}</p>
               <h2>{ch.title}</h2>
-              <p className="story-body">{ch.body}</p>
+              {ch.body.split(/\n\n/).map((para) => (
+                <p key={para.slice(0, 48)} className="story-body">
+                  {para}
+                </p>
+              ))}
               {ch.stat ? (
                 <div
                   className={`story-stat ${
@@ -384,10 +388,13 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                   {story.condition.map((item) => {
                     const tone = statusTone(item.status);
                     return (
-                      <article key={item.label} className={`condition-card ${tone.className}`}>
+                      <article
+                        key={item.label}
+                        className={`condition-card ${isPortrait ? "is-plain" : tone.className}`}
+                      >
                         <header>
                           <h3>{item.label}</h3>
-                          <em>{tone.chip}</em>
+                          {isPortrait ? null : <em>{tone.chip}</em>}
                         </header>
                         <p>{item.detail}</p>
                       </article>
@@ -457,6 +464,13 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     <article key={card.title} className="compare-card">
                       <h3>{card.title}</h3>
                       <p className="compare-cost">{card.cost}</p>
+                      {isPortrait ? (
+                        <>
+                          <p>{card.answers}</p>
+                          <p>{card.doesNot}</p>
+                        </>
+                      ) : (
+                        <>
                       <p>
                         <span>Answers</span>
                         {card.answers}
@@ -465,6 +479,8 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                         <span>Does not</span>
                         {card.doesNot}
                       </p>
+                        </>
+                      )}
                     </article>
                   ))}
                 </div>
@@ -540,6 +556,92 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
             {ch.visual === "districtMap" && story.districtMaps?.length ? (
               <aside className="visual-pane">
                 <Missouri13Map maps={story.districtMaps} />
+              </aside>
+            ) : null}
+
+            {ch.visual === "ideology" && story.ideology ? (
+              <aside className="visual-pane">
+                <div className="ideology-card">
+                  <p className="ideology-score">
+                    <strong>{story.ideology.score.toFixed(3)}</strong>
+                    <span>First dimension · VoteView</span>
+                  </p>
+                  <div className="ideology-axis" aria-hidden>
+                    <div className="ideology-ends">
+                      <span>{story.ideology.axisLeft}</span>
+                      <span>{story.ideology.axisRight}</span>
+                    </div>
+                    <div className="ideology-track">
+                      <i
+                        className="ideology-marker"
+                        style={{
+                          left: `${((story.ideology.score + 1) / 2) * 100}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="ideology-ticks">
+                      <em>−1</em>
+                      <em>0</em>
+                      <em>+1</em>
+                    </div>
+                  </div>
+                  <div className="ideology-ranks">
+                    <article>
+                      <header>
+                        <span>Whole House, 53rd Congress</span>
+                        <strong>Left of {story.ideology.houseMoreLiberalThan}% of members</strong>
+                      </header>
+                      <div className="ideology-mini" aria-hidden>
+                        <span
+                          style={{
+                            width: `${100 - story.ideology.houseMoreLiberalThan}%`,
+                          }}
+                        />
+                      </div>
+                      <p>
+                        Most of the people to his right are Republicans. He is on the Democratic
+                        side of the chamber, not the fringe of it.
+                      </p>
+                    </article>
+                    <article className="is-home">
+                      <header>
+                        <span>Among Democrats</span>
+                        <strong>
+                          Right of {story.ideology.demsMoreConservativeThan}% of his party
+                        </strong>
+                      </header>
+                      <div className="ideology-mini" aria-hidden>
+                        <span style={{ width: `${story.ideology.demsMoreConservativeThan}%` }} />
+                      </div>
+                      <p>
+                        That is the middle of the Democrats — a notch more conservative than the
+                        party median, not a silver radical and not a Cleveland gold man.
+                      </p>
+                    </article>
+                  </div>
+                  <p className="visual-caption">{story.ideology.caption}</p>
+                </div>
+                {story.voteRows?.length ? (
+                  <>
+                    <div className="odds-list">
+                      {story.voteRows.map((row) => (
+                        <article key={row.period} className="odds-row">
+                          <div className="odds-meta">
+                            <strong>{row.period}</strong>
+                            <span>
+                              Missed {row.missed} of {row.eligible}
+                            </span>
+                          </div>
+                          <div className="odds-track" aria-hidden>
+                            <span style={{ width: `${Math.min(100, row.pct)}%` }} />
+                          </div>
+                          <div className="odds-pct">{row.pct}%</div>
+                        </article>
+                      ))}
+                    </div>
+                    <p className="visual-caption">Share of roll calls missed, by stretch of the session</p>
+                  </>
+                ) : null}
               </aside>
             ) : null}
 
@@ -1136,6 +1238,63 @@ const STORY_CSS = `
     margin: 0 0 0.3rem; font-family: var(--font-body); font-size: 0.92rem; font-weight: 700;
   }
   .bill-card header span { font-size: 11px; color: var(--muted); }
+  .ideology-card {
+    border: 1px solid var(--line); background: rgba(255,255,255,0.7);
+    padding: 0.9rem 1rem 1rem;
+  }
+  .ideology-score { margin: 0 0 0.85rem; }
+  .ideology-score strong {
+    display: block; font-family: var(--font-display);
+    font-size: 2.4rem; line-height: 1; color: var(--warn);
+  }
+  .ideology-score span {
+    display: block; margin-top: 0.25rem;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    font-weight: 700; color: var(--muted);
+  }
+  .ideology-axis { margin: 0 0 1rem; }
+  .ideology-ends {
+    display: flex; justify-content: space-between; gap: 1rem;
+    font-size: 0.72rem; color: var(--muted); line-height: 1.3; margin-bottom: 0.45rem;
+  }
+  .ideology-ends span:last-child { text-align: right; }
+  .ideology-track {
+    position: relative;
+    height: 10px; border-radius: 99px;
+    background: linear-gradient(90deg, #2f6b4f 0%, #e7edf4 50%, #b42318 100%);
+  }
+  .ideology-marker {
+    position: absolute; top: 50%; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--navy); border: 2px solid #f5f7fa;
+    transform: translate(-50%, -50%); box-shadow: 0 0 0 2px rgba(180,35,24,0.35);
+  }
+  .ideology-ticks {
+    display: flex; justify-content: space-between; margin-top: 0.25rem;
+  }
+  .ideology-ticks em {
+    font-style: normal; font-size: 10px; font-weight: 700; color: var(--navy);
+  }
+  .ideology-ranks { display: grid; gap: 0.7rem; }
+  .ideology-ranks article {
+    border-top: 1px solid var(--line); padding-top: 0.7rem;
+  }
+  .ideology-ranks header {
+    display: flex; flex-direction: column; gap: 0.15rem; margin-bottom: 0.4rem;
+  }
+  .ideology-ranks header span {
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    font-weight: 700; color: var(--muted);
+  }
+  .ideology-ranks header strong { font-size: 0.95rem; color: var(--navy); }
+  .ideology-ranks article.is-home header strong { color: var(--warn); }
+  .ideology-ranks p { margin: 0.4rem 0 0; font-size: 0.82rem; line-height: 1.4; color: var(--muted); }
+  .ideology-mini {
+    height: 8px; border-radius: 99px; background: var(--wash); overflow: hidden;
+  }
+  .ideology-mini span {
+    display: block; height: 100%; background: var(--navy);
+  }
+  .ideology-ranks article.is-home .ideology-mini span { background: var(--warn); }
   .hero-map-veil {
     position: absolute; inset: 0; pointer-events: none;
     background:
@@ -1412,6 +1571,11 @@ const STORY_CSS = `
   }
   .condition-card.is-concern em { color: var(--warn); }
   .condition-card.is-original em { color: var(--muted); }
+  .condition-card.is-plain {
+    border-color: var(--line);
+    background: rgba(255,255,255,0.7);
+  }
+  .condition-card.is-plain em { display: none; }
 
   .repair-list { display: grid; gap: 0.5rem; }
   .repair-card {

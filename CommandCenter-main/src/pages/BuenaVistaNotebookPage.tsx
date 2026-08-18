@@ -154,7 +154,9 @@ export default function BuenaVistaNotebookPage() {
               <li key={c.label} className="border border-white/10 rounded-sm p-3 bg-field/60">
                 <div className="flex items-baseline justify-between gap-2 mb-1">
                   <span className="text-cream font-medium text-sm">{c.label}</span>
+                  {story.layout === "portrait" ? null : (
                   <span className="label-caps">{c.status}</span>
+                  )}
                 </div>
                 <p className="text-chalk text-xs leading-relaxed">{c.detail}</p>
               </li>
