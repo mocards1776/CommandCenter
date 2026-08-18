@@ -2190,6 +2190,7 @@ type EspnGameSummary = {
     type?: string;
     summary?: string;
     events?: {
+      id?: string;
       date?: string;
       status?: string;
       statusType?: { state?: string };
@@ -2197,18 +2198,22 @@ type EspnGameSummary = {
         homeAway?: string;
         score?: string | number;
         winner?: boolean;
-        team?: { abbreviation?: string; displayName?: string };
+        team?: { abbreviation?: string; displayName?: string; id?: string };
       }[];
+      links?: { href?: string; text?: string }[];
     }[];
   }[];
   lastFiveGames?: {
     team?: { id?: string; abbreviation?: string };
     events?: {
+      id?: string;
       atVs?: string;
       score?: string;
       gameResult?: string;
       gameDate?: string;
-      opponent?: { abbreviation?: string };
+      opponent?: { abbreviation?: string; id?: string };
+      opponentLogo?: string;
+      links?: { href?: string; text?: string }[];
     }[];
   }[];
   boxscore?: {
@@ -2226,7 +2231,7 @@ type EspnGameSummary = {
     }[];
   };
   injuries?: {
-    team?: { abbreviation?: string };
+    team?: { abbreviation?: string; id?: string };
     injuries?: {
       status?: string;
       athlete?: {
@@ -2387,14 +2392,25 @@ export type MlbEspnLastFiveGame = {
   result: string;
   atVs: string;
   opponent: string;
+  /** MLB Stats API team id for the opponent (logo + link). */
+  opponentTeamId: number | null;
   score: string;
   date: string;
+  espnEventId: string | null;
+  /** Resolved MLB gamePk when schedule lookup succeeds. */
+  gamePk: number | null;
 };
 
 export type MlbEspnSeasonSeriesGame = {
   date: string;
   label: string;
   score: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
+  awayTeamId: number | null;
+  homeTeamId: number | null;
+  espnEventId: string | null;
+  gamePk: number | null;
 };
 
 export type MlbEspnInjuryRow = {
@@ -2406,6 +2422,7 @@ export type MlbEspnInjuryRow = {
 
 export type MlbEspnTeamStatLine = {
   abbrev: string;
+  teamId: number | null;
   avg: string;
   runs: string;
   hits: string;
@@ -2422,11 +2439,15 @@ export type MlbEspnTeamStatLine = {
 
 export type MlbEspnGameExtras = {
   espnEventId: string;
+  awayAbbrev: string | null;
+  homeAbbrev: string | null;
+  awayTeamId: number | null;
+  homeTeamId: number | null;
   predictor: { awayPct: number; homePct: number } | null;
-  lastFive: { abbrev: string; teamId: string; games: MlbEspnLastFiveGame[] }[];
+  lastFive: { abbrev: string; teamId: number | null; espnTeamId: string; games: MlbEspnLastFiveGame[] }[];
   seasonSeries: { summary: string; games: MlbEspnSeasonSeriesGame[] } | null;
   teamStats: MlbEspnTeamStatLine[];
-  injuries: { abbrev: string; players: MlbEspnInjuryRow[] }[];
+  injuries: { abbrev: string; teamId: number | null; players: MlbEspnInjuryRow[] }[];
 };
 
 function espnStatValue(
@@ -2447,6 +2468,10 @@ function parseEspnGameExtrasFromSummary(
   const competitors = comp?.competitors ?? [];
   const home = competitors.find((c) => c.homeAway === "home");
   const away = competitors.find((c) => c.homeAway === "away");
+  const awayAbbrev = away?.team?.abbreviation?.toUpperCase() || null;
+  const homeAbbrev = home?.team?.abbreviation?.toUpperCase() || null;
+  const awayTeamId = mlbTeamIdFromEspnAbbrev(awayAbbrev);
+  const homeTeamId = mlbTeamIdFromEspnAbbrev(homeAbbrev);
 
   const awayPct = Number(sum.predictor?.awayTeam?.gameProjection);
   const homePct = Number(sum.predictor?.homeTeam?.gameProjection);
@@ -2455,17 +2480,33 @@ function parseEspnGameExtrasFromSummary(
       ? { awayPct, homePct }
       : null;
 
-  const lastFive = (sum.lastFiveGames ?? []).map((block) => ({
-    abbrev: block.team?.abbreviation?.toUpperCase() || "—",
-    teamId: String(block.team?.id ?? ""),
-    games: (block.events ?? []).slice(0, 5).map((ev) => ({
-      result: (ev.gameResult || "").toUpperCase(),
-      atVs: ev.atVs === "@" ? "@" : "vs",
-      opponent: ev.opponent?.abbreviation?.toUpperCase() || "—",
-      score: ev.score || "—",
-      date: ev.gameDate ? formatSportsDateLong(ev.gameDate) || ev.gameDate.slice(0, 10) : "",
-    })),
-  }));
+  const lastFive = (sum.lastFiveGames ?? []).map((block) => {
+    const abbrev = block.team?.abbreviation?.toUpperCase() || "—";
+    return {
+      abbrev,
+      teamId: mlbTeamIdFromEspnAbbrev(abbrev),
+      espnTeamId: String(block.team?.id ?? ""),
+      games: (block.events ?? []).slice(0, 5).map((ev) => {
+        const opponent = ev.opponent?.abbreviation?.toUpperCase() || "—";
+        const espnEventId =
+          ev.id?.trim() ||
+          (ev.links ?? [])
+            .map((l) => parseEspnGameIdFromUrl(l.href ?? ""))
+            .find(Boolean) ||
+          null;
+        return {
+          result: (ev.gameResult || "").toUpperCase(),
+          atVs: ev.atVs === "@" ? "@" : "vs",
+          opponent,
+          opponentTeamId: mlbTeamIdFromEspnAbbrev(opponent),
+          score: ev.score || "—",
+          date: ev.gameDate ? formatSportsDateLong(ev.gameDate) || ev.gameDate.slice(0, 10) : "",
+          espnEventId,
+          gamePk: null as number | null,
+        };
+      }),
+    };
+  });
 
   const seriesBlock =
     (sum.seasonseries ?? []).find(
@@ -2483,28 +2524,39 @@ function parseEspnGameExtrasFromSummary(
           .map((ev) => {
             const h = (ev.competitors ?? []).find((c) => c.homeAway === "home");
             const a = (ev.competitors ?? []).find((c) => c.homeAway === "away");
-            const ha = a?.team?.abbreviation || "?";
-            const hh = h?.team?.abbreviation || "?";
+            const ha = (a?.team?.abbreviation || "?").toUpperCase();
+            const hh = (h?.team?.abbreviation || "?").toUpperCase();
             const as = a?.score != null ? String(a.score) : "—";
             const hs = h?.score != null ? String(h.score) : "—";
+            const espnEventId =
+              ev.id?.trim() ||
+              (ev.links ?? [])
+                .map((l) => parseEspnGameIdFromUrl(l.href ?? ""))
+                .find(Boolean) ||
+              null;
             return {
               date: ev.date ? formatSportsDateLong(ev.date) || ev.date.slice(0, 10) : "",
               label: `${ha} @ ${hh}`,
               score: `${as}–${hs}`,
+              awayAbbrev: ha,
+              homeAbbrev: hh,
+              awayTeamId: mlbTeamIdFromEspnAbbrev(ha),
+              homeTeamId: mlbTeamIdFromEspnAbbrev(hh),
+              espnEventId,
+              gamePk: null as number | null,
             };
           }),
       }
     : null;
 
-  const teamOrder = [away?.team?.abbreviation, home?.team?.abbreviation]
-    .filter(Boolean)
-    .map((a) => String(a).toUpperCase());
+  const teamOrder = [awayAbbrev, homeAbbrev].filter(Boolean) as string[];
   const teamStats: MlbEspnTeamStatLine[] = [];
   for (const side of sum.boxscore?.teams ?? []) {
     const abbrev = side.team?.abbreviation?.toUpperCase() || "—";
     const stats = side.statistics;
     teamStats.push({
       abbrev,
+      teamId: mlbTeamIdFromEspnAbbrev(abbrev),
       avg: espnStatValue(stats, "batting", "avg"),
       runs: espnStatValue(stats, "batting", "runs"),
       hits: espnStatValue(stats, "batting", "hits"),
@@ -2525,26 +2577,179 @@ function parseEspnGameExtrasFromSummary(
     return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
   });
 
-  const injuries = (sum.injuries ?? []).map((block) => ({
-    abbrev: block.team?.abbreviation?.toUpperCase() || "—",
-    players: (block.injuries ?? []).slice(0, 8).map((row) => ({
-      name: row.athlete?.displayName || row.athlete?.shortName || "—",
-      pos: row.athlete?.position?.abbreviation || "—",
-      status: row.type?.description || row.status || "IL",
-      returnDate: row.details?.returnDate
-        ? formatSportsDateLong(row.details.returnDate) || row.details.returnDate.slice(0, 10)
-        : null,
-    })),
-  }));
+  const injuries = (sum.injuries ?? []).map((block) => {
+    const abbrev = block.team?.abbreviation?.toUpperCase() || "—";
+    return {
+      abbrev,
+      teamId: mlbTeamIdFromEspnAbbrev(abbrev),
+      players: (block.injuries ?? []).slice(0, 8).map((row) => ({
+        name: row.athlete?.displayName || row.athlete?.shortName || "—",
+        pos: row.athlete?.position?.abbreviation || "—",
+        status: row.type?.description || row.status || "IL",
+        returnDate: row.details?.returnDate
+          ? formatSportsDateLong(row.details.returnDate) || row.details.returnDate.slice(0, 10)
+          : null,
+      })),
+    };
+  });
 
   return {
     espnEventId: eventId,
+    awayAbbrev,
+    homeAbbrev,
+    awayTeamId,
+    homeTeamId,
     predictor,
     lastFive,
     seasonSeries,
     teamStats,
     injuries,
   };
+}
+
+/** Chicago calendar date (YYYY-MM-DD) from an ISO / ESPN timestamp. */
+function espnDateToCentralYmd(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) {
+      const m = iso.match(/^(\d{4}-\d{2}-\d{2})/);
+      return m?.[1] ?? null;
+    }
+    const ymd = d.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+    return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
+  } catch {
+    return null;
+  }
+}
+
+type ScheduleGameRow = {
+  gamePk?: number;
+  teams?: {
+    away?: { team?: { id?: number; abbreviation?: string } };
+    home?: { team?: { id?: number; abbreviation?: string } };
+  };
+};
+
+async function fetchMlbScheduleGamesForDate(ymd: string): Promise<ScheduleGameRow[]> {
+  try {
+    const schedule = (await mlbGet("schedule", {
+      sportId: "1",
+      date: ymd,
+      hydrate: "team",
+    })) as { dates?: { games?: ScheduleGameRow[] }[] };
+    return schedule.dates?.[0]?.games ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function matchScheduleGamePk(
+  games: ScheduleGameRow[],
+  homeAbbrev: string,
+  awayAbbrev: string,
+): number | null {
+  const homeKeys = mlbAbbrevAliases(homeAbbrev);
+  const awayKeys = mlbAbbrevAliases(awayAbbrev);
+  const homeId = mlbTeamIdFromEspnAbbrev(homeAbbrev);
+  const awayId = mlbTeamIdFromEspnAbbrev(awayAbbrev);
+  for (const g of games) {
+    const hAbb = (g.teams?.home?.team?.abbreviation ?? "").toUpperCase();
+    const aAbb = (g.teams?.away?.team?.abbreviation ?? "").toUpperCase();
+    const hId = g.teams?.home?.team?.id;
+    const aId = g.teams?.away?.team?.id;
+    const abbrevMatch = homeKeys.has(hAbb) && awayKeys.has(aAbb);
+    const idMatch =
+      homeId != null && awayId != null && hId === homeId && aId === awayId;
+    if ((abbrevMatch || idMatch) && g.gamePk != null) return g.gamePk;
+  }
+  return null;
+}
+
+/** Attach MLB `gamePk`s to last-five / series rows via schedule lookup (one fetch per date). */
+async function hydrateEspnExtrasGamePks(
+  extras: MlbEspnGameExtras,
+  sum: EspnGameSummary,
+): Promise<MlbEspnGameExtras> {
+  type Need = {
+    ymd: string;
+    homeAbbrev: string;
+    awayAbbrev: string;
+    apply: (pk: number) => void;
+  };
+  const needs: Need[] = [];
+
+  const seriesRaw = (sum.seasonseries ?? []).find(
+    (s) => s.summary && /season/i.test(s.type ?? "") && !/preseason/i.test(s.type ?? ""),
+  ) ??
+    (sum.seasonseries ?? []).find((s) => s.summary && !/preseason/i.test(s.type ?? "")) ??
+    null;
+  const seriesIsoByEvent = new Map<string, string>();
+  for (const ev of seriesRaw?.events ?? []) {
+    if (ev.id && ev.date) seriesIsoByEvent.set(ev.id, ev.date);
+  }
+
+  if (extras.seasonSeries) {
+    for (const g of extras.seasonSeries.games) {
+      const iso = g.espnEventId ? seriesIsoByEvent.get(g.espnEventId) : null;
+      const ymd = espnDateToCentralYmd(iso) || (g.date.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? null);
+      if (!ymd || !g.homeAbbrev || !g.awayAbbrev) continue;
+      needs.push({
+        ymd,
+        homeAbbrev: g.homeAbbrev,
+        awayAbbrev: g.awayAbbrev,
+        apply: (pk) => {
+          g.gamePk = pk;
+        },
+      });
+    }
+  }
+
+  const lastFiveIso = new Map<string, string>();
+  for (const block of sum.lastFiveGames ?? []) {
+    for (const ev of block.events ?? []) {
+      if (ev.id && ev.gameDate) lastFiveIso.set(ev.id, ev.gameDate);
+    }
+  }
+
+  for (const block of extras.lastFive) {
+    for (const g of block.games) {
+      const iso = g.espnEventId ? lastFiveIso.get(g.espnEventId) : null;
+      const ymd =
+        espnDateToCentralYmd(iso) ||
+        (g.date.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? null);
+      if (!ymd || !block.abbrev || !g.opponent) continue;
+      const homeAbbrev = g.atVs === "@" ? g.opponent : block.abbrev;
+      const awayAbbrev = g.atVs === "@" ? block.abbrev : g.opponent;
+      needs.push({
+        ymd,
+        homeAbbrev,
+        awayAbbrev,
+        apply: (pk) => {
+          g.gamePk = pk;
+        },
+      });
+    }
+  }
+
+  const byDate = new Map<string, Need[]>();
+  for (const n of needs) {
+    const list = byDate.get(n.ymd) ?? [];
+    list.push(n);
+    byDate.set(n.ymd, list);
+  }
+
+  await Promise.all(
+    [...byDate.entries()].map(async ([ymd, list]) => {
+      const games = await fetchMlbScheduleGamesForDate(ymd);
+      for (const n of list) {
+        const pk = matchScheduleGamePk(games, n.homeAbbrev, n.awayAbbrev);
+        if (pk != null) n.apply(pk);
+      }
+    }),
+  );
+
+  return extras;
 }
 
 /** ESPN matchup predictor, last 5, team stats, season series, injuries for a game page. */
@@ -2583,7 +2788,10 @@ export async function fetchEspnGameExtras(
       `baseball/mlb/summary?event=${eventId}`,
     );
     if (!sum) return null;
-    const extras = parseEspnGameExtrasFromSummary(sum, eventId);
+    const extras = await hydrateEspnExtrasGamePks(
+      parseEspnGameExtrasFromSummary(sum, eventId),
+      sum,
+    );
     const hasBits =
       extras.predictor ||
       extras.lastFive.some((b) => b.games.length > 0) ||

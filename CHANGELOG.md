@@ -2,6 +2,13 @@
 
 ---
 
+## ESPN game extras: logos + clickable games — August 18, 2026
+
+- Matchup predictor, last 5, season series, team stats, and injuries show team logos (`TeamMark`).
+- Last 5 and season-series rows link to the MLB game page (schedule `gamePk` hydration, with ESPN event-id fallback).
+
+---
+
 ## Remove RotoWorld Dispatch feed — August 18, 2026
 
 - Drop the **RotoWorld player news** synthetic feed from Dispatch (MLB folder / Unread).

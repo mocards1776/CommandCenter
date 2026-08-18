@@ -29,6 +29,7 @@ import {
   prospectRanksFor,
   resolveMissingRecapPlayers,
   teamPagePath,
+  resolveMlbGamePkFromEspnEvent,
   type MlbBbrefGamePreview,
   type MlbBbrefPreviewSummary,
   type MlbBoxscore,
@@ -126,7 +127,7 @@ export function MlbGameDetail({
 
   const espnExtras = useQuery({
     queryKey: [
-      "mlb-espn-game-extras-v1",
+      "mlb-espn-game-extras-v2",
       gamePk,
       espnEventId ?? null,
       box.data?.officialDate,
@@ -257,6 +258,8 @@ export function MlbGameDetail({
           <EspnPreviewExtras
             awayAbbrev={g.away.abbrev}
             homeAbbrev={g.home.abbrev}
+            awayTeamId={g.away.teamId}
+            homeTeamId={g.home.teamId}
             data={espnExtras.data}
             loading={espnExtras.isPending}
           />
@@ -345,6 +348,8 @@ export function MlbGameDetail({
           <EspnPreviewExtras
             awayAbbrev={g.away.abbrev}
             homeAbbrev={g.home.abbrev}
+            awayTeamId={g.away.teamId}
+            homeTeamId={g.home.teamId}
             data={espnExtras.data}
             loading={espnExtras.isPending}
           />
@@ -504,11 +509,15 @@ function summaryBits(s: MlbBbrefPreviewSummary | null | undefined): string[] {
 function EspnPreviewExtras({
   awayAbbrev,
   homeAbbrev,
+  awayTeamId,
+  homeTeamId,
   data,
   loading,
 }: {
   awayAbbrev: string;
   homeAbbrev: string;
+  awayTeamId?: number | null;
+  homeTeamId?: number | null;
   data: MlbEspnGameExtras | null | undefined;
   loading: boolean;
 }) {
@@ -521,6 +530,8 @@ function EspnPreviewExtras({
   }
   if (!data) return null;
 
+  const awayId = awayTeamId || data.awayTeamId || null;
+  const homeId = homeTeamId || data.homeTeamId || null;
   const awayL5 =
     data.lastFive.find((b) => b.abbrev === awayAbbrev.toUpperCase()) ??
     data.lastFive.find((b) => mlbAbbrevMatch(b.abbrev, awayAbbrev));
@@ -545,13 +556,19 @@ function EspnPreviewExtras({
           </p>
           <div className="space-y-3 px-4 py-4">
             <div className="flex items-end justify-between gap-3">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.14em] text-white/55">{awayAbbrev}</p>
-                <p className="numeral text-[28px] leading-none text-white">{Math.round(awayPct)}%</p>
+              <div className="flex items-end gap-2.5">
+                {awayId ? <TeamMark teamId={awayId} size="sm" className="mb-0.5" /> : null}
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-white/55">{awayAbbrev}</p>
+                  <p className="numeral text-[28px] leading-none text-white">{Math.round(awayPct)}%</p>
+                </div>
               </div>
-              <div className="text-right">
-                <p className="text-[11px] uppercase tracking-[0.14em] text-white/55">{homeAbbrev}</p>
-                <p className="numeral text-[28px] leading-none text-white">{Math.round(homePct)}%</p>
+              <div className="flex items-end gap-2.5">
+                <div className="text-right">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-white/55">{homeAbbrev}</p>
+                  <p className="numeral text-[28px] leading-none text-white">{Math.round(homePct)}%</p>
+                </div>
+                {homeId ? <TeamMark teamId={homeId} size="sm" className="mb-0.5" /> : null}
               </div>
             </div>
             <div className="flex h-2.5 overflow-hidden rounded-full bg-white/10">
@@ -571,46 +588,69 @@ function EspnPreviewExtras({
       {hasL5 && (
         <section className="grid gap-3 sm:grid-cols-2">
           {[
-            { abbrev: awayAbbrev, block: awayL5 },
-            { abbrev: homeAbbrev, block: homeL5 },
-          ].map(({ abbrev, block }) => (
+            { abbrev: awayAbbrev, teamId: awayId ?? awayL5?.teamId ?? null, block: awayL5 },
+            { abbrev: homeAbbrev, teamId: homeId ?? homeL5?.teamId ?? null, block: homeL5 },
+          ].map(({ abbrev, teamId, block }) => (
             <div
               key={abbrev}
               className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]"
             >
-              <p className="border-b border-white/[0.07] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
-                {abbrev} last 5
-              </p>
+              <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-2.5">
+                {teamId ? <TeamMark teamId={teamId} size="xs" /> : null}
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+                  {abbrev} last 5
+                </p>
+              </div>
               {block?.games.length ? (
                 <ul className="divide-y divide-white/[0.06]">
-                  {block.games.map((g, i) => (
-                    <li
-                      key={`${abbrev}-${g.date}-${g.opponent}-${i}`}
-                      className="flex items-center justify-between gap-2 px-4 py-2 text-[12.5px]"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-cream">
-                          <span
-                            className={cn(
-                              "numeral mr-2 inline-block w-4 font-semibold",
-                              g.result === "W"
-                                ? "text-emerald-400"
-                                : g.result === "L"
-                                  ? "text-alert"
-                                  : "text-white/60",
-                            )}
-                          >
-                            {g.result || "—"}
-                          </span>
-                          {g.atVs} {g.opponent}
-                        </p>
-                        {g.date ? (
-                          <p className="mt-0.5 text-[11px] text-[#8b93a7]">{g.date}</p>
-                        ) : null}
-                      </div>
-                      <p className="numeral shrink-0 text-white/85">{g.score}</p>
-                    </li>
-                  ))}
+                  {block.games.map((g, i) => {
+                    const row = (
+                      <>
+                        <div className="flex min-w-0 items-center gap-2">
+                          {g.opponentTeamId ? (
+                            <TeamMark teamId={g.opponentTeamId} size="xs" />
+                          ) : null}
+                          <div className="min-w-0">
+                            <p className="text-cream">
+                              <span
+                                className={cn(
+                                  "numeral mr-2 inline-block w-4 font-semibold",
+                                  g.result === "W"
+                                    ? "text-emerald-400"
+                                    : g.result === "L"
+                                      ? "text-alert"
+                                      : "text-white/60",
+                                )}
+                              >
+                                {g.result || "—"}
+                              </span>
+                              {g.atVs} {g.opponent}
+                            </p>
+                            {g.date ? (
+                              <p className="mt-0.5 text-[11px] text-[#8b93a7]">{g.date}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                        <p className="numeral shrink-0 text-white/85">{g.score}</p>
+                      </>
+                    );
+                    const key = `${abbrev}-${g.date}-${g.opponent}-${i}`;
+                    const clickable = g.gamePk != null || Boolean(g.espnEventId);
+                    return (
+                      <li key={key}>
+                        <EspnExtrasGameLink
+                          gamePk={g.gamePk}
+                          espnEventId={g.espnEventId}
+                          className={cn(
+                            "flex items-center justify-between gap-2 px-4 py-2 text-[12.5px]",
+                            clickable && "transition-colors hover:bg-white/[0.04]",
+                          )}
+                        >
+                          {row}
+                        </EspnExtrasGameLink>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
                 <p className="px-4 py-3 text-[12px] text-[#8b93a7]">Data unavailable</p>
@@ -622,26 +662,50 @@ function EspnPreviewExtras({
 
       {hasSeries && data.seasonSeries && (
         <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
-          <p className="border-b border-white/[0.07] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
-            Season series
-          </p>
+          <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-2.5">
+            {awayId ? <TeamMark teamId={awayId} size="xs" /> : null}
+            {homeId ? <TeamMark teamId={homeId} size="xs" /> : null}
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+              Season series
+            </p>
+          </div>
           <p className="border-b border-white/[0.06] px-4 py-2.5 text-[13px] text-cream">
             {data.seasonSeries.summary}
           </p>
           {data.seasonSeries.games.length > 0 && (
             <ul className="divide-y divide-white/[0.06]">
-              {data.seasonSeries.games.map((g, i) => (
-                <li
-                  key={`${g.date}-${g.label}-${i}`}
-                  className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2.5"
-                >
-                  <p className="text-[13px] text-cream">
-                    {g.label}{" "}
-                    <span className="numeral font-semibold text-white">{g.score}</span>
-                  </p>
-                  <p className="text-[11px] text-[#8b93a7]">{g.date}</p>
-                </li>
-              ))}
+              {data.seasonSeries.games.map((g, i) => {
+                const row = (
+                  <>
+                    <div className="flex min-w-0 items-center gap-2">
+                      {g.awayTeamId ? <TeamMark teamId={g.awayTeamId} size="xs" /> : null}
+                      <span className="text-[11px] text-white/40">@</span>
+                      {g.homeTeamId ? <TeamMark teamId={g.homeTeamId} size="xs" /> : null}
+                      <p className="text-[13px] text-cream">
+                        {g.label}{" "}
+                        <span className="numeral font-semibold text-white">{g.score}</span>
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-[#8b93a7]">{g.date}</p>
+                  </>
+                );
+                const key = `${g.date}-${g.label}-${i}`;
+                const clickable = g.gamePk != null || Boolean(g.espnEventId);
+                return (
+                  <li key={key}>
+                    <EspnExtrasGameLink
+                      gamePk={g.gamePk}
+                      espnEventId={g.espnEventId}
+                      className={cn(
+                        "flex flex-wrap items-center justify-between gap-2 px-4 py-2.5",
+                        clickable && "transition-colors hover:bg-white/[0.04]",
+                      )}
+                    >
+                      {row}
+                    </EspnExtrasGameLink>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
@@ -682,7 +746,12 @@ function EspnPreviewExtras({
               <tbody>
                 {data.teamStats.map((row) => (
                   <tr key={row.abbrev} className="border-b border-white/[0.05] last:border-0">
-                    <td className="px-3 py-2 font-semibold text-white">{row.abbrev}</td>
+                    <td className="px-3 py-2">
+                      <span className="inline-flex items-center gap-2 font-semibold text-white">
+                        {row.teamId ? <TeamMark teamId={row.teamId} size="xs" /> : null}
+                        {row.abbrev}
+                      </span>
+                    </td>
                     {(
                       [
                         row.avg,
@@ -718,9 +787,12 @@ function EspnPreviewExtras({
               key={block.abbrev}
               className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]"
             >
-              <p className="border-b border-white/[0.07] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
-                {block.abbrev} injuries
-              </p>
+              <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-2.5">
+                {block.teamId ? <TeamMark teamId={block.teamId} size="xs" /> : null}
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+                  {block.abbrev} injuries
+                </p>
+              </div>
               {block.players.length ? (
                 <ul className="divide-y divide-white/[0.06]">
                   {block.players.map((p, i) => (
@@ -754,6 +826,53 @@ function EspnPreviewExtras({
 
 function mlbAbbrevMatch(a: string, b: string): boolean {
   return a.toUpperCase() === b.toUpperCase();
+}
+
+/** Last-five / season-series row → MLB game page (resolved gamePk or ESPN event lookup). */
+function EspnExtrasGameLink({
+  gamePk,
+  espnEventId,
+  className,
+  children,
+}: {
+  gamePk: number | null;
+  espnEventId: string | null;
+  className?: string;
+  children: ReactNode;
+}) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+
+  if (gamePk != null) {
+    return (
+      <Link to={`/sports/mlb/game/${gamePk}`} className={className}>
+        {children}
+      </Link>
+    );
+  }
+
+  if (!espnEventId) {
+    return <div className={className}>{children}</div>;
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      className={cn(className, "w-full cursor-pointer text-left disabled:opacity-60")}
+      onClick={() => {
+        if (busy) return;
+        setBusy(true);
+        void resolveMlbGamePkFromEspnEvent(espnEventId)
+          .then((pk) => {
+            if (pk != null) navigate(`/sports/mlb/game/${pk}`);
+          })
+          .finally(() => setBusy(false));
+      }}
+    >
+      {children}
+    </button>
+  );
 }
 
 function BbrefPreviewStack({
