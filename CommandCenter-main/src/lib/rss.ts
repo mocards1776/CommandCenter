@@ -1674,7 +1674,7 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       teamFilter: { espnId: "24", abbrev: "STL" },
       days: 14,
       maxItems: 40,
-      // Always surface finals even when ESPN lags on recap copy.
+      // Finals may stub when ESPN lags; previews only when ESPN has written copy.
       stubWithoutArticle: true,
     });
   }
@@ -1691,7 +1691,7 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       lookAheadDays: 1,
       // League volume is high — prefer finals + today's previews.
       preferFinals: true,
-      // Don't leave the feed empty when ESPN article copy is thin/late.
+      // Finals may stub; MLB previews still require real ESPN preview text.
       stubWithoutArticle: true,
     });
   }
@@ -2298,11 +2298,12 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
           return [pitchers, records || null, when].filter(Boolean).join(" · ") || `First pitch — ${matchup}.`;
         };
 
-        // Scoreboard-only fallback — never leave the feed empty when recap fetch fails.
-        // MLB previews still list from the scoreboard when ESPN has no story yet.
+        // Scoreboard-only fallback for finals/live — MLB previews require real ESPN preview copy.
         const scoreboardStub = () => {
           if (c.isPreview) {
-            if (linkSport !== "mlb" && !opts.stubWithoutArticle) return null;
+            // Baseball: never list a preview without written preview text.
+            if (linkSport === "mlb") return null;
+            if (!opts.stubWithoutArticle) return null;
             return stubItem("preview", `Preview: ${matchup}`, previewCopy());
           }
           if (!opts.stubWithoutArticle) return null;
@@ -2408,7 +2409,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             } satisfies RssFeedItem;
           }
 
-          // Hollow previews: never list stubs like "Preview — STL @ PHI."
+          // Hollow previews: MLB requires real ESPN preview prose — no scoreboard stubs.
           // Finals/live may still stub when stubWithoutArticle is on.
           const headline = article?.headline?.trim() ?? "";
           const storyText = (article?.story ?? "")
@@ -2428,6 +2429,16 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
               `${headline} ${body}`,
             );
           if (hollow) return scoreboardStub();
+
+          // MLB: require an actual story body (or a description that reads like preview prose).
+          if (linkSport === "mlb") {
+            const hasStory = storyText.length >= 80;
+            const hasProseDesc =
+              description.length >= 60 &&
+              /[.!?]/.test(description) &&
+              !/^first pitch\b/i.test(description);
+            if (!hasStory && !hasProseDesc) return null;
+          }
 
           return {
             id: `preview-${c.eventId}`,
@@ -2457,10 +2468,27 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
     return db - da;
   });
 
-  // Drop hollow preview stubs that slipped through (e.g. "Preview — STL @ PHI.").
+  // Drop hollow preview stubs (scoreboard-only / pitcher-line previews with no story).
   const filtered = items.filter((it) => {
     const snip = (it.snippet ?? "").trim();
     const title = (it.title ?? "").trim();
+    const isMlbPreview =
+      linkSport === "mlb" &&
+      (/\/mlb\/preview\//i.test(it.link) || /^preview-/i.test(it.id) || /^Preview\s*:/i.test(title));
+    if (isMlbPreview) {
+      // Pitcher · record · time stubs and "Preview: AWY @ HOME" titles without prose.
+      if (/^Preview\s*:/i.test(title) && snip.length < 60) return false;
+      if (
+        /^[A-Za-z.'\-]+(?:\s+[A-Za-z.'\-]+)?\s+vs\s+[A-Za-z.'\-]+/i.test(snip) &&
+        snip.length < 100 &&
+        !/[.!?].{10,}/.test(snip)
+      ) {
+        return false;
+      }
+      if (/^First pitch\b/i.test(snip)) return false;
+      if (/fantasy baseball|optimize your fantasy|stay ahead of the game/i.test(snip)) return false;
+      if (snip.length < 40) return false;
+    }
     if (/^Preview\s*[—–-]/i.test(title) || /^Preview\s*[—–-]/i.test(snip)) {
       // Keep only if snippet has real prose beyond the stub pattern.
       if (/^Preview\s*[—–-].{0,80}$/i.test(snip) && !/[.!?].*\s\w{4,}/.test(snip.slice(20))) {

@@ -1533,19 +1533,29 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
           snippet,
         });
       } else {
-        const headline = article?.headline || `Preview: ${matchup}`;
-        const snippet =
-          article?.description?.trim() ||
-          (article?.story ? stripTags(article.story).slice(0, 200) : "") ||
-          `Game preview for ${matchup}.`;
+        const headline = article?.headline?.trim() || "";
+        const storyText = article?.story ? stripTags(article.story).trim() : "";
+        const description = (article?.description ?? "").replace(/^—\s*/, "").trim();
+        const body = description || storyText;
+        const promo =
+          /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook/i.test(
+            `${headline} ${body}`,
+          );
+        // Only list Cardinals previews when ESPN has written preview copy.
+        if (!headline || promo || body.length < 60 || /^game preview for\b/i.test(body)) {
+          continue;
+        }
+        if (storyText.length < 80 && !(description.length >= 60 && /[.!?]/.test(description))) {
+          continue;
+        }
         items.push({
           id: `preview-${eventId}`,
-          title: article?.headline ? headline : `Preview: ${matchup}`,
+          title: headline,
           link: `https://www.espn.com/mlb/preview/_/gameId/${eventId}`,
           author: "ESPN",
           publishedAt: event.date ?? comp.date ?? null,
           image: null,
-          snippet,
+          snippet: body.slice(0, 220),
         });
       }
     }

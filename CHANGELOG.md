@@ -2,6 +2,14 @@
 
 ---
 
+## MLB previews require ESPN text — August 18, 2026
+
+- MLB wraps/previews feeds only list a preview when ESPN has written preview copy (no scoreboard pitcher/time stubs).
+- Game readers omit the preview story card until ESPN publishes one; probables and leaders still show.
+- Cardinals edge wrap feed uses the same preview-text gate.
+
+---
+
 ## MLB player WAR scrape — August 18, 2026
 
 - Fix Baseball-Reference WAR parsing: the value-table slice was truncating on `entity-id="…"`, so season/career WAR never loaded.

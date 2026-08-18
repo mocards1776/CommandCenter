@@ -104,7 +104,7 @@ export function MlbGameDetail({
 
   const recap = useQuery({
     queryKey: [
-      "mlb-game-recap-v3",
+      "mlb-game-recap-v4",
       gamePk,
       espnEventId ?? null,
       box.data?.officialDate,

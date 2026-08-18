@@ -2144,12 +2144,8 @@ type EspnGameSummary = {
       status?: { type?: { state?: string; description?: string; detail?: string } };
       competitors?: {
         homeAway?: string;
-        records?: { type?: string; summary?: string }[];
-        probables?: { athlete?: { displayName?: string; shortName?: string } }[];
         team?: {
-          id?: string;
           displayName?: string;
-          shortDisplayName?: string;
           abbreviation?: string;
         };
       }[];
@@ -2157,27 +2153,6 @@ type EspnGameSummary = {
   };
   article?: EspnStorySrc;
   news?: { articles?: EspnStorySrc[] };
-  seasonseries?: { type?: string; summary?: string }[];
-  predictor?: {
-    homeTeam?: { gameProjection?: string };
-    awayTeam?: { gameProjection?: string };
-  };
-  lastFiveGames?: {
-    team?: { id?: string; abbreviation?: string };
-    events?: { gameResult?: string }[];
-  }[];
-  gameInfo?: {
-    venue?: { fullName?: string };
-    weather?: { temperature?: number; precipitation?: number };
-  };
-  injuries?: {
-    team?: { abbreviation?: string; displayName?: string };
-    injuries?: {
-      status?: string;
-      athlete?: { fullName?: string; displayName?: string };
-      details?: { type?: string; detail?: string };
-    }[];
-  }[];
 };
 
 function espnStoryBodyHtml(a: EspnStorySrc | undefined): string {
@@ -2206,138 +2181,6 @@ function espnStoryMentionsMatchup(
     return keys.some((k) => k && blob.includes(k.toLowerCase()));
   };
   return hits(homeName ?? null, homeAbbrev) && hits(awayName ?? null, awayAbbrev);
-}
-
-function lastFiveRecordLine(events: { gameResult?: string }[] | undefined): string | null {
-  if (!events?.length) return null;
-  let w = 0;
-  let l = 0;
-  for (const ev of events.slice(0, 5)) {
-    const r = String(ev.gameResult ?? "").toUpperCase();
-    if (r === "W") w += 1;
-    else if (r === "L") l += 1;
-  }
-  if (w + l === 0) return null;
-  return `${w}-${l}`;
-}
-
-function teamNick(team?: { displayName?: string; shortDisplayName?: string; abbreviation?: string } | null): string {
-  if (team?.shortDisplayName) return team.shortDisplayName;
-  const name = team?.displayName?.trim() ?? "";
-  const twoWord = name.match(/Red Sox|White Sox|Blue Jays/i)?.[0];
-  if (twoWord) return twoWord;
-  const parts = name.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) return parts[parts.length - 1]!;
-  return name || team?.abbreviation || "TBD";
-}
-
-/** When ESPN has no written preview, build one from the summary matchup card. */
-function buildEspnMlbPreviewFromSummary(
-  sum: EspnGameSummary,
-  eventId: string,
-  homeAbbrev: string,
-  awayAbbrev: string,
-): MlbGameRecap | null {
-  const comp = sum.header?.competitions?.[0];
-  const competitors = comp?.competitors ?? [];
-  const home = competitors.find((c) => c.homeAway === "home");
-  const away = competitors.find((c) => c.homeAway === "away");
-  const homeName = home?.team?.displayName || homeAbbrev;
-  const awayName = away?.team?.displayName || awayAbbrev;
-  const homeNick = teamNick(home?.team) || homeAbbrev;
-  const awayNick = teamNick(away?.team) || awayAbbrev;
-  const venue = sum.gameInfo?.venue?.fullName ?? null;
-  const awayPitch =
-    away?.probables?.[0]?.athlete?.displayName || away?.probables?.[0]?.athlete?.shortName || null;
-  const homePitch =
-    home?.probables?.[0]?.athlete?.displayName || home?.probables?.[0]?.athlete?.shortName || null;
-
-  const paras: string[] = [];
-  paras.push(
-    `${awayName} visit ${homeName}${venue ? ` at ${venue}` : ""}.`,
-  );
-
-  const series = (sum.seasonseries ?? []).find(
-    (s) => s.summary && /current|season/i.test(s.type ?? "") && !/preseason/i.test(s.type ?? ""),
-  );
-  if (series?.summary) paras.push(`${series.summary.replace(/\.$/, "")}.`);
-
-  if (awayPitch && homePitch) {
-    paras.push(`${awayPitch} is lined up against ${homePitch}.`);
-  } else if (awayPitch || homePitch) {
-    paras.push(`Probable starter: ${awayPitch || homePitch}.`);
-  }
-
-  const awayL5 = lastFiveRecordLine(
-    sum.lastFiveGames?.find((b) => (b.team?.id && away?.team?.id && b.team.id === away.team.id) ||
-      b.team?.abbreviation?.toUpperCase() === awayAbbrev.toUpperCase())?.events,
-  );
-  const homeL5 = lastFiveRecordLine(
-    sum.lastFiveGames?.find((b) => (b.team?.id && home?.team?.id && b.team.id === home.team.id) ||
-      b.team?.abbreviation?.toUpperCase() === homeAbbrev.toUpperCase())?.events,
-  );
-  if (awayL5 || homeL5) {
-    const bits = [
-      awayL5 ? `The ${awayNick} are ${awayL5} in their last five` : null,
-      homeL5 ? `the ${homeNick} are ${homeL5}` : null,
-    ].filter(Boolean);
-    if (bits.length) paras.push(`${bits.join("; ")}.`.replace(/^the /, "The "));
-  }
-
-  const awayPct = Number(sum.predictor?.awayTeam?.gameProjection);
-  const homePct = Number(sum.predictor?.homeTeam?.gameProjection);
-  if (Number.isFinite(awayPct) && Number.isFinite(homePct) && (awayPct > 0 || homePct > 0)) {
-    if (awayPct >= homePct) {
-      paras.push(`ESPN's matchup predictor gives the ${awayNick} a ${Math.round(awayPct)}% chance to win.`);
-    } else {
-      paras.push(`ESPN's matchup predictor gives the ${homeNick} a ${Math.round(homePct)}% chance to win.`);
-    }
-  }
-
-  const wx = sum.gameInfo?.weather;
-  if (wx?.temperature != null && Number.isFinite(wx.temperature)) {
-    const rain =
-      wx.precipitation != null && Number(wx.precipitation) > 0
-        ? ` with a ${wx.precipitation}% chance of rain`
-        : "";
-    paras.push(`First-pitch forecast${venue ? ` at ${venue}` : ""}: ${wx.temperature}°${rain}.`);
-  }
-
-  const injuryBits: string[] = [];
-  for (const block of sum.injuries ?? []) {
-    const nick = teamNick({
-      displayName: block.team?.displayName,
-      abbreviation: block.team?.abbreviation,
-    });
-    const names: string[] = [];
-    for (const inj of block.injuries ?? []) {
-      const status = inj.status ?? "";
-      if (/60-day|out for season/i.test(status)) continue;
-      if (!/day-to-day|day to day|7-day|10-day|15-day/i.test(status)) continue;
-      const name = inj.athlete?.fullName || inj.athlete?.displayName;
-      if (!name) continue;
-      const kind = inj.details?.type || inj.details?.detail;
-      names.push(kind ? `${name} (${kind})` : name);
-      if (names.length >= 2) break;
-    }
-    if (names.length) injuryBits.push(`${nick}: ${names.join(", ")}`);
-  }
-  if (injuryBits.length) paras.push(`Recent availability — ${injuryBits.join("; ")}.`);
-
-  const unique = [...new Set(paras.map((p) => p.replace(/\s+/g, " ").trim()).filter((p) => p.length > 8))];
-  if (unique.length < 2) return null;
-
-  const storyHtml = unique.map((p) => `<p>${p}</p>`).join("\n");
-  const storyText = unique.join(" ");
-  return {
-    espnEventId: eventId,
-    headline: `Preview: ${awayNick} at ${homeNick}`,
-    description: null,
-    storyHtml,
-    storyText,
-    url: `https://www.espn.com/mlb/preview/_/gameId/${eventId}`,
-    image: null,
-  };
 }
 
 function recapFromEspnStory(
@@ -2433,9 +2276,7 @@ export async function fetchEspnGameRecap(
       }
     }
 
-    if (isPregame) {
-      return buildEspnMlbPreviewFromSummary(sum, eventId, homeAbbrev, awayAbbrev);
-    }
+    // Pregame without a written ESPN article: no preview card (probables/leaders still show).
     return null;
   } catch {
     return null;
