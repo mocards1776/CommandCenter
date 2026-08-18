@@ -306,6 +306,12 @@ export type MlbManager = {
   /** American odds to be next manager fired (Kalshi / sportsbooks), when available. */
   firedOddsAmerican: string | null;
   firedOddsPct: number | null;
+  firedOddsUrl: string | null;
+  /** Kalshi Manager of the Year implied % (safety signal). */
+  motyOddsAmerican: string | null;
+  motyOddsPct: number | null;
+  motyOddsUrl: string | null;
+  motyLeague: "AL" | "NL" | null;
   divisionRank: number | null;
   contractNote: string | null;
   /** Parsed "year X of Y" estimate when we can infer it. */
@@ -5342,8 +5348,153 @@ export type MlbManagerFiredOdds = {
     impliedPct: number | null;
     source: string;
     url: string;
+    ticker?: string;
   }[];
 };
+
+export type MlbManagerMotyOdds = {
+  source: string;
+  checkedAt: string | null;
+  items: {
+    name: string;
+    league: "AL" | "NL";
+    oddsAmerican: string;
+    impliedPct: number;
+    source: string;
+    url: string;
+    ticker?: string;
+  }[];
+};
+
+function kalshiDollarProbClient(raw: string | null | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  if (n === 0) return 0;
+  return Math.max(0.01, Math.min(0.99, n));
+}
+
+function kalshiAmericanClient(p: number): string {
+  return p >= 0.5
+    ? `-${Math.round((100 * p) / (1 - p))}`
+    : `+${Math.round((100 * (1 - p)) / p)}`;
+}
+
+/** Browser/Node fallback when the sports edge is down — Kalshi is usually open. */
+async function fetchKalshiManagerFiredOddsDirect(): Promise<MlbManagerFiredOdds["items"]> {
+  try {
+    const res = await fetch(
+      "https://api.elections.kalshi.com/trade-api/v2/markets?limit=100&status=open&series_ticker=KXCOACHOUTMLB",
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      markets?: {
+        ticker?: string;
+        subtitle?: string;
+        yes_bid_dollars?: string | null;
+        yes_ask_dollars?: string | null;
+        last_price_dollars?: string | null;
+        yes_sub_title?: string | null;
+        no_sub_title?: string | null;
+        custom_strike?: { Coach?: string; Team?: string; Person?: string } | null;
+      }[];
+    };
+    const items: MlbManagerFiredOdds["items"] = [];
+    for (const m of data.markets ?? []) {
+      const name = (
+        m.custom_strike?.Coach ??
+        m.custom_strike?.Person ??
+        m.yes_sub_title ??
+        m.no_sub_title ??
+        ""
+      ).trim();
+      if (!name || /field|any other|tie|co-?winner/i.test(name)) continue;
+      const bid = kalshiDollarProbClient(m.yes_bid_dollars);
+      const ask = kalshiDollarProbClient(m.yes_ask_dollars);
+      const last = kalshiDollarProbClient(m.last_price_dollars);
+      let p: number | null = null;
+      if (bid != null && ask != null && (bid > 0 || ask > 0)) p = (bid + ask) / 2;
+      else p = (ask && ask > 0 ? ask : null) ?? (bid && bid > 0 ? bid : null) ?? (last && last > 0 ? last : null);
+      if (p == null || p <= 0) continue;
+      const subtitle = (m.subtitle ?? "").replace(/^:+\s*/, "").trim();
+      items.push({
+        name,
+        team: m.custom_strike?.Team ?? (subtitle || null),
+        oddsAmerican: kalshiAmericanClient(p),
+        impliedPct: Math.round(p * 1000) / 10,
+        source: "Kalshi",
+        url: `https://kalshi.com/markets/${(m.ticker ?? "").toLowerCase()}`,
+        ticker: m.ticker ?? "",
+      });
+    }
+    items.sort((a, b) => (b.impliedPct ?? 0) - (a.impliedPct ?? 0));
+    return items;
+  } catch {
+    return [];
+  }
+}
+
+async function fetchKalshiManagerMotyOddsDirect(): Promise<MlbManagerMotyOdds["items"]> {
+  const items: MlbManagerMotyOdds["items"] = [];
+  for (const s of [
+    { ticker: "KXMLBALMOTY", league: "AL" as const },
+    { ticker: "KXMLBNLMOTY", league: "NL" as const },
+  ]) {
+    try {
+      const res = await fetch(
+        `https://api.elections.kalshi.com/trade-api/v2/markets?limit=50&status=open&series_ticker=${s.ticker}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        markets?: {
+          ticker?: string;
+          yes_bid_dollars?: string | null;
+          yes_ask_dollars?: string | null;
+          last_price_dollars?: string | null;
+          yes_sub_title?: string | null;
+          no_sub_title?: string | null;
+          custom_strike?: { Person?: string; Coach?: string } | null;
+        }[];
+      };
+      for (const m of data.markets ?? []) {
+        const name = (
+          m.custom_strike?.Person ??
+          m.custom_strike?.Coach ??
+          m.yes_sub_title ??
+          m.no_sub_title ??
+          ""
+        ).trim();
+        if (!name || /tie|co-?winner|field|any other/i.test(name)) continue;
+        const bid = kalshiDollarProbClient(m.yes_bid_dollars);
+        const ask = kalshiDollarProbClient(m.yes_ask_dollars);
+        const last = kalshiDollarProbClient(m.last_price_dollars);
+        let p: number | null = null;
+        if (bid != null && ask != null && (bid > 0 || ask > 0)) p = (bid + ask) / 2;
+        else
+          p =
+            (ask && ask > 0 ? ask : null) ??
+            (bid && bid > 0 ? bid : null) ??
+            (last && last > 0 ? last : null);
+        if (p == null || p <= 0) continue;
+        items.push({
+          name,
+          league: s.league,
+          oddsAmerican: kalshiAmericanClient(p),
+          impliedPct: Math.round(p * 1000) / 10,
+          source: "Kalshi",
+          url: `https://kalshi.com/markets/${(m.ticker ?? "").toLowerCase()}`,
+          ticker: m.ticker ?? "",
+        });
+      }
+    } catch {
+      /* next */
+    }
+  }
+  items.sort((a, b) => b.impliedPct - a.impliedPct);
+  return items;
+}
 
 export async function fetchManagerFiredOdds(): Promise<MlbManagerFiredOdds> {
   const data = await invokeSports<{
@@ -5351,17 +5502,34 @@ export async function fetchManagerFiredOdds(): Promise<MlbManagerFiredOdds> {
     checkedAt?: string;
     items?: MlbManagerFiredOdds["items"];
   }>({ action: "managerFiredOdds" });
+  let items = data?.items ?? [];
+  if (!items.length) items = await fetchKalshiManagerFiredOddsDirect();
   return {
-    source: data?.source ?? "none",
-    checkedAt: data?.checkedAt ?? null,
-    items: data?.items ?? [],
+    source: items.length ? (data?.source ?? "Kalshi") : "none",
+    checkedAt: data?.checkedAt ?? new Date().toISOString(),
+    items,
+  };
+}
+
+export async function fetchManagerMotyOdds(): Promise<MlbManagerMotyOdds> {
+  const data = await invokeSports<{
+    source?: string;
+    checkedAt?: string;
+    items?: MlbManagerMotyOdds["items"];
+  }>({ action: "managerMotyOdds" });
+  let items = data?.items ?? [];
+  if (!items.length) items = await fetchKalshiManagerMotyOddsDirect();
+  return {
+    source: items.length ? (data?.source ?? "Kalshi") : "none",
+    checkedAt: data?.checkedAt ?? new Date().toISOString(),
+    items,
   };
 }
 
 function matchFiredOdds(
   managerName: string,
   items: MlbManagerFiredOdds["items"],
-): { american: string; pct: number | null } | null {
+): { american: string; pct: number | null; url: string | null } | null {
   const want = normalizePersonName(managerName);
   const last = want.split(" ").slice(-1)[0] ?? "";
   const hit =
@@ -5371,7 +5539,57 @@ function matchFiredOdds(
       return last.length >= 4 && (n.endsWith(last) || n.includes(want));
     });
   if (!hit) return null;
-  return { american: hit.oddsAmerican, pct: hit.impliedPct };
+  return { american: hit.oddsAmerican, pct: hit.impliedPct, url: hit.url || null };
+}
+
+function matchMotyOdds(
+  managerName: string,
+  items: MlbManagerMotyOdds["items"],
+  preferLeague?: "AL" | "NL" | null,
+): { american: string; pct: number; url: string | null; league: "AL" | "NL" } | null {
+  const want = normalizePersonName(managerName);
+  const last = want.split(" ").slice(-1)[0] ?? "";
+  const matches = items.filter((it) => {
+    const n = normalizePersonName(it.name);
+    return n === want || (last.length >= 4 && (n.endsWith(last) || n.includes(want)));
+  });
+  if (!matches.length) return null;
+  const preferred =
+    (preferLeague && matches.find((m) => m.league === preferLeague)) ||
+    [...matches].sort((a, b) => b.impliedPct - a.impliedPct)[0]!;
+  return {
+    american: preferred.oddsAmerican,
+    pct: preferred.impliedPct,
+    url: preferred.url || null,
+    league: preferred.league,
+  };
+}
+
+/** AL clubs — used to pick the right Manager of the Year market. */
+const AL_TEAM_IDS = new Set([
+  108, // LAA
+  110, // BAL
+  111, // BOS
+  114, // CLE
+  116, // DET
+  117, // HOU
+  118, // KC
+  133, // ATH/OAK
+  136, // SEA
+  139, // TB
+  140, // TEX
+  141, // TOR
+  142, // MIN
+  145, // CWS
+  147, // NYY
+]);
+
+function leagueForTeamId(teamId: number): "AL" | "NL" | null {
+  if (!teamId) return null;
+  if (AL_TEAM_IDS.has(teamId)) return "AL";
+  // Remaining MLB clubs are NL.
+  if (TEAM_COLORS[teamId]) return "NL";
+  return null;
 }
 
 function isGenericMlbHeadshot(url: string | null | undefined): boolean {
@@ -5688,6 +5906,8 @@ function buildHotSeat(
     shortLeash?: boolean;
     /** Kalshi (or book) implied % to be next manager fired. */
     firedOddsPct?: number | null;
+    /** Kalshi Manager of the Year implied % — higher = safer seat. */
+    motyOddsPct?: number | null;
   },
 ): { score: number; factors: HotSeatFactor[] } {
   const gbNum = input.gb === "—" || !input.gb ? 0 : parseFloat(input.gb) || 0;
@@ -5712,9 +5932,24 @@ function buildHotSeat(
     const marketPts = Math.round(marketPct * 3 * 10) / 10;
     factors.push({
       key: "market",
-      label: "Kalshi %",
+      label: "Next fired",
       points: marketPts,
       detail: `Kalshi ~${marketPct.toFixed(1)}% next-fired → +${marketPts.toFixed(1)} heat (dominates ranking)`,
+    });
+  }
+
+  const motyPct =
+    input.motyOddsPct != null && Number.isFinite(input.motyOddsPct)
+      ? Math.max(0, Math.min(99, input.motyOddsPct))
+      : null;
+  if (motyPct != null && motyPct > 0) {
+    // MOTY favorites are safer — cut heat. 40% MOTY → −40, 70% → −70 (capped).
+    const safetyPts = -Math.round(Math.min(70, motyPct) * 10) / 10;
+    factors.push({
+      key: "moty",
+      label: "Mgr of Year",
+      points: safetyPts,
+      detail: `Kalshi ~${motyPct.toFixed(1)}% Manager of the Year → ${safetyPts.toFixed(1)} heat (safer seat)`,
     });
   }
 
@@ -5866,13 +6101,16 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
     return managersListCache.data;
   }
   const season = currentSeason();
-  const [teamsRaw, standings, firedOdds] = await Promise.all([
+  const [teamsRaw, standings, firedOdds, motyOdds] = await Promise.all([
     mlbGet("teams", { sportId: "1", season: String(season) }) as Promise<{
       teams?: { id?: number; name?: string; abbreviation?: string }[];
     }>,
     fetchMlbStandings(),
     fetchManagerFiredOdds().catch(
       (): MlbManagerFiredOdds => ({ source: "none", checkedAt: null, items: [] }),
+    ),
+    fetchManagerMotyOdds().catch(
+      (): MlbManagerMotyOdds => ({ source: "none", checkedAt: null, items: [] }),
     ),
   ]);
 
@@ -5966,6 +6204,11 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
           mlbHeadshot(mgrId, 213);
 
         const odds = matchFiredOdds(mgr.person.fullName, firedOdds.items);
+        const moty = matchMotyOdds(
+          mgr.person.fullName,
+          motyOdds.items,
+          leagueForTeamId(team.id),
+        );
 
         const shortLeash =
           interim ||
@@ -5983,6 +6226,7 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
           interim,
           shortLeash,
           firedOddsPct: odds?.pct ?? null,
+          motyOddsPct: moty?.pct ?? null,
         });
 
         managers.push({
@@ -6000,6 +6244,11 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
           playoffOdds: playoff,
           firedOddsAmerican: odds?.american ?? null,
           firedOddsPct: odds?.pct ?? null,
+          firedOddsUrl: odds?.url ?? null,
+          motyOddsAmerican: moty?.american ?? null,
+          motyOddsPct: moty?.pct ?? null,
+          motyOddsUrl: moty?.url ?? null,
+          motyLeague: moty?.league ?? null,
           divisionRank: st?.rank ? Number(st.rank) : null,
           contractNote,
           contractTerm,
@@ -6035,7 +6284,7 @@ export async function fetchMlbManagers(): Promise<MlbManager[]> {
 /** Fast path for a single manager page — avoids rebuilding the full 30-team board. */
 async function fetchMlbManagerBaseLite(managerId: number): Promise<MlbManager> {
   const season = currentSeason();
-  const [person, standings, firedOdds] = await Promise.all([
+  const [person, standings, firedOdds, motyOdds] = await Promise.all([
     mlbGet(`people/${managerId}`, { hydrate: "currentTeam" }) as Promise<{
       people?: {
         id?: number;
@@ -6046,6 +6295,9 @@ async function fetchMlbManagerBaseLite(managerId: number): Promise<MlbManager> {
     fetchMlbStandings(),
     fetchManagerFiredOdds().catch(
       (): MlbManagerFiredOdds => ({ source: "none", checkedAt: null, items: [] }),
+    ),
+    fetchManagerMotyOdds().catch(
+      (): MlbManagerMotyOdds => ({ source: "none", checkedAt: null, items: [] }),
     ),
   ]);
   const p = person.people?.[0];
@@ -6095,6 +6347,7 @@ async function fetchMlbManagerBaseLite(managerId: number): Promise<MlbManager> {
   );
   const interim = photoMeta.interim;
   const odds = matchFiredOdds(p.fullName, firedOdds.items);
+  const moty = matchMotyOdds(p.fullName, motyOdds.items, leagueForTeamId(teamId));
   const shortLeash =
     isShortLeashContract(contractNote) || interim || (yearsWithTeam <= 1 && winPct < 0.42);
   const heat = buildHotSeat({
@@ -6107,6 +6360,7 @@ async function fetchMlbManagerBaseLite(managerId: number): Promise<MlbManager> {
     interim,
     shortLeash,
     firedOddsPct: odds?.pct ?? null,
+    motyOddsPct: moty?.pct ?? null,
   });
   const headshot =
     photoMeta.photo ||
@@ -6127,6 +6381,11 @@ async function fetchMlbManagerBaseLite(managerId: number): Promise<MlbManager> {
     playoffOdds: playoff,
     firedOddsAmerican: odds?.american ?? null,
     firedOddsPct: odds?.pct ?? null,
+    firedOddsUrl: odds?.url ?? null,
+    motyOddsAmerican: moty?.american ?? null,
+    motyOddsPct: moty?.pct ?? null,
+    motyOddsUrl: moty?.url ?? null,
+    motyLeague: moty?.league ?? null,
     divisionRank: st?.rank != null ? Number(st.rank) : null,
     contractNote,
     contractTerm,
@@ -6389,6 +6648,7 @@ export async function fetchMlbManagerDetail(managerId: number | string): Promise
     interim: isInterim,
     shortLeash,
     firedOddsPct: base.firedOddsPct,
+    motyOddsPct: base.motyOddsPct,
   });
 
   const playingCareer =

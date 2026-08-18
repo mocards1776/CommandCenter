@@ -2,6 +2,14 @@
 
 ---
 
+## MLB manager Kalshi odds — August 18, 2026
+
+- Restore **Next fired** Kalshi odds on MLB managers (list, hot seat, manager detail), with a direct Kalshi client fallback when the sports edge returns empty.
+- Add **Manager of the Year** (AL/NL) Kalshi odds as a safety signal on the same surfaces; MOTY % lowers hot-seat heat.
+- Sports edge: harden next-fired scrape (more markets, better name fields) and add `managerMotyOdds`.
+
+---
+
 ## MLB feed, contracts, extracts — August 18, 2026
 
 - MLB wraps list today's (and tomorrow's) game previews from the scoreboard when ESPN has no story yet — probable pitchers, records, and first-pitch time.

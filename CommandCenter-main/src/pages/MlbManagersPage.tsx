@@ -29,7 +29,7 @@ function heatLabel(rank: number): string {
 export default function MlbManagersPage() {
   const { user } = useAuth();
   const managers = useQuery({
-    queryKey: ["mlb-managers-v9"],
+    queryKey: ["mlb-managers-v10"],
     queryFn: fetchMlbManagers,
     staleTime: 180_000,
   });
@@ -162,9 +162,12 @@ export default function MlbManagersPage() {
           <p className="text-[11px] leading-relaxed text-[#8b93a7]">
             Hot seat ranks by <span className="text-amber-200">Kalshi next-fired %</span>{" "}
             first (market favorite = #1), then by heat score. Heat itself is dominated by
-            Kalshi, then win percentage, games back, playoff odds, and division place —
-            scaled by tenure. Interim / short-leash skippers skip the first-year cushion.
-            When MLB still lists a fired manager beside an interim, we show the interim only.
+            Kalshi next-fired, then cut by{" "}
+            <span className="text-emerald-200">Manager of the Year %</span> when a skipper
+            is a real MOTY contender, then win percentage, games back, playoff odds, and
+            division place — scaled by tenure. Interim / short-leash skippers skip the
+            first-year cushion. When MLB still lists a fired manager beside an interim, we
+            show the interim only.
           </p>
         </>
       )}
@@ -305,11 +308,11 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
                 className="numeral rounded-sm bg-amber-400/15 px-1.5 py-0.5 text-[11px] font-semibold text-amber-200"
                 title={
                   m.firedOddsAmerican
-                    ? `Kalshi weight · ${m.firedOddsAmerican}`
+                    ? `Kalshi next-fired · ${m.firedOddsAmerican}`
                     : "Kalshi implied next-fired %"
                 }
               >
-                {m.firedOddsPct.toFixed(1)}%
+                Fired {m.firedOddsPct.toFixed(1)}%
                 {m.firedOddsAmerican ? (
                   <span className="ml-1 text-[10px] font-medium text-amber-200/70">
                     {m.firedOddsAmerican}
@@ -321,7 +324,19 @@ function ManagerRow({ manager: m }: { manager: MlbManager }) {
                 className="numeral rounded-sm bg-white/[0.06] px-1.5 py-0.5 text-[11px] font-semibold text-amber-200"
                 title="Next-fired market price"
               >
-                {m.firedOddsAmerican}
+                Fired {m.firedOddsAmerican}
+              </span>
+            ) : null}
+            {m.motyOddsPct != null ? (
+              <span
+                className="numeral rounded-sm bg-emerald-400/15 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-200"
+                title={
+                  m.motyOddsAmerican
+                    ? `Kalshi ${m.motyLeague ?? ""} Manager of the Year · ${m.motyOddsAmerican}`
+                    : "Kalshi Manager of the Year %"
+                }
+              >
+                {m.motyLeague ? `${m.motyLeague} ` : ""}MOTY {m.motyOddsPct.toFixed(1)}%
               </span>
             ) : null}
           </div>

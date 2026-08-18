@@ -30,7 +30,7 @@ export default function MlbManagerPage() {
   const qc = useQueryClient();
 
   const detail = useQuery({
-    queryKey: ["mlb-manager-v9", managerId],
+    queryKey: ["mlb-manager-v10", managerId],
     queryFn: () => fetchMlbManagerDetail(managerId!),
     enabled: Boolean(managerId),
     staleTime: 180_000,
@@ -364,22 +364,59 @@ export default function MlbManagerPage() {
             No published manager contract terms found yet.
           </p>
         )}
-        {m.firedOddsPct != null || m.firedOddsAmerican ? (
-          <p className="mt-3 text-[12.5px] text-[#c8cdd8]">
-            Kalshi:{" "}
-            {m.firedOddsPct != null ? (
-              <span className="numeral font-semibold text-amber-200">
-                {m.firedOddsPct.toFixed(1)}%
-              </span>
+        {m.firedOddsPct != null || m.firedOddsAmerican || m.motyOddsPct != null ? (
+          <div className="mt-3 space-y-1.5 text-[12.5px] text-[#c8cdd8]">
+            {m.firedOddsPct != null || m.firedOddsAmerican ? (
+              <p>
+                <span className="text-[#8b93a7]">Next fired · </span>
+                {m.firedOddsUrl ? (
+                  <a
+                    href={m.firedOddsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="numeral font-semibold text-amber-200 hover:underline"
+                  >
+                    {m.firedOddsPct != null ? `${m.firedOddsPct.toFixed(1)}%` : null}
+                    {m.firedOddsAmerican
+                      ? `${m.firedOddsPct != null ? " · " : ""}${m.firedOddsAmerican}`
+                      : null}
+                  </a>
+                ) : (
+                  <span className="numeral font-semibold text-amber-200">
+                    {m.firedOddsPct != null ? `${m.firedOddsPct.toFixed(1)}%` : null}
+                    {m.firedOddsAmerican
+                      ? `${m.firedOddsPct != null ? " · " : ""}${m.firedOddsAmerican}`
+                      : null}
+                  </span>
+                )}
+                <span className="text-[#8b93a7]"> (heaviest hot-seat weight)</span>
+              </p>
             ) : null}
-            {m.firedOddsAmerican ? (
-              <span className="numeral text-amber-200/80">
-                {m.firedOddsPct != null ? " · " : ""}
-                {m.firedOddsAmerican}
-              </span>
+            {m.motyOddsPct != null ? (
+              <p>
+                <span className="text-[#8b93a7]">
+                  {m.motyLeague ? `${m.motyLeague} ` : ""}Mgr of the Year ·{" "}
+                </span>
+                {m.motyOddsUrl ? (
+                  <a
+                    href={m.motyOddsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="numeral font-semibold text-emerald-200 hover:underline"
+                  >
+                    {m.motyOddsPct.toFixed(1)}%
+                    {m.motyOddsAmerican ? ` · ${m.motyOddsAmerican}` : ""}
+                  </a>
+                ) : (
+                  <span className="numeral font-semibold text-emerald-200">
+                    {m.motyOddsPct.toFixed(1)}%
+                    {m.motyOddsAmerican ? ` · ${m.motyOddsAmerican}` : ""}
+                  </span>
+                )}
+                <span className="text-[#8b93a7]"> (safer seat)</span>
+              </p>
             ) : null}
-            <span className="text-[#8b93a7]"> (heaviest hot-seat weight)</span>
-          </p>
+          </div>
         ) : null}
       </section>
 

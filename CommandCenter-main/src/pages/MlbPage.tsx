@@ -63,7 +63,7 @@ export default function MlbPage() {
     favorites.data?.some((f) => (f.position ?? "").toLowerCase() === "manager"),
   );
   const managers = useQuery({
-    queryKey: ["mlb-managers-v9"],
+    queryKey: ["mlb-managers-v10"],
     queryFn: fetchMlbManagers,
     enabled: hasManagerFavs,
     staleTime: 180_000,

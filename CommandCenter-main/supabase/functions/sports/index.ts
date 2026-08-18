@@ -1257,14 +1257,61 @@ async function scrapeBbrefManagerPhoto(name: string) {
   };
 }
 
+function kalshiDollarProb(raw: string | null | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  if (n === 0) return 0;
+  return Math.max(0.01, Math.min(0.99, n));
+}
+
+function kalshiMidProb(m: {
+  yes_bid_dollars?: string | null;
+  yes_ask_dollars?: string | null;
+  last_price_dollars?: string | null;
+  yes_bid?: number | null;
+  yes_ask?: number | null;
+  last_price?: number | null;
+}): number | null {
+  const bid = kalshiDollarProb(m.yes_bid_dollars);
+  const ask = kalshiDollarProb(m.yes_ask_dollars);
+  const last = kalshiDollarProb(m.last_price_dollars);
+  let p: number | null = null;
+  if (bid != null && ask != null && (bid > 0 || ask > 0)) p = (bid + ask) / 2;
+  else p = (ask && ask > 0 ? ask : null) ?? (bid && bid > 0 ? bid : null) ?? (last && last > 0 ? last : null);
+  if (p == null || p <= 0) {
+    const cents = m.last_price ?? m.yes_ask ?? m.yes_bid ?? null;
+    if (cents == null || !(cents > 0)) return null;
+    p = Math.max(0.01, Math.min(0.99, cents / 100));
+  }
+  return p;
+}
+
+function kalshiAmerican(p: number): string {
+  return p >= 0.5
+    ? `-${Math.round((100 * p) / (1 - p))}`
+    : `+${Math.round((100 * (1 - p)) / p)}`;
+}
+
 async function scrapeManagerFiredOdds() {
-  // Prefer Kalshi public market search for "manager" MLB out contracts.
-  const items: { name: string; team?: string | null; oddsAmerican: string; impliedPct: number | null; source: string; url: string }[] = [];
+  // Kalshi "Baseball Managers Out" — next-fired / out before Dec 1.
+  const items: {
+    name: string;
+    team?: string | null;
+    oddsAmerican: string;
+    impliedPct: number | null;
+    source: string;
+    url: string;
+    ticker?: string;
+  }[] = [];
   try {
-    const url = "https://api.elections.kalshi.com/trade-api/v2/markets?limit=50&status=open&series_ticker=KXCOACHOUTMLB";
-    const res = await timedFetch(url, { headers: { Accept: "application/json", "User-Agent": UA } });
+    const url =
+      "https://api.elections.kalshi.com/trade-api/v2/markets?limit=100&status=open&series_ticker=KXCOACHOUTMLB";
+    const res = await timedFetch(url, {
+      headers: { Accept: "application/json", "User-Agent": UA },
+    });
     if (res.ok) {
-      const data = await res.json() as {
+      const data = (await res.json()) as {
         markets?: {
           title?: string;
           subtitle?: string;
@@ -1275,63 +1322,60 @@ async function scrapeManagerFiredOdds() {
           yes_bid_dollars?: string | null;
           yes_ask_dollars?: string | null;
           last_price_dollars?: string | null;
+          yes_sub_title?: string | null;
           no_sub_title?: string | null;
-          custom_strike?: { Coach?: string; Team?: string } | null;
+          custom_strike?: { Coach?: string; Team?: string; Person?: string } | null;
         }[];
-      };
-      const dollarProb = (raw: string | null | undefined): number | null => {
-        if (raw == null || raw === "") return null;
-        const n = Number(raw);
-        if (!Number.isFinite(n) || n <= 0) return null;
-        return Math.max(0.01, Math.min(0.99, n));
       };
       for (const m of data.markets ?? []) {
         const name =
-          (m.custom_strike?.Coach ?? m.no_sub_title ?? "").trim() ||
+          (
+            m.custom_strike?.Coach ??
+            m.custom_strike?.Person ??
+            m.yes_sub_title ??
+            m.no_sub_title ??
+            ""
+          ).trim() ||
           (() => {
             const title = `${m.title ?? ""} ${m.subtitle ?? ""}`;
-            // Legacy titles like "Will Matt Quatraro be out as manager..."
-            const nameMatch = title.match(/Will\s+([A-Z][a-zA-Z.'-]+(?:\s+[A-Z][a-zA-Z.']+){0,3})\s+be\s+out/i)
-              ?? title.match(/([A-Z][a-zA-Z.'-]+(?:\s+[A-Z][a-zA-Z.']+){1,3})/);
+            const nameMatch =
+              title.match(
+                /Will\s+([A-Z][a-zA-Z.'-]+(?:\s+[A-Z][a-zA-Z.']+){0,3})\s+be\s+out/i,
+              ) ?? title.match(/([A-Z][a-zA-Z.'-]+(?:\s+[A-Z][a-zA-Z.']+){1,3})/);
             return nameMatch?.[1]?.trim() ?? "";
           })();
-        if (!name || /field|any other/i.test(name)) continue;
-        // Prefer mid of bid/ask dollars; fall back to last trade, then legacy cent prices.
-        const bid = dollarProb(m.yes_bid_dollars);
-        const ask = dollarProb(m.yes_ask_dollars);
-        const last = dollarProb(m.last_price_dollars);
-        let p: number | null = null;
-        if (bid != null && ask != null) p = (bid + ask) / 2;
-        else p = ask ?? bid ?? last;
-        if (p == null) {
-          const cents = m.last_price ?? m.yes_ask ?? m.yes_bid ?? null;
-          if (cents == null) continue;
-          p = Math.max(0.01, Math.min(0.99, cents / 100));
-        }
-        const american = p >= 0.5
-          ? `-${Math.round((100 * p) / (1 - p))}`
-          : `+${Math.round((100 * (1 - p)) / p)}`;
+        if (!name || /field|any other|tie|co-?winner/i.test(name)) continue;
+        const p = kalshiMidProb(m);
+        if (p == null) continue;
+        const subtitle = (m.subtitle ?? "").replace(/^:+\s*/, "").trim();
         items.push({
           name,
-          team: m.custom_strike?.Team ?? null,
-          oddsAmerican: american,
+          team: m.custom_strike?.Team ?? (subtitle || null),
+          oddsAmerican: kalshiAmerican(p),
           impliedPct: Math.round(p * 1000) / 10,
           source: "Kalshi",
           url: `https://kalshi.com/markets/${(m.ticker ?? "").toLowerCase()}`,
+          ticker: m.ticker ?? "",
         });
       }
     }
-  } catch { /* */ }
+  } catch {
+    /* */
+  }
 
   if (!items.length) {
     // Fallback: scrape BetOnline futures page text for american odds lines.
     try {
-      const html = await (await timedFetch(
-        "https://www.betonline.ag/sportsbook/futures-and-props/mlb-specials/manager-fired",
-        { headers: { "User-Agent": UA, Accept: "text/html" } },
-        SEARCH_MS,
-      )).text();
-      for (const m of html.matchAll(/([A-Z][a-z]+(?:\s+[A-Z][a-z.]+)+)\s*<[^>]*>\s*([+-]\d{2,4})/g)) {
+      const html = await (
+        await timedFetch(
+          "https://www.betonline.ag/sportsbook/futures-and-props/mlb-specials/manager-fired",
+          { headers: { "User-Agent": UA, Accept: "text/html" } },
+          SEARCH_MS,
+        )
+      ).text();
+      for (const m of html.matchAll(
+        /([A-Z][a-z]+(?:\s+[A-Z][a-z.]+)+)\s*<[^>]*>\s*([+-]\d{2,4})/g,
+      )) {
         items.push({
           name: m[1],
           team: null,
@@ -1341,11 +1385,91 @@ async function scrapeManagerFiredOdds() {
           url: "https://www.betonline.ag/sportsbook/futures-and-props/mlb-specials/manager-fired",
         });
       }
-    } catch { /* */ }
+    } catch {
+      /* */
+    }
   }
 
   items.sort((a, b) => (b.impliedPct ?? 0) - (a.impliedPct ?? 0));
-  return { source: items[0]?.source ?? "none", checkedAt: new Date().toISOString(), items: items.slice(0, 20) };
+  return {
+    source: items[0]?.source ?? "none",
+    checkedAt: new Date().toISOString(),
+    items,
+  };
+}
+
+/** AL + NL Kalshi Manager of the Year markets — safety signal for hot seat. */
+async function scrapeManagerMotyOdds() {
+  const items: {
+    name: string;
+    league: "AL" | "NL";
+    oddsAmerican: string;
+    impliedPct: number;
+    source: string;
+    url: string;
+    ticker: string;
+  }[] = [];
+
+  const series: { ticker: string; league: "AL" | "NL" }[] = [
+    { ticker: "KXMLBALMOTY", league: "AL" },
+    { ticker: "KXMLBNLMOTY", league: "NL" },
+  ];
+
+  for (const s of series) {
+    try {
+      const url =
+        `https://api.elections.kalshi.com/trade-api/v2/markets?limit=50&status=open&series_ticker=${s.ticker}`;
+      const res = await timedFetch(url, {
+        headers: { Accept: "application/json", "User-Agent": UA },
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        markets?: {
+          title?: string;
+          ticker?: string;
+          yes_bid?: number | null;
+          yes_ask?: number | null;
+          last_price?: number | null;
+          yes_bid_dollars?: string | null;
+          yes_ask_dollars?: string | null;
+          last_price_dollars?: string | null;
+          yes_sub_title?: string | null;
+          no_sub_title?: string | null;
+          custom_strike?: { Person?: string; Coach?: string } | null;
+        }[];
+      };
+      for (const m of data.markets ?? []) {
+        const name = (
+          m.custom_strike?.Person ??
+          m.custom_strike?.Coach ??
+          m.yes_sub_title ??
+          m.no_sub_title ??
+          ""
+        ).trim();
+        if (!name || /tie|co-?winner|field|any other/i.test(name)) continue;
+        const p = kalshiMidProb(m);
+        if (p == null) continue;
+        items.push({
+          name,
+          league: s.league,
+          oddsAmerican: kalshiAmerican(p),
+          impliedPct: Math.round(p * 1000) / 10,
+          source: "Kalshi",
+          url: `https://kalshi.com/markets/${(m.ticker ?? "").toLowerCase()}`,
+          ticker: m.ticker ?? "",
+        });
+      }
+    } catch {
+      /* next series */
+    }
+  }
+
+  items.sort((a, b) => b.impliedPct - a.impliedPct);
+  return {
+    source: items.length ? "Kalshi" : "none",
+    checkedAt: new Date().toISOString(),
+    items,
+  };
 }
 
 async function scrapeNflCoachFiredOdds() {
@@ -2711,6 +2835,13 @@ Deno.serve(async (req: Request) => {
   if (body.action === "managerFiredOdds") {
     try {
       return json(await scrapeManagerFiredOdds());
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
+    }
+  }
+  if (body.action === "managerMotyOdds") {
+    try {
+      return json(await scrapeManagerMotyOdds());
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
     }
