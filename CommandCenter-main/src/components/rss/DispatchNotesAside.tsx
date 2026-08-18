@@ -374,9 +374,9 @@ export default function DispatchNotesAside() {
       </section>
 
       <LeadersBoard title="NL Leaders" rows={nlLeaders} pending={standings.isPending} errored={standings.isError} />
-      <LeadersBoard title="AL Leaders" rows={alLeaders} pending={standings.isPending} errored={standings.isError} />
-
       <WildCardBoard title="NL Wild Card" rows={nlWcRows} pending={wildCardNl.isPending} errored={wildCardNl.isError} />
+
+      <LeadersBoard title="AL Leaders" rows={alLeaders} pending={standings.isPending} errored={standings.isError} />
       <WildCardBoard title="AL Wild Card" rows={alWcRows} pending={wildCardAl.isPending} errored={wildCardAl.isError} />
     </div>
   );
@@ -384,7 +384,7 @@ export default function DispatchNotesAside() {
 
 type MlbLeaderRow = MlbStandingRow & { divisionLetter: string };
 
-/** One row per division (E/C/W) showing that division's current leader. */
+/** Division winners (E/C/W) — same column set as the wild-card board (MLB.com layout). */
 function LeadersBoard({
   title,
   rows,
@@ -404,47 +404,72 @@ function LeadersBoard({
       ) : errored || !rows.length ? (
         <p className="text-chalk font-body text-[12px]">Couldn’t load leaders.</p>
       ) : (
-        <table className="w-full text-left text-[12px]">
-          <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
-            <tr>
-              <th className="pb-2 pr-1 font-medium">Team</th>
-              <th className="numeral px-1 pb-2 font-medium">W</th>
-              <th className="numeral px-1 pb-2 font-medium">L</th>
-              <th className="numeral px-1 pb-2 font-medium">PCT</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const isStl = r.teamId === STL_TEAM_ID;
-              return (
-                <tr
-                  key={`${r.teamId || r.team}-${r.divisionLetter}`}
-                  className={cn("border-t border-white/[0.05]", isStl && "bg-accent/10")}
-                >
-                  <td className="py-1.5 pr-1">
-                    <span className="inline-flex min-w-0 items-center gap-1.5">
-                      {r.teamId ? <TeamMark teamId={r.teamId} size="xs" /> : null}
-                      <Link
-                        to={teamPagePath(r.teamId)}
-                        className={cn(
-                          "truncate hover:underline",
-                          isStl ? "text-cream font-semibold" : "text-cream/90 hover:text-accent",
-                        )}
-                      >
-                        {r.abbrev || r.team} - {r.divisionLetter}
-                      </Link>
-                    </span>
-                  </td>
-                  <td className="numeral text-cream px-1 py-1.5">{r.wins}</td>
-                  <td className="numeral text-chalk px-1 py-1.5">{r.losses}</td>
-                  <td className="numeral text-chalk px-1 py-1.5">
-                    {r.pct ? (r.pct.startsWith(".") ? r.pct : r.pct.replace(/^0/, "")) : "—"}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[420px] text-left text-[11px]">
+            <thead className="text-chalk-dim text-[9px] uppercase tracking-[0.12em]">
+              <tr>
+                <th className="pb-2 pr-1 font-medium">Team</th>
+                <th className="numeral px-1 pb-2 font-medium">W</th>
+                <th className="numeral px-1 pb-2 font-medium">L</th>
+                <th className="numeral px-1 pb-2 font-medium">PCT</th>
+                <th className="numeral px-1 pb-2 font-medium">WCGB</th>
+                <th className="numeral px-1 pb-2 font-medium">L10</th>
+                <th className="numeral px-1 pb-2 font-medium">STRK</th>
+                <th className="numeral px-1 pb-2 font-medium">DIFF</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const isStl = r.teamId === STL_TEAM_ID;
+                return (
+                  <tr
+                    key={`${r.teamId || r.team}-${r.divisionLetter}`}
+                    className={cn(
+                      "border-t border-white/[0.05]",
+                      isStl && "bg-accent/10",
+                      i % 2 === 1 && !isStl && "bg-white/[0.02]",
+                    )}
+                  >
+                    <td className="py-1.5 pr-1">
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        {r.teamId ? <TeamMark teamId={r.teamId} size="xs" /> : null}
+                        <Link
+                          to={teamPagePath(r.teamId)}
+                          className={cn(
+                            "truncate hover:underline",
+                            isStl ? "text-cream font-semibold" : "text-cream/90 hover:text-accent",
+                          )}
+                        >
+                          {r.abbrev || r.team} - {r.divisionLetter}
+                        </Link>
+                      </span>
+                    </td>
+                    <td className="numeral text-cream px-1 py-1.5">{r.wins}</td>
+                    <td className="numeral text-chalk px-1 py-1.5">{r.losses}</td>
+                    <td className="numeral text-chalk px-1 py-1.5">
+                      {r.pct ? (r.pct.startsWith(".") ? r.pct : r.pct.replace(/^0/, "")) : "—"}
+                    </td>
+                    <td className="numeral text-chalk px-1 py-1.5">{r.wcgb || "—"}</td>
+                    <td className="numeral text-chalk px-1 py-1.5">{r.l10 || "—"}</td>
+                    <td className="numeral text-chalk px-1 py-1.5">{r.streak || "—"}</td>
+                    <td
+                      className={cn(
+                        "numeral px-1 py-1.5",
+                        r.runDiff > 0
+                          ? "text-emerald-400"
+                          : r.runDiff < 0
+                            ? "text-alert"
+                            : "text-chalk",
+                      )}
+                    >
+                      {r.runDiff > 0 ? `+${r.runDiff}` : r.runDiff}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

@@ -4858,12 +4858,14 @@ async function fetchEspnPlayoffMap(): Promise<
 
 function shortDivName(name?: string): string {
   if (!name) return "Division";
-  return name
-    .replace("National League ", "NL ")
-    .replace("American League ", "AL ")
-    .replace("Central", "Central")
-    .replace("East", "East")
-    .replace("West", "West");
+  const trimmed = name.trim();
+  if (/^(AL|NL)\s+(East|Central|West)$/i.test(trimmed)) {
+    const [, lg, div] = trimmed.match(/^(AL|NL)\s+(East|Central|West)$/i)!;
+    return `${lg.toUpperCase()} ${div[0]!.toUpperCase()}${div.slice(1).toLowerCase()}`;
+  }
+  return trimmed
+    .replace(/^National League\s+/i, "NL ")
+    .replace(/^American League\s+/i, "AL ");
 }
 
 export async function fetchMlbStandings(): Promise<MlbDivisionTable[]> {

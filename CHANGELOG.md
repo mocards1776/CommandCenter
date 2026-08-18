@@ -2,6 +2,14 @@
 
 ---
 
+## Standings: Leaders above Wild Card (MLB.com layout) — August 18, 2026
+
+- Notes aside pairs **NL/AL Leaders** (E/C/W) directly above each league’s wild-card board.
+- Leaders tables use the same W/L/PCT/WCGB/L10/STRK/DIFF columns as wild card.
+- Dispatch standings article includes the same Leaders → Wild Card blocks.
+
+---
+
 ## ESPN game extras: logos + clickable games — August 18, 2026
 
 - Matchup predictor, last 5, season series, team stats, and injuries show team logos (`TeamMark`).

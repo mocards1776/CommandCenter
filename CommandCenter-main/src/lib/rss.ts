@@ -2973,6 +2973,7 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
     fetchMlbStandings,
     fetchMlbWildCardStandings,
     fetchMlbLeaders,
+    divisionLeaders,
     mlbTeamLogo,
     mlbHeadshot,
     mlbLeagueLogo,
@@ -3063,6 +3064,40 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
     </section>`;
   };
 
+  const leadersBlock = (
+    title: string,
+    rows: ReturnType<typeof divisionLeaders>,
+  ) => {
+    if (!rows.length) return "";
+    const body = rows
+      .map((r) => {
+        const logo = r.teamId
+          ? `<img class="mlb-standings-logo" src="${esc(mlbTeamLogo(r.teamId))}" alt="" width="22" height="22" loading="lazy" />`
+          : "";
+        const label = `${r.abbrev || r.team} - ${r.divisionLetter}`;
+        const name = r.teamId
+          ? `<a class="mlb-standings-team" href="${esc(teamPagePath(r.teamId))}">${esc(label)}</a>`
+          : esc(label);
+        return `<tr>
+          <td class="mlb-standings-team-cell">${logo}${name}</td>
+          <td class="mlb-standings-wl numeral">${r.wins}&ndash;${r.losses}</td>
+          <td class="numeral">${esc(r.pct)}</td>
+          <td class="numeral">${esc(r.wcgb || "—")}</td>
+        </tr>`;
+      })
+      .join("");
+    return `<section class="mlb-standings-block">
+      <h2>${esc(title)}</h2>
+      <table class="mlb-standings-table">
+        <thead><tr><th>Team</th><th>W-L</th><th>Pct</th><th>WCGB</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </section>`;
+  };
+
+  const nlDivLeaders = divisionLeaders(standings, "NL");
+  const alDivLeaders = divisionLeaders(standings, "AL");
+
   const shortName = (name: string) => {
     const bits = name.trim().split(/\s+/);
     if (bits.length < 2) return name;
@@ -3116,10 +3151,12 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
   };
 
   const standingsHtml = `
-    <p class="mlb-digest-lede">Division standings and wild-card boards for ${esc(dateKey)}.</p>
+    <p class="mlb-digest-lede">Division standings, division leaders, and wild-card boards for ${esc(dateKey)}.</p>
     <div class="mlb-standings-feed">
       ${divisionHtml}
+      ${leadersBlock("NL Leaders", nlDivLeaders)}
       ${wcBlock("NL Wild Card", nlWc)}
+      ${leadersBlock("AL Leaders", alDivLeaders)}
       ${wcBlock("AL Wild Card", alWc)}
     </div>
   `.trim();
