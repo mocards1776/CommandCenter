@@ -24,7 +24,7 @@ export const FYAN_STORY: ClientStory = {
   portraitCredit: "St. Louis Daily Globe-Democrat, November 6, 1890 · Wikimedia Commons",
   family: {
     names: "Ken, Wally and John Thompson",
-    relation: "Great-great-great-grandsons",
+    relation: "Great-great-grandsons",
     body: "Marshfield is the through-line.",
   },
   cover: {
@@ -39,7 +39,7 @@ export const FYAN_STORY: ClientStory = {
   address: "Robert Washington Fyan",
   cityLine: "Marshfield, Missouri · 13th Congressional District",
   heroLine:
-    "Great-great-great-grandfather of Ken, Wally and John Thompson. A Union major who became the 14th-circuit judge, then a three-term Democrat in a district that could go either way.",
+    "Great-great-grandfather of Ken, Wally and John Thompson. A Union major who became the 14th-circuit judge, then a three-term Democrat in a district that could go either way.",
   support:
     "He sat in the House under three presidents — Chester A. Arthur, then Benjamin Harrison, then Grover Cleveland again — and never under a Republican majority. The fights that defined those years were silver, the tariff, and, in 1893, a financial panic. The rest of this scroll is that story, in order.",
   keyNumbers: [
@@ -577,7 +577,7 @@ export const FYAN_STORY: ClientStory = {
   notebook: {
     title: "The record",
     paragraphs: [
-      "Robert Washington Fyan (March 11, 1835 – July 28, 1896). Great-great-great-grandfather of Ken, Wally and John Thompson. Democrat of Marshfield. Missouri’s 13th, 48th Congress (1883–85) and 52nd–53rd (1891–95).",
+      "Robert Washington Fyan (March 11, 1835 – July 28, 1896). Great-great-grandfather of Ken, Wally and John Thompson. Democrat of Marshfield. Missouri’s 13th, 48th Congress (1883–85) and 52nd–53rd (1891–95).",
       "Elections: 1882 won 13,904–12,424–6,122 (plurality 1,480 over Cloud). 1884 lost the nomination; Wade 50.3%, A. L. Thomas 45.0%. 1886–88 out. 1890 won 49.9%–41.6%–8.5%. 1892 won 57.05%–42.82%. 1894 retired; Raney 51.3%–Fox 48.7%.",
       "Maps: 48th 13th = Barry, Christian, Dallas, Greene, Jasper, Lawrence, McDonald, Newton, Polk, Stone, Taney, Webster. 50th–52nd drops Dallas, Jasper, Polk. 53rd keeps Webster, adds Wright, Texas, and the Lead Belt; Greene to the 7th.",
       "Votes: Nay to table free silver (1892). Yea on Geary (1892). Nay on Sherman repeal (1893). Yea on Wilson tariff House passage (1894). Yea to forfeit Texas-Pacific grants (1884). DW-NOMINATE −0.335: middle of the Democrats, left of most of the House. Missed 42.3% of roll calls.",
