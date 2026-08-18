@@ -129,7 +129,7 @@ export function MlbGameDetail({
 
   const espnExtras = useQuery({
     queryKey: [
-      "mlb-espn-game-extras-v2",
+      "mlb-espn-game-extras-v3",
       gamePk,
       espnEventId ?? null,
       box.data?.officialDate,
