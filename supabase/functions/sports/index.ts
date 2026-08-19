@@ -42,6 +42,50 @@ async function timedFetch(
   }
 }
 
+/** BBRef HTML — direct first, then a CORS/CF open proxy when Cloudflare challenges the edge IP. */
+async function fetchBbrefHtml(
+  url: string,
+  init: RequestInit = {},
+  ms = FETCH_MS,
+): Promise<{ url: string; html: string } | null> {
+  const tryDirect = async () => {
+    const res = await timedFetch(url, init, ms);
+    const html = await res.text();
+    if (/just a moment|cf-browser-verification/i.test(html)) return null;
+    if (html.length < 8_000) return null;
+    return { url: res.url || url, html };
+  };
+  try {
+    const direct = await tryDirect();
+    if (direct) return direct;
+  } catch {
+    /* proxy next */
+  }
+  try {
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    const res = await timedFetch(
+      proxyUrl,
+      {
+        headers: {
+          "User-Agent": UA,
+          Accept: "text/html,application/json",
+        },
+      },
+      Math.max(ms, 20_000),
+    );
+    if (!res.ok) return null;
+    const html = await res.text();
+    if (/just a moment|cf-browser-verification/i.test(html) || html.length < 8_000) return null;
+    // allorigins keeps the target URL opaque — use the requested URL for redirects we already know.
+    const finalUrl =
+      html.match(/canonical"\s+href="(https:\/\/www\.baseball-reference\.com\/players\/[^"]+)"/i)?.[1] ??
+      url;
+    return { url: finalUrl, html };
+  } catch {
+    return null;
+  }
+}
+
 async function withBudget<T>(ms: number, work: () => Promise<T>, fallback: T): Promise<T> {
   try {
     return await Promise.race([
@@ -184,12 +228,21 @@ async function scrapeBbref(name: string, mlbId?: number | null) {
     searchable.match(
       /Service Time(?:\s*\([^)]*\))?\s*<\/strong>\s*:?\s*([0-9]+(?:\.[0-9]+)?)/i,
     ) ?? searchable.match(/Service Time[^:]*:\s*([0-9]+(?:\.[0-9]+)?)/i);
+  // Same page already has value tables — return WAR so the player card can use contract
+  // payload when playerExtras is blank (CF / soft-timeout).
+  const valueSlice = extractBbrefWarTables(searchable);
+  let { seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(valueSlice, "b_war");
+  if (seasonWar == null && careerWar == null) {
+    ({ seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(valueSlice, "p_war"));
+  }
   return {
     source: "baseball-reference",
     url: playerUrl,
     name,
     contractStatus,
     serviceTime: stMatch?.[1] ?? null,
+    seasonWar,
+    careerWar,
     currentSalary: latest
       ? {
           year: latest.year,
@@ -2005,19 +2058,21 @@ async function loadBbrefPlayerHtml(
     try {
       const directUrl =
         `https://www.baseball-reference.com/redirect.fcgi?player=1&mlb_ID=${Math.trunc(mlbId)}`;
-      const directRes = await timedFetch(directUrl, {
-        headers: { "User-Agent": UA, Accept: "text/html" },
-        redirect: "follow",
-      }, HEAVY_MS);
-      const html = await directRes.text();
+      const page = await fetchBbrefHtml(
+        directUrl,
+        { headers: { "User-Agent": UA, Accept: "text/html" }, redirect: "follow" },
+        HEAVY_MS,
+      );
       if (
-        /\/players\/[a-z]\/[a-z0-9]+\.shtml/i.test(directRes.url) &&
-        html.length > 20_000 &&
-        !/just a moment|cf-browser-verification/i.test(html)
+        page &&
+        /\/players\/[a-z]\/[a-z0-9]+\.shtml/i.test(page.url) &&
+        page.html.length > 20_000
       ) {
-        // mlb_ID redirect is authoritative — don't drop the page on a brittle H1 name check
-        // (that used to blank WAR even when the right player loaded).
-        return { url: directRes.url, html };
+        // Only trust the redirect when the page is the requested player. A wrong
+        // mlbId used to return another player's WAR with no name check.
+        if (!name || bbrefPageMatchesName(page.html, name)) {
+          return page;
+        }
       }
     } catch {
       /* fall through to name search */
@@ -2026,12 +2081,14 @@ async function loadBbrefPlayerHtml(
 
   const q = encodeURIComponent(name.trim());
   const searchUrl = `https://www.baseball-reference.com/search/search.fcgi?search=${q}`;
-  const searchRes = await timedFetch(searchUrl, {
-    headers: { "User-Agent": UA, Accept: "text/html" },
-    redirect: "follow",
-  });
-  let html = await searchRes.text();
-  let playerUrl = searchRes.url;
+  const searchPage = await fetchBbrefHtml(
+    searchUrl,
+    { headers: { "User-Agent": UA, Accept: "text/html" }, redirect: "follow" },
+    SEARCH_MS + FETCH_MS,
+  );
+  if (!searchPage) return null;
+  let html = searchPage.html;
+  let playerUrl = searchPage.url;
   const want = name.trim().toLowerCase();
   if (!/\/players\/[a-z]\/[a-z0-9]+\.shtml/i.test(playerUrl)) {
     const linkRe = /href="(\/players\/[a-z]\/[a-z0-9]+\.shtml)"[^>]*>([^<]{2,80})<\/a>/gi;
@@ -2049,11 +2106,20 @@ async function loadBbrefPlayerHtml(
     const path = (best && best.score >= 40 ? best.path : null) ?? fallback?.[1];
     if (!path) return null;
     playerUrl = `https://www.baseball-reference.com${path}`;
-    html = await (
-      await timedFetch(playerUrl, {
-        headers: { "User-Agent": UA, Accept: "text/html", Referer: searchUrl },
-      })
-    ).text();
+    const playerPage = await fetchBbrefHtml(
+      playerUrl,
+      {
+        headers: {
+          "User-Agent": UA,
+          Accept: "text/html",
+          Referer: searchUrl,
+        },
+      },
+      FETCH_MS,
+    );
+    if (!playerPage) return null;
+    html = playerPage.html;
+    playerUrl = playerPage.url;
   }
   if (/just a moment|cf-browser-verification/i.test(html)) return null;
   if (name && !bbrefPageMatchesName(html, name)) return null;

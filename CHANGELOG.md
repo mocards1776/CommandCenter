@@ -7,6 +7,7 @@
 - RUWT game cards show TV/stream networks (MLB.TV OK) with logos when ESPN provides them.
 - RUWT boards are Chicago **today only** for MLB, NFL, and soccer (no multi-day soccer slate).
 - Player WAR: FanGraphs leaders run in parallel with BBRef inside `playerExtras`; drop the soft-timeout race that could return blank WAR while the scrape was still running; deploy the sports edge function with the full source (not a stale GitHub pin).
+- **Burleson blank-WAR fix:** BBRef fetch falls back through `allorigins` when Cloudflare blocks the edge IP; contract scrape also returns season/career WAR; player card prefers BBRef service time (`3.029`) over ESPN “5th Season” and can display WAR from the contract payload when extras is empty.
 
 ---
 

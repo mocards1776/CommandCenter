@@ -31,6 +31,7 @@ import {
   fetchPlayerContract,
   fetchProspectRankMaps,
   playerNewsSourceLabel,
+  preferServiceTime,
   prospectRankLabels,
   prospectRanksFor,
   teamPagePath,
@@ -118,7 +119,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
 
   const contract = useQuery({
     queryKey: [
-      "mlb-player-contract-v10",
+      "mlb-player-contract-v11",
       playerId,
       player.data?.name,
       player.data?.useName,
@@ -248,7 +249,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
   });
 
   const extras = useQuery({
-    queryKey: ["mlb-player-extras-v6", playerId, player.data?.name, player.data?.teamAbbrev, isPitcherPreview],
+    queryKey: ["mlb-player-extras-v7", playerId, player.data?.name, player.data?.teamAbbrev, isPitcherPreview],
     queryFn: () =>
       fetchMlbPlayerExtras(player.data!.name, {
         isPitcher: isPitcherPreview,
@@ -256,7 +257,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         teamAbbrev: player.data!.teamAbbrev,
       }),
     enabled: Boolean(player.data?.name),
-    staleTime: 60 * 60_000,
+    staleTime: 5 * 60_000,
     retry: 2,
   });
 
@@ -321,14 +322,17 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         player={p}
         accent={accent}
         isFavorite={isFav}
-        serviceTime={extras.data?.serviceTime ?? contract.data?.serviceTime ?? null}
+        serviceTime={preferServiceTime(
+          extras.data?.serviceTime,
+          contract.data?.serviceTime,
+        )}
         extrasPending={extras.isPending || extras.isFetching}
         contractPending={contract.isPending || contract.isFetching}
         salary={contract.data?.currentSalary?.display ?? null}
         salaryYear={contract.data?.currentSalary?.year ?? null}
         contractStatus={contract.data?.contractStatus ?? null}
-        seasonWar={extras.data?.seasonWar ?? null}
-        careerWar={extras.data?.careerWar ?? null}
+        seasonWar={extras.data?.seasonWar ?? contract.data?.seasonWar ?? null}
+        careerWar={extras.data?.careerWar ?? contract.data?.careerWar ?? null}
         warRank={extras.data?.warRank ?? null}
         warOf={extras.data?.warOf ?? null}
         pipelineRank={scouting.data?.pipelineRank ?? null}

@@ -369,7 +369,34 @@ export type MlbPlayerContract = {
   totalValue?: string | null;
   /** MLB service time (YY.DDD) when scraped from BBRef. */
   serviceTime?: string | null;
+  /** WAR from the same BBRef page as the contract scrape (fallback when extras is blank). */
+  seasonWar?: number | null;
+  careerWar?: number | null;
 };
+
+/** Prefer BBRef-style service time (3.029) over ESPN “5th Season” fluff. */
+export function preferServiceTime(
+  ...candidates: Array<string | null | undefined>
+): string | null {
+  const score = (s: string) => {
+    const t = s.trim();
+    if (/^\d+\.\d{1,3}$/.test(t)) return 4;
+    if (/^\d+$/.test(t)) return 3;
+    if (/\bseason\b/i.test(t)) return 1;
+    return 2;
+  };
+  let best: string | null = null;
+  let bestScore = -1;
+  for (const c of candidates) {
+    if (!c || !String(c).trim()) continue;
+    const s = score(String(c));
+    if (s > bestScore) {
+      best = String(c).trim();
+      bestScore = s;
+    }
+  }
+  return best;
+}
 
 function currentSeason(): number {
   return new Date().getFullYear();
@@ -3811,6 +3838,8 @@ function mapContractPayload(data: unknown): MlbPlayerContract | null {
     aav?: string | null;
     totalValue?: string | null;
     serviceTime?: string | null;
+    seasonWar?: number | null;
+    careerWar?: number | null;
   };
   if (
     d.error &&
@@ -3827,8 +3856,15 @@ function mapContractPayload(data: unknown): MlbPlayerContract | null {
     Boolean(d.totalValue) ||
     Boolean(d.aav) ||
     Boolean(d.serviceTime) ||
+    d.seasonWar != null ||
+    d.careerWar != null ||
     (d.salaryHistory?.length ?? 0) > 0;
   if (!hasAnything) return null;
+  const asNum = (v: unknown): number | null => {
+    if (v == null || v === "") return null;
+    const n = typeof v === "number" ? v : Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
   return {
     contractStatus: d.contractStatus ?? null,
     currentSalary: d.currentSalary ?? null,
@@ -3839,6 +3875,8 @@ function mapContractPayload(data: unknown): MlbPlayerContract | null {
     aav: d.aav ?? null,
     totalValue: d.totalValue ?? null,
     serviceTime: d.serviceTime ?? null,
+    seasonWar: asNum(d.seasonWar),
+    careerWar: asNum(d.careerWar),
   };
 }
 
@@ -4849,18 +4887,21 @@ export async function fetchMlbPlayerExtras(
     }
   }
 
-  // BBRef often times out from edge IPs — fall back to ESPN season experience.
-  if (!mapped?.serviceTime) {
-    const exp = await fetchEspnExperienceFallback(name);
-    if (exp) {
-      mapped = {
-        serviceTime: exp,
-        seasonWar: mapped?.seasonWar ?? null,
-        careerWar: mapped?.careerWar ?? null,
-        warRank: mapped?.warRank ?? null,
-        warOf: mapped?.warOf ?? null,
-        url: mapped?.url ?? null,
-      };
+  // Don't poison the card with ESPN “5th Season” when BBRef service time is coming
+  // from the contract scrape — only use ESPN if we still have nothing.
+  if (!mapped?.serviceTime || /\bseason\b/i.test(mapped.serviceTime)) {
+    if (!mapped?.serviceTime) {
+      const exp = await fetchEspnExperienceFallback(name);
+      if (exp) {
+        mapped = {
+          serviceTime: exp,
+          seasonWar: mapped?.seasonWar ?? null,
+          careerWar: mapped?.careerWar ?? null,
+          warRank: mapped?.warRank ?? null,
+          warOf: mapped?.warOf ?? null,
+          url: mapped?.url ?? null,
+        };
+      }
     }
   }
 
