@@ -18,6 +18,7 @@ import {
   fetchMlbPlayer,
   fetchMlbPlayerBio,
   fetchMlbPlayerExtras,
+  fetchMlbPlayerWar,
   mlbHeadshotFallbacks,
   fetchMlbPlayerGameLog,
   fetchMlbPlayerHighlights,
@@ -248,8 +249,27 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
     retry: 1,
   });
 
+  const war = useQuery({
+    queryKey: [
+      "mlb-player-war-v1",
+      playerId,
+      player.data?.name,
+      player.data?.teamAbbrev,
+      isPitcherPreview,
+    ],
+    queryFn: () =>
+      fetchMlbPlayerWar(player.data!.name, {
+        isPitcher: isPitcherPreview,
+        mlbId: Number(playerId) || null,
+        teamAbbrev: player.data!.teamAbbrev,
+      }),
+    enabled: Boolean(player.data?.name),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
   const extras = useQuery({
-    queryKey: ["mlb-player-extras-v8", playerId, player.data?.name, player.data?.teamAbbrev, isPitcherPreview],
+    queryKey: ["mlb-player-extras-v9", playerId, player.data?.name, player.data?.teamAbbrev, isPitcherPreview],
     queryFn: () =>
       fetchMlbPlayerExtras(player.data!.name, {
         isPitcher: isPitcherPreview,
@@ -328,11 +348,16 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         )}
         extrasPending={extras.isPending || extras.isFetching}
         contractPending={contract.isPending || contract.isFetching}
+        warPending={war.isPending || war.isFetching}
         salary={contract.data?.currentSalary?.display ?? null}
         salaryYear={contract.data?.currentSalary?.year ?? null}
         contractStatus={contract.data?.contractStatus ?? null}
-        seasonWar={extras.data?.seasonWar ?? contract.data?.seasonWar ?? null}
-        careerWar={extras.data?.careerWar ?? contract.data?.careerWar ?? null}
+        seasonWar={
+          war.data?.seasonWar ?? extras.data?.seasonWar ?? contract.data?.seasonWar ?? null
+        }
+        careerWar={
+          war.data?.careerWar ?? extras.data?.careerWar ?? contract.data?.careerWar ?? null
+        }
         warRank={extras.data?.warRank ?? null}
         warOf={extras.data?.warOf ?? null}
         pipelineRank={scouting.data?.pipelineRank ?? null}
@@ -820,6 +845,7 @@ function PlayerHeader({
   serviceTime,
   extrasPending,
   contractPending,
+  warPending,
   salary,
   salaryYear,
   contractStatus,
@@ -840,6 +866,7 @@ function PlayerHeader({
   serviceTime?: string | null;
   extrasPending?: boolean;
   contractPending?: boolean;
+  warPending?: boolean;
   salary?: string | null;
   salaryYear?: string | null;
   contractStatus?: string | null;
@@ -973,7 +1000,7 @@ function PlayerHeader({
                     ? seasonWar.toFixed(1)
                     : careerWar != null
                       ? careerWar.toFixed(1)
-                      : extrasPending
+                      : warPending
                         ? "…"
                         : "—"}
                 </p>

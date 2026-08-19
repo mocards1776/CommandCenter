@@ -4653,12 +4653,35 @@ function mapPlayerExtrasPayload(data: unknown): MlbPlayerExtras | null {
 }
 
 /** ESPN "11th Season" style experience — fallback when BBRef service time is down. */
-async function fetchEspnExperienceFallback(playerName: string): Promise<string | null> {
+async function fetchEspnExperienceFallback(
+  playerName: string,
+  timeoutMs = 8_000,
+): Promise<string | null> {
+  try {
+    const ctl = new AbortController();
+    const timer = window.setTimeout(() => ctl.abort(), timeoutMs);
+    try {
+      return await fetchEspnExperienceFallbackInner(playerName, ctl.signal);
+    } finally {
+      window.clearTimeout(timer);
+    }
+  } catch {
+    return null;
+  }
+}
+
+async function fetchEspnExperienceFallbackInner(
+  playerName: string,
+  signal: AbortSignal,
+): Promise<string | null> {
   try {
     const searchUrl =
       "https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&type=player&limit=8&query=" +
       encodeURIComponent(playerName.trim());
-    const searchRes = await fetch(searchUrl, { headers: { Accept: "application/json" } });
+    const searchRes = await fetch(searchUrl, {
+      headers: { Accept: "application/json" },
+      signal,
+    });
     if (!searchRes.ok) return null;
     const searchJson = (await searchRes.json()) as {
       items?: { id?: string; displayName?: string; league?: string; type?: string }[];
@@ -4679,7 +4702,7 @@ async function fetchEspnExperienceFallback(playerName: string): Promise<string |
     if (!hit?.id) return null;
     const athRes = await fetch(
       `https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${hit.id}`,
-      { headers: { Accept: "application/json" } },
+      { headers: { Accept: "application/json" }, signal },
     );
     if (!athRes.ok) return null;
     const ath = (await athRes.json()) as {
@@ -4861,18 +4884,48 @@ async function invokeSportsAction(
         window.clearTimeout(timer);
       }
     } catch {
-      /* fall through to supabase-js */
+      /* timed out or network error */
     }
   }
+  // supabase-js invoke can hang indefinitely in mobile PWAs — cap it too.
   try {
-    const { data } = await supabase.functions.invoke("sports", { body });
-    return data ?? null;
+    const result = await Promise.race([
+      supabase.functions.invoke("sports", { body }),
+      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+    if (!result || typeof result !== "object" || !("data" in result)) return null;
+    return (result as { data: unknown }).data ?? null;
   } catch {
     return null;
   }
 }
 
-/** Service time + WAR from Baseball Reference (via sports edge). */
+/** Season + career WAR from BBRef daily dumps (fast sports edge action). */
+export async function fetchMlbPlayerWar(
+  playerName: string,
+  opts?: { isPitcher?: boolean; mlbId?: number | null; teamAbbrev?: string | null },
+): Promise<Pick<MlbPlayerExtras, "seasonWar" | "careerWar" | "url"> | null> {
+  const name = playerName.trim();
+  if (name.length < 3 && !(opts?.mlbId != null && opts.mlbId > 0)) return null;
+  const warBody = {
+    action: "playerWar",
+    name,
+    isPitcher: Boolean(opts?.isPitcher),
+    mlbId: opts?.mlbId ?? null,
+    teamAbbrev: opts?.teamAbbrev ?? null,
+  };
+  const mapped = mapPlayerExtrasPayload(await invokeSportsAction(warBody, 28_000));
+  if (mapped && (mapped.seasonWar != null || mapped.careerWar != null)) {
+    return {
+      seasonWar: mapped.seasonWar,
+      careerWar: mapped.careerWar,
+      url: mapped.url,
+    };
+  }
+  return fetchWarViaEdgeRetry(name, opts);
+}
+
+/** Service time + WAR rank from Baseball Reference (via sports edge). */
 export async function fetchMlbPlayerExtras(
   playerName: string,
   opts?: { isPitcher?: boolean; mlbId?: number | null; teamAbbrev?: string | null },
@@ -4886,56 +4939,8 @@ export async function fetchMlbPlayerExtras(
     mlbId: opts?.mlbId ?? null,
     teamAbbrev: opts?.teamAbbrev ?? null,
   };
-  const warBody = {
-    action: "playerWar",
-    name,
-    isPitcher: Boolean(opts?.isPitcher),
-    mlbId: opts?.mlbId ?? null,
-    teamAbbrev: opts?.teamAbbrev ?? null,
-  };
 
-  // Dump-only WAR is fast and reliable — don't wait on the HTML extras scrape.
-  const warP = invokeSportsAction(warBody, 18_000);
-  const extrasP = invokeSportsAction(extrasBody, 22_000);
-
-  const warMapped = mapPlayerExtrasPayload(await warP);
-  let extrasRaw: unknown = null;
-  if (warMapped && (warMapped.seasonWar != null || warMapped.careerWar != null)) {
-    extrasRaw = await Promise.race([
-      extrasP,
-      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 5_000)),
-    ]);
-  } else {
-    extrasRaw = await extrasP;
-  }
-  let mapped = mapPlayerExtrasPayload(extrasRaw);
-
-  if (warMapped && (warMapped.seasonWar != null || warMapped.careerWar != null)) {
-    mapped = {
-      serviceTime: mapped?.serviceTime ?? null,
-      seasonWar: warMapped.seasonWar,
-      careerWar: warMapped.careerWar,
-      warRank: mapped?.warRank ?? null,
-      warOf: mapped?.warOf ?? null,
-      url: warMapped.url ?? mapped?.url ?? null,
-    };
-  }
-
-  // Edge used to return serviceTime with blank WAR when BBRef HTML was CF-blocked.
-  // FanGraphs / dump retry only if the fast path still has nothing.
-  if (mapped?.seasonWar == null && mapped?.careerWar == null) {
-    const local = await fetchWarViaEdgeRetry(name, opts);
-    if (local) {
-      mapped = {
-        serviceTime: mapped?.serviceTime ?? null,
-        seasonWar: local.seasonWar,
-        careerWar: local.careerWar,
-        warRank: mapped?.warRank ?? null,
-        warOf: mapped?.warOf ?? null,
-        url: local.url ?? mapped?.url ?? null,
-      };
-    }
-  }
+  let mapped = mapPlayerExtrasPayload(await invokeSportsAction(extrasBody, 22_000));
 
   // Don't poison the card with ESPN “5th Season” when BBRef service time is coming
   // from the contract scrape — only use ESPN if we still have nothing.
