@@ -2399,15 +2399,14 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
           return [pitchers, records || null, when].filter(Boolean).join(" · ") || `First pitch — ${matchup}.`;
         };
 
-        // Scoreboard stubs: MLB never lists without written ESPN copy (wrap or preview).
-        // Earlier stubs kept feeds full when ESPN lagged, but Dispatch opened empty readers.
+        // Scoreboard stubs fill the feed when ESPN recap/preview copy isn't up yet.
+        // MLB/NFL items open the game reader (box score + wrap when available), not a
+        // blank article extract — so stubs are safe for baseball/football.
         const scoreboardStub = () => {
-          if (linkSport === "mlb") return null;
+          if (linkSport !== "mlb" && linkSport !== "nfl" && !opts.stubWithoutArticle) return null;
           if (c.isPreview) {
-            if (!opts.stubWithoutArticle) return null;
             return stubItem("preview", `Preview: ${matchup}`, previewCopy());
           }
-          if (!opts.stubWithoutArticle) return null;
           if (c.isLive) {
             return stubItem("live", `Live: ${scoreBit}`, `In progress — ${matchup}.`);
           }
@@ -2527,6 +2526,29 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
                 bestLen = len;
               }
             }
+            if (best) article = best;
+          }
+
+          // MLB previews: same candidate search — article alone is often empty early.
+          if (linkSport === "mlb" && c.isPreview && !article) {
+            const candidates: StorySrc[] = [];
+            if (
+              !isMediaClip(sum.article) &&
+              (sum.article?.headline || sum.article?.story || sum.article?.description)
+            ) {
+              candidates.push(sum.article);
+            }
+            for (const a of newsArticles) candidates.push(a);
+            let best: StorySrc | undefined;
+            let bestLen = 0;
+            for (const cand of candidates) {
+              if (!storyMentionsMatchup(cand)) continue;
+              const len = bodyLen(cand);
+              if (len > bestLen || (!best && cand.headline)) {
+                best = cand;
+                bestLen = len;
+              }
+            }
             article = best;
           }
 
@@ -2558,7 +2580,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
                 description.length >= 60 &&
                 /[.!?]/.test(description) &&
                 !/^final\b/i.test(description);
-              if (!hasStory && !hasProseDesc) return null;
+              if (!hasStory && !hasProseDesc) return scoreboardStub();
             } else {
               if (!opts.stubWithoutArticle && (!snippet || snippet.length < 40)) return null;
               if (opts.stubWithoutArticle && (!snippet || snippet.length < 40)) {
@@ -2611,7 +2633,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
               description.length >= 60 &&
               /[.!?]/.test(description) &&
               !/^first pitch\b/i.test(description);
-            if (!hasStory && !hasProseDesc) return null;
+            if (!hasStory && !hasProseDesc) return scoreboardStub();
           }
 
           return {
@@ -2643,10 +2665,13 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   });
 
   // Drop hollow preview stubs (scoreboard-only / pitcher-line previews with no story).
-  // Also drop MLB scoreboard wrap stubs if any slipped through.
   const filtered = items.filter((it) => {
     const snip = (it.snippet ?? "").trim();
     const title = (it.title ?? "").trim();
+    const isScoreboardStub =
+      linkSport === "mlb" &&
+      (/^Final\s*:/i.test(title) || /^Preview\s*:/i.test(title) || /^Live\s*:/i.test(title));
+    if (isScoreboardStub) return true;
     const isMlbWrap =
       linkSport === "mlb" &&
       (/\/mlb\/recap\//i.test(it.link) || /^wrap-/i.test(it.id) || /^Final\s*:/i.test(title));
