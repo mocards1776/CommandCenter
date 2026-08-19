@@ -337,6 +337,7 @@ export default function ScrollStory({ story, clientMode = true, label }: Props) 
                     ch.id === "bank" ||
                     ch.id === "call" ||
                     ch.id === "family" ||
+                    ch.id === "harrison" ||
                     ch.id === "votes" ||
                     ch.id === "bills" ||
                     ch.id === "congress" ||

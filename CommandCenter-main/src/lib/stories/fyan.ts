@@ -462,6 +462,21 @@ export const FYAN_STORY: ClientStory = {
       stat: { value: "Union", label: "24th & 46th Missouri Infantry" },
     },
     {
+      id: "harrison",
+      eyebrow: "The first marriage",
+      title: "Elizabeth Harrison. Christmas Day, 1866.",
+      body:
+        "Robert Washington Fyan married Elizabeth Harrison in Laclede County, Missouri, on December 25, 1866. She was born December 21, 1847, in Phelps County, to John Brazil Harrison and Elizabeth Dodson Harrison.\n\nTwo children were born to the marriage in Marshfield: Robert Harrison “Harry” Fyan, November 3, 1867, and May Fyan, May 2, 1871. May died September 30, 1871, not quite five months old. Elizabeth Harrison Fyan died of illness on April 29, 1874. The illness is not named here. She is not Lizzie Hyer, who died in the 1880 cyclone.",
+      visual: "none",
+      bullets: [
+        "Married December 25, 1866 · Laclede County",
+        "Harry · born November 3, 1867 · Marshfield",
+        "May · born May 2, 1871 · died September 30, 1871",
+        "Elizabeth Harrison Fyan · died April 29, 1874",
+      ],
+      stat: { value: "1866", label: "Christmas Day wedding · Laclede County" },
+    },
+    {
       id: "bench",
       eyebrow: "The bench",
       title: "Seventeen years as circuit judge — then Congress.",
@@ -584,6 +599,7 @@ export const FYAN_STORY: ClientStory = {
       "Times: Arthur, Harrison, Cleveland II. Democratic House throughout his service. 1890 U.S. city milk about 14¢ a half-gallon.",
       "Presidential maps (appended): 1884 Cleveland 53.49%–46.02% statewide; Political Graveyard has no 1884 county plurality. 1888 and 1892 county fills: Cleveland over most of the state; Harrison in the Ozarks, German counties, St. Louis city and county — including Webster and Greene. 1892 Webster Harrison 45.38%–41.59%. 2024 Trump 58.49%; Harris only Jackson, Boone, St. Louis County, St. Louis city; Webster Trump 80.67%. Nominate analogue (119th Congress): Wyden −0.335, Courtney −0.337, Sykes −0.332; House Dem median −0.396. Missouri now: Cleaver −0.454, Bell −0.472; Wagner +0.392 through Burlison +0.734; Hawley +0.819, Schmitt +0.884.",
       "Photograph (appended): chest-up studio likeness, distinct from the 1890 Globe-Democrat sketch. Find A Grave memorial 23932295, added by Linda Barnes, April 29, 2023.",
+      "First marriage (family record): Elizabeth Harrison, born December 21, 1847, Phelps County, to John Brazil Harrison and Elizabeth Dodson Harrison. Married Laclede County, December 25, 1866. Children, both Marshfield: Robert Harrison “Harry” Fyan, November 3, 1867; May Fyan, May 2, 1871–September 30, 1871. Elizabeth Harrison Fyan died of illness April 29, 1874 (illness not named). Distinct from Elizabeth “Lizzie” P. Hyer, 1880 cyclone.",
     ],
   },
   researchDate: "August 18, 2026",
@@ -601,5 +617,6 @@ export const FYAN_STORY: ClientStory = {
     "Wikipedia, 1884 / 1888 / 1892 / 2024 United States presidential election in Missouri (statewide totals; 1892 and 2024 county tables)",
     "VoteView HSall_members.csv, 119th Congress DW-NOMINATE first dimension (retrieved August 18, 2026)",
     "Find A Grave memorial 23932295, photographic portrait added by Linda Barnes, April 29, 2023 (distinct from the Globe-Democrat sketch)",
+    "Thompson family record: Elizabeth Harrison Fyan (1847–1874); Robert Harrison “Harry” Fyan (b. 1867); May Fyan (1871)",
   ],
 };
