@@ -1685,36 +1685,10 @@ async function invokeRss<T>(body: Record<string, string>): Promise<T> {
 }
 
 export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFeed> {
-  if (feedUrl === "synthetic:cardinals-wraps") {
-    return fetchEspnWrapsFeed({
-      feedUrl,
-      title: "Cardinals wraps & previews",
-      description: "St. Louis Cardinals game wraps and previews from ESPN",
-      sportPath: "baseball/mlb",
-      linkSport: "mlb",
-      teamFilter: { espnId: "24", abbrev: "STL" },
-      days: 14,
-      maxItems: 40,
-      // Wait for real ESPN wrap/preview prose — scoreboard stubs open empty readers.
-      stubWithoutArticle: false,
-    });
-  }
-  if (feedUrl === "synthetic:mlb-wraps") {
-    return fetchEspnWrapsFeed({
-      feedUrl,
-      title: "MLB wraps & previews",
-      description: "League-wide MLB game wraps and previews from ESPN",
-      sportPath: "baseball/mlb",
-      linkSport: "mlb",
-      days: 5,
-      maxItems: 60,
-      // Today + tomorrow so first-pitch previews aren't dropped after midnight.
-      lookAheadDays: 1,
-      // League volume is high — prefer finals + today's previews.
-      preferFinals: true,
-      // Wait for real ESPN wrap/preview prose — scoreboard stubs open empty readers.
-      stubWithoutArticle: false,
-    });
+  // MLB + Cardinals wraps are built+cached on the rss edge (15-min cron warms them
+  // even when Dispatch is closed). Client still polls while open for faster pickup.
+  if (feedUrl === "synthetic:cardinals-wraps" || feedUrl === "synthetic:mlb-wraps") {
+    return invokeRss<RssFeed>({ mode: "feed", feedUrl });
   }
   if (feedUrl === "synthetic:nfl-wraps") {
     return fetchEspnWrapsFeed({

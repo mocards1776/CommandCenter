@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 // Proxies RSS feeds and extracts full article text (reader mode) so the
 // browser never hits third-party origins directly.
@@ -9,6 +10,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 // POST body:
 //   { mode: "feed", feedUrl?: string }
 //   { mode: "read", url: string }
+//   { mode: "warm-wraps" }  — cron: rebuild MLB + Cardinals wrap caches
 // Successful extracts are kept in-memory briefly so idle prefetches make opens instant.
 
 const CORS: Record<string, string> = {
@@ -1439,6 +1441,53 @@ async function fetchText(url: string, attempt = 0): Promise<string> {
 const CARDINALS_TEAM_ID = "24"; // ESPN team id (MLB.com uses 138)
 const CARDINALS_ABBREV = "STL";
 const SYNTHETIC_CARDINALS_WRAPS = "synthetic:cardinals-wraps";
+const SYNTHETIC_MLB_WRAPS = "synthetic:mlb-wraps";
+/** Serve cached wraps for up to 20m; cron refreshes every 15m. */
+const FEED_CACHE_TTL_MS = 20 * 60_000;
+
+function adminClient() {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return null;
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+async function readFeedCache(
+  feedUrl: string,
+  maxAgeMs: number,
+): Promise<Record<string, unknown> | null> {
+  const admin = adminClient();
+  if (!admin) return null;
+  try {
+    const { data, error } = await admin
+      .from("rss_feed_cache")
+      .select("payload, updated_at")
+      .eq("feed_url", feedUrl)
+      .maybeSingle();
+    if (error || !data?.payload) return null;
+    const at = Date.parse(String(data.updated_at));
+    if (!Number.isFinite(at) || Date.now() - at > maxAgeMs) return null;
+    return data.payload as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+async function writeFeedCache(feedUrl: string, payload: Record<string, unknown>): Promise<void> {
+  const admin = adminClient();
+  if (!admin) return;
+  try {
+    await admin.from("rss_feed_cache").upsert({
+      feed_url: feedUrl,
+      payload,
+      updated_at: new Date().toISOString(),
+    });
+  } catch {
+    /* ignore cache write failures */
+  }
+}
 
 function isSyntheticFeedUrl(raw: string): boolean {
   return raw.startsWith("synthetic:");
@@ -1512,7 +1561,7 @@ function isPreviewGame(
   );
 }
 
-async function handleCardinalsWrapsFeed(): Promise<Response> {
+async function buildCardinalsWrapsFeed(): Promise<Record<string, unknown>> {
   const items: FeedItem[] = [];
   const seen = new Set<string>();
 
@@ -1659,18 +1708,257 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
     return tb - ta;
   });
 
-  return json({
+  return {
     title: "Cardinals wraps & previews",
     description: "St. Louis Cardinals game wraps and previews from ESPN",
     link: "https://www.espn.com/mlb/",
     feedUrl: SYNTHETIC_CARDINALS_WRAPS,
     items,
+  };
+}
+
+/** League-wide MLB wraps — same prose bar as Cardinals; no scoreboard stubs. */
+async function buildMlbWrapsFeed(): Promise<Record<string, unknown>> {
+  type Cand = {
+    eventId: string;
+    event: EspnEvent;
+    isFinal: boolean;
+    isPreview: boolean;
+  };
+  const candidates: Cand[] = [];
+  const seen = new Set<string>();
+  const today = new Date();
+  // Past 5 days + tomorrow (look-ahead for previews).
+  for (let i = -1; i < 5; i++) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    const dateStr = formatEspnDate(d);
+    const scoreboard = (await fetchEspnJson(
+      `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${dateStr}`,
+    )) as { events?: EspnEvent[] } | null;
+    if (!scoreboard?.events?.length) continue;
+    for (const event of scoreboard.events) {
+      const comp = event.competitions?.[0];
+      if (!comp) continue;
+      const isFinal = isFinalGame(comp, event);
+      const isPreview = isPreviewGame(comp, event);
+      if (!isFinal && !isPreview) continue;
+      // League-wide: only keep today's/tomorrow's previews (i <= 0).
+      if (isPreview && i > 0) continue;
+      const eventId = event.id ?? comp.id;
+      if (!eventId || seen.has(eventId)) continue;
+      seen.add(eventId);
+      candidates.push({ eventId, event, isFinal, isPreview });
+    }
+  }
+
+  candidates.sort((a, b) => {
+    const da = a.event.date ? Date.parse(a.event.date) : 0;
+    const db = b.event.date ? Date.parse(b.event.date) : 0;
+    return db - da;
   });
+  const limited = [
+    ...candidates.filter((c) => c.isPreview),
+    ...candidates.filter((c) => !c.isPreview),
+  ].slice(0, 60);
+
+  const items: FeedItem[] = [];
+  const espnPromo =
+    /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook|team hitting ratings|pitcher projections/i;
+
+  const concurrency = 4;
+  for (let i = 0; i < limited.length; i += concurrency) {
+    const chunk = limited.slice(i, i + concurrency);
+    const settled = await Promise.all(
+      chunk.map(async (c) => {
+        const comp = c.event.competitions?.[0];
+        if (!comp) return null;
+        const home = (comp.competitors ?? []).find((x) => x.homeAway === "home");
+        const away = (comp.competitors ?? []).find((x) => x.homeAway === "away");
+        const summary = (await fetchEspnJson(
+          `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${c.eventId}`,
+        )) as {
+          article?: {
+            headline?: string;
+            description?: string;
+            story?: string;
+            type?: string;
+          };
+          news?: {
+            articles?: {
+              headline?: string;
+              description?: string;
+              story?: string;
+              type?: string;
+            }[];
+          };
+        } | null;
+        if (!summary) return null;
+
+        type StorySrc = {
+          headline?: string;
+          description?: string;
+          story?: string;
+          type?: string;
+        };
+        const storyMentionsMatchup = (a: StorySrc) => {
+          const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`.toLowerCase();
+          const hits = (side?: EspnCompetitor) => {
+            const abbrev = side?.team?.abbreviation ?? "";
+            const name = side?.team?.displayName ?? "";
+            const short = side?.team?.shortDisplayName ?? "";
+            const nick = name.split(/\s+/).slice(-1)[0] ?? "";
+            const keys = [abbrev, name, short, nick]
+              .filter((k) => k && k.length >= 3)
+              .map((k) => k.toLowerCase());
+            return keys.some((k) => blob.includes(k));
+          };
+          return hits(home) && hits(away);
+        };
+        const newsArticles = (summary.news?.articles ?? []).filter((a) => {
+          const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`;
+          return Boolean(a.headline) && !espnPromo.test(blob) && !/^media$/i.test(a.type ?? "");
+        });
+
+        const bodyLen = (a: StorySrc) => {
+          const story = a.story ? stripTags(a.story).trim() : "";
+          const desc = (a.description ?? "").replace(/^—\s*/, "").trim();
+          return Math.max(story.length, desc.length);
+        };
+
+        let best: StorySrc | null = null;
+        if (c.isFinal) {
+          const pool: StorySrc[] = [];
+          if (summary.article && !/^media$/i.test(summary.article.type ?? "")) {
+            pool.push(summary.article);
+          }
+          for (const a of newsArticles) pool.push(a);
+          let bestLen = 0;
+          for (const cand of pool) {
+            if (!storyMentionsMatchup(cand)) continue;
+            const len = bodyLen(cand);
+            if (len > bestLen || (!best && cand.headline)) {
+              best = cand;
+              bestLen = len;
+            }
+          }
+        } else {
+          const art = summary.article;
+          if (
+            art?.headline &&
+            !espnPromo.test(`${art.headline} ${art.description ?? ""} ${art.story ?? ""}`) &&
+            !/^media$/i.test(art.type ?? "") &&
+            storyMentionsMatchup(art)
+          ) {
+            best = art;
+          } else {
+            // Previews: also search news rail for matchup copy.
+            let bestLen = 0;
+            for (const cand of newsArticles) {
+              if (!storyMentionsMatchup(cand)) continue;
+              const len = bodyLen(cand);
+              if (len > bestLen || (!best && cand.headline)) {
+                best = cand;
+                bestLen = len;
+              }
+            }
+          }
+        }
+
+        if (!best?.headline) return null;
+        const storyText = best.story ? stripTags(best.story).trim() : "";
+        const description = (best.description ?? "").replace(/^—\s*/, "").trim();
+        const hasStory = storyText.length >= 80;
+        const hasProseDesc =
+          description.length >= 60 &&
+          /[.!?]/.test(description) &&
+          !(c.isFinal ? /^final\b/i.test(description) : /^first pitch\b/i.test(description));
+        if (!hasStory && !hasProseDesc) return null;
+
+        const snippet = description || storyText.slice(0, 220);
+        if (c.isFinal) {
+          return {
+            id: `wrap-${c.eventId}`,
+            title: best.headline,
+            link: espnRecapUrl(c.eventId),
+            author: "ESPN",
+            publishedAt: c.event.date ?? null,
+            image: null,
+            snippet,
+          } satisfies FeedItem;
+        }
+        return {
+          id: `preview-${c.eventId}`,
+          title: best.headline,
+          link: `https://www.espn.com/mlb/preview/_/gameId/${c.eventId}`,
+          author: "ESPN",
+          publishedAt: c.event.date ?? null,
+          image: null,
+          snippet: snippet.slice(0, 220),
+        } satisfies FeedItem;
+      }),
+    );
+    for (const item of settled) {
+      if (item) items.push(item);
+    }
+  }
+
+  items.sort((a, b) => {
+    const ta = a.publishedAt ? Date.parse(a.publishedAt) : 0;
+    const tb = b.publishedAt ? Date.parse(b.publishedAt) : 0;
+    return tb - ta;
+  });
+
+  return {
+    title: "MLB wraps & previews",
+    description: "League-wide MLB game wraps and previews from ESPN",
+    link: "https://www.espn.com/mlb/",
+    feedUrl: SYNTHETIC_MLB_WRAPS,
+    items,
+  };
+}
+
+async function handleCachedWrapFeed(
+  feedUrl: string,
+  builder: () => Promise<Record<string, unknown>>,
+  forceRefresh = false,
+): Promise<Response> {
+  if (!forceRefresh) {
+    const cached = await readFeedCache(feedUrl, FEED_CACHE_TTL_MS);
+    if (cached) return json(cached);
+  }
+  const payload = await builder();
+  await writeFeedCache(feedUrl, payload);
+  return json(payload);
+}
+
+async function handleWarmWraps(): Promise<Response> {
+  const results: Record<string, { ok: boolean; items?: number; error?: string }> = {};
+  for (const [feedUrl, builder] of [
+    [SYNTHETIC_MLB_WRAPS, buildMlbWrapsFeed],
+    [SYNTHETIC_CARDINALS_WRAPS, buildCardinalsWrapsFeed],
+  ] as const) {
+    try {
+      const payload = await builder();
+      await writeFeedCache(feedUrl, payload);
+      const items = Array.isArray(payload.items) ? payload.items.length : 0;
+      results[feedUrl] = { ok: true, items };
+    } catch (e) {
+      results[feedUrl] = {
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
+  }
+  return json({ warmedAt: new Date().toISOString(), results });
 }
 
 async function handleFeed(feedUrl: string) {
   if (feedUrl === SYNTHETIC_CARDINALS_WRAPS) {
-    return await handleCardinalsWrapsFeed();
+    return await handleCachedWrapFeed(feedUrl, buildCardinalsWrapsFeed);
+  }
+  if (feedUrl === SYNTHETIC_MLB_WRAPS) {
+    return await handleCachedWrapFeed(feedUrl, buildMlbWrapsFeed);
   }
   if (isSyntheticFeedUrl(feedUrl)) {
     return json({ error: "Unknown synthetic feed" }, 400);
@@ -2142,7 +2430,12 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
-  let body: { mode?: string; feedUrl?: string; url?: string; refresh?: boolean | string };
+  let body: {
+    mode?: string;
+    feedUrl?: string;
+    url?: string;
+    refresh?: boolean | string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -2150,6 +2443,9 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    if (body.mode === "warm-wraps") {
+      return await handleWarmWraps();
+    }
     if (body.mode === "feed") {
       return await handleFeed(body.feedUrl?.trim() || DEFAULT_FEED);
     }
@@ -2158,7 +2454,7 @@ Deno.serve(async (req: Request) => {
       const refresh = body.refresh === true || body.refresh === "1" || body.refresh === "true";
       return await handleRead(body.url.trim(), refresh);
     }
-    return json({ error: "mode must be 'feed' or 'read'" }, 400);
+    return json({ error: "mode must be 'feed', 'read', or 'warm-wraps'" }, 400);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return json({ error: message }, 502);

@@ -183,7 +183,7 @@ export default function PlayerTagsPanel({
       await qc.invalidateQueries({ queryKey: ["sports-player-tags-by-tag"] });
       await qc.invalidateQueries({ queryKey: ["sports-player-tags-names"] });
       await qc.invalidateQueries({ queryKey: ["sports-player-tags-ids"] });
-      await qc.invalidateQueries({ queryKey: ["rss-feed-v5"] });
+      await qc.invalidateQueries({ queryKey: ["rss-feed-v6"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't add tag"),
   });
@@ -197,7 +197,7 @@ export default function PlayerTagsPanel({
       await qc.invalidateQueries({ queryKey: ["sports-player-tags-by-tag"] });
       await qc.invalidateQueries({ queryKey: ["sports-player-tags-names"] });
       await qc.invalidateQueries({ queryKey: ["sports-player-tags-ids"] });
-      await qc.invalidateQueries({ queryKey: ["rss-feed-v5"] });
+      await qc.invalidateQueries({ queryKey: ["rss-feed-v6"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't remove tag"),
   });

@@ -2164,7 +2164,7 @@ export default function RssPage() {
     queries: allFeeds.map((f) => {
       const wrapFeed = isEspnWrapFeedUrl(f.url);
       return {
-        queryKey: ["rss-feed-v5", f.url],
+        queryKey: ["rss-feed-v6", f.url],
         queryFn: () => fetchRssFeed(f.url),
         staleTime: wrapFeed ? 45_000 : 90_000,
         // Keep polling ESPN wrap feeds until recap/preview prose lands — never list score stubs.
