@@ -1718,7 +1718,12 @@ async function fetchEspnJson(url: string): Promise<unknown | null> {
 
 type EspnCompetitor = {
   homeAway?: string;
-  team?: { id?: string; abbreviation?: string };
+  team?: {
+    id?: string;
+    abbreviation?: string;
+    displayName?: string;
+    shortDisplayName?: string;
+  };
 };
 
 type EspnEvent = {
@@ -1793,12 +1798,14 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
           headline?: string;
           description?: string;
           story?: string;
+          type?: string;
         };
         news?: {
           articles?: {
             headline?: string;
             description?: string;
             story?: string;
+            type?: string;
           }[];
         };
       } | null;
@@ -1808,18 +1815,41 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
           headline?: string;
           description?: string;
           story?: string;
+          type?: string;
         };
         const espnPromo =
           /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook/i;
+        const home = (comp.competitors ?? []).find((x) => x.homeAway === "home");
+        const away = (comp.competitors ?? []).find((x) => x.homeAway === "away");
+        const storyMentionsMatchup = (a: StorySrc) => {
+          const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`.toLowerCase();
+          const hits = (side?: EspnCompetitor) => {
+            const abbrev = side?.team?.abbreviation ?? "";
+            const name = side?.team?.displayName ?? "";
+            const short = side?.team?.shortDisplayName ?? "";
+            const nick = name.split(/\s+/).slice(-1)[0] ?? "";
+            const keys = [abbrev, name, short, nick]
+              .filter((k) => k && k.length >= 3)
+              .map((k) => k.toLowerCase());
+            if (abbrev === "STL") keys.push("cardinals", "cards");
+            return keys.some((k) => blob.includes(k));
+          };
+          return hits(home) && hits(away);
+        };
         const candidates: StorySrc[] = [];
-        if (summary?.article) candidates.push(summary.article);
+        if (summary?.article && !/^media$/i.test(summary.article.type ?? "")) {
+          candidates.push(summary.article);
+        }
         for (const a of summary?.news?.articles ?? []) {
           const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`;
-          if (a.headline && !espnPromo.test(blob)) candidates.push(a);
+          if (a.headline && !espnPromo.test(blob) && !/^media$/i.test(a.type ?? "")) {
+            candidates.push(a);
+          }
         }
         let best: StorySrc | null = null;
         let bestLen = 0;
         for (const c of candidates) {
+          if (!storyMentionsMatchup(c)) continue;
           const story = c.story ? stripTags(c.story).trim() : "";
           const desc = (c.description ?? "").replace(/^—\s*/, "").trim();
           const len = Math.max(story.length, desc.length);

@@ -2437,6 +2437,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
               headline?: string;
               description?: string;
               story?: string;
+              type?: string;
               images?: { url?: string }[];
               links?: { href?: string }[] | { web?: { href?: string } };
             };
@@ -2445,6 +2446,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
                 headline?: string;
                 description?: string;
                 story?: string;
+                type?: string;
                 images?: { url?: string }[];
                 links?: { href?: string }[] | { web?: { href?: string } };
               }[];
@@ -2459,7 +2461,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook|team hitting ratings|pitcher projections/i;
           const newsArticles = (sum.news?.articles ?? []).filter((a) => {
             const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`;
-            return Boolean(a.headline) && !espnPromo.test(blob);
+            return Boolean(a.headline) && !espnPromo.test(blob) && !/^media$/i.test(a.type ?? "");
           });
           const newsArticle = newsArticles[0];
           const officialOk =
@@ -2471,9 +2473,11 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             headline?: string;
             description?: string;
             story?: string;
+            type?: string;
             images?: { url?: string }[];
             links?: { href?: string }[] | { web?: { href?: string } };
           };
+          const isMediaClip = (a: StorySrc | undefined) => /^media$/i.test(a?.type ?? "");
           const stripStory = (html: string | undefined) =>
             (html ?? "")
               .replace(/<[^>]+>/g, " ")
@@ -2484,7 +2488,24 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             const desc = (a?.description ?? "").replace(/^—\s*/, "").trim();
             return Math.max(story.length, desc.length);
           };
-          let article: StorySrc | undefined = officialOk
+          const homeName = home?.team?.displayName ?? home?.team?.shortDisplayName ?? null;
+          const awayName = away?.team?.displayName ?? away?.team?.shortDisplayName ?? null;
+          const storyMentionsMatchup = (a: StorySrc | undefined) => {
+            if (linkSport !== "mlb") return true;
+            const blob = `${a?.headline ?? ""} ${a?.description ?? ""} ${stripStory(a?.story)}`.toLowerCase();
+            const hits = (name: string | null, abbrev: string | null, short?: string | null) => {
+              const nick = name?.split(/\s+/).slice(-1)[0] ?? null;
+              const keys = [abbrev, name, short, nick]
+                .filter((k): k is string => Boolean(k && k.length >= 3))
+                .map((k) => k.toLowerCase());
+              return keys.some((k) => blob.includes(k));
+            };
+            return (
+              hits(homeName, homeAbbr, home?.team?.shortDisplayName) &&
+              hits(awayName, awayAbbr, away?.team?.shortDisplayName)
+            );
+          };
+          let article: StorySrc | undefined = officialOk && !isMediaClip(sum.article) && storyMentionsMatchup(sum.article)
             ? sum.article
             : linkSport !== "mlb" && newsArticle?.headline
               ? {
@@ -2496,23 +2517,29 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
                 }
               : undefined;
 
-          // MLB wraps: pick the richest story body across article + news rail.
+          // MLB wraps: richest story that is actually about THIS game.
+          // ESPN's news rail is league-wide — picking length alone attached
+          // Jo Adell / Guardians to Dodgers–Rockies.
           if (linkSport === "mlb" && c.isFinal) {
             const candidates: StorySrc[] = [];
-            if (sum.article?.headline || sum.article?.story || sum.article?.description) {
+            if (
+              !isMediaClip(sum.article) &&
+              (sum.article?.headline || sum.article?.story || sum.article?.description)
+            ) {
               candidates.push(sum.article);
             }
             for (const a of newsArticles) candidates.push(a);
             let best: StorySrc | undefined;
             let bestLen = 0;
             for (const cand of candidates) {
+              if (!storyMentionsMatchup(cand)) continue;
               const len = bodyLen(cand);
               if (len > bestLen || (!best && cand.headline)) {
                 best = cand;
                 bestLen = len;
               }
             }
-            if (best) article = best;
+            article = best;
           }
 
           const storyLink = espnArticleLinkHref(article?.links);

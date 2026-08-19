@@ -2339,6 +2339,11 @@ function espnStoryMentionsMatchup(
   return hits(homeName ?? null, homeAbbrev) && hits(awayName ?? null, awayAbbrev);
 }
 
+function espnStoryMatchupBlob(a: EspnStorySrc | undefined): string {
+  if (!a) return "";
+  return `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`;
+}
+
 function recapFromEspnStory(
   eventId: string,
   story: EspnStorySrc,
@@ -2418,15 +2423,21 @@ export async function fetchEspnGameRecap(
       // stub isn't a real preview even if the caller passed a lower minLen.
       const effectiveMinLen = /^preview$/i.test(a.type ?? "") ? Math.max(minLen, 80) : minLen;
       if (text.length < effectiveMinLen) return false;
-      if (requireMatchup && !espnStoryMentionsMatchup(text, homeAbbrev, awayAbbrev, homeName, awayName)) {
+      // Always require this game's teams — ESPN's official article slot and the
+      // news rail both reuse other clubs' wraps (Jo Adell / Guardians on LAD-COL).
+      const matchupText = `${espnStoryMatchupBlob(a)} ${text}`;
+      if (
+        requireMatchup &&
+        !espnStoryMentionsMatchup(matchupText, homeAbbrev, awayAbbrev, homeName, awayName)
+      ) {
         return false;
       }
       return true;
     };
 
-    // Official recap/preview only — never the league news rail (fantasy promo, talking-head clips).
+    // Official recap/preview only when it is actually about this matchup.
     // Pregame stubs are often just a bare matchup line, so require a real preview (>=80 chars).
-    if (usable(sum.article, false, isPregame ? 80 : 40)) {
+    if (usable(sum.article, true, isPregame ? 80 : 40)) {
       return recapFromEspnStory(eventId, sum.article!, isPregame ? "preview" : "recap");
     }
 
@@ -4790,7 +4801,7 @@ async function fetchWarViaEdgeRetry(
   if (!base || !key) return null;
   try {
     const ctl = new AbortController();
-    const timer = window.setTimeout(() => ctl.abort(), 40_000);
+      const timer = window.setTimeout(() => ctl.abort(), 18_000);
     try {
       const res = await fetch(`${base}/functions/v1/sports`, {
         method: "POST",
@@ -4800,12 +4811,11 @@ async function fetchWarViaEdgeRetry(
           apikey: key,
         },
         body: JSON.stringify({
-          action: "playerExtras",
+          action: "playerWar",
           name,
           isPitcher: Boolean(opts?.isPitcher),
           mlbId: opts?.mlbId ?? null,
           teamAbbrev: opts?.teamAbbrev ?? null,
-          forceWar: true,
         }),
         signal: ctl.signal,
       });
@@ -4825,32 +4835,16 @@ async function fetchWarViaEdgeRetry(
   }
 }
 
-/** Service time + WAR from Baseball Reference (via sports edge). */
-export async function fetchMlbPlayerExtras(
-  playerName: string,
-  opts?: { isPitcher?: boolean; mlbId?: number | null; teamAbbrev?: string | null },
-): Promise<MlbPlayerExtras | null> {
-  const name = playerName.trim();
-  if (name.length < 3) return null;
-  const body = {
-    action: "playerExtras",
-    name,
-    isPitcher: Boolean(opts?.isPitcher),
-    mlbId: opts?.mlbId ?? null,
-    teamAbbrev: opts?.teamAbbrev ?? null,
-  };
-
+async function invokeSportsAction(
+  body: Record<string, unknown>,
+  timeoutMs: number,
+): Promise<unknown | null> {
   const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-  let mapped: MlbPlayerExtras | null = null;
-
-  // Direct fetch first — supabase-js invoke has dropped bodies / hung in the browser
-  // (same pattern as contract lookups). Soft-timeout responses may still carry serviceTime.
   if (base && key) {
     try {
       const ctl = new AbortController();
-      const timer = window.setTimeout(() => ctl.abort(), 50_000);
+      const timer = window.setTimeout(() => ctl.abort(), timeoutMs);
       try {
         const res = await fetch(`${base}/functions/v1/sports`, {
           method: "POST",
@@ -4862,26 +4856,73 @@ export async function fetchMlbPlayerExtras(
           body: JSON.stringify(body),
           signal: ctl.signal,
         });
-        if (res.ok) mapped = mapPlayerExtrasPayload(await res.json());
+        if (res.ok) return await res.json();
       } finally {
         window.clearTimeout(timer);
       }
     } catch {
-      /* fall through */
+      /* fall through to supabase-js */
     }
   }
+  try {
+    const { data } = await supabase.functions.invoke("sports", { body });
+    return data ?? null;
+  } catch {
+    return null;
+  }
+}
 
-  if (!mapped) {
-    try {
-      const { data } = await supabase.functions.invoke("sports", { body });
-      mapped = mapPlayerExtrasPayload(data);
-    } catch {
-      mapped = null;
-    }
+/** Service time + WAR from Baseball Reference (via sports edge). */
+export async function fetchMlbPlayerExtras(
+  playerName: string,
+  opts?: { isPitcher?: boolean; mlbId?: number | null; teamAbbrev?: string | null },
+): Promise<MlbPlayerExtras | null> {
+  const name = playerName.trim();
+  if (name.length < 3) return null;
+  const extrasBody = {
+    action: "playerExtras",
+    name,
+    isPitcher: Boolean(opts?.isPitcher),
+    mlbId: opts?.mlbId ?? null,
+    teamAbbrev: opts?.teamAbbrev ?? null,
+  };
+  const warBody = {
+    action: "playerWar",
+    name,
+    isPitcher: Boolean(opts?.isPitcher),
+    mlbId: opts?.mlbId ?? null,
+    teamAbbrev: opts?.teamAbbrev ?? null,
+  };
+
+  // Dump-only WAR is fast and reliable — don't wait on the HTML extras scrape.
+  const warP = invokeSportsAction(warBody, 18_000);
+  const extrasP = invokeSportsAction(extrasBody, 22_000);
+
+  const warMapped = mapPlayerExtrasPayload(await warP);
+  let extrasRaw: unknown = null;
+  if (warMapped && (warMapped.seasonWar != null || warMapped.careerWar != null)) {
+    extrasRaw = await Promise.race([
+      extrasP,
+      new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 5_000)),
+    ]);
+  } else {
+    extrasRaw = await extrasP;
+  }
+  let mapped = mapPlayerExtrasPayload(extrasRaw);
+
+  if (warMapped && (warMapped.seasonWar != null || warMapped.careerWar != null)) {
+    mapped = {
+      serviceTime: mapped?.serviceTime ?? null,
+      seasonWar: warMapped.seasonWar,
+      careerWar: warMapped.careerWar,
+      warRank: mapped?.warRank ?? null,
+      warOf: mapped?.warOf ?? null,
+      url: warMapped.url ?? mapped?.url ?? null,
+    };
   }
 
   // Edge used to return serviceTime with blank WAR when BBRef HTML was CF-blocked.
-  // FanGraphs runs inside playerExtras now; retry once if WAR is still missing.
+  // FanGraphs / dump retry only if the fast path still has nothing.
   if (mapped?.seasonWar == null && mapped?.careerWar == null) {
     const local = await fetchWarViaEdgeRetry(name, opts);
     if (local) {

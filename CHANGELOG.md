@@ -2,6 +2,13 @@
 
 ---
 
+## Wrong MLB wrap + WAR dump — August 19, 2026
+
+- **Wrong game wrap:** ESPN game summaries put other clubs’ recaps on the news rail. Dispatch was picking the longest story, so a Dodgers–Rockies wrap opened with a Jo Adell / Guardians headline and photo. Wraps now keep only copy that mentions both teams.
+- **WAR:** Player-card WAR no longer depends on Cloudflare-blocked BBRef HTML. The sports edge reads Baseball-Reference’s daily bat+pitch WAR dumps (two-way totals summed), returns them on a fast `playerWar` action, and the card uses that before the slower extras scrape. Ohtani-style two-way seasons show combined WAR.
+
+---
+
 ## RUWT: drop hero, show TV, today-only soccer — August 19, 2026
 
 - Remove the large RUWT hero (“Best games right now”) — keep sport filters + Rank/Refresh only.

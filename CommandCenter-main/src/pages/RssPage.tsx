@@ -2161,7 +2161,7 @@ export default function RssPage() {
 
   const feedQueries = useQueries({
     queries: allFeeds.map((f) => ({
-      queryKey: ["rss-feed-v2", f.url],
+      queryKey: ["rss-feed-v3", f.url],
       queryFn: () => fetchRssFeed(f.url),
       staleTime: 90_000,
     })),

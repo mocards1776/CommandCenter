@@ -2476,6 +2476,124 @@ function parseBbrefSeasonAndCareerWar(
   return { seasonWar, careerWar };
 }
 
+/** Compact BBRef daily WAR index — bat + pitch summed per player/year. */
+type WarDumpRec = { name: string; playerId: string | null; byYear: Map<number, number> };
+type WarDumpIndex = {
+  at: number;
+  byMlbId: Map<number, WarDumpRec>;
+  byName: Map<string, WarDumpRec>;
+};
+
+const WAR_DUMP_TTL_MS = 6 * 60 * 60_000;
+let warDumpIndex: WarDumpIndex | null = null;
+let warDumpInflight: Promise<WarDumpIndex | null> | null = null;
+
+function normalizeWarName(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function ingestWarDump(index: WarDumpIndex, text: string): void {
+  const lines = text.split(/\r?\n/);
+  if (lines.length < 2) return;
+  const header = lines[0]!.split(",");
+  const iMlb = header.indexOf("mlb_ID");
+  const iYear = header.indexOf("year_ID");
+  const iWar = header.indexOf("WAR");
+  const iName = header.indexOf("name_common");
+  const iPid = header.indexOf("player_ID");
+  if (iMlb < 0 || iYear < 0 || iWar < 0 || iName < 0) return;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line) continue;
+    const cols = line.split(",");
+    const mlbId = Number(cols[iMlb]);
+    const year = Number(cols[iYear]);
+    const war = Number(cols[iWar]);
+    const name = (cols[iName] ?? "").trim();
+    if (!Number.isFinite(year) || !Number.isFinite(war)) continue;
+    let rec =
+      (Number.isFinite(mlbId) && mlbId > 0 ? index.byMlbId.get(mlbId) : undefined) ??
+      (name ? index.byName.get(normalizeWarName(name)) : undefined);
+    if (!rec) rec = { name, playerId: cols[iPid] ?? null, byYear: new Map() };
+    rec.byYear.set(year, (rec.byYear.get(year) ?? 0) + war);
+    if (!rec.playerId && cols[iPid]) rec.playerId = cols[iPid]!;
+    if (Number.isFinite(mlbId) && mlbId > 0) index.byMlbId.set(mlbId, rec);
+    if (name) index.byName.set(normalizeWarName(name), rec);
+  }
+}
+
+async function loadWarDumpIndex(): Promise<WarDumpIndex | null> {
+  if (warDumpIndex && Date.now() - warDumpIndex.at < WAR_DUMP_TTL_MS) return warDumpIndex;
+  if (warDumpInflight) return warDumpInflight;
+  warDumpInflight = (async () => {
+    const headers = { "User-Agent": UA, Accept: "text/plain" };
+    const [batRes, pitRes] = await Promise.all([
+      timedFetch(
+        "https://www.baseball-reference.com/data/war_daily_bat.txt",
+        { headers },
+        20_000,
+      ).catch(() => null),
+      timedFetch(
+        "https://www.baseball-reference.com/data/war_daily_pitch.txt",
+        { headers },
+        20_000,
+      ).catch(() => null),
+    ]);
+    const next: WarDumpIndex = {
+      at: Date.now(),
+      byMlbId: new Map(),
+      byName: new Map(),
+    };
+    if (batRes?.ok) ingestWarDump(next, await batRes.text());
+    if (pitRes?.ok) ingestWarDump(next, await pitRes.text());
+    if (next.byMlbId.size === 0 && next.byName.size === 0) return warDumpIndex;
+    warDumpIndex = next;
+    return next;
+  })().finally(() => {
+    warDumpInflight = null;
+  });
+  return warDumpInflight;
+}
+
+function warFromDumpIndex(
+  index: WarDumpIndex,
+  mlbId?: number | null,
+  name?: string | null,
+): { seasonWar: number | null; careerWar: number | null; url: string | null } | null {
+  const rec =
+    (mlbId != null && mlbId > 0 ? index.byMlbId.get(Math.trunc(mlbId)) : undefined) ??
+    (name ? index.byName.get(normalizeWarName(name)) : undefined);
+  if (!rec || rec.byYear.size === 0) return null;
+  const year = new Date().getFullYear();
+  const years = [...rec.byYear.keys()].sort((a, b) => b - a);
+  const rawSeason = rec.byYear.has(year) ? rec.byYear.get(year)! : rec.byYear.get(years[0]!)!;
+  const rawCareer = [...rec.byYear.values()].reduce((a, b) => a + b, 0);
+  const letter = (rec.playerId ?? "x")[0] ?? "x";
+  return {
+    seasonWar: Math.round(rawSeason * 10) / 10,
+    careerWar: Math.round(rawCareer * 10) / 10,
+    url: rec.playerId
+      ? `https://www.baseball-reference.com/players/${letter}/${rec.playerId}.shtml`
+      : "https://www.baseball-reference.com/data/war_daily_bat.txt",
+  };
+}
+
+/** Season + career WAR from BBRef's published daily dumps (bat + pitch summed). */
+async function scrapeBbrefWarDaily(opts: {
+  mlbId?: number | null;
+  name?: string | null;
+}): Promise<{ seasonWar: number | null; careerWar: number | null; url: string | null } | null> {
+  const index = await loadWarDumpIndex();
+  if (!index) return null;
+  return warFromDumpIndex(index, opts.mlbId, opts.name);
+}
+
 /** Service time + WAR (+ optional league WAR rank) from Baseball Reference. */
 async function scrapePlayerExtras(
   name: string,
@@ -2483,19 +2601,30 @@ async function scrapePlayerExtras(
   mlbId?: number | null,
   teamAbbrev?: string | null,
 ): Promise<Record<string, unknown>> {
-  // Run FanGraphs beside BBRef — Cloudflare often blocks BBRef from edge IPs while
-  // FanGraphs leaders JSON still returns. Prior fixes only retuned the HTML parser,
-  // so WAR stayed blank whenever the page never arrived (and the browser CORS
-  // fallback could never read BBRef either).
-  const [page, fg] = await Promise.all([
-    loadBbrefPlayerHtml(name, mlbId).catch(() => null),
-    scrapeFangraphsWar({
-      mlbId: mlbId ?? null,
-      name,
-      isPitcher,
-      teamAbbrev: teamAbbrev ?? null,
-    }).catch(() => null),
-  ]);
+  // Daily WAR dumps first — Cloudflare blocks player HTML from many edge IPs, and
+  // FanGraphs leaders JSON is flaky. The dumps are static text (CF-cached) and
+  // already include two-way totals once bat + pitch rows are summed.
+  const dump = await scrapeBbrefWarDaily({ mlbId, name }).catch(() => null);
+
+  const pageP = loadBbrefPlayerHtml(name, mlbId).catch(() => null);
+  const fgP =
+    dump?.seasonWar == null && dump?.careerWar == null
+      ? scrapeFangraphsWar({
+          mlbId: mlbId ?? null,
+          name,
+          isPitcher,
+          teamAbbrev: teamAbbrev ?? null,
+        }).catch(() => null)
+      : Promise.resolve(null);
+
+  // Don't block WAR on a slow BBRef HTML scrape when the dump already has it.
+  const page = dump
+    ? await Promise.race([
+        pageP,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000)),
+      ])
+    : await pageP;
+  const fg = await fgP;
 
   let serviceTime: string | null = null;
   let seasonWar: number | null = null;
@@ -2529,6 +2658,14 @@ async function scrapePlayerExtras(
     }
   }
 
+  if (dump) {
+    // Dump is the source of truth (bat + pitch summed). HTML parse is batting- or
+    // pitching-only and blanked two-way cards when Cloudflare blocked the page.
+    if (dump.seasonWar != null) seasonWar = dump.seasonWar;
+    if (dump.careerWar != null) careerWar = dump.careerWar;
+    if (!url && dump.url) url = dump.url;
+  }
+
   if (fg && (seasonWar == null || careerWar == null)) {
     if (seasonWar == null && fg.seasonWar != null) seasonWar = fg.seasonWar;
     if (careerWar == null && fg.careerWar != null) careerWar = fg.careerWar;
@@ -2541,13 +2678,16 @@ async function scrapePlayerExtras(
 
   // Core fields only — skip league-rank scrape (extra BBRef page) so WAR survives soft timeouts.
   return {
-    source: page && (seasonWar != null || careerWar != null || serviceTime)
-      ? "baseball-reference"
-      : fg
-        ? "fangraphs"
-        : page
+    source:
+      dump && (seasonWar != null || careerWar != null)
+        ? "bbref-war-daily"
+        : page && (seasonWar != null || careerWar != null || serviceTime)
           ? "baseball-reference"
-          : "fangraphs",
+          : fg
+            ? "fangraphs"
+            : page
+              ? "baseball-reference"
+              : "bbref-war-daily",
     url,
     name,
     serviceTime,
@@ -3501,6 +3641,33 @@ Deno.serve(async (req: Request) => {
       );
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e), found: false }, 200);
+    }
+  }
+  if (body.action === "playerWar") {
+    const name = String(body.name ?? "").trim();
+    const mlbIdRaw = body.mlbId ?? body.playerId;
+    const mlbId =
+      typeof mlbIdRaw === "number"
+        ? mlbIdRaw
+        : typeof mlbIdRaw === "string" && /^\d+$/.test(mlbIdRaw)
+          ? Number(mlbIdRaw)
+          : null;
+    if ((name.length < 3 || name.length > 80) && !(mlbId != null && mlbId > 0)) {
+      return json({ error: "Bad name" }, 400);
+    }
+    try {
+      const dump = await scrapeBbrefWarDaily({ mlbId, name: name || null });
+      if (!dump || (dump.seasonWar == null && dump.careerWar == null)) {
+        return json({ error: "WAR not found", name, mlbId, seasonWar: null, careerWar: null });
+      }
+      return json({
+        source: "bbref-war-daily",
+        name: name || null,
+        mlbId,
+        ...dump,
+      });
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 200);
     }
   }
   if (body.action === "playerExtras") {
