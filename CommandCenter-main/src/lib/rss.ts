@@ -2399,14 +2399,14 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
           return [pitchers, records || null, when].filter(Boolean).join(" · ") || `First pitch — ${matchup}.`;
         };
 
-        // Scoreboard stubs fill the feed when ESPN recap/preview copy isn't up yet.
-        // MLB/NFL items open the game reader (box score + wrap when available), not a
-        // blank article extract — so stubs are safe for baseball/football.
+        // Scoreboard stubs only for sports that opt in (NFL/soccer). MLB waits for ESPN prose.
         const scoreboardStub = () => {
-          if (linkSport !== "mlb" && linkSport !== "nfl" && !opts.stubWithoutArticle) return null;
+          if (linkSport === "mlb") return null;
           if (c.isPreview) {
+            if (!opts.stubWithoutArticle) return null;
             return stubItem("preview", `Preview: ${matchup}`, previewCopy());
           }
+          if (!opts.stubWithoutArticle) return null;
           if (c.isLive) {
             return stubItem("live", `Live: ${scoreBit}`, `In progress — ${matchup}.`);
           }
@@ -2580,7 +2580,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
                 description.length >= 60 &&
                 /[.!?]/.test(description) &&
                 !/^final\b/i.test(description);
-              if (!hasStory && !hasProseDesc) return scoreboardStub();
+              if (!hasStory && !hasProseDesc) return null;
             } else {
               if (!opts.stubWithoutArticle && (!snippet || snippet.length < 40)) return null;
               if (opts.stubWithoutArticle && (!snippet || snippet.length < 40)) {
@@ -2633,7 +2633,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
               description.length >= 60 &&
               /[.!?]/.test(description) &&
               !/^first pitch\b/i.test(description);
-            if (!hasStory && !hasProseDesc) return scoreboardStub();
+            if (!hasStory && !hasProseDesc) return null;
           }
 
           return {
@@ -2668,10 +2668,6 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   const filtered = items.filter((it) => {
     const snip = (it.snippet ?? "").trim();
     const title = (it.title ?? "").trim();
-    const isScoreboardStub =
-      linkSport === "mlb" &&
-      (/^Final\s*:/i.test(title) || /^Preview\s*:/i.test(title) || /^Live\s*:/i.test(title));
-    if (isScoreboardStub) return true;
     const isMlbWrap =
       linkSport === "mlb" &&
       (/\/mlb\/recap\//i.test(it.link) || /^wrap-/i.test(it.id) || /^Final\s*:/i.test(title));
@@ -4108,3 +4104,16 @@ export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>([
   "cardinals-farm",
   "cardinals-savant",
 ]);
+
+/** ESPN wrap/preview feeds — poll until written recap/preview copy lands. */
+export const RSS_ESPN_WRAP_FEED_URLS = new Set<string>([
+  "synthetic:cardinals-wraps",
+  "synthetic:mlb-wraps",
+  "synthetic:nfl-wraps",
+  "synthetic:soccer-clubs-wraps",
+  "synthetic:epl-wraps",
+]);
+
+export function isEspnWrapFeedUrl(url: string): boolean {
+  return RSS_ESPN_WRAP_FEED_URLS.has(url);
+}
