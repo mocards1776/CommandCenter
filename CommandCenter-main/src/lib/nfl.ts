@@ -1,5 +1,6 @@
 /** NFL via ESPN site API — scoreboard, live field, plays, players, RUWT. */
 
+import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { supabase } from "./supabase";
 import { formatSportsDateLong } from "./utils";
 
@@ -89,6 +90,7 @@ export type NflScoreGame = {
   homeWinPct: number | null;
   /** Chicago calendar date (YYYY-MM-DD) for the kickoff. */
   date: string | null;
+  broadcasts: GameBroadcast[];
 };
 
 export type NflScoredGame = NflScoreGame & {
@@ -281,6 +283,11 @@ type EspnEvent = {
         name?: string;
       };
     };
+    broadcasts?: { market?: string; names?: string[] }[];
+    geoBroadcasts?: {
+      market?: { type?: string };
+      media?: { shortName?: string; name?: string; logo?: string; darkLogo?: string };
+    }[];
     competitors?: {
       homeAway?: string;
       score?: unknown;
@@ -342,6 +349,7 @@ function mapEvent(event: EspnEvent): NflScoreGame | null {
     situation: mapSituation(comp.situation, live),
     homeWinPct: null,
     date: chicagoDateFromIso(event.date),
+    broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
   };
 }
 

@@ -1,6 +1,8 @@
 /** ESPN soccer helpers — Premier League + Championship scoreboards for RUWT / cards. */
 
 import { supabase } from "@/lib/supabase";
+import { parseEspnBroadcasts } from "@/lib/game-broadcasts";
+import type { GameBroadcast } from "@/lib/game-broadcasts";
 
 export function soccerTeamLogo(teamId: string | number): string {
   return `https://a.espncdn.com/i/teamlogos/soccer/500/${teamId}.png`;
@@ -19,6 +21,7 @@ export type SoccerScoreGame = {
   id: string;
   league: string;
   leagueSlug: string;
+  /** Chicago calendar date YYYY-MM-DD when kickoff is known. */
   date: string | null;
   status: string;
   shortDetail: string | null;
@@ -28,6 +31,7 @@ export type SoccerScoreGame = {
   venue: string | null;
   away: SoccerScoreSide;
   home: SoccerScoreSide;
+  broadcasts: GameBroadcast[];
 };
 
 export type SoccerScoredGame = SoccerScoreGame & {
@@ -161,6 +165,11 @@ function parseScoreboardPayload(
             detail?: string;
           };
         };
+        broadcasts?: { market?: string; names?: string[] }[];
+        geoBroadcasts?: {
+          market?: { type?: string };
+          media?: { shortName?: string; name?: string; logo?: string; darkLogo?: string };
+        }[];
         competitors?: {
           homeAway?: string;
           score?: string | number;
@@ -192,11 +201,14 @@ function parseScoreboardPayload(
     const final = st?.state === "post" || st?.completed === true;
     const pregame = st?.state === "pre";
     const live = st?.state === "in" || (!final && !pregame);
+    const chicagoDate = event.date
+      ? new Date(event.date).toLocaleDateString("en-CA", { timeZone: "America/Chicago" })
+      : null;
     out.push({
       id: String(event.id ?? ""),
       league: leagueName,
       leagueSlug,
-      date: event.date ? event.date.slice(0, 10) : null,
+      date: chicagoDate,
       status: st?.description ?? (final ? "Final" : live ? "Live" : "Scheduled"),
       shortDetail: st?.shortDetail ?? st?.detail ?? null,
       final,
@@ -205,6 +217,7 @@ function parseScoreboardPayload(
       venue: comp.venue?.fullName ?? null,
       away: sideFromCompetitor(awayRaw),
       home: sideFromCompetitor(homeRaw),
+      broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
     });
   }
   return out;
@@ -320,50 +333,30 @@ async function fetchFocusClubGames(): Promise<SoccerScoreGame[]> {
   return out;
 }
 
-/** Today’s boards + near-term slate + always-on focus club fixtures. */
+/** Today’s boards only — RUWT is a same-day watch list, not a fixture calendar. */
 export async function fetchSoccerRuwtBoard(todayYmd: string): Promise<SoccerScoreGame[]> {
   const ymd = todayYmd.replace(/-/g, "");
-  const windowDays = [0, 1, 2, 3, -1];
-  const datedPaths = windowDays.flatMap((delta) => {
-    const day = ymdOffsetChicago(todayYmd, delta).replace(/-/g, "");
-    return [
-      fetchSoccerScoreboardDay("eng.1", day),
-      fetchSoccerScoreboardDay("eng.2", day),
-    ];
-  });
+  const chicagoYmd = /^\d{4}-\d{2}-\d{2}$/.test(todayYmd)
+    ? todayYmd
+    : `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`;
 
-  const [plToday, champToday, plOpen, champOpen, focusGames, ...windowBoards] = await Promise.all([
+  const [plToday, champToday] = await Promise.all([
     fetchSoccerScoreboardDay("eng.1", ymd).catch(() => [] as SoccerScoreGame[]),
     fetchSoccerScoreboardDay("eng.2", ymd).catch(() => [] as SoccerScoreGame[]),
-    // Undated scoreboard = ESPN's "current" slate (often next matchday when today is empty).
-    fetchSoccerScoreboardDay("eng.1").catch(() => [] as SoccerScoreGame[]),
-    fetchSoccerScoreboardDay("eng.2").catch(() => [] as SoccerScoreGame[]),
-    fetchFocusClubGames().catch(() => [] as SoccerScoreGame[]),
-    ...datedPaths,
   ]);
 
   const focus = new Set(RUWT_SOCCER_FOCUS.map((t) => t.id));
-  const champFocus = [...champToday, ...champOpen, ...windowBoards.flat()].filter(
-    (g) => g.leagueSlug === "eng.2" && (focus.has(g.away.teamId) || focus.has(g.home.teamId)),
+  const champFocus = champToday.filter(
+    (g) => focus.has(g.away.teamId) || focus.has(g.home.teamId),
   );
-
-  // When PL has a quiet midweek, still show the open slate so Soccer RUWT isn't empty.
-  const plGames = plToday.length ? plToday : plOpen;
 
   const seen = new Set<string>();
   const out: SoccerScoreGame[] = [];
-  for (const g of [...plGames, ...champFocus, ...focusGames]) {
+  for (const g of [...plToday, ...champFocus.length ? champFocus : champToday]) {
     if (!g.id || seen.has(g.id)) continue;
+    if (g.date && g.date !== chicagoYmd) continue;
     seen.add(g.id);
     out.push(g);
-  }
-  // If still empty, fall back to full Championship day board so the filter isn't blank.
-  if (!out.length) {
-    for (const g of champToday.length ? champToday : champOpen) {
-      if (!g.id || seen.has(g.id)) continue;
-      seen.add(g.id);
-      out.push(g);
-    }
   }
   return out;
 }

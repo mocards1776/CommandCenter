@@ -248,11 +248,12 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
   });
 
   const extras = useQuery({
-    queryKey: ["mlb-player-extras-v4", playerId, player.data?.name, isPitcherPreview],
+    queryKey: ["mlb-player-extras-v6", playerId, player.data?.name, player.data?.teamAbbrev, isPitcherPreview],
     queryFn: () =>
       fetchMlbPlayerExtras(player.data!.name, {
         isPitcher: isPitcherPreview,
         mlbId: Number(playerId) || null,
+        teamAbbrev: player.data!.teamAbbrev,
       }),
     enabled: Boolean(player.data?.name),
     staleTime: 60 * 60_000,

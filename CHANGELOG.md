@@ -2,6 +2,14 @@
 
 ---
 
+## RUWT TV networks + today-only; WAR edge deploy — August 19, 2026
+
+- RUWT game cards show TV/stream networks (MLB.TV OK) with logos when ESPN provides them.
+- RUWT boards are Chicago **today only** for MLB, NFL, and soccer (no multi-day soccer slate).
+- Player WAR: FanGraphs leaders run in parallel with BBRef inside `playerExtras`; drop the soft-timeout race that could return blank WAR while the scrape was still running; deploy the sports edge function with the full source (not a stale GitHub pin).
+
+---
+
 ## MLB wraps: wait for recap text; wrap link contrast; game/season lines — August 19, 2026
 
 - **Why wraps wait for recap text:** Scoreboard-only “Final: SCORE” stubs used to keep MLB/Cardinals Dispatch feeds full when ESPN lagged. Those items opened empty readers. Previews already required written ESPN copy; finals now use the same bar — list a wrap only when ESPN has real recap prose (and prefer `news.articles` when `article.story` is empty).

@@ -20,6 +20,7 @@ import {
   type MlbScoredGame,
 } from "@/lib/mlb";
 import { fetchNflScoreboard, chicagoTodayNfl, NFL_TEAMS, type NflScoredGame } from "@/lib/nfl";
+import type { GameBroadcast } from "@/lib/game-broadcasts";
 import {
   chicagoTodaySoccer,
   fetchPremierLeagueTeams,
@@ -118,7 +119,12 @@ export default function RuwtPage() {
 
   const scoreboard = useQuery({
     queryKey: ["mlb-scoreboard", "today", chicagoToday()],
-    queryFn: () => fetchMlbScoreboard(chicagoToday()),
+    queryFn: async () => {
+      const today = chicagoToday();
+      const board = await fetchMlbScoreboard(today);
+      // RUWT is same-day only — drop any spill from the schedule hydrate.
+      return board.filter((g) => !g.officialDate || g.officialDate === today);
+    },
     refetchInterval: 30_000,
     staleTime: 15_000,
   });
@@ -681,6 +687,28 @@ export default function RuwtPage() {
   );
 }
 
+function RuwtBroadcasts({ broadcasts }: { broadcasts?: GameBroadcast[] | null }) {
+  if (!broadcasts?.length) return null;
+  return (
+    <div className="relative z-10 flex flex-wrap items-center gap-1.5 border-t border-white/[0.06] px-3 py-1.5">
+      <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/40">TV</span>
+      {broadcasts.map((b) => (
+        <span
+          key={`${b.market ?? "x"}-${b.name}`}
+          className="inline-flex h-5 max-w-[7.5rem] items-center gap-1 rounded-sm bg-white/[0.07] px-1.5 text-[10px] text-[#c5cce0]"
+          title={b.market ? `${b.name} (${b.market})` : b.name}
+        >
+          {b.logo ? (
+            <img src={b.logo} alt={b.name} className="h-3.5 w-auto max-w-[3.75rem] object-contain" />
+          ) : (
+            <span className="truncate">{b.name}</span>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
   return (
     <Link
@@ -737,6 +765,7 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
           />
         </div>
       )}
+      <RuwtBroadcasts broadcasts={game.broadcasts} />
       {game.reasons.length > 0 && (
         <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
           {game.reasons.join(" · ")}
@@ -801,6 +830,7 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
           <p className="text-[15px] font-bold text-white">{game.home.abbrev}</p>
         </div>
       </div>
+      <RuwtBroadcasts broadcasts={game.broadcasts} />
       {game.reasons.length > 0 && (
         <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
           {game.reasons.join(" · ")}
@@ -965,6 +995,8 @@ function RuwtCard({
           </div>
         </div>
       ) : null}
+
+      <RuwtBroadcasts broadcasts={game.broadcasts} />
 
       {game.reasons.length > 0 && (
         <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">

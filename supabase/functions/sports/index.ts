@@ -2415,43 +2415,227 @@ async function scrapePlayerExtras(
   name: string,
   isPitcher: boolean,
   mlbId?: number | null,
+  teamAbbrev?: string | null,
 ): Promise<Record<string, unknown>> {
-  const page = await loadBbrefPlayerHtml(name, mlbId);
-  if (!page) return { error: "Player not found on Baseball Reference", name };
-  const searchable = page.html.replace(/<!--([\s\S]*?)-->/g, "$1");
-  const stMatch =
-    searchable.match(
-      /Service Time(?:\s*\([^)]*\))?\s*<\/strong>\s*:?\s*([0-9]+(?:\.[0-9]+)?)/i,
-    ) ??
-    searchable.match(/Service Time[^<]{0,60}<\/strong>\s*:?\s*([0-9]+(?:\.[0-9]+)?)/i) ??
-    searchable.match(/Service Time[^:]*:\s*([0-9]+(?:\.[0-9]+)?)/i);
-  const serviceTime = stMatch?.[1] ?? null;
-  const primary = isPitcher ? "p_war" : "b_war";
-  const secondary = isPitcher ? "b_war" : "p_war";
-  // Prefer the player value/standard tables — never the truncated entity-id slice.
-  const valueSlice = extractBbrefWarTables(searchable);
-  let { seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(valueSlice, primary);
-  // Two-way players / misclassified pitchers: fall back to the other WAR column.
-  if (seasonWar == null && careerWar == null) {
-    ({ seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(valueSlice, secondary));
+  // Run FanGraphs beside BBRef — Cloudflare often blocks BBRef from edge IPs while
+  // FanGraphs leaders JSON still returns. Prior fixes only retuned the HTML parser,
+  // so WAR stayed blank whenever the page never arrived (and the browser CORS
+  // fallback could never read BBRef either).
+  const [page, fg] = await Promise.all([
+    loadBbrefPlayerHtml(name, mlbId).catch(() => null),
+    scrapeFangraphsWar({
+      mlbId: mlbId ?? null,
+      name,
+      isPitcher,
+      teamAbbrev: teamAbbrev ?? null,
+    }).catch(() => null),
+  ]);
+
+  let serviceTime: string | null = null;
+  let seasonWar: number | null = null;
+  let careerWar: number | null = null;
+  let url: string | null = null;
+
+  if (page) {
+    const searchable = page.html.replace(/<!--([\s\S]*?)-->/g, "$1");
+    url = page.url;
+    const stMatch =
+      searchable.match(
+        /Service Time(?:\s*\([^)]*\))?\s*<\/strong>\s*:?\s*([0-9]+(?:\.[0-9]+)?)/i,
+      ) ??
+      searchable.match(/Service Time[^<]{0,60}<\/strong>\s*:?\s*([0-9]+(?:\.[0-9]+)?)/i) ??
+      searchable.match(/Service Time[^:]*:\s*([0-9]+(?:\.[0-9]+)?)/i);
+    serviceTime = stMatch?.[1] ?? null;
+    const primary = isPitcher ? "p_war" : "b_war";
+    const secondary = isPitcher ? "b_war" : "p_war";
+    // Prefer the player value/standard tables — never the truncated entity-id slice.
+    const valueSlice = extractBbrefWarTables(searchable);
+    ({ seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(valueSlice, primary));
+    // Two-way players / misclassified pitchers: fall back to the other WAR column.
+    if (seasonWar == null && careerWar == null) {
+      ({ seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(valueSlice, secondary));
+    }
+    if (seasonWar == null && careerWar == null) {
+      ({ seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(searchable, primary));
+    }
+    if (seasonWar == null && careerWar == null) {
+      ({ seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(searchable, secondary));
+    }
   }
-  if (seasonWar == null && careerWar == null) {
-    ({ seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(searchable, primary));
+
+  if (fg && (seasonWar == null || careerWar == null)) {
+    if (seasonWar == null && fg.seasonWar != null) seasonWar = fg.seasonWar;
+    if (careerWar == null && fg.careerWar != null) careerWar = fg.careerWar;
+    if (!url && fg.url) url = fg.url;
   }
-  if (seasonWar == null && careerWar == null) {
-    ({ seasonWar, careerWar } = parseBbrefSeasonAndCareerWar(searchable, secondary));
+
+  if (!page && seasonWar == null && careerWar == null && !serviceTime) {
+    return { error: "Player not found on Baseball Reference", name };
   }
 
   // Core fields only — skip league-rank scrape (extra BBRef page) so WAR survives soft timeouts.
   return {
-    source: "baseball-reference",
-    url: page.url,
+    source: page && (seasonWar != null || careerWar != null || serviceTime)
+      ? "baseball-reference"
+      : fg
+        ? "fangraphs"
+        : page
+          ? "baseball-reference"
+          : "fangraphs",
+    url,
     name,
     serviceTime,
     seasonWar,
     careerWar,
     warRank: null as number | null,
     warOf: null as number | null,
+  };
+}
+
+/** FanGraphs team ids for season/career leaderboard filters. */
+const FANGRAPHS_TEAM_ID: Record<string, number> = {
+  LAA: 1,
+  BAL: 2,
+  BOS: 3,
+  CHW: 4,
+  CWS: 4,
+  CLE: 5,
+  DET: 6,
+  KC: 7,
+  KCR: 7,
+  MIN: 8,
+  NYY: 9,
+  OAK: 10,
+  ATH: 10,
+  SEA: 11,
+  TB: 12,
+  TBR: 12,
+  TEX: 13,
+  TOR: 14,
+  AZ: 15,
+  ARI: 15,
+  ATL: 16,
+  CHC: 17,
+  CIN: 18,
+  COL: 19,
+  MIA: 20,
+  HOU: 21,
+  LAD: 22,
+  MIL: 23,
+  WSH: 24,
+  WSN: 24,
+  NYM: 25,
+  PHI: 26,
+  PIT: 27,
+  STL: 28,
+  SD: 29,
+  SDP: 29,
+  SF: 30,
+  SFG: 30,
+};
+
+async function scrapeFangraphsWar(opts: {
+  mlbId: number | null;
+  name: string;
+  isPitcher: boolean;
+  teamAbbrev: string | null;
+}): Promise<{ seasonWar: number | null; careerWar: number | null; url: string | null } | null> {
+  const yearNow = new Date().getFullYear();
+  const seasonsToTry = [yearNow, yearNow - 1];
+  const stats = opts.isPitcher ? "pit" : "bat";
+  const wantId = opts.mlbId != null && opts.mlbId > 0 ? Math.trunc(opts.mlbId) : null;
+  const wantName = opts.name.trim().toLowerCase().replace(/\./g, "");
+
+  const loadPage = async (team: number, season: number, season1: number, pageitems = 80) => {
+    const url =
+      `https://www.fangraphs.com/api/leaders/major-league/data` +
+      `?pos=all&stats=${stats}&lg=all&qual=0&type=8` +
+      `&season=${season}&season1=${season1}&month=0&team=${team}` +
+      `&pageitems=${pageitems}&pagenum=1&ind=0`;
+    const res = await timedFetch(
+      url,
+      {
+        headers: {
+          "User-Agent": UA,
+          Accept: "application/json",
+          Referer: "https://www.fangraphs.com/",
+        },
+      },
+      12_000,
+    );
+    if (!res.ok) return [] as Record<string, unknown>[];
+    const text = await res.text();
+    if (/just a moment|cf-browser-verification/i.test(text) || text[0] !== "{") return [];
+    try {
+      const json = JSON.parse(text) as { data?: Record<string, unknown>[] };
+      return Array.isArray(json.data) ? json.data : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const matchRow = (rows: Record<string, unknown>[]) => {
+    if (wantId != null) {
+      const byId = rows.find((r) => Number(r.xMLBAMID) === wantId);
+      if (byId) return byId;
+    }
+    return (
+      rows.find((r) => {
+        const n = String(r.PlayerName ?? r.PlayerNameRoute ?? "")
+          .toLowerCase()
+          .replace(/\./g, "")
+          .trim();
+        return n && (n === wantName || n.includes(wantName) || wantName.includes(n));
+      }) ?? null
+    );
+  };
+
+  const teamId =
+    opts.teamAbbrev && FANGRAPHS_TEAM_ID[opts.teamAbbrev.toUpperCase()]
+      ? FANGRAPHS_TEAM_ID[opts.teamAbbrev.toUpperCase()]!
+      : 0;
+
+  let seasonRow: Record<string, unknown> | null = null;
+  for (const y of seasonsToTry) {
+    if (teamId > 0) seasonRow = matchRow(await loadPage(teamId, y, y, 60));
+    if (!seasonRow) seasonRow = matchRow(await loadPage(0, y, y, 200));
+    if (seasonRow) break;
+  }
+
+  let careerRow: Record<string, unknown> | null = null;
+  const fgPlayerId = seasonRow?.playerid != null ? Number(seasonRow.playerid) : null;
+  // Career board filtered by team is small enough to include the player; league-wide career
+  // leaders often omit them.
+  if (teamId > 0) {
+    const careerRows = await loadPage(teamId, yearNow, 1871, 80);
+    careerRow =
+      (fgPlayerId && Number.isFinite(fgPlayerId)
+        ? careerRows.find((r) => Number(r.playerid) === fgPlayerId)
+        : null) ?? matchRow(careerRows);
+  }
+  if (!careerRow && fgPlayerId && Number.isFinite(fgPlayerId)) {
+    const careerRows = await loadPage(0, yearNow, 1871, 150);
+    careerRow = careerRows.find((r) => Number(r.playerid) === fgPlayerId) ?? null;
+  }
+
+  const asWar = (row: Record<string, unknown> | null) => {
+    if (!row || row.WAR == null || row.WAR === "") return null;
+    const n = typeof row.WAR === "number" ? row.WAR : Number(row.WAR);
+    return Number.isFinite(n) ? Math.round(n * 10) / 10 : null;
+  };
+
+  const seasonWar = asWar(seasonRow);
+  const careerWar = asWar(careerRow);
+  if (seasonWar == null && careerWar == null) return null;
+  return {
+    seasonWar,
+    careerWar,
+    url:
+      fgPlayerId != null
+        ? `https://www.fangraphs.com/players/${encodeURIComponent(
+            String(seasonRow?.PlayerNameRoute ?? opts.name).replace(/\s+/g, "-").toLowerCase(),
+          )}/${fgPlayerId}/stats`
+        : "https://www.fangraphs.com/",
   };
 }
 
@@ -3263,41 +3447,20 @@ Deno.serve(async (req: Request) => {
         : typeof mlbIdRaw === "string" && /^\d+$/.test(mlbIdRaw)
           ? Number(mlbIdRaw)
           : null;
+    const teamAbbrev =
+      typeof body.teamAbbrev === "string" && body.teamAbbrev.trim()
+        ? body.teamAbbrev.trim().toUpperCase()
+        : null;
     try {
-      // Soft timeout still returns whatever core fields we managed to scrape.
-      const partial: Record<string, unknown> = {
-        error: "Player extras timed out",
+      // Do not Promise.race an empty partial — that used to return blank WAR while the
+      // scrape was still finishing. timedFetch caps inside scrapePlayerExtras prevent hangs.
+      const full = await scrapePlayerExtras(
         name,
-        serviceTime: null,
-        seasonWar: null,
-        careerWar: null,
-        warRank: null,
-        warOf: null,
-        url: null,
-      };
-      const result = await withBudget(
-        45_000,
-        async () => {
-          const full = await scrapePlayerExtras(name, Boolean(body.isPitcher), mlbId);
-          for (const k of [
-            "serviceTime",
-            "seasonWar",
-            "careerWar",
-            "warRank",
-            "warOf",
-            "url",
-            "source",
-          ] as const) {
-            if (full[k] != null) partial[k] = full[k];
-          }
-          if (full.serviceTime || full.seasonWar != null || full.careerWar != null) {
-            delete partial.error;
-          }
-          return full;
-        },
-        partial,
+        Boolean(body.isPitcher),
+        mlbId,
+        teamAbbrev,
       );
-      return json(result);
+      return json(full);
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 200);
     }

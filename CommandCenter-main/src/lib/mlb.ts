@@ -2,6 +2,7 @@
 
 import { supabase } from "./supabase";
 import { formatSportsDateLong } from "./utils";
+import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 
 const MLB = "https://statsapi.mlb.com/api/v1";
 const ESPN_STANDINGS = "https://site.api.espn.com/apis/v2/sports/baseball/mlb/standings";
@@ -69,6 +70,8 @@ export type MlbScoreGame = {
   gameDate: string | null;
   /** Present while the game is in progress. */
   situation: MlbLiveSituation | null;
+  /** TV / stream networks (MLB.TV, locals, national). */
+  broadcasts: GameBroadcast[];
 };
 
 export type MlbScoreSide = {
@@ -3089,7 +3092,7 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
   const raw = (await mlbGet("schedule", {
     sportId: "1",
     date,
-    hydrate: "linescore,team,probablePitcher,venue",
+    hydrate: "linescore,team,probablePitcher,venue,broadcasts(all)",
   })) as {
     dates?: {
       date?: string;
@@ -3099,6 +3102,14 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
         officialDate?: string;
         status?: { detailedState?: string; abstractGameState?: string };
         venue?: { name?: string };
+        broadcasts?: {
+          type?: string;
+          name?: string;
+          callSign?: string;
+          language?: string;
+          isNational?: boolean;
+          homeAway?: string;
+        }[];
         linescore?: {
           currentInningOrdinal?: string;
           inningState?: string;
@@ -3131,7 +3142,7 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
   };
 
   const games = raw.dates?.[0]?.games ?? [];
-  return games.map((g) => {
+  const mapped = games.map((g) => {
     const abstract = g.status?.abstractGameState ?? "";
     const live = abstract === "Live";
     const final = abstract === "Final";
@@ -3160,6 +3171,21 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
         primaryColor: TEAM_COLORS[teamId] ?? "d9515c",
       };
     };
+    const away = side(g.teams?.away, g.linescore?.teams?.away);
+    const home = side(g.teams?.home, g.linescore?.teams?.home);
+    const mlbTvNames = (g.broadcasts ?? [])
+      .filter((b) => /^TV$/i.test(b.type ?? "") && (!b.language || /^en/i.test(b.language)))
+      .map((b) => ({
+        name: (b.name || b.callSign || "").trim(),
+        market: b.isNational ? "national" : b.homeAway === "home" ? "home" : b.homeAway === "away" ? "away" : null,
+      }))
+      .filter((b) => b.name);
+    // Prefer MLB.TV label when streaming is present but only locals listed.
+    const hasMlbTv = mlbTvNames.some((b) => /mlb\.?\s*tv/i.test(b.name));
+    const named = [
+      ...(!hasMlbTv ? [{ market: "national", names: ["MLB.TV"] }] : []),
+      ...mlbTvNames.map((b) => ({ market: b.market ?? undefined, names: [b.name] })),
+    ];
     return {
       id: String(g.gamePk ?? g.gameDate),
       status: g.status?.detailedState ?? abstract,
@@ -3167,16 +3193,55 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
       live,
       final,
       inning: inn,
-      away: side(g.teams?.away, g.linescore?.teams?.away),
-      home: side(g.teams?.home, g.linescore?.teams?.home),
+      away,
+      home,
       when: fmtWhen(g.gameDate),
       whenShort: fmtWhenShort(g.gameDate),
       venue: g.venue?.name ?? null,
       officialDate: g.officialDate ?? raw.dates?.[0]?.date ?? null,
       gameDate: g.gameDate ?? null,
       situation: mapLiveSituation(g.linescore, live),
-    };
+      broadcasts: parseEspnBroadcasts(undefined, named),
+    } satisfies MlbScoreGame;
   });
+
+  // Overlay ESPN logos (MLB.TV wordmark, etc.) when available.
+  try {
+    const ymd = date.replace(/-/g, "");
+    const espn = (await fetchEspnSiteJson(`baseball/mlb/scoreboard?dates=${ymd}`)) as {
+      events?: {
+        shortName?: string;
+        competitions?: {
+          broadcasts?: { market?: string; names?: string[] }[];
+          geoBroadcasts?: {
+            market?: { type?: string };
+            media?: { shortName?: string; name?: string; logo?: string; darkLogo?: string };
+          }[];
+          competitors?: { homeAway?: string; team?: { abbreviation?: string } }[];
+        }[];
+      }[];
+    } | null;
+    if (!espn) throw new Error("no espn board");
+    const byMatch = new Map<string, GameBroadcast[]>();
+    for (const ev of espn.events ?? []) {
+      const comp = ev.competitions?.[0];
+      if (!comp) continue;
+      const home = (comp.competitors ?? []).find((c) => c.homeAway === "home")?.team?.abbreviation;
+      const away = (comp.competitors ?? []).find((c) => c.homeAway === "away")?.team?.abbreviation;
+      if (!home || !away) continue;
+      const key = `${away.toUpperCase()}@${home.toUpperCase()}`;
+      byMatch.set(key, parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts));
+    }
+    for (const g of mapped) {
+      const key = `${g.away.abbrev.toUpperCase()}@${g.home.abbrev.toUpperCase()}`;
+      const espnBroadcasts = byMatch.get(key);
+      if (espnBroadcasts?.length) g.broadcasts = espnBroadcasts;
+    }
+  } catch {
+    /* keep MLB-derived broadcast names */
+  }
+
+  return mapped;
 }
 
 function teamInGame(g: MlbScoreGame, teamId: number): boolean {
@@ -4506,19 +4571,26 @@ function mapPlayerExtrasPayload(data: unknown): MlbPlayerExtras | null {
       ? (root.data as Record<string, unknown>)
       : root;
   const d = nested as Partial<MlbPlayerExtras> & { error?: string };
-  const hasBits =
-    Boolean(d.serviceTime) ||
-    d.seasonWar != null ||
-    d.careerWar != null ||
-    d.warRank != null;
+  const asNum = (v: unknown): number | null => {
+    if (v == null || v === "") return null;
+    const n = typeof v === "number" ? v : Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const seasonWar = asNum(d.seasonWar);
+  const careerWar = asNum(d.careerWar);
+  const warRank = asNum(d.warRank);
+  const warOf = asNum(d.warOf);
+  const serviceTime =
+    typeof d.serviceTime === "string" && d.serviceTime.trim() ? d.serviceTime.trim() : null;
+  const hasBits = Boolean(serviceTime) || seasonWar != null || careerWar != null || warRank != null;
   if (!hasBits) return null;
   return {
-    serviceTime: d.serviceTime ?? null,
-    seasonWar: d.seasonWar ?? null,
-    careerWar: d.careerWar ?? null,
-    warRank: d.warRank ?? null,
-    warOf: d.warOf ?? null,
-    url: d.url ?? null,
+    serviceTime,
+    seasonWar,
+    careerWar,
+    warRank,
+    warOf,
+    url: typeof d.url === "string" ? d.url : null,
   };
 }
 
@@ -4658,32 +4730,49 @@ function parseBbrefWarFromHtml(
   return { ...out, urlHint };
 }
 
-/** Browser fallback when the sports edge returns service time but blank WAR. */
-async function fetchBbrefWarInBrowser(
+/** Browser fallback when the sports edge returns service time but blank WAR.
+ *  Direct BBRef fetches fail in the browser (CORS + Cloudflare). Re-hit the
+ *  edge once more — FanGraphs fallback now runs server-side inside playerExtras.
+ */
+async function fetchWarViaEdgeRetry(
   name: string,
-  opts?: { isPitcher?: boolean; mlbId?: number | null },
+  opts?: { isPitcher?: boolean; mlbId?: number | null; teamAbbrev?: string | null },
 ): Promise<Pick<MlbPlayerExtras, "seasonWar" | "careerWar" | "url"> | null> {
+  const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  if (!base || !key) return null;
   try {
-    const mlbId = opts?.mlbId;
-    const url =
-      mlbId != null && Number.isFinite(mlbId) && mlbId > 0
-        ? `https://www.baseball-reference.com/redirect.fcgi?player=1&mlb_ID=${Math.trunc(mlbId)}`
-        : `https://www.baseball-reference.com/search/search.fcgi?search=${encodeURIComponent(name)}`;
-    const res = await fetch(url, {
-      headers: { Accept: "text/html" },
-      credentials: "omit",
-      redirect: "follow",
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
-    if (html.length < 20_000 || /just a moment|cf-browser-verification/i.test(html)) return null;
-    const parsed = parseBbrefWarFromHtml(html, Boolean(opts?.isPitcher));
-    if (parsed.seasonWar == null && parsed.careerWar == null) return null;
-    return {
-      seasonWar: parsed.seasonWar,
-      careerWar: parsed.careerWar,
-      url: parsed.urlHint ?? (res.url.includes("/players/") ? res.url : null),
-    };
+    const ctl = new AbortController();
+    const timer = window.setTimeout(() => ctl.abort(), 40_000);
+    try {
+      const res = await fetch(`${base}/functions/v1/sports`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+          apikey: key,
+        },
+        body: JSON.stringify({
+          action: "playerExtras",
+          name,
+          isPitcher: Boolean(opts?.isPitcher),
+          mlbId: opts?.mlbId ?? null,
+          teamAbbrev: opts?.teamAbbrev ?? null,
+          forceWar: true,
+        }),
+        signal: ctl.signal,
+      });
+      if (!res.ok) return null;
+      const mapped = mapPlayerExtrasPayload(await res.json());
+      if (!mapped || (mapped.seasonWar == null && mapped.careerWar == null)) return null;
+      return {
+        seasonWar: mapped.seasonWar,
+        careerWar: mapped.careerWar,
+        url: mapped.url,
+      };
+    } finally {
+      window.clearTimeout(timer);
+    }
   } catch {
     return null;
   }
@@ -4692,7 +4781,7 @@ async function fetchBbrefWarInBrowser(
 /** Service time + WAR from Baseball Reference (via sports edge). */
 export async function fetchMlbPlayerExtras(
   playerName: string,
-  opts?: { isPitcher?: boolean; mlbId?: number | null },
+  opts?: { isPitcher?: boolean; mlbId?: number | null; teamAbbrev?: string | null },
 ): Promise<MlbPlayerExtras | null> {
   const name = playerName.trim();
   if (name.length < 3) return null;
@@ -4701,6 +4790,7 @@ export async function fetchMlbPlayerExtras(
     name,
     isPitcher: Boolean(opts?.isPitcher),
     mlbId: opts?.mlbId ?? null,
+    teamAbbrev: opts?.teamAbbrev ?? null,
   };
 
   const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -4743,9 +4833,10 @@ export async function fetchMlbPlayerExtras(
     }
   }
 
-  // Edge used to truncate the WAR table on BBRef's entity-id= attribute — fill from the browser.
+  // Edge used to return serviceTime with blank WAR when BBRef HTML was CF-blocked.
+  // FanGraphs runs inside playerExtras now; retry once if WAR is still missing.
   if (mapped?.seasonWar == null && mapped?.careerWar == null) {
-    const local = await fetchBbrefWarInBrowser(name, opts);
+    const local = await fetchWarViaEdgeRetry(name, opts);
     if (local) {
       mapped = {
         serviceTime: mapped?.serviceTime ?? null,
