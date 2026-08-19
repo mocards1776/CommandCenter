@@ -1924,7 +1924,7 @@ function RecapBody({
   taggedIds?: Set<number>;
 }) {
   const linkClass =
-    "font-semibold text-accent underline-offset-[3px] transition hover:underline";
+    "font-semibold text-[#eef3ff] underline decoration-accent/45 underline-offset-[3px] transition hover:text-cream hover:decoration-accent";
 
   const needles = hidePhrases
     .map((p) => p.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim())
@@ -2271,12 +2271,21 @@ function EspnBoxBoard({
 
 function batterPerfLine(b: MlbBoxscoreBatter): string {
   return [
-    b.h ? `${b.h} H` : null,
+    `${b.h}-${b.ab}`,
     b.hr ? `${b.hr} HR` : null,
     b.rbi ? `${b.rbi} RBI` : null,
     b.r ? `${b.r} R` : null,
     b.bb ? `${b.bb} BB` : null,
-    !b.h && !b.hr && !b.rbi && !b.r && !b.bb && b.ab ? `${b.ab} AB` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function batterSeasonLine(b: MlbBoxscoreBatter): string {
+  return [
+    b.avg ? `${b.avg} AVG` : null,
+    b.seasonHr != null ? `${b.seasonHr} HR` : null,
+    b.seasonRbi != null ? `${b.seasonRbi} RBI` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -2290,6 +2299,17 @@ function pitcherPerfLine(p: MlbBoxscorePitcher): string {
     `${p.so} K`,
     p.bb ? `${p.bb} BB` : null,
     pitcherDecision(p.note) === "W" ? "W" : pitcherDecision(p.note) === "S" ? "SV" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function pitcherSeasonLine(p: MlbBoxscorePitcher): string {
+  const rec = pitcherSeasonRecord(p);
+  return [
+    rec.wins != null && rec.losses != null ? `${rec.wins}-${rec.losses}` : null,
+    p.seasonEra ? `${p.seasonEra} ERA` : null,
+    rec.saves != null && rec.saves > 0 ? `${rec.saves} SV` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -2310,6 +2330,7 @@ function FavoritePerformancesInGame({
       teamAbbrev: string;
       position: string | null;
       line: string;
+      seasonLine: string;
     };
     const byId = new Map<number, Row>();
     for (const side of [game.away, game.home]) {
@@ -2321,6 +2342,7 @@ function FavoritePerformancesInGame({
           teamAbbrev: b.teamAbbrev,
           position: b.position || null,
           line: batterPerfLine(b),
+          seasonLine: batterSeasonLine(b),
         });
       }
       for (const p of side.pitchers) {
@@ -2336,6 +2358,7 @@ function FavoritePerformancesInGame({
               ? existing.position
               : pitcherRoleLabel(p),
           line: pitcherPerfLine(p),
+          seasonLine: pitcherSeasonLine(p),
         });
       }
     }
@@ -2373,11 +2396,14 @@ function FavoritePerformancesInGame({
                   aria-hidden
                 />
               </Link>
-              <p className="text-[11px] text-[#8b93a7]">
+              <p className="numeral text-[11px] text-[#8b93a7]">
                 {p.teamAbbrev}
                 {p.position ? ` · ${p.position}` : ""}
                 {p.line ? ` · ${p.line}` : ""}
               </p>
+              {p.seasonLine ? (
+                <p className="numeral text-[11px] text-[#a8b0c2]">Season · {p.seasonLine}</p>
+              ) : null}
             </div>
           </li>
         ))}
@@ -2404,35 +2430,50 @@ function TopProspectsInGame({
       orgRank: number | null;
       top100Rank: number | null;
       orgClubId: number | null;
+      line: string;
+      seasonLine: string;
     };
     const byId = new Map<number, Row>();
-    const consider = (
-      id: number,
-      name: string,
-      teamId: number,
-      teamAbbrev: string,
-      position: string | null,
-    ) => {
-      const { orgRank, top100Rank, orgClubId } = prospectRanksFor(prospectRanks, id);
+    const considerBatter = (b: MlbBoxscoreBatter, teamId: number) => {
+      const { orgRank, top100Rank, orgClubId } = prospectRanksFor(prospectRanks, b.id);
       if ((orgRank == null || orgRank <= 0) && (top100Rank == null || top100Rank <= 0)) return;
-      byId.set(id, {
-        id,
-        name,
+      byId.set(b.id, {
+        id: b.id,
+        name: b.name,
         teamId,
-        teamAbbrev,
-        position,
+        teamAbbrev: b.teamAbbrev,
+        position: b.position || null,
         orgRank,
         top100Rank,
         orgClubId: orgClubId ?? null,
+        line: batterPerfLine(b),
+        seasonLine: batterSeasonLine(b),
+      });
+    };
+    const considerPitcher = (p: MlbBoxscorePitcher, teamId: number) => {
+      const { orgRank, top100Rank, orgClubId } = prospectRanksFor(prospectRanks, p.id);
+      if ((orgRank == null || orgRank <= 0) && (top100Rank == null || top100Rank <= 0)) return;
+      const existing = byId.get(p.id);
+      if (existing && parseIpOuts(p.ip) <= 0) return;
+      byId.set(p.id, {
+        id: p.id,
+        name: p.name,
+        teamId,
+        teamAbbrev: p.teamAbbrev,
+        position:
+          existing?.position && existing.position !== "P"
+            ? existing.position
+            : pitcherRoleLabel(p),
+        orgRank,
+        top100Rank,
+        orgClubId: orgClubId ?? null,
+        line: pitcherPerfLine(p),
+        seasonLine: pitcherSeasonLine(p),
       });
     };
     for (const side of [game.away, game.home]) {
-      for (const b of side.batters) {
-        consider(b.id, b.name, side.teamId, side.abbrev, b.position);
-      }
-      for (const p of side.pitchers) {
-        consider(p.id, p.name, side.teamId, side.abbrev, "P");
-      }
+      for (const b of side.batters) considerBatter(b, side.teamId);
+      for (const p of side.pitchers) considerPitcher(p, side.teamId);
     }
     return [...byId.values()].sort((a, b) => {
       const aTop = a.top100Rank ?? 999;
@@ -2480,10 +2521,14 @@ function TopProspectsInGame({
                   ))}
                   {p.name}
                 </Link>
-                <p className="text-[11px] text-[#8b93a7]">
+                <p className="numeral text-[11px] text-[#8b93a7]">
                   {p.teamAbbrev}
                   {p.position ? ` · ${p.position}` : ""}
+                  {p.line ? ` · ${p.line}` : ""}
                 </p>
+                {p.seasonLine ? (
+                  <p className="numeral text-[11px] text-[#a8b0c2]">Season · {p.seasonLine}</p>
+                ) : null}
               </div>
             </li>
           );

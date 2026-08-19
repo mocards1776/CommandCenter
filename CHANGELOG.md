@@ -2,6 +2,14 @@
 
 ---
 
+## MLB wraps: wait for recap text; wrap link contrast; game/season lines — August 19, 2026
+
+- **Why wraps wait for recap text:** Scoreboard-only “Final: SCORE” stubs used to keep MLB/Cardinals Dispatch feeds full when ESPN lagged. Those items opened empty readers. Previews already required written ESPN copy; finals now use the same bar — list a wrap only when ESPN has real recap prose (and prefer `news.articles` when `article.story` is empty).
+- Wrap story links use light `#eef3ff` again (a layout revert had put accent red back on in-body player/story links).
+- Favorite players and Top prospects cards show game lines as **H-AB** (e.g. `0-5`) plus extras, and a **Season** line (AVG/HR/RBI or W-L/ERA/SV).
+
+---
+
 ## Game preview + player card fixes — August 18, 2026
 
 - ESPN last-5: match AZ↔ARI (and other abbrev aliases) / team ids so both clubs load.

@@ -1069,6 +1069,8 @@ export type MlbBoxscoreBatter = {
   avg: string | null;
   obp: string | null;
   slg: string | null;
+  /** Season RBI total when available. */
+  seasonRbi: number | null;
   summary: string;
 };
 
@@ -1091,6 +1093,7 @@ export type MlbBoxscorePitcher = {
   seasonWins: number | null;
   seasonLosses: number | null;
   seasonSaves: number | null;
+  seasonEra: string | null;
 };
 
 export type MlbBoxscoreSide = {
@@ -1195,6 +1198,11 @@ function mapBoxSide(
         seasonHrRaw != null && seasonHrRaw !== ""
           ? Number(seasonHrRaw)
           : null;
+      const seasonRbiRaw = season.rbi;
+      const seasonRbi =
+        seasonRbiRaw != null && seasonRbiRaw !== ""
+          ? Number(seasonRbiRaw)
+          : null;
       return {
         id,
         name: p.person?.fullName ?? "—",
@@ -1212,6 +1220,7 @@ function mapBoxSide(
         avg: avg != null && avg !== "" ? String(avg) : null,
         obp: obp != null && obp !== "" ? String(obp) : null,
         slg: slg != null && slg !== "" ? String(slg) : null,
+        seasonRbi: Number.isFinite(seasonRbi) ? seasonRbi : null,
         summary: String(b.summary ?? ""),
       } satisfies MlbBoxscoreBatter;
     })
@@ -1235,6 +1244,7 @@ function mapBoxSide(
         const n = typeof v === "number" ? v : Number(v);
         return Number.isFinite(n) ? n : null;
       };
+      const eraRaw = season.era;
       return {
         id,
         name: p.person?.fullName ?? "—",
@@ -1252,6 +1262,7 @@ function mapBoxSide(
         seasonWins: readSeason("wins"),
         seasonLosses: readSeason("losses"),
         seasonSaves: readSeason("saves"),
+        seasonEra: eraRaw != null && eraRaw !== "" ? String(eraRaw) : null,
       } satisfies MlbBoxscorePitcher;
     })
     .filter((x): x is MlbBoxscorePitcher => x != null);

@@ -1794,18 +1794,52 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
           description?: string;
           story?: string;
         };
+        news?: {
+          articles?: {
+            headline?: string;
+            description?: string;
+            story?: string;
+          }[];
+        };
       } | null;
 
-      const article = summary?.article;
-      const matchup = event.shortName || event.name || "Cardinals game";
       if (isFinal) {
-        if (!article?.headline) continue;
-        const snippet =
-          article.description?.trim() ||
-          (article.story ? stripTags(article.story).slice(0, 200) : "");
+        type StorySrc = {
+          headline?: string;
+          description?: string;
+          story?: string;
+        };
+        const espnPromo =
+          /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook/i;
+        const candidates: StorySrc[] = [];
+        if (summary?.article) candidates.push(summary.article);
+        for (const a of summary?.news?.articles ?? []) {
+          const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`;
+          if (a.headline && !espnPromo.test(blob)) candidates.push(a);
+        }
+        let best: StorySrc | null = null;
+        let bestLen = 0;
+        for (const c of candidates) {
+          const story = c.story ? stripTags(c.story).trim() : "";
+          const desc = (c.description ?? "").replace(/^—\s*/, "").trim();
+          const len = Math.max(story.length, desc.length);
+          if (len > bestLen || (!best && c.headline)) {
+            best = c;
+            bestLen = len;
+          }
+        }
+        if (!best?.headline) continue;
+        const storyText = best.story ? stripTags(best.story).trim() : "";
+        const description = (best.description ?? "").replace(/^—\s*/, "").trim();
+        const hasStory = storyText.length >= 80;
+        const hasProseDesc =
+          description.length >= 60 && /[.!?]/.test(description) && !/^final\b/i.test(description);
+        // Wait for real wrap prose — headline-only / scoreboard stubs open empty readers.
+        if (!hasStory && !hasProseDesc) continue;
+        const snippet = description || storyText.slice(0, 220);
         items.push({
           id: eventId,
-          title: article.headline,
+          title: best.headline,
           link: espnRecapUrl(eventId),
           author: "ESPN",
           publishedAt: event.date ?? comp.date ?? null,
@@ -1813,6 +1847,7 @@ async function handleCardinalsWrapsFeed(): Promise<Response> {
           snippet,
         });
       } else {
+        const article = summary?.article;
         const headline = article?.headline?.trim() || "";
         const storyText = article?.story ? stripTags(article.story).trim() : "";
         const description = (article?.description ?? "").replace(/^—\s*/, "").trim();

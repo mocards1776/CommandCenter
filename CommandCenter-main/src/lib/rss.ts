@@ -1704,8 +1704,8 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       teamFilter: { espnId: "24", abbrev: "STL" },
       days: 14,
       maxItems: 40,
-      // Finals may stub when ESPN lags; previews only when ESPN has written copy.
-      stubWithoutArticle: true,
+      // Wait for real ESPN wrap/preview prose — scoreboard stubs open empty readers.
+      stubWithoutArticle: false,
     });
   }
   if (feedUrl === "synthetic:mlb-wraps") {
@@ -1721,8 +1721,8 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       lookAheadDays: 1,
       // League volume is high — prefer finals + today's previews.
       preferFinals: true,
-      // Finals may stub; MLB previews still require real ESPN preview text.
-      stubWithoutArticle: true,
+      // Wait for real ESPN wrap/preview prose — scoreboard stubs open empty readers.
+      stubWithoutArticle: false,
     });
   }
   if (feedUrl === "synthetic:nfl-wraps") {
@@ -2411,11 +2411,11 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
           return [pitchers, records || null, when].filter(Boolean).join(" · ") || `First pitch — ${matchup}.`;
         };
 
-        // Scoreboard-only fallback for finals/live — MLB previews require real ESPN preview copy.
+        // Scoreboard stubs: MLB never lists without written ESPN copy (wrap or preview).
+        // Earlier stubs kept feeds full when ESPN lagged, but Dispatch opened empty readers.
         const scoreboardStub = () => {
+          if (linkSport === "mlb") return null;
           if (c.isPreview) {
-            // Baseball: never list a preview without written preview text.
-            if (linkSport === "mlb") return null;
             if (!opts.stubWithoutArticle) return null;
             return stubItem("preview", `Preview: ${matchup}`, previewCopy());
           }
@@ -2454,18 +2454,37 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
           if (!sum || sum.error) return scoreboardStub();
           // Soccer (and some other sports) put wrap copy in news.articles, not article.
           // MLB previews: never promote the league news rail (fantasy promo, clips).
+          // MLB finals: news.articles often hold the real wrap when article.story is empty.
           const espnPromo =
             /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook|team hitting ratings|pitcher projections/i;
-          const newsArticle = (sum.news?.articles ?? []).find((a) => {
+          const newsArticles = (sum.news?.articles ?? []).filter((a) => {
             const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`;
             return Boolean(a.headline) && !espnPromo.test(blob);
           });
+          const newsArticle = newsArticles[0];
           const officialOk =
             Boolean(sum.article?.headline) &&
             !espnPromo.test(
               `${sum.article?.headline ?? ""} ${sum.article?.description ?? ""} ${sum.article?.story ?? ""}`,
             );
-          const article = officialOk
+          type StorySrc = {
+            headline?: string;
+            description?: string;
+            story?: string;
+            images?: { url?: string }[];
+            links?: { href?: string }[] | { web?: { href?: string } };
+          };
+          const stripStory = (html: string | undefined) =>
+            (html ?? "")
+              .replace(/<[^>]+>/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+          const bodyLen = (a: StorySrc | undefined) => {
+            const story = stripStory(a?.story);
+            const desc = (a?.description ?? "").replace(/^—\s*/, "").trim();
+            return Math.max(story.length, desc.length);
+          };
+          let article: StorySrc | undefined = officialOk
             ? sum.article
             : linkSport !== "mlb" && newsArticle?.headline
               ? {
@@ -2476,6 +2495,25 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
                   links: newsArticle.links,
                 }
               : undefined;
+
+          // MLB wraps: pick the richest story body across article + news rail.
+          if (linkSport === "mlb" && c.isFinal) {
+            const candidates: StorySrc[] = [];
+            if (sum.article?.headline || sum.article?.story || sum.article?.description) {
+              candidates.push(sum.article);
+            }
+            for (const a of newsArticles) candidates.push(a);
+            let best: StorySrc | undefined;
+            let bestLen = 0;
+            for (const cand of candidates) {
+              const len = bodyLen(cand);
+              if (len > bestLen || (!best && cand.headline)) {
+                best = cand;
+                bestLen = len;
+              }
+            }
+            if (best) article = best;
+          }
 
           const storyLink = espnArticleLinkHref(article?.links);
           const image = article?.images?.[0]?.url ?? null;
@@ -2495,17 +2533,22 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             if (!article?.headline) {
               return scoreboardStub();
             }
-            const storyText = (article.story ?? "")
-              .replace(/<[^>]+>/g, " ")
-              .replace(/\s+/g, " ")
-              .trim();
-            const snippet =
-              (article.description ?? "").replace(/^—\s*/, "").trim() ||
-              storyText.slice(0, 220);
-            // Wait for real wrap copy unless stubs are allowed.
-            if (!opts.stubWithoutArticle && (!snippet || snippet.length < 40)) return null;
-            if (opts.stubWithoutArticle && (!snippet || snippet.length < 40)) {
-              return stubItem("wrap", article.headline, `Final — ${matchup}.`, image, storyLink);
+            const storyText = stripStory(article.story);
+            const description = (article.description ?? "").replace(/^—\s*/, "").trim();
+            const snippet = description || storyText.slice(0, 220);
+            // MLB: same bar as previews — real wrap prose before Dispatch lists it.
+            if (linkSport === "mlb") {
+              const hasStory = storyText.length >= 80;
+              const hasProseDesc =
+                description.length >= 60 &&
+                /[.!?]/.test(description) &&
+                !/^final\b/i.test(description);
+              if (!hasStory && !hasProseDesc) return null;
+            } else {
+              if (!opts.stubWithoutArticle && (!snippet || snippet.length < 40)) return null;
+              if (opts.stubWithoutArticle && (!snippet || snippet.length < 40)) {
+                return stubItem("wrap", article.headline, `Final — ${matchup}.`, image, storyLink);
+              }
             }
             return {
               id: `wrap-${c.eventId}`,
@@ -2585,9 +2628,18 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   });
 
   // Drop hollow preview stubs (scoreboard-only / pitcher-line previews with no story).
+  // Also drop MLB scoreboard wrap stubs if any slipped through.
   const filtered = items.filter((it) => {
     const snip = (it.snippet ?? "").trim();
     const title = (it.title ?? "").trim();
+    const isMlbWrap =
+      linkSport === "mlb" &&
+      (/\/mlb\/recap\//i.test(it.link) || /^wrap-/i.test(it.id) || /^Final\s*:/i.test(title));
+    if (isMlbWrap) {
+      if (/^Final\s*:/i.test(title) && snip.length < 60) return false;
+      if (/^Final\s*[—–-]/i.test(snip) && snip.length < 60) return false;
+      if (snip.length < 40) return false;
+    }
     const isMlbPreview =
       linkSport === "mlb" &&
       (/\/mlb\/preview\//i.test(it.link) || /^preview-/i.test(it.id) || /^Preview\s*:/i.test(title));
