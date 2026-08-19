@@ -1,0 +1,33 @@
+name: Warm MLB wrap feeds
+
+# Rebuild ESPN wrap caches every 15 minutes so Dispatch shows new wraps
+# even when the app is closed. Hits rss edge mode=warm-wraps.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Warm wrap caches
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          URL="${SUPABASE_URL:-https://esdgrgulaxnewmhjuyzh.supabase.co}"
+          KEY="${SUPABASE_ANON_KEY}"
+          if [ -z "$KEY" ]; then
+            echo "::warning::SUPABASE_ANON_KEY secret is not set — skipping wrap warm."
+            echo "Add SUPABASE_URL (optional) and SUPABASE_ANON_KEY under Repo Settings → Secrets."
+            exit 0
+          fi
+          curl -fsS -X POST "$URL/functions/v1/rss" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $KEY" \
+            -H "apikey: $KEY" \
+            -d '{"mode":"warm-wraps"}' \
+            --max-time 120
+          echo
+          echo "Wrap warm complete."

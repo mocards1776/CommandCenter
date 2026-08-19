@@ -34,5 +34,10 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
     through the `story-link` edge function (service role). Public resolve via
     `resolve_story_link(token)` SECURITY DEFINER RPC (returns slug/label only).
 
+11. `rss_feed_cache` — server-side ESPN wrap/preview payloads (`feed_url`,
+    `payload`, `updated_at`). RLS on, service-role only. Warmed every 15
+    minutes by `pg_cron` + `pg_net` (`warm-mlb-wraps` job) so Dispatch can
+    serve MLB/Cardinals wraps without the app being open.
+
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.
