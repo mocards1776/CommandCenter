@@ -71,12 +71,6 @@ export const RSS_FEEDS: readonly RssFeedDef[] = [
     url: "synthetic:cardinals-savant",
   },
   {
-    id: "words-about-birds",
-    title: "Words About Birds",
-    short: "WAB",
-    url: "synthetic:words-about-birds",
-  },
-  {
     id: "soccer-clubs-wraps",
     title: "Wrexham, Wolves & Arsenal wraps",
     short: "Clubs",
@@ -109,7 +103,6 @@ export const RSS_FEED_FOLDERS: readonly RssFeedFolder[] = [
       "cardinals-wraps",
       "cardinals-farm",
       "cardinals-savant",
-      "words-about-birds",
     ],
   },
   {
@@ -237,7 +230,6 @@ export function sourcePreferenceScore(link: string): number {
   try {
     const host = new URL(link).hostname.replace(/^www\./, "").toLowerCase();
     if (host === "mlb.com" || host.endsWith(".mlb.com")) return 100;
-    if (host.includes("words-about-birds")) return 85;
     if (host.includes("vivaelbirdos") || host.includes("sbnation")) return 70;
     if (host.includes("espn.")) return 55;
     if (host.includes("stltoday")) return 50;
@@ -261,7 +253,6 @@ const PUBLISHER_BY_HOST: { test: RegExp; label: string }[] = [
   { test: /espn\.com/i, label: "ESPN" },
   { test: /mlb\.com/i, label: "MLB" },
   { test: /stltoday|post-dispatch/i, label: "STL Today" },
-  { test: /words-about-birds\.beehiiv\.com/i, label: "Words About Birds" },
   { test: /beehiiv\.com/i, label: "Beehiiv" },
   { test: /fox2|ktvi|foxsports/i, label: "FOX" },
   { test: /yahoo/i, label: "Yahoo" },
@@ -1464,7 +1455,7 @@ export function articleMentionsCardinals(
 ): boolean {
   const hay = `${item.title} ${item.snippet ?? ""} ${item.link ?? ""}`.toLowerCase();
   return (
-    /cardinals?\b|redbirds?\b|\bstl\b|st\.?\s*louis(?:\s+cardinals)?\b|\/cardinals\b|teamid=138\b|words-about-birds\.beehiiv\.com/.test(
+    /cardinals?\b|redbirds?\b|\bstl\b|st\.?\s*louis(?:\s+cardinals)?\b|\/cardinals\b|teamid=138\b/.test(
       hay,
     )
   );
@@ -1813,9 +1804,6 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
   }
   if (feedUrl === "synthetic:cardinals-savant") {
     return fetchCardinalsSavantFeed();
-  }
-  if (feedUrl === "synthetic:words-about-birds") {
-    return invokeRss<RssFeed>({ mode: "feed", feedUrl });
   }
   if (feedUrl.startsWith("synthetic:tag:")) {
     return fetchTagPlayerFeed(feedUrl);
