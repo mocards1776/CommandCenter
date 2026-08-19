@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Loader2, Radio, RefreshCw, Settings2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, RefreshCw, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
 import NflFieldMap from "@/components/sports/NflFieldMap";
-import StarField from "@/components/StarField";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
@@ -143,8 +142,12 @@ export default function RuwtPage() {
   });
 
   const soccerBoard = useQuery({
-    queryKey: ["soccer-ruwt-board", chicagoTodaySoccer()],
-    queryFn: () => fetchSoccerRuwtBoard(chicagoTodaySoccer()),
+    queryKey: ["soccer-ruwt-board", "today-only", chicagoTodaySoccer()],
+    queryFn: async () => {
+      const today = chicagoTodaySoccer();
+      const board = await fetchSoccerRuwtBoard(today);
+      return board.filter((g) => g.date === today);
+    },
     refetchInterval: 30_000,
     staleTime: 15_000,
   });
@@ -348,64 +351,7 @@ export default function RuwtPage() {
   };
 
   return (
-    <div className="flex min-h-0 flex-col gap-5 p-4 md:p-7">
-      <div className="relative overflow-hidden rounded-lg border border-accent/25 bg-gradient-to-br from-hero-lift to-hero p-5 sm:p-7">
-        <StarField count={28} seed={17} />
-        <div className="relative z-10 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div className="rule-head mb-2 inline-flex items-center gap-2">
-              <Radio size={14} className="text-accent" />
-              Are You Watching This
-            </div>
-            <h2 className="font-display text-cream text-[28px] leading-tight sm:text-[34px]">
-              Best games <span className="text-accent">right now</span>
-            </h2>
-            <p className="text-chalk mt-2 max-w-xl text-[13px] leading-relaxed">
-              Today&apos;s MLB, NFL, and soccer games, ranked by drama, your team interest,
-              favorites, and stakes — so you know what to turn on.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setEditing((v) => !v)}
-              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
-            >
-              <Settings2 size={13} />
-              {editing ? "Done" : "Rank teams"}
-            </button>
-            <button
-              type="button"
-              onClick={refresh}
-              disabled={scoreboard.isFetching || nflBoard.isFetching || soccerBoard.isFetching}
-              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40 disabled:opacity-40"
-            >
-              <RefreshCw
-                size={13}
-                className={
-                  scoreboard.isFetching || nflBoard.isFetching || soccerBoard.isFetching
-                    ? "animate-spin"
-                    : ""
-                }
-              />
-              Refresh
-            </button>
-            <Link
-              to="/sports/nfl?solo=1"
-              className="text-chalk hover:text-cream rounded-sm border border-white/10 px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
-            >
-              NFL board
-            </Link>
-            <Link
-              to="/sports/mlb?solo=1"
-              className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
-            >
-              Full MLB
-            </Link>
-          </div>
-        </div>
-      </div>
-
+    <div className="flex min-h-0 flex-col gap-4 p-4 md:p-7">
       <div className="flex flex-wrap items-center gap-2">
         {(
           [
@@ -429,6 +375,31 @@ export default function RuwtPage() {
             {label}
           </button>
         ))}
+        <span className="mx-1 hidden h-4 w-px bg-white/10 sm:inline-block" />
+        <button
+          type="button"
+          onClick={() => setEditing((v) => !v)}
+          className="text-chalk hover:text-cream flex items-center gap-1.5 rounded-sm border border-white/10 px-2.5 py-1.5 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
+        >
+          <Settings2 size={13} />
+          {editing ? "Done" : "Rank teams"}
+        </button>
+        <button
+          type="button"
+          onClick={refresh}
+          disabled={scoreboard.isFetching || nflBoard.isFetching || soccerBoard.isFetching}
+          className="text-chalk hover:text-cream flex items-center gap-1.5 rounded-sm border border-white/10 px-2.5 py-1.5 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40 disabled:opacity-40"
+        >
+          <RefreshCw
+            size={13}
+            className={
+              scoreboard.isFetching || nflBoard.isFetching || soccerBoard.isFetching
+                ? "animate-spin"
+                : ""
+            }
+          />
+          Refresh
+        </button>
       </div>
 
       {editing && (
@@ -695,14 +666,17 @@ function RuwtBroadcasts({ broadcasts }: { broadcasts?: GameBroadcast[] | null })
       {broadcasts.map((b) => (
         <span
           key={`${b.market ?? "x"}-${b.name}`}
-          className="inline-flex h-5 max-w-[7.5rem] items-center gap-1 rounded-sm bg-white/[0.07] px-1.5 text-[10px] text-[#c5cce0]"
+          className="inline-flex h-5 max-w-[9rem] items-center gap-1 rounded-sm bg-white/[0.07] px-1.5 text-[10px] text-[#c5cce0]"
           title={b.market ? `${b.name} (${b.market})` : b.name}
         >
           {b.logo ? (
-            <img src={b.logo} alt={b.name} className="h-3.5 w-auto max-w-[3.75rem] object-contain" />
-          ) : (
-            <span className="truncate">{b.name}</span>
-          )}
+            <img
+              src={b.logo}
+              alt=""
+              className="h-3.5 w-auto max-w-[2.75rem] object-contain brightness-0 invert"
+            />
+          ) : null}
+          <span className="truncate">{b.name}</span>
         </span>
       ))}
     </div>

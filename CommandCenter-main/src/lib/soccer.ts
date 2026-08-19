@@ -269,70 +269,6 @@ async function fetchSoccerScoreboardDay(
   }
 }
 
-function ymdOffsetChicago(baseYmd: string, dayDelta: number): string {
-  const [y, m, d] = baseYmd.split("-").map(Number);
-  const dt = new Date(Date.UTC(y!, m! - 1, d!));
-  dt.setUTCDate(dt.getUTCDate() + dayDelta);
-  return dt.toISOString().slice(0, 10);
-}
-
-async function fetchFocusClubGames(): Promise<SoccerScoreGame[]> {
-  const out: SoccerScoreGame[] = [];
-  await Promise.all(
-    RUWT_SOCCER_FOCUS.map(async (club) => {
-      try {
-        const raw = (await soccerEspnGet(
-          `soccer/${club.leagueSlug}/teams/${club.id}`,
-        )) as {
-          team?: {
-            nextEvent?: {
-              id?: string;
-              date?: string;
-              name?: string;
-              shortName?: string;
-              competitions?: {
-                venue?: { fullName?: string };
-                status?: {
-                  type?: {
-                    state?: string;
-                    completed?: boolean;
-                    description?: string;
-                    shortDetail?: string;
-                    detail?: string;
-                  };
-                };
-                competitors?: {
-                  homeAway?: string;
-                  score?: string | number;
-                  records?: { type?: string; summary?: string }[];
-                  team?: {
-                    id?: string;
-                    abbreviation?: string;
-                    displayName?: string;
-                    shortDisplayName?: string;
-                    logo?: string;
-                    logos?: { href?: string }[];
-                  };
-                }[];
-              }[];
-            }[];
-          };
-        };
-        for (const event of raw.team?.nextEvent ?? []) {
-          const parsed = parseScoreboardPayload(
-            { events: [event] },
-            club.leagueSlug,
-          );
-          out.push(...parsed);
-        }
-      } catch {
-        /* optional */
-      }
-    }),
-  );
-  return out;
-}
-
 /** Today’s boards only — RUWT is a same-day watch list, not a fixture calendar. */
 export async function fetchSoccerRuwtBoard(todayYmd: string): Promise<SoccerScoreGame[]> {
   const ymd = todayYmd.replace(/-/g, "");
@@ -354,7 +290,8 @@ export async function fetchSoccerRuwtBoard(todayYmd: string): Promise<SoccerScor
   const out: SoccerScoreGame[] = [];
   for (const g of [...plToday, ...champFocus.length ? champFocus : champToday]) {
     if (!g.id || seen.has(g.id)) continue;
-    if (g.date && g.date !== chicagoYmd) continue;
+    // Require an explicit Chicago calendar match — undated / next-fixture spill is not RUWT.
+    if (g.date !== chicagoYmd) continue;
     seen.add(g.id);
     out.push(g);
   }

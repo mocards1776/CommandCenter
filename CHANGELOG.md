@@ -2,6 +2,14 @@
 
 ---
 
+## RUWT: drop hero, show TV, today-only soccer — August 19, 2026
+
+- Remove the large RUWT hero (“Best games right now”) — keep sport filters + Rank/Refresh only.
+- TV network chips always show the network name (logos when available); MLB matches ESPN via abbrev aliases (CWS↔CHW).
+- Soccer RUWT is strict Chicago-today only (no undated / next-fixture spill like Watford–Wrexham on 8/22).
+
+---
+
 ## RUWT TV networks + today-only; WAR edge deploy — August 19, 2026
 
 - RUWT game cards show TV/stream networks (MLB.TV OK) with logos when ESPN provides them.

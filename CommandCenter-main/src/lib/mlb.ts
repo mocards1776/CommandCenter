@@ -3249,20 +3249,29 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
       }[];
     } | null;
     if (!espn) throw new Error("no espn board");
-    const byMatch = new Map<string, GameBroadcast[]>();
+    const espnRows: { away: string; home: string; broadcasts: GameBroadcast[] }[] = [];
     for (const ev of espn.events ?? []) {
       const comp = ev.competitions?.[0];
       if (!comp) continue;
       const home = (comp.competitors ?? []).find((c) => c.homeAway === "home")?.team?.abbreviation;
       const away = (comp.competitors ?? []).find((c) => c.homeAway === "away")?.team?.abbreviation;
       if (!home || !away) continue;
-      const key = `${away.toUpperCase()}@${home.toUpperCase()}`;
-      byMatch.set(key, parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts));
+      espnRows.push({
+        away,
+        home,
+        broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
+      });
     }
     for (const g of mapped) {
-      const key = `${g.away.abbrev.toUpperCase()}@${g.home.abbrev.toUpperCase()}`;
-      const espnBroadcasts = byMatch.get(key);
+      const espnBroadcasts = espnRows.find(
+        (row) =>
+          mlbAbbrevsMatch(row.away, g.away.abbrev) && mlbAbbrevsMatch(row.home, g.home.abbrev),
+      )?.broadcasts;
       if (espnBroadcasts?.length) g.broadcasts = espnBroadcasts;
+      // Always keep at least MLB.TV so the RUWT chip row is never empty for MLB.
+      if (!g.broadcasts.length) {
+        g.broadcasts = parseEspnBroadcasts(undefined, [{ market: "national", names: ["MLB.TV"] }]);
+      }
     }
   } catch {
     /* keep MLB-derived broadcast names */
