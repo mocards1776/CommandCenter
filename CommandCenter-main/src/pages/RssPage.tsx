@@ -74,6 +74,7 @@ import {
   deleteRssHighlight,
   feedIdsForFolder,
   isFeedFolderId,
+  isEspnWrapFeedUrl,
   articleNeedsEdgeExtract,
   clearExtractSession,
   fetchRssArticle,
@@ -2160,11 +2161,17 @@ export default function RssPage() {
     allFeeds.find((f) => f.id === id) ?? RSS_FEEDS.find((f) => f.id === id);
 
   const feedQueries = useQueries({
-    queries: allFeeds.map((f) => ({
-      queryKey: ["rss-feed-v4", f.url],
-      queryFn: () => fetchRssFeed(f.url),
-      staleTime: 90_000,
-    })),
+    queries: allFeeds.map((f) => {
+      const wrapFeed = isEspnWrapFeedUrl(f.url);
+      return {
+        queryKey: ["rss-feed-v5", f.url],
+        queryFn: () => fetchRssFeed(f.url),
+        staleTime: wrapFeed ? 45_000 : 90_000,
+        // Keep polling ESPN wrap feeds until recap/preview prose lands — never list score stubs.
+        refetchInterval: wrapFeed ? 90_000 : false,
+        refetchIntervalInBackground: false,
+      };
+    }),
   });
 
   const allNotes = useQuery({
