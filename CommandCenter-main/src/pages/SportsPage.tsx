@@ -25,6 +25,7 @@ import {
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
 import { fetchMlbFarmSystemRankings, fetchTeamCurrentGame, mlbHeadshot, teamPagePath } from "@/lib/mlb";
+import { fetchMlbTeamStatLeagueRanks } from "@/lib/mlb-team-page";
 import {
   DEFAULT_FAVORITES,
   ensureFavoriteTeamsSeeded,
@@ -818,6 +819,19 @@ function TeamDetailPanel({
     refetchInterval: 30_000,
   });
 
+  const teamStatRanks = useQuery({
+    queryKey: ["mlb-team-stat-ranks", mlbTeamId],
+    queryFn: () => fetchMlbTeamStatLeagueRanks(mlbTeamId!),
+    enabled: Boolean(mlbTeamId) && detail?.source === "mlb",
+    staleTime: 60 * 60_000,
+  });
+
+  const statRankMap = useMemo(() => {
+    const map: Record<string, { rank: number; of: number }> = {};
+    for (const r of teamStatRanks.data ?? []) map[r.label] = { rank: r.rank, of: r.of };
+    return map;
+  }, [teamStatRanks.data]);
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/55" onClick={onClose}>
       <aside
@@ -850,7 +864,7 @@ function TeamDetailPanel({
           {detail && (
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               {detail.record && (
-                <span className="numeral text-[24px] leading-none" style={{ color: accent }}>
+                <span className="numeral text-cream text-[24px] leading-none">
                   {detail.record}
                 </span>
               )}
@@ -928,6 +942,7 @@ function TeamDetailPanel({
                 <MlbTeamOrgSummary
                   abbrev={detail.abbrev}
                   accent={accent}
+                  fallbackRecord={detail.record}
                   playoffOdds={formatOdds(detail.playoffOdds)}
                   wildCardOdds={
                     detail.wildCardOdds ? formatOdds(detail.wildCardOdds) : null
@@ -1181,23 +1196,23 @@ function TeamDetailPanel({
                 )}
               </DetailSection>
 
-              <DetailSection title="Upcoming">
+              <CollapsibleDetailSection title="Upcoming" count={detail.upcoming.length} defaultOpen={false}>
                 <GameList
                   games={detail.upcoming}
                   empty="No upcoming games."
                   mlbBoxscores={detail.source === "mlb"}
                 />
-              </DetailSection>
+              </CollapsibleDetailSection>
 
-              <DetailSection title="Recent">
+              <CollapsibleDetailSection title="Recent" count={detail.recent.length} defaultOpen={false}>
                 <GameList
                   games={detail.recent}
                   empty="No recent games."
                   mlbBoxscores={detail.source === "mlb"}
                 />
-              </DetailSection>
+              </CollapsibleDetailSection>
 
-              <DetailSection title="Roster">
+              <CollapsibleDetailSection title="Roster" count={detail.roster.length} defaultOpen={false}>
                 {detail.roster.length === 0 ? (
                   <EmptyLine>Roster unavailable.</EmptyLine>
                 ) : isSoccer ? (
@@ -1247,17 +1262,25 @@ function TeamDetailPanel({
                     })}
                   </ul>
                 )}
-              </DetailSection>
+              </CollapsibleDetailSection>
 
               {!isSoccer ? (
               <DetailSection title="Team stats">
                 {(detail.teamHitting.length > 0 || detail.teamPitching.length > 0) ? (
                   <div className="flex flex-col gap-3">
                     {detail.teamHitting.length > 0 && (
-                      <StatGrid title="Hitting" rows={detail.teamHitting} accent={accent} />
+                      <StatGrid
+                        title="Hitting"
+                        rows={detail.teamHitting}
+                        ranks={statRankMap}
+                      />
                     )}
                     {detail.teamPitching.length > 0 && (
-                      <StatGrid title="Pitching" rows={detail.teamPitching} accent={accent} />
+                      <StatGrid
+                        title="Pitching"
+                        rows={detail.teamPitching}
+                        ranks={statRankMap}
+                      />
                     )}
                   </div>
                 ) : (
@@ -1301,6 +1324,42 @@ function TeamDetailPanel({
         </div>
       </aside>
     </div>
+  );
+}
+
+function CollapsibleDetailSection({
+  title,
+  children,
+  count,
+  defaultOpen = false,
+}: {
+  title: string;
+  children: ReactNode;
+  count?: number;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="mb-3 flex w-full items-center justify-between gap-2 text-left"
+      >
+        <span className="inline-flex items-center gap-2">
+          <h3 className="rule-head">{title}</h3>
+          {count != null && count > 0 ? (
+            <span className="text-chalk-dim numeral text-[11px]">({count})</span>
+          ) : null}
+        </span>
+        {open ? (
+          <ChevronUp size={16} className="text-chalk-dim shrink-0" />
+        ) : (
+          <ChevronDown size={16} className="text-chalk-dim shrink-0" />
+        )}
+      </button>
+      {open ? children : null}
+    </section>
   );
 }
 
@@ -1443,22 +1502,30 @@ function GameList({
 function StatGrid({
   title,
   rows,
-  accent,
+  ranks,
 }: {
   title: string;
   rows: { label: string; value: string }[];
-  accent: string;
+  ranks?: Record<string, { rank: number; of: number }>;
 }) {
   return (
     <div>
       <p className="text-chalk-dim mb-2 text-[10.5px] uppercase tracking-[0.14em]">{title}</p>
       <dl className="grid grid-cols-3 gap-2">
-        {rows.map((s) => (
-          <div key={s.label} className="bg-panel rounded border border-white/[0.07] px-2.5 py-2">
-            <dt className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">{s.label}</dt>
-            <dd className="numeral text-cream mt-0.5 text-[18px]">{s.value}</dd>
-          </div>
-        ))}
+        {rows.map((s) => {
+          const rank = ranks?.[s.label];
+          return (
+            <div key={s.label} className="bg-panel rounded border border-white/[0.07] px-2.5 py-2">
+              <dt className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">{s.label}</dt>
+              <dd className="numeral text-cream mt-0.5 text-[18px]">{s.value}</dd>
+              {rank ? (
+                <p className="text-chalk-dim mt-0.5 text-[10px]">
+                  {`${rank.rank}${ordinalSuffixLocal(rank.rank)}`} in MLB
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
       </dl>
     </div>
   );
