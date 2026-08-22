@@ -16,6 +16,16 @@
 
 ---
 
+## Team page polish — August 22, 2026
+
+- **Baseball-Reference:** Org overview card always renders (with BBRef link + fallback when scrape fails) instead of disappearing silently.
+- **Record readability:** Header record uses cream text instead of dark team-color on navy.
+- **5-year win trend:** WC / DIV / LCS / WS badges on seasons that earned them.
+- **Team stats:** Hitting and pitching tiles show MLB rank (e.g. “3rd in MLB”).
+- **Roster & results:** Upcoming, Recent, and Roster sections collapse by default — tap to expand.
+
+---
+
 ## Wrong MLB wrap + WAR dump — August 19, 2026
 
 - **Wrong game wrap:** ESPN game summaries put other clubs’ recaps on the news rail. Dispatch was picking the longest story, so a Dodgers–Rockies wrap opened with a Jo Adell / Guardians headline and photo. Wraps now keep only copy that mentions both teams.

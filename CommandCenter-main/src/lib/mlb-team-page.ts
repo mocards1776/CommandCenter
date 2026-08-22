@@ -308,11 +308,247 @@ export function leaderHeadshot(playerId: number): string {
   return mlbHeadshot(playerId, 426);
 }
 
+export type MlbTeamWinTrendHonor = "WC" | "DIV" | "LCS" | "WS";
+
 export type MlbTeamWinTrendPoint = {
   season: number;
   wins: number;
   losses: number;
+  honors: MlbTeamWinTrendHonor[];
 };
+
+export type MlbTeamStatRank = {
+  label: string;
+  rank: number;
+  of: number;
+};
+
+type TeamSeasonStats = {
+  teamId: number;
+  hitting: Record<string, unknown>;
+  pitching: Record<string, unknown>;
+  runsScored: number | null;
+  runsAllowed: number | null;
+};
+
+const HITTING_RANK_SPECS: { key: string; label: string; order: "asc" | "desc" }[] = [
+  { key: "runs", label: "R", order: "desc" },
+  { key: "homeRuns", label: "HR", order: "desc" },
+  { key: "avg", label: "AVG", order: "desc" },
+  { key: "obp", label: "OBP", order: "desc" },
+  { key: "slg", label: "SLG", order: "desc" },
+  { key: "ops", label: "OPS", order: "desc" },
+];
+
+const PITCHING_RANK_SPECS: { key: string; label: string; order: "asc" | "desc" }[] = [
+  { key: "era", label: "ERA", order: "asc" },
+  { key: "whip", label: "WHIP", order: "asc" },
+  { key: "strikeOuts", label: "SO", order: "desc" },
+  { key: "saves", label: "SV", order: "desc" },
+  { key: "wins", label: "W", order: "desc" },
+  { key: "inningsPitched", label: "IP", order: "desc" },
+];
+
+function numStat(raw: unknown): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function fetchTeamSeasonStats(teamId: number, season: number): Promise<TeamSeasonStats | null> {
+  try {
+    const [hitRes, pitchRes] = await Promise.all([
+      fetch(
+        `https://statsapi.mlb.com/api/v1/teams/${teamId}/stats?season=${season}&group=hitting&stats=season`,
+        { headers: { Accept: "application/json" } },
+      ),
+      fetch(
+        `https://statsapi.mlb.com/api/v1/teams/${teamId}/stats?season=${season}&group=pitching&stats=season`,
+        { headers: { Accept: "application/json" } },
+      ),
+    ]);
+    if (!hitRes.ok || !pitchRes.ok) return null;
+    const hitRaw = (await hitRes.json()) as {
+      stats?: { splits?: { stat?: Record<string, unknown> }[] }[];
+    };
+    const pitchRaw = (await pitchRes.json()) as {
+      stats?: { splits?: { stat?: Record<string, unknown> }[] }[];
+    };
+    return {
+      teamId,
+      hitting: hitRaw.stats?.[0]?.splits?.[0]?.stat ?? {},
+      pitching: pitchRaw.stats?.[0]?.splits?.[0]?.stat ?? {},
+      runsScored: null,
+      runsAllowed: null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadLeagueTeamStats(season: number): Promise<TeamSeasonStats[]> {
+  const standRes = await fetch(
+    `https://statsapi.mlb.com/api/v1/standings?leagueId=103,104&season=${season}&standingsTypes=regularSeason`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!standRes.ok) return [];
+  const standRaw = (await standRes.json()) as {
+    records?: {
+      teamRecords?: {
+        team?: { id?: number };
+        runsScored?: number;
+        runsAllowed?: number;
+      }[];
+    }[];
+  };
+  const teamRows: { id: number; runsScored: number | null; runsAllowed: number | null }[] = [];
+  for (const div of standRaw.records ?? []) {
+    for (const row of div.teamRecords ?? []) {
+      if (!row.team?.id) continue;
+      teamRows.push({
+        id: row.team.id,
+        runsScored: row.runsScored ?? null,
+        runsAllowed: row.runsAllowed ?? null,
+      });
+    }
+  }
+  const stats = await Promise.all(teamRows.map((t) => fetchTeamSeasonStats(t.id, season)));
+  return stats
+    .map((s, i) => {
+      if (!s) return null;
+      const row = teamRows[i]!;
+      return {
+        ...s,
+        runsScored: row.runsScored,
+        runsAllowed: row.runsAllowed,
+      };
+    })
+    .filter((s): s is TeamSeasonStats => Boolean(s));
+}
+
+function rankTeams(
+  rows: TeamSeasonStats[],
+  read: (row: TeamSeasonStats) => number | null,
+  order: "asc" | "desc",
+): Map<number, number> {
+  const scored = rows
+    .map((row) => ({ teamId: row.teamId, value: read(row) }))
+    .filter((r): r is { teamId: number; value: number } => r.value != null);
+  scored.sort((a, b) => (order === "desc" ? b.value - a.value : a.value - b.value));
+  const out = new Map<number, number>();
+  for (let i = 0; i < scored.length; i++) {
+    const { teamId, value } = scored[i]!;
+    let rank = i + 1;
+    for (let j = i - 1; j >= 0; j--) {
+      if (scored[j]!.value === value) rank = j + 1;
+      else break;
+    }
+    out.set(teamId, rank);
+  }
+  return out;
+}
+
+/** MLB-wide team stat ranks (30 teams) for the team stats grid. */
+export async function fetchMlbTeamStatLeagueRanks(
+  teamId: number,
+  season = new Date().getFullYear(),
+): Promise<MlbTeamStatRank[]> {
+  const rows = await loadLeagueTeamStats(season);
+  if (!rows.length) return [];
+  const of = rows.length;
+  const ranks: MlbTeamStatRank[] = [];
+
+  const rRank = rankTeams(rows, (row) => row.runsScored, "desc");
+  if (rRank.has(teamId)) ranks.push({ label: "R", rank: rRank.get(teamId)!, of });
+
+  for (const spec of HITTING_RANK_SPECS) {
+    if (spec.label === "R") continue;
+    const map = rankTeams(rows, (row) => numStat(row.hitting[spec.key]), spec.order);
+    if (map.has(teamId)) ranks.push({ label: spec.label, rank: map.get(teamId)!, of });
+  }
+  for (const spec of PITCHING_RANK_SPECS) {
+    const map = rankTeams(rows, (row) => numStat(row.pitching[spec.key]), spec.order);
+    if (map.has(teamId)) ranks.push({ label: spec.label, rank: map.get(teamId)!, of });
+  }
+  return ranks;
+}
+
+async function postseasonHonors(teamId: number, season: number): Promise<MlbTeamWinTrendHonor[]> {
+  const honors: MlbTeamWinTrendHonor[] = [];
+  try {
+    const standRes = await fetch(
+      `https://statsapi.mlb.com/api/v1/standings?leagueId=103,104&season=${season}&standingsTypes=regularSeason`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (standRes.ok) {
+      const standRaw = (await standRes.json()) as {
+        records?: {
+          teamRecords?: {
+            team?: { id?: number };
+            divisionChamp?: boolean;
+            divisionLeader?: boolean;
+            hasWildcard?: boolean;
+            clinchIndicator?: string;
+          }[];
+        }[];
+      };
+      for (const div of standRaw.records ?? []) {
+        for (const row of div.teamRecords ?? []) {
+          if (row.team?.id !== teamId) continue;
+          const ind = (row.clinchIndicator ?? "").toLowerCase();
+          if (row.divisionChamp || ind === "z") honors.push("DIV");
+          else if (ind === "y" || (row.hasWildcard && !row.divisionChamp)) honors.push("WC");
+        }
+      }
+    }
+  } catch {
+    /* optional */
+  }
+
+  const seriesWin = async (gameType: "L" | "W", tag: MlbTeamWinTrendHonor) => {
+    try {
+      const res = await fetch(
+        `https://statsapi.mlb.com/api/v1/schedule?season=${season}&sportId=1&gameTypes=${gameType}&teamId=${teamId}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!res.ok) return;
+      const raw = (await res.json()) as {
+        dates?: {
+          games?: {
+            status?: { abstractGameState?: string };
+            seriesDescription?: string;
+            gameNumber?: number;
+            gamesInSeries?: number;
+            teams?: {
+              away?: { team?: { id?: number }; isWinner?: boolean };
+              home?: { team?: { id?: number }; isWinner?: boolean };
+            };
+          }[];
+        }[];
+      };
+      for (const dt of raw.dates ?? []) {
+        for (const g of dt.games ?? []) {
+          if (g.status?.abstractGameState !== "Final") continue;
+          const away = g.teams?.away;
+          const home = g.teams?.home;
+          const side =
+            away?.team?.id === teamId ? away : home?.team?.id === teamId ? home : null;
+          if (!side?.isWinner) continue;
+          if (gameType === "L" && /championship/i.test(g.seriesDescription ?? "")) {
+            if (g.gameNumber === g.gamesInSeries) honors.push(tag);
+          }
+          if (gameType === "W") honors.push(tag);
+        }
+      }
+    } catch {
+      /* optional */
+    }
+  };
+
+  await seriesWin("L", "LCS");
+  await seriesWin("W", "WS");
+  return [...new Set(honors)];
+}
 
 /** Last N regular-season win totals for the team bar chart. */
 export async function fetchMlbTeamWinTrend(
@@ -341,10 +577,12 @@ export async function fetchMlbTeamWinTrend(
         for (const div of raw.records ?? []) {
           for (const row of div.teamRecords ?? []) {
             if (row.team?.id === teamId && row.wins != null) {
+              const honors = await postseasonHonors(teamId, season);
               return {
                 season,
                 wins: row.wins,
                 losses: row.losses ?? 0,
+                honors,
               } satisfies MlbTeamWinTrendPoint;
             }
           }
