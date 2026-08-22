@@ -663,22 +663,30 @@ function RuwtBroadcasts({ broadcasts }: { broadcasts?: GameBroadcast[] | null })
   return (
     <div className="relative z-10 flex flex-wrap items-center gap-1.5 border-t border-white/[0.06] px-3 py-1.5">
       <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/40">TV</span>
-      {broadcasts.map((b) => (
-        <span
-          key={`${b.market ?? "x"}-${b.name}`}
-          className="inline-flex h-5 max-w-[9rem] items-center gap-1 rounded-sm bg-white/[0.07] px-1.5 text-[10px] text-[#c5cce0]"
-          title={b.market ? `${b.name} (${b.market})` : b.name}
-        >
-          {b.logo ? (
-            <img
-              src={b.logo}
-              alt=""
-              className="h-3.5 w-auto max-w-[2.75rem] object-contain brightness-0 invert"
-            />
-          ) : null}
-          <span className="truncate">{b.name}</span>
-        </span>
-      ))}
+      {broadcasts.map((b) => {
+        const isSvg = Boolean(b.logo && /\.svg(\?|$)/i.test(b.logo));
+        return (
+          <span
+            key={`${b.market ?? "x"}-${b.name}`}
+            className="inline-flex h-5 max-w-[9rem] items-center gap-1 rounded-sm bg-white/[0.07] px-1.5 text-[10px] text-[#c5cce0]"
+            title={b.market ? `${b.name} (${b.market})` : b.name}
+          >
+            {b.logo ? (
+              <img
+                src={b.logo}
+                alt=""
+                className={
+                  isSvg
+                    ? "h-3.5 w-3.5 object-contain"
+                    : "h-3.5 w-auto max-w-[2.75rem] object-contain brightness-0 invert"
+                }
+                loading="lazy"
+              />
+            ) : null}
+            <span className="truncate">{b.name}</span>
+          </span>
+        );
+      })}
     </div>
   );
 }
