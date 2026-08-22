@@ -30,10 +30,16 @@ export function mlbToBbrefAbbrev(abbrev: string | null | undefined): string | nu
 export type MlbTeamBbrefSummary = {
   url: string;
   salariesUrl: string | null;
+  scheduleUrl: string | null;
   season: number;
   abbrev: string;
   record: string | null;
   standing: string | null;
+  playoffOdds: {
+    postseason: string | null;
+    worldSeries: string | null;
+    text: string | null;
+  } | null;
   manager: { name: string; record: string | null } | null;
   president: string | null;
   farmDirector: string | null;
@@ -106,10 +112,18 @@ export async function fetchMlbTeamBbrefSummary(
     return {
       url: payload.url,
       salariesUrl: payload.salariesUrl ?? null,
+      scheduleUrl: payload.scheduleUrl ?? null,
       season: payload.season ?? season,
       abbrev: payload.abbrev ?? bb,
       record: payload.record ?? null,
       standing: payload.standing ?? null,
+      playoffOdds: payload.playoffOdds
+        ? {
+            postseason: payload.playoffOdds.postseason ?? null,
+            worldSeries: payload.playoffOdds.worldSeries ?? null,
+            text: payload.playoffOdds.text ?? null,
+          }
+        : null,
       manager: payload.manager ?? null,
       president: payload.president ?? null,
       farmDirector: payload.farmDirector ?? null,
@@ -292,4 +306,54 @@ export async function fetchMlbTeamLeaderCards(
 
 export function leaderHeadshot(playerId: number): string {
   return mlbHeadshot(playerId, 426);
+}
+
+export type MlbTeamWinTrendPoint = {
+  season: number;
+  wins: number;
+  losses: number;
+};
+
+/** Last N regular-season win totals for the team bar chart. */
+export async function fetchMlbTeamWinTrend(
+  teamId: number,
+  seasons = 5,
+): Promise<MlbTeamWinTrendPoint[]> {
+  const end = new Date().getFullYear();
+  const years = Array.from({ length: seasons }, (_, i) => end - seasons + 1 + i);
+  const points = await Promise.all(
+    years.map(async (season) => {
+      try {
+        const res = await fetch(
+          `https://statsapi.mlb.com/api/v1/standings?leagueId=103,104&season=${season}&standingsTypes=regularSeason`,
+          { headers: { Accept: "application/json" } },
+        );
+        if (!res.ok) return null;
+        const raw = (await res.json()) as {
+          records?: {
+            teamRecords?: {
+              wins?: number;
+              losses?: number;
+              team?: { id?: number };
+            }[];
+          }[];
+        };
+        for (const div of raw.records ?? []) {
+          for (const row of div.teamRecords ?? []) {
+            if (row.team?.id === teamId && row.wins != null) {
+              return {
+                season,
+                wins: row.wins,
+                losses: row.losses ?? 0,
+              } satisfies MlbTeamWinTrendPoint;
+            }
+          }
+        }
+      } catch {
+        /* optional season */
+      }
+      return null;
+    }),
+  );
+  return points.filter((p): p is MlbTeamWinTrendPoint => Boolean(p));
 }

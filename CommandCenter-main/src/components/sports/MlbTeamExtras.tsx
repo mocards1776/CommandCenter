@@ -5,6 +5,7 @@ import {
   fetchMlbTeamBbrefSummary,
   fetchMlbTeamLeaderCards,
   fetchMlbTeamPayroll,
+  fetchMlbTeamWinTrend,
   leaderHeadshot,
   type MlbTeamLeaderCard,
 } from "@/lib/mlb-team-page";
@@ -38,6 +39,14 @@ export function MlbTeamOrgSummary({
   }
   if (!s) return null;
 
+  const bbrefPost = s.playoffOdds?.postseason;
+  const bbrefWs = s.playoffOdds?.worldSeries;
+  const oddsLine = bbrefPost
+    ? `${bbrefPost} to make postseason${bbrefWs ? `, ${bbrefWs} to win World Series` : ""}`
+    : playoffOdds
+      ? `Make postseason ${playoffOdds}${wildCardOdds ? ` · WC ${wildCardOdds}` : ""}`
+      : null;
+
   const rows: { label: string; value: ReactNode }[] = [
     {
       label: "Record",
@@ -49,19 +58,27 @@ export function MlbTeamOrgSummary({
           {s.standing ? (
             <span className="text-chalk ml-2 text-[12px]">{s.standing}</span>
           ) : null}
+          {s.scheduleUrl ? (
+            <>
+              {" "}
+              <a
+                href={s.scheduleUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-white/50 underline underline-offset-2 hover:text-white"
+              >
+                Schedule and Results
+              </a>
+            </>
+          ) : null}
         </span>
       ),
     },
   ];
-  if (playoffOdds) {
+  if (oddsLine) {
     rows.push({
       label: "Playoff odds",
-      value: (
-        <span className="text-cream text-[13px]">
-          Make postseason {playoffOdds}
-          {wildCardOdds ? ` · WC ${wildCardOdds}` : ""}
-        </span>
-      ),
+      value: <span className="text-cream text-[13px]">{oddsLine}</span>,
     });
   }
   if (s.manager) {
@@ -139,6 +156,59 @@ export function MlbTeamOrgSummary({
           </div>
         ))}
       </dl>
+    </section>
+  );
+}
+
+export function MlbTeamWinTrend({
+  teamId,
+  accent,
+}: {
+  teamId: number;
+  accent: string;
+}) {
+  const trend = useQuery({
+    queryKey: ["mlb-team-win-trend", teamId],
+    queryFn: () => fetchMlbTeamWinTrend(teamId, 5),
+    staleTime: 60 * 60_000,
+    retry: 1,
+  });
+
+  if (trend.isPending) {
+    return <p className="text-chalk-dim animate-pulse text-[12px]">Loading win trend…</p>;
+  }
+  const rows = trend.data ?? [];
+  if (rows.length === 0) return null;
+  const maxWins = Math.max(100, ...rows.map((r) => r.wins));
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
+      <div className="border-b border-white/[0.06] px-4 py-3">
+        <h3 className="text-[15px] font-semibold text-white">5-Year Win Trend</h3>
+        <p className="text-chalk-dim mt-0.5 text-[11px] uppercase tracking-[0.14em]">
+          Regular season wins
+        </p>
+      </div>
+      <ul className="flex flex-col gap-2.5 px-4 py-4">
+        {rows.map((r) => (
+          <li key={r.season} className="grid grid-cols-[3rem_1fr_2.5rem] items-center gap-2">
+            <span className="numeral text-chalk text-[12px]">{r.season}</span>
+            <div className="h-3.5 overflow-hidden rounded-sm bg-white/[0.06]">
+              <div
+                className="h-full rounded-sm transition-[width] duration-500"
+                style={{
+                  width: `${Math.max(4, (r.wins / maxWins) * 100)}%`,
+                  background: accent,
+                }}
+                title={`${r.wins}-${r.losses}`}
+              />
+            </div>
+            <span className="numeral text-right text-[13px] font-semibold text-white">
+              {r.wins}
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

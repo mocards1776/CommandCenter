@@ -20,6 +20,7 @@ import {
   MlbTeamLeadersSection,
   MlbTeamOrgSummary,
   MlbTeamPayrollTable,
+  MlbTeamWinTrend,
 } from "@/components/sports/MlbTeamExtras";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
@@ -932,6 +933,10 @@ function TeamDetailPanel({
                     detail.wildCardOdds ? formatOdds(detail.wildCardOdds) : null
                   }
                 />
+              )}
+
+              {mlbTeamId && detail.source === "mlb" && (
+                <MlbTeamWinTrend teamId={mlbTeamId} accent={accent} />
               )}
 
               <DetailSection title="Standings">

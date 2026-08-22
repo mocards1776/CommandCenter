@@ -2872,9 +2872,10 @@ async function scrapeTeamBbrefSummary(
   });
   if (!res.ok) return { error: `BBRef team ${res.status}`, abbrev: abbr, season };
   const html = (await res.text()).replace(/<!--([\s\S]*?)-->/g, "$1");
+  // BBRef sometimes puts a space before </strong> ("Manager: </strong>").
   const pickStrong = (label: string) => {
     const re = new RegExp(
-      `<strong>${label}:</strong>\\s*([\\s\\S]*?)(?:</p>|<p>|$)`,
+      `<strong>${label}:\\s*</strong>\\s*([\\s\\S]*?)(?:</p>|<p>|$)`,
       "i",
     );
     const m = html.match(re);
@@ -2888,7 +2889,22 @@ async function scrapeTeamBbrefSummary(
     ? decodeHtmlEntities(stripTags(recordBlock[1])).replace(/\s+/g, " ").trim()
     : null;
   const recordMatch = recordText?.match(/(\d+-\d+)/);
-  const placeMatch = recordText?.match(/(\d+(?:st|nd|rd|th)\s+place\s+in\s+[^,]+)/i);
+  const placeMatch = recordText?.match(
+    /(\d+(?:st|nd|rd|th)\s+place\s+in\s+[A-Za-z0-9_.\s-]+?)(?:\s*\(|$)/i,
+  );
+  const standing = placeMatch?.[1]
+    ? placeMatch[1].replace(/_/g, " ").replace(/\s+/g, " ").trim()
+    : null;
+  const playoffBlock = html.match(
+    /Playoff Odds:<\/strong><\/a>\s*([\s\S]{0,200}?)<\/p>/i,
+  ) ?? html.match(/Playoff Odds:<\/strong>\s*([\s\S]{0,200}?)<\/p>/i);
+  const playoffText = playoffBlock
+    ? decodeHtmlEntities(stripTags(playoffBlock[1])).replace(/\s+/g, " ").trim()
+    : null;
+  const postseasonPct =
+    playoffText?.match(/([\d.]+%)\s*to make postseason/i)?.[1] ?? null;
+  const worldSeriesPct =
+    playoffText?.match(/([\d.]+%)\s*to win World Series/i)?.[1] ?? null;
   const pythagBlock = html.match(/Pythagorean W-L:?\s*([\s\S]{0,120}?)(?:More team|<\/)/i);
   const pythagText = pythagBlock
     ? decodeHtmlEntities(stripTags(pythagBlock[1])).replace(/\s+/g, " ").trim()
@@ -2906,6 +2922,13 @@ async function scrapeTeamBbrefSummary(
   const salaryHref =
     html.match(/href="(\/teams\/[^"]*salaries[^"]*)"/i)?.[1] ??
     `/teams/${abbr}/${abbr.toLowerCase()}-salaries-and-contracts.shtml`;
+  const scheduleHref =
+    html.match(
+      new RegExp(
+        `href="(/teams/[^"]*${abbr}/${season}-schedule-scores[^"]*)"`,
+        "i",
+      ),
+    )?.[1] ?? `/teams/${abbr}/${season}-schedule-scores.shtml`;
 
   return {
     source: "baseball-reference",
@@ -2913,10 +2936,16 @@ async function scrapeTeamBbrefSummary(
     salariesUrl: salaryHref.startsWith("http")
       ? salaryHref
       : `https://www.baseball-reference.com${salaryHref}`,
+    scheduleUrl: `https://www.baseball-reference.com${scheduleHref}`,
     season,
     abbrev: abbr,
     record: recordMatch?.[1] ?? null,
-    standing: placeMatch?.[1] ?? null,
+    standing,
+    playoffOdds: {
+      postseason: postseasonPct,
+      worldSeries: worldSeriesPct,
+      text: playoffText,
+    },
     manager: managerMatch
       ? { name: managerMatch[1]!.trim(), record: managerMatch[2]!.trim() }
       : managerRaw

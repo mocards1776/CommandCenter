@@ -2,6 +2,14 @@
 
 ---
 
+## Team pages: BBRef detail, win trend, TV logos — August 22, 2026
+
+- **Team overview:** Baseball-Reference org block on MLB team drawers now reliably includes manager (fixed `Manager:` scrape), president, farm/scouting directors, ballpark, attendance, park factors, Pythagorean W-L, and BBRef playoff odds (postseason + World Series) with a Schedule and Results link.
+- **5-year win trend:** Horizontal win-total bars for the last five regular seasons on every MLB team drawer.
+- **RUWT TV logos:** Replace the blank ESPN MLB.TV chip with the MLB league mark; map club `.TV` streams and RSNs (Marquee, KING 5, YES, NESN, etc.) to team/league icons so chips are no longer logo-less.
+
+---
+
 ## Wrong MLB wrap + WAR dump — August 19, 2026
 
 - **Wrong game wrap:** ESPN game summaries put other clubs’ recaps on the news rail. Dispatch was picking the longest story, so a Dodgers–Rockies wrap opened with a Jo Adell / Guardians headline and photo. Wraps now keep only copy that mentions both teams.
