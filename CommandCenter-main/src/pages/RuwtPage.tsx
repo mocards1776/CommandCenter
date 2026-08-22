@@ -25,6 +25,7 @@ import {
   fetchPremierLeagueTeams,
   fetchSoccerRuwtBoard,
   loadSoccerTeamInterest,
+  PREMIER_LEAGUE_TEAMS,
   rankRuwtSoccerGames,
   RUWT_SOCCER_FOCUS,
   setSoccerTeamInterestRating,
@@ -156,7 +157,34 @@ export default function RuwtPage() {
     queryKey: ["epl-teams"],
     queryFn: fetchPremierLeagueTeams,
     staleTime: 6 * 60 * 60_000,
+    initialData: PREMIER_LEAGUE_TEAMS.map((t) => ({
+      ...t,
+      logo: t.logo ?? soccerTeamLogo(t.id),
+    })),
   });
+
+  const soccerInterestClubs = useMemo(() => {
+    const focusIds = new Set(RUWT_SOCCER_FOCUS.map((t) => t.id));
+    const pl = (plTeams.data?.length ? plTeams.data : PREMIER_LEAGUE_TEAMS).filter(
+      (t) => !focusIds.has(t.id),
+    );
+    return [
+      ...RUWT_SOCCER_FOCUS.map((t) => ({
+        id: t.id,
+        name: t.name,
+        abbrev: t.abbrev,
+        logo: soccerTeamLogo(t.id),
+        badge: "EFL",
+      })),
+      ...pl.map((t: SoccerTeamMeta) => ({
+        id: t.id,
+        name: t.name,
+        abbrev: t.abbrev,
+        logo: t.logo ?? soccerTeamLogo(t.id),
+        badge: "EPL",
+      })),
+    ];
+  }, [plTeams.data]);
 
   const standings = useQuery({
     queryKey: ["mlb-standings"],
@@ -488,28 +516,7 @@ export default function RuwtPage() {
                 Premier League clubs plus Wrexham & Wolves (Championship). 10 = must-watch.
               </p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {(
-                  [
-                    ...RUWT_SOCCER_FOCUS.map((t) => ({
-                      id: t.id,
-                      name: t.name,
-                      abbrev: t.abbrev,
-                      logo: soccerTeamLogo(t.id),
-                      badge: "EFL",
-                    })),
-                    ...(plTeams.data ?? []).map((t: SoccerTeamMeta) => ({
-                      id: t.id,
-                      name: t.name,
-                      abbrev: t.abbrev,
-                      logo: t.logo,
-                      badge: "EPL",
-                    })),
-                  ]
-                    // Prefer focus clubs first; skip PL duplicates of focus ids.
-                    .filter(
-                      (t, i, arr) => arr.findIndex((x) => x.id === t.id) === i,
-                    )
-                ).map((t) => {
+                {soccerInterestClubs.map((t) => {
                   const value = soccerInterest[String(t.id)] ?? 0;
                   return (
                     <label

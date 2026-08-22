@@ -10,6 +10,12 @@
 
 ---
 
+## RUWT: Premier League interest sliders — August 22, 2026
+
+- Soccer **Rank teams** now always lists all Premier League clubs (static ESPN roster fallback when the live teams API fails), not just Wrexham and Wolves.
+
+---
+
 ## Wrong MLB wrap + WAR dump — August 19, 2026
 
 - **Wrong game wrap:** ESPN game summaries put other clubs’ recaps on the news rail. Dispatch was picking the longest story, so a Dodgers–Rockies wrap opened with a Jo Adell / Guardians headline and photo. Wraps now keep only copy that mentions both teams.
