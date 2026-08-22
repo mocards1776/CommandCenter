@@ -77,6 +77,37 @@ export const RUWT_SOCCER_FOCUS: { id: string; name: string; abbrev: string; leag
     { id: "380", name: "Wolves", abbrev: "WOL", leagueSlug: "eng.2" },
   ];
 
+/** Static Premier League clubs — RUWT sliders must work when ESPN teams fetch fails. */
+export const PREMIER_LEAGUE_TEAMS: SoccerTeamMeta[] = [
+  { id: "349", name: "Bournemouth", abbrev: "BOU", logo: null, leagueSlug: "eng.1" },
+  { id: "359", name: "Arsenal", abbrev: "ARS", logo: null, leagueSlug: "eng.1" },
+  { id: "362", name: "Aston Villa", abbrev: "AVL", logo: null, leagueSlug: "eng.1" },
+  { id: "337", name: "Brentford", abbrev: "BRE", logo: null, leagueSlug: "eng.1" },
+  { id: "331", name: "Brighton", abbrev: "BHA", logo: null, leagueSlug: "eng.1" },
+  { id: "363", name: "Chelsea", abbrev: "CHE", logo: null, leagueSlug: "eng.1" },
+  { id: "388", name: "Coventry", abbrev: "COV", logo: null, leagueSlug: "eng.1" },
+  { id: "384", name: "C Palace", abbrev: "CRY", logo: null, leagueSlug: "eng.1" },
+  { id: "368", name: "Everton", abbrev: "EVE", logo: null, leagueSlug: "eng.1" },
+  { id: "370", name: "Fulham", abbrev: "FUL", logo: null, leagueSlug: "eng.1" },
+  { id: "306", name: "Hull", abbrev: "HUL", logo: null, leagueSlug: "eng.1" },
+  { id: "373", name: "Ipswich", abbrev: "IPS", logo: null, leagueSlug: "eng.1" },
+  { id: "357", name: "Leeds", abbrev: "LEE", logo: null, leagueSlug: "eng.1" },
+  { id: "364", name: "Liverpool", abbrev: "LIV", logo: null, leagueSlug: "eng.1" },
+  { id: "382", name: "Man City", abbrev: "MNC", logo: null, leagueSlug: "eng.1" },
+  { id: "360", name: "Man United", abbrev: "MAN", logo: null, leagueSlug: "eng.1" },
+  { id: "361", name: "Newcastle", abbrev: "NEW", logo: null, leagueSlug: "eng.1" },
+  { id: "393", name: "Nottm Forest", abbrev: "NFO", logo: null, leagueSlug: "eng.1" },
+  { id: "366", name: "Sunderland", abbrev: "SUN", logo: null, leagueSlug: "eng.1" },
+  { id: "367", name: "Spurs", abbrev: "TOT", logo: null, leagueSlug: "eng.1" },
+];
+
+function withSoccerLogos(teams: SoccerTeamMeta[]): SoccerTeamMeta[] {
+  return teams.map((t) => ({
+    ...t,
+    logo: t.logo ?? soccerTeamLogo(t.id),
+  }));
+}
+
 const SOCCER_INTEREST_KEY = "ruwt-soccer-team-interest-v1";
 
 export function loadSoccerTeamInterest(): Record<string, number> {
@@ -316,7 +347,7 @@ export async function fetchPremierLeagueTeams(): Promise<SoccerTeamMeta[]> {
       }[];
     };
     const teams = data.sports?.[0]?.leagues?.[0]?.teams ?? [];
-    return teams
+    const live = teams
       .map((row) => {
         const t = row.team;
         if (!t?.id) return null;
@@ -324,14 +355,16 @@ export async function fetchPremierLeagueTeams(): Promise<SoccerTeamMeta[]> {
           id: String(t.id),
           name: t.shortDisplayName ?? t.displayName ?? "Club",
           abbrev: t.abbreviation ?? "—",
-          logo: t.logos?.[0]?.href ?? null,
+          logo: t.logos?.[0]?.href ?? soccerTeamLogo(t.id),
           leagueSlug: "eng.1",
-        } satisfies SoccerTeamMeta;
+        } as SoccerTeamMeta;
       })
-      .filter((t): t is SoccerTeamMeta => Boolean(t));
+      .filter((t): t is SoccerTeamMeta => t != null);
+    if (live.length) return live;
   } catch {
-    return [];
+    /* fall through */
   }
+  return withSoccerLogos(PREMIER_LEAGUE_TEAMS);
 }
 
 /** Championship promotion odds (Polymarket when live, else ESPN projection). */
