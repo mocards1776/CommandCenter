@@ -94,10 +94,13 @@ import {
   topFinishedWeeks,
   topFinishedMonths,
   buildFinishCard,
+  needsFinishRatingPrompt,
   type ReadingSession,
 } from "@/lib/books";
 import StarField from "@/components/StarField";
 import HighlightCard from "@/components/HighlightCard";
+import FinishRatingPrompt from "@/components/FinishRatingPrompt";
+import RatingPicker from "@/components/RatingPicker";
 import { useCelebration } from "@/components/celebration-context";
 import { cn, todayStr, fmtLongDate } from "@/lib/utils";
 import type { Book, BookHighlight, ReadStatus } from "@/types";
@@ -118,65 +121,7 @@ type Filter = {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/* ── Rating ─────────────────────────────────────────────────────────── */
-/** Half-star picker. StoryGraph uses quarter stars; halves are the useful part. */
-function RatingPicker({
-  value,
-  onChange,
-}: {
-  value: number | null;
-  onChange: (v: number | null) => void;
-}) {
-  const [hover, setHover] = useState<number | null>(null);
-  const shown = hover ?? value ?? 0;
-
-  return (
-    <div className="flex items-center gap-1" onMouseLeave={() => setHover(null)}>
-      {[1, 2, 3, 4, 5].map((i) => (
-        <span key={i} className="relative h-5 w-5">
-          {/* two half-width hit targets per star */}
-          <button
-            aria-label={`${i - 0.5} stars`}
-            onMouseEnter={() => setHover(i - 0.5)}
-            onClick={() => onChange(i - 0.5)}
-            className="absolute left-0 top-0 z-10 h-full w-1/2"
-          />
-          <button
-            aria-label={`${i} stars`}
-            onMouseEnter={() => setHover(i)}
-            onClick={() => onChange(i)}
-            className="absolute right-0 top-0 z-10 h-full w-1/2"
-          />
-          <Star
-            size={19}
-            className={cn(
-              "absolute inset-0",
-              shown >= i - 0.5 ? "text-accent" : "text-white/20",
-            )}
-            style={
-              shown >= i
-                ? { fill: "currentColor" }
-                : shown >= i - 0.5
-                  ? {
-                      fill: "currentColor",
-                      clipPath: "inset(0 50% 0 0)",
-                    }
-                  : undefined
-            }
-          />
-        </span>
-      ))}
-      {value !== null && (
-        <button
-          onClick={() => onChange(null)}
-          className="text-chalk-dim hover:text-alert ml-1.5 text-[10px] uppercase tracking-[0.15em]"
-        >
-          clear
-        </button>
-      )}
-    </div>
-  );
-}
+/* ── Shared UI ──────────────────────────────────────────────────────── */
 
 /* ── Calendar heatmap ───────────────────────────────────────────────── */
 /** Pages read per day for the last ~26 weeks. */
@@ -1539,6 +1484,7 @@ function BookDetail({
   const { burst, bookFinish } = useCelebration();
   const [pages, setPages] = useState("");
   const [date, setDate] = useState(todayStr());
+  const [ratingPromptAt, setRatingPromptAt] = useState<string | null>(null);
   // Seeded from the book so the mode you last used for it comes back.
   const [mode, setMode] = useState<"pages" | "percent" | "page">(
     (book.progress_mode as "pages" | "percent" | "page") ?? "pages",
@@ -1550,14 +1496,33 @@ function BookDetail({
     qc.invalidateQueries({ queryKey: ["on-deck"] });
   };
 
-  const celebrateFinish = (finishedAt = date || todayStr()) =>
-    bookFinish(buildFinishCard(book, books, finishedAt));
+  const celebrateFinish = (finishedAt = date || todayStr(), ratedBook = book) =>
+    bookFinish(buildFinishCard(ratedBook, books, finishedAt));
+
+  const maybeCelebrateFinish = (finishedAt = date || todayStr()) => {
+    if (needsFinishRatingPrompt(book)) {
+      setRatingPromptAt(finishedAt);
+      return;
+    }
+    celebrateFinish(finishedAt);
+  };
+
+  const completeRatingPrompt = async (rating: number | null) => {
+    const finishedAt = ratingPromptAt ?? (date || todayStr());
+    setRatingPromptAt(null);
+    let ratedBook = book;
+    if (rating !== null) {
+      ratedBook = await updateBook(book.id, { star_rating: rating });
+      refresh();
+    }
+    celebrateFinish(finishedAt, ratedBook);
+  };
 
   const patch = useMutation({
     mutationFn: (p: Partial<Book>) => updateBook(book.id, p),
     onSuccess: (_data, vars) => {
       refresh();
-      if (vars.status === "read" && book.status !== "read") celebrateFinish();
+      if (vars.status === "read" && book.status !== "read") maybeCelebrateFinish();
       if (vars.status === "currently-reading" && book.on_deck) {
         toast.success("Moved to Reading — off the deck");
       }
@@ -1578,7 +1543,7 @@ function BookDetail({
     onSuccess: (r, n) => {
       setPages("");
       refresh();
-      if (r.finished) celebrateFinish();
+      if (r.finished) maybeCelebrateFinish();
       else toast.success(`${n} pages logged`);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not log pages"),
@@ -1597,7 +1562,7 @@ function BookDetail({
     onSuccess: (r) => {
       setPages("");
       refresh();
-      if (r.finished) celebrateFinish();
+      if (r.finished) maybeCelebrateFinish();
       else toast.success(r.delta > 0 ? `${r.delta} pages logged` : "Progress updated");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not update"),
@@ -1614,7 +1579,7 @@ function BookDetail({
       }),
     onSuccess: () => {
       refresh();
-      celebrateFinish();
+      maybeCelebrateFinish();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not finish book"),
   });
@@ -1667,6 +1632,7 @@ function BookDetail({
     setCoverToolsOpen(false);
     setCoverLink("");
     setCoverBroken(false);
+    setRatingPromptAt(null);
     setPullY(0);
     pullStartY.current = null;
     pullDelta.current = 0;
@@ -1716,6 +1682,7 @@ function BookDetail({
   };
 
   return (
+    <>
     <div className="book-sheet-scrim fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-md" onClick={onClose}>
       <aside
         ref={panelRef}
@@ -2370,6 +2337,14 @@ function BookDetail({
         </div>
       </aside>
     </div>
+    {ratingPromptAt && (
+      <FinishRatingPrompt
+        book={book}
+        onSubmit={(rating) => void completeRatingPrompt(rating)}
+        onSkip={() => void completeRatingPrompt(null)}
+      />
+    )}
+    </>
   );
 }
 

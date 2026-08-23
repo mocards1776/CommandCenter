@@ -1877,6 +1877,14 @@ export function finishOrdinals(
   };
 }
 
+/** True when finishing should ask for a first-time rating before the recap card. */
+export function needsFinishRatingPrompt(book: {
+  star_rating?: number | null;
+  read_count?: number | null;
+}): boolean {
+  return book.star_rating == null && (book.read_count ?? 0) === 0;
+}
+
 /** Payload for the finish celebration / share card. */
 export function buildFinishCard(
   book: Book,
