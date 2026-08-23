@@ -46,4 +46,5 @@ jobs:
           REF="${PROJECT_REF:-esdgrgulaxnewmhjuyzh}"
           supabase functions deploy rss --project-ref "$REF" --no-verify-jwt
           supabase functions deploy sports --project-ref "$REF" --no-verify-jwt
+          supabase functions deploy plaid --project-ref "$REF"
           echo "Edge deploy complete for $REF"

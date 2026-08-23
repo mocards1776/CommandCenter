@@ -641,6 +641,168 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["story_links"]["Insert"]>;
         Relationships: [];
       };
+      finance_categories: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          slug: string;
+          color: string;
+          icon: string | null;
+          is_income: boolean;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          slug: string;
+          color?: string;
+          icon?: string | null;
+          is_income?: boolean;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["finance_categories"]["Insert"]>;
+        Relationships: [];
+      };
+      finance_accounts: {
+        Row: {
+          id: string;
+          user_id: string;
+          plaid_item_id: string | null;
+          plaid_account_id: string | null;
+          name: string;
+          official_name: string | null;
+          type: string;
+          subtype: string | null;
+          mask: string | null;
+          current_balance: number;
+          available_balance: number | null;
+          credit_limit: number | null;
+          currency: string;
+          is_hidden: boolean;
+          last_synced_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          plaid_item_id?: string | null;
+          plaid_account_id?: string | null;
+          name: string;
+          official_name?: string | null;
+          type?: string;
+          subtype?: string | null;
+          mask?: string | null;
+          current_balance?: number;
+          available_balance?: number | null;
+          credit_limit?: number | null;
+          currency?: string;
+          is_hidden?: boolean;
+          last_synced_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["finance_accounts"]["Insert"]>;
+        Relationships: [];
+      };
+      finance_transactions: {
+        Row: {
+          id: string;
+          user_id: string;
+          account_id: string;
+          category_id: string | null;
+          plaid_transaction_id: string | null;
+          amount: number;
+          name: string;
+          merchant_name: string | null;
+          pending: boolean;
+          transaction_date: string;
+          authorized_date: string | null;
+          payment_channel: string | null;
+          plaid_category: string[] | null;
+          notes: string | null;
+          is_transfer: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          account_id: string;
+          category_id?: string | null;
+          plaid_transaction_id?: string | null;
+          amount: number;
+          name: string;
+          merchant_name?: string | null;
+          pending?: boolean;
+          transaction_date: string;
+          authorized_date?: string | null;
+          payment_channel?: string | null;
+          plaid_category?: string[] | null;
+          notes?: string | null;
+          is_transfer?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["finance_transactions"]["Insert"]>;
+        Relationships: [];
+      };
+      finance_budgets: {
+        Row: {
+          id: string;
+          user_id: string;
+          category_id: string;
+          month: string;
+          amount: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          category_id: string;
+          month: string;
+          amount: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["finance_budgets"]["Insert"]>;
+        Relationships: [];
+      };
+      plaid_items: {
+        Row: {
+          id: string;
+          user_id: string;
+          item_id: string;
+          access_token: string;
+          institution_id: string | null;
+          institution_name: string | null;
+          cursor: string | null;
+          last_synced_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          item_id: string;
+          access_token: string;
+          institution_id?: string | null;
+          institution_name?: string | null;
+          cursor?: string | null;
+          last_synced_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["plaid_items"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {

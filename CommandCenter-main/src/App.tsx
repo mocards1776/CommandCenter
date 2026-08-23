@@ -10,6 +10,7 @@ import DashboardPage from "@/pages/DashboardPage";
 import TodosPage from "@/pages/TodosPage";
 import HabitsPage from "@/pages/HabitsPage";
 import ReadingPage from "@/pages/ReadingPage";
+import FinancePage from "@/pages/FinancePage";
 import SportsPage from "@/pages/SportsPage";
 import MlbPage from "@/pages/MlbPage";
 import RuwtPage from "@/pages/RuwtPage";
@@ -121,6 +122,7 @@ export default function App() {
               <Route path="/todos" element={<TodosPage />} />
               <Route path="/habits" element={<HabitsPage />} />
               <Route path="/reading" element={<ReadingPage />} />
+              <Route path="/finance" element={<FinancePage />} />
               <Route path="/sports" element={<SportsPage />} />
               <Route path="/sports/mlb" element={<MlbPage />} />
               <Route path="/sports/ruwt" element={<RuwtPage />} />
