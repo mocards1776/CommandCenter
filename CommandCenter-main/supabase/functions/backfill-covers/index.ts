@@ -117,6 +117,30 @@ function year(v: unknown): number | undefined {
   return m ? Number.parseInt(m[1], 10) : undefined;
 }
 
+/** Upgrade catalog jacket URLs to the largest available size. */
+function upgradeCoverUrl(url: string): string | null {
+  if (!url?.trim()) return null;
+  let u = url.trim().replace(/^http:/i, "https:");
+  if (/[?&]vid=ISBN/i.test(u)) return null;
+  u = u.replace(/\/b\/(id|isbn|olid)\/([^/?#]+)-(S|M)\.jpe?g(\?[^#]*)?$/i, "/b/$1/$2-L.jpg$4");
+  if (/books\.google\.|googleusercontent\.com\/books/i.test(u)) {
+    u = u.replace(/([?&])edge=curl(&)?/gi, (_, p1, p2) => (p2 ? p1 : ""));
+    if (/[?&]zoom=\d+/i.test(u)) u = u.replace(/([?&])zoom=\d+/gi, "$1zoom=0");
+    else u += (u.includes("?") ? "&" : "?") + "zoom=0";
+    if (!/[?&]img=/i.test(u)) u += "&img=1";
+  }
+  return u;
+}
+
+/** Best hotlink when we can't store bytes — prefer Google, then Open Library. */
+function pickCoverHotlink(urls: string[]): string | null {
+  const upgraded = urls.map((u) => upgradeCoverUrl(u)).filter((u): u is string => Boolean(u));
+  const google = upgraded.find((u) => /books\.google\.|googleusercontent\.com\/books/i.test(u));
+  if (google) return google;
+  const ol = upgraded.find((u) => /covers\.openlibrary\.org/i.test(u));
+  return ol ?? upgraded[0] ?? null;
+}
+
 /** Subjects double as genre chips, so drop the cataloguing cruft. */
 function cleanSubjects(list: unknown): string[] | undefined {
   if (!Array.isArray(list)) return undefined;
@@ -489,10 +513,19 @@ Deno.serve(async (req: Request) => {
           patch.locked_at = new Date().toISOString();
           covers++;
         }
-      } else if (b.cover_path == null) {
-        // A forced re-check that comes up empty leaves the existing cover
-        // alone rather than blanking a good one.
-        patch.cover_path = "";
+      } else {
+        const hotlink = pickCoverHotlink(coverUrls);
+        if (hotlink) {
+          // Hotlink fallback — clear a bad stored stub so the URL can display.
+          patch.cover_url = hotlink;
+          patch.cover_path = null;
+          patch.locked_at = new Date().toISOString();
+          covers++;
+        } else if (b.cover_path == null) {
+          // A forced re-check that comes up empty leaves the existing cover
+          // alone rather than blanking a good one.
+          patch.cover_path = "";
+        }
       }
     }
 

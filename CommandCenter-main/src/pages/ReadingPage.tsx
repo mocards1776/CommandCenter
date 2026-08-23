@@ -1492,13 +1492,6 @@ function SharpCover({
         src={src}
         alt=""
         decoding="async"
-        referrerPolicy="no-referrer"
-        onLoad={(e) => {
-          const w = e.currentTarget.naturalWidth;
-          if (w > 0 && w < 260 && idx < candidates.length - 1) {
-            setIdx((i) => i + 1);
-          }
-        }}
         onError={() => {
           if (idx < candidates.length - 1) setIdx((i) => i + 1);
           else onBroken?.();
@@ -1779,7 +1772,6 @@ function BookDetail({
                 src={cover}
                 alt=""
                 aria-hidden
-                referrerPolicy="no-referrer"
                 className="absolute inset-0 h-full w-full scale-[1.45] object-cover opacity-40 blur-[48px]"
               />
               <div className="absolute inset-0 bg-gradient-to-b from-[#070f1f]/10 via-[#0a1428]/75 to-[#0a1428]" />

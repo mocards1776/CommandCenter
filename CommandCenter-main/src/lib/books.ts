@@ -602,15 +602,17 @@ export function coverCandidates(book: {
     out.push(u);
   };
 
-  if (book.cover_url && /[?&]vid=ISBN/i.test(book.cover_url)) {
-    // Shared Google "no cover" stub — treat as blank.
-  } else if (book.cover_path && book.cover_path.length > 0) {
+  // Storage first — even when cover_url is Google's shared "no cover" stub.
+  if (book.cover_path && book.cover_path.length > 0) {
     const base = supabase.storage.from("book-covers").getPublicUrl(book.cover_path).data.publicUrl;
     const bust = book.locked_at || book.updated_at || "";
     push(bust ? `${base}${base.includes("?") ? "&" : "?"}v=${encodeURIComponent(bust)}` : base);
   }
 
-  push(book.cover_url);
+  // Skip vid=ISBN stub URLs — they are a shared blue "no cover" skeleton.
+  if (!book.cover_url || !/[?&]vid=ISBN/i.test(book.cover_url)) {
+    push(book.cover_url);
+  }
 
   const isbn = String(book.isbn ?? "").replace(/[^0-9Xx]/g, "");
   if (isbn.length === 10 || isbn.length === 13) {
@@ -621,12 +623,6 @@ export function coverCandidates(book: {
 }
 
 export function coverSrc(book: Book): string | null {
-  // Google's vid=ISBN content URL is a shared blue "no cover" skeleton. If that's
-  // what we saved as cover_url, the stored file is almost certainly that stub —
-  // treat the jacket as missing so Find/paste cover can run.
-  if (book.cover_url && /[?&]vid=ISBN/i.test(book.cover_url)) {
-    if (!book.cover_path || book.cover_path.length === 0) return null;
-  }
   return coverCandidates(book)[0] ?? null;
 }
 
@@ -1257,6 +1253,14 @@ export async function pullCover(bookId: string, url?: string): Promise<CoverPull
     !(row.cover_url && /[?&]vid=ISBN/i.test(row.cover_url))
   ) {
     return { found: true, source: "catalog", cover_path: row.cover_path };
+  }
+  if (row?.cover_url && !/[?&]vid=ISBN/i.test(row.cover_url)) {
+    return {
+      found: true,
+      source: "catalog",
+      cover_path: row.cover_path ?? null,
+      cover_url: row.cover_url,
+    };
   }
 
   const { data, error } = await supabase.functions.invoke<CoverPullResult & { error?: string }>(

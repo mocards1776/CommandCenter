@@ -82,6 +82,17 @@ function upgradeGoogleCover(raw: string): string {
   return u;
 }
 
+/** Best available jacket URL from Google Books imageLinks. */
+function googleCoverLink(links: Record<string, string> | undefined): string | null {
+  const raw =
+    links?.extraLarge ??
+    links?.large ??
+    links?.medium ??
+    links?.thumbnail ??
+    links?.smallThumbnail;
+  return raw ? upgradeGoogleCover(String(raw).replace(/^http:/, "https:")) : null;
+}
+
 /** Google Books often has a jacket when Open Library does not. */
 async function googleCover(title: string, author: string | null, isbn: string | null): Promise<string | null> {
   const queries: string[] = [];
@@ -760,9 +771,7 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
         const authors = Array.isArray(v.authors) ? (v.authors as string[]).join(", ") : "";
         const year = String(v.publishedDate ?? "").slice(0, 4);
         const links = v.imageLinks as Record<string, string> | undefined;
-        const cover = links?.thumbnail || links?.smallThumbnail
-          ? String(links.thumbnail ?? links.smallThumbnail).replace(/^http:/, "https:")
-          : null;
+        const cover = googleCoverLink(links);
         const cats = Array.isArray(v.categories)
           ? (v.categories as string[]).slice(0, 2).join(" · ")
           : "";
@@ -915,9 +924,7 @@ async function browseGoogleFrontTables(): Promise<BrowseShelf[]> {
         const authors = Array.isArray(v.authors) ? v.authors.join(", ") : "";
         const pubYear = published.slice(0, 4);
         const links = v.imageLinks as Record<string, string> | undefined;
-        const cover = links?.thumbnail || links?.smallThumbnail
-          ? String(links.thumbnail ?? links.smallThumbnail).replace(/^http:/, "https:")
-          : null;
+        const cover = googleCoverLink(links);
         const ratings = Number(v.ratingsCount ?? 0);
         const cats = Array.isArray(v.categories) ? v.categories.slice(0, 2).join(" · ") : "";
         books.push({
