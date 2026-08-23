@@ -318,12 +318,19 @@ function TourCard({
                     </td>
                     <td className="py-2.5 pr-2">
                       {l.id ? (
-                        <Link
-                          to={`/sports/golf/player/${l.id}`}
-                          className="text-cream text-[13px] hover:underline"
-                        >
-                          {l.shortName ?? l.name}
-                        </Link>
+                        <span className="inline-flex max-w-[12rem] items-center gap-1 sm:max-w-[16rem]">
+                          <Link
+                            to={`/sports/golf/player/${l.id}`}
+                            className="text-cream truncate text-[13px] hover:underline"
+                          >
+                            {l.shortName ?? l.name}
+                          </Link>
+                          {l.fedexCupRank != null && l.fedexCupRank > 0 ? (
+                            <span className="numeral shrink-0 text-[10px] font-medium text-[#d4a574]/90">
+                              {l.fedexCupRank}
+                            </span>
+                          ) : null}
+                        </span>
                       ) : (
                         <span className="text-cream text-[13px]">{l.shortName ?? l.name}</span>
                       )}
