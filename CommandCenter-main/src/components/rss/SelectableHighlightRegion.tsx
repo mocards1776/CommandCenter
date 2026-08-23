@@ -12,6 +12,7 @@ import {
   fetchRssHighlights,
   hidePhrasesInHtml,
   markQuotesInHtml,
+  paintQuotesInElement,
   scrubReaderChrome,
   type RssHighlight,
 } from "@/lib/rss";
@@ -181,6 +182,15 @@ export function SelectableHighlightRegion({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [pendingQuote]);
+
+  // Children mode (game wraps) and html mode: paint on the live DOM after mount/update.
+  useEffect(() => {
+    if (!quoteTexts.length) return;
+    const id = window.requestAnimationFrame(() => {
+      paintQuotesInElement(rootRef.current, quoteTexts);
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [quoteTexts, displayHtml, children]);
 
   return (
     <>
