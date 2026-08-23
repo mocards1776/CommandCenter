@@ -16,6 +16,12 @@
 
 ---
 
+## MoScout inline highlights — August 23, 2026
+
+- Restore DOM highlight painting after article render so saved quotes show red inline marks in Missouri Scout (and other Dispatch) articles, not only in the Notes panel. Game wraps and previews get the same fix via `SelectableHighlightRegion`.
+
+---
+
 ## Team page polish — August 22, 2026
 
 - **Baseball-Reference:** Org overview card always renders (with BBRef link + fallback when scrape fails) instead of disappearing silently.

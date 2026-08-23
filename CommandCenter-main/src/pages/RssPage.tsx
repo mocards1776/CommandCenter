@@ -66,6 +66,7 @@ import {
   encodeFeedDomainFilter,
   loadDedupeKeepHosts,
   markQuotesInHtml,
+  paintQuotesInElement,
   parseFeedScopedFilter,
   parsePlayerArticleLink,
   parseMlbGameArticleLink,
@@ -1240,6 +1241,17 @@ function ArticleReaderShell({
     root.addEventListener("click", onImgClick);
     return () => root.removeEventListener("click", onImgClick);
   }, [displayHtml]);
+
+  // Belt-and-suspenders: paint saved quotes on the live DOM after linkify/extract
+  // so MoScout (and other feeds) show inline marks even when HTML-string matching misses.
+  useEffect(() => {
+    if (!quoteTexts.length) return;
+    const id = window.requestAnimationFrame(() => {
+      paintQuotesInElement(articleBodyRef.current, quoteTexts);
+      paintQuotesInElement(titleSelectRef.current, quoteTexts);
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [displayHtml, quoteTexts]);
 
   // Link any MLB player names → player page; stylize tweet cards; repair imgs.
   useEffect(() => {
