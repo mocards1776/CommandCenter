@@ -501,6 +501,37 @@ function scoreText(score: unknown): string {
   return "";
 }
 
+/** Parse golf to-par text (E, +2, -5) into a sortable number (lower is better). */
+function golfToParNumeric(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const s = raw.trim().toUpperCase();
+  if (!s || s === "—" || s === "-") return null;
+  if (s === "E") return 0;
+  const n = Number.parseInt(s, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Official tournament to-par from ESPN statistics (matches leaderboard position). */
+function golfScoreToPar(c: {
+  score?: unknown;
+  statistics?: { name?: string; displayValue?: string; value?: number }[];
+}): { text: string; value: number | null } {
+  const stp = (c.statistics ?? []).find((s) => s.name === "scoreToPar");
+  if (stp) {
+    const text =
+      (stp.displayValue && String(stp.displayValue).trim()) ||
+      formatGolfToPar(stp.value) ||
+      "";
+    const value =
+      typeof stp.value === "number" && Number.isFinite(stp.value)
+        ? stp.value
+        : golfToParNumeric(text);
+    if (text) return { text, value };
+  }
+  const fallback = scoreText(c.score);
+  return { text: fallback, value: golfToParNumeric(fallback) };
+}
+
 function fmtWhen(iso: string | null | undefined): string | null {
   if (!iso) return null;
   try {
@@ -930,6 +961,7 @@ type EspnTourPayload = {
           period?: number;
           linescores?: unknown[];
         }[];
+        statistics?: { name?: string; displayValue?: string; value?: number }[];
       }[];
     }[];
   }[];
@@ -955,16 +987,22 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
   const comp = event?.competitions?.[0];
   const competitors = comp?.competitors ?? [];
 
-  // Tie-aware positions from score / leaderboard order.
-  const sorted = [...competitors].sort(
-    (a, b) => (a.sortOrder ?? a.order ?? 0) - (b.sortOrder ?? b.order ?? 0),
-  );
+  // Tie-aware positions from official to-par / leaderboard order.
+  const sorted = [...competitors].sort((a, b) => {
+    const ao = a.sortOrder ?? a.order;
+    const bo = b.sortOrder ?? b.order;
+    if (ao != null && bo != null && ao !== bo) return ao - bo;
+    const av = golfScoreToPar(a).value;
+    const bv = golfScoreToPar(b).value;
+    if (av != null && bv != null && av !== bv) return av - bv;
+    return (ao ?? 0) - (bo ?? 0);
+  });
   const positions: string[] = [];
   let i = 0;
   while (i < sorted.length) {
-    const score = scoreText(sorted[i]!.score);
+    const score = golfScoreToPar(sorted[i]!).text;
     let j = i + 1;
-    while (j < sorted.length && scoreText(sorted[j]!.score) === score) j++;
+    while (j < sorted.length && golfScoreToPar(sorted[j]!).text === score) j++;
     const label = j - i > 1 ? `T${i + 1}` : String(i + 1);
     for (let k = i; k < j; k++) positions[k] = label;
     i = j;
@@ -1014,11 +1052,13 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
       positions[idx] ||
       String(idx + 1);
 
+    const toPar = golfScoreToPar(c);
+
     return {
       id: c.athlete?.id != null ? String(c.athlete.id) : c.id != null ? String(c.id) : null,
       name: c.athlete?.displayName ?? "—",
       shortName: c.athlete?.shortName ?? null,
-      score: scoreText(c.score) || "—",
+      score: toPar.text || "—",
       detail: c.status?.type?.description ?? null,
       position,
       thru,
