@@ -50,6 +50,6 @@ export function TeamStandingLine({
 }) {
   if (!standing) return null;
   return (
-    <p className={cn("mt-0.5 text-[9px] leading-tight text-white/50", className)}>{standing}</p>
+    <p className={cn("mt-0.5 text-[10px] leading-tight text-white/50 md:text-[9px]", className)}>{standing}</p>
   );
 }

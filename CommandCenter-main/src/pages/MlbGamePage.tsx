@@ -48,7 +48,7 @@ import {
   type RecapInline,
 } from "@/lib/mlb";
 import { contentHidePhrases, fetchRssFilters } from "@/lib/rss";
-import { cn, formatSportsDateLong } from "@/lib/utils";
+import { cn, dispatchReaderColumnClass, formatSportsDateLong } from "@/lib/utils";
 
 export function MlbGameDetail({
   gamePk,
@@ -387,7 +387,7 @@ export default function MlbGamePage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
+    <div className={cn(dispatchReaderColumnClass, "space-y-5 p-4 md:p-7")}>
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
@@ -722,9 +722,9 @@ function EspnPreviewExtras({
             Team stats
           </p>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[520px] border-collapse text-[12px]">
+            <table className="w-full min-w-[520px] border-collapse text-[13px] md:text-[12px]">
               <thead>
-                <tr className="border-b border-white/[0.07] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                <tr className="border-b border-white/[0.07] text-[11px] uppercase tracking-[0.12em] text-[#8b93a7] md:text-[10px]">
                   <th className="px-3 py-2 text-left font-semibold">Team</th>
                   {(
                     [
@@ -1038,9 +1038,9 @@ function BbrefStatTable({
         {title}
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[320px] text-[12px]">
+        <table className="w-full min-w-[320px] text-[13px] md:text-[12px]">
           <thead>
-            <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+            <tr className="bg-white/[0.03] text-[11px] uppercase tracking-[0.12em] text-[#8b93a7] md:text-[10px]">
               {columns.map((c) => (
                 <th
                   key={c.key}
@@ -1331,14 +1331,14 @@ function EspnTeam({
       >
         <p
           className={cn(
-            "truncate text-[15px] font-bold tracking-wide sm:text-[22px]",
+            "truncate text-[17px] font-bold tracking-wide sm:text-[22px]",
             winner ? "text-white" : loser ? "text-white/55" : "text-white",
           )}
         >
           {side.abbrev}
         </p>
         {side.record ? (
-          <p className="numeral mt-0.5 truncate text-[11px] font-medium text-white/70 sm:mt-1 sm:text-[13px]">
+          <p className="numeral mt-0.5 truncate text-[12px] font-medium text-white/70 sm:mt-1 sm:text-[13px]">
             {side.record}
           </p>
         ) : (
@@ -1406,9 +1406,9 @@ function ProbablePitchers({
       </div>
       {(awayStats || homeStats || loading) && (
         <div className="overflow-x-auto border-t border-white/[0.07]">
-          <table className="w-full min-w-[520px] text-[12px]">
+          <table className="w-full min-w-[520px] text-[13px] md:text-[12px]">
             <thead>
-              <tr className="bg-white/[0.03] text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+              <tr className="bg-white/[0.03] text-[11px] uppercase tracking-[0.12em] text-[#8b93a7] md:text-[10px]">
                 <th className="px-3 py-2 text-left font-medium">Player</th>
                 <th className="numeral px-1.5 py-2 font-medium">W-L</th>
                 <th className="numeral px-1.5 py-2 font-medium">ERA</th>
@@ -1452,7 +1452,7 @@ function ProbablePitchers({
                         <span className="text-cream">{label}</span>
                       )}
                       {meta && (
-                        <span className="mt-0.5 block text-[10px] text-[#8b93a7]">{meta}</span>
+                        <span className="mt-0.5 block text-[11px] text-[#8b93a7] md:text-[10px]">{meta}</span>
                       )}
                     </td>
                     {stats ? (
@@ -1521,7 +1521,7 @@ function PitcherCard({
         <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-white/50">{first}</p>
       )}
       <p className="text-[16px] font-semibold leading-tight text-white sm:text-[18px]">{last}</p>
-      {meta && <p className="text-[10px] text-[#8b93a7]">{meta}</p>}
+      {meta && <p className="text-[11px] text-[#8b93a7] md:text-[10px]">{meta}</p>}
     </>
   );
   const cls = cn(
@@ -1846,7 +1846,7 @@ function GameWrap({
       articleTitle={recap.headline || "Game wrap"}
       feedUrl="synthetic:mlb-wraps"
       className={cn(
-        "font-rss text-[15px] leading-[1.75] text-[#d5dae6] [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream",
+        "font-rss text-[16px] leading-[1.75] text-[#d5dae6] md:text-[15px] [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream",
         !effectiveOpen && long && "line-clamp-[12]",
       )}
     >
