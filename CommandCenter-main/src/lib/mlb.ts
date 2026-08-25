@@ -611,6 +611,42 @@ export function normalizePersonName(name: string): string {
     .trim();
 }
 
+/** Map ASCII letters to common accented variants for regex name matching. */
+const ACCENT_CHAR_CLASS: Partial<Record<string, string>> = {
+  a: "aàáâãäåāăą",
+  c: "cçćč",
+  e: "eèéêëēėę",
+  g: "gğ",
+  i: "iìíîïīį",
+  l: "lł",
+  n: "nñń",
+  o: "oòóôõöōő",
+  s: "sśš",
+  u: "uùúûüūű",
+  y: "yýÿ",
+  z: "zžźż",
+};
+
+function accentFlexibleNamePart(part: string): string {
+  const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return [...part]
+    .map((ch) => {
+      const cls = ACCENT_CHAR_CLASS[ch];
+      if (cls) return `[${cls}]`;
+      return escapeRe(ch);
+    })
+    .join("");
+}
+
+/** Build a regex fragment for a normalized name that still matches accented prose. */
+function accentFlexibleNamePattern(normalizedName: string): string {
+  return normalizedName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(accentFlexibleNamePart)
+    .join("[\\s.\\-]+");
+}
+
 export function buildPlayerNameIndex(
   players: { id: number; name: string }[],
   opts: { bareLastNames?: boolean } = {},
@@ -654,7 +690,9 @@ const NON_PLAYER_NAME_HINTS = new Set(
 /** Pull likely "First Last" mentions from article prose for MLB people search. */
 export function extractPlayerNameCandidates(text: string, limit = 48): string[] {
   if (!text) return [];
-  const matches = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z.'-]+){1,2}\b/g) ?? [];
+  // Unicode letters so accented names (Rincón, Gastélum) are discovered.
+  const matches =
+    text.match(/\b[\p{Lu}][\p{L}]+(?:\s+[\p{Lu}][\p{L}.'-]+){1,2}\b/gu) ?? [];
   const out: string[] = [];
   const seen = new Set<string>();
   for (const raw of matches) {
@@ -669,8 +707,9 @@ export function extractPlayerNameCandidates(text: string, limit = 48): string[] 
 
 export async function fetchMlbTeamRoster(
   teamId: number,
+  rosterType: "active" | "40Man" = "active",
 ): Promise<{ id: number; name: string }[]> {
-  const raw = (await mlbGet(`teams/${teamId}/roster`, { rosterType: "active" })) as {
+  const raw = (await mlbGet(`teams/${teamId}/roster`, { rosterType })) as {
     roster?: { person?: { id?: number; fullName?: string } }[];
   };
   return (raw.roster ?? [])
@@ -855,16 +894,8 @@ export function linkifyMlbPlayersInHtml(
     .filter((n) => n.length >= 3)
     .sort((a, b) => b.length - a.length);
   if (names.length) {
-    const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    // Allow flexible whitespace/punctuation between name parts as in the index key.
-    const pattern = names
-      .map((n) =>
-        escapeRe(n)
-          .split(/\s+/)
-          .join("[\\s.\\-]+"),
-      )
-      .join("|");
-    const re = new RegExp(`\\b(?:${pattern})\\b`, "gi");
+    const pattern = names.map(accentFlexibleNamePattern).join("|");
+    const re = new RegExp(`\\b(?:${pattern})\\b`, "giu");
 
     const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const textNodes: Text[] = [];
@@ -2069,6 +2100,11 @@ function stripHtml(html: string): string {
     .replace(/&#39;/g, "'")
     .replace(/&quot;/g, '"')
     .replace(/\n{3,}/g, "\n\n");
+}
+
+/** Plain text from article HTML — used for player-name discovery in Dispatch. */
+export function htmlToPlainText(html: string): string {
+  return stripHtml(html).replace(/\s+/g, " ").trim();
 }
 
 /** Pull ESPN `gameId` from mlb recap / preview / game URLs. */

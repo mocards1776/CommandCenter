@@ -185,15 +185,14 @@ export default function DispatchEspnGameReader({
   );
 
   const hero = heroImage ? (
-    <div className="relative -mx-4 mb-4 overflow-hidden md:-mx-7">
-      <div className="relative aspect-[16/9] max-h-[280px] w-full md:aspect-[21/9] md:max-h-[340px]">
+    <div className="relative -mx-4 mb-4 md:-mx-7">
+      <div className="relative max-h-[min(52vh,480px)] w-full overflow-hidden rounded-sm bg-black/15">
         <img
           src={heroImage}
           alt=""
-          className="absolute inset-0 h-full w-full object-cover object-center"
+          className="mx-auto max-h-[min(52vh,480px)] w-full object-contain object-center"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#07101f] via-[#07101f]/45 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#0c1a36]/55 via-transparent to-[#1a0e14]/35" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#07101f] to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 md:px-7">
           <p className="text-cream text-[10px] font-semibold uppercase tracking-[0.2em]">
             Game wrap

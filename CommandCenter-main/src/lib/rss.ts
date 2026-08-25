@@ -3401,22 +3401,17 @@ async function fetchCardinalsFarmWrapsFeed(): Promise<RssFeed> {
   };
 }
 
-/** Cardinals Baseball Savant Statcast preview pages (recent + upcoming). */
+/** Cardinals Baseball Savant Statcast preview — today's game only (Central). */
 async function fetchCardinalsSavantFeed(): Promise<RssFeed> {
   const { mlbTeamLogo } = await import("./mlb");
-  const { formatSportsDateLong } = await import("./utils");
+  const { formatSportsDateLong, todayStr } = await import("./utils");
 
   const CARDINALS_ID = 138;
-  const today = new Date();
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const start = new Date(today);
-  start.setDate(start.getDate() - 5);
-  const end = new Date(today);
-  end.setDate(end.getDate() + 7);
+  const today = todayStr();
 
   const url =
     `https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${CARDINALS_ID}` +
-    `&startDate=${iso(start)}&endDate=${iso(end)}&hydrate=team`;
+    `&startDate=${today}&endDate=${today}&hydrate=team`;
   const res = await fetch(url, { headers: { Accept: "application/json" } });
   if (!res.ok) throw new Error(`Cardinals schedule ${res.status}`);
   const data = (await res.json()) as {
@@ -3447,6 +3442,7 @@ async function fetchCardinalsSavantFeed(): Promise<RssFeed> {
       const homeAbbr = home?.abbreviation ?? "HOME";
       const status = g.status?.detailedState ?? g.status?.abstractGameState ?? "";
       const date = g.officialDate ?? day.date ?? "";
+      if (date !== today) continue;
       const dateLabel = date ? formatSportsDateLong(date) : "";
       const isFinal = /final|completed/i.test(status);
       const title = isFinal
@@ -3474,7 +3470,7 @@ async function fetchCardinalsSavantFeed(): Promise<RssFeed> {
 
   return {
     title: "Cardinals Baseball Savant",
-    description: "Statcast previews for upcoming and recent St. Louis Cardinals games",
+    description: "Statcast preview for today's St. Louis Cardinals game",
     link: "https://baseballsavant.mlb.com/",
     feedUrl: "synthetic:cardinals-savant",
     items,
