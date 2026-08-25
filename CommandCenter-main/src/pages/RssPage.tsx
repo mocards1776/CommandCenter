@@ -153,6 +153,7 @@ import {
   buildPlayerNameIndex,
   extractPlayerNameCandidates,
   fetchMlbTeamRoster,
+  htmlToPlainText,
   linkifyMlbPlayersInHtml,
   mlbTeamLogo,
   normalizePersonName,
@@ -1074,10 +1075,18 @@ function ArticleReaderShell({
 
   const { user } = useAuth();
 
-  // Seed with Cardinals roster for fast local matches; search fills in any MLB player.
+  // Seed with Cardinals active + 40-man for fast local matches; search fills gaps.
   const roster = useQuery({
     queryKey: ["mlb-roster-stl"],
-    queryFn: () => fetchMlbTeamRoster(138),
+    queryFn: async () => {
+      const [active, forty] = await Promise.all([
+        fetchMlbTeamRoster(138, "active"),
+        fetchMlbTeamRoster(138, "40Man"),
+      ]);
+      const byId = new Map<number, { id: number; name: string }>();
+      for (const p of [...active, ...forty]) byId.set(p.id, p);
+      return [...byId.values()];
+    },
     staleTime: 30 * 60_000,
   });
 
@@ -1266,9 +1275,13 @@ function ArticleReaderShell({
       const repaired = repairRssContentImages(html, item.link);
       const players = roster.data ?? [];
       const index = buildPlayerNameIndex(players, { bareLastNames: true });
-      const candidates = extractPlayerNameCandidates(article.data?.contentText ?? "", 48);
+      const proseSource =
+        html.length > 200
+          ? htmlToPlainText(html)
+          : (article.data?.contentText ?? item.snippet ?? "");
+      const candidates = extractPlayerNameCandidates(proseSource, 64);
       if (candidates.length) {
-        const found = await searchMlbPlayersByNames(candidates, 48);
+        const found = await searchMlbPlayersByNames(candidates, 64);
         for (const [k, id] of found) index.set(k, id);
       }
       if (cancelled) return;
@@ -1591,7 +1604,7 @@ function ArticleReaderShell({
                 src={image}
                 alt=""
                 referrerPolicy="no-referrer"
-                className="max-h-[320px] w-full object-cover"
+              className="max-h-[min(52vh,480px)] w-full bg-black/15 object-contain"
                 onError={(e) => {
                   const el = e.currentTarget;
                   if (item.logoTeamIds?.length) {
