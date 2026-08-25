@@ -73,10 +73,10 @@ const GOOGLE_KEY = Deno.env.get("GOOGLE_BOOKS_API_KEY") ?? "";
 /** Upgrade a Google Books thumbnail into a larger front-cover URL when possible. */
 function upgradeGoogleCover(raw: string): string {
   let u = raw.replace(/^http:/, "https:").replace(/&edge=curl/g, "");
-  // zoom=0 is the large jacket; API thumbnails arrive as zoom=1 (~128px) or zoom=5 stamps.
+  // Prefer zoom=4: brand-new titles often stub zoom=0; grabImage retries 0/2/1.
   if (u.includes("books.google") || u.includes("googleusercontent.com")) {
-    if (/[?&]zoom=\d+/i.test(u)) u = u.replace(/([?&])zoom=\d+/gi, "$1zoom=0");
-    else u += (u.includes("?") ? "&" : "?") + "zoom=0";
+    if (/[?&]zoom=\d+/i.test(u)) u = u.replace(/([?&])zoom=\d+/gi, "$1zoom=4");
+    else u += (u.includes("?") ? "&" : "?") + "zoom=4";
     if (!/[?&]img=/i.test(u)) u += "&img=1";
   }
   return u;
@@ -153,11 +153,13 @@ function sniffImageType(bytes: Uint8Array): string | null {
 }
 
 /**
- * Google Books serves an identical blue "no cover" skeleton for missing jackets
- * (vid=ISBN…&zoom=3). Hash it so we never lock that onto a book.
+ * Google Books placeholder jackets (blue stub + grayscale "no preview" stub).
+ * Hash them so we never lock a skeleton onto a book.
  */
 const GOOGLE_PLACEHOLDER_SHA256 = new Set([
   "5e7f0425abc77878f2a1efe98f12070d7e97b3047d2ce1cd050598230e34e205",
+  // Grayscale stub many 2025–26 titles return at zoom=0 / zoom=3.
+  "3efa8c43e5b4348f303a528c81adf435f0111ea752fe9f0f6241478b60987fa6",
 ]);
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -165,34 +167,56 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** Google zoom levels to try. New titles often stub zoom=0; zoom=4 still has art. */
+function googleCoverCandidates(url: string): string[] {
+  let base = url.replace(/^http:/i, "https:").replace(/&edge=curl/gi, "");
+  if (!/[?&]img=/i.test(base)) base += (base.includes("?") ? "&" : "?") + "img=1";
+  const out: string[] = [];
+  for (const zoom of [0, 4, 2, 1]) {
+    const next = /[?&]zoom=\d+/i.test(base)
+      ? base.replace(/([?&])zoom=\d+/gi, `$1zoom=${zoom}`)
+      : `${base}&zoom=${zoom}`;
+    if (!out.includes(next)) out.push(next);
+  }
+  return out;
+}
+
 /** Download an image URL; reject tiny placeholders and non-images. */
 async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string } | null> {
   try {
     // The vid=ISBN form is what returns the shared skeleton placeholder.
     if (/[?&]vid=ISBN/i.test(url)) return null;
-    const fetchUrl = upgradeGoogleCover(url).replace(
-      /\/b\/(id|isbn|olid)\/([^/?#]+)-(S|M)\.jpe?g/i,
-      "/b/$1/$2-L.jpg",
-    );
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 12000);
-    const res = await fetch(fetchUrl, {
-      signal: ctl.signal,
-      redirect: "follow",
-      headers: {
-        "User-Agent": UA,
-        // Some CDNs 403 a bare fetch; Accept helps, and OL covers want a referer-ish UA.
-        Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-      },
-    }).finally(() => clearTimeout(t));
-    if (!res.ok) return null;
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    if (bytes.byteLength < 3000 || bytes.byteLength > 4_000_000) return null;
-    if (GOOGLE_PLACEHOLDER_SHA256.has(await sha256Hex(bytes))) return null;
-    const header = (res.headers.get("Content-Type") ?? "").split(";")[0].trim();
-    const type = header.startsWith("image/") ? header : sniffImageType(bytes);
-    if (!type) return null;
-    return { bytes, type };
+    const isGoogle = /books\.google\.|googleusercontent\.com\/books/i.test(url);
+    const candidates = isGoogle
+      ? googleCoverCandidates(url)
+      : [
+          upgradeGoogleCover(url).replace(
+            /\/b\/(id|isbn|olid)\/([^/?#]+)-(S|M)\.jpe?g/i,
+            "/b/$1/$2-L.jpg",
+          ),
+        ];
+
+    for (const fetchUrl of candidates) {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 12000);
+      const res = await fetch(fetchUrl, {
+        signal: ctl.signal,
+        redirect: "follow",
+        headers: {
+          "User-Agent": UA,
+          Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        },
+      }).finally(() => clearTimeout(t));
+      if (!res.ok) continue;
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes.byteLength < 3000 || bytes.byteLength > 4_000_000) continue;
+      if (GOOGLE_PLACEHOLDER_SHA256.has(await sha256Hex(bytes))) continue;
+      const header = (res.headers.get("Content-Type") ?? "").split(";")[0].trim();
+      const type = header.startsWith("image/") ? header : sniffImageType(bytes);
+      if (!type) continue;
+      return { bytes, type };
+    }
+    return null;
   } catch {
     return null;
   }

@@ -570,12 +570,12 @@ export function upgradeCoverUrl(url: string | null | undefined): string | null {
   u = u.replace(/\/b\/(id|isbn|olid)\/([^/?#]+)-(S|M)\.jpe?g(\?[^#]*)?$/i, "/b/$1/$2-L.jpg$4");
   u = u.replace(/-([SM])\.jpe?g(\?|#|$)/i, "-L.jpg$2");
 
-  // Google Books content / thumbnail endpoints — zoom=0 is the large front cover.
-  // (API thumbnails arrive as zoom=1/~128px, which looks soft at hero size.)
+  // Google Books content / thumbnail endpoints. Prefer zoom=4 — brand-new
+  // titles often return a grayscale stub at zoom=0; edge grabImage retries.
   if (/books\.google\.|googleusercontent\.com\/books|books\.googleusercontent/i.test(u)) {
     u = u.replace(/([?&])edge=curl(&)?/gi, (_, p1, p2) => (p2 ? p1 : ""));
-    if (/[?&]zoom=\d+/i.test(u)) u = u.replace(/([?&])zoom=\d+/gi, "$1zoom=0");
-    else u += (u.includes("?") ? "&" : "?") + "zoom=0";
+    if (/[?&]zoom=\d+/i.test(u)) u = u.replace(/([?&])zoom=\d+/gi, "$1zoom=4");
+    else u += (u.includes("?") ? "&" : "?") + "zoom=4";
     if (!/[?&]img=/i.test(u)) u += "&img=1";
   }
 

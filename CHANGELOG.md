@@ -2,6 +2,13 @@
 
 ---
 
+## Fetch book info for brand-new bestsellers — August 25, 2026
+
+- **Enrichment miss:** Open Library often has no record yet for just-released titles, and the Google Books JSON API rate-limits anonymous callers. `backfill-covers` now sniffs an ISBN via DuckDuckGo lite and scrapes Google Books' public HTML page (blurb, page count, publisher, year, jacket) — still free, no API key.
+- **Google jackets:** Reject the grayscale "no preview" stub and try zoom=4/2/1 when zoom=0 is empty art, so new covers actually store.
+
+---
+
 ## Team pages: BBRef detail, win trend, TV logos — August 22, 2026
 
 - **Team overview:** Baseball-Reference org block on MLB team drawers now reliably includes manager (fixed `Manager:` scrape), president, farm/scouting directors, ballpark, attendance, park factors, Pythagorean W-L, and BBRef playoff odds (postseason + World Series) with a Schedule and Results link.
