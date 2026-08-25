@@ -1101,7 +1101,7 @@ export async function saveHighlightNote(id: string, my_note: string | null): Pro
 
 /**
  * Ask for books. `catalog` is free (Google Books + Open Library). `search`
- * uses Claude + web search; `recommend` reads the library for what to read next.
+ * uses Grok + web search; `recommend` reads the library for what to read next.
  */
 export async function askAI(
   mode: "search" | "recommend" | "catalog",
@@ -1189,7 +1189,7 @@ async function saveCoverHotlink(bookId: string, url: string): Promise<CoverPullR
 
 /**
  * Pull a jacket for a blank book. Catalog enrich first (same path as bulk
- * cover backfill), then Claude web search. With `url`, fetch that page/image.
+ * cover backfill), then Grok web search. With `url`, fetch that page/image.
  */
 export async function pullCover(bookId: string, url?: string): Promise<CoverPullResult> {
   const pasted = url?.trim() ? cleanPastedCoverUrl(url) : "";
@@ -1387,7 +1387,7 @@ export type BackfillResult = {
  * Re-fetch metadata for one book, ignoring whether it was enriched before.
  * Backs the "Fetch book info" button on a book that came through the import
  * with nothing but a title. Also auto-pulls fiction (subjects first, then
- * Claude) so the reader never has to set it by hand.
+ * Grok) so the reader never has to set it by hand.
  */
 export async function enrichBook(bookId: string): Promise<BackfillResult> {
   const { data, error } = await supabase.functions.invoke<BackfillResult & { error?: string }>(
@@ -1397,7 +1397,7 @@ export async function enrichBook(bookId: string): Promise<BackfillResult> {
   if (error) throw new Error(error.message);
   if (!data || data.error) throw new Error(data?.error ?? "Lookup failed");
 
-  // Subjects may have settled fiction; Claude fills holes + series. Skip when
+  // Subjects may have settled fiction; Grok fills holes + series. Skip when
   // both are already done so "Fetch book info" doesn't re-spend tokens.
   const { data: row } = await supabase
     .from("books")

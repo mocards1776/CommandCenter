@@ -2354,7 +2354,7 @@ function BookDetail({
 
 /* ── Ask AI ─────────────────────────────────────────────────────────── */
 /**
- * Catalog (free Google Books + Open Library) is the default. Claude search /
+ * Catalog (free Google Books + Open Library) is the default. Grok search /
  * shelf recommendations stay behind the AI tab — useful, but not free.
  * A suggestion you already own is marked rather than hidden.
  */
@@ -4707,7 +4707,7 @@ function Classifier() {
       <h2 className="rule-head mb-2">Fiction &amp; series</h2>
       <p className="text-chalk-dim mb-2 text-[11px] leading-relaxed">
         {left.toLocaleString()} books still need sorting. Fiction usually comes from the catalog;
-        this asks Claude to fill the gaps and assign series.
+        this asks Grok to fill the gaps and assign series.
       </p>
       <button
         onClick={run}

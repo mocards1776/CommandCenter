@@ -1,21 +1,17 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-// Unpinned deliberately: an invented version pin fails the deploy outright,
-// which is worse than tracking the current SDK.
-import Anthropic from "npm:@anthropic-ai/sdk";
 
 // Features over the reading library:
 //
-//   "recommend" — Claude reads the library and suggests what to read next.
-//   "search"    — Claude + web search for natural-language book requests.
-//   "catalog"   — FREE search via Google Books + Open Library (no Anthropic).
-//   "browse"    — FREE new & popular shelves (Google Books, no Anthropic).
+//   "recommend" — Grok reads the library and suggests what to read next.
+//   "search"    — Grok + web search for natural-language book requests.
+//   "catalog"   — FREE search via Google Books + Open Library (no xAI).
+//   "browse"    — FREE new & popular shelves (Google Books, no xAI).
 //   "classify"  — batched (or single-book via bookId) fiction/series fill.
-//   "cover"     — find and store a jacket (OL / Google / Claude / pasted URL).
+//   "cover"     — find and store a jacket (OL / Google / Grok / pasted URL).
 //
-// Only "search"/"cover" skip structured outputs: web search results carry
-// citations, and citations are rejected alongside output_config.format, so
-// those paths ask for a JSON block and parse it tolerantly instead of 400ing.
+// Structured JSON uses xAI response_format / text.format. Paths that also
+// need web search ask for a fenced JSON block and parse it tolerantly.
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -23,7 +19,111 @@ const CORS: Record<string, string> = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const MODEL = "claude-opus-5";
+const MODEL = "grok-4.6";
+const XAI_BASE = "https://api.x.ai/v1";
+
+type GrokResult = {
+  model: string;
+  stop_reason: string | null;
+  content: { type: "text"; text: string }[];
+  parsed_output?: Record<string, unknown>;
+};
+
+/** Extract plain text from an xAI Responses API payload. */
+function responseText(data: Record<string, unknown>): string {
+  if (typeof data.output_text === "string" && data.output_text.trim()) {
+    return data.output_text;
+  }
+  const parts: string[] = [];
+  const output = data.output;
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      if (!item || typeof item !== "object") continue;
+      const block = item as Record<string, unknown>;
+      if (typeof block.text === "string") parts.push(block.text);
+      const content = block.content;
+      if (Array.isArray(content)) {
+        for (const c of content) {
+          if (!c || typeof c !== "object") continue;
+          const chunk = c as Record<string, unknown>;
+          if (typeof chunk.text === "string") parts.push(chunk.text);
+          if (typeof chunk.output_text === "string") parts.push(chunk.output_text);
+        }
+      }
+    }
+  }
+  return parts.join("\n");
+}
+
+/**
+ * Call Grok via the xAI Responses API (OpenAI-compatible).
+ * Secret: XAI_API_KEY under Edge Functions → Secrets.
+ */
+async function askGrok(params: {
+  apiKey: string;
+  system: string;
+  user: string;
+  schema?: { name: string; schema: Record<string, unknown> };
+  webSearch?: boolean;
+  reasoning?: "low" | "medium" | "high";
+}): Promise<GrokResult> {
+  const body: Record<string, unknown> = {
+    model: MODEL,
+    store: false,
+    input: [
+      { role: "system", content: params.system },
+      { role: "user", content: params.user },
+    ],
+    reasoning: { effort: params.reasoning ?? "medium" },
+  };
+
+  if (params.webSearch) {
+    body.tools = [{ type: "web_search" }];
+  }
+
+  if (params.schema) {
+    body.text = {
+      format: {
+        type: "json_schema",
+        name: params.schema.name,
+        schema: params.schema.schema,
+        strict: true,
+      },
+    };
+  }
+
+  const res = await fetch(`${XAI_BASE}/responses`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${params.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const raw = await res.text();
+  if (!res.ok) {
+    throw new Error(`xAI ${res.status}: ${raw.slice(0, 400)}`);
+  }
+
+  const data = JSON.parse(raw) as Record<string, unknown>;
+  const text = responseText(data);
+  let parsed_output: Record<string, unknown> | undefined;
+  if (params.schema && text) {
+    try {
+      parsed_output = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      /* tolerant callers may extractJson later */
+    }
+  }
+
+  return {
+    model: String(data.model ?? MODEL),
+    stop_reason: typeof data.status === "string" ? data.status : null,
+    content: [{ type: "text", text }],
+    parsed_output,
+  };
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -282,7 +382,7 @@ async function coverFromPage(pageUrl: string): Promise<string | null> {
 
 type AiCoverHint = { urls: string[]; pages: string[]; isbns: string[] };
 
-/** Collect image URLs, page URLs, and ISBNs Claude mentioned. */
+/** Collect image URLs, page URLs, and ISBNs Grok mentioned. */
 function extractCoverHints(text: string): AiCoverHint {
   const urls: string[] = [];
   const pages: string[] = [];
@@ -330,12 +430,12 @@ function extractCoverHints(text: string): AiCoverHint {
 
 /**
  * Find a jacket for one book and store our own copy. Order: reader URL (if
- * any) → Open Library → Claude web search. Empty cover_path means a prior
+ * any) → Open Library → Grok web search. Empty cover_path means a prior
  * catalog miss; this path is allowed to overwrite that.
  */
 async function findCover(
   admin: ReturnType<typeof createClient>,
-  client: Anthropic | null,
+  apiKey: string | null,
   userId: string,
   bookId: string,
   url: string | null,
@@ -395,17 +495,15 @@ async function findCover(
 
   // Catalog miss (or dead OL link): spend tokens on a web search.
   let aiError: string | null = null;
-  if (!img && !url && client) {
+  if (!img && !url && apiKey) {
     const q =
       `"${book.title}"${book.authors ? ` ${book.authors.split(",")[0].trim()}` : ""}` +
       `${book.isbn ? ` ISBN ${book.isbn}` : ""}`;
     try {
-      const message = await askClaude(client, {
-        model: MODEL,
-        max_tokens: 4000,
-        thinking: { type: "adaptive" },
-        output_config: { effort: "low" },
-        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 6 }],
+      const message = await askGrok({
+        apiKey,
+        reasoning: "low",
+        webSearch: true,
         system:
           "You help fetch book cover art. Search the web and return a ```json fenced block only:\n" +
           '{"isbn":"978...","cover_url":"https://...jpg","cover_urls":["https://..."],' +
@@ -415,15 +513,12 @@ async function findCover(
           "prefer covers.openlibrary.org/b/isbn/... or Google Books content URLs. " +
           "page_urls are retail/library pages that show the cover (Open Library, Amazon, Goodreads). " +
           "Always fill whatever you can; empty strings/arrays are ok.",
-        messages: [{ role: "user", content: `Find the cover for: ${q}` }],
+        user: `Find the cover for: ${q}`,
       });
-      if (message.stop_reason === "refusal") {
-        aiError = "Claude declined that cover search.";
+      const text = message.content.map((b) => b.text).join("\n");
+      if (!text.trim()) {
+        aiError = "Grok returned an empty cover search.";
       } else {
-        const text = (message.content ?? [])
-          .filter((b: { type: string }) => b.type === "text")
-          .map((b: { text: string }) => b.text)
-          .join("\n");
         const hint = extractCoverHints(text);
 
         // ISBNs beat hotlinked retail images — OL will serve bytes we can store.
@@ -621,37 +716,15 @@ function digest(
 }
 
 /**
- * Server-side fallback is the documented default for this model, but it is a
- * beta parameter — if the API rejects it, the request is worth more than the
- * fallback, so retry once without it rather than failing the user's click.
- */
-async function askClaude(client: Anthropic, params: Record<string, unknown>) {
-  const withFallback = {
-    ...params,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-  };
-  try {
-    const stream = client.beta.messages.stream(withFallback as never);
-    return await stream.finalMessage();
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (!/fallback|beta/i.test(msg)) throw e;
-    const stream = client.beta.messages.stream(params as never);
-    return await stream.finalMessage();
-  }
-}
-
-/**
- * One batch of fiction/series classification. The caller loops until
- * `remaining` is 0. classified_at is the bookmark, so an interrupted run
- * resumes instead of restarting, and re-running only touches new books.
+ * Call Grok with a JSON schema for fiction/series classification.
+ * classified_at is the bookmark, so an interrupted run resumes instead of
+ * restarting, and re-running only touches new books.
  * Pass `bookId` to classify a single book (e.g. right after enrich) even if
  * it was already stamped — fiction already on the row is left alone.
  */
 async function classify(
   admin: ReturnType<typeof createClient>,
-  client: Anthropic,
+  apiKey: string,
   userId: string,
   batch: number,
   bookId: string | null = null,
@@ -670,11 +743,10 @@ async function classify(
     .map((b, i) => `${i}. ${b.title}${b.authors ? ` — ${b.authors}` : ""}${b.published_year ? ` (${b.published_year})` : ""}`)
     .join("\n");
 
-  const message = await askClaude(client, {
-    model: MODEL,
-    max_tokens: 16000,
-    thinking: { type: "adaptive" },
-    output_config: { effort: "low", format: { type: "json_schema", schema: CLASSIFY_SCHEMA } },
+  const message = await askGrok({
+    apiKey,
+    reasoning: "low",
+    schema: { name: "book_classify", schema: CLASSIFY_SCHEMA },
     system:
       "You classify books. For each numbered book return: `id` (the number, as a string), " +
       "`fiction` (true for novels and short-story collections, false for everything else " +
@@ -683,21 +755,14 @@ async function classify(
       'as a string, or "" if unknown or not applicable). ' +
       "Return one entry per book, in order. If you do not recognise a book, still return an " +
       'entry: guess `fiction` from the title and author, and leave both series fields "".',
-    messages: [{ role: "user", content: list }],
+    user: list,
   });
 
-  if (message.stop_reason === "refusal") {
-    return json({ error: "Claude declined to classify that batch." }, 400);
-  }
-
-  const text = (message.content ?? [])
-    .filter((b: { type: string }) => b.type === "text")
-    .map((b: { text: string }) => b.text)
-    .join("\n");
+  const text = message.content.map((b) => b.text).join("\n");
 
   let parsed: { id: string; fiction: boolean; series: string; series_position: string }[] = [];
   try {
-    parsed = JSON.parse(text)?.books ?? [];
+    parsed = (message.parsed_output?.books as typeof parsed) ?? JSON.parse(text)?.books ?? [];
   } catch {
     return json({ error: "Could not read the classification response." }, 502);
   }
@@ -736,7 +801,7 @@ async function classify(
 }
 
 /**
- * Free catalog search — Google Books + Open Library. No Anthropic spend.
+ * Free catalog search — Google Books + Open Library. No xAI spend.
  * Used for "Find similar" and the Ask panel's Catalog tab.
  */
 function googleIsbn(v: Record<string, unknown>): string | null {
@@ -907,7 +972,7 @@ function normalizeBrowseShelves(raw: unknown): BrowseShelf[] {
 }
 
 /**
- * Google fallback when Claude isn't available — prefer high-signal bestsellers /
+ * Google fallback when Grok isn't available — prefer high-signal bestsellers /
  * recent titles over raw "newest academic monograph" noise.
  */
 async function browseGoogleFrontTables(): Promise<BrowseShelf[]> {
@@ -983,19 +1048,17 @@ async function browseGoogleFrontTables(): Promise<BrowseShelf[]> {
 }
 
 /**
- * Front-of-store browse: Claude + web search for what's actually on B&N tables /
+ * Front-of-store browse: Grok + web search for what's actually on B&N tables /
  * NYT lists right now. Falls back to curated Google queries without a key.
  */
-async function browseFrontTables(client: Anthropic | null): Promise<BrowseShelf[]> {
-  if (client) {
+async function browseFrontTables(apiKey: string | null): Promise<BrowseShelf[]> {
+  if (apiKey) {
     try {
       const year = new Date().getFullYear();
-      const message = await askClaude(client, {
-        model: MODEL,
-        max_tokens: 8000,
-        thinking: { type: "adaptive" },
-        output_config: { effort: "medium" },
-        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 8 }],
+      const message = await askGrok({
+        apiKey,
+        reasoning: "medium",
+        webSearch: true,
         system:
           "You curate the front of a US bookstore (Barnes & Noble front tables + " +
           "current New York Times hardcover bestseller energy). Search the web for " +
@@ -1007,46 +1070,36 @@ async function browseFrontTables(client: Anthropic | null): Promise<BrowseShelf[
           '[{"title":"","author":"","year":"","reason":""}]}]}' +
           "\nExactly those four shelf ids. 6–10 real books per shelf. " +
           "Each reason is one short clause (e.g. \"NYT hardcover #3\" or \"June release\").",
-        messages: [
-          {
-            role: "user",
-            content:
-              `What books are on the front tables and bestseller lists in the US right now (${year})? ` +
-              "Cover new releases, overall bestsellers, fiction picks, and nonfiction picks.",
-          },
-        ],
+        user:
+          `What books are on the front tables and bestseller lists in the US right now (${year})? ` +
+          "Cover new releases, overall bestsellers, fiction picks, and nonfiction picks.",
       });
 
-      if (message.stop_reason !== "refusal") {
-        const text = (message.content ?? [])
-          .filter((b: { type: string }) => b.type === "text")
-          .map((b: { text: string }) => b.text)
-          .join("\n");
-        const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-        const candidate = fenced
-          ? fenced[1]
-          : text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
-        let parsed: unknown = null;
-        try {
-          parsed = JSON.parse(candidate);
-        } catch {
-          parsed = null;
-        }
-        const shelves = normalizeBrowseShelves(parsed);
-        if (shelves.length > 0) {
-          // Jackets in parallel — same as recommend/search.
-          return await Promise.all(
-            shelves.map(async (shelf) => ({
-              ...shelf,
-              books: await Promise.all(
-                shelf.books.map(async (b) => ({
-                  ...b,
-                  cover_url: b.cover_url ?? (await coverFor(b.title, b.author)),
-                })),
-              ),
-            })),
-          );
-        }
+      const text = message.content.map((b) => b.text).join("\n");
+      const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+      const candidate = fenced
+        ? fenced[1]
+        : text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(candidate);
+      } catch {
+        parsed = null;
+      }
+      const shelves = normalizeBrowseShelves(parsed);
+      if (shelves.length > 0) {
+        // Jackets in parallel — same as recommend/search.
+        return await Promise.all(
+          shelves.map(async (shelf) => ({
+            ...shelf,
+            books: await Promise.all(
+              shelf.books.map(async (b) => ({
+                ...b,
+                cover_url: b.cover_url ?? (await coverFor(b.title, b.author)),
+              })),
+            ),
+          })),
+        );
       }
     } catch {
       // fall through to Google
@@ -1107,39 +1160,37 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-  // Free catalog + cover-from-link need no Claude.
+  // Free catalog + cover-from-link need no Grok.
   if (mode === "catalog") {
     const recommendations = await catalogSearch(query);
     return json({ recommendations, mode: "catalog" });
   }
 
-  // Browse prefers Claude + web search for real front-table picks, but can
+  // Browse prefers Grok + web search for real front-table picks, but can
   // degrade to Google when the key is missing.
   if (mode === "browse") {
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    const client = apiKey ? new Anthropic({ apiKey }) : null;
-    const shelves = await browseFrontTables(client);
+    const apiKey = Deno.env.get("XAI_API_KEY");
+    const shelves = await browseFrontTables(apiKey);
     return json({ shelves, mode: "browse" });
   }
 
-  const needsClaude = !(mode === "cover" && coverUrl);
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (needsClaude && !apiKey) {
+  const needsGrok = !(mode === "cover" && coverUrl);
+  const apiKey = Deno.env.get("XAI_API_KEY");
+  if (needsGrok && !apiKey) {
     return json(
       {
         error:
-          "No Anthropic key on the server. Add ANTHROPIC_API_KEY under Edge Functions → Secrets in Supabase (not Vercel).",
+          "No xAI key on the server. Add XAI_API_KEY under Edge Functions → Secrets in Supabase (not Vercel).",
       },
       400,
     );
   }
-  const client = apiKey ? new Anthropic({ apiKey }) : null;
 
   if (mode === "classify") {
-    return await classify(admin, client!, userId, batch, bookId);
+    return await classify(admin, apiKey!, userId, batch, bookId);
   }
   if (mode === "cover") {
-    return await findCover(admin, client, userId, bookId!, coverUrl);
+    return await findCover(admin, apiKey, userId, bookId!, coverUrl);
   }
 
   const { data: books, error } = await admin
@@ -1150,71 +1201,46 @@ Deno.serve(async (req: Request) => {
 
   const taste = digest(books ?? []);
 
-  const ask = (params: Record<string, unknown>) => askClaude(client!, params);
-
   try {
-    let message;
+    let message: GrokResult;
 
     if (mode === "recommend") {
-      message = await ask({
-        model: MODEL,
-        max_tokens: 16000,
-        thinking: { type: "adaptive" },
-        output_config: {
-          effort: "medium",
-          format: { type: "json_schema", schema: SUGGESTION_SCHEMA },
-        },
+      message = await askGrok({
+        apiKey: apiKey!,
+        reasoning: "medium",
+        schema: { name: "book_recommendations", schema: SUGGESTION_SCHEMA },
         system:
           "You recommend books to a specific reader based on their library. " +
           "Recommend books they do NOT already own — the list below is what they have. " +
           "Favour specific, well-matched picks over famous ones they have obviously heard of. " +
           "Each reason is one sentence naming the book in their library it follows from.",
-        messages: [
-          {
-            role: "user",
-            content: `Here is my reading history.\n\n${taste}\n\nRecommend 8 books I should read next.`,
-          },
-        ],
+        user: `Here is my reading history.\n\n${taste}\n\nRecommend 8 books I should read next.`,
       });
     } else {
-      message = await ask({
-        model: MODEL,
-        max_tokens: 16000,
-        thinking: { type: "adaptive" },
-        output_config: { effort: "medium" },
-        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 6 }],
+      message = await askGrok({
+        apiKey: apiKey!,
+        reasoning: "medium",
+        webSearch: true,
         system:
           "You find books matching a reader's description, searching the web when the " +
           "answer depends on current information (what is in print, what has an audiobook, " +
           "what came out recently). Answer with a ```json fenced block and nothing else: " +
           '{"recommendations":[{"title":"","author":"","year":"","reason":""}]}. ' +
           "Up to 10 entries; each reason is one sentence on why it matches the request.",
-        messages: [
-          {
-            role: "user",
-            content:
-              `Find books matching: ${query}\n\n` +
-              `For context, my taste:\n${taste.slice(0, 2000)}`,
-          },
-        ],
+        user:
+          `Find books matching: ${query}\n\n` +
+          `For context, my taste:\n${taste.slice(0, 2000)}`,
       });
     }
 
-    // A refusal is a successful HTTP 200 with empty or partial content — read
-    // stop_reason before touching content.
-    if (message.stop_reason === "refusal") {
-      return json({ error: "Claude declined that one. Try rephrasing.", recommendations: [] });
+    const text = message.content.map((b) => b.text).join("\n");
+    if (!text.trim() && !message.parsed_output) {
+      return json({ error: "Grok returned an empty answer. Try rephrasing.", recommendations: [] });
     }
-
-    const text = (message.content ?? [])
-      .filter((b: { type: string }) => b.type === "text")
-      .map((b: { text: string }) => b.text)
-      .join("\n");
 
     const recommendations =
       mode === "recommend"
-        ? ((message as { parsed_output?: { recommendations?: Suggestion[] } }).parsed_output
-            ?.recommendations ?? extractJson(text))
+        ? ((message.parsed_output?.recommendations as Suggestion[] | undefined) ?? extractJson(text))
         : extractJson(text);
 
     // Jackets last, in parallel — a slow cover lookup shouldn't hold up an
@@ -1230,11 +1256,11 @@ Deno.serve(async (req: Request) => {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // The two failures worth naming precisely; everything else passes through.
-    if (/401|authentication/i.test(msg)) {
-      return json({ error: "Anthropic rejected the key. Check ANTHROPIC_API_KEY." }, 400);
+    if (/401|authentication|invalid.?api.?key/i.test(msg)) {
+      return json({ error: "xAI rejected the key. Check XAI_API_KEY." }, 400);
     }
     if (/429|rate.?limit/i.test(msg)) {
-      return json({ error: "Anthropic rate limit hit. Try again shortly." }, 429);
+      return json({ error: "xAI rate limit hit. Try again shortly." }, 429);
     }
     return json({ error: msg }, 502);
   }
