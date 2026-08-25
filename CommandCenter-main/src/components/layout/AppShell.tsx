@@ -5,6 +5,7 @@ import {
   ListChecks,
   Repeat,
   BookOpen,
+  Wallet,
   Trophy,
   Newspaper,
   LogOut,
@@ -50,6 +51,7 @@ const NAV = [
   { to: "/todos", label: "Todos", short: "Todos", Icon: ListChecks },
   { to: "/habits", label: "Habits", short: "Habits", Icon: Repeat },
   { to: "/reading", label: "Reading", short: "Reading", Icon: BookOpen },
+  { to: "/finance", label: "Finance", short: "Finance", Icon: Wallet },
   { to: "/rss", label: "News", short: "News", Icon: Newspaper },
   { to: "/sports", label: "Sports", short: "Sports", Icon: Trophy },
   {

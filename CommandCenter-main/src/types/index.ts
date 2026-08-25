@@ -16,6 +16,16 @@ export type Book = Tables<"books">;
 export type BookInsert = TablesInsert<"books">;
 export type BookHighlight = Tables<"book_highlights">;
 
+export type FinanceAccount = Tables<"finance_accounts">;
+export type FinanceCategory = Tables<"finance_categories">;
+export type FinanceBudget = Tables<"finance_budgets"> & {
+  finance_categories?: Pick<FinanceCategory, "name" | "color" | "slug"> | null;
+};
+export type FinanceTransaction = Tables<"finance_transactions"> & {
+  finance_accounts?: Pick<FinanceAccount, "name" | "mask" | "type"> | null;
+  finance_categories?: Pick<FinanceCategory, "name" | "color" | "slug"> | null;
+};
+
 export type ReadStatus = "read" | "to-read" | "currently-reading" | "did-not-finish" | "paused";
 
 export type HabitInsert = TablesInsert<"habits">;

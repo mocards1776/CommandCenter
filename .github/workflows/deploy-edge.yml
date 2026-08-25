@@ -44,7 +44,7 @@ jobs:
             exit 0
           fi
           REF="${PROJECT_REF:-esdgrgulaxnewmhjuyzh}"
-          for fn in rss sports backfill-covers book-ai book-lookup todoist readwise-sync story-link; do
+          for fn in rss sports backfill-covers book-ai book-lookup todoist readwise-sync story-link plaid; do
             if [ -d "supabase/functions/$fn" ]; then
               echo "Deploying $fn…"
               if [ "$fn" = "rss" ] || [ "$fn" = "sports" ] || [ "$fn" = "story-link" ]; then
