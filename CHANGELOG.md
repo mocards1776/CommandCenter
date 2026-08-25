@@ -6,6 +6,7 @@
 
 - **Enrichment miss:** Open Library often has no record yet for just-released titles, and the Google Books JSON API rate-limits anonymous callers. `backfill-covers` now sniffs an ISBN via DuckDuckGo lite and scrapes Google Books' public HTML page (blurb, page count, publisher, year, jacket) — still free, no API key.
 - **Google jackets:** Reject the grayscale "no preview" stub and try zoom=4/2/1 when zoom=0 is empty art, so new covers actually store.
+- **CI:** Edge deploy workflow now ships `backfill-covers` / `book-ai` (and the other reading functions), not only `rss` + `sports`.
 
 ---
 
