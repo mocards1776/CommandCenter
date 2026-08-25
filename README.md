@@ -11,7 +11,7 @@ Personal dashboard: tasks, habits, and time tracking.
 | Todoist proxy | `supabase/functions/todoist/` | Deno edge function |
 | Book lookup / enrichment | `supabase/functions/book-lookup/`, `supabase/functions/backfill-covers/` | Deno edge functions |
 | Highlights | `supabase/functions/readwise-sync/` | Readwise API v2 |
-| AI search / recommendations / classification | `supabase/functions/book-ai/` | Claude Opus 5 (user's own Anthropic key) |
+| AI search / recommendations / classification | `supabase/functions/book-ai/` | Grok 4.6 (user's own xAI key) |
 | Tasks | Todoist | unified `/api/v1` |
 | Hosting | Vercel | root `vercel.json` builds `CommandCenter-main` |
 | macOS widget | `NLCentralStandings/` | WidgetKit NL Central standings (M1 Mac, macOS 14+) |
@@ -128,7 +128,7 @@ workflow (or run `supabase functions deploy rss sports`) → hard-reload the app
   blank card.
 - **Third-party keys belong in Supabase, never Vercel.** Anything prefixed
   `VITE_` is compiled into the bundle and shipped to every browser. That applies
-  to `TODOIST_API_TOKEN`, `GOOGLE_BOOKS_API_KEY`, `ANTHROPIC_API_KEY`, and
+  to `TODOIST_API_TOKEN`, `GOOGLE_BOOKS_API_KEY`, `XAI_API_KEY`, and
   `READWISE_TOKEN`.
 - **All dates are Central time** (`America/Chicago`), computed in
   `src/lib/utils.ts`. Using UTC makes tasks flip to "tomorrow" at 6–7pm local.
