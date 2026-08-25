@@ -102,7 +102,10 @@ workflow (or run `supabase functions deploy rss sports`) → hard-reload the app
 - **Google Books rate-limits anonymous callers to nothing.** Every unauthenticated
   `volumes?q=isbn:` request comes back 429. It is a fallback only. Set
   `GOOGLE_BOOKS_API_KEY` as a Supabase secret to make it useful — Open Library
-  alone covers roughly half the library.
+  alone covers roughly half the library. Brand-new bestsellers missing from both
+  still enrich via a free DuckDuckGo ISBN sniff + Google Books HTML scrape
+  (`backfill-covers`). Google jacket fetches must try zoom=4 (not only zoom=0):
+  new titles often return a grayscale stub at zoom=0/3.
 - **Readwise calls everything a "book."** Articles, tweets and podcasts come
   back from the same `/export/` endpoint; only `category === "books"` is
   matched against the library. Matching is on a normalised title (subtitle

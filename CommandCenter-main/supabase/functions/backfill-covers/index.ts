@@ -11,8 +11,9 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // Open Library is the primary source. Descriptions live on the *work* record,
 // not the edition — `/api/books` never returns one, which is why the first
 // version of this function produced 1 description across 385 books. Google
-// Books is only a fallback because it rate-limits anonymous callers hard
-// (every request from here comes back 429 without an API key).
+// Books JSON API is a fallback (anonymous callers get 429 without a key). For
+// brand-new bestsellers missing from both catalogs, we sniff an ISBN via
+// DuckDuckGo lite and scrape Google Books' public HTML page — still free.
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -125,11 +126,151 @@ function upgradeCoverUrl(url: string): string | null {
   u = u.replace(/\/b\/(id|isbn|olid)\/([^/?#]+)-(S|M)\.jpe?g(\?[^#]*)?$/i, "/b/$1/$2-L.jpg$4");
   if (/books\.google\.|googleusercontent\.com\/books/i.test(u)) {
     u = u.replace(/([?&])edge=curl(&)?/gi, (_, p1, p2) => (p2 ? p1 : ""));
-    if (/[?&]zoom=\d+/i.test(u)) u = u.replace(/([?&])zoom=\d+/gi, "$1zoom=0");
-    else u += (u.includes("?") ? "&" : "?") + "zoom=0";
+    // Prefer zoom=4: for brand-new titles zoom=0/3 is often a grayscale stub
+    // while zoom=4 still serves the publisher jacket. grabImage retries others.
+    if (/[?&]zoom=\d+/i.test(u)) u = u.replace(/([?&])zoom=\d+/gi, "$1zoom=4");
+    else u += (u.includes("?") ? "&" : "?") + "zoom=4";
     if (!/[?&]img=/i.test(u)) u += "&img=1";
   }
   return u;
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+/** First ISBN-13 in free-form text (DuckDuckGo / Google Books HTML). */
+function firstIsbn13(text: string): string | null {
+  const matches = text.match(/\b97[89][0-9]{10}\b/g) ?? [];
+  return matches[0] ?? null;
+}
+
+/**
+ * Brand-new bestsellers often aren't in Open Library yet, and the Google Books
+ * *API* rate-limits anonymous callers to nothing. DuckDuckGo lite still surfaces
+ * the ISBN from retailer snippets — free, no key.
+ */
+async function discoverIsbn(title: string, authors: string | null): Promise<string | null> {
+  const author = (authors ?? "").split(",")[0].trim();
+  const q = `"${titleVariants(title)[0] ?? title}"${author ? ` ${author}` : ""} ISBN`;
+  try {
+    const res = await fetchWithTimeout(
+      `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(q)}`,
+      9000,
+    );
+    if (res.ok) {
+      const isbn = firstIsbn13(await res.text());
+      if (isbn) return isbn;
+    }
+  } catch {
+    // try Google Books HTML next
+  }
+  try {
+    const gq = `intitle:"${titleVariants(title)[0] ?? title}"${
+      author ? ` inauthor:${author}` : ""
+    }`;
+    const res = await fetchWithTimeout(
+      `https://books.google.com/books?q=${encodeURIComponent(gq)}&hl=en`,
+      9000,
+    );
+    if (res.ok) return firstIsbn13(await res.text());
+  } catch {
+    // no isbn
+  }
+  return null;
+}
+
+/**
+ * Scrape Google Books' public HTML page (not the JSON API). Works without an
+ * API key and covers brand-new titles the Open Library catalog hasn't ingested.
+ */
+async function lookupGoogleBooksHtml(
+  title: string,
+  authors: string | null,
+  isbnHint?: string | null,
+): Promise<Meta> {
+  const out: Meta = {};
+  let isbn = (isbnHint ?? "").replace(/[^0-9Xx]/g, "");
+  if (!(isbn.length === 10 || isbn.length === 13)) {
+    isbn = (await discoverIsbn(title, authors)) ?? "";
+  }
+  if (!(isbn.length === 10 || isbn.length === 13)) return out;
+
+  try {
+    const res = await fetchWithTimeout(
+      `https://books.google.com/books?vid=ISBN${isbn}&hl=en`,
+      10000,
+    );
+    if (!res.ok) return out;
+    const html = await res.text();
+
+    const desc =
+      /<meta[^>]+name=["']description["'][^>]*content=["']([^"']*)["']/i.exec(html)?.[1] ??
+      /<meta[^>]+content=["']([^"']*)["'][^>]*name=["']description["']/i.exec(html)?.[1];
+    if (desc) out.description = plainText(decodeEntities(desc));
+
+    const pages =
+      /Length(?:<\/span>)?<\/td>\s*<td[^>]*>\s*(?:<span[^>]*>)?\s*(\d+)\s*pages/i.exec(html)?.[1] ??
+      />(\d+)\s*pages<\/span>/i.exec(html)?.[1];
+    if (pages) {
+      const n = Number.parseInt(pages, 10);
+      if (n > 0 && n < 5000) out.page_count = n;
+    }
+
+    const pubCell =
+      /Publisher(?:<\/span>)?<\/td>\s*<td[^>]*>\s*(?:<span[^>]*>)?\s*([^<]+)/i.exec(html)?.[1];
+    if (pubCell) {
+      const cleaned = decodeEntities(pubCell).replace(/,\s*\d{4}\s*$/, "").trim();
+      if (cleaned) out.publisher = cleaned;
+      out.published_year ??= year(pubCell);
+    }
+
+    const isbnCell =
+      /(?:metadata_label[^>]*>\s*(?:<span[^>]*>)?\s*)?ISBN(?:<\/span>)?<\/td>\s*<td[^>]*>\s*(?:<span[^>]*>)?\s*([^<]+)/i
+        .exec(html)?.[1];
+    if (isbnCell && /[0-9]{9,}/.test(isbnCell)) {
+      const prefer = firstIsbn13(isbnCell.replace(/[^0-9Xx,\s]/g, ""));
+      out.isbn = prefer ?? isbn.replace(/[^0-9Xx]/g, "");
+    } else {
+      out.isbn = isbn.replace(/[^0-9Xx]/g, "");
+    }
+
+    const vol =
+      /"volume_id"\s*:\s*"([A-Za-z0-9_-]+)"/.exec(html)?.[1] ??
+      /books\/about\/[^"?]+html\?id=([A-Za-z0-9_-]+)/i.exec(html)?.[1] ??
+      /canonical[^>]+id=([A-Za-z0-9_-]+)/i.exec(html)?.[1];
+    if (vol) {
+      // zoom=4 is the reliable jacket for titles without a preview scan.
+      out.coverUrl =
+        `https://books.google.com/books/content?id=${vol}&printsec=frontcover&img=1&zoom=4`;
+    } else {
+      const og =
+        /<meta[^>]+(?:property|name)=["']og:image["'][^>]*content=["']([^"']+)["']/i.exec(html)?.[1] ??
+        /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']og:image["']/i.exec(html)?.[1];
+      if (og) out.coverUrl = decodeEntities(og).replace(/^http:/i, "https:");
+    }
+
+    // Subjects from the bibliographic breadcrumb / subject links.
+    const subjects: string[] = [];
+    for (const m of html.matchAll(/subject:%22([^%"']+)%22/gi)) {
+      const label = decodeEntities(decodeURIComponent(m[1].replace(/\+/g, " "))).trim();
+      if (label && label.length < 40) subjects.push(label);
+    }
+    out.subjects = cleanSubjects(subjects);
+
+    out.published_year ??= year(html);
+  } catch {
+    // partial / empty is fine — caller merges with other sources
+  }
+  return out;
 }
 
 /** Best hotlink when we can't store bytes — prefer Google, then Open Library. */
@@ -322,11 +463,13 @@ async function lookupByTitle(title: string, authors: string | null): Promise<Met
 }
 
 /**
- * Google Books serves an identical blue "no cover" skeleton for missing jackets
- * (vid=ISBN…&zoom=3). Hash it so we never lock that onto a book.
+ * Google Books placeholder jackets (blue stub + grayscale "no preview" stub).
+ * Hash them so we never lock a skeleton onto a book.
  */
 const GOOGLE_PLACEHOLDER_SHA256 = new Set([
   "5e7f0425abc77878f2a1efe98f12070d7e97b3047d2ce1cd050598230e34e205",
+  // Grayscale stub many 2025–26 titles return at zoom=0 / zoom=3.
+  "3efa8c43e5b4348f303a528c81adf435f0111ea752fe9f0f6241478b60987fa6",
 ]);
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -334,28 +477,41 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** Google zoom levels to try. New titles often stub zoom=0; zoom=4 still has art. */
+function googleCoverCandidates(url: string): string[] {
+  let base = url.replace(/^http:/i, "https:").replace(/&edge=curl/gi, "");
+  if (!/[?&]img=/i.test(base)) base += (base.includes("?") ? "&" : "?") + "img=1";
+  const out: string[] = [];
+  for (const zoom of [0, 4, 2, 1]) {
+    const next = /[?&]zoom=\d+/i.test(base)
+      ? base.replace(/([?&])zoom=\d+/gi, `$1zoom=${zoom}`)
+      : `${base}&zoom=${zoom}`;
+    if (!out.includes(next)) out.push(next);
+  }
+  return out;
+}
+
 async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string } | null> {
   try {
     // The vid=ISBN form is what returns the shared skeleton placeholder.
     if (/[?&]vid=ISBN/i.test(url)) return null;
-    // Prefer large Google jackets — API thumbnails are ~128px and look soft in-app.
-    let fetchUrl = url.replace(/^http:/i, "https:");
-    if (/books\.google\.|googleusercontent\.com\/books/i.test(fetchUrl)) {
-      fetchUrl = fetchUrl.replace(/&edge=curl/gi, "");
-      if (/[?&]zoom=\d+/i.test(fetchUrl)) fetchUrl = fetchUrl.replace(/([?&])zoom=\d+/gi, "$1zoom=0");
-      else fetchUrl += (fetchUrl.includes("?") ? "&" : "?") + "zoom=0";
-      if (!/[?&]img=/i.test(fetchUrl)) fetchUrl += "&img=1";
+    const isGoogle = /books\.google\.|googleusercontent\.com\/books/i.test(url);
+    const candidates = isGoogle
+      ? googleCoverCandidates(url)
+      : [url.replace(/^http:/i, "https:").replace(/\/b\/(id|isbn|olid)\/([^/?#]+)-(S|M)\.jpe?g/i, "/b/$1/$2-L.jpg")];
+
+    for (const fetchUrl of candidates) {
+      const res = await fetchWithTimeout(fetchUrl, 8000, { redirect: "follow" });
+      if (!res.ok) continue;
+      const type = (res.headers.get("Content-Type") ?? "").split(";")[0];
+      if (!type.startsWith("image/")) continue;
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      // Open Library serves a ~1KB placeholder for misses; size is the real test.
+      if (bytes.byteLength < 3000) continue;
+      if (GOOGLE_PLACEHOLDER_SHA256.has(await sha256Hex(bytes))) continue;
+      return { bytes, type };
     }
-    fetchUrl = fetchUrl.replace(/\/b\/(id|isbn|olid)\/([^/?#]+)-(S|M)\.jpe?g/i, "/b/$1/$2-L.jpg");
-    const res = await fetchWithTimeout(fetchUrl, 8000, { redirect: "follow" });
-    if (!res.ok) return null;
-    const type = (res.headers.get("Content-Type") ?? "").split(";")[0];
-    if (!type.startsWith("image/")) return null;
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    // Open Library serves a ~1KB placeholder for misses; size is the real test.
-    if (bytes.byteLength < 3000) return null;
-    if (GOOGLE_PLACEHOLDER_SHA256.has(await sha256Hex(bytes))) return null;
-    return { bytes, type };
+    return null;
   } catch {
     return null;
   }
@@ -469,6 +625,31 @@ Deno.serve(async (req: Request) => {
       // Title search often yields an ISBN — use it for a better jacket pass.
       if (!hasIsbn && bt.isbn) {
         coverUrls.unshift(`https://covers.openlibrary.org/b/isbn/${bt.isbn}-L.jpg?default=false`);
+      }
+    }
+
+    // Brand-new bestsellers: Open Library + Google API often empty, but the
+    // public Google Books HTML page (and a free DuckDuckGo ISBN sniff) still
+    // have the blurb, page count, and jacket.
+    if (!meta.description || !meta.page_count || (wantCover && coverUrls.length === 0 && !meta.coverUrl)) {
+      const gb = await lookupGoogleBooksHtml(
+        String(b.title ?? ""),
+        (b as { authors?: string }).authors ?? null,
+        meta.isbn ?? (hasIsbn ? isbn : null),
+      );
+      meta = {
+        page_count: meta.page_count ?? gb.page_count,
+        description: meta.description ?? gb.description,
+        publisher: meta.publisher ?? gb.publisher,
+        published_year: meta.published_year ?? gb.published_year,
+        subtitle: meta.subtitle,
+        subjects: meta.subjects ?? gb.subjects,
+        isbn: meta.isbn ?? gb.isbn,
+        coverUrl: meta.coverUrl ?? gb.coverUrl,
+      };
+      if (gb.coverUrl) coverUrls.unshift(gb.coverUrl);
+      if (gb.isbn) {
+        coverUrls.push(`https://covers.openlibrary.org/b/isbn/${gb.isbn}-L.jpg?default=false`);
       }
     }
 

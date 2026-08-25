@@ -112,6 +112,7 @@ import {
   tagFeedUrl,
 } from "@/lib/sports-player-tags";
 import { setRssReaderBrand } from "@/lib/rss-brand";
+import { prefetchDispatchGameData } from "@/lib/dispatch-prefetch";
 import { useArticleNavKeys } from "@/hooks/useArticleNavKeys";
 import { nflTeamLogo } from "@/lib/nfl";
 import { soccerTeamLogo } from "@/lib/soccer";
@@ -164,7 +165,7 @@ import { MlbGameDetail } from "@/pages/MlbGamePage";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { useAuth } from "@/lib/auth-context";
-import { cn, isPublishedTodayCentral } from "@/lib/utils";
+import { cn, dispatchReaderColumnClass, dispatchReaderPanelClass, isPublishedTodayCentral } from "@/lib/utils";
 
 type NavView =
   | "unread"
@@ -708,7 +709,7 @@ function EspnGameReaderShell({
       className="grid w-full max-w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
       onClick={onDoubleTap}
     >
-      <div className="mx-auto w-full max-w-3xl min-w-0 justify-self-center overflow-x-hidden">
+      <div className={cn(dispatchReaderColumnClass, "justify-self-center overflow-x-hidden")}>
         <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
           <button
             type="button"
@@ -828,7 +829,7 @@ function MlbGameArticleShell({
       className="grid w-full max-w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
       onClick={onDoubleTap}
     >
-      <div className="mx-auto w-full max-w-3xl min-w-0 justify-self-center overflow-x-hidden">
+      <div className={cn(dispatchReaderColumnClass, "justify-self-center overflow-x-hidden")}>
         <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
           <button
             type="button"
@@ -851,7 +852,7 @@ function MlbGameArticleShell({
             Archive
           </button>
         </div>
-        <div className="mx-auto w-full max-w-3xl min-w-0 space-y-4 px-3 py-4 sm:p-4 md:p-7">
+        <div className={cn(dispatchReaderPanelClass, "space-y-4")}>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
             <button
               type="button"
@@ -1442,7 +1443,7 @@ function ArticleReaderShell({
       style={{ touchAction: "pan-y" }}
       onClick={onDoubleTap}
     >
-      <article className="font-rss mx-auto min-w-0 max-w-3xl justify-self-center">
+      <article className={cn("font-rss justify-self-center", dispatchReaderColumnClass)}>
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -2440,7 +2441,7 @@ export default function RssPage() {
   // Pre-extract upcoming articles so opens / next-swipes don't wait on a cold scrape.
   useEffect(() => {
     const ac = new AbortController();
-    const warm = (urls: string[]) =>
+    const warmExtracts = (urls: string[]) =>
       prefetchRssArticles(urls, {
         concurrency: 3,
         signal: ac.signal,
@@ -2452,24 +2453,33 @@ export default function RssPage() {
           }),
       });
 
+    const warmGames = (items: RssFeedItemRef[]) => {
+      for (const it of items) {
+        void prefetchDispatchGameData(qc, it, it.feedUrl).catch(() => {});
+      }
+    };
+
     const run = () => {
       if (selected && selectedIndex >= 0) {
-        const neighbors = [1, 2, -1, 3, 4, -2]
+        const neighborItems = [1, 2, -1, 3, 4, -2]
           .map((d) => navItems[selectedIndex + d])
-          .filter((it): it is RssFeedItemRef => Boolean(it))
+          .filter((it): it is RssFeedItemRef => Boolean(it));
+        warmGames(neighborItems);
+        const extractUrls = neighborItems
           .filter(articleNeedsEdgeExtract)
           .map((it) => it.link);
-        void warm(neighbors);
+        void warmExtracts(extractUrls);
         return;
       }
       // Idle list: prefer unread rows, then the visible head of the feed.
-      const pool = (unreadInList.length ? unreadInList : listItems)
-        .filter(articleNeedsEdgeExtract)
-        .slice(0, 18)
-        .map((it) => it.link);
-      void warm(pool);
+      const poolItems = (unreadInList.length ? unreadInList : listItems).slice(0, 18);
+      warmGames(poolItems);
+      const pool = poolItems.filter(articleNeedsEdgeExtract).map((it) => it.link);
+      void warmExtracts(pool);
     };
 
+    // Prioritize the next article — don't wait for idle on keyboard nav.
+    run();
     const ric = (
       window as Window & {
         requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
@@ -2480,16 +2490,12 @@ export default function RssPage() {
       window as Window & { cancelIdleCallback?: (id: number) => void }
     ).cancelIdleCallback;
     let idleId: number | null = null;
-    let timeoutId: number | null = null;
     if (typeof ric === "function") {
-      idleId = ric(run, { timeout: 1200 });
-    } else {
-      timeoutId = window.setTimeout(run, 250);
+      idleId = ric(run, { timeout: 400 });
     }
     return () => {
       ac.abort();
       if (idleId != null && typeof cic === "function") cic(idleId);
-      if (timeoutId != null) window.clearTimeout(timeoutId);
     };
   }, [selected, selectedIndex, navItems, listItems, unreadInList, qc]);
 
@@ -2615,8 +2621,21 @@ export default function RssPage() {
 
   function goRelative(delta: number) {
     if (selectedIndex < 0) return;
-    const next = navItems[selectedIndex + delta];
-    if (next) setSelected(next);
+    const nextIdx = selectedIndex + delta;
+    const next = navItems[nextIdx];
+    if (next) {
+      void prefetchDispatchGameData(qc, next, next.feedUrl);
+      const ahead = navItems[nextIdx + (delta > 0 ? 1 : -1)];
+      if (ahead) void prefetchDispatchGameData(qc, ahead, ahead.feedUrl);
+      if (articleNeedsEdgeExtract(next)) {
+        void qc.prefetchQuery({
+          queryKey: ["rss-article-v2", next.link],
+          queryFn: () => fetchRssArticle(next.link),
+          staleTime: 10 * 60_000,
+        });
+      }
+      setSelected(next);
+    }
   }
 
   async function archiveSelected() {

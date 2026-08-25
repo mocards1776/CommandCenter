@@ -94,6 +94,42 @@ export function NflGameDetailView({
   const label = statusLabel(g);
   const pregame = !g.final && !g.live;
 
+  const articleSection =
+    g.article?.storyHtml || g.article?.description ? (
+      <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
+        {!suppressStoryHeader ? (
+          <div className="border-b border-white/[0.06] px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+              {g.final ? "Game wrap" : "Preview"}
+            </p>
+            <h2 className="font-rss mt-1 text-[20px] font-semibold leading-snug text-cream">
+              {g.article.headline}
+            </h2>
+            {g.article.description ? (
+              <p className="text-chalk mt-2 text-[13px] leading-relaxed">
+                {g.article.description.replace(/^—\s*/, "")}
+              </p>
+            ) : null}
+          </div>
+        ) : g.article.description ? (
+          <div className="border-b border-white/[0.06] px-4 py-3">
+            <p className="text-chalk text-[13px] leading-relaxed">
+              {g.article.description.replace(/^—\s*/, "")}
+            </p>
+          </div>
+        ) : null}
+        {g.article.storyHtml ? (
+          <SelectableHighlightRegion
+            articleUrl={recapUrl}
+            articleTitle={g.article.headline}
+            feedUrl="synthetic:nfl-wraps"
+            html={g.article.storyHtml}
+            className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-semibold [&_a]:text-accent [&_a]:hover:underline [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
+          />
+        ) : null}
+      </section>
+    ) : null;
+
   return (
     <div className="space-y-5">
       <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
@@ -200,6 +236,8 @@ export function NflGameDetailView({
         />
       )}
 
+      {articleSection}
+
       {teamStatLabels.length > 0 && (
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
           <div className="border-b border-white/[0.06] px-4 py-2.5">
@@ -212,8 +250,12 @@ export function NflGameDetailView({
               <thead>
                 <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
                   <th className="px-3 py-2 font-medium">Stat</th>
-                  <th className="numeral px-2 py-2 text-right font-medium">{g.away.abbrev}</th>
-                  <th className="numeral px-3 py-2 text-right font-medium">{g.home.abbrev}</th>
+                  <th className="numeral px-2 py-2 text-right font-medium">
+                    <NflTeamStatHeader side={g.away} align="right" />
+                  </th>
+                  <th className="numeral px-3 py-2 text-right font-medium">
+                    <NflTeamStatHeader side={g.home} align="right" />
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -272,8 +314,13 @@ export function NflGameDetailView({
                     className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]"
                   >
                     <div className="border-b border-white/[0.06] px-3 py-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
-                        {group.teamAbbrev} · {group.name}
+                      <p className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+                        {side.logo ? (
+                          <img src={side.logo} alt="" className="h-5 w-5 object-contain" />
+                        ) : null}
+                        <span>
+                          {group.teamAbbrev} · {group.name}
+                        </span>
                       </p>
                     </div>
                     <div className="overflow-x-auto">
@@ -326,41 +373,6 @@ export function NflGameDetailView({
         </section>
       )}
 
-      {g.article?.storyHtml || g.article?.description ? (
-        <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
-          {!suppressStoryHeader ? (
-            <div className="border-b border-white/[0.06] px-4 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
-                {g.final ? "Game wrap" : "Preview"}
-              </p>
-              <h2 className="font-rss mt-1 text-[20px] font-semibold leading-snug text-cream">
-                {g.article.headline}
-              </h2>
-              {g.article.description ? (
-                <p className="text-chalk mt-2 text-[13px] leading-relaxed">
-                  {g.article.description.replace(/^—\s*/, "")}
-                </p>
-              ) : null}
-            </div>
-          ) : g.article.description ? (
-            <div className="border-b border-white/[0.06] px-4 py-3">
-              <p className="text-chalk text-[13px] leading-relaxed">
-                {g.article.description.replace(/^—\s*/, "")}
-              </p>
-            </div>
-          ) : null}
-          {g.article.storyHtml ? (
-            <SelectableHighlightRegion
-              articleUrl={recapUrl}
-              articleTitle={g.article.headline}
-              feedUrl="synthetic:nfl-wraps"
-              html={g.article.storyHtml}
-              className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-semibold [&_a]:text-accent [&_a]:hover:underline [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
-            />
-          ) : null}
-        </section>
-      ) : null}
-
       {g.scoringPlays.length > 0 && (
         <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
           <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
@@ -408,6 +420,28 @@ export function NflGameDetailView({
         </section>
       )}
     </div>
+  );
+}
+
+function NflTeamStatHeader({
+  side,
+  align,
+}: {
+  side: NflScoreSide;
+  align: "left" | "right";
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5",
+        align === "right" ? "justify-end" : "justify-start",
+      )}
+    >
+      {side.logo ? (
+        <img src={side.logo} alt="" className="h-5 w-5 object-contain" />
+      ) : null}
+      {side.abbrev}
+    </span>
   );
 }
 

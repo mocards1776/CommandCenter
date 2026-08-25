@@ -1597,7 +1597,11 @@ function BookDetail({
     onSuccess: (r) => {
       refresh();
       const hit = Boolean(r.blurbs || r.found || r.pages);
-      toast[hit ? "success" : "error"](hit ? "Found it" : "Nothing found for this one");
+      toast[hit ? "success" : "error"](
+        hit
+          ? "Found it"
+          : "Not in the free catalogs yet — try Change cover, or paste a retailer link",
+      );
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Lookup failed"),
   });

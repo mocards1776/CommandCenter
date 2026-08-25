@@ -7,6 +7,7 @@ import { NflGameDetailView } from "@/pages/NflGamePage";
 import { SoccerGameDetailView } from "@/pages/SoccerGamePage";
 import { parseEspnGameIdFromUrl, resolveMlbGamePkFromEspnEvent } from "@/lib/mlb";
 import { fetchNflGameDetail } from "@/lib/nfl";
+import { dispatchReaderPanelClass } from "@/lib/utils";
 
 function isNflEspnUrl(url: string): boolean {
   return /espn\.com\/nfl\//i.test(url);
@@ -209,7 +210,7 @@ export default function DispatchEspnGameReader({
 
   if (!eventId) {
     return (
-      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
+      <div className={dispatchReaderPanelClass}>
         {chrome}
         <p className="text-alert text-[13px]">Couldn’t find an ESPN game id in this link.</p>
         <a
@@ -226,7 +227,7 @@ export default function DispatchEspnGameReader({
 
   if (soccer) {
     return (
-      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
+      <div className={dispatchReaderPanelClass}>
         {chrome}
         {hero}
         <SoccerGameDetailView
@@ -242,7 +243,7 @@ export default function DispatchEspnGameReader({
   if (nfl) {
     if (nflGame.isPending) {
       return (
-        <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
+        <div className={dispatchReaderPanelClass}>
           {chrome}
           <div className="text-chalk flex min-h-[40vh] items-center justify-center gap-2">
             <Loader2 size={18} className="animate-spin" />
@@ -253,7 +254,7 @@ export default function DispatchEspnGameReader({
     }
     if (nflGame.data || eventId) {
       return (
-        <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
+        <div className={dispatchReaderPanelClass}>
           {chrome}
           {hero}
           <NflGameDetailView eventId={eventId!} suppressStoryHeader={Boolean(heroImage || title)} />
@@ -264,7 +265,7 @@ export default function DispatchEspnGameReader({
 
   if (!nfl && !soccer && resolved.isPending) {
     return (
-      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
+      <div className={dispatchReaderPanelClass}>
         {chrome}
         <div className="text-chalk flex min-h-[40vh] items-center justify-center gap-2">
           <Loader2 size={18} className="animate-spin" />
@@ -276,7 +277,7 @@ export default function DispatchEspnGameReader({
 
   if (!nfl && !soccer && resolved.data != null) {
     return (
-      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
+      <div className={dispatchReaderPanelClass}>
         {chrome}
         {hero}
         <MlbGameDetail
@@ -290,7 +291,7 @@ export default function DispatchEspnGameReader({
 
   if (fallback.isPending) {
     return (
-      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
+      <div className={dispatchReaderPanelClass}>
         {chrome}
         <div className="text-chalk flex min-h-[30vh] items-center justify-center gap-2">
           <Loader2 size={18} className="animate-spin" />
@@ -302,7 +303,7 @@ export default function DispatchEspnGameReader({
 
   if (fallback.data) {
     return (
-      <div className="mx-auto w-full max-w-3xl min-w-0 space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7">
+      <div className={dispatchReaderPanelClass}>
         {chrome}
         {hero}
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
@@ -320,7 +321,7 @@ export default function DispatchEspnGameReader({
             feedUrl={nfl ? "synthetic:nfl-wraps" : "synthetic:mlb-wraps"}
             articleImage={heroImage ?? null}
             html={fallback.data.html}
-            className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-semibold [&_a]:text-accent [&_a]:hover:underline [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
+            className="rss-reader px-4 py-4 text-[16px] leading-[1.75] text-[#d5dae6] md:text-[15px] [&_a]:font-semibold [&_a]:text-accent [&_a]:hover:underline [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
           />
           <div className="px-4 pb-4">
             <a

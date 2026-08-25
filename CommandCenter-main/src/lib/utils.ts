@@ -6,6 +6,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Dispatch / sports reader column — full width on phones, wider on desktop. */
+export const dispatchReaderColumnClass =
+  "mx-auto w-full min-w-0 max-w-3xl md:max-w-4xl xl:max-w-5xl";
+
+/** Padded game preview panel inside the reader column. */
+export const dispatchReaderPanelClass =
+  "mx-auto w-full min-w-0 max-w-3xl md:max-w-4xl xl:max-w-5xl space-y-5 overflow-x-hidden px-3 py-4 sm:p-4 md:p-7";
+
 // ─── Dates ────────────────────────────────────────────────────────────────
 // Everything is anchored to Central time. Using UTC here is what made tasks
 // flip to "tomorrow" at 6-7pm local in the old build.
