@@ -4053,27 +4053,20 @@ export function isArticleRead(link: string, lookup: ReadLookup): boolean {
   return gid != null && lookup.espnGameIds.has(gid);
 }
 
+const READS_FETCH_LIMIT = 1000;
+
 export async function fetchRssReads(): Promise<string[]> {
   const userId = await requireUserId();
-  const pageSize = 1000;
-  const urls: string[] = [];
-  let offset = 0;
-  // Supabase/PostgREST caps each select at 1000 rows — paginate so reads
-  // beyond that limit still show as read in Dispatch.
-  while (true) {
-    const { data, error } = await supabase
-      .from("rss_reads")
-      .select("article_url")
-      .eq("user_id", userId)
-      .order("read_at", { ascending: false })
-      .range(offset, offset + pageSize - 1);
-    if (error) throw error;
-    const page = (data ?? []).map((r) => r.article_url).filter(Boolean);
-    urls.push(...page);
-    if (page.length < pageSize) break;
-    offset += pageSize;
-  }
-  return urls;
+  // Newest reads only — one query, no pagination. Dispatch feeds are recent;
+  // cache patches on mark-read cover anything not in this window.
+  const { data, error } = await supabase
+    .from("rss_reads")
+    .select("article_url")
+    .eq("user_id", userId)
+    .order("read_at", { ascending: false })
+    .limit(READS_FETCH_LIMIT);
+  if (error) throw error;
+  return (data ?? []).map((r) => r.article_url).filter(Boolean);
 }
 
 /** Merge newly read URLs into a cached reads list (deduped + normalized). */
