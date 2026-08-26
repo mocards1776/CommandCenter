@@ -4055,12 +4055,40 @@ export function isArticleRead(link: string, lookup: ReadLookup): boolean {
 
 export async function fetchRssReads(): Promise<string[]> {
   const userId = await requireUserId();
-  const { data, error } = await supabase
-    .from("rss_reads")
-    .select("article_url")
-    .eq("user_id", userId);
-  if (error) throw error;
-  return (data ?? []).map((r) => r.article_url).filter(Boolean);
+  const pageSize = 1000;
+  const urls: string[] = [];
+  let offset = 0;
+  // Supabase/PostgREST caps each select at 1000 rows — paginate so reads
+  // beyond that limit still show as read in Dispatch.
+  while (true) {
+    const { data, error } = await supabase
+      .from("rss_reads")
+      .select("article_url")
+      .eq("user_id", userId)
+      .order("read_at", { ascending: false })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []).map((r) => r.article_url).filter(Boolean);
+    urls.push(...page);
+    if (page.length < pageSize) break;
+    offset += pageSize;
+  }
+  return urls;
+}
+
+/** Merge newly read URLs into a cached reads list (deduped + normalized). */
+export function mergeReadUrls(
+  existing: readonly string[],
+  additions: readonly string[],
+): string[] {
+  const set = new Set<string>();
+  for (const raw of existing) {
+    if (raw) set.add(normalizeReadUrl(raw));
+  }
+  for (const raw of additions) {
+    if (raw) set.add(normalizeReadUrl(raw));
+  }
+  return [...set];
 }
 
 export async function markRssRead(input: {

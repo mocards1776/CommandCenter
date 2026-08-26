@@ -90,6 +90,7 @@ import {
   formatFeedDate,
   buildReadLookup,
   isArticleRead,
+  mergeReadUrls,
   markRssRead,
   markRssReadMany,
   markRssUnread,
@@ -187,11 +188,7 @@ async function persistArticleRead(
 ) {
   const articleUrl = normalizeReadUrl(input.articleUrl);
   await markRssRead({ ...input, articleUrl });
-  qc.setQueryData<string[]>(queryKey, (old) => {
-    const urls = old ?? [];
-    if (urls.some((u) => normalizeReadUrl(u) === articleUrl)) return urls;
-    return [...urls, articleUrl];
-  });
+  qc.setQueryData<string[]>(queryKey, (old) => mergeReadUrls(old ?? [], [articleUrl]));
   await qc.cancelQueries({ queryKey });
   void qc.invalidateQueries({ queryKey });
 }
@@ -2532,20 +2529,23 @@ export default function RssPage() {
   }, [selected, selectedIndex, navItems, qc]);
 
   const markAllReadMut = useMutation({
-    mutationFn: () =>
-      markRssReadMany(
-        unreadInList.map((it) => ({
-          articleUrl: it.link,
-          articleTitle: it.title,
-          feedUrl: it.feedUrl,
-        })),
-      ),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: readsQueryKey });
+    mutationFn: async () => {
+      const targets = unreadInList.map((it) => ({
+        articleUrl: it.link,
+        articleTitle: it.title,
+        feedUrl: it.feedUrl,
+      }));
+      await markRssReadMany(targets);
+      return targets.map((t) => t.articleUrl);
+    },
+    onSuccess: async (markedUrls) => {
+      qc.setQueryData<string[]>(readsQueryKey, (old) => mergeReadUrls(old ?? [], markedUrls));
+      await qc.cancelQueries({ queryKey: readsQueryKey });
+      void qc.invalidateQueries({ queryKey: readsQueryKey });
       toast.success(
-        unreadInList.length === 1
+        markedUrls.length === 1
           ? "Marked 1 article read"
-          : `Marked ${unreadInList.length} articles read`,
+          : `Marked ${markedUrls.length} articles read`,
       );
     },
     onError: (err) =>
@@ -2553,18 +2553,21 @@ export default function RssPage() {
   });
 
   const archiveDupesMut = useMutation({
-    mutationFn: () =>
-      markRssReadMany(
-        duplicateItems
-          .filter((it) => !isRead(it.link))
-          .map((it) => ({
-            articleUrl: it.link,
-            articleTitle: it.title,
-            feedUrl: it.feedUrl,
-          })),
-      ),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: readsQueryKey });
+    mutationFn: async () => {
+      const targets = duplicateItems
+        .filter((it) => !isRead(it.link))
+        .map((it) => ({
+          articleUrl: it.link,
+          articleTitle: it.title,
+          feedUrl: it.feedUrl,
+        }));
+      await markRssReadMany(targets);
+      return targets.map((t) => t.articleUrl);
+    },
+    onSuccess: async (markedUrls) => {
+      qc.setQueryData<string[]>(readsQueryKey, (old) => mergeReadUrls(old ?? [], markedUrls));
+      await qc.cancelQueries({ queryKey: readsQueryKey });
+      void qc.invalidateQueries({ queryKey: readsQueryKey });
       toast.success("Archived duplicate articles");
     },
     onError: (err) =>
@@ -2585,11 +2588,7 @@ export default function RssPage() {
           articleTitle: item.title,
           feedUrl: selected?.feedUrl ?? RSS_FEEDS[0].url,
         });
-        qc.setQueryData<string[]>(readsQueryKey, (old) => {
-          const urls = old ?? [];
-          if (urls.some((u) => normalizeReadUrl(u) === url)) return urls;
-          return [...urls, url];
-        });
+        qc.setQueryData<string[]>(readsQueryKey, (old) => mergeReadUrls(old ?? [], [url]));
       }
       await qc.cancelQueries({ queryKey: readsQueryKey });
       void qc.invalidateQueries({ queryKey: readsQueryKey });
@@ -2675,20 +2674,23 @@ export default function RssPage() {
         return { mode: "saved" as const, n: targets.length };
       }
       const targets = listItems.filter((it) => batchSelected.has(it.link) && !isRead(it.link));
-      await markRssReadMany(
-        targets.map((it) => ({
-          articleUrl: it.link,
-          articleTitle: it.title,
-          feedUrl: it.feedUrl,
-        })),
-      );
-      return { mode: "read" as const, n: targets.length };
+      const rows = targets.map((it) => ({
+        articleUrl: it.link,
+        articleTitle: it.title,
+        feedUrl: it.feedUrl,
+      }));
+      await markRssReadMany(rows);
+      return { mode: "read" as const, n: targets.length, markedUrls: rows.map((r) => r.articleUrl) };
     },
     onSuccess: async (result) => {
       if (result.mode === "saved") {
         await qc.invalidateQueries({ queryKey: ["rss-saves"] });
       } else {
-        await qc.invalidateQueries({ queryKey: readsQueryKey });
+        qc.setQueryData<string[]>(readsQueryKey, (old) =>
+          mergeReadUrls(old ?? [], result.markedUrls),
+        );
+        await qc.cancelQueries({ queryKey: readsQueryKey });
+        void qc.invalidateQueries({ queryKey: readsQueryKey });
       }
       setBatchSelected(new Set());
       setBatchMode(false);
@@ -3483,14 +3485,11 @@ export default function RssPage() {
                           });
                           return;
                         }
-                        void markRssRead({
+                        void persistArticleRead(qc, readsQueryKey, {
                           articleUrl: item.link,
                           articleTitle: item.title,
                           feedUrl: item.feedUrl,
-                        }).then(() => {
-                          void qc.invalidateQueries({ queryKey: readsQueryKey });
-                          toast.success("Archived");
-                        });
+                        }).then(() => toast.success("Archived"));
                       }
                     : undefined
                 }
