@@ -1754,6 +1754,74 @@ async function scrapeNflCoachFiredOdds() {
   };
 }
 
+async function scrapeCfbCoachFiredOdds() {
+  const items: {
+    name: string;
+    teamHint: string | null;
+    oddsAmerican: string;
+    impliedPct: number;
+    ticker: string;
+    url: string;
+  }[] = [];
+  const url =
+    "https://api.elections.kalshi.com/trade-api/v2/markets?limit=200&status=open&series_ticker=KXCOACHOUTNCAAFB";
+  const res = await timedFetch(url, {
+    headers: { Accept: "application/json", "User-Agent": UA },
+  });
+  if (!res.ok) throw new Error(`Kalshi CFB coaches ${res.status}`);
+  const data = (await res.json()) as {
+    markets?: {
+      title?: string;
+      subtitle?: string;
+      ticker?: string;
+      yes_sub_title?: string | null;
+      no_sub_title?: string | null;
+      yes_bid_dollars?: string | null;
+      yes_ask_dollars?: string | null;
+      last_price_dollars?: string | null;
+      custom_strike?: { Coach?: string; Team?: string } | null;
+    }[];
+  };
+  const dollarProb = (raw: string | null | undefined): number | null => {
+    if (raw == null || raw === "") return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return null;
+    if (n === 0) return 0;
+    return Math.max(0.01, Math.min(0.99, n));
+  };
+  for (const m of data.markets ?? []) {
+    const name =
+      (m.custom_strike?.Coach ?? m.yes_sub_title ?? m.no_sub_title ?? "").trim() || "";
+    if (!name || /field|any other/i.test(name)) continue;
+    const bid = dollarProb(m.yes_bid_dollars);
+    const ask = dollarProb(m.yes_ask_dollars);
+    const last = dollarProb(m.last_price_dollars);
+    let p: number | null = null;
+    if (bid != null && ask != null && (bid > 0 || ask > 0)) p = (bid + ask) / 2;
+    else p = (ask && ask > 0 ? ask : null) ?? (bid && bid > 0 ? bid : null) ?? last;
+    if (p == null || p <= 0) continue;
+    const american =
+      p >= 0.5
+        ? `-${Math.round((100 * p) / (1 - p))}`
+        : `+${Math.round((100 * (1 - p)) / p)}`;
+    const subtitle = (m.subtitle ?? "").replace(/^:+\s*/, "").trim();
+    items.push({
+      name,
+      teamHint: subtitle || m.custom_strike?.Team || null,
+      oddsAmerican: american,
+      impliedPct: Math.round(p * 1000) / 10,
+      ticker: m.ticker ?? "",
+      url: `https://kalshi.com/markets/${(m.ticker ?? "").toLowerCase()}`,
+    });
+  }
+  items.sort((a, b) => b.impliedPct - a.impliedPct);
+  return {
+    source: items.length ? "Kalshi" : "none",
+    checkedAt: new Date().toISOString(),
+    items,
+  };
+}
+
 function decodeHtmlEntities(s: string): string {
   return s
     .replace(/&amp;/g, "&")
@@ -3485,6 +3553,13 @@ Deno.serve(async (req: Request) => {
   if (body.action === "nflCoachFiredOdds") {
     try {
       return json(await scrapeNflCoachFiredOdds());
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
+    }
+  }
+  if (body.action === "cfbCoachFiredOdds") {
+    try {
+      return json(await scrapeCfbCoachFiredOdds());
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e), items: [] }, 200);
     }
