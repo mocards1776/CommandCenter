@@ -54,6 +54,7 @@ import {
   articlePublisherLabel,
   articleSourceHost,
   cleanArticleTitle,
+  resolveArticleTitle,
   contentHidePhrases,
   createRssHighlight,
   feedSourceLabel,
@@ -488,13 +489,14 @@ function stylizeTweetCardsInHtml(html: string): string {
     const meta =
       bq.querySelector("footer, cite, .rss-tweet-meta")?.textContent?.replace(/\s+/g, " ").trim() ||
       "";
-    const handleMatch = meta.match(/@(\w+)/);
+    const handleMatch =
+      meta.match(/@(\w+)/) || hay.match(/@([A-Za-z0-9_]{1,15})/);
     const nameMatch = meta.match(/—\s*([^(@]+)/);
     const handle = handleMatch?.[1] ?? "user";
     const display = (nameMatch?.[1] ?? handle).trim();
     const link = bq.querySelector("footer a, cite a, .rss-tweet-meta a") as HTMLAnchorElement | null;
     const dateLabel = link?.textContent?.trim() || "";
-    const href = link?.href || "";
+    const href = link?.getAttribute("href") || link?.href || "";
 
     const bodyClone = bq.cloneNode(true) as HTMLElement;
     bodyClone.querySelectorAll("footer, cite, .rss-tweet-meta, script").forEach((n) => n.remove());
@@ -506,21 +508,25 @@ function stylizeTweetCardsInHtml(html: string): string {
       <div class="rss-tweet-card__head">
         <span class="rss-tweet-card__avatar" aria-hidden="true">${(display[0] || "X").toUpperCase()}</span>
         <div class="rss-tweet-card__who">
-          <span class="rss-tweet-card__name">${display}</span>
-          <span class="rss-tweet-card__handle">@${handle}</span>
+          <div class="rss-tweet-card__names">
+            <span class="rss-tweet-card__name">${display}</span>
+            <span class="rss-tweet-card__handle">@${handle}</span>
+            ${
+              dateLabel
+                ? `<span class="rss-tweet-card__dot" aria-hidden="true">·</span><span class="rss-tweet-card__date">${
+                    href
+                      ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${dateLabel}</a>`
+                      : dateLabel
+                  }</span>`
+                : ""
+            }
+          </div>
         </div>
-        <span class="rss-tweet-card__mark" aria-hidden="true">𝕏</span>
+        <span class="rss-tweet-card__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        </span>
       </div>
       <div class="rss-tweet-card__body">${bodyHtml}</div>
-      ${
-        dateLabel
-          ? `<div class="rss-tweet-card__foot">${
-              href
-                ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${dateLabel}</a>`
-                : dateLabel
-            }</div>`
-          : ""
-      }
     `;
     bq.replaceWith(card);
   });
@@ -1193,7 +1199,7 @@ function ArticleReaderShell({
     blocked: Boolean(pendingQuote || lightboxSrc),
   });
 
-  const title = cleanArticleTitle(article.data?.title || item.title);
+  const title = resolveArticleTitle(article.data?.title, item.title);
   const byline = article.data?.byline || item.author;
   const publisher = articlePublisherLabel(item.link, byline);
   const rawImage = article.data?.image || item.image;

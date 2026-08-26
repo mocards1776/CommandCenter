@@ -617,6 +617,7 @@ export const DEFAULT_CONTENT_HIDES = [
   "the associated press created this story using technology provided by data skrive",
   "created this story using technology provided by data skrive",
   "data from sportradar",
+  "most popular",
 ] as const;
 
 /** Collect user content-hide phrases plus built-in MLB clutter patterns. */
@@ -866,6 +867,8 @@ export function scrubReaderChrome(html: string): string {
       /share on (?:x|twitter|facebook|linkedin)/i.test(raw) ||
       /opens in new window/i.test(raw) ||
       /email a link to a friend/i.test(raw) ||
+      /^most popular$/i.test(raw) ||
+      /^latest video$/i.test(raw) ||
       /^sports\s*mlb\s*/i.test(raw.replace(/\s+/g, "")) ||
       /^sportsmlb/i.test(text.replace(/\s+/g, "")) ||
       /^(?:facebook|twitter|bluesky|whatsapp|sms|email|print|copy link|save|close|log in)$/i.test(
@@ -944,6 +947,61 @@ export function isSoccerBleedArticle(
 }
 
 /**
+ * STL Today posts that are video-first with little or no readable article text.
+ */
+export function isStlTodayVideoOnlyArticle(
+  item: Pick<RssFeedItem, "link" | "title" | "snippet">,
+): boolean {
+  let host = "";
+  try {
+    host = new URL(item.link).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    if (!/stltoday\.com/i.test(item.link)) return false;
+    host = "stltoday.com";
+  }
+  if (host !== "stltoday.com") return false;
+
+  const link = item.link.toLowerCase();
+  const hay = `${item.title} ${item.snippet ?? ""}`.toLowerCase();
+
+  if (/\/video(?:\/|$|\?)/.test(link)) return true;
+  if (/^video:/i.test(item.title.trim())) return true;
+  if (/\blatest video\b/.test(hay)) return true;
+  if (/\bwatch(?:ing)?\b/.test(hay) && /\bvideo\b/.test(hay) && hay.length < 140) return true;
+  return false;
+}
+
+/**
+ * Non-Cardinals STL Today bleed — prep/high-school and other local sports.
+ */
+export function isStlTodayOffTopicArticle(
+  item: Pick<RssFeedItem, "link" | "title" | "snippet">,
+): boolean {
+  let link = item.link.toLowerCase();
+  try {
+    link = new URL(item.link).pathname.toLowerCase() + new URL(item.link).search.toLowerCase();
+  } catch {
+    /* keep raw link */
+  }
+  if (!/stltoday\.com/i.test(item.link)) return false;
+
+  if (
+    /\/sports\/(?:prep|high-school|highschool|stlhighschool)/.test(link) ||
+    /stlhighschoolsports\.com/.test(link) ||
+    /[?&]section=(?:prep|high-school|soccer)\b/.test(link)
+  ) {
+    return true;
+  }
+
+  const hay = `${item.title} ${item.snippet ?? ""}`.toLowerCase();
+  if (/\bhigh school\b/.test(hay) && !/\bcardinals?\b/.test(hay)) return true;
+  if (/\bboys?\s+soccer\b|\bgirls?\s+soccer\b/.test(hay) && !/\bcardinals?\b/.test(hay)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * MLB Film Room / clip pages (`/video/…`), not written mlb.com news.
  * Cardinals Wire syndicates these heavily; we hide them only in that feed.
  */
@@ -987,8 +1045,40 @@ export function cleanArticleTitle(title: string | null | undefined): string {
   if (!title) return "";
   return title
     .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/\s*\|\s*STLtoday\.com.*$/i, "")
+    .replace(/\s*\|\s*St\.?\s*Louis Post-Dispatch.*$/i, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+const GENERIC_ARTICLE_TITLES =
+  /^(?:cardinals|st\.?\s*louis cardinals|mlb|sports|news|video|latest)$/i;
+
+/**
+ * Prefer the RSS list title when the extracted page title is generic or truncated
+ * (common on STL Today og:title and paywall shells).
+ */
+export function resolveArticleTitle(
+  extracted: string | null | undefined,
+  feedTitle: string | null | undefined,
+): string {
+  const feed = cleanArticleTitle(feedTitle);
+  const ext = cleanArticleTitle(extracted);
+  if (!ext) return feed;
+  if (!feed) return ext;
+  if (GENERIC_ARTICLE_TITLES.test(ext)) return feed;
+  const extLower = ext.toLowerCase();
+  const feedLower = feed.toLowerCase();
+  if (feed.length > ext.length + 6 && feedLower.startsWith(extLower)) return feed;
+  // Truncated mid-word ("Orioles didn" vs full headline).
+  if (
+    feed.length > ext.length + 4 &&
+    feedLower.startsWith(extLower) &&
+    !/[.!?:;"'\u2019\u201d]$/.test(ext)
+  ) {
+    return feed;
+  }
+  return ext.length >= feed.length ? ext : feed;
 }
 
 function escapeRegExp(value: string): string {
@@ -1302,6 +1392,18 @@ export function articleMatchesFilters(
     effectiveFeed === "cardinals-wraps" ||
     effectiveFeed === "cardinals-farm";
   if (!isWrapFeed && isSoccerBleedArticle(item)) return true;
+  if (
+    (effectiveFeed === "cardinals" || effectiveFeed === "folder:cardinals") &&
+    isStlTodayOffTopicArticle(item)
+  ) {
+    return true;
+  }
+  if (
+    (effectiveFeed === "cardinals" || effectiveFeed === "folder:cardinals") &&
+    isStlTodayVideoOnlyArticle(item)
+  ) {
+    return true;
+  }
   // Wire-only: drop MLB Film Room clips; keep mlb.com/news and other hosts.
   if (effectiveFeed === "cardinals-wire" && isMlbFilmRoomArticle(item)) return true;
   // Auto-generated AP / Data Skrive wires + FanDuel game stubs (news wires only).
@@ -1453,12 +1555,50 @@ export function feedSourceLabel(feedUrl: string | null | undefined): string {
 export function articleMentionsCardinals(
   item: Pick<RssFeedItem, "title" | "snippet" | "link">,
 ): boolean {
-  const hay = `${item.title} ${item.snippet ?? ""} ${item.link ?? ""}`.toLowerCase();
-  return (
-    /cardinals?\b|redbirds?\b|\bstl\b|st\.?\s*louis(?:\s+cardinals)?\b|\/cardinals\b|teamid=138\b/.test(
-      hay,
-    )
-  );
+  const text = `${item.title} ${item.snippet ?? ""}`.toLowerCase();
+  if (
+    /cardinals?\b|redbirds?\b|st\.?\s*louis\s+cardinals\b|\bstl\s+cardinals\b/.test(text)
+  ) {
+    return true;
+  }
+  if (/\bvs\.?\s+(?:stl|cardinals)\b|\b(?:stl|cardinals)\s+vs\.?\b/.test(text)) return true;
+
+  const link = (item.link ?? "").toLowerCase();
+  if (!link) return false;
+  // MLB / wire URLs — not bare stltoday.com (covers all St. Louis sports).
+  if (/teamid=138\b|mlb\.com\/cardinals\b|\/cardinals(?:\/|$|\?)/.test(link)) {
+    if (/stltoday\.com/i.test(link) && !/\/sports\/(?:mlb\/)?cardinals\b/.test(link)) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+/** Drop league-wide RotoWire templates that aren't about this player. */
+export function isPlayerSpecificNewsNote(
+  note: {
+    headline?: string | null;
+    story?: string | null;
+    description?: string | null;
+  },
+  playerName: string,
+): boolean {
+  const headline = (note.headline ?? "").trim();
+  const body = `${note.story ?? ""} ${note.description ?? ""}`.trim();
+  const hay = `${headline} ${body}`.toLowerCase();
+  if (!hay.trim()) return false;
+
+  const parts = playerName.trim().split(/\s+/).filter(Boolean);
+  const last = parts[parts.length - 1]?.toLowerCase() ?? "";
+  if (!last || last.length < 2) return true;
+
+  const generic =
+    /fantasy baseball forecaster|team hitting ratings|team pitching ratings|starting lineup advice|waiver wire pick|daily fantasy|dfs pick|weekly outlook|matchup ratings|pitching ratings update|hitting ratings update/i;
+  if (generic.test(hay) && !hay.includes(last)) return false;
+
+  if (headline && !headline.toLowerCase().includes(last)) return false;
+  return true;
 }
 
 function normalizeImgKeyClient(src: string): string {
@@ -1878,6 +2018,7 @@ export async function fetchTagPlayerFeed(feedUrl: string): Promise<RssFeed> {
             ];
 
       for (const note of entries) {
+        if (!isPlayerSpecificNewsNote(note, name)) continue;
         const headline = note.headline || "Player news update";
         const story = note.story || note.description || "";
         // Missing publish date → treat as fresh (now) instead of skipping.
@@ -3732,8 +3873,12 @@ async function extractStlTodayInBrowser(url: string): Promise<RssArticle | null>
   const contentText = contentHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   if (contentText.length < 40) return null;
   const title =
-    unlocked.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
-    null;
+    resolveArticleTitle(
+      unlocked.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+        unlocked.match(/<h1[^>]*class="[^"]*(?:headline|asset-headline|title)[^"]*"[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ||
+        null,
+      null,
+    ) || null;
   const image =
     unlocked.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
     null;

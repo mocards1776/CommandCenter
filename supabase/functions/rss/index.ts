@@ -295,7 +295,7 @@ function unlockEncryptedContent(html: string): string {
 }
 
 const CHROME_CLASS_RE =
-  /(?:subscriber-hide|tnt-gift|gift-|share-tools|share-bar|social-share|social-links|follow-this|follow-author|author-card|asset-user|asset-meta|asset-tags|asset-comments|comments-|newsletter|notification|modal-|dropdown-menu|preferred-source|google-preferred|paywall|clipboard|subscribe-promo|inline-relcontent|tnt-inline|trinity|audio-player|related-articles|read-more|promo-|story-cover|caas-readmore|caas-da|bodyad|body-ads|taboola|outbrain|film-room-branding|powered-by)/i;
+  /(?:subscriber-hide|tnt-gift|gift-|share-tools|share-bar|social-share|social-links|follow-this|follow-author|author-card|asset-user|asset-meta|asset-tags|asset-comments|comments-|newsletter|notification|modal-|dropdown-menu|preferred-source|google-preferred|paywall|clipboard|subscribe-promo|inline-relcontent|tnt-inline|trinity|audio-player|related-articles|read-more|promo-|story-cover|caas-readmore|caas-da|bodyad|body-ads|taboola|outbrain|film-room-branding|powered-by|most-popular|popular-stories|popular-module|more-stories|trb_pop|related-content|right-rail|sidebar-module)/i;
 
 /** Drop share/gift/follow/modals and other newspaper chrome before sanitize. */
 function stripArticleChrome(html: string): string {
@@ -406,6 +406,42 @@ function extractBeehiivFragment(html: string): string | null {
   return null;
 }
 
+/** Baltimore Sun / Tribune article body — avoid sidebar "Most Popular" leakage. */
+function extractTribuneArticleFragment(html: string): string | null {
+  const openers = [
+    /<div[^>]*class="[^"]*article-body[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*story-body[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*trb_article[^"]*"[^>]*>/i,
+    /<div[^>]*itemprop=["']articleBody["'][^>]*>/i,
+    /<article[^>]*class="[^"]*article[^"]*"[^>]*>/i,
+  ];
+  for (const re of openers) {
+    const tag = re.source.includes("<article") ? "article" : "div";
+    const frag = tag === "article"
+      ? html.match(re)?.[0]
+        ? (() => {
+            const m = html.match(/<article[^>]*class="[^"]*article[^"]*"[^>]*>([\s\S]*?)<\/article>/i);
+            return m?.[1] ?? null;
+          })()
+        : null
+      : sliceBalancedDiv(html, re);
+    if (frag && stripTags(frag).length > 200) {
+      // Peel sidebar / popular modules that sometimes nest inside the body wrapper.
+      let out = frag;
+      for (let pass = 0; pass < 4; pass++) {
+        const next = out.replace(
+          /<(aside|section|div|nav|ul)[^>]*(?:most-popular|popular-stories|popular-module|more-stories|trb_pop|related-content|right-rail)[^>]*>[\s\S]*?<\/\1>/gi,
+          "",
+        );
+        if (next === out) break;
+        out = next;
+      }
+      if (stripTags(out).length > 200) return out;
+    }
+  }
+  return null;
+}
+
 function extractFragment(html: string, pageUrl = ""): string | null {
   // Baseball Savant is a React SPA — generic <main>/<nav> splits yield menu soup.
   if (isSavantPreviewUrl(pageUrl) || isBaseballSavantUrl(pageUrl)) {
@@ -416,6 +452,11 @@ function extractFragment(html: string, pageUrl = ""): string | null {
   if (isBeehiivUrl(pageUrl)) {
     const beehiiv = extractBeehiivFragment(html);
     if (beehiiv) return beehiiv;
+  }
+
+  if (/baltimoresun\.com|chicagotribune\.com|orlandosentinel\.com/i.test(pageUrl)) {
+    const tribune = extractTribuneArticleFragment(html);
+    if (tribune) return tribune;
   }
 
   // MLB.com news — never let an embedded clip steal the article body.
@@ -1049,7 +1090,7 @@ function extractMlbVideoFragment(html: string, pageUrl = ""): string | null {
 }
 
 const JUNK_TEXT_RE =
-  /(?:get email notifications|your notification has been saved|problem saving your notification|followed notifications|please log in to use this feature|don't have an account|sign up today|gift this article|new subscriber benefit|copied to clipboard|out of gifts for the month|share this article paywall|prefer us on google|preferred news source|author twitter|author email|follow [\w .|/-]+ post-dispatch|manage followed notifications|facebook|twitter|bluesky|whatsapp|\bsms\b|copy (?:article )?link|copy link|\bprint\b|\{\{[^}]+\}\}|data-(?:html|toggle|placement|trigger)|aria-label="tooltip|tabindex="0"|role="button"|story by|appeared first on|film room powered by|advertisement|more mlb on heavy|share on x|opens in new window|email a link to a friend|sports\s*mlb)/i;
+  /(?:get email notifications|your notification has been saved|problem saving your notification|followed notifications|please log in to use this feature|don't have an account|sign up today|gift this article|new subscriber benefit|copied to clipboard|out of gifts for the month|share this article paywall|prefer us on google|preferred news source|author twitter|author email|follow [\w .|/-]+ post-dispatch|manage followed notifications|facebook|twitter|bluesky|whatsapp|\bsms\b|copy (?:article )?link|copy link|\bprint\b|\{\{[^}]+\}\}|data-(?:html|toggle|placement|trigger)|aria-label="tooltip|tabindex="0"|role="button"|story by|appeared first on|film room powered by|advertisement|more mlb on heavy|share on x|opens in new window|email a link to a friend|sports\s*mlb|most popular)/i;
 
 /** Drop leftover chrome paragraphs and leaked attribute debris after sanitize. */
 function scrubContentHtml(html: string, heroImage: string | null = null): string {
@@ -1074,7 +1115,7 @@ function scrubContentHtml(html: string, heroImage: string | null = null): string
     if (BYLINE_NOISE_RE.test(text) && text.length < 160) return "";
     if (/^(?:advertisement)+$/i.test(text.replace(/\s+/g, ""))) return "";
     if (text.length < 120 && JUNK_TEXT_RE.test(text)) return "";
-    if (/^(?:facebook|twitter|bluesky|whatsapp|sms|email|print|copy link|save|close|log in|story by)$/i.test(text)) {
+    if (/^(?:facebook|twitter|bluesky|whatsapp|sms|email|print|copy link|save|close|log in|story by|most popular)$/i.test(text)) {
       return "";
     }
     // Promo bullets that are mostly a single link.
@@ -1369,11 +1410,35 @@ function sanitizeHtml(frag: string): string {
 }
 
 function pageMeta(html: string) {
-  const title =
+  const h1 =
+    html.match(
+      /<h1[^>]*class="[^"]*(?:headline|asset-headline|article-title|entry-title|title)[^"]*"[^>]*>([\s\S]*?)<\/h1>/i,
+    )?.[1] ||
+    html.match(/<h1[^>]*itemprop=["']headline["'][^>]*>([\s\S]*?)<\/h1>/i)?.[1] ||
+    null;
+  const ogTitle =
     html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
     html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)?.[1] ||
-    html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ||
     null;
+  const docTitle = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || null;
+  const clean = (raw: string | null) =>
+    raw
+      ? stripTags(raw)
+          .replace(/https?:\/\/\S+/gi, " ")
+          .replace(/\s*\|\s*STLtoday\.com.*$/i, "")
+          .replace(/\s*\|\s*The Baltimore Sun.*$/i, "")
+          .replace(/\s+/g, " ")
+          .trim()
+      : null;
+  const h1Clean = clean(h1);
+  const ogClean = clean(ogTitle);
+  const docClean = clean(docTitle);
+  const generic = /^(?:cardinals|st\.?\s*louis cardinals|mlb|sports|news|video|latest)$/i;
+  let title: string | null = ogClean || docClean;
+  if (h1Clean && (!title || generic.test(title) || (title && h1Clean.length > title.length + 6))) {
+    title = h1Clean;
+  }
+  if (title && generic.test(title) && docClean && !generic.test(docClean)) title = docClean;
   const byline =
     html.match(/itemprop=["']author["'][^>]*content=["']([^"']+)["']/i)?.[1] ||
     html.match(/class=["'][^"']*blog-author-name[^"']*["'][^>]*>([\s\S]*?)</i)?.[1] ||

@@ -698,11 +698,28 @@ async function scrapeRotoWireNote(name: string): Promise<{
     }));
   const headline = rw.headline ?? rw.description ?? null;
   const story = rw.story ?? null;
+  const displayName = hit.displayName ?? name;
+  const last = want.split(/\s+/).filter(Boolean).pop()?.toLowerCase() ?? "";
+  const generic =
+    /fantasy baseball forecaster|team hitting ratings|team pitching ratings|starting lineup advice|waiver wire pick|daily fantasy|dfs pick|weekly outlook|matchup ratings/i;
+  const noteHay = `${headline ?? ""} ${story ?? ""} ${rw.description ?? ""}`.toLowerCase();
+  const playerSpecific =
+    Boolean(last) &&
+    (!headline || headline.toLowerCase().includes(last)) &&
+    (!generic.test(noteHay) || noteHay.includes(last));
   if (!headline && !story) {
     return {
       note: null,
       news,
-      displayName: hit.displayName ?? null,
+      displayName,
+      espnId: String(hit.id),
+    };
+  }
+  if (!playerSpecific) {
+    return {
+      note: null,
+      news,
+      displayName,
       espnId: String(hit.id),
     };
   }
@@ -716,7 +733,7 @@ async function scrapeRotoWireNote(name: string): Promise<{
       url: `https://www.espn.com/mlb/player/_/id/${hit.id}`,
     },
     news,
-    displayName: hit.displayName ?? null,
+    displayName,
     espnId: String(hit.id),
   };
 }
