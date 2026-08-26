@@ -1878,20 +1878,27 @@ function BookDetail({
                 </p>
               )}
 
-              <p className="mt-3.5 text-[16px] tracking-[-0.015em]">
+              <p className="mt-3.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[16px] tracking-[-0.015em]">
                 <Editable
                   value={book.authors}
                   placeholder="Add author"
-                  doubleClick
-                  onSingleClick={() => {
-                    if (!book.authors) return;
-                    onFilter({ type: "author", value: book.authors.split(",")[0].trim() });
-                    onClose();
-                  }}
                   onSave={(v) => patch.mutate({ authors: v.trim() || null })}
                   className="text-chalk hover:text-cream text-center"
-                  inputClassName="w-full text-center"
+                  inputClassName="w-full min-w-[12rem] text-center"
                 />
+                {book.authors && (
+                  <button
+                    type="button"
+                    title="Browse books by this author"
+                    onClick={() => {
+                      onFilter({ type: "author", value: book.authors!.split(",")[0].trim() });
+                      onClose();
+                    }}
+                    className="text-chalk-dim hover:text-accent text-[10px] uppercase tracking-[0.16em]"
+                  >
+                    Browse
+                  </button>
+                )}
               </p>
 
               {book.star_rating !== null && (
