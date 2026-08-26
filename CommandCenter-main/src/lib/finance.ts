@@ -5,6 +5,8 @@ import type {
   FinanceCategory,
   FinanceTransaction,
   FinanceBudget,
+  FinanceIncomeSource,
+  FinanceIncomeRule,
 } from "@/types";
 import type { Tables } from "@/types/database";
 
@@ -75,18 +77,28 @@ function enrichTransactions(
   rows: Tables<"finance_transactions">[],
   accounts: FinanceAccount[],
   categories: FinanceCategory[],
+  incomeSources: FinanceIncomeSource[] = [],
+  tagsByTxn: Map<string, string[]> = new Map(),
 ): FinanceTransaction[] {
   const acctById = new Map(accounts.map((a) => [a.id, a]));
   const catById = new Map(categories.map((c) => [c.id, c]));
+  const sourceById = new Map(incomeSources.map((s) => [s.id, s]));
   return rows.map((t) => ({
     ...t,
     finance_accounts: acctById.get(t.account_id) ?? null,
     finance_categories: t.category_id ? catById.get(t.category_id) ?? null : null,
+    finance_income_sources: t.income_source_id ? sourceById.get(t.income_source_id) ?? null : null,
+    tags: tagsByTxn.get(t.id) ?? [],
   }));
 }
 
 export async function fetchAllTransactions(): Promise<FinanceTransaction[]> {
-  const [accounts, categories] = await Promise.all([fetchAccounts(), fetchCategories()]);
+  const [accounts, categories, incomeSources, tagsByTxn] = await Promise.all([
+    fetchAccounts(),
+    fetchCategories(),
+    fetchIncomeSources(),
+    fetchTransactionTagsMap(),
+  ]);
   const out: Tables<"finance_transactions">[] = [];
   for (let from = 0; from < 50_000; from += PAGE) {
     const { data, error } = await supabase
@@ -99,7 +111,7 @@ export async function fetchAllTransactions(): Promise<FinanceTransaction[]> {
     out.push(...data);
     if (data.length < PAGE) break;
   }
-  return enrichTransactions(out, accounts, categories);
+  return enrichTransactions(out, accounts, categories, incomeSources, tagsByTxn);
 }
 
 export async function fetchBudgets(month: string): Promise<FinanceBudget[]> {
@@ -158,6 +170,291 @@ export async function updateTransactionNotes(id: string, notes: string): Promise
     .update({ notes })
     .eq("id", id);
   if (error) throw error;
+}
+
+export async function updateTransactionTransfer(id: string, isTransfer: boolean): Promise<void> {
+  const { error } = await supabase
+    .from("finance_transactions")
+    .update({ is_transfer: isTransfer })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function updateTransactionIncomeSource(
+  id: string,
+  incomeSourceId: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from("finance_transactions")
+    .update({ income_source_id: incomeSourceId })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** Link two transactions as a transfer pair (e.g. checking payment + credit card payment). */
+export async function linkTransferPair(txnIdA: string, txnIdB: string): Promise<string> {
+  const groupId = crypto.randomUUID();
+  const { error } = await supabase
+    .from("finance_transactions")
+    .update({ is_transfer: true, transfer_group_id: groupId })
+    .in("id", [txnIdA, txnIdB]);
+  if (error) throw error;
+  return groupId;
+}
+
+export async function unlinkTransferGroup(groupId: string): Promise<void> {
+  const { error } = await supabase
+    .from("finance_transactions")
+    .update({ is_transfer: false, transfer_group_id: null })
+    .eq("transfer_group_id", groupId);
+  if (error) throw error;
+}
+
+// ─── Tags ────────────────────────────────────────────────────────────────────
+
+export function normalizeFinanceTag(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^#+/, "")
+    .replace(/\s+/g, " ")
+    .slice(0, 40);
+}
+
+export async function fetchTransactionTagsMap(): Promise<Map<string, string[]>> {
+  const { data, error } = await supabase
+    .from("finance_transaction_tags")
+    .select("transaction_id, tag")
+    .order("created_at");
+  if (error) throw error;
+  const map = new Map<string, string[]>();
+  for (const r of data ?? []) {
+    const list = map.get(r.transaction_id) ?? [];
+    list.push(r.tag);
+    map.set(r.transaction_id, list);
+  }
+  return map;
+}
+
+export async function fetchUserFinanceTagNames(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("finance_transaction_tags")
+    .select("tag");
+  if (error) throw error;
+  const set = new Set<string>();
+  for (const r of data ?? []) {
+    const t = normalizeFinanceTag(String(r.tag ?? ""));
+    if (t) set.add(t);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+export async function addTransactionTag(transactionId: string, tag: string): Promise<void> {
+  const userId = await requireUserId();
+  const normalized = normalizeFinanceTag(tag);
+  if (!normalized) throw new Error("Tag is empty");
+  const { error } = await supabase.from("finance_transaction_tags").upsert(
+    { user_id: userId, transaction_id: transactionId, tag: normalized },
+    { onConflict: "user_id,transaction_id,tag" },
+  );
+  if (error) throw error;
+}
+
+export async function removeTransactionTag(transactionId: string, tag: string): Promise<void> {
+  const { error } = await supabase
+    .from("finance_transaction_tags")
+    .delete()
+    .eq("transaction_id", transactionId)
+    .eq("tag", normalizeFinanceTag(tag));
+  if (error) throw error;
+}
+
+// ─── Income sources ──────────────────────────────────────────────────────────
+
+export const DEFAULT_INCOME_SOURCES = [
+  { name: "Josh", color: "#5b8def", patterns: ["Thompson Communications"] },
+  { name: "Alexandra", color: "#9b6fd4", patterns: ["Happen Bank", "Mercy"] },
+] as const;
+
+export async function fetchIncomeSources(): Promise<FinanceIncomeSource[]> {
+  const { data, error } = await supabase
+    .from("finance_income_sources")
+    .select("*")
+    .order("sort_order")
+    .order("name");
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function fetchIncomeRules(): Promise<FinanceIncomeRule[]> {
+  const [rules, sources] = await Promise.all([
+    supabase.from("finance_income_rules").select("*").order("pattern").then(({ data, error }) => {
+      if (error) throw error;
+      return data ?? [];
+    }),
+    fetchIncomeSources(),
+  ]);
+  const sourceById = new Map(sources.map((s) => [s.id, s]));
+  return rules.map((r) => ({
+    ...r,
+    finance_income_sources: sourceById.get(r.income_source_id) ?? null,
+  }));
+}
+
+export function matchIncomeSource(
+  rules: FinanceIncomeRule[],
+  name: string,
+  merchantName: string | null,
+): string | null {
+  const haystack = `${merchantName ?? ""} ${name}`.toLowerCase();
+  for (const rule of rules) {
+    if (haystack.includes(rule.pattern.toLowerCase())) {
+      return rule.income_source_id;
+    }
+  }
+  return null;
+}
+
+export async function saveIncomeSource(
+  name: string,
+  color: string,
+  id?: string,
+): Promise<FinanceIncomeSource> {
+  const userId = await requireUserId();
+  const row = { user_id: userId, name: name.trim(), color };
+  if (id) {
+    const { data, error } = await supabase
+      .from("finance_income_sources")
+      .update(row)
+      .eq("id", id)
+      .select("*")
+      .single();
+    if (error) throw error;
+    return data;
+  }
+  const { data, error } = await supabase
+    .from("finance_income_sources")
+    .insert(row)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function saveIncomeRule(
+  incomeSourceId: string,
+  pattern: string,
+  id?: string,
+): Promise<void> {
+  const userId = await requireUserId();
+  const normalized = pattern.trim();
+  if (!normalized) throw new Error("Pattern is empty");
+  const row = { user_id: userId, income_source_id: incomeSourceId, pattern: normalized };
+  if (id) {
+    const { error } = await supabase.from("finance_income_rules").update(row).eq("id", id);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await supabase.from("finance_income_rules").upsert(row, {
+    onConflict: "user_id,pattern",
+  });
+  if (error) throw error;
+}
+
+export async function deleteIncomeRule(id: string): Promise<void> {
+  const { error } = await supabase.from("finance_income_rules").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteIncomeSource(id: string): Promise<void> {
+  const { error } = await supabase.from("finance_income_sources").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/** Seed default income sources and rules if none exist. */
+export async function ensureDefaultIncomeSources(): Promise<void> {
+  const existing = await fetchIncomeSources();
+  if (existing.length > 0) return;
+
+  for (const [i, src] of DEFAULT_INCOME_SOURCES.entries()) {
+    const created = await saveIncomeSource(src.name, src.color);
+    for (const pattern of src.patterns) {
+      await saveIncomeRule(created.id, pattern);
+    }
+    await supabase
+      .from("finance_income_sources")
+      .update({ sort_order: i })
+      .eq("id", created.id);
+  }
+}
+
+/** Apply income rules to all uncategorized income transactions. */
+export async function applyIncomeRules(): Promise<number> {
+  const [rules, txns] = await Promise.all([
+    fetchIncomeRules(),
+    supabase
+      .from("finance_transactions")
+      .select("id, name, merchant_name, amount, income_source_id")
+      .is("income_source_id", null)
+      .lt("amount", 0)
+      .then(({ data, error }) => {
+        if (error) throw error;
+        return data ?? [];
+      }),
+  ]);
+  if (!rules.length || !txns.length) return 0;
+
+  let updated = 0;
+  for (const t of txns) {
+    const sourceId = matchIncomeSource(rules, t.name, t.merchant_name);
+    if (!sourceId) continue;
+    const { error } = await supabase
+      .from("finance_transactions")
+      .update({ income_source_id: sourceId })
+      .eq("id", t.id);
+    if (!error) updated++;
+  }
+  return updated;
+}
+
+export type IncomeBySource = {
+  sourceId: string;
+  name: string;
+  color: string;
+  amount: number;
+  count: number;
+};
+
+export function incomeBySource(
+  txns: FinanceTransaction[],
+  sources: FinanceIncomeSource[],
+  from: string,
+  to: string,
+): IncomeBySource[] {
+  const byId = new Map(sources.map((s) => [s.id, s]));
+  const agg = new Map<string, { amount: number; count: number }>();
+
+  for (const t of txns) {
+    if (t.transaction_date < from || t.transaction_date > to) continue;
+    if (t.pending || t.is_transfer || isExpense(t)) continue;
+    if (!t.income_source_id) continue;
+    const cur = agg.get(t.income_source_id) ?? { amount: 0, count: 0 };
+    cur.amount += Math.abs(t.amount);
+    cur.count += 1;
+    agg.set(t.income_source_id, cur);
+  }
+
+  return [...agg.entries()]
+    .map(([sourceId, v]) => {
+      const src = byId.get(sourceId);
+      return {
+        sourceId,
+        name: src?.name ?? "Unknown",
+        color: src?.color ?? "#888",
+        amount: v.amount,
+        count: v.count,
+      };
+    })
+    .sort((a, b) => b.amount - a.amount);
 }
 
 // ─── Plaid edge function client ──────────────────────────────────────────────

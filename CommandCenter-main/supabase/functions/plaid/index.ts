@@ -133,6 +133,7 @@ async function syncItem(
   let hasMore = true;
 
   const accountMap = new Map<string, string>();
+  const accountTypeMap = new Map<string, string>();
 
   while (hasMore) {
     const syncRes = await plaidCall<{
@@ -174,13 +175,17 @@ async function syncItem(
       if (existing?.id) {
         await admin.from("finance_accounts").update(row).eq("id", existing.id);
         accountMap.set(acct.account_id, existing.id);
+        accountTypeMap.set(acct.account_id, acct.type);
       } else {
         const { data: ins } = await admin
           .from("finance_accounts")
           .insert(row)
           .select("id")
           .single();
-        if (ins) accountMap.set(acct.account_id, ins.id);
+        if (ins) {
+          accountMap.set(acct.account_id, ins.id);
+          accountTypeMap.set(acct.account_id, acct.type);
+        }
       }
     }
 
@@ -205,6 +210,11 @@ async function syncItem(
         const isIncome = t.amount < 0;
         const categoryId = await ensureCategory(admin, userId, slug, catName, isIncome);
 
+        const accountType = accountTypeMap.get(t.account_id);
+        const isCreditPayment = accountType === "credit" && t.amount < 0;
+        const isTransfer =
+          slug.startsWith("transfer") || slug === "loan-payments" || isCreditPayment;
+
         const row = {
           user_id: userId,
           account_id: accountId,
@@ -218,7 +228,7 @@ async function syncItem(
           authorized_date: t.authorized_date,
           payment_channel: t.payment_channel,
           plaid_category: t.category,
-          is_transfer: slug.startsWith("transfer"),
+          is_transfer: isTransfer,
         };
 
         const { error } = await admin

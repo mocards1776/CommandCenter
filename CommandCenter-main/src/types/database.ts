@@ -728,6 +728,8 @@ export type Database = {
           plaid_category: string[] | null;
           notes: string | null;
           is_transfer: boolean;
+          transfer_group_id: string | null;
+          income_source_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -747,10 +749,70 @@ export type Database = {
           plaid_category?: string[] | null;
           notes?: string | null;
           is_transfer?: boolean;
+          transfer_group_id?: string | null;
+          income_source_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["finance_transactions"]["Insert"]>;
+        Relationships: [];
+      };
+      finance_income_sources: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          color: string;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          color?: string;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["finance_income_sources"]["Insert"]>;
+        Relationships: [];
+      };
+      finance_income_rules: {
+        Row: {
+          id: string;
+          user_id: string;
+          income_source_id: string;
+          pattern: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          income_source_id: string;
+          pattern: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["finance_income_rules"]["Insert"]>;
+        Relationships: [];
+      };
+      finance_transaction_tags: {
+        Row: {
+          id: string;
+          user_id: string;
+          transaction_id: string;
+          tag: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          transaction_id: string;
+          tag: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["finance_transaction_tags"]["Insert"]>;
         Relationships: [];
       };
       finance_budgets: {

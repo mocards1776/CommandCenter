@@ -21,9 +21,16 @@ export type FinanceCategory = Tables<"finance_categories">;
 export type FinanceBudget = Tables<"finance_budgets"> & {
   finance_categories?: Pick<FinanceCategory, "name" | "color" | "slug"> | null;
 };
+export type FinanceIncomeSource = Tables<"finance_income_sources">;
+export type FinanceIncomeRule = Tables<"finance_income_rules"> & {
+  finance_income_sources?: Pick<FinanceIncomeSource, "name" | "color"> | null;
+};
+export type FinanceTransactionTag = Tables<"finance_transaction_tags">;
 export type FinanceTransaction = Tables<"finance_transactions"> & {
   finance_accounts?: Pick<FinanceAccount, "name" | "mask" | "type"> | null;
   finance_categories?: Pick<FinanceCategory, "name" | "color" | "slug"> | null;
+  finance_income_sources?: Pick<FinanceIncomeSource, "name" | "color"> | null;
+  tags?: string[];
 };
 
 export type ReadStatus = "read" | "to-read" | "currently-reading" | "did-not-finish" | "paused";
