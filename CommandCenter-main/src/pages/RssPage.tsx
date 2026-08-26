@@ -172,35 +172,31 @@ import { cn, dispatchReaderColumnClass, dispatchReaderPanelClass, isPublishedTod
 const EMPTY_READ_URLS: string[] = [];
 const EMPTY_HIGHLIGHT_URLS = new Set<string>();
 
-function markReadOptimistic(qc: QueryClient, articleUrl: string) {
-  qc.setQueryData<string[]>(["rss-reads"], (old) => {
-    const urls = old ?? [];
-    if (urls.includes(articleUrl)) return urls;
-    return [...urls, articleUrl];
-  });
-}
-
-function markReadRevert(qc: QueryClient, articleUrl: string) {
-  qc.setQueryData<string[]>(["rss-reads"], (old) => {
-    const urls = old ?? [];
-    if (!urls.includes(articleUrl)) return urls;
-    return urls.filter((u) => u !== articleUrl);
-  });
-}
-
-async function markReadInBackground(
+/** Persist read state and refresh cache — cancel in-flight reads first to avoid stale overwrites. */
+async function persistArticleRead(
   qc: QueryClient,
   input: { articleUrl: string; articleTitle?: string | null; feedUrl?: string | null },
 ) {
-  markReadOptimistic(qc, input.articleUrl);
-  try {
-    await markRssRead(input);
-    // Sync from server without invalidating (avoids race + full-list refetch jank).
-    const fresh = await fetchRssReads();
-    qc.setQueryData(["rss-reads"], fresh);
-  } catch {
-    markReadRevert(qc, input.articleUrl);
-  }
+  await markRssRead(input);
+  await qc.cancelQueries({ queryKey: ["rss-reads"] });
+  await qc.invalidateQueries({ queryKey: ["rss-reads"] });
+}
+
+function useAutoMarkArticleRead(
+  qc: QueryClient,
+  input: { articleUrl: string; articleTitle?: string | null; feedUrl?: string | null },
+) {
+  useEffect(() => {
+    let cancelled = false;
+    void persistArticleRead(qc, input).catch(() => {
+      if (!cancelled) {
+        /* auth blip / offline — reader still works */
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [qc, input.articleUrl, input.articleTitle, input.feedUrl]);
 }
 
 type NavView =
@@ -734,6 +730,13 @@ function EspnGameReaderShell({
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [item.link, onClose]);
+
+  useAutoMarkArticleRead(qc, {
+    articleUrl: item.link,
+    articleTitle: item.title,
+    feedUrl,
+  });
+
   return (
     <div
       className="grid w-full max-w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
@@ -843,6 +846,13 @@ function MlbGameArticleShell({
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [item.link, onClose]);
+
+  useAutoMarkArticleRead(qc, {
+    articleUrl: item.link,
+    articleTitle: item.title,
+    feedUrl,
+  });
+
   return (
     <div
       className="grid w-full max-w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
@@ -949,6 +959,7 @@ function PlayerArticleShell({
   onToggleSave: () => void;
   onArchive: () => void;
 }) {
+  const qc = useQueryClient();
   const feedUrl = item.link.startsWith("app:") ? `synthetic:tag-player` : item.link;
 
   const leave = () => {
@@ -976,6 +987,13 @@ function PlayerArticleShell({
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [item.link, onClose]);
+
+  useAutoMarkArticleRead(qc, {
+    articleUrl: item.link,
+    articleTitle: item.title,
+    feedUrl,
+  });
+
   return (
     <div style={{ touchAction: "pan-y" }} onClick={onDoubleTap}>
       <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
@@ -1166,6 +1184,13 @@ function ArticleReaderShell({
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [item.link, onClose]);
+
+  useAutoMarkArticleRead(qc, {
+    articleUrl: item.link,
+    articleTitle: item.title,
+    feedUrl,
+  });
+
   // Escape closes the lightbox.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -2134,16 +2159,6 @@ export default function RssPage() {
   });
   const readUrls = useMemo(() => new Set(reads.data ?? EMPTY_READ_URLS), [reads.data]);
 
-  // Mark read once from the page shell — not inside each reader variant.
-  useEffect(() => {
-    if (!selected || !user?.id) return;
-    void markReadInBackground(qc, {
-      articleUrl: selected.link,
-      articleTitle: selected.title,
-      feedUrl: selected.feedUrl,
-    });
-  }, [selected?.link, selected?.title, selected?.feedUrl, user?.id, qc]);
-
   const filtersQuery = useQuery({
     queryKey: ["rss-filters"],
     queryFn: fetchRssFilters,
@@ -2540,7 +2555,8 @@ export default function RssPage() {
           feedUrl: selected?.feedUrl ?? RSS_FEEDS[0].url,
         });
       }
-      qc.setQueryData(["rss-reads"], await fetchRssReads());
+      await qc.cancelQueries({ queryKey: ["rss-reads"] });
+      await qc.invalidateQueries({ queryKey: ["rss-reads"] });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not update read state");
     }
