@@ -706,6 +706,66 @@ function buildPreviewHtml(opts: {
   return paras.join("\n");
 }
 
+/** Rich preview copy from an ESPN summary payload — used when prose previews are missing. */
+export function soccerPreviewFromSummary(
+  sum: unknown,
+  matchup: string,
+): { headline: string; snippet: string; html: string } | null {
+  const s = sum as EspnSummary;
+  const comp = s?.header?.competitions?.[0];
+  if (!comp) return null;
+
+  const st = comp.status?.type;
+  const state = normalizeState(st?.state, st?.completed);
+  const status =
+    st?.description ||
+    st?.shortDetail ||
+    st?.detail ||
+    (state === "post" ? "Full Time" : state === "in" ? "Live" : "Scheduled");
+  const usedSlug = s.header?.league?.slug?.trim() || "eng.2";
+  const leagueName = leagueDisplayName(
+    usedSlug,
+    s.header?.league?.name ||
+      s.header?.league?.shortName ||
+      s.header?.league?.abbreviation ||
+      null,
+  );
+
+  const awayRaw = (comp.competitors ?? []).find((c) => c.homeAway === "away");
+  const homeRaw = (comp.competitors ?? []).find((c) => c.homeAway === "home");
+  const away = parseSide(awayRaw);
+  const home = parseSide(homeRaw);
+  const venue = s.gameInfo?.venue?.fullName || comp.venue?.fullName || null;
+  const when = whenLabel(comp.date, state, status);
+  const odds = parseOdds(s.pickcenter?.[0] || s.odds?.[0]);
+  const lastFive = parseLastFive(s.lastFiveGames);
+  const seriesSummary =
+    s.seasonseries?.[0]?.summary || s.seasonseries?.[0]?.shortSummary || null;
+
+  const html = buildPreviewHtml({
+    away,
+    home,
+    leagueName,
+    venue,
+    when,
+    state,
+    status,
+    odds,
+    seriesSummary,
+    lastFive,
+  });
+  const snippet = html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (snippet.length < 40) return null;
+  return {
+    headline: `Preview: ${matchup}`,
+    snippet: snippet.slice(0, 220),
+    html,
+  };
+}
+
 /** League-wide ESPN promo copy (fantasy, sportsbook) — never treat as a game story. */
 function isEspnPromoCopy(text: string): boolean {
   return /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook|draftkings|fanduel|betmgm|promo code/i.test(

@@ -195,6 +195,24 @@ export type CfbPlayerProfile = {
   status: string | null;
   seasonStats: { label: string; value: string }[];
   statCategories: { name: string; stats: { label: string; value: string }[] }[];
+  seasonSplits: {
+    season: string;
+    categories: { name: string; stats: { label: string; value: string }[] }[];
+  }[];
+  gameLogCategories: {
+    name: string;
+    labels: string[];
+    rows: {
+      eventId: string | null;
+      date: string | null;
+      week: number | null;
+      opponent: string;
+      atVs: string | null;
+      result: string;
+      score: string | null;
+      stats: { label: string; value: string }[];
+    }[];
+  }[];
   recentGames: { label: string; result: string; line: string }[];
   news: { headline: string; description: string; image: string | null; href: string | null }[];
 };
@@ -918,6 +936,51 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
   return { ...base, headshot, bio, careerHighlights };
 }
 
+type CfbGameLogEventMeta = {
+  id?: string;
+  week?: number;
+  gameDate?: string;
+  atVs?: string;
+  gameResult?: string;
+  score?: string;
+  opponent?: { displayName?: string; abbreviation?: string };
+};
+
+function parseCfbGameLogEvents(raw: unknown): Record<string, CfbGameLogEventMeta> {
+  if (!raw) return {};
+  if (Array.isArray(raw)) {
+    const out: Record<string, CfbGameLogEventMeta> = {};
+    for (const ev of raw) {
+      const id = String((ev as CfbGameLogEventMeta).id ?? "");
+      if (id) out[id] = ev as CfbGameLogEventMeta;
+    }
+    return out;
+  }
+  if (typeof raw === "object") return raw as Record<string, CfbGameLogEventMeta>;
+  return {};
+}
+
+function buildCfbStatCategories(
+  labels: string[],
+  values: string[],
+  catsMeta: { name?: string; displayName?: string; count?: number }[],
+): CfbPlayerProfile["statCategories"] {
+  let offset = 0;
+  const statCategories: CfbPlayerProfile["statCategories"] = [];
+  for (const cat of catsMeta) {
+    const count = cat.count ?? 0;
+    statCategories.push({
+      name: cat.displayName ?? cat.name ?? "Stats",
+      stats: labels.slice(offset, offset + count).map((label, i) => ({
+        label,
+        value: values[offset + i] ?? "—",
+      })),
+    });
+    offset += count;
+  }
+  return statCategories;
+}
+
 export async function fetchCfbPlayerProfile(playerId: string): Promise<CfbPlayerProfile> {
   const id = String(playerId);
   const [athleteRes, overviewRes] = await Promise.all([
@@ -951,25 +1014,17 @@ export async function fetchCfbPlayerProfile(playerId: string): Promise<CfbPlayer
     | {
         labels?: string[];
         categories?: { name?: string; displayName?: string; count?: number }[];
-        splits?: { stats?: string[] }[];
+        splits?: { displayName?: string; type?: string; stats?: string[] }[];
       }
     | undefined;
   const labels = statistics?.labels ?? [];
   const values = statistics?.splits?.[0]?.stats ?? [];
   const catsMeta = statistics?.categories ?? [];
-  let offset = 0;
-  const statCategories: CfbPlayerProfile["statCategories"] = [];
-  for (const cat of catsMeta) {
-    const count = cat.count ?? 0;
-    statCategories.push({
-      name: cat.displayName ?? cat.name ?? "Stats",
-      stats: labels.slice(offset, offset + count).map((label, i) => ({
-        label,
-        value: values[offset + i] ?? "—",
-      })),
-    });
-    offset += count;
-  }
+  const statCategories = buildCfbStatCategories(labels, values, catsMeta);
+  const seasonSplits = (statistics?.splits ?? []).map((split, idx) => ({
+    season: split.displayName ?? split.type ?? `Season ${idx + 1}`,
+    categories: buildCfbStatCategories(labels, split.stats ?? [], catsMeta),
+  }));
 
   const summaryStats = (
     (a.statsSummary as { statistics?: { shortDisplayName?: string; displayValue?: string }[] })
@@ -978,17 +1033,67 @@ export async function fetchCfbPlayerProfile(playerId: string): Promise<CfbPlayer
 
   const gameLog = overview.gameLog as
     | {
-        events?: {
-          week?: number;
-          opponent?: { displayName?: string; abbreviation?: string };
-          stats?: string[];
+        events?: unknown;
+        statistics?: {
+          displayName?: string;
+          labels?: string[];
+          events?: { eventId?: string; stats?: string[] }[];
         }[];
       }
     | undefined;
+  const eventMeta = parseCfbGameLogEvents(gameLog?.events);
+  const gameLogCategories: CfbPlayerProfile["gameLogCategories"] = (gameLog?.statistics ?? []).map(
+    (block) => {
+      const blockLabels = block.labels ?? labels;
+      const rows = (block.events ?? []).map((ev) => {
+        const meta = eventMeta[String(ev.eventId ?? "")] ?? {};
+        const stats = ev.stats ?? [];
+        const opponent =
+          meta.opponent?.abbreviation ?? meta.opponent?.displayName ?? "—";
+        const result = `${meta.gameResult ?? ""} ${meta.score ?? ""}`.trim() || "—";
+        return {
+          eventId: ev.eventId != null ? String(ev.eventId) : null,
+          date: meta.gameDate ?? null,
+          week: meta.week ?? null,
+          opponent,
+          atVs: meta.atVs ?? null,
+          result,
+          score: meta.score ?? null,
+          stats: blockLabels.map((label, i) => ({
+            label,
+            value: stats[i] ?? "—",
+          })),
+        };
+      });
+      return {
+        name: block.displayName ?? "Stats",
+        labels: blockLabels,
+        rows,
+      };
+    },
+  );
+  const recentGames: CfbPlayerProfile["recentGames"] = (gameLogCategories[0]?.rows ?? [])
+    .slice(0, 8)
+    .map((row) => ({
+      label:
+        row.week != null
+          ? `Wk ${row.week} ${row.atVs ?? ""} ${row.opponent}`.trim()
+          : row.opponent,
+      result: row.result,
+      line: row.stats
+        .slice(0, 5)
+        .map((s) => s.value)
+        .join(" · "),
+    }));
 
   const newsRaw = overview.news as
-    | { headline?: string; description?: string; images?: { url?: string }[]; links?: { href?: string }[] }[]
+    | { headline?: string; description?: string; images?: { url?: string }[]; links?: { href?: string; web?: { href?: string } }[] }[]
     | undefined;
+
+  const headshotHref =
+    (a.headshot as { href?: string } | undefined)?.href ||
+    (overview.headshot as { href?: string } | undefined)?.href ||
+    null;
 
   return {
     id,
@@ -1001,7 +1106,7 @@ export async function fetchCfbPlayerProfile(playerId: string): Promise<CfbPlayer
     teamAbbrev: team.abbreviation ?? null,
     teamColor: (team.color ?? "d9515c").replace(/^#/, ""),
     teamLogo: team.logos?.[0]?.href ?? (team.id ? cfbTeamLogo(team.id) : null),
-    headshot: cfbHeadshot(id),
+    headshot: headshotHref ?? cfbHeadshot(id),
     height: (a.displayHeight as string | undefined) ?? null,
     weight: a.displayWeight != null ? String(a.displayWeight) : null,
     age: typeof a.age === "number" ? a.age : null,
@@ -1018,16 +1123,14 @@ export async function fetchCfbPlayerProfile(playerId: string): Promise<CfbPlayer
       null,
     seasonStats: summaryStats.length ? summaryStats : (statCategories[0]?.stats.slice(0, 8) ?? []),
     statCategories,
-    recentGames: (gameLog?.events ?? []).slice(0, 6).map((ev) => ({
-      label: ev.week != null ? `Week ${ev.week}` : "Game",
-      result: ev.opponent?.abbreviation ?? ev.opponent?.displayName ?? "—",
-      line: (ev.stats ?? []).slice(0, 4).join(" · ") || "—",
-    })),
-    news: (newsRaw ?? []).slice(0, 6).map((n) => ({
+    seasonSplits,
+    gameLogCategories,
+    recentGames,
+    news: (newsRaw ?? []).slice(0, 8).map((n) => ({
       headline: n.headline ?? "",
       description: n.description ?? "",
       image: n.images?.[0]?.url ?? null,
-      href: n.links?.[0]?.href ?? null,
+      href: n.links?.[0]?.href ?? n.links?.[0]?.web?.href ?? null,
     })),
   };
 }

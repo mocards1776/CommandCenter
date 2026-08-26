@@ -866,12 +866,9 @@ async function fillSoccerGamesFromScoreboard(
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
-    const res = await fetch(
-      `https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueSlug}/scoreboard?dates=${y}${m}${day}`,
-      { headers: { Accept: "application/json" } },
-    );
-    if (!res.ok) return [] as { date?: string; competitions?: EspnComp[] }[];
-    const board = (await res.json()) as {
+    const board = (await espnGet(
+      `soccer/${leagueSlug}/scoreboard?dates=${y}${m}${day}`,
+    )) as {
       events?: { date?: string; competitions?: EspnComp[] }[];
     };
     return board.events ?? [];
@@ -2169,9 +2166,66 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     // optional
   }
 
+  const isSoccer = /soccer\//i.test(fav.espnPath);
+
+  // Soccer schedules are often empty early — scan scoreboard days for recent/upcoming.
+  if (isSoccer && (recent.length === 0 || upcoming.length === 0)) {
+    const leagueSlug = fav.espnPath.match(/soccer\/([^/]+)\//)?.[1] ?? "eng.2";
+    const filled = await fillSoccerGamesFromScoreboard(leagueSlug, espnTeamId, {
+      needLast: recent.length === 0,
+      needNext: upcoming.length === 0,
+    }).catch(() => ({ last: null, next: null }));
+
+    const chipToRow = (chip: GameChip, prefix: string): ScheduleGame => ({
+      id: `${prefix}-${chip.label}-${chip.when ?? "tbd"}`,
+      when: chip.when,
+      label: chip.label,
+      detail: chip.detail,
+      status: chip.live ? "Live" : chip.won != null ? (chip.won ? "Win" : "Loss") : "Scheduled",
+      won: chip.won,
+      live: Boolean(chip.live),
+    });
+
+    if (recent.length === 0 && filled.last) {
+      recent.unshift(chipToRow(filled.last, "sb-last"));
+    }
+    if (upcoming.length === 0 && filled.next) {
+      upcoming.push(chipToRow(filled.next, "sb-next"));
+    }
+  }
+
+  // Seed recent from previousEvent when schedule + scoreboard both miss.
+  if (isSoccer && recent.length === 0) {
+    try {
+      const raw = (await espnGet(fav.espnPath)) as {
+        team?: {
+          previousEvent?: {
+            id?: string;
+            date?: string;
+            competitions?: EspnComp[];
+          }[];
+        };
+      };
+      for (const ev of raw.team?.previousEvent ?? []) {
+        const chip = competitionChip(ev.competitions?.[0] ?? null, espnTeamId);
+        if (!chip) continue;
+        recent.push({
+          id: String(ev.id ?? `${ev.date}-${chip.label}`),
+          when: fmtWhen(ev.date),
+          label: chip.label,
+          detail: chip.detail,
+          status: chip.won != null ? (chip.won ? "Win" : "Loss") : "Final",
+          won: chip.won,
+          live: Boolean(chip.live),
+        });
+      }
+    } catch {
+      /* optional */
+    }
+  }
+
   // Roster
   const roster: RosterPlayer[] = [];
-  const isSoccer = /soccer\//i.test(fav.espnPath);
   try {
     const raw = (await espnGet(`${fav.espnPath}/roster`)) as {
       athletes?: {
