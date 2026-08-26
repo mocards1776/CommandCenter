@@ -4000,14 +4000,14 @@ export function formatFeedDate(raw: string | null): string {
   });
 }
 
-export async function fetchRssReads(): Promise<Set<string>> {
+export async function fetchRssReads(): Promise<string[]> {
   const userId = await requireUserId();
   const { data, error } = await supabase
     .from("rss_reads")
     .select("article_url")
     .eq("user_id", userId);
   if (error) throw error;
-  return new Set((data ?? []).map((r) => r.article_url));
+  return (data ?? []).map((r) => r.article_url).filter(Boolean);
 }
 
 export async function markRssRead(input: {

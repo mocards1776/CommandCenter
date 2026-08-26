@@ -169,33 +169,38 @@ import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { useAuth } from "@/lib/auth-context";
 import { cn, dispatchReaderColumnClass, dispatchReaderPanelClass, isPublishedTodayCentral } from "@/lib/utils";
 
-const EMPTY_READ_URLS = new Set<string>();
+const EMPTY_READ_URLS: string[] = [];
+const EMPTY_HIGHLIGHT_URLS = new Set<string>();
 
 function markReadOptimistic(qc: QueryClient, articleUrl: string) {
-  qc.setQueryData<Set<string>>(["rss-reads"], (old) => {
-    const next = new Set(old ?? []);
-    next.add(articleUrl);
-    return next;
+  qc.setQueryData<string[]>(["rss-reads"], (old) => {
+    const urls = old ?? [];
+    if (urls.includes(articleUrl)) return urls;
+    return [...urls, articleUrl];
   });
 }
 
 function markReadRevert(qc: QueryClient, articleUrl: string) {
-  qc.setQueryData<Set<string>>(["rss-reads"], (old) => {
-    if (!old?.has(articleUrl)) return old;
-    const next = new Set(old);
-    next.delete(articleUrl);
-    return next;
+  qc.setQueryData<string[]>(["rss-reads"], (old) => {
+    const urls = old ?? [];
+    if (!urls.includes(articleUrl)) return urls;
+    return urls.filter((u) => u !== articleUrl);
   });
 }
 
-function markReadInBackground(
+async function markReadInBackground(
   qc: QueryClient,
   input: { articleUrl: string; articleTitle?: string | null; feedUrl?: string | null },
 ) {
   markReadOptimistic(qc, input.articleUrl);
-  void markRssRead(input)
-    .then(() => qc.invalidateQueries({ queryKey: ["rss-reads"] }))
-    .catch(() => markReadRevert(qc, input.articleUrl));
+  try {
+    await markRssRead(input);
+    // Sync from server without invalidating (avoids race + full-list refetch jank).
+    const fresh = await fetchRssReads();
+    qc.setQueryData(["rss-reads"], fresh);
+  } catch {
+    markReadRevert(qc, input.articleUrl);
+  }
 }
 
 type NavView =
@@ -729,15 +734,6 @@ function EspnGameReaderShell({
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [item.link, onClose]);
-
-  useEffect(() => {
-    markReadInBackground(qc, {
-      articleUrl: item.link,
-      articleTitle: item.title,
-      feedUrl,
-    });
-  }, [item.link, item.title, feedUrl, qc]);
-
   return (
     <div
       className="grid w-full max-w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
@@ -847,15 +843,6 @@ function MlbGameArticleShell({
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [item.link, onClose]);
-
-  useEffect(() => {
-    markReadInBackground(qc, {
-      articleUrl: item.link,
-      articleTitle: item.title,
-      feedUrl,
-    });
-  }, [item.link, item.title, feedUrl, qc]);
-
   return (
     <div
       className="grid w-full max-w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
@@ -962,7 +949,6 @@ function PlayerArticleShell({
   onToggleSave: () => void;
   onArchive: () => void;
 }) {
-  const qc = useQueryClient();
   const feedUrl = item.link.startsWith("app:") ? `synthetic:tag-player` : item.link;
 
   const leave = () => {
@@ -990,15 +976,6 @@ function PlayerArticleShell({
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [item.link, onClose]);
-
-  useEffect(() => {
-    markReadInBackground(qc, {
-      articleUrl: item.link,
-      articleTitle: item.title,
-      feedUrl,
-    });
-  }, [item.link, item.title, feedUrl, qc]);
-
   return (
     <div style={{ touchAction: "pan-y" }} onClick={onDoubleTap}>
       <div className="mb-3 flex flex-wrap items-center gap-3 px-1">
@@ -1189,15 +1166,6 @@ function ArticleReaderShell({
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [item.link, onClose]);
-
-  useEffect(() => {
-    markReadInBackground(qc, {
-      articleUrl: item.link,
-      articleTitle: item.title,
-      feedUrl,
-    });
-  }, [item.link, item.title, feedUrl, qc]);
-
   // Escape closes the lightbox.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -2150,6 +2118,8 @@ export default function RssPage() {
     return window.localStorage.getItem("dispatch-hide-read") === "1";
   });
 
+  const { user } = useAuth();
+
   // Keep the open article across navigations to the player page so back returns here.
   useEffect(() => {
     persistDispatchOpen(selected, readerQueue);
@@ -2158,12 +2128,21 @@ export default function RssPage() {
   const reads = useQuery({
     queryKey: ["rss-reads"],
     queryFn: fetchRssReads,
+    enabled: Boolean(user?.id),
     staleTime: 300_000,
     refetchOnWindowFocus: false,
-    // Sets are not plain data — disable structural sharing so optimistic updates stick.
-    structuralSharing: false,
   });
-  const readUrls = useMemo(() => reads.data ?? EMPTY_READ_URLS, [reads.data]);
+  const readUrls = useMemo(() => new Set(reads.data ?? EMPTY_READ_URLS), [reads.data]);
+
+  // Mark read once from the page shell — not inside each reader variant.
+  useEffect(() => {
+    if (!selected || !user?.id) return;
+    void markReadInBackground(qc, {
+      articleUrl: selected.link,
+      articleTitle: selected.title,
+      feedUrl: selected.feedUrl,
+    });
+  }, [selected?.link, selected?.title, selected?.feedUrl, user?.id, qc]);
 
   const filtersQuery = useQuery({
     queryKey: ["rss-filters"],
@@ -2172,7 +2151,6 @@ export default function RssPage() {
   });
   const filters = filtersQuery.data ?? [];
 
-  const { user } = useAuth();
   const userTags = useQuery({
     queryKey: ["sports-player-tags-names", user?.id],
     queryFn: fetchUserTagNames,
@@ -2248,7 +2226,7 @@ export default function RssPage() {
   const [shareHighlight, setShareHighlight] = useState<RssHighlight | null>(null);
 
   const highlightUrls = useMemo(
-    () => highlightUrlSet.data ?? EMPTY_READ_URLS,
+    () => highlightUrlSet.data ?? EMPTY_HIGHLIGHT_URLS,
     [highlightUrlSet.data],
   );
 
@@ -2553,15 +2531,16 @@ export default function RssPage() {
 
   async function toggleRead(item: RssFeedItem) {
     try {
-      if (readUrls.has(item.link)) await markRssUnread(item.link);
-      else {
+      if (readUrls.has(item.link)) {
+        await markRssUnread(item.link);
+      } else {
         await markRssRead({
           articleUrl: item.link,
           articleTitle: item.title,
           feedUrl: selected?.feedUrl ?? RSS_FEEDS[0].url,
         });
       }
-      await qc.invalidateQueries({ queryKey: ["rss-reads"] });
+      qc.setQueryData(["rss-reads"], await fetchRssReads());
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not update read state");
     }
