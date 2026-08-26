@@ -1231,11 +1231,17 @@ function TeamDetailPanel({
                         detail.source === "mlb" && /^\d+$/.test(String(p.id));
                       const nflClickable =
                         fav.league === "NFL" && /^\d+$/.test(String(p.id));
+                      const cfbClickable =
+                        fav.league === "NCAA" &&
+                        fav.sport === "Football" &&
+                        /^\d+$/.test(String(p.id));
                       const href = mlbClickable
                         ? `/sports/mlb/player/${p.id}`
                         : nflClickable
                           ? `/sports/nfl/player/${p.id}`
-                          : null;
+                          : cfbClickable
+                            ? `/sports/cfb/player/${p.id}`
+                            : null;
                       const row = (
                         <>
                           <span className="text-chalk-dim numeral w-8 shrink-0 text-[11px]">

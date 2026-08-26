@@ -3,6 +3,11 @@
 import type { MlbScoreGame, MlbGameInterest, MlbScoredGame } from "./mlb";
 import { scoreGameInterest as baseScoreGameInterest } from "./mlb";
 import {
+  rankCfbRuwtGames,
+  type CfbScoreGame,
+  type CfbScoredGame,
+} from "./cfb";
+import {
   rankNflRuwtGames,
   type NflRuwtContext,
   type NflScoreGame,
@@ -11,6 +16,7 @@ import {
 
 const STORAGE_KEY = "ruwt-team-interest-v1";
 const NFL_STORAGE_KEY = "ruwt-nfl-team-interest-v1";
+const CFB_STORAGE_KEY = "ruwt-cfb-team-interest-v1";
 
 export type RuwtTeamInterest = Record<string, number>; // teamId → 0–10
 
@@ -86,6 +92,40 @@ export function setNflTeamInterestRating(
   else next[String(teamId)] = clamped;
   saveNflTeamInterest(next);
   return next;
+}
+
+export function loadCfbTeamInterest(): RuwtTeamInterest {
+  return loadInterestMap(CFB_STORAGE_KEY);
+}
+
+export function saveCfbTeamInterest(map: RuwtTeamInterest): void {
+  localStorage.setItem(CFB_STORAGE_KEY, JSON.stringify(map));
+}
+
+export function setCfbTeamInterestRating(
+  map: RuwtTeamInterest,
+  teamId: number,
+  rating: number,
+): RuwtTeamInterest {
+  const next = { ...map };
+  const clamped = Math.max(0, Math.min(10, Math.round(rating)));
+  if (clamped <= 0) delete next[String(teamId)];
+  else next[String(teamId)] = clamped;
+  saveCfbTeamInterest(next);
+  return next;
+}
+
+export function rankRuwtCfbGames(
+  games: CfbScoreGame[],
+  interest: RuwtTeamInterest,
+  limit = 24,
+  opts?: { watchTeamIds?: Set<string> },
+): CfbScoredGame[] {
+  return rankCfbRuwtGames(
+    games,
+    { teamInterest: interest, watchTeamIds: opts?.watchTeamIds },
+    limit,
+  );
 }
 
 export function rankRuwtNflGames(

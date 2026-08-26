@@ -15,8 +15,8 @@ export function TeamFormChips({
   return (
     <dl
       className={cn(
-        // Hide Last 5/10/20 on phones; keep on iPad / desktop.
-        "mt-1.5 hidden grid-cols-3 gap-1.5 md:grid",
+        // Inline only on xl+ — md/lg tablets get a full-width form row in the game header.
+        "mt-1.5 hidden grid-cols-3 gap-1.5 xl:grid",
         align === "right" && "ml-auto",
         align === "center" && "mx-auto",
         className,
@@ -49,7 +49,18 @@ export function TeamStandingLine({
   className?: string;
 }) {
   if (!standing) return null;
+  const compact = standing
+    .replace(/ in American League$/i, " AL")
+    .replace(/ in National League$/i, " NL");
   return (
-    <p className={cn("mt-0.5 text-[10px] leading-tight text-white/50 md:text-[9px]", className)}>{standing}</p>
+    <p
+      className={cn(
+        "mt-0.5 text-[10px] leading-snug text-white/50 md:text-[11px] lg:text-[10px]",
+        className,
+      )}
+    >
+      <span className="lg:hidden">{compact}</span>
+      <span className="hidden lg:inline">{standing}</span>
+    </p>
   );
 }

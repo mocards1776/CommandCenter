@@ -1211,8 +1211,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
         )}
       </div>
 
-      {/* Compact flex scoreboard — cannot outgrow the phone width. */}
-      <div className="relative z-10 flex w-full min-w-0 items-center gap-2 px-2.5 py-4 sm:gap-4 sm:px-6 sm:py-7">
+      <div className="relative z-10 flex w-full min-w-0 items-start gap-3 px-3 py-4 sm:gap-5 sm:px-6 sm:py-7 md:gap-8 md:px-8 lg:items-center">
         <EspnTeam
           side={g.away}
           align="left"
@@ -1221,7 +1220,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
           form={awayForm.data ?? null}
           showForm={pregameClock}
         />
-        <div className="w-[5.5rem] shrink-0 text-center sm:w-auto sm:min-w-[7.5rem] sm:px-1">
+        <div className="w-[5.75rem] shrink-0 self-center text-center sm:w-auto sm:min-w-[8rem] md:min-w-[9rem] lg:px-2">
           {pregameClock ? (
             <>
               <p className="font-display text-[26px] leading-none tracking-tight text-white sm:text-[52px]">
@@ -1282,6 +1281,13 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
         />
       </div>
 
+      {pregameClock && (awayForm.data || homeForm.data) ? (
+        <div className="relative z-10 grid grid-cols-2 gap-4 border-t border-white/[0.07] px-4 py-3.5 md:px-8 xl:hidden">
+          <TeamFormChips form={awayForm.data} align="left" className="!grid max-w-none" />
+          <TeamFormChips form={homeForm.data} align="right" className="!grid ml-auto max-w-none" />
+        </div>
+      ) : null}
+
       {showLiveMatchup && g.situation ? (
         <MlbLiveMatchupPanel game={g} situation={g.situation} />
       ) : g.live && g.situation ? (
@@ -1310,7 +1316,7 @@ function EspnTeam({
     <Link
       to={teamPagePath(side.teamId)}
       className={cn(
-        "flex min-w-0 flex-1 flex-col items-center gap-1.5 transition hover:opacity-90 sm:gap-2.5",
+        "flex min-w-0 flex-[1.1] flex-col items-center gap-1.5 transition hover:opacity-90 sm:gap-2.5 md:max-w-none",
         align === "left" ? "sm:items-start" : "sm:items-end",
         loser && "opacity-70",
       )}
@@ -1344,11 +1350,11 @@ function EspnTeam({
         ) : (
           <p className="mt-0.5 truncate text-[10px] text-[#8b93a7] sm:mt-1 sm:text-[11px]">{side.name}</p>
         )}
-        <TeamStandingLine standing={form?.standing} className="truncate" />
+        <TeamStandingLine standing={form?.standing} />
         {showForm ? (
           <TeamFormChips
             form={form}
-            className="mt-1.5 max-w-full sm:w-[9rem]"
+            className="mt-1.5 max-w-full"
             align={align === "right" ? "right" : "left"}
           />
         ) : null}

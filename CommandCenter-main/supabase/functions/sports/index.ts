@@ -3698,20 +3698,37 @@ Deno.serve(async (req: Request) => {
         : typeof mlbIdRaw === "string" && /^\d+$/.test(mlbIdRaw)
           ? Number(mlbIdRaw)
           : null;
+    const teamAbbrev =
+      typeof body.teamAbbrev === "string" && body.teamAbbrev.trim()
+        ? body.teamAbbrev.trim().toUpperCase()
+        : null;
     if ((name.length < 3 || name.length > 80) && !(mlbId != null && mlbId > 0)) {
       return json({ error: "Bad name" }, 400);
     }
     try {
       const dump = await scrapeBbrefWarDaily({ mlbId, name: name || null });
-      if (!dump || (dump.seasonWar == null && dump.careerWar == null)) {
-        return json({ error: "WAR not found", name, mlbId, seasonWar: null, careerWar: null });
+      if (dump && (dump.seasonWar != null || dump.careerWar != null)) {
+        return json({
+          source: "bbref-war-daily",
+          name: name || null,
+          mlbId,
+          ...dump,
+        });
       }
-      return json({
-        source: "bbref-war-daily",
-        name: name || null,
+      const extras = await scrapePlayerExtras(
+        name || "Player",
+        Boolean(body.isPitcher),
         mlbId,
-        ...dump,
-      });
+        teamAbbrev,
+      );
+      if (extras.seasonWar != null || extras.careerWar != null) {
+        return json({
+          ...extras,
+          name: name || null,
+          mlbId,
+        });
+      }
+      return json({ error: "WAR not found", name, mlbId, seasonWar: null, careerWar: null });
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 200);
     }

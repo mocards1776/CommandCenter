@@ -21,6 +21,8 @@ import MlbGamePage from "@/pages/MlbGamePage";
 import MlbManagersPage from "@/pages/MlbManagersPage";
 import MlbManagerPage from "@/pages/MlbManagerPage";
 import HotSeatPage from "@/pages/HotSeatPage";
+import CfbPlayerPage from "@/pages/CfbPlayerPage";
+import CfbPage from "@/pages/CfbPage";
 import GolferPage from "@/pages/GolferPage";
 import NflPage from "@/pages/NflPage";
 import NflGamePage from "@/pages/NflGamePage";
@@ -139,6 +141,8 @@ export default function App() {
               <Route path="/sports/nfl/player/:playerId" element={<NflPlayerPage />} />
               <Route path="/sports/nfl/team/:teamId" element={<NflTeamPage />} />
               <Route path="/sports/nfl/coach/:coachId" element={<NflCoachPage />} />
+              <Route path="/sports/cfb" element={<CfbPage />} />
+              <Route path="/sports/cfb/player/:playerId" element={<CfbPlayerPage />} />
               <Route path="/rss" element={<RssPage />} />
               <Route path="/notebook/:slug" element={<BuenaVistaNotebookPage />} />
             </Route>

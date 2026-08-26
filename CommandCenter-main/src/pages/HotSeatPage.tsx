@@ -10,11 +10,12 @@ import {
   type MlbManager,
 } from "@/lib/mlb";
 import { fetchNflCoaches, type NflCoach } from "@/lib/nfl";
+import { fetchCfbCoaches, type CfbCoach } from "@/lib/cfb";
 import { listFavoriteManagers } from "@/lib/favorite-managers";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
-type HotSeatSport = "mlb" | "nfl";
+type HotSeatSport = "mlb" | "nfl" | "cfb";
 
 function heatTone(rank: number): string {
   if (rank <= 5) return "text-alert";
@@ -33,7 +34,8 @@ function heatLabel(rank: number): string {
 export default function HotSeatPage() {
   const [params, setParams] = useSearchParams();
   const sportParam = params.get("sport");
-  const sport: HotSeatSport = sportParam === "nfl" ? "nfl" : "mlb";
+  const sport: HotSeatSport =
+    sportParam === "nfl" ? "nfl" : sportParam === "cfb" ? "cfb" : "mlb";
 
   const setSport = (next: HotSeatSport) => {
     const p = new URLSearchParams(params);
@@ -60,6 +62,7 @@ export default function HotSeatPage() {
             [
               ["mlb", "MLB"],
               ["nfl", "NFL"],
+              ["cfb", "CFB"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -77,7 +80,7 @@ export default function HotSeatPage() {
         </div>
       </header>
 
-      {sport === "mlb" ? <MlbHotSeat /> : <NflHotSeat />}
+      {sport === "mlb" ? <MlbHotSeat /> : sport === "nfl" ? <NflHotSeat /> : <CfbHotSeat />}
     </div>
   );
 }
@@ -492,6 +495,102 @@ function CoachRow({ coach: c }: { coach: NflCoach }) {
           {c.firedOddsPct != null ? `${c.firedOddsPct.toFixed(1)}` : c.hotSeatScore}
         </span>
       </Link>
+    </li>
+  );
+}
+
+function CfbHotSeat() {
+  const coaches = useQuery({
+    queryKey: ["cfb-coaches-hot-seat-v1"],
+    queryFn: fetchCfbCoaches,
+    staleTime: 180_000,
+  });
+
+  return (
+    <>
+      {coaches.isPending && (
+        <p className="text-chalk-dim flex items-center gap-2 text-[13px]">
+          <Loader2 size={16} className="animate-spin" /> Loading college coaches…
+        </p>
+      )}
+      {coaches.isError && (
+        <p className="text-alert text-[13px]">
+          {coaches.error instanceof Error ? coaches.error.message : "Load failed"}
+        </p>
+      )}
+      {coaches.data && (
+        <>
+          <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+            <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3">
+              <Flame size={16} className="text-alert" />
+              <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+                College football hot seat
+              </h2>
+            </div>
+            <ol className="divide-y divide-white/[0.05]">
+              {coaches.data.map((c) => (
+                <CfbCoachRow key={c.id} coach={c} />
+              ))}
+            </ol>
+          </section>
+          <p className="text-[11px] leading-relaxed text-[#8b93a7]">
+            Ranked by record pressure across major FBS programs (ESPN). No Kalshi CFB coach market
+            yet — heat is record-driven.
+          </p>
+        </>
+      )}
+    </>
+  );
+}
+
+function CfbCoachRow({ coach: c }: { coach: CfbCoach }) {
+  const chips = c.factors.slice(0, 3);
+  return (
+    <li>
+      <a
+        href={`https://www.espn.com/college-football/team/_/id/${c.teamId}`}
+        target="_blank"
+        rel="noreferrer"
+        className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-white/[0.03] sm:gap-4 sm:px-4"
+      >
+        <span
+          className={cn(
+            "numeral w-8 shrink-0 text-center text-[18px] font-semibold",
+            heatTone(c.hotSeatRank),
+          )}
+        >
+          {c.hotSeatRank}
+        </span>
+        {c.teamLogo ? (
+          <img
+            src={c.teamLogo}
+            alt=""
+            className="h-11 w-11 shrink-0 rounded-md bg-white object-contain p-1 ring-1 ring-white/10"
+          />
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="text-cream truncate text-[15px] font-semibold">{c.name}</span>
+            <span className="text-chalk-dim text-[12px]">{c.teamAbbrev}</span>
+          </div>
+          {c.recordSummary && (
+            <p className="text-chalk-dim mt-0.5 text-[12px]">{c.recordSummary}</p>
+          )}
+          {chips.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {chips.map((f) => (
+                <span
+                  key={f.label}
+                  className="rounded-sm bg-alert/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-alert"
+                >
+                  {f.label} +{f.points}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <span className="numeral shrink-0 text-[12px] text-[#8b93a7]">{c.hotSeatScore}</span>
+      </a>
     </li>
   );
 }

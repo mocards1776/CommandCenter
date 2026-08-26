@@ -4958,6 +4958,25 @@ export async function fetchMlbPlayerWar(
       url: mapped.url,
     };
   }
+  const extrasMapped = mapPlayerExtrasPayload(
+    await invokeSportsAction(
+      {
+        action: "playerExtras",
+        name,
+        isPitcher: Boolean(opts?.isPitcher),
+        mlbId: opts?.mlbId ?? null,
+        teamAbbrev: opts?.teamAbbrev ?? null,
+      },
+      22_000,
+    ),
+  );
+  if (extrasMapped && (extrasMapped.seasonWar != null || extrasMapped.careerWar != null)) {
+    return {
+      seasonWar: extrasMapped.seasonWar,
+      careerWar: extrasMapped.careerWar,
+      url: extrasMapped.url,
+    };
+  }
   return fetchWarViaEdgeRetry(name, opts);
 }
 

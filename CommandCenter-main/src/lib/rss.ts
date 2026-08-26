@@ -1670,9 +1670,12 @@ function scoreImageUrl(raw: string): number {
   const u = raw.toLowerCase();
   if (!u || u.startsWith("data:")) return -1000;
   let score = 10;
-  if (/(?:blur|lqip|placeholder|spacer|pixel|transparent|1x1|dummy)/i.test(u)) score -= 80;
-  if (/[?&](?:w|width)=(?:[1-9]|[1-9]\d|1\d\d)(?:&|$)/i.test(u)) score -= 40;
-  if (/\/(?:w_|w=)(?:[1-9]|[1-9]\d|1\d\d)(?:\/|,|$)/i.test(u)) score -= 35;
+  if (/(?:blur|lqip|placeholder|spacer|pixel|transparent|1x1|dummy|default-image|fallback|no-image|missing)/i.test(u)) {
+    score -= 80;
+  }
+  if (/[?&](?:w|width|h|height)=(?:[1-9]|[1-9]\d|1\d\d)(?:&|$)/i.test(u)) score -= 40;
+  if (/\/(?:w_|w=|h_)(?:[1-9]|[1-9]\d|1\d\d)(?:\/|,|$)/i.test(u)) score -= 35;
+  if (/graytv|gray\.media|lee\.net|mosaic/i.test(u)) score += 12;
   if (/[?&](?:w|width)=(?:[5-9]\d{2}|\d{4,})(?:&|$)/i.test(u)) score += 40;
   if (/\/(?:w_|w=)(?:[5-9]\d{2}|\d{4,})(?:\/|,|$)/i.test(u)) score += 35;
   if (/\.(?:jpe?g|png|webp)(?:$|\?)/i.test(u)) score += 8;
@@ -1747,10 +1750,14 @@ export function repairRssContentImages(html: string, pageUrl?: string | null): s
     const candidates = [
       attrs.getAttribute("data-src"),
       attrs.getAttribute("data-lazy-src"),
+      attrs.getAttribute("data-lazy"),
+      attrs.getAttribute("nitro-lazy-src"),
       attrs.getAttribute("data-original"),
       attrs.getAttribute("data-url"),
       attrs.getAttribute("data-image"),
       attrs.getAttribute("data-img-url"),
+      attrs.getAttribute("data-hero-image"),
+      attrs.getAttribute("data-src-mobile"),
       attrs.getAttribute("data-srcset-promoted"),
       attrs.getAttribute("src"),
     ].filter(Boolean) as string[];

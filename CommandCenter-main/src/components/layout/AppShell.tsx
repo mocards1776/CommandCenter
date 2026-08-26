@@ -16,6 +16,7 @@ import {
   Radio,
   Flag,
   Shield,
+  GraduationCap,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/lib/auth-context";
@@ -95,6 +96,12 @@ const SPORTS_NAV = [
     match: (p: string) => p === "/sports/nfl" || p.startsWith("/sports/nfl/"),
     label: "NFL",
     Icon: Shield,
+  },
+  {
+    to: "/sports/cfb?solo=1",
+    match: (p: string) => p === "/sports/cfb" || p.startsWith("/sports/cfb/"),
+    label: "CFB",
+    Icon: GraduationCap,
   },
   {
     to: "/sports/ruwt?solo=1",

@@ -442,6 +442,60 @@ function extractTribuneArticleFragment(html: string): string | null {
   return null;
 }
 
+/** Gray Media / KY3 / Mosaic CMS article bodies. */
+function extractGrayMediaFragment(html: string): string | null {
+  const ld = html.match(
+    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
+  );
+  if (ld) {
+    for (const block of ld) {
+      const inner = block.match(/>([\s\S]*?)<\/script>/i)?.[1];
+      if (!inner) continue;
+      try {
+        const data = JSON.parse(inner) as {
+          "@type"?: string;
+          articleBody?: string;
+          image?: string | { url?: string }[];
+        };
+        const body = data.articleBody?.trim();
+        if (body && body.length > 120) {
+          const imgs = Array.isArray(data.image)
+            ? data.image.map((i) => (typeof i === "string" ? i : i.url)).filter(Boolean)
+            : typeof data.image === "string"
+              ? [data.image]
+              : [];
+          const lead = imgs[0] ? `<figure><img src="${imgs[0]}" alt="" loading="lazy"></figure>` : "";
+          return `${lead}${body.startsWith("<") ? body : `<p>${body}</p>`}`;
+        }
+      } catch {
+        /* next block */
+      }
+    }
+  }
+
+  const openers = [
+    /<div[^>]*class="[^"]*RichTextArticleBody[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*article-body[^"]*"[^>]*>/i,
+    /<div[^>]*class="[^"]*story-body[^"]*"[^>]*>/i,
+    /<section[^>]*class="[^"]*article-content[^"]*"[^>]*>/i,
+  ];
+  for (const re of openers) {
+    const tag = re.source.includes("<section") ? "section" : "div";
+    const frag =
+      tag === "section"
+        ? html.match(re)?.[0]
+          ? html.match(/<section[^>]*class="[^"]*article-content[^"]*"[^>]*>([\s\S]*?)<\/section>/i)?.[1]
+          : null
+        : sliceBalancedDiv(html, re);
+    if (frag && stripTags(frag).length > 120) return frag;
+  }
+  return null;
+}
+
+function isGrayMediaUrl(url: string): boolean {
+  return /(?:^|\.)ky3\.com|kytv\.com|gray\.tv|graymedia/i.test(url);
+}
+
 function extractFragment(html: string, pageUrl = ""): string | null {
   // Baseball Savant is a React SPA — generic <main>/<nav> splits yield menu soup.
   if (isSavantPreviewUrl(pageUrl) || isBaseballSavantUrl(pageUrl)) {
@@ -457,6 +511,11 @@ function extractFragment(html: string, pageUrl = ""): string | null {
   if (/baltimoresun\.com|chicagotribune\.com|orlandosentinel\.com/i.test(pageUrl)) {
     const tribune = extractTribuneArticleFragment(html);
     if (tribune) return tribune;
+  }
+
+  if (isGrayMediaUrl(pageUrl)) {
+    const gray = extractGrayMediaFragment(html);
+    if (gray) return gray;
   }
 
   // MLB.com news — never let an embedded clip steal the article body.
@@ -1205,14 +1264,17 @@ function normalizeImgKey(src: string): string {
 }
 
 function dedupeImages(html: string, heroImage: string | null): string {
-  const seen = new Set<string>();
-  if (heroImage) seen.add(normalizeImgKey(heroImage));
+  if (!heroImage) return html;
+  const heroKey = normalizeImgKey(heroImage);
+  let seenHeroDup = false;
   return html.replace(/<img\b([^>]*)>/gi, (full, attrs) => {
     const src = attrValue(String(attrs), "src");
     if (!src) return "";
     const key = normalizeImgKey(src);
-    if (seen.has(key)) return "";
-    seen.add(key);
+    if (!seenHeroDup && key === heroKey) {
+      seenHeroDup = true;
+      return "";
+    }
     return full;
   });
 }
@@ -1466,11 +1528,12 @@ function isBeehiivUrl(url: string): boolean {
 
 async function fetchText(url: string, attempt = 0): Promise<string> {
   const isTownNews = /stltoday\.com|lee\.net|townnews/i.test(url);
+  const isGray = isGrayMediaUrl(url);
   const isSavant = isBaseballSavantUrl(url);
   const isBeehiiv = isBeehiivUrl(url);
   const res = await fetch(url, {
     headers: {
-      "User-Agent": isTownNews || isSavant || isBeehiiv ? BROWSER_UA : UA,
+      "User-Agent": isTownNews || isSavant || isBeehiiv || isGray ? BROWSER_UA : UA,
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
       ...(isTownNews
