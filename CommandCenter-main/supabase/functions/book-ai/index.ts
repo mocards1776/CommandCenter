@@ -332,6 +332,7 @@ function isLikelyImageUrl(url: string): boolean {
   if (/images-na\.ssl-images-amazon\.com|images-.*\.ssl-images-amazon\.com/i.test(url)) return true;
   if (/compressed\.photo\.goodreads\.com|i\.gr-assets\.com/i.test(url)) return true;
   if (/images\.isbndb\.com|covers\.openbd\.jp/i.test(url)) return true;
+  if (/cdn\.shopify\.com\/s\/files|\/cdn\/shop\/files\//i.test(url)) return true;
   return false;
 }
 

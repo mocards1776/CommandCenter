@@ -229,11 +229,13 @@ Deno.serve(async (req: Request) => {
 
   let coverUrl =
     (typeof src.image === "string" ? src.image : Array.isArray(src.image) ? src.image[0] : null) ??
+    meta(html, "og:image:secure_url") ??
     meta(html, "og:image") ??
     meta(html, "twitter:image") ??
     extra?.cover_url ??
     null;
-  if (coverUrl && coverUrl.startsWith("//")) coverUrl = parsed.protocol + coverUrl;
+  if (coverUrl && coverUrl.startsWith("//")) coverUrl = "https:" + coverUrl;
+  if (coverUrl) coverUrl = coverUrl.replace(/^http:/i, "https:");
 
   // Fetch the cover here and hand back bytes: the caller stores its own copy,
   // so the record survives the retailer changing or removing the image.

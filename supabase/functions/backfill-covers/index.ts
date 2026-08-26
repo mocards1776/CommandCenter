@@ -273,6 +273,47 @@ async function lookupGoogleBooksHtml(
   return out;
 }
 
+/** True when a stored cover_url is worth keeping (not Google's shared stub). */
+function isValidCoverUrl(url: string | null | undefined): boolean {
+  if (!url || !url.trim()) return false;
+  return !/[?&]vid=ISBN/i.test(url);
+}
+
+function hasJacket(b: {
+  cover_path?: string | null;
+  cover_url?: string | null;
+}): boolean {
+  return Boolean(b.cover_path && b.cover_path.length > 0) || isValidCoverUrl(b.cover_url);
+}
+
+/** Pull og:image from a retailer page the book was added from. */
+async function coverFromSourcePage(pageUrl: string): Promise<string | null> {
+  try {
+    const res = await fetchWithTimeout(pageUrl, 10000, {
+      headers: { Accept: "text/html,application/xhtml+xml" },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const patterns = [
+      /<meta[^>]+(?:property|name)=["']og:image:secure_url["'][^>]*content=["']([^"']+)["']/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']og:image:secure_url["']/i,
+      /<meta[^>]+(?:property|name)=["']og:image["'][^>]*content=["']([^"']+)["']/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']og:image["']/i,
+    ];
+    for (const re of patterns) {
+      const m = re.exec(html);
+      if (m?.[1]) {
+        let u = decodeEntities(m[1]).trim();
+        if (u.startsWith("//")) u = "https:" + u;
+        if (/^https?:\/\//i.test(u)) return u.replace(/^http:/i, "https:");
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Best hotlink when we can't store bytes — prefer Google, then Open Library. */
 function pickCoverHotlink(urls: string[]): string | null {
   const upgraded = urls.map((u) => upgradeCoverUrl(u)).filter((u): u is string => Boolean(u));
@@ -535,27 +576,28 @@ Deno.serve(async (req: Request) => {
 
   let batch = 12;
   let retryCovers = false;
+  let skipCovers = false;
   let bookId: string | null = null;
   try {
     const body = await req.json();
     if (typeof body?.batch === "number") batch = Math.min(25, Math.max(1, body.batch));
     if (typeof body?.bookId === "string") bookId = body.bookId;
     retryCovers = body?.retryCovers === true;
+    skipCovers = body?.skipCovers === true;
   } catch {
     // defaults are fine
   }
 
-  // A single-book request is an explicit "go look again", so it re-fetches
-  // even for a book that was already processed and overwrites what's there.
+  // Single-book requests re-fetch metadata; covers retry only when missing
+  // or the caller explicitly asked (bulk backfill / cover refresh).
   const force = bookId !== null;
-  if (force) retryCovers = true;
 
   const admin = createClient(supabaseUrl, serviceKey);
 
   const query = admin
     .from("books")
     .select(
-      "id,isbn,title,authors,subtitle,cover_path,page_count,publisher,published_year,description,subjects,fiction",
+      "id,isbn,title,authors,subtitle,cover_path,cover_url,source_url,locked_at,page_count,publisher,published_year,description,subjects,fiction",
     )
     .eq("user_id", userId);
 
@@ -574,13 +616,24 @@ Deno.serve(async (req: Request) => {
     processed++;
     const isbn = String(b.isbn ?? "").replace(/[^0-9Xx]/g, "");
     const hasIsbn = isbn.length === 13 || isbn.length === 10;
+    const jacket = hasJacket(b);
     // cover_path "" means "looked, found nothing" — don't pay for it twice.
-    const wantCover = retryCovers || b.cover_path == null;
+    const wantCover = !skipCovers && !jacket && (retryCovers || b.cover_path == null);
     const patch: Record<string, unknown> = { enriched_at: new Date().toISOString() };
 
     // Candidate cover URLs in preference order, collected as we look things up.
     const coverUrls: string[] = [];
     let meta: Meta = {};
+
+    if (wantCover) {
+      const existing = upgradeCoverUrl(String(b.cover_url ?? ""));
+      if (existing) coverUrls.push(existing);
+      const sourceUrl = String((b as { source_url?: string | null }).source_url ?? "");
+      if (sourceUrl.startsWith("http")) {
+        const fromPage = await coverFromSourcePage(sourceUrl);
+        if (fromPage) coverUrls.unshift(fromPage);
+      }
+    }
 
     if (hasIsbn) {
       const ol = await lookupOpenLibrary(isbn);
@@ -696,15 +749,13 @@ Deno.serve(async (req: Request) => {
         }
       } else {
         const hotlink = pickCoverHotlink(coverUrls);
-        if (hotlink) {
-          // Hotlink fallback — clear a bad stored stub so the URL can display.
+        if (hotlink && !jacket) {
           patch.cover_url = hotlink;
           patch.cover_path = null;
           patch.locked_at = new Date().toISOString();
           covers++;
-        } else if (b.cover_path == null) {
-          // A forced re-check that comes up empty leaves the existing cover
-          // alone rather than blanking a good one.
+        } else if (b.cover_path == null && !isValidCoverUrl(String(b.cover_url ?? ""))) {
+          // Mark as searched — but never blank a jacket we already had.
           patch.cover_path = "";
         }
       }

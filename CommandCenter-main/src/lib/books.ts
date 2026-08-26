@@ -629,6 +629,7 @@ export function coverSrc(book: Book): string | null {
 /** Create a book from a URL lookup, storing the cover so it can't rot. */
 export async function addBookFromUrl(url: string, overrides: Partial<BookInsert> = {}) {
   const found = await lookupBookUrl(url);
+  const coverFromLookup = upgradeCoverUrl(found.cover_url) ?? found.cover_url ?? null;
   const book = await createBook({
     title: found.title?.trim() || "Untitled",
     subtitle: found.subtitle,
@@ -638,7 +639,7 @@ export async function addBookFromUrl(url: string, overrides: Partial<BookInsert>
     publisher: found.publisher,
     published_year: found.published_year,
     description: found.description,
-    cover_url: found.cover_url,
+    cover_url: coverFromLookup,
     source_url: found.source_url,
     status: "to-read",
     ...overrides,
@@ -650,16 +651,47 @@ export async function addBookFromUrl(url: string, overrides: Partial<BookInsert>
       const path = await storeCover(book.id, found.cover_base64, found.cover_type);
       saved = await updateBook(book.id, { cover_path: path, locked_at: new Date().toISOString() });
     } catch {
-      // The book is saved either way; a failed cover upload isn't fatal.
       saved = await updateBook(book.id, { locked_at: new Date().toISOString() });
     }
   } else {
     saved = await updateBook(book.id, { locked_at: new Date().toISOString() });
   }
 
-  // Subjects + fiction/series — URL scrape doesn't carry those.
-  await enrichBook(saved.id).catch(() => {});
-  return saved;
+  // Metadata only — the URL scrape already found the jacket; catalog search
+  // for magazines/Shopify products often returns nothing or the wrong book.
+  await enrichBook(saved.id, { skipCovers: Boolean(coverFromLookup || saved.cover_path) }).catch(
+    () => {},
+  );
+
+  // Store our own copy when the edge lookup couldn't upload bytes.
+  if (!saved.cover_path && coverFromLookup) {
+    try {
+      const pulled = await pullCover(saved.id, coverFromLookup);
+      if (pulled.found) {
+        saved = await updateBook(saved.id, {
+          cover_path: pulled.cover_path ?? saved.cover_path,
+          cover_url: pulled.cover_url ?? coverFromLookup,
+          locked_at: new Date().toISOString(),
+        });
+      }
+    } catch {
+      // Hotlink from lookup is fine — enrich must not have stripped it.
+    }
+  }
+
+  const { data: fresh } = await supabase.from("books").select("*").eq("id", saved.id).single();
+  if (!fresh) return saved;
+
+  const stillHasJacket =
+    (fresh.cover_path && fresh.cover_path.length > 0) ||
+    (fresh.cover_url && !/[?&]vid=ISBN/i.test(fresh.cover_url));
+  if (!stillHasJacket && coverFromLookup) {
+    return updateBook(fresh.id, {
+      cover_url: coverFromLookup,
+      locked_at: new Date().toISOString(),
+    });
+  }
+  return fresh;
 }
 
 // ── Reading sessions ─────────────────────────────────────────────────────
@@ -1166,6 +1198,7 @@ function isLikelyCoverImageUrl(url: string): boolean {
   if (/m\.media-amazon\.com\/images/i.test(url)) return true;
   if (/images-.*\.ssl-images-amazon\.com/i.test(url)) return true;
   if (/compressed\.photo\.goodreads\.com|i\.gr-assets\.com/i.test(url)) return true;
+  if (/cdn\.shopify\.com\/s\/files|\/cdn\/shop\/files\//i.test(url)) return true;
   return false;
 }
 
@@ -1389,10 +1422,13 @@ export type BackfillResult = {
  * with nothing but a title. Also auto-pulls fiction (subjects first, then
  * Grok) so the reader never has to set it by hand.
  */
-export async function enrichBook(bookId: string): Promise<BackfillResult> {
+export async function enrichBook(
+  bookId: string,
+  opts: { skipCovers?: boolean } = {},
+): Promise<BackfillResult> {
   const { data, error } = await supabase.functions.invoke<BackfillResult & { error?: string }>(
     "backfill-covers",
-    { body: { bookId } },
+    { body: { bookId, skipCovers: opts.skipCovers === true } },
   );
   if (error) throw new Error(error.message);
   if (!data || data.error) throw new Error(data?.error ?? "Lookup failed");
