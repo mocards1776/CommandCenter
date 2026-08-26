@@ -501,7 +501,7 @@ function CoachRow({ coach: c }: { coach: NflCoach }) {
 
 function CfbHotSeat() {
   const coaches = useQuery({
-    queryKey: ["cfb-coaches-hot-seat-v1"],
+    queryKey: ["cfb-coaches-v2-kalshi-fbs"],
     queryFn: fetchCfbCoaches,
     staleTime: 180_000,
   });
@@ -534,8 +534,8 @@ function CfbHotSeat() {
             </ol>
           </section>
           <p className="text-[11px] leading-relaxed text-[#8b93a7]">
-            Ranked by record pressure across major FBS programs (ESPN). No Kalshi CFB coach market
-            yet — heat is record-driven.
+            Kalshi coach-out % for listed markets, then full FBS record pressure (ESPN). Tap a coach
+            for detail.
           </p>
         </>
       )}
@@ -547,10 +547,8 @@ function CfbCoachRow({ coach: c }: { coach: CfbCoach }) {
   const chips = c.factors.slice(0, 3);
   return (
     <li>
-      <a
-        href={`https://www.espn.com/college-football/team/_/id/${c.teamId}`}
-        target="_blank"
-        rel="noreferrer"
+      <Link
+        to={`/sports/cfb/coach/${c.id}`}
         className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-white/[0.03] sm:gap-4 sm:px-4"
       >
         <span
@@ -571,26 +569,51 @@ function CfbCoachRow({ coach: c }: { coach: CfbCoach }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span className="text-cream truncate text-[15px] font-semibold">{c.name}</span>
-            <span className="text-chalk-dim text-[12px]">{c.teamAbbrev}</span>
+            <span
+              className={cn(
+                "text-[10px] font-bold uppercase tracking-[0.14em]",
+                heatTone(c.hotSeatRank),
+              )}
+            >
+              {heatLabel(c.hotSeatRank)}
+            </span>
           </div>
-          {c.recordSummary && (
-            <p className="text-chalk-dim mt-0.5 text-[12px]">{c.recordSummary}</p>
-          )}
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-[#c8cdd8]">
+            <span>{c.teamAbbrev}</span>
+            {c.recordSummary && (
+              <span className="numeral font-medium text-cream">{c.recordSummary}</span>
+            )}
+            {c.firedOddsPct != null && (
+              <span className="text-alert/90 numeral font-semibold">
+                Kalshi {c.firedOddsPct.toFixed(1)}%
+              </span>
+            )}
+          </div>
           {chips.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {chips.map((f) => (
                 <span
                   key={f.label}
-                  className="rounded-sm bg-alert/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-alert"
+                  className={cn(
+                    "rounded-sm px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em]",
+                    f.points > 0
+                      ? "bg-alert/15 text-alert"
+                      : f.points < 0
+                        ? "bg-emerald-400/15 text-emerald-300"
+                        : "bg-white/[0.06] text-[#8b93a7]",
+                  )}
                 >
-                  {f.label} +{f.points}
+                  {f.label} {f.points > 0 ? "+" : ""}
+                  {f.points}
                 </span>
               ))}
             </div>
           )}
         </div>
-        <span className="numeral shrink-0 text-[12px] text-[#8b93a7]">{c.hotSeatScore}</span>
-      </a>
+        <span className="numeral shrink-0 text-[12px] text-[#8b93a7]">
+          {c.firedOddsPct != null ? `${c.firedOddsPct.toFixed(1)}` : c.hotSeatScore}
+        </span>
+      </Link>
     </li>
   );
 }

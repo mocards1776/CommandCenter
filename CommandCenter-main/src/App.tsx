@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "react-hot-toast";
@@ -23,13 +24,15 @@ import MlbManagerPage from "@/pages/MlbManagerPage";
 import HotSeatPage from "@/pages/HotSeatPage";
 import CfbPlayerPage from "@/pages/CfbPlayerPage";
 import CfbPage from "@/pages/CfbPage";
+import CfbGamePage from "@/pages/CfbGamePage";
+import CfbCoachPage from "@/pages/CfbCoachPage";
 import GolferPage from "@/pages/GolferPage";
 import NflPage from "@/pages/NflPage";
 import NflGamePage from "@/pages/NflGamePage";
 import NflPlayerPage from "@/pages/NflPlayerPage";
 import NflTeamPage from "@/pages/NflTeamPage";
 import NflCoachPage from "@/pages/NflCoachPage";
-import RssPage from "@/pages/RssPage";
+const RssPage = lazy(() => import("@/pages/RssPage"));
 import PublicStoryPage from "@/pages/PublicStoryPage";
 import BuenaVistaNotebookPage from "@/pages/BuenaVistaNotebookPage";
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
@@ -142,8 +145,23 @@ export default function App() {
               <Route path="/sports/nfl/team/:teamId" element={<NflTeamPage />} />
               <Route path="/sports/nfl/coach/:coachId" element={<NflCoachPage />} />
               <Route path="/sports/cfb" element={<CfbPage />} />
+              <Route path="/sports/cfb/game/:eventId" element={<CfbGamePage />} />
+              <Route path="/sports/cfb/coach/:coachId" element={<CfbCoachPage />} />
               <Route path="/sports/cfb/player/:playerId" element={<CfbPlayerPage />} />
-              <Route path="/rss" element={<RssPage />} />
+              <Route
+                path="/rss"
+                element={
+                  <Suspense
+                    fallback={
+                      <div className="text-chalk flex min-h-[40vh] items-center justify-center text-[13px]">
+                        Loading Dispatch…
+                      </div>
+                    }
+                  >
+                    <RssPage />
+                  </Suspense>
+                }
+              />
               <Route path="/notebook/:slug" element={<BuenaVistaNotebookPage />} />
             </Route>
             <Route path="*" element={<HomeRedirect />} />

@@ -593,6 +593,14 @@
     padding: 0.08em 0.14em;
     box-shadow: inset 0 -0.08em 0 rgba(217, 81, 92, 0.65);
   }
+
+  .rss-reader p,
+  .rss-reader figure,
+  .rss-reader blockquote,
+  .rss-reader table {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 120px;
+  }
 }
 
 /* Unlayered so reader Tailwind utilities (h2/img/a/ul) cannot blow out

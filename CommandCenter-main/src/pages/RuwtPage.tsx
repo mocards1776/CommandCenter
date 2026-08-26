@@ -719,7 +719,11 @@ export default function RuwtPage() {
                     const href =
                       item.sport === "mlb"
                         ? `/sports/mlb/game/${g.id}`
-                        : `/sports/nfl/game/${g.id}`;
+                        : item.sport === "nfl"
+                          ? `/sports/nfl/game/${g.id}`
+                          : item.sport === "cfb"
+                            ? `/sports/cfb/game/${g.id}`
+                            : "#";
                     return (
                       <Link
                         key={item.id}
@@ -781,10 +785,8 @@ function RuwtBroadcasts({ broadcasts }: { broadcasts?: GameBroadcast[] | null })
 
 function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
   return (
-    <a
-      href={`https://www.espn.com/college-football/game/_/gameId/${game.id}`}
-      target="_blank"
-      rel="noreferrer"
+    <Link
+      to={`/sports/cfb/game/${game.id}`}
       className={cn(
         "relative block overflow-hidden rounded-lg border bg-[#07101d] transition hover:border-accent/40",
         game.live ? "border-alert/45" : "border-white/[0.08]",
@@ -829,7 +831,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
           {game.reasons.join(" · ")}
         </p>
       )}
-    </a>
+    </Link>
   );
 }
 

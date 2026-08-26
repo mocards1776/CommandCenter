@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent, type TouchEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent, type TouchEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQueries, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   Archive,
   ArrowLeft,
@@ -67,7 +67,6 @@ import {
   encodeFeedDomainFilter,
   loadDedupeKeepHosts,
   markQuotesInHtml,
-  paintQuotesInElement,
   parseFeedScopedFilter,
   parsePlayerArticleLink,
   parseMlbGameArticleLink,
@@ -84,6 +83,7 @@ import {
   fetchRssFeed,
   fetchRssFilters,
   fetchRssHighlights,
+  fetchRssHighlightUrls,
   fetchRssReads,
   fetchRssSaves,
   prefetchRssArticles,
@@ -168,6 +168,26 @@ import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { useAuth } from "@/lib/auth-context";
 import { cn, dispatchReaderColumnClass, dispatchReaderPanelClass, isPublishedTodayCentral } from "@/lib/utils";
+
+const EMPTY_READ_URLS = new Set<string>();
+
+function markReadOptimistic(qc: QueryClient, articleUrl: string) {
+  qc.setQueryData<Set<string>>(["rss-reads"], (old) => {
+    const next = new Set(old ?? []);
+    next.add(articleUrl);
+    return next;
+  });
+}
+
+function markReadInBackground(
+  qc: QueryClient,
+  input: { articleUrl: string; articleTitle?: string | null; feedUrl?: string | null },
+) {
+  markReadOptimistic(qc, input.articleUrl);
+  void markRssRead(input).catch(() => {
+    void qc.invalidateQueries({ queryKey: ["rss-reads"] });
+  });
+}
 
 type NavView =
   | "unread"
@@ -702,13 +722,11 @@ function EspnGameReaderShell({
   }, [item.link, onClose]);
 
   useEffect(() => {
-    void markRssRead({
+    markReadInBackground(qc, {
       articleUrl: item.link,
       articleTitle: item.title,
       feedUrl,
-    })
-      .then(() => qc.invalidateQueries({ queryKey: ["rss-reads"] }))
-      .catch(() => {});
+    });
   }, [item.link, item.title, feedUrl, qc]);
 
   return (
@@ -822,13 +840,11 @@ function MlbGameArticleShell({
   }, [item.link, onClose]);
 
   useEffect(() => {
-    void markRssRead({
+    markReadInBackground(qc, {
       articleUrl: item.link,
       articleTitle: item.title,
       feedUrl,
-    })
-      .then(() => qc.invalidateQueries({ queryKey: ["rss-reads"] }))
-      .catch(() => {});
+    });
   }, [item.link, item.title, feedUrl, qc]);
 
   return (
@@ -967,13 +983,11 @@ function PlayerArticleShell({
   }, [item.link, onClose]);
 
   useEffect(() => {
-    void markRssRead({
+    markReadInBackground(qc, {
       articleUrl: item.link,
       articleTitle: item.title,
       feedUrl,
-    })
-      .then(() => qc.invalidateQueries({ queryKey: ["rss-reads"] }))
-      .catch(() => {});
+    });
   }, [item.link, item.title, feedUrl, qc]);
 
   return (
@@ -1168,13 +1182,11 @@ function ArticleReaderShell({
   }, [item.link, onClose]);
 
   useEffect(() => {
-    void markRssRead({
+    markReadInBackground(qc, {
       articleUrl: item.link,
       articleTitle: item.title,
       feedUrl,
-    })
-      .then(() => qc.invalidateQueries({ queryKey: ["rss-reads"] }))
-      .catch(() => {});
+    });
   }, [item.link, item.title, feedUrl, qc]);
 
   // Escape closes the lightbox.
@@ -1257,17 +1269,6 @@ function ArticleReaderShell({
     root.addEventListener("click", onImgClick);
     return () => root.removeEventListener("click", onImgClick);
   }, [displayHtml]);
-
-  // Belt-and-suspenders: paint saved quotes on the live DOM after linkify/extract
-  // so MoScout (and other feeds) show inline marks even when HTML-string matching misses.
-  useEffect(() => {
-    if (!quoteTexts.length) return;
-    const id = window.requestAnimationFrame(() => {
-      paintQuotesInElement(articleBodyRef.current, quoteTexts);
-      paintQuotesInElement(titleSelectRef.current, quoteTexts);
-    });
-    return () => window.cancelAnimationFrame(id);
-  }, [displayHtml, quoteTexts]);
 
   // Link any MLB player names → player page; stylize tweet cards; repair imgs.
   useEffect(() => {
@@ -1808,7 +1809,7 @@ function ArticleReaderShell({
   );
 }
 
-function ArticleRow({
+const ArticleRow = memo(function ArticleRow({
   item,
   read,
   highlighted,
@@ -2049,7 +2050,7 @@ function ArticleRow({
       </div>
     </li>
   );
-}
+});
 
 export default function RssPage() {
   const qc = useQueryClient();
@@ -2148,9 +2149,10 @@ export default function RssPage() {
   const reads = useQuery({
     queryKey: ["rss-reads"],
     queryFn: fetchRssReads,
-    staleTime: 60_000,
+    staleTime: 300_000,
+    refetchOnWindowFocus: false,
   });
-  const readUrls = reads.data ?? new Set<string>();
+  const readUrls = reads.data ?? EMPTY_READ_URLS;
 
   const filtersQuery = useQuery({
     queryKey: ["rss-filters"],
@@ -2199,6 +2201,7 @@ export default function RssPage() {
         queryKey: ["rss-feed-v6", f.url],
         queryFn: () => fetchRssFeed(f.url),
         staleTime: wrapFeed ? 45_000 : 90_000,
+        refetchOnWindowFocus: false,
         // Keep polling ESPN wrap feeds until recap/preview prose lands — never list score stubs.
         refetchInterval: wrapFeed ? 90_000 : false,
         refetchIntervalInBackground: false,
@@ -2206,10 +2209,19 @@ export default function RssPage() {
     }),
   });
 
+  const highlightUrlSet = useQuery({
+    queryKey: ["rss-highlight-urls"],
+    queryFn: fetchRssHighlightUrls,
+    staleTime: 300_000,
+    refetchOnWindowFocus: false,
+  });
+
   const allNotes = useQuery({
     queryKey: ["rss-highlights-all"],
     queryFn: () => fetchRssHighlights(),
-    enabled: true,
+    enabled: nav === "notes",
+    staleTime: 120_000,
+    refetchOnWindowFocus: false,
   });
 
   const savesQuery = useQuery({
@@ -2225,8 +2237,8 @@ export default function RssPage() {
   const [shareHighlight, setShareHighlight] = useState<RssHighlight | null>(null);
 
   const highlightUrls = useMemo(
-    () => new Set((allNotes.data ?? []).map((h) => h.articleUrl)),
-    [allNotes.data],
+    () => highlightUrlSet.data ?? EMPTY_READ_URLS,
+    [highlightUrlSet.data],
   );
 
   const toggleSaveMut = useMutation({
@@ -2457,12 +2469,14 @@ export default function RssPage() {
     [listItems, readUrls],
   );
 
-  // Pre-extract upcoming articles so opens / next-swipes don't wait on a cold scrape.
+  // Pre-extract adjacent articles only — avoid warming the whole inbox.
   useEffect(() => {
+    if (!selected || selectedIndex < 0) return;
     const ac = new AbortController();
-    const warmExtracts = (urls: string[]) =>
-      prefetchRssArticles(urls, {
-        concurrency: 3,
+    const warmExtracts = (urls: string[]) => {
+      if (!urls.length) return;
+      void prefetchRssArticles(urls, {
+        concurrency: 2,
         signal: ac.signal,
         prefetch: (url) =>
           qc.prefetchQuery({
@@ -2471,85 +2485,20 @@ export default function RssPage() {
             staleTime: 10 * 60_000,
           }),
       });
-
-    const warmGames = (items: RssFeedItemRef[]) => {
-      for (const it of items) {
-        void prefetchDispatchGameData(qc, it, it.feedUrl).catch(() => {});
-      }
     };
 
-    const run = () => {
-      if (selected && selectedIndex >= 0) {
-        const neighborItems = [1, 2, -1, 3, 4, -2]
-          .map((d) => navItems[selectedIndex + d])
-          .filter((it): it is RssFeedItemRef => Boolean(it));
-        warmGames(neighborItems);
-        const extractUrls = neighborItems
-          .filter(articleNeedsEdgeExtract)
-          .map((it) => it.link);
-        void warmExtracts(extractUrls);
-        return;
-      }
-      // Idle list: prefer unread rows, then the visible head of the feed.
-      const poolItems = (unreadInList.length ? unreadInList : listItems).slice(0, 18);
-      warmGames(poolItems);
-      const pool = poolItems.filter(articleNeedsEdgeExtract).map((it) => it.link);
-      void warmExtracts(pool);
-    };
-
-    // Prioritize the next article — don't wait for idle on keyboard nav.
-    run();
-    const ric = (
-      window as Window & {
-        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
-        cancelIdleCallback?: (id: number) => void;
-      }
-    ).requestIdleCallback;
-    const cic = (
-      window as Window & { cancelIdleCallback?: (id: number) => void }
-    ).cancelIdleCallback;
-    let idleId: number | null = null;
-    if (typeof ric === "function") {
-      idleId = ric(run, { timeout: 400 });
+    const neighborItems = [1, -1]
+      .map((d) => navItems[selectedIndex + d])
+      .filter((it): it is RssFeedItemRef => Boolean(it));
+    for (const it of neighborItems) {
+      void prefetchDispatchGameData(qc, it, it.feedUrl).catch(() => {});
     }
-    return () => {
-      ac.abort();
-      if (idleId != null && typeof cic === "function") cic(idleId);
-    };
-  }, [selected, selectedIndex, navItems, listItems, unreadInList, qc]);
-
-  // When feeds finish loading, warm the first extractable articles across them.
-  useEffect(() => {
-    const ready = feedQueries.every((q) => !q.isLoading);
-    if (!ready) return;
-    const urls: string[] = [];
-    for (const q of feedQueries) {
-      const items = q.data?.items ?? [];
-      for (const it of items.slice(0, 4)) {
-        if (articleNeedsEdgeExtract(it)) urls.push(it.link);
-      }
-    }
-    if (!urls.length) return;
-    const ac = new AbortController();
-    const t = window.setTimeout(() => {
-      void prefetchRssArticles(urls.slice(0, 24), {
-        concurrency: 3,
-        signal: ac.signal,
-        prefetch: (url) =>
-          qc.prefetchQuery({
-            queryKey: ["rss-article-v2", url],
-            queryFn: () => fetchRssArticle(url),
-            staleTime: 10 * 60_000,
-          }),
-      });
-    }, 400);
-    return () => {
-      ac.abort();
-      window.clearTimeout(t);
-    };
-    // Intentionally depend on fetch status, not full query objects.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feedQueries.map((q) => `${q.isLoading}:${q.dataUpdatedAt}`).join("|"), qc]);
+    const extractUrls = neighborItems
+      .filter(articleNeedsEdgeExtract)
+      .map((it) => it.link);
+    warmExtracts(extractUrls);
+    return () => ac.abort();
+  }, [selected, selectedIndex, navItems, qc]);
 
   const markAllReadMut = useMutation({
     mutationFn: () =>

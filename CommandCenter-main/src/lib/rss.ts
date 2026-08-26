@@ -4051,6 +4051,16 @@ export async function markRssUnread(articleUrl: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function fetchRssHighlightUrls(): Promise<Set<string>> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from("rss_highlights")
+    .select("article_url")
+    .eq("user_id", userId);
+  if (error) throw error;
+  return new Set((data ?? []).map((r) => r.article_url as string).filter(Boolean));
+}
+
 export async function fetchRssHighlights(articleUrl?: string): Promise<RssHighlight[]> {
   const userId = await requireUserId();
   let q = supabase

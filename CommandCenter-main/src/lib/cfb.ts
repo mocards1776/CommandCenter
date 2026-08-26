@@ -1,6 +1,7 @@
 /** College football via ESPN — scoreboard, RUWT, hot seat, player pages. */
 
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
+import { supabase } from "./supabase";
 import { formatSportsDateLong } from "./utils";
 
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/college-football";
@@ -117,13 +118,59 @@ export type CfbCoach = {
   teamAbbrev: string;
   teamLogo: string | null;
   teamColor: string;
+  headshot: string | null;
   recordSummary: string | null;
   wins: number;
   losses: number;
   winPct: number | null;
   hotSeatScore: number;
   hotSeatRank: number;
+  firedOddsPct: number | null;
+  firedOddsAmerican: string | null;
+  kalshiUrl: string | null;
   factors: { label: string; points: number; detail: string }[];
+};
+
+export type CfbCoachProfile = CfbCoach & {
+  bio: string | null;
+  careerHighlights: string[];
+};
+
+export type CfbScoringPlay = {
+  id: string;
+  text: string;
+  clock: string | null;
+  teamAbbrev: string | null;
+};
+
+export type CfbBoxPlayerRow = {
+  id: string;
+  name: string;
+  stats: string[];
+};
+
+export type CfbBoxStatGroup = {
+  teamAbbrev: string;
+  name: string;
+  labels: string[];
+  athletes: CfbBoxPlayerRow[];
+};
+
+export type CfbTeamGameStat = {
+  teamAbbrev: string;
+  label: string;
+  value: string;
+};
+
+export type CfbGameDetail = CfbScoreGame & {
+  scoringPlays: CfbScoringPlay[];
+  boxGroups: CfbBoxStatGroup[];
+  teamStats: CfbTeamGameStat[];
+  article: {
+    headline: string;
+    description: string | null;
+    storyHtml: string | null;
+  } | null;
 };
 
 export type CfbPlayerProfile = {
@@ -277,6 +324,289 @@ export async function fetchCfbScoreboard(dates?: string): Promise<CfbScoreGame[]
   return (raw.events ?? []).map(mapCfbEvent).filter((g): g is CfbScoreGame => Boolean(g?.id));
 }
 
+export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail> {
+  const res = await fetch(`${ESPN}/summary?event=${encodeURIComponent(eventId)}`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`CFB summary ${res.status}`);
+  const raw = (await res.json()) as {
+    header?: { competitions?: EspnEvent["competitions"]; id?: string };
+    scoringPlays?: {
+      id?: string;
+      text?: string;
+      clock?: { displayValue?: string };
+      team?: { abbreviation?: string };
+    }[];
+    boxscore?: {
+      teams?: {
+        team?: { abbreviation?: string };
+        statistics?: {
+          name?: string;
+          displayValue?: string;
+          label?: string;
+          abbreviation?: string;
+        }[];
+      }[];
+      players?: {
+        team?: { abbreviation?: string };
+        statistics?: {
+          name?: string;
+          labels?: string[];
+          athletes?: {
+            athlete?: { id?: string; displayName?: string };
+            stats?: string[];
+          }[];
+        }[];
+      }[];
+    };
+    article?: { headline?: string; description?: string; story?: string };
+    news?: { headline?: string; description?: string; story?: string }[];
+  };
+
+  const headerComp = raw.header?.competitions?.[0];
+  const board = await fetchCfbScoreboard().catch(() => [] as CfbScoreGame[]);
+  let base = board.find((g) => g.id === String(eventId)) ?? null;
+  if (!base && headerComp) {
+    base = mapCfbEvent({
+      id: eventId,
+      competitions: raw.header?.competitions,
+    });
+  }
+  if (!base) throw new Error("CFB game not found");
+
+  const boxGroups: CfbBoxStatGroup[] = [];
+  for (const side of raw.boxscore?.players ?? []) {
+    const abbrev = side.team?.abbreviation ?? "—";
+    for (const group of side.statistics ?? []) {
+      const gname = group.name ?? "stats";
+      const labels = group.labels ?? [];
+      const athletes: CfbBoxPlayerRow[] = [];
+      for (const row of group.athletes ?? []) {
+        const id = row.athlete?.id;
+        if (!id) continue;
+        athletes.push({
+          id: String(id),
+          name: row.athlete?.displayName ?? "—",
+          stats: row.stats ?? [],
+        });
+      }
+      if (athletes.length) {
+        boxGroups.push({ teamAbbrev: abbrev, name: gname, labels, athletes });
+      }
+    }
+  }
+
+  const teamStats: CfbTeamGameStat[] = [];
+  for (const side of raw.boxscore?.teams ?? []) {
+    const abbrev = side.team?.abbreviation ?? "—";
+    for (const s of side.statistics ?? []) {
+      const label = s.label ?? s.abbreviation ?? s.name ?? "Stat";
+      const value = s.displayValue ?? "—";
+      if (!value || value === "—") continue;
+      teamStats.push({ teamAbbrev: abbrev, label, value });
+    }
+  }
+
+  const articleRaw = raw.article ?? raw.news?.[0];
+  return {
+    ...base,
+    scoringPlays: (raw.scoringPlays ?? []).map((s) => ({
+      id: String(s.id ?? Math.random()),
+      text: s.text ?? "",
+      clock: s.clock?.displayValue ?? null,
+      teamAbbrev: s.team?.abbreviation ?? null,
+    })),
+    boxGroups,
+    teamStats,
+    article: articleRaw?.headline
+      ? {
+          headline: articleRaw.headline,
+          description: articleRaw.description ?? null,
+          storyHtml: articleRaw.story ?? null,
+        }
+      : null,
+  };
+}
+
+type FbsTeamRow = {
+  id: number;
+  name: string;
+  abbrev: string;
+  color: string;
+  logo: string | null;
+};
+
+async function fetchCoreJson<T>(url: string): Promise<T | null> {
+  try {
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** All FBS teams for a season (group 80). */
+export async function fetchFbsTeams(season = new Date().getFullYear()): Promise<FbsTeamRow[]> {
+  const listUrl = `${CORE}/seasons/${season}/types/2/groups/80/teams?limit=200`;
+  const list = await fetchCoreJson<{ items?: { $ref?: string }[] }>(listUrl);
+  const refs = list?.items?.map((i) => i.$ref).filter(Boolean) ?? [];
+  const rows: FbsTeamRow[] = [];
+  const chunkSize = 12;
+  for (let i = 0; i < refs.length; i += chunkSize) {
+    const chunk = refs.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(async (ref) => {
+        const team = await fetchCoreJson<{
+          id?: string;
+          displayName?: string;
+          abbreviation?: string;
+          color?: string;
+          logos?: { href?: string }[];
+        }>(ref!);
+        if (!team?.id || !team.abbreviation) return;
+        rows.push({
+          id: Number(team.id),
+          name: team.displayName ?? team.abbreviation,
+          abbrev: team.abbreviation.toUpperCase(),
+          color: (team.color ?? "555555").replace(/^#/, ""),
+          logo: team.logos?.[0]?.href ?? cfbTeamLogo(team.id),
+        });
+      }),
+    );
+  }
+  rows.sort((a, b) => a.name.localeCompare(b.name));
+  return rows;
+}
+
+function dollarProb(raw: string | null | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return null;
+  if (n === 0) return 0;
+  return Math.max(0.01, Math.min(0.99, n));
+}
+
+function americanFromProb(p: number): string {
+  if (p >= 0.5) return `-${Math.round((100 * p) / (1 - p))}`;
+  return `+${Math.round((100 * (1 - p)) / p)}`;
+}
+
+type KalshiCfbCoachMarket = {
+  name: string;
+  teamAbbrev: string | null;
+  teamHint: string | null;
+  impliedPct: number;
+  american: string;
+  ticker: string;
+  url: string;
+};
+
+function cfbAbbrevFromKalshiTicker(ticker: string): string | null {
+  const parts = ticker.split("-");
+  const tail = parts[parts.length - 1]?.toUpperCase();
+  return tail && /^[A-Z0-9]{2,6}$/.test(tail) ? tail : null;
+}
+
+function cfbAbbrevFromKalshiSubtitle(hint: string | null): string | null {
+  if (!hint) return null;
+  const cleaned = hint.replace(/^:+\s*/, "").trim();
+  for (const t of CFB_FOCUS_TEAMS) {
+    if (cleaned.toLowerCase().includes(t.name.toLowerCase())) return t.abbrev;
+  }
+  return null;
+}
+
+/** Kalshi “coach out before Sep 1” markets for college football. */
+export async function fetchCfbCoachFiredOdds(): Promise<KalshiCfbCoachMarket[]> {
+  type EdgeItem = {
+    name?: string;
+    teamHint?: string | null;
+    oddsAmerican?: string;
+    impliedPct?: number;
+    ticker?: string;
+    url?: string;
+  };
+
+  const usable = (data: unknown): data is { items?: EdgeItem[] } =>
+    Boolean(data) &&
+    typeof data === "object" &&
+    Array.isArray((data as { items?: unknown }).items) &&
+    !(data as { error?: string }).error;
+
+  let items: EdgeItem[] = [];
+  try {
+    const { data } = await supabase.functions.invoke("sports", {
+      body: { action: "cfbCoachFiredOdds" },
+    });
+    if (usable(data) && (data.items?.length ?? 0) > 0) {
+      items = data.items ?? [];
+    }
+  } catch {
+    /* fall through */
+  }
+
+  if (!items.length) {
+    try {
+      const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+      const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+      if (base && key) {
+        const res = await fetch(`${base}/functions/v1/sports`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${key}`,
+            apikey: key,
+          },
+          body: JSON.stringify({ action: "cfbCoachFiredOdds" }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { items?: EdgeItem[]; error?: string };
+          if (!data.error && data.items?.length) items = data.items;
+        }
+      }
+    } catch {
+      /* */
+    }
+  }
+
+  const out: KalshiCfbCoachMarket[] = [];
+  for (const m of items) {
+    const name = (m.name ?? "").trim();
+    if (!name) continue;
+    const pct = typeof m.impliedPct === "number" ? m.impliedPct : null;
+    if (pct == null || !Number.isFinite(pct) || pct <= 0) continue;
+    const hint = m.teamHint ?? null;
+    const p = Math.max(0.01, Math.min(0.99, pct > 1 ? pct / 100 : pct));
+    out.push({
+      name,
+      teamAbbrev:
+        cfbAbbrevFromKalshiTicker(m.ticker ?? "") ?? cfbAbbrevFromKalshiSubtitle(hint),
+      teamHint: hint,
+      impliedPct: pct > 1 ? pct : Math.round(pct * 1000) / 10,
+      american: m.oddsAmerican || americanFromProb(p),
+      ticker: m.ticker ?? "",
+      url: m.url ?? "",
+    });
+  }
+  out.sort((a, b) => b.impliedPct - a.impliedPct);
+  return out;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R | null>,
+): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += limit) {
+    const chunk = items.slice(i, i + limit);
+    const results = await Promise.all(chunk.map(fn));
+    for (const r of results) if (r != null) out.push(r);
+  }
+  return out;
+}
+
 function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score: number; reasons: string[] } {
   let score = 0;
   const reasons: string[] = [];
@@ -327,16 +657,6 @@ export function rankCfbRuwtGames(
     })
     .sort((a, b) => b.score - a.score || Number(b.id) - Number(a.id))
     .slice(0, limit);
-}
-
-async function fetchCoreJson<T>(url: string): Promise<T | null> {
-  try {
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
 }
 
 async function fetchTeamCoachAndRecord(
@@ -404,60 +724,198 @@ async function fetchTeamCoachAndRecord(
   };
 }
 
-/** CFB hot seat — record-driven heat for FBS focus programs (no Kalshi CFB market yet). */
+function recordHeatFactors(
+  wins: number,
+  losses: number,
+  recordSummary: string | null,
+): { score: number; factors: CfbCoach["factors"] } {
+  const games = wins + losses;
+  const winPct = games > 0 ? wins / games : null;
+  const factors: CfbCoach["factors"] = [];
+  let score = 0;
+  if (winPct != null) {
+    if (winPct < 0.35) {
+      score += 22;
+      factors.push({ label: "Record", points: 22, detail: `Win % ${(winPct * 100).toFixed(0)}` });
+    } else if (winPct < 0.5) {
+      score += 12;
+      factors.push({ label: "Record", points: 12, detail: `Win % ${(winPct * 100).toFixed(0)}` });
+    } else if (winPct >= 0.75) {
+      score -= 8;
+      factors.push({ label: "Record", points: -8, detail: `Win % ${(winPct * 100).toFixed(0)}` });
+    }
+  }
+  if (losses >= 4 && games > 0) {
+    const pts = Math.min(12, losses * 2);
+    score += pts;
+    factors.push({ label: "Losses", points: pts, detail: `${losses} losses` });
+  }
+  if (recordSummary && !factors.length) {
+    factors.push({ label: "Record", points: 0, detail: recordSummary });
+  }
+  return { score, factors };
+}
+
+/** CFB hot seat — Kalshi coach-out % when available, full FBS records for context. */
 export async function fetchCfbCoaches(): Promise<CfbCoach[]> {
   const season = new Date().getFullYear();
-  const queue = CFB_FOCUS_TEAMS.map((t) => t.id);
+  const fbsTeams = await fetchFbsTeams(season).catch(() =>
+    CFB_FOCUS_TEAMS.map((t) => ({
+      id: t.id,
+      name: t.name,
+      abbrev: t.abbrev,
+      color: "555555",
+      logo: cfbTeamLogo(t.id),
+    })),
+  );
+  const byAbbrev = new Map(fbsTeams.map((t) => [t.abbrev.toUpperCase(), t]));
+  const kalshi = await fetchCfbCoachFiredOdds().catch(() => [] as KalshiCfbCoachMarket[]);
+  const coveredTeamIds = new Set<number>();
   const rows: Omit<CfbCoach, "hotSeatRank">[] = [];
 
-  await Promise.all(
-    queue.map(async (teamId) => {
-      const pack = await fetchTeamCoachAndRecord(teamId, season);
-      if (!pack) return;
-      const games = pack.wins + pack.losses;
-      const winPct = games > 0 ? pack.wins / games : null;
-      const factors: CfbCoach["factors"] = [];
-      let score = 15;
-      if (winPct != null) {
-        if (winPct < 0.35) {
-          score += 22;
-          factors.push({ label: "Record", points: 22, detail: `Win % ${(winPct * 100).toFixed(0)}` });
-        } else if (winPct < 0.5) {
-          score += 12;
-          factors.push({ label: "Record", points: 12, detail: `Win % ${(winPct * 100).toFixed(0)}` });
-        } else if (winPct >= 0.75) {
-          score -= 8;
-          factors.push({ label: "Record", points: -8, detail: `Win % ${(winPct * 100).toFixed(0)}` });
-        }
-      }
-      if (pack.losses >= 4 && games > 0) {
-        score += Math.min(12, pack.losses * 2);
-        factors.push({
-          label: "Losses",
-          points: Math.min(12, pack.losses * 2),
-          detail: `${pack.losses} losses`,
-        });
-      }
-      rows.push({
-        id: pack.coachId,
-        name: pack.coachName,
-        teamId: String(teamId),
-        teamName: pack.teamName,
-        teamAbbrev: pack.teamAbbrev,
-        teamLogo: pack.teamLogo,
-        teamColor: pack.teamColor,
-        recordSummary: pack.recordSummary,
-        wins: pack.wins,
-        losses: pack.losses,
-        winPct,
-        hotSeatScore: Math.round(score * 10) / 10,
-        factors,
-      });
-    }),
-  );
+  for (const m of kalshi) {
+    const team =
+      (m.teamAbbrev ? byAbbrev.get(m.teamAbbrev.toUpperCase()) : null) ??
+      [...fbsTeams].find((t) =>
+        (m.teamHint ?? "").toLowerCase().includes(t.name.toLowerCase()),
+      ) ??
+      null;
+    if (team) coveredTeamIds.add(team.id);
+    const pack = team ? await fetchTeamCoachAndRecord(team.id, season).catch(() => null) : null;
+    const wins = pack?.wins ?? 0;
+    const losses = pack?.losses ?? 0;
+    const recordSummary = pack?.recordSummary ?? null;
+    const winPct = wins + losses > 0 ? wins / (wins + losses) : null;
+    const marketPct = m.impliedPct;
+    const marketPts = Math.round(marketPct * 0.85 * 10) / 10;
+    const factors: CfbCoach["factors"] = [
+      {
+        label: "Kalshi %",
+        points: marketPts,
+        detail: `Kalshi ~${marketPct.toFixed(1)}% coach-out → +${marketPts} heat`,
+      },
+    ];
+    let score = 20 + marketPts;
+    const recordAdj = recordHeatFactors(wins, losses, recordSummary);
+    score += recordAdj.score;
+    factors.push(...recordAdj.factors);
+    const id =
+      m.ticker.replace(/^KXCOACHOUTNCAAFB-[^-]+-/, "") ||
+      m.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    rows.push({
+      id,
+      name: m.name,
+      teamId: team ? String(team.id) : "0",
+      teamName: team?.name ?? pack?.teamName ?? m.teamHint ?? "FBS",
+      teamAbbrev: team?.abbrev ?? pack?.teamAbbrev ?? m.teamAbbrev ?? "—",
+      teamLogo: team?.logo ?? pack?.teamLogo ?? null,
+      teamColor: team?.color ?? pack?.teamColor ?? "333",
+      headshot: null,
+      recordSummary,
+      wins,
+      losses,
+      winPct,
+      hotSeatScore: Math.max(0, Math.min(100, Math.round(score))),
+      firedOddsPct: marketPct,
+      firedOddsAmerican: m.american,
+      kalshiUrl: m.url,
+      factors,
+    });
+  }
 
-  rows.sort((a, b) => b.hotSeatScore - a.hotSeatScore);
+  const remaining = fbsTeams.filter((t) => !coveredTeamIds.has(t.id));
+  const extras = await mapWithConcurrency(remaining, 10, async (team) => {
+    const pack = await fetchTeamCoachAndRecord(team.id, season);
+    if (!pack) return null;
+    const games = pack.wins + pack.losses;
+    const winPct = games > 0 ? pack.wins / games : null;
+    const { score: recordScore, factors } = recordHeatFactors(
+      pack.wins,
+      pack.losses,
+      pack.recordSummary,
+    );
+    let score = 15 + recordScore;
+    if (score < 8 && games === 0) return null;
+    return {
+      id: pack.coachId,
+      name: pack.coachName,
+      teamId: String(team.id),
+      teamName: pack.teamName,
+      teamAbbrev: pack.teamAbbrev,
+      teamLogo: pack.teamLogo,
+      teamColor: pack.teamColor,
+      headshot: null,
+      recordSummary: pack.recordSummary,
+      wins: pack.wins,
+      losses: pack.losses,
+      winPct,
+      hotSeatScore: Math.round(score * 10) / 10,
+      firedOddsPct: null,
+      firedOddsAmerican: null,
+      kalshiUrl: null,
+      factors,
+    } satisfies Omit<CfbCoach, "hotSeatRank">;
+  });
+
+  rows.push(...extras);
+
+  rows.sort((a, b) => {
+    const ap = a.firedOddsPct ?? -1;
+    const bp = b.firedOddsPct ?? -1;
+    if (ap !== bp) return bp - ap;
+    return b.hotSeatScore - a.hotSeatScore || a.name.localeCompare(b.name);
+  });
   return rows.map((r, i) => ({ ...r, hotSeatRank: i + 1 }));
+}
+
+export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachProfile> {
+  const all = await fetchCfbCoaches();
+  const base =
+    all.find((c) => c.id === coachId) ??
+    all.find((c) => c.id.toLowerCase() === coachId.toLowerCase()) ??
+    all.find((c) => c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") === coachId.toLowerCase());
+  if (!base) throw new Error("Coach not found");
+
+  let bio: string | null = null;
+  let headshot: string | null = base.headshot;
+  try {
+    const search = await fetch(
+      `https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&limit=8&query=${encodeURIComponent(base.name)}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (search.ok) {
+      const data = (await search.json()) as {
+        items?: {
+          id?: string;
+          displayName?: string;
+          type?: string;
+          sport?: string;
+          headshot?: { href?: string };
+          description?: string;
+        }[];
+      };
+      const hit =
+        (data.items ?? []).find(
+          (it) =>
+            /coach|person/i.test(it.type ?? "") &&
+            /football|college/i.test(it.sport ?? "football") &&
+            (it.displayName ?? "").toLowerCase().includes(base.name.split(" ").slice(-1)[0]!.toLowerCase()),
+        ) ??
+        (data.items ?? []).find((it) => /coach|person/i.test(it.type ?? ""));
+      if (hit?.headshot?.href) headshot = hit.headshot.href;
+      if (hit?.description?.trim()) bio = hit.description.trim();
+    }
+  } catch {
+    /* */
+  }
+
+  const careerHighlights: string[] = [];
+  if (base.recordSummary) careerHighlights.push(`Season record: ${base.recordSummary}`);
+  if (base.firedOddsPct != null) {
+    careerHighlights.push(`Kalshi coach-out implied: ${base.firedOddsPct.toFixed(1)}%`);
+  }
+
+  return { ...base, headshot, bio, careerHighlights };
 }
 
 export async function fetchCfbPlayerProfile(playerId: string): Promise<CfbPlayerProfile> {

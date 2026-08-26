@@ -149,10 +149,8 @@ function GameSection({
 
 function CfbScoreRow({ game, heat }: { game: CfbScoreGame; heat?: number }) {
   return (
-    <a
-      href={`https://www.espn.com/college-football/game/_/gameId/${game.id}`}
-      target="_blank"
-      rel="noreferrer"
+    <Link
+      to={`/sports/cfb/game/${game.id}`}
       className={cn(
         "bg-panel block overflow-hidden rounded-lg border transition hover:border-accent/40",
         game.live ? "border-alert/45" : "border-white/[0.08]",
@@ -190,7 +188,7 @@ function CfbScoreRow({ game, heat }: { game: CfbScoreGame; heat?: number }) {
         </p>
         <TeamSide side={game.home} align="end" />
       </div>
-    </a>
+    </Link>
   );
 }
 
