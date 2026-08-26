@@ -251,7 +251,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
 
   const war = useQuery({
     queryKey: [
-      "mlb-player-war-v1",
+      "mlb-player-war-v2",
       playerId,
       player.data?.name,
       player.data?.teamAbbrev,
@@ -265,6 +265,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
       }),
     enabled: Boolean(player.data?.name),
     staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
     retry: 1,
   });
 
@@ -278,7 +279,8 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
       }),
     enabled: Boolean(player.data?.name),
     staleTime: 5 * 60_000,
-    retry: 2,
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
 
   if (player.isPending) {
@@ -325,6 +327,22 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         ? p.sportName
         : "Minors"
       : "Major League";
+  const resolvedSeasonWar =
+    war.data?.seasonWar ?? extras.data?.seasonWar ?? contract.data?.seasonWar ?? null;
+  const resolvedCareerWar =
+    war.data?.careerWar ?? extras.data?.careerWar ?? contract.data?.careerWar ?? null;
+  const resolvedServiceTime = preferServiceTime(
+    extras.data?.serviceTime,
+    contract.data?.serviceTime,
+  );
+  const warStillLoading =
+    resolvedSeasonWar == null &&
+    resolvedCareerWar == null &&
+    (war.isPending || war.isFetching);
+  const serviceStillLoading =
+    !resolvedServiceTime &&
+    ((extras.isPending || extras.isFetching) ||
+      (contract.isPending || contract.isFetching));
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
@@ -342,22 +360,15 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
         player={p}
         accent={accent}
         isFavorite={isFav}
-        serviceTime={preferServiceTime(
-          extras.data?.serviceTime,
-          contract.data?.serviceTime,
-        )}
-        extrasPending={extras.isPending || extras.isFetching}
-        contractPending={contract.isPending || contract.isFetching}
-        warPending={war.isPending || war.isFetching}
+        serviceTime={resolvedServiceTime}
+        extrasPending={serviceStillLoading && (extras.isPending || extras.isFetching)}
+        contractPending={serviceStillLoading && (contract.isPending || contract.isFetching)}
+        warPending={warStillLoading}
         salary={contract.data?.currentSalary?.display ?? null}
         salaryYear={contract.data?.currentSalary?.year ?? null}
         contractStatus={contract.data?.contractStatus ?? null}
-        seasonWar={
-          war.data?.seasonWar ?? extras.data?.seasonWar ?? contract.data?.seasonWar ?? null
-        }
-        careerWar={
-          war.data?.careerWar ?? extras.data?.careerWar ?? contract.data?.careerWar ?? null
-        }
+        seasonWar={resolvedSeasonWar}
+        careerWar={resolvedCareerWar}
         warRank={extras.data?.warRank ?? null}
         warOf={extras.data?.warOf ?? null}
         pipelineRank={scouting.data?.pipelineRank ?? null}

@@ -4923,7 +4923,7 @@ async function invokeSportsAction(
       /* timed out or network error */
     }
   }
-  // supabase-js invoke can hang indefinitely in mobile PWAs — cap it too.
+  // Direct fetch failed — one capped supabase-js attempt (mobile PWAs).
   try {
     const result = await Promise.race([
       supabase.functions.invoke("sports", { body }),
@@ -4950,31 +4950,12 @@ export async function fetchMlbPlayerWar(
     mlbId: opts?.mlbId ?? null,
     teamAbbrev: opts?.teamAbbrev ?? null,
   };
-  const mapped = mapPlayerExtrasPayload(await invokeSportsAction(warBody, 28_000));
+  const mapped = mapPlayerExtrasPayload(await invokeSportsAction(warBody, 12_000));
   if (mapped && (mapped.seasonWar != null || mapped.careerWar != null)) {
     return {
       seasonWar: mapped.seasonWar,
       careerWar: mapped.careerWar,
       url: mapped.url,
-    };
-  }
-  const extrasMapped = mapPlayerExtrasPayload(
-    await invokeSportsAction(
-      {
-        action: "playerExtras",
-        name,
-        isPitcher: Boolean(opts?.isPitcher),
-        mlbId: opts?.mlbId ?? null,
-        teamAbbrev: opts?.teamAbbrev ?? null,
-      },
-      22_000,
-    ),
-  );
-  if (extrasMapped && (extrasMapped.seasonWar != null || extrasMapped.careerWar != null)) {
-    return {
-      seasonWar: extrasMapped.seasonWar,
-      careerWar: extrasMapped.careerWar,
-      url: extrasMapped.url,
     };
   }
   return fetchWarViaEdgeRetry(name, opts);
