@@ -1,4 +1,5 @@
 import { supabase, requireUserId } from "./supabase";
+import { soccerPreviewFromSummary } from "./soccer-game";
 import { formatCentralDateTime, parsePublishedAt } from "./utils";
 
 export type RssFeedDef = {
@@ -1871,7 +1872,7 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
           maxItems: 40,
           preferFinals: true,
           stubWithoutArticle: true,
-          lookAheadDays: 1,
+          lookAheadDays: 7,
         },
         {
           feedUrl,
@@ -1888,7 +1889,7 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
           maxItems: 40,
           preferFinals: true,
           stubWithoutArticle: true,
-          lookAheadDays: 1,
+          lookAheadDays: 7,
         },
       ],
       {
@@ -1911,7 +1912,7 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       maxItems: 48,
       preferFinals: true,
       stubWithoutArticle: true,
-      lookAheadDays: 1,
+      lookAheadDays: 7,
     });
   }
   if (feedUrl === "synthetic:mlb-stats") {
@@ -2746,7 +2747,21 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
               /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook/i.test(
                 `${headline} ${body}`,
               ));
-          if (hollow) return scoreboardStub();
+          if (hollow) {
+            if (linkSport === "soccer" && c.isPreview) {
+              const generated = soccerPreviewFromSummary(sum, matchup);
+              if (generated) {
+                return stubItem(
+                  "preview",
+                  generated.headline,
+                  generated.snippet,
+                  image,
+                  storyLink,
+                );
+              }
+            }
+            return scoreboardStub();
+          }
 
           // MLB: require an actual story body (or a description that reads like preview prose).
           if (linkSport === "mlb") {
@@ -2818,6 +2833,10 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
       if (/fantasy baseball|optimize your fantasy|stay ahead of the game/i.test(snip)) return false;
       if (snip.length < 40) return false;
     }
+    const hasSoccerMatchupCopy =
+      linkSport === "soccer" &&
+      (/Form:|Records:|Head-to-head:|Odds \(/i.test(snip) || /^Preview\s*:/i.test(title));
+    if (hasSoccerMatchupCopy) return true;
     if (/^Preview\s*[—–-]/i.test(title) || /^Preview\s*[—–-]/i.test(snip)) {
       // Keep only if snippet has real prose beyond the stub pattern.
       if (/^Preview\s*[—–-].{0,80}$/i.test(snip) && !/[.!?].*\s\w{4,}/.test(snip.slice(20))) {
