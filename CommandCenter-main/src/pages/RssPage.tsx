@@ -88,9 +88,13 @@ import {
   fetchRssSaves,
   prefetchRssArticles,
   formatFeedDate,
+  buildReadLookup,
+  isArticleRead,
   markRssRead,
   markRssReadMany,
   markRssUnread,
+  normalizeReadUrl,
+  rssReadsQueryKey,
   removeDedupeKeepHost,
   saveRssArticle,
   splitTextByQuotes,
@@ -170,33 +174,47 @@ import { useAuth } from "@/lib/auth-context";
 import { cn, dispatchReaderColumnClass, dispatchReaderPanelClass, isPublishedTodayCentral } from "@/lib/utils";
 
 const EMPTY_READ_URLS: string[] = [];
+const EMPTY_READ_LOOKUP = buildReadLookup(EMPTY_READ_URLS);
 const EMPTY_HIGHLIGHT_URLS = new Set<string>();
 
-/** Persist read state and refresh cache — cancel in-flight reads first to avoid stale overwrites. */
+type ReadsQueryKey = ReturnType<typeof rssReadsQueryKey>;
+
+/** Persist read state, patch cache immediately, then reconcile with Supabase. */
 async function persistArticleRead(
   qc: QueryClient,
+  queryKey: ReadsQueryKey,
   input: { articleUrl: string; articleTitle?: string | null; feedUrl?: string | null },
 ) {
-  await markRssRead(input);
-  await qc.cancelQueries({ queryKey: ["rss-reads"] });
-  await qc.invalidateQueries({ queryKey: ["rss-reads"] });
+  const articleUrl = normalizeReadUrl(input.articleUrl);
+  await markRssRead({ ...input, articleUrl });
+  qc.setQueryData<string[]>(queryKey, (old) => {
+    const urls = old ?? [];
+    if (urls.some((u) => normalizeReadUrl(u) === articleUrl)) return urls;
+    return [...urls, articleUrl];
+  });
+  await qc.cancelQueries({ queryKey });
+  void qc.invalidateQueries({ queryKey });
 }
 
 function useAutoMarkArticleRead(
   qc: QueryClient,
   input: { articleUrl: string; articleTitle?: string | null; feedUrl?: string | null },
 ) {
+  const { user } = useAuth();
+  const queryKey = useMemo(() => rssReadsQueryKey(user?.id), [user?.id]);
+
   useEffect(() => {
+    if (!user?.id) return;
     let cancelled = false;
-    void persistArticleRead(qc, input).catch(() => {
+    void persistArticleRead(qc, queryKey, input).catch((err) => {
       if (!cancelled) {
-        /* auth blip / offline — reader still works */
+        console.error("[dispatch] mark read failed", err);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [qc, input.articleUrl, input.articleTitle, input.feedUrl]);
+  }, [qc, queryKey, user?.id, input.articleUrl, input.articleTitle, input.feedUrl]);
 }
 
 type NavView =
@@ -2144,6 +2162,7 @@ export default function RssPage() {
   });
 
   const { user } = useAuth();
+  const readsQueryKey = useMemo(() => rssReadsQueryKey(user?.id), [user?.id]);
 
   // Keep the open article across navigations to the player page so back returns here.
   useEffect(() => {
@@ -2151,13 +2170,21 @@ export default function RssPage() {
   }, [selected, readerQueue]);
 
   const reads = useQuery({
-    queryKey: ["rss-reads"],
+    queryKey: readsQueryKey,
     queryFn: fetchRssReads,
     enabled: Boolean(user?.id),
-    staleTime: 300_000,
+    staleTime: 60_000,
     refetchOnWindowFocus: false,
+    structuralSharing: false,
   });
-  const readUrls = useMemo(() => new Set(reads.data ?? EMPTY_READ_URLS), [reads.data]);
+  const readLookup = useMemo(
+    () => (reads.data ? buildReadLookup(reads.data) : EMPTY_READ_LOOKUP),
+    [reads.data],
+  );
+  const isRead = useCallback(
+    (link: string) => isArticleRead(link, readLookup),
+    [readLookup],
+  );
 
   const filtersQuery = useQuery({
     queryKey: ["rss-filters"],
@@ -2316,10 +2343,10 @@ export default function RssPage() {
     const counts: Record<string, number> = {};
     for (const f of allFeeds) {
       const items = feedById.get(f.id)?.items ?? [];
-      counts[f.id] = items.filter((it) => !readUrls.has(it.link)).length;
+      counts[f.id] = items.filter((it) => !isRead(it.link)).length;
     }
     return counts;
-  }, [allFeeds, feedById, readUrls]);
+  }, [allFeeds, feedById, readLookup]);
 
   const savedListItems = useMemo((): RssFeedItemRef[] => {
     return (savesQuery.data ?? []).map((s) => {
@@ -2343,7 +2370,7 @@ export default function RssPage() {
     if (nav === "saved") return savedListItems;
     if (nav === "duplicates") {
       let rows = [...duplicateItems];
-      if (hideRead) rows = rows.filter((it) => !readUrls.has(it.link));
+      if (hideRead) rows = rows.filter((it) => !isRead(it.link));
       rows.sort((a, b) => {
         const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
         const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
@@ -2357,7 +2384,7 @@ export default function RssPage() {
         if (RSS_SEPARATE_FEEDS.has(f.id) || f.id.startsWith("tag:")) continue;
         const pack = feedById.get(f.id);
         for (const it of pack?.items ?? []) {
-          if (!readUrls.has(it.link)) {
+          if (!isRead(it.link)) {
             merged.push({ ...it, feedId: f.id, feedUrl: f.url });
           }
         }
@@ -2395,7 +2422,7 @@ export default function RssPage() {
         }
       }
       let rows = dedupeArticles(merged, keepHosts);
-      if (hideRead) rows = rows.filter((it) => !readUrls.has(it.link));
+      if (hideRead) rows = rows.filter((it) => !isRead(it.link));
       rows.sort((a, b) => {
         const da = a.publishedAt ? Date.parse(a.publishedAt) : 0;
         const db = b.publishedAt ? Date.parse(b.publishedAt) : 0;
@@ -2410,13 +2437,13 @@ export default function RssPage() {
       feedId: nav as RssFeedId,
       feedUrl: pack?.url ?? "",
     }));
-    if (hideRead) rows = rows.filter((it) => !readUrls.has(it.link));
+    if (hideRead) rows = rows.filter((it) => !isRead(it.link));
     return rows;
   }, [
     nav,
     allFeeds,
     feedById,
-    readUrls,
+    readLookup,
     duplicateItems,
     keepHosts,
     savedListItems,
@@ -2430,11 +2457,11 @@ export default function RssPage() {
     for (const f of allFeeds) {
       if (RSS_SEPARATE_FEEDS.has(f.id) || f.id.startsWith("tag:")) continue;
       for (const it of feedById.get(f.id)?.items ?? []) {
-        if (!readUrls.has(it.link)) merged.push(it);
+        if (!isRead(it.link)) merged.push(it);
       }
     }
     return dedupeArticles(merged, keepHosts).length;
-  }, [allFeeds, feedById, readUrls, keepHosts]);
+  }, [allFeeds, feedById, readLookup, keepHosts]);
 
   const navItems = readerQueue ?? listItems;
   const selectedIndex = useMemo(() => {
@@ -2469,8 +2496,8 @@ export default function RssPage() {
   const feedsFailed = feedQueries.filter((q) => q.isError).length;
 
   const unreadInList = useMemo(
-    () => listItems.filter((it) => !readUrls.has(it.link)),
-    [listItems, readUrls],
+    () => listItems.filter((it) => !isRead(it.link)),
+    [listItems, readLookup],
   );
 
   // Pre-extract adjacent articles only — avoid warming the whole inbox.
@@ -2514,7 +2541,7 @@ export default function RssPage() {
         })),
       ),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["rss-reads"] });
+      await qc.invalidateQueries({ queryKey: readsQueryKey });
       toast.success(
         unreadInList.length === 1
           ? "Marked 1 article read"
@@ -2529,7 +2556,7 @@ export default function RssPage() {
     mutationFn: () =>
       markRssReadMany(
         duplicateItems
-          .filter((it) => !readUrls.has(it.link))
+          .filter((it) => !isRead(it.link))
           .map((it) => ({
             articleUrl: it.link,
             articleTitle: it.title,
@@ -2537,7 +2564,7 @@ export default function RssPage() {
           })),
       ),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["rss-reads"] });
+      await qc.invalidateQueries({ queryKey: readsQueryKey });
       toast.success("Archived duplicate articles");
     },
     onError: (err) =>
@@ -2545,18 +2572,27 @@ export default function RssPage() {
   });
 
   async function toggleRead(item: RssFeedItem) {
+    const url = normalizeReadUrl(item.link);
     try {
-      if (readUrls.has(item.link)) {
+      if (isRead(item.link)) {
         await markRssUnread(item.link);
+        qc.setQueryData<string[]>(readsQueryKey, (old) =>
+          (old ?? []).filter((u) => normalizeReadUrl(u) !== url),
+        );
       } else {
         await markRssRead({
           articleUrl: item.link,
           articleTitle: item.title,
           feedUrl: selected?.feedUrl ?? RSS_FEEDS[0].url,
         });
+        qc.setQueryData<string[]>(readsQueryKey, (old) => {
+          const urls = old ?? [];
+          if (urls.some((u) => normalizeReadUrl(u) === url)) return urls;
+          return [...urls, url];
+        });
       }
-      await qc.cancelQueries({ queryKey: ["rss-reads"] });
-      await qc.invalidateQueries({ queryKey: ["rss-reads"] });
+      await qc.cancelQueries({ queryKey: readsQueryKey });
+      void qc.invalidateQueries({ queryKey: readsQueryKey });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not update read state");
     }
@@ -2615,12 +2651,11 @@ export default function RssPage() {
   async function archiveSelected() {
     if (!selected) return;
     try {
-      await markRssRead({
+      await persistArticleRead(qc, readsQueryKey, {
         articleUrl: selected.link,
         articleTitle: selected.title,
         feedUrl: selected.feedUrl,
       });
-      await qc.invalidateQueries({ queryKey: ["rss-reads"] });
       toast.success("Archived");
       if (selectedIndex >= 0 && selectedIndex < navItems.length - 1) {
         goRelative(1);
@@ -2639,7 +2674,7 @@ export default function RssPage() {
         await Promise.all(targets.map((it) => unsaveRssArticle(it.link)));
         return { mode: "saved" as const, n: targets.length };
       }
-      const targets = listItems.filter((it) => batchSelected.has(it.link) && !readUrls.has(it.link));
+      const targets = listItems.filter((it) => batchSelected.has(it.link) && !isRead(it.link));
       await markRssReadMany(
         targets.map((it) => ({
           articleUrl: it.link,
@@ -2653,7 +2688,7 @@ export default function RssPage() {
       if (result.mode === "saved") {
         await qc.invalidateQueries({ queryKey: ["rss-saves"] });
       } else {
-        await qc.invalidateQueries({ queryKey: ["rss-reads"] });
+        await qc.invalidateQueries({ queryKey: readsQueryKey });
       }
       setBatchSelected(new Set());
       setBatchMode(false);
@@ -2692,7 +2727,7 @@ export default function RssPage() {
         <ReaderView
           item={selected}
           feedUrl={selected.feedUrl}
-          isRead={readUrls.has(selected.link)}
+          isRead={isRead(selected.link)}
           isSaved={savedUrls.has(selected.link)}
           hasPrev={selectedIndex > 0}
           hasNext={selectedIndex >= 0 && selectedIndex < navItems.length - 1}
@@ -3268,7 +3303,7 @@ export default function RssPage() {
           ) : null}
           {!batchMode &&
           nav === "duplicates" &&
-          duplicateItems.some((it) => !readUrls.has(it.link)) ? (
+          duplicateItems.some((it) => !isRead(it.link)) ? (
             <button
               type="button"
               onClick={() => archiveDupesMut.mutate()}
@@ -3418,7 +3453,7 @@ export default function RssPage() {
               <ArticleRow
                 key={item.id + item.link}
                 item={item}
-                read={readUrls.has(item.link)}
+                read={isRead(item.link)}
                 highlighted={highlightUrls.has(item.link)}
                 saved={savedUrls.has(item.link)}
                 batchMode={batchMode}
@@ -3453,7 +3488,7 @@ export default function RssPage() {
                           articleTitle: item.title,
                           feedUrl: item.feedUrl,
                         }).then(() => {
-                          void qc.invalidateQueries({ queryKey: ["rss-reads"] });
+                          void qc.invalidateQueries({ queryKey: readsQueryKey });
                           toast.success("Archived");
                         });
                       }

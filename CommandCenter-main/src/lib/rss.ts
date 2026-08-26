@@ -4000,6 +4000,59 @@ export function formatFeedDate(raw: string | null): string {
   });
 }
 
+/** TanStack Query key — scoped per signed-in user. */
+export function rssReadsQueryKey(userId?: string | null) {
+  return ["rss-reads", userId ?? "anon"] as const;
+}
+
+/** Canonical article URL for read/unread storage and lookup. */
+export function normalizeReadUrl(url: string): string {
+  const raw = url.trim();
+  if (!raw) return raw;
+  try {
+    const u = new URL(raw, "https://local.invalid");
+    if (u.protocol === "http:" || u.protocol === "https:") {
+      u.hash = "";
+      if (u.pathname.length > 1 && u.pathname.endsWith("/")) {
+        u.pathname = u.pathname.slice(0, -1);
+      }
+      return u.toString();
+    }
+  } catch {
+    /* app:/dispatch: links */
+  }
+  return raw;
+}
+
+export function espnGameIdFromUrl(url: string): string | null {
+  const m = url.match(/gameId\/(\d+)/i);
+  return m?.[1] ?? null;
+}
+
+export type ReadLookup = {
+  urls: Set<string>;
+  espnGameIds: Set<string>;
+};
+
+export function buildReadLookup(urls: readonly string[]): ReadLookup {
+  const normalized = new Set<string>();
+  const espnGameIds = new Set<string>();
+  for (const raw of urls) {
+    if (!raw) continue;
+    normalized.add(raw);
+    normalized.add(normalizeReadUrl(raw));
+    const gid = espnGameIdFromUrl(raw);
+    if (gid) espnGameIds.add(gid);
+  }
+  return { urls: normalized, espnGameIds };
+}
+
+export function isArticleRead(link: string, lookup: ReadLookup): boolean {
+  if (lookup.urls.has(link) || lookup.urls.has(normalizeReadUrl(link))) return true;
+  const gid = espnGameIdFromUrl(link);
+  return gid != null && lookup.espnGameIds.has(gid);
+}
+
 export async function fetchRssReads(): Promise<string[]> {
   const userId = await requireUserId();
   const { data, error } = await supabase
@@ -4015,7 +4068,9 @@ export async function markRssRead(input: {
   articleTitle?: string | null;
   feedUrl?: string | null;
 }): Promise<void> {
-  await markRssReadMany([input]);
+  await markRssReadMany([
+    { ...input, articleUrl: normalizeReadUrl(input.articleUrl) },
+  ]);
 }
 
 export async function markRssReadMany(
@@ -4030,7 +4085,7 @@ export async function markRssReadMany(
   const readAt = new Date().toISOString();
   const rows = inputs.map((input) => ({
     user_id: userId,
-    article_url: input.articleUrl,
+    article_url: normalizeReadUrl(input.articleUrl),
     article_title: input.articleTitle ?? null,
     feed_url: input.feedUrl ?? null,
     read_at: readAt,
@@ -4043,11 +4098,13 @@ export async function markRssReadMany(
 
 export async function markRssUnread(articleUrl: string): Promise<void> {
   const userId = await requireUserId();
+  const normalized = normalizeReadUrl(articleUrl);
+  const candidates = [...new Set([articleUrl.trim(), normalized])];
   const { error } = await supabase
     .from("rss_reads")
     .delete()
     .eq("user_id", userId)
-    .eq("article_url", articleUrl);
+    .in("article_url", candidates);
   if (error) throw error;
 }
 
