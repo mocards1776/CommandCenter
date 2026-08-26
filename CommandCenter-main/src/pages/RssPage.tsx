@@ -179,14 +179,23 @@ function markReadOptimistic(qc: QueryClient, articleUrl: string) {
   });
 }
 
+function markReadRevert(qc: QueryClient, articleUrl: string) {
+  qc.setQueryData<Set<string>>(["rss-reads"], (old) => {
+    if (!old?.has(articleUrl)) return old;
+    const next = new Set(old);
+    next.delete(articleUrl);
+    return next;
+  });
+}
+
 function markReadInBackground(
   qc: QueryClient,
   input: { articleUrl: string; articleTitle?: string | null; feedUrl?: string | null },
 ) {
   markReadOptimistic(qc, input.articleUrl);
-  void markRssRead(input).catch(() => {
-    void qc.invalidateQueries({ queryKey: ["rss-reads"] });
-  });
+  void markRssRead(input)
+    .then(() => qc.invalidateQueries({ queryKey: ["rss-reads"] }))
+    .catch(() => markReadRevert(qc, input.articleUrl));
 }
 
 type NavView =
@@ -2151,8 +2160,10 @@ export default function RssPage() {
     queryFn: fetchRssReads,
     staleTime: 300_000,
     refetchOnWindowFocus: false,
+    // Sets are not plain data — disable structural sharing so optimistic updates stick.
+    structuralSharing: false,
   });
-  const readUrls = reads.data ?? EMPTY_READ_URLS;
+  const readUrls = useMemo(() => reads.data ?? EMPTY_READ_URLS, [reads.data]);
 
   const filtersQuery = useQuery({
     queryKey: ["rss-filters"],
