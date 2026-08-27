@@ -362,13 +362,125 @@ export function milbTeamFavorite(teamId: number, name = "MiLB club"): SportsFavo
   };
 }
 
+export function mlbTeamIdFromEspnId(espnId: string): number | null {
+  for (const [id, meta] of Object.entries(MLB_TEAM_META)) {
+    if (meta.espnId === espnId) return Number(id);
+  }
+  return null;
+}
+
+/** ESPN team drawer stub for search hits not in DEFAULT_FAVORITES. */
+export function espnSearchTeamFavorite(
+  league: string,
+  espnTeamId: string,
+  displayName: string,
+): SportsFavorite | undefined {
+  const lg = league.toLowerCase();
+  if (lg === "college-football") {
+    return {
+      key: `cfb-${espnTeamId}`,
+      name: displayName,
+      shortName: displayName,
+      sport: "Football",
+      league: "NCAA",
+      espnPath: `football/college-football/teams/${espnTeamId}`,
+      kind: "team",
+    };
+  }
+  if (lg === "nhl") {
+    return {
+      key: `nhl-${espnTeamId}`,
+      name: displayName,
+      shortName: displayName,
+      sport: "Hockey",
+      league: "NHL",
+      espnPath: `hockey/nhl/teams/${espnTeamId}`,
+      kind: "team",
+    };
+  }
+  if (lg.includes(".")) {
+    return {
+      key: `${lg}-${espnTeamId}`,
+      name: displayName,
+      shortName: displayName,
+      sport: "Soccer",
+      league: lg.toUpperCase(),
+      espnPath: `soccer/${lg}/teams/${espnTeamId}`,
+      kind: "team",
+    };
+  }
+  return undefined;
+}
+
 export function favoriteByKey(key: string): SportsFavorite | undefined {
   const known = DEFAULT_FAVORITES.find((f) => f.key === key);
   if (known) return known;
   const m = /^mlb-(\d+)$/.exec(key);
-  if (!m) return undefined;
-  const id = Number(m[1]);
-  return mlbTeamFavorite(id) ?? milbTeamFavorite(id);
+  if (m) {
+    const id = Number(m[1]);
+    return mlbTeamFavorite(id) ?? milbTeamFavorite(id);
+  }
+  const cfb = /^cfb-(\d+)$/.exec(key);
+  if (cfb) {
+    return espnSearchTeamFavorite("college-football", cfb[1]!, "College football");
+  }
+  const nhl = /^nhl-(\d+)$/.exec(key);
+  if (nhl) {
+    return espnSearchTeamFavorite("nhl", nhl[1]!, "NHL team");
+  }
+  const dyn = /^([a-z0-9.]+)-(\d+)$/.exec(key);
+  if (dyn) {
+    const [, lg, id] = dyn;
+    if (lg && id && lg.includes(".")) {
+      return espnSearchTeamFavorite(lg, id, "Club");
+    }
+  }
+  return undefined;
+}
+
+export type SearchableSportsTeam = {
+  name: string;
+  shortName: string;
+  league: string;
+  path: string;
+  keywords: string[];
+};
+
+/** Local team index for instant sports search. */
+export function getSearchableSportsTeams(): SearchableSportsTeam[] {
+  const out: SearchableSportsTeam[] = [];
+  const seen = new Set<string>();
+
+  for (const fav of DEFAULT_FAVORITES) {
+    if (fav.kind !== "team") continue;
+    const nfl = /football\/nfl\/teams\/(\d+)/.exec(fav.espnPath);
+    const path = nfl ? `/sports/nfl/team/${nfl[1]}` : `/sports?solo=1&team=${fav.key}`;
+    out.push({
+      name: fav.name,
+      shortName: fav.shortName,
+      league: fav.league,
+      path,
+      keywords: [fav.shortName, fav.sport, fav.key],
+    });
+    seen.add(path);
+  }
+
+  for (const [teamId, meta] of Object.entries(MLB_TEAM_META)) {
+    const fav = mlbTeamFavorite(Number(teamId));
+    if (!fav) continue;
+    const path = fav.key === "mlb-stl" ? "/sports?solo=1&team=mlb-stl" : `/sports?solo=1&team=mlb-${teamId}`;
+    if (seen.has(path)) continue;
+    seen.add(path);
+    out.push({
+      name: meta.name,
+      shortName: meta.shortName,
+      league: "MLB",
+      path,
+      keywords: [meta.abbrev, meta.name, meta.shortName],
+    });
+  }
+
+  return out;
 }
 
 export function loadSportsLayout(): SportsLayout {
