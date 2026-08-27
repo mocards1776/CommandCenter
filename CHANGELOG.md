@@ -2,6 +2,14 @@
 
 ---
 
+## Sports UI fixes: boards, CFB ranks, WAR — August 27, 2026
+
+- **Dispatch boards:** Stop stripping repeated standings logos and leader headshots (WHIP/Last-N tables). Rename “form” → **recent records**. Compact reader mode drops the empty “MLB Stats API” hero. Scoreboard leads with yesterday’s finals (full inning box scores), then today/upcoming.
+- **Player cards:** Newest news only (cross-source RotoWire/RotoWorld dedupe). Tighter tablet hero spacing. “Form” → “Recent”. Client-side BBRef WAR dump fallback when the sports edge returns blank (e.g. Tristan Peters).
+- **CFB:** Top-25 poll ranks stay bold; everyone else shows smaller **FPI #N**. Pregame game pages show odds/predictor/last-5 instead of a blank page. Teams are clickable via new `/sports/cfb/team/:id` pages.
+
+---
+
 ## Fetch book info for brand-new bestsellers — August 25, 2026
 
 - **Enrichment miss:** Open Library often has no record yet for just-released titles, and the Google Books JSON API rate-limits anonymous callers. `backfill-covers` now sniffs an ISBN via DuckDuckGo lite and scrapes Google Books' public HTML page (blurb, page count, publisher, year, jacket) — still free, no API key.

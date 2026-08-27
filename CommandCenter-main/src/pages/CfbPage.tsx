@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Share } from "lucide-react";
 import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
+import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import { fetchCfbScoreboard, type CfbScoreGame } from "@/lib/cfb";
 import { loadCfbTeamInterest, rankRuwtCfbGames } from "@/lib/ruwt";
 import { markSportsSolo } from "@/lib/sports-home";
@@ -149,14 +150,18 @@ function GameSection({
 
 function CfbScoreRow({ game, heat }: { game: CfbScoreGame; heat?: number }) {
   return (
-    <Link
-      to={`/sports/cfb/game/${game.id}`}
+    <div
       className={cn(
-        "bg-panel block overflow-hidden rounded-lg border transition hover:border-accent/40",
+        "bg-panel relative overflow-hidden rounded-lg border transition hover:border-accent/40",
         game.live ? "border-alert/45" : "border-white/[0.08]",
       )}
     >
-      <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
+      <Link
+        to={`/sports/cfb/game/${game.id}`}
+        className="absolute inset-0 z-0"
+        aria-label={`${game.away.abbrev} at ${game.home.abbrev}`}
+      />
+      <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2 pointer-events-none">
         <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cream">
           {game.live ? (
             <span className="text-alert">
@@ -173,9 +178,12 @@ function CfbScoreRow({ game, heat }: { game: CfbScoreGame; heat?: number }) {
           <span className="text-[10px] text-[#8b93a7]">Heat {heat}</span>
         ) : null}
       </div>
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3">
+      <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3">
         <TeamSide side={game.away} align="start" />
-        <p className="font-display text-center text-[24px] tabular-nums text-cream">
+        <Link
+          to={`/sports/cfb/game/${game.id}`}
+          className="font-display relative z-10 text-center text-[24px] tabular-nums text-cream"
+        >
           {game.live || game.final ? (
             <>
               {game.away.score ?? "—"}
@@ -185,10 +193,10 @@ function CfbScoreRow({ game, heat }: { game: CfbScoreGame; heat?: number }) {
           ) : (
             <span className="text-[18px]">{game.whenShort ?? "TBD"}</span>
           )}
-        </p>
+        </Link>
         <TeamSide side={game.home} align="end" />
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -200,9 +208,11 @@ function TeamSide({
   align: "start" | "end";
 }) {
   return (
-    <div
+    <Link
+      to={`/sports/cfb/team/${side.teamId}`}
+      onClick={(e) => e.stopPropagation()}
       className={cn(
-        "flex min-w-0 flex-col gap-1",
+        "relative z-10 flex min-w-0 flex-col gap-1 hover:opacity-90",
         align === "end" ? "items-end text-right" : "items-start",
       )}
     >
@@ -210,10 +220,10 @@ function TeamSide({
         <img src={side.logo} alt="" className="h-8 w-8 object-contain" loading="lazy" />
       ) : null}
       <p className="text-cream text-[14px] font-semibold">
-        {side.rank ? `#${side.rank} ` : ""}
+        <CfbRankLabel pollRank={side.rank} fpiRank={side.fpiRank} />
         {side.abbrev}
       </p>
       {side.record ? <p className="text-chalk-dim text-[10px]">{side.record}</p> : null}
-    </div>
+    </Link>
   );
 }

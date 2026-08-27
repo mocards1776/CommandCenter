@@ -26,6 +26,7 @@ import {
   fetchCfbScoreboard,
   type CfbScoredGame,
 } from "@/lib/cfb";
+import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import type { GameBroadcast } from "@/lib/game-broadcasts";
 import {
   chicagoTodaySoccer,
@@ -803,7 +804,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
           {game.away.logo && <img src={game.away.logo} alt="" className="h-8 w-8 object-contain" />}
           <p className="text-[15px] font-bold text-white">
-            {game.away.rank ? `#${game.away.rank} ` : ""}
+            <CfbRankLabel pollRank={game.away.rank} fpiRank={game.away.fpiRank} />
             {game.away.abbrev}
           </p>
         </div>
@@ -821,7 +822,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
           <p className="text-[15px] font-bold text-white">
-            {game.home.rank ? `#${game.home.rank} ` : ""}
+            <CfbRankLabel pollRank={game.home.rank} fpiRank={game.home.fpiRank} />
             {game.home.abbrev}
           </p>
         </div>

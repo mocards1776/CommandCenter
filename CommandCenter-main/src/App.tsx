@@ -25,6 +25,7 @@ import HotSeatPage from "@/pages/HotSeatPage";
 import CfbPlayerPage from "@/pages/CfbPlayerPage";
 import CfbPage from "@/pages/CfbPage";
 import CfbGamePage from "@/pages/CfbGamePage";
+import CfbTeamPage from "@/pages/CfbTeamPage";
 import CfbCoachPage from "@/pages/CfbCoachPage";
 import GolferPage from "@/pages/GolferPage";
 import NflPage from "@/pages/NflPage";
@@ -146,6 +147,7 @@ export default function App() {
               <Route path="/sports/nfl/coach/:coachId" element={<NflCoachPage />} />
               <Route path="/sports/cfb" element={<CfbPage />} />
               <Route path="/sports/cfb/game/:eventId" element={<CfbGamePage />} />
+              <Route path="/sports/cfb/team/:teamId" element={<CfbTeamPage />} />
               <Route path="/sports/cfb/coach/:coachId" element={<CfbCoachPage />} />
               <Route path="/sports/cfb/player/:playerId" element={<CfbPlayerPage />} />
               <Route

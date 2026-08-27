@@ -78,7 +78,7 @@ export function MlbTeamFormPair({
   return (
     <section className="space-y-2">
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-        Standings & form
+        Standings & recent
       </h2>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {away.data ? <FormCard form={away.data} sport="mlb" /> : null}
@@ -115,7 +115,7 @@ export function NflTeamFormPair({
   return (
     <section className="space-y-2">
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-        Standings & form
+        Standings & recent
       </h2>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {away.data ? <FormCard form={away.data} sport="nfl" /> : null}

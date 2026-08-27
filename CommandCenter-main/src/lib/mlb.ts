@@ -4219,16 +4219,30 @@ function normalizePlayerBrief(
   const seen = new Set<string>();
   const dedupedNotes: MlbPlayerNewsNote[] = [];
   for (const n of notes) {
-    const key = `${n.source}|${n.headline ?? ""}`;
-    if (seen.has(key)) continue;
+    // Cross-source: same blurb from RotoWire + RotoWorld should collapse.
+    const key = (n.headline ?? n.story ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      .slice(0, 120);
+    if (!key || seen.has(key)) continue;
     seen.add(key);
     dedupedNotes.push(n);
   }
 
-  if (!dedupedNotes.length && !(payload.news?.length)) return null;
-  const primary = dedupedNotes[0];
+  dedupedNotes.sort((a, b) => {
+    const da = a.published ? Date.parse(a.published) : 0;
+    const db = b.published ? Date.parse(b.published) : 0;
+    return db - da;
+  });
+  // Player cards only surface the newest note — duplicate same-game blurbs
+  // from RotoWire/RotoWorld are noise once the latest update lands.
+  const newestNotes = dedupedNotes.slice(0, 1);
+
+  if (!newestNotes.length && !(payload.news?.length)) return null;
+  const primary = newestNotes[0];
   return {
-    source: payload.source ?? (dedupedNotes.map((n) => n.source).join("+") || "rotowire"),
+    source: payload.source ?? (newestNotes.map((n) => n.source).join("+") || "rotowire"),
     name: payload.name ?? fallbackName,
     espnId: payload.espnId ?? null,
     headline: primary?.headline ?? payload.headline ?? null,
@@ -4237,7 +4251,7 @@ function normalizePlayerBrief(
     published: primary?.published ?? payload.published ?? null,
     news: payload.news ?? [],
     url: primary?.url ?? payload.url ?? null,
-    notes: dedupedNotes,
+    notes: newestNotes,
   };
 }
 
@@ -4310,7 +4324,15 @@ export function mergeRotoWorldBoard(
   if (!matches.length) return brief;
 
   const notes = [...brief.notes];
-  const seen = new Set(notes.map((n) => `${n.source}|${n.headline ?? ""}`));
+  const seen = new Set(
+    notes.map((n) =>
+      (n.headline ?? n.story ?? "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+        .slice(0, 120),
+    ),
+  );
   for (const item of matches) {
     const note: MlbPlayerNewsNote = {
       source: item.source || "rotoworld",
@@ -4320,12 +4342,31 @@ export function mergeRotoWorldBoard(
       published: item.published ?? null,
       url: item.url ?? null,
     };
-    const key = `${note.source}|${note.headline ?? ""}`;
-    if (seen.has(key)) continue;
+    const key = (note.headline ?? note.story ?? "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      .slice(0, 120);
+    if (!key || seen.has(key)) continue;
     seen.add(key);
     notes.push(note);
   }
-  return { ...brief, notes };
+  notes.sort((a, b) => {
+    const da = a.published ? Date.parse(a.published) : 0;
+    const db = b.published ? Date.parse(b.published) : 0;
+    return db - da;
+  });
+  const newest = notes.slice(0, 1);
+  const primary = newest[0];
+  return {
+    ...brief,
+    notes: newest,
+    headline: primary?.headline ?? brief.headline,
+    story: primary?.story ?? brief.story,
+    description: primary?.description ?? brief.description,
+    published: primary?.published ?? brief.published,
+    url: primary?.url ?? brief.url,
+  };
 }
 
 async function withRotoWorldBoard(brief: MlbPlayerBrief): Promise<MlbPlayerBrief> {
@@ -4936,6 +4977,92 @@ async function invokeSportsAction(
   }
 }
 
+/** Browser-side BBRef daily WAR dump lookup when the sports edge returns blank. */
+async function fetchWarFromBbrefDumpBrowser(
+  opts?: { mlbId?: number | null; name?: string | null },
+): Promise<Pick<MlbPlayerExtras, "seasonWar" | "careerWar" | "url"> | null> {
+  const mlbId = opts?.mlbId != null && opts.mlbId > 0 ? Math.trunc(opts.mlbId) : null;
+  const nameKey = (opts?.name ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!mlbId && nameKey.length < 3) return null;
+
+  const fetchText = async (url: string): Promise<string | null> => {
+    try {
+      const direct = await fetch(url, { headers: { Accept: "text/plain" } });
+      if (direct.ok) return await direct.text();
+    } catch {
+      /* CORS / network — try allorigins */
+    }
+    try {
+      const proxied = await fetch(
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      );
+      if (proxied.ok) return await proxied.text();
+    } catch {
+      /* ignore */
+    }
+    return null;
+  };
+
+  const [bat, pit] = await Promise.all([
+    fetchText("https://www.baseball-reference.com/data/war_daily_bat.txt"),
+    fetchText("https://www.baseball-reference.com/data/war_daily_pitch.txt"),
+  ]);
+  if (!bat && !pit) return null;
+
+  const byYear = new Map<number, number>();
+  let playerId: string | null = null;
+  const ingest = (text: string | null) => {
+    if (!text) return;
+    const lines = text.split(/\r?\n/);
+    if (lines.length < 2) return;
+    const header = lines[0]!.split(",");
+    const iMlb = header.indexOf("mlb_ID");
+    const iYear = header.indexOf("year_ID");
+    const iWar = header.indexOf("WAR");
+    const iName = header.indexOf("name_common");
+    const iPid = header.indexOf("player_ID");
+    if (iMlb < 0 || iYear < 0 || iWar < 0) return;
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i]!.split(",");
+      const id = Number(cols[iMlb]);
+      const year = Number(cols[iYear]);
+      const war = Number(cols[iWar]);
+      if (!Number.isFinite(year) || !Number.isFinite(war)) continue;
+      const rowName = (cols[iName] ?? "").trim().toLowerCase();
+      const matchId = mlbId != null && id === mlbId;
+      const matchName =
+        !matchId &&
+        nameKey.length >= 3 &&
+        rowName.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim() === nameKey;
+      if (!matchId && !matchName) continue;
+      byYear.set(year, (byYear.get(year) ?? 0) + war);
+      if (!playerId && cols[iPid]) playerId = cols[iPid]!;
+    }
+  };
+  ingest(bat);
+  ingest(pit);
+  if (!byYear.size) return null;
+
+  const year = new Date().getFullYear();
+  const years = [...byYear.keys()].sort((a, b) => b - a);
+  const seasonWar = byYear.has(year) ? byYear.get(year)! : byYear.get(years[0]!)!;
+  const careerWar = [...byYear.values()].reduce((a, b) => a + b, 0);
+  const letter = (playerId ?? "x")[0] ?? "x";
+  return {
+    seasonWar: Math.round(seasonWar * 10) / 10,
+    careerWar: Math.round(careerWar * 10) / 10,
+    url: playerId
+      ? `https://www.baseball-reference.com/players/${letter}/${playerId}.shtml`
+      : "https://www.baseball-reference.com/data/war_daily_bat.txt",
+  };
+}
+
 /** Season + career WAR from BBRef daily dumps (fast sports edge action). */
 export async function fetchMlbPlayerWar(
   playerName: string,
@@ -4958,7 +5085,10 @@ export async function fetchMlbPlayerWar(
       url: mapped.url,
     };
   }
-  return fetchWarViaEdgeRetry(name, opts);
+  const retry = await fetchWarViaEdgeRetry(name, opts);
+  if (retry && (retry.seasonWar != null || retry.careerWar != null)) return retry;
+  // Edge blank/timeout — read BBRef daily dumps in the browser (via CORS proxy).
+  return fetchWarFromBbrefDumpBrowser({ mlbId: opts?.mlbId ?? null, name });
 }
 
 /** Service time + WAR rank from Baseball Reference (via sports edge). */
