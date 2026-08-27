@@ -4339,6 +4339,36 @@ export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>([
   "cardinals-savant",
 ]);
 
+/** Inbox feeds — included in Unread and fetched before heavy sidebar-only feeds. */
+export function isRssInboxFeed(feedId: string): boolean {
+  return !RSS_SEPARATE_FEEDS.has(feedId) && !feedId.startsWith("tag:");
+}
+
+/** Which feed ids must be loaded before showing the current nav list. */
+export function rssFeedIdsRequiredForNav(
+  nav: string,
+  allFeedIds: readonly string[],
+  favoriteFeedIds: readonly string[],
+): Set<string> {
+  if (nav === "saved" || nav === "notes" || nav === "filters") return new Set();
+  if (nav === "unread") {
+    return new Set(allFeedIds.filter((id) => isRssInboxFeed(id)));
+  }
+  if (nav === "duplicates") return new Set(allFeedIds);
+  if (nav === "folder:favorites") {
+    const ids = favoriteFeedIds.flatMap((id) => {
+      const folder = RSS_FEED_FOLDERS.find((f) => f.id === id);
+      return folder ? [...folder.feedIds] : [id];
+    });
+    return new Set(ids);
+  }
+  if (nav === "folder:tags") {
+    return new Set(allFeedIds.filter((id) => id.startsWith("tag:")));
+  }
+  if (isFeedFolderId(nav)) return new Set(feedIdsForFolder(nav));
+  return new Set([nav]);
+}
+
 /** ESPN wrap/preview feeds — poll until written recap/preview copy lands. */
 export const RSS_ESPN_WRAP_FEED_URLS = new Set<string>([
   "synthetic:cardinals-wraps",

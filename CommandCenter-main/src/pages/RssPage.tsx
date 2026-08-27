@@ -48,6 +48,8 @@ import {
   RSS_FEEDS,
   RSS_FEED_FOLDERS,
   RSS_SEPARATE_FEEDS,
+  isRssInboxFeed,
+  rssFeedIdsRequiredForNav,
   addDedupeKeepHost,
   addRssFilter,
   applyRssFilters,
@@ -102,6 +104,7 @@ import {
   suggestUrlFilterValue,
   unsaveRssArticle,
   updateRssHighlightNote,
+  type RssFeed,
   type RssFeedDef,
   type RssFeedFolder,
   type RssFeedId,
@@ -2236,23 +2239,50 @@ export default function RssPage() {
     [customFeeds, tagFeeds],
   );
 
+  const requiredFeedIds = useMemo(
+    () => rssFeedIdsRequiredForNav(nav, allFeeds.map((f) => f.id), favoriteFeedIds),
+    [nav, allFeeds, favoriteFeedIds],
+  );
+
+  /** Defer MLB/NFL/soccer digest feeds until inbox RSS is in — they don't block Unread. */
+  const [loadBackgroundFeeds, setLoadBackgroundFeeds] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setLoadBackgroundFeeds(true), 1_200);
+    return () => window.clearTimeout(t);
+  }, []);
+
   const resolveFeed = (id: string) =>
     allFeeds.find((f) => f.id === id) ?? RSS_FEEDS.find((f) => f.id === id);
 
   const feedQueries = useQueries({
     queries: allFeeds.map((f) => {
       const wrapFeed = isEspnWrapFeedUrl(f.url);
+      const enabled =
+        isRssInboxFeed(f.id) || loadBackgroundFeeds || requiredFeedIds.has(f.id);
       return {
         queryKey: ["rss-feed-v6", f.url],
         queryFn: () => fetchRssFeed(f.url),
+        enabled,
         staleTime: wrapFeed ? 45_000 : 90_000,
         refetchOnWindowFocus: false,
+        placeholderData: (prev: RssFeed | undefined) => prev,
         // Keep polling ESPN wrap feeds until recap/preview prose lands — never list score stubs.
         refetchInterval: wrapFeed ? 90_000 : false,
         refetchIntervalInBackground: false,
       };
     }),
   });
+
+  useEffect(() => {
+    if (loadBackgroundFeeds) return;
+    const inbox = allFeeds.filter((f) => isRssInboxFeed(f.id));
+    const inboxReady = inbox.every((f) => {
+      const i = allFeeds.findIndex((x) => x.id === f.id);
+      const q = feedQueries[i];
+      return q && !q.isLoading;
+    });
+    if (inboxReady && inbox.length > 0) setLoadBackgroundFeeds(true);
+  }, [allFeeds, feedQueries, loadBackgroundFeeds]);
 
   const highlightUrlSet = useQuery({
     queryKey: ["rss-highlight-urls"],
@@ -2504,7 +2534,25 @@ export default function RssPage() {
                     allFeeds.find((f) => f.id === nav)?.title ??
                     "Feed";
 
-  const feedsLoading = feedQueries.some((q) => q.isLoading);
+  const feedsLoading = useMemo(() => {
+    if (nav === "saved") return savesQuery.isLoading;
+    if (nav === "notes") return allNotes.isLoading;
+    if (nav === "filters") return filtersQuery.isLoading;
+    if (requiredFeedIds.size === 0) return false;
+    return allFeeds.some((f, i) => {
+      if (!requiredFeedIds.has(f.id)) return false;
+      const q = feedQueries[i];
+      return Boolean(q?.isLoading);
+    });
+  }, [
+    nav,
+    requiredFeedIds,
+    allFeeds,
+    feedQueries,
+    savesQuery.isLoading,
+    allNotes.isLoading,
+    filtersQuery.isLoading,
+  ]);
   const feedsFetching = feedQueries.some((q) => q.isFetching);
   const feedsError = feedQueries.find((q) => q.isError)?.error;
   const feedsFailed = feedQueries.filter((q) => q.isError).length;
@@ -3424,8 +3472,10 @@ export default function RssPage() {
               />
             ) : null}
           </div>
-        ) : feedsLoading ? (
-          <p className="label-caps animate-pulse p-5">Loading feeds</p>
+        ) : feedsLoading && listItems.length === 0 ? (
+          <p className="label-caps animate-pulse p-5">
+            {nav === "unread" ? "Loading articles" : "Loading feeds"}
+          </p>
         ) : feedsFailed > 0 && listItems.length === 0 ? (
           <div className="space-y-3 p-5">
             <p className="text-alert font-rss text-sm">
@@ -3455,7 +3505,13 @@ export default function RssPage() {
                   : "No articles in this feed."}
           </p>
         ) : (
-          <ul>
+          <>
+            {feedsFetching && listItems.length > 0 ? (
+              <p className="text-chalk-dim border-white/[0.06] border-b px-4 py-2 text-[10px] uppercase tracking-[0.14em]">
+                Updating feeds…
+              </p>
+            ) : null}
+            <ul>
             {listItems.map((item) => {
               const host = articleSourceHost(item.link);
               const kept = Boolean(host && keepHosts.includes(host));
@@ -3530,6 +3586,7 @@ export default function RssPage() {
             );
             })}
           </ul>
+          </>
         )}
       </section>
     </div>
