@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
+import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import { fetchCfbGameDetail, type CfbScoreSide } from "@/lib/cfb";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { cn, formatSportsDateLong } from "@/lib/utils";
@@ -190,6 +191,88 @@ export function CfbGameDetailView({
 
       {articleSection}
 
+      {pregame && (g.oddsLine || g.predictor || g.lastFive.length > 0 || g.venueDetail) ? (
+        <section className="bg-panel space-y-3 overflow-hidden rounded-xl border border-white/[0.08] px-4 py-3.5">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            Preview
+          </h2>
+          {g.venueDetail ? (
+            <p className="text-[13px] text-[#c8cdd8]">{g.venueDetail}</p>
+          ) : null}
+          {g.oddsLine ? (
+            <p className="text-cream text-[14px] font-medium">{g.oddsLine}</p>
+          ) : null}
+          {g.predictor &&
+          (g.predictor.awayWinPct != null || g.predictor.homeWinPct != null) ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
+                  {g.away.abbrev} win%
+                </p>
+                <p className="numeral text-cream text-[22px] font-semibold">
+                  {g.predictor.awayWinPct != null ? `${g.predictor.awayWinPct}%` : "—"}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
+                  {g.home.abbrev} win%
+                </p>
+                <p className="numeral text-cream text-[22px] font-semibold">
+                  {g.predictor.homeWinPct != null ? `${g.predictor.homeWinPct}%` : "—"}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {g.lastFive.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {g.lastFive.map((side) => (
+                <div key={side.teamAbbrev}>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                    {side.teamAbbrev} last 5
+                  </p>
+                  <ul className="space-y-1">
+                    {side.results.map((r, i) => (
+                      <li
+                        key={`${side.teamAbbrev}-${i}`}
+                        className="flex items-center justify-between gap-2 text-[12px]"
+                      >
+                        <span className="text-[#c8cdd8]">vs {r.label}</span>
+                        <span
+                          className={cn(
+                            "numeral font-semibold",
+                            /^W/i.test(r.result)
+                              ? "text-emerald-300"
+                              : /^L/i.test(r.result)
+                                ? "text-alert"
+                                : "text-cream",
+                          )}
+                        >
+                          {r.result}
+                          {r.score ? ` ${r.score}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {!g.article &&
+      !g.boxGroups.length &&
+      !g.teamStats.length &&
+      !g.scoringPlays.length &&
+      !(pregame && (g.oddsLine || g.predictor || g.lastFive.length)) ? (
+        <section className="bg-panel rounded-xl border border-white/[0.08] px-4 py-5">
+          <p className="text-chalk text-[13px] leading-relaxed">
+            ESPN hasn&apos;t published preview copy or boxscore data for this matchup yet.
+            Odds and team pages will fill in as kickoff gets closer.
+          </p>
+        </section>
+      ) : null}
+
       {teamStatLabels.length > 0 && (
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
           <div className="border-b border-white/[0.06] px-4 py-2.5">
@@ -247,7 +330,7 @@ export function CfbGameDetailView({
                   ) : null}
                   <div>
                     <p className="text-[14px] font-bold text-white">
-                      {side.rank ? `#${side.rank} ` : ""}
+                      <CfbRankLabel pollRank={side.rank} fpiRank={side.fpiRank} />
                       {side.name}
                     </p>
                     {side.record ? (
@@ -351,9 +434,10 @@ function MatchupSide({
   loser: boolean;
 }) {
   return (
-    <div
+    <Link
+      to={`/sports/cfb/team/${side.teamId}`}
       className={cn(
-        "flex min-w-0 flex-col gap-2",
+        "flex min-w-0 flex-col gap-2 hover:opacity-90",
         align === "right" ? "items-end text-right" : "items-start",
       )}
     >
@@ -367,7 +451,7 @@ function MatchupSide({
             winner ? "text-white" : loser ? "text-white/45" : "text-white",
           )}
         >
-          {side.rank ? `#${side.rank} ` : ""}
+          <CfbRankLabel pollRank={side.rank} fpiRank={side.fpiRank} />
           {side.abbrev}
         </p>
         <p className="text-[11px] text-[#8b93a7]">{side.name}</p>
@@ -375,7 +459,7 @@ function MatchupSide({
           <p className="numeral mt-0.5 text-[12px] text-[#a8b0c2]">{side.record}</p>
         ) : null}
       </div>
-    </div>
+    </Link>
   );
 }
 

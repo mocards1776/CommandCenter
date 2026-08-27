@@ -344,7 +344,7 @@ export function MlbPlayerDetail({ playerId }: { playerId: string }) {
     ((extras.isPending || extras.isFetching) ||
       (contract.isPending || contract.isFetching));
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-5">
       <div className="flex justify-end">
         <a
           href={mlbUrl}
@@ -812,7 +812,7 @@ function PerformanceSummaryCard({ summary }: { summary: MlbPerformanceSummary })
       <div className={cn("pointer-events-none absolute inset-0 bg-gradient-to-br", tone)} />
       <div className="relative border-b border-white/[0.06] flex items-center justify-between gap-3 px-4 py-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-          Form
+          Recent
         </p>
         {summary.latestIsWin != null && (
           <span
@@ -927,7 +927,7 @@ function PlayerHeader({
       <div className="absolute inset-0 bg-gradient-to-r from-[#07101f] via-[#07101f]/75 to-[#07101f]/35" />
       <div className="absolute inset-0 bg-gradient-to-t from-[#07101f] via-transparent to-[#07101f]/40" />
 
-      <div className="relative z-10 flex flex-col gap-5 p-5 lg:flex-row lg:items-end lg:gap-8 lg:p-8">
+      <div className="relative z-10 flex flex-col gap-4 p-4 sm:gap-5 sm:p-5 md:flex-row md:items-end md:gap-6 md:p-6 lg:gap-8 lg:p-8">
         <div className="relative mx-auto shrink-0 sm:mx-0">
           <div className="overflow-hidden rounded-xl bg-[#dfe6f2] p-1 shadow-2xl ring-2 ring-white/30">
             <img
@@ -935,7 +935,7 @@ function PlayerHeader({
               alt=""
               width={220}
               height={220}
-              className="h-[170px] w-[170px] rounded-[10px] object-cover object-[center_12%] sm:h-[200px] sm:w-[200px] lg:h-[220px] lg:w-[220px]"
+              className="h-[140px] w-[140px] rounded-[10px] object-cover object-[center_12%] sm:h-[170px] sm:w-[170px] md:h-[190px] md:w-[190px] lg:h-[220px] lg:w-[220px]"
               data-fallback-idx="0"
               onError={(e) => {
                 const el = e.currentTarget;
@@ -1024,13 +1024,15 @@ function PlayerHeader({
                         ? "Season"
                         : careerWar != null
                           ? "Career"
-                          : "Season"}
+                          : warPending
+                            ? "Loading"
+                            : "N/A"}
                 </p>
               </div>
             </div>
           </div>
 
-          <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 text-[12.5px]">
+          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-[12.5px] sm:mt-4 sm:gap-y-2.5 md:grid-cols-3 lg:grid-cols-2">
             {htWt && (
               <div>
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">HT / WT</dt>
