@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Share, Star } from "lucide-react";
+import { Loader2, RefreshCw, Star } from "lucide-react";
 import toast from "react-hot-toast";
-import StarField from "@/components/StarField";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
@@ -105,98 +104,46 @@ export default function MlbPage() {
     ]).then(() => toast.success("MLB updated"));
   };
 
-  const tabTitle =
-    tab === "board"
-      ? "Scores"
-      : tab === "standings"
-        ? "Standings"
-        : tab === "leaders"
-          ? "Stats"
-          : "Playoff odds";
-
   return (
     <div className="flex min-h-0 flex-col gap-5 p-4 md:p-7">
-      <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#050b16] shadow-[0_16px_40px_rgba(0,0,0,0.35)]">
-        <div
-          className="pointer-events-none absolute inset-0 opacity-90"
-          style={{
-            background:
-              "radial-gradient(ellipse at 12% 20%, rgba(190,10,20,0.28), transparent 42%), linear-gradient(160deg, #0a1628 0%, #07101d 100%)",
-          }}
-        />
-        <StarField count={24} seed={42} />
-        <div className="relative z-10 px-4 py-4 sm:px-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="mb-1.5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/70">
-                  MLB
-                </span>
-              </div>
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <h2 className="font-display text-[28px] leading-none tracking-tight text-cream sm:text-[32px]">
-                  {tabTitle}
-                </h2>
-                {liveCount > 0 ? (
-                  <span className="text-alert inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]">
-                    <span className="bg-alert inline-block h-1.5 w-1.5 animate-pulse rounded-full" />
-                    {liveCount} live
-                  </span>
-                ) : null}
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <a
-                href="/sports.html"
-                className="text-chalk hover:text-cream flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.03] px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] transition hover:border-accent/40"
-              >
-                <Share size={12} />
-                Home
-              </a>
-              <button
-                type="button"
-                onClick={refresh}
-                disabled={refreshing}
-                className="text-chalk hover:text-cream flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.03] px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] transition hover:border-accent/40 disabled:opacity-40"
-              >
-                <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} />
-                Refresh
-              </button>
-              <Link
-                to="/sports"
-                className="from-accent-deep to-accent-dark text-cream rounded-full bg-gradient-to-b px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]"
-              >
-                My teams
-              </Link>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-1 border-t border-white/[0.08] pt-3">
-            {(
-              [
-                ["board", "Scores"],
-                ["standings", "Standings"],
-                ["leaders", "Stats"],
-                ["odds", "Playoff odds"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setTab(id)}
-                className={cn(
-                  "rounded-sm px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition",
-                  tab === id
-                    ? "from-accent-deep to-accent-dark text-cream bg-gradient-to-b"
-                    : "text-chalk border border-white/10 hover:text-cream",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {(
+          [
+            ["board", "Scores"],
+            ["standings", "Standings"],
+            ["leaders", "Stats"],
+            ["odds", "Playoff odds"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={cn(
+              "rounded-sm px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition",
+              tab === id
+                ? "from-accent-deep to-accent-dark text-cream bg-gradient-to-b"
+                : "text-chalk border border-white/10 hover:text-cream",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+        {liveCount > 0 ? (
+          <span className="text-alert ml-1 inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]">
+            <span className="bg-alert inline-block h-1.5 w-1.5 animate-pulse rounded-full" />
+            {liveCount} live
+          </span>
+        ) : null}
+        <button
+          type="button"
+          onClick={refresh}
+          disabled={refreshing}
+          title="Refresh"
+          className="text-chalk hover:text-cream ml-auto rounded-sm border border-white/10 p-2 transition hover:border-accent/40 disabled:opacity-40"
+        >
+          <RefreshCw size={14} className={refreshing ? "animate-spin" : undefined} />
+        </button>
       </div>
 
       {tab === "board" && (
