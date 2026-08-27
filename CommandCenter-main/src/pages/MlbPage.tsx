@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Share, Star } from "lucide-react";
 import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
-import HeroGameCard from "@/components/sports/HeroGameCard";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
@@ -17,7 +16,6 @@ import {
   fetchMlbStandings,
   mlbHeadshot,
   mlbHeadshotFallbacks,
-  pickHeroGame,
   playoffOddsFromStandings,
   teamPagePath,
   type MlbLeaderBoard,
@@ -95,7 +93,6 @@ export default function MlbPage() {
   );
 
   const liveCount = scoreboard.data?.filter((g) => g.live).length ?? 0;
-  const hero = scoreboard.data ? pickHeroGame(scoreboard.data) : null;
   const refreshing =
     scoreboard.isFetching || standings.isFetching || leaders.isFetching;
 
@@ -108,86 +105,130 @@ export default function MlbPage() {
     ]).then(() => toast.success("MLB updated"));
   };
 
+  const tabTitle =
+    tab === "board"
+      ? "Scores"
+      : tab === "standings"
+        ? "Standings"
+        : tab === "leaders"
+          ? "Stats"
+          : "Playoff odds";
+
   return (
     <div className="flex min-h-0 flex-col gap-5 p-4 md:p-7">
-      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#050b16] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] sm:p-7">
+      <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#050b16] shadow-[0_16px_40px_rgba(0,0,0,0.35)]">
         <div
           className="pointer-events-none absolute inset-0 opacity-90"
           style={{
             background:
-              "radial-gradient(ellipse at 12% 20%, rgba(190,10,20,0.35), transparent 42%), radial-gradient(ellipse at 88% 10%, rgba(56,120,220,0.22), transparent 40%), linear-gradient(160deg, #0a1628 0%, #07101d 55%, #12080c 100%)",
+              "radial-gradient(ellipse at 12% 20%, rgba(190,10,20,0.28), transparent 42%), linear-gradient(160deg, #0a1628 0%, #07101d 100%)",
           }}
         />
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.14]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",
-            backgroundSize: "48px 48px",
-            maskImage: "radial-gradient(ellipse at center, black 20%, transparent 75%)",
-          }}
-        />
-        <StarField count={40} seed={42} />
-        <div className="relative z-10 flex flex-wrap items-end justify-between gap-5">
-          <div className="max-w-xl">
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_12px_rgba(190,10,20,0.9)]" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">
-                Major League Baseball
-              </span>
+        <StarField count={24} seed={42} />
+        <div className="relative z-10 px-4 py-4 sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="mb-1.5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-white/70">
+                  MLB
+                </span>
+              </div>
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h2 className="font-display text-[28px] leading-none tracking-tight text-cream sm:text-[32px]">
+                  {tabTitle}
+                </h2>
+                {liveCount > 0 ? (
+                  <span className="text-alert inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                    <span className="bg-alert inline-block h-1.5 w-1.5 animate-pulse rounded-full" />
+                    {liveCount} live
+                  </span>
+                ) : null}
+              </div>
             </div>
-            <h2 className="font-display text-[34px] leading-[0.95] tracking-tight text-cream sm:text-[44px]">
-              Live <span className="text-accent">MLB</span>
-            </h2>
-            <p className="mt-3 text-[14px] leading-relaxed text-[#b7c0d0]">
-              Scoreboard, standings, league leaders, playoff odds — and{" "}
-              <Link to="/sports/ruwt?solo=1" className="text-accent hover:underline">
-                RUWT
-              </Link>{" "}
-              for the best games to turn on.
-            </p>
-            {liveCount > 0 && (
-              <p className="text-alert mt-3 inline-flex items-center gap-2 rounded-full bg-alert/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]">
-                <span className="bg-alert inline-block h-1.5 w-1.5 animate-pulse rounded-full" />
-                {liveCount} live now
-              </p>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href="/sports.html"
+                className="text-chalk hover:text-cream flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.03] px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] transition hover:border-accent/40"
+              >
+                <Share size={12} />
+                Home
+              </a>
+              <button
+                type="button"
+                onClick={refresh}
+                disabled={refreshing}
+                className="text-chalk hover:text-cream flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.03] px-3 py-1.5 text-[10px] uppercase tracking-[0.14em] transition hover:border-accent/40 disabled:opacity-40"
+              >
+                <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} />
+                Refresh
+              </button>
+              <Link
+                to="/sports"
+                className="from-accent-deep to-accent-dark text-cream rounded-full bg-gradient-to-b px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]"
+              >
+                My teams
+              </Link>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <a
-              href="/sports.html"
-              className="text-chalk hover:text-cream flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.03] px-3.5 py-2 text-[10.5px] uppercase tracking-[0.14em] backdrop-blur-sm transition hover:border-accent/40"
-            >
-              <Share size={13} />
-              Home Screen
-            </a>
-            <button
-              type="button"
-              onClick={refresh}
-              disabled={refreshing}
-              className="text-chalk hover:text-cream flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.03] px-3.5 py-2 text-[10.5px] uppercase tracking-[0.14em] backdrop-blur-sm transition hover:border-accent/40 disabled:opacity-40"
-            >
-              <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
-              Refresh
-            </button>
-            <Link
-              to="/sports"
-              className="from-accent-deep to-accent-dark text-cream rounded-full bg-gradient-to-b px-4 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] shadow-[0_8px_24px_rgba(190,10,20,0.35)]"
-            >
-              My teams
-            </Link>
+
+          <div className="mt-4 flex flex-wrap gap-1 border-t border-white/[0.08] pt-3">
+            {(
+              [
+                ["board", "Scores"],
+                ["standings", "Standings"],
+                ["leaders", "Stats"],
+                ["odds", "Playoff odds"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                className={cn(
+                  "rounded-sm px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition",
+                  tab === id
+                    ? "from-accent-deep to-accent-dark text-cream bg-gradient-to-b"
+                    : "text-chalk border border-white/10 hover:text-cream",
+                )}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {hero && (
-        <HeroGameCard
-          game={hero}
-          label={hero.live ? "Live now" : hero.final ? "Latest final" : "Up next"}
+      {tab === "board" && (
+        <ScoreboardSection
+          games={scoreboard.data ?? []}
+          loading={scoreboard.isPending}
+          error={scoreboard.isError ? "Couldn’t load scoreboard." : null}
+        />
+      )}
+      {tab === "standings" && (
+        <StandingsSection
+          tables={standings.data ?? []}
+          loading={standings.isPending}
+          error={standings.isError ? "Couldn’t load standings." : null}
+        />
+      )}
+      {tab === "leaders" && (
+        <LeadersSection
+          boards={leaders.data ?? []}
+          loading={leaders.isPending}
+          error={leaders.isError ? "Couldn’t load leaders." : null}
+        />
+      )}
+      {tab === "odds" && (
+        <OddsSection
+          rows={odds}
+          loading={standings.isPending}
+          error={standings.isError ? "Couldn’t load odds." : null}
         />
       )}
 
-      {yesterday.data && yesterday.data.lines.some((l) => l.played) && (
+      {tab === "board" && yesterday.data && yesterday.data.lines.some((l) => l.played) && (
         <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
           <div className="mb-3 flex items-baseline justify-between gap-3">
             <h3 className="rule-head">Yesterday</h3>
@@ -235,7 +276,7 @@ export default function MlbPage() {
         </section>
       )}
 
-      {playerFavs.length > 0 && (
+      {tab === "board" && playerFavs.length > 0 && (
         <section>
           <h3 className="rule-head mb-3">Your players</h3>
           <div className="flex gap-3 overflow-x-auto pb-1">
@@ -269,7 +310,8 @@ export default function MlbPage() {
         </section>
       )}
 
-      {favorites.data &&
+      {tab === "board" &&
+        favorites.data &&
         favorites.data.some((f) => (f.position ?? "").toLowerCase() === "manager") && (
         <section>
           <h3 className="rule-head mb-3">Your managers</h3>
@@ -308,59 +350,6 @@ export default function MlbPage() {
         </section>
       )}
 
-      <div className="flex flex-wrap gap-1.5">
-        {(
-          [
-            ["board", "Scoreboard"],
-            ["standings", "Standings"],
-            ["leaders", "Leaders"],
-            ["odds", "Playoff odds"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={cn(
-              "rounded-sm px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition",
-              tab === id
-                ? "from-accent-deep to-accent-dark text-cream bg-gradient-to-b"
-                : "text-chalk border border-white/10 hover:text-cream",
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "board" && (
-        <ScoreboardSection
-          games={scoreboard.data ?? []}
-          loading={scoreboard.isPending}
-          error={scoreboard.isError ? "Couldn’t load scoreboard." : null}
-        />
-      )}
-      {tab === "standings" && (
-        <StandingsSection
-          tables={standings.data ?? []}
-          loading={standings.isPending}
-          error={standings.isError ? "Couldn’t load standings." : null}
-        />
-      )}
-      {tab === "leaders" && (
-        <LeadersSection
-          boards={leaders.data ?? []}
-          loading={leaders.isPending}
-          error={leaders.isError ? "Couldn’t load leaders." : null}
-        />
-      )}
-      {tab === "odds" && (
-        <OddsSection
-          rows={odds}
-          loading={standings.isPending}
-          error={standings.isError ? "Couldn’t load odds." : null}
-        />
-      )}
     </div>
   );
 }
