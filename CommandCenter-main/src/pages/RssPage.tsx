@@ -1079,7 +1079,10 @@ function ArticleReaderShell({
   const titleSelectRef = useRef<HTMLElement>(null);
   const [pendingQuote, setPendingQuote] = useState<string | null>(null);
   const [showNotes, setShowNotes] = useState(false);
-  const [linkedHtml, setLinkedHtml] = useState<string>("");
+  const [linkedHtml, setLinkedHtml] = useState<{ link: string; html: string }>({
+    link: "",
+    html: "",
+  });
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [shareHighlight, setShareHighlight] = useState<RssHighlight | null>(null);
   const refreshExtractRef = useRef(false);
@@ -1183,6 +1186,12 @@ function ArticleReaderShell({
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [item.link]);
 
+  // Drop overlays immediately on article change.
+  useEffect(() => {
+    setPendingQuote(null);
+    setLightboxSrc(null);
+  }, [item.link]);
+
   // Browser / iOS back from the article returns to the feed list.
   // Player names link to the real player page; session restore reopens this article.
   useEffect(() => {
@@ -1233,8 +1242,12 @@ function ArticleReaderShell({
   const publisher = articlePublisherLabel(item.link, byline);
   const rawImage = article.data?.image || item.image;
   const contentImage = useMemo(
-    () => firstContentImageUrl(linkedHtml || article.data?.contentHtml),
-    [linkedHtml, article.data?.contentHtml],
+    () =>
+      firstContentImageUrl(
+        (linkedHtml.link === item.link ? linkedHtml.html : "") ||
+          article.data?.contentHtml,
+      ),
+    [linkedHtml, article.data?.contentHtml, item.link],
   );
   const image = rawImage || contentImage;
   const quoteTexts = useMemo(
@@ -1263,12 +1276,14 @@ function ArticleReaderShell({
   // Content hides (MLB signup chrome + user “Hide” phrases) collapse clutter blocks.
   // Strip hero duplicates so the header photo isn't repeated in the body.
   const displayHtml = useMemo(() => {
-    const base = linkedHtml || article.data?.contentHtml || "";
+    const processed =
+      linkedHtml.link === item.link && linkedHtml.html ? linkedHtml.html : "";
+    const base = processed || article.data?.contentHtml || "";
     const scrubbed = scrubReaderChrome(base);
     const cleaned = hidePhrasesInHtml(scrubbed, hidePhrases);
     const deduped = stripDuplicateContentImages(cleaned, image);
     return markQuotesInHtml(deduped, quoteTexts);
-  }, [linkedHtml, article.data?.contentHtml, quoteTexts, hidePhrases, image]);
+  }, [linkedHtml, article.data?.contentHtml, quoteTexts, hidePhrases, image, item.link]);
 
   // Click images in article body → fullscreen lightbox.
   useEffect(() => {
@@ -1290,13 +1305,14 @@ function ArticleReaderShell({
   // Link any MLB player names → player page; stylize tweet cards; repair imgs.
   useEffect(() => {
     const html = article.data?.contentHtml;
+    const link = item.link;
     if (!html) {
-      setLinkedHtml("");
+      setLinkedHtml({ link: "", html: "" });
       return;
     }
     let cancelled = false;
     (async () => {
-      const repaired = repairRssContentImages(html, item.link);
+      const repaired = repairRssContentImages(html, link);
       const players = roster.data ?? [];
       const index = buildPlayerNameIndex(players, { bareLastNames: true });
       const proseSource =
@@ -1315,12 +1331,13 @@ function ArticleReaderShell({
         watchMarks,
         favoritePlayerNames,
       );
-      setLinkedHtml(stylizeTweetCardsInHtml(linked));
+      setLinkedHtml({ link, html: stylizeTweetCardsInHtml(linked) });
     })().catch(() => {
       if (!cancelled) {
-        setLinkedHtml(
-          stylizeTweetCardsInHtml(repairRssContentImages(html, item.link)),
-        );
+        setLinkedHtml({
+          link,
+          html: stylizeTweetCardsInHtml(repairRssContentImages(html, link)),
+        });
       }
     });
     return () => {
