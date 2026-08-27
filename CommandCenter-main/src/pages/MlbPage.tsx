@@ -5,6 +5,7 @@ import { Loader2, RefreshCw, Share, Star } from "lucide-react";
 import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
 import HeroGameCard from "@/components/sports/HeroGameCard";
+import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import TeamMark from "@/components/sports/TeamMark";
@@ -15,6 +16,7 @@ import {
   fetchMlbScoreboard,
   fetchMlbStandings,
   mlbHeadshot,
+  mlbHeadshotFallbacks,
   pickHeroGame,
   playoffOddsFromStandings,
   teamPagePath,
@@ -233,25 +235,20 @@ export default function MlbPage() {
         </section>
       )}
 
-      {favorites.data &&
-        favorites.data.some((f) => (f.position ?? "").toLowerCase() !== "manager") && (
+      {playerFavs.length > 0 && (
         <section>
           <h3 className="rule-head mb-3">Your players</h3>
           <div className="flex gap-3 overflow-x-auto pb-1">
-            {favorites.data
-              .filter((f) => (f.position ?? "").toLowerCase() !== "manager")
-              .map((f) => (
+            {playerFavs.map((f) => (
               <Link
                 key={f.id}
                 to={`/sports/mlb/player/${f.playerId}`}
                 className="bg-panel group relative w-[148px] shrink-0 overflow-hidden rounded-lg border border-white/[0.08] transition hover:border-accent/40"
               >
                 <div className="from-accent-dark/80 absolute inset-0 bg-gradient-to-t to-transparent opacity-80" />
-                <img
-                  src={mlbHeadshot(f.playerId, 213)}
-                  alt=""
-                  className="aspect-[3/4] w-full object-cover object-top"
-                  loading="lazy"
+                <PlayerHeadshot
+                  playerId={f.playerId}
+                  className="aspect-[3/4] w-full object-top"
                 />
                 <div className="absolute inset-x-0 bottom-0 p-2.5">
                   <p className="font-display text-cream text-[15px] leading-tight drop-shadow">
@@ -281,7 +278,6 @@ export default function MlbPage() {
               .filter((f) => (f.position ?? "").toLowerCase() === "manager")
               .map((f) => {
                 const resolved = managers.data?.find((m) => String(m.id) === String(f.playerId));
-                const src = resolved?.headshot ?? mlbHeadshot(f.playerId, 213);
                 return (
                 <Link
                   key={f.id}
@@ -289,11 +285,9 @@ export default function MlbPage() {
                   className="bg-panel group relative w-[148px] shrink-0 overflow-hidden rounded-lg border border-white/[0.08] transition hover:border-accent/40"
                 >
                   <div className="from-accent-dark/80 absolute inset-0 bg-gradient-to-t to-transparent opacity-80" />
-                  <img
-                    src={src}
-                    alt=""
-                    className="aspect-[3/4] w-full object-cover object-[center_18%]"
-                    loading="lazy"
+                  <ManagerCarouselPhoto
+                    managerId={f.playerId}
+                    primary={resolved?.headshot}
                   />
                   <div className="absolute inset-x-0 bottom-0 p-2.5">
                     <p className="font-display text-cream text-[15px] leading-tight drop-shadow">
@@ -807,4 +801,33 @@ function EmptyLine({ children }: { children: ReactNode }) {
 
 function ErrorLine({ children }: { children: ReactNode }) {
   return <p className="text-alert text-[13px]">{children}</p>;
+}
+
+function ManagerCarouselPhoto({
+  managerId,
+  primary,
+}: {
+  managerId: number | string;
+  primary?: string | null;
+}) {
+  const chain = useMemo(() => {
+    const fallbacks = mlbHeadshotFallbacks(managerId, 213);
+    if (primary && !fallbacks.includes(primary)) return [primary, ...fallbacks];
+    if (primary) return [primary, ...fallbacks.filter((u) => u !== primary)];
+    return fallbacks;
+  }, [managerId, primary]);
+  const [idx, setIdx] = useState(0);
+  const src = chain[Math.min(idx, chain.length - 1)] ?? chain[0]!;
+
+  return (
+    <img
+      src={src}
+      alt=""
+      className="aspect-[3/4] w-full object-cover object-[center_18%]"
+      loading="lazy"
+      onError={() => {
+        setIdx((i) => (i + 1 < chain.length ? i + 1 : i));
+      }}
+    />
+  );
 }

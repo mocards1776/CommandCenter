@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw, Share } from "lucide-react";
 import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
-import { chicagoTodayCfb, fetchCfbScoreboard, type CfbScoreGame } from "@/lib/cfb";
+import { fetchCfbScoreboard, type CfbScoreGame } from "@/lib/cfb";
 import { loadCfbTeamInterest, rankRuwtCfbGames } from "@/lib/ruwt";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
@@ -16,8 +16,8 @@ export default function CfbPage() {
   }, []);
 
   const scoreboard = useQuery({
-    queryKey: ["cfb-scoreboard", chicagoTodayCfb()],
-    queryFn: () => fetchCfbScoreboard(chicagoTodayCfb().replace(/-/g, "")),
+    queryKey: ["cfb-scoreboard"],
+    queryFn: () => fetchCfbScoreboard(),
     refetchInterval: 30_000,
     staleTime: 15_000,
   });
@@ -106,7 +106,7 @@ export default function CfbPage() {
       ) : scoreboard.isError ? (
         <p className="text-alert text-[13px]">Couldn’t load the college football scoreboard.</p>
       ) : games.length === 0 ? (
-        <p className="text-chalk-dim text-[13px]">No games on today’s board.</p>
+        <p className="text-chalk-dim text-[13px]">No games this week.</p>
       ) : (
         <>
           {live.length > 0 && (

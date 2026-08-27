@@ -489,6 +489,7 @@ async function postseasonHonors(teamId: number, season: number): Promise<MlbTeam
             divisionLeader?: boolean;
             hasWildcard?: boolean;
             clinchIndicator?: string;
+            wildCardRank?: string;
           }[];
         }[];
       };
@@ -496,8 +497,9 @@ async function postseasonHonors(teamId: number, season: number): Promise<MlbTeam
         for (const row of div.teamRecords ?? []) {
           if (row.team?.id !== teamId) continue;
           const ind = (row.clinchIndicator ?? "").toLowerCase();
+          const wcRank = String(row.wildCardRank ?? "").trim();
           if (row.divisionChamp || ind === "z") honors.push("DIV");
-          else if (ind === "y" || (row.hasWildcard && !row.divisionChamp)) honors.push("WC");
+          else if (ind === "w" || /^[123]$/.test(wcRank)) honors.push("WC");
         }
       }
     }
@@ -550,12 +552,12 @@ async function postseasonHonors(teamId: number, season: number): Promise<MlbTeam
   return [...new Set(honors)];
 }
 
-/** Last N regular-season win totals for the team bar chart. */
+/** Last N completed regular seasons for the team bar chart (excludes in-progress year). */
 export async function fetchMlbTeamWinTrend(
   teamId: number,
   seasons = 5,
 ): Promise<MlbTeamWinTrendPoint[]> {
-  const end = new Date().getFullYear();
+  const end = new Date().getFullYear() - 1;
   const years = Array.from({ length: seasons }, (_, i) => end - seasons + 1 + i);
   const points = await Promise.all(
     years.map(async (season) => {

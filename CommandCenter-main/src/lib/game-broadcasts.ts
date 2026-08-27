@@ -9,6 +9,8 @@ export type GameBroadcast = {
 
 const MLB_LEAGUE_LOGO =
   "https://www.mlbstatic.com/team-logos/league-on-dark/1.svg";
+const PRIME_VIDEO_LOGO =
+  "https://upload.wikimedia.org/wikipedia/commons/1/11/Amazon_Prime_Video_logo.svg";
 const ESPN_LOGO =
   "https://a.espncdn.com/guid/54bf758e-5371-31f9-bb3d-8059d58f785c/logos/default.png";
 const ESPN_PRIMARY =
@@ -34,7 +36,7 @@ const NETWORK_LOGOS: { test: RegExp; logo: string }[] = [
   { test: /^abc$/i, logo: MLB_LEAGUE_LOGO },
   { test: /^cbs$/i, logo: MLB_LEAGUE_LOGO },
   { test: /^peacock$/i, logo: MLB_LEAGUE_LOGO },
-  { test: /amazon|prime\s*video/i, logo: MLB_LEAGUE_LOGO },
+  { test: /amazon|prime\s*video/i, logo: PRIME_VIDEO_LOGO },
   { test: /apple\s*tv/i, logo: MLB_LEAGUE_LOGO },
   { test: /^usa(\s*net(work)?)?$/i, logo: MLB_LEAGUE_LOGO },
   // Local affiliates / RSNs
