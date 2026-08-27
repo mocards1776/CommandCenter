@@ -1933,12 +1933,20 @@ function BookDetail({
                   inputClassName="w-24 text-center text-[12.5px]"
                 />
                 {book.page_count != null && <span className="-ml-1">pages</span>}
-                {book.published_year != null && (
-                  <>
-                    <span className="text-white/20">·</span>
-                    <span>{book.published_year}</span>
-                  </>
-                )}
+                <span className="text-white/20">·</span>
+                <Editable
+                  value={book.published_year}
+                  placeholder="Add year"
+                  numeric
+                  onSave={(v) => {
+                    const n = Number.parseInt(v.trim(), 10);
+                    patch.mutate({
+                      published_year: Number.isFinite(n) && n >= 1000 && n <= 2100 ? n : null,
+                    });
+                  }}
+                  className="text-chalk-dim hover:text-cream text-center"
+                  inputClassName="w-16 text-center text-[12.5px]"
+                />
                 {book.format && (
                   <>
                     <span className="text-white/20">·</span>
