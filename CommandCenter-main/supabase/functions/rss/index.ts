@@ -531,6 +531,12 @@ function extractFragment(html: string, pageUrl = ""): string | null {
     if (mlbVideo) return mlbVideo;
   }
 
+  // STL Today / TownNews Field59 video assets — embed mp4 on confirmed video pages only.
+  if (isStlTodayVideoUrl(pageUrl)) {
+    const stlVideo = extractStlTodayVideoFragment(html, pageUrl);
+    if (stlVideo) return stlVideo;
+  }
+
   const townNews = extractTownNewsParagraphs(html);
   if (townNews) return townNews;
 
@@ -584,6 +590,16 @@ function extractFragment(html: string, pageUrl = ""): string | null {
 
 function isMlbVideoUrl(url: string): boolean {
   return /mlb\.com/i.test(url) && /\/video\//i.test(url);
+}
+
+/** TownNews BLOX video asset pages on STL Today (Field59 pressers, etc.). */
+function isStlTodayVideoUrl(url: string): boolean {
+  if (!/stltoday\.com/i.test(url)) return false;
+  return (
+    /\/video_[a-f0-9-]+\.html/i.test(url) ||
+    /\/video\//i.test(url) ||
+    /\/tncms\/asset\/editorial\/[a-f0-9-]+/i.test(url)
+  );
 }
 
 function isMlbNewsUrl(url: string): boolean {
@@ -1086,6 +1102,55 @@ function mlbVideoFallbackHtml(url: string, title?: string | null): string {
   return (
     `<p>This MLB.com item is a video clip. Playback couldn’t be embedded here.</p>` +
     `<p><a href="${url.replace(/"/g, "")}" target="_blank" rel="noopener noreferrer">${label}</a></p>`
+  );
+}
+
+function stlTodayVideoFallbackHtml(url: string, title?: string | null): string {
+  const label = title ? stripTags(title) : "Watch on STLtoday.com";
+  return (
+    `<p>This STL Today item is a video. Playback couldn’t be embedded here.</p>` +
+    `<p><a href="${url.replace(/"/g, "")}" target="_blank" rel="noopener noreferrer">${label}</a></p>`
+  );
+}
+
+/** Pull a clean autoplay video card out of STL Today / TownNews Field59 pages. */
+function extractStlTodayVideoFragment(html: string, pageUrl = ""): string | null {
+  const isVideoPage =
+    isStlTodayVideoUrl(pageUrl) ||
+    /class="[^"]*\btype-video\b[^"]*"/i.test(html) ||
+    /blox_asset_type"\s*:\s*"video"/i.test(html) ||
+    /"type"\s*:\s*"video"/i.test(html);
+  if (!isVideoPage) return null;
+
+  const field59Id =
+    html.match(/"asset_field59_id"\s*:\s*"([a-f0-9]+)"/i)?.[1] ||
+    html.match(/redirect\.field59\.com\/video\/([a-f0-9]+)\.mp4/i)?.[1] ||
+    null;
+
+  const mp4Direct = html.match(/https:\/\/redirect\.field59\.com\/video\/[a-f0-9]+\.mp4/i)?.[0] || null;
+  const mp4FromId = field59Id ? `https://redirect.field59.com/video/${field59Id}.mp4` : null;
+
+  const ogVideoRaw =
+    html.match(/<meta[^>]+property=["']og:video(?::secure_url|:url)?["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:video(?::secure_url|:url)?["']/i)?.[1] ||
+    null;
+  const ogVideo = ogVideoRaw ? cleanMediaUrl(ogVideoRaw) : null;
+
+  const src =
+    (mp4Direct ? cleanMediaUrl(mp4Direct) : null) ||
+    (mp4FromId ? cleanMediaUrl(mp4FromId) : null) ||
+    (ogVideo && /\.mp4(\?|$)/i.test(ogVideo) ? ogVideo : null);
+  if (!src) return null;
+
+  const title =
+    html.match(/"asset_headline"\s*:\s*"((?:\\.|[^"\\])*)"/i)?.[1]?.replace(/\\"/g, '"') ||
+    html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ||
+    "Video";
+  const cleanTitle = stripTags(title).replace(/\s*\|\s*stltoday\.com.*/i, "").trim();
+  return (
+    `<p><video class="rss-video" src="${src}" controls autoplay muted playsinline loop preload="auto"></video></p>` +
+    (cleanTitle ? `<p>${cleanTitle}</p>` : "")
   );
 }
 
@@ -2174,6 +2239,21 @@ async function handleRead(url: string, refresh = false) {
       writeExtractMem(url, payload);
       return json(payload);
     }
+    if (isStlTodayVideoUrl(url)) {
+      const contentHtml = sanitizeHtml(stlTodayVideoFallbackHtml(url));
+      const contentText = stripTags(contentHtml);
+      const payload = {
+        url,
+        title: null,
+        byline: "STLtoday.com",
+        image: null,
+        contentHtml,
+        contentText,
+        wordCount: contentText.split(/\s+/).filter(Boolean).length,
+      };
+      writeExtractMem(url, payload);
+      return json(payload);
+    }
     throw err;
   }
 
@@ -2208,8 +2288,11 @@ async function handleRead(url: string, refresh = false) {
       html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
       null;
     const mlbVideo = extractMlbVideoFragment(html, url);
+    const stlVideo = extractStlTodayVideoFragment(html, url);
     if (mlbVideo) frag = mlbVideo;
+    else if (stlVideo) frag = stlVideo;
     else if (isMlbVideoUrl(url)) frag = mlbVideoFallbackHtml(url, meta.title);
+    else if (isStlTodayVideoUrl(url)) frag = stlTodayVideoFallbackHtml(url, meta.title);
     else if (isBeehiivUrl(url) && desc && stripTags(desc).length > 20) {
       frag =
         `<p>${desc}</p>` +
@@ -2231,7 +2314,7 @@ async function handleRead(url: string, refresh = false) {
   const hasVideo = /<video\b/i.test(contentHtml);
   // Soft fallback when extract shrinks below threshold (common on STL Today paywall HTML).
   const minOk = isTownNews ? 40 : 80;
-  if (contentText.length < minOk && !hasVideo && !isMlbVideoUrl(url)) {
+  if (contentText.length < minOk && !hasVideo && !isMlbVideoUrl(url) && !isStlTodayVideoUrl(url)) {
     // Retry TownNews with unlock only — no chrome strip.
     if (isTownNews) {
       const retry = extractTownNewsParagraphs(html);
@@ -2241,7 +2324,7 @@ async function handleRead(url: string, refresh = false) {
       }
     }
   }
-  if (contentText.length < minOk && !hasVideo && !isMlbVideoUrl(url)) {
+  if (contentText.length < minOk && !hasVideo && !isMlbVideoUrl(url) && !isStlTodayVideoUrl(url)) {
     const desc =
       html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
       html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
@@ -2260,7 +2343,7 @@ async function handleRead(url: string, refresh = false) {
       contentText = stripTags(contentHtml);
     }
   }
-  if (contentText.length < minOk && !hasVideo && !isMlbVideoUrl(url)) {
+  if (contentText.length < minOk && !hasVideo && !isMlbVideoUrl(url) && !isStlTodayVideoUrl(url)) {
     return json({ error: "Extracted text too short", url }, 422);
   }
   // Prefer no hero image when the body already embeds a video (Film Room).

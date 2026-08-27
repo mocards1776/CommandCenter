@@ -949,7 +949,17 @@ export function isSoccerBleedArticle(
 
 /**
  * STL Today posts that are video-first with little or no readable article text.
+ * TownNews BLOX uses `video_<uuid>.html` slugs and `/video/` paths for Field59 clips.
  */
+export function isStlTodayVideoUrl(link: string): boolean {
+  if (!/stltoday\.com/i.test(link)) return false;
+  return (
+    /\/video_[a-f0-9-]+\.html/i.test(link) ||
+    /\/video(?:\/|$|\?)/i.test(link) ||
+    /\/tncms\/asset\/editorial\/[a-f0-9-]+/i.test(link)
+  );
+}
+
 export function isStlTodayVideoOnlyArticle(
   item: Pick<RssFeedItem, "link" | "title" | "snippet">,
 ): boolean {
@@ -965,7 +975,7 @@ export function isStlTodayVideoOnlyArticle(
   const link = item.link.toLowerCase();
   const hay = `${item.title} ${item.snippet ?? ""}`.toLowerCase();
 
-  if (/\/video(?:\/|$|\?)/.test(link)) return true;
+  if (isStlTodayVideoUrl(item.link)) return true;
   if (/^video:/i.test(item.title.trim())) return true;
   if (/\blatest video\b/.test(hay)) return true;
   if (/\bwatch(?:ing)?\b/.test(hay) && /\bvideo\b/.test(hay) && hay.length < 140) return true;
@@ -1399,12 +1409,7 @@ export function articleMatchesFilters(
   ) {
     return true;
   }
-  if (
-    (effectiveFeed === "cardinals" || effectiveFeed === "folder:cardinals") &&
-    isStlTodayVideoOnlyArticle(item)
-  ) {
-    return true;
-  }
+  // STL Today Field59 videos are embedded in the reader — keep them in the feed.
   // Wire-only: drop MLB Film Room clips; keep mlb.com/news and other hosts.
   if (effectiveFeed === "cardinals-wire" && isMlbFilmRoomArticle(item)) return true;
   // Auto-generated AP / Data Skrive wires + FanDuel game stubs (news wires only).
