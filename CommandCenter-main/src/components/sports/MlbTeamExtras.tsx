@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -7,7 +7,6 @@ import {
   fetchMlbTeamPayroll,
   fetchMlbTeamWinTrend,
   leaderHeadshot,
-  mlbToBbrefAbbrev,
   type MlbTeamLeaderCard,
   type MlbTeamWinTrendHonor,
 } from "@/lib/mlb-team-page";
@@ -55,6 +54,9 @@ export function MlbTeamOrgSummary({
   playoffOdds,
   wildCardOdds,
   fallbackRecord,
+  fallbackStanding,
+  fallbackManager,
+  fallbackPresident,
   season = new Date().getFullYear(),
 }: {
   abbrev: string;
@@ -62,6 +64,9 @@ export function MlbTeamOrgSummary({
   playoffOdds?: string | null;
   wildCardOdds?: string | null;
   fallbackRecord?: string | null;
+  fallbackStanding?: string | null;
+  fallbackManager?: { id?: number; name: string; record?: string | null } | null;
+  fallbackPresident?: string | null;
   season?: number;
 }) {
   const summary = useQuery({
@@ -72,21 +77,14 @@ export function MlbTeamOrgSummary({
   });
 
   const s = summary.data;
-  const bbrefUrl =
-    s?.url ??
-    (mlbToBbrefAbbrev(abbrev)
-      ? `https://www.baseball-reference.com/teams/${mlbToBbrefAbbrev(abbrev)}/${season}.shtml`
-      : null);
 
   if (summary.isPending) {
     return (
       <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c] px-4 py-4">
-        <p className="text-chalk-dim animate-pulse text-[12px]">Loading Baseball-Reference overview…</p>
+        <p className="text-chalk-dim animate-pulse text-[12px]">Loading team overview…</p>
       </section>
     );
   }
-
-  if (!s && !bbrefUrl) return null;
 
   const recordColor = readableAccent(accent);
 
@@ -98,8 +96,13 @@ export function MlbTeamOrgSummary({
       ? `Make postseason ${playoffOdds}${wildCardOdds ? ` · WC ${wildCardOdds}` : ""}`
       : null;
 
+  const managerName = s?.manager?.name ?? fallbackManager?.name ?? null;
+  const managerRecord = s?.manager?.record ?? fallbackManager?.record ?? null;
+  const managerId = fallbackManager?.id;
+
   const rows: { label: string; value: ReactNode }[] = [];
   const record = s?.record ?? fallbackRecord;
+  const standing = s?.standing ?? fallbackStanding;
   if (record) {
     rows.push({
       label: "Record",
@@ -108,22 +111,7 @@ export function MlbTeamOrgSummary({
           <span className="numeral text-[18px] font-semibold" style={{ color: recordColor }}>
             {record}
           </span>
-          {s?.standing ? (
-            <span className="text-chalk ml-2 text-[12px]">{s.standing}</span>
-          ) : null}
-          {s?.scheduleUrl ? (
-            <>
-              {" "}
-              <a
-                href={s.scheduleUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[11px] text-white/50 underline underline-offset-2 hover:text-white"
-              >
-                Schedule and Results
-              </a>
-            </>
-          ) : null}
+          {standing ? <span className="text-chalk ml-2 text-[12px]">{standing}</span> : null}
         </span>
       ),
     });
@@ -134,18 +122,25 @@ export function MlbTeamOrgSummary({
       value: <span className="text-cream text-[13px]">{oddsLine}</span>,
     });
   }
-  if (s?.manager) {
+  if (managerName) {
     rows.push({
       label: "Manager",
       value: (
         <span className="text-cream text-[13px]">
-          {s.manager.name}
-          {s.manager.record ? ` (${s.manager.record})` : ""}
+          {managerId ? (
+            <Link to={`/sports/mlb/managers/${managerId}`} className="hover:text-accent hover:underline">
+              {managerName}
+            </Link>
+          ) : (
+            managerName
+          )}
+          {managerRecord ? ` (${managerRecord})` : ""}
         </span>
       ),
     });
   }
-  if (s?.president) rows.push({ label: "President", value: s.president });
+  const president = s?.president ?? fallbackPresident;
+  if (president) rows.push({ label: "President", value: president });
   if (s?.farmDirector) rows.push({ label: "Farm Director", value: s.farmDirector });
   if (s?.scoutingDirector) rows.push({ label: "Scouting Director", value: s.scoutingDirector });
   if (s?.ballpark) rows.push({ label: "Ballpark", value: s.ballpark });
@@ -162,7 +157,9 @@ export function MlbTeamOrgSummary({
           {s.parkFactors.oneYear
             ? `One-year: Batting ${s.parkFactors.oneYear.batting}, Pitching ${s.parkFactors.oneYear.pitching}`
             : null}
-          <span className="text-chalk-dim mt-0.5 block text-[11px]">{s.parkFactors.note}</span>
+          <span className="text-chalk-dim mt-0.5 block text-[11px]">
+            {s.parkFactors.note || "Over 100 favors batters, under 100 favors pitchers."}
+          </span>
         </span>
       ),
     });
@@ -181,47 +178,23 @@ export function MlbTeamOrgSummary({
     });
   }
 
+  if (rows.length === 0) return null;
+
   return (
     <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
-      <div className="flex items-end justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
-        <div>
-          <h3 className="text-[15px] font-semibold text-white">{season} Statistics</h3>
-          <p className="text-chalk-dim mt-0.5 text-[11px] uppercase tracking-[0.14em]">
-            Baseball-Reference overview
-          </p>
-        </div>
-        {bbrefUrl ? (
-          <a
-            href={bbrefUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-[11px] uppercase tracking-[0.12em] text-white/55 underline underline-offset-2 hover:text-white"
-          >
-            Baseball-Reference
-          </a>
-        ) : null}
+      <div className="border-b border-white/[0.06] px-4 py-3">
+        <h3 className="text-[15px] font-semibold text-white">{season} Statistics</h3>
       </div>
-      {!s && summary.isError ? (
-        <p className="text-chalk-dim border-b border-white/[0.06] px-4 py-3 text-[12px]">
-          Live scrape unavailable — open Baseball-Reference for the full org overview.
-        </p>
-      ) : null}
-      {rows.length > 0 ? (
-        <dl className="divide-y divide-white/[0.06]">
-          {rows.map((r) => (
-            <div key={r.label} className="flex gap-3 px-4 py-2.5">
-              <dt className="text-chalk-dim w-28 shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em]">
-                {r.label}
-              </dt>
-              <dd className="min-w-0 text-[13px] text-[#e8e4d9]">{r.value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : (
-        <p className="text-chalk-dim px-4 py-3 text-[12px]">
-          Open Baseball-Reference for manager, park factors, attendance, and more.
-        </p>
-      )}
+      <dl className="divide-y divide-white/[0.06]">
+        {rows.map((r) => (
+          <div key={r.label} className="flex gap-3 px-4 py-2.5">
+            <dt className="text-chalk-dim w-28 shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em]">
+              {r.label}
+            </dt>
+            <dd className="min-w-0 text-[13px] text-[#e8e4d9]">{r.value}</dd>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }
@@ -312,7 +285,7 @@ export function MlbTeamPayrollTable({ abbrev }: { abbrev: string }) {
 
   return (
     <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
-      <div className="flex flex-wrap items-end justify-between gap-2 border-b border-white/[0.06] px-4 py-3">
+      <div className="border-b border-white/[0.06] px-4 py-3">
         <div>
           <h3 className="text-[15px] font-semibold text-white">Salaries & contracts</h3>
           <p className="text-chalk-dim mt-0.5 text-[11px]">
@@ -325,14 +298,6 @@ export function MlbTeamPayrollTable({ abbrev }: { abbrev: string }) {
             ) : null}
           </p>
         </div>
-        <a
-          href={p.url}
-          target="_blank"
-          rel="noreferrer"
-          className="text-[11px] uppercase tracking-[0.12em] text-white/55 underline underline-offset-2 hover:text-white"
-        >
-          Baseball-Reference
-        </a>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] text-left text-[12px]">
@@ -438,51 +403,50 @@ export function MlbTeamLeadersSection({
   teamId: number;
   accent: string;
 }) {
-  const [tab, setTab] = useState<"hitting" | "pitching" | "fielding">("hitting");
   const leaders = useQuery({
     queryKey: ["mlb-team-leader-cards", teamId],
     queryFn: () => fetchMlbTeamLeaderCards(teamId),
     staleTime: 120_000,
   });
 
-  const cards = useMemo(
-    () => (leaders.data ?? []).filter((c) => c.group === tab).slice(0, 6),
-    [leaders.data, tab],
-  );
+  const groups = useMemo(() => {
+    const all = leaders.data ?? [];
+    return (
+      [
+        { id: "hitting" as const, label: "Hitting" },
+        { id: "pitching" as const, label: "Pitching" },
+        { id: "fielding" as const, label: "Fielding" },
+      ]
+        .map((group) => ({
+          ...group,
+          cards: all.filter((c) => c.group === group.id).slice(0, 6),
+        }))
+        .filter((group) => group.cards.length > 0)
+    );
+  }, [leaders.data]);
 
   return (
     <section>
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-        <div className="flex items-baseline gap-3">
-          <h3 className="text-[22px] font-bold tracking-tight text-white">Team Leaders</h3>
-          <span className="text-[12px] text-white/50 underline underline-offset-2">Sortable Stats</span>
-        </div>
-      </div>
-      <div className="mb-4 flex flex-wrap gap-2">
-        {(["hitting", "pitching", "fielding"] as const).map((id) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={cn(
-              "rounded-full border px-3.5 py-1.5 text-[12px] font-semibold capitalize tracking-[0.04em] transition",
-              tab === id
-                ? "border-white bg-white text-[#1a1a1a]"
-                : "border-white/30 bg-transparent text-white hover:border-white/60",
-            )}
-          >
-            {id}
-          </button>
-        ))}
+      <div className="mb-4">
+        <h3 className="text-[22px] font-bold tracking-tight text-white">Team Leaders</h3>
       </div>
       {leaders.isPending ? (
         <p className="text-chalk-dim animate-pulse text-[12px]">Loading leaders…</p>
-      ) : cards.length === 0 ? (
+      ) : groups.length === 0 ? (
         <p className="text-chalk-dim text-[12px]">Leaders unavailable.</p>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {cards.map((card) => (
-            <LeaderCard key={`${card.group}-${card.category}`} card={card} accent={accent} />
+        <div className="flex flex-col gap-6">
+          {groups.map((group) => (
+            <div key={group.id}>
+              <h4 className="text-chalk-dim mb-3 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                {group.label}
+              </h4>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {group.cards.map((card) => (
+                  <LeaderCard key={`${card.group}-${card.category}`} card={card} accent={accent} />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}

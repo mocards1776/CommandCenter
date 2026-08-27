@@ -889,7 +889,7 @@ function TeamDetailPanel({
               Full team page
             </Link>
           )}
-          {detail && (detail.manager || detail.generalManager) ? (
+          {detail && (detail.manager || detail.generalManager) && detail.source !== "mlb" ? (
             <div className="mt-3 flex flex-col gap-1 border-t border-white/[0.06] pt-3">
               {detail.manager ? (
                 <p className="text-chalk text-[12px]">
@@ -950,6 +950,17 @@ function TeamDetailPanel({
                   abbrev={detail.abbrev}
                   accent={accent}
                   fallbackRecord={detail.record}
+                  fallbackStanding={detail.standing}
+                  fallbackManager={
+                    detail.manager
+                      ? {
+                          id: detail.manager.id,
+                          name: detail.manager.name,
+                          record: detail.record,
+                        }
+                      : null
+                  }
+                  fallbackPresident={detail.generalManager?.name ?? null}
                   playoffOdds={formatOdds(detail.playoffOdds)}
                   wildCardOdds={
                     detail.wildCardOdds ? formatOdds(detail.wildCardOdds) : null
@@ -1088,6 +1099,7 @@ function TeamDetailPanel({
                 </DetailSection>
               ) : null}
 
+              {detail.source !== "mlb" ? (
               <DetailSection title={isSoccer ? "Promotion odds" : "Playoff odds"}>
                 {isSoccer && detail.soccerPromotion ? (
                   <div className="bg-panel rounded border border-white/[0.07] p-4">
@@ -1202,6 +1214,7 @@ function TeamDetailPanel({
                   </EmptyLine>
                 )}
               </DetailSection>
+              ) : null}
 
               <CollapsibleDetailSection title="Upcoming" count={detail.upcoming.length} defaultOpen={false}>
                 <GameList
@@ -1306,7 +1319,8 @@ function TeamDetailPanel({
               </DetailSection>
               ) : null}
 
-              {(detail.hittingLeaders.length > 0 || detail.pitchingLeaders.length > 0) && (
+              {(detail.hittingLeaders.length > 0 || detail.pitchingLeaders.length > 0) &&
+                detail.source !== "mlb" && (
                 <DetailSection title="Leaders">
                   <div className="flex flex-col gap-4">
                     {detail.hittingLeaders.length > 0 && (

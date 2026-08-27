@@ -108,9 +108,9 @@ export async function fetchMlbTeamBbrefSummary(
     });
     if (error) throw error;
     const payload = data as (Partial<MlbTeamBbrefSummary> & { error?: string }) | null;
-    if (!payload || payload.error || !payload.url) return null;
+    if (!payload || payload.error) return null;
     return {
-      url: payload.url,
+      url: payload.url ?? "",
       salariesUrl: payload.salariesUrl ?? null,
       scheduleUrl: payload.scheduleUrl ?? null,
       season: payload.season ?? season,
