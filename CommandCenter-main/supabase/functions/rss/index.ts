@@ -1119,15 +1119,26 @@ function extractStlTodayVideoFragment(html: string, pageUrl = ""): string | null
     isStlTodayVideoUrl(pageUrl) ||
     /class="[^"]*\btype-video\b[^"]*"/i.test(html) ||
     /blox_asset_type"\s*:\s*"video"/i.test(html) ||
-    /"type"\s*:\s*"video"/i.test(html);
+    /"type"\s*:\s*"video"/i.test(html) ||
+    /og:type["'][^>]+content=["']video["']/i.test(html) ||
+    /property=["']og:type["'][^>]+content=["']video["']/i.test(html);
   if (!isVideoPage) return null;
 
   const field59Id =
     html.match(/"asset_field59_id"\s*:\s*"([a-f0-9]+)"/i)?.[1] ||
-    html.match(/redirect\.field59\.com\/video\/([a-f0-9]+)\.mp4/i)?.[1] ||
+    html.match(/redirect\.field59\.com\/video\/([a-f0-9]+)\.(?:mp4|m3u8)/i)?.[1] ||
+    html.match(/cdn\.field59\.com\/[^"'\\\s>]*?\/([a-f0-9]{20,})(?:_|\.)/i)?.[1] ||
     null;
 
-  const mp4Direct = html.match(/https:\/\/redirect\.field59\.com\/video\/[a-f0-9]+\.mp4/i)?.[0] || null;
+  const mp4Direct =
+    html.match(/https?:\\?\/\\?\/redirect\.field59\.com\\?\/video\\?\/[a-f0-9]+\.mp4/i)?.[0] ||
+    html.match(/https?:\/\/redirect\.field59\.com\/video\/[a-f0-9]+\.mp4/i)?.[0] ||
+    null;
+  const m3u8 =
+    html.match(/https?:\\?\/\\?\/redirect\.field59\.com\\?\/video\\?\/[a-f0-9]+\.m3u8/i)?.[0] ||
+    html.match(/https?:\/\/redirect\.field59\.com\/video\/[a-f0-9]+\.m3u8/i)?.[0] ||
+    null;
+  const mp4FromM3u8 = m3u8 ? cleanMediaUrl(m3u8).replace(/\.m3u8(\?.*)?$/i, ".mp4") : null;
   const mp4FromId = field59Id ? `https://redirect.field59.com/video/${field59Id}.mp4` : null;
 
   const ogVideoRaw =
@@ -1138,20 +1149,39 @@ function extractStlTodayVideoFragment(html: string, pageUrl = ""): string | null
 
   const src =
     (mp4Direct ? cleanMediaUrl(mp4Direct) : null) ||
+    (mp4FromM3u8 && /^https?:/i.test(mp4FromM3u8) ? mp4FromM3u8 : null) ||
     (mp4FromId ? cleanMediaUrl(mp4FromId) : null) ||
     (ogVideo && /\.mp4(\?|$)/i.test(ogVideo) ? ogVideo : null);
   if (!src) return null;
 
+  const desc =
+    html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    null;
   const title =
     html.match(/"asset_headline"\s*:\s*"((?:\\.|[^"\\])*)"/i)?.[1]?.replace(/\\"/g, '"') ||
     html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
     html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ||
     "Video";
   const cleanTitle = stripTags(title).replace(/\s*\|\s*stltoday\.com.*/i, "").trim();
+  const cleanDesc = desc ? stripTags(desc).trim() : "";
   return (
     `<p><video class="rss-video" src="${src}" controls autoplay muted playsinline loop preload="auto"></video></p>` +
-    (cleanTitle ? `<p>${cleanTitle}</p>` : "")
+    (cleanTitle ? `<p><strong>${cleanTitle}</strong></p>` : "") +
+    (cleanDesc && cleanDesc !== cleanTitle ? `<p>${cleanDesc}</p>` : "")
   );
+}
+
+/** Gift / share / related-video chrome mistaken for the article body. */
+function isStlTodayVideoChromeNoise(html: string): boolean {
+  if (/<video\b/i.test(html)) return false;
+  const text = stripTags(html).toLowerCase();
+  if (/gift this video|out of gifts|share this video paywall|prefer us on google/.test(text)) {
+    return true;
+  }
+  if (/javascript is required to use this website/.test(text)) return true;
+  if (/\blatest video\b/.test(text) && text.length < 1200) return true;
+  return false;
 }
 
 /** Pull a clean autoplay video card out of MLB.com Film Room / clip pages. */
@@ -2259,7 +2289,22 @@ async function handleRead(url: string, refresh = false) {
 
   const html = unlockEncryptedContent(stripNoise(rawHtml));
   const meta = pageMeta(html);
-  let frag = extractFragment(html, url);
+
+  // Field59 ids / mp4s often live inside <script> JSON that stripNoise removes —
+  // resolve video cards from the raw page first so we never fall through to gift chrome.
+  let frag: string | null = null;
+  if (isStlTodayVideoUrl(url)) {
+    frag =
+      extractStlTodayVideoFragment(rawHtml, url) ||
+      extractStlTodayVideoFragment(html, url);
+  }
+  if (!frag) frag = extractFragment(html, url);
+  if (isStlTodayVideoUrl(url) && frag && isStlTodayVideoChromeNoise(frag)) {
+    frag =
+      extractStlTodayVideoFragment(rawHtml, url) ||
+      extractStlTodayVideoFragment(html, url) ||
+      stlTodayVideoFallbackHtml(url, meta.title);
+  }
 
   // MLB.com news is often a SPA — try the AMP shell before giving up.
   if (isMlbNewsUrl(url) && (!frag || stripTags(frag).length < 400)) {
