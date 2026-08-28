@@ -1088,7 +1088,7 @@ function ArticleReaderShell({
   const refreshExtractRef = useRef(false);
 
   const article = useQuery({
-    queryKey: ["rss-article-v2", item.link],
+    queryKey: ["rss-article-v3", item.link],
     queryFn: async () => {
       if (item.contentHtml) {
         return {
@@ -2537,7 +2537,7 @@ export default function RssPage() {
         signal: ac.signal,
         prefetch: (url) =>
           qc.prefetchQuery({
-            queryKey: ["rss-article-v2", url],
+            queryKey: ["rss-article-v3", url],
             queryFn: () => fetchRssArticle(url),
             staleTime: 10 * 60_000,
           }),
@@ -2667,7 +2667,7 @@ export default function RssPage() {
       if (ahead) void prefetchDispatchGameData(qc, ahead, ahead.feedUrl);
       if (articleNeedsEdgeExtract(next)) {
         void qc.prefetchQuery({
-          queryKey: ["rss-article-v2", next.link],
+          queryKey: ["rss-article-v3", next.link],
           queryFn: () => fetchRssArticle(next.link),
           staleTime: 10 * 60_000,
         });

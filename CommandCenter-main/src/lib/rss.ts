@@ -1869,7 +1869,14 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
   // MLB + Cardinals wraps are built+cached on the rss edge (15-min cron warms them
   // even when Dispatch is closed). Client still polls while open for faster pickup.
   if (feedUrl === "synthetic:cardinals-wraps" || feedUrl === "synthetic:mlb-wraps") {
-    return invokeRss<RssFeed>({ mode: "feed", feedUrl });
+    // Bypass edge feed cache on a cadence so evening wraps aren't stuck for 20m.
+    const bust =
+      typeof window !== "undefined" && Math.floor(Date.now() / 60_000) % 3 === 0;
+    return invokeRss<RssFeed>({
+      mode: "feed",
+      feedUrl,
+      ...(bust ? { refresh: "1" } : {}),
+    });
   }
   if (feedUrl === "synthetic:nfl-wraps") {
     return fetchEspnWrapsFeed({
@@ -3754,7 +3761,7 @@ async function fetchCardinalsSavantFeed(): Promise<RssFeed> {
   };
 }
 
-const EXTRACT_SESSION_PREFIX = "rss-extract-v3:";
+const EXTRACT_SESSION_PREFIX = "rss-extract-v4:";
 const EXTRACT_SESSION_TTL_MS = 45 * 60_000;
 const EXTRACT_SESSION_MAX = 28;
 const EXTRACT_SESSION_MAX_BYTES = 180_000;
@@ -3823,6 +3830,25 @@ export function isThinRssExtract(article: Pick<RssArticle, "contentHtml" | "cont
   return words > 0 && words < 50 && /Open original article/i.test(html);
 }
 
+/** Gift / share / related-video chrome mistaken for a Field59 video body. */
+export function isNoisyStlTodayVideoExtract(
+  url: string,
+  article: Pick<RssArticle, "contentHtml" | "contentText">,
+): boolean {
+  if (!isStlTodayVideoUrl(url)) return false;
+  const html = article.contentHtml ?? "";
+  if (/<video\b/i.test(html)) return false;
+  const text = `${article.contentText ?? ""} ${html}`.toLowerCase();
+  if (/gift this video|out of gifts|share this video paywall|prefer us on google/.test(text)) {
+    return true;
+  }
+  if (/javascript is required to use this website/.test(text)) return true;
+  if (/\blatest video\b/.test(text) && (article.contentText ?? "").length < 1200) return true;
+  // Video URL with no playable embed and no real prose = failed extract.
+  if (!(article.contentText ?? "").trim() || (article.contentText ?? "").length < 80) return true;
+  return false;
+}
+
 export function clearExtractSession(url?: string): void {
   try {
     if (url) {
@@ -3848,9 +3874,11 @@ export async function fetchRssArticle(
   if (cached) {
     // Drop stale Savant nav-chrome extracts from older edge deploys.
     const { isSavantPreviewUrl, isSavantNavSoup } = await import("./savant-preview");
-    if (!(isSavantPreviewUrl(url) && isSavantNavSoup(cached.contentHtml || cached.contentText || ""))) {
-      return cached;
-    }
+    const savantSoup =
+      isSavantPreviewUrl(url) && isSavantNavSoup(cached.contentHtml || cached.contentText || "");
+    const stlVideoNoise = isNoisyStlTodayVideoExtract(url, cached);
+    if (!savantSoup && !stlVideoNoise) return cached;
+    if (stlVideoNoise) clearExtractSession(url);
   }
 
   // Prefer browser rebuild for Savant — edge often lags redeploys and returns SPA nav.
@@ -3886,6 +3914,15 @@ export async function fetchRssArticle(
         }
         throw new Error("Savant preview extract returned navigation chrome");
       }
+    }
+    if (isNoisyStlTodayVideoExtract(url, article)) {
+      const local = await extractStlTodayInBrowser(url).catch(() => null);
+      if (local && !isNoisyStlTodayVideoExtract(url, local)) {
+        writeExtractSession(local);
+        return local;
+      }
+      // Don't cache gift/share chrome as if it were the video.
+      return article;
     }
     writeExtractSession(article);
     return article;
@@ -3969,6 +4006,49 @@ async function extractStlTodayInBrowser(url: string): Promise<RssArticle | null>
       .replace(/&gt;/gi, ">")
       .replace(/&mdash;/gi, "—")
       .replace(/&rsquo;/gi, "'");
+
+  // Field59 pressers / clips — prefer a clean mp4 card over TownNews chrome.
+  if (isStlTodayVideoUrl(url)) {
+    const field59Id =
+      raw.match(/"asset_field59_id"\s*:\s*"([a-f0-9]+)"/i)?.[1] ||
+      raw.match(/redirect\.field59\.com\/video\/([a-f0-9]+)\.(?:mp4|m3u8)/i)?.[1] ||
+      null;
+    const mp4Direct = raw.match(/https?:\/\/redirect\.field59\.com\/video\/[a-f0-9]+\.mp4/i)?.[0] || null;
+    const m3u8 = raw.match(/https?:\/\/redirect\.field59\.com\/video\/[a-f0-9]+\.m3u8/i)?.[0] || null;
+    const src =
+      mp4Direct ||
+      (m3u8 ? m3u8.replace(/\.m3u8(\?.*)?$/i, ".mp4") : null) ||
+      (field59Id ? `https://redirect.field59.com/video/${field59Id}.mp4` : null);
+    if (src) {
+      const title =
+        resolveArticleTitle(
+          raw.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+            null,
+          null,
+        ) || "Video";
+      const desc =
+        raw.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+        raw.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+        null;
+      const image =
+        raw.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] || null;
+      const contentHtml =
+        `<p><video class="rss-video" src="${src}" controls autoplay muted playsinline loop preload="auto"></video></p>` +
+        `<p><strong>${title}</strong></p>` +
+        (desc ? `<p>${decodeEntities(desc)}</p>` : "");
+      const contentText = contentHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      return {
+        url,
+        title,
+        byline: "Post-Dispatch",
+        image,
+        contentHtml,
+        contentText,
+        wordCount: contentText.split(/\s+/).filter(Boolean).length,
+      };
+    }
+  }
+
   const decrypt = (s: string) => {
     let out = "";
     for (let i = 0; i < s.length; i++) {
@@ -4434,7 +4514,6 @@ export async function unsaveRssArticle(articleUrl: string): Promise<void> {
 
 /** Feeds that stay out of the cross-feed Unread inbox (browse them on their own). */
 export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>([
-  "mlb-wraps",
   "nfl-wraps",
   "mlb-stats",
   "mlb-form",

@@ -1119,15 +1119,26 @@ function extractStlTodayVideoFragment(html: string, pageUrl = ""): string | null
     isStlTodayVideoUrl(pageUrl) ||
     /class="[^"]*\btype-video\b[^"]*"/i.test(html) ||
     /blox_asset_type"\s*:\s*"video"/i.test(html) ||
-    /"type"\s*:\s*"video"/i.test(html);
+    /"type"\s*:\s*"video"/i.test(html) ||
+    /og:type["'][^>]+content=["']video["']/i.test(html) ||
+    /property=["']og:type["'][^>]+content=["']video["']/i.test(html);
   if (!isVideoPage) return null;
 
   const field59Id =
     html.match(/"asset_field59_id"\s*:\s*"([a-f0-9]+)"/i)?.[1] ||
-    html.match(/redirect\.field59\.com\/video\/([a-f0-9]+)\.mp4/i)?.[1] ||
+    html.match(/redirect\.field59\.com\/video\/([a-f0-9]+)\.(?:mp4|m3u8)/i)?.[1] ||
+    html.match(/cdn\.field59\.com\/[^"'\\\s>]*?\/([a-f0-9]{20,})(?:_|\.)/i)?.[1] ||
     null;
 
-  const mp4Direct = html.match(/https:\/\/redirect\.field59\.com\/video\/[a-f0-9]+\.mp4/i)?.[0] || null;
+  const mp4Direct =
+    html.match(/https?:\\?\/\\?\/redirect\.field59\.com\\?\/video\\?\/[a-f0-9]+\.mp4/i)?.[0] ||
+    html.match(/https?:\/\/redirect\.field59\.com\/video\/[a-f0-9]+\.mp4/i)?.[0] ||
+    null;
+  const m3u8 =
+    html.match(/https?:\\?\/\\?\/redirect\.field59\.com\\?\/video\\?\/[a-f0-9]+\.m3u8/i)?.[0] ||
+    html.match(/https?:\/\/redirect\.field59\.com\/video\/[a-f0-9]+\.m3u8/i)?.[0] ||
+    null;
+  const mp4FromM3u8 = m3u8 ? cleanMediaUrl(m3u8).replace(/\.m3u8(\?.*)?$/i, ".mp4") : null;
   const mp4FromId = field59Id ? `https://redirect.field59.com/video/${field59Id}.mp4` : null;
 
   const ogVideoRaw =
@@ -1138,20 +1149,39 @@ function extractStlTodayVideoFragment(html: string, pageUrl = ""): string | null
 
   const src =
     (mp4Direct ? cleanMediaUrl(mp4Direct) : null) ||
+    (mp4FromM3u8 && /^https?:/i.test(mp4FromM3u8) ? mp4FromM3u8 : null) ||
     (mp4FromId ? cleanMediaUrl(mp4FromId) : null) ||
     (ogVideo && /\.mp4(\?|$)/i.test(ogVideo) ? ogVideo : null);
   if (!src) return null;
 
+  const desc =
+    html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+    null;
   const title =
     html.match(/"asset_headline"\s*:\s*"((?:\\.|[^"\\])*)"/i)?.[1]?.replace(/\\"/g, '"') ||
     html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
     html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ||
     "Video";
   const cleanTitle = stripTags(title).replace(/\s*\|\s*stltoday\.com.*/i, "").trim();
+  const cleanDesc = desc ? stripTags(desc).trim() : "";
   return (
     `<p><video class="rss-video" src="${src}" controls autoplay muted playsinline loop preload="auto"></video></p>` +
-    (cleanTitle ? `<p>${cleanTitle}</p>` : "")
+    (cleanTitle ? `<p><strong>${cleanTitle}</strong></p>` : "") +
+    (cleanDesc && cleanDesc !== cleanTitle ? `<p>${cleanDesc}</p>` : "")
   );
+}
+
+/** Gift / share / related-video chrome mistaken for the article body. */
+function isStlTodayVideoChromeNoise(html: string): boolean {
+  if (/<video\b/i.test(html)) return false;
+  const text = stripTags(html).toLowerCase();
+  if (/gift this video|out of gifts|share this video paywall|prefer us on google/.test(text)) {
+    return true;
+  }
+  if (/javascript is required to use this website/.test(text)) return true;
+  if (/\blatest video\b/.test(text) && text.length < 1200) return true;
+  return false;
 }
 
 /** Pull a clean autoplay video card out of MLB.com Film Room / clip pages. */
@@ -1635,8 +1665,8 @@ const CARDINALS_TEAM_ID = "24"; // ESPN team id (MLB.com uses 138)
 const CARDINALS_ABBREV = "STL";
 const SYNTHETIC_CARDINALS_WRAPS = "synthetic:cardinals-wraps";
 const SYNTHETIC_MLB_WRAPS = "synthetic:mlb-wraps";
-/** Serve cached wraps for up to 20m; cron refreshes every 15m. */
-const FEED_CACHE_TTL_MS = 20 * 60_000;
+/** Serve cached wraps for up to 5m so evening recaps land quickly; cron still warms. */
+const FEED_CACHE_TTL_MS = 5 * 60_000;
 
 function adminClient() {
   const url = Deno.env.get("SUPABASE_URL");
@@ -1695,6 +1725,103 @@ function formatEspnDate(d: Date): string {
 
 function espnRecapUrl(eventId: string): string {
   return `https://www.espn.com/mlb/recap/_/gameId/${eventId}`;
+}
+
+/** ESPN often leaves yesterday's wrap on upcoming game pages — don't list those as previews. */
+function looksLikeMlbRecapCopy(text: string): boolean {
+  const t = text.toLowerCase();
+  if (/\b(?:beat|beats|beaten|defeat(?:ed|s)?|shutout|walk-?off|rout(?:ed|s)?|tops?|topped|snap(?:ped)?\s+\d)/i.test(t)) {
+    return true;
+  }
+  if (/\b\d{1,2}-\d{1,2}\b/.test(t) && /\b(?:win|victory|loss|over|past)\b/i.test(t)) return true;
+  if (/\b(?:rbi|homer(?:ed|s)?|strike(?:s|ing)? out)\b/i.test(t) && /\b(?:win|beat|over)\b/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+type StorySrc = {
+  headline?: string;
+  description?: string;
+  story?: string;
+  type?: string;
+};
+
+function storyBodyLen(a: StorySrc): number {
+  const story = a.story ? stripTags(a.story).trim() : "";
+  const desc = (a.description ?? "").replace(/^—\s*/, "").trim();
+  return Math.max(story.length, desc.length);
+}
+
+function storyHasProse(a: StorySrc, forFinal: boolean): boolean {
+  const storyText = a.story ? stripTags(a.story).trim() : "";
+  const description = (a.description ?? "").replace(/^—\s*/, "").trim();
+  const hasStory = storyText.length >= 80;
+  const hasProseDesc =
+    description.length >= 60 &&
+    /[.!?]/.test(description) &&
+    !(forFinal ? /^final\b/i.test(description) : /^first pitch\b/i.test(description));
+  return hasStory || hasProseDesc;
+}
+
+function teamMentionKeys(side?: EspnCompetitor): string[] {
+  if (!side?.team) return [];
+  const abbrev = side.team.abbreviation ?? "";
+  const name = side.team.displayName ?? "";
+  const short = side.team.shortDisplayName ?? "";
+  const nick = name.split(/\s+/).slice(-1)[0] ?? "";
+  const keys = [abbrev, name, short, nick].filter((k) => k && k.length >= 2);
+  if (abbrev === "STL") keys.push("cardinals", "cards");
+  if (abbrev === "TB" || abbrev === "TBR") keys.push("rays", "tampa");
+  if (abbrev === "KC" || abbrev === "KCR") keys.push("royals", "kansas");
+  if (abbrev === "SF" || abbrev === "SFG") keys.push("giants");
+  if (abbrev === "SD" || abbrev === "SDP") keys.push("padres");
+  if (abbrev === "AZ" || abbrev === "ARI") keys.push("diamondbacks", "d-backs", "dbacks");
+  if (abbrev === "CWS" || abbrev === "CHW") keys.push("white sox", "sox");
+  if (abbrev === "WSH" || abbrev === "WSN") keys.push("nationals", "nats");
+  return [...new Set(keys.map((k) => k.toLowerCase()))];
+}
+
+function storyMentionsTeam(blob: string, side?: EspnCompetitor): boolean {
+  const keys = teamMentionKeys(side);
+  return keys.some((k) => blob.includes(k));
+}
+
+/** Prefer both clubs; accept one-club + solid prose so we don't drop half a slate. */
+function pickMlbWrapStory(
+  pool: StorySrc[],
+  home?: EspnCompetitor,
+  away?: EspnCompetitor,
+  opts?: { requirePreviewTone?: boolean },
+): StorySrc | null {
+  const usable = pool.filter((a) => {
+    if (!a.headline) return false;
+    if (/^media$/i.test(a.type ?? "")) return false;
+    const blob = `${a.headline} ${a.description ?? ""} ${a.story ?? ""}`;
+    if (opts?.requirePreviewTone && looksLikeMlbRecapCopy(blob)) return false;
+    return true;
+  });
+  if (!usable.length) return null;
+
+  const scored = usable.map((a) => {
+    const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`.toLowerCase();
+    const both = storyMentionsTeam(blob, home) && storyMentionsTeam(blob, away);
+    const one = storyMentionsTeam(blob, home) || storyMentionsTeam(blob, away);
+    const prose = storyHasProse(a, !opts?.requirePreviewTone);
+    let score = storyBodyLen(a);
+    if (both && prose) score += 10_000;
+    else if (one && prose) score += 5_000;
+    else if (both) score += 2_000;
+    else if (one) score += 500;
+    else score -= 1_000;
+    return { a, score, both, one, prose };
+  });
+  scored.sort((x, y) => y.score - x.score);
+  const best = scored[0];
+  if (!best) return null;
+  // Require at least one team mention and readable prose.
+  if (!best.one || !best.prose) return null;
+  return best.a;
 }
 
 async function fetchEspnJson(url: string): Promise<unknown | null> {
@@ -1910,7 +2037,7 @@ async function buildCardinalsWrapsFeed(): Promise<Record<string, unknown>> {
   };
 }
 
-/** League-wide MLB wraps — same prose bar as Cardinals; no scoreboard stubs. */
+/** League-wide MLB wraps — finals first, no recycled recaps as "previews". */
 async function buildMlbWrapsFeed(): Promise<Record<string, unknown>> {
   type Cand = {
     eventId: string;
@@ -1921,8 +2048,8 @@ async function buildMlbWrapsFeed(): Promise<Record<string, unknown>> {
   const candidates: Cand[] = [];
   const seen = new Set<string>();
   const today = new Date();
-  // Past 5 days + tomorrow (look-ahead for previews).
-  for (let i = -1; i < 5; i++) {
+  // Past 7 days + tomorrow (look-ahead for real previews only).
+  for (let i = -1; i < 7; i++) {
     const d = new Date(today);
     d.setUTCDate(d.getUTCDate() - i);
     const dateStr = formatEspnDate(d);
@@ -1950,10 +2077,11 @@ async function buildMlbWrapsFeed(): Promise<Record<string, unknown>> {
     const db = b.event.date ? Date.parse(b.event.date) : 0;
     return db - da;
   });
+  // Finals first so a stack of preview stubs can't crowd out real wraps.
   const limited = [
+    ...candidates.filter((c) => c.isFinal),
     ...candidates.filter((c) => c.isPreview),
-    ...candidates.filter((c) => !c.isPreview),
-  ].slice(0, 60);
+  ].slice(0, 90);
 
   const items: FeedItem[] = [];
   const espnPromo =
@@ -1971,103 +2099,31 @@ async function buildMlbWrapsFeed(): Promise<Record<string, unknown>> {
         const summary = (await fetchEspnJson(
           `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${c.eventId}`,
         )) as {
-          article?: {
-            headline?: string;
-            description?: string;
-            story?: string;
-            type?: string;
-          };
-          news?: {
-            articles?: {
-              headline?: string;
-              description?: string;
-              story?: string;
-              type?: string;
-            }[];
-          };
+          article?: StorySrc;
+          news?: { articles?: StorySrc[] };
         } | null;
         if (!summary) return null;
 
-        type StorySrc = {
-          headline?: string;
-          description?: string;
-          story?: string;
-          type?: string;
-        };
-        const storyMentionsMatchup = (a: StorySrc) => {
-          const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`.toLowerCase();
-          const hits = (side?: EspnCompetitor) => {
-            const abbrev = side?.team?.abbreviation ?? "";
-            const name = side?.team?.displayName ?? "";
-            const short = side?.team?.shortDisplayName ?? "";
-            const nick = name.split(/\s+/).slice(-1)[0] ?? "";
-            const keys = [abbrev, name, short, nick]
-              .filter((k) => k && k.length >= 3)
-              .map((k) => k.toLowerCase());
-            return keys.some((k) => blob.includes(k));
-          };
-          return hits(home) && hits(away);
-        };
-        const newsArticles = (summary.news?.articles ?? []).filter((a) => {
+        const pool: StorySrc[] = [];
+        if (summary.article && !espnPromo.test(
+          `${summary.article.headline ?? ""} ${summary.article.description ?? ""} ${summary.article.story ?? ""}`,
+        )) {
+          pool.push(summary.article);
+        }
+        for (const a of summary.news?.articles ?? []) {
           const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`;
-          return Boolean(a.headline) && !espnPromo.test(blob) && !/^media$/i.test(a.type ?? "");
-        });
-
-        const bodyLen = (a: StorySrc) => {
-          const story = a.story ? stripTags(a.story).trim() : "";
-          const desc = (a.description ?? "").replace(/^—\s*/, "").trim();
-          return Math.max(story.length, desc.length);
-        };
-
-        let best: StorySrc | null = null;
-        if (c.isFinal) {
-          const pool: StorySrc[] = [];
-          if (summary.article && !/^media$/i.test(summary.article.type ?? "")) {
-            pool.push(summary.article);
-          }
-          for (const a of newsArticles) pool.push(a);
-          let bestLen = 0;
-          for (const cand of pool) {
-            if (!storyMentionsMatchup(cand)) continue;
-            const len = bodyLen(cand);
-            if (len > bestLen || (!best && cand.headline)) {
-              best = cand;
-              bestLen = len;
-            }
-          }
-        } else {
-          const art = summary.article;
-          if (
-            art?.headline &&
-            !espnPromo.test(`${art.headline} ${art.description ?? ""} ${art.story ?? ""}`) &&
-            !/^media$/i.test(art.type ?? "") &&
-            storyMentionsMatchup(art)
-          ) {
-            best = art;
-          } else {
-            // Previews: also search news rail for matchup copy.
-            let bestLen = 0;
-            for (const cand of newsArticles) {
-              if (!storyMentionsMatchup(cand)) continue;
-              const len = bodyLen(cand);
-              if (len > bestLen || (!best && cand.headline)) {
-                best = cand;
-                bestLen = len;
-              }
-            }
+          if (a.headline && !espnPromo.test(blob) && !/^media$/i.test(a.type ?? "")) {
+            pool.push(a);
           }
         }
 
+        const best = pickMlbWrapStory(pool, home, away, {
+          requirePreviewTone: c.isPreview,
+        });
         if (!best?.headline) return null;
+
         const storyText = best.story ? stripTags(best.story).trim() : "";
         const description = (best.description ?? "").replace(/^—\s*/, "").trim();
-        const hasStory = storyText.length >= 80;
-        const hasProseDesc =
-          description.length >= 60 &&
-          /[.!?]/.test(description) &&
-          !(c.isFinal ? /^final\b/i.test(description) : /^first pitch\b/i.test(description));
-        if (!hasStory && !hasProseDesc) return null;
-
         const snippet = description || storyText.slice(0, 220);
         if (c.isFinal) {
           return {
@@ -2146,12 +2202,12 @@ async function handleWarmWraps(): Promise<Response> {
   return json({ warmedAt: new Date().toISOString(), results });
 }
 
-async function handleFeed(feedUrl: string) {
+async function handleFeed(feedUrl: string, forceRefresh = false) {
   if (feedUrl === SYNTHETIC_CARDINALS_WRAPS) {
-    return await handleCachedWrapFeed(feedUrl, buildCardinalsWrapsFeed);
+    return await handleCachedWrapFeed(feedUrl, buildCardinalsWrapsFeed, forceRefresh);
   }
   if (feedUrl === SYNTHETIC_MLB_WRAPS) {
-    return await handleCachedWrapFeed(feedUrl, buildMlbWrapsFeed);
+    return await handleCachedWrapFeed(feedUrl, buildMlbWrapsFeed, forceRefresh);
   }
   if (isSyntheticFeedUrl(feedUrl)) {
     return json({ error: "Unknown synthetic feed" }, 400);
@@ -2259,7 +2315,22 @@ async function handleRead(url: string, refresh = false) {
 
   const html = unlockEncryptedContent(stripNoise(rawHtml));
   const meta = pageMeta(html);
-  let frag = extractFragment(html, url);
+
+  // Field59 ids / mp4s often live inside <script> JSON that stripNoise removes —
+  // resolve video cards from the raw page first so we never fall through to gift chrome.
+  let frag: string | null = null;
+  if (isStlTodayVideoUrl(url)) {
+    frag =
+      extractStlTodayVideoFragment(rawHtml, url) ||
+      extractStlTodayVideoFragment(html, url);
+  }
+  if (!frag) frag = extractFragment(html, url);
+  if (isStlTodayVideoUrl(url) && frag && isStlTodayVideoChromeNoise(frag)) {
+    frag =
+      extractStlTodayVideoFragment(rawHtml, url) ||
+      extractStlTodayVideoFragment(html, url) ||
+      stlTodayVideoFallbackHtml(url, meta.title);
+  }
 
   // MLB.com news is often a SPA — try the AMP shell before giving up.
   if (isMlbNewsUrl(url) && (!frag || stripTags(frag).length < 400)) {
@@ -2658,7 +2729,8 @@ Deno.serve(async (req: Request) => {
       return await handleWarmWraps();
     }
     if (body.mode === "feed") {
-      return await handleFeed(body.feedUrl?.trim() || DEFAULT_FEED);
+      const refresh = body.refresh === true || body.refresh === "1" || body.refresh === "true";
+      return await handleFeed(body.feedUrl?.trim() || DEFAULT_FEED, refresh);
     }
     if (body.mode === "read") {
       if (!body.url?.trim()) return json({ error: "url is required" }, 400);
