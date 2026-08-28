@@ -835,10 +835,32 @@ export function linkifyMlbPlayersInHtml(
     frag.appendChild(makeWatchMark(kind));
   };
 
+  const stripWatchMarksInside = (anchor: Element) => {
+    anchor.querySelectorAll(":scope > .rss-player-watch").forEach((el) => el.remove());
+    // Drop trailing spacer text left from a prior mark insert.
+    let last = anchor.lastChild;
+    while (last && last.nodeType === 3 && !/\S/.test(last.textContent ?? "")) {
+      const prev = last.previousSibling;
+      anchor.removeChild(last);
+      last = prev;
+    }
+  };
+
   const insertWatchMarkAfter = (anchor: Element, id: number, nameHint?: string) => {
     const kind = markFor(id, nameHint);
     if (!kind) return;
     const mark = makeWatchMark(kind);
+    // Leader/standings/results rows are CSS grids/flex rows. A sibling mark becomes
+    // its own column and shoves the stat onto the next line (scroll "freak out").
+    const boardCell = anchor.closest(
+      ".mlb-leader-card__row, .mlb-leader-card__who, .mlb-standings-team-cell, .mlb-results-matchup, .mlb-results-pitchers",
+    );
+    if (boardCell) {
+      stripWatchMarksInside(anchor);
+      anchor.appendChild(doc.createTextNode("\u00a0"));
+      anchor.appendChild(mark);
+      return;
+    }
     anchor.parentNode?.insertBefore(mark, anchor.nextSibling);
   };
 

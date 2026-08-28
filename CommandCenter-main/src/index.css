@@ -594,10 +594,15 @@
     box-shadow: inset 0 -0.08em 0 rgba(217, 81, 92, 0.65);
   }
 
-  .rss-reader p,
-  .rss-reader figure,
-  .rss-reader blockquote,
-  .rss-reader table {
+  /*
+   * Only top-level article prose — not nested digest cards/tables.
+   * content-visibility + contain-intrinsic-size on every <p> inside leader
+   * heroes made Dispatch boards jump/resize while scrolling.
+   */
+  .rss-reader > p,
+  .rss-reader > figure,
+  .rss-reader > blockquote,
+  .rss-reader > table {
     content-visibility: auto;
     contain-intrinsic-size: auto 120px;
   }
@@ -1069,12 +1074,29 @@
   font-size: 0.88rem !important;
   font-weight: 650;
   line-height: 1.25;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15em;
+  max-width: 100%;
+}
+.rss-reader .mlb-leader-card__row a .rss-player-watch,
+.rss-reader .mlb-leader-card__who a .rss-player-watch {
+  flex: 0 0 auto;
+}
+/* Legacy sibling marks (cached HTML) — park them in the name column. */
+.rss-reader .mlb-leader-card__row > .rss-player-watch {
+  grid-column: 2;
+  justify-self: end;
+  margin-left: 0;
 }
 .rss-reader .mlb-leader-card__row .mlb-leader-card__stat,
-.rss-reader .mlb-leader-card__row span.numeral {
+.rss-reader .mlb-leader-card__row > span.numeral {
+  grid-column: 3;
   font-weight: 700;
   color: #111 !important;
   font-variant-numeric: tabular-nums;
+  font-size: 0.88rem !important;
+  line-height: 1.25;
 }
 
 mark.rss-hl {
