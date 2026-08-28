@@ -2355,6 +2355,20 @@ function espnStoryBodyHtml(a: EspnStorySrc | undefined): string {
   return "";
 }
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Whole-token match so short abbrevs don't hit substrings (BAL⊂baseball, ATH⊂path). */
+function textHasTeamToken(blob: string, token: string): boolean {
+  const t = token.toLowerCase().trim();
+  if (!t) return false;
+  if (t.length <= 3) {
+    return new RegExp(`(?:^|[^a-z0-9])${escapeRegExp(t)}(?:[^a-z0-9]|$)`, "i").test(blob);
+  }
+  return blob.includes(t);
+}
+
 function espnStoryMentionsMatchup(
   text: string,
   homeAbbrev: string,
@@ -2370,7 +2384,7 @@ function espnStoryMentionsMatchup(
       const nick = name.split(/\s+/).slice(-1)[0];
       if (nick && nick.length >= 4) keys.push(nick);
     }
-    return keys.some((k) => k && blob.includes(k.toLowerCase()));
+    return keys.some((k) => k && textHasTeamToken(blob, k));
   };
   return hits(homeName ?? null, homeAbbrev) && hits(awayName ?? null, awayAbbrev);
 }
@@ -2477,9 +2491,13 @@ export async function fetchEspnGameRecap(
       return recapFromEspnStory(eventId, sum.article!, isPregame ? "preview" : "recap");
     }
 
+    // Pregame news rails are league features / fantasy blurbs — never promote them
+    // as this game's preview (BAL⊂baseball / ATH⊂path false positives used to leak).
+    if (isPregame) return null;
+
     for (const a of sum.news?.articles ?? []) {
       if (usable(a, true, 80)) {
-        return recapFromEspnStory(eventId, a, isPregame ? "preview" : "recap");
+        return recapFromEspnStory(eventId, a, "recap");
       }
     }
 
