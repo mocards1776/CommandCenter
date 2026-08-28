@@ -1385,6 +1385,104 @@ function attrValue(attrs: string, name: string): string | null {
   return sq ? sq[1] : null;
 }
 
+/** Minute Media / Cloudinary ship LQIP as `c_fill,w_16` — bump tiny path widths. */
+function upgradeTinyCdnImageUrl(raw: string, target = 1440): string {
+  const src = raw.trim();
+  if (!src || !/^https?:/i.test(src)) return src;
+  let decoded = src;
+  try {
+    decoded = decodeURIComponent(src);
+  } catch {
+    /* keep */
+  }
+  return decoded.replace(/(^|[,/])w_(\d+)(?=,|\/|$)/g, (full, pre: string, n: string) => {
+    const width = Number(n);
+    if (Number.isFinite(width) && width > 0 && width < 200) return `${pre}w_${target}`;
+    return full;
+  });
+}
+
+function scoreCdnImageUrl(raw: string): number {
+  const u = raw.toLowerCase();
+  if (!u || u.startsWith("data:")) return -1000;
+  let score = 10;
+  if (/(?:blur|lqip|placeholder|spacer|pixel|transparent|1x1|dummy)/i.test(u)) score -= 80;
+  if (/[?&](?:w|width)=(?:[1-9]|[1-9]\d|1\d\d)(?:&|$)/i.test(u)) score -= 40;
+  if (/[?&](?:w|width)=(?:[5-9]\d{2}|\d{4,})(?:&|$)/i.test(u)) score += 40;
+  const pathW = u.match(/(?:^|[,/])w_(\d+)(?=,|\/|$)/);
+  if (pathW) {
+    const w = Number(pathW[1]);
+    if (w > 0 && w < 200) score -= 90;
+    else if (w >= 720) score += 40;
+    else if (w >= 360) score += 18;
+  }
+  if (/\.(?:jpe?g|png|webp)(?:$|\?)/i.test(u)) score += 8;
+  if (/minutemediacdn|cloudinary|imgix/i.test(u)) score += 6;
+  score += Math.min(raw.length / 40, 12);
+  return score;
+}
+
+function largestFromSrcset(srcset: string): string {
+  let best = "";
+  let bestW = -1;
+  for (const part of srcset.split(",")) {
+    const bits = part.trim().split(/\s+/);
+    const url = bits[0] || "";
+    if (!url) continue;
+    const wMark = bits.find((b) => /^\d+w$/i.test(b));
+    const dens = bits.find((b) => /^\d+(?:\.\d+)?x$/i.test(b));
+    const pathW = url.match(/(?:^|[,/])w_(\d+)(?=,|\/|$)/i);
+    let w = wMark ? Number(wMark.replace(/\D/g, "")) : 0;
+    if (!w && dens) w = Math.round(Number(dens.replace(/x$/i, "")) * 1000);
+    if (!w && pathW) w = Number(pathW[1]);
+    if (w > bestW) {
+      bestW = w;
+      best = url;
+    } else if (!best) best = url;
+    else if (w === bestW && scoreCdnImageUrl(url) > scoreCdnImageUrl(best)) best = url;
+  }
+  return best;
+}
+
+/**
+ * SI / Minute Media put the real sizes on <source srcset> and leave a w_16 blur
+ * on <img>. Collapse <picture> to a single upgraded <img> before sanitize strips
+ * the picture wrapper (source-only tags have no src and would be dropped).
+ */
+function promotePictureElements(html: string): string {
+  return html.replace(/<picture\b[^>]*>([\s\S]*?)<\/picture>/gi, (_full, inner: string) => {
+    const candidates: string[] = [];
+    const sourceRe = /<source\b([^>]*)>/gi;
+    let sm: RegExpExecArray | null;
+    while ((sm = sourceRe.exec(inner))) {
+      const ss = attrValue(sm[1] || "", "srcset") || attrValue(sm[1] || "", "data-srcset");
+      if (!ss) continue;
+      const large = largestFromSrcset(ss);
+      if (large) candidates.push(large);
+    }
+    const imgMatch = inner.match(/<img\b([^>]*)>/i);
+    if (!imgMatch) return inner;
+    const imgAttrs = imgMatch[1] || "";
+    for (const name of ["data-src", "data-lazy-src", "data-original", "src"]) {
+      const v = attrValue(imgAttrs, name);
+      if (v) candidates.push(v);
+    }
+    const imgSrcset = attrValue(imgAttrs, "srcset") || attrValue(imgAttrs, "data-srcset");
+    if (imgSrcset) {
+      const large = largestFromSrcset(imgSrcset);
+      if (large) candidates.unshift(large);
+    }
+    const ranked = candidates
+      .map((c) => upgradeTinyCdnImageUrl(c.startsWith("//") ? `https:${c}` : c))
+      .filter((c) => /^(https?:|\/)/i.test(c) && !c.startsWith("data:"))
+      .sort((a, b) => scoreCdnImageUrl(b) - scoreCdnImageUrl(a));
+    const src = ranked[0];
+    if (!src) return imgMatch[0];
+    const alt = attrValue(imgAttrs, "alt") || "";
+    return `<img src="${src.replace(/"/g, "")}"${alt ? ` alt="${alt.replace(/"/g, "&quot;")}"` : ""} loading="lazy">`;
+  });
+}
+
 /** Turn twitter-tweet markup into a clean quote + attribution footer. */
 function stylizeTweetBlockquotes(html: string): string {
   return html.replace(/<blockquote\b([^>]*)>([\s\S]*?)<\/blockquote>/gi, (_full, attrs, inner) => {
@@ -1426,7 +1524,7 @@ function stylizeTweetBlockquotes(html: string): string {
 }
 
 function sanitizeHtml(frag: string): string {
-  const cleaned = frag.replace(
+  const cleaned = promotePictureElements(frag).replace(
     /<\/?([a-zA-Z0-9]+)(\s[^>]*)?>/g,
     (full, rawTag: string, attrs = "") => {
       const name = rawTag.toLowerCase();
@@ -1469,35 +1567,6 @@ function sanitizeHtml(frag: string): string {
       }
 
       if (name === "img") {
-        const scoreUrl = (raw: string): number => {
-          const u = raw.toLowerCase();
-          if (!u || u.startsWith("data:")) return -1000;
-          let score = 10;
-          if (/(?:blur|lqip|placeholder|spacer|pixel|transparent|1x1|dummy)/i.test(u)) {
-            score -= 80;
-          }
-          if (/[?&](?:w|width)=(?:[1-9]|[1-9]\d|1\d\d)(?:&|$)/i.test(u)) score -= 40;
-          if (/[?&](?:w|width)=(?:[5-9]\d{2}|\d{4,})(?:&|$)/i.test(u)) score += 40;
-          if (/\.(?:jpe?g|png|webp)(?:$|\?)/i.test(u)) score += 8;
-          score += Math.min(raw.length / 40, 12);
-          return score;
-        };
-        const largestSrcset = (srcset: string): string => {
-          let best = "";
-          let bestW = -1;
-          for (const part of srcset.split(",")) {
-            const bits = part.trim().split(/\s+/);
-            const url = bits[0] || "";
-            if (!url) continue;
-            const wMark = bits.find((b) => /^\d+w$/i.test(b));
-            const w = wMark ? Number(wMark.replace(/\D/g, "")) : 0;
-            if (w > bestW) {
-              bestW = w;
-              best = url;
-            } else if (!best) best = url;
-          }
-          return best;
-        };
         const candidates = [
           attrValue(attrs, "data-src"),
           attrValue(attrs, "data-lazy-src"),
@@ -1509,15 +1578,16 @@ function sanitizeHtml(frag: string): string {
         const srcset =
           attrValue(attrs, "srcset") || attrValue(attrs, "data-srcset") || "";
         if (srcset) {
-          const large = largestSrcset(srcset);
+          const large = largestFromSrcset(srcset);
           if (large) candidates.unshift(large);
         }
         let src =
           candidates
-            .map((c) => (c.startsWith("//") ? "https:" + c : c))
+            .map((c) => upgradeTinyCdnImageUrl(c.startsWith("//") ? "https:" + c : c))
             .filter((c) => /^(https?:|\/)/i.test(c) && !c.startsWith("data:"))
-            .sort((a, b) => scoreUrl(b) - scoreUrl(a))[0] || "";
+            .sort((a, b) => scoreCdnImageUrl(b) - scoreCdnImageUrl(a))[0] || "";
         if (!src || !/^(https?:|\/)/i.test(src)) return "";
+        src = upgradeTinyCdnImageUrl(src);
         keep.push('src="' + src.replace(/"/g, "") + '"');
         const alt = attrValue(attrs, "alt");
         if (alt) keep.push('alt="' + alt.replace(/"/g, "&quot;") + '"');

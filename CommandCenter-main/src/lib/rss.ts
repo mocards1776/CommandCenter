@@ -1694,9 +1694,29 @@ export function firstContentImageUrl(html: string | null | undefined): string | 
       continue;
     }
     const src = img.getAttribute("src") || "";
-    if (/^https?:/i.test(src) && scoreImageUrl(src) > 0) return src;
+    if (/^https?:/i.test(src) && scoreImageUrl(src) > 0) return upgradeTinyCdnImageUrl(src);
   }
   return null;
+}
+
+/**
+ * Minute Media / Cloudinary LQIP thumbs ship as `c_fill,w_16` (or `w_32`).
+ * Rewrite tiny path widths so Dispatch doesn't stretch a 16px blur to full column.
+ */
+export function upgradeTinyCdnImageUrl(raw: string, target = 1440): string {
+  const src = raw.trim();
+  if (!src || !/^https?:/i.test(src)) return src;
+  let decoded = src;
+  try {
+    decoded = decodeURIComponent(src);
+  } catch {
+    /* keep */
+  }
+  return decoded.replace(/(^|[,/])w_(\d+)(?=,|\/|$)/g, (full, pre: string, n: string) => {
+    const width = Number(n);
+    if (Number.isFinite(width) && width > 0 && width < 200) return `${pre}w_${target}`;
+    return full;
+  });
 }
 
 /** Score image URLs so blur/LQIP placeholders lose to the real asset. */
@@ -1709,11 +1729,19 @@ function scoreImageUrl(raw: string): number {
   }
   if (/[?&](?:w|width|h|height)=(?:[1-9]|[1-9]\d|1\d\d)(?:&|$)/i.test(u)) score -= 40;
   if (/\/(?:w_|w=|h_)(?:[1-9]|[1-9]\d|1\d\d)(?:\/|,|$)/i.test(u)) score -= 35;
-  if (/graytv|gray\.media|lee\.net|mosaic/i.test(u)) score += 12;
+  // Cloudinary / Minute Media path transforms: c_fill,w_16,ar_16:9
+  const pathW = u.match(/(?:^|[,/])w_(\d+)(?=,|\/|$)/);
+  if (pathW) {
+    const w = Number(pathW[1]);
+    if (w > 0 && w < 200) score -= 90;
+    else if (w >= 720) score += 40;
+    else if (w >= 360) score += 18;
+  }
+  if (/graytv|gray\.media|lee\.net|mosaic|minutemediacdn/i.test(u)) score += 12;
   if (/[?&](?:w|width)=(?:[5-9]\d{2}|\d{4,})(?:&|$)/i.test(u)) score += 40;
   if (/\/(?:w_|w=)(?:[5-9]\d{2}|\d{4,})(?:\/|,|$)/i.test(u)) score += 35;
   if (/\.(?:jpe?g|png|webp)(?:$|\?)/i.test(u)) score += 8;
-  if (/mlbstatic|mlbinfra|espncdn|cloudinary|imgix|wp\.com|twimg/i.test(u)) score += 6;
+  if (/mlbstatic|mlbinfra|espncdn|cloudinary|imgix|wp\.com|twimg|minutemediacdn/i.test(u)) score += 6;
   score += Math.min(raw.length / 40, 12);
   return score;
 }
@@ -1726,11 +1754,17 @@ function largestFromSrcset(srcset: string): string | null {
     const url = bits[0];
     if (!url) continue;
     const wMark = bits.find((b) => /^\d+w$/i.test(b));
-    const w = wMark ? Number(wMark.replace(/\D/g, "")) : 0;
+    const dens = bits.find((b) => /^\d+(?:\.\d+)?x$/i.test(b));
+    const pathW = url.match(/(?:^|[,/])w_(\d+)(?=,|\/|$)/i);
+    let w = wMark ? Number(wMark.replace(/\D/g, "")) : 0;
+    if (!w && dens) w = Math.round(Number(dens.replace(/x$/i, "")) * 1000);
+    if (!w && pathW) w = Number(pathW[1]);
     if (w > bestW) {
       bestW = w;
       best = url;
     } else if (best == null) {
+      best = url;
+    } else if (w === bestW && scoreImageUrl(url) > scoreImageUrl(best)) {
       best = url;
     }
   }
@@ -1763,20 +1797,20 @@ export function repairRssContentImages(html: string, pageUrl?: string | null): s
   const root = doc.getElementById("root");
   if (!root) return html;
 
-  // Promote <picture><source srcset> into the nested img when needed.
+  // Promote <picture><source srcset> into the nested img — prefer the largest
+  // candidate across ALL sources (SI ships w_16 LQIP on <img>, real sizes on <source>).
   root.querySelectorAll("picture").forEach((pic) => {
     const img = pic.querySelector("img");
     if (!img) return;
-    const sources = [...pic.querySelectorAll("source")];
-    for (const source of sources) {
+    const fromSources: string[] = [];
+    for (const source of pic.querySelectorAll("source")) {
       const ss = source.getAttribute("srcset") || source.getAttribute("data-srcset");
       if (!ss) continue;
       const large = largestFromSrcset(ss);
-      if (large) {
-        img.setAttribute("data-srcset-promoted", large);
-        break;
-      }
+      if (large) fromSources.push(large);
     }
+    const bestSource = fromSources.sort((a, b) => scoreImageUrl(b) - scoreImageUrl(a))[0];
+    if (bestSource) img.setAttribute("data-srcset-promoted", bestSource);
   });
 
   root.querySelectorAll("img").forEach((img) => {
@@ -1801,18 +1835,25 @@ export function repairRssContentImages(html: string, pageUrl?: string | null): s
       if (large) candidates.unshift(large);
     }
     const ranked = candidates
-      .map((c) => absolutizeImgUrl(c, base))
+      .map((c) => upgradeTinyCdnImageUrl(absolutizeImgUrl(c, base)))
       .filter((c) => /^https?:/i.test(c) && !/^data:image\/svg/i.test(c))
       .sort((a, b) => scoreImageUrl(b) - scoreImageUrl(a));
     const src = ranked[0] ?? "";
     if (src) {
-      attrs.setAttribute("src", src);
+      attrs.setAttribute("src", upgradeTinyCdnImageUrl(src));
       attrs.removeAttribute("srcset");
       attrs.removeAttribute("data-srcset");
       attrs.removeAttribute("data-srcset-promoted");
       attrs.loading = "lazy";
       // Some CDNs block no-referrer; prefer origin when loading inline.
       attrs.referrerPolicy = "no-referrer-when-downgrade";
+      // Drop blur-up placeholder classes left over from SI / Qwik shells.
+      if (attrs.className && /blur/i.test(attrs.className)) {
+        attrs.className = attrs.className
+          .split(/\s+/)
+          .filter((c) => c && !/blur/i.test(c) && c !== "undefined")
+          .join(" ");
+      }
     }
   });
 

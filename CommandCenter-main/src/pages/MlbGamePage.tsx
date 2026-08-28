@@ -231,7 +231,7 @@ export function MlbGameDetail({
     <div className="w-full max-w-full min-w-0 space-y-5 overflow-x-hidden">
       <GameMatchupHeader game={g} />
 
-      {/* Pregame: probables/leaders first, then preview text, then ESPN extras + BBRef. */}
+      {/* Pregame: starters → preview text → lineups/leaders → ESPN extras + BBRef. */}
       {g.pregame && (
         <>
           <PreviewStack
@@ -241,22 +241,26 @@ export function MlbGameDetail({
             metaBits={metaBits}
             watchPlayerIds={favoritePlayerIds}
             taggedPlayerIds={taggedPlayerIds}
+            afterStarters={
+              <>
+                {recap.isPending && (
+                  <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
+                    <Loader2 size={14} className="animate-spin" /> Loading preview…
+                  </p>
+                )}
+                {recap.data && (
+                  <GameWrap
+                    recap={recap.data}
+                    box={g}
+                    defaultOpen
+                    suppressHeader={suppressWrapHeader}
+                    favoriteIds={favoritePlayerIds}
+                    taggedIds={taggedPlayerIds}
+                  />
+                )}
+              </>
+            }
           />
-          {recap.isPending && (
-            <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
-              <Loader2 size={14} className="animate-spin" /> Loading preview…
-            </p>
-          )}
-          {recap.data && (
-            <GameWrap
-              recap={recap.data}
-              box={g}
-              defaultOpen
-              suppressHeader={suppressWrapHeader}
-              favoriteIds={favoritePlayerIds}
-              taggedIds={taggedPlayerIds}
-            />
-          )}
           <EspnPreviewExtras
             awayAbbrev={g.away.abbrev}
             homeAbbrev={g.home.abbrev}
@@ -416,6 +420,7 @@ function PreviewStack({
   bottom = false,
   watchPlayerIds,
   taggedPlayerIds,
+  afterStarters,
 }: {
   game: MlbBoxscore;
   preview: Awaited<ReturnType<typeof fetchMlbGamePreview>> | undefined;
@@ -424,6 +429,8 @@ function PreviewStack({
   bottom?: boolean;
   watchPlayerIds?: Set<number>;
   taggedPlayerIds?: Set<number>;
+  /** Pregame: preview copy sits between probable pitchers and batting leaders. */
+  afterStarters?: ReactNode;
 }) {
   const hasPitchers =
     g.away.probablePitcher ||
@@ -438,7 +445,16 @@ function PreviewStack({
       (preview.battingLeaders.some((r) => r.away || r.home) ||
         preview.pitchingLeaders.some((r) => r.away || r.home)),
   );
-  if (!hasPitchers && !hasLineups && !hasLeaders && !loading && !metaBits.length) return null;
+  if (
+    !hasPitchers &&
+    !hasLineups &&
+    !hasLeaders &&
+    !loading &&
+    !metaBits.length &&
+    !afterStarters
+  ) {
+    return null;
+  }
 
   return (
     <div className="space-y-5">
@@ -458,6 +474,7 @@ function PreviewStack({
           taggedPlayerIds={taggedPlayerIds}
         />
       )}
+      {afterStarters}
       {loading && g.pregame && (
         <p className="text-chalk-dim flex items-center gap-2 text-[12px]">
           <Loader2 size={14} className="animate-spin" /> Loading preview stats…
