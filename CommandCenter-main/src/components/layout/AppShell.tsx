@@ -45,6 +45,7 @@ import {
   subscribeRssReaderBrand,
 } from "@/lib/rss-brand";
 import DispatchScoreTicker from "@/components/rss/DispatchScoreTicker";
+import SportsSearch from "@/components/sports/SportsSearch";
 import { cn, formatSportsDateLong } from "@/lib/utils";
 
 const NAV = [
@@ -293,10 +294,22 @@ export default function AppShell() {
         </button>
         {onReading ? (
           <PagesTodayBadge />
+        ) : onSports ? (
+          <>
+            <div className="relative z-10 hidden min-w-0 flex-1 px-2 md:block md:max-w-md md:px-4 lg:max-w-lg">
+              <SportsSearch />
+            </div>
+            <span className="label-caps relative z-10 hidden shrink-0 lg:inline">{today}</span>
+          </>
         ) : (
           <span className="label-caps relative z-10 hidden lg:inline">{today}</span>
         )}
       </header>
+      {onSports ? (
+        <div className="bg-ink relative z-10 border-b border-accent/10 px-4 py-2 md:hidden">
+          <SportsSearch />
+        </div>
+      ) : null}
       <div className="rule-flag" />
       {onRss ? <DispatchScoreTicker /> : null}
 
