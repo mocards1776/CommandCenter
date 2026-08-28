@@ -1240,14 +1240,19 @@ function ArticleReaderShell({
   const title = resolveArticleTitle(article.data?.title, item.title);
   const byline = article.data?.byline || item.author;
   const publisher = articlePublisherLabel(item.link, byline);
-  const rawImage = article.data?.image || item.image;
+  const isCompactBoard =
+    Boolean(item.compactBoard) ||
+    /^dispatch:\/\/mlb-(results|standings|leaders|form)\//.test(item.link);
+  const rawImage = isCompactBoard ? null : article.data?.image || item.image;
   const contentImage = useMemo(
     () =>
-      firstContentImageUrl(
-        (linkedHtml.link === item.link ? linkedHtml.html : "") ||
-          article.data?.contentHtml,
-      ),
-    [linkedHtml, article.data?.contentHtml, item.link],
+      isCompactBoard
+        ? null
+        : firstContentImageUrl(
+            (linkedHtml.link === item.link ? linkedHtml.html : "") ||
+              article.data?.contentHtml,
+          ),
+    [linkedHtml, article.data?.contentHtml, item.link, isCompactBoard],
   );
   const image = rawImage || contentImage;
   const quoteTexts = useMemo(
@@ -1493,7 +1498,7 @@ function ArticleReaderShell({
 
   return (
     <div
-      className="grid w-full gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:pr-0"
+      className="grid w-full gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] lg:gap-5 lg:pr-0"
       style={{ touchAction: "pan-y" }}
       onClick={onDoubleTap}
     >
@@ -1571,7 +1576,7 @@ function ArticleReaderShell({
 
         <header
           ref={titleSelectRef}
-          className="mb-8"
+          className={isCompactBoard ? "mb-4" : "mb-8"}
           onMouseUp={captureSelection}
           onTouchEnd={() => {
             window.setTimeout(captureSelection, 50);
@@ -1579,7 +1584,7 @@ function ArticleReaderShell({
         >
           <div className="label-caps font-body text-accent mb-3">
             {formatFeedDate(item.publishedAt)}
-            {` · ${publisher}`}
+            {!isCompactBoard ? ` · ${publisher}` : ""}
             {article.data?.wordCount ? ` · ${readingMinutes(article.data.wordCount)}` : ""}
             {/rotowire|rotoworld/i.test(item.author ?? publisher) &&
             isPublishedTodayCentral(item.publishedAt) ? (
@@ -1588,7 +1593,12 @@ function ArticleReaderShell({
               </span>
             ) : null}
           </div>
-          <h2 className="text-cream text-[32px] leading-[1.15] font-semibold md:text-[40px]">
+          <h2
+            className={cn(
+              "text-cream font-semibold leading-[1.15]",
+              isCompactBoard ? "text-[24px] md:text-[28px]" : "text-[32px] md:text-[40px]",
+            )}
+          >
             {titleParts.map((part, i) =>
               part.highlighted ? (
                 <mark key={i} className="rss-hl">
@@ -1599,42 +1609,44 @@ function ArticleReaderShell({
               ),
             )}
           </h2>
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <a
-              href={item.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-body text-chalk hover:text-accent inline-flex items-center gap-1.5 text-[12px] transition-colors"
-            >
-              {publisher}
-              <ExternalLink size={12} />
-            </a>
-            <button
-              type="button"
-              onClick={() => {
-                const host = articleSourceHost(item.link);
-                const feedId =
-                  RSS_FEEDS.find((f) => f.url === feedUrl)?.id ??
-                  (feedUrl.startsWith("synthetic:")
-                    ? feedUrl.replace(/^synthetic:/, "")
-                    : null);
-                if (feedId && host) {
-                  blockDomainMut.mutate(encodeFeedDomainFilter(feedId, host));
-                } else {
-                  blockDomainMut.mutate(suggestUrlFilterValue(item.link));
-                }
-              }}
-              disabled={blockDomainMut.isPending}
-              title="Block this domain"
-              className="font-body text-chalk-dim hover:text-alert inline-flex items-center gap-1 text-[12px] transition-colors disabled:opacity-40"
-            >
-              <Ban size={12} />
-              Block domain
-            </button>
-          </div>
+          {!isCompactBoard ? (
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <a
+                href={item.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-body text-chalk hover:text-accent inline-flex items-center gap-1.5 text-[12px] transition-colors"
+              >
+                {publisher}
+                <ExternalLink size={12} />
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  const host = articleSourceHost(item.link);
+                  const feedId =
+                    RSS_FEEDS.find((f) => f.url === feedUrl)?.id ??
+                    (feedUrl.startsWith("synthetic:")
+                      ? feedUrl.replace(/^synthetic:/, "")
+                      : null);
+                  if (feedId && host) {
+                    blockDomainMut.mutate(encodeFeedDomainFilter(feedId, host));
+                  } else {
+                    blockDomainMut.mutate(suggestUrlFilterValue(item.link));
+                  }
+                }}
+                disabled={blockDomainMut.isPending}
+                title="Block this domain"
+                className="font-body text-chalk-dim hover:text-alert inline-flex items-center gap-1 text-[12px] transition-colors disabled:opacity-40"
+              >
+                <Ban size={12} />
+                Block domain
+              </button>
+            </div>
+          ) : null}
         </header>
 
-        {!displayHtml.includes("<video") ? (
+        {!displayHtml.includes("<video") && !isCompactBoard ? (
           image ? (
             <button
               type="button"

@@ -55,8 +55,8 @@ export const RSS_FEEDS: readonly RssFeedDef[] = [
   },
   {
     id: "mlb-form",
-    title: "MLB form standings",
-    short: "Form",
+    title: "MLB recent records",
+    short: "Recent",
     url: "synthetic:mlb-form",
   },
   {
@@ -172,6 +172,11 @@ export type RssFeedItem = {
   logoAbbrevs?: string[];
   /** ESPN soccer team ids for logo fallbacks. */
   logoSoccerIds?: string[];
+  /**
+   * Synthetic data boards (standings, leaders, results, recent records).
+   * Reader skips the empty publisher hero and trims chrome.
+   */
+  compactBoard?: boolean;
 };
 
 export type RssFeedItemRef = RssFeedItem & {
@@ -1620,6 +1625,28 @@ function normalizeImgKeyClient(src: string): string {
   }
 }
 
+/**
+ * Structured board images (standings logos, leader mugs, results logos) are
+ * intentionally repeated across independent cards/tables — never strip them.
+ * Only dedupe ordinary article figures against the hero / earlier prose images.
+ */
+function isStructuredBoardImage(img: Element): boolean {
+  if (
+    img.classList.contains("mlb-standings-logo") ||
+    img.classList.contains("mlb-results-logo") ||
+    img.classList.contains("mlb-results-mug") ||
+    img.classList.contains("mlb-leader-card__mug") ||
+    img.classList.contains("mlb-leader-card__shot")
+  ) {
+    return true;
+  }
+  return Boolean(
+    img.closest(
+      ".mlb-standings-table, .mlb-standings-feed, .mlb-standings-block, .mlb-leader-card, .mlb-leader-grid, .mlb-results-card, .mlb-results-feed, .mlb-results-pitchers",
+    ),
+  );
+}
+
 /** Remove duplicate &lt;img&gt; tags (same asset twice, or matching the hero). */
 export function stripDuplicateContentImages(
   html: string,
@@ -1632,6 +1659,7 @@ export function stripDuplicateContentImages(
   const seen = new Set<string>();
   if (heroImage) seen.add(normalizeImgKeyClient(heroImage));
   root.querySelectorAll("img").forEach((img) => {
+    if (isStructuredBoardImage(img)) return;
     const src = img.getAttribute("src") || "";
     if (!src) {
       img.remove();
@@ -2890,6 +2918,8 @@ type MlbDayResultGame = {
   homeHits: number | null;
   awayErrors: number | null;
   homeErrors: number | null;
+  /** Per-inning runs for the old-school box (away/home may be null mid-inning). */
+  innings: { num: number; away: number | null; home: number | null }[];
   /** e.g. "F/10" for extras, or the current inning while in progress. */
   inningLine: string | null;
   currentInning: number | null;
@@ -2936,7 +2966,11 @@ async function fetchMlbResultsByDate(
           scheduledInnings?: number;
           currentInningOrdinal?: string;
           inningState?: string;
-          innings?: unknown[];
+          innings?: {
+            num?: number;
+            away?: { runs?: number };
+            home?: { runs?: number };
+          }[];
           teams?: {
             away?: { runs?: number; hits?: number; errors?: number };
             home?: { runs?: number; hits?: number; errors?: number };
@@ -2988,6 +3022,11 @@ async function fetchMlbResultsByDate(
                 : null,
             }
           : null;
+      const innings = (ls?.innings ?? []).map((inn) => ({
+        num: inn.num ?? 0,
+        away: inn.away?.runs ?? null,
+        home: inn.home?.runs ?? null,
+      }));
       games.push({
         gamePk: Number(g.gamePk) || 0,
         awayName: g.teams?.away?.team?.name ?? "Away",
@@ -3012,6 +3051,7 @@ async function fetchMlbResultsByDate(
         homeHits: ls?.teams?.home?.hits ?? null,
         awayErrors: ls?.teams?.away?.errors ?? null,
         homeErrors: ls?.teams?.home?.errors ?? null,
+        innings,
         inningLine,
         currentInning,
         statusDetail: detailed || abstract || "Scheduled",
@@ -3098,6 +3138,7 @@ function renderMlbResultsHtml(
   mlbTeamLogo: (id: number) => string,
   teamPagePath: (id: number) => string,
   mlbHeadshot: (playerId: number | string, size?: 213 | 426) => string,
+  options?: { lede?: string; finalsTitle?: string; upcomingTitle?: string },
 ): string {
   if (!games.length) {
     return `<p class="mlb-digest-lede">No MLB games on ${esc(dateKey)}.</p>`;
@@ -3126,8 +3167,39 @@ function renderMlbResultsHtml(
     </div>`;
   };
 
+  /** Classic newspaper box: innings 1–N then R H E. */
+  const boxScoreTable = (g: MlbDayResultGame) => {
+    const innings =
+      g.innings.length > 0
+        ? g.innings
+        : Array.from({ length: Math.max(9, g.extrasInnings ?? 9) }, (_, i) => ({
+            num: i + 1,
+            away: null as number | null,
+            home: null as number | null,
+          }));
+    const cols = innings.map((inn) => inn.num);
+    const head = cols
+      .map((n) => `<th class="numeral">${n}</th>`)
+      .join("");
+    const awayCells = innings
+      .map((inn) => `<td class="numeral">${inn.away != null ? inn.away : ""}</td>`)
+      .join("");
+    const homeCells = innings
+      .map((inn) => `<td class="numeral">${inn.home != null ? inn.home : ""}</td>`)
+      .join("");
+    return `<div class="mlb-results-box-wrap"><table class="mlb-results-box">
+      <thead><tr><th></th>${head}<th>R</th><th>H</th><th>E</th></tr></thead>
+      <tbody>
+        <tr><td>${esc(g.awayAbbr)}</td>${awayCells}<td class="numeral">${g.awayRuns ?? "—"}</td><td class="numeral">${g.awayHits ?? "—"}</td><td class="numeral">${g.awayErrors ?? "—"}</td></tr>
+        <tr><td>${esc(g.homeAbbr)}</td>${homeCells}<td class="numeral">${g.homeRuns ?? "—"}</td><td class="numeral">${g.homeHits ?? "—"}</td><td class="numeral">${g.homeErrors ?? "—"}</td></tr>
+      </tbody>
+    </table></div>`;
+  };
+
   const rheTable = (g: MlbDayResultGame) => {
-    if (g.awayRuns == null && g.homeRuns == null) return "";
+    if (g.awayRuns == null && g.homeRuns == null && !g.innings.length) return "";
+    // Prefer full inning-by-inning box when we have linescore frames.
+    if (g.innings.length > 0 || g.isFinal) return boxScoreTable(g);
     return `<table class="mlb-results-rhe">
       <thead><tr><th></th><th>R</th><th>H</th><th>E</th></tr></thead>
       <tbody>
@@ -3192,11 +3264,16 @@ function renderMlbResultsHtml(
       <div class="mlb-results-grid">${list.map(card).join("")}</div>
     </section>`;
   };
+  const lede =
+    options?.lede === ""
+      ? ""
+      : (options?.lede ??
+        `Every MLB final${others.length ? " and remaining game" : ""} for ${esc(dateKey)}.`);
   return `
-    <p class="mlb-digest-lede">Every MLB final${others.length ? " and remaining game" : ""} for ${esc(dateKey)}.</p>
+    ${lede ? `<p class="mlb-digest-lede">${lede}</p>` : ""}
     <div class="mlb-results-feed">
-      ${section("Finals", finals)}
-      ${section("Still to play", others)}
+      ${section(options?.finalsTitle ?? "Finals", finals)}
+      ${section(options?.upcomingTitle ?? "Still to play", others)}
     </div>
   `.trim();
 }
@@ -3210,23 +3287,16 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
     divisionLeaders,
     mlbTeamLogo,
     mlbHeadshot,
-    mlbLeagueLogo,
     mlbTeamAccent,
     teamPagePath,
   } = await import("./mlb");
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = String(today.getMonth() + 1).padStart(2, "0");
-  const d = String(today.getDate()).padStart(2, "0");
-  const dateKey = `${y}-${m}-${d}`;
-
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
-
-  const startDay = new Date(today);
-  startDay.setDate(today.getDate() - 6);
-  const startKey = `${startDay.getFullYear()}-${String(startDay.getMonth() + 1).padStart(2, "0")}-${String(startDay.getDate()).padStart(2, "0")}`;
+  const { todayStr, shiftDay } = await import("./utils");
+  const dateKey = todayStr();
+  const yesterdayKey = shiftDay(dateKey, -1);
+  const upcomingEndKey = shiftDay(dateKey, 3);
+  // Pull yesterday through a few days ahead so the scoreboard can lead with
+  // prior-day finals, then today's remaining games, then the upcoming slate.
+  const startKey = yesterdayKey;
 
   const [standings, nlWc, alWc, alLeaders, nlLeaders, resultsByDay] = await Promise.all([
     fetchMlbStandings(),
@@ -3234,7 +3304,9 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
     fetchMlbWildCardStandings(103),
     fetchMlbLeaders(5, { leagueId: 103 }),
     fetchMlbLeaders(5, { leagueId: 104 }),
-    fetchMlbResultsByDate(startKey, dateKey).catch(() => new Map<string, MlbDayResultGame[]>()),
+    fetchMlbResultsByDate(startKey, upcomingEndKey).catch(
+      () => new Map<string, MlbDayResultGame[]>(),
+    ),
   ]);
 
   // Only worth the extra boxscore calls for the last two days' pitcher lines.
@@ -3401,48 +3473,87 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
     ${leaderCardsHtml("National League", nlLeaders)}
   `.trim();
 
+  // Primary scoreboard: yesterday's finals (with full boxes) + today remaining + upcoming.
+  const yesterdayGames = (resultsByDay.get(yesterdayKey) ?? []).filter((g) => g.isFinal);
+  const todayGames = resultsByDay.get(dateKey) ?? [];
+  const upcomingGames: MlbDayResultGame[] = [];
+  for (let i = 1; i <= 3; i++) {
+    const key = shiftDay(dateKey, i);
+    for (const g of resultsByDay.get(key) ?? []) {
+      if (!g.isFinal) upcomingGames.push(g);
+    }
+  }
+  const todayRemaining = todayGames.filter((g) => !g.isFinal);
+  const todayFinals = todayGames.filter((g) => g.isFinal);
+  const scoreboardGames = [...yesterdayGames, ...todayFinals, ...todayRemaining, ...upcomingGames];
+
+  const renderSectionOnly = (
+    list: MlbDayResultGame[],
+    title: string,
+  ): string => {
+    if (!list.length) return "";
+    return renderMlbResultsHtml(list, dateKey, esc, mlbTeamLogo, teamPagePath, mlbHeadshot, {
+      lede: "",
+      finalsTitle: title,
+      upcomingTitle: title,
+    })
+      .replace(/<p class="mlb-digest-lede">[\s\S]*?<\/p>/, "")
+      .replace(/<div class="mlb-results-feed">/, "")
+      .replace(/<\/div>\s*$/, "");
+  };
+
+  const scoreboardHtml = `
+    <p class="mlb-digest-lede">Yesterday&rsquo;s finals with full box scores, then today&rsquo;s remaining games and the upcoming slate.</p>
+    <div class="mlb-results-feed">
+      ${renderSectionOnly(yesterdayGames, `Yesterday · ${yesterdayKey}`)}
+      ${renderSectionOnly(todayFinals, `Today's finals · ${dateKey}`)}
+      ${renderSectionOnly(todayRemaining, `Still to play today · ${dateKey}`)}
+      ${renderSectionOnly(upcomingGames, `Upcoming through ${upcomingEndKey}`)}
+      ${
+        !scoreboardGames.length
+          ? `<p class="mlb-digest-lede">No MLB games in the current window.</p>`
+          : ""
+      }
+    </div>
+  `.trim();
+
   const items: RssFeedItem[] = [];
+  items.push({
+    id: `mlb-results-${dateKey}`,
+    title: `MLB scoreboard — ${dateKey}`,
+    link: `dispatch://mlb-results/${dateKey}`,
+    author: "MLB",
+    publishedAt: `${dateKey}T20:00:00-05:00`,
+    image: null,
+    snippet: scoreboardGames.length
+      ? `${yesterdayGames.length} yesterday · ${todayGames.length} today · ${upcomingGames.length} upcoming`
+      : `No MLB games around ${dateKey}.`,
+    contentHtml: scoreboardHtml,
+    compactBoard: true,
+  });
+
   for (let i = 0; i < 7; i++) {
-    const day = new Date(today);
-    day.setDate(today.getDate() - i);
-    const yy = day.getFullYear();
-    const mm = String(day.getMonth() + 1).padStart(2, "0");
-    const dd = String(day.getDate()).padStart(2, "0");
-    const key = `${yy}-${mm}-${dd}`;
+    const key = shiftDay(dateKey, -i);
     const isToday = i === 0;
     const archiveNote = `<p>This archive day is listed for history. Switch to today's article for live boards.</p>`;
-    const dayGames = resultsByDay.get(key) ?? [];
-    const finals = dayGames.filter((g) => g.isFinal);
-    const resultsHtml = renderMlbResultsHtml(dayGames, key, esc, mlbTeamLogo, teamPagePath, mlbHeadshot);
-    items.push({
-      id: `mlb-results-${key}`,
-      title: isToday ? `MLB results — ${key}` : `MLB results — ${key}`,
-      link: `dispatch://mlb-results/${key}`,
-      author: "MLB Stats API",
-      publishedAt: `${key}T20:00:00-05:00`,
-      image: mlbLeagueLogo(),
-      snippet: dayGames.length
-        ? `${finals.length} final${finals.length === 1 ? "" : "s"} · ${dayGames.length} game${dayGames.length === 1 ? "" : "s"} on ${key}.`
-        : `No MLB games on ${key}.`,
-      contentHtml: resultsHtml,
-    });
     items.push({
       id: `mlb-standings-${key}`,
       title: isToday ? `MLB standings — ${key}` : `MLB standings — ${key} (archive)`,
       link: `dispatch://mlb-standings/${key}`,
-      author: "MLB Stats API",
+      author: "MLB",
       publishedAt: `${key}T12:00:00-05:00`,
       image: null,
       snippet: isToday
         ? `Division standings and NL/AL wild cards for ${dateKey}.`
         : `Archived standings placeholder for ${key}.`,
       contentHtml: isToday ? standingsHtml : archiveNote,
+      compactBoard: true,
     });
     items.push({
       id: `mlb-leaders-${key}`,
       title: isToday ? `MLB league leaders — ${key}` : `MLB league leaders — ${key} (archive)`,
       link: `dispatch://mlb-leaders/${key}`,
-      author: "MLB Stats API",
+      author: "MLB",
       // Slightly later so leaders sort under standings when same day.
       publishedAt: `${key}T12:05:00-05:00`,
       image: null,
@@ -3450,6 +3561,7 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
         ? `AL and NL hitting/pitching leaders for ${dateKey}.`
         : `Archived leaders placeholder for ${key}.`,
       contentHtml: isToday ? leadersHtml : archiveNote,
+      compactBoard: true,
     });
   }
 
@@ -3461,22 +3573,19 @@ async function fetchMlbStatsDigestFeed(): Promise<RssFeed> {
 
   return {
     title: "MLB standings & leaders",
-    description: "Daily results, division standings, and AL/NL league leaders as separate articles",
+    description: "Scoreboard with yesterday's boxes, division standings, and AL/NL league leaders",
     link: "https://www.mlb.com/standings",
     feedUrl: "synthetic:mlb-stats",
     items,
   };
 }
 
-/** Form standings over the last 5 / 10 / 20 / 30 / 40 / 50 games. */
+/** Recent-record standings over the last 5 / 10 / 20 / 30 / 40 / 50 games. */
 async function fetchMlbFormStandingsFeed(): Promise<RssFeed> {
   const { mlbTeamLogo, teamPagePath } = await import("./mlb");
   const { fetchMlbFormStandings } = await import("./team-form");
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = String(today.getMonth() + 1).padStart(2, "0");
-  const d = String(today.getDate()).padStart(2, "0");
-  const dateKey = `${y}-${m}-${d}`;
+  const { todayStr, shiftDay } = await import("./utils");
+  const dateKey = todayStr();
 
   const boards = await fetchMlbFormStandings([5, 10, 20, 30, 40, 50]);
   const esc = (s: string) =>
@@ -3516,31 +3625,27 @@ async function fetchMlbFormStandingsFeed(): Promise<RssFeed> {
 
   const items: RssFeedItem[] = [];
   for (let i = 0; i < 7; i++) {
-    const day = new Date(today);
-    day.setDate(today.getDate() - i);
-    const yy = day.getFullYear();
-    const mm = String(day.getMonth() + 1).padStart(2, "0");
-    const dd = String(day.getDate()).padStart(2, "0");
-    const key = `${yy}-${mm}-${dd}`;
+    const key = shiftDay(dateKey, -i);
     const isToday = i === 0;
     items.push({
       id: `mlb-form-${key}`,
-      title: isToday ? `MLB form standings — ${key}` : `MLB form standings — ${key} (archive)`,
+      title: isToday ? `MLB recent records — ${key}` : `MLB recent records — ${key} (archive)`,
       link: `dispatch://mlb-form/${key}`,
-      author: "MLB Stats API",
+      author: "MLB",
       publishedAt: `${key}T12:10:00-05:00`,
       image: null,
       snippet: isToday
         ? `League standings for the last 5, 10, 20, 30, 40, and 50 games (${dateKey}).`
-        : `Archived form standings placeholder for ${key}.`,
+        : `Archived recent-records placeholder for ${key}.`,
       contentHtml: isToday
         ? contentHtml
-        : `<p>This archive day is listed for history. Open today's form standings for live boards.</p>`,
+        : `<p>This archive day is listed for history. Open today's recent records for live boards.</p>`,
+      compactBoard: true,
     });
   }
 
   return {
-    title: "MLB form standings",
+    title: "MLB recent records",
     description: "League standings by last 5 / 10 / 20 / 30 / 40 / 50 games",
     link: "https://www.mlb.com/standings",
     feedUrl: "synthetic:mlb-form",

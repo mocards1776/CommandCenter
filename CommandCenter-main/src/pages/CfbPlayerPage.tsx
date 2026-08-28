@@ -327,7 +327,16 @@ function PlayerHero({ player, accent }: { player: CfbPlayerProfile; accent: stri
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/55">
-            {player.teamName ?? "College Football"}
+            {player.teamId ? (
+              <Link
+                to={`/sports/cfb/team/${player.teamId}`}
+                className="hover:text-white transition"
+              >
+                {player.teamName ?? "College Football"}
+              </Link>
+            ) : (
+              (player.teamName ?? "College Football")
+            )}
           </p>
           <h1 className="font-display text-cream mt-1 text-[42px] leading-none sm:text-[52px]">
             {lastName}
