@@ -1869,7 +1869,14 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
   // MLB + Cardinals wraps are built+cached on the rss edge (15-min cron warms them
   // even when Dispatch is closed). Client still polls while open for faster pickup.
   if (feedUrl === "synthetic:cardinals-wraps" || feedUrl === "synthetic:mlb-wraps") {
-    return invokeRss<RssFeed>({ mode: "feed", feedUrl });
+    // Bypass edge feed cache on a cadence so evening wraps aren't stuck for 20m.
+    const bust =
+      typeof window !== "undefined" && Math.floor(Date.now() / 60_000) % 3 === 0;
+    return invokeRss<RssFeed>({
+      mode: "feed",
+      feedUrl,
+      ...(bust ? { refresh: "1" } : {}),
+    });
   }
   if (feedUrl === "synthetic:nfl-wraps") {
     return fetchEspnWrapsFeed({
@@ -4507,7 +4514,6 @@ export async function unsaveRssArticle(articleUrl: string): Promise<void> {
 
 /** Feeds that stay out of the cross-feed Unread inbox (browse them on their own). */
 export const RSS_SEPARATE_FEEDS = new Set<RssFeedId>([
-  "mlb-wraps",
   "nfl-wraps",
   "mlb-stats",
   "mlb-form",
