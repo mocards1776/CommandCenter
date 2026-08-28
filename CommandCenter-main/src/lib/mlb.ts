@@ -837,6 +837,13 @@ export function linkifyMlbPlayersInHtml(
 
   const stripWatchMarksInside = (anchor: Element) => {
     anchor.querySelectorAll(":scope > .rss-player-watch").forEach((el) => el.remove());
+    // Drop trailing spacer text left from a prior mark insert.
+    let last = anchor.lastChild;
+    while (last && last.nodeType === 3 && !/\S/.test(last.textContent ?? "")) {
+      const prev = last.previousSibling;
+      anchor.removeChild(last);
+      last = prev;
+    }
   };
 
   const insertWatchMarkAfter = (anchor: Element, id: number, nameHint?: string) => {
