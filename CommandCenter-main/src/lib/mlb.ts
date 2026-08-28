@@ -4901,7 +4901,7 @@ async function fetchWarViaEdgeRetry(
   if (!base || !key) return null;
   try {
     const ctl = new AbortController();
-      const timer = window.setTimeout(() => ctl.abort(), 18_000);
+      const timer = window.setTimeout(() => ctl.abort(), 32_000);
     try {
       const res = await fetch(`${base}/functions/v1/sports`, {
         method: "POST",
@@ -4975,6 +4975,151 @@ async function invokeSportsAction(
   } catch {
     return null;
   }
+}
+
+/** FanGraphs team ids for WAR leader lookups (mirrors sports edge). */
+const FANGRAPHS_TEAM_ID: Record<string, number> = {
+  LAA: 1,
+  BAL: 2,
+  BOS: 3,
+  CHW: 4,
+  CWS: 4,
+  CLE: 5,
+  DET: 6,
+  KC: 7,
+  KCR: 7,
+  MIN: 8,
+  NYY: 9,
+  OAK: 10,
+  ATH: 10,
+  SEA: 11,
+  TB: 12,
+  TBR: 12,
+  TEX: 13,
+  TOR: 14,
+  AZ: 15,
+  ARI: 15,
+  ATL: 16,
+  CHC: 17,
+  CIN: 18,
+  COL: 19,
+  MIA: 20,
+  HOU: 21,
+  LAD: 22,
+  MIL: 23,
+  WSH: 24,
+  WSN: 24,
+  NYM: 25,
+  PHI: 26,
+  PIT: 27,
+  STL: 28,
+  SD: 29,
+  SDP: 29,
+  SF: 30,
+  SFG: 30,
+};
+
+/** FanGraphs leaders + player stats — works in-browser (Access-Control-Allow-Origin: *). */
+async function fetchFangraphsWarClient(opts: {
+  name: string;
+  isPitcher?: boolean;
+  mlbId?: number | null;
+  teamAbbrev?: string | null;
+}): Promise<Pick<MlbPlayerExtras, "seasonWar" | "careerWar" | "url"> | null> {
+  const yearNow = new Date().getFullYear();
+  const stats = opts.isPitcher ? "pit" : "bat";
+  const wantId = opts.mlbId != null && opts.mlbId > 0 ? Math.trunc(opts.mlbId) : null;
+  const wantName = opts.name.trim().toLowerCase().replace(/\./g, "");
+  const teamId =
+    opts.teamAbbrev && FANGRAPHS_TEAM_ID[opts.teamAbbrev.toUpperCase()]
+      ? FANGRAPHS_TEAM_ID[opts.teamAbbrev.toUpperCase()]!
+      : 0;
+
+  const loadPage = async (team: number, season: number, season1: number, pageitems = 80) => {
+    const url =
+      `https://www.fangraphs.com/api/leaders/major-league/data` +
+      `?pos=all&stats=${stats}&lg=all&qual=0&type=8` +
+      `&season=${season}&season1=${season1}&month=0&team=${team}` +
+      `&pageitems=${pageitems}&pagenum=1&ind=0`;
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!res.ok) return [] as Record<string, unknown>[];
+    const text = await res.text();
+    if (!text.startsWith("{")) return [];
+    try {
+      const json = JSON.parse(text) as { data?: Record<string, unknown>[] };
+      return Array.isArray(json.data) ? json.data : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const matchRow = (rows: Record<string, unknown>[]) => {
+    if (wantId != null) {
+      const byId = rows.find((r) => Number(r.xMLBAMID) === wantId);
+      if (byId) return byId;
+    }
+    return (
+      rows.find((r) => {
+        const n = String(r.PlayerName ?? r.PlayerNameRoute ?? "")
+          .toLowerCase()
+          .replace(/\./g, "")
+          .trim();
+        return n && (n === wantName || n.includes(wantName) || wantName.includes(n));
+      }) ?? null
+    );
+  };
+
+  const asWar = (row: Record<string, unknown> | null) => {
+    if (!row || row.WAR == null || row.WAR === "") return null;
+    const n = typeof row.WAR === "number" ? row.WAR : Number(row.WAR);
+    return Number.isFinite(n) ? Math.round(n * 10) / 10 : null;
+  };
+
+  let seasonRow: Record<string, unknown> | null = null;
+  for (const y of [yearNow, yearNow - 1]) {
+    if (teamId > 0) seasonRow = matchRow(await loadPage(teamId, y, y, 120));
+    if (!seasonRow) seasonRow = matchRow(await loadPage(0, y, y, 500));
+    if (seasonRow) break;
+  }
+
+  const seasonWar = asWar(seasonRow);
+  const fgPlayerId = seasonRow?.playerid != null ? Number(seasonRow.playerid) : null;
+  let careerWar: number | null = null;
+
+  if (fgPlayerId != null && Number.isFinite(fgPlayerId)) {
+    try {
+      const pos = opts.isPitcher ? "P" : "OF";
+      const res = await fetch(
+        `https://www.fangraphs.com/api/players/stats?playerid=${fgPlayerId}&position=${pos}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (res.ok) {
+        const json = (await res.json()) as {
+          data?: { WAR?: number; type?: number; AbbLevel?: string }[];
+        };
+        const total = (json.data ?? []).find((r) => r.type === -1 && r.AbbLevel === "MLB");
+        if (total?.WAR != null) {
+          const n = Number(total.WAR);
+          if (Number.isFinite(n)) careerWar = Math.round(n * 10) / 10;
+        }
+      }
+    } catch {
+      /* optional */
+    }
+  }
+
+  if (seasonWar == null && careerWar == null) return null;
+  const route = String(seasonRow?.PlayerNameRoute ?? opts.name)
+    .replace(/\s+/g, "-")
+    .toLowerCase();
+  return {
+    seasonWar,
+    careerWar,
+    url:
+      fgPlayerId != null
+        ? `https://www.fangraphs.com/players/${encodeURIComponent(route)}/${fgPlayerId}/stats`
+        : "https://www.fangraphs.com/",
+  };
 }
 
 /** Browser-side BBRef daily WAR dump lookup when the sports edge returns blank. */
@@ -5070,6 +5215,9 @@ export async function fetchMlbPlayerWar(
 ): Promise<Pick<MlbPlayerExtras, "seasonWar" | "careerWar" | "url"> | null> {
   const name = playerName.trim();
   if (name.length < 3 && !(opts?.mlbId != null && opts.mlbId > 0)) return null;
+
+  // FanGraphs is CORS-open and fast — don't block the card on a 50MB BBRef dump cold load.
+  const fgP = fetchFangraphsWarClient({ name, ...opts }).catch(() => null);
   const warBody = {
     action: "playerWar",
     name,
@@ -5077,13 +5225,22 @@ export async function fetchMlbPlayerWar(
     mlbId: opts?.mlbId ?? null,
     teamAbbrev: opts?.teamAbbrev ?? null,
   };
-  const mapped = mapPlayerExtrasPayload(await invokeSportsAction(warBody, 12_000));
-  if (mapped && (mapped.seasonWar != null || mapped.careerWar != null)) {
+  const edgeP = (async () => {
+    const mapped = mapPlayerExtrasPayload(await invokeSportsAction(warBody, 32_000));
+    if (!mapped || (mapped.seasonWar == null && mapped.careerWar == null)) return null;
     return {
       seasonWar: mapped.seasonWar,
       careerWar: mapped.careerWar,
       url: mapped.url,
     };
+  })();
+
+  const [fg, edge] = await Promise.all([fgP, edgeP]);
+  const seasonWar = edge?.seasonWar ?? fg?.seasonWar ?? null;
+  const careerWar = edge?.careerWar ?? fg?.careerWar ?? null;
+  const url = edge?.url ?? fg?.url ?? null;
+  if (seasonWar != null || careerWar != null) {
+    return { seasonWar, careerWar, url };
   }
   const retry = await fetchWarViaEdgeRetry(name, opts);
   if (retry && (retry.seasonWar != null || retry.careerWar != null)) return retry;
@@ -5106,7 +5263,21 @@ export async function fetchMlbPlayerExtras(
     teamAbbrev: opts?.teamAbbrev ?? null,
   };
 
-  let mapped = mapPlayerExtrasPayload(await invokeSportsAction(extrasBody, 22_000));
+  let mapped = mapPlayerExtrasPayload(await invokeSportsAction(extrasBody, 28_000));
+
+  if (mapped?.seasonWar == null && mapped?.careerWar == null) {
+    const fg = await fetchFangraphsWarClient({ name, ...opts }).catch(() => null);
+    if (fg && (fg.seasonWar != null || fg.careerWar != null)) {
+      mapped = {
+        serviceTime: mapped?.serviceTime ?? null,
+        seasonWar: fg.seasonWar,
+        careerWar: fg.careerWar,
+        warRank: mapped?.warRank ?? null,
+        warOf: mapped?.warOf ?? null,
+        url: fg.url ?? mapped?.url ?? null,
+      };
+    }
+  }
 
   // Don't poison the card with ESPN “5th Season” when BBRef service time is coming
   // from the contract scrape — only use ESPN if we still have nothing.
