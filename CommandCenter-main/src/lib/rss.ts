@@ -2649,7 +2649,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
           // MLB previews: never promote the league news rail (fantasy promo, clips).
           // MLB finals: news.articles often hold the real wrap when article.story is empty.
           const espnPromo =
-            /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook|team hitting ratings|pitcher projections/i;
+            /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook|team hitting ratings|pitcher projections|betting tips|prop bets|draftkings|fanduel|betmgm|promo code|what's next for|walking wounded|reliever depth chart/i;
           const newsArticles = (sum.news?.articles ?? []).filter((a) => {
             const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`;
             return Boolean(a.headline) && !espnPromo.test(blob) && !/^media$/i.test(a.type ?? "");
@@ -2681,6 +2681,17 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
           };
           const homeName = home?.team?.displayName ?? home?.team?.shortDisplayName ?? null;
           const awayName = away?.team?.displayName ?? away?.team?.shortDisplayName ?? null;
+          const tokenHit = (blob: string, token: string) => {
+            const t = token.toLowerCase().trim();
+            if (!t) return false;
+            if (t.length <= 3) {
+              return new RegExp(
+                `(?:^|[^a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:[^a-z0-9]|$)`,
+                "i",
+              ).test(blob);
+            }
+            return blob.includes(t);
+          };
           const storyMentionsMatchup = (a: StorySrc | undefined) => {
             if (linkSport !== "mlb") return true;
             const blob = `${a?.headline ?? ""} ${a?.description ?? ""} ${stripStory(a?.story)}`.toLowerCase();
@@ -2689,7 +2700,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
               const keys = [abbrev, name, short, nick]
                 .filter((k): k is string => Boolean(k && k.length >= 3))
                 .map((k) => k.toLowerCase());
-              return keys.some((k) => blob.includes(k));
+              return keys.some((k) => tokenHit(blob, k));
             };
             return (
               hits(homeName, homeAbbr, home?.team?.shortDisplayName) &&
@@ -2733,27 +2744,17 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             if (best) article = best;
           }
 
-          // MLB previews: same candidate search — article alone is often empty early.
-          if (linkSport === "mlb" && c.isPreview && !article) {
-            const candidates: StorySrc[] = [];
+          // MLB previews: official article only — never the fantasy/betting/injury news rail.
+          if (linkSport === "mlb" && c.isPreview) {
             if (
-              !isMediaClip(sum.article) &&
-              (sum.article?.headline || sum.article?.story || sum.article?.description)
+              !article ||
+              !storyMentionsMatchup(article) ||
+              espnPromo.test(
+                `${article.headline ?? ""} ${article.description ?? ""} ${article.story ?? ""}`,
+              )
             ) {
-              candidates.push(sum.article);
+              article = undefined;
             }
-            for (const a of newsArticles) candidates.push(a);
-            let best: StorySrc | undefined;
-            let bestLen = 0;
-            for (const cand of candidates) {
-              if (!storyMentionsMatchup(cand)) continue;
-              const len = bodyLen(cand);
-              if (len > bestLen || (!best && cand.headline)) {
-                best = cand;
-                bestLen = len;
-              }
-            }
-            article = best;
           }
 
           const storyLink = espnArticleLinkHref(article?.links);
@@ -2911,7 +2912,13 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
         return false;
       }
       if (/^First pitch\b/i.test(snip)) return false;
-      if (/fantasy baseball|optimize your fantasy|stay ahead of the game/i.test(snip)) return false;
+      if (
+        /fantasy baseball|optimize your fantasy|stay ahead of the game|betting tips|walking wounded|what's next for|prop bets/i.test(
+          `${title} ${snip}`,
+        )
+      ) {
+        return false;
+      }
       if (snip.length < 40) return false;
     }
     const hasSoccerMatchupCopy =

@@ -1849,12 +1849,37 @@ function teamMentionKeys(side?: EspnCompetitor): string[] {
   if (abbrev === "AZ" || abbrev === "ARI") keys.push("diamondbacks", "d-backs", "dbacks");
   if (abbrev === "CWS" || abbrev === "CHW") keys.push("white sox", "sox");
   if (abbrev === "WSH" || abbrev === "WSN") keys.push("nationals", "nats");
+  if (abbrev === "ATH" || abbrev === "OAK") keys.push("athletics", "a's", "as");
   return [...new Set(keys.map((k) => k.toLowerCase()))];
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Whole-token for short keys so BAL⊄baseball, ATH⊄path, SEA⊄season. */
+function blobHasTeamKey(blob: string, key: string): boolean {
+  const k = key.toLowerCase().trim();
+  if (!k) return false;
+  if (k.length <= 3) {
+    return new RegExp(`(?:^|[^a-z0-9])${escapeRegExp(k)}(?:[^a-z0-9]|$)`, "i").test(blob);
+  }
+  return blob.includes(k);
 }
 
 function storyMentionsTeam(blob: string, side?: EspnCompetitor): boolean {
   const keys = teamMentionKeys(side);
-  return keys.some((k) => blob.includes(k));
+  return keys.some((k) => blobHasTeamKey(blob, k));
+}
+
+const ESPN_MLB_PROMO_RE =
+  /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook|team hitting ratings|pitcher projections|betting tips|prop bets|draftkings|fanduel|betmgm|promo code/i;
+
+/** League features / injury roundups — not a game preview even if one club is named. */
+function looksLikeMlbFeatureCopy(text: string): boolean {
+  return /what's next for|walking wounded|injured \w+|unique path to stardom|betting tips|odds,? recommended|reliever depth chart/i.test(
+    text,
+  );
 }
 
 /** Prefer both clubs; accept one-club + solid prose so we don't drop half a slate. */
@@ -1868,7 +1893,9 @@ function pickMlbWrapStory(
     if (!a.headline) return false;
     if (/^media$/i.test(a.type ?? "")) return false;
     const blob = `${a.headline} ${a.description ?? ""} ${a.story ?? ""}`;
+    if (ESPN_MLB_PROMO_RE.test(blob)) return false;
     if (opts?.requirePreviewTone && looksLikeMlbRecapCopy(blob)) return false;
+    if (opts?.requirePreviewTone && looksLikeMlbFeatureCopy(blob)) return false;
     return true;
   });
   if (!usable.length) return null;
@@ -1889,7 +1916,12 @@ function pickMlbWrapStory(
   scored.sort((x, y) => y.score - x.score);
   const best = scored[0];
   if (!best) return null;
-  // Require at least one team mention and readable prose.
+  // Previews: both clubs + prose. One-club news (injury roundups) must never list.
+  if (opts?.requirePreviewTone) {
+    if (!best.both || !best.prose) return null;
+    return best.a;
+  }
+  // Finals: require at least one team mention and readable prose.
   if (!best.one || !best.prose) return null;
   return best.a;
 }
@@ -2154,9 +2186,6 @@ async function buildMlbWrapsFeed(): Promise<Record<string, unknown>> {
   ].slice(0, 90);
 
   const items: FeedItem[] = [];
-  const espnPromo =
-    /fantasy baseball|optimize your fantasy|stay ahead of the game|rolling 10-day outlook|team hitting ratings|pitcher projections/i;
-
   const concurrency = 4;
   for (let i = 0; i < limited.length; i += concurrency) {
     const chunk = limited.slice(i, i + concurrency);
@@ -2175,15 +2204,19 @@ async function buildMlbWrapsFeed(): Promise<Record<string, unknown>> {
         if (!summary) return null;
 
         const pool: StorySrc[] = [];
-        if (summary.article && !espnPromo.test(
+        if (summary.article && !ESPN_MLB_PROMO_RE.test(
           `${summary.article.headline ?? ""} ${summary.article.description ?? ""} ${summary.article.story ?? ""}`,
         )) {
           pool.push(summary.article);
         }
-        for (const a of summary.news?.articles ?? []) {
-          const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`;
-          if (a.headline && !espnPromo.test(blob) && !/^media$/i.test(a.type ?? "")) {
-            pool.push(a);
+        // Finals may need the news rail when article.story is empty.
+        // Previews: never — ESPN fills that rail with fantasy / betting / injury features.
+        if (!c.isPreview) {
+          for (const a of summary.news?.articles ?? []) {
+            const blob = `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`;
+            if (a.headline && !ESPN_MLB_PROMO_RE.test(blob) && !/^media$/i.test(a.type ?? "")) {
+              pool.push(a);
+            }
           }
         }
 
