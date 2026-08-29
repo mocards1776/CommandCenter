@@ -595,17 +595,11 @@
   }
 
   /*
-   * Only top-level article prose — not nested digest cards/tables.
-   * content-visibility + contain-intrinsic-size on every <p> inside leader
-   * heroes made Dispatch boards jump/resize while scrolling.
+   * Do not use content-visibility on reader prose.
+   * Estimated contain-intrinsic-size (even on top-level <p>/figure only)
+   * still resizes paragraphs as they enter the viewport, so articles
+   * bounce while scrolling. Digest boards / leaders already avoid it.
    */
-  .rss-reader > p,
-  .rss-reader > figure,
-  .rss-reader > blockquote,
-  .rss-reader > table {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 120px;
-  }
 }
 
 /* Unlayered so reader Tailwind utilities (h2/img/a/ul) cannot blow out

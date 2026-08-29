@@ -496,6 +496,95 @@ function isGrayMediaUrl(url: string): boolean {
   return /(?:^|\.)ky3\.com|kytv\.com|gray\.tv|graymedia/i.test(url);
 }
 
+function isPostGazetteUrl(url: string): boolean {
+  return /(?:^|\.)post-gazette\.com/i.test(url);
+}
+
+/** Slice a top-level `{…}` starting at `start` (must point at `{`). */
+function sliceJsonObject(source: string, start: number): string | null {
+  if (start < 0 || source[start] !== "{") return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < source.length; i++) {
+    const ch = source[i]!;
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * Pittsburgh Post-Gazette — article body ships only inside pgStoryZeroJSON
+ * (Piano paywall shell; DOM has no story paragraphs after stripNoise).
+ */
+function extractPostGazetteStory(html: string): {
+  html: string;
+  title: string | null;
+  byline: string | null;
+  image: string | null;
+} | null {
+  const marker = html.match(/pgStoryZeroJSON\s*=\s*/i);
+  if (!marker || marker.index == null) return null;
+  const start = html.indexOf("{", marker.index + marker[0].length);
+  const rawJson = sliceJsonObject(html, start);
+  if (!rawJson) return null;
+  try {
+    const data = JSON.parse(rawJson) as {
+      articles?: Array<{
+        body?: string;
+        author?: string;
+        title?: string;
+        images?: Array<{ url_hero?: string; url_global?: string; url?: string; caption?: string }>;
+      }>;
+    };
+    const article = Array.isArray(data.articles) ? data.articles[0] : null;
+    const body = typeof article?.body === "string" ? article.body.trim() : "";
+    if (!body || stripTags(body).length < 200) return null;
+
+    const img =
+      article?.images?.[0]?.url_hero ||
+      article?.images?.[0]?.url_global ||
+      article?.images?.[0]?.url ||
+      null;
+    const caption = article?.images?.[0]?.caption?.trim() || "";
+    const lead = img
+      ? `<figure><img src="${img}" alt="" loading="lazy">${
+          caption ? `<figcaption>${caption}</figcaption>` : ""
+        }</figure>`
+      : "";
+    const byline = typeof article?.author === "string"
+      ? article.author.replace(/^By\s+/i, "").trim()
+      : null;
+    const title = typeof article?.title === "string" ? article.title.trim() : null;
+    return {
+      html: `${lead}${body}`,
+      title,
+      byline,
+      image: img,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function extractPostGazetteFragment(html: string): string | null {
+  return extractPostGazetteStory(html)?.html ?? null;
+}
+
 function extractFragment(html: string, pageUrl = ""): string | null {
   // Baseball Savant is a React SPA — generic <main>/<nav> splits yield menu soup.
   if (isSavantPreviewUrl(pageUrl) || isBaseballSavantUrl(pageUrl)) {
@@ -506,6 +595,12 @@ function extractFragment(html: string, pageUrl = ""): string | null {
   if (isBeehiivUrl(pageUrl)) {
     const beehiiv = extractBeehiivFragment(html);
     if (beehiiv) return beehiiv;
+  }
+
+  // Post-Gazette body is in a script JSON blob — must run before stripNoise callers.
+  if (isPostGazetteUrl(pageUrl)) {
+    const pg = extractPostGazetteFragment(html);
+    if (pg) return pg;
   }
 
   if (/baltimoresun\.com|chicagotribune\.com|orlandosentinel\.com/i.test(pageUrl)) {
@@ -1696,9 +1791,10 @@ async function fetchText(url: string, attempt = 0): Promise<string> {
   const isGray = isGrayMediaUrl(url);
   const isSavant = isBaseballSavantUrl(url);
   const isBeehiiv = isBeehiivUrl(url);
+  const isPg = isPostGazetteUrl(url);
   const res = await fetch(url, {
     headers: {
-      "User-Agent": isTownNews || isSavant || isBeehiiv || isGray ? BROWSER_UA : UA,
+      "User-Agent": isTownNews || isSavant || isBeehiiv || isGray || isPg ? BROWSER_UA : UA,
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
       ...(isTownNews
@@ -1710,6 +1806,7 @@ async function fetchText(url: string, attempt = 0): Promise<string> {
             "Sec-Fetch-Site": "none",
           }
         : {}),
+      ...(isPg ? { Referer: "https://www.post-gazette.com/", "Cache-Control": "no-cache" } : {}),
       ...(isSavant
         ? { Referer: "https://baseballsavant.mlb.com/" }
         : isMlbVideoUrl(url) || /mlb\.com/i.test(url)
@@ -2414,6 +2511,29 @@ async function handleRead(url: string, refresh = false) {
       return json(payload);
     }
     throw err;
+  }
+
+  // Post-Gazette: body lives in pgStoryZeroJSON inside <script> — read before stripNoise.
+  if (isPostGazetteUrl(url)) {
+    const pgStory = extractPostGazetteStory(rawHtml);
+    if (pgStory) {
+      const meta = pageMeta(stripNoise(rawHtml));
+      let contentHtml = scrubContentHtml(sanitizeHtml(stripArticleChrome(pgStory.html)), pgStory.image || meta.image);
+      if (pgStory.image) contentHtml = dedupeImages(contentHtml, pgStory.image);
+      else if (meta.image) contentHtml = dedupeImages(contentHtml, meta.image);
+      const contentText = stripTags(contentHtml);
+      const payload = {
+        url,
+        title: pgStory.title || meta.title,
+        byline: pgStory.byline || meta.byline || "Pittsburgh Post-Gazette",
+        image: pgStory.image || meta.image,
+        contentHtml,
+        contentText,
+        wordCount: contentText.split(/\s+/).filter(Boolean).length,
+      };
+      writeExtractMem(url, payload);
+      return json(payload);
+    }
   }
 
   const html = unlockEncryptedContent(stripNoise(rawHtml));
