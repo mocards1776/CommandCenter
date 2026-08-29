@@ -88,6 +88,15 @@ export type CfbScoreSide = {
   fpiRank: number | null;
 };
 
+export type CfbLiveSituation = {
+  downDistanceText: string | null;
+  possessionText: string | null;
+  yardLine: number | null;
+  isRedZone: boolean;
+  possessionTeamId: string | null;
+  lastPlayText: string | null;
+};
+
 export type CfbScoreGame = {
   id: string;
   status: string;
@@ -101,6 +110,9 @@ export type CfbScoreGame = {
   venue: string | null;
   date: string | null;
   broadcasts: GameBroadcast[];
+  /** ESPN period number (1–4 regulation, 5+ OT). */
+  period: number | null;
+  situation: CfbLiveSituation | null;
 };
 
 export type CfbScoredGame = CfbScoreGame & {
@@ -289,12 +301,38 @@ export async function fetchCfbFpiRanks(): Promise<Map<number, number>> {
   return map;
 }
 
+function mapCfbSituation(
+  sit:
+    | {
+        downDistanceText?: string;
+        possessionText?: string;
+        yardLine?: number;
+        isRedZone?: boolean;
+        possession?: string;
+        lastPlay?: { text?: string; team?: { id?: string } };
+      }
+    | null
+    | undefined,
+  live: boolean,
+): CfbLiveSituation | null {
+  if (!live || !sit) return null;
+  return {
+    downDistanceText: sit.downDistanceText ?? null,
+    possessionText: sit.possessionText ?? null,
+    yardLine: typeof sit.yardLine === "number" ? sit.yardLine : null,
+    isRedZone: Boolean(sit.isRedZone),
+    possessionTeamId: sit.possession ?? sit.lastPlay?.team?.id ?? null,
+    lastPlayText: sit.lastPlay?.text ?? null,
+  };
+}
+
 type EspnEvent = {
   id?: string;
   date?: string;
   competitions?: {
     venue?: { fullName?: string };
     status?: {
+      period?: number;
       type?: {
         state?: string;
         completed?: boolean;
@@ -322,6 +360,7 @@ type EspnEvent = {
         logos?: { href?: string }[];
       };
     }[];
+    situation?: Parameters<typeof mapCfbSituation>[0];
   }[];
 };
 
@@ -384,6 +423,11 @@ function mapCfbEvent(
           timeZoneName: "short",
         })
       : null;
+  const periodRaw = comp.status?.period;
+  const period =
+    typeof periodRaw === "number" && Number.isFinite(periodRaw) && periodRaw > 0
+      ? periodRaw
+      : null;
   return {
     id: String(event.id ?? comp.status?.type?.detail ?? Math.random()),
     status: st?.description ?? st?.detail ?? "Scheduled",
@@ -397,6 +441,8 @@ function mapCfbEvent(
     venue: comp.venue?.fullName ?? null,
     date: chicagoDateFromIso(iso),
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
+    period,
+    situation: mapCfbSituation(comp.situation, live),
   };
 }
 
@@ -890,17 +936,70 @@ async function mapWithConcurrency<T, R>(
   return out;
 }
 
-function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score: number; reasons: string[] } {
+export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score: number; reasons: string[] } {
   let score = 0;
   const reasons: string[] = [];
+  const diff =
+    g.away.score != null && g.home.score != null
+      ? Math.abs(g.away.score - g.home.score)
+      : null;
+  const detail = `${g.shortDetail ?? ""} ${g.status ?? ""}`.toLowerCase();
+  const period = g.period;
+  const inOt =
+    (period != null && period >= 5) || /\bot\b|overtime/.test(detail);
+
   if (g.live) {
     score += 40;
     reasons.push("Live");
-  }
-  if (!g.final && !g.live) {
+    // Drama from margin — without this every live game sits at flat 40.
+    if (diff != null) {
+      if (diff <= 3) {
+        score += 28;
+        reasons.push("One-score game");
+      } else if (diff <= 8) {
+        score += 14;
+        reasons.push("Tight");
+      } else if (diff >= 28) {
+        score -= 20;
+        reasons.push("Blowout");
+      } else if (diff >= 21) {
+        score -= 14;
+        reasons.push("Blowout");
+      } else if (diff >= 14) {
+        score -= 8;
+      }
+    }
+    if (inOt) {
+      score += 32;
+      reasons.push("Overtime");
+    } else if (diff == null || diff <= 14) {
+      // Late-game bump only when still watchable — don't cancel blowout drag.
+      if (period === 4 || /\b4th\b/.test(detail)) {
+        score += 18;
+        reasons.push("4th quarter");
+      } else if (period === 3 || /\b3rd\b/.test(detail)) {
+        score += 8;
+        reasons.push("3rd quarter");
+      }
+    }
+    if (g.situation?.isRedZone && (diff == null || diff <= 14)) {
+      score += 18;
+      reasons.push("Red zone");
+    }
+    if (
+      g.situation?.downDistanceText?.startsWith("4th") &&
+      (diff == null || diff <= 14)
+    ) {
+      score += 12;
+      reasons.push("4th down");
+    }
+  } else if (!g.final) {
     score += 8;
     reasons.push("Upcoming");
+  } else {
+    score += 2;
   }
+
   const awayRank = g.away.rank;
   const homeRank = g.home.rank;
   if (awayRank && homeRank && awayRank <= 25 && homeRank <= 25) {
@@ -909,7 +1008,15 @@ function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score: numbe
   } else if ((awayRank && awayRank <= 25) || (homeRank && homeRank <= 25)) {
     score += 16;
     reasons.push("Ranked team");
+  } else {
+    const af = g.away.fpiRank;
+    const hf = g.home.fpiRank;
+    if (af != null && hf != null && af <= 40 && hf <= 40) {
+      score += 10;
+      reasons.push("FPI quality");
+    }
   }
+
   for (const side of [g.away, g.home]) {
     const interest = ctx?.teamInterest[String(side.teamId)] ?? 0;
     if (interest >= 7) {
@@ -921,11 +1028,13 @@ function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score: numbe
       reasons.push(`Watch ${side.abbrev}`);
     }
   }
-  if (g.final && Math.abs((g.away.score ?? 0) - (g.home.score ?? 0)) <= 7) {
+
+  if (g.final && diff != null && diff <= 7) {
     score += 10;
     reasons.push("Close final");
   }
-  return { score, reasons: [...new Set(reasons)] };
+
+  return { score: Math.max(0, score), reasons: [...new Set(reasons)].slice(0, 5) };
 }
 
 export function rankCfbRuwtGames(
