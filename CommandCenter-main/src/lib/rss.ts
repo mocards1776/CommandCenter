@@ -3809,7 +3809,7 @@ async function fetchCardinalsSavantFeed(): Promise<RssFeed> {
   };
 }
 
-const EXTRACT_SESSION_PREFIX = "rss-extract-v4:";
+const EXTRACT_SESSION_PREFIX = "rss-extract-v5:";
 const EXTRACT_SESSION_TTL_MS = 45 * 60_000;
 const EXTRACT_SESSION_MAX = 28;
 const EXTRACT_SESSION_MAX_BYTES = 180_000;
@@ -3878,6 +3878,10 @@ export function isThinRssExtract(article: Pick<RssArticle, "contentHtml" | "cont
   return words > 0 && words < 50 && /Open original article/i.test(html);
 }
 
+function isPostGazetteUrl(url: string): boolean {
+  return /(?:^|\.)post-gazette\.com/i.test(url);
+}
+
 /** Gift / share / related-video chrome mistaken for a Field59 video body. */
 export function isNoisyStlTodayVideoExtract(
   url: string,
@@ -3925,8 +3929,9 @@ export async function fetchRssArticle(
     const savantSoup =
       isSavantPreviewUrl(url) && isSavantNavSoup(cached.contentHtml || cached.contentText || "");
     const stlVideoNoise = isNoisyStlTodayVideoExtract(url, cached);
-    if (!savantSoup && !stlVideoNoise) return cached;
-    if (stlVideoNoise) clearExtractSession(url);
+    const thinPg = isPostGazetteUrl(url) && isThinRssExtract(cached);
+    if (!savantSoup && !stlVideoNoise && !thinPg) return cached;
+    if (stlVideoNoise || thinPg) clearExtractSession(url);
   }
 
   // Prefer browser rebuild for Savant — edge often lags redeploys and returns SPA nav.
@@ -3947,6 +3952,13 @@ export async function fetchRssArticle(
     });
     if (/mlb\.com\/(?:news|gameday|article|press-release|story)\b/i.test(url) && isThinRssExtract(article)) {
       const local = await extractMlbNewsInBrowser(url).catch(() => null);
+      if (local && !isThinRssExtract(local)) {
+        writeExtractSession(local);
+        return local;
+      }
+    }
+    if (isPostGazetteUrl(url) && isThinRssExtract(article)) {
+      const local = await extractPostGazetteInBrowser(url).catch(() => null);
       if (local && !isThinRssExtract(local)) {
         writeExtractSession(local);
         return local;
@@ -3978,6 +3990,13 @@ export async function fetchRssArticle(
     // Edge IPs often get thin STL Today shells — decrypt in the browser as fallback.
     if (/mlb\.com\/(?:news|gameday|article|press-release|story)\b/i.test(url)) {
       const local = await extractMlbNewsInBrowser(url).catch(() => null);
+      if (local) {
+        writeExtractSession(local);
+        return local;
+      }
+    }
+    if (isPostGazetteUrl(url)) {
+      const local = await extractPostGazetteInBrowser(url).catch(() => null);
       if (local) {
         writeExtractSession(local);
         return local;
@@ -4155,6 +4174,107 @@ async function extractStlTodayInBrowser(url: string): Promise<RssArticle | null>
     contentText,
     wordCount: contentText.split(/\s+/).filter(Boolean).length,
   };
+}
+
+/** Browser-side Post-Gazette extract — body lives in pgStoryZeroJSON (paywall shell). */
+async function extractPostGazetteInBrowser(url: string): Promise<RssArticle | null> {
+  const tryFetch = async (target: string, ms = 7000) => {
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), ms);
+    try {
+      const res = await fetch(target, {
+        headers: { Accept: "text/html" },
+        credentials: "omit",
+        signal: ctrl.signal,
+      });
+      if (!res.ok) return null;
+      return await res.text();
+    } finally {
+      window.clearTimeout(timer);
+    }
+  };
+  // Direct first (may CORS-fail), then open proxy — same pattern as BBRef browser fallbacks.
+  let html =
+    (await tryFetch(url).catch(() => null)) ||
+    (await tryFetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`).catch(() => null));
+  if (!html) return null;
+  const marker = html.match(/pgStoryZeroJSON\s*=\s*/i);
+  if (!marker || marker.index == null) return null;
+  const start = html.indexOf("{", marker.index + marker[0].length);
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let end = -1;
+  for (let i = start; i < html.length; i++) {
+    const ch = html[i]!;
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        end = i + 1;
+        break;
+      }
+    }
+  }
+  if (end < 0) return null;
+  try {
+    const data = JSON.parse(html.slice(start, end)) as {
+      articles?: Array<{
+        body?: string;
+        author?: string;
+        title?: string;
+        images?: Array<{ url_hero?: string; url_global?: string; url?: string; caption?: string }>;
+      }>;
+    };
+    const article = Array.isArray(data.articles) ? data.articles[0] : null;
+    const body = typeof article?.body === "string" ? article.body.trim() : "";
+    const textLen = body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
+    if (!body || textLen < 200) return null;
+    const img =
+      article?.images?.[0]?.url_hero ||
+      article?.images?.[0]?.url_global ||
+      article?.images?.[0]?.url ||
+      html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+      null;
+    const caption = article?.images?.[0]?.caption?.trim() || "";
+    const lead = img
+      ? `<figure><img src="${img}" alt="" loading="lazy">${
+          caption ? `<figcaption>${caption}</figcaption>` : ""
+        }</figure>`
+      : "";
+    const contentHtml = `${lead}${body}`;
+    const contentText = contentHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const title =
+      (typeof article?.title === "string" ? article.title.trim() : null) ||
+      html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+      null;
+    const byline =
+      (typeof article?.author === "string"
+        ? article.author.replace(/^By\s+/i, "").trim()
+        : null) || "Pittsburgh Post-Gazette";
+    return {
+      url,
+      title,
+      byline,
+      image: img,
+      contentHtml,
+      contentText,
+      wordCount: contentText.split(/\s+/).filter(Boolean).length,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Browser-side MLB.com news extract when the edge only got a teaser. */
