@@ -2,6 +2,12 @@
 
 ---
 
+## CFB: embed ESPN recap video — August 30, 2026
+
+- College football game pages pull ESPN summary clips and embed the best recap / full-highlights MP4 in-app (tap to play), with additional play highlights in a collapsible reel. External ESPN recap/boxscore links remain.
+
+---
+
 ## Sports UI fixes: boards, CFB ranks, WAR — August 27, 2026
 
 - **Dispatch boards:** Stop stripping repeated standings logos and leader headshots (WHIP/Last-N tables). Rename “form” → **recent records**. Compact reader mode drops the empty “MLB Stats API” hero. Scoreboard leads with yesterday’s finals (full inning box scores), then today/upcoming.

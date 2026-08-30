@@ -5,7 +5,10 @@ import { ArrowLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import CfbRankLabel from "@/components/sports/CfbRankLabel";
+import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
+import HighlightReel from "@/components/sports/HighlightReel";
 import { fetchCfbGameDetail, type CfbScoreSide } from "@/lib/cfb";
+import type { MlbHighlight } from "@/lib/mlb";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { cn, formatSportsDateLong } from "@/lib/utils";
 
@@ -32,7 +35,7 @@ export function CfbGameDetailView({
   suppressStoryHeader?: boolean;
 }) {
   const detail = useQuery({
-    queryKey: ["cfb-game", eventId],
+    queryKey: ["cfb-game-v2", eventId],
     queryFn: () => fetchCfbGameDetail(eventId),
     enabled: Boolean(eventId),
     refetchInterval: (q) => (q.state.data?.live ? 15_000 : false),
@@ -51,6 +54,25 @@ export function CfbGameDetailView({
     }
     return labels.slice(0, 16);
   }, [g?.teamStats]);
+
+  const extraHighlights = useMemo((): MlbHighlight[] => {
+    if (!g) return [];
+    const recapId = g.recapVideo?.id;
+    return g.videos
+      .filter((v) => v.mp4 && v.id !== recapId)
+      .map((v) => ({
+        id: v.id,
+        title: v.headline,
+        description: v.description,
+        duration:
+          v.durationSec != null
+            ? `${Math.floor(v.durationSec / 60)}:${String(Math.floor(v.durationSec % 60)).padStart(2, "0")}`
+            : null,
+        thumb: v.thumb,
+        url: v.mp4!,
+        date: null,
+      }));
+  }, [g]);
 
   if (detail.isPending) {
     return (
@@ -218,6 +240,18 @@ export function CfbGameDetailView({
           </a>
         </div>
       </header>
+
+      {g.recapVideo ? (
+        <EspnVideoEmbed clip={g.recapVideo} eyebrow="ESPN recap" />
+      ) : null}
+
+      {extraHighlights.length > 0 ? (
+        <HighlightReel
+          highlights={extraHighlights}
+          title="More ESPN highlights"
+          defaultOpen={false}
+        />
+      ) : null}
 
       {articleSection}
 
@@ -530,7 +564,7 @@ export default function CfbGamePage() {
   const swipeRef = useSwipeBack(() => navigate(-1));
 
   const detail = useQuery({
-    queryKey: ["cfb-game", eventId],
+    queryKey: ["cfb-game-v2", eventId],
     queryFn: () => fetchCfbGameDetail(eventId!),
     enabled: Boolean(eventId),
     refetchInterval: (q) => (q.state.data?.live ? 15_000 : false),

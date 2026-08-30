@@ -228,6 +228,18 @@ export type CfbTeamGameStat = {
   value: string;
 };
 
+/** ESPN clip attached to a CFB game summary (recap package or play highlight). */
+export type CfbGameVideo = {
+  id: string;
+  headline: string;
+  description: string | null;
+  thumb: string | null;
+  /** Progressive MP4 when ESPN exposes one (embeddable in-app). */
+  mp4: string | null;
+  href: string | null;
+  durationSec: number | null;
+};
+
 export type CfbGameDetail = CfbScoreGame & {
   scoringPlays: CfbScoringPlay[];
   boxGroups: CfbBoxStatGroup[];
@@ -237,6 +249,10 @@ export type CfbGameDetail = CfbScoreGame & {
     description: string | null;
     storyHtml: string | null;
   } | null;
+  /** Best ESPN recap / full-highlights package when available. */
+  recapVideo: CfbGameVideo | null;
+  /** Other embeddable clips from the summary (play highlights, related). */
+  videos: CfbGameVideo[];
   /** Pregame extras from ESPN summary when box/article are empty. */
   oddsLine: string | null;
   predictor: { homeWinPct: number | null; awayWinPct: number | null } | null;
@@ -247,6 +263,77 @@ export type CfbGameDetail = CfbScoreGame & {
   }[];
   venueDetail: string | null;
 };
+
+type EspnVideoRaw = {
+  id?: string | number;
+  headline?: string;
+  title?: string;
+  description?: string;
+  caption?: string;
+  duration?: number;
+  thumbnail?: string;
+  images?: { url?: string }[];
+  posterImages?: { default?: { href?: string }; full?: { href?: string } };
+  links?: {
+    web?: { href?: string };
+    source?: { href?: string; HD?: { href?: string } };
+    mobile?: { source?: { href?: string } };
+  };
+};
+
+function espnVideoMp4(v: EspnVideoRaw): string | null {
+  const candidates = [
+    v.links?.mobile?.source?.href,
+    v.links?.source?.HD?.href,
+    v.links?.source?.href,
+  ];
+  for (const href of candidates) {
+    if (href && /\.mp4(\?|$)/i.test(href)) return href;
+  }
+  return null;
+}
+
+function mapEspnGameVideo(raw: EspnVideoRaw): CfbGameVideo | null {
+  const id = raw.id != null ? String(raw.id) : "";
+  const headline = (raw.headline || raw.title || "").trim();
+  if (!id || !headline) return null;
+  const mp4 = espnVideoMp4(raw);
+  return {
+    id,
+    headline,
+    description: (raw.description || raw.caption || "").trim() || null,
+    thumb:
+      raw.posterImages?.full?.href ??
+      raw.posterImages?.default?.href ??
+      raw.thumbnail ??
+      raw.images?.[0]?.url ??
+      null,
+    mp4,
+    href: raw.links?.web?.href ?? `https://www.espn.com/video/clip?id=${id}`,
+    durationSec: typeof raw.duration === "number" ? raw.duration : null,
+  };
+}
+
+/** Prefer full-highlight / recap packages over short studio bites. */
+export function pickCfbRecapVideo(videos: CfbGameVideo[]): CfbGameVideo | null {
+  const withMp4 = videos.filter((v) => v.mp4);
+  if (!withMp4.length) return null;
+  const scored = withMp4.map((v) => {
+    const h = v.headline.toLowerCase();
+    let score = 0;
+    if (/full\s+highlights?/.test(h)) score += 20;
+    else if (/\bhighlights?\b/.test(h)) score += 10;
+    if (/\brecap\b/.test(h)) score += 8;
+    if (v.durationSec != null && v.durationSec >= 90) score += 4;
+    else if (v.durationSec != null && v.durationSec >= 60) score += 2;
+    if (v.durationSec != null && v.durationSec < 45 && !/\bhighlight/i.test(h)) {
+      score -= 6;
+    }
+    return { v, score };
+  });
+  scored.sort((a, b) => b.score - a.score || (b.v.durationSec ?? 0) - (a.v.durationSec ?? 0));
+  return scored[0]?.v ?? null;
+}
 
 export type CfbPlayerProfile = {
   id: string;
@@ -652,10 +739,16 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
         }[];
       }[];
     };
-    article?: { headline?: string; description?: string; story?: string };
+    article?: {
+      headline?: string;
+      description?: string;
+      story?: string;
+      video?: EspnVideoRaw[];
+    };
     news?:
       | { articles?: { headline?: string; description?: string; story?: string }[] }
       | { headline?: string; description?: string; story?: string }[];
+    videos?: EspnVideoRaw[];
     pickcenter?: {
       details?: string;
       overUnder?: number;
@@ -813,6 +906,15 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
       : null,
   ].filter(Boolean);
 
+  const videoById = new Map<string, CfbGameVideo>();
+  for (const rawVid of [...(raw.article?.video ?? []), ...(raw.videos ?? [])]) {
+    const mapped = mapEspnGameVideo(rawVid);
+    if (!mapped || videoById.has(mapped.id)) continue;
+    videoById.set(mapped.id, mapped);
+  }
+  const videos = [...videoById.values()];
+  const recapVideo = pickCfbRecapVideo(videos);
+
   return {
     ...base,
     venue: base.venue ?? raw.gameInfo?.venue?.fullName ?? null,
@@ -831,6 +933,8 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
           storyHtml: articleRaw.story ?? null,
         }
       : null,
+    recapVideo,
+    videos,
     oddsLine,
     predictor,
     lastFive,
