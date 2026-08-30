@@ -666,6 +666,34 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
   };
 }
 
+export type CfbTeamStaffMember = {
+  id: string;
+  name: string;
+  title: string;
+};
+
+export type CfbTeamScheduleGame = {
+  id: string;
+  week: number | null;
+  date: string | null;
+  dateLabel: string | null;
+  name: string;
+  shortName: string;
+  status: string;
+  shortDetail: string | null;
+  live: boolean;
+  final: boolean;
+  home: boolean;
+  teamScore: number | null;
+  oppScore: number | null;
+  oppId: string | null;
+  oppName: string;
+  oppAbbrev: string;
+  oppLogo: string | null;
+  oppRank: number | null;
+  won: boolean | null;
+};
+
 export type CfbTeamPage = {
   id: string;
   name: string;
@@ -674,6 +702,7 @@ export type CfbTeamPage = {
   logo: string | null;
   record: string | null;
   standing: string | null;
+  conference: string | null;
   fpiRank: number | null;
   nextEvent: { id: string; name: string; date: string | null } | null;
   roster: {
@@ -683,15 +712,308 @@ export type CfbTeamPage = {
     position: string | null;
     headshot: string | null;
   }[];
+  schedule: CfbTeamScheduleGame[];
+  coaches: CfbTeamStaffMember[];
   recent: CfbScoreGame[];
 };
 
+export type CfbConference = {
+  id: string;
+  name: string;
+  shortName: string;
+  abbreviation: string;
+};
+
+export type CfbStandingRow = {
+  teamId: string;
+  name: string;
+  abbrev: string;
+  logo: string | null;
+  overall: string | null;
+  conference: string | null;
+  pointsFor: string | null;
+  pointsAgainst: string | null;
+  streak: string | null;
+};
+
+export type CfbPollEntry = {
+  rank: number;
+  previous: number | null;
+  points: number | null;
+  firstPlaceVotes: number | null;
+  record: string | null;
+  trend: string | null;
+  teamId: string;
+  name: string;
+  abbrev: string;
+  logo: string | null;
+};
+
+export type CfbPollBoard = {
+  id: string;
+  name: string;
+  shortName: string;
+  entries: CfbPollEntry[];
+};
+
+export type CfbLeaderRow = {
+  rank: number;
+  value: string;
+  athleteId: string;
+  athleteName: string;
+  athleteHeadshot: string | null;
+  position: string | null;
+  teamId: string | null;
+  teamAbbrev: string | null;
+  teamLogo: string | null;
+};
+
+export type CfbLeaderCategory = {
+  id: string;
+  name: string;
+  displayName: string;
+  leaders: CfbLeaderRow[];
+};
+
+const FBS_CONFERENCE_LABELS: Record<string, string> = {
+  "151": "American",
+  "1": "ACC",
+  "4": "Big 12",
+  "5": "Big Ten",
+  "12": "CUSA",
+  "18": "Independents",
+  "15": "MAC",
+  "17": "Mountain West",
+  "9": "Pac-12",
+  "8": "SEC",
+  "37": "Sun Belt",
+};
+
+function parseEspnScore(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string" && raw.trim() !== "" && Number.isFinite(Number(raw))) {
+    return Number(raw);
+  }
+  return null;
+}
+
+function standingStat(
+  stats: { name?: string; abbreviation?: string; displayValue?: string }[] | undefined,
+  ...names: string[]
+): string | null {
+  for (const s of stats ?? []) {
+    const key = (s.name ?? "").toLowerCase();
+    const abbr = (s.abbreviation ?? "").toLowerCase();
+    if (names.some((n) => key === n.toLowerCase() || abbr === n.toLowerCase())) {
+      return s.displayValue ?? null;
+    }
+  }
+  return null;
+}
+
+export async function fetchCfbConferences(): Promise<CfbConference[]> {
+  const res = await fetch(
+    "https://site.api.espn.com/apis/v2/sports/football/college-football/standings",
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) throw new Error(`CFB conferences ${res.status}`);
+  const raw = (await res.json()) as {
+    children?: {
+      id?: string | number;
+      name?: string;
+      shortName?: string;
+      abbreviation?: string;
+    }[];
+  };
+  return (raw.children ?? [])
+    .map((c) => ({
+      id: String(c.id ?? ""),
+      name: c.name ?? "Conference",
+      shortName: c.shortName ?? c.name ?? "Conference",
+      abbreviation: (c.abbreviation ?? c.shortName ?? c.name ?? "—").toUpperCase(),
+    }))
+    .filter((c) => c.id);
+}
+
+export async function fetchCfbConferenceStandings(
+  groupId: string,
+): Promise<{ conference: CfbConference; rows: CfbStandingRow[] }> {
+  const res = await fetch(
+    `https://site.api.espn.com/apis/v2/sports/football/college-football/standings?group=${encodeURIComponent(groupId)}`,
+    { headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) throw new Error(`CFB standings ${res.status}`);
+  const raw = (await res.json()) as {
+    id?: string | number;
+    name?: string;
+    shortName?: string;
+    abbreviation?: string;
+    standings?: {
+      entries?: {
+        team?: {
+          id?: string;
+          displayName?: string;
+          abbreviation?: string;
+          logos?: { href?: string }[];
+        };
+        stats?: { name?: string; abbreviation?: string; displayValue?: string }[];
+      }[];
+    };
+  };
+  const conference: CfbConference = {
+    id: String(raw.id ?? groupId),
+    name: raw.name ?? "Conference",
+    shortName: raw.shortName ?? raw.name ?? "Conference",
+    abbreviation: (raw.abbreviation ?? raw.shortName ?? "—").toUpperCase(),
+  };
+  const rows: CfbStandingRow[] = [];
+  for (const e of raw.standings?.entries ?? []) {
+    const team = e.team ?? {};
+    if (!team.id) continue;
+    rows.push({
+      teamId: String(team.id),
+      name: team.displayName ?? "—",
+      abbrev: (team.abbreviation ?? "—").toUpperCase(),
+      logo: team.logos?.[0]?.href ?? cfbTeamLogo(team.id),
+      overall: standingStat(e.stats, "overall"),
+      conference: standingStat(e.stats, "vs. Conf.", "CONF", "vs Conf"),
+      pointsFor: standingStat(e.stats, "pointsFor", "PF"),
+      pointsAgainst: standingStat(e.stats, "pointsAgainst", "PA"),
+      streak: standingStat(e.stats, "streak", "STRK"),
+    });
+  }
+  return { conference, rows };
+}
+
+export async function fetchCfbPolls(): Promise<CfbPollBoard[]> {
+  const res = await fetch(`${ESPN}/rankings`, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`CFB rankings ${res.status}`);
+  const raw = (await res.json()) as {
+    rankings?: {
+      id?: string | number;
+      name?: string;
+      shortName?: string;
+      ranks?: {
+        current?: number;
+        previous?: number;
+        points?: number;
+        firstPlaceVotes?: number;
+        recordSummary?: string;
+        trend?: string;
+        team?: {
+          id?: string;
+          abbreviation?: string;
+          displayName?: string;
+          location?: string;
+          logos?: { href?: string }[];
+        };
+      }[];
+    }[];
+  };
+  const boards: CfbPollBoard[] = [];
+  for (const poll of raw.rankings ?? []) {
+    const entries: CfbPollEntry[] = [];
+    for (const r of poll.ranks ?? []) {
+      const team = r.team ?? {};
+      if (!team.id || r.current == null) continue;
+      entries.push({
+        rank: r.current,
+        previous: typeof r.previous === "number" ? r.previous : null,
+        points: typeof r.points === "number" ? r.points : null,
+        firstPlaceVotes:
+          typeof r.firstPlaceVotes === "number" ? r.firstPlaceVotes : null,
+        record: r.recordSummary ?? null,
+        trend: r.trend ?? null,
+        teamId: String(team.id),
+        name: team.displayName ?? team.location ?? "—",
+        abbrev: (team.abbreviation ?? "—").toUpperCase(),
+        logo: team.logos?.[0]?.href ?? cfbTeamLogo(team.id),
+      });
+    }
+    if (!entries.length) continue;
+    boards.push({
+      id: String(poll.id ?? poll.shortName ?? poll.name ?? boards.length),
+      name: poll.name ?? "Poll",
+      shortName: poll.shortName ?? poll.name ?? "Poll",
+      entries,
+    });
+  }
+  return boards;
+}
+
+export async function fetchCfbLeaders(season?: number): Promise<{
+  season: number;
+  categories: CfbLeaderCategory[];
+}> {
+  const year = season ?? new Date().getFullYear();
+  const tryYears = [year, year - 1];
+  for (const y of tryYears) {
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v3/sports/football/college-football/leaders?season=${y}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) continue;
+    const raw = (await res.json()) as {
+      leaders?: {
+        categories?: {
+          name?: string;
+          displayName?: string;
+          leaders?: {
+            displayValue?: string;
+            athlete?: {
+              id?: string;
+              displayName?: string;
+              headshot?: { href?: string };
+              position?: { abbreviation?: string };
+            };
+            team?: {
+              id?: string;
+              abbreviation?: string;
+              logos?: { href?: string }[];
+            };
+          }[];
+        }[];
+      };
+    };
+    const categories: CfbLeaderCategory[] = [];
+    for (const cat of raw.leaders?.categories ?? []) {
+      const leaders: CfbLeaderRow[] = [];
+      (cat.leaders ?? []).forEach((row, idx) => {
+        const a = row.athlete ?? {};
+        if (!a.id) return;
+        const team = row.team ?? {};
+        leaders.push({
+          rank: idx + 1,
+          value: row.displayValue ?? "—",
+          athleteId: String(a.id),
+          athleteName: a.displayName ?? "—",
+          athleteHeadshot: a.headshot?.href ?? cfbHeadshot(a.id, 200),
+          position: a.position?.abbreviation ?? null,
+          teamId: team.id ? String(team.id) : null,
+          teamAbbrev: team.abbreviation ? team.abbreviation.toUpperCase() : null,
+          teamLogo: team.logos?.[0]?.href ?? (team.id ? cfbTeamLogo(team.id) : null),
+        });
+      });
+      if (!leaders.length) continue;
+      categories.push({
+        id: cat.name ?? cat.displayName ?? String(categories.length),
+        name: cat.name ?? "stat",
+        displayName: cat.displayName ?? cat.name ?? "Leaders",
+        leaders,
+      });
+    }
+    if (categories.length) return { season: y, categories };
+  }
+  return { season: year, categories: [] };
+}
+
 export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
   const id = String(teamId);
-  const [fpiByTeam, teamRes, rosterRes] = await Promise.all([
+  const [fpiByTeam, teamRes, rosterRes, scheduleRes] = await Promise.all([
     fetchCfbFpiRanks().catch(() => new Map<number, number>()),
     fetch(`${ESPN}/teams/${id}`, { headers: { Accept: "application/json" } }),
     fetch(`${ESPN}/teams/${id}/roster`, { headers: { Accept: "application/json" } }),
+    fetch(`${ESPN}/teams/${id}/schedule`, { headers: { Accept: "application/json" } }),
   ]);
   if (!teamRes.ok) throw new Error(`CFB team ${teamRes.status}`);
   const teamJson = (await teamRes.json()) as {
@@ -703,11 +1025,18 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
       logos?: { href?: string }[];
       record?: { items?: { type?: string; summary?: string }[] };
       standingSummary?: string;
+      groups?: {
+        id?: string | number;
+        isConference?: boolean;
+        name?: string;
+        parent?: { id?: string | number; name?: string };
+      };
       nextEvent?: { id?: string; name?: string; date?: string }[];
     };
   };
   const t = teamJson.team ?? {};
   const roster: CfbTeamPage["roster"] = [];
+  const coaches: CfbTeamStaffMember[] = [];
   if (rosterRes.ok) {
     const rosterJson = (await rosterRes.json()) as {
       athletes?: {
@@ -719,6 +1048,7 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
           headshot?: { href?: string };
         }[];
       }[];
+      coach?: { id?: string; firstName?: string; lastName?: string; displayName?: string }[];
     };
     for (const group of rosterJson.athletes ?? []) {
       for (const a of group.items ?? []) {
@@ -732,6 +1062,111 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
         });
       }
     }
+    for (const c of rosterJson.coach ?? []) {
+      if (!c.id) continue;
+      const name =
+        c.displayName?.trim() ||
+        [c.firstName, c.lastName].filter(Boolean).join(" ").trim() ||
+        "Coach";
+      coaches.push({
+        id: String(c.id),
+        name,
+        title: coaches.length === 0 ? "Head coach" : "Coach",
+      });
+    }
+  }
+
+  const schedule: CfbTeamScheduleGame[] = [];
+  if (scheduleRes.ok) {
+    const schedJson = (await scheduleRes.json()) as {
+      events?: {
+        id?: string;
+        date?: string;
+        name?: string;
+        shortName?: string;
+        week?: { number?: number } | number;
+        competitions?: {
+          status?: {
+            type?: {
+              state?: string;
+              completed?: boolean;
+              description?: string;
+              detail?: string;
+              shortDetail?: string;
+            };
+          };
+          competitors?: {
+            homeAway?: string;
+            score?: unknown;
+            winner?: boolean;
+            curatedRank?: { current?: number };
+            team?: {
+              id?: string;
+              displayName?: string;
+              abbreviation?: string;
+              logos?: { href?: string }[];
+            };
+          }[];
+        }[];
+      }[];
+    };
+    for (const ev of schedJson.events ?? []) {
+      if (!ev.id) continue;
+      const comp = ev.competitions?.[0];
+      const st = comp?.status?.type;
+      const live = st?.state === "in";
+      const final = Boolean(st?.completed) || st?.state === "post";
+      const self = (comp?.competitors ?? []).find((c) => String(c.team?.id) === id);
+      const opp = (comp?.competitors ?? []).find((c) => String(c.team?.id) !== id);
+      if (!self || !opp?.team) continue;
+      const weekRaw = ev.week;
+      const week =
+        typeof weekRaw === "number"
+          ? weekRaw
+          : typeof weekRaw?.number === "number"
+            ? weekRaw.number
+            : null;
+      const iso = ev.date ?? null;
+      const whenDate = iso ? new Date(iso) : null;
+      const dateLabel =
+        whenDate && !Number.isNaN(whenDate.getTime())
+          ? whenDate.toLocaleDateString("en-US", {
+              weekday: "short",
+              month: "numeric",
+              day: "numeric",
+              timeZone: "America/Chicago",
+            })
+          : null;
+      const teamScore = parseEspnScore(self.score);
+      const oppScore = parseEspnScore(opp.score);
+      let won: boolean | null = null;
+      if (final && teamScore != null && oppScore != null) {
+        won = teamScore > oppScore ? true : teamScore < oppScore ? false : null;
+      } else if (typeof self.winner === "boolean") {
+        won = self.winner;
+      }
+      schedule.push({
+        id: String(ev.id),
+        week,
+        date: iso,
+        dateLabel,
+        name: ev.name ?? ev.shortName ?? "Game",
+        shortName: ev.shortName ?? ev.name ?? "Game",
+        status: st?.description ?? st?.detail ?? "Scheduled",
+        shortDetail: st?.shortDetail ?? st?.detail ?? null,
+        live,
+        final,
+        home: self.homeAway === "home",
+        teamScore,
+        oppScore,
+        oppId: opp.team.id ? String(opp.team.id) : null,
+        oppName: opp.team.displayName ?? "Opponent",
+        oppAbbrev: (opp.team.abbreviation ?? "—").toUpperCase(),
+        oppLogo: opp.team.logos?.[0]?.href ?? (opp.team.id ? cfbTeamLogo(opp.team.id) : null),
+        oppRank: cfbPollRank(opp.curatedRank?.current),
+        won,
+      });
+    }
   }
 
   const recentBoard = await fetchCfbScoreboard().catch(() => [] as CfbScoreGame[]);
@@ -740,6 +1175,11 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
   );
 
   const next = t.nextEvent?.[0];
+  const groupId = t.groups?.id != null ? String(t.groups.id) : null;
+  const conference =
+    (groupId && FBS_CONFERENCE_LABELS[groupId]) ||
+    (t.standingSummary?.match(/\bin\s+(.+)$/i)?.[1] ?? null);
+
   return {
     id,
     name: t.displayName ?? "Team",
@@ -748,11 +1188,14 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
     logo: t.logos?.[0]?.href ?? cfbTeamLogo(id),
     record: (t.record?.items ?? []).find((r) => r.type === "total")?.summary ?? null,
     standing: t.standingSummary ?? null,
+    conference,
     fpiRank: fpiByTeam.get(Number(id)) ?? null,
     nextEvent: next?.id
       ? { id: String(next.id), name: next.name ?? "Next game", date: next.date ?? null }
       : null,
     roster,
+    schedule,
+    coaches,
     recent,
   };
 }
