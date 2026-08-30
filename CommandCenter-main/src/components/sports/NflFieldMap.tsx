@@ -3,6 +3,16 @@ import type { NflScoreGame } from "@/lib/nfl";
 import { fieldBallPctFromHomeYardLine } from "@/lib/nfl";
 import { cn } from "@/lib/utils";
 
+/** Minimal shape for NFL / CFB live field maps on RUWT cards. */
+export type FootballFieldGame = {
+  away: { teamId: string | number; abbrev: string; color?: string };
+  home: { teamId: string | number; abbrev: string; color?: string };
+  situation?: {
+    downDistanceText?: string | null;
+    lastPlayText?: string | null;
+  } | null;
+};
+
 /** Horizontal football field with ball / line-of-scrimmage marker. */
 export default function NflFieldMap({
   game,
@@ -12,7 +22,7 @@ export default function NflFieldMap({
   downDistanceText,
   className,
 }: {
-  game: NflScoreGame;
+  game: FootballFieldGame;
   homeYardLine: number | null;
   possessionTeamId: string | null;
   downDistanceText?: string | null;

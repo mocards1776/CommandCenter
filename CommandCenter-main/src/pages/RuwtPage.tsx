@@ -785,6 +785,10 @@ function RuwtBroadcasts({ broadcasts }: { broadcasts?: GameBroadcast[] | null })
 }
 
 function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
+  const poss = game.situation?.possessionTeamId;
+  const awayHasBall = poss != null && String(poss) === String(game.away.teamId);
+  const homeHasBall = poss != null && String(poss) === String(game.home.teamId);
+
   return (
     <Link
       to={`/sports/cfb/game/${game.id}`}
@@ -796,16 +800,26 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
       <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
         <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-cream">
           <span className="text-accent">#{rank}</span>{" "}
-          {game.live ? "Live" : game.final ? "Final" : "Preview"}
+          {game.live ? (
+            <span className="text-alert">
+              <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-alert" />
+              {game.shortDetail || "Live"}
+            </span>
+          ) : game.final ? (
+            "Final"
+          ) : (
+            "Preview"
+          )}
         </span>
         <span className="text-[10.5px] text-[#8b93a7]">Heat {game.score}</span>
       </div>
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
           {game.away.logo && <img src={game.away.logo} alt="" className="h-8 w-8 object-contain" />}
-          <p className="text-[15px] font-bold text-white">
+          <p className={cn("text-[15px] font-bold text-white", awayHasBall && "text-cream")}>
             <CfbRankLabel pollRank={game.away.rank} fpiRank={game.away.fpiRank} />
             {game.away.abbrev}
+            {awayHasBall ? " ●" : ""}
           </p>
         </div>
         <p className="font-display text-center text-[28px] tabular-nums text-white">
@@ -821,12 +835,24 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
         </p>
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
-          <p className="text-[15px] font-bold text-white">
+          <p className={cn("text-[15px] font-bold text-white", homeHasBall && "text-cream")}>
+            {homeHasBall ? "● " : ""}
             <CfbRankLabel pollRank={game.home.rank} fpiRank={game.home.fpiRank} />
             {game.home.abbrev}
           </p>
         </div>
       </div>
+      {game.live && game.situation && (
+        <div className="relative z-10 border-t border-white/[0.06] px-2 py-2">
+          <NflFieldMap
+            game={game}
+            homeYardLine={game.situation.yardLine}
+            possessionTeamId={game.situation.possessionTeamId}
+            downDistanceText={game.situation.downDistanceText}
+          />
+        </div>
+      )}
+      <RuwtBroadcasts broadcasts={game.broadcasts} />
       {game.reasons.length > 0 && (
         <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
           {game.reasons.join(" · ")}
