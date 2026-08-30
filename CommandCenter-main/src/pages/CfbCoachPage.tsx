@@ -111,9 +111,11 @@ export default function CfbCoachPage() {
                 {c.recordSummary && (
                   <span className="numeral text-cream font-semibold">{c.recordSummary}</span>
                 )}
-                <span className={cn("font-bold uppercase tracking-[0.14em]", heatTone(c.hotSeatRank))}>
-                  #{c.hotSeatRank} {heatLabel(c.hotSeatRank)}
-                </span>
+                {c.hotSeatRank > 0 ? (
+                  <span className={cn("font-bold uppercase tracking-[0.14em]", heatTone(c.hotSeatRank))}>
+                    #{c.hotSeatRank} {heatLabel(c.hotSeatRank)}
+                  </span>
+                ) : null}
               </div>
             </div>
           </div>

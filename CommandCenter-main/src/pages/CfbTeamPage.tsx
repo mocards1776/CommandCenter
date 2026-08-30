@@ -8,6 +8,7 @@ import {
   fetchCfbTeamPage,
   type CfbTeamPage,
   type CfbTeamScheduleGame,
+  type CfbTeamWinTrendPoint,
 } from "@/lib/cfb";
 import { cn, formatSportsDate } from "@/lib/utils";
 
@@ -20,7 +21,7 @@ export default function CfbTeamPage() {
   const [tab, setTab] = useState<TeamTab>("schedule");
 
   const team = useQuery({
-    queryKey: ["cfb-team", teamId],
+    queryKey: ["cfb-team-v2", teamId],
     queryFn: () => fetchCfbTeamPage(teamId!),
     enabled: Boolean(teamId),
     staleTime: 120_000,
@@ -98,7 +99,12 @@ export default function CfbTeamPage() {
           </div>
 
           <div className="space-y-4 px-4 py-4 md:px-0 md:py-0">
-            {tab === "schedule" && <SchedulePanel team={t} />}
+            {tab === "schedule" && (
+              <div className="space-y-4">
+                <CfbWinTrendChart points={t.winTrend} accent={accent} />
+                <SchedulePanel team={t} />
+              </div>
+            )}
             {tab === "coaches" && <CoachesPanel team={t} accent={accent} />}
             {tab === "roster" && <RosterPanel team={t} />}
           </div>
@@ -275,6 +281,48 @@ function ScheduleRow({
   );
 }
 
+function CfbWinTrendChart({
+  points,
+  accent,
+}: {
+  points: CfbTeamWinTrendPoint[];
+  accent: string;
+}) {
+  if (!points.length) return null;
+  const maxWins = Math.max(12, ...points.map((r) => r.wins));
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
+      <div className="border-b border-white/[0.06] px-4 py-3">
+        <h3 className="text-[15px] font-semibold text-white">5-Year Win Trend</h3>
+        <p className="text-chalk-dim mt-0.5 text-[11px] uppercase tracking-[0.14em]">
+          Regular season wins
+        </p>
+      </div>
+      <ul className="flex flex-col gap-2.5 px-4 py-4">
+        {points.map((r) => (
+          <li key={r.season} className="grid grid-cols-[3rem_1fr_auto] items-center gap-2">
+            <span className="numeral text-chalk text-[12px]">{r.season}</span>
+            <div className="h-3.5 overflow-hidden rounded-sm bg-white/[0.06]">
+              <div
+                className="h-full rounded-sm transition-[width] duration-500"
+                style={{
+                  width: `${Math.max(4, (r.wins / maxWins) * 100)}%`,
+                  background: accent,
+                }}
+                title={`${r.wins}-${r.losses}`}
+              />
+            </div>
+            <span className="numeral min-w-[3.5rem] text-right text-[13px] font-semibold text-white">
+              {r.wins}-{r.losses}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function CoachesPanel({ team, accent }: { team: CfbTeamPage; accent: string }) {
   if (team.coaches.length === 0) {
     return <p className="text-chalk-dim text-[13px]">Coaching staff unavailable.</p>;
@@ -283,38 +331,71 @@ function CoachesPanel({ team, accent }: { team: CfbTeamPage; accent: string }) {
   return (
     <div className="space-y-3">
       <p className="text-chalk-dim text-[12px] leading-relaxed">
-        Staff listed from ESPN’s team roster feed. Head coach links into the hot-seat profile when
-        available.
+        Head coach from ESPN; coordinators from the current season staff listing when available.
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        {team.coaches.map((c) => (
-          <Link
-            key={c.id}
-            to={`/sports/cfb/coach/${c.id}`}
-            className="bg-panel hover:border-accent/40 group flex items-center gap-4 rounded-xl border border-white/[0.08] p-4 transition"
-          >
+        {team.coaches.map((c) => {
+          const inner = (
+            <>
+              {c.headshot ? (
+                <img
+                  src={c.headshot}
+                  alt=""
+                  className="h-16 w-16 shrink-0 rounded-xl bg-[#dfe6f2] object-cover object-top"
+                  loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                    const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
+                    if (fallback) fallback.style.display = "grid";
+                  }}
+                />
+              ) : null}
+              <div
+                className={cn(
+                  "grid h-16 w-16 shrink-0 place-items-center rounded-xl text-[18px] font-semibold text-white",
+                  c.headshot ? "hidden" : "",
+                )}
+                style={{ background: `${accent}99` }}
+              >
+                {c.name
+                  .split(/\s+/)
+                  .slice(0, 2)
+                  .map((p) => p[0])
+                  .join("")
+                  .toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+                  {c.title}
+                </p>
+                <p className="text-cream truncate text-[16px] font-semibold group-hover:underline">
+                  {c.name}
+                </p>
+                <p className="text-chalk-dim mt-0.5 text-[12px]">{team.name}</p>
+              </div>
+            </>
+          );
+
+          if (c.linkable) {
+            return (
+              <Link
+                key={c.id}
+                to={`/sports/cfb/coach/${c.id}`}
+                className="bg-panel hover:border-accent/40 group flex items-center gap-4 rounded-xl border border-white/[0.08] p-4 transition"
+              >
+                {inner}
+              </Link>
+            );
+          }
+          return (
             <div
-              className="grid h-14 w-14 shrink-0 place-items-center rounded-full text-[18px] font-semibold text-white"
-              style={{ background: `${accent}99` }}
+              key={c.id}
+              className="bg-panel flex items-center gap-4 rounded-xl border border-white/[0.08] p-4"
             >
-              {c.name
-                .split(/\s+/)
-                .slice(0, 2)
-                .map((p) => p[0])
-                .join("")
-                .toUpperCase()}
+              {inner}
             </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                {c.title}
-              </p>
-              <p className="text-cream truncate text-[16px] font-semibold group-hover:underline">
-                {c.name}
-              </p>
-              <p className="text-chalk-dim mt-0.5 text-[12px]">{team.name}</p>
-            </div>
-          </Link>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

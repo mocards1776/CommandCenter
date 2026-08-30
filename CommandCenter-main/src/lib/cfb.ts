@@ -804,6 +804,15 @@ export type CfbTeamStaffMember = {
   id: string;
   name: string;
   title: string;
+  headshot: string | null;
+  /** False when we only have a name (no ESPN coach id to open). */
+  linkable: boolean;
+};
+
+export type CfbTeamWinTrendPoint = {
+  season: number;
+  wins: number;
+  losses: number;
 };
 
 export type CfbTeamScheduleGame = {
@@ -848,6 +857,7 @@ export type CfbTeamPage = {
   }[];
   schedule: CfbTeamScheduleGame[];
   coaches: CfbTeamStaffMember[];
+  winTrend: CfbTeamWinTrendPoint[];
   recent: CfbScoreGame[];
 };
 
@@ -1141,6 +1151,225 @@ export async function fetchCfbLeaders(season?: number): Promise<{
   return { season: year, categories: [] };
 }
 
+function stripWikiMarkup(raw: string): string {
+  return raw
+    .replace(/\[\[[^|\]]*\|([^\]]+)\]\]/g, "$1")
+    .replace(/\[\[([^\]]+)\]\]/g, "$1")
+    .replace(/'{2,}/g, "")
+    .replace(/\s*\(interim\)/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function wikiFootballSeasonTitle(teamDisplayName: string, year: number): string {
+  return `${year}_${teamDisplayName.replace(/\s+/g, "_")}_football_team`;
+}
+
+async function fetchWikiCoachingStaff(
+  teamDisplayName: string,
+): Promise<{ title: string; name: string }[]> {
+  const year = new Date().getFullYear();
+  const titles = [
+    wikiFootballSeasonTitle(teamDisplayName, year),
+    wikiFootballSeasonTitle(teamDisplayName, year - 1),
+  ];
+  for (const page of titles) {
+    try {
+      const res = await fetch(
+        `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(page)}&prop=wikitext&format=json`,
+        {
+          headers: {
+            Accept: "application/json",
+            "Api-User-Agent": "CommandCenterCFB/1.0 (sports dashboard; local)",
+          },
+        },
+      );
+      if (!res.ok) continue;
+      const raw = (await res.json()) as {
+        error?: unknown;
+        parse?: { wikitext?: { ["*"]?: string } };
+      };
+      if (raw.error) continue;
+      const wt = raw.parse?.wikitext?.["*"] ?? "";
+      if (!wt) continue;
+      const roles: { key: string; title: string }[] = [
+        { key: "head_coach", title: "Head coach" },
+        { key: "off_coach", title: "Offensive coordinator" },
+        { key: "def_coach", title: "Defensive coordinator" },
+        { key: "special_teams_coach", title: "Special teams coordinator" },
+        { key: "st_coach", title: "Special teams coordinator" },
+      ];
+      const out: { title: string; name: string }[] = [];
+      const seen = new Set<string>();
+      for (const role of roles) {
+        const m = wt.match(new RegExp(`\\|\\s*${role.key}\\s*=\\s*(.+)`, "i"));
+        if (!m) continue;
+        const name = stripWikiMarkup(m[1] ?? "");
+        if (!name || seen.has(name.toLowerCase())) continue;
+        seen.add(name.toLowerCase());
+        out.push({ title: role.title, name });
+      }
+      if (out.length) return out;
+    } catch {
+      /* try next year */
+    }
+  }
+  return [];
+}
+
+async function searchEspnCoachHeadshot(
+  name: string,
+): Promise<{ id: string | null; headshot: string | null }> {
+  try {
+    const res = await fetch(
+      `https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&limit=8&query=${encodeURIComponent(name)}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return { id: null, headshot: null };
+    const data = (await res.json()) as {
+      items?: {
+        id?: string;
+        displayName?: string;
+        type?: string;
+        headshot?: { href?: string };
+      }[];
+    };
+    const last = name.split(/\s+/).slice(-1)[0]?.toLowerCase() ?? "";
+    const hit =
+      (data.items ?? []).find(
+        (it) =>
+          /coach|person|athlete/i.test(it.type ?? "") &&
+          (it.displayName ?? "").toLowerCase().includes(last),
+      ) ?? (data.items ?? []).find((it) => /coach|person/i.test(it.type ?? ""));
+    if (!hit) return { id: null, headshot: null };
+    return {
+      id: hit.id ? String(hit.id) : null,
+      headshot: hit.headshot?.href ?? (hit.id ? cfbHeadshot(hit.id, 350) : null),
+    };
+  } catch {
+    return { id: null, headshot: null };
+  }
+}
+
+export async function fetchCfbTeamWinTrend(
+  teamId: string | number,
+  seasons = 5,
+): Promise<CfbTeamWinTrendPoint[]> {
+  const id = String(teamId);
+  const end = new Date().getFullYear() - 1;
+  const years = Array.from({ length: seasons }, (_, i) => end - seasons + 1 + i);
+  const points = await Promise.all(
+    years.map(async (season) => {
+      try {
+        const res = await fetch(
+          `${CORE}/seasons/${season}/types/2/teams/${id}/records/0?lang=en&region=us`,
+          { headers: { Accept: "application/json" } },
+        );
+        if (!res.ok) return null;
+        const raw = (await res.json()) as {
+          summary?: string;
+          stats?: { name?: string; value?: number }[];
+        };
+        const winsStat = raw.stats?.find((s) => s.name === "wins")?.value;
+        const lossesStat = raw.stats?.find((s) => s.name === "losses")?.value;
+        let wins =
+          typeof winsStat === "number" && Number.isFinite(winsStat) ? Math.round(winsStat) : null;
+        let losses =
+          typeof lossesStat === "number" && Number.isFinite(lossesStat)
+            ? Math.round(lossesStat)
+            : null;
+        if (wins == null || losses == null) {
+          const m = (raw.summary ?? "").match(/^(\d+)\s*-\s*(\d+)/);
+          if (!m) return null;
+          wins = Number(m[1]);
+          losses = Number(m[2]);
+        }
+        return { season, wins, losses } satisfies CfbTeamWinTrendPoint;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return points.filter((p): p is CfbTeamWinTrendPoint => Boolean(p));
+}
+
+async function buildCfbCoachingStaff(opts: {
+  teamId: string;
+  teamName: string;
+  rosterCoaches: { id: string; name: string }[];
+}): Promise<CfbTeamStaffMember[]> {
+  const wikiStaff = await fetchWikiCoachingStaff(opts.teamName).catch(() => []);
+  const byName = new Map<string, CfbTeamStaffMember>();
+
+  const upsert = (row: CfbTeamStaffMember) => {
+    const key = row.name.toLowerCase();
+    const prev = byName.get(key);
+    if (!prev) {
+      byName.set(key, row);
+      return;
+    }
+    // Prefer ESPN id + richer title
+    byName.set(key, {
+      id: prev.linkable ? prev.id : row.linkable ? row.id : prev.id,
+      name: prev.name,
+      title:
+        prev.title === "Head coach" || row.title === "Coach"
+          ? prev.title
+          : row.title === "Head coach"
+            ? row.title
+            : prev.title,
+      headshot: prev.headshot ?? row.headshot,
+      linkable: prev.linkable || row.linkable,
+    });
+  };
+
+  for (const c of opts.rosterCoaches) {
+    upsert({
+      id: c.id,
+      name: c.name,
+      title: "Head coach",
+      headshot: cfbHeadshot(c.id, 350),
+      linkable: true,
+    });
+  }
+
+  for (const w of wikiStaff) {
+    const rosterHit = opts.rosterCoaches.find(
+      (c) => c.name.toLowerCase() === w.name.toLowerCase(),
+    );
+    if (rosterHit) {
+      upsert({
+        id: rosterHit.id,
+        name: rosterHit.name,
+        title: w.title,
+        headshot: cfbHeadshot(rosterHit.id, 350),
+        linkable: true,
+      });
+      continue;
+    }
+    const searched = await searchEspnCoachHeadshot(w.name);
+    upsert({
+      id: searched.id ?? `name:${w.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      name: w.name,
+      title: w.title,
+      headshot: searched.headshot,
+      linkable: Boolean(searched.id),
+    });
+  }
+
+  const order = [
+    "Head coach",
+    "Offensive coordinator",
+    "Defensive coordinator",
+    "Special teams coordinator",
+  ];
+  return [...byName.values()].sort((a, b) => {
+    const ai = order.indexOf(a.title);
+    const bi = order.indexOf(b.title);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a.name.localeCompare(b.name);
+  });
+}
+
 export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
   const id = String(teamId);
   const [fpiByTeam, teamRes, rosterRes, scheduleRes] = await Promise.all([
@@ -1170,7 +1399,7 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
   };
   const t = teamJson.team ?? {};
   const roster: CfbTeamPage["roster"] = [];
-  const coaches: CfbTeamStaffMember[] = [];
+  const rosterCoaches: { id: string; name: string }[] = [];
   if (rosterRes.ok) {
     const rosterJson = (await rosterRes.json()) as {
       athletes?: {
@@ -1202,13 +1431,15 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
         c.displayName?.trim() ||
         [c.firstName, c.lastName].filter(Boolean).join(" ").trim() ||
         "Coach";
-      coaches.push({
-        id: String(c.id),
-        name,
-        title: coaches.length === 0 ? "Head coach" : "Coach",
-      });
+      rosterCoaches.push({ id: String(c.id), name });
     }
   }
+
+  const teamName = t.displayName ?? "Team";
+  const [coaches, winTrend] = await Promise.all([
+    buildCfbCoachingStaff({ teamId: id, teamName, rosterCoaches }),
+    fetchCfbTeamWinTrend(id, 5).catch(() => [] as CfbTeamWinTrendPoint[]),
+  ]);
 
   const schedule: CfbTeamScheduleGame[] = [];
   if (scheduleRes.ok) {
@@ -1330,6 +1561,7 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
     roster,
     schedule,
     coaches,
+    winTrend,
     recent,
   };
 }
@@ -1895,15 +2127,20 @@ export async function fetchCfbCoaches(): Promise<CfbCoach[]> {
 }
 
 export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachProfile> {
-  const all = await fetchCfbCoaches();
-  const base =
+  const all = await fetchCfbCoaches().catch(() => [] as CfbCoach[]);
+  let base =
     all.find((c) => c.id === coachId) ??
     all.find((c) => c.id.toLowerCase() === coachId.toLowerCase()) ??
-    all.find((c) => c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") === coachId.toLowerCase());
+    all.find((c) => c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") === coachId.toLowerCase()) ??
+    null;
+
+  if (!base) {
+    base = await fetchCfbCoachDirect(coachId);
+  }
   if (!base) throw new Error("Coach not found");
 
   let bio: string | null = null;
-  let headshot: string | null = base.headshot;
+  let headshot: string | null = base.headshot ?? cfbHeadshot(base.id, 350);
   try {
     const search = await fetch(
       `https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&limit=8&query=${encodeURIComponent(base.name)}`,
@@ -1925,7 +2162,9 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
           (it) =>
             /coach|person/i.test(it.type ?? "") &&
             /football|college/i.test(it.sport ?? "football") &&
-            (it.displayName ?? "").toLowerCase().includes(base.name.split(" ").slice(-1)[0]!.toLowerCase()),
+            (it.displayName ?? "")
+              .toLowerCase()
+              .includes(base!.name.split(" ").slice(-1)[0]!.toLowerCase()),
         ) ??
         (data.items ?? []).find((it) => /coach|person/i.test(it.type ?? ""));
       if (hit?.headshot?.href) headshot = hit.headshot.href;
@@ -1942,6 +2181,163 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
   }
 
   return { ...base, headshot, bio, careerHighlights };
+}
+
+/** Resolve a coach by ESPN id when they're missing from the hot-seat board (e.g. 0–0 teams). */
+async function fetchCfbCoachDirect(coachId: string): Promise<CfbCoach | null> {
+  const id = String(coachId);
+  const season = new Date().getFullYear();
+  let seasonCoach =
+    (await fetchCoreJson<{
+      id?: string;
+      firstName?: string;
+      lastName?: string;
+      team?: { $ref?: string };
+      experience?: number;
+    }>(`${CORE}/seasons/${season}/coaches/${id}?lang=en&region=us`)) ?? null;
+
+  if (seasonCoach && !seasonCoach.team?.$ref) {
+    const prev = await fetchCoreJson<{
+      id?: string;
+      firstName?: string;
+      lastName?: string;
+      team?: { $ref?: string };
+      experience?: number;
+    }>(`${CORE}/seasons/${season - 1}/coaches/${id}?lang=en&region=us`);
+    if (prev?.team?.$ref) seasonCoach = { ...seasonCoach, team: prev.team };
+  }
+
+  if (!seasonCoach?.id) {
+    seasonCoach = await fetchCoreJson<{
+      id?: string;
+      firstName?: string;
+      lastName?: string;
+      team?: { $ref?: string };
+      experience?: number;
+    }>(`${CORE}/seasons/${season - 1}/coaches/${id}?lang=en&region=us`);
+  }
+
+  if (!seasonCoach?.id) {
+    const person = await fetchCoreJson<{
+      id?: string;
+      firstName?: string;
+      lastName?: string;
+      coachSeasons?: { $ref?: string }[];
+    }>(`http://sports.core.api.espn.com/v2/sports/football/leagues/college-football/coaches/${id}?lang=en&region=us`);
+    if (!person?.id) return null;
+    const seasonRef = person.coachSeasons?.[0]?.$ref;
+    const fromSeason = seasonRef
+      ? await fetchCoreJson<{
+          id?: string;
+          firstName?: string;
+          lastName?: string;
+          team?: { $ref?: string };
+        }>(seasonRef)
+      : null;
+    const teamRef = fromSeason?.team?.$ref;
+    const teamIdMatch = teamRef?.match(/\/teams\/(\d+)/);
+    const teamId = teamIdMatch?.[1] ?? "";
+    let teamName = "Team";
+    let teamAbbrev = "—";
+    let teamColor = "555555";
+    let teamLogo: string | null = teamId ? cfbTeamLogo(teamId) : null;
+    if (teamId) {
+      const team = await fetchCoreJson<{
+        displayName?: string;
+        abbreviation?: string;
+        color?: string;
+        logos?: { href?: string }[];
+      }>(`${CORE}/seasons/${season}/teams/${teamId}?lang=en&region=us`);
+      if (team) {
+        teamName = team.displayName ?? teamName;
+        teamAbbrev = (team.abbreviation ?? "—").toUpperCase();
+        teamColor = (team.color ?? "555555").replace(/^#/, "");
+        teamLogo = team.logos?.[0]?.href ?? teamLogo;
+      }
+    }
+    const name = [person.firstName, person.lastName].filter(Boolean).join(" ").trim();
+    if (!name) return null;
+    return {
+      id: String(person.id),
+      name,
+      teamId,
+      teamName,
+      teamAbbrev,
+      teamLogo,
+      teamColor,
+      headshot: cfbHeadshot(person.id, 350),
+      recordSummary: null,
+      wins: 0,
+      losses: 0,
+      winPct: null,
+      hotSeatScore: 0,
+      hotSeatRank: 0,
+      firedOddsPct: null,
+      firedOddsAmerican: null,
+      kalshiUrl: null,
+      factors: [],
+    };
+  }
+
+  const teamRef = seasonCoach.team?.$ref;
+  const teamIdMatch = teamRef?.match(/\/teams\/(\d+)/);
+  const teamId = teamIdMatch?.[1] ?? "";
+  let teamName = "Team";
+  let teamAbbrev = "—";
+  let teamColor = "555555";
+  let teamLogo: string | null = teamId ? cfbTeamLogo(teamId) : null;
+  let recordSummary: string | null = null;
+  let wins = 0;
+  let losses = 0;
+  if (teamId) {
+    const pack = await fetchTeamCoachAndRecord(Number(teamId), season).catch(() => null);
+    if (pack) {
+      teamName = pack.teamName;
+      teamAbbrev = pack.teamAbbrev;
+      teamColor = pack.teamColor;
+      teamLogo = pack.teamLogo;
+      recordSummary = pack.recordSummary;
+      wins = pack.wins;
+      losses = pack.losses;
+    } else {
+      const team = await fetchCoreJson<{
+        displayName?: string;
+        abbreviation?: string;
+        color?: string;
+        logos?: { href?: string }[];
+      }>(`${CORE}/seasons/${season}/teams/${teamId}?lang=en&region=us`);
+      if (team) {
+        teamName = team.displayName ?? teamName;
+        teamAbbrev = (team.abbreviation ?? "—").toUpperCase();
+        teamColor = (team.color ?? "555555").replace(/^#/, "");
+        teamLogo = team.logos?.[0]?.href ?? teamLogo;
+      }
+    }
+  }
+
+  const name = [seasonCoach.firstName, seasonCoach.lastName].filter(Boolean).join(" ").trim();
+  if (!name) return null;
+  const games = wins + losses;
+  return {
+    id: String(seasonCoach.id),
+    name,
+    teamId,
+    teamName,
+    teamAbbrev,
+    teamLogo,
+    teamColor,
+    headshot: cfbHeadshot(seasonCoach.id, 350),
+    recordSummary,
+    wins,
+    losses,
+    winPct: games > 0 ? wins / games : null,
+    hotSeatScore: 0,
+    hotSeatRank: 0,
+    firedOddsPct: null,
+    firedOddsAmerican: null,
+    kalshiUrl: null,
+    factors: [],
+  };
 }
 
 type CfbGameLogEventMeta = {
