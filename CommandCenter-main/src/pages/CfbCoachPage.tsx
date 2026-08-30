@@ -25,7 +25,7 @@ export default function CfbCoachPage() {
   const swipeRef = useSwipeBack(() => navigate(-1));
 
   const detail = useQuery({
-    queryKey: ["cfb-coach-v1", coachId],
+    queryKey: ["cfb-coach-v2", coachId],
     queryFn: () => fetchCfbCoachProfile(coachId!),
     enabled: Boolean(coachId),
     staleTime: 180_000,
@@ -108,9 +108,13 @@ export default function CfbCoachPage() {
                 {c.name}
               </h1>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-white/75">
-                {c.recordSummary && (
+                {c.career?.summary ? (
+                  <span className="numeral text-cream font-semibold">
+                    Career {c.career.summary}
+                  </span>
+                ) : c.recordSummary ? (
                   <span className="numeral text-cream font-semibold">{c.recordSummary}</span>
-                )}
+                ) : null}
                 {c.hotSeatRank > 0 ? (
                   <span className={cn("font-bold uppercase tracking-[0.14em]", heatTone(c.hotSeatRank))}>
                     #{c.hotSeatRank} {heatLabel(c.hotSeatRank)}
@@ -122,7 +126,7 @@ export default function CfbCoachPage() {
           <div className="sm:ml-auto">
             <div className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-center">
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50">
-                Kalshi out %
+                Out odds
               </p>
               <p className={cn("numeral text-[28px] font-semibold", heatTone(c.hotSeatRank))}>
                 {c.firedOddsPct != null ? `${c.firedOddsPct.toFixed(1)}%` : "—"}
@@ -130,10 +134,109 @@ export default function CfbCoachPage() {
               {c.firedOddsAmerican && (
                 <p className="numeral text-[12px] text-white/55">{c.firedOddsAmerican}</p>
               )}
+              {c.oddsSource && (
+                <p className="mt-1 text-[9px] uppercase tracking-[0.14em] text-white/40">
+                  {c.oddsSource}
+                </p>
+              )}
             </div>
           </div>
         </div>
       </article>
+
+      {c.seasonRecords.length > 0 && (
+        <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+          <div className="border-b border-white/[0.06] px-4 py-3">
+            <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+              Record by year
+            </h2>
+            <p className="text-chalk-dim mt-0.5 text-[11px]">
+              School and W–L from ESPN coach seasons
+              {c.career ? ` · Career ${c.career.summary}` : ""}
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[28rem] text-left text-[13px]">
+              <thead>
+                <tr className="border-b border-white/[0.06] text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
+                  <th className="px-4 py-2 font-semibold">Year</th>
+                  <th className="px-4 py-2 font-semibold">School</th>
+                  <th className="px-4 py-2 font-semibold">Record</th>
+                </tr>
+              </thead>
+              <tbody>
+                {c.seasonRecords.map((row) => (
+                  <tr
+                    key={`${row.season}-${row.teamId ?? row.school}`}
+                    className="border-b border-white/[0.04] last:border-0"
+                  >
+                    <td className="numeral text-cream px-4 py-2.5 font-medium">{row.season}</td>
+                    <td className="px-4 py-2.5 text-[#c8cdd8]">
+                      {row.teamId ? (
+                        <Link
+                          to={`/sports/cfb/team/${row.teamId}`}
+                          className="hover:text-cream hover:underline"
+                        >
+                          {row.school}
+                          {row.teamAbbrev ? (
+                            <span className="text-chalk-dim ml-1.5 text-[11px]">{row.teamAbbrev}</span>
+                          ) : null}
+                        </Link>
+                      ) : (
+                        row.school
+                      )}
+                    </td>
+                    <td className="numeral text-cream px-4 py-2.5 font-semibold">{row.summary}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {c.staff.length > 0 && (
+        <section className="bg-panel space-y-3 rounded-xl border border-white/[0.08] p-4">
+          <div>
+            <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+              Coaching staff
+            </h2>
+            <p className="text-chalk-dim mt-0.5 text-[11px]">
+              Assistants at {c.teamName} · Wikipedia season staff when available
+            </p>
+          </div>
+          <ul className="divide-y divide-white/[0.05]">
+            {c.staff.map((s) => (
+              <li key={s.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                {s.headshot ? (
+                  <img
+                    src={s.headshot}
+                    alt=""
+                    className="h-10 w-10 rounded-lg bg-[#dfe6f2] object-cover object-top"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div
+                    className="grid h-10 w-10 place-items-center rounded-lg text-[11px] font-semibold text-white"
+                    style={{ background: `${accent}99` }}
+                  >
+                    {s.name
+                      .split(/\s+/)
+                      .slice(0, 2)
+                      .map((p) => p[0])
+                      .join("")
+                      .toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-cream truncate text-[14px] font-medium">{s.name}</p>
+                  <p className="text-[11px] text-[#8b93a7]">{s.title}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="bg-panel space-y-3 rounded-xl border border-white/[0.08] p-4">
         <div className="flex items-center gap-2">
@@ -163,6 +266,9 @@ export default function CfbCoachPage() {
               </span>
             </li>
           ))}
+          {c.factors.length === 0 && (
+            <li className="text-chalk-dim text-[13px]">No heat factors for this coach yet.</li>
+          )}
         </ul>
       </section>
 
@@ -188,13 +294,21 @@ export default function CfbCoachPage() {
 
       <div className="flex flex-wrap gap-3">
         {c.teamId !== "0" && (
-          <a
-            href={`https://www.espn.com/college-football/team/_/id/${c.teamId}`}
-            target="_blank"
-            rel="noreferrer"
+          <Link
+            to={`/sports/cfb/team/${c.teamId}`}
             className="text-accent inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] hover:underline"
           >
-            {c.teamName} on ESPN <ExternalLink size={11} />
+            {c.teamName} team page
+          </Link>
+        )}
+        {c.cfbRefUrl && (
+          <a
+            href={c.cfbRefUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-chalk-dim hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em]"
+          >
+            College Football Reference <ExternalLink size={11} />
           </a>
         )}
         {c.kalshiUrl && (
@@ -204,7 +318,7 @@ export default function CfbCoachPage() {
             rel="noreferrer"
             className="text-chalk-dim hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em]"
           >
-            Kalshi market <ExternalLink size={11} />
+            Odds market <ExternalLink size={11} />
           </a>
         )}
       </div>

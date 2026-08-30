@@ -331,7 +331,10 @@ function CoachesPanel({ team, accent }: { team: CfbTeamPage; accent: string }) {
   return (
     <div className="space-y-3">
       <p className="text-chalk-dim text-[12px] leading-relaxed">
-        Head coach from ESPN; coordinators from the current season staff listing when available.
+        Head coach from ESPN
+        {team.staffSource
+          ? `; assistants from ${team.staffSource}.`
+          : "; assistants when the season staff listing is available."}
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         {team.coaches.map((c) => {

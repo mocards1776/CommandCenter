@@ -155,13 +155,51 @@ export type CfbCoach = {
   hotSeatRank: number;
   firedOddsPct: number | null;
   firedOddsAmerican: string | null;
+  /** Prediction-market URL when available (Kalshi coach-out, etc.). */
   kalshiUrl: string | null;
   factors: { label: string; points: number; detail: string }[];
+};
+
+export type CfbTeamStaffMember = {
+  id: string;
+  name: string;
+  title: string;
+  headshot: string | null;
+  /** False when we only have a name (no ESPN coach id to open). */
+  linkable: boolean;
+};
+
+export type CfbCoachSeasonRecord = {
+  season: number;
+  school: string;
+  teamId: string | null;
+  teamAbbrev: string | null;
+  wins: number;
+  losses: number;
+  ties: number;
+  summary: string;
+};
+
+export type CfbCoachCareerTotals = {
+  wins: number;
+  losses: number;
+  ties: number;
+  seasons: number;
+  summary: string;
 };
 
 export type CfbCoachProfile = CfbCoach & {
   bio: string | null;
   careerHighlights: string[];
+  /** Head-coaching W–L by season and school (ESPN coach seasons). */
+  seasonRecords: CfbCoachSeasonRecord[];
+  career: CfbCoachCareerTotals | null;
+  /** e.g. Kalshi — null when heat is record-only. */
+  oddsSource: string | null;
+  /** College Football Reference search / coach page when resolved. */
+  cfbRefUrl: string | null;
+  /** Current program staff (assistants) when team is known. */
+  staff: CfbTeamStaffMember[];
 };
 
 export type CfbScoringPlay = {
@@ -800,15 +838,6 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
   };
 }
 
-export type CfbTeamStaffMember = {
-  id: string;
-  name: string;
-  title: string;
-  headshot: string | null;
-  /** False when we only have a name (no ESPN coach id to open). */
-  linkable: boolean;
-};
-
 export type CfbTeamWinTrendPoint = {
   season: number;
   wins: number;
@@ -857,6 +886,8 @@ export type CfbTeamPage = {
   }[];
   schedule: CfbTeamScheduleGame[];
   coaches: CfbTeamStaffMember[];
+  /** Where assistant/coordinator names came from (Wikipedia season page, etc.). */
+  staffSource: string | null;
   winTrend: CfbTeamWinTrendPoint[];
   recent: CfbScoreGame[];
 };
@@ -1165,9 +1196,102 @@ function wikiFootballSeasonTitle(teamDisplayName: string, year: number): string 
   return `${year}_${teamDisplayName.replace(/\s+/g, "_")}_football_team`;
 }
 
+function parseWikiStaffLine(line: string): { name: string; title: string } | null {
+  const cleaned = line.replace(/^\*\s*/, "").trim();
+  if (!cleaned) return null;
+  const parts = cleaned.split(/\s+[–\-—]\s+/);
+  const name = stripWikiMarkup(parts[0] ?? "");
+  if (!name || /^reference:/i.test(name)) return null;
+  let title = parts.length > 1 ? stripWikiMarkup(parts.slice(1).join(" – ")) : "Assistant coach";
+  title = title.replace(/^'+|'+$/g, "").trim() || "Assistant coach";
+  return { name, title };
+}
+
+function parseWikiRosterFooterStaff(wt: string): { title: string; name: string }[] {
+  const footer = wt.match(
+    /\{\{American football roster\/Footer[\s\S]*?\n\}\}/i,
+  )?.[0];
+  if (!footer) return [];
+  const out: { title: string; name: string }[] = [];
+  const seen = new Set<string>();
+
+  const push = (name: string, title: string) => {
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) return;
+    seen.add(key);
+    out.push({ name, title });
+  };
+
+  const hcBlock = footer.match(/\|head_coach\s*=\s*([\s\S]*?)(?=\n\|[a-z_]+\s*=|\n\}\})/i)?.[1] ?? "";
+  for (const line of hcBlock.split("\n")) {
+    if (!/^\*/.test(line.trim())) continue;
+    const row = parseWikiStaffLine(line.trim());
+    if (row) push(row.name, "Head coach");
+  }
+
+  const asstBlock =
+    footer.match(/\|asst_coach\s*=\s*([\s\S]*?)(?=\n\|[a-z_]+\s*=|\n\}\})/i)?.[1] ?? "";
+  for (const line of asstBlock.split("\n")) {
+    if (!/^\*/.test(line.trim())) continue;
+    const row = parseWikiStaffLine(line.trim());
+    if (row) push(row.name, row.title);
+  }
+  return out;
+}
+
+function parseWikiCoachingStaffTable(wt: string): { title: string; name: string }[] {
+  const section = wt.match(
+    /==+\s*Coaching staff\s*==+([\s\S]*?)(?=\n==+|\n\{\{Reflist|\n\[\[Category:)/i,
+  )?.[1];
+  if (!section || !/\{\|/.test(section)) return [];
+  const out: { title: string; name: string }[] = [];
+  const seen = new Set<string>();
+  for (const row of section.split(/\n\|-\s*\n/)) {
+    const cells = [...row.matchAll(/\|{1,2}\s*([^|\n]+)/g)].map((m) =>
+      stripWikiMarkup(m[1] ?? ""),
+    );
+    if (cells.length < 2) continue;
+    const name = cells[0]?.replace(/^align=center\|/i, "").trim() ?? "";
+    const title = cells[1]?.replace(/^align=center\|/i, "").trim() ?? "";
+    if (!name || !title) continue;
+    if (/^name$/i.test(name) || /^position$/i.test(title)) continue;
+    if (/reference:/i.test(name) || /colspan/i.test(name)) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name, title });
+  }
+  return out;
+}
+
+function parseWikiInfoboxCoaches(wt: string): { title: string; name: string }[] {
+  const roles: { key: string; title: string }[] = [
+    { key: "head_coach", title: "Head coach" },
+    { key: "off_coach", title: "Offensive coordinator" },
+    { key: "def_coach", title: "Defensive coordinator" },
+    { key: "special_teams_coach", title: "Special teams coordinator" },
+    { key: "st_coach", title: "Special teams coordinator" },
+  ];
+  const out: { title: string; name: string }[] = [];
+  const seen = new Set<string>();
+  for (const role of roles) {
+    const m = wt.match(new RegExp(`\\|\\s*${role.key}\\s*=\\s*(.+)`, "i"));
+    if (!m) continue;
+    const name = stripWikiMarkup(m[1] ?? "");
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push({ title: role.title, name });
+  }
+  return out;
+}
+
+/**
+ * Assistant / coordinator names from the team's Wikipedia season page.
+ * Prefers the roster Footer staff list or Coaching staff table; falls back to infobox.
+ */
 async function fetchWikiCoachingStaff(
   teamDisplayName: string,
-): Promise<{ title: string; name: string }[]> {
+): Promise<{ title: string; name: string; source: string }[]> {
   const year = new Date().getFullYear();
   const titles = [
     wikiFootballSeasonTitle(teamDisplayName, year),
@@ -1192,24 +1316,19 @@ async function fetchWikiCoachingStaff(
       if (raw.error) continue;
       const wt = raw.parse?.wikitext?.["*"] ?? "";
       if (!wt) continue;
-      const roles: { key: string; title: string }[] = [
-        { key: "head_coach", title: "Head coach" },
-        { key: "off_coach", title: "Offensive coordinator" },
-        { key: "def_coach", title: "Defensive coordinator" },
-        { key: "special_teams_coach", title: "Special teams coordinator" },
-        { key: "st_coach", title: "Special teams coordinator" },
-      ];
-      const out: { title: string; name: string }[] = [];
-      const seen = new Set<string>();
-      for (const role of roles) {
-        const m = wt.match(new RegExp(`\\|\\s*${role.key}\\s*=\\s*(.+)`, "i"));
-        if (!m) continue;
-        const name = stripWikiMarkup(m[1] ?? "");
-        if (!name || seen.has(name.toLowerCase())) continue;
-        seen.add(name.toLowerCase());
-        out.push({ title: role.title, name });
+
+      const footer = parseWikiRosterFooterStaff(wt);
+      if (footer.length >= 2) {
+        return footer.map((r) => ({ ...r, source: `Wikipedia · ${page.replace(/_/g, " ")}` }));
       }
-      if (out.length) return out;
+      const table = parseWikiCoachingStaffTable(wt);
+      if (table.length >= 2) {
+        return table.map((r) => ({ ...r, source: `Wikipedia · ${page.replace(/_/g, " ")}` }));
+      }
+      const info = parseWikiInfoboxCoaches(wt);
+      if (info.length) {
+        return info.map((r) => ({ ...r, source: `Wikipedia · ${page.replace(/_/g, " ")}` }));
+      }
     } catch {
       /* try next year */
     }
@@ -1293,13 +1412,25 @@ export async function fetchCfbTeamWinTrend(
   return points.filter((p): p is CfbTeamWinTrendPoint => Boolean(p));
 }
 
+function staffTitleRank(title: string): number {
+  const t = title.toLowerCase();
+  if (/^head coach$/.test(t)) return 0;
+  if (/offensive coordinator/.test(t)) return 1;
+  if (/defensive coordinator/.test(t)) return 2;
+  if (/special teams/.test(t)) return 3;
+  if (/coordinator/.test(t)) return 4;
+  if (/analyst|graduate assistant|quality control|strength|performance/.test(t)) return 80;
+  return 20;
+}
+
 async function buildCfbCoachingStaff(opts: {
   teamId: string;
   teamName: string;
   rosterCoaches: { id: string; name: string }[];
-}): Promise<CfbTeamStaffMember[]> {
+}): Promise<{ coaches: CfbTeamStaffMember[]; staffSource: string | null }> {
   const wikiStaff = await fetchWikiCoachingStaff(opts.teamName).catch(() => []);
   const byName = new Map<string, CfbTeamStaffMember>();
+  let staffSource: string | null = wikiStaff[0]?.source ?? null;
 
   const upsert = (row: CfbTeamStaffMember) => {
     const key = row.name.toLowerCase();
@@ -1308,16 +1439,14 @@ async function buildCfbCoachingStaff(opts: {
       byName.set(key, row);
       return;
     }
-    // Prefer ESPN id + richer title
+    const preferNewTitle =
+      staffTitleRank(row.title) < staffTitleRank(prev.title) ||
+      (prev.title === "Coach" && row.title !== "Coach") ||
+      (prev.title === "Assistant coach" && row.title !== "Assistant coach");
     byName.set(key, {
       id: prev.linkable ? prev.id : row.linkable ? row.id : prev.id,
       name: prev.name,
-      title:
-        prev.title === "Head coach" || row.title === "Coach"
-          ? prev.title
-          : row.title === "Head coach"
-            ? row.title
-            : prev.title,
+      title: preferNewTitle ? row.title : prev.title,
       headshot: prev.headshot ?? row.headshot,
       linkable: prev.linkable || row.linkable,
     });
@@ -1333,41 +1462,48 @@ async function buildCfbCoachingStaff(opts: {
     });
   }
 
+  // Cap ESPN headshot lookups — full staff lists can be 15+ names.
+  const toSearch = wikiStaff.filter(
+    (w) => !opts.rosterCoaches.some((c) => c.name.toLowerCase() === w.name.toLowerCase()),
+  );
+  const searchChunk = 6;
+  for (let i = 0; i < toSearch.length; i += searchChunk) {
+    const chunk = toSearch.slice(i, i + searchChunk);
+    await Promise.all(
+      chunk.map(async (w) => {
+        const searched = await searchEspnCoachHeadshot(w.name);
+        upsert({
+          id: searched.id ?? `name:${w.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+          name: w.name,
+          title: w.title,
+          headshot: searched.headshot,
+          linkable: Boolean(searched.id),
+        });
+      }),
+    );
+  }
+
   for (const w of wikiStaff) {
     const rosterHit = opts.rosterCoaches.find(
       (c) => c.name.toLowerCase() === w.name.toLowerCase(),
     );
-    if (rosterHit) {
-      upsert({
-        id: rosterHit.id,
-        name: rosterHit.name,
-        title: w.title,
-        headshot: cfbHeadshot(rosterHit.id, 350),
-        linkable: true,
-      });
-      continue;
-    }
-    const searched = await searchEspnCoachHeadshot(w.name);
+    if (!rosterHit) continue;
     upsert({
-      id: searched.id ?? `name:${w.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-      name: w.name,
+      id: rosterHit.id,
+      name: rosterHit.name,
       title: w.title,
-      headshot: searched.headshot,
-      linkable: Boolean(searched.id),
+      headshot: cfbHeadshot(rosterHit.id, 350),
+      linkable: true,
     });
   }
 
-  const order = [
-    "Head coach",
-    "Offensive coordinator",
-    "Defensive coordinator",
-    "Special teams coordinator",
-  ];
-  return [...byName.values()].sort((a, b) => {
-    const ai = order.indexOf(a.title);
-    const bi = order.indexOf(b.title);
-    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a.name.localeCompare(b.name);
-  });
+  const coaches = [...byName.values()].sort(
+    (a, b) =>
+      staffTitleRank(a.title) - staffTitleRank(b.title) || a.name.localeCompare(b.name),
+  );
+  if (!coaches.length) staffSource = null;
+  else if (!staffSource && opts.rosterCoaches.length) staffSource = "ESPN roster";
+  return { coaches, staffSource };
 }
 
 export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
@@ -1436,10 +1572,12 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
   }
 
   const teamName = t.displayName ?? "Team";
-  const [coaches, winTrend] = await Promise.all([
+  const [staffPack, winTrend] = await Promise.all([
     buildCfbCoachingStaff({ teamId: id, teamName, rosterCoaches }),
     fetchCfbTeamWinTrend(id, 5).catch(() => [] as CfbTeamWinTrendPoint[]),
   ]);
+  const coaches = staffPack.coaches;
+  const staffSource = staffPack.staffSource;
 
   const schedule: CfbTeamScheduleGame[] = [];
   if (scheduleRes.ok) {
@@ -1561,6 +1699,7 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
     roster,
     schedule,
     coaches,
+    staffSource,
     winTrend,
     recent,
   };
@@ -2126,6 +2265,121 @@ export async function fetchCfbCoaches(): Promise<CfbCoach[]> {
   return rows.map((r, i) => ({ ...r, hotSeatRank: i + 1 }));
 }
 
+/** Year-by-year head-coaching record + school from ESPN coach seasons. */
+export async function fetchCfbCoachSeasonRecords(
+  coachId: string,
+): Promise<CfbCoachSeasonRecord[]> {
+  const id = String(coachId);
+  if (!/^\d+$/.test(id)) return [];
+
+  const person = await fetchCoreJson<{
+    coachSeasons?: { $ref?: string }[];
+  }>(`${CORE}/coaches/${id}?lang=en&region=us`);
+  const seasonRefs = (person?.coachSeasons ?? [])
+    .map((s) => s.$ref)
+    .filter((r): r is string => Boolean(r));
+  if (!seasonRefs.length) return [];
+
+  const teamCache = new Map<string, { name: string; abbrev: string }>();
+  const rows: CfbCoachSeasonRecord[] = [];
+  const chunkSize = 5;
+
+  for (let i = 0; i < seasonRefs.length; i += chunkSize) {
+    const chunk = seasonRefs.slice(i, i + chunkSize);
+    await Promise.all(
+      chunk.map(async (ref) => {
+        const seasonMatch = ref.match(/\/seasons\/(\d+)\/coaches\//);
+        const season = seasonMatch ? Number(seasonMatch[1]) : null;
+        if (!season) return;
+
+        const seasonCoach = await fetchCoreJson<{
+          team?: { $ref?: string };
+          records?: { record?: { $ref?: string }; team?: { $ref?: string } }[];
+        }>(ref);
+        const teamRef =
+          seasonCoach?.team?.$ref ?? seasonCoach?.records?.[0]?.team?.$ref ?? null;
+        const teamId = teamRef?.match(/\/teams\/(\d+)/)?.[1] ?? null;
+        if (!teamId) return;
+
+        let school = "—";
+        let teamAbbrev: string | null = null;
+        const cached = teamCache.get(`${season}:${teamId}`);
+        if (cached) {
+          school = cached.name;
+          teamAbbrev = cached.abbrev;
+        } else {
+          const team = await fetchCoreJson<{
+            displayName?: string;
+            abbreviation?: string;
+          }>(`${CORE}/seasons/${season}/teams/${teamId}?lang=en&region=us`);
+          school = team?.displayName ?? `Team ${teamId}`;
+          teamAbbrev = team?.abbreviation?.toUpperCase() ?? null;
+          teamCache.set(`${season}:${teamId}`, { name: school, abbrev: teamAbbrev ?? "—" });
+        }
+
+        const recordRef =
+          seasonCoach?.records?.[0]?.record?.$ref ??
+          `${CORE}/seasons/${season}/types/2/coaches/${id}/record?lang=en&region=us`;
+        const rec = await fetchCoreJson<{
+          summary?: string;
+          displayValue?: string;
+          stats?: { name?: string; value?: number }[];
+        }>(recordRef);
+
+        const winsStat = rec?.stats?.find((s) => s.name === "wins")?.value;
+        const lossesStat = rec?.stats?.find((s) => s.name === "losses")?.value;
+        const tiesStat = rec?.stats?.find((s) => s.name === "ties")?.value;
+        let wins =
+          typeof winsStat === "number" && Number.isFinite(winsStat) ? Math.round(winsStat) : null;
+        let losses =
+          typeof lossesStat === "number" && Number.isFinite(lossesStat)
+            ? Math.round(lossesStat)
+            : null;
+        let ties =
+          typeof tiesStat === "number" && Number.isFinite(tiesStat) ? Math.round(tiesStat) : 0;
+        const summaryRaw = rec?.summary ?? rec?.displayValue ?? "";
+        if (wins == null || losses == null) {
+          const m = summaryRaw.match(/^(\d+)\s*-\s*(\d+)(?:\s*-\s*(\d+))?/);
+          if (!m) return;
+          wins = Number(m[1]);
+          losses = Number(m[2]);
+          ties = m[3] != null ? Number(m[3]) : 0;
+        }
+        if (wins + losses + ties <= 0 && season < new Date().getFullYear()) return;
+
+        const summary =
+          ties > 0 ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`;
+        rows.push({
+          season,
+          school,
+          teamId,
+          teamAbbrev,
+          wins,
+          losses,
+          ties,
+          summary,
+        });
+      }),
+    );
+  }
+
+  rows.sort((a, b) => b.season - a.season || a.school.localeCompare(b.school));
+  return rows;
+}
+
+function careerFromSeasonRecords(records: CfbCoachSeasonRecord[]): CfbCoachCareerTotals | null {
+  if (!records.length) return null;
+  const wins = records.reduce((n, r) => n + r.wins, 0);
+  const losses = records.reduce((n, r) => n + r.losses, 0);
+  const ties = records.reduce((n, r) => n + r.ties, 0);
+  const summary = ties > 0 ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`;
+  return { wins, losses, ties, seasons: records.length, summary };
+}
+
+function cfbRefSearchUrl(name: string): string {
+  return `https://www.sports-reference.com/cfb/search/search.fcgi?search=${encodeURIComponent(name)}`;
+}
+
 export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachProfile> {
   const all = await fetchCfbCoaches().catch(() => [] as CfbCoach[]);
   let base =
@@ -2174,13 +2428,48 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
     /* */
   }
 
-  const careerHighlights: string[] = [];
-  if (base.recordSummary) careerHighlights.push(`Season record: ${base.recordSummary}`);
-  if (base.firedOddsPct != null) {
-    careerHighlights.push(`Kalshi coach-out implied: ${base.firedOddsPct.toFixed(1)}%`);
+  const seasonRecords = /^\d+$/.test(base.id)
+    ? await fetchCfbCoachSeasonRecords(base.id).catch(() => [] as CfbCoachSeasonRecord[])
+    : [];
+  const career = careerFromSeasonRecords(seasonRecords);
+
+  let staff: CfbTeamStaffMember[] = [];
+  if (base.teamId && base.teamId !== "0") {
+    const pack = await buildCfbCoachingStaff({
+      teamId: base.teamId,
+      teamName: base.teamName,
+      rosterCoaches: [{ id: base.id, name: base.name }],
+    }).catch(() => ({ coaches: [] as CfbTeamStaffMember[], staffSource: null }));
+    staff = pack.coaches.filter((c) => c.name.toLowerCase() !== base!.name.toLowerCase());
   }
 
-  return { ...base, headshot, bio, careerHighlights };
+  const careerHighlights: string[] = [];
+  if (career) {
+    careerHighlights.push(
+      `Career record: ${career.summary} across ${career.seasons} season${career.seasons === 1 ? "" : "s"}`,
+    );
+  } else if (base.recordSummary) {
+    careerHighlights.push(`Season record: ${base.recordSummary}`);
+  }
+  if (seasonRecords.length) {
+    const schools = [...new Set(seasonRecords.map((r) => r.school))];
+    if (schools.length) careerHighlights.push(`Schools: ${schools.join(", ")}`);
+  }
+  if (base.firedOddsPct != null) {
+    careerHighlights.push(`Coach-out implied: ${base.firedOddsPct.toFixed(1)}%`);
+  }
+
+  return {
+    ...base,
+    headshot,
+    bio,
+    careerHighlights,
+    seasonRecords,
+    career,
+    oddsSource: base.firedOddsPct != null ? "Kalshi" : null,
+    cfbRefUrl: cfbRefSearchUrl(base.name),
+    staff,
+  };
 }
 
 /** Resolve a coach by ESPN id when they're missing from the hot-seat board (e.g. 0–0 teams). */

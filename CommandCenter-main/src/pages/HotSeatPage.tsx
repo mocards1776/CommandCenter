@@ -534,8 +534,8 @@ function CfbHotSeat() {
             </ol>
           </section>
           <p className="text-[11px] leading-relaxed text-[#8b93a7]">
-            Kalshi coach-out % for listed markets, then full FBS record pressure (ESPN). Tap a coach
-            for detail.
+            Out odds from prediction markets when listed (Kalshi coach-out), then FBS record pressure
+            (ESPN). Coach pages include year-by-year school records and assistants.
           </p>
         </>
       )}
@@ -585,7 +585,7 @@ function CfbCoachRow({ coach: c }: { coach: CfbCoach }) {
             )}
             {c.firedOddsPct != null && (
               <span className="text-alert/90 numeral font-semibold">
-                Kalshi {c.firedOddsPct.toFixed(1)}%
+                Out {c.firedOddsPct.toFixed(1)}%
               </span>
             )}
           </div>
