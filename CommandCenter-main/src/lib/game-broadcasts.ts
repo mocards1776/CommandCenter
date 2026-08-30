@@ -118,13 +118,15 @@ export function networkLogoFor(name: string, espnLogo?: string | null): string |
 
 type EspnGeoBroadcast = {
   type?: { shortName?: string };
-  market?: { type?: string };
+  market?: { type?: string } | string;
   media?: { shortName?: string; name?: string; logo?: string; darkLogo?: string };
+  names?: string[];
 };
 
 type EspnNamedBroadcast = {
-  market?: string;
+  market?: string | { type?: string };
   names?: string[];
+  media?: { shortName?: string; name?: string; logo?: string; darkLogo?: string };
 };
 
 /** Prefer geoBroadcasts (logos) and fall back to names-only broadcasts. */
@@ -145,21 +147,30 @@ export function parseEspnBroadcasts(
     out.push({ name: label, logo: networkLogoFor(label, logo), market });
   };
 
-  for (const g of geo ?? []) {
-    const name = g.media?.shortName || g.media?.name;
-    if (!name) continue;
-    push(
-      name,
-      g.media?.darkLogo || g.media?.logo || null,
-      g.market?.type?.toLowerCase() ?? null,
-    );
-  }
+  const marketOf = (m: EspnGeoBroadcast["market"] | undefined): string | null => {
+    if (!m) return null;
+    if (typeof m === "string") return m.toLowerCase();
+    return m.type?.toLowerCase() ?? null;
+  };
 
-  for (const b of named ?? []) {
-    for (const name of b.names ?? []) {
-      push(name, null, b.market?.toLowerCase() ?? null);
+  const ingest = (rows: EspnGeoBroadcast[] | EspnNamedBroadcast[] | undefined) => {
+    for (const g of rows ?? []) {
+      const mediaName = g.media?.shortName || g.media?.name;
+      if (mediaName) {
+        push(
+          mediaName,
+          g.media?.darkLogo || g.media?.logo || null,
+          marketOf(g.market),
+        );
+      }
+      for (const name of g.names ?? []) {
+        push(name, null, marketOf(g.market));
+      }
     }
-  }
+  };
+
+  ingest(geo);
+  ingest(named);
 
   // National / streaming first (MLB.TV, ESPN, …), then locals.
   const rank = (m: string | null) =>
