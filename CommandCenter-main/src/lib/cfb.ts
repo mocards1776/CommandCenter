@@ -354,7 +354,11 @@ type EspnEvent = {
         shortDetail?: string;
       };
     };
-    broadcasts?: { market?: string; names?: string[] }[];
+    broadcasts?: {
+      market?: string | { type?: string };
+      names?: string[];
+      media?: { shortName?: string; name?: string; logo?: string; darkLogo?: string };
+    }[];
     geoBroadcasts?: {
       market?: { type?: string };
       media?: { shortName?: string; name?: string; logo?: string; darkLogo?: string };
@@ -531,6 +535,42 @@ export async function fetchCfbScoreboard(dates?: string): Promise<CfbScoreGame[]
     .filter((g): g is CfbScoreGame => Boolean(g?.id));
 }
 
+function cfbArticleRelevantToGame(
+  text: string,
+  away: { name: string; abbrev: string },
+  home: { name: string; abbrev: string },
+): boolean {
+  const blob = text.trim();
+  if (!blob) return false;
+  if (/fantasy|dfs|waiver|promo|presented by/i.test(blob)) return false;
+
+  const mentions = (abbrev: string, name: string): boolean => {
+    const nameLc = name.toLowerCase();
+    const hay = blob.toLowerCase();
+    if (nameLc.length >= 5 && hay.includes(nameLc)) return true;
+    // "Hawai'i Rainbow Warriors" / "Stanford Cardinal" → location tokens
+    const location = nameLc
+      .replace(
+        /\s+(rainbow warriors|cardinal|tigers|bulldogs|wildcats|eagles|bears|lions|panthers|knights|aggies|sooners|longhorns|buckeyes|wolverines|trojans|bruins|ducks|huskies|seminoles|gators|volunteers|commodores|razorbacks|crimson tide|fighting irish|yellow jackets|demon deacons|tar heels|wolfpack|cavaliers|hokies|orange|boilermakers|hoosiers|spartans|hawkeyes|badgers|gophers|nittany lions|terrapins|cornhuskers|jayhawks|cyclones|mountaineers|cougars|utes|buffaloes|sun devils|wildcats)\s*$/i,
+        "",
+      )
+      .trim();
+    if (location.length >= 4 && hay.includes(location)) return true;
+    // Strip diacritics-ish apostrophes for Hawaii / Hawai'i
+    const locFlat = location.replace(/['']/g, "");
+    const hayFlat = hay.replace(/['']/g, "");
+    if (locFlat.length >= 4 && hayFlat.includes(locFlat)) return true;
+    const ab = abbrev.trim();
+    if (ab.length >= 2) {
+      const re = new RegExp(`\\b${ab.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      if (re.test(blob)) return true;
+    }
+    return false;
+  };
+
+  return mentions(away.abbrev, away.name) || mentions(home.abbrev, home.name);
+}
+
 export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail> {
   const [fpiByTeam, res] = await Promise.all([
     fetchCfbFpiRanks().catch(() => new Map<number, number>()),
@@ -605,6 +645,16 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
   };
 
   const headerComp = raw.header?.competitions?.[0];
+  let boardCache: CfbScoreGame[] | null = null;
+  const loadBoard = async (dates?: string | null) => {
+    if (!boardCache) {
+      boardCache = await fetchCfbScoreboard(dates || undefined).catch(
+        () => [] as CfbScoreGame[],
+      );
+    }
+    return boardCache;
+  };
+
   let base = headerComp
     ? mapCfbEvent(
         {
@@ -617,10 +667,19 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
     : null;
   if (!base) {
     // Fallback: current week board (may miss older/future events).
-    const board = await fetchCfbScoreboard().catch(() => [] as CfbScoreGame[]);
+    const board = await loadBoard();
     base = board.find((g) => g.id === String(eventId)) ?? null;
   }
   if (!base) throw new Error("CFB game not found");
+
+  // Summary header sometimes omits TV; scoreboard usually has it.
+  if (!base.broadcasts.length) {
+    const board = await loadBoard(base.date);
+    const fromBoard = board.find((g) => g.id === String(eventId));
+    if (fromBoard?.broadcasts.length) {
+      base = { ...base, broadcasts: fromBoard.broadcasts };
+    }
+  }
 
   const boxGroups: CfbBoxStatGroup[] = [];
   for (const side of raw.boxscore?.players ?? []) {
@@ -658,16 +717,20 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
   const newsArticles = Array.isArray(raw.news)
     ? raw.news
     : (raw.news?.articles ?? []);
+
+  const candidates = [
+    raw.article,
+    ...newsArticles,
+  ].filter((a): a is NonNullable<typeof a> => Boolean(a?.headline));
+
   const articleRaw =
-    raw.article ??
-    newsArticles.find(
-      (a) =>
-        a.headline &&
-        !/fantasy|dfs|waiver|promo|presented by/i.test(
-          `${a.headline} ${a.description ?? ""}`,
-        ),
-    ) ??
-    newsArticles[0];
+    candidates.find((a) =>
+      cfbArticleRelevantToGame(
+        `${a.headline ?? ""} ${a.description ?? ""}`,
+        base.away,
+        base.home,
+      ),
+    ) ?? null;
 
   const pick = raw.pickcenter?.[0] ?? raw.odds?.[0];
   const oddsLine = pick?.details

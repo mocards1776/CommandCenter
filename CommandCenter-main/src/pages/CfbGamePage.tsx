@@ -121,20 +121,50 @@ export function CfbGameDetailView({
             background: `radial-gradient(ellipse at 80% 45%, #${g.home.color}88, transparent 58%)`,
           }}
         />
-        <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.07] px-4 py-2.5">
+        <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.07] px-3 py-2.5 sm:px-4">
           <p
             className={cn(
-              "text-[11px] font-bold uppercase tracking-[0.16em]",
+              "shrink-0 text-[11px] font-bold uppercase tracking-[0.16em]",
               g.final ? "text-cream" : g.live ? "text-alert" : "text-[#a8b0c2]",
             )}
           >
             {label}
           </p>
-          {g.venue ? (
-            <p className="truncate text-[11px] text-[#8b93a7]">{g.venue}</p>
-          ) : g.date ? (
-            <p className="text-[11px] text-[#8b93a7]">{formatSportsDateLong(g.date)}</p>
-          ) : null}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-2 gap-y-1">
+            {g.broadcasts.length > 0 ? (
+              <div className="flex flex-wrap items-center justify-end gap-1">
+                {g.broadcasts.map((b) => {
+                  const isSvg = Boolean(b.logo && /\.svg(\?|$)/i.test(b.logo));
+                  return (
+                    <span
+                      key={`${b.market ?? "x"}-${b.name}`}
+                      className="inline-flex h-5 max-w-[8.5rem] items-center gap-1 rounded-sm bg-white/[0.08] px-1.5 text-[10px] text-[#c5cce0]"
+                      title={b.market ? `${b.name} (${b.market})` : b.name}
+                    >
+                      {b.logo ? (
+                        <img
+                          src={b.logo}
+                          alt=""
+                          className={
+                            isSvg
+                              ? "h-3.5 w-3.5 object-contain"
+                              : "h-3.5 w-auto max-w-[2.5rem] object-contain brightness-0 invert"
+                          }
+                          loading="lazy"
+                        />
+                      ) : null}
+                      <span className="truncate">{b.name}</span>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : null}
+            {g.venue ? (
+              <p className="truncate text-[11px] text-[#8b93a7]">{g.venue}</p>
+            ) : g.date ? (
+              <p className="text-[11px] text-[#8b93a7]">{formatSportsDateLong(g.date)}</p>
+            ) : null}
+          </div>
         </div>
 
         <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-7 sm:gap-4 sm:px-6">
@@ -275,41 +305,72 @@ export function CfbGameDetailView({
 
       {teamStatLabels.length > 0 && (
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-          <div className="border-b border-white/[0.06] px-4 py-2.5">
+          <div className="border-b border-white/[0.06] px-3 py-2.5 sm:px-4">
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
               Team stats
             </h2>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px] text-left text-[12px]">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                  <th className="px-3 py-2 font-medium">Stat</th>
-                  <th className="numeral px-2 py-2 text-right font-medium">{g.away.abbrev}</th>
-                  <th className="numeral px-3 py-2 text-right font-medium">{g.home.abbrev}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {teamStatLabels.map((statLabel) => {
-                  const away =
-                    g.teamStats.find(
-                      (s) => s.label === statLabel && s.teamAbbrev === g.away.abbrev,
-                    )?.value ?? "—";
-                  const home =
-                    g.teamStats.find(
-                      (s) => s.label === statLabel && s.teamAbbrev === g.home.abbrev,
-                    )?.value ?? "—";
-                  return (
-                    <tr key={statLabel} className="border-t border-white/[0.05]">
-                      <td className="px-3 py-1.5 text-[#c8cdd8]">{statLabel}</td>
-                      <td className="numeral px-2 py-1.5 text-right text-white">{away}</td>
-                      <td className="numeral px-3 py-1.5 text-right text-white">{home}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <table className="w-full table-fixed text-left text-[11px] sm:text-[12px]">
+            <colgroup>
+              <col className="w-[46%]" />
+              <col className="w-[27%]" />
+              <col className="w-[27%]" />
+            </colgroup>
+            <thead>
+              <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                <th className="px-2 py-2 font-medium sm:px-3">Stat</th>
+                <th className="px-1.5 py-2 text-center font-medium sm:px-2">
+                  <span className="inline-flex flex-col items-center gap-1">
+                    {g.away.logo ? (
+                      <img
+                        src={g.away.logo}
+                        alt=""
+                        className="h-6 w-6 object-contain sm:h-7 sm:w-7"
+                      />
+                    ) : null}
+                    <span className="numeral">{g.away.abbrev}</span>
+                  </span>
+                </th>
+                <th className="px-1.5 py-2 text-center font-medium sm:px-3">
+                  <span className="inline-flex flex-col items-center gap-1">
+                    {g.home.logo ? (
+                      <img
+                        src={g.home.logo}
+                        alt=""
+                        className="h-6 w-6 object-contain sm:h-7 sm:w-7"
+                      />
+                    ) : null}
+                    <span className="numeral">{g.home.abbrev}</span>
+                  </span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {teamStatLabels.map((statLabel) => {
+                const away =
+                  g.teamStats.find(
+                    (s) => s.label === statLabel && s.teamAbbrev === g.away.abbrev,
+                  )?.value ?? "—";
+                const home =
+                  g.teamStats.find(
+                    (s) => s.label === statLabel && s.teamAbbrev === g.home.abbrev,
+                  )?.value ?? "—";
+                return (
+                  <tr key={statLabel} className="border-t border-white/[0.05]">
+                    <td className="px-2 py-1.5 leading-snug text-[#c8cdd8] sm:px-3">
+                      {statLabel}
+                    </td>
+                    <td className="numeral break-words px-1.5 py-1.5 text-center text-white sm:px-2">
+                      {away}
+                    </td>
+                    <td className="numeral break-words px-1.5 py-1.5 text-center text-white sm:px-3">
+                      {home}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </section>
       )}
 
@@ -485,7 +546,7 @@ export default function CfbGamePage() {
   }
 
   return (
-    <div ref={swipeRef} className="mx-auto max-w-5xl space-y-5 p-4 md:p-7">
+    <div ref={swipeRef} className="mx-auto max-w-5xl space-y-4 p-3 sm:space-y-5 sm:p-4 md:p-7">
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
