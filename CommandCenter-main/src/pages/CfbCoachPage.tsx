@@ -1,7 +1,14 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Flame, Loader2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, ExternalLink, Flame, Loader2, Star } from "lucide-react";
+import toast from "react-hot-toast";
 import { fetchCfbCoachProfile } from "@/lib/cfb";
+import {
+  addFavoriteCoach,
+  isFavoriteCoach,
+  removeFavoriteCoach,
+} from "@/lib/favorite-coaches";
+import { useAuth } from "@/lib/auth-context";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { cn } from "@/lib/utils";
 
@@ -23,12 +30,50 @@ export default function CfbCoachPage() {
   const { coachId } = useParams<{ coachId: string }>();
   const navigate = useNavigate();
   const swipeRef = useSwipeBack(() => navigate(-1));
+  const { user } = useAuth();
+  const qc = useQueryClient();
 
   const detail = useQuery({
-    queryKey: ["cfb-coach-v2", coachId],
+    queryKey: ["cfb-coach-v3", coachId],
     queryFn: () => fetchCfbCoachProfile(coachId!),
     enabled: Boolean(coachId),
     staleTime: 180_000,
+  });
+
+  const favId = detail.data?.id ?? coachId;
+  const favQuery = useQuery({
+    queryKey: ["favorite-coach", user?.id, favId],
+    queryFn: () => isFavoriteCoach(user!.id, favId!),
+    enabled: Boolean(user?.id && favId),
+  });
+
+  const toggleFav = useMutation({
+    mutationFn: async () => {
+      if (!user || !detail.data) throw new Error("Sign in to favorite coaches");
+      const id = detail.data.id;
+      const nowFav = !favQuery.data;
+      if (nowFav) {
+        await addFavoriteCoach({
+          userId: user.id,
+          coachId: id,
+          coachName: detail.data.name,
+          teamName: detail.data.teamName,
+          teamId: detail.data.teamId,
+          sport: "football",
+          league: "CFB",
+        });
+      } else {
+        await removeFavoriteCoach(user.id, id);
+      }
+      return nowFav;
+    },
+    onSuccess: (nowFav) => {
+      void qc.invalidateQueries({ queryKey: ["favorite-coach", user?.id, favId] });
+      void qc.invalidateQueries({ queryKey: ["favorite-coaches", user?.id] });
+      void qc.invalidateQueries({ queryKey: ["favorite-players", user?.id] });
+      toast.success(nowFav ? "Coach favorited" : "Removed from favorites");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't update favorite"),
   });
 
   if (detail.isPending) {
@@ -59,6 +104,7 @@ export default function CfbCoachPage() {
 
   const c = detail.data;
   const accent = `#${c.teamColor}`;
+  const isFavorite = Boolean(favQuery.data);
 
   return (
     <div ref={swipeRef} className="mx-auto max-w-3xl space-y-6 p-4 md:p-7">
@@ -123,7 +169,7 @@ export default function CfbCoachPage() {
               </div>
             </div>
           </div>
-          <div className="sm:ml-auto">
+          <div className="flex flex-col gap-2 sm:ml-auto sm:items-end">
             <div className="rounded-xl border border-white/15 bg-black/30 px-4 py-3 text-center">
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50">
                 Out odds
@@ -140,6 +186,21 @@ export default function CfbCoachPage() {
                 </p>
               )}
             </div>
+            <button
+              type="button"
+              onClick={() => toggleFav.mutate()}
+              disabled={!user || toggleFav.isPending}
+              className={cn(
+                "inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition disabled:opacity-50",
+                isFavorite
+                  ? "border border-white/30 bg-white/10 text-white"
+                  : "text-cream",
+              )}
+              style={isFavorite ? undefined : { background: accent }}
+            >
+              <Star size={14} className={isFavorite ? "fill-current text-accent" : ""} />
+              {isFavorite ? "Favorited" : "Favorite coach"}
+            </button>
           </div>
         </div>
       </article>

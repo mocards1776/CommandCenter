@@ -15,13 +15,16 @@ const ESPN_LOGO =
   "https://a.espncdn.com/guid/54bf758e-5371-31f9-bb3d-8059d58f785c/logos/default.png";
 const ESPN_PRIMARY =
   "https://a.espncdn.com/guid/335fd2d2-97b9-336b-81ee-573eb6bdcffc/logos/default.png";
+/** Fox / FS1 — never reuse the MLB bat silhouette. */
+const FOX_LOGO = "https://commons.wikimedia.org/wiki/Special:FilePath/FOX_wordmark.svg";
+const FS1_LOGO = "https://commons.wikimedia.org/wiki/Special:FilePath/Fox_Sports_1_logo.svg";
 
 const teamLogo = (teamId: number) =>
   `https://www.mlbstatic.com/team-logos/team-cap-on-dark/${teamId}.svg`;
 
 /**
  * Curated logos when ESPN omits `media.logo` or ships a blank asset.
- * Prefer MLB static SVGs (readable on dark chips) over dead espncdn paths.
+ * Prefer network-correct marks; MLB league SVG only for MLB.TV / club streams.
  */
 const NETWORK_LOGOS: { test: RegExp; logo: string }[] = [
   // ESPN's MLB.TV PNG is an opaque rectangle that becomes a blank white chip
@@ -29,17 +32,11 @@ const NETWORK_LOGOS: { test: RegExp; logo: string }[] = [
   { test: /^mlb\.?tv$/i, logo: MLB_LEAGUE_LOGO },
   { test: /^espn(\s*unlmtd|\s*unlimited|\+)?$/i, logo: ESPN_LOGO },
   { test: /^espn2$/i, logo: ESPN_PRIMARY },
-  { test: /^(fox|fs1|fox\s*sports)$/i, logo: MLB_LEAGUE_LOGO },
-  { test: /^tbs$/i, logo: MLB_LEAGUE_LOGO },
-  { test: /^tnt$/i, logo: MLB_LEAGUE_LOGO },
-  { test: /^nbc$/i, logo: MLB_LEAGUE_LOGO },
-  { test: /^abc$/i, logo: MLB_LEAGUE_LOGO },
-  { test: /^cbs$/i, logo: MLB_LEAGUE_LOGO },
-  { test: /^peacock$/i, logo: MLB_LEAGUE_LOGO },
+  { test: /^fox$/i, logo: FOX_LOGO },
+  { test: /^fox\s*sports$/i, logo: FOX_LOGO },
+  { test: /^fs1$/i, logo: FS1_LOGO },
   { test: /amazon|prime\s*video/i, logo: PRIME_VIDEO_LOGO },
-  { test: /apple\s*tv/i, logo: MLB_LEAGUE_LOGO },
-  { test: /^usa(\s*net(work)?)?$/i, logo: MLB_LEAGUE_LOGO },
-  // Local affiliates / RSNs
+  // Local affiliates / RSNs → club cap marks (MLB context)
   { test: /^king\s*5$/i, logo: teamLogo(136) }, // Seattle NBC → Mariners
   { test: /^wpix$/i, logo: teamLogo(121) },
   { test: /^yes$/i, logo: teamLogo(147) },
@@ -52,8 +49,6 @@ const NETWORK_LOGOS: { test: RegExp; logo: string }[] = [
   { test: /^nbc\s*sports\s*(ca|california)$/i, logo: teamLogo(133) },
   { test: /^nbc\s*sports\s*(phil|philadelphia)$/i, logo: teamLogo(143) },
   { test: /^space\s*city(\s*home(\s*network)?)?$/i, logo: teamLogo(117) },
-  { test: /^fan[dD]uel\s*sports(\s*network)?(\s*\w+)?$/i, logo: MLB_LEAGUE_LOGO },
-  { test: /^bally\s*sports/i, logo: MLB_LEAGUE_LOGO },
   { test: /^root\s*sports/i, logo: teamLogo(136) },
   { test: /^sportsnet$/i, logo: teamLogo(141) },
   { test: /^tva$/i, logo: teamLogo(141) },
