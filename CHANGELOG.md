@@ -2,6 +2,13 @@
 
 ---
 
+## CFB coaches: Wikipedia bios + fix broken headshots — August 30, 2026
+
+- Coach pages no longer invent ESPN player-CDN portrait URLs (those 404’d into a broken question-mark image). Missing portraits fall back to the team logo or initials.
+- Pull Wikipedia profile text, bio facts (born / hometown / alma mater), and full playing + coaching career path; enrich assistant coordinators with short wiki bios and portraits when available.
+
+---
+
 ## CFB: embed ESPN recap video — August 30, 2026
 
 - College football game pages pull ESPN summary clips and embed the best recap / full-highlights MP4 in-app (tap to play), with additional play highlights in a collapsible reel. External ESPN recap/boxscore links remain.
