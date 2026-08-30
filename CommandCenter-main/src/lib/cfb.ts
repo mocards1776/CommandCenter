@@ -113,6 +113,19 @@ export type CfbScoreGame = {
   /** ESPN period number (1–4 regulation, 5+ OT). */
   period: number | null;
   situation: CfbLiveSituation | null;
+  /** DraftKings (etc.) line from ESPN scoreboard — watchability only. */
+  odds: CfbGameOdds | null;
+};
+
+/** Point spread is home-centric (negative ⇒ home favored), matching ESPN. */
+export type CfbGameOdds = {
+  details: string | null;
+  /** Home team spread (e.g. -6.5 ⇒ home -6.5). */
+  spread: number | null;
+  overUnder: number | null;
+  /** Team id of the spread favorite. */
+  favoriteTeamId: number | null;
+  provider: string | null;
 };
 
 export type CfbScoredGame = CfbScoreGame & {
@@ -361,6 +374,14 @@ type EspnEvent = {
       };
     }[];
     situation?: Parameters<typeof mapCfbSituation>[0];
+    odds?: {
+      details?: string;
+      spread?: number;
+      overUnder?: number;
+      provider?: { name?: string; displayName?: string };
+      awayTeamOdds?: { favorite?: boolean; team?: { id?: string } };
+      homeTeamOdds?: { favorite?: boolean; team?: { id?: string } };
+    }[];
   }[];
 };
 
@@ -400,6 +421,46 @@ function sideFromCompetitor(
   };
 }
 
+function mapCfbOdds(
+  odds:
+    | {
+        details?: string;
+        spread?: number;
+        overUnder?: number;
+        provider?: { name?: string; displayName?: string };
+        awayTeamOdds?: { favorite?: boolean; team?: { id?: string } };
+        homeTeamOdds?: { favorite?: boolean; team?: { id?: string } };
+      }[]
+    | null
+    | undefined,
+): CfbGameOdds | null {
+  const row = odds?.[0];
+  if (!row) return null;
+  const spread =
+    typeof row.spread === "number" && Number.isFinite(row.spread) ? row.spread : null;
+  const overUnder =
+    typeof row.overUnder === "number" && Number.isFinite(row.overUnder)
+      ? row.overUnder
+      : null;
+  let favoriteTeamId: number | null = null;
+  if (row.homeTeamOdds?.favorite && row.homeTeamOdds.team?.id) {
+    favoriteTeamId = Number(row.homeTeamOdds.team.id) || null;
+  } else if (row.awayTeamOdds?.favorite && row.awayTeamOdds.team?.id) {
+    favoriteTeamId = Number(row.awayTeamOdds.team.id) || null;
+  } else if (spread != null) {
+    // Home-centric spread fallback: negative ⇒ home favored.
+    favoriteTeamId = null; // filled by caller with home/away ids if needed
+  }
+  if (!row.details && spread == null && overUnder == null) return null;
+  return {
+    details: row.details ?? null,
+    spread,
+    overUnder,
+    favoriteTeamId,
+    provider: row.provider?.displayName ?? row.provider?.name ?? null,
+  };
+}
+
 function mapCfbEvent(
   event: EspnEvent,
   fpiByTeam?: Map<number, number>,
@@ -428,6 +489,15 @@ function mapCfbEvent(
     typeof periodRaw === "number" && Number.isFinite(periodRaw) && periodRaw > 0
       ? periodRaw
       : null;
+  const odds = mapCfbOdds(comp.odds);
+  if (odds && odds.favoriteTeamId == null && odds.spread != null) {
+    odds.favoriteTeamId =
+      odds.spread < 0
+        ? Number(homeC.team.id) || null
+        : odds.spread > 0
+          ? Number(awayC.team.id) || null
+          : null;
+  }
   return {
     id: String(event.id ?? comp.status?.type?.detail ?? Math.random()),
     status: st?.description ?? st?.detail ?? "Scheduled",
@@ -443,6 +513,7 @@ function mapCfbEvent(
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
     period,
     situation: mapCfbSituation(comp.situation, live),
+    odds,
   };
 }
 
@@ -1457,6 +1528,63 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
     if (af != null && hf != null && af <= 40 && hf <= 40) {
       score += 10;
       reasons.push("FPI quality");
+    }
+  }
+
+  // Betting line — market consensus for watchability (not for tips).
+  const odds = g.odds;
+  const spread = odds?.spread ?? null;
+  const absSpread = spread != null ? Math.abs(spread) : null;
+  if (absSpread != null) {
+    if (absSpread <= 3) {
+      score += 18;
+      reasons.push(odds?.details ? `Pick'em (${odds.details})` : "Pick'em line");
+    } else if (absSpread <= 7) {
+      score += 12;
+      reasons.push(odds?.details ? `Close line (${odds.details})` : "Close line");
+    } else if (absSpread <= 10.5) {
+      score += 6;
+      reasons.push("Competitive line");
+    } else if (absSpread >= 28) {
+      score -= 14;
+      reasons.push("Heavy chalk");
+    } else if (absSpread >= 17) {
+      score -= 8;
+      reasons.push("Lopsided line");
+    }
+  }
+
+  // Market vs FPI: books favor the worse FPI side → interesting disagreement.
+  const favId = odds?.favoriteTeamId ?? null;
+  if (favId != null && g.away.fpiRank != null && g.home.fpiRank != null) {
+    const favFpi = favId === g.away.teamId ? g.away.fpiRank : favId === g.home.teamId ? g.home.fpiRank : null;
+    const dogFpi = favId === g.away.teamId ? g.home.fpiRank : favId === g.home.teamId ? g.away.fpiRank : null;
+    // Lower FPI ordinal = stronger team. Favorite with worse (higher) FPI = market ≠ FPI.
+    if (favFpi != null && dogFpi != null && favFpi > dogFpi + 2) {
+      score += 10;
+      reasons.push("Market vs FPI");
+    }
+  }
+
+  // Live: favorite trailing = upset watch (uses scoreboard, not FPI).
+  if (g.live && favId != null && g.away.score != null && g.home.score != null) {
+    const favScore = favId === g.away.teamId ? g.away.score : favId === g.home.teamId ? g.home.score : null;
+    const dogScore = favId === g.away.teamId ? g.home.score : favId === g.home.teamId ? g.away.score : null;
+    if (favScore != null && dogScore != null && dogScore > favScore) {
+      score += 22;
+      reasons.push("Upset watch");
+    } else if (
+      favScore != null &&
+      dogScore != null &&
+      absSpread != null &&
+      absSpread >= 3
+    ) {
+      // Favorite leading but not covering yet → still interesting.
+      const favMargin = favScore - dogScore;
+      if (favMargin >= 0 && favMargin < absSpread - 0.5 && favMargin <= 10) {
+        score += 8;
+        reasons.push("Against the number");
+      }
     }
   }
 
