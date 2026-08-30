@@ -1401,7 +1401,7 @@ async function wikiSearchFootballCoachTitle(name: string): Promise<string | null
     api.searchParams.set("action", "query");
     api.searchParams.set("list", "search");
     api.searchParams.set("srsearch", `${name} American football coach`);
-    api.searchParams.set("srlimit", "5");
+    api.searchParams.set("srlimit", "8");
     api.searchParams.set("format", "json");
     api.searchParams.set("origin", "*");
     const res = await fetch(api.toString(), {
@@ -1412,13 +1412,22 @@ async function wikiSearchFootballCoachTitle(name: string): Promise<string | null
       query?: { search?: { title?: string; snippet?: string }[] };
     };
     const last = name.split(/\s+/).slice(-1)[0]?.toLowerCase() ?? "";
-    const hits = data.query?.search ?? [];
+    const first = name.split(/\s+/)[0]?.toLowerCase() ?? "";
+    const hits = (data.query?.search ?? []).filter((h) => {
+      const t = (h.title ?? "").toLowerCase();
+      if (/^list of\b/i.test(t)) return false;
+      if (/\b(disambiguation|album|film|song)\b/i.test(t)) return false;
+      return t.includes(last);
+    });
     const prefer =
-      hits.find((h) => /football coach/i.test(h.title ?? "")) ??
-      hits.find(
-        (h) =>
-          (h.title ?? "").toLowerCase().includes(last) &&
-          /coach|football/i.test(`${h.title ?? ""} ${h.snippet ?? ""}`),
+      hits.find((h) => /american football coach/i.test(h.title ?? "")) ??
+      hits.find((h) => /\bfootball coach\b/i.test(h.title ?? "")) ??
+      hits.find((h) => {
+        const t = (h.title ?? "").toLowerCase();
+        return t.startsWith(first) && t.includes(last);
+      }) ??
+      hits.find((h) =>
+        /coach|football/i.test(`${h.title ?? ""} ${h.snippet ?? ""}`),
       ) ??
       hits[0];
     return prefer?.title ?? null;
@@ -1473,7 +1482,20 @@ async function fetchWikiFootballCoachCard(name: string): Promise<WikiFootballCoa
       if (!page || page.missing) continue;
       const extract = page.extract?.trim() || null;
       if (extract && /may refer to:/i.test(extract)) continue;
+      if (extract && /^this is a list of\b/i.test(extract)) continue;
       if (!extract && !page.thumbnail && !page.original) continue;
+      // Reject list / index pages that slipped through search.
+      if (/^list of\b/i.test(page.title ?? title)) continue;
+      const lastName = name.split(/\s+/).slice(-1)[0] ?? "";
+      if (
+        lastName.length > 2 &&
+        extract &&
+        !new RegExp(`\\b${lastName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(
+          extract,
+        )
+      ) {
+        continue;
+      }
 
       let careerPath: CfbCoachCareerStop[] = [];
       let birthDate: string | null = null;
