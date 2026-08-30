@@ -5,7 +5,10 @@ import { ArrowLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import CfbRankLabel from "@/components/sports/CfbRankLabel";
-import { fetchCfbGameDetail, type CfbScoreSide } from "@/lib/cfb";
+import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
+import HighlightReel from "@/components/sports/HighlightReel";
+import { fetchCfbBackupHighlights, fetchCfbGameDetail, type CfbScoreSide } from "@/lib/cfb";
+import type { MlbHighlight } from "@/lib/mlb";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { cn, formatSportsDateLong } from "@/lib/utils";
 
@@ -32,7 +35,7 @@ export function CfbGameDetailView({
   suppressStoryHeader?: boolean;
 }) {
   const detail = useQuery({
-    queryKey: ["cfb-game", eventId],
+    queryKey: ["cfb-game-v2", eventId],
     queryFn: () => fetchCfbGameDetail(eventId),
     enabled: Boolean(eventId),
     refetchInterval: (q) => (q.state.data?.live ? 15_000 : false),
@@ -40,6 +43,26 @@ export function CfbGameDetailView({
   });
 
   const g = detail.data;
+
+  const backups = useQuery({
+    queryKey: [
+      "cfb-backup-highlights",
+      eventId,
+      g?.away.name,
+      g?.home.name,
+      g?.date,
+    ],
+    queryFn: () =>
+      fetchCfbBackupHighlights({
+        awayName: g!.away.name,
+        homeName: g!.home.name,
+        awayAbbrev: g!.away.abbrev,
+        homeAbbrev: g!.home.abbrev,
+        date: g!.date,
+      }),
+    enabled: Boolean(g?.final && !g.recapVideo),
+    staleTime: 300_000,
+  });
 
   const teamStatLabels = useMemo(() => {
     const labels: string[] = [];
@@ -51,6 +74,33 @@ export function CfbGameDetailView({
     }
     return labels.slice(0, 16);
   }, [g?.teamStats]);
+
+  const extraHighlights = useMemo((): MlbHighlight[] => {
+    if (!g) return [];
+    const recapId = g.recapVideo?.id;
+    return g.videos
+      .filter((v) => v.mp4 && v.id !== recapId)
+      .map((v) => ({
+        id: v.id,
+        title: v.headline,
+        description: v.description,
+        duration:
+          v.durationSec != null
+            ? `${Math.floor(v.durationSec / 60)}:${String(Math.floor(v.durationSec % 60)).padStart(2, "0")}`
+            : null,
+        thumb: v.thumb,
+        url: v.mp4!,
+        date: null,
+      }));
+  }, [g]);
+
+  const primaryHighlight = g?.recapVideo ?? backups.data?.primary ?? null;
+  const primaryEyebrow =
+    primaryHighlight?.source === "fox"
+      ? "FOX highlights"
+      : primaryHighlight?.source === "cbs"
+        ? "CBS highlights"
+        : "ESPN recap";
 
   if (detail.isPending) {
     return (
@@ -218,6 +268,41 @@ export function CfbGameDetailView({
           </a>
         </div>
       </header>
+
+      {primaryHighlight ? (
+        <EspnVideoEmbed clip={primaryHighlight} eyebrow={primaryEyebrow} />
+      ) : null}
+
+      {extraHighlights.length > 0 ? (
+        <HighlightReel
+          highlights={extraHighlights}
+          title="More ESPN highlights"
+          defaultOpen={false}
+        />
+      ) : null}
+
+      {!g.recapVideo && (backups.data?.clips.length ?? 0) > 0 ? (
+        <section className="space-y-2.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            More highlights
+          </p>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            {backups.data!.clips.map((clip) => (
+              <EspnVideoEmbed
+                key={clip.id}
+                clip={clip}
+                eyebrow={
+                  clip.source === "cbs"
+                    ? "CBS"
+                    : clip.source === "fox"
+                      ? "FOX"
+                      : "Highlights"
+                }
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {articleSection}
 
@@ -530,7 +615,7 @@ export default function CfbGamePage() {
   const swipeRef = useSwipeBack(() => navigate(-1));
 
   const detail = useQuery({
-    queryKey: ["cfb-game", eventId],
+    queryKey: ["cfb-game-v2", eventId],
     queryFn: () => fetchCfbGameDetail(eventId!),
     enabled: Boolean(eventId),
     refetchInterval: (q) => (q.state.data?.live ? 15_000 : false),

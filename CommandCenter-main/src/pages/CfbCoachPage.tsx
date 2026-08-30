@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Flame, Loader2, Star } from "lucide-react";
@@ -26,6 +27,59 @@ function heatLabel(rank: number): string {
   return "Safe";
 }
 
+function CoachPortrait({
+  src,
+  fallbacks = [],
+  teamLogo,
+  name,
+  accent,
+}: {
+  src: string | null;
+  fallbacks?: string[];
+  teamLogo: string | null;
+  name: string;
+  accent: string;
+}) {
+  const candidates = [src, ...fallbacks, teamLogo].filter(
+    (u, i, arr): u is string => Boolean(u) && arr.indexOf(u) === i,
+  );
+  const [idx, setIdx] = useState(0);
+  const current = candidates[idx] ?? null;
+
+  if (!current) {
+    return (
+      <div
+        className="grid h-28 w-28 place-items-center rounded-xl text-[18px] font-semibold text-white ring-2 ring-white/25"
+        style={{ background: `${accent}aa` }}
+        aria-hidden
+      >
+        {name
+          .split(/\s+/)
+          .slice(0, 2)
+          .map((p) => p[0])
+          .join("")
+          .toUpperCase()}
+      </div>
+    );
+  }
+
+  const isLogo = Boolean(teamLogo && current === teamLogo);
+  return (
+    <img
+      src={current}
+      alt=""
+      referrerPolicy="no-referrer"
+      className={cn(
+        "h-28 w-28 rounded-xl ring-2 ring-white/25",
+        isLogo ? "bg-white object-contain p-2" : "bg-[#dfe6f2] object-cover object-top",
+      )}
+      onError={() => {
+        if (idx < candidates.length - 1) setIdx((v) => v + 1);
+      }}
+    />
+  );
+}
+
 export default function CfbCoachPage() {
   const { coachId } = useParams<{ coachId: string }>();
   const navigate = useNavigate();
@@ -34,7 +88,7 @@ export default function CfbCoachPage() {
   const qc = useQueryClient();
 
   const detail = useQuery({
-    queryKey: ["cfb-coach-v3", coachId],
+    queryKey: ["cfb-coach-v4", coachId],
     queryFn: () => fetchCfbCoachProfile(coachId!),
     enabled: Boolean(coachId),
     staleTime: 180_000,
@@ -105,6 +159,8 @@ export default function CfbCoachPage() {
   const c = detail.data;
   const accent = `#${c.teamColor}`;
   const isFavorite = Boolean(favQuery.data);
+  const playingStops = c.careerPath.filter((s) => s.kind === "playing");
+  const coachingStops = c.careerPath.filter((s) => s.kind === "coaching");
 
   return (
     <div ref={swipeRef} className="mx-auto max-w-3xl space-y-6 p-4 md:p-7">
@@ -133,19 +189,13 @@ export default function CfbCoachPage() {
         />
         <div className="relative z-10 flex flex-col gap-5 p-5 sm:flex-row sm:items-end sm:p-7">
           <div className="flex items-center gap-4">
-            {c.headshot ? (
-              <img
-                src={c.headshot}
-                alt=""
-                className="h-28 w-28 rounded-xl bg-[#dfe6f2] object-cover object-top ring-2 ring-white/25"
-              />
-            ) : c.teamLogo ? (
-              <img
-                src={c.teamLogo}
-                alt=""
-                className="h-24 w-24 rounded-xl bg-white object-contain p-2 ring-2 ring-white/20"
-              />
-            ) : null}
+            <CoachPortrait
+              src={c.headshot}
+              fallbacks={c.headshotFallbacks}
+              teamLogo={c.teamLogo}
+              name={c.name}
+              accent={accent}
+            />
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/60">
                 Head coach · {c.teamAbbrev}
@@ -205,6 +255,90 @@ export default function CfbCoachPage() {
         </div>
       </article>
 
+      {c.bioFacts.length > 0 && (
+        <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+          <div className="border-b border-white/[0.06] px-4 py-3">
+            <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+              Bio facts
+            </h2>
+          </div>
+          <dl className="grid grid-cols-1 gap-px bg-white/[0.04] sm:grid-cols-2">
+            {c.bioFacts.map((f) => (
+              <div key={f.label} className="bg-panel px-4 py-3">
+                <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                  {f.label}
+                </dt>
+                <dd className="text-cream mt-1 text-[13.5px] leading-snug">{f.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+
+      {c.bio && (
+        <section className="bg-panel space-y-2 rounded-xl border border-white/[0.08] p-4">
+          <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+            Profile
+          </h2>
+          <p className="text-[14px] leading-relaxed text-[#d5dae6]">{c.bio}</p>
+          {c.wikiUrl ? (
+            <a
+              href={c.wikiUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em] hover:underline"
+            >
+              Wikipedia <ExternalLink size={11} />
+            </a>
+          ) : null}
+        </section>
+      )}
+
+      {(playingStops.length > 0 || coachingStops.length > 0) && (
+        <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+          <div className="border-b border-white/[0.06] px-4 py-3">
+            <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+              Career path
+            </h2>
+            <p className="text-chalk-dim mt-0.5 text-[11px]">
+              Playing and coaching stops from Wikipedia
+            </p>
+          </div>
+          <div className="divide-y divide-white/[0.05]">
+            {playingStops.length > 0 ? (
+              <div className="px-4 py-3">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                  Playing
+                </p>
+                <ul className="space-y-1.5">
+                  {playingStops.map((s) => (
+                    <li key={`p-${s.years}-${s.detail}`} className="flex gap-3 text-[13px]">
+                      <span className="numeral text-accent w-24 shrink-0 font-medium">{s.years}</span>
+                      <span className="text-[#c8cdd8]">{s.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {coachingStops.length > 0 ? (
+              <div className="px-4 py-3">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                  Coaching
+                </p>
+                <ul className="space-y-1.5">
+                  {coachingStops.map((s) => (
+                    <li key={`c-${s.years}-${s.detail}`} className="flex gap-3 text-[13px]">
+                      <span className="numeral text-accent w-24 shrink-0 font-medium">{s.years}</span>
+                      <span className="text-[#c8cdd8]">{s.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      )}
+
       {c.seasonRecords.length > 0 && (
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
           <div className="border-b border-white/[0.06] px-4 py-3">
@@ -263,22 +397,26 @@ export default function CfbCoachPage() {
               Coaching staff
             </h2>
             <p className="text-chalk-dim mt-0.5 text-[11px]">
-              Assistants at {c.teamName} · Wikipedia season staff when available
+              Assistants at {c.teamName} · Wikipedia bios when available
             </p>
           </div>
           <ul className="divide-y divide-white/[0.05]">
             {c.staff.map((s) => (
-              <li key={s.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+              <li key={s.id} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
                 {s.headshot ? (
                   <img
                     src={s.headshot}
                     alt=""
-                    className="h-10 w-10 rounded-lg bg-[#dfe6f2] object-cover object-top"
+                    referrerPolicy="no-referrer"
+                    className="h-10 w-10 shrink-0 rounded-lg bg-[#dfe6f2] object-cover object-top"
                     loading="lazy"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                    }}
                   />
                 ) : (
                   <div
-                    className="grid h-10 w-10 place-items-center rounded-lg text-[11px] font-semibold text-white"
+                    className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[11px] font-semibold text-white"
                     style={{ background: `${accent}99` }}
                   >
                     {s.name
@@ -292,6 +430,9 @@ export default function CfbCoachPage() {
                 <div className="min-w-0">
                   <p className="text-cream truncate text-[14px] font-medium">{s.name}</p>
                   <p className="text-[11px] text-[#8b93a7]">{s.title}</p>
+                  {s.bio ? (
+                    <p className="text-chalk mt-1 text-[12px] leading-relaxed">{s.bio}</p>
+                  ) : null}
                 </div>
               </li>
             ))}
@@ -346,13 +487,6 @@ export default function CfbCoachPage() {
         </section>
       )}
 
-      {c.bio && (
-        <section className="bg-panel space-y-2 rounded-xl border border-white/[0.08] p-4">
-          <h2 className="text-[12px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">Bio</h2>
-          <p className="text-[13.5px] leading-relaxed text-[#c8cdd8]">{c.bio}</p>
-        </section>
-      )}
-
       <div className="flex flex-wrap gap-3">
         {c.teamId !== "0" && (
           <Link
@@ -361,6 +495,16 @@ export default function CfbCoachPage() {
           >
             {c.teamName} team page
           </Link>
+        )}
+        {c.wikiUrl && (
+          <a
+            href={c.wikiUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-chalk-dim hover:text-cream inline-flex items-center gap-1 text-[11px] uppercase tracking-[0.14em]"
+          >
+            Wikipedia <ExternalLink size={11} />
+          </a>
         )}
         {c.cfbRefUrl && (
           <a

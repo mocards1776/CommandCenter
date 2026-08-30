@@ -167,6 +167,8 @@ export type CfbTeamStaffMember = {
   headshot: string | null;
   /** False when we only have a name (no ESPN coach id to open). */
   linkable: boolean;
+  /** Short Wikipedia intro when available. */
+  bio?: string | null;
 };
 
 export type CfbCoachSeasonRecord = {
@@ -188,8 +190,22 @@ export type CfbCoachCareerTotals = {
   summary: string;
 };
 
+export type CfbCoachBioFact = {
+  label: string;
+  value: string;
+};
+
+export type CfbCoachCareerStop = {
+  years: string;
+  detail: string;
+  kind: "playing" | "coaching";
+};
+
 export type CfbCoachProfile = CfbCoach & {
   bio: string | null;
+  bioFacts: CfbCoachBioFact[];
+  /** Playing + assistant/HC stops from Wikipedia when available. */
+  careerPath: CfbCoachCareerStop[];
   careerHighlights: string[];
   /** Head-coaching W–L by season and school (ESPN coach seasons). */
   seasonRecords: CfbCoachSeasonRecord[];
@@ -198,6 +214,10 @@ export type CfbCoachProfile = CfbCoach & {
   oddsSource: string | null;
   /** College Football Reference search / coach page when resolved. */
   cfbRefUrl: string | null;
+  /** Wikipedia article when resolved. */
+  wikiUrl: string | null;
+  /** Extra portrait URLs for <img onError> (e.g. team logo). */
+  headshotFallbacks: string[];
   /** Current program staff (assistants) when team is known. */
   staff: CfbTeamStaffMember[];
 };
@@ -228,6 +248,28 @@ export type CfbTeamGameStat = {
   value: string;
 };
 
+/** ESPN clip attached to a CFB game summary (recap package or play highlight). */
+export type CfbGameVideo = {
+  id: string;
+  headline: string;
+  description: string | null;
+  thumb: string | null;
+  /** Progressive MP4 when ESPN exposes one (embeddable in-app). */
+  mp4: string | null;
+  href: string | null;
+  durationSec: number | null;
+  /** Origin network when this is a FOX/CBS backup rather than ESPN. */
+  source?: "espn" | "fox" | "cbs";
+};
+
+export type CfbBackupHighlights = {
+  /** Best full-game package from FOX or CBS. */
+  primary: CfbGameVideo | null;
+  /** Extra play clips (usually FOX). */
+  clips: CfbGameVideo[];
+};
+
+
 export type CfbGameDetail = CfbScoreGame & {
   scoringPlays: CfbScoringPlay[];
   boxGroups: CfbBoxStatGroup[];
@@ -237,6 +279,10 @@ export type CfbGameDetail = CfbScoreGame & {
     description: string | null;
     storyHtml: string | null;
   } | null;
+  /** Best ESPN recap / full-highlights package when available. */
+  recapVideo: CfbGameVideo | null;
+  /** Other embeddable clips from the summary (play highlights, related). */
+  videos: CfbGameVideo[];
   /** Pregame extras from ESPN summary when box/article are empty. */
   oddsLine: string | null;
   predictor: { homeWinPct: number | null; awayWinPct: number | null } | null;
@@ -247,6 +293,289 @@ export type CfbGameDetail = CfbScoreGame & {
   }[];
   venueDetail: string | null;
 };
+
+type EspnVideoRaw = {
+  id?: string | number;
+  headline?: string;
+  title?: string;
+  description?: string;
+  caption?: string;
+  duration?: number;
+  thumbnail?: string;
+  images?: { url?: string }[];
+  posterImages?: { default?: { href?: string }; full?: { href?: string } };
+  links?: {
+    web?: { href?: string };
+    source?: { href?: string; HD?: { href?: string } };
+    mobile?: { source?: { href?: string } };
+  };
+};
+
+function espnVideoMp4(v: EspnVideoRaw): string | null {
+  const candidates = [
+    v.links?.mobile?.source?.href,
+    v.links?.source?.HD?.href,
+    v.links?.source?.href,
+  ];
+  for (const href of candidates) {
+    if (href && /\.mp4(\?|$)/i.test(href)) return href;
+  }
+  return null;
+}
+
+function mapEspnGameVideo(raw: EspnVideoRaw): CfbGameVideo | null {
+  const id = raw.id != null ? String(raw.id) : "";
+  const headline = (raw.headline || raw.title || "").trim();
+  if (!id || !headline) return null;
+  const mp4 = espnVideoMp4(raw);
+  return {
+    id,
+    headline,
+    description: (raw.description || raw.caption || "").trim() || null,
+    thumb:
+      raw.posterImages?.full?.href ??
+      raw.posterImages?.default?.href ??
+      raw.thumbnail ??
+      raw.images?.[0]?.url ??
+      null,
+    mp4,
+    href: raw.links?.web?.href ?? `https://www.espn.com/video/clip?id=${id}`,
+    durationSec: typeof raw.duration === "number" ? raw.duration : null,
+    source: "espn",
+  };
+}
+
+/** Prefer full-highlight / recap packages over short studio bites. */
+export function pickCfbRecapVideo(videos: CfbGameVideo[]): CfbGameVideo | null {
+  const withMp4 = videos.filter((v) => v.mp4);
+  if (!withMp4.length) return null;
+  const scored = withMp4.map((v) => {
+    const h = v.headline.toLowerCase();
+    let score = 0;
+    if (/full\s+highlights?/.test(h)) score += 20;
+    else if (/\bhighlights?\b/.test(h)) score += 10;
+    if (/\brecap\b/.test(h)) score += 8;
+    if (v.durationSec != null && v.durationSec >= 90) score += 4;
+    else if (v.durationSec != null && v.durationSec >= 60) score += 2;
+    if (v.durationSec != null && v.durationSec < 45 && !/\bhighlight/i.test(h)) {
+      score -= 6;
+    }
+    return { v, score };
+  });
+  scored.sort((a, b) => b.score - a.score || (b.v.durationSec ?? 0) - (a.v.durationSec ?? 0));
+  return scored[0]?.v ?? null;
+}
+
+const FOX_BIFROST_KEY = "jE7yBJVRNAwdDesMgTzTXUUSx1It41Fq";
+
+function cfbTeamSearchToken(name: string, abbrev: string): string {
+  const first = (name.trim().split(/\s+/)[0] || abbrev).toLowerCase();
+  // Keep acronyms like UNLV / USC intact; otherwise first word ("Memphis").
+  return first.replace(/[^a-z0-9]/g, "");
+}
+
+function scoreBackupHighlight(
+  headline: string,
+  awayName: string,
+  homeName: string,
+  awayAbbrev: string,
+  homeAbbrev: string,
+): number {
+  const h = headline.toLowerCase();
+  const awayTok = cfbTeamSearchToken(awayName, awayAbbrev);
+  const homeTok = cfbTeamSearchToken(homeName, homeAbbrev);
+  let score = 0;
+  if (/full\s+highlights?/.test(h) || /\bhighlights?\b.*\bcfb\b/.test(h)) score += 20;
+  else if (/\bhighlights?\b/.test(h)) score += 10;
+  if (awayTok && h.includes(awayTok)) score += 6;
+  if (homeTok && h.includes(homeTok)) score += 6;
+  if (/volleyball|soccer|basketball|softball|baseball/.test(h)) score -= 30;
+  return score;
+}
+
+async function fetchFoxBackupHighlights(opts: {
+  awayName: string;
+  homeName: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
+}): Promise<CfbGameVideo[]> {
+  const awayTok = cfbTeamSearchToken(opts.awayName, opts.awayAbbrev);
+  const homeTok = cfbTeamSearchToken(opts.homeName, opts.homeAbbrev);
+  const queries = [
+    `${opts.awayName} ${opts.homeName} highlights`,
+    `${awayTok} ${homeTok} highlights`,
+    `${opts.awayAbbrev} ${opts.homeAbbrev} highlights`,
+  ];
+  const byId = new Map<string, CfbGameVideo>();
+
+  for (const q of queries) {
+    try {
+      const url =
+        `https://api.foxsports.com/bifrost/v1/search/content?text=` +
+        `${encodeURIComponent(q)}&apikey=${FOX_BIFROST_KEY}`;
+      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        results?: {
+          title?: string;
+          components?: {
+            type?: string;
+            model?: {
+              title?: string;
+              webUrl?: string;
+              contentType?: string;
+              isVideo?: boolean;
+              image?: { url?: string; altUrl?: string };
+              sparkId?: string;
+            };
+          }[];
+        }[];
+      };
+      for (const section of data.results ?? []) {
+        if (!/video/i.test(section.title ?? "")) continue;
+        for (const c of section.components ?? []) {
+          const m = c.model;
+          const title = (m?.title ?? "").trim();
+          const path = m?.webUrl ?? "";
+          if (!title || !/\/watch\/fmc-/i.test(path)) continue;
+          const score = scoreBackupHighlight(
+            title,
+            opts.awayName,
+            opts.homeName,
+            opts.awayAbbrev,
+            opts.homeAbbrev,
+          );
+          if (score < 10) continue;
+          const id = path.split("/").pop() || m?.sparkId || title;
+          if (byId.has(id)) continue;
+          byId.set(id, {
+            id,
+            headline: title.replace(/🏈/g, "").trim(),
+            description: "FOX Sports",
+            thumb: m?.image?.url ?? m?.image?.altUrl ?? null,
+            mp4: null,
+            href: path.startsWith("http") ? path : `https://www.foxsports.com${path}`,
+            durationSec: null,
+            source: "fox",
+          });
+        }
+      }
+      if (byId.size) break;
+    } catch {
+      /* try next query */
+    }
+  }
+
+  return [...byId.values()].sort(
+    (a, b) =>
+      scoreBackupHighlight(
+        b.headline,
+        opts.awayName,
+        opts.homeName,
+        opts.awayAbbrev,
+        opts.homeAbbrev,
+      ) -
+      scoreBackupHighlight(
+        a.headline,
+        opts.awayName,
+        opts.homeName,
+        opts.awayAbbrev,
+        opts.homeAbbrev,
+      ),
+  );
+}
+
+async function fetchCbsBackupHighlight(opts: {
+  awayName: string;
+  homeName: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
+  date: string | null;
+}): Promise<CfbGameVideo | null> {
+  if (!opts.date) return null;
+  const m = opts.date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!month || !day) return null;
+
+  const away = cfbTeamSearchToken(opts.awayName, opts.awayAbbrev);
+  const home = cfbTeamSearchToken(opts.homeName, opts.homeAbbrev);
+  const dateTags = [`${month}${day}`, `${month}-${day}`, `${m[2]}${m[3]}`];
+  const slugs: string[] = [];
+  for (const tag of dateTags) {
+    slugs.push(`ncaaf-highlights-${away}-at-${home}-${tag}`);
+    slugs.push(`ncaaf-highlights-${home}-vs-${away}-${tag}`);
+    slugs.push(`ncaaf-highlights-${away}-${home}-${tag}`);
+  }
+
+  for (const slug of slugs) {
+    const href = `https://www.cbssports.com/watch/general/video/${slug}`;
+    try {
+      const res = await fetch(href, {
+        headers: { Accept: "text/html", "User-Agent": "Mozilla/5.0" },
+      });
+      if (!res.ok) continue;
+      const finalUrl = res.url || href;
+      if (/\/watch\/general\/?$/i.test(finalUrl.replace(/\/$/, ""))) continue;
+      const html = await res.text();
+      const title =
+        html.match(/property="og:title" content="([^"]+)"/i)?.[1] ||
+        html.match(/<title>([^<]+)/i)?.[1] ||
+        "";
+      const image = html.match(/property="og:image" content="([^"]+)"/i)?.[1] || null;
+      if (!/highlight/i.test(title)) continue;
+      const score = scoreBackupHighlight(
+        title,
+        opts.awayName,
+        opts.homeName,
+        opts.awayAbbrev,
+        opts.homeAbbrev,
+      );
+      if (score < 10) continue;
+      return {
+        id: `cbs:${slug}`,
+        headline: title.replace(/\s*Stream of General Videos.*$/i, "").trim() || title.trim(),
+        description: "CBS Sports",
+        thumb: image && /^https?:/i.test(image) ? image : null,
+        mp4: null,
+        href: finalUrl,
+        durationSec: null,
+        source: "cbs",
+      };
+    } catch {
+      /* try next slug */
+    }
+  }
+  return null;
+}
+
+/** FOX + CBS highlight packages when ESPN has no embeddable recap clip. */
+export async function fetchCfbBackupHighlights(opts: {
+  awayName: string;
+  homeName: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
+  date: string | null;
+}): Promise<CfbBackupHighlights> {
+  const [fox, cbs] = await Promise.all([
+    fetchFoxBackupHighlights(opts).catch(() => [] as CfbGameVideo[]),
+    fetchCbsBackupHighlight(opts).catch(() => null),
+  ]);
+
+  const foxPrimary =
+    fox.find((v) => /full\s+highlights?|\bhighlights?\b.*\bcfb\b/i.test(v.headline)) ??
+    fox[0] ??
+    null;
+  const primary = foxPrimary ?? cbs;
+  const clips = fox.filter((v) => v.id !== primary?.id).slice(0, 8);
+  // If FOX won primary, still surface CBS as an extra clip when present.
+  if (primary?.source === "fox" && cbs && cbs.id !== primary.id) {
+    clips.unshift(cbs);
+  }
+
+  return { primary, clips };
+}
 
 export type CfbPlayerProfile = {
   id: string;
@@ -652,10 +981,16 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
         }[];
       }[];
     };
-    article?: { headline?: string; description?: string; story?: string };
+    article?: {
+      headline?: string;
+      description?: string;
+      story?: string;
+      video?: EspnVideoRaw[];
+    };
     news?:
       | { articles?: { headline?: string; description?: string; story?: string }[] }
       | { headline?: string; description?: string; story?: string }[];
+    videos?: EspnVideoRaw[];
     pickcenter?: {
       details?: string;
       overUnder?: number;
@@ -813,6 +1148,15 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
       : null,
   ].filter(Boolean);
 
+  const videoById = new Map<string, CfbGameVideo>();
+  for (const rawVid of [...(raw.article?.video ?? []), ...(raw.videos ?? [])]) {
+    const mapped = mapEspnGameVideo(rawVid);
+    if (!mapped || videoById.has(mapped.id)) continue;
+    videoById.set(mapped.id, mapped);
+  }
+  const videos = [...videoById.values()];
+  const recapVideo = pickCfbRecapVideo(videos);
+
   return {
     ...base,
     venue: base.venue ?? raw.gameInfo?.venue?.fullName ?? null,
@@ -831,6 +1175,8 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
           storyHtml: articleRaw.story ?? null,
         }
       : null,
+    recapVideo,
+    videos,
     oddsLine,
     predictor,
     lastFive,
@@ -1184,9 +1530,12 @@ export async function fetchCfbLeaders(season?: number): Promise<{
 
 function stripWikiMarkup(raw: string): string {
   return raw
+    .replace(/\{\{tooltip\|([^|}]+)\|([^}]+)\}\}/gi, "$1 ($2)")
+    .replace(/\{\{[^}]*\}\}/g, " ")
     .replace(/\[\[[^|\]]*\|([^\]]+)\]\]/g, "$1")
     .replace(/\[\[([^\]]+)\]\]/g, "$1")
     .replace(/'{2,}/g, "")
+    .replace(/<[^>]+>/g, " ")
     .replace(/\s*\(interim\)/gi, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -1334,6 +1683,223 @@ async function fetchWikiCoachingStaff(
   return best;
 }
 
+function parseWikiInfoboxCareerPath(wikitext: string): CfbCoachCareerStop[] {
+  const stops: CfbCoachCareerStop[] = [];
+  const push = (kind: "playing" | "coaching", yearsRaw: string, detailRaw: string) => {
+    const years = stripWikiMarkup(yearsRaw);
+    const detail = stripWikiMarkup(detailRaw);
+    if (!years || !detail) return;
+    stops.push({ years, detail, kind });
+  };
+  for (const m of wikitext.matchAll(/\| *player_years(\d+) *= *([^\n]+)/gi)) {
+    const n = m[1]!;
+    const team = wikitext.match(new RegExp(`\\| *player_team${n} *= *([^\\n]+)`, "i"))?.[1] ?? "";
+    const pos = wikitext.match(new RegExp(`\\| *player_positions *= *([^\\n]+)`, "i"))?.[1];
+    const detail = pos && n === "1" ? `${team} (${pos})` : team;
+    push("playing", m[2]!, detail);
+  }
+  for (const m of wikitext.matchAll(/\| *coach_years(\d+) *= *([^\n]+)/gi)) {
+    const n = m[1]!;
+    const team = wikitext.match(new RegExp(`\\| *coach_team${n} *= *([^\\n]+)`, "i"))?.[1] ?? "";
+    push("coaching", m[2]!, team);
+  }
+  return stops;
+}
+
+type WikiFootballCoachCard = {
+  title: string;
+  extract: string | null;
+  image: string | null;
+  url: string;
+  careerPath: CfbCoachCareerStop[];
+  birthDate: string | null;
+  birthPlace: string | null;
+};
+
+function cleanWikiImageUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return url.replace(/[?&]utm_[^&]+/g, "").replace(/\?$/, "").trim() || null;
+}
+
+async function wikiSearchFootballCoachTitle(name: string): Promise<string | null> {
+  try {
+    const api = new URL("https://en.wikipedia.org/w/api.php");
+    api.searchParams.set("action", "query");
+    api.searchParams.set("list", "search");
+    api.searchParams.set("srsearch", `${name} American football coach`);
+    api.searchParams.set("srlimit", "8");
+    api.searchParams.set("format", "json");
+    api.searchParams.set("origin", "*");
+    const res = await fetch(api.toString(), {
+      headers: { Accept: "application/json", "User-Agent": "CommandCenter/1.0" },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      query?: { search?: { title?: string; snippet?: string }[] };
+    };
+    const last = name.split(/\s+/).slice(-1)[0]?.toLowerCase() ?? "";
+    const first = name.split(/\s+/)[0]?.toLowerCase() ?? "";
+    const hits = (data.query?.search ?? []).filter((h) => {
+      const t = (h.title ?? "").toLowerCase();
+      if (/^list of\b/i.test(t)) return false;
+      if (/\b(disambiguation|album|film|song)\b/i.test(t)) return false;
+      return t.includes(last);
+    });
+    const prefer =
+      hits.find((h) => /american football coach/i.test(h.title ?? "")) ??
+      hits.find((h) => /\bfootball coach\b/i.test(h.title ?? "")) ??
+      hits.find((h) => {
+        const t = (h.title ?? "").toLowerCase();
+        return t.startsWith(first) && t.includes(last);
+      }) ??
+      hits.find((h) =>
+        /coach|football/i.test(`${h.title ?? ""} ${h.snippet ?? ""}`),
+      ) ??
+      hits[0];
+    return prefer?.title ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWikiFootballCoachCard(name: string): Promise<WikiFootballCoachCard | null> {
+  const titles = [
+    `${name.trim()} (American football coach)`,
+    `${name.trim()} (football coach)`,
+    name.trim(),
+  ];
+  const searched = await wikiSearchFootballCoachTitle(name);
+  if (searched && !titles.includes(searched)) titles.unshift(searched);
+
+  for (const title of titles) {
+    try {
+      const api = new URL("https://en.wikipedia.org/w/api.php");
+      api.searchParams.set("action", "query");
+      api.searchParams.set("titles", title);
+      api.searchParams.set("prop", "pageimages|extracts|info");
+      api.searchParams.set("inprop", "url");
+      api.searchParams.set("exintro", "1");
+      api.searchParams.set("explaintext", "1");
+      api.searchParams.set("pithumbsize", "640");
+      api.searchParams.set("pilicense", "any");
+      api.searchParams.set("format", "json");
+      api.searchParams.set("redirects", "1");
+      api.searchParams.set("origin", "*");
+      const res = await fetch(api.toString(), {
+        headers: { Accept: "application/json", "User-Agent": "CommandCenter/1.0" },
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        query?: {
+          pages?: Record<
+            string,
+            {
+              missing?: boolean;
+              title?: string;
+              extract?: string;
+              fullurl?: string;
+              thumbnail?: { source?: string };
+              original?: { source?: string };
+            }
+          >;
+        };
+      };
+      const page = Object.values(data.query?.pages ?? {})[0];
+      if (!page || page.missing) continue;
+      const extract = page.extract?.trim() || null;
+      if (extract && /may refer to:/i.test(extract)) continue;
+      if (extract && /^this is a list of\b/i.test(extract)) continue;
+      if (!extract && !page.thumbnail && !page.original) continue;
+      // Reject list / index pages that slipped through search.
+      if (/^list of\b/i.test(page.title ?? title)) continue;
+      const lastName = name.split(/\s+/).slice(-1)[0] ?? "";
+      if (
+        lastName.length > 2 &&
+        extract &&
+        !new RegExp(`\\b${lastName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(
+          extract,
+        )
+      ) {
+        continue;
+      }
+
+      let careerPath: CfbCoachCareerStop[] = [];
+      let birthDate: string | null = null;
+      let birthPlace: string | null = null;
+      try {
+        const parseRes = await fetch(
+          `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(page.title ?? title)}&prop=wikitext&format=json&origin=*`,
+          { headers: { Accept: "application/json", "User-Agent": "CommandCenter/1.0" } },
+        );
+        if (parseRes.ok) {
+          const parsed = (await parseRes.json()) as {
+            parse?: { wikitext?: { ["*"]?: string } };
+          };
+          const wt = parsed.parse?.wikitext?.["*"] ?? "";
+          careerPath = parseWikiInfoboxCareerPath(wt);
+          const bd = wt.match(/\| *birth_date *= *([^\n]+)/i)?.[1];
+          const bp = wt.match(/\| *birth_place *= *([^\n]+)/i)?.[1];
+          if (bd) {
+            const m = bd.match(/(\d{4})\|(\d{1,2})\|(\d{1,2})/);
+            if (m) {
+              birthDate = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+                .toLocaleDateString("en-US", {
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                  timeZone: "UTC",
+                });
+            } else {
+              const cleaned = stripWikiMarkup(bd);
+              if (cleaned && !/\{\{/.test(cleaned)) birthDate = cleaned;
+            }
+          }
+          if (bp) birthPlace = stripWikiMarkup(bp) || null;
+        }
+      } catch {
+        /* extract-only is fine */
+      }
+
+      return {
+        title: page.title ?? title,
+        extract,
+        image: cleanWikiImageUrl(page.original?.source ?? page.thumbnail?.source),
+        url:
+          page.fullurl ??
+          `https://en.wikipedia.org/wiki/${encodeURIComponent((page.title ?? title).replace(/ /g, "_"))}`,
+        careerPath,
+        birthDate,
+        birthPlace,
+      };
+    } catch {
+      /* try next title */
+    }
+  }
+  return null;
+}
+
+function formatCoachBirthPlace(raw: {
+  city?: string;
+  state?: string;
+  country?: string;
+} | null | undefined): string | null {
+  if (!raw) return null;
+  const bits = [raw.city, raw.state, raw.country === "USA" ? null : raw.country].filter(Boolean);
+  return bits.length ? bits.join(", ") : null;
+}
+
+function formatCoachDob(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 async function searchEspnCoachHeadshot(
   name: string,
 ): Promise<{ id: string | null; headshot: string | null }> {
@@ -1351,6 +1917,7 @@ async function searchEspnCoachHeadshot(
         headshot?: { href?: string };
       }[];
     };
+
     const last = name.split(/\s+/).slice(-1)[0]?.toLowerCase() ?? "";
     const hit =
       (data.items ?? []).find(
@@ -1359,9 +1926,10 @@ async function searchEspnCoachHeadshot(
           (it.displayName ?? "").toLowerCase().includes(last),
       ) ?? (data.items ?? []).find((it) => /coach|person/i.test(it.type ?? ""));
     if (!hit) return { id: null, headshot: null };
+    // Never invent player-CDN URLs for coaches — those 404 and break the UI.
     return {
       id: hit.id ? String(hit.id) : null,
-      headshot: hit.headshot?.href ?? (hit.id ? cfbHeadshot(hit.id, 350) : null),
+      headshot: hit.headshot?.href ?? null,
     };
   } catch {
     return { id: null, headshot: null };
@@ -1447,6 +2015,7 @@ async function buildCfbCoachingStaff(opts: {
       title: preferNewTitle ? row.title : prev.title,
       headshot: prev.headshot ?? row.headshot,
       linkable: prev.linkable || row.linkable,
+      bio: prev.bio ?? row.bio ?? null,
     });
   };
 
@@ -1455,7 +2024,7 @@ async function buildCfbCoachingStaff(opts: {
       id: c.id,
       name: c.name,
       title: "Head coach",
-      headshot: cfbHeadshot(c.id, 350),
+      headshot: null,
       linkable: true,
     });
   }
@@ -1490,7 +2059,7 @@ async function buildCfbCoachingStaff(opts: {
       id: rosterHit.id,
       name: rosterHit.name,
       title: w.title,
-      headshot: cfbHeadshot(rosterHit.id, 350),
+      headshot: null,
       linkable: true,
     });
   }
@@ -2418,42 +2987,68 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
   }
 
   let bio: string | null = null;
-  let headshot: string | null =
-    base.headshot ?? (/^\d+$/.test(base.id) ? cfbHeadshot(base.id, 350) : null);
-  try {
-    const search = await fetch(
-      `https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&limit=8&query=${encodeURIComponent(base.name)}`,
-      { headers: { Accept: "application/json" } },
-    );
-    if (search.ok) {
-      const data = (await search.json()) as {
-        items?: {
-          id?: string;
-          displayName?: string;
-          type?: string;
-          sport?: string;
-          headshot?: { href?: string };
-          description?: string;
-        }[];
-      };
-      const hit =
-        (data.items ?? []).find(
-          (it) =>
-            /coach|person/i.test(it.type ?? "") &&
-            /football|college/i.test(it.sport ?? "football") &&
-            (it.displayName ?? "")
-              .toLowerCase()
-              .includes(base!.name.split(" ").slice(-1)[0]!.toLowerCase()),
-        ) ??
-        (data.items ?? []).find((it) => /coach|person/i.test(it.type ?? ""));
-      if (hit?.headshot?.href) headshot = hit.headshot.href;
-      if (hit?.description?.trim()) bio = hit.description.trim();
-      if (hit?.id && /^\d+$/.test(String(hit.id)) && !/^\d+$/.test(base.id)) {
-        base = { ...base, id: String(hit.id) };
+  // Do not invent ESPN player-CDN URLs for coaches (404 → broken question-mark image).
+  let headshot: string | null = base.headshot;
+  let wikiUrl: string | null = null;
+  let careerPath: CfbCoachCareerStop[] = [];
+  const bioFacts: CfbCoachBioFact[] = [];
+
+  const espnCoachIdEarly = /^\d+$/.test(base.id) ? base.id : null;
+  const [wikiCard, corePerson, espnSearch] = await Promise.all([
+    fetchWikiFootballCoachCard(base.name).catch(() => null),
+    espnCoachIdEarly
+      ? fetchCoreJson<{
+          birthPlace?: { city?: string; state?: string; country?: string };
+          dateOfBirth?: string;
+          college?: { $ref?: string };
+        }>(`${CORE}/coaches/${espnCoachIdEarly}?lang=en&region=us`).catch(() => null)
+      : Promise.resolve(null),
+    searchEspnCoachHeadshot(base.name),
+  ]);
+
+  if (espnSearch.headshot) headshot = espnSearch.headshot;
+  if (espnSearch.id && /^\d+$/.test(espnSearch.id) && !/^\d+$/.test(base.id)) {
+    base = { ...base, id: espnSearch.id };
+  }
+
+  if (wikiCard?.image) headshot = wikiCard.image;
+  if (wikiCard?.extract) bio = wikiCard.extract;
+  if (wikiCard?.url) wikiUrl = wikiCard.url;
+  if (wikiCard?.careerPath.length) careerPath = wikiCard.careerPath;
+
+  const born =
+    wikiCard?.birthDate || formatCoachDob(corePerson?.dateOfBirth ?? null);
+  const hometown =
+    wikiCard?.birthPlace || formatCoachBirthPlace(corePerson?.birthPlace);
+  if (born) bioFacts.push({ label: "Born", value: born });
+  if (hometown) bioFacts.push({ label: "Hometown", value: hometown });
+
+  if (corePerson?.college?.$ref) {
+    const college = await fetchCoreJson<{
+      name?: string;
+      shortName?: string;
+      abbrev?: string;
+    }>(corePerson.college.$ref).catch(() => null);
+    const alma = college?.name || college?.shortName;
+    if (alma) bioFacts.push({ label: "Alma mater", value: alma });
+  }
+
+  if (!bio) {
+    try {
+      const search = await fetch(
+        `https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&limit=8&query=${encodeURIComponent(base.name)}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (search.ok) {
+        const data = (await search.json()) as {
+          items?: { description?: string; type?: string }[];
+        };
+        const hit = (data.items ?? []).find((it) => /coach|person/i.test(it.type ?? ""));
+        if (hit?.description?.trim()) bio = hit.description.trim();
       }
+    } catch {
+      /* */
     }
-  } catch {
-    /* */
   }
 
   const espnCoachId = /^\d+$/.test(base.id) ? base.id : null;
@@ -2461,6 +3056,16 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
     ? await fetchCfbCoachSeasonRecords(espnCoachId).catch(() => [] as CfbCoachSeasonRecord[])
     : [];
   const career = careerFromSeasonRecords(seasonRecords);
+
+  if (career) {
+    bioFacts.push({ label: "Head coaching record", value: career.summary });
+  } else if (base.recordSummary) {
+    bioFacts.push({ label: "Season record", value: base.recordSummary });
+  }
+  if (seasonRecords.length) {
+    const schools = [...new Set(seasonRecords.map((r) => r.school))];
+    if (schools.length) bioFacts.push({ label: "Programs", value: schools.join(", ") });
+  }
 
   let staff: CfbTeamStaffMember[] = [];
   if (base.teamId && base.teamId !== "0") {
@@ -2479,6 +3084,22 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
         : [{ id: base.id, name: base.name }],
     }).catch(() => ({ coaches: [] as CfbTeamStaffMember[], staffSource: null }));
     staff = pack.coaches.filter((c) => c.name.toLowerCase() !== base!.name.toLowerCase());
+
+    // Enrich top assistants with Wikipedia portraits / short bios.
+    const enrichTargets = staff
+      .filter((s) => staffTitleRank(s.title) <= 4)
+      .slice(0, 8);
+    await Promise.all(
+      enrichTargets.map(async (s) => {
+        const card = await fetchWikiFootballCoachCard(s.name).catch(() => null);
+        if (!card) return;
+        s.headshot = card.image ?? s.headshot;
+        if (card.extract) {
+          const first = card.extract.split(/(?<=\.)\s+/)[0]?.trim();
+          s.bio = first || card.extract.slice(0, 220);
+        }
+      }),
+    );
   }
 
   const careerHighlights: string[] = [];
@@ -2496,16 +3117,30 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
   if (base.firedOddsPct != null) {
     careerHighlights.push(`Coach-out implied: ${base.firedOddsPct.toFixed(1)}%`);
   }
+  if (careerPath.length) {
+    const hc = careerPath.filter((s) => s.kind === "coaching").slice(-3);
+    if (hc.length) {
+      careerHighlights.push(
+        `Recent stops: ${hc.map((s) => `${s.years} ${s.detail}`).join(" · ")}`,
+      );
+    }
+  }
+
+  const headshotFallbacks = [base.teamLogo].filter((u): u is string => Boolean(u));
 
   return {
     ...base,
     headshot,
+    headshotFallbacks,
     bio,
+    bioFacts,
+    careerPath,
     careerHighlights,
     seasonRecords,
     career,
     oddsSource: base.firedOddsPct != null ? "Kalshi" : null,
     cfbRefUrl: cfbRefSearchUrl(base.name),
+    wikiUrl,
     staff,
   };
 }
@@ -2592,7 +3227,7 @@ async function fetchCfbCoachDirect(coachId: string): Promise<CfbCoach | null> {
       teamAbbrev,
       teamLogo,
       teamColor,
-      headshot: cfbHeadshot(person.id, 350),
+      headshot: null,
       recordSummary: null,
       wins: 0,
       losses: 0,
@@ -2653,7 +3288,7 @@ async function fetchCfbCoachDirect(coachId: string): Promise<CfbCoach | null> {
     teamAbbrev,
     teamLogo,
     teamColor,
-    headshot: cfbHeadshot(seasonCoach.id, 350),
+    headshot: null,
     recordSummary,
     wins,
     losses,
