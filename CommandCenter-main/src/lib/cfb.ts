@@ -167,6 +167,8 @@ export type CfbTeamStaffMember = {
   headshot: string | null;
   /** False when we only have a name (no ESPN coach id to open). */
   linkable: boolean;
+  /** Short Wikipedia intro when available. */
+  bio?: string | null;
 };
 
 export type CfbCoachSeasonRecord = {
@@ -188,8 +190,22 @@ export type CfbCoachCareerTotals = {
   summary: string;
 };
 
+export type CfbCoachBioFact = {
+  label: string;
+  value: string;
+};
+
+export type CfbCoachCareerStop = {
+  years: string;
+  detail: string;
+  kind: "playing" | "coaching";
+};
+
 export type CfbCoachProfile = CfbCoach & {
   bio: string | null;
+  bioFacts: CfbCoachBioFact[];
+  /** Playing + assistant/HC stops from Wikipedia when available. */
+  careerPath: CfbCoachCareerStop[];
   careerHighlights: string[];
   /** Head-coaching W–L by season and school (ESPN coach seasons). */
   seasonRecords: CfbCoachSeasonRecord[];
@@ -198,6 +214,10 @@ export type CfbCoachProfile = CfbCoach & {
   oddsSource: string | null;
   /** College Football Reference search / coach page when resolved. */
   cfbRefUrl: string | null;
+  /** Wikipedia article when resolved. */
+  wikiUrl: string | null;
+  /** Extra portrait URLs for <img onError> (e.g. team logo). */
+  headshotFallbacks: string[];
   /** Current program staff (assistants) when team is known. */
   staff: CfbTeamStaffMember[];
 };
@@ -1184,9 +1204,12 @@ export async function fetchCfbLeaders(season?: number): Promise<{
 
 function stripWikiMarkup(raw: string): string {
   return raw
+    .replace(/\{\{tooltip\|([^|}]+)\|([^}]+)\}\}/gi, "$1 ($2)")
+    .replace(/\{\{[^}]*\}\}/g, " ")
     .replace(/\[\[[^|\]]*\|([^\]]+)\]\]/g, "$1")
     .replace(/\[\[([^\]]+)\]\]/g, "$1")
     .replace(/'{2,}/g, "")
+    .replace(/<[^>]+>/g, " ")
     .replace(/\s*\(interim\)/gi, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -1334,6 +1357,201 @@ async function fetchWikiCoachingStaff(
   return best;
 }
 
+function parseWikiInfoboxCareerPath(wikitext: string): CfbCoachCareerStop[] {
+  const stops: CfbCoachCareerStop[] = [];
+  const push = (kind: "playing" | "coaching", yearsRaw: string, detailRaw: string) => {
+    const years = stripWikiMarkup(yearsRaw);
+    const detail = stripWikiMarkup(detailRaw);
+    if (!years || !detail) return;
+    stops.push({ years, detail, kind });
+  };
+  for (const m of wikitext.matchAll(/\| *player_years(\d+) *= *([^\n]+)/gi)) {
+    const n = m[1]!;
+    const team = wikitext.match(new RegExp(`\\| *player_team${n} *= *([^\\n]+)`, "i"))?.[1] ?? "";
+    const pos = wikitext.match(new RegExp(`\\| *player_positions *= *([^\\n]+)`, "i"))?.[1];
+    const detail = pos && n === "1" ? `${team} (${pos})` : team;
+    push("playing", m[2]!, detail);
+  }
+  for (const m of wikitext.matchAll(/\| *coach_years(\d+) *= *([^\n]+)/gi)) {
+    const n = m[1]!;
+    const team = wikitext.match(new RegExp(`\\| *coach_team${n} *= *([^\\n]+)`, "i"))?.[1] ?? "";
+    push("coaching", m[2]!, team);
+  }
+  return stops;
+}
+
+type WikiFootballCoachCard = {
+  title: string;
+  extract: string | null;
+  image: string | null;
+  url: string;
+  careerPath: CfbCoachCareerStop[];
+  birthDate: string | null;
+  birthPlace: string | null;
+};
+
+function cleanWikiImageUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return url.replace(/[?&]utm_[^&]+/g, "").replace(/\?$/, "").trim() || null;
+}
+
+async function wikiSearchFootballCoachTitle(name: string): Promise<string | null> {
+  try {
+    const api = new URL("https://en.wikipedia.org/w/api.php");
+    api.searchParams.set("action", "query");
+    api.searchParams.set("list", "search");
+    api.searchParams.set("srsearch", `${name} American football coach`);
+    api.searchParams.set("srlimit", "5");
+    api.searchParams.set("format", "json");
+    api.searchParams.set("origin", "*");
+    const res = await fetch(api.toString(), {
+      headers: { Accept: "application/json", "User-Agent": "CommandCenter/1.0" },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      query?: { search?: { title?: string; snippet?: string }[] };
+    };
+    const last = name.split(/\s+/).slice(-1)[0]?.toLowerCase() ?? "";
+    const hits = data.query?.search ?? [];
+    const prefer =
+      hits.find((h) => /football coach/i.test(h.title ?? "")) ??
+      hits.find(
+        (h) =>
+          (h.title ?? "").toLowerCase().includes(last) &&
+          /coach|football/i.test(`${h.title ?? ""} ${h.snippet ?? ""}`),
+      ) ??
+      hits[0];
+    return prefer?.title ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWikiFootballCoachCard(name: string): Promise<WikiFootballCoachCard | null> {
+  const titles = [
+    `${name.trim()} (American football coach)`,
+    `${name.trim()} (football coach)`,
+    name.trim(),
+  ];
+  const searched = await wikiSearchFootballCoachTitle(name);
+  if (searched && !titles.includes(searched)) titles.unshift(searched);
+
+  for (const title of titles) {
+    try {
+      const api = new URL("https://en.wikipedia.org/w/api.php");
+      api.searchParams.set("action", "query");
+      api.searchParams.set("titles", title);
+      api.searchParams.set("prop", "pageimages|extracts|info");
+      api.searchParams.set("inprop", "url");
+      api.searchParams.set("exintro", "1");
+      api.searchParams.set("explaintext", "1");
+      api.searchParams.set("pithumbsize", "640");
+      api.searchParams.set("pilicense", "any");
+      api.searchParams.set("format", "json");
+      api.searchParams.set("redirects", "1");
+      api.searchParams.set("origin", "*");
+      const res = await fetch(api.toString(), {
+        headers: { Accept: "application/json", "User-Agent": "CommandCenter/1.0" },
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        query?: {
+          pages?: Record<
+            string,
+            {
+              missing?: boolean;
+              title?: string;
+              extract?: string;
+              fullurl?: string;
+              thumbnail?: { source?: string };
+              original?: { source?: string };
+            }
+          >;
+        };
+      };
+      const page = Object.values(data.query?.pages ?? {})[0];
+      if (!page || page.missing) continue;
+      const extract = page.extract?.trim() || null;
+      if (extract && /may refer to:/i.test(extract)) continue;
+      if (!extract && !page.thumbnail && !page.original) continue;
+
+      let careerPath: CfbCoachCareerStop[] = [];
+      let birthDate: string | null = null;
+      let birthPlace: string | null = null;
+      try {
+        const parseRes = await fetch(
+          `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(page.title ?? title)}&prop=wikitext&format=json&origin=*`,
+          { headers: { Accept: "application/json", "User-Agent": "CommandCenter/1.0" } },
+        );
+        if (parseRes.ok) {
+          const parsed = (await parseRes.json()) as {
+            parse?: { wikitext?: { ["*"]?: string } };
+          };
+          const wt = parsed.parse?.wikitext?.["*"] ?? "";
+          careerPath = parseWikiInfoboxCareerPath(wt);
+          const bd = wt.match(/\| *birth_date *= *([^\n]+)/i)?.[1];
+          const bp = wt.match(/\| *birth_place *= *([^\n]+)/i)?.[1];
+          if (bd) {
+            const m = bd.match(/(\d{4})\|(\d{1,2})\|(\d{1,2})/);
+            if (m) {
+              birthDate = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+                .toLocaleDateString("en-US", {
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                  timeZone: "UTC",
+                });
+            } else {
+              const cleaned = stripWikiMarkup(bd);
+              if (cleaned && !/\{\{/.test(cleaned)) birthDate = cleaned;
+            }
+          }
+          if (bp) birthPlace = stripWikiMarkup(bp) || null;
+        }
+      } catch {
+        /* extract-only is fine */
+      }
+
+      return {
+        title: page.title ?? title,
+        extract,
+        image: cleanWikiImageUrl(page.original?.source ?? page.thumbnail?.source),
+        url:
+          page.fullurl ??
+          `https://en.wikipedia.org/wiki/${encodeURIComponent((page.title ?? title).replace(/ /g, "_"))}`,
+        careerPath,
+        birthDate,
+        birthPlace,
+      };
+    } catch {
+      /* try next title */
+    }
+  }
+  return null;
+}
+
+function formatCoachBirthPlace(raw: {
+  city?: string;
+  state?: string;
+  country?: string;
+} | null | undefined): string | null {
+  if (!raw) return null;
+  const bits = [raw.city, raw.state, raw.country === "USA" ? null : raw.country].filter(Boolean);
+  return bits.length ? bits.join(", ") : null;
+}
+
+function formatCoachDob(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 async function searchEspnCoachHeadshot(
   name: string,
 ): Promise<{ id: string | null; headshot: string | null }> {
@@ -1351,6 +1569,7 @@ async function searchEspnCoachHeadshot(
         headshot?: { href?: string };
       }[];
     };
+
     const last = name.split(/\s+/).slice(-1)[0]?.toLowerCase() ?? "";
     const hit =
       (data.items ?? []).find(
@@ -1359,9 +1578,10 @@ async function searchEspnCoachHeadshot(
           (it.displayName ?? "").toLowerCase().includes(last),
       ) ?? (data.items ?? []).find((it) => /coach|person/i.test(it.type ?? ""));
     if (!hit) return { id: null, headshot: null };
+    // Never invent player-CDN URLs for coaches — those 404 and break the UI.
     return {
       id: hit.id ? String(hit.id) : null,
-      headshot: hit.headshot?.href ?? (hit.id ? cfbHeadshot(hit.id, 350) : null),
+      headshot: hit.headshot?.href ?? null,
     };
   } catch {
     return { id: null, headshot: null };
@@ -1447,6 +1667,7 @@ async function buildCfbCoachingStaff(opts: {
       title: preferNewTitle ? row.title : prev.title,
       headshot: prev.headshot ?? row.headshot,
       linkable: prev.linkable || row.linkable,
+      bio: prev.bio ?? row.bio ?? null,
     });
   };
 
@@ -1455,7 +1676,7 @@ async function buildCfbCoachingStaff(opts: {
       id: c.id,
       name: c.name,
       title: "Head coach",
-      headshot: cfbHeadshot(c.id, 350),
+      headshot: null,
       linkable: true,
     });
   }
@@ -1490,7 +1711,7 @@ async function buildCfbCoachingStaff(opts: {
       id: rosterHit.id,
       name: rosterHit.name,
       title: w.title,
-      headshot: cfbHeadshot(rosterHit.id, 350),
+      headshot: null,
       linkable: true,
     });
   }
@@ -2418,42 +2639,68 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
   }
 
   let bio: string | null = null;
-  let headshot: string | null =
-    base.headshot ?? (/^\d+$/.test(base.id) ? cfbHeadshot(base.id, 350) : null);
-  try {
-    const search = await fetch(
-      `https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&limit=8&query=${encodeURIComponent(base.name)}`,
-      { headers: { Accept: "application/json" } },
-    );
-    if (search.ok) {
-      const data = (await search.json()) as {
-        items?: {
-          id?: string;
-          displayName?: string;
-          type?: string;
-          sport?: string;
-          headshot?: { href?: string };
-          description?: string;
-        }[];
-      };
-      const hit =
-        (data.items ?? []).find(
-          (it) =>
-            /coach|person/i.test(it.type ?? "") &&
-            /football|college/i.test(it.sport ?? "football") &&
-            (it.displayName ?? "")
-              .toLowerCase()
-              .includes(base!.name.split(" ").slice(-1)[0]!.toLowerCase()),
-        ) ??
-        (data.items ?? []).find((it) => /coach|person/i.test(it.type ?? ""));
-      if (hit?.headshot?.href) headshot = hit.headshot.href;
-      if (hit?.description?.trim()) bio = hit.description.trim();
-      if (hit?.id && /^\d+$/.test(String(hit.id)) && !/^\d+$/.test(base.id)) {
-        base = { ...base, id: String(hit.id) };
+  // Do not invent ESPN player-CDN URLs for coaches (404 → broken question-mark image).
+  let headshot: string | null = base.headshot;
+  let wikiUrl: string | null = null;
+  let careerPath: CfbCoachCareerStop[] = [];
+  const bioFacts: CfbCoachBioFact[] = [];
+
+  const espnCoachIdEarly = /^\d+$/.test(base.id) ? base.id : null;
+  const [wikiCard, corePerson, espnSearch] = await Promise.all([
+    fetchWikiFootballCoachCard(base.name).catch(() => null),
+    espnCoachIdEarly
+      ? fetchCoreJson<{
+          birthPlace?: { city?: string; state?: string; country?: string };
+          dateOfBirth?: string;
+          college?: { $ref?: string };
+        }>(`${CORE}/coaches/${espnCoachIdEarly}?lang=en&region=us`).catch(() => null)
+      : Promise.resolve(null),
+    searchEspnCoachHeadshot(base.name),
+  ]);
+
+  if (espnSearch.headshot) headshot = espnSearch.headshot;
+  if (espnSearch.id && /^\d+$/.test(espnSearch.id) && !/^\d+$/.test(base.id)) {
+    base = { ...base, id: espnSearch.id };
+  }
+
+  if (wikiCard?.image) headshot = wikiCard.image;
+  if (wikiCard?.extract) bio = wikiCard.extract;
+  if (wikiCard?.url) wikiUrl = wikiCard.url;
+  if (wikiCard?.careerPath.length) careerPath = wikiCard.careerPath;
+
+  const born =
+    wikiCard?.birthDate || formatCoachDob(corePerson?.dateOfBirth ?? null);
+  const hometown =
+    wikiCard?.birthPlace || formatCoachBirthPlace(corePerson?.birthPlace);
+  if (born) bioFacts.push({ label: "Born", value: born });
+  if (hometown) bioFacts.push({ label: "Hometown", value: hometown });
+
+  if (corePerson?.college?.$ref) {
+    const college = await fetchCoreJson<{
+      name?: string;
+      shortName?: string;
+      abbrev?: string;
+    }>(corePerson.college.$ref).catch(() => null);
+    const alma = college?.name || college?.shortName;
+    if (alma) bioFacts.push({ label: "Alma mater", value: alma });
+  }
+
+  if (!bio) {
+    try {
+      const search = await fetch(
+        `https://site.web.api.espn.com/apis/common/v3/search?region=us&lang=en&limit=8&query=${encodeURIComponent(base.name)}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (search.ok) {
+        const data = (await search.json()) as {
+          items?: { description?: string; type?: string }[];
+        };
+        const hit = (data.items ?? []).find((it) => /coach|person/i.test(it.type ?? ""));
+        if (hit?.description?.trim()) bio = hit.description.trim();
       }
+    } catch {
+      /* */
     }
-  } catch {
-    /* */
   }
 
   const espnCoachId = /^\d+$/.test(base.id) ? base.id : null;
@@ -2461,6 +2708,16 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
     ? await fetchCfbCoachSeasonRecords(espnCoachId).catch(() => [] as CfbCoachSeasonRecord[])
     : [];
   const career = careerFromSeasonRecords(seasonRecords);
+
+  if (career) {
+    bioFacts.push({ label: "Head coaching record", value: career.summary });
+  } else if (base.recordSummary) {
+    bioFacts.push({ label: "Season record", value: base.recordSummary });
+  }
+  if (seasonRecords.length) {
+    const schools = [...new Set(seasonRecords.map((r) => r.school))];
+    if (schools.length) bioFacts.push({ label: "Programs", value: schools.join(", ") });
+  }
 
   let staff: CfbTeamStaffMember[] = [];
   if (base.teamId && base.teamId !== "0") {
@@ -2479,6 +2736,22 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
         : [{ id: base.id, name: base.name }],
     }).catch(() => ({ coaches: [] as CfbTeamStaffMember[], staffSource: null }));
     staff = pack.coaches.filter((c) => c.name.toLowerCase() !== base!.name.toLowerCase());
+
+    // Enrich top assistants with Wikipedia portraits / short bios.
+    const enrichTargets = staff
+      .filter((s) => staffTitleRank(s.title) <= 4)
+      .slice(0, 8);
+    await Promise.all(
+      enrichTargets.map(async (s) => {
+        const card = await fetchWikiFootballCoachCard(s.name).catch(() => null);
+        if (!card) return;
+        s.headshot = card.image ?? s.headshot;
+        if (card.extract) {
+          const first = card.extract.split(/(?<=\.)\s+/)[0]?.trim();
+          s.bio = first || card.extract.slice(0, 220);
+        }
+      }),
+    );
   }
 
   const careerHighlights: string[] = [];
@@ -2496,16 +2769,30 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
   if (base.firedOddsPct != null) {
     careerHighlights.push(`Coach-out implied: ${base.firedOddsPct.toFixed(1)}%`);
   }
+  if (careerPath.length) {
+    const hc = careerPath.filter((s) => s.kind === "coaching").slice(-3);
+    if (hc.length) {
+      careerHighlights.push(
+        `Recent stops: ${hc.map((s) => `${s.years} ${s.detail}`).join(" · ")}`,
+      );
+    }
+  }
+
+  const headshotFallbacks = [base.teamLogo].filter((u): u is string => Boolean(u));
 
   return {
     ...base,
     headshot,
+    headshotFallbacks,
     bio,
+    bioFacts,
+    careerPath,
     careerHighlights,
     seasonRecords,
     career,
     oddsSource: base.firedOddsPct != null ? "Kalshi" : null,
     cfbRefUrl: cfbRefSearchUrl(base.name),
+    wikiUrl,
     staff,
   };
 }
@@ -2592,7 +2879,7 @@ async function fetchCfbCoachDirect(coachId: string): Promise<CfbCoach | null> {
       teamAbbrev,
       teamLogo,
       teamColor,
-      headshot: cfbHeadshot(person.id, 350),
+      headshot: null,
       recordSummary: null,
       wins: 0,
       losses: 0,
@@ -2653,7 +2940,7 @@ async function fetchCfbCoachDirect(coachId: string): Promise<CfbCoach | null> {
     teamAbbrev,
     teamLogo,
     teamColor,
-    headshot: cfbHeadshot(seasonCoach.id, 350),
+    headshot: null,
     recordSummary,
     wins,
     losses,
