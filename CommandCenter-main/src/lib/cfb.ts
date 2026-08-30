@@ -258,7 +258,17 @@ export type CfbGameVideo = {
   mp4: string | null;
   href: string | null;
   durationSec: number | null;
+  /** Origin network when this is a FOX/CBS backup rather than ESPN. */
+  source?: "espn" | "fox" | "cbs";
 };
+
+export type CfbBackupHighlights = {
+  /** Best full-game package from FOX or CBS. */
+  primary: CfbGameVideo | null;
+  /** Extra play clips (usually FOX). */
+  clips: CfbGameVideo[];
+};
+
 
 export type CfbGameDetail = CfbScoreGame & {
   scoringPlays: CfbScoringPlay[];
@@ -331,6 +341,7 @@ function mapEspnGameVideo(raw: EspnVideoRaw): CfbGameVideo | null {
     mp4,
     href: raw.links?.web?.href ?? `https://www.espn.com/video/clip?id=${id}`,
     durationSec: typeof raw.duration === "number" ? raw.duration : null,
+    source: "espn",
   };
 }
 
@@ -353,6 +364,217 @@ export function pickCfbRecapVideo(videos: CfbGameVideo[]): CfbGameVideo | null {
   });
   scored.sort((a, b) => b.score - a.score || (b.v.durationSec ?? 0) - (a.v.durationSec ?? 0));
   return scored[0]?.v ?? null;
+}
+
+const FOX_BIFROST_KEY = "jE7yBJVRNAwdDesMgTzTXUUSx1It41Fq";
+
+function cfbTeamSearchToken(name: string, abbrev: string): string {
+  const first = (name.trim().split(/\s+/)[0] || abbrev).toLowerCase();
+  // Keep acronyms like UNLV / USC intact; otherwise first word ("Memphis").
+  return first.replace(/[^a-z0-9]/g, "");
+}
+
+function scoreBackupHighlight(
+  headline: string,
+  awayName: string,
+  homeName: string,
+  awayAbbrev: string,
+  homeAbbrev: string,
+): number {
+  const h = headline.toLowerCase();
+  const awayTok = cfbTeamSearchToken(awayName, awayAbbrev);
+  const homeTok = cfbTeamSearchToken(homeName, homeAbbrev);
+  let score = 0;
+  if (/full\s+highlights?/.test(h) || /\bhighlights?\b.*\bcfb\b/.test(h)) score += 20;
+  else if (/\bhighlights?\b/.test(h)) score += 10;
+  if (awayTok && h.includes(awayTok)) score += 6;
+  if (homeTok && h.includes(homeTok)) score += 6;
+  if (/volleyball|soccer|basketball|softball|baseball/.test(h)) score -= 30;
+  return score;
+}
+
+async function fetchFoxBackupHighlights(opts: {
+  awayName: string;
+  homeName: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
+}): Promise<CfbGameVideo[]> {
+  const awayTok = cfbTeamSearchToken(opts.awayName, opts.awayAbbrev);
+  const homeTok = cfbTeamSearchToken(opts.homeName, opts.homeAbbrev);
+  const queries = [
+    `${opts.awayName} ${opts.homeName} highlights`,
+    `${awayTok} ${homeTok} highlights`,
+    `${opts.awayAbbrev} ${opts.homeAbbrev} highlights`,
+  ];
+  const byId = new Map<string, CfbGameVideo>();
+
+  for (const q of queries) {
+    try {
+      const url =
+        `https://api.foxsports.com/bifrost/v1/search/content?text=` +
+        `${encodeURIComponent(q)}&apikey=${FOX_BIFROST_KEY}`;
+      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        results?: {
+          title?: string;
+          components?: {
+            type?: string;
+            model?: {
+              title?: string;
+              webUrl?: string;
+              contentType?: string;
+              isVideo?: boolean;
+              image?: { url?: string; altUrl?: string };
+              sparkId?: string;
+            };
+          }[];
+        }[];
+      };
+      for (const section of data.results ?? []) {
+        if (!/video/i.test(section.title ?? "")) continue;
+        for (const c of section.components ?? []) {
+          const m = c.model;
+          const title = (m?.title ?? "").trim();
+          const path = m?.webUrl ?? "";
+          if (!title || !/\/watch\/fmc-/i.test(path)) continue;
+          const score = scoreBackupHighlight(
+            title,
+            opts.awayName,
+            opts.homeName,
+            opts.awayAbbrev,
+            opts.homeAbbrev,
+          );
+          if (score < 10) continue;
+          const id = path.split("/").pop() || m?.sparkId || title;
+          if (byId.has(id)) continue;
+          byId.set(id, {
+            id,
+            headline: title.replace(/🏈/g, "").trim(),
+            description: "FOX Sports",
+            thumb: m?.image?.url ?? m?.image?.altUrl ?? null,
+            mp4: null,
+            href: path.startsWith("http") ? path : `https://www.foxsports.com${path}`,
+            durationSec: null,
+            source: "fox",
+          });
+        }
+      }
+      if (byId.size) break;
+    } catch {
+      /* try next query */
+    }
+  }
+
+  return [...byId.values()].sort(
+    (a, b) =>
+      scoreBackupHighlight(
+        b.headline,
+        opts.awayName,
+        opts.homeName,
+        opts.awayAbbrev,
+        opts.homeAbbrev,
+      ) -
+      scoreBackupHighlight(
+        a.headline,
+        opts.awayName,
+        opts.homeName,
+        opts.awayAbbrev,
+        opts.homeAbbrev,
+      ),
+  );
+}
+
+async function fetchCbsBackupHighlight(opts: {
+  awayName: string;
+  homeName: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
+  date: string | null;
+}): Promise<CfbGameVideo | null> {
+  if (!opts.date) return null;
+  const m = opts.date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!month || !day) return null;
+
+  const away = cfbTeamSearchToken(opts.awayName, opts.awayAbbrev);
+  const home = cfbTeamSearchToken(opts.homeName, opts.homeAbbrev);
+  const dateTags = [`${month}${day}`, `${month}-${day}`, `${m[2]}${m[3]}`];
+  const slugs: string[] = [];
+  for (const tag of dateTags) {
+    slugs.push(`ncaaf-highlights-${away}-at-${home}-${tag}`);
+    slugs.push(`ncaaf-highlights-${home}-vs-${away}-${tag}`);
+    slugs.push(`ncaaf-highlights-${away}-${home}-${tag}`);
+  }
+
+  for (const slug of slugs) {
+    const href = `https://www.cbssports.com/watch/general/video/${slug}`;
+    try {
+      const res = await fetch(href, {
+        headers: { Accept: "text/html", "User-Agent": "Mozilla/5.0" },
+      });
+      if (!res.ok) continue;
+      const finalUrl = res.url || href;
+      if (/\/watch\/general\/?$/i.test(finalUrl.replace(/\/$/, ""))) continue;
+      const html = await res.text();
+      const title =
+        html.match(/property="og:title" content="([^"]+)"/i)?.[1] ||
+        html.match(/<title>([^<]+)/i)?.[1] ||
+        "";
+      const image = html.match(/property="og:image" content="([^"]+)"/i)?.[1] || null;
+      if (!/highlight/i.test(title)) continue;
+      const score = scoreBackupHighlight(
+        title,
+        opts.awayName,
+        opts.homeName,
+        opts.awayAbbrev,
+        opts.homeAbbrev,
+      );
+      if (score < 10) continue;
+      return {
+        id: `cbs:${slug}`,
+        headline: title.replace(/\s*Stream of General Videos.*$/i, "").trim() || title.trim(),
+        description: "CBS Sports",
+        thumb: image && /^https?:/i.test(image) ? image : null,
+        mp4: null,
+        href: finalUrl,
+        durationSec: null,
+        source: "cbs",
+      };
+    } catch {
+      /* try next slug */
+    }
+  }
+  return null;
+}
+
+/** FOX + CBS highlight packages when ESPN has no embeddable recap clip. */
+export async function fetchCfbBackupHighlights(opts: {
+  awayName: string;
+  homeName: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
+  date: string | null;
+}): Promise<CfbBackupHighlights> {
+  const [fox, cbs] = await Promise.all([
+    fetchFoxBackupHighlights(opts).catch(() => [] as CfbGameVideo[]),
+    fetchCbsBackupHighlight(opts).catch(() => null),
+  ]);
+
+  const foxPrimary =
+    fox.find((v) => /full\s+highlights?|\bhighlights?\b.*\bcfb\b/i.test(v.headline)) ??
+    fox[0] ??
+    null;
+  const primary = foxPrimary ?? cbs;
+  const clips = fox.filter((v) => v.id !== primary?.id).slice(0, 8);
+  // If FOX won primary, still surface CBS as an extra clip when present.
+  if (primary?.source === "fox" && cbs && cbs.id !== primary.id) {
+    clips.unshift(cbs);
+  }
+
+  return { primary, clips };
 }
 
 export type CfbPlayerProfile = {

@@ -7,7 +7,7 @@ import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightR
 import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel from "@/components/sports/HighlightReel";
-import { fetchCfbGameDetail, type CfbScoreSide } from "@/lib/cfb";
+import { fetchCfbBackupHighlights, fetchCfbGameDetail, type CfbScoreSide } from "@/lib/cfb";
 import type { MlbHighlight } from "@/lib/mlb";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { cn, formatSportsDateLong } from "@/lib/utils";
@@ -44,6 +44,26 @@ export function CfbGameDetailView({
 
   const g = detail.data;
 
+  const backups = useQuery({
+    queryKey: [
+      "cfb-backup-highlights",
+      eventId,
+      g?.away.name,
+      g?.home.name,
+      g?.date,
+    ],
+    queryFn: () =>
+      fetchCfbBackupHighlights({
+        awayName: g!.away.name,
+        homeName: g!.home.name,
+        awayAbbrev: g!.away.abbrev,
+        homeAbbrev: g!.home.abbrev,
+        date: g!.date,
+      }),
+    enabled: Boolean(g?.final && !g.recapVideo),
+    staleTime: 300_000,
+  });
+
   const teamStatLabels = useMemo(() => {
     const labels: string[] = [];
     const seen = new Set<string>();
@@ -73,6 +93,14 @@ export function CfbGameDetailView({
         date: null,
       }));
   }, [g]);
+
+  const primaryHighlight = g?.recapVideo ?? backups.data?.primary ?? null;
+  const primaryEyebrow =
+    primaryHighlight?.source === "fox"
+      ? "FOX highlights"
+      : primaryHighlight?.source === "cbs"
+        ? "CBS highlights"
+        : "ESPN recap";
 
   if (detail.isPending) {
     return (
@@ -241,8 +269,8 @@ export function CfbGameDetailView({
         </div>
       </header>
 
-      {g.recapVideo ? (
-        <EspnVideoEmbed clip={g.recapVideo} eyebrow="ESPN recap" />
+      {primaryHighlight ? (
+        <EspnVideoEmbed clip={primaryHighlight} eyebrow={primaryEyebrow} />
       ) : null}
 
       {extraHighlights.length > 0 ? (
@@ -251,6 +279,29 @@ export function CfbGameDetailView({
           title="More ESPN highlights"
           defaultOpen={false}
         />
+      ) : null}
+
+      {!g.recapVideo && (backups.data?.clips.length ?? 0) > 0 ? (
+        <section className="space-y-2.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            More highlights
+          </p>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            {backups.data!.clips.map((clip) => (
+              <EspnVideoEmbed
+                key={clip.id}
+                clip={clip}
+                eyebrow={
+                  clip.source === "cbs"
+                    ? "CBS"
+                    : clip.source === "fox"
+                      ? "FOX"
+                      : "Highlights"
+                }
+              />
+            ))}
+          </div>
+        </section>
       ) : null}
 
       {articleSection}

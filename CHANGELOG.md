@@ -2,6 +2,12 @@
 
 ---
 
+## CFB highlights: FOX/CBS backups — August 30, 2026
+
+- When ESPN has no embeddable recap clip, game pages search FOX Sports and probe CBS Sports for full-game highlight packages (thumb + watch link), plus related FOX play clips.
+
+---
+
 ## CFB coaches: Wikipedia bios + fix broken headshots — August 30, 2026
 
 - Coach pages no longer invent ESPN player-CDN portrait URLs (those 404’d into a broken question-mark image). Missing portraits fall back to the team logo or initials.
