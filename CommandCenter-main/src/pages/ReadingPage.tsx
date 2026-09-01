@@ -3838,7 +3838,7 @@ function NowReading({
         if (aKey !== bKey) return bKey.localeCompare(aKey);
         return (b.current_page ?? 0) - (a.current_page ?? 0);
       })
-      .slice(0, 3);
+      .slice(0, 5);
   }, [books, sessions]);
 
   if (reading.length === 0) return null;
