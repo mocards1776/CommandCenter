@@ -246,6 +246,7 @@ export type Database = {
           contributors: string | null;
           isbn: string | null;
           format: string | null;
+          content_type: string;
           status: string;
           date_added: string | null;
           last_date_read: string | null;
@@ -291,6 +292,7 @@ export type Database = {
           contributors?: string | null;
           isbn?: string | null;
           format?: string | null;
+          content_type?: string;
           status?: string;
           date_added?: string | null;
           last_date_read?: string | null;

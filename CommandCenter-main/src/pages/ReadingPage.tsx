@@ -95,6 +95,11 @@ import {
   topFinishedMonths,
   buildFinishCard,
   needsFinishRatingPrompt,
+  isMagazine,
+  isBookItem,
+  libraryTitle,
+  createMagazine,
+  addMagazineFromUrl,
   type ReadingSession,
 } from "@/lib/books";
 import StarField from "@/components/StarField";
@@ -103,7 +108,7 @@ import FinishRatingPrompt from "@/components/FinishRatingPrompt";
 import RatingPicker from "@/components/RatingPicker";
 import { useCelebration } from "@/components/celebration-context";
 import { cn, todayStr, fmtLongDate } from "@/lib/utils";
-import type { Book, BookHighlight, ReadStatus } from "@/types";
+import type { Book, BookHighlight, ContentType, ReadStatus } from "@/types";
 
 const SHELVES: { key: ReadStatus; label: string }[] = [
   { key: "currently-reading", label: "Reading" },
@@ -112,6 +117,8 @@ const SHELVES: { key: ReadStatus; label: string }[] = [
   { key: "did-not-finish", label: "DNF" },
   { key: "paused", label: "Paused" },
 ];
+
+type LibraryKind = "books" | "magazines";
 
 /** One filter across the whole library, so any value on screen can link to it. */
 type Filter = {
@@ -213,6 +220,7 @@ function MonthlyStats({
 
   const rows = useMemo(() => {
     const bookCount = Array(12).fill(0);
+    const magazineCount = Array(12).fill(0);
     const loggedPages = Array(12).fill(0);
     const estimatedPages = Array(12).fill(0);
 
@@ -227,17 +235,19 @@ function MonthlyStats({
     for (const b of books) {
       if (!b.finished_at?.startsWith(String(year))) continue;
       const m = Number(b.finished_at.slice(5, 7)) - 1;
-      bookCount[m]++;
+      if (isMagazine(b)) magazineCount[m]++;
+      else bookCount[m]++;
       // Imported history has no sessions; use the page count as an estimate,
       // but never double-count a book that was actually logged.
       if (b.page_count && !bookHasSession.has(b.id)) estimatedPages[m] += b.page_count;
     }
 
-    return { bookCount, loggedPages, estimatedPages };
+    return { bookCount, magazineCount, loggedPages, estimatedPages };
   }, [books, sessions, year]);
 
-  const maxBooks = Math.max(1, ...rows.bookCount);
+  const maxBooks = Math.max(1, ...rows.bookCount, ...rows.magazineCount);
   const totalBooks = rows.bookCount.reduce((a, b) => a + b, 0);
+  const totalMagazines = rows.magazineCount.reduce((a, b) => a + b, 0);
   const totalLogged = rows.loggedPages.reduce((a, b) => a + b, 0);
   const totalEstimated = rows.estimatedPages.reduce((a, b) => a + b, 0);
 
@@ -269,7 +279,7 @@ function MonthlyStats({
             <div
               className="from-accent-deep to-accent w-full rounded-sm bg-gradient-to-t"
               style={{ height: `${Math.max(2, (n / maxBooks) * 68)}px` }}
-              title={`${MONTHS[i]} ${year}: ${n} books · ${(rows.loggedPages[i] + rows.estimatedPages[i]).toLocaleString()} pages`}
+              title={`${MONTHS[i]} ${year}: ${n} books · ${rows.magazineCount[i]} magazines · ${(rows.loggedPages[i] + rows.estimatedPages[i]).toLocaleString()} pages`}
             />
             <span className="text-chalk-dim text-[8.5px]">{MONTHS[i][0]}</span>
           </button>
@@ -277,6 +287,7 @@ function MonthlyStats({
       </div>
       <p className="text-chalk mt-2 text-[11px]">
         <span className="numeral text-accent">{totalBooks}</span> books ·{" "}
+        <span className="numeral text-accent">{totalMagazines}</span> magazines ·{" "}
         <span className="numeral text-accent">
           {(totalLogged + totalEstimated).toLocaleString()}
         </span>{" "}
@@ -1866,18 +1877,34 @@ function BookDetail({
                 <Editable
                   value={book.title}
                   doubleClick
-                  onSave={(v) => v.trim() && patch.mutate({ title: v.trim() })}
+                  onSave={(v) => {
+                    const t = v.trim();
+                    if (!t) return;
+                    patch.mutate(isMagazine(book) ? { title: t, series: t } : { title: t });
+                  }}
                   inputClassName="w-full text-center text-[22px]"
                   className="text-center"
                 />
               </h2>
 
-              {subtitle && (
+              {isMagazine(book) ? (
+                <p className="text-chalk/80 mt-2.5 text-[14px] leading-snug tracking-[-0.01em]">
+                  Issue{" "}
+                  <Editable
+                    value={book.subtitle}
+                    placeholder="Add issue"
+                    onSave={(v) => patch.mutate({ subtitle: v.trim() || null })}
+                    className="text-chalk hover:text-cream"
+                    inputClassName="min-w-[10rem] text-center text-[14px]"
+                  />
+                </p>
+              ) : subtitle ? (
                 <p className="text-chalk/80 mt-2.5 text-[14px] leading-snug tracking-[-0.01em]">
                   {subtitle}
                 </p>
-              )}
+              ) : null}
 
+              {!isMagazine(book) && (
               <p className="mt-3.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[16px] tracking-[-0.015em]">
                 <Editable
                   value={book.authors}
@@ -1900,6 +1927,7 @@ function BookDetail({
                   </button>
                 )}
               </p>
+              )}
 
               {book.star_rating !== null && (
                 <div className="mt-4 inline-flex items-center gap-1">
@@ -1947,10 +1975,16 @@ function BookDetail({
                   className="text-chalk-dim hover:text-cream text-center"
                   inputClassName="w-16 text-center text-[12.5px]"
                 />
-                {book.format && (
+                {book.format && !isMagazine(book) && (
                   <>
                     <span className="text-white/20">·</span>
                     <span className="capitalize">{book.format}</span>
+                  </>
+                )}
+                {isMagazine(book) && (
+                  <>
+                    <span className="text-white/20">·</span>
+                    <span>Magazine</span>
                   </>
                 )}
                 {book.read_count > 0 && (
@@ -1959,6 +1993,8 @@ function BookDetail({
                     <span>Read {book.read_count}×</span>
                   </>
                 )}
+                {!isMagazine(book) && (
+                <>
                 <span className="text-white/20">·</span>
                 <FictionLabel
                   fiction={book.fiction}
@@ -1969,6 +2005,8 @@ function BookDetail({
                   }}
                   onCorrect={(next) => patch.mutate({ fiction: next })}
                 />
+                </>
+                )}
               </div>
 
               <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
@@ -2619,12 +2657,12 @@ function AskAI({
 /* ── Stats breakdown (today / week / month / top days|weeks|months) ─── */
 export type BreakdownFocus =
   | { kind: "pages"; label: string; from: string; to: string }
-  | { kind: "finished"; label: string; from: string; to: string }
+  | { kind: "finished"; label: string; from: string; to: string; contentType?: ContentType }
   | { kind: "top-days"; label: string; limit?: number }
   | { kind: "top-weeks"; label: string; limit?: number }
   | { kind: "top-months"; label: string; limit?: number }
-  | { kind: "top-finished-weeks"; label: string; limit?: number }
-  | { kind: "top-finished-months"; label: string; limit?: number };
+  | { kind: "top-finished-weeks"; label: string; limit?: number; contentType?: ContentType }
+  | { kind: "top-finished-months"; label: string; limit?: number; contentType?: ContentType };
 
 function StatsBreakdown({
   focus,
@@ -2651,7 +2689,7 @@ function StatsBreakdown({
   const finished = useMemo(
     () =>
       focus.kind === "finished"
-        ? finishedContributions(books, focus.from, focus.to)
+        ? finishedContributions(books, focus.from, focus.to, focus.contentType)
         : [],
     [focus, books],
   );
@@ -2670,14 +2708,14 @@ function StatsBreakdown({
   const topFinishedWeekRows = useMemo(
     () =>
       focus.kind === "top-finished-weeks"
-        ? topFinishedWeeks(books, focus.limit ?? 10)
+        ? topFinishedWeeks(books, focus.limit ?? 10, focus.contentType ?? "book")
         : [],
     [focus, books],
   );
   const topFinishedMonthRows = useMemo(
     () =>
       focus.kind === "top-finished-months"
-        ? topFinishedMonths(books, focus.limit ?? 10)
+        ? topFinishedMonths(books, focus.limit ?? 10, focus.contentType ?? "book")
         : [],
     [focus, books],
   );
@@ -2695,8 +2733,8 @@ function StatsBreakdown({
             : focus.kind === "top-months"
               ? `Top ${topMonths.length} month${topMonths.length === 1 ? "" : "s"} by pages`
               : focus.kind === "top-finished-weeks"
-                ? `Top ${topFinishedWeekRows.length} week${topFinishedWeekRows.length === 1 ? "" : "s"} by books finished`
-                : `Top ${topFinishedMonthRows.length} month${topFinishedMonthRows.length === 1 ? "" : "s"} by books finished`;
+                ? `Top ${topFinishedWeekRows.length} week${topFinishedWeekRows.length === 1 ? "" : "s"} by ${focus.contentType === "magazine" ? "magazines" : "books"} finished`
+                : `Top ${topFinishedMonthRows.length} month${topFinishedMonthRows.length === 1 ? "" : "s"} by ${focus.contentType === "magazine" ? "magazines" : "books"} finished`;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
@@ -2808,7 +2846,7 @@ function StatsBreakdown({
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="text-cream truncate text-[13px]">{r.book.title}</p>
+                      <p className="text-cream truncate text-[13px]">{libraryTitle(r.book)}</p>
                       <p className="text-chalk-dim text-[11px]">
                         {r.started && r.started !== r.ended
                           ? `${fmtLongDate(r.started)} – ${fmtLongDate(r.ended)}`
@@ -2934,6 +2972,7 @@ function StatsBreakdown({
                         label: p.label,
                         from: p.from,
                         to: p.to,
+                        contentType: focus.contentType,
                       })
                     }
                     className={cn(
@@ -2960,7 +2999,13 @@ function StatsBreakdown({
                     <span className="numeral text-accent shrink-0 text-[18px]">
                       {p.pages}
                       <span className="text-chalk-dim ml-1 text-[11px] font-sans tracking-normal">
-                        {p.pages === 1 ? "book" : "books"}
+                        {focus.contentType === "magazine"
+                          ? p.pages === 1
+                            ? "issue"
+                            : "issues"
+                          : p.pages === 1
+                            ? "book"
+                            : "books"}
                       </span>
                     </span>
                   </button>
@@ -3134,11 +3179,19 @@ function AddPanel({
   onAdded: (b: Book) => void;
 }) {
   const qc = useQueryClient();
+  const [contentKind, setContentKind] = useState<"book" | "magazine">("book");
   const [mode, setMode] = useState<"url" | "manual">("url");
   const [url, setUrl] = useState("");
   const [manual, setManual] = useState({
     title: "",
     authors: "",
+    page_count: "",
+    finished_at: "",
+    status: "read" as ReadStatus,
+  });
+  const [magazine, setMagazine] = useState({
+    publication: "",
+    issue: "",
     page_count: "",
     finished_at: "",
     status: "read" as ReadStatus,
@@ -3151,9 +3204,18 @@ function AddPanel({
   };
 
   const fromUrl = useMutation({
-    mutationFn: () => addBookFromUrl(url.trim()),
+    mutationFn: () =>
+      contentKind === "magazine"
+        ? addMagazineFromUrl(url.trim(), magazine.publication.trim(), magazine.issue.trim(), {
+            page_count: magazine.page_count ? Number.parseInt(magazine.page_count, 10) : null,
+            status: magazine.status,
+            finished_at: magazine.finished_at || null,
+            last_date_read: magazine.finished_at || null,
+            read_count: magazine.status === "read" ? 1 : 0,
+          })
+        : addBookFromUrl(url.trim()),
     onSuccess: (b) => {
-      toast.success(`Added "${b.title}"`);
+      toast.success(`Added "${libraryTitle(b)}"`);
       finish(b);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Lookup failed"),
@@ -3161,6 +3223,21 @@ function AddPanel({
 
   const fromForm = useMutation({
     mutationFn: async () => {
+      if (contentKind === "magazine") {
+        const book = await createMagazine({
+          publication: magazine.publication.trim(),
+          issue: magazine.issue.trim(),
+          page_count: magazine.page_count ? Number.parseInt(magazine.page_count, 10) : null,
+          status: magazine.status,
+          finished_at: magazine.finished_at || null,
+          last_date_read: magazine.finished_at || null,
+          read_count: magazine.status === "read" ? 1 : 0,
+        });
+        if (url.trim()) {
+          await pullCover(book.id, url.trim()).catch(() => {});
+        }
+        return book;
+      }
       const book = await createBook({
         title: manual.title.trim(),
         authors: manual.authors.trim() || null,
@@ -3175,7 +3252,7 @@ function AddPanel({
       return book;
     },
     onSuccess: (b) => {
-      toast.success("Book added");
+      toast.success(contentKind === "magazine" ? "Magazine added" : "Book added");
       finish(b);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not add"),
@@ -3184,6 +3261,14 @@ function AddPanel({
   const field =
     "bg-panel text-cream w-full rounded-sm border border-white/10 px-3 py-2 text-[13px] outline-none focus:border-accent/50";
 
+  const canSubmitUrl =
+    url.trim() &&
+    (contentKind === "book" || (magazine.publication.trim() && magazine.issue.trim()));
+  const canSubmitManual =
+    contentKind === "book"
+      ? manual.title.trim()
+      : magazine.publication.trim() && magazine.issue.trim();
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
       <div
@@ -3191,10 +3276,27 @@ function AddPanel({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center">
-          <h2 className="font-display text-cream flex-1 text-[22px]">Add a book</h2>
+          <h2 className="font-display text-cream flex-1 text-[22px]">
+            Add {contentKind === "magazine" ? "a magazine" : "a book"}
+          </h2>
           <button onClick={onClose} className="text-chalk hover:text-cream">
             <X size={18} />
           </button>
+        </div>
+
+        <div className="mb-4 flex gap-1">
+          {(["book", "magazine"] as const).map((k) => (
+            <button
+              key={k}
+              onClick={() => setContentKind(k)}
+              className={cn(
+                "px-3 py-1.5 text-[10.5px] uppercase tracking-[0.19em]",
+                contentKind === k ? "text-accent border-accent border-b" : "text-chalk hover:text-cream",
+              )}
+            >
+              {k === "book" ? "Book" : "Magazine"}
+            </button>
+          ))}
         </div>
 
         <div className="mb-4 flex gap-1">
@@ -3216,28 +3318,119 @@ function AddPanel({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (url.trim()) fromUrl.mutate();
+              if (canSubmitUrl) fromUrl.mutate();
             }}
           >
+            {contentKind === "magazine" && (
+              <div className="mb-3 flex flex-col gap-3">
+                <input
+                  value={magazine.publication}
+                  onChange={(e) => setMagazine({ ...magazine, publication: e.target.value })}
+                  placeholder="Publication (e.g. The Atlantic)"
+                  className={field}
+                />
+                <input
+                  value={magazine.issue}
+                  onChange={(e) => setMagazine({ ...magazine, issue: e.target.value })}
+                  placeholder="Issue (e.g. March 2026)"
+                  className={field}
+                />
+                <input
+                  value={magazine.page_count}
+                  onChange={(e) => setMagazine({ ...magazine, page_count: e.target.value })}
+                  inputMode="numeric"
+                  placeholder="Pages"
+                  className={field}
+                />
+              </div>
+            )}
             <div className="bg-panel flex items-center gap-2.5 rounded-sm border border-white/10 px-3">
               <Link2 size={15} className="text-chalk-dim shrink-0" />
               <input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="Paste a Barnes & Noble, Amazon or Open Library link"
+                placeholder={
+                  contentKind === "magazine"
+                    ? "Paste a retailer or publisher link for the cover"
+                    : "Paste a Barnes & Noble, Amazon or Open Library link"
+                }
                 className="placeholder:text-chalk-dim flex-1 bg-transparent py-2.5 text-[13px] outline-none"
               />
             </div>
             <p className="text-chalk-dim mt-2 text-[11px] leading-relaxed">
-              The cover and details are copied into your own library, so the entry keeps working
-              even if the link dies.
+              {contentKind === "magazine"
+                ? "The cover is copied from the link. Page counts come from what you enter above."
+                : "The cover and details are copied into your own library, so the entry keeps working even if the link dies."}
             </p>
             <button
               type="submit"
-              disabled={fromUrl.isPending || !url.trim()}
+              disabled={fromUrl.isPending || !canSubmitUrl}
               className="from-accent-deep to-accent-dark text-cream mt-4 w-full rounded-sm bg-gradient-to-b py-2.5 text-[11px] font-semibold uppercase tracking-[0.20em] disabled:opacity-40"
             >
-              {fromUrl.isPending ? "Looking it up…" : "Add book"}
+              {fromUrl.isPending ? "Looking it up…" : contentKind === "magazine" ? "Add magazine" : "Add book"}
+            </button>
+          </form>
+        ) : contentKind === "magazine" ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (canSubmitManual) fromForm.mutate();
+            }}
+            className="flex flex-col gap-3"
+          >
+            <input
+              value={magazine.publication}
+              onChange={(e) => setMagazine({ ...magazine, publication: e.target.value })}
+              placeholder="Publication"
+              className={field}
+            />
+            <input
+              value={magazine.issue}
+              onChange={(e) => setMagazine({ ...magazine, issue: e.target.value })}
+              placeholder="Issue (date, number, or season)"
+              className={field}
+            />
+            <div className="flex gap-3">
+              <input
+                value={magazine.page_count}
+                onChange={(e) => setMagazine({ ...magazine, page_count: e.target.value })}
+                inputMode="numeric"
+                placeholder="Pages"
+                className={cn(field, "w-24")}
+              />
+              <select
+                value={magazine.status}
+                onChange={(e) => setMagazine({ ...magazine, status: e.target.value as ReadStatus })}
+                className={field}
+              >
+                {SHELVES.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Cover image URL (optional)"
+              className={field}
+            />
+            <label className="block">
+              <span className="label-caps">Finished on (optional)</span>
+              <input
+                type="date"
+                value={magazine.finished_at}
+                onChange={(e) => setMagazine({ ...magazine, finished_at: e.target.value })}
+                className={cn(field, "mt-1.5")}
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={fromForm.isPending || !canSubmitManual}
+              className="from-accent-deep to-accent-dark text-cream mt-1 rounded-sm bg-gradient-to-b py-2.5 text-[11px] font-semibold uppercase tracking-[0.20em] disabled:opacity-40"
+            >
+              Add magazine
             </button>
           </form>
         ) : (
@@ -3762,7 +3955,7 @@ function GoalCard({ books, onDrill }: { books: Book[]; onDrill: (year: string) =
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
-  const done = books.filter((b) => b.finished_at?.startsWith(String(year))).length;
+  const done = books.filter((b) => isBookItem(b) && b.finished_at?.startsWith(String(year))).length;
   const target = goal?.target_books ?? null;
   const pct = target ? Math.min(100, (done / target) * 100) : null;
 
@@ -4033,11 +4226,15 @@ function PeriodTotals({
     s.booksMonthRank != null ? `#${s.booksMonthRank} of ${s.booksMonthTotal} months` : null;
   const booksWeekRankLabel =
     s.booksWeekRank != null ? `#${s.booksWeekRank} of ${s.booksWeekTotal} weeks` : null;
+  const magazinesMonthRankLabel =
+    s.magazinesMonthRank != null ? `#${s.magazinesMonthRank} of ${s.magazinesMonthTotal} months` : null;
+  const magazinesWeekRankLabel =
+    s.magazinesWeekRank != null ? `#${s.magazinesWeekRank} of ${s.magazinesWeekTotal} weeks` : null;
 
   return (
     <div>
       <h2 className="rule-head mb-3">Recent</h2>
-      <div className="bg-accent/15 grid grid-cols-2 gap-px">
+      <div className="bg-accent/15 grid grid-cols-3 gap-px">
         <Cell
           label="This week"
           value={s.pagesWeek}
@@ -4067,9 +4264,10 @@ function PeriodTotals({
           onValueClick={() =>
             onBreakdown({
               kind: "finished",
-              label: "This week · finished",
+              label: "This week · books finished",
               from: s.weekStart,
               to: s.today,
+              contentType: "book",
             })
           }
           onRankClick={() =>
@@ -4077,6 +4275,30 @@ function PeriodTotals({
               kind: "top-finished-weeks",
               label: "Best weeks by books",
               limit: 10,
+              contentType: "book",
+            })
+          }
+        />
+        <Cell
+          label="This week"
+          value={s.magazinesWeek}
+          sub={s.magazinesWeek === 1 ? "magazine" : "magazines"}
+          rank={magazinesWeekRankLabel}
+          onValueClick={() =>
+            onBreakdown({
+              kind: "finished",
+              label: "This week · magazines finished",
+              from: s.weekStart,
+              to: s.today,
+              contentType: "magazine",
+            })
+          }
+          onRankClick={() =>
+            onBreakdown({
+              kind: "top-finished-weeks",
+              label: "Best weeks by magazines",
+              limit: 10,
+              contentType: "magazine",
             })
           }
         />
@@ -4109,9 +4331,10 @@ function PeriodTotals({
           onValueClick={() =>
             onBreakdown({
               kind: "finished",
-              label: "This month · finished",
+              label: "This month · books finished",
               from: s.monthStart,
               to: s.today,
+              contentType: "book",
             })
           }
           onRankClick={() =>
@@ -4119,6 +4342,30 @@ function PeriodTotals({
               kind: "top-finished-months",
               label: "Best months by books",
               limit: 10,
+              contentType: "book",
+            })
+          }
+        />
+        <Cell
+          label="This month"
+          value={s.magazinesMonth}
+          sub={s.magazinesMonth === 1 ? "magazine" : "magazines"}
+          rank={magazinesMonthRankLabel}
+          onValueClick={() =>
+            onBreakdown({
+              kind: "finished",
+              label: "This month · magazines finished",
+              from: s.monthStart,
+              to: s.today,
+              contentType: "magazine",
+            })
+          }
+          onRankClick={() =>
+            onBreakdown({
+              kind: "top-finished-months",
+              label: "Best months by magazines",
+              limit: 10,
+              contentType: "magazine",
             })
           }
         />
@@ -4513,7 +4760,7 @@ function Shelf({
                     <div className="bg-panel flex h-full w-full flex-col items-center justify-center gap-2 px-2">
                       <BookOpen size={18} className="text-chalk-dim" />
                       <span className="text-chalk-dim line-clamp-3 text-center text-[9.5px] leading-tight">
-                        {b.title}
+                        {libraryTitle(b)}
                       </span>
                     </div>
                   )}
@@ -4540,9 +4787,11 @@ function Shelf({
                   )}
                 </div>
                 <p className="text-cream mt-1.5 line-clamp-2 text-[11.5px] leading-tight">
-                  {b.title}
+                  {libraryTitle(b)}
                 </p>
-                <p className="text-chalk-dim truncate text-[10px]">{b.authors || "Unknown"}</p>
+                <p className="text-chalk-dim truncate text-[10px]">
+                  {isMagazine(b) ? b.subtitle || "Magazine" : b.authors || "Unknown"}
+                </p>
               </button>
             </li>
           );
@@ -4559,7 +4808,7 @@ function Shelf({
         const facts = [
           b.published_year ? String(b.published_year) : null,
           b.page_count ? `${b.page_count} pages` : null,
-          b.format ? b.format[0].toUpperCase() + b.format.slice(1) : null,
+          isMagazine(b) ? "Magazine" : b.format ? b.format[0].toUpperCase() + b.format.slice(1) : null,
           b.read_count > 1 ? `read ${b.read_count}×` : null,
           highlights[b.id] ? `${highlights[b.id]} highlights` : null,
         ].filter(Boolean) as string[];
@@ -4587,27 +4836,48 @@ function Shelf({
               )}
 
               <div className="min-w-0 flex-1">
-                <p className="text-cream truncate text-[14px]">{b.title}</p>
+                <p className="text-cream truncate text-[14px]">{libraryTitle(b)}</p>
 
                 <p className="text-chalk-dim truncate text-[11.5px]">
-                  <span
-                    role="link"
-                    tabIndex={0}
-                    onClick={(e) => {
-                      if (!b.authors) return;
-                      e.stopPropagation(); // don't also open the drawer
-                      onFilter({ type: "author", value: b.authors.split(",")[0].trim() });
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && b.authors) {
+                  {isMagazine(b) ? (
+                    <span
+                      role="link"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        if (!b.series) return;
                         e.stopPropagation();
+                        onFilter({ type: "series", value: b.series });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && b.series) {
+                          e.stopPropagation();
+                          onFilter({ type: "series", value: b.series });
+                        }
+                      }}
+                      className={b.series ? "hover:text-accent cursor-pointer" : ""}
+                    >
+                      {b.subtitle || "Magazine issue"}
+                    </span>
+                  ) : (
+                    <span
+                      role="link"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        if (!b.authors) return;
+                        e.stopPropagation(); // don't also open the drawer
                         onFilter({ type: "author", value: b.authors.split(",")[0].trim() });
-                      }
-                    }}
-                    className={b.authors ? "hover:text-accent cursor-pointer" : ""}
-                  >
-                    {b.authors || "Unknown author"}
-                  </span>
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && b.authors) {
+                          e.stopPropagation();
+                          onFilter({ type: "author", value: b.authors.split(",")[0].trim() });
+                        }
+                      }}
+                      className={b.authors ? "hover:text-accent cursor-pointer" : ""}
+                    >
+                      {b.authors || "Unknown author"}
+                    </span>
+                  )}
                 </p>
 
                 {facts.length > 0 && (
@@ -4986,6 +5256,7 @@ export default function ReadingPage() {
     };
   }, [qc]);
   const [shelf, setShelf] = useState<ReadStatus>("currently-reading");
+  const [libraryKind, setLibraryKind] = useState<LibraryKind>("books");
   // One filter across author / tag / year, so every number on the page can
   // be a link into the list that produced it.
   const [filter, setFilter] = useState<Filter | null>(null);
@@ -5141,9 +5412,12 @@ export default function ReadingPage() {
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
-    for (const b of books ?? []) c[b.status] = (c[b.status] ?? 0) + 1;
+    for (const b of books ?? []) {
+      if (libraryKind === "magazines" ? !isMagazine(b) : isMagazine(b)) continue;
+      c[b.status] = (c[b.status] ?? 0) + 1;
+    }
     return c;
-  }, [books]);
+  }, [books, libraryKind]);
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
@@ -5155,6 +5429,7 @@ export default function ReadingPage() {
     // A filter looks across the whole library; the shelf tabs only apply
     // when you haven't drilled in from a stat or a tag.
     return (books ?? [])
+      .filter((b) => (libraryKind === "magazines" ? isMagazine(b) : isBookItem(b)))
       .filter((b) => (filter ? true : b.status === shelf))
       .filter((b) => {
         if (!filter) return true;
@@ -5171,7 +5446,7 @@ export default function ReadingPage() {
         return b.finished_at?.startsWith(filter.value) ?? false;
       })
       .slice(0, 300);
-  }, [books, shelf, filter]);
+  }, [books, shelf, filter, libraryKind]);
 
   // Keep the open drawer in sync with refetched data.
   const openBook = open ? ((books ?? []).find((b) => b.id === open.id) ?? open) : null;
@@ -5257,6 +5532,29 @@ export default function ReadingPage() {
           </button>
 
           <div className="relative flex flex-wrap items-center gap-1">
+            <div className="mr-2 flex gap-1 border-r border-white/10 pr-2">
+              {(["books", "magazines"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => {
+                    setLibraryKind(k);
+                    setFilter(null);
+                  }}
+                  className={cn(
+                    "px-2.5 py-1.5 text-[10px] uppercase tracking-[0.17em] transition-colors",
+                    libraryKind === k
+                      ? "text-accent border-accent border-b"
+                      : "text-chalk hover:text-cream",
+                  )}
+                >
+                  {k === "books" ? "Books" : "Magazines"}
+                  <span className="text-chalk-dim ml-1">
+                    {(books ?? []).filter((b) => (k === "magazines" ? isMagazine(b) : isBookItem(b))).length}
+                  </span>
+                </button>
+              ))}
+            </div>
             {SHELVES.map((s) => (
               <button
                 key={s.key}

@@ -1,6 +1,6 @@
 import { supabase, requireUserId } from "./supabase";
 import { todayStr, shiftDay } from "./utils";
-import type { Book, BookHighlight, BookInsert, ReadStatus } from "@/types";
+import type { Book, BookHighlight, BookInsert, ContentType, ReadStatus } from "@/types";
 
 const VALID_STATUS: ReadStatus[] = [
   "read",
@@ -9,6 +9,72 @@ const VALID_STATUS: ReadStatus[] = [
   "did-not-finish",
   "paused",
 ];
+
+export function isMagazine(b: Pick<Book, "content_type">): boolean {
+  return b.content_type === "magazine";
+}
+
+export function isBookItem(b: Pick<Book, "content_type">): boolean {
+  return b.content_type !== "magazine";
+}
+
+/** Publication + issue label for shelves and stats. */
+export function magazineLabel(b: Pick<Book, "title" | "series" | "subtitle">): string {
+  const pub = (b.series ?? b.title).trim();
+  const issue = (b.subtitle ?? "").trim();
+  return issue ? `${pub} · ${issue}` : pub;
+}
+
+/** Library row title — issues show publication + issue; books use title. */
+export function libraryTitle(b: Pick<Book, "content_type" | "title" | "series" | "subtitle">): string {
+  return isMagazine(b) ? magazineLabel(b) : b.title;
+}
+
+export function buildMagazineFields(
+  publication: string,
+  issue: string,
+): Pick<BookInsert, "content_type" | "format" | "title" | "series" | "subtitle" | "tags"> {
+  const pub = publication.trim();
+  const iss = issue.trim();
+  return {
+    content_type: "magazine",
+    format: "magazine",
+    title: pub,
+    series: pub,
+    subtitle: iss || null,
+    tags: ["magazine"],
+  };
+}
+
+export async function addMagazineFromUrl(
+  url: string,
+  publication: string,
+  issue: string,
+  overrides: Partial<BookInsert> = {},
+): Promise<Book> {
+  const fields = buildMagazineFields(publication, issue);
+  return addBookFromUrl(url, { ...fields, ...overrides });
+}
+
+export async function createMagazine(input: {
+  publication: string;
+  issue: string;
+  page_count?: number | null;
+  status?: ReadStatus;
+  finished_at?: string | null;
+  last_date_read?: string | null;
+  read_count?: number;
+}): Promise<Book> {
+  const fields = buildMagazineFields(input.publication, input.issue);
+  return createBook({
+    ...fields,
+    page_count: input.page_count ?? null,
+    status: input.status ?? "to-read",
+    finished_at: input.finished_at ?? null,
+    last_date_read: input.last_date_read ?? null,
+    read_count: input.read_count ?? (input.status === "read" ? 1 : 0),
+  });
+}
 
 /**
  * A minimal RFC-4180 CSV parser. StoryGraph exports contain commas and
@@ -1782,6 +1848,8 @@ export type PeriodStats = {
   pagesMonth: number;
   booksWeek: number;
   booksMonth: number;
+  magazinesWeek: number;
+  magazinesMonth: number;
   /** 1 = best month ever by pages logged; null when this month has no pages. */
   monthRank: number | null;
   monthTotal: number;
@@ -1794,6 +1862,12 @@ export type PeriodStats = {
   /** 1 = best week ever by books finished; null when this week has none. */
   booksWeekRank: number | null;
   booksWeekTotal: number;
+  /** 1 = best month ever by magazines finished; null when this month has none. */
+  magazinesMonthRank: number | null;
+  magazinesMonthTotal: number;
+  /** 1 = best week ever by magazines finished; null when this week has none. */
+  magazinesWeekRank: number | null;
+  magazinesWeekTotal: number;
   weekStart: string;
   monthStart: string;
   today: string;
@@ -1837,7 +1911,7 @@ export function pagesContributions(
       const book = key === "__none__" ? null : (byId.get(key) ?? null);
       return {
         bookId: book?.id ?? (key === "__none__" ? null : key),
-        title: book?.title ?? "Unknown book",
+        title: book ? libraryTitle(book) : "Unknown book",
         authors: book?.authors ?? null,
         book,
         pages,
@@ -1857,16 +1931,19 @@ export function finishedContributions(
   books: Book[],
   from: string,
   to: string,
+  contentType?: ContentType,
 ): FinishedContribution[] {
   const out: FinishedContribution[] = [];
   for (const b of books) {
+    if (contentType === "magazine" && !isMagazine(b)) continue;
+    if (contentType === "book" && isMagazine(b)) continue;
     for (const r of b.read_log ?? []) {
       if (!r.end || r.end < from || r.end > to) continue;
       out.push({ book: b, ended: r.end, started: r.start });
     }
   }
   return out.sort(
-    (a, b) => b.ended.localeCompare(a.ended) || a.book.title.localeCompare(b.book.title),
+    (a, b) => b.ended.localeCompare(a.ended) || libraryTitle(a.book).localeCompare(libraryTitle(b.book)),
   );
 }
 
@@ -1892,17 +1969,20 @@ export function finishOrdinals(
   const { weekStart, monthStart } = periodBounds(day);
   const yearStart = `${day.slice(0, 4)}-01-01`;
 
+  const target = books.find((b) => b.id === bookId);
+
   const countIn = (from: string) => {
     let n = 0;
     let includesThis = false;
     for (const b of books) {
+      if (isMagazine(b)) continue;
       for (const r of b.read_log ?? []) {
         if (!r.end || r.end < from || r.end > day) continue;
         n += 1;
         if (b.id === bookId && r.end === day) includesThis = true;
       }
     }
-    if (!includesThis) n += 1;
+    if (!includesThis && target && !isMagazine(target)) n += 1;
     return n;
   };
 
@@ -1965,13 +2045,18 @@ export function weekKeyFor(date: string): string {
 }
 
 /** Finished read-through counts keyed by week Monday / month YYYY-MM. */
-function finishedCountsByPeriod(books: Book[]): {
+function finishedCountsByPeriod(
+  books: Book[],
+  contentType?: ContentType,
+): {
   byWeek: Map<string, number>;
   byMonth: Map<string, number>;
 } {
   const byWeek = new Map<string, number>();
   const byMonth = new Map<string, number>();
   for (const b of books) {
+    if (contentType === "magazine" && !isMagazine(b)) continue;
+    if (contentType === "book" && isMagazine(b)) continue;
     // Count every read-through that finished, not just the book's latest
     // finish — a re-read in a period is a book finished in that period.
     for (const r of b.read_log ?? []) {
@@ -2006,30 +2091,43 @@ export function periodStats(books: Book[], sessions: ReadingSession[]): PeriodSt
   if (!byMonth.has(monthKey)) byMonth.set(monthKey, pagesMonth);
   if (!byWeek.has(weekStartIso)) byWeek.set(weekStartIso, pagesWeek);
 
-  const finished = finishedCountsByPeriod(books);
-  const booksWeek = finished.byWeek.get(weekStartIso) ?? 0;
-  const booksMonth = finished.byMonth.get(monthKey) ?? 0;
+  const finishedBooks = finishedCountsByPeriod(books, "book");
+  const finishedMagazines = finishedCountsByPeriod(books, "magazine");
+  const booksWeek = finishedBooks.byWeek.get(weekStartIso) ?? 0;
+  const booksMonth = finishedBooks.byMonth.get(monthKey) ?? 0;
+  const magazinesWeek = finishedMagazines.byWeek.get(weekStartIso) ?? 0;
+  const magazinesMonth = finishedMagazines.byMonth.get(monthKey) ?? 0;
   // Ensure the current month/week is ranked even when empty.
-  if (!finished.byMonth.has(monthKey)) finished.byMonth.set(monthKey, booksMonth);
-  if (!finished.byWeek.has(weekStartIso)) finished.byWeek.set(weekStartIso, booksWeek);
+  if (!finishedBooks.byMonth.has(monthKey)) finishedBooks.byMonth.set(monthKey, booksMonth);
+  if (!finishedBooks.byWeek.has(weekStartIso)) finishedBooks.byWeek.set(weekStartIso, booksWeek);
+  if (!finishedMagazines.byMonth.has(monthKey)) finishedMagazines.byMonth.set(monthKey, magazinesMonth);
+  if (!finishedMagazines.byWeek.has(weekStartIso)) finishedMagazines.byWeek.set(weekStartIso, magazinesWeek);
 
   const monthRank = rankDescending(byMonth.get(monthKey) ?? 0, [...byMonth.values()]);
   const weekRank = rankDescending(byWeek.get(weekStartIso) ?? 0, [...byWeek.values()]);
-  const booksMonthRank = rankDescending(booksMonth, [...finished.byMonth.values()]);
-  const booksWeekRank = rankDescending(booksWeek, [...finished.byWeek.values()]);
+  const booksMonthRank = rankDescending(booksMonth, [...finishedBooks.byMonth.values()]);
+  const booksWeekRank = rankDescending(booksWeek, [...finishedBooks.byWeek.values()]);
+  const magazinesMonthRank = rankDescending(magazinesMonth, [...finishedMagazines.byMonth.values()]);
+  const magazinesWeekRank = rankDescending(magazinesWeek, [...finishedMagazines.byWeek.values()]);
   return {
     pagesWeek,
     pagesMonth,
     booksWeek,
     booksMonth,
+    magazinesWeek,
+    magazinesMonth,
     monthRank: pagesMonth > 0 ? monthRank : null,
     monthTotal: byMonth.size,
     weekRank: pagesWeek > 0 ? weekRank : null,
     weekTotal: byWeek.size,
     booksMonthRank: booksMonth > 0 ? booksMonthRank : null,
-    booksMonthTotal: finished.byMonth.size,
+    booksMonthTotal: finishedBooks.byMonth.size,
     booksWeekRank: booksWeek > 0 ? booksWeekRank : null,
-    booksWeekTotal: finished.byWeek.size,
+    booksWeekTotal: finishedBooks.byWeek.size,
+    magazinesMonthRank: magazinesMonth > 0 ? magazinesMonthRank : null,
+    magazinesMonthTotal: finishedMagazines.byMonth.size,
+    magazinesWeekRank: magazinesWeek > 0 ? magazinesWeekRank : null,
+    magazinesWeekTotal: finishedMagazines.byWeek.size,
     weekStart: weekStartIso,
     monthStart: monthStartIso,
     today,
@@ -2242,8 +2340,12 @@ export function topReadingMonths(sessions: ReadingSession[], limit = 10): TopRea
 }
 
 /** Best weeks by books finished — used for the books week-rank drill-down. */
-export function topFinishedWeeks(books: Book[], limit = 10): TopReadingPeriod[] {
-  const { byWeek } = finishedCountsByPeriod(books);
+export function topFinishedWeeks(
+  books: Book[],
+  limit = 10,
+  contentType: ContentType = "book",
+): TopReadingPeriod[] {
+  const { byWeek } = finishedCountsByPeriod(books, contentType);
   const { weekStart } = periodBounds();
   return rankPeriodMap(
     byWeek,
@@ -2255,8 +2357,12 @@ export function topFinishedWeeks(books: Book[], limit = 10): TopReadingPeriod[] 
 }
 
 /** Best months by books finished — used for the books month-rank drill-down. */
-export function topFinishedMonths(books: Book[], limit = 10): TopReadingPeriod[] {
-  const { byMonth } = finishedCountsByPeriod(books);
+export function topFinishedMonths(
+  books: Book[],
+  limit = 10,
+  contentType: ContentType = "book",
+): TopReadingPeriod[] {
+  const { byMonth } = finishedCountsByPeriod(books, contentType);
   const { today } = periodBounds();
   const monthKey = today.slice(0, 7);
   return rankPeriodMap(

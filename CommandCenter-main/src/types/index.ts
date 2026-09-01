@@ -35,6 +35,8 @@ export type FinanceTransaction = Tables<"finance_transactions"> & {
 
 export type ReadStatus = "read" | "to-read" | "currently-reading" | "did-not-finish" | "paused";
 
+export type ContentType = "book" | "magazine";
+
 export type HabitInsert = TablesInsert<"habits">;
 export type HabitUpdate = TablesUpdate<"habits">;
 
