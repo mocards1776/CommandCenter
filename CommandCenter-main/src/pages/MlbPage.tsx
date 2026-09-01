@@ -832,7 +832,7 @@ function TonightHighlightsSection({
     );
   }
 
-  const { league, topHitters, topPitchers, tagged, highlights } = digest;
+  const { league, topPerformers, tagged, highlights } = digest;
   const statTiles = [
     { label: "Games", value: String(league.gamesPlayed) },
     { label: "Live", value: String(league.gamesLive) },
@@ -864,19 +864,8 @@ function TonightHighlightsSection({
         </div>
       </section>
 
-      {(topHitters.length > 0 || topPitchers.length > 0) && (
-        <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <PerformerTable
-            title="Best hitting"
-            rows={topHitters}
-            returnPath={returnPath}
-          />
-          <PerformerTable
-            title="Best pitching"
-            rows={topPitchers}
-            returnPath={returnPath}
-          />
-        </section>
+      {topPerformers.length > 0 && (
+        <PerformerTable rows={topPerformers} returnPath={returnPath} />
       )}
 
       {tagged.length > 0 ? (
@@ -935,11 +924,9 @@ function TonightHighlightsSection({
 }
 
 function PerformerTable({
-  title,
   rows,
   returnPath,
 }: {
-  title: string;
   rows: MlbTonightPerformer[];
   returnPath: string;
 }) {
@@ -948,22 +935,26 @@ function PerformerTable({
     <div className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] px-4 py-2.5">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-          {title}
+          Best performances tonight
         </h3>
+        <p className="text-chalk-dim mt-1 text-[10px]">
+          DraftKings-style scoring — hitters and pitchers on the same scale
+        </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[420px] text-left text-[12px]">
+        <table className="w-full min-w-[480px] text-left text-[12px]">
           <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
             <tr className="border-b border-white/[0.06]">
               <th className="px-3 py-2 font-medium">Player</th>
+              <th className="px-2 py-2 font-medium">Role</th>
               <th className="px-2 py-2 font-medium">Today</th>
               <th className="px-2 py-2 font-medium">Matchup</th>
-              <th className="numeral px-3 py-2 text-right font-medium">GS</th>
+              <th className="numeral px-3 py-2 text-right font-medium">FP</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={`${title}-${row.playerId}-${row.gamePk}`} className="border-t border-white/[0.04]">
+              <tr key={`${row.role}-${row.playerId}-${row.gamePk}`} className="border-t border-white/[0.04]">
                 <td className="px-3 py-2.5">
                   <Link
                     to={`/sports/mlb/player/${row.playerId}`}
@@ -982,6 +973,9 @@ function PerformerTable({
                     </span>
                   </Link>
                 </td>
+                <td className="text-chalk-dim px-2 py-2.5 text-[10px] uppercase tracking-[0.12em]">
+                  {row.role === "pitching" ? "P" : "H"}
+                </td>
                 <td className="numeral text-chalk px-2 py-2.5">{row.todayLine}</td>
                 <td className="px-2 py-2.5">
                   <Link
@@ -993,7 +987,7 @@ function PerformerTable({
                   </Link>
                 </td>
                 <td className="numeral text-accent px-3 py-2.5 text-right font-semibold">
-                  {row.gameScore}
+                  {row.fantasyPoints % 1 === 0 ? row.fantasyPoints : row.fantasyPoints.toFixed(1)}
                 </td>
               </tr>
             ))}

@@ -122,10 +122,11 @@ export type MlbTonightPerformer = {
   playerId: number;
   name: string;
   teamAbbrev: string;
+  role: "hitting" | "pitching";
   gamePk: number;
   gameLabel: string;
   todayLine: string;
-  gameScore: number;
+  fantasyPoints: number;
 };
 
 export type MlbTonightTaggedRow = {
@@ -140,8 +141,7 @@ export type MlbTonightTaggedRow = {
 
 export type MlbTonightDigest = {
   league: MlbTonightLeagueStats;
-  topHitters: MlbTonightPerformer[];
-  topPitchers: MlbTonightPerformer[];
+  topPerformers: MlbTonightPerformer[];
   tagged: MlbTonightTaggedRow[];
   highlights: MlbTonightHighlight[];
 };
@@ -1197,6 +1197,10 @@ export type MlbBoxscoreBatter = {
   seasonHr: number | null;
   bb: number;
   so: number;
+  d: number;
+  t: number;
+  sb: number;
+  hbp: number;
   avg: string | null;
   obp: string | null;
   slg: string | null;
@@ -1348,6 +1352,10 @@ function mapBoxSide(
         seasonHr: Number.isFinite(seasonHr) ? seasonHr : null,
         bb: Number(b.baseOnBalls ?? 0),
         so: Number(b.strikeOuts ?? 0),
+        d: Number(b.doubles ?? 0),
+        t: Number(b.triples ?? 0),
+        sb: Number(b.stolenBases ?? 0),
+        hbp: Number(b.hitByPitch ?? 0),
         avg: avg != null && avg !== "" ? String(avg) : null,
         obp: obp != null && obp !== "" ? String(obp) : null,
         slg: slg != null && slg !== "" ? String(slg) : null,
@@ -3835,12 +3843,26 @@ function boxParseIpOuts(ip: string): number {
   return innings * 3 + Math.min(partial, 2);
 }
 
-function boxBatterGameScore(b: MlbBoxscoreBatter): number {
-  return Math.max(0, 40 + 3 * b.hr + 2 * b.h + 2 * b.rbi + b.r + b.bb - b.so);
+function boxBatterFantasyPoints(b: MlbBoxscoreBatter): number {
+  const singles = Math.max(0, b.h - b.d - b.t - b.hr);
+  const raw =
+    singles * 3 +
+    b.d * 5 +
+    b.t * 8 +
+    b.hr * 10 +
+    b.rbi * 2 +
+    b.r * 2 +
+    b.bb * 2 +
+    b.hbp * 2 +
+    b.sb * 5;
+  return Math.round(raw * 10) / 10;
 }
 
-function boxPitcherGameScore(p: MlbBoxscorePitcher): number {
-  return 50 + boxParseIpOuts(p.ip) + p.so - 2 * p.h - 4 * p.er - 2 * p.bb;
+function boxPitcherFantasyPoints(p: MlbBoxscorePitcher): number {
+  const outs = boxParseIpOuts(p.ip);
+  const win = boxPitcherDecision(p.note) === "W";
+  const raw = outs * 2.25 + p.so * 2 + (win ? 4 : 0) - p.er * 2 - p.h * 0.6 - p.bb * 0.6;
+  return Math.round(raw * 10) / 10;
 }
 
 function boxPitcherDecision(note: string | null | undefined): "W" | "L" | "S" | null {
@@ -4011,8 +4033,7 @@ export async function fetchMlbTonightDigest(opts?: {
   let runs = 0;
   let hits = 0;
   let strikeouts = 0;
-  const hitters: MlbTonightPerformer[] = [];
-  const pitchers: MlbTonightPerformer[] = [];
+  const performers: MlbTonightPerformer[] = [];
   const taggedById = new Map<number, MlbTonightTaggedRow>();
 
   for (let i = 0; i < boxscores.length; i++) {
@@ -4045,17 +4066,18 @@ export async function fetchMlbTonightDigest(opts?: {
     for (const side of [box.away, box.home]) {
       for (const b of side.batters) {
         homeRuns += b.hr;
-        if (b.ab <= 0 && b.h <= 0 && b.bb <= 0) continue;
-        const gs = boxBatterGameScore(b);
-        if (gs <= 40) continue;
-        hitters.push({
+        if (b.ab <= 0 && b.h <= 0 && b.bb <= 0 && b.hbp <= 0) continue;
+        const fp = boxBatterFantasyPoints(b);
+        if (fp <= 0) continue;
+        performers.push({
           playerId: b.id,
           name: b.name,
           teamAbbrev: b.teamAbbrev,
+          role: "hitting",
           gamePk: box.gamePk,
           gameLabel,
           todayLine: formatBatterTodayLine(b),
-          gameScore: gs,
+          fantasyPoints: fp,
         });
         collectTagged(
           b.id,
@@ -4069,15 +4091,16 @@ export async function fetchMlbTonightDigest(opts?: {
       for (const p of side.pitchers) {
         strikeouts += p.so;
         if (boxParseIpOuts(p.ip) <= 0) continue;
-        const gs = boxPitcherGameScore(p);
-        pitchers.push({
+        const fp = boxPitcherFantasyPoints(p);
+        performers.push({
           playerId: p.id,
           name: p.name,
           teamAbbrev: p.teamAbbrev,
+          role: "pitching",
           gamePk: box.gamePk,
           gameLabel,
           todayLine: formatPitcherTodayLine(p),
-          gameScore: gs,
+          fantasyPoints: fp,
         });
         const existing = taggedById.get(p.id);
         if (opts?.taggedPlayerIds?.has(p.id)) {
@@ -4095,8 +4118,9 @@ export async function fetchMlbTonightDigest(opts?: {
     }
   }
 
-  hitters.sort((a, b) => b.gameScore - a.gameScore || a.name.localeCompare(b.name));
-  pitchers.sort((a, b) => b.gameScore - a.gameScore || a.name.localeCompare(b.name));
+  performers.sort(
+    (a, b) => b.fantasyPoints - a.fantasyPoints || a.name.localeCompare(b.name),
+  );
 
   const tagged = [...taggedById.values()].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -4116,8 +4140,7 @@ export async function fetchMlbTonightDigest(opts?: {
       hits,
       strikeouts,
     },
-    topHitters: hitters.slice(0, 8),
-    topPitchers: pitchers.slice(0, 6),
+    topPerformers: performers.slice(0, 12),
     tagged,
     highlights,
   };
