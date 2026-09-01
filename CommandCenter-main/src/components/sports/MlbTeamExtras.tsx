@@ -5,8 +5,10 @@ import {
   fetchMlbTeamBbrefSummary,
   fetchMlbTeamLeaderCards,
   fetchMlbTeamPayroll,
+  fetchMlbTeamRecordSplits,
   fetchMlbTeamWinTrend,
   leaderHeadshot,
+  type MlbRecordChip,
   type MlbTeamLeaderCard,
   type MlbTeamWinTrendHonor,
 } from "@/lib/mlb-team-page";
@@ -393,6 +395,158 @@ function LeaderCard({
         ))}
       </ul>
     </article>
+  );
+}
+
+function SplitChip({
+  chip,
+  accent,
+  emphasize = false,
+}: {
+  chip: MlbRecordChip;
+  accent: string;
+  emphasize?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg border px-2.5 py-2.5 text-center",
+        emphasize
+          ? "border-white/[0.14] bg-white/[0.06]"
+          : "border-white/[0.07] bg-[#0d1017]",
+      )}
+    >
+      <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+        {chip.label}
+      </p>
+      <p
+        className={cn(
+          "numeral mt-1.5 font-semibold leading-none text-white",
+          emphasize ? "text-[20px]" : "text-[16px]",
+        )}
+        style={emphasize ? { color: readableAccent(accent) } : undefined}
+      >
+        {chip.record}
+      </p>
+      {chip.pct ? (
+        <p className="numeral text-chalk-dim mt-1 text-[10px]">{chip.pct}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function SplitGroup({
+  title,
+  chips,
+  accent,
+  emphasize = false,
+  cols = "grid-cols-2 sm:grid-cols-3",
+}: {
+  title: string;
+  chips: MlbRecordChip[];
+  accent: string;
+  emphasize?: boolean;
+  cols?: string;
+}) {
+  if (!chips.length) return null;
+  return (
+    <div>
+      <p className="text-chalk-dim mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]">
+        {title}
+      </p>
+      <div className={cn("grid gap-2", cols)}>
+        {chips.map((chip) => (
+          <SplitChip
+            key={`${title}-${chip.label}`}
+            chip={chip}
+            accent={accent}
+            emphasize={emphasize}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Recent form + home/away / month / situational record splits for the team page. */
+export function MlbTeamRecordSplitsSection({
+  teamId,
+  accent,
+}: {
+  teamId: number;
+  accent: string;
+}) {
+  const splits = useQuery({
+    queryKey: ["mlb-team-record-splits", teamId],
+    queryFn: () => fetchMlbTeamRecordSplits(teamId),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
+  if (splits.isPending) {
+    return (
+      <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c] px-4 py-4">
+        <p className="text-chalk-dim animate-pulse text-[12px]">Loading record splits…</p>
+      </section>
+    );
+  }
+
+  const data = splits.data;
+  if (!data) return null;
+  const hasAny =
+    data.recent.length > 0 ||
+    data.venue.length > 0 ||
+    data.timing.length > 0 ||
+    data.situational.length > 0 ||
+    data.vsArm.length > 0 ||
+    data.months.length > 0 ||
+    data.divisions.length > 0 ||
+    data.leagues.length > 0;
+  if (!hasAny) return null;
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
+      <div className="border-b border-white/[0.06] px-4 py-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h3 className="text-[15px] font-semibold text-white">Record splits</h3>
+            <p className="text-chalk-dim mt-0.5 text-[11px] uppercase tracking-[0.14em]">
+              {data.season} regular season
+            </p>
+          </div>
+          {data.streak ? (
+            <span className="numeral rounded-md border border-white/[0.1] bg-white/[0.04] px-2 py-1 text-[12px] font-semibold text-white">
+              Streak {data.streak}
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex flex-col gap-5 px-4 py-4">
+        <SplitGroup
+          title="Recent form"
+          chips={data.recent}
+          accent={accent}
+          emphasize
+          cols="grid-cols-2 sm:grid-cols-4"
+        />
+        <SplitGroup title="Home / Away" chips={data.venue} accent={accent} cols="grid-cols-2" />
+        <SplitGroup title="By month" chips={data.months} accent={accent} cols="grid-cols-3 sm:grid-cols-4" />
+        <div className="grid gap-5 sm:grid-cols-2">
+          <SplitGroup title="Day / Night" chips={data.timing} accent={accent} cols="grid-cols-2" />
+          <SplitGroup title="vs LHP / RHP" chips={data.vsArm} accent={accent} cols="grid-cols-2" />
+        </div>
+        <SplitGroup
+          title="Situational"
+          chips={data.situational}
+          accent={accent}
+          cols="grid-cols-3"
+        />
+        <div className="grid gap-5 sm:grid-cols-2">
+          <SplitGroup title="vs Divisions" chips={data.divisions} accent={accent} />
+          <SplitGroup title="vs Leagues" chips={data.leagues} accent={accent} cols="grid-cols-2" />
+        </div>
+      </div>
+    </section>
   );
 }
 

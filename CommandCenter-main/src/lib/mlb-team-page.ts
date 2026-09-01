@@ -597,3 +597,236 @@ export async function fetchMlbTeamWinTrend(
   );
   return points.filter((p): p is MlbTeamWinTrendPoint => Boolean(p));
 }
+
+export type MlbRecordChip = {
+  label: string;
+  record: string;
+  pct: string | null;
+};
+
+export type MlbTeamRecordSplits = {
+  teamId: number;
+  season: number;
+  streak: string | null;
+  recent: MlbRecordChip[];
+  venue: MlbRecordChip[];
+  timing: MlbRecordChip[];
+  situational: MlbRecordChip[];
+  vsArm: MlbRecordChip[];
+  months: MlbRecordChip[];
+  divisions: MlbRecordChip[];
+  leagues: MlbRecordChip[];
+};
+
+function wlPct(wins: number, losses: number): string | null {
+  const g = wins + losses;
+  if (!g) return null;
+  return (wins / g).toFixed(3).replace(/^0/, "");
+}
+
+function wlRecord(wins: number, losses: number): string {
+  return `${wins}-${losses}`;
+}
+
+function formFromResults(results: boolean[], n: number): MlbRecordChip | null {
+  const slice = results.slice(-n);
+  if (!slice.length) return null;
+  const wins = slice.filter(Boolean).length;
+  const losses = slice.length - wins;
+  return {
+    label: `Last ${n}`,
+    record: wlRecord(wins, losses),
+    pct: wlPct(wins, losses),
+  };
+}
+
+function monthLabel(yyyyMm: string): string {
+  const [y, m] = yyyyMm.split("-").map(Number);
+  if (!y || !m) return yyyyMm;
+  const d = new Date(Date.UTC(y, m - 1, 1));
+  return d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+}
+
+function shortDivLabel(name: string): string {
+  return name
+    .replace(/^National League\s+/i, "NL ")
+    .replace(/^American League\s+/i, "AL ")
+    .replace(/\s+Division$/i, "");
+}
+
+/** Season record splits: recent form, home/away, month, day/night, etc. */
+export async function fetchMlbTeamRecordSplits(
+  teamId: number,
+  season = new Date().getFullYear(),
+): Promise<MlbTeamRecordSplits> {
+  const empty: MlbTeamRecordSplits = {
+    teamId,
+    season,
+    streak: null,
+    recent: [],
+    venue: [],
+    timing: [],
+    situational: [],
+    vsArm: [],
+    months: [],
+    divisions: [],
+    leagues: [],
+  };
+
+  const [schedRes, standRes] = await Promise.all([
+    fetch(
+      `https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${teamId}&startDate=${season}-03-01&endDate=${season}-11-15&gameType=R`,
+      { headers: { Accept: "application/json" } },
+    ),
+    fetch(
+      `https://statsapi.mlb.com/api/v1/standings?leagueId=103,104&season=${season}&standingsTypes=regularSeason`,
+      { headers: { Accept: "application/json" } },
+    ),
+  ]);
+
+  const resultsChrono: boolean[] = [];
+  const byMonth = new Map<string, { wins: number; losses: number }>();
+
+  if (schedRes.ok) {
+    const sched = (await schedRes.json()) as {
+      dates?: {
+        games?: {
+          officialDate?: string;
+          status?: { abstractGameState?: string };
+          teams?: {
+            away?: { team?: { id?: number }; isWinner?: boolean };
+            home?: { team?: { id?: number }; isWinner?: boolean };
+          };
+        }[];
+      }[];
+    };
+    const rows: { date: string; won: boolean }[] = [];
+    for (const day of sched.dates ?? []) {
+      for (const g of day.games ?? []) {
+        if (g.status?.abstractGameState !== "Final") continue;
+        const home = g.teams?.home;
+        const away = g.teams?.away;
+        if (!home || !away) continue;
+        const us = home.team?.id === teamId ? home : away;
+        if (us.team?.id !== teamId || us.isWinner == null) continue;
+        const date = g.officialDate ?? "";
+        rows.push({ date, won: Boolean(us.isWinner) });
+      }
+    }
+    rows.sort((a, b) => a.date.localeCompare(b.date));
+    for (const r of rows) {
+      resultsChrono.push(r.won);
+      const mk = r.date.slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(mk)) continue;
+      const bucket = byMonth.get(mk) ?? { wins: 0, losses: 0 };
+      if (r.won) bucket.wins += 1;
+      else bucket.losses += 1;
+      byMonth.set(mk, bucket);
+    }
+  }
+
+  const recent = [5, 10, 20, 30]
+    .map((n) => formFromResults(resultsChrono, n))
+    .filter((x): x is MlbRecordChip => Boolean(x));
+
+  const months = [...byMonth.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([mk, wl]) => ({
+      label: monthLabel(mk),
+      record: wlRecord(wl.wins, wl.losses),
+      pct: wlPct(wl.wins, wl.losses),
+    }));
+
+  let streak: string | null = null;
+  const venue: MlbRecordChip[] = [];
+  const timing: MlbRecordChip[] = [];
+  const situational: MlbRecordChip[] = [];
+  const vsArm: MlbRecordChip[] = [];
+  const divisions: MlbRecordChip[] = [];
+  const leagues: MlbRecordChip[] = [];
+
+  if (standRes.ok) {
+    const stand = (await standRes.json()) as {
+      records?: {
+        teamRecords?: {
+          team?: { id?: number };
+          streak?: { streakCode?: string };
+          records?: {
+            splitRecords?: { type?: string; wins?: number; losses?: number; pct?: string }[];
+            divisionRecords?: {
+              wins?: number;
+              losses?: number;
+              pct?: string;
+              division?: { name?: string };
+            }[];
+            leagueRecords?: {
+              wins?: number;
+              losses?: number;
+              pct?: string;
+              league?: { name?: string };
+            }[];
+          };
+        }[];
+      }[];
+    };
+
+    outer: for (const block of stand.records ?? []) {
+      for (const row of block.teamRecords ?? []) {
+        if (row.team?.id !== teamId) continue;
+        streak = row.streak?.streakCode ?? null;
+        const splits = row.records?.splitRecords ?? [];
+        const pick = (type: string, label: string, bucket: MlbRecordChip[]) => {
+          const s = splits.find((x) => x.type === type);
+          if (!s || (s.wins ?? 0) + (s.losses ?? 0) === 0) return;
+          bucket.push({
+            label,
+            record: wlRecord(s.wins ?? 0, s.losses ?? 0),
+            pct: s.pct ?? wlPct(s.wins ?? 0, s.losses ?? 0),
+          });
+        };
+        pick("home", "Home", venue);
+        pick("away", "Away", venue);
+        pick("day", "Day", timing);
+        pick("night", "Night", timing);
+        pick("oneRun", "1-run", situational);
+        pick("extraInning", "Extras", situational);
+        pick("winners", "vs .500+", situational);
+        pick("left", "vs LHP", vsArm);
+        pick("right", "vs RHP", vsArm);
+
+        for (const d of row.records?.divisionRecords ?? []) {
+          const name = d.division?.name;
+          if (!name || (d.wins ?? 0) + (d.losses ?? 0) === 0) continue;
+          divisions.push({
+            label: shortDivLabel(name),
+            record: wlRecord(d.wins ?? 0, d.losses ?? 0),
+            pct: d.pct ?? wlPct(d.wins ?? 0, d.losses ?? 0),
+          });
+        }
+        for (const l of row.records?.leagueRecords ?? []) {
+          const name = l.league?.name;
+          if (!name || (l.wins ?? 0) + (l.losses ?? 0) === 0) continue;
+          leagues.push({
+            label: /american/i.test(name) ? "vs AL" : /national/i.test(name) ? "vs NL" : name,
+            record: wlRecord(l.wins ?? 0, l.losses ?? 0),
+            pct: l.pct ?? wlPct(l.wins ?? 0, l.losses ?? 0),
+          });
+        }
+        break outer;
+      }
+    }
+  }
+
+  return {
+    ...empty,
+    streak,
+    recent,
+    venue,
+    timing,
+    situational,
+    vsArm,
+    months,
+    divisions,
+    leagues,
+  };
+}
