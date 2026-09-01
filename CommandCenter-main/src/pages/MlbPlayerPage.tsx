@@ -1,5 +1,5 @@
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Loader2 } from "lucide-react";
 import HighlightReel from "@/components/sports/HighlightReel";
@@ -52,7 +52,18 @@ import { cn, formatCentralDateTime, formatSportsDate, isPublishedTodayCentral } 
 export default function MlbPlayerPage() {
   const { playerId } = useParams<{ playerId: string }>();
   const navigate = useNavigate();
-  const swipeRef = useSwipeBack(() => navigate(-1));
+  const location = useLocation();
+
+  const goBack = useCallback(() => {
+    const from = (location.state as { from?: string } | null)?.from;
+    if (from) {
+      navigate(from);
+      return;
+    }
+    navigate(-1);
+  }, [location.state, navigate]);
+
+  const swipeRef = useSwipeBack(goBack);
 
   useEffect(() => {
     const st = (history.state as { mlbPlayer?: string } | null) ?? {};
@@ -70,7 +81,7 @@ export default function MlbPlayerPage() {
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={goBack}
           className="text-chalk hover:text-cream flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
         >
           <ArrowLeft size={14} /> Back

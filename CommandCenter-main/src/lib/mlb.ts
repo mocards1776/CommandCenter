@@ -98,6 +98,16 @@ export type MlbHighlight = {
   date: string | null;
 };
 
+export type MlbPageTab = "board" | "standings" | "leaders" | "odds" | "highlights";
+
+export type MlbTonightHighlight = MlbHighlight & {
+  gamePk: number;
+  gameLabel: string;
+  impactScore: number;
+  playerIds: number[];
+  watchKind: "favorite" | "tagged" | null;
+};
+
 export type MlbStandingRow = {
   rank: string;
   teamId: number;
@@ -3719,6 +3729,133 @@ export async function fetchMlbPlayerHighlights(
     }
   }
   return out;
+}
+
+type RawHighlightItem = {
+  type?: string;
+  title?: string;
+  headline?: string;
+  description?: string;
+  duration?: string;
+  date?: string;
+  playbacks?: { name?: string; url?: string }[];
+  image?: { templateUrl?: string; cuts?: { src?: string; width?: number }[] };
+  slug?: string;
+  id?: string;
+  keywordsAll?: { type?: string; value?: string; displayName?: string }[];
+};
+
+function highlightPlayerIds(item: RawHighlightItem): number[] {
+  const ids: number[] = [];
+  for (const k of item.keywordsAll ?? []) {
+    const type = (k.type ?? "").toLowerCase();
+    if (type === "player" || type === "person" || type === "athlete") {
+      const id = Number(k.value);
+      if (Number.isFinite(id) && id > 0) ids.push(id);
+    }
+  }
+  return [...new Set(ids)];
+}
+
+function highlightImpactScore(title: string, description: string | null): number {
+  const text = `${title} ${description ?? ""}`.toLowerCase();
+  let score = 0;
+  if (/walk[- ]?off|game[- ]?winner|wins it|ends it|ends the game/.test(text)) score += 10;
+  if (/grand slam/.test(text)) score += 9;
+  if (/home run|homers?|crushes|launches|two-run|three-run|solo shot|blasts/.test(text)) score += 7;
+  if (/no[- ]?hitter|perfect game/.test(text)) score += 10;
+  if (/rob(s|bed)|diving catch|web gem|amazing catch|highlight reel/.test(text)) score += 6;
+  if (/steals home|steal of home|stolen base/.test(text)) score += 5;
+  if (/go-ahead|ties the game|takes the lead|equaliz/.test(text)) score += 6;
+  if (/strikeout|strikes out|fans \d|punch(?:es|ing) out/.test(text)) score += 4;
+  if (/milestone|record|first career/.test(text)) score += 5;
+  if (/double play|turns two|picks off/.test(text)) score += 4;
+  if (/recap|daily recap|condensed game|highlights in \d|top \d+ plays|game story/.test(text))
+    score -= 8;
+  return score;
+}
+
+function parseHighlightItem(v: RawHighlightItem): MlbHighlight | null {
+  if (v.type !== "video") return null;
+  const title = v.title || v.headline || "Highlight";
+  if (/\babs\b/i.test(title)) return null;
+  const url = pickPlayback(v.playbacks);
+  if (!url) return null;
+  return {
+    id: String(v.id ?? v.slug ?? v.title),
+    title,
+    description: v.description ?? null,
+    duration: v.duration ?? null,
+    thumb: highlightThumb(v.image),
+    url,
+    date: v.date ?? null,
+  };
+}
+
+/** Impactful clips from today's MLB games, boosted for favorite/tagged players. */
+export async function fetchMlbTonightHighlights(opts?: {
+  favoritePlayerIds?: Set<number>;
+  taggedPlayerIds?: Set<number>;
+  maxClips?: number;
+}): Promise<MlbTonightHighlight[]> {
+  const maxClips = opts?.maxClips ?? 24;
+  const board = await fetchMlbScoreboard();
+  const active = board.filter((g) => g.final || g.live);
+  if (!active.length) return [];
+
+  const batches = await Promise.all(
+    active.map(async (game) => {
+      const raw = (await mlbGet(`game/${game.id}/content`)) as {
+        highlights?: { highlights?: { items?: RawHighlightItem[] } };
+      };
+      const items = raw.highlights?.highlights?.items ?? [];
+      const gameLabel = `${game.away.abbrev} @ ${game.home.abbrev}`;
+      const out: MlbTonightHighlight[] = [];
+      for (const v of items) {
+        const base = parseHighlightItem(v);
+        if (!base) continue;
+        const playerIds = highlightPlayerIds(v);
+        const impactScore = highlightImpactScore(base.title, base.description);
+        let watchKind: PlayerWatchKind | null = null;
+        for (const id of playerIds) {
+          const kind = playerWatchKind(id, opts?.favoritePlayerIds, opts?.taggedPlayerIds);
+          if (kind === "favorite") {
+            watchKind = "favorite";
+            break;
+          }
+          if (kind === "tagged") watchKind = "tagged";
+        }
+        if (impactScore < 3 && !watchKind) continue;
+        out.push({
+          ...base,
+          gamePk: Number(game.id),
+          gameLabel,
+          impactScore: watchKind ? impactScore + 8 : impactScore,
+          playerIds,
+          watchKind,
+        });
+      }
+      return out;
+    }),
+  );
+
+  const seen = new Set<string>();
+  const merged: MlbTonightHighlight[] = [];
+  for (const clip of batches.flat()) {
+    if (seen.has(clip.id)) continue;
+    seen.add(clip.id);
+    merged.push(clip);
+  }
+
+  merged.sort((a, b) => {
+    const watchA = a.watchKind === "favorite" ? 2 : a.watchKind === "tagged" ? 1 : 0;
+    const watchB = b.watchKind === "favorite" ? 2 : b.watchKind === "tagged" ? 1 : 0;
+    if (watchB !== watchA) return watchB - watchA;
+    if (b.impactScore !== a.impactScore) return b.impactScore - a.impactScore;
+    return (b.date ?? "").localeCompare(a.date ?? "");
+  });
+
+  return merged.slice(0, maxClips);
 }
 
 /** Prefix match — "Signed as Free Agent" ok; "Assigned" must NOT match "Signed". */

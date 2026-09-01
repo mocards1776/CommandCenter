@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Star } from "lucide-react";
+import { Loader2, Play, RefreshCw, Star } from "lucide-react";
 import toast from "react-hot-toast";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
+import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import TeamMark from "@/components/sports/TeamMark";
 import {
   fetchFavoritePlayersYesterday,
@@ -13,19 +14,44 @@ import {
   fetchMlbManagers,
   fetchMlbScoreboard,
   fetchMlbStandings,
+  fetchMlbTonightHighlights,
   mlbHeadshot,
   mlbHeadshotFallbacks,
   playoffOddsFromStandings,
   teamPagePath,
   type MlbLeaderBoard,
+  type MlbPageTab,
   type MlbScoreGame,
+  type MlbTonightHighlight,
 } from "@/lib/mlb";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
 
+const MLB_TABS = new Set<MlbPageTab>(["board", "standings", "leaders", "odds", "highlights"]);
+
+function readMlbTab(raw: string | null): MlbPageTab {
+  if (raw && MLB_TABS.has(raw as MlbPageTab)) return raw as MlbPageTab;
+  return "board";
+}
+
 export default function MlbPage() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<"board" | "standings" | "leaders" | "odds">("board");
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = readMlbTab(searchParams.get("tab"));
+  const returnPath = `${location.pathname}${location.search}`;
+
+  const setTab = (id: MlbPageTab) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id === "board") next.delete("tab");
+        else next.set("tab", id);
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -58,6 +84,13 @@ export default function MlbPage() {
     staleTime: 30_000,
   });
 
+  const taggedPlayers = useQuery({
+    queryKey: ["tagged-player-ids"],
+    queryFn: fetchTaggedPlayerIds,
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+  });
+
   const hasManagerFavs = Boolean(
     favorites.data?.some((f) => (f.position ?? "").toLowerCase() === "manager"),
   );
@@ -79,6 +112,30 @@ export default function MlbPage() {
     [favorites.data],
   );
 
+  const favoritePlayerIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const f of playerFavs) {
+      const id = Number(f.playerId);
+      if (Number.isFinite(id)) set.add(id);
+    }
+    return set;
+  }, [playerFavs]);
+
+  const taggedPlayerIds = useMemo(() => new Set(taggedPlayers.data ?? []), [taggedPlayers.data]);
+
+  const tonight = useQuery({
+    queryKey: [
+      "mlb-tonight-highlights",
+      [...favoritePlayerIds].join(","),
+      [...taggedPlayerIds].join(","),
+    ],
+    queryFn: () =>
+      fetchMlbTonightHighlights({ favoritePlayerIds, taggedPlayerIds }),
+    enabled: tab === "highlights",
+    staleTime: 120_000,
+    refetchInterval: tab === "highlights" ? 120_000 : false,
+  });
+
   const yesterday = useQuery({
     queryKey: ["favorite-players-yesterday", user?.id, playerFavs.map((f) => f.playerId).join(",")],
     queryFn: () => fetchFavoritePlayersYesterday(playerFavs),
@@ -93,7 +150,10 @@ export default function MlbPage() {
 
   const liveCount = scoreboard.data?.filter((g) => g.live).length ?? 0;
   const refreshing =
-    scoreboard.isFetching || standings.isFetching || leaders.isFetching;
+    scoreboard.isFetching ||
+    standings.isFetching ||
+    leaders.isFetching ||
+    (tab === "highlights" && tonight.isFetching);
 
   const refresh = () => {
     void Promise.all([
@@ -101,6 +161,7 @@ export default function MlbPage() {
       standings.refetch(),
       leaders.refetch(),
       favorites.refetch(),
+      tab === "highlights" ? tonight.refetch() : Promise.resolve(),
     ]).then(() => toast.success("MLB updated"));
   };
 
@@ -112,6 +173,7 @@ export default function MlbPage() {
             ["board", "Scores"],
             ["standings", "Standings"],
             ["leaders", "Stats"],
+            ["highlights", "Tonight's Highlights"],
             ["odds", "Playoff odds"],
           ] as const
         ).map(([id, label]) => (
@@ -165,6 +227,15 @@ export default function MlbPage() {
           boards={leaders.data ?? []}
           loading={leaders.isPending}
           error={leaders.isError ? "Couldn’t load leaders." : null}
+          returnPath={returnPath}
+        />
+      )}
+      {tab === "highlights" && (
+        <TonightHighlightsSection
+          clips={tonight.data ?? []}
+          loading={tonight.isPending}
+          error={tonight.isError ? "Couldn’t load tonight’s highlights." : null}
+          returnPath={returnPath}
         />
       )}
       {tab === "odds" && (
@@ -188,6 +259,7 @@ export default function MlbPage() {
               <li key={line.playerId}>
                 <Link
                   to={`/sports/mlb/player/${line.playerId}`}
+                  state={{ from: returnPath }}
                   className="flex items-start gap-3 rounded-lg border border-white/[0.05] px-2 py-2 transition hover:bg-white/[0.03]"
                 >
                   <img
@@ -231,6 +303,7 @@ export default function MlbPage() {
               <Link
                 key={f.id}
                 to={`/sports/mlb/player/${f.playerId}`}
+                state={{ from: returnPath }}
                 className="bg-panel group relative w-[148px] shrink-0 overflow-hidden rounded-lg border border-white/[0.08] transition hover:border-accent/40"
               >
                 <div className="from-accent-dark/80 absolute inset-0 bg-gradient-to-t to-transparent opacity-80" />
@@ -596,10 +669,12 @@ function LeadersSection({
   boards,
   loading,
   error,
+  returnPath,
 }: {
   boards: MlbLeaderBoard[];
   loading: boolean;
   error: string | null;
+  returnPath: string;
 }) {
   if (loading) return <LoadingBlock label="Loading leaders…" />;
   if (error) return <ErrorLine>{error}</ErrorLine>;
@@ -607,13 +682,21 @@ function LeadersSection({
   const pitching = boards.filter((b) => b.group === "pitching");
   return (
     <div className="flex flex-col gap-6">
-      <LeaderGroup title="Hitting" boards={hitting} />
-      <LeaderGroup title="Pitching" boards={pitching} />
+      <LeaderGroup title="Hitting" boards={hitting} returnPath={returnPath} />
+      <LeaderGroup title="Pitching" boards={pitching} returnPath={returnPath} />
     </div>
   );
 }
 
-function LeaderGroup({ title, boards }: { title: string; boards: MlbLeaderBoard[] }) {
+function LeaderGroup({
+  title,
+  boards,
+  returnPath,
+}: {
+  title: string;
+  boards: MlbLeaderBoard[];
+  returnPath: string;
+}) {
   if (boards.length === 0) return null;
   return (
     <div>
@@ -629,6 +712,7 @@ function LeaderGroup({ title, boards }: { title: string; boards: MlbLeaderBoard[
                 <li key={`${b.key}-${l.playerId}`}>
                   <Link
                     to={`/sports/mlb/player/${l.playerId}`}
+                    state={{ from: returnPath }}
                     className="group flex items-center gap-2.5 rounded-sm transition hover:bg-white/[0.03]"
                   >
                     <img
@@ -718,6 +802,185 @@ function OddsSection({
       <p className="text-chalk-dim border-t border-white/[0.06] px-3 py-2 text-[10.5px]">
         Odds via ESPN projections · standings via MLB Stats API
       </p>
+    </div>
+  );
+}
+
+function TonightHighlightsSection({
+  clips,
+  loading,
+  error,
+  returnPath,
+}: {
+  clips: MlbTonightHighlight[];
+  loading: boolean;
+  error: string | null;
+  returnPath: string;
+}) {
+  const [active, setActive] = useState<MlbTonightHighlight | null>(null);
+
+  if (loading) return <LoadingBlock label="Loading tonight’s highlights…" />;
+  if (error) return <ErrorLine>{error}</ErrorLine>;
+
+  const watchClips = clips.filter((c) => c.watchKind);
+  const impactClips = clips.filter((c) => !c.watchKind);
+
+  if (!clips.length) {
+    return (
+      <EmptyLine>
+        No highlight clips yet — check back once games are underway or after first pitch.
+      </EmptyLine>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {watchClips.length > 0 ? (
+        <section>
+          <h3 className="rule-head mb-3">Your players</h3>
+          <HighlightClipGrid
+            clips={watchClips}
+            returnPath={returnPath}
+            onPlay={setActive}
+          />
+        </section>
+      ) : null}
+
+      <section>
+        <h3 className="rule-head mb-3">
+          {watchClips.length ? "More tonight" : "Tonight’s highlights"}
+        </h3>
+        {impactClips.length ? (
+          <HighlightClipGrid
+            clips={impactClips}
+            returnPath={returnPath}
+            onPlay={setActive}
+          />
+        ) : (
+          <EmptyLine>No other impact plays yet tonight.</EmptyLine>
+        )}
+      </section>
+
+      {active ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setActive(null)}
+        >
+          <div
+            className="w-full max-w-3xl overflow-hidden rounded-xl border border-white/10 bg-[#0a101c] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-2.5">
+              <div className="min-w-0">
+                <p className="truncate text-[12.5px] text-[#c8cdd8]">{active.title}</p>
+                <p className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+                  {active.gameLabel}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActive(null)}
+                className="text-[11px] uppercase tracking-[0.14em] text-[#8b93a7] hover:text-[#e8ebf2]"
+              >
+                Close
+              </button>
+            </div>
+            <video
+              key={active.url}
+              src={active.url}
+              controls
+              autoPlay
+              playsInline
+              className="aspect-video w-full bg-black"
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function HighlightClipGrid({
+  clips,
+  returnPath,
+  onPlay,
+}: {
+  clips: MlbTonightHighlight[];
+  returnPath: string;
+  onPlay: (clip: MlbTonightHighlight) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+      {clips.map((clip) => (
+        <article
+          key={clip.id}
+          className={cn(
+            "overflow-hidden rounded-lg border bg-white/[0.025] transition hover:border-white/12",
+            clip.watchKind === "favorite" && "border-accent/35 bg-accent/[0.04]",
+            clip.watchKind === "tagged" && "border-[#7eb6ff]/35 bg-[#7eb6ff]/[0.04]",
+            !clip.watchKind && "border-white/[0.06]",
+          )}
+        >
+          <button
+            type="button"
+            onClick={() => onPlay(clip)}
+            className="group w-full text-left"
+          >
+            <div className="relative aspect-video bg-black/50">
+              {clip.thumb ? (
+                <img
+                  src={clip.thumb}
+                  alt=""
+                  className="h-full w-full object-cover opacity-90"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="h-full w-full bg-gradient-to-br from-[#132033] to-[#0a101c]" />
+              )}
+              <div className="absolute inset-0 grid place-items-center bg-black/20 transition group-hover:bg-black/10">
+                <span className="grid h-10 w-10 place-items-center rounded-full border border-white/25 bg-black/45 text-[#e8ebf2]">
+                  <Play size={15} className="ml-0.5 fill-current" />
+                </span>
+              </div>
+              {clip.duration ? (
+                <span className="absolute right-2 bottom-2 rounded-sm bg-black/55 px-1.5 py-0.5 text-[10px] text-[#d5dae6]">
+                  {clip.duration.replace(/^00:/, "")}
+                </span>
+              ) : null}
+            </div>
+          </button>
+          <div className="space-y-1.5 px-3 py-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                to={`/sports/mlb/game/${clip.gamePk}`}
+                state={{ from: returnPath }}
+                className="text-chalk-dim hover:text-accent text-[10px] uppercase tracking-[0.12em]"
+              >
+                {clip.gameLabel}
+              </Link>
+              {clip.watchKind === "favorite" ? (
+                <span className="text-accent inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.12em]">
+                  <Star size={10} className="fill-current" /> Favorite
+                </span>
+              ) : clip.watchKind === "tagged" ? (
+                <span className="text-[10px] uppercase tracking-[0.12em] text-[#7eb6ff]">
+                  Tagged
+                </span>
+              ) : null}
+            </div>
+            <p className="line-clamp-2 text-[12.5px] leading-snug text-[#b8bfd0]">{clip.title}</p>
+            {clip.playerIds[0] ? (
+              <Link
+                to={`/sports/mlb/player/${clip.playerIds[0]}`}
+                state={{ from: returnPath }}
+                className="text-accent text-[11px] hover:underline"
+              >
+                Player card
+              </Link>
+            ) : null}
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
