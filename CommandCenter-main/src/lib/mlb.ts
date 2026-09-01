@@ -106,6 +106,11 @@ export type MlbTonightHighlight = MlbHighlight & {
   impactScore: number;
   playerIds: number[];
   watchKind: "favorite" | "tagged" | null;
+  /** Inning, score, and play description from win-probability feed. */
+  circumstance: string | null;
+  /** Batting team's win probability added (percentage points). */
+  winProbabilityAdded: number | null;
+  leverageIndex: number | null;
 };
 
 export type MlbTonightLeagueStats = {
@@ -126,6 +131,7 @@ export type MlbTonightPerformer = {
   gamePk: number;
   gameLabel: string;
   todayLine: string;
+  seasonLine: string;
   fantasyPoints: number;
 };
 
@@ -141,7 +147,8 @@ export type MlbTonightTaggedRow = {
 
 export type MlbTonightDigest = {
   league: MlbTonightLeagueStats;
-  topPerformers: MlbTonightPerformer[];
+  topHitters: MlbTonightPerformer[];
+  topPitchers: MlbTonightPerformer[];
   tagged: MlbTonightTaggedRow[];
   highlights: MlbTonightHighlight[];
 };
@@ -3795,12 +3802,164 @@ function highlightPlayerIds(item: RawHighlightItem): number[] {
   const ids: number[] = [];
   for (const k of item.keywordsAll ?? []) {
     const type = (k.type ?? "").toLowerCase();
-    if (type === "player" || type === "person" || type === "athlete") {
+    if (type === "player_id") {
       const id = Number(k.value);
+      if (Number.isFinite(id) && id > 0) ids.push(id);
+      continue;
+    }
+    if (type === "player" || type === "person" || type === "athlete") {
+      const raw = String(k.value ?? "");
+      const id = Number(raw.replace(/^playerid-/i, "")) || Number(raw);
       if (Number.isFinite(id) && id > 0) ids.push(id);
     }
   }
   return [...new Set(ids)];
+}
+
+function highlightTaxonomies(item: RawHighlightItem): string[] {
+  return (item.keywordsAll ?? [])
+    .filter((k) => (k.type ?? "").toLowerCase() === "taxonomy")
+    .map((k) => (k.value ?? "").toLowerCase());
+}
+
+function highlightDedupKey(
+  item: RawHighlightItem,
+  gamePk: number,
+  playerIds: number[],
+  title: string,
+): string {
+  const pid = playerIds[0] ?? 0;
+  const tax = highlightTaxonomies(item);
+  const t = title.toLowerCase().replace(/^field view:\s*/i, "").replace(/\(\d+\)\s*$/, "").trim();
+  const runs =
+    t.match(/\b(solo|two-run|three-run|grand slam|walk-off|game-tying|go-ahead)\b/)?.[1] ?? "";
+  let event = "play";
+  if (tax.includes("home-run") || /\bhome run\b|\bhomer\b/.test(t)) event = "hr";
+  else if (tax.includes("walk-off") || /walk.?off/.test(t)) event = "walkoff";
+  else if (/grand slam/.test(t)) event = "gslam";
+  else if (tax.includes("defense") || /\brob(s|bed)\b/.test(t)) event = "defense";
+  else if (/strikeout|strikes out/.test(t)) event = "k";
+  return `${gamePk}:${pid}:${runs}:${event}`;
+}
+
+function highlightClipPreference(item: RawHighlightItem, title: string): number {
+  let score = 0;
+  const t = title.toLowerCase();
+  const tax = highlightTaxonomies(item);
+  if (tax.includes("in-game-highlight")) score += 8;
+  if (tax.includes("game-story-highlight")) score += 4;
+  if (/^field view:/i.test(title)) score -= 25;
+  if (/broadcast compare|slow motion|mic'd up|sound on/i.test(t)) score -= 12;
+  if (/caps .+ inning|gives .+ the lead|ties the game|walk-off|grand slam/.test(t)) score += 6;
+  return score;
+}
+
+type WinProbPlay = {
+  atBatIndex: number;
+  batterId: number;
+  eventType: string;
+  description: string;
+  inning: number;
+  isTopInning: boolean;
+  awayScore: number;
+  homeScore: number;
+  rbi: number;
+  battingTeamWpa: number;
+  leverageIndex: number | null;
+};
+
+async function fetchGameWinProbPlays(gamePk: number): Promise<WinProbPlay[]> {
+  try {
+    const res = await fetch(`https://statsapi.mlb.com/api/v1/game/${gamePk}/winProbability`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return [];
+    const raw = (await res.json()) as {
+      result?: {
+        eventType?: string;
+        description?: string;
+        rbi?: number;
+        awayScore?: number;
+        homeScore?: number;
+      };
+      about?: { atBatIndex?: number; inning?: number; isTopInning?: boolean };
+      matchup?: { batter?: { id?: number } };
+      homeTeamWinProbabilityAdded?: number;
+      leverageIndex?: number;
+    }[];
+    const out: WinProbPlay[] = [];
+    for (const p of raw) {
+      const batterId = p.matchup?.batter?.id;
+      if (!batterId) continue;
+      const homeWpa = p.homeTeamWinProbabilityAdded ?? 0;
+      const isTop = Boolean(p.about?.isTopInning);
+      out.push({
+        atBatIndex: p.about?.atBatIndex ?? -1,
+        batterId,
+        eventType: p.result?.eventType ?? "",
+        description: p.result?.description ?? "",
+        inning: p.about?.inning ?? 0,
+        isTopInning: isTop,
+        awayScore: p.result?.awayScore ?? 0,
+        homeScore: p.result?.homeScore ?? 0,
+        rbi: p.result?.rbi ?? 0,
+        battingTeamWpa: isTop ? -homeWpa : homeWpa,
+        leverageIndex: p.leverageIndex ?? null,
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function matchHighlightToPlay(
+  title: string,
+  playerIds: number[],
+  plays: WinProbPlay[],
+): WinProbPlay | null {
+  if (!playerIds.length || !plays.length) return null;
+  const t = title.toLowerCase();
+  let pool = plays.filter((p) => playerIds.includes(p.batterId));
+  if (!pool.length) return null;
+
+  const eventHint =
+    /grand slam/.test(t) ? "home_run" :
+    /walk.?off/.test(t) ? "home_run" :
+    /home run|homer/.test(t) ? "home_run" :
+    /strikeout|strikes out|punches out/.test(t) ? "strikeout" :
+    /double play/.test(t) ? "double_play" :
+    /single/.test(t) ? "single" :
+    /double/.test(t) ? "double" :
+    /triple/.test(t) ? "triple" :
+    null;
+
+  if (eventHint) {
+    const filtered = pool.filter((p) => p.eventType === eventHint);
+    if (filtered.length) pool = filtered;
+  }
+
+  const runCtx = t.match(/\b(solo|two-run|three-run|grand slam)\b/)?.[1];
+  if (runCtx && pool.length > 1) {
+    const narrowed = pool.filter((p) => {
+      const d = p.description.toLowerCase();
+      if (runCtx === "grand slam") return p.rbi >= 4 || /grand slam/.test(d);
+      if (runCtx === "three-run") return p.rbi >= 3 || /three-run/.test(d);
+      if (runCtx === "two-run") return p.rbi >= 2 || /two-run/.test(d);
+      if (runCtx === "solo") return p.rbi <= 1 && !/scores\./.test(d);
+      return true;
+    });
+    if (narrowed.length) pool = narrowed;
+  }
+
+  return [...pool].sort(
+    (a, b) => Math.abs(b.battingTeamWpa) - Math.abs(a.battingTeamWpa),
+  )[0] ?? null;
+}
+
+function formatPlayCircumstance(play: WinProbPlay): string {
+  const half = play.isTopInning ? "Top" : "Bot";
+  return `${half} ${play.inning}, ${play.awayScore}-${play.homeScore} — ${play.description}`;
 }
 
 function highlightImpactScore(title: string, description: string | null): number {
@@ -3964,14 +4123,32 @@ export async function fetchMlbTonightHighlights(opts?: {
   const active = board.filter((g) => g.final || g.live);
   if (!active.length) return [];
 
-  const batches = await Promise.all(
+  const winProbByGame = new Map<number, WinProbPlay[]>();
+  await Promise.all(
     active.map(async (game) => {
-      const raw = (await mlbGet(`game/${game.id}/content`)) as {
+      const plays = await fetchGameWinProbPlays(Number(game.id));
+      winProbByGame.set(Number(game.id), plays);
+    }),
+  );
+
+  type Candidate = MlbTonightHighlight & {
+    dedupKey: string;
+    clipPreference: number;
+    rawItem: RawHighlightItem;
+  };
+
+  const candidates: Candidate[] = [];
+
+  await Promise.all(
+    active.map(async (game) => {
+      const gamePk = Number(game.id);
+      const raw = (await mlbGet(`game/${gamePk}/content`)) as {
         highlights?: { highlights?: { items?: RawHighlightItem[] } };
       };
       const items = raw.highlights?.highlights?.items ?? [];
       const gameLabel = `${game.away.abbrev} @ ${game.home.abbrev}`;
-      const out: MlbTonightHighlight[] = [];
+      const wpPlays = winProbByGame.get(gamePk) ?? [];
+
       for (const v of items) {
         const base = parseHighlightItem(v);
         if (!base) continue;
@@ -3987,28 +4164,43 @@ export async function fetchMlbTonightHighlights(opts?: {
           if (kind === "tagged") watchKind = "tagged";
         }
         if (impactScore < minImpact) continue;
-        out.push({
+
+        const matched = matchHighlightToPlay(base.title, playerIds, wpPlays);
+        candidates.push({
           ...base,
-          gamePk: Number(game.id),
+          gamePk,
           gameLabel,
           impactScore: watchKind ? impactScore + 4 : impactScore,
           playerIds,
           watchKind,
+          circumstance: matched ? formatPlayCircumstance(matched) : base.description,
+          winProbabilityAdded: matched ? Math.round(matched.battingTeamWpa * 10) / 10 : null,
+          leverageIndex: matched?.leverageIndex ?? null,
+          dedupKey: highlightDedupKey(v, gamePk, playerIds, base.title),
+          clipPreference: highlightClipPreference(v, base.title),
+          rawItem: v,
         });
       }
-      return out;
     }),
   );
 
-  const seen = new Set<string>();
-  const merged: MlbTonightHighlight[] = [];
-  for (const clip of batches.flat()) {
-    if (seen.has(clip.id)) continue;
-    seen.add(clip.id);
-    merged.push(clip);
+  // One clip per play — keep the best angle / broadcast, not Field View duplicates.
+  const bestByEvent = new Map<string, Candidate>();
+  for (const clip of candidates) {
+    const prev = bestByEvent.get(clip.dedupKey);
+    if (!prev) {
+      bestByEvent.set(clip.dedupKey, clip);
+      continue;
+    }
+    const prevScore = prev.impactScore + prev.clipPreference;
+    const nextScore = clip.impactScore + clip.clipPreference;
+    if (nextScore > prevScore) bestByEvent.set(clip.dedupKey, clip);
   }
 
-  merged.sort((a, b) => {
+  const merged = [...bestByEvent.values()].sort((a, b) => {
+    const wpaA = Math.abs(a.winProbabilityAdded ?? 0);
+    const wpaB = Math.abs(b.winProbabilityAdded ?? 0);
+    if (wpaB !== wpaA) return wpaB - wpaA;
     if (b.impactScore !== a.impactScore) return b.impactScore - a.impactScore;
     const watchA = a.watchKind === "favorite" ? 2 : a.watchKind === "tagged" ? 1 : 0;
     const watchB = b.watchKind === "favorite" ? 2 : b.watchKind === "tagged" ? 1 : 0;
@@ -4016,7 +4208,7 @@ export async function fetchMlbTonightHighlights(opts?: {
     return (b.date ?? "").localeCompare(a.date ?? "");
   });
 
-  return merged.slice(0, maxClips);
+  return merged.slice(0, maxClips).map(({ dedupKey: _d, clipPreference: _p, rawItem: _r, ...clip }) => clip);
 }
 
 /** League snapshot, top lines, tagged players, and premium highlights for tonight. */
@@ -4077,6 +4269,7 @@ export async function fetchMlbTonightDigest(opts?: {
           gamePk: box.gamePk,
           gameLabel,
           todayLine: formatBatterTodayLine(b),
+          seasonLine: formatBatterSeasonLine(b),
           fantasyPoints: fp,
         });
         collectTagged(
@@ -4100,6 +4293,7 @@ export async function fetchMlbTonightDigest(opts?: {
           gamePk: box.gamePk,
           gameLabel,
           todayLine: formatPitcherTodayLine(p),
+          seasonLine: formatPitcherSeasonLine(p),
           fantasyPoints: fp,
         });
         const existing = taggedById.get(p.id);
@@ -4118,9 +4312,12 @@ export async function fetchMlbTonightDigest(opts?: {
     }
   }
 
-  performers.sort(
-    (a, b) => b.fantasyPoints - a.fantasyPoints || a.name.localeCompare(b.name),
-  );
+  const hitters = performers
+    .filter((p) => p.role === "hitting")
+    .sort((a, b) => b.fantasyPoints - a.fantasyPoints || a.name.localeCompare(b.name));
+  const pitchers = performers
+    .filter((p) => p.role === "pitching")
+    .sort((a, b) => b.fantasyPoints - a.fantasyPoints || a.name.localeCompare(b.name));
 
   const tagged = [...taggedById.values()].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -4140,7 +4337,8 @@ export async function fetchMlbTonightDigest(opts?: {
       hits,
       strikeouts,
     },
-    topPerformers: performers.slice(0, 12),
+    topHitters: hitters.slice(0, 8),
+    topPitchers: pitchers.slice(0, 6),
     tagged,
     highlights,
   };

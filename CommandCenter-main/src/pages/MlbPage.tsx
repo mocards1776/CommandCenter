@@ -832,7 +832,7 @@ function TonightHighlightsSection({
     );
   }
 
-  const { league, topPerformers, tagged, highlights } = digest;
+  const { league, topHitters, topPitchers, tagged, highlights } = digest;
   const statTiles = [
     { label: "Games", value: String(league.gamesPlayed) },
     { label: "Live", value: String(league.gamesLive) },
@@ -864,8 +864,11 @@ function TonightHighlightsSection({
         </div>
       </section>
 
-      {topPerformers.length > 0 && (
-        <PerformerTable rows={topPerformers} returnPath={returnPath} />
+      {(topHitters.length > 0 || topPitchers.length > 0) && (
+        <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <PerformerTable title="Best hitting" rows={topHitters} returnPath={returnPath} />
+          <PerformerTable title="Best pitching" rows={topPitchers} returnPath={returnPath} />
+        </section>
       )}
 
       {tagged.length > 0 ? (
@@ -896,9 +899,20 @@ function TonightHighlightsSection({
             <div className="flex items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-2.5">
               <div className="min-w-0">
                 <p className="truncate text-[12.5px] text-[#c8cdd8]">{active.title}</p>
-                <p className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
-                  {active.gameLabel}
-                </p>
+                {active.circumstance ? (
+                  <p className="text-chalk-dim mt-0.5 line-clamp-2 text-[11px]">{active.circumstance}</p>
+                ) : null}
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <p className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+                    {active.gameLabel}
+                  </p>
+                  {active.winProbabilityAdded != null ? (
+                    <span className="numeral text-[10px] text-emerald-300">
+                      {active.winProbabilityAdded >= 0 ? "+" : ""}
+                      {active.winProbabilityAdded.toFixed(1)}% WPA
+                    </span>
+                  ) : null}
+                </div>
               </div>
               <button
                 type="button"
@@ -924,9 +938,11 @@ function TonightHighlightsSection({
 }
 
 function PerformerTable({
+  title,
   rows,
   returnPath,
 }: {
+  title: string;
   rows: MlbTonightPerformer[];
   returnPath: string;
 }) {
@@ -935,26 +951,24 @@ function PerformerTable({
     <div className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] px-4 py-2.5">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-          Best performances tonight
+          {title}
         </h3>
-        <p className="text-chalk-dim mt-1 text-[10px]">
-          DraftKings-style scoring — hitters and pitchers on the same scale
-        </p>
+        <p className="text-chalk-dim mt-1 text-[10px]">DraftKings-style fantasy points</p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[480px] text-left text-[12px]">
           <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
             <tr className="border-b border-white/[0.06]">
               <th className="px-3 py-2 font-medium">Player</th>
-              <th className="px-2 py-2 font-medium">Role</th>
               <th className="px-2 py-2 font-medium">Today</th>
+              <th className="px-2 py-2 font-medium">Season</th>
               <th className="px-2 py-2 font-medium">Matchup</th>
               <th className="numeral px-3 py-2 text-right font-medium">FP</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={`${row.role}-${row.playerId}-${row.gamePk}`} className="border-t border-white/[0.04]">
+              <tr key={`${title}-${row.playerId}-${row.gamePk}`} className="border-t border-white/[0.04]">
                 <td className="px-3 py-2.5">
                   <Link
                     to={`/sports/mlb/player/${row.playerId}`}
@@ -973,10 +987,8 @@ function PerformerTable({
                     </span>
                   </Link>
                 </td>
-                <td className="text-chalk-dim px-2 py-2.5 text-[10px] uppercase tracking-[0.12em]">
-                  {row.role === "pitching" ? "P" : "H"}
-                </td>
                 <td className="numeral text-chalk px-2 py-2.5">{row.todayLine}</td>
+                <td className="numeral text-chalk-dim px-2 py-2.5">{row.seasonLine || "—"}</td>
                 <td className="px-2 py-2.5">
                   <Link
                     to={`/sports/mlb/game/${row.gamePk}`}
@@ -1125,6 +1137,29 @@ function HighlightClipGrid({
               ) : null}
             </div>
             <p className="line-clamp-2 text-[12.5px] leading-snug text-[#b8bfd0]">{clip.title}</p>
+            {clip.circumstance ? (
+              <p className="text-chalk-dim line-clamp-2 text-[11px] leading-snug">{clip.circumstance}</p>
+            ) : null}
+            {(clip.winProbabilityAdded != null || clip.leverageIndex != null) && (
+              <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.12em]">
+                {clip.winProbabilityAdded != null ? (
+                  <span
+                    className={cn(
+                      "numeral rounded-sm px-1.5 py-0.5",
+                      clip.winProbabilityAdded >= 0
+                        ? "bg-emerald-500/15 text-emerald-300"
+                        : "bg-alert/15 text-alert",
+                    )}
+                  >
+                    {clip.winProbabilityAdded >= 0 ? "+" : ""}
+                    {clip.winProbabilityAdded.toFixed(1)}% WPA
+                  </span>
+                ) : null}
+                {clip.leverageIndex != null ? (
+                  <span className="text-chalk-dim numeral">LI {clip.leverageIndex.toFixed(2)}</span>
+                ) : null}
+              </div>
+            )}
             {clip.playerIds[0] ? (
               <Link
                 to={`/sports/mlb/player/${clip.playerIds[0]}`}
