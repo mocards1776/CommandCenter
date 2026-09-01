@@ -876,7 +876,7 @@ function TonightHighlightsSection({
       ) : null}
 
       <section>
-        <h3 className="rule-head mb-3">Premium highlights</h3>
+        <h3 className="rule-head mb-3">Premium highlights &amp; web gems</h3>
         {highlights.length ? (
           <HighlightClipGrid clips={highlights} returnPath={returnPath} onPlay={setActive} />
         ) : (
@@ -1133,6 +1133,11 @@ function HighlightClipGrid({
               ) : clip.watchKind === "tagged" ? (
                 <span className="text-[10px] uppercase tracking-[0.12em] text-[#7eb6ff]">
                   Tagged
+                </span>
+              ) : null}
+              {clip.isDefense ? (
+                <span className="text-[10px] uppercase tracking-[0.12em] text-amber-300/90">
+                  Web gem
                 </span>
               ) : null}
             </div>

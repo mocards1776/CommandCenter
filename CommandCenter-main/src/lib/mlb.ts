@@ -111,6 +111,8 @@ export type MlbTonightHighlight = MlbHighlight & {
   /** Batting team's win probability added (percentage points). */
   winProbabilityAdded: number | null;
   leverageIndex: number | null;
+  /** Defensive highlight (web gem, diving catch, etc.). */
+  isDefense?: boolean;
 };
 
 export type MlbTonightLeagueStats = {
@@ -3848,6 +3850,7 @@ function highlightClipPreference(item: RawHighlightItem, title: string): number 
   const tax = highlightTaxonomies(item);
   if (tax.includes("in-game-highlight")) score += 8;
   if (tax.includes("game-story-highlight")) score += 4;
+  if (tax.includes("defense")) score += 5;
   if (/^field view:/i.test(title)) score -= 25;
   if (/broadcast compare|slow motion|mic'd up|sound on/i.test(t)) score -= 12;
   if (/caps .+ inning|gives .+ the lead|ties the game|walk-off|grand slam/.test(t)) score += 6;
@@ -3857,6 +3860,7 @@ function highlightClipPreference(item: RawHighlightItem, title: string): number 
 type WinProbPlay = {
   atBatIndex: number;
   batterId: number;
+  fielderIds: number[];
   eventType: string;
   description: string;
   inning: number;
@@ -3865,6 +3869,7 @@ type WinProbPlay = {
   homeScore: number;
   rbi: number;
   battingTeamWpa: number;
+  homeWpaAdded: number;
   leverageIndex: number | null;
 };
 
@@ -3886,6 +3891,7 @@ async function fetchGameWinProbPlays(gamePk: number): Promise<WinProbPlay[]> {
       matchup?: { batter?: { id?: number } };
       homeTeamWinProbabilityAdded?: number;
       leverageIndex?: number;
+      credits?: { player?: { id?: number }; credit?: string }[];
     }[];
     const out: WinProbPlay[] = [];
     for (const p of raw) {
@@ -3893,17 +3899,27 @@ async function fetchGameWinProbPlays(gamePk: number): Promise<WinProbPlay[]> {
       if (!batterId) continue;
       const homeWpa = p.homeTeamWinProbabilityAdded ?? 0;
       const isTop = Boolean(p.about?.isTopInning);
+      const fielderIds: number[] = [];
+      const desc = p.result?.description ?? "";
+      for (const c of p.credits ?? []) {
+        const id = c.player?.id;
+        if (id && (c.credit?.startsWith("f_") || c.credit === "f_assist")) {
+          fielderIds.push(id);
+        }
+      }
       out.push({
         atBatIndex: p.about?.atBatIndex ?? -1,
         batterId,
+        fielderIds,
         eventType: p.result?.eventType ?? "",
-        description: p.result?.description ?? "",
+        description: desc,
         inning: p.about?.inning ?? 0,
         isTopInning: isTop,
         awayScore: p.result?.awayScore ?? 0,
         homeScore: p.result?.homeScore ?? 0,
         rbi: p.result?.rbi ?? 0,
         battingTeamWpa: isTop ? -homeWpa : homeWpa,
+        homeWpaAdded: homeWpa,
         leverageIndex: p.leverageIndex ?? null,
       });
     }
@@ -3962,9 +3978,68 @@ function formatPlayCircumstance(play: WinProbPlay): string {
   return `${half} ${play.inning}, ${play.awayScore}-${play.homeScore} — ${play.description}`;
 }
 
-function highlightImpactScore(title: string, description: string | null): number {
+function isDefenseHighlight(
+  item: RawHighlightItem,
+  title: string,
+  description: string | null,
+): boolean {
+  const tax = highlightTaxonomies(item);
+  if (tax.includes("defense")) return true;
+  const text = `${title} ${description ?? ""}`.toLowerCase();
+  return /web gem|\bgem\b|great catch|diving catch|sliding catch|sprawling catch|leaping catch|amazing catch|spectacular catch|(?:rob|nab)s\b|throws .+ out|guns down|backhanded|lays out|climbing the wall|snow cone|highlights-reel catch|sliding play|diving stop|leaping grab/.test(
+    text,
+  );
+}
+
+function highlightQualifies(impactScore: number, isDefense: boolean): boolean {
+  if (isDefense) return impactScore >= 4;
+  return impactScore >= 7;
+}
+
+function defendingTeamWpa(play: WinProbPlay): number {
+  return play.isTopInning ? play.homeWpaAdded : -play.homeWpaAdded;
+}
+
+function fielderNameHint(title: string): string | null {
+  const m = title.match(/^(.+?)['\u2019]s\b/);
+  return m?.[1]?.trim().toLowerCase() ?? null;
+}
+
+function matchDefenseHighlightToPlay(
+  title: string,
+  playerIds: number[],
+  plays: WinProbPlay[],
+): WinProbPlay | null {
+  if (!plays.length) return null;
+  const hint = fielderNameHint(title)?.split(" ").pop() ?? "";
+  let pool = plays.filter((p) => {
+    const desc = p.description.toLowerCase();
+    if (hint && desc.includes(hint)) return true;
+    return playerIds.some((id) => p.fielderIds.includes(id));
+  });
+  if (!pool.length && hint) {
+    pool = plays.filter((p) => p.description.toLowerCase().includes(hint));
+  }
+  if (!pool.length) return null;
+  const outs = pool.filter((p) =>
+    /grounds? out|flies? out|lines? out|force out|fielders? choice|double play|field_out/i.test(
+      `${p.eventType} ${p.description}`,
+    ),
+  );
+  const ranked = (outs.length ? outs : pool).sort(
+    (a, b) => Math.abs(defendingTeamWpa(b)) - Math.abs(defendingTeamWpa(a)),
+  );
+  return ranked[0] ?? null;
+}
+
+function highlightImpactScore(
+  title: string,
+  description: string | null,
+  isDefense = false,
+): number {
   const text = `${title} ${description ?? ""}`.toLowerCase();
   if (
+    !isDefense &&
     /singles? to|ground(?:s|ed)? out|fly(?:s|ing)? out|pop(?:s|ping)? out|lines? out|fielder'?s choice|force(?:s|d)? out|double play/.test(
       text,
     )
@@ -3984,8 +4059,15 @@ function highlightImpactScore(title: string, description: string | null): number
   if (/grand slam/.test(text)) score += 11;
   if (/no[- ]?hitter|perfect game|\bcycle\b/.test(text)) score += 12;
   if (/three home runs|3 home runs|two home runs|2 home runs/.test(text)) score += 11;
-  if (/rob(s|bed)|diving catch|web gem|amazing catch|leaping catch|climbing the wall/.test(text))
-    score += 8;
+  if (/\bweb gem\b/.test(text)) score += 11;
+  if (/great (diving |sliding |leaping )?catch|spectacular catch|amazing catch/.test(text))
+    score += 10;
+  if (/diving catch|sliding catch|sprawling catch|leaping catch|climbing the wall/.test(text))
+    score += 9;
+  if (/rob(s|bed)|backhanded|lays out|snow cone/.test(text)) score += 8;
+  if (/\bnabs\b|throws .+ out|guns down|sliding play|diving stop|leaping grab/.test(text))
+    score += 7;
+  if (isDefense) score += 5;
   if (/steals home|steal of home/.test(text)) score += 9;
   if (/two-run|three-run|go-ahead|ties the game|takes the lead|game-tying/.test(text)) score += 7;
   if (/home run|homers?|crushes|launches|blasts|solo shot/.test(text)) score += 5;
@@ -4117,8 +4199,8 @@ export async function fetchMlbTonightHighlights(opts?: {
   maxClips?: number;
   games?: MlbScoreGame[];
 }): Promise<MlbTonightHighlight[]> {
-  const maxClips = opts?.maxClips ?? 8;
-  const minImpact = 7;
+  const maxClips = opts?.maxClips ?? 10;
+  const minDefenseSlots = 3;
   const board = opts?.games ?? (await fetchMlbScoreboard());
   const active = board.filter((g) => g.final || g.live);
   if (!active.length) return [];
@@ -4134,6 +4216,7 @@ export async function fetchMlbTonightHighlights(opts?: {
   type Candidate = MlbTonightHighlight & {
     dedupKey: string;
     clipPreference: number;
+    isDefense: boolean;
     rawItem: RawHighlightItem;
   };
 
@@ -4153,7 +4236,8 @@ export async function fetchMlbTonightHighlights(opts?: {
         const base = parseHighlightItem(v);
         if (!base) continue;
         const playerIds = highlightPlayerIds(v);
-        const impactScore = highlightImpactScore(base.title, base.description);
+        const isDefense = isDefenseHighlight(v, base.title, base.description);
+        const impactScore = highlightImpactScore(base.title, base.description, isDefense);
         let watchKind: PlayerWatchKind | null = null;
         for (const id of playerIds) {
           const kind = playerWatchKind(id, opts?.favoritePlayerIds, opts?.taggedPlayerIds);
@@ -4163,9 +4247,23 @@ export async function fetchMlbTonightHighlights(opts?: {
           }
           if (kind === "tagged") watchKind = "tagged";
         }
-        if (impactScore < minImpact) continue;
+        if (!highlightQualifies(impactScore, isDefense)) continue;
 
-        const matched = matchHighlightToPlay(base.title, playerIds, wpPlays);
+        const matched = isDefense
+          ? matchDefenseHighlightToPlay(base.title, playerIds, wpPlays)
+          : matchHighlightToPlay(base.title, playerIds, wpPlays);
+        const wpa = matched
+          ? Math.round(
+              (isDefense ? defendingTeamWpa(matched) : matched.battingTeamWpa) * 10,
+            ) / 10
+          : null;
+        const circumstance =
+          isDefense && base.description
+            ? base.description
+            : matched
+              ? formatPlayCircumstance(matched)
+              : base.description;
+
         candidates.push({
           ...base,
           gamePk,
@@ -4173,11 +4271,12 @@ export async function fetchMlbTonightHighlights(opts?: {
           impactScore: watchKind ? impactScore + 4 : impactScore,
           playerIds,
           watchKind,
-          circumstance: matched ? formatPlayCircumstance(matched) : base.description,
-          winProbabilityAdded: matched ? Math.round(matched.battingTeamWpa * 10) / 10 : null,
+          circumstance,
+          winProbabilityAdded: wpa,
           leverageIndex: matched?.leverageIndex ?? null,
           dedupKey: highlightDedupKey(v, gamePk, playerIds, base.title),
-          clipPreference: highlightClipPreference(v, base.title),
+          clipPreference: highlightClipPreference(v, base.title) + (isDefense ? 6 : 0),
+          isDefense,
           rawItem: v,
         });
       }
@@ -4197,7 +4296,7 @@ export async function fetchMlbTonightHighlights(opts?: {
     if (nextScore > prevScore) bestByEvent.set(clip.dedupKey, clip);
   }
 
-  const merged = [...bestByEvent.values()].sort((a, b) => {
+  const sortCandidates = (a: Candidate, b: Candidate) => {
     const wpaA = Math.abs(a.winProbabilityAdded ?? 0);
     const wpaB = Math.abs(b.winProbabilityAdded ?? 0);
     if (wpaB !== wpaA) return wpaB - wpaA;
@@ -4206,9 +4305,37 @@ export async function fetchMlbTonightHighlights(opts?: {
     const watchB = b.watchKind === "favorite" ? 2 : b.watchKind === "tagged" ? 1 : 0;
     if (watchB !== watchA) return watchB - watchA;
     return (b.date ?? "").localeCompare(a.date ?? "");
-  });
+  };
 
-  return merged.slice(0, maxClips).map(({ dedupKey: _d, clipPreference: _p, rawItem: _r, ...clip }) => clip);
+  const pool = [...bestByEvent.values()];
+  const offense = pool.filter((c) => !c.isDefense).sort(sortCandidates);
+  const defense = pool.filter((c) => c.isDefense).sort(sortCandidates);
+  const picked: Candidate[] = [];
+  const used = new Set<string>();
+  const maxOffense = Math.max(4, maxClips - minDefenseSlots);
+
+  for (const clip of offense) {
+    if (picked.length >= maxOffense) break;
+    picked.push(clip);
+    used.add(clip.dedupKey);
+  }
+  for (const clip of defense) {
+    if (picked.filter((c) => c.isDefense).length >= minDefenseSlots) break;
+    if (used.has(clip.dedupKey)) continue;
+    picked.push(clip);
+    used.add(clip.dedupKey);
+  }
+  for (const clip of pool.sort(sortCandidates)) {
+    if (picked.length >= maxClips) break;
+    if (used.has(clip.dedupKey)) continue;
+    picked.push(clip);
+    used.add(clip.dedupKey);
+  }
+
+  return picked
+    .sort(sortCandidates)
+    .slice(0, maxClips)
+    .map(({ dedupKey: _d, clipPreference: _p, rawItem: _r, ...clip }) => clip);
 }
 
 /** League snapshot, top lines, tagged players, and premium highlights for tonight. */
