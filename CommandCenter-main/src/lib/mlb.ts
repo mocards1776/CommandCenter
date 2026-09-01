@@ -3912,62 +3912,6 @@ function formatPitcherSeasonLine(p: MlbBoxscorePitcher): string {
     .join(" · ");
 }
 
-async function fetchTaggedPlayerSeasonFallback(
-  playerId: number,
-): Promise<Omit<MlbTonightTaggedRow, "todayLine" | "played"> | null> {
-  try {
-    const season = currentSeason();
-    const raw = (await mlbGet(`people/${playerId}`, {
-      hydrate: `currentTeam,stats(group=[hitting,pitching],type=[season],season=${season})`,
-    })) as {
-      people?: {
-        fullName?: string;
-        primaryPosition?: { abbreviation?: string };
-        currentTeam?: { abbreviation?: string };
-        stats?: {
-          group?: { displayName?: string };
-          splits?: { stat?: Record<string, unknown> }[];
-        }[];
-      }[];
-    };
-    const p = raw.people?.[0];
-    if (!p?.fullName) return null;
-    const hitting = p.stats?.find((s) => s.group?.displayName === "hitting")?.splits?.[0]?.stat;
-    const pitching = p.stats?.find((s) => s.group?.displayName === "pitching")?.splits?.[0]?.stat;
-    const pos = p.primaryPosition?.abbreviation ?? null;
-    const teamAbbrev = p.currentTeam?.abbreviation ?? "—";
-    let seasonLine = "—";
-    if (pitching && Number(pitching.inningsPitched ?? 0) > 0) {
-      const w = pitching.wins;
-      const l = pitching.losses;
-      seasonLine = [
-        w != null && l != null ? `${w}-${l}` : null,
-        pitching.era ? `${pitching.era} ERA` : null,
-        Number(pitching.saves ?? 0) > 0 ? `${pitching.saves} SV` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-    } else if (hitting) {
-      seasonLine = [
-        hitting.avg ? `${hitting.avg} AVG` : null,
-        hitting.homeRuns != null ? `${hitting.homeRuns} HR` : null,
-        hitting.rbi != null ? `${hitting.rbi} RBI` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-    }
-    return {
-      playerId,
-      name: p.fullName,
-      teamAbbrev,
-      position: pos,
-      seasonLine: seasonLine || "—",
-    };
-  } catch {
-    return null;
-  }
-}
-
 function parseHighlightItem(v: RawHighlightItem): MlbHighlight | null {
   if (v.type !== "video") return null;
   const title = v.title || v.headline || "Highlight";
@@ -4154,24 +4098,7 @@ export async function fetchMlbTonightDigest(opts?: {
   hitters.sort((a, b) => b.gameScore - a.gameScore || a.name.localeCompare(b.name));
   pitchers.sort((a, b) => b.gameScore - a.gameScore || a.name.localeCompare(b.name));
 
-  const taggedIds = [...(opts?.taggedPlayerIds ?? [])];
-  const missingTagged = taggedIds.filter((id) => !taggedById.has(id));
-  if (missingTagged.length) {
-    const fallbacks = await Promise.all(missingTagged.map((id) => fetchTaggedPlayerSeasonFallback(id)));
-    for (const row of fallbacks) {
-      if (!row) continue;
-      taggedById.set(row.playerId, {
-        ...row,
-        todayLine: "DNP",
-        played: false,
-      });
-    }
-  }
-
-  const tagged = [...taggedById.values()].sort((a, b) => {
-    if (a.played !== b.played) return a.played ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+  const tagged = [...taggedById.values()].sort((a, b) => a.name.localeCompare(b.name));
 
   const highlights = await fetchMlbTonightHighlights({
     favoritePlayerIds: opts?.favoritePlayerIds,

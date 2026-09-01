@@ -1029,13 +1029,7 @@ function TaggedPerformersTable({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr
-                key={row.playerId}
-                className={cn(
-                  "border-t border-white/[0.04]",
-                  !row.played && "opacity-70",
-                )}
-              >
+              <tr key={row.playerId} className="border-t border-white/[0.04]">
                 <td className="px-3 py-2.5">
                   <Link
                     to={`/sports/mlb/player/${row.playerId}`}
@@ -1057,14 +1051,7 @@ function TaggedPerformersTable({
                     </span>
                   </Link>
                 </td>
-                <td
-                  className={cn(
-                    "numeral px-2 py-2.5",
-                    row.played ? "text-chalk" : "text-chalk-dim italic",
-                  )}
-                >
-                  {row.todayLine}
-                </td>
+                <td className="numeral text-chalk px-2 py-2.5">{row.todayLine}</td>
                 <td className="numeral text-chalk-dim px-2 py-2.5">{row.seasonLine}</td>
               </tr>
             ))}
