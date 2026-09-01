@@ -20,6 +20,7 @@ import {
   MlbTeamLeadersSection,
   MlbTeamOrgSummary,
   MlbTeamPayrollTable,
+  MlbTeamRecordSplitsSection,
   MlbTeamWinTrend,
 } from "@/components/sports/MlbTeamExtras";
 import TeamMark from "@/components/sports/TeamMark";
@@ -1073,8 +1074,143 @@ function TeamDetailPanel({
                 )}
               </DetailSection>
 
+              <CollapsibleDetailSection title="Upcoming" count={detail.upcoming.length} defaultOpen={false}>
+                <GameList
+                  games={detail.upcoming}
+                  empty="No upcoming games."
+                  mlbBoxscores={detail.source === "mlb"}
+                />
+              </CollapsibleDetailSection>
+
+              <CollapsibleDetailSection title="Recent" count={detail.recent.length} defaultOpen={false}>
+                <GameList
+                  games={detail.recent}
+                  empty="No recent games."
+                  mlbBoxscores={detail.source === "mlb"}
+                />
+              </CollapsibleDetailSection>
+
+              <CollapsibleDetailSection title="Roster" count={detail.roster.length} defaultOpen={false}>
+                {detail.roster.length === 0 ? (
+                  <EmptyLine>Roster unavailable.</EmptyLine>
+                ) : isSoccer ? (
+                  <SoccerRosterList roster={detail.roster} />
+                ) : (
+                  <ul className="bg-panel divide-y divide-white/[0.05] rounded border border-white/[0.07]">
+                    {detail.roster.map((p) => {
+                      const mlbClickable =
+                        detail.source === "mlb" && /^\d+$/.test(String(p.id));
+                      const nflClickable =
+                        fav.league === "NFL" && /^\d+$/.test(String(p.id));
+                      const cfbClickable =
+                        fav.league === "NCAA" &&
+                        fav.sport === "Football" &&
+                        /^\d+$/.test(String(p.id));
+                      const href = mlbClickable
+                        ? `/sports/mlb/player/${p.id}`
+                        : nflClickable
+                          ? `/sports/nfl/player/${p.id}`
+                          : cfbClickable
+                            ? `/sports/cfb/player/${p.id}`
+                            : null;
+                      const row = (
+                        <>
+                          <span className="text-chalk-dim numeral w-8 shrink-0 text-[11px]">
+                            {p.number ? `#${p.number}` : "—"}
+                          </span>
+                          <span className="text-cream min-w-0 flex-1 truncate group-hover:underline">
+                            {p.name}
+                          </span>
+                          <span className="text-chalk-dim shrink-0 text-[10px] uppercase tracking-[0.12em]">
+                            {p.position ?? "—"}
+                          </span>
+                        </>
+                      );
+                      return (
+                        <li key={p.id}>
+                          {href ? (
+                            <Link
+                              to={href}
+                              className="group flex items-baseline gap-2 px-3 py-2 text-[12.5px] hover:bg-white/[0.03]"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {row}
+                            </Link>
+                          ) : (
+                            <div className="flex items-baseline gap-2 px-3 py-2 text-[12.5px]">
+                              {row}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </CollapsibleDetailSection>
+
+              {!isSoccer ? (
+              <DetailSection title="Team stats">
+                {(detail.teamHitting.length > 0 || detail.teamPitching.length > 0) ? (
+                  <div className="flex flex-col gap-3">
+                    {detail.teamHitting.length > 0 && (
+                      <StatGrid
+                        title="Hitting"
+                        rows={detail.teamHitting}
+                        ranks={statRankMap}
+                      />
+                    )}
+                    {detail.teamPitching.length > 0 && (
+                      <StatGrid
+                        title="Pitching"
+                        rows={detail.teamPitching}
+                        ranks={statRankMap}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <EmptyLine>
+                    {detail.source === "mlb"
+                      ? "Team stats unavailable."
+                      : "Detailed team stats via MLB for Cardinals; other leagues show standings & roster."}
+                  </EmptyLine>
+                )}
+              </DetailSection>
+              ) : null}
+
+              {mlbTeamId && detail.source === "mlb" && (
+                <MlbTeamRecordSplitsSection teamId={mlbTeamId} accent={accent} />
+              )}
+
               {mlbTeamId && detail.source === "mlb" && (
                 <MlbTeamLeadersSection teamId={mlbTeamId} accent={accent} />
+              )}
+
+              {(detail.hittingLeaders.length > 0 || detail.pitchingLeaders.length > 0) &&
+                detail.source !== "mlb" && (
+                <DetailSection title="Leaders">
+                  <div className="flex flex-col gap-4">
+                    {detail.hittingLeaders.length > 0 && (
+                      <LeaderList title="Hitting" leaders={detail.hittingLeaders} sport="mlb" />
+                    )}
+                    {detail.pitchingLeaders.length > 0 && (
+                      <LeaderList title="Pitching" leaders={detail.pitchingLeaders} sport="mlb" />
+                    )}
+                  </div>
+                </DetailSection>
+              )}
+
+              {detail.playerTables.length > 0 && (
+                <DetailSection title="Player stats">
+                  <div className="flex flex-col gap-4">
+                    {detail.playerTables.map((table) => (
+                      <PlayerStatTable
+                        key={table.name}
+                        table={table}
+                        sport={detail.source === "mlb" ? "mlb" : "nfl"}
+                      />
+                    ))}
+                  </div>
+                </DetailSection>
               )}
 
               {mlbTeamId && detail.source === "mlb" && detail.abbrev && (
@@ -1215,137 +1351,6 @@ function TeamDetailPanel({
                 )}
               </DetailSection>
               ) : null}
-
-              <CollapsibleDetailSection title="Upcoming" count={detail.upcoming.length} defaultOpen={false}>
-                <GameList
-                  games={detail.upcoming}
-                  empty="No upcoming games."
-                  mlbBoxscores={detail.source === "mlb"}
-                />
-              </CollapsibleDetailSection>
-
-              <CollapsibleDetailSection title="Recent" count={detail.recent.length} defaultOpen={false}>
-                <GameList
-                  games={detail.recent}
-                  empty="No recent games."
-                  mlbBoxscores={detail.source === "mlb"}
-                />
-              </CollapsibleDetailSection>
-
-              <CollapsibleDetailSection title="Roster" count={detail.roster.length} defaultOpen={false}>
-                {detail.roster.length === 0 ? (
-                  <EmptyLine>Roster unavailable.</EmptyLine>
-                ) : isSoccer ? (
-                  <SoccerRosterList roster={detail.roster} />
-                ) : (
-                  <ul className="bg-panel divide-y divide-white/[0.05] rounded border border-white/[0.07]">
-                    {detail.roster.map((p) => {
-                      const mlbClickable =
-                        detail.source === "mlb" && /^\d+$/.test(String(p.id));
-                      const nflClickable =
-                        fav.league === "NFL" && /^\d+$/.test(String(p.id));
-                      const cfbClickable =
-                        fav.league === "NCAA" &&
-                        fav.sport === "Football" &&
-                        /^\d+$/.test(String(p.id));
-                      const href = mlbClickable
-                        ? `/sports/mlb/player/${p.id}`
-                        : nflClickable
-                          ? `/sports/nfl/player/${p.id}`
-                          : cfbClickable
-                            ? `/sports/cfb/player/${p.id}`
-                            : null;
-                      const row = (
-                        <>
-                          <span className="text-chalk-dim numeral w-8 shrink-0 text-[11px]">
-                            {p.number ? `#${p.number}` : "—"}
-                          </span>
-                          <span className="text-cream min-w-0 flex-1 truncate group-hover:underline">
-                            {p.name}
-                          </span>
-                          <span className="text-chalk-dim shrink-0 text-[10px] uppercase tracking-[0.12em]">
-                            {p.position ?? "—"}
-                          </span>
-                        </>
-                      );
-                      return (
-                        <li key={p.id}>
-                          {href ? (
-                            <Link
-                              to={href}
-                              className="group flex items-baseline gap-2 px-3 py-2 text-[12.5px] hover:bg-white/[0.03]"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {row}
-                            </Link>
-                          ) : (
-                            <div className="flex items-baseline gap-2 px-3 py-2 text-[12.5px]">
-                              {row}
-                            </div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </CollapsibleDetailSection>
-
-              {!isSoccer ? (
-              <DetailSection title="Team stats">
-                {(detail.teamHitting.length > 0 || detail.teamPitching.length > 0) ? (
-                  <div className="flex flex-col gap-3">
-                    {detail.teamHitting.length > 0 && (
-                      <StatGrid
-                        title="Hitting"
-                        rows={detail.teamHitting}
-                        ranks={statRankMap}
-                      />
-                    )}
-                    {detail.teamPitching.length > 0 && (
-                      <StatGrid
-                        title="Pitching"
-                        rows={detail.teamPitching}
-                        ranks={statRankMap}
-                      />
-                    )}
-                  </div>
-                ) : (
-                  <EmptyLine>
-                    {detail.source === "mlb"
-                      ? "Team stats unavailable."
-                      : "Detailed team stats via MLB for Cardinals; other leagues show standings & roster."}
-                  </EmptyLine>
-                )}
-              </DetailSection>
-              ) : null}
-
-              {(detail.hittingLeaders.length > 0 || detail.pitchingLeaders.length > 0) &&
-                detail.source !== "mlb" && (
-                <DetailSection title="Leaders">
-                  <div className="flex flex-col gap-4">
-                    {detail.hittingLeaders.length > 0 && (
-                      <LeaderList title="Hitting" leaders={detail.hittingLeaders} sport="mlb" />
-                    )}
-                    {detail.pitchingLeaders.length > 0 && (
-                      <LeaderList title="Pitching" leaders={detail.pitchingLeaders} sport="mlb" />
-                    )}
-                  </div>
-                </DetailSection>
-              )}
-
-              {detail.playerTables.length > 0 && (
-                <DetailSection title="Player stats">
-                  <div className="flex flex-col gap-4">
-                    {detail.playerTables.map((table) => (
-                      <PlayerStatTable
-                        key={table.name}
-                        table={table}
-                        sport={detail.source === "mlb" ? "mlb" : "nfl"}
-                      />
-                    ))}
-                  </div>
-                </DetailSection>
-              )}
             </div>
           )}
         </div>
