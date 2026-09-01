@@ -14,7 +14,7 @@ import {
   fetchMlbManagers,
   fetchMlbScoreboard,
   fetchMlbStandings,
-  fetchMlbTonightHighlights,
+  fetchMlbTonightDigest,
   mlbHeadshot,
   mlbHeadshotFallbacks,
   playoffOddsFromStandings,
@@ -22,7 +22,10 @@ import {
   type MlbLeaderBoard,
   type MlbPageTab,
   type MlbScoreGame,
+  type MlbTonightDigest,
   type MlbTonightHighlight,
+  type MlbTonightPerformer,
+  type MlbTonightTaggedRow,
 } from "@/lib/mlb";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
@@ -125,12 +128,12 @@ export default function MlbPage() {
 
   const tonight = useQuery({
     queryKey: [
-      "mlb-tonight-highlights",
+      "mlb-tonight-digest",
       [...favoritePlayerIds].join(","),
       [...taggedPlayerIds].join(","),
     ],
     queryFn: () =>
-      fetchMlbTonightHighlights({ favoritePlayerIds, taggedPlayerIds }),
+      fetchMlbTonightDigest({ favoritePlayerIds, taggedPlayerIds }),
     enabled: tab === "highlights",
     staleTime: 120_000,
     refetchInterval: tab === "highlights" ? 120_000 : false,
@@ -232,7 +235,7 @@ export default function MlbPage() {
       )}
       {tab === "highlights" && (
         <TonightHighlightsSection
-          clips={tonight.data ?? []}
+          digest={tonight.data ?? null}
           loading={tonight.isPending}
           error={tonight.isError ? "Couldn’t load tonight’s highlights." : null}
           returnPath={returnPath}
@@ -807,12 +810,12 @@ function OddsSection({
 }
 
 function TonightHighlightsSection({
-  clips,
+  digest,
   loading,
   error,
   returnPath,
 }: {
-  clips: MlbTonightHighlight[];
+  digest: MlbTonightDigest | null;
   loading: boolean;
   error: string | null;
   returnPath: string;
@@ -821,43 +824,74 @@ function TonightHighlightsSection({
 
   if (loading) return <LoadingBlock label="Loading tonight’s highlights…" />;
   if (error) return <ErrorLine>{error}</ErrorLine>;
-
-  const watchClips = clips.filter((c) => c.watchKind);
-  const impactClips = clips.filter((c) => !c.watchKind);
-
-  if (!clips.length) {
+  if (!digest) {
     return (
       <EmptyLine>
-        No highlight clips yet — check back once games are underway or after first pitch.
+        No games on the board yet — check back once tonight’s slate gets underway.
       </EmptyLine>
     );
   }
 
+  const { league, topHitters, topPitchers, tagged, highlights } = digest;
+  const statTiles = [
+    { label: "Games", value: String(league.gamesPlayed) },
+    { label: "Live", value: String(league.gamesLive) },
+    { label: "Home runs", value: String(league.homeRuns) },
+    { label: "Runs", value: String(league.runs) },
+    { label: "Hits", value: String(league.hits) },
+    { label: "Strikeouts", value: String(league.strikeouts) },
+  ];
+
   return (
     <div className="flex flex-col gap-6">
-      {watchClips.length > 0 ? (
-        <section>
-          <h3 className="rule-head mb-3">Your players</h3>
-          <HighlightClipGrid
-            clips={watchClips}
+      <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+        <div className="mb-3 flex items-baseline justify-between gap-3">
+          <h2 className="rule-head">Tonight in MLB</h2>
+          <p className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">{league.date}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          {statTiles.map((tile) => (
+            <div
+              key={tile.label}
+              className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2.5 text-center"
+            >
+              <p className="numeral text-cream text-[20px] font-semibold leading-none">{tile.value}</p>
+              <p className="text-chalk-dim mt-1.5 text-[10px] uppercase tracking-[0.14em]">
+                {tile.label}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {(topHitters.length > 0 || topPitchers.length > 0) && (
+        <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <PerformerTable
+            title="Best hitting"
+            rows={topHitters}
             returnPath={returnPath}
-            onPlay={setActive}
+          />
+          <PerformerTable
+            title="Best pitching"
+            rows={topPitchers}
+            returnPath={returnPath}
           />
         </section>
+      )}
+
+      {tagged.length > 0 ? (
+        <TaggedPerformersTable rows={tagged} returnPath={returnPath} />
       ) : null}
 
       <section>
-        <h3 className="rule-head mb-3">
-          {watchClips.length ? "More tonight" : "Tonight’s highlights"}
-        </h3>
-        {impactClips.length ? (
-          <HighlightClipGrid
-            clips={impactClips}
-            returnPath={returnPath}
-            onPlay={setActive}
-          />
+        <h3 className="rule-head mb-3">Premium highlights</h3>
+        {highlights.length ? (
+          <HighlightClipGrid clips={highlights} returnPath={returnPath} onPlay={setActive} />
         ) : (
-          <EmptyLine>No other impact plays yet tonight.</EmptyLine>
+          <EmptyLine>
+            No premium clips yet — walk-offs, homers, and web gems will show up here as games
+            finish.
+          </EmptyLine>
         )}
       </section>
 
@@ -896,6 +930,147 @@ function TonightHighlightsSection({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function PerformerTable({
+  title,
+  rows,
+  returnPath,
+}: {
+  title: string;
+  rows: MlbTonightPerformer[];
+  returnPath: string;
+}) {
+  if (!rows.length) return null;
+  return (
+    <div className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="border-b border-white/[0.06] px-4 py-2.5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+          {title}
+        </h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[420px] text-left text-[12px]">
+          <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+            <tr className="border-b border-white/[0.06]">
+              <th className="px-3 py-2 font-medium">Player</th>
+              <th className="px-2 py-2 font-medium">Today</th>
+              <th className="px-2 py-2 font-medium">Matchup</th>
+              <th className="numeral px-3 py-2 text-right font-medium">GS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={`${title}-${row.playerId}-${row.gamePk}`} className="border-t border-white/[0.04]">
+                <td className="px-3 py-2.5">
+                  <Link
+                    to={`/sports/mlb/player/${row.playerId}`}
+                    state={{ from: returnPath }}
+                    className="text-cream inline-flex items-center gap-2 font-semibold hover:text-accent hover:underline"
+                  >
+                    <img
+                      src={mlbHeadshot(row.playerId)}
+                      alt=""
+                      className="h-8 w-8 rounded-full object-cover object-top ring-1 ring-white/10"
+                      loading="lazy"
+                    />
+                    <span>
+                      {row.name}
+                      <span className="text-chalk-dim ml-1 text-[10px]">{row.teamAbbrev}</span>
+                    </span>
+                  </Link>
+                </td>
+                <td className="numeral text-chalk px-2 py-2.5">{row.todayLine}</td>
+                <td className="px-2 py-2.5">
+                  <Link
+                    to={`/sports/mlb/game/${row.gamePk}`}
+                    state={{ from: returnPath }}
+                    className="text-chalk-dim hover:text-accent text-[11px]"
+                  >
+                    {row.gameLabel}
+                  </Link>
+                </td>
+                <td className="numeral text-accent px-3 py-2.5 text-right font-semibold">
+                  {row.gameScore}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TaggedPerformersTable({
+  rows,
+  returnPath,
+}: {
+  rows: MlbTonightTaggedRow[];
+  returnPath: string;
+}) {
+  return (
+    <div className="bg-panel overflow-hidden rounded-xl border border-[#7eb6ff]/25">
+      <div className="border-b border-white/[0.06] px-4 py-2.5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7eb6ff]">
+          Tagged players
+        </h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] text-left text-[12px]">
+          <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+            <tr className="border-b border-white/[0.06]">
+              <th className="px-3 py-2 font-medium">Player</th>
+              <th className="px-2 py-2 font-medium">Today</th>
+              <th className="px-2 py-2 font-medium">Season</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr
+                key={row.playerId}
+                className={cn(
+                  "border-t border-white/[0.04]",
+                  !row.played && "opacity-70",
+                )}
+              >
+                <td className="px-3 py-2.5">
+                  <Link
+                    to={`/sports/mlb/player/${row.playerId}`}
+                    state={{ from: returnPath }}
+                    className="text-cream inline-flex items-center gap-2 font-semibold hover:text-accent hover:underline"
+                  >
+                    <img
+                      src={mlbHeadshot(row.playerId)}
+                      alt=""
+                      className="h-8 w-8 rounded-full object-cover object-top ring-1 ring-white/10"
+                      loading="lazy"
+                    />
+                    <span>
+                      {row.name}
+                      <span className="text-chalk-dim ml-1 text-[10px]">
+                        {row.teamAbbrev}
+                        {row.position ? ` · ${row.position}` : ""}
+                      </span>
+                    </span>
+                  </Link>
+                </td>
+                <td
+                  className={cn(
+                    "numeral px-2 py-2.5",
+                    row.played ? "text-chalk" : "text-chalk-dim italic",
+                  )}
+                >
+                  {row.todayLine}
+                </td>
+                <td className="numeral text-chalk-dim px-2 py-2.5">{row.seasonLine}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

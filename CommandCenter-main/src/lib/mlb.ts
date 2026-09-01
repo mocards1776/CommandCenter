@@ -108,6 +108,44 @@ export type MlbTonightHighlight = MlbHighlight & {
   watchKind: "favorite" | "tagged" | null;
 };
 
+export type MlbTonightLeagueStats = {
+  date: string;
+  gamesPlayed: number;
+  gamesLive: number;
+  homeRuns: number;
+  runs: number;
+  hits: number;
+  strikeouts: number;
+};
+
+export type MlbTonightPerformer = {
+  playerId: number;
+  name: string;
+  teamAbbrev: string;
+  gamePk: number;
+  gameLabel: string;
+  todayLine: string;
+  gameScore: number;
+};
+
+export type MlbTonightTaggedRow = {
+  playerId: number;
+  name: string;
+  teamAbbrev: string;
+  position: string | null;
+  todayLine: string;
+  seasonLine: string;
+  played: boolean;
+};
+
+export type MlbTonightDigest = {
+  league: MlbTonightLeagueStats;
+  topHitters: MlbTonightPerformer[];
+  topPitchers: MlbTonightPerformer[];
+  tagged: MlbTonightTaggedRow[];
+  highlights: MlbTonightHighlight[];
+};
+
 export type MlbStandingRow = {
   rank: string;
   teamId: number;
@@ -3759,20 +3797,175 @@ function highlightPlayerIds(item: RawHighlightItem): number[] {
 
 function highlightImpactScore(title: string, description: string | null): number {
   const text = `${title} ${description ?? ""}`.toLowerCase();
+  if (
+    /singles? to|ground(?:s|ed)? out|fly(?:s|ing)? out|pop(?:s|ping)? out|lines? out|fielder'?s choice|force(?:s|d)? out|double play/.test(
+      text,
+    )
+  ) {
+    return -20;
+  }
+  if (
+    /recap|daily recap|condensed game|highlights in \d|top \d+ plays|game story|watch the|injury update|press conference|interview/.test(
+      text,
+    )
+  ) {
+    return -20;
+  }
+
   let score = 0;
-  if (/walk[- ]?off|game[- ]?winner|wins it|ends it|ends the game/.test(text)) score += 10;
-  if (/grand slam/.test(text)) score += 9;
-  if (/home run|homers?|crushes|launches|two-run|three-run|solo shot|blasts/.test(text)) score += 7;
-  if (/no[- ]?hitter|perfect game/.test(text)) score += 10;
-  if (/rob(s|bed)|diving catch|web gem|amazing catch|highlight reel/.test(text)) score += 6;
-  if (/steals home|steal of home|stolen base/.test(text)) score += 5;
-  if (/go-ahead|ties the game|takes the lead|equaliz/.test(text)) score += 6;
-  if (/strikeout|strikes out|fans \d|punch(?:es|ing) out/.test(text)) score += 4;
-  if (/milestone|record|first career/.test(text)) score += 5;
-  if (/double play|turns two|picks off/.test(text)) score += 4;
-  if (/recap|daily recap|condensed game|highlights in \d|top \d+ plays|game story/.test(text))
-    score -= 8;
+  if (/walk[- ]?off|game[- ]?winner|wins it|ends it|ends the game/.test(text)) score += 12;
+  if (/grand slam/.test(text)) score += 11;
+  if (/no[- ]?hitter|perfect game|\bcycle\b/.test(text)) score += 12;
+  if (/three home runs|3 home runs|two home runs|2 home runs/.test(text)) score += 11;
+  if (/rob(s|bed)|diving catch|web gem|amazing catch|leaping catch|climbing the wall/.test(text))
+    score += 8;
+  if (/steals home|steal of home/.test(text)) score += 9;
+  if (/two-run|three-run|go-ahead|ties the game|takes the lead|game-tying/.test(text)) score += 7;
+  if (/home run|homers?|crushes|launches|blasts|solo shot/.test(text)) score += 5;
+  if (/milestone|record|first career|debut/.test(text)) score += 7;
+  if (/strikes out the side|punch(?:es|ing) out \d|fans \d+/.test(text)) score += 5;
   return score;
+}
+
+function boxParseIpOuts(ip: string): number {
+  const m = ip.match(/(\d+)(?:\.(\d))?/);
+  if (!m) return 0;
+  const innings = Number(m[1]) || 0;
+  const partial = Number(m[2]) || 0;
+  return innings * 3 + Math.min(partial, 2);
+}
+
+function boxBatterGameScore(b: MlbBoxscoreBatter): number {
+  return Math.max(0, 40 + 3 * b.hr + 2 * b.h + 2 * b.rbi + b.r + b.bb - b.so);
+}
+
+function boxPitcherGameScore(p: MlbBoxscorePitcher): number {
+  return 50 + boxParseIpOuts(p.ip) + p.so - 2 * p.h - 4 * p.er - 2 * p.bb;
+}
+
+function boxPitcherDecision(note: string | null | undefined): "W" | "L" | "S" | null {
+  if (!note) return null;
+  const m = note.match(/\b(W|L|S)\b/i);
+  if (!m) return null;
+  const d = m[1].toUpperCase();
+  return d === "W" || d === "L" || d === "S" ? d : null;
+}
+
+function formatBatterTodayLine(b: MlbBoxscoreBatter): string {
+  return [
+    `${b.h}-${b.ab}`,
+    b.hr ? `${b.hr} HR` : null,
+    b.rbi ? `${b.rbi} RBI` : null,
+    b.r ? `${b.r} R` : null,
+    b.bb ? `${b.bb} BB` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function formatBatterSeasonLine(b: MlbBoxscoreBatter): string {
+  return [
+    b.avg ? `${b.avg} AVG` : null,
+    b.seasonHr != null ? `${b.seasonHr} HR` : null,
+    b.seasonRbi != null ? `${b.seasonRbi} RBI` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function formatPitcherTodayLine(p: MlbBoxscorePitcher): string {
+  const decision = boxPitcherDecision(p.note);
+  return [
+    `${p.ip} IP`,
+    `${p.h} H`,
+    `${p.er} ER`,
+    `${p.so} K`,
+    p.bb ? `${p.bb} BB` : null,
+    decision === "W" ? "W" : decision === "S" ? "SV" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function formatPitcherSeasonLine(p: MlbBoxscorePitcher): string {
+  let wins = p.seasonWins;
+  let losses = p.seasonLosses;
+  let saves = p.seasonSaves;
+  const note = p.note ?? "";
+  if (wins == null || losses == null) {
+    const wl = note.match(/\(\s*[WL]\s*,\s*(\d+)\s*-\s*(\d+)\s*\)/i);
+    if (wl) {
+      wins = wins ?? Number(wl[1]);
+      losses = losses ?? Number(wl[2]);
+    }
+  }
+  if (saves == null) {
+    const sv = note.match(/\(\s*S\s*,\s*(\d+)\s*\)/i);
+    if (sv) saves = Number(sv[1]);
+  }
+  return [
+    wins != null && losses != null ? `${wins}-${losses}` : null,
+    p.seasonEra ? `${p.seasonEra} ERA` : null,
+    saves != null && saves > 0 ? `${saves} SV` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+async function fetchTaggedPlayerSeasonFallback(
+  playerId: number,
+): Promise<Omit<MlbTonightTaggedRow, "todayLine" | "played"> | null> {
+  try {
+    const season = currentSeason();
+    const raw = (await mlbGet(`people/${playerId}`, {
+      hydrate: `currentTeam,stats(group=[hitting,pitching],type=[season],season=${season})`,
+    })) as {
+      people?: {
+        fullName?: string;
+        primaryPosition?: { abbreviation?: string };
+        currentTeam?: { abbreviation?: string };
+        stats?: {
+          group?: { displayName?: string };
+          splits?: { stat?: Record<string, unknown> }[];
+        }[];
+      }[];
+    };
+    const p = raw.people?.[0];
+    if (!p?.fullName) return null;
+    const hitting = p.stats?.find((s) => s.group?.displayName === "hitting")?.splits?.[0]?.stat;
+    const pitching = p.stats?.find((s) => s.group?.displayName === "pitching")?.splits?.[0]?.stat;
+    const pos = p.primaryPosition?.abbreviation ?? null;
+    const teamAbbrev = p.currentTeam?.abbreviation ?? "—";
+    let seasonLine = "—";
+    if (pitching && Number(pitching.inningsPitched ?? 0) > 0) {
+      const w = pitching.wins;
+      const l = pitching.losses;
+      seasonLine = [
+        w != null && l != null ? `${w}-${l}` : null,
+        pitching.era ? `${pitching.era} ERA` : null,
+        Number(pitching.saves ?? 0) > 0 ? `${pitching.saves} SV` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    } else if (hitting) {
+      seasonLine = [
+        hitting.avg ? `${hitting.avg} AVG` : null,
+        hitting.homeRuns != null ? `${hitting.homeRuns} HR` : null,
+        hitting.rbi != null ? `${hitting.rbi} RBI` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    }
+    return {
+      playerId,
+      name: p.fullName,
+      teamAbbrev,
+      position: pos,
+      seasonLine: seasonLine || "—",
+    };
+  } catch {
+    return null;
+  }
 }
 
 function parseHighlightItem(v: RawHighlightItem): MlbHighlight | null {
@@ -3797,9 +3990,11 @@ export async function fetchMlbTonightHighlights(opts?: {
   favoritePlayerIds?: Set<number>;
   taggedPlayerIds?: Set<number>;
   maxClips?: number;
+  games?: MlbScoreGame[];
 }): Promise<MlbTonightHighlight[]> {
-  const maxClips = opts?.maxClips ?? 24;
-  const board = await fetchMlbScoreboard();
+  const maxClips = opts?.maxClips ?? 8;
+  const minImpact = 7;
+  const board = opts?.games ?? (await fetchMlbScoreboard());
   const active = board.filter((g) => g.final || g.live);
   if (!active.length) return [];
 
@@ -3825,12 +4020,12 @@ export async function fetchMlbTonightHighlights(opts?: {
           }
           if (kind === "tagged") watchKind = "tagged";
         }
-        if (impactScore < 3 && !watchKind) continue;
+        if (impactScore < minImpact) continue;
         out.push({
           ...base,
           gamePk: Number(game.id),
           gameLabel,
-          impactScore: watchKind ? impactScore + 8 : impactScore,
+          impactScore: watchKind ? impactScore + 4 : impactScore,
           playerIds,
           watchKind,
         });
@@ -3848,14 +4043,157 @@ export async function fetchMlbTonightHighlights(opts?: {
   }
 
   merged.sort((a, b) => {
+    if (b.impactScore !== a.impactScore) return b.impactScore - a.impactScore;
     const watchA = a.watchKind === "favorite" ? 2 : a.watchKind === "tagged" ? 1 : 0;
     const watchB = b.watchKind === "favorite" ? 2 : b.watchKind === "tagged" ? 1 : 0;
     if (watchB !== watchA) return watchB - watchA;
-    if (b.impactScore !== a.impactScore) return b.impactScore - a.impactScore;
     return (b.date ?? "").localeCompare(a.date ?? "");
   });
 
   return merged.slice(0, maxClips);
+}
+
+/** League snapshot, top lines, tagged players, and premium highlights for tonight. */
+export async function fetchMlbTonightDigest(opts?: {
+  favoritePlayerIds?: Set<number>;
+  taggedPlayerIds?: Set<number>;
+}): Promise<MlbTonightDigest> {
+  const date = chicagoToday();
+  const board = await fetchMlbScoreboard(date);
+  const active = board.filter((g) => g.final || g.live);
+  const boxscores = await Promise.all(active.map((g) => fetchMlbBoxscore(g.id)));
+
+  let homeRuns = 0;
+  let runs = 0;
+  let hits = 0;
+  let strikeouts = 0;
+  const hitters: MlbTonightPerformer[] = [];
+  const pitchers: MlbTonightPerformer[] = [];
+  const taggedById = new Map<number, MlbTonightTaggedRow>();
+
+  for (let i = 0; i < boxscores.length; i++) {
+    const box = boxscores[i]!;
+    const game = active[i]!;
+    const gameLabel = `${game.away.abbrev} @ ${game.home.abbrev}`;
+    runs += box.away.runs + box.home.runs;
+    hits += box.away.hits + box.home.hits;
+
+    const collectTagged = (
+      playerId: number,
+      name: string,
+      teamAbbrev: string,
+      position: string | null,
+      todayLine: string,
+      seasonLine: string,
+    ) => {
+      if (!opts?.taggedPlayerIds?.has(playerId)) return;
+      taggedById.set(playerId, {
+        playerId,
+        name,
+        teamAbbrev,
+        position,
+        todayLine,
+        seasonLine,
+        played: true,
+      });
+    };
+
+    for (const side of [box.away, box.home]) {
+      for (const b of side.batters) {
+        homeRuns += b.hr;
+        if (b.ab <= 0 && b.h <= 0 && b.bb <= 0) continue;
+        const gs = boxBatterGameScore(b);
+        if (gs <= 40) continue;
+        hitters.push({
+          playerId: b.id,
+          name: b.name,
+          teamAbbrev: b.teamAbbrev,
+          gamePk: box.gamePk,
+          gameLabel,
+          todayLine: formatBatterTodayLine(b),
+          gameScore: gs,
+        });
+        collectTagged(
+          b.id,
+          b.name,
+          b.teamAbbrev,
+          b.position || null,
+          formatBatterTodayLine(b),
+          formatBatterSeasonLine(b),
+        );
+      }
+      for (const p of side.pitchers) {
+        strikeouts += p.so;
+        if (boxParseIpOuts(p.ip) <= 0) continue;
+        const gs = boxPitcherGameScore(p);
+        pitchers.push({
+          playerId: p.id,
+          name: p.name,
+          teamAbbrev: p.teamAbbrev,
+          gamePk: box.gamePk,
+          gameLabel,
+          todayLine: formatPitcherTodayLine(p),
+          gameScore: gs,
+        });
+        const existing = taggedById.get(p.id);
+        if (opts?.taggedPlayerIds?.has(p.id)) {
+          taggedById.set(p.id, {
+            playerId: p.id,
+            name: p.name,
+            teamAbbrev: p.teamAbbrev,
+            position: existing?.position && existing.position !== "P" ? existing.position : "P",
+            todayLine: formatPitcherTodayLine(p),
+            seasonLine: formatPitcherSeasonLine(p),
+            played: true,
+          });
+        }
+      }
+    }
+  }
+
+  hitters.sort((a, b) => b.gameScore - a.gameScore || a.name.localeCompare(b.name));
+  pitchers.sort((a, b) => b.gameScore - a.gameScore || a.name.localeCompare(b.name));
+
+  const taggedIds = [...(opts?.taggedPlayerIds ?? [])];
+  const missingTagged = taggedIds.filter((id) => !taggedById.has(id));
+  if (missingTagged.length) {
+    const fallbacks = await Promise.all(missingTagged.map((id) => fetchTaggedPlayerSeasonFallback(id)));
+    for (const row of fallbacks) {
+      if (!row) continue;
+      taggedById.set(row.playerId, {
+        ...row,
+        todayLine: "DNP",
+        played: false,
+      });
+    }
+  }
+
+  const tagged = [...taggedById.values()].sort((a, b) => {
+    if (a.played !== b.played) return a.played ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const highlights = await fetchMlbTonightHighlights({
+    favoritePlayerIds: opts?.favoritePlayerIds,
+    taggedPlayerIds: opts?.taggedPlayerIds,
+    games: board,
+  });
+
+  return {
+    league: {
+      date,
+      gamesPlayed: active.length,
+      gamesLive: active.filter((g) => g.live).length,
+      homeRuns,
+      runs,
+      hits,
+      strikeouts,
+    },
+    topHitters: hitters.slice(0, 8),
+    topPitchers: pitchers.slice(0, 6),
+    tagged,
+    highlights,
+  };
 }
 
 /** Prefix match — "Signed as Free Agent" ok; "Assigned" must NOT match "Signed". */
