@@ -1663,7 +1663,7 @@ function BookDetail({
             ? {
                 ...b,
                 cover_path: r.cover_path ?? null,
-                cover_url: r.cover_url ?? b.cover_url,
+                cover_url: r.cover_url ?? (r.cover_path ? b.cover_url : r.cover_url ?? null),
                 locked_at: new Date().toISOString(),
               }
             : b,
@@ -1673,9 +1673,18 @@ function BookDetail({
       setCoverLink("");
       setCoverToolsOpen(false);
       setCoverBroken(false);
-      toast.success(
-        r.source === "ai" ? "Cover found" : r.source === "link" ? "Cover updated" : "Cover found",
-      );
+      // Only celebrate a jacket we actually stored (or a user-pasted hotlink).
+      // Catalog "cover_url only" used to toast success then render Safari's
+      // blank "image not available" box for forthcoming titles.
+      if (r.cover_path || r.source === "link") {
+        toast.success(
+          r.source === "ai" ? "Cover found" : r.source === "link" ? "Cover updated" : "Cover found",
+        );
+      } else {
+        toast.error(
+          "No usable jacket yet (common for new releases). Paste an Amazon/publisher image URL.",
+        );
+      }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't find a cover"),
   });

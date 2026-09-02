@@ -314,15 +314,6 @@ async function coverFromSourcePage(pageUrl: string): Promise<string | null> {
   }
 }
 
-/** Best hotlink when we can't store bytes — prefer Google, then Open Library. */
-function pickCoverHotlink(urls: string[]): string | null {
-  const upgraded = urls.map((u) => upgradeCoverUrl(u)).filter((u): u is string => Boolean(u));
-  const google = upgraded.find((u) => /books\.google\.|googleusercontent\.com\/books/i.test(u));
-  if (google) return google;
-  const ol = upgraded.find((u) => /covers\.openlibrary\.org/i.test(u));
-  return ol ?? upgraded[0] ?? null;
-}
-
 /** Subjects double as genre chips, so drop the cataloguing cruft. */
 function cleanSubjects(list: unknown): string[] | undefined {
   if (!Array.isArray(list)) return undefined;
@@ -547,8 +538,9 @@ async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string
       const type = (res.headers.get("Content-Type") ?? "").split(";")[0];
       if (!type.startsWith("image/")) continue;
       const bytes = new Uint8Array(await res.arrayBuffer());
-      // Open Library serves a ~1KB placeholder for misses; size is the real test.
-      if (bytes.byteLength < 3000) continue;
+      // Open Library miss placeholders are ~1KB; Google grayscale stubs for
+      // forthcoming titles are often 3–7KB. Real jackets are almost always larger.
+      if (bytes.byteLength < 8000) continue;
       if (GOOGLE_PLACEHOLDER_SHA256.has(await sha256Hex(bytes))) continue;
       return { bytes, type };
     }
@@ -747,17 +739,11 @@ Deno.serve(async (req: Request) => {
           patch.locked_at = new Date().toISOString();
           covers++;
         }
-      } else {
-        const hotlink = pickCoverHotlink(coverUrls);
-        if (hotlink && !jacket) {
-          patch.cover_url = hotlink;
-          patch.cover_path = null;
-          patch.locked_at = new Date().toISOString();
-          covers++;
-        } else if (b.cover_path == null && !isValidCoverUrl(String(b.cover_url ?? ""))) {
-          // Mark as searched — but never blank a jacket we already had.
-          patch.cover_path = "";
-        }
+      } else if (b.cover_path == null && !isValidCoverUrl(String(b.cover_url ?? ""))) {
+        // Do NOT hotlink unverified catalog URLs. That was toasting "Cover found"
+        // while Safari showed "image not available" for dead Google/OL stubs.
+        // Mark as searched so we don't loop forever — never blank a jacket we had.
+        patch.cover_path = "";
       }
     }
 

@@ -1346,20 +1346,10 @@ export async function pullCover(bookId: string, url?: string): Promise<CoverPull
     .select("cover_path,cover_url")
     .eq("id", bookId)
     .maybeSingle();
-  if (
-    row?.cover_path &&
-    row.cover_path.length > 0 &&
-    !(row.cover_url && /[?&]vid=ISBN/i.test(row.cover_url))
-  ) {
+  // Only treat a *stored* jacket as found. A bare cover_url hotlink often 404s
+  // in the browser (Google/OL stubs) after we already toasted "Cover found".
+  if (row?.cover_path && row.cover_path.length > 0) {
     return { found: true, source: "catalog", cover_path: row.cover_path };
-  }
-  if (row?.cover_url && !/[?&]vid=ISBN/i.test(row.cover_url)) {
-    return {
-      found: true,
-      source: "catalog",
-      cover_path: row.cover_path ?? null,
-      cover_url: row.cover_url,
-    };
   }
 
   const { data, error } = await supabase.functions.invoke<CoverPullResult & { error?: string }>(

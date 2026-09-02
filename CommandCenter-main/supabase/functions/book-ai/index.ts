@@ -309,7 +309,8 @@ async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string
       }).finally(() => clearTimeout(t));
       if (!res.ok) continue;
       const bytes = new Uint8Array(await res.arrayBuffer());
-      if (bytes.byteLength < 3000 || bytes.byteLength > 4_000_000) continue;
+      // Forthcoming titles often get 3–7KB grayscale Google stubs; real art is larger.
+      if (bytes.byteLength < 8000 || bytes.byteLength > 4_000_000) continue;
       if (GOOGLE_PLACEHOLDER_SHA256.has(await sha256Hex(bytes))) continue;
       const header = (res.headers.get("Content-Type") ?? "").split(";")[0].trim();
       const type = header.startsWith("image/") ? header : sniffImageType(bytes);
@@ -511,8 +512,11 @@ async function findCover(
           '"page_urls":["https://openlibrary.org/..."]}.\n' +
           "Rules: isbn is the 13-digit ISBN if you can find one (else \"\"). " +
           "cover_url/cover_urls must be DIRECT image files (jpg/png/webp) when possible — " +
-          "prefer covers.openlibrary.org/b/isbn/... or Google Books content URLs. " +
-          "page_urls are retail/library pages that show the cover (Open Library, Amazon, Goodreads). " +
+          "prefer covers.openlibrary.org/b/isbn/... , publisher CDNs, or Amazon/Goodreads image hosts. " +
+          "For forthcoming/new-release titles, prefer the publisher or retailer product-image CDN " +
+          "(Amazon m.media-amazon.com, Simon & Schuster, Penguin, etc.) — Google Books / Open Library " +
+          "often have the record but only a blank stub. " +
+          "page_urls are retail/library pages that show the cover (Open Library, Amazon, Goodreads, publisher). " +
           "Always fill whatever you can; empty strings/arrays are ok.",
         user: `Find the cover for: ${q}`,
       });
