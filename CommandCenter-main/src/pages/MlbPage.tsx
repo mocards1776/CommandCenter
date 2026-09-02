@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2, Play, RefreshCw, Star } from "lucide-react";
 import toast from "react-hot-toast";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
+import HighlightVideoPlayer from "@/components/sports/HighlightVideoPlayer";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
@@ -809,6 +810,54 @@ function OddsSection({
   );
 }
 
+function parseHighlightPossessiveTitle(title: string): { playerName: string; rest: string } | null {
+  const match = title.match(/^(.+?)['\u2019]s\s+(.+)$/);
+  if (!match) return null;
+  return { playerName: match[1]!, rest: match[2]! };
+}
+
+function HighlightModalTitle({
+  clip,
+  returnPath,
+}: {
+  clip: MlbTonightHighlight;
+  returnPath: string;
+}) {
+  const playerId = clip.playerIds[0];
+  const parts = parseHighlightPossessiveTitle(clip.title);
+  if (playerId && parts) {
+    return (
+      <p className="truncate text-[12.5px] text-[#c8cdd8]">
+        <Link
+          to={`/sports/mlb/player/${playerId}`}
+          state={{ from: returnPath }}
+          className="text-accent hover:underline"
+        >
+          {parts.playerName}
+        </Link>
+        <span>
+          {"'s "}
+          {parts.rest}
+        </span>
+      </p>
+    );
+  }
+  if (playerId) {
+    return (
+      <p className="truncate text-[12.5px] text-[#c8cdd8]">
+        <Link
+          to={`/sports/mlb/player/${playerId}`}
+          state={{ from: returnPath }}
+          className="text-accent hover:underline"
+        >
+          {clip.title}
+        </Link>
+      </p>
+    );
+  }
+  return <p className="truncate text-[12.5px] text-[#c8cdd8]">{clip.title}</p>;
+}
+
 function TonightHighlightsSection({
   digest,
   loading,
@@ -898,7 +947,7 @@ function TonightHighlightsSection({
           >
             <div className="flex items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-2.5">
               <div className="min-w-0">
-                <p className="truncate text-[12.5px] text-[#c8cdd8]">{active.title}</p>
+                <HighlightModalTitle clip={active} returnPath={returnPath} />
                 {active.circumstance ? (
                   <p className="text-chalk-dim mt-0.5 line-clamp-2 text-[11px]">{active.circumstance}</p>
                 ) : null}
@@ -922,14 +971,7 @@ function TonightHighlightsSection({
                 Close
               </button>
             </div>
-            <video
-              key={active.url}
-              src={active.url}
-              controls
-              autoPlay
-              playsInline
-              className="aspect-video w-full bg-black"
-            />
+            <HighlightVideoPlayer src={active.url} />
           </div>
         </div>
       ) : null}
