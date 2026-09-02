@@ -491,13 +491,10 @@ Deno.serve(async (req: Request) => {
     const season = Number(body.season) || new Date().getFullYear();
     if (!/^[A-Z0-9]{2,3}$/.test(abbrev)) return json({ error: "Bad abbrev" }, 400);
     try {
-      return json(
-        await withBudget(
-          HEAVY_MS,
-          () => scrapeTeamBbrefSummary(abbrev, season),
-          { error: "Team summary timed out", abbrev, season },
-        ),
-      );
+      // Do NOT soft-timeout via Promise.race — that returned empty stubs while the
+      // BBRef scrape was still in flight, leaving President/Farm/Attendance blank.
+      // scrapeTeamBbrefSummary has a 30m warm cache so repeat opens are instant.
+      return json(await scrapeTeamBbrefSummary(abbrev, season));
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : String(e) }, 200);
     }

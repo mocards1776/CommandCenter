@@ -9580,6 +9580,55 @@ function scoreFrontOfficeTitle(title: string): number {
 export async function fetchMlbTeamGeneralManager(
   teamId: number,
 ): Promise<MlbTeamExec | null> {
+  const office = await fetchMlbTeamFrontOffice(teamId);
+  if (!office?.president && !office?.generalManager) return null;
+  if (office.generalManager) return office.generalManager;
+  if (office.president) {
+    return { title: "President of Baseball Operations", name: office.president };
+  }
+  return null;
+}
+
+export type MlbTeamFrontOffice = {
+  president: string | null;
+  farmDirector: string | null;
+  scoutingDirector: string | null;
+  generalManager: MlbTeamExec | null;
+};
+
+function scoreFarmTitle(title: string): number {
+  const t = title.toLowerCase().replace(/\s+/g, " ").trim();
+  if (/assistant|coordinator|manager,|special/.test(t)) return 0;
+  if (/director.*player development|player development.*director|farm director|director, farm/.test(t))
+    return 90;
+  if (/vice president.*player development|player development.*vice president/.test(t)) return 85;
+  if (/player development/.test(t) && /director|vp|vice president/.test(t)) return 70;
+  return 0;
+}
+
+function scoreScoutingTitle(title: string): number {
+  const t = title.toLowerCase().replace(/\s+/g, " ").trim();
+  if (/assistant|coordinator|area scout|cross-checker/.test(t)) return 0;
+  if (/director.*amateur acquisition|amateur acquisition.*director/.test(t)) return 95;
+  if (/director.*scouting|scouting director|director of scouting/.test(t)) return 90;
+  if (/vice president.*scouting|scouting.*vice president/.test(t)) return 85;
+  if (/amateur scouting|scouting/.test(t) && /director|vp|vice president/.test(t)) return 70;
+  return 0;
+}
+
+function scorePresidentTitle(title: string): number {
+  const t = title.toLowerCase().replace(/\s+/g, " ").trim();
+  if (/assistant|executive assistant|special assistant/.test(t)) return 0;
+  if (/president of baseball operations/.test(t)) return 100;
+  if (/president, baseball operations/.test(t)) return 98;
+  if (/president.*baseball/.test(t)) return 90;
+  return 0;
+}
+
+/** President / farm / scouting leads from the club MLB.com front-office page. */
+export async function fetchMlbTeamFrontOffice(
+  teamId: number,
+): Promise<MlbTeamFrontOffice | null> {
   const slug = mlbClubSlug(teamId);
   if (!slug) return null;
   try {
@@ -9599,36 +9648,62 @@ export async function fetchMlbTeamGeneralManager(
       .replace(/&apos;/g, "'");
 
     type Cand = { score: number; title: string; name: string };
-    const cands: Cand[] = [];
-
+    const rows: { title: string; name: string }[] = [];
     const rowRe =
       /<tr[^>]*>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<\/tr>/gi;
     let m: RegExpExecArray | null;
     while ((m = rowRe.exec(html)) != null) {
       const left = m[1]!.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
       const right = m[2]!.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      for (const [title, name] of [
-        [left, right],
-        [right, left],
-      ] as const) {
-        const score = scoreFrontOfficeTitle(title);
-        if (score > 0 && name && /^[A-ZÁÉÍÓÚ]/.test(name) && name.length < 60) {
-          cands.push({ score, title, name });
+      if (!left || !right) continue;
+      // Title is usually left, name right — but accept either orientation via scorers.
+      rows.push({ title: left, name: right });
+      rows.push({ title: right, name: left });
+    }
+
+    const pick = (scoreFn: (title: string) => number): Cand | null => {
+      const cands: Cand[] = [];
+      for (const row of rows) {
+        const score = scoreFn(row.title);
+        if (
+          score > 0 &&
+          row.name &&
+          /^[A-ZÁÉÍÓÚ]/.test(row.name) &&
+          row.name.length < 60 &&
+          !/title|name/i.test(row.name)
+        ) {
+          cands.push({ score, title: row.title, name: row.name });
         }
       }
-    }
+      cands.sort((a, b) => b.score - a.score);
+      return cands[0] ?? null;
+    };
 
-    const pRe =
-      /(President of Baseball Operations[^:<]{0,60}|Executive Vice President\s*&\s*General Manager|Senior Vice President,?\s*General Manager|General Manager)\s*:\s*<strong[^>]*>\s*(?:<a[^>]*>)?\s*([^<]{2,60})/gi;
-    while ((m = pRe.exec(html)) != null) {
-      const title = m[1]!.replace(/\s+/g, " ").trim();
-      const name = m[2]!.replace(/\s+/g, " ").trim();
-      const score = scoreFrontOfficeTitle(title);
-      if (score > 0) cands.push({ score, title, name });
+    const president = pick(scorePresidentTitle);
+    const farm = pick(scoreFarmTitle);
+    const scouting = pick(scoreScoutingTitle);
+    const gmCands: Cand[] = [];
+    for (const row of rows) {
+      const score = scoreFrontOfficeTitle(row.title);
+      if (
+        score > 0 &&
+        row.name &&
+        /^[A-ZÁÉÍÓÚ]/.test(row.name) &&
+        row.name.length < 60
+      ) {
+        gmCands.push({ score, title: row.title, name: row.name });
+      }
     }
+    gmCands.sort((a, b) => b.score - a.score);
+    const gm = gmCands[0];
 
-    cands.sort((a, b) => b.score - a.score);
-    return cands[0] ? { title: cands[0].title, name: cands[0].name } : null;
+    if (!president && !farm && !scouting && !gm) return null;
+    return {
+      president: president?.name ?? null,
+      farmDirector: farm?.name ?? null,
+      scoutingDirector: scouting?.name ?? null,
+      generalManager: gm ? { title: gm.title, name: gm.name } : null,
+    };
   } catch {
     return null;
   }

@@ -14,6 +14,7 @@ import {
   type MlbTeamLeaderCard,
   type MlbTeamWinTrendHonor,
 } from "@/lib/mlb-team-page";
+import { fetchMlbTeamFrontOffice } from "@/lib/mlb";
 import { cn } from "@/lib/utils";
 
 function readableAccent(hex: string): string {
@@ -77,12 +78,20 @@ export function MlbTeamOrgSummary({
   fallbackGeneralManager?: { name: string; title?: string | null } | null;
   season?: number;
 }) {
-  // v3 key busts stale null caches from when the edge scrape was broken.
+  // v4 key busts stale null caches from soft-timeout stubs.
   const summary = useQuery({
-    queryKey: ["mlb-team-bbref-summary-v3", abbrev, season],
+    queryKey: ["mlb-team-bbref-summary-v4", abbrev, season],
     queryFn: () => fetchMlbTeamBbrefSummary(abbrev, season),
     staleTime: 15 * 60_000,
     retry: 2,
+  });
+
+  const frontOffice = useQuery({
+    queryKey: ["mlb-team-front-office-v1", teamId],
+    queryFn: () => fetchMlbTeamFrontOffice(teamId!),
+    enabled: teamId != null,
+    staleTime: 24 * 60 * 60_000,
+    retry: 1,
   });
 
   const venue = useQuery({
@@ -102,7 +111,12 @@ export function MlbTeamOrgSummary({
   });
 
   const s = summary.data;
-  const stillLoading = summary.isPending;
+  const stillLoading =
+    summary.isPending ||
+    (Boolean(teamId) &&
+      frontOffice.isPending &&
+      !s?.president &&
+      !s?.farmDirector);
 
   const recordColor = readableAccent(accent);
 
@@ -120,15 +134,20 @@ export function MlbTeamOrgSummary({
   const managerRecord = s?.manager?.record ?? fallbackManager?.record ?? null;
   const managerId = fallbackManager?.id;
 
-  const president = s?.president ?? fallbackPresident ?? null;
-  const gm = fallbackGeneralManager?.name ?? null;
-  const gmTitle = fallbackGeneralManager?.title?.trim() || "GM";
+  const president =
+    s?.president ?? frontOffice.data?.president ?? fallbackPresident ?? null;
+  const gm = fallbackGeneralManager?.name ?? frontOffice.data?.generalManager?.name ?? null;
+  const gmTitle =
+    fallbackGeneralManager?.title?.trim() ||
+    frontOffice.data?.generalManager?.title?.trim() ||
+    "GM";
   const showGm =
     Boolean(gm) &&
     (!president || !president.toLowerCase().includes(gm!.toLowerCase()));
 
-  const farmDirector = s?.farmDirector ?? null;
-  const scoutingDirector = s?.scoutingDirector ?? null;
+  const farmDirector = s?.farmDirector ?? frontOffice.data?.farmDirector ?? null;
+  const scoutingDirector =
+    s?.scoutingDirector ?? frontOffice.data?.scoutingDirector ?? null;
   const ballpark = s?.ballpark ?? venue.data ?? null;
   const attendance = s?.attendance ?? null;
   const park = s?.parkFactors;

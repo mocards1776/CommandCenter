@@ -91,11 +91,59 @@ import {
   type WarDumpIndex
 } from "./lib-b.ts";
 
+/** Warm cache — BBRef team pages are expensive (CF) and rarely change mid-day. */
+const TEAM_BBREF_CACHE = new Map<
+  string,
+  { at: number; data: Record<string, unknown> }
+>();
+const TEAM_BBREF_TTL_MS = 30 * 60_000;
+
+function teamBbrefCacheKey(abbrev: string, season: number): string {
+  return `${abbrev.toUpperCase()}:${season}`;
+}
+
+function getCachedTeamBbrefSummary(
+  abbrev: string,
+  season: number,
+): Record<string, unknown> | null {
+  const hit = TEAM_BBREF_CACHE.get(teamBbrefCacheKey(abbrev, season));
+  if (!hit) return null;
+  if (Date.now() - hit.at > TEAM_BBREF_TTL_MS) {
+    TEAM_BBREF_CACHE.delete(teamBbrefCacheKey(abbrev, season));
+    return null;
+  }
+  return hit.data;
+}
+
+function putCachedTeamBbrefSummary(
+  abbrev: string,
+  season: number,
+  data: Record<string, unknown>,
+): void {
+  if (data.error) return;
+  // Require at least one org / park field so timeout stubs aren't cached.
+  if (
+    !data.president &&
+    !data.farmDirector &&
+    !data.ballpark &&
+    !(data.pythagorean as { record?: string } | undefined)?.record
+  ) {
+    return;
+  }
+  TEAM_BBREF_CACHE.set(teamBbrefCacheKey(abbrev, season), {
+    at: Date.now(),
+    data,
+  });
+}
+
 async function scrapeTeamBbrefSummary(
   abbrev: string,
   season: number,
 ): Promise<Record<string, unknown>> {
   const abbr = abbrev.toUpperCase();
+  const cached = getCachedTeamBbrefSummary(abbr, season);
+  if (cached) return { ...cached, cached: true };
+
   const url = `https://www.baseball-reference.com/teams/${abbr}/${season}.shtml`;
   // Prefer fetchBbrefHtml (direct + proxy) — bare timedFetch gets CF-blocked from some edge IPs.
   const fetched = await fetchBbrefHtml(
@@ -103,7 +151,12 @@ async function scrapeTeamBbrefSummary(
     { headers: { "User-Agent": UA, Accept: "text/html" } },
     HEAVY_MS,
   );
-  if (!fetched?.html) return { error: "BBRef team page unavailable", abbrev: abbr, season };
+  if (!fetched?.html) {
+    // Serve stale cache beyond TTL rather than empty fields when CF blocks.
+    const stale = TEAM_BBREF_CACHE.get(teamBbrefCacheKey(abbr, season));
+    if (stale) return { ...stale.data, cached: true, stale: true };
+    return { error: "BBRef team page unavailable", abbrev: abbr, season };
+  }
   const html = fetched.html.replace(/<!--([\s\S]*?)-->/g, "$1");
   const infoBlock =
     html.match(/id="info"[^>]*>([\s\S]*?)<button id="meta_more_button"/i)?.[1] ??
@@ -172,7 +225,7 @@ async function scrapeTeamBbrefSummary(
       ),
     )?.[1] ?? `/teams/${abbr}/${season}-schedule-scores.shtml`;
 
-  return {
+  const result: Record<string, unknown> = {
     source: "baseball-reference",
     url,
     salariesUrl: salaryHref.startsWith("http")
@@ -213,6 +266,8 @@ async function scrapeTeamBbrefSummary(
       runsAllowed: runsAllowed ? Number(runsAllowed) : null,
     },
   };
+  putCachedTeamBbrefSummary(abbr, season, result);
+  return result;
 }
 
 /** Team payroll / contracts table from Baseball-Reference. */

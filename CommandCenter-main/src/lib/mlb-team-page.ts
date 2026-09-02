@@ -509,20 +509,26 @@ export async function fetchMlbTeamBbrefSummary(
 
   const attempt = async () => {
     const payload = await invokeSportsEdge<
-      Partial<MlbTeamBbrefSummary> & { error?: string }
+      Partial<MlbTeamBbrefSummary> & {
+        error?: string;
+        farmDirector?: string | null;
+        scoutingDirector?: string | null;
+      }
     >(
       {
         action: "teamBbrefSummary",
         abbrev: bb,
         season,
       },
-      45_000,
+      60_000,
     );
     if (!payload || payload.error) return null;
+    const farmDirector = payload.farmDirector ?? null;
+    const scoutingDirector = payload.scoutingDirector ?? null;
     // Require at least one org field so a soft timeout stub isn't treated as success.
     if (
       !payload.president &&
-      !payload.farmDirector &&
+      !farmDirector &&
       !payload.ballpark &&
       !payload.pythagorean?.record &&
       !payload.manager?.name
@@ -546,8 +552,8 @@ export async function fetchMlbTeamBbrefSummary(
         : null,
       manager: payload.manager ?? null,
       president: payload.president ?? null,
-      farmDirector: payload.farmDirector ?? null,
-      scoutingDirector: payload.scoutingDirector ?? null,
+      farmDirector,
+      scoutingDirector,
       ballpark: payload.ballpark ?? null,
       attendance: payload.attendance ?? null,
       parkFactors: payload.parkFactors ?? {
