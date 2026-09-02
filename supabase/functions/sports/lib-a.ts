@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { decodeHtmlEntities, loadBbrefPlayerHtml } from "./lib-b.ts";
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",

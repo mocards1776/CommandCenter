@@ -237,7 +237,7 @@ async function scrapeTeamPayroll(abbrev: string): Promise<Record<string, unknown
     /* fall through */
   }
   if (!salariesUrl) {
-    return { error: "Could not resolve salaries URL", abbrev: abbr };
+    salariesUrl = `https://www.baseball-reference.com/teams/${abbr}/${abbr.toLowerCase()}-salaries-and-contracts.shtml`;
   }
 
   const res = await timedFetch(salariesUrl, {
