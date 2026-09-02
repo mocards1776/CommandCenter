@@ -1223,7 +1223,7 @@ function TonightHighlightsSection({
     );
   }
 
-  const { league, topHitters, topPitchers, tagged, highlights, homeRunHitters, gameRecaps } =
+  const { league, topHitters, topPitchers, tagged, highlights, homeRunHitters, gameRecaps, mustSee } =
     digest;
   const statTiles = [
     { label: "Games", value: String(league.gamesPlayed), id: "games" as const },
@@ -1298,6 +1298,18 @@ function TonightHighlightsSection({
             No premium clips yet — walk-offs, homers, and web gems will show up here as games
             finish.
           </EmptyLine>
+        )}
+      </section>
+
+      <section>
+        <h3 className="rule-head mb-3">Must C</h3>
+        <p className="text-chalk-dim mb-3 text-[11px]">
+          MLB editorial picks — clips flagged must-see in the content API
+        </p>
+        {mustSee.length ? (
+          <HighlightClipGrid clips={mustSee} returnPath={returnPath} onPlay={setActive} />
+        ) : (
+          <EmptyLine>Must-see clips appear as games finish.</EmptyLine>
         )}
       </section>
 
