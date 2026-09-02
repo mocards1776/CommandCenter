@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Play, Volume2, VolumeX } from "lucide-react";
+import { Pause, Play, Volume2, VolumeX } from "lucide-react";
 
 const SEEK_SECONDS = 5;
 const DOUBLE_TAP_MS = 320;
@@ -127,11 +127,7 @@ export default function HighlightVideoPlayer({
     }
 
     lastTapRef.current = null;
-    if (singleTapTimerRef.current != null) window.clearTimeout(singleTapTimerRef.current);
-    singleTapTimerRef.current = window.setTimeout(() => {
-      singleTapTimerRef.current = null;
-      togglePlayback();
-    }, DOUBLE_TAP_MS);
+    revealChrome();
   };
 
   return (
@@ -193,23 +189,37 @@ export default function HighlightVideoPlayer({
           showChrome ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       >
-        <div
-          role="slider"
-          aria-label="Playback position"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(progress * 100)}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            const rect = event.currentTarget.getBoundingClientRect();
-            const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-            seekToRatio(ratio);
-          }}
-          className="h-5 cursor-pointer"
-        >
-          <div className="mt-auto h-0.5 overflow-hidden rounded-full bg-white/25">
-            <div className="h-full rounded-full bg-white/70" style={{ width: `${progress * 100}%` }} />
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            aria-label={playing ? "Pause" : "Play"}
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-white/20 bg-black/55 text-[#e8ebf2]"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              togglePlayback();
+            }}
+          >
+            {playing ? <Pause size={14} /> : <Play size={14} className="ml-0.5 fill-current" />}
+          </button>
+          <div
+            role="slider"
+            aria-label="Playback position"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(progress * 100)}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+              seekToRatio(ratio);
+            }}
+            className="min-w-0 flex-1 cursor-pointer py-2"
+          >
+            <div className="h-0.5 overflow-hidden rounded-full bg-white/25">
+              <div className="h-full rounded-full bg-white/70" style={{ width: `${progress * 100}%` }} />
+            </div>
           </div>
         </div>
       </div>

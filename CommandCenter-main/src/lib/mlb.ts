@@ -155,7 +155,7 @@ export type MlbTonightDigest = {
   highlights: MlbTonightHighlight[];
   /** Tonight's home-run hitters (from boxscores). */
   homeRunHitters: MlbTonightHomeRun[];
-  /** Condensed game / daily recap packages from the MLB content API. */
+  /** ~3 min game highlight reels (prefers game-recap over condensed-game). */
   gameRecaps: MlbTonightHighlight[];
 };
 
@@ -4190,6 +4190,29 @@ function formatPitcherSeasonLine(p: MlbBoxscorePitcher): string {
     .join(" · ");
 }
 
+function highlightDurationSeconds(duration: string | null | undefined): number | null {
+  if (!duration) return null;
+  const parts = duration.split(":").map((p) => Number(p));
+  if (parts.some((n) => !Number.isFinite(n))) return null;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return null;
+}
+
+function recapPackagePreference(
+  item: RawHighlightItem,
+  title: string,
+): number {
+  const tax = highlightTaxonomies(item);
+  const t = title.toLowerCase();
+  if (tax.includes("game-recap") || /\bhighlights\b/.test(t)) return 5;
+  if (/highlights in \d/.test(t)) return 4;
+  if (/recap|daily wrap|wrap-up|wrap up/.test(t)) return 3;
+  if (tax.includes("condensed-game") || /condensed game/.test(t)) return 1;
+  if (/game story/.test(t)) return 2;
+  return 0;
+}
+
 function parseHighlightItem(v: RawHighlightItem): MlbHighlight | null {
   if (v.type !== "video") return null;
   const title = v.title || v.headline || "Highlight";
@@ -4207,7 +4230,7 @@ function parseHighlightItem(v: RawHighlightItem): MlbHighlight | null {
   };
 }
 
-/** Condensed game / daily recap packages from MLB game content (not impact-filtered). */
+/** ~3 min highlight reels / daily recap packages from MLB game content (not impact-filtered). */
 export async function fetchMlbTonightGameRecaps(
   games?: MlbScoreGame[],
 ): Promise<MlbTonightHighlight[]> {
@@ -4215,7 +4238,7 @@ export async function fetchMlbTonightGameRecaps(
   const active = board.filter((g) => g.final || g.live);
   if (!active.length) return [];
 
-  const recaps: MlbTonightHighlight[] = [];
+  const recaps: (MlbTonightHighlight & { packageScore: number })[] = [];
   await Promise.all(
     active.map(async (game) => {
       const gamePk = Number(game.id);
@@ -4233,12 +4256,16 @@ export async function fetchMlbTonightGameRecaps(
         if (!base) continue;
         const text = `${base.title} ${base.description ?? ""}`.toLowerCase();
         if (
-          !/recap|condensed game|highlights in \d|game story|daily wrap|wrap-up|wrap up/.test(
+          !/recap|condensed game|highlights in \d|game story|daily wrap|wrap-up|wrap up|\bhighlights\b/.test(
             text,
-          )
+          ) &&
+          !highlightTaxonomies(v).some((t) => t === "game-recap" || t === "condensed-game")
         ) {
           continue;
         }
+        let packageScore = recapPackagePreference(v, base.title);
+        const secs = highlightDurationSeconds(base.duration);
+        if (secs != null && secs >= 150 && secs <= 300) packageScore += 2;
         recaps.push({
           ...base,
           gamePk,
@@ -4250,24 +4277,19 @@ export async function fetchMlbTonightGameRecaps(
           winProbabilityAdded: null,
           leverageIndex: null,
           isDefense: false,
+          packageScore,
         });
       }
     }),
   );
 
-  // Prefer one recap per game — condensed game over short packages when both exist.
-  const bestByGame = new Map<number, MlbTonightHighlight>();
-  for (const clip of recaps) {
+  // Prefer one recap per game — ~3 min highlight reels over 8–12 min condensed games.
+  const bestByGame = new Map<number, { clip: MlbTonightHighlight; score: number }>();
+  for (const { packageScore, ...clip } of recaps) {
     const prev = bestByGame.get(clip.gamePk);
-    const score = (c: MlbTonightHighlight) => {
-      const t = c.title.toLowerCase();
-      if (/condensed/.test(t)) return 3;
-      if (/recap/.test(t)) return 2;
-      return 1;
-    };
-    if (!prev || score(clip) > score(prev)) bestByGame.set(clip.gamePk, clip);
+    if (!prev || packageScore > prev.score) bestByGame.set(clip.gamePk, { clip, score: packageScore });
   }
-  return [...bestByGame.values()].sort((a, b) => a.gameLabel.localeCompare(b.gameLabel));
+  return [...bestByGame.values()].map((v) => v.clip).sort((a, b) => a.gameLabel.localeCompare(b.gameLabel));
 }
 
 /** Impactful clips from today's MLB games, boosted for favorite/tagged players. */

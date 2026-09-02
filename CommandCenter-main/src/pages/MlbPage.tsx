@@ -1304,7 +1304,8 @@ function TonightHighlightsSection({
       <section>
         <h3 className="rule-head mb-3">Game recaps</h3>
         <p className="text-chalk-dim mb-3 text-[11px]">
-          Condensed games and daily recaps from the MLB content API
+          ~3-minute highlight reels per game (MLB also publishes 8–12 min condensed games; we pick the
+          shorter package when both exist)
         </p>
         {gameRecaps.length ? (
           <HighlightClipGrid clips={gameRecaps} returnPath={returnPath} onPlay={setActive} />
