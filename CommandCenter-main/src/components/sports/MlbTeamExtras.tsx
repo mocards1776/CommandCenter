@@ -7,6 +7,7 @@ import {
   fetchMlbTeamPayroll,
   fetchMlbTeamPythagorean,
   fetchMlbTeamRecordSplits,
+  fetchMlbTeamVenue,
   fetchMlbTeamWinTrend,
   leaderHeadshot,
   type MlbRecordChip,
@@ -76,10 +77,19 @@ export function MlbTeamOrgSummary({
   fallbackGeneralManager?: { name: string; title?: string | null } | null;
   season?: number;
 }) {
+  // v3 key busts stale null caches from when the edge scrape was broken.
   const summary = useQuery({
-    queryKey: ["mlb-team-bbref-summary", abbrev, season],
+    queryKey: ["mlb-team-bbref-summary-v3", abbrev, season],
     queryFn: () => fetchMlbTeamBbrefSummary(abbrev, season),
-    staleTime: 30 * 60_000,
+    staleTime: 15 * 60_000,
+    retry: 2,
+  });
+
+  const venue = useQuery({
+    queryKey: ["mlb-team-venue", teamId],
+    queryFn: () => fetchMlbTeamVenue(teamId!),
+    enabled: teamId != null,
+    staleTime: 24 * 60 * 60_000,
     retry: 1,
   });
 
@@ -92,15 +102,7 @@ export function MlbTeamOrgSummary({
   });
 
   const s = summary.data;
-  const loading = summary.isPending || (teamId != null && pythagFallback.isPending && !s?.pythagorean?.record);
-
-  if (loading) {
-    return (
-      <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c] px-4 py-4">
-        <p className="text-chalk-dim animate-pulse text-[12px]">Loading team overview…</p>
-      </section>
-    );
-  }
+  const stillLoading = summary.isPending;
 
   const recordColor = readableAccent(accent);
 
@@ -110,116 +112,151 @@ export function MlbTeamOrgSummary({
     ? `${bbrefPost} to make postseason${bbrefWs ? `, ${bbrefWs} to win World Series` : ""}`
     : playoffOdds
       ? `Make postseason ${playoffOdds}${wildCardOdds ? ` · WC ${wildCardOdds}` : ""}`
-      : null;
+      : stillLoading
+        ? "…"
+        : null;
 
   const managerName = s?.manager?.name ?? fallbackManager?.name ?? null;
   const managerRecord = s?.manager?.record ?? fallbackManager?.record ?? null;
   const managerId = fallbackManager?.id;
 
-  const rows: { label: string; value: ReactNode }[] = [];
-  const record = s?.record ?? fallbackRecord;
-  const standing = s?.standing ?? fallbackStanding;
-  if (record) {
-    rows.push({
-      label: "Record",
-      value: (
-        <span>
-          <span className="numeral text-[18px] font-semibold" style={{ color: recordColor }}>
-            {record}
-          </span>
-          {standing ? <span className="text-chalk ml-2 text-[12px]">{standing}</span> : null}
-        </span>
-      ),
-    });
-  }
-  if (oddsLine) {
-    rows.push({
-      label: "Playoff odds",
-      value: <span className="text-cream text-[13px]">{oddsLine}</span>,
-    });
-  }
-  if (managerName) {
-    rows.push({
-      label: "Manager",
-      value: (
-        <span className="text-cream text-[13px]">
-          {managerId ? (
-            <Link to={`/sports/mlb/managers/${managerId}`} className="hover:text-accent hover:underline">
-              {managerName}
-            </Link>
-          ) : (
-            managerName
-          )}
-          {managerRecord ? ` (${managerRecord})` : ""}
-        </span>
-      ),
-    });
-  }
-  const president = s?.president ?? fallbackPresident;
-  if (president) rows.push({ label: "President", value: president });
+  const president = s?.president ?? fallbackPresident ?? null;
   const gm = fallbackGeneralManager?.name ?? null;
   const gmTitle = fallbackGeneralManager?.title?.trim() || "GM";
-  if (
-    gm &&
-    (!president || !president.toLowerCase().includes(gm.toLowerCase()))
-  ) {
-    rows.push({
-      label: gmTitle.includes("GM") || gmTitle.includes("General Manager") ? gmTitle : "GM",
-      value: gm,
-    });
-  }
-  if (s?.farmDirector) rows.push({ label: "Farm Director", value: s.farmDirector });
-  if (s?.scoutingDirector) rows.push({ label: "Scouting Director", value: s.scoutingDirector });
-  if (s?.ballpark) rows.push({ label: "Ballpark", value: s.ballpark });
-  if (s?.attendance) rows.push({ label: "Attendance", value: s.attendance });
-  if (s?.parkFactors?.multiYear || s?.parkFactors?.oneYear) {
-    rows.push({
-      label: "Park Factors",
-      value: (
-        <span className="text-[12px] leading-relaxed text-[#d5dae6]">
-          {s.parkFactors.multiYear
-            ? `Multi-year: Batting ${s.parkFactors.multiYear.batting}, Pitching ${s.parkFactors.multiYear.pitching}`
-            : null}
-          {s.parkFactors.multiYear && s.parkFactors.oneYear ? " · " : null}
-          {s.parkFactors.oneYear
-            ? `One-year: Batting ${s.parkFactors.oneYear.batting}, Pitching ${s.parkFactors.oneYear.pitching}`
-            : null}
-          <span className="text-chalk-dim mt-0.5 block text-[11px]">
-            {s.parkFactors.note || "Over 100 favors batters, under 100 favors pitchers."}
-          </span>
-        </span>
-      ),
-    });
-  }
+  const showGm =
+    Boolean(gm) &&
+    (!president || !president.toLowerCase().includes(gm!.toLowerCase()));
+
+  const farmDirector = s?.farmDirector ?? null;
+  const scoutingDirector = s?.scoutingDirector ?? null;
+  const ballpark = s?.ballpark ?? venue.data ?? null;
+  const attendance = s?.attendance ?? null;
+  const park = s?.parkFactors;
   const pyth =
     s?.pythagorean?.record
       ? s.pythagorean
       : pythagFallback.data?.record
         ? pythagFallback.data
         : null;
-  if (pyth?.record) {
-    rows.push({
+
+  const record = s?.record ?? fallbackRecord;
+  const standing = s?.standing ?? fallbackStanding;
+  const scheduleHref = s?.scheduleUrl ?? null;
+
+  const dash = (loading: boolean, value: ReactNode | null | undefined) => {
+    if (value) return value;
+    if (loading) return <span className="text-chalk-dim animate-pulse">…</span>;
+    return <span className="text-chalk-dim">—</span>;
+  };
+
+  // Always render the full BBRef-style sheet — never drop rows when scrape is partial.
+  const rows: { label: string; value: ReactNode }[] = [
+    {
+      label: "Record",
+      value: record ? (
+        <span>
+          <span className="numeral text-[18px] font-semibold" style={{ color: recordColor }}>
+            {record}
+          </span>
+          {standing ? <span className="text-chalk ml-2 text-[12px]">{standing}</span> : null}
+        </span>
+      ) : (
+        dash(stillLoading, null)
+      ),
+    },
+    {
+      label: "Playoff odds",
+      value: dash(
+        stillLoading && !oddsLine,
+        oddsLine ? <span className="text-cream text-[13px]">{oddsLine}</span> : null,
+      ),
+    },
+    {
+      label: "Manager",
+      value: dash(
+        stillLoading && !managerName,
+        managerName ? (
+          <span className="text-cream text-[13px]">
+            {managerId ? (
+              <Link
+                to={`/sports/mlb/managers/${managerId}`}
+                className="hover:text-accent hover:underline"
+              >
+                {managerName}
+              </Link>
+            ) : (
+              managerName
+            )}
+            {managerRecord ? ` (${managerRecord})` : ""}
+          </span>
+        ) : null,
+      ),
+    },
+    {
+      label: "President",
+      value: dash(stillLoading, president),
+    },
+    ...(showGm
+      ? [
+          {
+            label:
+              gmTitle.includes("GM") || gmTitle.includes("General Manager")
+                ? gmTitle
+                : "GM",
+            value: <span className="text-cream text-[13px]">{gm}</span>,
+          } as { label: string; value: ReactNode },
+        ]
+      : []),
+    {
+      label: "Farm Director",
+      value: dash(stillLoading, farmDirector),
+    },
+    {
+      label: "Scouting Director",
+      value: dash(stillLoading, scoutingDirector),
+    },
+    {
+      label: "Ballpark",
+      value: dash(stillLoading && !venue.data, ballpark),
+    },
+    {
+      label: "Attendance",
+      value: dash(stillLoading, attendance),
+    },
+    {
+      label: "Park Factors",
+      value:
+        park?.multiYear || park?.oneYear ? (
+          <span className="text-[12px] leading-relaxed text-[#d5dae6]">
+            {park.multiYear
+              ? `Multi-year: Batting ${park.multiYear.batting}, Pitching ${park.multiYear.pitching}`
+              : null}
+            {park.multiYear && park.oneYear ? " · " : null}
+            {park.oneYear
+              ? `One-year: Batting ${park.oneYear.batting}, Pitching ${park.oneYear.pitching}`
+              : null}
+            <span className="text-chalk-dim mt-0.5 block text-[11px]">
+              {park.note || "Over 100 favors batters, under 100 favors pitchers."}
+            </span>
+          </span>
+        ) : (
+          dash(stillLoading, null)
+        ),
+    },
+    {
       label: "Pythagorean W-L",
-      value: (
+      value: pyth?.record ? (
         <span className="text-cream text-[13px]">
           <span className="numeral">{pyth.record}</span>
           {pyth.runsScored != null && pyth.runsAllowed != null
             ? ` · ${pyth.runsScored} Runs, ${pyth.runsAllowed} Runs Allowed`
             : ""}
         </span>
+      ) : (
+        dash(stillLoading || pythagFallback.isPending, null)
       ),
-    });
-  }
-
-  if (rows.length === 0) {
-    return (
-      <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c] px-4 py-4">
-        <p className="text-chalk-dim text-[12px]">Team overview unavailable.</p>
-      </section>
-    );
-  }
-
-  const scheduleHref = s?.scheduleUrl ?? null;
+    },
+  ];
 
   return (
     <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">

@@ -97,11 +97,14 @@ async function scrapeTeamBbrefSummary(
 ): Promise<Record<string, unknown>> {
   const abbr = abbrev.toUpperCase();
   const url = `https://www.baseball-reference.com/teams/${abbr}/${season}.shtml`;
-  const res = await timedFetch(url, {
-    headers: { "User-Agent": UA, Accept: "text/html" },
-  });
-  if (!res.ok) return { error: `BBRef team ${res.status}`, abbrev: abbr, season };
-  const html = (await res.text()).replace(/<!--([\s\S]*?)-->/g, "$1");
+  // Prefer fetchBbrefHtml (direct + proxy) — bare timedFetch gets CF-blocked from some edge IPs.
+  const fetched = await fetchBbrefHtml(
+    url,
+    { headers: { "User-Agent": UA, Accept: "text/html" } },
+    HEAVY_MS,
+  );
+  if (!fetched?.html) return { error: "BBRef team page unavailable", abbrev: abbr, season };
+  const html = fetched.html.replace(/<!--([\s\S]*?)-->/g, "$1");
   const infoBlock =
     html.match(/id="info"[^>]*>([\s\S]*?)<button id="meta_more_button"/i)?.[1] ??
     html;
@@ -219,14 +222,13 @@ async function scrapeTeamPayroll(abbrev: string): Promise<Record<string, unknown
   const season = new Date().getFullYear();
   let salariesUrl: string | null = null;
   try {
-    const teamPage = await timedFetch(
+    const teamPage = await fetchBbrefHtml(
       `https://www.baseball-reference.com/teams/${abbr}/${season}.shtml`,
       { headers: { "User-Agent": UA, Accept: "text/html" } },
       10_000,
     );
-    if (teamPage.ok) {
-      const teamHtml = await teamPage.text();
-      const href = teamHtml.match(/href="(\/teams\/[^"]*salaries[^"]*)"/i)?.[1];
+    if (teamPage?.html) {
+      const href = teamPage.html.match(/href="(\/teams\/[^"]*salaries[^"]*)"/i)?.[1];
       if (href) {
         salariesUrl = href.startsWith("http")
           ? href
@@ -240,11 +242,13 @@ async function scrapeTeamPayroll(abbrev: string): Promise<Record<string, unknown
     salariesUrl = `https://www.baseball-reference.com/teams/${abbr}/${abbr.toLowerCase()}-salaries-and-contracts.shtml`;
   }
 
-  const res = await timedFetch(salariesUrl, {
-    headers: { "User-Agent": UA, Accept: "text/html" },
-  });
-  if (!res.ok) return { error: `BBRef payroll ${res.status}`, abbrev: abbr };
-  let html = (await res.text()).replace(/<!--([\s\S]*?)-->/g, "$1");
+  const fetched = await fetchBbrefHtml(
+    salariesUrl,
+    { headers: { "User-Agent": UA, Accept: "text/html" } },
+    HEAVY_MS,
+  );
+  if (!fetched?.html) return { error: "BBRef payroll unavailable", abbrev: abbr };
+  let html = fetched.html.replace(/<!--([\s\S]*?)-->/g, "$1");
   if (!/id="payroll"/i.test(html)) {
     return { error: "Payroll table not found", abbrev: abbr, url: salariesUrl };
   }
@@ -341,6 +345,9 @@ function isUpcomingFreeAgent(contractStatus: string | null, season: number): boo
 
 async function scrapeLeaguePayroll(): Promise<Record<string, unknown>> {
   const season = new Date().getFullYear();
+  const started = Date.now();
+  // Leave headroom under the 55s withBudget so partial results still return.
+  const softDeadlineMs = 48_000;
   const allRows: {
     name: string;
     teamAbbrev: string;
@@ -354,8 +361,9 @@ async function scrapeLeaguePayroll(): Promise<Record<string, unknown>> {
     bbrefId: string | null;
   }[] = [];
   let teamsLoaded = 0;
-  const concurrency = 6;
+  const concurrency = 8;
   for (let i = 0; i < BBREF_TEAM_ABBREVS.length; i += concurrency) {
+    if (Date.now() - started > softDeadlineMs && teamsLoaded >= 8) break;
     const batch = BBREF_TEAM_ABBREVS.slice(i, i + concurrency);
     const results = await Promise.all(
       batch.map(async (abbrev) => {

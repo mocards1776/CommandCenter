@@ -20,12 +20,16 @@ import {
   mlbHeadshotFallbacks,
   parsePlayoffPercent,
   playoffOddsFromStandings,
+  playoffOddsMovement,
+  recordPlayoffOddsSnapshot,
   teamPagePath,
   type MlbLeaderBoard,
+  type MlbOddsMovementRow,
   type MlbPageTab,
   type MlbScoreGame,
   type MlbTonightDigest,
   type MlbTonightHighlight,
+  type MlbTonightHomeRun,
   type MlbTonightPerformer,
   type MlbTonightTaggedRow,
 } from "@/lib/mlb";
@@ -156,11 +160,11 @@ export default function MlbPage() {
   });
 
   const contracts = useQuery({
-    queryKey: ["mlb-contracts-board"],
+    queryKey: ["mlb-contracts-board-v2"],
     queryFn: () => fetchMlbContractsBoard(),
     enabled: tab === "contracts",
-    staleTime: 60 * 60_000,
-    retry: 1,
+    staleTime: 30 * 60_000,
+    retry: 2,
   });
 
   const yesterday = useQuery({
@@ -174,6 +178,12 @@ export default function MlbPage() {
     () => (standings.data ? playoffOddsFromStandings(standings.data) : []),
     [standings.data],
   );
+
+  useEffect(() => {
+    if (odds.length) recordPlayoffOddsSnapshot(odds);
+  }, [odds]);
+
+  const oddsMovers = useMemo(() => playoffOddsMovement(odds), [odds]);
 
   const playoffOddsByTeam = useMemo(() => {
     const out: Record<number, number> = {};
@@ -316,6 +326,8 @@ export default function MlbPage() {
       {tab === "odds" && (
         <OddsSection
           rows={odds}
+          dayMovers={oddsMovers.day}
+          weekMovers={oddsMovers.week}
           loading={standings.isPending}
           error={standings.isError ? "Couldn’t load odds." : null}
         />
@@ -824,10 +836,14 @@ function LeaderGroup({
 
 function OddsSection({
   rows,
+  dayMovers,
+  weekMovers,
   loading,
   error,
 }: {
   rows: ReturnType<typeof playoffOddsFromStandings>;
+  dayMovers: MlbOddsMovementRow[];
+  weekMovers: MlbOddsMovementRow[];
   loading: boolean;
   error: string | null;
 }) {
@@ -835,23 +851,107 @@ function OddsSection({
   if (error) return <ErrorLine>{error}</ErrorLine>;
   if (rows.length === 0) return <EmptyLine>Playoff odds not published yet.</EmptyLine>;
   return (
-    <div className="bg-panel overflow-hidden rounded-lg border border-white/[0.07]">
-      <table className="w-full text-left text-[12.5px]">
-        <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
-          <tr className="border-b border-white/[0.06]">
-            <th className="px-3 py-2.5 font-medium">Team</th>
-            <th className="px-2 py-2.5 font-medium">Rec</th>
-            <th className="px-2 py-2.5 font-medium">Playoff</th>
-            <th className="hidden px-2 py-2.5 font-medium sm:table-cell">WC</th>
-            <th className="px-3 py-2.5 font-medium">Div</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const pct = parsePlayoffPercent(r.playoffPercent);
-            return (
-              <tr key={r.teamId} className="border-t border-white/[0.04]">
-                <td className="text-cream px-3 py-2.5">
+    <div className="flex flex-col gap-6">
+      <div className="bg-panel overflow-hidden rounded-lg border border-white/[0.07]">
+        <table className="w-full text-left text-[12.5px]">
+          <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+            <tr className="border-b border-white/[0.06]">
+              <th className="px-3 py-2.5 font-medium">Team</th>
+              <th className="px-2 py-2.5 font-medium">Rec</th>
+              <th className="px-2 py-2.5 font-medium">Playoff</th>
+              <th className="hidden px-2 py-2.5 font-medium sm:table-cell">WC</th>
+              <th className="px-3 py-2.5 font-medium">Div</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const pct = parsePlayoffPercent(r.playoffPercent);
+              return (
+                <tr key={r.teamId} className="border-t border-white/[0.04]">
+                  <td className="text-cream px-3 py-2.5">
+                    <Link
+                      to={teamPagePath(r.teamId)}
+                      className="inline-flex items-center gap-2 hover:text-accent hover:underline"
+                    >
+                      <TeamMark teamId={r.teamId} size="xs" />
+                      {r.team}
+                    </Link>
+                  </td>
+                  <td className="numeral text-chalk px-2 py-2.5">{r.record}</td>
+                  <td className="px-2 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="numeral text-accent w-12">{r.playoffPercent}</span>
+                      <div className="bg-field hidden h-1.5 max-w-[80px] flex-1 overflow-hidden rounded-full sm:block">
+                        <div
+                          className="bg-accent h-full rounded-full"
+                          style={{ width: `${Math.min(100, pct)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </td>
+                  <td className="numeral text-chalk hidden px-2 py-2.5 sm:table-cell">
+                    {r.wildCardPercent ?? "—"}
+                  </td>
+                  <td className="text-chalk-dim px-3 py-2.5 text-[11px]">{r.division}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <p className="text-chalk-dim border-t border-white/[0.06] px-3 py-2 text-[10.5px]">
+          Odds via ESPN projections · standings via MLB Stats API
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <OddsMoversTable
+          title="Last day movers"
+          subtitle="Change in playoff odds vs ~24 hours ago"
+          rows={dayMovers}
+        />
+        <OddsMoversTable
+          title="Last week movers"
+          subtitle="Change in playoff odds vs ~7 days ago"
+          rows={weekMovers}
+        />
+      </div>
+    </div>
+  );
+}
+
+function OddsMoversTable({
+  title,
+  subtitle,
+  rows,
+}: {
+  title: string;
+  subtitle: string;
+  rows: MlbOddsMovementRow[];
+}) {
+  return (
+    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="border-b border-white/[0.06] px-4 py-3">
+        <h3 className="rule-head">{title}</h3>
+        <p className="text-chalk-dim mt-1 text-[11px]">{subtitle}</p>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-chalk-dim px-4 py-6 text-[13px]">
+          Movement appears after odds have been checked on prior days on this device.
+        </p>
+      ) : (
+        <table className="w-full text-left text-[12.5px]">
+          <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+            <tr className="border-b border-white/[0.06]">
+              <th className="px-4 py-2 font-medium">Team</th>
+              <th className="px-2 py-2 text-right font-medium">Was</th>
+              <th className="px-2 py-2 text-right font-medium">Now</th>
+              <th className="px-4 py-2 text-right font-medium">Δ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={`${title}-${r.teamId}`} className="border-t border-white/[0.04]">
+                <td className="text-cream px-4 py-2">
                   <Link
                     to={teamPagePath(r.teamId)}
                     className="inline-flex items-center gap-2 hover:text-accent hover:underline"
@@ -860,31 +960,27 @@ function OddsSection({
                     {r.team}
                   </Link>
                 </td>
-                <td className="numeral text-chalk px-2 py-2.5">{r.record}</td>
-                <td className="px-2 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="numeral text-accent w-12">{r.playoffPercent}</span>
-                    <div className="bg-field hidden h-1.5 max-w-[80px] flex-1 overflow-hidden rounded-full sm:block">
-                      <div
-                        className="bg-accent h-full rounded-full"
-                        style={{ width: `${Math.min(100, pct)}%` }}
-                      />
-                    </div>
-                  </div>
+                <td className="numeral text-chalk px-2 py-2 text-right">
+                  {r.previous.toFixed(1)}%
                 </td>
-                <td className="numeral text-chalk hidden px-2 py-2.5 sm:table-cell">
-                  {r.wildCardPercent ?? "—"}
+                <td className="numeral text-cream px-2 py-2 text-right">
+                  {r.current.toFixed(1)}%
                 </td>
-                <td className="text-chalk-dim px-3 py-2.5 text-[11px]">{r.division}</td>
+                <td
+                  className={cn(
+                    "numeral px-4 py-2 text-right font-semibold",
+                    r.delta > 0 ? "text-emerald-300" : "text-alert",
+                  )}
+                >
+                  {r.delta > 0 ? "+" : ""}
+                  {r.delta.toFixed(1)}
+                </td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <p className="text-chalk-dim border-t border-white/[0.06] px-3 py-2 text-[10.5px]">
-        Odds via ESPN projections · standings via MLB Stats API
-      </p>
-    </div>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }
 
@@ -1115,6 +1211,7 @@ function TonightHighlightsSection({
   returnPath: string;
 }) {
   const [active, setActive] = useState<MlbTonightHighlight | null>(null);
+  const [showHomeRuns, setShowHomeRuns] = useState(false);
 
   if (loading) return <LoadingBlock label="Loading tonight’s highlights…" />;
   if (error) return <ErrorLine>{error}</ErrorLine>;
@@ -1126,14 +1223,20 @@ function TonightHighlightsSection({
     );
   }
 
-  const { league, topHitters, topPitchers, tagged, highlights } = digest;
+  const { league, topHitters, topPitchers, tagged, highlights, homeRunHitters, gameRecaps } =
+    digest;
   const statTiles = [
-    { label: "Games", value: String(league.gamesPlayed) },
-    { label: "Live", value: String(league.gamesLive) },
-    { label: "Home runs", value: String(league.homeRuns) },
-    { label: "Runs", value: String(league.runs) },
-    { label: "Hits", value: String(league.hits) },
-    { label: "Strikeouts", value: String(league.strikeouts) },
+    { label: "Games", value: String(league.gamesPlayed), id: "games" as const },
+    { label: "Live", value: String(league.gamesLive), id: "live" as const },
+    {
+      label: "Home runs",
+      value: String(league.homeRuns),
+      id: "hr" as const,
+      interactive: true,
+    },
+    { label: "Runs", value: String(league.runs), id: "runs" as const },
+    { label: "Hits", value: String(league.hits), id: "hits" as const },
+    { label: "Strikeouts", value: String(league.strikeouts), id: "k" as const },
   ];
 
   return (
@@ -1144,18 +1247,35 @@ function TonightHighlightsSection({
           <p className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">{league.date}</p>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          {statTiles.map((tile) => (
-            <div
-              key={tile.label}
-              className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2.5 text-center"
-            >
-              <p className="numeral text-cream text-[20px] font-semibold leading-none">{tile.value}</p>
-              <p className="text-chalk-dim mt-1.5 text-[10px] uppercase tracking-[0.14em]">
-                {tile.label}
-              </p>
-            </div>
-          ))}
+          {statTiles.map((tile) => {
+            const isHr = tile.id === "hr";
+            const Tag = isHr ? "button" : "div";
+            return (
+              <Tag
+                key={tile.label}
+                type={isHr ? "button" : undefined}
+                onClick={isHr ? () => setShowHomeRuns((v) => !v) : undefined}
+                className={cn(
+                  "rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2.5 text-center",
+                  isHr &&
+                    "hover:border-accent/40 focus-visible:ring-accent/40 cursor-pointer transition hover:bg-white/[0.05] focus-visible:ring-2 focus-visible:outline-none",
+                  isHr && showHomeRuns && "border-accent/50 bg-accent/10",
+                )}
+              >
+                <p className="numeral text-cream text-[20px] font-semibold leading-none">
+                  {tile.value}
+                </p>
+                <p className="text-chalk-dim mt-1.5 text-[10px] uppercase tracking-[0.14em]">
+                  {tile.label}
+                  {isHr ? (showHomeRuns ? " · hide" : " · who") : ""}
+                </p>
+              </Tag>
+            );
+          })}
         </div>
+        {showHomeRuns ? (
+          <HomeRunHittersTable rows={homeRunHitters} returnPath={returnPath} />
+        ) : null}
       </section>
 
       {(topHitters.length > 0 || topPitchers.length > 0) && (
@@ -1178,6 +1298,18 @@ function TonightHighlightsSection({
             No premium clips yet — walk-offs, homers, and web gems will show up here as games
             finish.
           </EmptyLine>
+        )}
+      </section>
+
+      <section>
+        <h3 className="rule-head mb-3">Game recaps</h3>
+        <p className="text-chalk-dim mb-3 text-[11px]">
+          Condensed games and daily recaps from the MLB content API
+        </p>
+        {gameRecaps.length ? (
+          <HighlightClipGrid clips={gameRecaps} returnPath={returnPath} onPlay={setActive} />
+        ) : (
+          <EmptyLine>Recap packages appear as games finish.</EmptyLine>
         )}
       </section>
 
@@ -1216,10 +1348,70 @@ function TonightHighlightsSection({
                 Close
               </button>
             </div>
-            <HighlightVideoPlayer src={active.url} />
+            <HighlightVideoPlayer src={active.url} startMuted />
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function HomeRunHittersTable({
+  rows,
+  returnPath,
+}: {
+  rows: MlbTonightHomeRun[];
+  returnPath: string;
+}) {
+  if (!rows.length) {
+    return (
+      <p className="text-chalk-dim mt-3 text-[12px]">No home runs recorded yet tonight.</p>
+    );
+  }
+  return (
+    <div className="mt-3 overflow-hidden rounded-lg border border-white/[0.08]">
+      <table className="w-full text-left text-[12.5px]">
+        <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+          <tr className="border-b border-white/[0.06] bg-white/[0.02]">
+            <th className="px-3 py-2 font-medium">Player</th>
+            <th className="px-2 py-2 font-medium">Team</th>
+            <th className="px-2 py-2 text-right font-medium">HR</th>
+            <th className="px-3 py-2 font-medium">Game</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={`${r.playerId}-${r.gamePk}`} className="border-t border-white/[0.04]">
+              <td className="px-3 py-2">
+                <Link
+                  to={`/sports/mlb/player/${r.playerId}`}
+                  state={{ from: returnPath }}
+                  className="text-cream inline-flex items-center gap-2 hover:text-accent hover:underline"
+                >
+                  <img
+                    src={mlbHeadshot(r.playerId)}
+                    alt=""
+                    className="h-7 w-7 rounded-full object-cover object-top"
+                    loading="lazy"
+                  />
+                  {r.name}
+                </Link>
+              </td>
+              <td className="text-chalk px-2 py-2">{r.teamAbbrev}</td>
+              <td className="numeral text-cream px-2 py-2 text-right font-semibold">{r.hr}</td>
+              <td className="px-3 py-2">
+                <Link
+                  to={`/sports/mlb/game/${r.gamePk}`}
+                  state={{ from: returnPath }}
+                  className="text-chalk-dim hover:text-accent text-[11px] uppercase tracking-[0.1em]"
+                >
+                  {r.gameLabel}
+                </Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1488,6 +1680,11 @@ function HighlightClipGrid({
               ) : null}
             </div>
             <p className="line-clamp-2 text-[12.5px] leading-snug text-[#b8bfd0]">{clip.title}</p>
+            {clip.circumstance ? (
+              <p className="text-chalk-dim line-clamp-2 text-[11px] leading-snug">
+                {clip.circumstance}
+              </p>
+            ) : null}
             {(clip.winProbabilityAdded != null || clip.leverageIndex != null) && (
               <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.12em]">
                 {clip.winProbabilityAdded != null ? (

@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { Play } from "lucide-react";
+import { Play, Volume2, VolumeX } from "lucide-react";
 
 const SEEK_SECONDS = 5;
 const DOUBLE_TAP_MS = 320;
 const CHROME_HIDE_MS = 2800;
 
 /** Inline highlight player without native controls (avoids iOS overlay chrome). */
-export default function HighlightVideoPlayer({ src }: { src: string }) {
+export default function HighlightVideoPlayer({
+  src,
+  startMuted = true,
+}: {
+  src: string;
+  /** Default true — autoplay policies + UX: start muted. */
+  startMuted?: boolean;
+}) {
   const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const chromeTimerRef = useRef<number | null>(null);
@@ -14,6 +21,7 @@ export default function HighlightVideoPlayer({ src }: { src: string }) {
   const lastTapRef = useRef<{ at: number; zone: "left" | "right" } | null>(null);
 
   const [playing, setPlaying] = useState(true);
+  const [muted, setMuted] = useState(startMuted);
   const [progress, setProgress] = useState(0);
   const [showChrome, setShowChrome] = useState(false);
   const [seekHint, setSeekHint] = useState<string | null>(null);
@@ -22,10 +30,18 @@ export default function HighlightVideoPlayer({ src }: { src: string }) {
     const video = videoRef.current;
     if (!video) return;
     setPlaying(true);
+    setMuted(startMuted);
+    video.muted = startMuted;
     setProgress(0);
     setShowChrome(false);
     void video.play().catch(() => setPlaying(false));
-  }, [src]);
+  }, [src, startMuted]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = muted;
+  }, [muted]);
 
   useEffect(() => {
     return () => {
@@ -125,6 +141,7 @@ export default function HighlightVideoPlayer({ src }: { src: string }) {
         key={src}
         src={src}
         autoPlay
+        muted={muted}
         playsInline
         preload="auto"
         className="h-full w-full"
@@ -136,6 +153,18 @@ export default function HighlightVideoPlayer({ src }: { src: string }) {
           setProgress(video.currentTime / video.duration);
         }}
       />
+      <button
+        type="button"
+        aria-label={muted ? "Unmute" : "Mute"}
+        className="absolute top-3 right-3 z-50 grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-black/55 text-[#e8ebf2]"
+        onClick={(event) => {
+          event.stopPropagation();
+          setMuted((m) => !m);
+          revealChrome();
+        }}
+      >
+        {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+      </button>
       <button
         type="button"
         aria-label="Video controls"

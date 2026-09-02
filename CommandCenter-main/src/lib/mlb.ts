@@ -153,6 +153,19 @@ export type MlbTonightDigest = {
   topPitchers: MlbTonightPerformer[];
   tagged: MlbTonightTaggedRow[];
   highlights: MlbTonightHighlight[];
+  /** Tonight's home-run hitters (from boxscores). */
+  homeRunHitters: MlbTonightHomeRun[];
+  /** Condensed game / daily recap packages from the MLB content API. */
+  gameRecaps: MlbTonightHighlight[];
+};
+
+export type MlbTonightHomeRun = {
+  playerId: number;
+  name: string;
+  teamAbbrev: string;
+  hr: number;
+  gamePk: number;
+  gameLabel: string;
 };
 
 export type MlbStandingRow = {
@@ -4194,6 +4207,69 @@ function parseHighlightItem(v: RawHighlightItem): MlbHighlight | null {
   };
 }
 
+/** Condensed game / daily recap packages from MLB game content (not impact-filtered). */
+export async function fetchMlbTonightGameRecaps(
+  games?: MlbScoreGame[],
+): Promise<MlbTonightHighlight[]> {
+  const board = games ?? (await fetchMlbScoreboard());
+  const active = board.filter((g) => g.final || g.live);
+  if (!active.length) return [];
+
+  const recaps: MlbTonightHighlight[] = [];
+  await Promise.all(
+    active.map(async (game) => {
+      const gamePk = Number(game.id);
+      const raw = (await mlbGet(`game/${gamePk}/content`)) as {
+        highlights?: { highlights?: { items?: RawHighlightItem[] } };
+        editorial?: {
+          recap?: { mlb?: { headline?: string; image?: { cuts?: { src?: string }[] } } };
+        };
+      };
+      const items = raw.highlights?.highlights?.items ?? [];
+      const gameLabel = `${game.away.abbrev} @ ${game.home.abbrev}`;
+
+      for (const v of items) {
+        const base = parseHighlightItem(v);
+        if (!base) continue;
+        const text = `${base.title} ${base.description ?? ""}`.toLowerCase();
+        if (
+          !/recap|condensed game|highlights in \d|game story|daily wrap|wrap-up|wrap up/.test(
+            text,
+          )
+        ) {
+          continue;
+        }
+        recaps.push({
+          ...base,
+          gamePk,
+          gameLabel,
+          impactScore: 1,
+          playerIds: highlightPlayerIds(v),
+          watchKind: null,
+          circumstance: base.description,
+          winProbabilityAdded: null,
+          leverageIndex: null,
+          isDefense: false,
+        });
+      }
+    }),
+  );
+
+  // Prefer one recap per game — condensed game over short packages when both exist.
+  const bestByGame = new Map<number, MlbTonightHighlight>();
+  for (const clip of recaps) {
+    const prev = bestByGame.get(clip.gamePk);
+    const score = (c: MlbTonightHighlight) => {
+      const t = c.title.toLowerCase();
+      if (/condensed/.test(t)) return 3;
+      if (/recap/.test(t)) return 2;
+      return 1;
+    };
+    if (!prev || score(clip) > score(prev)) bestByGame.set(clip.gamePk, clip);
+  }
+  return [...bestByGame.values()].sort((a, b) => a.gameLabel.localeCompare(b.gameLabel));
+}
+
 /** Impactful clips from today's MLB games, boosted for favorite/tagged players. */
 export async function fetchMlbTonightHighlights(opts?: {
   favoritePlayerIds?: Set<number>;
@@ -4356,6 +4432,7 @@ export async function fetchMlbTonightDigest(opts?: {
   let strikeouts = 0;
   const performers: MlbTonightPerformer[] = [];
   const taggedById = new Map<number, MlbTonightTaggedRow>();
+  const homeRunHitters: MlbTonightHomeRun[] = [];
 
   for (let i = 0; i < boxscores.length; i++) {
     const box = boxscores[i]!;
@@ -4387,6 +4464,16 @@ export async function fetchMlbTonightDigest(opts?: {
     for (const side of [box.away, box.home]) {
       for (const b of side.batters) {
         homeRuns += b.hr;
+        if (b.hr > 0) {
+          homeRunHitters.push({
+            playerId: b.id,
+            name: b.name,
+            teamAbbrev: b.teamAbbrev,
+            hr: b.hr,
+            gamePk: box.gamePk,
+            gameLabel,
+          });
+        }
         if (b.ab <= 0 && b.h <= 0 && b.bb <= 0 && b.hbp <= 0) continue;
         const fp = boxBatterFantasyPoints(b);
         if (fp <= 0) continue;
@@ -4450,11 +4537,16 @@ export async function fetchMlbTonightDigest(opts?: {
 
   const tagged = [...taggedById.values()].sort((a, b) => a.name.localeCompare(b.name));
 
-  const highlights = await fetchMlbTonightHighlights({
-    favoritePlayerIds: opts?.favoritePlayerIds,
-    taggedPlayerIds: opts?.taggedPlayerIds,
-    games: board,
-  });
+  const [highlights, gameRecaps] = await Promise.all([
+    fetchMlbTonightHighlights({
+      favoritePlayerIds: opts?.favoritePlayerIds,
+      taggedPlayerIds: opts?.taggedPlayerIds,
+      games: board,
+    }),
+    fetchMlbTonightGameRecaps(board),
+  ]);
+
+  homeRunHitters.sort((a, b) => b.hr - a.hr || a.name.localeCompare(b.name));
 
   return {
     league: {
@@ -4470,6 +4562,8 @@ export async function fetchMlbTonightDigest(opts?: {
     topPitchers: pitchers.slice(0, 6),
     tagged,
     highlights,
+    homeRunHitters,
+    gameRecaps,
   };
 }
 
@@ -6928,6 +7022,113 @@ export function playoffOddsFromStandings(tables: MlbDivisionTable[]): MlbPlayoff
   const num = parsePlayoffPercent;
   rows.sort((a, b) => num(b.playoffPercent) - num(a.playoffPercent));
   return rows;
+}
+
+const ODDS_HISTORY_KEY = "mlb-playoff-odds-history-v1";
+
+type OddsSnapshot = {
+  at: number;
+  /** YYYY-MM-DD in local time */
+  day: string;
+  teams: Record<number, { playoff: number; wildCard: number | null; name: string }>;
+};
+
+function oddsHistoryDayKey(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function readOddsHistory(): OddsSnapshot[] {
+  try {
+    const raw = localStorage.getItem(ODDS_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as OddsSnapshot[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Persist today's odds snapshot (one per calendar day) for movement tables. */
+export function recordPlayoffOddsSnapshot(rows: MlbPlayoffRow[]): void {
+  if (!rows.length || typeof localStorage === "undefined") return;
+  try {
+    const day = oddsHistoryDayKey();
+    const teams: OddsSnapshot["teams"] = {};
+    for (const r of rows) {
+      teams[r.teamId] = {
+        playoff: parsePlayoffPercent(r.playoffPercent),
+        wildCard: r.wildCardPercent ? parsePlayoffPercent(r.wildCardPercent) : null,
+        name: r.team,
+      };
+    }
+    const history = readOddsHistory().filter((s) => s.day !== day);
+    history.push({ at: Date.now(), day, teams });
+    // Keep ~10 days.
+    history.sort((a, b) => a.at - b.at);
+    while (history.length > 10) history.shift();
+    localStorage.setItem(ODDS_HISTORY_KEY, JSON.stringify(history));
+  } catch {
+    /* quota */
+  }
+}
+
+export type MlbOddsMovementRow = {
+  teamId: number;
+  team: string;
+  current: number;
+  previous: number;
+  delta: number;
+};
+
+function snapshotClosestTo(
+  history: OddsSnapshot[],
+  targetMs: number,
+): OddsSnapshot | null {
+  if (!history.length) return null;
+  let best: OddsSnapshot | null = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const s of history) {
+    const dist = Math.abs(s.at - targetMs);
+    // Prefer snapshots at or before the target within a 36h window.
+    if (s.at <= targetMs + 6 * 60 * 60_000 && dist < bestDist) {
+      best = s;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+/** Biggest movers vs ~1 day ago and ~7 days ago (from local snapshots). */
+export function playoffOddsMovement(
+  current: MlbPlayoffRow[],
+): { day: MlbOddsMovementRow[]; week: MlbOddsMovementRow[] } {
+  const history = readOddsHistory();
+  const now = Date.now();
+  const daySnap = snapshotClosestTo(history, now - 24 * 60 * 60_000);
+  const weekSnap = snapshotClosestTo(history, now - 7 * 24 * 60 * 60_000);
+
+  const build = (snap: OddsSnapshot | null): MlbOddsMovementRow[] => {
+    if (!snap) return [];
+    const rows: MlbOddsMovementRow[] = [];
+    for (const r of current) {
+      const prev = snap.teams[r.teamId];
+      if (!prev) continue;
+      const cur = parsePlayoffPercent(r.playoffPercent);
+      const delta = Math.round((cur - prev.playoff) * 10) / 10;
+      if (Math.abs(delta) < 0.05) continue;
+      rows.push({
+        teamId: r.teamId,
+        team: r.team,
+        current: cur,
+        previous: prev.playoff,
+        delta,
+      });
+    }
+    rows.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+    return rows.slice(0, 15);
+  };
+
+  return { day: build(daySnap), week: build(weekSnap) };
 }
 
 export type MlbWildCardRow = {

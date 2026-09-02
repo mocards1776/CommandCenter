@@ -285,9 +285,36 @@ type RawLeaguePayroll = {
 };
 
 async function fetchLeaguePayrollRaw(): Promise<RawLeaguePayroll | null> {
-  const payload = await invokeSportsEdge<RawLeaguePayroll>({ action: "leaguePayroll" }, 65_000);
-  if (!payload || payload.error || !payload.topSalaries?.length) return null;
+  const payload = await invokeSportsEdge<RawLeaguePayroll>({ action: "leaguePayroll" }, 70_000);
+  if (!payload || payload.error) return null;
+  // Accept partial league scrapes — even a handful of teams is enough for Top salaries.
+  if (!payload.topSalaries?.length) return null;
   return payload;
+}
+
+const CONTRACTS_CACHE_KEY = "mlb-contracts-board-v2";
+const CONTRACTS_CACHE_TTL_MS = 6 * 60 * 60_000;
+
+function readContractsCache(): MlbContractsBoard | null {
+  try {
+    const raw = sessionStorage.getItem(CONTRACTS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { at: number; board: MlbContractsBoard };
+    if (!parsed?.board?.topSalaries?.length) return null;
+    if (Date.now() - parsed.at > CONTRACTS_CACHE_TTL_MS) return null;
+    return parsed.board;
+  } catch {
+    return null;
+  }
+}
+
+function writeContractsCache(board: MlbContractsBoard) {
+  try {
+    if (!board.topSalaries.length) return;
+    sessionStorage.setItem(CONTRACTS_CACHE_KEY, JSON.stringify({ at: Date.now(), board }));
+  } catch {
+    /* quota */
+  }
 }
 
 function parseFaYear(contractStatus: string, season: number): number | null {
@@ -395,8 +422,23 @@ async function fetchLeaguePayrollClientFallback(): Promise<RawLeaguePayroll> {
 
 /** League-wide salaries and upcoming free agents from BBRef team payroll tables. */
 export async function fetchMlbContractsBoard(): Promise<MlbContractsBoard> {
+  const cached = readContractsCache();
   const raw = (await fetchLeaguePayrollRaw()) ?? (await fetchLeaguePayrollClientFallback());
-  const playerIndex = await loadLeaguePlayerIdIndex();
+  if (!raw.topSalaries?.length && cached) return cached;
+
+  // Player id lookup is optional — don't block the board on roster fan-out.
+  let playerIndex = new Map<string, number>();
+  try {
+    playerIndex = await Promise.race([
+      loadLeaguePlayerIdIndex(),
+      new Promise<Map<string, number>>((resolve) =>
+        setTimeout(() => resolve(new Map()), 8_000),
+      ),
+    ]);
+  } catch {
+    /* optional */
+  }
+
   const topSalaries = attachPlayerIds(
     (raw.topSalaries ?? []).map((r) => ({
       ...r,
@@ -431,13 +473,15 @@ export async function fetchMlbContractsBoard(): Promise<MlbContractsBoard> {
     faYear: r.faYear,
   }));
 
-  return {
+  const board: MlbContractsBoard = {
     season: raw.season ?? String(new Date().getFullYear()),
     topSalaries,
     upcomingFreeAgents,
     teamsLoaded: raw.teamsLoaded ?? 0,
     source: raw.source ?? "baseball-reference",
   };
+  writeContractsCache(board);
+  return board;
 }
 
 export type MlbTeamLeaderEntry = {
@@ -462,13 +506,30 @@ export async function fetchMlbTeamBbrefSummary(
 ): Promise<MlbTeamBbrefSummary | null> {
   const bb = mlbToBbrefAbbrev(abbrev);
   if (!bb) return null;
-  const payload = await invokeSportsEdge<Partial<MlbTeamBbrefSummary>>({
-    action: "teamBbrefSummary",
-    abbrev: bb,
-    season,
-  });
-  if (!payload || payload.error) return null;
-  return {
+
+  const attempt = async () => {
+    const payload = await invokeSportsEdge<
+      Partial<MlbTeamBbrefSummary> & { error?: string }
+    >(
+      {
+        action: "teamBbrefSummary",
+        abbrev: bb,
+        season,
+      },
+      45_000,
+    );
+    if (!payload || payload.error) return null;
+    // Require at least one org field so a soft timeout stub isn't treated as success.
+    if (
+      !payload.president &&
+      !payload.farmDirector &&
+      !payload.ballpark &&
+      !payload.pythagorean?.record &&
+      !payload.manager?.name
+    ) {
+      return null;
+    }
+    return {
       url: payload.url ?? "",
       salariesUrl: payload.salariesUrl ?? null,
       scheduleUrl: payload.scheduleUrl ?? null,
@@ -499,7 +560,27 @@ export async function fetchMlbTeamBbrefSummary(
         runsScored: null,
         runsAllowed: null,
       },
+    } satisfies MlbTeamBbrefSummary;
+  };
+
+  return (await attempt()) ?? (await attempt());
+}
+
+/** Venue name from MLB Stats API (ballpark fallback when BBRef is slow). */
+export async function fetchMlbTeamVenue(teamId: number): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://statsapi.mlb.com/api/v1/teams/${teamId}?hydrate=venue`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return null;
+    const raw = (await res.json()) as {
+      teams?: { venue?: { name?: string } }[];
     };
+    return raw.teams?.[0]?.venue?.name?.trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 /** Pythagorean W-L from MLB team runs (BBRef-style exponent 1.83). */
