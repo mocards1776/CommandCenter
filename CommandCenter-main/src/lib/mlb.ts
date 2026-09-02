@@ -3829,19 +3829,21 @@ function highlightDedupKey(
   gamePk: number,
   playerIds: number[],
   title: string,
+  matched: WinProbPlay | null,
 ): string {
+  if (matched && matched.atBatIndex >= 0) {
+    return `${gamePk}:ab${matched.atBatIndex}`;
+  }
   const pid = playerIds[0] ?? 0;
   const tax = highlightTaxonomies(item);
   const t = title.toLowerCase().replace(/^field view:\s*/i, "").replace(/\(\d+\)\s*$/, "").trim();
-  const runs =
-    t.match(/\b(solo|two-run|three-run|grand slam|walk-off|game-tying|go-ahead)\b/)?.[1] ?? "";
   let event = "play";
   if (tax.includes("home-run") || /\bhome run\b|\bhomer\b/.test(t)) event = "hr";
   else if (tax.includes("walk-off") || /walk.?off/.test(t)) event = "walkoff";
   else if (/grand slam/.test(t)) event = "gslam";
   else if (tax.includes("defense") || /\brob(s|bed)\b/.test(t)) event = "defense";
   else if (/strikeout|strikes out/.test(t)) event = "k";
-  return `${gamePk}:${pid}:${runs}:${event}`;
+  return `${gamePk}:${pid}:${event}`;
 }
 
 function highlightClipPreference(item: RawHighlightItem, title: string): number {
@@ -4274,7 +4276,7 @@ export async function fetchMlbTonightHighlights(opts?: {
           circumstance,
           winProbabilityAdded: wpa,
           leverageIndex: matched?.leverageIndex ?? null,
-          dedupKey: highlightDedupKey(v, gamePk, playerIds, base.title),
+          dedupKey: highlightDedupKey(v, gamePk, playerIds, base.title, matched),
           clipPreference: highlightClipPreference(v, base.title) + (isDefense ? 6 : 0),
           isDefense,
           rawItem: v,

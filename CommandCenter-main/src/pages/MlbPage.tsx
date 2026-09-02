@@ -1383,9 +1383,6 @@ function HighlightClipGrid({
               ) : null}
             </div>
             <p className="line-clamp-2 text-[12.5px] leading-snug text-[#b8bfd0]">{clip.title}</p>
-            {clip.circumstance ? (
-              <p className="text-chalk-dim line-clamp-2 text-[11px] leading-snug">{clip.circumstance}</p>
-            ) : null}
             {(clip.winProbabilityAdded != null || clip.leverageIndex != null) && (
               <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.12em]">
                 {clip.winProbabilityAdded != null ? (
