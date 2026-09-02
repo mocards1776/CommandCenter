@@ -1224,6 +1224,63 @@ function TonightHighlightsSection({
   );
 }
 
+function scoreTodaySegment(segment: string, role: MlbTonightPerformer["role"]): number {
+  const s = segment.trim();
+  if (role === "pitching") {
+    if (/^[\d.]+ IP$/i.test(s)) return -1;
+    const k = s.match(/^(\d+) K$/i);
+    if (k) return Number(k[1]!) * 2;
+    if (s === "W" || s === "SV") return 4;
+    return 0;
+  }
+  if (/^\d+-\d+$/.test(s)) return -1;
+  const hr = s.match(/^(\d+) HR$/i);
+  if (hr) return Number(hr[1]!) * 10;
+  const rbi = s.match(/^(\d+) RBI$/i);
+  if (rbi) return Number(rbi[1]!) * 2;
+  const r = s.match(/^(\d+) R$/i);
+  if (r) return Number(r[1]!) * 2;
+  const bb = s.match(/^(\d+) BB$/i);
+  if (bb) return Number(bb[1]!) * 2;
+  const sb = s.match(/^(\d+) SB$/i);
+  if (sb) return Number(sb[1]!) * 5;
+  return 0;
+}
+
+function PerformerTodayLine({
+  todayLine,
+  role,
+}: {
+  todayLine: string;
+  role: MlbTonightPerformer["role"];
+}) {
+  const parts = todayLine.split(" · ").filter(Boolean);
+  let bestIdx = -1;
+  let bestScore = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const score = scoreTodaySegment(parts[i]!, role);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = i;
+    }
+  }
+
+  return (
+    <span className="numeral text-chalk">
+      {parts.map((part, i) => (
+        <span key={`${part}-${i}`}>
+          {i > 0 ? " · " : null}
+          {i === bestIdx && bestScore > 0 ? (
+            <span className="text-cream font-semibold">{part}</span>
+          ) : (
+            part
+          )}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function PerformerTable({
   title,
   rows,
@@ -1249,8 +1306,8 @@ function PerformerTable({
               <th className="px-3 py-2 font-medium">Player</th>
               <th className="px-2 py-2 font-medium">Today</th>
               <th className="px-2 py-2 font-medium">Season</th>
-              <th className="px-2 py-2 font-medium">Matchup</th>
               <th className="numeral px-3 py-2 text-right font-medium">FP</th>
+              <th className="px-2 py-2 font-medium">Matchup</th>
             </tr>
           </thead>
           <tbody>
@@ -1274,8 +1331,13 @@ function PerformerTable({
                     </span>
                   </Link>
                 </td>
-                <td className="numeral text-chalk px-2 py-2.5">{row.todayLine}</td>
+                <td className="px-2 py-2.5">
+                  <PerformerTodayLine todayLine={row.todayLine} role={row.role} />
+                </td>
                 <td className="numeral text-chalk-dim px-2 py-2.5">{row.seasonLine || "—"}</td>
+                <td className="numeral text-accent px-3 py-2.5 text-right font-semibold">
+                  {row.fantasyPoints % 1 === 0 ? row.fantasyPoints : row.fantasyPoints.toFixed(1)}
+                </td>
                 <td className="px-2 py-2.5">
                   <Link
                     to={`/sports/mlb/game/${row.gamePk}`}
@@ -1284,9 +1346,6 @@ function PerformerTable({
                   >
                     {row.gameLabel}
                   </Link>
-                </td>
-                <td className="numeral text-accent px-3 py-2.5 text-right font-semibold">
-                  {row.fantasyPoints % 1 === 0 ? row.fantasyPoints : row.fantasyPoints.toFixed(1)}
                 </td>
               </tr>
             ))}
