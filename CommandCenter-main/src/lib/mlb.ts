@@ -6925,7 +6925,7 @@ export function playoffOddsFromStandings(tables: MlbDivisionTable[]): MlbPlayoff
       });
     }
   }
-  const num = (s: string) => parseFloat(s.replace("%", "")) || 0;
+  const num = parsePlayoffPercent;
   rows.sort((a, b) => num(b.playoffPercent) - num(a.playoffPercent));
   return rows;
 }
@@ -8147,8 +8147,28 @@ export async function fetchMlbManagerRumorsFeed(): Promise<{
 
 function parseOddsPercent(raw: string | number | null | undefined): number | null {
   if (raw == null || raw === "" || raw === "-" || raw === "—") return null;
-  const n = typeof raw === "number" ? raw : parseFloat(String(raw).replace(/%/g, "").trim());
-  return Number.isFinite(n) ? n : null;
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  const n = parsePlayoffPercent(raw);
+  return n > 0 || String(raw).trim().startsWith("<") ? n : null;
+}
+
+/** Parse playoff % for sorting/display width (handles >99.9% and <0.1%). */
+export function parsePlayoffPercent(raw: string | number | null | undefined): number {
+  if (raw == null || raw === "" || raw === "-" || raw === "—") return 0;
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : 0;
+  const s = String(raw).trim();
+  const gt = s.match(/^>\s*([\d.]+)/);
+  if (gt) {
+    const n = parseFloat(gt[1]!);
+    return Number.isFinite(n) ? Math.min(100, n + 0.01) : 100;
+  }
+  const lt = s.match(/^<\s*([\d.]+)/);
+  if (lt) {
+    const n = parseFloat(lt[1]!);
+    return Number.isFinite(n) ? Math.max(0, n - 0.01) : 0;
+  }
+  const n = parseFloat(s.replace(/%/g, ""));
+  return Number.isFinite(n) ? n : 0;
 }
 
 function buildHotSeat(

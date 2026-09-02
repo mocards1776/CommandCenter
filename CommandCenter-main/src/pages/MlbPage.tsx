@@ -18,6 +18,7 @@ import {
   fetchMlbTonightDigest,
   mlbHeadshot,
   mlbHeadshotFallbacks,
+  parsePlayoffPercent,
   playoffOddsFromStandings,
   teamPagePath,
   type MlbLeaderBoard,
@@ -34,6 +35,7 @@ import {
   type MlbFreeAgentRow,
   type MlbSalaryLeader,
 } from "@/lib/mlb-team-page";
+import { loadTeamInterest, scoreRuwtGame } from "@/lib/ruwt";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
 
@@ -173,6 +175,42 @@ export default function MlbPage() {
     [standings.data],
   );
 
+  const playoffOddsByTeam = useMemo(() => {
+    const out: Record<number, number> = {};
+    for (const div of standings.data ?? []) {
+      for (const row of div.rows) {
+        if (!row.playoffPercent) continue;
+        out[row.teamId] = parsePlayoffPercent(row.playoffPercent);
+      }
+    }
+    return out;
+  }, [standings.data]);
+
+  const ruwtByGameId = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!scoreboard.data?.length) return map;
+    const watchManagerIds = new Set<number>();
+    const managerTeamById = new Map<number, number>();
+    for (const f of favorites.data ?? []) {
+      if ((f.position ?? "").toLowerCase() !== "manager") continue;
+      const mid = Number(f.playerId);
+      const tid = f.teamId != null ? Number(f.teamId) : NaN;
+      if (Number.isFinite(mid)) watchManagerIds.add(mid);
+      if (Number.isFinite(mid) && Number.isFinite(tid)) managerTeamById.set(mid, tid);
+    }
+    const ctx = {
+      teamInterest: loadTeamInterest(),
+      watchPlayerIds: favoritePlayerIds,
+      watchManagerIds,
+      managerTeamById,
+      playoffOddsByTeam,
+    };
+    for (const g of scoreboard.data) {
+      map.set(g.id, scoreRuwtGame(g, ctx).score);
+    }
+    return map;
+  }, [scoreboard.data, favorites.data, favoritePlayerIds, playoffOddsByTeam]);
+
   const liveCount = scoreboard.data?.filter((g) => g.live).length ?? 0;
   const refreshing =
     scoreboard.isFetching ||
@@ -241,6 +279,7 @@ export default function MlbPage() {
           games={scoreboard.data ?? []}
           loading={scoreboard.isPending}
           error={scoreboard.isError ? "Couldn’t load scoreboard." : null}
+          ruwtByGameId={ruwtByGameId}
         />
       )}
       {tab === "standings" && (
@@ -414,10 +453,12 @@ function ScoreboardSection({
   games,
   loading,
   error,
+  ruwtByGameId,
 }: {
   games: MlbScoreGame[];
   loading: boolean;
   error: string | null;
+  ruwtByGameId: Map<string, number>;
 }) {
   if (loading) return <LoadingBlock label="Loading games…" />;
   if (error) return <ErrorLine>{error}</ErrorLine>;
@@ -440,7 +481,7 @@ function ScoreboardSection({
       {live.length > 0 && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {live.map((g) => (
-            <ScoreCard key={g.id} game={g} />
+            <ScoreCard key={g.id} game={g} ruwtScore={ruwtByGameId.get(g.id)} />
           ))}
         </div>
       )}
@@ -449,7 +490,7 @@ function ScoreboardSection({
           {live.length > 0 && <h3 className="rule-head mb-3">Also today</h3>}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {rest.map((g) => (
-              <ScoreCard key={g.id} game={g} />
+              <ScoreCard key={g.id} game={g} ruwtScore={ruwtByGameId.get(g.id)} />
             ))}
           </div>
         </div>
@@ -458,7 +499,7 @@ function ScoreboardSection({
   );
 }
 
-function ScoreCard({ game }: { game: MlbScoreGame }) {
+function ScoreCard({ game, ruwtScore }: { game: MlbScoreGame; ruwtScore?: number }) {
   const awayWins =
     game.final && (game.away.score ?? 0) > (game.home.score ?? 0);
   const homeWins =
@@ -506,8 +547,13 @@ function ScoreCard({ game }: { game: MlbScoreGame }) {
             "Preview"
           )}
         </span>
-        <span className="truncate text-[10.5px] text-[#8b93a7]">
-          {pregame ? game.whenShort ?? game.when : game.venue ?? "Box score"}
+        <span className="flex min-w-0 items-center gap-2 truncate text-[10.5px] text-[#8b93a7]">
+          {ruwtScore != null ? (
+            <span className="numeral shrink-0 font-semibold text-[#8b93a7]">Heat {ruwtScore}</span>
+          ) : null}
+          <span className="truncate">
+            {pregame ? game.whenShort ?? game.when : game.venue ?? "Box score"}
+          </span>
         </span>
       </div>
 
@@ -802,7 +848,7 @@ function OddsSection({
         </thead>
         <tbody>
           {rows.map((r) => {
-            const pct = parseFloat(r.playoffPercent) || 0;
+            const pct = parsePlayoffPercent(r.playoffPercent);
             return (
               <tr key={r.teamId} className="border-t border-white/[0.04]">
                 <td className="text-cream px-3 py-2.5">

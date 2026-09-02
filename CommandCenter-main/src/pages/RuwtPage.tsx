@@ -14,6 +14,7 @@ import {
   fetchMlbStandings,
   fetchPitcherSeasonLines,
   mlbHeadshot,
+  parsePlayoffPercent,
   type MlbPitcherSeasonLine,
   type MlbScoreGame,
   type MlbScoredGame,
@@ -236,8 +237,8 @@ export default function RuwtPage() {
     for (const div of standings.data ?? []) {
       for (const row of div.rows) {
         if (!row.playoffPercent) continue;
-        const n = parseFloat(row.playoffPercent.replace("%", ""));
-        if (Number.isFinite(n)) out[row.teamId] = n;
+        const n = parsePlayoffPercent(row.playoffPercent);
+        if (n > 0 || row.playoffPercent.trim().startsWith("<")) out[row.teamId] = n;
       }
     }
     return out;

@@ -9,6 +9,7 @@ import {
   fetchMlbWildCardStandings,
   fetchTeamCurrentAndNextGames,
   mlbHeadshot,
+  parsePlayoffPercent,
   playoffOddsFromStandings,
   teamPagePath,
   type MlbScoreGame,
@@ -125,7 +126,7 @@ export default function DispatchNotesAside() {
   const odds = standings.data ? playoffOddsFromStandings(standings.data) : [];
   const stlOdds = odds.find((r) => r.teamId === STL_TEAM_ID);
   const stlPlayoffPct = stlOdds
-    ? parseFloat(String(stlOdds.playoffPercent).replace("%", ""))
+    ? parsePlayoffPercent(stlOdds.playoffPercent)
     : NaN;
 
   return (

@@ -9,6 +9,7 @@ import {
   fetchMlbManagers,
   fetchMlbScoreboard,
   fetchMlbStandings,
+  parsePlayoffPercent,
   playoffOddsFromStandings,
   type MlbScoreGame,
   type MlbScoredGame,
@@ -234,8 +235,7 @@ export default function DispatchScoreTicker() {
     const oddsRows = standings.data ? playoffOddsFromStandings(standings.data) : [];
     const playoffOddsByTeam: Record<number, number> = {};
     for (const row of oddsRows) {
-      const pct = Number(String(row.playoffPercent ?? "").replace("%", ""));
-      if (Number.isFinite(pct)) playoffOddsByTeam[row.teamId] = pct;
+      playoffOddsByTeam[row.teamId] = parsePlayoffPercent(row.playoffPercent);
     }
 
     const ctx: RuwtScoreContext = {
