@@ -98,7 +98,7 @@ export type MlbHighlight = {
   date: string | null;
 };
 
-export type MlbPageTab = "board" | "standings" | "leaders" | "odds" | "highlights";
+export type MlbPageTab = "board" | "standings" | "leaders" | "odds" | "highlights" | "contracts";
 
 export type MlbTonightHighlight = MlbHighlight & {
   gamePk: number;

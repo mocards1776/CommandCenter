@@ -80,6 +80,327 @@ export type MlbTeamPayroll = {
   rows: MlbTeamPayrollRow[];
 };
 
+export type MlbSalaryLeader = {
+  rank: number;
+  name: string;
+  playerId: number | null;
+  teamAbbrev: string;
+  salary: string;
+  salaryAmount: number;
+  contractStatus: string | null;
+  serviceTime: string | null;
+};
+
+export type MlbFreeAgentRow = {
+  name: string;
+  playerId: number | null;
+  teamAbbrev: string;
+  salary: string | null;
+  salaryAmount: number | null;
+  serviceTime: string | null;
+  contractStatus: string;
+  faYear: number | null;
+};
+
+export type MlbContractsBoard = {
+  season: string;
+  topSalaries: MlbSalaryLeader[];
+  upcomingFreeAgents: MlbFreeAgentRow[];
+  teamsLoaded: number;
+  source: string;
+};
+
+const BBREF_TO_MLB_ABBREV: Record<string, string> = {
+  ARI: "AZ",
+  ATH: "ATH",
+  ATL: "ATL",
+  BAL: "BAL",
+  BOS: "BOS",
+  CHC: "CHC",
+  CHW: "CWS",
+  CIN: "CIN",
+  CLE: "CLE",
+  COL: "COL",
+  DET: "DET",
+  HOU: "HOU",
+  KCR: "KC",
+  LAA: "LAA",
+  LAD: "LAD",
+  MIA: "MIA",
+  MIL: "MIL",
+  MIN: "MIN",
+  NYM: "NYM",
+  NYY: "NYY",
+  PHI: "PHI",
+  PIT: "PIT",
+  SDP: "SD",
+  SEA: "SEA",
+  SFG: "SF",
+  STL: "STL",
+  TBR: "TB",
+  TEX: "TEX",
+  TOR: "TOR",
+  WSN: "WSH",
+};
+
+const BBREF_TEAM_ABBREVS = [
+  "ARI", "ATL", "BAL", "BOS", "CHC", "CHW", "CIN", "CLE", "COL", "DET",
+  "HOU", "KCR", "LAA", "LAD", "MIA", "MIL", "MIN", "NYM", "NYY", "ATH",
+  "PHI", "PIT", "SDP", "SEA", "SFG", "STL", "TBR", "TEX", "TOR", "WSN",
+];
+
+function displayTeamAbbrev(bbrefAbbrev: string): string {
+  return BBREF_TO_MLB_ABBREV[bbrefAbbrev.toUpperCase()] ?? bbrefAbbrev;
+}
+
+function normPlayerName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+}
+
+async function loadLeaguePlayerIdIndex(): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  try {
+    const teamsRes = await fetch(
+      `https://statsapi.mlb.com/api/v1/teams?sportId=1&season=${new Date().getFullYear()}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!teamsRes.ok) return map;
+    const teamsRaw = (await teamsRes.json()) as {
+      teams?: { id?: number }[];
+    };
+    const teamIds = (teamsRaw.teams ?? []).map((t) => t.id).filter((id): id is number => id != null);
+    await Promise.all(
+      teamIds.map(async (teamId) => {
+        for (const rosterType of ["active", "40Man"] as const) {
+          try {
+            const res = await fetch(
+              `https://statsapi.mlb.com/api/v1/teams/${teamId}/roster?rosterType=${rosterType}`,
+              { headers: { Accept: "application/json" } },
+            );
+            if (!res.ok) continue;
+            const raw = (await res.json()) as {
+              roster?: { person?: { id?: number; fullName?: string } }[];
+            };
+            for (const row of raw.roster ?? []) {
+              const id = row.person?.id;
+              const fullName = row.person?.fullName;
+              if (!id || !fullName) continue;
+              map.set(normPlayerName(fullName), id);
+            }
+          } catch {
+            /* optional roster */
+          }
+        }
+      }),
+    );
+  } catch {
+    /* optional */
+  }
+  return map;
+}
+
+function attachPlayerIds<T extends { name: string; playerId?: number | null }>(
+  rows: T[],
+  index: Map<string, number>,
+): (T & { playerId: number | null })[] {
+  return rows.map((row) => ({
+    ...row,
+    playerId: index.get(normPlayerName(row.name)) ?? row.playerId ?? null,
+  }));
+}
+
+type RawLeaguePayroll = {
+  season?: string;
+  teamsLoaded?: number;
+  source?: string;
+  error?: string;
+  topSalaries?: {
+    rank: number;
+    name: string;
+    teamAbbrev: string;
+    salary: string;
+    salaryAmount: number;
+    contractStatus: string | null;
+    serviceTime: string | null;
+  }[];
+  upcomingFreeAgents?: {
+    name: string;
+    teamAbbrev: string;
+    salary: string | null;
+    salaryAmount: number | null;
+    serviceTime: string | null;
+    contractStatus: string;
+    faYear: number | null;
+  }[];
+};
+
+async function fetchLeaguePayrollRaw(): Promise<RawLeaguePayroll | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke("sports", {
+      body: { action: "leaguePayroll" },
+    });
+    if (error) throw error;
+    const payload = data as RawLeaguePayroll | null;
+    if (!payload || payload.error || !payload.topSalaries?.length) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function parseFaYear(contractStatus: string, season: number): number | null {
+  const s = contractStatus.trim();
+  const faAfter = s.match(/FA after (\d{4})/i);
+  if (faAfter) return Number(faAfter[1]);
+  const opt = s.match(/(?:club|player|mutual|team|vesting) option (?:for )?(\d{4})/i);
+  if (opt) return Number(opt[1]);
+  if (/\bUFA\b/i.test(s) || /unrestricted free agent/i.test(s)) return season;
+  if (/^1 yr\//i.test(s)) return season + 1;
+  const range = s.match(/\((\d{2})-(\d{2})\)/);
+  if (range) {
+    const end = Number(range[2]);
+    const yy = season % 100;
+    if (end === yy) return season + 1;
+    if (end < 70) {
+      const century = Math.floor(season / 100) * 100;
+      const fullEnd = century + end;
+      if (fullEnd === season) return season + 1;
+    }
+  }
+  return null;
+}
+
+function isUpcomingFreeAgent(contractStatus: string | null, season: number): boolean {
+  if (!contractStatus) return false;
+  const s = contractStatus.trim();
+  if (/pre-?arb/i.test(s) || /minor league/i.test(s)) return false;
+  const faYear = parseFaYear(s, season);
+  return faYear != null && faYear >= season && faYear <= season + 1;
+}
+
+async function fetchLeaguePayrollClientFallback(): Promise<RawLeaguePayroll> {
+  const season = new Date().getFullYear();
+  const allRows: {
+    name: string;
+    teamAbbrev: string;
+    serviceTime: string | null;
+    contractStatus: string | null;
+    salary: string | null;
+    salaryAmount: number | null;
+  }[] = [];
+  let teamsLoaded = 0;
+  const batchSize = 6;
+  for (let i = 0; i < BBREF_TEAM_ABBREVS.length; i += batchSize) {
+    const batch = BBREF_TEAM_ABBREVS.slice(i, i + batchSize);
+    const results = await Promise.all(batch.map((abbrev) => fetchMlbTeamPayroll(abbrev)));
+    for (const payroll of results) {
+      if (!payroll?.rows.length) continue;
+      teamsLoaded += 1;
+      for (const row of payroll.rows) {
+        allRows.push({
+          name: row.name,
+          teamAbbrev: payroll.abbrev,
+          serviceTime: row.serviceTime,
+          contractStatus: row.contractStatus,
+          salary: row.salary,
+          salaryAmount: row.salaryAmount,
+        });
+      }
+    }
+  }
+
+  const topSalaries = [...allRows]
+    .filter((r) => (r.salaryAmount ?? 0) > 0)
+    .sort((a, b) => (b.salaryAmount ?? 0) - (a.salaryAmount ?? 0))
+    .slice(0, 40)
+    .map((r, idx) => ({
+      rank: idx + 1,
+      name: r.name,
+      teamAbbrev: r.teamAbbrev,
+      salary: r.salary ?? `$${(r.salaryAmount ?? 0).toLocaleString("en-US")}`,
+      salaryAmount: r.salaryAmount!,
+      contractStatus: r.contractStatus,
+      serviceTime: r.serviceTime,
+    }));
+
+  const upcomingFreeAgents = allRows
+    .filter((r) => isUpcomingFreeAgent(r.contractStatus, season))
+    .sort((a, b) => {
+      const faA = parseFaYear(a.contractStatus ?? "", season) ?? 9999;
+      const faB = parseFaYear(b.contractStatus ?? "", season) ?? 9999;
+      if (faA !== faB) return faA - faB;
+      return (b.salaryAmount ?? 0) - (a.salaryAmount ?? 0);
+    })
+    .map((r) => ({
+      name: r.name,
+      teamAbbrev: r.teamAbbrev,
+      salary: r.salary,
+      salaryAmount: r.salaryAmount,
+      serviceTime: r.serviceTime,
+      contractStatus: r.contractStatus ?? "",
+      faYear: parseFaYear(r.contractStatus ?? "", season),
+    }));
+
+  return {
+    season: String(season),
+    teamsLoaded,
+    source: "baseball-reference",
+    topSalaries,
+    upcomingFreeAgents,
+  };
+}
+
+/** League-wide salaries and upcoming free agents from BBRef team payroll tables. */
+export async function fetchMlbContractsBoard(): Promise<MlbContractsBoard> {
+  const raw = (await fetchLeaguePayrollRaw()) ?? (await fetchLeaguePayrollClientFallback());
+  const playerIndex = await loadLeaguePlayerIdIndex();
+  const topSalaries = attachPlayerIds(
+    (raw.topSalaries ?? []).map((r) => ({
+      ...r,
+      teamAbbrev: displayTeamAbbrev(r.teamAbbrev),
+    })),
+    playerIndex,
+  ).map((r) => ({
+    rank: r.rank,
+    name: r.name,
+    playerId: r.playerId,
+    teamAbbrev: r.teamAbbrev,
+    salary: r.salary,
+    salaryAmount: r.salaryAmount,
+    contractStatus: r.contractStatus,
+    serviceTime: r.serviceTime,
+  }));
+
+  const upcomingFreeAgents = attachPlayerIds(
+    (raw.upcomingFreeAgents ?? []).map((r) => ({
+      ...r,
+      teamAbbrev: displayTeamAbbrev(r.teamAbbrev),
+    })),
+    playerIndex,
+  ).map((r) => ({
+    name: r.name,
+    playerId: r.playerId,
+    teamAbbrev: r.teamAbbrev,
+    salary: r.salary,
+    salaryAmount: r.salaryAmount,
+    serviceTime: r.serviceTime,
+    contractStatus: r.contractStatus,
+    faYear: r.faYear,
+  }));
+
+  return {
+    season: raw.season ?? String(new Date().getFullYear()),
+    topSalaries,
+    upcomingFreeAgents,
+    teamsLoaded: raw.teamsLoaded ?? 0,
+    source: raw.source ?? "baseball-reference",
+  };
+}
+
 export type MlbTeamLeaderEntry = {
   id: number;
   name: string;

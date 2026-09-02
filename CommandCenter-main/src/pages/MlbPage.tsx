@@ -28,10 +28,23 @@ import {
   type MlbTonightPerformer,
   type MlbTonightTaggedRow,
 } from "@/lib/mlb";
+import {
+  fetchMlbContractsBoard,
+  type MlbContractsBoard,
+  type MlbFreeAgentRow,
+  type MlbSalaryLeader,
+} from "@/lib/mlb-team-page";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
 
-const MLB_TABS = new Set<MlbPageTab>(["board", "standings", "leaders", "odds", "highlights"]);
+const MLB_TABS = new Set<MlbPageTab>([
+  "board",
+  "standings",
+  "leaders",
+  "odds",
+  "highlights",
+  "contracts",
+]);
 
 function readMlbTab(raw: string | null): MlbPageTab {
   if (raw && MLB_TABS.has(raw as MlbPageTab)) return raw as MlbPageTab;
@@ -140,6 +153,14 @@ export default function MlbPage() {
     refetchInterval: tab === "highlights" ? 120_000 : false,
   });
 
+  const contracts = useQuery({
+    queryKey: ["mlb-contracts-board"],
+    queryFn: () => fetchMlbContractsBoard(),
+    enabled: tab === "contracts",
+    staleTime: 60 * 60_000,
+    retry: 1,
+  });
+
   const yesterday = useQuery({
     queryKey: ["favorite-players-yesterday", user?.id, playerFavs.map((f) => f.playerId).join(",")],
     queryFn: () => fetchFavoritePlayersYesterday(playerFavs),
@@ -157,7 +178,8 @@ export default function MlbPage() {
     scoreboard.isFetching ||
     standings.isFetching ||
     leaders.isFetching ||
-    (tab === "highlights" && tonight.isFetching);
+    (tab === "highlights" && tonight.isFetching) ||
+    (tab === "contracts" && contracts.isFetching);
 
   const refresh = () => {
     void Promise.all([
@@ -166,6 +188,7 @@ export default function MlbPage() {
       leaders.refetch(),
       favorites.refetch(),
       tab === "highlights" ? tonight.refetch() : Promise.resolve(),
+      tab === "contracts" ? contracts.refetch() : Promise.resolve(),
     ]).then(() => toast.success("MLB updated"));
   };
 
@@ -178,6 +201,7 @@ export default function MlbPage() {
             ["standings", "Standings"],
             ["leaders", "Stats"],
             ["highlights", "Tonight's Highlights"],
+            ["contracts", "Contracts"],
             ["odds", "Playoff odds"],
           ] as const
         ).map(([id, label]) => (
@@ -239,6 +263,14 @@ export default function MlbPage() {
           digest={tonight.data ?? null}
           loading={tonight.isPending}
           error={tonight.isError ? "Couldn’t load tonight’s highlights." : null}
+          returnPath={returnPath}
+        />
+      )}
+      {tab === "contracts" && (
+        <ContractsSection
+          board={contracts.data ?? null}
+          loading={contracts.isPending}
+          error={contracts.isError ? "Couldn’t load contract data." : null}
           returnPath={returnPath}
         />
       )}
@@ -807,6 +839,173 @@ function OddsSection({
         Odds via ESPN projections · standings via MLB Stats API
       </p>
     </div>
+  );
+}
+
+function ContractsSection({
+  board,
+  loading,
+  error,
+  returnPath,
+}: {
+  board: MlbContractsBoard | null;
+  loading: boolean;
+  error: string | null;
+  returnPath: string;
+}) {
+  if (loading) {
+    return <LoadingBlock label="Loading salaries and free agents…" />;
+  }
+  if (error) return <ErrorLine>{error}</ErrorLine>;
+  if (!board) return <EmptyLine>Contract data not available yet.</EmptyLine>;
+
+  return (
+    <div className="flex flex-col gap-6">
+      <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+        <div className="border-b border-white/[0.06] px-4 py-3">
+          <h3 className="rule-head">Top salaries</h3>
+          <p className="text-chalk-dim mt-1 text-[11px]">
+            {board.season} season · {board.topSalaries.length} highest-paid players
+          </p>
+        </div>
+        {board.topSalaries.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[520px] text-left text-[12px]">
+              <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+                <tr>
+                  <th className="px-4 py-2 font-medium">#</th>
+                  <th className="px-2 py-2 font-medium">Player</th>
+                  <th className="px-2 py-2 font-medium">Team</th>
+                  <th className="px-2 py-2 text-right font-medium">Salary</th>
+                  <th className="px-4 py-2 font-medium">Contract</th>
+                </tr>
+              </thead>
+              <tbody>
+                {board.topSalaries.map((row) => (
+                  <SalaryLeaderRow key={`${row.rank}-${row.name}`} row={row} returnPath={returnPath} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-chalk-dim px-4 py-6 text-[13px]">No salary data loaded.</p>
+        )}
+      </section>
+
+      <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+        <div className="border-b border-white/[0.06] px-4 py-3">
+          <h3 className="rule-head">Upcoming free agents</h3>
+          <p className="text-chalk-dim mt-1 text-[11px]">
+            Expiring deals and players projected to hit the market this offseason or next
+          </p>
+        </div>
+        {board.upcomingFreeAgents.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-left text-[12px]">
+              <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Player</th>
+                  <th className="px-2 py-2 font-medium">Team</th>
+                  <th className="px-2 py-2 font-medium">FA</th>
+                  <th className="px-2 py-2 text-right font-medium">Salary</th>
+                  <th className="px-2 py-2 font-medium">Srv</th>
+                  <th className="px-4 py-2 font-medium">Contract</th>
+                </tr>
+              </thead>
+              <tbody>
+                {board.upcomingFreeAgents.slice(0, 60).map((row) => (
+                  <FreeAgentRow key={`${row.name}-${row.teamAbbrev}`} row={row} returnPath={returnPath} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-chalk-dim px-4 py-6 text-[13px]">No upcoming free agents matched.</p>
+        )}
+      </section>
+
+      <p className="text-chalk-dim text-[10.5px]">
+        Salaries via Baseball Reference team payroll tables
+        {board.teamsLoaded ? ` · ${board.teamsLoaded} teams loaded` : ""}
+      </p>
+    </div>
+  );
+}
+
+function SalaryLeaderRow({
+  row,
+  returnPath,
+}: {
+  row: MlbSalaryLeader;
+  returnPath: string;
+}) {
+  const nameCell = row.playerId ? (
+    <Link
+      to={`/sports/mlb/player/${row.playerId}`}
+      state={{ from: returnPath }}
+      className="text-cream hover:text-accent inline-flex items-center gap-2 hover:underline"
+    >
+      <img
+        src={mlbHeadshot(row.playerId)}
+        alt=""
+        className="h-8 w-8 rounded-full object-cover object-top ring-1 ring-white/10"
+        loading="lazy"
+      />
+      {row.name}
+    </Link>
+  ) : (
+    <span className="text-cream">{row.name}</span>
+  );
+
+  return (
+    <tr className="border-t border-white/[0.04]">
+      <td className="text-chalk-dim numeral px-4 py-2.5">{row.rank}</td>
+      <td className="px-2 py-2.5">{nameCell}</td>
+      <td className="text-chalk numeral px-2 py-2.5">{row.teamAbbrev}</td>
+      <td className="numeral text-accent px-2 py-2.5 text-right font-medium">{row.salary}</td>
+      <td className="text-chalk-dim max-w-[14rem] truncate px-4 py-2.5" title={row.contractStatus ?? ""}>
+        {row.contractStatus ?? "—"}
+      </td>
+    </tr>
+  );
+}
+
+function FreeAgentRow({
+  row,
+  returnPath,
+}: {
+  row: MlbFreeAgentRow;
+  returnPath: string;
+}) {
+  const nameCell = row.playerId ? (
+    <Link
+      to={`/sports/mlb/player/${row.playerId}`}
+      state={{ from: returnPath }}
+      className="text-cream hover:text-accent inline-flex items-center gap-2 hover:underline"
+    >
+      <img
+        src={mlbHeadshot(row.playerId)}
+        alt=""
+        className="h-8 w-8 rounded-full object-cover object-top ring-1 ring-white/10"
+        loading="lazy"
+      />
+      {row.name}
+    </Link>
+  ) : (
+    <span className="text-cream">{row.name}</span>
+  );
+
+  return (
+    <tr className="border-t border-white/[0.04]">
+      <td className="px-4 py-2.5">{nameCell}</td>
+      <td className="text-chalk numeral px-2 py-2.5">{row.teamAbbrev}</td>
+      <td className="numeral text-cream px-2 py-2.5">{row.faYear ?? "—"}</td>
+      <td className="numeral text-chalk px-2 py-2.5 text-right">{row.salary ?? "—"}</td>
+      <td className="numeral text-chalk-dim px-2 py-2.5">{row.serviceTime ?? "—"}</td>
+      <td className="text-chalk-dim max-w-[14rem] truncate px-4 py-2.5" title={row.contractStatus}>
+        {row.contractStatus}
+      </td>
+    </tr>
   );
 }
 

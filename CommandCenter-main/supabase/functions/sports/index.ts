@@ -3149,6 +3149,144 @@ async function scrapeTeamPayroll(abbrev: string): Promise<Record<string, unknown
   };
 }
 
+const BBREF_TEAM_ABBREVS = [
+  "ARI", "ATL", "BAL", "BOS", "CHC", "CHW", "CIN", "CLE", "COL", "DET",
+  "HOU", "KCR", "LAA", "LAD", "MIA", "MIL", "MIN", "NYM", "NYY", "ATH",
+  "PHI", "PIT", "SDP", "SEA", "SFG", "STL", "TBR", "TEX", "TOR", "WSN",
+];
+
+function parseFaYear(contractStatus: string, season: number): number | null {
+  const s = contractStatus.trim();
+  const faAfter = s.match(/FA after (\d{4})/i);
+  if (faAfter) return Number(faAfter[1]);
+  const opt = s.match(/(?:club|player|mutual|team|vesting) option (?:for )?(\d{4})/i);
+  if (opt) return Number(opt[1]);
+  if (/\bUFA\b/i.test(s) || /unrestricted free agent/i.test(s)) return season;
+  if (/^1 yr\//i.test(s)) return season + 1;
+  const range = s.match(/\((\d{2})-(\d{2})\)/);
+  if (range) {
+    const end = Number(range[2]);
+    const yy = season % 100;
+    if (end === yy) return season + 1;
+    if (end < 70) {
+      const century = Math.floor(season / 100) * 100;
+      const fullEnd = century + end;
+      if (fullEnd === season) return season + 1;
+    }
+  }
+  return null;
+}
+
+function isUpcomingFreeAgent(contractStatus: string | null, season: number): boolean {
+  if (!contractStatus) return false;
+  const s = contractStatus.trim();
+  if (/pre-?arb/i.test(s) || /minor league/i.test(s)) return false;
+  const faYear = parseFaYear(s, season);
+  return faYear != null && faYear >= season && faYear <= season + 1;
+}
+
+async function scrapeLeaguePayroll(): Promise<Record<string, unknown>> {
+  const season = new Date().getFullYear();
+  const allRows: {
+    name: string;
+    teamAbbrev: string;
+    age: string | null;
+    experience: string | null;
+    serviceTime: string | null;
+    acquired: string | null;
+    contractStatus: string | null;
+    salary: string | null;
+    salaryAmount: number | null;
+    bbrefId: string | null;
+  }[] = [];
+  let teamsLoaded = 0;
+  const concurrency = 6;
+  for (let i = 0; i < BBREF_TEAM_ABBREVS.length; i += concurrency) {
+    const batch = BBREF_TEAM_ABBREVS.slice(i, i + concurrency);
+    const results = await Promise.all(
+      batch.map(async (abbrev) => {
+        try {
+          return await scrapeTeamPayroll(abbrev);
+        } catch {
+          return { abbrev, rows: [] as Record<string, unknown>[] };
+        }
+      }),
+    );
+    for (const result of results) {
+      const abbr = String(result.abbrev ?? "");
+      const rows = (result.rows ?? []) as {
+        name: string;
+        age?: string | null;
+        experience?: string | null;
+        serviceTime?: string | null;
+        acquired?: string | null;
+        contractStatus?: string | null;
+        salary?: string | null;
+        salaryAmount?: number | null;
+        bbrefId?: string | null;
+      }[];
+      if (rows.length) teamsLoaded += 1;
+      for (const row of rows) {
+        if (!row.name) continue;
+        allRows.push({
+          name: row.name,
+          teamAbbrev: abbr,
+          age: row.age ?? null,
+          experience: row.experience ?? null,
+          serviceTime: row.serviceTime ?? null,
+          acquired: row.acquired ?? null,
+          contractStatus: row.contractStatus ?? null,
+          salary: row.salary ?? null,
+          salaryAmount: row.salaryAmount ?? null,
+          bbrefId: row.bbrefId ?? null,
+        });
+      }
+    }
+  }
+
+  const topSalaries = [...allRows]
+    .filter((r) => (r.salaryAmount ?? 0) > 0)
+    .sort((a, b) => (b.salaryAmount ?? 0) - (a.salaryAmount ?? 0))
+    .slice(0, 40)
+    .map((r, i) => ({
+      rank: i + 1,
+      name: r.name,
+      teamAbbrev: r.teamAbbrev,
+      salary: r.salary ?? moneyDisplay(r.salaryAmount!),
+      salaryAmount: r.salaryAmount!,
+      contractStatus: r.contractStatus,
+      serviceTime: r.serviceTime,
+      bbrefId: r.bbrefId,
+    }));
+
+  const upcomingFreeAgents = allRows
+    .filter((r) => isUpcomingFreeAgent(r.contractStatus, season))
+    .sort((a, b) => {
+      const faA = parseFaYear(a.contractStatus ?? "", season) ?? 9999;
+      const faB = parseFaYear(b.contractStatus ?? "", season) ?? 9999;
+      if (faA !== faB) return faA - faB;
+      return (b.salaryAmount ?? 0) - (a.salaryAmount ?? 0);
+    })
+    .map((r) => ({
+      name: r.name,
+      teamAbbrev: r.teamAbbrev,
+      salary: r.salary,
+      salaryAmount: r.salaryAmount,
+      serviceTime: r.serviceTime,
+      contractStatus: r.contractStatus ?? "",
+      faYear: parseFaYear(r.contractStatus ?? "", season),
+      bbrefId: r.bbrefId,
+    }));
+
+  return {
+    source: "baseball-reference",
+    season: String(season),
+    teamsLoaded,
+    topSalaries,
+    upcomingFreeAgents,
+  };
+}
+
 /** MLB Pipeline scouting grades + narrative for a prospect (hide when absent). */
 async function scrapePipelineScouting(playerId: number): Promise<Record<string, unknown>> {
   const year = new Date().getFullYear();
@@ -3881,6 +4019,19 @@ Deno.serve(async (req: Request) => {
           HEAVY_MS,
           () => scrapeTeamPayroll(abbrev),
           { error: "Team payroll timed out", abbrev },
+        ),
+      );
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : String(e) }, 200);
+    }
+  }
+  if (body.action === "leaguePayroll") {
+    try {
+      return json(
+        await withBudget(
+          55_000,
+          () => scrapeLeaguePayroll(),
+          { error: "League payroll timed out" },
         ),
       );
     } catch (e) {
