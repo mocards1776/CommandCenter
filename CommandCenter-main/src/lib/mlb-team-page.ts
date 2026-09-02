@@ -1,4 +1,3 @@
-import { supabase } from "./supabase";
 import { mlbHeadshot } from "./mlb";
 
 /** Map StatsAPI / ESPN abbrevs → Baseball-Reference team codes. */
@@ -153,6 +152,53 @@ function displayTeamAbbrev(bbrefAbbrev: string): string {
   return BBREF_TO_MLB_ABBREV[bbrefAbbrev.toUpperCase()] ?? bbrefAbbrev;
 }
 
+async function invokeSportsEdge<T extends Record<string, unknown>>(
+  body: Record<string, unknown>,
+  timeoutMs = 35_000,
+): Promise<(T & { error?: string }) | null> {
+  const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  if (!base || !key) return null;
+
+  const ctl = new AbortController();
+  const timer = window.setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/functions/v1/sports`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+        apikey: key,
+      },
+      body: JSON.stringify(body),
+      signal: ctl.signal,
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T & { error?: string };
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function loadMlbTeamAbbrevs(): Promise<string[]> {
+  try {
+    const res = await fetch(
+      `https://statsapi.mlb.com/api/v1/teams?sportId=1&season=${new Date().getFullYear()}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return [...BBREF_TEAM_ABBREVS];
+    const raw = (await res.json()) as { teams?: { abbreviation?: string }[] };
+    const abbrevs = (raw.teams ?? [])
+      .map((t) => t.abbreviation)
+      .filter((abbr): abbr is string => Boolean(abbr));
+    return abbrevs.length ? abbrevs.sort() : [...BBREF_TEAM_ABBREVS];
+  } catch {
+    return [...BBREF_TEAM_ABBREVS];
+  }
+}
+
 function normPlayerName(name: string): string {
   return name
     .trim()
@@ -239,17 +285,9 @@ type RawLeaguePayroll = {
 };
 
 async function fetchLeaguePayrollRaw(): Promise<RawLeaguePayroll | null> {
-  try {
-    const { data, error } = await supabase.functions.invoke("sports", {
-      body: { action: "leaguePayroll" },
-    });
-    if (error) throw error;
-    const payload = data as RawLeaguePayroll | null;
-    if (!payload || payload.error || !payload.topSalaries?.length) return null;
-    return payload;
-  } catch {
-    return null;
-  }
+  const payload = await invokeSportsEdge<RawLeaguePayroll>({ action: "leaguePayroll" }, 65_000);
+  if (!payload || payload.error || !payload.topSalaries?.length) return null;
+  return payload;
 }
 
 function parseFaYear(contractStatus: string, season: number): number | null {
@@ -294,8 +332,9 @@ async function fetchLeaguePayrollClientFallback(): Promise<RawLeaguePayroll> {
   }[] = [];
   let teamsLoaded = 0;
   const batchSize = 6;
-  for (let i = 0; i < BBREF_TEAM_ABBREVS.length; i += batchSize) {
-    const batch = BBREF_TEAM_ABBREVS.slice(i, i + batchSize);
+  const teamAbbrevs = await loadMlbTeamAbbrevs();
+  for (let i = 0; i < teamAbbrevs.length; i += batchSize) {
+    const batch = teamAbbrevs.slice(i, i + batchSize);
     const results = await Promise.all(batch.map((abbrev) => fetchMlbTeamPayroll(abbrev)));
     for (const payroll of results) {
       if (!payroll?.rows.length) continue;
@@ -423,14 +462,13 @@ export async function fetchMlbTeamBbrefSummary(
 ): Promise<MlbTeamBbrefSummary | null> {
   const bb = mlbToBbrefAbbrev(abbrev);
   if (!bb) return null;
-  try {
-    const { data, error } = await supabase.functions.invoke("sports", {
-      body: { action: "teamBbrefSummary", abbrev: bb, season },
-    });
-    if (error) throw error;
-    const payload = data as (Partial<MlbTeamBbrefSummary> & { error?: string }) | null;
-    if (!payload || payload.error) return null;
-    return {
+  const payload = await invokeSportsEdge<Partial<MlbTeamBbrefSummary>>({
+    action: "teamBbrefSummary",
+    abbrev: bb,
+    season,
+  });
+  if (!payload || payload.error) return null;
+  return {
       url: payload.url ?? "",
       salariesUrl: payload.salariesUrl ?? null,
       scheduleUrl: payload.scheduleUrl ?? null,
@@ -462,22 +500,16 @@ export async function fetchMlbTeamBbrefSummary(
         runsAllowed: null,
       },
     };
-  } catch {
-    return null;
-  }
 }
 
 export async function fetchMlbTeamPayroll(abbrev: string): Promise<MlbTeamPayroll | null> {
   const bb = mlbToBbrefAbbrev(abbrev);
   if (!bb) return null;
-  try {
-    const { data, error } = await supabase.functions.invoke("sports", {
-      body: { action: "teamPayroll", abbrev: bb },
-    });
-    if (error) throw error;
-    const payload = data as (Partial<MlbTeamPayroll> & { error?: string; rows?: MlbTeamPayrollRow[] }) | null;
-    if (!payload || payload.error || !payload.url) return null;
-    return {
+  const payload = await invokeSportsEdge<
+    Partial<MlbTeamPayroll> & { error?: string; rows?: MlbTeamPayrollRow[] }
+  >({ action: "teamPayroll", abbrev: bb });
+  if (!payload || payload.error || !payload.url) return null;
+  return {
       url: payload.url,
       abbrev: payload.abbrev ?? bb,
       season: payload.season ?? String(new Date().getFullYear()),
@@ -485,9 +517,6 @@ export async function fetchMlbTeamPayroll(abbrev: string): Promise<MlbTeamPayrol
       payrollTotalDisplay: payload.payrollTotalDisplay ?? null,
       rows: (payload.rows ?? []).map((r) => ({ ...r, playerId: r.playerId ?? null })),
     };
-  } catch {
-    return null;
-  }
 }
 
 function shortName(full: string): string {

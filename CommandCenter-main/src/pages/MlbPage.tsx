@@ -854,7 +854,7 @@ function ContractsSection({
   returnPath: string;
 }) {
   if (loading) {
-    return <LoadingBlock label="Loading salaries and free agents…" />;
+    return <LoadingBlock label="Loading salaries and free agents… (about 15s)" />;
   }
   if (error) return <ErrorLine>{error}</ErrorLine>;
   if (!board) return <EmptyLine>Contract data not available yet.</EmptyLine>;
