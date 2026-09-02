@@ -62,6 +62,19 @@ npm run lint
   `scripts/sync-edge-copies.sh` (CI fails on drift). On `main`, GitHub Actions
   deploys `rss` / `sports` when that tree changes — requires repo secrets
   `SUPABASE_ACCESS_TOKEN` (and optional `SUPABASE_PROJECT_REF`).
+
+  **One-time GitHub secret setup** (so edge deploys aren’t skipped):
+
+  ```bash
+  # Create a token at https://supabase.com/dashboard/account/tokens
+  gh secret set SUPABASE_ACCESS_TOKEN --repo mocards1776/CommandCenter
+  gh secret set SUPABASE_PROJECT_REF --body "esdgrgulaxnewmhjuyzh" --repo mocards1776/CommandCenter
+  ```
+
+  Or in GitHub: **Settings → Secrets and variables → Actions → New repository secret**.
+
+  Manual deploy (no CI): `supabase login` then
+  `supabase functions deploy sports --project-ref esdgrgulaxnewmhjuyzh --no-verify-jwt`
 - **Migrations** — applied to the Supabase project; `supabase/migrations/`
   is the record.
 
