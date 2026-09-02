@@ -5,6 +5,7 @@ import {
   fetchMlbTeamBbrefSummary,
   fetchMlbTeamLeaderCards,
   fetchMlbTeamPayroll,
+  fetchMlbTeamPythagorean,
   fetchMlbTeamRecordSplits,
   fetchMlbTeamWinTrend,
   leaderHeadshot,
@@ -53,22 +54,26 @@ const HONOR_META: Record<
 export function MlbTeamOrgSummary({
   abbrev,
   accent,
+  teamId,
   playoffOdds,
   wildCardOdds,
   fallbackRecord,
   fallbackStanding,
   fallbackManager,
   fallbackPresident,
+  fallbackGeneralManager,
   season = new Date().getFullYear(),
 }: {
   abbrev: string;
   accent: string;
+  teamId?: number;
   playoffOdds?: string | null;
   wildCardOdds?: string | null;
   fallbackRecord?: string | null;
   fallbackStanding?: string | null;
   fallbackManager?: { id?: number; name: string; record?: string | null } | null;
   fallbackPresident?: string | null;
+  fallbackGeneralManager?: { name: string; title?: string | null } | null;
   season?: number;
 }) {
   const summary = useQuery({
@@ -78,9 +83,18 @@ export function MlbTeamOrgSummary({
     retry: 1,
   });
 
-  const s = summary.data;
+  const pythagFallback = useQuery({
+    queryKey: ["mlb-team-pythag", teamId, season],
+    queryFn: () => fetchMlbTeamPythagorean(teamId!, season),
+    enabled: teamId != null && !summary.data?.pythagorean?.record,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
 
-  if (summary.isPending) {
+  const s = summary.data;
+  const loading = summary.isPending || (teamId != null && pythagFallback.isPending && !s?.pythagorean?.record);
+
+  if (loading) {
     return (
       <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c] px-4 py-4">
         <p className="text-chalk-dim animate-pulse text-[12px]">Loading team overview…</p>
@@ -143,6 +157,17 @@ export function MlbTeamOrgSummary({
   }
   const president = s?.president ?? fallbackPresident;
   if (president) rows.push({ label: "President", value: president });
+  const gm = fallbackGeneralManager?.name ?? null;
+  const gmTitle = fallbackGeneralManager?.title?.trim() || "GM";
+  if (
+    gm &&
+    (!president || !president.toLowerCase().includes(gm.toLowerCase()))
+  ) {
+    rows.push({
+      label: gmTitle.includes("GM") || gmTitle.includes("General Manager") ? gmTitle : "GM",
+      value: gm,
+    });
+  }
   if (s?.farmDirector) rows.push({ label: "Farm Director", value: s.farmDirector });
   if (s?.scoutingDirector) rows.push({ label: "Scouting Director", value: s.scoutingDirector });
   if (s?.ballpark) rows.push({ label: "Ballpark", value: s.ballpark });
@@ -166,26 +191,52 @@ export function MlbTeamOrgSummary({
       ),
     });
   }
-  if (s?.pythagorean?.record) {
+  const pyth =
+    s?.pythagorean?.record
+      ? s.pythagorean
+      : pythagFallback.data?.record
+        ? pythagFallback.data
+        : null;
+  if (pyth?.record) {
     rows.push({
       label: "Pythagorean W-L",
       value: (
         <span className="text-cream text-[13px]">
-          <span className="numeral">{s.pythagorean.record}</span>
-          {s.pythagorean.runsScored != null && s.pythagorean.runsAllowed != null
-            ? ` · ${s.pythagorean.runsScored} Runs, ${s.pythagorean.runsAllowed} Runs Allowed`
+          <span className="numeral">{pyth.record}</span>
+          {pyth.runsScored != null && pyth.runsAllowed != null
+            ? ` · ${pyth.runsScored} Runs, ${pyth.runsAllowed} Runs Allowed`
             : ""}
         </span>
       ),
     });
   }
 
-  if (rows.length === 0) return null;
+  if (rows.length === 0) {
+    return (
+      <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c] px-4 py-4">
+        <p className="text-chalk-dim text-[12px]">Team overview unavailable.</p>
+      </section>
+    );
+  }
+
+  const scheduleHref = s?.scheduleUrl ?? null;
 
   return (
     <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
       <div className="border-b border-white/[0.06] px-4 py-3">
-        <h3 className="text-[15px] font-semibold text-white">{season} Statistics</h3>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-[15px] font-semibold text-white">{season} Statistics</h3>
+          {scheduleHref ? (
+            <a
+              href={scheduleHref}
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent text-[11px] font-semibold uppercase tracking-[0.12em] hover:underline"
+            >
+              Schedule &amp; Results
+            </a>
+          ) : null}
+        </div>
       </div>
       <dl className="divide-y divide-white/[0.06]">
         {rows.map((r) => (

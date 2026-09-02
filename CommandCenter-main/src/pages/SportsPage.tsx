@@ -950,6 +950,7 @@ function TeamDetailPanel({
                 <MlbTeamOrgSummary
                   abbrev={detail.abbrev}
                   accent={accent}
+                  teamId={mlbTeamId}
                   fallbackRecord={detail.record}
                   fallbackStanding={detail.standing}
                   fallbackManager={
@@ -961,7 +962,14 @@ function TeamDetailPanel({
                         }
                       : null
                   }
-                  fallbackPresident={detail.generalManager?.name ?? null}
+                  fallbackGeneralManager={
+                    detail.generalManager
+                      ? {
+                          name: detail.generalManager.name,
+                          title: detail.generalManager.title,
+                        }
+                      : null
+                  }
                   playoffOdds={formatOdds(detail.playoffOdds)}
                   wildCardOdds={
                     detail.wildCardOdds ? formatOdds(detail.wildCardOdds) : null

@@ -502,6 +502,67 @@ export async function fetchMlbTeamBbrefSummary(
     };
 }
 
+/** Pythagorean W-L from MLB team runs (BBRef-style exponent 1.83). */
+export async function fetchMlbTeamPythagorean(
+  teamId: number,
+  season = new Date().getFullYear(),
+): Promise<{ record: string; runsScored: number; runsAllowed: number } | null> {
+  try {
+    const [hitRes, pitchRes, standRes] = await Promise.all([
+      fetch(
+        `https://statsapi.mlb.com/api/v1/teams/${teamId}/stats?season=${season}&group=hitting&stats=season&gameType=R`,
+        { headers: { Accept: "application/json" } },
+      ),
+      fetch(
+        `https://statsapi.mlb.com/api/v1/teams/${teamId}/stats?season=${season}&group=pitching&stats=season&gameType=R`,
+        { headers: { Accept: "application/json" } },
+      ),
+      fetch(
+        `https://statsapi.mlb.com/api/v1/standings?leagueId=103,104&season=${season}&standingsTypes=regularSeason&hydrate=team`,
+        { headers: { Accept: "application/json" } },
+      ),
+    ]);
+    if (!hitRes.ok || !pitchRes.ok) return null;
+
+    const pickRuns = (raw: unknown): number | null => {
+      const stats = (raw as { stats?: { splits?: { stat?: { runs?: number } }[] }[] })
+        ?.stats?.[0]?.splits?.[0]?.stat?.runs;
+      return typeof stats === "number" && Number.isFinite(stats) ? stats : null;
+    };
+
+    const rs = pickRuns(await hitRes.json());
+    const ra = pickRuns(await pitchRes.json());
+    if (rs == null || ra == null) return null;
+
+    let games: number | null = null;
+    if (standRes.ok) {
+      const stand = (await standRes.json()) as {
+        records?: { teamRecords?: { team?: { id?: number }; wins?: number; losses?: number }[] }[];
+      };
+      for (const block of stand.records ?? []) {
+        const row = block.teamRecords?.find((r) => r.team?.id === teamId);
+        if (row?.wins != null && row.losses != null) {
+          games = row.wins + row.losses;
+          break;
+        }
+      }
+    }
+    if (games == null || games <= 0) return { record: "", runsScored: rs, runsAllowed: ra };
+
+    const exp = 1.83;
+    const winPct = rs ** exp / (rs ** exp + ra ** exp);
+    const pythW = Math.round(winPct * games);
+    const pythL = games - pythW;
+    return {
+      record: `${pythW}-${pythL}`,
+      runsScored: rs,
+      runsAllowed: ra,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchMlbTeamPayroll(abbrev: string): Promise<MlbTeamPayroll | null> {
   const bb = mlbToBbrefAbbrev(abbrev);
   if (!bb) return null;
