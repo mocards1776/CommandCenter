@@ -2,6 +2,14 @@
 
 ---
 
+## Dispatch: stop MoScout (Squarespace) article image glitches — September 3, 2026
+
+- Missouri Scout (and other Squarespace) extracts were keeping fluid-block image styles (`width/height: 100%`, `object-fit: cover`). Without the parent frame those images collapse, stretch, then jump — articles looked like they were glitching while scrolling.
+- Hero vs body duplicates no longer slip through: Squarespace serves the same file on `static1.squarespace.com` (og:image) and `images.squarespace-cdn.com` (body). Dedupe now matches by filename across those CDNs.
+- Client repair strips leftover img styles; extract session cache bumped so stale pulls refresh.
+
+---
+
 ## CFB highlights: FOX/CBS backups — August 30, 2026
 
 - When ESPN has no embeddable recap clip, game pages search FOX Sports and probe CBS Sports for full-game highlight packages (thumb + watch link), plus related FOX play clips.
