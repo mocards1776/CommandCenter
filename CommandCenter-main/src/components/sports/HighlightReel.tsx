@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Play } from "lucide-react";
 import type { MlbHighlight } from "@/lib/mlb";
+import HighlightVideoPlayer from "@/components/sports/HighlightVideoPlayer";
 
 export default function HighlightReel({
   highlights,
@@ -109,14 +110,10 @@ export default function HighlightReel({
                 Close
               </button>
             </div>
-            <video
+            <HighlightVideoPlayer
               key={active.url}
               src={active.url}
-              controls
-              autoPlay
-              muted={autoPlayFirst}
-              playsInline
-              className="aspect-video w-full bg-black"
+              startMuted
             />
           </div>
         </div>

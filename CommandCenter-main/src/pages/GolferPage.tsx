@@ -21,6 +21,7 @@ import {
 import toast from "react-hot-toast";
 import PlayerTagsPanel from "@/components/sports/PlayerTagsPanel";
 import SportsNotesPanel from "@/components/sports/SportsNotesPanel";
+import HighlightVideoPlayer from "@/components/sports/HighlightVideoPlayer";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -176,17 +177,7 @@ function VideoCard({
   if (playing && item.mp4) {
     return (
       <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0b1220]">
-        <div className="relative aspect-video bg-black">
-          <video
-            key={item.mp4}
-            src={item.mp4}
-            controls
-            autoPlay
-            playsInline
-            poster={item.image ?? undefined}
-            className="h-full w-full object-contain"
-          />
-        </div>
+        <HighlightVideoPlayer key={item.mp4} src={item.mp4} startMuted />
         <div className="flex items-start justify-between gap-2 px-3 py-2.5">
           <div className="min-w-0">
             <p className="text-[13px] font-semibold leading-snug text-white">{item.headline}</p>

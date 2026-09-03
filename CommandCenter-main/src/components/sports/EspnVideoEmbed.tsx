@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ExternalLink, Play } from "lucide-react";
+import HighlightVideoPlayer from "@/components/sports/HighlightVideoPlayer";
 
 export type EspnEmbedClip = {
   id: string;
@@ -45,17 +46,7 @@ export default function EspnVideoEmbed({
             Close
           </button>
         </div>
-        <div className="relative aspect-video bg-black">
-          <video
-            key={clip.mp4}
-            src={clip.mp4}
-            controls
-            autoPlay
-            playsInline
-            poster={clip.thumb ?? undefined}
-            className="h-full w-full object-contain"
-          />
-        </div>
+        <HighlightVideoPlayer key={clip.mp4} src={clip.mp4} startMuted />
         <div className="px-3 py-2.5">
           <p className="text-[13px] font-semibold leading-snug text-cream">{clip.headline}</p>
           {clip.description ? (

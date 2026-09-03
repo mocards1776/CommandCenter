@@ -915,6 +915,16 @@ function PlayerHeader({
         : player.sportAbbrev
       : null;
   const school = player.school ?? player.draft?.school ?? null;
+  const draftPosition = (() => {
+    const d = player.draft;
+    if (d?.round && d.pick != null) {
+      const yr = d.year != null ? `${d.year} · ` : "";
+      return `${yr}Rd ${d.round}, Pick ${d.pick}`;
+    }
+    if (d?.display) return d.display;
+    if (player.draftYear != null) return String(player.draftYear);
+    return "—";
+  })();
   const rankLabels = prospectRankLabels(
     prospectRankPair ?? { orgRank: pipelineRank ?? null, top100Rank: null },
   );
@@ -1110,11 +1120,17 @@ function PlayerHeader({
               </div>
             )}
             {player.birthPlace && (
-              <div className="col-span-2">
+              <div>
                 <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Born</dt>
                 <dd className="mt-0.5 text-white">{player.birthPlace}</dd>
               </div>
             )}
+            <div>
+              <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">
+                Draft Position
+              </dt>
+              <dd className="mt-0.5 text-white">{draftPosition}</dd>
+            </div>
           </dl>
 
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
