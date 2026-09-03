@@ -1339,8 +1339,16 @@ export async function pullCover(bookId: string, url?: string): Promise<CoverPull
     );
   }
 
+  // Explicit Find must re-search. A stored Google "image not available" stub
+  // used to short-circuit here and toast "Cover found" with a blank jacket.
+  if (!pasted) {
+    await updateBook(bookId, { cover_path: null, cover_url: null, locked_at: null });
+  }
+
   // Reuse the battle-tested cover pipeline before spending AI tokens.
-  await supabase.functions.invoke("backfill-covers", { body: { bookId } }).catch(() => {});
+  await supabase.functions
+    .invoke("backfill-covers", { body: { bookId, retryCovers: true } })
+    .catch(() => {});
   const { data: row } = await supabase
     .from("books")
     .select("cover_path,cover_url")

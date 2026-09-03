@@ -502,6 +502,9 @@ const GOOGLE_PLACEHOLDER_SHA256 = new Set([
   "5e7f0425abc77878f2a1efe98f12070d7e97b3047d2ce1cd050598230e34e205",
   // Grayscale stub many 2025–26 titles return at zoom=0 / zoom=3.
   "3efa8c43e5b4348f303a528c81adf435f0111ea752fe9f0f6241478b60987fa6",
+  // White "image not available" plate (often ~46KB @ 800×1043) — Google's
+  // forthcoming-title stub that used to pass our size floor and get locked in.
+  "72c2ffbaccd2444186957aaa2f6fdc8d912e207cf242fb4858e29df66a60d0e4",
 ]);
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -609,8 +612,10 @@ Deno.serve(async (req: Request) => {
     const isbn = String(b.isbn ?? "").replace(/[^0-9Xx]/g, "");
     const hasIsbn = isbn.length === 13 || isbn.length === 10;
     const jacket = hasJacket(b);
-    // cover_path "" means "looked, found nothing" — don't pay for it twice.
-    const wantCover = !skipCovers && !jacket && (retryCovers || b.cover_path == null);
+    // cover_path "" means "looked, found nothing" — don't pay for it twice,
+    // unless the caller forced a retry (Find cover / bulk re-scan).
+    const wantCover =
+      !skipCovers && (retryCovers || (!jacket && b.cover_path == null));
     const patch: Record<string, unknown> = { enriched_at: new Date().toISOString() };
 
     // Candidate cover URLs in preference order, collected as we look things up.
@@ -618,6 +623,12 @@ Deno.serve(async (req: Request) => {
     let meta: Meta = {};
 
     if (wantCover) {
+      // Publisher CDNs before Google — forthcoming titles often get a blank
+      // Google plate that used to be stored as a "successful" jacket.
+      if (hasIsbn && isbn.length === 13) {
+        coverUrls.push(`https://www.harpercollins.com/cdn/shop/files/${isbn}.jpg`);
+        coverUrls.push(`https://www.harpercollins.com/cdn/shop/products/${isbn}.jpg`);
+      }
       const existing = upgradeCoverUrl(String(b.cover_url ?? ""));
       if (existing) coverUrls.push(existing);
       const sourceUrl = String((b as { source_url?: string | null }).source_url ?? "");
