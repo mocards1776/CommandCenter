@@ -1612,7 +1612,28 @@ export function isPlayerSpecificNewsNote(
   return true;
 }
 
+/**
+ * Squarespace ships the same asset on static1 (og:image) and
+ * images.squarespace-cdn.com (body) with different paths — match by filename.
+ */
+function squarespaceFileKeyClient(src: string): string | null {
+  try {
+    const u = new URL(src, "https://example.invalid");
+    if (!/squarespace/i.test(u.hostname)) return null;
+    const base = decodeURIComponent(u.pathname.split("/").pop() || "")
+      .toLowerCase()
+      .replace(/\+/g, " ")
+      .trim();
+    if (!base || !/\.(?:jpe?g|png|gif|webp|avif)$/i.test(base)) return null;
+    return `sqsp-file:${base}`;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeImgKeyClient(src: string): string {
+  const sq = squarespaceFileKeyClient(src);
+  if (sq) return sq;
   try {
     const u = new URL(src, "https://example.invalid");
     const path = u.pathname.replace(/\/+$/, "").toLowerCase();
@@ -1847,7 +1868,10 @@ export function repairRssContentImages(html: string, pageUrl?: string | null): s
       attrs.loading = "lazy";
       // Some CDNs block no-referrer; prefer origin when loading inline.
       attrs.referrerPolicy = "no-referrer-when-downgrade";
-      // Drop blur-up placeholder classes left over from SI / Qwik shells.
+      // Drop fluid-container leftovers (Squarespace width/height:100% +
+      // object-fit:cover) — they collapse/jump without the parent frame and
+      // fight reader CSS. Also drop blur-up placeholder classes.
+      attrs.removeAttribute("style");
       if (attrs.className && /blur/i.test(attrs.className)) {
         attrs.className = attrs.className
           .split(/\s+/)
@@ -3809,7 +3833,7 @@ async function fetchCardinalsSavantFeed(): Promise<RssFeed> {
   };
 }
 
-const EXTRACT_SESSION_PREFIX = "rss-extract-v5:";
+const EXTRACT_SESSION_PREFIX = "rss-extract-v6:";
 const EXTRACT_SESSION_TTL_MS = 45 * 60_000;
 const EXTRACT_SESSION_MAX = 28;
 const EXTRACT_SESSION_MAX_BYTES = 180_000;

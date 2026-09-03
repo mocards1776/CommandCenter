@@ -1438,7 +1438,29 @@ function scrubContentHtml(html: string, heroImage: string | null = null): string
     .trim();
 }
 
+/**
+ * Squarespace ships the same asset on static1.squarespace.com (og:image) and
+ * images.squarespace-cdn.com (in-body fluid blocks) with different paths.
+ * Match by filename so hero/body dedupe actually works.
+ */
+function squarespaceFileKey(src: string): string | null {
+  try {
+    const u = new URL(src);
+    if (!/squarespace/i.test(u.hostname)) return null;
+    const base = decodeURIComponent(u.pathname.split("/").pop() || "")
+      .toLowerCase()
+      .replace(/\+/g, " ")
+      .trim();
+    if (!base || !/\.(?:jpe?g|png|gif|webp|avif)$/i.test(base)) return null;
+    return `sqsp-file:${base}`;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeImgKey(src: string): string {
+  const sq = squarespaceFileKey(src);
+  if (sq) return sq;
   try {
     const u = new URL(src);
     u.hash = "";
@@ -1638,10 +1660,13 @@ function sanitizeHtml(frag: string): string {
         keep.push('rel="noopener noreferrer"');
       }
       // Allow safe inline styles for Statcast heat-map cells / compact mugs.
+      // Never keep styles on <img>: Squarespace fluid blocks leave
+      // width/height:100% + object-fit:cover, which collapse/jump without the
+      // parent frame and fight reader CSS (max-height / object-contain).
       const rawStyle = attrValue(attrs, "style");
       if (
         rawStyle &&
-        /^(?:table|thead|tbody|tr|th|td|span|div|p|img)$/i.test(name) &&
+        /^(?:table|thead|tbody|tr|th|td|span|div|p)$/i.test(name) &&
         !/expression\s*\(|javascript:|url\s*\(\s*["']?\s*data:/i.test(rawStyle)
       ) {
         const safe = rawStyle
