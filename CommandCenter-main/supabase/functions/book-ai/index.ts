@@ -260,6 +260,9 @@ const GOOGLE_PLACEHOLDER_SHA256 = new Set([
   "5e7f0425abc77878f2a1efe98f12070d7e97b3047d2ce1cd050598230e34e205",
   // Grayscale stub many 2025–26 titles return at zoom=0 / zoom=3.
   "3efa8c43e5b4348f303a528c81adf435f0111ea752fe9f0f6241478b60987fa6",
+  // White "image not available" plate (often ~46KB @ 800×1043) — Google's
+  // forthcoming-title stub that used to pass our size floor and get locked in.
+  "72c2ffbaccd2444186957aaa2f6fdc8d912e207cf242fb4858e29df66a60d0e4",
 ]);
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -323,6 +326,19 @@ async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string
   }
 }
 
+/**
+ * Publisher / retailer jacket URLs keyed by ISBN-13. Free catalogs lag on
+ * forthcoming titles; Harper's Shopify CDN often has art months earlier.
+ */
+function publisherCoverUrls(isbnRaw: string): string[] {
+  const isbn = isbnRaw.replace(/[^0-9Xx]/g, "");
+  if (isbn.length !== 13) return [];
+  return [
+    `https://www.harpercollins.com/cdn/shop/files/${isbn}.jpg`,
+    `https://www.harpercollins.com/cdn/shop/products/${isbn}.jpg`,
+  ];
+}
+
 /** True when the URL looks like a direct jacket image (not a retail HTML page). */
 function isLikelyImageUrl(url: string): boolean {
   if (/\.(jpg|jpeg|png|webp|gif)(\?|#|$)/i.test(url)) return true;
@@ -331,6 +347,7 @@ function isLikelyImageUrl(url: string): boolean {
   if (/googleusercontent\.com\/books/i.test(url)) return true;
   if (/m\.media-amazon\.com\/images/i.test(url)) return true;
   if (/images-na\.ssl-images-amazon\.com|images-.*\.ssl-images-amazon\.com/i.test(url)) return true;
+  if (/harpercollins\.com\/cdn\/shop\//i.test(url)) return true;
   if (/compressed\.photo\.goodreads\.com|i\.gr-assets\.com/i.test(url)) return true;
   if (/images\.isbndb\.com|covers\.openbd\.jp/i.test(url)) return true;
   if (/cdn\.shopify\.com\/s\/files|\/cdn\/shop\/files\//i.test(url)) return true;
@@ -474,6 +491,9 @@ async function findCover(
     }
   } else {
     const isbn = String(book.isbn ?? "").replace(/[^0-9Xx]/g, "");
+    // Publisher CDNs before Google — Google often serves a 46KB blank plate
+    // for not-yet-released titles and claims success.
+    for (const u of publisherCoverUrls(isbn)) push(u, "publisher");
     if (isbn.length === 10 || isbn.length === 13) {
       push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`, "openlibrary");
       push(`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`, "openlibrary");
@@ -514,8 +534,9 @@ async function findCover(
           "cover_url/cover_urls must be DIRECT image files (jpg/png/webp) when possible — " +
           "prefer covers.openlibrary.org/b/isbn/... , publisher CDNs, or Amazon/Goodreads image hosts. " +
           "For forthcoming/new-release titles, prefer the publisher or retailer product-image CDN " +
-          "(Amazon m.media-amazon.com, Simon & Schuster, Penguin, etc.) — Google Books / Open Library " +
-          "often have the record but only a blank stub. " +
+          "(HarperCollins cdn/shop/files/{isbn}.jpg, Amazon m.media-amazon.com, Penguin, etc.) — " +
+          "Google Books / Open Library often have the record but only a blank 'image not available' stub. " +
+          "Never return a Google Books content URL unless you are sure it is real cover art. " +
           "page_urls are retail/library pages that show the cover (Open Library, Amazon, Goodreads, publisher). " +
           "Always fill whatever you can; empty strings/arrays are ok.",
         user: `Find the cover for: ${q}`,
@@ -526,8 +547,9 @@ async function findCover(
       } else {
         const hint = extractCoverHints(text);
 
-        // ISBNs beat hotlinked retail images — OL will serve bytes we can store.
+        // ISBNs beat hotlinked retail images — publisher CDN + OL first.
         for (const isbn of hint.isbns) {
+          for (const u of publisherCoverUrls(isbn)) push(u, "ai");
           push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`, "ai");
           push(`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`, "ai");
         }
