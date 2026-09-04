@@ -88,7 +88,7 @@ export default function CfbCoachPage() {
   const qc = useQueryClient();
 
   const detail = useQuery({
-    queryKey: ["cfb-coach-v5", coachId],
+    queryKey: ["cfb-coach-v6", coachId],
     queryFn: () => fetchCfbCoachProfile(coachId!),
     enabled: Boolean(coachId),
     staleTime: 180_000,
@@ -198,7 +198,7 @@ export default function CfbCoachPage() {
             />
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/60">
-                Head coach · {c.teamAbbrev}
+                {c.seasonRecords.length > 0 ? "Head coach" : "Coach"} · {c.teamAbbrev}
               </p>
               <h1 className="font-display text-cream mt-1 text-[32px] leading-none sm:text-[40px]">
                 {c.name}
@@ -397,43 +397,50 @@ export default function CfbCoachPage() {
               Coaching staff
             </h2>
             <p className="text-chalk-dim mt-0.5 text-[11px]">
-              Assistants at {c.teamName} · Wikipedia bios when available
+              Assistants at {c.teamName} · tap for bio & record
             </p>
           </div>
           <ul className="divide-y divide-white/[0.05]">
             {c.staff.map((s) => (
-              <li key={s.id} className="flex items-start gap-3 py-2.5 first:pt-0 last:pb-0">
-                {s.headshot ? (
-                  <img
-                    src={s.headshot}
-                    alt=""
-                    referrerPolicy="no-referrer"
-                    className="h-10 w-10 shrink-0 rounded-lg bg-[#dfe6f2] object-cover object-top"
-                    loading="lazy"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.display = "none";
-                    }}
-                  />
-                ) : (
-                  <div
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[11px] font-semibold text-white"
-                    style={{ background: `${accent}99` }}
-                  >
-                    {s.name
-                      .split(/\s+/)
-                      .slice(0, 2)
-                      .map((p) => p[0])
-                      .join("")
-                      .toUpperCase()}
+              <li key={s.id}>
+                <Link
+                  to={`/sports/cfb/coach/${encodeURIComponent(s.id)}`}
+                  className="hover:bg-white/[0.03] group flex items-start gap-3 rounded-lg py-2.5 transition first:pt-0 last:pb-0"
+                >
+                  {s.headshot ? (
+                    <img
+                      src={s.headshot}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      className="h-10 w-10 shrink-0 rounded-lg bg-[#dfe6f2] object-cover object-top"
+                      loading="lazy"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div
+                      className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[11px] font-semibold text-white"
+                      style={{ background: `${accent}99` }}
+                    >
+                      {s.name
+                        .split(/\s+/)
+                        .slice(0, 2)
+                        .map((p) => p[0])
+                        .join("")
+                        .toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-cream truncate text-[14px] font-medium group-hover:underline">
+                      {s.name}
+                    </p>
+                    <p className="text-[11px] text-[#8b93a7]">{s.title}</p>
+                    {s.bio ? (
+                      <p className="text-chalk mt-1 text-[12px] leading-relaxed">{s.bio}</p>
+                    ) : null}
                   </div>
-                )}
-                <div className="min-w-0">
-                  <p className="text-cream truncate text-[14px] font-medium">{s.name}</p>
-                  <p className="text-[11px] text-[#8b93a7]">{s.title}</p>
-                  {s.bio ? (
-                    <p className="text-chalk mt-1 text-[12px] leading-relaxed">{s.bio}</p>
-                  ) : null}
-                </div>
+                </Link>
               </li>
             ))}
           </ul>

@@ -2,6 +2,14 @@
 
 ---
 
+## CFB: assistant coaches open like head coaches — September 4, 2026
+
+- Team coaching staff and HC staff lists link every assistant (not just ESPN-id head coaches).
+- Coach profile pages resolve name-only staff via Wikipedia bios / career path and ESPN search when available.
+- Assistants without a head-coaching résumé still get bio + career stops; yearly W–L shows when ESPN has seasons.
+
+---
+
 ## CFB hub: slim header, actions in Sports chrome — September 4, 2026
 
 - Removed the bulky CFB hero card and big view tiles.

@@ -2499,10 +2499,24 @@ async function buildCfbCoachingStaff(opts: {
           name: w.name,
           title: w.title,
           headshot: searched.headshot,
-          linkable: Boolean(searched.id),
+          // Name-slug ids are enough — profile page resolves bio/record via Wikipedia + ESPN search.
+          linkable: true,
         });
       }),
     );
+  }
+
+  // Ensure every wiki staff row exists even if the ESPN search chunk skipped them.
+  for (const w of wikiStaff) {
+    const existing = byName.get(w.name.toLowerCase());
+    if (existing) continue;
+    upsert({
+      id: `name:${w.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      name: w.name,
+      title: w.title,
+      headshot: null,
+      linkable: true,
+    });
   }
 
   for (const w of wikiStaff) {
@@ -3322,6 +3336,59 @@ function cfbRefSearchUrl(name: string): string {
   return `https://www.sports-reference.com/cfb/search/search.fcgi?search=${encodeURIComponent(name)}`;
 }
 
+
+function cfbCoachNameSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function cfbCoachIdFromName(name: string): string {
+  return `name:${cfbCoachNameSlug(name)}`;
+}
+
+/** Recover a display name from `name:first-last` profile ids. */
+function cfbCoachNameFromId(coachId: string): string | null {
+  const raw = String(coachId);
+  const slug = raw.startsWith("name:") ? raw.slice(5) : !/^\d+$/.test(raw) && raw.includes("-") ? raw : null;
+  if (!slug) return null;
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function stubCfbCoach(opts: {
+  id: string;
+  name: string;
+  teamId?: string;
+  teamName?: string;
+  teamAbbrev?: string;
+  teamLogo?: string | null;
+  teamColor?: string;
+  headshot?: string | null;
+}): CfbCoach {
+  return {
+    id: opts.id,
+    name: opts.name,
+    teamId: opts.teamId ?? "0",
+    teamName: opts.teamName ?? "College football",
+    teamAbbrev: opts.teamAbbrev ?? "CFB",
+    teamLogo: opts.teamLogo ?? null,
+    teamColor: (opts.teamColor ?? "555555").replace(/^#/, ""),
+    headshot: opts.headshot ?? null,
+    recordSummary: null,
+    wins: 0,
+    losses: 0,
+    winPct: null,
+    hotSeatScore: 0,
+    hotSeatRank: 0,
+    firedOddsPct: null,
+    firedOddsAmerican: null,
+    kalshiUrl: null,
+    factors: [],
+  };
+}
+
 export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachProfile> {
   const all = await fetchCfbCoaches().catch(() => [] as CfbCoach[]);
   let base =
@@ -3330,8 +3397,34 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
     all.find((c) => c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") === coachId.toLowerCase()) ??
     null;
 
-  if (!base) {
+  if (!base && /^\d+$/.test(String(coachId))) {
     base = await fetchCfbCoachDirect(coachId);
+  }
+  if (!base) {
+    const guessed = cfbCoachNameFromId(coachId);
+    if (guessed) {
+      const searched = await searchEspnCoachHeadshot(guessed).catch(() => ({
+        id: null as string | null,
+        headshot: null as string | null,
+      }));
+      if (searched.id && /^\d+$/.test(searched.id)) {
+        base = await fetchCfbCoachDirect(searched.id);
+        if (base && searched.headshot && !base.headshot) {
+          base = { ...base, headshot: searched.headshot };
+        }
+      }
+      if (!base) {
+        // Match slug against hot-seat board names (e.g. HC listed under ESPN id).
+        const slug = cfbCoachNameSlug(guessed);
+        base =
+          all.find((c) => cfbCoachNameSlug(c.name) === slug) ??
+          stubCfbCoach({
+            id: coachId.startsWith("name:") ? coachId : cfbCoachIdFromName(guessed),
+            name: guessed,
+            headshot: searched.headshot,
+          });
+      }
+    }
   }
   if (!base) throw new Error("Coach not found");
 
