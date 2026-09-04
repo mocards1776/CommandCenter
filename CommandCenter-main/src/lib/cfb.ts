@@ -1678,39 +1678,48 @@ async function fetchWikiSeasonHeadCoach(
   teamDisplayName: string,
   season: number,
 ): Promise<string | null> {
-  const page = wikiFootballSeasonTitle(teamDisplayName, season);
-  try {
-    const res = await fetch(
-      `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(page)}&prop=wikitext&format=json&origin=*`,
-      {
-        headers: {
-          Accept: "application/json",
-          "Api-User-Agent": "CommandCenterCFB/1.0 (sports dashboard; local)",
+  // Try a few title shapes — ESPN display names vary ("Missouri Tigers" vs "Missouri").
+  const candidates = [
+    teamDisplayName,
+    teamDisplayName.replace(/\s+(Tigers|Bulldogs|Wildcats|Eagles|Bears|Lions|Panthers|Hawks|Cardinals|Razorbacks|Gators|Volunteers|Commodores|Crimson Tide|Sooners|Longhorns|Aggies|Nittany Lions|Fighting Irish|Trojans|Bruins|Ducks|Huskies|Spartans|Wolverines|Buckeyes)\s*$/i, "").trim(),
+  ].filter((n, i, arr) => n && arr.indexOf(n) === i);
+
+  for (const name of candidates) {
+    const page = wikiFootballSeasonTitle(name, season);
+    try {
+      const res = await fetch(
+        `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(page)}&prop=wikitext&format=json&origin=*`,
+        {
+          headers: {
+            Accept: "application/json",
+            "Api-User-Agent": "CommandCenterCFB/1.0 (sports dashboard; local)",
+          },
         },
-      },
-    );
-    if (!res.ok) return null;
-    const raw = (await res.json()) as {
-      error?: unknown;
-      parse?: { wikitext?: { ["*"]?: string } };
-    };
-    if (raw.error) return null;
-    const wt = raw.parse?.wikitext?.["*"] ?? "";
-    if (!wt) return null;
+      );
+      if (!res.ok) continue;
+      const raw = (await res.json()) as {
+        error?: unknown;
+        parse?: { wikitext?: { ["*"]?: string } };
+      };
+      if (raw.error) continue;
+      const wt = raw.parse?.wikitext?.["*"] ?? "";
+      if (!wt) continue;
 
-    const fromInfobox = parseWikiInfoboxCoaches(wt).find((r) => r.title === "Head coach");
-    if (fromInfobox?.name) return fromInfobox.name;
+      const fromInfobox = parseWikiInfoboxCoaches(wt).find((r) => r.title === "Head coach");
+      if (fromInfobox?.name) return fromInfobox.name;
 
-    const fromFooter = parseWikiRosterFooterStaff(wt).find((r) => r.title === "Head coach");
-    if (fromFooter?.name) return fromFooter.name;
+      const fromFooter = parseWikiRosterFooterStaff(wt).find((r) => r.title === "Head coach");
+      if (fromFooter?.name) return fromFooter.name;
 
-    const fromTable = parseWikiCoachingStaffTable(wt).find((r) =>
-      /^head coach$/i.test(r.title),
-    );
-    return fromTable?.name ?? null;
-  } catch {
-    return null;
+      const fromTable = parseWikiCoachingStaffTable(wt).find((r) =>
+        /^head coach$/i.test(r.title),
+      );
+      if (fromTable?.name) return fromTable.name;
+    } catch {
+      /* try next title */
+    }
   }
+  return null;
 }
 
 /**
@@ -2258,23 +2267,33 @@ export async function fetchCfbTeamSeasonHistory(
   season: number,
 ): Promise<CfbTeamSeasonHistory> {
   const id = String(teamId);
-  const [games, seasonRec, teamMeta] = await Promise.all([
+  const currentYear = new Date().getFullYear();
+
+  // Prefer site.api for the display name — same host as schedule, reliable in-browser.
+  const [games, seasonRec, siteTeam] = await Promise.all([
     fetchCfbTeamSeasonSchedule(id, season),
     fetchCfbTeamSeasonRecord(id, season),
-    fetchCoreJson<{ displayName?: string; nickname?: string; name?: string; location?: string }>(
-      `${CORE}/seasons/${season}/teams/${id}?lang=en&region=us`,
-    ).catch(() => null),
+    fetch(`${ESPN}/teams/${id}`, { headers: { Accept: "application/json" } })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const raw = (await res.json()) as {
+          team?: { displayName?: string; nickname?: string; location?: string; name?: string };
+        };
+        return raw.team ?? null;
+      })
+      .catch(() => null),
   ]);
 
-  let record = seasonRec?.summary ?? null;
+  const record = seasonRec?.summary ?? null;
 
-  // Prefer Wikipedia for the season's actual HC — ESPN's season coaches list
-  // frequently returns the current coach for every past year.
   const teamDisplay =
-    teamMeta?.displayName ||
-    [teamMeta?.location, teamMeta?.name].filter(Boolean).join(" ") ||
-    teamMeta?.nickname ||
+    siteTeam?.displayName ||
+    [siteTeam?.location, siteTeam?.name].filter(Boolean).join(" ") ||
+    siteTeam?.nickname ||
     "Team";
+
+  // Wikipedia only — ESPN's historical coaches feed returns today's HC for every year
+  // (e.g. Drinkwitz on 2017 Mizzou). Never fall back to that for past seasons.
   const wikiHc = await fetchWikiSeasonHeadCoach(teamDisplay, season).catch(() => null);
 
   let coach: CfbTeamSeasonHistory["coach"] = null;
@@ -2283,13 +2302,13 @@ export async function fetchCfbTeamSeasonHistory(
       id: null as string | null,
       headshot: null as string | null,
     }));
+    // Keep the Wikipedia name even if ESPN search resolves a different id.
     coach = { id: searched.id, name: wikiHc };
-  } else {
-    // Last resort: ESPN (may be wrong for historical seasons).
+  } else if (season >= currentYear) {
+    // Current season only: ESPN roster coach is acceptable.
     const coachPack = await fetchTeamCoachAndRecord(Number(id), season).catch(() => null);
     if (coachPack) {
       coach = { id: coachPack.coachId, name: coachPack.coachName };
-      if (!record && coachPack.recordSummary) record = coachPack.recordSummary;
     }
   }
 

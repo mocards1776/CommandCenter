@@ -296,7 +296,7 @@ function CfbWinTrendChart({
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
 
   const history = useQuery({
-    queryKey: ["cfb-team-season-history-v2", teamId, selectedSeason],
+    queryKey: ["cfb-team-season-history-v3", teamId, selectedSeason],
     queryFn: () => fetchCfbTeamSeasonHistory(teamId, selectedSeason!),
     enabled: selectedSeason != null,
     staleTime: 10 * 60_000,
