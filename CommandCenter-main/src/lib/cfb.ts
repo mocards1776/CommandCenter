@@ -1346,6 +1346,30 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
     .slice(-40)
     .reverse();
 
+  // Prefer header/boxscore linescores when the mapped sides are empty.
+  const headerComps = raw.header?.competitions?.[0]?.competitors ?? [];
+  const readLs = (c: { linescores?: { value?: number; displayValue?: string }[] } | undefined) =>
+    (c?.linescores ?? [])
+      .map((ls) => {
+        if (typeof ls.value === "number" && Number.isFinite(ls.value)) return ls.value;
+        const n = Number(ls.displayValue);
+        return Number.isFinite(n) ? n : null;
+      })
+      .filter((n): n is number => n != null);
+  if (!base.away.linescores.length || !base.home.linescores.length) {
+    const awayC = headerComps.find((c) => (c as { homeAway?: string }).homeAway === "away");
+    const homeC = headerComps.find((c) => (c as { homeAway?: string }).homeAway === "home");
+    const awayLs = readLs(awayC as { linescores?: { value?: number; displayValue?: string }[] });
+    const homeLs = readLs(homeC as { linescores?: { value?: number; displayValue?: string }[] });
+    if (awayLs.length || homeLs.length) {
+      base = {
+        ...base,
+        away: { ...base.away, linescores: awayLs.length ? awayLs : base.away.linescores },
+        home: { ...base.home, linescores: homeLs.length ? homeLs : base.home.linescores },
+      };
+    }
+  }
+
   // If scoreboard situation was missing, infer yard line from latest play.
   if (base.live && !base.situation && recentPlays[0]) {
     const play = recentPlays[0];

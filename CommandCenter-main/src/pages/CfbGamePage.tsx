@@ -258,7 +258,7 @@ export function CfbGameDetailView({
           <MatchupSide side={g.home} align="right" winner={homeWins} loser={awayWins} />
         </div>
 
-        {!pregame && (g.away.linescores.length > 0 || g.home.linescores.length > 0) ? (
+        {!pregame ? (
           <div className="relative z-10 border-t border-white/[0.06] px-3 pb-3 pt-1 sm:px-4">
             <CfbLinescoreTable away={g.away} home={g.home} />
           </div>
