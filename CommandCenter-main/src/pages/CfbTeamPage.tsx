@@ -532,24 +532,14 @@ function CoachesPanel({ team, accent }: { team: CfbTeamPage; accent: string }) {
             </>
           );
 
-          if (c.linkable) {
-            return (
-              <Link
-                key={c.id}
-                to={`/sports/cfb/coach/${c.id}`}
-                className="bg-panel hover:border-accent/40 group flex items-center gap-4 rounded-xl border border-white/[0.08] p-4 transition"
-              >
-                {inner}
-              </Link>
-            );
-          }
           return (
-            <div
+            <Link
               key={c.id}
-              className="bg-panel flex items-center gap-4 rounded-xl border border-white/[0.08] p-4"
+              to={`/sports/cfb/coach/${encodeURIComponent(c.id)}`}
+              className="bg-panel hover:border-accent/40 group flex items-center gap-4 rounded-xl border border-white/[0.08] p-4 transition"
             >
               {inner}
-            </div>
+            </Link>
           );
         })}
       </div>
