@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Share, Users } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
-import StarField from "@/components/StarField";
 import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import {
   fetchCfbConferenceStandings,
@@ -19,41 +18,11 @@ import { cn } from "@/lib/utils";
 
 type CfbBoardView = "scores" | "conferences" | "polls" | "stats";
 
-const VIEW_CARDS: {
-  id: CfbBoardView;
-  eyebrow: string;
-  title: [string, string];
-  blurb: string;
-  seed: number;
-}[] = [
-  {
-    id: "scores",
-    eyebrow: "This week",
-    title: ["Game", "day"],
-    blurb: "Full FBS scoreboard with RUWT heat on every matchup.",
-    seed: 11,
-  },
-  {
-    id: "conferences",
-    eyebrow: "Standings",
-    title: ["Conference", "races"],
-    blurb: "Pick a conference and scan overall + league records.",
-    seed: 22,
-  },
-  {
-    id: "polls",
-    eyebrow: "Rankings",
-    title: ["Poll", "board"],
-    blurb: "AP Top 25 and coaches poll in one place.",
-    seed: 33,
-  },
-  {
-    id: "stats",
-    eyebrow: "Leaders",
-    title: ["Season", "stats"],
-    blurb: "Passing, rushing, receiving, and more FBS leaders.",
-    seed: 44,
-  },
+const VIEW_TABS: { id: CfbBoardView; label: string }[] = [
+  { id: "scores", label: "Scores" },
+  { id: "conferences", label: "Conferences" },
+  { id: "polls", label: "Polls" },
+  { id: "stats", label: "Stats" },
 ];
 
 export default function CfbPage() {
@@ -156,111 +125,52 @@ export default function CfbPage() {
     void Promise.all(jobs).then(() => toast.success("College football updated"));
   };
 
-  const refreshing =
-    scoreboard.isFetching ||
-    conferences.isFetching ||
-    standings.isFetching ||
-    polls.isFetching ||
-    leaders.isFetching;
+
+  useEffect(() => {
+    const onRefresh = () => refresh();
+    window.addEventListener("cc:cfb-refresh", onRefresh);
+    return () => window.removeEventListener("cc:cfb-refresh", onRefresh);
+    // refresh closes over the active view + react-query objects
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional bind to latest view
+  }, [view, conferenceId]);
 
   return (
-    <div className="flex min-h-0 flex-col gap-5 p-4 md:p-7">
-      <div className="relative overflow-hidden rounded-lg border border-accent/25 bg-gradient-to-br from-hero-lift to-hero p-5 sm:p-7">
-        <StarField count={28} seed={42} />
-        <div className="relative z-10 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <div className="rule-head mb-2">NCAA Football</div>
-            <h2 className="font-display text-cream text-[28px] leading-tight sm:text-[34px]">
-              College <span className="text-accent">football</span>
-            </h2>
-            <p className="text-chalk mt-2 max-w-lg text-[13px] leading-relaxed">
-              Pick <span className="text-accent">conferences</span>,{" "}
-              <span className="text-accent">polls</span>, or{" "}
-              <span className="text-accent">stats</span> below — same board language as the
-              scoreboard.{" "}
-              <Link to="/sports/ruwt?solo=1&sport=cfb" className="text-accent hover:underline">
-                RUWT
-              </Link>{" "}
-              and the{" "}
-              <Link to="/sports/hot-seat?solo=1&sport=cfb" className="text-accent hover:underline">
-                hot seat
-              </Link>{" "}
-              stay one hop away.
-            </p>
-            {live.length > 0 && view === "scores" && (
-              <p className="text-alert mt-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
-                <span className="bg-alert mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full" />
-                {live.length} live now
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5">
-            <a
-              href="/sports.html"
-              title="Home Screen"
-              aria-label="Home Screen"
-              className="text-chalk hover:text-cream inline-flex h-9 w-9 items-center justify-center rounded-sm border border-white/10 transition hover:border-accent/40"
-            >
-              <Share size={14} />
-            </a>
-            <button
-              type="button"
-              onClick={refresh}
-              disabled={refreshing}
-              title="Refresh"
-              aria-label="Refresh"
-              className="text-chalk hover:text-cream inline-flex h-9 w-9 items-center justify-center rounded-sm border border-white/10 transition hover:border-accent/40 disabled:opacity-40"
-            >
-              <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
-            </button>
-            <Link
-              to="/sports?solo=1"
-              title="My teams"
-              aria-label="My teams"
-              className="from-accent-deep to-accent-dark text-cream inline-flex h-9 w-9 items-center justify-center rounded-sm bg-gradient-to-b"
-            >
-              <Users size={14} />
-            </Link>
-          </div>
-        </div>
-      </div>
+    <div className="flex min-h-0 flex-col gap-4 p-4 md:p-7">
+      <header className="flex items-baseline gap-x-2.5 gap-y-1">
+        <h2 className="font-display text-cream text-[22px] leading-none sm:text-[26px]">
+          College <span className="text-accent">football</span>
+        </h2>
+        {live.length > 0 && view === "scores" ? (
+          <span className="text-alert text-[10px] font-semibold uppercase tracking-[0.14em]">
+            <span className="bg-alert mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full" />
+            {live.length} live
+          </span>
+        ) : null}
+      </header>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {VIEW_CARDS.map((card) => {
-          const active = view === card.id;
+      <nav
+        className="flex gap-1 overflow-x-auto border-b border-white/[0.08]"
+        aria-label="College football views"
+      >
+        {VIEW_TABS.map((tab) => {
+          const active = view === tab.id;
           return (
             <button
-              key={card.id}
+              key={tab.id}
               type="button"
-              onClick={() => setView(card.id)}
+              onClick={() => setView(tab.id)}
               className={cn(
-                "relative overflow-hidden rounded-lg border p-4 text-left transition",
+                "shrink-0 border-b-2 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] transition",
                 active
-                  ? "border-accent/50 bg-gradient-to-br from-hero-lift to-hero shadow-[0_0_0_1px_rgba(217,81,92,0.25)]"
-                  : "border-white/[0.08] bg-gradient-to-br from-hero-lift/80 to-hero/70 hover:border-accent/35",
+                  ? "border-accent text-cream"
+                  : "border-transparent text-chalk hover:text-cream",
               )}
             >
-              <StarField count={18} seed={card.seed} />
-              <div className="relative z-10">
-                <div className="rule-head mb-2">{card.eyebrow}</div>
-                <h3 className="font-display text-cream text-[22px] leading-tight">
-                  {card.title[0]} <span className="text-accent">{card.title[1]}</span>
-                </h3>
-                <p className="text-chalk mt-2 text-[12px] leading-relaxed">{card.blurb}</p>
-                {active ? (
-                  <span className="text-accent mt-3 inline-block text-[10px] font-semibold uppercase tracking-[0.16em]">
-                    Selected
-                  </span>
-                ) : (
-                  <span className="text-chalk-dim mt-3 inline-block text-[10px] font-semibold uppercase tracking-[0.16em]">
-                    Open
-                  </span>
-                )}
-              </div>
+              {tab.label}
             </button>
           );
         })}
-      </div>
+      </nav>
 
       {view === "scores" && (
         <>
