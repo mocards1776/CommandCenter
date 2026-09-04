@@ -2,6 +2,14 @@
 
 ---
 
+## CFB: bowl games in team records + correct season coaches — September 4, 2026
+
+- **Records:** Team win trends and season W–L use ESPN’s overall mark that **includes bowls** (not regular-season-only).
+- **Schedules:** Team pages and clickable season history merge regular-season + bowl games; bowl weeks label by bowl name.
+- **Coaches:** Season history pulls the head coach from that year’s Wikipedia page — ESPN’s historical coaches feed wrongly returns today’s HC for every year (e.g. Drinkwitz on 2017 Mizzou).
+
+---
+
 ## CFB: all-games scoreboard, fresh staff, 10-year history — September 4, 2026
 
 - **Scoreboard:** College football board pulls the full FBS slate (`groups=80`), not ESPN’s featured/Top-25 slice.
