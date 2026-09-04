@@ -87,6 +87,8 @@ export type CfbScoreSide = {
   rank: number | null;
   /** ESPN FPI ordinal across FBS (can be 26–130+). */
   fpiRank: number | null;
+  /** Quarter / OT points from ESPN linescores (Q1…Q4, then OT). */
+  linescores: number[];
 };
 
 export type CfbLiveSituation = {
@@ -601,6 +603,25 @@ export async function fetchCfbBackupHighlights(opts: {
   return { primary, clips };
 }
 
+export type CfbPlayerSchoolStop = {
+  teamId: string | null;
+  teamName: string;
+  teamLogo: string | null;
+  /** ESPN season span, e.g. "2021-2022" or "2024-CURRENT". */
+  seasons: string | null;
+};
+
+export type CfbPlayerRecruiting = {
+  /** Recruiting / signing class year. */
+  year: number | null;
+  /** 1–5 star rating when ESPN publishes one. */
+  stars: number | null;
+  /** ESPN recruit grade (typically 60–99). */
+  grade: string | null;
+  hometown: string | null;
+  highSchool: string | null;
+};
+
 export type CfbPlayerProfile = {
   id: string;
   name: string;
@@ -621,6 +642,9 @@ export type CfbPlayerProfile = {
   experience: string | null;
   bio: string | null;
   status: string | null;
+  /** College stops newest → oldest (transfers / prior schools). */
+  schoolHistory: CfbPlayerSchoolStop[];
+  recruiting: CfbPlayerRecruiting | null;
   seasonStats: { label: string; value: string }[];
   statCategories: { name: string; stats: { label: string; value: string }[] }[];
   seasonSplits: {
@@ -726,7 +750,7 @@ function mapCfbSituation(
     yardLine: typeof sit.yardLine === "number" ? sit.yardLine : null,
     isRedZone: Boolean(sit.isRedZone),
     possessionTeamId: sit.possession ?? sit.lastPlay?.team?.id ?? null,
-    lastPlayText: sit.lastPlay?.text ?? null,
+    lastPlayText: simplifyCfbPlayText(sit.lastPlay?.text) || null,
   };
 }
 
@@ -759,6 +783,7 @@ type EspnEvent = {
       score?: unknown;
       curatedRank?: { current?: number };
       records?: { type?: string; summary?: string }[];
+      linescores?: { value?: number; displayValue?: string }[];
       team?: {
         id?: string;
         displayName?: string;
@@ -785,6 +810,7 @@ type EspnCompetitor = {
   score?: unknown;
   curatedRank?: { current?: number };
   records?: { type?: string; summary?: string }[];
+  linescores?: { value?: number; displayValue?: string }[];
   team?: {
     id?: string;
     displayName?: string;
@@ -803,6 +829,14 @@ function sideFromCompetitor(
   const abbrev = team.abbreviation ?? "—";
   const overall = (c.records ?? []).find((r) => r.type === "total")?.summary ?? null;
   const teamId = Number(team.id) || 0;
+  const linescores = (c.linescores ?? [])
+    .map((ls) => {
+      if (typeof ls.value === "number" && Number.isFinite(ls.value)) return ls.value;
+      const n = Number(ls.displayValue);
+      return Number.isFinite(n) ? n : null;
+    })
+    .filter((n): n is number => n != null);
+
   return {
     teamId,
     name: team.displayName ?? team.shortDisplayName ?? abbrev,
@@ -813,6 +847,7 @@ function sideFromCompetitor(
     color: (team.color ?? "555555").replace(/^#/, ""),
     rank: cfbPollRank(c.curatedRank?.current),
     fpiRank: teamId && fpiByTeam ? (fpiByTeam.get(teamId) ?? null) : null,
+    linescores,
   };
 }
 
@@ -969,6 +1004,48 @@ function cfbArticleRelevantToGame(
   return mentions(away.abbrev, away.name) || mentions(home.abbrev, home.name);
 }
 
+
+/** Strip jersey numbers, formation boilerplate, and kick metadata from ESPN play text. */
+export function simplifyCfbPlayText(raw: string | null | undefined): string {
+  if (!raw) return "";
+  let t = raw.replace(/\s+/g, " ").trim();
+  if (!t) return "";
+
+  // Leading game clock: (06:12) / (0:45)
+  t = t.replace(/^\(\d{1,2}:\d{2}\)\s*/i, "");
+  // Formation / tempo boilerplate (incl. "No Huddle-Shotgun")
+  t = t.replace(
+    /\b(?:No\s*Huddle(?:[\s-]*Shotgun)?|Shotgun|Under Center|Wildcat|Pistol)\b[\s-]*/gi,
+    "",
+  );
+  // Jersey numbers: #12 / # 12
+  t = t.replace(/#\s*\d+\s*/g, "");
+  // Catch / throw location crumbs ("caught at Mizzou03,")
+  t = t.replace(
+    /\b(?:caught|thrown)\s+at\s+[A-Za-z][A-Za-z0-9.'-]{1,24}\d{0,2},?/gi,
+    "",
+  );
+  // Tackle parentheses without jersey: (T.Williams Jr.)
+  t = t.replace(/\s*\(\s*[A-Z][A-Za-z.']+(?:\s+(?:Jr\.|Sr\.|III|IV|II))?(?:\s*[,/]\s*[^)]+)?\s*\)\s*$/g, "");
+  // Trailing tackle parentheses: (#2 T.Williams Jr.)
+  t = t.replace(/\s*\([^)]*#\d+[^)]*\)\s*/g, " ");
+  // Kick holder / long snapper notes
+  t = t.replace(/\s*\(\s*H:\s*[^)]+\)\s*/gi, " ");
+  t = t.replace(/\s*\(\s*LS:\s*[^)]+\)\s*/gi, " ");
+  t = t.replace(/\s*\(\s*H:\s*[^;)]+;\s*LS:\s*[^)]+\)\s*/gi, " ");
+  // Redundant clock echoes
+  t = t.replace(/,?\s*clock\s+\d{1,2}:\d{2}\b/gi, "");
+  // "1ST DOWN" noise mid-sentence after TD kick lines
+  t = t.replace(/\b1ST DOWN\b/gi, "");
+  // Collapse "pass complete short middle to" spacing leftovers
+  t = t.replace(/\s{2,}/g, " ");
+  t = t.replace(/\s+,/g, ",");
+  t = t.replace(/,\s*,+/g, ",");
+  t = t.replace(/\s+\./g, ".");
+  t = t.replace(/\.\s*\./g, ".");
+  return t.trim().replace(/^[,.\s]+|[,.\s]+$/g, "");
+}
+
 function mapCfbPlay(p: {
   id?: string;
   text?: string;
@@ -991,7 +1068,7 @@ function mapCfbPlay(p: {
   const end = p.end ?? p.start;
   return {
     id: String(p.id ?? Math.random()),
-    text: p.text ?? "",
+    text: simplifyCfbPlayText(p.text),
     shortDownDistanceText:
       p.shortDownDistanceText ??
       end?.shortDownDistanceText ??
@@ -1269,6 +1346,30 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
     .slice(-40)
     .reverse();
 
+  // Prefer header/boxscore linescores when the mapped sides are empty.
+  const headerComps = raw.header?.competitions?.[0]?.competitors ?? [];
+  const readLs = (c: { linescores?: { value?: number; displayValue?: string }[] } | undefined) =>
+    (c?.linescores ?? [])
+      .map((ls) => {
+        if (typeof ls.value === "number" && Number.isFinite(ls.value)) return ls.value;
+        const n = Number(ls.displayValue);
+        return Number.isFinite(n) ? n : null;
+      })
+      .filter((n): n is number => n != null);
+  if (!base.away.linescores.length || !base.home.linescores.length) {
+    const awayC = headerComps.find((c) => (c as { homeAway?: string }).homeAway === "away");
+    const homeC = headerComps.find((c) => (c as { homeAway?: string }).homeAway === "home");
+    const awayLs = readLs(awayC as { linescores?: { value?: number; displayValue?: string }[] });
+    const homeLs = readLs(homeC as { linescores?: { value?: number; displayValue?: string }[] });
+    if (awayLs.length || homeLs.length) {
+      base = {
+        ...base,
+        away: { ...base.away, linescores: awayLs.length ? awayLs : base.away.linescores },
+        home: { ...base.home, linescores: homeLs.length ? homeLs : base.home.linescores },
+      };
+    }
+  }
+
   // If scoreboard situation was missing, infer yard line from latest play.
   if (base.live && !base.situation && recentPlays[0]) {
     const play = recentPlays[0];
@@ -1290,7 +1391,7 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
     venue: base.venue ?? raw.gameInfo?.venue?.fullName ?? null,
     scoringPlays: (raw.scoringPlays ?? []).map((s) => ({
       id: String(s.id ?? Math.random()),
-      text: s.text ?? "",
+      text: simplifyCfbPlayText(s.text),
       clock: s.clock?.displayValue ?? null,
       teamAbbrev: s.team?.abbreviation ?? null,
     })),
@@ -3838,11 +3939,140 @@ function emptyCfbCategoriesFrom(
   }));
 }
 
+
+const ESPN_STAR_WORDS: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+};
+
+function parseSeasonStartYear(seasons: string | null | undefined): number | null {
+  if (!seasons) return null;
+  const m = String(seasons).match(/(20\d{2})/);
+  return m ? Number(m[1]) : null;
+}
+
+async function fetchCfbPlayerSchoolHistory(
+  playerId: string,
+): Promise<CfbPlayerSchoolStop[]> {
+  try {
+    const res = await fetch(`${ESPN_WEB}/athletes/${encodeURIComponent(playerId)}/bio`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return [];
+    const raw = (await res.json()) as {
+      teamHistory?: {
+        id?: string;
+        displayName?: string;
+        logo?: string;
+        seasons?: string;
+      }[];
+    };
+    return (raw.teamHistory ?? [])
+      .map((t) => ({
+        teamId: t.id != null ? String(t.id) : null,
+        teamName: (t.displayName ?? "").trim(),
+        teamLogo: t.logo ?? (t.id != null ? cfbTeamLogo(t.id) : null),
+        seasons: t.seasons?.trim() || null,
+      }))
+      .filter((t) => t.teamName);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchCfbPlayerRecruiting(opts: {
+  playerName: string;
+  schoolHistory: CfbPlayerSchoolStop[];
+  teamId: string | null;
+}): Promise<CfbPlayerRecruiting | null> {
+  const name = opts.playerName.trim();
+  if (!name) return null;
+
+  // Oldest school is usually the original signing school (bio is newest → oldest).
+  const oldest =
+    opts.schoolHistory.length > 0
+      ? opts.schoolHistory[opts.schoolHistory.length - 1]
+      : null;
+  const teamId = oldest?.teamId ?? opts.teamId;
+  if (!teamId) return null;
+
+  const startYear = parseSeasonStartYear(oldest?.seasons);
+  const years = [
+    startYear,
+    startYear != null ? startYear - 1 : null,
+    startYear != null ? startYear + 1 : null,
+    cfbSeasonYear() - 3,
+    cfbSeasonYear() - 2,
+    cfbSeasonYear() - 4,
+  ].filter((y, i, arr): y is number => y != null && y >= 2015 && arr.indexOf(y) === i);
+
+  const nameRe = new RegExp(
+    name
+      .split(/\s+/)
+      .map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("\\s+"),
+    "i",
+  );
+
+  for (const year of years.slice(0, 4)) {
+    try {
+      const url = `https://www.espn.com/college-sports/football/recruiting/school/_/id/${encodeURIComponent(
+        teamId,
+      )}/class/${year}`;
+      const res = await fetch(url, {
+        headers: {
+          Accept: "text/html",
+          "User-Agent": "Mozilla/5.0 CommandCenter",
+        },
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+      const rows = html.split(/<tr\b/i).slice(1);
+      const row = rows.find((r) => nameRe.test(r.replace(/<[^>]+>/g, " ")));
+      if (!row) continue;
+
+      const starWord = row.match(/class=["']star\s+([a-z]+)-star["']/i)?.[1]?.toLowerCase();
+      const stars = starWord ? (ESPN_STAR_WORDS[starWord] ?? null) : null;
+      const gradeMatch = row.match(/>(\d{2,3})<\/td>/g);
+      const grade =
+        gradeMatch
+          ?.map((g) => g.replace(/\D/g, ""))
+          .find((g) => {
+            const n = Number(g);
+            return n >= 40 && n <= 99;
+          }) ?? null;
+      const loc = row
+        .replace(/<[^>]+>/g, " | ")
+        .replace(/\s+/g, " ")
+        .match(
+          /\|\s*([^|]+?)\s*\|\s*([^|]+?(?:High School|Academy|Prep|Christian|Catholic)[^|]*)\s*\|/i,
+        );
+      const hometown = loc?.[1]?.trim() || null;
+      const highSchool = loc?.[2]?.trim() || null;
+
+      return {
+        year,
+        stars,
+        grade,
+        hometown,
+        highSchool,
+      };
+    } catch {
+      /* try next class year */
+    }
+  }
+  return null;
+}
+
 export async function fetchCfbPlayerProfile(playerId: string): Promise<CfbPlayerProfile> {
   const id = String(playerId);
-  const [athleteRes, overviewRes] = await Promise.all([
+  const [athleteRes, overviewRes, schoolHistory] = await Promise.all([
     fetch(`${ESPN_WEB}/athletes/${id}`, { headers: { Accept: "application/json" } }),
     fetch(`${ESPN_WEB}/athletes/${id}/overview`, { headers: { Accept: "application/json" } }),
+    fetchCfbPlayerSchoolHistory(id),
   ]);
   if (!athleteRes.ok) throw new Error(`CFB player ${athleteRes.status}`);
   const raw = (await athleteRes.json()) as { athlete?: Record<string, unknown> };
@@ -3984,9 +4214,30 @@ export async function fetchCfbPlayerProfile(playerId: string): Promise<CfbPlayer
     (overview.headshot as { href?: string } | undefined)?.href ||
     null;
 
+  const displayName = String(a.displayName ?? a.fullName ?? "Player");
+  const history =
+    schoolHistory.length > 0
+      ? schoolHistory
+      : team.id
+        ? [
+            {
+              teamId: team.id,
+              teamName: team.displayName ?? team.abbreviation ?? "Team",
+              teamLogo: team.logos?.[0]?.href ?? cfbTeamLogo(team.id),
+              seasons: null,
+            },
+          ]
+        : [];
+
+  const recruiting = await fetchCfbPlayerRecruiting({
+    playerName: displayName,
+    schoolHistory: history,
+    teamId: team.id ?? null,
+  });
+
   return {
     id,
-    name: String(a.displayName ?? a.fullName ?? "Player"),
+    name: displayName,
     number: a.jersey != null ? String(a.jersey) : null,
     position: position.abbreviation ?? null,
     positionName: position.displayName ?? null,
@@ -4010,6 +4261,8 @@ export async function fetchCfbPlayerProfile(playerId: string): Promise<CfbPlayer
       (a.injuries as { status?: string }[] | undefined)?.[0]?.status ||
       (a.status as { name?: string } | undefined)?.name ||
       null,
+    schoolHistory: history,
+    recruiting,
     seasonStats,
     statCategories,
     seasonSplits,
