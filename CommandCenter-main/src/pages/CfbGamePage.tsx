@@ -451,15 +451,31 @@ export function CfbGameDetailView({
         </section>
       ) : null}
 
-      {!g.article &&
+      {pregame &&
+      !g.article &&
       !g.boxGroups.length &&
       !g.teamStats.length &&
       !g.scoringPlays.length &&
-      !(pregame && (g.oddsLine || g.predictor || g.lastFive.length)) ? (
+      !(g.oddsLine || g.predictor || g.lastFive.length) ? (
         <section className="bg-panel rounded-xl border border-white/[0.08] px-4 py-5">
           <p className="text-chalk text-[13px] leading-relaxed">
             ESPN hasn&apos;t published preview copy or boxscore data for this matchup yet.
             Odds and team pages will fill in as kickoff gets closer.
+          </p>
+        </section>
+      ) : null}
+
+      {!pregame &&
+      !g.boxGroups.length &&
+      !g.teamStats.length &&
+      !g.scoringPlays.length &&
+      !g.recentPlays.length ? (
+        <section className="bg-panel rounded-xl border border-white/[0.08] px-4 py-5">
+          <p className="text-chalk text-[13px] leading-relaxed">
+            ESPN hasn&apos;t opened the live box score or play-by-play feed for this game yet
+            (score by quarter is above
+            {g.videos.length || g.recapVideo ? "; highlights are below" : ""}
+            ). Stats will appear when ESPN publishes them.
           </p>
         </section>
       ) : null}

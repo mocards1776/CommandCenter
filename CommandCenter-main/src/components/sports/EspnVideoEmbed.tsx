@@ -30,6 +30,12 @@ export default function EspnVideoEmbed({
   const [playing, setPlaying] = useState(false);
   const duration = formatDuration(clip.durationSec);
   const canEmbed = Boolean(clip.mp4);
+  const desc =
+    clip.description &&
+    clip.description.replace(/\s+/g, " ").trim().toLowerCase() !==
+      clip.headline.replace(/\s+/g, " ").trim().toLowerCase()
+      ? clip.description
+      : null;
 
   if (playing && clip.mp4) {
     return (
@@ -49,9 +55,9 @@ export default function EspnVideoEmbed({
         <HighlightVideoPlayer key={clip.mp4} src={clip.mp4} startMuted />
         <div className="px-3 py-2.5">
           <p className="text-[13px] font-semibold leading-snug text-cream">{clip.headline}</p>
-          {clip.description ? (
+          {desc ? (
             <p className="text-chalk mt-1 line-clamp-2 text-[11px] leading-relaxed">
-              {clip.description}
+              {desc}
             </p>
           ) : null}
         </div>
@@ -83,9 +89,9 @@ export default function EspnVideoEmbed({
           {eyebrow}
         </p>
         <p className="mt-1 text-[13px] font-semibold leading-snug text-cream">{clip.headline}</p>
-        {clip.description ? (
+        {desc ? (
           <p className="text-chalk mt-1 line-clamp-2 text-[11px] leading-relaxed">
-            {clip.description}
+            {desc}
           </p>
         ) : null}
         {!canEmbed && clip.href ? (
