@@ -1,8 +1,15 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, ExternalLink, Loader2, Star } from "lucide-react";
+import toast from "react-hot-toast";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
+import { useAuth } from "@/lib/auth-context";
+import {
+  addFavoritePlayer,
+  isFavoritePlayer,
+  removeFavoritePlayer,
+} from "@/lib/favorite-players";
 import { cfbHeadshot, fetchCfbPlayerProfile, type CfbPlayerProfile } from "@/lib/cfb";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +17,8 @@ export default function CfbPlayerPage() {
   const { playerId } = useParams<{ playerId: string }>();
   const navigate = useNavigate();
   const swipeRef = useSwipeBack(() => navigate(-1));
+  const { user } = useAuth();
+  const qc = useQueryClient();
   const [seasonIdx, setSeasonIdx] = useState(0);
 
   const profile = useQuery({
@@ -18,6 +27,38 @@ export default function CfbPlayerPage() {
     enabled: Boolean(playerId),
     staleTime: 120_000,
   });
+
+  const fav = useQuery({
+    queryKey: ["favorite-player", user?.id, playerId],
+    queryFn: () => isFavoritePlayer(user!.id, playerId!),
+    enabled: Boolean(user?.id && playerId),
+  });
+
+  const toggleFav = async () => {
+    if (!user?.id || !playerId || !profile.data) return;
+    try {
+      if (fav.data) {
+        await removeFavoritePlayer(user.id, playerId);
+        toast.success("Removed favorite");
+      } else {
+        await addFavoritePlayer({
+          userId: user.id,
+          playerId,
+          playerName: profile.data.name,
+          teamName: profile.data.teamName,
+          teamId: profile.data.teamId,
+          position: profile.data.position,
+          sport: "football",
+          league: "CFB",
+        });
+        toast.success("Favorited CFB player");
+      }
+      await qc.invalidateQueries({ queryKey: ["favorite-player", user.id, playerId] });
+      await qc.invalidateQueries({ queryKey: ["favorite-players", user.id] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update favorite");
+    }
+  };
 
   if (!playerId) {
     return <p className="text-alert p-6 text-[13px]">Missing player id</p>;
@@ -55,7 +96,70 @@ export default function CfbPlayerPage() {
         <p className="text-alert text-[13px]">Couldn’t load this player.</p>
       ) : (
         <>
-          <PlayerHero player={p} accent={accent} />
+          <PlayerHero player={p} accent={accent} isFavorite={Boolean(fav.data)} onToggleFav={toggleFav} />
+
+          {(p.recruiting || (p.schoolHistory?.length ?? 0) > 0) && (
+            <section className="grid gap-3 sm:grid-cols-2">
+              {p.recruiting ? (
+                <div className="bg-panel rounded-xl border border-white/[0.08] p-4">
+                  <h3 className="rule-head mb-3">Recruiting</h3>
+                  <dl className="grid grid-cols-2 gap-3 text-[13px]">
+                    <BioItem
+                      label="Class"
+                      value={p.recruiting.year != null ? String(p.recruiting.year) : "—"}
+                    />
+                    <BioItem
+                      label="Stars"
+                      value={
+                        p.recruiting.stars != null
+                          ? `${"★".repeat(p.recruiting.stars)}${"☆".repeat(Math.max(0, 5 - p.recruiting.stars))}`
+                          : "—"
+                      }
+                    />
+                    <BioItem label="ESPN grade" value={p.recruiting.grade ?? "—"} />
+                    <BioItem
+                      label="Hometown"
+                      value={p.recruiting.hometown ?? p.birthPlace ?? "—"}
+                    />
+                    {p.recruiting.highSchool ? (
+                      <BioItem label="High school" value={p.recruiting.highSchool} />
+                    ) : null}
+                  </dl>
+                </div>
+              ) : null}
+              {(p.schoolHistory?.length ?? 0) > 0 ? (
+                <div className="bg-panel rounded-xl border border-white/[0.08] p-4">
+                  <h3 className="rule-head mb-3">School history</h3>
+                  <ul className="space-y-2.5">
+                    {p.schoolHistory.map((stop) => (
+                      <li key={`${stop.teamId ?? stop.teamName}-${stop.seasons ?? ""}`} className="flex items-center gap-3">
+                        {stop.teamLogo ? (
+                          <img src={stop.teamLogo} alt="" className="h-8 w-8 object-contain" />
+                        ) : (
+                          <span className="bg-white/10 h-8 w-8 rounded-full" />
+                        )}
+                        <div className="min-w-0">
+                          {stop.teamId ? (
+                            <Link
+                              to={`/sports/cfb/team/${stop.teamId}`}
+                              className="text-cream hover:text-accent text-[14px] font-semibold"
+                            >
+                              {stop.teamName}
+                            </Link>
+                          ) : (
+                            <p className="text-cream text-[14px] font-semibold">{stop.teamName}</p>
+                          )}
+                          <p className="text-[12px] text-[#8b93a7]">
+                            {stop.seasons?.replace(/CURRENT/i, "present") ?? "—"}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </section>
+          )}
 
           {p.seasonStats.length > 0 && (
             <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
@@ -297,10 +401,26 @@ function BioItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PlayerHero({ player, accent }: { player: CfbPlayerProfile; accent: string }) {
+function formatPlayerWeight(weight: string | null | undefined): string | null {
+  if (!weight) return null;
+  return /\b(lbs?|lb)\b/i.test(weight) ? weight : `${weight} lbs`;
+}
+
+function PlayerHero({
+  player,
+  accent,
+  isFavorite,
+  onToggleFav,
+}: {
+  player: CfbPlayerProfile;
+  accent: string;
+  isFavorite: boolean;
+  onToggleFav: () => void;
+}) {
   const parts = player.name.trim().split(/\s+/);
   const lastName = parts.length > 1 ? parts[parts.length - 1] : player.name;
   const firstName = parts.length > 1 ? parts.slice(0, -1).join(" ") : "";
+  const htWt = [player.height, formatPlayerWeight(player.weight)].filter(Boolean).join(", ") || "—";
 
   return (
     <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
@@ -352,10 +472,23 @@ function PlayerHero({ player, accent }: { player: CfbPlayerProfile; accent: stri
             {player.classYear ? ` · ${player.classYear}` : ""}
           </p>
           <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[12px]">
-            <HeroChip label="HT/WT" value={[player.height, player.weight ? `${player.weight} lbs` : null].filter(Boolean).join(", ") || "—"} />
+            <HeroChip label="HT/WT" value={htWt} />
             <HeroChip label="Birthplace" value={player.birthPlace ?? "—"} />
             <HeroChip label="Status" value={player.status ?? "Active"} />
           </dl>
+          <button
+            type="button"
+            onClick={() => void onToggleFav()}
+            className={cn(
+              "mt-4 inline-flex items-center gap-2 rounded-sm border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] transition",
+              isFavorite
+                ? "border-accent/50 bg-accent/15 text-cream"
+                : "border-white/25 bg-black/25 text-white/85 hover:border-white/50 hover:text-white",
+            )}
+          >
+            <Star size={13} className={isFavorite ? "fill-accent text-accent" : ""} />
+            {isFavorite ? "Favorited" : "Add to favorites"}
+          </button>
         </div>
       </div>
     </article>

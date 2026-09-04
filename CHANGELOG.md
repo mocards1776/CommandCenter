@@ -2,6 +2,14 @@
 
 ---
 
+## CFB: cleaner game pages + player favorites / history — September 4, 2026
+
+- **Game pages:** Quarter-by-quarter linescore under the scoreboard; play-by-play text stripped of jersey numbers, formation boilerplate, and kick metadata; field + recent-plays layout tightened for readability.
+- **Player pages:** Favorite star (CFB league); school history / prior stops from ESPN bio; recruiting class year + star rating (and ESPN grade when available).
+- Fixed duplicate “lbs lbs” on player height/weight chips.
+
+---
+
 ## CFB: assistant coaches open like head coaches — September 4, 2026
 
 - Team coaching staff and HC staff lists link every assistant (not just ESPN-id head coaches).

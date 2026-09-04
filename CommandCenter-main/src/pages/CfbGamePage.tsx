@@ -258,6 +258,12 @@ export function CfbGameDetailView({
           <MatchupSide side={g.home} align="right" winner={homeWins} loser={awayWins} />
         </div>
 
+        {!pregame && (g.away.linescores.length > 0 || g.home.linescores.length > 0) ? (
+          <div className="relative z-10 border-t border-white/[0.06] px-3 pb-3 pt-1 sm:px-4">
+            <CfbLinescoreTable away={g.away} home={g.home} />
+          </div>
+        ) : null}
+
         <div className="relative z-10 flex flex-wrap gap-3 border-t border-white/[0.06] px-4 py-2.5">
           <a
             href={recapUrl}
@@ -279,36 +285,60 @@ export function CfbGameDetailView({
       </header>
 
       {(g.live || g.situation || homeYardLine != null) && (
-        <NflFieldMap
-          game={g}
-          homeYardLine={homeYardLine}
-          possessionTeamId={g.situation?.possessionTeamId ?? null}
-          downDistanceText={g.situation?.downDistanceText}
-        />
+        <section className="space-y-2">
+          <NflFieldMap
+            game={g}
+            homeYardLine={homeYardLine}
+            possessionTeamId={g.situation?.possessionTeamId ?? null}
+            downDistanceText={g.situation?.downDistanceText}
+          />
+          {g.situation?.lastPlayText ? (
+            <p className="text-chalk px-1 text-[12px] leading-relaxed">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                Last play ·{" "}
+              </span>
+              <span className="text-cream/90">{g.situation.lastPlayText}</span>
+            </p>
+          ) : null}
+        </section>
       )}
 
       {g.recentPlays.length > 0 && (
-        <section className="bg-panel rounded-xl border border-white/[0.08]">
-          <div className="border-b border-white/[0.06] px-4 py-2.5">
+        <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] shadow-[0_12px_40px_rgba(0,0,0,0.22)]">
+          <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
               Recent plays
             </h2>
+            <span className="text-[10px] text-[#6b7386]">Cleaned for readability</span>
           </div>
           <ul className="max-h-[28rem] divide-y divide-white/[0.05] overflow-y-auto">
             {g.recentPlays.slice(0, 12).map((p) => (
-              <li key={p.id} className={cn("px-4 py-2.5", p.scoringPlay && "bg-accent/10")}>
+              <li
+                key={p.id}
+                className={cn(
+                  "px-4 py-3 transition-colors",
+                  p.scoringPlay && "bg-gradient-to-r from-accent/15 to-transparent",
+                )}
+              >
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                   {p.period != null && (
-                    <span className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+                    <span className="rounded-sm bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#a8b0c2]">
                       Q{p.period}
-                      {p.clock ? ` ${p.clock}` : ""}
+                      {p.clock ? ` · ${p.clock}` : ""}
                     </span>
                   )}
                   {p.shortDownDistanceText && (
-                    <span className="text-[10px] text-emerald-200/70">{p.shortDownDistanceText}</span>
+                    <span className="text-[10px] font-medium text-emerald-200/75">
+                      {p.shortDownDistanceText}
+                    </span>
                   )}
+                  {p.scoringPlay ? (
+                    <span className="text-accent text-[10px] font-semibold uppercase tracking-[0.12em]">
+                      Score
+                    </span>
+                  ) : null}
                 </div>
-                <p className="text-cream mt-0.5 text-[13px] leading-snug">{p.text}</p>
+                <p className="text-cream mt-1 text-[13px] leading-relaxed">{p.text}</p>
               </li>
             ))}
           </ul>
@@ -610,6 +640,59 @@ export function CfbGameDetailView({
           </ul>
         </section>
       )}
+    </div>
+  );
+}
+
+function CfbLinescoreTable({
+  away,
+  home,
+}: {
+  away: CfbScoreSide;
+  home: CfbScoreSide;
+}) {
+  const periodCount = Math.max(away.linescores.length, home.linescores.length, 4);
+  const headers = Array.from({ length: periodCount }, (_, i) =>
+    i < 4 ? `Q${i + 1}` : periodCount === 5 ? "OT" : `OT${i - 3}`,
+  );
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-white/[0.08] bg-black/25">
+      <table className="w-full min-w-[280px] text-center text-[12px]">
+        <thead>
+          <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+            <th className="px-2 py-1.5 text-left font-medium">Team</th>
+            {headers.map((h) => (
+              <th key={h} className="numeral px-1.5 py-1.5 font-medium">
+                {h}
+              </th>
+            ))}
+            <th className="numeral px-2 py-1.5 font-semibold text-cream/80">T</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[away, home].map((side) => (
+            <tr key={side.teamId} className="border-t border-white/[0.05]">
+              <td className="px-2 py-1.5 text-left">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-cream">
+                  {side.logo ? (
+                    <img src={side.logo} alt="" className="h-4 w-4 object-contain" />
+                  ) : null}
+                  {side.abbrev}
+                </span>
+              </td>
+              {headers.map((_, i) => (
+                <td key={`${side.teamId}-${i}`} className="numeral px-1.5 py-1.5 text-white/85">
+                  {side.linescores[i] ?? "–"}
+                </td>
+              ))}
+              <td className="numeral px-2 py-1.5 font-bold text-white">
+                {side.score ?? "–"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
