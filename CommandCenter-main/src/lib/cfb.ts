@@ -1228,6 +1228,12 @@ export type CfbTeamScheduleGame = {
   oppLogo: string | null;
   oppRank: number | null;
   won: boolean | null;
+  /** Postseason / bowl game (ESPN seasontype 3). */
+  bowl: boolean;
+  /** e.g. "Goodyear Cotton Bowl Classic" when ESPN provides a note. */
+  bowlName: string | null;
+  /** ESPN week label — "Week 8" or "Bowls". */
+  weekLabel: string | null;
 };
 
 export type CfbTeamPage = {
@@ -1664,6 +1670,50 @@ function parseWikiInfoboxCoaches(wt: string): { title: string; name: string }[] 
 }
 
 /**
+ * Head coach for a specific season from the Wikipedia season page.
+ * ESPN's /seasons/{year}/teams/{id}/coaches endpoint often returns the *current*
+ * coach for every year, so Wikipedia is the source of truth for history.
+ */
+async function fetchWikiSeasonHeadCoach(
+  teamDisplayName: string,
+  season: number,
+): Promise<string | null> {
+  const page = wikiFootballSeasonTitle(teamDisplayName, season);
+  try {
+    const res = await fetch(
+      `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(page)}&prop=wikitext&format=json&origin=*`,
+      {
+        headers: {
+          Accept: "application/json",
+          "Api-User-Agent": "CommandCenterCFB/1.0 (sports dashboard; local)",
+        },
+      },
+    );
+    if (!res.ok) return null;
+    const raw = (await res.json()) as {
+      error?: unknown;
+      parse?: { wikitext?: { ["*"]?: string } };
+    };
+    if (raw.error) return null;
+    const wt = raw.parse?.wikitext?.["*"] ?? "";
+    if (!wt) return null;
+
+    const fromInfobox = parseWikiInfoboxCoaches(wt).find((r) => r.title === "Head coach");
+    if (fromInfobox?.name) return fromInfobox.name;
+
+    const fromFooter = parseWikiRosterFooterStaff(wt).find((r) => r.title === "Head coach");
+    if (fromFooter?.name) return fromFooter.name;
+
+    const fromTable = parseWikiCoachingStaffTable(wt).find((r) =>
+      /^head coach$/i.test(r.title),
+    );
+    return fromTable?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Assistant / coordinator names from the team's Wikipedia season page.
  * Prefers the roster Footer staff list or Coaching staff table; falls back to infobox.
  * Uses the current season page when it has staff — do not prefer a longer prior-year
@@ -1983,6 +2033,82 @@ async function searchEspnCoachHeadshot(
   }
 }
 
+type CfbEspnScheduleEvent = {
+  id?: string;
+  date?: string;
+  name?: string;
+  shortName?: string;
+  seasonType?: { type?: number; name?: string } | number;
+  week?: { number?: number; text?: string } | number;
+  competitions?: {
+    notes?: { type?: string; headline?: string }[];
+    status?: {
+      type?: {
+        state?: string;
+        completed?: boolean;
+        description?: string;
+        detail?: string;
+        shortDetail?: string;
+      };
+    };
+    competitors?: {
+      homeAway?: string;
+      score?: unknown;
+      winner?: boolean;
+      curatedRank?: { current?: number };
+      team?: {
+        id?: string;
+        displayName?: string;
+        abbreviation?: string;
+        logos?: { href?: string }[];
+      };
+    }[];
+  }[];
+};
+
+/** Overall W–L including bowls. ESPN types/2 is regular season only; types/3 folds bowls in. */
+async function fetchCfbTeamSeasonRecord(
+  teamId: string,
+  season: number,
+): Promise<{ wins: number; losses: number; summary: string } | null> {
+  const id = String(teamId);
+  for (const seasonType of [3, 2] as const) {
+    try {
+      const res = await fetch(
+        `${CORE}/seasons/${season}/types/${seasonType}/teams/${id}/records/0?lang=en&region=us`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!res.ok) continue;
+      const raw = (await res.json()) as {
+        summary?: string;
+        stats?: { name?: string; value?: number }[];
+      };
+      const winsStat = raw.stats?.find((s) => s.name === "wins")?.value;
+      const lossesStat = raw.stats?.find((s) => s.name === "losses")?.value;
+      let wins =
+        typeof winsStat === "number" && Number.isFinite(winsStat) ? Math.round(winsStat) : null;
+      let losses =
+        typeof lossesStat === "number" && Number.isFinite(lossesStat)
+          ? Math.round(lossesStat)
+          : null;
+      if (wins == null || losses == null) {
+        const m = (raw.summary ?? "").match(/^(\d+)\s*-\s*(\d+)/);
+        if (!m) continue;
+        wins = Number(m[1]);
+        losses = Number(m[2]);
+      }
+      return {
+        wins,
+        losses,
+        summary: raw.summary?.match(/^\d+\s*-\s*\d+/)?.[0] ?? `${wins}-${losses}`,
+      };
+    } catch {
+      /* try next season type */
+    }
+  }
+  return null;
+}
+
 export async function fetchCfbTeamWinTrend(
   teamId: string | number,
   seasons = 10,
@@ -1993,34 +2119,9 @@ export async function fetchCfbTeamWinTrend(
   const years = Array.from({ length: seasons }, (_, i) => end - seasons + 1 + i);
   const points = await Promise.all(
     years.map(async (season) => {
-      try {
-        const res = await fetch(
-          `${CORE}/seasons/${season}/types/2/teams/${id}/records/0?lang=en&region=us`,
-          { headers: { Accept: "application/json" } },
-        );
-        if (!res.ok) return null;
-        const raw = (await res.json()) as {
-          summary?: string;
-          stats?: { name?: string; value?: number }[];
-        };
-        const winsStat = raw.stats?.find((s) => s.name === "wins")?.value;
-        const lossesStat = raw.stats?.find((s) => s.name === "losses")?.value;
-        let wins =
-          typeof winsStat === "number" && Number.isFinite(winsStat) ? Math.round(winsStat) : null;
-        let losses =
-          typeof lossesStat === "number" && Number.isFinite(lossesStat)
-            ? Math.round(lossesStat)
-            : null;
-        if (wins == null || losses == null) {
-          const m = (raw.summary ?? "").match(/^(\d+)\s*-\s*(\d+)/);
-          if (!m) return null;
-          wins = Number(m[1]);
-          losses = Number(m[2]);
-        }
-        return { season, wins, losses } satisfies CfbTeamWinTrendPoint;
-      } catch {
-        return null;
-      }
+      const rec = await fetchCfbTeamSeasonRecord(id, season);
+      if (!rec) return null;
+      return { season, wins: rec.wins, losses: rec.losses } satisfies CfbTeamWinTrendPoint;
     }),
   );
   return points.filter((p): p is CfbTeamWinTrendPoint => Boolean(p));
@@ -2028,36 +2129,8 @@ export async function fetchCfbTeamWinTrend(
 
 function mapCfbTeamScheduleEvents(
   teamId: string,
-  events: {
-    id?: string;
-    date?: string;
-    name?: string;
-    shortName?: string;
-    week?: { number?: number } | number;
-    competitions?: {
-      status?: {
-        type?: {
-          state?: string;
-          completed?: boolean;
-          description?: string;
-          detail?: string;
-          shortDetail?: string;
-        };
-      };
-      competitors?: {
-        homeAway?: string;
-        score?: unknown;
-        winner?: boolean;
-        curatedRank?: { current?: number };
-        team?: {
-          id?: string;
-          displayName?: string;
-          abbreviation?: string;
-          logos?: { href?: string }[];
-        };
-      }[];
-    }[];
-  }[],
+  events: CfbEspnScheduleEvent[],
+  opts?: { bowlSeason?: boolean },
 ): CfbTeamScheduleGame[] {
   const id = String(teamId);
   const schedule: CfbTeamScheduleGame[] = [];
@@ -2077,6 +2150,27 @@ function mapCfbTeamScheduleEvents(
         : typeof weekRaw?.number === "number"
           ? weekRaw.number
           : null;
+    const weekText =
+      typeof weekRaw === "object" && weekRaw && typeof weekRaw.text === "string"
+        ? weekRaw.text.trim()
+        : null;
+    const seasonTypeNum =
+      typeof ev.seasonType === "number"
+        ? ev.seasonType
+        : typeof ev.seasonType?.type === "number"
+          ? ev.seasonType.type
+          : null;
+    const bowl =
+      Boolean(opts?.bowlSeason) ||
+      seasonTypeNum === 3 ||
+      /bowl/i.test(weekText ?? "") ||
+      /bowl/i.test(ev.seasonType && typeof ev.seasonType === "object" ? ev.seasonType.name ?? "" : "");
+    const bowlName =
+      (comp?.notes ?? []).find((n) => n.headline?.trim())?.headline?.trim() ??
+      (bowl ? weekText && !/^week\b/i.test(weekText) ? weekText : null : null);
+    const weekLabel = bowl
+      ? bowlName || weekText || "Bowl"
+      : weekText || (week != null ? `Week ${week}` : null);
     const iso = ev.date ?? null;
     const whenDate = iso ? new Date(iso) : null;
     const dateLabel =
@@ -2116,9 +2210,46 @@ function mapCfbTeamScheduleEvents(
       oppLogo: opp.team.logos?.[0]?.href ?? (opp.team.id ? cfbTeamLogo(opp.team.id) : null),
       oppRank: cfbPollRank(opp.curatedRank?.current),
       won,
+      bowl,
+      bowlName,
+      weekLabel,
     });
   }
   return schedule;
+}
+
+/** Regular season + bowl games for a team/year, deduped by event id. */
+async function fetchCfbTeamSeasonSchedule(
+  teamId: string,
+  season: number,
+): Promise<CfbTeamScheduleGame[]> {
+  const id = String(teamId);
+  const [regRes, bowlRes] = await Promise.all([
+    fetch(`${ESPN}/teams/${id}/schedule?seasontype=2&season=${season}`, {
+      headers: { Accept: "application/json" },
+    }),
+    fetch(`${ESPN}/teams/${id}/schedule?seasontype=3&season=${season}`, {
+      headers: { Accept: "application/json" },
+    }),
+  ]);
+  const byId = new Map<string, CfbTeamScheduleGame>();
+  if (regRes.ok) {
+    const json = (await regRes.json()) as { events?: CfbEspnScheduleEvent[] };
+    for (const g of mapCfbTeamScheduleEvents(id, json.events ?? [], { bowlSeason: false })) {
+      byId.set(g.id, g);
+    }
+  }
+  if (bowlRes.ok) {
+    const json = (await bowlRes.json()) as { events?: CfbEspnScheduleEvent[] };
+    for (const g of mapCfbTeamScheduleEvents(id, json.events ?? [], { bowlSeason: true })) {
+      byId.set(g.id, g);
+    }
+  }
+  return [...byId.values()].sort((a, b) => {
+    const ta = a.date ? new Date(a.date).getTime() : 0;
+    const tb = b.date ? new Date(b.date).getTime() : 0;
+    return ta - tb;
+  });
 }
 
 /** Season schedule + head coach for a team's year (used by clickable win-trend history). */
@@ -2127,56 +2258,40 @@ export async function fetchCfbTeamSeasonHistory(
   season: number,
 ): Promise<CfbTeamSeasonHistory> {
   const id = String(teamId);
-  const [scheduleRes, coachPack, recRes] = await Promise.all([
-    fetch(`${ESPN}/teams/${id}/schedule?seasontype=2&season=${season}`, {
-      headers: { Accept: "application/json" },
-    }),
-    fetchTeamCoachAndRecord(Number(id), season).catch(() => null),
-    fetch(`${CORE}/seasons/${season}/types/2/teams/${id}/records/0?lang=en&region=us`, {
-      headers: { Accept: "application/json" },
-    }).catch(() => null),
+  const [games, seasonRec, teamMeta] = await Promise.all([
+    fetchCfbTeamSeasonSchedule(id, season),
+    fetchCfbTeamSeasonRecord(id, season),
+    fetchCoreJson<{ displayName?: string; nickname?: string; name?: string; location?: string }>(
+      `${CORE}/seasons/${season}/teams/${id}?lang=en&region=us`,
+    ).catch(() => null),
   ]);
 
-  let record: string | null = null;
-  if (recRes?.ok) {
-    try {
-      const raw = (await recRes.json()) as { summary?: string };
-      record = raw.summary ?? null;
-    } catch {
-      /* optional */
+  let record = seasonRec?.summary ?? null;
+
+  // Prefer Wikipedia for the season's actual HC — ESPN's season coaches list
+  // frequently returns the current coach for every past year.
+  const teamDisplay =
+    teamMeta?.displayName ||
+    [teamMeta?.location, teamMeta?.name].filter(Boolean).join(" ") ||
+    teamMeta?.nickname ||
+    "Team";
+  const wikiHc = await fetchWikiSeasonHeadCoach(teamDisplay, season).catch(() => null);
+
+  let coach: CfbTeamSeasonHistory["coach"] = null;
+  if (wikiHc) {
+    const searched = await searchEspnCoachHeadshot(wikiHc).catch(() => ({
+      id: null as string | null,
+      headshot: null as string | null,
+    }));
+    coach = { id: searched.id, name: wikiHc };
+  } else {
+    // Last resort: ESPN (may be wrong for historical seasons).
+    const coachPack = await fetchTeamCoachAndRecord(Number(id), season).catch(() => null);
+    if (coachPack) {
+      coach = { id: coachPack.coachId, name: coachPack.coachName };
+      if (!record && coachPack.recordSummary) record = coachPack.recordSummary;
     }
   }
-
-  let games: CfbTeamScheduleGame[] = [];
-  if (scheduleRes.ok) {
-    const schedJson = (await scheduleRes.json()) as {
-      events?: Parameters<typeof mapCfbTeamScheduleEvents>[1];
-    };
-    games = mapCfbTeamScheduleEvents(id, schedJson.events ?? []);
-  }
-
-  let coach: CfbTeamSeasonHistory["coach"] = coachPack
-    ? { id: coachPack.coachId, name: coachPack.coachName }
-    : null;
-  if (!coach) {
-    const list = await fetchCoreJson<{ items?: { $ref?: string }[] }>(
-      `${CORE}/seasons/${season}/teams/${id}/coaches?lang=en&region=us`,
-    );
-    const ref = list?.items?.[0]?.$ref;
-    if (ref) {
-      const person = await fetchCoreJson<{
-        id?: string;
-        firstName?: string;
-        lastName?: string;
-      }>(ref);
-      const name = [person?.firstName, person?.lastName].filter(Boolean).join(" ").trim();
-      if (name) {
-        coach = { id: person?.id ? String(person.id) : null, name };
-      }
-    }
-  }
-
-  if (!record && coachPack?.recordSummary) record = coachPack.recordSummary;
 
   return { season, coach, record, games };
 }
@@ -2278,11 +2393,13 @@ async function buildCfbCoachingStaff(opts: {
 
 export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
   const id = String(teamId);
-  const [fpiByTeam, teamRes, rosterRes, scheduleRes] = await Promise.all([
+  const season = new Date().getFullYear();
+  const [fpiByTeam, teamRes, rosterRes, scheduleGames, seasonRec] = await Promise.all([
     fetchCfbFpiRanks().catch(() => new Map<number, number>()),
     fetch(`${ESPN}/teams/${id}`, { headers: { Accept: "application/json" } }),
     fetch(`${ESPN}/teams/${id}/roster`, { headers: { Accept: "application/json" } }),
-    fetch(`${ESPN}/teams/${id}/schedule`, { headers: { Accept: "application/json" } }),
+    fetchCfbTeamSeasonSchedule(id, season).catch(() => [] as CfbTeamScheduleGame[]),
+    fetchCfbTeamSeasonRecord(id, season).catch(() => null),
   ]);
   if (!teamRes.ok) throw new Error(`CFB team ${teamRes.status}`);
   const teamJson = (await teamRes.json()) as {
@@ -2349,13 +2466,8 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
   const coaches = staffPack.coaches;
   const staffSource = staffPack.staffSource;
 
-  const schedule: CfbTeamScheduleGame[] = [];
-  if (scheduleRes.ok) {
-    const schedJson = (await scheduleRes.json()) as {
-      events?: Parameters<typeof mapCfbTeamScheduleEvents>[1];
-    };
-    schedule.push(...mapCfbTeamScheduleEvents(id, schedJson.events ?? []));
-  }
+  // Prefer the season schedule (regular + bowls). Fall back empty if ESPN fails.
+  const schedule = scheduleGames;
 
   const recentBoard = await fetchCfbScoreboard().catch(() => [] as CfbScoreGame[]);
   const recent = recentBoard.filter(
@@ -2368,13 +2480,17 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
     (groupId && FBS_CONFERENCE_LABELS[groupId]) ||
     (t.standingSummary?.match(/\bin\s+(.+)$/i)?.[1] ?? null);
 
+  const espnRecord =
+    (t.record?.items ?? []).find((r) => r.type === "total")?.summary ?? null;
+
   return {
     id,
     name: t.displayName ?? "Team",
     abbrev: (t.abbreviation ?? "—").toUpperCase(),
     color: (t.color ?? "555555").replace(/^#/, ""),
     logo: t.logos?.[0]?.href ?? cfbTeamLogo(id),
-    record: (t.record?.items ?? []).find((r) => r.type === "total")?.summary ?? null,
+    // Prefer bowl-inclusive overall when ESPN has posted it.
+    record: seasonRec?.summary ?? espnRecord,
     standing: t.standingSummary ?? null,
     conference,
     fpiRank: fpiByTeam.get(Number(id)) ?? null,

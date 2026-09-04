@@ -22,7 +22,7 @@ export default function CfbTeamPage() {
   const [tab, setTab] = useState<TeamTab>("schedule");
 
   const team = useQuery({
-    queryKey: ["cfb-team-v3", teamId],
+    queryKey: ["cfb-team-v4", teamId],
     queryFn: () => fetchCfbTeamPage(teamId!),
     enabled: Boolean(teamId),
     staleTime: 120_000,
@@ -161,8 +161,10 @@ function SchedulePanel({ team }: { team: CfbTeamPage }) {
   const groups = useMemo(() => {
     const byWeek = new Map<string, CfbTeamScheduleGame[]>();
     for (const g of team.schedule) {
-      const key =
-        g.week != null ? `Week ${g.week}` : g.final ? "Final" : g.live ? "Live" : "Upcoming";
+      const key = g.bowl
+        ? g.bowlName || g.weekLabel || "Bowl"
+        : g.weekLabel ||
+          (g.week != null ? `Week ${g.week}` : g.final ? "Final" : g.live ? "Live" : "Upcoming");
       const list = byWeek.get(key) ?? [];
       list.push(g);
       byWeek.set(key, list);
@@ -294,7 +296,7 @@ function CfbWinTrendChart({
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
 
   const history = useQuery({
-    queryKey: ["cfb-team-season-history", teamId, selectedSeason],
+    queryKey: ["cfb-team-season-history-v2", teamId, selectedSeason],
     queryFn: () => fetchCfbTeamSeasonHistory(teamId, selectedSeason!),
     enabled: selectedSeason != null,
     staleTime: 10 * 60_000,
@@ -310,7 +312,7 @@ function CfbWinTrendChart({
       <div className="border-b border-white/[0.06] px-4 py-3">
         <h3 className="text-[15px] font-semibold text-white">10-Year Win Trend</h3>
         <p className="text-chalk-dim mt-0.5 text-[11px] uppercase tracking-[0.14em]">
-          Tap a year for games and the coach
+          Includes bowls · tap a year for games and the coach
         </p>
       </div>
       <ul className="flex flex-col gap-2.5 px-4 py-4">
