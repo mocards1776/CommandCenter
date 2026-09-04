@@ -24,6 +24,7 @@ export function cfbHeadshot(playerId: string | number, size = 350): string {
 /** Programs surfaced in RUWT interest + hot seat (FBS focus). */
 export const CFB_FOCUS_TEAMS: { id: number; name: string; abbrev: string }[] = [
   { id: 142, name: "Missouri", abbrev: "MIZ" },
+  { id: 2623, name: "Missouri State", abbrev: "MOST" },
   { id: 333, name: "Alabama", abbrev: "ALA" },
   { id: 2, name: "Auburn", abbrev: "AUB" },
   { id: 8, name: "Arkansas", abbrev: "ARK" },
@@ -888,10 +889,17 @@ function mapCfbEvent(
   };
 }
 
+/** Full FBS board — ESPN's default scoreboard is a featured/Top-25 slice. */
+function cfbScoreboardUrl(dates?: string): string {
+  const params = new URLSearchParams({ groups: "80", limit: "300" });
+  if (dates) params.set("dates", dates);
+  return `${ESPN}/scoreboard?${params.toString()}`;
+}
+
 export async function fetchCfbScoreboard(dates?: string): Promise<CfbScoreGame[]> {
   const [fpiByTeam, boardRes] = await Promise.all([
     fetchCfbFpiRanks().catch(() => new Map<number, number>()),
-    fetch(dates ? `${ESPN}/scoreboard?dates=${dates}` : `${ESPN}/scoreboard`, {
+    fetch(cfbScoreboardUrl(dates), {
       headers: { Accept: "application/json" },
     }),
   ]);
@@ -1190,6 +1198,16 @@ export type CfbTeamWinTrendPoint = {
   losses: number;
 };
 
+export type CfbTeamSeasonHistory = {
+  season: number;
+  coach: {
+    id: string | null;
+    name: string;
+  } | null;
+  record: string | null;
+  games: CfbTeamScheduleGame[];
+};
+
 export type CfbTeamScheduleGame = {
   id: string;
   week: number | null;
@@ -1314,6 +1332,17 @@ function parseEspnScore(raw: unknown): number | null {
   if (typeof raw === "number" && Number.isFinite(raw)) return raw;
   if (typeof raw === "string" && raw.trim() !== "" && Number.isFinite(Number(raw))) {
     return Number(raw);
+  }
+  if (raw && typeof raw === "object") {
+    const obj = raw as { value?: unknown; displayValue?: unknown };
+    if (typeof obj.value === "number" && Number.isFinite(obj.value)) return obj.value;
+    if (
+      typeof obj.displayValue === "string" &&
+      obj.displayValue.trim() !== "" &&
+      Number.isFinite(Number(obj.displayValue))
+    ) {
+      return Number(obj.displayValue);
+    }
   }
   return null;
 }
@@ -1637,7 +1666,8 @@ function parseWikiInfoboxCoaches(wt: string): { title: string; name: string }[] 
 /**
  * Assistant / coordinator names from the team's Wikipedia season page.
  * Prefers the roster Footer staff list or Coaching staff table; falls back to infobox.
- * Tries current + prior season and keeps the richest staff list.
+ * Uses the current season page when it has staff — do not prefer a longer prior-year
+ * list (that kept departed coordinators on the board).
  */
 async function fetchWikiCoachingStaff(
   teamDisplayName: string,
@@ -1647,7 +1677,6 @@ async function fetchWikiCoachingStaff(
     wikiFootballSeasonTitle(teamDisplayName, year),
     wikiFootballSeasonTitle(teamDisplayName, year - 1),
   ];
-  let best: { title: string; name: string; source: string }[] = [];
 
   for (const page of titles) {
     try {
@@ -1674,13 +1703,12 @@ async function fetchWikiCoachingStaff(
       if (rows.length < 2) rows = parseWikiCoachingStaffTable(wt);
       if (rows.length < 2) rows = parseWikiInfoboxCoaches(wt);
       if (!rows.length) continue;
-      const mapped = rows.map((r) => ({ ...r, source }));
-      if (mapped.length > best.length) best = mapped;
+      return rows.map((r) => ({ ...r, source }));
     } catch {
       /* try next year */
     }
   }
-  return best;
+  return [];
 }
 
 function parseWikiInfoboxCareerPath(wikitext: string): CfbCoachCareerStop[] {
@@ -1900,6 +1928,25 @@ function formatCoachDob(iso: string | null | undefined): string | null {
   });
 }
 
+/** Age in whole years from an ISO date or a display string like "April 12, 1983". */
+function ageFromCoachBirth(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const iso = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
+  let born: Date | null = null;
+  if (iso) {
+    born = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
+  } else {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) born = parsed;
+  }
+  if (!born || Number.isNaN(born.getTime())) return null;
+  const now = new Date();
+  let age = now.getUTCFullYear() - born.getUTCFullYear();
+  const m = now.getUTCMonth() - born.getUTCMonth();
+  if (m < 0 || (m === 0 && now.getUTCDate() < born.getUTCDate())) age -= 1;
+  return age >= 0 && age < 120 ? age : null;
+}
+
 async function searchEspnCoachHeadshot(
   name: string,
 ): Promise<{ id: string | null; headshot: string | null }> {
@@ -1938,10 +1985,11 @@ async function searchEspnCoachHeadshot(
 
 export async function fetchCfbTeamWinTrend(
   teamId: string | number,
-  seasons = 5,
+  seasons = 10,
 ): Promise<CfbTeamWinTrendPoint[]> {
   const id = String(teamId);
-  const end = new Date().getFullYear() - 1;
+  // Include the current season (partial records) so the board stays current.
+  const end = new Date().getFullYear();
   const years = Array.from({ length: seasons }, (_, i) => end - seasons + 1 + i);
   const points = await Promise.all(
     years.map(async (season) => {
@@ -1976,6 +2024,161 @@ export async function fetchCfbTeamWinTrend(
     }),
   );
   return points.filter((p): p is CfbTeamWinTrendPoint => Boolean(p));
+}
+
+function mapCfbTeamScheduleEvents(
+  teamId: string,
+  events: {
+    id?: string;
+    date?: string;
+    name?: string;
+    shortName?: string;
+    week?: { number?: number } | number;
+    competitions?: {
+      status?: {
+        type?: {
+          state?: string;
+          completed?: boolean;
+          description?: string;
+          detail?: string;
+          shortDetail?: string;
+        };
+      };
+      competitors?: {
+        homeAway?: string;
+        score?: unknown;
+        winner?: boolean;
+        curatedRank?: { current?: number };
+        team?: {
+          id?: string;
+          displayName?: string;
+          abbreviation?: string;
+          logos?: { href?: string }[];
+        };
+      }[];
+    }[];
+  }[],
+): CfbTeamScheduleGame[] {
+  const id = String(teamId);
+  const schedule: CfbTeamScheduleGame[] = [];
+  for (const ev of events) {
+    if (!ev.id) continue;
+    const comp = ev.competitions?.[0];
+    const st = comp?.status?.type;
+    const live = st?.state === "in";
+    const final = Boolean(st?.completed) || st?.state === "post";
+    const self = (comp?.competitors ?? []).find((c) => String(c.team?.id) === id);
+    const opp = (comp?.competitors ?? []).find((c) => String(c.team?.id) !== id);
+    if (!self || !opp?.team) continue;
+    const weekRaw = ev.week;
+    const week =
+      typeof weekRaw === "number"
+        ? weekRaw
+        : typeof weekRaw?.number === "number"
+          ? weekRaw.number
+          : null;
+    const iso = ev.date ?? null;
+    const whenDate = iso ? new Date(iso) : null;
+    const dateLabel =
+      whenDate && !Number.isNaN(whenDate.getTime())
+        ? whenDate.toLocaleDateString("en-US", {
+            weekday: "short",
+            month: "numeric",
+            day: "numeric",
+            timeZone: "America/Chicago",
+          })
+        : null;
+    const teamScore = parseEspnScore(self.score);
+    const oppScore = parseEspnScore(opp.score);
+    let won: boolean | null = null;
+    if (final && teamScore != null && oppScore != null) {
+      won = teamScore > oppScore ? true : teamScore < oppScore ? false : null;
+    } else if (typeof self.winner === "boolean") {
+      won = self.winner;
+    }
+    schedule.push({
+      id: String(ev.id),
+      week,
+      date: iso,
+      dateLabel,
+      name: ev.name ?? ev.shortName ?? "Game",
+      shortName: ev.shortName ?? ev.name ?? "Game",
+      status: st?.description ?? st?.detail ?? "Scheduled",
+      shortDetail: st?.shortDetail ?? st?.detail ?? null,
+      live,
+      final,
+      home: self.homeAway === "home",
+      teamScore,
+      oppScore,
+      oppId: opp.team.id ? String(opp.team.id) : null,
+      oppName: opp.team.displayName ?? "Opponent",
+      oppAbbrev: (opp.team.abbreviation ?? "—").toUpperCase(),
+      oppLogo: opp.team.logos?.[0]?.href ?? (opp.team.id ? cfbTeamLogo(opp.team.id) : null),
+      oppRank: cfbPollRank(opp.curatedRank?.current),
+      won,
+    });
+  }
+  return schedule;
+}
+
+/** Season schedule + head coach for a team's year (used by clickable win-trend history). */
+export async function fetchCfbTeamSeasonHistory(
+  teamId: string | number,
+  season: number,
+): Promise<CfbTeamSeasonHistory> {
+  const id = String(teamId);
+  const [scheduleRes, coachPack, recRes] = await Promise.all([
+    fetch(`${ESPN}/teams/${id}/schedule?seasontype=2&season=${season}`, {
+      headers: { Accept: "application/json" },
+    }),
+    fetchTeamCoachAndRecord(Number(id), season).catch(() => null),
+    fetch(`${CORE}/seasons/${season}/types/2/teams/${id}/records/0?lang=en&region=us`, {
+      headers: { Accept: "application/json" },
+    }).catch(() => null),
+  ]);
+
+  let record: string | null = null;
+  if (recRes?.ok) {
+    try {
+      const raw = (await recRes.json()) as { summary?: string };
+      record = raw.summary ?? null;
+    } catch {
+      /* optional */
+    }
+  }
+
+  let games: CfbTeamScheduleGame[] = [];
+  if (scheduleRes.ok) {
+    const schedJson = (await scheduleRes.json()) as {
+      events?: Parameters<typeof mapCfbTeamScheduleEvents>[1];
+    };
+    games = mapCfbTeamScheduleEvents(id, schedJson.events ?? []);
+  }
+
+  let coach: CfbTeamSeasonHistory["coach"] = coachPack
+    ? { id: coachPack.coachId, name: coachPack.coachName }
+    : null;
+  if (!coach) {
+    const list = await fetchCoreJson<{ items?: { $ref?: string }[] }>(
+      `${CORE}/seasons/${season}/teams/${id}/coaches?lang=en&region=us`,
+    );
+    const ref = list?.items?.[0]?.$ref;
+    if (ref) {
+      const person = await fetchCoreJson<{
+        id?: string;
+        firstName?: string;
+        lastName?: string;
+      }>(ref);
+      const name = [person?.firstName, person?.lastName].filter(Boolean).join(" ").trim();
+      if (name) {
+        coach = { id: person?.id ? String(person.id) : null, name };
+      }
+    }
+  }
+
+  if (!record && coachPack?.recordSummary) record = coachPack.recordSummary;
+
+  return { season, coach, record, games };
 }
 
 function staffTitleRank(title: string): number {
@@ -2141,7 +2344,7 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
   const teamName = t.displayName ?? "Team";
   const [staffPack, winTrend] = await Promise.all([
     buildCfbCoachingStaff({ teamId: id, teamName, rosterCoaches }),
-    fetchCfbTeamWinTrend(id, 5).catch(() => [] as CfbTeamWinTrendPoint[]),
+    fetchCfbTeamWinTrend(id, 10).catch(() => [] as CfbTeamWinTrendPoint[]),
   ]);
   const coaches = staffPack.coaches;
   const staffSource = staffPack.staffSource;
@@ -2149,94 +2352,9 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
   const schedule: CfbTeamScheduleGame[] = [];
   if (scheduleRes.ok) {
     const schedJson = (await scheduleRes.json()) as {
-      events?: {
-        id?: string;
-        date?: string;
-        name?: string;
-        shortName?: string;
-        week?: { number?: number } | number;
-        competitions?: {
-          status?: {
-            type?: {
-              state?: string;
-              completed?: boolean;
-              description?: string;
-              detail?: string;
-              shortDetail?: string;
-            };
-          };
-          competitors?: {
-            homeAway?: string;
-            score?: unknown;
-            winner?: boolean;
-            curatedRank?: { current?: number };
-            team?: {
-              id?: string;
-              displayName?: string;
-              abbreviation?: string;
-              logos?: { href?: string }[];
-            };
-          }[];
-        }[];
-      }[];
+      events?: Parameters<typeof mapCfbTeamScheduleEvents>[1];
     };
-    for (const ev of schedJson.events ?? []) {
-      if (!ev.id) continue;
-      const comp = ev.competitions?.[0];
-      const st = comp?.status?.type;
-      const live = st?.state === "in";
-      const final = Boolean(st?.completed) || st?.state === "post";
-      const self = (comp?.competitors ?? []).find((c) => String(c.team?.id) === id);
-      const opp = (comp?.competitors ?? []).find((c) => String(c.team?.id) !== id);
-      if (!self || !opp?.team) continue;
-      const weekRaw = ev.week;
-      const week =
-        typeof weekRaw === "number"
-          ? weekRaw
-          : typeof weekRaw?.number === "number"
-            ? weekRaw.number
-            : null;
-      const iso = ev.date ?? null;
-      const whenDate = iso ? new Date(iso) : null;
-      const dateLabel =
-        whenDate && !Number.isNaN(whenDate.getTime())
-          ? whenDate.toLocaleDateString("en-US", {
-              weekday: "short",
-              month: "numeric",
-              day: "numeric",
-              timeZone: "America/Chicago",
-            })
-          : null;
-      const teamScore = parseEspnScore(self.score);
-      const oppScore = parseEspnScore(opp.score);
-      let won: boolean | null = null;
-      if (final && teamScore != null && oppScore != null) {
-        won = teamScore > oppScore ? true : teamScore < oppScore ? false : null;
-      } else if (typeof self.winner === "boolean") {
-        won = self.winner;
-      }
-      schedule.push({
-        id: String(ev.id),
-        week,
-        date: iso,
-        dateLabel,
-        name: ev.name ?? ev.shortName ?? "Game",
-        shortName: ev.shortName ?? ev.name ?? "Game",
-        status: st?.description ?? st?.detail ?? "Scheduled",
-        shortDetail: st?.shortDetail ?? st?.detail ?? null,
-        live,
-        final,
-        home: self.homeAway === "home",
-        teamScore,
-        oppScore,
-        oppId: opp.team.id ? String(opp.team.id) : null,
-        oppName: opp.team.displayName ?? "Opponent",
-        oppAbbrev: (opp.team.abbreviation ?? "—").toUpperCase(),
-        oppLogo: opp.team.logos?.[0]?.href ?? (opp.team.id ? cfbTeamLogo(opp.team.id) : null),
-        oppRank: cfbPollRank(opp.curatedRank?.current),
-        won,
-      });
-    }
+    schedule.push(...mapCfbTeamScheduleEvents(id, schedJson.events ?? []));
   }
 
   const recentBoard = await fetchCfbScoreboard().catch(() => [] as CfbScoreGame[]);
@@ -3020,6 +3138,9 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
     wikiCard?.birthDate || formatCoachDob(corePerson?.dateOfBirth ?? null);
   const hometown =
     wikiCard?.birthPlace || formatCoachBirthPlace(corePerson?.birthPlace);
+  const age =
+    ageFromCoachBirth(corePerson?.dateOfBirth ?? null) ?? ageFromCoachBirth(born);
+  if (age != null) bioFacts.push({ label: "Age", value: String(age) });
   if (born) bioFacts.push({ label: "Born", value: born });
   if (hometown) bioFacts.push({ label: "Hometown", value: hometown });
 

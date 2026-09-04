@@ -223,6 +223,16 @@ export const DEFAULT_FAVORITES: SportsFavorite[] = [
     color: "f1b82d",
   },
   {
+    key: "cfb-missouri-state",
+    name: "Missouri State Football",
+    shortName: "MOST FB",
+    sport: "Football",
+    league: "NCAA",
+    espnPath: "football/college-football/teams/2623",
+    kind: "team",
+    color: "5e0009",
+  },
+  {
     key: "cbb-mizzou",
     name: "Mizzou Basketball",
     shortName: "Mizzou BB",
@@ -231,6 +241,16 @@ export const DEFAULT_FAVORITES: SportsFavorite[] = [
     espnPath: "basketball/mens-college-basketball/teams/142",
     kind: "team",
     color: "f1b82d",
+  },
+  {
+    key: "cbb-missouri-state",
+    name: "Missouri State Basketball",
+    shortName: "MOST BB",
+    sport: "Basketball",
+    league: "NCAA",
+    espnPath: "basketball/mens-college-basketball/teams/2623",
+    kind: "team",
+    color: "5e0009",
   },
   {
     key: "nfl-det",

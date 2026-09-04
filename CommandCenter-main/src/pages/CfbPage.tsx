@@ -30,7 +30,7 @@ const VIEW_CARDS: {
     id: "scores",
     eyebrow: "This week",
     title: ["Game", "day"],
-    blurb: "Live scoreboard with RUWT heat on every matchup.",
+    blurb: "Full FBS scoreboard with RUWT heat on every matchup.",
     seed: 11,
   },
   {
@@ -72,7 +72,7 @@ export default function CfbPage() {
   }, []);
 
   const scoreboard = useQuery({
-    queryKey: ["cfb-scoreboard"],
+    queryKey: ["cfb-scoreboard-fbs"],
     queryFn: () => fetchCfbScoreboard(),
     refetchInterval: view === "scores" ? 30_000 : false,
     staleTime: 15_000,

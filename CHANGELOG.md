@@ -2,6 +2,15 @@
 
 ---
 
+## CFB: all-games scoreboard, fresh staff, 10-year history — September 4, 2026
+
+- **Scoreboard:** College football board pulls the full FBS slate (`groups=80`), not ESPN’s featured/Top-25 slice.
+- **Coaches:** Staff lists prefer the current Wikipedia season page so departed coordinators (e.g. last year’s Mizzou assistants) no longer stick around; coach pages show a live **Age** from birth date.
+- **Favorites:** Missouri State Football and Basketball join the default sports board next to Mizzou.
+- **Team history:** Win trend expands to 10 seasons; tap a year for that season’s games and head coach.
+
+---
+
 ## Dispatch: stop MoScout (Squarespace) article image glitches — September 3, 2026
 
 - Missouri Scout (and other Squarespace) extracts were keeping fluid-block image styles (`width/height: 100%`, `object-fit: cover`). Without the parent frame those images collapse, stretch, then jump — articles looked like they were glitching while scrolling.
