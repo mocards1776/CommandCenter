@@ -6,6 +6,7 @@ import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import {
   fetchCfbTeamPage,
+  fetchCfbTeamSeasonHistory,
   type CfbTeamPage,
   type CfbTeamScheduleGame,
   type CfbTeamWinTrendPoint,
@@ -21,7 +22,7 @@ export default function CfbTeamPage() {
   const [tab, setTab] = useState<TeamTab>("schedule");
 
   const team = useQuery({
-    queryKey: ["cfb-team-v2", teamId],
+    queryKey: ["cfb-team-v3", teamId],
     queryFn: () => fetchCfbTeamPage(teamId!),
     enabled: Boolean(teamId),
     staleTime: 120_000,
@@ -101,7 +102,7 @@ export default function CfbTeamPage() {
           <div className="space-y-4 px-4 py-4 md:px-0 md:py-0">
             {tab === "schedule" && (
               <div className="space-y-4">
-                <CfbWinTrendChart points={t.winTrend} accent={accent} />
+                <CfbWinTrendChart teamId={t.id} points={t.winTrend} accent={accent} />
                 <SchedulePanel team={t} />
               </div>
             )}
@@ -282,44 +283,194 @@ function ScheduleRow({
 }
 
 function CfbWinTrendChart({
+  teamId,
   points,
   accent,
 }: {
+  teamId: string;
   points: CfbTeamWinTrendPoint[];
   accent: string;
 }) {
+  const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
+
+  const history = useQuery({
+    queryKey: ["cfb-team-season-history", teamId, selectedSeason],
+    queryFn: () => fetchCfbTeamSeasonHistory(teamId, selectedSeason!),
+    enabled: selectedSeason != null,
+    staleTime: 10 * 60_000,
+  });
+
   if (!points.length) return null;
   const maxWins = Math.max(12, ...points.map((r) => r.wins));
+  // Newest season first for scanning.
+  const ordered = [...points].sort((a, b) => b.season - a.season);
 
   return (
     <section className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#12151c]">
       <div className="border-b border-white/[0.06] px-4 py-3">
-        <h3 className="text-[15px] font-semibold text-white">5-Year Win Trend</h3>
+        <h3 className="text-[15px] font-semibold text-white">10-Year Win Trend</h3>
         <p className="text-chalk-dim mt-0.5 text-[11px] uppercase tracking-[0.14em]">
-          Regular season wins
+          Tap a year for games and the coach
         </p>
       </div>
       <ul className="flex flex-col gap-2.5 px-4 py-4">
-        {points.map((r) => (
-          <li key={r.season} className="grid grid-cols-[3rem_1fr_auto] items-center gap-2">
-            <span className="numeral text-chalk text-[12px]">{r.season}</span>
-            <div className="h-3.5 overflow-hidden rounded-sm bg-white/[0.06]">
-              <div
-                className="h-full rounded-sm transition-[width] duration-500"
-                style={{
-                  width: `${Math.max(4, (r.wins / maxWins) * 100)}%`,
-                  background: accent,
-                }}
-                title={`${r.wins}-${r.losses}`}
-              />
-            </div>
-            <span className="numeral min-w-[3.5rem] text-right text-[13px] font-semibold text-white">
-              {r.wins}-{r.losses}
-            </span>
-          </li>
-        ))}
+        {ordered.map((r) => {
+          const active = selectedSeason === r.season;
+          return (
+            <li key={r.season}>
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedSeason((prev) => (prev === r.season ? null : r.season))
+                }
+                className={cn(
+                  "grid w-full grid-cols-[3rem_1fr_auto] items-center gap-2 rounded-md px-1.5 py-1 text-left transition",
+                  active ? "bg-white/[0.06] ring-1 ring-white/15" : "hover:bg-white/[0.03]",
+                )}
+                aria-pressed={active}
+              >
+                <span
+                  className={cn(
+                    "numeral text-[12px] font-semibold underline-offset-2",
+                    active ? "text-cream underline" : "text-chalk hover:text-cream",
+                  )}
+                >
+                  {r.season}
+                </span>
+                <div className="h-3.5 overflow-hidden rounded-sm bg-white/[0.06]">
+                  <div
+                    className="h-full rounded-sm transition-[width] duration-500"
+                    style={{
+                      width: `${Math.max(4, (r.wins / maxWins) * 100)}%`,
+                      background: accent,
+                    }}
+                    title={`${r.wins}-${r.losses}`}
+                  />
+                </div>
+                <span className="numeral min-w-[3.5rem] text-right text-[13px] font-semibold text-white">
+                  {r.wins}-{r.losses}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
+
+      {selectedSeason != null && (
+        <div className="border-t border-white/[0.06] px-4 py-4">
+          {history.isPending ? (
+            <p className="text-chalk flex items-center gap-2 text-[13px]">
+              <Loader2 size={14} className="animate-spin" /> Loading {selectedSeason}…
+            </p>
+          ) : history.isError || !history.data ? (
+            <p className="text-alert text-[13px]">
+              Couldn’t load the {selectedSeason} season.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                    {selectedSeason} season
+                  </p>
+                  <p className="text-cream mt-1 text-[14px] font-semibold">
+                    {history.data.coach ? (
+                      history.data.coach.id ? (
+                        <Link
+                          to={`/sports/cfb/coach/${history.data.coach.id}`}
+                          className="hover:underline"
+                        >
+                          HC {history.data.coach.name}
+                        </Link>
+                      ) : (
+                        <>HC {history.data.coach.name}</>
+                      )
+                    ) : (
+                      "Head coach unavailable"
+                    )}
+                  </p>
+                </div>
+                {history.data.record ? (
+                  <p className="numeral text-cream text-[18px] font-semibold">
+                    {history.data.record}
+                  </p>
+                ) : null}
+              </div>
+
+              {history.data.games.length === 0 ? (
+                <p className="text-chalk-dim text-[13px]">No games for this season.</p>
+              ) : (
+                <ul className="divide-y divide-white/[0.05] overflow-hidden rounded-lg border border-white/[0.06]">
+                  {history.data.games.map((g) => (
+                    <SeasonHistoryRow key={g.id} game={g} />
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </section>
+  );
+}
+
+function SeasonHistoryRow({ game }: { game: CfbTeamScheduleGame }) {
+  const resultLabel = game.final
+    ? game.won === true
+      ? "W"
+      : game.won === false
+        ? "L"
+        : "T"
+    : game.live
+      ? game.shortDetail || "Live"
+      : game.shortDetail || game.dateLabel || "TBD";
+
+  return (
+    <li>
+      <Link
+        to={`/sports/cfb/game/${game.id}`}
+        className="hover:bg-white/[0.03] grid grid-cols-[1fr_auto] items-center gap-3 px-3 py-2.5 transition"
+      >
+        <div className="min-w-0">
+          <p className="text-cream truncate text-[13px] font-medium">
+            <span className="text-chalk-dim mr-1.5 text-[10px] font-medium uppercase tracking-[0.12em]">
+              {game.home ? "vs" : "@"}
+            </span>
+            {game.oppName}
+          </p>
+          <p className="text-chalk-dim text-[11px]">
+            {game.date ? formatSportsDate(game.date) : game.dateLabel || "Date TBD"}
+          </p>
+        </div>
+        <div className="text-right">
+          {game.live || game.final ? (
+            <p className="font-display text-cream text-[18px] tabular-nums leading-none">
+              <span className={cn(game.won === false && game.final && "text-white/45")}>
+                {game.teamScore ?? "—"}
+              </span>
+              <span className="mx-1 text-[12px] text-white/30">-</span>
+              <span className={cn(game.won === true && game.final && "text-white/45")}>
+                {game.oppScore ?? "—"}
+              </span>
+            </p>
+          ) : (
+            <p className="text-cream text-[12px] font-medium">{game.shortDetail || "TBD"}</p>
+          )}
+          <p
+            className={cn(
+              "mt-1 text-[10px] font-semibold uppercase tracking-[0.12em]",
+              game.final && game.won === true
+                ? "text-turf"
+                : game.final && game.won === false
+                  ? "text-alert"
+                  : "text-chalk",
+            )}
+          >
+            {resultLabel}
+          </p>
+        </div>
+      </Link>
+    </li>
   );
 }
 
