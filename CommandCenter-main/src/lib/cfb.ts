@@ -1185,12 +1185,16 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
     ...newsArticles,
   ].filter((a): a is NonNullable<typeof a> => Boolean(a?.headline));
 
+  // `await` above resets TS narrowing on `let base`; capture teams for the closure.
+  if (!base) throw new Error("CFB game not found");
+  const awayTeam = base.away;
+  const homeTeam = base.home;
   const articleRaw =
     candidates.find((a) =>
       cfbArticleRelevantToGame(
         `${a.headline ?? ""} ${a.description ?? ""}`,
-        base.away,
-        base.home,
+        awayTeam,
+        homeTeam,
       ),
     ) ?? null;
 
