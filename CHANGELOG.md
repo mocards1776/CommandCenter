@@ -2,6 +2,14 @@
 
 ---
 
+## CFB: stop wrong historical head coaches — September 4, 2026
+
+- Season history no longer trusts ESPN’s past-year coaches feed (it was returning today’s HC for every season — e.g. Drinkwitz on 2017 Mizzou).
+- Past seasons resolve the head coach from that year’s Wikipedia page only; ESPN is used only for the current season as a fallback.
+- Wikipedia title lookup tries a few name shapes so more programs resolve cleanly.
+
+---
+
 ## CFB: bowl games in team records + correct season coaches — September 4, 2026
 
 - **Records:** Team win trends and season W–L use ESPN’s overall mark that **includes bowls** (not regular-season-only).
