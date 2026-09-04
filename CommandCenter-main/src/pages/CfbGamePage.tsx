@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
+import NflFieldMap from "@/components/sports/NflFieldMap";
 import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel from "@/components/sports/HighlightReel";
@@ -38,11 +39,19 @@ export function CfbGameDetailView({
     queryKey: ["cfb-game-v2", eventId],
     queryFn: () => fetchCfbGameDetail(eventId),
     enabled: Boolean(eventId),
-    refetchInterval: (q) => (q.state.data?.live ? 15_000 : false),
-    staleTime: 10_000,
+    refetchInterval: (q) => (q.state.data?.live ? 12_000 : false),
+    staleTime: 8_000,
   });
 
   const g = detail.data;
+
+  const homeYardLine = useMemo(() => {
+    if (!g) return null;
+    if (g.situation?.yardLine != null) return g.situation.yardLine;
+    const play = g.recentPlays?.[0];
+    if (play?.yardLine != null) return play.yardLine;
+    return null;
+  }, [g]);
 
   const backups = useQuery({
     queryKey: [
@@ -268,6 +277,43 @@ export function CfbGameDetailView({
           </a>
         </div>
       </header>
+
+      {(g.live || g.situation || homeYardLine != null) && (
+        <NflFieldMap
+          game={g}
+          homeYardLine={homeYardLine}
+          possessionTeamId={g.situation?.possessionTeamId ?? null}
+          downDistanceText={g.situation?.downDistanceText}
+        />
+      )}
+
+      {g.recentPlays.length > 0 && (
+        <section className="bg-panel rounded-xl border border-white/[0.08]">
+          <div className="border-b border-white/[0.06] px-4 py-2.5">
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+              Recent plays
+            </h2>
+          </div>
+          <ul className="max-h-[28rem] divide-y divide-white/[0.05] overflow-y-auto">
+            {g.recentPlays.slice(0, 12).map((p) => (
+              <li key={p.id} className={cn("px-4 py-2.5", p.scoringPlay && "bg-accent/10")}>
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  {p.period != null && (
+                    <span className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+                      Q{p.period}
+                      {p.clock ? ` ${p.clock}` : ""}
+                    </span>
+                  )}
+                  {p.shortDownDistanceText && (
+                    <span className="text-[10px] text-emerald-200/70">{p.shortDownDistanceText}</span>
+                  )}
+                </div>
+                <p className="text-cream mt-0.5 text-[13px] leading-snug">{p.text}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {primaryHighlight ? (
         <EspnVideoEmbed clip={primaryHighlight} eyebrow={primaryEyebrow} />
@@ -618,8 +664,8 @@ export default function CfbGamePage() {
     queryKey: ["cfb-game-v2", eventId],
     queryFn: () => fetchCfbGameDetail(eventId!),
     enabled: Boolean(eventId),
-    refetchInterval: (q) => (q.state.data?.live ? 15_000 : false),
-    staleTime: 10_000,
+    refetchInterval: (q) => (q.state.data?.live ? 12_000 : false),
+    staleTime: 8_000,
   });
 
   const refresh = () => {

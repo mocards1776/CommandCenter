@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCw, Share } from "lucide-react";
+import { Loader2, RefreshCw, Share, Users } from "lucide-react";
 import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
 import CfbRankLabel from "@/components/sports/CfbRankLabel";
@@ -194,28 +194,32 @@ export default function CfbPage() {
               </p>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <a
               href="/sports.html"
-              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
+              title="Home Screen"
+              aria-label="Home Screen"
+              className="text-chalk hover:text-cream inline-flex h-9 w-9 items-center justify-center rounded-sm border border-white/10 transition hover:border-accent/40"
             >
-              <Share size={13} />
-              Home Screen
+              <Share size={14} />
             </a>
             <button
               type="button"
               onClick={refresh}
               disabled={refreshing}
-              className="text-chalk hover:text-cream flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40 disabled:opacity-40"
+              title="Refresh"
+              aria-label="Refresh"
+              className="text-chalk hover:text-cream inline-flex h-9 w-9 items-center justify-center rounded-sm border border-white/10 transition hover:border-accent/40 disabled:opacity-40"
             >
-              <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />
-              Refresh
+              <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
             </button>
             <Link
               to="/sports?solo=1"
-              className="from-accent-deep to-accent-dark text-cream rounded-sm bg-gradient-to-b px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
+              title="My teams"
+              aria-label="My teams"
+              className="from-accent-deep to-accent-dark text-cream inline-flex h-9 w-9 items-center justify-center rounded-sm bg-gradient-to-b"
             >
-              My teams
+              <Users size={14} />
             </Link>
           </div>
         </div>

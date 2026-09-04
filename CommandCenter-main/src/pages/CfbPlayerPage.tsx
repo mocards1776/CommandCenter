@@ -13,7 +13,7 @@ export default function CfbPlayerPage() {
   const [seasonIdx, setSeasonIdx] = useState(0);
 
   const profile = useQuery({
-    queryKey: ["cfb-player", playerId],
+    queryKey: ["cfb-player-v2", playerId],
     queryFn: () => fetchCfbPlayerProfile(playerId!),
     enabled: Boolean(playerId),
     staleTime: 120_000,
@@ -61,7 +61,9 @@ export default function CfbPlayerPage() {
             <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
               <div className="border-b border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
                 <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
-                  Season key stats
+                  {splits[0]?.season && /^\d{4}$/.test(splits[0].season)
+                    ? `${splits[0].season} key stats`
+                    : "Season key stats"}
                 </h2>
               </div>
               <div className="grid grid-cols-2 divide-x divide-white/[0.06] sm:grid-cols-4">

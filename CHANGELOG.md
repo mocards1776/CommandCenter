@@ -2,6 +2,14 @@
 
 ---
 
+## CFB: 2026 stats, live field + plays, compact hub — September 4, 2026
+
+- **Player pages:** Season key stats prefer the current CFB season (2026). When ESPN only has prior-year splits yet, we show a 2026 row with dashes instead of defaulting to 2025.
+- **Game pages:** Live/detail views add a field map and the last dozen plays from ESPN drives; live games auto-refresh every 12s and pull situation from the scoreboard when the summary omits it.
+- **CFB hub:** Home Screen / Refresh / My teams are compact icon buttons in the header.
+
+---
+
 ## CFB: stop wrong historical head coaches — September 4, 2026
 
 - Season history no longer trusts ESPN’s past-year coaches feed (it was returning today’s HC for every season — e.g. Drinkwitz on 2017 Mizzou).
