@@ -2,6 +2,14 @@
 
 ---
 
+## CFB: live games never show pregame empty state — September 4, 2026
+
+- Live/final CFB game pages no longer show the “preview/boxscore not published yet” kickoff message.
+- When ESPN withholds box score / play-by-play (`boxscoreAvailable: false`), we still show score-by-quarter and a clear live-feed note; highlights stay visible without duplicate caption text.
+- Linescores always prefer the summary header values (string `displayValue` included).
+
+---
+
 ## CFB: cleaner game pages + player favorites / history — September 4, 2026
 
 - **Game pages:** Quarter-by-quarter linescore under the scoreboard; play-by-play text stripped of jersey numbers, formation boilerplate, and kick metadata; field + recent-plays layout tightened for readability.

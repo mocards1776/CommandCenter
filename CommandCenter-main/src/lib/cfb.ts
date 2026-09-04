@@ -354,10 +354,17 @@ function mapEspnGameVideo(raw: EspnVideoRaw): CfbGameVideo | null {
   const headline = (raw.headline || raw.title || "").trim();
   if (!id || !headline) return null;
   const mp4 = espnVideoMp4(raw);
+  const descriptionRaw = (raw.description || raw.caption || "").trim() || null;
+  const description =
+    descriptionRaw &&
+    descriptionRaw.replace(/\s+/g, " ").toLowerCase() !==
+      headline.replace(/\s+/g, " ").toLowerCase()
+      ? descriptionRaw
+      : null;
   return {
     id,
     headline,
-    description: (raw.description || raw.caption || "").trim() || null,
+    description,
     thumb:
       raw.posterImages?.full?.href ??
       raw.posterImages?.default?.href ??
@@ -831,8 +838,11 @@ function sideFromCompetitor(
   const teamId = Number(team.id) || 0;
   const linescores = (c.linescores ?? [])
     .map((ls) => {
-      if (typeof ls.value === "number" && Number.isFinite(ls.value)) return ls.value;
-      const n = Number(ls.displayValue);
+      if (typeof ls === "number" && Number.isFinite(ls)) return ls;
+      if (typeof ls?.value === "number" && Number.isFinite(ls.value)) return ls.value;
+      // Summary header usually only has displayValue (string), not value.
+      const raw = ls?.displayValue ?? null;
+      const n = Number(raw);
       return Number.isFinite(n) ? n : null;
     })
     .filter((n): n is number => n != null);
@@ -1216,6 +1226,18 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
         ...base,
         broadcasts: base.broadcasts.length ? base.broadcasts : fromBoard.broadcasts,
         situation: base.situation ?? fromBoard.situation,
+        away: {
+          ...base.away,
+          linescores: base.away.linescores.length
+            ? base.away.linescores
+            : fromBoard.away.linescores,
+        },
+        home: {
+          ...base.home,
+          linescores: base.home.linescores.length
+            ? base.home.linescores
+            : fromBoard.home.linescores,
+        },
       };
     }
   }
@@ -1356,11 +1378,12 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
         return Number.isFinite(n) ? n : null;
       })
       .filter((n): n is number => n != null);
-  if (!base.away.linescores.length || !base.home.linescores.length) {
+  {
     const awayC = headerComps.find((c) => (c as { homeAway?: string }).homeAway === "away");
     const homeC = headerComps.find((c) => (c as { homeAway?: string }).homeAway === "home");
     const awayLs = readLs(awayC as { linescores?: { value?: number; displayValue?: string }[] });
     const homeLs = readLs(homeC as { linescores?: { value?: number; displayValue?: string }[] });
+    // Always prefer header linescores when ESPN sends them (scoreboard can lag).
     if (awayLs.length || homeLs.length) {
       base = {
         ...base,
