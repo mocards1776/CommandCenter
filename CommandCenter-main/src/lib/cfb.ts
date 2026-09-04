@@ -230,6 +230,27 @@ export type CfbScoringPlay = {
   teamAbbrev: string | null;
 };
 
+export type CfbPlay = {
+  id: string;
+  text: string;
+  shortDownDistanceText: string | null;
+  clock: string | null;
+  period: number | null;
+  yardLine: number | null;
+  possessionTeamId: string | null;
+  scoringPlay: boolean;
+};
+
+export type CfbDrive = {
+  id: string;
+  description: string | null;
+  teamId: string | null;
+  teamAbbrev: string | null;
+  result: string | null;
+  yards: number | null;
+  plays: CfbPlay[];
+};
+
 export type CfbBoxPlayerRow = {
   id: string;
   name: string;
@@ -273,6 +294,8 @@ export type CfbBackupHighlights = {
 
 export type CfbGameDetail = CfbScoreGame & {
   scoringPlays: CfbScoringPlay[];
+  drives: CfbDrive[];
+  recentPlays: CfbPlay[];
   boxGroups: CfbBoxStatGroup[];
   teamStats: CfbTeamGameStat[];
   article: {
@@ -946,6 +969,42 @@ function cfbArticleRelevantToGame(
   return mentions(away.abbrev, away.name) || mentions(home.abbrev, home.name);
 }
 
+function mapCfbPlay(p: {
+  id?: string;
+  text?: string;
+  shortDownDistanceText?: string;
+  scoringPlay?: boolean;
+  clock?: { displayValue?: string };
+  period?: { number?: number };
+  start?: {
+    yardLine?: number;
+    shortDownDistanceText?: string;
+    team?: { id?: string };
+  };
+  end?: {
+    yardLine?: number;
+    shortDownDistanceText?: string;
+    team?: { id?: string };
+  };
+  team?: { id?: string };
+}): CfbPlay {
+  const end = p.end ?? p.start;
+  return {
+    id: String(p.id ?? Math.random()),
+    text: p.text ?? "",
+    shortDownDistanceText:
+      p.shortDownDistanceText ??
+      end?.shortDownDistanceText ??
+      p.start?.shortDownDistanceText ??
+      null,
+    clock: p.clock?.displayValue ?? null,
+    period: p.period?.number ?? null,
+    yardLine: end?.yardLine ?? null,
+    possessionTeamId: end?.team?.id ?? p.team?.id ?? p.start?.team?.id ?? null,
+    scoringPlay: Boolean(p.scoringPlay),
+  };
+}
+
 export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail> {
   const [fpiByTeam, res] = await Promise.all([
     fetchCfbFpiRanks().catch(() => new Map<number, number>()),
@@ -967,6 +1026,24 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
       clock?: { displayValue?: string };
       team?: { abbreviation?: string };
     }[];
+    drives?: {
+      current?: {
+        id?: string;
+        description?: string;
+        team?: { id?: string; abbreviation?: string };
+        result?: string;
+        yards?: number;
+        plays?: Parameters<typeof mapCfbPlay>[0][];
+      };
+      previous?: {
+        id?: string;
+        description?: string;
+        team?: { id?: string; abbreviation?: string };
+        result?: string;
+        yards?: number;
+        plays?: Parameters<typeof mapCfbPlay>[0][];
+      }[];
+    };
     boxscore?: {
       teams?: {
         team?: { abbreviation?: string };
@@ -1053,12 +1130,16 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
   }
   if (!base) throw new Error("CFB game not found");
 
-  // Summary header sometimes omits TV; scoreboard usually has it.
-  if (!base.broadcasts.length) {
+  // Summary header sometimes omits TV / live situation; scoreboard usually has both.
+  if (!base.broadcasts.length || (base.live && !base.situation)) {
     const board = await loadBoard(base.date);
     const fromBoard = board.find((g) => g.id === String(eventId));
-    if (fromBoard?.broadcasts.length) {
-      base = { ...base, broadcasts: fromBoard.broadcasts };
+    if (fromBoard) {
+      base = {
+        ...base,
+        broadcasts: base.broadcasts.length ? base.broadcasts : fromBoard.broadcasts,
+        situation: base.situation ?? fromBoard.situation,
+      };
     }
   }
 
@@ -1165,6 +1246,41 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
   const videos = [...videoById.values()];
   const recapVideo = pickCfbRecapVideo(videos);
 
+  const drivesRaw = [
+    ...(raw.drives?.previous ?? []),
+    ...(raw.drives?.current ? [raw.drives.current] : []),
+  ];
+  const drives: CfbDrive[] = drivesRaw.map((d) => ({
+    id: String(d.id ?? Math.random()),
+    description: d.description ?? null,
+    teamId: d.team?.id ?? null,
+    teamAbbrev: d.team?.abbreviation ?? null,
+    result: d.result ?? null,
+    yards: typeof d.yards === "number" ? d.yards : null,
+    plays: (d.plays ?? []).map(mapCfbPlay),
+  }));
+  const recentPlays = drives
+    .flatMap((d) => d.plays)
+    .filter((p) => p.text)
+    .slice(-40)
+    .reverse();
+
+  // If scoreboard situation was missing, infer yard line from latest play.
+  if (base.live && !base.situation && recentPlays[0]) {
+    const play = recentPlays[0];
+    base = {
+      ...base,
+      situation: {
+        downDistanceText: play.shortDownDistanceText,
+        possessionText: null,
+        yardLine: play.yardLine,
+        isRedZone: false,
+        possessionTeamId: play.possessionTeamId,
+        lastPlayText: play.text,
+      },
+    };
+  }
+
   return {
     ...base,
     venue: base.venue ?? raw.gameInfo?.venue?.fullName ?? null,
@@ -1174,6 +1290,8 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
       clock: s.clock?.displayValue ?? null,
       teamAbbrev: s.team?.abbreviation ?? null,
     })),
+    drives,
+    recentPlays,
     boxGroups,
     teamStats,
     article: articleRaw?.headline
@@ -3603,6 +3721,26 @@ function buildCfbStatCategories(
   return statCategories;
 }
 
+/** CFB season year: Aug–Dec = calendar year; Jan–Jul = prior year (bowl season). */
+export function cfbSeasonYear(now = new Date()): number {
+  const y = now.getFullYear();
+  return now.getMonth() >= 7 ? y : y - 1;
+}
+
+function yearFromSeasonLabel(label: string): number | null {
+  const m = String(label).match(/(20\d{2})/);
+  return m ? Number(m[1]) : null;
+}
+
+function emptyCfbCategoriesFrom(
+  cats: CfbPlayerProfile["statCategories"],
+): CfbPlayerProfile["statCategories"] {
+  return cats.map((cat) => ({
+    name: cat.name,
+    stats: cat.stats.map((st) => ({ label: st.label, value: "—" })),
+  }));
+}
+
 export async function fetchCfbPlayerProfile(playerId: string): Promise<CfbPlayerProfile> {
   const id = String(playerId);
   const [athleteRes, overviewRes] = await Promise.all([
@@ -3640,18 +3778,50 @@ export async function fetchCfbPlayerProfile(playerId: string): Promise<CfbPlayer
       }
     | undefined;
   const labels = statistics?.labels ?? [];
-  const values = statistics?.splits?.[0]?.stats ?? [];
   const catsMeta = statistics?.categories ?? [];
-  const statCategories = buildCfbStatCategories(labels, values, catsMeta);
-  const seasonSplits = (statistics?.splits ?? []).map((split, idx) => ({
+  const seasonYear = cfbSeasonYear();
+  let seasonSplits = (statistics?.splits ?? []).map((split, idx) => ({
     season: split.displayName ?? split.type ?? `Season ${idx + 1}`,
     categories: buildCfbStatCategories(labels, split.stats ?? [], catsMeta),
   }));
 
+  const currentIdx = seasonSplits.findIndex((sp) => yearFromSeasonLabel(sp.season) === seasonYear);
+  if (currentIdx < 0) {
+    const template =
+      seasonSplits[0]?.categories ??
+      buildCfbStatCategories(
+        labels,
+        labels.map(() => "—"),
+        catsMeta,
+      );
+    seasonSplits = [
+      {
+        season: String(seasonYear),
+        categories: emptyCfbCategoriesFrom(template),
+      },
+      ...seasonSplits,
+    ];
+  } else if (currentIdx > 0) {
+    const [cur] = seasonSplits.splice(currentIdx, 1);
+    seasonSplits = [cur, ...seasonSplits];
+  }
+
+  const focusSplit = seasonSplits[0];
+  const statCategories = focusSplit?.categories ?? [];
   const summaryStats = (
     (a.statsSummary as { statistics?: { shortDisplayName?: string; displayValue?: string }[] })
       ?.statistics ?? []
   ).map((s) => ({ label: s.shortDisplayName ?? "Stat", value: s.displayValue ?? "—" }));
+  // Prefer current-season split numbers over athlete summary (often prior year).
+  const seasonStats =
+    yearFromSeasonLabel(focusSplit?.season ?? "") === seasonYear
+      ? (statCategories[0]?.stats.slice(0, 8) ??
+        (summaryStats.length && yearFromSeasonLabel(String(seasonYear)) === seasonYear
+          ? summaryStats
+          : []))
+      : summaryStats.length
+        ? summaryStats
+        : (statCategories[0]?.stats.slice(0, 8) ?? []);
 
   const gameLog = overview.gameLog as
     | {
@@ -3743,7 +3913,7 @@ export async function fetchCfbPlayerProfile(playerId: string): Promise<CfbPlayer
       (a.injuries as { status?: string }[] | undefined)?.[0]?.status ||
       (a.status as { name?: string } | undefined)?.name ||
       null,
-    seasonStats: summaryStats.length ? summaryStats : (statCategories[0]?.stats.slice(0, 8) ?? []),
+    seasonStats,
     statCategories,
     seasonSplits,
     gameLogCategories,
