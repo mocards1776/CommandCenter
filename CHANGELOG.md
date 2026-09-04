@@ -2,6 +2,14 @@
 
 ---
 
+## CFB hub: slim header, actions in Sports chrome — September 4, 2026
+
+- Removed the bulky CFB hero card and big view tiles.
+- Home Screen / Refresh / My teams are icon buttons in the Sports top header (beside search).
+- Hub navigation is a compact Scores / Conferences / Polls / Stats tab strip.
+
+---
+
 ## CFB: 2026 stats, live field + plays, compact hub — September 4, 2026
 
 - **Player pages:** Season key stats prefer the current CFB season (2026). When ESPN only has prior-year splits yet, we show a 2026 row with dashes instead of defaulting to 2025.

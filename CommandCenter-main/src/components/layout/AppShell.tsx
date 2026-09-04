@@ -17,6 +17,8 @@ import {
   Flag,
   Shield,
   GraduationCap,
+  RefreshCw,
+  Share,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/lib/auth-context";
@@ -148,6 +150,7 @@ export default function AppShell() {
   const soloParam = searchParams.get("solo") === "1";
   const onReading = pathname.startsWith("/reading");
   const onSports = pathname.startsWith("/sports");
+  const onCfbHub = pathname === "/sports/cfb" || pathname === "/sports/cfb/";
   const onRss = pathname.startsWith("/rss");
 
   const [soloSession, setSoloSession] = useState(
@@ -299,6 +302,35 @@ export default function AppShell() {
             <div className="relative z-10 hidden min-w-0 flex-1 px-2 md:block md:max-w-md md:px-4 lg:max-w-lg">
               <SportsSearch />
             </div>
+            {onCfbHub ? (
+              <div className="relative z-10 hidden shrink-0 items-center gap-1 md:flex">
+                <a
+                  href="/sports.html"
+                  title="Home Screen"
+                  aria-label="Home Screen"
+                  className="text-chalk hover:text-cream inline-flex h-8 w-8 items-center justify-center rounded-sm border border-white/10 transition hover:border-accent/40"
+                >
+                  <Share size={13} />
+                </a>
+                <button
+                  type="button"
+                  title="Refresh"
+                  aria-label="Refresh"
+                  onClick={() => window.dispatchEvent(new Event("cc:cfb-refresh"))}
+                  className="text-chalk hover:text-cream inline-flex h-8 w-8 items-center justify-center rounded-sm border border-white/10 transition hover:border-accent/40"
+                >
+                  <RefreshCw size={13} />
+                </button>
+                <NavLink
+                  to="/sports?solo=1"
+                  title="My teams"
+                  aria-label="My teams"
+                  className="from-accent-deep to-accent-dark text-cream inline-flex h-8 w-8 items-center justify-center rounded-sm bg-gradient-to-b"
+                >
+                  <Users size={13} />
+                </NavLink>
+              </div>
+            ) : null}
             <span className="label-caps relative z-10 hidden shrink-0 lg:inline">{today}</span>
           </>
         ) : (
@@ -306,8 +338,39 @@ export default function AppShell() {
         )}
       </header>
       {onSports ? (
-        <div className="bg-ink relative z-10 border-b border-accent/10 px-4 py-2 md:hidden">
-          <SportsSearch />
+        <div className="bg-ink relative z-10 flex items-center gap-2 border-b border-accent/10 px-4 py-2 md:hidden">
+          <div className="min-w-0 flex-1">
+            <SportsSearch />
+          </div>
+          {onCfbHub ? (
+              <div className="relative z-10 flex shrink-0 items-center gap-1">
+                <a
+                  href="/sports.html"
+                  title="Home Screen"
+                  aria-label="Home Screen"
+                  className="text-chalk hover:text-cream inline-flex h-8 w-8 items-center justify-center rounded-sm border border-white/10 transition hover:border-accent/40"
+                >
+                  <Share size={13} />
+                </a>
+                <button
+                  type="button"
+                  title="Refresh"
+                  aria-label="Refresh"
+                  onClick={() => window.dispatchEvent(new Event("cc:cfb-refresh"))}
+                  className="text-chalk hover:text-cream inline-flex h-8 w-8 items-center justify-center rounded-sm border border-white/10 transition hover:border-accent/40"
+                >
+                  <RefreshCw size={13} />
+                </button>
+                <NavLink
+                  to="/sports?solo=1"
+                  title="My teams"
+                  aria-label="My teams"
+                  className="from-accent-deep to-accent-dark text-cream inline-flex h-8 w-8 items-center justify-center rounded-sm bg-gradient-to-b"
+                >
+                  <Users size={13} />
+                </NavLink>
+              </div>
+            ) : null}
         </div>
       ) : null}
       <div className="rule-flag" />
