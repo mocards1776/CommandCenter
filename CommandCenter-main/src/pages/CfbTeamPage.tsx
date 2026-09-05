@@ -133,10 +133,10 @@ function TeamHero({ team, accent }: { team: CfbTeamPage; accent: string }) {
         <div className="min-w-0 flex-1 pb-0.5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70">
             {[team.conference, team.standing].filter(Boolean).join(" · ") || "College football"}
-            {team.fpiRank != null ? (
+            {team.fpiRank != null || team.rank != null ? (
               <>
                 {" · "}
-                <CfbRankLabel pollRank={null} fpiRank={team.fpiRank} />
+                <CfbRankLabel pollRank={team.rank} fpiRank={team.fpiRank} />
               </>
             ) : null}
           </p>
