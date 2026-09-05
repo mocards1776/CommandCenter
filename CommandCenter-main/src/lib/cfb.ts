@@ -36,8 +36,9 @@ export const CFB_FOCUS_TEAMS: { id: number; name: string; abbrev: string }[] = [
   { id: 201, name: "Mississippi State", abbrev: "MSST" },
   { id: 263, name: "Tennessee", abbrev: "TENN" },
   { id: 245, name: "Texas A&M", abbrev: "TAMU" },
-  { id: 228, name: "Texas", abbrev: "TEX" },
-  { id: 251, name: "Texas Tech", abbrev: "TTU" },
+  { id: 228, name: "Clemson", abbrev: "CLEM" },
+  { id: 251, name: "Texas", abbrev: "TEX" },
+  { id: 2641, name: "Texas Tech", abbrev: "TTU" },
   { id: 239, name: "Baylor", abbrev: "BAY" },
   { id: 262, name: "Oklahoma", abbrev: "OU" },
   { id: 2305, name: "Kansas State", abbrev: "KSU" },
@@ -696,8 +697,21 @@ export function cfbPollRank(raw: number | null | undefined): number | null {
   return raw;
 }
 
+/**
+ * Prefer AP Top 25, then AFCA Coaches. ESPN scoreboard curatedRank is AP-only,
+ * so Coaches-only teams (e.g. Clemson #23) otherwise look unranked.
+ */
+export function mergeCfbPollRank(
+  curated: number | null | undefined,
+  fromPolls: number | null | undefined,
+): number | null {
+  return cfbPollRank(curated) ?? cfbPollRank(fromPolls);
+}
+
 let fpiRankCache: { map: Map<number, number>; fetchedAt: number } | null = null;
+let pollRankCache: { map: Map<number, number>; fetchedAt: number } | null = null;
 const FPI_CACHE_MS = 30 * 60 * 1000;
+const POLL_RANK_CACHE_MS = 15 * 60 * 1000;
 
 /** ESPN Football Power Index ranks for all FBS teams (ordinal 1…N). */
 export async function fetchCfbFpiRanks(): Promise<Map<number, number>> {
@@ -733,6 +747,53 @@ export async function fetchCfbFpiRanks(): Promise<Map<number, number>> {
     /* keep empty — UI falls back to poll-only */
   }
   fpiRankCache = { map, fetchedAt: now };
+  return map;
+}
+
+/**
+ * AP-first Top 25 map, with AFCA Coaches filling gaps.
+ * ESPN curatedRank on the scoreboard is AP-only.
+ */
+export async function fetchCfbPollRankByTeam(): Promise<Map<number, number>> {
+  const now = Date.now();
+  if (pollRankCache && now - pollRankCache.fetchedAt < POLL_RANK_CACHE_MS) {
+    return pollRankCache.map;
+  }
+  const map = new Map<number, number>();
+  try {
+    const res = await fetch(`${ESPN}/rankings`, { headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error(`CFB rankings ${res.status}`);
+    const raw = (await res.json()) as {
+      rankings?: {
+        name?: string;
+        shortName?: string;
+        ranks?: { current?: number; team?: { id?: string } }[];
+      }[];
+    };
+    const ap = new Map<number, number>();
+    const coaches = new Map<number, number>();
+    for (const poll of raw.rankings ?? []) {
+      const label = `${poll.name ?? ""} ${poll.shortName ?? ""}`.toLowerCase();
+      if (/fcs|division ii|div ii|d2\b/.test(label)) continue;
+      const isAp = /\bap\b/.test(label) || /ap poll/.test(label);
+      const isCoaches = /coaches/.test(label) && !/fcs/.test(label);
+      if (!isAp && !isCoaches) continue;
+      const target = isAp ? ap : coaches;
+      for (const r of poll.ranks ?? []) {
+        const id = Number(r.team?.id);
+        const rank = cfbPollRank(r.current);
+        if (!id || rank == null) continue;
+        if (!target.has(id)) target.set(id, rank);
+      }
+    }
+    for (const [id, rank] of ap) map.set(id, rank);
+    for (const [id, rank] of coaches) {
+      if (!map.has(id)) map.set(id, rank);
+    }
+  } catch {
+    /* keep empty — fall back to curatedRank only */
+  }
+  pollRankCache = { map, fetchedAt: now };
   return map;
 }
 
@@ -831,6 +892,7 @@ type EspnCompetitor = {
 function sideFromCompetitor(
   c: EspnCompetitor,
   fpiByTeam?: Map<number, number>,
+  pollByTeam?: Map<number, number>,
 ): CfbScoreSide {
   const team = c.team ?? {};
   const abbrev = team.abbreviation ?? "—";
@@ -855,7 +917,10 @@ function sideFromCompetitor(
     record: overall,
     logo: team.logos?.[0]?.href ?? cfbTeamLogo(team.id ?? 0),
     color: (team.color ?? "555555").replace(/^#/, ""),
-    rank: cfbPollRank(c.curatedRank?.current),
+    rank: mergeCfbPollRank(
+      c.curatedRank?.current,
+      teamId && pollByTeam ? pollByTeam.get(teamId) : null,
+    ),
     fpiRank: teamId && fpiByTeam ? (fpiByTeam.get(teamId) ?? null) : null,
     linescores,
   };
@@ -904,6 +969,7 @@ function mapCfbOdds(
 function mapCfbEvent(
   event: EspnEvent,
   fpiByTeam?: Map<number, number>,
+  pollByTeam?: Map<number, number>,
 ): CfbScoreGame | null {
   const comp = event.competitions?.[0];
   if (!comp) return null;
@@ -944,8 +1010,8 @@ function mapCfbEvent(
     shortDetail: st?.shortDetail ?? st?.detail ?? null,
     live,
     final,
-    away: sideFromCompetitor(awayC, fpiByTeam),
-    home: sideFromCompetitor(homeC, fpiByTeam),
+    away: sideFromCompetitor(awayC, fpiByTeam, pollByTeam),
+    home: sideFromCompetitor(homeC, fpiByTeam, pollByTeam),
     when: iso ? formatSportsDateLong(iso) : null,
     whenShort,
     venue: comp.venue?.fullName ?? null,
@@ -965,8 +1031,9 @@ function cfbScoreboardUrl(dates?: string): string {
 }
 
 export async function fetchCfbScoreboard(dates?: string): Promise<CfbScoreGame[]> {
-  const [fpiByTeam, boardRes] = await Promise.all([
+  const [fpiByTeam, pollByTeam, boardRes] = await Promise.all([
     fetchCfbFpiRanks().catch(() => new Map<number, number>()),
+    fetchCfbPollRankByTeam().catch(() => new Map<number, number>()),
     fetch(cfbScoreboardUrl(dates), {
       headers: { Accept: "application/json" },
     }),
@@ -974,7 +1041,7 @@ export async function fetchCfbScoreboard(dates?: string): Promise<CfbScoreGame[]
   if (!boardRes.ok) throw new Error(`CFB scoreboard ${boardRes.status}`);
   const raw = (await boardRes.json()) as { events?: EspnEvent[] };
   return (raw.events ?? [])
-    .map((e) => mapCfbEvent(e, fpiByTeam))
+    .map((e) => mapCfbEvent(e, fpiByTeam, pollByTeam))
     .filter((g): g is CfbScoreGame => Boolean(g?.id));
 }
 
@@ -1093,8 +1160,9 @@ function mapCfbPlay(p: {
 }
 
 export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail> {
-  const [fpiByTeam, res] = await Promise.all([
+  const [fpiByTeam, pollByTeam, res] = await Promise.all([
     fetchCfbFpiRanks().catch(() => new Map<number, number>()),
+    fetchCfbPollRankByTeam().catch(() => new Map<number, number>()),
     fetch(`${ESPN}/summary?event=${encodeURIComponent(eventId)}`, {
       headers: { Accept: "application/json" },
     }),
@@ -1208,6 +1276,7 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
           competitions: raw.header?.competitions,
         },
         fpiByTeam,
+        pollByTeam,
       )
     : null;
   if (!base) {
@@ -1491,6 +1560,8 @@ export type CfbTeamPage = {
   record: string | null;
   standing: string | null;
   conference: string | null;
+  /** AP-first Top 25, with Coaches fill-in. */
+  rank: number | null;
   fpiRank: number | null;
   nextEvent: { id: string; name: string; date: string | null } | null;
   roster: {
@@ -2385,7 +2456,7 @@ export async function fetchCfbTeamWinTrend(
 function mapCfbTeamScheduleEvents(
   teamId: string,
   events: CfbEspnScheduleEvent[],
-  opts?: { bowlSeason?: boolean },
+  opts?: { bowlSeason?: boolean; pollByTeam?: Map<number, number> },
 ): CfbTeamScheduleGame[] {
   const id = String(teamId);
   const schedule: CfbTeamScheduleGame[] = [];
@@ -2463,7 +2534,10 @@ function mapCfbTeamScheduleEvents(
       oppName: opp.team.displayName ?? "Opponent",
       oppAbbrev: (opp.team.abbreviation ?? "—").toUpperCase(),
       oppLogo: opp.team.logos?.[0]?.href ?? (opp.team.id ? cfbTeamLogo(opp.team.id) : null),
-      oppRank: cfbPollRank(opp.curatedRank?.current),
+      oppRank: mergeCfbPollRank(
+        opp.curatedRank?.current,
+        opp.team.id ? opts?.pollByTeam?.get(Number(opp.team.id)) : null,
+      ),
       won,
       bowl,
       bowlName,
@@ -2479,7 +2553,8 @@ async function fetchCfbTeamSeasonSchedule(
   season: number,
 ): Promise<CfbTeamScheduleGame[]> {
   const id = String(teamId);
-  const [regRes, bowlRes] = await Promise.all([
+  const [pollByTeam, regRes, bowlRes] = await Promise.all([
+    fetchCfbPollRankByTeam().catch(() => new Map<number, number>()),
     fetch(`${ESPN}/teams/${id}/schedule?seasontype=2&season=${season}`, {
       headers: { Accept: "application/json" },
     }),
@@ -2490,13 +2565,19 @@ async function fetchCfbTeamSeasonSchedule(
   const byId = new Map<string, CfbTeamScheduleGame>();
   if (regRes.ok) {
     const json = (await regRes.json()) as { events?: CfbEspnScheduleEvent[] };
-    for (const g of mapCfbTeamScheduleEvents(id, json.events ?? [], { bowlSeason: false })) {
+    for (const g of mapCfbTeamScheduleEvents(id, json.events ?? [], {
+      bowlSeason: false,
+      pollByTeam,
+    })) {
       byId.set(g.id, g);
     }
   }
   if (bowlRes.ok) {
     const json = (await bowlRes.json()) as { events?: CfbEspnScheduleEvent[] };
-    for (const g of mapCfbTeamScheduleEvents(id, json.events ?? [], { bowlSeason: true })) {
+    for (const g of mapCfbTeamScheduleEvents(id, json.events ?? [], {
+      bowlSeason: true,
+      pollByTeam,
+    })) {
       byId.set(g.id, g);
     }
   }
@@ -2673,8 +2754,9 @@ async function buildCfbCoachingStaff(opts: {
 export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
   const id = String(teamId);
   const season = new Date().getFullYear();
-  const [fpiByTeam, teamRes, rosterRes, scheduleGames, seasonRec] = await Promise.all([
+  const [fpiByTeam, pollByTeam, teamRes, rosterRes, scheduleGames, seasonRec] = await Promise.all([
     fetchCfbFpiRanks().catch(() => new Map<number, number>()),
+    fetchCfbPollRankByTeam().catch(() => new Map<number, number>()),
     fetch(`${ESPN}/teams/${id}`, { headers: { Accept: "application/json" } }),
     fetch(`${ESPN}/teams/${id}/roster`, { headers: { Accept: "application/json" } }),
     fetchCfbTeamSeasonSchedule(id, season).catch(() => [] as CfbTeamScheduleGame[]),
@@ -2772,6 +2854,7 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
     record: seasonRec?.summary ?? espnRecord,
     standing: t.standingSummary ?? null,
     conference,
+    rank: pollByTeam.get(Number(id)) ?? null,
     fpiRank: fpiByTeam.get(Number(id)) ?? null,
     nextEvent: next?.id
       ? { id: String(next.id), name: next.name ?? "Next game", date: next.date ?? null }
@@ -3032,34 +3115,64 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
 
   const awayRank = g.away.rank;
   const homeRank = g.home.rank;
-  if (awayRank && homeRank && awayRank <= 25 && homeRank <= 25) {
-    score += 28;
+  const awayFpi = g.away.fpiRank;
+  const homeFpi = g.home.fpiRank;
+  const bothRanked = Boolean(
+    awayRank && homeRank && awayRank <= 25 && homeRank <= 25,
+  );
+  const oneRanked = Boolean(
+    (awayRank && awayRank <= 25) || (homeRank && homeRank <= 25),
+  );
+  if (bothRanked) {
+    // Top-10 clash gets more than a 20s/20s game.
+    const best = Math.min(awayRank!, homeRank!);
+    const bump = best <= 10 ? 36 : best <= 15 ? 32 : 28;
+    score += bump;
     reasons.push("Ranked matchup");
-  } else if ((awayRank && awayRank <= 25) || (homeRank && homeRank <= 25)) {
+  } else if (oneRanked) {
     score += 16;
     reasons.push("Ranked team");
-  } else {
-    const af = g.away.fpiRank;
-    const hf = g.home.fpiRank;
-    if (af != null && hf != null && af <= 40 && hf <= 40) {
+    // Quality unranked / Coaches-edge foe still matters (FPI top 25).
+    const otherFpi = awayRank ? homeFpi : awayFpi;
+    if (otherFpi != null && otherFpi <= 25) {
       score += 10;
-      reasons.push("FPI quality");
+      reasons.push("Quality foe");
     }
+  } else if (awayFpi != null && homeFpi != null && awayFpi <= 40 && homeFpi <= 40) {
+    score += 10;
+    reasons.push("FPI quality");
+  }
+
+  // Both top-25 FPI even when polls disagree — national-caliber slate.
+  if (awayFpi != null && homeFpi != null && awayFpi <= 25 && homeFpi <= 25) {
+    score += 12;
+    reasons.push("Top FPI clash");
   }
 
   // Betting line — market consensus for watchability (not for tips).
+  // Soften pick'ems between weak FPI sides so they don't outrank ranked games.
   const odds = g.odds;
   const spread = odds?.spread ?? null;
   const absSpread = spread != null ? Math.abs(spread) : null;
+  const avgFpi =
+    awayFpi != null && homeFpi != null ? (awayFpi + homeFpi) / 2 : null;
+  const lineQuality =
+    bothRanked || oneRanked || (avgFpi != null && avgFpi <= 50)
+      ? 1
+      : avgFpi != null && avgFpi <= 80
+        ? 0.55
+        : 0.35;
   if (absSpread != null) {
     if (absSpread <= 3) {
-      score += 18;
+      const pts = Math.round(18 * lineQuality);
+      score += pts;
       reasons.push(odds?.details ? `Pick'em (${odds.details})` : "Pick'em line");
     } else if (absSpread <= 7) {
-      score += 12;
+      const pts = Math.round(12 * Math.max(lineQuality, 0.5));
+      score += pts;
       reasons.push(odds?.details ? `Close line (${odds.details})` : "Close line");
     } else if (absSpread <= 10.5) {
-      score += 6;
+      score += bothRanked || oneRanked ? 10 : 6;
       reasons.push("Competitive line");
     } else if (absSpread >= 28) {
       score -= 14;
@@ -3072,13 +3185,59 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
 
   // Market vs FPI: books favor the worse FPI side → interesting disagreement.
   const favId = odds?.favoriteTeamId ?? null;
-  if (favId != null && g.away.fpiRank != null && g.home.fpiRank != null) {
-    const favFpi = favId === g.away.teamId ? g.away.fpiRank : favId === g.home.teamId ? g.home.fpiRank : null;
-    const dogFpi = favId === g.away.teamId ? g.home.fpiRank : favId === g.home.teamId ? g.away.fpiRank : null;
+  if (favId != null && awayFpi != null && homeFpi != null) {
+    const favFpi = favId === g.away.teamId ? awayFpi : favId === g.home.teamId ? homeFpi : null;
+    const dogFpi = favId === g.away.teamId ? homeFpi : favId === g.home.teamId ? awayFpi : null;
     // Lower FPI ordinal = stronger team. Favorite with worse (higher) FPI = market ≠ FPI.
     if (favFpi != null && dogFpi != null && favFpi > dogFpi + 2) {
       score += 10;
       reasons.push("Market vs FPI");
+    }
+  }
+
+  const dogSide =
+    favId != null
+      ? favId === g.away.teamId
+        ? g.home
+        : favId === g.home.teamId
+          ? g.away
+          : null
+      : null;
+  const favSide =
+    favId != null
+      ? favId === g.away.teamId
+        ? g.away
+        : favId === g.home.teamId
+          ? g.home
+          : null
+      : null;
+
+  // Preview upset spots — ranked / top-FPI dogs and thin FPI gaps vs big spreads.
+  if (!g.live && !g.final && favSide && dogSide && absSpread != null && absSpread >= 2.5) {
+    const dogRanked = dogSide.rank != null && dogSide.rank <= 25;
+    const favRanked = favSide.rank != null && favSide.rank <= 25;
+    const dogTopFpi = dogSide.fpiRank != null && dogSide.fpiRank <= 25;
+    const fpiGap =
+      favSide.fpiRank != null && dogSide.fpiRank != null
+        ? Math.abs(favSide.fpiRank - dogSide.fpiRank)
+        : null;
+    if (dogRanked) {
+      score += 18;
+      reasons.push("Ranked underdog");
+    } else if (favRanked && dogTopFpi) {
+      score += 14;
+      reasons.push("Upset spot");
+    } else if (
+      favRanked &&
+      dogSide.fpiRank != null &&
+      dogSide.fpiRank <= 40 &&
+      absSpread >= 7
+    ) {
+      score += 10;
+      reasons.push("Upset spot");
+    } else if (fpiGap != null && fpiGap <= 8 && absSpread >= 7) {
+      score += 10;
+      reasons.push("Upset spot");
     }
   }
 
@@ -3104,6 +3263,15 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
     }
   }
 
+  // Primetime / broadcast window — national CFB windows deserve a bump.
+  const nets = g.broadcasts.map((b) => b.name.toUpperCase());
+  if (nets.some((n) => /\b(ABC|CBS|NBC|FOX)\b/.test(n))) {
+    score += 8;
+    reasons.push("National TV");
+  } else if (nets.some((n) => /ESPN|ESPN2|FOX SPORTS|FS1/.test(n))) {
+    score += 4;
+  }
+
   for (const side of [g.away, g.home]) {
     const interest = ctx?.teamInterest[String(side.teamId)] ?? 0;
     if (interest >= 7) {
@@ -3121,7 +3289,7 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
     reasons.push("Close final");
   }
 
-  return { score: Math.max(0, score), reasons: [...new Set(reasons)].slice(0, 5) };
+  return { score: Math.max(0, score), reasons: [...new Set(reasons)].slice(0, 6) };
 }
 
 export function rankCfbRuwtGames(

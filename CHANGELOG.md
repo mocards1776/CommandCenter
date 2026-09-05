@@ -2,6 +2,14 @@
 
 ---
 
+## CFB RUWT: Coaches ranks, heat, upset spots — September 5, 2026
+
+- Poll badges prefer AP Top 25 and fill from AFCA Coaches (ESPN scoreboard `curatedRank` is AP-only — Clemson #23 Coaches no longer looks unranked).
+- RUWT heat boosts ranked matchups, top-FPI clashes, national TV, and preview upset spots (ranked / quality underdogs); softens pick'ems between weak FPI sides so they don't outrank #11 LSU–style games.
+- Fixed CFB focus-team IDs for Clemson / Texas / Texas Tech on the interest board.
+
+---
+
 ## CFB: live games never show pregame empty state — September 4, 2026
 
 - Live/final CFB game pages no longer show the “preview/boxscore not published yet” kickoff message.
