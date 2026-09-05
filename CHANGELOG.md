@@ -2,6 +2,13 @@
 
 ---
 
+## RUWT: marquee ABC + FPI-quality heat — September 5, 2026
+
+- Stronger **FPI quality** when both sides are top-40 (bigger bump if one is top-25); near-misses get **Quality slate**.
+- Live **Marquee** bump on ABC/CBS/NBC/FOX when the game is SEC, ranked, or FPI-quality — so kickoffs like Baylor–Auburn climb the board.
+
+---
+
 ## RUWT: late one-score heat (closing seconds) — September 5, 2026
 
 - **One-score** now means ≤8 (a TD), not only a FG (≤3); ≤3 adds **Within a kick**.
