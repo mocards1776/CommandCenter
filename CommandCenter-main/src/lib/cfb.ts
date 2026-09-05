@@ -33,14 +33,16 @@ export const CFB_FOCUS_TEAMS: { id: number; name: string; abbrev: string }[] = [
   { id: 96, name: "Kentucky", abbrev: "UK" },
   { id: 99, name: "LSU", abbrev: "LSU" },
   { id: 145, name: "Ole Miss", abbrev: "MISS" },
-  { id: 201, name: "Mississippi State", abbrev: "MSST" },
-  { id: 263, name: "Tennessee", abbrev: "TENN" },
+  { id: 344, name: "Mississippi State", abbrev: "MSST" },
+  { id: 2633, name: "Tennessee", abbrev: "TENN" },
   { id: 245, name: "Texas A&M", abbrev: "TAMU" },
+  { id: 2579, name: "South Carolina", abbrev: "SC" },
+  { id: 238, name: "Vanderbilt", abbrev: "VAN" },
   { id: 228, name: "Clemson", abbrev: "CLEM" },
   { id: 251, name: "Texas", abbrev: "TEX" },
   { id: 2641, name: "Texas Tech", abbrev: "TTU" },
   { id: 239, name: "Baylor", abbrev: "BAY" },
-  { id: 262, name: "Oklahoma", abbrev: "OU" },
+  { id: 201, name: "Oklahoma", abbrev: "OU" },
   { id: 2305, name: "Kansas State", abbrev: "KSU" },
   { id: 2306, name: "Kansas", abbrev: "KU" },
   { id: 52, name: "Florida State", abbrev: "FSU" },
@@ -75,6 +77,31 @@ export const CFB_FOCUS_TEAMS: { id: number; name: string; abbrev: string }[] = [
   { id: 235, name: "Memphis", abbrev: "MEM" },
   { id: 242, name: "Boise State", abbrev: "BOIS" },
 ];
+
+/** Current SEC (ESPN group 8) — RUWT interest floor of 4. */
+export const CFB_SEC_TEAMS: { id: number; name: string; abbrev: string }[] = [
+  { id: 333, name: "Alabama", abbrev: "ALA" },
+  { id: 8, name: "Arkansas", abbrev: "ARK" },
+  { id: 2, name: "Auburn", abbrev: "AUB" },
+  { id: 57, name: "Florida", abbrev: "FLA" },
+  { id: 61, name: "Georgia", abbrev: "UGA" },
+  { id: 96, name: "Kentucky", abbrev: "UK" },
+  { id: 99, name: "LSU", abbrev: "LSU" },
+  { id: 145, name: "Ole Miss", abbrev: "MISS" },
+  { id: 344, name: "Mississippi State", abbrev: "MSST" },
+  { id: 142, name: "Missouri", abbrev: "MIZ" },
+  { id: 201, name: "Oklahoma", abbrev: "OU" },
+  { id: 2579, name: "South Carolina", abbrev: "SC" },
+  { id: 2633, name: "Tennessee", abbrev: "TENN" },
+  { id: 251, name: "Texas", abbrev: "TEX" },
+  { id: 245, name: "Texas A&M", abbrev: "TAMU" },
+  { id: 238, name: "Vanderbilt", abbrev: "VAN" },
+];
+
+export const CFB_SEC_TEAM_IDS = new Set(CFB_SEC_TEAMS.map((t) => String(t.id)));
+
+/** Minimum RUWT interest for every SEC program. */
+export const CFB_SEC_INTEREST_FLOOR = 4;
 
 export type CfbScoreSide = {
   teamId: number;
@@ -3361,7 +3388,8 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
 
   for (const side of [g.away, g.home]) {
     const interest = ctx?.teamInterest[String(side.teamId)] ?? 0;
-    if (interest >= 7) {
+    // Board starts at 4 (SEC floor); 7+ is "follow closely".
+    if (interest >= 4) {
       score += interest * 3;
       reasons.push(`${side.abbrev} interest ${interest}`);
     }

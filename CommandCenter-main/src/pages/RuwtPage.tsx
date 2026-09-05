@@ -22,6 +22,7 @@ import {
 import { fetchNflScoreboard, chicagoTodayNfl, NFL_TEAMS, type NflScoredGame } from "@/lib/nfl";
 import {
   CFB_FOCUS_TEAMS,
+  CFB_SEC_TEAM_IDS,
   chicagoTodayCfb,
   cfbTeamLogo,
   fetchCfbScoreboard,
@@ -572,9 +573,14 @@ export default function RuwtPage() {
           {(sportFilter === "all" || sportFilter === "cfb") && (
             <div>
               <h3 className="rule-head mb-1">College football interest</h3>
+              <p className="text-chalk-dim mb-4 text-[12px]">
+                10 = favorite must-watch · 7 = follow closely · 0 = ignore for RUWT.
+                SEC programs are auto-ranked at least 4.
+              </p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {CFB_FOCUS_TEAMS.map((t) => {
                   const value = cfbInterest[String(t.id)] ?? 0;
+                  const secFloor = CFB_SEC_TEAM_IDS.has(String(t.id));
                   return (
                     <label
                       key={t.id}
@@ -583,10 +589,13 @@ export default function RuwtPage() {
                       <img src={cfbTeamLogo(t.id)} alt="" className="h-6 w-6 object-contain" />
                       <span className="text-cream min-w-0 flex-1 truncate text-[13px]">
                         {t.abbrev} · {t.name}
+                        {secFloor ? (
+                          <span className="text-chalk-dim"> · SEC</span>
+                        ) : null}
                       </span>
                       <input
                         type="range"
-                        min={0}
+                        min={secFloor ? 4 : 0}
                         max={10}
                         value={value}
                         onChange={(e) =>
