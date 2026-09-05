@@ -2,6 +2,14 @@
 
 ---
 
+## RUWT: late one-score heat (closing seconds) — September 5, 2026
+
+- **One-score** now means ≤8 (a TD), not only a FG (≤3); ≤3 adds **Within a kick**.
+- Final **2:00 / 1:00 / 0:30** of a one-score 4th/OT gets **Two-minute drill / Final minute / Closing seconds** heat (e.g. CCU–WVU at :27).
+- Big FPI dog still within a TD late → **Upset alive**; TNT/TBS/USA count as national TV.
+
+---
+
 ## RUWT: closest-upset heat over ranked blowouts — September 5, 2026
 
 - Live **Upset watch / Closest upset** when a ranked (or huge-FPI) chalk lead stays modest (≤21) against a big FPI dog — e.g. #23 Houston up 19 on Oregon State outranks a 29-pt Indiana blowout.

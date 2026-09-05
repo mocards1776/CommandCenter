@@ -3146,6 +3146,16 @@ async function mapWithConcurrency<T, R>(
   return out;
 }
 
+/** Parse MM:SS from ESPN shortDetail / status ("0:27 - 4th Quarter"). */
+function parseRuwtClockSeconds(detail: string): number | null {
+  const m = detail.match(/\b(\d{1,2}):(\d{2})\b/);
+  if (!m) return null;
+  const min = Number(m[1]);
+  const sec = Number(m[2]);
+  if (!Number.isFinite(min) || !Number.isFinite(sec) || sec > 59) return null;
+  return min * 60 + sec;
+}
+
 export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score: number; reasons: string[] } {
   let score = 0;
   const reasons: string[] = [];
@@ -3168,12 +3178,17 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
     // Soften mid-range drag when a ranked team is on the field so AP games
     // don't sink below G5 clocks — but still punish true blowouts (≥28)
     // so a 29-pt IU lead doesn't beat a closer ranked-upset watch.
+    // Football one-score = TD (+PAT/2pt), i.e. ≤8 — not only a FG (≤3).
     if (diff != null) {
-      if (diff <= 3) {
+      if (diff <= 8) {
         score += 28;
         reasons.push("One-score game");
-      } else if (diff <= 8) {
-        score += 14;
+        if (diff <= 3) {
+          score += 6;
+          reasons.push("Within a kick");
+        }
+      } else if (diff <= 14) {
+        score += 10;
         reasons.push("Tight");
       } else if (diff >= 28) {
         score -= rankedLive ? 18 : 20;
@@ -3181,7 +3196,8 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
       } else if (diff >= 21) {
         score -= rankedLive ? 10 : 14;
         reasons.push("Blowout");
-      } else if (diff >= 14) {
+      } else {
+        // 15–20: soft drag
         score -= rankedLive ? 3 : 8;
       }
     }
@@ -3196,6 +3212,26 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
       } else if (period === 3 || /\b3rd\b/.test(detail)) {
         score += diff != null && diff > 14 ? 4 : 8;
         reasons.push("3rd quarter");
+      }
+    }
+    // Final minutes of a one-score game are appointment TV (CCU–WVU :27).
+    if (
+      diff != null &&
+      diff <= 8 &&
+      (inOt || period === 4 || /\b4th\b/.test(detail))
+    ) {
+      const clockSecs = parseRuwtClockSeconds(detail);
+      if (clockSecs != null && clockSecs <= 120) {
+        if (clockSecs <= 30) {
+          score += 22;
+          reasons.push("Closing seconds");
+        } else if (clockSecs <= 60) {
+          score += 16;
+          reasons.push("Final minute");
+        } else {
+          score += 10;
+          reasons.push("Two-minute drill");
+        }
       }
     }
     if (g.situation?.isRedZone && (diff == null || diff <= 14)) {
@@ -3396,20 +3432,26 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
       } else if (chalkScore != null && dogScore != null && chalkScore > dogScore) {
         const favMargin = chalkScore - dogScore;
         const gap = fpiGap ?? (absSpread != null ? absSpread * 4 : null);
-        // Huge FPI dog keeping a ranked/FPI chalk lead modest = closest upset
-        // (ORST–#23 HOU down 19 outranks UNT–#6 IU down 29).
-        const chalkRanked =
-          (chalkId === g.away.teamId &&
-            g.away.rank != null &&
-            g.away.rank <= 25) ||
-          (chalkId === g.home.teamId &&
-            g.home.rank != null &&
-            g.home.rank <= 25);
-        if (
+        const lateClose =
+          favMargin <= 8 &&
+          (inOt || period === 4 || /\b4th\b/.test(detail));
+        // Huge dog still within a TD late = upset still alive (CCU–WVU).
+        if (gap != null && gap >= 30 && lateClose) {
+          score += gap >= 50 ? 14 : 10;
+          reasons.push("Upset alive");
+        } else if (
+          // Huge FPI dog keeping a ranked/FPI chalk lead modest = closest upset
+          // (ORST–#23 HOU down 19 outranks UNT–#6 IU down 29).
           gap != null &&
           gap >= 40 &&
           favMargin <= 21 &&
-          (chalkRanked || gap >= 55)
+          ((chalkId === g.away.teamId &&
+            g.away.rank != null &&
+            g.away.rank <= 25) ||
+            (chalkId === g.home.teamId &&
+              g.home.rank != null &&
+              g.home.rank <= 25) ||
+            gap >= 55)
         ) {
           const closeness = 21 - favMargin;
           const gapBonus = gap >= 70 ? 8 : gap >= 55 ? 5 : 3;
@@ -3434,6 +3476,9 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
   const nets = g.broadcasts.map((b) => b.name.toUpperCase());
   if (nets.some((n) => /\b(ABC|CBS|NBC|FOX)\b/.test(n))) {
     score += 8;
+    reasons.push("National TV");
+  } else if (nets.some((n) => /\b(TNT|TBS|USA|PEACOCK|NETFLIX)\b/.test(n))) {
+    score += 6;
     reasons.push("National TV");
   } else if (nets.some((n) => /ESPN|ESPN2|FOX SPORTS|FS1/.test(n))) {
     score += 4;
