@@ -3286,15 +3286,32 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
       score += 10;
       reasons.push("Quality foe");
     }
-  } else if (awayFpi != null && homeFpi != null && awayFpi <= 40 && homeFpi <= 40) {
-    score += 10;
-    reasons.push("FPI quality");
+  } else if (awayFpi != null && homeFpi != null) {
+    // Unranked but national-caliber (BAY FPI 37 / AUB FPI 21 on ABC).
+    const bestFpi = Math.min(awayFpi, homeFpi);
+    const worstFpi = Math.max(awayFpi, homeFpi);
+    if (worstFpi <= 40) {
+      score += bestFpi <= 25 ? 20 : 16;
+      reasons.push("FPI quality");
+    } else if (bestFpi <= 25 && worstFpi <= 55) {
+      score += 12;
+      reasons.push("FPI quality");
+    }
   }
 
   // Both top-25 FPI even when polls disagree — national-caliber slate.
   if (awayFpi != null && homeFpi != null && awayFpi <= 25 && homeFpi <= 25) {
     score += 12;
     reasons.push("Top FPI clash");
+  } else if (
+    awayFpi != null &&
+    homeFpi != null &&
+    Math.min(awayFpi, homeFpi) <= 25 &&
+    Math.max(awayFpi, homeFpi) <= 40
+  ) {
+    // One top-25 FPI side vs a still-strong top-40 foe.
+    score += 8;
+    reasons.push("Quality slate");
   }
 
   // Betting line — market consensus for watchability (not for tips).
@@ -3474,10 +3491,31 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
 
   // Primetime / broadcast window — national CFB windows deserve a bump.
   const nets = g.broadcasts.map((b) => b.name.toUpperCase());
-  if (nets.some((n) => /\b(ABC|CBS|NBC|FOX)\b/.test(n))) {
+  const bigFour = nets.some((n) => /\b(ABC|CBS|NBC|FOX)\b/.test(n));
+  const cableNational = nets.some((n) =>
+    /\b(TNT|TBS|USA|PEACOCK|NETFLIX)\b/.test(n),
+  );
+  if (bigFour) {
     score += 8;
     reasons.push("National TV");
-  } else if (nets.some((n) => /\b(TNT|TBS|USA|PEACOCK|NETFLIX)\b/.test(n))) {
+    // Live ABC/CBS/NBC/FOX with real teams = appointment viewing at kickoff
+    // (Baylor–Auburn), not just another 0–0 clock.
+    const secOnField =
+      CFB_SEC_TEAM_IDS.has(String(g.away.teamId)) ||
+      CFB_SEC_TEAM_IDS.has(String(g.home.teamId));
+    const qualityLive =
+      bothRanked ||
+      oneRanked ||
+      secOnField ||
+      (avgFpi != null && avgFpi <= 45) ||
+      (awayFpi != null &&
+        homeFpi != null &&
+        Math.max(awayFpi, homeFpi) <= 40);
+    if (g.live && qualityLive) {
+      score += 14;
+      reasons.push("Marquee");
+    }
+  } else if (cableNational) {
     score += 6;
     reasons.push("National TV");
   } else if (nets.some((n) => /ESPN|ESPN2|FOX SPORTS|FS1/.test(n))) {
