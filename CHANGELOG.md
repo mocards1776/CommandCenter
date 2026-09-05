@@ -2,6 +2,14 @@
 
 ---
 
+## RUWT live filter, ESPN previews, yesterday’s Home recap — September 5, 2026
+
+- **RUWT:** “Live only” chip next to the sport filters — hides upcoming and finals.
+- **ESPN previews:** CFB game pages prefer ESPN’s official Preview/Recap article (and normalize `<hl2>` story HTML). MLB previews fall back to the CDN gamepackage, then an ESPN matchup card (probables / records / line) when ESPN hasn’t published written preview prose. Dispatch adds a **CFB wraps & previews** feed so college previews show up alongside NFL/MLB.
+- **Home Screen:** Board / **Yesterday’s recap** toggle — finals for favorite teams, ESPN highlights when available, and favorite-player lines.
+
+---
+
 ## CFB RUWT: Coaches ranks, heat, upset spots — September 5, 2026
 
 - Poll badges prefer AP Top 25 and fill from AFCA Coaches (ESPN scoreboard `curatedRank` is AP-only — Clemson #23 Coaches no longer looks unranked).

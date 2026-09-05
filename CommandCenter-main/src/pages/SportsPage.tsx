@@ -48,6 +48,7 @@ import {
 } from "@/lib/sports";
 import { cn } from "@/lib/utils";
 import { fetchChampionshipPromotionOdds } from "@/lib/soccer";
+import { fetchYesterdayRecap, type YesterdayRecap } from "@/lib/yesterday-recap";
 
 function ordinalSuffixLocal(n: number): string {
   const v = Math.abs(n) % 100;
@@ -488,6 +489,7 @@ export default function SportsPage() {
   const { user } = useAuth();
   const [layout, setLayout] = useState<SportsLayout>(() => loadSportsLayout());
   const [customizing, setCustomizing] = useState(false);
+  const [homeMode, setHomeMode] = useState<"board" | "yesterday">("board");
   const [searchParams] = useSearchParams();
   const [selectedKey, setSelectedKey] = useState<string | null>(
     () => searchParams.get("team") || null,
@@ -594,6 +596,14 @@ export default function SportsPage() {
     retry: 1,
   });
 
+  const yesterdayRecap = useQuery({
+    queryKey: ["sports-yesterday-recap", user?.id, layout.order.join(","), layout.hidden.join(",")],
+    queryFn: () => fetchYesterdayRecap({ layout, userId: user?.id }),
+    enabled: homeMode === "yesterday",
+    staleTime: 120_000,
+    retry: 1,
+  });
+
   const farmRankByTeamId = useMemo(() => {
     const map = new Map<number, number>();
     for (const row of farmRanks.data ?? []) map.set(row.teamId, row.rank);
@@ -659,6 +669,38 @@ export default function SportsPage() {
         </p>
       )}
 
+      <div className="flex flex-wrap items-center gap-2">
+        {(
+          [
+            ["board", "Board"],
+            ["yesterday", "Yesterday’s recap"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setHomeMode(id)}
+            className={cn(
+              "rounded-sm border px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] transition",
+              homeMode === id
+                ? "border-accent/50 bg-accent/15 text-cream"
+                : "border-white/10 text-chalk hover:border-accent/40 hover:text-cream",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {homeMode === "yesterday" ? (
+        <YesterdayRecapPanel
+          data={yesterdayRecap.data}
+          loading={yesterdayRecap.isPending}
+          error={yesterdayRecap.isError}
+          onRetry={() => void yesterdayRecap.refetch()}
+        />
+      ) : (
+        <>
       {/* Hide board hero while team detail is open — panel covers the right half otherwise. */}
       {cardsHero.data && !selectedKey && (
         <HeroGameCard
@@ -772,6 +814,8 @@ export default function SportsPage() {
           </div>
         </div>
       </div>
+        </>
+      )}
 
       {customizing && (
         <CustomizePanel layout={layout} onChange={updateLayout} onClose={closeCustomize} />
@@ -795,6 +839,168 @@ export default function SportsPage() {
           else setGolfOpen(false);
         }}
       />
+    </div>
+  );
+}
+
+function YesterdayRecapPanel({
+  data,
+  loading,
+  error,
+  onRetry,
+}: {
+  data: YesterdayRecap | undefined;
+  loading: boolean;
+  error: boolean;
+  onRetry: () => void;
+}) {
+  if (loading) {
+    return (
+      <p className="text-chalk flex items-center gap-2 text-[13px]">
+        <Loader2 size={14} className="animate-spin" /> Loading yesterday’s games…
+      </p>
+    );
+  }
+  if (error) {
+    return (
+      <div className="space-y-2">
+        <p className="text-alert text-[13px]">Couldn’t load yesterday’s recap.</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="text-chalk hover:text-cream rounded-sm border border-white/10 px-3 py-1.5 text-[10.5px] uppercase tracking-[0.14em]"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+  if (!data || (data.games.length === 0 && data.playerLines.length === 0)) {
+    return (
+      <p className="text-chalk-dim text-[13px]">
+        No favorite-team finals or player lines for {data?.date ?? "yesterday"}.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="rule-head mb-1">Yesterday</div>
+        <h2 className="font-display text-cream text-[26px] leading-tight">{data.date}</h2>
+        <p className="text-chalk mt-1 text-[13px]">
+          Finals for your board · highlights when ESPN has them · favorite players
+        </p>
+      </div>
+
+      {data.games.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            Scores
+          </h3>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {data.games.map((g) => {
+              const inner = (
+                <article className="bg-panel rounded-lg border border-white/[0.08] p-3 transition hover:border-accent/35">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                      {g.sportLabel}
+                    </span>
+                    <span className="text-[10px] text-[#8b93a7]">{g.detail}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {g.away.logo ? (
+                      <img src={g.away.logo} alt="" className="h-8 w-8 object-contain" />
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={cn(
+                          "text-[15px] font-semibold",
+                          g.away.winner ? "text-cream" : "text-[#a8b0c2]",
+                        )}
+                      >
+                        {g.away.abbrev}{" "}
+                        <span className="numeral">{g.away.score ?? "—"}</span>
+                      </p>
+                      <p
+                        className={cn(
+                          "text-[15px] font-semibold",
+                          g.home.winner ? "text-cream" : "text-[#a8b0c2]",
+                        )}
+                      >
+                        {g.home.abbrev}{" "}
+                        <span className="numeral">{g.home.score ?? "—"}</span>
+                      </p>
+                    </div>
+                    {g.home.logo ? (
+                      <img src={g.home.logo} alt="" className="h-8 w-8 object-contain" />
+                    ) : null}
+                  </div>
+                  {g.highlight ? (
+                    <p className="text-chalk mt-2 line-clamp-2 text-[12px]">
+                      {g.highlight.headline}
+                    </p>
+                  ) : null}
+                </article>
+              );
+              return g.href.startsWith("http") ? (
+                <a key={g.id} href={g.href} target="_blank" rel="noreferrer">
+                  {inner}
+                </a>
+              ) : (
+                <Link key={g.id} to={g.href}>
+                  {inner}
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {data.playerLines.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            Favorite players
+          </h3>
+          <ul className="space-y-2">
+            {data.playerLines.map((line) => (
+              <li key={line.playerId}>
+                <Link
+                  to={`/sports/mlb/player/${line.playerId}`}
+                  className="bg-panel flex items-start gap-3 rounded-lg border border-white/[0.08] px-3 py-2.5 transition hover:border-accent/35"
+                >
+                  <img
+                    src={line.headshot}
+                    alt=""
+                    className="h-12 w-10 shrink-0 rounded-md bg-[#dfe6f2] object-cover object-[center_15%]"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <p className="text-cream text-[14px] font-semibold">{line.playerName}</p>
+                      {line.isWin != null && (
+                        <span
+                          className={cn(
+                            "text-[10px] font-bold uppercase tracking-[0.12em]",
+                            line.isWin ? "text-emerald-300" : "text-alert",
+                          )}
+                        >
+                          {line.isWin ? "W" : "L"}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[12px] text-[#a8b0c2]">
+                      {`${line.isHome ? "vs" : "@"} ${line.opponent}`}
+                    </p>
+                    <p className="numeral text-cream mt-1 text-[13px] leading-snug">
+                      {line.summary || "—"}
+                    </p>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }
