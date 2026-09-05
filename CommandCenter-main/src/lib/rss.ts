@@ -48,6 +48,12 @@ export const RSS_FEEDS: readonly RssFeedDef[] = [
     url: "synthetic:nfl-wraps",
   },
   {
+    id: "cfb-wraps",
+    title: "CFB wraps & previews",
+    short: "CFB wraps",
+    url: "synthetic:cfb-wraps",
+  },
+  {
     id: "mlb-stats",
     title: "MLB standings & leaders",
     short: "MLB boards",
@@ -115,6 +121,11 @@ export const RSS_FEED_FOLDERS: readonly RssFeedFolder[] = [
     id: "folder:nfl",
     title: "NFL",
     feedIds: ["nfl-wraps"],
+  },
+  {
+    id: "folder:cfb",
+    title: "CFB",
+    feedIds: ["cfb-wraps"],
   },
   {
     id: "folder:soccer",
@@ -1958,6 +1969,23 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       stubWithoutArticle: true,
     });
   }
+  if (feedUrl === "synthetic:cfb-wraps") {
+    return fetchEspnWrapsFeed({
+      feedUrl,
+      title: "CFB wraps & previews",
+      description: "College football game wraps and ESPN previews",
+      sportPath: "football/college-football",
+      linkSport: "cfb",
+      days: 7,
+      maxItems: 48,
+      preferFinals: true,
+      includeLive: true,
+      // ESPN publishes real Preview stories for CFB — keep stubs off so Dispatch
+      // only lists games with matchup prose (or finals with wrap copy).
+      stubWithoutArticle: false,
+      lookAheadDays: 3,
+    });
+  }
   if (feedUrl === "synthetic:soccer-clubs-wraps") {
     // Wrexham (Championship) + Wolves / Arsenal (PL) — pull both league scoreboards.
     return fetchMergedEspnWrapsFeeds(
@@ -2214,7 +2242,7 @@ type EspnWrapsOpts = {
   /** ESPN site path, e.g. baseball/mlb or football/nfl or soccer/eng.1 */
   sportPath?: string;
   /** Link slug under espn.com — mlb, nfl, or soccer */
-  linkSport?: "mlb" | "nfl" | "soccer";
+  linkSport?: "mlb" | "nfl" | "cfb" | "soccer";
   teamFilter?: { espnId: string; abbrev: string };
   /** Multi-club filter (OR). Takes precedence over teamFilter when set. */
   teamFilters?: { espnId: string; abbrev: string }[];
@@ -2565,9 +2593,10 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
             if (storyHref) return storyHref;
             return `https://www.espn.com/soccer/match/_/gameId/${c.eventId}`;
           }
+          const path = linkSport === "cfb" ? "college-football" : linkSport;
           return kind === "preview"
-            ? `https://www.espn.com/${linkSport}/preview/_/gameId/${c.eventId}`
-            : `https://www.espn.com/${linkSport}/recap/_/gameId/${c.eventId}`;
+            ? `https://www.espn.com/${path}/preview/_/gameId/${c.eventId}`
+            : `https://www.espn.com/${path}/recap/_/gameId/${c.eventId}`;
         };
 
         const stubItem = (
@@ -2961,7 +2990,7 @@ async function fetchEspnWrapsFeed(opts: EspnWrapsOpts): Promise<RssFeed> {
   return {
     title: opts.title,
     description: opts.description,
-    link: `https://www.espn.com/${linkSport}/`,
+    link: `https://www.espn.com/${linkSport === "cfb" ? "college-football" : linkSport}/`,
     feedUrl: opts.feedUrl,
     items: filtered,
   };
@@ -4750,6 +4779,7 @@ export const RSS_ESPN_WRAP_FEED_URLS = new Set<string>([
   "synthetic:cardinals-wraps",
   "synthetic:mlb-wraps",
   "synthetic:nfl-wraps",
+  "synthetic:cfb-wraps",
   "synthetic:soccer-clubs-wraps",
   "synthetic:epl-wraps",
 ]);

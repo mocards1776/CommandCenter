@@ -2370,11 +2370,17 @@ type EspnGameSummary = {
           displayName?: string;
           abbreviation?: string;
         };
+        records?: { type?: string; summary?: string }[];
+        probables?: {
+          athlete?: { displayName?: string; shortName?: string };
+        }[];
       }[];
     }[];
   };
   article?: EspnStorySrc;
   news?: { articles?: EspnStorySrc[] };
+  pickcenter?: { details?: string; overUnder?: number }[];
+  odds?: { details?: string; overUnder?: number }[];
   predictor?: {
     homeTeam?: { gameProjection?: string };
     awayTeam?: { gameProjection?: string };
@@ -2516,6 +2522,102 @@ function recapFromEspnStory(
   };
 }
 
+async function fetchEspnMlbPreviewFromCdn(
+  eventId: string,
+  homeAbbrev: string,
+  awayAbbrev: string,
+  homeName: string | null,
+  awayName: string | null,
+): Promise<MlbGameRecap | null> {
+  try {
+    const res = await fetch(
+      `https://cdn.espn.com/core/mlb/preview?xhr=1&gameId=${encodeURIComponent(eventId)}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return null;
+    const raw = (await res.json()) as {
+      gamepackageJSON?: { article?: EspnStorySrc };
+    };
+    const article = raw.gamepackageJSON?.article;
+    if (!article?.headline) return null;
+    if (isEspnGamePromoCopy(article.headline, article.description, article.story)) return null;
+    const html = espnStoryBodyHtml(article);
+    const text = stripHtml(html).trim();
+    if (text.length < 80) return null;
+    const blob = `${espnStoryMatchupBlob(article)} ${text}`;
+    if (!espnStoryMentionsMatchup(blob, homeAbbrev, awayAbbrev, homeName, awayName)) return null;
+    return recapFromEspnStory(eventId, article, "preview");
+  } catch {
+    return null;
+  }
+}
+
+/** When ESPN has no written Preview story, still publish an ESPN-sourced matchup card. */
+function buildEspnMlbMatchupPreview(
+  eventId: string,
+  sum: EspnGameSummary,
+  homeAbbrev: string,
+  awayAbbrev: string,
+): MlbGameRecap | null {
+  const comp = sum.header?.competitions?.[0];
+  const competitors = comp?.competitors ?? [];
+  const home = competitors.find((c) => c.homeAway === "home");
+  const away = competitors.find((c) => c.homeAway === "away");
+  if (!home?.team || !away?.team) return null;
+
+  const recordOf = (side: (typeof home) | (typeof away)) =>
+    side?.records?.find((r) => r.type === "total")?.summary ??
+    side?.records?.[0]?.summary ??
+    null;
+  const pitcherOf = (side: (typeof home) | (typeof away)) =>
+    side?.probables?.[0]?.athlete?.displayName ??
+    side?.probables?.[0]?.athlete?.shortName ??
+    null;
+
+  const awayPitch = pitcherOf(away);
+  const homePitch = pitcherOf(home);
+  const awayRec = recordOf(away);
+  const homeRec = recordOf(home);
+  const odds =
+    sum.pickcenter?.[0]?.details ??
+    sum.odds?.[0]?.details ??
+    null;
+  const ou =
+    sum.pickcenter?.[0]?.overUnder ??
+    sum.odds?.[0]?.overUnder ??
+    null;
+  const series = sum.seasonseries?.[0]?.summary ?? null;
+  const when = comp?.status?.type?.detail ?? comp?.status?.type?.description ?? null;
+
+  const bits = [
+    awayPitch || homePitch
+      ? `<p><strong>Probables:</strong> ${awayPitch ?? "TBD"} vs ${homePitch ?? "TBD"}</p>`
+      : null,
+    awayRec || homeRec
+      ? `<p><strong>Records:</strong> ${away.team.abbreviation ?? awayAbbrev}${awayRec ? ` (${awayRec})` : ""} at ${home.team.abbreviation ?? homeAbbrev}${homeRec ? ` (${homeRec})` : ""}</p>`
+      : null,
+    odds
+      ? `<p><strong>Line:</strong> ${odds}${ou != null ? ` · O/U ${ou}` : ""}</p>`
+      : null,
+    series ? `<p><strong>Season series:</strong> ${series}</p>` : null,
+    when ? `<p><strong>First pitch:</strong> ${when}</p>` : null,
+  ].filter(Boolean);
+
+  if (!bits.length) return null;
+  const awayLabel = away.team.displayName ?? awayAbbrev;
+  const homeLabel = home.team.displayName ?? homeAbbrev;
+  const storyHtml = `<p>ESPN matchup card — written preview not published yet.</p>${bits.join("")}`;
+  return {
+    espnEventId: eventId,
+    headline: `${awayLabel} at ${homeLabel}`,
+    description: "ESPN matchup card",
+    storyHtml,
+    storyText: stripHtml(storyHtml).trim(),
+    url: `https://www.espn.com/mlb/preview/_/gameId/${eventId}`,
+    image: null,
+  };
+}
+
 /** ESPN game wrap / recap for an MLB game (matched by date + team ids/abbrevs). */
 export async function fetchEspnGameRecap(
   officialDate: string | null | undefined,
@@ -2593,9 +2695,14 @@ export async function fetchEspnGameRecap(
       return recapFromEspnStory(eventId, sum.article!, isPregame ? "preview" : "recap");
     }
 
-    // Pregame news rails are league features / fantasy blurbs — never promote them
-    // as this game's preview (BAL⊂baseball / ATH⊂path false positives used to leak).
-    if (isPregame) return null;
+    // CDN gamepackage sometimes carries the Preview article when site.api omits it.
+    if (isPregame) {
+      const fromCdn = await fetchEspnMlbPreviewFromCdn(eventId, homeAbbrev, awayAbbrev, homeName, awayName);
+      if (fromCdn) return fromCdn;
+      // ESPN often ships no written preview — still surface a real ESPN matchup card
+      // (probables / records / odds) so the preview slot isn't empty.
+      return buildEspnMlbMatchupPreview(eventId, sum, homeAbbrev, awayAbbrev);
+    }
 
     for (const a of sum.news?.articles ?? []) {
       if (usable(a, true, 80)) {

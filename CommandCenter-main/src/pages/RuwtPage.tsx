@@ -125,6 +125,7 @@ export default function RuwtPage() {
   const [editing, setEditing] = useState(false);
   const [showFinals, setShowFinals] = useState(false);
   const [sportFilter, setSportFilter] = useState<RuwtSportFilter>("all");
+  const [liveOnly, setLiveOnly] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -403,8 +404,15 @@ export default function RuwtPage() {
     return unified.filter((g) => g.sport === sportFilter);
   }, [unified, sportFilter]);
 
-  const activeGames = useMemo(() => filtered.filter((g) => !g.game.final), [filtered]);
-  const finalGames = useMemo(() => filtered.filter((g) => g.game.final), [filtered]);
+  const activeGames = useMemo(() => {
+    const open = filtered.filter((g) => !g.game.final);
+    if (!liveOnly) return open;
+    return open.filter((g) => g.game.live);
+  }, [filtered, liveOnly]);
+  const finalGames = useMemo(
+    () => (liveOnly ? [] : filtered.filter((g) => g.game.final)),
+    [filtered, liveOnly],
+  );
 
   const refresh = () => {
     void Promise.all([
@@ -442,6 +450,19 @@ export default function RuwtPage() {
             {label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setLiveOnly((v) => !v)}
+          className={cn(
+            "rounded-sm border px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] transition",
+            liveOnly
+              ? "border-alert/50 bg-alert/15 text-cream"
+              : "border-white/10 text-chalk hover:border-accent/40 hover:text-cream",
+          )}
+          aria-pressed={liveOnly}
+        >
+          Live only
+        </button>
         <span className="mx-1 hidden h-4 w-px bg-white/10 sm:inline-block" />
         <button
           type="button"
@@ -671,7 +692,11 @@ export default function RuwtPage() {
               )}
             </div>
           ) : (
-            <p className="text-chalk-dim text-[13px]">No live/upcoming games — finals below.</p>
+            <p className="text-chalk-dim text-[13px]">
+              {liveOnly
+                ? "No live games right now."
+                : "No live/upcoming games — finals below."}
+            </p>
           )}
 
           {finalGames.length > 0 && (

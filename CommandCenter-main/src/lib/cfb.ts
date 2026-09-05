@@ -1081,6 +1081,77 @@ function cfbArticleRelevantToGame(
   return mentions(away.abbrev, away.name) || mentions(home.abbrev, home.name);
 }
 
+/** ESPN preview/recap HTML often uses custom <hl2> tags — normalize for the reader. */
+export function sanitizeEspnStoryHtml(html: string | null | undefined): string | null {
+  if (!html?.trim()) return null;
+  return html
+    .replace(/<\/?hl(\d)>/gi, (_, n: string) => {
+      const level = Math.min(5, Math.max(2, Number(n) || 2));
+      return _.startsWith("</") ? `</h${level}>` : `<h${level}>`;
+    })
+    .replace(/<\/?photo[^>]*>/gi, "")
+    .replace(/<\/?image[^>]*>/gi, "")
+    .trim();
+}
+
+function pickCfbGameArticle(
+  official: {
+    headline?: string;
+    description?: string;
+    story?: string;
+    type?: string;
+  } | null
+    | undefined,
+  newsArticles: {
+    headline?: string;
+    description?: string;
+    story?: string;
+    type?: string;
+  }[],
+  away: { name: string; abbrev: string },
+  home: { name: string; abbrev: string },
+): {
+  headline: string;
+  description: string | null;
+  storyHtml: string | null;
+} | null {
+  // ESPN's official game article (type Preview/Recap) is authoritative — don't lose it
+  // to a weakly related news-rail hit, and don't require headline-only team matches.
+  const officialStory = sanitizeEspnStoryHtml(official?.story);
+  const officialText = `${official?.headline ?? ""} ${official?.description ?? ""} ${official?.story ?? ""}`;
+  if (
+    official?.headline &&
+    (officialStory || (official.description ?? "").trim().length >= 40) &&
+    (/^(preview|recap|story)$/i.test(official.type ?? "") ||
+      (officialStory?.replace(/<[^>]+>/g, "").trim().length ?? 0) >= 120 ||
+      cfbArticleRelevantToGame(officialText, away, home))
+  ) {
+    return {
+      headline: official.headline,
+      description: official.description ?? null,
+      storyHtml: officialStory,
+    };
+  }
+
+  const candidates = [official, ...newsArticles].filter(
+    (a): a is NonNullable<typeof a> => Boolean(a?.headline),
+  );
+  const hit =
+    candidates.find((a) =>
+      cfbArticleRelevantToGame(
+        `${a.headline ?? ""} ${a.description ?? ""} ${a.story ?? ""}`,
+        away,
+        home,
+      ),
+    ) ?? null;
+  if (!hit?.headline) return null;
+  return {
+    headline: hit.headline,
+    description: hit.description ?? null,
+    storyHtml: sanitizeEspnStoryHtml(hit.story),
+  };
+}
+
 
 /** Strip jersey numbers, formation boilerplate, and kick metadata from ESPN play text. */
 export function simplifyCfbPlayText(raw: string | null | undefined): string {
@@ -1225,11 +1296,12 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
       headline?: string;
       description?: string;
       story?: string;
+      type?: string;
       video?: EspnVideoRaw[];
     };
     news?:
-      | { articles?: { headline?: string; description?: string; story?: string }[] }
-      | { headline?: string; description?: string; story?: string }[];
+      | { articles?: { headline?: string; description?: string; story?: string; type?: string }[] }
+      | { headline?: string; description?: string; story?: string; type?: string }[];
     videos?: EspnVideoRaw[];
     pickcenter?: {
       details?: string;
@@ -1348,23 +1420,11 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
     ? raw.news
     : (raw.news?.articles ?? []);
 
-  const candidates = [
-    raw.article,
-    ...newsArticles,
-  ].filter((a): a is NonNullable<typeof a> => Boolean(a?.headline));
-
   // `await` above resets TS narrowing on `let base`; capture teams for the closure.
   if (!base) throw new Error("CFB game not found");
   const awayTeam = base.away;
   const homeTeam = base.home;
-  const articleRaw =
-    candidates.find((a) =>
-      cfbArticleRelevantToGame(
-        `${a.headline ?? ""} ${a.description ?? ""}`,
-        awayTeam,
-        homeTeam,
-      ),
-    ) ?? null;
+  const article = pickCfbGameArticle(raw.article, newsArticles, awayTeam, homeTeam);
 
   const pick = raw.pickcenter?.[0] ?? raw.odds?.[0];
   const oddsLine = pick?.details
@@ -1491,13 +1551,7 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
     recentPlays,
     boxGroups,
     teamStats,
-    article: articleRaw?.headline
-      ? {
-          headline: articleRaw.headline,
-          description: articleRaw.description ?? null,
-          storyHtml: articleRaw.story ?? null,
-        }
-      : null,
+    article,
     recapVideo,
     videos,
     oddsLine,
