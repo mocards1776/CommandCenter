@@ -698,8 +698,8 @@ export function cfbPollRank(raw: number | null | undefined): number | null {
 }
 
 /**
- * Prefer AP Top 25, then AFCA Coaches. ESPN scoreboard curatedRank is AP-only,
- * so Coaches-only teams (e.g. Clemson #23) otherwise look unranked.
+ * AP Top 25 only. ESPN scoreboard curatedRank is AP; fromPolls is the AP map
+ * from rankings (used when curatedRank is missing on a payload).
  */
 export function mergeCfbPollRank(
   curated: number | null | undefined,
@@ -751,8 +751,8 @@ export async function fetchCfbFpiRanks(): Promise<Map<number, number>> {
 }
 
 /**
- * AP-first Top 25 map, with AFCA Coaches filling gaps.
- * ESPN curatedRank on the scoreboard is AP-only.
+ * AP Top 25 only — no Coaches / CFP / other polls.
+ * ESPN curatedRank on the scoreboard is AP; this map covers payloads that omit it.
  */
 export async function fetchCfbPollRankByTeam(): Promise<Map<number, number>> {
   const now = Date.now();
@@ -770,25 +770,17 @@ export async function fetchCfbPollRankByTeam(): Promise<Map<number, number>> {
         ranks?: { current?: number; team?: { id?: string } }[];
       }[];
     };
-    const ap = new Map<number, number>();
-    const coaches = new Map<number, number>();
     for (const poll of raw.rankings ?? []) {
       const label = `${poll.name ?? ""} ${poll.shortName ?? ""}`.toLowerCase();
       if (/fcs|division ii|div ii|d2\b/.test(label)) continue;
       const isAp = /\bap\b/.test(label) || /ap poll/.test(label);
-      const isCoaches = /coaches/.test(label) && !/fcs/.test(label);
-      if (!isAp && !isCoaches) continue;
-      const target = isAp ? ap : coaches;
+      if (!isAp) continue;
       for (const r of poll.ranks ?? []) {
         const id = Number(r.team?.id);
         const rank = cfbPollRank(r.current);
         if (!id || rank == null) continue;
-        if (!target.has(id)) target.set(id, rank);
+        if (!map.has(id)) map.set(id, rank);
       }
-    }
-    for (const [id, rank] of ap) map.set(id, rank);
-    for (const [id, rank] of coaches) {
-      if (!map.has(id)) map.set(id, rank);
     }
   } catch {
     /* keep empty — fall back to curatedRank only */
@@ -1614,7 +1606,7 @@ export type CfbTeamPage = {
   record: string | null;
   standing: string | null;
   conference: string | null;
-  /** AP-first Top 25, with Coaches fill-in. */
+  /** AP Top 25 only. */
   rank: number | null;
   fpiRank: number | null;
   nextEvent: { id: string; name: string; date: string | null } | null;

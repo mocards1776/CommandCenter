@@ -2,6 +2,12 @@
 
 ---
 
+## CFB poll badges: AP only — September 5, 2026
+
+- Rank badges and RUWT poll ranks use the **AP Top 25 only** (no AFCA Coaches fill-in). ESPN’s scoreboard `curatedRank` is already AP — Coaches-only teams stay unranked until they make the AP poll.
+
+---
+
 ## RUWT live filter, ESPN previews, yesterday’s Home recap — September 5, 2026
 
 - **RUWT:** “Live only” chip next to the sport filters — hides upcoming and finals.
@@ -10,9 +16,9 @@
 
 ---
 
-## CFB RUWT: Coaches ranks, heat, upset spots — September 5, 2026
+## CFB RUWT: ranks, heat, upset spots — September 5, 2026
 
-- Poll badges prefer AP Top 25 and fill from AFCA Coaches (ESPN scoreboard `curatedRank` is AP-only — Clemson #23 Coaches no longer looks unranked).
+- Poll badges use AP Top 25 (ESPN scoreboard `curatedRank` is AP).
 - RUWT heat boosts ranked matchups, top-FPI clashes, national TV, and preview upset spots (ranked / quality underdogs); softens pick'ems between weak FPI sides so they don't outrank #11 LSU–style games.
 - Fixed CFB focus-team IDs for Clemson / Texas / Texas Tech on the interest board.
 
