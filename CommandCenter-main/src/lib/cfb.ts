@@ -3165,8 +3165,9 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
       (g.away.rank && g.away.rank <= 25) || (g.home.rank && g.home.rank <= 25),
     );
     // Drama from margin — without this every live game sits at flat 40.
-    // Soften blowout drag when a ranked team is on the field so AP games
-    // don't sink below G5 clocks (Houston vs Liberty/JMU style).
+    // Soften mid-range drag when a ranked team is on the field so AP games
+    // don't sink below G5 clocks — but still punish true blowouts (≥28)
+    // so a 29-pt IU lead doesn't beat a closer ranked-upset watch.
     if (diff != null) {
       if (diff <= 3) {
         score += 28;
@@ -3175,10 +3176,10 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
         score += 14;
         reasons.push("Tight");
       } else if (diff >= 28) {
-        score -= rankedLive ? 10 : 20;
+        score -= rankedLive ? 18 : 20;
         reasons.push("Blowout");
       } else if (diff >= 21) {
-        score -= rankedLive ? 6 : 14;
+        score -= rankedLive ? 10 : 14;
         reasons.push("Blowout");
       } else if (diff >= 14) {
         score -= rankedLive ? 3 : 8;
@@ -3392,16 +3393,36 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
             : 0;
         score += base + earlyBonus;
         reasons.push(gap >= 25 ? "Upset brewing" : "Upset watch");
-      } else if (
-        chalkScore != null &&
-        dogScore != null &&
-        absSpread != null &&
-        absSpread >= 3 &&
-        favId != null
-      ) {
-        // Favorite leading but not covering yet → still interesting.
+      } else if (chalkScore != null && dogScore != null && chalkScore > dogScore) {
         const favMargin = chalkScore - dogScore;
-        if (favMargin >= 0 && favMargin < absSpread - 0.5 && favMargin <= 10) {
+        const gap = fpiGap ?? (absSpread != null ? absSpread * 4 : null);
+        // Huge FPI dog keeping a ranked/FPI chalk lead modest = closest upset
+        // (ORST–#23 HOU down 19 outranks UNT–#6 IU down 29).
+        const chalkRanked =
+          (chalkId === g.away.teamId &&
+            g.away.rank != null &&
+            g.away.rank <= 25) ||
+          (chalkId === g.home.teamId &&
+            g.home.rank != null &&
+            g.home.rank <= 25);
+        if (
+          gap != null &&
+          gap >= 40 &&
+          favMargin <= 21 &&
+          (chalkRanked || gap >= 55)
+        ) {
+          const closeness = 21 - favMargin;
+          const gapBonus = gap >= 70 ? 8 : gap >= 55 ? 5 : 3;
+          score += 14 + Math.round(closeness * 0.7) + gapBonus;
+          reasons.push(favMargin <= 14 ? "Closest upset" : "Upset watch");
+        } else if (
+          absSpread != null &&
+          absSpread >= 3 &&
+          favId != null &&
+          favMargin < absSpread - 0.5 &&
+          favMargin <= 10
+        ) {
+          // Favorite leading but not covering yet → still interesting.
           score += 8;
           reasons.push("Against the number");
         }

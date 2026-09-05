@@ -2,6 +2,13 @@
 
 ---
 
+## RUWT: closest-upset heat over ranked blowouts — September 5, 2026
+
+- Live **Upset watch / Closest upset** when a ranked (or huge-FPI) chalk lead stays modest (≤21) against a big FPI dog — e.g. #23 Houston up 19 on Oregon State outranks a 29-pt Indiana blowout.
+- True blowouts (≥28, and ≥21) drag harder even with an AP team on the field so padded ranked leads don’t sit above closer upset watches.
+
+---
+
 ## RUWT: footballs, ranked heat, P5 floors, logos, glows — September 5, 2026
 
 - Possession markers are **football glyphs** (not white dots) on RUWT cards and field headers; field ball is a pointed laced football.
