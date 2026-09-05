@@ -2,6 +2,12 @@
 
 ---
 
+## CFB coach records: fill missing final seasons — September 5, 2026
+
+- When ESPN blanks a head coach’s last year after a job change (e.g. Eric Morris **2025** at North Texas missing while 2026 OKST shows 0–0), rebuild that season from Wikipedia HC stops + the school’s ESPN schedule W–L.
+
+---
+
 ## CFB coach portraits from Wikimedia Commons — September 5, 2026
 
 - When Wikipedia has no lead image (and ESPN has no coach headshot), resolve portraits from **Wikimedia Commons** by name — fixes missing faces like Alex Golesh on coach profiles.

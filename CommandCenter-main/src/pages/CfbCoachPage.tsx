@@ -88,7 +88,7 @@ export default function CfbCoachPage() {
   const qc = useQueryClient();
 
   const detail = useQuery({
-    queryKey: ["cfb-coach-v7", coachId],
+    queryKey: ["cfb-coach-v8", coachId],
     queryFn: () => fetchCfbCoachProfile(coachId!),
     enabled: Boolean(coachId),
     staleTime: 180_000,

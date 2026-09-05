@@ -4042,6 +4042,223 @@ export async function fetchCfbCoachSeasonRecords(
   return rows;
 }
 
+/** Expand wiki ranges like "2023–2025" / "2026–present" into season years. */
+function expandCoachCareerYears(years: string, presentYear = new Date().getFullYear()): number[] {
+  const normalized = years
+    .replace(/[–—]/g, "-")
+    .replace(/\bpresent\b/gi, String(presentYear))
+    .trim();
+  const range = normalized.match(/(\d{4})\s*-\s*(\d{4})/);
+  if (range) {
+    const start = Number(range[1]);
+    const end = Number(range[2]);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return [];
+    if (end - start > 40) return [];
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }
+  const single = normalized.match(/\b(\d{4})\b/);
+  return single ? [Number(single[1])] : [];
+}
+
+/** Wiki HC rows are bare school names; assistants usually carry (OC/QB) style tags. */
+function isLikelyHeadCoachCareerStop(detail: string): boolean {
+  if (/\bhead coach\b/i.test(detail)) return true;
+  if (/\([^)]*\)/.test(detail)) return false;
+  return detail.trim().length > 0;
+}
+
+function schoolHintFromCareerDetail(detail: string): string {
+  return detail
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\bfootball\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchFbsTeamBySchoolHint(
+  teams: { id: number; name: string; abbrev: string }[],
+  hint: string,
+): { id: number; name: string; abbrev: string } | null {
+  const h = hint.toLowerCase().trim();
+  if (!h) return null;
+  const exact = teams.find((t) => t.name.toLowerCase() === h);
+  if (exact) return exact;
+  const starts = teams.filter((t) => t.name.toLowerCase().startsWith(h));
+  if (starts.length === 1) return starts[0]!;
+  const tokens = h.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 2) {
+    const multi = teams.filter((t) => {
+      const n = t.name.toLowerCase();
+      return tokens.every((tok) => n.includes(tok));
+    });
+    if (multi.length === 1) return multi[0]!;
+  }
+  const includes = teams.filter((t) => t.name.toLowerCase().includes(h));
+  if (includes.length === 1) return includes[0]!;
+  return null;
+}
+
+async function lookupEspnTeamBySchoolHint(
+  hint: string,
+): Promise<{ id: number; name: string; abbrev: string } | null> {
+  try {
+    const url = new URL("https://site.web.api.espn.com/apis/common/v3/search");
+    url.searchParams.set("query", hint);
+    url.searchParams.set("limit", "8");
+    url.searchParams.set("type", "team");
+    url.searchParams.set("sport", "football");
+    url.searchParams.set("league", "college-football");
+    const res = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      items?: {
+        id?: string;
+        displayName?: string;
+        abbreviation?: string;
+        type?: string;
+      }[];
+    };
+    const h = hint.toLowerCase();
+    const teams = (data.items ?? []).filter((it) => /team/i.test(it.type ?? "team"));
+    const hit =
+      teams.find((t) => (t.displayName ?? "").toLowerCase().startsWith(h)) ??
+      teams.find((t) => (t.displayName ?? "").toLowerCase().includes(h)) ??
+      teams[0];
+    if (!hit?.id || !/^\d+$/.test(hit.id)) return null;
+    return {
+      id: Number(hit.id),
+      name: hit.displayName ?? hint,
+      abbrev: (hit.abbreviation ?? "—").toUpperCase(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Completed W–L from ESPN team schedule (covers seasons ESPN coach records blank out). */
+async function fetchTeamSeasonWlFromSchedule(
+  teamId: number | string,
+  season: number,
+): Promise<{ wins: number; losses: number; ties: number } | null> {
+  try {
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/football/college-football/teams/${teamId}/schedule?season=${season}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      events?: {
+        competitions?: {
+          status?: { type?: { completed?: boolean } };
+          competitors?: {
+            team?: { id?: string };
+            winner?: boolean;
+            score?: { value?: number } | string | null;
+          }[];
+        }[];
+      }[];
+    };
+    let wins = 0;
+    let losses = 0;
+    let ties = 0;
+    const tid = String(teamId);
+    for (const event of data.events ?? []) {
+      const comp = event.competitions?.[0];
+      if (!comp?.status?.type?.completed) continue;
+      const self = (comp.competitors ?? []).find((c) => String(c.team?.id) === tid);
+      const opp = (comp.competitors ?? []).find((c) => String(c.team?.id) !== tid);
+      if (!self) continue;
+      if (self.winner === true) wins += 1;
+      else if (self.winner === false) losses += 1;
+      else {
+        const sScore =
+          typeof self.score === "object" && self.score
+            ? Number(self.score.value)
+            : Number(self.score);
+        const oScore =
+          typeof opp?.score === "object" && opp.score
+            ? Number(opp.score.value)
+            : Number(opp?.score);
+        if (Number.isFinite(sScore) && Number.isFinite(oScore)) {
+          if (sScore > oScore) wins += 1;
+          else if (sScore < oScore) losses += 1;
+          else ties += 1;
+        }
+      }
+    }
+    if (wins + losses + ties <= 0) return null;
+    return { wins, losses, ties };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ESPN sometimes leaves a departed HC's final season at 0-0 on the new school
+ * (Eric Morris 2025 → OKST blank). Fill those gaps from Wikipedia HC stops +
+ * the school's ESPN schedule W–L.
+ */
+async function backfillCoachSeasonRecordsFromCareerPath(
+  records: CfbCoachSeasonRecord[],
+  careerPath: CfbCoachCareerStop[],
+): Promise<CfbCoachSeasonRecord[]> {
+  const hcStops = careerPath.filter(
+    (s) => s.kind === "coaching" && isLikelyHeadCoachCareerStop(s.detail),
+  );
+  if (!hcStops.length) return records;
+
+  const presentYear = new Date().getFullYear();
+  const bySeason = new Map<number, CfbCoachSeasonRecord>();
+  for (const row of records) bySeason.set(row.season, row);
+
+  const fbsTeams = await fetchFbsTeams(presentYear).catch(() => [] as FbsTeamRow[]);
+  const teamCache = new Map<string, { id: number; name: string; abbrev: string } | null>();
+
+  const resolveTeam = async (hint: string) => {
+    const key = hint.toLowerCase();
+    if (teamCache.has(key)) return teamCache.get(key) ?? null;
+    const fromFbs = matchFbsTeamBySchoolHint(fbsTeams, hint);
+    const resolved = fromFbs ?? (await lookupEspnTeamBySchoolHint(hint));
+    teamCache.set(key, resolved);
+    return resolved;
+  };
+
+  for (const stop of hcStops) {
+    const years = expandCoachCareerYears(stop.years, presentYear);
+    const hint = schoolHintFromCareerDetail(stop.detail);
+    if (!years.length || !hint) continue;
+    const team = await resolveTeam(hint);
+    if (!team) continue;
+
+    for (const season of years) {
+      const existing = bySeason.get(season);
+      const needsFill =
+        !existing ||
+        (existing.wins + existing.losses + existing.ties <= 0 && season < presentYear);
+      if (!needsFill) continue;
+
+      const wl = await fetchTeamSeasonWlFromSchedule(team.id, season);
+      if (!wl) continue;
+      const summary =
+        wl.ties > 0 ? `${wl.wins}-${wl.losses}-${wl.ties}` : `${wl.wins}-${wl.losses}`;
+      bySeason.set(season, {
+        season,
+        school: team.name,
+        teamId: String(team.id),
+        teamAbbrev: team.abbrev,
+        wins: wl.wins,
+        losses: wl.losses,
+        ties: wl.ties,
+        summary,
+      });
+    }
+  }
+
+  return [...bySeason.values()].sort(
+    (a, b) => b.season - a.season || a.school.localeCompare(b.school),
+  );
+}
+
 function careerFromSeasonRecords(records: CfbCoachSeasonRecord[]): CfbCoachCareerTotals | null {
   if (!records.length) return null;
   const wins = records.reduce((n, r) => n + r.wins, 0);
@@ -4243,9 +4460,17 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
   }
 
   const espnCoachId = /^\d+$/.test(base.id) ? base.id : null;
-  const seasonRecords = espnCoachId
+  let seasonRecords = espnCoachId
     ? await fetchCfbCoachSeasonRecords(espnCoachId).catch(() => [] as CfbCoachSeasonRecord[])
     : [];
+  // ESPN often blanks a coach's final season after they leave (Morris 2025).
+  // Rebuild missing HC years from Wikipedia stops + team schedules.
+  if (careerPath.length) {
+    seasonRecords = await backfillCoachSeasonRecordsFromCareerPath(
+      seasonRecords,
+      careerPath,
+    ).catch(() => seasonRecords);
+  }
   const career = careerFromSeasonRecords(seasonRecords);
 
   if (career) {
