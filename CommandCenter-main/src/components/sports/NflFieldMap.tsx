@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import type { NflScoreGame } from "@/lib/nfl";
 import { fieldBallPctFromHomeYardLine } from "@/lib/nfl";
 import { cn } from "@/lib/utils";
+import PossessionFootball from "@/components/sports/PossessionFootball";
 
 /** Minimal shape for NFL / CFB live field maps on RUWT cards. */
 export type FootballFieldGame = {
@@ -28,7 +29,7 @@ function parseYardsToGo(text: string | null | undefined): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** Brown football with laces — flips with direction of attack. */
+/** Brown football with pointed tips + laces — flips with direction of attack. */
 function FootballGlyph({
   facingRight,
   className,
@@ -38,25 +39,33 @@ function FootballGlyph({
 }) {
   return (
     <svg
-      viewBox="0 0 28 16"
+      viewBox="0 0 32 16"
       className={className}
       aria-hidden
       style={{ transform: facingRight ? undefined : "scaleX(-1)" }}
     >
-      <ellipse cx="14" cy="8" rx="12.5" ry="6.6" fill="#6b3a14" stroke="#2a1508" strokeWidth="1.2" />
-      <ellipse cx="14" cy="7.2" rx="10.5" ry="4.8" fill="#8b4e1c" opacity="0.9" />
-      <path d="M8 8 H20" stroke="#f5efe4" strokeWidth="1.15" strokeLinecap="round" />
-      {[10, 12, 14, 16, 18].map((x) => (
+      <path
+        d="M2 8 C2 3.2 7.5 1.2 16 1.2 C24.5 1.2 30 3.2 30 8 C30 12.8 24.5 14.8 16 14.8 C7.5 14.8 2 12.8 2 8 Z"
+        fill="#6b3a14"
+        stroke="#2a1508"
+        strokeWidth="1.1"
+      />
+      <path
+        d="M3.2 8 C3.2 4.2 8.2 2.6 16 2.6 C23.8 2.6 28.8 4.2 28.8 8 C28.8 11.8 23.8 13.4 16 13.4 C8.2 13.4 3.2 11.8 3.2 8 Z"
+        fill="#8b4e1c"
+      />
+      <path d="M10 8 H22" stroke="#f5efe4" strokeWidth="1.2" strokeLinecap="round" />
+      {[12, 14, 16, 18, 20].map((x) => (
         <path
           key={x}
-          d={`M${x} 5.6 V10.4`}
+          d={`M${x} 5.3 V10.7`}
           stroke="#f5efe4"
-          strokeWidth="0.9"
+          strokeWidth="0.95"
           strokeLinecap="round"
         />
       ))}
-      <ellipse cx="5.2" cy="8" rx="1.6" ry="2.4" fill="#2a1508" opacity="0.55" />
-      <ellipse cx="22.8" cy="8" rx="1.6" ry="2.4" fill="#2a1508" opacity="0.55" />
+      <ellipse cx="4.4" cy="8" rx="1.5" ry="2.3" fill="#2a1508" opacity="0.5" />
+      <ellipse cx="27.6" cy="8" rx="1.5" ry="2.3" fill="#2a1508" opacity="0.5" />
     </svg>
   );
 }
@@ -136,7 +145,7 @@ export default function NflFieldMap({
           style={awayHasBall ? { backgroundColor: `${awayColor}cc` } : undefined}
         >
           {game.away.abbrev}
-          {awayHasBall ? " ●" : ""}
+          {awayHasBall ? <PossessionFootball className="h-2.5 w-4" /> : null}
         </span>
         <span className="text-emerald-200/70">{ddText || "Field"}</span>
         <span
@@ -146,7 +155,7 @@ export default function NflFieldMap({
           )}
           style={homeHasBall ? { backgroundColor: `${homeColor}cc` } : undefined}
         >
-          {homeHasBall ? "● " : ""}
+          {homeHasBall ? <PossessionFootball className="h-2.5 w-4" /> : null}
           {game.home.abbrev}
         </span>
       </div>

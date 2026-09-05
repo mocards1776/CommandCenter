@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Loader2, RefreshCw, Settings2 } from "lucide
 import toast from "react-hot-toast";
 import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
 import NflFieldMap from "@/components/sports/NflFieldMap";
+import PossessionFootball from "@/components/sports/PossessionFootball";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
@@ -22,6 +23,7 @@ import {
 import { fetchNflScoreboard, chicagoTodayNfl, NFL_TEAMS, type NflScoredGame } from "@/lib/nfl";
 import {
   CFB_FOCUS_TEAMS,
+  CFB_POWER5_TEAM_IDS,
   CFB_SEC_TEAM_IDS,
   chicagoTodayCfb,
   cfbTeamLogo,
@@ -575,12 +577,15 @@ export default function RuwtPage() {
               <h3 className="rule-head mb-1">College football interest</h3>
               <p className="text-chalk-dim mb-4 text-[12px]">
                 10 = favorite must-watch · 7 = follow closely · 0 = ignore for RUWT.
-                SEC programs are auto-ranked at least 4.
+                Power conferences default to at least 2 · SEC programs at least 4.
               </p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {CFB_FOCUS_TEAMS.map((t) => {
                   const value = cfbInterest[String(t.id)] ?? 0;
                   const secFloor = CFB_SEC_TEAM_IDS.has(String(t.id));
+                  const powerFloor =
+                    !secFloor && CFB_POWER5_TEAM_IDS.has(String(t.id));
+                  const min = secFloor ? 4 : powerFloor ? 2 : 0;
                   return (
                     <label
                       key={t.id}
@@ -591,11 +596,13 @@ export default function RuwtPage() {
                         {t.abbrev} · {t.name}
                         {secFloor ? (
                           <span className="text-chalk-dim"> · SEC</span>
+                        ) : powerFloor ? (
+                          <span className="text-chalk-dim"> · P5</span>
                         ) : null}
                       </span>
                       <input
                         type="range"
-                        min={secFloor ? 4 : 0}
+                        min={min}
                         max={10}
                         value={value}
                         onChange={(e) =>
@@ -823,6 +830,20 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
   const poss = game.situation?.possessionTeamId;
   const awayHasBall = poss != null && String(poss) === String(game.away.teamId);
   const homeHasBall = poss != null && String(poss) === String(game.home.teamId);
+  const diff =
+    game.away.score != null && game.home.score != null
+      ? Math.abs(game.away.score - game.home.score)
+      : null;
+  const period = game.period;
+  const detail = `${game.shortDetail ?? ""} ${game.status ?? ""}`.toLowerCase();
+  const inOt = (period != null && period >= 5) || /\bot\b|overtime/.test(detail);
+  const redZone = Boolean(game.live && game.situation?.isRedZone);
+  const closeAndLate = Boolean(
+    game.live &&
+      diff != null &&
+      diff <= 8 &&
+      (period === 4 || inOt || /\b4th\b/.test(detail)),
+  );
 
   return (
     <Link
@@ -830,6 +851,11 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
       className={cn(
         "relative block overflow-hidden rounded-lg border bg-[#07101d] transition hover:border-accent/40",
         game.live ? "border-alert/45" : "border-white/[0.08]",
+        redZone &&
+          "border-red-500/70 shadow-[0_0_0_1px_rgba(239,68,68,0.55),0_0_28px_rgba(239,68,68,0.38)]",
+        !redZone &&
+          closeAndLate &&
+          "border-amber-400/60 shadow-[0_0_0_1px_rgba(251,191,36,0.45),0_0_24px_rgba(251,191,36,0.3)]",
       )}
     >
       <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
@@ -851,10 +877,17 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
           {game.away.logo && <img src={game.away.logo} alt="" className="h-8 w-8 object-contain" />}
-          <p className={cn("text-[15px] font-bold text-white", awayHasBall && "text-cream")}>
+          <p
+            className={cn(
+              "inline-flex items-center gap-1 text-[15px] font-bold text-white",
+              awayHasBall && "text-cream",
+            )}
+          >
             <CfbRankLabel pollRank={game.away.rank} fpiRank={game.away.fpiRank} />
             {game.away.abbrev}
-            {awayHasBall ? " ●" : ""}
+            {awayHasBall ? (
+              <PossessionFootball className="h-3 w-5 shrink-0" />
+            ) : null}
           </p>
         </div>
         <p className="font-display text-center text-[28px] tabular-nums text-white">
@@ -870,8 +903,15 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
         </p>
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
-          <p className={cn("text-[15px] font-bold text-white", homeHasBall && "text-cream")}>
-            {homeHasBall ? "● " : ""}
+          <p
+            className={cn(
+              "inline-flex items-center gap-1 text-[15px] font-bold text-white",
+              homeHasBall && "text-cream",
+            )}
+          >
+            {homeHasBall ? (
+              <PossessionFootball className="h-3 w-5 shrink-0" />
+            ) : null}
             <CfbRankLabel pollRank={game.home.rank} fpiRank={game.home.fpiRank} />
             {game.home.abbrev}
           </p>
@@ -898,12 +938,30 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
 }
 
 function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
+  const poss = game.situation?.possessionTeamId;
+  const awayHasBall = poss != null && String(poss) === String(game.away.teamId);
+  const homeHasBall = poss != null && String(poss) === String(game.home.teamId);
+  const diff =
+    game.away.score != null && game.home.score != null
+      ? Math.abs(game.away.score - game.home.score)
+      : null;
+  const detail = `${game.shortDetail ?? ""} ${game.status ?? ""}`.toLowerCase();
+  const redZone = Boolean(game.live && game.situation?.isRedZone);
+  const closeAndLate = Boolean(
+    game.live && diff != null && diff <= 8 && (/\b4th\b/.test(detail) || /\bot\b|overtime/.test(detail)),
+  );
+
   return (
     <Link
       to={`/sports/nfl/game/${game.id}`}
       className={cn(
         "relative block overflow-hidden rounded-lg border bg-[#07101d] transition hover:border-accent/40",
         game.live ? "border-alert/45" : "border-white/[0.08]",
+        redZone &&
+          "border-red-500/70 shadow-[0_0_0_1px_rgba(239,68,68,0.55),0_0_28px_rgba(239,68,68,0.38)]",
+        !redZone &&
+          closeAndLate &&
+          "border-amber-400/60 shadow-[0_0_0_1px_rgba(251,191,36,0.45),0_0_24px_rgba(251,191,36,0.3)]",
       )}
     >
       <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
@@ -925,7 +983,15 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
           {game.away.logo && <img src={game.away.logo} alt="" className="h-8 w-8 object-contain" />}
-          <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
+          <p
+            className={cn(
+              "inline-flex items-center gap-1 text-[15px] font-bold text-white",
+              awayHasBall && "text-cream",
+            )}
+          >
+            {game.away.abbrev}
+            {awayHasBall ? <PossessionFootball className="h-3 w-5 shrink-0" /> : null}
+          </p>
         </div>
         <p className="font-display text-center text-[28px] tabular-nums text-white">
           {game.live || game.final ? (
@@ -940,7 +1006,15 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
         </p>
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
-          <p className="text-[15px] font-bold text-white">{game.home.abbrev}</p>
+          <p
+            className={cn(
+              "inline-flex items-center gap-1 text-[15px] font-bold text-white",
+              homeHasBall && "text-cream",
+            )}
+          >
+            {homeHasBall ? <PossessionFootball className="h-3 w-5 shrink-0" /> : null}
+            {game.home.abbrev}
+          </p>
         </div>
       </div>
       {game.live && game.situation && (

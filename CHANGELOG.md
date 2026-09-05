@@ -2,6 +2,16 @@
 
 ---
 
+## RUWT: footballs, ranked heat, P5 floors, logos, glows — September 5, 2026
+
+- Possession markers are **football glyphs** (not white dots) on RUWT cards and field headers; field ball is a pointed laced football.
+- **Ranked teams** get a bigger heat bump; blowouts involving an AP team drag less, so games like #23 Houston clear G5 clocks.
+- Power conferences (ACC / Big Ten / Big 12 / SEC + Notre Dame) default to interest **2**; SEC stays at **4**. Interest heat counts from 2 up.
+- Fixed **ESPNU** and **SEC Network** TV logos (curated SVG marks).
+- Live cards **glow red** in the red zone and **glow amber** when it’s close and late (one-score, 4th/OT).
+
+---
+
 ## RUWT field map: football + drive direction — September 5, 2026
 
 - Ball marker is a brown football with laces (not a cream circle).
