@@ -103,6 +103,30 @@ export const CFB_SEC_TEAM_IDS = new Set(CFB_SEC_TEAMS.map((t) => String(t.id)));
 /** Minimum RUWT interest for every SEC program. */
 export const CFB_SEC_INTEREST_FLOOR = 4;
 
+/**
+ * Power conferences (ACC / Big Ten / Big 12 / SEC) + Notre Dame.
+ * Excludes the reconstituted Pac-12 G5 pool. RUWT interest floor of 2
+ * (SEC still wins with its floor of 4).
+ */
+export const CFB_POWER5_TEAM_IDS = new Set<string>([
+  // ACC
+  "2390", "258", "52", "153", "154", "24", "25", "97", "103", "150", "183", "221",
+  "228", "259", "2567", "59", "152",
+  // Big 12
+  "38", "2305", "2116", "254", "9", "12", "66", "197", "239", "248", "252", "277",
+  "2132", "2306", "2641", "2628",
+  // Big Ten
+  "30", "356", "127", "135", "2509", "26", "77", "84", "120", "130", "158", "194",
+  "213", "264", "275", "2294", "2483", "164",
+  // SEC
+  ...Array.from(CFB_SEC_TEAM_IDS),
+  // Independent power
+  "87", // Notre Dame
+]);
+
+/** Minimum RUWT interest for Power conference programs (non-SEC still 2). */
+export const CFB_POWER5_INTEREST_FLOOR = 2;
+
 export type CfbScoreSide = {
   teamId: number;
   name: string;
@@ -3137,7 +3161,12 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
   if (g.live) {
     score += 40;
     reasons.push("Live");
+    const rankedLive = Boolean(
+      (g.away.rank && g.away.rank <= 25) || (g.home.rank && g.home.rank <= 25),
+    );
     // Drama from margin — without this every live game sits at flat 40.
+    // Soften blowout drag when a ranked team is on the field so AP games
+    // don't sink below G5 clocks (Houston vs Liberty/JMU style).
     if (diff != null) {
       if (diff <= 3) {
         score += 28;
@@ -3146,25 +3175,25 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
         score += 14;
         reasons.push("Tight");
       } else if (diff >= 28) {
-        score -= 20;
+        score -= rankedLive ? 10 : 20;
         reasons.push("Blowout");
       } else if (diff >= 21) {
-        score -= 14;
+        score -= rankedLive ? 6 : 14;
         reasons.push("Blowout");
       } else if (diff >= 14) {
-        score -= 8;
+        score -= rankedLive ? 3 : 8;
       }
     }
     if (inOt) {
       score += 32;
       reasons.push("Overtime");
-    } else if (diff == null || diff <= 14) {
-      // Late-game bump only when still watchable — don't cancel blowout drag.
+    } else if (diff == null || diff <= 14 || (rankedLive && diff <= 21)) {
+      // Late-game bump — ranked games keep a light late bump a bit longer.
       if (period === 4 || /\b4th\b/.test(detail)) {
-        score += 18;
+        score += diff != null && diff > 14 ? 10 : 18;
         reasons.push("4th quarter");
       } else if (period === 3 || /\b3rd\b/.test(detail)) {
-        score += 8;
+        score += diff != null && diff > 14 ? 4 : 8;
         reasons.push("3rd quarter");
       }
     }
@@ -3205,11 +3234,14 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
   if (bothRanked) {
     // Top-10 clash gets more than a 20s/20s game.
     const best = Math.min(awayRank!, homeRank!);
-    const bump = best <= 10 ? 36 : best <= 15 ? 32 : 28;
+    const bump = best <= 10 ? 40 : best <= 15 ? 36 : 32;
     score += bump;
     reasons.push("Ranked matchup");
   } else if (oneRanked) {
-    score += 16;
+    // AP teams outrank G5 clocks — #23 Houston should clear LIB/JMU.
+    const rankedSide = awayRank && awayRank <= 25 ? awayRank : homeRank!;
+    const bump = rankedSide <= 10 ? 34 : rankedSide <= 15 ? 30 : 26;
+    score += bump;
     reasons.push("Ranked team");
     // Quality unranked / Coaches-edge foe still matters (FPI top 25).
     const otherFpi = awayRank ? homeFpi : awayFpi;
@@ -3388,8 +3420,8 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
 
   for (const side of [g.away, g.home]) {
     const interest = ctx?.teamInterest[String(side.teamId)] ?? 0;
-    // Board starts at 4 (SEC floor); 7+ is "follow closely".
-    if (interest >= 4) {
+    // Board starts at 2 (Power 5 floor); SEC is 4; 7+ is "follow closely".
+    if (interest >= 2) {
       score += interest * 3;
       reasons.push(`${side.abbrev} interest ${interest}`);
     }

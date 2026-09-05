@@ -15,6 +15,13 @@ const ESPN_LOGO =
   "https://a.espncdn.com/guid/54bf758e-5371-31f9-bb3d-8059d58f785c/logos/default.png";
 const ESPN_PRIMARY =
   "https://a.espncdn.com/guid/335fd2d2-97b9-336b-81ee-573eb6bdcffc/logos/default.png";
+/** ESPN often ships blank chips for these — pin known-good SVG marks (skip invert). */
+const ESPNU_LOGO =
+  "https://commons.wikimedia.org/wiki/Special:FilePath/ESPN_U_logo.svg";
+const SEC_NETWORK_LOGO =
+  "https://commons.wikimedia.org/wiki/Special:FilePath/SEC_Network_logo.svg";
+const SECN_PLUS_LOGO =
+  "https://a.espncdn.com/guid/d1e3d7c4-8e72-37f3-b9b9-515573fd5526/logos/default.png";
 /** Fox / FS1 — never reuse the MLB bat silhouette. */
 const FOX_LOGO = "https://commons.wikimedia.org/wiki/Special:FilePath/FOX_wordmark.svg";
 const FS1_LOGO = "https://commons.wikimedia.org/wiki/Special:FilePath/Fox_Sports_1_logo.svg";
@@ -32,6 +39,10 @@ const NETWORK_LOGOS: { test: RegExp; logo: string }[] = [
   { test: /^mlb\.?tv$/i, logo: MLB_LEAGUE_LOGO },
   { test: /^espn(\s*unlmtd|\s*unlimited|\+)?$/i, logo: ESPN_LOGO },
   { test: /^espn2$/i, logo: ESPN_PRIMARY },
+  { test: /^espnu$/i, logo: ESPNU_LOGO },
+  { test: /^sec(\s*network)?$/i, logo: SEC_NETWORK_LOGO },
+  { test: /^secn$/i, logo: SEC_NETWORK_LOGO },
+  { test: /^secn?\+$/i, logo: SECN_PLUS_LOGO },
   { test: /^fox$/i, logo: FOX_LOGO },
   { test: /^fox\s*sports$/i, logo: FOX_LOGO },
   { test: /^fs1$/i, logo: FS1_LOGO },
