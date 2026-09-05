@@ -13,7 +13,60 @@ export type FootballFieldGame = {
   } | null;
 };
 
-/** Horizontal football field with ball / line-of-scrimmage marker. */
+function teamHex(color: string | undefined, fallback = "888888"): string {
+  const raw = (color || fallback).replace(/^#/, "");
+  return `#${raw.length === 6 ? raw : fallback}`;
+}
+
+/** Yards-to-go from "2ND & 9", "1st & Goal", etc. */
+function parseYardsToGo(text: string | null | undefined): number | null {
+  if (!text) return null;
+  if (/\bgoal\b/i.test(text)) return null;
+  const m = text.match(/&\s*(\d+)/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** Brown football with laces — flips with direction of attack. */
+function FootballGlyph({
+  facingRight,
+  className,
+}: {
+  facingRight: boolean;
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 28 16"
+      className={className}
+      aria-hidden
+      style={{ transform: facingRight ? undefined : "scaleX(-1)" }}
+    >
+      <ellipse cx="14" cy="8" rx="12.5" ry="6.6" fill="#6b3a14" stroke="#2a1508" strokeWidth="1.2" />
+      <ellipse cx="14" cy="7.2" rx="10.5" ry="4.8" fill="#8b4e1c" opacity="0.9" />
+      <path d="M8 8 H20" stroke="#f5efe4" strokeWidth="1.15" strokeLinecap="round" />
+      {[10, 12, 14, 16, 18].map((x) => (
+        <path
+          key={x}
+          d={`M${x} 5.6 V10.4`}
+          stroke="#f5efe4"
+          strokeWidth="0.9"
+          strokeLinecap="round"
+        />
+      ))}
+      <ellipse cx="5.2" cy="8" rx="1.6" ry="2.4" fill="#2a1508" opacity="0.55" />
+      <ellipse cx="22.8" cy="8" rx="1.6" ry="2.4" fill="#2a1508" opacity="0.55" />
+    </svg>
+  );
+}
+
+/**
+ * Horizontal football field with:
+ * - team-colored end zones
+ * - blue line of scrimmage + yellow first-down stakes
+ * - brown football glyph + team-colored direction chevron
+ */
 export default function NflFieldMap({
   game,
   /** ESPN situation.yardLine — yards from the home end zone (0–100). */
@@ -32,40 +85,85 @@ export default function NflFieldMap({
   const homeHasBall = poss != null && String(poss) === String(game.home.teamId);
   const awayHasBall = poss != null && String(poss) === String(game.away.teamId);
 
+  const awayColor = teamHex(game.away.color, "1e3a5f");
+  const homeColor = teamHex(game.home.color, "7a1f1f");
+  const possColor = homeHasBall ? homeColor : awayHasBall ? awayColor : "#f0e6c8";
+
+  // Away left → home right. Away offense drives right; home offense drives left.
+  const facingRight = awayHasBall;
+  const facingLeft = homeHasBall;
+
   const rawPct = fieldBallPctFromHomeYardLine(homeYardLine);
-  const ballPct = rawPct != null ? Math.max(2, Math.min(98, rawPct)) : null;
+  const ballPct = rawPct != null ? Math.max(0, Math.min(100, rawPct)) : null;
+
+  const ddText = downDistanceText || game.situation?.downDistanceText || null;
+  const yardsToGo = parseYardsToGo(ddText);
+  const goalToGo = Boolean(ddText && /\bgoal\b/i.test(ddText));
+
+  let firstDownPct: number | null = null;
+  if (ballPct != null && (homeHasBall || awayHasBall)) {
+    if (goalToGo) {
+      firstDownPct = facingRight ? 100 : 0;
+    } else if (yardsToGo != null) {
+      firstDownPct = facingRight
+        ? Math.max(0, Math.min(100, ballPct + yardsToGo))
+        : Math.max(0, Math.min(100, ballPct - yardsToGo));
+    }
+  }
+
+  /** Map 0–100 yard pct onto the playable strip (between end zones). */
+  const fieldLeft = (pct: number) => 8 + pct * 0.84;
 
   const ticks = [10, 20, 30, 40, 50, 40, 30, 20, 10];
+
+  const toGainLeft =
+    ballPct != null && firstDownPct != null
+      ? Math.min(fieldLeft(ballPct), fieldLeft(firstDownPct))
+      : null;
+  const toGainWidth =
+    ballPct != null && firstDownPct != null
+      ? Math.abs(fieldLeft(firstDownPct) - fieldLeft(ballPct))
+      : null;
 
   return (
     <div className={cn("overflow-hidden rounded-xl border border-emerald-700/35 bg-[#0a1f12]", className)}>
       <div className="flex items-center justify-between gap-2 px-3 pt-2.5 text-[10px] font-semibold uppercase tracking-[0.14em]">
-        <span className={cn(awayHasBall ? "text-cream" : "text-white/45")}>
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5",
+            awayHasBall ? "text-white" : "text-white/45",
+          )}
+          style={awayHasBall ? { backgroundColor: `${awayColor}cc` } : undefined}
+        >
           {game.away.abbrev}
           {awayHasBall ? " ●" : ""}
         </span>
-        <span className="text-emerald-200/70">
-          {downDistanceText || game.situation?.downDistanceText || "Field"}
-        </span>
-        <span className={cn(homeHasBall ? "text-cream" : "text-white/45")}>
+        <span className="text-emerald-200/70">{ddText || "Field"}</span>
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5",
+            homeHasBall ? "text-white" : "text-white/45",
+          )}
+          style={homeHasBall ? { backgroundColor: `${homeColor}cc` } : undefined}
+        >
           {homeHasBall ? "● " : ""}
           {game.home.abbrev}
         </span>
       </div>
 
-      <div className="relative mx-2 mb-3 mt-2 h-16 overflow-hidden rounded-md border border-white/10 bg-gradient-to-b from-[#1a5c34] to-[#0d3d22]">
-        {/* End zones */}
-        <div
-          className="absolute inset-y-0 left-0 w-[8%] opacity-90"
-          style={{ background: `#${game.away.color || "333"}88` }}
-        />
-        <div
-          className="absolute inset-y-0 right-0 w-[8%] opacity-90"
-          style={{ background: `#${game.home.color || "333"}88` }}
-        />
+      <div className="relative mx-2 mb-3 mt-2 h-[4.5rem] overflow-hidden rounded-md border border-white/10 bg-gradient-to-b from-[#1a5c34] to-[#0d3d22]">
+        {/* End zones — team-colored */}
+        <div className="absolute inset-y-0 left-0 z-[1] w-[8%]" style={{ background: awayColor }} />
+        <div className="absolute inset-y-0 right-0 z-[1] w-[8%]" style={{ background: homeColor }} />
+        <span className="pointer-events-none absolute left-[1%] top-1/2 z-[2] -translate-y-1/2 -rotate-90 text-[8px] font-black tracking-wider text-white/80">
+          {game.away.abbrev}
+        </span>
+        <span className="pointer-events-none absolute right-[1%] top-1/2 z-[2] -translate-y-1/2 rotate-90 text-[8px] font-black tracking-wider text-white/80">
+          {game.home.abbrev}
+        </span>
 
         {/* Yard lines */}
-        <div className="absolute inset-y-0 left-[8%] right-[8%]">
+        <div className="absolute inset-y-0 left-[8%] right-[8%] z-0">
           {ticks.map((n, i) => (
             <div
               key={`${n}-${i}`}
@@ -79,12 +177,69 @@ export default function NflFieldMap({
           ))}
         </div>
 
+        {/* To-gain wash between LOS and first-down stakes */}
+        {toGainLeft != null && toGainWidth != null && toGainWidth > 0.3 && (
+          <div
+            className="absolute inset-y-0 z-[3] bg-amber-300/35"
+            style={{ left: `${toGainLeft}%`, width: `${toGainWidth}%` }}
+          />
+        )}
+
+        {/* First-down marker (yellow) */}
+        {firstDownPct != null && (
+          <div
+            className="absolute inset-y-0 z-[4] w-0.5 bg-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.7)]"
+            style={{ left: `${fieldLeft(firstDownPct)}%` }}
+            title="First down"
+          />
+        )}
+
+        {/* Line of scrimmage (blue) */}
+        {ballPct != null && (
+          <div
+            className="absolute inset-y-0 z-[5] w-0.5 bg-sky-400 shadow-[0_0_6px_rgba(56,189,248,0.65)]"
+            style={{ left: `${fieldLeft(ballPct)}%` }}
+            title="Line of scrimmage"
+          />
+        )}
+
+        {/* Ball + team-colored direction of attack (ESPN-style) */}
         {ballPct != null && (
           <div
             className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
-            style={{ left: `${8 + ballPct * 0.84}%` }}
+            style={{ left: `${fieldLeft(ballPct)}%` }}
           >
-            <span className="block h-3.5 w-3.5 rounded-full bg-[#f0e6c8] shadow-[0_0_0_2px_rgba(0,0,0,0.35),0_0_12px_rgba(240,230,200,0.55)]" />
+            {/* Soft team glow behind the football */}
+            <span
+              className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-50 blur-[3px]"
+              style={{ backgroundColor: possColor }}
+              aria-hidden
+            />
+            <FootballGlyph
+              facingRight={facingRight || !facingLeft}
+              className="relative h-[18px] w-8 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]"
+            />
+            {/* Direction chevron — team color, points toward the end zone they're attacking */}
+            {(facingLeft || facingRight) && (
+              <span
+                className="absolute top-1/2 -translate-y-1/2"
+                style={{
+                  ...(facingRight
+                    ? { left: "calc(100% + 3px)" }
+                    : { right: "calc(100% + 3px)" }),
+                  width: 0,
+                  height: 0,
+                  borderTop: "7px solid transparent",
+                  borderBottom: "7px solid transparent",
+                  ...(facingRight
+                    ? { borderLeft: `12px solid ${possColor}` }
+                    : { borderRight: `12px solid ${possColor}` }),
+                  filter: "drop-shadow(0 0 2px rgba(0,0,0,0.7))",
+                }}
+                title={facingRight ? "Driving right" : "Driving left"}
+                aria-hidden
+              />
+            )}
           </div>
         )}
       </div>
@@ -120,6 +275,7 @@ export function NflLiveStrip({ game }: { game: NflScoreGame }) {
   );
 }
 
+/** @deprecated Prefer NflScoreRow — kept as alias for existing imports. */
 export function NflScoreRow({
   game,
   to,

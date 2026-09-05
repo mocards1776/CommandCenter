@@ -2,6 +2,13 @@
 
 ---
 
+## RUWT field map: football + drive direction — September 5, 2026
+
+- Ball marker is a brown football with laces (not a cream circle).
+- Direction of attack is obvious and color-coded: team-colored end zones, blue line of scrimmage, yellow first-down stakes + to-gain wash, and a team-colored chevron pointing the way the offense is driving.
+
+---
+
 ## RUWT: SEC interest floor of 4 — September 5, 2026
 
 - Auto-rank every SEC program at **at least 4** on CFB RUWT interest (sliders + scoring).
