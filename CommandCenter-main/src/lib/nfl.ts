@@ -1505,7 +1505,11 @@ export function scoreNflRuwtGame(g: NflScoreGame, ctx?: NflRuwtContext): { score
       score += 18;
       reasons.push("Red zone");
     }
-    if (g.situation?.downDistanceText?.startsWith("4th")) {
+    // 4th-down heat is for late drama — early-game 4th downs are mostly noise.
+    // NflScoreGame has no period field; infer from ESPN shortDetail ("3rd", "4th", OT).
+    const detail = `${g.shortDetail ?? ""} ${g.status ?? ""}`.toLowerCase();
+    const late = /\b(3rd|4th)\b/.test(detail) || /\bot\b|overtime/.test(detail);
+    if (g.situation?.downDistanceText?.startsWith("4th") && late) {
       score += 12;
       reasons.push("4th down");
     }
