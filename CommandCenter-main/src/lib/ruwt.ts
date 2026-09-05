@@ -4,6 +4,8 @@ import type { MlbScoreGame, MlbGameInterest, MlbScoredGame } from "./mlb";
 import { scoreGameInterest as baseScoreGameInterest } from "./mlb";
 import {
   rankCfbRuwtGames,
+  CFB_SEC_INTEREST_FLOOR,
+  CFB_SEC_TEAM_IDS,
   type CfbScoreGame,
   type CfbScoredGame,
 } from "./cfb";
@@ -95,7 +97,27 @@ export function setNflTeamInterestRating(
 }
 
 export function loadCfbTeamInterest(): RuwtTeamInterest {
-  return loadInterestMap(CFB_STORAGE_KEY);
+  const loaded = loadInterestMap(CFB_STORAGE_KEY);
+  const withFloor = applyCfbSecInterestFloor(loaded);
+  // Persist so Rank teams sliders show the SEC floor immediately.
+  if (JSON.stringify(withFloor) !== JSON.stringify(loaded)) {
+    saveCfbTeamInterest(withFloor);
+  }
+  return withFloor;
+}
+
+/** Every SEC program is at least CFB_SEC_INTEREST_FLOOR on RUWT. */
+export function applyCfbSecInterestFloor(map: RuwtTeamInterest): RuwtTeamInterest {
+  const next = { ...map };
+  let changed = false;
+  for (const id of CFB_SEC_TEAM_IDS) {
+    const cur = next[id] ?? 0;
+    if (cur < CFB_SEC_INTEREST_FLOOR) {
+      next[id] = CFB_SEC_INTEREST_FLOOR;
+      changed = true;
+    }
+  }
+  return changed ? next : map;
 }
 
 export function saveCfbTeamInterest(map: RuwtTeamInterest): void {
@@ -109,8 +131,12 @@ export function setCfbTeamInterestRating(
 ): RuwtTeamInterest {
   const next = { ...map };
   const clamped = Math.max(0, Math.min(10, Math.round(rating)));
-  if (clamped <= 0) delete next[String(teamId)];
-  else next[String(teamId)] = clamped;
+  const key = String(teamId);
+  // SEC floor — don't let Rank teams drag an SEC club below 4.
+  const floored =
+    CFB_SEC_TEAM_IDS.has(key) ? Math.max(CFB_SEC_INTEREST_FLOOR, clamped) : clamped;
+  if (floored <= 0) delete next[key];
+  else next[key] = floored;
   saveCfbTeamInterest(next);
   return next;
 }
@@ -123,7 +149,7 @@ export function rankRuwtCfbGames(
 ): CfbScoredGame[] {
   return rankCfbRuwtGames(
     games,
-    { teamInterest: interest, watchTeamIds: opts?.watchTeamIds },
+    { teamInterest: applyCfbSecInterestFloor(interest), watchTeamIds: opts?.watchTeamIds },
     limit,
   );
 }

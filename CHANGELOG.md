@@ -2,6 +2,14 @@
 
 ---
 
+## RUWT: SEC interest floor of 4 — September 5, 2026
+
+- Auto-rank every SEC program at **at least 4** on CFB RUWT interest (sliders + scoring).
+- Interest heat now counts from 4 up (not only 7+), so the SEC floor actually moves games.
+- Fixed ESPN focus IDs: Tennessee `2633`, Oklahoma `201`, Mississippi State `344`; added South Carolina and Vanderbilt.
+
+---
+
 ## CFB RUWT: upset brewing + quieter early 4th downs — September 5, 2026
 
 - Live heat: when chalk is trailing, bump hard as **Upset brewing** (scaled by FPI gap). If live odds omit a favorite, use the better-FPI side so games like Ohio (FPI #99) up on Nebraska (FPI #31) jump the board instead of sitting on “Live · Tight”.
