@@ -3145,9 +3145,15 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
       score += 18;
       reasons.push("Red zone");
     }
+    // 4th-and-short drama matters late — early-game 4th downs are mostly noise.
     if (
       g.situation?.downDistanceText?.startsWith("4th") &&
-      (diff == null || diff <= 14)
+      (diff == null || diff <= 14) &&
+      (period === 4 ||
+        period === 3 ||
+        /\b4th\b/.test(detail) ||
+        /\b3rd\b/.test(detail) ||
+        inOt)
     ) {
       score += 12;
       reasons.push("4th down");
@@ -3287,24 +3293,59 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
     }
   }
 
-  // Live: favorite trailing = upset watch (uses scoreboard, not FPI).
-  if (g.live && favId != null && g.away.score != null && g.home.score != null) {
-    const favScore = favId === g.away.teamId ? g.away.score : favId === g.home.teamId ? g.home.score : null;
-    const dogScore = favId === g.away.teamId ? g.home.score : favId === g.home.teamId ? g.away.score : null;
-    if (favScore != null && dogScore != null && dogScore > favScore) {
-      score += 22;
-      reasons.push("Upset watch");
-    } else if (
-      favScore != null &&
-      dogScore != null &&
-      absSpread != null &&
-      absSpread >= 3
+  // Live: chalk trailing = upset brewing.
+  // Prefer the betting favorite; if live odds are missing, use the better-FPI side.
+  if (g.live && g.away.score != null && g.home.score != null) {
+    const fpiGap =
+      awayFpi != null && homeFpi != null ? Math.abs(awayFpi - homeFpi) : null;
+    let chalkId = favId;
+    if (
+      chalkId == null &&
+      awayFpi != null &&
+      homeFpi != null &&
+      fpiGap != null &&
+      fpiGap >= 12
     ) {
-      // Favorite leading but not covering yet → still interesting.
-      const favMargin = favScore - dogScore;
-      if (favMargin >= 0 && favMargin < absSpread - 0.5 && favMargin <= 10) {
-        score += 8;
-        reasons.push("Against the number");
+      chalkId = awayFpi < homeFpi ? g.away.teamId : g.home.teamId;
+    }
+    if (chalkId != null) {
+      const chalkScore =
+        chalkId === g.away.teamId
+          ? g.away.score
+          : chalkId === g.home.teamId
+            ? g.home.score
+            : null;
+      const dogScore =
+        chalkId === g.away.teamId
+          ? g.home.score
+          : chalkId === g.home.teamId
+            ? g.away.score
+            : null;
+      if (chalkScore != null && dogScore != null && dogScore > chalkScore) {
+        // Ohio (FPI 99) up on Nebraska (FPI 31) should jump the board —
+        // live odds often omit favoriteTeamId, so FPI gap drives the bump.
+        const gap = fpiGap ?? (absSpread != null ? absSpread * 4 : 20);
+        const base = gap >= 50 ? 36 : gap >= 30 ? 30 : gap >= 18 ? 26 : 22;
+        const earlyBonus =
+          gap >= 25 &&
+          (period === 1 || period === 2 || /\b1st\b|\b2nd\b/.test(detail))
+            ? 6
+            : 0;
+        score += base + earlyBonus;
+        reasons.push(gap >= 25 ? "Upset brewing" : "Upset watch");
+      } else if (
+        chalkScore != null &&
+        dogScore != null &&
+        absSpread != null &&
+        absSpread >= 3 &&
+        favId != null
+      ) {
+        // Favorite leading but not covering yet → still interesting.
+        const favMargin = chalkScore - dogScore;
+        if (favMargin >= 0 && favMargin < absSpread - 0.5 && favMargin <= 10) {
+          score += 8;
+          reasons.push("Against the number");
+        }
       }
     }
   }

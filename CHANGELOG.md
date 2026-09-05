@@ -2,6 +2,13 @@
 
 ---
 
+## CFB RUWT: upset brewing + quieter early 4th downs — September 5, 2026
+
+- Live heat: when chalk is trailing, bump hard as **Upset brewing** (scaled by FPI gap). If live odds omit a favorite, use the better-FPI side so games like Ohio (FPI #99) up on Nebraska (FPI #31) jump the board instead of sitting on “Live · Tight”.
+- **4th down** heat only in the second half / OT (CFB + NFL) — early-game 4th downs no longer inflate RUWT.
+
+---
+
 ## CFB poll badges: AP only — September 5, 2026
 
 - Rank badges and RUWT poll ranks use the **AP Top 25 only** (no AFCA Coaches fill-in). ESPN’s scoreboard `curatedRank` is already AP — Coaches-only teams stay unranked until they make the AP poll.
