@@ -559,11 +559,16 @@ function CfbCoachRow({ coach: c }: { coach: CfbCoach }) {
         >
           {c.hotSeatRank}
         </span>
-        {c.teamLogo ? (
+        {c.headshot || c.teamLogo ? (
           <img
-            src={c.teamLogo}
+            src={c.headshot || c.teamLogo!}
             alt=""
-            className="h-11 w-11 shrink-0 rounded-md bg-white object-contain p-1 ring-1 ring-white/10"
+            className={cn(
+              "h-11 w-11 shrink-0 rounded-md ring-1 ring-white/10",
+              c.headshot
+                ? "bg-[#dfe6f2] object-cover object-top"
+                : "bg-white object-contain p-1",
+            )}
           />
         ) : null}
         <div className="min-w-0 flex-1">

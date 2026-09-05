@@ -2,6 +2,13 @@
 
 ---
 
+## CFB coach portraits from Wikimedia Commons — September 5, 2026
+
+- When Wikipedia has no lead image (and ESPN has no coach headshot), resolve portraits from **Wikimedia Commons** by name — fixes missing faces like Alex Golesh on coach profiles.
+- Hot Seat board now prefers coach headshots over team logos for the top 30 rows when a Commons portrait is found.
+
+---
+
 ## RUWT: marquee ABC + FPI-quality heat — September 5, 2026
 
 - Stronger **FPI quality** when both sides are top-40 (bigger bump if one is top-25); near-misses get **Quality slate**.

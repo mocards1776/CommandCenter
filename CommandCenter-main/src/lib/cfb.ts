@@ -2222,6 +2222,155 @@ function cleanWikiImageUrl(url: string | null | undefined): string | null {
   return url.replace(/[?&]utm_[^&]+/g, "").replace(/\?$/, "").trim() || null;
 }
 
+/** Score Wikimedia Commons files for likely coach portraits (avoid farms, ships, PDFs). */
+function scoreCommonsCoachPortrait(fileTitle: string, coachName: string): number {
+  const file = fileTitle.replace(/^File:/i, "").toLowerCase();
+  if (!/\.(jpe?g|png|webp)$/i.test(file)) return -1;
+  const parts = coachName
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((p) => p.length > 1);
+  if (parts.length < 2) return -1;
+  const first = parts[0]!;
+  const last = parts[parts.length - 1]!;
+  if (!file.includes(last)) return -1;
+  if (
+    /\b(geograph|dpla|regiment|infantry|snooker|railway|station|fjord|ship|pdf|album|poster|logo|wordmark|mountain|municipality|airport|kosova|prishtina|village|church|crkva|map|legislative|assembly|senate|congress)\b/.test(
+      file,
+    )
+  ) {
+    return -1;
+  }
+  // Skip 19th-century / early archival scans that share a surname.
+  const yearHit = file.match(/\b(17|18|19)\d{2}\b/);
+  if (yearHit && Number(yearHit[0]) < 1985) return -1;
+  const hasFirst = file.includes(first);
+  const hasCoach = /\bcoach\b/.test(file);
+  // Filenames like "Gen-golesh-auburn1.png" omit the first name — allow when
+  // the surname is distinctive enough (short surnames need first name / coach).
+  if (!hasFirst && !hasCoach && last.length < 6) return -1;
+
+  let score = 10;
+  if (hasFirst && file.includes(last)) score += 24;
+  else if (hasFirst || hasCoach) score += 12;
+  else score += 6; // distinctive last-name-only hit
+  if (hasCoach) score += 10;
+  if (/\b(football|media.?days|sec|cropped)\b/.test(file)) score += 8;
+  if (/\b(19|20)\d{2}\b/.test(file)) score += 3;
+  if (/cropped/.test(file)) score += 4;
+  if (file.length > 100) score -= 6;
+  return score;
+}
+
+async function resolveCommonsFileUrl(fileTitle: string): Promise<string | null> {
+  try {
+    const api = new URL("https://commons.wikimedia.org/w/api.php");
+    api.searchParams.set("action", "query");
+    api.searchParams.set("titles", fileTitle);
+    api.searchParams.set("prop", "imageinfo");
+    api.searchParams.set("iiprop", "url|mime|size");
+    api.searchParams.set("iiurlwidth", "640");
+    api.searchParams.set("format", "json");
+    api.searchParams.set("origin", "*");
+    const res = await fetch(api.toString(), {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "CommandCenter/1.0 (coach-portraits)",
+      },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      query?: {
+        pages?: Record<
+          string,
+          {
+            imageinfo?: {
+              thumburl?: string;
+              url?: string;
+              mime?: string;
+              width?: number;
+              height?: number;
+            }[];
+          }
+        >;
+      };
+    };
+    const info = Object.values(data.query?.pages ?? {})[0]?.imageinfo?.[0];
+    if (!info) return null;
+    if (info.mime && !/^image\//i.test(info.mime)) return null;
+    // Prefer a person-sized frame over ultra-wide group photos when we can tell.
+    if (
+      info.width &&
+      info.height &&
+      info.width > 0 &&
+      info.height > 0 &&
+      info.width / info.height > 2.4
+    ) {
+      // Still usable (Golesh presser crop is wide) — mild preference only via score.
+    }
+    return cleanWikiImageUrl(info.thumburl ?? info.url);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Wikipedia pageimages is often empty for CFB HCs (e.g. Alex Golesh) even when
+ * Commons has a portrait. Search Commons and pick the best filename match.
+ */
+async function searchCommonsCoachPortrait(name: string): Promise<string | null> {
+  const q = name.trim();
+  if (q.length < 4) return null;
+  const last = q.split(/\s+/).filter(Boolean).slice(-1)[0] ?? "";
+  const queries = [q];
+  if (last.length >= 4) {
+    queries.push(`Coach ${last}`);
+    if (last.toLowerCase() !== q.toLowerCase()) queries.push(last);
+  }
+  try {
+    const seen = new Set<string>();
+    const ranked: { title: string; score: number }[] = [];
+    for (const query of queries) {
+      const api = new URL("https://commons.wikimedia.org/w/api.php");
+      api.searchParams.set("action", "query");
+      api.searchParams.set("list", "search");
+      api.searchParams.set("srsearch", query);
+      api.searchParams.set("srnamespace", "6");
+      api.searchParams.set("srlimit", "12");
+      api.searchParams.set("format", "json");
+      api.searchParams.set("origin", "*");
+      const res = await fetch(api.toString(), {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "CommandCenter/1.0 (coach-portraits)",
+        },
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        query?: { search?: { title?: string }[] };
+      };
+      for (const h of data.query?.search ?? []) {
+        const title = h.title ?? "";
+        if (!title || seen.has(title)) continue;
+        seen.add(title);
+        const score = scoreCommonsCoachPortrait(title, q);
+        if (score > 0) ranked.push({ title, score });
+      }
+      // Prefer a strong full-name hit before burning more queries.
+      if (ranked.some((h) => h.score >= 20)) break;
+    }
+    ranked.sort((a, b) => b.score - a.score);
+    for (const hit of ranked.slice(0, 5)) {
+      const url = await resolveCommonsFileUrl(hit.title);
+      if (url) return url;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function wikiSearchFootballCoachTitle(name: string): Promise<string | null> {
   try {
     const api = new URL("https://en.wikipedia.org/w/api.php");
@@ -2361,10 +2510,16 @@ async function fetchWikiFootballCoachCard(name: string): Promise<WikiFootballCoa
         /* extract-only is fine */
       }
 
+      let image = cleanWikiImageUrl(page.original?.source ?? page.thumbnail?.source);
+      // Many CFB HC pages have no lead image; Commons often still has a portrait.
+      if (!image) {
+        image = await searchCommonsCoachPortrait(name).catch(() => null);
+      }
+
       return {
         title: page.title ?? title,
         extract,
-        image: cleanWikiImageUrl(page.original?.source ?? page.thumbnail?.source),
+        image,
         url:
           page.fullurl ??
           `https://en.wikipedia.org/wiki/${encodeURIComponent((page.title ?? title).replace(/ /g, "_"))}`,
@@ -2376,7 +2531,18 @@ async function fetchWikiFootballCoachCard(name: string): Promise<WikiFootballCoa
       /* try next title */
     }
   }
-  return null;
+  // Wiki page miss (or title not found) — still try Commons by name.
+  const commonsOnly = await searchCommonsCoachPortrait(name).catch(() => null);
+  if (!commonsOnly) return null;
+  return {
+    title: name,
+    extract: null,
+    image: commonsOnly,
+    url: `https://commons.wikimedia.org/w/index.php?search=${encodeURIComponent(name)}`,
+    careerPath: [],
+    birthDate: null,
+    birthPlace: null,
+  };
 }
 
 function formatCoachBirthPlace(raw: {
@@ -3765,7 +3931,13 @@ export async function fetchCfbCoaches(): Promise<CfbCoach[]> {
     if (ap !== bp) return bp - ap;
     return b.hotSeatScore - a.hotSeatScore || a.name.localeCompare(b.name);
   });
-  return rows.map((r, i) => ({ ...r, hotSeatRank: i + 1 }));
+  const ranked = rows.map((r, i) => ({ ...r, hotSeatRank: i + 1 }));
+  // Resolve Commons portraits for the visible board (team logos were the only face).
+  await mapWithConcurrency(ranked.slice(0, 30), 6, async (row) => {
+    if (row.headshot) return;
+    row.headshot = await searchCommonsCoachPortrait(row.name).catch(() => null);
+  });
+  return ranked;
 }
 
 /** Year-by-year head-coaching record + school from ESPN coach seasons. */
@@ -4026,6 +4198,11 @@ export async function fetchCfbCoachProfile(coachId: string): Promise<CfbCoachPro
   if (wikiCard?.extract) bio = wikiCard.extract;
   if (wikiCard?.url) wikiUrl = wikiCard.url;
   if (wikiCard?.careerPath.length) careerPath = wikiCard.careerPath;
+
+  // Last resort when ESPN + Wikipedia pageimages both miss (common for new HCs).
+  if (!headshot) {
+    headshot = await searchCommonsCoachPortrait(base.name).catch(() => null);
+  }
 
   const born =
     wikiCard?.birthDate || formatCoachDob(corePerson?.dateOfBirth ?? null);
