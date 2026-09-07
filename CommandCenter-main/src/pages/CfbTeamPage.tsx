@@ -11,6 +11,12 @@ import {
   type CfbTeamScheduleGame,
   type CfbTeamWinTrendPoint,
 } from "@/lib/cfb";
+import {
+  cfbInterestFloorForTeam,
+  getCfbTeamInterestRating,
+  loadCfbTeamInterest,
+  setCfbTeamInterestRating,
+} from "@/lib/ruwt";
 import { cn, formatSportsDate } from "@/lib/utils";
 
 type TeamTab = "schedule" | "coaches" | "roster";
@@ -115,6 +121,40 @@ export default function CfbTeamPage() {
   );
 }
 
+/** Tiny RUWT interest slider for a school home — same storage as Rank teams. */
+function CfbRuwtInterestControl({ teamId }: { teamId: string }) {
+  const floor = cfbInterestFloorForTeam(teamId);
+  const [value, setValue] = useState(() => getCfbTeamInterestRating(teamId));
+
+  return (
+    <label
+      className="mt-2.5 inline-flex max-w-full items-center gap-1.5 text-white/45"
+      title="RUWT interest — how much this school boosts Are You Watching This"
+    >
+      <span className="shrink-0 text-[8.5px] font-semibold uppercase tracking-[0.16em]">
+        RUWT
+      </span>
+      <input
+        type="range"
+        min={floor}
+        max={10}
+        step={1}
+        value={value}
+        aria-label="RUWT interest rating"
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          const saved = setCfbTeamInterestRating(loadCfbTeamInterest(), Number(teamId), next);
+          setValue(saved[String(teamId)] ?? floor);
+        }}
+        className="h-1 w-[4.5rem] cursor-pointer appearance-none rounded-full bg-white/20 accent-white/70 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white/80"
+      />
+      <span className="numeral w-3.5 shrink-0 text-right text-[10px] tabular-nums text-white/55">
+        {value}
+      </span>
+    </label>
+  );
+}
+
 function TeamHero({ team, accent }: { team: CfbTeamPage; accent: string }) {
   return (
     <article
@@ -151,6 +191,7 @@ function TeamHero({ team, accent }: { team: CfbTeamPage; accent: string }) {
               <span className="text-[13px] text-white/75">HC {team.coaches[0].name}</span>
             ) : null}
           </div>
+          <CfbRuwtInterestControl teamId={team.id} />
         </div>
       </div>
     </article>
