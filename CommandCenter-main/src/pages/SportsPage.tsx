@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
@@ -485,22 +485,39 @@ function CustomizePanel({
   );
 }
 
+function cfbEspnTeamId(fav: SportsFavorite): string | null {
+  const m = /football\/college-football\/teams\/(\d+)/i.exec(fav.espnPath);
+  return m?.[1] ?? (/^cfb-(\d+)$/.exec(fav.key)?.[1] ?? null);
+}
+
 export default function SportsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [layout, setLayout] = useState<SportsLayout>(() => loadSportsLayout());
   const [customizing, setCustomizing] = useState(false);
   const [homeMode, setHomeMode] = useState<"board" | "yesterday">("board");
   const [searchParams] = useSearchParams();
-  const [selectedKey, setSelectedKey] = useState<string | null>(
-    () => searchParams.get("team") || null,
-  );
+  const initialTeam = searchParams.get("team");
+  const [selectedKey, setSelectedKey] = useState<string | null>(() => {
+    if (!initialTeam) return null;
+    // CFB schools use the dedicated team page — never open the board drawer.
+    if (/^cfb-\d+$/.test(initialTeam)) return null;
+    return initialTeam;
+  });
   const [golfOpen, setGolfOpen] = useState(false);
 
   useEffect(() => {
     const team = searchParams.get("team");
-    if (team) setSelectedKey(team);
+    if (team) {
+      const cfbId = /^cfb-(\d+)$/.exec(team)?.[1];
+      if (cfbId) {
+        navigate(`/sports/cfb/team/${cfbId}`, { replace: true });
+        return;
+      }
+      setSelectedKey(team);
+    }
     if (searchParams.get("golf") === "1") setGolfOpen(true);
-  }, [searchParams]);
+  }, [searchParams, navigate]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -756,7 +773,14 @@ export default function SportsPage() {
                   ? promotionByTeamId.get(fav.espnPath.split("/").pop() ?? "") ?? null
                   : null
               }
-              onOpen={() => setSelectedKey(fav.key)}
+              onOpen={() => {
+                const cfbId = cfbEspnTeamId(fav);
+                if (cfbId) {
+                  navigate(`/sports/cfb/team/${cfbId}`);
+                  return;
+                }
+                setSelectedKey(fav.key);
+              }}
             />
           );
         })}
@@ -1023,6 +1047,7 @@ function TeamDetailPanel({
   const mlbTeamId = fav.mlbTeamId;
   const nflTeamId =
     fav.league === "NFL" ? (fav.espnPath.split("/").pop() ?? null) : null;
+  const cfbTeamId = cfbEspnTeamId(fav);
   const isSoccer = /soccer\//i.test(fav.espnPath);
 
   const hero = useQuery({
@@ -1090,6 +1115,15 @@ function TeamDetailPanel({
           {nflTeamId && /^\d+$/.test(nflTeamId) && (
             <Link
               to={`/sports/nfl/team/${nflTeamId}`}
+              className="text-accent mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Full team page
+            </Link>
+          )}
+          {cfbTeamId && /^\d+$/.test(cfbTeamId) && (
+            <Link
+              to={`/sports/cfb/team/${cfbTeamId}`}
               className="text-accent mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] hover:underline"
               onClick={(e) => e.stopPropagation()}
             >

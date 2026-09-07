@@ -137,7 +137,8 @@ function teamPathForEspn(item: EspnSearchItem): string | null {
     const mlbId = mlbTeamIdFromEspnId(item.id);
     if (mlbId != null) return teamPagePath(mlbId);
   }
-  if (league === "college-football") return `/sports?solo=1&team=cfb-${item.id}`;
+  // Dedicated CFB team home (schedule / coaches / roster) — not the board drawer.
+  if (league === "college-football") return `/sports/cfb/team/${item.id}`;
   if (league === "nhl") return `/sports?solo=1&team=nhl-${item.id}`;
   if (league.includes(".")) return `/sports?solo=1&team=${league}-${item.id}`;
   return null;

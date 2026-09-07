@@ -474,7 +474,12 @@ export function getSearchableSportsTeams(): SearchableSportsTeam[] {
   for (const fav of DEFAULT_FAVORITES) {
     if (fav.kind !== "team") continue;
     const nfl = /football\/nfl\/teams\/(\d+)/.exec(fav.espnPath);
-    const path = nfl ? `/sports/nfl/team/${nfl[1]}` : `/sports?solo=1&team=${fav.key}`;
+    const cfb = /football\/college-football\/teams\/(\d+)/.exec(fav.espnPath);
+    const path = nfl
+      ? `/sports/nfl/team/${nfl[1]}`
+      : cfb
+        ? `/sports/cfb/team/${cfb[1]}`
+        : `/sports?solo=1&team=${fav.key}`;
     out.push({
       name: fav.name,
       shortName: fav.shortName,
