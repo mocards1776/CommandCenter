@@ -113,9 +113,7 @@ export function applyCfbInterestFloors(map: RuwtTeamInterest): RuwtTeamInterest 
   const next = { ...map };
   let changed = false;
   for (const id of CFB_POWER5_TEAM_IDS) {
-    const floor = CFB_SEC_TEAM_IDS.has(id)
-      ? CFB_SEC_INTEREST_FLOOR
-      : CFB_POWER5_INTEREST_FLOOR;
+    const floor = cfbInterestFloorForTeam(id);
     const cur = next[id] ?? 0;
     if (cur < floor) {
       next[id] = floor;
@@ -142,16 +140,27 @@ export function setCfbTeamInterestRating(
   const next = { ...map };
   const clamped = Math.max(0, Math.min(10, Math.round(rating)));
   const key = String(teamId);
-  const floor = CFB_SEC_TEAM_IDS.has(key)
-    ? CFB_SEC_INTEREST_FLOOR
-    : CFB_POWER5_TEAM_IDS.has(key)
-      ? CFB_POWER5_INTEREST_FLOOR
-      : 0;
+  const floor = cfbInterestFloorForTeam(key);
   const floored = Math.max(floor, clamped);
   if (floored <= 0) delete next[key];
   else next[key] = floored;
   saveCfbTeamInterest(next);
   return next;
+}
+
+/** Conference floor for a CFB team (SEC 4 · other Power 2 · else 0). */
+export function cfbInterestFloorForTeam(teamId: string | number): number {
+  const key = String(teamId);
+  if (CFB_SEC_TEAM_IDS.has(key)) return CFB_SEC_INTEREST_FLOOR;
+  if (CFB_POWER5_TEAM_IDS.has(key)) return CFB_POWER5_INTEREST_FLOOR;
+  return 0;
+}
+
+/** Current RUWT interest for one school (applies conference floors). */
+export function getCfbTeamInterestRating(teamId: string | number): number {
+  const key = String(teamId);
+  const map = loadCfbTeamInterest();
+  return map[key] ?? cfbInterestFloorForTeam(key);
 }
 
 export function rankRuwtCfbGames(

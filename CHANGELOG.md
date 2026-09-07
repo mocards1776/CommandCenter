@@ -2,6 +2,12 @@
 
 ---
 
+## CFB school home: subtle RUWT interest — September 7, 2026
+
+- School team pages show a tiny **RUWT** interest slider under the record (same 0–10 storage as Rank teams on the RUWT board).
+
+---
+
 ## CFB school search → full team home — September 7, 2026
 
 - Searching a college football school (e.g. Boston College) opens the dedicated CFB team page (schedule, coaches, roster) instead of the thin sports-board standings drawer.
