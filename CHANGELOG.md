@@ -2,6 +2,13 @@
 
 ---
 
+## CFB school search → full team home — September 7, 2026
+
+- Searching a college football school (e.g. Boston College) opens the dedicated CFB team page (schedule, coaches, roster) instead of the thin sports-board standings drawer.
+- Board taps and legacy `?team=cfb-*` links redirect to the same school home.
+
+---
+
 ## CFB coach records: fill missing final seasons — September 5, 2026
 
 - When ESPN blanks a head coach’s last year after a job change (e.g. Eric Morris **2025** at North Texas missing while 2026 OKST shows 0–0), rebuild that season from Wikipedia HC stops + the school’s ESPN schedule W–L.
