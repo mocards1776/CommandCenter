@@ -17,14 +17,19 @@ import {
   setCalendarIcalUrls,
   type CalendarEvent,
 } from "@/lib/calendar";
-import { listFavoritePlayers } from "@/lib/favorite-players";
+import { listFavoritePlayers, type FavoritePlayer } from "@/lib/favorite-players";
 import {
-  fetchMlbLeaders,
-  fetchMlbStandings,
+  chicagoToday,
   fetchFavoritePlayersYesterday,
+  fetchMlbLeaders,
+  fetchMlbPlayer,
+  fetchMlbScoreboard,
+  fetchMlbStandings,
   type FavoriteYesterdayLine,
   type MlbDivisionTable,
   type MlbLeaderBoard,
+  type MlbPlayerStatLine,
+  type MlbScoreGame,
 } from "@/lib/mlb";
 import {
   battingAverageLabel,
@@ -33,9 +38,28 @@ import {
   editionIssue,
 } from "@/lib/newspaper";
 import {
+  chicagoTodayNfl,
+  fetchNflPlayerProfile,
+  fetchNflScoreboard,
+  type NflScoreGame,
+} from "@/lib/nfl";
+import {
+  chicagoTodayCfb,
+  fetchCfbPlayerProfile,
+  fetchCfbScoreboard,
+  type CfbScoreGame,
+} from "@/lib/cfb";
+import {
+  chicagoTodaySoccer,
+  fetchSoccerRuwtBoard,
+  type SoccerScoreGame,
+} from "@/lib/soccer";
+import {
+  fetchTeamDetail,
   fetchTeamSnapshot,
   loadSportsLayout,
   visibleFavorites,
+  type StandingRow,
   type TeamSnapshot,
 } from "@/lib/sports";
 import { cn, dueLabel, isOverdue, todayStr } from "@/lib/utils";
@@ -44,15 +68,28 @@ import { fetchYesterdayRecap, type YesterdayRecapGame } from "@/lib/yesterday-re
 
 const STL_TEAM_ID = 138;
 
-function nlCentral(tables: MlbDivisionTable[] | undefined) {
-  if (!tables?.length) return null;
-  return (
-    tables.find((t) => {
-      const n = `${t.shortName} ${t.name}`.toLowerCase();
-      return n.includes("nl") && n.includes("central");
-    }) ?? null
-  );
-}
+type PlayerSeasonCard = {
+  playerId: string;
+  name: string;
+  team: string | null;
+  position: string | null;
+  sport: string;
+  seasonLine: string;
+  yesterday: FavoriteYesterdayLine | null;
+};
+
+type LeagueStandingBox = {
+  key: string;
+  title: string;
+  subtitle: string;
+  rows: {
+    rank: string;
+    team: string;
+    record: string;
+    gb: string;
+    highlight: boolean;
+  }[];
+};
 
 function groupScores(games: YesterdayRecapGame[]) {
   const map = new Map<string, YesterdayRecapGame[]>();
@@ -92,6 +129,164 @@ function teamLine(snap: TeamSnapshot): { text: string; cls?: string } {
     };
   }
   return { text: snap.standing || snap.record || "—" };
+}
+
+/** Reuse sports.ts offseason signal: hollow 0-0 records are already nulled. */
+function isTeamInSeason(snap: TeamSnapshot): boolean {
+  return Boolean(snap.nextGame || snap.record);
+}
+
+function pickStatLine(stats: MlbPlayerStatLine[], keys: string[]): string {
+  const parts: string[] = [];
+  for (const key of keys) {
+    const hit = stats.find(
+      (s) => s.label.toLowerCase() === key.toLowerCase() || s.label === key,
+    );
+    if (hit?.value) parts.push(`${hit.label} ${hit.value}`);
+  }
+  return parts.join(" · ") || stats.slice(0, 4).map((s) => `${s.label} ${s.value}`).join(" · ");
+}
+
+function playerSportKey(f: FavoritePlayer): string {
+  return `${f.sport ?? ""} ${f.league ?? ""}`.toLowerCase();
+}
+
+function isPitcherFav(f: FavoritePlayer): boolean {
+  return /^(p|pitcher|sp|rp|cl|lhp|rhp)$/i.test(f.position ?? "");
+}
+
+async function loadPlayerSeasonCard(
+  f: FavoritePlayer,
+  yesterday: FavoriteYesterdayLine | null,
+): Promise<PlayerSeasonCard> {
+  const key = playerSportKey(f);
+  try {
+    if (!key.trim() || key.includes("baseball") || key.includes("mlb") || !f.sport) {
+      const p = await fetchMlbPlayer(f.playerId);
+      const pitcher = isPitcherFav(f) || /p/i.test(p.position ?? "");
+      const stats = pitcher
+        ? p.mlbPitching.length
+          ? p.mlbPitching
+          : p.pitching
+        : p.mlbHitting.length
+          ? p.mlbHitting
+          : p.hitting;
+      return {
+        playerId: f.playerId,
+        name: f.playerName,
+        team: f.teamName ?? p.teamAbbrev,
+        position: f.position ?? p.position,
+        sport: "MLB",
+        seasonLine: pickStatLine(
+          stats,
+          pitcher ? ["ERA", "W", "SO", "IP", "WHIP", "SV"] : ["AVG", "HR", "RBI", "OPS", "SB"],
+        ),
+        yesterday,
+      };
+    }
+    if (key.includes("nfl") || (key.includes("football") && key.includes("nfl"))) {
+      const p = await fetchNflPlayerProfile(f.playerId);
+      return {
+        playerId: f.playerId,
+        name: f.playerName,
+        team: f.teamName ?? p.teamAbbrev,
+        position: f.position ?? p.position,
+        sport: "NFL",
+        seasonLine:
+          p.seasonStats
+            .slice(0, 5)
+            .map((s) => `${s.label} ${s.value}`)
+            .join(" · ") || "—",
+        yesterday,
+      };
+    }
+    if (key.includes("cfb") || key.includes("college")) {
+      const p = await fetchCfbPlayerProfile(f.playerId);
+      return {
+        playerId: f.playerId,
+        name: f.playerName,
+        team: f.teamName ?? p.teamAbbrev,
+        position: f.position ?? p.position,
+        sport: "CFB",
+        seasonLine:
+          p.seasonStats
+            .slice(0, 5)
+            .map((s) => `${s.label} ${s.value}`)
+            .join(" · ") || "—",
+        yesterday,
+      };
+    }
+  } catch {
+    /* fall through */
+  }
+  return {
+    playerId: f.playerId,
+    name: f.playerName,
+    team: f.teamName,
+    position: f.position,
+    sport: (f.league || f.sport || "—").toUpperCase(),
+    seasonLine: yesterday?.summary || "Season line unavailable",
+    yesterday,
+  };
+}
+
+function standingRowsFromMlb(table: MlbDivisionTable): LeagueStandingBox {
+  return {
+    key: `mlb-${table.shortName}-${table.name}`,
+    title: table.shortName || table.name,
+    subtitle: "MLB",
+    rows: table.rows.map((r) => ({
+      rank: String(r.rank),
+      team: r.abbrev || r.team,
+      record: `${r.wins}-${r.losses}`,
+      gb: r.gb,
+      highlight: r.teamId === STL_TEAM_ID,
+    })),
+  };
+}
+
+function standingRowsFromDivision(
+  key: string,
+  title: string,
+  subtitle: string,
+  rows: StandingRow[],
+): LeagueStandingBox {
+  return {
+    key,
+    title,
+    subtitle,
+    rows: rows.slice(0, 8).map((r) => ({
+      rank: r.rank,
+      team: r.team,
+      record: r.record,
+      gb: r.gb || r.pts || r.pct || "—",
+      highlight: r.isMe,
+    })),
+  };
+}
+
+function ScoreCell({
+  away,
+  home,
+  status,
+}: {
+  away: { abbrev: string; score: string | number | null; win?: boolean };
+  home: { abbrev: string; score: string | number | null; win?: boolean };
+  status: string;
+}) {
+  return (
+    <div className="np-score">
+      <div className={cn("np-score-row", away.win && "win")}>
+        <span>{away.abbrev}</span>
+        <span>{away.score ?? "—"}</span>
+      </div>
+      <div className={cn("np-score-row", home.win && "win")}>
+        <span>{home.abbrev}</span>
+        <span>{home.score ?? "—"}</span>
+      </div>
+      <div className="np-score-status">{status}</div>
+    </div>
+  );
 }
 
 export default function DailyNewspaperPage() {
@@ -156,11 +351,7 @@ export default function DailyNewspaperPage() {
 
   const playerFavs = useMemo(
     () =>
-      (favorites.data ?? []).filter((f) => {
-        if ((f.position ?? "").toLowerCase() === "manager") return false;
-        const sport = (f.sport ?? "").toLowerCase();
-        return !sport || sport === "baseball" || sport === "mlb";
-      }),
+      (favorites.data ?? []).filter((f) => (f.position ?? "").toLowerCase() !== "manager"),
     [favorites.data],
   );
 
@@ -179,7 +370,7 @@ export default function DailyNewspaperPage() {
     queryKey: ["tt-team-snaps", teamFavs.map((t) => t.key).join(",")],
     queryFn: async () => {
       const rows = await Promise.all(
-        teamFavs.slice(0, 12).map(async (fav) => {
+        teamFavs.slice(0, 16).map(async (fav) => {
           try {
             return await fetchTeamSnapshot(fav);
           } catch {
@@ -203,6 +394,111 @@ export default function DailyNewspaperPage() {
     staleTime: 120_000,
   });
 
+  const mlbBoard = useQuery({
+    queryKey: ["tt-mlb-board", chicagoToday()],
+    queryFn: () => fetchMlbScoreboard(chicagoToday()),
+    staleTime: 60_000,
+  });
+  const nflBoard = useQuery({
+    queryKey: ["tt-nfl-board", chicagoTodayNfl()],
+    queryFn: async () => {
+      const ymd = chicagoTodayNfl().replace(/-/g, "");
+      return fetchNflScoreboard(ymd).catch(() => fetchNflScoreboard());
+    },
+    staleTime: 60_000,
+  });
+  const cfbBoard = useQuery({
+    queryKey: ["tt-cfb-board", chicagoTodayCfb()],
+    queryFn: async () => {
+      const ymd = chicagoTodayCfb().replace(/-/g, "");
+      return fetchCfbScoreboard(ymd).catch(() => fetchCfbScoreboard());
+    },
+    staleTime: 60_000,
+  });
+  const soccerBoard = useQuery({
+    queryKey: ["tt-soccer-board", chicagoTodaySoccer()],
+    queryFn: () => fetchSoccerRuwtBoard(chicagoTodaySoccer()),
+    staleTime: 60_000,
+  });
+
+  const inSeasonSnaps = useMemo(
+    () => (teamSnaps.data ?? []).filter(isTeamInSeason),
+    [teamSnaps.data],
+  );
+
+  const inSeasonFavs = useMemo(() => {
+    const keys = new Set(inSeasonSnaps.map((s) => s.key));
+    return teamFavs.filter((f) => keys.has(f.key));
+  }, [teamFavs, inSeasonSnaps]);
+
+  const leagueStandings = useQuery({
+    queryKey: [
+      "tt-league-standings",
+      inSeasonFavs.map((f) => f.key).join(","),
+      standings.dataUpdatedAt,
+    ],
+    queryFn: async (): Promise<LeagueStandingBox[]> => {
+      const boxes: LeagueStandingBox[] = [];
+      for (const table of standings.data ?? []) {
+        boxes.push(standingRowsFromMlb(table));
+      }
+
+      const byLeague = new Map<string, (typeof inSeasonFavs)[number]>();
+      for (const fav of inSeasonFavs) {
+        if (/mlb/i.test(fav.league) || /baseball/i.test(fav.sport)) continue;
+        const leagueKey = `${fav.sport}|${fav.league}`;
+        if (!byLeague.has(leagueKey)) byLeague.set(leagueKey, fav);
+      }
+
+      const extras = await Promise.all(
+        [...byLeague.values()].slice(0, 8).map(async (fav) => {
+          try {
+            const detail = await fetchTeamDetail(fav);
+            if (!detail.division.length) return null;
+            return standingRowsFromDivision(
+              fav.key,
+              detail.standing || fav.league || fav.shortName,
+              fav.league || fav.sport,
+              detail.division,
+            );
+          } catch {
+            return null;
+          }
+        }),
+      );
+      for (const box of extras) if (box) boxes.push(box);
+      return boxes;
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  const yesterdayByPlayer = useMemo(() => {
+    const map = new Map<string, FavoriteYesterdayLine>();
+    for (const line of playerYesterday.data?.lines ?? []) {
+      map.set(line.playerId, line);
+    }
+    return map;
+  }, [playerYesterday.data]);
+
+  const playerSeason = useQuery({
+    queryKey: [
+      "tt-player-season",
+      user?.id,
+      playerFavs.map((f) => f.playerId).join(","),
+      playerYesterday.dataUpdatedAt,
+    ],
+    queryFn: async () => {
+      const cards = await Promise.all(
+        playerFavs.slice(0, 16).map((f) =>
+          loadPlayerSeasonCard(f, yesterdayByPlayer.get(f.playerId) ?? null),
+        ),
+      );
+      return cards;
+    },
+    enabled: playerFavs.length > 0,
+    staleTime: 5 * 60_000,
+  });
+
   const rows = useMemo(() => flattenTasks(tasks ?? []), [tasks]);
   const upNext = pickUpNext(rows);
   const dueToday = useMemo(
@@ -214,13 +510,8 @@ export default function DailyNewspaperPage() {
     [tasks, day],
   );
   const habitsDue = useMemo(() => (habits ?? []).filter((h) => h.dueToday), [habits]);
-  const central = nlCentral(standings.data);
   const games = recap.data?.games ?? [];
   const scoresBySport = useMemo(() => groupScores(games), [games]);
-  const playedLines = useMemo(
-    () => (playerYesterday.data?.lines ?? []).filter((l) => l.played),
-    [playerYesterday.data],
-  );
   const boards = useMemo(() => pickLeaderBoards(leaders.data), [leaders.data]);
 
   const todayEvents = useMemo(() => {
@@ -236,6 +527,66 @@ export default function DailyNewspaperPage() {
     return events.filter((e) => dayKeyEvent(e) === tom);
   }, [calendar.data, day]);
 
+  const upcomingFromTeams = useMemo(
+    () =>
+      inSeasonSnaps
+        .filter((s) => s.nextGame)
+        .map((s) => ({
+          key: s.key,
+          team: s.shortName || s.name,
+          logo: s.logo,
+          label: s.nextGame!.label,
+          when: s.nextGame!.when,
+          detail: s.nextGame!.detail,
+        })),
+    [inSeasonSnaps],
+  );
+
+  const upcomingFromBoards = useMemo(() => {
+    const items: { key: string; team: string; label: string; when: string | null; detail: string | null }[] = [];
+    for (const g of mlbBoard.data ?? []) {
+      if (g.final || g.live) continue;
+      items.push({
+        key: `mlb-${g.id}`,
+        team: "MLB",
+        label: `${g.away.abbrev} @ ${g.home.abbrev}`,
+        when: g.whenShort || g.when,
+        detail: g.venue,
+      });
+    }
+    for (const g of nflBoard.data ?? []) {
+      if (g.final || g.live) continue;
+      items.push({
+        key: `nfl-${g.id}`,
+        team: "NFL",
+        label: `${g.away.abbrev} @ ${g.home.abbrev}`,
+        when: g.whenShort || g.when,
+        detail: g.venue,
+      });
+    }
+    for (const g of cfbBoard.data ?? []) {
+      if (g.final || g.live) continue;
+      items.push({
+        key: `cfb-${g.id}`,
+        team: "CFB",
+        label: `${g.away.abbrev} @ ${g.home.abbrev}`,
+        when: g.whenShort || g.when,
+        detail: g.venue,
+      });
+    }
+    for (const g of soccerBoard.data ?? []) {
+      if (g.final || g.live) continue;
+      items.push({
+        key: `soc-${g.id}`,
+        team: g.league || "Soccer",
+        label: `${g.away.abbrev} vs ${g.home.abbrev}`,
+        when: g.shortDetail,
+        detail: g.venue,
+      });
+    }
+    return items.slice(0, 18);
+  }, [mlbBoard.data, nflBoard.data, cfbBoard.data, soccerBoard.data]);
+
   const leadDek = useMemo(() => {
     const bits: string[] = [];
     if (dueToday.length) bits.push(`${dueToday.length} due`);
@@ -244,9 +595,9 @@ export default function DailyNewspaperPage() {
       bits.push(`${habitsDue.filter((h) => h.completedToday).length}/${habitsDue.length} habits`);
     }
     if (todayEvents.length) bits.push(`${todayEvents.length} on calendar`);
-    if (teamFavs.length) bits.push(`${teamFavs.length} teams`);
+    if (inSeasonSnaps.length) bits.push(`${inSeasonSnaps.length} in-season`);
     return bits.join(" · ") || "Quiet desk — make some news.";
-  }, [dueToday.length, overdue.length, habitsDue, todayEvents.length, teamFavs.length]);
+  }, [dueToday.length, overdue.length, habitsDue, todayEvents.length, inSeasonSnaps.length]);
 
   const refreshing =
     tasksFetching ||
@@ -255,7 +606,13 @@ export default function DailyNewspaperPage() {
     recap.isFetching ||
     calendar.isFetching ||
     leaders.isFetching ||
-    teamSnaps.isFetching;
+    teamSnaps.isFetching ||
+    mlbBoard.isFetching ||
+    nflBoard.isFetching ||
+    cfbBoard.isFetching ||
+    soccerBoard.isFetching ||
+    playerSeason.isFetching ||
+    leagueStandings.isFetching;
 
   async function onRefresh() {
     await Promise.all([
@@ -267,6 +624,12 @@ export default function DailyNewspaperPage() {
       calendar.refetch(),
       teamSnaps.refetch(),
       playerYesterday.refetch(),
+      mlbBoard.refetch(),
+      nflBoard.refetch(),
+      cfbBoard.refetch(),
+      soccerBoard.refetch(),
+      playerSeason.refetch(),
+      leagueStandings.refetch(),
     ]);
   }
 
@@ -282,12 +645,108 @@ export default function DailyNewspaperPage() {
 
   function renderEvents(list: CalendarEvent[], empty: string) {
     if (!list.length) return <li className="np-muted">{empty}</li>;
-    return list.slice(0, 14).map((e) => (
+    return list.slice(0, 12).map((e) => (
       <li key={e.id}>
         <span className="when">{formatEventTime(e)}</span>
         <span className="t">{e.title}</span>
       </li>
     ));
+  }
+
+  function renderMlbGames(games: MlbScoreGame[] | undefined) {
+    if (!games?.length) return <p className="np-muted">No MLB games today.</p>;
+    return (
+      <div className="np-scores">
+        {games.slice(0, 12).map((g) => (
+          <ScoreCell
+            key={g.id}
+            away={{
+              abbrev: g.away.abbrev,
+              score: g.away.score,
+              win: g.final && (g.away.score ?? 0) > (g.home.score ?? 0),
+            }}
+            home={{
+              abbrev: g.home.abbrev,
+              score: g.home.score,
+              win: g.final && (g.home.score ?? 0) > (g.away.score ?? 0),
+            }}
+            status={g.live ? g.inning || "Live" : g.final ? "Final" : g.whenShort || g.when || g.status}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  function renderNflGames(games: NflScoreGame[] | undefined) {
+    if (!games?.length) return <p className="np-muted">No NFL games today.</p>;
+    return (
+      <div className="np-scores">
+        {games.slice(0, 12).map((g) => (
+          <ScoreCell
+            key={g.id}
+            away={{
+              abbrev: g.away.abbrev,
+              score: g.away.score,
+              win: g.final && (g.away.score ?? 0) > (g.home.score ?? 0),
+            }}
+            home={{
+              abbrev: g.home.abbrev,
+              score: g.home.score,
+              win: g.final && (g.home.score ?? 0) > (g.away.score ?? 0),
+            }}
+            status={g.live ? g.shortDetail || "Live" : g.final ? "Final" : g.whenShort || g.when || g.status}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  function renderCfbGames(games: CfbScoreGame[] | undefined) {
+    if (!games?.length) return <p className="np-muted">No CFB games today.</p>;
+    return (
+      <div className="np-scores">
+        {games.slice(0, 12).map((g) => (
+          <ScoreCell
+            key={g.id}
+            away={{
+              abbrev: g.away.abbrev,
+              score: g.away.score,
+              win: g.final && (g.away.score ?? 0) > (g.home.score ?? 0),
+            }}
+            home={{
+              abbrev: g.home.abbrev,
+              score: g.home.score,
+              win: g.final && (g.home.score ?? 0) > (g.away.score ?? 0),
+            }}
+            status={g.live ? g.shortDetail || "Live" : g.final ? "Final" : g.whenShort || g.when || g.status}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  function renderSoccerGames(games: SoccerScoreGame[] | undefined) {
+    if (!games?.length) return <p className="np-muted">No soccer matches today.</p>;
+    return (
+      <div className="np-scores">
+        {games.slice(0, 12).map((g) => (
+          <ScoreCell
+            key={g.id}
+            away={{
+              abbrev: g.away.abbrev,
+              score: g.away.score,
+              win: false,
+            }}
+            home={{
+              abbrev: g.home.abbrev,
+              score: g.home.score,
+              win: false,
+            }}
+            status={g.live ? g.shortDetail || "Live" : g.final ? "FT" : g.shortDetail || g.status}
+          />
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -297,8 +756,8 @@ export default function DailyNewspaperPage() {
           <p className="label-caps text-accent">Print edition</p>
           <h1>Thompson Times</h1>
           <p className="text-chalk mt-2 max-w-xl text-[12px] leading-relaxed">
-            Two packed letter pages — desk, calendar, your teams, then sports finals, followed
-            players, standings, and leaders.
+            Dense broadsheet boxes — desk beside calendar, in-season teams beside upcoming
+            games, then every scoreboard and standing that already lives in Command Center.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -334,8 +793,7 @@ export default function DailyNewspaperPage() {
           <p className="font-semibold text-cream">Google Calendar / iCal feeds</p>
           <p className="mt-1 text-[11px] leading-relaxed">
             Google Calendar → Settings → Integrate calendar → copy the{" "}
-            <em>Secret address in iCal format</em>. Paste one URL per line (Pookie, work, sports,
-            etc.).
+            <em>Secret address in iCal format</em>. Paste one URL per line.
           </p>
           <textarea
             value={calDraft}
@@ -387,39 +845,56 @@ export default function DailyNewspaperPage() {
           </header>
 
           <div className="np-front np-anim-body">
-            <div className="np-stack">
-              <section className="np-box">
-                <p className="np-kicker">Calendar</p>
-                <div className="np-sec-head">
-                  <h2>Today</h2>
-                  <span>{todayEvents.length} events</span>
-                </div>
-                <ul className="np-list np-cal">
-                  {renderEvents(
-                    todayEvents,
-                    calendar.data?.sourceCount
-                      ? "Nothing on the books today."
-                      : "Add an iCal feed via Calendar settings.",
-                  )}
-                </ul>
-                {tomorrowEvents.length > 0 ? (
-                  <>
-                    <div className="np-sec-head" style={{ marginTop: "0.4rem" }}>
-                      <h2>Tomorrow</h2>
-                      <span>{tomorrowEvents.length}</span>
-                    </div>
-                    <ul className="np-list np-cal">
-                      {tomorrowEvents.slice(0, 6).map((e) => (
-                        <li key={e.id}>
-                          <span className="when">{formatEventTime(e)}</span>
-                          <span className="t">{e.title}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
-              </section>
+            <section className="np-box">
+              <p className="np-kicker">Calendar</p>
+              <div className="np-sec-head">
+                <h2>Today</h2>
+                <span>{todayEvents.length}</span>
+              </div>
+              <ul className="np-list np-cal">{renderEvents(todayEvents, calendar.data?.sourceCount ? "Clear day." : "Add iCal in Calendar settings.")}</ul>
+              {tomorrowEvents.length ? (
+                <>
+                  <div className="np-sec-head" style={{ marginTop: "0.35rem" }}>
+                    <h2>Tomorrow</h2>
+                    <span>{tomorrowEvents.length}</span>
+                  </div>
+                  <ul className="np-list np-cal">
+                    {tomorrowEvents.slice(0, 6).map((e) => (
+                      <li key={e.id}>
+                        <span className="when">{formatEventTime(e)}</span>
+                        <span className="t">{e.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </section>
 
+            <section className="np-box np-desk">
+              <p className="np-kicker">The desk</p>
+              <h2 className="np-headline">{upNext?.content ?? "Nothing left on the plate."}</h2>
+              <p className="np-dek">{leadDek}</p>
+              <div className="np-sec-head">
+                <h2>Agenda</h2>
+                <span>
+                  {dueToday.length} due · {overdue.length} late
+                </span>
+              </div>
+              <ul className="np-list np-agenda">
+                {[...overdue, ...dueToday].slice(0, 14).map((t) => (
+                  <li key={t.id} className={cn(isOverdue(t.due?.date) && "late")}>
+                    <span className="pri">P{5 - t.priority}</span>
+                    <span className="t">{t.content}</span>
+                    <span className="due m">{t.due?.date ? dueLabel(t.due.date) : "—"}</span>
+                  </li>
+                ))}
+                {!dueToday.length && !overdue.length ? (
+                  <li className="np-muted">No dated tasks for today.</li>
+                ) : null}
+              </ul>
+            </section>
+
+            <div className="np-stack">
               <section className="np-box">
                 <p className="np-kicker">Weather</p>
                 {weather.data ? (
@@ -434,7 +909,7 @@ export default function DailyNewspaperPage() {
                       </div>
                     </div>
                     <ul className="np-list np-wx-days">
-                      {weather.data.daily.slice(0, 4).map((d) => {
+                      {weather.data.daily.slice(0, 3).map((d) => {
                         const label = new Date(`${d.date}T12:00:00`).toLocaleDateString("en-US", {
                           timeZone: weather.data!.timezone,
                           weekday: "short",
@@ -452,51 +927,10 @@ export default function DailyNewspaperPage() {
                     </ul>
                   </>
                 ) : (
-                  <p className="np-muted">Loading forecast…</p>
+                  <p className="np-muted">Loading…</p>
                 )}
               </section>
-            </div>
 
-            <div className="np-stack">
-              <section className="np-box" style={{ flex: 1 }}>
-                <p className="np-kicker">The desk</p>
-                <h2 className="np-headline">{upNext?.content ?? "Nothing left on the plate."}</h2>
-                <p className="np-dek">{leadDek}</p>
-                <div className="np-columns">
-                  <p>
-                    {upNext
-                      ? `Lead item${upNext.due?.date ? ` — ${dueLabel(upNext.due.date) ?? ""}` : ""}${
-                          isOverdue(upNext.due?.date) ? " (overdue)" : ""
-                        }. Clear the board before the day drifts.`
-                      : "The scoreboard is open. Knock out a habit or pull the next due task."}
-                  </p>
-                  <p>
-                    Sports desk: yesterday’s finals by league, followed-player lines, NL Central, and
-                    MLB leaders run on page B. Your teams box sits below the fold.
-                  </p>
-                </div>
-                <div className="np-sec-head" style={{ marginTop: "0.45rem" }}>
-                  <h2>Agenda</h2>
-                  <span>
-                    {dueToday.length} due · {overdue.length} late
-                  </span>
-                </div>
-                <ul className="np-list np-agenda">
-                  {[...overdue, ...dueToday].slice(0, 16).map((t) => (
-                    <li key={t.id} className={cn(isOverdue(t.due?.date) && "late")}>
-                      <span className="pri">P{5 - t.priority}</span>
-                      <span className="t">{t.content}</span>
-                      <span className="due m">{t.due?.date ? dueLabel(t.due.date) : "—"}</span>
-                    </li>
-                  ))}
-                  {!dueToday.length && !overdue.length ? (
-                    <li className="np-muted">No dated tasks for today.</li>
-                  ) : null}
-                </ul>
-              </section>
-            </div>
-
-            <div className="np-stack">
               <section className="np-box">
                 <p className="np-kicker">Scoreboard</p>
                 <div className="np-ba">
@@ -517,7 +951,7 @@ export default function DailyNewspaperPage() {
                     <dd>{score.strikeouts}</dd>
                   </div>
                   <div>
-                    <dt>On deck</dt>
+                    <dt>Deck</dt>
                     <dd>{score.onDeck}</dd>
                   </div>
                   <div>
@@ -530,49 +964,84 @@ export default function DailyNewspaperPage() {
                   </div>
                 </dl>
               </section>
-
-              <section className="np-box">
-                <p className="np-kicker">Habits</p>
-                <ul className="np-list">
-                  {(habitsDue.length ? habitsDue : habits ?? []).slice(0, 10).map((h) => (
-                    <li key={h.id} className={cn(h.completedToday && "np-done")}>
-                      <span className="check">{h.completedToday ? "■" : "□"}</span>
-                      <span className="t">{h.name}</span>
-                      {h.streak > 0 ? <span className="m">{h.streak}d</span> : null}
-                    </li>
-                  ))}
-                  {!habits?.length ? <li className="np-muted">No habits due.</li> : null}
-                </ul>
-              </section>
             </div>
+
+            <section className="np-box">
+              <p className="np-kicker">Habits</p>
+              <ul className="np-list">
+                {(habitsDue.length ? habitsDue : habits ?? []).slice(0, 10).map((h) => (
+                  <li key={h.id} className={cn(h.completedToday && "np-done")}>
+                    <span className="check">{h.completedToday ? "■" : "□"}</span>
+                    <span className="t">{h.name}</span>
+                    {h.streak > 0 ? <span className="m">{h.streak}d</span> : null}
+                  </li>
+                ))}
+                {!habits?.length ? <li className="np-muted">No habits due.</li> : null}
+              </ul>
+            </section>
           </div>
 
-          <section className="np-box np-anim-body">
-            <div className="np-sec-head">
-              <h2>My teams</h2>
-              <span>{teamFavs.length} followed</span>
-            </div>
-            <div className="np-teams">
-              {(teamSnaps.data ?? []).map((snap) => {
-                const line = teamLine(snap);
-                const fav = teamFavs.find((f) => f.key === snap.key);
-                return (
-                  <div key={snap.key} className="np-team">
-                    <div className="np-team-top">
-                      {snap.logo ? <img src={snap.logo} alt="" /> : null}
-                      <span className="np-team-name">{snap.shortName || snap.name}</span>
+          <div className="np-duo np-anim-body">
+            <section className="np-box">
+              <div className="np-sec-head">
+                <h2>My teams</h2>
+                <span>{inSeasonSnaps.length} in season</span>
+              </div>
+              <div className="np-teams">
+                {inSeasonSnaps.map((snap) => {
+                  const line = teamLine(snap);
+                  const fav = teamFavs.find((f) => f.key === snap.key);
+                  return (
+                    <div key={snap.key} className="np-team">
+                      <div className="np-team-top">
+                        {snap.logo ? <img src={snap.logo} alt="" /> : null}
+                        <span className="np-team-name">{snap.shortName || snap.name}</span>
+                      </div>
+                      <div className="np-team-rec">
+                        {[snap.record, snap.standing, fav?.league].filter(Boolean).join(" · ") ||
+                          fav?.sport}
+                      </div>
+                      <div className={cn("np-team-line", line.cls)}>{line.text}</div>
                     </div>
-                    <div className="np-team-rec">
-                      {[snap.record, snap.standing, fav?.league].filter(Boolean).join(" · ") ||
-                        fav?.sport}
-                    </div>
-                    <div className={cn("np-team-line", line.cls)}>{line.text}</div>
-                  </div>
-                );
-              })}
-              {!teamSnaps.data?.length ? <p className="np-muted">Loading team desk…</p> : null}
-            </div>
-          </section>
+                  );
+                })}
+                {!teamSnaps.isPending && !inSeasonSnaps.length ? (
+                  <p className="np-muted">No in-season teams right now.</p>
+                ) : null}
+                {teamSnaps.isPending ? <p className="np-muted">Loading team desk…</p> : null}
+              </div>
+            </section>
+
+            <section className="np-box">
+              <div className="np-sec-head">
+                <h2>Upcoming</h2>
+                <span>Next tips</span>
+              </div>
+              <ul className="np-list np-upcoming">
+                {upcomingFromTeams.length
+                  ? upcomingFromTeams.slice(0, 12).map((u) => (
+                      <li key={u.key}>
+                        <span className="when">{u.when || "TBD"}</span>
+                        <span className="t">
+                          <strong>{u.team}</strong> · {u.label}
+                          {u.detail ? ` · ${u.detail}` : ""}
+                        </span>
+                      </li>
+                    ))
+                  : upcomingFromBoards.slice(0, 12).map((u) => (
+                      <li key={u.key}>
+                        <span className="when">{u.when || "TBD"}</span>
+                        <span className="t">
+                          <strong>{u.team}</strong> · {u.label}
+                        </span>
+                      </li>
+                    ))}
+                {!upcomingFromTeams.length && !upcomingFromBoards.length ? (
+                  <li className="np-muted">No upcoming games on the wire.</li>
+                ) : null}
+              </ul>
+            </section>
+          </div>
 
           <footer className="np-folio">
             <span>Thompson Times</span>
@@ -588,24 +1057,52 @@ export default function DailyNewspaperPage() {
               <p className="np-kicker">Section B</p>
               <h1>Sports</h1>
             </div>
-            <div
-              style={{
-                textAlign: "right",
-                fontSize: "8px",
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: "var(--np-muted)",
-              }}
-            >
+            <div className="np-section-meta">
               <div>{editionDateline(day)}</div>
-              <div>Finals · Players · Standings · Leaders</div>
+              <div>Boards · Upcoming · Players · Standings · Leaders</div>
             </div>
           </header>
 
           <div className="np-sports np-anim-body">
             <section className="np-box">
               <div className="np-sec-head">
-                <h2>Final scores</h2>
+                <h2>MLB</h2>
+                <span>Scoreboard</span>
+              </div>
+              {mlbBoard.isPending ? <p className="np-muted">Loading…</p> : renderMlbGames(mlbBoard.data)}
+            </section>
+
+            <section className="np-box">
+              <div className="np-sec-head">
+                <h2>NFL</h2>
+                <span>Scoreboard</span>
+              </div>
+              {nflBoard.isPending ? <p className="np-muted">Loading…</p> : renderNflGames(nflBoard.data)}
+            </section>
+
+            <section className="np-box">
+              <div className="np-sec-head">
+                <h2>CFB</h2>
+                <span>Scoreboard</span>
+              </div>
+              {cfbBoard.isPending ? <p className="np-muted">Loading…</p> : renderCfbGames(cfbBoard.data)}
+            </section>
+
+            <section className="np-box">
+              <div className="np-sec-head">
+                <h2>Soccer</h2>
+                <span>Scoreboard</span>
+              </div>
+              {soccerBoard.isPending ? (
+                <p className="np-muted">Loading…</p>
+              ) : (
+                renderSoccerGames(soccerBoard.data)
+              )}
+            </section>
+
+            <section className="np-box">
+              <div className="np-sec-head">
+                <h2>Finals</h2>
                 <span>{recap.data?.date ?? "Yesterday"}</span>
               </div>
               {scoresBySport.length ? (
@@ -614,16 +1111,20 @@ export default function DailyNewspaperPage() {
                     <div className="np-sport-label">{sport}</div>
                     <div className="np-scores">
                       {list.map((g) => (
-                        <div key={g.id} className="np-score">
-                          <div className={cn("np-score-row", g.away.winner && "win")}>
-                            <span>{g.away.abbrev || g.away.name}</span>
-                            <span>{g.away.score ?? "—"}</span>
-                          </div>
-                          <div className={cn("np-score-row", g.home.winner && "win")}>
-                            <span>{g.home.abbrev || g.home.name}</span>
-                            <span>{g.home.score ?? "—"}</span>
-                          </div>
-                        </div>
+                        <ScoreCell
+                          key={g.id}
+                          away={{
+                            abbrev: g.away.abbrev || g.away.name,
+                            score: g.away.score,
+                            win: g.away.winner,
+                          }}
+                          home={{
+                            abbrev: g.home.abbrev || g.home.name,
+                            score: g.home.score,
+                            win: g.home.winner,
+                          }}
+                          status="Final"
+                        />
                       ))}
                     </div>
                   </div>
@@ -638,30 +1139,41 @@ export default function DailyNewspaperPage() {
             <section className="np-box">
               <div className="np-sec-head">
                 <h2>Followed players</h2>
-                <span>{playerYesterday.data?.date ?? "Yesterday"}</span>
+                <span>Season stats</span>
               </div>
               <ul className="np-list np-players">
-                {playedLines.length ? (
-                  playedLines.slice(0, 14).map((p: FavoriteYesterdayLine) => (
-                    <li key={`${p.playerId}-${p.summary}`}>
+                {(playerSeason.data ?? []).length ? (
+                  (playerSeason.data ?? []).map((p) => (
+                    <li key={p.playerId}>
                       <strong>
-                        {p.playerName}
-                        {p.isWin != null ? (p.isWin ? " · W" : " · L") : ""}
+                        {p.name}
+                        {p.position ? ` · ${p.position}` : ""}
+                        {p.yesterday?.isWin != null
+                          ? p.yesterday.isWin
+                            ? " · W"
+                            : " · L"
+                          : ""}
                       </strong>
                       <span className="meta">
-                        {p.isHome ? "vs" : "@"} {p.opponent}
-                        {p.teamName ? ` · ${p.teamName}` : ""}
+                        {p.sport}
+                        {p.team ? ` · ${p.team}` : ""}
+                        {p.yesterday
+                          ? ` · ${p.yesterday.isHome ? "vs" : "@"} ${p.yesterday.opponent}`
+                          : ""}
                       </span>
-                      <span className="line">{p.summary || "—"}</span>
+                      <span className="line">{p.seasonLine || "—"}</span>
+                      {p.yesterday?.summary ? (
+                        <span className="meta">Yday · {p.yesterday.summary}</span>
+                      ) : null}
                     </li>
                   ))
                 ) : (
                   <li className="np-muted">
                     {playerFavs.length
-                      ? playerYesterday.isPending
-                        ? "Loading lines…"
-                        : "No followed-player lines from yesterday."
-                      : "Star players on the MLB board to fill this column."}
+                      ? playerSeason.isPending
+                        ? "Loading season lines…"
+                        : "No season lines yet."
+                      : "Star players on the sports board to fill this box."}
                   </li>
                 )}
               </ul>
@@ -669,39 +1181,42 @@ export default function DailyNewspaperPage() {
 
             <section className="np-box np-span-2">
               <div className="np-sec-head">
-                <h2>NL Central</h2>
-                <span>Standings</span>
+                <h2>Standings</h2>
+                <span>All boards</span>
               </div>
-              {central ? (
-                <table className="np-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Team</th>
-                      <th>W</th>
-                      <th>L</th>
-                      <th>GB</th>
-                      <th>L10</th>
-                      <th>Str</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {central.rows.map((r) => (
-                      <tr key={r.teamId} className={cn(r.teamId === STL_TEAM_ID && "np-home")}>
-                        <td>{r.rank}</td>
-                        <td>{r.abbrev || r.team}</td>
-                        <td>{r.wins}</td>
-                        <td>{r.losses}</td>
-                        <td>{r.gb}</td>
-                        <td>{r.l10}</td>
-                        <td>{r.streak}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              {(leagueStandings.data ?? []).length ? (
+                <div className="np-standings-grid">
+                  {(leagueStandings.data ?? []).map((box) => (
+                    <div key={box.key} className="np-standing-box">
+                      <div className="np-sport-label">
+                        {box.title} · {box.subtitle}
+                      </div>
+                      <table className="np-table">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Team</th>
+                            <th>Rec</th>
+                            <th>GB</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {box.rows.map((r, idx) => (
+                            <tr key={`${box.key}-${r.team}-${idx}`} className={cn(r.highlight && "np-home")}>
+                              <td>{r.rank}</td>
+                              <td>{r.team}</td>
+                              <td>{r.record}</td>
+                              <td>{r.gb}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <p className="np-muted">
-                  {standings.isPending ? "Loading…" : "Standings unavailable."}
+                  {leagueStandings.isPending ? "Loading standings…" : "Standings unavailable."}
                 </p>
               )}
             </section>
