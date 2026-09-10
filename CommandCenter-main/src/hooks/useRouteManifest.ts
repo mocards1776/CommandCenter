@@ -89,7 +89,7 @@ export function useRouteManifest() {
           : mode === "rss"
             ? "Dispatch"
             : pathname.startsWith("/newspaper")
-              ? "Daily Newspaper"
+              ? "Thompson Times"
               : "🇺🇸 Josh's Command Center";
   }, [pathname]);
 }

@@ -53,7 +53,7 @@ import { cn, formatSportsDateLong } from "@/lib/utils";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", short: "Today", Icon: LayoutDashboard },
-  { to: "/newspaper", label: "Daily Paper", short: "Paper", Icon: ScrollText },
+  { to: "/newspaper", label: "Thompson Times", short: "Times", Icon: ScrollText },
   { to: "/todos", label: "Todos", short: "Todos", Icon: ListChecks },
   { to: "/habits", label: "Habits", short: "Habits", Icon: Repeat },
   { to: "/reading", label: "Reading", short: "Reading", Icon: BookOpen },
