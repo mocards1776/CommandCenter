@@ -62,11 +62,35 @@ import {
   type StandingRow,
   type TeamSnapshot,
 } from "@/lib/sports";
-import { cn, dueLabel, isOverdue, todayStr } from "@/lib/utils";
+import { cn, dueLabel, isOverdue, shiftDay, todayStr } from "@/lib/utils";
 import { DEFAULT_WEATHER_ZIP, fetchZipWeather, weatherGlyph } from "@/lib/weather";
 import { fetchYesterdayRecap, type YesterdayRecapGame } from "@/lib/yesterday-recap";
+import {
+  dailyProgress,
+  fetchBooks,
+  fetchDailyGoal,
+  fetchHighlightCounts,
+  fetchOnDeck,
+  fetchSessions,
+  libraryTitle,
+  pagesContributions,
+  periodStats,
+} from "@/lib/books";
+import {
+  RSS_FEEDS,
+  cleanArticleTitle,
+  fetchRssFeed,
+  fetchRssHighlights,
+  fetchRssReads,
+  fetchRssSaves,
+  formatFeedDate,
+} from "@/lib/rss";
+import type { Book } from "@/types";
 
 const STL_TEAM_ID = 138;
+const MOSCOUT = RSS_FEEDS.find((f) => f.id === "moscout")!;
+/** Dense 2-col wire — pack as many Scout stories as will fit a letter page. */
+const MOSCOUT_PER_PAGE = 56;
 
 type PlayerSeasonCard = {
   playerId: string;
@@ -289,6 +313,22 @@ function ScoreCell({
   );
 }
 
+
+function chunkItems<T>(items: T[], size: number): T[][] {
+  if (!items.length) return [[]];
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+function readingProgress(book: Book): string {
+  if (!book.page_count || book.page_count <= 0) {
+    return book.current_page ? `p. ${book.current_page}` : "—";
+  }
+  const pct = Math.min(100, Math.round((100 * (book.current_page || 0)) / book.page_count));
+  return `${book.current_page || 0}/${book.page_count} · ${pct}%`;
+}
+
 export default function DailyNewspaperPage() {
   const { user } = useAuth();
   const day = todayStr();
@@ -418,6 +458,55 @@ export default function DailyNewspaperPage() {
   const soccerBoard = useQuery({
     queryKey: ["tt-soccer-board", chicagoTodaySoccer()],
     queryFn: () => fetchSoccerRuwtBoard(chicagoTodaySoccer()),
+    staleTime: 60_000,
+  });
+
+  const booksQ = useQuery({
+    queryKey: ["books"],
+    queryFn: fetchBooks,
+    staleTime: 60_000,
+  });
+  const sessionsQ = useQuery({
+    queryKey: ["reading-sessions"],
+    queryFn: fetchSessions,
+    staleTime: 60_000,
+  });
+  const dailyGoalQ = useQuery({
+    queryKey: ["daily-goal"],
+    queryFn: fetchDailyGoal,
+    staleTime: 5 * 60_000,
+  });
+  const onDeckQ = useQuery({
+    queryKey: ["on-deck"],
+    queryFn: fetchOnDeck,
+    staleTime: 60_000,
+  });
+  const highlightCountsQ = useQuery({
+    queryKey: ["highlight-counts"],
+    queryFn: fetchHighlightCounts,
+    staleTime: 5 * 60_000,
+  });
+  const moscoutQ = useQuery({
+    queryKey: ["rss-feed-v6", MOSCOUT.url],
+    queryFn: () => fetchRssFeed(MOSCOUT.url),
+    staleTime: 90_000,
+  });
+  const rssReadsQ = useQuery({
+    queryKey: ["rss-reads", user?.id],
+    queryFn: fetchRssReads,
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+  });
+  const rssHighlightsQ = useQuery({
+    queryKey: ["rss-highlights-all"],
+    queryFn: () => fetchRssHighlights(),
+    enabled: Boolean(user?.id),
+    staleTime: 60_000,
+  });
+  const rssSavesQ = useQuery({
+    queryKey: ["rss-saves"],
+    queryFn: fetchRssSaves,
+    enabled: Boolean(user?.id),
     staleTime: 60_000,
   });
 
@@ -587,6 +676,63 @@ export default function DailyNewspaperPage() {
     return items.slice(0, 18);
   }, [mlbBoard.data, nflBoard.data, cfbBoard.data, soccerBoard.data]);
 
+  const currentlyReading = useMemo(() => {
+    const sessions = sessionsQ.data ?? [];
+    const latest = new Map<string, string>();
+    for (const s of sessions) {
+      if (!s.book_id) continue;
+      const prev = latest.get(s.book_id);
+      if (!prev || s.session_date > prev) latest.set(s.book_id, s.session_date);
+    }
+    return (booksQ.data ?? [])
+      .filter((b) => b.status === "currently-reading")
+      .sort((a, b) => {
+        const da = latest.get(a.id) ?? a.last_date_read ?? a.started_at ?? "";
+        const db = latest.get(b.id) ?? b.last_date_read ?? b.started_at ?? "";
+        return db.localeCompare(da);
+      });
+  }, [booksQ.data, sessionsQ.data]);
+
+  const readingToday = useMemo(
+    () => dailyProgress(sessionsQ.data ?? [], dailyGoalQ.data ?? null),
+    [sessionsQ.data, dailyGoalQ.data],
+  );
+  const readingPeriod = useMemo(
+    () => periodStats(booksQ.data ?? [], sessionsQ.data ?? []),
+    [booksQ.data, sessionsQ.data],
+  );
+  const pagesRecent = useMemo(() => {
+    const to = day;
+    const from = shiftDay(day, -6);
+    return pagesContributions(sessionsQ.data ?? [], booksQ.data ?? [], from, to).slice(0, 14);
+  }, [sessionsQ.data, booksQ.data, day]);
+  const pagesYesterday = useMemo(() => {
+    const y = shiftDay(day, -1);
+    return pagesContributions(sessionsQ.data ?? [], booksQ.data ?? [], y, y);
+  }, [sessionsQ.data, booksQ.data, day]);
+  const readingHighlightTotal = useMemo(
+    () => Object.values(highlightCountsQ.data ?? {}).reduce((n, v) => n + v, 0),
+    [highlightCountsQ.data],
+  );
+  const moscoutItems = useMemo(
+    () => moscoutQ.data?.items ?? [],
+    [moscoutQ.data],
+  );
+  const moscoutPages = useMemo(
+    () => chunkItems(moscoutItems, MOSCOUT_PER_PAGE),
+    [moscoutItems],
+  );
+  const moscoutHighlightCount = useMemo(() => {
+    const items = moscoutItems;
+    if (!items.length) return 0;
+    const links = new Set(items.map((i) => i.link));
+    return (rssHighlightsQ.data ?? []).filter((h) => links.has(h.articleUrl)).length;
+  }, [moscoutItems, rssHighlightsQ.data]);
+  const moscoutReadCount = useMemo(() => {
+    const reads = new Set(rssReadsQ.data ?? []);
+    return moscoutItems.filter((i) => reads.has(i.link)).length;
+  }, [moscoutItems, rssReadsQ.data]);
+
   const leadDek = useMemo(() => {
     const bits: string[] = [];
     if (dueToday.length) bits.push(`${dueToday.length} due`);
@@ -612,7 +758,13 @@ export default function DailyNewspaperPage() {
     cfbBoard.isFetching ||
     soccerBoard.isFetching ||
     playerSeason.isFetching ||
-    leagueStandings.isFetching;
+    leagueStandings.isFetching ||
+    booksQ.isFetching ||
+    sessionsQ.isFetching ||
+    moscoutQ.isFetching ||
+    rssReadsQ.isFetching ||
+    rssHighlightsQ.isFetching ||
+    rssSavesQ.isFetching;
 
   async function onRefresh() {
     await Promise.all([
@@ -630,6 +782,15 @@ export default function DailyNewspaperPage() {
       soccerBoard.refetch(),
       playerSeason.refetch(),
       leagueStandings.refetch(),
+      booksQ.refetch(),
+      sessionsQ.refetch(),
+      dailyGoalQ.refetch(),
+      onDeckQ.refetch(),
+      highlightCountsQ.refetch(),
+      moscoutQ.refetch(),
+      rssReadsQ.refetch(),
+      rssHighlightsQ.refetch(),
+      rssSavesQ.refetch(),
     ]);
   }
 
@@ -756,8 +917,8 @@ export default function DailyNewspaperPage() {
           <p className="label-caps text-accent">Print edition</p>
           <h1>Thompson Times</h1>
           <p className="text-chalk mt-2 max-w-xl text-[12px] leading-relaxed">
-            Dense broadsheet boxes — desk beside calendar, in-season teams beside upcoming
-            games, then every scoreboard and standing that already lives in Command Center.
+            Multi-page broadsheet — desk, sports boards, reading stats, and the full Missouri
+            Scout from Dispatch packed tight. Print every page.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1256,9 +1417,252 @@ export default function DailyNewspaperPage() {
           <footer className="np-folio">
             <span>Thompson Times</span>
             <span>B · Sports</span>
-            <span>End of edition</span>
+            <span>Reading →</span>
           </footer>
         </article>
+
+        {/* ── PAGE C: READING ───────────────────────────────────── */}
+        <article className="np-page" aria-label="Thompson Times reading page">
+          <header className="np-section-mast np-anim-mast">
+            <div>
+              <p className="np-kicker">Section C</p>
+              <h1>Reading</h1>
+            </div>
+            <div className="np-section-meta">
+              <div>{editionDateline(day)}</div>
+              <div>Now · Recent pages · On deck</div>
+            </div>
+          </header>
+
+          <div className="np-reading np-anim-body">
+            <section className="np-box">
+              <div className="np-sec-head">
+                <h2>Today</h2>
+                <span>Pages</span>
+              </div>
+              <dl className="np-stats np-stats-reading">
+                <div>
+                  <dt>Today</dt>
+                  <dd>
+                    {readingToday.today}
+                    {readingToday.goal != null ? `/${readingToday.goal}` : ""}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Streak</dt>
+                  <dd>{readingToday.streak}d</dd>
+                </div>
+                <div>
+                  <dt>Best</dt>
+                  <dd>{readingToday.bestStreak}d</dd>
+                </div>
+                <div>
+                  <dt>Week</dt>
+                  <dd>{readingPeriod.pagesWeek}</dd>
+                </div>
+                <div>
+                  <dt>Month</dt>
+                  <dd>{readingPeriod.pagesMonth}</dd>
+                </div>
+                <div>
+                  <dt>Highlights</dt>
+                  <dd>{readingHighlightTotal}</dd>
+                </div>
+              </dl>
+              <p className="np-muted" style={{ marginTop: "0.25rem" }}>
+                Finished this week: {readingPeriod.booksWeek} books · {readingPeriod.magazinesWeek}{" "}
+                magazines. Month: {readingPeriod.booksMonth} books · {readingPeriod.magazinesMonth}{" "}
+                magazines.
+              </p>
+            </section>
+
+            <section className="np-box">
+              <div className="np-sec-head">
+                <h2>Currently reading</h2>
+                <span>{currentlyReading.length}</span>
+              </div>
+              <ul className="np-list np-reading-now">
+                {currentlyReading.length ? (
+                  currentlyReading.slice(0, 8).map((b) => (
+                    <li key={b.id}>
+                      <strong>{libraryTitle(b)}</strong>
+                      <span className="meta">
+                        {[b.authors, readingProgress(b)].filter(Boolean).join(" · ")}
+                      </span>
+                    </li>
+                  ))
+                ) : (
+                  <li className="np-muted">
+                    {booksQ.isPending ? "Loading library…" : "Nothing marked currently reading."}
+                  </li>
+                )}
+              </ul>
+            </section>
+
+            <section className="np-box">
+              <div className="np-sec-head">
+                <h2>Pages recently</h2>
+                <span>7 days</span>
+              </div>
+              <ul className="np-list np-pages-recent">
+                {pagesRecent.length ? (
+                  pagesRecent.map((p) => (
+                    <li key={p.bookId ?? p.title}>
+                      <span className="t">{p.title}</span>
+                      <span className="v">{p.pages}p</span>
+                    </li>
+                  ))
+                ) : (
+                  <li className="np-muted">
+                    {sessionsQ.isPending ? "Loading sessions…" : "No pages logged this week."}
+                  </li>
+                )}
+              </ul>
+              {pagesYesterday.length ? (
+                <>
+                  <div className="np-sec-head" style={{ marginTop: "0.35rem" }}>
+                    <h2>Yesterday</h2>
+                    <span>{pagesYesterday.reduce((n, p) => n + p.pages, 0)}p</span>
+                  </div>
+                  <ul className="np-list np-pages-recent">
+                    {pagesYesterday.map((p) => (
+                      <li key={`y-${p.bookId ?? p.title}`}>
+                        <span className="t">{p.title}</span>
+                        <span className="v">{p.pages}p</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </section>
+
+            <section className="np-box">
+              <div className="np-sec-head">
+                <h2>On deck</h2>
+                <span>{(onDeckQ.data ?? []).length}</span>
+              </div>
+              <ul className="np-list">
+                {(onDeckQ.data ?? []).length ? (
+                  (onDeckQ.data ?? []).slice(0, 10).map((b) => (
+                    <li key={b.id}>
+                      <span className="t">{libraryTitle(b)}</span>
+                      {b.authors ? <span className="m">{b.authors.split(",")[0]}</span> : null}
+                    </li>
+                  ))
+                ) : (
+                  <li className="np-muted">
+                    {onDeckQ.isPending ? "Loading…" : "On-deck shelf is empty."}
+                  </li>
+                )}
+              </ul>
+            </section>
+          </div>
+
+          <footer className="np-folio">
+            <span>Thompson Times</span>
+            <span>C · Reading</span>
+            <span>MoScout →</span>
+          </footer>
+        </article>
+
+        {/* ── PAGES D+: MOSCOUT ─────────────────────────────────── */}
+        {moscoutPages.map((pageItems, pageIdx) => (
+          <article
+            key={`moscout-${pageIdx}`}
+            className="np-page"
+            aria-label={`Thompson Times Missouri Scout page ${pageIdx + 1}`}
+          >
+            <header className="np-section-mast np-anim-mast">
+              <div>
+                <p className="np-kicker">Section D{moscoutPages.length > 1 ? ` · ${pageIdx + 1}` : ""}</p>
+                <h1>Missouri Scout</h1>
+              </div>
+              <div className="np-section-meta">
+                <div>{editionDateline(day)}</div>
+                <div>
+                  Dispatch · {moscoutItems.length} stories
+                  {moscoutPages.length > 1
+                    ? ` · ${pageIdx + 1}/${moscoutPages.length}`
+                    : ""}
+                </div>
+              </div>
+            </header>
+
+            {pageIdx === 0 ? (
+              <section className="np-box np-anim-body" style={{ marginBottom: "0.28rem" }}>
+                <div className="np-sec-head">
+                  <h2>Dispatch</h2>
+                  <span>Stats</span>
+                </div>
+                <dl className="np-stats np-stats-reading">
+                  <div>
+                    <dt>Scout stories</dt>
+                    <dd>{moscoutItems.length}</dd>
+                  </div>
+                  <div>
+                    <dt>Scout read</dt>
+                    <dd>{moscoutReadCount}</dd>
+                  </div>
+                  <div>
+                    <dt>Scout marks</dt>
+                    <dd>{moscoutHighlightCount}</dd>
+                  </div>
+                  <div>
+                    <dt>Reads (1k)</dt>
+                    <dd>{(rssReadsQ.data ?? []).length}</dd>
+                  </div>
+                  <div>
+                    <dt>Highlights</dt>
+                    <dd>{(rssHighlightsQ.data ?? []).length}</dd>
+                  </div>
+                  <div>
+                    <dt>Saves</dt>
+                    <dd>{(rssSavesQ.data ?? []).length}</dd>
+                  </div>
+                </dl>
+              </section>
+            ) : null}
+
+            <section className="np-box np-moscout np-anim-body">
+              <div className="np-sec-head">
+                <h2>{pageIdx === 0 ? "Full wire" : "Wire continued"}</h2>
+                <span>
+                  {pageItems.length
+                    ? `${pageIdx * MOSCOUT_PER_PAGE + 1}–${pageIdx * MOSCOUT_PER_PAGE + pageItems.length}`
+                    : "—"}
+                </span>
+              </div>
+              {pageItems.length ? (
+                <ol className="np-moscout-list" start={pageIdx * MOSCOUT_PER_PAGE + 1}>
+                  {pageItems.map((item) => (
+                    <li key={item.id}>
+                      <span className="when">{formatFeedDate(item.publishedAt) || "—"}</span>
+                      <span className="t">{cleanArticleTitle(item.title)}</span>
+                      {item.author ? <span className="by">{item.author}</span> : null}
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="np-muted">
+                  {moscoutQ.isPending
+                    ? "Loading Missouri Scout…"
+                    : "Missouri Scout feed is empty right now."}
+                </p>
+              )}
+            </section>
+
+            <footer className="np-folio">
+              <span>Thompson Times</span>
+              <span>
+                D · MoScout
+                {moscoutPages.length > 1 ? ` ${pageIdx + 1}/${moscoutPages.length}` : ""}
+              </span>
+              <span>
+                {pageIdx === moscoutPages.length - 1 ? "End of edition" : "Continued →"}
+              </span>
+            </footer>
+          </article>
+        ))}
       </div>
     </div>
   );

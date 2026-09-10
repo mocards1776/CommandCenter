@@ -1198,7 +1198,7 @@ mark.rss-hl {
   flex-direction: column;
   gap: 0.35rem;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .np-page::before {
@@ -1560,6 +1560,86 @@ mark.rss-hl {
   min-width: 0;
 }
 
+.np-reading {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 0.28rem;
+  align-content: start;
+}
+
+.np-stats-reading {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.np-reading-now li,
+.np-pages-recent li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 0.35rem;
+  align-items: baseline;
+  font-size: 8.5px;
+}
+
+.np-reading-now strong {
+  grid-column: 1 / -1;
+  font-size: 9.5px;
+}
+
+.np-reading-now .meta {
+  grid-column: 1 / -1;
+  color: var(--np-muted);
+  font-size: 7.5px;
+}
+
+.np-pages-recent .v {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.np-moscout {
+  flex: 1;
+}
+
+.np-moscout-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  columns: 2;
+  column-gap: 0.4rem;
+  font-size: 6.5px;
+  line-height: 1.15;
+}
+
+.np-moscout-list li {
+  break-inside: avoid;
+  padding: 0.04rem 0;
+  border-bottom: 1px solid var(--np-rule-soft);
+  display: grid;
+  grid-template-columns: 2.2rem 1fr;
+  gap: 0.05rem 0.2rem;
+}
+
+.np-moscout-list .when {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: 6px;
+  color: var(--np-muted);
+}
+
+.np-moscout-list .t {
+  font-size: 6.5px;
+  line-height: 1.15;
+}
+
+.np-moscout-list .by {
+  grid-column: 2;
+  font-size: 5.5px;
+  color: var(--np-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .np-score-status {
   margin-top: 0.1rem;
   font-size: 7px;
@@ -1722,12 +1802,14 @@ mark.rss-hl {
   .np-front,
   .np-duo,
   .np-sports,
+  .np-reading,
   .np-leaders,
   .np-teams,
   .np-scores,
   .np-standings-grid {
     grid-template-columns: 1fr;
   }
+  .np-moscout-list { columns: 1; }
   .np-columns { columns: 1; }
   .np-span-2 { grid-column: auto; }
 }
@@ -1751,17 +1833,19 @@ mark.rss-hl {
   .np-page {
     width: 100% !important;
     min-height: 10.4in;
-    height: 10.4in;
+    height: auto;
     box-shadow: none !important;
     padding: 0 !important;
     background: white !important;
     page-break-after: always;
     break-after: page;
-    overflow: hidden;
+    overflow: visible;
   }
   .np-page:last-child { page-break-after: auto; break-after: auto; }
   .np-page::before { display: none; }
   .np-anim-mast, .np-anim-body { animation: none !important; }
+  .np-moscout-list { font-size: 6.5px; line-height: 1.12; }
+  .np-moscout-list li { padding: 0.03rem 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
