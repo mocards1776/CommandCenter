@@ -43,6 +43,19 @@ export function battingAverageLabel(avg: number): string {
   return s.startsWith("0") ? s.slice(1) : s;
 }
 
+/** Fit article copy onto a letter column page without mid-word cuts. */
+export function clipArticleBody(
+  body: string,
+  maxWords: number,
+): { text: string; truncated: boolean } {
+  const words = body.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return { text: body.trim(), truncated: false };
+  let text = words.slice(0, maxWords).join(" ");
+  text = text.replace(/[,:;–—-]\s*$/, "");
+  if (!/[.!?]"?$/.test(text)) text += "…";
+  return { text, truncated: true };
+}
+
 export function moneyCompact(n: number): string {
   const abs = Math.abs(n);
   if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
