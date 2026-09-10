@@ -59,6 +59,8 @@ import {
   classifyBatch,
   unclassifiedCount,
   titleKey,
+  scoreBookSearchHit,
+  rankCatalogSuggestions,
   findDuplicateBooks,
   mergeBooks,
   addBookFromSuggestion,
@@ -506,20 +508,17 @@ function TagInput({
  */
 /** Score library rows for a search needle (shared by dropdown + full page). */
 function searchLibrary(books: Book[], raw: string, limit = 40): Book[] {
-  const needle = raw.trim().toLowerCase();
+  const needle = raw.trim();
   if (needle.length < 2) return [];
   const scored: { b: Book; score: number }[] = [];
   for (const b of books) {
-    const title = b.title.toLowerCase();
-    const author = (b.authors ?? "").toLowerCase();
-    let score = -1;
-    if (title.startsWith(needle)) score = 0;
-    else if (title.includes(needle)) score = 1;
-    else if (author.includes(needle)) score = 2;
-    else if (b.tags.some((t) => t.toLowerCase().includes(needle))) score = 3;
-    if (score >= 0) scored.push({ b, score });
+    const score = scoreBookSearchHit(needle, b.title, b.authors ?? "", b.tags);
+    if (score < 99) scored.push({ b, score });
   }
-  return scored.sort((x, y) => x.score - y.score).slice(0, limit).map((x) => x.b);
+  return scored
+    .sort((x, y) => x.score - y.score || x.b.title.localeCompare(y.b.title))
+    .slice(0, limit)
+    .map((x) => x.b);
 }
 
 function LibrarySearch({
@@ -560,9 +559,9 @@ function LibrarySearch({
   });
 
   const catalogHits = useMemo(() => {
-    const rows = catalog.data ?? [];
+    const rows = rankCatalogSuggestions(debounced, catalog.data ?? []);
     return rows.filter((s) => !owned.has(titleKey(s.title))).slice(0, 6);
-  }, [catalog.data, owned]);
+  }, [catalog.data, owned, debounced]);
 
   const add = useMutation({
     mutationFn: (s: Suggestion) => addBookFromSuggestion(s),
@@ -754,8 +753,10 @@ function SearchResultsPage({
   });
 
   const catalogHits = useMemo(() => {
-    return (catalog.data ?? []).filter((s) => !owned.has(titleKey(s.title)));
-  }, [catalog.data, owned]);
+    return rankCatalogSuggestions(q, catalog.data ?? []).filter(
+      (s) => !owned.has(titleKey(s.title)),
+    );
+  }, [catalog.data, owned, q]);
 
   const add = useMutation({
     mutationFn: (s: Suggestion) => addBookFromSuggestion(s),
@@ -2450,8 +2451,8 @@ function AskAI({
 
   const ask = useMutation({
     mutationFn: (mode: "search" | "recommend" | "catalog") => askAI(mode, query),
-    onSuccess: (r) => {
-      setResults(r);
+    onSuccess: (r, mode) => {
+      setResults(mode === "catalog" ? rankCatalogSuggestions(query, r) : r);
       if (r.length === 0) toast("Nothing came back — try rewording it.", { icon: "🤔" });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Ask failed"),
