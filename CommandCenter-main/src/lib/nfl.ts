@@ -72,6 +72,8 @@ export type NflScoreSide = {
   record: string | null;
   logo: string | null;
   color: string;
+  /** Quarter / OT points from ESPN linescores (Q1…Q4, then OT). */
+  linescores: number[];
 };
 
 export type NflScoreGame = {
@@ -157,6 +159,26 @@ export type NflTeamGameStat = {
   value: string;
 };
 
+export type NflGameVideo = {
+  id: string;
+  headline: string;
+  description: string | null;
+  thumb: string | null;
+  /** Progressive MP4 when ESPN exposes one (embeddable in-app). */
+  mp4: string | null;
+  href: string | null;
+  durationSec: number | null;
+  /** Origin network when this is a FOX/CBS backup rather than ESPN. */
+  source?: "espn" | "fox" | "cbs";
+};
+
+export type NflBackupHighlights = {
+  /** Best full-game package from FOX or CBS. */
+  primary: NflGameVideo | null;
+  /** Extra play clips (usually FOX). */
+  clips: NflGameVideo[];
+};
+
 export type NflGameDetail = NflScoreGame & {
   drives: NflDrive[];
   recentPlays: NflPlay[];
@@ -165,6 +187,19 @@ export type NflGameDetail = NflScoreGame & {
   boxGroups: NflBoxStatGroup[];
   teamStats: NflTeamGameStat[];
   article: { headline: string; description: string | null; storyHtml: string | null } | null;
+  /** Best ESPN recap / full-highlights package when available. */
+  recapVideo: NflGameVideo | null;
+  /** Other embeddable clips from the summary (play highlights, related). */
+  videos: NflGameVideo[];
+  /** Pregame extras from ESPN summary when box/article are empty. */
+  oddsLine: string | null;
+  predictor: { homeWinPct: number | null; awayWinPct: number | null } | null;
+  lastFive: {
+    teamId: number;
+    teamAbbrev: string;
+    results: { label: string; result: string; score: string | null }[];
+  }[];
+  venueDetail: string | null;
 };
 
 export type NflPlayerProfile = {
@@ -210,10 +245,23 @@ function parseScore(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function readLinescores(
+  rows: { value?: number; displayValue?: string }[] | undefined,
+): number[] {
+  return (rows ?? [])
+    .map((ls) => {
+      if (typeof ls.value === "number" && Number.isFinite(ls.value)) return ls.value;
+      const n = Number(ls.displayValue);
+      return Number.isFinite(n) ? n : null;
+    })
+    .filter((n): n is number => n != null);
+}
+
 function sideFromCompetitor(c: {
   homeAway?: string;
   score?: unknown;
   records?: { type?: string; summary?: string }[];
+  linescores?: { value?: number; displayValue?: string }[];
   team?: {
     id?: string;
     displayName?: string;
@@ -234,6 +282,7 @@ function sideFromCompetitor(c: {
     record: overall,
     logo: team.logos?.[0]?.href ?? nflTeamLogo(abbrev),
     color: (team.color ?? "555555").replace(/^#/, ""),
+    linescores: readLinescores(c.linescores),
   };
 }
 
@@ -361,6 +410,129 @@ export async function fetchNflScoreboard(dates?: string): Promise<NflScoreGame[]
   return (raw.events ?? []).map(mapEvent).filter((g): g is NflScoreGame => Boolean(g?.id));
 }
 
+
+type EspnVideoRaw = {
+  id?: string | number;
+  headline?: string;
+  title?: string;
+  description?: string;
+  caption?: string;
+  duration?: number;
+  thumbnail?: string;
+  images?: { url?: string }[];
+  posterImages?: { default?: { href?: string }; full?: { href?: string } };
+  links?: {
+    web?: { href?: string };
+    source?: { href?: string; HD?: { href?: string } };
+    mobile?: { source?: { href?: string } };
+  };
+};
+
+function espnVideoMp4(v: EspnVideoRaw): string | null {
+  const candidates = [
+    v.links?.mobile?.source?.href,
+    v.links?.source?.HD?.href,
+    v.links?.source?.href,
+  ];
+  for (const href of candidates) {
+    if (href && /\.mp4(\?|$)/i.test(href)) return href;
+  }
+  return null;
+}
+
+function mapEspnGameVideo(raw: EspnVideoRaw): NflGameVideo | null {
+  const id = raw.id != null ? String(raw.id) : "";
+  const headline = (raw.headline || raw.title || "").trim();
+  if (!id || !headline) return null;
+  const mp4 = espnVideoMp4(raw);
+  const descriptionRaw = (raw.description || raw.caption || "").trim() || null;
+  const description =
+    descriptionRaw &&
+    descriptionRaw.replace(/\s+/g, " ").toLowerCase() !==
+      headline.replace(/\s+/g, " ").toLowerCase()
+      ? descriptionRaw
+      : null;
+  return {
+    id,
+    headline,
+    description,
+    thumb:
+      raw.posterImages?.full?.href ??
+      raw.posterImages?.default?.href ??
+      raw.thumbnail ??
+      raw.images?.[0]?.url ??
+      null,
+    mp4,
+    href: raw.links?.web?.href ?? `https://www.espn.com/video/clip?id=${id}`,
+    durationSec: typeof raw.duration === "number" ? raw.duration : null,
+    source: "espn",
+  };
+}
+
+/** Prefer full-highlight / recap packages over short studio bites. */
+export function pickNflRecapVideo(videos: NflGameVideo[]): NflGameVideo | null {
+  const withMp4 = videos.filter((v) => v.mp4);
+  if (!withMp4.length) return null;
+  const scored = withMp4.map((v) => {
+    const h = v.headline.toLowerCase();
+    let score = 0;
+    if (/full\s+highlights?/.test(h)) score += 20;
+    else if (/\bhighlights?\b/.test(h)) score += 10;
+    if (/\brecap\b/.test(h)) score += 8;
+    if (v.durationSec != null && v.durationSec >= 90) score += 4;
+    else if (v.durationSec != null && v.durationSec >= 60) score += 2;
+    if (v.durationSec != null && v.durationSec < 45 && !/\bhighlight/i.test(h)) {
+      score -= 6;
+    }
+    return { v, score };
+  });
+  scored.sort((a, b) => b.score - a.score || (b.v.durationSec ?? 0) - (a.v.durationSec ?? 0));
+  return scored[0]?.v ?? null;
+}
+
+export function sanitizeEspnStoryHtml(html: string | null | undefined): string | null {
+  if (!html?.trim()) return null;
+  return html
+    .replace(/<\/?hl(\d)>/gi, (_, n: string) => {
+      const level = Math.min(5, Math.max(2, Number(n) || 2));
+      return _.startsWith("</") ? `</h${level}>` : `<h${level}>`;
+    })
+    .replace(/<\/?photo[^>]*>/gi, "")
+    .replace(/<\/?image[^>]*>/gi, "")
+    .trim();
+}
+
+/** Strip jersey numbers, formation boilerplate, and kick metadata from ESPN play text. */
+export function simplifyNflPlayText(raw: string | null | undefined): string {
+  if (!raw) return "";
+  let t = raw.replace(/\s+/g, " ").trim();
+  if (!t) return "";
+
+  t = t.replace(/^\(\d{1,2}:\d{2}\)\s*/i, "");
+  t = t.replace(
+    /\b(?:No\s*Huddle(?:[\s-]*Shotgun)?|Shotgun|Under Center|Wildcat|Pistol)\b[\s-]*/gi,
+    "",
+  );
+  t = t.replace(/#\s*\d+\s*/g, "");
+  t = t.replace(
+    /\b(?:caught|thrown)\s+at\s+[A-Za-z][A-Za-z0-9.'-]{1,24}\d{0,2},?/gi,
+    "",
+  );
+  t = t.replace(/\s*\(\s*[A-Z][A-Za-z.']+(?:\s+(?:Jr\.|Sr\.|III|IV|II))?(?:\s*[,/]\s*[^)]+)?\s*\)\s*$/g, "");
+  t = t.replace(/\s*\([^)]*#\d+[^)]*\)\s*/g, " ");
+  t = t.replace(/\s*\(\s*H:\s*[^)]+\)\s*/gi, " ");
+  t = t.replace(/\s*\(\s*LS:\s*[^)]+\)\s*/gi, " ");
+  t = t.replace(/\s*\(\s*H:\s*[^;)]+;\s*LS:\s*[^)]+\)\s*/gi, " ");
+  t = t.replace(/,?\s*clock\s+\d{1,2}:\d{2}\b/gi, "");
+  t = t.replace(/\b1ST DOWN\b/gi, "");
+  t = t.replace(/\s{2,}/g, " ");
+  t = t.replace(/\s+,/g, ",");
+  t = t.replace(/,\s*,+/g, ",");
+  t = t.replace(/\s+\./g, ".");
+  t = t.replace(/\.\s*\./g, ".");
+  return t.trim().replace(/^[,.\s]+|[,.\s]+$/g, "");
+}
+
 function mapPlay(p: {
   id?: string;
   text?: string;
@@ -391,7 +563,7 @@ function mapPlay(p: {
   const end = p.end ?? p.start;
   return {
     id: String(p.id ?? Math.random()),
-    text: p.text ?? "",
+    text: simplifyNflPlayText(p.text),
     shortDownDistanceText: p.shortDownDistanceText ?? null,
     clock: p.clock?.displayValue ?? null,
     period: p.period?.number ?? null,
@@ -463,7 +635,37 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
         }[];
       }[];
     };
-    article?: { headline?: string; description?: string; story?: string };
+    article?: {
+      headline?: string;
+      description?: string;
+      story?: string;
+      videos?: EspnVideoRaw[];
+    };
+    news?:
+      | { articles?: { headline?: string; description?: string; story?: string }[] }
+      | { headline?: string; description?: string; story?: string }[];
+    videos?: EspnVideoRaw[];
+    pickcenter?: { details?: string; overUnder?: number; spread?: number }[];
+    odds?: { details?: string; overUnder?: number }[];
+    predictor?: {
+      homeTeam?: { gameProjection?: { winPercentage?: string } };
+      awayTeam?: { gameProjection?: { winPercentage?: string } };
+    };
+    lastFiveGames?: {
+      team?: { id?: string; abbreviation?: string };
+      events?: {
+        opponent?: { abbreviation?: string; displayName?: string };
+        result?: string;
+        score?: string;
+      }[];
+    }[];
+    gameInfo?: {
+      venue?: {
+        fullName?: string;
+        address?: { city?: string; state?: string };
+      };
+      weather?: { displayValue?: string; temperature?: number };
+    };
     winprobability?: { homeWinPercentage?: number }[];
   };
 
@@ -556,13 +758,85 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
     }
   }
 
+  // Prefer header linescores when the mapped sides are empty / lagging.
+  const headerComps = headerComp?.competitors ?? [];
+  {
+    const awayC = headerComps.find((c) => (c as { homeAway?: string }).homeAway === "away") as
+      | { linescores?: { value?: number; displayValue?: string }[] }
+      | undefined;
+    const homeC = headerComps.find((c) => (c as { homeAway?: string }).homeAway === "home") as
+      | { linescores?: { value?: number; displayValue?: string }[] }
+      | undefined;
+    const awayLs = readLinescores(awayC?.linescores);
+    const homeLs = readLinescores(homeC?.linescores);
+    if (awayLs.length || homeLs.length) {
+      base = {
+        ...base,
+        away: { ...base.away, linescores: awayLs.length ? awayLs : base.away.linescores },
+        home: { ...base.home, linescores: homeLs.length ? homeLs : base.home.linescores },
+      };
+    }
+  }
+
+  const pick = raw.pickcenter?.[0] ?? raw.odds?.[0];
+  const oddsLine = pick?.details
+    ? `${pick.details}${pick.overUnder != null ? ` · O/U ${pick.overUnder}` : ""}`
+    : null;
+
+  const winPct = (rawPct: string | undefined) => {
+    if (!rawPct) return null;
+    const n = Number(rawPct);
+    if (!Number.isFinite(n)) return null;
+    return n <= 1 ? Math.round(n * 100) : Math.round(n);
+  };
+  const predictor =
+    raw.predictor?.homeTeam || raw.predictor?.awayTeam
+      ? {
+          homeWinPct: winPct(raw.predictor.homeTeam?.gameProjection?.winPercentage),
+          awayWinPct: winPct(raw.predictor.awayTeam?.gameProjection?.winPercentage),
+        }
+      : null;
+
+  const lastFive = (raw.lastFiveGames ?? []).map((side) => ({
+    teamId: Number(side.team?.id) || 0,
+    teamAbbrev: side.team?.abbreviation ?? "—",
+    results: (side.events ?? []).slice(0, 5).map((e) => ({
+      label: e.opponent?.abbreviation ?? e.opponent?.displayName ?? "Opp",
+      result: e.result ?? "—",
+      score: e.score ?? null,
+    })),
+  }));
+
+  const venueBits = [
+    raw.gameInfo?.venue?.fullName || base.venue,
+    raw.gameInfo?.venue?.address
+      ? [raw.gameInfo.venue.address.city, raw.gameInfo.venue.address.state]
+          .filter(Boolean)
+          .join(", ")
+      : null,
+    raw.gameInfo?.weather?.displayValue
+      ? `${raw.gameInfo.weather.temperature ?? ""}${
+          raw.gameInfo.weather.temperature != null ? "° " : ""
+        }${raw.gameInfo.weather.displayValue}`.trim()
+      : null,
+  ].filter(Boolean);
+
+  const videoById = new Map<string, NflGameVideo>();
+  for (const rawVid of [...(raw.article?.videos ?? []), ...(raw.videos ?? [])]) {
+    const mapped = mapEspnGameVideo(rawVid);
+    if (!mapped || videoById.has(mapped.id)) continue;
+    videoById.set(mapped.id, mapped);
+  }
+  const videos = [...videoById.values()];
+  const recapVideo = pickNflRecapVideo(videos);
+
   return {
     ...base,
     drives,
     recentPlays,
     scoringPlays: (raw.scoringPlays ?? []).map((s) => ({
       id: String(s.id ?? Math.random()),
-      text: s.text ?? "",
+      text: simplifyNflPlayText(s.text),
       clock: s.clock?.displayValue ?? null,
       teamAbbrev: s.team?.abbreviation ?? null,
     })),
@@ -573,9 +847,15 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
       ? {
           headline: raw.article.headline,
           description: raw.article.description ?? null,
-          storyHtml: raw.article.story ?? null,
+          storyHtml: sanitizeEspnStoryHtml(raw.article.story),
         }
       : null,
+    recapVideo,
+    videos,
+    oddsLine,
+    predictor,
+    lastFive,
+    venueDetail: venueBits.length ? venueBits.join(" · ") : null,
   };
 }
 
@@ -1462,6 +1742,218 @@ export async function fetchNflCoachProfile(coachId: string): Promise<NflCoachPro
 export function fieldBallPctFromHomeYardLine(yardLine: number | null): number | null {
   if (yardLine == null || !Number.isFinite(yardLine)) return null;
   return Math.max(0, Math.min(100, 100 - yardLine));
+}
+
+
+const FOX_BIFROST_KEY = "jE7yBJVRNAwdDesMgTzTXUUSx1It41Fq";
+
+function nflTeamSearchToken(name: string, abbrev: string): string {
+  const cleaned = name.replace(/\b(football|club|team)\b/gi, " ").replace(/\s+/g, " ").trim();
+  // Prefer city/region token ("Kansas", "San") so FOX search matches NFL packs.
+  const first = (cleaned.split(/\s+/)[0] || abbrev).toLowerCase();
+  return first.replace(/[^a-z0-9]/g, "");
+}
+
+function scoreNflBackupHighlight(
+  headline: string,
+  awayName: string,
+  homeName: string,
+  awayAbbrev: string,
+  homeAbbrev: string,
+): number {
+  const h = headline.toLowerCase();
+  const awayTok = nflTeamSearchToken(awayName, awayAbbrev);
+  const homeTok = nflTeamSearchToken(homeName, homeAbbrev);
+  let score = 0;
+  if (/full\s+highlights?/.test(h) || /\bhighlights?\b.*\bnfl\b/.test(h)) score += 20;
+  else if (/\bhighlights?\b/.test(h)) score += 10;
+  if (awayTok && h.includes(awayTok)) score += 6;
+  if (homeTok && h.includes(homeTok)) score += 6;
+  if (/volleyball|soccer|basketball|softball|baseball|hockey|cfb|college/.test(h)) score -= 30;
+  return score;
+}
+
+async function fetchFoxNflBackupHighlights(opts: {
+  awayName: string;
+  homeName: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
+}): Promise<NflGameVideo[]> {
+  const awayTok = nflTeamSearchToken(opts.awayName, opts.awayAbbrev);
+  const homeTok = nflTeamSearchToken(opts.homeName, opts.homeAbbrev);
+  const queries = [
+    `${opts.awayName} ${opts.homeName} NFL highlights`,
+    `${awayTok} ${homeTok} NFL highlights`,
+    `${opts.awayAbbrev} ${opts.homeAbbrev} highlights`,
+  ];
+  const byId = new Map<string, NflGameVideo>();
+
+  for (const q of queries) {
+    try {
+      const url =
+        `https://api.foxsports.com/bifrost/v1/search/content?text=` +
+        `${encodeURIComponent(q)}&apikey=${FOX_BIFROST_KEY}`;
+      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        results?: {
+          title?: string;
+          components?: {
+            type?: string;
+            model?: {
+              title?: string;
+              webUrl?: string;
+              contentType?: string;
+              isVideo?: boolean;
+              image?: { url?: string; altUrl?: string };
+              sparkId?: string;
+            };
+          }[];
+        }[];
+      };
+      for (const section of data.results ?? []) {
+        if (!/video/i.test(section.title ?? "")) continue;
+        for (const c of section.components ?? []) {
+          const m = c.model;
+          const title = (m?.title ?? "").trim();
+          const path = m?.webUrl ?? "";
+          if (!title || !/\/watch\/fmc-/i.test(path)) continue;
+          const score = scoreNflBackupHighlight(
+            title,
+            opts.awayName,
+            opts.homeName,
+            opts.awayAbbrev,
+            opts.homeAbbrev,
+          );
+          if (score < 10) continue;
+          const id = path.split("/").pop() || m?.sparkId || title;
+          if (byId.has(id)) continue;
+          byId.set(id, {
+            id,
+            headline: title.replace(/🏈/g, "").trim(),
+            description: "FOX Sports",
+            thumb: m?.image?.url ?? m?.image?.altUrl ?? null,
+            mp4: null,
+            href: path.startsWith("http") ? path : `https://www.foxsports.com${path}`,
+            durationSec: null,
+            source: "fox",
+          });
+        }
+      }
+      if (byId.size) break;
+    } catch {
+      /* try next query */
+    }
+  }
+
+  return [...byId.values()].sort(
+    (a, b) =>
+      scoreNflBackupHighlight(
+        b.headline,
+        opts.awayName,
+        opts.homeName,
+        opts.awayAbbrev,
+        opts.homeAbbrev,
+      ) -
+      scoreNflBackupHighlight(
+        a.headline,
+        opts.awayName,
+        opts.homeName,
+        opts.awayAbbrev,
+        opts.homeAbbrev,
+      ),
+  );
+}
+
+async function fetchCbsNflBackupHighlight(opts: {
+  awayName: string;
+  homeName: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
+  date: string | null;
+}): Promise<NflGameVideo | null> {
+  if (!opts.date) return null;
+  const m = opts.date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!month || !day) return null;
+
+  const away = nflTeamSearchToken(opts.awayName, opts.awayAbbrev);
+  const home = nflTeamSearchToken(opts.homeName, opts.homeAbbrev);
+  const dateTags = [`${month}${day}`, `${month}-${day}`, `${m[2]}${m[3]}`];
+  const slugs: string[] = [];
+  for (const tag of dateTags) {
+    slugs.push(`nfl-highlights-${away}-at-${home}-${tag}`);
+    slugs.push(`nfl-highlights-${home}-vs-${away}-${tag}`);
+    slugs.push(`nfl-highlights-${away}-${home}-${tag}`);
+  }
+
+  for (const slug of slugs) {
+    const href = `https://www.cbssports.com/watch/general/video/${slug}`;
+    try {
+      const res = await fetch(href, {
+        headers: { Accept: "text/html", "User-Agent": "Mozilla/5.0" },
+      });
+      if (!res.ok) continue;
+      const finalUrl = res.url || href;
+      if (/\/watch\/general\/?$/i.test(finalUrl.replace(/\/$/, ""))) continue;
+      const html = await res.text();
+      const title =
+        html.match(/property="og:title" content="([^"]+)"/i)?.[1] ||
+        html.match(/<title>([^<]+)/i)?.[1] ||
+        "";
+      const image = html.match(/property="og:image" content="([^"]+)"/i)?.[1] || null;
+      if (!/highlight/i.test(title)) continue;
+      const score = scoreNflBackupHighlight(
+        title,
+        opts.awayName,
+        opts.homeName,
+        opts.awayAbbrev,
+        opts.homeAbbrev,
+      );
+      if (score < 10) continue;
+      return {
+        id: `cbs:${slug}`,
+        headline: title.replace(/\s*Stream of General Videos.*$/i, "").trim() || title.trim(),
+        description: "CBS Sports",
+        thumb: image && /^https?:/i.test(image) ? image : null,
+        mp4: null,
+        href: finalUrl,
+        durationSec: null,
+        source: "cbs",
+      };
+    } catch {
+      /* try next slug */
+    }
+  }
+  return null;
+}
+
+/** FOX + CBS highlight packages when ESPN has no embeddable recap clip. */
+export async function fetchNflBackupHighlights(opts: {
+  awayName: string;
+  homeName: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
+  date: string | null;
+}): Promise<NflBackupHighlights> {
+  const [fox, cbs] = await Promise.all([
+    fetchFoxNflBackupHighlights(opts).catch(() => [] as NflGameVideo[]),
+    fetchCbsNflBackupHighlight(opts).catch(() => null),
+  ]);
+
+  const foxPrimary =
+    fox.find((v) => /full\s+highlights?|\bhighlights?\b.*\bnfl\b/i.test(v.headline)) ??
+    fox[0] ??
+    null;
+  const primary = foxPrimary ?? cbs;
+  const clips = fox.filter((v) => v.id !== primary?.id).slice(0, 8);
+  if (primary?.source === "fox" && cbs && cbs.id !== primary.id) {
+    clips.unshift(cbs);
+  }
+
+  return { primary, clips };
 }
 
 export function pickNflHeroGame(games: NflScoreGame[]): NflScoreGame | null {

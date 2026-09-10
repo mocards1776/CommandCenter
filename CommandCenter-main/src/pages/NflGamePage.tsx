@@ -5,9 +5,17 @@ import { ArrowLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import NflFieldMap from "@/components/sports/NflFieldMap";
+import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
+import HighlightReel from "@/components/sports/HighlightReel";
 import { TeamStandingLine } from "@/components/sports/TeamFormChips";
 import { fetchNflTeamForm, type TeamFormStrip } from "@/lib/team-form";
-import { fetchNflGameDetail, type NflScoreSide } from "@/lib/nfl";
+import {
+  fetchNflBackupHighlights,
+  fetchNflGameDetail,
+  type NflScoreSide,
+} from "@/lib/nfl";
+import type { MlbHighlight } from "@/lib/mlb";
+import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { cn, formatSportsDateLong } from "@/lib/utils";
 
 function statusLabel(g: {
@@ -18,7 +26,6 @@ function statusLabel(g: {
 }): string {
   if (g.live) return g.shortDetail && !/^live$/i.test(g.shortDetail) ? g.shortDetail : "Live";
   if (g.final) {
-    // Avoid "Final · Final" when ESPN repeats the state in shortDetail.
     if (g.shortDetail && !/^final\b/i.test(g.shortDetail)) return g.shortDetail;
     return "Final";
   }
@@ -57,6 +64,20 @@ export function NflGameDetailView({
     staleTime: 120_000,
   });
 
+  const backups = useQuery({
+    queryKey: ["nfl-backup-highlights", eventId, g?.away.name, g?.home.name, g?.date],
+    queryFn: () =>
+      fetchNflBackupHighlights({
+        awayName: g!.away.name,
+        homeName: g!.home.name,
+        awayAbbrev: g!.away.abbrev,
+        homeAbbrev: g!.home.abbrev,
+        date: g!.date,
+      }),
+    enabled: Boolean(g?.final && !g.recapVideo),
+    staleTime: 300_000,
+  });
+
   const homeYardLine = useMemo(() => {
     if (!g) return null;
     if (g.situation?.yardLine != null) return g.situation.yardLine;
@@ -75,6 +96,33 @@ export function NflGameDetailView({
     }
     return labels.slice(0, 16);
   }, [g?.teamStats]);
+
+  const extraHighlights = useMemo((): MlbHighlight[] => {
+    if (!g) return [];
+    const recapId = g.recapVideo?.id;
+    return g.videos
+      .filter((v) => v.mp4 && v.id !== recapId)
+      .map((v) => ({
+        id: v.id,
+        title: v.headline,
+        description: v.description,
+        duration:
+          v.durationSec != null
+            ? `${Math.floor(v.durationSec / 60)}:${String(Math.floor(v.durationSec % 60)).padStart(2, "0")}`
+            : null,
+        thumb: v.thumb,
+        url: v.mp4!,
+        date: null,
+      }));
+  }, [g]);
+
+  const primaryHighlight = g?.recapVideo ?? backups.data?.primary ?? null;
+  const primaryEyebrow =
+    primaryHighlight?.source === "fox"
+      ? "FOX highlights"
+      : primaryHighlight?.source === "cbs"
+        ? "CBS highlights"
+        : "ESPN recap";
 
   if (detail.isPending) {
     return (
@@ -147,20 +195,50 @@ export function NflGameDetailView({
         />
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.06),transparent_45%)]" />
 
-        <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.07] px-4 py-2.5">
+        <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.07] px-3 py-2.5 sm:px-4">
           <p
             className={cn(
-              "text-[11px] font-bold uppercase tracking-[0.16em]",
+              "shrink-0 text-[11px] font-bold uppercase tracking-[0.16em]",
               g.final ? "text-cream" : g.live ? "text-alert" : "text-[#a8b0c2]",
             )}
           >
             {label}
           </p>
-          {g.venue ? (
-            <p className="truncate text-[11px] text-[#8b93a7]">{g.venue}</p>
-          ) : g.date ? (
-            <p className="text-[11px] text-[#8b93a7]">{formatSportsDateLong(g.date)}</p>
-          ) : null}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-2 gap-y-1">
+            {g.broadcasts.length > 0 ? (
+              <div className="flex flex-wrap items-center justify-end gap-1">
+                {g.broadcasts.map((b) => {
+                  const isSvg = Boolean(b.logo && /\.svg(\?|$)/i.test(b.logo));
+                  return (
+                    <span
+                      key={`${b.market ?? "x"}-${b.name}`}
+                      className="inline-flex h-5 max-w-[8.5rem] items-center gap-1 rounded-sm bg-white/[0.08] px-1.5 text-[10px] text-[#c5cce0]"
+                      title={b.market ? `${b.name} (${b.market})` : b.name}
+                    >
+                      {b.logo ? (
+                        <img
+                          src={b.logo}
+                          alt=""
+                          className={
+                            isSvg
+                              ? "h-3.5 w-3.5 object-contain"
+                              : "h-3.5 w-auto max-w-[2.5rem] object-contain brightness-0 invert"
+                          }
+                          loading="lazy"
+                        />
+                      ) : null}
+                      <span className="truncate">{b.name}</span>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : null}
+            {g.venue ? (
+              <p className="truncate text-[11px] text-[#8b93a7]">{g.venue}</p>
+            ) : g.date ? (
+              <p className="text-[11px] text-[#8b93a7]">{formatSportsDateLong(g.date)}</p>
+            ) : null}
+          </div>
         </div>
 
         <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-7 sm:gap-4 sm:px-6">
@@ -207,6 +285,12 @@ export function NflGameDetailView({
           />
         </div>
 
+        {!pregame ? (
+          <div className="relative z-10 border-t border-white/[0.06] px-3 pb-3 pt-1 sm:px-4">
+            <NflLinescoreTable away={g.away} home={g.home} />
+          </div>
+        ) : null}
+
         <div className="relative z-10 flex flex-wrap gap-3 border-t border-white/[0.06] px-4 py-2.5">
           <a
             href={recapUrl}
@@ -228,15 +312,196 @@ export function NflGameDetailView({
       </header>
 
       {(g.live || g.situation || homeYardLine != null) && (
-        <NflFieldMap
-          game={g}
-          homeYardLine={homeYardLine}
-          possessionTeamId={g.situation?.possessionTeamId ?? null}
-          downDistanceText={g.situation?.downDistanceText}
-        />
+        <section className="space-y-2">
+          <NflFieldMap
+            game={g}
+            homeYardLine={homeYardLine}
+            possessionTeamId={g.situation?.possessionTeamId ?? null}
+            downDistanceText={g.situation?.downDistanceText}
+          />
+          {g.situation?.lastPlayText ? (
+            <p className="text-chalk px-1 text-[12px] leading-relaxed">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                Last play ·{" "}
+              </span>
+              <span className="text-cream/90">{g.situation.lastPlayText}</span>
+            </p>
+          ) : null}
+        </section>
       )}
 
+      {g.recentPlays.length > 0 && (
+        <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] shadow-[0_12px_40px_rgba(0,0,0,0.22)]">
+          <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+              Recent plays
+            </h2>
+            <span className="text-[10px] text-[#6b7386]">Gamecast-style</span>
+          </div>
+          <ul className="max-h-[28rem] divide-y divide-white/[0.05] overflow-y-auto">
+            {g.recentPlays.slice(0, 12).map((p) => (
+              <li
+                key={p.id}
+                className={cn(
+                  "px-4 py-3 transition-colors",
+                  p.scoringPlay && "bg-gradient-to-r from-accent/15 to-transparent",
+                )}
+              >
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  {p.period != null && (
+                    <span className="rounded-sm bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#a8b0c2]">
+                      Q{p.period}
+                      {p.clock ? ` · ${p.clock}` : ""}
+                    </span>
+                  )}
+                  {p.shortDownDistanceText && (
+                    <span className="text-[10px] font-medium text-emerald-200/75">
+                      {p.shortDownDistanceText}
+                    </span>
+                  )}
+                  {p.scoringPlay ? (
+                    <span className="text-accent text-[10px] font-semibold uppercase tracking-[0.12em]">
+                      Score
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-cream mt-1 text-[13px] leading-relaxed">{p.text}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {primaryHighlight ? (
+        <EspnVideoEmbed clip={primaryHighlight} eyebrow={primaryEyebrow} />
+      ) : null}
+
+      {extraHighlights.length > 0 ? (
+        <HighlightReel
+          highlights={extraHighlights}
+          title="More ESPN highlights"
+          defaultOpen={false}
+        />
+      ) : null}
+
+      {!g.recapVideo && (backups.data?.clips.length ?? 0) > 0 ? (
+        <section className="space-y-2.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            More highlights
+          </p>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            {backups.data!.clips.map((clip) => (
+              <EspnVideoEmbed
+                key={clip.id}
+                clip={clip}
+                eyebrow={
+                  clip.source === "cbs" ? "CBS" : clip.source === "fox" ? "FOX" : "Highlights"
+                }
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {articleSection}
+
+      {pregame && (g.oddsLine || g.predictor || g.lastFive.length > 0 || g.venueDetail) ? (
+        <section className="bg-panel space-y-3 overflow-hidden rounded-xl border border-white/[0.08] px-4 py-3.5">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            Preview
+          </h2>
+          {g.venueDetail ? (
+            <p className="text-[13px] text-[#c8cdd8]">{g.venueDetail}</p>
+          ) : null}
+          {g.oddsLine ? (
+            <p className="text-cream text-[14px] font-medium">{g.oddsLine}</p>
+          ) : null}
+          {g.predictor &&
+          (g.predictor.awayWinPct != null || g.predictor.homeWinPct != null) ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
+                  {g.away.abbrev} win%
+                </p>
+                <p className="numeral text-cream text-[22px] font-semibold">
+                  {g.predictor.awayWinPct != null ? `${g.predictor.awayWinPct}%` : "—"}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
+                  {g.home.abbrev} win%
+                </p>
+                <p className="numeral text-cream text-[22px] font-semibold">
+                  {g.predictor.homeWinPct != null ? `${g.predictor.homeWinPct}%` : "—"}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {g.lastFive.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {g.lastFive.map((side) => (
+                <div key={side.teamAbbrev}>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                    {side.teamAbbrev} last 5
+                  </p>
+                  <ul className="space-y-1">
+                    {side.results.map((r, i) => (
+                      <li
+                        key={`${side.teamAbbrev}-${i}`}
+                        className="flex items-center justify-between gap-2 text-[12px]"
+                      >
+                        <span className="text-[#c8cdd8]">vs {r.label}</span>
+                        <span
+                          className={cn(
+                            "numeral font-semibold",
+                            /^W/i.test(r.result)
+                              ? "text-emerald-300"
+                              : /^L/i.test(r.result)
+                                ? "text-alert"
+                                : "text-cream",
+                          )}
+                        >
+                          {r.result}
+                          {r.score ? ` ${r.score}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {pregame &&
+      !g.article &&
+      !g.boxGroups.length &&
+      !g.teamStats.length &&
+      !g.scoringPlays.length &&
+      !(g.oddsLine || g.predictor || g.lastFive.length) ? (
+        <section className="bg-panel rounded-xl border border-white/[0.08] px-4 py-5">
+          <p className="text-chalk text-[13px] leading-relaxed">
+            ESPN hasn’t published preview copy or boxscore data for this matchup yet. Odds and
+            team pages will fill in as kickoff gets closer.
+          </p>
+        </section>
+      ) : null}
+
+      {!pregame &&
+      !g.boxGroups.length &&
+      !g.teamStats.length &&
+      !g.scoringPlays.length &&
+      !g.recentPlays.length ? (
+        <section className="bg-panel rounded-xl border border-white/[0.08] px-4 py-5">
+          <p className="text-chalk text-[13px] leading-relaxed">
+            ESPN hasn’t opened the live box score or play-by-play feed for this game yet (score by
+            quarter is above
+            {g.videos.length || g.recapVideo ? "; highlights are below" : ""}
+            ). Stats will appear when ESPN publishes them.
+          </p>
+        </section>
+      ) : null}
 
       {teamStatLabels.length > 0 && (
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
@@ -259,18 +524,18 @@ export function NflGameDetailView({
                 </tr>
               </thead>
               <tbody>
-                {teamStatLabels.map((label) => {
+                {teamStatLabels.map((statLabel) => {
                   const away =
                     g.teamStats.find(
-                      (s) => s.label === label && s.teamAbbrev === g.away.abbrev,
+                      (s) => s.label === statLabel && s.teamAbbrev === g.away.abbrev,
                     )?.value ?? "—";
                   const home =
                     g.teamStats.find(
-                      (s) => s.label === label && s.teamAbbrev === g.home.abbrev,
+                      (s) => s.label === statLabel && s.teamAbbrev === g.home.abbrev,
                     )?.value ?? "—";
                   return (
-                    <tr key={label} className="border-t border-white/[0.05]">
-                      <td className="px-3 py-1.5 text-[#c8cdd8]">{label}</td>
+                    <tr key={statLabel} className="border-t border-white/[0.05]">
+                      <td className="px-3 py-1.5 text-[#c8cdd8]">{statLabel}</td>
                       <td className="numeral px-2 py-1.5 text-right text-white">{away}</td>
                       <td className="numeral px-3 py-1.5 text-right text-white">{home}</td>
                     </tr>
@@ -391,34 +656,57 @@ export function NflGameDetailView({
           </ul>
         </section>
       )}
+    </div>
+  );
+}
 
-      {g.recentPlays.length > 0 && (
-        <section className="bg-panel rounded-xl border border-white/[0.08]">
-          <div className="border-b border-white/[0.06] px-4 py-2.5">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-              Play-by-play
-            </h2>
-          </div>
-          <ul className="max-h-[28rem] divide-y divide-white/[0.05] overflow-y-auto">
-            {g.recentPlays.map((p) => (
-              <li key={p.id} className={cn("px-4 py-2.5", p.scoringPlay && "bg-accent/10")}>
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  {p.period != null && (
-                    <span className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
-                      Q{p.period}
-                      {p.clock ? ` ${p.clock}` : ""}
-                    </span>
-                  )}
-                  {p.shortDownDistanceText && (
-                    <span className="text-[10px] text-emerald-200/70">{p.shortDownDistanceText}</span>
-                  )}
-                </div>
-                <p className="text-cream mt-0.5 text-[13px] leading-snug">{p.text}</p>
-              </li>
+function NflLinescoreTable({
+  away,
+  home,
+}: {
+  away: NflScoreSide;
+  home: NflScoreSide;
+}) {
+  const periodCount = Math.max(away.linescores.length, home.linescores.length, 4);
+  const headers = Array.from({ length: periodCount }, (_, i) =>
+    i < 4 ? `Q${i + 1}` : periodCount === 5 ? "OT" : `OT${i - 3}`,
+  );
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-white/[0.08] bg-black/25">
+      <table className="w-full min-w-[280px] text-center text-[12px]">
+        <thead>
+          <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+            <th className="px-2 py-1.5 text-left font-medium">Team</th>
+            {headers.map((h) => (
+              <th key={h} className="numeral px-1.5 py-1.5 font-medium">
+                {h}
+              </th>
             ))}
-          </ul>
-        </section>
-      )}
+            <th className="numeral px-2 py-1.5 font-semibold text-cream/80">T</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[away, home].map((side) => (
+            <tr key={side.teamId} className="border-t border-white/[0.05]">
+              <td className="px-2 py-1.5 text-left">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-cream">
+                  {side.logo ? (
+                    <img src={side.logo} alt="" className="h-4 w-4 object-contain" />
+                  ) : null}
+                  {side.abbrev}
+                </span>
+              </td>
+              {headers.map((_, i) => (
+                <td key={`${side.teamId}-${i}`} className="numeral px-1.5 py-1.5 text-white/85">
+                  {side.linescores[i] ?? "–"}
+                </td>
+              ))}
+              <td className="numeral px-2 py-1.5 font-bold text-white">{side.score ?? "–"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -437,9 +725,7 @@ function NflTeamStatHeader({
         align === "right" ? "justify-end" : "justify-start",
       )}
     >
-      {side.logo ? (
-        <img src={side.logo} alt="" className="h-5 w-5 object-contain" />
-      ) : null}
+      {side.logo ? <img src={side.logo} alt="" className="h-5 w-5 object-contain" /> : null}
       {side.abbrev}
     </span>
   );
@@ -504,13 +790,26 @@ function NflMatchupSide({
 export default function NflGamePage() {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
+  const swipeRef = useSwipeBack(() => navigate(-1));
+
+  const detail = useQuery({
+    queryKey: ["nfl-game", eventId],
+    queryFn: () => fetchNflGameDetail(eventId!),
+    enabled: Boolean(eventId),
+    refetchInterval: (q) => (q.state.data?.live ? 12_000 : false),
+    staleTime: 8_000,
+  });
+
+  const refresh = () => {
+    void detail.refetch().then(() => toast.success("Game updated"));
+  };
 
   if (!eventId) {
     return <p className="text-alert p-6 text-[13px]">Missing game id</p>;
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5 p-4 md:p-7">
+    <div ref={swipeRef} className="mx-auto max-w-4xl space-y-5 p-4 md:p-7">
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
@@ -522,11 +821,12 @@ export default function NflGamePage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => toast.success("Game updated")}
-            className="text-chalk hover:text-cream rounded-sm border border-white/10 p-2"
-            aria-label="Refresh"
+            onClick={refresh}
+            disabled={detail.isFetching}
+            className="text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] disabled:opacity-40"
           >
-            <RefreshCw size={14} />
+            <RefreshCw size={13} className={detail.isFetching ? "animate-spin" : ""} />
+            Refresh
           </button>
           <Link
             to="/sports/nfl?solo=1"
