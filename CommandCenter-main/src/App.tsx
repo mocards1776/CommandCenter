@@ -36,6 +36,7 @@ import NflCoachPage from "@/pages/NflCoachPage";
 const RssPage = lazy(() => import("@/pages/RssPage"));
 import PublicStoryPage from "@/pages/PublicStoryPage";
 import BuenaVistaNotebookPage from "@/pages/BuenaVistaNotebookPage";
+import DailyNewspaperPage from "@/pages/DailyNewspaperPage";
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
 import { markSportsSolo } from "@/lib/sports-home";
 import { markRssSolo } from "@/lib/rss-home";
@@ -125,6 +126,7 @@ export default function App() {
             <Route element={<Protected />}>
               <Route path="/" element={<HomeRedirect />} />
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/newspaper" element={<DailyNewspaperPage />} />
               <Route path="/todos" element={<TodosPage />} />
               <Route path="/habits" element={<HabitsPage />} />
               <Route path="/reading" element={<ReadingPage />} />
