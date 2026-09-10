@@ -1,0 +1,921 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Thompson Times — print-first morning paper
+   ───────────────────────────────────────────────────────────────────────
+   Print is the design target: US Letter portrait, 0.55in margins, copy
+   flowing through newspaper columns. Screen renders the same document on
+   a paper sheet so what you see is what prints.
+
+   The edition is ONE continuous flow, not a stack of fixed 8.5×11 boxes.
+   Fragmentation is handled by the printer (break-inside / break-before /
+   orphans / widows) rather than by clipping content to a fixed height.
+
+   Rhythm: everything is a multiple of 4px. Body copy sits on a 16px
+   baseline (11.5px/16px), agate on 12px, so columns line up across the
+   gutter.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@page {
+  size: letter portrait;
+  margin: 0.55in;
+}
+
+.tt-root {
+  /* Ink and paper */
+  --tt-paper: #f7f5ef;
+  --tt-ink: #14161a;
+  --tt-ink-soft: #4f545c;
+  --tt-rule: #14161a;
+  --tt-rule-hair: rgba(20, 22, 26, 0.24);
+  --tt-rule-faint: rgba(20, 22, 26, 0.13);
+  --tt-accent: #8c1c22;
+  --tt-win: #1d6a41;
+
+  /* 4px spacing scale — the only vertical measurements in this file */
+  --tt-1: 4px;
+  --tt-2: 8px;
+  --tt-3: 12px;
+  --tt-4: 16px;
+  --tt-5: 20px;
+  --tt-6: 24px;
+  --tt-8: 32px;
+
+  /* One gutter everywhere: columns, grids, rails */
+  --tt-gutter: 20px;
+
+  --tt-serif: "Source Serif 4", "Iowan Old Style", Palatino, Georgia, serif;
+  --tt-display: "Playfair Display", Georgia, serif;
+  --tt-sans: "Libre Franklin", system-ui, -apple-system, sans-serif;
+
+  padding: var(--tt-6) var(--tt-4) var(--tt-8);
+}
+
+/* ── Screen chrome (never prints) ──────────────────────────────────── */
+
+.tt-toolbar {
+  width: min(8.5in, 100%);
+  margin: 0 auto var(--tt-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--tt-3);
+}
+
+.tt-toolbar h1 {
+  font-family: var(--tt-display);
+  color: var(--color-cream, #f4f1e9);
+  font-size: 24px;
+  line-height: 28px;
+  letter-spacing: 0.02em;
+}
+
+.tt-toolbar p {
+  max-width: 34rem;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--color-chalk, rgba(237, 239, 245, 0.55));
+}
+
+.tt-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tt-2);
+}
+
+.tt-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tt-2);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: var(--tt-2) var(--tt-3);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-chalk, rgba(237, 239, 245, 0.55));
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.tt-btn:hover {
+  color: var(--color-cream, #f4f1e9);
+  border-color: rgba(217, 81, 92, 0.45);
+}
+
+.tt-btn-primary {
+  background: var(--color-accent-deep, #c0303b);
+  border-color: var(--color-accent-deep, #c0303b);
+  color: var(--color-cream, #f4f1e9);
+  font-weight: 600;
+}
+
+.tt-btn-primary:hover {
+  filter: brightness(1.1);
+  color: var(--color-cream, #f4f1e9);
+}
+
+.tt-setup {
+  width: min(8.5in, 100%);
+  margin: 0 auto var(--tt-4);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  padding: var(--tt-3);
+  color: var(--color-chalk, rgba(237, 239, 245, 0.55));
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.tt-setup strong {
+  display: block;
+  color: var(--color-cream, #f4f1e9);
+}
+
+.tt-setup textarea {
+  width: 100%;
+  min-height: 72px;
+  margin-top: var(--tt-2);
+  background: #0a1220;
+  color: #edf0f5;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: var(--tt-2);
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+
+.tt-setup-actions {
+  display: flex;
+  gap: var(--tt-2);
+  margin-top: var(--tt-2);
+}
+
+/* ── The sheet ─────────────────────────────────────────────────────── */
+
+.tt-sheet {
+  width: min(8.5in, 100%);
+  margin: 0 auto;
+  padding: 0.55in;
+  box-sizing: border-box;
+  background: var(--tt-paper);
+  color: var(--tt-ink);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.4);
+  font-family: var(--tt-serif);
+  font-size: 11.5px;
+  line-height: 16px;
+  font-feature-settings: "onum" 0;
+}
+
+.tt-edition > * + * {
+  margin-top: var(--tt-4);
+}
+
+/* ── Masthead ──────────────────────────────────────────────────────── */
+
+.tt-mast {
+  text-align: center;
+  break-inside: avoid;
+  break-after: avoid;
+}
+
+.tt-mast-brow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tt-3);
+  padding-bottom: var(--tt-1);
+  border-bottom: 1px solid var(--tt-rule-hair);
+  font-family: var(--tt-sans);
+  font-size: 8.5px;
+  line-height: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--tt-ink-soft);
+}
+
+.tt-nameplate {
+  font-family: var(--tt-display);
+  font-weight: 700;
+  font-size: 60px;
+  line-height: 64px;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  margin: var(--tt-1) 0 0;
+}
+
+.tt-mast-motto {
+  font-family: var(--tt-serif);
+  font-style: italic;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--tt-ink-soft);
+  margin: 0 0 var(--tt-1);
+}
+
+.tt-mast-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tt-3);
+  padding: var(--tt-1) 0;
+  border-top: 1px solid var(--tt-rule);
+  border-bottom: 3px double var(--tt-rule);
+  font-family: var(--tt-sans);
+  font-size: 9px;
+  line-height: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.tt-mast-line span:nth-child(2) {
+  font-weight: 600;
+}
+
+/* ── Section heads ─────────────────────────────────────────────────── */
+
+.tt-section {
+  break-inside: auto;
+}
+
+/* The long read opens a fresh sheet, the way a paper opens a section front.
+   The other sections deliberately do NOT force a break: a forced break after a
+   section that just overflowed leaves a nearly blank sheet behind it. They
+   butt up under their own heavy section rule instead, which is what a paper
+   does anyway. */
+.tt-section-page {
+  break-before: page;
+}
+
+.tt-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tt-3);
+  padding-bottom: var(--tt-1);
+  margin-bottom: var(--tt-3);
+  border-bottom: 2px solid var(--tt-rule);
+  break-inside: avoid;
+  break-after: avoid;
+}
+
+.tt-section-head h2 {
+  font-family: var(--tt-display);
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 28px;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.tt-section-head p {
+  margin: 0;
+  font-family: var(--tt-sans);
+  font-size: 8.5px;
+  line-height: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tt-ink-soft);
+  text-align: right;
+}
+
+/* ── Front page well: lead story + right rail ──────────────────────── */
+
+.tt-lead {
+  display: grid;
+  grid-template-columns: minmax(0, 2.15fr) minmax(0, 1fr);
+  gap: var(--tt-gutter);
+  align-items: start;
+}
+
+.tt-lead-main {
+  min-width: 0;
+  border-right: 1px solid var(--tt-rule-hair);
+  padding-right: var(--tt-gutter);
+}
+
+.tt-rail {
+  min-width: 0;
+}
+
+.tt-rail > * + * {
+  margin-top: var(--tt-4);
+  padding-top: var(--tt-3);
+  border-top: 1px solid var(--tt-rule-hair);
+}
+
+/* ── Typographic hierarchy: kicker → hed → dek → body ──────────────── */
+
+.tt-kicker {
+  font-family: var(--tt-sans);
+  font-size: 8.5px;
+  line-height: 12px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--tt-accent);
+  margin: 0 0 var(--tt-1);
+  break-after: avoid;
+}
+
+.tt-hed {
+  font-family: var(--tt-display);
+  font-weight: 700;
+  font-size: 34px;
+  line-height: 36px;
+  letter-spacing: -0.018em;
+  margin: 0 0 var(--tt-2);
+  text-wrap: balance;
+  break-after: avoid;
+}
+
+.tt-hed-sm {
+  font-family: var(--tt-display);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 20px;
+  letter-spacing: -0.005em;
+  margin: 0 0 var(--tt-1);
+  text-wrap: balance;
+  break-after: avoid;
+}
+
+.tt-dek {
+  font-family: var(--tt-serif);
+  font-style: italic;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--tt-ink-soft);
+  margin: 0 0 var(--tt-3);
+  padding-bottom: var(--tt-3);
+  border-bottom: 1px solid var(--tt-rule-hair);
+  break-after: avoid;
+}
+
+.tt-byline {
+  font-family: var(--tt-sans);
+  font-size: 8.5px;
+  line-height: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--tt-ink-soft);
+  margin: 0 0 var(--tt-2);
+}
+
+.tt-body p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 16px;
+  text-align: justify;
+  hyphens: auto;
+  orphans: 3;
+  widows: 3;
+}
+
+.tt-body p + p {
+  text-indent: 1.1em;
+}
+
+.tt-body p:first-of-type::first-letter {
+  float: left;
+  font-family: var(--tt-display);
+  font-size: 44px;
+  line-height: 36px;
+  padding: 2px var(--tt-1) 0 0;
+  font-weight: 700;
+}
+
+/* ── Column flows ──────────────────────────────────────────────────── */
+
+.tt-flow-2,
+.tt-flow-3 {
+  column-gap: var(--tt-gutter);
+  column-rule: 1px solid var(--tt-rule-faint);
+}
+
+.tt-flow-2 {
+  columns: 2;
+}
+
+.tt-flow-3 {
+  columns: 3;
+}
+
+/* Story blocks are the atoms of the flow: never split one across a column
+   or a page — that is what produced cut-off cards and orphan heads. */
+.tt-story {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin: 0 0 var(--tt-4);
+}
+
+.tt-story:last-child {
+  margin-bottom: 0;
+}
+
+/* Long ruled lists are allowed to run over a column break — a paper does the
+   same. The head still travels with its first rows (break-after: avoid). */
+.tt-story-open {
+  break-inside: auto;
+  page-break-inside: auto;
+}
+
+.tt-story-rule {
+  margin-top: var(--tt-4);
+  border-top: 1px solid var(--tt-rule-hair);
+  padding-top: var(--tt-2);
+}
+
+/* ── Brief heads (inside rails and column flows) ───────────────────── */
+
+.tt-brief-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tt-2);
+  margin: 0 0 var(--tt-2);
+  padding-bottom: var(--tt-1);
+  border-bottom: 1px solid var(--tt-rule);
+  break-after: avoid;
+}
+
+/* A second deck inside the same story ("Tomorrow", "Yesterday") needs air
+   above it or it reads as another row of the list it follows. */
+.tt-agate + .tt-brief-head,
+.tt-empty + .tt-brief-head {
+  margin-top: var(--tt-3);
+}
+
+.tt-brief-head h3 {
+  font-family: var(--tt-display);
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 16px;
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+
+.tt-brief-head span {
+  font-family: var(--tt-sans);
+  font-size: 8px;
+  line-height: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--tt-ink-soft);
+  white-space: nowrap;
+}
+
+/* ── Agate: the dense ruled lists a paper runs everywhere ──────────── */
+
+.tt-agate {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 10.5px;
+  line-height: 14px;
+}
+
+.tt-agate li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tt-2);
+  padding: var(--tt-1) 0;
+  border-bottom: 1px solid var(--tt-rule-faint);
+  break-inside: avoid;
+}
+
+.tt-agate li:last-child {
+  border-bottom: 0;
+}
+
+.tt-agate .t {
+  flex: 1;
+  min-width: 0;
+}
+
+.tt-agate .m {
+  font-family: var(--tt-sans);
+  font-size: 8.5px;
+  color: var(--tt-ink-soft);
+  white-space: nowrap;
+}
+
+.tt-agate .when {
+  width: 4.6em;
+  flex: none;
+  font-family: var(--tt-sans);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Priority tags and ranks need a stub, not a clock column. */
+.tt-agate-narrow .when {
+  width: 1.8em;
+}
+
+.tt-agate .v {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tt-agate .note {
+  display: block;
+  width: 100%;
+  font-size: 9.5px;
+  line-height: 12px;
+  color: var(--tt-ink-soft);
+}
+
+/* Two-deck entries: name and figure on the first line, the detail beneath. */
+.tt-agate-stack li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 var(--tt-2);
+  align-items: baseline;
+}
+
+.tt-agate-stack .note {
+  grid-column: 1 / -1;
+}
+
+.tt-agate .mark {
+  width: 1em;
+  flex: none;
+  color: var(--tt-accent);
+}
+
+.tt-done .t {
+  color: var(--tt-ink-soft);
+  text-decoration: line-through;
+}
+
+.tt-late .m,
+.tt-late .when {
+  color: var(--tt-accent);
+  font-weight: 700;
+}
+
+.tt-empty {
+  margin: 0;
+  font-style: italic;
+  font-size: 10.5px;
+  line-height: 16px;
+  color: var(--tt-ink-soft);
+}
+
+.tt-note {
+  margin-top: var(--tt-2);
+}
+
+/* ── Weather ears ──────────────────────────────────────────────────── */
+
+.tt-wx-now {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tt-2);
+  margin-bottom: var(--tt-2);
+}
+
+.tt-wx-now .temp {
+  font-family: var(--tt-display);
+  font-size: 30px;
+  line-height: 32px;
+  font-weight: 700;
+}
+
+.tt-wx-now .sky {
+  font-size: 10.5px;
+  line-height: 14px;
+  color: var(--tt-ink-soft);
+}
+
+.tt-wx-days li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--tt-2);
+}
+
+/* ── Stat table (the scoreboard box) ───────────────────────────────── */
+
+.tt-figure {
+  text-align: center;
+  padding-bottom: var(--tt-2);
+  margin-bottom: var(--tt-2);
+  border-bottom: 1px solid var(--tt-rule-hair);
+}
+
+.tt-figure strong {
+  display: block;
+  font-family: var(--tt-display);
+  font-size: 34px;
+  line-height: 36px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tt-figure span {
+  font-family: var(--tt-sans);
+  font-size: 8px;
+  line-height: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--tt-ink-soft);
+}
+
+.tt-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--tt-2);
+  margin: 0;
+}
+
+.tt-stats div {
+  min-width: 0;
+}
+
+.tt-stats dt {
+  font-family: var(--tt-sans);
+  font-size: 8px;
+  line-height: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tt-ink-soft);
+}
+
+.tt-stats dd {
+  margin: 0;
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Box scores ────────────────────────────────────────────────────── */
+
+.tt-score {
+  break-inside: avoid;
+  margin-bottom: var(--tt-3);
+  padding-bottom: var(--tt-2);
+  border-bottom: 1px solid var(--tt-rule-faint);
+  font-size: 10.5px;
+  line-height: 14px;
+}
+
+.tt-score:last-child {
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
+.tt-score-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--tt-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.tt-score-row.win {
+  font-weight: 700;
+}
+
+.tt-score-row .team {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tt-1);
+  min-width: 0;
+}
+
+.tt-score-row .rec {
+  font-size: 9px;
+  color: var(--tt-ink-soft);
+}
+
+.tt-score-meta {
+  font-family: var(--tt-sans);
+  font-size: 8px;
+  line-height: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tt-ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Standings / leaders tables ────────────────────────────────────── */
+
+.tt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tt-table th,
+.tt-table td {
+  padding: 1px 2px;
+  text-align: right;
+  border-bottom: 1px solid var(--tt-rule-faint);
+  white-space: nowrap;
+}
+
+.tt-table th:first-child,
+.tt-table td:first-child,
+.tt-table th:nth-child(2),
+.tt-table td:nth-child(2) {
+  text-align: left;
+}
+
+.tt-table th {
+  font-family: var(--tt-sans);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tt-ink-soft);
+  font-weight: 600;
+  border-bottom-color: var(--tt-rule-hair);
+}
+
+.tt-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.tt-table .me td {
+  font-weight: 700;
+  background: rgba(140, 28, 34, 0.08);
+}
+
+/* ── Dispatch (the long read) ──────────────────────────────────────── */
+
+.tt-dispatch-body p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 16px;
+  text-align: justify;
+  hyphens: auto;
+  orphans: 3;
+  widows: 3;
+}
+
+.tt-dispatch-body p + p {
+  text-indent: 1.1em;
+}
+
+.tt-continued {
+  margin: var(--tt-3) 0 0;
+  font-family: var(--tt-sans);
+  font-size: 8.5px;
+  line-height: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tt-ink-soft);
+  text-align: right;
+  break-before: avoid;
+}
+
+/* ── Colophon ──────────────────────────────────────────────────────── */
+
+.tt-colophon {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--tt-3);
+  padding-top: var(--tt-2);
+  border-top: 3px double var(--tt-rule);
+  font-family: var(--tt-sans);
+  font-size: 8.5px;
+  line-height: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tt-ink-soft);
+  break-inside: avoid;
+}
+
+/* ── Screen: narrow viewports collapse the columns ─────────────────── */
+
+@media screen and (max-width: 900px) {
+  .tt-root {
+    padding: var(--tt-4) var(--tt-2) var(--tt-6);
+  }
+
+  .tt-sheet {
+    padding: var(--tt-6) var(--tt-4);
+  }
+
+  .tt-lead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tt-lead-main {
+    border-right: 0;
+    padding-right: 0;
+    padding-bottom: var(--tt-3);
+    border-bottom: 1px solid var(--tt-rule-hair);
+  }
+
+  .tt-rail > *:first-child {
+    margin-top: var(--tt-4);
+    padding-top: var(--tt-3);
+    border-top: 1px solid var(--tt-rule-hair);
+  }
+
+  .tt-flow-3 {
+    columns: 2;
+  }
+
+  .tt-nameplate {
+    font-size: 40px;
+    line-height: 44px;
+  }
+
+  .tt-hed {
+    font-size: 26px;
+    line-height: 28px;
+  }
+}
+
+@media screen and (max-width: 560px) {
+  .tt-flow-2,
+  .tt-flow-3 {
+    columns: 1;
+    column-rule: 0;
+  }
+
+  .tt-mast-brow,
+  .tt-mast-line {
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    text-align: center;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PRINT
+   Everything that is app and not paper disappears; the sheet becomes
+   the page box itself and the flow fragments naturally.
+   ═══════════════════════════════════════════════════════════════════ */
+
+@media print {
+  /* Dashboard chrome: header, rails, tab bars, toasts, install prompts.
+     The nameplate is also a <header>, so it is excluded by name. */
+  body.tt-paper-mode header:not(.tt-mast),
+  body.tt-paper-mode nav,
+  body.tt-paper-mode .rule-flag,
+  body.tt-paper-mode [data-rht-toaster],
+  body.tt-paper-mode .tt-screen-only {
+    display: none !important;
+  }
+
+  /* Unwrap the app shell so the sheet is the only thing on the page. */
+  body.tt-paper-mode,
+  body.tt-paper-mode #root,
+  body.tt-paper-mode #root > div,
+  body.tt-paper-mode #root > div > div,
+  body.tt-paper-mode main {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  .tt-root {
+    padding: 0 !important;
+  }
+
+  /* @page owns the margins; the sheet is edge-to-edge inside them. */
+  .tt-sheet {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    color: #000 !important;
+  }
+
+  /* No gradients, tints or shadows survive the press. */
+  .tt-sheet * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Keep the row tints and hairlines; a laser renders them as light gray. */
+  .tt-sheet {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+}
