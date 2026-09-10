@@ -329,6 +329,16 @@ function readingProgress(book: Book): string {
   return `${book.current_page || 0}/${book.page_count} · ${pct}%`;
 }
 
+/** Ultra-short stamp for dense MoScout wire columns. */
+function moscoutWhen(raw: string | null): string {
+  const full = formatFeedDate(raw);
+  if (!full) return "—";
+  // Drop weekday + year: "Thu, Sep 10, 2026" → "Sep 10"
+  const m = full.match(/([A-Z][a-z]{2})\s+(\d{1,2})(?:,?\s+\d{4})?/);
+  if (m) return `${m[1]} ${m[2]}`;
+  return full.length > 12 ? full.slice(0, 12) : full;
+}
+
 export default function DailyNewspaperPage() {
   const { user } = useAuth();
   const day = todayStr();
@@ -1636,7 +1646,7 @@ export default function DailyNewspaperPage() {
                 <ol className="np-moscout-list" start={pageIdx * MOSCOUT_PER_PAGE + 1}>
                   {pageItems.map((item) => (
                     <li key={item.id}>
-                      <span className="when">{formatFeedDate(item.publishedAt) || "—"}</span>
+                      <span className="when">{moscoutWhen(item.publishedAt)}</span>
                       <span className="t">{cleanArticleTitle(item.title)}</span>
                       {item.author ? <span className="by">{item.author}</span> : null}
                     </li>
