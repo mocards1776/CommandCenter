@@ -8,6 +8,7 @@ import {
   Wallet,
   Trophy,
   Newspaper,
+  ScrollText,
   LogOut,
   Users,
   Flame,
@@ -52,6 +53,7 @@ import { cn, formatSportsDateLong } from "@/lib/utils";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", short: "Today", Icon: LayoutDashboard },
+  { to: "/newspaper", label: "Daily Paper", short: "Paper", Icon: ScrollText },
   { to: "/todos", label: "Todos", short: "Todos", Icon: ListChecks },
   { to: "/habits", label: "Habits", short: "Habits", Icon: Repeat },
   { to: "/reading", label: "Reading", short: "Reading", Icon: BookOpen },
@@ -210,6 +212,7 @@ export default function AppShell() {
     // so the main icon keeps opening the dashboard.
     if (
       pathname.startsWith("/dashboard") ||
+      pathname.startsWith("/newspaper") ||
       pathname.startsWith("/todos") ||
       pathname.startsWith("/habits") ||
       pathname.startsWith("/notebook")

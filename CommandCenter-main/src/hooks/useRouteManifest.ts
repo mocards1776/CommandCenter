@@ -88,6 +88,8 @@ export function useRouteManifest() {
           ? "Sports"
           : mode === "rss"
             ? "Dispatch"
-            : "🇺🇸 Josh's Command Center";
+            : pathname.startsWith("/newspaper")
+              ? "Daily Newspaper"
+              : "🇺🇸 Josh's Command Center";
   }, [pathname]);
 }
