@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Loader2, Star } from "lucide-react";
@@ -18,9 +19,10 @@ export default function NflPlayerPage() {
   const swipeRef = useSwipeBack(() => navigate(-1));
   const { user } = useAuth();
   const qc = useQueryClient();
+  const [seasonIdx, setSeasonIdx] = useState(0);
 
   const profile = useQuery({
-    queryKey: ["nfl-player", playerId],
+    queryKey: ["nfl-player-v2", playerId],
     queryFn: () => fetchNflPlayerProfile(playerId!),
     enabled: Boolean(playerId),
     staleTime: 120_000,
@@ -64,6 +66,12 @@ export default function NflPlayerPage() {
 
   const p = profile.data;
   const accent = `#${(p?.teamColor ?? "d9515c").replace(/^#/, "")}`;
+  const splits = p?.seasonSplits?.length
+    ? p.seasonSplits
+    : p
+      ? [{ season: "Season", categories: p.statCategories }]
+      : [];
+  const activeSplit = splits[Math.min(seasonIdx, Math.max(0, splits.length - 1))];
 
   return (
     <div ref={swipeRef} className="mx-auto max-w-6xl space-y-6 p-4 md:p-7">
@@ -79,7 +87,7 @@ export default function NflPlayerPage() {
           to="/sports/nfl?solo=1"
           className="text-chalk-dim hover:text-cream text-[11px] uppercase tracking-[0.14em]"
         >
-          NFL board
+          NFL hub
         </Link>
       </div>
 
@@ -94,9 +102,70 @@ export default function NflPlayerPage() {
         <>
           <PlayerHero player={p} accent={accent} isFavorite={Boolean(fav.data)} onToggleFav={toggleFav} />
 
+          {(p.awards.length > 0 || p.teamHistory.length > 0) && (
+            <section className="grid gap-3 sm:grid-cols-2">
+              {p.awards.length > 0 ? (
+                <div className="bg-panel rounded-xl border border-white/[0.08] p-4">
+                  <h3 className="rule-head mb-3">Awards</h3>
+                  <ul className="space-y-2.5">
+                    {p.awards.slice(0, 8).map((award) => (
+                      <li key={`${award.id}-${award.name}`} className="min-w-0">
+                        <p className="text-cream text-[14px] font-semibold">
+                          {award.name}
+                          {award.displayCount ? (
+                            <span className="text-chalk ml-2 text-[12px] font-medium">
+                              {award.displayCount}
+                            </span>
+                          ) : null}
+                        </p>
+                        {award.seasons.length > 0 ? (
+                          <p className="text-[12px] text-[#8b93a7]">{award.seasons.join(" · ")}</p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {p.teamHistory.length > 0 ? (
+                <div className="bg-panel rounded-xl border border-white/[0.08] p-4">
+                  <h3 className="rule-head mb-3">Team history</h3>
+                  <ul className="space-y-2.5">
+                    {p.teamHistory.map((stop) => (
+                      <li
+                        key={`${stop.teamId ?? stop.teamName}-${stop.seasons ?? ""}`}
+                        className="flex items-center gap-3"
+                      >
+                        {stop.teamLogo ? (
+                          <img src={stop.teamLogo} alt="" className="h-8 w-8 object-contain" />
+                        ) : (
+                          <span className="bg-white/10 h-8 w-8 rounded-full" />
+                        )}
+                        <div className="min-w-0">
+                          {stop.teamId ? (
+                            <Link
+                              to={`/sports/nfl/team/${stop.teamId}`}
+                              className="text-cream hover:text-accent text-[14px] font-semibold"
+                            >
+                              {stop.teamName}
+                            </Link>
+                          ) : (
+                            <p className="text-cream text-[14px] font-semibold">{stop.teamName}</p>
+                          )}
+                          <p className="text-[12px] text-[#8b93a7]">
+                            {stop.seasons?.replace(/CURRENT/i, "present") ?? "—"}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </section>
+          )}
+
           {p.bio ? (
             <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
-              <h3 className="rule-head mb-2">Bio</h3>
+              <h3 className="rule-head mb-2">About</h3>
               {p.status ? (
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
                   Status · {p.status}
@@ -110,7 +179,9 @@ export default function NflPlayerPage() {
             <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
               <div className="border-b border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
                 <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
-                  Season key stats
+                  {splits[0]?.season && /^\d{4}$/.test(splits[0].season)
+                    ? `${splits[0].season} key stats`
+                    : "Season key stats"}
                 </h2>
               </div>
               <div className="grid grid-cols-2 divide-x divide-white/[0.06] sm:grid-cols-4">
@@ -128,71 +199,145 @@ export default function NflPlayerPage() {
             </section>
           )}
 
-          {p.statCategories.map((cat) => (
-            <section
-              key={cat.name}
-              className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]"
-            >
-              <div className="border-b border-white/[0.06] px-4 py-2.5">
-                <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
-                  {cat.name}
-                </h3>
+          {splits.length > 0 && (activeSplit?.categories?.length ?? 0) > 0 && (
+            <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-2.5">
+                <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+                  Stats
+                </h2>
+                {splits.length > 1 ? (
+                  <div className="flex max-w-full flex-wrap gap-1 overflow-x-auto">
+                    {splits.map((split, idx) => (
+                      <button
+                        key={split.season}
+                        type="button"
+                        onClick={() => setSeasonIdx(idx)}
+                        className={cn(
+                          "rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors",
+                          idx === seasonIdx
+                            ? "bg-white/10 text-cream"
+                            : "text-chalk hover:text-cream",
+                        )}
+                      >
+                        {split.season}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[420px] text-center text-[12px]">
-                  <thead>
-                    <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                      {cat.stats.map((s) => (
-                        <th key={s.label} className="px-2 py-2 font-medium">
-                          {s.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-t border-white/[0.05]">
-                      {cat.stats.map((s) => (
-                        <td key={s.label} className="numeral text-cream px-2 py-2.5 text-[15px]">
-                          {s.value}
-                        </td>
-                      ))}
-                    </tr>
-                  </tbody>
-                </table>
+              <div className="divide-y divide-white/[0.06]">
+                {(activeSplit?.categories ?? []).map((cat) => (
+                  <div key={`${activeSplit?.season}-${cat.name}`} className="overflow-x-auto">
+                    <div className="border-b border-white/[0.04] bg-white/[0.02] px-4 py-2">
+                      <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+                        {cat.name}
+                      </h3>
+                    </div>
+                    <table className="w-full min-w-[520px] text-center text-[12px]">
+                      <thead>
+                        <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                          {cat.stats.map((s) => (
+                            <th key={s.label} className="px-2 py-2 font-medium">
+                              {s.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-t border-white/[0.05]">
+                          {cat.stats.map((s) => (
+                            <td key={s.label} className="numeral text-cream px-2 py-2.5 text-[15px]">
+                              {s.value}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
               </div>
             </section>
-          ))}
+          )}
 
-          {p.recentGames.length > 0 && (
+          {p.gameLogCategories.some((c) => c.rows.length > 0) && (
             <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
               <div className="border-b border-white/[0.06] px-4 py-2.5">
                 <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
-                  Recent games
+                  Game log
                 </h3>
               </div>
-              <ul className="divide-y divide-white/[0.05]">
-                {p.recentGames.map((g) => (
-                  <li
-                    key={`${g.label}-${g.result}`}
-                    className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-[12px]"
-                  >
-                    <span className="text-cream min-w-[120px] font-medium">{g.label}</span>
-                    <span
-                      className={cn(
-                        "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase",
-                        g.result.startsWith("W")
-                          ? "bg-emerald-500/15 text-emerald-300"
-                          : g.result.startsWith("L")
-                            ? "bg-red-500/15 text-red-300"
-                            : "bg-white/10 text-[#c8cdd8]",
-                      )}
-                    >
-                      {g.result}
-                    </span>
-                    <span className="text-chalk min-w-0 flex-1 truncate">{g.line || "—"}</span>
-                  </li>
-                ))}
-              </ul>
+              {p.gameLogCategories.map((cat) =>
+                cat.rows.length === 0 ? null : (
+                  <div key={cat.name} className="border-t border-white/[0.05] first:border-t-0">
+                    <div className="border-b border-white/[0.04] bg-white/[0.02] px-4 py-2">
+                      <h4 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                        {cat.name}
+                      </h4>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[720px] text-[12px]">
+                        <thead>
+                          <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+                            <th className="px-3 py-2 text-left font-medium">Date</th>
+                            <th className="px-2 py-2 text-left font-medium">Opp</th>
+                            <th className="px-2 py-2 text-center font-medium">Result</th>
+                            {cat.labels.map((label) => (
+                              <th key={label} className="px-2 py-2 text-center font-medium">
+                                {label}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cat.rows.map((row) => (
+                            <tr
+                              key={`${row.eventId ?? row.date}-${row.opponent}-${cat.name}`}
+                              className="border-t border-white/[0.05]"
+                            >
+                              <td className="text-chalk whitespace-nowrap px-3 py-2 text-left">
+                                {row.date
+                                  ? new Date(row.date).toLocaleDateString("en-US", {
+                                      month: "short",
+                                      day: "numeric",
+                                    })
+                                  : row.week != null
+                                    ? `Wk ${row.week}`
+                                    : "—"}
+                              </td>
+                              <td className="text-cream whitespace-nowrap px-2 py-2 text-left font-medium">
+                                {row.atVs ? `${row.atVs} ` : ""}
+                                {row.opponent}
+                              </td>
+                              <td className="px-2 py-2 text-center">
+                                <span
+                                  className={cn(
+                                    "numeral rounded px-1.5 py-0.5 text-[10px] font-bold uppercase",
+                                    row.result.startsWith("W")
+                                      ? "bg-emerald-500/15 text-emerald-300"
+                                      : row.result.startsWith("L")
+                                        ? "bg-red-500/15 text-red-300"
+                                        : "bg-white/10 text-[#c8cdd8]",
+                                  )}
+                                >
+                                  {row.result}
+                                </span>
+                              </td>
+                              {row.stats.map((s) => (
+                                <td
+                                  key={s.label}
+                                  className="numeral text-cream px-2 py-2 text-center"
+                                >
+                                  {s.value}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ),
+              )}
             </section>
           )}
 
@@ -238,22 +383,47 @@ export default function NflPlayerPage() {
           )}
 
           <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
-            <h3 className="rule-head mb-3">Origin</h3>
+            <h3 className="rule-head mb-3">Bio</h3>
             <dl className="grid grid-cols-2 gap-3 text-[13px] sm:grid-cols-3">
               <BioItem label="Height" value={p.height ?? "—"} />
-              <BioItem label="Weight" value={p.weight ?? "—"} />
+              <BioItem label="Weight" value={formatPlayerWeight(p.weight) ?? "—"} />
               <BioItem label="Age" value={p.age != null ? String(p.age) : "—"} />
               <BioItem label="Born" value={p.dob ?? "—"} />
               <BioItem label="Birthplace" value={p.birthPlace ?? "—"} />
               <BioItem label="College" value={p.college ?? "—"} />
               <BioItem label="Draft" value={p.draft ?? "—"} />
               <BioItem label="Experience" value={p.experience ?? "—"} />
+              <BioItem label="Status" value={p.status ?? "—"} />
             </dl>
+            <a
+              href={`https://www.espn.com/nfl/player/_/id/${p.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent mt-4 inline-flex items-center gap-1 text-[12px]"
+            >
+              ESPN player page <ExternalLink size={12} />
+            </a>
           </section>
         </>
       )}
     </div>
   );
+}
+
+function BioItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+        {label}
+      </dt>
+      <dd className="text-cream mt-0.5 text-[14px]">{value}</dd>
+    </div>
+  );
+}
+
+function formatPlayerWeight(weight: string | null | undefined): string | null {
+  if (!weight) return null;
+  return /\b(lbs?|lb)\b/i.test(weight) ? weight : `${weight} lbs`;
 }
 
 function PlayerHero({
@@ -267,9 +437,10 @@ function PlayerHero({
   isFavorite: boolean;
   onToggleFav: () => void;
 }) {
-  const nameParts = player.name.trim().split(/\s+/);
-  const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : player.name;
-  const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(" ") : "";
+  const parts = player.name.trim().split(/\s+/);
+  const lastName = parts.length > 1 ? parts[parts.length - 1] : player.name;
+  const firstName = parts.length > 1 ? parts.slice(0, -1).join(" ") : "";
+  const htWt = [player.height, formatPlayerWeight(player.weight)].filter(Boolean).join(", ") || "—";
 
   return (
     <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
@@ -279,104 +450,57 @@ function PlayerHero({
           background: `linear-gradient(145deg, #0a1428 0%, ${accent}40 42%, #07101f 100%)`,
         }}
       />
-      <div className="absolute inset-0 bg-gradient-to-r from-[#07101f] via-[#07101f]/75 to-[#07101f]/35" />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#07101f] via-transparent to-[#07101f]/40" />
-
       <div className="relative z-10 flex flex-col gap-5 p-5 lg:flex-row lg:items-end lg:gap-8 lg:p-8">
-        <div className="relative mx-auto shrink-0 sm:mx-0">
-          <div className="overflow-hidden rounded-xl bg-[#dfe6f2] p-1 shadow-2xl ring-2 ring-white/30">
+        <div className="relative shrink-0">
+          <div className="overflow-hidden rounded-xl bg-[#dfe6f2] p-1 ring-2 ring-white/30">
             <img
               src={player.headshot ?? nflHeadshot(player.id)}
               alt=""
-              width={220}
-              height={220}
-              className="h-[170px] w-[170px] rounded-[10px] object-cover object-[center_12%] sm:h-[200px] sm:w-[200px] lg:h-[220px] lg:w-[220px]"
+              className="aspect-square w-36 object-cover object-top sm:w-44"
               onError={(e) => {
                 e.currentTarget.src = nflHeadshot(player.id);
               }}
             />
           </div>
-          {player.teamLogo && (
-            <span className="absolute -right-2 -bottom-2 rounded-full bg-white p-1 shadow-lg">
-              <img src={player.teamLogo} alt="" className="h-10 w-10 object-contain" />
-            </span>
-          )}
+          {player.teamLogo ? (
+            <img
+              src={player.teamLogo}
+              alt=""
+              className="absolute -bottom-2 -right-2 h-12 w-12 rounded-full bg-[#07101f] p-1 ring-2 ring-white/20"
+            />
+          ) : null}
         </div>
-
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                {player.teamId && player.teamName ? (
-                  <Link
-                    to={`/sports/nfl/team/${player.teamId}`}
-                    className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/70 transition hover:text-white"
-                  >
-                    {player.teamName}
-                  </Link>
-                ) : player.teamName ? (
-                  <span className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/70">
-                    {player.teamName}
-                  </span>
-                ) : null}
-                <span className="rounded-sm border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
-                  NFL
-                </span>
-              </div>
-              {firstName && (
-                <p className="mt-1 text-[13px] font-medium uppercase tracking-[0.08em] text-white/65">
-                  {firstName}
-                </p>
-              )}
-              <h1 className="font-display text-[40px] leading-[0.92] text-white sm:text-[52px] lg:text-[56px]">
-                {lastName}
-              </h1>
-              {(player.number || player.position) && (
-                <p className="mt-1.5 text-[13px] text-white/75">
-                  {[player.number ? `#${player.number}` : null, player.positionName ?? player.position]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-              )}
-            </div>
-
-            {player.age != null && (
-              <div className="shrink-0 rounded-md border border-white/25 bg-black/35 px-3 py-2 text-center backdrop-blur-sm">
-                <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/60">Age</p>
-                <p className="numeral text-[30px] leading-none text-white">{player.age}</p>
-              </div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/55">
+            {player.teamId ? (
+              <Link
+                to={`/sports/nfl/team/${player.teamId}`}
+                className="transition hover:text-white"
+              >
+                {player.teamName ?? "NFL"}
+              </Link>
+            ) : (
+              (player.teamName ?? "NFL")
             )}
-          </div>
-
-          <dl className="mt-4 grid grid-cols-2 gap-2.5 text-[12.5px] sm:grid-cols-3 lg:grid-cols-4">
-            {(player.height || player.weight) && (
-              <div>
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">HT / WT</dt>
-                <dd className="mt-0.5 text-white">
-                  {[player.height, player.weight].filter(Boolean).join(" · ")}
-                </dd>
-              </div>
-            )}
-            {player.college && (
-              <div>
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">College</dt>
-                <dd className="mt-0.5 text-white">{player.college}</dd>
-              </div>
-            )}
-            {player.draft && (
-              <div>
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Draft</dt>
-                <dd className="mt-0.5 text-white">{player.draft}</dd>
-              </div>
-            )}
-            {player.experience && (
-              <div>
-                <dt className="text-[10px] uppercase tracking-[0.14em] text-white/50">Exp</dt>
-                <dd className="mt-0.5 text-white">{player.experience}</dd>
-              </div>
-            )}
+          </p>
+          <h1 className="font-display text-cream mt-1 text-[42px] leading-none sm:text-[52px]">
+            {lastName}
+          </h1>
+          {firstName ? (
+            <p className="text-cream/80 mt-1 text-[18px] font-medium">{firstName}</p>
+          ) : null}
+          <p className="text-chalk mt-3 text-[13px]">
+            {player.number ? `#${player.number} · ` : ""}
+            {player.positionName ?? player.position ?? "Player"}
+            {player.experience ? ` · ${player.experience}` : ""}
+          </p>
+          <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[12px]">
+            <HeroChip label="HT/WT" value={htWt} />
+            <HeroChip label="College" value={player.college ?? "—"} />
+            <HeroChip label="Draft" value={player.draft ?? "—"} />
+            <HeroChip label="Birthplace" value={player.birthPlace ?? "—"} />
+            <HeroChip label="Status" value={player.status ?? "Active"} />
           </dl>
-
           <button
             type="button"
             onClick={() => void onToggleFav()}
@@ -396,11 +520,13 @@ function PlayerHero({
   );
 }
 
-function BioItem({ label, value }: { label: string; value: string }) {
+function HeroChip({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">{label}</dt>
-      <dd className="text-cream mt-0.5">{value}</dd>
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+        {label}
+      </dt>
+      <dd className="text-cream/90 mt-0.5 text-[13px]">{value}</dd>
     </div>
   );
 }
