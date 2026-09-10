@@ -92,10 +92,10 @@ import type { Book } from "@/types";
 
 const STL_TEAM_ID = 138;
 const MOSCOUT = RSS_FEEDS.find((f) => f.id === "moscout")!;
-/** Lead Missouri Scout articles with full body (wire index is separate). */
-const MOSCOUT_LEAD_COUNT = 4;
-/** Words that fit a letter page under the section mast + folio. */
-const MOSCOUT_WORDS_PER_PAGE = 920;
+/** Most recent Missouri Scout story only. */
+const MOSCOUT_LEAD_COUNT = 1;
+/** Words that fit a letter page under a compact mast + folio. */
+const MOSCOUT_WORDS_PER_PAGE = 1100;
 
 type PlayerSeasonCard = {
   playerId: string;
@@ -940,11 +940,10 @@ export default function DailyNewspaperPage() {
     () => moscoutQ.data?.items ?? [],
     [moscoutQ.data],
   );
-  const moscoutLeadArticles = useMemo(
-    () => moscoutArticlesQ.data ?? [],
+  const moscoutLatest = useMemo(
+    () => moscoutArticlesQ.data?.[0] ?? null,
     [moscoutArticlesQ.data],
   );
-  const moscoutWire = useMemo(() => moscoutItems.slice(0, 36), [moscoutItems]);
   const moscoutHighlightCount = useMemo(() => {
     const items = moscoutItems;
     if (!items.length) return 0;
@@ -1158,8 +1157,8 @@ export default function DailyNewspaperPage() {
           <p className="label-caps text-accent">Print edition</p>
           <h1>Thompson Times</h1>
           <p className="text-chalk mt-2 max-w-xl text-[12px] leading-relaxed">
-            Letter-locked print edition — desk, boards, reading, Scout wire, and
-            lead stories. Print every page.
+            Letter-locked print edition — desk, boards, reading, and the latest
+            Missouri Scout. Print every page.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1850,71 +1849,63 @@ export default function DailyNewspaperPage() {
           </footer>
         </article>
 
-        {/* ── PAGE 5: MISSOURI SCOUT WIRE ───────────────────────── */}
-        <article className="np-page" aria-label="Thompson Times Missouri Scout wire">
-          <header className="np-section-mast np-anim-mast">
+        {/* ── PAGE 5: LATEST MISSOURI SCOUT ─────────────────────── */}
+        <article className="np-page" aria-label="Thompson Times Missouri Scout">
+          <header className="np-section-mast np-section-mast-compact np-anim-mast">
             <div>
-              <p className="np-kicker">Page 5</p>
+              <p className="np-kicker">Page 5 · Dispatch</p>
               <h1>Missouri Scout</h1>
             </div>
             <div className="np-section-meta">
               <div>{editionDateline(day)}</div>
-              <div>Dispatch · {moscoutItems.length} on the wire</div>
+              <div>
+                Latest
+                {moscoutItems.length ? ` · ${moscoutItems.length} on wire` : ""}
+              </div>
             </div>
           </header>
 
           <div className="np-page-body">
-            <section className="np-box np-anim-body" style={{ flex: "0 0 auto" }}>
-              <div className="np-sec-head">
-                <h2>Dispatch</h2>
-                <span>Stats</span>
-              </div>
-              <dl className="np-stats np-stats-reading">
-                <div>
-                  <dt>Scout stories</dt>
-                  <dd>{moscoutItems.length}</dd>
-                </div>
-                <div>
-                  <dt>Scout read</dt>
-                  <dd>{moscoutReadCount}</dd>
-                </div>
-                <div>
-                  <dt>Scout marks</dt>
-                  <dd>{moscoutHighlightCount}</dd>
-                </div>
-                <div>
-                  <dt>Reads (1k)</dt>
-                  <dd>{(rssReadsQ.data ?? []).length}</dd>
-                </div>
-                <div>
-                  <dt>Highlights</dt>
-                  <dd>{(rssHighlightsQ.data ?? []).length}</dd>
-                </div>
-                <div>
-                  <dt>Saves</dt>
-                  <dd>{(rssSavesQ.data ?? []).length}</dd>
-                </div>
-              </dl>
-            </section>
-
             <section className="np-box np-moscout np-anim-body">
-              <div className="np-sec-head">
-                <h2>Wire</h2>
-                <span>{moscoutWire.length} headlines</span>
-              </div>
-              {moscoutWire.length ? (
-                <ol className="np-moscout-list" start={1}>
-                  {moscoutWire.map((item, idx) => (
-                    <li key={item.id || item.link || idx}>
-                      <span className="when">{moscoutWhen(item.publishedAt)}</span>
-                      <span className="t">{cleanArticleTitle(item.title)}</span>
-                      {item.author ? <span className="by">{item.author}</span> : null}
-                    </li>
-                  ))}
-                </ol>
+              {moscoutLatest ? (
+                (() => {
+                  const clipped = clipArticleBody(moscoutLatest.body, MOSCOUT_WORDS_PER_PAGE);
+                  return (
+                    <article className="np-moscout-article">
+                      <header className="np-moscout-head">
+                        <p className="np-moscout-meta">
+                          {[
+                            moscoutWhen(moscoutLatest.publishedAt),
+                            moscoutLatest.author,
+                            moscoutLatest.wordCount ? `${moscoutLatest.wordCount} words` : null,
+                            moscoutReadCount ? `${moscoutReadCount} scout read` : null,
+                            moscoutHighlightCount ? `${moscoutHighlightCount} marks` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                        <h2 className="np-moscout-headline-sm">{moscoutLatest.title}</h2>
+                      </header>
+                      <div className="np-moscout-body">
+                        {clipped.text
+                          .split(/\n{2,}/)
+                          .map((p) => p.trim())
+                          .filter(Boolean)
+                          .map((p, i) => (
+                            <p key={i}>{p}</p>
+                          ))}
+                      </div>
+                      {clipped.truncated ? (
+                        <p className="np-continued">Continued in Dispatch →</p>
+                      ) : null}
+                    </article>
+                  );
+                })()
               ) : (
                 <p className="np-muted">
-                  {moscoutQ.isPending ? "Loading Missouri Scout…" : "Missouri Scout feed is empty right now."}
+                  {moscoutArticlesQ.isPending || moscoutQ.isPending
+                    ? "Loading Missouri Scout…"
+                    : "Missouri Scout feed is empty right now."}
                 </p>
               )}
             </section>
@@ -1922,78 +1913,10 @@ export default function DailyNewspaperPage() {
 
           <footer className="np-folio">
             <span>Thompson Times</span>
-            <span>5 · MoScout Wire</span>
-            <span>{moscoutLeadArticles.length ? "Leads →" : "End of edition"}</span>
+            <span>5 · MoScout</span>
+            <span>End of edition</span>
           </footer>
         </article>
-
-        {/* ── PAGES 6+: MISSOURI SCOUT LEADS ────────────────────── */}
-        {moscoutLeadArticles.map((article, pageIdx) => {
-          const pageNo = 6 + pageIdx;
-          const total = moscoutLeadArticles.length;
-          const clipped = clipArticleBody(article.body, MOSCOUT_WORDS_PER_PAGE);
-          return (
-            <article
-              key={`moscout-lead-${article.id || pageIdx}`}
-              className="np-page"
-              aria-label={`Thompson Times Missouri Scout lead ${pageIdx + 1}`}
-            >
-              <header className="np-section-mast np-anim-mast">
-                <div>
-                  <p className="np-kicker">
-                    Page {pageNo}
-                    {total > 1 ? ` · Lead ${pageIdx + 1}/${total}` : " · Lead"}
-                  </p>
-                  <h1>Missouri Scout</h1>
-                </div>
-                <div className="np-section-meta">
-                  <div>{editionDateline(day)}</div>
-                  <div>Full story</div>
-                </div>
-              </header>
-
-              <div className="np-page-body">
-                <section className="np-box np-moscout np-anim-body">
-                  <article className="np-moscout-article">
-                    <header className="np-moscout-head">
-                      <p className="np-moscout-meta">
-                        {[
-                          moscoutWhen(article.publishedAt),
-                          article.author,
-                          article.wordCount ? `${article.wordCount} words` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                      <h2>{article.title}</h2>
-                    </header>
-                    <div className="np-moscout-body">
-                      {clipped.text
-                        .split(/\n{2,}/)
-                        .map((p) => p.trim())
-                        .filter(Boolean)
-                        .map((p, i) => (
-                          <p key={i}>{p}</p>
-                        ))}
-                    </div>
-                    {clipped.truncated ? (
-                      <p className="np-continued">Continued in Dispatch →</p>
-                    ) : null}
-                  </article>
-                </section>
-              </div>
-
-              <footer className="np-folio">
-                <span>Thompson Times</span>
-                <span>
-                  {pageNo} · MoScout Lead
-                  {total > 1 ? ` ${pageIdx + 1}/${total}` : ""}
-                </span>
-                <span>{pageIdx === total - 1 ? "End of edition" : "Continued →"}</span>
-              </footer>
-            </article>
-          );
-        })}
       </div>
     </div>
   );

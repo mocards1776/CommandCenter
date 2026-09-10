@@ -1331,15 +1331,16 @@ mark.rss-hl {
   display: grid;
   grid-template-columns: 1.05fr 1.45fr 0.95fr 0.95fr;
   gap: 0.22rem;
-  align-items: stretch;
-  flex: 1.35 1 0;
+  align-items: start;
+  flex: 0 0 auto;
   min-height: 0;
   overflow: hidden;
 }
 
 .np-front > .np-box,
 .np-front > .np-stack {
-  height: 100%;
+  height: auto;
+  max-height: 100%;
   overflow: hidden;
 }
 
@@ -1351,13 +1352,15 @@ mark.rss-hl {
   display: grid;
   grid-template-columns: 1.3fr 1fr;
   gap: 0.22rem;
-  flex: 1 1 0;
+  flex: 0 0 auto;
   min-height: 0;
   overflow: hidden;
+  align-items: start;
 }
 
 .np-duo > .np-box {
-  height: 100%;
+  height: auto;
+  max-height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1583,6 +1586,11 @@ mark.rss-hl {
   text-transform: uppercase;
 }
 
+.np-section-mast-compact h1 {
+  font-size: 15px;
+  letter-spacing: 0.04em;
+}
+
 .np-section-meta {
   text-align: right;
   font-size: 8px;
@@ -1620,9 +1628,18 @@ mark.rss-hl {
   overflow: hidden;
 }
 
-/* Only the scoreboards page finals strip is height-capped */
+.np-sports-boards {
+  grid-template-rows: auto auto;
+  align-content: start;
+}
+
+.np-sports-boards > .np-box:not(.np-span-2) {
+  align-self: start;
+}
+
 .np-sports-boards > .np-box.np-span-2 {
-  max-height: 38%;
+  max-height: none;
+  align-self: start;
 }
 
 .np-standings-grid {
@@ -1724,6 +1741,14 @@ mark.rss-hl {
   letter-spacing: -0.015em;
 }
 
+.np-moscout-headline-sm {
+  font-size: 12px !important;
+  line-height: 1.25 !important;
+  font-weight: 700;
+  letter-spacing: 0 !important;
+  margin: 0.08rem 0 0 !important;
+}
+
 .np-moscout-meta {
   margin: 0;
   font-size: 7.5px;
@@ -1737,20 +1762,21 @@ mark.rss-hl {
   min-height: 0;
   overflow: hidden;
   columns: 2;
-  column-gap: 0.5rem;
+  column-gap: 0.55rem;
   column-fill: auto;
-  font-size: 9px;
-  line-height: 1.32;
+  font-size: 9.25px;
+  line-height: 1.34;
   text-align: justify;
   hyphens: auto;
   /* Soft clip instead of a hard mid-sentence cut */
-  mask-image: linear-gradient(180deg, #000 0%, #000 92%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 93%, transparent 100%);
 }
 
 .np-moscout-body p {
   margin: 0 0 0.35rem;
-  /* Allow flowing across columns — avoid left huge empty column gaps */
   break-inside: auto;
+  orphans: 3;
+  widows: 3;
 }
 
 .np-moscout-list {
@@ -2061,6 +2087,7 @@ mark.rss-hl {
   .np-anim-mast, .np-anim-body { animation: none !important; }
   .np-moscout-body { mask-image: none; font-size: 8.5px; line-height: 1.3; }
   .np-moscout-head h2 { font-size: 18px; }
+  .np-moscout-headline-sm { font-size: 12px !important; }
   .np-moscout-list { font-size: 7px; line-height: 1.18; }
   .np-flag { font-size: 48px; }
 }
