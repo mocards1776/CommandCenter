@@ -1123,8 +1123,7 @@ mark.rss-hl {
 
 /* ═══════════════════════════════════════════════════════════════════════
    Thompson Times — dense print newspaper
-   Cool paper + near-black ink. Locked US Letter pages; grids never reflow
-   to viewport width (that was crushing spacing inside the app shell).
+   Cool paper + near-black ink. Small type, packed columns, section boxes.
    ═══════════════════════════════════════════════════════════════════════ */
 .newspaper-root {
   --np-paper: #f4f3ef;
@@ -1184,28 +1183,25 @@ mark.rss-hl {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.5rem;
-  width: 100%;
-  overflow-x: auto;
-  padding-bottom: 0.5rem;
+  gap: 1.25rem;
 }
 
 .np-page {
-  /* Locked US Letter — never shrink/reflow with the browser viewport */
+  /* US Letter preview: 8.5 × 11in — lock height so content paginates instead of growing */
   width: 8.5in;
-  min-width: 8.5in;
+  max-width: 100%;
   height: 11in;
-  min-height: 11in;
   max-height: 11in;
+  min-height: 11in;
   box-sizing: border-box;
   background:
     linear-gradient(180deg, #faf9f6 0%, var(--np-paper) 55%, #efeee8 100%);
   color: var(--np-ink);
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.38);
-  padding: 0.26in 0.3in 0.22in;
+  padding: 0.28in 0.28in 0.24in;
   display: flex;
   flex-direction: column;
-  gap: 0.16rem;
+  gap: 0.28rem;
   position: relative;
   overflow: hidden;
 }
@@ -1222,22 +1218,11 @@ mark.rss-hl {
 
 .np-page > * { position: relative; z-index: 1; }
 
-/* Everything between masthead and folio fills the letter sheet evenly */
-.np-page-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 0.16rem;
-}
-
 .np-mast {
   text-align: center;
   border-bottom: 3px double var(--np-ink);
-  padding-bottom: 0.12rem;
-  margin-bottom: 0;
-  flex-shrink: 0;
+  padding-bottom: 0.22rem;
+  margin-bottom: 0.12rem;
 }
 
 .np-mast-top {
@@ -1249,17 +1234,17 @@ mark.rss-hl {
   text-transform: uppercase;
   color: var(--np-muted);
   border-bottom: 1px solid var(--np-rule);
-  padding-bottom: 0.14rem;
-  margin-bottom: 0.14rem;
+  padding-bottom: 0.18rem;
+  margin-bottom: 0.18rem;
 }
 
 .np-flag {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 38px;
-  line-height: 0.88;
-  letter-spacing: -0.03em;
-  margin: 0.04rem 0 0.08rem;
+  font-size: clamp(36px, 8vw, 58px);
+  line-height: 0.86;
+  letter-spacing: -0.035em;
+  margin: 0.08rem 0 0.12rem;
   text-transform: uppercase;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
 }
@@ -1274,7 +1259,7 @@ mark.rss-hl {
   text-transform: uppercase;
   border-top: 1px solid var(--np-ink);
   border-bottom: 1px solid var(--np-ink);
-  padding: 0.16rem 0;
+  padding: 0.2rem 0;
 }
 
 .np-mast-sub .flex-rule {
@@ -1290,7 +1275,7 @@ mark.rss-hl {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--np-accent);
-  margin: 0 0 0.16rem;
+  margin: 0 0 0.2rem;
 }
 
 .np-sec-head {
@@ -1299,8 +1284,8 @@ mark.rss-hl {
   justify-content: space-between;
   gap: 0.35rem;
   border-bottom: 1.5px solid var(--np-ink);
-  padding-bottom: 0.1rem;
-  margin-bottom: 0.2rem;
+  padding-bottom: 0.12rem;
+  margin-bottom: 0.28rem;
 }
 
 .np-sec-head h2 {
@@ -1321,81 +1306,46 @@ mark.rss-hl {
 .np-box {
   border: 1px solid var(--np-rule);
   background: var(--np-box);
-  padding: 0.18rem 0.22rem 0.2rem;
+  padding: 0.26rem 0.3rem 0.28rem;
   min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
 }
 
 .np-front {
   display: grid;
   grid-template-columns: 1.05fr 1.45fr 0.95fr 0.95fr;
-  gap: 0.16rem;
-  align-items: stretch;
-  flex: 1 1 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.np-front > .np-box,
-.np-front > .np-stack {
-  height: auto;
-  min-height: 0;
-  overflow: hidden;
+  gap: 0.28rem;
+  align-items: start;
 }
 
 .np-desk .np-headline {
-  font-size: 14px;
-  line-height: 1.12;
+  font-size: 18px;
 }
 
 .np-duo {
   display: grid;
-  grid-template-columns: 1.35fr 1fr;
-  gap: 0.16rem;
-  flex: 0 0 auto;
-  min-height: 0;
-  overflow: hidden;
-  align-items: start;
-}
-
-.np-duo > .np-box {
-  height: auto;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 0.28rem;
+  margin-top: 0.28rem;
 }
 
 .np-stack {
   display: flex;
   flex-direction: column;
-  gap: 0.16rem;
+  gap: 0.28rem;
   min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  height: 100%;
-}
-
-.np-stack > .np-box {
-  flex: 1 1 0;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .np-ba {
   text-align: center;
-  padding: 0.08rem 0 0.18rem;
+  padding: 0.1rem 0 0.25rem;
   border-bottom: 1px solid var(--np-rule-soft);
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.28rem;
 }
 
 .np-ba strong {
   display: block;
   font-family: var(--font-display);
-  font-size: 26px;
+  font-size: 28px;
   line-height: 0.95;
   font-variant-numeric: tabular-nums;
 }
@@ -1411,7 +1361,7 @@ mark.rss-hl {
 .np-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 0.16rem 0.22rem;
+  gap: 0.2rem 0.25rem;
 }
 
 .np-stats dt {
@@ -1433,19 +1383,16 @@ mark.rss-hl {
   list-style: none;
   margin: 0;
   padding: 0;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .np-list li {
   display: flex;
   gap: 0.3rem;
   align-items: baseline;
-  padding: 0.1rem 0;
+  padding: 0.14rem 0;
   border-bottom: 1px solid var(--np-rule-soft);
-  font-size: 9px;
-  line-height: 1.22;
+  font-size: 9.5px;
+  line-height: 1.25;
 }
 
 .np-list li:last-child { border-bottom: 0; }
@@ -1457,36 +1404,36 @@ mark.rss-hl {
 
 .np-headline {
   font-family: var(--font-display);
-  font-size: 14px;
-  line-height: 1.12;
-  margin: 0 0 0.14rem;
-  letter-spacing: -0.01em;
+  font-size: 22px;
+  line-height: 1.05;
+  margin: 0 0 0.25rem;
+  letter-spacing: -0.015em;
 }
 
 .np-dek {
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--np-muted);
-  margin: 0 0 0.28rem;
-  padding-bottom: 0.22rem;
+  margin: 0 0 0.35rem;
+  padding-bottom: 0.28rem;
   border-bottom: 1px solid var(--np-rule-soft);
 }
 
 .np-columns {
   columns: 2;
-  column-gap: 0.5rem;
+  column-gap: 0.55rem;
   font-family: var(--font-rss);
-  font-size: 9px;
-  line-height: 1.32;
+  font-size: 9.5px;
+  line-height: 1.35;
 }
 
-.np-columns p { margin: 0 0 0.3rem; }
+.np-columns p { margin: 0 0 0.35rem; break-inside: avoid; }
 
 .np-agenda li {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 0.28rem;
-  font-size: 8.5px;
+  gap: 0.3rem;
+  font-size: 9px;
 }
 
 .np-agenda .pri { font-size: 7.5px; color: var(--np-muted); }
@@ -1494,31 +1441,34 @@ mark.rss-hl {
 
 .np-cal li {
   display: grid;
-  grid-template-columns: 3.1rem 1fr;
-  gap: 0.3rem;
-  font-size: 8.5px;
+  grid-template-columns: 3.2rem 1fr;
+  gap: 0.35rem;
+  font-size: 9px;
 }
 
 .np-cal .when {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  font-size: 8px;
+  font-size: 8.5px;
 }
 
 .np-teams {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.14rem;
-  flex: 1;
-  min-height: 0;
-  align-content: start;
-  grid-auto-rows: max-content;
-  overflow: hidden;
+  gap: 0.22rem;
+}
+
+@media (max-width: 1100px) {
+  .np-teams { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .np-teams { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .np-team {
   border: 1px solid var(--np-rule);
-  padding: 0.22rem 0.26rem;
+  padding: 0.28rem 0.32rem;
   background: #fff;
   min-width: 0;
 }
@@ -1526,19 +1476,19 @@ mark.rss-hl {
 .np-team-top {
   display: flex;
   align-items: center;
-  gap: 0.22rem;
-  margin-bottom: 0.1rem;
+  gap: 0.28rem;
+  margin-bottom: 0.15rem;
 }
 
 .np-team-top img {
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   object-fit: contain;
   flex-shrink: 0;
 }
 
 .np-team-name {
-  font-size: 8.5px;
+  font-size: 9px;
   font-weight: 800;
   line-height: 1.1;
   overflow: hidden;
@@ -1547,15 +1497,15 @@ mark.rss-hl {
 }
 
 .np-team-rec {
-  font-size: 7px;
+  font-size: 7.5px;
   color: var(--np-muted);
   letter-spacing: 0.04em;
 }
 
 .np-team-line {
-  font-size: 8px;
-  line-height: 1.18;
-  margin-top: 0.08rem;
+  font-size: 8.5px;
+  line-height: 1.2;
+  margin-top: 0.1rem;
 }
 
 .np-team-line.w { color: #1a6b3c; font-weight: 700; }
@@ -1566,13 +1516,12 @@ mark.rss-hl {
   justify-content: space-between;
   gap: 0.5rem;
   margin-top: auto;
-  padding-top: 0.2rem;
+  padding-top: 0.28rem;
   border-top: 1px solid var(--np-rule);
   font-size: 7.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--np-muted);
-  flex-shrink: 0;
 }
 
 .np-section-mast {
@@ -1581,22 +1530,16 @@ mark.rss-hl {
   justify-content: space-between;
   gap: 0.75rem;
   border-bottom: 2.5px solid var(--np-ink);
-  padding-bottom: 0.12rem;
-  margin-bottom: 0;
-  flex-shrink: 0;
+  padding-bottom: 0.25rem;
+  margin-bottom: 0.3rem;
 }
 
 .np-section-mast h1 {
   font-family: var(--font-display);
-  font-size: 18px;
-  line-height: 0.95;
-  margin: 0.02rem 0 0;
+  font-size: 28px;
+  line-height: 0.92;
+  margin: 0.05rem 0 0;
   text-transform: uppercase;
-}
-
-.np-section-mast-compact h1 {
-  font-size: 12px;
-  letter-spacing: 0.06em;
 }
 
 .np-section-meta {
@@ -1611,105 +1554,49 @@ mark.rss-hl {
 .np-sports {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.18rem;
-  align-content: stretch;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+  gap: 0.22rem;
+  align-content: start;
 }
 
 .np-span-2 { grid-column: 1 / -1; }
 
-.np-sports-desk {
-  grid-template-columns: 1fr;
-  grid-template-rows: minmax(0, 1.05fr) minmax(0, 1.2fr) minmax(0, 0.9fr);
-}
-
-.np-sports-desk > .np-box {
-  grid-column: auto;
-}
-
-.np-sports > .np-box {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.np-sports-boards {
-  grid-template-rows: minmax(0, 1.55fr) minmax(0, 1fr);
-  align-content: stretch;
-}
-
-.np-sports-boards > .np-box:not(.np-span-2) {
-  align-self: stretch;
-}
-
-.np-sports-boards > .np-box.np-span-2 {
-  max-height: none;
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.np-sports-boards > .np-box.np-span-2 .np-sport-block {
-  flex: 0 0 auto;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 0.14rem;
-}
-
-.np-sports-boards > .np-box.np-span-2 .np-scores {
-  flex: 1;
-  align-content: start;
-}
-
 .np-standings-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.16rem;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  align-content: start;
+  gap: 0.2rem;
+}
+
+@media (max-width: 1100px) {
+  .np-sports { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .np-standings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .np-sports { grid-template-columns: 1fr; }
+  .np-standings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .np-standing-box {
   border: 1px solid var(--np-rule-soft);
   background: #fff;
-  padding: 0.12rem 0.14rem;
+  padding: 0.14rem 0.16rem;
   min-width: 0;
-  overflow: hidden;
 }
 
 .np-standing-box .np-table {
-  font-size: 7px;
+  font-size: 7.5px;
 }
 
 .np-standing-box .np-table th,
 .np-standing-box .np-table td {
-  padding: 0.05rem 0.04rem;
+  padding: 0.06rem 0.04rem;
 }
 
 .np-reading {
   display: grid;
   grid-template-columns: 1fr 1.15fr;
-  grid-template-rows: auto 1fr;
-  gap: 0.22rem;
-  align-content: stretch;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.np-reading > .np-box {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
+  gap: 0.28rem;
+  align-content: start;
 }
 
 .np-stats-reading {
@@ -1720,7 +1607,7 @@ mark.rss-hl {
 .np-pages-recent li {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 0.16rem 0.3rem;
+  gap: 0.2rem 0.35rem;
   align-items: baseline;
   font-size: 8.5px;
 }
@@ -1755,23 +1642,15 @@ mark.rss-hl {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 0.28rem;
+  gap: 0.35rem;
 }
 
 .np-moscout-head h2 {
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: 22px;
   line-height: 1.05;
-  margin: 0.1rem 0 0;
+  margin: 0.12rem 0 0;
   letter-spacing: -0.015em;
-}
-
-.np-moscout-headline-sm {
-  font-size: 10.5px !important;
-  line-height: 1.25 !important;
-  font-weight: 700;
-  letter-spacing: 0 !important;
-  margin: 0.06rem 0 0 !important;
 }
 
 .np-moscout-meta {
@@ -1787,20 +1666,16 @@ mark.rss-hl {
   min-height: 0;
   overflow: hidden;
   columns: 2;
-  column-gap: 0.45rem;
-  column-fill: auto;
-  font-size: 9px;
-  line-height: 1.36;
+  column-gap: 0.55rem;
+  font-size: 9.5px;
+  line-height: 1.35;
   text-align: justify;
   hyphens: auto;
-  mask-image: linear-gradient(180deg, #000 0%, #000 94%, transparent 100%);
 }
 
 .np-moscout-body p {
-  margin: 0 0 0.28rem;
-  break-inside: auto;
-  orphans: 2;
-  widows: 2;
+  margin: 0 0 0.45rem;
+  break-inside: avoid;
 }
 
 .np-moscout-list {
@@ -1808,38 +1683,35 @@ mark.rss-hl {
   margin: 0;
   padding: 0;
   columns: 2;
-  column-gap: 0.45rem;
-  font-size: 7.5px;
-  line-height: 1.2;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+  column-gap: 0.4rem;
+  font-size: 6.5px;
+  line-height: 1.15;
 }
 
 .np-moscout-list li {
   break-inside: avoid;
-  padding: 0.08rem 0;
+  padding: 0.04rem 0;
   border-bottom: 1px solid var(--np-rule-soft);
   display: grid;
-  grid-template-columns: 2.4rem 1fr;
-  gap: 0.05rem 0.22rem;
+  grid-template-columns: 2.2rem 1fr;
+  gap: 0.05rem 0.2rem;
 }
 
 .np-moscout-list .when {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  font-size: 7px;
+  font-size: 6px;
   color: var(--np-muted);
 }
 
 .np-moscout-list .t {
-  font-size: 7.5px;
-  line-height: 1.2;
+  font-size: 6.5px;
+  line-height: 1.15;
 }
 
 .np-moscout-list .by {
   grid-column: 2;
-  font-size: 6.5px;
+  font-size: 5.5px;
   color: var(--np-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -1847,8 +1719,8 @@ mark.rss-hl {
 }
 
 .np-score-status {
-  margin-top: 0.08rem;
-  font-size: 6.5px;
+  margin-top: 0.1rem;
+  font-size: 7px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--np-muted);
@@ -1860,7 +1732,7 @@ mark.rss-hl {
 .np-score-team {
   display: flex;
   align-items: baseline;
-  gap: 0.18rem;
+  gap: 0.22rem;
   min-width: 0;
 }
 
@@ -1878,93 +1750,86 @@ mark.rss-hl {
 .np-score-num {
   display: inline-flex;
   align-items: baseline;
-  gap: 0.16rem;
+  gap: 0.2rem;
   font-weight: 700;
 }
 
 .np-score-num .he {
-  font-size: 6px;
+  font-size: 6.5px;
   font-weight: 600;
   color: var(--np-muted);
 }
 
 .np-score-pitch,
 .np-score-detail {
-  margin-top: 0.04rem;
-  font-size: 6px;
-  line-height: 1.15;
+  margin-top: 0.06rem;
+  font-size: 6.5px;
+  line-height: 1.2;
   color: var(--np-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.np-upcoming {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
 .np-upcoming li {
   display: grid;
-  grid-template-columns: 3.2rem 1fr;
-  gap: 0.26rem;
-  font-size: 8px;
+  grid-template-columns: 3.4rem 1fr;
+  gap: 0.3rem;
+  font-size: 8.5px;
 }
 
 .np-upcoming .when {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  font-size: 7.5px;
+  font-size: 8px;
 }
 
-.np-sport-block { margin-bottom: 0.22rem; }
+.np-sport-block { margin-bottom: 0.35rem; }
 .np-sport-block:last-child { margin-bottom: 0; }
 
 .np-sport-label {
-  font-size: 7px;
+  font-size: 7.5px;
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--np-accent);
   border-bottom: 1px solid var(--np-rule);
-  margin-bottom: 0.14rem;
-  padding-bottom: 0.06rem;
+  margin-bottom: 0.2rem;
+  padding-bottom: 0.08rem;
 }
 
 .np-scores {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.1rem;
-  flex: 1;
-  min-height: 0;
-  align-content: start;
-  overflow: hidden;
-}
-
-.np-sports-boards > .np-box:not(.np-span-2) .np-scores {
-  align-content: stretch;
-}
-
-/* Finals strip across the full page — denser 5-up */
-.np-sports-boards > .np-box.np-span-2 .np-scores {
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.16rem;
+}
+
+/* Inside a 4-up scoreboard cell, pack 2 score chips */
+.np-sports > .np-box:not(.np-span-2) .np-scores {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 720px) {
+  .np-scores,
+  .np-sports > .np-box:not(.np-span-2) .np-scores {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .np-score {
   border: 1px solid var(--np-rule-soft);
-  padding: 0.1rem 0.14rem;
+  padding: 0.14rem 0.18rem;
   background: #fff;
-  font-size: 7.5px;
+  font-size: 8px;
   min-width: 0;
 }
 
 .np-score-row {
   display: flex;
   justify-content: space-between;
-  gap: 0.28rem;
+  gap: 0.35rem;
   font-variant-numeric: tabular-nums;
-  line-height: 1.15;
+  line-height: 1.2;
 }
 
 .np-score-row.win { font-weight: 800; }
@@ -1972,43 +1837,44 @@ mark.rss-hl {
 .np-players {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0 0.28rem;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  align-content: start;
+  gap: 0 0.35rem;
+}
+
+@media (max-width: 900px) {
+  .np-players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .np-players li {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.04rem;
-  padding: 0.1rem 0;
+  gap: 0.05rem;
+  padding: 0.14rem 0;
   border-bottom: 1px solid var(--np-rule-soft);
-  font-size: 7.5px;
+  font-size: 8px;
   min-width: 0;
+  break-inside: avoid;
 }
 
-.np-players strong { font-size: 9px; }
+.np-players strong { font-size: 9.5px; }
 .np-players .line { font-variant-numeric: tabular-nums; }
-.np-players .meta { color: var(--np-muted); font-size: 7.5px; }
+.np-players .meta { color: var(--np-muted); font-size: 8px; }
 
 .np-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 8px;
+  font-size: 8.5px;
   font-variant-numeric: tabular-nums;
 }
 
 .np-table th,
 .np-table td {
-  padding: 0.1rem 0.08rem;
+  padding: 0.12rem 0.1rem;
   border-bottom: 1px solid var(--np-rule-soft);
   text-align: left;
 }
 
 .np-table th {
-  font-size: 6.5px;
+  font-size: 7px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--np-muted);
@@ -2020,25 +1886,33 @@ mark.rss-hl {
 .np-leaders {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.16rem;
+  gap: 0.2rem;
+}
+
+@media (max-width: 1100px) {
+  .np-leaders { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .np-leaders { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .np-leader-col h3 {
-  font-size: 7px;
+  font-size: 7.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--np-accent);
-  margin: 0 0 0.12rem;
+  margin: 0 0 0.15rem;
   border-bottom: 1px solid var(--np-rule);
-  padding-bottom: 0.06rem;
+  padding-bottom: 0.08rem;
 }
 
 .np-leader-col li {
   display: flex;
   justify-content: space-between;
-  gap: 0.22rem;
-  font-size: 8px;
-  padding: 0.08rem 0;
+  gap: 0.25rem;
+  font-size: 8.5px;
+  padding: 0.1rem 0;
   border-bottom: 1px solid var(--np-rule-soft);
 }
 
@@ -2049,19 +1923,19 @@ mark.rss-hl {
 .np-wx {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  margin-bottom: 0.18rem;
+  gap: 0.35rem;
+  margin-bottom: 0.25rem;
 }
 .np-wx .temp {
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: 22px;
   line-height: 1;
 }
 .np-wx-days li {
   display: grid;
   grid-template-columns: 1.4fr 0.6fr 1.4fr;
-  font-size: 8px;
-  padding: 0.08rem 0;
+  font-size: 8.5px;
+  padding: 0.1rem 0;
   border-bottom: 1px solid var(--np-rule-soft);
   font-variant-numeric: tabular-nums;
 }
@@ -2073,13 +1947,22 @@ mark.rss-hl {
   to { opacity: 1; transform: none; }
 }
 
-.np-continued {
-  margin: 0.2rem 0 0;
-  font-size: 7.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--np-muted);
-  text-align: right;
+@media (max-width: 900px) {
+  .np-front { grid-template-columns: 1fr 1.2fr; }
+  .np-front > :nth-child(n + 3) { grid-column: 1 / -1; }
+  .np-duo,
+  .np-reading {
+    grid-template-columns: 1fr;
+  }
+  .np-moscout-list { columns: 1; }
+  .np-columns { columns: 1; }
+}
+
+@media (max-width: 640px) {
+  .np-front {
+    grid-template-columns: 1fr;
+  }
+  .np-span-2 { grid-column: auto; }
 }
 
 @media print {
@@ -2091,14 +1974,10 @@ mark.rss-hl {
   nav,
   [data-rht-toaster] { display: none !important; }
   .newspaper-root { padding: 0 !important; }
-  .newspaper-edition {
-    gap: 0;
-    display: block;
-    overflow: visible;
-  }
+  .newspaper-edition { gap: 0; display: block; }
   .np-page {
+    /* Fill the letter sheet under @page margins */
     width: 7.94in !important;
-    min-width: 7.94in !important;
     max-width: 7.94in !important;
     height: 10.44in !important;
     max-height: 10.44in !important;
@@ -2113,11 +1992,28 @@ mark.rss-hl {
   .np-page:last-child { page-break-after: auto; break-after: auto; }
   .np-page::before { display: none; }
   .np-anim-mast, .np-anim-body { animation: none !important; }
-  .np-moscout-body { mask-image: none; font-size: 8.5px; line-height: 1.3; }
-  .np-moscout-head h2 { font-size: 18px; }
-  .np-moscout-headline-sm { font-size: 10px !important; }
-  .np-moscout-list { font-size: 7px; line-height: 1.18; }
-  .np-flag { font-size: 48px; }
+
+  /* Keep multi-box grids on letter — don't collapse like mobile */
+  .np-front {
+    grid-template-columns: 1.05fr 1.45fr 0.95fr 0.95fr !important;
+  }
+  .np-duo { grid-template-columns: 1.25fr 1fr !important; }
+  .np-sports { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  .np-span-2 { grid-column: 1 / -1 !important; }
+  .np-standings-grid { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+  .np-scores { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+  .np-sports > .np-box:not(.np-span-2) .np-scores {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .np-leaders { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+  .np-teams { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+  .np-reading { grid-template-columns: 1fr 1.15fr !important; }
+  .np-players { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+
+  .np-moscout-list { font-size: 6.5px; line-height: 1.12; columns: 2; }
+  .np-moscout-list li { padding: 0.03rem 0; }
+  .np-moscout-body { font-size: 9px; line-height: 1.32; columns: 2; }
+  .np-moscout-head h2 { font-size: 20px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
