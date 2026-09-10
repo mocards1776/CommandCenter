@@ -133,9 +133,9 @@ function pickLeaderBoards(boards: MlbLeaderBoard[] | undefined) {
   for (const key of want) {
     const b = boards.find((x) => x.key === key);
     if (b) picked.push(b);
-    if (picked.length >= 6) break;
+    if (picked.length >= 5) break;
   }
-  return picked.length ? picked : boards.slice(0, 6);
+  return picked.length ? picked : boards.slice(0, 5);
 }
 
 function teamLine(snap: TeamSnapshot): { text: string; cls?: string } {
@@ -1271,7 +1271,7 @@ export default function DailyNewspaperPage() {
               )}
             </section>
 
-            <section className="np-box">
+            <section className="np-box np-span-2">
               <div className="np-sec-head">
                 <h2>Finals</h2>
                 <span>{recap.data?.date ?? "Yesterday"}</span>
@@ -1307,7 +1307,7 @@ export default function DailyNewspaperPage() {
               )}
             </section>
 
-            <section className="np-box">
+            <section className="np-box np-span-2">
               <div className="np-sec-head">
                 <h2>Followed players</h2>
                 <span>Season stats</span>
