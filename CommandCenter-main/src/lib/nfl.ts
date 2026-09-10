@@ -202,6 +202,40 @@ export type NflGameDetail = NflScoreGame & {
   venueDetail: string | null;
 };
 
+export type NflPlayerTeamStop = {
+  teamId: string | null;
+  teamName: string;
+  teamLogo: string | null;
+  seasons: string | null;
+};
+
+export type NflPlayerAward = {
+  id: string;
+  name: string;
+  displayCount: string | null;
+  seasons: string[];
+};
+
+export type NflPlayerStatCategory = {
+  name: string;
+  stats: { label: string; value: string }[];
+};
+
+export type NflPlayerGameLogCategory = {
+  name: string;
+  labels: string[];
+  rows: {
+    eventId: string | null;
+    date: string | null;
+    week: number | null;
+    opponent: string;
+    atVs: string | null;
+    result: string;
+    score: string | null;
+    stats: { label: string; value: string }[];
+  }[];
+};
+
 export type NflPlayerProfile = {
   id: string;
   name: string;
@@ -225,8 +259,16 @@ export type NflPlayerProfile = {
   /** Long-form bio when ESPN provides one. */
   bio: string | null;
   status: string | null;
+  /** Club stops from ESPN bio (career team history). */
+  teamHistory: NflPlayerTeamStop[];
+  awards: NflPlayerAward[];
   seasonStats: { label: string; value: string }[];
-  statCategories: { name: string; stats: { label: string; value: string }[] }[];
+  /** Focus / current-season categories (first seasonSplits entry). */
+  statCategories: NflPlayerStatCategory[];
+  /** Year tabs + Career when ESPN career stats are available. */
+  seasonSplits: { season: string; categories: NflPlayerStatCategory[] }[];
+  /** Category game-log tables (Passing / Rushing / …). */
+  gameLogCategories: NflPlayerGameLogCategory[];
   recentGames: { label: string; result: string; line: string }[];
   news: { headline: string; description: string; image: string | null; href: string | null }[];
 };
@@ -859,20 +901,343 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
   };
 }
 
+/** NFL season year: Sep–Dec = calendar year; Jan–Aug = prior year (regular season + playoffs). */
+export function nflSeasonYear(now = new Date()): number {
+  const y = now.getFullYear();
+  return now.getMonth() >= 8 ? y : y - 1;
+}
+
+type NflGameLogEventMeta = {
+  id?: string;
+  week?: number;
+  gameDate?: string;
+  atVs?: string;
+  gameResult?: string;
+  score?: string;
+  opponent?: { displayName?: string; abbreviation?: string };
+};
+
+function parseNflGameLogEvents(raw: unknown): Record<string, NflGameLogEventMeta> {
+  if (!raw) return {};
+  if (Array.isArray(raw)) {
+    const out: Record<string, NflGameLogEventMeta> = {};
+    for (const ev of raw) {
+      const id = String((ev as NflGameLogEventMeta).id ?? "");
+      if (id) out[id] = ev as NflGameLogEventMeta;
+    }
+    return out;
+  }
+  if (typeof raw === "object") return raw as Record<string, NflGameLogEventMeta>;
+  return {};
+}
+
+function buildNflStatCategories(
+  labels: string[],
+  values: string[],
+  catsMeta: { name?: string; displayName?: string; count?: number }[],
+): NflPlayerStatCategory[] {
+  let offset = 0;
+  const categories: NflPlayerStatCategory[] = [];
+  for (const cat of catsMeta) {
+    const count = cat.count ?? 0;
+    categories.push({
+      name: cat.displayName ?? cat.name ?? "Stats",
+      stats: labels.slice(offset, offset + count).map((label, i) => ({
+        label,
+        value: values[offset + i] ?? "—",
+      })),
+    });
+    offset += count;
+  }
+  return categories;
+}
+
+function yearFromSeasonLabel(label: string): number | null {
+  const m = String(label).match(/(20\d{2})/);
+  return m ? Number(m[1]) : null;
+}
+
+async function fetchNflPlayerTeamHistory(playerId: string): Promise<{
+  teamHistory: NflPlayerTeamStop[];
+  awards: NflPlayerAward[];
+}> {
+  try {
+    const res = await fetch(`${ESPN_WEB}/athletes/${encodeURIComponent(playerId)}/bio`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return { teamHistory: [], awards: [] };
+    const raw = (await res.json()) as {
+      teamHistory?: {
+        id?: string;
+        displayName?: string;
+        logo?: string;
+        seasons?: string;
+        slug?: string;
+      }[];
+      awards?: {
+        id?: string | number;
+        name?: string;
+        displayCount?: string;
+        seasons?: string[];
+      }[];
+    };
+    const teamHistory = (raw.teamHistory ?? [])
+      .map((t) => ({
+        teamId: t.id != null ? String(t.id) : null,
+        teamName: (t.displayName ?? "").trim(),
+        teamLogo:
+          t.logo ??
+          (t.slug
+            ? `https://a.espncdn.com/i/teamlogos/nfl/500/${t.slug.split("-").pop()}.png`
+            : null),
+        seasons: t.seasons?.trim() || null,
+      }))
+      .filter((t) => t.teamName);
+    const awards = (raw.awards ?? [])
+      .map((a) => ({
+        id: a.id != null ? String(a.id) : a.name ?? "",
+        name: (a.name ?? "").trim(),
+        displayCount: a.displayCount?.trim() || null,
+        seasons: Array.isArray(a.seasons) ? a.seasons.map(String) : [],
+      }))
+      .filter((a) => a.name);
+    return { teamHistory, awards };
+  } catch {
+    return { teamHistory: [], awards: [] };
+  }
+}
+
+type EspnCareerStatsPayload = {
+  filters?: { name?: string; value?: string; options?: { value?: string; displayValue?: string }[] }[];
+  categories?: {
+    name?: string;
+    displayName?: string;
+    labels?: string[];
+    totals?: string[];
+    statistics?: {
+      season?: { year?: number; displayName?: string };
+      stats?: string[];
+    }[];
+  }[];
+};
+
+function buildNflSeasonSplitsFromCareerStats(
+  payload: EspnCareerStatsPayload | null,
+  fallback: NflPlayerStatCategory[],
+  seasonYear: number,
+): { season: string; categories: NflPlayerStatCategory[] }[] {
+  const cats = payload?.categories ?? [];
+  if (!cats.length) {
+    return fallback.length ? [{ season: String(seasonYear), categories: fallback }] : [];
+  }
+
+  const yearSet = new Set<number>();
+  for (const cat of cats) {
+    for (const row of cat.statistics ?? []) {
+      const y = row.season?.year;
+      if (typeof y === "number" && Number.isFinite(y)) yearSet.add(y);
+    }
+  }
+  const years = [...yearSet].sort((a, b) => b - a);
+  const splits: { season: string; categories: NflPlayerStatCategory[] }[] = years
+    .map((year) => ({
+      season: String(year),
+      categories: cats
+        .map((cat) => {
+          const row = (cat.statistics ?? []).find((r) => r.season?.year === year);
+          if (!row) return null;
+          const labels = cat.labels ?? [];
+          const values = row.stats ?? [];
+          // Skip empty / all-dash rows for positions that didn't play that category.
+          if (!values.some((v) => v && v !== "-" && v !== "0" && v !== "—")) return null;
+          return {
+            name: cat.displayName ?? cat.name ?? "Stats",
+            stats: labels.map((label, i) => ({ label, value: values[i] ?? "—" })),
+          };
+        })
+        .filter((c): c is NflPlayerStatCategory => Boolean(c)),
+    }))
+    .filter((sp) => sp.categories.length > 0);
+
+  const careerCats = cats
+    .map((cat) => {
+      const labels = cat.labels ?? [];
+      const values = cat.totals ?? [];
+      if (!values.length) return null;
+      return {
+        name: cat.displayName ?? cat.name ?? "Stats",
+        stats: labels.map((label, i) => ({ label, value: values[i] ?? "—" })),
+      };
+    })
+    .filter((c): c is NflPlayerStatCategory => Boolean(c));
+  if (careerCats.length) {
+    splits.push({ season: "Career", categories: careerCats });
+  }
+
+  if (!splits.length && fallback.length) {
+    return [{ season: String(seasonYear), categories: fallback }];
+  }
+
+  // Prefer current season first when present.
+  const currentIdx = splits.findIndex((sp) => yearFromSeasonLabel(sp.season) === seasonYear);
+  if (currentIdx > 0) {
+    const [cur] = splits.splice(currentIdx, 1);
+    splits.unshift(cur);
+  }
+  return splits;
+}
+
+function buildNflGameLogCategories(opts: {
+  labels: string[];
+  catsMeta: { name?: string; displayName?: string; count?: number }[];
+  eventMeta: Record<string, NflGameLogEventMeta>;
+  seasonTypes?: {
+    displayName?: string;
+    categories?: {
+      displayName?: string;
+      events?: { eventId?: string; stats?: string[] }[];
+    }[];
+  }[];
+  overviewBlocks?: {
+    displayName?: string;
+    labels?: string[];
+    events?: { eventId?: string; stats?: string[] }[];
+  }[];
+}): NflPlayerGameLogCategory[] {
+  const { labels, catsMeta, eventMeta } = opts;
+
+  // Prefer full-season gamelog payload when available.
+  const seasonBlock = opts.seasonTypes?.[0]?.categories?.[0];
+  if (seasonBlock?.events?.length && catsMeta.length) {
+    const rows = seasonBlock.events.map((ev) => {
+      const meta = eventMeta[String(ev.eventId ?? "")] ?? {};
+      const stats = ev.stats ?? [];
+      const opponent =
+        meta.opponent?.abbreviation ?? meta.opponent?.displayName ?? "—";
+      const result = `${meta.gameResult ?? ""} ${meta.score ?? ""}`.trim() || "—";
+      return {
+        eventId: ev.eventId != null ? String(ev.eventId) : null,
+        date: meta.gameDate ?? null,
+        week: meta.week ?? null,
+        opponent,
+        atVs: meta.atVs ?? null,
+        result,
+        score: meta.score ?? null,
+        stats: labels.map((label, i) => ({
+          label,
+          value: stats[i] ?? "—",
+        })),
+      };
+    });
+
+    // Split flat per-game stats into category tables (Passing / Rushing / …).
+    let offset = 0;
+    const out: NflPlayerGameLogCategory[] = [];
+    for (const cat of catsMeta) {
+      const count = cat.count ?? 0;
+      const catLabels = labels.slice(offset, offset + count);
+      out.push({
+        name: cat.displayName ?? cat.name ?? "Stats",
+        labels: catLabels,
+        rows: rows.map((row) => ({
+          ...row,
+          stats: row.stats.slice(offset, offset + count),
+        })),
+      });
+      offset += count;
+    }
+    return out.filter((c) => c.rows.length > 0);
+  }
+
+  // Fallback: overview recent-game blocks (already split by category).
+  return (opts.overviewBlocks ?? []).map((block) => {
+    const blockLabels = block.labels ?? labels;
+    const rows = (block.events ?? []).map((ev) => {
+      const meta = eventMeta[String(ev.eventId ?? "")] ?? {};
+      const stats = ev.stats ?? [];
+      const opponent =
+        meta.opponent?.abbreviation ?? meta.opponent?.displayName ?? "—";
+      const result = `${meta.gameResult ?? ""} ${meta.score ?? ""}`.trim() || "—";
+      return {
+        eventId: ev.eventId != null ? String(ev.eventId) : null,
+        date: meta.gameDate ?? null,
+        week: meta.week ?? null,
+        opponent,
+        atVs: meta.atVs ?? null,
+        result,
+        score: meta.score ?? null,
+        stats: blockLabels.map((label, i) => ({
+          label,
+          value: stats[i] ?? "—",
+        })),
+      };
+    });
+    return {
+      name: block.displayName ?? "Stats",
+      labels: blockLabels,
+      rows,
+    };
+  });
+}
+
 export async function fetchNflPlayerProfile(playerId: string): Promise<NflPlayerProfile> {
   const id = String(playerId);
-  const [athleteRes, overviewRes, coreRes] = await Promise.all([
-    fetch(`${ESPN_WEB}/athletes/${id}`, { headers: { Accept: "application/json" } }),
-    fetch(`${ESPN_WEB}/athletes/${id}/overview`, { headers: { Accept: "application/json" } }),
-    fetch(
-      `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/${id}?lang=en&region=us`,
-      { headers: { Accept: "application/json" } },
-    ).catch(() => null),
-  ]);
+  const seasonYear = nflSeasonYear();
+  const [athleteRes, overviewRes, coreRes, bioBundle, careerStatsRes, gameLogRes] =
+    await Promise.all([
+      fetch(`${ESPN_WEB}/athletes/${id}`, { headers: { Accept: "application/json" } }),
+      fetch(`${ESPN_WEB}/athletes/${id}/overview`, { headers: { Accept: "application/json" } }),
+      fetch(
+        `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${seasonYear}/athletes/${id}?lang=en&region=us`,
+        { headers: { Accept: "application/json" } },
+      ).catch(() => null),
+      fetchNflPlayerTeamHistory(id),
+      fetch(`${ESPN_WEB}/athletes/${id}/stats`, { headers: { Accept: "application/json" } }).catch(
+        () => null,
+      ),
+      fetch(
+        `${ESPN_WEB}/athletes/${id}/gamelog?season=${seasonYear}`,
+        { headers: { Accept: "application/json" } },
+      ).catch(() => null),
+    ]);
   if (!athleteRes.ok) throw new Error(`NFL player ${athleteRes.status}`);
   const raw = (await athleteRes.json()) as { athlete?: Record<string, unknown> };
   const overview = overviewRes.ok ? ((await overviewRes.json()) as Record<string, unknown>) : {};
   const core = coreRes && coreRes.ok ? ((await coreRes.json()) as Record<string, unknown>) : {};
+  const careerStats =
+    careerStatsRes && careerStatsRes.ok
+      ? ((await careerStatsRes.json()) as EspnCareerStatsPayload)
+      : null;
+  type NflGameLogPayload = {
+    labels?: string[];
+    categories?: { name?: string; displayName?: string; count?: number }[];
+    events?: unknown;
+    seasonTypes?: {
+      displayName?: string;
+      categories?: {
+        displayName?: string;
+        events?: { eventId?: string; stats?: string[] }[];
+      }[];
+    }[];
+    filters?: { name?: string; value?: string }[];
+  };
+  let gameLogPayload: NflGameLogPayload | null = null;
+  if (gameLogRes && gameLogRes.ok) {
+    gameLogPayload = (await gameLogRes.json()) as NflGameLogPayload;
+  } else {
+    // Retry with ESPN's default season if our calendar guess misses.
+    try {
+      const retry = await fetch(`${ESPN_WEB}/athletes/${id}/gamelog`, {
+        headers: { Accept: "application/json" },
+      });
+      if (retry.ok) {
+        gameLogPayload = (await retry.json()) as NflGameLogPayload;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   const a = { ...core, ...(raw.athlete ?? {}) } as Record<string, unknown>;
   const team = (a.team ?? {}) as {
     id?: string;
@@ -909,63 +1274,131 @@ export async function fetchNflPlayerProfile(playerId: string): Promise<NflPlayer
 
   const statistics = overview.statistics as
     | {
+        displayName?: string;
         labels?: string[];
         categories?: { name?: string; displayName?: string; count?: number }[];
-        splits?: { stats?: string[] }[];
+        splits?: { displayName?: string; type?: string; stats?: string[] }[];
       }
     | undefined;
-  const labels = statistics?.labels ?? [];
-  const values = statistics?.splits?.[0]?.stats ?? [];
+  const overviewLabels = statistics?.labels ?? [];
   const catsMeta = statistics?.categories ?? [];
-  let offset = 0;
-  const statCategories: NflPlayerProfile["statCategories"] = [];
-  for (const cat of catsMeta) {
-    const count = cat.count ?? 0;
-    const sliceLabels = labels.slice(offset, offset + count);
-    const sliceValues = values.slice(offset, offset + count);
-    offset += count;
-    statCategories.push({
-      name: cat.displayName ?? cat.name ?? "Stats",
-      stats: sliceLabels.map((label, i) => ({ label, value: sliceValues[i] ?? "—" })),
-    });
+  const regularSplit =
+    statistics?.splits?.find((s) => /regular/i.test(s.displayName ?? "")) ??
+    statistics?.splits?.[0];
+  const overviewCategories = buildNflStatCategories(
+    overviewLabels,
+    regularSplit?.stats ?? [],
+    catsMeta,
+  );
+
+  const filterSeason = Number(
+    gameLogPayload?.filters?.find((f) => f.name === "season")?.value ??
+      careerStats?.filters?.find((f) => f.name === "season")?.value ??
+      "",
+  );
+  const effectiveSeason =
+    yearFromSeasonLabel(String(statistics?.displayName ?? "")) ??
+    (Number.isFinite(filterSeason) && filterSeason > 0 ? filterSeason : seasonYear);
+
+  let seasonSplits = buildNflSeasonSplitsFromCareerStats(
+    careerStats,
+    overviewCategories,
+    effectiveSeason,
+  );
+  // Ensure current overview numbers surface under the current year when career stats lag.
+  if (overviewCategories.length) {
+    const idx = seasonSplits.findIndex(
+      (sp) => yearFromSeasonLabel(sp.season) === effectiveSeason,
+    );
+    if (idx >= 0) {
+      seasonSplits[idx] = { season: String(effectiveSeason), categories: overviewCategories };
+    } else if (!seasonSplits.some((sp) => /^\d{4}$/.test(sp.season))) {
+      seasonSplits = [{ season: String(effectiveSeason), categories: overviewCategories }, ...seasonSplits];
+    }
   }
 
+  const focusSplit = seasonSplits[0];
+  const statCategories = focusSplit?.categories ?? overviewCategories;
   const seasonStats =
-    summaryStats.length > 0 ? summaryStats : (statCategories[0]?.stats.slice(0, 8) ?? []);
+    yearFromSeasonLabel(focusSplit?.season ?? "") === effectiveSeason
+      ? (statCategories[0]?.stats.slice(0, 8) ??
+        (summaryStats.length ? summaryStats : []))
+      : summaryStats.length
+        ? summaryStats
+        : (statCategories[0]?.stats.slice(0, 8) ?? []);
 
-  const gameLog = overview.gameLog as
+  const overviewGameLog = overview.gameLog as
     | {
-        events?: {
-          week?: number;
-          atVs?: string;
-          opponent?: { abbreviation?: string };
-          score?: string;
-          gameResult?: string;
-          stats?: string[];
+        events?: unknown;
+        statistics?: {
+          displayName?: string;
+          labels?: string[];
+          events?: { eventId?: string; stats?: string[] }[];
         }[];
       }
     | undefined;
-  const recentGames: NflPlayerProfile["recentGames"] = (gameLog?.events ?? []).slice(0, 8).map((g) => ({
-    label: `Wk ${g.week ?? "—"} ${g.atVs ?? ""} ${g.opponent?.abbreviation ?? ""}`.trim(),
-    result: `${g.gameResult ?? ""} ${g.score ?? ""}`.trim() || "—",
-    line: (g.stats ?? []).slice(0, 5).join(" · "),
-  }));
+
+  const gameLogLabels = gameLogPayload?.labels ?? overviewLabels;
+  const gameLogCatsMeta = gameLogPayload?.categories ?? catsMeta;
+  const eventMeta = {
+    ...parseNflGameLogEvents(overviewGameLog?.events),
+    ...parseNflGameLogEvents(gameLogPayload?.events),
+  };
+  const gameLogCategories = buildNflGameLogCategories({
+    labels: gameLogLabels,
+    catsMeta: gameLogCatsMeta,
+    eventMeta,
+    seasonTypes: gameLogPayload?.seasonTypes,
+    overviewBlocks: overviewGameLog?.statistics,
+  });
+
+  const recentGames: NflPlayerProfile["recentGames"] = (gameLogCategories[0]?.rows ?? [])
+    .slice(0, 8)
+    .map((row) => ({
+      label:
+        row.week != null
+          ? `Wk ${row.week} ${row.atVs ?? ""} ${row.opponent}`.trim()
+          : row.opponent,
+      result: row.result,
+      line: row.stats
+        .slice(0, 5)
+        .map((s) => s.value)
+        .join(" · "),
+    }));
 
   const newsRaw = (overview.news ?? []) as {
     headline?: string;
     description?: string;
     images?: { url?: string }[];
-    links?: { web?: { href?: string } };
+    links?: { href?: string; web?: { href?: string } }[] | { web?: { href?: string } };
   }[];
   const news = (Array.isArray(newsRaw) ? newsRaw : [])
     .slice(0, 8)
-    .map((n) => ({
-      headline: n.headline ?? "",
-      description: n.description ?? "",
-      image: n.images?.[0]?.url ?? null,
-      href: n.links?.web?.href ?? null,
-    }))
+    .map((n) => {
+      const links = n.links;
+      const href = Array.isArray(links)
+        ? (links[0]?.href ?? links[0]?.web?.href ?? null)
+        : (links?.web?.href ?? null);
+      return {
+        headline: n.headline ?? "",
+        description: n.description ?? "",
+        image: n.images?.[0]?.url ?? null,
+        href,
+      };
+    })
     .filter((n) => n.headline);
+
+  let teamHistory = bioBundle.teamHistory;
+  if (!teamHistory.length && team.id) {
+    teamHistory = [
+      {
+        teamId: team.id,
+        teamName: team.displayName ?? team.abbreviation ?? "Team",
+        teamLogo: team.logos?.[0]?.href ?? (team.abbreviation ? nflTeamLogo(team.abbreviation) : null),
+        seasons: null,
+      },
+    ];
+  }
 
   return {
     id,
@@ -989,8 +1422,12 @@ export async function fetchNflPlayerProfile(playerId: string): Promise<NflPlayer
     draft,
     bio,
     status: status ? String(status) : null,
+    teamHistory,
+    awards: bioBundle.awards,
     seasonStats,
     statCategories,
+    seasonSplits,
+    gameLogCategories,
     recentGames,
     news,
   };
