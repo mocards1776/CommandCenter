@@ -95,7 +95,7 @@ const MOSCOUT = RSS_FEEDS.find((f) => f.id === "moscout")!;
 /** Most recent Missouri Scout story only. */
 const MOSCOUT_LEAD_COUNT = 1;
 /** Words that fit a letter page under a compact mast + folio. */
-const MOSCOUT_WORDS_PER_PAGE = 1100;
+const MOSCOUT_WORDS_PER_PAGE = 1400;
 
 type PlayerSeasonCard = {
   playerId: string;
@@ -509,7 +509,7 @@ export default function DailyNewspaperPage() {
     queryKey: ["tt-team-snaps", teamFavs.map((t) => t.key).join(",")],
     queryFn: async () => {
       const rows = await Promise.all(
-        teamFavs.slice(0, 16).map(async (fav) => {
+        teamFavs.slice(0, 20).map(async (fav) => {
           try {
             return await fetchTeamSnapshot(fav);
           } catch {
@@ -1028,7 +1028,7 @@ export default function DailyNewspaperPage() {
 
   function renderEvents(list: CalendarEvent[], empty: string) {
     if (!list.length) return <li className="np-muted">{empty}</li>;
-    return list.slice(0, 8).map((e) => (
+    return list.slice(0, 10).map((e) => (
       <li key={e.id}>
         <span className="when">{formatEventTime(e)}</span>
         <span className="t">{e.title}</span>
@@ -1040,7 +1040,7 @@ export default function DailyNewspaperPage() {
     if (!games?.length) return <p className="np-muted">No MLB games today.</p>;
     return (
       <div className="np-scores">
-        {games.slice(0, 6).map((g) => (
+        {games.slice(0, 10).map((g) => (
           <ScoreCell
             key={g.id}
             away={{
@@ -1073,7 +1073,7 @@ export default function DailyNewspaperPage() {
     if (!games?.length) return <p className="np-muted">No NFL games today.</p>;
     return (
       <div className="np-scores">
-        {games.slice(0, 6).map((g) => (
+        {games.slice(0, 10).map((g) => (
           <ScoreCell
             key={g.id}
             away={{
@@ -1100,7 +1100,7 @@ export default function DailyNewspaperPage() {
     if (!games?.length) return <p className="np-muted">No CFB games today.</p>;
     return (
       <div className="np-scores">
-        {games.slice(0, 6).map((g) => (
+        {games.slice(0, 10).map((g) => (
           <ScoreCell
             key={g.id}
             away={{
@@ -1127,7 +1127,7 @@ export default function DailyNewspaperPage() {
     if (!games?.length) return <p className="np-muted">No soccer matches today.</p>;
     return (
       <div className="np-scores">
-        {games.slice(0, 6).map((g) => (
+        {games.slice(0, 10).map((g) => (
           <ScoreCell
             key={g.id}
             away={{
@@ -1261,7 +1261,7 @@ export default function DailyNewspaperPage() {
                     <span>{tomorrowEvents.length}</span>
                   </div>
                   <ul className="np-list np-cal">
-                    {tomorrowEvents.slice(0, 5).map((e) => (
+                    {tomorrowEvents.slice(0, 8).map((e) => (
                       <li key={e.id}>
                         <span className="when">{formatEventTime(e)}</span>
                         <span className="t">{e.title}</span>
@@ -1283,7 +1283,7 @@ export default function DailyNewspaperPage() {
                 </span>
               </div>
               <ul className="np-list np-agenda">
-                {[...overdue, ...dueToday].slice(0, 10).map((t) => (
+                {[...overdue, ...dueToday].slice(0, 14).map((t) => (
                   <li key={t.id} className={cn(isOverdue(t.due?.date) && "late")}>
                     <span className="pri">P{5 - t.priority}</span>
                     <span className="t">{t.content}</span>
@@ -1311,7 +1311,7 @@ export default function DailyNewspaperPage() {
                       </div>
                     </div>
                     <ul className="np-list np-wx-days">
-                      {weather.data.daily.slice(0, 3).map((d) => {
+                      {weather.data.daily.slice(0, 4).map((d) => {
                         const label = new Date(`${d.date}T12:00:00`).toLocaleDateString("en-US", {
                           timeZone: weather.data!.timezone,
                           weekday: "short",
@@ -1371,7 +1371,7 @@ export default function DailyNewspaperPage() {
             <section className="np-box">
               <p className="np-kicker">Habits</p>
               <ul className="np-list">
-                {(habitsDue.length ? habitsDue : habits ?? []).slice(0, 8).map((h) => (
+                {(habitsDue.length ? habitsDue : habits ?? []).slice(0, 12).map((h) => (
                   <li key={h.id} className={cn(h.completedToday && "np-done")}>
                     <span className="check">{h.completedToday ? "■" : "□"}</span>
                     <span className="t">{h.name}</span>
@@ -1390,7 +1390,7 @@ export default function DailyNewspaperPage() {
                 <span>{inSeasonSnaps.length} in season</span>
               </div>
               <div className="np-teams">
-                {inSeasonSnaps.slice(0, 10).map((snap) => {
+                {inSeasonSnaps.slice(0, 15).map((snap) => {
                   const line = teamLine(snap);
                   const fav = teamFavs.find((f) => f.key === snap.key);
                   return (
@@ -1421,7 +1421,7 @@ export default function DailyNewspaperPage() {
               </div>
               <ul className="np-list np-upcoming">
                 {upcomingFromTeams.length
-                  ? upcomingFromTeams.slice(0, 10).map((u) => (
+                  ? upcomingFromTeams.slice(0, 14).map((u) => (
                       <li key={u.key}>
                         <span className="when">{u.when || "TBD"}</span>
                         <span className="t">
@@ -1434,7 +1434,7 @@ export default function DailyNewspaperPage() {
                         </span>
                       </li>
                     ))
-                  : upcomingFromBoards.slice(0, 10).map((u) => (
+                  : upcomingFromBoards.slice(0, 14).map((u) => (
                       <li key={u.key}>
                         <span className="when">{u.when || "TBD"}</span>
                         <span className="t">
@@ -1519,11 +1519,11 @@ export default function DailyNewspaperPage() {
                 <span>{recap.data?.date ?? "Yesterday"}</span>
               </div>
               {scoresBySport.length ? (
-                scoresBySport.slice(0, 3).map(([sport, list]) => (
+                scoresBySport.slice(0, 4).map(([sport, list]) => (
                   <div key={sport} className="np-sport-block">
                     <div className="np-sport-label">{sport}</div>
                     <div className="np-scores">
-                      {list.slice(0, 5).map((g) => (
+                      {list.slice(0, 8).map((g) => (
                         <ScoreCell
                           key={g.id}
                           away={{
@@ -1581,7 +1581,7 @@ export default function DailyNewspaperPage() {
               </div>
               <ul className="np-list np-players">
                 {(playerSeason.data ?? []).length ? (
-                  (playerSeason.data ?? []).slice(0, 12).map((p) => (
+                  (playerSeason.data ?? []).slice(0, 16).map((p) => (
                     <li key={p.playerId}>
                       <strong>
                         {p.name}
@@ -1624,7 +1624,7 @@ export default function DailyNewspaperPage() {
               </div>
               {(leagueStandings.data ?? []).length ? (
                 <div className="np-standings-grid">
-                  {(leagueStandings.data ?? []).slice(0, 5).map((box) => (
+                  {(leagueStandings.data ?? []).slice(0, 6).map((box) => (
                     <div key={box.key} className="np-standing-box">
                       <div className="np-sport-label">
                         {box.title} · {box.subtitle}
@@ -1641,7 +1641,7 @@ export default function DailyNewspaperPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {box.rows.slice(0, 6).map((r, idx) => (
+                          {box.rows.slice(0, 8).map((r, idx) => (
                             <tr key={`${box.key}-${r.team}-${idx}`} className={cn(r.highlight && "np-home")}>
                               <td>{r.rank}</td>
                               <td>{r.team}</td>
@@ -1674,7 +1674,7 @@ export default function DailyNewspaperPage() {
                     <div key={b.key} className="np-leader-col">
                       <h3>{b.label}</h3>
                       <ul className="np-list">
-                        {b.leaders.slice(0, 4).map((l) => (
+                        {b.leaders.slice(0, 5).map((l) => (
                           <li key={`${b.key}-${l.playerId}`}>
                             <span>
                               {l.rank}. {l.name.split(" ").slice(-1)[0]}
@@ -1766,7 +1766,7 @@ export default function DailyNewspaperPage() {
               </div>
               <ul className="np-list np-reading-now">
                 {currentlyReading.length ? (
-                  currentlyReading.slice(0, 6).map((b) => (
+                  currentlyReading.slice(0, 8).map((b) => (
                     <li key={b.id}>
                       <strong>{libraryTitle(b)}</strong>
                       <span className="meta">
@@ -1826,7 +1826,7 @@ export default function DailyNewspaperPage() {
               </div>
               <ul className="np-list">
                 {(onDeckQ.data ?? []).length ? (
-                  (onDeckQ.data ?? []).slice(0, 8).map((b) => (
+                  (onDeckQ.data ?? []).slice(0, 10).map((b) => (
                     <li key={b.id}>
                       <span className="t">{libraryTitle(b)}</span>
                       {b.authors ? <span className="m">{b.authors.split(",")[0]}</span> : null}
