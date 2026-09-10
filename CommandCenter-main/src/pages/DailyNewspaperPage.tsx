@@ -694,12 +694,12 @@ export default function DailyNewspaperPage() {
               </ul>
             </section>
 
-            <section className="np-box">
+            <section className="np-box np-span-2">
               <div className="np-section-head">
                 <h2>Ledger</h2>
                 <span>{bounds.monthKey}</span>
               </div>
-              <dl className="np-stat-grid np-stat-grid-2">
+              <dl className="np-stat-grid np-stat-grid-4">
                 <div>
                   <dt>Net worth</dt>
                   <dd>{moneyCompact(netWorth.net)}</dd>
@@ -718,8 +718,8 @@ export default function DailyNewspaperPage() {
                 </div>
               </dl>
               <h3 className="np-kicker np-mt">Accounts</h3>
-              <ul className="np-accounts">
-                {(accounts.data ?? []).slice(0, 8).map((a) => (
+              <ul className="np-accounts np-accounts-wide">
+                {(accounts.data ?? []).slice(0, 10).map((a) => (
                   <li key={a.id}>
                     <span>{a.name}</span>
                     <strong>{fmtMoney(Number(a.current_balance))}</strong>

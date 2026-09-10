@@ -1155,7 +1155,7 @@ mark.rss-hl {
 
 .np-page {
   width: min(100%, 8.5in);
-  min-height: 11in;
+  min-height: 0;
   background:
     radial-gradient(120% 80% at 10% 0%, rgba(18, 24, 32, 0.03), transparent 55%),
     linear-gradient(180deg, #fbfaf7 0%, var(--np-paper) 40%, #f3f0e8 100%);
@@ -1245,8 +1245,8 @@ mark.rss-hl {
 .np-front-grid {
   display: grid;
   grid-template-columns: 1.15fr 2.35fr 1.15fr;
-  gap: 0.55rem;
-  flex: 1;
+  gap: 0.45rem;
+  flex: 0 0 auto;
   min-height: 0;
 }
 
@@ -1301,6 +1301,16 @@ mark.rss-hl {
 
 .np-stat-grid-2 {
   grid-template-columns: 1fr 1fr;
+}
+
+.np-stat-grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.np-accounts-wide {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 1rem;
 }
 
 .np-stat-grid dt {
@@ -1601,9 +1611,9 @@ mark.rss-hl {
 .np-sports-grid,
 .np-life-grid {
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
-  gap: 0.5rem;
-  flex: 1;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 0.45rem;
+  flex: 0 0 auto;
   align-content: start;
 }
 
@@ -1613,7 +1623,7 @@ mark.rss-hl {
 
 .np-scoreboard {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
   gap: 0.35rem;
 }
 
@@ -1820,7 +1830,9 @@ mark.rss-hl {
   .np-agenda-grid,
   .np-scoreboard,
   .np-highlights,
-  .np-cards-row {
+  .np-cards-row,
+  .np-stat-grid-4,
+  .np-accounts-wide {
     grid-template-columns: 1fr;
   }
 
@@ -1883,14 +1895,14 @@ mark.rss-hl {
 
   .np-page {
     width: 100% !important;
-    min-height: auto;
-    height: auto;
+    min-height: 10.3in;
+    height: 10.3in;
     box-shadow: none !important;
     padding: 0 !important;
     background: white !important;
     page-break-after: always;
     break-after: page;
-    overflow: visible;
+    overflow: hidden;
   }
 
   .np-page:last-child {
