@@ -1396,6 +1396,80 @@ export function titleKey(raw: string): string {
     .trim();
 }
 
+const SEARCH_STOP = new Set([
+  "a",
+  "an",
+  "the",
+  "of",
+  "and",
+  "or",
+  "in",
+  "on",
+  "to",
+  "for",
+  "by",
+  "with",
+]);
+
+function normalizeSearchText(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function searchTokens(raw: string): string[] {
+  return normalizeSearchText(raw)
+    .split(" ")
+    .filter((t) => t && !SEARCH_STOP.has(t));
+}
+
+/**
+ * Rank a library / catalog hit for a typed query. Lower is better; 99 = miss.
+ * Token matching makes "Unit x" find "Unit X" even when punctuation / case differ,
+ * while ignoring weak author-initial matches.
+ */
+export function scoreBookSearchHit(
+  query: string,
+  title: string,
+  author = "",
+  tags: string[] = [],
+): number {
+  const qKey = titleKey(query);
+  const tKey = titleKey(title);
+  const qTokens = searchTokens(query);
+  const tTokens = searchTokens(title);
+  const aTokens = searchTokens(author);
+  if (!qKey || qTokens.length === 0) return 99;
+
+  if (tKey === qKey) return 0;
+  if (tKey.startsWith(qKey)) return 1;
+  if (tTokens.slice(0, qTokens.length).join(" ") === qTokens.join(" ")) return 2;
+  if (qTokens.every((tok) => tTokens.includes(tok))) return 3;
+  if (normalizeSearchText(title).includes(qKey)) return 4;
+  if (qTokens.every((tok) => aTokens.includes(tok))) return 5;
+  if (qTokens.every((tok) => tTokens.includes(tok) || aTokens.includes(tok))) {
+    const strong = qTokens.filter((tok) => tok.length > 1);
+    if (strong.length === 0 || strong.some((tok) => tTokens.includes(tok))) return 6;
+  }
+  if (tags.some((tag) => normalizeSearchText(tag).includes(qKey) || qTokens.every((tok) => searchTokens(tag).includes(tok)))) {
+    return 7;
+  }
+  if (qTokens.some((tok) => tok.length > 2 && tTokens.includes(tok))) return 8;
+  return 99;
+}
+
+/** Sort catalog suggestions so exact titles surface before fuzzy API noise. */
+export function rankCatalogSuggestions(query: string, rows: Suggestion[]): Suggestion[] {
+  return [...rows]
+    .map((s) => ({ s, score: scoreBookSearchHit(query, s.title, s.author) }))
+    .filter((x) => x.score < 99)
+    .sort((a, b) => a.score - b.score || a.s.title.localeCompare(b.s.title))
+    .map((x) => x.s);
+}
+
 // ── Readwise highlights ──────────────────────────────────────────────────
 
 export type SyncResult = {
