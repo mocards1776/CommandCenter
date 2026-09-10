@@ -101,6 +101,8 @@ export type StandingRow = {
 export type ScheduleGame = {
   id: string;
   when: string | null;
+  /** ISO start for chronological sorting (newspaper, desk). */
+  startIso?: string | null;
   label: string;
   detail: string | null;
   status: string;
@@ -2287,6 +2289,7 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
       const row: ScheduleGame = {
         id: String(ev.id ?? `${ev.date}-${chip.label}`),
         when: fmtWhen(ev.date),
+        startIso: ev.date ?? null,
         label: chip.label,
         detail: chip.detail,
         status: chip.live ? "Live" : chip.won != null ? (chip.won ? "Win" : "Loss") : "Scheduled",
@@ -2316,6 +2319,7 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     const chipToRow = (chip: GameChip, prefix: string): ScheduleGame => ({
       id: `${prefix}-${chip.label}-${chip.when ?? "tbd"}`,
       when: chip.when,
+      startIso: null,
       label: chip.label,
       detail: chip.detail,
       status: chip.live ? "Live" : chip.won != null ? (chip.won ? "Win" : "Loss") : "Scheduled",
@@ -2349,6 +2353,7 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
         recent.push({
           id: String(ev.id ?? `${ev.date}-${chip.label}`),
           when: fmtWhen(ev.date),
+          startIso: ev.date ?? null,
           label: chip.label,
           detail: chip.detail,
           status: chip.won != null ? (chip.won ? "Win" : "Loss") : "Final",
@@ -2492,6 +2497,7 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
         upcoming.push({
           id: String(ev.id ?? `${ev.date}-${chip.label}`),
           when: fmtWhen(ev.date),
+          startIso: ev.date ?? null,
           label: chip.label,
           detail: chip.detail,
           status: chip.live ? "Live" : "Scheduled",
@@ -2800,6 +2806,7 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
       const row: ScheduleGame = {
         id: String(game.gamePk ?? game.gameDate),
         when: fmtWhen(game.gameDate) ?? fmtDay(d.date),
+        startIso: game.gameDate ?? null,
         label,
         detail: live ? detailed : detail,
         status: live ? "Live" : done ? (mine?.isWinner ? "Win" : "Loss") : detailed || "Scheduled",
