@@ -91,9 +91,10 @@ import type { Book } from "@/types";
 
 const STL_TEAM_ID = 138;
 const MOSCOUT = RSS_FEEDS.find((f) => f.id === "moscout")!;
-/** Full Missouri Scout articles (title + body) per letter page. */
-const MOSCOUT_ARTICLES_PER_PAGE = 1;
-const MOSCOUT_ARTICLE_COUNT = 10;
+/** One letter page: only the latest Missouri Scout story, clipped to fit. */
+const MOSCOUT_LEAD_COUNT = 1;
+/** Short enough to sit under teams/upcoming on one letter sheet. */
+const MOSCOUT_EXCERPT_WORDS = 90;
 
 type PlayerSeasonCard = {
   playerId: string;
@@ -414,6 +415,16 @@ function chunkItems<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+function clipArticleBody(body: string, maxWords: number): { text: string; truncated: boolean } {
+  const words = body.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return { text: body.trim(), truncated: false };
+  let clipped = words.slice(0, maxWords).join(" ");
+  clipped = clipped.replace(/[,:;–—-]\s*$/, "");
+  if (!/[.!?]"?$/.test(clipped)) clipped += "…";
+  return { text: clipped, truncated: true };
+}
+
+
 function readingProgress(book: Book): string {
   if (!book.page_count || book.page_count <= 0) {
     return book.current_page ? `p. ${book.current_page}` : "—";
@@ -645,10 +656,10 @@ export default function DailyNewspaperPage() {
   const moscoutArticlesQ = useQuery({
     queryKey: [
       "tt-moscout-articles",
-      (moscoutQ.data?.items ?? []).slice(0, MOSCOUT_ARTICLE_COUNT).map((i) => i.link).join("|"),
+      (moscoutQ.data?.items ?? []).slice(0, MOSCOUT_LEAD_COUNT).map((i) => i.link).join("|"),
     ],
     queryFn: async (): Promise<MoscoutArticle[]> => {
-      const items = (moscoutQ.data?.items ?? []).slice(0, MOSCOUT_ARTICLE_COUNT);
+      const items = (moscoutQ.data?.items ?? []).slice(0, MOSCOUT_LEAD_COUNT);
       const rows = await Promise.all(
         items.map(async (item) => {
           let body = stripHtml(item.snippet || "");
@@ -944,8 +955,8 @@ export default function DailyNewspaperPage() {
     () => moscoutQ.data?.items ?? [],
     [moscoutQ.data],
   );
-  const moscoutArticlePages = useMemo(
-    () => chunkItems(moscoutArticlesQ.data ?? [], MOSCOUT_ARTICLES_PER_PAGE),
+  const moscoutLatest = useMemo(
+    () => moscoutArticlesQ.data?.[0] ?? null,
     [moscoutArticlesQ.data],
   );
   const moscoutHighlightCount = useMemo(() => {
@@ -1161,8 +1172,8 @@ export default function DailyNewspaperPage() {
           <p className="label-caps text-accent">Print edition</p>
           <h1>Thompson Times</h1>
           <p className="text-chalk mt-2 max-w-xl text-[12px] leading-relaxed">
-            Multi-page letter edition — desk, boards, reading, and full Missouri
-            Scout articles. Print every page.
+            One letter page — desk, teams, and the latest Missouri Scout
+            story. Print a single sheet.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1264,7 +1275,7 @@ export default function DailyNewspaperPage() {
                     <span>{tomorrowEvents.length}</span>
                   </div>
                   <ul className="np-list np-cal">
-                    {tomorrowEvents.slice(0, 6).map((e) => (
+                    {tomorrowEvents.slice(0, 4).map((e) => (
                       <li key={e.id}>
                         <span className="when">{formatEventTime(e)}</span>
                         <span className="t">{e.title}</span>
@@ -1286,7 +1297,7 @@ export default function DailyNewspaperPage() {
                 </span>
               </div>
               <ul className="np-list np-agenda">
-                {[...overdue, ...dueToday].slice(0, 14).map((t) => (
+                {[...overdue, ...dueToday].slice(0, 8).map((t) => (
                   <li key={t.id} className={cn(isOverdue(t.due?.date) && "late")}>
                     <span className="pri">P{5 - t.priority}</span>
                     <span className="t">{t.content}</span>
@@ -1374,7 +1385,7 @@ export default function DailyNewspaperPage() {
             <section className="np-box">
               <p className="np-kicker">Habits</p>
               <ul className="np-list">
-                {(habitsDue.length ? habitsDue : habits ?? []).slice(0, 10).map((h) => (
+                {(habitsDue.length ? habitsDue : habits ?? []).slice(0, 6).map((h) => (
                   <li key={h.id} className={cn(h.completedToday && "np-done")}>
                     <span className="check">{h.completedToday ? "■" : "□"}</span>
                     <span className="t">{h.name}</span>
@@ -1393,7 +1404,7 @@ export default function DailyNewspaperPage() {
                 <span>{inSeasonSnaps.length} in season</span>
               </div>
               <div className="np-teams">
-                {inSeasonSnaps.map((snap) => {
+                {inSeasonSnaps.slice(0, 8).map((snap) => {
                   const line = teamLine(snap);
                   const fav = teamFavs.find((f) => f.key === snap.key);
                   return (
@@ -1424,7 +1435,7 @@ export default function DailyNewspaperPage() {
               </div>
               <ul className="np-list np-upcoming">
                 {upcomingFromTeams.length
-                  ? upcomingFromTeams.slice(0, 14).map((u) => (
+                  ? upcomingFromTeams.slice(0, 8).map((u) => (
                       <li key={u.key}>
                         <span className="when">{u.when || "TBD"}</span>
                         <span className="t">
@@ -1437,7 +1448,7 @@ export default function DailyNewspaperPage() {
                         </span>
                       </li>
                     ))
-                  : upcomingFromBoards.slice(0, 14).map((u) => (
+                  : upcomingFromBoards.slice(0, 8).map((u) => (
                       <li key={u.key}>
                         <span className="when">{u.when || "TBD"}</span>
                         <span className="t">
@@ -1457,501 +1468,51 @@ export default function DailyNewspaperPage() {
             </section>
           </div>
 
-          <footer className="np-folio">
-            <span>Thompson Times</span>
-            <span>1 · Front</span>
-            <span>Boards →</span>
-          </footer>
-        </article>
 
-        {/* ── PAGE 2: SCOREBOARDS ───────────────────────────────── */}
-        <article className="np-page" aria-label="Thompson Times sports boards">
-          <header className="np-section-mast np-anim-mast">
-            <div>
-              <p className="np-kicker">Page 2</p>
-              <h1>Scoreboards</h1>
+          <section className="np-box np-moscout-lead np-anim-body">
+            <div className="np-sec-head">
+              <h2>Missouri Scout</h2>
+              <span>Latest</span>
             </div>
-            <div className="np-section-meta">
-              <div>{editionDateline(day)}</div>
-              <div>MLB · NFL · CFB · Soccer · Finals</div>
-            </div>
-          </header>
-
-          <div className="np-sports np-anim-body">
-            <section className="np-box">
-              <div className="np-sec-head">
-                <h2>MLB</h2>
-                <span>Scoreboard</span>
-              </div>
-              {mlbBoard.isPending ? <p className="np-muted">Loading…</p> : renderMlbGames(mlbBoard.data)}
-            </section>
-
-            <section className="np-box">
-              <div className="np-sec-head">
-                <h2>NFL</h2>
-                <span>Scoreboard</span>
-              </div>
-              {nflBoard.isPending ? <p className="np-muted">Loading…</p> : renderNflGames(nflBoard.data)}
-            </section>
-
-            <section className="np-box">
-              <div className="np-sec-head">
-                <h2>CFB</h2>
-                <span>Scoreboard</span>
-              </div>
-              {cfbBoard.isPending ? <p className="np-muted">Loading…</p> : renderCfbGames(cfbBoard.data)}
-            </section>
-
-            <section className="np-box">
-              <div className="np-sec-head">
-                <h2>Soccer</h2>
-                <span>Scoreboard</span>
-              </div>
-              {soccerBoard.isPending ? (
-                <p className="np-muted">Loading…</p>
-              ) : (
-                renderSoccerGames(soccerBoard.data)
-              )}
-            </section>
-
-            <section className="np-box np-span-2">
-              <div className="np-sec-head">
-                <h2>Finals</h2>
-                <span>{recap.data?.date ?? "Yesterday"}</span>
-              </div>
-              {scoresBySport.length ? (
-                scoresBySport.map(([sport, list]) => (
-                  <div key={sport} className="np-sport-block">
-                    <div className="np-sport-label">{sport}</div>
-                    <div className="np-scores">
-                      {list.map((g) => (
-                        <ScoreCell
-                          key={g.id}
-                          away={{
-                            abbrev: g.away.abbrev || g.away.name,
-                            score: g.away.score,
-                            win: g.away.winner,
-                          }}
-                          home={{
-                            abbrev: g.home.abbrev || g.home.name,
-                            score: g.home.score,
-                            win: g.home.winner,
-                          }}
-                          status="Final"
-                          detail={g.detail || g.headline || null}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="np-muted">
-                  {recap.isPending ? "Pulling finals…" : "No favorite-team finals overnight."}
-                </p>
-              )}
-            </section>
-          </div>
-
-          <footer className="np-folio">
-            <span>Thompson Times</span>
-            <span>2 · Boards</span>
-            <span>Desk →</span>
-          </footer>
-        </article>
-
-        {/* ── PAGE 3: SPORTS DESK ───────────────────────────────── */}
-        <article className="np-page" aria-label="Thompson Times sports desk">
-          <header className="np-section-mast np-anim-mast">
-            <div>
-              <p className="np-kicker">Page 3</p>
-              <h1>Sports desk</h1>
-            </div>
-            <div className="np-section-meta">
-              <div>{editionDateline(day)}</div>
-              <div>Players · Standings · Leaders</div>
-            </div>
-          </header>
-
-          <div className="np-sports np-anim-body">
-            <section className="np-box np-span-2">
-              <div className="np-sec-head">
-                <h2>Followed players</h2>
-                <span>Season stats</span>
-              </div>
-              <ul className="np-list np-players">
-                {(playerSeason.data ?? []).length ? (
-                  (playerSeason.data ?? []).map((p) => (
-                    <li key={p.playerId}>
-                      <strong>
-                        {p.name}
-                        {p.position ? ` · ${p.position}` : ""}
-                        {p.yesterday?.isWin != null
-                          ? p.yesterday.isWin
-                            ? " · W"
-                            : " · L"
-                          : ""}
-                      </strong>
-                      <span className="meta">
-                        {p.sport}
-                        {p.team ? ` · ${p.team}` : ""}
-                        {p.yesterday
-                          ? ` · ${p.yesterday.isHome ? "vs" : "@"} ${p.yesterday.opponent}`
-                          : ""}
-                      </span>
-                      <span className="line">{p.seasonLine || "—"}</span>
-                      {p.yesterday?.summary ? (
-                        <span className="meta">Yday · {p.yesterday.summary}</span>
-                      ) : null}
-                    </li>
-                  ))
-                ) : (
-                  <li className="np-muted">
-                    {playerFavs.length
-                      ? playerSeason.isPending
-                        ? "Loading season lines…"
-                        : "No season lines yet."
-                      : "Star players on the sports board to fill this box."}
-                  </li>
-                )}
-              </ul>
-            </section>
-
-            <section className="np-box np-span-2">
-              <div className="np-sec-head">
-                <h2>Standings</h2>
-                <span>Playoff odds</span>
-              </div>
-              {(leagueStandings.data ?? []).length ? (
-                <div className="np-standings-grid">
-                  {(leagueStandings.data ?? []).map((box) => (
-                    <div key={box.key} className="np-standing-box">
-                      <div className="np-sport-label">
-                        {box.title} · {box.subtitle}
-                      </div>
-                      <table className="np-table">
-                        <thead>
-                          <tr>
-                            <th>#</th>
-                            <th>Team</th>
-                            <th>Rec</th>
-                            <th>GB</th>
-                            <th>PO%</th>
-                            <th>WC%</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {box.rows.map((r, idx) => (
-                            <tr key={`${box.key}-${r.team}-${idx}`} className={cn(r.highlight && "np-home")}>
-                              <td>{r.rank}</td>
-                              <td>{r.team}</td>
-                              <td>{r.record}</td>
-                              <td>{r.gb}</td>
-                              <td>{formatOddsPct(r.playoffOdds)}</td>
-                              <td>{formatOddsPct(r.wildCardOdds)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ))}
+            {moscoutLatest ? (
+              <article className="np-moscout-article">
+                <header className="np-moscout-head">
+                  <p className="np-moscout-meta">
+                    {[
+                      moscoutWhen(moscoutLatest.publishedAt),
+                      moscoutLatest.author,
+                      moscoutLatest.wordCount ? `${moscoutLatest.wordCount} words` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                  <h2 className="np-moscout-headline-sm">{moscoutLatest.title}</h2>
+                </header>
+                <div className="np-moscout-body np-moscout-body-compact">
+                  {(() => {
+                    const clipped = clipArticleBody(moscoutLatest.body, MOSCOUT_EXCERPT_WORDS);
+                    return clipped.text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean).map((p, i) => (
+                      <p key={i}>{p}</p>
+                    ));
+                  })()}
                 </div>
-              ) : (
-                <p className="np-muted">
-                  {leagueStandings.isPending ? "Loading standings…" : "Standings unavailable."}
-                </p>
-              )}
-            </section>
-
-            <section className="np-box np-span-2">
-              <div className="np-sec-head">
-                <h2>League leaders</h2>
-                <span>MLB</span>
-              </div>
-              {boards.length ? (
-                <div className="np-leaders">
-                  {boards.map((b) => (
-                    <div key={b.key} className="np-leader-col">
-                      <h3>{b.label}</h3>
-                      <ul className="np-list">
-                        {b.leaders.slice(0, 5).map((l) => (
-                          <li key={`${b.key}-${l.playerId}`}>
-                            <span>
-                              {l.rank}. {l.name.split(" ").slice(-1)[0]}
-                              <span className="m"> {l.team}</span>
-                            </span>
-                            <span className="v">{l.value}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="np-muted">
-                  {leaders.isPending ? "Loading leaders…" : "Leaders unavailable."}
-                </p>
-              )}
-            </section>
-          </div>
-
-          <footer className="np-folio">
-            <span>Thompson Times</span>
-            <span>3 · Desk</span>
-            <span>Reading →</span>
-          </footer>
-        </article>
-
-        {/* ── PAGE 4: READING ───────────────────────────────────── */}
-        <article className="np-page" aria-label="Thompson Times reading page">
-          <header className="np-section-mast np-anim-mast">
-            <div>
-              <p className="np-kicker">Page 4</p>
-              <h1>Reading</h1>
-            </div>
-            <div className="np-section-meta">
-              <div>{editionDateline(day)}</div>
-              <div>Now · Recent pages · On deck</div>
-            </div>
-          </header>
-
-          <div className="np-reading np-anim-body">
-            <section className="np-box">
-              <div className="np-sec-head">
-                <h2>Today</h2>
-                <span>Pages</span>
-              </div>
-              <dl className="np-stats np-stats-reading">
-                <div>
-                  <dt>Today</dt>
-                  <dd>
-                    {readingToday.today}
-                    {readingToday.goal != null ? `/${readingToday.goal}` : ""}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Streak</dt>
-                  <dd>{readingToday.streak}d</dd>
-                </div>
-                <div>
-                  <dt>Best</dt>
-                  <dd>{readingToday.bestStreak}d</dd>
-                </div>
-                <div>
-                  <dt>Week</dt>
-                  <dd>{readingPeriod.pagesWeek}</dd>
-                </div>
-                <div>
-                  <dt>Month</dt>
-                  <dd>{readingPeriod.pagesMonth}</dd>
-                </div>
-                <div>
-                  <dt>Highlights</dt>
-                  <dd>{readingHighlightTotal}</dd>
-                </div>
-              </dl>
-              <p className="np-muted" style={{ marginTop: "0.25rem" }}>
-                Finished this week: {readingPeriod.booksWeek} books · {readingPeriod.magazinesWeek}{" "}
-                magazines. Month: {readingPeriod.booksMonth} books · {readingPeriod.magazinesMonth}{" "}
-                magazines.
+              </article>
+            ) : (
+              <p className="np-muted">
+                {moscoutArticlesQ.isPending || moscoutQ.isPending
+                  ? "Loading Missouri Scout…"
+                  : "Missouri Scout feed is empty right now."}
               </p>
-            </section>
-
-            <section className="np-box">
-              <div className="np-sec-head">
-                <h2>Currently reading</h2>
-                <span>{currentlyReading.length}</span>
-              </div>
-              <ul className="np-list np-reading-now">
-                {currentlyReading.length ? (
-                  currentlyReading.slice(0, 8).map((b) => (
-                    <li key={b.id}>
-                      <strong>{libraryTitle(b)}</strong>
-                      <span className="meta">
-                        {[b.authors, readingProgress(b)].filter(Boolean).join(" · ")}
-                      </span>
-                    </li>
-                  ))
-                ) : (
-                  <li className="np-muted">
-                    {booksQ.isPending ? "Loading library…" : "Nothing marked currently reading."}
-                  </li>
-                )}
-              </ul>
-            </section>
-
-            <section className="np-box">
-              <div className="np-sec-head">
-                <h2>Pages recently</h2>
-                <span>7 days</span>
-              </div>
-              <ul className="np-list np-pages-recent">
-                {pagesRecent.length ? (
-                  pagesRecent.map((p) => (
-                    <li key={p.bookId ?? p.title}>
-                      <span className="t">{p.title}</span>
-                      <span className="v">{p.pages}p</span>
-                    </li>
-                  ))
-                ) : (
-                  <li className="np-muted">
-                    {sessionsQ.isPending ? "Loading sessions…" : "No pages logged this week."}
-                  </li>
-                )}
-              </ul>
-              {pagesYesterday.length ? (
-                <>
-                  <div className="np-sec-head" style={{ marginTop: "0.35rem" }}>
-                    <h2>Yesterday</h2>
-                    <span>{pagesYesterday.reduce((n, p) => n + p.pages, 0)}p</span>
-                  </div>
-                  <ul className="np-list np-pages-recent">
-                    {pagesYesterday.map((p) => (
-                      <li key={`y-${p.bookId ?? p.title}`}>
-                        <span className="t">{p.title}</span>
-                        <span className="v">{p.pages}p</span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : null}
-            </section>
-
-            <section className="np-box">
-              <div className="np-sec-head">
-                <h2>On deck</h2>
-                <span>{(onDeckQ.data ?? []).length}</span>
-              </div>
-              <ul className="np-list">
-                {(onDeckQ.data ?? []).length ? (
-                  (onDeckQ.data ?? []).slice(0, 10).map((b) => (
-                    <li key={b.id}>
-                      <span className="t">{libraryTitle(b)}</span>
-                      {b.authors ? <span className="m">{b.authors.split(",")[0]}</span> : null}
-                    </li>
-                  ))
-                ) : (
-                  <li className="np-muted">
-                    {onDeckQ.isPending ? "Loading…" : "On-deck shelf is empty."}
-                  </li>
-                )}
-              </ul>
-            </section>
-          </div>
+            )}
+          </section>
 
           <footer className="np-folio">
             <span>Thompson Times</span>
-            <span>4 · Reading</span>
-            <span>MoScout →</span>
+            <span>1 · Edition</span>
+            <span>Letter</span>
           </footer>
         </article>
 
-        {/* ── PAGES 5+: MISSOURI SCOUT ARTICLES ─────────────────── */}
-        {moscoutArticlePages.map((pageItems, pageIdx) => {
-          const article = pageItems[0];
-          const pageNo = 5 + pageIdx;
-          const total = moscoutArticlePages.length;
-          return (
-            <article
-              key={`moscout-${pageIdx}`}
-              className="np-page"
-              aria-label={`Thompson Times Missouri Scout page ${pageIdx + 1}`}
-            >
-              <header className="np-section-mast np-anim-mast">
-                <div>
-                  <p className="np-kicker">
-                    Page {pageNo}
-                    {total > 1 ? ` · ${pageIdx + 1}/${total}` : ""}
-                  </p>
-                  <h1>Missouri Scout</h1>
-                </div>
-                <div className="np-section-meta">
-                  <div>{editionDateline(day)}</div>
-                  <div>
-                    Dispatch · {moscoutArticlesQ.data?.length ?? moscoutItems.length} articles
-                  </div>
-                </div>
-              </header>
-
-              {pageIdx === 0 ? (
-                <section className="np-box np-anim-body" style={{ marginBottom: "0.28rem" }}>
-                  <div className="np-sec-head">
-                    <h2>Dispatch</h2>
-                    <span>Stats</span>
-                  </div>
-                  <dl className="np-stats np-stats-reading">
-                    <div>
-                      <dt>Scout stories</dt>
-                      <dd>{moscoutItems.length}</dd>
-                    </div>
-                    <div>
-                      <dt>Scout read</dt>
-                      <dd>{moscoutReadCount}</dd>
-                    </div>
-                    <div>
-                      <dt>Scout marks</dt>
-                      <dd>{moscoutHighlightCount}</dd>
-                    </div>
-                    <div>
-                      <dt>Reads (1k)</dt>
-                      <dd>{(rssReadsQ.data ?? []).length}</dd>
-                    </div>
-                    <div>
-                      <dt>Highlights</dt>
-                      <dd>{(rssHighlightsQ.data ?? []).length}</dd>
-                    </div>
-                    <div>
-                      <dt>Saves</dt>
-                      <dd>{(rssSavesQ.data ?? []).length}</dd>
-                    </div>
-                  </dl>
-                </section>
-              ) : null}
-
-              <section className="np-box np-moscout np-anim-body">
-                {article ? (
-                  <article className="np-moscout-article">
-                    <header className="np-moscout-head">
-                      <p className="np-moscout-meta">
-                        {[
-                          moscoutWhen(article.publishedAt),
-                          article.author,
-                          article.wordCount ? `${article.wordCount} words` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                      <h2>{article.title}</h2>
-                    </header>
-                    <div className="np-moscout-body">
-                      {article.body
-                        .split(/\n{2,}/)
-                        .map((p) => p.trim())
-                        .filter(Boolean)
-                        .map((p, i) => (
-                          <p key={i}>{p}</p>
-                        ))}
-                    </div>
-                  </article>
-                ) : (
-                  <p className="np-muted">
-                    {moscoutArticlesQ.isPending || moscoutQ.isPending
-                      ? "Loading Missouri Scout…"
-                      : "Missouri Scout feed is empty right now."}
-                  </p>
-                )}
-              </section>
-
-              <footer className="np-folio">
-                <span>Thompson Times</span>
-                <span>
-                  {pageNo} · MoScout
-                  {total > 1 ? ` ${pageIdx + 1}/${total}` : ""}
-                </span>
-                <span>{pageIdx === total - 1 ? "End of edition" : "Continued →"}</span>
-              </footer>
-            </article>
-          );
-        })}
       </div>
     </div>
   );

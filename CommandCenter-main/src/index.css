@@ -1636,26 +1636,35 @@ mark.rss-hl {
   flex-direction: column;
 }
 
+.np-moscout-lead {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 2.6in;
+  overflow: hidden;
+  margin-top: 0.2rem;
+}
+
 .np-moscout-article {
   flex: 1;
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.2rem;
 }
 
-.np-moscout-head h2 {
+.np-moscout-head h2,
+.np-moscout-headline-sm {
   font-family: var(--font-display);
-  font-size: 22px;
-  line-height: 1.05;
-  margin: 0.12rem 0 0;
+  font-size: 15px;
+  line-height: 1.08;
+  margin: 0.08rem 0 0;
   letter-spacing: -0.015em;
 }
 
 .np-moscout-meta {
   margin: 0;
-  font-size: 7.5px;
+  font-size: 7px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--np-muted);
@@ -1673,8 +1682,21 @@ mark.rss-hl {
   hyphens: auto;
 }
 
+.np-moscout-body-compact {
+  columns: 2;
+  column-gap: 0.45rem;
+  font-size: 8px;
+  line-height: 1.28;
+  text-align: left;
+}
+
+.np-moscout-body-compact p {
+  margin: 0 0 0.28rem;
+  break-inside: avoid;
+}
+
 .np-moscout-body p {
-  margin: 0 0 0.45rem;
+  margin: 0 0 0.35rem;
   break-inside: avoid;
 }
 
@@ -2012,8 +2034,10 @@ mark.rss-hl {
 
   .np-moscout-list { font-size: 6.5px; line-height: 1.12; columns: 2; }
   .np-moscout-list li { padding: 0.03rem 0; }
-  .np-moscout-body { font-size: 9px; line-height: 1.32; columns: 2; }
-  .np-moscout-head h2 { font-size: 20px; }
+  .np-moscout-body { font-size: 8.5px; line-height: 1.28; columns: 2; }
+  .np-moscout-body-compact { font-size: 7.5px; line-height: 1.22; }
+  .np-moscout-headline-sm { font-size: 13px !important; }
+  .np-moscout-lead { max-height: 2.35in; }
 }
 
 @media (prefers-reduced-motion: reduce) {
