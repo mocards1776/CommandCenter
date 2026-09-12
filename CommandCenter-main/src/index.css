@@ -1997,19 +1997,16 @@ mark.rss-hl {
     overflow: hidden !important;
   }
 
-  /* Hide app chrome (header/nav) and newspaper toolbar. */
+  /* Hide app chrome only — do NOT blanket-hide `header`/`nav`/`.bg-ink`
+     (the masthead is an in-page <header>, and body chrome uses bg-ink). */
   .newspaper-toolbar,
   .newspaper-cal-setup,
   .print\:hidden,
-  header,
-  nav,
-  footer.app-footer,
-  .bg-ink,
-  .rule-flag,
-  [data-rht-toaster],
   #root > div > header,
   #root > div > nav,
-  #root > div > .rule-flag { display: none !important; }
+  #root > div > .rule-flag,
+  #root > div > .bg-ink.fixed,
+  [data-rht-toaster] { display: none !important; }
 
   /* Safari/iOS: hide everything, then reveal only the edition sheet. */
   body * { visibility: hidden !important; }
@@ -2022,6 +2019,20 @@ mark.rss-hl {
     max-width: none !important;
     background: white !important;
     position: static !important;
+  }
+
+  /* Collapse the app shell wrappers so they don't invent extra print pages. */
+  #root,
+  #root > div,
+  main {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
   }
 
   .newspaper-edition {
