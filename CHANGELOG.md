@@ -2,6 +2,13 @@
 
 ---
 
+## Thompson Times: one letter page + latest MoScout — September 12, 2026
+
+- Collapse the daily newspaper to a **single letter page** (desk, teams, upcoming).
+- Print only the **most recent Missouri Scout** story as a clipped lead under the sports desk — no multi-article MoScout dump.
+
+---
+
 ## CFB game pages: show team records — September 12, 2026
 
 - ESPN’s game **summary** header returns W–L under singular `record`, while the scoreboard uses plural `records`. Game detail only read `records`, so live/final matchup headers (and box headers) showed FPI but no **1-0**-style record.
