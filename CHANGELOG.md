@@ -2,6 +2,13 @@
 
 ---
 
+## Thompson Times: force a single print sheet — September 12, 2026
+
+- Harden print CSS so the one-page edition **clips** instead of spilling onto blank pages (Safari/iOS especially).
+- Hide app chrome on print; keep only the letter sheet + latest MoScout lead.
+
+---
+
 ## Thompson Times: one letter page + latest MoScout — September 12, 2026
 
 - Collapse the daily newspaper to a **single letter page** (desk, teams, upcoming).
