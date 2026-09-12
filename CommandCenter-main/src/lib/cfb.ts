@@ -893,7 +893,9 @@ type EspnEvent = {
       homeAway?: string;
       score?: unknown;
       curatedRank?: { current?: number };
-      records?: { type?: string; summary?: string }[];
+      /** Scoreboard uses plural `records`; summary header uses singular `record`. */
+      records?: { type?: string; summary?: string; displayValue?: string }[];
+      record?: { type?: string; summary?: string; displayValue?: string }[];
       linescores?: { value?: number; displayValue?: string }[];
       team?: {
         id?: string;
@@ -916,11 +918,16 @@ type EspnEvent = {
   }[];
 };
 
+type EspnRecordRow = { type?: string; summary?: string; displayValue?: string };
+
 type EspnCompetitor = {
   homeAway?: string;
   score?: unknown;
   curatedRank?: { current?: number };
-  records?: { type?: string; summary?: string }[];
+  /** Scoreboard payload. */
+  records?: EspnRecordRow[];
+  /** Summary header payload (same shape, different key). */
+  record?: EspnRecordRow[];
   linescores?: { value?: number; displayValue?: string }[];
   team?: {
     id?: string;
@@ -932,6 +939,15 @@ type EspnCompetitor = {
   };
 };
 
+/** Overall W–L from ESPN scoreboard (`records`) or summary (`record`). */
+function pickOverallRecord(c: EspnCompetitor): string | null {
+  const rows = c.records?.length ? c.records : c.record;
+  if (!rows?.length) return null;
+  const total = rows.find((r) => r.type === "total") ?? rows[0];
+  const summary = total.summary || total.displayValue || null;
+  return summary?.trim() || null;
+}
+
 function sideFromCompetitor(
   c: EspnCompetitor,
   fpiByTeam?: Map<number, number>,
@@ -939,7 +955,7 @@ function sideFromCompetitor(
 ): CfbScoreSide {
   const team = c.team ?? {};
   const abbrev = team.abbreviation ?? "—";
-  const overall = (c.records ?? []).find((r) => r.type === "total")?.summary ?? null;
+  const overall = pickOverallRecord(c);
   const teamId = Number(team.id) || 0;
   const linescores = (c.linescores ?? [])
     .map((ls) => {

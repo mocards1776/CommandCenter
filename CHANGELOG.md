@@ -2,6 +2,13 @@
 
 ---
 
+## CFB game pages: show team records — September 12, 2026
+
+- ESPN’s game **summary** header returns W–L under singular `record`, while the scoreboard uses plural `records`. Game detail only read `records`, so live/final matchup headers (and box headers) showed FPI but no **1-0**-style record.
+- `pickOverallRecord` now accepts either key so MD/CONN and other CFB games surface overall records under the abbrev.
+
+---
+
 ## CFB school home: subtle RUWT interest — September 7, 2026
 
 - School team pages show a tiny **RUWT** interest slider under the record (same 0–10 storage as Rank teams on the RUWT board).
