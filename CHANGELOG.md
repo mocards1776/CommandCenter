@@ -2,17 +2,6 @@
 
 ---
 
-## Thompson Times: a real printable morning paper — September 10, 2026
-
-- `/newspaper` is one continuous edition that flows through newspaper columns instead of five fixed 8.5×11 boxes with `overflow: hidden`. Nothing is clipped any more, and short days no longer leave half-empty sheets.
-- Print target is **US Letter portrait** with `@page` 0.55in margins; page breaks are handled by `break-inside` / `break-before` / orphan and widow control rather than by forcing content into a fixed height.
-- Real masthead (nameplate, motto, Vol./No., dateline, conditions) and a proper hierarchy — nameplate → hed → dek → body — set in Playfair Display and Source Serif 4 on a 4px spacing scale and a 16px baseline.
-- The front page opens with a lead story written from the day's own numbers, a right rail (weather, scoreboard, habits) and a three-column brief strip; sports, standings, reading and the Missouri Scout long read follow as sections.
-- Printing drops the app header, side rail, tab bar, toasts, shadows and gradients.
-- Dev-only `/newspaper-preview.html` renders the edition from a fixture so print layout can be checked without signing in.
-
----
-
 ## CFB school home: subtle RUWT interest — September 7, 2026
 
 - School team pages show a tiny **RUWT** interest slider under the record (same 0–10 storage as Rank teams on the RUWT board).
