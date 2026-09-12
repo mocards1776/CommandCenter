@@ -1989,29 +1989,71 @@ mark.rss-hl {
 
 @media print {
   @page { size: letter; margin: 0.28in; }
-  html, body { background: white !important; }
+
+  /* One sheet only — clip overflow instead of spilling onto blank pages. */
+  html, body {
+    background: white !important;
+    height: 100% !important;
+    overflow: hidden !important;
+  }
+
+  /* Hide app chrome (header/nav) and newspaper toolbar. */
   .newspaper-toolbar,
   .newspaper-cal-setup,
-  .bg-ink,
+  .print\:hidden,
+  header,
   nav,
-  [data-rht-toaster] { display: none !important; }
-  .newspaper-root { padding: 0 !important; }
-  .newspaper-edition { gap: 0; display: block; }
+  footer.app-footer,
+  .bg-ink,
+  .rule-flag,
+  [data-rht-toaster],
+  #root > div > header,
+  #root > div > nav,
+  #root > div > .rule-flag { display: none !important; }
+
+  /* Safari/iOS: hide everything, then reveal only the edition sheet. */
+  body * { visibility: hidden !important; }
+  .newspaper-edition,
+  .newspaper-edition * { visibility: visible !important; }
+
+  .newspaper-root {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+    background: white !important;
+    position: static !important;
+  }
+
+  .newspaper-edition {
+    display: block !important;
+    gap: 0 !important;
+    width: 7.94in !important;
+    height: 10.44in !important;
+    max-height: 10.44in !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+  }
+
   .np-page {
-    /* Fill the letter sheet under @page margins */
+    position: absolute !important;
+    inset: 0 !important;
     width: 7.94in !important;
     max-width: 7.94in !important;
     height: 10.44in !important;
     max-height: 10.44in !important;
-    min-height: 10.44in !important;
+    min-height: 0 !important;
     box-shadow: none !important;
     padding: 0 !important;
     background: white !important;
-    page-break-after: always;
-    break-after: page;
     overflow: hidden !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
-  .np-page:last-child { page-break-after: auto; break-after: auto; }
+
   .np-page::before { display: none; }
   .np-anim-mast, .np-anim-body { animation: none !important; }
 
@@ -2028,7 +2070,7 @@ mark.rss-hl {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
   .np-leaders { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
-  .np-teams { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+  .np-teams { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
   .np-reading { grid-template-columns: 1fr 1.15fr !important; }
   .np-players { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
 
@@ -2037,7 +2079,7 @@ mark.rss-hl {
   .np-moscout-body { font-size: 8.5px; line-height: 1.28; columns: 2; }
   .np-moscout-body-compact { font-size: 7.5px; line-height: 1.22; }
   .np-moscout-headline-sm { font-size: 13px !important; }
-  .np-moscout-lead { max-height: 2.35in; }
+  .np-moscout-lead { max-height: 2.1in; overflow: hidden !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {

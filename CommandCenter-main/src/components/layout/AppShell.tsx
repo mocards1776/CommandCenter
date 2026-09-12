@@ -268,7 +268,7 @@ export default function AppShell() {
   return (
     <div className="flex min-h-screen flex-col">
       <header
-        className="bg-ink relative flex min-h-[58px] shrink-0 items-center justify-between overflow-hidden px-4 md:min-h-[70px] md:px-8"
+        className="bg-ink relative flex min-h-[58px] shrink-0 items-center justify-between overflow-hidden px-4 print:hidden md:min-h-[70px] md:px-8"
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 0.5rem)",
           paddingBottom: "0.5rem",
@@ -381,7 +381,7 @@ export default function AppShell() {
 
       <div className="flex min-h-0 flex-1">
         {!hideMainChrome && (
-          <nav className="bg-ink hidden w-[196px] shrink-0 flex-col border-r border-accent/15 py-5 md:flex">
+          <nav className="bg-ink hidden w-[196px] shrink-0 flex-col border-r border-accent/15 py-5 print:hidden md:flex">
             {NAV.map(({ to, label }) => (
               <NavLink
                 key={to}
@@ -446,7 +446,7 @@ export default function AppShell() {
       {/* Full Command Center mobile tabs */}
       {!hideMainChrome && (
         <nav
-          className="bg-ink fixed inset-x-0 bottom-0 z-40 flex border-t border-accent/20 md:hidden"
+          className="bg-ink fixed inset-x-0 bottom-0 z-40 flex border-t border-accent/20 print:hidden md:hidden"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
           {NAV.map(({ to, short, Icon }) => (
@@ -481,7 +481,7 @@ export default function AppShell() {
       {/* Sports standalone mobile tabs — Teams + MLB only */}
       {sportsOnly && (
         <nav
-          className="bg-ink fixed inset-x-0 bottom-0 z-40 flex border-t border-accent/20 md:hidden"
+          className="bg-ink fixed inset-x-0 bottom-0 z-40 flex border-t border-accent/20 print:hidden md:hidden"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
           {SPORTS_NAV.map(({ to, match, label, Icon }) => {
