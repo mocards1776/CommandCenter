@@ -1396,6 +1396,48 @@ export function titleKey(raw: string): string {
     .trim();
 }
 
+/** Individual author names from a "A, B & C" / "A and B" string. */
+function authorNameKeys(authors: string): string[] {
+  return authors
+    .split(/,|&|\band\b/i)
+    .map((part) =>
+      part
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .filter((part) => part.length > 0);
+}
+
+/**
+ * Same shelf work as an owned row — not merely the same base title.
+ * "Parcells" (Gutman) must not swallow "Parcells: A Football Life"
+ * (Parcells & Demasio); titleKey alone strips the subtitle and collides.
+ */
+export function isSameOwnedWork(
+  owned: Pick<Book, "title" | "authors">,
+  suggestion: { title: string; author?: string | null },
+): boolean {
+  if (titleKey(owned.title) !== titleKey(suggestion.title)) return false;
+  const ownedNames = authorNameKeys(owned.authors ?? "");
+  const sugNames = authorNameKeys(suggestion.author ?? "");
+  if (ownedNames.length === 0 || sugNames.length === 0) return true;
+  return ownedNames.some((name) => sugNames.includes(name));
+}
+
+/** First owned book that is the same work as this catalog suggestion. */
+export function findOwnedMatch(
+  books: Book[],
+  suggestion: { title: string; author?: string | null },
+): Book | undefined {
+  const key = titleKey(suggestion.title);
+  if (!key) return undefined;
+  return books.find(
+    (b) => titleKey(b.title) === key && isSameOwnedWork(b, suggestion),
+  );
+}
+
 const SEARCH_STOP = new Set([
   "a",
   "an",

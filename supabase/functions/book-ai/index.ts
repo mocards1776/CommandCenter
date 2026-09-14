@@ -922,7 +922,6 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
   if (!q) return [];
 
   const hits: CatalogHit[] = [];
-  const seen = new Set<string>();
 
   const push = (
     title: string,
@@ -934,10 +933,29 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
     pageCount: number | null = null,
   ) => {
     const key = normalizeSearchText(title);
-    if (!key || seen.has(key)) return;
+    if (!key) return;
     const score = scoreCatalogHit(q, title, author);
     if (score >= 99) return;
-    seen.add(key);
+    const existing = hits.find((h) => normalizeSearchText(h.title) === key);
+    if (existing) {
+      // Prefer the pass with the better relevance score, then richer authors
+      // (Google lists Nunyo Demasio; Open Library often only has Bill Parcells).
+      if (
+        score < existing.score ||
+        (score === existing.score && author.length > existing.author.length)
+      ) {
+        existing.title = title;
+        existing.author = author;
+        existing.year = year || existing.year;
+        existing.reason = reason || existing.reason;
+        existing.cover_url = cover ? upgradeGoogleCover(cover) : existing.cover_url;
+        existing.isbn = isbn ?? existing.isbn;
+        existing.page_count =
+          pageCount && pageCount > 0 ? pageCount : existing.page_count;
+        existing.score = score;
+      }
+      return;
+    }
     hits.push({
       title,
       author,
@@ -952,9 +970,16 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
 
   const qTokens = searchTokens(q);
   const titleLike = qTokens.length > 0 && qTokens.length <= 6;
-  const googleQ = titleLike ? `intitle:${q}` : q;
+  // Single-token: intitle: keeps exact titles on top. Multi-token: also run a
+  // plain q= pass — "Parcells demasio" is title + co-author, and intitle alone
+  // drops Demasio (he's not in the title) so Google returns nothing useful.
+  const googleQueries = titleLike
+    ? qTokens.length <= 1
+      ? [`intitle:${q}`]
+      : [`intitle:${q}`, q]
+    : [q];
 
-  const googleFetch = async () => {
+  const googleFetch = async (googleQ: string) => {
     try {
       const key = GOOGLE_KEY ? `&key=${encodeURIComponent(GOOGLE_KEY)}` : "";
       const ctl = new AbortController();
@@ -1035,7 +1060,7 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
     );
   }
 
-  await Promise.all([googleFetch(), ...olJobs]);
+  await Promise.all([...googleQueries.map((gq) => googleFetch(gq)), ...olJobs]);
 
   hits.sort((a, b) => a.score - b.score || a.title.localeCompare(b.title));
   return hits.slice(0, 12).map(({ score: _score, ...rest }) => rest);
