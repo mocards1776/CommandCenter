@@ -58,9 +58,9 @@ import {
   cleanBookText,
   classifyBatch,
   unclassifiedCount,
-  titleKey,
   scoreBookSearchHit,
   rankCatalogSuggestions,
+  findOwnedMatch,
   findDuplicateBooks,
   mergeBooks,
   addBookFromSuggestion,
@@ -540,15 +540,6 @@ function LibrarySearch({
     return () => window.clearTimeout(t);
   }, [q]);
 
-  const owned = useMemo(() => {
-    const m = new Map<string, Book>();
-    for (const b of books) {
-      const k = titleKey(b.title);
-      if (k && !m.has(k)) m.set(k, b);
-    }
-    return m;
-  }, [books]);
-
   const library = useMemo(() => searchLibrary(books, q, 6), [q, books]);
 
   const catalog = useQuery({
@@ -560,8 +551,10 @@ function LibrarySearch({
 
   const catalogHits = useMemo(() => {
     const rows = rankCatalogSuggestions(debounced, catalog.data ?? []);
-    return rows.filter((s) => !owned.has(titleKey(s.title))).slice(0, 6);
-  }, [catalog.data, owned, debounced]);
+    // Hide only the same work (title + author), not every book that shares a
+    // base title — Gutman's Parcells must not bury Parcells/Demasio.
+    return rows.filter((s) => !findOwnedMatch(books, s)).slice(0, 6);
+  }, [catalog.data, books, debounced]);
 
   const add = useMutation({
     mutationFn: (s: Suggestion) => addBookFromSuggestion(s),
@@ -597,6 +590,9 @@ function LibrarySearch({
             onFocus={() => setFocused(true)}
             onBlur={() => setTimeout(() => setFocused(false), 180)}
             placeholder="Search library or find a book"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
             className="placeholder:text-chalk-dim flex-1 bg-transparent py-2.5 text-[13px] outline-none"
           />
           {q && (
@@ -734,15 +730,6 @@ function SearchResultsPage({
   const qc = useQueryClient();
   const [q, setQ] = useState(query);
 
-  const owned = useMemo(() => {
-    const m = new Map<string, Book>();
-    for (const b of books) {
-      const k = titleKey(b.title);
-      if (k && !m.has(k)) m.set(k, b);
-    }
-    return m;
-  }, [books]);
-
   const library = useMemo(() => searchLibrary(books, q, 80), [q, books]);
 
   const catalog = useQuery({
@@ -754,9 +741,9 @@ function SearchResultsPage({
 
   const catalogHits = useMemo(() => {
     return rankCatalogSuggestions(q, catalog.data ?? []).filter(
-      (s) => !owned.has(titleKey(s.title)),
+      (s) => !findOwnedMatch(books, s),
     );
-  }, [catalog.data, owned, q]);
+  }, [catalog.data, books, q]);
 
   const add = useMutation({
     mutationFn: (s: Suggestion) => addBookFromSuggestion(s),
@@ -807,6 +794,9 @@ function SearchResultsPage({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               autoFocus
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
               className="placeholder:text-chalk-dim flex-1 bg-transparent py-2.5 text-[13px] outline-none"
             />
           </div>
@@ -2440,15 +2430,7 @@ function AskAI({
   const seeded = useRef(false);
 
   // Indexed once so every result can say whether it's already on a shelf.
-  const owned = useMemo(() => {
-    const m = new Map<string, Book>();
-    for (const b of books) {
-      const k = titleKey(b.title);
-      if (k && !m.has(k)) m.set(k, b);
-    }
-    return m;
-  }, [books]);
-
+  // Match on title + author so a different Parcells biography stays addable.
   const ask = useMutation({
     mutationFn: (mode: "search" | "recommend" | "catalog") => askAI(mode, query),
     onSuccess: (r, mode) => {
@@ -2590,7 +2572,7 @@ function AskAI({
         {results && !ask.isPending && (
           <ul className="mt-6 flex flex-col gap-2.5">
             {results.map((s) => {
-              const have = owned.get(titleKey(s.title));
+              const have = findOwnedMatch(books, s);
               const justAdded = added[s.title];
               const openOwned = have
                 ? () => {
@@ -3040,15 +3022,6 @@ function NewPopularPanel({
   const qc = useQueryClient();
   const [added, setAdded] = useState<Record<string, string>>({});
 
-  const owned = useMemo(() => {
-    const m = new Map<string, Book>();
-    for (const b of books) {
-      const k = titleKey(b.title);
-      if (k && !m.has(k)) m.set(k, b);
-    }
-    return m;
-  }, [books]);
-
   const browse = useQuery({
     queryKey: ["browse-new-popular", "front-tables"],
     queryFn: browseNewPopular,
@@ -3113,7 +3086,7 @@ function NewPopularPanel({
                 <p className="text-chalk-dim mb-3 text-[11.5px]">{shelf.blurb}</p>
                 <ul className="flex flex-col gap-2.5">
                   {shelf.books.map((s) => {
-                    const have = owned.get(titleKey(s.title));
+                    const have = findOwnedMatch(books, s);
                     const justAdded = added[s.title];
                     return (
                       <li
