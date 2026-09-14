@@ -1198,9 +1198,100 @@ export async function saveHighlightNote(id: string, my_note: string | null): Pro
 }
 
 /**
- * Free catalog search that runs in the browser against Open Library (CORS-open).
- * Used instead of the book-ai edge path for catalog — that function was hanging
- * on Google Books quota/timeouts and left the UI stuck on "searching…".
+ * Editions free catalogs often mis-label (wrong/missing co-author, stripped
+ * subtitle). Seed these so a Libby/Audible title like Parcells × Demasio is
+ * recognizable in Command Center search instead of a bare "Parcells / Bill
+ * Parcells" row that looks like a different book.
+ */
+const KNOWN_CATALOG_EDITIONS: {
+  match: (q: string) => boolean;
+  suggestion: Suggestion;
+}[] = [
+  {
+    // Libby: "Bill Parcells, Nunyo Demasio" — Parcells: A Football Life
+    match: (q) => {
+      const n = normalizeSearchText(q);
+      return n.includes("parcells") || n.includes("demasio");
+    },
+    suggestion: {
+      title: "Parcells: A Football Life",
+      author: "Bill Parcells, Nunyo Demasio",
+      year: "2014",
+      reason: "Biography · NFL",
+      cover_url: "https://covers.openlibrary.org/b/isbn/9780385346351-L.jpg",
+      isbn: "9780385346351",
+      page_count: 536,
+    },
+  },
+];
+
+/** ISBN-13/10 for Parcells: A Football Life (Parcells & Demasio, 2014). */
+const FOOTBALL_LIFE_ISBNS = new Set([
+  "9780385346351",
+  "0385346351",
+  "9780804128254", // audiobook / Books on Tape
+  "0804128251",
+]);
+
+/** Attach the Demasio co-author + subtitle Open Library drops for this ISBN. */
+function enrichKnownEdition(s: Suggestion): Suggestion {
+  const isbn = (s.isbn ?? "").replace(/[^0-9Xx]/g, "");
+  const isFootballLife =
+    FOOTBALL_LIFE_ISBNS.has(isbn) ||
+    (titleKey(s.title) === "parcells" &&
+      /parcells/i.test(s.author ?? "") &&
+      /2014/.test(s.year ?? ""));
+  if (!isFootballLife) return s;
+  const author = normalizeSearchText(s.author ?? "").includes("demasio")
+    ? s.author
+    : s.author?.trim()
+      ? `${s.author.replace(/\s*,\s*$/, "")}, Nunyo Demasio`
+      : "Bill Parcells, Nunyo Demasio";
+  return {
+    ...s,
+    title:
+      titleKey(s.title) === "parcells" && !/football life/i.test(s.title)
+        ? "Parcells: A Football Life"
+        : s.title,
+    author: author ?? "Bill Parcells, Nunyo Demasio",
+    year: s.year || "2014",
+    isbn: s.isbn || "9780385346351",
+    cover_url:
+      s.cover_url || "https://covers.openlibrary.org/b/isbn/9780385346351-L.jpg",
+  };
+}
+
+function suggestionDedupeKey(s: Suggestion): string {
+  // Collapse "Parcells" and "Parcells: A Football Life" so the enriched row wins.
+  return `${titleKey(s.title)}|${normalizeSearchText((s.author ?? "").split(",")[0] ?? "")}`;
+}
+
+/** Edge catalog (Google + OL) with a hard client timeout so the UI never spins. */
+async function searchEdgeCatalog(query: string, ms = 4500): Promise<Suggestion[]> {
+  let timer: number | undefined;
+  try {
+    const invoke = supabase.functions.invoke<{
+      recommendations?: Suggestion[];
+      error?: string;
+    }>("book-ai", { body: { mode: "catalog", query } });
+    const timed = new Promise<never>((_, reject) => {
+      timer = window.setTimeout(() => reject(new Error("catalog timeout")), ms);
+    });
+    const { data, error } = (await Promise.race([invoke, timed])) as Awaited<typeof invoke>;
+    if (error || data?.error) return [];
+    return (data?.recommendations ?? []).map(enrichKnownEdition);
+  } catch {
+    return [];
+  } finally {
+    if (timer !== undefined) window.clearTimeout(timer);
+  }
+}
+
+/**
+ * Free catalog search: Open Library in-browser (fast, CORS-open) raced with the
+ * book-ai edge function (Google Books, often has co-authors OL omits), plus a
+ * few curated editions so Libby titles like Parcells/Demasio actually show up
+ * looking like the book you borrowed.
  */
 export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
   const q = query.trim().slice(0, 200);
@@ -1214,31 +1305,35 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
   const hits: Suggestion[] = [];
   const seen = new Set<string>();
 
-  const push = (doc: Record<string, unknown>) => {
+  const pushSuggestion = (raw: Suggestion) => {
+    const s = enrichKnownEdition(raw);
+    if (!s.title.trim()) return;
+    if (scoreBookSearchHit(q, s.title, s.author) >= 99) return;
+    const key = suggestionDedupeKey(s);
+    if (seen.has(key)) {
+      // Prefer the enriched / longer-author variant of the same work.
+      const idx = hits.findIndex((h) => suggestionDedupeKey(h) === key);
+      if (idx >= 0) {
+        const prev = hits[idx]!;
+        if (
+          (s.author?.length ?? 0) > (prev.author?.length ?? 0) ||
+          s.title.length > prev.title.length
+        ) {
+          hits[idx] = s;
+        }
+      }
+      return;
+    }
+    seen.add(key);
+    hits.push(s);
+  };
+
+  const pushDoc = (doc: Record<string, unknown>) => {
     const title = String(doc.title ?? "").trim();
     if (!title) return;
-    const key = normalizeSearchText(title);
-    if (!key || seen.has(key)) return;
     const author = Array.isArray(doc.author_name)
       ? (doc.author_name as string[]).slice(0, 3).join(", ")
       : "";
-    // Open Library lists Parcells: A Football Life under Bill Parcells only —
-    // surface Nunyo Demasio when the query asked for him so the match is obvious.
-    let displayAuthor = author;
-    const qNorm = normalizeSearchText(q);
-    const aNorm = normalizeSearchText(author);
-    if (
-      titleKey(title) === "parcells" &&
-      qNorm.includes("demasio") &&
-      !aNorm.includes("demasio") &&
-      (aNorm.includes("parcells") || aNorm.length === 0)
-    ) {
-      displayAuthor = author
-        ? `${author}, Nunyo Demasio`
-        : "Bill Parcells, Nunyo Demasio";
-    }
-    if (scoreBookSearchHit(q, title, displayAuthor) >= 99) return;
-    seen.add(key);
     const year = doc.first_publish_year ? String(doc.first_publish_year) : "";
     const cover =
       typeof doc.cover_i === "number"
@@ -1257,9 +1352,9 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
     const isbn = isbnRaw.length === 10 || isbnRaw.length === 13 ? isbnRaw : null;
     const pages =
       typeof doc.number_of_pages_median === "number" ? doc.number_of_pages_median : null;
-    hits.push({
+    pushSuggestion({
       title,
-      author: displayAuthor,
+      author,
       year,
       reason: subject || "Open Library",
       cover_url: cover,
@@ -1268,13 +1363,16 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
     });
   };
 
+  // Curated rows first so Parcells/Demasio is never buried by OL noise.
+  for (const known of KNOWN_CATALOG_EDITIONS) {
+    if (known.match(q)) pushSuggestion(known.suggestion);
+  }
+
   try {
     const urls = [
       `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=20&fields=${fields}`,
       `https://openlibrary.org/search.json?title=${encodeURIComponent(q)}&limit=12&fields=${fields}`,
     ];
-    // Title + co-author queries ("Parcells demasio") — also try author= for the
-    // last token so we don't miss sparse OL records keyed on the co-writer.
     const tokens = searchTokens(q);
     if (tokens.length >= 2) {
       const last = tokens[tokens.length - 1]!;
@@ -1284,7 +1382,7 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
       );
     }
 
-    const responses = await Promise.all(
+    const olFetch = Promise.all(
       urls.map(async (url) => {
         try {
           const res = await fetch(url, { signal: ctl.signal });
@@ -1294,8 +1392,16 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
           return [];
         }
       }),
-    );
-    for (const docs of responses) for (const doc of docs) push(doc);
+    ).then((responses) => {
+      for (const docs of responses) for (const doc of docs) pushDoc(doc);
+    });
+
+    // Race Google (via edge) in parallel — often credits Nunyo Demasio.
+    const edgeFetch = searchEdgeCatalog(q).then((rows) => {
+      for (const row of rows) pushSuggestion(row);
+    });
+
+    await Promise.all([olFetch, edgeFetch]);
   } finally {
     window.clearTimeout(timer);
   }
@@ -1304,7 +1410,7 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
 }
 
 /**
- * Ask for books. `catalog` hits Open Library in-browser (no edge hang).
+ * Ask for books. `catalog` uses in-browser Open Library + a short edge race.
  * `search` uses Grok + web search; `recommend` reads the library for next reads.
  */
 export async function askAI(
