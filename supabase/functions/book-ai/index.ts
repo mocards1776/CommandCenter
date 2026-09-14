@@ -983,7 +983,7 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
     try {
       const key = GOOGLE_KEY ? `&key=${encodeURIComponent(GOOGLE_KEY)}` : "";
       const ctl = new AbortController();
-      const t = setTimeout(() => ctl.abort(), 9000);
+      const t = setTimeout(() => ctl.abort(), 4500);
       const res = await fetch(
         `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(googleQ)}&maxResults=20&printType=books${key}`,
         { signal: ctl.signal, headers: { "User-Agent": UA } },
@@ -1012,7 +1012,7 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
   const openLibraryFetch = async (url: string) => {
     try {
       const ctl = new AbortController();
-      const t = setTimeout(() => ctl.abort(), 9000);
+      const t = setTimeout(() => ctl.abort(), 4500);
       const res = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": UA } }).finally(
         () => clearTimeout(t),
       );
@@ -1140,7 +1140,7 @@ async function browseGoogleFrontTables(): Promise<BrowseShelf[]> {
     const seen = new Set<string>();
     try {
       const ctl = new AbortController();
-      const t = setTimeout(() => ctl.abort(), 9000);
+      const t = setTimeout(() => ctl.abort(), 4500);
       const url =
         `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}` +
         `&orderBy=${orderBy}&maxResults=20&printType=books&langRestrict=en${key}`;

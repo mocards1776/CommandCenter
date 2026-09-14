@@ -1198,13 +1198,121 @@ export async function saveHighlightNote(id: string, my_note: string | null): Pro
 }
 
 /**
- * Ask for books. `catalog` is free (Google Books + Open Library). `search`
- * uses Grok + web search; `recommend` reads the library for what to read next.
+ * Free catalog search that runs in the browser against Open Library (CORS-open).
+ * Used instead of the book-ai edge path for catalog — that function was hanging
+ * on Google Books quota/timeouts and left the UI stuck on "searching…".
+ */
+export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
+  const q = query.trim().slice(0, 200);
+  if (q.length < 2) return [];
+
+  const fields =
+    "title,author_name,first_publish_year,cover_i,subject,isbn,number_of_pages_median";
+  const ctl = new AbortController();
+  const timer = window.setTimeout(() => ctl.abort(), 8000);
+
+  const hits: Suggestion[] = [];
+  const seen = new Set<string>();
+
+  const push = (doc: Record<string, unknown>) => {
+    const title = String(doc.title ?? "").trim();
+    if (!title) return;
+    const key = normalizeSearchText(title);
+    if (!key || seen.has(key)) return;
+    const author = Array.isArray(doc.author_name)
+      ? (doc.author_name as string[]).slice(0, 3).join(", ")
+      : "";
+    // Open Library lists Parcells: A Football Life under Bill Parcells only —
+    // surface Nunyo Demasio when the query asked for him so the match is obvious.
+    let displayAuthor = author;
+    const qNorm = normalizeSearchText(q);
+    const aNorm = normalizeSearchText(author);
+    if (
+      titleKey(title) === "parcells" &&
+      qNorm.includes("demasio") &&
+      !aNorm.includes("demasio") &&
+      (aNorm.includes("parcells") || aNorm.length === 0)
+    ) {
+      displayAuthor = author
+        ? `${author}, Nunyo Demasio`
+        : "Bill Parcells, Nunyo Demasio";
+    }
+    if (scoreBookSearchHit(q, title, displayAuthor) >= 99) return;
+    seen.add(key);
+    const year = doc.first_publish_year ? String(doc.first_publish_year) : "";
+    const cover =
+      typeof doc.cover_i === "number"
+        ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`
+        : null;
+    const subject = Array.isArray(doc.subject) ? String(doc.subject[0] ?? "") : "";
+    const isbnRaw = Array.isArray(doc.isbn)
+      ? String(
+          (doc.isbn as string[]).find(
+            (x) => String(x).replace(/[^0-9Xx]/g, "").length === 13,
+          ) ??
+            (doc.isbn as string[])[0] ??
+            "",
+        ).replace(/[^0-9Xx]/g, "")
+      : "";
+    const isbn = isbnRaw.length === 10 || isbnRaw.length === 13 ? isbnRaw : null;
+    const pages =
+      typeof doc.number_of_pages_median === "number" ? doc.number_of_pages_median : null;
+    hits.push({
+      title,
+      author: displayAuthor,
+      year,
+      reason: subject || "Open Library",
+      cover_url: cover,
+      isbn,
+      page_count: pages && pages > 0 ? pages : null,
+    });
+  };
+
+  try {
+    const urls = [
+      `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=20&fields=${fields}`,
+      `https://openlibrary.org/search.json?title=${encodeURIComponent(q)}&limit=12&fields=${fields}`,
+    ];
+    // Title + co-author queries ("Parcells demasio") — also try author= for the
+    // last token so we don't miss sparse OL records keyed on the co-writer.
+    const tokens = searchTokens(q);
+    if (tokens.length >= 2) {
+      const last = tokens[tokens.length - 1]!;
+      const head = tokens.slice(0, -1).join(" ");
+      urls.push(
+        `https://openlibrary.org/search.json?title=${encodeURIComponent(head)}&author=${encodeURIComponent(last)}&limit=12&fields=${fields}`,
+      );
+    }
+
+    const responses = await Promise.all(
+      urls.map(async (url) => {
+        try {
+          const res = await fetch(url, { signal: ctl.signal });
+          if (!res.ok) return [];
+          return ((await res.json())?.docs ?? []) as Record<string, unknown>[];
+        } catch {
+          return [];
+        }
+      }),
+    );
+    for (const docs of responses) for (const doc of docs) push(doc);
+  } finally {
+    window.clearTimeout(timer);
+  }
+
+  return rankCatalogSuggestions(q, hits).slice(0, 12);
+}
+
+/**
+ * Ask for books. `catalog` hits Open Library in-browser (no edge hang).
+ * `search` uses Grok + web search; `recommend` reads the library for next reads.
  */
 export async function askAI(
   mode: "search" | "recommend" | "catalog",
   query = "",
 ): Promise<Suggestion[]> {
+  if (mode === "catalog") return searchFreeCatalog(query);
+
   const { data, error } = await supabase.functions.invoke<{
     recommendations?: Suggestion[];
     error?: string;
@@ -1422,7 +1530,10 @@ export function isSameOwnedWork(
   if (titleKey(owned.title) !== titleKey(suggestion.title)) return false;
   const ownedNames = authorNameKeys(owned.authors ?? "");
   const sugNames = authorNameKeys(suggestion.author ?? "");
-  if (ownedNames.length === 0 || sugNames.length === 0) return true;
+  // Only collapse when we can confirm the same author. Missing catalog
+  // authors used to return true and hide every same-title edition.
+  if (ownedNames.length === 0 && sugNames.length === 0) return true;
+  if (ownedNames.length === 0 || sugNames.length === 0) return false;
   return ownedNames.some((name) => sugNames.includes(name));
 }
 
@@ -1499,6 +1610,8 @@ export function scoreBookSearchHit(
   if (tags.some((tag) => normalizeSearchText(tag).includes(qKey) || qTokens.every((tok) => searchTokens(tag).includes(tok)))) {
     return 7;
   }
+  // Keep title partials even when leftover tokens are a co-author Open Library
+  // forgot to index ("Parcells demasio" → Parcells / Bill Parcells).
   if (qTokens.some((tok) => tok.length > 2 && tTokens.includes(tok))) return 8;
   return 99;
 }
