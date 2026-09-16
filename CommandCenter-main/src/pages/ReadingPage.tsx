@@ -512,7 +512,14 @@ function searchLibrary(books: Book[], raw: string, limit = 40): Book[] {
   if (needle.length < 2) return [];
   const scored: { b: Book; score: number }[] = [];
   for (const b of books) {
-    const score = scoreBookSearchHit(needle, b.title, b.authors ?? "", b.tags);
+    const score = scoreBookSearchHit(
+      needle,
+      b.title,
+      b.authors ?? "",
+      b.tags,
+      b.subtitle ?? "",
+      b.series ?? "",
+    );
     if (score < 99) scored.push({ b, score });
   }
   return scored
@@ -683,6 +690,9 @@ function LibrarySearch({
                   <span className="text-chalk-dim block truncate text-[10.5px]">
                     {s.author || "Unknown author"}
                     {s.year ? ` · ${s.year}` : ""}
+                    {s.series
+                      ? ` · ${s.series}${s.series_position ? ` #${s.series_position}` : ""}`
+                      : ""}
                   </span>
                 </span>
                 <span className="text-accent shrink-0 text-[10px] uppercase tracking-[0.14em]">
@@ -890,6 +900,9 @@ function SearchResultsPage({
                     <span className="text-chalk-dim mt-0.5 block text-[11px]">
                       {s.author || "Unknown author"}
                       {s.year ? ` · ${s.year}` : ""}
+                      {s.series
+                        ? ` · ${s.series}${s.series_position ? ` #${s.series_position}` : ""}`
+                        : ""}
                     </span>
                   </span>
                   <span className="text-accent shrink-0 text-[10.5px] uppercase tracking-[0.14em]">

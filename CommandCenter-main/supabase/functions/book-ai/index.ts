@@ -758,7 +758,7 @@ async function classify(
 ) {
   let q = admin
     .from("books")
-    .select("id,title,authors,published_year,fiction")
+    .select("id,title,authors,published_year,fiction,series")
     .eq("user_id", userId);
   q = bookId ? q.eq("id", bookId).limit(1) : q.is("classified_at", null).limit(batch);
   const { data: books, error } = await q;
@@ -808,7 +808,8 @@ async function classify(
       if (typeof got.fiction === "boolean" && books[i].fiction === null) {
         patch.fiction = got.fiction;
       }
-      if (got.series?.trim()) {
+      // Keep an already-assigned series (e.g. seeded Volume I from catalog add).
+      if (got.series?.trim() && !books[i].series) {
         patch.series = got.series.trim();
         const n = Number.parseFloat(got.series_position);
         patch.series_position = Number.isFinite(n) ? n : null;
@@ -869,6 +870,11 @@ function normalizeSearchText(raw: string): string {
     .trim();
 }
 
+/** Drop leading article; keep text after ":" so colon-titles rank correctly. */
+function catalogSearchKey(raw: string): string {
+  return normalizeSearchText(raw.replace(/\(.*?\)/g, "")).replace(/^(the|a|an) /, "");
+}
+
 /** Drop subtitle / leading article — same idea as client titleKey. */
 function catalogTitleKey(raw: string): string {
   return normalizeSearchText(
@@ -884,26 +890,60 @@ function searchTokens(raw: string): string[] {
     .filter((t) => t && !SEARCH_STOP.has(t));
 }
 
+const VOLUME_SEARCH_TOKENS = new Set([
+  "volume",
+  "vol",
+  "vols",
+  "book",
+  "pt",
+  "part",
+  "i",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+  "vi",
+  "vii",
+  "viii",
+  "ix",
+  "x",
+]);
+
 /**
  * Lower is better. 99 = discard (no meaningful title overlap).
  * Short tokens like "x" must match as whole title tokens so "Ibram X. Kendi"
  * does not beat a real title hit for "Unit x".
+ *
+ * Colon-stripped equality alone must not make "America: The Last Best Hope"
+ * perfect-match a bare Open Library title "America".
  */
 function scoreCatalogHit(query: string, title: string, author: string): number {
   const qKey = catalogTitleKey(query);
   const tKey = catalogTitleKey(title);
+  const qFull = catalogSearchKey(query);
+  const tFull = catalogSearchKey(title);
   const qTokens = searchTokens(query);
   const tTokens = searchTokens(title);
   const aTokens = searchTokens(author);
   if (!qKey || qTokens.length === 0) return 99;
 
-  if (tKey === qKey) return 0;
-  if (tKey.startsWith(qKey + " ") || tKey.startsWith(qKey)) return 1;
+  if (tFull === qFull) return 0;
+  if (tKey === qKey) {
+    const qCore = qTokens.filter((tok) => !VOLUME_SEARCH_TOKENS.has(tok) && !/^\d+$/.test(tok));
+    const tCore = tTokens.filter((tok) => !VOLUME_SEARCH_TOKENS.has(tok) && !/^\d+$/.test(tok));
+    if (qCore.length <= 1 || qCore.every((tok) => tCore.includes(tok))) return 0;
+  }
+  if (tFull.startsWith(qFull)) return 1;
+  if (tKey.startsWith(qKey + " ") || tKey.startsWith(qKey)) {
+    const qCore = qTokens.filter((tok) => !VOLUME_SEARCH_TOKENS.has(tok) && !/^\d+$/.test(tok));
+    const tCore = tTokens.filter((tok) => !VOLUME_SEARCH_TOKENS.has(tok) && !/^\d+$/.test(tok));
+    if (qCore.length <= 1 || qCore.every((tok) => tCore.includes(tok))) return 1;
+  }
   if (qTokens.length > 0 && tTokens.slice(0, qTokens.length).join(" ") === qTokens.join(" ")) {
     return 2;
   }
   if (qTokens.every((tok) => tTokens.includes(tok))) return 3;
-  if (normalizeSearchText(title).includes(qKey)) return 4;
+  if (tFull.includes(qFull) || normalizeSearchText(title).includes(qKey)) return 4;
   // Author-only / partial title matches stay available but ranked lower.
   if (qTokens.every((tok) => tTokens.includes(tok) || aTokens.includes(tok))) {
     // Require at least one multi-char token in the title so "unit x" does not
@@ -1018,7 +1058,16 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
       );
       if (!res.ok) return;
       for (const doc of (await res.json())?.docs ?? []) {
-        const title = String(doc.title ?? "").trim();
+        const rawTitle = String(doc.title ?? "").trim();
+        const subtitle = String(doc.subtitle ?? "").trim();
+        let title = rawTitle;
+        if (subtitle && rawTitle) {
+          const tNorm = normalizeSearchText(rawTitle);
+          const sNorm = normalizeSearchText(subtitle);
+          if (sNorm && !tNorm.includes(sNorm) && !sNorm.includes(tNorm)) {
+            title = `${rawTitle}: ${subtitle}`;
+          }
+        }
         if (!title) continue;
         const author = Array.isArray(doc.author_name) ? doc.author_name.slice(0, 2).join(", ") : "";
         const year = doc.first_publish_year ? String(doc.first_publish_year) : "";
@@ -1045,7 +1094,7 @@ async function catalogSearch(query: string): Promise<Suggestion[]> {
   };
 
   const olFields =
-    "title,author_name,first_publish_year,cover_i,subject,isbn,number_of_pages_median";
+    "title,subtitle,author_name,first_publish_year,cover_i,subject,isbn,number_of_pages_median";
   // Title-param search ranks exact titles first; general q= still catches author/ISBN phrasing.
   const olJobs = [
     openLibraryFetch(

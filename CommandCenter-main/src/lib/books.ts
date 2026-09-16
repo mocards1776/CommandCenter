@@ -970,6 +970,9 @@ export type Suggestion = {
   cover_url?: string | null;
   isbn?: string | null;
   page_count?: number | null;
+  subtitle?: string | null;
+  series?: string | null;
+  series_position?: number | null;
 };
 
 /** Best-effort ISBN / page count when catalog search omitted them (CORS-friendly). */
@@ -1014,6 +1017,76 @@ async function openLibraryExtras(
   }
 }
 
+const ROMAN_VOL: Record<string, number> = {
+  i: 1,
+  ii: 2,
+  iii: 3,
+  iv: 4,
+  v: 5,
+  vi: 6,
+  vii: 7,
+  viii: 8,
+  ix: 9,
+  x: 10,
+};
+
+/** Pull "Volume I" / "Vol. 2" / "#3" out of a title or subtitle. */
+export function inferSeriesFromTitle(
+  title: string,
+  subtitle?: string | null,
+): { series: string | null; series_position: number | null } {
+  const blob = [title, subtitle ?? ""].filter(Boolean).join(" ");
+  const vol =
+    blob.match(/\(\s*volume\s+([ivxlcdm]+|\d+)\s*\)/i) ??
+    blob.match(/\bvolume\s+([ivxlcdm]+|\d+)\b/i) ??
+    blob.match(/\bvol\.?\s*([ivxlcdm]+|\d+)\b/i) ??
+    blob.match(/#\s*(\d+)\b/);
+  if (!vol) return { series: null, series_position: null };
+
+  const raw = vol[1]!.toLowerCase();
+  const series_position = ROMAN_VOL[raw] ?? Number.parseInt(raw, 10);
+  if (!Number.isFinite(series_position) || series_position <= 0) {
+    return { series: null, series_position: null };
+  }
+
+  // Series name = title with the volume marker (and trailing subtitle after
+  // colon/em-dash when that marker lived in the title) stripped.
+  let series = title
+    .replace(/\(\s*volume\s+(?:[ivxlcdm]+|\d+)\s*\)/gi, "")
+    .replace(/\bvolume\s+(?:[ivxlcdm]+|\d+)\b/gi, "")
+    .replace(/\bvol\.?\s*(?:[ivxlcdm]+|\d+)\b/gi, "")
+    .replace(/#\s*\d+\b/g, "")
+    .replace(/\s*[,:\u2014\u2013\-]\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  // "America the Last Best Hope, Vol. 2" → leave "America the Last Best Hope"
+  series = series.replace(/,\s*$/g, "").trim();
+  if (!series || series.length < 2) return { series: null, series_position: null };
+  return { series, series_position };
+}
+
+/**
+ * Open Library often stores multi-volume works as title "America" with the
+ * real name in subtitle — fold that into the display title so search + add
+ * look like the Libby/Audible jacket.
+ */
+export function composeCatalogTitle(title: string, subtitle?: string | null): string {
+  const t = title.trim();
+  const sub = (subtitle ?? "").trim();
+  if (!sub) return t;
+  if (!t) return sub;
+  const tNorm = normalizeSearchText(t);
+  const sNorm = normalizeSearchText(sub);
+  if (!sNorm || tNorm.includes(sNorm) || sNorm.includes(tNorm)) return t;
+  // Subtitle already continues the work title ("The Last Best Hope…").
+  if (/^(the|a|an)\s/i.test(sub) || /volume|vol\.?/i.test(sub)) {
+    return `${t}: ${sub}`;
+  }
+  // Generic subtitle after a colon when title doesn't already have one.
+  if (t.includes(":")) return t;
+  return `${t}: ${sub}`;
+}
+
 /**
  * Add a catalog / AI suggestion and keep the jacket + page count that search
  * already found. Enrich still runs for blurb/subjects, but we no longer discard
@@ -1036,14 +1109,24 @@ export async function addBookFromSuggestion(
     if (!cover) cover = extra.cover_url;
   }
 
+  const inferred = inferSeriesFromTitle(s.title, s.subtitle);
+  const series = (s.series ?? inferred.series)?.trim() || null;
+  const series_position =
+    s.series_position ??
+    inferred.series_position ??
+    null;
+
   let book = await createBook({
     title: s.title.trim() || "Untitled",
     authors: s.author?.trim() || null,
+    subtitle: s.subtitle?.trim() || null,
     status: "to-read",
     published_year: Number.isFinite(year) ? year : null,
     cover_url: cover,
     isbn: isbn && (isbn.length === 10 || isbn.length === 13) ? isbn : null,
     page_count: pages,
+    series,
+    series_position,
     ...overrides,
   });
 
@@ -1223,6 +1306,31 @@ const KNOWN_CATALOG_EDITIONS: {
       page_count: 536,
     },
   },
+  {
+    // Libby/Audible: America: The Last Best Hope (Volume I) — OL often indexes
+    // this as bare title "America", which search then ranks as a perfect hit
+    // because titleKey strips at the colon.
+    match: (q) => {
+      const n = normalizeSearchText(q);
+      if (n.includes("last best hope")) return true;
+      return (
+        n.includes("bennett") &&
+        n.includes("america") &&
+        (n.includes("hope") || n.includes("volume") || n.includes("vol"))
+      );
+    },
+    suggestion: {
+      title: "America: The Last Best Hope (Volume I)",
+      subtitle: "From the Age of Discovery to a World at War",
+      author: "William J. Bennett",
+      year: "2006",
+      reason: "History · Series vol. 1",
+      cover_url: "https://covers.openlibrary.org/b/isbn/9781595550552-L.jpg",
+      isbn: "9781595550552",
+      series: "America: The Last Best Hope",
+      series_position: 1,
+    },
+  },
 ];
 
 /** ISBN-13/10 for Parcells: A Football Life (Parcells & Demasio, 2014). */
@@ -1233,6 +1341,35 @@ const FOOTBALL_LIFE_ISBNS = new Set([
   "0804128251",
 ]);
 
+/** Print + audio ISBNs for America: The Last Best Hope Volume I. */
+const LAST_BEST_HOPE_V1_ISBNS = new Set([
+  "9781595550552",
+  "1595550550",
+  "9781595551115",
+  "1595551115",
+  "9781433202421", // Blackstone audiobook
+  "1433202425",
+  "9781400212903",
+  "1400212901",
+]);
+
+function isLastBestHopeVol1(s: Suggestion): boolean {
+  const isbn = (s.isbn ?? "").replace(/[^0-9Xx]/g, "");
+  if (LAST_BEST_HOPE_V1_ISBNS.has(isbn)) return true;
+  const blob = normalizeSearchText(`${s.title} ${s.subtitle ?? ""}`);
+  if (!blob.includes("last best hope") && !blob.includes("age of discovery")) return false;
+  if (!/bennett/i.test(s.author ?? "")) return false;
+  // Vol 2 subtitle is "World at War to the Triumph of Freedom".
+  if (blob.includes("triumph of freedom")) return false;
+  if (/\bvol(?:ume)?\s*(?:2|ii)\b/.test(blob)) return false;
+  return (
+    /\bvol(?:ume)?\s*(?:1|i)\b/.test(blob) ||
+    blob.includes("age of discovery") ||
+    // Bare "America" + Bennett + Last Best Hope subtitle, no vol 2 markers.
+    (titleKey(s.title) === "america" && blob.includes("last best hope"))
+  );
+}
+
 /** Attach the Demasio co-author + subtitle Open Library drops for this ISBN. */
 function enrichKnownEdition(s: Suggestion): Suggestion {
   const isbn = (s.isbn ?? "").replace(/[^0-9Xx]/g, "");
@@ -1241,29 +1378,73 @@ function enrichKnownEdition(s: Suggestion): Suggestion {
     (titleKey(s.title) === "parcells" &&
       /parcells/i.test(s.author ?? "") &&
       /2014/.test(s.year ?? ""));
-  if (!isFootballLife) return s;
-  const author = normalizeSearchText(s.author ?? "").includes("demasio")
-    ? s.author
-    : s.author?.trim()
-      ? `${s.author.replace(/\s*,\s*$/, "")}, Nunyo Demasio`
-      : "Bill Parcells, Nunyo Demasio";
-  return {
-    ...s,
-    title:
-      titleKey(s.title) === "parcells" && !/football life/i.test(s.title)
-        ? "Parcells: A Football Life"
-        : s.title,
-    author: author ?? "Bill Parcells, Nunyo Demasio",
-    year: s.year || "2014",
-    isbn: s.isbn || "9780385346351",
-    cover_url:
-      s.cover_url || "https://covers.openlibrary.org/b/isbn/9780385346351-L.jpg",
-  };
+  if (isFootballLife) {
+    const author = normalizeSearchText(s.author ?? "").includes("demasio")
+      ? s.author
+      : s.author?.trim()
+        ? `${s.author.replace(/\s*,\s*$/, "")}, Nunyo Demasio`
+        : "Bill Parcells, Nunyo Demasio";
+    return {
+      ...s,
+      title:
+        titleKey(s.title) === "parcells" && !/football life/i.test(s.title)
+          ? "Parcells: A Football Life"
+          : s.title,
+      author: author ?? "Bill Parcells, Nunyo Demasio",
+      year: s.year || "2014",
+      isbn: s.isbn || "9780385346351",
+      cover_url:
+        s.cover_url || "https://covers.openlibrary.org/b/isbn/9780385346351-L.jpg",
+    };
+  }
+
+  if (isLastBestHopeVol1(s)) {
+    const inferred = inferSeriesFromTitle(
+      "America: The Last Best Hope (Volume I)",
+      "From the Age of Discovery to a World at War",
+    );
+    return {
+      ...s,
+      title: "America: The Last Best Hope (Volume I)",
+      subtitle: s.subtitle?.includes("Age of Discovery")
+        ? s.subtitle
+        : "From the Age of Discovery to a World at War",
+      author: /bennett/i.test(s.author ?? "") ? s.author! : "William J. Bennett",
+      year: s.year || "2006",
+      isbn: s.isbn || "9781595550552",
+      cover_url:
+        s.cover_url || "https://covers.openlibrary.org/b/isbn/9781595550552-L.jpg",
+      series: s.series || inferred.series,
+      series_position: s.series_position ?? inferred.series_position,
+      reason: s.reason?.includes("Series") ? s.reason : "History · Series vol. 1",
+    };
+  }
+
+  // Generic volume titles from catalogs — keep series fields populated.
+  if (!s.series) {
+    const inferred = inferSeriesFromTitle(s.title, s.subtitle);
+    if (inferred.series) {
+      return {
+        ...s,
+        series: inferred.series,
+        series_position: inferred.series_position,
+      };
+    }
+  }
+  return s;
 }
 
 function suggestionDedupeKey(s: Suggestion): string {
   // Collapse "Parcells" and "Parcells: A Football Life" so the enriched row wins.
-  return `${titleKey(s.title)}|${normalizeSearchText((s.author ?? "").split(",")[0] ?? "")}`;
+  // Keep volume numbers so Vol. 1 and Vol. 2 don't wipe each other out —
+  // titleKey("America: … Vol. 1") and titleKey("America") both become "america".
+  const vol =
+    s.series_position != null
+      ? String(s.series_position)
+      : (normalizeSearchText(`${s.title} ${s.subtitle ?? ""}`).match(
+          /\b(?:volume|vol)\s*([ivxlcdm]+|\d+)\b/,
+        )?.[1] ?? "");
+  return `${titleKey(s.title)}|${normalizeSearchText((s.author ?? "").split(",")[0] ?? "")}|${vol}`;
 }
 
 /** Edge catalog (Google + OL) with a hard client timeout so the UI never spins. */
@@ -1298,7 +1479,7 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
   if (q.length < 2) return [];
 
   const fields =
-    "title,author_name,first_publish_year,cover_i,subject,isbn,number_of_pages_median";
+    "title,subtitle,author_name,first_publish_year,cover_i,subject,isbn,number_of_pages_median";
   const ctl = new AbortController();
   const timer = window.setTimeout(() => ctl.abort(), 8000);
 
@@ -1308,7 +1489,7 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
   const pushSuggestion = (raw: Suggestion) => {
     const s = enrichKnownEdition(raw);
     if (!s.title.trim()) return;
-    if (scoreBookSearchHit(q, s.title, s.author) >= 99) return;
+    if (scoreBookSearchHit(q, s.title, s.author, [], s.subtitle ?? "", s.series ?? "") >= 99) return;
     const key = suggestionDedupeKey(s);
     if (seen.has(key)) {
       // Prefer the enriched / longer-author variant of the same work.
@@ -1317,9 +1498,10 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
         const prev = hits[idx]!;
         if (
           (s.author?.length ?? 0) > (prev.author?.length ?? 0) ||
-          s.title.length > prev.title.length
+          s.title.length > prev.title.length ||
+          ((s.series?.length ?? 0) > 0 && !prev.series)
         ) {
-          hits[idx] = s;
+          hits[idx] = { ...prev, ...s, series: s.series ?? prev.series, series_position: s.series_position ?? prev.series_position };
         }
       }
       return;
@@ -1329,7 +1511,9 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
   };
 
   const pushDoc = (doc: Record<string, unknown>) => {
-    const title = String(doc.title ?? "").trim();
+    const rawTitle = String(doc.title ?? "").trim();
+    const subtitle = String(doc.subtitle ?? "").trim() || null;
+    const title = composeCatalogTitle(rawTitle, subtitle);
     if (!title) return;
     const author = Array.isArray(doc.author_name)
       ? (doc.author_name as string[]).slice(0, 3).join(", ")
@@ -1352,14 +1536,18 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
     const isbn = isbnRaw.length === 10 || isbnRaw.length === 13 ? isbnRaw : null;
     const pages =
       typeof doc.number_of_pages_median === "number" ? doc.number_of_pages_median : null;
+    const inferred = inferSeriesFromTitle(title, subtitle);
     pushSuggestion({
       title,
+      subtitle,
       author,
       year,
       reason: subject || "Open Library",
       cover_url: cover,
       isbn,
       page_count: pages && pages > 0 ? pages : null,
+      series: inferred.series,
+      series_position: inferred.series_position,
     });
   };
 
@@ -1686,28 +1874,79 @@ function searchTokens(raw: string): string[] {
 }
 
 /**
+ * Full-title key for search: keeps text after a colon so
+ * "America: The Last Best Hope" does not collapse to "america".
+ * (titleKey still strips at ":" for Relentless → Relentless: A Memoir matching.)
+ */
+function searchTitleKey(raw: string): string {
+  return normalizeSearchText(raw.replace(/\(.*?\)/g, "")).replace(/^(the|a|an) /, "");
+}
+
+const VOLUME_SEARCH_TOKENS = new Set([
+  "volume",
+  "vol",
+  "vols",
+  "book",
+  "pt",
+  "part",
+  "i",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+  "vi",
+  "vii",
+  "viii",
+  "ix",
+  "x",
+]);
+
+/**
  * Rank a library / catalog hit for a typed query. Lower is better; 99 = miss.
  * Token matching makes "Unit x" find "Unit X" even when punctuation / case differ,
  * while ignoring weak author-initial matches.
+ *
+ * Colon-stripped titleKey equality alone is not enough: Libby titles like
+ * "America: The Last Best Hope (Volume I)" must not perfect-match a bare
+ * Open Library row titled "America".
  */
 export function scoreBookSearchHit(
   query: string,
   title: string,
   author = "",
   tags: string[] = [],
+  subtitle = "",
+  series = "",
 ): number {
   const qKey = titleKey(query);
   const tKey = titleKey(title);
+  const qFull = searchTitleKey(query);
+  const tFull = searchTitleKey(
+    [title, subtitle, series].filter(Boolean).join(" "),
+  );
   const qTokens = searchTokens(query);
-  const tTokens = searchTokens(title);
+  const tTokens = searchTokens([title, subtitle, series].filter(Boolean).join(" "));
   const aTokens = searchTokens(author);
   if (!qKey || qTokens.length === 0) return 99;
 
-  if (tKey === qKey) return 0;
-  if (tKey.startsWith(qKey)) return 1;
+  if (tFull === qFull) return 0;
+  // Short queries ("Relentless") still match "Relentless: A Memoir" via titleKey.
+  // Longer colon-titles must not — require the title to carry the query's
+  // non-volume tokens (so "America: The Last Best Hope" ≠ bare "America").
+  if (tKey === qKey) {
+    const qCore = qTokens.filter((tok) => !VOLUME_SEARCH_TOKENS.has(tok) && !/^\d+$/.test(tok));
+    const tCore = tTokens.filter((tok) => !VOLUME_SEARCH_TOKENS.has(tok) && !/^\d+$/.test(tok));
+    if (qCore.length <= 1 || qCore.every((tok) => tCore.includes(tok))) return 0;
+  }
+  if (tFull.startsWith(qFull)) return 1;
+  if (tKey.startsWith(qKey)) {
+    const qCore = qTokens.filter((tok) => !VOLUME_SEARCH_TOKENS.has(tok) && !/^\d+$/.test(tok));
+    const tCore = tTokens.filter((tok) => !VOLUME_SEARCH_TOKENS.has(tok) && !/^\d+$/.test(tok));
+    if (qCore.length <= 1 || qCore.every((tok) => tCore.includes(tok))) return 1;
+  }
   if (tTokens.slice(0, qTokens.length).join(" ") === qTokens.join(" ")) return 2;
   if (qTokens.every((tok) => tTokens.includes(tok))) return 3;
-  if (normalizeSearchText(title).includes(qKey)) return 4;
+  if (tFull.includes(qFull) || normalizeSearchText(title).includes(qKey)) return 4;
   if (qTokens.every((tok) => aTokens.includes(tok))) return 5;
   if (qTokens.every((tok) => tTokens.includes(tok) || aTokens.includes(tok))) {
     const strong = qTokens.filter((tok) => tok.length > 1);
@@ -1725,7 +1964,10 @@ export function scoreBookSearchHit(
 /** Sort catalog suggestions so exact titles surface before fuzzy API noise. */
 export function rankCatalogSuggestions(query: string, rows: Suggestion[]): Suggestion[] {
   return [...rows]
-    .map((s) => ({ s, score: scoreBookSearchHit(query, s.title, s.author) }))
+    .map((s) => ({
+      s,
+      score: scoreBookSearchHit(query, s.title, s.author, [], s.subtitle ?? "", s.series ?? ""),
+    }))
     .filter((x) => x.score < 99)
     .sort((a, b) => a.score - b.score || a.s.title.localeCompare(b.s.title))
     .map((x) => x.s);
