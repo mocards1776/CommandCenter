@@ -1,0 +1,34 @@
+name: Auto-import magazine issues
+
+# Poll Baseball America (Shopify) and USA Today Sports Weekly for new issues
+# and add them to the reading library as magazines.
+on:
+  schedule:
+    # Twice daily — Sports Weekly is weekly; BA is roughly bi-monthly.
+    - cron: "15 12,0 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync magazine issues
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          URL="${SUPABASE_URL:-https://esdgrgulaxnewmhjuyzh.supabase.co}"
+          KEY="${SUPABASE_ANON_KEY}"
+          if [ -z "$KEY" ]; then
+            echo "::warning::SUPABASE_ANON_KEY secret is not set — skipping magazine sync."
+            echo "Add SUPABASE_URL (optional) and SUPABASE_ANON_KEY under Repo Settings → Secrets."
+            exit 0
+          fi
+          curl -fsS -X POST "$URL/functions/v1/magazine-sync" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $KEY" \
+            -H "apikey: $KEY" \
+            -d '{}' \
+            --max-time 120
+          echo
+          echo "Magazine sync complete."

@@ -76,6 +76,31 @@ export async function createMagazine(input: {
   });
 }
 
+export type MagazineSyncResult = {
+  ok: boolean;
+  looked: number;
+  inserted: number;
+  skipped?: number;
+  baseballAmerica?: number;
+  sportsWeekly?: number;
+  issues?: Array<{ publication: string; issue: string; id: string }>;
+  errors?: string[];
+};
+
+/**
+ * Pull new Baseball America + Sports Weekly issues into the magazine shelf.
+ * Safe to re-run — duplicates are skipped by source URL / issue key.
+ */
+export async function syncMagazines(): Promise<MagazineSyncResult> {
+  const { data, error } = await supabase.functions.invoke<
+    MagazineSyncResult & { error?: string }
+  >("magazine-sync", { body: {} });
+  if (data?.error) throw new Error(data.error);
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Magazine sync failed");
+  return data;
+}
+
 /**
  * A minimal RFC-4180 CSV parser. StoryGraph exports contain commas and
  * newlines inside quoted fields (reviews, content warnings, tag lists), which
