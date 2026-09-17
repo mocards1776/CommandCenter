@@ -1356,6 +1356,25 @@ const KNOWN_CATALOG_EDITIONS: {
       series_position: 1,
     },
   },
+  {
+    // Audible/Harper: brand-new Lane Kiffin bio — free catalogs lag / bury it
+    // under unrelated "lane" + "being" phrase matches.
+    match: (q) => {
+      const n = normalizeSearchText(q);
+      if (n.includes("lane being lane")) return true;
+      if (n.includes("talty") && n.includes("lane")) return true;
+      return n.includes("kiffin") && (n.includes("lane") || n.includes("chaos") || n.includes("talty"));
+    },
+    suggestion: {
+      title: "Lane Being Lane",
+      subtitle: "The Story of Lane Kiffin, College Football's Agent of Chaos",
+      author: "John Talty",
+      year: "2026",
+      reason: "Biography · CFB",
+      cover_url: "https://covers.openlibrary.org/b/isbn/9780063573284-L.jpg",
+      isbn: "9780063573284",
+    },
+  },
 ];
 
 /** ISBN-13/10 for Parcells: A Football Life (Parcells & Demasio, 2014). */
@@ -1883,6 +1902,83 @@ const SEARCH_STOP = new Set([
   "with",
 ]);
 
+/**
+ * Title glue that must not alone qualify a multi-word query hit.
+ * "lane being lane" matching only "being" → Being George Washington is noise.
+ */
+const SEARCH_WEAK = new Set([
+  "being",
+  "been",
+  "well",
+  "true",
+  "story",
+  "life",
+  "art",
+  "man",
+  "men",
+  "woman",
+  "world",
+  "new",
+  "old",
+  "one",
+  "two",
+  "first",
+  "last",
+  "great",
+  "good",
+  "best",
+  "how",
+  "why",
+  "what",
+  "when",
+  "where",
+  "who",
+  "his",
+  "her",
+  "our",
+  "their",
+  "from",
+  "into",
+  "over",
+  "after",
+  "about",
+  "other",
+  "than",
+  "then",
+  "them",
+  "this",
+  "that",
+  "these",
+  "those",
+  "your",
+  "my",
+  "its",
+  "also",
+  "more",
+  "most",
+  "some",
+  "any",
+  "all",
+  "own",
+  "same",
+  "such",
+  "only",
+  "just",
+  "like",
+  "make",
+  "made",
+  "way",
+  "time",
+  "year",
+  "day",
+  "war",
+  "book",
+  "guide",
+  "history",
+  "memoir",
+  "biography",
+]);
+
 function normalizeSearchText(raw: string): string {
   return raw
     .toLowerCase()
@@ -1896,6 +1992,42 @@ function searchTokens(raw: string): string[] {
   return normalizeSearchText(raw)
     .split(" ")
     .filter((t) => t && !SEARCH_STOP.has(t));
+}
+
+/** Distinctive query tokens, order preserved (drops stop/weak/short glue). */
+function strongSearchTokens(tokens: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const tok of tokens) {
+    if (tok.length <= 2 || SEARCH_WEAK.has(tok) || seen.has(tok)) continue;
+    seen.add(tok);
+    out.push(tok);
+  }
+  return out;
+}
+
+/**
+ * Partial title overlap for fuzzy catalog / library hits.
+ * Requires at least one strong token so "being" alone cannot surface
+ * unrelated titles; still allows "Parcells demasio" → title "Parcells".
+ */
+function hasPartialTitleTokenMatch(qTokens: string[], tTokens: string[]): boolean {
+  const uniqueQ = [...new Set(qTokens)].filter((t) => t.length > 2);
+  if (uniqueQ.length === 0) return false;
+  if (!uniqueQ.some((tok) => tTokens.includes(tok))) return false;
+
+  const strongQ = strongSearchTokens(qTokens);
+  if (strongQ.length === 0) {
+    // Query is only weak words ("being true") — any title overlap is fine.
+    return true;
+  }
+
+  const strongHits = strongQ.filter((tok) => tTokens.includes(tok));
+  if (strongHits.length === 0) return false;
+  if (strongQ.length === 1) return true;
+  if (strongHits.length >= Math.ceil(strongQ.length / 2)) return true;
+  // Leading distinctive token in the title (co-author leftover case).
+  return tTokens.includes(strongQ[0]!);
 }
 
 /**
@@ -1981,8 +2113,9 @@ export function scoreBookSearchHit(
     return 7;
   }
   // Keep title partials even when leftover tokens are a co-author Open Library
-  // forgot to index ("Parcells demasio" → Parcells / Bill Parcells).
-  if (qTokens.some((tok) => tok.length > 2 && tTokens.includes(tok))) return 8;
+  // forgot to index ("Parcells demasio" → Parcells / Bill Parcells) — but not
+  // when the only overlap is weak glue ("lane being lane" → "Being Nixon").
+  if (hasPartialTitleTokenMatch(qTokens, tTokens)) return 8;
   return 99;
 }
 

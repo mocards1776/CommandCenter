@@ -861,6 +861,80 @@ const SEARCH_STOP = new Set([
   "with",
 ]);
 
+/** Title glue that must not alone qualify a multi-word query hit. */
+const SEARCH_WEAK = new Set([
+  "being",
+  "been",
+  "well",
+  "true",
+  "story",
+  "life",
+  "art",
+  "man",
+  "men",
+  "woman",
+  "world",
+  "new",
+  "old",
+  "one",
+  "two",
+  "first",
+  "last",
+  "great",
+  "good",
+  "best",
+  "how",
+  "why",
+  "what",
+  "when",
+  "where",
+  "who",
+  "his",
+  "her",
+  "our",
+  "their",
+  "from",
+  "into",
+  "over",
+  "after",
+  "about",
+  "other",
+  "than",
+  "then",
+  "them",
+  "this",
+  "that",
+  "these",
+  "those",
+  "your",
+  "my",
+  "its",
+  "also",
+  "more",
+  "most",
+  "some",
+  "any",
+  "all",
+  "own",
+  "same",
+  "such",
+  "only",
+  "just",
+  "like",
+  "make",
+  "made",
+  "way",
+  "time",
+  "year",
+  "day",
+  "war",
+  "book",
+  "guide",
+  "history",
+  "memoir",
+  "biography",
+]);
+
 function normalizeSearchText(raw: string): string {
   return raw
     .toLowerCase()
@@ -888,6 +962,33 @@ function searchTokens(raw: string): string[] {
   return normalizeSearchText(raw)
     .split(" ")
     .filter((t) => t && !SEARCH_STOP.has(t));
+}
+
+function strongSearchTokens(tokens: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const tok of tokens) {
+    if (tok.length <= 2 || SEARCH_WEAK.has(tok) || seen.has(tok)) continue;
+    seen.add(tok);
+    out.push(tok);
+  }
+  return out;
+}
+
+/** Partial title overlap — requires a strong token, not just weak glue. */
+function hasPartialTitleTokenMatch(qTokens: string[], tTokens: string[]): boolean {
+  const uniqueQ = [...new Set(qTokens)].filter((t) => t.length > 2);
+  if (uniqueQ.length === 0) return false;
+  if (!uniqueQ.some((tok) => tTokens.includes(tok))) return false;
+
+  const strongQ = strongSearchTokens(qTokens);
+  if (strongQ.length === 0) return true;
+
+  const strongHits = strongQ.filter((tok) => tTokens.includes(tok));
+  if (strongHits.length === 0) return false;
+  if (strongQ.length === 1) return true;
+  if (strongHits.length >= Math.ceil(strongQ.length / 2)) return true;
+  return tTokens.includes(strongQ[0]!);
 }
 
 const VOLUME_SEARCH_TOKENS = new Set([
@@ -951,7 +1052,8 @@ function scoreCatalogHit(query: string, title: string, author: string): number {
     const strong = qTokens.filter((tok) => tok.length > 1);
     if (strong.length === 0 || strong.some((tok) => tTokens.includes(tok))) return 6;
   }
-  if (qTokens.some((tok) => tok.length > 2 && tTokens.includes(tok))) return 8;
+  // "Parcells demasio" → Parcells; not "lane being lane" → Being Nixon.
+  if (hasPartialTitleTokenMatch(qTokens, tTokens)) return 8;
   return 99;
 }
 

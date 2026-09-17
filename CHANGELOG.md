@@ -2,6 +2,13 @@
 
 ---
 
+## Reading search: stop weak “being” library noise — September 17, 2026
+
+- Partial title matches now require a **strong** query token, so `"lane being lane"` no longer floods **Your library** with books that only share the glue word *being*.
+- Seed **Lane Being Lane** (Talty) as a known catalog edition — free catalogs lag on this new title and were burying it under unrelated *lane*/*being* phrase hits.
+
+---
+
 ## Thompson Times: force a single print sheet — September 12, 2026
 
 - Harden print CSS so the one-page edition **clips** instead of spilling onto blank pages (Safari/iOS especially).
