@@ -102,6 +102,7 @@ import {
   libraryTitle,
   createMagazine,
   addMagazineFromUrl,
+  syncMagazines,
   type ReadingSession,
 } from "@/lib/books";
 import StarField from "@/components/StarField";
@@ -5270,6 +5271,42 @@ export default function ReadingPage() {
     () => (localStorage.getItem("reading-view") as "list" | "grid" | null) ?? "list",
   );
 
+  const magazineSync = useMutation({
+    mutationFn: (opts?: { quiet?: boolean }) => syncMagazines(),
+    onSuccess: (r, opts) => {
+      qc.invalidateQueries({ queryKey: ["books"] });
+      if (r.inserted > 0) {
+        const sample = r.issues?.[0];
+        toast.success(
+          r.inserted === 1
+            ? `New issue: ${sample ? `${sample.publication} · ${sample.issue}` : "magazine"}`
+            : `Imported ${r.inserted} new magazine issues`,
+        );
+      } else if (!opts?.quiet) {
+        toast.success("Magazines up to date");
+      }
+      if (r.errors?.length && !opts?.quiet) {
+        toast.error(r.errors[0]);
+      }
+    },
+    onError: (e, opts) => {
+      if (opts?.quiet) return;
+      toast.error(e instanceof Error ? e.message : "Magazine sync failed");
+    },
+  });
+
+  // Quiet background check when opening Magazines (at most once per 6h).
+  useEffect(() => {
+    if (libraryKind !== "magazines") return;
+    const key = "magazine-auto-sync-at";
+    const last = Number(localStorage.getItem(key) || "0");
+    if (Date.now() - last < 6 * 60 * 60 * 1000) return;
+    localStorage.setItem(key, String(Date.now()));
+    magazineSync.mutate({ quiet: true });
+    // Intentional: fire once when switching to Magazines, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [libraryKind]);
+
   const { data: tagKinds = {} } = useQuery({
     queryKey: ["tag-kinds"],
     queryFn: fetchTagKinds,
@@ -5565,6 +5602,21 @@ export default function ReadingPage() {
             ))}
 
             <div className="ml-auto flex items-center gap-1">
+              {libraryKind === "magazines" && (
+                <button
+                  type="button"
+                  onClick={() => magazineSync.mutate({ quiet: false })}
+                  disabled={magazineSync.isPending}
+                  aria-label="Check for new magazine issues"
+                  title="Baseball America & Sports Weekly auto-import"
+                  className="text-chalk-dim hover:text-cream flex items-center gap-1.5 rounded-sm border border-white/10 px-2.5 py-1.5 text-[10px] uppercase tracking-[0.14em] transition hover:border-accent/40 disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={magazineSync.isPending ? "animate-spin" : ""} />
+                  <span className="hidden sm:inline">
+                    {magazineSync.isPending ? "Checking" : "New issues"}
+                  </span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setStatsOpen(true)}
@@ -5596,6 +5648,13 @@ export default function ReadingPage() {
               ))}
             </div>
           </div>
+
+          {libraryKind === "magazines" && (
+            <p className="text-chalk-dim -mt-2 text-[11px] leading-relaxed">
+              Baseball America and Sports Weekly new issues auto-import when they publish.
+              Tap <span className="text-cream">New issues</span> to check now.
+            </p>
+          )}
 
           {filter && (
             <button
