@@ -1487,6 +1487,7 @@ function BookDetail({
   onFilter,
   onFindSimilar,
   onOpenBook,
+  onFinishedMagazine,
 }: {
   book: Book;
   books: Book[];
@@ -1495,6 +1496,8 @@ function BookDetail({
   onFilter: (f: Filter) => void;
   onFindSimilar: (b: Book) => void;
   onOpenBook: (b: Book) => void;
+  /** Magazines leave the Reading shelf — jump to Magazines → Read. */
+  onFinishedMagazine?: () => void;
 }) {
   const qc = useQueryClient();
   const { burst, bookFinish } = useCelebration();
@@ -1592,10 +1595,17 @@ function BookDetail({
         pageCount: book.page_count,
         currentPage: book.current_page,
         status: book.status,
+        contentType: book.content_type,
+        series: book.series,
+        title: book.title,
       }),
-    onSuccess: () => {
+    onSuccess: (r) => {
       refresh();
       maybeCelebrateFinish();
+      if (r.pagesLogged > 0) {
+        toast.success(`${r.pagesLogged} pages · finished`);
+      }
+      if (isMagazine(book)) onFinishedMagazine?.();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not finish book"),
   });
@@ -5608,7 +5618,7 @@ export default function ReadingPage() {
                   onClick={() => magazineSync.mutate({ quiet: false })}
                   disabled={magazineSync.isPending}
                   aria-label="Check for new magazine issues"
-                  title="Baseball America & Sports Weekly auto-import"
+                  title="Baseball America, Sports Weekly & Sports Illustrated auto-import"
                   className="text-chalk-dim hover:text-cream flex items-center gap-1.5 rounded-sm border border-white/10 px-2.5 py-1.5 text-[10px] uppercase tracking-[0.14em] transition hover:border-accent/40 disabled:opacity-50"
                 >
                   <RefreshCw size={14} className={magazineSync.isPending ? "animate-spin" : ""} />
@@ -5651,8 +5661,9 @@ export default function ReadingPage() {
 
           {libraryKind === "magazines" && (
             <p className="text-chalk-dim -mt-2 text-[11px] leading-relaxed">
-              Baseball America and Sports Weekly new issues auto-import when they publish.
-              Tap <span className="text-cream">New issues</span> to check now.
+              Baseball America, Sports Weekly, and Sports Illustrated auto-import when
+              new issues publish. Tap <span className="text-cream">New issues</span> to
+              check now.
             </p>
           )}
 
@@ -5744,6 +5755,10 @@ export default function ReadingPage() {
           onFilter={setFilter}
           onFindSimilar={findSimilar}
           onOpenBook={openBookDrawer}
+          onFinishedMagazine={() => {
+            setLibraryKind("magazines");
+            setShelf("read");
+          }}
         />
       )}
       {adding && (

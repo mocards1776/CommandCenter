@@ -46,6 +46,16 @@ export function buildMagazineFields(
   };
 }
 
+/** Typical issue length when store scrapes omit page counts. */
+export function defaultMagazinePageCount(publication: string | null | undefined): number {
+  const p = (publication ?? "").toLowerCase();
+  if (p.includes("sports weekly")) return 48;
+  if (p.includes("sports illustrated") || p === "si") return 96;
+  if (p.includes("baseball america")) return 84;
+  if (p.includes("gameday")) return 120;
+  return 64;
+}
+
 export async function addMagazineFromUrl(
   url: string,
   publication: string,
@@ -66,9 +76,11 @@ export async function createMagazine(input: {
   read_count?: number;
 }): Promise<Book> {
   const fields = buildMagazineFields(input.publication, input.issue);
+  const page_count =
+    input.page_count ?? defaultMagazinePageCount(input.publication);
   return createBook({
     ...fields,
-    page_count: input.page_count ?? null,
+    page_count,
     status: input.status ?? "to-read",
     finished_at: input.finished_at ?? null,
     last_date_read: input.last_date_read ?? null,
@@ -83,6 +95,7 @@ export type MagazineSyncResult = {
   skipped?: number;
   baseballAmerica?: number;
   sportsWeekly?: number;
+  sportsIllustrated?: number;
   issues?: Array<{ publication: string; issue: string; id: string }>;
   errors?: string[];
 };
@@ -922,6 +935,9 @@ export async function logPages(opts: {
 /**
  * Mark a book finished. Logs any remaining pages so Today / stats count them,
  * then closes the read-through with a real start–end range.
+ *
+ * Magazines often arrive from auto-import with no page_count. In that case we
+ * fill a publication default and log the full issue so Today / month pages move.
  */
 export async function finishBook(opts: {
   bookId: string;
@@ -929,12 +945,36 @@ export async function finishBook(opts: {
   pageCount: number | null;
   currentPage: number;
   status: string;
+  contentType?: ContentType | string | null;
+  series?: string | null;
+  title?: string | null;
 }): Promise<{ finished: boolean; pagesLogged: number }> {
   const date = opts.date ?? todayStr();
+
+  let pageCount = opts.pageCount;
+  let contentType = opts.contentType ?? null;
+  let series = opts.series ?? null;
+  let title = opts.title ?? null;
+
+  if (pageCount == null || contentType == null) {
+    const { data } = await supabase
+      .from("books")
+      .select("page_count, content_type, series, title")
+      .eq("id", opts.bookId)
+      .single();
+    if (pageCount == null) pageCount = data?.page_count ?? null;
+    contentType = contentType ?? data?.content_type ?? null;
+    series = series ?? data?.series ?? null;
+    title = title ?? data?.title ?? null;
+  }
+
+  if (pageCount == null && contentType === "magazine") {
+    pageCount = defaultMagazinePageCount(series || title);
+    await updateBook(opts.bookId, { page_count: pageCount });
+  }
+
   const remaining =
-    opts.pageCount !== null && opts.pageCount > opts.currentPage
-      ? opts.pageCount - opts.currentPage
-      : 0;
+    pageCount !== null && pageCount > opts.currentPage ? pageCount - opts.currentPage : 0;
 
   if (remaining > 0) {
     const r = await logPages({
@@ -942,7 +982,7 @@ export async function finishBook(opts: {
       pages: remaining,
       date,
       currentPage: opts.currentPage,
-      pageCount: opts.pageCount,
+      pageCount,
       status: opts.status,
     });
     return { finished: r.finished, pagesLogged: remaining };
@@ -962,8 +1002,8 @@ export async function finishBook(opts: {
     finished_at: date,
     last_date_read: date,
   };
-  if (opts.pageCount !== null && opts.pageCount > 0) {
-    patch.current_page = opts.pageCount;
+  if (pageCount !== null && pageCount > 0) {
+    patch.current_page = pageCount;
   }
 
   const already = log.some((r) => r.end === date);

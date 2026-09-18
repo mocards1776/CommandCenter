@@ -6,6 +6,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // Sources:
 //   - Baseball America: public Shopify products.json (Single Issue SKUs)
 //   - USA Today Sports Weekly: online store month category pages
+//   - Sports Illustrated: DiscountMags cover listing (monthly issues)
 //
 // Cron (GitHub Actions) hits this with the anon key. Signed-in users can also
 // trigger a sync from the Magazines tab. Writes use the service role scoped to
@@ -24,9 +25,16 @@ const UA =
 
 const BA_SHOPIFY = "https://baseballamerica.myshopify.com";
 const SW_STORE = "https://onlinestore.usatoday.com";
+const SI_DISCOUNTMAGS = "https://www.discountmags.com/magazine/sports-illustrated";
 
 /** How far back to look for issues on each sync (avoids importing the whole archive). */
 const LOOKBACK_DAYS = 45;
+
+const DEFAULT_PAGES: Record<string, number> = {
+  "Baseball America": 84,
+  "Sports Weekly": 48,
+  "Sports Illustrated": 96,
+};
 
 type Candidate = {
   publication: string;
@@ -160,7 +168,7 @@ async function fetchBaCandidates(lookbackDays: number): Promise<Candidate[]> {
       issue: label,
       source_url,
       cover_url: p.images?.[0]?.src ?? null,
-      page_count: extractPageCount(p.body_html ?? ""),
+      page_count: extractPageCount(p.body_html ?? "") ?? DEFAULT_PAGES["Baseball America"],
       published_at: published,
       external_key: `ba:${dateCode ?? p.handle}`,
     });
@@ -265,7 +273,7 @@ async function fetchSwCandidates(lookbackDays: number): Promise<Candidate[]> {
         issue: formatSlashDate(slashDate),
         source_url,
         cover_url: null,
-        page_count: null,
+        page_count: DEFAULT_PAGES["Sports Weekly"],
         published_at: publishedGuess,
         external_key: key,
       });
@@ -290,6 +298,55 @@ async function fetchSwCandidates(lookbackDays: number): Promise<Candidate[]> {
   );
 
   return list;
+}
+
+const SI_MONTHS: Record<string, number> = {
+  january: 1,
+  february: 2,
+  march: 3,
+  april: 4,
+  may: 5,
+  june: 6,
+  july: 7,
+  august: 8,
+  september: 9,
+  october: 10,
+  november: 11,
+  december: 12,
+};
+
+/** Sports Illustrated monthly issues via DiscountMags cover filenames. */
+async function fetchSiCandidates(lookbackDays: number): Promise<Candidate[]> {
+  const html = await fetchText(SI_DISCOUNTMAGS);
+  const byKey = new Map<string, Candidate>();
+  const re =
+    /8281-sports-illustrated-cover-(\d{4})-([a-z]+)-(\d+)-issue\.jpg/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const year = m[1];
+    const monthName = m[2].toLowerCase();
+    const issueNum = m[3];
+    const month = SI_MONTHS[monthName];
+    if (!month) continue;
+    const mm = String(month).padStart(2, "0");
+    // Treat as mid-month so lookback matches when the issue is typically out.
+    const publishedGuess = `${year}-${mm}-15T12:00:00.000Z`;
+    if (!isRecent(publishedGuess, lookbackDays)) continue;
+    const key = `si:${year}${mm}`;
+    if (byKey.has(key)) continue;
+    const label = `${monthName[0]!.toUpperCase()}${monthName.slice(1)} ${year}`;
+    byKey.set(key, {
+      publication: "Sports Illustrated",
+      issue: label,
+      source_url: `${SI_DISCOUNTMAGS}#${year}-${monthName}`,
+      cover_url:
+        `https://img.discountmags.com/products/extras/8281-sports-illustrated-cover-${year}-${monthName}-${issueNum}-issue.jpg`,
+      page_count: DEFAULT_PAGES["Sports Illustrated"],
+      published_at: publishedGuess,
+      external_key: key,
+    });
+  }
+  return [...byKey.values()];
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -371,6 +428,7 @@ Deno.serve(async (req: Request) => {
 
   let ba: Candidate[] = [];
   let sw: Candidate[] = [];
+  let si: Candidate[] = [];
   const errors: string[] = [];
   try {
     ba = await fetchBaCandidates(lookbackDays);
@@ -382,8 +440,13 @@ Deno.serve(async (req: Request) => {
   } catch (e) {
     errors.push(`Sports Weekly: ${String(e)}`);
   }
+  try {
+    si = await fetchSiCandidates(lookbackDays);
+  } catch (e) {
+    errors.push(`Sports Illustrated: ${String(e)}`);
+  }
 
-  const candidates = [...ba, ...sw];
+  const candidates = [...ba, ...sw, ...si];
 
   // Existing magazine rows for this user — match on source_url or external tag.
   const { data: existing, error: exErr } = await admin
@@ -400,7 +463,7 @@ Deno.serve(async (req: Request) => {
   for (const r of existing ?? []) {
     const tags = Array.isArray(r.tags) ? r.tags : [];
     for (const t of tags) {
-      if (/^(ba|sw):/i.test(String(t))) existingKeys.add(String(t).toLowerCase());
+      if (/^(ba|sw|si):/i.test(String(t))) existingKeys.add(String(t).toLowerCase());
     }
     const series = String(r.series ?? "").trim().toLowerCase();
     const sub = String(r.subtitle ?? "").trim().toLowerCase();
@@ -423,10 +486,12 @@ Deno.serve(async (req: Request) => {
       wouldInsert: toInsert.length,
       baseballAmerica: ba.length,
       sportsWeekly: sw.length,
+      sportsIllustrated: si.length,
       candidates: toInsert.map((c) => ({
         publication: c.publication,
         issue: c.issue,
         source_url: c.source_url,
+        content_type: "magazine",
       })),
       errors,
       lookbackDays,
@@ -452,6 +517,7 @@ Deno.serve(async (req: Request) => {
     issues: inserted,
     baseballAmerica: ba.length,
     sportsWeekly: sw.length,
+    sportsIllustrated: si.length,
     skipped: candidates.length - toInsert.length,
     errors,
     lookbackDays,
