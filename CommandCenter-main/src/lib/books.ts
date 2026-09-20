@@ -1415,6 +1415,26 @@ const KNOWN_CATALOG_EDITIONS: {
       isbn: "9780063573284",
     },
   },
+  {
+    // Mariner, Sept 2026: Open Library has no record of it at all, so "the
+    // playbook" only returns Barney Stinson / hacker-playbook noise.
+    match: (q) => {
+      const n = normalizeSearchText(q);
+      if (!n.includes("playbook")) return false;
+      if (n === "playbook" || n === "the playbook") return true;
+      return /\b(robinson|clegg|nfl|football|hidden forces)\b/.test(n);
+    },
+    suggestion: {
+      title: "The Playbook",
+      subtitle: "The Hidden Forces Shaping Winners and Losers in the Modern NFL",
+      author: "Joshua Robinson, Jonathan Clegg",
+      year: "2026",
+      reason: "Sports · NFL",
+      cover_url: "https://images.booksense.com/images/641/442/9780063442641.jpg",
+      isbn: "9780063442641",
+      page_count: 288,
+    },
+  },
 ];
 
 /** ISBN-13/10 for Parcells: A Football Life (Parcells & Demasio, 2014). */
@@ -1531,8 +1551,11 @@ function suggestionDedupeKey(s: Suggestion): string {
   return `${titleKey(s.title)}|${normalizeSearchText((s.author ?? "").split(",")[0] ?? "")}|${vol}`;
 }
 
-/** Edge catalog (Google + OL) with a hard client timeout so the UI never spins. */
-async function searchEdgeCatalog(query: string, ms = 4500): Promise<Suggestion[]> {
+/**
+ * Edge catalog (Google + OL) with a hard client timeout so the UI never spins.
+ * `null` means the source never answered — that is not the same as "no hits".
+ */
+async function searchEdgeCatalog(query: string, ms = 4500): Promise<Suggestion[] | null> {
   let timer: number | undefined;
   try {
     const invoke = supabase.functions.invoke<{
@@ -1543,13 +1566,37 @@ async function searchEdgeCatalog(query: string, ms = 4500): Promise<Suggestion[]
       timer = window.setTimeout(() => reject(new Error("catalog timeout")), ms);
     });
     const { data, error } = (await Promise.race([invoke, timed])) as Awaited<typeof invoke>;
-    if (error || data?.error) return [];
+    if (error || data?.error) return null;
     return (data?.recommendations ?? []).map(enrichKnownEdition);
   } catch {
-    return [];
+    return null;
   } finally {
     if (timer !== undefined) window.clearTimeout(timer);
   }
+}
+
+/**
+ * One Open Library search, retried once. OL answers 403/503 under load often
+ * enough that a single miss used to leave the whole catalog section empty.
+ * `null` means the source never answered.
+ */
+async function fetchOpenLibraryDocs(
+  url: string,
+  signal: AbortSignal,
+): Promise<Record<string, unknown>[] | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) {
+      if (signal.aborted) break;
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 400));
+    }
+    try {
+      const res = await fetch(url, { signal });
+      if (res.ok) return ((await res.json())?.docs ?? []) as Record<string, unknown>[];
+    } catch {
+      if (signal.aborted) break;
+    }
+  }
+  return null;
 }
 
 /**
@@ -1569,6 +1616,7 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
 
   const hits: Suggestion[] = [];
   const seen = new Set<string>();
+  let answered = 0;
 
   const pushSuggestion = (raw: Suggestion) => {
     const s = enrichKnownEdition(raw);
@@ -1636,8 +1684,11 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
   };
 
   // Curated rows first so Parcells/Demasio is never buried by OL noise.
+  const curated = new Set<string>();
   for (const known of KNOWN_CATALOG_EDITIONS) {
-    if (known.match(q)) pushSuggestion(known.suggestion);
+    if (!known.match(q)) continue;
+    pushSuggestion(known.suggestion);
+    curated.add(suggestionDedupeKey(enrichKnownEdition(known.suggestion)));
   }
 
   try {
@@ -1655,21 +1706,19 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
     }
 
     const olFetch = Promise.all(
-      urls.map(async (url) => {
-        try {
-          const res = await fetch(url, { signal: ctl.signal });
-          if (!res.ok) return [];
-          return ((await res.json())?.docs ?? []) as Record<string, unknown>[];
-        } catch {
-          return [];
-        }
-      }),
+      urls.map((url) => fetchOpenLibraryDocs(url, ctl.signal)),
     ).then((responses) => {
-      for (const docs of responses) for (const doc of docs) pushDoc(doc);
+      for (const docs of responses) {
+        if (!docs) continue;
+        answered++;
+        for (const doc of docs) pushDoc(doc);
+      }
     });
 
     // Race Google (via edge) in parallel — often credits Nunyo Demasio.
     const edgeFetch = searchEdgeCatalog(q).then((rows) => {
+      if (!rows) return;
+      answered++;
       for (const row of rows) pushSuggestion(row);
     });
 
@@ -1678,7 +1727,14 @@ export async function searchFreeCatalog(query: string): Promise<Suggestion[]> {
     window.clearTimeout(timer);
   }
 
-  return rankCatalogSuggestions(q, hits).slice(0, 12);
+  // Open Library rate-limiting and a spent Google Books quota both used to
+  // surface as a calm "No catalog matches", which reads like the book does
+  // not exist. Say the search failed instead — curated rows still stand.
+  if (answered === 0 && hits.length === 0) {
+    throw new Error("Free catalogs did not answer. Check your connection and try again.");
+  }
+
+  return rankCatalogSuggestions(q, hits, curated).slice(0, 12);
 }
 
 /**
@@ -2159,15 +2215,24 @@ export function scoreBookSearchHit(
   return 99;
 }
 
-/** Sort catalog suggestions so exact titles surface before fuzzy API noise. */
-export function rankCatalogSuggestions(query: string, rows: Suggestion[]): Suggestion[] {
+/**
+ * Sort catalog suggestions so exact titles surface before fuzzy API noise.
+ * `preferred` holds dedupe keys for hand-verified editions, which win ties —
+ * "the playbook" must not open with a same-titled 2010 sitcom tie-in.
+ */
+export function rankCatalogSuggestions(
+  query: string,
+  rows: Suggestion[],
+  preferred?: Set<string>,
+): Suggestion[] {
   return [...rows]
     .map((s) => ({
       s,
       score: scoreBookSearchHit(query, s.title, s.author, [], s.subtitle ?? "", s.series ?? ""),
+      rank: preferred?.has(suggestionDedupeKey(s)) ? 0 : 1,
     }))
     .filter((x) => x.score < 99)
-    .sort((a, b) => a.score - b.score || a.s.title.localeCompare(b.s.title))
+    .sort((a, b) => a.score - b.score || a.rank - b.rank || a.s.title.localeCompare(b.s.title))
     .map((x) => x.s);
 }
 

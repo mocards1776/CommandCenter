@@ -2,6 +2,14 @@
 
 ---
 
+## Reading search: say when catalogs fail, seed The Playbook — September 20, 2026
+
+- A dead free catalog (Open Library rate-limiting, spent Google Books quota, no signal) used to render a calm **“No catalog matches”**, which reads like the book does not exist. Search now **retries Open Library once** and, when every source stays silent, shows an error instead of a fake empty result.
+- Seed **The Playbook** (Robinson & Clegg, Mariner 2026) as a known catalog edition — Open Library has no record of the book, so `"the playbook"` only returned sitcom tie-ins and hacker guides.
+- Hand-verified catalog editions now win **score ties**, so the real book leads instead of a same-titled 2010 paperback.
+
+---
+
 ## Reading search: stop weak “being” library noise — September 17, 2026
 
 - Partial title matches now require a **strong** query token, so `"lane being lane"` no longer floods **Your library** with books that only share the glue word *being*.

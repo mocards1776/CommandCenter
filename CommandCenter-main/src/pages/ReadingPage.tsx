@@ -701,7 +701,7 @@ function LibrarySearch({
                 </span>
               </button>
             ))}
-            {!catalog.isFetching && catalogHits.length === 0 && library.length > 0 && (
+            {!catalog.isFetching && !catalog.isError && catalogHits.length === 0 && library.length > 0 && (
               <p className="text-chalk-dim px-3 py-2 text-[11.5px]">No new catalog matches.</p>
             )}
           </div>
@@ -873,7 +873,7 @@ function SearchResultsPage({
               {catalog.error instanceof Error ? catalog.error.message : "Catalog search failed"}
             </p>
           )}
-          {!catalog.isFetching && catalogHits.length === 0 && (
+          {!catalog.isFetching && !catalog.isError && catalogHits.length === 0 && (
             <p className="text-chalk-dim text-[12px]">No catalog matches.</p>
           )}
           <ul className="flex flex-col gap-2">
