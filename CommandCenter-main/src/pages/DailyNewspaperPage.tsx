@@ -3,13 +3,12 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { editionDateLabel, editionDateline, editionIssue } from "@/lib/newspaper";
+import { editionDateline, editionIssue } from "@/lib/newspaper";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
-  chunkPages,
+  enrichWrapBodies,
   favoriteGameHref,
-  favoriteTeamHref,
   isTeamInSeason,
   matchWrapToFavorites,
   playerHref,
@@ -52,105 +51,110 @@ function ExternalOrLink({
   );
 }
 
-function Masthead({
-  volume,
-  issue,
-  day,
-  folio,
-}: {
-  volume: number;
-  issue: number;
-  day: string;
-  folio: string;
-}) {
+function Mast({ day, folio, pageLabel }: { day: string; folio: string; pageLabel: string }) {
+  const { volume, issue } = editionIssue(day);
   return (
-    <header className="np-mast np-anim-mast">
-      <div className="np-mast-top">
-        <span>
-          Vol. {volume} · No. {issue}
-        </span>
-        <span>{editionDateline(day)}</span>
-        <span>{folio}</span>
+    <header className="tt-mast">
+      <div className="tt-mast-brand">
+        <span className="tt-mark">TT</span>
+        <div>
+          <h1>Thompson Times</h1>
+          <p>Sports desk · {editionDateline(day)}</p>
+        </div>
       </div>
-      <h1 className="np-flag">Thompson Times</h1>
-      <div className="np-mast-sub">
-        <span>Sports edition</span>
-        <span className="flex-rule" aria-hidden />
-        <span>{editionDateLabel(day)}</span>
-        <span className="flex-rule" aria-hidden />
-        <span>Digital desk</span>
+      <div className="tt-mast-meta">
+        <span>
+          Vol {volume} · № {issue}
+        </span>
+        <span>{pageLabel}</span>
+        <span>{folio}</span>
       </div>
     </header>
   );
 }
 
-function TeamBoard({ teams }: { teams: TeamInfobox[] }) {
-  if (!teams.length) {
-    return (
-      <div className="np-box">
-        <p className="np-muted">No in-season teams on your board yet.</p>
-      </div>
-    );
-  }
-  const dense = teams.length > 6;
+function FormDots({ form }: { form: ("W" | "L" | "·")[] }) {
+  if (!form.length) return null;
   return (
-    <div className={cn("np-team-board", dense && "dense")}>
-      {teams.map((t, i) => {
+    <span className="tt-form" aria-label={`Form ${form.join("")}`}>
+      {form.map((f, i) => (
+        <i key={`${f}-${i}`} className={cn(f === "W" && "w", f === "L" && "l")} />
+      ))}
+    </span>
+  );
+}
+
+function TeamMatrix({ teams }: { teams: TeamInfobox[] }) {
+  if (!teams.length) {
+    return <p className="tt-empty">No in-season clubs on your board.</p>;
+  }
+  return (
+    <div className="tt-matrix">
+      {teams.map((t) => {
         const last = t.snap.lastGame;
         const next = t.snap.nextGame;
-        const result =
-          last?.won === true ? "W" : last?.won === false ? "L" : null;
         const nextGame = t.detail?.upcoming[0];
         const nextHref =
           (nextGame ? favoriteGameHref(t.fav, nextGame.id) : null) || t.href;
+        const result = last?.won === true ? "W" : last?.won === false ? "L" : null;
         return (
-          <article
-            key={t.fav.key}
-            className="np-infobox"
-            style={{ animationDelay: `${0.04 + i * 0.03}s` }}
-          >
+          <article key={t.fav.key} className="tt-cell">
             <div
-              className="np-infobox-rule"
-              style={{ background: t.snap.color ? `#${t.snap.color}` : "var(--np-accent)" }}
+              className="tt-cell-accent"
+              style={{ background: t.snap.color ? `#${t.snap.color}` : "var(--tt-accent)" }}
             />
-            <div className="np-infobox-top">
-              {t.snap.logo ? (
-                <img src={t.snap.logo} alt="" className="np-infobox-logo" />
-              ) : null}
+            <div className="tt-cell-head">
+              {t.snap.logo ? <img src={t.snap.logo} alt="" /> : null}
               <div className="min-w-0">
-                <ExternalOrLink href={t.href} className="np-infobox-name">
+                <ExternalOrLink href={t.href} className="tt-cell-name">
                   {t.snap.shortName || t.fav.shortName}
                 </ExternalOrLink>
-                <div className="np-infobox-meta">
-                  {t.fav.league}
-                  {t.snap.record ? ` · ${t.snap.record}` : ""}
+                <div className="tt-cell-sub">
+                  <span>{t.fav.league}</span>
+                  {t.snap.record ? <span>{t.snap.record}</span> : null}
+                  <FormDots form={t.form} />
                 </div>
               </div>
+              {t.odds ? <span className="tt-odds">{t.odds}</span> : null}
             </div>
-            {t.snap.standing ? (
-              <p className="np-infobox-stand">{t.snap.standing}</p>
+            {t.snap.standing ? <p className="tt-cell-stand">{t.snap.standing}</p> : null}
+            <div className="tt-cell-lines">
+              {last ? (
+                <p className={cn(result === "W" && "win", result === "L" && "loss")}>
+                  <span>Last</span>
+                  <span>
+                    {result ? `${result} ` : ""}
+                    {last.label}
+                    {last.detail ? ` ${last.detail}` : ""}
+                  </span>
+                </p>
+              ) : null}
+              {next ? (
+                <p>
+                  <span>Next</span>
+                  <ExternalOrLink href={nextHref} className="tt-a">
+                    {next.label}
+                    {next.when ? ` · ${next.when}` : ""}
+                  </ExternalOrLink>
+                </p>
+              ) : null}
+            </div>
+            {t.teamStats.length ? (
+              <dl className="tt-mini-stats">
+                {t.teamStats.map((s) => (
+                  <div key={s.label}>
+                    <dt>{s.label}</dt>
+                    <dd>{s.value}</dd>
+                  </div>
+                ))}
+              </dl>
             ) : null}
-            {last ? (
-              <p className={cn("np-infobox-line", result === "W" && "w", result === "L" && "l")}>
-                Last{result ? ` ${result}` : ""} · {last.label}
-                {last.detail ? ` ${last.detail}` : ""}
-              </p>
-            ) : null}
-            {next ? (
-              <p className="np-infobox-line next">
-                Next ·{" "}
-                <ExternalOrLink href={nextHref} className="np-link">
-                  {next.label}
-                </ExternalOrLink>
-                {next.when ? ` · ${next.when}` : ""}
-              </p>
-            ) : null}
-            {!dense && t.detail?.division?.length ? (
-              <ul className="np-infobox-div">
-                {t.detail.division.slice(0, 3).map((row) => (
+            {t.detail?.division?.length ? (
+              <ul className="tt-div">
+                {t.detail.division.slice(0, 5).map((row) => (
                   <li key={`${t.fav.key}-${row.rank}-${row.team}`} className={cn(row.isMe && "me")}>
                     <span>
-                      {row.rank}. {row.team}
+                      {row.rank} {row.team}
                     </span>
                     <span>{row.record}</span>
                   </li>
@@ -164,134 +168,181 @@ function TeamBoard({ teams }: { teams: TeamInfobox[] }) {
   );
 }
 
-function WrapArticle({
-  card,
-  feature = false,
-}: {
-  card: GameWrapCard;
-  feature?: boolean;
-}) {
-  const href = card.gameHref || card.wrapHref || card.teamHref;
+function ScoreStrip({ cards }: { cards: GameWrapCard[] }) {
+  const finals = cards.filter((c) => c.scoreLine).slice(0, 8);
+  if (!finals.length) return null;
   return (
-    <article className={cn("np-wrap", feature && "feature")}>
-      <p className="np-kicker">
-        {card.sportLabel}
-        {card.won === true ? " · Win" : card.won === false ? " · Loss" : ""}
-        {" · "}
-        <ExternalOrLink href={card.teamHref} className="np-link">
-          {card.teamName}
+    <div className="tt-strip">
+      {finals.map((c) => (
+        <ExternalOrLink
+          key={c.id}
+          href={c.gameHref || c.teamHref}
+          className={cn("tt-strip-item", c.won === true && "win", c.won === false && "loss")}
+        >
+          <span className="lg">{c.sportLabel}</span>
+          <strong>{c.teamName}</strong>
+          <span className="sc">{c.scoreLine}</span>
         </ExternalOrLink>
-      </p>
-      <h2 className={cn("np-headline", feature ? "lg" : "md")}>
-        <ExternalOrLink href={href} className="np-link">
-          {card.headline}
-        </ExternalOrLink>
-      </h2>
-      {card.scoreLine ? <p className="np-scoreline">{card.scoreLine}</p> : null}
-      {card.dek ? <p className={cn("np-dek", feature && "cols")}>{card.dek}</p> : null}
-      <div className="np-wrap-meta">
-        {card.when ? <span>{card.when}</span> : null}
-        {card.gameHref ? (
-          <ExternalOrLink href={card.gameHref} className="np-text-link">
-            Game center →
+      ))}
+    </div>
+  );
+}
+
+function WrapPage({ card }: { card: GameWrapCard }) {
+  const href = card.gameHref || card.wrapHref || card.teamHref;
+  const body = card.body || card.dek || "";
+  const paras = body
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const prose =
+    paras.length > 1
+      ? paras
+      : body
+          .replace(/\s+/g, " ")
+          .match(/.{1,420}(?:\s|$)/g)
+          ?.map((s) => s.trim())
+          .filter(Boolean) ?? [body];
+
+  return (
+    <article className="tt-wrap">
+      <div className="tt-wrap-main">
+        <p className="tt-kicker">
+          {card.sportLabel}
+          {card.won === true ? " · Win" : card.won === false ? " · Loss" : ""}
+          {" · "}
+          <ExternalOrLink href={card.teamHref} className="tt-a">
+            {card.teamName}
           </ExternalOrLink>
-        ) : null}
-        {card.wrapHref && card.wrapHref !== card.gameHref ? (
-          <ExternalOrLink href={card.wrapHref} className="np-text-link">
-            Full wrap →
+        </p>
+        <h2>
+          <ExternalOrLink href={href} className="tt-a">
+            {card.headline}
           </ExternalOrLink>
-        ) : null}
-      </div>
-      {(card.stats.length > 0 || card.leaders.length > 0) && (
-        <div className="np-wrap-rail">
-          {card.stats.length > 0 ? (
-            <div className="np-statbox">
-              <h3>Box</h3>
-              <dl>
-                {card.stats.map((s) => (
-                  <div key={s.label}>
-                    <dt>{s.label}</dt>
-                    <dd>{s.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
+        </h2>
+        {card.scoreLine ? <p className="tt-score">{card.scoreLine}</p> : null}
+        <div className="tt-prose">
+          {prose.slice(0, 14).map((p, i) => (
+            <p key={i}>{p}</p>
+          ))}
+        </div>
+        <div className="tt-wrap-links">
+          {card.gameHref ? (
+            <ExternalOrLink href={card.gameHref} className="tt-chip">
+              Game center
+            </ExternalOrLink>
           ) : null}
-          {card.leaders.length > 0 ? (
-            <div className="np-statbox">
-              <h3>Club marks</h3>
-              <ul>
-                {card.leaders.map((l) => (
-                  <li key={`${l.name}-${l.line}`}>
-                    {l.href ? (
-                      <ExternalOrLink href={l.href} className="np-link">
-                        {l.name}
-                      </ExternalOrLink>
-                    ) : (
-                      <span>{l.name}</span>
-                    )}
-                    <span className="v">{l.line}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {card.wrapHref ? (
+            <ExternalOrLink href={card.wrapHref} className="tt-chip">
+              ESPN wrap
+            </ExternalOrLink>
           ) : null}
         </div>
-      )}
+      </div>
+      <aside className="tt-wrap-rail">
+        {card.stats.length ? (
+          <div className="tt-panel">
+            <h3>Box</h3>
+            <dl>
+              {card.stats.map((s) => (
+                <div key={s.label}>
+                  <dt>{s.label}</dt>
+                  <dd>{s.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ) : null}
+        {card.leaders.length ? (
+          <div className="tt-panel">
+            <h3>Names</h3>
+            <ul>
+              {card.leaders.map((l) => (
+                <li key={`${l.name}-${l.line}`}>
+                  {l.href ? (
+                    <ExternalOrLink href={l.href} className="tt-a">
+                      {l.name}
+                    </ExternalOrLink>
+                  ) : (
+                    <span>{l.name}</span>
+                  )}
+                  <span className="v">{l.line}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {card.teamStats.length ? (
+          <div className="tt-panel">
+            <h3>Club marks</h3>
+            <dl>
+              {card.teamStats.map((s) => (
+                <div key={s.label}>
+                  <dt>{s.label}</dt>
+                  <dd>{s.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ) : null}
+        {card.division.length ? (
+          <div className="tt-panel">
+            <h3>Table</h3>
+            <ul className="tt-table">
+              {card.division.map((r) => (
+                <li key={`${r.rank}-${r.team}`} className={cn(r.me && "me")}>
+                  <span>
+                    {r.rank} {r.team}
+                  </span>
+                  <span>{r.record}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </aside>
     </article>
   );
 }
 
-function LeadersRail({ teams }: { teams: TeamInfobox[] }) {
+function Notebook({ teams }: { teams: TeamInfobox[] }) {
   const rows = teams
     .flatMap((t) => {
-      const hit = (t.detail?.hittingLeaders ?? []).slice(0, 2).map((l) => ({
+      const people = [
+        ...(t.detail?.hittingLeaders ?? []).slice(0, 2),
+        ...(t.detail?.pitchingLeaders ?? []).slice(0, 1),
+      ];
+      return people.map((l) => ({
         team: t.fav.shortName,
         teamHref: t.href,
         name: l.name,
         line: l.line,
         href: l.id ? playerHref(t.fav.espnPath, l.id) : null,
-        kind: "Bat",
       }));
-      const pit = (t.detail?.pitchingLeaders ?? []).slice(0, 1).map((l) => ({
-        team: t.fav.shortName,
-        teamHref: t.href,
-        name: l.name,
-        line: l.line,
-        href: l.id ? playerHref(t.fav.espnPath, l.id) : null,
-        kind: "Arm",
-      }));
-      return [...hit, ...pit];
     })
-    .slice(0, 8);
-
+    .slice(0, 12);
   if (!rows.length) return null;
-
   return (
-    <aside className="np-box np-leaders-rail">
-      <div className="np-sec-head">
-        <h2>Notebook</h2>
-        <span>Names to watch</span>
-      </div>
+    <aside className="tt-panel tt-notebook">
+      <h3>Notebook</h3>
       <ul>
         {rows.map((r) => (
-          <li key={`${r.team}-${r.name}-${r.kind}`}>
-            <span className="kind">{r.kind}</span>
-            <span className="body">
+          <li key={`${r.team}-${r.name}-${r.line}`}>
+            <span>
               {r.href ? (
-                <ExternalOrLink href={r.href} className="np-link">
+                <ExternalOrLink href={r.href} className="tt-a">
                   {r.name}
                 </ExternalOrLink>
               ) : (
                 r.name
               )}
-              <span className="meta">
+              <em>
                 {" "}
                 ·{" "}
-                <ExternalOrLink href={r.teamHref} className="np-link">
+                <ExternalOrLink href={r.teamHref} className="tt-a">
                   {r.team}
                 </ExternalOrLink>
-              </span>
+              </em>
             </span>
             <span className="v">{r.line}</span>
           </li>
@@ -304,7 +355,6 @@ function LeadersRail({ teams }: { teams: TeamInfobox[] }) {
 export default function DailyNewspaperPage() {
   const { user } = useAuth();
   const day = todayStr();
-  const { volume, issue } = editionIssue(day);
   const layout = useMemo(() => loadSportsLayout(), []);
   const teamFavs = useMemo(
     () => visibleFavorites(layout).filter((f) => f.kind === "team"),
@@ -316,8 +366,8 @@ export default function DailyNewspaperPage() {
 
   const teamSnaps = useQuery({
     queryKey: ["tt-team-snaps", teamFavs.map((t) => t.key).join(",")],
-    queryFn: async () => {
-      const rows = await Promise.all(
+    queryFn: async () =>
+      Promise.all(
         teamFavs.slice(0, 16).map(async (fav) => {
           try {
             return await fetchTeamSnapshot(fav);
@@ -336,9 +386,7 @@ export default function DailyNewspaperPage() {
             };
           }
         }),
-      );
-      return rows;
-    },
+      ),
     staleTime: 120_000,
   });
 
@@ -392,9 +440,10 @@ export default function DailyNewspaperPage() {
       );
       const matched = [];
       const seen = new Set<string>();
+      const pool = inSeasonFavs.length ? inSeasonFavs : teamFavs;
       for (const feed of feeds) {
-        for (const item of feed.items.slice(0, 16)) {
-          const hit = matchWrapToFavorites(item, feed.url, inSeasonFavs.length ? inSeasonFavs : teamFavs);
+        for (const item of feed.items.slice(0, 20)) {
+          const hit = matchWrapToFavorites(item, feed.url, pool);
           if (!hit) continue;
           const key = hit.item.link || hit.item.id;
           if (seen.has(key)) continue;
@@ -409,16 +458,11 @@ export default function DailyNewspaperPage() {
   });
 
   const teams = useMemo(
-    () =>
-      buildTeamInfoboxes(
-        teamFavs,
-        teamSnaps.data ?? [],
-        teamDetailsQ.data ?? [],
-      ),
+    () => buildTeamInfoboxes(teamFavs, teamSnaps.data ?? [], teamDetailsQ.data ?? []),
     [teamFavs, teamSnaps.data, teamDetailsQ.data],
   );
 
-  const wrapCards = useMemo(
+  const baseCards = useMemo(
     () =>
       buildGameWrapCards({
         favs: inSeasonFavs.length ? inSeasonFavs : teamFavs,
@@ -429,15 +473,24 @@ export default function DailyNewspaperPage() {
     [inSeasonFavs, teamFavs, teamDetailsQ.data, recap.data, wrapsQ.data],
   );
 
-  const feature = wrapCards[0] ?? null;
-  const restWraps = wrapCards.slice(1);
-  const wrapPages = chunkPages(restWraps, 2);
+  const enrichedQ = useQuery({
+    queryKey: [
+      "tt-wrap-bodies",
+      baseCards.map((c) => `${c.id}:${c.gameId}:${c.wrapHref}`).join("|"),
+    ],
+    queryFn: () =>
+      enrichWrapBodies(baseCards, inSeasonFavs.length ? inSeasonFavs : teamFavs),
+    enabled: baseCards.length > 0,
+    staleTime: 10 * 60_000,
+  });
+
+  const wrapCards = enrichedQ.data ?? baseCards;
 
   const pages = useMemo(() => {
-    const out: ("front" | GameWrapCard[])[] = ["front"];
-    for (const chunk of wrapPages) out.push(chunk);
+    const out: ({ kind: "front" } | { kind: "wrap"; card: GameWrapCard })[] = [{ kind: "front" }];
+    for (const card of wrapCards) out.push({ kind: "wrap", card });
     return out;
-  }, [wrapPages]);
+  }, [wrapCards]);
 
   function goPage(idx: number) {
     const el = pagerRef.current;
@@ -472,7 +525,8 @@ export default function DailyNewspaperPage() {
     teamSnaps.isFetching ||
     teamDetailsQ.isFetching ||
     recap.isFetching ||
-    wrapsQ.isFetching;
+    wrapsQ.isFetching ||
+    enrichedQ.isFetching;
 
   async function onRefresh() {
     await Promise.all([
@@ -480,30 +534,31 @@ export default function DailyNewspaperPage() {
       teamDetailsQ.refetch(),
       recap.refetch(),
       wrapsQ.refetch(),
+      enrichedQ.refetch(),
     ]);
   }
+
+  const feature = wrapCards[0] ?? null;
 
   return (
     <div className="newspaper-root">
       <div className="newspaper-toolbar print:hidden">
         <div>
-          <p className="label-caps text-accent">Sports edition</p>
+          <p className="label-caps text-accent">Sports desk</p>
           <h1>Thompson Times</h1>
           <p className="text-chalk mt-2 max-w-xl text-[12px] leading-relaxed">
-            Swipeable sports desk — your teams, game wraps, and box marks. Tap
-            names and scores to open the full game.
+            Dense digital edition — your clubs, full ESPN wraps, and live links.
+            Swipe pages left / right.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void onRefresh()}
-            className="text-chalk hover:text-cream inline-flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[11px] uppercase tracking-[0.16em] transition hover:border-accent/40"
-          >
-            <RefreshCw size={13} className={cn(refreshing && "animate-spin")} />
-            Refresh
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => void onRefresh()}
+          className="text-chalk hover:text-cream inline-flex items-center gap-2 rounded-sm border border-white/10 px-3 py-2 text-[11px] uppercase tracking-[0.16em] transition hover:border-accent/40"
+        >
+          <RefreshCw size={13} className={cn(refreshing && "animate-spin")} />
+          Refresh
+        </button>
       </div>
 
       <div className="np-pager-chrome print:hidden">
@@ -546,58 +601,81 @@ export default function DailyNewspaperPage() {
 
       <div className="newspaper-edition np-pager" ref={pagerRef}>
         {pages.map((page, pi) => {
-          if (page === "front") {
+          if (page.kind === "front") {
             return (
-              <section key="front" className="np-page" aria-label={`Page ${pi + 1}`}>
-                <Masthead volume={volume} issue={issue} day={day} folio={`A${pi + 1}`} />
-                <div className="np-anim-body np-page-body">
-                  <div className="np-sec-head">
+              <section key="front" className="np-page tt-page" aria-label={`Page ${pi + 1}`}>
+                <Mast day={day} folio={`A${pi + 1}`} pageLabel="Clubs" />
+                <div className="tt-body">
+                  <div className="tt-sec">
                     <h2>My teams</h2>
-                    <span>{teams.length} in season</span>
+                    <span>{teams.length} live</span>
                   </div>
-                  <TeamBoard teams={teams} />
-
-                  <div className="np-front-grid">
-                    <div className="np-front-main">
-                      <div className="np-sec-head">
-                        <h2>The wire</h2>
-                        <span>Wraps &amp; finals</span>
-                      </div>
-                      {feature ? (
-                        <WrapArticle card={feature} feature />
-                      ) : (
-                        <p className="np-muted">
-                          Waiting on wraps for your clubs — check back after the
-                          next final.
+                  <TeamMatrix teams={teams} />
+                  <div className="tt-sec">
+                    <h2>Wire</h2>
+                    <span>Followed finals</span>
+                  </div>
+                  <ScoreStrip cards={wrapCards} />
+                  <div className="tt-front-split">
+                    {feature ? (
+                      <div className="tt-feature">
+                        <p className="tt-kicker">
+                          {feature.sportLabel} ·{" "}
+                          <ExternalOrLink href={feature.teamHref} className="tt-a">
+                            {feature.teamName}
+                          </ExternalOrLink>
                         </p>
-                      )}
-                    </div>
-                    <LeadersRail teams={teams} />
+                        <h3>
+                          <ExternalOrLink
+                            href={feature.gameHref || feature.wrapHref || feature.teamHref}
+                            className="tt-a"
+                          >
+                            {feature.headline}
+                          </ExternalOrLink>
+                        </h3>
+                        {feature.scoreLine ? <p className="tt-score">{feature.scoreLine}</p> : null}
+                        <div className="tt-prose compact">
+                          {(feature.body || feature.dek || "")
+                            .split(/\n{2,}/)
+                            .map((p) => p.trim())
+                            .filter(Boolean)
+                            .slice(0, 4)
+                            .map((p, i) => (
+                              <p key={i}>{p}</p>
+                            ))}
+                          {!feature.body && feature.dek ? <p>{feature.dek}</p> : null}
+                        </div>
+                        {feature.gameHref ? (
+                          <ExternalOrLink href={feature.gameHref} className="tt-chip">
+                            Continue on page {Math.min(2, pages.length)} →
+                          </ExternalOrLink>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="tt-empty">Wraps load after the next final.</p>
+                    )}
+                    <Notebook teams={teams} />
                   </div>
                 </div>
-                <footer className="np-folio">
-                  Thompson Times · Sports · {editionDateline(day)} · A{pi + 1}
+                <footer className="tt-folio">
+                  Thompson Times · A{pi + 1} · swipe for wraps
                 </footer>
               </section>
             );
           }
 
           return (
-            <section key={`wraps-${pi}`} className="np-page" aria-label={`Page ${pi + 1}`}>
-              <Masthead volume={volume} issue={issue} day={day} folio={`A${pi + 1}`} />
-              <div className="np-anim-body np-page-body">
-                <div className="np-sec-head">
-                  <h2>Game wraps</h2>
-                  <span>Continued</span>
-                </div>
-                <div className="np-wrap-stack">
-                  {page.map((card) => (
-                    <WrapArticle key={card.id} card={card} />
-                  ))}
-                </div>
+            <section
+              key={page.card.id}
+              className="np-page tt-page"
+              aria-label={`Page ${pi + 1}`}
+            >
+              <Mast day={day} folio={`A${pi + 1}`} pageLabel="Wrap" />
+              <div className="tt-body">
+                <WrapPage card={page.card} />
               </div>
-              <footer className="np-folio">
-                Thompson Times · Sports · {editionDateline(day)} · A{pi + 1}
+              <footer className="tt-folio">
+                Thompson Times · {page.card.teamName} · A{pi + 1}
               </footer>
             </section>
           );

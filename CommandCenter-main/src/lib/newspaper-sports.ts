@@ -1,10 +1,6 @@
 /** Sports-edition helpers for Thompson Times (digital newspaper). */
 
-import {
-  type SportsFavorite,
-  type TeamDetail,
-  type TeamSnapshot,
-} from "./sports";
+import { espnGet, type SportsFavorite, type TeamDetail, type TeamSnapshot } from "./sports";
 import type { RssFeedItem } from "./rss";
 import type { YesterdayRecapGame } from "./yesterday-recap";
 
@@ -19,15 +15,12 @@ export function favoriteTeamHref(fav: SportsFavorite): string {
 export function favoriteGameHref(fav: SportsFavorite, gameId: string): string | null {
   if (!gameId || gameId.startsWith("sb-")) return null;
   if (/baseball\/mlb\//.test(fav.espnPath)) {
-    // ESPN event ids are not MLB Stats API gamePks — keep ESPN for those.
     if (gameId.length >= 9) return `https://www.espn.com/mlb/game/_/gameId/${gameId}`;
     return `/sports/mlb/game/${gameId}`;
   }
   if (/football\/nfl\//.test(fav.espnPath)) return `/sports/nfl/game/${gameId}`;
   if (/college-football\//.test(fav.espnPath)) return `/sports/cfb/game/${gameId}`;
-  if (/soccer\//.test(fav.espnPath)) {
-    return `/sports/soccer/game/${gameId}`;
-  }
+  if (/soccer\//.test(fav.espnPath)) return `/sports/soccer/game/${gameId}`;
   if (/hockey\/nhl\//.test(fav.espnPath)) {
     return `https://www.espn.com/nhl/game/_/gameId/${gameId}`;
   }
@@ -57,11 +50,8 @@ export function wrapFeedsForFavorites(favs: SportsFavorite[]): string[] {
     if (f.kind !== "team") continue;
     const p = f.espnPath;
     if (p.startsWith("baseball/mlb/")) {
-      if (f.key === "mlb-stl" || f.mlbTeamId === 138) {
-        urls.add("synthetic:cardinals-wraps");
-      } else {
-        urls.add("synthetic:mlb-wraps");
-      }
+      if (f.key === "mlb-stl" || f.mlbTeamId === 138) urls.add("synthetic:cardinals-wraps");
+      else urls.add("synthetic:mlb-wraps");
     } else if (p.startsWith("football/nfl/")) {
       urls.add("synthetic:nfl-wraps");
     } else if (p.startsWith("football/college-football/")) {
@@ -79,37 +69,19 @@ export type MatchedWrap = {
   feedUrl: string;
   favoriteKeys: string[];
   gameHref: string | null;
+  gameId: string | null;
 };
 
 const WEAK_TOKENS = new Set([
-  "the",
-  "and",
-  "st.",
-  "st",
-  "fc",
-  "afc",
-  "club",
-  "city",
-  "united",
-  "state",
-  "states",
-  "football",
-  "basketball",
-  "baseball",
-  "hockey",
-  "soccer",
-  "tour",
-  "louis", // alone — require "st. louis" / "cardinals"
-  "kansas",
-  "detroit",
-  "missouri", // alone — require mizzou / missouri state phrasing
+  "the", "and", "st.", "st", "fc", "afc", "club", "city", "united", "state",
+  "states", "football", "basketball", "baseball", "hockey", "soccer", "tour",
+  "louis", "kansas", "detroit", "missouri",
 ]);
 
 function strongNames(fav: SportsFavorite): string[] {
   const names = [fav.shortName, fav.name]
     .map((n) => n.trim().toLowerCase())
     .filter(Boolean);
-  // Alias helpers
   if (fav.key === "mlb-stl") names.push("cardinals", "st. louis cardinals", "stl");
   if (fav.key === "nfl-kc") names.push("chiefs", "kansas city chiefs", "kc");
   if (fav.key === "nfl-det") names.push("lions", "detroit lions");
@@ -128,11 +100,18 @@ function strongNames(fav: SportsFavorite): string[] {
 
 function hayHasName(hay: string, name: string): boolean {
   if (name.length <= 3) {
-    // Short tokens (stl, kc) — word-ish boundary
     const re = new RegExp(`(?:^|[^a-z0-9])${name.replace(/\./g, "\\.")}(?:[^a-z0-9]|$)`, "i");
     return re.test(hay);
   }
   return hay.includes(name);
+}
+
+function extractGameId(link: string): string | null {
+  return (
+    link.match(/gameId[=/](\d+)/i)?.[1] ??
+    link.match(/\/game\/_\/gameId\/(\d+)/i)?.[1] ??
+    null
+  );
 }
 
 export function matchWrapToFavorites(
@@ -146,36 +125,19 @@ export function matchWrapToFavorites(
   for (const fav of favs) {
     if (fav.kind !== "team") continue;
     let hit = false;
-
-    // Strongest: official MLB team ids on wrap payloads
     if (fav.mlbTeamId && item.logoTeamIds?.includes(fav.mlbTeamId)) hit = true;
-
-    // Soccer / NFL logo id bags when present
     if (!hit && item.logoSoccerIds?.length) {
       const espnId = fav.espnPath.split("/").pop();
       if (espnId && item.logoSoccerIds.includes(espnId)) hit = true;
     }
-
-    if (!hit) {
-      hit = strongNames(fav).some((n) => hayHasName(hay, n));
-    }
-
-    // Cardinals-only feed: every item is for STL
-    if (!hit && feedUrl.includes("cardinals-wraps") && fav.key === "mlb-stl") {
-      hit = true;
-    }
-
-    // Club wraps feed: only match soccer favorites by name (already covered)
+    if (!hit) hit = strongNames(fav).some((n) => hayHasName(hay, n));
+    if (!hit && feedUrl.includes("cardinals-wraps") && fav.key === "mlb-stl") hit = true;
     if (hit) keys.push(fav.key);
   }
 
   if (!keys.length) return null;
 
-  const gameId =
-    item.link.match(/gameId[=/](\d+)/i)?.[1] ??
-    item.link.match(/\/game\/_\/gameId\/(\d+)/i)?.[1] ??
-    null;
-
+  const gameId = extractGameId(item.link) ?? extractGameId(item.id);
   const primary = favs.find((f) => f.key === keys[0]);
   const gameHref =
     gameId && primary
@@ -184,7 +146,7 @@ export function matchWrapToFavorites(
         ? inferGameHrefFromFeed(feedUrl, gameId)
         : null;
 
-  return { item, feedUrl, favoriteKeys: keys, gameHref };
+  return { item, feedUrl, favoriteKeys: keys, gameHref, gameId };
 }
 
 function inferGameHrefFromFeed(feedUrl: string, gameId: string): string | null {
@@ -200,6 +162,88 @@ function inferGameHrefFromFeed(feedUrl: string, gameId: string): string | null {
   return null;
 }
 
+function sportPathsForWrap(feedUrl: string, fav?: SportsFavorite | null): string[] {
+  if (feedUrl.includes("nfl")) return ["football/nfl"];
+  if (feedUrl.includes("cfb")) return ["football/college-football"];
+  if (feedUrl.includes("mlb") || feedUrl.includes("cardinals")) return ["baseball/mlb"];
+  if (feedUrl.includes("soccer") || feedUrl.includes("epl")) {
+    const fromFav = fav?.espnPath.match(/soccer\/([^/]+)\//)?.[1];
+    const paths = [];
+    if (fromFav) paths.push(`soccer/${fromFav}`);
+    paths.push("soccer/eng.1", "soccer/eng.2");
+    return [...new Set(paths)];
+  }
+  if (fav?.espnPath.includes("/teams/")) {
+    const base = fav.espnPath.replace(/\/teams\/\d+.*/, "");
+    if (base) return [base];
+  }
+  return [];
+}
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|h[1-6]|li|tr|blockquote)>/gi, "\n\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+/** Pull full ESPN wrap prose for a game (summary API, then article extract). */
+export async function fetchEspnWrapStoryText(opts: {
+  feedUrl: string;
+  gameId: string | null;
+  link: string;
+  fav?: SportsFavorite | null;
+}): Promise<string | null> {
+  const paths = sportPathsForWrap(opts.feedUrl, opts.fav);
+  if (opts.gameId) {
+    for (const path of paths) {
+      try {
+        const sum = (await espnGet(`${path}/summary?event=${opts.gameId}`)) as {
+          article?: { story?: string; description?: string; headline?: string };
+          news?: { articles?: { story?: string; description?: string; headline?: string }[] };
+        };
+        const candidates = [
+          sum.article,
+          ...(sum.news?.articles ?? []),
+        ].filter(Boolean);
+        let best = "";
+        for (const a of candidates) {
+          const text = stripHtml(a?.story || "");
+          if (text.length > best.length) best = text;
+        }
+        if (best.length >= 160) return best;
+        const desc = (sum.article?.description || "").replace(/^—\s*/, "").trim();
+        if (best.length < 80 && desc.length >= 80) return desc;
+        if (best.length >= 80) return best;
+      } catch {
+        /* try next path */
+      }
+    }
+  }
+
+  try {
+    const { fetchRssArticle } = await import("./rss");
+    const article = await fetchRssArticle(opts.link);
+    const text = (article.contentText || stripHtml(article.contentHtml || "")).trim();
+    if (text.length >= 120) return text;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 export function isTeamInSeason(snap: TeamSnapshot): boolean {
   return Boolean(snap.nextGame || snap.record);
 }
@@ -209,6 +253,10 @@ export type TeamInfobox = {
   snap: TeamSnapshot;
   detail: TeamDetail | null;
   href: string;
+  form: ("W" | "L" | "·")[];
+  odds: string | null;
+  teamStats: { label: string; value: string }[];
+  recentLines: { label: string; won: boolean | null; href: string | null }[];
 };
 
 export type GameWrapCard = {
@@ -219,13 +267,19 @@ export type GameWrapCard = {
   sportLabel: string;
   headline: string;
   dek: string | null;
+  /** Full ESPN wrap body when available. */
+  body: string | null;
   scoreLine: string | null;
   when: string | null;
   won: boolean | null;
   gameHref: string | null;
   wrapHref: string | null;
+  feedUrl: string | null;
+  gameId: string | null;
   stats: { label: string; value: string }[];
   leaders: { name: string; line: string; href: string | null }[];
+  teamStats: { label: string; value: string }[];
+  division: { rank: string; team: string; record: string; me: boolean }[];
 };
 
 export function buildTeamInfoboxes(
@@ -239,11 +293,30 @@ export function buildTeamInfoboxes(
     .map((fav) => {
       const snap = snapBy.get(fav.key);
       if (!snap || !isTeamInSeason(snap)) return null;
+      const detail = detailBy.get(fav.key) ?? null;
+      const form = (detail?.recent ?? [])
+        .slice(0, 5)
+        .map((g) => (g.won === true ? "W" : g.won === false ? "L" : "·")) as ("W" | "L" | "·")[];
+      const odds = detail?.playoffOdds || detail?.wildCardOdds || null;
+      const teamStats = [
+        ...(detail?.teamHitting ?? []).slice(0, 3),
+        ...(detail?.teamPitching ?? []).slice(0, 2),
+        ...(detail?.teamFacts ?? []).slice(0, 3),
+      ].slice(0, 5);
+      const recentLines = (detail?.recent ?? []).slice(0, 3).map((g) => ({
+        label: g.label + (g.detail ? ` ${g.detail}` : ""),
+        won: g.won,
+        href: favoriteGameHref(fav, g.id),
+      }));
       return {
         fav,
         snap,
-        detail: detailBy.get(fav.key) ?? null,
+        detail,
         href: favoriteTeamHref(fav),
+        form,
+        odds,
+        teamStats,
+        recentLines,
       } satisfies TeamInfobox;
     })
     .filter((x): x is TeamInfobox => x != null);
@@ -263,7 +336,38 @@ function sportMatchesFavorite(
   return false;
 }
 
-const MAX_WRAP_CARDS = 10;
+const MAX_WRAP_CARDS = 8;
+
+function leadersFromDetail(fav: SportsFavorite, detail: TeamDetail | null) {
+  const hit = (detail?.hittingLeaders ?? []).slice(0, 4).map((l) => ({
+    name: l.name,
+    line: l.line,
+    href: l.id ? playerHref(fav.espnPath, l.id) : null,
+  }));
+  const pit = (detail?.pitchingLeaders ?? []).slice(0, 2).map((l) => ({
+    name: l.name,
+    line: l.line,
+    href: l.id ? playerHref(fav.espnPath, l.id) : null,
+  }));
+  return [...hit, ...pit].slice(0, 5);
+}
+
+function teamStatsFromDetail(detail: TeamDetail | null) {
+  return [
+    ...(detail?.teamHitting ?? []).slice(0, 4),
+    ...(detail?.teamPitching ?? []).slice(0, 3),
+    ...(detail?.teamFacts ?? []).slice(0, 4),
+  ].slice(0, 8);
+}
+
+function divisionFromDetail(detail: TeamDetail | null) {
+  return (detail?.division ?? []).slice(0, 6).map((r) => ({
+    rank: r.rank,
+    team: r.team,
+    record: r.record,
+    me: r.isMe,
+  }));
+}
 
 export function buildGameWrapCards(opts: {
   favs: SportsFavorite[];
@@ -283,43 +387,30 @@ export function buildGameWrapCards(opts: {
     cards.push(card);
   }
 
-  // 1) Yesterday’s finished games for followed teams (best signal).
   for (const g of recapGames) {
     if (!g.favoriteKeys.length) continue;
     const favKey = g.favoriteKeys[0]!;
     const fav = favBy.get(favKey);
     if (!fav) continue;
-    // ESPN reuses numeric team ids across sports — ignore cross-league collisions.
     if (!sportMatchesFavorite(fav, g.sport)) continue;
 
     const wrap =
+      wraps.find((w) => w.favoriteKeys.includes(favKey) && w.gameId === g.id) ??
       wraps.find(
-        (w) => w.favoriteKeys.includes(favKey) && w.gameHref?.includes(g.id),
-      ) ??
-      wraps.find((w) =>
-        w.favoriteKeys.includes(favKey) &&
-        strongNames(fav).some((n) =>
-          hayHasName(`${w.item.title} ${w.item.snippet}`.toLowerCase(), n),
-        ),
+        (w) =>
+          w.favoriteKeys.includes(favKey) &&
+          strongNames(fav).some((n) =>
+            hayHasName(`${w.item.title} ${w.item.snippet}`.toLowerCase(), n),
+          ),
       );
 
-    const scoreLine = `${g.away.abbrev} ${g.away.score ?? "—"} · ${g.home.abbrev} ${g.home.score ?? "—"}`;
+    const scoreLine = `${g.away.abbrev} ${g.away.score ?? "—"}  ${g.home.abbrev} ${g.home.score ?? "—"}`;
     let favWon: boolean | null = null;
     const names = strongNames(fav);
-    const awayHit = names.some((t) => hayHasName(g.away.name.toLowerCase(), t));
-    const homeHit = names.some((t) => hayHasName(g.home.name.toLowerCase(), t));
-    if (awayHit) favWon = g.away.winner;
-    else if (homeHit) favWon = g.home.winner;
+    if (names.some((t) => hayHasName(g.away.name.toLowerCase(), t))) favWon = g.away.winner;
+    else if (names.some((t) => hayHasName(g.home.name.toLowerCase(), t))) favWon = g.home.winner;
 
     const detail = details.find((d) => d.fav.key === favKey)?.detail ?? null;
-    const leaders = (detail?.hittingLeaders ?? [])
-      .slice(0, 3)
-      .map((l) => ({
-        name: l.name,
-        line: l.line,
-        href: l.id ? playerHref(fav.espnPath, l.id) : null,
-      }));
-
     const internalHref = g.href.startsWith("/")
       ? g.href
       : favoriteGameHref(fav, g.id) ?? wrap?.gameHref ?? g.href;
@@ -332,25 +423,29 @@ export function buildGameWrapCards(opts: {
       sportLabel: g.sportLabel,
       headline: wrap?.item.title || g.headline,
       dek: wrap?.item.snippet || g.detail,
+      body: null,
       scoreLine,
       when: null,
       won: favWon,
       gameHref: internalHref,
       wrapHref: wrap?.item.link ?? null,
+      feedUrl: wrap?.feedUrl ?? null,
+      gameId: wrap?.gameId ?? g.id,
       stats: [
-        { label: "Away", value: `${g.away.abbrev} ${g.away.score ?? "—"}` },
-        { label: "Home", value: `${g.home.abbrev} ${g.home.score ?? "—"}` },
+        { label: g.away.abbrev, value: String(g.away.score ?? "—") },
+        { label: g.home.abbrev, value: String(g.home.score ?? "—") },
       ],
-      leaders,
+      leaders: leadersFromDetail(fav, detail),
+      teamStats: teamStatsFromDetail(detail),
+      division: divisionFromDetail(detail),
     });
   }
 
-  // 2) Recent schedule rows for followed teams (one or two each).
   for (const { fav, detail } of details) {
     for (const game of detail.recent.slice(0, 2)) {
       if (cards.length >= MAX_WRAP_CARDS) break;
       const wrap = wraps.find(
-        (w) => w.favoriteKeys.includes(fav.key) && w.gameHref?.includes(game.id),
+        (w) => w.favoriteKeys.includes(fav.key) && (w.gameId === game.id || w.gameHref?.includes(game.id)),
       );
       push({
         id: `recent-${fav.key}-${game.id}`,
@@ -360,32 +455,31 @@ export function buildGameWrapCards(opts: {
         sportLabel: fav.league || fav.sport,
         headline: wrap?.item.title || `${fav.shortName}: ${game.label}`,
         dek: wrap?.item.snippet || game.detail,
+        body: null,
         scoreLine: game.detail,
         when: game.when,
         won: game.won,
         gameHref: favoriteGameHref(fav, game.id) ?? wrap?.gameHref ?? null,
         wrapHref: wrap?.item.link ?? null,
+        feedUrl: wrap?.feedUrl ?? null,
+        gameId: wrap?.gameId ?? game.id,
         stats: [
           { label: "Result", value: game.won === true ? "W" : game.won === false ? "L" : "—" },
           { label: "Matchup", value: game.label },
         ],
-        leaders: (detail.hittingLeaders ?? [])
-          .slice(0, 2)
-          .map((l) => ({
-            name: l.name,
-            line: l.line,
-            href: l.id ? playerHref(fav.espnPath, l.id) : null,
-          })),
+        leaders: leadersFromDetail(fav, detail),
+        teamStats: teamStatsFromDetail(detail),
+        division: divisionFromDetail(detail),
       });
     }
   }
 
-  // 3) Remaining noteworthy-matched wraps (noteworthy only).
   for (const w of wraps) {
     if (cards.length >= MAX_WRAP_CARDS) break;
     if (cards.some((c) => c.wrapHref === w.item.link || c.headline === w.item.title)) continue;
     const fav = favBy.get(w.favoriteKeys[0] ?? "") ?? null;
     if (!fav) continue;
+    const detail = details.find((d) => d.fav.key === fav.key)?.detail ?? null;
     push({
       id: `wrap-${w.item.id}`,
       favoriteKey: fav.key,
@@ -394,17 +488,45 @@ export function buildGameWrapCards(opts: {
       sportLabel: fav.league || fav.sport,
       headline: w.item.title,
       dek: w.item.snippet,
+      body: null,
       scoreLine: null,
       when: w.item.publishedAt,
       won: null,
       gameHref: w.gameHref,
       wrapHref: w.item.link,
+      feedUrl: w.feedUrl,
+      gameId: w.gameId,
       stats: [],
-      leaders: [],
+      leaders: leadersFromDetail(fav, detail),
+      teamStats: teamStatsFromDetail(detail),
+      division: divisionFromDetail(detail),
     });
   }
 
   return cards;
+}
+
+/** Fill `body` on wrap cards with ESPN recap prose. */
+export async function enrichWrapBodies(
+  cards: GameWrapCard[],
+  favs: SportsFavorite[],
+): Promise<GameWrapCard[]> {
+  const favBy = new Map(favs.map((f) => [f.key, f]));
+  const out = await Promise.all(
+    cards.map(async (card) => {
+      if (!card.wrapHref && !card.gameId) return card;
+      const fav = favBy.get(card.favoriteKey);
+      const body = await fetchEspnWrapStoryText({
+        feedUrl: card.feedUrl || "",
+        gameId: card.gameId,
+        link: card.wrapHref || card.gameHref || "",
+        fav,
+      });
+      if (!body) return card;
+      return { ...card, body, dek: card.dek || body.slice(0, 180) };
+    }),
+  );
+  return out;
 }
 
 export function chunkPages<T>(items: T[], size: number): T[][] {
