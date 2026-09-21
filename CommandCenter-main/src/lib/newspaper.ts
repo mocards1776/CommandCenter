@@ -1,4 +1,4 @@
-/** Helpers for the Thompson Times print edition. */
+/** Helpers for the Thompson Times sports edition. */
 
 import { todayStr } from "./utils";
 
