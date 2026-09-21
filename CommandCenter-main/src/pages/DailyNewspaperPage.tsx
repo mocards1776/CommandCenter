@@ -218,15 +218,22 @@ function StoryLinks({ card }: { card: GameWrapCard }) {
   );
 }
 
+/** Columns are chosen from copy length so a short wrap never leaves a blank column. */
+function proseColumnClass(copy: string, max = 3): string {
+  const len = copy.length;
+  const cols = len > 2600 ? 3 : len > 1100 ? 2 : 1;
+  return `cols-${Math.min(cols, max)}`;
+}
+
 function LeadStory({ card }: { card: GameWrapCard }) {
   const copy = cardCopy(card);
-  const paras = proseParas(copy, 18);
+  const paras = proseParas(copy, 24);
   return (
     <article className="tt-lead">
       {card.scoreLine ? <div className="tt-lead-score">{card.scoreLine}</div> : null}
       <StoryHead card={card} />
       {paras.length ? (
-        <div className="tt-prose">
+        <div className={cn("tt-prose", proseColumnClass(copy))}>
           {paras.map((p, i) => (
             <p key={i}>{p}</p>
           ))}
@@ -385,7 +392,39 @@ function Rail({
   );
 }
 
-function WrapSide({ card }: { card: GameWrapCard }) {
+/** Agate rows for whatever height is left over, so no box stretches into white. */
+function deskAgate(teams: TeamInfobox[], skipKey?: string) {
+  return teams
+    .filter((t) => t.fav.key !== skipKey)
+    .flatMap((t) => {
+      const rows = [
+        {
+          left: (
+            <>
+              <strong>{t.fav.shortName}</strong> <em>{t.fav.league}</em>
+            </>
+          ),
+          right: t.snap.record || "—",
+        },
+      ];
+      if (t.snap.nextGame) {
+        rows.push({
+          left: <em>Next {t.snap.nextGame.label}</em>,
+          right: t.snap.nextGame.when || "—",
+        });
+      }
+      return rows;
+    })
+    .slice(0, 18);
+}
+
+function WrapSide({
+  card,
+  teams,
+}: {
+  card: GameWrapCard;
+  teams?: TeamInfobox[];
+}) {
   return (
     <aside className="tt-wrap-side">
       <StatBox
@@ -417,20 +456,31 @@ function WrapSide({ card }: { card: GameWrapCard }) {
           me: r.me,
         }))}
       />
+      {teams?.length ? (
+        <StatBox title="Around the desk" rows={deskAgate(teams, card.favoriteKey)} />
+      ) : null}
     </aside>
   );
 }
 
-function FolioStory({ card, compact }: { card: GameWrapCard; compact?: boolean }) {
+function FolioStory({
+  card,
+  compact,
+  teams,
+}: {
+  card: GameWrapCard;
+  compact?: boolean;
+  teams?: TeamInfobox[];
+}) {
   const copy = cardCopy(card);
-  const paras = proseParas(copy, compact ? 12 : 18);
+  const paras = proseParas(copy, compact ? 18 : 26);
   return (
     <div className={cn("tt-folio-story", compact && "compact")}>
       <article className="tt-wrap-story">
         {card.scoreLine ? <div className="tt-lead-score">{card.scoreLine}</div> : null}
         <StoryHead card={card} level={compact ? 3 : 2} />
         {paras.length ? (
-          <div className={cn("tt-prose", !compact && "cols-2")}>
+          <div className={cn("tt-prose", proseColumnClass(copy, compact ? 2 : 3))}>
             {paras.map((p, i) => (
               <p key={i}>{p}</p>
             ))}
@@ -438,7 +488,7 @@ function FolioStory({ card, compact }: { card: GameWrapCard; compact?: boolean }
         ) : null}
         <StoryLinks card={card} />
       </article>
-      <WrapSide card={card} />
+      <WrapSide card={card} teams={teams} />
     </div>
   );
 }
@@ -458,8 +508,8 @@ function InsidePage({
   return (
     <div className="tt-inside">
       <div className={cn("tt-inside-grid", secondary ? "two" : "one")}>
-        <FolioStory card={primary} compact={Boolean(secondary)} />
-        {secondary ? <FolioStory card={secondary} compact /> : null}
+        <FolioStory card={primary} compact={Boolean(secondary)} teams={teams} />
+        {secondary ? <FolioStory card={secondary} compact teams={teams} /> : null}
       </div>
       <div className="tt-inside-foot">
         {wire.length ? <WireStack cards={wire.slice(0, 4)} /> : null}
@@ -762,7 +812,10 @@ export default function DailyNewspaperPage() {
                   <div className="tt-pack">
                     <div className="tt-pack-main">
                       {lead ? (
-                        <LeadStory card={lead} />
+                        <div className="tt-lead-wrap">
+                          <LeadStory card={lead} />
+                          <WrapSide card={lead} teams={teams} />
+                        </div>
                       ) : (
                         <p className="tt-empty">Waiting on wraps for your clubs.</p>
                       )}

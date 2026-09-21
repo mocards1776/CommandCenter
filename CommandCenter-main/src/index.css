@@ -1365,8 +1365,17 @@ mark.rss-hl {
   border-right: 1px solid var(--tt-rule-strong);
 }
 
-.tt-lead {
+/* Lead runs with a ruled agate column beside it, never a blank text column */
+.tt-lead-wrap {
   flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 0.95fr);
+  gap: 0.42rem;
+}
+.tt-lead {
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   display: flex; flex-direction: column; gap: 0.1rem;
@@ -1502,8 +1511,11 @@ mark.rss-hl {
   padding: 0.18rem 0.28rem 0.22rem;
   min-height: 0;
   overflow: hidden;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
 }
+/* The last box soaks any leftover column height so nothing ends in white */
+.tt-wrap-side > .tt-box:last-child,
+.tt-rail > .tt-box:last-child { flex: 1 1 auto; }
 .tt-box h4 {
   margin: 0 0 0.12rem;
   font-family: var(--tt-label);
