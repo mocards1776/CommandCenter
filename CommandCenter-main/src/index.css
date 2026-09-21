@@ -1239,10 +1239,10 @@ mark.rss-hl {
   box-sizing: border-box;
   background: transparent;
   color: var(--tt-text);
-  padding: 0.35rem 0.55rem 0.4rem;
+  padding: 0.2rem 0.35rem 0.25rem;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.22rem;
   position: relative;
   overflow: hidden;
   animation: tt-page-in 0.35s ease both;
@@ -1321,19 +1321,19 @@ mark.rss-hl {
 /* ── Club ticker (modern score tiles) ── */
 .tt-ticker {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
-  gap: 0.28rem;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 0.18rem;
   flex-shrink: 0;
 }
 .tt-tile {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.35rem;
+  gap: 0.28rem;
   align-items: center;
-  padding: 0.35rem 0.4rem;
+  padding: 0.28rem 0.32rem;
   background: linear-gradient(160deg, var(--tt-panel-2), var(--tt-panel));
   border: 1px solid var(--tt-line);
-  border-radius: 4px;
+  border-radius: 3px;
   min-width: 0;
   transition: border-color 0.2s ease, transform 0.2s ease;
   animation: tt-tile-in 0.4s ease both;
@@ -1395,23 +1395,25 @@ mark.rss-hl {
 .tt-pack {
   display: grid;
   grid-template-columns: 1.55fr 0.95fr;
-  gap: 0.35rem;
+  gap: 0.22rem;
   min-height: 0;
   height: 100%;
   overflow: hidden;
 }
 .tt-pack-main {
   min-width: 0; min-height: 0; overflow: hidden;
-  display: flex; flex-direction: column; gap: 0.28rem;
+  display: flex; flex-direction: column; gap: 0.18rem;
   background: linear-gradient(165deg, rgba(22, 41, 79, 0.55), rgba(13, 29, 60, 0.85));
   border: 1px solid var(--tt-line);
-  border-radius: 6px;
-  padding: 0.45rem 0.5rem;
+  border-radius: 4px;
+  padding: 0.32rem 0.38rem;
 }
 
 .tt-lead {
-  flex-shrink: 0;
-  display: flex; flex-direction: column; gap: 0.2rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex; flex-direction: column; gap: 0.12rem;
+  overflow: hidden;
 }
 .tt-lead-score {
   display: flex; align-items: center; gap: 0.55rem;
@@ -1419,12 +1421,14 @@ mark.rss-hl {
   font-size: clamp(18px, 2.4vw, 26px);
   letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--tt-warm);
+  flex-shrink: 0;
 }
 .tt-lead h2 {
   margin: 0;
   font-family: var(--tt-font-ui);
-  font-size: clamp(16px, 2vw, 22px);
-  line-height: 1.12; letter-spacing: -0.02em; font-weight: 800;
+  font-size: clamp(15px, 1.85vw, 20px);
+  line-height: 1.1; letter-spacing: -0.02em; font-weight: 800;
+  flex-shrink: 0;
 }
 .tt-kicker {
   margin: 0;
@@ -1443,18 +1447,23 @@ mark.rss-hl {
 
 .tt-prose {
   font-family: var(--tt-font-body);
-  font-size: 11.5px;
-  line-height: 1.38;
+  font-size: 11px;
+  line-height: 1.34;
   color: rgba(242, 244, 248, 0.88);
   columns: 2;
-  column-gap: 0.75rem;
+  column-gap: 0.55rem;
   column-fill: auto;
   overflow: hidden;
+  text-align: left;
 }
-.tt-lead .tt-prose { max-height: min(34vh, 240px); }
+.tt-lead .tt-prose {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
 .tt-prose.cols-2 { columns: 2; }
-.tt-prose.cols-3 { columns: 3; column-gap: 0.55rem; font-size: 10.5px; }
-.tt-prose p { margin: 0 0 0.35rem; break-inside: avoid; }
+.tt-prose.cols-3 { columns: 3; column-gap: 0.45rem; font-size: 10.25px; }
+.tt-prose p { margin: 0 0 0.28rem; break-inside: avoid; }
 
 .tt-inline-links {
   display: flex; gap: 0.85rem; flex-shrink: 0;
@@ -1466,16 +1475,38 @@ mark.rss-hl {
 .tt-inline-links .tt-a:hover { color: var(--tt-warm); }
 
 .tt-wire {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
   overflow: hidden;
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-auto-rows: min-content;
-  gap: 0.28rem 0.4rem;
+  gap: 0.18rem 0.3rem;
   align-content: start;
   border-top: 1px solid var(--tt-line);
-  padding-top: 0.28rem;
+  padding-top: 0.18rem;
+  max-height: 28%;
+}
+.tt-rail {
+  min-width: 0; min-height: 0; overflow: hidden;
+  display: flex; flex-direction: column; gap: 0.18rem;
+}
+.tt-rail .tt-brief {
+  background: var(--tt-panel);
+  border: 1px solid var(--tt-line);
+  border-left: 2px solid var(--tt-accent);
+  border-radius: 3px;
+  padding: 0.25rem 0.32rem;
+  flex-shrink: 0;
+}
+.tt-box {
+  border: 1px solid var(--tt-line);
+  background: var(--tt-panel);
+  border-radius: 3px;
+  padding: 0.2rem 0.28rem;
+  min-height: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
 }
 .tt-brief {
   min-width: 0;
@@ -1498,26 +1529,6 @@ mark.rss-hl {
   overflow: hidden;
 }
 
-.tt-rail {
-  min-width: 0; min-height: 0; overflow: hidden;
-  display: flex; flex-direction: column; gap: 0.28rem;
-}
-.tt-rail .tt-brief {
-  background: var(--tt-panel);
-  border: 1px solid var(--tt-line);
-  border-left: 2px solid var(--tt-accent);
-  border-radius: 4px;
-  padding: 0.35rem 0.4rem;
-  flex-shrink: 0;
-}
-.tt-box {
-  border: 1px solid var(--tt-line);
-  background: var(--tt-panel);
-  border-radius: 4px;
-  padding: 0.28rem 0.35rem;
-  min-height: 0;
-  overflow: hidden;
-}
 .tt-box h4 {
   margin: 0 0 0.15rem;
   font-family: var(--tt-font-brand);
