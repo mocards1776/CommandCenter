@@ -1393,9 +1393,17 @@ mark.rss-hl {
   gap: 0.32rem;
   flex-shrink: 0;
 }
+.np-team-board.dense {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.24rem;
+}
+.np-team-board.dense .np-infobox { padding: 0.22rem 0.28rem 0.24rem; }
+.np-team-board.dense .np-infobox-name { font-size: 12px; }
+.np-team-board.dense .np-infobox-line { font-size: 8.5px; }
 
 @media (max-width: 720px) {
-  .np-team-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .np-team-board,
+  .np-team-board.dense { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .np-infobox {

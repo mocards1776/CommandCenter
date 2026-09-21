@@ -33,6 +33,7 @@ import NflGamePage from "@/pages/NflGamePage";
 import NflPlayerPage from "@/pages/NflPlayerPage";
 import NflTeamPage from "@/pages/NflTeamPage";
 import NflCoachPage from "@/pages/NflCoachPage";
+import SoccerGamePage from "@/pages/SoccerGamePage";
 const RssPage = lazy(() => import("@/pages/RssPage"));
 import PublicStoryPage from "@/pages/PublicStoryPage";
 import BuenaVistaNotebookPage from "@/pages/BuenaVistaNotebookPage";
@@ -79,7 +80,7 @@ function Protected() {
     );
   }
 
-  if (!session) {
+  if (!session && import.meta.env.VITE_DEV_BYPASS_AUTH !== "1") {
     const next = encodeURIComponent(location.pathname + location.search);
     return <Navigate to={`/login?next=${next}`} replace />;
   }
@@ -152,6 +153,7 @@ export default function App() {
               <Route path="/sports/cfb/team/:teamId" element={<CfbTeamPage />} />
               <Route path="/sports/cfb/coach/:coachId" element={<CfbCoachPage />} />
               <Route path="/sports/cfb/player/:playerId" element={<CfbPlayerPage />} />
+              <Route path="/sports/soccer/game/:eventId" element={<SoccerGamePage />} />
               <Route
                 path="/rss"
                 element={

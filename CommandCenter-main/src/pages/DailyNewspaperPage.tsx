@@ -8,6 +8,7 @@ import {
   buildGameWrapCards,
   buildTeamInfoboxes,
   chunkPages,
+  favoriteGameHref,
   favoriteTeamHref,
   isTeamInSeason,
   matchWrapToFavorites,
@@ -91,13 +92,17 @@ function TeamBoard({ teams }: { teams: TeamInfobox[] }) {
       </div>
     );
   }
+  const dense = teams.length > 6;
   return (
-    <div className="np-team-board">
+    <div className={cn("np-team-board", dense && "dense")}>
       {teams.map((t, i) => {
         const last = t.snap.lastGame;
         const next = t.snap.nextGame;
         const result =
           last?.won === true ? "W" : last?.won === false ? "L" : null;
+        const nextGame = t.detail?.upcoming[0];
+        const nextHref =
+          (nextGame ? favoriteGameHref(t.fav, nextGame.id) : null) || t.href;
         return (
           <article
             key={t.fav.key}
@@ -134,22 +139,15 @@ function TeamBoard({ teams }: { teams: TeamInfobox[] }) {
             {next ? (
               <p className="np-infobox-line next">
                 Next ·{" "}
-                <ExternalOrLink
-                  href={
-                    t.detail?.upcoming[0]
-                      ? favoriteTeamHref(t.fav)
-                      : t.href
-                  }
-                  className="np-link"
-                >
+                <ExternalOrLink href={nextHref} className="np-link">
                   {next.label}
                 </ExternalOrLink>
                 {next.when ? ` · ${next.when}` : ""}
               </p>
             ) : null}
-            {t.detail?.division?.length ? (
+            {!dense && t.detail?.division?.length ? (
               <ul className="np-infobox-div">
-                {t.detail.division.slice(0, 4).map((row) => (
+                {t.detail.division.slice(0, 3).map((row) => (
                   <li key={`${t.fav.key}-${row.rank}-${row.team}`} className={cn(row.isMe && "me")}>
                     <span>
                       {row.rank}. {row.team}
@@ -395,7 +393,7 @@ export default function DailyNewspaperPage() {
       const matched = [];
       const seen = new Set<string>();
       for (const feed of feeds) {
-        for (const item of feed.items.slice(0, 24)) {
+        for (const item of feed.items.slice(0, 16)) {
           const hit = matchWrapToFavorites(item, feed.url, inSeasonFavs.length ? inSeasonFavs : teamFavs);
           if (!hit) continue;
           const key = hit.item.link || hit.item.id;
