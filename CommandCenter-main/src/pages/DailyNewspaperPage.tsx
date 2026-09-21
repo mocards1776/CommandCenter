@@ -55,12 +55,13 @@ function Mast({ day, folio }: { day: string; folio: string }) {
   return (
     <header className="tt-mast">
       <div className="tt-mast-l">
-        <h1>Thompson Times</h1>
         <span className="tt-mast-sep">Sports</span>
-        <span>{editionDateline(day)}</span>
+        <h1>Thompson Times</h1>
+        <span className="tt-mast-sep">Section {folio}</span>
       </div>
       <div className="tt-mast-r">
-        <span>
+        <span className="tt-dateline">{editionDateline(day)}</span>
+        <span className="tt-dateline">
           Vol {volume} · № {issue}
         </span>
         <span>{folio}</span>
