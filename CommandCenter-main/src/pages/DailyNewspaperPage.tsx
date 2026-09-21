@@ -8,7 +8,6 @@ import {
   buildGameWrapCards,
   buildTeamInfoboxes,
   enrichWrapBodies,
-  favoriteGameHref,
   isTeamInSeason,
   matchWrapToFavorites,
   playerHref,
