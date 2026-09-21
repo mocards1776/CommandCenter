@@ -237,11 +237,24 @@ export async function fetchEspnWrapStoryText(opts: {
     const { fetchRssArticle } = await import("./rss");
     const article = await fetchRssArticle(opts.link);
     const text = (article.contentText || stripHtml(article.contentHtml || "")).trim();
-    if (text.length >= 120) return text;
+    if (text.length >= 120 && readsLikeProse(text)) return text;
   } catch {
     /* ignore */
   }
   return null;
+}
+
+/** ESPN box-score shells scrape as run-together labels; keep only real sentences. */
+function readsLikeProse(text: string): boolean {
+  const head = text.slice(0, 600);
+  const sentences = head.match(/[.!?]["')\]]?\s/g)?.length ?? 0;
+  if (sentences < 2) return false;
+  if (/All Players|Period\s*\d|\d(?:st|nd|rd|th)\s+Period|Team Stats/i.test(head)) {
+    return false;
+  }
+  // Scoreboard scrapes jam words together without spaces after capitals.
+  const jammed = head.match(/[a-z][A-Z]/g)?.length ?? 0;
+  return jammed < 8;
 }
 
 export function isTeamInSeason(snap: TeamSnapshot): boolean {

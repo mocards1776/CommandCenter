@@ -1433,6 +1433,7 @@ mark.rss-hl {
 .tt-lead .tt-prose { flex: 1; min-height: 0; }
 .tt-prose p { margin: 0; break-inside: avoid; text-indent: 0.85em; }
 .tt-prose p:first-child { text-indent: 0; }
+.tt-prose.cols-1 { columns: 1; column-rule: 0; }
 .tt-prose.cols-2 { columns: 2; }
 .tt-prose.cols-3 { columns: 3; }
 /* Drop cap opens the lead like a section front */

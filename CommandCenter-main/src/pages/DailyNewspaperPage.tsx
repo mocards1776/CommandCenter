@@ -146,8 +146,40 @@ function proseParas(text: string, max = 20): string[] {
   );
 }
 
+/** Agate notes that tail the story so ruled columns always run full. */
+function notesTail(card: GameWrapCard): string {
+  const bits: string[] = [];
+  if (card.leaders.length) {
+    bits.push(
+      `NOTES — ${card.leaders
+        .slice(0, 5)
+        .map((l) => `${l.name} ${l.line}`)
+        .join("; ")}.`,
+    );
+  }
+  if (card.teamStats.length) {
+    bits.push(
+      `Club marks: ${card.teamStats
+        .slice(0, 8)
+        .map((s) => `${s.label} ${s.value}`)
+        .join(", ")}.`,
+    );
+  }
+  if (card.division.length) {
+    bits.push(
+      `Standings: ${card.division
+        .map((r) => `${r.rank}. ${r.team} ${r.record}`)
+        .join("; ")}.`,
+    );
+  }
+  return bits.join("\n\n");
+}
+
 function cardCopy(card: GameWrapCard): string {
-  if (card.body && card.body.trim().length >= 80) return card.body.trim();
+  if (card.body && card.body.trim().length >= 80) {
+    const tail = notesTail(card);
+    return tail ? `${card.body.trim()}\n\n${tail}` : card.body.trim();
+  }
   const bits: string[] = [];
   if (card.dek) bits.push(card.dek.trim());
   if (card.scoreLine) bits.push(`Final: ${card.scoreLine}.`);
