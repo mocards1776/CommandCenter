@@ -139,7 +139,7 @@ function TeamMatrix({ teams }: { teams: TeamInfobox[] }) {
                 </p>
               ) : null}
             </div>
-            {t.teamStats.length ? (
+            {t.teamStats.length && teams.length <= 6 ? (
               <dl className="tt-mini-stats">
                 {t.teamStats.map((s) => (
                   <div key={s.label}>
@@ -149,9 +149,9 @@ function TeamMatrix({ teams }: { teams: TeamInfobox[] }) {
                 ))}
               </dl>
             ) : null}
-            {t.detail?.division?.length ? (
+            {t.detail?.division?.length && teams.length <= 6 ? (
               <ul className="tt-div">
-                {t.detail.division.slice(0, 5).map((row) => (
+                {t.detail.division.slice(0, 4).map((row) => (
                   <li key={`${t.fav.key}-${row.rank}-${row.team}`} className={cn(row.isMe && "me")}>
                     <span>
                       {row.rank} {row.team}

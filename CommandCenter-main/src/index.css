@@ -1298,11 +1298,14 @@ mark.rss-hl {
 
 .tt-matrix {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.22rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.18rem;
   flex-shrink: 0;
 }
-@media (max-width: 720px) {
+@media (max-width: 900px) {
+  .tt-matrix { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
   .tt-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -1310,7 +1313,7 @@ mark.rss-hl {
   position: relative;
   border: 1px solid var(--tt-line);
   background: var(--tt-panel);
-  padding: 0.28rem 0.32rem 0.3rem 0.4rem;
+  padding: 0.22rem 0.26rem 0.24rem 0.34rem;
   min-width: 0;
 }
 .tt-cell-accent {
