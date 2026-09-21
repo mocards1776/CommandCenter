@@ -167,11 +167,44 @@ function proseParas(text: string, max = 20): string[] {
   );
 }
 
-function LeadStory({ card }: { card: GameWrapCard }) {
+/** Prefer ESPN body; otherwise stitch dek + box into readable copy so the well never sits empty. */
+function cardCopy(card: GameWrapCard): string {
+  if (card.body && card.body.trim().length >= 80) return card.body.trim();
+  const bits: string[] = [];
+  if (card.dek) bits.push(card.dek.trim());
+  if (card.scoreLine) bits.push(`Final: ${card.scoreLine}.`);
+  if (card.leaders.length) {
+    bits.push(
+      `Names: ${card.leaders
+        .slice(0, 5)
+        .map((l) => `${l.name} (${l.line})`)
+        .join("; ")}.`,
+    );
+  }
+  if (card.teamStats.length) {
+    bits.push(
+      `Club marks: ${card.teamStats
+        .slice(0, 6)
+        .map((s) => `${s.label} ${s.value}`)
+        .join(", ")}.`,
+    );
+  }
+  if (card.division.length) {
+    bits.push(
+      `Table: ${card.division
+        .slice(0, 6)
+        .map((r) => `${r.rank}. ${r.team} ${r.record}`)
+        .join("; ")}.`,
+    );
+  }
+  return bits.join(" ").trim();
+}
+
+function StoryHead({ card, level = 2 }: { card: GameWrapCard; level?: 2 | 3 }) {
   const href = card.gameHref || card.wrapHref || card.teamHref;
-  const paras = proseParas(card.body || card.dek || "", 16);
+  const Title = level === 2 ? "h2" : "h3";
   return (
-    <article className="tt-lead">
+    <>
       <p className="tt-kicker">
         {card.sportLabel}
         {card.won === true ? " · Win" : card.won === false ? " · Loss" : ""}
@@ -180,36 +213,54 @@ function LeadStory({ card }: { card: GameWrapCard }) {
           {card.teamName}
         </ExternalOrLink>
       </p>
-      <h2>
+      <Title>
         <ExternalOrLink href={href} className="tt-a">
           {card.headline}
         </ExternalOrLink>
-      </h2>
+      </Title>
       {card.scoreLine ? <p className="tt-score">{card.scoreLine}</p> : null}
-      <div className="tt-prose tt-prose-fill">
-        {paras.map((p, i) => (
-          <p key={i}>{p}</p>
-        ))}
-      </div>
-      <div className="tt-inline-links">
-        {card.gameHref ? (
-          <ExternalOrLink href={card.gameHref} className="tt-a">
-            Game center
-          </ExternalOrLink>
-        ) : null}
-        {card.wrapHref ? (
-          <ExternalOrLink href={card.wrapHref} className="tt-a">
-            ESPN
-          </ExternalOrLink>
-        ) : null}
-      </div>
+    </>
+  );
+}
+
+function StoryLinks({ card }: { card: GameWrapCard }) {
+  return (
+    <div className="tt-inline-links">
+      {card.gameHref ? (
+        <ExternalOrLink href={card.gameHref} className="tt-a">
+          Game center
+        </ExternalOrLink>
+      ) : null}
+      {card.wrapHref ? (
+        <ExternalOrLink href={card.wrapHref} className="tt-a">
+          ESPN
+        </ExternalOrLink>
+      ) : null}
+    </div>
+  );
+}
+
+function LeadStory({ card }: { card: GameWrapCard }) {
+  const copy = cardCopy(card);
+  const paras = proseParas(copy, 18);
+  return (
+    <article className="tt-lead">
+      <StoryHead card={card} />
+      {paras.length ? (
+        <div className="tt-prose">
+          {paras.map((p, i) => (
+            <p key={i}>{p}</p>
+          ))}
+        </div>
+      ) : null}
+      <StoryLinks card={card} />
     </article>
   );
 }
 
 function Brief({ card }: { card: GameWrapCard }) {
   const href = card.gameHref || card.wrapHref || card.teamHref;
-  const dek = (card.body || card.dek || "").replace(/\s+/g, " ").trim().slice(0, 280);
+  const dek = cardCopy(card).replace(/\s+/g, " ").trim().slice(0, 220);
   return (
     <article className="tt-brief">
       <p className="tt-kicker">
@@ -224,8 +275,43 @@ function Brief({ card }: { card: GameWrapCard }) {
         </ExternalOrLink>
       </h3>
       {card.scoreLine ? <p className="tt-score sm">{card.scoreLine}</p> : null}
-      {dek ? <p className="tt-brief-dek">{dek}{dek.length >= 280 ? "…" : ""}</p> : null}
+      {dek ? <p className="tt-brief-dek">{dek}{dek.length >= 220 ? "…" : ""}</p> : null}
     </article>
+  );
+}
+
+/** Dense wire column — fills leftover height with stacked briefs (no empty well). */
+function WireStack({ cards }: { cards: GameWrapCard[] }) {
+  if (!cards.length) return null;
+  return (
+    <div className="tt-wire">
+      {cards.map((c) => (
+        <Brief key={c.id} card={c} />
+      ))}
+    </div>
+  );
+}
+
+function StatBox({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: { left: ReactNode; right?: ReactNode; me?: boolean }[];
+}) {
+  if (!rows.length) return null;
+  return (
+    <div className="tt-box">
+      <h4>{title}</h4>
+      <ul>
+        {rows.map((r, i) => (
+          <li key={i} className={cn(r.me && "me")}>
+            <span>{r.left}</span>
+            {r.right != null ? <span className="v">{r.right}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -236,9 +322,7 @@ function Rail({
   teams: TeamInfobox[];
   cards: GameWrapCard[];
 }) {
-  const standings = teams
-    .filter((t) => t.detail?.division?.length)
-    .slice(0, 3);
+  const standings = teams.filter((t) => t.detail?.division?.length).slice(0, 4);
   const names = teams
     .flatMap((t) => {
       const people = [
@@ -253,167 +337,187 @@ function Rail({
         href: l.id ? playerHref(t.fav.espnPath, l.id) : null,
       }));
     })
-    .slice(0, 14);
+    .slice(0, 16);
+
+  const recent = teams
+    .flatMap((t) =>
+      t.recentLines.slice(0, 2).map((g) => ({
+        team: t.fav.shortName,
+        ...g,
+      })),
+    )
+    .slice(0, 10);
 
   return (
     <aside className="tt-rail">
-      {cards.slice(1, 3).map((c) => (
+      {cards.slice(0, 2).map((c) => (
         <Brief key={c.id} card={c} />
       ))}
       {standings.map((t) => (
-        <div key={t.fav.key} className="tt-box">
-          <h4>
-            <ExternalOrLink href={t.href} className="tt-a">
-              {t.fav.shortName}
-            </ExternalOrLink>{" "}
-            table
-          </h4>
-          <ul>
-            {(t.detail?.division ?? []).slice(0, 6).map((r) => (
-              <li key={`${t.fav.key}-${r.rank}-${r.team}`} className={cn(r.isMe && "me")}>
-                <span>
-                  {r.rank} {r.team}
-                </span>
-                <span>{r.record}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <StatBox
+          key={t.fav.key}
+          title={`${t.fav.shortName} table`}
+          rows={(t.detail?.division ?? []).slice(0, 6).map((r) => ({
+            left: `${r.rank} ${r.team}`,
+            right: r.record,
+            me: r.isMe,
+          }))}
+        />
       ))}
+      {recent.length ? (
+        <StatBox
+          title="Results"
+          rows={recent.map((g) => ({
+            left: (
+              <>
+                <strong>{g.team}</strong> {g.label}
+              </>
+            ),
+            right: g.won === true ? "W" : g.won === false ? "L" : "·",
+          }))}
+        />
+      ) : null}
       {names.length ? (
-        <div className="tt-box">
-          <h4>Notebook</h4>
-          <ul>
-            {names.map((r) => (
-              <li key={`${r.team}-${r.name}-${r.line}`}>
-                <span>
-                  {r.href ? (
-                    <ExternalOrLink href={r.href} className="tt-a">
-                      {r.name}
-                    </ExternalOrLink>
-                  ) : (
-                    r.name
-                  )}
-                  <em>
-                    {" "}
-                    ·{" "}
-                    <ExternalOrLink href={r.teamHref} className="tt-a">
-                      {r.team}
-                    </ExternalOrLink>
-                  </em>
-                </span>
-                <span className="v">{r.line}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <StatBox
+          title="Notebook"
+          rows={names.map((r) => ({
+            left: (
+              <>
+                {r.href ? (
+                  <ExternalOrLink href={r.href} className="tt-a">
+                    {r.name}
+                  </ExternalOrLink>
+                ) : (
+                  r.name
+                )}
+                <em>
+                  {" "}
+                  ·{" "}
+                  <ExternalOrLink href={r.teamHref} className="tt-a">
+                    {r.team}
+                  </ExternalOrLink>
+                </em>
+              </>
+            ),
+            right: r.line,
+          }))}
+        />
       ) : null}
     </aside>
   );
 }
 
-function WrapPage({ card }: { card: GameWrapCard }) {
-  const href = card.gameHref || card.wrapHref || card.teamHref;
-  const paras = proseParas(card.body || card.dek || "", 24);
+function WrapSide({ card }: { card: GameWrapCard }) {
   return (
-    <div className="tt-wrap-fill">
+    <aside className="tt-wrap-side">
+      <StatBox
+        title="Box"
+        rows={card.stats.map((s) => ({ left: s.label, right: s.value }))}
+      />
+      <StatBox
+        title="Names"
+        rows={card.leaders.map((l) => ({
+          left: l.href ? (
+            <ExternalOrLink href={l.href} className="tt-a">
+              {l.name}
+            </ExternalOrLink>
+          ) : (
+            l.name
+          ),
+          right: l.line,
+        }))}
+      />
+      <StatBox
+        title="Club"
+        rows={card.teamStats.map((s) => ({ left: s.label, right: s.value }))}
+      />
+      <StatBox
+        title="Table"
+        rows={card.division.map((r) => ({
+          left: `${r.rank} ${r.team}`,
+          right: r.record,
+          me: r.me,
+        }))}
+      />
+    </aside>
+  );
+}
+
+/** One story cell inside a packed folio — prose + side box share the cell. */
+function FolioStory({ card, compact }: { card: GameWrapCard; compact?: boolean }) {
+  const copy = cardCopy(card);
+  const paras = proseParas(copy, compact ? 10 : 16);
+  return (
+    <div className={cn("tt-folio-story", compact && "compact")}>
       <article className="tt-wrap-story">
-        <p className="tt-kicker">
-          {card.sportLabel}
-          {card.won === true ? " · Win" : card.won === false ? " · Loss" : ""}
-          {" · "}
-          <ExternalOrLink href={card.teamHref} className="tt-a">
-            {card.teamName}
-          </ExternalOrLink>
-        </p>
-        <h2>
-          <ExternalOrLink href={href} className="tt-a">
-            {card.headline}
-          </ExternalOrLink>
-        </h2>
-        {card.scoreLine ? <p className="tt-score">{card.scoreLine}</p> : null}
-        <div className="tt-prose tt-prose-fill cols-3">
-          {paras.map((p, i) => (
-            <p key={i}>{p}</p>
-          ))}
-        </div>
-        <div className="tt-inline-links">
-          {card.gameHref ? (
-            <ExternalOrLink href={card.gameHref} className="tt-a">
-              Game center
-            </ExternalOrLink>
-          ) : null}
-          {card.wrapHref ? (
-            <ExternalOrLink href={card.wrapHref} className="tt-a">
-              ESPN wrap
-            </ExternalOrLink>
-          ) : null}
-        </div>
+        <StoryHead card={card} level={compact ? 3 : 2} />
+        {paras.length ? (
+          <div className={cn("tt-prose", !compact && "cols-2")}>
+            {paras.map((p, i) => (
+              <p key={i}>{p}</p>
+            ))}
+          </div>
+        ) : null}
+        <StoryLinks card={card} />
       </article>
-      <aside className="tt-wrap-side">
-        {card.stats.length ? (
-          <div className="tt-box">
-            <h4>Box</h4>
-            <ul>
-              {card.stats.map((s) => (
-                <li key={s.label}>
-                  <span>{s.label}</span>
-                  <span className="v">{s.value}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        {card.leaders.length ? (
-          <div className="tt-box">
-            <h4>Names</h4>
-            <ul>
-              {card.leaders.map((l) => (
-                <li key={`${l.name}-${l.line}`}>
-                  {l.href ? (
-                    <ExternalOrLink href={l.href} className="tt-a">
-                      {l.name}
-                    </ExternalOrLink>
-                  ) : (
-                    <span>{l.name}</span>
-                  )}
-                  <span className="v">{l.line}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        {card.teamStats.length ? (
-          <div className="tt-box">
-            <h4>Club</h4>
-            <ul>
-              {card.teamStats.map((s) => (
-                <li key={s.label}>
-                  <span>{s.label}</span>
-                  <span className="v">{s.value}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        {card.division.length ? (
-          <div className="tt-box">
-            <h4>Table</h4>
-            <ul>
-              {card.division.map((r) => (
-                <li key={`${r.rank}-${r.team}`} className={cn(r.me && "me")}>
-                  <span>
-                    {r.rank} {r.team}
-                  </span>
-                  <span className="v">{r.record}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </aside>
+      <WrapSide card={card} />
     </div>
   );
+}
+
+/** Inside page: two stories stacked/side-by-side plus a wire strip — no blank cream. */
+function InsidePage({
+  primary,
+  secondary,
+  wire,
+  teams,
+}: {
+  primary: GameWrapCard;
+  secondary?: GameWrapCard;
+  wire: GameWrapCard[];
+  teams: TeamInfobox[];
+}) {
+  const team = teams.find((t) => t.fav.key === primary.favoriteKey);
+  return (
+    <div className="tt-inside">
+      <div className={cn("tt-inside-grid", secondary ? "two" : "one")}>
+        <FolioStory card={primary} compact={Boolean(secondary)} />
+        {secondary ? <FolioStory card={secondary} compact /> : null}
+      </div>
+      <div className="tt-inside-foot">
+        {wire.length ? <WireStack cards={wire} /> : null}
+        {team?.recentLines.length ? (
+          <StatBox
+            title={`${team.fav.shortName} recent`}
+            rows={team.recentLines.map((g) => ({
+              left: g.label,
+              right: g.won === true ? "W" : g.won === false ? "L" : "·",
+            }))}
+          />
+        ) : null}
+        {teams
+          .filter((t) => t.fav.key !== primary.favoriteKey)
+          .slice(0, 2)
+          .map((t) => (
+            <StatBox
+              key={t.fav.key}
+              title={t.fav.shortName}
+              rows={[
+                { left: "Record", right: t.snap.record || "—" },
+                { left: "Next", right: t.snap.nextGame?.label || "—" },
+                ...t.teamStats.slice(0, 3).map((s) => ({ left: s.label, right: s.value })),
+              ]}
+            />
+          ))}
+      </div>
+    </div>
+  );
+}
+
+function chunkPairs<T>(items: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += 2) out.push(items.slice(i, i + 2));
+  return out;
 }
 
 export default function DailyNewspaperPage() {
@@ -548,20 +652,42 @@ export default function DailyNewspaperPage() {
     staleTime: 10 * 60_000,
   });
 
-  const wrapCards = enrichedQ.data ?? baseCards;
+  const wrapCards = useMemo(() => {
+    const cards = [...(enrichedQ.data ?? baseCards)];
+    // Lead = longest usable copy so A1 never opens on a thin score line.
+    cards.sort((a, b) => cardCopy(b).length - cardCopy(a).length);
+    return cards;
+  }, [enrichedQ.data, baseCards]);
 
-  // Front uses first 3 cards; remaining each get a full page.
+  const lead = wrapCards[0] ?? null;
+  // Rail takes 1–2; main column wire takes the rest after lead.
+  const railCards = wrapCards.slice(1, 3);
+  const mainWire = wrapCards.slice(3);
+  const insidePairs = useMemo(() => chunkPairs(wrapCards), [wrapCards]);
+
   const pages = useMemo(() => {
-    const out: ({ kind: "front" } | { kind: "wrap"; card: GameWrapCard })[] = [
-      { kind: "front" },
-    ];
-    for (const card of wrapCards.slice(1)) out.push({ kind: "wrap", card });
-    // Always include lead wrap as page 2 if body is long enough to continue.
-    if (wrapCards[0]) {
-      out.splice(1, 0, { kind: "wrap", card: wrapCards[0]! });
+    const out: (
+      | { kind: "front" }
+      | {
+          kind: "inside";
+          primary: GameWrapCard;
+          secondary?: GameWrapCard;
+          wire: GameWrapCard[];
+        }
+    )[] = [{ kind: "front" }];
+    for (let i = 0; i < insidePairs.length; i++) {
+      const pair = insidePairs[i]!;
+      const used = new Set(pair.map((c) => c.id));
+      const wire = wrapCards.filter((c) => !used.has(c.id)).slice(0, 4);
+      out.push({
+        kind: "inside",
+        primary: pair[0]!,
+        secondary: pair[1],
+        wire,
+      });
     }
     return out;
-  }, [wrapCards]);
+  }, [insidePairs, wrapCards]);
 
   function goPage(idx: number) {
     const el = pagerRef.current;
@@ -608,9 +734,6 @@ export default function DailyNewspaperPage() {
       enrichedQ.refetch(),
     ]);
   }
-
-  const lead = wrapCards[0] ?? null;
-  const below = wrapCards.slice(3, 6);
 
   return (
     <div className="newspaper-root tt-shell">
@@ -667,15 +790,45 @@ export default function DailyNewspaperPage() {
                       ) : (
                         <p className="tt-empty">Waiting on wraps for your clubs.</p>
                       )}
-                      {below.length ? (
-                        <div className="tt-below">
-                          {below.map((c) => (
-                            <Brief key={c.id} card={c} />
+                      {mainWire.length ? (
+                        <WireStack cards={mainWire} />
+                      ) : (
+                        <div className="tt-wire tt-wire-fill">
+                          {teams.slice(0, 6).map((t) => (
+                            <article key={t.fav.key} className="tt-brief">
+                              <p className="tt-kicker">
+                                {t.fav.league} ·{" "}
+                                <ExternalOrLink href={t.href} className="tt-a">
+                                  {t.fav.shortName}
+                                </ExternalOrLink>
+                              </p>
+                              <h3>
+                                <ExternalOrLink href={t.href} className="tt-a">
+                                  {t.snap.standing || t.snap.record || t.fav.name}
+                                </ExternalOrLink>
+                              </h3>
+                              <p className="tt-brief-dek">
+                                {[
+                                  t.snap.lastGame
+                                    ? `Last: ${t.snap.lastGame.label}${t.snap.lastGame.detail ? ` ${t.snap.lastGame.detail}` : ""}`
+                                    : null,
+                                  t.snap.nextGame
+                                    ? `Next: ${t.snap.nextGame.label}${t.snap.nextGame.when ? ` ${t.snap.nextGame.when}` : ""}`
+                                    : null,
+                                  t.teamStats
+                                    .slice(0, 3)
+                                    .map((s) => `${s.label} ${s.value}`)
+                                    .join(" · ") || null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </p>
+                            </article>
                           ))}
                         </div>
-                      ) : null}
+                      )}
                     </div>
-                    <Rail teams={teams} cards={wrapCards} />
+                    <Rail teams={teams} cards={railCards} />
                   </div>
                 </div>
               </section>
@@ -684,13 +837,18 @@ export default function DailyNewspaperPage() {
 
           return (
             <section
-              key={page.card.id}
+              key={`${page.primary.id}-${page.secondary?.id ?? "solo"}`}
               className="np-page tt-page"
               aria-label={`Page ${pi + 1}`}
             >
               <Mast day={day} folio={`A${pi + 1}`} />
               <div className="tt-body">
-                <WrapPage card={page.card} />
+                <InsidePage
+                  primary={page.primary}
+                  secondary={page.secondary}
+                  wire={page.wire}
+                  teams={teams}
+                />
               </div>
             </section>
           );
