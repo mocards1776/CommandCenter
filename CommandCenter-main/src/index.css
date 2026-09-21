@@ -1389,8 +1389,12 @@ mark.rss-hl {
   columns: 2;
   column-gap: 0.5rem;
   column-fill: auto;
-  max-height: 42%;
   overflow: hidden;
+}
+.tt-lead .tt-prose {
+  flex: 0 1 auto;
+  /* Cap lead so wire still has room under it */
+  max-height: min(38vh, 280px);
 }
 .tt-prose.cols-2 { columns: 2; }
 .tt-prose.cols-3 { columns: 3; column-gap: 0.4rem; font-size: 8.25px; line-height: 1.28; }
@@ -1481,27 +1485,30 @@ mark.rss-hl {
 .tt-box em { color: var(--tt-muted); font-style: normal; font-size: 7px; }
 .tt-box .v { font-weight: 700; text-align: right; white-space: nowrap; }
 
-/* Inside folio — 2 stories + foot wire, no blank cream */
+/* Inside folio — stories stretch to fill; foot sits tight beneath */
 .tt-inside {
-  display: grid;
-  grid-template-rows: 1fr auto;
-  gap: 0.14rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
   min-height: 0; height: 100%; overflow: hidden;
 }
 .tt-inside-grid {
+  flex: 1;
   min-height: 0; overflow: hidden;
   display: grid;
-  gap: 0.18rem;
+  gap: 0.14rem;
+  align-items: stretch;
 }
 .tt-inside-grid.one { grid-template-columns: 1fr; }
 .tt-inside-grid.two { grid-template-columns: 1fr 1fr; }
 .tt-folio-story {
-  min-width: 0; min-height: 0; overflow: hidden;
+  min-width: 0; min-height: 0; height: 100%;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 1.55fr 0.7fr;
-  gap: 0.18rem;
+  gap: 0.14rem;
   border: 1px solid var(--tt-line);
-  padding: 0.12rem;
+  padding: 0.1rem;
   background: var(--tt-panel);
 }
 .tt-folio-story.compact .tt-wrap-story h2,
@@ -1510,28 +1517,39 @@ mark.rss-hl {
 }
 .tt-wrap-story {
   min-width: 0; min-height: 0; overflow: hidden;
-  display: flex; flex-direction: column; gap: 0.08rem;
+  display: flex; flex-direction: column; gap: 0.06rem;
+  height: 100%;
 }
 .tt-wrap-story h2, .tt-wrap-story h3 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(14px, 1.8vw, 20px);
+  font-size: clamp(13px, 1.7vw, 18px);
   line-height: 1.05; letter-spacing: -0.025em;
+  flex-shrink: 0;
+}
+.tt-wrap-story .tt-prose {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  columns: 2;
+  column-fill: auto;
 }
 .tt-wrap-side {
-  min-width: 0; min-height: 0; overflow: hidden;
-  display: flex; flex-direction: column; gap: 0.1rem;
+  min-width: 0; min-height: 0; height: 100%;
+  overflow: hidden;
+  display: flex; flex-direction: column; gap: 0.08rem;
   border-left: 1px solid var(--tt-line);
-  padding-left: 0.18rem;
+  padding-left: 0.14rem;
 }
+.tt-wrap-side .tt-box { flex: 1 1 auto; }
 .tt-inside-foot {
   display: grid;
   grid-template-columns: 1.6fr repeat(3, minmax(0, 0.7fr));
-  gap: 0.14rem;
+  gap: 0.1rem;
   border-top: 1px solid var(--tt-ink);
-  padding-top: 0.1rem;
-  min-height: 0;
-  max-height: 32%;
+  padding-top: 0.08rem;
+  flex-shrink: 0;
   overflow: hidden;
 }
 .tt-inside-foot .tt-wire {
@@ -1539,7 +1557,12 @@ mark.rss-hl {
   border-top: 0;
   padding-top: 0;
   grid-template-columns: 1fr 1fr;
-  max-height: 100%;
+  max-height: 7.5rem;
+  overflow: hidden;
+}
+.tt-inside-foot .tt-board {
+  grid-column: 1 / -1;
+  font-size: 7.5px;
 }
 
 .tt-empty {

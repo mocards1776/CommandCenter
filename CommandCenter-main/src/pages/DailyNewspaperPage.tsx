@@ -485,7 +485,7 @@ function InsidePage({
         {secondary ? <FolioStory card={secondary} compact /> : null}
       </div>
       <div className="tt-inside-foot">
-        {wire.length ? <WireStack cards={wire} /> : null}
+        {wire.length ? <WireStack cards={wire.slice(0, 4)} /> : null}
         {team?.recentLines.length ? (
           <StatBox
             title={`${team.fav.shortName} recent`}
@@ -509,6 +509,7 @@ function InsidePage({
               ]}
             />
           ))}
+        <ClubBoard teams={teams} />
       </div>
     </div>
   );
