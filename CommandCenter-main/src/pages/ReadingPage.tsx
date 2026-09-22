@@ -5553,6 +5553,10 @@ export default function ReadingPage() {
               onBreakdown={openBreakdown}
             />
             <PagesCalendar sessions={sessions ?? []} />
+            <GoalCard
+              books={books ?? []}
+              onDrill={(y) => setFilter({ type: "year", value: y })}
+            />
           </div>
 
           <button
@@ -5712,7 +5716,6 @@ export default function ReadingPage() {
         </div>
 
         <aside className="bg-ink hidden flex-col gap-6 border-accent/15 p-4 md:p-6 lg:flex lg:border-l">
-          <GoalCard books={books ?? []} onDrill={(y) => setFilter({ type: "year", value: y })} />
           <MonthlyStats
             books={books ?? []}
             sessions={sessions ?? []}
