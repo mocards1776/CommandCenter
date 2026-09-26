@@ -271,7 +271,9 @@ function TourCard({
             <h3 className="font-display text-cream text-[22px] leading-tight">
               {snap.eventName ?? "This week’s event"}
             </h3>
-            {snap.status && <p className="text-chalk mt-1 text-[12px]">{snap.status}</p>}
+            {typeof snap.status === "string" && snap.status ? (
+              <p className="text-chalk mt-1 text-[12px]">{snap.status}</p>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             {onOpenGolf && (

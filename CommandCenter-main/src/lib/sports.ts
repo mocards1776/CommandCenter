@@ -1214,12 +1214,17 @@ export async function fetchTourSnapshot(fav: SportsFavorite): Promise<TourSnapsh
     if (row.id && fedexById.has(row.id)) row.fedexCupRank = fedexById.get(row.id) ?? null;
   }
 
+  // ESPN sometimes omits type.detail/description and leaves event.status as the
+  // full `{ type: … }` object — never pass that through (React can't render it).
+  const statusText = [comp?.status?.type?.detail, comp?.status?.type?.description, comp?.status?.type?.name]
+    .find((v): v is string => typeof v === "string" && v.trim().length > 0) ?? null;
+
   return {
     key: fav.key,
     name: fav.name,
     eventName: event?.name ?? null,
     eventId: event?.id != null ? String(event.id) : null,
-    status: comp?.status?.type?.detail ?? comp?.status?.type?.description ?? event?.status ?? null,
+    status: statusText,
     leaders: field.slice(0, 5),
     field,
   };
