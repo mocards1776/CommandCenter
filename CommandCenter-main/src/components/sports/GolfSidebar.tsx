@@ -184,7 +184,9 @@ export default function GolfSidebar({
               </h2>
               <p className="mt-1 text-[11px] text-white/45">
                 {tour.data?.eventName ?? "PGA Tour"}
-                {tour.data?.status ? ` · ${tour.data.status}` : ""}
+                {typeof tour.data?.status === "string" && tour.data.status
+                  ? ` · ${tour.data.status}`
+                  : ""}
               </p>
             </div>
             <div className="flex items-center gap-1">
