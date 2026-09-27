@@ -1071,7 +1071,7 @@ type EspnTourPayload = {
     status?: string;
     competitions?: {
       status?: {
-        type?: { description?: string; detail?: string; state?: string; completed?: boolean };
+        type?: { description?: string; detail?: string; state?: string; completed?: boolean; name?: string };
       };
       competitors?: {
         id?: string;
