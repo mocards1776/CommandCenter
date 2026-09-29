@@ -45,6 +45,11 @@ import {
   prefersRssHome,
 } from "@/lib/rss-home";
 import {
+  clearNewspaperSolo,
+  markNewspaperSolo,
+  prefersNewspaperHome,
+} from "@/lib/newspaper-home";
+import {
   getRssReaderBrand,
   subscribeRssReaderBrand,
 } from "@/lib/rss-brand";
@@ -161,12 +166,14 @@ export default function AppShell() {
   const onSports = pathname.startsWith("/sports");
   const onCfbHub = pathname === "/sports/cfb" || pathname === "/sports/cfb/";
   const onRss = pathname.startsWith("/rss");
+  const onNewspaper = pathname.startsWith("/newspaper");
 
   const [soloSession, setSoloSession] = useState(
     () =>
       soloParam ||
       (onSports && prefersSportsHome()) ||
       (onRss && prefersRssHome()) ||
+      (onNewspaper && prefersNewspaperHome()) ||
       (onReading && prefersReadingHome()),
   );
 
@@ -180,6 +187,7 @@ export default function AppShell() {
         markReadingSolo();
         clearSportsSolo();
         clearRssSolo();
+        clearNewspaperSolo();
         setSoloSession(true);
       }
       return;
@@ -196,6 +204,7 @@ export default function AppShell() {
         markSportsSolo();
         clearReadingSolo();
         clearRssSolo();
+        clearNewspaperSolo();
         setSoloSession(true);
       }
       return;
@@ -210,16 +219,31 @@ export default function AppShell() {
         markRssSolo();
         clearReadingSolo();
         clearSportsSolo();
+        clearNewspaperSolo();
         setSoloSession(true);
       }
       return;
     }
 
-    // Leaving Sports/Reading/Dispatch for the rest of Command Center clears solo prefs
-    // so the main icon keeps opening the dashboard.
+    if (onNewspaper) {
+      const timesManifest = document
+        .querySelector('link[rel="manifest"]')
+        ?.getAttribute("href")
+        ?.includes("times.webmanifest");
+      if (soloParam || (isStandaloneApp() && timesManifest)) {
+        markNewspaperSolo();
+        clearReadingSolo();
+        clearSportsSolo();
+        clearRssSolo();
+        setSoloSession(true);
+      }
+      return;
+    }
+
+    // Leaving the standalone sections for the rest of Command Center clears solo
+    // prefs so the main icon keeps opening the dashboard.
     if (
       pathname.startsWith("/dashboard") ||
-      pathname.startsWith("/newspaper") ||
       pathname.startsWith("/todos") ||
       pathname.startsWith("/habits") ||
       pathname.startsWith("/notebook")
@@ -227,9 +251,10 @@ export default function AppShell() {
       clearReadingSolo();
       clearSportsSolo();
       clearRssSolo();
+      clearNewspaperSolo();
       setSoloSession(false);
     }
-  }, [soloParam, onReading, onSports, onRss, pathname]);
+  }, [soloParam, onReading, onSports, onRss, onNewspaper, pathname]);
 
   const readingOnly = useMemo(
     () => onReading && (soloParam || soloSession),
@@ -243,7 +268,11 @@ export default function AppShell() {
     () => onRss && (soloParam || soloSession),
     [onRss, soloParam, soloSession],
   );
-  const hideMainChrome = readingOnly || sportsOnly || rssOnly;
+  const newspaperOnly = useMemo(
+    () => onNewspaper && (soloParam || soloSession),
+    [onNewspaper, soloParam, soloSession],
+  );
+  const hideMainChrome = readingOnly || sportsOnly || rssOnly || newspaperOnly;
 
   const today = (() => {
     if (onSports || sportsOnly) {
@@ -266,6 +295,10 @@ export default function AppShell() {
     <span className="text-accent">Sports</span>
   ) : rssOnly || onRss ? (
     <span className="text-accent">{rssBrand || "News"}</span>
+  ) : newspaperOnly ? (
+    <>
+      Thompson <span className="text-accent">Times</span>
+    </>
   ) : (
     <>
       Command <span className="text-accent">Center</span>
@@ -440,8 +473,8 @@ export default function AppShell() {
         <main
           className={cn(
             "min-w-0 flex-1 overflow-x-hidden md:pb-0",
-            // Reading/Dispatch solo: no bottom bar. Sports solo + full app: pad for tabs.
-            readingOnly || rssOnly ? "pb-0" : "pb-[76px] md:pb-0",
+            // Reading/Dispatch/Times solo: no bottom bar. Sports solo + full app: pad for tabs.
+            readingOnly || rssOnly || newspaperOnly ? "pb-0" : "pb-[76px] md:pb-0",
           )}
         >
           <Outlet />

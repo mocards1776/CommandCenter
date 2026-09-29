@@ -15,6 +15,7 @@ export default function InstallHint() {
   const onReading = pathname.startsWith("/reading");
   const onSports = pathname.startsWith("/sports");
   const onRss = pathname.startsWith("/rss");
+  const onNewspaper = pathname.startsWith("/newspaper");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -53,7 +54,9 @@ export default function InstallHint() {
                 ? "Bookmark Sports (not Dashboard)"
                 : onRss
                   ? "Bookmark Dispatch (not Dashboard)"
-                  : "Add to your Home Screen"}
+                  : onNewspaper
+                    ? "Bookmark the Times (not Dashboard)"
+                    : "Add to your Home Screen"}
           </p>
           <p className="text-chalk mt-1 text-[11.5px] leading-relaxed">
             {onReading ? (
@@ -84,6 +87,16 @@ export default function InstallHint() {
                 </a>
                 , then tap <Share size={11} className="inline align-[-1px]" /> →{" "}
                 <span className="text-cream">Add to Home Screen</span>. The URL must say rss.html
+                — Safari won’t let you edit it.
+              </>
+            ) : onNewspaper ? (
+              <>
+                Open{" "}
+                <a href="/times.html" className="text-accent underline underline-offset-2">
+                  /times.html
+                </a>
+                , then tap <Share size={11} className="inline align-[-1px]" /> →{" "}
+                <span className="text-cream">Add to Home Screen</span>. The URL must say times.html
                 — Safari won’t let you edit it.
               </>
             ) : (

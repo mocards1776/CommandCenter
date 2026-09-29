@@ -3,21 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Dispatch</title>
+    <title>Thompson Times</title>
     <!--
       Static launch page for iOS “Add to Home Screen”.
       Safari bookmarks the URL of the page you’re on — it won’t let you edit it.
       Open THIS file, then Add. Do not add from /dashboard.
     -->
-    <link rel="manifest" href="/rss.webmanifest" />
+    <link rel="manifest" href="/times.webmanifest" />
     <meta name="theme-color" content="#081228" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Dispatch" />
-    <link rel="apple-touch-icon" href="/icon-rss-192.png" />
-    <link rel="apple-touch-icon" sizes="192x192" href="/icon-rss-192.png" />
-    <link rel="apple-touch-icon" sizes="512x512" href="/icon-rss-512.png" />
-    <link rel="icon" href="/icon-rss-192.png" />
+    <meta name="apple-mobile-web-app-title" content="Times" />
+    <link rel="apple-touch-icon" href="/icon-times-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-times-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/icon-times-512.png" />
+    <link rel="icon" href="/icon-times-192.png" />
     <style>
       :root {
         color-scheme: dark;
@@ -41,16 +41,23 @@
         height: 4.5rem;
         margin: 0 auto 1rem;
         border-radius: 0.65rem;
-        background: url("/icon-rss-192.png") center / cover no-repeat;
+        background: url("/icon-times-192.png") center / cover no-repeat;
         box-shadow: 0 0 0 1px rgba(217, 81, 92, 0.35);
       }
       h1 {
-        font-family: "Playfair Display", Georgia, serif;
-        font-size: 2rem;
+        font-family: "Playfair Display", Georgia, "Times New Roman", serif;
+        font-size: 1.85rem;
         font-weight: 700;
+        color: #f4f1e9;
+        margin: 0 0 0.2rem;
+        letter-spacing: 0.02em;
+      }
+      .kicker {
+        font-size: 0.6rem;
+        letter-spacing: 0.34em;
+        text-transform: uppercase;
         color: #d9515c;
-        margin: 0 0 0.75rem;
-        letter-spacing: 0.04em;
+        margin: 0 0 0.9rem;
       }
       p {
         margin: 0 0 0.85rem;
@@ -84,20 +91,22 @@
     <script>
       (function () {
         try {
-          localStorage.setItem("rss-solo", "1");
-          sessionStorage.setItem("rss-solo", "1");
+          localStorage.setItem("newspaper-solo", "1");
+          sessionStorage.setItem("newspaper-solo", "1");
           localStorage.removeItem("reading-solo");
           sessionStorage.removeItem("reading-solo");
           localStorage.removeItem("sports-solo");
           sessionStorage.removeItem("sports-solo");
-          localStorage.removeItem("newspaper-solo");
-          sessionStorage.removeItem("newspaper-solo");
+          localStorage.removeItem("rss-solo");
+          sessionStorage.removeItem("rss-solo");
         } catch (e) {}
         var standalone =
           (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
           window.navigator.standalone === true;
+        // Home Screen launch → straight into the edition (not Dashboard).
+        // Stay put in Safari so Share → Add captures /times.html.
         if (standalone) {
-          location.replace("/rss?solo=1");
+          location.replace("/newspaper?solo=1");
         }
       })();
     </script>
@@ -105,14 +114,15 @@
   <body>
     <div class="card">
       <div class="mark" aria-hidden="true"></div>
-      <h1>Dispatch</h1>
+      <p class="kicker">Sports</p>
+      <h1>Thompson Times</h1>
       <p>
         Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.
-        The name should say Dispatch — leave it.
+        The name should say Times — leave it.
       </p>
       <p class="url" id="url"></p>
       <p>If the URL still says /dashboard, you’re on the wrong page. Stay here.</p>
-      <a class="btn" href="/rss?solo=1">Open Dispatch</a>
+      <a class="btn" href="/newspaper?solo=1">Open the edition</a>
     </div>
     <script>
       document.getElementById("url").textContent = location.href;

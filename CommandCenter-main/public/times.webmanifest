@@ -1,0 +1,16 @@
+{
+  "name": "Thompson Times",
+  "short_name": "Times",
+  "description": "The daily sports broadsheet: game wraps, agate, and standings for your clubs.",
+  "start_url": "/times.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0A1730",
+  "theme_color": "#081228",
+  "icons": [
+    { "src": "/icon-times-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-times-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-times-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

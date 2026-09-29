@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Share } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { editionDateline, editionIssue } from "@/lib/newspaper";
 import {
@@ -823,14 +823,20 @@ export default function DailyNewspaperPage() {
             <ChevronRight size={16} />
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => void onRefresh()}
-          className="tt-chrome-refresh"
-        >
-          <RefreshCw size={12} className={cn(refreshing && "animate-spin")} />
-          Refresh
-        </button>
+        <div className="tt-chrome-r">
+          <a href="/times.html" className="tt-chrome-refresh" title="Add to Home Screen">
+            <Share size={12} />
+            Home Screen
+          </a>
+          <button
+            type="button"
+            onClick={() => void onRefresh()}
+            className="tt-chrome-refresh"
+          >
+            <RefreshCw size={12} className={cn(refreshing && "animate-spin")} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="newspaper-edition np-pager" ref={pagerRef}>

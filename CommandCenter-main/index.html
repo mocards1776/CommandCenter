@@ -25,20 +25,34 @@
   <body>
     <div id="root"></div>
     <script>
-      // Reading Home Screen uses ?solo=1. Persist before React auth redirects
-      // can strip the query, and send bare "/" to the library when preferred.
+      // Standalone Home Screen apps launch with ?solo=1. Persist the flag before
+      // React auth redirects can strip the query, and send bare "/" back to
+      // whichever section the icon belongs to.
       (function () {
+        var SOLO = [
+          ["/reading", "reading-solo"],
+          ["/sports", "sports-solo"],
+          ["/rss", "rss-solo"],
+          ["/newspaper", "newspaper-solo"],
+        ];
         try {
-          if (/[?&]solo=1(?:&|$)/.test(location.search)) {
-            localStorage.setItem("reading-solo", "1");
-            sessionStorage.setItem("reading-solo", "1");
-          }
           var path = location.pathname;
-          if (
-            (path === "/" || path === "") &&
-            localStorage.getItem("reading-solo") === "1"
-          ) {
-            location.replace("/reading?solo=1");
+          if (/[?&]solo=1(?:&|$)/.test(location.search)) {
+            for (var i = 0; i < SOLO.length; i++) {
+              if (path.indexOf(SOLO[i][0]) === 0) {
+                localStorage.setItem(SOLO[i][1], "1");
+                sessionStorage.setItem(SOLO[i][1], "1");
+                break;
+              }
+            }
+          }
+          if (path === "/" || path === "") {
+            for (var j = 0; j < SOLO.length; j++) {
+              if (localStorage.getItem(SOLO[j][1]) === "1") {
+                location.replace(SOLO[j][0] + "?solo=1");
+                return;
+              }
+            }
           }
         } catch (e) {}
       })();
