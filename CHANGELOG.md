@@ -2,6 +2,13 @@
 
 ---
 
+## Reading: similar books by genre, tags required to finish — September 29, 2026
+
+- **Find similar** was a catalog search for the book’s own title, so a legal thriller only came back as itself (or as nothing). It now searches by tags, the genre named in the blurb, or catalog subjects — *Proof* surfaces other legal thrillers — and falls back to AI when the catalogs have no genre to go on.
+- Finishing a book that has no tags stops until at least one tag is added. Cancel leaves the book unfinished. Magazines are unchanged.
+
+---
+
 ## Reading search: say when catalogs fail, seed The Playbook — September 20, 2026
 
 - A dead free catalog (Open Library rate-limiting, spent Google Books quota, no signal) used to render a calm **“No catalog matches”**, which reads like the book does not exist. Search now **retries Open Library once** and, when every source stays silent, shows an error instead of a fake empty result.

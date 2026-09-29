@@ -97,6 +97,7 @@ import {
   topFinishedMonths,
   buildFinishCard,
   needsFinishRatingPrompt,
+  bookNeedsFinishTags,
   isMagazine,
   isBookItem,
   libraryTitle,
@@ -108,6 +109,14 @@ import {
 import StarField from "@/components/StarField";
 import HighlightCard from "@/components/HighlightCard";
 import FinishRatingPrompt from "@/components/FinishRatingPrompt";
+import FinishTagsPrompt from "@/components/FinishTagsPrompt";
+import {
+  bookMatchesTopics,
+  searchSimilarBooks,
+  similarAiQuery,
+  similarTopics,
+  sameWork,
+} from "@/lib/similar-books";
 import RatingPicker from "@/components/RatingPicker";
 import { useCelebration } from "@/components/celebration-context";
 import { cn, todayStr, fmtLongDate } from "@/lib/utils";
@@ -920,7 +929,14 @@ function SearchResultsPage({
 }
 
 /* ── Reading history ────────────────────────────────────────────────── */
-function ReadingHistory({ book }: { book: Book }) {
+function ReadingHistory({
+  book,
+  beforeUnreadFinish,
+}: {
+  book: Book;
+  /** Run before a to-read book is recorded as finished. Call `run` to proceed. */
+  beforeUnreadFinish?: (run: () => void) => void;
+}) {
   const qc = useQueryClient();
   const { data: sessions } = useQuery({
     queryKey: ["book-sessions", book.id],
@@ -1056,7 +1072,10 @@ function ReadingHistory({ book }: { book: Book }) {
             onSubmit={(e: FormEvent) => {
               e.preventDefault();
               if (!readDraft.end) return;
-              addRead.mutate({ start: readDraft.start || null, end: readDraft.end });
+              const entry = { start: readDraft.start || null, end: readDraft.end };
+              const run = () => addRead.mutate(entry);
+              if (book.status === "to-read" && beforeUnreadFinish) beforeUnreadFinish(run);
+              else run();
             }}
             className="mb-2 flex flex-wrap items-end gap-2"
           >
@@ -1504,6 +1523,8 @@ function BookDetail({
   const [pages, setPages] = useState("");
   const [date, setDate] = useState(todayStr());
   const [ratingPromptAt, setRatingPromptAt] = useState<string | null>(null);
+  // Held finish action until the book has at least one tag.
+  const [tagGate, setTagGate] = useState<(() => void) | null>(null);
   // Seeded from the book so the mode you last used for it comes back.
   const [mode, setMode] = useState<"pages" | "percent" | "page">(
     (book.progress_mode as "pages" | "percent" | "page") ?? "pages",
@@ -1663,6 +1684,7 @@ function BookDetail({
     setCoverLink("");
     setCoverBroken(false);
     setRatingPromptAt(null);
+    setTagGate(null);
     setPullY(0);
     pullStartY.current = null;
     pullDelta.current = 0;
@@ -1707,6 +1729,26 @@ function BookDetail({
   const openCoverTools = () => {
     setCoverToolsOpen(true);
   };
+
+  const requireTagsThen = (run: () => void) => {
+    if (bookNeedsFinishTags(book)) {
+      setTagGate(() => run);
+      return;
+    }
+    run();
+  };
+
+  const pagesWouldFinish = (addPages: number) =>
+    book.page_count != null &&
+    book.page_count > 0 &&
+    addPages > 0 &&
+    book.current_page + addPages >= book.page_count;
+
+  const targetWouldFinish = (toPage: number) =>
+    book.page_count != null &&
+    book.page_count > 0 &&
+    toPage > book.current_page &&
+    toPage >= book.page_count;
 
   const cover = coverBroken ? null : coverSrc(book);
   const subjects = book.subjects ?? [];
@@ -2168,7 +2210,7 @@ function BookDetail({
             onChange={(e) => {
               const status = e.target.value as ReadStatus;
               if (status === "read" && book.status !== "read") {
-                finish.mutate();
+                requireTagsThen(() => finish.mutate());
                 return;
               }
               const p: Partial<Book> = { status };
@@ -2243,8 +2285,10 @@ function BookDetail({
               disabled={finish.isPending}
               onClick={(e) => {
                 const r = e.currentTarget.getBoundingClientRect();
-                burst(r.left + r.width / 2, r.top + r.height / 2);
-                finish.mutate();
+                requireTagsThen(() => {
+                  burst(r.left + r.width / 2, r.top + r.height / 2);
+                  finish.mutate();
+                });
               }}
               className="bg-accent text-field hover:bg-accent/90 mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition disabled:opacity-40"
             >
@@ -2281,7 +2325,12 @@ function BookDetail({
               burst(r.left + r.width / 2, r.top + r.height / 2);
 
               if (mode === "pages") {
-                if (n > 0) log.mutate(Math.round(n));
+                if (n > 0) {
+                  const pages = Math.round(n);
+                  const go = () => log.mutate(pages);
+                  if (pagesWouldFinish(pages)) requireTagsThen(go);
+                  else go();
+                }
                 return;
               }
               // Percent and absolute page both resolve to "move to page X".
@@ -2291,7 +2340,9 @@ function BookDetail({
                 toast.error("Add a page count first");
                 return;
               }
-              jump.mutate(target);
+              const go = () => jump.mutate(target);
+              if (targetWouldFinish(target)) requireTagsThen(go);
+              else go();
             }}
             className="mt-2 flex gap-2"
           >
@@ -2336,8 +2387,12 @@ function BookDetail({
                   key={n}
                   onClick={(e) => {
                     const r = e.currentTarget.getBoundingClientRect();
-                    burst(r.left + r.width / 2, r.top + r.height / 2);
-                    log.mutate(n);
+                    const go = () => {
+                      burst(r.left + r.width / 2, r.top + r.height / 2);
+                      log.mutate(n);
+                    };
+                    if (pagesWouldFinish(n)) requireTagsThen(go);
+                    else go();
                   }}
                   className="bg-field text-chalk hover:text-cream flex-1 rounded-xl border border-white/10 py-1.5 text-[11px] transition hover:border-white/20"
                 >
@@ -2385,9 +2440,15 @@ function BookDetail({
             current={book.tags}
             onAdd={(t) => patch.mutate({ tags: [...book.tags, t] })}
           />
+          {bookNeedsFinishTags(book) && book.status !== "read" && (
+            <p className="text-chalk-dim mt-2 text-[11px]">Add a tag before finishing this book.</p>
+          )}
         </div>
 
-        <ReadingHistory book={book} />
+        <ReadingHistory
+          book={book}
+          beforeUnreadFinish={(run) => requireTagsThen(run)}
+        />
         <Editions book={book} onApplied={refresh} />
 
         {/* Review */}
@@ -2418,6 +2479,25 @@ function BookDetail({
         </div>
       </aside>
     </div>
+    {tagGate && (
+      <FinishTagsPrompt
+        book={book}
+        existing={allTags}
+        onCancel={() => setTagGate(null)}
+        onSubmit={async (tags) => {
+          const run = tagGate;
+          try {
+            await updateBook(book.id, { tags });
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Could not save tags");
+            throw e;
+          }
+          refresh();
+          setTagGate(null);
+          run?.();
+        }}
+      />
+    )}
     {ratingPromptAt && (
       <FinishRatingPrompt
         book={book}
@@ -2444,7 +2524,12 @@ function AskAI({
   books: Book[];
   onClose: () => void;
   onOpen?: (b: Book) => void;
-  seed?: { query: string; mode: "catalog" | "search" };
+  seed?: {
+    query: string;
+    mode: "catalog" | "search" | "similar";
+    excludeTitle?: string;
+    excludeAuthor?: string;
+  };
 }) {
   const qc = useQueryClient();
   const [tab, setTab] = useState<"catalog" | "ai">(seed?.mode === "search" ? "ai" : "catalog");
@@ -2452,14 +2537,78 @@ function AskAI({
   const [results, setResults] = useState<Suggestion[] | null>(null);
   const [added, setAdded] = useState<Record<string, string>>({});
   const seeded = useRef(false);
+  const similar = seed?.mode === "similar";
+
+  const withLibrary = (topics: string[], rows: Suggestion[]): Suggestion[] => {
+    const title = seed?.excludeTitle ?? "";
+    const author = seed?.excludeAuthor ?? "";
+    const owned: Suggestion[] = books
+      .filter(
+        (b) =>
+          !isMagazine(b) &&
+          bookMatchesTopics(b, topics) &&
+          !sameWork(title, author, b.title, b.authors ?? ""),
+      )
+      .map((b) => ({
+        title: b.title,
+        author: b.authors ?? "",
+        year: b.published_year ? String(b.published_year) : "",
+        reason: `In your library · ${topics[0] ?? "similar"}`,
+        cover_url: coverSrc(b),
+      }));
+    const seen = new Set<string>();
+    const out: Suggestion[] = [];
+    for (const s of [...owned, ...rows]) {
+      const key = `${s.title.toLowerCase()}|${(s.author ?? "").toLowerCase()}`;
+      if (seen.has(key)) continue;
+      if (title && sameWork(title, author, s.title, s.author ?? "")) continue;
+      seen.add(key);
+      out.push(s);
+      if (out.length >= 12) break;
+    }
+    return out;
+  };
 
   // Indexed once so every result can say whether it's already on a shelf.
   // Match on title + author so a different Parcells biography stays addable.
   const ask = useMutation({
-    mutationFn: (mode: "search" | "recommend" | "catalog") => askAI(mode, query),
+    mutationFn: async (mode: "search" | "recommend" | "catalog" | "similar") => {
+      if (mode === "similar") {
+        const topics = query
+          .split("·")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        let rows: Suggestion[] = [];
+        try {
+          rows = await searchSimilarBooks({
+            topics,
+            title: seed?.excludeTitle ?? "",
+            author: seed?.excludeAuthor ?? "",
+          });
+        } catch {
+          // Catalog miss still leaves the AI fallback, and any same-tag books already on the shelf.
+          rows = [];
+        }
+        const merged = withLibrary(topics, rows);
+        if (merged.length > 0) return merged;
+        const ai = await askAI(
+          "search",
+          similarAiQuery({
+            title: seed?.excludeTitle ?? query,
+            author: seed?.excludeAuthor ?? "",
+            topics,
+          }),
+        );
+        return ai.filter(
+          (s) => !sameWork(seed?.excludeTitle ?? "", seed?.excludeAuthor ?? "", s.title, s.author ?? ""),
+        );
+      }
+      return askAI(mode, query);
+    },
     onSuccess: (r, mode) => {
-      setResults(mode === "catalog" ? rankCatalogSuggestions(query, r) : r);
-      if (r.length === 0) toast("Nothing came back — try rewording it.", { icon: "🤔" });
+      const rows = mode === "catalog" ? rankCatalogSuggestions(query, r) : r;
+      setResults(rows);
+      if (rows.length === 0) toast("Nothing came back — try rewording it.", { icon: "🤔" });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Ask failed"),
   });
@@ -2499,10 +2648,20 @@ function AskAI({
           <div className="relative z-10 flex items-start justify-between gap-4">
             <div>
               <h2 className="font-display text-cream text-[23px] leading-tight">
-                Find a <span className="text-accent">book</span>
+                {similar ? (
+                  <>
+                    Similar <span className="text-accent">books</span>
+                  </>
+                ) : (
+                  <>
+                    Find a <span className="text-accent">book</span>
+                  </>
+                )}
               </h2>
               <p className="text-chalk-dim mt-1 text-[11.5px]">
-                Free catalog search, or ask AI when you need a smarter pick.
+                {similar
+                  ? `Same kind of read${seed?.excludeTitle ? ` as ${seed.excludeTitle}` : ""}${query ? ` · ${query}` : ""}.`
+                  : "Free catalog search, or ask AI when you need a smarter pick."}
               </p>
             </div>
             <button
@@ -2542,7 +2701,7 @@ function AskAI({
           onSubmit={(e: FormEvent) => {
             e.preventDefault();
             if (!query.trim()) return;
-            ask.mutate(tab === "catalog" ? "catalog" : "search");
+            ask.mutate(tab === "catalog" ? (similar ? "similar" : "catalog") : "search");
           }}
           className="flex gap-2"
         >
@@ -2587,9 +2746,11 @@ function AskAI({
           <p className="label-caps mt-8 animate-pulse text-center">
             {ask.variables === "recommend"
               ? "Reading your shelves"
-              : ask.variables === "catalog"
-                ? "Searching catalogs"
-                : "Searching"}
+              : ask.variables === "similar"
+                ? "Finding similar books"
+                : ask.variables === "catalog"
+                  ? "Searching catalogs"
+                  : "Searching"}
           </p>
         )}
 
@@ -5272,7 +5433,15 @@ export default function ReadingPage() {
   const [asking, setAsking] = useState(false);
   const [browsing, setBrowsing] = useState(false);
   const [breakdown, setBreakdown] = useState<BreakdownFocus | null>(null);
-  const [askSeed, setAskSeed] = useState<{ query: string; mode: "catalog" | "search" } | undefined>();
+  const [askSeed, setAskSeed] = useState<
+    | {
+        query: string;
+        mode: "catalog" | "search" | "similar";
+        excludeTitle?: string;
+        excludeAuthor?: string;
+      }
+    | undefined
+  >();
   const [statsOpen, setStatsOpen] = useState(false);
   const [tagsManageOpen, setTagsManageOpen] = useState(false);
   const [searchPage, setSearchPage] = useState<string | null>(null);
@@ -5399,7 +5568,12 @@ export default function ReadingPage() {
       (st) => Boolean(st.readingBrowse),
     );
 
-  const openAsk = (seed?: { query: string; mode: "catalog" | "search" }) => {
+  const openAsk = (seed?: {
+    query: string;
+    mode: "catalog" | "search" | "similar";
+    excludeTitle?: string;
+    excludeAuthor?: string;
+  }) => {
     setOpen(null);
     setAskSeed(seed);
     setAsking(true);
@@ -5439,8 +5613,8 @@ export default function ReadingPage() {
     );
 
   const findSimilar = (b: Book) => {
-    const author = (b.authors ?? "").split(",")[0]?.trim();
-    const bits = [b.title, author, ...(b.subjects ?? []).slice(0, 2)].filter(Boolean);
+    const author = (b.authors ?? "").split(",")[0]?.trim() ?? "";
+    const topics = similarTopics(b);
     // Close the book entry, then open ask on a clean history step.
     if ((history.state as ReadingHistory | null)?.readingBook) {
       history.replaceState(
@@ -5450,7 +5624,21 @@ export default function ReadingPage() {
       );
     }
     setOpen(null);
-    openAsk({ query: bits.join(" "), mode: "catalog" });
+    if (topics.length) {
+      openAsk({
+        query: topics.join(" · "),
+        mode: "similar",
+        excludeTitle: b.title,
+        excludeAuthor: author,
+      });
+      return;
+    }
+    openAsk({
+      query: similarAiQuery({ title: b.title, author, topics: [] }),
+      mode: "search",
+      excludeTitle: b.title,
+      excludeAuthor: author,
+    });
   };
 
   const counts = useMemo(() => {

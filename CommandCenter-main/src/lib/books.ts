@@ -2839,6 +2839,15 @@ export function needsFinishRatingPrompt(book: {
   return book.star_rating == null && (book.read_count ?? 0) === 0;
 }
 
+/** A book with no tags cannot be marked finished until one is added. Magazines are exempt. */
+export function bookNeedsFinishTags(book: {
+  tags?: string[] | null;
+  content_type?: string | null;
+}): boolean {
+  if (book.content_type === "magazine") return false;
+  return !(book.tags ?? []).some((t) => t.trim().length > 0);
+}
+
 /** Payload for the finish celebration / share card. */
 export function buildFinishCard(
   book: Book,
