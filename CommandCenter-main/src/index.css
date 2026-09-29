@@ -1150,8 +1150,11 @@ mark.rss-hl {
   --w-cond: "Oswald", "Libre Franklin", sans-serif;
   --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
 
-  height: calc(100dvh - 3.25rem);
-  max-height: calc(100dvh - 3.25rem);
+  /* App header (58px, 70px from md) plus the flag rule beneath it. Guessing
+     low here pushes the foot briefs under the fold, so it is measured. */
+  --w-chrome: calc(60px + env(safe-area-inset-top, 0px));
+  height: calc(100dvh - var(--w-chrome));
+  max-height: calc(100dvh - var(--w-chrome));
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -1948,6 +1951,8 @@ mark.rss-hl {
   border-top: 3px double var(--w-rule);
   padding-top: 0.2rem;
   margin-top: 0.2rem;
+  /* Briefs give way to the stories rather than squeezing the decks. */
+  max-height: 26%;
 }
 .wsj-briefs > * + * {
   border-left: 1px solid var(--w-hair);
@@ -2027,6 +2032,12 @@ mark.rss-hl {
   font-size: 12px;
   color: var(--w-muted);
   text-align: center;
+}
+
+@media (min-width: 768px) {
+  .newspaper-root.wsj-shell {
+    --w-chrome: calc(72px + env(safe-area-inset-top, 0px));
+  }
 }
 
 /* ── Narrower stock ─────────────────────────────────────────────────── */

@@ -17,6 +17,7 @@ import {
   enrichWrapBodies,
   matchWrapToFavorites,
   mergeStoryCards,
+  promotePostseason,
   wireStoryCards,
   wrapFeedsForFavorites,
   type GameWrapCard,
@@ -824,7 +825,8 @@ export default function DailyNewspaperPage() {
       favs: teamFavs,
       details: teamDetailsQ.data ?? [],
     });
-    return mergeStoryCards(wire, enrichedQ.data ?? teamCards);
+    const merged = mergeStoryCards(wire, enrichedQ.data ?? teamCards);
+    return promotePostseason(merged, FRONT_STORIES);
   }, [wireQ.data, teamFavs, teamDetailsQ.data, enrichedQ.data, teamCards]);
 
   const pages = useMemo(() => paginate(stories), [stories]);

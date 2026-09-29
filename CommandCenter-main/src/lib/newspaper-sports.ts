@@ -557,6 +557,12 @@ function cardEventId(card: GameWrapCard): string | null {
 }
 
 /** Turn league-board games into printable stories. */
+function scoreNoun(league: string): string {
+  if (league === "MLB") return "Runs";
+  if (league === "NHL") return "Goals";
+  return "Points";
+}
+
 export function wireStoryCards(opts: {
   games: WireGame[];
   favs: SportsFavorite[];
@@ -620,7 +626,7 @@ export function wireStoryCards(opts: {
       followed: g.favoriteKeys.length > 0,
       status: g.statusDetail,
       boxScore: [
-        { label: "Runs", away: g.away.score ?? "—", home: g.home.score ?? "—" },
+        { label: scoreNoun(g.league), away: g.away.score ?? "—", home: g.home.score ?? "—" },
         { label: "Record", away: g.away.record ?? "—", home: g.home.record ?? "—" },
       ],
     } satisfies GameWrapCard;
@@ -643,6 +649,22 @@ export function mergeStoryCards(
     return !takenHeads.has(c.headline.toLowerCase());
   });
   return [...wire, ...extra];
+}
+
+/**
+ * Bracket baseball belongs above the fold even in a week when a followed club
+ * won. If nothing in the first `within` slots is a postseason game, the best
+ * one is lifted into the last of them rather than left to the foot briefs.
+ */
+export function promotePostseason(cards: GameWrapCard[], within = 3): GameWrapCard[] {
+  if (cards.length <= within) return cards;
+  if (cards.slice(0, within).some((c) => c.postseason)) return cards;
+  const at = cards.findIndex((c, i) => i >= within && c.postseason);
+  if (at < 0) return cards;
+  const out = cards.slice();
+  const [game] = out.splice(at, 1);
+  out.splice(within - 1, 0, game!);
+  return out;
 }
 
 /** Fill `body` on wrap cards with ESPN recap prose. */

@@ -36,6 +36,8 @@ export type WireGame = {
   /** "ATL leads series 1-0" */
   series: string | null;
   postseason: boolean;
+  /** Exhibitions: a result, but not news. */
+  preseason: boolean;
   final: boolean;
   live: boolean;
   statusDetail: string;
@@ -291,6 +293,7 @@ function toWireGame(
     round: comp.notes?.find((n) => n.headline)?.headline?.trim() ?? null,
     series: comp.series?.summary?.trim() ?? null,
     postseason: ev.season?.type === 3,
+    preseason: ev.season?.type === 1,
     final,
     live,
     statusDetail: st?.detail ?? st?.description ?? (final ? "Final" : "Scheduled"),
@@ -312,14 +315,18 @@ function toWireGame(
  * Rank the wire the way a desk would: your clubs first, then the bracket, then
  * finished games over games still to come, then whichever has the most copy to
  * set. Re-run it after enrichment so a filled-out story can claim the lead.
+ *
+ * Exhibitions drop behind even tonight's slate: a preseason box with no recap
+ * attached is a result nobody needs to read about.
  */
 export function deskOrder(a: WireGame, b: WireGame): number {
   const score = (g: WireGame) =>
     (g.favoriteKeys.length ? 4000 : 0) +
     (g.postseason ? 2000 : 0) +
-    (g.final ? 1000 : g.live ? 600 : 0) +
+    (g.final ? 1000 : g.live ? 600 : 300) +
     (g.photo ? 120 : 0) +
-    Math.min(400, Math.floor((g.body?.length ?? 0) / 10));
+    Math.min(400, Math.floor((g.body?.length ?? 0) / 10)) -
+    (g.preseason ? 2500 : 0);
   const diff = score(b) - score(a);
   if (diff) return diff;
   return String(b.startedAt ?? "").localeCompare(String(a.startedAt ?? ""));
