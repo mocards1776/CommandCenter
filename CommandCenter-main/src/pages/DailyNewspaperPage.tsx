@@ -3,18 +3,26 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, RefreshCw, Share } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { editionDateline, editionIssue } from "@/lib/newspaper";
+import {
+  editionDateline,
+  editionDay,
+  editionIssue,
+  editionNewsDay,
+  msUntilNextEdition,
+  romanNumeral,
+} from "@/lib/newspaper";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
   enrichWrapBodies,
-  isTeamInSeason,
   matchWrapToFavorites,
-  playerHref,
+  mergeStoryCards,
+  wireStoryCards,
   wrapFeedsForFavorites,
   type GameWrapCard,
   type TeamInfobox,
 } from "@/lib/newspaper-sports";
+import { enrichWireStories, fetchNewspaperWire } from "@/lib/newspaper-wire";
 import { fetchRssFeed } from "@/lib/rss";
 import {
   fetchTeamDetail,
@@ -24,8 +32,11 @@ import {
   type SportsFavorite,
   type TeamDetail,
 } from "@/lib/sports";
-import { cn, todayStr } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { fetchYesterdayRecap } from "@/lib/yesterday-recap";
+
+/** How many stories get a full ESPN story pull rather than the wire stub. */
+const DEEP_STORIES = 28;
 
 function ExternalOrLink({
   href,
@@ -50,85 +61,70 @@ function ExternalOrLink({
   );
 }
 
-function Mast({ day, folio }: { day: string; folio: string }) {
+/* ───────────────────────── nameplate ───────────────────────── */
+
+function Nameplate({ day, folio, pages }: { day: string; folio: string; pages: number }) {
   const { volume, issue } = editionIssue(day);
   return (
-    <header className="tt-mast">
-      <div className="tt-mast-l">
-        <span className="tt-mast-sep">Sports</span>
-        <h1>Thompson Times</h1>
-        <span className="tt-mast-sep">Section {folio}</span>
-      </div>
-      <div className="tt-mast-r">
-        <span className="tt-dateline">{editionDateline(day)}</span>
-        <span className="tt-dateline">
-          Vol {volume} · № {issue}
+    <header className="wsj-head">
+      <h1 className="wsj-nameplate">The Thompson Times</h1>
+      <div className="wsj-folio">
+        <span className="wsj-folio-l">
+          <em>Sports Desk</em>
+          <span className="wsj-dots" aria-hidden="true" />
+          <span>Wires &amp; ESPN</span>
         </span>
-        <span>{folio}</span>
+        <span className="wsj-folio-c">
+          {editionDateline(day)} · VOL. {romanNumeral(volume)} NO. {issue}
+        </span>
+        <span className="wsj-folio-r">
+          <span className="wsj-stars">★★★★</span>
+          <span>
+            {folio} of {pages}
+          </span>
+        </span>
       </div>
     </header>
   );
 }
 
-function FormDots({ form }: { form: ("W" | "L" | "·")[] }) {
-  if (!form.length) return <span className="tt-form-empty">—</span>;
-  return (
-    <span className="tt-form">
-      {form.map((f, i) => (
-        <i key={`${f}-${i}`} className={cn(f === "W" && "w", f === "L" && "l")} />
-      ))}
-    </span>
-  );
-}
+/* ───────────────────────── data band ───────────────────────── */
 
-/** Modern score tiles — Apple Sports density without cream tables. */
-function ClubTicker({ teams }: { teams: TeamInfobox[] }) {
-  if (!teams.length) return <p className="tt-empty">No in-season clubs.</p>;
+/** The markets strip, but for clubs: record, form, and what's next. */
+function ScoreBand({ teams, wireCount }: { teams: TeamInfobox[]; wireCount: number }) {
+  const active = teams.filter((t) => t.seasonState === "active");
+  const cells = active.length ? active : teams;
   return (
-    <div className="tt-ticker">
-      {teams.map((t) => {
+    <div className="wsj-band">
+      {cells.map((t) => {
         const last = t.snap.lastGame;
-        const next = t.snap.nextGame;
-        const result = last?.won === true ? "W" : last?.won === false ? "L" : "";
+        const up = last?.won === true;
+        const down = last?.won === false;
         return (
-          <ExternalOrLink key={t.fav.key} href={t.href} className="tt-tile tt-a">
-            {t.snap.logo ? <img src={t.snap.logo} alt="" /> : <span />}
-            <div className="tt-tile-meta">
-              <div className="tt-tile-top">
-                <span className="tt-tile-name">
-                  {t.snap.shortName || t.fav.shortName}
-                </span>
-                <span className="tt-tile-rec">{t.snap.record || "—"}</span>
-              </div>
-              <div className="tt-tile-sub">
-                <span className="lg">{t.fav.league}</span>
-                <FormDots form={t.form} />
-                {t.odds ? <span>{t.odds}</span> : null}
-              </div>
-              <div className="tt-tile-lines">
-                {last ? (
-                  <span className={cn(result === "W" && "win", result === "L" && "loss")}>
-                    {result} {last.label}
-                    {last.detail ? ` ${last.detail}` : ""}
-                  </span>
-                ) : next ? (
-                  <span>
-                    Next {next.label}
-                    {next.when ? ` · ${next.when}` : ""}
-                  </span>
-                ) : (
-                  t.snap.standing || "—"
-                )}
-              </div>
-            </div>
+          <ExternalOrLink key={t.fav.key} href={t.href} className="wsj-band-cell wsj-a">
+            <span className="wsj-band-lg">{t.fav.league}</span>
+            <span className="wsj-band-team">{t.snap.shortName || t.fav.shortName}</span>
+            <span className="wsj-band-val">{t.snap.record || t.snap.standing || "—"}</span>
+            <span className={cn("wsj-band-move", up && "up", down && "down")}>
+              {up ? "▲" : down ? "▼" : "·"}{" "}
+              {last?.detail || last?.label || t.snap.nextGame?.label || "—"}
+            </span>
           </ExternalOrLink>
         );
       })}
+      <span className="wsj-band-cell wsj-band-count">
+        <span className="wsj-band-lg">Wire</span>
+        <span className="wsj-band-team">Games</span>
+        <span className="wsj-band-val">{wireCount}</span>
+        <span className="wsj-band-move">on the desk</span>
+      </span>
     </div>
   );
 }
 
-function proseParas(text: string, max = 20): string[] {
+/* ───────────────────────── copy helpers ───────────────────────── */
+
+function proseParas(text: string, max = 40): string[] {
   const raw = text.trim();
   if (!raw) return [];
   const byBreak = raw
@@ -139,20 +135,20 @@ function proseParas(text: string, max = 20): string[] {
   return (
     raw
       .replace(/\s+/g, " ")
-      .match(/.{1,380}(?:\s|$)/g)
+      .match(/.{1,340}(?:\s|$)/g)
       ?.map((s) => s.trim())
       .filter(Boolean)
       .slice(0, max) ?? [raw]
   );
 }
 
-/** Agate notes that tail the story so ruled columns always run full. */
+/** Agate notes that tail a story so ruled columns always run full. */
 function notesTail(card: GameWrapCard): string {
   const bits: string[] = [];
   if (card.leaders.length) {
     bits.push(
       `NOTES — ${card.leaders
-        .slice(0, 5)
+        .slice(0, 6)
         .map((l) => `${l.name} ${l.line}`)
         .join("; ")}.`,
     );
@@ -182,7 +178,7 @@ function cardCopy(card: GameWrapCard): string {
   }
   const bits: string[] = [];
   if (card.dek) bits.push(card.dek.trim());
-  if (card.scoreLine) bits.push(`Final: ${card.scoreLine}.`);
+  if (card.scoreLine) bits.push(`${card.status || "Final"}: ${card.scoreLine}.`);
   if (card.leaders.length) {
     bits.push(
       `Names: ${card.leaders
@@ -210,115 +206,168 @@ function cardCopy(card: GameWrapCard): string {
   return bits.join(" ").trim();
 }
 
-function StoryHead({ card, level = 2 }: { card: GameWrapCard; level?: 2 | 3 }) {
-  const href = card.gameHref || card.wrapHref || card.teamHref;
-  const Title = level === 2 ? "h2" : "h3";
+function kickerOf(card: GameWrapCard): string {
+  const bits = [card.sportLabel];
+  if (card.round) bits.push(card.round);
+  else if (card.postseason) bits.push("Postseason");
+  if (card.followed && card.teamName) bits.push(card.teamName);
+  return bits.join(" · ");
+}
+
+/* ───────────────────────── story parts ───────────────────────── */
+
+function Byline({ card }: { card: GameWrapCard }) {
   return (
-    <>
-      <p className="tt-kicker">
-        {card.sportLabel}
-        {card.won === true ? " · Win" : card.won === false ? " · Loss" : ""}
-        {" · "}
-        <ExternalOrLink href={card.teamHref} className="tt-a">
-          {card.teamName}
-        </ExternalOrLink>
-      </p>
-      <Title>
-        <ExternalOrLink href={href} className="tt-a">
-          {card.headline}
-        </ExternalOrLink>
-      </Title>
-      {card.scoreLine ? <p className="tt-score">{card.scoreLine}</p> : null}
-    </>
+    <p className="wsj-byline">
+      <em>By</em> {card.sportLabel} Wire
+      {card.followed ? ` · ${card.teamName} Desk` : ""}
+    </p>
   );
 }
 
-function StoryLinks({ card }: { card: GameWrapCard }) {
-  return (
-    <div className="tt-inline-links">
-      {card.gameHref ? (
-        <ExternalOrLink href={card.gameHref} className="tt-a">
-          Game center
-        </ExternalOrLink>
-      ) : null}
-      {card.wrapHref ? (
-        <ExternalOrLink href={card.wrapHref} className="tt-a">
-          ESPN
-        </ExternalOrLink>
-      ) : null}
-    </div>
-  );
-}
-
-/** Columns are chosen from copy length so a short wrap never leaves a blank column. */
-function proseColumnClass(copy: string, max = 3): string {
-  const len = copy.length;
-  const cols = len > 2600 ? 3 : len > 1100 ? 2 : 1;
-  return `cols-${Math.min(cols, max)}`;
-}
-
-function LeadStory({ card }: { card: GameWrapCard }) {
+function Prose({
+  card,
+  cols,
+  max,
+  drop,
+}: {
+  card: GameWrapCard;
+  cols: 1 | 2 | 3 | 4;
+  max?: number;
+  drop?: boolean;
+}) {
   const copy = cardCopy(card);
-  const paras = proseParas(copy, 24);
+  const paras = proseParas(copy, max ?? 40);
+  if (!paras.length) return null;
   return (
-    <article className="tt-lead">
-      {card.scoreLine ? <div className="tt-lead-score">{card.scoreLine}</div> : null}
-      <StoryHead card={card} />
-      {paras.length ? (
-        <div className={cn("tt-prose", proseColumnClass(copy))}>
-          {paras.map((p, i) => (
-            <p key={i}>{p}</p>
-          ))}
-        </div>
-      ) : null}
-      <StoryLinks card={card} />
-    </article>
-  );
-}
-
-function Brief({ card }: { card: GameWrapCard }) {
-  const href = card.gameHref || card.wrapHref || card.teamHref;
-  const dek = cardCopy(card).replace(/\s+/g, " ").trim().slice(0, 200);
-  return (
-    <article className="tt-brief">
-      <p className="tt-kicker">
-        {card.sportLabel} ·{" "}
-        <ExternalOrLink href={card.teamHref} className="tt-a">
-          {card.teamName}
-        </ExternalOrLink>
-      </p>
-      <h3>
-        <ExternalOrLink href={href} className="tt-a">
-          {card.headline}
-        </ExternalOrLink>
-      </h3>
-      {card.scoreLine ? <p className="tt-score sm">{card.scoreLine}</p> : null}
-      {dek ? <p className="tt-brief-dek">{dek}{dek.length >= 200 ? "…" : ""}</p> : null}
-    </article>
-  );
-}
-
-function WireStack({ cards }: { cards: GameWrapCard[] }) {
-  if (!cards.length) return null;
-  return (
-    <div className="tt-wire">
-      {cards.map((c) => (
-        <Brief key={c.id} card={c} />
+    <div className={cn("wsj-prose", `c${cols}`, drop && "drop")}>
+      {paras.map((p, i) => (
+        <p key={i}>
+          {i === 0 && card.dateline ? <span className="wsj-dateline">{card.dateline} — </span> : null}
+          {p}
+        </p>
       ))}
     </div>
   );
 }
 
-function StatBox({
+function Jump({ card, page }: { card: GameWrapCard; page: number }) {
+  const href = card.gameHref || card.wrapHref;
+  if (!href) return null;
+  return (
+    <p className="wsj-jump">
+      <ExternalOrLink href={href} className="wsj-a">
+        Please turn to page A{page}
+      </ExternalOrLink>
+    </p>
+  );
+}
+
+function Cut({ card }: { card: GameWrapCard }) {
+  if (!card.photo) return null;
+  return (
+    <figure className="wsj-cut">
+      <img src={card.photo} alt="" loading="lazy" />
+      <figcaption>
+        {card.caption}
+        {card.series ? <span className="wsj-credit"> {card.series}</span> : null}
+      </figcaption>
+    </figure>
+  );
+}
+
+function Headline({
+  card,
+  size,
+}: {
+  card: GameWrapCard;
+  size: "xl" | "lg" | "md" | "sm";
+}) {
+  const href = card.gameHref || card.wrapHref || card.teamHref;
+  return (
+    <>
+      <p className="wsj-kicker">{kickerOf(card)}</p>
+      <h2 className={cn("wsj-hl", size)}>
+        <ExternalOrLink href={href} className="wsj-a">
+          {card.headline}
+        </ExternalOrLink>
+      </h2>
+    </>
+  );
+}
+
+/* ───────────────────────── What's News rail ───────────────────────── */
+
+function WhatsNews({
+  cards,
+  teams,
+  postseason,
+}: {
+  cards: GameWrapCard[];
+  teams: TeamInfobox[];
+  postseason: string[];
+}) {
+  const closed = teams.filter((t) => t.seasonState === "complete");
+  return (
+    <aside className="wsj-news">
+      <h3 className="wsj-news-head">What’s News</h3>
+      <p className="wsj-news-sub">Around the Leagues</p>
+      <ul className="wsj-news-list">
+        {postseason.map((league) => (
+          <li key={`post-${league}`}>
+            <strong>{league} is in the postseason.</strong> Bracket games lead the
+            wire until a champion is decided.
+          </li>
+        ))}
+        {cards.slice(0, 9).map((c, i) => {
+          const href = c.gameHref || c.wrapHref || c.teamHref;
+          const lead = c.headline.split(/(?<=^[^.]{12,90})\s+/)[0] ?? c.headline;
+          return (
+            <li key={c.id}>
+              <ExternalOrLink href={href} className="wsj-a">
+                <strong>{lead}</strong>
+              </ExternalOrLink>{" "}
+              {c.scoreLine ? `${c.scoreLine}. ` : ""}
+              {c.round ? `${c.round}. ` : ""}
+              <span className="wsj-ref">A{Math.min(9, 2 + Math.floor(i / 2))}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {closed.length ? (
+        <>
+          <p className="wsj-news-sub">Season Complete</p>
+          <ul className="wsj-news-list tight">
+            {closed.map((t) => (
+              <li key={t.fav.key}>
+                <ExternalOrLink href={t.href} className="wsj-a">
+                  <strong>{t.snap.shortName || t.fav.shortName}</strong>
+                </ExternalOrLink>{" "}
+                finished {t.snap.record || "—"}
+                {t.snap.standing ? `, ${t.snap.standing}` : ""}.
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </aside>
+  );
+}
+
+/* ───────────────────────── agate boxes ───────────────────────── */
+
+function AgateBox({
   title,
   rows,
+  wide,
 }: {
   title: string;
   rows: { left: ReactNode; right?: ReactNode; me?: boolean }[];
+  wide?: boolean;
 }) {
   if (!rows.length) return null;
   return (
-    <div className="tt-box">
+    <div className={cn("wsj-box", wide && "wide")}>
       <h4>{title}</h4>
       <ul>
         {rows.map((r, i) => (
@@ -332,111 +381,19 @@ function StatBox({
   );
 }
 
-function Rail({
-  teams,
-  cards,
-}: {
-  teams: TeamInfobox[];
-  cards: GameWrapCard[];
-}) {
-  const standings = teams.filter((t) => t.detail?.division?.length).slice(0, 3);
-  const names = teams
-    .flatMap((t) => {
-      const people = [
-        ...(t.detail?.hittingLeaders ?? []).slice(0, 2),
-        ...(t.detail?.pitchingLeaders ?? []).slice(0, 1),
-      ];
-      return people.map((l) => ({
-        team: t.fav.shortName,
-        teamHref: t.href,
-        name: l.name,
-        line: l.line,
-        href: l.id ? playerHref(t.fav.espnPath, l.id) : null,
-      }));
-    })
-    .slice(0, 12);
-
-  const recent = teams
-    .flatMap((t) =>
-      t.recentLines.slice(0, 2).map((g) => ({
-        team: t.fav.shortName,
-        ...g,
-      })),
-    )
-    .slice(0, 8);
-
-  return (
-    <aside className="tt-rail">
-      {cards.slice(0, 2).map((c) => (
-        <Brief key={c.id} card={c} />
-      ))}
-      {standings.map((t) => (
-        <StatBox
-          key={t.fav.key}
-          title={`${t.fav.shortName}`}
-          rows={(t.detail?.division ?? []).slice(0, 5).map((r) => ({
-            left: `${r.rank} ${r.team}`,
-            right: r.record,
-            me: r.isMe,
-          }))}
-        />
-      ))}
-      {recent.length ? (
-        <StatBox
-          title="Results"
-          rows={recent.map((g) => ({
-            left: (
-              <>
-                <strong>{g.team}</strong> {g.label}
-              </>
-            ),
-            right: g.won === true ? "W" : g.won === false ? "L" : "·",
-          }))}
-        />
-      ) : null}
-      {names.length ? (
-        <StatBox
-          title="Notebook"
-          rows={names.map((r) => ({
-            left: (
-              <>
-                {r.href ? (
-                  <ExternalOrLink href={r.href} className="tt-a">
-                    {r.name}
-                  </ExternalOrLink>
-                ) : (
-                  r.name
-                )}
-                <em>
-                  {" "}
-                  ·{" "}
-                  <ExternalOrLink href={r.teamHref} className="tt-a">
-                    {r.team}
-                  </ExternalOrLink>
-                </em>
-              </>
-            ),
-            right: r.line,
-          }))}
-        />
-      ) : null}
-    </aside>
-  );
-}
-
-/** Agate rows for whatever height is left over, so no box stretches into white. */
+/** Rows for whatever height is left over, so no box stretches into white. */
 function deskAgate(teams: TeamInfobox[], skipKey?: string) {
   return teams
     .filter((t) => t.fav.key !== skipKey)
     .flatMap((t) => {
-      const rows = [
+      const rows: { left: ReactNode; right?: ReactNode }[] = [
         {
           left: (
             <>
               <strong>{t.fav.shortName}</strong> <em>{t.fav.league}</em>
             </>
           ),
-          right: t.snap.record || "—",
+          right: t.snap.record || t.snap.standing || "—",
         },
       ];
       if (t.snap.nextGame) {
@@ -444,30 +401,48 @@ function deskAgate(teams: TeamInfobox[], skipKey?: string) {
           left: <em>Next {t.snap.nextGame.label}</em>,
           right: t.snap.nextGame.when || "—",
         });
+      } else if (t.seasonState === "complete") {
+        rows.push({ left: <em>Season complete</em>, right: t.snap.standing || "—" });
       }
       return rows;
     })
-    .slice(0, 18);
+    .slice(0, 20);
 }
 
-function WrapSide({
-  card,
-  teams,
-}: {
-  card: GameWrapCard;
-  teams?: TeamInfobox[];
-}) {
+function StoryRail({ card, teams }: { card: GameWrapCard; teams?: TeamInfobox[] }) {
   return (
-    <aside className="tt-wrap-side">
-      <StatBox
-        title="Box"
-        rows={card.stats.map((s) => ({ left: s.label, right: s.value }))}
-      />
-      <StatBox
-        title="Names"
+    <aside className="wsj-rail">
+      {card.boxScore?.length ? (
+        <div className="wsj-box">
+          <h4>Line score</h4>
+          <ul>
+            <li>
+              <span>
+                <strong>{card.scoreLine}</strong>
+              </span>
+              <span className="v">{card.status}</span>
+            </li>
+            {card.boxScore.map((r) => (
+              <li key={r.label}>
+                <span>{r.label}</span>
+                <span className="v">
+                  {r.away} / {r.home}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <AgateBox
+          title="Box"
+          rows={card.stats.map((s) => ({ left: s.label, right: s.value }))}
+        />
+      )}
+      <AgateBox
+        title="Names in the game"
         rows={card.leaders.map((l) => ({
           left: l.href ? (
-            <ExternalOrLink href={l.href} className="tt-a">
+            <ExternalOrLink href={l.href} className="wsj-a">
               {l.name}
             </ExternalOrLink>
           ) : (
@@ -476,12 +451,12 @@ function WrapSide({
           right: l.line,
         }))}
       />
-      <StatBox
+      <AgateBox
         title="Club"
         rows={card.teamStats.map((s) => ({ left: s.label, right: s.value }))}
       />
-      <StatBox
-        title="Table"
+      <AgateBox
+        title="Standings"
         rows={card.division.map((r) => ({
           left: `${r.rank} ${r.team}`,
           right: r.record,
@@ -489,114 +464,243 @@ function WrapSide({
         }))}
       />
       {teams?.length ? (
-        <StatBox title="Around the desk" rows={deskAgate(teams, card.favoriteKey)} />
+        <AgateBox title="Around the desk" rows={deskAgate(teams, card.favoriteKey)} />
       ) : null}
     </aside>
   );
 }
 
-function FolioStory({
-  card,
-  compact,
-  teams,
-}: {
-  card: GameWrapCard;
-  compact?: boolean;
-  teams?: TeamInfobox[];
-}) {
-  const copy = cardCopy(card);
-  const paras = proseParas(copy, compact ? 18 : 26);
+/* ───────────────────────── briefs ───────────────────────── */
+
+function Brief({ card, words = 190 }: { card: GameWrapCard; words?: number }) {
+  const href = card.gameHref || card.wrapHref || card.teamHref;
+  const dek = cardCopy(card).replace(/\s+/g, " ").trim().slice(0, words);
   return (
-    <div className={cn("tt-folio-story", compact && "compact")}>
-      <article className="tt-wrap-story">
-        {card.scoreLine ? <div className="tt-lead-score">{card.scoreLine}</div> : null}
-        <StoryHead card={card} level={compact ? 3 : 2} />
-        {paras.length ? (
-          <div className={cn("tt-prose", proseColumnClass(copy, compact ? 2 : 3))}>
-            {paras.map((p, i) => (
-              <p key={i}>{p}</p>
-            ))}
-          </div>
-        ) : null}
-        <StoryLinks card={card} />
-      </article>
-      <WrapSide card={card} teams={teams} />
+    <article className="wsj-brief">
+      <p className="wsj-kicker">{kickerOf(card)}</p>
+      <h3>
+        <ExternalOrLink href={href} className="wsj-a">
+          {card.headline}
+        </ExternalOrLink>
+      </h3>
+      {card.scoreLine ? <p className="wsj-score">{card.scoreLine}</p> : null}
+      {dek ? (
+        <p className="wsj-brief-dek">
+          {card.dateline ? <span className="wsj-dateline">{card.dateline} — </span> : null}
+          {dek}
+          {dek.length >= words ? "…" : ""}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
+function BriefRow({ cards, cols }: { cards: GameWrapCard[]; cols: number }) {
+  if (!cards.length) return null;
+  return (
+    <div className="wsj-briefs" style={{ ["--cols" as string]: String(cols) }}>
+      {cards.map((c) => (
+        <Brief key={c.id} card={c} />
+      ))}
     </div>
   );
 }
+
+/* ───────────────────────── front page ───────────────────────── */
+
+function FrontPage({
+  lead,
+  second,
+  third,
+  briefs,
+  teams,
+  postseason,
+  newsCards,
+}: {
+  lead: GameWrapCard | null;
+  second: GameWrapCard | null;
+  third: GameWrapCard | null;
+  briefs: GameWrapCard[];
+  teams: TeamInfobox[];
+  postseason: string[];
+  newsCards: GameWrapCard[];
+}) {
+  if (!lead) {
+    return <p className="wsj-empty">The wire is quiet. Nothing has come in for your clubs.</p>;
+  }
+  return (
+    <div className="wsj-front">
+      {/* Top deck: What's News · art · lead story */}
+      <div className="wsj-deck">
+        <WhatsNews cards={newsCards} teams={teams} postseason={postseason} />
+
+        <div className="wsj-art">
+          <Cut card={lead} />
+          {third ? (
+            <article className="wsj-underart">
+              <Headline card={third} size="md" />
+              <Prose card={third} cols={2} max={8} />
+            </article>
+          ) : null}
+        </div>
+
+        <article className="wsj-lead">
+          <Headline card={lead} size="xl" />
+          {lead.series || lead.round ? (
+            <p className="wsj-dek">{[lead.round, lead.series].filter(Boolean).join(" · ")}</p>
+          ) : null}
+          <Byline card={lead} />
+          <Prose card={lead} cols={2} drop max={18} />
+          <Jump card={lead} page={2} />
+        </article>
+      </div>
+
+      {/* Second deck: stacked head · spanning feature */}
+      {second ? (
+        <div className="wsj-deck2">
+          <div className="wsj-stack">
+            <Headline card={second} size="lg" />
+            <p className="wsj-stack-dek">
+              {second.scoreLine}
+              {second.status ? ` · ${second.status}` : ""}
+            </p>
+            <AgateBox
+              title="Names"
+              rows={second.leaders.slice(0, 4).map((l) => ({ left: l.name, right: l.line }))}
+            />
+          </div>
+          <div className="wsj-feature">
+            <Byline card={second} />
+            <Prose card={second} cols={3} max={20} />
+          </div>
+        </div>
+      ) : null}
+
+      <ScoreBand teams={teams} wireCount={newsCards.length} />
+      <BriefRow cards={briefs} cols={Math.min(5, Math.max(2, briefs.length))} />
+    </div>
+  );
+}
+
+/* ───────────────────────── inside pages ───────────────────────── */
 
 function InsidePage({
   primary,
   secondary,
-  wire,
+  briefs,
   teams,
+  folioNext,
 }: {
   primary: GameWrapCard;
   secondary?: GameWrapCard;
-  wire: GameWrapCard[];
+  briefs: GameWrapCard[];
   teams: TeamInfobox[];
+  folioNext: number;
 }) {
-  const team = teams.find((t) => t.fav.key === primary.favoriteKey);
   return (
-    <div className="tt-inside">
-      <div className={cn("tt-inside-grid", secondary ? "two" : "one")}>
-        <FolioStory card={primary} compact={Boolean(secondary)} teams={teams} />
-        {secondary ? <FolioStory card={secondary} compact teams={teams} /> : null}
-      </div>
-      <div className="tt-inside-foot">
-        {wire.length ? <WireStack cards={wire.slice(0, 4)} /> : null}
-        {team?.recentLines.length ? (
-          <StatBox
-            title={`${team.fav.shortName} recent`}
-            rows={team.recentLines.map((g) => ({
-              left: g.label,
-              right: g.won === true ? "W" : g.won === false ? "L" : "·",
-            }))}
-          />
+    <div className="wsj-inside">
+      <div className={cn("wsj-inside-grid", secondary ? "two" : "one")}>
+        <article className="wsj-story">
+          {primary.photo ? <Cut card={primary} /> : null}
+          <Headline card={primary} size={secondary ? "lg" : "xl"} />
+          {primary.round || primary.series ? (
+            <p className="wsj-dek">
+              {[primary.round, primary.series].filter(Boolean).join(" · ")}
+            </p>
+          ) : null}
+          <Byline card={primary} />
+          <Prose card={primary} cols={secondary ? 2 : 3} max={30} />
+          <Jump card={primary} page={folioNext} />
+        </article>
+        {secondary ? (
+          <article className="wsj-story">
+            <Headline card={secondary} size="md" />
+            <Byline card={secondary} />
+            <Prose card={secondary} cols={2} max={24} />
+            <Jump card={secondary} page={folioNext} />
+          </article>
         ) : null}
-        {teams
-          .filter((t) => t.fav.key !== primary.favoriteKey)
-          .slice(0, 2)
-          .map((t) => (
-            <StatBox
-              key={t.fav.key}
-              title={t.fav.shortName}
-              rows={[
-                { left: "Record", right: t.snap.record || "—" },
-                { left: "Next", right: t.snap.nextGame?.label || "—" },
-                ...t.teamStats.slice(0, 3).map((s) => ({ left: s.label, right: s.value })),
-              ]}
-            />
-          ))}
-        <ClubTicker teams={teams} />
+        <StoryRail card={primary} teams={teams} />
       </div>
+      <BriefRow cards={briefs} cols={Math.min(5, Math.max(2, briefs.length))} />
     </div>
   );
 }
 
-function chunkPairs<T>(items: T[]): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += 2) out.push(items.slice(i, i + 2));
-  return out;
+/* ───────────────────────── paging ───────────────────────── */
+
+type Page =
+  | { kind: "front" }
+  | {
+      kind: "inside";
+      primary: GameWrapCard;
+      secondary?: GameWrapCard;
+      briefs: GameWrapCard[];
+    };
+
+/** Stories the front page sets in full before the paper turns inside. */
+const FRONT_STORIES = 3;
+
+/**
+ * Two full stories a page, with the next few games set as briefs along the foot.
+ * The run is as long as the wire — no cap, so a 90-game Saturday prints a
+ * 90-game paper.
+ */
+function paginate(cards: GameWrapCard[]): Page[] {
+  const pages: Page[] = [{ kind: "front" }];
+  const rest = cards.slice(FRONT_STORIES);
+  const BRIEFS = 4;
+  let i = 0;
+  while (i < rest.length) {
+    const primary = rest[i]!;
+    const secondary = rest[i + 1];
+    const briefs = rest.slice(i + 2, i + 2 + BRIEFS);
+    pages.push({ kind: "inside", primary, secondary, briefs });
+    i += 2 + briefs.length;
+  }
+  return pages;
 }
+
+/* ───────────────────────── page ───────────────────────── */
 
 export default function DailyNewspaperPage() {
   const { user } = useAuth();
-  const day = todayStr();
+  const [day, setDay] = useState(() => editionDay());
   const layout = useMemo(() => loadSportsLayout(), []);
   const teamFavs = useMemo(
     () => visibleFavorites(layout).filter((f) => f.kind === "team"),
     [layout],
   );
 
+  // The paper goes to press at 4 AM. An app left open on the counter rolls
+  // itself over instead of showing yesterday's front until you reload.
+  useEffect(() => {
+    let timer = 0;
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        setDay(editionDay());
+        schedule();
+      }, msUntilNextEdition() + 2_000);
+    };
+    schedule();
+    const onWake = () => setDay(editionDay());
+    document.addEventListener("visibilitychange", onWake);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onWake);
+    };
+  }, []);
+
   const pagerRef = useRef<HTMLDivElement>(null);
   const [pageIndex, setPageIndex] = useState(0);
 
+  const favKeys = teamFavs.map((t) => t.key).join(",");
+
   const teamSnaps = useQuery({
-    queryKey: ["tt-team-snaps", teamFavs.map((t) => t.key).join(",")],
+    queryKey: ["tt-team-snaps", day, favKeys],
     queryFn: async () =>
       Promise.all(
-        teamFavs.slice(0, 16).map(async (fav) => {
+        teamFavs.map(async (fav) => {
           try {
             return await fetchTeamSnapshot(fav);
           } catch {
@@ -618,16 +722,11 @@ export default function DailyNewspaperPage() {
     staleTime: 120_000,
   });
 
-  const inSeasonFavs = useMemo(() => {
-    const keys = new Set((teamSnaps.data ?? []).filter(isTeamInSeason).map((s) => s.key));
-    return teamFavs.filter((f) => keys.has(f.key));
-  }, [teamFavs, teamSnaps.data]);
-
   const teamDetailsQ = useQuery({
-    queryKey: ["tt-team-details", inSeasonFavs.map((f) => f.key).join(",")],
+    queryKey: ["tt-team-details", day, favKeys],
     queryFn: async () => {
       const rows = await Promise.all(
-        inSeasonFavs.slice(0, 12).map(async (fav) => {
+        teamFavs.map(async (fav) => {
           try {
             const detail = await fetchTeamDetail(fav);
             return { fav, detail } as { fav: SportsFavorite; detail: TeamDetail };
@@ -638,23 +737,31 @@ export default function DailyNewspaperPage() {
       );
       return rows.filter(Boolean) as { fav: SportsFavorite; detail: TeamDetail }[];
     },
-    enabled: inSeasonFavs.length > 0,
+    enabled: teamFavs.length > 0,
+    staleTime: 5 * 60_000,
+  });
+
+  const wireQ = useQuery({
+    queryKey: ["tt-wire", day, favKeys],
+    queryFn: async () => {
+      const wire = await fetchNewspaperWire({ favs: teamFavs, day });
+      const games = await enrichWireStories(wire.games, DEEP_STORIES);
+      return { ...wire, games };
+    },
+    enabled: teamFavs.length > 0,
     staleTime: 5 * 60_000,
   });
 
   const recap = useQuery({
-    queryKey: ["newspaper-yesterday-recap", user?.id],
+    queryKey: ["newspaper-yesterday-recap", day, user?.id],
     queryFn: () => fetchYesterdayRecap({ layout, userId: user?.id }),
     staleTime: 120_000,
   });
 
-  const wrapFeedUrls = useMemo(
-    () => wrapFeedsForFavorites(inSeasonFavs.length ? inSeasonFavs : teamFavs),
-    [inSeasonFavs, teamFavs],
-  );
+  const wrapFeedUrls = useMemo(() => wrapFeedsForFavorites(teamFavs), [teamFavs]);
 
   const wrapsQ = useQuery({
-    queryKey: ["tt-wraps", wrapFeedUrls.join("|")],
+    queryKey: ["tt-wraps", day, wrapFeedUrls.join("|")],
     queryFn: async () => {
       const feeds = await Promise.all(
         wrapFeedUrls.map(async (url) => {
@@ -668,10 +775,9 @@ export default function DailyNewspaperPage() {
       );
       const matched = [];
       const seen = new Set<string>();
-      const pool = inSeasonFavs.length ? inSeasonFavs : teamFavs;
       for (const feed of feeds) {
-        for (const item of feed.items.slice(0, 20)) {
-          const hit = matchWrapToFavorites(item, feed.url, pool);
+        for (const item of feed.items.slice(0, 24)) {
+          const hit = matchWrapToFavorites(item, feed.url, teamFavs);
           if (!hit) continue;
           const key = hit.item.link || hit.item.id;
           if (seen.has(key)) continue;
@@ -690,62 +796,43 @@ export default function DailyNewspaperPage() {
     [teamFavs, teamSnaps.data, teamDetailsQ.data],
   );
 
-  const baseCards = useMemo(
+  const teamCards = useMemo(
     () =>
       buildGameWrapCards({
-        favs: inSeasonFavs.length ? inSeasonFavs : teamFavs,
+        favs: teamFavs,
         details: teamDetailsQ.data ?? [],
         recapGames: recap.data?.games ?? [],
         wraps: wrapsQ.data ?? [],
       }),
-    [inSeasonFavs, teamFavs, teamDetailsQ.data, recap.data, wrapsQ.data],
+    [teamFavs, teamDetailsQ.data, recap.data, wrapsQ.data],
   );
 
   const enrichedQ = useQuery({
     queryKey: [
       "tt-wrap-bodies",
-      baseCards.map((c) => `${c.id}:${c.gameId}:${c.wrapHref}`).join("|"),
+      day,
+      teamCards.map((c) => `${c.id}:${c.gameId}`).join("|"),
     ],
-    queryFn: () =>
-      enrichWrapBodies(baseCards, inSeasonFavs.length ? inSeasonFavs : teamFavs),
-    enabled: baseCards.length > 0,
+    queryFn: () => enrichWrapBodies(teamCards, teamFavs),
+    enabled: teamCards.length > 0,
     staleTime: 10 * 60_000,
   });
 
-  const wrapCards = useMemo(() => {
-    const cards = [...(enrichedQ.data ?? baseCards)];
-    cards.sort((a, b) => cardCopy(b).length - cardCopy(a).length);
-    return cards;
-  }, [enrichedQ.data, baseCards]);
+  const stories = useMemo(() => {
+    const wire = wireStoryCards({
+      games: wireQ.data?.games ?? [],
+      favs: teamFavs,
+      details: teamDetailsQ.data ?? [],
+    });
+    return mergeStoryCards(wire, enrichedQ.data ?? teamCards);
+  }, [wireQ.data, teamFavs, teamDetailsQ.data, enrichedQ.data, teamCards]);
 
-  const lead = wrapCards[0] ?? null;
-  const railCards = wrapCards.slice(1, 3);
-  const mainWire = wrapCards.slice(3);
-  const insidePairs = useMemo(() => chunkPairs(wrapCards), [wrapCards]);
+  const pages = useMemo(() => paginate(stories), [stories]);
 
-  const pages = useMemo(() => {
-    const out: (
-      | { kind: "front" }
-      | {
-          kind: "inside";
-          primary: GameWrapCard;
-          secondary?: GameWrapCard;
-          wire: GameWrapCard[];
-        }
-    )[] = [{ kind: "front" }];
-    for (let i = 0; i < insidePairs.length; i++) {
-      const pair = insidePairs[i]!;
-      const used = new Set(pair.map((c) => c.id));
-      const wire = wrapCards.filter((c) => !used.has(c.id)).slice(0, 4);
-      out.push({
-        kind: "inside",
-        primary: pair[0]!,
-        secondary: pair[1],
-        wire,
-      });
-    }
-    return out;
-  }, [insidePairs, wrapCards]);
+  const lead = stories[0] ?? null;
+  const second = stories[1] ?? null;
+  const third = stories[2] ?? null;
+  const frontBriefs = stories.slice(FRONT_STORIES, FRONT_STORIES + 5);
 
   function goPage(idx: number) {
     const el = pagerRef.current;
@@ -779,14 +866,17 @@ export default function DailyNewspaperPage() {
   const refreshing =
     teamSnaps.isFetching ||
     teamDetailsQ.isFetching ||
+    wireQ.isFetching ||
     recap.isFetching ||
     wrapsQ.isFetching ||
     enrichedQ.isFetching;
 
   async function onRefresh() {
+    setDay(editionDay());
     await Promise.all([
       teamSnaps.refetch(),
       teamDetailsQ.refetch(),
+      wireQ.refetch(),
       recap.refetch(),
       wrapsQ.refetch(),
       enrichedQ.refetch(),
@@ -794,28 +884,30 @@ export default function DailyNewspaperPage() {
   }
 
   return (
-    <div className="newspaper-root tt-shell">
-      <div className="tt-chrome print:hidden">
-        <div className="tt-chrome-l">
+    <div className="newspaper-root wsj-shell">
+      <div className="wsj-chrome print:hidden">
+        <div className="wsj-chrome-l">
           <strong>Thompson Times</strong>
-          <span>Sports desk</span>
+          <span>
+            Edition {day} · covers {editionNewsDay(day)} · presses 4 a.m. CT
+          </span>
         </div>
-        <div className="tt-chrome-c">
+        <div className="wsj-chrome-c">
           <button
             type="button"
-            className="np-pager-btn"
+            className="wsj-pager-btn"
             aria-label="Previous page"
             disabled={pageIndex <= 0}
             onClick={() => goPage(pageIndex - 1)}
           >
             <ChevronLeft size={16} />
           </button>
-          <span className="np-pager-label">
+          <span className="wsj-pager-label">
             {pageIndex + 1}/{pages.length}
           </span>
           <button
             type="button"
-            className="np-pager-btn"
+            className="wsj-pager-btn"
             aria-label="Next page"
             disabled={pageIndex >= pages.length - 1}
             onClick={() => goPage(pageIndex + 1)}
@@ -823,103 +915,50 @@ export default function DailyNewspaperPage() {
             <ChevronRight size={16} />
           </button>
         </div>
-        <div className="tt-chrome-r">
-          <a href="/times.html" className="tt-chrome-refresh" title="Add to Home Screen">
+        <div className="wsj-chrome-r">
+          <a href="/times.html" className="wsj-chrome-btn" title="Add to Home Screen">
             <Share size={12} />
             Home Screen
           </a>
-          <button
-            type="button"
-            onClick={() => void onRefresh()}
-            className="tt-chrome-refresh"
-          >
+          <button type="button" onClick={() => void onRefresh()} className="wsj-chrome-btn">
             <RefreshCw size={12} className={cn(refreshing && "animate-spin")} />
             Refresh
           </button>
         </div>
       </div>
 
-      <div className="newspaper-edition np-pager" ref={pagerRef}>
-        {pages.map((page, pi) => {
-          if (page.kind === "front") {
-            return (
-              <section key="front" className="np-page tt-page" aria-label={`Page ${pi + 1}`}>
-                <Mast day={day} folio={`A${pi + 1}`} />
-                <div className="tt-body tt-front">
-                  <ClubTicker teams={teams} />
-                  <div className="tt-pack">
-                    <div className="tt-pack-main">
-                      {lead ? (
-                        <div className="tt-lead-wrap">
-                          <LeadStory card={lead} />
-                          <WrapSide card={lead} teams={teams} />
-                        </div>
-                      ) : (
-                        <p className="tt-empty">Waiting on wraps for your clubs.</p>
-                      )}
-                      {mainWire.length ? (
-                        <WireStack cards={mainWire} />
-                      ) : (
-                        <div className="tt-wire">
-                          {teams.slice(0, 6).map((t) => (
-                            <article key={t.fav.key} className="tt-brief">
-                              <p className="tt-kicker">
-                                {t.fav.league} ·{" "}
-                                <ExternalOrLink href={t.href} className="tt-a">
-                                  {t.fav.shortName}
-                                </ExternalOrLink>
-                              </p>
-                              <h3>
-                                <ExternalOrLink href={t.href} className="tt-a">
-                                  {t.snap.standing || t.snap.record || t.fav.name}
-                                </ExternalOrLink>
-                              </h3>
-                              <p className="tt-brief-dek">
-                                {[
-                                  t.snap.lastGame
-                                    ? `Last: ${t.snap.lastGame.label}${t.snap.lastGame.detail ? ` ${t.snap.lastGame.detail}` : ""}`
-                                    : null,
-                                  t.snap.nextGame
-                                    ? `Next: ${t.snap.nextGame.label}${t.snap.nextGame.when ? ` ${t.snap.nextGame.when}` : ""}`
-                                    : null,
-                                  t.teamStats
-                                    .slice(0, 3)
-                                    .map((s) => `${s.label} ${s.value}`)
-                                    .join(" · ") || null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              </p>
-                            </article>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <Rail teams={teams} cards={railCards} />
-                  </div>
-                </div>
-              </section>
-            );
-          }
-
-          return (
-            <section
-              key={`${page.primary.id}-${page.secondary?.id ?? "solo"}`}
-              className="np-page tt-page"
-              aria-label={`Page ${pi + 1}`}
-            >
-              <Mast day={day} folio={`A${pi + 1}`} />
-              <div className="tt-body">
+      <div className="newspaper-edition wsj-pager" ref={pagerRef}>
+        {pages.map((page, pi) => (
+          <section
+            key={page.kind === "front" ? "front" : `${page.primary.id}-${pi}`}
+            className="wsj-page"
+            aria-label={`Page A${pi + 1}`}
+          >
+            <span className="wsj-tab">A{pi + 1}</span>
+            <Nameplate day={day} folio={`A${pi + 1}`} pages={pages.length} />
+            <div className="wsj-body">
+              {page.kind === "front" ? (
+                <FrontPage
+                  lead={lead}
+                  second={second}
+                  third={third}
+                  briefs={frontBriefs}
+                  teams={teams}
+                  postseason={wireQ.data?.postseasonLeagues ?? []}
+                  newsCards={stories}
+                />
+              ) : (
                 <InsidePage
                   primary={page.primary}
                   secondary={page.secondary}
-                  wire={page.wire}
+                  briefs={page.briefs}
                   teams={teams}
+                  folioNext={Math.min(pages.length, pi + 2)}
                 />
-              </div>
-            </section>
-          );
-        })}
+              )}
+            </div>
+          </section>
+        ))}
       </div>
     </div>
   );
