@@ -13,11 +13,13 @@ import {
   fetchFavoritePlayersYesterday,
   fetchMlbLeaders,
   fetchMlbManagers,
+  fetchMlbPlayoffTree,
   fetchMlbScoreboard,
   fetchMlbStandings,
   fetchMlbTonightDigest,
   mlbHeadshot,
   mlbHeadshotFallbacks,
+  mlbIsInPlayoffs,
   parsePlayoffPercent,
   playoffOddsFromStandings,
   playoffOddsMovement,
@@ -42,8 +44,10 @@ import {
 import { loadTeamInterest, scoreRuwtGame } from "@/lib/ruwt";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
+import MlbPlayoffBracket from "@/components/sports/MlbPlayoffBracket";
 
 const MLB_TABS = new Set<MlbPageTab>([
+  "playoffs",
   "board",
   "standings",
   "leaders",
@@ -52,23 +56,32 @@ const MLB_TABS = new Set<MlbPageTab>([
   "contracts",
 ]);
 
-function readMlbTab(raw: string | null): MlbPageTab {
+function readMlbTab(raw: string | null, playoffDefault: boolean): MlbPageTab {
   if (raw && MLB_TABS.has(raw as MlbPageTab)) return raw as MlbPageTab;
-  return "board";
+  return playoffDefault ? "playoffs" : "board";
 }
 
 export default function MlbPage() {
   const { user } = useAuth();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = readMlbTab(searchParams.get("tab"));
   const returnPath = `${location.pathname}${location.search}`;
+
+  const playoffMode = useQuery({
+    queryKey: ["mlb-in-playoffs"],
+    queryFn: () => mlbIsInPlayoffs(),
+    staleTime: 10 * 60_000,
+  });
+
+  const tab = readMlbTab(searchParams.get("tab"), playoffMode.data === true);
 
   const setTab = (id: MlbPageTab) => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        if (id === "board") next.delete("tab");
+        // Default tab is playoffs in October, scores otherwise — omit when it matches default.
+        const defaultTab = playoffMode.data ? "playoffs" : "board";
+        if (id === defaultTab) next.delete("tab");
         else next.set("tab", id);
         return next;
       },
@@ -81,11 +94,26 @@ export default function MlbPage() {
     if (params.get("solo") === "1") markSportsSolo();
   }, []);
 
+  // Once we know we're in the postseason, land on Playoffs if no explicit tab was chosen.
+  useEffect(() => {
+    if (playoffMode.data !== true) return;
+    if (searchParams.get("tab")) return;
+    // readMlbTab already returns playoffs — nothing to write.
+  }, [playoffMode.data, searchParams]);
+
   const scoreboard = useQuery({
     queryKey: ["mlb-scoreboard"],
     queryFn: () => fetchMlbScoreboard(),
     refetchInterval: 30_000,
     staleTime: 15_000,
+  });
+
+  const playoffs = useQuery({
+    queryKey: ["mlb-playoff-tree"],
+    queryFn: () => fetchMlbPlayoffTree(),
+    enabled: tab === "playoffs" || playoffMode.data === true,
+    staleTime: 60_000,
+    refetchInterval: tab === "playoffs" ? 30_000 : false,
   });
 
   const standings = useQuery({
@@ -227,7 +255,8 @@ export default function MlbPage() {
     standings.isFetching ||
     leaders.isFetching ||
     (tab === "highlights" && tonight.isFetching) ||
-    (tab === "contracts" && contracts.isFetching);
+    (tab === "contracts" && contracts.isFetching) ||
+    (tab === "playoffs" && playoffs.isFetching);
 
   const refresh = () => {
     void Promise.all([
@@ -235,6 +264,7 @@ export default function MlbPage() {
       standings.refetch(),
       leaders.refetch(),
       favorites.refetch(),
+      playoffs.refetch(),
       tab === "highlights" ? tonight.refetch() : Promise.resolve(),
       tab === "contracts" ? contracts.refetch() : Promise.resolve(),
     ]).then(() => toast.success("MLB updated"));
@@ -245,6 +275,7 @@ export default function MlbPage() {
       <div className="flex flex-wrap items-center gap-2">
         {(
           [
+            ["playoffs", "Playoffs"],
             ["board", "Scores"],
             ["standings", "Standings"],
             ["leaders", "Stats"],
@@ -283,6 +314,20 @@ export default function MlbPage() {
           <RefreshCw size={14} className={refreshing ? "animate-spin" : undefined} />
         </button>
       </div>
+
+      {tab === "playoffs" && (
+        <section>
+          {playoffs.isPending ? (
+            <p className="text-chalk flex items-center gap-2 text-[13px]">
+              <Loader2 size={14} className="animate-spin" /> Loading bracket…
+            </p>
+          ) : playoffs.isError || !playoffs.data ? (
+            <p className="text-alert text-[13px]">Couldn’t load the playoff bracket.</p>
+          ) : (
+            <MlbPlayoffBracket tree={playoffs.data} />
+          )}
+        </section>
+      )}
 
       {tab === "board" && (
         <ScoreboardSection

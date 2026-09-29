@@ -1,10 +1,15 @@
 /** NHL via ESPN site API — scoreboard, standings, teams, games, players. */
 
+import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { formatSportsDateLong } from "./utils";
 
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl";
 const ESPN_WEB = "https://site.web.api.espn.com/apis/common/v3/sports/hockey/nhl";
 const CORE = "https://sports.core.api.espn.com/v2/sports/hockey/leagues/nhl";
+
+export function chicagoTodayNhl(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+}
 
 function chicagoDateFromIso(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -14,13 +19,13 @@ function chicagoDateFromIso(iso: string | null | undefined): string | null {
 }
 
 /**
- * ESPN NHL season id is the year the season ends (2026 = 2025-26).
- * July–September stay on the season that ended in June.
+ * ESPN NHL season id is the year the season ends (2027 = 2026-27).
+ * The new season opens mid-September — stay on the upcoming/current year from Sep 1.
  */
 export function nhlSeasonYear(d = new Date()): number {
   const y = d.getFullYear();
   const m = d.getMonth();
-  if (m >= 9) return y + 1;
+  if (m >= 8) return y + 1; // Sep–Dec → season ending next calendar year
   return y;
 }
 
@@ -96,6 +101,12 @@ export type NhlScoreGame = {
   whenShort: string | null;
   venue: string | null;
   date: string | null;
+  broadcasts: GameBroadcast[];
+};
+
+export type NhlScoredGame = NhlScoreGame & {
+  score: number;
+  reasons: string[];
 };
 
 type EspnCompetitor = {
@@ -131,6 +142,11 @@ type EspnEvent = {
         name?: string;
       };
     };
+    broadcasts?: { market?: string; names?: string[] }[];
+    geoBroadcasts?: {
+      market?: { type?: string };
+      media?: { shortName?: string; name?: string; logo?: string; darkLogo?: string };
+    }[];
     competitors?: EspnCompetitor[];
   }[];
 };
@@ -192,6 +208,7 @@ function mapScoreEvent(event: EspnEvent): NhlScoreGame | null {
     whenShort: live || final ? (status?.shortDetail ?? null) : whenShort,
     venue: comp.venue?.fullName ?? null,
     date: chicagoDateFromIso(event.date),
+    broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
   };
 }
 
@@ -203,6 +220,94 @@ export async function fetchNhlScoreboard(dates?: string): Promise<NhlScoreGame[]
 
 export function pickNhlHeroGame(games: NhlScoreGame[]): NhlScoreGame | null {
   return games.find((g) => g.live) ?? games.find((g) => !g.final) ?? games[0] ?? null;
+}
+
+export type NhlRuwtContext = {
+  teamInterest: Record<string, number>;
+  /** Favorite player team ids — boosts matchups involving those clubs. */
+  watchTeamIds?: Set<string>;
+};
+
+/** Drama + interest score for RUWT (parallel to NFL / soccer). */
+export function scoreNhlRuwtGame(
+  g: NhlScoreGame,
+  ctx?: NhlRuwtContext,
+): { score: number; reasons: string[] } {
+  let score = 0;
+  const reasons: string[] = [];
+  const detail = `${g.shortDetail ?? ""} ${g.status ?? ""}`.toLowerCase();
+  const inOt = /\bot\b|overtime|shootout|\bso\b/.test(detail);
+
+  if (g.live) {
+    score += 40;
+    reasons.push("Live");
+    const diff = Math.abs((g.away.score ?? 0) - (g.home.score ?? 0));
+    if (diff <= 1) {
+      score += 28;
+      reasons.push("One-goal game");
+    } else if (diff <= 2) {
+      score += 14;
+      reasons.push("Tight");
+    }
+    if (inOt) {
+      score += 18;
+      reasons.push("Overtime");
+    } else if (/\b3rd\b/.test(detail) && diff <= 1) {
+      score += 12;
+      reasons.push("Late & close");
+    }
+  } else if (!g.final) {
+    score += 12;
+    reasons.push("Upcoming");
+  } else {
+    score += 2;
+  }
+
+  if (ctx) {
+    const ai = ctx.teamInterest[String(g.away.teamId)] ?? 0;
+    const hi = ctx.teamInterest[String(g.home.teamId)] ?? 0;
+    const top = Math.max(ai, hi);
+    if (top > 0) {
+      score += Math.round(top * 4.2);
+      if (top >= 9) reasons.push("Your #1 team");
+      else if (top >= 7) reasons.push("High interest team");
+      else if (top >= 4) reasons.push("On your board");
+    }
+    if (ai >= 5 && hi >= 5) {
+      score += 12;
+      reasons.push("Both teams ranked");
+    }
+
+    const watchTeams = ctx.watchTeamIds;
+    if (watchTeams?.size) {
+      const awayWatched = watchTeams.has(String(g.away.teamId));
+      const homeWatched = watchTeams.has(String(g.home.teamId));
+      if (awayWatched || homeWatched) {
+        score += awayWatched && homeWatched ? 26 : 18;
+        reasons.push(
+          awayWatched && homeWatched ? "Favorite players both sides" : "Favorite player team",
+        );
+      }
+    }
+  }
+
+  const unique: string[] = [];
+  for (const r of reasons) if (!unique.includes(r)) unique.push(r);
+  return { score: Math.max(0, score), reasons: unique.slice(0, 5) };
+}
+
+export function rankNhlRuwtGames(
+  games: NhlScoreGame[],
+  ctx?: NhlRuwtContext,
+  limit = 20,
+): NhlScoredGame[] {
+  return [...games]
+    .map((g) => {
+      const { score, reasons } = scoreNhlRuwtGame(g, ctx);
+      return { ...g, score, reasons };
+    })
+    .sort((a, b) => b.score - a.score || Number(b.id) - Number(a.id))
+    .slice(0, limit);
 }
 
 export type NhlStandingRow = {
@@ -264,24 +369,16 @@ function mapStandings(raw: StandingsPayload, seasonLabel: string | null): NhlSta
   }));
 }
 
-function standingsHaveGames(groups: NhlStandingGroup[]): boolean {
-  return groups.some((g) => g.rows.some((r) => r.gp !== "0" && r.gp !== "" && r.points !== "0"));
-}
-
 export async function fetchNhlStandings(): Promise<NhlStandingGroup[]> {
+  const season = nhlSeasonYear();
   const current = await getJson<StandingsPayload>(
-    "https://site.api.espn.com/apis/v2/sports/hockey/nhl/standings",
+    `https://site.api.espn.com/apis/v2/sports/hockey/nhl/standings?season=${season}`,
   );
-  const label = current.seasons?.[0]?.displayName ?? null;
-  const groups = mapStandings(current, label);
-  if (standingsHaveGames(groups)) return groups;
-  const prev = current.seasons?.[1];
-  if (!prev?.year) return groups;
-  const prior = await getJson<StandingsPayload>(
-    `https://site.api.espn.com/apis/v2/sports/hockey/nhl/standings?season=${prev.year}`,
-  ).catch(() => null);
-  if (!prior) return groups;
-  return mapStandings(prior, prior.seasons?.find((s) => s.year === prev.year)?.displayName ?? prev.displayName ?? null);
+  const label =
+    current.seasons?.find((s) => s.year === season)?.displayName ??
+    current.seasons?.[0]?.displayName ??
+    `${season - 1}-${String(season).slice(2)}`;
+  return mapStandings(current, label);
 }
 
 export type NhlScoringLeader = {
@@ -294,38 +391,34 @@ export type NhlScoringLeader = {
 };
 
 export async function fetchNhlScoringLeaders(limit = 10): Promise<NhlScoringLeader[]> {
-  const seasons = [nhlSeasonYear(), nhlSeasonYear() - 1];
-  for (const season of seasons) {
-    const url =
-      `${ESPN_WEB}/statistics/byathlete?region=us&lang=en&contentorigin=espn` +
-      `&isqualified=false&page=1&limit=${limit}&sort=offensive.points%3Adesc&season=${season}&seasontype=2`;
-    const raw = await getJson<{
-      requestedSeason?: { displayName?: string };
-      athletes?: {
-        athlete?: { id?: string; displayName?: string };
-        categories?: { name?: string; totals?: string[] }[];
-      }[];
-    }>(url).catch(() => null);
-    const rows: NhlScoringLeader[] = [];
-    for (const row of raw?.athletes ?? []) {
-      const id = row.athlete?.id;
-      if (!id) continue;
-      const off = row.categories?.find((c) => c.name === "offensive");
-      const totals = off?.totals ?? [];
-      const points = totals[2] ?? "0";
-      if (points === "0" || points === "0.0") continue;
-      rows.push({
-        id: String(id),
-        name: row.athlete?.displayName ?? "Player",
-        goals: totals[0] ?? "—",
-        assists: totals[1] ?? "—",
-        points,
-        seasonLabel: raw?.requestedSeason?.displayName ?? null,
-      });
-    }
-    if (rows.length) return rows;
+  const season = nhlSeasonYear();
+  const url =
+    `${ESPN_WEB}/statistics/byathlete?region=us&lang=en&contentorigin=espn` +
+    `&isqualified=false&page=1&limit=${limit}&sort=offensive.points%3Adesc&season=${season}&seasontype=2`;
+  const raw = await getJson<{
+    requestedSeason?: { displayName?: string };
+    athletes?: {
+      athlete?: { id?: string; displayName?: string };
+      categories?: { name?: string; totals?: string[] }[];
+    }[];
+  }>(url).catch(() => null);
+  const rows: NhlScoringLeader[] = [];
+  for (const row of raw?.athletes ?? []) {
+    const id = row.athlete?.id;
+    if (!id) continue;
+    const off = row.categories?.find((c) => c.name === "offensive");
+    const totals = off?.totals ?? [];
+    rows.push({
+      id: String(id),
+      name: row.athlete?.displayName ?? "Player",
+      goals: totals[0] ?? "—",
+      assists: totals[1] ?? "—",
+      points: totals[2] ?? "0",
+      seasonLabel: raw?.requestedSeason?.displayName ?? `${season - 1}-${String(season).slice(2)}`,
+    });
   }
-  return [];
+  // Early-season boards may be all zeroes — still show the 2026-27 slate, not last year.
+  return rows.slice(0, limit);
 }
 
 export type NhlBoxRow = {
@@ -366,7 +459,31 @@ export type NhlGameDetail = NhlScoreGame & {
   boxGroups: NhlBoxGroup[];
   scoringPlays: NhlScoringPlay[];
   leaders: NhlGameLeader[];
+  article: { headline: string; description: string | null; storyHtml: string | null } | null;
+  oddsLine: string | null;
+  lastFive: {
+    teamId: number;
+    teamAbbrev: string;
+    results: { label: string; result: string; score: string | null }[];
+  }[];
+  venueDetail: string | null;
+  goalieStarters: {
+    away: { id: string; name: string } | null;
+    home: { id: string; name: string } | null;
+  };
 };
+
+function sanitizeNhlStoryHtml(html: string | null | undefined): string | null {
+  if (!html?.trim()) return null;
+  return html
+    .replace(/<\/?hl(\d)>/gi, (_, n: string) => {
+      const level = Math.min(5, Math.max(2, Number(n) || 2));
+      return _.startsWith("</") ? `</h${level}>` : `<h${level}>`;
+    })
+    .replace(/<\/?photo[^>]*>/gi, "")
+    .replace(/<\/?image[^>]*>/gi, "")
+    .trim();
+}
 
 const SKATER_COLS = ["G", "A", "+/-", "S", "SOG", "TOI", "PIM", "HT", "BS"];
 const GOALIE_COLS = ["SV", "SV%", "GA", "SA", "TOI"];
@@ -434,14 +551,60 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
         }[];
       }[];
     }[];
+    article?: { headline?: string; description?: string; story?: string };
+    pickcenter?: { details?: string; overUnder?: number; spread?: number }[];
+    odds?: { details?: string; overUnder?: number }[];
+    lastFiveGames?: {
+      team?: { id?: string; abbreviation?: string };
+      events?: {
+        opponent?: { abbreviation?: string; displayName?: string };
+        result?: string;
+        score?: string;
+      }[];
+    }[];
+    gameInfo?: {
+      venue?: { fullName?: string; address?: { city?: string; state?: string } };
+    };
+    broadcasts?: {
+      market?: { type?: string } | string;
+      media?: { shortName?: string; name?: string; logo?: string; darkLogo?: string };
+      isNational?: boolean;
+    }[];
+    goalies?: {
+      away?: { athlete?: { id?: string; displayName?: string }; starter?: boolean }[];
+      home?: { athlete?: { id?: string; displayName?: string }; starter?: boolean }[];
+      team?: { homeAway?: string };
+    };
   }>(`${ESPN}/summary?event=${encodeURIComponent(eventId)}`);
 
   const headerEvent: EspnEvent = {
     id: eventId,
     competitions: raw.header?.competitions,
   };
-  const base = mapScoreEvent(headerEvent);
+  let base = mapScoreEvent(headerEvent);
   if (!base) throw new Error("NHL game missing competitors");
+
+  // Prefer scoreboard broadcasts; fall back to summary broadcast list.
+  if (!base.broadcasts.length && raw.broadcasts?.length) {
+    const named = raw.broadcasts.map((b) => {
+      const market =
+        typeof b.market === "string"
+          ? b.market
+          : b.market?.type ?? (b.isNational ? "national" : null);
+      const name = b.media?.shortName ?? b.media?.name ?? "";
+      return { market: market ?? undefined, names: name ? [name] : [] };
+    });
+    base = {
+      ...base,
+      broadcasts: parseEspnBroadcasts(
+        raw.broadcasts.map((b) => ({
+          market: typeof b.market === "object" ? b.market : { type: b.isNational ? "National" : undefined },
+          media: b.media,
+        })),
+        named,
+      ),
+    };
+  }
 
   const awayTeam = raw.boxscore?.teams?.find((t) => t.homeAway === "away");
   const homeTeam = raw.boxscore?.teams?.find((t) => t.homeAway === "home");
@@ -534,7 +697,7 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
   for (const block of raw.leaders ?? []) {
     const abbrev = block.team?.abbreviation ?? "";
     for (const cat of block.leaders ?? []) {
-      if (!/goals|assists/i.test(cat.displayName ?? "")) continue;
+      if (!/goals|assists|points|saves/i.test(cat.displayName ?? "")) continue;
       const top = cat.leaders?.[0];
       if (!top?.athlete?.id) continue;
       leaders.push({
@@ -547,7 +710,70 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
     }
   }
 
-  return { ...base, teamStats, boxGroups, scoringPlays, leaders };
+  const pick = raw.pickcenter?.[0] ?? raw.odds?.[0];
+  const oddsLine = pick?.details
+    ? `${pick.details}${pick.overUnder != null ? ` · O/U ${pick.overUnder}` : ""}`
+    : null;
+
+  const lastFive = (raw.lastFiveGames ?? []).map((side) => ({
+    teamId: Number(side.team?.id) || 0,
+    teamAbbrev: side.team?.abbreviation ?? "—",
+    results: (side.events ?? []).slice(0, 5).map((e) => ({
+      label: e.opponent?.abbreviation ?? e.opponent?.displayName ?? "Opp",
+      result: e.result ?? "—",
+      score: e.score ?? null,
+    })),
+  }));
+
+  const venueBits = [
+    raw.gameInfo?.venue?.fullName || base.venue,
+    raw.gameInfo?.venue?.address
+      ? [raw.gameInfo.venue.address.city, raw.gameInfo.venue.address.state].filter(Boolean).join(", ")
+      : null,
+  ].filter(Boolean);
+
+  const pickStarter = (
+    list: { athlete?: { id?: string; displayName?: string }; starter?: boolean }[] | undefined,
+  ) => {
+    const starter = list?.find((g) => g.starter) ?? list?.[0];
+    if (!starter?.athlete?.id) return null;
+    return { id: String(starter.athlete.id), name: starter.athlete.displayName ?? "Goalie" };
+  };
+  const goaliesRaw = raw.goalies;
+  let awayGoalie = pickStarter(goaliesRaw?.away);
+  let homeGoalie = pickStarter(goaliesRaw?.home);
+  // Some payloads nest by team.homeAway instead of away/home keys.
+  if (!awayGoalie || !homeGoalie) {
+    const asList = Array.isArray(goaliesRaw) ? goaliesRaw : [];
+    for (const block of asList as {
+      team?: { homeAway?: string };
+      athletes?: { athlete?: { id?: string; displayName?: string }; starter?: boolean }[];
+    }[]) {
+      const starter = pickStarter(block.athletes);
+      if (!starter) continue;
+      if (block.team?.homeAway === "away") awayGoalie = awayGoalie ?? starter;
+      if (block.team?.homeAway === "home") homeGoalie = homeGoalie ?? starter;
+    }
+  }
+
+  return {
+    ...base,
+    teamStats,
+    boxGroups,
+    scoringPlays,
+    leaders,
+    article: raw.article?.headline
+      ? {
+          headline: raw.article.headline,
+          description: raw.article.description ?? null,
+          storyHtml: sanitizeNhlStoryHtml(raw.article.story),
+        }
+      : null,
+    oddsLine,
+    lastFive,
+    venueDetail: venueBits.length ? venueBits.join(" · ") : null,
+    goalieStarters: { away: awayGoalie, home: homeGoalie },
+  };
 }
 
 export type NhlStatLine = { label: string; value: string };

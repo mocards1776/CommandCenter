@@ -22,6 +22,13 @@ import {
 } from "@/lib/mlb";
 import { fetchNflScoreboard, chicagoTodayNfl, NFL_TEAMS, type NflScoredGame } from "@/lib/nfl";
 import {
+  chicagoTodayNhl,
+  fetchNhlScoreboard,
+  NHL_TEAMS,
+  nhlTeamLogo,
+  type NhlScoredGame,
+} from "@/lib/nhl";
+import {
   CFB_FOCUS_TEAMS,
   CFB_POWER5_TEAM_IDS,
   CFB_SEC_TEAM_IDS,
@@ -47,12 +54,15 @@ import {
 } from "@/lib/soccer";
 import {
   loadCfbTeamInterest,
+  loadNhlTeamInterest,
   loadNflTeamInterest,
   loadTeamInterest,
   rankRuwtCfbGames,
   rankRuwtGames,
+  rankRuwtNhlGames,
   rankRuwtNflGames,
   setCfbTeamInterestRating,
+  setNhlTeamInterestRating,
   setNflTeamInterestRating,
   setTeamInterestRating,
   type RuwtTeamInterest,
@@ -76,11 +86,12 @@ function ordinalPlace(n: number): string {
   }
 }
 
-type RuwtSportFilter = "all" | "mlb" | "nfl" | "cfb" | "soccer";
+type RuwtSportFilter = "all" | "mlb" | "nfl" | "nhl" | "cfb" | "soccer";
 
 type UnifiedRuwtItem =
   | { sport: "mlb"; score: number; id: string; game: MlbScoredGame }
   | { sport: "nfl"; score: number; id: string; game: NflScoredGame }
+  | { sport: "nhl"; score: number; id: string; game: NhlScoredGame }
   | { sport: "cfb"; score: number; id: string; game: CfbScoredGame }
   | { sport: "soccer"; score: number; id: string; game: SoccerScoredGame };
 
@@ -121,6 +132,7 @@ export default function RuwtPage() {
   const { user } = useAuth();
   const [interest, setInterest] = useState<RuwtTeamInterest>(() => loadTeamInterest());
   const [nflInterest, setNflInterest] = useState<RuwtTeamInterest>(() => loadNflTeamInterest());
+  const [nhlInterest, setNhlInterest] = useState<RuwtTeamInterest>(() => loadNhlTeamInterest());
   const [cfbInterest, setCfbInterest] = useState<RuwtTeamInterest>(() => loadCfbTeamInterest());
   const [soccerInterest, setSoccerInterest] = useState<RuwtTeamInterest>(() =>
     loadSoccerTeamInterest(),
@@ -154,6 +166,18 @@ export default function RuwtPage() {
       // ESPN week boards mix days — pin to Chicago today.
       const ymd = today.replace(/-/g, "");
       const board = await fetchNflScoreboard(ymd).catch(() => fetchNflScoreboard());
+      return board.filter((g) => !g.date || g.date === today);
+    },
+    refetchInterval: 20_000,
+    staleTime: 10_000,
+  });
+
+  const nhlBoard = useQuery({
+    queryKey: ["nhl-scoreboard", "today", chicagoTodayNhl()],
+    queryFn: async () => {
+      const today = chicagoTodayNhl();
+      const ymd = today.replace(/-/g, "");
+      const board = await fetchNhlScoreboard(ymd).catch(() => fetchNhlScoreboard());
       return board.filter((g) => !g.date || g.date === today);
     },
     refetchInterval: 20_000,
@@ -330,6 +354,17 @@ export default function RuwtPage() {
     return set;
   }, [favorites.data]);
 
+  const nhlWatchTeamIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of favorites.data ?? []) {
+      const sport = (f.sport ?? "").toLowerCase();
+      const league = (f.league ?? "").toLowerCase();
+      if (sport !== "hockey" && sport !== "nhl" && league !== "nhl") continue;
+      if (f.teamId) set.add(String(f.teamId));
+    }
+    return set;
+  }, [favorites.data]);
+
   const ranked = useMemo(() => {
     if (!scoreboard.data) return [] as MlbScoredGame[];
     return rankRuwtGames(
@@ -362,6 +397,13 @@ export default function RuwtPage() {
     });
   }, [nflBoard.data, nflInterest, nflWatchPlayerIds, nflWatchTeamIds]);
 
+  const nhlRanked = useMemo(() => {
+    if (!nhlBoard.data) return [] as NhlScoredGame[];
+    return rankRuwtNhlGames(nhlBoard.data, nhlInterest, 24, {
+      watchTeamIds: nhlWatchTeamIds,
+    });
+  }, [nhlBoard.data, nhlInterest, nhlWatchTeamIds]);
+
   const cfbRanked = useMemo(() => {
     if (!cfbBoard.data) return [] as CfbScoredGame[];
     return rankRuwtCfbGames(cfbBoard.data, cfbInterest, 24);
@@ -385,6 +427,12 @@ export default function RuwtPage() {
       id: `nfl-${g.id}`,
       game: g,
     }));
+    const nhlItems: UnifiedRuwtItem[] = nhlRanked.map((g) => ({
+      sport: "nhl",
+      score: g.score,
+      id: `nhl-${g.id}`,
+      game: g,
+    }));
     const cfbItems: UnifiedRuwtItem[] = cfbRanked.map((g) => ({
       sport: "cfb",
       score: g.score,
@@ -397,10 +445,10 @@ export default function RuwtPage() {
       id: `soccer-${g.id}`,
       game: g,
     }));
-    return [...mlbItems, ...nflItems, ...cfbItems, ...soccerItems].sort(
+    return [...mlbItems, ...nflItems, ...nhlItems, ...cfbItems, ...soccerItems].sort(
       (a, b) => b.score - a.score || a.id.localeCompare(b.id),
     );
-  }, [ranked, nflRanked, cfbRanked, soccerRanked]);
+  }, [ranked, nflRanked, nhlRanked, cfbRanked, soccerRanked]);
 
   const filtered = useMemo(() => {
     if (sportFilter === "all") return unified;
@@ -422,10 +470,18 @@ export default function RuwtPage() {
       scoreboard.refetch(),
       standings.refetch(),
       nflBoard.refetch(),
+      nhlBoard.refetch(),
       cfbBoard.refetch(),
       soccerBoard.refetch(),
     ]).then(() => toast.success("RUWT updated"));
   };
+
+  const anyFetching =
+    scoreboard.isFetching ||
+    nflBoard.isFetching ||
+    nhlBoard.isFetching ||
+    cfbBoard.isFetching ||
+    soccerBoard.isFetching;
 
   return (
     <div className="flex min-h-0 flex-col gap-4 p-4 md:p-7">
@@ -435,6 +491,7 @@ export default function RuwtPage() {
             ["all", "All"],
             ["mlb", "MLB"],
             ["nfl", "NFL"],
+            ["nhl", "NHL"],
             ["cfb", "CFB"],
             ["soccer", "Soccer"],
           ] as const
@@ -478,17 +535,10 @@ export default function RuwtPage() {
         <button
           type="button"
           onClick={refresh}
-          disabled={scoreboard.isFetching || nflBoard.isFetching || cfbBoard.isFetching || soccerBoard.isFetching}
+          disabled={anyFetching}
           className="text-chalk hover:text-cream flex items-center gap-1.5 rounded-sm border border-white/10 px-2.5 py-1.5 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40 disabled:opacity-40"
         >
-          <RefreshCw
-            size={13}
-            className={
-              scoreboard.isFetching || nflBoard.isFetching || cfbBoard.isFetching || soccerBoard.isFetching
-                ? "animate-spin"
-                : ""
-            }
-          />
+          <RefreshCw size={13} className={anyFetching ? "animate-spin" : ""} />
           Refresh
         </button>
       </div>
@@ -559,6 +609,49 @@ export default function RuwtPage() {
                         onChange={(e) =>
                           setNflInterest(
                             setNflTeamInterestRating(nflInterest, t.id, Number(e.target.value)),
+                          )
+                        }
+                        className="w-24 accent-[var(--accent,#d9515c)]"
+                      />
+                      <span className="numeral text-accent w-5 text-right text-[13px] font-semibold">
+                        {value}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {(sportFilter === "all" || sportFilter === "nhl") && (
+            <div>
+              <h3 className="rule-head mb-1">NHL team interest</h3>
+              <p className="text-chalk-dim mb-4 text-[12px]">
+                10 = favorite must-watch · 7 = follow closely · 0 = ignore for RUWT.
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {NHL_TEAMS.map((t) => {
+                  const value = nhlInterest[String(t.id)] ?? 0;
+                  return (
+                    <label
+                      key={t.id}
+                      className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
+                    >
+                      <img
+                        src={nhlTeamLogo(t.abbrev)}
+                        alt=""
+                        className="h-6 w-6 object-contain"
+                      />
+                      <span className="text-cream min-w-0 flex-1 truncate text-[13px]">
+                        {t.abbrev} · {t.name}
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={10}
+                        value={value}
+                        onChange={(e) =>
+                          setNhlInterest(
+                            setNhlTeamInterestRating(nhlInterest, t.id, Number(e.target.value)),
                           )
                         }
                         className="w-24 accent-[var(--accent,#d9515c)]"
@@ -676,13 +769,17 @@ export default function RuwtPage() {
         </section>
       )}
 
-      {scoreboard.isPending && nflBoard.isPending && cfbBoard.isPending && soccerBoard.isPending ? (
+      {scoreboard.isPending &&
+      nflBoard.isPending &&
+      nhlBoard.isPending &&
+      cfbBoard.isPending &&
+      soccerBoard.isPending ? (
         <p className="text-chalk flex items-center gap-2 text-[13px]">
           <Loader2 size={14} className="animate-spin" /> Loading slate…
         </p>
       ) : activeGames.length === 0 && finalGames.length === 0 ? (
         <p className="text-chalk-dim text-[13px]">
-          {scoreboard.isError && sportFilter !== "nfl"
+          {scoreboard.isError && sportFilter !== "nfl" && sportFilter !== "nhl"
             ? "Couldn’t load today’s MLB games."
             : "No games on the board for this filter."}
         </p>
@@ -700,6 +797,8 @@ export default function RuwtPage() {
                   />
                 ) : item.sport === "nfl" ? (
                   <NflRuwtCard key={item.id} game={item.game} rank={i + 1} />
+                ) : item.sport === "nhl" ? (
+                  <NhlRuwtCard key={item.id} game={item.game} rank={i + 1} />
                 ) : item.sport === "cfb" ? (
                   <CfbRuwtCard key={item.id} game={item.game} rank={i + 1} />
                 ) : (
@@ -740,6 +839,8 @@ export default function RuwtPage() {
                       />
                     ) : item.sport === "nfl" ? (
                       <NflRuwtCard key={item.id} game={item.game} rank={activeGames.length + i + 1} />
+                    ) : item.sport === "nhl" ? (
+                      <NhlRuwtCard key={item.id} game={item.game} rank={activeGames.length + i + 1} />
                     ) : item.sport === "cfb" ? (
                       <CfbRuwtCard
                         key={item.id}
@@ -764,9 +865,11 @@ export default function RuwtPage() {
                         ? `/sports/mlb/game/${g.id}`
                         : item.sport === "nfl"
                           ? `/sports/nfl/game/${g.id}`
-                          : item.sport === "cfb"
-                            ? `/sports/cfb/game/${g.id}`
-                            : "#";
+                          : item.sport === "nhl"
+                            ? `/sports/nhl/game/${g.id}`
+                            : item.sport === "cfb"
+                              ? `/sports/cfb/game/${g.id}`
+                              : "#";
                     return (
                       <Link
                         key={item.id}
@@ -1027,6 +1130,74 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
           />
         </div>
       )}
+      <RuwtBroadcasts broadcasts={game.broadcasts} />
+      {game.reasons.length > 0 && (
+        <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
+          {game.reasons.join(" · ")}
+        </p>
+      )}
+    </Link>
+  );
+}
+
+function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
+  const diff =
+    game.away.score != null && game.home.score != null
+      ? Math.abs(game.away.score - game.home.score)
+      : null;
+  const detail = `${game.shortDetail ?? ""} ${game.status ?? ""}`.toLowerCase();
+  const inOt = /\bot\b|overtime|shootout|\bso\b/.test(detail);
+  const closeAndLate = Boolean(
+    game.live && diff != null && diff <= 1 && (/\b3rd\b/.test(detail) || inOt),
+  );
+
+  return (
+    <Link
+      to={`/sports/nhl/game/${game.id}`}
+      className={cn(
+        "relative block overflow-hidden rounded-lg border bg-[#07101d] transition hover:border-accent/40",
+        game.live ? "border-alert/45" : "border-white/[0.08]",
+        closeAndLate &&
+          "border-amber-400/60 shadow-[0_0_0_1px_rgba(251,191,36,0.45),0_0_24px_rgba(251,191,36,0.3)]",
+      )}
+    >
+      <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
+        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-cream">
+          <span className="text-accent">#{rank}</span>{" "}
+          {game.live ? (
+            <span className="text-alert">
+              <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-alert" />
+              {game.shortDetail || "Live"}
+            </span>
+          ) : game.final ? (
+            "Final"
+          ) : (
+            "Preview"
+          )}
+        </span>
+        <span className="text-[10.5px] text-[#8b93a7]">Heat {game.score}</span>
+      </div>
+      <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
+        <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
+          {game.away.logo && <img src={game.away.logo} alt="" className="h-8 w-8 object-contain" />}
+          <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
+        </div>
+        <p className="font-display text-center text-[28px] tabular-nums text-white">
+          {game.live || game.final ? (
+            <>
+              {game.away.score ?? "—"}
+              <span className="mx-1.5 text-[16px] text-white/30">-</span>
+              {game.home.score ?? "—"}
+            </>
+          ) : (
+            <span className="text-[20px]">{game.whenShort ?? "TBD"}</span>
+          )}
+        </p>
+        <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
+          {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
+          <p className="text-[15px] font-bold text-white">{game.home.abbrev}</p>
+        </div>
+      </div>
       <RuwtBroadcasts broadcasts={game.broadcasts} />
       {game.reasons.length > 0 && (
         <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
