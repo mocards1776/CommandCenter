@@ -303,14 +303,20 @@ function Headline({
 
 /* ───────────────────────── What's News rail ───────────────────────── */
 
-/** 7:00 PM out of an ISO stamp, in the reader's own zone. */
+/**
+ * "7 PM" out of an ISO stamp, in the reader's own zone. hour12 is forced
+ * because a 24-hour locale would print a bare "19" once the :00 is dropped.
+ */
 function faceOff(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d
-    .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    .replace(":00", "");
+  const t = d.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return t.replace(":00 ", " ");
 }
 
 function WhatsNews({
@@ -611,7 +617,7 @@ function FrontPage({
             </p>
             <AgateBox
               title="Names"
-              rows={second.leaders.slice(0, 4).map((l) => ({ left: l.name, right: l.line }))}
+              rows={second.leaders.slice(0, 3).map((l) => ({ left: l.name, right: l.line }))}
             />
           </div>
           <div className="wsj-feature">
