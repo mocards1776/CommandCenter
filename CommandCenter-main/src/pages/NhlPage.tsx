@@ -65,7 +65,11 @@ export default function NhlPage() {
               Live <span className="text-accent">NHL</span>
             </h2>
             <p className="text-chalk mt-2 max-w-lg text-[13px] leading-relaxed">
-              Scoreboard, standings, and player pages — same path as the other leagues.
+              Scoreboard, standings, and player pages — and{" "}
+              <Link to="/sports/ruwt?solo=1" className="text-accent hover:underline">
+                RUWT
+              </Link>{" "}
+              including NHL games.
             </p>
             {live.length > 0 && (
               <p className="text-alert mt-2 text-[11px] font-semibold uppercase tracking-[0.16em]">

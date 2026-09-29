@@ -1,10 +1,15 @@
 /** NHL via ESPN site API — scoreboard, standings, teams, games, players. */
 
+import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { formatSportsDateLong } from "./utils";
 
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl";
 const ESPN_WEB = "https://site.web.api.espn.com/apis/common/v3/sports/hockey/nhl";
 const CORE = "https://sports.core.api.espn.com/v2/sports/hockey/leagues/nhl";
+
+export function chicagoTodayNhl(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+}
 
 function chicagoDateFromIso(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -96,6 +101,12 @@ export type NhlScoreGame = {
   whenShort: string | null;
   venue: string | null;
   date: string | null;
+  broadcasts: GameBroadcast[];
+};
+
+export type NhlScoredGame = NhlScoreGame & {
+  score: number;
+  reasons: string[];
 };
 
 type EspnCompetitor = {
@@ -131,6 +142,11 @@ type EspnEvent = {
         name?: string;
       };
     };
+    broadcasts?: { market?: string; names?: string[] }[];
+    geoBroadcasts?: {
+      market?: { type?: string };
+      media?: { shortName?: string; name?: string; logo?: string; darkLogo?: string };
+    }[];
     competitors?: EspnCompetitor[];
   }[];
 };
@@ -192,6 +208,7 @@ function mapScoreEvent(event: EspnEvent): NhlScoreGame | null {
     whenShort: live || final ? (status?.shortDetail ?? null) : whenShort,
     venue: comp.venue?.fullName ?? null,
     date: chicagoDateFromIso(event.date),
+    broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
   };
 }
 
@@ -203,6 +220,94 @@ export async function fetchNhlScoreboard(dates?: string): Promise<NhlScoreGame[]
 
 export function pickNhlHeroGame(games: NhlScoreGame[]): NhlScoreGame | null {
   return games.find((g) => g.live) ?? games.find((g) => !g.final) ?? games[0] ?? null;
+}
+
+export type NhlRuwtContext = {
+  teamInterest: Record<string, number>;
+  /** Favorite player team ids — boosts matchups involving those clubs. */
+  watchTeamIds?: Set<string>;
+};
+
+/** Drama + interest score for RUWT (parallel to NFL / soccer). */
+export function scoreNhlRuwtGame(
+  g: NhlScoreGame,
+  ctx?: NhlRuwtContext,
+): { score: number; reasons: string[] } {
+  let score = 0;
+  const reasons: string[] = [];
+  const detail = `${g.shortDetail ?? ""} ${g.status ?? ""}`.toLowerCase();
+  const inOt = /\bot\b|overtime|shootout|\bso\b/.test(detail);
+
+  if (g.live) {
+    score += 40;
+    reasons.push("Live");
+    const diff = Math.abs((g.away.score ?? 0) - (g.home.score ?? 0));
+    if (diff <= 1) {
+      score += 28;
+      reasons.push("One-goal game");
+    } else if (diff <= 2) {
+      score += 14;
+      reasons.push("Tight");
+    }
+    if (inOt) {
+      score += 18;
+      reasons.push("Overtime");
+    } else if (/\b3rd\b/.test(detail) && diff <= 1) {
+      score += 12;
+      reasons.push("Late & close");
+    }
+  } else if (!g.final) {
+    score += 12;
+    reasons.push("Upcoming");
+  } else {
+    score += 2;
+  }
+
+  if (ctx) {
+    const ai = ctx.teamInterest[String(g.away.teamId)] ?? 0;
+    const hi = ctx.teamInterest[String(g.home.teamId)] ?? 0;
+    const top = Math.max(ai, hi);
+    if (top > 0) {
+      score += Math.round(top * 4.2);
+      if (top >= 9) reasons.push("Your #1 team");
+      else if (top >= 7) reasons.push("High interest team");
+      else if (top >= 4) reasons.push("On your board");
+    }
+    if (ai >= 5 && hi >= 5) {
+      score += 12;
+      reasons.push("Both teams ranked");
+    }
+
+    const watchTeams = ctx.watchTeamIds;
+    if (watchTeams?.size) {
+      const awayWatched = watchTeams.has(String(g.away.teamId));
+      const homeWatched = watchTeams.has(String(g.home.teamId));
+      if (awayWatched || homeWatched) {
+        score += awayWatched && homeWatched ? 26 : 18;
+        reasons.push(
+          awayWatched && homeWatched ? "Favorite players both sides" : "Favorite player team",
+        );
+      }
+    }
+  }
+
+  const unique: string[] = [];
+  for (const r of reasons) if (!unique.includes(r)) unique.push(r);
+  return { score: Math.max(0, score), reasons: unique.slice(0, 5) };
+}
+
+export function rankNhlRuwtGames(
+  games: NhlScoreGame[],
+  ctx?: NhlRuwtContext,
+  limit = 20,
+): NhlScoredGame[] {
+  return [...games]
+    .map((g) => {
+      const { score, reasons } = scoreNhlRuwtGame(g, ctx);
+      return { ...g, score, reasons };
+    })
+    .sort((a, b) => b.score - a.score || Number(b.id) - Number(a.id))
+    .slice(0, limit);
 }
 
 export type NhlStandingRow = {
