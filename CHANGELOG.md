@@ -2,6 +2,15 @@
 
 ---
 
+## NHL game details, kill Live heroes, 2026-27 season, MLB playoffs — September 29, 2026
+
+- **NHL game pages** match NFL/MLB detail depth: color matchup header, TV chips, odds, preview/wrap story, last-five form, starters, period table, scoring, team stats, and box score.
+- **Removed the “Live {league}” StarField hero** from NHL and NFL hubs (same waste MLB/CFB/RUWT already dropped). Agents were re-adding it because NFL still had the template — that copy source is gone.
+- **NHL stats/standings pin to 2026-27** (ESPN season id 2027 from September). No more silent fall-back to 2025-26 empty-season boards.
+- **MLB playoff mode:** Playoffs tab with Wild Card → DS → LCS → World Series tree; default landing tab while the league is in postseason.
+
+---
+
 ## RUWT: NHL heat board — September 29, 2026
 
 - RUWT adds an **NHL** filter alongside MLB / NFL / CFB / Soccer: today’s Chicago slate, heat ranking (live / one-goal / OT + team interest), TV chips, and Rank teams sliders for all 32 clubs.
