@@ -1556,7 +1556,8 @@ mark.rss-hl {
    Sized so five lines of a wire headline and the agate box beneath it both
    clear the band: a larger face fits four lines and ellipsises the rest,
    which reads worse than setting the whole head a shade smaller. */
-.wsj-stack .wsj-hl {
+.wsj-deck2 > .wsj-stack .wsj-hl {
+  /* Outranks .wsj-hl.lg, which is set later at matching specificity. */
   font-size: clamp(14px, 1.45vw, 21px);
   line-height: 1.04;
   display: -webkit-box;
