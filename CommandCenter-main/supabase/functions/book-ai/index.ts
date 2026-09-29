@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { imageIsInteriorPage, publisherJacketUrls, sniffImageType } from "../_shared/cover-bytes.ts";
 
 // Features over the reading library:
 //
@@ -223,35 +224,6 @@ async function googleCover(title: string, author: string | null, isbn: string | 
   return null;
 }
 
-function sniffImageType(bytes: Uint8Array): string | null {
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return "image/jpeg";
-  }
-  if (
-    bytes.length >= 8 &&
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47
-  ) {
-    return "image/png";
-  }
-  if (
-    bytes.length >= 12 &&
-    bytes[0] === 0x52 &&
-    bytes[1] === 0x49 &&
-    bytes[2] === 0x46 &&
-    bytes[3] === 0x46 &&
-    bytes[8] === 0x57 &&
-    bytes[9] === 0x45 &&
-    bytes[10] === 0x42 &&
-    bytes[11] === 0x50
-  ) {
-    return "image/webp";
-  }
-  return null;
-}
-
 /**
  * Google Books placeholder jackets (blue stub + grayscale "no preview" stub).
  * Hash them so we never lock a skeleton onto a book.
@@ -318,6 +290,8 @@ async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string
       const header = (res.headers.get("Content-Type") ?? "").split(";")[0].trim();
       const type = header.startsWith("image/") ? header : sniffImageType(bytes);
       if (!type) continue;
+      // Praise pages and other interior scans are not jackets. Keep looking.
+      if (imageIsInteriorPage(bytes, type)) continue;
       return { bytes, type };
     }
     return null;
@@ -330,13 +304,8 @@ async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string
  * Publisher / retailer jacket URLs keyed by ISBN-13. Free catalogs lag on
  * forthcoming titles; Harper's Shopify CDN often has art months earlier.
  */
-function publisherCoverUrls(isbnRaw: string): string[] {
-  const isbn = isbnRaw.replace(/[^0-9Xx]/g, "");
-  if (isbn.length !== 13) return [];
-  return [
-    `https://www.harpercollins.com/cdn/shop/files/${isbn}.jpg`,
-    `https://www.harpercollins.com/cdn/shop/products/${isbn}.jpg`,
-  ];
+function publisherCoverUrls(isbnRaw: string, title?: string | null): string[] {
+  return publisherJacketUrls(isbnRaw, title);
 }
 
 /** True when the URL looks like a direct jacket image (not a retail HTML page). */
@@ -493,7 +462,7 @@ async function findCover(
     const isbn = String(book.isbn ?? "").replace(/[^0-9Xx]/g, "");
     // Publisher CDNs before Google — Google often serves a 46KB blank plate
     // for not-yet-released titles and claims success.
-    for (const u of publisherCoverUrls(isbn)) push(u, "publisher");
+    for (const u of publisherCoverUrls(isbn, String(book.title ?? ""))) push(u, "publisher");
     if (isbn.length === 10 || isbn.length === 13) {
       push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`, "openlibrary");
       push(`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`, "openlibrary");
@@ -549,7 +518,7 @@ async function findCover(
 
         // ISBNs beat hotlinked retail images — publisher CDN + OL first.
         for (const isbn of hint.isbns) {
-          for (const u of publisherCoverUrls(isbn)) push(u, "ai");
+          for (const u of publisherCoverUrls(isbn, String(book.title ?? ""))) push(u, "ai");
           push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`, "ai");
           push(`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`, "ai");
         }

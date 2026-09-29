@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { imageIsInteriorPage, publisherJacketUrls, sniffImageType } from "../_shared/cover-bytes.ts";
 
 // Enriches imported books: cover art, page count, description, subjects,
 // publisher and year. The StoryGraph export carries none of those, which is why
@@ -538,13 +539,17 @@ async function grabImage(url: string): Promise<{ bytes: Uint8Array; type: string
     for (const fetchUrl of candidates) {
       const res = await fetchWithTimeout(fetchUrl, 8000, { redirect: "follow" });
       if (!res.ok) continue;
-      const type = (res.headers.get("Content-Type") ?? "").split(";")[0];
-      if (!type.startsWith("image/")) continue;
       const bytes = new Uint8Array(await res.arrayBuffer());
       // Open Library miss placeholders are ~1KB; Google grayscale stubs for
       // forthcoming titles are often 3–7KB. Real jackets are almost always larger.
       if (bytes.byteLength < 8000) continue;
       if (GOOGLE_PLACEHOLDER_SHA256.has(await sha256Hex(bytes))) continue;
+      const header = (res.headers.get("Content-Type") ?? "").split(";")[0].trim();
+      // Simon & Schuster's cover CDN sends binary/octet-stream for real JPEGs.
+      const type = header.startsWith("image/") ? header : sniffImageType(bytes);
+      if (!type) continue;
+      // A page of praise quotes (or any interior text scan) is not a jacket.
+      if (imageIsInteriorPage(bytes, type)) continue;
       return { bytes, type };
     }
     return null;
@@ -626,8 +631,9 @@ Deno.serve(async (req: Request) => {
       // Publisher CDNs before Google — forthcoming titles often get a blank
       // Google plate that used to be stored as a "successful" jacket.
       if (hasIsbn && isbn.length === 13) {
-        coverUrls.push(`https://www.harpercollins.com/cdn/shop/files/${isbn}.jpg`);
-        coverUrls.push(`https://www.harpercollins.com/cdn/shop/products/${isbn}.jpg`);
+        // Publisher CDNs before Google. Google often labels a praise page or
+        // other interior scan as the front cover on new titles.
+        coverUrls.push(...publisherJacketUrls(isbn, String(b.title ?? "")));
       }
       const existing = upgradeCoverUrl(String(b.cover_url ?? ""));
       if (existing) coverUrls.push(existing);

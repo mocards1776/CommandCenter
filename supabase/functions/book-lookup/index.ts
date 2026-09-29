@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { imageIsInteriorPage, sniffImageType } from "../_shared/cover-bytes.ts";
 
 // Looks up a book from a retail/library URL and returns metadata plus the
 // cover image as base64, so the caller can store its own copy.
@@ -245,15 +246,21 @@ Deno.serve(async (req: Request) => {
     try {
       const img = await fetch(coverUrl, { headers: { "User-Agent": UA, Referer: parsed.origin } });
       const type = img.headers.get("Content-Type") ?? "";
-      if (img.ok && type.startsWith("image/")) {
+      if (img.ok && (type.startsWith("image/") || type.includes("octet-stream"))) {
         const buf = new Uint8Array(await img.arrayBuffer());
-        if (buf.byteLength <= 4_000_000) {
-          let bin = "";
-          for (let i = 0; i < buf.length; i += 8192) {
-            bin += String.fromCharCode(...buf.subarray(i, i + 8192));
+        const sniffed = type.startsWith("image/") ? type.split(";")[0] : sniffImageType(buf);
+        if (sniffed && buf.byteLength <= 4_000_000) {
+          // Don't hand back a praise page or other interior scan as the jacket.
+          if (imageIsInteriorPage(buf, sniffed)) {
+            coverUrl = null;
+          } else {
+            let bin = "";
+            for (let i = 0; i < buf.length; i += 8192) {
+              bin += String.fromCharCode(...buf.subarray(i, i + 8192));
+            }
+            coverBase64 = btoa(bin);
+            coverType = sniffed;
           }
-          coverBase64 = btoa(bin);
-          coverType = type.split(";")[0];
         }
       }
     } catch {
