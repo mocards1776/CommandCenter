@@ -17,10 +17,17 @@ import {
   type NflScoreGame,
   type NflScoredGame,
 } from "./nfl";
+import {
+  rankNhlRuwtGames,
+  type NhlRuwtContext,
+  type NhlScoreGame,
+  type NhlScoredGame,
+} from "./nhl";
 
 const STORAGE_KEY = "ruwt-team-interest-v1";
 const NFL_STORAGE_KEY = "ruwt-nfl-team-interest-v1";
 const CFB_STORAGE_KEY = "ruwt-cfb-team-interest-v1";
+const NHL_STORAGE_KEY = "ruwt-nhl-team-interest-v1";
 
 export type RuwtTeamInterest = Record<string, number>; // teamId → 0–10
 
@@ -95,6 +102,27 @@ export function setNflTeamInterestRating(
   if (clamped <= 0) delete next[String(teamId)];
   else next[String(teamId)] = clamped;
   saveNflTeamInterest(next);
+  return next;
+}
+
+export function loadNhlTeamInterest(): RuwtTeamInterest {
+  return loadInterestMap(NHL_STORAGE_KEY);
+}
+
+export function saveNhlTeamInterest(map: RuwtTeamInterest): void {
+  localStorage.setItem(NHL_STORAGE_KEY, JSON.stringify(map));
+}
+
+export function setNhlTeamInterestRating(
+  map: RuwtTeamInterest,
+  teamId: number,
+  rating: number,
+): RuwtTeamInterest {
+  const next = { ...map };
+  const clamped = Math.max(0, Math.min(10, Math.round(rating)));
+  if (clamped <= 0) delete next[String(teamId)];
+  else next[String(teamId)] = clamped;
+  saveNhlTeamInterest(next);
   return next;
 }
 
@@ -188,6 +216,19 @@ export function rankRuwtNflGames(
     watchTeamIds: opts?.watchTeamIds ?? new Set(),
   };
   return rankNflRuwtGames(games, ctx, limit);
+}
+
+export function rankRuwtNhlGames(
+  games: NhlScoreGame[],
+  interest: RuwtTeamInterest,
+  limit = 20,
+  opts?: { watchTeamIds?: Set<string> },
+): NhlScoredGame[] {
+  const ctx: NhlRuwtContext = {
+    teamInterest: interest,
+    watchTeamIds: opts?.watchTeamIds ?? new Set(),
+  };
+  return rankNhlRuwtGames(games, ctx, limit);
 }
 
 function parseWinPct(record: string | null): number | null {
