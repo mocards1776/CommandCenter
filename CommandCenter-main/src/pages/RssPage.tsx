@@ -645,12 +645,13 @@ function ReaderView({
     );
   }
 
-  // MLB/NFL/soccer wraps open the sports game reader.
+  // MLB/NFL/NHL/soccer wraps open the sports game reader.
   const isEspnGame =
     feedUrl === "synthetic:cardinals-wraps" ||
     feedUrl === "synthetic:mlb-wraps" ||
     feedUrl === "synthetic:nfl-wraps" ||
-    /espn\.com\/(?:mlb|nfl)\/(?:recap|preview|game)/i.test(item.link) ||
+    feedUrl === "synthetic:nhl-wraps" ||
+    /espn\.com\/(?:mlb|nfl|nhl)\/(?:recap|preview|game)/i.test(item.link) ||
     Boolean(parseEspnGameIdFromUrl(item.link));
 
   const isSoccerGame =

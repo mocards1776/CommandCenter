@@ -17,12 +17,13 @@ export function isDispatchGameItem(
     feedUrl === "synthetic:cardinals-wraps" ||
     feedUrl === "synthetic:mlb-wraps" ||
     feedUrl === "synthetic:nfl-wraps" ||
+    feedUrl === "synthetic:nhl-wraps" ||
     feedUrl === "synthetic:soccer-clubs-wraps" ||
     feedUrl === "synthetic:epl-wraps"
   ) {
     return true;
   }
-  if (/espn\.com\/(?:mlb|nfl)\/(?:recap|preview|game)/i.test(item.link)) return true;
+  if (/espn\.com\/(?:mlb|nfl|nhl)\/(?:recap|preview|game)/i.test(item.link)) return true;
   if (/espn\.com\/soccer\/(?:match|preview|report|recap)/i.test(item.link)) return true;
   return false;
 }

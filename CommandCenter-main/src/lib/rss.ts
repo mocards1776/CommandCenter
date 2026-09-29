@@ -54,6 +54,12 @@ export const RSS_FEEDS: readonly RssFeedDef[] = [
     url: "synthetic:cfb-wraps",
   },
   {
+    id: "nhl-wraps",
+    title: "NHL wraps & previews",
+    short: "NHL wraps",
+    url: "synthetic:nhl-wraps",
+  },
+  {
     id: "mlb-stats",
     title: "MLB standings & leaders",
     short: "MLB boards",
@@ -1986,6 +1992,22 @@ export function fetchRssFeed(feedUrl: string = DEFAULT_RSS_FEED): Promise<RssFee
       lookAheadDays: 3,
     });
   }
+  if (feedUrl === "synthetic:nhl-wraps") {
+    return fetchEspnWrapsFeed({
+      feedUrl,
+      title: "NHL wraps & previews",
+      description: "League-wide NHL game wraps and previews from ESPN",
+      sportPath: "hockey/nhl",
+      linkSport: "nhl",
+      days: 5,
+      maxItems: 48,
+      preferFinals: true,
+      includeLive: true,
+      // Hockey recaps land late; still list finals with a score stub meanwhile.
+      stubWithoutArticle: true,
+      lookAheadDays: 2,
+    });
+  }
   if (feedUrl === "synthetic:soccer-clubs-wraps") {
     // Wrexham (Championship) + Wolves / Arsenal (PL) — pull both league scoreboards.
     return fetchMergedEspnWrapsFeeds(
@@ -2241,8 +2263,8 @@ type EspnWrapsOpts = {
   description: string;
   /** ESPN site path, e.g. baseball/mlb or football/nfl or soccer/eng.1 */
   sportPath?: string;
-  /** Link slug under espn.com — mlb, nfl, or soccer */
-  linkSport?: "mlb" | "nfl" | "cfb" | "soccer";
+  /** Link slug under espn.com — mlb, nfl, cfb, nhl, or soccer */
+  linkSport?: "mlb" | "nfl" | "cfb" | "nhl" | "soccer";
   teamFilter?: { espnId: string; abbrev: string };
   /** Multi-club filter (OR). Takes precedence over teamFilter when set. */
   teamFilters?: { espnId: string; abbrev: string }[];
@@ -4780,6 +4802,7 @@ export const RSS_ESPN_WRAP_FEED_URLS = new Set<string>([
   "synthetic:mlb-wraps",
   "synthetic:nfl-wraps",
   "synthetic:cfb-wraps",
+  "synthetic:nhl-wraps",
   "synthetic:soccer-clubs-wraps",
   "synthetic:epl-wraps",
 ]);
