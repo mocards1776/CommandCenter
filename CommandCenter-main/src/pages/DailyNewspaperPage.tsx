@@ -173,6 +173,16 @@ function notesTail(card: GameWrapCard): string {
         .join("; ")}.`,
     );
   }
+  // Every story closes on a glance line, so a short recap still runs its
+  // column to the foot instead of stopping in a strip of white.
+  const glance = [card.status, card.round, card.series].filter(Boolean).join(" · ");
+  const records = card.boxScore?.find((r) => r.label === "Record");
+  const parts = [
+    glance,
+    records ? `Records ${records.away} and ${records.home}` : "",
+    card.scoreLine,
+  ].filter(Boolean);
+  if (parts.length) bits.push(`AT A GLANCE — ${parts.join(". ")}.`);
   return bits.join("\n\n");
 }
 
