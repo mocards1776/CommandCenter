@@ -814,6 +814,12 @@ export default function SportsPage() {
             >
               MLB hub
             </Link>
+            <Link
+              to="/sports/nhl?solo=1"
+              className="text-chalk hover:text-cream rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
+            >
+              NHL hub
+            </Link>
             <a
               href="/sports.html"
               className="text-chalk hover:text-cream rounded-sm border border-white/10 px-3 py-2 text-[10.5px] uppercase tracking-[0.14em] transition hover:border-accent/40"
@@ -1049,8 +1055,11 @@ function TeamDetailPanel({
   const mlbTeamId = fav.mlbTeamId;
   const nflTeamId =
     fav.league === "NFL" ? (fav.espnPath.split("/").pop() ?? null) : null;
+  const nhlTeamId =
+    fav.league === "NHL" ? (fav.espnPath.split("/").pop() ?? null) : null;
   const cfbTeamId = cfbEspnTeamId(fav);
   const isSoccer = /soccer\//i.test(fav.espnPath);
+  const isHockey = fav.league === "NHL";
 
   const hero = useQuery({
     queryKey: ["team-detail-hero", mlbTeamId],
@@ -1126,6 +1135,15 @@ function TeamDetailPanel({
           {cfbTeamId && /^\d+$/.test(cfbTeamId) && (
             <Link
               to={`/sports/cfb/team/${cfbTeamId}`}
+              className="text-accent mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Full team page
+            </Link>
+          )}
+          {nhlTeamId && /^\d+$/.test(nhlTeamId) && (
+            <Link
+              to={`/sports/nhl/team/${nhlTeamId}`}
               className="text-accent mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] hover:underline"
               onClick={(e) => e.stopPropagation()}
             >
@@ -1233,9 +1251,9 @@ function TeamDetailPanel({
                         <tr className="border-b border-white/[0.06]">
                           <th className="px-3 py-2 font-medium">Team</th>
                           <th className="px-2 py-2 font-medium">{isSoccer ? "Pld" : "Rec"}</th>
-                          {isSoccer ? (
+                          {isSoccer || isHockey ? (
                             <>
-                              <th className="px-2 py-2 font-medium">GD</th>
+                              <th className="px-2 py-2 font-medium">{isHockey ? "DIFF" : "GD"}</th>
                               <th className="px-2 py-2 font-medium">Pts</th>
                             </>
                           ) : (
@@ -1298,7 +1316,7 @@ function TeamDetailPanel({
                             <td className="numeral text-cream px-2 py-2">
                               {isSoccer ? row.record : row.record}
                             </td>
-                            {isSoccer ? (
+                            {isSoccer || isHockey ? (
                               <>
                                 <td className="numeral text-chalk px-2 py-2">{row.gd || "—"}</td>
                                 <td className="numeral text-cream px-2 py-2 font-medium">
@@ -1329,6 +1347,7 @@ function TeamDetailPanel({
                   games={detail.upcoming}
                   empty="No upcoming games."
                   mlbBoxscores={detail.source === "mlb"}
+                  gameBase={isHockey ? "/sports/nhl/game" : null}
                 />
               </CollapsibleDetailSection>
 
@@ -1337,6 +1356,7 @@ function TeamDetailPanel({
                   games={detail.recent}
                   empty="No recent games."
                   mlbBoxscores={detail.source === "mlb"}
+                  gameBase={isHockey ? "/sports/nhl/game" : null}
                 />
               </CollapsibleDetailSection>
 
@@ -1356,13 +1376,16 @@ function TeamDetailPanel({
                         fav.league === "NCAA" &&
                         fav.sport === "Football" &&
                         /^\d+$/.test(String(p.id));
+                      const nhlClickable = fav.league === "NHL" && /^\d+$/.test(String(p.id));
                       const href = mlbClickable
                         ? `/sports/mlb/player/${p.id}`
                         : nflClickable
                           ? `/sports/nfl/player/${p.id}`
                           : cfbClickable
                             ? `/sports/cfb/player/${p.id}`
-                            : null;
+                            : nhlClickable
+                              ? `/sports/nhl/player/${p.id}`
+                              : null;
                       const row = (
                         <>
                           <span className="text-chalk-dim numeral w-8 shrink-0 text-[11px]">
@@ -1456,7 +1479,9 @@ function TeamDetailPanel({
                       <PlayerStatTable
                         key={table.name}
                         table={table}
-                        sport={detail.source === "mlb" ? "mlb" : "nfl"}
+                        sport={
+                          detail.source === "mlb" ? "mlb" : fav.league === "NHL" ? "nhl" : "nfl"
+                        }
                       />
                     ))}
                   </div>
@@ -1692,17 +1717,24 @@ function GameList({
   games,
   empty,
   mlbBoxscores,
+  gameBase,
 }: {
   games: ScheduleGame[];
   empty: string;
   mlbBoxscores?: boolean;
+  gameBase?: string | null;
 }) {
   if (games.length === 0) return <EmptyLine>{empty}</EmptyLine>;
   const upcomingStyle = games.some((g) => g.myPitcher || g.oppPitcher || g.pitchers);
   return (
     <ul className="bg-panel divide-y divide-white/[0.05] rounded border border-white/[0.07]">
       {games.map((g) => {
-        const canOpen = mlbBoxscores && /^\d+$/.test(g.id);
+        const canOpen = (mlbBoxscores || Boolean(gameBase)) && /^\d+$/.test(g.id);
+        const gameHref = mlbBoxscores
+          ? `/sports/mlb/game/${g.id}`
+          : gameBase
+            ? `${gameBase}/${g.id}`
+            : null;
         const showMatchup = Boolean(g.myPitcher || g.oppPitcher || g.pitchers);
         const body = (
           <>
@@ -1753,9 +1785,9 @@ function GameList({
         );
         return (
           <li key={g.id}>
-            {canOpen ? (
+            {canOpen && gameHref ? (
               <Link
-                to={`/sports/mlb/game/${g.id}`}
+                to={gameHref}
                 className={cn(
                   "group flex flex-wrap items-start justify-between gap-2 px-3 text-[12.5px] hover:bg-white/[0.03]",
                   upcomingStyle && showMatchup ? "py-3" : "items-baseline py-2.5",
@@ -1820,7 +1852,7 @@ function LeaderList({
 }: {
   title: string;
   leaders: { id?: string; name: string; line: string }[];
-  sport?: "mlb" | "nfl";
+  sport?: "mlb" | "nfl" | "nhl";
 }) {
   return (
     <div>
@@ -1832,7 +1864,9 @@ function LeaderList({
               ? `/sports/mlb/player/${l.id}`
               : l.id && sport === "nfl"
                 ? `/sports/nfl/player/${l.id}`
-                : null;
+                : l.id && sport === "nhl"
+                  ? `/sports/nhl/player/${l.id}`
+                  : null;
           const body = (
             <span className="flex items-center gap-2.5">
               {l.id && sport === "mlb" ? (
@@ -1874,7 +1908,7 @@ function PlayerStatTable({
   sport,
 }: {
   table: { name: string; labels: string[]; rows: { id: string; name: string; stats: string[] }[] };
-  sport: "mlb" | "nfl";
+  sport: "mlb" | "nfl" | "nhl";
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-white/[0.08]">
@@ -1903,7 +1937,9 @@ function PlayerStatTable({
                     to={
                       sport === "mlb"
                         ? `/sports/mlb/player/${row.id}`
-                        : `/sports/nfl/player/${row.id}`
+                        : sport === "nhl"
+                          ? `/sports/nhl/player/${row.id}`
+                          : `/sports/nfl/player/${row.id}`
                     }
                     className="text-cream inline-flex items-center gap-2 hover:underline"
                     onClick={(e) => e.stopPropagation()}

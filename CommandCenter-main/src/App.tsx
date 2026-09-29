@@ -33,6 +33,10 @@ import NflGamePage from "@/pages/NflGamePage";
 import NflPlayerPage from "@/pages/NflPlayerPage";
 import NflTeamPage from "@/pages/NflTeamPage";
 import NflCoachPage from "@/pages/NflCoachPage";
+import NhlPage from "@/pages/NhlPage";
+import NhlGamePage from "@/pages/NhlGamePage";
+import NhlPlayerPage from "@/pages/NhlPlayerPage";
+import NhlTeamPage from "@/pages/NhlTeamPage";
 import SoccerGamePage from "@/pages/SoccerGamePage";
 const RssPage = lazy(() => import("@/pages/RssPage"));
 import PublicStoryPage from "@/pages/PublicStoryPage";
@@ -148,6 +152,10 @@ export default function App() {
               <Route path="/sports/nfl/player/:playerId" element={<NflPlayerPage />} />
               <Route path="/sports/nfl/team/:teamId" element={<NflTeamPage />} />
               <Route path="/sports/nfl/coach/:coachId" element={<NflCoachPage />} />
+              <Route path="/sports/nhl" element={<NhlPage />} />
+              <Route path="/sports/nhl/game/:eventId" element={<NhlGamePage />} />
+              <Route path="/sports/nhl/player/:playerId" element={<NhlPlayerPage />} />
+              <Route path="/sports/nhl/team/:teamId" element={<NhlTeamPage />} />
               <Route path="/sports/cfb" element={<CfbPage />} />
               <Route path="/sports/cfb/game/:eventId" element={<CfbGamePage />} />
               <Route path="/sports/cfb/team/:teamId" element={<CfbTeamPage />} />

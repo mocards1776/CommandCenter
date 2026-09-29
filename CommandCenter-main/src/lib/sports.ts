@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { fetchMlbTeamGeneralManager, fetchMlbTeamManager } from "./mlb";
+import { NHL_TEAMS } from "./nhl";
 import { formatSportsDateLong } from "./utils";
 
 /** A favorite franchise or tour the dashboard can show. */
@@ -476,12 +477,15 @@ export function getSearchableSportsTeams(): SearchableSportsTeam[] {
   for (const fav of DEFAULT_FAVORITES) {
     if (fav.kind !== "team") continue;
     const nfl = /football\/nfl\/teams\/(\d+)/.exec(fav.espnPath);
+    const nhl = /hockey\/nhl\/teams\/(\d+)/.exec(fav.espnPath);
     const cfb = /football\/college-football\/teams\/(\d+)/.exec(fav.espnPath);
     const path = nfl
       ? `/sports/nfl/team/${nfl[1]}`
-      : cfb
-        ? `/sports/cfb/team/${cfb[1]}`
-        : `/sports?solo=1&team=${fav.key}`;
+      : nhl
+        ? `/sports/nhl/team/${nhl[1]}`
+        : cfb
+          ? `/sports/cfb/team/${cfb[1]}`
+          : `/sports?solo=1&team=${fav.key}`;
     out.push({
       name: fav.name,
       shortName: fav.shortName,
@@ -490,6 +494,19 @@ export function getSearchableSportsTeams(): SearchableSportsTeam[] {
       keywords: [fav.shortName, fav.sport, fav.key],
     });
     seen.add(path);
+  }
+
+  for (const team of NHL_TEAMS) {
+    const path = `/sports/nhl/team/${team.id}`;
+    if (seen.has(path)) continue;
+    seen.add(path);
+    out.push({
+      name: team.name,
+      shortName: team.abbrev,
+      league: "NHL",
+      path,
+      keywords: [team.abbrev, team.name, "hockey", "nhl"],
+    });
   }
 
   for (const [teamId, meta] of Object.entries(MLB_TEAM_META)) {
@@ -2448,15 +2465,17 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
         for (const e of entries) {
           const stat = (n: string) => e.stats?.find((s) => s.name === n)?.displayValue ?? "";
           const isMe = String(e.team?.id) === String(espnTeamId);
+          const isHockey = /hockey\/nhl/i.test(fav.espnPath);
           const row: StandingRow = {
             rank: stat("rank") || String(division.length + 1),
             team: e.team?.shortDisplayName || e.team?.displayName || "—",
             teamId: e.team?.id ? String(e.team.id) : null,
-            record:
-              stat("overall") ||
-              (isSoccer
-                ? `${stat("wins")}-${stat("ties")}-${stat("losses")}`
-                : `${stat("wins")}-${stat("losses")}`),
+            record: isHockey
+              ? `${stat("wins") || "0"}-${stat("losses") || "0"}-${stat("otLosses") || stat("overtimeLosses") || "0"}`
+              : stat("overall") ||
+                (isSoccer
+                  ? `${stat("wins")}-${stat("ties")}-${stat("losses")}`
+                  : `${stat("wins")}-${stat("losses")}`),
             gb: stat("gamesBehind") || "—",
             pct: stat("winPercent") || "",
             isMe,
@@ -2984,19 +3003,30 @@ function mlbStatTableRows(
   return out;
 }
 
-/** NFL (and other ESPN) team player stat tables — mirrors ESPN team/stats. */
+/** NFL / NHL team player stat tables — mirrors the league team pages. */
 async function fetchEspnTeamPlayerTables(fav: SportsFavorite): Promise<TeamPlayerStatTable[]> {
-  if (!/football\/nfl/i.test(fav.espnPath)) return [];
   const teamId = fav.espnPath.split("/").pop();
   if (!teamId) return [];
   try {
-    const { fetchNflTeamPage } = await import("./nfl");
-    const page = await fetchNflTeamPage(teamId);
-    return page.playerTables.map((t) => ({
-      name: t.name,
-      labels: t.labels,
-      rows: t.rows,
-    }));
+    if (/football\/nfl/i.test(fav.espnPath)) {
+      const { fetchNflTeamPage } = await import("./nfl");
+      const page = await fetchNflTeamPage(teamId);
+      return page.playerTables.map((t) => ({
+        name: t.name,
+        labels: t.labels,
+        rows: t.rows,
+      }));
+    }
+    if (/hockey\/nhl/i.test(fav.espnPath)) {
+      const { fetchNhlTeamPage } = await import("./nhl");
+      const page = await fetchNhlTeamPage(teamId);
+      return page.playerTables.map((t) => ({
+        name: t.name,
+        labels: t.labels,
+        rows: t.rows,
+      }));
+    }
+    return [];
   } catch {
     return [];
   }

@@ -17,6 +17,7 @@ import {
   Radio,
   Flag,
   Shield,
+  Disc,
   GraduationCap,
   RefreshCw,
   Share,
@@ -101,6 +102,12 @@ const SPORTS_NAV = [
     match: (p: string) => p === "/sports/nfl" || p.startsWith("/sports/nfl/"),
     label: "NFL",
     Icon: Shield,
+  },
+  {
+    to: "/sports/nhl?solo=1",
+    match: (p: string) => p === "/sports/nhl" || p.startsWith("/sports/nhl/"),
+    label: "NHL",
+    Icon: Disc,
   },
   {
     to: "/sports/cfb?solo=1",

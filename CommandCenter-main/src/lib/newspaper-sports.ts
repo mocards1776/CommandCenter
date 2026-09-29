@@ -9,6 +9,8 @@ export function favoriteTeamHref(fav: SportsFavorite): string {
   if (nfl) return `/sports/nfl/team/${nfl[1]}`;
   const cfb = /football\/college-football\/teams\/(\d+)/.exec(fav.espnPath);
   if (cfb) return `/sports/cfb/team/${cfb[1]}`;
+  const nhl = /hockey\/nhl\/teams\/(\d+)/.exec(fav.espnPath);
+  if (nhl) return `/sports/nhl/team/${nhl[1]}`;
   return `/sports?solo=1&team=${encodeURIComponent(fav.key)}`;
 }
 
@@ -21,9 +23,7 @@ export function favoriteGameHref(fav: SportsFavorite, gameId: string): string | 
   if (/football\/nfl\//.test(fav.espnPath)) return `/sports/nfl/game/${gameId}`;
   if (/college-football\//.test(fav.espnPath)) return `/sports/cfb/game/${gameId}`;
   if (/soccer\//.test(fav.espnPath)) return `/sports/soccer/game/${gameId}`;
-  if (/hockey\/nhl\//.test(fav.espnPath)) {
-    return `https://www.espn.com/nhl/game/_/gameId/${gameId}`;
-  }
+  if (/hockey\/nhl\//.test(fav.espnPath)) return `/sports/nhl/game/${gameId}`;
   if (/mens-college-basketball\//.test(fav.espnPath)) {
     return `https://www.espn.com/mens-college-basketball/game/_/gameId/${gameId}`;
   }
@@ -40,6 +40,9 @@ export function playerHref(sportPath: string, playerId: string): string | null {
   }
   if (/college-football\//.test(sportPath) || sportPath === "cfb") {
     return `/sports/cfb/player/${playerId}`;
+  }
+  if (/hockey\/nhl\//.test(sportPath) || sportPath === "nhl") {
+    return `/sports/nhl/player/${playerId}`;
   }
   return null;
 }
