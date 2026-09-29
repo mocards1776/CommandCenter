@@ -98,7 +98,57 @@ export type MlbHighlight = {
   date: string | null;
 };
 
-export type MlbPageTab = "board" | "standings" | "leaders" | "odds" | "highlights" | "contracts";
+export type MlbPageTab =
+  | "board"
+  | "standings"
+  | "leaders"
+  | "odds"
+  | "highlights"
+  | "contracts"
+  | "playoffs";
+
+export type MlbPlayoffRoundId = "wc" | "ds" | "lcs" | "ws";
+
+export type MlbPlayoffSide = {
+  teamId: number | null;
+  name: string;
+  abbrev: string;
+  wins: number;
+  /** True when MLB hasn't assigned a real club yet (e.g. "NYY/BOS"). */
+  placeholder: boolean;
+};
+
+export type MlbPlayoffGame = {
+  gamePk: number;
+  gameNumber: number;
+  status: string;
+  live: boolean;
+  final: boolean;
+  awayScore: number | null;
+  homeScore: number | null;
+  when: string | null;
+  date: string | null;
+};
+
+export type MlbPlayoffSeries = {
+  id: string;
+  round: MlbPlayoffRoundId;
+  league: "AL" | "NL" | "MLB";
+  label: string;
+  slot: string;
+  gamesInSeries: number;
+  seriesStatus: string | null;
+  completed: boolean;
+  away: MlbPlayoffSide;
+  home: MlbPlayoffSide;
+  games: MlbPlayoffGame[];
+};
+
+export type MlbPlayoffTree = {
+  season: number;
+  active: boolean;
+  rounds: { id: MlbPlayoffRoundId; label: string; series: MlbPlayoffSeries[] }[];
+};
 
 export type MlbTonightHighlight = MlbHighlight & {
   gamePk: number;
@@ -1085,6 +1135,285 @@ export async function resolveMissingRecapPlayers(
 
 export function chicagoToday(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+}
+
+/** Calendar year for the MLB season currently running (includes postseason into Nov). */
+export function mlbSeasonYear(d = new Date()): number {
+  return d.getFullYear();
+}
+
+function isPlaceholderMlbTeam(team: {
+  id?: number;
+  abbreviation?: string;
+  name?: string;
+}): boolean {
+  const id = team.id ?? 0;
+  const abbrev = team.abbreviation ?? "";
+  const name = team.name ?? "";
+  if (id <= 0 || id > 200) return true;
+  if (abbrev.includes("/") || name.includes("/")) return true;
+  if (/^(AL|NL)\s*(High|Low)$/i.test(abbrev) || /^(High|Low)$/i.test(abbrev)) return true;
+  return false;
+}
+
+function mapPlayoffSide(team: {
+  id?: number;
+  abbreviation?: string;
+  name?: string;
+  teamName?: string;
+  shortName?: string;
+}): MlbPlayoffSide {
+  const placeholder = isPlaceholderMlbTeam(team);
+  const abbrev = team.abbreviation ?? "TBD";
+  return {
+    teamId: placeholder ? null : (team.id ?? null),
+    name: team.name ?? team.teamName ?? team.shortName ?? abbrev,
+    abbrev,
+    wins: 0,
+    placeholder,
+  };
+}
+
+function playoffRoundMeta(
+  gameType: string,
+  seriesDescription: string,
+  description: string,
+): { round: MlbPlayoffRoundId; league: "AL" | "NL" | "MLB"; label: string; slot: string } | null {
+  const sd = seriesDescription || "";
+  const desc = description || "";
+  const slotMatch = desc.match(/'([AB])'/i) ?? sd.match(/\b([AB])\b/);
+  const slot = slotMatch?.[1]?.toUpperCase() ?? "";
+  if (gameType === "F" || /wild\s*card/i.test(sd)) {
+    const league = /AL/i.test(sd) || /AL/i.test(desc) ? "AL" : "NL";
+    return {
+      round: "wc",
+      league,
+      label: `${league} Wild Card${slot ? ` ${slot}` : ""}`,
+      slot,
+    };
+  }
+  if (gameType === "D" || /division/i.test(sd) || /DS/i.test(sd)) {
+    const league = /AL/i.test(sd) || /AL/i.test(desc) ? "AL" : "NL";
+    return {
+      round: "ds",
+      league,
+      label: `${league}DS${slot ? ` ${slot}` : ""}`,
+      slot,
+    };
+  }
+  if (gameType === "L" || /championship/i.test(sd) || /CS/i.test(sd)) {
+    const league = /AL/i.test(sd) || /AL/i.test(desc) ? "AL" : "NL";
+    return { round: "lcs", league, label: `${league}CS`, slot: "" };
+  }
+  if (gameType === "W" || /world\s*series/i.test(sd)) {
+    return { round: "ws", league: "MLB", label: "World Series", slot: "" };
+  }
+  return null;
+}
+
+/** Full postseason bracket from MLB Stats API (series + games). */
+export async function fetchMlbPlayoffTree(
+  season = mlbSeasonYear(),
+): Promise<MlbPlayoffTree> {
+  const url =
+    `${MLB}/schedule/postseason?season=${season}` +
+    `&hydrate=team,linescore,seriesStatus`;
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`MLB postseason ${res.status}`);
+  const raw = (await res.json()) as {
+    dates?: {
+      date?: string;
+      games?: {
+        gamePk?: number;
+        gameType?: string;
+        gameDate?: string;
+        officialDate?: string;
+        description?: string;
+        seriesDescription?: string;
+        seriesGameNumber?: number;
+        gamesInSeries?: number;
+        status?: { detailedState?: string; abstractGameState?: string };
+        seriesStatus?: {
+          wins?: number;
+          losses?: number;
+          isOver?: boolean;
+          shortDescription?: string;
+          description?: string;
+        };
+        teams?: {
+          away?: {
+            score?: number;
+            isWinner?: boolean;
+            team?: {
+              id?: number;
+              abbreviation?: string;
+              name?: string;
+              teamName?: string;
+              shortName?: string;
+            };
+          };
+          home?: {
+            score?: number;
+            isWinner?: boolean;
+            team?: {
+              id?: number;
+              abbreviation?: string;
+              name?: string;
+              teamName?: string;
+              shortName?: string;
+            };
+          };
+        };
+      }[];
+    }[];
+  };
+
+  const seriesMap = new Map<string, MlbPlayoffSeries>();
+
+  for (const day of raw.dates ?? []) {
+    for (const g of day.games ?? []) {
+      const gameType = g.gameType ?? "";
+      const meta = playoffRoundMeta(
+        gameType,
+        g.seriesDescription ?? "",
+        g.description ?? "",
+      );
+      if (!meta) continue;
+      const awayTeam = g.teams?.away?.team ?? {};
+      const homeTeam = g.teams?.home?.team ?? {};
+      const seriesKey = `${meta.round}-${meta.league}-${meta.slot || "X"}-${[
+        awayTeam.id ?? awayTeam.abbreviation,
+        homeTeam.id ?? homeTeam.abbreviation,
+      ]
+        .map(String)
+        .sort()
+        .join("-")}`;
+
+      let series = seriesMap.get(seriesKey);
+      if (!series) {
+        series = {
+          id: seriesKey,
+          round: meta.round,
+          league: meta.league,
+          label: meta.label,
+          slot: meta.slot,
+          gamesInSeries: g.gamesInSeries ?? (meta.round === "wc" ? 3 : meta.round === "ws" || meta.round === "lcs" ? 7 : 5),
+          seriesStatus: g.seriesStatus?.shortDescription ?? g.seriesStatus?.description ?? null,
+          completed: Boolean(g.seriesStatus?.isOver),
+          away: mapPlayoffSide(awayTeam),
+          home: mapPlayoffSide(homeTeam),
+          games: [],
+        };
+        seriesMap.set(seriesKey, series);
+      }
+
+      const abstract = g.status?.abstractGameState ?? "";
+      const detailed = g.status?.detailedState ?? "";
+      const live = abstract === "Live" || /in progress|warmup/i.test(detailed);
+      const final = abstract === "Final" || /final|completed|game over/i.test(detailed);
+      const awayScore =
+        g.teams?.away?.score != null && Number.isFinite(g.teams.away.score)
+          ? g.teams.away.score
+          : null;
+      const homeScore =
+        g.teams?.home?.score != null && Number.isFinite(g.teams.home.score)
+          ? g.teams.home.score
+          : null;
+
+      series.games.push({
+        gamePk: g.gamePk ?? 0,
+        gameNumber: g.seriesGameNumber ?? series.games.length + 1,
+        status: detailed || abstract || "Scheduled",
+        live,
+        final,
+        awayScore,
+        homeScore,
+        when: fmtWhenShort(g.gameDate),
+        date: g.officialDate ?? day.date ?? null,
+      });
+
+      if (g.seriesStatus) {
+        series.seriesStatus =
+          g.seriesStatus.shortDescription ?? g.seriesStatus.description ?? series.seriesStatus;
+        series.completed = Boolean(g.seriesStatus.isOver);
+        // seriesStatus wins/losses are from the perspective of the "leading" side inconsistently —
+        // compute from finals instead when possible.
+      }
+    }
+  }
+
+  for (const series of seriesMap.values()) {
+    series.games.sort((a, b) => a.gameNumber - b.gameNumber || (a.date ?? "").localeCompare(b.date ?? ""));
+    let awayWins = 0;
+    let homeWins = 0;
+    for (const game of series.games) {
+      if (!game.final || game.awayScore == null || game.homeScore == null) continue;
+      if (game.awayScore > game.homeScore) awayWins += 1;
+      else if (game.homeScore > game.awayScore) homeWins += 1;
+    }
+    series.away.wins = awayWins;
+    series.home.wins = homeWins;
+    const need = Math.ceil(series.gamesInSeries / 2);
+    if (awayWins >= need || homeWins >= need) series.completed = true;
+  }
+
+  const order: MlbPlayoffRoundId[] = ["wc", "ds", "lcs", "ws"];
+  const labels: Record<MlbPlayoffRoundId, string> = {
+    wc: "Wild Card",
+    ds: "Division Series",
+    lcs: "League Championship",
+    ws: "World Series",
+  };
+
+  const rounds = order.map((id) => ({
+    id,
+    label: labels[id],
+    series: [...seriesMap.values()]
+      .filter((s) => s.round === id)
+      .sort((a, b) => {
+        const leagueOrder = { AL: 0, NL: 1, MLB: 2 };
+        return (
+          leagueOrder[a.league] - leagueOrder[b.league] ||
+          a.slot.localeCompare(b.slot) ||
+          a.label.localeCompare(b.label)
+        );
+      }),
+  }));
+
+  const active = rounds.some((r) =>
+    r.series.some((s) => s.games.some((g) => g.live || g.final || Boolean(g.date))),
+  );
+
+  return { season, active, rounds };
+}
+
+/** True when today's MLB board is postseason (or a playoff tree already has games). */
+export async function mlbIsInPlayoffs(season = mlbSeasonYear()): Promise<boolean> {
+  try {
+    const today = chicagoToday();
+    const ymd = today.replace(/-/g, "");
+    const espn = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${ymd}`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (espn.ok) {
+      const raw = (await espn.json()) as {
+        leagues?: { season?: { type?: { type?: number; name?: string } } }[];
+      };
+      const type = raw.leagues?.[0]?.season?.type;
+      if (type?.type === 3 || /post/i.test(type?.name ?? "")) return true;
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const tree = await fetchMlbPlayoffTree(season);
+    return tree.rounds.some((r) =>
+      r.series.some((s) => s.games.some((g) => g.live || g.final)),
+    );
+  } catch {
+    return false;
+  }
 }
 
 function chicagoHour(): number {
