@@ -1623,7 +1623,8 @@ mark.rss-hl {
   list-style: none;
   margin: 0;
   padding: 0;
-  flex: 1 1 auto;
+  /* The bullet list yields height to Tonight and Season Complete below it. */
+  flex: 1 1 0;
   min-height: 0;
   overflow: hidden;
   font-family: var(--w-body);

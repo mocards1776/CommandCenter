@@ -23,7 +23,11 @@ import {
   type GameWrapCard,
   type TeamInfobox,
 } from "@/lib/newspaper-sports";
-import { enrichWireStories, fetchNewspaperWire } from "@/lib/newspaper-wire";
+import {
+  enrichWireStories,
+  fetchNewspaperWire,
+  type WireGame,
+} from "@/lib/newspaper-wire";
 import { fetchRssFeed } from "@/lib/rss";
 import {
   fetchTeamDetail,
@@ -299,14 +303,26 @@ function Headline({
 
 /* ───────────────────────── What's News rail ───────────────────────── */
 
+/** 7:00 PM out of an ISO stamp, in the reader's own zone. */
+function faceOff(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d
+    .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    .replace(":00", "");
+}
+
 function WhatsNews({
   cards,
   teams,
   postseason,
+  tonight,
 }: {
   cards: GameWrapCard[];
   teams: TeamInfobox[];
   postseason: string[];
+  tonight: WireGame[];
 }) {
   const closed = teams.filter((t) => t.seasonState === "complete");
   return (
@@ -320,7 +336,7 @@ function WhatsNews({
             wire until a champion is decided.
           </li>
         ))}
-        {cards.slice(0, 9).map((c, i) => {
+        {cards.slice(0, 7).map((c, i) => {
           const href = c.gameHref || c.wrapHref || c.teamHref;
           const lead = c.headline.split(/(?<=^[^.]{12,90})\s+/)[0] ?? c.headline;
           return (
@@ -335,6 +351,27 @@ function WhatsNews({
           );
         })}
       </ul>
+      {tonight.length ? (
+        <>
+          <p className="wsj-news-sub">Tonight</p>
+          <ul className="wsj-news-list tight">
+            {tonight.map((g) => (
+              <li key={g.id}>
+                <ExternalOrLink href={g.href} className="wsj-a">
+                  <strong>
+                    {g.away.short} at {g.home.short}
+                  </strong>
+                </ExternalOrLink>{" "}
+                {g.league}
+                {g.round ? `, ${g.round}` : ""}.{" "}
+                <span className="wsj-ref">
+                  {g.live ? g.statusDetail : faceOff(g.startedAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
       {closed.length ? (
         <>
           <p className="wsj-news-sub">Season Complete</p>
@@ -517,6 +554,7 @@ function FrontPage({
   teams,
   postseason,
   newsCards,
+  tonight,
 }: {
   lead: GameWrapCard | null;
   second: GameWrapCard | null;
@@ -525,6 +563,7 @@ function FrontPage({
   teams: TeamInfobox[];
   postseason: string[];
   newsCards: GameWrapCard[];
+  tonight: WireGame[];
 }) {
   if (!lead) {
     return <p className="wsj-empty">The wire is quiet. Nothing has come in for your clubs.</p>;
@@ -533,7 +572,12 @@ function FrontPage({
     <div className="wsj-front">
       {/* Top deck: What's News · art · lead story */}
       <div className="wsj-deck">
-        <WhatsNews cards={newsCards} teams={teams} postseason={postseason} />
+        <WhatsNews
+          cards={newsCards}
+          teams={teams}
+          postseason={postseason}
+          tonight={tonight}
+        />
 
         <div className="wsj-art">
           <Cut card={lead} />
@@ -829,6 +873,24 @@ export default function DailyNewspaperPage() {
     return promotePostseason(merged, FRONT_STORIES);
   }, [wireQ.data, teamFavs, teamDetailsQ.data, enrichedQ.data, teamCards]);
 
+  /**
+   * A game still being played has no story to set, so it runs on the front the
+   * way a paper runs it: a line in the rail rather than a bylined column.
+   */
+  const tonight = useMemo(() => {
+    const games = wireQ.data?.games ?? [];
+    return games
+      .filter((g) => !g.final && !g.preseason)
+      .sort((a, b) =>
+        a.live === b.live
+          ? String(a.startedAt).localeCompare(String(b.startedAt))
+          : a.live
+            ? -1
+            : 1,
+      )
+      .slice(0, 8);
+  }, [wireQ.data]);
+
   const pages = useMemo(() => paginate(stories), [stories]);
 
   const lead = stories[0] ?? null;
@@ -948,6 +1010,7 @@ export default function DailyNewspaperPage() {
                   teams={teams}
                   postseason={wireQ.data?.postseasonLeagues ?? []}
                   newsCards={stories}
+                  tonight={tonight}
                 />
               ) : (
                 <InsidePage
