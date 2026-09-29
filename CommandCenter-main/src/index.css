@@ -1553,12 +1553,13 @@ mark.rss-hl {
   padding-right: 0.5rem;
 }
 /* Stacked heads break early and ride one word a line, as in a column head.
-   Capped so a five-line head cannot crowd the agate box out of the column. */
+   Capped at four lines so the head cannot crowd its agate box out of the
+   column and leave the box clipped against the band below. */
 .wsj-stack .wsj-hl {
   font-size: clamp(15px, 1.7vw, 24px);
   line-height: 1.03;
   display: -webkit-box;
-  -webkit-line-clamp: 5;
+  -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

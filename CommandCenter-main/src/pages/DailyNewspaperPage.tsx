@@ -627,7 +627,7 @@ function FrontPage({
             </p>
             <AgateBox
               title="Names"
-              rows={second.leaders.slice(0, 3).map((l) => ({ left: l.name, right: l.line }))}
+              rows={second.leaders.slice(0, 2).map((l) => ({ left: l.name, right: l.line }))}
             />
           </div>
           <div className="wsj-feature">
