@@ -1175,11 +1175,13 @@ mark.rss-hl {
   font-size: 8.5px; letter-spacing: 0.16em; text-transform: uppercase;
 }
 .tt-chrome-c { display: flex; align-items: center; gap: 0.3rem; }
+.tt-chrome-r { display: flex; align-items: center; gap: 0.3rem; }
 .tt-chrome-refresh {
   display: inline-flex; align-items: center; gap: 0.3rem;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: transparent; color: inherit;
   font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase;
+  text-decoration: none;
   padding: 0.28rem 0.5rem;
 }
 .tt-chrome-refresh:hover { color: #fff; border-color: #fff; }

@@ -78,6 +78,12 @@
         try {
           localStorage.setItem("reading-solo", "1");
           sessionStorage.setItem("reading-solo", "1");
+          localStorage.removeItem("sports-solo");
+          sessionStorage.removeItem("sports-solo");
+          localStorage.removeItem("rss-solo");
+          sessionStorage.removeItem("rss-solo");
+          localStorage.removeItem("newspaper-solo");
+          sessionStorage.removeItem("newspaper-solo");
         } catch (e) {}
         var standalone =
           (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
