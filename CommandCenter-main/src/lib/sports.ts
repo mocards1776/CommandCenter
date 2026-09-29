@@ -871,7 +871,10 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
 
   let nextGame: GameChip | null = null;
   const next = t.nextEvent?.[0];
-  if (next?.competitions?.[0]) {
+  const nextStatus = next?.competitions?.[0]?.status?.type;
+  // Once a season ends, ESPN leaves the final game sitting in nextEvent. Taking
+  // it at face value makes a finished club look like it plays tomorrow.
+  if (next?.competitions?.[0] && !nextStatus?.completed && nextStatus?.state !== "post") {
     nextGame = competitionChip(next.competitions[0], teamId);
     if (nextGame) nextGame.when = fmtWhen(next.date) ?? nextGame.when;
   }
