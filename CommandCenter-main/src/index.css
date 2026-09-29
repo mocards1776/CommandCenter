@@ -1553,13 +1553,14 @@ mark.rss-hl {
   padding-right: 0.5rem;
 }
 /* Stacked heads break early and ride one word a line, as in a column head.
-   Capped at four lines so the head cannot crowd its agate box out of the
-   column and leave the box clipped against the band below. */
+   Sized so five lines of a wire headline and the agate box beneath it both
+   clear the band: a larger face fits four lines and ellipsises the rest,
+   which reads worse than setting the whole head a shade smaller. */
 .wsj-stack .wsj-hl {
-  font-size: clamp(15px, 1.7vw, 24px);
-  line-height: 1.03;
+  font-size: clamp(14px, 1.45vw, 21px);
+  line-height: 1.04;
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
