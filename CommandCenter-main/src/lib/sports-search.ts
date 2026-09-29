@@ -123,6 +123,7 @@ function playerPathForEspn(item: EspnSearchItem): string | null {
   if (item.type !== "player" || !item.id) return null;
   const league = (item.league ?? "").toLowerCase();
   if (league === "nfl") return `/sports/nfl/player/${item.id}`;
+  if (league === "nhl") return `/sports/nhl/player/${item.id}`;
   if (league === "college-football") return `/sports/cfb/player/${item.id}`;
   if (league === "mlb") return null;
   if ((item.sport ?? "").toLowerCase() === "golf") return `/sports/golf/player/${item.id}`;
@@ -133,13 +134,13 @@ function teamPathForEspn(item: EspnSearchItem): string | null {
   if (item.type !== "team" || !item.id) return null;
   const league = (item.league ?? "").toLowerCase();
   if (league === "nfl") return `/sports/nfl/team/${item.id}`;
+  if (league === "nhl") return `/sports/nhl/team/${item.id}`;
   if (league === "mlb") {
     const mlbId = mlbTeamIdFromEspnId(item.id);
     if (mlbId != null) return teamPagePath(mlbId);
   }
   // Dedicated CFB team home (schedule / coaches / roster) — not the board drawer.
   if (league === "college-football") return `/sports/cfb/team/${item.id}`;
-  if (league === "nhl") return `/sports?solo=1&team=nhl-${item.id}`;
   if (league.includes(".")) return `/sports?solo=1&team=${league}-${item.id}`;
   return null;
 }

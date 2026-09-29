@@ -2,6 +2,13 @@
 
 ---
 
+## NHL hub, team, game, and player pages — September 29, 2026
+
+- NHL now has the same kind of pages as the other leagues: a scoreboard hub with standings and scoring leaders, a team home (roster, schedule, skater and goalie stats), a game page (period scores, scoring plays, box score), and a player page (season, career, game log, news).
+- Search, the Blues board, yesterday’s recap, and the newspaper open those pages instead of ESPN.
+
+---
+
 ## Reading: similar books by genre, tags required to finish — September 29, 2026
 
 - **Find similar** was a catalog search for the book’s own title, so a legal thriller only came back as itself (or as nothing). It now searches by tags, the genre named in the blurb, or catalog subjects — *Proof* surfaces other legal thrillers — and falls back to AI when the catalogs have no genre to go on.

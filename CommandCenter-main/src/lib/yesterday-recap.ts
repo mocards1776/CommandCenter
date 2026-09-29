@@ -108,7 +108,7 @@ function boardSportsForFavorites(favs: SportsFavorite[]): BoardSport[] {
         sport: "nhl",
         label: "NHL",
         path: "hockey/nhl",
-        hrefFor: (id) => `https://www.espn.com/nhl/game/_/gameId/${id}`,
+        hrefFor: (id) => `/sports/nhl/game/${id}`,
       });
     } else if (p.startsWith("basketball/mens-college-basketball/")) {
       add({
