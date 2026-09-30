@@ -2,8 +2,11 @@
 
 import { espnGet, type SportsFavorite, type TeamDetail, type TeamSnapshot } from "./sports";
 import type { RssFeedItem } from "./rss";
+import { favoriteDeskWeight } from "./newspaper";
 import type { WireGame } from "./newspaper-wire";
 import type { YesterdayRecapGame } from "./yesterday-recap";
+
+export { favoriteDeskWeight };
 
 export function favoriteTeamHref(fav: SportsFavorite): string {
   const nfl = /football\/nfl\/teams\/(\d+)/.exec(fav.espnPath);
@@ -48,18 +51,28 @@ export function playerHref(sportPath: string, playerId: string): string | null {
   return null;
 }
 
+/** Real club RSS plus synthetic game-wrap boards for the Times desk. */
 export function wrapFeedsForFavorites(favs: SportsFavorite[]): string[] {
   const urls = new Set<string>();
   for (const f of favs) {
     if (f.kind !== "team") continue;
     const p = f.espnPath;
     if (p.startsWith("baseball/mlb/")) {
-      if (f.key === "mlb-stl" || f.mlbTeamId === 138) urls.add("synthetic:cardinals-wraps");
-      else urls.add("synthetic:mlb-wraps");
+      if (f.key === "mlb-stl" || f.mlbTeamId === 138) {
+        urls.add("synthetic:cardinals-wraps");
+        // STL Today + Cardinals Wire — denser club copy than ESPN alone.
+        urls.add("https://rss.app/feeds/NY6044y6TPBMOdru.xml");
+        urls.add("https://rss.app/feeds/tdKZI96hgDCSMd6o.xml");
+      } else {
+        urls.add("synthetic:mlb-wraps");
+      }
     } else if (p.startsWith("football/nfl/")) {
       urls.add("synthetic:nfl-wraps");
     } else if (p.startsWith("football/college-football/")) {
       urls.add("synthetic:cfb-wraps");
+      if (f.key === "cfb-mizzou") {
+        urls.add("https://rss.app/feeds/nG7WGKJTs5LOQjxd.xml"); // Missouri Scout
+      }
     } else if (p.startsWith("hockey/nhl/")) {
       urls.add("synthetic:nhl-wraps");
     } else if (p.startsWith("soccer/")) {
@@ -112,6 +125,13 @@ function strongNames(fav: SportsFavorite): string[] {
 /** A wrap feed only names clubs in that feed's sport. */
 function feedAllowsFavorite(feedUrl: string, fav: SportsFavorite): boolean {
   const path = fav.espnPath;
+  // Named club RSS (not the synthetic league boards).
+  if (feedUrl.includes("NY6044y6TPBMOdru") || feedUrl.includes("tdKZI96hgDCSMd6o")) {
+    return fav.key === "mlb-stl";
+  }
+  if (feedUrl.includes("nG7WGKJTs5LOQjxd")) {
+    return fav.key === "cfb-mizzou" || fav.key === "cbb-mizzou";
+  }
   if (feedUrl.includes("cardinals-wraps")) return fav.key === "mlb-stl";
   if (feedUrl.includes("mlb")) return path.startsWith("baseball/mlb/");
   if (feedUrl.includes("nfl")) return path.startsWith("football/nfl/");
@@ -161,6 +181,9 @@ export function matchWrapToFavorites(
   }
 
   if (!keys.length) return null;
+
+  // Home desk (Cardinals / Blues / Mizzou) wins when a wrap names two clubs.
+  keys.sort((a, b) => favoriteDeskWeight(b) - favoriteDeskWeight(a));
 
   const gameId = extractGameId(item.link) ?? extractGameId(item.id);
   const primary = favs.find((f) => f.key === keys[0]);
@@ -388,7 +411,8 @@ export function buildTeamInfoboxes(
         recentLines,
       } satisfies TeamInfobox;
     })
-    .filter((x): x is TeamInfobox => x != null);
+    .filter((x): x is TeamInfobox => x != null)
+    .sort((a, b) => favoriteDeskWeight(b.fav.key) - favoriteDeskWeight(a.fav.key));
 }
 
 const LEAGUE_ROOTS = [
@@ -613,7 +637,8 @@ export function wireStoryCards(opts: {
   const favBy = new Map(favs.map((f) => [f.key, f]));
 
   return games.map((g) => {
-    const favKey = g.favoriteKeys[0] ?? "";
+    const favKey =
+      [...g.favoriteKeys].sort((a, b) => favoriteDeskWeight(b) - favoriteDeskWeight(a))[0] ?? "";
     const fav = favBy.get(favKey) ?? null;
     const detail = details.find((d) => d.fav.key === favKey)?.detail ?? null;
     const scored = g.away.score != null && g.home.score != null;

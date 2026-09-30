@@ -12,6 +12,7 @@ import {
   editionCoversRecent,
   editionCoversResult,
   editionNewsDay,
+  favoriteDeskWeight,
   instantDay,
   isResultCopy,
 } from "./newspaper.ts";
@@ -200,7 +201,7 @@ export function isRecapStory(card: GameWrapCard): boolean {
   });
 }
 
-/** Last night's result outranks a feature; newer copy outranks older copy. */
+/** Last night's result outranks a feature; home clubs outrank the rest. */
 function storyRank(card: GameWrapCard, edition: string): number {
   const day = card.when ? instantDay(card.when) : null;
   let score = 0;
@@ -210,6 +211,8 @@ function storyRank(card: GameWrapCard, edition: string): number {
   if (card.id.startsWith("league-")) score += 10;
   if (isRecapStory(card)) score += 20;
   if ((card.body?.length ?? 0) >= 400) score += 15;
+  // Cardinals / Blues / Mizzou lead Section A; Lions, Chiefs, soccer follow.
+  if (card.favoriteKey) score += favoriteDeskWeight(card.favoriteKey);
   return score;
 }
 
@@ -379,10 +382,16 @@ function favoritePages(
   ];
 
   // Pad to the minimum with deep club-form pages (standings + slate).
-  const formChunks = chunkClubs(clubs, FORM_CLUBS_PER_PAGE);
+  // Home clubs (Cardinals / Blues / Mizzou) before Lions, Chiefs, soccer.
+  const orderedClubs = [...clubs].sort(
+    (a, b) => favoriteDeskWeight(b.key) - favoriteDeskWeight(a.key),
+  );
+  const formChunks = chunkClubs(orderedClubs, FORM_CLUBS_PER_PAGE);
   let formIdx = 0;
   while (pages.length < MIN_SECTION_PAGES) {
-    const chunk = formChunks[formIdx % Math.max(1, formChunks.length)] ?? clubs.slice(0, FORM_CLUBS_PER_PAGE);
+    const chunk =
+      formChunks[formIdx % Math.max(1, formChunks.length)] ??
+      orderedClubs.slice(0, FORM_CLUBS_PER_PAGE);
     const pageN = pages.length + 1;
     pages.push({
       kind: "favorites-form",
@@ -391,10 +400,10 @@ function favoritePages(
       sectionTitle: "Favorite Teams",
       sectionPage: pageN,
       sectionCount: 0,
-      clubs: chunk.length ? chunk : clubs,
+      clubs: chunk.length ? chunk : orderedClubs,
     });
     formIdx += 1;
-    if (!clubs.length && formIdx > MIN_SECTION_PAGES) break;
+    if (!orderedClubs.length && formIdx > MIN_SECTION_PAGES) break;
   }
 
   return {

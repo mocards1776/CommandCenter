@@ -3,13 +3,30 @@
  * from CommandCenter-main/.
  */
 import type { GameWrapCard } from "./newspaper-sports.ts";
-import { editionCovers, editionCoversResult, isResultCopy } from "./newspaper.ts";
+import {
+  editionCovers,
+  editionCoversResult,
+  favoriteDeskWeight,
+  isResultCopy,
+} from "./newspaper.ts";
 import {
   buildEdition,
   isDeskStory,
   MIN_SECTION_PAGES,
   type ClubDesk,
 } from "./newspaper-sections.ts";
+
+assert(favoriteDeskWeight("mlb-stl") === 100, "Cardinals are home desk");
+assert(favoriteDeskWeight("nhl-stl") === 100, "Blues are home desk");
+assert(favoriteDeskWeight("cfb-mizzou") === 100, "Mizzou is home desk");
+assert(
+  favoriteDeskWeight("nfl-det") > favoriteDeskWeight("nfl-kc"),
+  "Lions outrank Chiefs",
+);
+assert(
+  favoriteDeskWeight("nfl-kc") > favoriteDeskWeight("eng-arsenal"),
+  "Chiefs outrank soccer",
+);
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg);
@@ -158,10 +175,15 @@ assert(folios.includes("NFL4") && folios.includes("NFL5"), "NFL has schedule + f
 assert(folios.includes("MLB1") && folios.includes("MLB5"), "MLB has a full five-page desk");
 
 const a = paper.pages[0];
-assert(a?.kind === "favorites-front" && a.lead?.id === "news-cards", "the newest story leads, not Sunday's score");
+assert(a?.kind === "favorites-front" && a.lead?.id === "news-cards", "Cardinals desk weight leads Section A over Chiefs copy");
 assert(
   a?.kind === "favorites-front" && a.news.some((story) => story.id === "news-injury"),
   "Tuesday's Chiefs story still runs",
+);
+const formPage = paper.pages.find((page) => page.kind === "favorites-form");
+assert(
+  formPage?.kind === "favorites-form" && formPage.clubs[0]?.key === "mlb-stl",
+  "club-form pages list Cardinals before Chiefs",
 );
 assert(a?.kind === "favorites-front" && a.news.every((story) => story.id !== "wire-nfl-weekend"), "weekend score stays off A1 fresh list");
 assert(a?.kind === "favorites-front" && a.jumpFolio === "A2", `the front jumps to clubs desk, got ${a.jumpFolio}`);
@@ -273,6 +295,48 @@ assert(
   tuesdayA?.kind === "favorites-front" &&
     tuesdayA.news.every((story) => story.id !== "news-lions-sunday"),
   "Sunday's rewrite does not lead Tuesday's favorites front",
+);
+
+// Same-day club notes: Lions copy outranks Chiefs on the favorites desk.
+const lionsNote = card({
+  id: "news-lions-note",
+  headline: "Lions elevate a practice-squad receiver",
+  favoriteKey: "nfl-det",
+  followed: true,
+  teamName: "Lions",
+  when: "2026-09-30T16:00:00Z",
+  body: "Detroit signed the receiver and will see if he sticks on game day. ".repeat(2),
+});
+const chiefsNote = card({
+  id: "news-chiefs-note",
+  headline: "Chiefs shuffle the practice report",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  teamName: "Chiefs",
+  when: "2026-09-30T16:05:00Z",
+  body: "Kansas City listed two starters as limited for Wednesday. ".repeat(2),
+});
+const lionsClub: ClubDesk = {
+  key: "nfl-det",
+  shortName: "Lions",
+  logo: null,
+  leaguePath: "football/nfl",
+  record: "3-0",
+  standing: "1st in NFC North",
+  division: [],
+  stats: [],
+  leaders: [],
+  upcoming: [],
+};
+const deskOrder = buildEdition({
+  stories: [chiefsNote, lionsNote],
+  clubs: [chiefs, lionsClub],
+  edition,
+});
+const deskFront = deskOrder.pages[0];
+assert(
+  deskFront?.kind === "favorites-front" && deskFront.lead?.id === "news-lions-note",
+  "Lions lead Chiefs when both filed the same afternoon",
 );
 
 console.log("newspaper-sections ok");

@@ -215,3 +215,19 @@ export function moneyCompact(n: number): string {
     maximumFractionDigits: 0,
   }).format(n);
 }
+
+/**
+ * How hard Section A should push a club. Home desk first, then Lions, Chiefs,
+ * then soccer — matches the paper's real interest order.
+ */
+export function favoriteDeskWeight(key: string): number {
+  if (key === "mlb-stl") return 100;
+  if (key === "nhl-stl") return 100;
+  if (key === "cfb-mizzou" || key === "cbb-mizzou") return 100;
+  if (key === "nfl-det") return 70;
+  if (key === "nfl-kc") return 50;
+  if (key === "cfb-missouri-state" || key === "cbb-missouri-state") return 40;
+  if (key === "eng-arsenal" || key === "eng-wrexham" || key === "eng-wolves") return 25;
+  if (key.startsWith("eng-") || key.includes("soccer")) return 20;
+  return 10;
+}
