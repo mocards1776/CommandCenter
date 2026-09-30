@@ -2446,25 +2446,41 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
   } = { pts: null, gf: null, ga: null, gd: null, played: null, rank: null };
   try {
     const root = espnSportRoot(fav.espnPath);
-    const res = await fetch(`https://site.api.espn.com/apis/v2/sports/${root}/standings`, {
-      headers: { Accept: "application/json" },
-    });
-    if (res.ok) {
-      const d = (await res.json()) as {
-        children?: {
-          name?: string;
-          standings?: {
-            entries?: {
-              team?: { id?: string; displayName?: string; shortDisplayName?: string };
-              stats?: { name?: string; displayValue?: string }[];
-            }[];
-          };
+    type StandingNode = {
+      name?: string;
+      children?: StandingNode[];
+      standings?: {
+        entries?: {
+          team?: { id?: string; displayName?: string; shortDisplayName?: string };
+          stats?: { name?: string; displayValue?: string }[];
         }[];
       };
-      for (const child of d.children ?? []) {
-        const entries = child.standings?.entries ?? [];
-        const mine = entries.some((e) => String(e.team?.id) === String(espnTeamId));
-        if (!mine) continue;
+    };
+    const urls = [
+      `https://site.api.espn.com/apis/v2/sports/${root}/standings?level=3`,
+      `https://site.web.api.espn.com/apis/v2/sports/${root}/standings?level=3`,
+    ];
+    let d: { children?: StandingNode[] } | null = null;
+    for (const url of urls) {
+      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!res.ok) continue;
+      d = (await res.json()) as { children?: StandingNode[] };
+      break;
+    }
+    if (d) {
+      const groups: NonNullable<StandingNode["standings"]>["entries"][] = [];
+      const walk = (nodes: StandingNode[]) => {
+        for (const node of nodes) {
+          const entries = node.standings?.entries ?? [];
+          if (entries.some((e) => String(e.team?.id) === String(espnTeamId))) groups.push(entries);
+          if (node.children?.length) walk(node.children);
+        }
+      };
+      walk(d.children ?? []);
+      // Division (4) over conference (16) over a full league table when both exist.
+      groups.sort((a, b) => (a?.length ?? 0) - (b?.length ?? 0));
+      const entries = groups[0] ?? [];
+      if (entries.length) {
         for (const e of entries) {
           const stat = (n: string) => e.stats?.find((s) => s.name === n)?.displayValue ?? "";
           const isMe = String(e.team?.id) === String(espnTeamId);
@@ -2499,7 +2515,6 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
             };
           }
         }
-        break;
       }
     }
   } catch {
@@ -2598,6 +2613,11 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
         played: myTable.played,
       };
     }
+  } else if (myTable.gf || myTable.ga || myTable.gd) {
+    const football = /football/i.test(fav.espnPath);
+    if (myTable.gf) teamFacts.push({ label: football ? "PF" : "GF", value: myTable.gf });
+    if (myTable.ga) teamFacts.push({ label: football ? "PA" : "GA", value: myTable.ga });
+    if (myTable.gd) teamFacts.push({ label: football ? "Diff" : "GD", value: myTable.gd });
   }
 
   return {

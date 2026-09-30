@@ -3,8 +3,8 @@
  * from CommandCenter-main/.
  */
 import type { GameWrapCard } from "./newspaper-sports.ts";
-import type { WireGame } from "./newspaper-wire.ts";
-import { buildEdition, isRecapCard, sportSectionId } from "./newspaper-sections.ts";
+import { editionCovers, editionCoversResult, isResultCopy } from "./newspaper.ts";
+import { buildEdition, isDeskStory, type ClubDesk } from "./newspaper-sections.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg);
@@ -15,8 +15,8 @@ function card(partial: Partial<GameWrapCard> & Pick<GameWrapCard, "id" | "headli
     favoriteKey: "",
     teamName: "",
     teamHref: "/",
-    sportLabel: "MLB",
-    leaguePath: "baseball/mlb",
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
     dek: null,
     body: null,
     scoreLine: null,
@@ -34,253 +34,184 @@ function card(partial: Partial<GameWrapCard> & Pick<GameWrapCard, "id" | "headli
   };
 }
 
-function game(partial: Partial<WireGame> & Pick<WireGame, "id">): WireGame {
-  return {
-    eventId: partial.id,
-    path: "baseball/mlb",
-    league: "MLB",
-    sportLabel: "MLB",
-    round: null,
-    series: null,
-    postseason: false,
-    preseason: false,
-    final: true,
-    live: false,
-    statusDetail: "Final",
-    startedAt: "2026-09-29T23:00:00Z",
-    day: "2026-09-29",
-    away: {
-      name: "Away",
-      short: "Away",
-      abbrev: "AWY",
-      logo: null,
-      score: "2",
-      winner: false,
-      record: "80-80",
-      seed: null,
-    },
-    home: {
-      name: "Home",
-      short: "Home",
-      abbrev: "HOM",
-      logo: null,
-      score: "4",
-      winner: true,
-      record: "90-70",
-      seed: null,
-    },
-    headline: partial.id,
-    body: null,
-    dateline: null,
-    photo: null,
-    href: "/",
-    leaders: [],
-    favoriteKeys: [],
-    ...partial,
-  };
-}
+const edition = "2026-09-30";
+
+assert(!editionCovers("2026-09-27T20:00:00Z", edition), "Sunday afternoon is not Wednesday's news");
+assert(!editionCovers("2026-09-28T00:30:00Z", edition), "Sunday night football is a previous paper");
+assert(editionCovers("2026-09-29T23:30:00Z", edition), "Tuesday night belongs in Wednesday's edition");
+assert(!editionCovers("Sun, Sep 27", edition), "a display string is not a dateline");
+assert(
+  !editionCoversResult("2026-09-28T21:16:48Z", "2026-09-29"),
+  "a Monday afternoon rewrite of Sunday is not Tuesday's result",
+);
+assert(
+  editionCoversResult("2026-09-29T03:30:00Z", "2026-09-29"),
+  "Monday night's final is Tuesday's result",
+);
+assert(
+  !isResultCopy({ headline: "Chiefs list Kelce as questionable for Sunday" }),
+  "an injury note is news",
+);
+assert(
+  isResultCopy({ headline: "Lions post 31 points for record-setting third time to start 2026" }),
+  "a points recap is a result",
+);
+assert(
+  isResultCopy({ headline: "Chiefs' Mahomes perfect on play-action passes in win vs. Dolphins" }),
+  "a win story is a result",
+);
+
+const weekend = card({
+  id: "wire-nfl-weekend",
+  headline: "Chiefs beat Dolphins",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  teamName: "Chiefs",
+  status: "Final",
+  scoreLine: "KC 24 · MIA 10",
+  when: "2026-09-27T20:00:00Z",
+  body: "Kansas City scored twice in the first half and then ran the clock. ".repeat(3),
+});
+
+const tuesday = card({
+  id: "news-injury",
+  headline: "Chiefs list Kelce as questionable for Sunday",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  teamName: "Chiefs",
+  when: "2026-09-29T18:00:00Z",
+  dek: "Kansas City will not decide until Friday.",
+  body: "Kansas City listed Travis Kelce as questionable with a knee. The club plays Sunday. ".repeat(2),
+});
+
+const scheduled = card({
+  id: "wire-nfl-next",
+  headline: "Chiefs at Ravens",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  status: "7:20 PM ET",
+  scoreLine: "KC at BAL",
+  when: "2026-10-05T23:20:00Z",
+});
 
 const cardinals = card({
-  id: "wire-mlb-stl",
-  gameId: "g-stl",
-  headline: "Cardinals fall in ten",
+  id: "news-cards",
+  headline: "Cardinals add a bat for the winter",
   favoriteKey: "mlb-stl",
   followed: true,
   teamName: "Cardinals",
   sportLabel: "MLB",
   leaguePath: "baseball/mlb",
-  status: "Final",
-  scoreLine: "CHC 3  ·  STL 2",
-  body: "A long night at Busch ended with a walk-off that was not theirs. ".repeat(4),
+  when: "2026-09-30T15:00:00Z",
+  body: "St. Louis spent the offseason meeting on a corner bat. ".repeat(3),
 });
 
-const otherFinal = card({
-  id: "wire-mlb-nyy",
-  gameId: "g-nyy",
-  headline: "Yankees drop the nightcap",
-  sportLabel: "MLB",
+assert(!isDeskStory(scheduled), "a future kickoff is a schedule line, not an article");
+assert(isDeskStory(tuesday), "a story that names the club is copy");
+assert(isDeskStory(weekend), "a final is copy when the date says it is");
+
+const chiefs: ClubDesk = {
+  key: "nfl-kc",
+  shortName: "Chiefs",
+  leaguePath: "football/nfl",
+  record: "2-1",
+  standing: "1st in AFC West",
+  division: [
+    { rank: "1", team: "Chiefs", record: "2-1", gb: "-", me: true },
+    { rank: "2", team: "Chargers", record: "2-1", gb: "-", me: false },
+  ],
+  stats: [{ label: "PF", value: "78" }],
+  leaders: [{ name: "Mahomes", line: "8 TD", href: "/sports/nfl/player/1" }],
+  upcoming: [{ id: "kc-next", label: "at Ravens", when: "Sun 7:20 PM", detail: "Week 5" }],
+};
+
+const cards: ClubDesk = {
+  key: "mlb-stl",
+  shortName: "Cardinals",
   leaguePath: "baseball/mlb",
-  status: "Final",
-  scoreLine: "BOS 5  ·  NYY 1",
-  body: "Boston put the game away early and the bullpen never warmed. ".repeat(3),
+  record: "78-84",
+  standing: "3rd in NL Central",
+  division: [{ rank: "3", team: "Cardinals", record: "78-84", gb: "8", me: true }],
+  stats: [{ label: "AVG", value: ".248" }],
+  leaders: [],
+  upcoming: [],
+};
+
+const paper = buildEdition({
+  stories: [weekend, tuesday, scheduled, cardinals],
+  clubs: [chiefs, cards],
+  edition,
 });
 
-const scheduled = card({
-  id: "wire-mlb-lad",
-  gameId: "g-lad",
-  headline: "Dodgers at Padres",
-  sportLabel: "MLB",
-  leaguePath: "baseball/mlb",
-  status: "7:10 PM ET",
-  scoreLine: "LAD at SD",
-});
+const folios = paper.pages.map((page) => page.folio);
+assert(folios[0] === "A1", "section A opens the paper");
+assert(!folios.some((folio) => folio.startsWith("A") && folio !== "A1"), "section A does not reprint the stories");
+assert(folios.includes("NFL1") && folios.includes("MLB1"), "each sport still has a section");
 
-const live = card({
-  id: "wire-mlb-bos",
-  gameId: "g-bos",
-  headline: "Red Sox at Yankees",
-  sportLabel: "MLB",
-  leaguePath: "baseball/mlb",
-  status: "Top 2nd",
-  scoreLine: "BOS 0 · NYY 0",
-});
+const a = paper.pages[0];
+assert(a?.kind === "favorites-front" && a.lead?.id === "news-cards", "the newest story leads, not Sunday's score");
+assert(
+  a?.kind === "favorites-front" && a.news.some((story) => story.id === "news-injury"),
+  "Tuesday's Chiefs story still runs",
+);
+assert(a?.kind === "favorites-front" && a.news.every((story) => story.id !== "wire-nfl-weekend"), "weekend score stays off A1");
+assert(a?.kind === "favorites-front" && a.jumpFolio?.startsWith("MLB"), `the front jumps into the sport, got ${a.jumpFolio}`);
 
-const chiefs = card({
-  id: "wire-nfl-kc",
-  gameId: "g-kc",
-  headline: "Chiefs hold on",
+const nfl = paper.pages.find((page) => page.folio === "NFL1");
+assert(nfl?.kind === "sport-front", "NFL1 is the football desk");
+if (nfl?.kind === "sport-front") {
+  assert(nfl.upcoming.some((game) => game.label === "at Ravens"), "the section carries the upcoming schedule");
+  assert(!nfl.upcoming.some((game) => /dolphins/i.test(game.label)), "last weekend is not the schedule");
+  assert(nfl.clubs[0]?.division.some((row) => row.me && row.team === "Chiefs"), "standings mark your club");
+  assert(nfl.clubs[0]?.stats.some((stat) => stat.label === "PF"), "season stats run with the table");
+  assert(nfl.articles.every((article) => article.card.id !== "wire-nfl-weekend"), "Sunday's score is not an NFL story");
+  assert(nfl.articles.some((article) => article.card.id === "news-injury"), "Tuesday's article is the football news");
+}
+
+const mlb = paper.pages.find((page) => page.folio === "MLB1");
+assert(mlb?.kind === "sport-front" && mlb.articles.some((article) => article.card.id === "news-cards"), "baseball keeps its own news");
+
+const sundayRewrite = card({
+  id: "news-lions-sunday",
+  headline: "Lions post 31 points for record-setting third time to start 2026",
+  favoriteKey: "nfl-det",
+  followed: true,
+  teamName: "Lions",
+  when: "2026-09-28T21:16:48Z",
+  body: "Detroit put up another 30 on Sunday evening and the offense never looked back. ".repeat(2),
+});
+const mondayNews = card({
+  id: "news-kelce",
+  headline: "Chiefs list Kelce as questionable for Sunday",
   favoriteKey: "nfl-kc",
   followed: true,
   teamName: "Chiefs",
-  sportLabel: "NFL",
-  leaguePath: "football/nfl",
+  when: "2026-09-28T20:26:00Z",
+  body: "Kansas City will make the call on Friday. Travis Kelce is the only name on the report. ".repeat(2),
+});
+const mondayNight = card({
+  id: "wire-nfl-mnf",
+  headline: "Chiefs beat the Ravens on Monday night",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  teamName: "Chiefs",
   status: "Final",
-  scoreLine: "KC 27  ·  LV 17",
-  body: "Kansas City's last drive used the clock and left no time. ".repeat(3),
+  scoreLine: "KC 27 · BAL 20",
+  when: "2026-09-29T03:30:00Z",
+  body: "Kansas City closed it in the fourth quarter. ".repeat(3),
 });
-
-const buriedPlayoff = card({
-  id: "wire-mlb-nlcs",
-  gameId: "g-nlcs",
-  headline: "Brewers take the series opener",
-  sportLabel: "MLB",
-  leaguePath: "baseball/mlb",
-  status: "Final",
-  postseason: true,
-  scoreLine: "MIL 4  ·  LAD 2",
-  body: "The National League series started with a complete game. ".repeat(3),
+const tuesdayPaper = buildEdition({
+  stories: [sundayRewrite, mondayNews, mondayNight],
+  clubs: [chiefs],
+  edition: "2026-09-29",
 });
-
-const wrongSport = card({
-  id: "wrap-seahawks",
-  gameId: "not-on-the-board",
-  headline: "Seahawks roll past Cardinals",
-  sportLabel: "MLB",
-  leaguePath: "baseball/mlb",
-  status: "Final",
-  scoreLine: "SEA 31 · ARI 7",
-  body: "Drew Lock threw three touchdowns and the Seahawks never trailed. ".repeat(3),
-});
-
-assert(sportSectionId("baseball/mlb").code === "MLB", "MLB code");
-assert(sportSectionId("soccer/eng.1").code === "EPL", "EPL code");
-assert(sportSectionId("soccer/eng.2").title === "EFL Championship", "EFL title");
-assert(!isRecapCard(scheduled), "a start time is not a recap");
-assert(!isRecapCard(live), "a game in progress is not a recap yet");
-assert(isRecapCard(otherFinal), "a final is a recap");
-
-const edition = buildEdition({
-  stories: [cardinals, otherFinal, scheduled, live, chiefs, buriedPlayoff, wrongSport],
-  games: [
-    game({
-      id: "g-stl",
-      favoriteKeys: ["mlb-stl"],
-      startedAt: "2026-09-29T23:10:00Z",
-      leaders: [{ name: "Winn", line: "2-4", href: "/sports/mlb/player/1" }],
-    }),
-    game({ id: "g-nyy", startedAt: "2026-09-29T23:05:00Z" }),
-    game({
-      id: "g-lad",
-      final: false,
-      statusDetail: "7:10 PM ET",
-      startedAt: "2026-09-30T00:10:00Z",
-      day: "2026-09-30",
-      away: {
-        name: "Dodgers",
-        short: "Dodgers",
-        abbrev: "LAD",
-        logo: null,
-        score: null,
-        winner: false,
-        record: null,
-        seed: null,
-      },
-      home: {
-        name: "Padres",
-        short: "Padres",
-        abbrev: "SD",
-        logo: null,
-        score: null,
-        winner: false,
-        record: null,
-        seed: null,
-      },
-    }),
-    game({
-      id: "g-kc",
-      path: "football/nfl",
-      league: "NFL",
-      sportLabel: "NFL",
-      favoriteKeys: ["nfl-kc"],
-      day: "2026-09-28",
-    }),
-    game({ id: "g-nlcs", postseason: true, startedAt: "2026-09-29T22:00:00Z" }),
-    game({
-      id: "g-bos",
-      final: false,
-      live: true,
-      statusDetail: "Top 2nd",
-      startedAt: "2026-09-29T23:40:00Z",
-    }),
-  ],
-});
-
-const folios = edition.pages.map((p) => p.folio);
-assert(folios[0] === "A1", `section A leads, got ${folios.join(",")}`);
-assert(folios.includes("MLB1"), "MLB section exists");
-assert(folios.includes("NFL1"), "NFL section exists");
-assert(folios.indexOf("MLB1") < folios.indexOf("NFL1"), "MLB prints before NFL");
-assert(!folios.some((f) => f.startsWith("A") && f !== "A1" && edition.pages.find((p) => p.folio === f)?.kind === "sport-front"), "A is only favorites");
-
-const aFront = edition.pages[0]!;
-assert(aFront.kind === "favorites-front" && aFront.sectionTitle === "Favorite Teams", "A1 is favorite teams");
-
-const favoriteIds = new Set(Object.keys(edition.favoriteFolioByStory));
-assert(favoriteIds.has("wire-mlb-stl") && favoriteIds.has("wire-nfl-kc"), "favorites are filed in A");
-assert(!favoriteIds.has("wire-mlb-nyy"), "other clubs stay out of section A");
-assert(
-  !favoriteIds.has("wrap-seahawks"),
-  "a mis-filed football clip is not a baseball recap in section A",
-);
-
-const mlb1 = edition.pages.find((p) => p.folio === "MLB1");
-assert(mlb1?.kind === "sport-front", "MLB1 is the sport front");
-if (mlb1?.kind === "sport-front") {
-  assert(mlb1.games.length === 5, `MLB schedule has every game, got ${mlb1.games.length}`);
-  const order = mlb1.games.map((g) => g.id);
-  assert(
-    order.indexOf("g-nlcs") < order.indexOf("g-nyy") && order.indexOf("g-nyy") < order.indexOf("g-stl"),
-    `schedule is chronological, got ${order.join(",")}`,
-  );
-  assert(mlb1.spansDays, "a two-day board is marked");
-  assert(mlb1.leaders.some((l) => l.name === "Winn"), "game leaders land in stats");
-  const recapIds = mlb1.recaps.map((r) => r.card.id);
-  assert(
-    recapIds.includes("wire-mlb-stl") && recapIds.includes("wire-mlb-nyy") && recapIds.includes("wire-mlb-nlcs"),
-    "every final is on MLB1",
-  );
-  assert(!recapIds.includes("wire-mlb-lad"), "the scheduled game is not a recap");
-  assert(!recapIds.includes("wire-mlb-bos"), "the live game stays on the schedule");
-  assert(!recapIds.includes("wrap-seahawks"), "an off-board story does not join the MLB recaps");
-  assert(recapIds.indexOf("wire-mlb-nlcs") === 1, "postseason is lifted onto the board");
-  assert(mlb1.recaps.every((r) => r.folio.startsWith("MLB") && r.folio !== "MLB1"), "recaps jump inside the section");
+const tuesdayNfl = tuesdayPaper.pages.find((page) => page.folio === "NFL1");
+assert(tuesdayNfl?.kind === "sport-front", "Tuesday still opens a football section");
+if (tuesdayNfl?.kind === "sport-front") {
+  const ids = tuesdayNfl.articles.map((article) => article.card.id);
+  assert(!ids.includes("news-lions-sunday"), "Sunday's rewrite does not run on Tuesday");
+  assert(ids.includes("news-kelce"), "Monday's injury note is Tuesday's news");
+  assert(ids.includes("wire-nfl-mnf"), "Monday night's final is Tuesday's result");
 }
-
-const mlbInside = edition.pages.filter((p) => p.kind === "sport-inside" && p.section === "MLB");
-const insideIds = mlbInside.flatMap((p) =>
-  p.kind === "sport-inside" ? [p.primary.id, p.secondary?.id].filter(Boolean) : [],
-);
-assert(
-  insideIds.includes("wire-mlb-stl") && insideIds.includes("wire-mlb-nyy") && insideIds.includes("wire-mlb-nlcs"),
-  "each MLB final gets a full recap",
-);
-assert(!insideIds.includes("wire-mlb-lad"), "scheduled game has no recap column");
-assert(!insideIds.includes("wrap-seahawks"), "off-board story has no MLB column");
-
-const nfl1 = edition.pages.find((p) => p.folio === "NFL1");
-assert(nfl1?.kind === "sport-front" && nfl1.games.length === 1, "NFL keeps its own board");
-
-const quiet = buildEdition({ stories: [], games: [] });
-assert(quiet.pages.length === 1 && quiet.pages[0]?.folio === "A1", "an empty wire still opens section A");
 
 console.log("newspaper-sections ok");

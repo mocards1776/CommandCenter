@@ -108,9 +108,8 @@ export type WireLeague = {
   /** espn.com slug for recap links. */
   slug: string;
   /**
-   * How many days back from the edition's news day to scan. Daily leagues need
-   * one; football plays once a week, so a Tuesday paper has to reach back to
-   * Saturday to have anything at all to print.
+   * How many days back from the edition's news day to scan. One day is the
+   * night the paper covers. A later edition does not reprint the weekend.
    */
   lookback: number;
   /** Internal game route builder, when the app has a page for it. */
@@ -139,7 +138,7 @@ const LEAGUES: WireLeague[] = [
     league: "NFL",
     label: "Football",
     slug: "nfl",
-    lookback: 4,
+    lookback: 1,
     gameHref: (id) => `/sports/nfl/game/${id}`,
   },
   {
@@ -147,7 +146,7 @@ const LEAGUES: WireLeague[] = [
     league: "CFB",
     label: "College football",
     slug: "college-football",
-    lookback: 4,
+    lookback: 1,
     gameHref: (id) => `/sports/cfb/game/${id}`,
   },
   {
@@ -155,7 +154,7 @@ const LEAGUES: WireLeague[] = [
     league: "CBB",
     label: "College basketball",
     slug: "mens-college-basketball",
-    lookback: 2,
+    lookback: 1,
   },
 ];
 
@@ -182,7 +181,7 @@ export function wireLeaguesForFavorites(favs: SportsFavorite[]): WireLeague[] {
         league: fav.league || "Soccer",
         label: "Soccer",
         slug: "soccer",
-        lookback: 3,
+        lookback: 1,
         gameHref: (id) => `/sports/soccer/game/${id}`,
       });
     }
@@ -353,7 +352,7 @@ function shiftIso(iso: string, days: number): string {
 
 /**
  * Pull the edition's boards: its own date plus each league's lookback window, so
- * late finals, the evening's slate, and the weekend's football all make the paper.
+ * late finals and the night this edition covers. Older slates stay in yesterday's paper.
  */
 export async function fetchNewspaperWire(opts: {
   favs: SportsFavorite[];

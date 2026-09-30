@@ -37,6 +37,84 @@ export function editionNewsDay(day = editionDay()): string {
   return shiftDay(day, -1);
 }
 
+/** Calendar day of an instant in Central time. Display strings are not dates. */
+export function instantDay(iso: string): string | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-CA", { timeZone: TZ });
+}
+
+/**
+ * Whether a timestamp belongs in this edition. That is the dateline itself or
+ * the night before it. Saturday's football is not Wednesday's news.
+ */
+export function editionCovers(iso: string | null | undefined, edition = editionDay()): boolean {
+  if (!iso) return false;
+  const day = instantDay(iso);
+  if (!day) return false;
+  return day === edition || day === editionNewsDay(edition);
+}
+
+function centralHourOf(iso: string): { day: string; hour: number } | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const day = d.toLocaleDateString("en-CA", { timeZone: TZ });
+  const hh = d.toLocaleString("en-US", {
+    timeZone: TZ,
+    hour: "2-digit",
+    hour12: false,
+  });
+  return { day, hour: Number(hh) % 24 };
+}
+
+/**
+ * A final belongs only in the edition that covers the night it was played:
+ * filed after 5 PM Central on the news day, through 10 AM Central on the
+ * dateline. A Monday afternoon rewrite of Sunday stays in Monday's paper.
+ */
+export function editionCoversResult(iso: string | null | undefined, edition = editionDay()): boolean {
+  if (!iso) return false;
+  const clock = centralHourOf(iso);
+  if (!clock) return false;
+  const news = editionNewsDay(edition);
+  if (clock.day === news && clock.hour >= 17) return true;
+  if (clock.day === edition && clock.hour < 10) return true;
+  return false;
+}
+
+/**
+ * Game copy: a recap, a final with a score, or a headline that is the result.
+ * A transaction, an injury note, or a preview is not.
+ */
+export function isResultCopy(input: {
+  headline?: string | null;
+  dek?: string | null;
+  type?: string | null;
+  status?: string | null;
+  scoreLine?: string | null;
+}): boolean {
+  const kind = `${input.type ?? ""} ${input.status ?? ""}`.toLowerCase();
+  if (/\brecap\b/.test(kind)) return true;
+  if (
+    input.status &&
+    /final/i.test(input.status) &&
+    input.scoreLine &&
+    /\d/.test(input.scoreLine)
+  ) {
+    return true;
+  }
+  const hay = `${input.headline ?? ""} ${input.dek ?? ""}`.toLowerCase();
+  return (
+    /\bin (?:a |the )?(?:win|loss|defeat)\b/.test(hay) ||
+    /\bwin (?:over|vs\.?|against)\b/.test(hay) ||
+    /\b(?:beat|defeated|edged|routed|downed|topped) the\b/.test(hay) ||
+    /\b(?:lifts|lifted)\b[^.]{0,48}\b(?:win|victory)\b/.test(hay) ||
+    /\bposts? \d+ points\b/.test(hay) ||
+    /\brecaps?\b/.test(hay) ||
+    /\b\d{1,3}\s*[-–]\s*\d{1,3}\s+(?:win|loss|victory|defeat)\b/.test(hay)
+  );
+}
+
 /** Milliseconds until the next 4 AM Central press run, so an open app rolls itself over. */
 export function msUntilNextEdition(now = new Date()): number {
   const day = editionDay(now);

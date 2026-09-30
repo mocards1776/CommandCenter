@@ -84,6 +84,11 @@ const WEAK_TOKENS = new Set([
   "louis", "kansas", "detroit", "missouri",
 ]);
 
+/** Names a headline must use before it counts as a story about this club. */
+export function clubMentionNames(fav: SportsFavorite): string[] {
+  return strongNames(fav).filter((name) => name.length >= 4);
+}
+
 function strongNames(fav: SportsFavorite): string[] {
   const names = [fav.shortName, fav.name]
     .map((n) => n.trim().toLowerCase())
