@@ -1,10 +1,9 @@
 /**
  * Thompson Times sections.
  *
- * Section A is the clubs you follow: the freshest stories, then a jump into
- * the sport. Each sport section is that league's desk — news about your
- * clubs, their standings and season stats, and the games still to be played.
- * A result from the weekend is a previous edition.
+ * Section A is the clubs you follow — a front, a clubs desk, then inside
+ * story pages. Every sport section always runs at least three pages:
+ * news, all-teams/standings, and the schedule — then full story pages.
  */
 
 import { editionCovers, editionCoversResult, editionNewsDay, instantDay, isResultCopy } from "./newspaper.ts";
@@ -55,6 +54,10 @@ export type FavoritesFrontPage = PageBase & {
   news: GameWrapCard[];
 };
 
+export type FavoritesClubsPage = PageBase & {
+  kind: "favorites-clubs";
+};
+
 export type FavoritesInsidePage = PageBase & {
   kind: "favorites-inside";
   primary: GameWrapCard;
@@ -98,9 +101,13 @@ export type ClubDesk = {
   upcoming: { id: string; label: string; when: string | null; detail: string | null }[];
 };
 
+export type SportFocus = "news" | "teams" | "schedule";
+
 export type SportFrontPage = PageBase & {
   kind: "sport-front";
   path: string;
+  /** Which desk this page owns — each sport always prints all three. */
+  focus: SportFocus;
   clubs: ClubDesk[];
   upcoming: DeskFixture[];
   articles: { card: GameWrapCard; folio: string }[];
@@ -115,6 +122,7 @@ export type SportInsidePage = PageBase & {
 
 export type EditionPage =
   | FavoritesFrontPage
+  | FavoritesClubsPage
   | FavoritesInsidePage
   | SportFrontPage
   | SportInsidePage;
@@ -127,6 +135,7 @@ export type EditionSection = {
   index: number;
   stories: number;
   upcoming: number;
+  pages: number;
 };
 
 export type Edition = {
@@ -204,6 +213,86 @@ function uniqueCodes(ids: SportSectionId[]): SportSectionId[] {
 }
 
 const FRONT_STORIES = 3;
+const FRONT_BRIEFS = 4;
+
+function upcomingFor(clubs: ClubDesk[]): DeskFixture[] {
+  return clubs.flatMap((club) =>
+    club.upcoming.map((game) => ({
+      id: game.id,
+      team: club.shortName,
+      label: game.label,
+      when: game.when,
+      detail: game.detail,
+    })),
+  );
+}
+
+function favoritePages(stories: GameWrapCard[], sportJump?: string): {
+  pages: (FavoritesFrontPage | FavoritesClubsPage | FavoritesInsidePage)[];
+  favoriteFolioByStory: Record<string, string>;
+} {
+  const favoriteFolioByStory: Record<string, string> = {};
+  for (const card of stories.slice(0, FRONT_STORIES)) favoriteFolioByStory[card.id] = "A1";
+
+  const inside: FavoritesInsidePage[] = [];
+  const rest = stories.slice(FRONT_STORIES);
+  let cursor = 0;
+  let n = 3; // A2 is the clubs desk; inside stories start at A3
+  while (cursor < rest.length) {
+    const primary = rest[cursor]!;
+    const secondary = rest[cursor + 1];
+    const briefs = rest.slice(cursor + 2, cursor + 2 + FRONT_BRIEFS);
+    const folio = `A${n}`;
+    favoriteFolioByStory[primary.id] = folio;
+    if (secondary) favoriteFolioByStory[secondary.id] = folio;
+    for (const brief of briefs) favoriteFolioByStory[brief.id] = folio;
+    inside.push({
+      kind: "favorites-inside",
+      folio,
+      section: "A",
+      sectionTitle: "Favorite Teams",
+      sectionPage: n,
+      sectionCount: 0,
+      primary,
+      secondary,
+      briefs,
+    });
+    cursor += 2 + briefs.length;
+    n += 1;
+  }
+
+  const front: FavoritesFrontPage = {
+    kind: "favorites-front",
+    folio: "A1",
+    section: "A",
+    sectionTitle: "Favorite Teams",
+    sectionPage: 1,
+    sectionCount: 0,
+    jumpFolio: "A2",
+    lead: stories[0] ?? null,
+    second: stories[1] ?? null,
+    third: stories[2] ?? null,
+    briefs: stories.slice(FRONT_STORIES, FRONT_STORIES + 5),
+    news: stories,
+  };
+  // Prefer jumping into the lead's sport when A has no clubs page next —
+  // but A2 is always the clubs desk, so keep that as the next folio.
+  void sportJump;
+
+  const clubsPage: FavoritesClubsPage = {
+    kind: "favorites-clubs",
+    folio: "A2",
+    section: "A",
+    sectionTitle: "Favorite Teams",
+    sectionPage: 2,
+    sectionCount: 0,
+  };
+
+  return {
+    pages: stampCounts([front, clubsPage, ...inside]),
+    favoriteFolioByStory,
+  };
+}
 
 function sportPages(
   id: SportSectionId,
@@ -213,9 +302,10 @@ function sportPages(
   pages: (SportFrontPage | SportInsidePage)[];
   sportFolioByStory: Record<string, string>;
 } {
-  const inside: SportInsidePage[] = [];
+  const upcoming = upcomingFor(clubs);
   const sportFolioByStory: Record<string, string> = {};
-  let n = 2;
+  const inside: SportInsidePage[] = [];
+  let n = 4; // 1 news, 2 teams, 3 schedule, then full stories
   for (let i = 0; i < stories.length; i += 2) {
     const primary = stories[i]!;
     const secondary = stories[i + 1];
@@ -236,33 +326,45 @@ function sportPages(
     n += 1;
   }
 
-  const frontFolio = `${id.code}1`;
-  const front: SportFrontPage = {
-    kind: "sport-front",
-    folio: frontFolio,
+  const articles = stories.map((card) => ({
+    card,
+    folio: sportFolioByStory[card.id] ?? `${id.code}4`,
+  }));
+
+  const base = {
     section: id.code,
     sectionTitle: id.title,
-    sectionPage: 1,
     sectionCount: 0,
     path: id.path,
     clubs,
-    upcoming: clubs.flatMap((club) =>
-      club.upcoming.map((game) => ({
-        id: game.id,
-        team: club.shortName,
-        label: game.label,
-        when: game.when,
-        detail: game.detail,
-      })),
-    ),
-    articles: stories.map((card) => ({
-      card,
-      folio: sportFolioByStory[card.id] ?? frontFolio,
-    })),
+    upcoming,
+    articles,
+  };
+
+  const news: SportFrontPage = {
+    ...base,
+    kind: "sport-front",
+    folio: `${id.code}1`,
+    sectionPage: 1,
+    focus: "news",
+  };
+  const teams: SportFrontPage = {
+    ...base,
+    kind: "sport-front",
+    folio: `${id.code}2`,
+    sectionPage: 2,
+    focus: "teams",
+  };
+  const schedule: SportFrontPage = {
+    ...base,
+    kind: "sport-front",
+    folio: `${id.code}3`,
+    sectionPage: 3,
+    focus: "schedule",
   };
 
   return {
-    pages: stampCounts([front, ...inside]),
+    pages: stampCounts([news, teams, schedule, ...inside]),
     sportFolioByStory,
   };
 }
@@ -319,25 +421,12 @@ export function buildEdition(opts: {
   const sportFolioByStory: Record<string, string> = {};
   for (const part of sportPagesBuilt) Object.assign(sportFolioByStory, part.built.sportFolioByStory);
 
-  const favoriteFolioByStory: Record<string, string> = {};
-  for (const card of fresh) favoriteFolioByStory[card.id] = "A1";
+  const favorites = favoritePages(
+    fresh,
+    fresh[0] ? sportFolioByStory[fresh[0].id] : undefined,
+  );
 
-  const front: FavoritesFrontPage = {
-    kind: "favorites-front",
-    folio: "A1",
-    section: "A",
-    sectionTitle: "Favorite Teams",
-    sectionPage: 1,
-    sectionCount: 1,
-    jumpFolio: fresh[0] ? sportFolioByStory[fresh[0].id] : undefined,
-    lead: fresh[0] ?? null,
-    second: fresh[1] ?? null,
-    third: fresh[2] ?? null,
-    briefs: fresh.slice(FRONT_STORIES, FRONT_STORIES + 5),
-    news: fresh,
-  };
-
-  const pages: EditionPage[] = [front];
+  const pages: EditionPage[] = [...favorites.pages];
   const sections: EditionSection[] = [
     {
       code: "A",
@@ -346,6 +435,7 @@ export function buildEdition(opts: {
       index: 0,
       stories: fresh.length,
       upcoming: opts.clubs.reduce((n, club) => n + Math.min(1, club.upcoming.length), 0),
+      pages: favorites.pages.length,
     },
   ];
 
@@ -358,9 +448,15 @@ export function buildEdition(opts: {
       index: pages.length,
       stories: (storiesBy.get(part.id.path) ?? []).length,
       upcoming,
+      pages: part.built.pages.length,
     });
     pages.push(...part.built.pages);
   }
 
-  return { pages, sections, sportFolioByStory, favoriteFolioByStory };
+  return {
+    pages,
+    sections,
+    sportFolioByStory,
+    favoriteFolioByStory: favorites.favoriteFolioByStory,
+  };
 }
