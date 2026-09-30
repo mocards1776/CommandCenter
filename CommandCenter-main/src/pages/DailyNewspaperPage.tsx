@@ -181,13 +181,18 @@ function daysUntilIso(iso: string | null | undefined): number | null {
 
 /** Clubs with no slate, or next tip more than six weeks out, print compact. */
 function clubIsOffseason(team: TeamInfobox): boolean {
-  if (team.seasonState === "complete" || team.seasonState === "upcoming") return true;
-  const soon =
-    team.detail?.upcoming?.find((g) => g.startIso)?.startIso ??
-    team.detail?.upcoming?.[0]?.startIso ??
-    null;
-  const days = daysUntilIso(soon);
-  return days != null && days > 45;
+  const hasSlate =
+    Boolean(team.snap.nextGame) || (team.detail?.upcoming?.length ?? 0) > 0;
+  if (hasSlate) {
+    const soon =
+      team.detail?.upcoming?.find((g) => g.startIso)?.startIso ??
+      team.detail?.upcoming?.[0]?.startIso ??
+      null;
+    const days = daysUntilIso(soon);
+    // Only shelve when we know the wait is long — missing ISO keeps the full card.
+    return days != null && days > 45;
+  }
+  return team.seasonState === "complete" || team.seasonState === "upcoming";
 }
 
 function clubCountdown(team: TeamInfobox): string {
