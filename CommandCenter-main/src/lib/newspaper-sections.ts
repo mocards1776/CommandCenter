@@ -153,9 +153,11 @@ export function isFavoriteStory(card: GameWrapCard): boolean {
 
 /**
  * Copy the desk will set. A line on the schedule is not an article. A final
- * needs a score. A fetched story needs a body.
+ * needs a score. A fetched story needs a body. League wire (not a followed
+ * club) still counts so sport sections can print a full news page.
  */
 export function isDeskStory(card: GameWrapCard): boolean {
+  if (card.id.startsWith("league-")) return Boolean(card.headline && card.leaguePath);
   if (!isFavoriteStory(card)) return false;
   if (card.id.startsWith("news-")) return Boolean(card.headline);
   if ((card.body?.trim().length ?? 0) >= 80) return true;
@@ -177,6 +179,7 @@ function storyRank(card: GameWrapCard, edition: string): number {
   if (day === editionNewsDay(edition) && card.status && /final/i.test(card.status)) score += 100;
   if (card.postseason) score += 40;
   if (card.id.startsWith("news-")) score += 25;
+  if (card.id.startsWith("league-")) score += 10;
   if ((card.body?.length ?? 0) >= 400) score += 15;
   return score;
 }
@@ -421,9 +424,10 @@ export function buildEdition(opts: {
   const sportFolioByStory: Record<string, string> = {};
   for (const part of sportPagesBuilt) Object.assign(sportFolioByStory, part.built.sportFolioByStory);
 
+  const favoriteCopy = fresh.filter(isFavoriteStory);
   const favorites = favoritePages(
-    fresh,
-    fresh[0] ? sportFolioByStory[fresh[0].id] : undefined,
+    favoriteCopy,
+    favoriteCopy[0] ? sportFolioByStory[favoriteCopy[0].id] : undefined,
   );
 
   const pages: EditionPage[] = [...favorites.pages];
@@ -433,7 +437,7 @@ export function buildEdition(opts: {
       title: "Favorite Teams",
       folio: "A1",
       index: 0,
-      stories: fresh.length,
+      stories: favoriteCopy.length,
       upcoming: opts.clubs.reduce((n, club) => n + Math.min(1, club.upcoming.length), 0),
       pages: favorites.pages.length,
     },

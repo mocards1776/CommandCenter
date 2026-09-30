@@ -12,7 +12,7 @@ import {
   msUntilNextEdition,
   romanNumeral,
 } from "@/lib/newspaper";
-import { fetchTeamArticles } from "@/lib/newspaper-news";
+import { fetchLeagueArticles, fetchTeamArticles } from "@/lib/newspaper-news";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
@@ -158,14 +158,14 @@ function Nameplate({
 
 /* ───────────────────────── data band ───────────────────────── */
 
-/** Readable club desk — full cells, not a crushed ticker. */
+/** Full-page club desk — large cells that fill the sheet. */
 function ClubsDesk({ teams, onTurn }: { teams: TeamInfobox[]; onTurn?: (folio: string) => void }) {
   const cells = teams.length ? teams : [];
   return (
     <div className="wsj-clubs-desk">
       <header className="wsj-clubs-desk-head">
         <h3>Your clubs</h3>
-        <p>{cells.length} followed · records, form, and what’s next</p>
+        <p>{cells.length} followed · records, form, standings, and what’s next</p>
         {onTurn ? (
           <button type="button" className="wsj-jump-btn" onClick={() => onTurn("A2")}>
             Full clubs page A2
@@ -176,49 +176,69 @@ function ClubsDesk({ teams, onTurn }: { teams: TeamInfobox[]; onTurn?: (folio: s
         {cells.map((t) => {
           const next = t.snap.nextGame;
           const closed = t.seasonState === "complete";
+          const table = tableWindow(
+            (t.detail?.division ?? []).map((row) => ({
+              rank: row.rank,
+              team: row.team,
+              record: row.record,
+              gb: row.gb,
+              me: row.isMe,
+            })),
+          ).slice(0, 5);
+          const leaders = [
+            ...(t.detail?.hittingLeaders ?? []),
+            ...(t.detail?.pitchingLeaders ?? []),
+          ].slice(0, 3);
           return (
             <li key={t.fav.key}>
               <ExternalOrLink href={t.href} className="wsj-clubs-card wsj-a">
-                <TeamLogo src={t.snap.logo || t.detail?.logo} size="lg" />
-                <div className="wsj-clubs-card-body">
-                  <span className="wsj-clubs-card-lg">{t.fav.league}</span>
-                  <strong>{t.snap.shortName || t.fav.shortName}</strong>
-                  <em>{clubRecord(t) || t.snap.standing || "—"}</em>
-                  <span>
-                    {next
-                      ? `Next ${next.label}${next.when ? ` · ${next.when}` : ""}`
-                      : closed
-                        ? `Season over${t.snap.standing ? ` · ${t.snap.standing}` : ""}`
-                        : "—"}
-                  </span>
-                  {t.form.length ? (
-                    <span className="wsj-clubs-form">{t.form.join(" ")}</span>
-                  ) : null}
+                <div className="wsj-clubs-card-top">
+                  <TeamLogo src={t.snap.logo || t.detail?.logo} size="lg" />
+                  <div className="wsj-clubs-card-body">
+                    <span className="wsj-clubs-card-lg">{t.fav.league}</span>
+                    <strong>{t.snap.shortName || t.fav.shortName}</strong>
+                    <em>{clubRecord(t) || "—"}</em>
+                    <span className="wsj-clubs-standing">{t.snap.standing || "—"}</span>
+                    <span>
+                      {next
+                        ? `Next ${next.label}${next.when ? ` · ${next.when}` : ""}`
+                        : closed
+                          ? `Season over${t.snap.standing ? ` · ${t.snap.standing}` : ""}`
+                          : "—"}
+                    </span>
+                    {t.form.length ? (
+                      <span className="wsj-clubs-form">{t.form.join(" ")}</span>
+                    ) : null}
+                  </div>
                 </div>
+                {table.length ? (
+                  <ul className="wsj-clubs-mini-table">
+                    {table.map((row) => (
+                      <li key={`${t.fav.key}-${row.rank}-${row.team}`} className={cn(row.me && "me")}>
+                        <span>
+                          {row.rank} {row.team}
+                        </span>
+                        <strong>{row.record}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {leaders.length ? (
+                  <ul className="wsj-clubs-leaders">
+                    {leaders.map((leader) => (
+                      <li key={`${t.fav.key}-${leader.name}`}>
+                        <span>{leader.name}</span>
+                        <em>{leader.line}</em>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </ExternalOrLink>
             </li>
           );
         })}
       </ul>
     </div>
-  );
-}
-
-/** Compact band kept only as a jump cue — real desk is page A2. */
-function ScoreBand({ teams, onTurn }: { teams: TeamInfobox[]; onTurn: (folio: string) => void }) {
-  const active = teams.filter((t) => t.seasonState === "active");
-  const cells = (active.length ? active : teams).slice(0, 8);
-  return (
-    <button type="button" className="wsj-band wsj-band-jump" onClick={() => onTurn("A2")}>
-      {cells.map((t) => (
-        <span key={t.fav.key} className="wsj-band-cell">
-          <TeamLogo src={t.snap.logo || t.detail?.logo} size="md" />
-          <span className="wsj-band-team">{t.snap.shortName || t.fav.shortName}</span>
-          <span className="wsj-band-val">{clubRecord(t) || "—"}</span>
-        </span>
-      ))}
-      <span className="wsj-band-more">Open clubs desk → A2</span>
-    </button>
   );
 }
 
@@ -758,11 +778,11 @@ function FrontPage({
           {news}
           <div className="wsj-art wsj-quiet">
             <p className="wsj-empty">
-              No fresh copy on your clubs. Each sport section has the standings and what is next.
+              No fresh copy on your clubs. Turn to A2 for the clubs desk, then each sport section.
             </p>
           </div>
         </div>
-        <ScoreBand teams={teams} onTurn={onTurn} />
+        <ClubsDesk teams={teams} onTurn={onTurn} />
       </div>
     );
   }
@@ -778,6 +798,7 @@ function FrontPage({
             <article className="wsj-underart">
               <Headline card={third} size="md" />
               <p className="wsj-brief-dek">{recapDek(third)}</p>
+              <Prose card={third} cols={1} max={8} />
               <Jump
                 folio={folioOf(third) === "A1" ? undefined : folioOf(third)}
                 onTurn={onTurn}
@@ -794,7 +815,7 @@ function FrontPage({
             <p className="wsj-dek">{lead.dek}</p>
           ) : null}
           <Byline card={lead} />
-          <Prose card={lead} cols={2} drop max={32} />
+          <Prose card={lead} cols={2} drop max={40} />
           <Jump folio={jumpFolio} onTurn={onTurn} />
         </article>
       </div>
@@ -810,7 +831,7 @@ function FrontPage({
           </div>
           <div className="wsj-feature">
             <Byline card={second} />
-            <Prose card={second} cols={3} max={22} />
+            <Prose card={second} cols={3} max={28} />
             <Jump
               folio={folioOf(second) === "A1" ? undefined : folioOf(second)}
               onTurn={onTurn}
@@ -821,8 +842,12 @@ function FrontPage({
         <ClubsDesk teams={teams} onTurn={onTurn} />
       )}
 
-      <ScoreBand teams={teams} onTurn={onTurn} />
-      <BriefRow cards={briefs} cols={Math.min(5, Math.max(2, briefs.length || 2))} />
+      <BriefRow cards={briefs} cols={Math.min(5, Math.max(3, briefs.length || 3))} />
+      <p className="wsj-page-trail">
+        <button type="button" className="wsj-jump-btn" onClick={() => onTurn("A2")}>
+          Please turn to page A2 for the clubs desk
+        </button>
+      </p>
     </div>
   );
 }
@@ -1056,13 +1081,17 @@ function SportFront({
     );
   }
 
-  // News page — fill the sheet with stories
+  // News page — fill the sheet with league + club stories (or a dense desk if quiet)
   return (
     <div className="wsj-sport focus-news">
       <SportHero
         page={page}
         leagueClubs={leagueClubs}
-        blurb={`${page.articles.length} stories · turn to ${page.section}2 for all teams`}
+        blurb={
+          page.articles.length
+            ? `${page.articles.length} stories · turn to ${page.section}2 for all teams`
+            : `Club form · turn to ${page.section}2 for all teams`
+        }
       />
       <div className="wsj-sport-solo news">
         {page.articles.length ? (
@@ -1072,9 +1101,16 @@ function SportFront({
               const dek = recapDek(card);
               const crest =
                 page.clubs.find((c) => c.key === card.favoriteKey)?.logo ||
-                leagueClubs.find((c) => c.favorite && card.teamName?.includes(c.short))?.logo;
+                leagueClubs.find(
+                  (c) =>
+                    (c.favorite && card.teamName?.includes(c.short)) ||
+                    card.teamName?.toLowerCase().includes(c.short.toLowerCase()),
+                )?.logo;
               return (
-                <article key={card.id} className={cn("wsj-recap graphic fill", card.photo && "has-thumb")}>
+                <article
+                  key={card.id}
+                  className={cn("wsj-recap graphic packed", card.photo && "has-thumb")}
+                >
                   {card.photo ? (
                     <img src={card.photo} alt="" className="wsj-recap-thumb" loading="lazy" />
                   ) : crest ? (
@@ -1088,7 +1124,7 @@ function SportFront({
                       </ExternalOrLink>
                     </h3>
                     {dek ? <p className="wsj-brief-dek">{dek}</p> : null}
-                    <Prose card={card} cols={1} max={10} />
+                    <Prose card={card} cols={1} max={12} />
                     <Jump folio={folio === page.folio ? undefined : folio} onTurn={onTurn} />
                   </div>
                 </article>
@@ -1096,25 +1132,64 @@ function SportFront({
             })}
           </div>
         ) : (
-          <div className="wsj-news-grid">
-            {page.clubs.map((club) => {
-              const next = club.upcoming[0];
-              return (
-                <article key={club.key} className="wsj-recap graphic fill">
+          <div className="wsj-sport-form">
+            {page.clubs.map((club) => (
+              <article key={club.key} className="wsj-sport-form-card">
+                <header className="wsj-sport-form-head">
                   <TeamLogo src={club.logo} size="lg" />
                   <div>
-                    <p className="wsj-kicker">{club.shortName}</p>
-                    <p className="wsj-brief-dek">
+                    <strong>{club.shortName}</strong>
+                    <em>
                       {club.record || "—"}
-                      {club.standing ? `, ${club.standing}` : ""}.{" "}
-                      {next
-                        ? `Next: ${next.label}${next.when ? `, ${next.when}` : ""}.`
-                        : "Nothing left on the calendar."}
-                    </p>
+                      {club.standing ? ` · ${club.standing}` : ""}
+                    </em>
                   </div>
-                </article>
-              );
-            })}
+                </header>
+                {club.division.length ? (
+                  <AgateBox
+                    title={tableTitle(club.standing)}
+                    rows={club.division.map((row) => ({
+                      left: (
+                        <span className="wsj-club-inline">
+                          <TeamLogo src={row.logo} size="xs" />
+                          <span>
+                            {row.rank} {row.team}
+                          </span>
+                        </span>
+                      ),
+                      right: row.gb && row.gb !== "-" ? `${row.record} ${row.gb}` : row.record,
+                      me: row.me,
+                    }))}
+                  />
+                ) : null}
+                {club.leaders.length ? (
+                  <AgateBox
+                    title="Names"
+                    rows={club.leaders.slice(0, 4).map((l) => ({ left: l.name, right: l.line }))}
+                  />
+                ) : null}
+                {club.upcoming.length ? (
+                  <ul className="wsj-slate graphic">
+                    {club.upcoming.map((game) => (
+                      <li key={game.id} className="me">
+                        <span className="wsj-matchup">
+                          <strong>{game.label}</strong>
+                        </span>
+                        <span className="wsj-match-meta">
+                          {game.detail ? <em>{game.detail}</em> : <em />}
+                          <strong>{game.when || "TBD"}</strong>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="wsj-brief-dek">Nothing left on the calendar.</p>
+                )}
+              </article>
+            ))}
+            {!page.clubs.length ? (
+              <p className="wsj-empty">No clubs filed in this section yet.</p>
+            ) : null}
           </div>
         )}
       </div>
@@ -1291,15 +1366,6 @@ export default function DailyNewspaperPage() {
     staleTime: 5 * 60_000,
   });
 
-  const stories = useMemo(() => {
-    const wire = wireStoryCards({
-      games: wireQ.data?.games ?? [],
-      favs: teamFavs,
-      details: teamDetailsQ.data ?? [],
-    });
-    return mergeStoryCards(mergeStoryCards(wire, enrichedQ.data ?? teamCards), newsQ.data ?? []);
-  }, [wireQ.data, teamFavs, teamDetailsQ.data, enrichedQ.data, teamCards, newsQ.data]);
-
   const clubs = useMemo<ClubDesk[]>(
     () =>
       teams.map((team) => {
@@ -1360,6 +1426,34 @@ export default function DailyNewspaperPage() {
       [...new Set(clubs.map((c) => c.leaguePath).filter(Boolean) as string[])].sort(),
     [clubs],
   );
+
+  const leagueNewsQ = useQuery({
+    queryKey: ["tt-league-news", day, sportPaths.join("|")],
+    queryFn: () => fetchLeagueArticles(sportPaths, day),
+    enabled: sportPaths.length > 0,
+    staleTime: 5 * 60_000,
+  });
+
+  const stories = useMemo(() => {
+    const wire = wireStoryCards({
+      games: wireQ.data?.games ?? [],
+      favs: teamFavs,
+      details: teamDetailsQ.data ?? [],
+    });
+    const clubCopy = mergeStoryCards(
+      mergeStoryCards(wire, enrichedQ.data ?? teamCards),
+      newsQ.data ?? [],
+    );
+    return mergeStoryCards(clubCopy, leagueNewsQ.data ?? []);
+  }, [
+    wireQ.data,
+    teamFavs,
+    teamDetailsQ.data,
+    enrichedQ.data,
+    teamCards,
+    newsQ.data,
+    leagueNewsQ.data,
+  ]);
 
   const leagueClubsQ = useQuery({
     queryKey: ["tt-league-clubs", day, sportPaths.join("|")],

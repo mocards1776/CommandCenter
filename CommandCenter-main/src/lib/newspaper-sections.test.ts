@@ -181,6 +181,35 @@ assert((paper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= 3, "NFL sec
 assert(paper.sections.find((s) => s.code === "A")?.pages === 2, "A is front + clubs when no overflow stories");
 assert(paper.pages.some((page) => page.folio === "NFL4"), "NFL story copy gets its own inside page after the three desk pages");
 
+const leagueWire = card({
+  id: "league-wire-1",
+  headline: "NFL notebook: injuries and Waivers across the league",
+  favoriteKey: "",
+  followed: false,
+  teamName: "League",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  when: "2026-09-30T14:00:00Z",
+  body: "Around the league, clubs shuffled the practice report and the waiver wire. ".repeat(3),
+});
+assert(isDeskStory(leagueWire), "league wire is desk copy for sport sections");
+const withLeague = buildEdition({
+  stories: [weekend, tuesday, scheduled, cardinals, leagueWire],
+  clubs: [chiefs, cards],
+  edition,
+});
+const aLead = withLeague.pages[0];
+assert(
+  aLead?.kind === "favorites-front" && aLead.news.every((story) => story.id !== "league-wire-1"),
+  "league wire stays off the favorites front",
+);
+const nflWithLeague = withLeague.pages.find((page) => page.folio === "NFL1");
+assert(
+  nflWithLeague?.kind === "sport-front" &&
+    nflWithLeague.articles.some((article) => article.card.id === "league-wire-1"),
+  "league wire fills the sport news page",
+);
+
 const sundayRewrite = card({
   id: "news-lions-sunday",
   headline: "Lions post 31 points for record-setting third time to start 2026",
