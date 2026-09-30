@@ -168,3 +168,89 @@ export async function fetchTeamArticles(
   const rest = picked.slice(12).map(({ fav, article }) => toCard(fav, article, article.description ?? ""));
   return [...withBody, ...rest].filter((card): card is GameWrapCard => card != null);
 }
+
+function leagueLabel(path: string): string {
+  const slug = path.split("/").pop() ?? "League";
+  return slug.replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function toLeagueCard(path: string, article: NewsArticle, body: string): GameWrapCard | null {
+  const headline = article.headline?.trim() ?? "";
+  const id = String(article.id ?? "");
+  if (!headline || !id) return null;
+  const teamCat = (article.categories ?? []).find((cat) => cat.type === "team" && cat.description);
+  const teamName = teamCat?.description?.trim() || leagueLabel(path);
+  const href = article.links?.web?.href ?? null;
+  const dek = (article.description ?? "").trim() || null;
+  return {
+    id: `league-${id}`,
+    favoriteKey: "",
+    teamName,
+    teamHref: href || "/",
+    sportLabel: leagueLabel(path),
+    leaguePath: path,
+    headline,
+    dek,
+    body: body.trim() || dek,
+    scoreLine: null,
+    when: article.published ?? null,
+    won: null,
+    gameHref: href,
+    wrapHref: href,
+    feedUrl: null,
+    gameId: null,
+    stats: [],
+    leaders: [],
+    teamStats: [],
+    division: [],
+    photo: article.images?.[0]?.url ?? null,
+    caption: teamName,
+    followed: false,
+    status: article.type ?? null,
+  };
+}
+
+/**
+ * League wire for each sport section — fills NFL1/MLB1/etc. even when your
+ * clubs are quiet. Same edition window as club stories.
+ */
+export async function fetchLeagueArticles(
+  paths: string[],
+  edition: string,
+): Promise<GameWrapCard[]> {
+  const unique = [...new Set(paths.filter(Boolean))];
+  const picked: { path: string; article: NewsArticle }[] = [];
+  const seen = new Set<string>();
+
+  await Promise.all(
+    unique.map(async (path) => {
+      try {
+        const data = (await espnGet(`${path}/news?limit=30`)) as { articles?: NewsArticle[] };
+        const fresh = (data.articles ?? [])
+          .filter((article) => articleInEdition(article, edition))
+          .slice(0, 10);
+        for (const article of fresh) {
+          const id = String(article.id ?? "");
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          picked.push({ path, article });
+        }
+      } catch {
+        /* one league's wire shouldn't kill the edition */
+      }
+    }),
+  );
+
+  picked.sort((a, b) => String(b.article.published ?? "").localeCompare(String(a.article.published ?? "")));
+  const withBody = await Promise.all(
+    picked.slice(0, 20).map(async ({ path, article }) => {
+      const fallback = (article.description ?? "").trim();
+      const body = await articleBody(String(article.id), fallback);
+      return toLeagueCard(path, article, body);
+    }),
+  );
+  const rest = picked
+    .slice(20)
+    .map(({ path, article }) => toLeagueCard(path, article, article.description ?? ""));
+  return [...withBody, ...rest].filter((card): card is GameWrapCard => card != null);
+}
