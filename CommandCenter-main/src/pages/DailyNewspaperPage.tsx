@@ -36,11 +36,14 @@ import {
   enrichWireStories,
   espnTeamLogo,
   fetchLeagueClubs,
+  fetchLeagueSlate,
   fetchNewspaperWire,
   markFavoriteClubs,
   type LeagueClub,
+  type LeagueSlateGame,
   type WireGame,
 } from "@/lib/newspaper-wire";
+import { fetchMlbPlayoffTree, type MlbPlayoffTree } from "@/lib/mlb";
 import { fetchRssFeed } from "@/lib/rss";
 import {
   fetchTeamDetail,
@@ -146,7 +149,9 @@ function Nameplate({
                   ? "All Teams"
                   : page.focus === "schedule"
                     ? "Schedule"
-                    : "Club Form"
+                    : page.focus === "playoffs"
+                      ? "Playoffs"
+                      : "Club Form"
             : page.kind === "sport-inside"
               ? "Stories"
               : page.kind === "favorites-clubs"
@@ -881,20 +886,40 @@ function InsidePage({
         <article className="wsj-story">
           {primary.photo ? <Cut card={primary} /> : null}
           <Headline card={primary} size={secondary ? "lg" : "xl"} />
-          {primary.round || primary.series ? (
+          {primary.round || primary.series || primary.scoreLine ? (
             <p className="wsj-dek">
-              {[primary.round, primary.series].filter(Boolean).join(" · ")}
+              {[primary.round, primary.series, primary.scoreLine].filter(Boolean).join(" · ")}
             </p>
           ) : null}
           <Byline card={primary} />
-          <Prose card={primary} cols={secondary ? 2 : 3} max={30} />
+          <Prose card={primary} cols={secondary ? 2 : 3} max={36} />
+          {primary.stats.length || primary.leaders.length ? (
+            <div className="wsj-sport-tables" style={{ marginTop: "0.35rem" }}>
+              <AgateBox
+                title="Box"
+                rows={primary.stats.slice(0, 6).map((s) => ({ left: s.label, right: s.value }))}
+              />
+              <AgateBox
+                title="Names"
+                rows={primary.leaders.slice(0, 6).map((l) => ({ left: l.name, right: l.line }))}
+              />
+            </div>
+          ) : null}
           <Jump folio={jumpFolio} onTurn={onTurn} />
         </article>
         {secondary ? (
           <article className="wsj-story">
+            {secondary.photo ? <Cut card={secondary} /> : null}
             <Headline card={secondary} size="md" />
+            {secondary.scoreLine ? <p className="wsj-dek">{secondary.scoreLine}</p> : null}
             <Byline card={secondary} />
-            <Prose card={secondary} cols={2} max={24} />
+            <Prose card={secondary} cols={2} max={28} />
+            {secondary.leaders.length ? (
+              <AgateBox
+                title="Names"
+                rows={secondary.leaders.slice(0, 5).map((l) => ({ left: l.name, right: l.line }))}
+              />
+            ) : null}
             <Jump folio={jumpFolio} onTurn={onTurn} />
           </article>
         ) : null}
@@ -961,10 +986,14 @@ function SportHero({
 function SportFront({
   page,
   leagueClubs,
+  slate,
+  playoffs,
   onTurn,
 }: {
   page: Extract<EditionPage, { kind: "sport-front" }>;
   leagueClubs: LeagueClub[];
+  slate: LeagueSlateGame[];
+  playoffs: MlbPlayoffTree | null;
   onTurn: (folio: string) => void;
 }) {
   const tables = new Set<string>();
@@ -1045,15 +1074,61 @@ function SportFront({
   }
 
   if (page.focus === "schedule") {
+    const nextFocus = page.path === "baseball/mlb" ? "playoffs" : "club form";
     return (
       <div className="wsj-sport focus-schedule">
         <SportHero
           page={page}
           leagueClubs={leagueClubs}
-          blurb={`${page.upcoming.length} games ahead · page ${page.folio}`}
+          blurb={
+            slate.length
+              ? `${slate.length} games on the board · probables where filed · page ${page.folio}`
+              : `League slate · page ${page.folio}`
+          }
         />
         <div className="wsj-sport-solo">
-          {page.clubs.some((club) => club.upcoming.length) ? (
+          {slate.length ? (
+            <div className="wsj-slate-board">
+              {slate.map((game) => (
+                <article key={game.id} className={cn("wsj-slate-card", game.live && "live")}>
+                  <div className="wsj-slate-card-top">
+                    <span>
+                      {game.round || (game.final ? "Final" : game.live ? "Live" : "Today")}
+                      {game.venue ? ` · ${game.venue}` : ""}
+                    </span>
+                    <strong>{game.live ? game.status : game.final ? "Final" : game.when || game.status}</strong>
+                  </div>
+                  <div className="wsj-slate-row">
+                    <TeamLogo src={game.away.logo} size="sm" />
+                    <div>
+                      <strong>{game.away.abbrev}</strong>
+                      {game.away.record ? <em>{game.away.record}</em> : null}
+                    </div>
+                    <span className="score">{game.away.score ?? "—"}</span>
+                  </div>
+                  <div className="wsj-slate-row">
+                    <TeamLogo src={game.home.logo} size="sm" />
+                    <div>
+                      <strong>{game.home.abbrev}</strong>
+                      {game.home.record ? <em>{game.home.record}</em> : null}
+                    </div>
+                    <span className="score">{game.home.score ?? "—"}</span>
+                  </div>
+                  {(game.away.pitcher || game.home.pitcher) && !game.final ? (
+                    <p className="wsj-slate-pitch">
+                      <b>Probables</b>{" "}
+                      {game.away.pitcher || "TBD"} vs {game.home.pitcher || "TBD"}
+                    </p>
+                  ) : game.final ? (
+                    <p className="wsj-slate-pitch">
+                      <b>{game.away.abbrev}</b> {game.away.score} · <b>{game.home.abbrev}</b>{" "}
+                      {game.home.score}
+                    </p>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          ) : page.clubs.some((club) => club.upcoming.length) ? (
             <div className="wsj-schedule-grid">
               {page.clubs.map((club) =>
                 club.upcoming.length ? (
@@ -1080,14 +1155,33 @@ function SportFront({
               )}
             </div>
           ) : (
-            <p className="wsj-empty">Nothing left on the calendar.</p>
+            <p className="wsj-empty">No league games on today’s board.</p>
           )}
         </div>
         <p className="wsj-page-trail">
           <button type="button" className="wsj-jump-btn" onClick={() => onTurn(`${page.section}5`)}>
-            Please turn to page {page.section}5 for club form
+            Please turn to page {page.section}5 for {nextFocus}
           </button>
         </p>
+      </div>
+    );
+  }
+
+  if (page.focus === "playoffs") {
+    return (
+      <div className="wsj-sport focus-playoffs">
+        <SportHero
+          page={page}
+          leagueClubs={leagueClubs}
+          blurb={
+            playoffs
+              ? `${playoffs.season} postseason bracket · page ${page.folio}`
+              : `Postseason bracket · page ${page.folio}`
+          }
+        />
+        <div className="wsj-sport-solo">
+          <PlayoffDesk tree={playoffs} />
+        </div>
       </div>
     );
   }
@@ -1098,16 +1192,20 @@ function SportFront({
         <SportHero
           page={page}
           leagueClubs={leagueClubs}
-          blurb={`${page.clubs.length || leagueClubs.length} clubs · form & tables · page ${page.folio}`}
+          blurb={`${leagueClubs.length || page.clubs.length} clubs · full league form · page ${page.folio}`}
         />
         <div className="wsj-sport-solo">
-          <ClubFormGrid clubs={page.clubs} />
+          {leagueClubs.length ? (
+            <LeagueFormGrid clubs={leagueClubs} />
+          ) : (
+            <ClubFormGrid clubs={page.clubs} />
+          )}
         </div>
       </div>
     );
   }
 
-  // News + recaps — pack the sheet with articles / game wraps
+  // News + recaps — capped cards, no overlapping equal-height rows
   const isRecaps = page.focus === "recaps";
   const nextFolio = isRecaps ? `${page.section}3` : `${page.section}2`;
   const nextLabel = isRecaps ? "all teams" : "recaps";
@@ -1143,7 +1241,7 @@ function SportFront({
                   {card.photo ? (
                     <img src={card.photo} alt="" className="wsj-recap-thumb" loading="lazy" />
                   ) : crest ? (
-                    <TeamLogo src={crest} size="lg" />
+                    <TeamLogo src={crest} size="md" />
                   ) : null}
                   <div className="wsj-recap-copy">
                     <p className="wsj-kicker">
@@ -1156,13 +1254,24 @@ function SportFront({
                       </ExternalOrLink>
                     </h3>
                     {dek ? <p className="wsj-brief-dek">{dek}</p> : null}
-                    <Prose card={card} cols={1} max={isRecaps ? 16 : 14} />
+                    {!dek ? <Prose card={card} cols={1} max={6} /> : null}
+                    {card.leaders.length ? (
+                      <p className="wsj-slate-pitch">
+                        <b>Names</b>{" "}
+                        {card.leaders
+                          .slice(0, 3)
+                          .map((l) => `${l.name} ${l.line}`)
+                          .join(" · ")}
+                      </p>
+                    ) : null}
                     <Jump folio={folio === page.folio ? undefined : folio} onTurn={onTurn} />
                   </div>
                 </article>
               );
             })}
           </div>
+        ) : leagueClubs.length ? (
+          <LeagueFormGrid clubs={leagueClubs} />
         ) : (
           <ClubFormGrid clubs={page.clubs} />
         )}
@@ -1172,6 +1281,94 @@ function SportFront({
           Please turn to page {nextFolio} for {nextLabel}
         </button>
       </p>
+    </div>
+  );
+}
+
+function LeagueFormGrid({ clubs }: { clubs: LeagueClub[] }) {
+  const groups = new Map<string, LeagueClub[]>();
+  for (const club of clubs) {
+    const key = club.group || "League";
+    const list = groups.get(key) ?? [];
+    list.push(club);
+    groups.set(key, list);
+  }
+  return (
+    <div className="wsj-sport-solo" style={{ gap: "0.45rem" }}>
+      {[...groups.entries()].map(([group, rows]) => (
+        <div key={group}>
+          {group && group !== "League" ? <p className="wsj-team-group-label">{group}</p> : null}
+          <div className="wsj-league-form-grid">
+            {rows.map((club) => (
+              <div key={club.id} className={cn("wsj-league-form-card", club.favorite && "me")}>
+                <TeamLogo src={club.logo} size="md" />
+                <div>
+                  <strong>{club.abbrev}</strong>
+                  <em>
+                    {club.record || "—"}
+                    {club.rank ? ` · ${club.rank}` : ""}
+                  </em>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlayoffDesk({ tree }: { tree: MlbPlayoffTree | null }) {
+  if (!tree || !tree.rounds.some((r) => r.series.length)) {
+    return <p className="wsj-empty">Postseason bracket isn’t published yet.</p>;
+  }
+  return (
+    <div className="wsj-playoff-desk">
+      {tree.rounds.map((round) =>
+        round.series.length ? (
+          <section key={round.id} className="wsj-playoff-round">
+            <h4>{round.label}</h4>
+            <div className="wsj-playoff-grid">
+              {round.series.map((series) => {
+                const aW = series.away.wins;
+                const hW = series.home.wins;
+                return (
+                  <article key={series.id} className="wsj-playoff-card">
+                    <header>
+                      <span>{series.label}</span>
+                      <span>{series.seriesStatus || `Best of ${series.gamesInSeries}`}</span>
+                    </header>
+                    <div className={cn("wsj-playoff-side", aW > hW && "winner")}>
+                      <TeamLogo
+                        src={
+                          series.away.teamId
+                            ? `https://www.mlbstatic.com/team-logos/${series.away.teamId}.svg`
+                            : null
+                        }
+                        size="sm"
+                      />
+                      <strong>{series.away.abbrev || series.away.name}</strong>
+                      <span className="wins">{aW}</span>
+                    </div>
+                    <div className={cn("wsj-playoff-side", hW > aW && "winner")}>
+                      <TeamLogo
+                        src={
+                          series.home.teamId
+                            ? `https://www.mlbstatic.com/team-logos/${series.home.teamId}.svg`
+                            : null
+                        }
+                        size="sm"
+                      />
+                      <strong>{series.home.abbrev || series.home.name}</strong>
+                      <span className="wins">{hW}</span>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        ) : null,
+      )}
     </div>
   );
 }
@@ -1512,6 +1709,25 @@ export default function DailyNewspaperPage() {
     staleTime: 30 * 60_000,
   });
 
+  const leagueSlateQ = useQuery({
+    queryKey: ["tt-league-slate", day, sportPaths.join("|")],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        sportPaths.map(async (path) => [path, await fetchLeagueSlate(path, day)] as const),
+      );
+      return Object.fromEntries(entries) as Record<string, LeagueSlateGame[]>;
+    },
+    enabled: sportPaths.length > 0,
+    staleTime: 3 * 60_000,
+  });
+
+  const mlbPlayoffsQ = useQuery({
+    queryKey: ["tt-mlb-playoffs", day],
+    queryFn: () => fetchMlbPlayoffTree(),
+    enabled: sportPaths.includes("baseball/mlb"),
+    staleTime: 10 * 60_000,
+  });
+
   /**
    * Only a game still being played on this edition's night belongs in the rail.
    * Next week's kickoff is the schedule, not tonight.
@@ -1616,6 +1832,8 @@ export default function DailyNewspaperPage() {
     teamDetailsQ.isFetching ||
     wireQ.isFetching ||
     leagueClubsQ.isFetching ||
+    leagueSlateQ.isFetching ||
+    mlbPlayoffsQ.isFetching ||
     recap.isFetching ||
     wrapsQ.isFetching ||
     enrichedQ.isFetching ||
@@ -1628,6 +1846,8 @@ export default function DailyNewspaperPage() {
       teamDetailsQ.refetch(),
       wireQ.refetch(),
       leagueClubsQ.refetch(),
+      leagueSlateQ.refetch(),
+      mlbPlayoffsQ.refetch(),
       recap.refetch(),
       wrapsQ.refetch(),
       enrichedQ.refetch(),
@@ -1759,6 +1979,8 @@ export default function DailyNewspaperPage() {
                 <SportFront
                   page={page}
                   leagueClubs={leagueClubsQ.data?.[page.path] ?? []}
+                  slate={leagueSlateQ.data?.[page.path] ?? []}
+                  playoffs={page.path === "baseball/mlb" ? mlbPlayoffsQ.data ?? null : null}
                   onTurn={goFolio}
                 />
               ) : (

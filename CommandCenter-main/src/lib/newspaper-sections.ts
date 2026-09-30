@@ -118,12 +118,12 @@ export type ClubDesk = {
   upcoming: { id: string; label: string; when: string | null; detail: string | null }[];
 };
 
-export type SportFocus = "news" | "recaps" | "teams" | "schedule" | "form";
+export type SportFocus = "news" | "recaps" | "teams" | "schedule" | "form" | "playoffs";
 
 export type SportFrontPage = PageBase & {
   kind: "sport-front";
   path: string;
-  /** Which desk this page owns — each sport always prints all five. */
+  /** Which desk this page owns — each sport always prints at least five. */
   focus: SportFocus;
   clubs: ClubDesk[];
   upcoming: DeskFixture[];
@@ -274,7 +274,35 @@ function inFreshWindow(card: GameWrapCard, edition: string): boolean {
 }
 
 function inSectionWindow(card: GameWrapCard, edition: string): boolean {
-  return editionCoversRecent(card.when, edition, 5);
+  // Two-day lookback keeps the paper fresh; older previews stay off the desk.
+  return editionCoversRecent(card.when, edition, 2);
+}
+
+/** Collapse near-duplicate wires (same game / same head stem). */
+export function dedupeStories(stories: GameWrapCard[]): GameWrapCard[] {
+  const seen = new Set<string>();
+  const out: GameWrapCard[] = [];
+  for (const card of stories) {
+    const head = card.headline
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      .slice(0, 56);
+    const keys = [card.gameId ? `g:${card.gameId}` : "", head].filter(Boolean);
+    if (keys.some((k) => seen.has(k))) continue;
+    for (const k of keys) seen.add(k);
+    out.push(card);
+  }
+  return out;
+}
+
+function isStalePreview(card: GameWrapCard, edition: string): boolean {
+  if (isRecapStory(card)) return false;
+  const hay = `${card.headline} ${card.status ?? ""} ${card.dek ?? ""}`;
+  if (!/\bpreview\b|\bbreak skid\b|\blook to\b|\binto game\b|\bprobable\b/i.test(hay)) {
+    return false;
+  }
+  return !editionCovers(card.when, edition);
 }
 
 function favoritePages(
@@ -379,17 +407,21 @@ function sportPages(
   id: SportSectionId,
   clubs: ClubDesk[],
   stories: GameWrapCard[],
+  edition: string,
 ): {
   pages: (SportFrontPage | SportInsidePage)[];
   sportFolioByStory: Record<string, string>;
 } {
   const upcoming = upcomingFor(clubs);
   const sportFolioByStory: Record<string, string> = {};
+  const unique = dedupeStories(stories.filter((card) => !isStalePreview(card, edition)));
+  const isMlb = id.path === "baseball/mlb";
+  const deskCount = 5;
   const inside: SportInsidePage[] = [];
-  let n = 6; // 1–5 are fixed desks; full stories start at 6
-  for (let i = 0; i < stories.length; i += 2) {
-    const primary = stories[i]!;
-    const secondary = stories[i + 1];
+  let n = deskCount + 1;
+  for (let i = 0; i < unique.length; i += 2) {
+    const primary = unique[i]!;
+    const secondary = unique[i + 1];
     const folio = `${id.code}${n}`;
     sportFolioByStory[primary.id] = folio;
     if (secondary) sportFolioByStory[secondary.id] = folio;
@@ -407,16 +439,17 @@ function sportPages(
     n += 1;
   }
 
-  const articles = stories.map((card) => ({
+  const articles = unique.map((card) => ({
     card,
-    folio: sportFolioByStory[card.id] ?? `${id.code}6`,
+    folio: sportFolioByStory[card.id] ?? `${id.code}${deskCount + 1}`,
   }));
-  const recaps = stories.filter(isRecapStory).map((card) => ({
+  // News desk shows a capped, deduped set so the grid cannot collapse.
+  const newsArticles = articles.slice(0, 8);
+  const recaps = unique.filter(isRecapStory).map((card) => ({
     card,
-    folio: sportFolioByStory[card.id] ?? `${id.code}6`,
+    folio: sportFolioByStory[card.id] ?? `${id.code}${deskCount + 1}`,
   }));
-  // Recaps page falls back to all stories when no scored wraps filed yet.
-  const recapArticles = recaps.length ? recaps : articles;
+  const recapArticles = (recaps.length ? recaps : articles).slice(0, 8);
 
   const base = {
     section: id.code,
@@ -433,7 +466,7 @@ function sportPages(
     folio: `${id.code}1`,
     sectionPage: 1,
     focus: "news",
-    articles,
+    articles: newsArticles,
   };
   const recapPage: SportFrontPage = {
     ...base,
@@ -459,17 +492,18 @@ function sportPages(
     focus: "schedule",
     articles,
   };
-  const form: SportFrontPage = {
+  // MLB prints the playoff tree as page 5; other sports keep the league form desk.
+  const fifth: SportFrontPage = {
     ...base,
     kind: "sport-front",
     folio: `${id.code}5`,
     sectionPage: 5,
-    focus: "form",
+    focus: isMlb ? "playoffs" : "form",
     articles,
   };
 
   return {
-    pages: stampCounts([news, recapPage, teams, schedule, form, ...inside]),
+    pages: stampCounts([news, recapPage, teams, schedule, fifth, ...inside]),
     sportFolioByStory,
   };
 }
@@ -516,7 +550,12 @@ export function buildEdition(opts: {
 
   const sportPagesBuilt = ids.map((id) => ({
     id,
-    built: sportPages(id, clubsBy.get(id.path) ?? [], storiesBy.get(id.path) ?? []),
+    built: sportPages(
+      id,
+      clubsBy.get(id.path) ?? [],
+      storiesBy.get(id.path) ?? [],
+      opts.edition,
+    ),
   }));
   const sportFolioByStory: Record<string, string> = {};
   for (const part of sportPagesBuilt) Object.assign(sportFolioByStory, part.built.sportFolioByStory);

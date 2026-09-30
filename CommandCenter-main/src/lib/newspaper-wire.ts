@@ -8,7 +8,38 @@
  */
 
 import { editionNewsDay } from "./newspaper";
+import { fetchMlbScoreboard, type MlbScoreGame } from "./mlb";
 import type { SportsFavorite } from "./sports";
+
+/** One game on a section's schedule page — league-wide, with pitchers when known. */
+export type LeagueSlateGame = {
+  id: string;
+  path: string;
+  day: string;
+  when: string | null;
+  status: string;
+  final: boolean;
+  live: boolean;
+  venue: string | null;
+  round: string | null;
+  href: string | null;
+  away: {
+    name: string;
+    abbrev: string;
+    logo: string | null;
+    score: string | null;
+    record: string | null;
+    pitcher: string | null;
+  };
+  home: {
+    name: string;
+    abbrev: string;
+    logo: string | null;
+    score: string | null;
+    record: string | null;
+    pitcher: string | null;
+  };
+};
 
 const ESPN_SITE = "https://site.api.espn.com/apis/site/v2/sports";
 
@@ -630,4 +661,148 @@ export async function enrichWireStories(
       return { ...g, body: hit.body, dateline: hit.dateline, photo: hit.photo };
     })
     .sort(deskOrder);
+}
+
+function mlbSlateSide(side: MlbScoreGame["away"]) {
+  return {
+    name: side.name,
+    abbrev: side.abbrev,
+    logo: side.teamId ? `https://www.mlbstatic.com/team-logos/${side.teamId}.svg` : null,
+    score: side.score != null ? String(side.score) : null,
+    record: side.record,
+    pitcher: side.probablePitcher,
+  };
+}
+
+function slateFromMlb(game: MlbScoreGame, day: string): LeagueSlateGame {
+  return {
+    id: `mlb-${game.id}`,
+    path: "baseball/mlb",
+    day,
+    when: game.whenShort || game.when,
+    status: game.live ? game.inning || "Live" : game.status,
+    final: game.final,
+    live: game.live,
+    venue: game.venue,
+    round: null,
+    href: `/sports/mlb/game/${game.id}`,
+    away: mlbSlateSide(game.away),
+    home: mlbSlateSide(game.home),
+  };
+}
+
+async function slateFromEspn(path: string, day: string): Promise<LeagueSlateGame[]> {
+  const ymd = day.replace(/-/g, "");
+  const res = await fetch(`${ESPN_SITE}/${path}/scoreboard?dates=${ymd}&limit=300`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as {
+    events?: {
+      id?: string;
+      date?: string;
+      competitions?: {
+        date?: string;
+        venue?: { fullName?: string };
+        notes?: { headline?: string }[];
+        status?: { type?: { completed?: boolean; state?: string; detail?: string; shortDetail?: string } };
+        competitors?: {
+          homeAway?: string;
+          score?: string;
+          records?: { type?: string; summary?: string }[];
+          team?: {
+            id?: string;
+            displayName?: string;
+            shortDisplayName?: string;
+            abbreviation?: string;
+            logo?: string;
+          };
+          probables?: { athlete?: { displayName?: string; shortName?: string } }[];
+        }[];
+      }[];
+    }[];
+  };
+  const out: LeagueSlateGame[] = [];
+  for (const ev of data.events ?? []) {
+    const comp = ev.competitions?.[0];
+    const awayC = comp?.competitors?.find((c) => c.homeAway === "away");
+    const homeC = comp?.competitors?.find((c) => c.homeAway === "home");
+    if (!awayC?.team || !homeC?.team) continue;
+    const st = comp?.status?.type;
+    const final = Boolean(st?.completed);
+    const live = !final && st?.state === "in";
+    const side = (c: NonNullable<typeof awayC>) => ({
+      name: c.team?.displayName || c.team?.shortDisplayName || "—",
+      abbrev: c.team?.abbreviation || "—",
+      logo: c.team?.logo || espnTeamLogo(path, c.team?.id),
+      score: c.score ?? null,
+      record: c.records?.find((r) => r.type === "total")?.summary ?? null,
+      pitcher: c.probables?.[0]?.athlete?.shortName || c.probables?.[0]?.athlete?.displayName || null,
+    });
+    const when = (() => {
+      const iso = comp?.date || ev.date;
+      if (!iso) return null;
+      try {
+        return new Date(iso).toLocaleTimeString("en-US", {
+          timeZone: "America/Chicago",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+      } catch {
+        return null;
+      }
+    })();
+    out.push({
+      id: `${path}-${ev.id}`,
+      path,
+      day,
+      when: final || live ? null : when,
+      status: st?.shortDetail || st?.detail || (final ? "Final" : "Scheduled"),
+      final,
+      live,
+      venue: comp?.venue?.fullName ?? null,
+      round: comp?.notes?.find((n) => n.headline)?.headline ?? null,
+      href: null,
+      away: side(awayC),
+      home: side(homeC),
+    });
+  }
+  return out;
+}
+
+/**
+ * League-wide slate for a sport section schedule page: today's (and last night's)
+ * board with probable pitchers when the feed carries them.
+ */
+export async function fetchLeagueSlate(path: string, edition: string): Promise<LeagueSlateGame[]> {
+  const days = [...new Set([edition, editionNewsDay(edition)])];
+  const seen = new Set<string>();
+  const out: LeagueSlateGame[] = [];
+  for (const day of days) {
+    try {
+      if (path === "baseball/mlb") {
+        const board = await fetchMlbScoreboard(day);
+        for (const g of board) {
+          const row = slateFromMlb(g, day);
+          if (seen.has(row.id)) continue;
+          seen.add(row.id);
+          out.push(row);
+        }
+      } else {
+        for (const row of await slateFromEspn(path, day)) {
+          if (seen.has(row.id)) continue;
+          seen.add(row.id);
+          out.push(row);
+        }
+      }
+    } catch {
+      /* one day missing shouldn't blank the desk */
+    }
+  }
+  return out.sort((a, b) => {
+    const rank = (g: LeagueSlateGame) => (g.live ? 0 : g.final ? 2 : 1);
+    const by = rank(a) - rank(b);
+    if (by) return by;
+    return String(a.when ?? "").localeCompare(String(b.when ?? ""));
+  });
 }

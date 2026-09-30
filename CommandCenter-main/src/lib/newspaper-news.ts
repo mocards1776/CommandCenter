@@ -53,11 +53,32 @@ function mentionsClub(fav: SportsFavorite, article: NewsArticle): boolean {
   const teamId = fav.espnPath.split("/").pop() ?? "";
   const teams = (article.categories ?? []).filter((cat) => cat.type === "team");
   // A power ranking or odds card tags the whole league. That is not a club story.
-  if (teams.length > 4) return false;
+  if (teams.length > 3) return false;
   const tagged = teams.some((cat) => String(cat.teamId ?? "") === teamId);
   if (!tagged) return false;
-  const hay = `${article.headline ?? ""} ${article.description ?? ""}`.toLowerCase();
-  return clubMentionNames(fav).some((name) => hay.includes(name));
+  const names = clubMentionNames(fav);
+  const head = (article.headline ?? "").toLowerCase();
+  // Headline must name the club whenever more than one team is tagged.
+  if (names.some((name) => head.includes(name))) return true;
+  if (teams.length !== 1) return false;
+  const hay = `${head} ${(article.description ?? "").toLowerCase()}`;
+  return names.some((name) => hay.includes(name));
+}
+
+/** Higher = more clearly about this favorite club. */
+export function favoriteArticleScore(fav: SportsFavorite, article: NewsArticle): number {
+  if (!mentionsClub(fav, article)) return 0;
+  const names = clubMentionNames(fav);
+  const head = (article.headline ?? "").toLowerCase();
+  const dek = (article.description ?? "").toLowerCase();
+  const teams = (article.categories ?? []).filter((cat) => cat.type === "team");
+  let score = 10;
+  if (names.some((n) => head.includes(n))) score += 40;
+  if (names.some((n) => dek.includes(n))) score += 10;
+  if (teams.length === 1) score += 25;
+  else if (teams.length === 2) score += 8;
+  if (/\bpreview\b/i.test(head) || /\bpreview\b/i.test(article.type ?? "")) score -= 15;
+  return score;
 }
 
 function articleInEdition(article: NewsArticle, edition: string): boolean {
@@ -71,9 +92,9 @@ function articleInEdition(article: NewsArticle, edition: string): boolean {
     : editionCovers(article.published, edition);
 }
 
-/** Wider intake so sport sections can pack five filled pages. */
+/** Short lookback so section pages stay fresh. */
 function articleInSection(article: NewsArticle, edition: string): boolean {
-  return editionCoversRecent(article.published, edition, 5);
+  return editionCoversRecent(article.published, edition, 2);
 }
 
 async function articleBody(id: string, fallback: string): Promise<string> {
@@ -149,10 +170,13 @@ export async function fetchTeamArticles(
         };
         const mine = (data.articles ?? [])
           .filter((article) => articleInSection(article, edition) && mentionsClub(fav, article))
-          .slice(0, 8);
+          .sort((a, b) => favoriteArticleScore(fav, b) - favoriteArticleScore(fav, a))
+          .slice(0, 6);
         for (const article of mine) {
           const id = String(article.id ?? "");
           if (!id || seen.has(id)) continue;
+          // Drop weak matches (tagged but barely about the club).
+          if (favoriteArticleScore(fav, article) < 20) continue;
           seen.add(id);
           picked.push({ fav, article });
         }
