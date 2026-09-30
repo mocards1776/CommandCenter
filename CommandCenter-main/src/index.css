@@ -1868,13 +1868,13 @@ mark.rss-hl {
 
 /* Second deck: a narrow stacked head beside a spanning feature. */
 .wsj-deck2 {
-  flex: 1 1 0;
+  flex: 1.2 1 0;
   min-height: 0;
   overflow: hidden;
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(0, 4.25fr);
   gap: 0 0.5rem;
-  padding: 0.24rem 0 0.24rem;
+  padding: 0.18rem 0 0.18rem;
   border-bottom: 1px solid var(--w-rule);
 }
 .wsj-stack {
@@ -2304,13 +2304,13 @@ mark.rss-hl {
   display: grid;
   grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
   gap: 0 0.5rem;
-  flex-shrink: 0;
+  flex: 0.55 1 auto;
+  min-height: 0;
   overflow: hidden;
   border-top: 3px double var(--w-rule);
   padding-top: 0.2rem;
-  margin-top: 0.2rem;
-  /* Briefs give way to the stories rather than squeezing the decks. */
-  max-height: 26%;
+  margin-top: 0.1rem;
+  max-height: none;
 }
 .wsj-briefs > * + * {
   border-left: 1px solid var(--w-hair);
