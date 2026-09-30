@@ -17,12 +17,16 @@ import {
   enrichWrapBodies,
   matchWrapToFavorites,
   mergeStoryCards,
-  promotePostseason,
   wireStoryCards,
   wrapFeedsForFavorites,
   type GameWrapCard,
   type TeamInfobox,
 } from "@/lib/newspaper-sports";
+import {
+  buildEdition,
+  type EditionPage,
+  type EditionSection,
+} from "@/lib/newspaper-sections";
 import {
   enrichWireStories,
   fetchNewspaperWire,
@@ -68,14 +72,20 @@ function ExternalOrLink({
 
 /* ───────────────────────── nameplate ───────────────────────── */
 
-function Nameplate({ day, folio, pages }: { day: string; folio: string; pages: number }) {
+function Nameplate({
+  day,
+  page,
+}: {
+  day: string;
+  page: EditionPage;
+}) {
   const { volume, issue } = editionIssue(day);
   return (
     <header className="wsj-head">
       <h1 className="wsj-nameplate">The Thompson Times</h1>
       <div className="wsj-folio">
         <span className="wsj-folio-l">
-          <em>Sports Desk</em>
+          <em>{page.sectionTitle}</em>
           <span className="wsj-dots" aria-hidden="true" />
           <span>Wires &amp; ESPN</span>
         </span>
@@ -85,10 +95,20 @@ function Nameplate({ day, folio, pages }: { day: string; folio: string; pages: n
         <span className="wsj-folio-r">
           <span className="wsj-stars">★★★★</span>
           <span>
-            {folio} of {pages}
+            {page.folio} · {page.sectionPage} of {page.sectionCount}
           </span>
         </span>
       </div>
+      <p className="wsj-section-rule">
+        <span>Section {page.section}</span>
+        <span>
+          {page.kind === "sport-front"
+            ? "Schedule · Stats · Recaps"
+            : page.kind === "sport-inside"
+              ? "Recaps"
+              : "Favorite Teams"}
+        </span>
+      </p>
     </header>
   );
 }
@@ -266,14 +286,13 @@ function Prose({
   );
 }
 
-function Jump({ card, page }: { card: GameWrapCard; page: number }) {
-  const href = card.gameHref || card.wrapHref;
-  if (!href) return null;
+function Jump({ folio, onTurn }: { folio?: string; onTurn: (folio: string) => void }) {
+  if (!folio) return null;
   return (
     <p className="wsj-jump">
-      <ExternalOrLink href={href} className="wsj-a">
-        Please turn to page A{page}
-      </ExternalOrLink>
+      <button type="button" className="wsj-jump-btn" onClick={() => onTurn(folio)}>
+        Please turn to page {folio}
+      </button>
     </p>
   );
 }
@@ -334,17 +353,43 @@ function WhatsNews({
   teams,
   postseason,
   tonight,
+  sections,
+  folioOf,
+  onTurn,
 }: {
   cards: GameWrapCard[];
   teams: TeamInfobox[];
   postseason: string[];
   tonight: WireGame[];
+  sections: EditionSection[];
+  folioOf: (card: GameWrapCard) => string;
+  onTurn: (folio: string) => void;
 }) {
   const closed = teams.filter((t) => t.seasonState === "complete");
+  const sports = sections.filter((s) => s.code !== "A");
   return (
     <aside className="wsj-news">
       <h3 className="wsj-news-head">What’s News</h3>
-      <p className="wsj-news-sub">Around the Leagues</p>
+      {sports.length ? (
+        <>
+          <p className="wsj-news-sub">In this edition</p>
+          <ul className="wsj-news-list tight">
+            {sports.map((s) => (
+              <li key={s.code}>
+                <button type="button" className="wsj-jump-btn" onClick={() => onTurn(s.folio)}>
+                  <strong>Section {s.code}</strong>
+                </button>{" "}
+                {s.title}. {s.games} {s.games === 1 ? "game" : "games"}, {s.recaps}{" "}
+                {s.recaps === 1 ? "recap" : "recaps"}.{" "}
+                <button type="button" className="wsj-ref wsj-jump-btn" onClick={() => onTurn(s.folio)}>
+                  {s.folio}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      <p className="wsj-news-sub">Your clubs</p>
       <ul className="wsj-news-list">
         {postseason.map((league) => (
           <li key={`post-${league}`}>
@@ -352,9 +397,10 @@ function WhatsNews({
             wire until a champion is decided.
           </li>
         ))}
-        {cards.slice(0, 7).map((c, i) => {
+        {cards.slice(0, 7).map((c) => {
           const href = c.gameHref || c.wrapHref || c.teamHref;
           const lead = c.headline.split(/(?<=^[^.]{12,90})\s+/)[0] ?? c.headline;
+          const folio = folioOf(c);
           return (
             <li key={c.id}>
               <ExternalOrLink href={href} className="wsj-a">
@@ -362,7 +408,9 @@ function WhatsNews({
               </ExternalOrLink>{" "}
               {c.scoreLine ? `${c.scoreLine}. ` : ""}
               {c.round ? `${c.round}. ` : ""}
-              <span className="wsj-ref">A{Math.min(9, 2 + Math.floor(i / 2))}</span>
+              <button type="button" className="wsj-ref wsj-jump-btn" onClick={() => onTurn(folio)}>
+                {folio}
+              </button>
             </li>
           );
         })}
@@ -571,6 +619,11 @@ function FrontPage({
   postseason,
   newsCards,
   tonight,
+  sections,
+  folioOf,
+  onTurn,
+  jumpFolio,
+  wireCount,
 }: {
   lead: GameWrapCard | null;
   second: GameWrapCard | null;
@@ -580,20 +633,43 @@ function FrontPage({
   postseason: string[];
   newsCards: GameWrapCard[];
   tonight: WireGame[];
+  sections: EditionSection[];
+  folioOf: (card: GameWrapCard) => string;
+  onTurn: (folio: string) => void;
+  jumpFolio?: string;
+  wireCount: number;
 }) {
+  const news = (
+    <WhatsNews
+      cards={newsCards}
+      teams={teams}
+      postseason={postseason}
+      tonight={tonight}
+      sections={sections}
+      folioOf={folioOf}
+      onTurn={onTurn}
+    />
+  );
   if (!lead) {
-    return <p className="wsj-empty">The wire is quiet. Nothing has come in for your clubs.</p>;
+    return (
+      <div className="wsj-front">
+        <div className="wsj-deck">
+          {news}
+          <div className="wsj-art wsj-quiet">
+            <p className="wsj-empty">
+              Your clubs have no new copy. Each league prints its own section.
+            </p>
+          </div>
+        </div>
+        <ScoreBand teams={teams} wireCount={wireCount} />
+      </div>
+    );
   }
   return (
     <div className="wsj-front">
       {/* Top deck: What's News · art · lead story */}
       <div className="wsj-deck">
-        <WhatsNews
-          cards={newsCards}
-          teams={teams}
-          postseason={postseason}
-          tonight={tonight}
-        />
+        {news}
 
         <div className="wsj-art">
           <Cut card={lead} />
@@ -612,7 +688,7 @@ function FrontPage({
           ) : null}
           <Byline card={lead} />
           <Prose card={lead} cols={2} drop max={18} />
-          <Jump card={lead} page={2} />
+          <Jump folio={jumpFolio} onTurn={onTurn} />
         </article>
       </div>
 
@@ -637,7 +713,7 @@ function FrontPage({
         </div>
       ) : null}
 
-      <ScoreBand teams={teams} wireCount={newsCards.length} />
+      <ScoreBand teams={teams} wireCount={wireCount} />
       <BriefRow cards={briefs} cols={Math.min(5, Math.max(2, briefs.length))} />
     </div>
   );
@@ -650,13 +726,15 @@ function InsidePage({
   secondary,
   briefs,
   teams,
-  folioNext,
+  jumpFolio,
+  onTurn,
 }: {
   primary: GameWrapCard;
   secondary?: GameWrapCard;
   briefs: GameWrapCard[];
   teams: TeamInfobox[];
-  folioNext: number;
+  jumpFolio?: string;
+  onTurn: (folio: string) => void;
 }) {
   return (
     <div className="wsj-inside">
@@ -671,14 +749,14 @@ function InsidePage({
           ) : null}
           <Byline card={primary} />
           <Prose card={primary} cols={secondary ? 2 : 3} max={30} />
-          <Jump card={primary} page={folioNext} />
+          <Jump folio={jumpFolio} onTurn={onTurn} />
         </article>
         {secondary ? (
           <article className="wsj-story">
             <Headline card={secondary} size="md" />
             <Byline card={secondary} />
             <Prose card={secondary} cols={2} max={24} />
-            <Jump card={secondary} page={folioNext} />
+            <Jump folio={jumpFolio} onTurn={onTurn} />
           </article>
         ) : null}
         <StoryRail card={primary} teams={teams} />
@@ -688,38 +766,128 @@ function InsidePage({
   );
 }
 
-/* ───────────────────────── paging ───────────────────────── */
+/* ───────────────────────── sport section front ───────────────────────── */
 
-type Page =
-  | { kind: "front" }
-  | {
-      kind: "inside";
-      primary: GameWrapCard;
-      secondary?: GameWrapCard;
-      briefs: GameWrapCard[];
-    };
+function shortDay(iso: string): string {
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "numeric", day: "numeric" });
+}
 
-/** Stories the front page sets in full before the paper turns inside. */
-const FRONT_STORIES = 3;
+function recapDek(card: GameWrapCard): string {
+  const raw = (card.body || card.dek || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  const sentence = raw.split(/(?<=[.!?])\s/)[0] ?? raw;
+  return sentence.length > 220 ? `${sentence.slice(0, 217)}…` : sentence;
+}
 
-/**
- * Two full stories a page, with the next few games set as briefs along the foot.
- * The run is as long as the wire — no cap, so a 90-game Saturday prints a
- * 90-game paper.
- */
-function paginate(cards: GameWrapCard[]): Page[] {
-  const pages: Page[] = [{ kind: "front" }];
-  const rest = cards.slice(FRONT_STORIES);
-  const BRIEFS = 4;
-  let i = 0;
-  while (i < rest.length) {
-    const primary = rest[i]!;
-    const secondary = rest[i + 1];
-    const briefs = rest.slice(i + 2, i + 2 + BRIEFS);
-    pages.push({ kind: "inside", primary, secondary, briefs });
-    i += 2 + briefs.length;
-  }
-  return pages;
+function SportFront({
+  page,
+  teams,
+  onTurn,
+}: {
+  page: Extract<EditionPage, { kind: "sport-front" }>;
+  teams: TeamInfobox[];
+  onTurn: (folio: string) => void;
+}) {
+  const mine = teams.filter((t) => t.fav.espnPath.startsWith(`${page.path}/`));
+  return (
+    <div className="wsj-sport">
+      <div className="wsj-sport-col">
+        <h3>Schedule</h3>
+        {page.games.length ? (
+          <ul className="wsj-slate">
+            {page.games.map((g) => (
+              <li key={g.id} className={cn(g.favoriteKeys.length > 0 && "me")}>
+                <span>
+                  <ExternalOrLink href={g.href} className="wsj-a">
+                    <strong>
+                      {g.away.abbrev}
+                      {g.away.score != null ? ` ${g.away.score}` : ""}
+                    </strong>
+                    {" at "}
+                    <strong>
+                      {g.home.abbrev}
+                      {g.home.score != null ? ` ${g.home.score}` : ""}
+                    </strong>
+                  </ExternalOrLink>
+                  {page.spansDays ? <em> {shortDay(g.day)}</em> : null}
+                  {g.round ? <em> {g.round}</em> : null}
+                </span>
+                <span className="v">
+                  {g.final ? "Final" : g.live ? g.statusDetail : faceOff(g.startedAt) || g.statusDetail}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="wsj-empty">No games on the board.</p>
+        )}
+      </div>
+
+      <div className="wsj-sport-col">
+        <h3>Stats</h3>
+        <AgateBox
+          title="In the games"
+          rows={page.leaders.map((l) => ({
+            left: l.href ? (
+              <ExternalOrLink href={l.href} className="wsj-a">
+                {l.name}
+              </ExternalOrLink>
+            ) : (
+              l.name
+            ),
+            right: l.line,
+          }))}
+        />
+        {mine.map((t) => (
+          <AgateBox
+            key={t.fav.key}
+            title={t.snap.shortName || t.fav.shortName}
+            rows={[
+              { left: "Record", right: t.snap.record || "—", me: true },
+              { left: "Standing", right: t.snap.standing || "—" },
+              {
+                left: "Form",
+                right: t.form.length ? t.form.join(" ") : "—",
+              },
+              ...t.teamStats.map((s) => ({ left: s.label, right: s.value })),
+            ]}
+          />
+        ))}
+        {!page.leaders.length && !mine.length ? (
+          <p className="wsj-empty">No statistical lines on the wire.</p>
+        ) : null}
+      </div>
+
+      <div className="wsj-sport-col">
+        <h3>Recaps</h3>
+        {page.recaps.length ? (
+          <div className="wsj-recap-list">
+            {page.recaps.map(({ card, folio }) => {
+              const href = card.gameHref || card.wrapHref || card.teamHref;
+              const dek = recapDek(card);
+              return (
+                <article key={card.id} className="wsj-recap">
+                  <p className="wsj-kicker">{kickerOf(card)}</p>
+                  <h3>
+                    <ExternalOrLink href={href} className="wsj-a">
+                      {card.headline}
+                    </ExternalOrLink>
+                  </h3>
+                  {card.scoreLine ? <p className="wsj-score">{card.scoreLine}</p> : null}
+                  {dek ? <p className="wsj-brief-dek">{dek}</p> : null}
+                  <Jump folio={folio === page.folio ? undefined : folio} onTurn={onTurn} />
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="wsj-empty">No finals yet. The board above is the slate.</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /* ───────────────────────── page ───────────────────────── */
@@ -885,8 +1053,7 @@ export default function DailyNewspaperPage() {
       favs: teamFavs,
       details: teamDetailsQ.data ?? [],
     });
-    const merged = mergeStoryCards(wire, enrichedQ.data ?? teamCards);
-    return promotePostseason(merged, FRONT_STORIES);
+    return mergeStoryCards(wire, enrichedQ.data ?? teamCards);
   }, [wireQ.data, teamFavs, teamDetailsQ.data, enrichedQ.data, teamCards]);
 
   /**
@@ -896,7 +1063,7 @@ export default function DailyNewspaperPage() {
   const tonight = useMemo(() => {
     const games = wireQ.data?.games ?? [];
     return games
-      .filter((g) => !g.final && !g.preseason)
+      .filter((g) => !g.final && !g.preseason && g.favoriteKeys.length > 0)
       .sort((a, b) =>
         a.live === b.live
           ? String(a.startedAt).localeCompare(String(b.startedAt))
@@ -907,12 +1074,15 @@ export default function DailyNewspaperPage() {
       .slice(0, 8);
   }, [wireQ.data]);
 
-  const pages = useMemo(() => paginate(stories), [stories]);
+  const edition = useMemo(
+    () => buildEdition({ stories, games: wireQ.data?.games ?? [] }),
+    [stories, wireQ.data],
+  );
+  const pages = edition.pages;
 
-  const lead = stories[0] ?? null;
-  const second = stories[1] ?? null;
-  const third = stories[2] ?? null;
-  const frontBriefs = stories.slice(FRONT_STORIES, FRONT_STORIES + 5);
+  function folioOf(card: GameWrapCard): string {
+    return edition.sportFolioByStory[card.id] ?? edition.favoriteFolioByStory[card.id] ?? "A1";
+  }
 
   function goPage(idx: number) {
     const el = pagerRef.current;
@@ -920,6 +1090,11 @@ export default function DailyNewspaperPage() {
     const next = Math.max(0, Math.min(pages.length - 1, idx));
     el.scrollTo({ left: next * el.clientWidth, behavior: "smooth" });
     setPageIndex(next);
+  }
+
+  function goFolio(folio: string) {
+    const idx = pages.findIndex((p) => p.folio === folio);
+    if (idx >= 0) goPage(idx);
   }
 
   useEffect(() => {
@@ -983,7 +1158,7 @@ export default function DailyNewspaperPage() {
             <ChevronLeft size={16} />
           </button>
           <span className="wsj-pager-label">
-            {pageIndex + 1}/{pages.length}
+            {pages[pageIndex]?.folio ?? "A1"}
           </span>
           <button
             type="button"
@@ -1007,34 +1182,66 @@ export default function DailyNewspaperPage() {
         </div>
       </div>
 
+      <div className="wsj-secbar print:hidden" role="tablist" aria-label="Sections">
+        {edition.sections.map((section) => {
+          const on = pages[pageIndex]?.section === section.code;
+          return (
+            <button
+              key={section.code}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              title={section.title}
+              className={cn("wsj-sec-btn", on && "on")}
+              onClick={() => goFolio(section.folio)}
+            >
+              {section.code === "A" ? "A · Clubs" : section.code}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="newspaper-edition wsj-pager" ref={pagerRef}>
-        {pages.map((page, pi) => (
-          <section
-            key={page.kind === "front" ? "front" : `${page.primary.id}-${pi}`}
-            className="wsj-page"
-            aria-label={`Page A${pi + 1}`}
-          >
-            <span className="wsj-tab">A{pi + 1}</span>
-            <Nameplate day={day} folio={`A${pi + 1}`} pages={pages.length} />
+        {pages.map((page) => (
+          <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`}>
+            <span className="wsj-tab">{page.folio}</span>
+            <Nameplate day={day} page={page} />
             <div className="wsj-body">
-              {page.kind === "front" ? (
+              {page.kind === "favorites-front" ? (
                 <FrontPage
-                  lead={lead}
-                  second={second}
-                  third={third}
-                  briefs={frontBriefs}
+                  lead={page.lead}
+                  second={page.second}
+                  third={page.third}
+                  briefs={page.briefs}
                   teams={teams}
                   postseason={wireQ.data?.postseasonLeagues ?? []}
-                  newsCards={stories}
+                  newsCards={page.news}
                   tonight={tonight}
+                  sections={edition.sections}
+                  folioOf={folioOf}
+                  onTurn={goFolio}
+                  jumpFolio={page.jumpFolio}
+                  wireCount={wireQ.data?.games.length ?? 0}
                 />
-              ) : (
+              ) : page.kind === "favorites-inside" ? (
                 <InsidePage
                   primary={page.primary}
                   secondary={page.secondary}
                   briefs={page.briefs}
                   teams={teams}
-                  folioNext={Math.min(pages.length, pi + 2)}
+                  jumpFolio={page.jumpFolio}
+                  onTurn={goFolio}
+                />
+              ) : page.kind === "sport-front" ? (
+                <SportFront page={page} teams={teams} onTurn={goFolio} />
+              ) : (
+                <InsidePage
+                  primary={page.primary}
+                  secondary={page.secondary}
+                  briefs={[]}
+                  teams={teams.filter((t) => t.fav.espnPath.startsWith(`${page.path}/`))}
+                  jumpFolio={page.jumpFolio}
+                  onTurn={goFolio}
                 />
               )}
             </div>

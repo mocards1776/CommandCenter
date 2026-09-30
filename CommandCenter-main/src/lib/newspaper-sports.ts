@@ -104,6 +104,19 @@ function strongNames(fav: SportsFavorite): string[] {
   return [...new Set(names)].filter((n) => n.length >= 3 && !WEAK_TOKENS.has(n));
 }
 
+/** A wrap feed only names clubs in that feed's sport. */
+function feedAllowsFavorite(feedUrl: string, fav: SportsFavorite): boolean {
+  const path = fav.espnPath;
+  if (feedUrl.includes("cardinals-wraps")) return fav.key === "mlb-stl";
+  if (feedUrl.includes("mlb")) return path.startsWith("baseball/mlb/");
+  if (feedUrl.includes("nfl")) return path.startsWith("football/nfl/");
+  if (feedUrl.includes("cfb")) return path.startsWith("football/college-football/");
+  if (feedUrl.includes("nhl")) return path.startsWith("hockey/nhl/");
+  if (feedUrl.includes("epl")) return /soccer\/eng\.1\//.test(path);
+  if (feedUrl.includes("soccer")) return path.startsWith("soccer/");
+  return true;
+}
+
 function hayHasName(hay: string, name: string): boolean {
   if (name.length <= 3) {
     const re = new RegExp(`(?:^|[^a-z0-9])${name.replace(/\./g, "\\.")}(?:[^a-z0-9]|$)`, "i");
@@ -130,6 +143,7 @@ export function matchWrapToFavorites(
 
   for (const fav of favs) {
     if (fav.kind !== "team") continue;
+    if (!feedAllowsFavorite(feedUrl, fav)) continue;
     let hit = false;
     if (fav.mlbTeamId && item.logoTeamIds?.includes(fav.mlbTeamId)) hit = true;
     if (!hit && item.logoSoccerIds?.length) {
@@ -300,6 +314,8 @@ export type GameWrapCard = {
   teamName: string;
   teamHref: string;
   sportLabel: string;
+  /** ESPN sport path, e.g. baseball/mlb, used to file the story in a section. */
+  leaguePath: string | null;
   headline: string;
   dek: string | null;
   /** Full ESPN wrap body when available. */
@@ -368,6 +384,23 @@ export function buildTeamInfoboxes(
       } satisfies TeamInfobox;
     })
     .filter((x): x is TeamInfobox => x != null);
+}
+
+const LEAGUE_ROOTS = [
+  "baseball/mlb",
+  "football/nfl",
+  "football/college-football",
+  "hockey/nhl",
+  "basketball/mens-college-basketball",
+] as const;
+
+/** ESPN path of the league a club plays in, without the team id. */
+export function leaguePathFromEspn(espnPath: string): string | null {
+  for (const root of LEAGUE_ROOTS) {
+    if (espnPath === root || espnPath.startsWith(`${root}/`)) return root;
+  }
+  const soccer = /^(soccer\/[^/]+)(?:\/|$)/.exec(espnPath);
+  return soccer?.[1] ?? null;
 }
 
 function sportMatchesFavorite(
@@ -466,6 +499,7 @@ export function buildGameWrapCards(opts: {
       teamName: fav.shortName,
       teamHref: favoriteTeamHref(fav),
       sportLabel: g.sportLabel,
+      leaguePath: leaguePathFromEspn(fav.espnPath),
       headline: wrap?.item.title || g.headline,
       dek: wrap?.item.snippet || g.detail,
       body: null,
@@ -497,6 +531,7 @@ export function buildGameWrapCards(opts: {
         teamName: fav.shortName,
         teamHref: favoriteTeamHref(fav),
         sportLabel: fav.league || fav.sport,
+        leaguePath: leaguePathFromEspn(fav.espnPath),
         headline: wrap?.item.title || `${fav.shortName}: ${game.label}`,
         dek: wrap?.item.snippet || game.detail,
         body: null,
@@ -529,6 +564,7 @@ export function buildGameWrapCards(opts: {
       teamName: fav.shortName,
       teamHref: favoriteTeamHref(fav),
       sportLabel: fav.league || fav.sport,
+      leaguePath: leaguePathFromEspn(fav.espnPath),
       headline: w.item.title,
       dek: w.item.snippet,
       body: null,
@@ -594,6 +630,7 @@ export function wireStoryCards(opts: {
       teamName: fav?.shortName ?? (g.away.winner ? g.away.short : g.home.short),
       teamHref: fav ? favoriteTeamHref(fav) : g.href,
       sportLabel: g.league,
+      leaguePath: g.path,
       headline: g.headline,
       dek: g.series ?? null,
       body: g.body,
@@ -612,9 +649,9 @@ export function wireStoryCards(opts: {
             { label: g.home.abbrev, value: String(g.home.score) },
           ]
         : [],
-      leaders: g.leaders.length ? g.leaders : leadersFromDetail(fav ?? favs[0]!, detail),
-      teamStats: teamStatsFromDetail(detail),
-      division: divisionFromDetail(detail),
+      leaders: g.leaders.length ? g.leaders : fav ? leadersFromDetail(fav, detail) : [],
+      teamStats: fav ? teamStatsFromDetail(detail) : [],
+      division: fav ? divisionFromDetail(detail) : [],
       photo: g.photo,
       caption: scored
         ? `${g.away.name} at ${g.home.name}. ${g.statusDetail}.`
