@@ -174,7 +174,7 @@ if (nfl?.kind === "sport-front") {
   assert(nfl.clubs[0]?.division.some((row) => row.me && row.team === "Chiefs"), "standings mark your club");
   assert(nfl.clubs[0]?.stats.some((stat) => stat.label === "PF"), "season stats run with the table");
   assert(nfl.articles.some((article) => article.card.id === "news-injury"), "Tuesday's article is the football news");
-  assert(nfl.articles.some((article) => article.card.id === "wire-nfl-weekend"), "weekend recap still packs the section");
+  assert(nfl.articles.every((article) => article.card.id !== "wire-nfl-weekend"), "weekend recap is too old for a fresh midweek desk");
 }
 const nflRecaps = paper.pages.find((page) => page.folio === "NFL2");
 assert(nflRecaps?.kind === "sport-front" && nflRecaps.focus === "recaps", "NFL2 is the recaps page");
@@ -187,6 +187,8 @@ assert(nflForm?.kind === "sport-front" && nflForm.focus === "form", "NFL5 is the
 
 const mlb = paper.pages.find((page) => page.folio === "MLB1");
 assert(mlb?.kind === "sport-front" && mlb.articles.some((article) => article.card.id === "news-cards"), "baseball keeps its own news");
+const mlbPlayoffs = paper.pages.find((page) => page.folio === "MLB5");
+assert(mlbPlayoffs?.kind === "sport-front" && mlbPlayoffs.focus === "playoffs", "MLB5 is the playoff tree page");
 assert((paper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= MIN_SECTION_PAGES, "NFL section always has at least five pages");
 assert((paper.sections.find((s) => s.code === "A")?.pages ?? 0) >= MIN_SECTION_PAGES, "A always has at least five pages");
 assert((paper.sections.find((s) => s.code === "MLB")?.pages ?? 0) >= MIN_SECTION_PAGES, "MLB always has at least five pages");
@@ -263,8 +265,8 @@ if (tuesdayNfl?.kind === "sport-front") {
   const ids = tuesdayNfl.articles.map((article) => article.card.id);
   assert(ids.includes("news-kelce"), "Monday's injury note is Tuesday's news");
   assert(ids.includes("wire-nfl-mnf"), "Monday night's final is Tuesday's result");
-  // Recent window keeps Sunday's rewrite available for packing the section.
-  assert(ids.includes("news-lions-sunday"), "Sunday's rewrite still packs midweek section pages");
+  // Two-day lookback from Tuesday still reaches Monday-night / late Sunday rewrite.
+  assert(ids.includes("news-lions-sunday"), "late Sunday rewrite still packs Tuesday when in lookback");
 }
 const tuesdayA = tuesdayPaper.pages[0];
 assert(
