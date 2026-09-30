@@ -8,6 +8,7 @@ import {
   editionCoversResult,
   favoriteDeskWeight,
   isResultCopy,
+  splitStoryCopy,
 } from "./newspaper.ts";
 import {
   buildEdition,
@@ -26,6 +27,15 @@ assert(
 assert(
   favoriteDeskWeight("nfl-kc") > favoriteDeskWeight("eng-arsenal"),
   "Chiefs outrank soccer",
+);
+const split = splitStoryCopy(
+  "First sentence ends here. Second sentence keeps going with more copy for the jump. ".repeat(20),
+  200,
+);
+assert(split.teaser.length > 0 && split.rest.length > 0, "long copy splits for a real jump");
+assert(
+  split.teaser.length + split.rest.length >= 200,
+  "split keeps substantially all of the original copy",
 );
 
 function assert(cond: unknown, msg: string) {
@@ -186,7 +196,11 @@ assert(
   "club-form pages list Cardinals before Chiefs",
 );
 assert(a?.kind === "favorites-front" && a.news.every((story) => story.id !== "wire-nfl-weekend"), "weekend score stays off A1 fresh list");
-assert(a?.kind === "favorites-front" && a.jumpFolio === "A2", `the front jumps to clubs desk, got ${a.jumpFolio}`);
+assert(a?.kind === "favorites-front", "A1 is the favorites front");
+assert(
+  !a?.jumpFolio,
+  "A1 no longer invents a next-page jump — clubs desk is a labeled trail",
+);
 
 const nfl = paper.pages.find((page) => page.folio === "NFL1");
 assert(nfl?.kind === "sport-front" && nfl.focus === "news", "NFL1 is the football news page");
@@ -337,6 +351,42 @@ const deskFront = deskOrder.pages[0];
 assert(
   deskFront?.kind === "favorites-front" && deskFront.lead?.id === "news-lions-note",
   "Lions lead Chiefs when both filed the same afternoon",
+);
+
+const longLead = card({
+  id: "news-long-lead",
+  headline: "Cardinals map a winter of roster decisions",
+  favoriteKey: "mlb-stl",
+  followed: true,
+  teamName: "Cardinals",
+  sportLabel: "MLB",
+  leaguePath: "baseball/mlb",
+  when: "2026-09-30T17:00:00Z",
+  body: "St. Louis spent the afternoon in meetings that stretched past dusk. ".repeat(40),
+});
+const withJump = buildEdition({
+  stories: [longLead, lionsNote],
+  clubs: [cards, lionsClub],
+  edition,
+});
+const jumpFront = withJump.pages[0];
+assert(
+  jumpFront?.kind === "favorites-front" && Boolean(jumpFront.leadContinue),
+  "a long lead gets a real continuation folio",
+);
+const cont = withJump.pages.find((page) => page.kind === "favorites-continue");
+assert(cont?.kind === "favorites-continue", "continuation page is filed after the clubs desk");
+if (cont?.kind === "favorites-continue") {
+  assert(cont.continuedFrom === "A1", "continuation cites the front");
+  assert(cont.rest.length > 80, "continuation carries the rest of the body");
+  assert(
+    jumpFront?.kind === "favorites-front" && jumpFront.leadContinue === cont.folio,
+    "front jump lands on the continuation folio",
+  );
+}
+assert(
+  withJump.pages[1]?.kind === "favorites-clubs",
+  "A2 stays the clubs desk between the tease and the jump",
 );
 
 console.log("newspaper-sections ok");

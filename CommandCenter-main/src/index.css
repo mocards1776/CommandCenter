@@ -1153,14 +1153,17 @@ mark.rss-hl {
   /* App header (58px, 70px from md) plus the flag rule beneath it. Guessing
      low here pushes the foot briefs under the fold, so it is measured. */
   --w-chrome: calc(60px + env(safe-area-inset-top, 0px));
-  height: calc(100dvh - var(--w-chrome));
-  max-height: calc(100dvh - var(--w-chrome));
+  /* Taller sheet than the viewport so columns can run; page scrolls vertically. */
+  --w-page-min: max(100dvh - var(--w-chrome), 1180px);
+  height: var(--w-page-min);
+  max-height: none;
+  min-height: calc(100dvh - var(--w-chrome));
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 0;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: auto;
   font-family: var(--w-label);
   font-size: 11px;
   color: var(--w-ink);
@@ -1385,11 +1388,11 @@ mark.rss-hl {
 /* ── The spread: one folio per swipe ────────────────────────────────── */
 .newspaper-edition.wsj-pager {
   flex: 1;
-  min-height: 0;
+  min-height: var(--w-page-min);
   display: flex;
   flex-direction: row;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   scroll-snap-type: x mandatory;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
@@ -1405,19 +1408,19 @@ mark.rss-hl {
   width: 100%;
   min-width: 100%;
   max-width: 100%;
-  height: 100%;
-  min-height: 100%;
-  max-height: 100%;
+  height: auto;
+  min-height: var(--w-page-min);
+  max-height: none;
   scroll-snap-align: start;
   scroll-snap-stop: always;
   box-sizing: border-box;
-  padding: 0.45rem 0.45rem 0.2rem;
+  padding: 0.45rem 0.45rem 0.35rem;
   background: var(--w-paper);
   color: var(--w-ink);
   display: flex;
   flex-direction: column;
   gap: 0.14rem;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* The reader's folio chip, printed in the corner of the sheet. */
@@ -1732,6 +1735,162 @@ mark.rss-hl {
   font-style: normal;
   color: var(--w-muted);
   white-space: nowrap;
+}
+.wsj-clubs-slate {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0 0;
+  border-top: 1px solid var(--w-hair);
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+.wsj-clubs-slate li {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, auto) 1fr;
+  column-gap: 0.35rem;
+  row-gap: 0;
+  font-size: 10.5px;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+.wsj-clubs-slate-when {
+  color: var(--w-muted);
+  font-weight: 600;
+}
+.wsj-clubs-slate strong {
+  font-weight: 700;
+}
+.wsj-clubs-slate em {
+  grid-column: 2;
+  font-style: normal;
+  color: var(--w-muted);
+  font-size: 9.5px;
+}
+.wsj-clubs-shelved {
+  list-style: none;
+  margin: 0.15rem 0 0;
+  padding: 0.3rem 0 0;
+  border-top: 2px solid var(--w-rule);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.28rem;
+  flex-shrink: 0;
+}
+.wsj-clubs-shelved-card {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px dashed var(--w-hair);
+  background: #f7f8fa;
+  text-decoration: none;
+  color: inherit;
+}
+.wsj-clubs-shelved-card strong {
+  display: block;
+  font-family: var(--w-cond);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+.wsj-clubs-shelved-card span {
+  display: block;
+  font-size: 10px;
+  color: var(--w-muted);
+}
+.wsj-clubs-shelved-card em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--w-accent);
+}
+
+.wsj-story-fill {
+  margin-top: 0.2rem;
+  padding: 0.35rem 0.4rem;
+  border: 1px solid var(--w-hair);
+  background: linear-gradient(180deg, #f7f8fb 0%, #eef1f6 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+.wsj-story-fill-hero {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.wsj-story-fill-hero strong {
+  display: block;
+  font-family: var(--w-cond);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.wsj-story-fill-hero em {
+  display: block;
+  font-style: normal;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.wsj-story-fill-hero span {
+  display: block;
+  font-size: 10px;
+  color: var(--w-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.wsj-story-fill-stats,
+.wsj-story-fill-names {
+  list-style: none;
+  margin: 0;
+  padding: 0.15rem 0 0;
+  border-top: 1px solid var(--w-hair);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.12rem 0.5rem;
+}
+.wsj-story-fill-stats li,
+.wsj-story-fill-names li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.3rem;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.wsj-story-fill-names em {
+  font-style: normal;
+  color: var(--w-muted);
+  white-space: nowrap;
+}
+
+.wsj-continue {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.wsj-continued-from {
+  margin: 0;
+  font-family: var(--w-label);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-accent);
+  border-bottom: 1px solid var(--w-hair);
+  padding-bottom: 0.15rem;
+}
+.wsj-continue-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 3.2fr) minmax(0, 1fr);
+  gap: 0.55rem;
 }
 
 .wsj-sport-solo {
@@ -2094,17 +2253,18 @@ mark.rss-hl {
 .wsj-body {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
 }
 /* Flex rather than fixed rows: the wells that exist share the sheet, so a
    front without a second deck still fills instead of leaving a white band. */
 .wsj-front,
-.wsj-inside {
+.wsj-inside,
+.wsj-continue {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
 }
