@@ -13,6 +13,7 @@ import type { SportsFavorite } from "./sports";
 const ESPN_SITE = "https://site.api.espn.com/apis/site/v2/sports";
 
 export type WireSide = {
+  id: string | null;
   name: string;
   short: string;
   abbrev: string;
@@ -21,6 +22,19 @@ export type WireSide = {
   winner: boolean;
   record: string | null;
   seed: string | null;
+};
+
+/** Full-league club for sport-section team walls. */
+export type LeagueClub = {
+  id: string;
+  name: string;
+  short: string;
+  abbrev: string;
+  logo: string | null;
+  record: string;
+  rank: string;
+  group: string;
+  favorite: boolean;
 };
 
 export type WireGame = {
@@ -197,6 +211,7 @@ function side(c: EspnCompetitor | undefined): WireSide {
   const overall = c?.records?.find((r) => r.type === "total") ?? c?.records?.[0];
   const rank = c?.curatedRank?.current;
   return {
+    id: c?.team?.id ? String(c.team.id) : null,
     name: c?.team?.displayName ?? "—",
     short: c?.team?.shortDisplayName ?? c?.team?.displayName ?? "—",
     abbrev: (c?.team?.abbreviation ?? "—").toUpperCase(),
@@ -206,6 +221,156 @@ function side(c: EspnCompetitor | undefined): WireSide {
     record: overall?.summary ?? null,
     seed: rank && rank > 0 && rank < 99 ? `No. ${rank}` : null,
   };
+}
+
+function logoFromTeam(team: {
+  logo?: string;
+  logos?: { href?: string; rel?: string[] }[];
+} | undefined): string | null {
+  if (!team) return null;
+  if (team.logo) return team.logo;
+  const logos = team.logos ?? [];
+  const full = logos.find((l) => l.rel?.includes("full"));
+  return (full ?? logos[0])?.href ?? null;
+}
+
+function recordFromStats(
+  path: string,
+  stats: { name?: string; displayValue?: string }[] | undefined,
+): string {
+  const stat = (n: string) => stats?.find((s) => s.name === n)?.displayValue ?? "";
+  if (/soccer\//i.test(path)) {
+    const w = stat("wins") || "0";
+    const d = stat("ties") || "0";
+    const l = stat("losses") || "0";
+    const pts = stat("points");
+    return pts ? `${w}-${d}-${l} · ${pts} pts` : `${w}-${d}-${l}`;
+  }
+  if (/hockey\/nhl/i.test(path)) {
+    return `${stat("wins") || "0"}-${stat("losses") || "0"}-${stat("otLosses") || stat("overtimeLosses") || "0"}`;
+  }
+  return stat("overall") || `${stat("wins") || "0"}-${stat("losses") || "0"}`;
+}
+
+/** Every club in a league — not just the ones the reader follows. */
+export async function fetchLeagueClubs(path: string): Promise<LeagueClub[]> {
+  try {
+    const res = await fetch(`https://site.api.espn.com/apis/v2/sports/${path}/standings`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      children?: {
+        name?: string;
+        standings?: {
+          entries?: {
+            team?: {
+              id?: string;
+              displayName?: string;
+              shortDisplayName?: string;
+              abbreviation?: string;
+              logo?: string;
+              logos?: { href?: string; rel?: string[] }[];
+            };
+            stats?: { name?: string; displayValue?: string }[];
+          }[];
+        };
+      }[];
+      standings?: {
+        entries?: {
+          team?: {
+            id?: string;
+            displayName?: string;
+            shortDisplayName?: string;
+            abbreviation?: string;
+            logo?: string;
+            logos?: { href?: string; rel?: string[] }[];
+          };
+          stats?: { name?: string; displayValue?: string }[];
+        }[];
+      };
+    };
+    const out: LeagueClub[] = [];
+    const seen = new Set<string>();
+    const push = (
+      group: string,
+      entries: {
+        team?: {
+          id?: string;
+          displayName?: string;
+          shortDisplayName?: string;
+          abbreviation?: string;
+          logo?: string;
+          logos?: { href?: string; rel?: string[] }[];
+        };
+        stats?: { name?: string; displayValue?: string }[];
+      }[],
+    ) => {
+      for (const e of entries) {
+        const id = e.team?.id ? String(e.team.id) : "";
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        const rank =
+          e.stats?.find((s) => s.name === "rank")?.displayValue ||
+          e.stats?.find((s) => s.name === "playoffSeed")?.displayValue ||
+          String(out.length + 1);
+        out.push({
+          id,
+          name: e.team?.displayName ?? "—",
+          short: e.team?.shortDisplayName ?? e.team?.displayName ?? "—",
+          abbrev: (e.team?.abbreviation ?? "—").toUpperCase(),
+          logo: logoFromTeam(e.team),
+          record: recordFromStats(path, e.stats),
+          rank,
+          group,
+          favorite: false,
+        });
+      }
+    };
+    for (const child of data.children ?? []) {
+      push(child.name ?? "", child.standings?.entries ?? []);
+    }
+    if (!out.length) push("", data.standings?.entries ?? []);
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export function markFavoriteClubs(
+  clubs: LeagueClub[],
+  favs: SportsFavorite[],
+  path: string,
+): LeagueClub[] {
+  const ids = new Set(
+    favs
+      .filter((f) => f.kind === "team" && f.espnPath.startsWith(`${path}/`))
+      .map((f) => f.espnPath.split("/").pop() ?? ""),
+  );
+  return clubs.map((c) => ({ ...c, favorite: ids.has(c.id) }));
+}
+
+export function espnTeamLogo(path: string, teamId: string | null | undefined): string | null {
+  if (!teamId) return null;
+  if (/baseball\/mlb/i.test(path)) {
+    return `https://a.espncdn.com/i/teamlogos/mlb/500/scoreboard/${teamId}.png`;
+  }
+  if (/football\/nfl/i.test(path)) {
+    return `https://a.espncdn.com/i/teamlogos/nfl/500/${teamId}.png`;
+  }
+  if (/college-football/i.test(path)) {
+    return `https://a.espncdn.com/i/teamlogos/ncaa/500/${teamId}.png`;
+  }
+  if (/hockey\/nhl/i.test(path)) {
+    return `https://a.espncdn.com/i/teamlogos/nhl/500/${teamId}.png`;
+  }
+  if (/mens-college-basketball/i.test(path)) {
+    return `https://a.espncdn.com/i/teamlogos/ncaa/500/${teamId}.png`;
+  }
+  if (/soccer\//i.test(path)) {
+    return `https://a.espncdn.com/i/teamlogos/soccer/500/${teamId}.png`;
+  }
+  return `https://a.espncdn.com/i/teamlogos/soccer/500/${teamId}.png`;
 }
 
 /** ESPN prefixes recap descriptions with an em dash datelineless stub. */

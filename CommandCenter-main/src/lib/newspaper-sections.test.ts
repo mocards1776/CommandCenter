@@ -113,6 +113,7 @@ assert(isDeskStory(weekend), "a final is copy when the date says it is");
 const chiefs: ClubDesk = {
   key: "nfl-kc",
   shortName: "Chiefs",
+  logo: null,
   leaguePath: "football/nfl",
   record: "2-1",
   standing: "1st in AFC West",
@@ -128,6 +129,7 @@ const chiefs: ClubDesk = {
 const cards: ClubDesk = {
   key: "mlb-stl",
   shortName: "Cardinals",
+  logo: null,
   leaguePath: "baseball/mlb",
   record: "78-84",
   standing: "3rd in NL Central",
