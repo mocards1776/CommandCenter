@@ -147,8 +147,9 @@ const paper = buildEdition({
 
 const folios = paper.pages.map((page) => page.folio);
 assert(folios[0] === "A1", "section A opens the paper");
-assert(!folios.some((folio) => folio.startsWith("A") && folio !== "A1"), "section A does not reprint the stories");
-assert(folios.includes("NFL1") && folios.includes("MLB1"), "each sport still has a section");
+assert(folios.includes("A2"), "section A has a clubs desk page");
+assert(folios.includes("NFL1") && folios.includes("NFL2") && folios.includes("NFL3"), "NFL has news/teams/schedule pages");
+assert(folios.includes("MLB1") && folios.includes("MLB2") && folios.includes("MLB3"), "MLB has news/teams/schedule pages");
 
 const a = paper.pages[0];
 assert(a?.kind === "favorites-front" && a.lead?.id === "news-cards", "the newest story leads, not Sunday's score");
@@ -157,10 +158,10 @@ assert(
   "Tuesday's Chiefs story still runs",
 );
 assert(a?.kind === "favorites-front" && a.news.every((story) => story.id !== "wire-nfl-weekend"), "weekend score stays off A1");
-assert(a?.kind === "favorites-front" && a.jumpFolio?.startsWith("MLB"), `the front jumps into the sport, got ${a.jumpFolio}`);
+assert(a?.kind === "favorites-front" && a.jumpFolio === "A2", `the front jumps to clubs desk, got ${a.jumpFolio}`);
 
 const nfl = paper.pages.find((page) => page.folio === "NFL1");
-assert(nfl?.kind === "sport-front", "NFL1 is the football desk");
+assert(nfl?.kind === "sport-front" && nfl.focus === "news", "NFL1 is the football news page");
 if (nfl?.kind === "sport-front") {
   assert(nfl.upcoming.some((game) => game.label === "at Ravens"), "the section carries the upcoming schedule");
   assert(!nfl.upcoming.some((game) => /dolphins/i.test(game.label)), "last weekend is not the schedule");
@@ -169,9 +170,16 @@ if (nfl?.kind === "sport-front") {
   assert(nfl.articles.every((article) => article.card.id !== "wire-nfl-weekend"), "Sunday's score is not an NFL story");
   assert(nfl.articles.some((article) => article.card.id === "news-injury"), "Tuesday's article is the football news");
 }
+const nflTeams = paper.pages.find((page) => page.folio === "NFL2");
+assert(nflTeams?.kind === "sport-front" && nflTeams.focus === "teams", "NFL2 is the all-teams page");
+const nflSched = paper.pages.find((page) => page.folio === "NFL3");
+assert(nflSched?.kind === "sport-front" && nflSched.focus === "schedule", "NFL3 is the schedule page");
 
 const mlb = paper.pages.find((page) => page.folio === "MLB1");
 assert(mlb?.kind === "sport-front" && mlb.articles.some((article) => article.card.id === "news-cards"), "baseball keeps its own news");
+assert((paper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= 3, "NFL section always has at least news/teams/schedule");
+assert(paper.sections.find((s) => s.code === "A")?.pages === 2, "A is front + clubs when no overflow stories");
+assert(paper.pages.some((page) => page.folio === "NFL4"), "NFL story copy gets its own inside page after the three desk pages");
 
 const sundayRewrite = card({
   id: "news-lions-sunday",
