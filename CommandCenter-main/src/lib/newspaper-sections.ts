@@ -133,6 +133,8 @@ export type ClubDesk = {
   key: string;
   shortName: string;
   logo: string | null;
+  /** Franchise color as `#rrggbb`, when known. */
+  color?: string | null;
   leaguePath: string | null;
   record: string | null;
   standing: string | null;
