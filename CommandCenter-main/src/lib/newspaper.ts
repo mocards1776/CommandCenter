@@ -55,6 +55,26 @@ export function editionCovers(iso: string | null | undefined, edition = editionD
   return day === edition || day === editionNewsDay(edition);
 }
 
+/**
+ * Wider window for packing section pages with articles and recaps. Front-page
+ * lead copy still uses the tight edition window; inside pages may reach back.
+ */
+export function editionCoversRecent(
+  iso: string | null | undefined,
+  edition = editionDay(),
+  lookbackDays = 5,
+): boolean {
+  if (!iso) return false;
+  const day = instantDay(iso);
+  if (!day) return false;
+  let cursor = edition;
+  for (let i = 0; i <= lookbackDays; i += 1) {
+    if (day === cursor) return true;
+    cursor = shiftDay(cursor, -1);
+  }
+  return false;
+}
+
 function centralHourOf(iso: string): { day: string; hour: number } | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
