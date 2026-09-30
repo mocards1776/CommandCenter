@@ -1607,6 +1607,7 @@ export default function DailyNewspaperPage() {
 
   const clubs = useMemo<ClubDesk[]>(
     () =>
+      // teams already sorted by desk weight (Cardinals / Blues / Mizzou → Lions → Chiefs → soccer).
       teams.map((team) => {
         const path = leaguePathFromEspn(team.fav.espnPath);
         const upcoming = (team.detail?.upcoming ?? []).slice(0, 4).map((game) => ({
