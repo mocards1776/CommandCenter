@@ -4,7 +4,12 @@
  */
 import type { GameWrapCard } from "./newspaper-sports.ts";
 import { editionCovers, editionCoversResult, isResultCopy } from "./newspaper.ts";
-import { buildEdition, isDeskStory, type ClubDesk } from "./newspaper-sections.ts";
+import {
+  buildEdition,
+  isDeskStory,
+  MIN_SECTION_PAGES,
+  type ClubDesk,
+} from "./newspaper-sections.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(msg);
@@ -148,8 +153,9 @@ const paper = buildEdition({
 const folios = paper.pages.map((page) => page.folio);
 assert(folios[0] === "A1", "section A opens the paper");
 assert(folios.includes("A2"), "section A has a clubs desk page");
-assert(folios.includes("NFL1") && folios.includes("NFL2") && folios.includes("NFL3"), "NFL has news/teams/schedule pages");
-assert(folios.includes("MLB1") && folios.includes("MLB2") && folios.includes("MLB3"), "MLB has news/teams/schedule pages");
+assert(folios.includes("NFL1") && folios.includes("NFL2") && folios.includes("NFL3"), "NFL opens with desk pages");
+assert(folios.includes("NFL4") && folios.includes("NFL5"), "NFL has schedule + form pages");
+assert(folios.includes("MLB1") && folios.includes("MLB5"), "MLB has a full five-page desk");
 
 const a = paper.pages[0];
 assert(a?.kind === "favorites-front" && a.lead?.id === "news-cards", "the newest story leads, not Sunday's score");
@@ -157,7 +163,7 @@ assert(
   a?.kind === "favorites-front" && a.news.some((story) => story.id === "news-injury"),
   "Tuesday's Chiefs story still runs",
 );
-assert(a?.kind === "favorites-front" && a.news.every((story) => story.id !== "wire-nfl-weekend"), "weekend score stays off A1");
+assert(a?.kind === "favorites-front" && a.news.every((story) => story.id !== "wire-nfl-weekend"), "weekend score stays off A1 fresh list");
 assert(a?.kind === "favorites-front" && a.jumpFolio === "A2", `the front jumps to clubs desk, got ${a.jumpFolio}`);
 
 const nfl = paper.pages.find((page) => page.folio === "NFL1");
@@ -167,19 +173,25 @@ if (nfl?.kind === "sport-front") {
   assert(!nfl.upcoming.some((game) => /dolphins/i.test(game.label)), "last weekend is not the schedule");
   assert(nfl.clubs[0]?.division.some((row) => row.me && row.team === "Chiefs"), "standings mark your club");
   assert(nfl.clubs[0]?.stats.some((stat) => stat.label === "PF"), "season stats run with the table");
-  assert(nfl.articles.every((article) => article.card.id !== "wire-nfl-weekend"), "Sunday's score is not an NFL story");
   assert(nfl.articles.some((article) => article.card.id === "news-injury"), "Tuesday's article is the football news");
+  assert(nfl.articles.some((article) => article.card.id === "wire-nfl-weekend"), "weekend recap still packs the section");
 }
-const nflTeams = paper.pages.find((page) => page.folio === "NFL2");
-assert(nflTeams?.kind === "sport-front" && nflTeams.focus === "teams", "NFL2 is the all-teams page");
-const nflSched = paper.pages.find((page) => page.folio === "NFL3");
-assert(nflSched?.kind === "sport-front" && nflSched.focus === "schedule", "NFL3 is the schedule page");
+const nflRecaps = paper.pages.find((page) => page.folio === "NFL2");
+assert(nflRecaps?.kind === "sport-front" && nflRecaps.focus === "recaps", "NFL2 is the recaps page");
+const nflTeams = paper.pages.find((page) => page.folio === "NFL3");
+assert(nflTeams?.kind === "sport-front" && nflTeams.focus === "teams", "NFL3 is the all-teams page");
+const nflSched = paper.pages.find((page) => page.folio === "NFL4");
+assert(nflSched?.kind === "sport-front" && nflSched.focus === "schedule", "NFL4 is the schedule page");
+const nflForm = paper.pages.find((page) => page.folio === "NFL5");
+assert(nflForm?.kind === "sport-front" && nflForm.focus === "form", "NFL5 is the club form page");
 
 const mlb = paper.pages.find((page) => page.folio === "MLB1");
 assert(mlb?.kind === "sport-front" && mlb.articles.some((article) => article.card.id === "news-cards"), "baseball keeps its own news");
-assert((paper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= 3, "NFL section always has at least news/teams/schedule");
-assert(paper.sections.find((s) => s.code === "A")?.pages === 2, "A is front + clubs when no overflow stories");
-assert(paper.pages.some((page) => page.folio === "NFL4"), "NFL story copy gets its own inside page after the three desk pages");
+assert((paper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= MIN_SECTION_PAGES, "NFL section always has at least five pages");
+assert((paper.sections.find((s) => s.code === "A")?.pages ?? 0) >= MIN_SECTION_PAGES, "A always has at least five pages");
+assert((paper.sections.find((s) => s.code === "MLB")?.pages ?? 0) >= MIN_SECTION_PAGES, "MLB always has at least five pages");
+assert(paper.pages.some((page) => page.folio === "NFL6"), "NFL story copy gets its own inside page after the five desk pages");
+assert(paper.pages.some((page) => page.kind === "favorites-form"), "Section A pads with club-form pages");
 
 const leagueWire = card({
   id: "league-wire-1",
@@ -244,13 +256,21 @@ const tuesdayPaper = buildEdition({
   clubs: [chiefs],
   edition: "2026-09-29",
 });
+assert((tuesdayPaper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= MIN_SECTION_PAGES, "Tuesday NFL still has five pages");
 const tuesdayNfl = tuesdayPaper.pages.find((page) => page.folio === "NFL1");
 assert(tuesdayNfl?.kind === "sport-front", "Tuesday still opens a football section");
 if (tuesdayNfl?.kind === "sport-front") {
   const ids = tuesdayNfl.articles.map((article) => article.card.id);
-  assert(!ids.includes("news-lions-sunday"), "Sunday's rewrite does not run on Tuesday");
   assert(ids.includes("news-kelce"), "Monday's injury note is Tuesday's news");
   assert(ids.includes("wire-nfl-mnf"), "Monday night's final is Tuesday's result");
+  // Recent window keeps Sunday's rewrite available for packing the section.
+  assert(ids.includes("news-lions-sunday"), "Sunday's rewrite still packs midweek section pages");
 }
+const tuesdayA = tuesdayPaper.pages[0];
+assert(
+  tuesdayA?.kind === "favorites-front" &&
+    tuesdayA.news.every((story) => story.id !== "news-lions-sunday"),
+  "Sunday's rewrite does not lead Tuesday's favorites front",
+);
 
 console.log("newspaper-sections ok");

@@ -6,7 +6,7 @@
  * odds roundup that merely lists every team is not a story about your club.
  */
 
-import { editionCovers, editionCoversResult, isResultCopy } from "./newspaper";
+import { editionCovers, editionCoversRecent, editionCoversResult, isResultCopy } from "./newspaper";
 import {
   clubMentionNames,
   favoriteTeamHref,
@@ -71,6 +71,11 @@ function articleInEdition(article: NewsArticle, edition: string): boolean {
     : editionCovers(article.published, edition);
 }
 
+/** Wider intake so sport sections can pack five filled pages. */
+function articleInSection(article: NewsArticle, edition: string): boolean {
+  return editionCoversRecent(article.published, edition, 5);
+}
+
 async function articleBody(id: string, fallback: string): Promise<string> {
   try {
     const res = await fetch(`https://content.core.api.espn.com/v1/sports/news/${id}`, {
@@ -122,8 +127,8 @@ function toCard(fav: SportsFavorite, article: NewsArticle, body: string): GameWr
 }
 
 /**
- * Fresh articles that name a followed club. Dated to this edition only, so a
- * Wednesday paper does not inherit the weekend.
+ * Club articles for the Times. Prefer edition-day copy, then reach back a few
+ * days so section insides and recap pages stay full.
  */
 export async function fetchTeamArticles(
   favs: SportsFavorite[],
@@ -139,12 +144,12 @@ export async function fetchTeamArticles(
       const teamId = fav.espnPath.split("/").pop();
       if (!path || !teamId) return;
       try {
-        const data = (await espnGet(`${path}/news?team=${teamId}&limit=20`)) as {
+        const data = (await espnGet(`${path}/news?team=${teamId}&limit=40`)) as {
           articles?: NewsArticle[];
         };
         const mine = (data.articles ?? [])
-          .filter((article) => articleInEdition(article, edition) && mentionsClub(fav, article))
-          .slice(0, 3);
+          .filter((article) => articleInSection(article, edition) && mentionsClub(fav, article))
+          .slice(0, 8);
         for (const article of mine) {
           const id = String(article.id ?? "");
           if (!id || seen.has(id)) continue;
@@ -159,13 +164,13 @@ export async function fetchTeamArticles(
 
   picked.sort((a, b) => String(b.article.published ?? "").localeCompare(String(a.article.published ?? "")));
   const withBody = await Promise.all(
-    picked.slice(0, 12).map(async ({ fav, article }) => {
+    picked.slice(0, 24).map(async ({ fav, article }) => {
       const fallback = (article.description ?? "").trim();
       const body = await articleBody(String(article.id), fallback);
       return toCard(fav, article, body);
     }),
   );
-  const rest = picked.slice(12).map(({ fav, article }) => toCard(fav, article, article.description ?? ""));
+  const rest = picked.slice(24).map(({ fav, article }) => toCard(fav, article, article.description ?? ""));
   return [...withBody, ...rest].filter((card): card is GameWrapCard => card != null);
 }
 
@@ -212,7 +217,7 @@ function toLeagueCard(path: string, article: NewsArticle, body: string): GameWra
 
 /**
  * League wire for each sport section — fills NFL1/MLB1/etc. even when your
- * clubs are quiet. Same edition window as club stories.
+ * clubs are quiet. Uses a multi-day window so recap pages stay stocked.
  */
 export async function fetchLeagueArticles(
   paths: string[],
@@ -225,11 +230,16 @@ export async function fetchLeagueArticles(
   await Promise.all(
     unique.map(async (path) => {
       try {
-        const data = (await espnGet(`${path}/news?limit=30`)) as { articles?: NewsArticle[] };
-        const fresh = (data.articles ?? [])
-          .filter((article) => articleInEdition(article, edition))
-          .slice(0, 10);
-        for (const article of fresh) {
+        const data = (await espnGet(`${path}/news?limit=50`)) as { articles?: NewsArticle[] };
+        const pool = data.articles ?? [];
+        // Prefer true edition-day copy, then fill from the recent window.
+        const ranked = [
+          ...pool.filter((article) => articleInEdition(article, edition)),
+          ...pool.filter(
+            (article) => !articleInEdition(article, edition) && articleInSection(article, edition),
+          ),
+        ].slice(0, 24);
+        for (const article of ranked) {
           const id = String(article.id ?? "");
           if (!id || seen.has(id)) continue;
           seen.add(id);
@@ -243,14 +253,14 @@ export async function fetchLeagueArticles(
 
   picked.sort((a, b) => String(b.article.published ?? "").localeCompare(String(a.article.published ?? "")));
   const withBody = await Promise.all(
-    picked.slice(0, 20).map(async ({ path, article }) => {
+    picked.slice(0, 40).map(async ({ path, article }) => {
       const fallback = (article.description ?? "").trim();
       const body = await articleBody(String(article.id), fallback);
       return toLeagueCard(path, article, body);
     }),
   );
   const rest = picked
-    .slice(20)
+    .slice(40)
     .map(({ path, article }) => toLeagueCard(path, article, article.description ?? ""));
   return [...withBody, ...rest].filter((card): card is GameWrapCard => card != null);
 }

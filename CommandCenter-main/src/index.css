@@ -1747,31 +1747,58 @@ mark.rss-hl {
 }
 .wsj-news-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 0.4rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.35rem;
   align-content: start;
+}
+.wsj-news-grid.fill {
+  flex: 1;
+  grid-auto-rows: 1fr;
+  align-content: stretch;
+  min-height: 0;
 }
 .wsj-recap.graphic.packed {
   min-height: 0;
+  height: 100%;
   align-content: start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.3rem;
+}
+.wsj-recap.graphic.packed.has-thumb {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+.wsj-recap.graphic.packed .wsj-recap-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-height: 0;
 }
 .wsj-recap.graphic.packed .wsj-prose {
   font-size: 10.5px;
   line-height: 1.32;
   max-height: none;
+  flex: 1;
 }
 .wsj-sport-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 0.45rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.4rem;
   align-content: stretch;
   flex: 1;
+}
+.wsj-sport-form.fill {
+  flex: 1;
+  grid-auto-rows: 1fr;
+  min-height: 0;
+  height: 100%;
 }
 .wsj-sport-form-card {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
   min-height: 0;
+  height: 100%;
   padding: 0.4rem;
   border: 1px solid var(--w-hair);
   background: #fafafa;
@@ -1896,6 +1923,13 @@ mark.rss-hl {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+.wsj-front .wsj-briefs {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.wsj-inside .wsj-prose {
+  flex: 1;
 }
 
 .wsj-deck {
