@@ -231,3 +231,34 @@ export function favoriteDeskWeight(key: string): number {
   if (key.startsWith("eng-") || key.includes("soccer")) return 20;
   return 10;
 }
+
+/**
+ * Split story copy so the front can tease and a later folio carries the rest.
+ * Prefers paragraph, then sentence, then word boundaries.
+ */
+export function splitStoryCopy(
+  text: string,
+  teaserChars: number,
+): { teaser: string; rest: string } {
+  const raw = text.replace(/\s+/g, " ").trim();
+  if (!raw) return { teaser: "", rest: "" };
+  if (raw.length <= teaserChars) return { teaser: raw, rest: "" };
+
+  const window = raw.slice(0, teaserChars + 80);
+  const para = window.lastIndexOf("\n\n");
+  const sentence = Math.max(
+    window.lastIndexOf(". "),
+    window.lastIndexOf("! "),
+    window.lastIndexOf("? "),
+  );
+  const space = window.lastIndexOf(" ");
+  let cut = teaserChars;
+  if (para >= teaserChars * 0.45) cut = para;
+  else if (sentence >= teaserChars * 0.55) cut = sentence + 1;
+  else if (space >= teaserChars * 0.6) cut = space;
+
+  const teaser = raw.slice(0, cut).trim();
+  const rest = raw.slice(cut).trim();
+  if (rest.length < 120) return { teaser: raw, rest: "" };
+  return { teaser, rest };
+}

@@ -15,8 +15,14 @@ import {
   favoriteDeskWeight,
   instantDay,
   isResultCopy,
+  splitStoryCopy,
 } from "./newspaper.ts";
 import type { GameWrapCard } from "./newspaper-sports";
+
+/** Front-page teaser budgets — rest jumps to a real continuation folio. */
+const LEAD_TEASER = 1050;
+const SECOND_TEASER = 720;
+const THIRD_TEASER = 420;
 
 const KNOWN: Record<string, { code: string; title: string; order: number }> = {
   "baseball/mlb": { code: "MLB", title: "Major League Baseball", order: 10 },
@@ -64,6 +70,14 @@ export type FavoritesFrontPage = PageBase & {
   briefs: GameWrapCard[];
   /** Favorite-club stories, in the order the front page runs them. */
   news: GameWrapCard[];
+  /** Folio carrying the rest of each front story (real jumps only). */
+  leadContinue?: string;
+  secondContinue?: string;
+  thirdContinue?: string;
+  /** Teaser copy paired with the continuation folio (same split). */
+  leadTeaser?: string;
+  secondTeaser?: string;
+  thirdTeaser?: string;
 };
 
 export type FavoritesClubsPage = PageBase & {
@@ -81,6 +95,15 @@ export type FavoritesInsidePage = PageBase & {
   primary: GameWrapCard;
   secondary?: GameWrapCard;
   briefs: GameWrapCard[];
+};
+
+/** Rest of a front-page story — the destination of "Please turn to page…". */
+export type FavoritesContinuePage = PageBase & {
+  kind: "favorites-continue";
+  card: GameWrapCard;
+  continuedFrom: string;
+  /** Remaining body after the front-page teaser. */
+  rest: string;
 };
 
 export type DeskRow = {
@@ -143,6 +166,7 @@ export type EditionPage =
   | FavoritesClubsPage
   | FavoritesFormPage
   | FavoritesInsidePage
+  | FavoritesContinuePage
   | SportFrontPage
   | SportInsidePage;
 
@@ -226,11 +250,29 @@ function rankStories(cards: GameWrapCard[], edition: string): GameWrapCard[] {
 
 function stampCounts<T extends PageBase>(pages: T[]): T[] {
   const count = pages.length;
-  return pages.map((page, i) => ({
+  // Preserve author-set jumps (story continuations). Never invent a "next page"
+  // jump — that is what made "turn to A4" land on the wrong copy.
+  return pages.map((page) => ({
     ...page,
     sectionCount: count,
-    jumpFolio: pages[i + 1]?.folio,
   }));
+}
+
+/** Plain story body used for front tease / continuation (no agate notes). */
+export function storyBodyForJump(card: GameWrapCard): string {
+  const body = (card.body || "").trim();
+  if (body.length >= 40) return body;
+  return [card.dek, card.scoreLine, card.headline].filter(Boolean).join(" ").trim();
+}
+
+function frontSplit(
+  card: GameWrapCard | null | undefined,
+  budget: number,
+): { teaser: string; rest: string } {
+  if (!card) return { teaser: "", rest: "" };
+  const full = storyBodyForJump(card);
+  if (!full) return { teaser: "", rest: "" };
+  return splitStoryCopy(full, budget);
 }
 
 function uniqueCodes(ids: SportSectionId[]): SportSectionId[] {
@@ -313,21 +355,66 @@ function favoritePages(
   sectionStories: GameWrapCard[],
   clubs: ClubDesk[],
 ): {
-  pages: (FavoritesFrontPage | FavoritesClubsPage | FavoritesFormPage | FavoritesInsidePage)[];
+  pages: (
+    | FavoritesFrontPage
+    | FavoritesClubsPage
+    | FavoritesFormPage
+    | FavoritesInsidePage
+    | FavoritesContinuePage
+  )[];
   favoriteFolioByStory: Record<string, string>;
 } {
   const favoriteFolioByStory: Record<string, string> = {};
-  for (const card of freshStories.slice(0, FRONT_STORIES)) favoriteFolioByStory[card.id] = "A1";
+  const lead = freshStories[0] ?? sectionStories[0] ?? null;
+  const second = freshStories[1] ?? sectionStories[1] ?? null;
+  const third = freshStories[2] ?? sectionStories[2] ?? null;
+  for (const card of [lead, second, third]) {
+    if (card) favoriteFolioByStory[card.id] = "A1";
+  }
+
+  // Continuations sit right after the clubs desk so "turn to A3" is the rest
+  // of the lead — not an unrelated story or the clubs grid.
+  const continues: FavoritesContinuePage[] = [];
+  let n = 3;
+  const maybeContinue = (
+    card: GameWrapCard | null,
+    budget: number,
+  ): { folio?: string; teaser?: string } => {
+    const { teaser, rest } = frontSplit(card, budget);
+    if (!card || !rest) return { teaser: teaser || undefined };
+    const folio = `A${n}`;
+    continues.push({
+      kind: "favorites-continue",
+      folio,
+      section: "A",
+      sectionTitle: "Favorite Teams",
+      sectionPage: n,
+      sectionCount: 0,
+      card,
+      continuedFrom: "A1",
+      rest,
+      jumpFolio: undefined,
+    });
+    favoriteFolioByStory[`${card.id}::cont`] = folio;
+    n += 1;
+    return { folio, teaser };
+  };
+
+  const leadJump = maybeContinue(lead, LEAD_TEASER);
+  const secondJump = maybeContinue(second, SECOND_TEASER);
+  const thirdJump = maybeContinue(third, THIRD_TEASER);
 
   const inside: FavoritesInsidePage[] = [];
-  // Prefer fresh overflow, then recent section copy not already on the front.
-  const frontIds = new Set(freshStories.slice(0, FRONT_STORIES).map((c) => c.id));
+  const frontIds = new Set(
+    [lead, second, third].filter(Boolean).map((c) => c!.id),
+  );
   const restPool = [
-    ...freshStories.slice(FRONT_STORIES),
-    ...sectionStories.filter((c) => !frontIds.has(c.id) && !freshStories.slice(FRONT_STORIES).some((f) => f.id === c.id)),
+    ...freshStories.filter((c) => !frontIds.has(c.id)),
+    ...sectionStories.filter(
+      (c) => !frontIds.has(c.id) && !freshStories.some((f) => f.id === c.id),
+    ),
   ];
   let cursor = 0;
-  let n = 3; // A2 is clubs desk; insides / form start at A3
   while (cursor < restPool.length) {
     const primary = restPool[cursor]!;
     const secondary = restPool[cursor + 1];
@@ -358,12 +445,20 @@ function favoritePages(
     sectionTitle: "Favorite Teams",
     sectionPage: 1,
     sectionCount: 0,
-    jumpFolio: "A2",
-    lead: freshStories[0] ?? sectionStories[0] ?? null,
-    second: freshStories[1] ?? sectionStories[1] ?? null,
-    third: freshStories[2] ?? sectionStories[2] ?? null,
-    briefs: (freshStories.length ? freshStories : sectionStories).slice(FRONT_STORIES, FRONT_STORIES + 6),
+    lead,
+    second,
+    third,
+    briefs: (freshStories.length ? freshStories : sectionStories).slice(
+      FRONT_STORIES,
+      FRONT_STORIES + 6,
+    ),
     news: freshStories.length ? freshStories : sectionStories,
+    leadContinue: leadJump.folio,
+    secondContinue: secondJump.folio,
+    thirdContinue: thirdJump.folio,
+    leadTeaser: leadJump.teaser,
+    secondTeaser: secondJump.teaser,
+    thirdTeaser: thirdJump.teaser,
   };
 
   const clubsPage: FavoritesClubsPage = {
@@ -375,14 +470,15 @@ function favoritePages(
     sectionCount: 0,
   };
 
-  const pages: (FavoritesFrontPage | FavoritesClubsPage | FavoritesFormPage | FavoritesInsidePage)[] = [
-    front,
-    clubsPage,
-    ...inside,
-  ];
+  const pages: (
+    | FavoritesFrontPage
+    | FavoritesClubsPage
+    | FavoritesFormPage
+    | FavoritesInsidePage
+    | FavoritesContinuePage
+  )[] = [front, clubsPage, ...continues, ...inside];
 
   // Pad to the minimum with deep club-form pages (standings + slate).
-  // Home clubs (Cardinals / Blues / Mizzou) before Lions, Chiefs, soccer.
   const orderedClubs = [...clubs].sort(
     (a, b) => favoriteDeskWeight(b.key) - favoriteDeskWeight(a.key),
   );
