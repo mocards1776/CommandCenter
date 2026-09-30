@@ -68,6 +68,8 @@ export type DeskRow = {
   record: string;
   gb: string;
   me: boolean;
+  logo?: string | null;
+  teamId?: string | null;
 };
 
 export type DeskStat = { label: string; value: string };
@@ -86,6 +88,7 @@ export type DeskFixture = {
 export type ClubDesk = {
   key: string;
   shortName: string;
+  logo: string | null;
   leaguePath: string | null;
   record: string | null;
   standing: string | null;

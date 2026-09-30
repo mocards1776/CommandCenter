@@ -1241,42 +1241,145 @@ mark.rss-hl {
 .wsj-pager-btn:disabled {
   opacity: 0.3;
 }
+.wsj-secbar,
+.wsj-sec-btn {
+  display: none !important;
+}
 .wsj-pager-label {
   font-family: var(--w-cond);
   font-size: 11px;
   letter-spacing: 0.1em;
-  min-width: 3.2rem;
+  min-width: 4.2rem;
   text-align: center;
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.05;
 }
-.wsj-secbar {
-  display: flex;
-  gap: 0.25rem;
+.wsj-pager-label em {
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(237, 239, 245, 0.55);
+}
+
+.wsj-logo {
+  display: block;
+  object-fit: contain;
   flex-shrink: 0;
-  overflow-x: auto;
-  padding: 0.18rem 0.6rem 0.28rem;
-  background: #0b1730;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  scrollbar-width: none;
-}
-.wsj-secbar::-webkit-scrollbar {
-  display: none;
-}
-.wsj-sec-btn {
-  flex: 0 0 auto;
-  border: 1px solid rgba(255, 255, 255, 0.18);
   background: transparent;
-  color: rgba(237, 239, 245, 0.72);
-  font-family: var(--w-label);
-  font-size: 8.5px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  padding: 0.22rem 0.45rem;
+}
+.wsj-logo.xs { width: 14px; height: 14px; }
+.wsj-logo.sm { width: 22px; height: 22px; }
+.wsj-logo.md { width: 28px; height: 28px; }
+.wsj-logo.lg { width: 40px; height: 40px; }
+.wsj-logo.empty {
+  border-radius: 50%;
+  background: var(--w-agate);
+  border: 1px solid var(--w-hair);
+}
+.wsj-club-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+.wsj-club-grid {
+  list-style: none;
+  margin: 0.12rem 0 0.18rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.2rem;
+  flex: 0 0 auto;
+}
+.wsj-club-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.22rem 0.28rem;
+  border: 1px solid var(--w-hair);
+  background: var(--w-agate);
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+}
+.wsj-club-chip:hover {
+  border-color: var(--w-rule);
+  background: #eceff3;
+}
+.wsj-club-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.1;
+}
+.wsj-club-meta strong {
+  font-family: var(--w-cond);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wsj-club-meta em {
+  font-style: normal;
+  font-size: 8px;
+  color: var(--w-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wsj-section-pages {
+  list-style: none;
+  margin: 0 0 0.18rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+  flex: 0 0 auto;
+}
+.wsj-section-page {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem 0.32rem;
+  border: 1px solid var(--w-hair);
+  background: linear-gradient(90deg, #111827 0%, #1f2937 100%);
+  color: #f8fafc;
+  text-align: left;
   cursor: pointer;
 }
-.wsj-sec-btn.on,
-.wsj-sec-btn:hover {
-  color: #fff;
-  border-color: #fff;
+.wsj-section-page:hover {
+  background: linear-gradient(90deg, #0b5ea8 0%, #1f2937 100%);
+}
+.wsj-section-page-code {
+  font-family: var(--w-cond);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  min-width: 2.4rem;
+}
+.wsj-section-page-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.1;
+}
+.wsj-section-page-meta strong {
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wsj-section-page-meta em {
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.65);
 }
 
 /* ── The spread: one folio per swipe ────────────────────────────────── */
@@ -1308,12 +1411,12 @@ mark.rss-hl {
   scroll-snap-align: start;
   scroll-snap-stop: always;
   box-sizing: border-box;
-  padding: 0.85rem 0.6rem 0.3rem;
+  padding: 0.45rem 0.45rem 0.2rem;
   background: var(--w-paper);
   color: var(--w-ink);
   display: flex;
   flex-direction: column;
-  gap: 0.22rem;
+  gap: 0.14rem;
   overflow: hidden;
 }
 
@@ -1440,13 +1543,16 @@ mark.rss-hl {
 }
 .wsj-band-cell {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-areas: "lg team val" "move move move";
-  align-items: baseline;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "logo lg team val" "logo move move move";
+  align-items: center;
   gap: 0 0.28rem;
   min-width: 0;
-  padding: 0.16rem 0.34rem 0.2rem;
+  padding: 0.2rem 0.34rem 0.22rem;
   border-right: 1px solid var(--w-hair);
+}
+.wsj-band-cell .wsj-logo {
+  grid-area: logo;
 }
 .wsj-band-cell:last-child {
   border-right: 0;
@@ -2058,18 +2164,215 @@ mark.rss-hl {
   overflow: hidden;
 }
 
-/* ── Sport section: schedule, stats, recaps on page 1 ─────────────── */
+/* ── Sport section: graphic league desk ───────────────────────────── */
 .wsj-sport {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.05fr) minmax(0, 0.9fr);
-  gap: 0 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
 }
-.wsj-sport > * + * {
+.wsj-sport-hero {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.35rem 0.45rem;
+  background: linear-gradient(120deg, #0f1728 0%, #1c2a44 55%, #243552 100%);
+  color: #f4f1e9;
+  border: 1px solid #0b1730;
+}
+.wsj-sport-hero-mark {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+.wsj-sport-code {
+  font-family: var(--w-cond);
+  font-size: clamp(28px, 3.4vw, 42px);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 0.9;
+}
+.wsj-sport-hero-mark h3 {
+  margin: 0;
+  font-family: var(--w-head);
+  font-size: clamp(16px, 1.8vw, 24px);
+  font-weight: 700;
+  line-height: 1;
+}
+.wsj-sport-hero-mark p {
+  margin: 0.12rem 0 0;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(244, 241, 233, 0.7);
+}
+.wsj-sport-hero-rail {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.18rem;
+  max-width: 48%;
+  max-height: 52px;
+  overflow: hidden;
+}
+.wsj-sport-hero-rail .wsj-logo {
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 2px;
+  padding: 1px;
+}
+.wsj-sport-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(0, 0.95fr);
+  gap: 0 0.45rem;
+}
+.wsj-sport-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+  scrollbar-width: thin;
+  padding-right: 0.1rem;
+}
+.wsj-sport-panel + .wsj-sport-panel {
   border-left: 1px solid var(--w-hair);
-  padding-left: 0.55rem;
+  padding-left: 0.45rem;
+}
+.wsj-sport-panel > h3 {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding-bottom: 0.1rem;
+  background: var(--w-paper);
+  font-family: var(--w-head);
+  font-style: italic;
+  font-weight: 700;
+  font-size: clamp(15px, 1.5vw, 20px);
+  line-height: 1;
+  border-bottom: 2px solid var(--w-rule);
+}
+.wsj-team-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+.wsj-team-group-label {
+  margin: 0.16rem 0 0;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.wsj-team-wall {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 0.22rem;
+}
+.wsj-team-wall li {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.22rem 0.28rem;
+  border: 1px solid var(--w-hair);
+  background: linear-gradient(180deg, #fbfbfc 0%, #f0f2f5 100%);
+  min-width: 0;
+}
+.wsj-team-wall li.me {
+  border-color: var(--w-rule);
+  box-shadow: inset 0 0 0 1px var(--w-rule);
+  background: #fff;
+}
+.wsj-team-wall-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.05;
+}
+.wsj-team-wall-meta strong {
+  font-family: var(--w-cond);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.wsj-team-wall-meta em {
+  font-style: normal;
+  font-size: 8px;
+  color: var(--w-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wsj-slate.graphic {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+.wsj-slate.graphic li {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.12rem;
+  padding: 0.28rem 0.3rem;
+  border: 1px solid var(--w-hair);
+  background: var(--w-agate);
+}
+.wsj-slate.graphic li.me {
+  background: #fff;
+  border-color: var(--w-rule);
+}
+.wsj-matchup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  text-decoration: none;
+  color: inherit;
+}
+.wsj-match-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.wsj-match-meta strong {
+  color: var(--w-ink);
+  letter-spacing: 0.04em;
+}
+.wsj-recap.graphic {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.35rem;
+  border: 1px solid var(--w-hair);
+  padding: 0.28rem;
+  background: #fafafa;
+  align-items: start;
+}
+.wsj-recap.graphic.has-thumb {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+.wsj-recap-thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  display: block;
+  background: var(--w-agate);
 }
 .wsj-sport-col {
   min-width: 0;
@@ -2293,14 +2596,28 @@ mark.rss-hl {
     flex-direction: column;
     gap: 0.4rem;
   }
-  .wsj-sport > * + * {
+  .wsj-sport-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    overflow: visible;
+  }
+  .wsj-sport-panel + .wsj-sport-panel {
     border-left: 0;
     padding-left: 0;
     border-top: 1px solid var(--w-rule);
     padding-top: 0.24rem;
   }
+  .wsj-sport-panel,
   .wsj-sport-col {
     overflow: visible;
+  }
+  .wsj-sport-hero-rail {
+    display: none;
+  }
+  .wsj-sport > * + * {
+    border-left: 0;
+    padding-left: 0;
   }
   /* Zero flex-basis would collapse every well once the sheet is auto-height. */
   .wsj-deck,
