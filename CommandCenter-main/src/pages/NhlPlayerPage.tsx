@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Loader2, Star } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
+import { EspnPlayerHero, type HeroStatBox } from "@/components/sports/EspnPlayerHero";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -11,7 +12,7 @@ import {
   removeFavoritePlayer,
 } from "@/lib/favorite-players";
 import { fetchNhlPlayerProfile, nhlHeadshot, type NhlPlayerProfile } from "@/lib/nhl";
-import { cn } from "@/lib/utils";
+import { cn, formatSportsDate } from "@/lib/utils";
 
 export default function NhlPlayerPage() {
   const { playerId } = useParams<{ playerId: string }>();
@@ -355,9 +356,12 @@ export default function NhlPlayerPage() {
               <BioItem label="Height" value={p.height ?? "—"} />
               <BioItem label="Weight" value={p.weight ?? "—"} />
               <BioItem label="Age" value={p.age != null ? String(p.age) : "—"} />
-              <BioItem label="Born" value={p.dob ?? "—"} />
+              <BioItem
+                label="Born"
+                value={p.birthDate ? formatSportsDate(p.birthDate) : (p.dob ?? "—")}
+              />
               <BioItem label="Birthplace" value={p.birthPlace ?? "—"} />
-              <BioItem label="Shoots" value={p.shoots ?? "—"} />
+              <BioItem label={p.position === "G" ? "Catches" : "Shoots"} value={p.shoots ?? "—"} />
               <BioItem label="Draft" value={p.draft ?? "—"} />
               <BioItem label="Experience" value={p.experience ?? "—"} />
               <BioItem label="Status" value={p.status ?? "—"} />
@@ -393,6 +397,24 @@ function BioItem({ label, value }: { label: string; value: string }) {
   );
 }
 
+const HERO_STAT_PRIORITY = ["PTS", "SV%", "W", "GAA", "GP"];
+
+function heroStatBox(player: NhlPlayerProfile): HeroStatBox | null {
+  const byLabel = new Map(player.seasonStats.map((s) => [s.label.toUpperCase(), s.value]));
+  const label = HERO_STAT_PRIORITY.find((l) => {
+    const v = byLabel.get(l);
+    return v != null && v !== "" && v !== "—";
+  });
+  if (!label) return null;
+  const gp = byLabel.get("GP");
+  const seasonYear = player.seasonLabel?.match(/\d{4}-\d{2}/)?.[0] ?? null;
+  return {
+    label,
+    value: byLabel.get(label)!,
+    sub: label !== "GP" && gp ? `${gp} GP` : seasonYear,
+  };
+}
+
 function PlayerHero({
   player,
   accent,
@@ -404,81 +426,42 @@ function PlayerHero({
   isFavorite: boolean;
   onToggleFav: () => void;
 }) {
-  const parts = player.name.trim().split(/\s+/);
-  const lastName = parts.length > 1 ? parts[parts.length - 1] : player.name;
-  const firstName = parts.length > 1 ? parts.slice(0, -1).join(" ") : "";
+  const htWt = [player.height, player.weight].filter(Boolean).join(" · ");
+  const statBoxes: HeroStatBox[] = [];
+  if (player.age != null) statBoxes.push({ label: "Age", value: String(player.age) });
+  const stat = heroStatBox(player);
+  if (stat) statBoxes.push(stat);
 
   return (
-    <article className="relative overflow-hidden rounded-2xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
-      <div
-        className="absolute inset-0"
-        style={{ background: `linear-gradient(145deg, #0a1428 0%, ${accent}40 42%, #07101f 100%)` }}
-      />
-      <div className="relative z-10 flex flex-col gap-5 p-5 lg:flex-row lg:items-end lg:gap-8 lg:p-8">
-        <div className="relative shrink-0">
-          <div className="overflow-hidden rounded-xl bg-[#dfe6f2] p-1 ring-2 ring-white/30">
-            <img
-              src={player.headshot ?? nhlHeadshot(player.id)}
-              alt=""
-              className="aspect-square w-36 object-cover object-top sm:w-44"
-            />
-          </div>
-          {player.teamLogo ? (
-            <img
-              src={player.teamLogo}
-              alt=""
-              className="absolute -bottom-2 -right-2 h-12 w-12 rounded-full bg-[#07101f] p-1 ring-2 ring-white/20"
-            />
-          ) : null}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/55">
-            {player.teamId ? (
-              <Link to={`/sports/nhl/team/${player.teamId}`} className="transition hover:text-white">
-                {player.teamName ?? "NHL"}
-              </Link>
-            ) : (
-              (player.teamName ?? "NHL")
-            )}
-          </p>
-          <h1 className="font-display text-cream mt-1 text-[42px] leading-none sm:text-[52px]">{lastName}</h1>
-          {firstName ? <p className="text-cream/80 mt-1 text-[18px] font-medium">{firstName}</p> : null}
-          <p className="text-chalk mt-3 text-[13px]">
-            {player.number ? `#${player.number} · ` : ""}
-            {player.positionName ?? player.position ?? "Player"}
-            {player.experience ? ` · ${player.experience}` : ""}
-          </p>
-          <dl className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[12px]">
-            <HeroChip label="HT/WT" value={[player.height, player.weight].filter(Boolean).join(", ") || "—"} />
-            <HeroChip label="Shoots" value={player.shoots ?? "—"} />
-            <HeroChip label="Draft" value={player.draft ?? "—"} />
-            <HeroChip label="Birthplace" value={player.birthPlace ?? "—"} />
-            <HeroChip label="Status" value={player.status ?? "Active"} />
-          </dl>
-          <button
-            type="button"
-            onClick={() => void onToggleFav()}
-            className={cn(
-              "mt-4 inline-flex items-center gap-2 rounded-sm border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] transition",
-              isFavorite
-                ? "border-accent/50 bg-accent/15 text-cream"
-                : "border-white/25 bg-black/25 text-white/85 hover:border-white/50 hover:text-white",
-            )}
-          >
-            <Star size={13} className={isFavorite ? "fill-accent text-accent" : ""} />
-            {isFavorite ? "Favorited" : "Add to favorites"}
-          </button>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function HeroChip({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">{label}</dt>
-      <dd className="text-cream/90 mt-0.5 text-[13px]">{value}</dd>
-    </div>
+    <EspnPlayerHero
+      name={player.name}
+      league="NHL"
+      teamName={player.teamName}
+      teamHref={player.teamId ? `/sports/nhl/team/${player.teamId}` : null}
+      teamLogo={player.teamLogo}
+      headshot={player.headshot ?? nhlHeadshot(player.id)}
+      headshotFallback={nhlHeadshot(player.id)}
+      accent={accent}
+      number={player.number}
+      position={player.position}
+      statBoxes={statBoxes}
+      isFavorite={isFavorite}
+      onToggleFav={onToggleFav}
+      bio={[
+        { label: "HT / WT", value: htWt || "—" },
+        { label: "Position", value: player.positionName ?? player.position ?? "—" },
+        { label: player.position === "G" ? "Catches" : "Shoots", value: player.shoots ?? "—" },
+        {
+          label: "Birthdate",
+          value: player.birthDate
+            ? `${formatSportsDate(player.birthDate)}${player.age != null ? ` (${player.age})` : ""}`
+            : (player.dob ?? "—"),
+        },
+        { label: "Born", value: player.birthPlace ?? "—" },
+        { label: "Draft", value: player.draft ?? "Undrafted" },
+        { label: "Experience", value: player.experience ?? "—" },
+        { label: "Status", value: player.status ?? "Active" },
+      ]}
+    />
   );
 }

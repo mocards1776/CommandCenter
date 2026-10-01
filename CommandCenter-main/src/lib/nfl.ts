@@ -2,7 +2,7 @@
 
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { supabase } from "./supabase";
-import { formatSportsDateLong } from "./utils";
+import { espnBirthDate, espnBirthPlace, formatSportsDateLong } from "./utils";
 
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl";
 const ESPN_WEB = "https://site.web.api.espn.com/apis/common/v3/sports/football/nfl";
@@ -252,9 +252,12 @@ export type NflPlayerProfile = {
   weight: string | null;
   age: number | null;
   dob: string | null;
+  /** YYYY-MM-DD */
+  birthDate: string | null;
   birthPlace: string | null;
   college: string | null;
   experience: string | null;
+  experienceYears: number | null;
   draft: string | null;
   /** Long-form bio when ESPN provides one. */
   bio: string | null;
@@ -1249,12 +1252,8 @@ export async function fetchNflPlayerProfile(playerId: string): Promise<NflPlayer
   const position = (a.position ?? {}) as { abbreviation?: string; displayName?: string };
   const college = (a.college as { name?: string } | undefined)?.name ?? null;
   const draft = a.displayDraft != null ? String(a.displayDraft) : null;
-  const birthPlace =
-    (a.displayBirthPlace as string | undefined)?.trim() ||
-    (() => {
-      const bp = a.birthPlace as { city?: string; state?: string; country?: string } | undefined;
-      return bp ? [bp.city, bp.state?.trim(), bp.country].filter(Boolean).join(", ") : null;
-    })();
+  const birthPlace = espnBirthPlace(a.birthPlace, a.displayBirthPlace);
+  const experienceYears = (a.experience as { years?: number } | undefined)?.years;
 
   const bio =
     (typeof a.bio === "string" && a.bio.trim()) ||
@@ -1263,8 +1262,8 @@ export async function fetchNflPlayerProfile(playerId: string): Promise<NflPlayer
     null;
   const status =
     (a.injuries as { status?: string; longComment?: string }[] | undefined)?.[0]?.status ||
-    (a.status as { name?: string; type?: string } | undefined)?.type ||
     (a.status as { name?: string } | undefined)?.name ||
+    (a.status as { name?: string; type?: string } | undefined)?.type ||
     null;
 
   const summaryStats = (
@@ -1403,7 +1402,9 @@ export async function fetchNflPlayerProfile(playerId: string): Promise<NflPlayer
   return {
     id,
     name: String(a.displayName ?? a.fullName ?? "Player"),
-    number: (a.displayJersey as string | undefined) ?? (a.jersey != null ? String(a.jersey) : null),
+    number:
+      (a.displayJersey as string | undefined)?.replace(/^#/, "") ||
+      (a.jersey != null ? String(a.jersey) : null),
     position: position.abbreviation ?? null,
     positionName: position.displayName ?? null,
     teamId: team.id ?? null,
@@ -1416,9 +1417,11 @@ export async function fetchNflPlayerProfile(playerId: string): Promise<NflPlayer
     weight: (a.displayWeight as string | undefined) ?? null,
     age: typeof a.age === "number" ? a.age : null,
     dob: (a.displayDOB as string | undefined) ?? null,
+    birthDate: espnBirthDate(a.dateOfBirth, a.displayDOB),
     birthPlace,
     college,
     experience: (a.displayExperience as string | undefined) ?? null,
+    experienceYears: typeof experienceYears === "number" ? experienceYears : null,
     draft,
     bio,
     status: status ? String(status) : null,

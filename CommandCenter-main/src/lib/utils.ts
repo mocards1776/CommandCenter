@@ -80,6 +80,34 @@ export function formatSportsDate(raw: string | Date | null | undefined): string 
   }
 }
 
+/**
+ * ESPN athlete birth date as YYYY-MM-DD. Core API `dateOfBirth` is ISO; the site API's
+ * `displayDOB` is day-first ("17/9/1995").
+ */
+export function espnBirthDate(dateOfBirth: unknown, displayDOB: unknown): string | null {
+  if (typeof dateOfBirth === "string") {
+    const iso = /^(\d{4}-\d{2}-\d{2})/.exec(dateOfBirth);
+    if (iso) return iso[1];
+  }
+  if (typeof displayDOB === "string") {
+    const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(displayDOB.trim());
+    if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  }
+  return null;
+}
+
+/** "City, ST, Country" from ESPN's `birthPlace` object, falling back to `displayBirthPlace`. */
+export function espnBirthPlace(birthPlace: unknown, displayBirthPlace: unknown): string | null {
+  const bp = birthPlace as { city?: string; state?: string; country?: string } | undefined;
+  const fromObj = bp
+    ? [bp.city?.trim(), bp.state?.trim(), bp.country?.trim()].filter(Boolean).join(", ")
+    : "";
+  if (fromObj) return fromObj;
+  return typeof displayBirthPlace === "string" && displayBirthPlace.trim()
+    ? displayBirthPlace.trim()
+    : null;
+}
+
 /** Weekday + MM-DD-YYYY for sports headers. */
 export function formatSportsDateLong(raw: string | Date | null | undefined): string {
   if (raw == null || raw === "") return "";

@@ -1,7 +1,7 @@
 /** NHL via ESPN site API — scoreboard, standings, teams, games, players. */
 
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
-import { formatSportsDateLong } from "./utils";
+import { espnBirthDate, espnBirthPlace, formatSportsDateLong } from "./utils";
 
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl";
 const ESPN_WEB = "https://site.web.api.espn.com/apis/common/v3/sports/hockey/nhl";
@@ -816,9 +816,12 @@ export type NhlPlayerProfile = {
   weight: string | null;
   age: number | null;
   dob: string | null;
+  /** YYYY-MM-DD */
+  birthDate: string | null;
   birthPlace: string | null;
   shoots: string | null;
   experience: string | null;
+  experienceYears: number | null;
   draft: string | null;
   status: string | null;
   seasonLabel: string | null;
@@ -860,16 +863,20 @@ function athleteIdFromRef(ref: string | undefined): string | null {
 
 export async function fetchNhlPlayerProfile(playerId: string): Promise<NhlPlayerProfile> {
   const id = String(playerId);
-  const [athleteRes, overviewRes, careerRes, gameLogRes] = await Promise.all([
+  const [athleteRes, overviewRes, careerRes, gameLogRes, coreRes] = await Promise.all([
     getJson<{ athlete?: Record<string, unknown> }>(`${ESPN_WEB}/athletes/${id}`),
     getJson<Record<string, unknown>>(`${ESPN_WEB}/athletes/${id}/overview`).catch(
       () => ({}) as Record<string, unknown>,
     ),
     getJson<CareerStatsPayload>(`${ESPN_WEB}/athletes/${id}/stats`).catch(() => null),
     getJson<Record<string, unknown>>(`${ESPN_WEB}/athletes/${id}/gamelog`).catch(() => null),
+    getJson<Record<string, unknown>>(`${CORE}/athletes/${id}?lang=en&region=us`).catch(
+      () => ({}) as Record<string, unknown>,
+    ),
   ]);
 
-  const a = (athleteRes.athlete ?? {}) as Record<string, unknown>;
+  const a = { ...coreRes, ...(athleteRes.athlete ?? {}) } as Record<string, unknown>;
+  const experienceYears = (a.experience as { years?: number } | undefined)?.years;
   const team = (a.team ?? {}) as {
     id?: string;
     displayName?: string;
@@ -1027,9 +1034,11 @@ export async function fetchNhlPlayerProfile(playerId: string): Promise<NhlPlayer
     weight: (a.displayWeight as string | undefined) ?? null,
     age: typeof a.age === "number" ? a.age : null,
     dob: (a.displayDOB as string | undefined) ?? null,
-    birthPlace: (a.displayBirthPlace as string | undefined) ?? null,
+    birthDate: espnBirthDate(a.dateOfBirth, a.displayDOB),
+    birthPlace: espnBirthPlace(a.birthPlace, a.displayBirthPlace),
     shoots,
     experience: (a.displayExperience as string | undefined) ?? null,
+    experienceYears: typeof experienceYears === "number" ? experienceYears : null,
     draft: (a.displayDraft as string | undefined) ?? null,
     status: statusObj?.name ?? statusObj?.type ?? null,
     seasonLabel,
