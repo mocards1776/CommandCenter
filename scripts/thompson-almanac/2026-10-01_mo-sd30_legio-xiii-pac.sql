@@ -5,6 +5,8 @@
 -- Side colors: competitive-races.ts already sets Stinnett #ef4444 (red-500) / Fogle #3b82f6 (blue-500), but with no
 -- per-sponsor colors every PAC rendered in its candidate's exact color. sponsor_color_overrides wins over that
 -- default, so candidate committees are pinned to the base color and PACs to the lighter -300 tint.
+-- Planning CPP: SD-30 sits entirely in the Springfield DMA, so its blended "1,000 GRP" cost is just the Springfield
+-- general-2026 row of planning_cpp (keyed by cycle + DMA, so it also prices every other Springfield race this cycle).
 -- Safe to re-run.
 
 begin;
@@ -44,6 +46,13 @@ values ('mo-sd30', 'Friends of Melanie Stinnett', '#ef4444'),
        ('mo-sd30', 'Forward PAC', '#93c5fd')
 on conflict (race_slug, sponsor) do update
   set color = excluded.color,
+      updated_at = now();
+
+insert into planning_cpp (cycle, dma, candidate_cpp, issue_cpp)
+values ('general-2026', 'Springfield', 75, 165)
+on conflict (cycle, dma) do update
+  set candidate_cpp = excluded.candidate_cpp,
+      issue_cpp = excluded.issue_cpp,
       updated_at = now();
 
 commit;
