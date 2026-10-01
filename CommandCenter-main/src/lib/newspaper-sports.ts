@@ -1,6 +1,6 @@
 /** Sports-edition helpers for Thompson Times (digital newspaper). */
 
-import { espnGet, type SportsFavorite, type TeamDetail, type TeamSnapshot } from "./sports";
+import { espnGet, type SportsFavorite, type TeamDetail, type TeamSnapshot, type TeamStatLine } from "./sports";
 import type { RssFeedItem } from "./rss";
 import { favoriteDeskWeight } from "./newspaper";
 import type { WireGame } from "./newspaper-wire";
@@ -359,7 +359,7 @@ export type TeamInfobox = {
   seasonState: SeasonState;
   form: ("W" | "L" | "·")[];
   odds: string | null;
-  teamStats: { label: string; value: string }[];
+  teamStats: TeamStatLine[];
   recentLines: { label: string; won: boolean | null; href: string | null }[];
 };
 
@@ -384,10 +384,12 @@ export type GameWrapCard = {
   gameId: string | null;
   stats: { label: string; value: string }[];
   leaders: { name: string; line: string; href: string | null }[];
-  teamStats: { label: string; value: string }[];
+  teamStats: TeamStatLine[];
   division: { rank: string; team: string; record: string; me: boolean }[];
   /** Wire extras — present on stories built from a league board. */
   photo?: string | null;
+  /** A player cutout on a transparent ground, set on the club's color rather than cropped. */
+  photoStyle?: "cutout";
   caption?: string | null;
   dateline?: string | null;
   round?: string | null;
@@ -625,6 +627,7 @@ export function buildGameWrapCards(opts: {
       headline: w.item.title,
       dek: w.item.snippet,
       body: null,
+      photo: feedPhoto(w.item.image),
       scoreLine: null,
       when: w.item.publishedAt,
       won: null,
@@ -640,6 +643,13 @@ export function buildGameWrapCards(opts: {
   }
 
   return cards;
+}
+
+/** A feed item's own picture — not the crest some feeds stand in when they have none. */
+function feedPhoto(src: string | null | undefined): string | null {
+  if (!src || !/^https?:\/\//i.test(src)) return null;
+  if (/team-?logos?|\/logos?\/|teamlogos|\.svg(\?|$)|placeholder|default-?image/i.test(src)) return null;
+  return src;
 }
 
 /** ESPN event id behind a card, used to dedupe wire stories against team wraps. */

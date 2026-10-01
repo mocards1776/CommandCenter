@@ -1,6 +1,8 @@
 import {
   createContext,
   Fragment,
+  memo,
+  startTransition,
   useCallback,
   useContext,
   useEffect,
@@ -57,7 +59,8 @@ import { NamedText, PlayerName, PlayerPopProvider } from "@/components/newspaper
 import { fetchClubSheet, type ClubSheet } from "@/lib/newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "@/lib/newspaper-missouri-fetch";
 import type { MoItem } from "@/lib/newspaper-missouri";
-import type { Person } from "@/lib/newspaper-people";
+import { nameIndex, type Person } from "@/lib/newspaper-people";
+import { fetchPlayerFiles, imageLoads, storySubjects, type PlayerFile } from "@/lib/newspaper-subjects";
 import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
 import {
   daysUntil,
@@ -93,6 +96,7 @@ import {
 } from "@/lib/newspaper-sports";
 import {
   buildEdition,
+  isFavoriteStory,
   storyBodyForJump,
   type ClubDesk,
   type EditionPage,
@@ -713,10 +717,21 @@ function Cut({ card, shape = "wide" }: { card: GameWrapCard; shape?: "wide" | "t
   const caption =
     card.caption && squash(card.caption) !== squash(card.teamName) ? card.caption : null;
   return (
-    <figure className={cn("wsj-cut", shape)}>
+    <figure className={cn("wsj-cut", shape, card.photoStyle === "cutout" && "cutout")}>
       <img src={card.photo} alt="" loading="lazy" />
       {caption ? <figcaption>{caption}</figcaption> : null}
     </figure>
+  );
+}
+
+/** The club's place in its league for one stat line, set under the label. */
+function StatRank({ stat }: { stat: { rank?: string | null; rankIn?: string | null } }) {
+  if (!stat.rank) return null;
+  return (
+    <span className="tt-stat-rank">
+      {stat.rank}
+      {stat.rankIn ? <i> in {stat.rankIn}</i> : null}
+    </span>
   );
 }
 
@@ -771,7 +786,10 @@ function StatPoster({
           {stats.map((s) => (
             <div key={`${s.label}-${s.value}`}>
               <dd>{s.value}</dd>
-              <dt>{s.label}</dt>
+              <dt>
+                {s.label}
+                <StatRank stat={s} />
+              </dt>
             </div>
           ))}
         </dl>
@@ -1646,11 +1664,13 @@ function InsideFlag({ card, team }: { card: GameWrapCard; team: TeamInfobox | nu
   );
 }
 
-/** Names in the story, set as a strip under it when no box score runs. */
+const SubjectsContext = createContext<Record<string, PlayerFile[]>>({});
+
+/** The players the story is about — face, position, season line — set under it when no box score runs. */
 function StoryNames({ card }: { card: GameWrapCard }) {
+  const files = useContext(SubjectsContext)[card.id] ?? [];
   const stats = card.stats.slice(0, 6);
-  const leaders = card.leaders.slice(0, 4);
-  if (!stats.length && !leaders.length) return null;
+  if (!files.length && !stats.length) return null;
   return (
     <aside className="wsj-story-facts">
       {stats.length ? (
@@ -1663,20 +1683,43 @@ function StoryNames({ card }: { card: GameWrapCard }) {
           ))}
         </dl>
       ) : null}
-      {leaders.length ? (
-        <ul>
-          {leaders.map((l) => (
-            <li key={l.name}>
-              <strong>
-                <PlayerName name={l.name} href={l.href?.startsWith("/") ? l.href : null} />
-              </strong>
-              <span>{l.line}</span>
-            </li>
-          ))}
-        </ul>
+      {files.length ? (
+        <section className="tt-files" aria-label="In this story">
+          <h4 className="tt-files-h">In this story</h4>
+          <ul style={{ ["--cols" as string]: String(Math.min(files.length, 4)) }}>
+            {files.map((f) => (
+              <li key={f.href}>
+                <span className="tt-files-face">
+                  {f.headshot ? <img src={f.headshot} alt="" loading="lazy" /> : <b>{initials(f.name)}</b>}
+                </span>
+                <span className="tt-files-copy">
+                  <strong>
+                    <PlayerName name={f.name} href={f.href} />
+                  </strong>
+                  <em>{[f.position, f.team].filter(Boolean).join(" · ")}</em>
+                  {f.line ? (
+                    <span>
+                      {f.lineNote ? <i>{f.lineNote}: </i> : null}
+                      {f.line}
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
     </aside>
   );
+}
+
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("");
 }
 
 /** Destination of a front-page jump — the rest of the article. */
@@ -1716,7 +1759,7 @@ function ContinuePage({
               dress
               game={game}
             />
-            {game ? <GameBox game={game} /> : null}
+            {game ? <GameBox game={game} /> : <StoryNames card={card} />}
           </div>
         );
       })}
@@ -1831,7 +1874,10 @@ function OpenerDesk({ page, onTurn }: { page: SportFrontPage; onTurn: (folio: st
                         {stats.slice(0, 4).map((s) => (
                           <div key={s.label}>
                             <dd>{s.value}</dd>
-                            <dt>{s.label}</dt>
+                            <dt>
+                              {s.label}
+                              <StatRank stat={s} />
+                            </dt>
                           </div>
                         ))}
                       </dl>
@@ -2755,7 +2801,10 @@ function ClubFormGrid({ clubs, sheets = {} }: { clubs: ClubDesk[]; sheets?: Reco
                     {stats.slice(0, 8).map((s) => (
                       <div key={`${s.label}-${s.value}`}>
                         <dd>{s.value}</dd>
-                        <dt>{s.label}</dt>
+                        <dt>
+                          {s.label}
+                          <StatRank stat={s} />
+                        </dt>
                       </div>
                     ))}
                   </dl>
@@ -3017,6 +3066,80 @@ function ScoutBand({ item, onTurn, hasDesk }: { item: MoItem; onTurn: (folio: st
       </div>
     </section>
   );
+}
+
+/* ───────────────────────── pager ───────────────────────── */
+
+/** Folios this close to the one in view stay painted and get their art fetched ahead of the swipe. */
+const NEAR_PAGES = 2;
+
+/** The folio in view. Only near-page consumers read it, so turning a page doesn't re-render the edition. */
+const PagerIndexContext = createContext(0);
+
+const MemoSportFront = memo(SportFront);
+
+function NearSportFront({ index, ...props }: Omit<Parameters<typeof SportFront>[0], "active"> & { index: number }) {
+  const current = useContext(PagerIndexContext);
+  return <MemoSportFront {...props} active={Math.abs(index - current) <= 1} />;
+}
+
+function markNearPages(pager: HTMLElement, index: number) {
+  const sheets = pager.children;
+  for (let i = 0; i < sheets.length; i++) {
+    const sheet = sheets[i] as HTMLElement;
+    const near = Math.abs(i - index) <= NEAR_PAGES;
+    if (near === ("near" in sheet.dataset)) continue;
+    if (near) sheet.dataset.near = "";
+    else delete sheet.dataset.near;
+  }
+  for (const sheet of pager.querySelectorAll<HTMLElement>(".wsj-page[data-near]")) {
+    for (const img of sheet.querySelectorAll("img")) {
+      if (img.loading === "lazy") img.loading = "eager";
+      if (img.complete && img.naturalWidth) img.decode().catch(() => {});
+    }
+  }
+}
+
+/** Fetch the rest of the edition's art in idle time, a few at a time, so far folios open already printed. */
+function warmEdition(pager: HTMLElement, cap = 4): () => void {
+  const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType ?? "")) return () => {};
+  const hasIdle = typeof window.requestIdleCallback === "function";
+  const idle = (cb: () => void) => (hasIdle ? window.requestIdleCallback(cb, { timeout: 2_000 }) : window.setTimeout(cb, 200));
+  const cancelIdle = (id: number) => (hasIdle ? window.cancelIdleCallback(id) : window.clearTimeout(id));
+  let stopped = false;
+  let inflight = 0;
+  let handle = 0;
+  const pump = () => {
+    handle = 0;
+    if (stopped) return;
+    const queue = pager.querySelectorAll<HTMLImageElement>('img[loading="lazy"]');
+    for (let i = 0; i < queue.length && inflight < cap; i++) {
+      const img = queue[i];
+      img.loading = "eager";
+      if (img.complete) continue;
+      inflight++;
+      let timer = 0;
+      const done = () => {
+        window.clearTimeout(timer);
+        img.removeEventListener("load", done);
+        img.removeEventListener("error", done);
+        inflight--;
+        schedule();
+      };
+      timer = window.setTimeout(done, 10_000);
+      img.addEventListener("load", done);
+      img.addEventListener("error", done);
+    }
+  };
+  const schedule = () => {
+    if (!stopped && !handle) handle = idle(pump);
+  };
+  schedule();
+  return () => {
+    stopped = true;
+    if (handle) cancelIdle(handle);
+  };
 }
 
 /* ───────────────────────── page ───────────────────────── */
@@ -3318,7 +3441,7 @@ export default function DailyNewspaperPage() {
     staleTime: 10 * 60_000,
   });
 
-  const stories = useMemo(() => {
+  const filedStories = useMemo(() => {
     const extracts = extractsQ.data;
     const clean = rawStories.map((card) => (isBoilerplateDek(card.dek) ? { ...card, dek: null } : card));
     if (!extracts) return clean;
@@ -3586,11 +3709,6 @@ export default function DailyNewspaperPage() {
     [sportPaths, clubs, openers, boardQ.data],
   );
 
-  const edition = useMemo(
-    () => buildEdition({ stories, clubs, edition: day, playerPaths, missouri: missouriQ.data ?? null, offseason }),
-    [stories, clubs, day, playerPaths, missouriQ.data, offseason],
-  );
-
   /** Everyone the paper can name and link: box scores, club leaders, your players. */
   const people = useMemo<Person[]>(() => {
     const out: Person[] = [];
@@ -3619,6 +3737,65 @@ export default function DailyNewspaperPage() {
     for (const p of orgQ.data ?? []) push("baseball/mlb", p.id, p.name);
     return out;
   }, [followed, boardQ.data, clubs, sheetsQ.data, teams, orgQ.data]);
+
+  // Who each story is about, so a story the wire sent bare can still run a picture of him.
+  const nameIdx = useMemo(() => nameIndex(people), [people]);
+  const subjects = useMemo(() => {
+    const out: Record<string, Person[]> = {};
+    for (const card of filedStories) {
+      if (!isFavoriteStory(card) && !card.id.startsWith("league-")) continue;
+      const named = storySubjects(card, nameIdx);
+      if (named.length) out[card.id] = named;
+    }
+    return out;
+  }, [filedStories, nameIdx]);
+  const subjectHrefs = useMemo(
+    () => [...new Set(Object.values(subjects).flatMap((list) => list.map((p) => p.href)))].sort().slice(0, 80),
+    [subjects],
+  );
+  const filesQ = useQuery({
+    queryKey: ["tt-player-files", day, subjectHrefs.join("|")],
+    queryFn: async () => {
+      const season = Number(day.slice(0, 4)) || new Date().getFullYear();
+      const files = await fetchPlayerFiles(subjectHrefs, season);
+      // Only pictures that actually load make the paper; prospects often have none.
+      await Promise.all(
+        Object.values(files).map(async (f) => {
+          const [action, headshot] = await Promise.all([imageLoads(f.action), imageLoads(f.headshot)]);
+          f.action = action ? f.action : null;
+          f.headshot = headshot ? f.headshot : null;
+        }),
+      );
+      return files;
+    },
+    enabled: subjectHrefs.length > 0,
+    staleTime: 6 * 60 * 60_000,
+  });
+  const storyFiles = useMemo(() => {
+    const files = filesQ.data ?? {};
+    const out: Record<string, PlayerFile[]> = {};
+    for (const [id, list] of Object.entries(subjects)) {
+      const got = list.map((p) => files[p.href]).filter((f): f is PlayerFile => Boolean(f));
+      if (got.length) out[id] = got;
+    }
+    return out;
+  }, [subjects, filesQ.data]);
+  const stories = useMemo(
+    () =>
+      filedStories.map((card) => {
+        if (card.photo) return card;
+        const lead = storyFiles[card.id]?.[0];
+        if (lead?.action) return { ...card, photo: lead.action, caption: lead.name };
+        if (lead?.headshot) return { ...card, photo: lead.headshot, caption: lead.name, photoStyle: "cutout" as const };
+        return card;
+      }),
+    [filedStories, storyFiles],
+  );
+
+  const edition = useMemo(
+    () => buildEdition({ stories, clubs, edition: day, playerPaths, missouri: missouriQ.data ?? null, offseason }),
+    [stories, clubs, day, playerPaths, missouriQ.data, offseason],
+  );
   const comingUp = useMemo<ComingUp[]>(
     () =>
       clubs.flatMap((club) =>
@@ -3655,24 +3832,39 @@ export default function DailyNewspaperPage() {
     return out;
   }, [pages, teams]);
 
-  function goPage(idx: number) {
-    const el = pagerRef.current;
-    if (!el) return;
-    const next = Math.max(0, Math.min(pages.length - 1, idx));
-    const sheet = el.children[next] as HTMLElement | undefined;
-    if (sheet && next !== pageIndex) sheet.scrollTop = 0;
-    el.scrollTo({ left: next * el.clientWidth, behavior: "smooth" });
-    setPageIndex(next);
-    const folio = pages[next]?.folio;
-    if (folio && typeof window !== "undefined") {
-      window.history.replaceState(null, "", `#${folio}`);
-    }
-  }
+  const markFolio = useCallback(
+    (idx: number) => {
+      const folio = pages[idx]?.folio;
+      if (folio && typeof window !== "undefined" && window.location.hash !== `#${folio}`) {
+        window.history.replaceState(null, "", `#${folio}`);
+      }
+    },
+    [pages],
+  );
 
-  function goFolio(folio: string) {
-    const idx = pages.findIndex((p) => p.folio === folio);
-    if (idx >= 0) goPage(idx);
-  }
+  const goPage = useCallback(
+    (idx: number) => {
+      const el = pagerRef.current;
+      if (!el) return;
+      const next = Math.max(0, Math.min(pages.length - 1, idx));
+      const from = Math.round(el.scrollLeft / (el.clientWidth || 1));
+      const sheet = el.children[next] as HTMLElement | undefined;
+      if (sheet && next !== from) sheet.scrollTop = 0;
+      // Gliding across a whole section paints every folio in between; long jumps cut straight there.
+      el.scrollTo({ left: next * el.clientWidth, behavior: Math.abs(next - from) > NEAR_PAGES ? "instant" : "smooth" });
+      setPageIndex(next);
+      markFolio(next);
+    },
+    [pages.length, markFolio],
+  );
+
+  const goFolio = useCallback(
+    (folio: string) => {
+      const idx = pages.findIndex((p) => p.folio === folio);
+      if (idx >= 0) goPage(idx);
+    },
+    [pages, goPage],
+  );
 
   function goSection(code: string) {
     const section = edition.sections.find((s) => s.code === code);
@@ -3686,27 +3878,35 @@ export default function DailyNewspaperPage() {
     const idx = pages.findIndex((p) => p.folio === hash);
     if (idx >= 0) {
       const el = pagerRef.current;
-      if (el) el.scrollTo({ left: idx * el.clientWidth, behavior: "auto" });
+      if (el) el.scrollTo({ left: idx * el.clientWidth, behavior: "instant" });
       setPageIndex(idx);
     }
   }, [pages]);
 
+  // Settle the folio once the swipe or glide comes to rest — not on every scroll frame.
   useEffect(() => {
     const el = pagerRef.current;
     if (!el) return;
-    const onScroll = () => {
-      const w = el.clientWidth || 1;
-      const idx = Math.round(el.scrollLeft / w);
+    let timer = 0;
+    const settle = () => {
+      window.clearTimeout(timer);
+      const idx = Math.round(el.scrollLeft / (el.clientWidth || 1));
       const next = Math.max(0, Math.min(pages.length - 1, idx));
-      setPageIndex(next);
-      const folio = pages[next]?.folio;
-      if (folio && typeof window !== "undefined" && window.location.hash !== `#${folio}`) {
-        window.history.replaceState(null, "", `#${folio}`);
-      }
+      startTransition(() => setPageIndex(next));
+      markFolio(next);
+    };
+    const onScroll = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(settle, 150);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [pages]);
+    el.addEventListener("scrollend", settle);
+    return () => {
+      window.clearTimeout(timer);
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("scrollend", settle);
+    };
+  }, [pages.length, markFolio]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -3754,6 +3954,142 @@ export default function DailyNewspaperPage() {
     ]);
   }
 
+  // Built once per edition/data change, never per page turn: re-rendering 60 folios on every
+  // swipe was the slow part. Anything that must follow the folio in view reads PagerIndexContext.
+  const sheets = useMemo(
+    () =>
+      pages.map((page, index) => (
+          <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`}>
+            <div className="wsj-sheet">
+            {page.kind === "favorites-front" ? (
+              <Masthead day={day} page={page} clubs={teams.length} live={tonight.length} />
+            ) : (
+              <RunningHead day={day} page={page} />
+            )}
+            <div className="wsj-body">
+              {page.kind === "favorites-front" ? (
+                <FrontPage
+                  lead={page.lead}
+                  second={page.second}
+                  third={page.third}
+                  briefs={page.briefs}
+                  teams={teams}
+                  postseason={wireQ.data?.postseasonLeagues ?? []}
+                  tonight={tonight}
+                  comingUp={comingUp}
+                  sections={edition.sections}
+                  folios={edition.favoriteFolioByStory}
+                  onTurn={goFolio}
+                  leadContinue={page.leadContinue}
+                  secondContinue={page.secondContinue}
+                  thirdContinue={page.thirdContinue}
+                  leadTeaser={page.leadTeaser}
+                  secondTeaser={page.secondTeaser}
+                  thirdTeaser={page.thirdTeaser}
+                  scout={scoutQ.data ?? missouriQ.data?.scout ?? null}
+                />
+              ) : page.kind === "favorites-clubs" ? (
+                <ClubsDesk teams={teams} />
+              ) : page.kind === "favorites-form" ? (
+                <div className="wsj-clubs-desk">
+                  <header className="wsj-desk-head">
+                    <h2>Club Form</h2>
+                    <p>{page.clubs.length} clubs · standings, numbers, leaders and what’s next</p>
+                  </header>
+                  <ClubFormGrid clubs={page.clubs} sheets={sheetsQ.data ?? {}} />
+                </div>
+              ) : page.kind === "favorites-continue" ? (
+                <ContinuePage
+                  jumps={page.jumps}
+                  continuedFrom={page.continuedFrom}
+                  teams={teams}
+                  notebooks={notebookByFolio[page.folio] ?? []}
+                  onTurn={goFolio}
+                />
+              ) : page.kind === "favorites-inside" ? (
+                <InsidePage
+                  primary={page.primary}
+                  secondary={page.secondary}
+                  briefs={page.briefs}
+                  teams={teams}
+                  folios={edition.favoriteFolioByStory}
+                  here={page.folio}
+                  onTurn={goFolio}
+                  notebooks={notebookByFolio[page.folio]}
+                />
+              ) : page.kind === "sport-front" ? (
+                <NearSportFront
+                  index={index}
+                  page={page}
+                  leagueClubs={leagueClubsQ.data?.[page.path] ?? []}
+                  board={boardQ.data?.[page.path] ?? null}
+                  standings={standingsQ.data?.[page.path] ?? []}
+                  slate={leagueSlateQ.data?.[page.path] ?? []}
+                  playoffs={page.path === "baseball/mlb" ? mlbPlayoffsQ.data ?? null : null}
+                  edition={day}
+                  hasPlayers={playerPaths.includes(page.path)}
+                  nights={nightsByPath[page.path] ?? []}
+                  sheets={sheetsQ.data ?? {}}
+                  onTurn={goFolio}
+                />
+              ) : page.kind === "missouri" ? (
+                <MissouriDesk page={page} onTurn={goFolio} />
+              ) : (
+                <InsidePage
+                  primary={page.primary}
+                  secondary={page.secondary}
+                  briefs={[]}
+                  teams={[]}
+                  here={page.folio}
+                  onTurn={goFolio}
+                />
+              )}
+            </div>
+            </div>
+          </section>
+      )),
+    [
+      pages,
+      day,
+      teams,
+      tonight,
+      wireQ.data?.postseasonLeagues,
+      comingUp,
+      edition.sections,
+      edition.favoriteFolioByStory,
+      goFolio,
+      scoutQ.data,
+      missouriQ.data?.scout,
+      sheetsQ.data,
+      notebookByFolio,
+      leagueClubsQ.data,
+      boardQ.data,
+      standingsQ.data,
+      leagueSlateQ.data,
+      mlbPlayoffsQ.data,
+      playerPaths,
+      nightsByPath,
+    ],
+  );
+
+  useEffect(() => {
+    const el = pagerRef.current;
+    if (el) markNearPages(el, pageIndex);
+  }, [pageIndex, sheets]);
+
+  useEffect(() => {
+    const el = pagerRef.current;
+    if (!el || !pages.length) return;
+    let stop = () => {};
+    const timer = window.setTimeout(() => {
+      stop = warmEdition(el);
+    }, 3_000);
+    return () => {
+      window.clearTimeout(timer);
+      stop();
+    };
+  }, [sheets, pages.length]);
+
   const current = pages[pageIndex];
   const sectionIdx = edition.sections.findIndex((s) => s.code === current?.section);
 
@@ -3761,6 +4097,7 @@ export default function DailyNewspaperPage() {
     <div className="newspaper-root wsj-shell">
       <GameLookup.Provider value={findGame}>
       <OpenerContext.Provider value={openers}>
+      <SubjectsContext.Provider value={storyFiles}>
       <PlayerPopProvider people={people}>
       <ReaderProvider>
       <div className="wsj-chrome print:hidden">
@@ -3836,100 +4173,14 @@ export default function DailyNewspaperPage() {
         </div>
       </div>
 
-      <div className="newspaper-edition wsj-pager" ref={pagerRef}>
-        {pages.map((page, index) => (
-          <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`}>
-            <div className="wsj-sheet">
-            {page.kind === "favorites-front" ? (
-              <Masthead day={day} page={page} clubs={teams.length} live={tonight.length} />
-            ) : (
-              <RunningHead day={day} page={page} />
-            )}
-            <div className="wsj-body">
-              {page.kind === "favorites-front" ? (
-                <FrontPage
-                  lead={page.lead}
-                  second={page.second}
-                  third={page.third}
-                  briefs={page.briefs}
-                  teams={teams}
-                  postseason={wireQ.data?.postseasonLeagues ?? []}
-                  tonight={tonight}
-                  comingUp={comingUp}
-                  sections={edition.sections}
-                  folios={edition.favoriteFolioByStory}
-                  onTurn={goFolio}
-                  leadContinue={page.leadContinue}
-                  secondContinue={page.secondContinue}
-                  thirdContinue={page.thirdContinue}
-                  leadTeaser={page.leadTeaser}
-                  secondTeaser={page.secondTeaser}
-                  thirdTeaser={page.thirdTeaser}
-                  scout={scoutQ.data ?? missouriQ.data?.scout ?? null}
-                />
-              ) : page.kind === "favorites-clubs" ? (
-                <ClubsDesk teams={teams} />
-              ) : page.kind === "favorites-form" ? (
-                <div className="wsj-clubs-desk">
-                  <header className="wsj-desk-head">
-                    <h2>Club Form</h2>
-                    <p>{page.clubs.length} clubs · standings, numbers, leaders and what’s next</p>
-                  </header>
-                  <ClubFormGrid clubs={page.clubs} sheets={sheetsQ.data ?? {}} />
-                </div>
-              ) : page.kind === "favorites-continue" ? (
-                <ContinuePage
-                  jumps={page.jumps}
-                  continuedFrom={page.continuedFrom}
-                  teams={teams}
-                  notebooks={notebookByFolio[page.folio] ?? []}
-                  onTurn={goFolio}
-                />
-              ) : page.kind === "favorites-inside" ? (
-                <InsidePage
-                  primary={page.primary}
-                  secondary={page.secondary}
-                  briefs={page.briefs}
-                  teams={teams}
-                  folios={edition.favoriteFolioByStory}
-                  here={page.folio}
-                  onTurn={goFolio}
-                  notebooks={notebookByFolio[page.folio]}
-                />
-              ) : page.kind === "sport-front" ? (
-                <SportFront
-                  page={page}
-                  leagueClubs={leagueClubsQ.data?.[page.path] ?? []}
-                  board={boardQ.data?.[page.path] ?? null}
-                  standings={standingsQ.data?.[page.path] ?? []}
-                  slate={leagueSlateQ.data?.[page.path] ?? []}
-                  playoffs={page.path === "baseball/mlb" ? mlbPlayoffsQ.data ?? null : null}
-                  edition={day}
-                  active={Math.abs(index - pageIndex) <= 1}
-                  hasPlayers={playerPaths.includes(page.path)}
-                  nights={nightsByPath[page.path] ?? []}
-                  sheets={sheetsQ.data ?? {}}
-                  onTurn={goFolio}
-                />
-              ) : page.kind === "missouri" ? (
-                <MissouriDesk page={page} onTurn={goFolio} />
-              ) : (
-                <InsidePage
-                  primary={page.primary}
-                  secondary={page.secondary}
-                  briefs={[]}
-                  teams={[]}
-                  here={page.folio}
-                  onTurn={goFolio}
-                />
-              )}
-            </div>
-            </div>
-          </section>
-        ))}
-      </div>
+      <PagerIndexContext.Provider value={pageIndex}>
+        <div className="newspaper-edition wsj-pager" ref={pagerRef}>
+          {sheets}
+        </div>
+      </PagerIndexContext.Provider>
       </ReaderProvider>
       </PlayerPopProvider>
+      </SubjectsContext.Provider>
       </OpenerContext.Provider>
       </GameLookup.Provider>
     </div>

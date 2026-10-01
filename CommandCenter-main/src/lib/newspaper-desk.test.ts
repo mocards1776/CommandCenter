@@ -6,6 +6,7 @@ import { buildMissouriDesk, combestUrl, dedupeMo, parseCombest, type MoItem } fr
 import { nameIndex, namePieces, type Person } from "./newspaper-people.ts";
 import { daysUntil, espnOpener, mlbOpener, openerDate, openerMatchup } from "./newspaper-openers.ts";
 import { isBoilerplateDek, outletFor, storySource } from "./newspaper-source.ts";
+import { playerRef, seasonNote, storySubjects } from "./newspaper-subjects.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -159,5 +160,25 @@ assert(
 assert(storySource({ wrapHref: "https://rss.app/feeds/x" }) === null, "a feed proxy is no publisher");
 assert(isBoilerplateDek("Your best source for quality St. Louis Cardinals news"), "site taglines are not deks");
 assert(!isBoilerplateDek("Mikolas threw seven scoreless innings."), "real deks survive");
+
+assert(playerRef("/sports/mlb/player/802139")?.path === "baseball/mlb", "MLB player route");
+assert(playerRef("/sports/cfb/player/5197065")?.path === "football/college-football", "CFB player route");
+assert(playerRef("/sports/nba/team/phi") === null, "no file for a team page");
+assert(seasonNote("2026 regular season stats:", 2026) === null, "this season needs no note");
+assert(seasonNote("2025 Regular Season Stats", 2026) === "2025", "last season's line says so");
+const subjectIdx = nameIndex([
+  { name: "JJ Wetherholt", href: "/sports/mlb/player/802139" },
+  { name: "Nolan Gorman", href: "/sports/mlb/player/669357" },
+  { name: "Alec Burleson", href: "/sports/mlb/player/676475" },
+]);
+const subjects = storySubjects(
+  {
+    headline: "Wetherholt makes his case for second base",
+    body: "Nolan Gorman and Alec Burleson watched. Burleson said JJ Wetherholt was ready. Burleson agreed again.",
+  },
+  subjectIdx,
+);
+assert(subjects[0]?.name === "JJ Wetherholt", "the headline's player leads the story's subjects");
+assert(subjects.length === 3, "every named player is a subject");
 
 console.log("newspaper-desk ok");
