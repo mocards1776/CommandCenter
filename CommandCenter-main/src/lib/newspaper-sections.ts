@@ -20,6 +20,7 @@ import {
   splitStoryCopy,
 } from "./newspaper.ts";
 import type { GameWrapCard } from "./newspaper-sports";
+import type { MissouriDesk, MoItem } from "./newspaper-missouri";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
 const LEAD_TEASER = 1050;
@@ -145,7 +146,7 @@ export type ClubDesk = {
   upcoming: { id: string; label: string; when: string | null; detail: string | null }[];
 };
 
-export type SportFocus = "news" | "recaps" | "teams" | "schedule" | "form" | "playoffs";
+export type SportFocus = "news" | "recaps" | "teams" | "schedule" | "form" | "playoffs" | "players";
 
 export type SportFrontPage = PageBase & {
   kind: "sport-front";
@@ -164,7 +165,16 @@ export type SportInsidePage = PageBase & {
   secondary?: GameWrapCard;
 };
 
+/** The Missouri desk: statehouse and political headlines, deduped across outlets. */
+export type MissouriPage = PageBase & {
+  kind: "missouri";
+  items: MoItem[];
+  /** Radio, podcast and video segments; the front carries them. */
+  listen: MoItem[];
+};
+
 export type EditionPage =
+  | MissouriPage
   | FavoritesFrontPage
   | FavoritesClubsPage
   | FavoritesFormPage
@@ -542,6 +552,7 @@ function sportPages(
   clubs: ClubDesk[],
   stories: GameWrapCard[],
   edition: string,
+  withPlayers = false,
 ): {
   pages: (SportFrontPage | SportInsidePage)[];
   sportFolioByStory: Record<string, string>;
@@ -550,7 +561,7 @@ function sportPages(
   const sportFolioByStory: Record<string, string> = {};
   const unique = dedupeStories(stories.filter((card) => !isStalePreview(card, edition)));
   const isMlb = id.path === "baseball/mlb";
-  const deskCount = 5;
+  const deskCount = withPlayers ? 6 : 5;
   const inside: SportInsidePage[] = [];
   const full = unique.filter(hasStoryCopy);
   let n = deskCount + 1;
@@ -633,16 +644,51 @@ function sportPages(
     articles,
   };
 
+  const players: SportFrontPage = {
+    ...base,
+    kind: "sport-front",
+    folio: `${id.code}6`,
+    sectionPage: 6,
+    focus: "players",
+    articles,
+  };
+
   return {
-    pages: stampCounts([news, recapPage, teams, schedule, fifth, ...inside]),
+    pages: stampCounts([news, recapPage, teams, schedule, fifth, ...(withPlayers ? [players] : []), ...inside]),
     sportFolioByStory,
   };
+}
+
+const MO_FRONT = 11;
+const MO_PAGE = 16;
+
+function missouriPages(desk: MissouriDesk | null): MissouriPage[] {
+  if (!desk?.items.length) return [];
+  const chunks: MoItem[][] = [desk.items.slice(0, MO_FRONT)];
+  for (let i = MO_FRONT; i < desk.items.length && chunks.length < 3; i += MO_PAGE) {
+    chunks.push(desk.items.slice(i, i + MO_PAGE));
+  }
+  return stampCounts(
+    chunks.map((items, i) => ({
+      kind: "missouri" as const,
+      folio: `MO${i + 1}`,
+      section: "MO",
+      sectionTitle: "Missouri",
+      sectionPage: i + 1,
+      sectionCount: 0,
+      items,
+      listen: i === 0 ? desk.listen : [],
+    })),
+  );
 }
 
 export function buildEdition(opts: {
   stories: GameWrapCard[];
   clubs: ClubDesk[];
   edition: string;
+  /** League paths with followed or tagged players — each gets a "Your players" desk. */
+  playerPaths?: string[];
+  missouri?: MissouriDesk | null;
 }): Edition {
   const desk = dedupeStories(opts.stories.filter((card) => isDeskStory(card) && !isNewsMuted(card)));
   const fresh = rankStories(
@@ -687,6 +733,7 @@ export function buildEdition(opts: {
       clubsBy.get(id.path) ?? [],
       storiesBy.get(id.path) ?? [],
       opts.edition,
+      opts.playerPaths?.includes(id.path) ?? false,
     ),
   }));
   const sportFolioByStory: Record<string, string> = {};
@@ -726,6 +773,20 @@ export function buildEdition(opts: {
       pages: favorites.pages.length,
     },
   ];
+
+  const mo = missouriPages(opts.missouri ?? null);
+  if (mo.length) {
+    sections.push({
+      code: "MO",
+      title: "Missouri",
+      folio: "MO1",
+      index: pages.length,
+      stories: mo.reduce((n, p) => n + p.items.length, 0),
+      upcoming: 0,
+      pages: mo.length,
+    });
+    pages.push(...mo);
+  }
 
   for (const part of sportPagesBuilt) {
     const upcoming = (clubsBy.get(part.id.path) ?? []).reduce((n, club) => n + club.upcoming.length, 0);

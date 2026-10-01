@@ -465,4 +465,38 @@ assert(
   "a club whose season just ended still makes the Section A front",
 );
 
+const moItem = (i: number) => ({
+  id: `mo-${i}`,
+  source: "Missouri Independent",
+  headline: `Statehouse story number ${i}`,
+  url: `https://missouriindependent.com/${i}`,
+  kind: "story" as const,
+  photo: null,
+  dek: null,
+  when: null,
+});
+const withDesks = buildEdition({
+  stories: [cardinals, lionsNote],
+  clubs: [cards, chiefs, lionsClub],
+  edition,
+  playerPaths: ["football/nfl"],
+  missouri: { scout: null, items: Array.from({ length: 30 }, (_, i) => moItem(i)), listen: [moItem(99)] },
+});
+const deskFolios = withDesks.pages.map((page) => page.folio);
+const moPages = withDesks.pages.filter((page) => page.kind === "missouri");
+assert(moPages.length === 3 && moPages[0]!.folio === "MO1", "Missouri files its own section");
+assert(
+  deskFolios.indexOf("MO1") > deskFolios.indexOf("A1") && deskFolios.indexOf("MO1") < deskFolios.indexOf("NFL1"),
+  "Missouri runs between Section A and sports",
+);
+assert(
+  moPages[0]?.kind === "missouri" && moPages[0].listen.length === 1 && moPages[1]?.kind === "missouri" && !moPages[1].listen.length,
+  "only the Missouri front carries the listen rail",
+);
+assert(withDesks.sections.some((s) => s.code === "MO"), "Missouri gets a section tab");
+const nflPlayers = withDesks.pages.find((page) => page.folio === "NFL6");
+assert(nflPlayers?.kind === "sport-front" && nflPlayers.focus === "players", "a sport with followed players gets NFL6");
+assert(!deskFolios.includes("MLB6"), "no players page without followed players in the league");
+assert(!buildEdition({ stories: [lionsNote], clubs: [lionsClub], edition }).pages.some((p) => p.kind === "missouri"), "no desk, no section");
+
 console.log("newspaper-sections ok");
