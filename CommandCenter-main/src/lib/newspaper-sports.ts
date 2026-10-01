@@ -31,6 +31,7 @@ export function favoriteGameHref(fav: SportsFavorite, gameId: string): string | 
   if (/mens-college-basketball\//.test(fav.espnPath)) {
     return `https://www.espn.com/mens-college-basketball/game/_/gameId/${gameId}`;
   }
+  if (/basketball\/nba\//.test(fav.espnPath)) return `https://www.espn.com/nba/game/_/gameId/${gameId}`;
   return null;
 }
 
@@ -50,6 +51,12 @@ export function playerHref(sportPath: string, playerId: string): string | null {
   }
   return null;
 }
+
+const STL_TODAY_RSS = (section: string) =>
+  `https://www.stltoday.com/search/?f=rss&c=${section}*&l=50&s=start_time&sd=desc&t=article`;
+export const PD_BLUES_FEED = STL_TODAY_RSS("sports/professional/nhl/blues");
+export const PD_MIZZOU_FEED = STL_TODAY_RSS("sports/college/mizzou");
+export const ATHLETIC_BLUES_FEED = "https://rss.app/feeds/HJaMzlWvefjQfs5f.xml";
 
 /** Real club RSS plus synthetic game-wrap boards for the Times desk. */
 export function wrapFeedsForFavorites(favs: SportsFavorite[]): string[] {
@@ -72,9 +79,16 @@ export function wrapFeedsForFavorites(favs: SportsFavorite[]): string[] {
       urls.add("synthetic:cfb-wraps");
       if (f.key === "cfb-mizzou") {
         urls.add("https://rss.app/feeds/nG7WGKJTs5LOQjxd.xml"); // Missouri Scout
+        urls.add(PD_MIZZOU_FEED);
       }
+    } else if (p.startsWith("basketball/mens-college-basketball/")) {
+      if (f.key === "cbb-mizzou") urls.add(PD_MIZZOU_FEED);
     } else if (p.startsWith("hockey/nhl/")) {
       urls.add("synthetic:nhl-wraps");
+      if (f.key === "nhl-stl") {
+        urls.add(PD_BLUES_FEED);
+        urls.add(ATHLETIC_BLUES_FEED);
+      }
     } else if (p.startsWith("soccer/")) {
       urls.add("synthetic:soccer-clubs-wraps");
       if (/eng\.1/.test(p)) urls.add("synthetic:epl-wraps");
@@ -119,6 +133,8 @@ function strongNames(fav: SportsFavorite): string[] {
   if (fav.key === "eng-wrexham") names.push("wrexham");
   if (fav.key === "eng-arsenal") names.push("arsenal");
   if (fav.key === "nhl-stl") names.push("blues", "st. louis blues");
+  if (fav.key === "nfl-dal") names.push("cowboys", "dallas cowboys");
+  if (fav.key === "nba-phi") names.push("76ers", "sixers", "philadelphia 76ers");
   return [...new Set(names)].filter((n) => n.length >= 3 && !WEAK_TOKENS.has(n));
 }
 
@@ -129,9 +145,10 @@ function feedAllowsFavorite(feedUrl: string, fav: SportsFavorite): boolean {
   if (feedUrl.includes("NY6044y6TPBMOdru") || feedUrl.includes("tdKZI96hgDCSMd6o")) {
     return fav.key === "mlb-stl";
   }
-  if (feedUrl.includes("nG7WGKJTs5LOQjxd")) {
+  if (feedUrl.includes("nG7WGKJTs5LOQjxd") || feedUrl === PD_MIZZOU_FEED) {
     return fav.key === "cfb-mizzou" || fav.key === "cbb-mizzou";
   }
+  if (feedUrl === PD_BLUES_FEED || feedUrl === ATHLETIC_BLUES_FEED) return fav.key === "nhl-stl";
   if (feedUrl.includes("cardinals-wraps")) return fav.key === "mlb-stl";
   if (feedUrl.includes("mlb")) return path.startsWith("baseball/mlb/");
   if (feedUrl.includes("nfl")) return path.startsWith("football/nfl/");
@@ -177,7 +194,17 @@ export function matchWrapToFavorites(
     }
     if (!hit) hit = strongNames(fav).some((n) => hayHasName(hay, n));
     if (!hit && feedUrl.includes("cardinals-wraps") && fav.key === "mlb-stl") hit = true;
+    // Single-club desks: every story in the feed is about the club, named or not.
+    if (!hit && (feedUrl === PD_BLUES_FEED || feedUrl === PD_MIZZOU_FEED)) hit = true;
     if (hit) keys.push(fav.key);
+  }
+
+  // One Mizzou feed covers football and hoops; file each story with the right club.
+  if (keys.includes("cfb-mizzou") && keys.includes("cbb-mizzou")) {
+    const hoops = /\b(basketball|hoops|dennis gates|tip-?off|sec tournament|march madness|ncaa tournament|mizzou arena)\b/i.test(
+      `${hay} ${item.link}`,
+    );
+    keys.splice(keys.indexOf(hoops ? "cfb-mizzou" : "cbb-mizzou"), 1);
   }
 
   if (!keys.length) return null;
@@ -420,6 +447,7 @@ const LEAGUE_ROOTS = [
   "football/nfl",
   "football/college-football",
   "hockey/nhl",
+  "basketball/nba",
   "basketball/mens-college-basketball",
 ] as const;
 
