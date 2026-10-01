@@ -80,6 +80,12 @@ export type SectionBoard = {
   results: BoxGame[];
   /** Tonight and tomorrow — the schedule page. */
   slate: BoxGame[];
+  /** Football: every game of the current week, finals and kickoffs together. */
+  week?: BoxGame[];
+  weekLabel?: string | null;
+  /** Football: last week's finals, for the days before this week's games are played. */
+  prior?: BoxGame[];
+  priorLabel?: string | null;
 };
 
 function shiftDay(day: string, delta: number): string {
@@ -967,15 +973,18 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
   if (path.startsWith("football/")) {
     const current = await espnBoard(path, "");
     const games = boardGames(path, current, edition);
-    let results = games.filter((g) => g.final || g.live);
+    const results = games.filter((g) => g.final || g.live);
     const week = current?.week?.number;
-    if (results.filter((g) => g.final).length < 2 && week && week > 1) {
-      const prev = await espnBoard(path, `&week=${week - 1}&seasontype=${current?.season?.type ?? 2}`);
-      results = [...boardGames(path, prev, newsDay).filter((g) => g.final), ...results];
-    }
+    const prev =
+      week && week > 1 ? await espnBoard(path, `&week=${week - 1}&seasontype=${current?.season?.type ?? 2}`) : null;
+    const prior = prev ? boardGames(path, prev, newsDay).filter((g) => g.final) : [];
     return {
       results: uniqueGames(results).sort(byStart),
       slate: games.filter((g) => !g.final).sort(byStart),
+      week: uniqueGames(games).sort(byStart),
+      weekLabel: week ? `Week ${week}` : null,
+      prior: uniqueGames(prior).sort(byStart),
+      priorLabel: week && week > 1 ? `Week ${week - 1}` : null,
     };
   }
   const ymd = (d: string) => d.replace(/-/g, "");

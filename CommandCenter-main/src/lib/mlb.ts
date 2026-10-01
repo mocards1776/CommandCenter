@@ -1232,7 +1232,8 @@ export async function fetchMlbPlayoffTree(
         seriesDescription?: string;
         seriesGameNumber?: number;
         gamesInSeries?: number;
-        status?: { detailedState?: string; abstractGameState?: string };
+        ifNecessary?: string;
+        status?: { detailedState?: string; abstractGameState?: string; startTimeTBD?: boolean };
         seriesStatus?: {
           wins?: number;
           losses?: number;
@@ -1328,7 +1329,22 @@ export async function fetchMlbPlayoffTree(
         final,
         awayScore,
         homeScore,
-        when: fmtWhenShort(g.gameDate),
+        // MLB parks unscheduled games at 07:33Z with startTimeTBD set.
+        when: g.status?.startTimeTBD
+          ? [
+              g.officialDate
+                ? new Date(`${g.officialDate}T12:00:00Z`).toLocaleDateString("en-US", {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    timeZone: "UTC",
+                  })
+                : null,
+              g.ifNecessary === "Y" ? "if nec." : "TBD",
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : fmtWhenShort(g.gameDate),
         date: g.officialDate ?? day.date ?? null,
       });
 
