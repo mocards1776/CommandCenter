@@ -1,6 +1,16 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, RefreshCw, Share } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -9,9 +19,35 @@ import {
   editionDay,
   editionIssue,
   msUntilNextEdition,
+  instantDay,
+  isNewsMuted,
   romanNumeral,
+  splitStoryCopy,
 } from "@/lib/newspaper";
 import { fetchLeagueArticles, fetchTeamArticles } from "@/lib/newspaper-news";
+import {
+  boxStoryCard,
+  fetchSectionBoard,
+  gameClock,
+  fetchSectionStandings,
+  type BoxGame,
+  type SectionBoard,
+  type StandGroup,
+} from "@/lib/newspaper-box";
+import { proseParas, tidy } from "@/lib/newspaper-copy";
+import {
+  MatchupCard,
+  ScoreCard,
+  ScoreStrip,
+  StandingsTable,
+  Decisions,
+  Goals,
+  Leaders,
+  Linescore,
+  MlbAgate,
+} from "@/components/newspaper/BoxScore";
+import { ReaderProvider } from "@/components/newspaper/PaperReader";
+import { useReader } from "@/components/newspaper/reader-context";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
@@ -44,7 +80,7 @@ import {
   type WireGame,
 } from "@/lib/newspaper-wire";
 import { fetchMlbPlayoffTree, type MlbPlayoffTree } from "@/lib/mlb";
-import { fetchRssFeed } from "@/lib/rss";
+import { fetchRssArticle, fetchRssFeed, firstContentImageUrl, type RssArticle } from "@/lib/rss";
 import {
   fetchTeamDetail,
   fetchTeamSnapshot,
@@ -145,49 +181,8 @@ function tint(color: string | null | undefined): CSSProperties | undefined {
   return { ["--tt-team" as string]: color, ["--tt-on" as string]: inkOn(color) } as CSSProperties;
 }
 
-/** Wire copy arrives with link residue: "Raiders ." and "Chiefs ,". */
-function tidy(text: string): string {
-  return text
-    .replace(/\s+([,.;:!?])/g, "$1")
-    .replace(/\(\s+/g, "(")
-    .replace(/\s+\)/g, ")")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
 function squash(text: string | null | undefined): string {
   return (text ?? "").replace(/[^a-z0-9]+/gi, "").toLowerCase();
-}
-
-/**
- * Real paragraphs where the wire has them; otherwise group sentences into
- * paragraphs of a few hundred characters so an indent never lands mid-sentence.
- */
-function proseParas(text: string, max = 60): string[] {
-  const raw = text.trim();
-  if (!raw) return [];
-  const blocks = raw
-    .split(/\n{2,}/)
-    .map((p) => tidy(p.replace(/\s+/g, " ")))
-    .filter(Boolean);
-  const out: string[] = [];
-  for (const block of blocks) {
-    if (block.length <= 520) {
-      out.push(block);
-      continue;
-    }
-    const sentences = block.split(/(?<=[.!?]["'”’)]?)\s+(?=["“‘'(]?[A-Z0-9])/);
-    let buf = "";
-    for (const s of sentences) {
-      if (buf && buf.length + s.length > 440) {
-        out.push(buf);
-        buf = "";
-      }
-      buf = buf ? `${buf} ${s}` : s;
-    }
-    if (buf) out.push(buf);
-  }
-  return out.slice(0, max);
 }
 
 function gameState(status: string | null | undefined): string | null {
@@ -244,10 +239,6 @@ function kickerOf(card: GameWrapCard): string {
   else if (card.postseason) bits.push("Postseason");
   if (card.teamName) bits.push(card.teamName);
   return bits.join(" · ");
-}
-
-function storyHref(card: GameWrapCard): string {
-  return card.gameHref || card.wrapHref || card.teamHref;
 }
 
 function clubRecord(team: TeamInfobox | null | undefined): string | null {
@@ -372,8 +363,8 @@ function pageLabel(page: EditionPage): string {
     case "sport-front":
       return {
         news: "News",
-        recaps: "Recaps",
-        teams: "All Teams",
+        recaps: "Scores",
+        teams: "Standings",
         schedule: "Schedule",
         playoffs: "Playoffs",
         form: "Club Form",
@@ -455,16 +446,64 @@ function Kicker({ card }: { card: GameWrapCard }) {
   return <p className="wsj-kicker">{kickerOf(card)}</p>;
 }
 
-function Headline({ card, size }: { card: GameWrapCard; size: "xl" | "lg" | "md" | "sm" }) {
+/** Finds the box score behind a story, so the reader can set it with the copy. */
+const GameLookup = createContext<(card: GameWrapCard) => BoxGame | null>(() => null);
+
+/** A headline opens the story in the paper's reader, never the publisher's site. */
+function StoryLink({
+  card,
+  game,
+  color,
+  className,
+  children,
+}: {
+  card: GameWrapCard;
+  game?: BoxGame | null;
+  color?: string | null;
+  className?: string;
+  children: ReactNode;
+}) {
+  const open = useReader();
+  const lookup = useContext(GameLookup);
+  return (
+    <button
+      type="button"
+      className={cn("wsj-a wsj-story-link", className)}
+      onClick={() => open({ card, game: game ?? lookup(card), color })}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Headline({
+  card,
+  size,
+  game,
+}: {
+  card: GameWrapCard;
+  size: "xl" | "lg" | "md" | "sm";
+  game?: BoxGame | null;
+}) {
   return (
     <>
       <Kicker card={card} />
       <h2 className={cn("wsj-hl", size)}>
-        <ExternalOrLink href={storyHref(card)} className="wsj-a">
+        <StoryLink card={card} game={game}>
           {card.headline}
-        </ExternalOrLink>
+        </StoryLink>
       </h2>
     </>
+  );
+}
+
+function ReadOn({ card, game, label = "Read the full story" }: { card: GameWrapCard; game?: BoxGame | null; label?: string }) {
+  return (
+    <p className="wsj-jump">
+      <StoryLink card={card} game={game} className="wsj-jump-btn">
+        {label} <span aria-hidden="true">→</span>
+      </StoryLink>
+    </p>
   );
 }
 
@@ -635,6 +674,8 @@ function Story({
   onTurn,
   max,
   className,
+  readOn,
+  game,
 }: {
   card: GameWrapCard;
   team?: TeamInfobox | null;
@@ -648,6 +689,9 @@ function Story({
   onTurn?: (folio: string) => void;
   max?: number;
   className?: string;
+  /** Offer the whole story in the reader when this page sets only part of it. */
+  readOn?: boolean;
+  game?: BoxGame | null;
 }) {
   const copy = substantive(card, text ?? cardCopy(card));
   const dek = dekFor(card, copy);
@@ -669,12 +713,13 @@ function Story({
     >
       {artNode ? <div className="wsj-story-art">{artNode}</div> : null}
       <div className="wsj-story-copy">
-        <Headline card={card} size={size} />
+        <Headline card={card} size={size} game={game} />
         {dek ? <p className="wsj-dek">{dek}</p> : null}
         <ScoreBug card={card} />
         <Byline card={card} />
         {copy ? <Prose card={card} text={copy} cols={cols} drop={drop} max={max} /> : null}
         <Jump folio={jump} onTurn={onTurn} />
+        {readOn && !(jump && onTurn) ? <ReadOn card={card} game={game} /> : null}
       </div>
     </article>
   );
@@ -721,9 +766,9 @@ function Brief({
       <div className="wsj-brief-copy">
         <Kicker card={card} />
         <h3>
-          <ExternalOrLink href={storyHref(card)} className="wsj-a">
+          <StoryLink card={card} color={color}>
             {card.headline}
-          </ExternalOrLink>
+          </StoryLink>
         </h3>
         <ScoreBug card={card} />
         {dek ? <p className="wsj-brief-dek">{dek}</p> : null}
@@ -1345,6 +1390,7 @@ function InsidePage({
   folios,
   here,
   onTurn,
+  notebooks = [],
 }: {
   primary: GameWrapCard;
   secondary?: GameWrapCard;
@@ -1353,88 +1399,40 @@ function InsidePage({
   folios?: Record<string, string>;
   here: string;
   onTurn: (folio: string) => void;
+  /** The club's numbers, printed on the first page that club appears. */
+  notebooks?: TeamInfobox[];
 }) {
   const stories = ([primary, secondary].filter(Boolean) as GameWrapCard[]).sort(
     (a, b) => substantive(b, cardCopy(b)).length - substantive(a, cardCopy(a)).length,
   );
-  const postered = new Set<string>();
+  const lookup = useContext(GameLookup);
   return (
     <div className="wsj-inside">
       {stories.map((card, i) => {
         const team = teamForCard(teams, card);
         const text = cardCopy(card);
         const { art, cols } = artFor(card, text);
-        const poster = !card.photo && Boolean(team) && !postered.has(team!.fav.key);
-        if (poster && team) postered.add(team.fav.key);
+        const game = lookup(card);
         return (
-          <Story
-            key={card.id}
-            className={cn(i === 0 ? "primary" : "secondary")}
-            card={card}
-            team={team}
-            text={text}
-            size={i === 0 ? "xl" : "lg"}
-            cols={poster && art === "top" ? (cols === 3 ? 2 : cols) : cols}
-            art={poster ? "side" : art}
-            poster={poster}
-            drop={i === 0}
-          />
+          <div key={card.id} className="wsj-inside-story">
+            <Story
+              className={cn(i === 0 ? "primary" : "secondary")}
+              card={card}
+              team={team}
+              text={text}
+              size={i === 0 ? "xl" : "lg"}
+              cols={cols}
+              art={art}
+              drop={i === 0}
+              game={game}
+            />
+            {game ? <GameBox game={game} /> : null}
+          </div>
         );
       })}
       <BriefGrid
         cards={briefs}
-        title="Also on the desk"
-        folios={folios}
-        here={here}
-        onTurn={onTurn}
-        colorFor={(c) => teamColor(teamForCard(teams, c))}
-      />
-      <DeskBoard teams={teams} onTurn={onTurn} />
-    </div>
-  );
-}
-
-/** Destination of a front-page jump — the rest of the article. */
-function ContinuePage({
-  card,
-  rest,
-  continuedFrom,
-  teams,
-  more,
-  folios,
-  here,
-  onTurn,
-}: {
-  card: GameWrapCard;
-  rest: string;
-  continuedFrom: string;
-  teams: TeamInfobox[];
-  more: GameWrapCard[];
-  folios: Record<string, string>;
-  here: string;
-  onTurn: (folio: string) => void;
-}) {
-  const team = teamForCard(teams, card);
-  return (
-    <div className="wsj-continue">
-      <p className="wsj-continued-from">
-        <button type="button" className="wsj-jump-btn" onClick={() => onTurn(continuedFrom)}>
-          <span aria-hidden="true">←</span> Continued from page {continuedFrom}
-        </button>
-      </p>
-      <Story
-        className="primary"
-        card={card}
-        team={team}
-        text={rest}
-        size="xl"
-        cols={3}
-        art="none"
-      />
-      {team ? <StatPoster team={team} card={card} layout="band" /> : null}
-      <BriefGrid
-        cards={more}
-        title="More from your clubs"
+        title="In brief"
         folios={folios}
         here={here}
         onTurn={onTurn}
@@ -1444,22 +1442,115 @@ function ContinuePage({
         }}
         colorFor={(c) => teamColor(teamForCard(teams, c))}
       />
-      <DeskBoard teams={teams} onTurn={onTurn} />
+      {notebooks.map((team) => (
+        <StatPoster key={team.fav.key} team={team} layout="band" />
+      ))}
     </div>
+  );
+}
+
+/** Destination of a front-page jump — the rest of the article. */
+function ContinuePage({
+  jumps,
+  continuedFrom,
+  teams,
+  notebooks,
+  onTurn,
+}: {
+  jumps: { card: GameWrapCard; rest: string }[];
+  continuedFrom: string;
+  teams: TeamInfobox[];
+  notebooks: TeamInfobox[];
+  onTurn: (folio: string) => void;
+}) {
+  const lookup = useContext(GameLookup);
+  return (
+    <div className="wsj-continue">
+      {jumps.map(({ card, rest }, i) => {
+        const game = lookup(card);
+        return (
+          <div key={card.id} className="wsj-inside-story">
+            <p className="wsj-continued-from">
+              <button type="button" className="wsj-jump-btn" onClick={() => onTurn(continuedFrom)}>
+                <span aria-hidden="true">←</span> Continued from page {continuedFrom}
+              </button>
+            </p>
+            <Story
+              className={i === 0 ? "primary" : "secondary"}
+              card={card}
+              team={teamForCard(teams, card)}
+              text={rest}
+              size={i === 0 ? "xl" : "lg"}
+              cols={rest.length > 1400 ? 3 : rest.length > 500 ? 2 : 1}
+              art="none"
+              game={game}
+            />
+            {game ? <GameBox game={game} /> : null}
+          </div>
+        );
+      })}
+      {notebooks.map((team) => (
+        <StatPoster key={team.fav.key} team={team} layout="band" />
+      ))}
+    </div>
+  );
+}
+
+/** Linescore, decisions and the agate under a club story. */
+function GameBox({ game, agate = true }: { game: BoxGame; agate?: boolean }) {
+  return (
+    <section className="tt-gamebox">
+      <header>
+        <b>{gameClock(game)}</b>
+        <span>{[game.round, game.series, game.venue].filter(Boolean).join(" · ")}</span>
+      </header>
+      <div className="tt-gamebox-top">
+        <Linescore game={game} />
+        <div className="tt-gamebox-names">
+          <Decisions game={game} faces />
+          <Leaders game={game} max={3} />
+          <Goals game={game} />
+        </div>
+      </div>
+      {agate && game.path === "baseball/mlb" ? <MlbAgate game={game} /> : null}
+    </section>
   );
 }
 
 /* ───────────────────────── sport section front ───────────────────────── */
 
+type SportFrontPage = Extract<EditionPage, { kind: "sport-front" }>;
+
+const FOCUS_TITLES: Record<SportFrontPage["focus"], string> = {
+  news: "News",
+  recaps: "Scores",
+  teams: "Standings",
+  schedule: "Schedule",
+  playoffs: "Playoffs",
+  form: "Club Form",
+};
+
+/** Section flag: big on the section front, a slim band on the desk pages behind it. */
 function SportHero({
   page,
   leagueClubs,
   blurb,
 }: {
-  page: Extract<EditionPage, { kind: "sport-front" }>;
+  page: SportFrontPage;
   leagueClubs: LeagueClub[];
   blurb: string;
 }) {
+  if (page.focus !== "news") {
+    return (
+      <header className="wsj-sport-band">
+        <span className="wsj-sport-code">{page.section}</span>
+        <h3>
+          {page.sectionTitle} <em>{FOCUS_TITLES[page.focus]}</em>
+        </h3>
+        <p>{blurb}</p>
+      </header>
+    );
+  }
   return (
     <header className="wsj-sport-hero">
       <div className="wsj-sport-hero-mark">
@@ -1478,69 +1569,333 @@ function SportHero({
   );
 }
 
+function involvesClub(game: BoxGame, clubs: ClubDesk[]): boolean {
+  const names = clubs.map((c) => squash(c.shortName)).filter(Boolean);
+  return [game.away, game.home].some((side) => {
+    const s = squash(side.short);
+    return names.some((n) => s === n || s.includes(n) || n.includes(s));
+  });
+}
+
+/** League news front: last night's board, then the stories with their art. */
 function SportNewsDesk({
   page,
+  board,
   leagueClubs,
   onTurn,
 }: {
-  page: Extract<EditionPage, { kind: "sport-front" }>;
+  page: SportFrontPage;
+  board: SectionBoard | null;
   leagueClubs: LeagueClub[];
   onTurn: (folio: string) => void;
 }) {
-  const crestFor = (card: GameWrapCard) =>
-    page.clubs.find((c) => c.key === card.favoriteKey)?.logo ||
-    leagueClubs.find(
-      (c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()),
-    )?.logo ||
-    null;
-  const colorFor = (card: GameWrapCard) =>
-    page.clubs.find((c) => c.key === card.favoriteKey)?.color ?? null;
+  const open = useReader();
+  const results = board?.results ?? [];
+  const recent = page.path.startsWith("soccer/") || page.path.startsWith("football/") ? [...results].reverse() : results;
+  const gameById = new Map<string, BoxGame>();
+  // Recaps of games your clubs played run in Section A; the league desk takes the rest.
+  const recapCards = recent
+    .filter((g) => !involvesClub(g, page.clubs))
+    .map((g) => {
+      const card = boxStoryCard(g);
+      if (card) gameById.set(card.id, g);
+      return card;
+    })
+    .filter((c): c is GameWrapCard => Boolean(c && (c.photo || (c.body?.length ?? 0) > 300)));
+  // The wire's rewrite of a game the box already carries is the same story twice.
+  const covered = recent.filter((g) => g.recap);
+  const retold = (card: GameWrapCard) => {
+    const t = squash(card.teamName);
+    const head = squash(card.headline);
+    return covered.some((g) => {
+      const [a, b] = [squash(g.away.short), squash(g.home.short)];
+      const isA = Boolean(t && a && (t.includes(a) || a.includes(t)));
+      const isB = Boolean(t && b && (t.includes(b) || b.includes(t)));
+      if (!isA && !isB) return false;
+      const other = isA ? b : a;
+      return head.includes(other) || /\d+-\d+/.test(card.headline);
+    });
+  };
+  const stories = dedupeByHead([
+    ...recapCards,
+    ...page.articles.map((a) => a.card).filter((c) => !retold(c)),
+  ]);
   const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
-  const [lead, ...rest] = page.articles;
-  if (!lead) return null;
-  const leadCrest = crestFor(lead.card);
-  const dek = recapDek(lead.card, 2);
+  const withArt = stories.filter((c) => c.photo);
+  const lead = withArt[0] ?? stories[0] ?? null;
+  const seconds = stories.filter((c) => c !== lead && c.photo).slice(0, 2);
+  const briefs = stories.filter((c) => c !== lead && !seconds.includes(c)).slice(0, 8);
+  const crestFor = (card: GameWrapCard) =>
+    leagueClubs.find((c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()))?.logo ?? null;
+
   return (
     <div className="wsj-sport-news">
-      <article
-        className={cn("wsj-sport-lead", lead.card.photo ? "has-photo" : "no-photo")}
-        style={tint(colorFor(lead.card))}
-      >
-        {lead.card.photo ? (
-          <Cut card={lead.card} />
-        ) : leadCrest ? (
-          <span className="wsj-sport-lead-crest">
-            <img src={leadCrest} alt="" />
-          </span>
-        ) : null}
-        <div className="wsj-sport-lead-copy">
-          <Headline card={lead.card} size="xl" />
-          <ScoreBug card={lead.card} />
-          {dek ? <p className="wsj-dek">{dek}</p> : null}
-          {lead.card.leaders.length ? (
-            <p className="wsj-names-line">
-              <b>Names</b>{" "}
-              {lead.card.leaders
-                .slice(0, 3)
-                .map((l) => `${l.name} ${l.line}`)
-                .join(" · ")}
-            </p>
-          ) : null}
-          <Jump
-            folio={lead.folio === page.folio ? undefined : lead.folio}
-            onTurn={onTurn}
-            label={`Full story, page ${lead.folio}`}
+      {recent.length ? (
+        <section className="tt-strip-wrap">
+          <h3 className="wsj-band-title">
+            {page.path.startsWith("football/") ? "This week’s finals" : "Last night’s scores"}
+            <button type="button" className="tt-band-link" onClick={() => onTurn(`${page.section}2`)}>
+              Box scores, page {page.section}2 →
+            </button>
+          </h3>
+          <ScoreStrip
+            games={recent.slice(0, 16)}
+            onOpen={(g) => {
+              const card = boxStoryCard(g);
+              if (card) open({ card, game: g });
+              else onTurn(`${page.section}2`);
+            }}
           />
+        </section>
+      ) : null}
+      {lead ? (
+        <div className={cn("wsj-sport-lead-grid", seconds.length ? "with-side" : "solo")}>
+          <Story
+            className="lead"
+            card={lead}
+            text={splitStoryCopy(cardCopy(lead), seconds.length ? 1500 : 1000).teaser}
+            size="xl"
+            cols={2}
+            art="top"
+            drop
+            readOn
+            game={gameById.get(lead.id) ?? null}
+            jump={folios[lead.id] && folios[lead.id] !== page.folio ? folios[lead.id] : undefined}
+            onTurn={onTurn}
+          />
+          {seconds.length ? (
+            <div className="wsj-sport-seconds">
+              {seconds.map((card) => (
+                <Story
+                  key={card.id}
+                  card={card}
+                  text={recapDek(card, 2)}
+                  size="md"
+                  art="top"
+                  readOn
+                  game={gameById.get(card.id) ?? null}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
-      </article>
+      ) : (
+        <p className="wsj-empty">The league wire is quiet. Scores, tables and the slate follow.</p>
+      )}
       <BriefGrid
-        cards={rest.map((a) => a.card)}
+        cards={briefs}
+        title={briefs.length ? "Around the league" : undefined}
         folios={folios}
         here={page.folio}
         onTurn={onTurn}
         crestFor={crestFor}
-        colorFor={colorFor}
       />
+    </div>
+  );
+}
+
+function dedupeByHead(cards: GameWrapCard[]): GameWrapCard[] {
+  const seen = new Set<string>();
+  return cards.filter((c) => {
+    const k = squash(c.headline).slice(0, 40);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/** Box scores: the best game set large with its recap, the rest in agate. */
+function ScoresDesk({ page, board, active }: { page: SportFrontPage; board: SectionBoard | null; active: boolean }) {
+  const open = useReader();
+  const results = board?.results ?? [];
+  const games = page.path.startsWith("soccer/") || page.path.startsWith("football/") ? [...results].reverse() : results;
+  if (!board) return <p className="wsj-empty">Setting the box scores…</p>;
+  if (!games.length) return <p className="wsj-empty">No finals on the board — the schedule is on page {page.section}4.</p>;
+  const featured =
+    games.find((g) => g.recap?.photo && !involvesClub(g, page.clubs)) ?? games.find((g) => g.recap) ?? games[0]!;
+  const rest = games.filter((g) => g !== featured).slice(0, 18);
+  const card = boxStoryCard(featured);
+  const isMlb = page.path === "baseball/mlb";
+  return (
+    <div className="tt-scores">
+      <article className="tt-feature">
+        {featured.recap?.photo ? (
+          <figure className="tt-feature-photo">
+            <img src={featured.recap.photo} alt="" loading="lazy" />
+            <figcaption>
+              {featured.away.name} at {featured.home.name}
+              {featured.venue ? `, ${featured.venue}` : ""}.
+            </figcaption>
+          </figure>
+        ) : null}
+        <div className="tt-feature-copy">
+          <p className="wsj-kicker">
+            {[featured.league, featured.round, featured.series].filter(Boolean).join(" · ")}
+          </p>
+          <h2 className="wsj-hl lg">
+            {card ? (
+              <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card, game: featured })}>
+                {featured.recap!.headline}
+              </button>
+            ) : (
+              `${featured.away.short} ${featured.away.score ?? ""}, ${featured.home.short} ${featured.home.score ?? ""}`
+            )}
+          </h2>
+          {featured.recap?.blurb ? <p className="wsj-dek">{featured.recap.blurb}</p> : null}
+          <Linescore game={featured} />
+          <Decisions game={featured} faces />
+          <Leaders game={featured} max={4} />
+          <Goals game={featured} />
+          {card ? (
+            <p className="wsj-jump">
+              <button type="button" className="wsj-jump-btn" onClick={() => open({ card, game: featured })}>
+                Read the story <span aria-hidden="true">→</span>
+              </button>
+            </p>
+          ) : null}
+        </div>
+      </article>
+      {isMlb ? <MlbAgate game={featured} enabled={active} /> : null}
+      {rest.length ? (
+        <>
+          <h3 className="wsj-band-title">{isMlb ? "Box scores" : "Results"}</h3>
+          <div className={cn("tt-score-grid", isMlb && "agate")}>
+            {rest.map((g) => (
+              <ScoreCard
+                key={g.id}
+                game={g}
+                agate={isMlb}
+                agateEnabled={active}
+                onOpen={(game) => {
+                  const c = boxStoryCard(game);
+                  if (c) open({ card: c, game });
+                }}
+              />
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function dayHeading(day: string, edition: string): string {
+  if (day === edition) return "Today";
+  const d = new Date(`${day}T12:00:00Z`);
+  const t = new Date(`${edition}T12:00:00Z`);
+  const diff = Math.round((d.getTime() - t.getTime()) / 86_400_000);
+  if (diff === 1) return "Tomorrow";
+  return d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function ScheduleDesk({
+  page,
+  board,
+  slate,
+  edition,
+}: {
+  page: SportFrontPage;
+  board: SectionBoard | null;
+  slate: LeagueSlateGame[];
+  edition: string;
+}) {
+  const games = board?.slate ?? [];
+  if (games.length) {
+    const days = new Map<string, BoxGame[]>();
+    for (const g of games.slice(0, 24)) {
+      const list = days.get(g.day) ?? [];
+      list.push(g);
+      days.set(g.day, list);
+    }
+    return (
+      <div className="tt-schedule">
+        {[...days.entries()].map(([day, list]) => (
+          <section key={day}>
+            <h3 className="wsj-band-title">
+              {dayHeading(day, edition)} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
+            </h3>
+            <div className="tt-matchups" style={{ ["--cols" as string]: String(balancedCols(list.length, [3, 2, 4])) }}>
+              {list.map((g) => (
+                <MatchupCard key={g.id} game={g} />
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    );
+  }
+  if (slate.length) {
+    return (
+      <div className="wsj-slate-board">
+        {slate.map((game) => (
+          <article key={game.id} className={cn("wsj-slate-card", game.live && "live")}>
+            <div className="wsj-slate-card-top">
+              <span>{game.round || game.venue || "Today"}</span>
+              <strong>{game.live ? game.status : game.when || game.status}</strong>
+            </div>
+            {[game.away, game.home].map((side, i) => (
+              <div key={i} className="wsj-slate-row">
+                <TeamLogo src={side.logo} size="sm" />
+                <div>
+                  <strong>{side.abbrev}</strong>
+                  {side.record ? <em>{side.record}</em> : null}
+                </div>
+                <span className="score">{side.score ?? ""}</span>
+              </div>
+            ))}
+          </article>
+        ))}
+      </div>
+    );
+  }
+  const clubs = page.clubs.filter((c) => c.upcoming.length);
+  if (!clubs.length) return <p className="wsj-empty">Nothing on the league calendar this week.</p>;
+  return (
+    <div className="wsj-schedule-grid">
+      {clubs.map((club) => (
+        <div key={club.key} className="wsj-schedule-col" style={tint(club.color)}>
+          <p className="wsj-schedule-head">
+            <TeamLogo src={club.logo} size="md" />
+            <strong>{club.shortName}</strong>
+            <em>{club.record || ""}</em>
+          </p>
+          <ul className="wsj-club-slate">
+            {club.upcoming.map((game) => (
+              <li key={game.id}>
+                <strong>{game.label}</strong>
+                <span>{game.when || "TBD"}</span>
+                {game.detail ? <em>{game.detail}</em> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StandingsDesk({
+  page,
+  standings,
+  leagueClubs,
+}: {
+  page: SportFrontPage;
+  standings: StandGroup[];
+  leagueClubs: LeagueClub[];
+}) {
+  if (!standings.length) {
+    return leagueClubs.length ? <LeagueFormGrid clubs={leagueClubs} /> : <ClubFormGrid clubs={page.clubs} />;
+  }
+  const favIds = new Set(leagueClubs.filter((c) => c.favorite).map((c) => c.id));
+  const favNames = page.clubs.map((c) => squash(c.shortName));
+  const mine = (row: { id: string; name: string }) =>
+    favIds.has(row.id) || favNames.some((n) => n && squash(row.name) === n);
+  const single = standings.length === 1;
+  return (
+    <div className={cn("tt-stand-grid", single && "single")}>
+      {standings.map((group) => (
+        <StandingsTable key={group.name} group={group} mine={mine} />
+      ))}
     </div>
   );
 }
@@ -1548,216 +1903,66 @@ function SportNewsDesk({
 function SportFront({
   page,
   leagueClubs,
+  board,
+  standings,
   slate,
   playoffs,
+  edition,
+  active,
   onTurn,
 }: {
-  page: Extract<EditionPage, { kind: "sport-front" }>;
+  page: SportFrontPage;
   leagueClubs: LeagueClub[];
+  board: SectionBoard | null;
+  standings: StandGroup[];
   slate: LeagueSlateGame[];
   playoffs: MlbPlayoffTree | null;
+  edition: string;
+  active: boolean;
   onTurn: (folio: string) => void;
 }) {
-  const groups = useMemo(() => {
-    const map = new Map<string, LeagueClub[]>();
-    for (const club of leagueClubs) {
-      const key = club.group || "League";
-      const list = map.get(key) ?? [];
-      list.push(club);
-      map.set(key, list);
-    }
-    return [...map.entries()];
-  }, [leagueClubs]);
+  const isMlb = page.path === "baseball/mlb";
+  const results = board?.results.length ?? 0;
+  const upcoming = board?.slate.length ?? slate.length;
+  const next: Record<SportFrontPage["focus"], { folio: string; label: string } | null> = {
+    news: { folio: `${page.section}2`, label: "Scores and box scores" },
+    recaps: { folio: `${page.section}3`, label: "The standings" },
+    teams: { folio: `${page.section}4`, label: "The schedule" },
+    schedule: { folio: `${page.section}5`, label: isMlb ? "The playoff bracket" : "Club form" },
+    playoffs: null,
+    form: null,
+  };
+  const blurb = {
+    news: `${page.articles.length + results} stories and finals · ${leagueClubs.length || page.clubs.length} clubs`,
+    recaps: results ? `${results} ${results === 1 ? "final" : "finals"} · lines, decisions and the agate` : "Box scores",
+    teams: standings.length ? `${standings.length} ${standings.length === 1 ? "table" : "tables"} · your clubs marked` : "League tables",
+    schedule: upcoming ? `${upcoming} games ahead · probables, TV and venues` : "League calendar",
+    playoffs: playoffs ? `${playoffs.season} postseason bracket` : "Postseason bracket",
+    form: `${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"} · tables, numbers, leaders`,
+  }[page.focus];
+  const turn = next[page.focus];
 
-  if (page.focus === "teams") {
-    const tables = new Set<string>();
-    return (
-      <div className="wsj-sport focus-teams">
-        <SportHero
-          page={page}
-          leagueClubs={leagueClubs}
-          blurb={`${leagueClubs.length || page.clubs.length} clubs · the full league desk`}
-        />
-        <div className="wsj-sport-solo">
-          {groups.length ? (
-            <div className="wsj-team-groups">
-              {groups.map(([group, rows]) => (
-                <div key={group} className="wsj-team-group">
-                  {group && group !== "League" ? <p className="wsj-team-group-label">{group}</p> : null}
-                  <ul className="wsj-team-wall">
-                    {rows.map((club) => (
-                      <li key={club.id} className={cn(club.favorite && "me")}>
-                        <TeamLogo src={club.logo} size="md" />
-                        <span className="wsj-team-wall-meta">
-                          <strong>{club.abbrev}</strong>
-                          <em>{club.record || "—"}</em>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="wsj-empty">League roster loading…</p>
-          )}
-          <div className="wsj-sport-tables">
-            {page.clubs.map((club) => {
-              const signature = club.division.map((row) => row.team).join("|");
-              if (!signature || tables.has(signature)) return null;
-              tables.add(signature);
-              return (
-                <AgateBox
-                  key={`table-${club.key}`}
-                  color={club.color}
-                  title={`${club.shortName} · ${tableTitle(club.standing)}`}
-                  rows={club.division.map((row) => ({
-                    left: (
-                      <span className="wsj-club-inline">
-                        <TeamLogo src={row.logo} size="xs" />
-                        <span>
-                          {row.rank} {row.team}
-                        </span>
-                      </span>
-                    ),
-                    right: row.gb && row.gb !== "-" ? `${row.record} ${row.gb}` : row.record,
-                    me: row.me,
-                  }))}
-                />
-              );
-            })}
-          </div>
-        </div>
-        <TurnBar onTurn={onTurn} folio={`${page.section}4`} label="The schedule" />
-      </div>
-    );
-  }
-
-  if (page.focus === "schedule") {
-    const nextFocus = page.path === "baseball/mlb" ? "The playoff bracket" : "Club form";
-    return (
-      <div className="wsj-sport focus-schedule">
-        <SportHero
-          page={page}
-          leagueClubs={leagueClubs}
-          blurb={slate.length ? `${slate.length} games on the board · probables where filed` : "League slate"}
-        />
-        <div className="wsj-sport-solo">
-          {slate.length ? (
-            <div className="wsj-slate-board">
-              {slate.map((game) => (
-                <article key={game.id} className={cn("wsj-slate-card", game.live && "live")}>
-                  <div className="wsj-slate-card-top">
-                    <span>
-                      {game.round || (game.final ? "Final" : game.live ? "Live" : "Today")}
-                      {game.venue ? ` · ${game.venue}` : ""}
-                    </span>
-                    <strong>{game.live ? game.status : game.final ? "Final" : game.when || game.status}</strong>
-                  </div>
-                  {[game.away, game.home].map((side, i) => (
-                    <div key={i} className="wsj-slate-row">
-                      <TeamLogo src={side.logo} size="sm" />
-                      <div>
-                        <strong>{side.abbrev}</strong>
-                        {side.record ? <em>{side.record}</em> : null}
-                      </div>
-                      <span className="score">{side.score ?? "—"}</span>
-                    </div>
-                  ))}
-                  {(game.away.pitcher || game.home.pitcher) && !game.final ? (
-                    <p className="wsj-slate-pitch">
-                      <b>Probables</b> {game.away.pitcher || "TBD"} vs {game.home.pitcher || "TBD"}
-                    </p>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          ) : page.clubs.some((club) => club.upcoming.length) ? (
-            <div className="wsj-schedule-grid">
-              {page.clubs.map((club) =>
-                club.upcoming.length ? (
-                  <div key={club.key} className="wsj-schedule-col" style={tint(club.color)}>
-                    <p className="wsj-schedule-head">
-                      <TeamLogo src={club.logo} size="md" />
-                      <strong>{club.shortName}</strong>
-                      <em>{club.record || ""}</em>
-                    </p>
-                    <ul className="wsj-club-slate">
-                      {club.upcoming.map((game) => (
-                        <li key={game.id}>
-                          <strong>{game.label}</strong>
-                          <span>{game.when || "TBD"}</span>
-                          {game.detail ? <em>{game.detail}</em> : null}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null,
-              )}
-            </div>
-          ) : (
-            <p className="wsj-empty">No league games on today’s board.</p>
-          )}
-        </div>
-        <TurnBar onTurn={onTurn} folio={`${page.section}5`} label={nextFocus} />
-      </div>
-    );
-  }
-
-  if (page.focus === "playoffs") {
-    return (
-      <div className="wsj-sport focus-playoffs">
-        <SportHero
-          page={page}
-          leagueClubs={leagueClubs}
-          blurb={playoffs ? `${playoffs.season} postseason bracket` : "Postseason bracket"}
-        />
-        <div className="wsj-sport-solo">
-          <PlayoffDesk tree={playoffs} />
-        </div>
-      </div>
-    );
-  }
-
-  if (page.focus === "form") {
-    return (
-      <div className="wsj-sport focus-form">
-        <SportHero
-          page={page}
-          leagueClubs={leagueClubs}
-          blurb={`${leagueClubs.length || page.clubs.length} clubs · full league form`}
-        />
-        <div className="wsj-sport-solo">
-          {leagueClubs.length ? <LeagueFormGrid clubs={leagueClubs} /> : <ClubFormGrid clubs={page.clubs} />}
-        </div>
-      </div>
-    );
-  }
-
-  const isRecaps = page.focus === "recaps";
-  const nextFolio = isRecaps ? `${page.section}3` : `${page.section}2`;
-  const nextLabel = isRecaps ? "Every club in the league" : "Last night’s recaps";
   return (
-    <div className={cn("wsj-sport", isRecaps ? "focus-recaps" : "focus-news")}>
-      <SportHero
-        page={page}
-        leagueClubs={leagueClubs}
-        blurb={
-          page.articles.length
-            ? `${page.articles.length} ${isRecaps ? "recaps" : "stories"} on the wire`
-            : "Wire quiet this morning"
-        }
-      />
+    <div className={cn("wsj-sport", `focus-${page.focus}`)}>
+      <SportHero page={page} leagueClubs={leagueClubs} blurb={blurb} />
       <div className="wsj-sport-solo">
-        {page.articles.length ? (
-          <SportNewsDesk page={page} leagueClubs={leagueClubs} onTurn={onTurn} />
-        ) : leagueClubs.length ? (
-          <LeagueFormGrid clubs={leagueClubs} />
-        ) : (
+        {page.focus === "news" ? (
+          <SportNewsDesk page={page} board={board} leagueClubs={leagueClubs} onTurn={onTurn} />
+        ) : page.focus === "recaps" ? (
+          <ScoresDesk page={page} board={board} active={active} />
+        ) : page.focus === "teams" ? (
+          <StandingsDesk page={page} standings={standings} leagueClubs={leagueClubs} />
+        ) : page.focus === "schedule" ? (
+          <ScheduleDesk page={page} board={board} slate={slate} edition={edition} />
+        ) : page.focus === "playoffs" ? (
+          <PlayoffDesk tree={playoffs} />
+        ) : page.clubs.length ? (
           <ClubFormGrid clubs={page.clubs} />
+        ) : (
+          <LeagueFormGrid clubs={leagueClubs} />
         )}
       </div>
-      <TurnBar onTurn={onTurn} folio={nextFolio} label={nextLabel} />
+      {turn ? <TurnBar onTurn={onTurn} folio={turn.folio} label={turn.label} /> : null}
     </div>
   );
 }
@@ -2146,7 +2351,7 @@ export default function DailyNewspaperPage() {
     staleTime: 5 * 60_000,
   });
 
-  const stories = useMemo(() => {
+  const rawStories = useMemo(() => {
     const wire = wireStoryCards({
       games: wireQ.data?.games ?? [],
       favs: teamFavs,
@@ -2156,7 +2361,7 @@ export default function DailyNewspaperPage() {
       mergeStoryCards(wire, enrichedQ.data ?? teamCards),
       newsQ.data ?? [],
     );
-    return mergeStoryCards(clubCopy, leagueNewsQ.data ?? []);
+    return mergeStoryCards(clubCopy, leagueNewsQ.data ?? []).filter((card) => !isNewsMuted(card));
   }, [
     wireQ.data,
     teamFavs,
@@ -2166,6 +2371,62 @@ export default function DailyNewspaperPage() {
     newsQ.data,
     leagueNewsQ.data,
   ]);
+
+  // Club feeds send a headline and a link. Dispatch's extractor sets the story
+  // (and its photo) so Section A prints copy instead of a crest.
+  const extractUrls = useMemo(
+    () =>
+      rawStories
+        .filter(
+          (card) =>
+            (card.favoriteKey || card.followed) &&
+            card.wrapHref &&
+            /^https?:\/\//i.test(card.wrapHref) &&
+            !/espn\.com\/.+\/(?:game|recap|preview|match)\b/i.test(card.wrapHref) &&
+            ((card.body?.trim().length ?? 0) < 600 || !card.photo),
+        )
+        .map((card) => card.wrapHref!)
+        .slice(0, 16),
+    [rawStories],
+  );
+  const queryClient = useQueryClient();
+  const extractsQ = useQuery({
+    queryKey: ["tt-extracts", day, extractUrls.join("|")],
+    queryFn: async () => {
+      const out: Record<string, RssArticle> = {};
+      let next = 0;
+      const worker = async () => {
+        while (next < extractUrls.length) {
+          const url = extractUrls[next++]!;
+          try {
+            out[url] = await queryClient.fetchQuery({
+              queryKey: ["rss-article-v3", url],
+              queryFn: () => fetchRssArticle(url),
+              staleTime: 10 * 60_000,
+            });
+          } catch {
+            /* the brief runs as filed */
+          }
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+      return out;
+    },
+    enabled: extractUrls.length > 0,
+    staleTime: 10 * 60_000,
+  });
+
+  const stories = useMemo(() => {
+    const extracts = extractsQ.data;
+    if (!extracts) return rawStories;
+    return rawStories.map((card) => {
+      const hit = card.wrapHref ? extracts[card.wrapHref] : undefined;
+      if (!hit) return card;
+      const text = hit.contentText?.trim() ?? "";
+      const body = text.length > (card.body?.trim().length ?? 0) + 120 ? text : card.body;
+      return { ...card, body, photo: card.photo || hit.image || firstContentImageUrl(hit.contentHtml) };
+    });
+  }, [rawStories, extractsQ.data]);
 
   const leagueClubsQ = useQuery({
     queryKey: ["tt-league-clubs", day, sportPaths.join("|")],
@@ -2200,6 +2461,65 @@ export default function DailyNewspaperPage() {
     enabled: sportPaths.includes("baseball/mlb"),
     staleTime: 10 * 60_000,
   });
+
+  const boardQ = useQuery({
+    queryKey: ["tt-board", day, sportPaths.join("|")],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        sportPaths.map(async (path) => {
+          try {
+            return [path, await fetchSectionBoard(path, day)] as const;
+          } catch {
+            return [path, { results: [], slate: [] }] as const;
+          }
+        }),
+      );
+      return Object.fromEntries(entries) as Record<string, SectionBoard>;
+    },
+    enabled: sportPaths.length > 0,
+    staleTime: 3 * 60_000,
+  });
+
+  const standingsQ = useQuery({
+    queryKey: ["tt-standings", day, sportPaths.join("|")],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        sportPaths.map(async (path) => [path, await fetchSectionStandings(path)] as const),
+      );
+      return Object.fromEntries(entries) as Record<string, StandGroup[]>;
+    },
+    enabled: sportPaths.length > 0,
+    staleTime: 30 * 60_000,
+  });
+
+  /** Pairs a club story with the game it reports, so the reader can set the box. */
+  const findGame = useCallback(
+    (card: GameWrapCard): BoxGame | null => {
+      const board = card.leaguePath ? boardQ.data?.[card.leaguePath] : undefined;
+      if (!board) return null;
+      const games = [...board.results, ...board.slate];
+      if (card.gameId) {
+        const hit = games.find(
+          (g) => g.espnEventId === card.gameId || (g.gamePk != null && String(g.gamePk) === card.gameId),
+        );
+        if (hit) return hit;
+      }
+      const team = squash(card.teamName);
+      if (!team || !card.when) return null;
+      const day = instantDay(card.when);
+      return (
+        board.results.find(
+          (g) =>
+            [g.away, g.home].some((s) => {
+              const n = squash(s.short);
+              return n === team || n.includes(team) || team.includes(n);
+            }) &&
+            (g.day === day || Math.abs(new Date(g.startIso ?? 0).getTime() - new Date(card.when!).getTime()) < 30 * 3_600_000),
+        ) ?? null
+      );
+    },
+    [boardQ.data],
+  );
 
   /**
    * Only a game still being played on this edition's night belongs in the rail.
@@ -2237,10 +2557,26 @@ export default function DailyNewspaperPage() {
     [clubs, teams],
   );
   const pages = edition.pages;
-  const frontNews = useMemo(() => {
-    const front = pages.find((p) => p.kind === "favorites-front");
-    return front?.kind === "favorites-front" ? front.news : [];
-  }, [pages]);
+  // A club's numbers print once in Section A — on the first story page it owns.
+  const notebookByFolio = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Record<string, TeamInfobox[]> = {};
+    for (const page of pages) {
+      const cards =
+        page.kind === "favorites-continue"
+          ? page.jumps.map((j) => j.card)
+          : page.kind === "favorites-inside"
+            ? [page.primary, page.secondary].filter((c): c is GameWrapCard => Boolean(c))
+            : [];
+      for (const card of cards) {
+        const team = teamForCard(teams, card);
+        if (!team || seen.has(team.fav.key)) continue;
+        seen.add(team.fav.key);
+        (out[page.folio] ??= []).push(team);
+      }
+    }
+    return out;
+  }, [pages, teams]);
 
   function goPage(idx: number) {
     const el = pagerRef.current;
@@ -2314,6 +2650,7 @@ export default function DailyNewspaperPage() {
     recap.isFetching ||
     wrapsQ.isFetching ||
     enrichedQ.isFetching ||
+    boardQ.isFetching ||
     newsQ.isFetching;
 
   async function onRefresh() {
@@ -2328,6 +2665,7 @@ export default function DailyNewspaperPage() {
       recap.refetch(),
       wrapsQ.refetch(),
       enrichedQ.refetch(),
+      boardQ.refetch(),
       newsQ.refetch(),
     ]);
   }
@@ -2337,6 +2675,8 @@ export default function DailyNewspaperPage() {
 
   return (
     <div className="newspaper-root wsj-shell">
+      <GameLookup.Provider value={findGame}>
+      <ReaderProvider>
       <div className="wsj-chrome print:hidden">
         <div className="wsj-chrome-l">
           <strong>Thompson Times</strong>
@@ -2411,7 +2751,7 @@ export default function DailyNewspaperPage() {
       </div>
 
       <div className="newspaper-edition wsj-pager" ref={pagerRef}>
-        {pages.map((page) => (
+        {pages.map((page, index) => (
           <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`}>
             <div className="wsj-sheet">
             {page.kind === "favorites-front" ? (
@@ -2449,19 +2789,13 @@ export default function DailyNewspaperPage() {
                     <p>{page.clubs.length} clubs · standings, numbers, leaders and what’s next</p>
                   </header>
                   <ClubFormGrid clubs={page.clubs} />
-                  <DeskBoard teams={teams.filter((t) => !page.clubs.some((c) => c.key === t.fav.key))} />
                 </div>
               ) : page.kind === "favorites-continue" ? (
                 <ContinuePage
-                  card={page.card}
-                  rest={page.rest}
+                  jumps={page.jumps}
                   continuedFrom={page.continuedFrom}
                   teams={teams}
-                  more={[...frontNews.slice(9), ...frontNews.slice(3, 9)]
-                    .filter((c) => c.id !== page.card.id)
-                    .slice(0, 4)}
-                  folios={edition.favoriteFolioByStory}
-                  here={page.folio}
+                  notebooks={notebookByFolio[page.folio] ?? []}
                   onTurn={goFolio}
                 />
               ) : page.kind === "favorites-inside" ? (
@@ -2473,13 +2807,18 @@ export default function DailyNewspaperPage() {
                   folios={edition.favoriteFolioByStory}
                   here={page.folio}
                   onTurn={goFolio}
+                  notebooks={notebookByFolio[page.folio]}
                 />
               ) : page.kind === "sport-front" ? (
                 <SportFront
                   page={page}
                   leagueClubs={leagueClubsQ.data?.[page.path] ?? []}
+                  board={boardQ.data?.[page.path] ?? null}
+                  standings={standingsQ.data?.[page.path] ?? []}
                   slate={leagueSlateQ.data?.[page.path] ?? []}
                   playoffs={page.path === "baseball/mlb" ? mlbPlayoffsQ.data ?? null : null}
+                  edition={day}
+                  active={Math.abs(index - pageIndex) <= 1}
                   onTurn={goFolio}
                 />
               ) : (
@@ -2487,7 +2826,7 @@ export default function DailyNewspaperPage() {
                   primary={page.primary}
                   secondary={page.secondary}
                   briefs={[]}
-                  teams={teams.filter((t) => t.fav.espnPath.startsWith(`${page.path}/`))}
+                  teams={[]}
                   here={page.folio}
                   onTurn={goFolio}
                 />
@@ -2497,6 +2836,8 @@ export default function DailyNewspaperPage() {
           </section>
         ))}
       </div>
+      </ReaderProvider>
+      </GameLookup.Provider>
     </div>
   );
 }

@@ -3152,6 +3152,1024 @@ mark.rss-hl {
 }
 
 /* ── Narrower stock ─────────────────────────────────────────────────── */
+/* ── Headlines are buttons: they open the paper's reader ─────────────── */
+.wsj-story-link {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+.wsj-story-link:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.wsj-inside-story {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── Box score parts ────────────────────────────────────────────────── */
+.tt-mark {
+  flex: none;
+  object-fit: contain;
+}
+.tt-mark.xs { width: 18px; height: 18px; }
+.tt-mark.sm { width: 26px; height: 26px; }
+.tt-mark.md { width: 40px; height: 40px; }
+.tt-mark.lg { width: 56px; height: 56px; }
+.tt-mark.empty { display: inline-block; }
+.tt-face {
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center 15%;
+  background: var(--w-paper-2);
+  box-shadow: inset 0 0 0 1px var(--w-hair);
+}
+.tt-face.sm { width: 30px; height: 30px; }
+.tt-face.md { width: 44px; height: 44px; }
+.tt-face.lg { width: 64px; height: 64px; }
+.tt-face.empty { display: inline-block; }
+
+.tt-line {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--w-cond);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.tt-line th,
+.tt-line td {
+  padding: 4px 5px;
+  text-align: center;
+  font-weight: 500;
+  border-bottom: 1px solid var(--w-hair);
+}
+.tt-line thead th {
+  font-family: var(--w-label);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--w-muted);
+  border-bottom: 1px solid var(--w-rule);
+}
+.tt-line .team {
+  text-align: left;
+  white-space: nowrap;
+}
+.tt-line th.team {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.tt-line th.team b {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.tt-line th.team em {
+  font-family: var(--w-label);
+  font-style: normal;
+  font-size: 10px;
+  color: var(--w-muted);
+}
+.tt-line .tot {
+  font-weight: 700;
+  border-left: 1px solid var(--w-hair);
+}
+.tt-line tr.won .tot,
+.tt-line tr.won th.team b {
+  font-weight: 800;
+}
+.tt-line.compact {
+  font-size: 13px;
+}
+.tt-line.compact th,
+.tt-line.compact td {
+  padding: 3px 3px;
+}
+
+.tt-decisions,
+.tt-leaders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11.5px;
+  color: var(--w-ink-soft);
+}
+.tt-decisions b {
+  font-family: var(--w-cond);
+  font-weight: 700;
+  color: var(--w-ink);
+}
+.tt-decisions em {
+  font-style: normal;
+  color: var(--w-muted);
+}
+.tt-decisions.faces li,
+.tt-leaders li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.tt-leaders span {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.tt-leaders em {
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tt-leaders b {
+  color: var(--w-ink);
+}
+.tt-leaders i {
+  font-style: normal;
+  font-size: 11px;
+}
+.tt-goals {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11.5px;
+  color: var(--w-ink-soft);
+}
+.tt-goals b {
+  font-family: var(--w-cond);
+  font-weight: 700;
+  color: var(--w-ink);
+}
+
+/* Agate: the small type that makes a sports section a sports section. */
+.tt-agate-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--w-hair);
+}
+.tt-agate-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.tt-agate {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--w-label);
+  font-size: 10.5px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+.tt-agate th,
+.tt-agate td {
+  padding: 1px 2px;
+  text-align: right;
+  white-space: nowrap;
+}
+.tt-agate thead th {
+  font-weight: 800;
+  border-bottom: 1px solid var(--w-rule);
+}
+.tt-agate .n {
+  text-align: left;
+  max-width: 0;
+  width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tt-agate thead .n {
+  font-family: var(--w-cond);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tt-agate i {
+  font-style: normal;
+  color: var(--w-muted);
+}
+.tt-agate tr.sub .n {
+  padding-left: 9px;
+}
+.tt-agate tr.tot td {
+  font-weight: 800;
+  border-top: 1px solid var(--w-hair);
+}
+.tt-agate-notes {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--w-ink-soft);
+}
+.tt-agate-notes b {
+  font-family: var(--w-cond);
+  font-weight: 700;
+  color: var(--w-ink);
+}
+.tt-agate-notes i {
+  font-style: normal;
+  font-weight: 800;
+  color: var(--w-ink);
+}
+.tt-agate-wait {
+  margin: 0;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--w-muted);
+}
+
+/* ── Score cards and the scoreboard strip ───────────────────────────── */
+.tt-scorecard {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px 12px;
+  background: var(--w-card);
+  box-shadow: inset 0 3px 0 var(--w-ink), 0 0 0 1px var(--w-hair);
+}
+.tt-scorecard.live {
+  box-shadow: inset 0 3px 0 var(--w-red), 0 0 0 1px var(--w-hair);
+}
+.tt-scorecard > header,
+.tt-matchup > header,
+.tt-gamebox > header,
+.tt-reader-box > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tt-scorecard > header span,
+.tt-matchup > header span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tt-scorecard > header b,
+.tt-matchup > header b,
+.tt-gamebox > header b,
+.tt-reader-box > header b {
+  color: var(--w-ink);
+  white-space: nowrap;
+}
+.tt-scorecard-recap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 0 0;
+  border: 0;
+  border-top: 1px solid var(--w-hair);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.tt-scorecard-recap strong {
+  font-family: var(--w-head);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.12;
+}
+.tt-scorecard-recap span {
+  font-family: var(--w-body);
+  font-size: 12.5px;
+  line-height: 1.38;
+  color: var(--w-ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tt-scorecard-recap em {
+  font-family: var(--w-body);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--w-red);
+}
+.tt-scorecard-recap:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.tt-strip-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tt-band-link {
+  order: 3;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--w-red);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tt-strip {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 6px;
+}
+.tt-strip button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 0;
+  background: var(--w-card);
+  box-shadow: 0 0 0 1px var(--w-hair);
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+.tt-strip button:hover {
+  box-shadow: 0 0 0 1px var(--w-ink);
+}
+.tt-strip-st {
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tt-strip-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--w-cond);
+  font-size: 14px;
+  color: var(--w-muted);
+}
+.tt-strip-row b {
+  font-weight: 500;
+}
+.tt-strip-row i {
+  margin-left: auto;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.tt-strip-row.won {
+  color: var(--w-ink);
+}
+.tt-strip-row.won b,
+.tt-strip-row.won i {
+  font-weight: 700;
+}
+
+/* ── Sport section: news front ──────────────────────────────────────── */
+.wsj-sport-lead-grid {
+  display: grid;
+  gap: var(--w-gutter);
+  align-items: start;
+}
+.wsj-sport-lead-grid.with-side {
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+}
+.wsj-sport-lead-grid.with-side > .wsj-story.lead {
+  padding-right: var(--w-gutter);
+  border-right: 1px solid var(--w-hair);
+}
+.wsj-sport-seconds {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.wsj-sport-seconds > .wsj-story + .wsj-story {
+  padding-top: 14px;
+  border-top: 1px solid var(--w-hair);
+}
+.wsj-sport-seconds .wsj-cut img {
+  aspect-ratio: 3 / 2;
+}
+
+/* Desk pages behind the section front carry a slim flag, not the hero. */
+.wsj-sport-band {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 10px;
+  border-bottom: 4px double var(--w-rule);
+}
+.wsj-sport-band .wsj-sport-code {
+  font-size: clamp(22px, 2.8vw, 32px);
+  padding: 4px 9px 2px;
+}
+.wsj-sport-band h3 {
+  margin: 0;
+  font-family: var(--w-head);
+  font-weight: 800;
+  font-size: clamp(20px, 2.6vw, 30px);
+  line-height: 1;
+}
+.wsj-sport-band h3 em {
+  font-style: italic;
+  font-weight: 600;
+  color: var(--w-red);
+}
+.wsj-sport-band p {
+  margin: 0 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  text-align: right;
+}
+
+/* ── Scores page ────────────────────────────────────────────────────── */
+.tt-scores {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.tt-feature {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: var(--w-gutter);
+  align-items: start;
+}
+.tt-feature:not(:has(.tt-feature-photo)) {
+  grid-template-columns: 1fr;
+}
+.tt-feature-photo {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tt-feature-photo img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--w-paper-2);
+}
+.tt-feature-photo figcaption,
+.tt-reader-photo figcaption {
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--w-ink-soft);
+}
+.tt-feature-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tt-score-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.tt-score-grid.agate {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* ── Club game box under a Section A story ──────────────────────────── */
+.tt-gamebox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  background: var(--w-card);
+  box-shadow: inset 0 3px 0 var(--tt-team, var(--w-ink)), 0 0 0 1px var(--w-hair);
+}
+.tt-gamebox-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.tt-gamebox-names {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Schedule ───────────────────────────────────────────────────────── */
+.tt-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.tt-schedule section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tt-schedule .wsj-band-title em {
+  order: 3;
+  font-style: normal;
+  letter-spacing: 0.1em;
+  color: var(--w-muted);
+}
+.tt-matchups {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 12px;
+}
+.tt-matchup {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--w-card);
+  box-shadow: inset 0 3px 0 var(--w-navy), 0 0 0 1px var(--w-hair);
+}
+.tt-matchup.live {
+  box-shadow: inset 0 3px 0 var(--w-red), 0 0 0 1px var(--w-hair);
+}
+.tt-matchup > header b {
+  font-family: var(--w-cond);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.tt-matchup-teams {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.tt-matchup-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px 6px;
+  text-align: center;
+  background: color-mix(in srgb, var(--tt-side, #888) 9%, transparent);
+  border-bottom: 3px solid var(--tt-side, var(--w-hair));
+}
+.tt-matchup-side strong {
+  font-family: var(--w-head);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.05;
+}
+.tt-matchup-side em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--w-muted);
+}
+.tt-matchup-score {
+  font-family: var(--w-cond);
+  font-size: 22px;
+  font-weight: 700;
+}
+.tt-matchup-at {
+  position: absolute;
+  left: 50%;
+  top: 36%;
+  transform: translate(-50%, -50%);
+  padding: 2px 6px;
+  background: var(--w-paper);
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--w-muted);
+}
+.tt-matchup-probs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--w-hair);
+}
+.tt-prob {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.tt-prob span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.tt-prob b {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tt-prob em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--w-muted);
+}
+.tt-matchup footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 10px;
+  font-size: 10.5px;
+  color: var(--w-muted);
+}
+.tt-matchup footer:empty {
+  display: none;
+}
+.tt-matchup footer .tv {
+  font-weight: 700;
+  color: var(--w-ink-soft);
+}
+
+/* ── Standings ──────────────────────────────────────────────────────── */
+.tt-stand-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px var(--w-gutter);
+  align-items: start;
+}
+.tt-stand-grid.single {
+  grid-template-columns: 1fr;
+}
+.tt-stand {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.tt-stand caption {
+  caption-side: top;
+  padding-bottom: 5px;
+  text-align: left;
+  font-family: var(--w-head);
+  font-weight: 800;
+  font-size: 17px;
+  border-bottom: 2px solid var(--w-rule);
+}
+.tt-stand th,
+.tt-stand td {
+  padding: 4px 4px;
+  text-align: right;
+  border-bottom: 1px solid var(--w-hair);
+  white-space: nowrap;
+}
+.tt-stand thead th {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tt-stand .team {
+  text-align: left;
+  width: 40%;
+}
+.tt-stand tbody th.team {
+  padding-bottom: 7px;
+}
+.tt-stand .cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding-bottom: 3px;
+}
+.tt-stand td {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tt-stand .rk {
+  width: 14px;
+  font-family: var(--w-cond);
+  color: var(--w-muted);
+}
+.tt-stand tbody th.team b {
+  font-weight: 700;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tt-stand sup {
+  font-size: 8.5px;
+  font-weight: 800;
+  color: var(--w-red);
+}
+.tt-stand .bar {
+  position: absolute;
+  left: 20px;
+  right: 6px;
+  bottom: -4px;
+  height: 3px;
+  background: var(--w-paper-2);
+}
+.tt-stand .bar i {
+  display: block;
+  height: 100%;
+  background: color-mix(in srgb, var(--w-navy) 70%, transparent);
+}
+.tt-stand tr.me {
+  background: color-mix(in srgb, var(--w-red) 8%, transparent);
+}
+.tt-stand tr.me th.team b {
+  color: var(--w-red);
+}
+.tt-stand tr.me .bar i {
+  background: var(--w-red);
+}
+
+/* ── The paper's reader: Dispatch, set as a newspaper page ──────────── */
+.tt-reader {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  background: rgba(10, 14, 24, 0.82);
+  backdrop-filter: blur(3px);
+}
+.tt-reader-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 8px;
+  background: #0b1730;
+  color: rgba(237, 239, 245, 0.85);
+}
+.tt-reader-back,
+.tt-reader-orig {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: none;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+}
+.tt-reader-plate {
+  font-family: var(--w-plate);
+  font-size: 22px;
+  color: #f4f1e9;
+}
+.tt-reader-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 18px 14px 48px;
+}
+.tt-reader-sheet {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 40px 40px;
+  background: var(--w-paper);
+  color: var(--w-ink);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+.tt-reader-hl {
+  margin: 0;
+  font-family: var(--w-head);
+  font-weight: 800;
+  font-size: clamp(30px, 4.6vw, 52px);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.tt-reader-dek {
+  margin: 0;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 19px;
+  line-height: 1.38;
+  color: var(--w-ink-soft);
+}
+.tt-reader-by {
+  margin: 0;
+  padding: 6px 0;
+  border-top: 1px solid var(--w-rule);
+  border-bottom: 1px solid var(--w-hair);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.tt-reader-by em {
+  font-family: var(--w-body);
+  font-weight: 400;
+  font-size: 12.5px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--w-muted);
+}
+.tt-reader-by span {
+  font-weight: 600;
+  color: var(--w-muted);
+}
+.tt-reader-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  background: var(--w-card);
+  box-shadow: inset 0 3px 0 var(--tt-team, var(--w-ink)), 0 0 0 1px var(--w-hair);
+}
+.tt-reader-photo {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tt-reader-photo img {
+  width: 100%;
+  max-height: 520px;
+  object-fit: cover;
+  background: var(--w-paper-2);
+}
+.tt-reader-body {
+  columns: 2;
+  column-gap: 28px;
+  column-rule: 1px solid var(--w-hair);
+  font-family: var(--w-body);
+  font-size: 16.5px;
+  line-height: 1.6;
+  text-align: justify;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+.tt-reader-body p {
+  margin: 0;
+}
+.tt-reader-body p + p {
+  text-indent: 1.3em;
+}
+.tt-reader-body > p:first-of-type::first-letter {
+  float: left;
+  margin: 0.05em 0.1em 0 0;
+  font-family: var(--w-head);
+  font-weight: 900;
+  font-size: 4.2em;
+  line-height: 0.8;
+  color: var(--tt-team, var(--w-ink));
+}
+.tt-reader-body img,
+.tt-reader-body figure,
+.tt-reader-body video,
+.tt-reader-body iframe {
+  max-width: 100%;
+  height: auto;
+  break-inside: avoid;
+}
+.tt-reader-body figure {
+  margin: 10px 0;
+}
+.tt-reader-body figcaption {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--w-muted);
+}
+.tt-reader-body h2,
+.tt-reader-body h3,
+.tt-reader-body h4 {
+  margin: 12px 0 4px;
+  font-family: var(--w-head);
+  font-size: 19px;
+  break-after: avoid;
+}
+.tt-reader-body blockquote {
+  margin: 10px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--w-red);
+  font-style: italic;
+}
+.tt-reader-body a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--w-hair);
+}
+.tt-reader-body ul,
+.tt-reader-body ol {
+  margin: 6px 0;
+  padding-left: 1.2em;
+}
+.tt-reader-wait {
+  margin: 0;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--w-muted);
+}
+.tt-reader-agate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 4px double var(--w-rule);
+}
+.tt-reader-agate h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 900px) {
+  .tt-score-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tt-score-grid.agate,
+  .tt-stand-grid,
+  .tt-feature,
+  .wsj-sport-lead-grid.with-side,
+  .tt-gamebox-top {
+    grid-template-columns: 1fr;
+  }
+  .wsj-sport-lead-grid.with-side > .wsj-story.lead {
+    padding-right: 0;
+    border-right: 0;
+  }
+  .wsj-sport-seconds {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .wsj-sport-seconds > .wsj-story + .wsj-story {
+    padding-top: 0;
+    border-top: 0;
+  }
+  .tt-matchups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tt-reader-sheet {
+    padding: 20px 22px 32px;
+  }
+}
+@media (max-width: 560px) {
+  .tt-score-grid,
+  .tt-matchups,
+  .tt-agate-cols,
+  .wsj-sport-seconds {
+    grid-template-columns: 1fr;
+  }
+  .tt-reader-body {
+    columns: 1;
+  }
+  .tt-reader-scroll {
+    padding: 0;
+  }
+  .tt-reader-sheet {
+    padding: 16px 16px 28px;
+  }
+  .tt-reader-plate {
+    display: none;
+  }
+  .wsj-sport-band p {
+    display: none;
+  }
+}
+
 @media (max-width: 1100px) {
   .wsj-front-grid {
     grid-template-columns: minmax(0, 1fr) 262px;
