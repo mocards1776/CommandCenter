@@ -2,8 +2,31 @@
 
 const TZ = "America/Chicago";
 
-/** The paper goes to press at 4:00 AM Central; before that you still hold yesterday's. */
-export const EDITION_HOUR = 4;
+/**
+ * Three editions a day, Central time: the morning paper at 6, the midday paper
+ * at noon, the evening paper at 5. Before 6 a.m. you still hold last night's.
+ */
+export const PRESS_HOURS = [
+  { hour: 6, slot: "morning", label: "Morning Edition" },
+  { hour: 12, slot: "midday", label: "Midday Edition" },
+  { hour: 17, slot: "evening", label: "Evening Edition" },
+] as const;
+
+export type PressSlot = (typeof PRESS_HOURS)[number]["slot"];
+
+export type PressEdition = {
+  /** Stable for the whole press run, e.g. "2026-10-01-midday". */
+  id: string;
+  /** Dateline. Rolls with the morning paper, not at midnight. */
+  day: string;
+  slot: PressSlot;
+  label: string;
+  /** When the next edition is set, for the ear. */
+  next: string;
+};
+
+/** The morning press is what starts a new dateline. */
+export const EDITION_HOUR = PRESS_HOURS[0].hour;
 
 /** Wall-clock hour (0-23) in Central time. */
 function centralHour(now: Date): number {
@@ -24,12 +47,40 @@ function shiftDay(iso: string, days: number): string {
 
 /**
  * Which edition is on the stand. Central calendar date, except between midnight
- * and 4 AM you're still reading the previous day's paper — the same way a
- * morning daily doesn't reprint at 12:01.
+ * and the morning press you're still reading the previous day's paper.
  */
 export function editionDay(now = new Date()): string {
+  return pressEdition(now).day;
+}
+
+/** The edition currently on the stand, and which press run it came off. */
+export function pressEdition(now = new Date()): PressEdition {
   const today = now.toLocaleDateString("en-CA", { timeZone: TZ });
-  return centralHour(now) < EDITION_HOUR ? shiftDay(today, -1) : today;
+  const hour = centralHour(now);
+  const slot = [...PRESS_HOURS].reverse().find((p) => hour >= p.hour) ?? null;
+  if (!slot) {
+    const day = shiftDay(today, -1);
+    const evening = PRESS_HOURS[PRESS_HOURS.length - 1]!;
+    return { id: `${day}-${evening.slot}`, day, slot: evening.slot, label: evening.label, next: "6 a.m." };
+  }
+  const next = PRESS_HOURS.find((p) => p.hour > slot.hour);
+  return {
+    id: `${today}-${slot.slot}`,
+    day: today,
+    slot: slot.slot,
+    label: slot.label,
+    next: next ? (next.hour === 12 ? "noon" : "5 p.m.") : "6 a.m.",
+  };
+}
+
+/** Milliseconds until the next press (6 a.m., noon, or 5 p.m. Central). */
+export function msUntilNextPress(now = new Date()): number {
+  const id = pressEdition(now).id;
+  const step = 60_000;
+  for (let t = now.getTime() + step; t < now.getTime() + 20 * 3_600_000; t += step) {
+    if (pressEdition(new Date(t)).id !== id) return t - now.getTime();
+  }
+  return 6 * 3_600_000;
 }
 
 /** The night of games an edition covers: the day before its dateline. */
@@ -135,16 +186,9 @@ export function isResultCopy(input: {
   );
 }
 
-/** Milliseconds until the next 4 AM Central press run, so an open app rolls itself over. */
+/** @deprecated The paper now goes to press three times a day. */
 export function msUntilNextEdition(now = new Date()): number {
-  const day = editionDay(now);
-  // Probe forward a minute at a time rather than doing offset math, so DST is
-  // whatever the platform says it is.
-  const step = 60_000;
-  for (let t = now.getTime() + step; t < now.getTime() + 36 * 3_600_000; t += step) {
-    if (editionDay(new Date(t)) !== day) return t - now.getTime();
-  }
-  return 6 * 3_600_000;
+  return msUntilNextPress(now);
 }
 
 const ROMAN: [number, string][] = [

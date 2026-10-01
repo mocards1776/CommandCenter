@@ -417,37 +417,29 @@ export function WeatherReport({ weather }: { weather: MarshfieldWeather | null |
   );
 }
 
-/** Masthead ear: the day's forecast in a sentence, like the front of a city paper. */
-export function WeatherEar({
+/** One line under the dateline, the way a city paper runs the forecast. */
+export function WeatherStrip({
   weather,
-  label,
   folio,
   onOpen,
 }: {
-  weather: MarshfieldWeather | null | undefined;
-  label: string;
+  weather: MarshfieldWeather;
   folio: string | null;
   onOpen?: () => void;
 }) {
-  if (!weather?.days.length) return null;
   return (
     <button
       type="button"
-      className="wsj-ear right wx-ear"
+      className="wx-strip"
       onClick={onOpen}
       disabled={!folio}
       title={folio ? `Full weather report, page ${folio}` : undefined}
     >
-      <strong>{label}</strong>
-      <span className="wx-ear-row">
-        <SkyIcon sky={weather.current.sky} size={34} title={weather.current.summary} />
-        <span className="wx-ear-now">
-          <b>{weather.current.tempF}°</b>
-          <i>Marshfield</i>
-        </span>
-      </span>
-      <span className="wx-ear-text">{earForecast(weather)}</span>
-      {folio ? <span className="wx-ear-turn">Full report, {folio}</span> : null}
+      <SkyIcon sky={weather.current.sky} size={26} title={weather.current.summary} />
+      <b>{weather.current.tempF}°</b>
+      <span className="wx-strip-place">Marshfield</span>
+      <span className="wx-strip-copy">{earForecast(weather)}</span>
+      {folio ? <em>Weather · {folio}</em> : null}
     </button>
   );
 }

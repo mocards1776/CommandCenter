@@ -14,15 +14,15 @@ import {
 } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, RefreshCw, Share } from "lucide-react";
+import { ChevronLeft, ChevronRight, Share } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import {
   editionCovers,
   editionDateline,
-  editionDay,
   editionIssue,
   editionNewsDay,
-  msUntilNextEdition,
+  msUntilNextPress,
+  pressEdition,
   instantDay,
   isNewsMuted,
   romanNumeral,
@@ -62,7 +62,7 @@ import type { MoItem } from "@/lib/newspaper-missouri";
 import { nameIndex, type Person } from "@/lib/newspaper-people";
 import { fetchPlayerFiles, imageLoads, storySubjects, type PlayerFile } from "@/lib/newspaper-subjects";
 import { fetchMarshfieldWeather, type MarshfieldWeather } from "@/lib/newspaper-weather";
-import { WeatherEar, WeatherReport } from "@/components/newspaper/WeatherReport";
+import { WeatherReport, WeatherStrip } from "@/components/newspaper/WeatherReport";
 import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
 import {
   daysUntil,
@@ -488,6 +488,7 @@ function Masthead({
   page,
   clubs,
   live,
+  editionLabel,
   weather,
   weatherFolio,
   onTurn,
@@ -496,12 +497,12 @@ function Masthead({
   page: EditionPage;
   clubs: number;
   live: number;
+  editionLabel: string;
   weather: MarshfieldWeather | null | undefined;
   weatherFolio: string | null;
   onTurn: (folio: string) => void;
 }) {
   const { volume, issue } = editionIssue(day);
-  const edition = live ? `${live} live now` : "Late City Edition";
   return (
     <header className="wsj-mast">
       <div className="wsj-mast-row">
@@ -510,19 +511,10 @@ function Masthead({
           <span>All the scores fit to print</span>
         </div>
         <h1 className="wsj-nameplate">The Thompson Times</h1>
-        {weather?.days.length ? (
-          <WeatherEar
-            weather={weather}
-            label={edition}
-            folio={weatherFolio}
-            onOpen={weatherFolio ? () => onTurn(weatherFolio) : undefined}
-          />
-        ) : (
-          <div className="wsj-ear right">
-            <strong>{edition}</strong>
-            <span>{clubs} clubs on the desk</span>
-          </div>
-        )}
+        <div className="wsj-ear right">
+          <strong>{live ? `${live} live now` : editionLabel}</strong>
+          <span>{clubs} clubs on the desk</span>
+        </div>
       </div>
       <div className="wsj-dateline-bar">
         <span>
@@ -533,6 +525,13 @@ function Masthead({
           Section {page.section} · {page.folio}
         </span>
       </div>
+      {weather?.days.length ? (
+        <WeatherStrip
+          weather={weather}
+          folio={weatherFolio}
+          onOpen={weatherFolio ? () => onTurn(weatherFolio) : undefined}
+        />
+      ) : null}
     </header>
   );
 }
@@ -3090,6 +3089,7 @@ function ScoutBand({ item, onTurn, hasDesk }: { item: MoItem; onTurn: (folio: st
 
 /** Folios this close to the one in view stay painted and get their art fetched ahead of the swipe. */
 const NEAR_PAGES = 2;
+const NO_STORIES: GameWrapCard[] = [];
 
 /** The folio in view. Only near-page consumers read it, so turning a page doesn't re-render the edition. */
 const PagerIndexContext = createContext(0);
@@ -3164,30 +3164,39 @@ function warmEdition(pager: HTMLElement, cap = 4): () => void {
 
 export default function DailyNewspaperPage() {
   const { user } = useAuth();
-  const [day, setDay] = useState(() => editionDay());
+  const [press, setPress] = useState(() => pressEdition());
+  const day = press.day;
+  const pressId = press.id;
   const layout = useMemo(() => loadSportsLayout(), []);
   const teamFavs = useMemo(
     () => visibleFavorites(layout).filter((f) => f.kind === "team"),
     [layout],
   );
 
-  // The paper goes to press at 4 AM. An app left open on the counter rolls
-  // itself over instead of showing yesterday's front until you reload.
+  // Three presses a day. Waking the tab only checks the clock; it does not
+  // pull a new mix of stories under the one already on the stand.
   useEffect(() => {
     let timer = 0;
     const schedule = () => {
       timer = window.setTimeout(() => {
-        setDay(editionDay());
+        setPress(pressEdition());
         schedule();
-      }, msUntilNextEdition() + 2_000);
+      }, msUntilNextPress() + 2_000);
     };
     schedule();
-    const onWake = () => setDay(editionDay());
+    const onWake = () => {
+      if (document.visibilityState === "visible") setPress(pressEdition());
+    };
     document.addEventListener("visibilitychange", onWake);
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onWake);
     };
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.add("tt-lock");
+    return () => document.documentElement.classList.remove("tt-lock");
   }, []);
 
   const pagerRef = useRef<HTMLDivElement>(null);
@@ -3196,7 +3205,7 @@ export default function DailyNewspaperPage() {
   const favKeys = teamFavs.map((t) => t.key).join(",");
 
   const teamSnaps = useQuery({
-    queryKey: ["tt-team-snaps", day, favKeys],
+    queryKey: [pressId, "tt-team-snaps", day, favKeys],
     queryFn: async () =>
       Promise.all(
         teamFavs.map(async (fav) => {
@@ -3218,11 +3227,14 @@ export default function DailyNewspaperPage() {
           }
         }),
       ),
-    staleTime: 120_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const teamDetailsQ = useQuery({
-    queryKey: ["tt-team-details", day, favKeys],
+    queryKey: [pressId, "tt-team-details", day, favKeys],
     queryFn: async () => {
       const rows = await Promise.all(
         teamFavs.map(async (fav) => {
@@ -3237,30 +3249,39 @@ export default function DailyNewspaperPage() {
       return rows.filter(Boolean) as { fav: SportsFavorite; detail: TeamDetail }[];
     },
     enabled: teamFavs.length > 0,
-    staleTime: 5 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const wireQ = useQuery({
-    queryKey: ["tt-wire", day, favKeys],
+    queryKey: [pressId, "tt-wire", day, favKeys],
     queryFn: async () => {
       const wire = await fetchNewspaperWire({ favs: teamFavs, day });
       const games = await enrichWireStories(wire.games, DEEP_STORIES);
       return { ...wire, games };
     },
     enabled: teamFavs.length > 0,
-    staleTime: 5 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const recap = useQuery({
-    queryKey: ["newspaper-yesterday-recap", day, user?.id],
+    queryKey: [pressId, "newspaper-yesterday-recap", day, user?.id],
     queryFn: () => fetchYesterdayRecap({ layout, userId: user?.id }),
-    staleTime: 120_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const wrapFeedUrls = useMemo(() => wrapFeedsForFavorites(teamFavs), [teamFavs]);
 
   const wrapsQ = useQuery({
-    queryKey: ["tt-wraps", day, wrapFeedUrls.join("|")],
+    queryKey: [pressId, "tt-wraps", day, wrapFeedUrls.join("|")],
     queryFn: async () => {
       const feeds = await Promise.all(
         wrapFeedUrls.map(async (url) => {
@@ -3287,7 +3308,10 @@ export default function DailyNewspaperPage() {
       return matched;
     },
     enabled: wrapFeedUrls.length > 0,
-    staleTime: 90_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const teams = useMemo(
@@ -3308,20 +3332,27 @@ export default function DailyNewspaperPage() {
 
   const enrichedQ = useQuery({
     queryKey: [
+      pressId,
       "tt-wrap-bodies",
       day,
       teamCards.map((c) => `${c.id}:${c.gameId}`).join("|"),
     ],
     queryFn: () => enrichWrapBodies(teamCards, teamFavs),
     enabled: teamCards.length > 0,
-    staleTime: 10 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const newsQ = useQuery({
-    queryKey: ["tt-news", day, favKeys],
+    queryKey: [pressId, "tt-news", day, favKeys],
     queryFn: () => fetchTeamArticles(teamFavs, day),
     enabled: teamFavs.length > 0,
-    staleTime: 5 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const clubs = useMemo<ClubDesk[]>(
@@ -3388,10 +3419,13 @@ export default function DailyNewspaperPage() {
   );
 
   const leagueNewsQ = useQuery({
-    queryKey: ["tt-league-news", day, sportPaths.join("|")],
+    queryKey: [pressId, "tt-league-news", day, sportPaths.join("|")],
     queryFn: () => fetchLeagueArticles(sportPaths, day),
     enabled: sportPaths.length > 0,
-    staleTime: 5 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const rawStories = useMemo(() => {
@@ -3434,7 +3468,7 @@ export default function DailyNewspaperPage() {
   );
   const queryClient = useQueryClient();
   const extractsQ = useQuery({
-    queryKey: ["tt-extracts", day, extractUrls.join("|")],
+    queryKey: [pressId, "tt-extracts", day, extractUrls.join("|")],
     queryFn: async () => {
       const out: Record<string, RssArticle> = {};
       let next = 0;
@@ -3443,9 +3477,10 @@ export default function DailyNewspaperPage() {
           const url = extractUrls[next++]!;
           try {
             out[url] = await queryClient.fetchQuery({
-              queryKey: ["rss-article-v3", url],
+              queryKey: [pressId, "rss-article-v3", url],
               queryFn: () => fetchRssArticle(url),
-              staleTime: 10 * 60_000,
+              staleTime: Infinity,
+              gcTime: 20 * 60 * 60_000,
             });
           } catch {
             /* the brief runs as filed */
@@ -3456,7 +3491,10 @@ export default function DailyNewspaperPage() {
       return out;
     },
     enabled: extractUrls.length > 0,
-    staleTime: 10 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const filedStories = useMemo(() => {
@@ -3472,8 +3510,28 @@ export default function DailyNewspaperPage() {
     });
   }, [rawStories, extractsQ.data]);
 
+  // One commit per press. Stories stay as they were set until the next edition's
+  // copy has all arrived, so the front never flickers between two versions.
+  const queryIdle = (q: { isFetched: boolean; isFetching: boolean }, enabled: boolean) =>
+    !enabled || (q.isFetched && !q.isFetching);
+  const copyReady =
+    queryIdle(wrapsQ, wrapFeedUrls.length > 0) &&
+    queryIdle(newsQ, teamFavs.length > 0) &&
+    queryIdle(wireQ, teamFavs.length > 0) &&
+    queryIdle(recap, true) &&
+    queryIdle(enrichedQ, teamCards.length > 0) &&
+    queryIdle(leagueNewsQ, sportPaths.length > 0) &&
+    queryIdle(extractsQ, extractUrls.length > 0);
+  const [lockedCopy, setLockedCopy] = useState<{ id: string; stories: typeof filedStories } | null>(null);
+  useEffect(() => {
+    if (!copyReady) return;
+    setLockedCopy((prev) => (prev?.id === pressId ? prev : { id: pressId, stories: filedStories }));
+  }, [copyReady, pressId, filedStories]);
+  const pressReady = lockedCopy?.id === pressId;
+  const printedStories = lockedCopy?.stories ?? NO_STORIES
+
   const leagueClubsQ = useQuery({
-    queryKey: ["tt-league-clubs", day, sportPaths.join("|")],
+    queryKey: [pressId, "tt-league-clubs", day, sportPaths.join("|")],
     queryFn: async () => {
       const entries = await Promise.all(
         sportPaths.map(async (path) => {
@@ -3484,11 +3542,14 @@ export default function DailyNewspaperPage() {
       return Object.fromEntries(entries) as Record<string, LeagueClub[]>;
     },
     enabled: sportPaths.length > 0,
-    staleTime: 30 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const leagueSlateQ = useQuery({
-    queryKey: ["tt-league-slate", day, sportPaths.join("|")],
+    queryKey: [pressId, "tt-league-slate", day, sportPaths.join("|")],
     queryFn: async () => {
       const entries = await Promise.all(
         sportPaths.map(async (path) => [path, await fetchLeagueSlate(path, day)] as const),
@@ -3496,18 +3557,24 @@ export default function DailyNewspaperPage() {
       return Object.fromEntries(entries) as Record<string, LeagueSlateGame[]>;
     },
     enabled: sportPaths.length > 0,
-    staleTime: 3 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const mlbPlayoffsQ = useQuery({
-    queryKey: ["tt-mlb-playoffs", day],
+    queryKey: [pressId, "tt-mlb-playoffs", day],
     queryFn: () => fetchMlbPlayoffTree(),
     enabled: sportPaths.includes("baseball/mlb"),
-    staleTime: 10 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const boardQ = useQuery({
-    queryKey: ["tt-board", day, sportPaths.join("|")],
+    queryKey: [pressId, "tt-board", day, sportPaths.join("|")],
     queryFn: async () => {
       const entries = await Promise.all(
         sportPaths.map(async (path) => {
@@ -3521,11 +3588,14 @@ export default function DailyNewspaperPage() {
       return Object.fromEntries(entries) as Record<string, SectionBoard>;
     },
     enabled: sportPaths.length > 0,
-    staleTime: 3 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const standingsQ = useQuery({
-    queryKey: ["tt-standings", day, sportPaths.join("|")],
+    queryKey: [pressId, "tt-standings", day, sportPaths.join("|")],
     queryFn: async () => {
       const entries = await Promise.all(
         sportPaths.map(async (path) => [path, await fetchSectionStandings(path)] as const),
@@ -3533,7 +3603,10 @@ export default function DailyNewspaperPage() {
       return Object.fromEntries(entries) as Record<string, StandGroup[]>;
     },
     enabled: sportPaths.length > 0,
-    staleTime: 30 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   /** Pairs a club story with the game it reports, so the reader can set the box. */
@@ -3583,21 +3656,27 @@ export default function DailyNewspaperPage() {
   }, [wireQ.data, day]);
 
   const favPlayersQ = useQuery({
-    queryKey: ["tt-fav-players", user?.id],
+    queryKey: [pressId, "tt-fav-players", user?.id],
     queryFn: () => listFavoritePlayers(user!.id),
     enabled: Boolean(user?.id),
-    staleTime: 10 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const taggedQ = useQuery({
-    queryKey: ["tt-tagged-players", user?.id],
+    queryKey: [pressId, "tt-tagged-players", user?.id],
     queryFn: async () => {
       const ids = await fetchTaggedPlayerIds();
       if (!ids.length) return [];
       return [...(await fetchMlbPeopleByIds(ids)).values()];
     },
     enabled: Boolean(user?.id),
-    staleTime: 30 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const followed = useMemo<FollowedPlayer[]>(() => {
@@ -3629,13 +3708,16 @@ export default function DailyNewspaperPage() {
   }, [favPlayersQ.data, taggedQ.data, sportPaths]);
 
   const nightsQ = useQuery({
-    queryKey: ["tt-player-nights", day, followed.map((p) => `${p.path}:${p.id}`).join("|")],
+    queryKey: [pressId, "tt-player-nights", day, followed.map((p) => `${p.path}:${p.id}`).join("|")],
     queryFn: () => {
       const [y, m] = day.split("-").map(Number) as [number, number];
       return fetchPlayerNights(followed, m < 3 ? y - 1 : y);
     },
     enabled: followed.length > 0,
-    staleTime: 10 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const nightsByPath = useMemo(() => {
@@ -3645,7 +3727,7 @@ export default function DailyNewspaperPage() {
   }, [nightsQ.data]);
 
   const sheetsQ = useQuery({
-    queryKey: ["tt-club-sheets", day, favKeys],
+    queryKey: [pressId, "tt-club-sheets", day, favKeys],
     queryFn: async () => {
       const rows = await Promise.all(
         teamFavs.map(async (fav) => [fav.key, await fetchClubSheet(fav.espnPath, day).catch(() => null)] as const),
@@ -3653,50 +3735,64 @@ export default function DailyNewspaperPage() {
       return Object.fromEntries(rows.filter((r) => r[1])) as Record<string, ClubSheet>;
     },
     enabled: teamFavs.length > 0,
-    staleTime: 30 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const weatherQ = useQuery({
-    queryKey: ["tt-weather-marshfield"],
+    queryKey: [pressId, "tt-weather-marshfield"],
     queryFn: fetchMarshfieldWeather,
-    staleTime: 15 * 60_000,
-    refetchInterval: 30 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const scoutQ = useQuery({
-    queryKey: ["tt-mo-scout", day],
+    queryKey: [pressId, "tt-mo-scout", day],
     queryFn: async () => {
       const item = await fetchMissouriScout();
       return item ? ((await enrichMissouriItems([item], 1))[0] ?? item) : null;
     },
-    staleTime: 15 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const missouriQ = useQuery({
-    queryKey: ["tt-missouri", day],
+    queryKey: [pressId, "tt-missouri", day],
     queryFn: async () => {
       const desk = await fetchMissouriDesk(day);
       return { ...desk, items: await enrichMissouriItems(desk.items, 7) };
     },
-    staleTime: 15 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const playerPaths = useMemo(() => [...new Set(followed.map((p) => p.path))], [followed]);
 
   const openersQ = useQuery({
-    queryKey: ["tt-openers", day, favKeys],
+    queryKey: [pressId, "tt-openers", day, favKeys],
     queryFn: async () => {
       const rows = await Promise.all(teamFavs.map((fav) => fetchOpener(fav).catch(() => null)));
       return rows.filter((o): o is Opener => o != null);
     },
     enabled: teamFavs.length > 0,
-    staleTime: 60 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   const openers = useMemo(() => new Map((openersQ.data ?? []).map((o) => [o.key, o])), [openersQ.data]);
 
   // The farm system makes the Cardinals copy as often as the big club does.
   const orgQ = useQuery({
-    queryKey: ["tt-org-rosters", day, favKeys],
+    queryKey: [pressId, "tt-org-rosters", day, favKeys],
     queryFn: async () => {
       const season = Number(day.slice(0, 4)) || new Date().getFullYear();
       const rows = await Promise.all(
@@ -3717,7 +3813,10 @@ export default function DailyNewspaperPage() {
       return rows.flat();
     },
     enabled: teamFavs.some((fav) => fav.mlbTeamId),
-    staleTime: 6 * 60 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   /** A league is between seasons when every club you follow in it is still counting down and no finals have posted. */
@@ -3767,19 +3866,19 @@ export default function DailyNewspaperPage() {
   const nameIdx = useMemo(() => nameIndex(people), [people]);
   const subjects = useMemo(() => {
     const out: Record<string, Person[]> = {};
-    for (const card of filedStories) {
+    for (const card of printedStories) {
       if (!isFavoriteStory(card) && !card.id.startsWith("league-")) continue;
       const named = storySubjects(card, nameIdx);
       if (named.length) out[card.id] = named;
     }
     return out;
-  }, [filedStories, nameIdx]);
+  }, [printedStories, nameIdx]);
   const subjectHrefs = useMemo(
     () => [...new Set(Object.values(subjects).flatMap((list) => list.map((p) => p.href)))].sort().slice(0, 80),
     [subjects],
   );
   const filesQ = useQuery({
-    queryKey: ["tt-player-files", day, subjectHrefs.join("|")],
+    queryKey: [pressId, "tt-player-files", day, subjectHrefs.join("|")],
     queryFn: async () => {
       const season = Number(day.slice(0, 4)) || new Date().getFullYear();
       const files = await fetchPlayerFiles(subjectHrefs, season);
@@ -3794,7 +3893,10 @@ export default function DailyNewspaperPage() {
       return files;
     },
     enabled: subjectHrefs.length > 0,
-    staleTime: 6 * 60 * 60_000,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   const storyFiles = useMemo(() => {
     const files = filesQ.data ?? {};
@@ -3807,14 +3909,14 @@ export default function DailyNewspaperPage() {
   }, [subjects, filesQ.data]);
   const stories = useMemo(
     () =>
-      filedStories.map((card) => {
+      printedStories.map((card) => {
         if (card.photo) return card;
         const lead = storyFiles[card.id]?.[0];
         if (lead?.action) return { ...card, photo: lead.action, caption: lead.name };
         if (lead?.headshot) return { ...card, photo: lead.headshot, caption: lead.name, photoStyle: "cutout" as const };
         return card;
       }),
-    [filedStories, storyFiles],
+    [printedStories, storyFiles],
   );
 
   const edition = useMemo(
@@ -3943,43 +4045,6 @@ export default function DailyNewspaperPage() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const refreshing =
-    teamSnaps.isFetching ||
-    teamDetailsQ.isFetching ||
-    wireQ.isFetching ||
-    leagueClubsQ.isFetching ||
-    leagueSlateQ.isFetching ||
-    mlbPlayoffsQ.isFetching ||
-    recap.isFetching ||
-    wrapsQ.isFetching ||
-    enrichedQ.isFetching ||
-    boardQ.isFetching ||
-    nightsQ.isFetching ||
-    missouriQ.isFetching ||
-    scoutQ.isFetching ||
-    newsQ.isFetching;
-
-  async function onRefresh() {
-    setDay(editionDay());
-    await Promise.all([
-      teamSnaps.refetch(),
-      teamDetailsQ.refetch(),
-      wireQ.refetch(),
-      leagueClubsQ.refetch(),
-      leagueSlateQ.refetch(),
-      mlbPlayoffsQ.refetch(),
-      recap.refetch(),
-      wrapsQ.refetch(),
-      enrichedQ.refetch(),
-      boardQ.refetch(),
-      newsQ.refetch(),
-      nightsQ.refetch(),
-      sheetsQ.refetch(),
-      missouriQ.refetch(),
-      scoutQ.refetch(),
-    ]);
-  }
-
   // Built once per edition/data change, never per page turn: re-rendering 60 folios on every
   // swipe was the slow part. Anything that must follow the folio in view reads PagerIndexContext.
   const sheets = useMemo(
@@ -3993,6 +4058,7 @@ export default function DailyNewspaperPage() {
                 page={page}
                 clubs={teams.length}
                 live={tonight.length}
+                editionLabel={press.label}
                 weather={weatherQ.data}
                 weatherFolio={weatherFolio}
                 onTurn={goFolio}
@@ -4108,6 +4174,7 @@ export default function DailyNewspaperPage() {
       nightsByPath,
       weatherQ.data,
       weatherFolio,
+      press.label,
     ],
   );
 
@@ -4205,16 +4272,23 @@ export default function DailyNewspaperPage() {
             <Share size={12} />
             Home Screen
           </a>
-          <button type="button" onClick={() => void onRefresh()} className="wsj-chrome-btn">
-            <RefreshCw size={12} className={cn(refreshing && "animate-spin")} />
-            Refresh
-          </button>
+          <span className="wsj-chrome-btn" title={`Next edition at ${press.next}. This one stays as printed.`}>
+            {press.label}
+          </span>
         </div>
       </div>
 
       <PagerIndexContext.Provider value={pageIndex}>
-        <div className="newspaper-edition wsj-pager" ref={pagerRef}>
-          {sheets}
+        <div className="tt-spread">
+          <div className="newspaper-edition wsj-pager" ref={pagerRef}>
+            {sheets}
+          </div>
+          {pressReady ? null : (
+            <div className="tt-pressing">
+              <p>Setting the {press.label.toLowerCase()}</p>
+              <span>The paper is held until the next press, at {press.next}.</span>
+            </div>
+          )}
         </div>
       </PagerIndexContext.Provider>
       </ReaderProvider>
