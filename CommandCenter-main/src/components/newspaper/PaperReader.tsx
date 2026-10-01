@@ -8,9 +8,20 @@ import {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink } from "lucide-react";
-import { Decisions, Goals, Leaders, Linescore, MlbAgate } from "@/components/newspaper/BoxScore";
+import {
+  Decisions,
+  EspnAgate,
+  Goals,
+  KeyStats,
+  Leaders,
+  Linescore,
+  MlbAgate,
+  Stars,
+} from "@/components/newspaper/BoxScore";
+import { ESPN_BOX_PATHS, fetchEspnBox } from "@/lib/newspaper-agate";
 import { fetchEspnRecapStory, gameClock } from "@/lib/newspaper-box";
 import { proseParas } from "@/lib/newspaper-copy";
+import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
 import { fetchRssArticle, scrubReaderChrome, stripDuplicateContentImages } from "@/lib/rss";
 import { cn } from "@/lib/utils";
 import { ReaderContext, type ReaderStory } from "@/components/newspaper/reader-context";
@@ -101,6 +112,18 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
     staleTime: 10 * 60_000,
   });
 
+  const espnBoxed = Boolean(espnEvent && path && ESPN_BOX_PATHS.has(path));
+  const espnBox = useQuery({
+    queryKey: ["tt-espn-box", path, espnEvent],
+    queryFn: () => fetchEspnBox(path!, espnEvent!),
+    enabled: espnBoxed,
+    staleTime: game?.live ? 60_000 : 30 * 60_000,
+  });
+  const espnGame = espnBox.data?.game ?? null;
+  const boxGame =
+    game && !game.scoring.length && espnGame?.scoring.length ? { ...game, scoring: espnGame.scoring } : (game ?? espnGame);
+  const stars = espnBox.data?.stars ?? [];
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -125,7 +148,8 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
   const kicker = [card.sportLabel, card.round || (card.postseason ? "Postseason" : null), card.teamName]
     .filter(Boolean)
     .join(" · ");
-  const dek = card.dek && card.dek.trim() !== card.headline.trim() ? card.dek : null;
+  const dek =
+    card.dek && card.dek.trim() !== card.headline.trim() && !isBoilerplateDek(card.dek) ? card.dek : null;
 
   return (
     <div className="tt-reader" role="dialog" aria-modal="true" aria-label={card.headline}>
@@ -157,22 +181,23 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
               </>
             ) : (
               <>
-                <em>By</em> {card.sportLabel} Wire
+                <em>By</em> {storySource(card) ?? `${card.sportLabel} Wire`}
               </>
             )}
             {card.when ? <span> · {whenLine(card.when)}</span> : null}
           </p>
 
-          {game && (game.final || game.live) ? (
+          {boxGame && (boxGame.final || boxGame.live) ? (
             <section className="tt-reader-box">
               <header>
-                <b>{gameClock(game)}</b>
-                <span>{[game.round, game.series, game.venue].filter(Boolean).join(" · ")}</span>
+                <b>{gameClock(boxGame)}</b>
+                <span>{[boxGame.round, boxGame.series, boxGame.venue].filter(Boolean).join(" · ")}</span>
               </header>
-              <Linescore game={game} />
-              <Decisions game={game} faces />
-              <Goals game={game} />
-              <Leaders game={game} max={4} />
+              <Linescore game={boxGame} />
+              <Decisions game={boxGame} faces />
+              {espnBox.data ? <KeyStats box={espnBox.data} /> : null}
+              <Goals game={boxGame} />
+              {stars.length ? <Stars stars={stars} path={boxGame.path} /> : <Leaders game={boxGame} max={4} />}
             </section>
           ) : null}
 
@@ -201,6 +226,15 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
             <section className={cn("tt-reader-agate")}>
               <h3>Box score</h3>
               <MlbAgate game={game} />
+            </section>
+          ) : espnBoxed && boxGame?.path !== "baseball/mlb" && (espnBox.isLoading || espnBox.data) ? (
+            <section className="tt-reader-agate">
+              <h3>Box score</h3>
+              {espnBox.data ? (
+                <EspnAgate box={espnBox.data} path={espnBox.data.game.path} />
+              ) : (
+                <p className="tt-agate-wait">Setting the box…</p>
+              )}
             </section>
           ) : null}
         </article>
