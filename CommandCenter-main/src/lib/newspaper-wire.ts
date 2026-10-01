@@ -195,6 +195,13 @@ const LEAGUES: WireLeague[] = [
     gameHref: (id) => `/sports/cfb/game/${id}`,
   },
   {
+    path: "basketball/nba",
+    league: "NBA",
+    label: "Basketball",
+    slug: "nba",
+    lookback: 1,
+  },
+  {
     path: "basketball/mens-college-basketball",
     league: "CBB",
     label: "College basketball",
@@ -397,6 +404,9 @@ export function espnTeamLogo(path: string, teamId: string | null | undefined): s
   }
   if (/mens-college-basketball/i.test(path)) {
     return `https://a.espncdn.com/i/teamlogos/ncaa/500/${teamId}.png`;
+  }
+  if (/basketball\/nba/i.test(path)) {
+    return `https://a.espncdn.com/i/teamlogos/nba/500/${teamId}.png`;
   }
   if (/soccer\//i.test(path)) {
     return `https://a.espncdn.com/i/teamlogos/soccer/500/${teamId}.png`;

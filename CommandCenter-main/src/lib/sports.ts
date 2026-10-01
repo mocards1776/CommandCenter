@@ -276,6 +276,26 @@ export const DEFAULT_FAVORITES: SportsFavorite[] = [
     color: "e31837",
   },
   {
+    key: "nfl-dal",
+    name: "Dallas Cowboys",
+    shortName: "Cowboys",
+    sport: "Football",
+    league: "NFL",
+    espnPath: "football/nfl/teams/6",
+    kind: "team",
+    color: "003594",
+  },
+  {
+    key: "nba-phi",
+    name: "Philadelphia 76ers",
+    shortName: "76ers",
+    sport: "Basketball",
+    league: "NBA",
+    espnPath: "basketball/nba/teams/20",
+    kind: "team",
+    color: "006bb6",
+  },
+  {
     key: "eng-wrexham",
     name: "Wrexham",
     shortName: "Wrexham",
@@ -688,9 +708,23 @@ function golfScoreToPar(c: {
   return { text: fallback, value: golfToParNumeric(fallback) };
 }
 
-function fmtWhen(iso: string | null | undefined): string | null {
+function evTimed(ev: unknown): boolean {
+  const e = ev as { timeValid?: boolean; competitions?: { timeValid?: boolean }[] } | null | undefined;
+  return e?.competitions?.[0]?.timeValid ?? e?.timeValid ?? true;
+}
+
+function fmtWhen(iso: string | null | undefined, timed = true): string | null {
   if (!iso) return null;
   try {
+    // ESPN parks an untimed game at midnight Eastern; keep that calendar day.
+    if (!timed) {
+      return new Date(iso).toLocaleDateString("en-US", {
+        timeZone: "America/New_York",
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+    }
     return new Date(iso).toLocaleString("en-US", {
       timeZone: "America/Chicago",
       weekday: "short",
@@ -876,7 +910,7 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
   // it at face value makes a finished club look like it plays tomorrow.
   if (next?.competitions?.[0] && !nextStatus?.completed && nextStatus?.state !== "post") {
     nextGame = competitionChip(next.competitions[0], teamId);
-    if (nextGame) nextGame.when = fmtWhen(next.date) ?? nextGame.when;
+    if (nextGame) nextGame.when = fmtWhen(next.date, evTimed(next)) ?? nextGame.when;
   }
 
   let lastGame: GameChip | null = null;
@@ -885,7 +919,7 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
     const st = prev.competitions[0].status?.type;
     if (st?.completed || st?.state === "post") {
       lastGame = competitionChip(prev.competitions[0], teamId);
-      if (lastGame) lastGame.when = fmtWhen(prev.date) ?? lastGame.when;
+      if (lastGame) lastGame.when = fmtWhen(prev.date, evTimed(prev)) ?? lastGame.when;
     }
   }
 
@@ -903,7 +937,7 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
         if (!comp?.status?.type?.completed && comp?.status?.type?.state !== "post") continue;
         lastGame = competitionChip(comp, teamId);
         if (lastGame) {
-          lastGame.when = fmtWhen(ev.date) ?? lastGame.when;
+          lastGame.when = fmtWhen(ev.date, evTimed(ev)) ?? lastGame.when;
           break;
         }
       }
@@ -915,7 +949,7 @@ export async function fetchTeamSnapshot(fav: SportsFavorite): Promise<TeamSnapsh
         if (!comp || st?.completed || st?.state === "post") continue;
         nextGame = competitionChip(comp, teamId);
         if (nextGame) {
-          nextGame.when = fmtWhen(ev.date) ?? nextGame.when;
+          nextGame.when = fmtWhen(ev.date, evTimed(ev)) ?? nextGame.when;
           break;
         }
       }
@@ -1046,7 +1080,7 @@ async function fillSoccerGamesFromScoreboard(
           if (!(st?.completed || st?.state === "post")) continue;
           const chip = competitionChip(comp, teamId);
           if (!chip) continue;
-          chip.when = fmtWhen(ev.date) ?? chip.when;
+          chip.when = fmtWhen(ev.date, evTimed(ev)) ?? chip.when;
           last = chip;
           break;
         }
@@ -1070,7 +1104,7 @@ async function fillSoccerGamesFromScoreboard(
           if (st?.completed || st?.state === "post") continue;
           const chip = competitionChip(comp, teamId);
           if (!chip) continue;
-          chip.when = fmtWhen(ev.date) ?? chip.when;
+          chip.when = fmtWhen(ev.date, evTimed(ev)) ?? chip.when;
           next = chip;
           break;
         }
@@ -2313,7 +2347,7 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
       if (!chip) continue;
       const row: ScheduleGame = {
         id: String(ev.id ?? `${ev.date}-${chip.label}`),
-        when: fmtWhen(ev.date),
+        when: fmtWhen(ev.date, evTimed(ev)),
         startIso: ev.date ?? null,
         label: chip.label,
         detail: chip.detail,
@@ -2377,7 +2411,7 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
         if (!chip) continue;
         recent.push({
           id: String(ev.id ?? `${ev.date}-${chip.label}`),
-          when: fmtWhen(ev.date),
+          when: fmtWhen(ev.date, evTimed(ev)),
           startIso: ev.date ?? null,
           label: chip.label,
           detail: chip.detail,
@@ -2538,7 +2572,7 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
         if (!chip) continue;
         upcoming.push({
           id: String(ev.id ?? `${ev.date}-${chip.label}`),
-          when: fmtWhen(ev.date),
+          when: fmtWhen(ev.date, evTimed(ev)),
           startIso: ev.date ?? null,
           label: chip.label,
           detail: chip.detail,
@@ -2614,7 +2648,7 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
       };
     }
   } else if (myTable.gf || myTable.ga || myTable.gd) {
-    const football = /football/i.test(fav.espnPath);
+    const football = /football|basketball/i.test(fav.espnPath);
     if (myTable.gf) teamFacts.push({ label: football ? "PF" : "GF", value: myTable.gf });
     if (myTable.ga) teamFacts.push({ label: football ? "PA" : "GA", value: myTable.ga });
     if (myTable.gd) teamFacts.push({ label: football ? "Diff" : "GD", value: myTable.gd });
