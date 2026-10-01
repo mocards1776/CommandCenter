@@ -220,6 +220,19 @@ export function moneyCompact(n: number): string {
  * How hard Section A should push a club. Home desk first, then Lions, Chiefs,
  * then soccer — matches the paper's real interest order.
  */
+/** Clubs the reader follows for scores and tables only — the desk files no news on them. */
+const NEWS_MUTED = new Set(["eng-arsenal"]);
+const NEWS_MUTED_NAMES = /\barsenal\b/i;
+
+export function isNewsMuted(card: {
+  favoriteKey?: string | null;
+  teamName?: string | null;
+  headline?: string | null;
+}): boolean {
+  if (card.favoriteKey && NEWS_MUTED.has(card.favoriteKey)) return true;
+  return NEWS_MUTED_NAMES.test(`${card.teamName ?? ""} ${card.headline ?? ""}`);
+}
+
 export function favoriteDeskWeight(key: string): number {
   if (key === "mlb-stl") return 100;
   if (key === "nhl-stl") return 100;

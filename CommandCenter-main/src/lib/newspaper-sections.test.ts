@@ -209,7 +209,7 @@ if (nfl?.kind === "sport-front") {
   assert(!nfl.upcoming.some((game) => /dolphins/i.test(game.label)), "last weekend is not the schedule");
   assert(nfl.clubs[0]?.division.some((row) => row.me && row.team === "Chiefs"), "standings mark your club");
   assert(nfl.clubs[0]?.stats.some((stat) => stat.label === "PF"), "season stats run with the table");
-  assert(nfl.articles.some((article) => article.card.id === "news-injury"), "Tuesday's article is the football news");
+  assert(nfl.articles.every((article) => article.card.id !== "news-injury"), "a followed club's story runs in Section A, not NFL");
   assert(nfl.articles.every((article) => article.card.id !== "wire-nfl-weekend"), "weekend recap is too old for a fresh midweek desk");
 }
 const nflRecaps = paper.pages.find((page) => page.folio === "NFL2");
@@ -222,13 +222,20 @@ const nflForm = paper.pages.find((page) => page.folio === "NFL5");
 assert(nflForm?.kind === "sport-front" && nflForm.focus === "form", "NFL5 is the club form page");
 
 const mlb = paper.pages.find((page) => page.folio === "MLB1");
-assert(mlb?.kind === "sport-front" && mlb.articles.some((article) => article.card.id === "news-cards"), "baseball keeps its own news");
+assert(
+  mlb?.kind === "sport-front" && mlb.articles.every((article) => article.card.id !== "news-cards"),
+  "Cardinals copy stays out of the MLB section",
+);
+assert(
+  paper.pages.every((page) => page.kind !== "sport-inside" || (page.primary.id !== "news-cards" && page.secondary?.id !== "news-cards")),
+  "no MLB story page carries a Cardinals story",
+);
 const mlbPlayoffs = paper.pages.find((page) => page.folio === "MLB5");
 assert(mlbPlayoffs?.kind === "sport-front" && mlbPlayoffs.focus === "playoffs", "MLB5 is the playoff tree page");
 assert((paper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= MIN_SECTION_PAGES, "NFL section always has at least five pages");
 assert((paper.sections.find((s) => s.code === "A")?.pages ?? 0) >= MIN_SECTION_PAGES, "A always has at least five pages");
 assert((paper.sections.find((s) => s.code === "MLB")?.pages ?? 0) >= MIN_SECTION_PAGES, "MLB always has at least five pages");
-assert(paper.pages.some((page) => page.folio === "NFL6"), "NFL story copy gets its own inside page after the five desk pages");
+assert(!paper.pages.some((page) => page.folio === "NFL6"), "no league copy, no NFL story page");
 assert(paper.pages.some((page) => page.kind === "favorites-form"), "Section A pads with club-form pages");
 
 const leagueWire = card({
@@ -240,14 +247,49 @@ const leagueWire = card({
   sportLabel: "NFL",
   leaguePath: "football/nfl",
   when: "2026-09-30T14:00:00Z",
-  body: "Around the league, clubs shuffled the practice report and the waiver wire. ".repeat(3),
+  body: "Around the league, clubs shuffled the practice report and the waiver wire. ".repeat(8),
+});
+const leagueShort = card({
+  id: "league-wire-2",
+  headline: "Bills sign a punter",
+  teamName: "Bills",
+  when: "2026-09-30T13:00:00Z",
+  body: "Buffalo added depth.",
+});
+const arsenalNews = card({
+  id: "news-arsenal",
+  headline: "Arteta on the international break",
+  favoriteKey: "eng-arsenal",
+  followed: true,
+  teamName: "Arsenal",
+  sportLabel: "EPL",
+  leaguePath: "soccer/eng.1",
+  when: "2026-09-30T12:00:00Z",
+  body: "The Arsenal manager spoke for twenty minutes. ".repeat(12),
+});
+const arsenalLeague = card({
+  id: "league-arsenal",
+  headline: "Arsenal and Chelsea split the points",
+  teamName: "League",
+  sportLabel: "EPL",
+  leaguePath: "soccer/eng.1",
+  when: "2026-09-30T12:00:00Z",
 });
 assert(isDeskStory(leagueWire), "league wire is desk copy for sport sections");
 const withLeague = buildEdition({
-  stories: [weekend, tuesday, scheduled, cardinals, leagueWire],
+  stories: [weekend, tuesday, scheduled, cardinals, leagueWire, leagueShort, arsenalNews, arsenalLeague],
   clubs: [chiefs, cards],
   edition,
 });
+assert(withLeague.pages.some((page) => page.folio === "NFL6"), "league story copy gets an inside page after the desk pages");
+assert(
+  withLeague.pages.every(
+    (page) => page.kind !== "sport-inside" || (page.primary.id !== "league-wire-2" && page.secondary?.id !== "league-wire-2"),
+  ),
+  "a one-line item is a brief, never a story page",
+);
+const allCards = JSON.stringify(withLeague.pages);
+assert(!allCards.includes("news-arsenal") && !allCards.includes("league-arsenal"), "Arsenal carries no news");
 const aLead = withLeague.pages[0];
 assert(
   aLead?.kind === "favorites-front" && aLead.news.every((story) => story.id !== "league-wire-1"),
@@ -297,12 +339,11 @@ const tuesdayPaper = buildEdition({
 assert((tuesdayPaper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= MIN_SECTION_PAGES, "Tuesday NFL still has five pages");
 const tuesdayNfl = tuesdayPaper.pages.find((page) => page.folio === "NFL1");
 assert(tuesdayNfl?.kind === "sport-front", "Tuesday still opens a football section");
-if (tuesdayNfl?.kind === "sport-front") {
-  const ids = tuesdayNfl.articles.map((article) => article.card.id);
+const tuesdayFront = tuesdayPaper.pages[0];
+if (tuesdayFront?.kind === "favorites-front") {
+  const ids = tuesdayFront.news.map((story) => story.id);
   assert(ids.includes("news-kelce"), "Monday's injury note is Tuesday's news");
   assert(ids.includes("wire-nfl-mnf"), "Monday night's final is Tuesday's result");
-  // Two-day lookback from Tuesday still reaches Monday-night / late Sunday rewrite.
-  assert(ids.includes("news-lions-sunday"), "late Sunday rewrite still packs Tuesday when in lookback");
 }
 const tuesdayA = tuesdayPaper.pages[0];
 assert(

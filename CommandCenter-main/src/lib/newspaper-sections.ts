@@ -3,8 +3,9 @@
  *
  * Section A is the clubs you follow — a front, a clubs desk, then inside
  * story / club-form pages. Every sport section always runs at least five
- * pages: news, recaps, all-teams, schedule, and club form — then full
- * story pages when copy exists.
+ * pages: league news, scores, standings, schedule, and playoffs or form —
+ * then full story pages for league copy. Followed-club stories run in
+ * Section A only.
  */
 
 import {
@@ -14,6 +15,7 @@ import {
   editionNewsDay,
   favoriteDeskWeight,
   instantDay,
+  isNewsMuted,
   isResultCopy,
   splitStoryCopy,
 } from "./newspaper.ts";
@@ -217,6 +219,13 @@ export function isDeskStory(card: GameWrapCard): boolean {
   return false;
 }
 
+/** Enough body to set as an article rather than a brief. */
+export const STORY_COPY_MIN = 400;
+
+export function hasStoryCopy(card: GameWrapCard): boolean {
+  return (card.body?.trim().length ?? 0) >= STORY_COPY_MIN;
+}
+
 export function isRecapStory(card: GameWrapCard): boolean {
   return isResultCopy({
     headline: card.headline,
@@ -416,11 +425,18 @@ function favoritePages(
       (c) => !frontIds.has(c.id) && !freshStories.some((f) => f.id === c.id),
     ),
   ];
+  // A story page needs a story. Thin items ride along as briefs.
+  const full = restPool.filter(hasStoryCopy);
+  const thin = restPool.filter((c) => !hasStoryCopy(c));
   let cursor = 0;
-  while (cursor < restPool.length) {
-    const primary = restPool[cursor]!;
-    const secondary = restPool[cursor + 1];
-    const briefs = restPool.slice(cursor + 2, cursor + 2 + FRONT_BRIEFS);
+  let thinCursor = 0;
+  while (cursor < full.length) {
+    const primary = full[cursor]!;
+    const secondary = full[cursor + 1];
+    const last = cursor + 2 >= full.length;
+    const take = last ? thin.length - thinCursor : FRONT_BRIEFS;
+    const briefs = thin.slice(thinCursor, thinCursor + take);
+    thinCursor += briefs.length;
     const folio = `A${n}`;
     favoriteFolioByStory[primary.id] = folio;
     if (secondary) favoriteFolioByStory[secondary.id] = folio;
@@ -436,7 +452,7 @@ function favoritePages(
       secondary,
       briefs,
     });
-    cursor += 2 + briefs.length;
+    cursor += 2;
     n += 1;
   }
 
@@ -525,10 +541,11 @@ function sportPages(
   const isMlb = id.path === "baseball/mlb";
   const deskCount = 5;
   const inside: SportInsidePage[] = [];
+  const full = unique.filter(hasStoryCopy);
   let n = deskCount + 1;
-  for (let i = 0; i < unique.length; i += 2) {
-    const primary = unique[i]!;
-    const secondary = unique[i + 1];
+  for (let i = 0; i < full.length; i += 2) {
+    const primary = full[i]!;
+    const secondary = full[i + 1];
     const folio = `${id.code}${n}`;
     sportFolioByStory[primary.id] = folio;
     if (secondary) sportFolioByStory[secondary.id] = folio;
@@ -546,17 +563,13 @@ function sportPages(
     n += 1;
   }
 
+  // A brief with no story page opens in the reader; its folio is its own desk.
   const articles = unique.map((card) => ({
     card,
-    folio: sportFolioByStory[card.id] ?? `${id.code}${deskCount + 1}`,
+    folio: sportFolioByStory[card.id] ?? `${id.code}1`,
   }));
-  // News desk shows a capped, deduped set so the grid cannot collapse.
-  const newsArticles = articles.slice(0, 8);
-  const recaps = unique.filter(isRecapStory).map((card) => ({
-    card,
-    folio: sportFolioByStory[card.id] ?? `${id.code}${deskCount + 1}`,
-  }));
-  const recapArticles = (recaps.length ? recaps : articles).slice(0, 8);
+  const newsArticles = articles.slice(0, 12);
+  const recapArticles = articles.filter((a) => isRecapStory(a.card)).slice(0, 8);
 
   const base = {
     section: id.code,
@@ -620,7 +633,7 @@ export function buildEdition(opts: {
   clubs: ClubDesk[];
   edition: string;
 }): Edition {
-  const desk = opts.stories.filter(isDeskStory);
+  const desk = opts.stories.filter((card) => isDeskStory(card) && !isNewsMuted(card));
   const fresh = rankStories(
     desk.filter((card) => inFreshWindow(card, opts.edition)),
     opts.edition,
@@ -647,9 +660,10 @@ export function buildEdition(opts: {
     list.push(club);
     clubsBy.set(club.leaguePath, list);
   }
+  // Your clubs are Section A's beat. Sport sections carry the rest of the league.
   const storiesBy = new Map<string, GameWrapCard[]>();
   for (const story of sectionCopy) {
-    if (!story.leaguePath) continue;
+    if (!story.leaguePath || isFavoriteStory(story)) continue;
     const list = storiesBy.get(story.leaguePath) ?? [];
     list.push(story);
     storiesBy.set(story.leaguePath, list);
