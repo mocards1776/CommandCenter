@@ -1934,8 +1934,34 @@ mark.rss-hl {
 .wsj-shelved-card.counting .tt-count.line {
   padding: 0;
 }
+.wsj-rail-list li.counting {
+  padding-left: 0;
+  list-style: none;
+}
+.wsj-rail-list li.counting::before {
+  content: none;
+}
 li.counting .tt-count.card {
   margin-top: 8px;
+}
+.wsj-rail-block .tt-count.card {
+  gap: 10px;
+  padding: 10px;
+}
+.wsj-rail-block .tt-count.card .tt-count-num {
+  min-width: 58px;
+  padding: 6px 4px;
+}
+.wsj-rail-block .tt-count.card .tt-count-num b {
+  font-size: 32px;
+}
+.wsj-rail-block .tt-count-copy strong {
+  flex-wrap: wrap;
+  font-size: 15px;
+}
+.wsj-rail-block .tt-count-copy strong img {
+  width: 16px;
+  height: 16px;
 }
 
 .tt-open-band {

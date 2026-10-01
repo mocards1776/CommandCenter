@@ -2503,7 +2503,6 @@ function SportFront({
   sheets: Record<string, ClubSheet>;
   onTurn: (folio: string) => void;
 }) {
-  const isMlb = page.path === "baseball/mlb";
   const results = (board?.results.length || board?.prior?.length) ?? 0;
   const upcoming = board?.slate.length ?? slate.length;
   const newsDay = editionNewsDay(edition);

@@ -169,7 +169,7 @@ export async function fetchOpener(fav: {
     const year = new Date().getFullYear();
     for (const season of [year, year + 1]) {
       const data = (await getJson(
-        `${MLB}/schedule?sportId=1&teamId=${fav.mlbTeamId}&season=${season}&gameType=R`,
+        `${MLB}/schedule?sportId=1&teamId=${fav.mlbTeamId}&season=${season}&gameType=R&hydrate=team`,
       ).catch(() => null)) as { dates?: { games?: MlbGame[] }[] } | null;
       const games = (data?.dates ?? []).flatMap((d) => d.games ?? []);
       // An opener only exists before a club's first game of that season.
