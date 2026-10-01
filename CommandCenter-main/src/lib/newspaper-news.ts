@@ -97,6 +97,16 @@ function articleInSection(article: NewsArticle, edition: string): boolean {
   return editionCoversRecent(article.published, edition, 2);
 }
 
+/** AP copy leads with a bare em dash when the dateline is stripped, and ends on a link plug. */
+function wireCopy(text: string): string {
+  return text
+    .replace(/^\s*[—–-]+\s*/, "")
+    .replace(/^([A-Z][A-Z .,'-]+?)\s*--\s*[—–]\s*/, "$1 -- ")
+    .replace(/\s*-{3,}\s*See AP'?s[\s\S]*$/i, "")
+    .replace(/\s*_{3,}\s*AP [\s\S]*$/, "")
+    .trim();
+}
+
 async function articleBody(id: string, fallback: string): Promise<string> {
   try {
     const res = await fetch(`https://content.core.api.espn.com/v1/sports/news/${id}`, {
@@ -104,7 +114,7 @@ async function articleBody(id: string, fallback: string): Promise<string> {
     });
     if (!res.ok) return fallback;
     const data = (await res.json()) as { headlines?: { story?: string; description?: string }[] };
-    const story = stripHtml(data.headlines?.[0]?.story ?? "");
+    const story = wireCopy(stripHtml(data.headlines?.[0]?.story ?? ""));
     if (story.length >= 80) return story;
   } catch {
     /* the dek still runs */
@@ -118,7 +128,7 @@ function toCard(fav: SportsFavorite, article: NewsArticle, body: string): GameWr
   if (!headline || !id) return null;
   const path = leaguePathFromEspn(fav.espnPath);
   const href = article.links?.web?.href ?? favoriteTeamHref(fav);
-  const dek = (article.description ?? "").trim() || null;
+  const dek = wireCopy(article.description ?? "") || null;
   return {
     id: `news-${id}`,
     favoriteKey: fav.key,
@@ -168,8 +178,13 @@ export async function fetchTeamArticles(
         const data = (await espnGet(`${path}/news?team=${teamId}&limit=40`)) as {
           articles?: NewsArticle[];
         };
-        const mine = (data.articles ?? [])
-          .filter((article) => articleInSection(article, edition) && mentionsClub(fav, article))
+        const about = (data.articles ?? []).filter((article) => mentionsClub(fav, article));
+        const fresh = about.filter((article) => articleInSection(article, edition));
+        // A club between games (or just out of season) still gets its latest pieces.
+        const pool = fresh.length
+          ? fresh
+          : about.filter((article) => editionCoversRecent(article.published, edition, 7)).slice(0, 3);
+        const mine = pool
           .sort((a, b) => favoriteArticleScore(fav, b) - favoriteArticleScore(fav, a))
           .slice(0, 6);
         for (const article of mine) {
@@ -189,7 +204,7 @@ export async function fetchTeamArticles(
   picked.sort((a, b) => String(b.article.published ?? "").localeCompare(String(a.article.published ?? "")));
   const withBody = await Promise.all(
     picked.slice(0, 24).map(async ({ fav, article }) => {
-      const fallback = (article.description ?? "").trim();
+      const fallback = wireCopy(article.description ?? "");
       const body = await articleBody(String(article.id), fallback);
       return toCard(fav, article, body);
     }),
@@ -210,7 +225,7 @@ function toLeagueCard(path: string, article: NewsArticle, body: string): GameWra
   const teamCat = (article.categories ?? []).find((cat) => cat.type === "team" && cat.description);
   const teamName = teamCat?.description?.trim() || leagueLabel(path);
   const href = article.links?.web?.href ?? null;
-  const dek = (article.description ?? "").trim() || null;
+  const dek = wireCopy(article.description ?? "") || null;
   return {
     id: `league-${id}`,
     favoriteKey: "",
@@ -278,7 +293,7 @@ export async function fetchLeagueArticles(
   picked.sort((a, b) => String(b.article.published ?? "").localeCompare(String(a.article.published ?? "")));
   const withBody = await Promise.all(
     picked.slice(0, 40).map(async ({ path, article }) => {
-      const fallback = (article.description ?? "").trim();
+      const fallback = wireCopy(article.description ?? "");
       const body = await articleBody(String(article.id), fallback);
       return toLeagueCard(path, article, body);
     }),

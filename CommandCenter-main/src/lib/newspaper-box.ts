@@ -8,9 +8,10 @@
  */
 
 import { editionNewsDay } from "./newspaper.ts";
+import type { GameWrapCard } from "./newspaper-sports";
 
 const MLB_API = "https://statsapi.mlb.com/api/v1";
-const ESPN_SITE = "https://site.api.espn.com/apis/site/v2/sports";
+const ESPN_SITE = "https://site.web.api.espn.com/apis/site/v2/sports";
 
 export type BoxSide = {
   id: string | null;
@@ -166,7 +167,7 @@ type MlbScheduleGameRaw = {
   gameDate?: string;
   officialDate?: string;
   gameType?: string;
-  status?: { abstractGameState?: string; detailedState?: string };
+  status?: { abstractGameState?: string; detailedState?: string; startTimeTBD?: boolean };
   teams?: { away?: MlbTeamSideRaw; home?: MlbTeamSideRaw };
   venue?: { name?: string };
   linescore?: {
@@ -303,8 +304,8 @@ function mlbGame(raw: MlbScheduleGameRaw, day: string): BoxGame | null {
     path: "baseball/mlb",
     league: "MLB",
     day: raw.officialDate || day,
-    startIso: raw.gameDate ?? null,
-    status: inning || raw.status?.detailedState || "Scheduled",
+    startIso: raw.status?.startTimeTBD && !final && !live ? null : raw.gameDate ?? null,
+    status: inning || (raw.status?.startTimeTBD && !final && !live ? "Time TBD" : raw.status?.detailedState || "Scheduled"),
     final,
     live,
     venue: raw.venue?.name ?? null,
@@ -707,6 +708,230 @@ export async function fetchEspnRecapStory(
   };
 }
 
+function faceOff(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d
+    .toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })
+    .replace(":00 ", " ");
+}
+
+export function gameClock(game: BoxGame): string {
+  if (game.final) return /final/i.test(game.status) ? game.status : "Final";
+  if (game.live) return game.status;
+  if (/postponed|delayed|suspended|canceled/i.test(game.status)) return game.status;
+  return faceOff(game.startIso) || game.status;
+}
+
+/** A finished game's recap, set as a story card so it runs like any other article. */
+export function boxStoryCard(game: BoxGame): GameWrapCard | null {
+  const recap = game.recap;
+  if (!recap) return null;
+  const winner = game.away.winner ? game.away : game.home.winner ? game.home : null;
+  const body = recap.html ? htmlToText(recap.html) : null;
+  return {
+    id: `box-${game.id}`,
+    favoriteKey: "",
+    teamName: winner?.short ?? game.home.short,
+    teamHref: game.href ?? "/",
+    sportLabel: game.league,
+    leaguePath: game.path,
+    headline: recap.headline,
+    dek: recap.blurb,
+    body,
+    scoreLine: `${game.away.abbrev} ${game.away.score ?? ""} · ${game.home.abbrev} ${game.home.score ?? ""}`,
+    when: game.startIso,
+    won: null,
+    gameHref: game.href,
+    wrapHref: recap.url,
+    feedUrl: null,
+    gameId: game.espnEventId ?? (game.gamePk != null ? String(game.gamePk) : null),
+    stats: [],
+    leaders: [],
+    teamStats: [],
+    division: [],
+    photo: recap.photo,
+    caption: `${game.away.name} at ${game.home.name}${game.venue ? `, ${game.venue}` : ""}.`,
+    round: game.round,
+    series: game.series,
+    postseason: Boolean(game.round),
+    status: game.final ? "Final" : game.status,
+  };
+}
+
+/* ───────────────────────── standings ───────────────────────── */
+
+export type StandRow = {
+  id: string;
+  name: string;
+  abbrev: string;
+  logo: string | null;
+  cells: string[];
+  /** 0–1 share of the possible (win pct or points pct), for the bar. */
+  bar: number;
+  clinch: string | null;
+};
+
+export type StandGroup = { name: string; columns: string[]; rows: StandRow[] };
+
+type StandEntryRaw = {
+  team?: {
+    id?: string;
+    displayName?: string;
+    shortDisplayName?: string;
+    abbreviation?: string;
+    logos?: { href?: string }[];
+  };
+  stats?: { name?: string; type?: string; displayValue?: string; value?: number }[];
+};
+
+type StandNodeRaw = {
+  name?: string;
+  abbreviation?: string;
+  children?: StandNodeRaw[];
+  standings?: { entries?: StandEntryRaw[] };
+};
+
+type StandSpec = {
+  columns: { label: string; type: string }[];
+  bar: (get: (t: string) => number) => number;
+  sort: (get: (t: string) => number) => number;
+};
+
+const STAND_SPECS: { test: (path: string) => boolean; spec: StandSpec }[] = [
+  {
+    test: (p) => p === "baseball/mlb",
+    spec: {
+      columns: [
+        { label: "W", type: "wins" },
+        { label: "L", type: "losses" },
+        { label: "Pct", type: "winpercent" },
+        { label: "GB", type: "gamesbehind" },
+        { label: "L10", type: "lasttengames" },
+        { label: "Strk", type: "streak" },
+        { label: "Diff", type: "pointdifferential" },
+      ],
+      bar: (g) => g("winpercent"),
+      sort: (g) => g("winpercent"),
+    },
+  },
+  {
+    test: (p) => p.startsWith("hockey/"),
+    spec: {
+      columns: [
+        { label: "GP", type: "gamesplayed" },
+        { label: "W", type: "wins" },
+        { label: "L", type: "losses" },
+        { label: "OTL", type: "otlosses" },
+        { label: "Pts", type: "points" },
+        { label: "GF", type: "pointsfor" },
+        { label: "GA", type: "pointsagainst" },
+        { label: "Strk", type: "streak" },
+      ],
+      bar: (g) => (g("gamesplayed") ? g("points") / (2 * g("gamesplayed")) : 0),
+      sort: (g) => g("points") * 1000 - g("gamesplayed"),
+    },
+  },
+  {
+    test: (p) => p.startsWith("soccer/"),
+    spec: {
+      columns: [
+        { label: "P", type: "gamesplayed" },
+        { label: "W", type: "wins" },
+        { label: "D", type: "ties" },
+        { label: "L", type: "losses" },
+        { label: "GF", type: "pointsfor" },
+        { label: "GA", type: "pointsagainst" },
+        { label: "GD", type: "pointdifferential" },
+        { label: "Pts", type: "points" },
+      ],
+      bar: (g) => (g("gamesplayed") ? g("points") / (3 * g("gamesplayed")) : 0),
+      sort: (g) => -g("rank"),
+    },
+  },
+  {
+    test: (p) => p === "football/nfl",
+    spec: {
+      columns: [
+        { label: "W", type: "wins" },
+        { label: "L", type: "losses" },
+        { label: "T", type: "ties" },
+        { label: "Pct", type: "winpercent" },
+        { label: "PF", type: "pointsfor" },
+        { label: "PA", type: "pointsagainst" },
+        { label: "Diff", type: "pointdifferential" },
+        { label: "Strk", type: "streak" },
+      ],
+      bar: (g) => g("winpercent"),
+      sort: (g) => g("winpercent") * 1000 + g("pointdifferential") / 100,
+    },
+  },
+];
+
+const COLLEGE_SPEC: StandSpec = {
+  columns: [
+    { label: "Conf", type: "vsconf" },
+    { label: "All", type: "total" },
+    { label: "PF", type: "pointsfor" },
+    { label: "PA", type: "pointsagainst" },
+    { label: "Strk", type: "streak" },
+  ],
+  bar: (g) => g("leaguewinpercent"),
+  sort: (g) => g("leaguewinpercent") * 1000 + g("wins"),
+};
+
+function standGroups(node: StandNodeRaw, out: { name: string; entries: StandEntryRaw[] }[]) {
+  if (node.standings?.entries?.length) {
+    out.push({ name: node.name ?? node.abbreviation ?? "League", entries: node.standings.entries });
+  }
+  for (const child of node.children ?? []) standGroups(child, out);
+}
+
+/** Division / conference / league tables, sorted the way the league prints them. */
+export async function fetchSectionStandings(path: string): Promise<StandGroup[]> {
+  const data = await getJson<StandNodeRaw>(
+    `https://site.web.api.espn.com/apis/v2/sports/${path}/standings?level=3`,
+  );
+  if (!data) return [];
+  const spec = STAND_SPECS.find((s) => s.test(path))?.spec ?? COLLEGE_SPEC;
+  const groups: { name: string; entries: StandEntryRaw[] }[] = [];
+  standGroups(data, groups);
+  return groups.map((group) => {
+    const rows = group.entries.map((entry) => {
+      const stats = entry.stats ?? [];
+      const find = (t: string) => stats.find((s) => (s.type ?? s.name ?? "").toLowerCase() === t);
+      const get = (t: string) => {
+        const s = find(t);
+        if (typeof s?.value === "number") return s.value;
+        return Number.parseFloat(String(s?.displayValue ?? "").replace(/^\+/, "")) || 0;
+      };
+      const show = (t: string) => {
+        const v = find(t)?.displayValue ?? "";
+        return v.replace(/, \d+ PTS$/, "") || "—";
+      };
+      return {
+        sortKey: spec.sort(get),
+        row: {
+          id: String(entry.team?.id ?? ""),
+          name: entry.team?.shortDisplayName || entry.team?.displayName || "—",
+          abbrev: (entry.team?.abbreviation ?? "—").toUpperCase(),
+          logo: entry.team?.logos?.[0]?.href ?? null,
+          cells: spec.columns.map((c) => show(c.type)),
+          bar: Math.max(0, Math.min(1, spec.bar(get))),
+          clinch: find("clincher")?.displayValue || null,
+        } satisfies StandRow,
+      };
+    });
+    rows.sort((a, b) => b.sortKey - a.sortKey);
+    return {
+      name: group.name.replace(/^\d{4}(-\d{2})?\s+/, ""),
+      columns: spec.columns.map((c) => c.label),
+      rows: rows.map((r) => r.row),
+    };
+  });
+}
+
 function uniqueGames(games: BoxGame[]): BoxGame[] {
   const seen = new Set<string>();
   return games.filter((g) => {
@@ -717,6 +942,7 @@ function uniqueGames(games: BoxGame[]): BoxGame[] {
 }
 
 const byStart = (a: BoxGame, b: BoxGame) => String(a.startIso ?? "").localeCompare(String(b.startIso ?? ""));
+const byDayThenStart = (a: BoxGame, b: BoxGame) => a.day.localeCompare(b.day) || byStart(a, b);
 
 /**
  * Results and slate for one sport section. Daily leagues read last night,
@@ -727,14 +953,15 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
   const newsDay = editionNewsDay(edition);
   const tomorrow = shiftDay(edition, 1);
   if (path === "baseball/mlb") {
-    const [last, today, next] = await Promise.all([
+    const [last, today, next, after] = await Promise.all([
       fetchMlbBoxDay(newsDay),
       fetchMlbBoxDay(edition),
       fetchMlbBoxDay(tomorrow),
+      fetchMlbBoxDay(shiftDay(edition, 2)),
     ]);
     return {
       results: [...last.filter((g) => g.final), ...today.filter((g) => g.final || g.live)].sort(byStart),
-      slate: uniqueGames([...today.filter((g) => !g.final), ...next]).sort(byStart),
+      slate: uniqueGames([...today.filter((g) => !g.final), ...next, ...after]).sort(byDayThenStart),
     };
   }
   if (path.startsWith("football/")) {
@@ -762,9 +989,17 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
       ...days.map((d) => espnBoard(path, `&dates=${ymd(d)}`)),
     ]);
     const past = uniqueGames(back.flatMap((board, i) => boardGames(path, board, days[i]!)));
+    const first = boardGames(path, ahead, edition).filter((g) => !g.final && !g.live);
+    // The undated board stops at the matchday's first date; read the rest of the round.
+    const firstDay = first.map((g) => g.startIso ?? "").filter(Boolean).sort()[0];
+    const restDays = firstDay
+      ? [1, 2, 3].map((n) => shiftDay(espnDayOf(firstDay, edition), n))
+      : [];
+    const rest = await Promise.all(restDays.map((d) => espnBoard(path, `&dates=${ymd(d)}`)));
+    const round = rest.flatMap((board, i) => boardGames(path, board, restDays[i]!));
     return {
       results: past.filter((g) => g.final || g.live).sort(byStart),
-      slate: uniqueGames(boardGames(path, ahead, edition).filter((g) => !g.final && !g.live)).sort(byStart),
+      slate: uniqueGames([...first, ...round].filter((g) => !g.final && !g.live)).sort(byStart),
     };
   }
   const [last, today, next] = await Promise.all([
