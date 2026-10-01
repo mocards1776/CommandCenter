@@ -9,6 +9,7 @@ import {
   gameClock,
 } from "@/lib/newspaper-box";
 import { cn } from "@/lib/utils";
+import { PersonName } from "./PlayerPop";
 
 function Mark({ src, size = "sm" }: { src: string | null | undefined; size?: "xs" | "sm" | "md" | "lg" }) {
   if (!src) return <span className={cn("tt-mark", size, "empty")} aria-hidden="true" />;
@@ -105,7 +106,7 @@ export function Decisions({ game, faces }: { game: BoxGame; faces?: boolean }) {
         <li key={d.label}>
           {faces ? <Face person={d.person} size="sm" /> : null}
           <span>
-            <b>{d.label}</b> {d.person.name}
+            <b>{d.label}</b> <PersonName path={game.path} id={d.person.id} name={d.person.name} />
             {d.person.line ? <em> ({d.person.line.replace(/ ERA$/, "")})</em> : null}
           </span>
         </li>
@@ -126,7 +127,9 @@ export function Leaders({ game, max = 3 }: { game: BoxGame; max?: number }) {
               {l.label}
               {l.team ? ` · ${l.team}` : ""}
             </em>
-            <b>{l.name}</b>
+            <b>
+              <PersonName path={game.path} id={l.id} name={l.name} />
+            </b>
             <i>{l.line}</i>
           </span>
         </li>
@@ -156,7 +159,7 @@ export function Goals({ game }: { game: BoxGame }) {
   );
 }
 
-function AgateBatting({ side, team }: { side: AgateSide; team: BoxSide }) {
+function AgateBatting({ side, team, path }: { side: AgateSide; team: BoxSide; path: string }) {
   if (!side.batters.length) return null;
   const tot = side.batters.reduce(
     (t, b) => ({ ab: t.ab + b.ab, r: t.r + b.r, h: t.h + b.h, rbi: t.rbi + b.rbi, bb: t.bb + b.bb, so: t.so + b.so }),
@@ -180,7 +183,7 @@ function AgateBatting({ side, team }: { side: AgateSide; team: BoxSide }) {
         {side.batters.map((b) => (
           <tr key={b.id} className={cn(b.sub && "sub")}>
             <td className="n">
-              {b.name} <i>{b.pos.toLowerCase()}</i>
+              <PersonName path={path} id={b.id} name={b.name} /> <i>{b.pos.toLowerCase()}</i>
             </td>
             <td>{b.ab}</td>
             <td>{b.r}</td>
@@ -206,7 +209,7 @@ function AgateBatting({ side, team }: { side: AgateSide; team: BoxSide }) {
   );
 }
 
-function AgatePitching({ side, team }: { side: AgateSide; team: BoxSide }) {
+function AgatePitching({ side, team, path }: { side: AgateSide; team: BoxSide; path: string }) {
   if (!side.pitchers.length) return null;
   return (
     <table className="tt-agate">
@@ -226,7 +229,7 @@ function AgatePitching({ side, team }: { side: AgateSide; team: BoxSide }) {
         {side.pitchers.map((p) => (
           <tr key={p.id}>
             <td className="n">
-              {p.name}
+              <PersonName path={path} id={p.id} name={p.name} />
               {p.note ? <i> {p.note}</i> : null}
             </td>
             <td>{p.ip}</td>
@@ -269,14 +272,14 @@ export function MlbAgate({ game, enabled = true }: { game: BoxGame; enabled?: bo
   return (
     <div className="tt-agate-box">
       <div className="tt-agate-cols">
-        <AgateBatting side={box.away} team={game.away} />
-        <AgateBatting side={box.home} team={game.home} />
+        <AgateBatting side={box.away} team={game.away} path={game.path} />
+        <AgateBatting side={box.home} team={game.home} path={game.path} />
       </div>
       {notes(box.away, game.away)}
       {notes(box.home, game.home)}
       <div className="tt-agate-cols">
-        <AgatePitching side={box.away} team={game.away} />
-        <AgatePitching side={box.home} team={game.home} />
+        <AgatePitching side={box.away} team={game.away} path={game.path} />
+        <AgatePitching side={box.home} team={game.home} path={game.path} />
       </div>
       {box.info.length ? (
         <p className="tt-agate-notes">
@@ -344,7 +347,7 @@ export function ScoreStrip({ games, onOpen }: { games: BoxGame[]; onOpen?: (game
               <span key={i} className={cn("tt-strip-row", s.winner && "won")}>
                 <Mark src={s.logo} size="xs" />
                 <b>{s.abbrev}</b>
-                <i>{s.score ?? ""}</i>
+                <i>{g.final || g.live ? s.score ?? "" : ""}</i>
               </span>
             ))}
           </button>
@@ -386,7 +389,7 @@ export function MatchupCard({ game }: { game: BoxGame }) {
             <div key={i} className="tt-prob">
               <Face person={prob} size="md" />
               <span>
-                <b>{prob?.name ?? "TBD"}</b>
+                <b>{prob ? <PersonName path={game.path} id={prob.id} name={prob.name} /> : "TBD"}</b>
                 <em>{prob?.line ?? ""}</em>
               </span>
             </div>
@@ -432,9 +435,6 @@ export function StandingsTable({
                 <Mark src={row.logo} size="xs" />
                 <b>{row.name}</b>
                 {row.clinch && row.clinch !== "-" ? <sup>{row.clinch}</sup> : null}
-                <span className="bar" aria-hidden="true">
-                  <i style={{ width: `${Math.round(row.bar * 100)}%` }} />
-                </span>
               </div>
             </th>
             {row.cells.map((c, j) => (

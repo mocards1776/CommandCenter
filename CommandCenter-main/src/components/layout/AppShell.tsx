@@ -305,8 +305,17 @@ export default function AppShell() {
     </>
   );
 
+  // The Times opens player pages in a framed pop-up; that frame carries no app chrome.
+  if (searchParams.get("embed") === "1") {
+    return (
+      <main className="bg-ink min-h-screen">
+        <Outlet />
+      </main>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className={cn("flex flex-col", onNewspaper ? "fixed inset-0 overflow-hidden" : "min-h-screen")}>
       <header
         className="bg-ink relative flex min-h-[58px] shrink-0 items-center justify-between overflow-hidden px-4 print:hidden md:min-h-[70px] md:px-8"
         style={{
@@ -473,6 +482,7 @@ export default function AppShell() {
         <main
           className={cn(
             "min-w-0 flex-1 overflow-x-hidden md:pb-0",
+            onNewspaper && "flex min-h-0 flex-col overflow-hidden",
             // Reading/Dispatch/Times solo: no bottom bar. Sports solo + full app: pad for tabs.
             readingOnly || rssOnly || newspaperOnly ? "pb-0" : "pb-[76px] md:pb-0",
           )}
