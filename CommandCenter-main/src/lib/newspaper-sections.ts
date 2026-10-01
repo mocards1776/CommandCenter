@@ -10,7 +10,6 @@
 
 import {
   editionCovers,
-  editionCoversRecent,
   editionCoversResult,
   editionNewsDay,
   favoriteDeskWeight,
@@ -349,15 +348,11 @@ function chunkClubs(clubs: ClubDesk[], size: number): ClubDesk[][] {
   return out;
 }
 
-function inFreshWindow(card: GameWrapCard, edition: string): boolean {
+/** Dateline or the night before it. Last week is a previous paper. */
+function inEditionWindow(card: GameWrapCard, edition: string): boolean {
   return isRecapStory(card)
     ? editionCoversResult(card.when, edition)
     : editionCovers(card.when, edition);
-}
-
-function inSectionWindow(card: GameWrapCard, edition: string): boolean {
-  // Two-day lookback keeps the paper fresh; older previews stay off the desk.
-  return editionCoversRecent(card.when, edition, 2);
 }
 
 /** Collapse near-duplicate wires (same game / same head stem). */
@@ -673,15 +668,10 @@ export function buildEdition(opts: {
 }): Edition {
   const desk = dedupeStories(opts.stories.filter((card) => isDeskStory(card) && !isNewsMuted(card)));
   const fresh = rankStories(
-    desk.filter((card) => inFreshWindow(card, opts.edition)),
+    desk.filter((card) => inEditionWindow(card, opts.edition)),
     opts.edition,
   );
-  const recent = rankStories(
-    desk.filter((card) => inSectionWindow(card, opts.edition)),
-    opts.edition,
-  );
-  // Prefer recent for packing; fall back to fresh if the lookback is empty.
-  const sectionCopy = recent.length ? recent : fresh;
+  const sectionCopy = fresh;
 
   const paths = new Set<string>();
   for (const club of opts.clubs) if (club.leaguePath) paths.add(club.leaguePath);
@@ -722,26 +712,7 @@ export function buildEdition(opts: {
   for (const part of sportPagesBuilt) Object.assign(sportFolioByStory, part.built.sportFolioByStory);
 
   const favoriteFresh = fresh.filter(isFavoriteStory);
-  const favoriteRecent = sectionCopy.filter(isFavoriteStory);
-  // A followed club that went quiet (off day, season just ended) still gets its latest story.
-  const covered = new Set(favoriteRecent.map((c) => c.favoriteKey));
-  const lastWord = rankStories(
-    desk.filter(
-      (c) =>
-        isFavoriteStory(c) &&
-        c.favoriteKey &&
-        !covered.has(c.favoriteKey) &&
-        !isStalePreview(c, opts.edition) &&
-        editionCoversRecent(c.when, opts.edition, 7),
-    ),
-    opts.edition,
-  ).filter((c) => {
-    if (covered.has(c.favoriteKey)) return false;
-    covered.add(c.favoriteKey);
-    return true;
-  });
-  favoriteRecent.push(...lastWord);
-  const favorites = favoritePages(favoriteFresh, favoriteRecent, opts.clubs);
+  const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs);
 
   const pages: EditionPage[] = [...favorites.pages];
   const sections: EditionSection[] = [
@@ -750,7 +721,7 @@ export function buildEdition(opts: {
       title: "Favorite Teams",
       folio: "A1",
       index: 0,
-      stories: favoriteRecent.length,
+      stories: favoriteFresh.length,
       upcoming: opts.clubs.reduce((n, club) => n + Math.min(1, club.upcoming.length), 0),
       pages: favorites.pages.length,
     },

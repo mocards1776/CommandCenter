@@ -6,7 +6,7 @@
  * odds roundup that merely lists every team is not a story about your club.
  */
 
-import { editionCovers, editionCoversRecent, editionCoversResult, isResultCopy } from "./newspaper";
+import { editionCovers, editionCoversResult, isResultCopy } from "./newspaper";
 import {
   clubMentionNames,
   favoriteTeamHref,
@@ -92,11 +92,6 @@ function articleInEdition(article: NewsArticle, edition: string): boolean {
     : editionCovers(article.published, edition);
 }
 
-/** Short lookback so section pages stay fresh. */
-function articleInSection(article: NewsArticle, edition: string): boolean {
-  return editionCoversRecent(article.published, edition, 2);
-}
-
 /** AP copy leads with a bare em dash when the dateline is stripped, and ends on a link plug. */
 function wireCopy(text: string): string {
   return text
@@ -171,8 +166,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 }
 
 /**
- * Club articles for the Times. Prefer edition-day copy, then reach back a few
- * days so section insides and recap pages stay full.
+ * Club articles for this edition only: the dateline and the night before it.
  */
 export async function fetchTeamArticles(
   favs: SportsFavorite[],
@@ -192,12 +186,7 @@ export async function fetchTeamArticles(
           articles?: NewsArticle[];
         };
         const about = (data.articles ?? []).filter((article) => mentionsClub(fav, article));
-        const fresh = about.filter((article) => articleInSection(article, edition));
-        // A club between games (or just out of season) still gets its latest pieces.
-        const pool = fresh.length
-          ? fresh
-          : about.filter((article) => editionCoversRecent(article.published, edition, 7)).slice(0, 3);
-        const mine = pool
+        const mine = about.filter((article) => articleInEdition(article, edition))
           .sort((a, b) => favoriteArticleScore(fav, b) - favoriteArticleScore(fav, a))
           .slice(0, 6);
         for (const article of mine) {
@@ -268,8 +257,7 @@ function toLeagueCard(path: string, article: NewsArticle, body: string): GameWra
 }
 
 /**
- * League wire for each sport section — fills NFL1/MLB1/etc. even when your
- * clubs are quiet. Uses a multi-day window so recap pages stay stocked.
+ * League wire for each sport section. Same window as the front: this edition only.
  */
 export async function fetchLeagueArticles(
   paths: string[],
@@ -283,13 +271,7 @@ export async function fetchLeagueArticles(
       try {
         const data = (await espnGet(`${path}/news?limit=50`)) as { articles?: NewsArticle[] };
         const pool = data.articles ?? [];
-        // Prefer true edition-day copy, then fill from the recent window.
-        const ranked = [
-          ...pool.filter((article) => articleInEdition(article, edition)),
-          ...pool.filter(
-            (article) => !articleInEdition(article, edition) && articleInSection(article, edition),
-          ),
-        ].slice(0, 24);
+        const ranked = pool.filter((article) => articleInEdition(article, edition)).slice(0, 24);
         for (const article of ranked) {
           const id = String(article.id ?? "");
           if (!id || seen.has(id)) continue;

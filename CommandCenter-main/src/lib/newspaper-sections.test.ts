@@ -465,8 +465,9 @@ const quietClub = buildEdition({
 const quietFront = quietClub.pages[0];
 assert(
   quietFront?.kind === "favorites-front" &&
-    [quietFront.lead, quietFront.second, quietFront.third].some((c) => c?.id === "news-cards-finale"),
-  "a club whose season just ended still makes the Section A front",
+    ![quietFront.lead, quietFront.second, quietFront.third].some((c) => c?.id === "news-cards-finale") &&
+    !JSON.stringify(quietClub.pages).includes("news-cards-finale"),
+  "last week's finale stays out of this edition",
 );
 
 const moItem = (i: number) => ({
