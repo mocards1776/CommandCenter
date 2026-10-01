@@ -13,6 +13,7 @@ import {
 import {
   buildEdition,
   isDeskStory,
+  isPreviewStory,
   MIN_SECTION_PAGES,
   type ClubDesk,
 } from "./newspaper-sections.ts";
@@ -514,5 +515,28 @@ const offTurn = offDesks[0]?.kind === "sport-front" ? offDesks[0].turn : null;
 assert(offTurn?.folio === "NFL2" && offTurn.focus === "opener", "the front turns to the countdown");
 const offLast = offDesks[2]?.kind === "sport-front" ? offDesks[2].turn : undefined;
 assert(offLast === null, "the last desk has no turn line");
+
+const bluesPreview = card({
+  id: "news-blues-preview",
+  favoriteKey: "nhl-stl",
+  headline: "Stars host the Blues to start 2026 season",
+  body: "St. Louis Blues (0-0-0) at Dallas Stars (0-0-0). BOTTOM LINE: The Stars open the season at home. ".repeat(6),
+  when: "2026-09-29T12:00:00Z",
+});
+const cardsColumn = card({
+  id: "news-cards-column",
+  favoriteKey: "mlb-stl",
+  headline: "Hochman: Gorman, Baez and Bohm and the Cardinals' infield",
+  body: "The Cardinals have choices to make at third base this winter. ".repeat(12),
+  when: "2026-09-29T12:00:00Z",
+});
+assert(isPreviewStory(bluesPreview) && !isPreviewStory(cardsColumn), "a wire preview is a preview; a column is not");
+const previewFront = buildEdition({ stories: [bluesPreview, cardsColumn], clubs: [], edition }).pages.find(
+  (p) => p.folio === "A1",
+);
+assert(
+  previewFront?.kind === "favorites-front" && previewFront.lead?.id === "news-cards-column",
+  "a preview of tomorrow's game never leads the front",
+);
 
 console.log("newspaper-sections ok");

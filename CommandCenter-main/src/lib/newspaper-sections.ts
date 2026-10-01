@@ -25,7 +25,7 @@ import type { MissouriDesk, MoItem } from "./newspaper-missouri";
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
 const LEAD_TEASER = 1050;
 const SECOND_TEASER = 720;
-const THIRD_TEASER = 420;
+const THIRD_TEASER = 700;
 
 const KNOWN: Record<string, { code: string; title: string; order: number }> = {
   "baseball/mlb": { code: "MLB", title: "Major League Baseball", order: 10 },
@@ -119,7 +119,7 @@ export type DeskRow = {
   teamId?: string | null;
 };
 
-export type DeskStat = { label: string; value: string };
+export type DeskStat = { label: string; value: string; rank?: string | null; rankIn?: string | null };
 
 export type DeskLeader = { name: string; line: string; href: string | null };
 
@@ -250,10 +250,22 @@ export function isRecapStory(card: GameWrapCard): boolean {
   });
 }
 
+/** A look-ahead at a game not yet played (wire previews, "X host Y to open the season"). */
+export function isPreviewStory(card: GameWrapCard): boolean {
+  if (card.status && /\b(scheduled|pre-?game|preview)\b/i.test(card.status)) return true;
+  if (card.wrapHref && /\/preview\b/i.test(card.wrapHref)) return true;
+  const body = card.body ?? "";
+  if (/\bBOTTOM LINE:|\bLINE:\s|Data Skrive/.test(body)) return true;
+  const head = `${card.headline} ${card.dek ?? ""}`;
+  return /\b(hosts?|visits?|face|take on|meet)\b.*\bto (start|open|begin|kick off)\b/i.test(head)
+    || /\b(preview|what to watch|how to watch|keys to the game|prediction)\b/i.test(card.headline);
+}
+
 /** Last night's result outranks a feature; home clubs outrank the rest. */
 function storyRank(card: GameWrapCard, edition: string): number {
   const day = card.when ? instantDay(card.when) : null;
   let score = 0;
+  if (isPreviewStory(card)) score -= 150;
   if (day === editionNewsDay(edition) && card.status && /final/i.test(card.status)) score += 100;
   if (card.postseason) score += 40;
   if (card.id.startsWith("news-")) score += 25;
@@ -394,11 +406,13 @@ function favoritePages(
   const frontPool = [...freshStories, ...sectionStories.filter((c) => !freshIds.has(c.id))];
   const picks: GameWrapCard[] = [];
   const clubOf = (c: GameWrapCard) => c.favoriteKey ?? c.teamName ?? c.id;
-  for (const card of frontPool) {
+  // A video stub or one-line note leaves a column of bare photo on the front.
+  const written = frontPool.filter((c) => hasStoryCopy(c) && !isPreviewStory(c));
+  for (const card of written) {
     if (picks.length >= 3) break;
     if (!picks.some((f) => clubOf(f) === clubOf(card))) picks.push(card);
   }
-  for (const card of frontPool) {
+  for (const card of [...written, ...frontPool]) {
     if (picks.length >= 3) break;
     if (!picks.includes(card)) picks.push(card);
   }
