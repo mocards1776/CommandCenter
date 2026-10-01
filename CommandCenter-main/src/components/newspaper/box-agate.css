@@ -1,0 +1,333 @@
+/*
+ * Box-score rules for the linescore and the agate.
+ *
+ * Every row is one fixed height with one hairline, so two clubs' tables set
+ * side by side rule up line for line; the head and the totals each get a
+ * single ink rule. Tables use the separated border model so no two borders
+ * ever collapse into a doubled or half-width line. Selectors carry the
+ * element name to outrank the base rules in index.css.
+ */
+
+/* ── Linescore ─────────────────────────────────────────────────────── */
+table.tt-line {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+table.tt-line th,
+table.tt-line td {
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-bottom: 1px solid var(--w-hair);
+  vertical-align: middle;
+  line-height: 1;
+}
+table.tt-line thead th {
+  height: 24px;
+  padding-bottom: 5px;
+  vertical-align: bottom;
+  border-bottom: 1px solid var(--w-rule);
+}
+table.tt-line tbody tr:last-child > * {
+  border-bottom: 0;
+}
+table.tt-line th.team {
+  display: table-cell;
+  padding-left: 0;
+}
+.tt-line-team {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+table.tt-line .per {
+  width: 2.3em;
+}
+table.tt-line .tot {
+  width: 2.6em;
+  border-left: 1px solid var(--w-rule);
+}
+table.tt-line .rhe {
+  width: 2.3em;
+}
+table.tt-line td.rhe {
+  font-weight: 500;
+}
+table.tt-line tr > :last-child {
+  padding-right: 0;
+}
+table.tt-line.compact th,
+table.tt-line.compact td {
+  height: 25px;
+  padding: 0 3px;
+}
+table.tt-line.compact thead th {
+  height: 20px;
+  padding-bottom: 4px;
+}
+table.tt-line.compact th.team {
+  padding-left: 0;
+}
+table.tt-line.compact .per,
+table.tt-line.compact .rhe {
+  width: 1.75em;
+}
+table.tt-line.compact .tot {
+  width: 2em;
+}
+
+/* ── Agate ─────────────────────────────────────────────────────────── */
+div.tt-agate-box {
+  gap: 14px;
+  padding-top: 10px;
+}
+div.tt-agate-cols {
+  gap: 14px 22px;
+}
+.tt-agate-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tt-agate-stack {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tt-agate-kicker {
+  margin: 0;
+  font-family: var(--w-label);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tt-agate-wrap {
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+table.tt-agate {
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-bottom: 1px solid var(--w-hair);
+  font-family: var(--w-label);
+  font-size: 11px;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+table.tt-agate th,
+table.tt-agate td {
+  box-sizing: border-box;
+  height: 21px;
+  padding: 0 0 0 4px;
+  border: 0;
+  border-top: 1px solid var(--w-hair);
+  vertical-align: middle;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+table.tt-agate thead th {
+  height: 23px;
+  padding-bottom: 3px;
+  vertical-align: bottom;
+  border-top: 0;
+  border-bottom: 1px solid var(--w-rule);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--w-ink);
+}
+table.tt-agate thead + tbody > tr:first-child > * {
+  border-top: 0;
+}
+table.tt-agate .n {
+  width: auto;
+  max-width: none;
+  padding-left: 0;
+  text-align: left;
+}
+table.tt-agate thead .n {
+  font-family: var(--w-cond);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 15px;
+  letter-spacing: 0.05em;
+}
+table.tt-agate tr.sub .n {
+  padding-left: 11px;
+}
+table.tt-agate i {
+  font-style: normal;
+  color: var(--w-muted);
+}
+table.tt-agate i.lead {
+  display: inline-block;
+  min-width: 1.4em;
+  color: var(--w-ink);
+  font-weight: 700;
+}
+table.tt-agate tfoot td,
+table.tt-agate tr.tot td {
+  border-top: 1px solid var(--w-rule);
+  font-weight: 800;
+}
+table.tt-agate.stats tr.sub .n {
+  color: var(--w-ink-soft);
+}
+
+/* Scoring summary: the play runs on as many lines as it needs. */
+table.tt-agate-plays col.c-team {
+  width: 3.6em;
+}
+table.tt-agate-plays col.c-clock {
+  width: 3.9em;
+}
+table.tt-agate-plays col.c-tag {
+  width: 3em;
+}
+table.tt-agate-plays col.c-score {
+  width: 5.2em;
+}
+table.tt-agate-plays td {
+  height: auto;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  vertical-align: baseline;
+}
+table.tt-agate-plays td.play {
+  padding-left: 8px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+table.tt-agate-plays thead th.n + th + th.n {
+  padding-left: 8px;
+}
+table.tt-agate-plays td.team {
+  font-family: var(--w-cond);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+table.tt-agate-plays td.score {
+  font-weight: 800;
+}
+table.tt-agate-plays td.tag {
+  text-align: center;
+  padding-left: 0;
+}
+table.tt-agate-plays td.tag span {
+  display: inline-block;
+  padding: 0 3px;
+  border: 1px solid var(--w-ink-soft);
+  border-radius: 2px;
+  font-size: 8.5px;
+  font-weight: 800;
+  line-height: 12px;
+  letter-spacing: 0.04em;
+}
+table.tt-agate-plays tr.per th {
+  height: 21px;
+  padding: 0;
+  text-align: left;
+  vertical-align: middle;
+  border-top: 1px solid var(--w-rule);
+  background: var(--w-paper-2);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-ink-soft);
+  text-indent: 4px;
+}
+table.tt-agate-plays thead + tbody > tr.per:first-child > th {
+  border-top: 0;
+}
+table.tt-agate-plays tr.per + tr > * {
+  border-top: 0;
+}
+
+/* ── Key team numbers in the reader's top box ──────────────────────── */
+.tt-keystats {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--w-hair);
+  border-bottom: 1px solid var(--w-hair);
+  font-family: var(--w-label);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.tt-keystats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 14px 6px 0;
+  margin-right: 14px;
+  border-right: 1px solid var(--w-hair);
+}
+.tt-keystats > div:last-child {
+  margin-right: 0;
+  border-right: 0;
+}
+.tt-keystats dt {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  min-height: 11px;
+}
+.tt-keystats dd {
+  margin: 0;
+  font-family: var(--w-cond);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--w-ink);
+  white-space: nowrap;
+}
+.tt-keystats dd span {
+  padding: 0 3px;
+  color: var(--w-muted);
+  font-weight: 400;
+}
+.tt-keystats > div.head dd {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--w-ink-soft);
+  line-height: 18px;
+}
+@media (max-width: 560px) {
+  .tt-keystats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 14px;
+  }
+  .tt-keystats > div {
+    margin-right: 0;
+    padding-right: 0;
+    border-right: 0;
+  }
+  .tt-keystats > div:nth-child(n + 4) {
+    border-top: 1px solid var(--w-hair);
+  }
+  .tt-keystats > div.head {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    padding-bottom: 0;
+  }
+  .tt-keystats > div.head dt {
+    display: none;
+  }
+}

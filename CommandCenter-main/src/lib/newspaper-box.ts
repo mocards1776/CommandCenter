@@ -480,7 +480,7 @@ export async function fetchMlbAgate(gamePk: number | string): Promise<MlbAgate |
 
 /* ───────────────────────── ESPN ───────────────────────── */
 
-type EspnAthlete = { id?: string; shortName?: string; displayName?: string; headshot?: string | { href?: string } };
+export type EspnAthlete = { id?: string; shortName?: string; displayName?: string; headshot?: string | { href?: string } };
 
 type EspnLeaderGroup = {
   shortDisplayName?: string;
@@ -540,13 +540,13 @@ type EspnBoardRaw = {
   season?: { type?: number };
 };
 
-function headshotOf(a: EspnAthlete | undefined): string | null {
+export function headshotOf(a: EspnAthlete | undefined): string | null {
   const h = a?.headshot;
   if (!h) return null;
   return typeof h === "string" ? h : h.href ?? null;
 }
 
-function leagueCode(path: string): string {
+export function leagueCode(path: string): string {
   const slug = path.split("/").pop() ?? "";
   return (
     {
@@ -555,11 +555,12 @@ function leagueCode(path: string): string {
       nhl: "NHL",
       "college-football": "CFB",
       "mens-college-basketball": "CBB",
+      nba: "NBA",
     } as Record<string, string>
   )[slug] ?? slug.toUpperCase();
 }
 
-function espnGameHref(path: string, id: string): string | null {
+export function espnGameHref(path: string, id: string): string | null {
   if (path === "football/nfl") return `/sports/nfl/game/${id}`;
   if (path === "hockey/nhl") return `/sports/nhl/game/${id}`;
   if (path === "football/college-football") return `/sports/cfb/game/${id}`;
@@ -567,8 +568,8 @@ function espnGameHref(path: string, id: string): string | null {
   return null;
 }
 
-function periodLabels(path: string, count: number): string[] {
-  const base = path.startsWith("soccer/") ? ["1H", "2H"] : path.startsWith("hockey/") ? ["1", "2", "3"] : path.startsWith("basketball/") ? ["1H", "2H"] : ["1", "2", "3", "4"];
+export function periodLabels(path: string, count: number): string[] {
+  const base = path.startsWith("soccer/") ? ["1H", "2H"] : path.startsWith("hockey/") ? ["1", "2", "3"] : path === "basketball/mens-college-basketball" ? ["1H", "2H"] : ["1", "2", "3", "4"];
   const out = [...base];
   while (out.length < count) {
     const extra = out.length - base.length + 1;
@@ -697,14 +698,29 @@ function boardGames(path: string, board: EspnBoardRaw | null, fallbackDay: strin
     .filter((g): g is BoxGame => g != null);
 }
 
+const summaries = new Map<string, { at: number; data: Promise<unknown> }>();
+
+/**
+ * ESPN's per-game summary (story, box score, scoring plays). The reader asks
+ * for the story and the box at once, so one request serves both for a minute.
+ */
+export function fetchEspnSummary<T = unknown>(path: string, eventId: string): Promise<T | null> {
+  const url = `${ESPN_SITE}/${path}/summary?event=${eventId}`;
+  const hit = summaries.get(url);
+  if (hit && Date.now() - hit.at < 60_000) return hit.data as Promise<T | null>;
+  const data = getJson<T>(url);
+  summaries.set(url, { at: Date.now(), data });
+  return data;
+}
+
 /** Full ESPN game story for a recap headline, when the board only sent the blurb. */
 export async function fetchEspnRecapStory(
   path: string,
   eventId: string,
 ): Promise<{ html: string; photo: string | null; byline: string | null } | null> {
-  const data = await getJson<{
+  const data = await fetchEspnSummary<{
     article?: { story?: string; images?: { url?: string }[]; byline?: string };
-  }>(`${ESPN_SITE}/${path}/summary?event=${eventId}`);
+  }>(path, eventId);
   const story = data?.article?.story;
   if (!story || story.length < 200) return null;
   return {
@@ -721,6 +737,14 @@ function faceOff(iso: string | null): string {
   return d
     .toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })
     .replace(":00 ", " ");
+}
+
+/** "Sat, Oct 3" for a game that hasn't started; empty once it has. */
+export function gameDay(game: BoxGame): string {
+  if (game.final || game.live || !game.startIso) return "";
+  const d = new Date(game.startIso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
 export function gameClock(game: BoxGame): string {

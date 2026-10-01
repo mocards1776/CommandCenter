@@ -1,15 +1,30 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchMlbAgate,
-  type AgateSide,
   type BoxGame,
   type BoxPerson,
   type BoxSide,
   type StandGroup,
   gameClock,
+  gameDay,
 } from "@/lib/newspaper-box";
+import {
+  agateMinWidth,
+  agateWidths,
+  keyStats,
+  mlbBattingTable,
+  mlbPitchingTable,
+  statSplit,
+  type AgatePair,
+  type AgateTable,
+  type EspnBox,
+  type NamePiece,
+  type ScoringPeriod,
+  type StarPick,
+} from "@/lib/newspaper-agate";
 import { cn } from "@/lib/utils";
 import { PersonName } from "./PlayerPop";
+import "./box-agate.css";
 
 function Mark({ src, size = "sm" }: { src: string | null | undefined; size?: "xs" | "sm" | "md" | "lg" }) {
   if (!src) return <span className={cn("tt-mark", size, "empty")} aria-hidden="true" />;
@@ -58,7 +73,7 @@ export function Linescore({ game, compact }: { game: BoxGame; compact?: boolean 
             <span className="sr-only">Team</span>
           </th>
           {periods.map((p) => (
-            <th key={p} scope="col">
+            <th key={p} scope="col" className="per">
               {p}
             </th>
           ))}
@@ -67,8 +82,12 @@ export function Linescore({ game, compact }: { game: BoxGame; compact?: boolean 
           </th>
           {isMlb && played ? (
             <>
-              <th scope="col">H</th>
-              <th scope="col">E</th>
+              <th scope="col" className="rhe">
+                H
+              </th>
+              <th scope="col" className="rhe">
+                E
+              </th>
             </>
           ) : null}
         </tr>
@@ -77,18 +96,22 @@ export function Linescore({ game, compact }: { game: BoxGame; compact?: boolean 
         {sides.map((side, i) => (
           <tr key={i} className={cn(side.winner && "won")}>
             <th scope="row" className="team">
-              <Mark src={side.logo} size="xs" />
-              <b>{compact ? side.abbrev : side.short}</b>
-              {side.record ? <em>{side.record}</em> : null}
+              <span className="tt-line-team">
+                <Mark src={side.logo} size="xs" />
+                <b>{compact ? side.abbrev : side.short}</b>
+                {side.record ? <em>{side.record}</em> : null}
+              </span>
             </th>
             {periods.map((p, j) => (
-              <td key={p}>{side.lines[j] ?? (played ? "–" : "")}</td>
+              <td key={p} className="per">
+                {side.lines[j] ?? (played ? "–" : "")}
+              </td>
             ))}
             <td className="tot">{side.score ?? "–"}</td>
             {isMlb && played ? (
               <>
-                <td>{side.hits ?? "–"}</td>
-                <td>{side.errors ?? "–"}</td>
+                <td className="rhe">{side.hits ?? "–"}</td>
+                <td className="rhe">{side.errors ?? "–"}</td>
               </>
             ) : null}
           </tr>
@@ -159,90 +182,103 @@ export function Goals({ game }: { game: BoxGame }) {
   );
 }
 
-function AgateBatting({ side, team, path }: { side: AgateSide; team: BoxSide; path: string }) {
-  if (!side.batters.length) return null;
-  const tot = side.batters.reduce(
-    (t, b) => ({ ab: t.ab + b.ab, r: t.r + b.r, h: t.h + b.h, rbi: t.rbi + b.rbi, bb: t.bb + b.bb, so: t.so + b.so }),
-    { ab: 0, r: 0, h: 0, rbi: 0, bb: 0, so: 0 },
-  );
+function AgateGrid({
+  table,
+  widths,
+  path,
+  className,
+}: {
+  table: AgateTable;
+  widths: string[];
+  path: string;
+  className?: string;
+}) {
   return (
-    <table className="tt-agate">
-      <thead>
-        <tr>
-          <th className="n">{team.short}</th>
-          <th>AB</th>
-          <th>R</th>
-          <th>H</th>
-          <th>BI</th>
-          <th>BB</th>
-          <th>SO</th>
-          <th>Avg</th>
-        </tr>
-      </thead>
-      <tbody>
-        {side.batters.map((b) => (
-          <tr key={b.id} className={cn(b.sub && "sub")}>
-            <td className="n">
-              <PersonName path={path} id={b.id} name={b.name} /> <i>{b.pos.toLowerCase()}</i>
-            </td>
-            <td>{b.ab}</td>
-            <td>{b.r}</td>
-            <td>{b.h}</td>
-            <td>{b.rbi}</td>
-            <td>{b.bb}</td>
-            <td>{b.so}</td>
-            <td>{b.avg ?? ""}</td>
+    <div className="tt-agate-wrap">
+      <table className={cn("tt-agate", className)} style={{ minWidth: agateMinWidth(widths) }}>
+        <colgroup>
+          <col />
+          {widths.map((w, i) => (
+            <col key={i} style={{ width: w }} />
+          ))}
+        </colgroup>
+        <thead>
+          <tr>
+            <th className="n" scope="col">
+              {table.title}
+            </th>
+            {table.columns.map((c, i) => (
+              <th key={i} scope="col">
+                {c}
+              </th>
+            ))}
           </tr>
-        ))}
-        <tr className="tot">
-          <td className="n">Totals</td>
-          <td>{tot.ab}</td>
-          <td>{tot.r}</td>
-          <td>{tot.h}</td>
-          <td>{tot.rbi}</td>
-          <td>{tot.bb}</td>
-          <td>{tot.so}</td>
-          <td />
-        </tr>
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {table.rows.map((r, i) => (
+            <tr key={`${r.id ?? r.name}-${i}`} className={cn(r.sub && "sub")}>
+              <td className="n">
+                {r.lead ? <i className="lead">{r.lead}</i> : null}
+                <PersonName path={path} id={r.id} name={r.name} />
+                {r.note ? <i> {r.note}</i> : null}
+              </td>
+              {r.cells.map((c, j) => (
+                <td key={j}>{c}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+        {table.totals ? (
+          <tfoot>
+            <tr className="tot">
+              <td className="n">Totals</td>
+              {table.totals.map((c, j) => (
+                <td key={j}>{c}</td>
+              ))}
+            </tr>
+          </tfoot>
+        ) : null}
+      </table>
+    </div>
   );
 }
 
-function AgatePitching({ side, team, path }: { side: AgateSide; team: BoxSide; path: string }) {
-  if (!side.pitchers.length) return null;
+/** Two clubs' tables of one kind, side by side on shared column widths. */
+function AgateTwin({
+  away,
+  home,
+  path,
+  label,
+}: {
+  away: AgateTable | null;
+  home: AgateTable | null;
+  path: string;
+  label?: string | null;
+}) {
+  if (!away && !home) return null;
+  const widths = agateWidths([away, home]);
   return (
-    <table className="tt-agate">
-      <thead>
-        <tr>
-          <th className="n">{team.short}</th>
-          <th>IP</th>
-          <th>H</th>
-          <th>R</th>
-          <th>ER</th>
-          <th>BB</th>
-          <th>SO</th>
-          <th>ERA</th>
-        </tr>
-      </thead>
-      <tbody>
-        {side.pitchers.map((p) => (
-          <tr key={p.id}>
-            <td className="n">
-              <PersonName path={path} id={p.id} name={p.name} />
-              {p.note ? <i> {p.note}</i> : null}
-            </td>
-            <td>{p.ip}</td>
-            <td>{p.h}</td>
-            <td>{p.r}</td>
-            <td>{p.er}</td>
-            <td>{p.bb}</td>
-            <td>{p.so}</td>
-            <td>{p.era ?? ""}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="tt-agate-group">
+      {label ? <h4 className="tt-agate-kicker">{label}</h4> : null}
+      <div className="tt-agate-cols">
+        {away ? <AgateGrid table={away} widths={widths} path={path} /> : <div aria-hidden="true" />}
+        {home ? <AgateGrid table={home} widths={widths} path={path} /> : <div aria-hidden="true" />}
+      </div>
+    </div>
+  );
+}
+
+function AgateNotes({ notes, team }: { notes: { label: string; value: string }[]; team?: string }) {
+  if (!notes.length) return null;
+  return (
+    <p className="tt-agate-notes">
+      {team ? <b>{team} </b> : null}
+      {notes.map((n) => (
+        <span key={n.label}>
+          <i>{n.label}</i> {n.value}.{" "}
+        </span>
+      ))}
+    </p>
   );
 }
 
@@ -258,38 +294,210 @@ export function MlbAgate({ game, enabled = true }: { game: BoxGame; enabled?: bo
   if (!box) {
     return q.isLoading && enabled ? <p className="tt-agate-wait">Setting the box…</p> : null;
   }
-  const notes = (side: AgateSide, team: BoxSide) =>
-    side.notes.length ? (
-      <p className="tt-agate-notes">
-        <b>{team.abbrev}</b>{" "}
-        {side.notes.map((n) => (
-          <span key={n.label}>
-            <i>{n.label}</i> {n.value}.{" "}
-          </span>
-        ))}
-      </p>
-    ) : null;
   return (
     <div className="tt-agate-box">
-      <div className="tt-agate-cols">
-        <AgateBatting side={box.away} team={game.away} path={game.path} />
-        <AgateBatting side={box.home} team={game.home} path={game.path} />
-      </div>
-      {notes(box.away, game.away)}
-      {notes(box.home, game.home)}
-      <div className="tt-agate-cols">
-        <AgatePitching side={box.away} team={game.away} path={game.path} />
-        <AgatePitching side={box.home} team={game.home} path={game.path} />
-      </div>
-      {box.info.length ? (
-        <p className="tt-agate-notes">
-          {box.info.map((n) => (
-            <span key={n.label}>
-              <i>{n.label}</i> {n.value}.{" "}
-            </span>
+      <AgateTwin
+        away={mlbBattingTable(box.away, game.away)}
+        home={mlbBattingTable(box.home, game.home)}
+        path={game.path}
+      />
+      <AgateNotes notes={box.away.notes} team={game.away.abbrev} />
+      <AgateNotes notes={box.home.notes} team={game.home.abbrev} />
+      <AgateTwin
+        away={mlbPitchingTable(box.away, game.away)}
+        home={mlbPitchingTable(box.home, game.home)}
+        path={game.path}
+      />
+      <AgateNotes notes={box.info} />
+    </div>
+  );
+}
+
+function Pieces({ pieces, path }: { pieces: NamePiece[]; path: string }) {
+  return (
+    <>
+      {pieces.map((p, i) =>
+        typeof p === "string" ? p : <PersonName key={i} path={path} id={p.id} name={p.name} />,
+      )}
+    </>
+  );
+}
+
+function ScoringTable({ periods, game, path }: { periods: ScoringPeriod[]; game: BoxGame; path: string }) {
+  if (!periods.length) return null;
+  return (
+    <div className="tt-agate-group">
+      <h4 className="tt-agate-kicker">Scoring</h4>
+      <div className="tt-agate-wrap">
+        <table className="tt-agate tt-agate-plays">
+          <colgroup>
+            <col className="c-team" />
+            <col className="c-clock" />
+            <col />
+            <col className="c-tag" />
+            <col className="c-score" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="n" scope="col">
+                Team
+              </th>
+              <th scope="col">Time</th>
+              <th className="n" scope="col">
+                Play
+              </th>
+              <th scope="col">
+                <span className="sr-only">Type</span>
+              </th>
+              <th scope="col">
+                {game.away.abbrev}-{game.home.abbrev}
+              </th>
+            </tr>
+          </thead>
+          {periods.map((period) => (
+            <tbody key={period.label}>
+              <tr className="per">
+                <th colSpan={5} scope="rowgroup">
+                  {period.label}
+                </th>
+              </tr>
+              {period.plays.map((play, i) => (
+                <tr key={i}>
+                  <td className="n team">{play.team}</td>
+                  <td>{play.clock}</td>
+                  <td className="n play">
+                    <Pieces pieces={play.lead} path={path} />
+                    {play.detail.length ? (
+                      <i>
+                        {" "}
+                        <Pieces pieces={play.detail} path={path} />
+                      </i>
+                    ) : null}
+                  </td>
+                  <td className="tag">{play.tag ? <span>{play.tag}</span> : null}</td>
+                  <td className="score">{play.score}</td>
+                </tr>
+              ))}
+            </tbody>
           ))}
-        </p>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+const STAR_LABEL = ["First star", "Second star", "Third star"];
+
+/** The three stars, set like the leaders strip at the top of the reader's box. */
+export function Stars({ stars, path }: { stars: StarPick[]; path: string }) {
+  if (!stars.length) return null;
+  return (
+    <ul className="tt-leaders">
+      {stars.map((s) => (
+        <li key={s.rank}>
+          <Face person={s.person} size="sm" />
+          <span>
+            <em>
+              {STAR_LABEL[s.rank - 1]}
+              {s.team ? ` · ${s.team}` : ""}
+            </em>
+            <b>
+              <PersonName path={path} id={s.person.id} name={s.person.name} />
+            </b>
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** A line of team numbers under the linescore: yards and turnovers, shots and power plays. */
+export function KeyStats({ box }: { box: EspnBox }) {
+  const rows = keyStats(box);
+  if (!rows.length) return null;
+  return (
+    <dl className="tt-keystats">
+      <div className="head">
+        <dt>
+          <span className="sr-only">Team stats</span>
+        </dt>
+        <dd>
+          {box.game.away.abbrev}
+          <span aria-hidden="true">–</span>
+          {box.game.home.abbrev}
+        </dd>
+      </div>
+      {rows.map((r) => (
+        <div key={r.label}>
+          <dt>{r.label}</dt>
+          <dd>
+            {r.away}
+            <span aria-hidden="true">–</span>
+            {r.home}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** NFL and NHL box: scoring by period, team stats, and every club's agate. */
+export function EspnAgate({ box, path }: { box: EspnBox; path: string }) {
+  const { game } = box;
+  const stat = (rows: EspnBox["teamStats"], title: string): AgateTable => ({
+    title,
+    columns: [game.away.abbrev, game.home.abbrev],
+    rows: rows.map((r) => ({ id: null, name: r.label, sub: r.sub, cells: [r.away, r.home] })),
+    totals: null,
+  });
+  const hockey = path.startsWith("hockey/");
+  const half = hockey ? box.teamStats.length : statSplit(box.teamStats);
+  const statsA = box.teamStats.length ? stat(box.teamStats.slice(0, half), "Team stats") : null;
+  const statsB = box.teamStats.length > half ? stat(box.teamStats.slice(half), "") : null;
+  const shots: AgateTable | null = box.shots
+    ? {
+        title: "Shots on goal",
+        columns: [...box.shots.periods, "T"],
+        rows: [
+          { id: null, name: game.away.short, cells: [...box.shots.away.map((v) => (v == null ? "–" : String(v))), box.shots.awayTotal] },
+          { id: null, name: game.home.short, cells: [...box.shots.home.map((v) => (v == null ? "–" : String(v))), box.shots.homeTotal] },
+        ],
+        totals: null,
+      }
+    : null;
+  const stars: AgateTable | null = box.stars.length
+    ? {
+        title: "Three stars",
+        columns: ["Team"],
+        rows: box.stars.map((s) => ({ id: s.person.id, name: s.person.name, lead: `${s.rank}.`, cells: [s.team ?? ""] })),
+        totals: null,
+      }
+    : null;
+  return (
+    <div className="tt-agate-box">
+      <ScoringTable periods={box.scoring} game={game} path={path} />
+      {hockey ? (
+        <div className="tt-agate-cols">
+          <div className="tt-agate-stack">
+            {shots ? <AgateGrid table={shots} widths={agateWidths([shots])} path={path} className="shots" /> : null}
+            {stars ? <AgateGrid table={stars} widths={agateWidths([stars])} path={path} /> : null}
+          </div>
+          {statsA ? <AgateGrid table={statsA} widths={agateWidths([statsA])} path={path} className="stats" /> : <div />}
+        </div>
+      ) : statsA ? (
+        <div className="tt-agate-cols">
+          <AgateGrid table={statsA} widths={agateWidths([statsA, statsB])} path={path} className="stats" />
+          {statsB ? (
+            <AgateGrid table={statsB} widths={agateWidths([statsA, statsB])} path={path} className="stats" />
+          ) : (
+            <div />
+          )}
+        </div>
       ) : null}
+      {box.pairs.map((pair: AgatePair) => (
+        <AgateTwin key={pair.key} away={pair.away} home={pair.home} path={path} label={pair.label} />
+      ))}
+      <AgateNotes notes={box.info} />
     </div>
   );
 }
@@ -367,7 +575,10 @@ export function MatchupCard({ game }: { game: BoxGame }) {
   return (
     <article className={cn("tt-matchup", game.live && "live")}>
       <header>
-        <b>{gameClock(game)}</b>
+        <b>
+          {gameDay(game) ? <time dateTime={game.startIso ?? undefined}>{gameDay(game)} · </time> : null}
+          {gameClock(game)}
+        </b>
         <span>{[game.round, game.series].filter(Boolean).join(" · ") || game.venue || ""}</span>
       </header>
       <div className="tt-matchup-teams">
