@@ -419,7 +419,8 @@ const cont = withJump.pages.find((page) => page.kind === "favorites-continue");
 assert(cont?.kind === "favorites-continue", "continuation page is filed after the clubs desk");
 if (cont?.kind === "favorites-continue") {
   assert(cont.continuedFrom === "A1", "continuation cites the front");
-  assert(cont.rest.length > 80, "continuation carries the rest of the body");
+  assert(cont.jumps[0]!.rest.length > 80, "continuation carries the rest of the body");
+  assert(cont.jumps[0]!.card.id === "news-long-lead", "the lead's jump comes first");
   assert(
     jumpFront?.kind === "favorites-front" && jumpFront.leadContinue === cont.folio,
     "front jump lands on the continuation folio",
@@ -428,6 +429,40 @@ if (cont?.kind === "favorites-continue") {
 assert(
   withJump.pages[1]?.kind === "favorites-clubs",
   "A2 stays the clubs desk between the tease and the jump",
+);
+
+const twice = buildEdition({
+  stories: [lionsNote, { ...lionsNote, id: "wrap-lions-note" }],
+  clubs: [lionsClub],
+  edition,
+});
+const twiceFront = twice.pages[0];
+assert(
+  twiceFront?.kind === "favorites-front" && twiceFront.second?.headline !== twiceFront.lead?.headline,
+  "the front never runs the same story twice",
+);
+
+const seasonFinale = card({
+  id: "news-cards-finale",
+  headline: "Brewers beat Cardinals 6-4 in the season finale",
+  favoriteKey: "mlb-stl",
+  followed: true,
+  teamName: "Cardinals",
+  sportLabel: "MLB",
+  leaguePath: "baseball/mlb",
+  when: "2026-09-27T21:00:00Z",
+  body: "MILWAUKEE -- The Cardinals closed the year in Milwaukee. ".repeat(12),
+});
+const quietClub = buildEdition({
+  stories: [lionsNote, seasonFinale],
+  clubs: [cards, lionsClub],
+  edition,
+});
+const quietFront = quietClub.pages[0];
+assert(
+  quietFront?.kind === "favorites-front" &&
+    [quietFront.lead, quietFront.second, quietFront.third].some((c) => c?.id === "news-cards-finale"),
+  "a club whose season just ended still makes the Section A front",
 );
 
 console.log("newspaper-sections ok");

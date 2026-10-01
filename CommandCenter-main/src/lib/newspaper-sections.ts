@@ -99,13 +99,12 @@ export type FavoritesInsidePage = PageBase & {
   briefs: GameWrapCard[];
 };
 
-/** Rest of a front-page story — the destination of "Please turn to page…". */
+/** The jump page: the rest of every front-page story, the way a broadsheet runs A3. */
 export type FavoritesContinuePage = PageBase & {
   kind: "favorites-continue";
-  card: GameWrapCard;
   continuedFrom: string;
-  /** Remaining body after the front-page teaser. */
-  rest: string;
+  /** Remaining body of each front story, in front-page order. */
+  jumps: { card: GameWrapCard; rest: string }[];
 };
 
 export type DeskRow = {
@@ -376,44 +375,56 @@ function favoritePages(
   favoriteFolioByStory: Record<string, string>;
 } {
   const favoriteFolioByStory: Record<string, string> = {};
-  const lead = freshStories[0] ?? sectionStories[0] ?? null;
-  const second = freshStories[1] ?? sectionStories[1] ?? null;
-  const third = freshStories[2] ?? sectionStories[2] ?? null;
+  const freshIds = new Set(freshStories.map((c) => c.id));
+  const frontPool = [...freshStories, ...sectionStories.filter((c) => !freshIds.has(c.id))];
+  const picks: GameWrapCard[] = [];
+  const clubOf = (c: GameWrapCard) => c.favoriteKey ?? c.teamName ?? c.id;
+  for (const card of frontPool) {
+    if (picks.length >= 3) break;
+    if (!picks.some((f) => clubOf(f) === clubOf(card))) picks.push(card);
+  }
+  for (const card of frontPool) {
+    if (picks.length >= 3) break;
+    if (!picks.includes(card)) picks.push(card);
+  }
+  const [lead = null, second = null, third = null] = picks;
   for (const card of [lead, second, third]) {
     if (card) favoriteFolioByStory[card.id] = "A1";
   }
 
-  // Continuations sit right after the clubs desk so "turn to A3" is the rest
-  // of the lead — not an unrelated story or the clubs grid.
-  const continues: FavoritesContinuePage[] = [];
-  let n = 3;
+  // Every front jump lands on one page right after the clubs desk.
+  const jumps: { card: GameWrapCard; rest: string }[] = [];
+  const jumpFolio = "A3";
   const maybeContinue = (
     card: GameWrapCard | null,
     budget: number,
   ): { folio?: string; teaser?: string } => {
     const { teaser, rest } = frontSplit(card, budget);
     if (!card || !rest) return { teaser: teaser || undefined };
-    const folio = `A${n}`;
-    continues.push({
-      kind: "favorites-continue",
-      folio,
-      section: "A",
-      sectionTitle: "Favorite Teams",
-      sectionPage: n,
-      sectionCount: 0,
-      card,
-      continuedFrom: "A1",
-      rest,
-      jumpFolio: undefined,
-    });
-    favoriteFolioByStory[`${card.id}::cont`] = folio;
-    n += 1;
-    return { folio, teaser };
+    jumps.push({ card, rest });
+    favoriteFolioByStory[`${card.id}::cont`] = jumpFolio;
+    return { folio: jumpFolio, teaser };
   };
 
   const leadJump = maybeContinue(lead, LEAD_TEASER);
   const secondJump = maybeContinue(second, SECOND_TEASER);
   const thirdJump = maybeContinue(third, THIRD_TEASER);
+  const continues: FavoritesContinuePage[] = jumps.length
+    ? [
+        {
+          kind: "favorites-continue",
+          folio: jumpFolio,
+          section: "A",
+          sectionTitle: "Favorite Teams",
+          sectionPage: 3,
+          sectionCount: 0,
+          continuedFrom: "A1",
+          jumps,
+          jumpFolio: undefined,
+        },
+      ]
+    : [];
+  let n = 3 + continues.length;
 
   const inside: FavoritesInsidePage[] = [];
   const frontIds = new Set(
@@ -633,7 +644,7 @@ export function buildEdition(opts: {
   clubs: ClubDesk[];
   edition: string;
 }): Edition {
-  const desk = opts.stories.filter((card) => isDeskStory(card) && !isNewsMuted(card));
+  const desk = dedupeStories(opts.stories.filter((card) => isDeskStory(card) && !isNewsMuted(card)));
   const fresh = rankStories(
     desk.filter((card) => inFreshWindow(card, opts.edition)),
     opts.edition,
@@ -683,6 +694,24 @@ export function buildEdition(opts: {
 
   const favoriteFresh = fresh.filter(isFavoriteStory);
   const favoriteRecent = sectionCopy.filter(isFavoriteStory);
+  // A followed club that went quiet (off day, season just ended) still gets its latest story.
+  const covered = new Set(favoriteRecent.map((c) => c.favoriteKey));
+  const lastWord = rankStories(
+    desk.filter(
+      (c) =>
+        isFavoriteStory(c) &&
+        c.favoriteKey &&
+        !covered.has(c.favoriteKey) &&
+        !isStalePreview(c, opts.edition) &&
+        editionCoversRecent(c.when, opts.edition, 7),
+    ),
+    opts.edition,
+  ).filter((c) => {
+    if (covered.has(c.favoriteKey)) return false;
+    covered.add(c.favoriteKey);
+    return true;
+  });
+  favoriteRecent.push(...lastWord);
   const favorites = favoritePages(favoriteFresh, favoriteRecent, opts.clubs);
 
   const pages: EditionPage[] = [...favorites.pages];
