@@ -3,6 +3,8 @@ import {
   Fragment,
   memo,
   startTransition,
+  Suspense,
+  use,
   useCallback,
   useContext,
   useEffect,
@@ -24,7 +26,6 @@ import {
   msUntilNextPress,
   pressEdition,
   instantDay,
-  isNewsMuted,
   romanNumeral,
   splitStoryCopy,
 } from "@/lib/newspaper";
@@ -63,7 +64,7 @@ import { nameIndex, type Person } from "@/lib/newspaper-people";
 import { fetchPlayerFiles, imageLoads, storySubjects, type PlayerFile } from "@/lib/newspaper-subjects";
 import { fetchMarshfieldWeather, type MarshfieldWeather } from "@/lib/newspaper-weather";
 import { WeatherReport, WeatherStrip } from "@/components/newspaper/WeatherReport";
-import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
+import { storySource } from "@/lib/newspaper-source";
 import {
   daysUntil,
   fetchOpener,
@@ -83,15 +84,16 @@ import {
 } from "@/lib/newspaper-players";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
+import { fileExtracts, gatherStories, sportPathsOf, urlsToExtract } from "@/lib/newspaper-compose";
+import { ISSUE_VERSION, readLocalIssue, writeLocalIssue, type PrintedIssue } from "@/lib/newspaper-issue";
+import { readRemoteIssue, writeDesk, writeRemoteIssue } from "@/lib/newspaper-issue-remote";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
   enrichWrapBodies,
   leaguePathFromEspn,
   matchWrapToFavorites,
-  mergeStoryCards,
   playerHref,
-  wireStoryCards,
   wrapFeedsForFavorites,
   type GameWrapCard,
   type TeamInfobox,
@@ -116,7 +118,7 @@ import {
   type WireGame,
 } from "@/lib/newspaper-wire";
 import { fetchMlbPeopleByIds, fetchMlbPlayoffTree, type MlbPlayoffTree } from "@/lib/mlb";
-import { fetchRssArticle, fetchRssFeed, firstContentImageUrl, type RssArticle } from "@/lib/rss";
+import { fetchRssArticle, fetchRssFeed, type RssArticle } from "@/lib/rss";
 import {
   fetchTeamDetail,
   fetchTeamSnapshot,
@@ -3162,11 +3164,64 @@ function warmEdition(pager: HTMLElement, cap = 4): () => void {
 
 /* ───────────────────────── page ───────────────────────── */
 
+const openingPressId = pressEdition().id;
+const openingIssuePromise: Promise<PrintedIssue | null> =
+  typeof indexedDB === "undefined" ? Promise.resolve(null) : readLocalIssue(openingPressId);
+
+function CoverSheet() {
+  const press = pressEdition();
+  const { volume, issue } = editionIssue(press.day);
+  return (
+    <section className="wsj-page" aria-label={press.label}>
+      <div className="wsj-sheet tt-cover">
+        <p className="tt-cover-kicker">Sports Final</p>
+        <h1 className="wsj-nameplate">The Thompson Times</h1>
+        <p className="tt-cover-edition">{press.label}</p>
+        <p className="tt-cover-date">
+          Vol. {romanNumeral(volume)} · No. {issue}
+          <span>{editionDateline(press.day)}</span>
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function EditionCover() {
+  return (
+    <div className="newspaper-root wsj-shell">
+      <div className="tt-spread">
+        <CoverSheet />
+      </div>
+    </div>
+  );
+}
+
 export default function DailyNewspaperPage() {
+  return (
+    <Suspense fallback={<EditionCover />}>
+      <NewspaperDesk />
+    </Suspense>
+  );
+}
+
+function NewspaperDesk() {
+  const opened = use(openingIssuePromise);
+  const queryClient = useQueryClient();
+  const seeded = useRef<string | null>(null);
+  if (opened && seeded.current !== opened.id) {
+    for (const q of opened.queries) queryClient.setQueryData(q.key, q.data);
+    seeded.current = opened.id;
+  }
   const { user } = useAuth();
   const [press, setPress] = useState(() => pressEdition());
   const day = press.day;
   const pressId = press.id;
+  const [docPhase, setDocPhase] = useState<"boot" | "document" | "press">(() =>
+    opened?.id === pressEdition().id ? "document" : "boot",
+  );
+  const [lockedCopy, setLockedCopy] = useState<{ id: string; stories: GameWrapCard[] } | null>(() =>
+    opened?.id === pressEdition().id ? { id: opened.id, stories: opened.stories as GameWrapCard[] } : null,
+  );
   const layout = useMemo(() => loadSportsLayout(), []);
   const teamFavs = useMemo(
     () => visibleFavorites(layout).filter((f) => f.kind === "team"),
@@ -3194,6 +3249,46 @@ export default function DailyNewspaperPage() {
     };
   }, []);
 
+  // The edition on the stand is a file. Read it before any desk starts pulling copy.
+  const phaseRef = useRef(docPhase);
+  phaseRef.current = docPhase;
+  const lockRef = useRef(lockedCopy);
+  lockRef.current = lockedCopy;
+  useEffect(() => {
+    if (phaseRef.current === "document" && lockRef.current?.id === pressId) return;
+    let cancel = false;
+    setDocPhase("boot");
+    void (async () => {
+      const local = await readLocalIssue(pressId);
+      if (cancel) return;
+      if (local?.id === pressId) {
+        for (const q of local.queries) queryClient.setQueryData(q.key, q.data);
+        setLockedCopy({ id: local.id, stories: local.stories as GameWrapCard[] });
+        setDocPhase("document");
+        return;
+      }
+      const remote = await readRemoteIssue(pressId).catch(() => null);
+      if (cancel) return;
+      if (remote?.id === pressId) {
+        for (const q of remote.queries) queryClient.setQueryData(q.key, q.data);
+        setLockedCopy({ id: remote.id, stories: remote.stories as GameWrapCard[] });
+        setDocPhase("document");
+        void writeLocalIssue(remote);
+        return;
+      }
+      setLockedCopy((prev) => (prev?.id === pressId ? prev : null));
+      setDocPhase("press");
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [pressId, queryClient]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    void writeDesk({ userId: user.id, order: layout.order, hidden: layout.hidden });
+  }, [user?.id, layout]);
+
   useEffect(() => {
     document.documentElement.classList.add("tt-lock");
     return () => document.documentElement.classList.remove("tt-lock");
@@ -3203,9 +3298,13 @@ export default function DailyNewspaperPage() {
   const [pageIndex, setPageIndex] = useState(0);
 
   const favKeys = teamFavs.map((t) => t.key).join(",");
+  // "press" is the only time the desks go out for copy. A filed edition just opens.
+  const pressing = docPhase === "press";
+  const open = docPhase !== "boot";
 
   const teamSnaps = useQuery({
     queryKey: [pressId, "tt-team-snaps", day, favKeys],
+    enabled: pressing,
     queryFn: async () =>
       Promise.all(
         teamFavs.map(async (fav) => {
@@ -3248,7 +3347,7 @@ export default function DailyNewspaperPage() {
       );
       return rows.filter(Boolean) as { fav: SportsFavorite; detail: TeamDetail }[];
     },
-    enabled: teamFavs.length > 0,
+    enabled: pressing && teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3262,7 +3361,7 @@ export default function DailyNewspaperPage() {
       const games = await enrichWireStories(wire.games, DEEP_STORIES);
       return { ...wire, games };
     },
-    enabled: teamFavs.length > 0,
+    enabled: pressing && teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3270,7 +3369,8 @@ export default function DailyNewspaperPage() {
   });
 
   const recap = useQuery({
-    queryKey: [pressId, "newspaper-yesterday-recap", day, user?.id],
+    queryKey: [pressId, "newspaper-yesterday-recap", day, user?.id ?? null],
+    enabled: pressing,
     queryFn: () => fetchYesterdayRecap({ layout, userId: user?.id }),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
@@ -3307,7 +3407,7 @@ export default function DailyNewspaperPage() {
       }
       return matched;
     },
-    enabled: wrapFeedUrls.length > 0,
+    enabled: pressing && wrapFeedUrls.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3338,7 +3438,7 @@ export default function DailyNewspaperPage() {
       teamCards.map((c) => `${c.id}:${c.gameId}`).join("|"),
     ],
     queryFn: () => enrichWrapBodies(teamCards, teamFavs),
-    enabled: teamCards.length > 0,
+    enabled: pressing && teamCards.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3348,7 +3448,7 @@ export default function DailyNewspaperPage() {
   const newsQ = useQuery({
     queryKey: [pressId, "tt-news", day, favKeys],
     queryFn: () => fetchTeamArticles(teamFavs, day),
-    enabled: teamFavs.length > 0,
+    enabled: pressing && teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3412,61 +3512,35 @@ export default function DailyNewspaperPage() {
     [teams],
   );
 
-  const sportPaths = useMemo(
-    () =>
-      [...new Set(clubs.map((c) => c.leaguePath).filter(Boolean) as string[])].sort(),
-    [clubs],
-  );
+  const sportPaths = useMemo(() => sportPathsOf(teams.map((t) => t.fav)), [teams]);
 
   const leagueNewsQ = useQuery({
     queryKey: [pressId, "tt-league-news", day, sportPaths.join("|")],
     queryFn: () => fetchLeagueArticles(sportPaths, day),
-    enabled: sportPaths.length > 0,
+    enabled: pressing && sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
-  const rawStories = useMemo(() => {
-    const wire = wireStoryCards({
-      games: wireQ.data?.games ?? [],
-      favs: teamFavs,
-      details: teamDetailsQ.data ?? [],
-    });
-    const clubCopy = mergeStoryCards(
-      mergeStoryCards(wire, enrichedQ.data ?? teamCards),
-      newsQ.data ?? [],
-    );
-    return mergeStoryCards(clubCopy, leagueNewsQ.data ?? []).filter((card) => !isNewsMuted(card));
-  }, [
-    wireQ.data,
-    teamFavs,
-    teamDetailsQ.data,
-    enrichedQ.data,
-    teamCards,
-    newsQ.data,
-    leagueNewsQ.data,
-  ]);
+  const rawStories = useMemo(
+    () =>
+      gatherStories({
+        wire: wireQ.data,
+        favs: teamFavs,
+        details: teamDetailsQ.data ?? [],
+        enriched: enrichedQ.data,
+        teamCards,
+        news: newsQ.data,
+        leagueNews: leagueNewsQ.data,
+      }),
+    [wireQ.data, teamFavs, teamDetailsQ.data, enrichedQ.data, teamCards, newsQ.data, leagueNewsQ.data],
+  );
 
   // Club feeds send a headline and a link. Dispatch's extractor sets the story
   // (and its photo) so Section A prints copy instead of a crest.
-  const extractUrls = useMemo(
-    () =>
-      rawStories
-        .filter(
-          (card) =>
-            (card.favoriteKey || card.followed) &&
-            card.wrapHref &&
-            /^https?:\/\//i.test(card.wrapHref) &&
-            !/espn\.com\/.+\/(?:game|recap|preview|match)\b/i.test(card.wrapHref) &&
-            ((card.body?.trim().length ?? 0) < 600 || !card.photo),
-        )
-        .map((card) => card.wrapHref!)
-        .slice(0, 16),
-    [rawStories],
-  );
-  const queryClient = useQueryClient();
+  const extractUrls = useMemo(() => urlsToExtract(rawStories), [rawStories]);
   const extractsQ = useQuery({
     queryKey: [pressId, "tt-extracts", day, extractUrls.join("|")],
     queryFn: async () => {
@@ -3490,31 +3564,24 @@ export default function DailyNewspaperPage() {
       await Promise.all([worker(), worker(), worker()]);
       return out;
     },
-    enabled: extractUrls.length > 0,
+    enabled: pressing && extractUrls.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
 
-  const filedStories = useMemo(() => {
-    const extracts = extractsQ.data;
-    const clean = rawStories.map((card) => (isBoilerplateDek(card.dek) ? { ...card, dek: null } : card));
-    if (!extracts) return clean;
-    return clean.map((card) => {
-      const hit = card.wrapHref ? extracts[card.wrapHref] : undefined;
-      if (!hit) return card;
-      const text = hit.contentText?.trim() ?? "";
-      const body = text.length > (card.body?.trim().length ?? 0) + 120 ? text : card.body;
-      return { ...card, body, photo: card.photo || hit.image || firstContentImageUrl(hit.contentHtml) };
-    });
-  }, [rawStories, extractsQ.data]);
+  const filedStories = useMemo(
+    () => fileExtracts(rawStories, extractsQ.data),
+    [rawStories, extractsQ.data],
+  );
 
-  // One commit per press. Stories stay as they were set until the next edition's
-  // copy has all arrived, so the front never flickers between two versions.
+  // One commit per press. A filed edition is already committed, so this only runs
+  // while the desk is actually setting a new one.
   const queryIdle = (q: { isFetched: boolean; isFetching: boolean }, enabled: boolean) =>
     !enabled || (q.isFetched && !q.isFetching);
   const copyReady =
+    pressing &&
     queryIdle(wrapsQ, wrapFeedUrls.length > 0) &&
     queryIdle(newsQ, teamFavs.length > 0) &&
     queryIdle(wireQ, teamFavs.length > 0) &&
@@ -3522,7 +3589,6 @@ export default function DailyNewspaperPage() {
     queryIdle(enrichedQ, teamCards.length > 0) &&
     queryIdle(leagueNewsQ, sportPaths.length > 0) &&
     queryIdle(extractsQ, extractUrls.length > 0);
-  const [lockedCopy, setLockedCopy] = useState<{ id: string; stories: typeof filedStories } | null>(null);
   useEffect(() => {
     if (!copyReady) return;
     setLockedCopy((prev) => (prev?.id === pressId ? prev : { id: pressId, stories: filedStories }));
@@ -3541,7 +3607,7 @@ export default function DailyNewspaperPage() {
       );
       return Object.fromEntries(entries) as Record<string, LeagueClub[]>;
     },
-    enabled: sportPaths.length > 0,
+    enabled: pressing && sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3556,7 +3622,7 @@ export default function DailyNewspaperPage() {
       );
       return Object.fromEntries(entries) as Record<string, LeagueSlateGame[]>;
     },
-    enabled: sportPaths.length > 0,
+    enabled: pressing && sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3566,7 +3632,7 @@ export default function DailyNewspaperPage() {
   const mlbPlayoffsQ = useQuery({
     queryKey: [pressId, "tt-mlb-playoffs", day],
     queryFn: () => fetchMlbPlayoffTree(),
-    enabled: sportPaths.includes("baseball/mlb"),
+    enabled: pressing && sportPaths.includes("baseball/mlb"),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3587,7 +3653,7 @@ export default function DailyNewspaperPage() {
       );
       return Object.fromEntries(entries) as Record<string, SectionBoard>;
     },
-    enabled: sportPaths.length > 0,
+    enabled: pressing && sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3602,7 +3668,7 @@ export default function DailyNewspaperPage() {
       );
       return Object.fromEntries(entries) as Record<string, StandGroup[]>;
     },
-    enabled: sportPaths.length > 0,
+    enabled: pressing && sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3658,7 +3724,7 @@ export default function DailyNewspaperPage() {
   const favPlayersQ = useQuery({
     queryKey: [pressId, "tt-fav-players", user?.id],
     queryFn: () => listFavoritePlayers(user!.id),
-    enabled: Boolean(user?.id),
+    enabled: open && Boolean(user?.id),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3672,7 +3738,7 @@ export default function DailyNewspaperPage() {
       if (!ids.length) return [];
       return [...(await fetchMlbPeopleByIds(ids)).values()];
     },
-    enabled: Boolean(user?.id),
+    enabled: open && Boolean(user?.id),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3713,7 +3779,7 @@ export default function DailyNewspaperPage() {
       const [y, m] = day.split("-").map(Number) as [number, number];
       return fetchPlayerNights(followed, m < 3 ? y - 1 : y);
     },
-    enabled: followed.length > 0,
+    enabled: open && followed.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3734,7 +3800,7 @@ export default function DailyNewspaperPage() {
       );
       return Object.fromEntries(rows.filter((r) => r[1])) as Record<string, ClubSheet>;
     },
-    enabled: teamFavs.length > 0,
+    enabled: pressing && teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3743,6 +3809,7 @@ export default function DailyNewspaperPage() {
 
   const weatherQ = useQuery({
     queryKey: [pressId, "tt-weather-marshfield"],
+    enabled: pressing,
     queryFn: fetchMarshfieldWeather,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
@@ -3752,6 +3819,7 @@ export default function DailyNewspaperPage() {
 
   const scoutQ = useQuery({
     queryKey: [pressId, "tt-mo-scout", day],
+    enabled: pressing,
     queryFn: async () => {
       const item = await fetchMissouriScout();
       return item ? ((await enrichMissouriItems([item], 1))[0] ?? item) : null;
@@ -3764,6 +3832,7 @@ export default function DailyNewspaperPage() {
 
   const missouriQ = useQuery({
     queryKey: [pressId, "tt-missouri", day],
+    enabled: pressing,
     queryFn: async () => {
       const desk = await fetchMissouriDesk(day);
       return { ...desk, items: await enrichMissouriItems(desk.items, 7) };
@@ -3782,7 +3851,7 @@ export default function DailyNewspaperPage() {
       const rows = await Promise.all(teamFavs.map((fav) => fetchOpener(fav).catch(() => null)));
       return rows.filter((o): o is Opener => o != null);
     },
-    enabled: teamFavs.length > 0,
+    enabled: pressing && teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3812,7 +3881,7 @@ export default function DailyNewspaperPage() {
       );
       return rows.flat();
     },
-    enabled: teamFavs.some((fav) => fav.mlbTeamId),
+    enabled: pressing && teamFavs.some((fav) => fav.mlbTeamId),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3892,7 +3961,7 @@ export default function DailyNewspaperPage() {
       );
       return files;
     },
-    enabled: subjectHrefs.length > 0,
+    enabled: open && subjectHrefs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -3918,6 +3987,71 @@ export default function DailyNewspaperPage() {
       }),
     [printedStories, storyFiles],
   );
+
+  const filedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pressing || !pressReady || filedRef.current === pressId) return;
+    const quiet = (q: { isFetched: boolean; isFetching: boolean }, enabled: boolean) =>
+      !enabled || (q.isFetched && !q.isFetching);
+    const deskQuiet =
+      quiet(teamSnaps, true) &&
+      quiet(teamDetailsQ, teamFavs.length > 0) &&
+      quiet(weatherQ, true) &&
+      quiet(sheetsQ, teamFavs.length > 0) &&
+      quiet(boardQ, sportPaths.length > 0) &&
+      quiet(standingsQ, sportPaths.length > 0) &&
+      quiet(leagueSlateQ, sportPaths.length > 0) &&
+      quiet(leagueClubsQ, sportPaths.length > 0) &&
+      quiet(scoutQ, true) &&
+      quiet(missouriQ, true) &&
+      quiet(openersQ, teamFavs.length > 0) &&
+      quiet(filesQ, subjectHrefs.length > 0) &&
+      quiet(orgQ, teamFavs.some((fav) => fav.mlbTeamId)) &&
+      quiet(mlbPlayoffsQ, sportPaths.includes("baseball/mlb"));
+    if (!deskQuiet) return;
+    const failed = [wrapsQ, newsQ, wireQ, recap, leagueNewsQ, extractsQ].some((q) => q.isError);
+    if (!stories.length && failed) return;
+    filedRef.current = pressId;
+    const queries = queryClient
+      .getQueryCache()
+      .getAll()
+      .flatMap((q) => {
+        if (!Array.isArray(q.queryKey) || q.queryKey[0] !== pressId || q.state.status !== "success") return [];
+        return [{ key: [...q.queryKey], data: q.state.data }];
+      });
+    const issue: PrintedIssue = { version: ISSUE_VERSION, id: pressId, stories, queries };
+    void writeLocalIssue(issue);
+    void writeRemoteIssue(issue);
+  }, [
+    pressing,
+    pressReady,
+    pressId,
+    stories,
+    teamSnaps,
+    teamDetailsQ,
+    teamFavs,
+    weatherQ,
+    sheetsQ,
+    sportPaths,
+    boardQ,
+    standingsQ,
+    leagueSlateQ,
+    leagueClubsQ,
+    scoutQ,
+    missouriQ,
+    openersQ,
+    filesQ,
+    subjectHrefs,
+    orgQ,
+    mlbPlayoffsQ,
+    wrapsQ,
+    newsQ,
+    wireQ,
+    recap,
+    leagueNewsQ,
+    extractsQ,
+    queryClient,
+  ]);
 
   const edition = useMemo(
     () => buildEdition({ stories, clubs, edition: day, playerPaths, missouri: missouriQ.data ?? null, offseason }),
@@ -4281,14 +4415,14 @@ export default function DailyNewspaperPage() {
       <PagerIndexContext.Provider value={pageIndex}>
         <div className="tt-spread">
           <div className="newspaper-edition wsj-pager" ref={pagerRef}>
-            {sheets}
+            {docPhase === "boot" ? <CoverSheet /> : sheets}
           </div>
-          {pressReady ? null : (
+          {docPhase === "press" && !pressReady ? (
             <div className="tt-pressing">
               <p>Setting the {press.label.toLowerCase()}</p>
               <span>The paper is held until the next press, at {press.next}.</span>
             </div>
-          )}
+          ) : null}
         </div>
       </PagerIndexContext.Provider>
       </ReaderProvider>

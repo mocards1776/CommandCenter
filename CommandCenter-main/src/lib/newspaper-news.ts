@@ -157,6 +157,19 @@ function toCard(fav: SportsFavorite, article: NewsArticle, body: string): GameWr
   };
 }
 
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]!);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 /**
  * Club articles for the Times. Prefer edition-day copy, then reach back a few
  * days so section insides and recap pages stay full.
@@ -266,8 +279,7 @@ export async function fetchLeagueArticles(
   const picked: { path: string; article: NewsArticle }[] = [];
   const seen = new Set<string>();
 
-  await Promise.all(
-    unique.map(async (path) => {
+  await mapLimit(unique, 2, async (path) => {
       try {
         const data = (await espnGet(`${path}/news?limit=50`)) as { articles?: NewsArticle[] };
         const pool = data.articles ?? [];
@@ -287,17 +299,14 @@ export async function fetchLeagueArticles(
       } catch {
         /* one league's wire shouldn't kill the edition */
       }
-    }),
-  );
+  });
 
   picked.sort((a, b) => String(b.article.published ?? "").localeCompare(String(a.article.published ?? "")));
-  const withBody = await Promise.all(
-    picked.slice(0, 40).map(async ({ path, article }) => {
+  const withBody = await mapLimit(picked.slice(0, 40), 3, async ({ path, article }) => {
       const fallback = wireCopy(article.description ?? "");
       const body = await articleBody(String(article.id), fallback);
       return toLeagueCard(path, article, body);
-    }),
-  );
+  });
   const rest = picked
     .slice(40)
     .map(({ path, article }) => toLeagueCard(path, article, article.description ?? ""));

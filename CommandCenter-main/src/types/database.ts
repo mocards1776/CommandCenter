@@ -459,6 +459,44 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["favorite_sports_teams"]["Insert"]>;
         Relationships: [];
       };
+      newspaper_issues: {
+        Row: {
+          id: string;
+          version: number;
+          status: string;
+          stories: Json;
+          queries: Json;
+          printed_at: string;
+        };
+        Insert: {
+          id: string;
+          version?: number;
+          status?: string;
+          stories?: Json;
+          queries?: Json;
+          printed_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["newspaper_issues"]["Insert"]>;
+        Relationships: [];
+      };
+      newspaper_desk: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          fav_order: string[];
+          hidden: string[];
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          fav_order?: string[];
+          hidden?: string[];
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["newspaper_desk"]["Insert"]>;
+        Relationships: [];
+      };
       favorite_sports_players: {
         Row: {
           id: string;

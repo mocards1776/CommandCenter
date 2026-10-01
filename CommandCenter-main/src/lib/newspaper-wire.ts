@@ -568,28 +568,32 @@ export async function fetchNewspaperWire(opts: {
   const byId = new Map<string, WireGame>();
   const postseason = new Set<string>();
 
-  await Promise.all(
-    leagues.flatMap((league) =>
-      [opts.day, ...daysBack(editionNewsDay(opts.day), league.lookback)].map(async (day) => {
-        try {
-          const events = await fetchBoard(league, day);
-          for (const ev of events) {
-            const game = toWireGame(ev, league, day, opts.favs);
-            if (!game) continue;
-            if (game.postseason) postseason.add(game.league);
-            // A later board wins only when it carries more: the same game shows
-            // up on both days around midnight, and the newer copy has the recap.
-            const prior = byId.get(game.id);
-            if (!prior || (!prior.body && game.body) || (!prior.final && game.final)) {
-              byId.set(game.id, game);
-            }
-          }
-        } catch {
-          /* one board failing shouldn't kill the edition */
-        }
-      }),
-    ),
+  const boards = leagues.flatMap((league) =>
+    [opts.day, ...daysBack(editionNewsDay(opts.day), league.lookback)].map((day) => ({ league, day })),
   );
+  let boardNext = 0;
+  const pullBoard = async () => {
+    while (boardNext < boards.length) {
+      const { league, day } = boards[boardNext++]!;
+      try {
+        const events = await fetchBoard(league, day);
+        for (const ev of events) {
+          const game = toWireGame(ev, league, day, opts.favs);
+          if (!game) continue;
+          if (game.postseason) postseason.add(game.league);
+          // A later board wins only when it carries more: the same game shows
+          // up on both days around midnight, and the newer copy has the recap.
+          const prior = byId.get(game.id);
+          if (!prior || (!prior.body && game.body) || (!prior.final && game.final)) {
+            byId.set(game.id, game);
+          }
+        }
+      } catch {
+        /* one board failing shouldn't kill the edition */
+      }
+    }
+  };
+  await Promise.all([pullBoard(), pullBoard(), pullBoard()]);
 
   return {
     games: [...byId.values()].sort(deskOrder),
@@ -639,18 +643,20 @@ export async function enrichWireStories(
   const wanted = new Set(targets.map((g) => g.id));
 
   const filled = new Map<string, { body: string; dateline: string | null; photo: string | null }>();
-  await Promise.all(
-    targets.map(async (g) => {
+  let storyNext = 0;
+  const pullStory = async () => {
+    while (storyNext < targets.length) {
+      const g = targets[storyNext++]!;
       try {
         const res = await fetch(`${ESPN_SITE}/${g.path}/summary?event=${g.eventId}`, {
           headers: { Accept: "application/json" },
         });
-        if (!res.ok) return;
+        if (!res.ok) continue;
         const sum = (await res.json()) as {
           article?: { story?: string; headline?: string; images?: { url?: string }[] };
         };
         const story = stripStoryHtml(sum.article?.story ?? "");
-        if (story.length < 200) return;
+        if (story.length < 200) continue;
         const { dateline, body } = splitDateline(story);
         filled.set(g.id, {
           body,
@@ -660,8 +666,9 @@ export async function enrichWireStories(
       } catch {
         /* keep the short wire body */
       }
-    }),
-  );
+    }
+  };
+  await Promise.all([pullStory(), pullStory(), pullStory()]);
 
   return games
     .map((g) => {

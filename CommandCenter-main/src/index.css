@@ -1369,6 +1369,45 @@ mark.rss-hl {
   font-size: clamp(26px, 4vw, 42px);
   color: #f4f1e9;
 }
+.tt-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+}
+.tt-cover-kicker {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.tt-cover-edition {
+  margin: 6px 0 0;
+  font-family: var(--w-head);
+  font-style: italic;
+  font-weight: 700;
+  font-size: clamp(22px, 3vw, 34px);
+}
+.tt-cover-date {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.tt-cover-date span {
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-family: var(--w-body);
+  font-style: italic;
+}
 
 .wsj-body {
   display: flex;
