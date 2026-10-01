@@ -1,5 +1,6 @@
 import {
   createContext,
+  Fragment,
   useCallback,
   useContext,
   useEffect,
@@ -18,6 +19,7 @@ import {
   editionDateline,
   editionDay,
   editionIssue,
+  editionNewsDay,
   msUntilNextEdition,
   instantDay,
   isNewsMuted,
@@ -31,11 +33,13 @@ import {
   gameClock,
   fetchSectionStandings,
   type BoxGame,
+  type BoxPerson,
   type SectionBoard,
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { proseParas, tidy } from "@/lib/newspaper-copy";
 import {
+  Face,
   MatchupCard,
   ScoreCard,
   ScoreStrip,
@@ -48,6 +52,22 @@ import {
 } from "@/components/newspaper/BoxScore";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
+import { PlayoffBracket } from "@/components/newspaper/PlayoffBracket";
+import { NamedText, PlayerName, PlayerPopProvider } from "@/components/newspaper/PlayerPop";
+import { fetchClubSheet, type ClubSheet } from "@/lib/newspaper-clubsheet";
+import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "@/lib/newspaper-missouri-fetch";
+import type { MoItem } from "@/lib/newspaper-missouri";
+import type { Person } from "@/lib/newspaper-people";
+import {
+  fetchPlayerNights,
+  playerPageHref,
+  playerPath,
+  rankNights,
+  type FollowedPlayer,
+  type PlayerNight,
+} from "@/lib/newspaper-players";
+import { listFavoritePlayers } from "@/lib/favorite-players";
+import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
@@ -79,7 +99,7 @@ import {
   type LeagueSlateGame,
   type WireGame,
 } from "@/lib/newspaper-wire";
-import { fetchMlbPlayoffTree, type MlbPlayoffTree } from "@/lib/mlb";
+import { fetchMlbPeopleByIds, fetchMlbPlayoffTree, type MlbPlayoffTree } from "@/lib/mlb";
 import { fetchRssArticle, fetchRssFeed, firstContentImageUrl, type RssArticle } from "@/lib/rss";
 import {
   fetchTeamDetail,
@@ -368,7 +388,10 @@ function pageLabel(page: EditionPage): string {
         schedule: "Schedule",
         playoffs: "Playoffs",
         form: "Club Form",
+        players: "Your Players",
       }[page.focus];
+    case "missouri":
+      return page.sectionPage === 1 ? "Statehouse" : "Around the State";
     case "sport-inside":
     case "favorites-inside":
       return "Stories";
@@ -533,28 +556,68 @@ function Prose({
   cols,
   drop,
   max,
+  dress,
+  color,
 }: {
   card: GameWrapCard;
   text: string;
   cols: 1 | 2 | 3;
   drop?: boolean;
   max?: number;
+  /** Long inside-page copy: a pull quote and run-in subheads break the gray. */
+  dress?: boolean;
+  color?: string | null;
 }) {
   const paras = proseParas(text, max);
   if (!paras.length) return null;
   const length = paras.reduce((n, p) => n + p.length, 0);
   // Short copy never splits into slivers of two-line columns.
   const fit = Math.max(1, Math.min(cols, Math.floor(length / 360))) as 1 | 2 | 3;
+  const seen = new Set<string>();
+  const quote = dress && length > 1600 ? pullQuote(paras) : null;
+  const quoteAt = quote ? Math.max(2, Math.floor(paras.length * 0.45)) : -1;
   return (
-    <div className={cn("wsj-prose", `c${fit}`, drop && "drop")}>
+    <div className={cn("wsj-prose", `c${fit}`, drop && "drop", dress && "dressed")}>
       {paras.map((p, i) => (
-        <p key={i}>
-          {i === 0 && card.dateline ? <span className="wsj-dateline">{card.dateline} — </span> : null}
-          {p}
-        </p>
+        <Fragment key={i}>
+          {i === quoteAt && quote ? (
+            <blockquote className="wsj-pull" style={tint(color)}>
+              <p>{quote}</p>
+            </blockquote>
+          ) : null}
+          {dress && i > 0 && i % 5 === 0 ? (
+            <p className="wsj-runin">
+              <b>{runIn(p)[0]}</b> <NamedText text={runIn(p)[1]} seen={seen} />
+            </p>
+          ) : (
+            <p>
+              {i === 0 && card.dateline ? <span className="wsj-dateline">{card.dateline} — </span> : null}
+              <NamedText text={p} seen={seen} />
+            </p>
+          )}
+        </Fragment>
       ))}
     </div>
   );
+}
+
+/** The story's own words, pulled out large: a quotation if it has one, else a strong line. */
+function pullQuote(paras: string[]): string | null {
+  const body = paras.slice(1).join(" ");
+  const quotes = [...body.matchAll(/[“"]([^”"]{50,180})[”"]/g)].map((m) => m[1]!.trim());
+  if (quotes.length) return `“${quotes.sort((a, b) => b.length - a.length)[0]!.replace(/[,.]$/, "")}.”`;
+  const lines = body
+    .split(/(?<=[.!?])\s+(?=[A-Z“"])/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 70 && t.length < 170 && !/^(but|and|so|he|she|it|they)\b/i.test(t));
+  return lines[Math.floor(lines.length / 2)] ?? null;
+}
+
+/** A paragraph's opening words, split off to be set as a bold small-caps run-in. */
+function runIn(text: string): [string, string] {
+  const words = text.split(/\s+/);
+  const n = Math.min(4, Math.max(1, words.length - 1));
+  return [words.slice(0, n).join(" "), words.slice(n).join(" ")];
 }
 
 function Jump({
@@ -676,6 +739,7 @@ function Story({
   className,
   readOn,
   game,
+  dress,
 }: {
   card: GameWrapCard;
   team?: TeamInfobox | null;
@@ -692,6 +756,7 @@ function Story({
   /** Offer the whole story in the reader when this page sets only part of it. */
   readOn?: boolean;
   game?: BoxGame | null;
+  dress?: boolean;
 }) {
   const copy = substantive(card, text ?? cardCopy(card));
   const dek = dekFor(card, copy);
@@ -717,7 +782,9 @@ function Story({
         {dek ? <p className="wsj-dek">{dek}</p> : null}
         <ScoreBug card={card} />
         <Byline card={card} />
-        {copy ? <Prose card={card} text={copy} cols={cols} drop={drop} max={max} /> : null}
+        {copy ? (
+          <Prose card={card} text={copy} cols={cols} drop={drop} max={max} dress={dress} color={teamColor(team)} />
+        ) : null}
         <Jump folio={jump} onTurn={onTurn} />
         {readOn && !(jump && onTurn) ? <ReadOn card={card} game={game} /> : null}
       </div>
@@ -1094,6 +1161,7 @@ function FrontPage({
   leadTeaser,
   secondTeaser,
   thirdTeaser,
+  scout,
 }: {
   lead: GameWrapCard | null;
   second: GameWrapCard | null;
@@ -1112,7 +1180,10 @@ function FrontPage({
   leadTeaser?: string;
   secondTeaser?: string;
   thirdTeaser?: string;
+  scout?: MoItem | null;
 }) {
+  const hasDesk = sections.some((s) => s.code === "MO");
+  const scoutBand = scout ? <ScoutBand item={scout} onTurn={onTurn} hasDesk={hasDesk} /> : null;
   const rail = (
     <FrontRail
       teams={teams}
@@ -1138,6 +1209,7 @@ function FrontPage({
           </div>
           {rail}
         </div>
+        {scoutBand}
         <DeskBoard teams={teams} onTurn={onTurn} />
       </div>
     );
@@ -1215,6 +1287,7 @@ function FrontPage({
         </div>
         {rail}
       </div>
+      {scoutBand}
       <BriefGrid
         cards={briefs}
         title="More from your clubs"
@@ -1406,6 +1479,7 @@ function InsidePage({
     (a, b) => substantive(b, cardCopy(b)).length - substantive(a, cardCopy(a)).length,
   );
   const lookup = useContext(GameLookup);
+  const noted = new Set(notebooks.map((t) => t.fav.key));
   return (
     <div className="wsj-inside">
       {stories.map((card, i) => {
@@ -1413,8 +1487,11 @@ function InsidePage({
         const text = cardCopy(card);
         const { art, cols } = artFor(card, text);
         const game = lookup(card);
+        // No photograph: the club's poster carries the art, unless its notebook already runs here.
+        const poster = !card.photo && Boolean(team) && !noted.has(team!.fav.key);
         return (
-          <div key={card.id} className="wsj-inside-story">
+          <div key={card.id} className={cn("wsj-inside-story", i === 0 && "first")} style={tint(teamColor(team))}>
+            {i === 0 ? <InsideFlag card={card} team={team} /> : null}
             <Story
               className={cn(i === 0 ? "primary" : "secondary")}
               card={card}
@@ -1422,11 +1499,13 @@ function InsidePage({
               text={text}
               size={i === 0 ? "xl" : "lg"}
               cols={cols}
-              art={art}
-              drop={i === 0}
+              art={poster ? "side" : art}
+              poster={poster}
+              drop
+              dress
               game={game}
             />
-            {game ? <GameBox game={game} /> : null}
+            {game ? <GameBox game={game} /> : <StoryNames card={card} />}
           </div>
         );
       })}
@@ -1446,6 +1525,51 @@ function InsidePage({
         <StatPoster key={team.fav.key} team={team} layout="band" />
       ))}
     </div>
+  );
+}
+
+/** The inside page's flag: the club's crest and colors over the lead story. */
+function InsideFlag({ card, team }: { card: GameWrapCard; team: TeamInfobox | null }) {
+  const logo = team?.snap.logo || team?.detail?.logo || null;
+  return (
+    <header className="wsj-inside-flag">
+      {logo ? <img src={logo} alt="" aria-hidden="true" /> : null}
+      <span>{team?.fav.shortName || card.teamName || card.sportLabel}</span>
+      <em>{[card.sportLabel, team ? clubRecord(team) : null, team?.snap.standing].filter(Boolean).join(" · ")}</em>
+    </header>
+  );
+}
+
+/** Names in the story, set as a strip under it when no box score runs. */
+function StoryNames({ card }: { card: GameWrapCard }) {
+  const stats = card.stats.slice(0, 6);
+  const leaders = card.leaders.slice(0, 4);
+  if (!stats.length && !leaders.length) return null;
+  return (
+    <aside className="wsj-story-facts">
+      {stats.length ? (
+        <dl>
+          {stats.map((s) => (
+            <div key={`${s.label}-${s.value}`}>
+              <dd>{s.value}</dd>
+              <dt>{s.label}</dt>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {leaders.length ? (
+        <ul>
+          {leaders.map((l) => (
+            <li key={l.name}>
+              <strong>
+                <PlayerName name={l.name} href={l.href?.startsWith("/") ? l.href : null} />
+              </strong>
+              <span>{l.line}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </aside>
   );
 }
 
@@ -1483,6 +1607,7 @@ function ContinuePage({
               size={i === 0 ? "xl" : "lg"}
               cols={rest.length > 1400 ? 3 : rest.length > 500 ? 2 : 1}
               art="none"
+              dress
               game={game}
             />
             {game ? <GameBox game={game} /> : null}
@@ -1528,6 +1653,7 @@ const FOCUS_TITLES: Record<SportFrontPage["focus"], string> = {
   schedule: "Schedule",
   playoffs: "Playoffs",
   form: "Club Form",
+  players: "Your Players",
 };
 
 /** Section flag: big on the section front, a slim band on the desk pages behind it. */
@@ -1577,21 +1703,49 @@ function involvesClub(game: BoxGame, clubs: ClubDesk[]): boolean {
   });
 }
 
+function weekday(day: string): number {
+  return new Date(`${day}T12:00:00Z`).getUTCDay();
+}
+
+/**
+ * The front's score strip. Football turns the page on Thursday: from the
+ * Thursday game through Monday night the strip is this week's slate, finals
+ * filling in as they go; Tuesday and Wednesday it still carries last week.
+ */
+function stripFor(path: string, board: SectionBoard | null, edition: string): { title: string; games: BoxGame[] } {
+  if (!board) return { title: "", games: [] };
+  if (path.startsWith("football/")) {
+    const day = weekday(edition);
+    const turned = day === 4 || day === 5 || day === 6 || day === 0 || day === 1;
+    if (turned && board.week?.length) {
+      return { title: `${board.weekLabel ?? "This week"} · scores and kickoffs`, games: board.week };
+    }
+    if (board.results.length) return { title: `${board.weekLabel ?? "This week"} finals`, games: [...board.results].reverse() };
+    return { title: `${board.priorLabel ?? "Last week"} finals`, games: [...(board.prior ?? [])].reverse() };
+  }
+  const games = path.startsWith("soccer/") ? [...board.results].reverse() : board.results;
+  return { title: "Last night’s scores", games };
+}
+
 /** League news front: last night's board, then the stories with their art. */
 function SportNewsDesk({
   page,
   board,
   leagueClubs,
+  edition,
   onTurn,
 }: {
   page: SportFrontPage;
   board: SectionBoard | null;
   leagueClubs: LeagueClub[];
+  edition: string;
   onTurn: (folio: string) => void;
 }) {
   const open = useReader();
-  const results = board?.results ?? [];
-  const recent = page.path.startsWith("soccer/") || page.path.startsWith("football/") ? [...results].reverse() : results;
+  const strip = stripFor(page.path, board, edition);
+  const football = page.path.startsWith("football/");
+  const finals = football ? [...(board?.results ?? []), ...(board?.prior ?? [])] : board?.results ?? [];
+  const recent = page.path.startsWith("soccer/") || football ? [...finals].reverse() : finals;
   const gameById = new Map<string, BoxGame>();
   // Recaps of games your clubs played run in Section A; the league desk takes the rest.
   const recapCards = recent
@@ -1630,16 +1784,16 @@ function SportNewsDesk({
 
   return (
     <div className="wsj-sport-news">
-      {recent.length ? (
+      {strip.games.length ? (
         <section className="tt-strip-wrap">
           <h3 className="wsj-band-title">
-            {page.path.startsWith("football/") ? "This week’s finals" : "Last night’s scores"}
+            {strip.title}
             <button type="button" className="tt-band-link" onClick={() => onTurn(`${page.section}2`)}>
               Box scores, page {page.section}2 →
             </button>
           </h3>
           <ScoreStrip
-            games={recent.slice(0, 16)}
+            games={strip.games.slice(0, 16)}
             onOpen={(g) => {
               const card = boxStoryCard(g);
               if (card) open({ card, game: g });
@@ -1704,33 +1858,126 @@ function dedupeByHead(cards: GameWrapCard[]): GameWrapCard[] {
   });
 }
 
+/** The final as a graphic: each club in its colors, the score set big. */
+function ScoreHero({ game, size = "lg" }: { game: BoxGame; size?: "lg" | "md" }) {
+  return (
+    <div className={cn("tt-hero", size)}>
+      {[game.away, game.home].map((side, i) => (
+        <div
+          key={i}
+          className={cn("tt-hero-side", side.winner && "won", game.final && !side.winner && "lost")}
+          style={tint(hexColor(side.color) ?? "#1f2a44")}
+        >
+          {side.logo ? <img className="tt-hero-ghost" src={side.logo} alt="" aria-hidden="true" /> : null}
+          <span className="tt-hero-disc">
+            <TeamLogo src={side.logo} size="lg" />
+          </span>
+          <span className="tt-hero-id">
+            <em>{i === 0 ? "Away" : "Home"}</em>
+            <strong>{side.short}</strong>
+            {side.record ? <i>{side.record}</i> : null}
+          </span>
+          <b className="tt-hero-score">{side.score ?? "–"}</b>
+        </div>
+      ))}
+      <span className="tt-hero-state">{gameClock(game)}</span>
+    </div>
+  );
+}
+
+type Star = { person: BoxPerson; label: string; team: string | null; game: BoxGame };
+
+/** The night's best lines, one from each game before anyone gets a second. */
+function starsOf(games: BoxGame[], max = 8): Star[] {
+  const lists = games.map((g) => [
+    ...g.decisions
+      .filter((d) => d.label !== "L")
+      .map((d) => ({ person: d.person, label: d.label === "W" ? "Winner" : "Save", team: null, game: g })),
+    ...g.leaders.map((l) => ({ person: l as BoxPerson, label: l.label, team: l.team, game: g })),
+  ]);
+  const out: Star[] = [];
+  const seen = new Set<string>();
+  for (let round = 0; out.length < max && lists.some((l) => l.length > round); round++) {
+    for (const list of lists) {
+      const star = list[round];
+      if (!star || !star.person.headshot || seen.has(star.person.name) || out.length >= max) continue;
+      seen.add(star.person.name);
+      out.push(star);
+    }
+  }
+  return out;
+}
+
+function StarsBand({ games, title = "Stars of the night" }: { games: BoxGame[]; title?: string }) {
+  const stars = starsOf(games);
+  if (stars.length < 2) return null;
+  return (
+    <section className="tt-stars-wrap">
+      <h3 className="wsj-band-title">{title}</h3>
+      <ul className="tt-stars" style={{ ["--cols" as string]: String(balancedCols(stars.length, [4, 3, 5, 2])) }}>
+        {stars.map((s) => (
+          <li key={`${s.game.id}-${s.person.name}`}>
+            <Face person={s.person} size="lg" />
+            <span>
+              <em>
+                {s.label}
+                {s.team ? ` · ${s.team}` : ` · ${s.game.away.abbrev}–${s.game.home.abbrev}`}
+              </em>
+              <strong>
+                <PlayerName name={s.person.name} href={s.person.id ? playerPageHref(s.game.path, s.person.id) : null} />
+              </strong>
+              {s.person.line ? <i>{s.person.line}</i> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** Box scores: the best game set large with its recap, the rest in agate. */
 function ScoresDesk({ page, board, active }: { page: SportFrontPage; board: SectionBoard | null; active: boolean }) {
   const open = useReader();
-  const results = board?.results ?? [];
-  const games = page.path.startsWith("soccer/") || page.path.startsWith("football/") ? [...results].reverse() : results;
   if (!board) return <p className="wsj-empty">Setting the box scores…</p>;
+  const football = page.path.startsWith("football/");
+  const flip = football || page.path.startsWith("soccer/");
+  const current = flip ? [...board.results].reverse() : board.results;
+  const prior = football ? [...(board.prior ?? [])].reverse() : [];
+  const games = current.length ? current : prior;
+  const behind = current.length ? prior : [];
   if (!games.length) return <p className="wsj-empty">No finals on the board — the schedule is on page {page.section}4.</p>;
   const featured =
     games.find((g) => g.recap?.photo && !involvesClub(g, page.clubs)) ?? games.find((g) => g.recap) ?? games[0]!;
   const rest = games.filter((g) => g !== featured).slice(0, 18);
   const card = boxStoryCard(featured);
   const isMlb = page.path === "baseball/mlb";
+  const photo = featured.recap?.photo ?? null;
+  const sparse = games.length < 7;
+  const ahead = board.slate.filter((g) => !g.final && !g.live).slice(0, sparse ? 6 : 0);
+  const restTitle = football
+    ? current.length
+      ? `${board.weekLabel ?? "This week"} results`
+      : `${board.priorLabel ?? "Last week"} results`
+    : isMlb
+      ? "Box scores"
+      : "Results";
   return (
     <div className="tt-scores">
-      <article className="tt-feature">
-        {featured.recap?.photo ? (
+      <article className={cn("tt-feature", !photo && "graphic")}>
+        {photo ? (
           <figure className="tt-feature-photo">
-            <img src={featured.recap.photo} alt="" loading="lazy" />
+            <img src={photo} alt="" loading="lazy" />
             <figcaption>
               {featured.away.name} at {featured.home.name}
               {featured.venue ? `, ${featured.venue}` : ""}.
             </figcaption>
           </figure>
-        ) : null}
+        ) : (
+          <ScoreHero game={featured} />
+        )}
         <div className="tt-feature-copy">
           <p className="wsj-kicker">
-            {[featured.league, featured.round, featured.series].filter(Boolean).join(" · ")}
+            {[featured.league, featured.round, featured.series].filter(Boolean).join(" · ") || "Game of the night"}
           </p>
           <h2 className="wsj-hl lg">
             {card ? (
@@ -1741,7 +1988,12 @@ function ScoresDesk({ page, board, active }: { page: SportFrontPage; board: Sect
               `${featured.away.short} ${featured.away.score ?? ""}, ${featured.home.short} ${featured.home.score ?? ""}`
             )}
           </h2>
-          {featured.recap?.blurb ? <p className="wsj-dek">{featured.recap.blurb}</p> : null}
+          {featured.recap?.blurb ? (
+            <p className="wsj-dek">
+              <NamedText text={featured.recap.blurb} />
+            </p>
+          ) : null}
+          {photo ? <ScoreHero game={featured} size="md" /> : null}
           <Linescore game={featured} />
           <Decisions game={featured} faces />
           <Leaders game={featured} max={4} />
@@ -1757,9 +2009,14 @@ function ScoresDesk({ page, board, active }: { page: SportFrontPage; board: Sect
       </article>
       {isMlb ? <MlbAgate game={featured} enabled={active} /> : null}
       {rest.length ? (
-        <>
-          <h3 className="wsj-band-title">{isMlb ? "Box scores" : "Results"}</h3>
-          <div className={cn("tt-score-grid", isMlb && "agate")}>
+        <section className="tt-results">
+          <h3 className="wsj-band-title">
+            {restTitle} <em>{games.length} {games.length === 1 ? "game" : "games"}</em>
+          </h3>
+          <div
+            className={cn("tt-score-grid", isMlb && "agate", sparse && "roomy")}
+            style={{ ["--cols" as string]: String(isMlb ? 2 : balancedCols(rest.length, [3, 2, 4])) }}
+          >
             {rest.map((g) => (
               <ScoreCard
                 key={g.id}
@@ -1773,7 +2030,30 @@ function ScoresDesk({ page, board, active }: { page: SportFrontPage; board: Sect
               />
             ))}
           </div>
-        </>
+        </section>
+      ) : null}
+      {sparse ? <StarsBand games={games} /> : null}
+      {behind.length ? (
+        <section className="tt-strip-wrap">
+          <h3 className="wsj-band-title">{board.priorLabel ?? "Last week"} finals</h3>
+          <ScoreStrip
+            games={behind}
+            onOpen={(g) => {
+              const c = boxStoryCard(g);
+              if (c) open({ card: c, game: g });
+            }}
+          />
+        </section>
+      ) : null}
+      {ahead.length ? (
+        <section className="tt-ahead">
+          <h3 className="wsj-band-title">Up next</h3>
+          <div className="tt-matchups" style={{ ["--cols" as string]: String(balancedCols(ahead.length, [3, 2, 4])) }}>
+            {ahead.map((g) => (
+              <MatchupCard key={g.id} game={g} />
+            ))}
+          </div>
+        </section>
       ) : null}
     </div>
   );
@@ -1878,13 +2158,34 @@ function StandingsDesk({
   page,
   standings,
   leagueClubs,
+  board,
+  onTurn,
 }: {
   page: SportFrontPage;
   standings: StandGroup[];
   leagueClubs: LeagueClub[];
+  board: SectionBoard | null;
+  onTurn: (folio: string) => void;
 }) {
+  const upcoming = (board?.slate ?? []).filter((g) => !g.final).slice(0, 16);
+  const schedule = upcoming.length ? (
+    <section className="tt-strip-wrap tt-stand-next">
+      <h3 className="wsj-band-title">
+        On the schedule
+        <button type="button" className="tt-band-link" onClick={() => onTurn(`${page.section}4`)}>
+          Matchups and probables, page {page.section}4 →
+        </button>
+      </h3>
+      <ScoreStrip games={upcoming} onOpen={() => onTurn(`${page.section}4`)} />
+    </section>
+  ) : null;
   if (!standings.length) {
-    return leagueClubs.length ? <LeagueFormGrid clubs={leagueClubs} /> : <ClubFormGrid clubs={page.clubs} />;
+    return (
+      <>
+        {leagueClubs.length ? <LeagueFormGrid clubs={leagueClubs} /> : <ClubFormGrid clubs={page.clubs} />}
+        {schedule}
+      </>
+    );
   }
   const favIds = new Set(leagueClubs.filter((c) => c.favorite).map((c) => c.id));
   const favNames = page.clubs.map((c) => squash(c.shortName));
@@ -1892,11 +2193,14 @@ function StandingsDesk({
     favIds.has(row.id) || favNames.some((n) => n && squash(row.name) === n);
   const single = standings.length === 1;
   return (
-    <div className={cn("tt-stand-grid", single && "single")}>
-      {standings.map((group) => (
-        <StandingsTable key={group.name} group={group} mine={mine} />
-      ))}
-    </div>
+    <>
+      <div className={cn("tt-stand-grid", single && "single")}>
+        {standings.map((group) => (
+          <StandingsTable key={group.name} group={group} mine={mine} />
+        ))}
+      </div>
+      {schedule}
+    </>
   );
 }
 
@@ -1909,6 +2213,9 @@ function SportFront({
   playoffs,
   edition,
   active,
+  hasPlayers,
+  nights,
+  sheets,
   onTurn,
 }: {
   page: SportFrontPage;
@@ -1919,18 +2226,25 @@ function SportFront({
   playoffs: MlbPlayoffTree | null;
   edition: string;
   active: boolean;
+  hasPlayers: boolean;
+  nights: PlayerNight[];
+  sheets: Record<string, ClubSheet>;
   onTurn: (folio: string) => void;
 }) {
   const isMlb = page.path === "baseball/mlb";
-  const results = board?.results.length ?? 0;
+  const results = (board?.results.length || board?.prior?.length) ?? 0;
   const upcoming = board?.slate.length ?? slate.length;
+  const newsDay = editionNewsDay(edition);
+  const played = nights.filter((n) => n.day === newsDay).length;
+  const playersTurn = hasPlayers ? { folio: `${page.section}6`, label: "Your players — last night’s lines" } : null;
   const next: Record<SportFrontPage["focus"], { folio: string; label: string } | null> = {
     news: { folio: `${page.section}2`, label: "Scores and box scores" },
     recaps: { folio: `${page.section}3`, label: "The standings" },
     teams: { folio: `${page.section}4`, label: "The schedule" },
     schedule: { folio: `${page.section}5`, label: isMlb ? "The playoff bracket" : "Club form" },
-    playoffs: null,
-    form: null,
+    playoffs: playersTurn,
+    form: playersTurn,
+    players: null,
   };
   const blurb = {
     news: `${page.articles.length + results} stories and finals · ${leagueClubs.length || page.clubs.length} clubs`,
@@ -1938,7 +2252,8 @@ function SportFront({
     teams: standings.length ? `${standings.length} ${standings.length === 1 ? "table" : "tables"} · your clubs marked` : "League tables",
     schedule: upcoming ? `${upcoming} games ahead · probables, TV and venues` : "League calendar",
     playoffs: playoffs ? `${playoffs.season} postseason bracket` : "Postseason bracket",
-    form: `${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"} · tables, numbers, leaders`,
+    form: `${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"} · numbers, leaders, the table`,
+    players: `${nights.length} followed · ${played} played last night`,
   }[page.focus];
   const turn = next[page.focus];
 
@@ -1947,22 +2262,122 @@ function SportFront({
       <SportHero page={page} leagueClubs={leagueClubs} blurb={blurb} />
       <div className="wsj-sport-solo">
         {page.focus === "news" ? (
-          <SportNewsDesk page={page} board={board} leagueClubs={leagueClubs} onTurn={onTurn} />
+          <SportNewsDesk page={page} board={board} leagueClubs={leagueClubs} edition={edition} onTurn={onTurn} />
         ) : page.focus === "recaps" ? (
           <ScoresDesk page={page} board={board} active={active} />
         ) : page.focus === "teams" ? (
-          <StandingsDesk page={page} standings={standings} leagueClubs={leagueClubs} />
+          <StandingsDesk page={page} standings={standings} leagueClubs={leagueClubs} board={board} onTurn={onTurn} />
         ) : page.focus === "schedule" ? (
           <ScheduleDesk page={page} board={board} slate={slate} edition={edition} />
         ) : page.focus === "playoffs" ? (
           <PlayoffDesk tree={playoffs} />
+        ) : page.focus === "players" ? (
+          <PlayersDesk nights={nights} newsDay={newsDay} />
         ) : page.clubs.length ? (
-          <ClubFormGrid clubs={page.clubs} />
+          <>
+            <ClubFormGrid clubs={page.clubs} sheets={sheets} />
+            {leagueClubs.length ? (
+              <section className="wsj-form-league">
+                <h3 className="wsj-band-title">Around the league</h3>
+                <LeagueFormGrid clubs={leagueClubs} />
+              </section>
+            ) : null}
+          </>
         ) : (
           <LeagueFormGrid clubs={leagueClubs} />
         )}
       </div>
       {turn ? <TurnBar onTurn={onTurn} folio={turn.folio} label={turn.label} /> : null}
+    </div>
+  );
+}
+
+function nightWhen(night: PlayerNight, newsDay: string): string {
+  if (!night.day) return "No games logged this season";
+  if (night.day === newsDay) return "Last night";
+  const d = new Date(`${night.day}T12:00:00Z`);
+  return `Last game · ${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })}`;
+}
+
+/** Every followed or tagged player in the section, with the line from his last game. */
+function PlayersDesk({ nights, newsDay }: { nights: PlayerNight[]; newsDay: string }) {
+  if (!nights.length) return <p className="wsj-empty">Pulling your players’ game logs…</p>;
+  const ranked = rankNights(nights, newsDay);
+  const played = ranked.filter((n) => n.day === newsDay);
+  const rest = ranked.filter((n) => n.day !== newsDay);
+  const card = (n: PlayerNight, big: boolean) => {
+    const href = playerPageHref(n.player.path, n.player.id);
+    return (
+      <article key={`${n.player.path}-${n.player.id}`} className={cn("tt-pl", big && "big", n.day === newsDay && "played")}>
+        <header>
+          <span className="tt-pl-face">
+            {n.headshot ? <img src={n.headshot} alt="" loading="lazy" /> : null}
+          </span>
+          <span className="tt-pl-id">
+            <em>
+              {[n.player.position, n.player.team].filter(Boolean).join(" · ")}
+              {n.player.source === "tagged" ? " · Tagged" : ""}
+            </em>
+            <strong>
+              <PlayerName name={n.player.name} href={href} />
+            </strong>
+            <span>{nightWhen(n, newsDay)}</span>
+          </span>
+        </header>
+        {n.opponent ? (
+          <p className="tt-pl-opp">
+            {n.opponentLogo ? <img src={n.opponentLogo} alt="" loading="lazy" /> : null}
+            <span>
+              {n.homeAway ?? "vs"} {n.opponent}
+            </span>
+            {n.result ? <b className={cn(/^W/.test(n.result) ? "w" : /^L/.test(n.result) ? "l" : "")}>{n.result}</b> : null}
+          </p>
+        ) : null}
+        {n.line ? <p className="tt-pl-line">{n.line}</p> : null}
+        {n.cells.length ? (
+          <dl className="tt-pl-cells">
+            {n.cells.map((c) => (
+              <div key={c.label}>
+                <dd>{c.value}</dd>
+                <dt>{c.label}</dt>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+      </article>
+    );
+  };
+  return (
+    <div className="tt-players">
+      {played.length ? (
+        <section>
+          <h3 className="wsj-band-title">
+            Last night <em>{played.length} played</em>
+          </h3>
+          <div className="tt-pl-grid big" style={{ ["--cols" as string]: String(balancedCols(played.length, [3, 2, 4])) }}>
+            {played.map((n) => card(n, true))}
+          </div>
+        </section>
+      ) : (
+        <p className="wsj-empty">None of your players saw action last night. Their latest lines follow.</p>
+      )}
+      {rest.length ? (
+        <section>
+          <h3 className="wsj-band-title">
+            {played.length ? "The rest of your list" : "Their last outings"} <em>{rest.length}</em>
+          </h3>
+          <div
+            className={cn("tt-pl-grid", !played.length && "big")}
+            style={{
+              ["--cols" as string]: String(
+                played.length ? balancedCols(rest.length, [4, 3, 5, 2]) : balancedCols(rest.length, [2, 3]),
+              ),
+            }}
+          >
+            {rest.map((n) => card(n, !played.length))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -2004,116 +2419,318 @@ function PlayoffDesk({ tree }: { tree: MlbPlayoffTree | null }) {
   if (!tree || !tree.rounds.some((r) => r.series.length)) {
     return <p className="wsj-empty">Postseason bracket isn’t published yet.</p>;
   }
+  return <PlayoffBracket tree={tree} />;
+}
+
+function ClubFormGrid({ clubs, sheets = {} }: { clubs: ClubDesk[]; sheets?: Record<string, ClubSheet> }) {
+  if (!clubs.length) return <p className="wsj-empty">No clubs filed in this section yet.</p>;
+  const wide = clubs.length <= 2;
   return (
-    <div className="wsj-playoff-desk">
-      {tree.rounds.map((round) =>
-        round.series.length ? (
-          <section key={round.id} className="wsj-playoff-round">
-            <h4>{round.label}</h4>
-            <div className="wsj-playoff-grid">
-              {round.series.map((series) => {
-                const aW = series.away.wins;
-                const hW = series.home.wins;
-                return (
-                  <article key={series.id} className="wsj-playoff-card">
-                    <header>
-                      <span>{series.label}</span>
-                      <span>{series.seriesStatus || `Best of ${series.gamesInSeries}`}</span>
-                    </header>
-                    {[
-                      { side: series.away, won: aW > hW, wins: aW },
-                      { side: series.home, won: hW > aW, wins: hW },
-                    ].map(({ side, won, wins }, i) => (
-                      <div key={i} className={cn("wsj-playoff-side", won && "winner")}>
-                        <TeamLogo
-                          src={
-                            side.teamId ? `https://www.mlbstatic.com/team-logos/${side.teamId}.svg` : null
-                          }
-                          size="sm"
-                        />
-                        <strong>{side.abbrev || side.name}</strong>
-                        <span className="wins">{wins}</span>
+    <div
+      className={cn("wsj-form-grid", wide && "wide")}
+      style={{ ["--cols" as string]: String(wide ? 1 : balancedCols(clubs.length, [3, 2, 4])) }}
+    >
+      {clubs.map((club) => {
+        const sheet = sheets[club.key];
+        const stats = sheet?.stats.length ? sheet.stats : club.stats;
+        const leaders = sheet?.leaders.length
+          ? sheet.leaders.map((l) => ({
+              key: `${l.category}-${l.id}`,
+              label: l.category,
+              name: l.name,
+              line: l.line,
+              headshot: l.headshot,
+              href: club.leaguePath ? playerPageHref(club.leaguePath, l.id) : null,
+            }))
+          : club.leaders.map((l) => ({
+              key: l.name,
+              label: null,
+              name: l.name,
+              line: l.line,
+              headshot: null,
+              href: l.href && l.href.startsWith("/") ? l.href : null,
+            }));
+        return (
+          <article key={club.key} className="wsj-form-card" style={tint(club.color)}>
+            <header className="wsj-club-card-head">
+              <span className="wsj-disc">
+                <TeamLogo src={club.logo} size="md" />
+              </span>
+              <span className="wsj-club-card-id">
+                <em>{club.standing || "—"}</em>
+                <strong>{club.shortName}</strong>
+              </span>
+              <b>{club.record || "—"}</b>
+            </header>
+            <div className="wsj-form-card-body">
+              {stats.length ? (
+                <section className="wsj-form-sec stats">
+                  <h4>{sheet?.season ? `${sheet.season} by the numbers` : "By the numbers"}</h4>
+                  <dl className="wsj-form-stats">
+                    {stats.slice(0, 8).map((s) => (
+                      <div key={`${s.label}-${s.value}`}>
+                        <dd>{s.value}</dd>
+                        <dt>{s.label}</dt>
                       </div>
                     ))}
-                  </article>
-                );
-              })}
+                  </dl>
+                </section>
+              ) : null}
+              {leaders.length ? (
+                <section className="wsj-form-sec leaders">
+                  <h4>Team leaders</h4>
+                  <ul className="wsj-form-leaders">
+                    {leaders.slice(0, 6).map((l) => (
+                      <li key={l.key}>
+                        {l.headshot ? <img src={l.headshot} alt="" loading="lazy" className="tt-face md" /> : null}
+                        <span>
+                          {l.label ? <em>{l.label}</em> : null}
+                          <strong>
+                            <PlayerName name={l.name} href={l.href} />
+                          </strong>
+                          <i>{l.line}</i>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+              {club.division.length ? (
+                <AgateBox
+                  color={club.color}
+                  title={tableTitle(club.standing)}
+                  rows={club.division.map((row) => ({
+                    left: (
+                      <span className="wsj-club-inline">
+                        <TeamLogo src={row.logo} size="xs" />
+                        <span>
+                          {row.rank} {row.team}
+                        </span>
+                      </span>
+                    ),
+                    right: row.gb && row.gb !== "-" && row.gb !== "0" ? `${row.record} · ${row.gb} GB` : row.record,
+                    me: row.me,
+                  }))}
+                />
+              ) : null}
+              {club.upcoming.length ? (
+                <AgateBox
+                  color={club.color}
+                  title="Next up"
+                  rows={club.upcoming.map((game) => ({ left: game.label, right: game.when || "TBD" }))}
+                />
+              ) : (
+                <p className="wsj-brief-dek">Nothing left on the calendar.</p>
+              )}
             </div>
-          </section>
-        ) : null,
-      )}
+          </article>
+        );
+      })}
     </div>
   );
 }
 
-function ClubFormGrid({ clubs }: { clubs: ClubDesk[] }) {
-  if (!clubs.length) return <p className="wsj-empty">No clubs filed in this section yet.</p>;
+/* ───────────────────────── Missouri ───────────────────────── */
+
+type MissouriEditionPage = Extract<EditionPage, { kind: "missouri" }>;
+
+/** A Missouri item set as a story card, so the reader can pull and set it. */
+function moCard(item: MoItem): GameWrapCard {
+  return {
+    id: item.id,
+    favoriteKey: "",
+    teamName: item.source,
+    teamHref: "",
+    sportLabel: "Missouri",
+    leaguePath: null,
+    headline: item.headline,
+    dek: item.dek,
+    body: null,
+    scoreLine: null,
+    when: item.when,
+    won: null,
+    gameHref: null,
+    wrapHref: item.url,
+    feedUrl: null,
+    gameId: null,
+    stats: [],
+    leaders: [],
+    teamStats: [],
+    division: [],
+    photo: item.photo,
+  };
+}
+
+function moWhen(iso: string | null): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const hours = Math.round((Date.now() - t) / 3_600_000);
+  if (hours < 1) return "Just now";
+  if (hours < 24) return `${hours} hr ago`;
+  return new Date(t).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+
+/** Feed snippets stop mid-word; end them on a sentence, or at least a word. */
+function cleanDek(text: string): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (/[.!?”"’)]$/.test(t)) return t;
+  const stop = Math.max(t.lastIndexOf(". "), t.lastIndexOf("? "), t.lastIndexOf("! "));
+  if (stop > 120) return t.slice(0, stop + 1);
+  const space = t.lastIndexOf(" ");
+  return `${(space > 40 ? t.slice(0, space) : t).replace(/[,;:\-–—]+$/, "")}…`;
+}
+
+function MoSource({ item }: { item: MoItem }) {
   return (
-    <div
-      className="wsj-form-grid"
-      style={{ ["--cols" as string]: String(balancedCols(clubs.length, [3, 2, 4])) }}
-    >
-      {clubs.map((club) => (
-        <article key={club.key} className="wsj-form-card" style={tint(club.color)}>
-          <header className="wsj-club-card-head">
-            <span className="wsj-disc">
-              <TeamLogo src={club.logo} size="md" />
-            </span>
-            <span className="wsj-club-card-id">
-              <em>{club.standing || "—"}</em>
-              <strong>{club.shortName}</strong>
-            </span>
-            <b>{club.record || "—"}</b>
-          </header>
-          <div className="wsj-form-card-body">
-            {club.division.length ? (
-              <AgateBox
-                color={club.color}
-                title={tableTitle(club.standing)}
-                rows={club.division.map((row) => ({
-                  left: (
-                    <span className="wsj-club-inline">
-                      <TeamLogo src={row.logo} size="xs" />
-                      <span>
-                        {row.rank} {row.team}
-                      </span>
-                    </span>
-                  ),
-                  right: row.gb && row.gb !== "-" ? `${row.record} ${row.gb}` : row.record,
-                  me: row.me,
-                }))}
-              />
-            ) : null}
-            {club.stats.length ? (
-              <dl className="wsj-form-stats">
-                {club.stats.slice(0, 8).map((s) => (
-                  <div key={`${s.label}-${s.value}`}>
-                    <dd>{s.value}</dd>
-                    <dt>{s.label}</dt>
-                  </div>
+    <p className="tt-mo-src">
+      <b>{item.source}</b>
+      {item.also?.length ? <span> · also {item.also.join(", ")}</span> : null}
+      {moWhen(item.when) ? <em> · {moWhen(item.when)}</em> : null}
+    </p>
+  );
+}
+
+function MoStory({ item, size }: { item: MoItem; size: "xl" | "md" | "sm" }) {
+  const open = useReader();
+  const card = moCard(item);
+  return (
+    <article className={cn("tt-mo-story", size, item.photo && size !== "sm" && "has-photo")}>
+      {item.photo && size !== "sm" ? (
+        <button type="button" className="tt-mo-photo" onClick={() => open({ card })} aria-label={item.headline}>
+          <img src={item.photo} alt="" loading="lazy" />
+        </button>
+      ) : null}
+      <div className="tt-mo-copy">
+        <MoSource item={item} />
+        <h3 className={cn("wsj-hl", size === "xl" ? "xl" : size === "md" ? "md" : "sm")}>
+          <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
+            {item.headline}
+          </button>
+        </h3>
+        {item.dek && size !== "sm" ? <p className="tt-mo-dek">{cleanDek(item.dek)}</p> : null}
+        {size !== "sm" ? (
+          <p className="wsj-jump">
+            <button type="button" className="wsj-jump-btn" onClick={() => open({ card })}>
+              Read the story <span aria-hidden="true">→</span>
+            </button>
+          </p>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function MissouriDesk({ page, onTurn }: { page: MissouriEditionPage; onTurn: (folio: string) => void }) {
+  const items = page.items;
+  const outlets = new Set(items.flatMap((i) => [i.source, ...(i.also ?? [])])).size;
+  const flag = (
+    <header className="tt-mo-flag">
+      <span className="wsj-sport-code">MO</span>
+      <h3>
+        Missouri <em>{page.sectionPage === 1 ? "Statehouse & Politics" : "Around the State"}</em>
+      </h3>
+      <p>
+        {items.length} stories · {outlets} outlets · duplicates folded
+      </p>
+    </header>
+  );
+  const more = page.sectionPage < page.sectionCount ? `MO${page.sectionPage + 1}` : null;
+  if (page.sectionPage > 1) {
+    return (
+      <div className="tt-mo">
+        {flag}
+        <div className="tt-mo-briefs">
+          {items.map((item) => (
+            <MoStory key={item.id} item={item} size={item.photo ? "md" : "sm"} />
+          ))}
+        </div>
+        {more ? <TurnBar onTurn={onTurn} folio={more} label="More from around the state" /> : null}
+      </div>
+    );
+  }
+  const lead = items.find((i) => i.photo) ?? items[0]!;
+  const seconds = items.filter((i) => i !== lead && i.photo).slice(0, 2);
+  const list = items.filter((i) => i !== lead && !seconds.includes(i));
+  return (
+    <div className="tt-mo">
+      {flag}
+      <div className="tt-mo-grid">
+        <div className="tt-mo-main">
+          <MoStory item={lead} size="xl" />
+          {seconds.length ? (
+            <div className={cn("tt-mo-seconds", seconds.length === 1 && "one")}>
+              {seconds.map((item) => (
+                <MoStory key={item.id} item={item} size="md" />
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <aside className="tt-mo-rail">
+          <section>
+            <h4>The headlines</h4>
+            <ol className="tt-mo-list">
+              {list.map((item) => (
+                <li key={item.id}>
+                  <MoStory item={item} size="sm" />
+                </li>
+              ))}
+            </ol>
+          </section>
+          {page.listen.length ? (
+            <section className="tt-mo-listen">
+              <h4>Listen &amp; watch</h4>
+              <ul>
+                {page.listen.map((item) => (
+                  <li key={item.id}>
+                    <a href={item.url} target="_blank" rel="noreferrer" className="wsj-a">
+                      <b>{item.source}</b>
+                      <span>{item.headline}</span>
+                    </a>
+                  </li>
                 ))}
-              </dl>
-            ) : null}
-            {club.leaders.length ? (
-              <AgateBox
-                color={club.color}
-                title="Leaders"
-                rows={club.leaders.slice(0, 5).map((l) => ({ left: l.name, right: l.line }))}
-              />
-            ) : null}
-            {club.upcoming.length ? (
-              <AgateBox
-                color={club.color}
-                title="Next up"
-                rows={club.upcoming.map((game) => ({ left: game.label, right: game.when || "TBD" }))}
-              />
-            ) : (
-              <p className="wsj-brief-dek">Nothing left on the calendar.</p>
-            )}
-          </div>
-        </article>
-      ))}
+              </ul>
+            </section>
+          ) : null}
+        </aside>
+      </div>
+      {more ? <TurnBar onTurn={onTurn} folio={more} label="More Missouri news" /> : null}
     </div>
+  );
+}
+
+/** Section A's window on the statehouse: the Missouri Scout's latest. */
+function ScoutBand({ item, onTurn, hasDesk }: { item: MoItem; onTurn: (folio: string) => void; hasDesk: boolean }) {
+  const open = useReader();
+  const card = moCard(item);
+  const dek = item.dek ? cleanDek(item.dek.length > 420 ? item.dek.slice(0, 420) : item.dek) : null;
+  return (
+    <section className={cn("tt-scout", item.photo && "has-photo")}>
+      <div className="tt-scout-flag">
+        <span>From the</span>
+        <strong>Missouri Scout</strong>
+        <em>{moWhen(item.when) || "Latest"}</em>
+      </div>
+      {item.photo ? <img className="tt-scout-photo" src={item.photo} alt="" loading="lazy" /> : null}
+      <div className="tt-scout-copy">
+        <h3 className="wsj-hl md">
+          <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
+            {item.headline}
+          </button>
+        </h3>
+        {dek ? <p>{dek}</p> : null}
+        <p className="tt-scout-links">
+          <button type="button" className="wsj-jump-btn" onClick={() => open({ card })}>
+            Read the update <span aria-hidden="true">→</span>
+          </button>
+          {hasDesk ? (
+            <button type="button" className="wsj-jump-btn" onClick={() => onTurn("MO1")}>
+              Missouri news, page MO1 <span aria-hidden="true">→</span>
+            </button>
+          ) : null}
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -2497,7 +3114,7 @@ export default function DailyNewspaperPage() {
     (card: GameWrapCard): BoxGame | null => {
       const board = card.leaguePath ? boardQ.data?.[card.leaguePath] : undefined;
       if (!board) return null;
-      const games = [...board.results, ...board.slate];
+      const games = [...board.results, ...board.slate, ...(board.prior ?? [])];
       if (card.gameId) {
         const hit = games.find(
           (g) => g.espnEventId === card.gameId || (g.gamePk != null && String(g.gamePk) === card.gameId),
@@ -2508,7 +3125,7 @@ export default function DailyNewspaperPage() {
       if (!team || !card.when) return null;
       const day = instantDay(card.when);
       return (
-        board.results.find(
+        [...board.results, ...(board.prior ?? [])].find(
           (g) =>
             [g.away, g.home].some((s) => {
               const n = squash(s.short);
@@ -2538,10 +3155,128 @@ export default function DailyNewspaperPage() {
       .slice(0, 6);
   }, [wireQ.data, day]);
 
+  const favPlayersQ = useQuery({
+    queryKey: ["tt-fav-players", user?.id],
+    queryFn: () => listFavoritePlayers(user!.id),
+    enabled: Boolean(user?.id),
+    staleTime: 10 * 60_000,
+  });
+
+  const taggedQ = useQuery({
+    queryKey: ["tt-tagged-players", user?.id],
+    queryFn: async () => {
+      const ids = await fetchTaggedPlayerIds();
+      if (!ids.length) return [];
+      return [...(await fetchMlbPeopleByIds(ids)).values()];
+    },
+    enabled: Boolean(user?.id),
+    staleTime: 30 * 60_000,
+  });
+
+  const followed = useMemo<FollowedPlayer[]>(() => {
+    const out: FollowedPlayer[] = [];
+    const seen = new Set<string>();
+    const add = (p: FollowedPlayer) => {
+      const k = `${p.path}:${p.id}`;
+      if (!p.id || seen.has(k)) return;
+      seen.add(k);
+      out.push(p);
+    };
+    for (const f of favPlayersQ.data ?? []) {
+      const path = playerPath(f.league, f.sport);
+      if (!path) continue;
+      add({ id: f.playerId, name: f.playerName, path, team: f.teamName, position: f.position, source: "favorite" });
+    }
+    for (const p of taggedQ.data ?? []) {
+      add({
+        id: String(p.id),
+        name: p.name,
+        path: "baseball/mlb",
+        team: p.teamName,
+        position: p.position,
+        source: "tagged",
+        sportId: p.sportId,
+      });
+    }
+    return out.filter((p) => sportPaths.includes(p.path));
+  }, [favPlayersQ.data, taggedQ.data, sportPaths]);
+
+  const nightsQ = useQuery({
+    queryKey: ["tt-player-nights", day, followed.map((p) => `${p.path}:${p.id}`).join("|")],
+    queryFn: () => {
+      const [y, m] = day.split("-").map(Number) as [number, number];
+      return fetchPlayerNights(followed, m < 3 ? y - 1 : y);
+    },
+    enabled: followed.length > 0,
+    staleTime: 10 * 60_000,
+  });
+
+  const nightsByPath = useMemo(() => {
+    const out: Record<string, PlayerNight[]> = {};
+    for (const n of nightsQ.data ?? []) (out[n.player.path] ??= []).push(n);
+    return out;
+  }, [nightsQ.data]);
+
+  const sheetsQ = useQuery({
+    queryKey: ["tt-club-sheets", day, favKeys],
+    queryFn: async () => {
+      const rows = await Promise.all(
+        teamFavs.map(async (fav) => [fav.key, await fetchClubSheet(fav.espnPath, day).catch(() => null)] as const),
+      );
+      return Object.fromEntries(rows.filter((r) => r[1])) as Record<string, ClubSheet>;
+    },
+    enabled: teamFavs.length > 0,
+    staleTime: 30 * 60_000,
+  });
+
+  const scoutQ = useQuery({
+    queryKey: ["tt-mo-scout", day],
+    queryFn: async () => {
+      const item = await fetchMissouriScout();
+      return item ? ((await enrichMissouriItems([item], 1))[0] ?? item) : null;
+    },
+    staleTime: 15 * 60_000,
+  });
+
+  const missouriQ = useQuery({
+    queryKey: ["tt-missouri", day],
+    queryFn: async () => {
+      const desk = await fetchMissouriDesk(day);
+      return { ...desk, items: await enrichMissouriItems(desk.items, 7) };
+    },
+    staleTime: 15 * 60_000,
+  });
+
+  const playerPaths = useMemo(() => [...new Set(followed.map((p) => p.path))], [followed]);
+
   const edition = useMemo(
-    () => buildEdition({ stories, clubs, edition: day }),
-    [stories, clubs, day],
+    () => buildEdition({ stories, clubs, edition: day, playerPaths, missouri: missouriQ.data ?? null }),
+    [stories, clubs, day, playerPaths, missouriQ.data],
   );
+
+  /** Everyone the paper can name and link: box scores, club leaders, your players. */
+  const people = useMemo<Person[]>(() => {
+    const out: Person[] = [];
+    const push = (path: string, id: string | null | undefined, name: string | null | undefined) => {
+      const href = id ? playerPageHref(path, id) : null;
+      if (href && name) out.push({ name, href });
+    };
+    for (const p of followed) push(p.path, p.id, p.name);
+    for (const [path, board] of Object.entries(boardQ.data ?? {})) {
+      for (const g of [...board.results, ...board.slate, ...(board.prior ?? [])]) {
+        for (const d of g.decisions) push(path, d.person.id, d.person.name);
+        for (const l of g.leaders) push(path, l.id, l.name);
+        push(path, g.probables.away?.id, g.probables.away?.name);
+        push(path, g.probables.home?.id, g.probables.home?.name);
+      }
+    }
+    for (const club of clubs) {
+      for (const l of club.leaders) if (l.href?.startsWith("/")) out.push({ name: l.name, href: l.href });
+      const sheet = sheetsQ.data?.[club.key];
+      if (sheet && club.leaguePath) for (const l of sheet.leaders) push(club.leaguePath, l.id, l.name);
+    }
+    return out;
+  }, [followed, boardQ.data, clubs, sheetsQ.data]);
   const comingUp = useMemo<ComingUp[]>(
     () =>
       clubs.flatMap((club) =>
@@ -2651,6 +3386,9 @@ export default function DailyNewspaperPage() {
     wrapsQ.isFetching ||
     enrichedQ.isFetching ||
     boardQ.isFetching ||
+    nightsQ.isFetching ||
+    missouriQ.isFetching ||
+    scoutQ.isFetching ||
     newsQ.isFetching;
 
   async function onRefresh() {
@@ -2667,6 +3405,10 @@ export default function DailyNewspaperPage() {
       enrichedQ.refetch(),
       boardQ.refetch(),
       newsQ.refetch(),
+      nightsQ.refetch(),
+      sheetsQ.refetch(),
+      missouriQ.refetch(),
+      scoutQ.refetch(),
     ]);
   }
 
@@ -2676,6 +3418,7 @@ export default function DailyNewspaperPage() {
   return (
     <div className="newspaper-root wsj-shell">
       <GameLookup.Provider value={findGame}>
+      <PlayerPopProvider people={people}>
       <ReaderProvider>
       <div className="wsj-chrome print:hidden">
         <div className="wsj-chrome-l">
@@ -2779,6 +3522,7 @@ export default function DailyNewspaperPage() {
                   leadTeaser={page.leadTeaser}
                   secondTeaser={page.secondTeaser}
                   thirdTeaser={page.thirdTeaser}
+                  scout={scoutQ.data ?? missouriQ.data?.scout ?? null}
                 />
               ) : page.kind === "favorites-clubs" ? (
                 <ClubsDesk teams={teams} />
@@ -2788,7 +3532,7 @@ export default function DailyNewspaperPage() {
                     <h2>Club Form</h2>
                     <p>{page.clubs.length} clubs · standings, numbers, leaders and what’s next</p>
                   </header>
-                  <ClubFormGrid clubs={page.clubs} />
+                  <ClubFormGrid clubs={page.clubs} sheets={sheetsQ.data ?? {}} />
                 </div>
               ) : page.kind === "favorites-continue" ? (
                 <ContinuePage
@@ -2819,8 +3563,13 @@ export default function DailyNewspaperPage() {
                   playoffs={page.path === "baseball/mlb" ? mlbPlayoffsQ.data ?? null : null}
                   edition={day}
                   active={Math.abs(index - pageIndex) <= 1}
+                  hasPlayers={playerPaths.includes(page.path)}
+                  nights={nightsByPath[page.path] ?? []}
+                  sheets={sheetsQ.data ?? {}}
                   onTurn={goFolio}
                 />
+              ) : page.kind === "missouri" ? (
+                <MissouriDesk page={page} onTurn={goFolio} />
               ) : (
                 <InsidePage
                   primary={page.primary}
@@ -2837,6 +3586,7 @@ export default function DailyNewspaperPage() {
         ))}
       </div>
       </ReaderProvider>
+      </PlayerPopProvider>
       </GameLookup.Provider>
     </div>
   );
