@@ -179,13 +179,22 @@ export type TeamDetail = {
   roster: RosterPlayer[];
   hittingLeaders: LeaderStat[];
   pitchingLeaders: LeaderStat[];
-  teamHitting: { label: string; value: string }[];
-  teamPitching: { label: string; value: string }[];
+  teamHitting: TeamStatLine[];
+  teamPitching: TeamStatLine[];
   /** ESPN-style player stat tables (MLB / NFL). */
   playerTables: TeamPlayerStatTable[];
   /** Club form / table chips for soccer. */
-  teamFacts: { label: string; value: string }[];
+  teamFacts: TeamStatLine[];
   source: "mlb" | "espn";
+};
+
+export type TeamStatLine = {
+  label: string;
+  value: string;
+  /** League rank as printed, e.g. "14th" or "T-3rd". */
+  rank?: string | null;
+  /** What the rank is counted within, e.g. "MLB", "FBS". */
+  rankIn?: string | null;
 };
 
 const LAYOUT_KEY = "sports-layout-v1";
@@ -2478,6 +2487,10 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     played: string | null;
     rank: number | null;
   } = { pts: null, gf: null, ga: null, gd: null, played: null, rank: null };
+  const leagueTable: {
+    scope: string | null;
+    rows: Map<string, { pts: string; gf: string; ga: string; gd: string }>;
+  } = { scope: null, rows: new Map() };
   try {
     const root = espnSportRoot(fav.espnPath);
     type StandingNode = {
@@ -2494,18 +2507,31 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
       `https://site.api.espn.com/apis/v2/sports/${root}/standings?level=3`,
       `https://site.web.api.espn.com/apis/v2/sports/${root}/standings?level=3`,
     ];
-    let d: { children?: StandingNode[] } | null = null;
+    let d: { name?: string; abbreviation?: string; children?: StandingNode[] } | null = null;
     for (const url of urls) {
       const res = await fetch(url, { headers: { Accept: "application/json" } });
       if (!res.ok) continue;
-      d = (await res.json()) as { children?: StandingNode[] };
+      d = (await res.json()) as { name?: string; abbreviation?: string; children?: StandingNode[] };
       break;
     }
     if (d) {
+      const scope = d.abbreviation || d.name || "";
+      leagueTable.scope = scope.length > 6 ? "league" : scope || null;
       const groups: NonNullable<StandingNode["standings"]>["entries"][] = [];
       const walk = (nodes: StandingNode[]) => {
         for (const node of nodes) {
           const entries = node.standings?.entries ?? [];
+          for (const e of entries) {
+            const id = e.team?.id ? String(e.team.id) : null;
+            if (!id || leagueTable.rows.has(id)) continue;
+            const stat = (n: string) => e.stats?.find((s) => s.name === n)?.displayValue ?? "";
+            leagueTable.rows.set(id, {
+              pts: stat("points"),
+              gf: stat("pointsFor"),
+              ga: stat("pointsAgainst"),
+              gd: stat("pointDifferential"),
+            });
+          }
           if (entries.some((e) => String(e.team?.id) === String(espnTeamId))) groups.push(entries);
           if (node.children?.length) walk(node.children);
         }
@@ -2587,7 +2613,7 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
   }
 
   let soccerPromotion: SoccerPromotionInfo | null = null;
-  const teamFacts: { label: string; value: string }[] = [];
+  const teamFacts: TeamStatLine[] = [];
   if (isSoccer) {
     const { championshipZone, zoneLabel, fetchChampionshipPromotionOdds } = await import(
       "@/lib/soccer"
@@ -2652,6 +2678,25 @@ async function fetchEspnTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     if (myTable.gf) teamFacts.push({ label: football ? "PF" : "GF", value: myTable.gf });
     if (myTable.ga) teamFacts.push({ label: football ? "PA" : "GA", value: myTable.ga });
     if (myTable.gd) teamFacts.push({ label: football ? "Diff" : "GD", value: myTable.gd });
+  }
+  const factColumn: Record<string, "pts" | "gf" | "ga" | "gd"> = {
+    Points: "pts",
+    GF: "gf",
+    PF: "gf",
+    GA: "ga",
+    PA: "ga",
+    GD: "gd",
+    Diff: "gd",
+  };
+  const leagueRows = [...leagueTable.rows.values()];
+  for (const fact of teamFacts) {
+    const col = factColumn[fact.label];
+    if (!col || leagueRows.length < 2) continue;
+    const rank = rankAmong(fact.value, leagueRows.map((r) => r[col]), fact.label);
+    if (rank) {
+      fact.rank = rank;
+      fact.rankIn = leagueTable.scope;
+    }
   }
 
   return {
@@ -2732,6 +2777,8 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     pitchLeaders,
     manager,
     generalManager,
+    leagueHitting,
+    leaguePitching,
   ] = await Promise.all([
     isMilb
       ? Promise.resolve({ records: [] })
@@ -2756,6 +2803,8 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     ).catch(() => ({})),
     isMilb ? Promise.resolve(null) : fetchMlbTeamManager(teamId).catch(() => null),
     isMilb ? Promise.resolve(null) : fetchMlbTeamGeneralManager(teamId).catch(() => null),
+    isMilb ? Promise.resolve(null) : mlbLeagueTeamStats(season, "hitting"),
+    isMilb ? Promise.resolve(null) : mlbLeagueTeamStats(season, "pitching"),
   ]);
 
   // Division standings (NL Central)
@@ -2913,7 +2962,7 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     ["obp", "OBP"],
     ["slg", "SLG"],
     ["ops", "OPS"],
-  ]);
+  ], leagueHitting);
   const teamPitching = pickTeamStatLines(pitchTeam, [
     ["era", "ERA"],
     ["whip", "WHIP"],
@@ -2921,7 +2970,7 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
     ["saves", "SV"],
     ["wins", "W"],
     ["inningsPitched", "IP"],
-  ]);
+  ], leaguePitching);
 
   const hittingLeaders = mlbLeaders(hitLeaders, (s) => {
     const ab = Number(s.atBats ?? 0);
@@ -3004,14 +3053,62 @@ async function fetchMlbTeamDetail(fav: SportsFavorite): Promise<TeamDetail> {
 function pickTeamStatLines(
   raw: unknown,
   keys: [string, string][],
-): { label: string; value: string }[] {
+  league?: Record<string, unknown>[] | null,
+): TeamStatLine[] {
   const splits =
     (raw as { stats?: { splits?: { stat?: Record<string, unknown> }[] }[] }).stats?.[0]?.splits ??
     [];
   const stat = splits[0]?.stat ?? {};
   return keys
     .filter(([k]) => stat[k] != null)
-    .map(([k, label]) => ({ label, value: String(stat[k]) }));
+    .map(([k, label]) => {
+      const value = String(stat[k]);
+      const rank = league?.length
+        ? rankAmong(value, league.map((row) => String(row[k] ?? "")), label)
+        : null;
+      return rank ? { label, value, rank, rankIn: "MLB" } : { label, value };
+    });
+}
+
+const LOWER_IS_BETTER = new Set(["ERA", "WHIP", "PA", "GA", "RA"]);
+const UNRANKED = new Set(["IP", "Played", "Zone"]);
+
+function statNumber(value: string): number | null {
+  const n = parseFloat(value.replace(/[^\d.+-]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** "14th" / "T-3rd" for `value` among every club's value; null when the column says nothing yet. */
+function rankAmong(value: string, all: string[], label: string): string | null {
+  if (UNRANKED.has(label)) return null;
+  const mine = statNumber(value);
+  const nums = all.map(statNumber).filter((n): n is number => n != null);
+  if (mine == null || nums.length < 2 || nums.every((n) => n === nums[0])) return null;
+  const lower = LOWER_IS_BETTER.has(label);
+  const rank = 1 + nums.filter((n) => (lower ? n < mine : n > mine)).length;
+  const tied = nums.filter((n) => n === mine).length > 1;
+  return `${tied ? "T-" : ""}${rank}${ordinalSuffix(rank)}`;
+}
+
+const mlbLeagueTables = new Map<string, Promise<Record<string, unknown>[]>>();
+
+/** Every MLB club's season line for one stat group, fetched once per season. */
+function mlbLeagueTeamStats(season: number, group: "hitting" | "pitching"): Promise<Record<string, unknown>[]> {
+  const key = `${season}-${group}`;
+  let hit = mlbLeagueTables.get(key);
+  if (!hit) {
+    hit = mlbGet(`teams/stats?season=${season}&group=${group}&stats=season&sportIds=1`)
+      .then((raw) =>
+        ((raw as { stats?: { splits?: { stat?: Record<string, unknown> }[] }[] }).stats?.[0]?.splits ?? [])
+          .map((s) => s.stat ?? {}),
+      )
+      .catch(() => {
+        mlbLeagueTables.delete(key);
+        return [];
+      });
+    mlbLeagueTables.set(key, hit);
+  }
+  return hit;
 }
 
 function mlbLeaders(

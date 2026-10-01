@@ -14,7 +14,7 @@ export type SheetLeader = {
 
 export type ClubSheet = {
   season: string;
-  stats: { label: string; value: string }[];
+  stats: { label: string; value: string; rank?: string | null; rankIn?: string | null }[];
   leaders: SheetLeader[];
 };
 
@@ -98,6 +98,24 @@ type CoreLeaders = {
   }[];
 };
 
+type CoreCategory = {
+  name?: string;
+  stats?: { name?: string; displayValue?: string; rankDisplayValue?: string }[];
+};
+
+type CoreStats = { splits?: { categories?: CoreCategory[] } };
+
+const RANK_SCOPE: Record<string, string> = {
+  nfl: "NFL",
+  nhl: "NHL",
+  "college-football": "FBS",
+};
+
+/** ESPN prints every FBS club as "Tied-1st" in these. */
+const BAD_RANKS: Record<string, Set<string>> = {
+  "college-football": new Set(["thirdDownConvPct", "redzoneTouchdownPct"]),
+};
+
 /** ESPN files the NHL season under the year it ends; football under the year it starts. */
 function seasonsToTry(sport: string, day: string): number[] {
   const [y, m] = day.split("-").map(Number) as [number, number];
@@ -133,13 +151,23 @@ export async function fetchClubSheet(espnPath: string, day: string): Promise<Clu
       break;
     }
   }
-  const cats = statsRaw?.results?.stats?.categories ?? [];
+  let ranked: CoreStats | null = null;
+  for (const s of season ? [season] : seasonsToTry(sport, day)) {
+    ranked = await getJson<CoreStats>(`${CORE}/${sport}/leagues/${league}/seasons/${s}/types/2/teams/${teamId}/statistics`);
+    if (ranked?.splits?.categories?.length) break;
+    ranked = null;
+  }
+  const cats = ranked?.splits?.categories ?? statsRaw?.results?.stats?.categories ?? [];
+  const rankIn = RANK_SCOPE[league] ?? null;
   const stats = STAT_PICKS[sport]!
-    .map(([cat, name, label]) => {
-      const v = cats.find((c) => c.name === cat)?.stats?.find((s) => s.name === name)?.displayValue;
-      return v != null && v !== "" ? { label, value: v } : null;
+    .map(([cat, name, label]): ClubSheet["stats"][number] | null => {
+      const s = (cats as CoreCategory[]).find((c) => c.name === cat)?.stats?.find((x) => x.name === name);
+      const v = s?.displayValue;
+      if (v == null || v === "") return null;
+      const rank = BAD_RANKS[league]?.has(name) ? null : s?.rankDisplayValue?.replace(/^Tied-/i, "T-") || null;
+      return rank ? { label, value: v, rank, rankIn } : { label, value: v };
     })
-    .filter((s): s is { label: string; value: string } => Boolean(s));
+    .filter((s): s is ClubSheet["stats"][number] => Boolean(s));
   const people = rosterMap(roster);
   const leaders: SheetLeader[] = [];
   const seen = new Set<string>();
