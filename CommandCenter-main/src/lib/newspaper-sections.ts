@@ -32,6 +32,7 @@ const KNOWN: Record<string, { code: string; title: string; order: number }> = {
   "football/nfl": { code: "NFL", title: "National Football League", order: 20 },
   "football/college-football": { code: "CFB", title: "College Football", order: 30 },
   "hockey/nhl": { code: "NHL", title: "National Hockey League", order: 40 },
+  "basketball/nba": { code: "NBA", title: "National Basketball Association", order: 45 },
   "basketball/mens-college-basketball": { code: "CBB", title: "College Basketball", order: 50 },
   "soccer/eng.1": { code: "EPL", title: "Premier League", order: 60 },
   "soccer/eng.2": { code: "EFL", title: "EFL Championship", order: 70 },
@@ -146,13 +147,17 @@ export type ClubDesk = {
   upcoming: { id: string; label: string; when: string | null; detail: string | null }[];
 };
 
-export type SportFocus = "news" | "recaps" | "teams" | "schedule" | "form" | "playoffs" | "players";
+export type SportFocus = "news" | "recaps" | "teams" | "schedule" | "form" | "playoffs" | "players" | "opener";
 
 export type SportFrontPage = PageBase & {
   kind: "sport-front";
   path: string;
   /** Which desk this page owns — each sport always prints at least five. */
   focus: SportFocus;
+  /** Between seasons: no scores or form, a countdown to opening night instead. */
+  offseason?: boolean;
+  /** The next desk in this section, for the page's turn line. */
+  turn?: { folio: string; focus: SportFocus } | null;
   clubs: ClubDesk[];
   upcoming: DeskFixture[];
   articles: { card: GameWrapCard; folio: string }[];
@@ -553,6 +558,7 @@ function sportPages(
   stories: GameWrapCard[],
   edition: string,
   withPlayers = false,
+  offseason = false,
 ): {
   pages: (SportFrontPage | SportInsidePage)[];
   sportFolioByStory: Record<string, string>;
@@ -561,7 +567,10 @@ function sportPages(
   const sportFolioByStory: Record<string, string> = {};
   const unique = dedupeStories(stories.filter((card) => !isStalePreview(card, edition)));
   const isMlb = id.path === "baseball/mlb";
-  const deskCount = withPlayers ? 6 : 5;
+  const focuses: SportFocus[] = offseason
+    ? ["news", "opener", "teams", ...(withPlayers ? (["players"] as const) : [])]
+    : ["news", "recaps", "teams", "schedule", isMlb ? "playoffs" : "form", ...(withPlayers ? (["players"] as const) : [])];
+  const deskCount = focuses.length;
   const inside: SportInsidePage[] = [];
   const full = unique.filter(hasStoryCopy);
   let n = deskCount + 1;
@@ -593,68 +602,24 @@ function sportPages(
   const newsArticles = articles.slice(0, 12);
   const recapArticles = articles.filter((a) => isRecapStory(a.card)).slice(0, 8);
 
-  const base = {
+  const desks: SportFrontPage[] = focuses.map((focus, i) => ({
     section: id.code,
     sectionTitle: id.title,
     sectionCount: 0,
     path: id.path,
     clubs,
     upcoming,
-  };
-
-  const news: SportFrontPage = {
-    ...base,
     kind: "sport-front",
-    folio: `${id.code}1`,
-    sectionPage: 1,
-    focus: "news",
-    articles: newsArticles,
-  };
-  const recapPage: SportFrontPage = {
-    ...base,
-    kind: "sport-front",
-    folio: `${id.code}2`,
-    sectionPage: 2,
-    focus: "recaps",
-    articles: recapArticles,
-  };
-  const teams: SportFrontPage = {
-    ...base,
-    kind: "sport-front",
-    folio: `${id.code}3`,
-    sectionPage: 3,
-    focus: "teams",
-    articles,
-  };
-  const schedule: SportFrontPage = {
-    ...base,
-    kind: "sport-front",
-    folio: `${id.code}4`,
-    sectionPage: 4,
-    focus: "schedule",
-    articles,
-  };
-  // MLB prints the playoff tree as page 5; other sports keep the league form desk.
-  const fifth: SportFrontPage = {
-    ...base,
-    kind: "sport-front",
-    folio: `${id.code}5`,
-    sectionPage: 5,
-    focus: isMlb ? "playoffs" : "form",
-    articles,
-  };
-
-  const players: SportFrontPage = {
-    ...base,
-    kind: "sport-front",
-    folio: `${id.code}6`,
-    sectionPage: 6,
-    focus: "players",
-    articles,
-  };
+    folio: `${id.code}${i + 1}`,
+    sectionPage: i + 1,
+    focus,
+    offseason,
+    turn: focuses[i + 1] ? { folio: `${id.code}${i + 2}`, focus: focuses[i + 1]! } : null,
+    articles: focus === "news" ? newsArticles : focus === "recaps" ? recapArticles : articles,
+  }));
 
   return {
-    pages: stampCounts([news, recapPage, teams, schedule, fifth, ...(withPlayers ? [players] : []), ...inside]),
+    pages: stampCounts([...desks, ...inside]),
     sportFolioByStory,
   };
 }
@@ -689,6 +654,8 @@ export function buildEdition(opts: {
   /** League paths with followed or tagged players — each gets a "Your players" desk. */
   playerPaths?: string[];
   missouri?: MissouriDesk | null;
+  /** League paths between seasons. */
+  offseason?: string[];
 }): Edition {
   const desk = dedupeStories(opts.stories.filter((card) => isDeskStory(card) && !isNewsMuted(card)));
   const fresh = rankStories(
@@ -734,6 +701,7 @@ export function buildEdition(opts: {
       storiesBy.get(id.path) ?? [],
       opts.edition,
       opts.playerPaths?.includes(id.path) ?? false,
+      opts.offseason?.includes(id.path) ?? false,
     ),
   }));
   const sportFolioByStory: Record<string, string> = {};

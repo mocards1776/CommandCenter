@@ -4,6 +4,8 @@
  */
 import { buildMissouriDesk, combestUrl, dedupeMo, parseCombest, type MoItem } from "./newspaper-missouri.ts";
 import { nameIndex, namePieces, type Person } from "./newspaper-people.ts";
+import { daysUntil, espnOpener, mlbOpener, openerDate, openerMatchup } from "./newspaper-openers.ts";
+import { isBoilerplateDek, outletFor, storySource } from "./newspaper-source.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -77,5 +79,85 @@ linked("David Price pitched.", seen);
 assert(linked("The price of gas rose.", seen).length === 0, "a lowercase common noun stays plain");
 assert(linked("jordan kyrou scored").join() === "jordan kyrou", "full names match case-insensitively");
 assert(linked("Kyroux scored").length === 0, "no partial-word matches");
+
+const accented = nameIndex([{ name: "Jesús  Báez", href: "/sports/mlb/player/800305" }]);
+const baez = namePieces("Jesus Baez homered twice for Springfield.", accented);
+assert(typeof baez[0] === "object" && baez[0].person.href.endsWith("800305"), "copy without accents still links");
+assert(
+  typeof namePieces("Jesús Báez homered.", accented)[0] === "object",
+  "copy with the league's accents links too",
+);
+
+// ESPN parks a date-only game at midnight Eastern.
+const now = Date.parse("2026-10-01T17:00:00Z");
+const cbb = espnOpener(
+  "cbb-mizzou",
+  "basketball/mens-college-basketball",
+  "142",
+  [
+    {
+      date: "2026-11-06T05:00Z",
+      competitions: [
+        {
+          timeValid: false,
+          competitors: [
+            { homeAway: "home", team: { id: "139", shortDisplayName: "Saint Louis" } },
+            { homeAway: "away", team: { id: "142", shortDisplayName: "Missouri" } },
+          ],
+        },
+      ],
+    },
+    {
+      date: "2026-11-03T05:00Z",
+      competitions: [
+        {
+          timeValid: false,
+          venue: { fullName: "Mizzou Arena" },
+          competitors: [
+            { homeAway: "home", team: { id: "142", shortDisplayName: "Missouri" } },
+            { homeAway: "away", team: { id: "325", shortDisplayName: "Cleveland St" } },
+          ],
+        },
+      ],
+    },
+  ],
+  now,
+);
+assert(cbb?.opponentShort === "Cleveland St" && cbb.home, "the earliest game is the opener");
+assert(cbb?.slate.length === 2 && cbb.slate[1]!.opponentShort === "Saint Louis", "the slate follows in date order");
+assert(cbb && openerDate(cbb) === "Tue, Nov 3", "an untimed game keeps its Eastern calendar day");
+assert(cbb && daysUntil(cbb.iso, now, cbb.timeValid) === 33, "33 days from Oct 1 to Nov 3");
+assert(cbb && openerMatchup(cbb.slate[1]!) === "at Saint Louis", "road games read 'at'");
+assert(
+  espnOpener("x", "basketball/nba", "20", [{ date: "2026-09-01T23:00Z", competitions: [] }], now) === null,
+  "no opener once the season has started",
+);
+
+const cards = mlbOpener(
+  "mlb-stl",
+  138,
+  [
+    {
+      gameDate: "2027-03-25T20:10:00Z",
+      status: { startTimeTBD: true },
+      venue: { name: "Great American Ball Park" },
+      teams: { away: { team: { id: 138, name: "St. Louis Cardinals" } }, home: { team: { id: 113, name: "Cincinnati Reds", teamName: "Reds" } } },
+    },
+  ],
+  now,
+);
+assert(cards?.opponentShort === "Reds" && !cards.home && !cards.timeValid, "Opening Day at Cincinnati, time TBD");
+assert(cards?.opponentLogo === "https://www.mlbstatic.com/team-logos/113.svg", "MLB opponent logos come from mlbstatic");
+
+assert(outletFor("https://www.stltoday.com/sports/x") === "St. Louis Post-Dispatch", "stltoday is the Post-Dispatch");
+assert(storySource({ wrapHref: "https://cardswire.usatoday.com/a" }) === "Cardinals Wire", "Cardinals Wire by host");
+assert(
+  storySource({ wrapHref: "https://www.espn.com/a", body: "… The Associated Press contributed to this report." }) ===
+    "The Associated Press",
+  "ESPN's AP copy credits the AP",
+);
+assert(storySource({ wrapHref: "https://rss.app/feeds/x" }) === null, "a feed proxy is no publisher");
+assert(isBoilerplateDek("Your best source for quality St. Louis Cardinals news"), "site taglines are not deks");
+assert(!isBoilerplateDek("Mikolas threw seven scoreless innings."), "real deks survive");
 
 console.log("newspaper-desk ok");

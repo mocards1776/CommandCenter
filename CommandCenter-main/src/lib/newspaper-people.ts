@@ -41,17 +41,24 @@ export type NameIndex = {
   last: Map<string, Person>;
 };
 
+/** Copy desks drop accents the league keeps ("Jesus Baez" for "Jesús Báez"). */
+function fold(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "");
+}
+
 export function nameIndex(people: Person[]): NameIndex {
   const full = new Map<string, Person>();
   const lastCount = new Map<string, number>();
   const lastOf = new Map<string, Person>();
   for (const p of uniquePeople(people)) {
-    full.set(p.name.toLowerCase(), p);
+    const name = p.name.toLowerCase();
+    for (const k of new Set([name, fold(name)])) if (!full.has(k)) full.set(k, p);
     const s = surname(p.name);
     if (s.length < 4) continue;
-    const k = s.toLowerCase();
-    lastCount.set(k, (lastCount.get(k) ?? 0) + 1);
-    lastOf.set(k, p);
+    for (const k of new Set([s.toLowerCase(), fold(s.toLowerCase())])) {
+      lastCount.set(k, (lastCount.get(k) ?? 0) + 1);
+      lastOf.set(k, p);
+    }
   }
   const last = new Map<string, Person>();
   for (const [k, n] of lastCount) if (n === 1) last.set(k, lastOf.get(k)!);

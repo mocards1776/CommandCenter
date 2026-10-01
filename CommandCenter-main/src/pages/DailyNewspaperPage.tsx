@@ -58,6 +58,16 @@ import { fetchClubSheet, type ClubSheet } from "@/lib/newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "@/lib/newspaper-missouri-fetch";
 import type { MoItem } from "@/lib/newspaper-missouri";
 import type { Person } from "@/lib/newspaper-people";
+import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
+import {
+  daysUntil,
+  fetchOpener,
+  openerDate,
+  openerDay,
+  openerMatchup,
+  openerTime,
+  type Opener,
+} from "@/lib/newspaper-openers";
 import {
   fetchPlayerNights,
   playerPageHref,
@@ -257,8 +267,16 @@ function kickerOf(card: GameWrapCard): string {
   const bits = [card.sportLabel];
   if (card.round) bits.push(card.round);
   else if (card.postseason) bits.push("Postseason");
-  if (card.teamName) bits.push(card.teamName);
+  if (card.teamName && squash(card.teamName) !== squash(card.sportLabel)) bits.push(card.teamName);
   return bits.join(" · ");
+}
+
+function blankRecord(r: string | null | undefined): boolean {
+  return !r || /^0-0(-0)?$/.test(r.trim());
+}
+
+function zeroStat(value: string): boolean {
+  return /^[+-]?0(\.0+)?$/.test(value.trim());
 }
 
 function clubRecord(team: TeamInfobox | null | undefined): string | null {
@@ -322,8 +340,58 @@ function daysUntilIso(iso: string | null | undefined): number | null {
   return Math.ceil((t - Date.now()) / 86_400_000);
 }
 
+const OpenerContext = createContext<Map<string, Opener>>(new Map());
+
+function useOpener(key: string | null | undefined): Opener | null {
+  const openers = useContext(OpenerContext);
+  return key ? (openers.get(key) ?? null) : null;
+}
+
+/** Days to a club's first game, set big; `line` is the one-row rail version. */
+function Countdown({
+  opener,
+  name,
+  logo,
+  color,
+  variant = "card",
+}: {
+  opener: Opener;
+  name?: string;
+  logo?: string | null;
+  color?: string | null;
+  variant?: "card" | "line" | "poster";
+}) {
+  const days = daysUntil(opener.iso, Date.now(), opener.timeValid);
+  const big = days <= 0 ? "Today" : days === 1 ? "1" : String(days);
+  const unit = days <= 0 ? "" : days === 1 ? "day" : "days";
+  return (
+    <div className={cn("tt-count", variant)} style={tint(color ?? null)}>
+      <p className="tt-count-num">
+        <b>{big}</b>
+        {unit ? <span>{unit}</span> : null}
+      </p>
+      <div className="tt-count-copy">
+        <em>
+          {name ? `${name} · ` : ""}
+          {opener.billing}
+        </em>
+        <strong>
+          {logo ? <img src={logo} alt="" aria-hidden="true" /> : null}
+          {openerMatchup(opener)}
+          {opener.opponentLogo ? <img src={opener.opponentLogo} alt="" aria-hidden="true" /> : null}
+        </strong>
+        <span>
+          {openerDate(opener)}
+          {opener.venue && variant !== "line" ? ` · ${opener.venue}` : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** Clubs with no slate, or next tip more than six weeks out, print compact. */
-function clubIsOffseason(team: TeamInfobox): boolean {
+function clubIsOffseason(team: TeamInfobox, opener?: Opener | null): boolean {
+  if (opener && daysUntil(opener.iso, Date.now(), opener.timeValid) > 7) return true;
   const hasSlate = Boolean(team.snap.nextGame) || (team.detail?.upcoming?.length ?? 0) > 0;
   if (hasSlate) {
     const soon =
@@ -389,6 +457,7 @@ function pageLabel(page: EditionPage): string {
         playoffs: "Playoffs",
         form: "Club Form",
         players: "Your Players",
+        opener: "Countdown",
       }[page.focus];
     case "missouri":
       return page.sectionPage === 1 ? "Statehouse" : "Around the State";
@@ -533,8 +602,8 @@ function ReadOn({ card, game, label = "Read the full story" }: { card: GameWrapC
 function Byline({ card }: { card: GameWrapCard }) {
   return (
     <p className="wsj-byline">
-      <em>By</em> {card.sportLabel} Wire
-      {card.followed || card.favoriteKey ? ` · ${card.teamName} Desk` : ""}
+      <em>By</em> {storySource(card) ?? `${card.sportLabel} Wire`}
+      {card.followed || card.favoriteKey ? <span> · {card.teamName} desk</span> : null}
     </p>
   );
 }
@@ -665,19 +734,19 @@ function StatPoster({
   layout?: "block" | "band";
 }) {
   const logo = team?.snap.logo || team?.detail?.logo || null;
-  const stats = (card?.teamStats.length ? card.teamStats : team?.teamStats ?? []).slice(
-    0,
-    layout === "band" ? 8 : 6,
-  );
+  const stats = (card?.teamStats.length ? card.teamStats : team?.teamStats ?? [])
+    .filter((s) => !zeroStat(String(s.value)))
+    .slice(0, layout === "band" ? 8 : 6);
   const leaders = (card?.leaders.length ? card.leaders : teamLeaders(team)).slice(
     0,
     layout === "band" ? 5 : 4,
   );
+  const opener = useOpener(team?.fav.key);
   if (!team && !stats.length) return null;
   const name = team?.snap.shortName || team?.fav.shortName || card?.teamName || "";
   const record = clubRecord(team);
   return (
-    <figure className={cn("wsj-poster", layout)} style={tint(teamColor(team))}>
+    <figure className={cn("wsj-poster", layout, opener && "counting")} style={tint(teamColor(team))}>
       {logo ? <img className="wsj-poster-mark" src={logo} alt="" aria-hidden="true" /> : null}
       <div className="wsj-poster-id">
         {logo ? (
@@ -717,6 +786,7 @@ function StatPoster({
           ))}
         </ul>
       ) : null}
+      {opener ? <Countdown opener={opener} variant="poster" /> : null}
     </figure>
   );
 }
@@ -747,7 +817,8 @@ function Story({
   size: "xl" | "lg" | "md" | "sm";
   cols?: 1 | 2 | 3;
   art?: ArtMode;
-  poster?: boolean;
+  /** The club poster stands in for a missing photo; "band" sets it full width over the story. */
+  poster?: boolean | "band";
   drop?: boolean;
   jump?: string;
   onTurn?: (folio: string) => void;
@@ -764,7 +835,7 @@ function Story({
     art === "none" ? null : card.photo ? (
       <Cut card={card} shape={art === "side" && copy.length > 450 ? "square" : "wide"} />
     ) : poster ? (
-      <StatPoster team={team ?? null} card={card} />
+      <StatPoster team={team ?? null} card={card} layout={poster === "band" ? "band" : "block"} />
     ) : null;
   return (
     <article
@@ -1031,8 +1102,12 @@ function FrontRail({
   sections: EditionSection[];
   onTurn: (folio: string) => void;
 }) {
+  const openers = useContext(OpenerContext);
   const sports = sections.filter((s) => s.code !== "A");
   const closed = teams.filter((t) => t.seasonState === "complete");
+  const waiting = teams
+    .filter((t) => t.seasonState !== "complete" && openers.has(t.fav.key))
+    .sort((a, b) => openers.get(a.fav.key)!.iso.localeCompare(openers.get(b.fav.key)!.iso));
   const tables = teams
     .filter((t) => t.seasonState !== "complete" && (t.detail?.division?.length ?? 0) > 1)
     .slice(0, 2);
@@ -1123,19 +1198,45 @@ function FrontRail({
         />
       ))}
 
+      {waiting.length ? (
+        <section className="wsj-rail-block">
+          <h3>Countdown</h3>
+          <ul className="tt-count-list">
+            {waiting.map((t) => (
+              <li key={t.fav.key}>
+                <Countdown
+                  opener={openers.get(t.fav.key)!}
+                  name={t.fav.shortName}
+                  color={teamColor(t)}
+                  variant="line"
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {closed.length ? (
         <section className="wsj-rail-block">
           <h3>Season Complete</h3>
           <ul className="wsj-rail-list">
-            {closed.map((t) => (
-              <li key={t.fav.key}>
-                <ExternalOrLink href={t.href} className="wsj-a">
-                  <strong>{t.fav.shortName}</strong>
-                </ExternalOrLink>{" "}
-                finished {t.snap.record || "—"}
-                {t.snap.standing ? `, ${t.snap.standing}` : ""}.
-              </li>
-            ))}
+            {closed.map((t) => {
+              const opener = openers.get(t.fav.key);
+              return (
+                <li key={t.fav.key} className={cn(opener && "counting")}>
+                  <p>
+                    <ExternalOrLink href={t.href} className="wsj-a">
+                      <strong>{t.fav.shortName}</strong>
+                    </ExternalOrLink>{" "}
+                    finished {t.snap.record || "—"}
+                    {t.snap.standing ? `, ${t.snap.standing}` : ""}.
+                  </p>
+                  {opener ? (
+                    <Countdown opener={opener} color={teamColor(t)} logo={t.snap.logo || t.detail?.logo} variant="card" />
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
@@ -1329,8 +1430,9 @@ function TurnBar({
 /* ───────────────────────── clubs desk ───────────────────────── */
 
 function ClubsDesk({ teams }: { teams: TeamInfobox[] }) {
-  const active = teams.filter((t) => !clubIsOffseason(t));
-  const shelved = teams.filter((t) => clubIsOffseason(t));
+  const openers = useContext(OpenerContext);
+  const active = teams.filter((t) => !clubIsOffseason(t, openers.get(t.fav.key)));
+  const shelved = teams.filter((t) => clubIsOffseason(t, openers.get(t.fav.key)));
   const cols = balancedCols(active.length, [5, 4, 3, 6, 2]);
   return (
     <div className="wsj-clubs-desk">
@@ -1431,21 +1533,25 @@ function ClubsDesk({ teams }: { teams: TeamInfobox[] }) {
             className="wsj-shelved"
             style={{ ["--cols" as string]: String(balancedCols(shelved.length, [4, 3, 5, 2])) }}
           >
-            {shelved.map((t) => (
-              <li key={t.fav.key} style={tint(teamColor(t))}>
-                <ExternalOrLink href={t.href} className="wsj-shelved-card wsj-a">
-                  <TeamLogo src={t.snap.logo || t.detail?.logo} size="lg" />
-                  <span>
-                    <strong>{t.fav.shortName}</strong>
+            {shelved.map((t) => {
+              const opener = openers.get(t.fav.key);
+              return (
+                <li key={t.fav.key} style={tint(teamColor(t))}>
+                  <ExternalOrLink href={t.href} className={cn("wsj-shelved-card wsj-a", opener && "counting")}>
+                    <TeamLogo src={t.snap.logo || t.detail?.logo} size="lg" />
                     <span>
-                      {t.seasonState === "complete" ? "Final" : t.fav.league} · {clubRecord(t) || "—"}
-                      {t.snap.standing ? ` · ${t.snap.standing}` : ""}
+                      <strong>{t.fav.shortName}</strong>
+                      <span>
+                        {t.seasonState === "complete" ? "Final" : t.fav.league} · {clubRecord(t) || "—"}
+                        {t.snap.standing ? ` · ${t.snap.standing}` : ""}
+                      </span>
+                      {opener ? null : <em>{clubCountdown(t)}</em>}
                     </span>
-                    <em>{clubCountdown(t)}</em>
-                  </span>
-                </ExternalOrLink>
-              </li>
-            ))}
+                    {opener ? <Countdown opener={opener} variant="line" /> : null}
+                  </ExternalOrLink>
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
@@ -1491,16 +1597,16 @@ function InsidePage({
         const poster = !card.photo && Boolean(team) && !noted.has(team!.fav.key);
         return (
           <div key={card.id} className={cn("wsj-inside-story", i === 0 && "first")} style={tint(teamColor(team))}>
-            {i === 0 ? <InsideFlag card={card} team={team} /> : null}
+            {i === 0 && !poster ? <InsideFlag card={card} team={team} /> : null}
             <Story
-              className={cn(i === 0 ? "primary" : "secondary")}
+              className={cn(i === 0 ? "primary" : "secondary", poster && "postered")}
               card={card}
               team={team}
               text={text}
               size={i === 0 ? "xl" : "lg"}
-              cols={cols}
-              art={poster ? "side" : art}
-              poster={poster}
+              cols={poster ? (text.length > 2400 ? 3 : text.length > 700 ? 2 : 1) : cols}
+              art={poster ? "top" : art}
+              poster={poster ? "band" : false}
               drop
               dress
               game={game}
@@ -1654,7 +1760,163 @@ const FOCUS_TITLES: Record<SportFrontPage["focus"], string> = {
   playoffs: "Playoffs",
   form: "Club Form",
   players: "Your Players",
+  opener: "Countdown to Opening Night",
 };
+
+const TURN_LABELS: Record<SportFrontPage["focus"], string> = {
+  news: "Front page",
+  recaps: "Scores and box scores",
+  teams: "The standings",
+  schedule: "The schedule",
+  playoffs: "The playoff bracket",
+  form: "Club form",
+  players: "Your players — last night’s lines",
+  opener: "Countdown to opening night",
+};
+
+/** Offseason desk: days to each followed club's first game, then what follows it. */
+function OpenerDesk({ page, onTurn }: { page: SportFrontPage; onTurn: (folio: string) => void }) {
+  const openers = useContext(OpenerContext);
+  const index = page.articles.filter((a) => a.card.headline).slice(0, rowsFor(page.clubs.length));
+  const rows = page.clubs
+    .map((club) => ({ club, opener: openers.get(club.key) ?? null }))
+    .sort((a, b) => (a.opener?.iso ?? "9").localeCompare(b.opener?.iso ?? "9"));
+  if (!rows.length) return <p className="wsj-empty">No followed clubs in this section.</p>;
+  return (
+    <div
+      className={cn("tt-open-grid", rows.length === 1 && "single")}
+      style={{ ["--cols" as string]: String(Math.min(3, rows.length)) }}
+    >
+      {rows.map(({ club, opener }) => {
+        // A league that has rolled its tables over prints 0-0 everywhere; that isn't last season.
+        const played = !blankRecord(club.record);
+        const stats = played ? club.stats.filter((s) => !zeroStat(s.value)) : [];
+        const table = club.division.some((r) => !blankRecord(r.record)) ? tableWindow(club.division, 6) : [];
+        return (
+          <article key={club.key} className="tt-open" style={tint(club.color ?? null)}>
+            <header>
+              {club.logo ? <img src={club.logo} alt="" aria-hidden="true" /> : null}
+              <h4>{club.shortName}</h4>
+              {played ? <span>Last season {club.record}</span> : null}
+            </header>
+            {opener ? (
+              <Countdown opener={opener} logo={club.logo} color={club.color} variant="card" />
+            ) : (
+              <p className="wsj-empty">Opening date not yet posted.</p>
+            )}
+            <div className="tt-open-body">
+              {opener && opener.slate.length > 1 ? (
+                <section>
+                  <h5 className="tt-open-h">The first {opener.slate.length} games</h5>
+                  <ol className="tt-open-slate">
+                    {opener.slate.map((g) => (
+                      <li key={g.iso + g.opponentShort} className={g.home ? "home" : "away"}>
+                        <b>{openerDay(g)}</b>
+                        <span>
+                          {g.opponentLogo ? <img src={g.opponentLogo} alt="" aria-hidden="true" /> : null}
+                          {openerMatchup(g)}
+                        </span>
+                        <em>{openerTime(g)}</em>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              ) : null}
+              {stats.length || table.length || club.leaders.length ? (
+                <div className="tt-open-side">
+                  {stats.length ? (
+                    <section>
+                      <h5 className="tt-open-h">Last season{club.standing ? ` · ${club.standing}` : ""}</h5>
+                      <dl className="tt-open-stats">
+                        {stats.slice(0, 4).map((s) => (
+                          <div key={s.label}>
+                            <dd>{s.value}</dd>
+                            <dt>{s.label}</dt>
+                          </div>
+                        ))}
+                      </dl>
+                    </section>
+                  ) : null}
+                  {table.length ? (
+                    <table className="tt-open-table">
+                      <tbody>
+                        {table.map((r) => (
+                          <tr key={r.team} className={cn(r.me && "me")}>
+                            <td>{r.rank}</td>
+                            <th scope="row">
+                              <span>
+                                {r.logo ? <img src={r.logo} alt="" aria-hidden="true" /> : null}
+                                {r.team}
+                              </span>
+                            </th>
+                            <td>{r.record}</td>
+                            <td>{r.gb}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : null}
+                  {club.leaders.length ? (
+                    <ul className="tt-open-leaders">
+                      {club.leaders.slice(0, 3).map((l) => (
+                        <li key={`${l.name}-${l.line}`}>
+                          <strong>{l.name}</strong>
+                          <span>{l.line}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </article>
+        );
+      })}
+      {index.length ? (
+        <section className="tt-open-index">
+          <h3 className="wsj-band-title">In this section</h3>
+          <ol>
+            {index.map(({ card, folio }) => (
+              <li key={card.id}>
+                <Kicker card={card} />
+                <h4>
+                  <StoryLink card={card}>{card.headline}</StoryLink>
+                </h4>
+                {card.dek ? <p>{card.dek}</p> : null}
+                {folio !== page.folio ? <Jump folio={folio} onTurn={onTurn} label={`Page ${folio}`} /> : null}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+/** One followed club leaves room on the page for the section's headlines. */
+function rowsFor(clubs: number): number {
+  return clubs <= 1 ? 6 : clubs === 2 ? 3 : 0;
+}
+
+/** Slim countdown band across an offseason section front. */
+function OpenerBand({ page }: { page: SportFrontPage }) {
+  const openers = useContext(OpenerContext);
+  const rows = page.clubs
+    .map((club) => ({ club, opener: openers.get(club.key) ?? null }))
+    .filter((r): r is { club: ClubDesk; opener: Opener } => Boolean(r.opener))
+    .sort((a, b) => a.opener.iso.localeCompare(b.opener.iso));
+  if (!rows.length) return null;
+  return (
+    <section className="tt-open-band" aria-label="Countdown to opening night">
+      <h3 className="wsj-band-title">Offseason · countdown to the opener</h3>
+      <div className="tt-open-band-row">
+        {rows.map(({ club, opener }) => (
+          <Countdown key={club.key} opener={opener} name={club.shortName} logo={club.logo} color={club.color} variant="line" />
+        ))}
+      </div>
+    </section>
+  );
+}
 
 /** Section flag: big on the section front, a slim band on the desk pages behind it. */
 function SportHero({
@@ -2204,6 +2466,16 @@ function StandingsDesk({
   );
 }
 
+/** In the offseason only the tables holding a followed club are worth the ink. */
+function offseasonTables(standings: StandGroup[], page: SportFrontPage, leagueClubs: LeagueClub[]): StandGroup[] {
+  const favIds = new Set(leagueClubs.filter((c) => c.favorite).map((c) => c.id));
+  const favNames = page.clubs.map((c) => squash(c.shortName)).filter(Boolean);
+  const mine = standings.filter((g) =>
+    g.rows.some((r) => favIds.has(r.id) || favNames.some((n) => squash(r.name) === n)),
+  );
+  return mine.length ? mine : standings.slice(0, 2);
+}
+
 function SportFront({
   page,
   leagueClubs,
@@ -2236,16 +2508,14 @@ function SportFront({
   const upcoming = board?.slate.length ?? slate.length;
   const newsDay = editionNewsDay(edition);
   const played = nights.filter((n) => n.day === newsDay).length;
-  const playersTurn = hasPlayers ? { folio: `${page.section}6`, label: "Your players — last night’s lines" } : null;
-  const next: Record<SportFrontPage["focus"], { folio: string; label: string } | null> = {
-    news: { folio: `${page.section}2`, label: "Scores and box scores" },
-    recaps: { folio: `${page.section}3`, label: "The standings" },
-    teams: { folio: `${page.section}4`, label: "The schedule" },
-    schedule: { folio: `${page.section}5`, label: isMlb ? "The playoff bracket" : "Club form" },
-    playoffs: playersTurn,
-    form: playersTurn,
-    players: null,
-  };
+  const turnFocus = page.turn?.focus;
+  const turn =
+    page.turn && turnFocus && (turnFocus !== "players" || hasPlayers)
+      ? {
+          folio: page.turn.folio,
+          label: turnFocus === "teams" && page.offseason ? "Last season’s final standings" : TURN_LABELS[turnFocus],
+        }
+      : null;
   const blurb = {
     news: `${page.articles.length + results} stories and finals · ${leagueClubs.length || page.clubs.length} clubs`,
     recaps: results ? `${results} ${results === 1 ? "final" : "finals"} · lines, decisions and the agate` : "Box scores",
@@ -2254,19 +2524,35 @@ function SportFront({
     playoffs: playoffs ? `${playoffs.season} postseason bracket` : "Postseason bracket",
     form: `${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"} · numbers, leaders, the table`,
     players: `${nights.length} followed · ${played} played last night`,
+    opener: `${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"} · days to the first game`,
   }[page.focus];
-  const turn = next[page.focus];
+  const offStandings = page.offseason ? offseasonTables(standings, page, leagueClubs) : standings;
+  const offBlurb =
+    page.offseason && page.focus === "teams"
+      ? `Last season’s final ${offStandings.length === 1 ? "table" : "tables"} · your clubs marked`
+      : page.offseason && page.focus === "news"
+        ? `Offseason · ${page.articles.length} stories · ${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"}`
+        : blurb;
 
   return (
-    <div className={cn("wsj-sport", `focus-${page.focus}`)}>
-      <SportHero page={page} leagueClubs={leagueClubs} blurb={blurb} />
+    <div className={cn("wsj-sport", `focus-${page.focus}`, page.offseason && "offseason")}>
+      <SportHero page={page} leagueClubs={leagueClubs} blurb={offBlurb} />
       <div className="wsj-sport-solo">
+        {page.focus === "news" && page.offseason ? <OpenerBand page={page} /> : null}
         {page.focus === "news" ? (
           <SportNewsDesk page={page} board={board} leagueClubs={leagueClubs} edition={edition} onTurn={onTurn} />
+        ) : page.focus === "opener" ? (
+          <OpenerDesk page={page} onTurn={onTurn} />
         ) : page.focus === "recaps" ? (
           <ScoresDesk page={page} board={board} active={active} />
         ) : page.focus === "teams" ? (
-          <StandingsDesk page={page} standings={standings} leagueClubs={leagueClubs} board={board} onTurn={onTurn} />
+          <StandingsDesk
+            page={page}
+            standings={offStandings}
+            leagueClubs={leagueClubs}
+            board={page.offseason ? null : board}
+            onTurn={onTurn}
+          />
         ) : page.focus === "schedule" ? (
           <ScheduleDesk page={page} board={board} slate={slate} edition={edition} />
         ) : page.focus === "playoffs" ? (
@@ -3035,8 +3321,9 @@ export default function DailyNewspaperPage() {
 
   const stories = useMemo(() => {
     const extracts = extractsQ.data;
-    if (!extracts) return rawStories;
-    return rawStories.map((card) => {
+    const clean = rawStories.map((card) => (isBoilerplateDek(card.dek) ? { ...card, dek: null } : card));
+    if (!extracts) return clean;
+    return clean.map((card) => {
       const hit = card.wrapHref ? extracts[card.wrapHref] : undefined;
       if (!hit) return card;
       const text = hit.contentText?.trim() ?? "";
@@ -3249,9 +3536,60 @@ export default function DailyNewspaperPage() {
 
   const playerPaths = useMemo(() => [...new Set(followed.map((p) => p.path))], [followed]);
 
+  const openersQ = useQuery({
+    queryKey: ["tt-openers", day, favKeys],
+    queryFn: async () => {
+      const rows = await Promise.all(teamFavs.map((fav) => fetchOpener(fav).catch(() => null)));
+      return rows.filter((o): o is Opener => o != null);
+    },
+    enabled: teamFavs.length > 0,
+    staleTime: 60 * 60_000,
+  });
+  const openers = useMemo(() => new Map((openersQ.data ?? []).map((o) => [o.key, o])), [openersQ.data]);
+
+  // The farm system makes the Cardinals copy as often as the big club does.
+  const orgQ = useQuery({
+    queryKey: ["tt-org-rosters", day, favKeys],
+    queryFn: async () => {
+      const season = Number(day.slice(0, 4)) || new Date().getFullYear();
+      const rows = await Promise.all(
+        teamFavs
+          .filter((fav) => fav.mlbTeamId)
+          .map(async (fav) => {
+            const res = await fetch(
+              `https://statsapi.mlb.com/api/v1/teams/${fav.mlbTeamId}/roster?rosterType=fullRoster&season=${season}`,
+            ).catch(() => null);
+            const data = (res?.ok ? await res.json().catch(() => null) : null) as {
+              roster?: { person?: { id?: number; fullName?: string } }[];
+            } | null;
+            return (data?.roster ?? []).flatMap((r) =>
+              r.person?.id && r.person.fullName ? [{ id: String(r.person.id), name: r.person.fullName }] : [],
+            );
+          }),
+      );
+      return rows.flat();
+    },
+    enabled: teamFavs.some((fav) => fav.mlbTeamId),
+    staleTime: 6 * 60 * 60_000,
+  });
+
+  /** A league is between seasons when every club you follow in it is still counting down and no finals have posted. */
+  const offseason = useMemo(
+    () =>
+      sportPaths.filter((path) => {
+        const mine = clubs.filter((c) => c.leaguePath === path);
+        if (!mine.length || !mine.every((c) => (openers.get(c.key) ? daysUntil(openers.get(c.key)!.iso, Date.now(), openers.get(c.key)!.timeValid) > 2 : false))) {
+          return false;
+        }
+        const board = boardQ.data?.[path];
+        return !board?.results.length && !board?.prior?.length;
+      }),
+    [sportPaths, clubs, openers, boardQ.data],
+  );
+
   const edition = useMemo(
-    () => buildEdition({ stories, clubs, edition: day, playerPaths, missouri: missouriQ.data ?? null }),
-    [stories, clubs, day, playerPaths, missouriQ.data],
+    () => buildEdition({ stories, clubs, edition: day, playerPaths, missouri: missouriQ.data ?? null, offseason }),
+    [stories, clubs, day, playerPaths, missouriQ.data, offseason],
   );
 
   /** Everyone the paper can name and link: box scores, club leaders, your players. */
@@ -3275,8 +3613,13 @@ export default function DailyNewspaperPage() {
       const sheet = sheetsQ.data?.[club.key];
       if (sheet && club.leaguePath) for (const l of sheet.leaders) push(club.leaguePath, l.id, l.name);
     }
+    for (const team of teams) {
+      const path = /^(.+)\/teams\//.exec(team.fav.espnPath)?.[1];
+      if (path) for (const r of team.detail?.roster ?? []) push(path, r.id, r.name);
+    }
+    for (const p of orgQ.data ?? []) push("baseball/mlb", p.id, p.name);
     return out;
-  }, [followed, boardQ.data, clubs, sheetsQ.data]);
+  }, [followed, boardQ.data, clubs, sheetsQ.data, teams, orgQ.data]);
   const comingUp = useMemo<ComingUp[]>(
     () =>
       clubs.flatMap((club) =>
@@ -3418,6 +3761,7 @@ export default function DailyNewspaperPage() {
   return (
     <div className="newspaper-root wsj-shell">
       <GameLookup.Provider value={findGame}>
+      <OpenerContext.Provider value={openers}>
       <PlayerPopProvider people={people}>
       <ReaderProvider>
       <div className="wsj-chrome print:hidden">
@@ -3587,6 +3931,7 @@ export default function DailyNewspaperPage() {
       </div>
       </ReaderProvider>
       </PlayerPopProvider>
+      </OpenerContext.Provider>
       </GameLookup.Provider>
     </div>
   );

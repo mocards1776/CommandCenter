@@ -499,4 +499,20 @@ assert(nflPlayers?.kind === "sport-front" && nflPlayers.focus === "players", "a 
 assert(!deskFolios.includes("MLB6"), "no players page without followed players in the league");
 assert(!buildEdition({ stories: [lionsNote], clubs: [lionsClub], edition }).pages.some((p) => p.kind === "missouri"), "no desk, no section");
 
+const offPaper = buildEdition({ stories: [chiefsNote], clubs: [chiefs], edition, offseason: ["football/nfl"] });
+const offDesks = offPaper.pages.filter((p) => p.kind === "sport-front" && p.path === "football/nfl");
+assert(
+  offDesks.map((p) => (p.kind === "sport-front" ? `${p.folio}:${p.focus}` : "")).join(",") ===
+    "NFL1:news,NFL2:opener,NFL3:teams",
+  "an offseason section runs news, the countdown and last season's tables",
+);
+assert(
+  offDesks.every((p) => p.kind === "sport-front" && p.offseason),
+  "offseason desks know they are between seasons",
+);
+const offTurn = offDesks[0]?.kind === "sport-front" ? offDesks[0].turn : null;
+assert(offTurn?.folio === "NFL2" && offTurn.focus === "opener", "the front turns to the countdown");
+const offLast = offDesks[2]?.kind === "sport-front" ? offDesks[2].turn : undefined;
+assert(offLast === null, "the last desk has no turn line");
+
 console.log("newspaper-sections ok");
