@@ -7,6 +7,17 @@ import { nameIndex, namePieces, type Person } from "./newspaper-people.ts";
 import { daysUntil, espnOpener, mlbOpener, openerDate, openerMatchup } from "./newspaper-openers.ts";
 import { isBoilerplateDek, outletFor, storySource } from "./newspaper-source.ts";
 import { playerRef, seasonNote, storySubjects } from "./newspaper-subjects.ts";
+import {
+  clock,
+  compass,
+  dayLength,
+  earForecast,
+  hourLabel,
+  moonPhase,
+  parseWeather,
+  skyOf,
+  writtenForecast,
+} from "./newspaper-weather.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -180,5 +191,37 @@ const subjects = storySubjects(
 );
 assert(subjects[0]?.name === "JJ Wetherholt", "the headline's player leads the story's subjects");
 assert(subjects.length === 3, "every named player is a subject");
+
+assert(compass(191) === "S" && compass(350) === "N" && compass(225) === "SW", "wind directions by compass point");
+assert(clock("2026-10-01T07:05") === "7:05 a.m." && clock("2026-10-01T19:02") === "7:02 p.m.", "AP-style clock");
+assert(hourLabel("2026-10-01T00:00") === "Mid." && hourLabel("2026-10-01T15:00") === "3 p.m.", "hour labels");
+assert(dayLength("2026-10-01T07:12", "2026-10-01T19:01") === "11 hr 49 min", "daylight length");
+assert(moonPhase("2024-10-17").name === "Full moon", "Oct. 17, 2024 was a full moon");
+assert(moonPhase("2024-11-01").name === "New moon", "Nov. 1, 2024 was a new moon");
+assert(skyOf(95) === "storm" && skyOf(0, false) === "moon" && skyOf(63) === "rain", "sky glyph by code");
+const wx = parseWeather({
+  current: { time: "2026-10-01T12:45", temperature_2m: 86, apparent_temperature: 84, weather_code: 3, wind_speed_10m: 19, wind_direction_10m: 191, wind_gusts_10m: 29, relative_humidity_2m: 48, dew_point_2m: 64, pressure_msl: 1009.2, is_day: 1 },
+  hourly: {
+    time: Array.from({ length: 48 }, (_, i) => `2026-10-0${1 + Math.floor(i / 24)}T${String(i % 24).padStart(2, "0")}:00`),
+    temperature_2m: Array.from({ length: 48 }, () => 70),
+    precipitation_probability: Array.from({ length: 48 }, () => 0),
+    weather_code: Array.from({ length: 48 }, (_, i) => (i >= 20 && i < 24 ? 0 : 3)),
+  },
+  daily: {
+    time: ["2026-09-30", "2026-10-01", "2026-10-02"],
+    weather_code: [0, 3, 61],
+    temperature_2m_max: [84, 88.4, 74],
+    temperature_2m_min: [60, 64, 58.6],
+    precipitation_probability_max: [0, 10, 70],
+    precipitation_sum: [0, 0, 0.4],
+  },
+});
+assert(wx.days[0]?.date === "2026-10-01" && wx.yesterday?.highF === 84, "today leads; the day before is the almanac's yesterday");
+assert(wx.hours[0]?.time === "2026-10-01T12:00" && wx.hours.length === 24, "the hourly chart starts at the current hour");
+assert(
+  earForecast(wx) === "Today, cloudy, high 88. Tonight, cloudy, low 59. Tomorrow, light rain, high 74.",
+  `ear forecast reads like the paper: ${earForecast(wx)}`,
+);
+assert(writtenForecast(wx).startsWith("Cloudy, breezy and very warm. High 88. Winds S at 19 mph, gusting to 29."), "written forecast");
 
 console.log("newspaper-desk ok");

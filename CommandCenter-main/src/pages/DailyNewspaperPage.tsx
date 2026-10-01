@@ -61,6 +61,8 @@ import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "@/li
 import type { MoItem } from "@/lib/newspaper-missouri";
 import { nameIndex, type Person } from "@/lib/newspaper-people";
 import { fetchPlayerFiles, imageLoads, storySubjects, type PlayerFile } from "@/lib/newspaper-subjects";
+import { fetchMarshfieldWeather, type MarshfieldWeather } from "@/lib/newspaper-weather";
+import { WeatherEar, WeatherReport } from "@/components/newspaper/WeatherReport";
 import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
 import {
   daysUntil,
@@ -486,13 +488,20 @@ function Masthead({
   page,
   clubs,
   live,
+  weather,
+  weatherFolio,
+  onTurn,
 }: {
   day: string;
   page: EditionPage;
   clubs: number;
   live: number;
+  weather: MarshfieldWeather | null | undefined;
+  weatherFolio: string | null;
+  onTurn: (folio: string) => void;
 }) {
   const { volume, issue } = editionIssue(day);
+  const edition = live ? `${live} live now` : "Late City Edition";
   return (
     <header className="wsj-mast">
       <div className="wsj-mast-row">
@@ -501,10 +510,19 @@ function Masthead({
           <span>All the scores fit to print</span>
         </div>
         <h1 className="wsj-nameplate">The Thompson Times</h1>
-        <div className="wsj-ear right">
-          <strong>{live ? `${live} live now` : "Late City Edition"}</strong>
-          <span>{clubs} clubs on the desk</span>
-        </div>
+        {weather?.days.length ? (
+          <WeatherEar
+            weather={weather}
+            label={edition}
+            folio={weatherFolio}
+            onOpen={weatherFolio ? () => onTurn(weatherFolio) : undefined}
+          />
+        ) : (
+          <div className="wsj-ear right">
+            <strong>{edition}</strong>
+            <span>{clubs} clubs on the desk</span>
+          </div>
+        )}
       </div>
       <div className="wsj-dateline-bar">
         <span>
@@ -3638,6 +3656,13 @@ export default function DailyNewspaperPage() {
     staleTime: 30 * 60_000,
   });
 
+  const weatherQ = useQuery({
+    queryKey: ["tt-weather-marshfield"],
+    queryFn: fetchMarshfieldWeather,
+    staleTime: 15 * 60_000,
+    refetchInterval: 30 * 60_000,
+  });
+
   const scoutQ = useQuery({
     queryKey: ["tt-mo-scout", day],
     queryFn: async () => {
@@ -3811,6 +3836,7 @@ export default function DailyNewspaperPage() {
     [clubs, teams],
   );
   const pages = edition.pages;
+  const weatherFolio = useMemo(() => pages.find((p) => p.kind === "favorites-clubs")?.folio ?? null, [pages]);
   // A club's numbers print once in Section A — on the first story page it owns.
   const notebookByFolio = useMemo(() => {
     const seen = new Set<string>();
@@ -3962,7 +3988,15 @@ export default function DailyNewspaperPage() {
           <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`}>
             <div className="wsj-sheet">
             {page.kind === "favorites-front" ? (
-              <Masthead day={day} page={page} clubs={teams.length} live={tonight.length} />
+              <Masthead
+                day={day}
+                page={page}
+                clubs={teams.length}
+                live={tonight.length}
+                weather={weatherQ.data}
+                weatherFolio={weatherFolio}
+                onTurn={goFolio}
+              />
             ) : (
               <RunningHead day={day} page={page} />
             )}
@@ -3989,7 +4023,10 @@ export default function DailyNewspaperPage() {
                   scout={scoutQ.data ?? missouriQ.data?.scout ?? null}
                 />
               ) : page.kind === "favorites-clubs" ? (
-                <ClubsDesk teams={teams} />
+                <>
+                  <WeatherReport weather={weatherQ.data} />
+                  <ClubsDesk teams={teams} />
+                </>
               ) : page.kind === "favorites-form" ? (
                 <div className="wsj-clubs-desk">
                   <header className="wsj-desk-head">
@@ -4069,6 +4106,8 @@ export default function DailyNewspaperPage() {
       mlbPlayoffsQ.data,
       playerPaths,
       nightsByPath,
+      weatherQ.data,
+      weatherFolio,
     ],
   );
 
