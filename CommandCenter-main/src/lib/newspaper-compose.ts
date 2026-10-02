@@ -4,7 +4,7 @@
  */
 import { fileEditionStories, fileMissouriItems, isNewsMuted, missouriItemInEdition } from "./newspaper";
 import { fetchLeagueArticles, fetchTeamArticles } from "./newspaper-news";
-import { fetchSectionBoard, fetchSectionStandings } from "./newspaper-box";
+import { fetchLeagueLeaders, fetchSectionBoard, fetchSectionStandings } from "./newspaper-box";
 import { fetchClubSheet } from "./newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./newspaper-missouri-fetch";
 import type { MoItem } from "./newspaper-missouri";
@@ -42,6 +42,7 @@ import {
   type TeamDetail,
 } from "./sports";
 import { fetchMarshfieldWeather } from "./newspaper-weather";
+import { fetchWatchList, type WatchGame } from "./newspaper-watch";
 import { fetchYesterdayRecap, type YesterdayRecap } from "./yesterday-recap";
 import { ISSUE_VERSION, type PrintedIssue, type PrintedQuery } from "./newspaper-issue";
 import { clearEditorStamps, editEdition, type EditorRequest } from "./newspaper-editor";
@@ -164,6 +165,7 @@ type PressBag = {
   wraps?: unknown;
   news?: GameWrapCard[];
   weather?: unknown;
+  watch?: WatchGame[];
   scoutItem?: unknown;
   missouri?: { scout: MoItem | null; items: MoItem[]; listen: MoItem[] } | null;
   openers?: unknown;
@@ -181,6 +183,7 @@ type PressBag = {
   playoffs?: unknown;
   board?: unknown;
   standings?: unknown;
+  leaders?: unknown;
   extractCursor?: number;
   extracts?: Record<string, RssArticle>;
 };
@@ -318,6 +321,7 @@ export async function pressStep(
 
   if (state.stage === 7) {
     state.weather = await settle(fetchMarshfieldWeather(), null);
+    state.watch = await settle(fetchWatchList(day), [] as WatchGame[]);
     state.scoutItem = await settle(
       fetchMissouriScout().then(async (item) => (item ? ((await enrichMissouriItems([item], 1))[0] ?? item) : null)),
       null,
@@ -364,6 +368,7 @@ export async function pressStep(
     put([pressId, "tt-wraps", day, wrapFeedUrls.join("|")], wraps);
     put([pressId, "tt-news", day, favKeys], state.news ?? []);
     put([pressId, "tt-weather-marshfield"], state.weather);
+    put([pressId, "tt-watch", day], state.watch ?? []);
     put([pressId, "tt-mo-scout", day], state.scoutItem);
     if (state.missouri) put([pressId, "tt-missouri", day], state.missouri);
     put([pressId, "tt-openers", day, favKeys], state.openers);
@@ -443,6 +448,14 @@ export async function pressStep(
           {},
         )
       : {};
+    state.leaders = paths.length
+      ? await settle(
+          poolMap(paths, 2, async (path) => [path, await fetchLeagueLeaders(path).catch(() => [])] as const).then(
+            (entries) => Object.fromEntries(entries),
+          ),
+          {},
+        )
+      : {};
     const teamCards = state.teamCards ?? [];
     const pathsKey = state.pathKey ?? "";
     put([pressId, "tt-wrap-bodies", day, teamCards.map((c) => `${c.id}:${c.gameId}`).join("|")], state.enriched ?? teamCards);
@@ -452,6 +465,7 @@ export async function pressStep(
       put([pressId, "tt-league-slate", day, pathsKey], state.leagueSlate);
       put([pressId, "tt-board", day, pathsKey], state.board);
       put([pressId, "tt-standings", day, pathsKey], state.standings);
+      put([pressId, "tt-leaders", day, pathsKey], state.leaders);
     }
     if (paths.includes("baseball/mlb")) put([pressId, "tt-mlb-playoffs", day], state.playoffs);
     state.extracts = {};

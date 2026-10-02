@@ -770,4 +770,26 @@ assert(
   "The Athletic runs in the sport section",
 );
 
+// League leaders: a desk in every sport section that has a list on file, in every edition.
+const leaderClub: ClubDesk = { ...cards, key: "nfl-det", shortName: "Lions", leaguePath: "football/nfl" };
+const focusesOf = (ed: ReturnType<typeof buildEdition>, code: string) =>
+  ed.pages.flatMap((p) => (p.kind === "sport-front" && p.section === code ? [p.focus] : []));
+for (const press of ["2026-09-30-morning", "2026-09-30-midday", "2026-09-30-evening"]) {
+  const withLeaders = buildEdition({ stories: [], clubs: [leaderClub], edition: press, leaderPaths: ["football/nfl"] });
+  const nflFocuses = focusesOf(withLeaders, "NFL");
+  assert(nflFocuses.includes("leaders"), `${press}: the NFL section runs a leaders desk`);
+  assert(nflFocuses.indexOf("leaders") === nflFocuses.indexOf("teams") + (press.endsWith("morning") ? 1 : 2), `${press}: leaders sit by the standings`);
+  const without = buildEdition({ stories: [], clubs: [leaderClub], edition: press });
+  assert(!focusesOf(without, "NFL").includes("leaders"), `${press}: no list, no leaders desk`);
+  assert(focusesOf(without, "NFL").length === nflFocuses.length - 1, `${press}: the leaders desk adds exactly one page`);
+
+  // The viewing guide closes Section A, before Missouri and the sport sections.
+  const a = withLeaders.pages.filter((p) => p.section === "A");
+  assert(a.at(-1)?.kind === "favorites-watch", `${press}: the viewing guide is the last page of Section A`);
+  assert(a.filter((p) => p.kind === "favorites-watch").length === 1, `${press}: one viewing guide`);
+  const watchAt = withLeaders.pages.findIndex((p) => p.kind === "favorites-watch");
+  assert(withLeaders.pages[watchAt + 1]?.section !== "A", `${press}: Section B or the sports follow the guide`);
+  assert(withLeaders.sections[0]!.pages === a.length, `${press}: Section A counts the guide`);
+}
+
 console.log("newspaper-sections ok");

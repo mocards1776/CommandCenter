@@ -46,6 +46,7 @@ import {
   rankStandings,
   type BoxGame,
   type BoxPerson,
+  type LeagueLeaderGroup,
   type SectionBoard,
   type StandGroup,
 } from "@/lib/newspaper-box";
@@ -105,6 +106,8 @@ import {
   writeRemoteIssue,
 } from "@/lib/newspaper-issue-remote";
 import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
+import { fetchWatchList } from "@/lib/newspaper-watch";
+import WatchGuide from "@/components/newspaper/WatchGuide";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
@@ -482,6 +485,7 @@ function pageLabel(page: EditionPage): string {
         news: "News",
         recaps: "Scores",
         teams: "Standings",
+        leaders: "Leaders",
         schedule: "Schedule",
         playoffs: "Playoffs",
         form: "Club Form",
@@ -499,6 +503,8 @@ function pageLabel(page: EditionPage): string {
       return "Club Form";
     case "favorites-continue":
       return "Continued";
+    case "favorites-watch":
+      return "What to Watch";
     default:
       return "Front Page";
   }
@@ -1824,6 +1830,7 @@ const FOCUS_TITLES: Record<SportFrontPage["focus"], string> = {
   news: "News",
   recaps: "Scores",
   teams: "Standings",
+  leaders: "League Leaders",
   schedule: "Schedule",
   playoffs: "Playoffs",
   form: "Club Form",
@@ -1835,6 +1842,7 @@ const TURN_LABELS: Record<SportFrontPage["focus"], string> = {
   news: "Front page",
   recaps: "Scores and box scores",
   teams: "The standings",
+  leaders: "League leaders",
   schedule: "The schedule",
   playoffs: "The playoff bracket",
   form: "Club form",
@@ -2689,36 +2697,42 @@ function offseasonTables(standings: StandGroup[], page: SportFrontPage, leagueCl
   return mine.length ? mine : standings.slice(0, 2);
 }
 
-/** Passing yards, home runs, points — the league list, not one club's leaders. */
-function LeagueLeaders({ path }: { path: string }) {
-  const leaders = useQuery({
-    queryKey: ["tt-league-leaders", path],
-    queryFn: () => fetchLeagueLeaders(path),
-    staleTime: 30 * 60_000,
-  });
-  const groups = leaders.data ?? [];
-  if (!groups.length) return null;
+/** Passing yards, home runs, points — the league list, not one club's leaders. Rule-filed from ESPN. */
+function LeadersDesk({ groups }: { groups: LeagueLeaderGroup[] }) {
+  if (!groups.length) return <p className="wsj-empty">The league has not posted its leaders.</p>;
   return (
-    <section className="tt-lleaders" aria-label="League leaders">
-      <h3 className="wsj-band-title">League leaders</h3>
+    <section className="tt-lleaders tt-lleaders-desk" aria-label="League leaders">
       <div className="tt-lleaders-grid">
-        {groups.map((group) => (
-          <div key={group.category}>
-            <h4>{group.category}</h4>
-            <ol>
-              {group.rows.map((row) => (
-                <li key={`${group.category}-${row.name}`}>
-                  {row.headshot ? <img src={row.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
+        {groups.map((group) => {
+          const [top, ...rest] = group.rows;
+          return (
+            <div key={group.category} className="tt-lleaders-cat">
+              <h4>{group.category}</h4>
+              {top ? (
+                <div className="tt-lleaders-top">
+                  {top.headshot ? <img src={top.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
                   <span>
-                    <strong>{row.name}</strong>
-                    <em>{row.team}</em>
+                    <strong>{top.name}</strong>
+                    <em>{top.team}</em>
                   </span>
-                  <b>{row.line}</b>
-                </li>
-              ))}
-            </ol>
-          </div>
-        ))}
+                  <b>{top.line}</b>
+                </div>
+              ) : null}
+              <ol start={2}>
+                {rest.map((row, i) => (
+                  <li key={`${group.category}-${row.name}`}>
+                    <i>{i + 2}</i>
+                    <span>
+                      <strong>{row.name}</strong>
+                      <em>{row.team}</em>
+                    </span>
+                    <b>{row.line}</b>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -2736,6 +2750,7 @@ function SportFront({
   hasPlayers,
   nights,
   sheets,
+  leaders,
   onTurn,
 }: {
   page: SportFrontPage;
@@ -2749,6 +2764,7 @@ function SportFront({
   hasPlayers: boolean;
   nights: PlayerNight[];
   sheets: Record<string, ClubSheet>;
+  leaders: LeagueLeaderGroup[];
   onTurn: (folio: string) => void;
 }) {
   const results = (board?.results.length || board?.prior?.length) ?? 0;
@@ -2767,6 +2783,7 @@ function SportFront({
     news: `${page.articles.length + results} stories and finals · ${leagueClubs.length || page.clubs.length} clubs`,
     recaps: results ? `${results} ${results === 1 ? "final" : "finals"} · lines, decisions and the agate` : "Box scores",
     teams: standings.length ? `${standings.length} ${standings.length === 1 ? "table" : "tables"} · your clubs marked` : "League tables",
+    leaders: leaders.length ? `${leaders.length} categories · the top five in each` : "League leaders",
     schedule: upcoming ? `${upcoming} games ahead · probables, TV and venues` : "League calendar",
     playoffs: playoffs ? `${playoffs.season} postseason bracket` : "Postseason bracket",
     form: `${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"} · numbers, leaders, the table`,
@@ -2801,6 +2818,8 @@ function SportFront({
             edition={edition}
             onTurn={onTurn}
           />
+        ) : page.focus === "leaders" ? (
+          <LeadersDesk groups={leaders} />
         ) : page.focus === "schedule" ? (
           <ScheduleDesk page={page} board={board} slate={slate} edition={edition} />
         ) : page.focus === "playoffs" ? (
@@ -2820,7 +2839,6 @@ function SportFront({
         ) : (
           <LeagueFormGrid clubs={leagueClubs} />
         )}
-        {page.focus === "news" || page.focus === "teams" ? <LeagueLeaders path={page.path} /> : null}
       </div>
       {turn ? <TurnBar onTurn={onTurn} folio={turn.folio} label={turn.label} /> : null}
     </div>
@@ -3987,6 +4005,25 @@ function NewspaperDesk() {
     refetchOnReconnect: false,
   });
 
+  const leadersQ = useQuery({
+    queryKey: [pressId, "tt-leaders", day, sportPaths.join("|")],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        sportPaths.map(async (path) => [path, await fetchLeagueLeaders(path).catch(() => [])] as const),
+      );
+      return Object.fromEntries(entries) as Record<string, LeagueLeaderGroup[]>;
+    },
+    enabled: pressing && sportPaths.length > 0,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const leaderPaths = useMemo(
+    () => Object.entries(leadersQ.data ?? {}).flatMap(([path, groups]) => (groups.length ? [path] : [])),
+    [leadersQ.data],
+  );
+
   /** Pairs a club story with the game it reports, so the reader can set the box. */
   const findGame = useCallback(
     (card: GameWrapCard): BoxGame | null => {
@@ -4123,6 +4160,16 @@ function NewspaperDesk() {
     queryKey: [pressId, "tt-weather-marshfield"],
     enabled: pressing,
     queryFn: fetchMarshfieldWeather,
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+
+  const watchQ = useQuery({
+    queryKey: [pressId, "tt-watch", day],
+    enabled: pressing,
+    queryFn: () => fetchWatchList(day),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -4333,9 +4380,11 @@ function NewspaperDesk() {
       quiet(teamSnaps, true) &&
       quiet(teamDetailsQ, teamFavs.length > 0) &&
       quiet(weatherQ, true) &&
+      quiet(watchQ, true) &&
       quiet(sheetsQ, teamFavs.length > 0) &&
       quiet(boardQ, sportPaths.length > 0) &&
       quiet(standingsQ, sportPaths.length > 0) &&
+      quiet(leadersQ, sportPaths.length > 0) &&
       quiet(leagueSlateQ, sportPaths.length > 0) &&
       quiet(leagueClubsQ, sportPaths.length > 0) &&
       quiet(scoutQ, true) &&
@@ -4367,10 +4416,12 @@ function NewspaperDesk() {
     teamDetailsQ,
     teamFavs,
     weatherQ,
+    watchQ,
     sheetsQ,
     sportPaths,
     boardQ,
     standingsQ,
+    leadersQ,
     leagueSlateQ,
     leagueClubsQ,
     scoutQ,
@@ -4390,8 +4441,17 @@ function NewspaperDesk() {
   ]);
 
   const edition = useMemo(
-    () => buildEdition({ stories, clubs, edition: pressId, playerPaths, missouri: missouriQ.data ?? null, offseason }),
-    [stories, clubs, pressId, playerPaths, missouriQ.data, offseason],
+    () =>
+      buildEdition({
+        stories,
+        clubs,
+        edition: pressId,
+        playerPaths,
+        missouri: missouriQ.data ?? null,
+        offseason,
+        leaderPaths,
+      }),
+    [stories, clubs, pressId, playerPaths, missouriQ.data, offseason, leaderPaths],
   );
   const comingUp = useMemo<ComingUp[]>(
     () =>
@@ -4615,6 +4675,8 @@ function NewspaperDesk() {
                   </header>
                   <ClubFormGrid clubs={page.clubs} sheets={sheetsQ.data ?? {}} />
                 </div>
+              ) : page.kind === "favorites-watch" ? (
+                <WatchGuide games={watchQ.data ?? []} editionLabel={press.label} />
               ) : page.kind === "favorites-continue" ? (
                 <ContinuePage
                   jumps={page.jumps}
@@ -4647,6 +4709,7 @@ function NewspaperDesk() {
                   hasPlayers={playerPaths.includes(page.path)}
                   nights={nightsByPath[page.path] ?? []}
                   sheets={sheetsQ.data ?? {}}
+                  leaders={leadersQ.data?.[page.path] ?? []}
                   onTurn={goFolio}
                 />
               ) : page.kind === "missouri" ? (
@@ -4679,6 +4742,8 @@ function NewspaperDesk() {
       scoutQ.data,
       missouriQ.data?.scout,
       sheetsQ.data,
+      leadersQ.data,
+      watchQ.data,
       notebookByFolio,
       leagueClubsQ.data,
       boardQ.data,
