@@ -549,7 +549,8 @@ export function buildGameWrapCards(opts: {
   /** Calendar day the recap board covers, stamped so the 18-hour gate can see it. */
   recapDate?: string | null;
 }): GameWrapCard[] {
-  const { favs, details, recapGames, wraps } = opts;
+  const { favs, details, recapGames } = opts;
+  const wraps = Array.isArray(opts.wraps) ? opts.wraps : [];
   const favBy = new Map(favs.map((f) => [f.key, f]));
   const cards: GameWrapCard[] = [];
   const seen = new Set<string>();

@@ -3433,8 +3433,8 @@ function NewspaperDesk() {
     [teamFavs, teamSnaps.data, teamDetailsQ.data],
   );
 
-  const wrapPack = wrapsQ.data as { wraps: MatchedWrap[]; athletic: GameWrapCard[] } | MatchedWrap[] | undefined;
-  const wrapHits = Array.isArray(wrapPack) ? wrapPack : wrapPack?.wraps;
+  const wrapPack = wrapsQ.data as { wraps?: MatchedWrap[]; athletic?: GameWrapCard[] } | MatchedWrap[] | undefined;
+  const wrapHits = Array.isArray(wrapPack) ? wrapPack : Array.isArray(wrapPack?.wraps) ? wrapPack.wraps : [];
   const athleticCards = Array.isArray(wrapPack) ? undefined : wrapPack?.athletic;
 
   const teamCards = useMemo(
