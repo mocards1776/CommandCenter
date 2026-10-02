@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { asPrintedIssue, ISSUE_VERSION, slimIssue, type PrintedIssue } from "./newspaper-issue";
+import type { EditorRequest } from "./newspaper-editor";
 
 function filed(data: { version?: unknown; status?: unknown } | null, error: unknown): boolean {
   return !error && !!data && data.status === "ready" && data.version === ISSUE_VERSION;
@@ -41,6 +42,25 @@ export async function readRemoteIssue(id: string): Promise<PrintedIssue | null> 
     .maybeSingle();
   if (error || !data || data.status !== "ready") return null;
   return asPrintedIssue(id, data.version, data.stories, data.queries);
+}
+
+/** The AI editor, for a device setting the paper itself. A throw means the rule desk sets it. */
+export async function askRemoteEditor(request: EditorRequest, timeoutMs = 25_000): Promise<unknown> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("newspaper-editor timed out")), timeoutMs);
+  });
+  try {
+    const { data, error } = await Promise.race([
+      supabase.functions.invoke("newspaper-editor", { body: request }),
+      timeout,
+    ]);
+    const body = data as { ok?: boolean; desk?: unknown } | null;
+    if (error || !body?.ok || !body.desk) throw error ?? new Error("newspaper-editor had no answer");
+    return body.desk;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** File an edition once. A later press does not overwrite the one already out. */

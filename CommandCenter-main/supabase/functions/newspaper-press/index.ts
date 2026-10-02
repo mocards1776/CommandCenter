@@ -41,10 +41,29 @@ type PressModule = {
       readKeys?: string[];
       carried?: unknown[];
       carriedMissouri?: unknown[];
+      editor?: (request: unknown) => Promise<unknown>;
     },
     bag: Record<string, unknown> | null,
   ) => Promise<{ done: false; bag: Record<string, unknown> } | { done: true; issue: Issue }>;
 };
+
+/** Long enough for one Grok pass; short enough that a hung editor still leaves time to file the rule desk's paper. */
+const EDITOR_TIMEOUT_MS = 60_000;
+
+/** One call to the newspaper-editor function. A throw means the rule desk sets the paper. */
+function askEditor(url: string, key: string) {
+  return async (request: unknown): Promise<unknown> => {
+    const res = await fetch(`${url}/functions/v1/newspaper-editor`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, apikey: key },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(EDITOR_TIMEOUT_MS),
+    });
+    const body = (await res.json().catch(() => null)) as { ok?: boolean; desk?: unknown; error?: string } | null;
+    if (!res.ok || !body?.ok || !body.desk) throw new Error(body?.error ?? `newspaper-editor ${res.status}`);
+    return body.desk;
+  };
+}
 
 let loading: Promise<PressModule> | null = null;
 
@@ -175,6 +194,7 @@ Deno.serve(async (req) => {
         readKeys,
         carried,
         carriedMissouri,
+        editor: Deno.env.get("NEWSPAPER_EDITOR") === "off" ? undefined : askEditor(url, key),
       },
       bag,
     );
