@@ -96,7 +96,15 @@ import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { fileExtracts, gatherStories, sportPathsOf, urlsToExtract } from "@/lib/newspaper-compose";
 import { ISSUE_VERSION, readLocalIssue, writeLocalIssue, type PrintedIssue } from "@/lib/newspaper-issue";
-import { readRemoteIssue, readRemoteQueries, readRemoteStories, writeDesk, writeRemoteIssue } from "@/lib/newspaper-issue-remote";
+import {
+  askRemoteEditor,
+  readRemoteIssue,
+  readRemoteQueries,
+  readRemoteStories,
+  writeDesk,
+  writeRemoteIssue,
+} from "@/lib/newspaper-issue-remote";
+import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
@@ -3876,10 +3884,27 @@ function NewspaperDesk() {
     queryIdle(extractsQ, extractUrls.length > 0) &&
     queryIdle(carriedIssueQ, Boolean(prevPress)) &&
     queryIdle(readsQ, Boolean(user?.id));
+  const pressIdRef = useRef(pressId);
+  pressIdRef.current = pressId;
+  const editedRef = useRef<string | null>(null);
+  const signedIn = Boolean(user?.id);
   useEffect(() => {
-    if (!copyReady) return;
-    setLockedCopy((prev) => (prev?.id === pressId ? prev : { id: pressId, stories: filedStories }));
-  }, [copyReady, pressId, filedStories]);
+    if (!copyReady || editedRef.current === pressId) return;
+    editedRef.current = pressId;
+    const id = pressId;
+    const filed = filedStories;
+    void (async () => {
+      // The scheduled press may have filed while this desk set copy. Its editor's front is the edition.
+      const pressed = await readRemoteStories(id).catch(() => null);
+      const stories = pressed
+        ? (pressed as GameWrapCard[])
+        : signedIn
+          ? (await editEdition(filed, id, askRemoteEditor)).stories
+          : clearEditorStamps(filed);
+      if (pressIdRef.current !== id) return;
+      setLockedCopy((prev) => (prev?.id === id ? prev : { id, stories }));
+    })();
+  }, [copyReady, pressId, filedStories, signedIn]);
   const pressReady = lockedCopy?.id === pressId;
   const printedStories = lockedCopy?.stories ?? NO_STORIES
 

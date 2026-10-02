@@ -44,6 +44,7 @@ import {
 import { fetchMarshfieldWeather } from "./newspaper-weather";
 import { fetchYesterdayRecap, type YesterdayRecap } from "./yesterday-recap";
 import { ISSUE_VERSION, type PrintedIssue, type PrintedQuery } from "./newspaper-issue";
+import { clearEditorStamps, editEdition, type EditorRequest } from "./newspaper-editor";
 
 export function deskFavorites(order: string[] | null | undefined, hidden: string[] | null | undefined): SportsFavorite[] {
   const layout: SportsLayout = {
@@ -204,6 +205,8 @@ export async function pressStep(
     /** Stories filed in the previous edition. Unread ones may run again. */
     carried?: GameWrapCard[];
     carriedMissouri?: MoItem[];
+    /** Asks the AI editor for the front. Without it, or when it fails, the rule desk sets the paper. */
+    editor?: (request: EditorRequest) => Promise<unknown>;
   },
   bag: PressBag | null,
 ): Promise<PressStep> {
@@ -488,12 +491,18 @@ export async function pressStep(
     return { done: false, bag: state };
   }
   if (extractUrls.length) put([pressId, "tt-extracts", day, extractUrls.join("|")], extracts);
-  const stories = fileEditionStories({
+  const filed = fileEditionStories({
     fresh: fileExtracts(raw, extractUrls.length ? extracts : undefined),
     carried: opts.carried ?? [],
     readKeys: new Set(opts.readKeys ?? []),
     pressId,
   });
+  let stories = clearEditorStamps(filed);
+  if (opts.editor) {
+    const edited = await editEdition(filed, pressId, opts.editor);
+    stories = edited.stories;
+    if (edited.desk) put([pressId, "tt-editor", day], edited.desk);
+  }
   return {
     done: true,
     issue: { version: ISSUE_VERSION, id: pressId, stories, queries: state.queries },
@@ -507,6 +516,7 @@ export async function composePress(opts: {
   favs: SportsFavorite[];
   layout: SportsLayout;
   userId?: string | null;
+  editor?: (request: EditorRequest) => Promise<unknown>;
 }): Promise<PrintedIssue> {
   let bag: PressBag | null = null;
   for (;;) {
