@@ -4,8 +4,10 @@ import {
   useMemo,
   useRef,
   useState,
+  type PointerEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import {
@@ -20,7 +22,7 @@ import {
 } from "@/components/newspaper/BoxScore";
 import { ESPN_BOX_PATHS, fetchEspnBox } from "@/lib/newspaper-agate";
 import { fetchEspnRecapStory, gameClock } from "@/lib/newspaper-box";
-import { proseParas } from "@/lib/newspaper-copy";
+import { isNavSoup, proseParas, readableCopy } from "@/lib/newspaper-copy";
 import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
 import { fetchRssArticle, scrubReaderChrome, stripDuplicateContentImages } from "@/lib/rss";
 import { cn } from "@/lib/utils";
@@ -39,7 +41,9 @@ export function ReaderProvider({ children }: { children: ReactNode }) {
   return (
     <ReaderContext.Provider value={open}>
       {children}
-      {story ? <PaperReader story={story} onClose={() => setStory(null)} /> : null}
+      {story && typeof document !== "undefined"
+        ? createPortal(<PaperReader story={story} onClose={() => setStory(null)} />, document.body)
+        : null}
     </ReaderContext.Provider>
   );
 }
@@ -84,10 +88,10 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
   const body = useQuery({
     queryKey: ["tt-reader", card.id, source, espnEvent],
     queryFn: async (): Promise<ReaderBody> => {
-      if (game?.recap?.html) {
+      if (game?.recap?.html && !isNavSoup(game.recap.html.replace(/<[^>]+>/g, " "))) {
         return { html: game.recap.html, text: null, photo: game.recap.photo, byline: game.recap.byline };
       }
-      const own = card.body?.trim() ?? "";
+      const own = readableCopy(card.body);
       if (own.length >= LONG_BODY) return { html: null, text: own, photo: null, byline: null };
       if (source && !isEspnGamePage(source)) {
         try {
@@ -96,8 +100,12 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
             queryFn: () => fetchRssArticle(source),
             staleTime: 10 * 60_000,
           });
-          if ((article.contentText?.length ?? 0) > Math.max(240, own.length)) {
-            return { html: article.contentHtml, text: null, photo: article.image, byline: article.byline };
+          const text = readableCopy(article.contentText);
+          if (text.length > Math.max(240, own.length)) {
+            const html = article.contentHtml && !isNavSoup(article.contentHtml.replace(/<[^>]+>/g, " "))
+              ? article.contentHtml
+              : null;
+            return { html, text: html ? null : text, photo: article.image, byline: article.byline };
           }
         } catch {
           /* fall through to the wire copy */
@@ -105,9 +113,11 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
       }
       if (espnEvent && path) {
         const espn = await fetchEspnRecapStory(path, espnEvent);
-        if (espn) return { html: espn.html, text: null, photo: espn.photo, byline: espn.byline };
+        if (espn && !isNavSoup(espn.html.replace(/<[^>]+>/g, " "))) {
+          return { html: espn.html, text: null, photo: espn.photo, byline: espn.byline };
+        }
       }
-      return { html: null, text: own || card.dek || "", photo: null, byline: null };
+      return { html: null, text: own, photo: null, byline: null };
     },
     staleTime: 10 * 60_000,
   });
@@ -125,13 +135,23 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
   const stars = espnBox.data?.stars ?? [];
 
   useEffect(() => {
+    document.documentElement.classList.add("tt-reader-open");
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
       e.stopPropagation();
     };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    return () => {
+      document.documentElement.classList.remove("tt-reader-open");
+      window.removeEventListener("keydown", onKey, true);
+    };
   }, [onClose]);
+
+  const close = (e: PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClose();
+  };
 
   useEffect(() => {
     sheetRef.current?.scrollTo({ top: 0 });
@@ -154,7 +174,7 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
   return (
     <div className="tt-reader" role="dialog" aria-modal="true" aria-label={card.headline}>
       <div className="tt-reader-bar">
-        <button type="button" onClick={onClose} className="tt-reader-back">
+        <button type="button" onPointerDown={close} className="tt-reader-back">
           <ArrowLeft size={14} /> Back to the paper
         </button>
         <span className="tt-reader-plate">The Thompson Times</span>
@@ -218,7 +238,7 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
                 <p key={i}>{p}</p>
               ))}
             </div>
-          ) : (
+          ) : dek ? null : (
             <p className="tt-reader-wait">The wire filed a headline only.</p>
           )}
 

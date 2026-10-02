@@ -1,3 +1,26 @@
+const NAV_MARKERS = ["my quiz activity", "my favorites", "add sports/teams", "home quizzes"];
+
+/**
+ * A site menu or team index saved as the article. Yardbarker files
+ * "Home Quizzes My Quiz Activity…" in place of the story.
+ */
+export function isNavSoup(text: string | null | undefined): boolean {
+  const raw = (text ?? "").replace(/\s+/g, " ").trim();
+  if (raw.length < 80) return false;
+  const lower = raw.toLowerCase();
+  if (NAV_MARKERS.some((marker) => lower.includes(marker))) return true;
+  const words = raw.split(" ").length;
+  const endings = (raw.match(/[.!?](?=\s|$)/g) ?? []).length;
+  const commas = (raw.match(/,/g) ?? []).length;
+  return words >= 50 && endings === 0 && commas < 2;
+}
+
+/** Article text, or nothing when the wire filed a menu. */
+export function readableCopy(text: string | null | undefined): string {
+  const raw = (text ?? "").trim();
+  return raw && !isNavSoup(raw) ? raw : "";
+}
+
 /** Wire copy arrives with link residue: "Raiders ." and "Chiefs ,". */
 export function tidy(text: string): string {
   return text

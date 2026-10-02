@@ -18,6 +18,7 @@ import {
   splitStoryCopy,
   withinEditionHours,
 } from "./newspaper.ts";
+import { isNavSoup } from "./newspaper-copy.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import type { MissouriDesk, MoItem } from "./newspaper-missouri";
 
@@ -297,8 +298,10 @@ function stampCounts<T extends PageBase>(pages: T[]): T[] {
 /** Plain story body used for front tease / continuation (no agate notes). */
 export function storyBodyForJump(card: GameWrapCard): string {
   const body = (card.body || "").trim();
-  if (body.length >= 40) return body;
-  return [card.dek, card.scoreLine, card.headline].filter(Boolean).join(" ").trim();
+  if (body.length >= 40 && !isNavSoup(body)) return body;
+  const dek = (card.dek || "").trim();
+  if (dek && !isNavSoup(dek)) return dek;
+  return [card.scoreLine, card.headline].filter(Boolean).join(" ").trim();
 }
 
 function frontSplit(

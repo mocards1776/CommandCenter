@@ -55,6 +55,12 @@
     overscroll-behavior: none;
   }
 
+  /* The reader is portaled onto the document. Body overflow must not eat its taps. */
+  html.tt-reader-open,
+  html.tt-reader-open body {
+    overflow: visible;
+  }
+
   body {
     background: var(--color-field);
     color: #edeff5;
@@ -1159,11 +1165,13 @@ mark.rss-hl {
   --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
   --w-gutter: 20px;
 
-  /* App header (58px, 70px from md) plus the flag rule beneath it. */
+  /* One broadsheet. The screen scales it; the page itself does not reflow. */
+  --tt-page-w: 1040px;
+  --tt-page-h: 1480px;
   --w-chrome: calc(61px + env(safe-area-inset-top, 0px));
-  flex: 1;
+  flex: 1 1 auto;
   height: 100%;
-  max-height: 100dvh;
+  max-height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1274,7 +1282,9 @@ mark.rss-hl {
 
 /* ── The spread: one folio per swipe, each scrolling on its own ─────── */
 .newspaper-edition.wsj-pager {
-  flex: 1;
+  --tt-fit: 1;
+  flex: 1 1 auto;
+  height: 0;
   min-height: 0;
   display: flex;
   flex-direction: row;
@@ -1285,6 +1295,7 @@ mark.rss-hl {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  touch-action: pan-x;
 }
 .newspaper-edition.wsj-pager::-webkit-scrollbar {
   display: none;
@@ -1297,11 +1308,10 @@ mark.rss-hl {
   min-height: 0;
   max-height: 100%;
   display: flex;
-  flex-direction: column;
-  overflow-x: hidden;
-  overflow-y: auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   overscroll-behavior: none;
-  -webkit-overflow-scrolling: touch;
   scroll-snap-align: start;
   scroll-snap-stop: always;
   box-sizing: border-box;
@@ -1309,12 +1319,19 @@ mark.rss-hl {
 }
 .wsj-sheet {
   box-sizing: border-box;
-  flex: 1 0 auto;
-  width: 100%;
-  max-width: 1320px;
-  min-height: 100%;
-  margin: 0 auto;
+  flex: none;
+  width: var(--tt-page-w, 1040px);
+  height: var(--tt-page-h, 1480px);
+  min-width: var(--tt-page-w, 1040px);
+  max-width: var(--tt-page-w, 1040px);
+  min-height: var(--tt-page-h, 1480px);
+  max-height: var(--tt-page-h, 1480px);
+  margin: 0;
   padding: 14px 18px 28px;
+  zoom: var(--tt-fit, 1);
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1323,24 +1340,6 @@ mark.rss-hl {
     var(--w-paper);
   color: var(--w-ink);
   box-shadow: 0 0 40px rgba(0, 0, 0, 0.35);
-}
-
-/* ── Pager performance: far folios skip style/layout/paint; the pager marks
-   the folio in view ±2 with [data-near] so swipes land on pages already painted.
-   The page box is sized by the flex track, so size containment can't shift it. */
-/* Skip work on far folios without putting containment on the scroll container,
-   which is what let the page scroll a viewport past the end of the sheet. */
-.wsj-page > .wsj-sheet {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 100% auto 800px;
-}
-.wsj-page[data-near] > .wsj-sheet {
-  content-visibility: visible;
-}
-@media print {
-  .wsj-page > .wsj-sheet {
-    content-visibility: visible;
-  }
 }
 
 .tt-spread {
@@ -5036,15 +5035,37 @@ li.counting .tt-count.card {
 
 /* ── The paper's reader: Dispatch, set as a newspaper page ──────────── */
 .tt-reader {
+  --w-paper: #fbfaf6;
+  --w-paper-2: #f2efe6;
+  --w-card: #ffffff;
+  --w-ink: #121418;
+  --w-ink-soft: #3a3e46;
+  --w-muted: #6b6f78;
+  --w-hair: rgba(18, 20, 24, 0.15);
+  --w-rule: #121418;
+  --w-red: #b3121d;
+  --w-navy: #0c1d38;
+  --w-head: "Playfair Display", "Times New Roman", Georgia, serif;
+  --w-plate: "UnifrakturMaguntia", "Playfair Display", Georgia, serif;
+  --w-label: "Libre Franklin", system-ui, sans-serif;
+  --w-cond: "Oswald", "Libre Franklin", sans-serif;
+  --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 120;
   display: flex;
   flex-direction: column;
-  background: rgba(10, 14, 24, 0.82);
-  backdrop-filter: blur(3px);
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  background: #0a0e18;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 .tt-reader-bar {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -5058,7 +5079,8 @@ li.counting .tt-count.card {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  min-height: 44px;
+  padding: 10px 14px;
   border: 1px solid rgba(255, 255, 255, 0.25);
   background: none;
   color: inherit;
@@ -5068,6 +5090,9 @@ li.counting .tt-count.card {
   text-transform: uppercase;
   text-decoration: none;
   cursor: pointer;
+  touch-action: manipulation;
+  position: relative;
+  z-index: 3;
 }
 .tt-reader-plate {
   font-family: var(--w-plate);
@@ -5075,7 +5100,8 @@ li.counting .tt-count.card {
   color: #f4f1e9;
 }
 .tt-reader-scroll {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 18px 14px 48px;
@@ -7008,3 +7034,195 @@ li.counting .tt-count.card {
     transition-duration: revert !important;
   }
 }
+
+/* The broadsheet is one size. Viewport queries above must not reflow it.
+   These rules sit last and are scoped to the sheet, so a phone scales the
+   page instead of restacking the columns. */
+.newspaper-root .wsj-sheet {
+  padding: 14px 18px 28px;
+  gap: 14px;
+}
+.newspaper-root .wsj-nameplate { font-size: 68px; }
+.newspaper-root .wsj-hl.xl { font-size: 46px; }
+.newspaper-root .wsj-hl.lg { font-size: 30px; }
+.newspaper-root .wsj-hl.md { font-size: 23px; }
+.newspaper-root .wsj-hl.sm { font-size: 17px; }
+.newspaper-root .wsj-dek { font-size: 16px; }
+.newspaper-root .wsj-poster-id strong { font-size: 31px; }
+.newspaper-root .wsj-brief h3 { font-size: 17px; }
+.newspaper-root .wsj-brief.featured h3 { font-size: 22px; }
+.newspaper-root .wsj-brief:only-child h3 { font-size: 26px; }
+.newspaper-root .wx-head h2 { font-size: 42px; }
+.newspaper-root .wx-temp { font-size: 84px; }
+.newspaper-root .wsj-desk-head h2 { font-size: 38px; }
+.newspaper-root .wsj-sport-code { font-size: 46px; }
+.newspaper-root .wsj-sport-band .wsj-sport-code { font-size: 29px; }
+.newspaper-root .wsj-sport-lead-copy .wsj-hl.xl { font-size: 38px; }
+.newspaper-root .tt-hero-score { font-size: 94px; }
+.newspaper-root .tt-mo-flag .wsj-sport-code { font-size: 31px; }
+.newspaper-root .tt-mo-flag h3 { font-size: 31px; }
+.newspaper-root .tt-br-head h3 { font-size: 37px; }
+.newspaper-root .tt-cover-edition { font-size: 34px; }
+.newspaper-root .wsj-front-grid { grid-template-columns: minmax(0, 1fr) 296px; }
+.newspaper-root .wsj-rail {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 0;
+  padding: 0 0 0 var(--w-gutter);
+  border-left: 1px solid var(--w-hair);
+  border-top: 0;
+}
+.newspaper-root .wsj-prose.c3 { columns: 3; }
+.newspaper-root .wsj-prose.c2 { columns: 2; }
+.newspaper-root .wsj-prose,
+.newspaper-root .wsj-prose.c1 { columns: 1; }
+.newspaper-root .wsj-briefs { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
+.newspaper-root .wsj-brief.featured { grid-column: span 2; }
+.newspaper-root .wsj-ticker { grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); }
+.newspaper-root .wsj-deskboard ul { grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); }
+.newspaper-root .wsj-clubs-grid { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
+.newspaper-root .wsj-shelved { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
+.newspaper-root .wsj-form-grid { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
+.newspaper-root .wsj-sport-lead { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+.newspaper-root .wsj-sport-lead.no-photo { grid-template-columns: minmax(160px, 0.5fr) minmax(0, 1.5fr); }
+.newspaper-root .wsj-sport-lead-crest { aspect-ratio: 1; }
+.newspaper-root .wsj-poster.band {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.newspaper-root .wsj-poster.band .wsj-poster-id { grid-column: auto; }
+.newspaper-root .wsj-poster-names { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.newspaper-root .wsj-mast-row { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.newspaper-root .wsj-ear { display: block; }
+.newspaper-root .wsj-ear.wx-ear {
+  display: block;
+  max-width: 168px;
+  justify-self: start;
+}
+.newspaper-root .wsj-ear.wx-ear > strong { display: block; }
+.newspaper-root .wsj-dateline-bar {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+  text-align: left;
+}
+.newspaper-root .wsj-dateline-bar > span { display: block; }
+.newspaper-root .wsj-dateline-bar .c { text-align: center; }
+.newspaper-root .wsj-dateline-bar .r { text-align: right; }
+.newspaper-root .wsj-run { grid-template-columns: auto minmax(0, 1fr) auto; }
+.newspaper-root .wsj-run-section { display: flex; }
+.newspaper-root .wsj-run-plate { font-size: 27px; }
+.newspaper-root .wsj-run-folio { font-size: 10.5px; }
+.newspaper-root .wsj-run-folio b { font-size: 20px; }
+.newspaper-root .wsj-story.art-side {
+  display: grid;
+  flex-direction: unset;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+}
+.newspaper-root .wsj-front-row.two {
+  display: grid;
+  flex-direction: unset;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+}
+.newspaper-root .wsj-front-row.two > * + * {
+  padding-left: var(--w-gutter);
+  padding-top: 0;
+  border-left: 1px solid var(--w-hair);
+  border-top: 0;
+}
+.newspaper-root .wsj-brief.featured.has-art {
+  display: grid;
+  flex-direction: unset;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+}
+.newspaper-root .wsj-filler { grid-column: auto; }
+.newspaper-root .wsj-filler button {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 3px;
+  padding: 10px 14px;
+}
+.newspaper-root .wsj-sport-hero-rail { display: flex; }
+.newspaper-root .wx-strip { flex-wrap: nowrap; }
+.newspaper-root .wx-strip-copy {
+  flex: 1;
+  order: 0;
+  font-size: 13.5px;
+}
+.newspaper-root .wx-strip em { margin-left: 0; }
+.newspaper-root .wx-top { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+.newspaper-root .wx-bottom { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+.newspaper-root .tt-mo-grid { grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); }
+.newspaper-root .tt-mo-main {
+  padding-right: var(--w-gutter);
+  border-right: 1px solid var(--w-hair);
+}
+.newspaper-root .tt-mo-briefs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.newspaper-root .tt-mo-seconds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.newspaper-root .tt-mo-flag p { display: block; }
+.newspaper-root .tt-stars { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
+.newspaper-root .tt-pl-grid { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
+.newspaper-root .tt-feature { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+.newspaper-root .tt-feature.graphic { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.newspaper-root .tt-feature:not(:has(.tt-feature-photo)) { grid-template-columns: 1fr; }
+.newspaper-root .wsj-form-grid.wide .wsj-form-card-body {
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.25fr) minmax(0, 1fr);
+}
+.newspaper-root .wsj-form-grid.wide .wsj-form-card-body > * {
+  grid-column: auto;
+  grid-row: auto;
+}
+.newspaper-root .wsj-form-grid.wide .wsj-form-sec.stats { grid-column: 1; }
+.newspaper-root .wsj-form-grid.wide .wsj-form-sec.leaders { grid-column: 2; grid-row: span 2; }
+.newspaper-root .wsj-form-grid.wide .wsj-form-card-body > .wsj-box:last-child,
+.newspaper-root .wsj-form-grid.wide .wsj-form-card-body > p:last-child { grid-column: 3; }
+.newspaper-root .wsj-form-grid.wide .wsj-form-card-body > .wsj-box:nth-last-child(2) { grid-column: 3; grid-row: 1; }
+.newspaper-root .tt-scout { grid-template-columns: 170px minmax(0, 1fr); }
+.newspaper-root .tt-scout.has-photo { grid-template-columns: 170px 220px minmax(0, 1fr); }
+.newspaper-root .tt-scout.has-photo .tt-scout-photo { grid-row: auto; }
+.newspaper-root .tt-scout-flag {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 14px 0 0;
+  border-right: 1px solid var(--w-hair);
+  border-bottom: 0;
+}
+.newspaper-root .tt-scout-flag em { margin: 6px 0 0; }
+.newspaper-root .tt-scout:not(.has-photo) .tt-scout-copy { grid-column: auto; }
+.newspaper-root .tt-score-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.newspaper-root .tt-score-grid.agate { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.newspaper-root .tt-stand-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.newspaper-root .tt-stand-grid.single { grid-template-columns: 1fr; }
+.newspaper-root .wsj-sport-lead-grid.with-side { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+.newspaper-root .wsj-sport-lead-grid.with-side > .wsj-story.lead {
+  padding-right: var(--w-gutter);
+  border-right: 1px solid var(--w-hair);
+}
+.newspaper-root .tt-gamebox-top { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.newspaper-root .wsj-sport-seconds {
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: none;
+}
+.newspaper-root .wsj-sport-seconds > .wsj-story + .wsj-story {
+  padding-top: 14px;
+  border-top: 1px solid var(--w-hair);
+}
+.newspaper-root .tt-matchups { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
+.newspaper-root .tt-agate-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.newspaper-root .tt-open-grid { grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); }
+.newspaper-root .tt-open-grid.single { grid-template-columns: minmax(0, 1fr); }
+.newspaper-root .tt-open-grid.single .tt-open-body { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+.newspaper-root .tt-open-index ol { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.newspaper-root .tt-open-leaders { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.newspaper-root .tt-open-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.newspaper-root .tt-hero-side { min-height: 210px; padding: 16px 16px 14px; }
+.newspaper-root .tt-hero-disc { width: 58px; height: 58px; }
+.newspaper-root .tt-hero-id strong { font-size: 22px; }
+.newspaper-root .wsj-story-facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.newspaper-root .wsj-sport-hero { padding: 14px 18px; }

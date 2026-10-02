@@ -8,6 +8,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -45,7 +46,7 @@ import {
   type SectionBoard,
   type StandGroup,
 } from "@/lib/newspaper-box";
-import { proseParas, tidy } from "@/lib/newspaper-copy";
+import { isNavSoup, proseParas, tidy } from "@/lib/newspaper-copy";
 import {
   Face,
   MatchupCard,
@@ -91,7 +92,7 @@ import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { fileExtracts, gatherStories, sportPathsOf, urlsToExtract } from "@/lib/newspaper-compose";
 import { ISSUE_VERSION, readLocalIssue, writeLocalIssue, type PrintedIssue } from "@/lib/newspaper-issue";
-import { readRemoteIssue, writeDesk, writeRemoteIssue } from "@/lib/newspaper-issue-remote";
+import { readRemoteIssue, readRemoteQueries, readRemoteStories, writeDesk, writeRemoteIssue } from "@/lib/newspaper-issue-remote";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
@@ -236,9 +237,10 @@ function gameState(status: string | null | undefined): string | null {
 }
 
 function cardCopy(card: GameWrapCard): string {
-  if (card.body && card.body.trim().length >= 40) return card.body.trim();
+  const body = card.body?.trim() ?? "";
+  if (body.length >= 40 && !isNavSoup(body)) return body;
   const bits: string[] = [];
-  if (card.dek) bits.push(card.dek.trim());
+  if (card.dek && !isNavSoup(card.dek)) bits.push(card.dek.trim());
   if (card.scoreLine) bits.push(`${card.status || "Final"}: ${card.scoreLine}.`);
   if (card.leaders.length) {
     bits.push(
@@ -3129,6 +3131,43 @@ function NearSportFront({ index, ...props }: Omit<Parameters<typeof SportFront>[
   return <MemoSportFront {...props} active={Math.abs(index - current) <= 1} />;
 }
 
+const FolioBody = memo(function FolioBody({ render }: { render: () => ReactNode }) {
+  return render();
+});
+
+/** The first two folios print immediately. The rest set in idle time, or as soon as you turn to them. */
+function FolioSlot({
+  index,
+  folio,
+  render,
+}: {
+  index: number;
+  folio: string;
+  render: () => ReactNode;
+}) {
+  const current = useContext(PagerIndexContext);
+  const near = index < 2 || Math.abs(index - current) <= 1;
+  const [shown, setShown] = useState(index < 2);
+  useEffect(() => {
+    if (near) setShown(true);
+  }, [near]);
+  useEffect(() => {
+    if (shown) return;
+    const ric = window.requestIdleCallback?.bind(window);
+    if (ric) {
+      const id = ric(() => setShown(true), { timeout: 500 + index * 40 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(() => setShown(true), 180 + index * 30);
+    return () => window.clearTimeout(id);
+  }, [shown, index]);
+  return (
+    <section className="wsj-page" aria-label={`Page ${folio}`}>
+      <div className="wsj-sheet">{shown ? <FolioBody render={render} /> : null}</div>
+    </section>
+  );
+}
+
 function markNearPages(pager: HTMLElement, index: number) {
   const sheets = pager.children;
   for (let i = 0; i < sheets.length; i++) {
@@ -3293,13 +3332,15 @@ function NewspaperDesk() {
         setDocPhase("document");
         return;
       }
-      const remote = await readRemoteIssue(pressId).catch(() => null);
+      const stories = await readRemoteStories(pressId).catch(() => null);
       if (cancel) return;
-      if (remote?.id === pressId) {
-        for (const q of remote.queries) queryClient.setQueryData(q.key, q.data);
-        setLockedCopy({ id: remote.id, stories: remote.stories as GameWrapCard[] });
+      if (stories) {
+        setLockedCopy({ id: pressId, stories: stories as GameWrapCard[] });
         setDocPhase("document");
-        void writeLocalIssue(remote);
+        const queries = await readRemoteQueries(pressId).catch(() => null);
+        if (cancel || !queries) return;
+        for (const q of queries) queryClient.setQueryData(q.key, q.data);
+        void writeLocalIssue({ version: ISSUE_VERSION, id: pressId, stories, queries });
         return;
       }
       setLockedCopy((prev) => (prev?.id === pressId ? prev : null));
@@ -3322,6 +3363,22 @@ function NewspaperDesk() {
 
   const pagerRef = useRef<HTMLDivElement>(null);
   const [pageIndex, setPageIndex] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = pagerRef.current;
+    if (!el) return;
+    const apply = () => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w < 40 || h < 40) return;
+      el.style.setProperty("--tt-fit", String(Math.min(w / 1040, h / 1480)));
+      el.dataset.fit = "1";
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [docPhase]);
 
   const favKeys = teamFavs.map((t) => t.key).join(",");
   // "press" is the only time the desks go out for copy. A filed edition just opens.
@@ -4250,8 +4307,12 @@ function NewspaperDesk() {
   const sheets = useMemo(
     () =>
       pages.map((page, index) => (
-          <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`}>
-            <div className="wsj-sheet">
+          <FolioSlot
+            key={page.folio}
+            index={index}
+            folio={page.folio}
+            render={() => (
+            <>
             {index === 0 ? (
               <Masthead
                 day={day}
@@ -4348,8 +4409,9 @@ function NewspaperDesk() {
                 />
               )}
             </div>
-            </div>
-          </section>
+            </>
+            )}
+          />
       )),
     [
       pages,

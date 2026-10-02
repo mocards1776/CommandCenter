@@ -9,6 +9,7 @@ import { fetchClubSheet } from "./newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./newspaper-missouri-fetch";
 import type { MoItem } from "./newspaper-missouri";
 import { fetchOpener, type Opener } from "./newspaper-openers";
+import { isNavSoup } from "./newspaper-copy";
 import { isBoilerplateDek } from "./newspaper-source";
 import {
   buildGameWrapCards,
@@ -72,14 +73,23 @@ export function urlsToExtract(cards: GameWrapCard[]): string[] {
 }
 
 export function fileExtracts(cards: GameWrapCard[], extracts: Record<string, RssArticle> | undefined): GameWrapCard[] {
-  const clean = cards.map((card) => (isBoilerplateDek(card.dek) ? { ...card, dek: null } : card));
+  const clean = cards.map((card) => ({
+    ...card,
+    dek: isBoilerplateDek(card.dek) || isNavSoup(card.dek) ? null : card.dek,
+    body: isNavSoup(card.body) ? null : card.body,
+  }));
   if (!extracts) return clean;
   return clean.map((card) => {
     const hit = card.wrapHref ? extracts[card.wrapHref] : undefined;
     if (!hit) return card;
     const text = hit.contentText?.trim() ?? "";
-    const body = text.length > (card.body?.trim().length ?? 0) + 120 ? text : card.body;
-    return { ...card, body, photo: card.photo || hit.image || firstContentImageUrl(hit.contentHtml) };
+    const adopt = text.length > (card.body?.trim().length ?? 0) + 120 && !isNavSoup(text);
+    const body = adopt ? text : card.body;
+    return {
+      ...card,
+      body: isNavSoup(body) ? null : body,
+      photo: card.photo || hit.image || firstContentImageUrl(hit.contentHtml),
+    };
   });
 }
 

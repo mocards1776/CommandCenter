@@ -14,11 +14,13 @@ import {
   pressEdition,
   splitStoryCopy,
 } from "./newspaper.ts";
+import { isNavSoup } from "./newspaper-copy.ts";
 import {
   buildEdition,
   isDeskStory,
   isPreviewStory,
   MIN_SECTION_PAGES,
+  storyBodyForJump,
   type ClubDesk,
 } from "./newspaper-sections.ts";
 
@@ -598,5 +600,22 @@ assert(!filed.some((story) => story.id === "seen"), "a story already on screen s
 assert(!filed.some((story) => story.id === "old-fresh"), "last week does not file as fresh");
 assert(filed.some((story) => story.id === "kept" && story.holdover), "an unread story carries into the next edition");
 assert(!filed.some((story) => story.id === "read-carry"), "a read story does not carry");
+
+const yardbarker =
+  "Home Quizzes My Quiz Activity MY FAVORITES Add Sports/Teams SPORTS NFL NFL Home Arizona Cardinals Atlanta Falcons Baltimore Ravens Buffalo Bills Carolina Panthers Chicago Bears Cincinnati Bengals Cleveland Browns Dallas Cowboys Denver Broncos Detroit Lions";
+assert(isNavSoup(yardbarker), "a site menu is not a story");
+assert(
+  !isNavSoup("The St. Louis Cardinals closed the book on their August 3 trade with the Arizona Diamondbacks on Thursday."),
+  "a sentence is the story",
+);
+assert(!isNavSoup("Quick Friday update. ".repeat(12)), "a punctuated roundup is copy");
+const menuStory = card({
+  id: "menu",
+  headline: "Cardinals complete a trade",
+  dek: "The Cardinals named the player to be named later.",
+  body: yardbarker,
+});
+assert(!storyBodyForJump(menuStory).toLowerCase().includes("quiz"), "the front does not print the menu");
+assert(storyBodyForJump(menuStory).includes("player to be named later"), "the dek stands in for a menu");
 
 console.log("newspaper-sections ok");

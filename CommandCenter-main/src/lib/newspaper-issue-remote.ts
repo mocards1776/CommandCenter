@@ -1,6 +1,37 @@
 import { supabase } from "./supabase";
 import { asPrintedIssue, ISSUE_VERSION, slimIssue, type PrintedIssue } from "./newspaper-issue";
 
+function filed(data: { version?: unknown; status?: unknown } | null, error: unknown): boolean {
+  return !error && !!data && data.status === "ready" && data.version === ISSUE_VERSION;
+}
+
+/** Stories only, so the filed edition can open before the desks arrive. */
+export async function readRemoteStories(id: string): Promise<unknown[] | null> {
+  const { data, error } = await supabase
+    .from("newspaper_issues")
+    .select("version, status, stories")
+    .eq("id", id)
+    .maybeSingle();
+  if (!filed(data, error) || !data || !Array.isArray(data.stories)) return null;
+  return data.stories;
+}
+
+/** Desks and art for an edition already on screen. */
+export async function readRemoteQueries(id: string): Promise<PrintedIssue["queries"] | null> {
+  const { data, error } = await supabase
+    .from("newspaper_issues")
+    .select("version, status, queries")
+    .eq("id", id)
+    .maybeSingle();
+  if (!filed(data, error) || !data || !Array.isArray(data.queries)) return null;
+  return (data.queries as unknown[]).filter(isQuery);
+}
+
+function isQuery(value: unknown): value is PrintedIssue["queries"][number] {
+  if (!value || typeof value !== "object") return false;
+  return Array.isArray((value as { key?: unknown }).key);
+}
+
 /** The edition already on the press, if the desk has finished it. */
 export async function readRemoteIssue(id: string): Promise<PrintedIssue | null> {
   const { data, error } = await supabase
