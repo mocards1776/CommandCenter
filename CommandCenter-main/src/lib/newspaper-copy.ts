@@ -33,6 +33,18 @@ export function killedSource(url: string | null | undefined): boolean {
 const JUNK_CUT =
   /\b(?:more must-reads|related stories|receive daily headlines|kicker:\s*headline|sign up today|recaptcha|all rights reserved|you may also like|recommended for you)\b/i;
 
+/** A module spliced into the story: Athletic's reporter poll, ESPN's link rail. */
+function stripModules(text: string): string {
+  return text
+    .replace(
+      /\bWE ASKED OUR REPORTERS\b.{0,1400}?(?=\s(?:Now|The|But|If|Asked|He|She|They|In|When|After|Before|It|That|This|So)\b)/i,
+      " ",
+    )
+    .replace(/\bKey links:\s*.+$/i, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 const BYLINE =
   /^(?:By\s+)?([A-Z][A-Za-z.'’-]{1,24}(?:\s+[A-Z][A-Za-z.'’-]{1,24}){0,3})\s*\|\s*(?:St\.?\s*Louis\s+)?(?:Post-Dispatch|Post Dispatch|The Athletic|ESPN|Associated Press|Semissourian)\b\s*/;
 
@@ -63,6 +75,7 @@ export function cleanStoryCopy(text: string | null | undefined): { author: strin
   if (!raw) return { author: null, text: "" };
   const cut = raw.search(JUNK_CUT);
   if (cut >= 0) raw = raw.slice(0, cut).trim();
+  raw = stripModules(raw);
   raw = stripLeadingMenu(raw);
   const lifted = liftByline(raw);
   raw = lifted.text;

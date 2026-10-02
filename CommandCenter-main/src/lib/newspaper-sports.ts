@@ -435,6 +435,8 @@ export type GameWrapCard = {
   boxScore?: { label: string; away: string; home: string }[];
   /** Unread in the previous edition, so it may run again past the 18-hour window. */
   holdover?: boolean;
+  /** Place in the source's own list. ESPN leads with what it is pushing; 0 is the top. */
+  listRank?: number;
 };
 
 export function buildTeamInfoboxes(

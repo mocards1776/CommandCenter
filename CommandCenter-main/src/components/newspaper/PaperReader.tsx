@@ -18,6 +18,7 @@ import {
   Leaders,
   Linescore,
   MlbAgate,
+  ScoreMast,
   Stars,
 } from "@/components/newspaper/BoxScore";
 import { ESPN_BOX_PATHS, fetchEspnBox } from "@/lib/newspaper-agate";
@@ -211,6 +212,7 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
 
           {boxGame && (boxGame.final || boxGame.live) ? (
             <section className="tt-reader-box">
+              <ScoreMast game={boxGame} />
               <header>
                 <b>{gameClock(boxGame)}</b>
                 <span>{[boxGame.round, boxGame.series, boxGame.venue].filter(Boolean).join(" · ")}</span>

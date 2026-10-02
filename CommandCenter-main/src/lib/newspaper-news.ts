@@ -6,7 +6,7 @@
  * odds roundup that merely lists every team is not a story about your club.
  */
 
-import { withinEditionHours } from "./newspaper";
+import { favoriteDeskWeight, withinEditionHours } from "./newspaper";
 import {
   clubMentionNames,
   favoriteTeamHref,
@@ -115,7 +115,12 @@ async function articleBody(id: string, fallback: string): Promise<string> {
   return fallback;
 }
 
-function toCard(fav: SportsFavorite, article: NewsArticle, body: string): GameWrapCard | null {
+function toCard(
+  fav: SportsFavorite,
+  article: NewsArticle,
+  body: string,
+  listRank?: number,
+): GameWrapCard | null {
   const headline = article.headline?.trim() ?? "";
   const id = String(article.id ?? "");
   if (!headline || !id) return null;
@@ -147,6 +152,7 @@ function toCard(fav: SportsFavorite, article: NewsArticle, body: string): GameWr
     caption: fav.name,
     followed: true,
     status: article.type ?? null,
+    listRank,
   };
 }
 
@@ -170,7 +176,7 @@ export async function fetchTeamArticles(
   favs: SportsFavorite[],
   edition: string,
 ): Promise<GameWrapCard[]> {
-  const picked: { fav: SportsFavorite; article: NewsArticle }[] = [];
+  const picked: { fav: SportsFavorite; article: NewsArticle; listRank: number }[] = [];
   const seen = new Set<string>();
 
   await Promise.all(
@@ -184,16 +190,25 @@ export async function fetchTeamArticles(
           articles?: NewsArticle[];
         };
         const about = (data.articles ?? []).filter((article) => mentionsClub(fav, article));
-        const mine = about.filter((article) => articleInEdition(article, edition))
-          .sort((a, b) => favoriteArticleScore(fav, b) - favoriteArticleScore(fav, a))
+        // ESPN's own order is the popularity signal. The score of 20 still decides
+        // whether the piece is actually about the club.
+        const mine = about
+          .map((article, listRank) => ({ article, listRank }))
+          .filter(
+            ({ article }) =>
+              articleInEdition(article, edition) && favoriteArticleScore(fav, article) >= 20,
+          )
+          .sort(
+            (a, b) =>
+              favoriteArticleScore(fav, b.article) - favoriteArticleScore(fav, a.article) ||
+              a.listRank - b.listRank,
+          )
           .slice(0, 6);
-        for (const article of mine) {
+        for (const { article, listRank } of mine) {
           const id = String(article.id ?? "");
           if (!id || seen.has(id)) continue;
-          // Drop weak matches (tagged but barely about the club).
-          if (favoriteArticleScore(fav, article) < 20) continue;
           seen.add(id);
-          picked.push({ fav, article });
+          picked.push({ fav, article, listRank });
         }
       } catch {
         /* one club's news feed shouldn't kill the edition */
@@ -201,15 +216,19 @@ export async function fetchTeamArticles(
     }),
   );
 
-  picked.sort((a, b) => String(b.article.published ?? "").localeCompare(String(a.article.published ?? "")));
+  picked.sort(
+    (a, b) => favoriteDeskWeight(b.fav.key) - favoriteDeskWeight(a.fav.key) || a.listRank - b.listRank,
+  );
   const withBody = await Promise.all(
-    picked.slice(0, 24).map(async ({ fav, article }) => {
+    picked.slice(0, 24).map(async ({ fav, article, listRank }) => {
       const fallback = wireCopy(article.description ?? "");
       const body = await articleBody(String(article.id), fallback);
-      return toCard(fav, article, body);
+      return toCard(fav, article, body, listRank);
     }),
   );
-  const rest = picked.slice(24).map(({ fav, article }) => toCard(fav, article, article.description ?? ""));
+  const rest = picked
+    .slice(24)
+    .map(({ fav, article, listRank }) => toCard(fav, article, article.description ?? "", listRank));
   return [...withBody, ...rest].filter((card): card is GameWrapCard => card != null);
 }
 
@@ -218,7 +237,12 @@ function leagueLabel(path: string): string {
   return slug.replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function toLeagueCard(path: string, article: NewsArticle, body: string): GameWrapCard | null {
+function toLeagueCard(
+  path: string,
+  article: NewsArticle,
+  body: string,
+  listRank?: number,
+): GameWrapCard | null {
   const headline = article.headline?.trim() ?? "";
   const id = String(article.id ?? "");
   if (!headline || !id) return null;
@@ -251,6 +275,7 @@ function toLeagueCard(path: string, article: NewsArticle, body: string): GameWra
     caption: teamName,
     followed: false,
     status: article.type ?? null,
+    listRank,
   };
 }
 
@@ -262,33 +287,38 @@ export async function fetchLeagueArticles(
   edition: string,
 ): Promise<GameWrapCard[]> {
   const unique = [...new Set(paths.filter(Boolean))];
-  const picked: { path: string; article: NewsArticle }[] = [];
   const seen = new Set<string>();
+  const byPath = new Map<string, { article: NewsArticle; listRank: number }[]>();
 
   await mapLimit(unique, 2, async (path) => {
       try {
         const data = (await espnGet(`${path}/news?limit=50`)) as { articles?: NewsArticle[] };
         const pool = data.articles ?? [];
-        const ranked = pool.filter((article) => articleInEdition(article, edition)).slice(0, 24);
-        for (const article of ranked) {
+        // Keep ESPN's list order. That order is the only popularity signal we have.
+        const ranked = pool.filter((article) => articleInEdition(article, edition)).slice(0, 16);
+        const rows: { article: NewsArticle; listRank: number }[] = [];
+        ranked.forEach((article, listRank) => {
           const id = String(article.id ?? "");
-          if (!id || seen.has(id)) continue;
+          if (!id || seen.has(id)) return;
           seen.add(id);
-          picked.push({ path, article });
-        }
+          rows.push({ article, listRank });
+        });
+        byPath.set(path, rows);
       } catch {
         /* one league's wire shouldn't kill the edition */
       }
   });
 
-  picked.sort((a, b) => String(b.article.published ?? "").localeCompare(String(a.article.published ?? "")));
-  const withBody = await mapLimit(picked.slice(0, 40), 3, async ({ path, article }) => {
+  const picked = unique.flatMap((path) =>
+    (byPath.get(path) ?? []).map((row) => ({ path, article: row.article, listRank: row.listRank })),
+  );
+  const withBody = await mapLimit(picked.slice(0, 24), 3, async ({ path, article, listRank }) => {
       const fallback = wireCopy(article.description ?? "");
       const body = await articleBody(String(article.id), fallback);
-      return toLeagueCard(path, article, body);
+      return toLeagueCard(path, article, body, listRank);
   });
   const rest = picked
-    .slice(40)
-    .map(({ path, article }) => toLeagueCard(path, article, article.description ?? ""));
+    .slice(24)
+    .map(({ path, article, listRank }) => toLeagueCard(path, article, article.description ?? "", listRank));
   return [...withBody, ...rest].filter((card): card is GameWrapCard => card != null);
 }

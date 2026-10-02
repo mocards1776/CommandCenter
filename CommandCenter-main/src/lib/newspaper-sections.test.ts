@@ -15,12 +15,14 @@ import {
   splitStoryCopy,
 } from "./newspaper.ts";
 import { cleanStoryCopy, isNavSoup, isPeripheralClubStory, killedSource } from "./newspaper-copy.ts";
+import { rankStandings } from "./newspaper-box.ts";
 import {
   buildEdition,
   dedupeStories,
   isDeskStory,
   isPreviewStory,
   MIN_SECTION_PAGES,
+  staleNamedPackage,
   storyBodyForJump,
   type ClubDesk,
 } from "./newspaper-sections.ts";
@@ -497,16 +499,16 @@ const withDesks = buildEdition({
 });
 const deskFolios = withDesks.pages.map((page) => page.folio);
 const moPages = withDesks.pages.filter((page) => page.kind === "missouri");
-assert(moPages.length === 3 && moPages[0]!.folio === "MO1", "Missouri files its own section");
+assert(moPages.length === 3 && moPages[0]!.folio === "B1", "Missouri files as section B");
 assert(
-  deskFolios.indexOf("MO1") > deskFolios.indexOf("A1") && deskFolios.indexOf("MO1") < deskFolios.indexOf("NFL1"),
+  deskFolios.indexOf("B1") > deskFolios.indexOf("A1") && deskFolios.indexOf("B1") < deskFolios.indexOf("NFL1"),
   "Missouri runs between Section A and sports",
 );
 assert(
   moPages[0]?.kind === "missouri" && moPages[0].listen.length === 1 && moPages[1]?.kind === "missouri" && !moPages[1].listen.length,
   "only the Missouri front carries the listen rail",
 );
-assert(withDesks.sections.some((s) => s.code === "MO"), "Missouri gets a section tab");
+assert(withDesks.sections.some((s) => s.code === "B" && s.folio === "B1"), "Missouri gets section B");
 const nflPlayers = withDesks.pages.find((page) => page.folio === "NFL6");
 assert(nflPlayers?.kind === "sport-front" && nflPlayers.focus === "players", "a sport with followed players gets NFL6");
 assert(!deskFolios.includes("MLB6"), "no players page without followed players in the league");
@@ -575,7 +577,11 @@ const eveningPaper = buildEdition({
   edition: evening,
   missouri: { scout: null, items: [moItem(1)], listen: [] },
 });
-assert(eveningPaper.pages[0]?.kind === "missouri", "noon and evening open on Missouri");
+assert(eveningPaper.pages[0]?.kind === "favorites-front", "noon and evening still open on Section A");
+assert(
+  eveningPaper.pages.some((page) => page.kind === "missouri" && page.folio === "B1"),
+  "Missouri is section B in the afternoon paper",
+);
 const eveningNfl = eveningPaper.pages.find((page) => page.folio === "NFL1");
 assert(eveningNfl?.kind === "sport-front" && eveningNfl.focus === "teams", "afternoon sports open on the table");
 assert(
@@ -636,6 +642,42 @@ const cut = cleanStoryCopy(
 );
 assert(cut.text.startsWith("The Cardinals named right-hander Brian Curley"), "the story stops before the must-reads");
 assert(!/must-reads/i.test(cut.text), "a must-read rail is not the story");
+
+const spliced = cleanStoryCopy(
+  "Jiříček has a long way to go. WE ASKED OUR REPORTERS what one NHL rule they would change Lauren Morales-Jones and Jorge Ribas It’s nice to hear. Now, it’s time to find out if Jiříček can back it up.",
+);
+assert(!/asked our reporters/i.test(spliced.text), "an Athletic module is not part of the story");
+assert(spliced.text.includes("Now, it’s time to find out"), "the story resumes after the module");
+const links = cleanStoryCopy("Crochet struck out Spencer Jones. Key links: Mega-preview | Bracket | Schedule Jump.");
+assert(links.text === "Crochet struck out Spencer Jones.", "an ESPN link rail is cut");
+
+const wednesdayPackage = card({
+  id: "league-wc",
+  headline: "2026 MLB wild-card series Day 2: Takeaways, analysis",
+  dek: "Three teams sealed their spots in the division series on Wednesday. Relive all the action.",
+  leaguePath: "baseball/mlb",
+  when: "2026-10-02T02:00:00Z",
+  body: "A refreshed package of Wednesday’s games. ".repeat(20),
+});
+assert(
+  staleNamedPackage(wednesdayPackage, "2026-10-02-morning"),
+  "a Wednesday takeaways package does not run in Friday’s morning edition",
+);
+assert(
+  !buildEdition({
+    stories: [wednesdayPackage],
+    clubs: [cards],
+    edition: "2026-10-02",
+  }).pages.some((page) => JSON.stringify(page).includes("wild-card")),
+  "the stale package never gets a folio",
+);
+const secFirst = rankStandings([
+  { name: "American", columns: ["W"], rows: [] },
+  { name: "Big Ten", columns: ["W"], rows: [] },
+  { name: "SEC", columns: ["W"], rows: [] },
+  { name: "ACC", columns: ["W"], rows: [] },
+]);
+assert(secFirst.map((g) => g.name).join(",") === "SEC,Big Ten,ACC,American", "the SEC table prints first");
 
 assert(
   isPeripheralClubStory({

@@ -475,6 +475,7 @@ export function EspnAgate({ box, path }: { box: EspnBox; path: string }) {
     : null;
   return (
     <div className="tt-agate-box">
+      <ScoreMast game={game} />
       <ScoringTable periods={box.scoring} game={game} path={path} />
       {hockey ? (
         <div className="tt-agate-cols">
@@ -498,6 +499,30 @@ export function EspnAgate({ box, path }: { box: EspnBox; path: string }) {
         <AgateTwin key={pair.key} away={pair.away} home={pair.home} path={path} label={pair.label} />
       ))}
       <AgateNotes notes={box.info} />
+    </div>
+  );
+}
+
+function sidePaint(color: string | null): string {
+  if (!color) return "#1f2a44";
+  return color.startsWith("#") ? color : `#${color}`;
+}
+
+/** The final the way the sports pages set it: both clubs, their marks, the score. */
+export function ScoreMast({ game }: { game: BoxGame }) {
+  return (
+    <div className="tt-score-mast">
+      {[game.away, game.home].map((side, i) => (
+        <div key={i} className={cn("tt-score-mast-side", side.winner && "won", game.final && !side.winner && "lost")} style={{ background: sidePaint(side.color) }}>
+          <Mark src={side.logo} size="lg" />
+          <span>
+            <em>{i === 0 ? "Away" : "Home"}</em>
+            <strong>{side.short}</strong>
+          </span>
+          <b>{side.score ?? "–"}</b>
+        </div>
+      ))}
+      <span className="tt-score-mast-state">{gameClock(game)}</span>
     </div>
   );
 }
@@ -534,7 +559,11 @@ export function ScoreCard({
         <button type="button" className="tt-scorecard-recap" onClick={() => onOpen?.(game)}>
           <strong>{game.recap.headline}</strong>
           {game.recap.blurb ? <span>{game.recap.blurb}</span> : null}
-          <em>Read the story →</em>
+          <em>Click for full story →</em>
+        </button>
+      ) : onOpen && (game.final || game.live) ? (
+        <button type="button" className="tt-scorecard-recap" onClick={() => onOpen(game)}>
+          <em>Box score →</em>
         </button>
       ) : null}
       {agate && game.path === "baseball/mlb" ? <MlbAgate game={game} enabled={agateEnabled} /> : null}

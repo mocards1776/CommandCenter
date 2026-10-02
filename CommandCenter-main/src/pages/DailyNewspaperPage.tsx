@@ -31,6 +31,7 @@ import {
   pressEdition,
   previousPressId,
   instantDay,
+  isDeskPress,
   romanNumeral,
   splitStoryCopy,
   storyReadKeys,
@@ -38,9 +39,11 @@ import {
 import { fetchLeagueArticles, fetchTeamArticles } from "@/lib/newspaper-news";
 import {
   boxStoryCard,
+  fetchLeagueLeaders,
   fetchSectionBoard,
   gameClock,
   fetchSectionStandings,
+  rankStandings,
   type BoxGame,
   type BoxPerson,
   type SectionBoard,
@@ -71,6 +74,7 @@ import { fetchPlayerFiles, imageLoads, storySubjects, type PlayerFile } from "@/
 import { fetchMarshfieldWeather, type MarshfieldWeather } from "@/lib/newspaper-weather";
 import { WeatherReport, WeatherStrip } from "@/components/newspaper/WeatherReport";
 import { storySource } from "@/lib/newspaper-source";
+import { getCfbTeamInterestRating } from "@/lib/ruwt";
 import {
   daysUntil,
   fetchOpener,
@@ -724,25 +728,6 @@ function runIn(text: string): [string, string] {
   return [words.slice(0, n).join(" "), words.slice(n).join(" ")];
 }
 
-function Jump({
-  folio,
-  onTurn,
-  label,
-}: {
-  folio?: string;
-  onTurn?: (folio: string) => void;
-  label?: string;
-}) {
-  if (!folio || !onTurn) return null;
-  return (
-    <p className="wsj-jump">
-      <button type="button" className="wsj-jump-btn" onClick={() => onTurn(folio)}>
-        {label ?? `Continued on page ${folio}`} <span aria-hidden="true">→</span>
-      </button>
-    </p>
-  );
-}
-
 function Cut({ card, shape = "wide" }: { card: GameWrapCard; shape?: "wide" | "tall" | "square" }) {
   if (!card.photo) return null;
   const caption =
@@ -907,8 +892,7 @@ function Story({
         {copy ? (
           <Prose card={card} text={copy} cols={cols} drop={drop} max={max} dress={dress} color={teamColor(team)} />
         ) : null}
-        <Jump folio={jump} onTurn={onTurn} />
-        {readOn && !(jump && onTurn) ? <ReadOn card={card} game={game} /> : null}
+        {copy || jump ? <ReadOn card={card} game={game} label="Click for full story" /> : null}
       </div>
     </article>
   );
@@ -963,7 +947,7 @@ function Brief({
         </h3>
         <ScoreBug card={card} />
         {dek ? <p className="wsj-brief-dek">{dek}</p> : null}
-        <Jump folio={folio} onTurn={onTurn} label={folio ? `Page ${folio}` : undefined} />
+        <ReadOn card={card} label="Click for full story" />
       </div>
     </article>
   );
@@ -1336,7 +1320,7 @@ function FrontPage({
   thirdTeaser?: string;
   scout?: MoItem | null;
 }) {
-  const hasDesk = sections.some((s) => s.code === "MO");
+  const hasDesk = sections.some((s) => s.code === "B");
   const scoutBand = scout ? <ScoutBand item={scout} onTurn={onTurn} hasDesk={hasDesk} /> : null;
   const rail = (
     <FrontRail
@@ -1962,7 +1946,7 @@ function OpenerDesk({ page, onTurn }: { page: SportFrontPage; onTurn: (folio: st
                   <StoryLink card={card}>{card.headline}</StoryLink>
                 </h4>
                 {card.dek ? <p>{card.dek}</p> : null}
-                {folio !== page.folio ? <Jump folio={folio} onTurn={onTurn} label={`Page ${folio}`} /> : null}
+                <ReadOn card={card} label="Click for full story" />
               </li>
             ))}
           </ol>
@@ -2382,7 +2366,7 @@ function ScoresDesk({
           <h2 className="wsj-hl lg">
             {card ? (
               <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card, game: featured })}>
-                {featured.recap!.headline}
+                {card.headline}
               </button>
             ) : (
               `${featured.away.short} ${featured.away.score ?? ""}, ${featured.home.short} ${featured.home.score ?? ""}`
@@ -2401,7 +2385,7 @@ function ScoresDesk({
           {card ? (
             <p className="wsj-jump">
               <button type="button" className="wsj-jump-btn" onClick={() => open({ card, game: featured })}>
-                Read the story <span aria-hidden="true">→</span>
+                {featured.recap ? "Click for full story" : "Box score"} <span aria-hidden="true">→</span>
               </button>
             </p>
           ) : null}
@@ -2495,6 +2479,55 @@ function dayHeading(day: string, edition: string): string {
   return d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
+function cfbWatch(game: BoxGame): number {
+  const away = game.away.id ? getCfbTeamInterestRating(game.away.id) : 0;
+  const home = game.home.id ? getCfbTeamInterestRating(game.home.id) : 0;
+  return away + home;
+}
+
+/** College football is a full Saturday slate. Agate, with a RUwT watch number, not matchup cards. */
+function CfbSchedule({ games, edition }: { games: BoxGame[]; edition: string }) {
+  const days = new Map<string, BoxGame[]>();
+  for (const game of games) {
+    const list = days.get(game.day) ?? [];
+    list.push(game);
+    days.set(game.day, list);
+  }
+  return (
+    <div className="tt-cfb-slate">
+      {[...days.entries()].map(([day, list]) => {
+        const ranked = [...list].sort((a, b) => cfbWatch(b) - cfbWatch(a) || String(a.startIso).localeCompare(String(b.startIso)));
+        return (
+          <section key={day}>
+            <h3 className="wsj-band-title">
+              {dayHeading(day, edition)} <em>{ranked.length} {ranked.length === 1 ? "game" : "games"}</em>
+            </h3>
+            <ol className="tt-cfb-rows">
+              {ranked.map((game) => (
+                <li key={game.id} className="tt-cfb-row">
+                  <time>{gameClock(game)}</time>
+                  <span className="tt-cfb-clubs">
+                    {game.away.logo ? <img src={game.away.logo} alt="" /> : null}
+                    <b>{game.away.abbrev}</b>
+                    <i>at</i>
+                    {game.home.logo ? <img src={game.home.logo} alt="" /> : null}
+                    <b>{game.home.abbrev}</b>
+                  </span>
+                  <em>{game.broadcasts.filter(Boolean).join(" · ") || game.venue || ""}</em>
+                  <span className="tt-cfb-watch" title="RUwT watchability">
+                    <i>Watch</i>
+                    {cfbWatch(game)}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function ScheduleDesk({
   page,
   board,
@@ -2507,6 +2540,9 @@ function ScheduleDesk({
   edition: string;
 }) {
   const games = board?.slate ?? [];
+  if (games.length && page.path.includes("college-football")) {
+    return <CfbSchedule games={games} edition={edition} />;
+  }
   if (games.length) {
     const days = new Map<string, BoxGame[]>();
     for (const g of games.slice(0, 24)) {
@@ -2586,24 +2622,27 @@ function StandingsDesk({
   standings,
   leagueClubs,
   board,
+  edition,
   onTurn,
 }: {
   page: SportFrontPage;
   standings: StandGroup[];
   leagueClubs: LeagueClub[];
   board: SectionBoard | null;
+  edition: string;
   onTurn: (folio: string) => void;
 }) {
+  const scheduleFolio = `${page.section}${isDeskPress(edition) ? 3 : 4}`;
   const upcoming = (board?.slate ?? []).filter((g) => !g.final).slice(0, 16);
   const schedule = upcoming.length ? (
     <section className="tt-strip-wrap tt-stand-next">
       <h3 className="wsj-band-title">
         On the schedule
-        <button type="button" className="tt-band-link" onClick={() => onTurn(`${page.section}4`)}>
-          Matchups and probables, page {page.section}4 →
+        <button type="button" className="tt-band-link" onClick={() => onTurn(scheduleFolio)}>
+          Matchups and probables, page {scheduleFolio} →
         </button>
       </h3>
-      <ScoreStrip games={upcoming} onOpen={() => onTurn(`${page.section}4`)} />
+      <ScoreStrip games={upcoming} onOpen={() => onTurn(scheduleFolio)} />
     </section>
   ) : null;
   if (!standings.length) {
@@ -2618,11 +2657,12 @@ function StandingsDesk({
   const favNames = page.clubs.map((c) => squash(c.shortName));
   const mine = (row: { id: string; name: string }) =>
     favIds.has(row.id) || favNames.some((n) => n && squash(row.name) === n);
-  const single = standings.length === 1;
+  const ordered = rankStandings(standings);
+  const single = ordered.length === 1;
   return (
     <>
       <div className={cn("tt-stand-grid", single && "single")}>
-        {standings.map((group) => (
+        {ordered.map((group) => (
           <StandingsTable key={group.name} group={group} mine={mine} />
         ))}
       </div>
@@ -2639,6 +2679,41 @@ function offseasonTables(standings: StandGroup[], page: SportFrontPage, leagueCl
     g.rows.some((r) => favIds.has(r.id) || favNames.some((n) => squash(r.name) === n)),
   );
   return mine.length ? mine : standings.slice(0, 2);
+}
+
+/** Passing yards, home runs, points — the league list, not one club's leaders. */
+function LeagueLeaders({ path }: { path: string }) {
+  const leaders = useQuery({
+    queryKey: ["tt-league-leaders", path],
+    queryFn: () => fetchLeagueLeaders(path),
+    staleTime: 30 * 60_000,
+  });
+  const groups = leaders.data ?? [];
+  if (!groups.length) return null;
+  return (
+    <section className="tt-lleaders" aria-label="League leaders">
+      <h3 className="wsj-band-title">League leaders</h3>
+      <div className="tt-lleaders-grid">
+        {groups.map((group) => (
+          <div key={group.category}>
+            <h4>{group.category}</h4>
+            <ol>
+              {group.rows.map((row) => (
+                <li key={`${group.category}-${row.name}`}>
+                  {row.headshot ? <img src={row.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
+                  <span>
+                    <strong>{row.name}</strong>
+                    <em>{row.team}</em>
+                  </span>
+                  <b>{row.line}</b>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function SportFront({
@@ -2715,6 +2790,7 @@ function SportFront({
             standings={offStandings}
             leagueClubs={leagueClubs}
             board={page.offseason ? null : board}
+            edition={edition}
             onTurn={onTurn}
           />
         ) : page.focus === "schedule" ? (
@@ -2736,6 +2812,7 @@ function SportFront({
         ) : (
           <LeagueFormGrid clubs={leagueClubs} />
         )}
+        {page.focus === "news" || page.focus === "teams" ? <LeagueLeaders path={page.path} /> : null}
       </div>
       {turn ? <TurnBar onTurn={onTurn} folio={turn.folio} label={turn.label} /> : null}
     </div>
@@ -3067,13 +3144,11 @@ function MoStory({ item, size }: { item: MoItem; size: "xl" | "md" | "sm" }) {
           </button>
         </h3>
         {item.dek && size !== "sm" ? <p className="tt-mo-dek">{cleanDek(item.dek)}</p> : null}
-        {size !== "sm" ? (
-          <p className="wsj-jump">
-            <button type="button" className="wsj-jump-btn" onClick={() => open({ card })}>
-              Read the story <span aria-hidden="true">→</span>
-            </button>
-          </p>
-        ) : null}
+        <p className="wsj-jump">
+          <button type="button" className="wsj-jump-btn" onClick={() => open({ card })}>
+            Click for full story <span aria-hidden="true">→</span>
+          </button>
+        </p>
       </div>
     </article>
   );
@@ -3083,17 +3158,19 @@ function MissouriDesk({ page, onTurn }: { page: MissouriEditionPage; onTurn: (fo
   const items = page.items;
   const outlets = new Set(items.flatMap((i) => [i.source, ...(i.also ?? [])])).size;
   const flag = (
-    <header className="tt-mo-flag">
-      <span className="wsj-sport-code">MO</span>
-      <h3>
-        Missouri <em>{page.sectionPage === 1 ? "Statehouse & Politics" : "Around the State"}</em>
-      </h3>
-      <p>
-        {items.length} stories · {outlets} outlets · duplicates folded
-      </p>
+    <header className="wsj-sport-hero tt-mo-hero">
+      <div className="wsj-sport-hero-mark">
+        <span className="wsj-sport-code">B</span>
+        <div>
+          <h3>Missouri</h3>
+          <p>
+            {page.sectionPage === 1 ? "Statehouse and the state" : "Around the state"} · {items.length} stories · {outlets} outlets
+          </p>
+        </div>
+      </div>
     </header>
   );
-  const more = page.sectionPage < page.sectionCount ? `MO${page.sectionPage + 1}` : null;
+  const more = page.sectionPage < page.sectionCount ? `B${page.sectionPage + 1}` : null;
   if (page.sectionPage > 1) {
     return (
       <div className="tt-mo">
@@ -3186,8 +3263,8 @@ function ScoutBand({ item, onTurn, hasDesk }: { item: MoItem; onTurn: (folio: st
             Read the update <span aria-hidden="true">→</span>
           </button>
           {hasDesk ? (
-            <button type="button" className="wsj-jump-btn" onClick={() => onTurn("MO1")}>
-              Missouri news, page MO1 <span aria-hidden="true">→</span>
+            <button type="button" className="wsj-jump-btn" onClick={() => onTurn("B1")}>
+              Missouri news, page B1 <span aria-hidden="true">→</span>
             </button>
           ) : null}
         </p>
@@ -3448,6 +3525,8 @@ function NewspaperDesk() {
 
   const pagerRef = useRef<HTMLDivElement>(null);
   const [pageIndex, setPageIndex] = useState(0);
+  const pageIndexRef = useRef(0);
+  pageIndexRef.current = pageIndex;
 
   useLayoutEffect(() => {
     const el = pagerRef.current;
@@ -3456,7 +3535,7 @@ function NewspaperDesk() {
       const w = el.clientWidth;
       const h = el.clientHeight;
       if (w < 40 || h < 40) return;
-      el.style.setProperty("--tt-fit", String(Math.min(w / 1040, h / 1480)));
+      el.style.setProperty("--tt-fit", String(Math.min(w / 1600, h / 1024)));
       el.dataset.fit = "1";
     };
     apply();
@@ -4392,6 +4471,46 @@ function NewspaperDesk() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  // The sheet scrolls vertically and eats a horizontal pan, so the pager never sees a swipe.
+  useEffect(() => {
+    const el = pagerRef.current;
+    if (!el) return;
+    let x0 = 0;
+    let y0 = 0;
+    let armed = false;
+    const start = (e: TouchEvent) => {
+      if (e.touches.length !== 1) {
+        armed = false;
+        return;
+      }
+      const t = e.touches[0]!;
+      x0 = t.clientX;
+      y0 = t.clientY;
+      armed = true;
+    };
+    const end = (e: TouchEvent) => {
+      if (!armed) return;
+      armed = false;
+      const t = e.changedTouches[0];
+      if (!t) return;
+      const dx = t.clientX - x0;
+      const dy = t.clientY - y0;
+      if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
+      goPage(pageIndexRef.current + (dx < 0 ? 1 : -1));
+    };
+    const cancel = () => {
+      armed = false;
+    };
+    el.addEventListener("touchstart", start, { capture: true, passive: true });
+    el.addEventListener("touchend", end, { capture: true, passive: true });
+    el.addEventListener("touchcancel", cancel, { capture: true });
+    return () => {
+      el.removeEventListener("touchstart", start, true);
+      el.removeEventListener("touchend", end, true);
+      el.removeEventListener("touchcancel", cancel, true);
+    };
+  }, [goPage]);
 
   // Built once per edition/data change, never per page turn: re-rendering 60 folios on every
   // swipe was the slow part. Anything that must follow the folio in view reads PagerIndexContext.

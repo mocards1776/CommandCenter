@@ -754,12 +754,19 @@ export function gameClock(game: BoxGame): string {
   return faceOff(game.startIso) || game.status;
 }
 
-/** A finished game's recap, set as a story card so it runs like any other article. */
+/**
+ * A finished or live game, set as a story card. A recap leads when ESPN filed
+ * one. Otherwise the card still opens, onto the box score.
+ */
 export function boxStoryCard(game: BoxGame): GameWrapCard | null {
   const recap = game.recap;
-  if (!recap) return null;
+  const played = game.final || game.live;
+  if (!recap && !played) return null;
   const winner = game.away.winner ? game.away : game.home.winner ? game.home : null;
-  const body = recap.html ? htmlToText(recap.html) : null;
+  const body = recap?.html ? htmlToText(recap.html) : null;
+  const scoreHeadline = `${game.away.short} ${game.away.score ?? ""}, ${game.home.short} ${game.home.score ?? ""}`
+    .replace(/\s+/g, " ")
+    .trim();
   return {
     id: `box-${game.id}`,
     favoriteKey: "",
@@ -767,21 +774,21 @@ export function boxStoryCard(game: BoxGame): GameWrapCard | null {
     teamHref: game.href ?? "/",
     sportLabel: game.league,
     leaguePath: game.path,
-    headline: recap.headline,
-    dek: recap.blurb,
+    headline: recap?.headline || scoreHeadline,
+    dek: recap?.blurb ?? null,
     body,
     scoreLine: `${game.away.abbrev} ${game.away.score ?? ""} · ${game.home.abbrev} ${game.home.score ?? ""}`,
     when: game.startIso,
     won: null,
     gameHref: game.href,
-    wrapHref: recap.url,
+    wrapHref: recap?.url ?? game.href,
     feedUrl: null,
     gameId: game.espnEventId ?? (game.gamePk != null ? String(game.gamePk) : null),
     stats: [],
     leaders: [],
     teamStats: [],
     division: [],
-    photo: recap.photo,
+    photo: recap?.photo ?? null,
     caption: `${game.away.name} at ${game.home.name}${game.venue ? `, ${game.venue}` : ""}.`,
     round: game.round,
     series: game.series,
@@ -927,7 +934,7 @@ export async function fetchSectionStandings(path: string): Promise<StandGroup[]>
   const spec = STAND_SPECS.find((s) => s.test(path))?.spec ?? COLLEGE_SPEC;
   const groups: { name: string; entries: StandEntryRaw[] }[] = [];
   standGroups(data, groups);
-  return groups.map((group) => {
+  return rankStandings(groups.map((group) => {
     const rows = group.entries.map((entry) => {
       const stats = entry.stats ?? [];
       const find = (t: string) => stats.find((s) => (s.type ?? s.name ?? "").toLowerCase() === t);
@@ -959,7 +966,99 @@ export async function fetchSectionStandings(path: string): Promise<StandGroup[]>
       columns: spec.columns.map((c) => c.label),
       rows: rows.map((r) => r.row),
     };
+  }));
+}
+
+/** SEC, then the other power conferences, then whatever ESPN sent. */
+const CONF_ORDER: { test: RegExp; rank: number }[] = [
+  { test: /\bsec\b|southeastern/i, rank: 0 },
+  { test: /big ten/i, rank: 1 },
+  { test: /big 12|big twelve/i, rank: 2 },
+  { test: /\bacc\b|atlantic coast/i, rank: 3 },
+];
+
+export function rankStandings(groups: StandGroup[]): StandGroup[] {
+  return groups
+    .map((group, index) => {
+      const hit = CONF_ORDER.find((row) => row.test.test(group.name));
+      return { group, index, rank: hit?.rank ?? 50 };
+    })
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((row) => row.group);
+}
+
+export type LeagueLeaderRow = {
+  name: string;
+  team: string;
+  line: string;
+  headshot: string | null;
+};
+
+export type LeagueLeaderGroup = { category: string; rows: LeagueLeaderRow[] };
+
+const LEADER_SKIP = /kickoff|punt|fieldgoal|extrapoint|returnyards|netavg|longfield/i;
+const LEADER_FIRST = [
+  "passingyards",
+  "rushingyards",
+  "receivingyards",
+  "passingtouchdowns",
+  "rushingtouchdowns",
+  "receivingtouchdowns",
+  "sacks",
+  "totaltackles",
+  "homeruns",
+  "battingaverage",
+  "era",
+  "strikeouts",
+  "wins",
+  "points",
+  "goals",
+  "assists",
+  "rebounds",
+  "avgpoints",
+];
+
+type LeaderCat = {
+  name?: string;
+  displayName?: string;
+  leaders?: {
+    displayValue?: string;
+    athlete?: { displayName?: string; shortName?: string; fullName?: string; headshot?: { href?: string } };
+    team?: { abbreviation?: string; shortDisplayName?: string };
+  }[];
+};
+
+/** League leaders (passing yards, home runs, points). ESPN's list, top of each category. */
+export async function fetchLeagueLeaders(path: string): Promise<LeagueLeaderGroup[]> {
+  const data = await getJson<{ leaders?: { categories?: LeaderCat[] } }>(
+    `https://site.web.api.espn.com/apis/site/v3/sports/${path}/leaders?limit=3`,
+  );
+  const cats = (data?.leaders?.categories ?? []).filter(
+    (cat) => cat.displayName && cat.leaders?.length && !LEADER_SKIP.test(`${cat.name ?? ""} ${cat.displayName}`),
+  );
+  cats.sort((a, b) => {
+    const ia = LEADER_FIRST.indexOf((a.name ?? "").toLowerCase());
+    const ib = LEADER_FIRST.indexOf((b.name ?? "").toLowerCase());
+    return (ia < 0 ? 40 : ia) - (ib < 0 ? 40 : ib);
   });
+  return cats
+    .slice(0, 5)
+    .map((cat) => ({
+      category: cat.displayName!,
+      rows: (cat.leaders ?? []).slice(0, 3).flatMap((row) => {
+        const name = row.athlete?.shortName || row.athlete?.displayName || row.athlete?.fullName || "";
+        if (!name) return [];
+        return [
+          {
+            name,
+            team: row.team?.abbreviation || row.team?.shortDisplayName || "",
+            line: row.displayValue ?? "",
+            headshot: row.athlete?.headshot?.href ?? null,
+          },
+        ];
+      }),
+    }))
+    .filter((group) => group.rows.length > 0);
 }
 
 function uniqueGames(games: BoxGame[]): BoxGame[] {

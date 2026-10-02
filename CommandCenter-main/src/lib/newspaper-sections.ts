@@ -2,10 +2,10 @@
  * Thompson Times sections.
  *
  * Section A is the clubs you follow — a front, a clubs desk, then inside
- * story / club-form pages. Every sport section always runs at least five
- * pages: league news, scores, standings, schedule, and playoffs or form —
- * then full story pages for league copy. Followed-club stories run in
- * Section A only.
+ * story / club-form pages. Section B is Missouri, in every edition, after A.
+ * Every sport section always runs at least five pages: league news, scores,
+ * standings, schedule, and playoffs or form — then a few full story pages
+ * for the best league copy. Followed-club stories run in Section A only.
  */
 
 import {
@@ -283,8 +283,11 @@ function storyRank(card: GameWrapCard, edition: string): number {
   if (card.postseason) score += 40;
   if (card.id.startsWith("news-")) score += 25;
   if (card.id.startsWith("league-")) score += 10;
+  if (isAthleticCard(card)) score += 12;
   if (isRecapStory(card)) score += 20;
   if (cleanStoryCopy(card.body).text.length >= 400) score += 15;
+  // ESPN lists the piece it is pushing first. There is no pageview count.
+  if (typeof card.listRank === "number") score += Math.max(0, 16 - Math.min(16, card.listRank));
   // Cardinals / Blues / Mizzou lead Section A; Lions, Chiefs, soccer follow.
   if (card.favoriteKey) score += favoriteDeskWeight(card.favoriteKey);
   return score;
@@ -294,6 +297,8 @@ function rankStories(cards: GameWrapCard[], edition: string): GameWrapCard[] {
   return [...cards].sort((a, b) => {
     const byRank = storyRank(b, edition) - storyRank(a, edition);
     if (byRank) return byRank;
+    const byList = (a.listRank ?? 99) - (b.listRank ?? 99);
+    if (byList) return byList;
     return String(b.when ?? "").localeCompare(String(a.when ?? ""));
   });
 }
@@ -328,7 +333,7 @@ function frontSplit(
 }
 
 function uniqueCodes(ids: SportSectionId[]): SportSectionId[] {
-  const used = new Set<string>(["A"]);
+  const used = new Set<string>(["A", "B"]);
   return ids.map((id) => {
     let code = id.code;
     if (used.has(code)) {
@@ -362,6 +367,28 @@ function chunkClubs(clubs: ClubDesk[], size: number): ClubDesk[][] {
   const out: ClubDesk[][] = [];
   for (let i = 0; i < clubs.length; i += size) out.push(clubs.slice(i, i + size));
   return out;
+}
+
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+function weekdayName(day: string): string {
+  const d = new Date(`${day.slice(0, 10)}T12:00:00Z`);
+  return d.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }).toLowerCase();
+}
+
+/**
+ * A "Day 2 takeaways / relive Wednesday" package whose named day is neither
+ * the news day nor the edition day. ESPN refreshes these, so the timestamp
+ * alone lets a two-day-old wild-card package back into the morning paper.
+ */
+export function staleNamedPackage(card: GameWrapCard, edition: string): boolean {
+  const text = `${card.headline} ${card.dek ?? ""}`.toLowerCase();
+  if (!/\b(takeaways|relive|wild-?card series|day \d+)\b/.test(text)) return false;
+  const named = WEEKDAYS.filter((day) => new RegExp(`\\b${day}\\b`).test(text));
+  if (!named.length) return false;
+  const editionDay = edition.slice(0, 10);
+  const allowed = new Set([weekdayName(editionDay), weekdayName(editionNewsDay(edition))]);
+  return named.some((day) => !allowed.has(day));
 }
 
 /** Last 18 hours before the press. An unread holdover may return for one more edition. */
@@ -632,6 +659,8 @@ function sportPages(
   const unique = dedupeStories(stories.filter((card) => !isStalePreview(card, edition)));
   const isMlb = id.path === "baseball/mlb";
   const desk = isDeskPress(edition);
+  // A morning sport section runs the best few long stories, not every wire rewrite.
+  const INSIDE_CAP = 6;
   // Morning leads with stories. Noon and 5 p.m. open on standings, form, and the slate.
   const focuses: SportFocus[] = offseason
     ? ["news", "opener", "teams", ...(withPlayers ? (["players"] as const) : [])]
@@ -640,7 +669,7 @@ function sportPages(
       : ["news", "recaps", "teams", "schedule", isMlb ? "playoffs" : "form", ...(withPlayers ? (["players"] as const) : [])];
   const deskCount = focuses.length;
   const inside: SportInsidePage[] = [];
-  const full = desk ? [] : unique.filter(hasStoryCopy);
+  const full = desk ? [] : unique.filter(hasStoryCopy).slice(0, INSIDE_CAP);
   let n = deskCount + 1;
   for (let i = 0; i < full.length; i += 2) {
     const primary = full[i]!;
@@ -704,8 +733,8 @@ function missouriPages(desk: MissouriDesk | null): MissouriPage[] {
   return stampCounts(
     chunks.map((items, i) => ({
       kind: "missouri" as const,
-      folio: `MO${i + 1}`,
-      section: "MO",
+      folio: `B${i + 1}`,
+      section: "B",
       sectionTitle: "Missouri",
       sectionPage: i + 1,
       sectionCount: 0,
@@ -725,7 +754,11 @@ export function buildEdition(opts: {
   /** League paths between seasons. */
   offseason?: string[];
 }): Edition {
-  const desk = dedupeStories(opts.stories.filter((card) => isDeskStory(card) && !isNewsMuted(card)));
+  const desk = dedupeStories(
+    opts.stories.filter(
+      (card) => isDeskStory(card) && !isNewsMuted(card) && !staleNamedPackage(card, opts.edition),
+    ),
+  );
   const fresh = rankStories(
     desk.filter((card) => inEditionWindow(card, opts.edition)),
     opts.edition,
@@ -774,12 +807,10 @@ export function buildEdition(opts: {
   const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs);
 
   const mo = missouriPages(opts.missouri ?? null);
-  const deskPress = isDeskPress(opts.edition);
-  // Noon and evening open on the statehouse. Morning still opens on the clubs.
-  const pages: EditionPage[] = deskPress ? [...mo, ...favorites.pages] : [...favorites.pages, ...mo];
-  const sections: EditionSection[] = [];
-  if (!deskPress) {
-    sections.push({
+  // Section A, then Missouri as B, then sports. Every edition, including noon and 5 p.m.
+  const pages: EditionPage[] = [...favorites.pages, ...mo];
+  const sections: EditionSection[] = [
+    {
       code: "A",
       title: "Favorite Teams",
       folio: "A1",
@@ -787,28 +818,17 @@ export function buildEdition(opts: {
       stories: favoriteFresh.length,
       upcoming: opts.clubs.reduce((n, club) => n + Math.min(1, club.upcoming.length), 0),
       pages: favorites.pages.length,
-    });
-  }
+    },
+  ];
   if (mo.length) {
     sections.push({
-      code: "MO",
+      code: "B",
       title: "Missouri",
-      folio: "MO1",
-      index: deskPress ? 0 : favorites.pages.length,
+      folio: "B1",
+      index: favorites.pages.length,
       stories: mo.reduce((n, p) => n + p.items.length, 0),
       upcoming: 0,
       pages: mo.length,
-    });
-  }
-  if (deskPress) {
-    sections.push({
-      code: "A",
-      title: "Favorite Teams",
-      folio: favorites.pages[0]?.folio ?? "A1",
-      index: mo.length,
-      stories: favoriteFresh.length,
-      upcoming: opts.clubs.reduce((n, club) => n + Math.min(1, club.upcoming.length), 0),
-      pages: favorites.pages.length,
     });
   }
 
