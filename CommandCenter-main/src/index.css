@@ -1165,11 +1165,9 @@ mark.rss-hl {
   --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
   --w-gutter: 20px;
 
-  /* Portrait sheet for a 13-inch iPad (1032×1376 CSS px). The broadsheet stays
-     composed at 1600px wide. Height is 1600 × the pager on that iPad, under the
-     Times chrome, so the fit meets both side edges. The page does not reflow. */
-  --tt-page-w: 1600px;
-  --tt-page-h: 1920px;
+  /* One broadsheet. The screen scales it; the page itself does not reflow. */
+  --tt-page-w: 1040px;
+  --tt-page-h: 1480px;
   --w-chrome: calc(61px + env(safe-area-inset-top, 0px));
   flex: 1 1 auto;
   height: 100%;
@@ -1322,19 +1320,19 @@ mark.rss-hl {
 .wsj-fit {
   position: relative;
   flex: none;
-  width: calc(var(--tt-page-w, 1600px) * var(--tt-fit, 1));
-  height: calc(var(--tt-page-h, 1920px) * var(--tt-fit, 1));
+  width: calc(var(--tt-page-w, 1040px) * var(--tt-fit, 1));
+  height: calc(var(--tt-page-h, 1480px) * var(--tt-fit, 1));
   overflow: hidden;
 }
 .wsj-sheet {
   box-sizing: border-box;
   flex: none;
-  width: var(--tt-page-w, 1600px);
-  height: var(--tt-page-h, 1920px);
-  min-width: var(--tt-page-w, 1600px);
-  max-width: var(--tt-page-w, 1600px);
-  min-height: var(--tt-page-h, 1920px);
-  max-height: var(--tt-page-h, 1920px);
+  width: var(--tt-page-w, 1040px);
+  height: var(--tt-page-h, 1480px);
+  min-width: var(--tt-page-w, 1040px);
+  max-width: var(--tt-page-w, 1040px);
+  min-height: var(--tt-page-h, 1480px);
+  max-height: var(--tt-page-h, 1480px);
   margin: 0;
   padding: 14px 18px 28px;
   overflow-x: hidden;
@@ -1679,8 +1677,8 @@ mark.rss-hl {
   column-rule: 1px solid var(--w-hair);
   column-fill: balance;
   text-align: justify;
-  hyphens: none;
-  -webkit-hyphens: none;
+  hyphens: auto;
+  -webkit-hyphens: auto;
   orphans: 2;
   widows: 2;
 }

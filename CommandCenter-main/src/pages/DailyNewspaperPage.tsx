@@ -3577,8 +3577,8 @@ function NewspaperDesk() {
       if (w < 40 || h < 40) return;
       const root = el.closest(".newspaper-root") ?? el;
       const cs = getComputedStyle(root);
-      const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1600;
-      const pageH = parseFloat(cs.getPropertyValue("--tt-page-h")) || 1920;
+      const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1040;
+      const pageH = parseFloat(cs.getPropertyValue("--tt-page-h")) || 1480;
       el.style.setProperty("--tt-fit", String(Math.min(w / pageW, h / pageH)));
       el.dataset.fit = "1";
     };
