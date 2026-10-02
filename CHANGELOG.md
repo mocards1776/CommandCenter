@@ -2,6 +2,14 @@
 
 ---
 
+## Thompson Times: an AI editor picks the front — October 2, 2026
+
+- Each press, Grok reads the top of the story budget and picks the lead, second and third, reorders the rest, and spikes junk (aggregator filler, stale "Day 2" packages, old previews). The Cardinals, Blues and Mizzou still come first on an ordinary day, but the day's biggest sports story can now lead the paper.
+- Every device opens the same front: the press saves the editor's picks with the filed edition.
+- If the editor is down, the paper sets itself the old way. Box scores, standings, schedules, weather and agate are unchanged.
+
+---
+
 ## NHL game details, kill Live heroes, 2026-27 season, MLB playoffs — September 29, 2026
 
 - **NHL game pages** match NFL/MLB detail depth: color matchup header, TV chips, odds, preview/wrap story, last-five form, starters, period table, scoring, team stats, and box score.

@@ -12,6 +12,7 @@ Personal dashboard: tasks, habits, and time tracking.
 | Book lookup / enrichment | `supabase/functions/book-lookup/`, `supabase/functions/backfill-covers/` | Deno edge functions |
 | Highlights | `supabase/functions/readwise-sync/` | Readwise API v2 |
 | AI search / recommendations / classification | `supabase/functions/book-ai/` | Grok 4.6 (user's own xAI key) |
+| Thompson Times AI editor (front, order, spikes) | `supabase/functions/newspaper-editor/` | Grok 4.6, same `XAI_API_KEY` |
 | Tasks | Todoist | unified `/api/v1` |
 | Hosting | Vercel | root `vercel.json` builds `CommandCenter-main` |
 | macOS widget | `NLCentralStandings/` | WidgetKit NL Central standings (M1 Mac, macOS 14+) |
@@ -57,7 +58,8 @@ npm run lint
   variable changes do *not* apply to existing deployments; redeploy after
   editing them.
 - **Edge functions** — `supabase functions deploy <name>` (`todoist`,
-  `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`, `sports`, `rss`).
+  `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`, `sports`, `rss`,
+  `newspaper-editor`).
   Canonical source: `supabase/functions/`. Keep the mirror in sync with
   `scripts/sync-edge-copies.sh` (CI fails on drift). On `main`, GitHub Actions
   deploys `rss` / `sports` when that tree changes — requires repo secrets
@@ -93,6 +95,36 @@ npm run lint
 
 **Ship checklist:** merge to `main` → confirm Vercel deploy → confirm edge
 workflow (or run `supabase functions deploy rss sports`) → hard-reload the app.
+
+### Thompson Times AI editor
+
+Once per press, after the stories are filed and deduped, `pressStep`
+(`src/lib/newspaper-compose.ts`) sends the top ~24 candidates (headline, dek,
+a short snippet, club, league, status, source, rule rank) to
+`newspaper-editor`. Grok answers with lead / second / third, an order, and a
+spike list. The answer is stamped onto the filed stories (`editorRank`,
+`editorSpiked`) and saved as the `tt-editor` query, so every device that opens
+the edition sets the same front. `buildEdition` honors the stamps; box
+scores, schedules, standings, weather and agate never go through the editor.
+If the call fails, times out (60s), or returns ids it was never shown, the
+stories file unstamped and the rule desk (`storyRank`) sets the paper exactly
+as before. A device that sets the paper itself first adopts the press's filed
+copy if it exists, otherwise asks the editor with the reader's session.
+
+Setup:
+
+```bash
+# Same key book-ai uses. Supabase secret only — never Vercel / VITE_.
+supabase secrets set XAI_API_KEY=xai-... --project-ref esdgrgulaxnewmhjuyzh
+# The function checks the caller itself (service-role key or a signed-in user).
+supabase functions deploy newspaper-editor --project-ref esdgrgulaxnewmhjuyzh --no-verify-jwt
+# The press worker runs the bundle stored in private.press_bundle, so after a
+# bundle rebuild (node scripts/bundle-newspaper-press.mjs) replace those rows
+# and redeploy newspaper-press.
+```
+
+Kill switch: `supabase secrets set NEWSPAPER_EDITOR=off` makes the press skip
+the call.
 
 ## Things that will bite you
 
