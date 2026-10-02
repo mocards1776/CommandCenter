@@ -1317,6 +1317,13 @@ mark.rss-hl {
   box-sizing: border-box;
   background: #151b28;
 }
+.wsj-fit {
+  position: relative;
+  flex: none;
+  width: calc(var(--tt-page-w, 1040px) * var(--tt-fit, 1));
+  height: calc(var(--tt-page-h, 1480px) * var(--tt-fit, 1));
+  overflow: hidden;
+}
 .wsj-sheet {
   box-sizing: border-box;
   flex: none;
@@ -1328,7 +1335,6 @@ mark.rss-hl {
   max-height: var(--tt-page-h, 1480px);
   margin: 0;
   padding: 14px 18px 28px;
-  zoom: var(--tt-fit, 1);
   overflow-x: hidden;
   overflow-y: auto;
   touch-action: pan-y;
@@ -1733,8 +1739,9 @@ mark.rss-hl {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
+  max-height: 320px;
   object-fit: cover;
-  object-position: center 30%;
+  object-position: center 18%;
   background: var(--w-paper-2);
 }
 .wsj-cut.square img {
@@ -1985,16 +1992,19 @@ mark.rss-hl {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   opacity: 0.75;
+  white-space: normal;
 }
 .tt-count-copy strong {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   font-family: var(--w-cond);
   font-size: 19px;
   font-weight: 700;
   line-height: 1.1;
   text-transform: uppercase;
+  white-space: normal;
 }
 .tt-count-copy strong img {
   width: 22px;
@@ -2363,7 +2373,9 @@ li.counting .tt-count.card {
 }
 .wsj-story.primary.art-top .wsj-cut img,
 .wsj-story.secondary.art-top .wsj-cut img {
-  aspect-ratio: 21 / 9;
+  aspect-ratio: 16 / 9;
+  max-height: 280px;
+  object-position: center top;
 }
 .wsj-story.lead .wsj-cut img {
   aspect-ratio: 16 / 9;
@@ -3799,6 +3811,18 @@ li.counting .tt-count.card {
   gap: 12px;
   padding: 10px 12px 10px 16px;
 }
+.wsj-shelved-card.counting {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  min-height: 108px;
+}
+.wsj-shelved-card.counting .tt-count.line {
+  grid-column: 1 / -1;
+  min-height: 72px;
+  align-items: center;
+  padding: 8px 0 2px;
+}
 .wsj-shelved-card > span {
   min-width: 0;
   display: flex;
@@ -4766,8 +4790,10 @@ li.counting .tt-count.card {
 }
 .tt-feature-photo img {
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 9;
+  max-height: 320px;
   object-fit: cover;
+  object-position: center 12%;
   background: var(--w-paper-2);
 }
 .tt-feature-photo figcaption,
@@ -5172,8 +5198,10 @@ li.counting .tt-count.card {
 }
 .tt-reader-photo img {
   width: 100%;
-  max-height: 520px;
+  aspect-ratio: 16 / 9;
+  max-height: 360px;
   object-fit: cover;
+  object-position: center top;
   background: var(--w-paper-2);
 }
 .tt-reader-body {
@@ -7226,3 +7254,36 @@ li.counting .tt-count.card {
 .newspaper-root .tt-hero-id strong { font-size: 22px; }
 .newspaper-root .wsj-story-facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .newspaper-root .wsj-sport-hero { padding: 14px 18px; }
+
+/* One frame for every folio. The sheet is the broadsheet; the frame is the screen. */
+.newspaper-root .wsj-fit .wsj-sheet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: scale(var(--tt-fit, 1));
+  transform-origin: top left;
+}
+.newspaper-root .wsj-shelved {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.wsj-club-odds {
+  margin: 4px 0 0;
+  font-family: var(--w-label, inherit);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--w-ink-soft);
+}
+
+@media print {
+  .wsj-fit {
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .newspaper-root .wsj-fit .wsj-sheet {
+    position: static !important;
+    transform: none !important;
+  }
+}

@@ -11,6 +11,7 @@
 import {
   editionNewsDay,
   favoriteDeskWeight,
+  holdoverCovers,
   instantDay,
   isDeskPress,
   isNewsMuted,
@@ -18,7 +19,8 @@ import {
   splitStoryCopy,
   withinEditionHours,
 } from "./newspaper.ts";
-import { isNavSoup } from "./newspaper-copy.ts";
+import { cleanStoryCopy, isPeripheralClubStory, killedSource } from "./newspaper-copy.ts";
+import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import type { MissouriDesk, MoItem } from "./newspaper-missouri";
 
@@ -141,6 +143,8 @@ export type ClubDesk = {
   leaguePath: string | null;
   record: string | null;
   standing: string | null;
+  /** Playoff or wild-card odds, when the league publishes them. */
+  odds?: string | null;
   division: DeskRow[];
   stats: DeskStat[];
   leaders: DeskLeader[];
@@ -217,11 +221,20 @@ export function isFavoriteStory(card: GameWrapCard): boolean {
  * needs a score. A fetched story needs a body. League wire (not a followed
  * club) still counts so sport sections can print a full news page.
  */
+function isAthleticCard(card: GameWrapCard): boolean {
+  if (card.caption === "The Athletic" || card.id.startsWith("athletic-")) return true;
+  const href = `${card.feedUrl ?? ""} ${card.wrapHref ?? ""}`;
+  return /theathletic\.com|\/athletic\/rss\//i.test(href);
+}
+
 export function isDeskStory(card: GameWrapCard): boolean {
+  if (killedSource(card.wrapHref) || killedSource(card.feedUrl) || killedSource(card.gameHref)) return false;
+  if (isPeripheralClubStory(card)) return false;
+  if (isAthleticCard(card)) return Boolean(card.headline && card.leaguePath);
   if (card.id.startsWith("league-")) return Boolean(card.headline && card.leaguePath);
   if (!isFavoriteStory(card)) return false;
   if (card.id.startsWith("news-")) return Boolean(card.headline);
-  if ((card.body?.trim().length ?? 0) >= 80) return true;
+  if (cleanStoryCopy(card.body).text.length >= 80) return true;
   if (
     card.status &&
     /final|postponed/i.test(card.status) &&
@@ -237,7 +250,7 @@ export function isDeskStory(card: GameWrapCard): boolean {
 export const STORY_COPY_MIN = 400;
 
 export function hasStoryCopy(card: GameWrapCard): boolean {
-  return (card.body?.trim().length ?? 0) >= STORY_COPY_MIN;
+  return cleanStoryCopy(card.body).text.length >= STORY_COPY_MIN;
 }
 
 export function isRecapStory(card: GameWrapCard): boolean {
@@ -271,7 +284,7 @@ function storyRank(card: GameWrapCard, edition: string): number {
   if (card.id.startsWith("news-")) score += 25;
   if (card.id.startsWith("league-")) score += 10;
   if (isRecapStory(card)) score += 20;
-  if ((card.body?.length ?? 0) >= 400) score += 15;
+  if (cleanStoryCopy(card.body).text.length >= 400) score += 15;
   // Cardinals / Blues / Mizzou lead Section A; Lions, Chiefs, soccer follow.
   if (card.favoriteKey) score += favoriteDeskWeight(card.favoriteKey);
   return score;
@@ -297,10 +310,10 @@ function stampCounts<T extends PageBase>(pages: T[]): T[] {
 
 /** Plain story body used for front tease / continuation (no agate notes). */
 export function storyBodyForJump(card: GameWrapCard): string {
-  const body = (card.body || "").trim();
-  if (body.length >= 40 && !isNavSoup(body)) return body;
-  const dek = (card.dek || "").trim();
-  if (dek && !isNavSoup(dek)) return dek;
+  const body = cleanStoryCopy(card.body).text;
+  if (body.length >= 40) return body;
+  const dek = cleanStoryCopy(card.dek).text;
+  if (dek) return dek;
   return [card.scoreLine, card.headline].filter(Boolean).join(" ").trim();
 }
 
@@ -351,28 +364,68 @@ function chunkClubs(clubs: ClubDesk[], size: number): ClubDesk[][] {
   return out;
 }
 
-/** Last 18 hours before the press. A holdover was unread in the previous edition. */
+/** Last 18 hours before the press. An unread holdover may return for one more edition. */
 function inEditionWindow(card: GameWrapCard, edition: string): boolean {
-  if (card.holdover) return true;
+  if (card.holdover) return holdoverCovers(card.when, edition);
   return withinEditionHours(card.when, edition);
 }
 
-/** Collapse near-duplicate wires (same game / same head stem). */
+const HEAD_STOP = new Set([
+  "the", "and", "for", "with", "from", "that", "this", "have", "has", "was", "were",
+  "are", "but", "his", "her", "their", "its", "into", "over", "after", "before",
+  "about", "will", "they", "them", "been", "than", "then", "when", "what", "your",
+  "our", "who", "how", "not", "you", "all", "can", "just", "out", "new", "says", "said",
+  "louis", "saint",
+]);
+
+function significantWords(headline: string): string[] {
+  return headline
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 3 && !HEAD_STOP.has(word));
+}
+
+function sameStory(a: string[], b: string[]): boolean {
+  if (!a.length || !b.length) return false;
+  const other = new Set(b);
+  const shared = a.filter((word) => other.has(word));
+  const shorter = Math.min(a.length, b.length);
+  return shared.length >= 3 && shared.length / shorter >= 0.5;
+}
+
+/** Post-Dispatch, then The Athletic, then the wires. A paper does not run four versions. */
+function sourceRank(card: GameWrapCard): number {
+  const source = (storySource(card) ?? "").toLowerCase();
+  if (source.includes("post-dispatch")) return 0;
+  if (source.includes("athletic")) return 1;
+  if (source.includes("associated press")) return 2;
+  if (source === "espn") return 3;
+  return 4;
+}
+
+function preferStory(next: GameWrapCard, prev: GameWrapCard): boolean {
+  const rank = sourceRank(next) - sourceRank(prev);
+  if (rank) return rank < 0;
+  return cleanStoryCopy(next.body).text.length > cleanStoryCopy(prev.body).text.length;
+}
+
+/** One story per event. The better source stays; the rest are spiked. */
 export function dedupeStories(stories: GameWrapCard[]): GameWrapCard[] {
-  const seen = new Set<string>();
-  const out: GameWrapCard[] = [];
+  const kept: GameWrapCard[] = [];
   for (const card of stories) {
-    const head = card.headline
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim()
-      .slice(0, 56);
-    const keys = [card.gameId ? `g:${card.gameId}` : "", head].filter(Boolean);
-    if (keys.some((k) => seen.has(k))) continue;
-    for (const k of keys) seen.add(k);
-    out.push(card);
+    const mine = significantWords(card.headline);
+    const idx = kept.findIndex((prev) => {
+      if (card.gameId && prev.gameId && card.gameId === prev.gameId) return true;
+      return sameStory(mine, significantWords(prev.headline));
+    });
+    if (idx < 0) {
+      kept.push(card);
+      continue;
+    }
+    if (preferStory(card, kept[idx]!)) kept[idx] = card;
   }
-  return out;
+  return kept;
 }
 
 function isStalePreview(card: GameWrapCard, edition: string): boolean {

@@ -14,9 +14,10 @@ import {
   pressEdition,
   splitStoryCopy,
 } from "./newspaper.ts";
-import { isNavSoup } from "./newspaper-copy.ts";
+import { cleanStoryCopy, isNavSoup, isPeripheralClubStory, killedSource } from "./newspaper-copy.ts";
 import {
   buildEdition,
+  dedupeStories,
   isDeskStory,
   isPreviewStory,
   MIN_SECTION_PAGES,
@@ -589,7 +590,8 @@ const filed = fileEditionStories({
     card({ id: "old-fresh", headline: "Last week", when: "2026-09-20T04:00:00Z", wrapHref: "https://example.com/old" }),
   ],
   carried: [
-    card({ id: "kept", headline: "Unread from noon", when: "2026-09-20T04:00:00Z", wrapHref: "https://example.com/kept" }),
+    card({ id: "kept", headline: "Unread from noon", when: "2026-09-29T20:00:00Z", wrapHref: "https://example.com/kept" }),
+    card({ id: "stale", headline: "Unread from last week", when: "2026-09-20T04:00:00Z", wrapHref: "https://example.com/stale" }),
     card({ id: "read-carry", headline: "Read at noon", when: "2026-09-30T04:00:00Z", wrapHref: "https://example.com/read-carry" }),
   ],
   readKeys: new Set(["https://example.com/seen", "https://example.com/read-carry"]),
@@ -599,6 +601,7 @@ assert(filed.some((story) => story.id === "fresh"), "a story inside 18 hours is 
 assert(!filed.some((story) => story.id === "seen"), "a story already on screen stays out");
 assert(!filed.some((story) => story.id === "old-fresh"), "last week does not file as fresh");
 assert(filed.some((story) => story.id === "kept" && story.holdover), "an unread story carries into the next edition");
+assert(!filed.some((story) => story.id === "stale"), "an unread story older than a day and a half does not carry");
 assert(!filed.some((story) => story.id === "read-carry"), "a read story does not carry");
 
 const yardbarker =
@@ -617,5 +620,111 @@ const menuStory = card({
 });
 assert(!storyBodyForJump(menuStory).toLowerCase().includes("quiz"), "the front does not print the menu");
 assert(storyBodyForJump(menuStory).includes("player to be named later"), "the dek stands in for a menu");
+
+assert(killedSource("https://www.yardbarker.com/mlb/cardinals"), "Yardbarker is not a source");
+assert(killedSource("https://viralsportsnews.com/cardinals-trade"), "Viral Sports News is not a source");
+assert(!killedSource("https://www.stltoday.com/sports/cardinals"), "the Post-Dispatch stays");
+
+const lifted = cleanStoryCopy(
+  "Matthew DeFranks | Post-Dispatch By the most important measures, the Blues top line was at the top of the NHL.",
+);
+assert(lifted.author === "Matthew DeFranks", "the author moves onto the credit line");
+assert(lifted.text.startsWith("By the most important measures"), "the drop cap starts on the story");
+
+const cut = cleanStoryCopy(
+  "The Cardinals named right-hander Brian Curley. MORE MUST-READS: Chad Tracy seems to have lost a locker.",
+);
+assert(cut.text.startsWith("The Cardinals named right-hander Brian Curley"), "the story stops before the must-reads");
+assert(!/must-reads/i.test(cut.text), "a must-read rail is not the story");
+
+assert(
+  isPeripheralClubStory({
+    headline: "Perryville youth, family treated to on-field experience",
+    dek: "Hunter Rogers met Cardinals catcher Leo Bernal.",
+    teamName: "Cardinals",
+  }),
+  "a fan feature that never names the club is not a Cardinals story",
+);
+assert(
+  !isPeripheralClubStory({
+    headline: "Cardinals catcher Leo Bernal signs a ball for a Perryville youth",
+    teamName: "Cardinals",
+  }),
+  "a story that names the club stays",
+);
+
+const oneTrade = dedupeStories([
+  card({
+    id: "espn-trade",
+    headline: "St. Louis Cardinals complete trade and name the pitcher to be named later",
+    body: "ESPN account of the Brian Curley trade. ".repeat(12),
+    wrapHref: "https://www.espn.com/mlb/story/curley",
+    favoriteKey: "mlb-stl",
+    teamName: "Cardinals",
+  }),
+  card({
+    id: "pd-trade",
+    headline: "Cardinals complete trade, name the pitcher to be named later",
+    body: "Post-Dispatch account of the Brian Curley trade, with the club's own words. ".repeat(12),
+    wrapHref: "https://www.stltoday.com/sports/cardinals-curley",
+    favoriteKey: "mlb-stl",
+    teamName: "Cardinals",
+  }),
+  card({
+    id: "yb-trade",
+    headline: "Cardinals complete trade naming the pitcher to be named later",
+    body: "Another wire account of the Brian Curley trade. ".repeat(8),
+    wrapHref: "https://www.yardbarker.com/mlb/curley",
+    favoriteKey: "mlb-stl",
+    teamName: "Cardinals",
+  }),
+]);
+assert(oneTrade.length === 1 && oneTrade[0]?.id === "pd-trade", "one trade story, and the Post-Dispatch files it");
+
+const spiked = buildEdition({
+  stories: [
+    card({
+      id: "junk",
+      headline: "Cardinals complete a trade with Arizona",
+      favoriteKey: "mlb-stl",
+      teamName: "Cardinals",
+      leaguePath: "baseball/mlb",
+      when: "2026-09-30T04:00:00Z",
+      body: "The Cardinals named a player to be named later. ".repeat(20),
+      wrapHref: "https://www.yardbarker.com/cardinals",
+    }),
+    card({
+      id: "perry",
+      headline: "Perryville youth, family treated to on-field experience",
+      dek: "A Cardinals catcher signed a foul ball.",
+      favoriteKey: "mlb-stl",
+      teamName: "Cardinals",
+      leaguePath: "baseball/mlb",
+      when: "2026-09-30T04:00:00Z",
+      body: "The family walked onto the field after the game. ".repeat(16),
+      wrapHref: "https://www.semissourian.com/perryville",
+    }),
+    card({
+      id: "athletic-1",
+      headline: "How the Blues top line changes the math",
+      caption: "The Athletic",
+      leaguePath: "hockey/nhl",
+      teamName: "NHL",
+      when: "2026-09-30T04:00:00Z",
+      body: "The Athletic on the line that carried St. Louis.",
+      feedUrl: "https://www.nytimes.com/athletic/rss/nhl/",
+      wrapHref: "https://www.nytimes.com/athletic/blues-line",
+    }),
+  ],
+  clubs: [],
+  edition,
+});
+assert(!spiked.favoriteFolioByStory.junk, "a killed host never gets a folio");
+assert(!spiked.favoriteFolioByStory.perry, "a fan feature never leads the club");
+const athleticPage = spiked.pages.find((page) => page.folio === "NHL1");
+assert(
+  athleticPage?.kind === "sport-front" && athleticPage.articles.some((article) => article.card.id === "athletic-1"),
+  "The Athletic runs in the sport section",
+);
 
 console.log("newspaper-sections ok");

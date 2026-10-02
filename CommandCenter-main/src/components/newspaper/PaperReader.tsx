@@ -22,7 +22,7 @@ import {
 } from "@/components/newspaper/BoxScore";
 import { ESPN_BOX_PATHS, fetchEspnBox } from "@/lib/newspaper-agate";
 import { fetchEspnRecapStory, gameClock } from "@/lib/newspaper-box";
-import { isNavSoup, proseParas, readableCopy } from "@/lib/newspaper-copy";
+import { cleanStoryCopy, isNavSoup, proseParas, readableCopy } from "@/lib/newspaper-copy";
 import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
 import { fetchRssArticle, scrubReaderChrome, stripDuplicateContentImages } from "@/lib/rss";
 import { cn } from "@/lib/utils";
@@ -164,7 +164,9 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
     return stripDuplicateContentImages(scrubReaderChrome(raw), photo);
   }, [body.data?.html, photo]);
   const paras = useMemo(() => proseParas(body.data?.text ?? ""), [body.data?.text]);
-  const byline = body.data?.byline || null;
+  const lifted = cleanStoryCopy(card.body).author;
+  const outlet = storySource(card) ?? `${card.sportLabel} Wire`;
+  const byline = body.data?.byline || (lifted ? `${lifted} · ${outlet}` : null);
   const kicker = [card.sportLabel, card.round || (card.postseason ? "Postseason" : null), card.teamName]
     .filter(Boolean)
     .join(" · ");
@@ -201,7 +203,7 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
               </>
             ) : (
               <>
-                <em>By</em> {storySource(card) ?? `${card.sportLabel} Wire`}
+                <em>By</em> {outlet}
               </>
             )}
             {card.when ? <span> · {whenLine(card.when)}</span> : null}

@@ -46,7 +46,7 @@ import {
   type SectionBoard,
   type StandGroup,
 } from "@/lib/newspaper-box";
-import { isNavSoup, proseParas, tidy } from "@/lib/newspaper-copy";
+import { cleanStoryCopy, proseParas, tidy } from "@/lib/newspaper-copy";
 import {
   Face,
   MatchupCard,
@@ -237,10 +237,11 @@ function gameState(status: string | null | undefined): string | null {
 }
 
 function cardCopy(card: GameWrapCard): string {
-  const body = card.body?.trim() ?? "";
-  if (body.length >= 40 && !isNavSoup(body)) return body;
+  const body = cleanStoryCopy(card.body).text;
+  if (body.length >= 40) return body;
   const bits: string[] = [];
-  if (card.dek && !isNavSoup(card.dek)) bits.push(card.dek.trim());
+  const dek = cleanStoryCopy(card.dek).text;
+  if (dek) bits.push(dek);
   if (card.scoreLine) bits.push(`${card.status || "Final"}: ${card.scoreLine}.`);
   if (card.leaders.length) {
     bits.push(
@@ -631,9 +632,12 @@ function ReadOn({ card, game, label = "Read the full story" }: { card: GameWrapC
 }
 
 function Byline({ card }: { card: GameWrapCard }) {
+  const author = cleanStoryCopy(card.body).author;
+  const source = storySource(card) ?? `${card.sportLabel} Wire`;
   return (
     <p className="wsj-byline">
-      <em>By</em> {storySource(card) ?? `${card.sportLabel} Wire`}
+      <em>By</em> {author ? `${author} · ` : ""}
+      {source}
       {card.followed || card.favoriteKey ? <span> · {card.teamName} desk</span> : null}
     </p>
   );
@@ -1524,6 +1528,7 @@ function ClubsDesk({ teams }: { teams: TeamInfobox[] }) {
                       <span>{t.snap.standing || "—"}</span>
                       <FormDots form={t.form} />
                     </p>
+                    {t.odds ? <p className="wsj-club-odds">Playoff odds {t.odds}</p> : null}
                     {slate.length || t.snap.nextGame ? (
                       <div className="wsj-club-card-sec">
                         <h4>Next up</h4>
@@ -1578,10 +1583,7 @@ function ClubsDesk({ teams }: { teams: TeamInfobox[] }) {
       {shelved.length ? (
         <section>
           <h3 className="wsj-band-title">Between seasons</h3>
-          <ul
-            className="wsj-shelved"
-            style={{ ["--cols" as string]: String(balancedCols(shelved.length, [4, 3, 5, 2])) }}
-          >
+          <ul className="wsj-shelved" style={{ ["--cols" as string]: "2" }}>
             {shelved.map((t) => {
               const opener = openers.get(t.fav.key);
               return (
@@ -2051,19 +2053,51 @@ function weekday(day: string): number {
  * Thursday game through Monday night the strip is this week's slate, finals
  * filling in as they go; Tuesday and Wednesday it still carries last week.
  */
-function stripFor(path: string, board: SectionBoard | null, edition: string): { title: string; games: BoxGame[] } {
-  if (!board) return { title: "", games: [] };
+function weekdayName(day: string): string {
+  return new Date(`${day}T12:00:00`).toLocaleDateString("en-US", {
+    weekday: "long",
+    timeZone: "America/Chicago",
+  });
+}
+
+/** Yesterday’s college finals stand alone. The rest of the slate follows them. */
+function finalsSplit(games: BoxGame[], edition: string): { yesterday: BoxGame[]; rest: BoxGame[]; title: string } {
+  const yday = editionNewsDay(edition);
+  const yesterday = games.filter((game) => game.final && game.day === yday);
+  const seen = new Set(yesterday.map((game) => game.id));
+  return {
+    yesterday,
+    rest: games.filter((game) => !seen.has(game.id)),
+    title: `${weekdayName(yday)}’s finals`,
+  };
+}
+
+function stripFor(path: string, board: SectionBoard | null, edition: string): { title: string; games: BoxGame[] }[] {
+  if (!board) return [];
+  if (path.includes("college-football")) {
+    const pool = board.week?.length ? board.week : board.results;
+    const split = finalsSplit(pool, edition);
+    const bands: { title: string; games: BoxGame[] }[] = [];
+    if (split.yesterday.length) bands.push({ title: split.title, games: split.yesterday });
+    if (split.rest.length) {
+      bands.push({
+        title: split.yesterday.length ? "Rest of the week" : `${board.weekLabel ?? "This week"} · scores and kickoffs`,
+        games: split.rest,
+      });
+    }
+    return bands;
+  }
   if (path.startsWith("football/")) {
     const day = weekday(edition);
     const turned = day === 4 || day === 5 || day === 6 || day === 0 || day === 1;
     if (turned && board.week?.length) {
-      return { title: `${board.weekLabel ?? "This week"} · scores and kickoffs`, games: board.week };
+      return [{ title: `${board.weekLabel ?? "This week"} · scores and kickoffs`, games: board.week }];
     }
-    if (board.results.length) return { title: `${board.weekLabel ?? "This week"} finals`, games: [...board.results].reverse() };
-    return { title: `${board.priorLabel ?? "Last week"} finals`, games: [...(board.prior ?? [])].reverse() };
+    if (board.results.length) return [{ title: `${board.weekLabel ?? "This week"} finals`, games: [...board.results].reverse() }];
+    return [{ title: `${board.priorLabel ?? "Last week"} finals`, games: [...(board.prior ?? [])].reverse() }];
   }
   const games = path.startsWith("soccer/") ? [...board.results].reverse() : board.results;
-  return { title: "Last night’s scores", games };
+  return games.length ? [{ title: "Last night’s scores", games }] : [];
 }
 
 /** League news front: last night's board, then the stories with their art. */
@@ -2081,7 +2115,7 @@ function SportNewsDesk({
   onTurn: (folio: string) => void;
 }) {
   const open = useReader();
-  const strip = stripFor(page.path, board, edition);
+  const strips = stripFor(page.path, board, edition);
   const football = page.path.startsWith("football/");
   const finals = football ? [...(board?.results ?? []), ...(board?.prior ?? [])] : board?.results ?? [];
   const recent = page.path.startsWith("soccer/") || football ? [...finals].reverse() : finals;
@@ -2123,24 +2157,26 @@ function SportNewsDesk({
 
   return (
     <div className="wsj-sport-news">
-      {strip.games.length ? (
-        <section className="tt-strip-wrap">
-          <h3 className="wsj-band-title">
-            {strip.title}
-            <button type="button" className="tt-band-link" onClick={() => onTurn(`${page.section}2`)}>
-              Box scores, page {page.section}2 →
-            </button>
-          </h3>
-          <ScoreStrip
-            games={strip.games.slice(0, 16)}
-            onOpen={(g) => {
-              const card = boxStoryCard(g);
-              if (card) open({ card, game: g });
-              else onTurn(`${page.section}2`);
-            }}
-          />
-        </section>
-      ) : null}
+      {strips.map((strip) =>
+        strip.games.length ? (
+          <section className="tt-strip-wrap" key={strip.title}>
+            <h3 className="wsj-band-title">
+              {strip.title}
+              <button type="button" className="tt-band-link" onClick={() => onTurn(`${page.section}2`)}>
+                Box scores, page {page.section}2 →
+              </button>
+            </h3>
+            <ScoreStrip
+              games={strip.games.slice(0, 16)}
+              onOpen={(g) => {
+                const card = boxStoryCard(g);
+                if (card) open({ card, game: g });
+                else onTurn(`${page.section}2`);
+              }}
+            />
+          </section>
+        ) : null,
+      )}
       {lead ? (
         <div className={cn("wsj-sport-lead-grid", seconds.length ? "with-side" : "solo")}>
           <Story
@@ -2275,19 +2311,36 @@ function StarsBand({ games, title = "Stars of the night" }: { games: BoxGame[]; 
 }
 
 /** Box scores: the best game set large with its recap, the rest in agate. */
-function ScoresDesk({ page, board, active }: { page: SportFrontPage; board: SectionBoard | null; active: boolean }) {
+function ScoresDesk({
+  page,
+  board,
+  active,
+  edition,
+}: {
+  page: SportFrontPage;
+  board: SectionBoard | null;
+  active: boolean;
+  edition: string;
+}) {
   const open = useReader();
   if (!board) return <p className="wsj-empty">Setting the box scores…</p>;
   const football = page.path.startsWith("football/");
+  const college = page.path.includes("college-football");
   const flip = football || page.path.startsWith("soccer/");
   const current = flip ? [...board.results].reverse() : board.results;
-  const prior = football ? [...(board.prior ?? [])].reverse() : [];
+  const prior = football && !college ? [...(board.prior ?? [])].reverse() : [];
   const games = current.length ? current : prior;
   const behind = current.length ? prior : [];
   if (!games.length) return <p className="wsj-empty">No finals on the board — the schedule is on page {page.section}4.</p>;
+  const collegeSplit = college ? finalsSplit(games, edition) : null;
+  const featuredPool = collegeSplit?.yesterday.length ? collegeSplit.yesterday : games;
   const featured =
-    games.find((g) => g.recap?.photo && !involvesClub(g, page.clubs)) ?? games.find((g) => g.recap) ?? games[0]!;
-  const rest = games.filter((g) => g !== featured).slice(0, 18);
+    featuredPool.find((g) => g.recap?.photo && !involvesClub(g, page.clubs)) ??
+    featuredPool.find((g) => g.recap) ??
+    featuredPool[0]!;
+  const rest = (collegeSplit ? [] : games.filter((g) => g !== featured)).slice(0, 18);
+  const yesterdayRest = collegeSplit?.yesterday.filter((g) => g !== featured) ?? [];
+  const weekRest = collegeSplit?.rest.filter((g) => g.final && g !== featured) ?? [];
   const card = boxStoryCard(featured);
   const isMlb = page.path === "baseball/mlb";
   const photo = featured.recap?.photo ?? null;
@@ -2355,6 +2408,33 @@ function ScoresDesk({ page, board, active }: { page: SportFrontPage; board: Sect
         </div>
       </article>
       {isMlb ? <MlbAgate game={featured} enabled={active} /> : null}
+      {[
+        { title: collegeSplit?.title ?? "", rows: yesterdayRest, count: collegeSplit?.yesterday.length ?? 0 },
+        { title: "Rest of the week", rows: weekRest, count: weekRest.length },
+      ].map((band) =>
+        band.rows.length ? (
+          <section className="tt-results" key={band.title}>
+            <h3 className="wsj-band-title">
+              {band.title} <em>{band.count} {band.count === 1 ? "game" : "games"}</em>
+            </h3>
+            <div
+              className="tt-score-grid"
+              style={{ ["--cols" as string]: String(balancedCols(band.rows.length, [3, 2, 4])) }}
+            >
+              {band.rows.map((g) => (
+                <ScoreCard
+                  key={g.id}
+                  game={g}
+                  onOpen={(game) => {
+                    const c = boxStoryCard(game);
+                    if (c) open({ card: c, game });
+                  }}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null,
+      )}
       {rest.length ? (
         <section className="tt-results">
           <h3 className="wsj-band-title">
@@ -2628,7 +2708,7 @@ function SportFront({
         ) : page.focus === "opener" ? (
           <OpenerDesk page={page} onTurn={onTurn} />
         ) : page.focus === "recaps" ? (
-          <ScoresDesk page={page} board={board} active={active} />
+          <ScoresDesk page={page} board={board} active={active} edition={edition} />
         ) : page.focus === "teams" ? (
           <StandingsDesk
             page={page}
@@ -2832,6 +2912,7 @@ function ClubFormGrid({ clubs, sheets = {} }: { clubs: ClubDesk[]; sheets?: Reco
               </span>
               <b>{club.record || "—"}</b>
             </header>
+            {club.odds ? <p className="wsj-club-odds">Playoff odds {club.odds}</p> : null}
             <div className="wsj-form-card-body">
               {stats.length ? (
                 <section className="wsj-form-sec stats">
@@ -3163,7 +3244,9 @@ function FolioSlot({
   }, [shown, index]);
   return (
     <section className="wsj-page" aria-label={`Page ${folio}`}>
-      <div className="wsj-sheet">{shown ? <FolioBody render={render} /> : null}</div>
+      <div className="wsj-fit">
+        <div className="wsj-sheet">{shown ? <FolioBody render={render} /> : null}</div>
+      </div>
     </section>
   );
 }
@@ -3238,6 +3321,7 @@ function CoverSheet() {
   const { volume, issue } = editionIssue(press.day);
   return (
     <section className="wsj-page" aria-label={press.label}>
+      <div className="wsj-fit">
       <div className="wsj-sheet tt-cover">
         <p className="tt-cover-kicker">Sports Final</p>
         <h1 className="wsj-nameplate">The Thompson Times</h1>
@@ -3246,6 +3330,7 @@ function CoverSheet() {
           Vol. {romanNumeral(volume)} · No. {issue}
           <span>{editionDateline(press.day)}</span>
         </p>
+      </div>
       </div>
     </section>
   );
@@ -3579,6 +3664,7 @@ function NewspaperDesk() {
           leaguePath: path,
           record: clubRecord(team),
           standing: team.snap.standing,
+          odds: team.odds,
           division,
           stats: team.teamStats,
           leaders: namedLeaders,
@@ -4099,17 +4185,22 @@ function NewspaperDesk() {
     }
     return out;
   }, [subjects, filesQ.data]);
-  const stories = useMemo(
-    () =>
-      printedStories.map((card) => {
-        if (card.photo) return card;
-        const lead = storyFiles[card.id]?.[0];
-        if (lead?.action) return { ...card, photo: lead.action, caption: lead.name };
-        if (lead?.headshot) return { ...card, photo: lead.headshot, caption: lead.name, photoStyle: "cutout" as const };
-        return card;
-      }),
-    [printedStories, storyFiles],
-  );
+  const stories = useMemo(() => {
+    const seen = new Set(printedStories.map((card) => card.wrapHref || card.id));
+    const extra = (athleticCards ?? []).filter((card) => {
+      const key = card.wrapHref || card.id;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return [...printedStories, ...extra].map((card) => {
+      if (card.photo) return card;
+      const lead = storyFiles[card.id]?.[0];
+      if (lead?.action) return { ...card, photo: lead.action, caption: lead.name };
+      if (lead?.headshot) return { ...card, photo: lead.headshot, caption: lead.name, photoStyle: "cutout" as const };
+      return card;
+    });
+  }, [printedStories, storyFiles, athleticCards]);
 
   const filedRef = useRef<string | null>(null);
   useEffect(() => {

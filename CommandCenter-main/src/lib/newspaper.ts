@@ -98,6 +98,9 @@ export function instantDay(iso: string): string | null {
 /** How far back an edition reaches. Older than this only returns if it was never read. */
 export const EDITION_HOURS = 18;
 
+/** An unread story may return once, in the next edition, and then it is gone. */
+export const HOLDOVER_HOURS = 36;
+
 export function isDeskPress(pressId: string): boolean {
   return pressId.endsWith("-midday") || pressId.endsWith("-evening");
 }
@@ -150,6 +153,16 @@ export function withinEditionHours(iso: string | null | undefined, pressId: stri
   if (Number.isNaN(t)) return false;
   const endMs = end.getTime();
   return t <= endMs && t >= endMs - EDITION_HOURS * 3_600_000;
+}
+
+/** A holdover is an unread story from the previous edition, still inside a day and a half. */
+export function holdoverCovers(iso: string | null | undefined, pressId: string): boolean {
+  const end = pressInstant(pressId);
+  if (!end || !iso) return false;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  const endMs = end.getTime();
+  return t <= endMs && t >= endMs - HOLDOVER_HOURS * 3_600_000;
 }
 
 /**
@@ -261,7 +274,12 @@ export function fileEditionStories<T extends StoryIdentity>(opts: {
   );
   const seen = new Set(fresh.flatMap((card) => storyReadKeys(card)));
   const carried = opts.carried
-    .filter((card) => !storyWasRead(card, opts.readKeys) && !storyReadKeys(card).some((key) => seen.has(key)))
+    .filter(
+      (card) =>
+        holdoverCovers(card.when, opts.pressId) &&
+        !storyWasRead(card, opts.readKeys) &&
+        !storyReadKeys(card).some((key) => seen.has(key)),
+    )
     .map((card) => ({ ...card, holdover: true }));
   return [...fresh, ...carried];
 }

@@ -55,6 +55,7 @@ export function playerHref(sportPath: string, playerId: string): string | null {
 const STL_TODAY_RSS = (section: string) =>
   `https://www.stltoday.com/search/?f=rss&c=${section}*&l=50&s=start_time&sd=desc&t=article`;
 export const PD_BLUES_FEED = STL_TODAY_RSS("sports/professional/nhl/blues");
+export const PD_CARDINALS_FEED = STL_TODAY_RSS("sports/professional/mlb/cardinals");
 export const PD_MIZZOU_FEED = STL_TODAY_RSS("sports/college/mizzou");
 export const ATHLETIC_BLUES_FEED = "https://rss.app/feeds/HJaMzlWvefjQfs5f.xml";
 
@@ -96,7 +97,8 @@ export function wrapFeedsForFavorites(favs: SportsFavorite[]): string[] {
     if (p.startsWith("baseball/mlb/")) {
       if (f.key === "mlb-stl" || f.mlbTeamId === 138) {
         urls.add("synthetic:cardinals-wraps");
-        // STL Today + Cardinals Wire — denser club copy than ESPN alone.
+        urls.add(PD_CARDINALS_FEED);
+        // Club wires. Yardbarker and Viral Sports News are dropped at the desk.
         urls.add("https://rss.app/feeds/NY6044y6TPBMOdru.xml");
         urls.add("https://rss.app/feeds/tdKZI96hgDCSMd6o.xml");
       } else {
@@ -179,6 +181,7 @@ function feedAllowsFavorite(feedUrl: string, fav: SportsFavorite): boolean {
     return fav.key === "cfb-mizzou" || fav.key === "cbb-mizzou";
   }
   if (feedUrl === PD_BLUES_FEED || feedUrl === ATHLETIC_BLUES_FEED) return fav.key === "nhl-stl";
+  if (feedUrl === PD_CARDINALS_FEED) return fav.key === "mlb-stl";
   const athletic = ATHLETIC_FEEDS.find((feed) => feed.url === feedUrl);
   if (athletic) return fav.espnPath.startsWith(athletic.prefix);
   if (feedUrl.includes("cardinals-wraps")) return fav.key === "mlb-stl";
@@ -227,7 +230,7 @@ export function matchWrapToFavorites(
     if (!hit) hit = strongNames(fav).some((n) => hayHasName(hay, n));
     if (!hit && feedUrl.includes("cardinals-wraps") && fav.key === "mlb-stl") hit = true;
     // Single-club desks: every story in the feed is about the club, named or not.
-    if (!hit && (feedUrl === PD_BLUES_FEED || feedUrl === PD_MIZZOU_FEED)) hit = true;
+    if (!hit && (feedUrl === PD_BLUES_FEED || feedUrl === PD_MIZZOU_FEED || feedUrl === PD_CARDINALS_FEED)) hit = true;
     if (hit) keys.push(fav.key);
   }
 

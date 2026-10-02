@@ -9,8 +9,8 @@ import { fetchClubSheet } from "./newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./newspaper-missouri-fetch";
 import type { MoItem } from "./newspaper-missouri";
 import { fetchOpener, type Opener } from "./newspaper-openers";
-import { isNavSoup } from "./newspaper-copy";
-import { isBoilerplateDek } from "./newspaper-source";
+import { cleanStoryCopy, isNavSoup, isPeripheralClubStory, killedSource } from "./newspaper-copy";
+import { isBoilerplateDek, storySource } from "./newspaper-source";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
@@ -72,22 +72,39 @@ export function urlsToExtract(cards: GameWrapCard[]): string[] {
     .slice(0, 20);
 }
 
+function runnable(card: GameWrapCard): boolean {
+  if (killedSource(card.wrapHref) || killedSource(card.feedUrl) || killedSource(card.gameHref)) return false;
+  if (isPeripheralClubStory(card)) return false;
+  return true;
+}
+
+/** Keep the author in the filed copy so the credit line can lift it on the page. */
+function filedBody(card: GameWrapCard, text: string | null | undefined): string | null {
+  const cleaned = cleanStoryCopy(text);
+  if (!cleaned.text) return null;
+  if (!cleaned.author) return cleaned.text;
+  const outlet = storySource(card) ?? "Wire";
+  return `${cleaned.author} | ${outlet} ${cleaned.text}`;
+}
+
 export function fileExtracts(cards: GameWrapCard[], extracts: Record<string, RssArticle> | undefined): GameWrapCard[] {
-  const clean = cards.map((card) => ({
-    ...card,
-    dek: isBoilerplateDek(card.dek) || isNavSoup(card.dek) ? null : card.dek,
-    body: isNavSoup(card.body) ? null : card.body,
-  }));
+  const clean = cards.filter(runnable).map((card) => {
+    const dek = cleanStoryCopy(card.dek);
+    return {
+      ...card,
+      dek: !dek.text || isBoilerplateDek(dek.text) ? null : dek.text,
+      body: filedBody(card, card.body),
+    };
+  });
   if (!extracts) return clean;
   return clean.map((card) => {
     const hit = card.wrapHref ? extracts[card.wrapHref] : undefined;
-    if (!hit) return card;
-    const text = hit.contentText?.trim() ?? "";
+    if (!hit || killedSource(card.wrapHref)) return card;
+    const text = cleanStoryCopy(hit.contentText).text;
     const adopt = text.length > (card.body?.trim().length ?? 0) + 120 && !isNavSoup(text);
-    const body = adopt ? text : card.body;
     return {
       ...card,
-      body: isNavSoup(body) ? null : body,
+      body: adopt ? filedBody(card, hit.contentText) : card.body,
       photo: card.photo || hit.image || firstContentImageUrl(hit.contentHtml),
     };
   });
