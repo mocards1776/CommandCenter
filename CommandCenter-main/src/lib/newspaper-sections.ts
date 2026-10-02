@@ -18,6 +18,7 @@ import {
   isResultCopy,
   splitStoryCopy,
   withinEditionHours,
+  withoutEditorStamps,
 } from "./newspaper.ts";
 import { cleanStoryCopy, isPeripheralClubStory, killedSource } from "./newspaper-copy.ts";
 import { storySource } from "./newspaper-source.ts";
@@ -275,7 +276,7 @@ export function isPreviewStory(card: GameWrapCard): boolean {
 }
 
 /** Last night's result outranks a feature; home clubs outrank the rest. */
-function storyRank(card: GameWrapCard, edition: string): number {
+export function storyRank(card: GameWrapCard, edition: string): number {
   const day = card.when ? instantDay(card.when) : null;
   let score = 0;
   if (isPreviewStory(card)) score -= 150;
@@ -293,8 +294,12 @@ function storyRank(card: GameWrapCard, edition: string): number {
   return score;
 }
 
+/** The editor's picks run in its order, ahead of everything it did not see. */
 function rankStories(cards: GameWrapCard[], edition: string): GameWrapCard[] {
   return [...cards].sort((a, b) => {
+    const ea = a.editorRank ?? Number.POSITIVE_INFINITY;
+    const eb = b.editorRank ?? Number.POSITIVE_INFINITY;
+    if (ea !== eb) return ea < eb ? -1 : 1;
     const byRank = storyRank(b, edition) - storyRank(a, edition);
     if (byRank) return byRank;
     const byList = (a.listRank ?? 99) - (b.listRank ?? 99);
@@ -464,10 +469,18 @@ function isStalePreview(card: GameWrapCard, edition: string): boolean {
   return !withinEditionHours(card.when, edition);
 }
 
+/** Stories the editor put on A1, in its order. Any league may lead; a front story still needs copy. */
+function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
+  return fresh
+    .filter((card) => card.editorRank != null && card.editorRank < FRONT_STORIES && hasStoryCopy(card))
+    .sort((a, b) => a.editorRank! - b.editorRank!);
+}
+
 function favoritePages(
   freshStories: GameWrapCard[],
   sectionStories: GameWrapCard[],
   clubs: ClubDesk[],
+  frontPicks: GameWrapCard[] = [],
 ): {
   pages: (
     | FavoritesFrontPage
@@ -481,7 +494,7 @@ function favoritePages(
   const favoriteFolioByStory: Record<string, string> = {};
   const freshIds = new Set(freshStories.map((c) => c.id));
   const frontPool = [...freshStories, ...sectionStories.filter((c) => !freshIds.has(c.id))];
-  const picks: GameWrapCard[] = [];
+  const picks: GameWrapCard[] = frontPicks.slice(0, FRONT_STORIES);
   const clubOf = (c: GameWrapCard) => c.favoriteKey ?? c.teamName ?? c.id;
   // A video stub or one-line note leaves a column of bare photo on the front.
   const written = frontPool.filter((c) => hasStoryCopy(c) && !isPreviewStory(c));
@@ -744,6 +757,21 @@ function missouriPages(desk: MissouriDesk | null): MissouriPage[] {
   );
 }
 
+/** Copy that can run in this edition: filed, deduped, inside the press window. */
+export function deskCopy(stories: GameWrapCard[], edition: string): GameWrapCard[] {
+  return dedupeStories(
+    stories.filter((card) => isDeskStory(card) && !isNewsMuted(card) && !staleNamedPackage(card, edition)),
+  ).filter((card) => inEditionWindow(card, edition));
+}
+
+/** What the AI editor reads: the stories the rule desk would run first, before it reorders them. */
+export function editorCandidates(stories: GameWrapCard[], edition: string, limit = 24): GameWrapCard[] {
+  return rankStories(
+    deskCopy(stories, edition).map(withoutEditorStamps),
+    edition,
+  ).slice(0, limit);
+}
+
 export function buildEdition(opts: {
   stories: GameWrapCard[];
   clubs: ClubDesk[];
@@ -754,13 +782,8 @@ export function buildEdition(opts: {
   /** League paths between seasons. */
   offseason?: string[];
 }): Edition {
-  const desk = dedupeStories(
-    opts.stories.filter(
-      (card) => isDeskStory(card) && !isNewsMuted(card) && !staleNamedPackage(card, opts.edition),
-    ),
-  );
   const fresh = rankStories(
-    desk.filter((card) => inEditionWindow(card, opts.edition)),
+    deskCopy(opts.stories, opts.edition).filter((card) => !card.editorSpiked),
     opts.edition,
   );
   const sectionCopy = fresh;
@@ -804,7 +827,7 @@ export function buildEdition(opts: {
   for (const part of sportPagesBuilt) Object.assign(sportFolioByStory, part.built.sportFolioByStory);
 
   const favoriteFresh = fresh.filter(isFavoriteStory);
-  const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs);
+  const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs, editorFront(fresh));
 
   const mo = missouriPages(opts.missouri ?? null);
   // Section A, then Missouri as B, then sports. Every edition, including noon and 5 p.m.

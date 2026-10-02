@@ -282,8 +282,17 @@ export function fileEditionStories<T extends StoryIdentity>(opts: {
         !storyWasRead(card, opts.readKeys) &&
         !storyReadKeys(card).some((key) => seen.has(key)),
     )
-    .map((card) => ({ ...card, holdover: true }));
+    // The last edition's editor ranked last edition's paper.
+    .map((card) => ({ ...withoutEditorStamps(card), holdover: true }));
   return [...fresh, ...carried];
+}
+
+/** A copy of the story without the AI editor's rank or spike. */
+export function withoutEditorStamps<T extends object>(card: T): T {
+  const copy = { ...card } as T & { editorRank?: unknown; editorSpiked?: unknown };
+  delete copy.editorRank;
+  delete copy.editorSpiked;
+  return copy;
 }
 
 /** A dated wire item must fall in the press window. The day's list has no clock and stays. */
