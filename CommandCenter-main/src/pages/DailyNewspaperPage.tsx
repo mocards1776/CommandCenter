@@ -3455,24 +3455,38 @@ function NewspaperDesk() {
     [layout],
   );
 
-  // Three presses a day. Waking the tab only checks the clock; it does not
-  // pull a new mix of stories under the one already on the stand.
+  // Three presses a day. A slept iPad often drops the long timer and never
+  // fires visibilitychange, so the stand also checks on focus, pageshow, and
+  // once a minute. The clock only changes which filed edition is open.
   useEffect(() => {
+    const sync = () => {
+      setPress((prev) => {
+        const next = pressEdition();
+        return next.id === prev.id ? prev : next;
+      });
+    };
     let timer = 0;
     const schedule = () => {
+      window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        setPress(pressEdition());
+        sync();
         schedule();
       }, msUntilNextPress() + 2_000);
     };
     schedule();
-    const onWake = () => {
-      if (document.visibilityState === "visible") setPress(pressEdition());
+    const pulse = window.setInterval(sync, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") sync();
     };
-    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("pageshow", sync);
+    window.addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearTimeout(timer);
-      document.removeEventListener("visibilitychange", onWake);
+      window.clearInterval(pulse);
+      window.removeEventListener("pageshow", sync);
+      window.removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
@@ -3535,7 +3549,11 @@ function NewspaperDesk() {
       const w = el.clientWidth;
       const h = el.clientHeight;
       if (w < 40 || h < 40) return;
-      el.style.setProperty("--tt-fit", String(Math.min(w / 1600, h / 1024)));
+      const root = el.closest(".newspaper-root") ?? el;
+      const cs = getComputedStyle(root);
+      const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 834;
+      const pageH = parseFloat(cs.getPropertyValue("--tt-page-h")) || 1080;
+      el.style.setProperty("--tt-fit", String(Math.min(w / pageW, h / pageH)));
       el.dataset.fit = "1";
     };
     apply();

@@ -28,14 +28,16 @@ export type PressEdition = {
 /** The morning press is what starts a new dateline. */
 export const EDITION_HOUR = PRESS_HOURS[0].hour;
 
-/** Wall-clock hour (0-23) in Central time. */
+/** Wall-clock hour (0-23) in Central time. hourCycle avoids Safari ignoring hour12:false. */
 function centralHour(now: Date): number {
-  const hh = now.toLocaleString("en-US", {
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: TZ,
-    hour: "2-digit",
-    hour12: false,
-  });
-  return Number(hh) % 24;
+    hour: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const hh = Number(parts.find((part) => part.type === "hour")?.value);
+  if (!Number.isFinite(hh)) return 0;
+  return hh % 24;
 }
 
 function shiftDay(iso: string, days: number): string {

@@ -558,6 +558,7 @@ assert(at("2026-10-01T10:30:00Z").id === "2026-09-30-evening", "before 6 a.m. yo
 assert(editionDay(new Date("2026-10-01T10:30:00Z")) === "2026-09-30", "the dateline rolls at the morning press");
 assert(at("2026-10-01T11:30:00Z").id === "2026-10-01-morning" && at("2026-10-01T11:30:00Z").label === "Morning Edition", "6 a.m. is the morning edition");
 assert(at("2026-10-01T17:30:00Z").id === "2026-10-01-midday" && at("2026-10-01T17:30:00Z").next === "5 p.m.", "noon is the midday edition");
+assert(at("2026-10-02T20:16:00Z").id === "2026-10-02-midday" && at("2026-10-02T20:16:00Z").label === "Midday Edition", "mid-afternoon Central is still the midday edition");
 assert(at("2026-10-01T22:30:00Z").id === "2026-10-01-evening" && at("2026-10-01T22:30:00Z").next === "6 a.m.", "5 p.m. is the evening edition");
 const untilNoon = msUntilNextPress(new Date("2026-10-01T11:30:00Z"));
 assert(untilNoon > 5 * 3_600_000 && untilNoon < 6 * 3_600_000, "the morning paper holds until noon");

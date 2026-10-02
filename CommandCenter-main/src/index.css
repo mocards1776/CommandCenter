@@ -1165,9 +1165,10 @@ mark.rss-hl {
   --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
   --w-gutter: 20px;
 
-  /* One landscape broadsheet, the shape of an iPad. The screen scales it; the page does not reflow. */
-  --tt-page-w: 1600px;
-  --tt-page-h: 1024px;
+  /* One portrait sheet, the width of an iPad held upright (11-inch class, 834 CSS px).
+     Height stays under the Times chrome so the fit meets both side edges. The screen scales it; the page does not reflow. */
+  --tt-page-w: 834px;
+  --tt-page-h: 1080px;
   --w-chrome: calc(61px + env(safe-area-inset-top, 0px));
   flex: 1 1 auto;
   height: 100%;
@@ -1320,19 +1321,19 @@ mark.rss-hl {
 .wsj-fit {
   position: relative;
   flex: none;
-  width: calc(var(--tt-page-w, 1600px) * var(--tt-fit, 1));
-  height: calc(var(--tt-page-h, 1024px) * var(--tt-fit, 1));
+  width: calc(var(--tt-page-w, 834px) * var(--tt-fit, 1));
+  height: calc(var(--tt-page-h, 1080px) * var(--tt-fit, 1));
   overflow: hidden;
 }
 .wsj-sheet {
   box-sizing: border-box;
   flex: none;
-  width: var(--tt-page-w, 1600px);
-  height: var(--tt-page-h, 1024px);
-  min-width: var(--tt-page-w, 1600px);
-  max-width: var(--tt-page-w, 1600px);
-  min-height: var(--tt-page-h, 1024px);
-  max-height: var(--tt-page-h, 1024px);
+  width: var(--tt-page-w, 834px);
+  height: var(--tt-page-h, 1080px);
+  min-width: var(--tt-page-w, 834px);
+  max-width: var(--tt-page-w, 834px);
+  min-height: var(--tt-page-h, 1080px);
+  max-height: var(--tt-page-h, 1080px);
   margin: 0;
   padding: 14px 18px 28px;
   overflow-x: hidden;
@@ -7066,28 +7067,28 @@ li.counting .tt-count.card {
   padding: 14px 18px 28px;
   gap: 14px;
 }
-.newspaper-root .wsj-nameplate { font-size: 68px; }
-.newspaper-root .wsj-hl.xl { font-size: 46px; }
-.newspaper-root .wsj-hl.lg { font-size: 30px; }
-.newspaper-root .wsj-hl.md { font-size: 23px; }
-.newspaper-root .wsj-hl.sm { font-size: 17px; }
-.newspaper-root .wsj-dek { font-size: 16px; }
-.newspaper-root .wsj-poster-id strong { font-size: 31px; }
-.newspaper-root .wsj-brief h3 { font-size: 17px; }
-.newspaper-root .wsj-brief.featured h3 { font-size: 22px; }
-.newspaper-root .wsj-brief:only-child h3 { font-size: 26px; }
-.newspaper-root .wx-head h2 { font-size: 42px; }
-.newspaper-root .wx-temp { font-size: 84px; }
-.newspaper-root .wsj-desk-head h2 { font-size: 38px; }
-.newspaper-root .wsj-sport-code { font-size: 46px; }
-.newspaper-root .wsj-sport-band .wsj-sport-code { font-size: 29px; }
-.newspaper-root .wsj-sport-lead-copy .wsj-hl.xl { font-size: 38px; }
-.newspaper-root .tt-hero-score { font-size: 94px; }
-.newspaper-root .tt-mo-flag .wsj-sport-code { font-size: 31px; }
-.newspaper-root .tt-mo-flag h3 { font-size: 31px; }
-.newspaper-root .tt-br-head h3 { font-size: 37px; }
-.newspaper-root .tt-cover-edition { font-size: 34px; }
-.newspaper-root .wsj-front-grid { grid-template-columns: minmax(0, 1fr) 296px; }
+.newspaper-root .wsj-nameplate { font-size: 46px; }
+.newspaper-root .wsj-hl.xl { font-size: 32px; }
+.newspaper-root .wsj-hl.lg { font-size: 22px; }
+.newspaper-root .wsj-hl.md { font-size: 18px; }
+.newspaper-root .wsj-hl.sm { font-size: 15px; }
+.newspaper-root .wsj-dek { font-size: 14px; }
+.newspaper-root .wsj-poster-id strong { font-size: 22px; }
+.newspaper-root .wsj-brief h3 { font-size: 15px; }
+.newspaper-root .wsj-brief.featured h3 { font-size: 18px; }
+.newspaper-root .wsj-brief:only-child h3 { font-size: 20px; }
+.newspaper-root .wx-head h2 { font-size: 30px; }
+.newspaper-root .wx-temp { font-size: 60px; }
+.newspaper-root .wsj-desk-head h2 { font-size: 28px; }
+.newspaper-root .wsj-sport-code { font-size: 34px; }
+.newspaper-root .wsj-sport-band .wsj-sport-code { font-size: 22px; }
+.newspaper-root .wsj-sport-lead-copy .wsj-hl.xl { font-size: 28px; }
+.newspaper-root .tt-hero-score { font-size: 64px; }
+.newspaper-root .tt-mo-flag .wsj-sport-code { font-size: 24px; }
+.newspaper-root .tt-mo-flag h3 { font-size: 24px; }
+.newspaper-root .tt-br-head h3 { font-size: 26px; }
+.newspaper-root .tt-cover-edition { font-size: 26px; }
+.newspaper-root .wsj-front-grid { grid-template-columns: minmax(0, 1fr) 200px; }
 .newspaper-root .wsj-rail {
   position: sticky;
   top: 0;
@@ -7099,17 +7100,17 @@ li.counting .tt-count.card {
   border-left: 1px solid var(--w-hair);
   border-top: 0;
 }
-.newspaper-root .wsj-prose.c3 { columns: 3; }
+.newspaper-root .wsj-prose.c3 { columns: 2; }
 .newspaper-root .wsj-prose.c2 { columns: 2; }
 .newspaper-root .wsj-prose,
 .newspaper-root .wsj-prose.c1 { columns: 1; }
-.newspaper-root .wsj-briefs { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
+.newspaper-root .wsj-briefs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .wsj-brief.featured { grid-column: span 2; }
-.newspaper-root .wsj-ticker { grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); }
-.newspaper-root .wsj-deskboard ul { grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); }
-.newspaper-root .wsj-clubs-grid { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
-.newspaper-root .wsj-shelved { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
-.newspaper-root .wsj-form-grid { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
+.newspaper-root .wsj-ticker { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.newspaper-root .wsj-deskboard ul { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.newspaper-root .wsj-clubs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.newspaper-root .wsj-shelved { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.newspaper-root .wsj-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .wsj-sport-lead { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
 .newspaper-root .wsj-sport-lead.no-photo { grid-template-columns: minmax(160px, 0.5fr) minmax(0, 1.5fr); }
 .newspaper-root .wsj-sport-lead-crest { aspect-ratio: 1; }
@@ -7138,7 +7139,7 @@ li.counting .tt-count.card {
 .newspaper-root .wsj-dateline-bar .r { text-align: right; }
 .newspaper-root .wsj-run { grid-template-columns: auto minmax(0, 1fr) auto; }
 .newspaper-root .wsj-run-section { display: flex; }
-.newspaper-root .wsj-run-plate { font-size: 27px; }
+.newspaper-root .wsj-run-plate { font-size: 22px; }
 .newspaper-root .wsj-run-folio { font-size: 10.5px; }
 .newspaper-root .wsj-run-folio b { font-size: 20px; }
 .newspaper-root .wsj-story.art-side {
@@ -7185,11 +7186,11 @@ li.counting .tt-count.card {
   padding-right: var(--w-gutter);
   border-right: 1px solid var(--w-hair);
 }
-.newspaper-root .tt-mo-briefs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.newspaper-root .tt-mo-briefs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-mo-seconds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-mo-flag p { display: block; }
-.newspaper-root .tt-stars { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
-.newspaper-root .tt-pl-grid { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
+.newspaper-root .tt-stars { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.newspaper-root .tt-pl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-feature { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
 .newspaper-root .tt-feature.graphic { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .newspaper-root .tt-feature:not(:has(.tt-feature-photo)) { grid-template-columns: 1fr; }
@@ -7218,7 +7219,7 @@ li.counting .tt-count.card {
 }
 .newspaper-root .tt-scout-flag em { margin: 6px 0 0; }
 .newspaper-root .tt-scout:not(.has-photo) .tt-scout-copy { grid-column: auto; }
-.newspaper-root .tt-score-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.newspaper-root .tt-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-score-grid.agate { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-stand-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-stand-grid.single { grid-template-columns: 1fr; }
@@ -7237,14 +7238,14 @@ li.counting .tt-count.card {
   padding-top: 14px;
   border-top: 1px solid var(--w-hair);
 }
-.newspaper-root .tt-matchups { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
+.newspaper-root .tt-matchups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-agate-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-open-grid { grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); }
 .newspaper-root .tt-open-grid.single { grid-template-columns: minmax(0, 1fr); }
 .newspaper-root .tt-open-grid.single .tt-open-body { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
-.newspaper-root .tt-open-index ol { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.newspaper-root .tt-open-leaders { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.newspaper-root .tt-open-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.newspaper-root .tt-open-index ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.newspaper-root .tt-open-leaders { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.newspaper-root .tt-open-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-hero-side { min-height: 210px; padding: 16px 16px 14px; }
 .newspaper-root .tt-hero-disc { width: 58px; height: 58px; }
 .newspaper-root .tt-hero-id strong { font-size: 22px; }
