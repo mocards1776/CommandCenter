@@ -4,8 +4,9 @@
  * Section A is the clubs you follow — a front, a clubs desk, then inside
  * story / club-form pages. Section B is Missouri, in every edition, after A.
  * Every sport section always runs at least five pages: league news, scores,
- * standings, schedule, and playoffs or form — then a few full story pages
- * for the best league copy. Followed-club stories run in Section A only.
+ * standings, schedule, and playoffs or form — plus league leaders whenever
+ * the league publishes them — then a few full story pages for the best
+ * league copy. Followed-club stories run in Section A only.
  */
 
 import {
@@ -112,6 +113,11 @@ export type FavoritesContinuePage = PageBase & {
   jumps: { card: GameWrapCard; rest: string }[];
 };
 
+/** The viewing guide: today's best games to watch, by RUWT. Last page of Section A, every edition. */
+export type FavoritesWatchPage = PageBase & {
+  kind: "favorites-watch";
+};
+
 export type DeskRow = {
   rank: string;
   team: string;
@@ -152,7 +158,16 @@ export type ClubDesk = {
   upcoming: { id: string; label: string; when: string | null; detail: string | null }[];
 };
 
-export type SportFocus = "news" | "recaps" | "teams" | "schedule" | "form" | "playoffs" | "players" | "opener";
+export type SportFocus =
+  | "news"
+  | "recaps"
+  | "teams"
+  | "leaders"
+  | "schedule"
+  | "form"
+  | "playoffs"
+  | "players"
+  | "opener";
 
 export type SportFrontPage = PageBase & {
   kind: "sport-front";
@@ -190,6 +205,7 @@ export type EditionPage =
   | FavoritesFormPage
   | FavoritesInsidePage
   | FavoritesContinuePage
+  | FavoritesWatchPage
   | SportFrontPage
   | SportInsidePage;
 
@@ -294,18 +310,37 @@ export function storyRank(card: GameWrapCard, edition: string): number {
   return score;
 }
 
-/** The editor's picks run in its order, ahead of everything it did not see. */
-function rankStories(cards: GameWrapCard[], edition: string): GameWrapCard[] {
+/**
+ * A game's own copy: the wire final, the recap, the club wrap. Every game gets
+ * one from the rule desk, so these never spend the AI editor's news budget.
+ */
+export function isGameWrap(card: GameWrapCard): boolean {
+  return /^(?:wire|recap|recent|wrap)-/.test(card.id);
+}
+
+function ruleOrder(cards: GameWrapCard[], edition: string): GameWrapCard[] {
   return [...cards].sort((a, b) => {
-    const ea = a.editorRank ?? Number.POSITIVE_INFINITY;
-    const eb = b.editorRank ?? Number.POSITIVE_INFINITY;
-    if (ea !== eb) return ea < eb ? -1 : 1;
     const byRank = storyRank(b, edition) - storyRank(a, edition);
     if (byRank) return byRank;
     const byList = (a.listRank ?? 99) - (b.listRank ?? 99);
     if (byList) return byList;
     return String(b.when ?? "").localeCompare(String(a.when ?? ""));
   });
+}
+
+/**
+ * The rule desk's order, with the news the editor ranked reshuffled into the
+ * same slots. Game wraps keep the places the rule desk gave them.
+ */
+function rankStories(cards: GameWrapCard[], edition: string): GameWrapCard[] {
+  const ruled = ruleOrder(cards, edition);
+  const slots = ruled.flatMap((card, i) => (card.editorRank != null ? [i] : []));
+  if (!slots.length) return ruled;
+  const edited = slots.map((i) => ruled[i]!).sort((a, b) => a.editorRank! - b.editorRank!);
+  slots.forEach((slot, k) => {
+    ruled[slot] = edited[k]!;
+  });
+  return ruled;
 }
 
 function stampCounts<T extends PageBase>(pages: T[]): T[] {
@@ -472,8 +507,8 @@ function isStalePreview(card: GameWrapCard, edition: string): boolean {
 /** Stories the editor put on A1, in its order. Any league may lead; a front story still needs copy. */
 function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
   return fresh
-    .filter((card) => card.editorRank != null && card.editorRank < FRONT_STORIES && hasStoryCopy(card))
-    .sort((a, b) => a.editorRank! - b.editorRank!);
+    .filter((card) => card.editorFront != null && card.editorFront < FRONT_STORIES && hasStoryCopy(card))
+    .sort((a, b) => a.editorFront! - b.editorFront!);
 }
 
 function favoritePages(
@@ -488,6 +523,7 @@ function favoritePages(
     | FavoritesFormPage
     | FavoritesInsidePage
     | FavoritesContinuePage
+    | FavoritesWatchPage
   )[];
   favoriteFolioByStory: Record<string, string>;
 } {
@@ -624,6 +660,7 @@ function favoritePages(
     | FavoritesFormPage
     | FavoritesInsidePage
     | FavoritesContinuePage
+    | FavoritesWatchPage
   )[] = [front, clubsPage, ...continues, ...inside];
 
   // Pad to the minimum with deep club-form pages (standings + slate).
@@ -650,6 +687,17 @@ function favoritePages(
     if (!orderedClubs.length && formIdx > MIN_SECTION_PAGES) break;
   }
 
+  // The viewing guide closes Section A, after the club pages and before Missouri.
+  const watchN = pages.length + 1;
+  pages.push({
+    kind: "favorites-watch",
+    folio: `A${watchN}`,
+    section: "A",
+    sectionTitle: "Favorite Teams",
+    sectionPage: watchN,
+    sectionCount: 0,
+  });
+
   return {
     pages: stampCounts(pages),
     favoriteFolioByStory,
@@ -663,6 +711,7 @@ function sportPages(
   edition: string,
   withPlayers = false,
   offseason = false,
+  withLeaders = false,
 ): {
   pages: (SportFrontPage | SportInsidePage)[];
   sportFolioByStory: Record<string, string>;
@@ -675,11 +724,14 @@ function sportPages(
   // A morning sport section runs the best few long stories, not every wire rewrite.
   const INSIDE_CAP = 6;
   // Morning leads with stories. Noon and 5 p.m. open on standings, form, and the slate.
+  // League leaders run beside the standings in every edition, whenever the league publishes them.
+  const leaders = withLeaders ? (["leaders"] as const) : [];
+  const players = withPlayers ? (["players"] as const) : [];
   const focuses: SportFocus[] = offseason
-    ? ["news", "opener", "teams", ...(withPlayers ? (["players"] as const) : [])]
+    ? ["news", "opener", "teams", ...leaders, ...players]
     : desk
-      ? ["teams", isMlb ? "playoffs" : "form", "schedule", "news", ...(withPlayers ? (["players"] as const) : [])]
-      : ["news", "recaps", "teams", "schedule", isMlb ? "playoffs" : "form", ...(withPlayers ? (["players"] as const) : [])];
+      ? ["teams", isMlb ? "playoffs" : "form", ...leaders, "schedule", "news", ...players]
+      : ["news", "recaps", "teams", ...leaders, "schedule", isMlb ? "playoffs" : "form", ...players];
   const deskCount = focuses.length;
   const inside: SportInsidePage[] = [];
   const full = desk ? [] : unique.filter(hasStoryCopy).slice(0, INSIDE_CAP);
@@ -764,12 +816,23 @@ export function deskCopy(stories: GameWrapCard[], edition: string): GameWrapCard
   ).filter((card) => inEditionWindow(card, edition));
 }
 
-/** What the AI editor reads: the stories the rule desk would run first, before it reorders them. */
-export function editorCandidates(stories: GameWrapCard[], edition: string, limit = 24): GameWrapCard[] {
-  return rankStories(
-    deskCopy(stories, edition).map(withoutEditorStamps),
-    edition,
-  ).slice(0, limit);
+/**
+ * What the AI editor reads, in the rule desk's order: `news` is the budget it
+ * ranks and may spike (team news, league news, The Athletic), capped at
+ * `limit`; `games` is the night's wraps, shown only so it can weigh news
+ * against results. Wraps never count against the cap.
+ */
+export function editorCandidates(
+  stories: GameWrapCard[],
+  edition: string,
+  limit = 24,
+  gameLimit = 16,
+): { news: GameWrapCard[]; games: GameWrapCard[] } {
+  const ranked = ruleOrder(deskCopy(stories, edition).map(withoutEditorStamps), edition);
+  return {
+    news: ranked.filter((card) => !isGameWrap(card)).slice(0, limit),
+    games: ranked.filter(isGameWrap).slice(0, gameLimit),
+  };
 }
 
 export function buildEdition(opts: {
@@ -781,6 +844,8 @@ export function buildEdition(opts: {
   missouri?: MissouriDesk | null;
   /** League paths between seasons. */
   offseason?: string[];
+  /** League paths with a league-leaders list on file — each gets a leaders desk. */
+  leaderPaths?: string[];
 }): Edition {
   const fresh = rankStories(
     deskCopy(opts.stories, opts.edition).filter((card) => !card.editorSpiked),
@@ -821,6 +886,7 @@ export function buildEdition(opts: {
       opts.edition,
       opts.playerPaths?.includes(id.path) ?? false,
       opts.offseason?.includes(id.path) ?? false,
+      opts.leaderPaths?.includes(id.path) ?? false,
     ),
   }));
   const sportFolioByStory: Record<string, string> = {};

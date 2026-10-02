@@ -1029,9 +1029,9 @@ type LeaderCat = {
 };
 
 /** League leaders (passing yards, home runs, points). ESPN's list, top of each category. */
-export async function fetchLeagueLeaders(path: string): Promise<LeagueLeaderGroup[]> {
+export async function fetchLeagueLeaders(path: string, categories = 8, rows = 5): Promise<LeagueLeaderGroup[]> {
   const data = await getJson<{ leaders?: { categories?: LeaderCat[] } }>(
-    `https://site.web.api.espn.com/apis/site/v3/sports/${path}/leaders?limit=3`,
+    `https://site.web.api.espn.com/apis/site/v3/sports/${path}/leaders?limit=${rows}`,
   );
   const cats = (data?.leaders?.categories ?? []).filter(
     (cat) => cat.displayName && cat.leaders?.length && !LEADER_SKIP.test(`${cat.name ?? ""} ${cat.displayName}`),
@@ -1042,10 +1042,10 @@ export async function fetchLeagueLeaders(path: string): Promise<LeagueLeaderGrou
     return (ia < 0 ? 40 : ia) - (ib < 0 ? 40 : ib);
   });
   return cats
-    .slice(0, 5)
+    .slice(0, categories)
     .map((cat) => ({
       category: cat.displayName!,
-      rows: (cat.leaders ?? []).slice(0, 3).flatMap((row) => {
+      rows: (cat.leaders ?? []).slice(0, rows).flatMap((row) => {
         const name = row.athlete?.shortName || row.athlete?.displayName || row.athlete?.fullName || "";
         if (!name) return [];
         return [
