@@ -6,7 +6,7 @@
  * odds roundup that merely lists every team is not a story about your club.
  */
 
-import { editionCovers, editionCoversResult, isResultCopy } from "./newspaper";
+import { withinEditionHours } from "./newspaper";
 import {
   clubMentionNames,
   favoriteTeamHref,
@@ -65,7 +65,12 @@ function mentionsClub(fav: SportsFavorite, article: NewsArticle): boolean {
   return names.some((name) => hay.includes(name));
 }
 
-/** Higher = more clearly about this favorite club. */
+/**
+ * How clearly an article is about this club.
+ * 10 for being tagged as the club, +40 if the headline names it, +10 if the
+ * dek does, +25 if it is the only team tagged. A preview loses 15. Anything
+ * under 20 is a weak tag — a roundup that lists the club — and stays out.
+ */
 export function favoriteArticleScore(fav: SportsFavorite, article: NewsArticle): number {
   if (!mentionsClub(fav, article)) return 0;
   const names = clubMentionNames(fav);
@@ -81,15 +86,8 @@ export function favoriteArticleScore(fav: SportsFavorite, article: NewsArticle):
   return score;
 }
 
-function articleInEdition(article: NewsArticle, edition: string): boolean {
-  const result = isResultCopy({
-    headline: article.headline,
-    dek: article.description,
-    type: article.type,
-  });
-  return result
-    ? editionCoversResult(article.published, edition)
-    : editionCovers(article.published, edition);
+function articleInEdition(article: NewsArticle, pressId: string): boolean {
+  return withinEditionHours(article.published, pressId);
 }
 
 /** AP copy leads with a bare em dash when the dateline is stripped, and ends on a link plug. */
@@ -166,7 +164,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 }
 
 /**
- * Club articles for this edition only: the dateline and the night before it.
+ * Club articles from the 18 hours before this press.
  */
 export async function fetchTeamArticles(
   favs: SportsFavorite[],

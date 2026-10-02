@@ -29,6 +29,7 @@ type PressModule = {
   }) => Promise<Issue>;
   deskFavorites: (order: string[] | null, hidden: string[] | null) => Fav[];
   pressEdition: () => { id: string; day: string };
+  previousPressId: (pressId: string) => string | null;
   slimIssue: (issue: Issue) => Issue;
   pressStep: (
     args: {
@@ -37,6 +38,9 @@ type PressModule = {
       favs: Fav[];
       layout: Layout;
       userId: string | null;
+      readKeys?: string[];
+      carried?: unknown[];
+      carriedMissouri?: unknown[];
     },
     bag: Record<string, unknown> | null,
   ) => Promise<{ done: false; bag: Record<string, unknown> } | { done: true; issue: Issue }>;
@@ -84,7 +88,7 @@ Deno.serve(async (req) => {
   }
 
   const supabase = createClient(url, key);
-  const { deskFavorites, pressEdition, pressStep, slimIssue } = await loadPress();
+  const { deskFavorites, pressEdition, previousPressId, pressStep, slimIssue } = await loadPress();
   const press = pressEdition();
   let continued = false;
   try {
@@ -134,6 +138,33 @@ Deno.serve(async (req) => {
       hidden: desk?.hidden ?? [],
       pinnedPlayers: [] as { id: string; name: string; teamKey: string }[],
     };
+    const since = new Date(Date.now() - 48 * 3_600_000).toISOString();
+    const { data: reads } = await supabase
+      .from("rss_reads")
+      .select("article_url")
+      .gte("read_at", since)
+      .order("read_at", { ascending: false })
+      .limit(2000);
+    const readKeys = (reads ?? []).map((row) => row.article_url).filter((url): url is string => Boolean(url));
+    const prevId = previousPressId(press.id);
+    let carried: unknown[] = [];
+    let carriedMissouri: unknown[] = [];
+    if (prevId) {
+      const { data: prev } = await supabase
+        .from("newspaper_issues")
+        .select("stories, queries")
+        .eq("id", prevId)
+        .eq("status", "ready")
+        .maybeSingle();
+      if (Array.isArray(prev?.stories)) carried = prev.stories;
+      const queries = Array.isArray(prev?.queries) ? prev.queries : [];
+      for (const query of queries) {
+        const row = query as { key?: unknown; data?: { items?: unknown[] } };
+        if (Array.isArray(row.key) && row.key[1] === "tt-missouri" && Array.isArray(row.data?.items)) {
+          carriedMissouri = row.data.items;
+        }
+      }
+    }
     const step = await pressStep(
       {
         pressId: press.id,
@@ -141,6 +172,9 @@ Deno.serve(async (req) => {
         favs,
         layout,
         userId: desk?.user_id ?? null,
+        readKeys,
+        carried,
+        carriedMissouri,
       },
       bag,
     );

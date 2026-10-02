@@ -95,42 +95,76 @@ export function instantDay(iso: string): string | null {
   return d.toLocaleDateString("en-CA", { timeZone: TZ });
 }
 
+/** How far back an edition reaches. Older than this only returns if it was never read. */
+export const EDITION_HOURS = 18;
+
+export function isDeskPress(pressId: string): boolean {
+  return pressId.endsWith("-midday") || pressId.endsWith("-evening");
+}
+
+/** The press before this one. Morning carries the previous evening. */
+export function previousPressId(pressId: string): string | null {
+  const match = /^(\d{4}-\d{2}-\d{2})-(morning|midday|evening)$/.exec(pressId);
+  if (!match) return null;
+  const day = match[1]!;
+  const slot = match[2];
+  if (slot === "midday") return `${day}-morning`;
+  if (slot === "evening") return `${day}-midday`;
+  return `${shiftDay(day, -1)}-evening`;
+}
+
+/** Wall-clock press time in Central, as a real instant. A bare day is the 6 a.m. press. */
+export function pressInstant(pressId: string): Date | null {
+  const match = /^(\d{4}-\d{2}-\d{2})(?:-(morning|midday|evening))?$/.exec(pressId);
+  if (!match) return null;
+  const day = match[1]!;
+  const slot = match[2] ?? "morning";
+  const hour = slot === "midday" ? 12 : slot === "evening" ? 17 : 6;
+  const [y, m, d] = day.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  for (const offset of [5, 6, 4]) {
+    const dt = new Date(Date.UTC(y, m - 1, d, hour + offset, 0, 0));
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(dt);
+    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+    const gotDay = `${get("year")}-${get("month")}-${get("day")}`;
+    if (gotDay === day && Number(get("hour")) % 24 === hour) return dt;
+  }
+  return null;
+}
+
 /**
- * Whether a timestamp belongs in this edition. That is the dateline itself or
- * the night before it. Saturday's football is not Wednesday's news.
+ * A story belongs in this edition when it was published in the 18 hours
+ * before the press. A bare dateline is the 6 a.m. press of that day.
+ */
+export function withinEditionHours(iso: string | null | undefined, pressId: string): boolean {
+  const end = pressInstant(pressId);
+  if (!end || !iso) return false;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  const endMs = end.getTime();
+  return t <= endMs && t >= endMs - EDITION_HOURS * 3_600_000;
+}
+
+/**
+ * Whether a timestamp belongs in this edition: the 18 hours before its press.
  */
 export function editionCovers(iso: string | null | undefined, edition = editionDay()): boolean {
-  if (!iso) return false;
-  const day = instantDay(iso);
-  if (!day) return false;
-  return day === edition || day === editionNewsDay(edition);
-}
-
-function centralHourOf(iso: string): { day: string; hour: number } | null {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const day = d.toLocaleDateString("en-CA", { timeZone: TZ });
-  const hh = d.toLocaleString("en-US", {
-    timeZone: TZ,
-    hour: "2-digit",
-    hour12: false,
-  });
-  return { day, hour: Number(hh) % 24 };
+  return withinEditionHours(iso, edition);
 }
 
 /**
- * A final belongs only in the edition that covers the night it was played:
- * filed after 5 PM Central on the news day, through 10 AM Central on the
- * dateline. A Monday afternoon rewrite of Sunday stays in Monday's paper.
+ * Results use the same 18-hour press window as every other story.
+ * Kept so older call sites still compile.
  */
 export function editionCoversResult(iso: string | null | undefined, edition = editionDay()): boolean {
-  if (!iso) return false;
-  const clock = centralHourOf(iso);
-  if (!clock) return false;
-  const news = editionNewsDay(edition);
-  if (clock.day === news && clock.hour >= 17) return true;
-  if (clock.day === edition && clock.hour < 10) return true;
-  return false;
+  return withinEditionHours(iso, edition);
 }
 
 /**
@@ -164,6 +198,97 @@ export function isResultCopy(input: {
     /\brecaps?\b/.test(hay) ||
     /\b\d{1,3}\s*[-–]\s*\d{1,3}\s+(?:win|loss|victory|defeat)\b/.test(hay)
   );
+}
+
+export type StoryIdentity = {
+  id: string;
+  headline: string;
+  wrapHref?: string | null;
+  gameHref?: string | null;
+  gameId?: string | null;
+  when?: string | null;
+  holdover?: boolean;
+};
+
+/** Same shape `rss_reads` stores, so a story seen in the paper matches a story seen in Dispatch. */
+export function canonicalReadUrl(url: string): string {
+  const raw = url.trim();
+  if (!raw) return raw;
+  try {
+    const u = new URL(raw);
+    if (u.protocol === "http:" || u.protocol === "https:") {
+      u.hash = "";
+      if (u.pathname.length > 1 && u.pathname.endsWith("/")) u.pathname = u.pathname.slice(0, -1);
+      return u.toString();
+    }
+  } catch {
+    /* keys that are not URLs */
+  }
+  return raw;
+}
+
+/** Every key a later edition can use to recognize this story. */
+export function storyReadKeys(card: StoryIdentity): string[] {
+  const keys: string[] = [`tt:id:${card.id}`];
+  if (card.gameId) keys.push(`tt:game:${card.gameId}`);
+  const url = card.wrapHref || (card.gameHref?.startsWith("http") ? card.gameHref : null);
+  if (url) keys.push(canonicalReadUrl(url));
+  const head = card.headline
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .slice(0, 72);
+  if (head) keys.push(`tt:head:${head}`);
+  return [...new Set(keys)];
+}
+
+export function storyWasRead(card: StoryIdentity, readKeys: ReadonlySet<string>): boolean {
+  return storyReadKeys(card).some((key) => readKeys.has(key));
+}
+
+/**
+ * Fresh copy from the last 18 hours, plus unread stories carried from the
+ * previous edition. Anything already seen on screen stays out.
+ */
+export function fileEditionStories<T extends StoryIdentity>(opts: {
+  fresh: T[];
+  carried: T[];
+  readKeys: ReadonlySet<string>;
+  pressId: string;
+}): T[] {
+  const fresh = opts.fresh.filter(
+    (card) => withinEditionHours(card.when, opts.pressId) && !storyWasRead(card, opts.readKeys),
+  );
+  const seen = new Set(fresh.flatMap((card) => storyReadKeys(card)));
+  const carried = opts.carried
+    .filter((card) => !storyWasRead(card, opts.readKeys) && !storyReadKeys(card).some((key) => seen.has(key)))
+    .map((card) => ({ ...card, holdover: true }));
+  return [...fresh, ...carried];
+}
+
+/** A dated wire item must fall in the press window. The day's list has no clock and stays. */
+export function missouriItemInEdition(when: string | null | undefined, pressId: string): boolean {
+  if (!when) return true;
+  return withinEditionHours(when, pressId);
+}
+
+/** Drop Missouri items already seen. Unread items from the previous edition stay. */
+export function fileMissouriItems<T extends { id: string; headline: string; url?: string | null }>(opts: {
+  fresh: T[];
+  carried: T[];
+  readKeys: ReadonlySet<string>;
+}): T[] {
+  const ident = (item: T): StoryIdentity => ({
+    id: item.id,
+    headline: item.headline,
+    wrapHref: item.url ?? null,
+  });
+  const fresh = opts.fresh.filter((item) => !storyWasRead(ident(item), opts.readKeys));
+  const seen = new Set(fresh.flatMap((item) => storyReadKeys(ident(item))));
+  const carried = opts.carried.filter(
+    (item) => !storyWasRead(ident(item), opts.readKeys) && !storyReadKeys(ident(item)).some((key) => seen.has(key)),
+  );
+  return [...fresh, ...carried];
 }
 
 /** @deprecated The paper now goes to press three times a day. */

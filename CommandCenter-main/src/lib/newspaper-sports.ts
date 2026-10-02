@@ -58,6 +58,35 @@ export const PD_BLUES_FEED = STL_TODAY_RSS("sports/professional/nhl/blues");
 export const PD_MIZZOU_FEED = STL_TODAY_RSS("sports/college/mizzou");
 export const ATHLETIC_BLUES_FEED = "https://rss.app/feeds/HJaMzlWvefjQfs5f.xml";
 
+/** The Athletic's own league feeds. One per sport the desk follows. */
+const ATHLETIC_FEEDS: { prefix: string; url: string }[] = [
+  { prefix: "football/nfl/", url: "https://www.nytimes.com/athletic/rss/nfl/" },
+  { prefix: "football/college-football/", url: "https://www.nytimes.com/athletic/rss/college-football/" },
+  { prefix: "baseball/mlb/", url: "https://www.nytimes.com/athletic/rss/mlb/" },
+  { prefix: "basketball/nba/", url: "https://www.nytimes.com/athletic/rss/nba/" },
+  { prefix: "basketball/mens-college-basketball/", url: "https://www.nytimes.com/athletic/rss/college-basketball/" },
+  { prefix: "hockey/nhl/", url: "https://www.nytimes.com/athletic/rss/nhl/" },
+  { prefix: "soccer/eng.1/", url: "https://www.nytimes.com/athletic/rss/premier-league/" },
+  { prefix: "soccer/", url: "https://www.nytimes.com/athletic/rss/soccer/" },
+];
+
+export function athleticFeedsForEspn(path: string): string[] {
+  return ATHLETIC_FEEDS.filter((feed) => path.startsWith(feed.prefix)).map((feed) => feed.url);
+}
+
+/** League path an Athletic feed files into, when a followed club plays that sport. */
+export function athleticLeaguePath(feedUrl: string, favs: { espnPath: string }[]): string | null {
+  const slug = feedUrl.match(/athletic\/rss\/([^/]+)/)?.[1];
+  const prefix = ATHLETIC_FEEDS.find((feed) => feed.url.includes(`/rss/${slug}/`))?.prefix;
+  if (!prefix) return null;
+  const fav = favs.find((f) => f.espnPath.startsWith(prefix));
+  if (!fav) return null;
+  const parts = fav.espnPath.split("/");
+  // soccer/eng.1/team/id → soccer/eng.1. Other sports are league/sport.
+  if (prefix === "soccer/") return parts.slice(0, 2).join("/");
+  return parts.slice(0, 2).join("/");
+}
+
 /** Real club RSS plus synthetic game-wrap boards for the Times desk. */
 export function wrapFeedsForFavorites(favs: SportsFavorite[]): string[] {
   const urls = new Set<string>();
@@ -93,6 +122,7 @@ export function wrapFeedsForFavorites(favs: SportsFavorite[]): string[] {
       urls.add("synthetic:soccer-clubs-wraps");
       if (/eng\.1/.test(p)) urls.add("synthetic:epl-wraps");
     }
+    for (const athletic of athleticFeedsForEspn(p)) urls.add(athletic);
   }
   return [...urls];
 }
@@ -149,6 +179,8 @@ function feedAllowsFavorite(feedUrl: string, fav: SportsFavorite): boolean {
     return fav.key === "cfb-mizzou" || fav.key === "cbb-mizzou";
   }
   if (feedUrl === PD_BLUES_FEED || feedUrl === ATHLETIC_BLUES_FEED) return fav.key === "nhl-stl";
+  const athletic = ATHLETIC_FEEDS.find((feed) => feed.url === feedUrl);
+  if (athletic) return fav.espnPath.startsWith(athletic.prefix);
   if (feedUrl.includes("cardinals-wraps")) return fav.key === "mlb-stl";
   if (feedUrl.includes("mlb")) return path.startsWith("baseball/mlb/");
   if (feedUrl.includes("nfl")) return path.startsWith("football/nfl/");
@@ -398,6 +430,8 @@ export type GameWrapCard = {
   followed?: boolean;
   status?: string | null;
   boxScore?: { label: string; away: string; home: string }[];
+  /** Unread in the previous edition, so it may run again past the 18-hour window. */
+  holdover?: boolean;
 };
 
 export function buildTeamInfoboxes(
@@ -512,6 +546,8 @@ export function buildGameWrapCards(opts: {
   details: { fav: SportsFavorite; detail: TeamDetail }[];
   recapGames: YesterdayRecapGame[];
   wraps: MatchedWrap[];
+  /** Calendar day the recap board covers, stamped so the 18-hour gate can see it. */
+  recapDate?: string | null;
 }): GameWrapCard[] {
   const { favs, details, recapGames, wraps } = opts;
   const favBy = new Map(favs.map((f) => [f.key, f]));
@@ -563,7 +599,7 @@ export function buildGameWrapCards(opts: {
       dek: wrap?.item.snippet || g.detail,
       body: null,
       scoreLine,
-      when: null,
+      when: opts.recapDate ? `${opts.recapDate}T23:00:00Z` : null,
       won: favWon,
       gameHref: internalHref,
       wrapHref: wrap?.item.link ?? null,
@@ -650,6 +686,73 @@ function feedPhoto(src: string | null | undefined): string | null {
   if (!src || !/^https?:\/\//i.test(src)) return null;
   if (/team-?logos?|\/logos?\/|teamlogos|\.svg(\?|$)|placeholder|default-?image/i.test(src)) return null;
   return src;
+}
+
+/** A league story from The Athletic that did not name a followed club. */
+export function cardFromAthletic(
+  item: RssFeedItem,
+  feedUrl: string,
+  leaguePath: string,
+): GameWrapCard | null {
+  const headline = item.title?.trim();
+  const link = item.link?.trim();
+  if (!headline || !link) return null;
+  const slug = leaguePath.split("/").pop() ?? "League";
+  const sportLabel = slug.replace(/[._-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return {
+    id: `athletic-${item.id || link}`,
+    favoriteKey: "",
+    teamName: sportLabel,
+    teamHref: link,
+    sportLabel,
+    leaguePath,
+    headline,
+    dek: item.snippet?.trim() || null,
+    body: item.snippet?.trim() || null,
+    scoreLine: null,
+    when: item.publishedAt,
+    won: null,
+    gameHref: link,
+    wrapHref: link,
+    feedUrl,
+    gameId: null,
+    stats: [],
+    leaders: [],
+    teamStats: [],
+    division: [],
+    photo: feedPhoto(item.image),
+    caption: "The Athletic",
+    followed: false,
+  };
+}
+
+/** Club matches stay wraps. Athletic items that name no club still file in that sport. */
+export function collectWrapFeeds(
+  feeds: { url: string; items: RssFeedItem[] }[],
+  favs: SportsFavorite[],
+): { wraps: MatchedWrap[]; athletic: GameWrapCard[] } {
+  const wraps: MatchedWrap[] = [];
+  const athletic: GameWrapCard[] = [];
+  const seen = new Set<string>();
+  for (const feed of feeds) {
+    for (const item of (feed.items ?? []).slice(0, 24)) {
+      const key = item.link || item.id;
+      if (!key || seen.has(key)) continue;
+      const hit = matchWrapToFavorites(item, feed.url, favs);
+      if (hit) {
+        seen.add(key);
+        wraps.push(hit);
+        continue;
+      }
+      const league = athleticLeaguePath(feed.url, favs);
+      if (!league) continue;
+      const card = cardFromAthletic(item, feed.url, league);
+      if (!card) continue;
+      seen.add(key);
+      athletic.push(card);
+    }
+  }
+  return { wraps, athletic };
 }
 
 /** ESPN event id behind a card, used to dedupe wire stories against team wraps. */

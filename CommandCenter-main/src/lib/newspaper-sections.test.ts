@@ -8,6 +8,7 @@ import {
   editionCoversResult,
   editionDay,
   favoriteDeskWeight,
+  fileEditionStories,
   isResultCopy,
   msUntilNextPress,
   pressEdition,
@@ -74,11 +75,15 @@ const edition = "2026-09-30";
 
 assert(!editionCovers("2026-09-27T20:00:00Z", edition), "Sunday afternoon is not Wednesday's news");
 assert(!editionCovers("2026-09-28T00:30:00Z", edition), "Sunday night football is a previous paper");
+assert(!editionCovers("2026-09-29T16:00:00Z", edition), "late morning the day before is outside 18 hours");
+assert(editionCovers("2026-09-29T17:30:00Z", edition), "afternoon the day before is inside the morning press");
 assert(editionCovers("2026-09-29T23:30:00Z", edition), "Tuesday night belongs in Wednesday's edition");
+assert(editionCovers("2026-09-30T10:30:00Z", edition), "the hour before the morning press still belongs");
+assert(!editionCovers("2026-09-30T12:00:00Z", edition), "after the morning press is the next edition");
 assert(!editionCovers("Sun, Sep 27", edition), "a display string is not a dateline");
 assert(
-  !editionCoversResult("2026-09-28T21:16:48Z", "2026-09-29"),
-  "a Monday afternoon rewrite of Sunday is not Tuesday's result",
+  editionCoversResult("2026-09-28T21:16:48Z", "2026-09-29"),
+  "a Monday afternoon story is inside Tuesday morning's 18 hours",
 );
 assert(
   editionCoversResult("2026-09-29T03:30:00Z", "2026-09-29"),
@@ -138,7 +143,7 @@ const cardinals = card({
   teamName: "Cardinals",
   sportLabel: "MLB",
   leaguePath: "baseball/mlb",
-  when: "2026-09-30T15:00:00Z",
+  when: "2026-09-30T10:00:00Z",
   body: "St. Louis spent the offseason meeting on a corner bat. ".repeat(3),
 });
 
@@ -250,14 +255,14 @@ const leagueWire = card({
   teamName: "League",
   sportLabel: "NFL",
   leaguePath: "football/nfl",
-  when: "2026-09-30T14:00:00Z",
+  when: "2026-09-30T09:00:00Z",
   body: "Around the league, clubs shuffled the practice report and the waiver wire. ".repeat(8),
 });
 const leagueShort = card({
   id: "league-wire-2",
   headline: "Bills sign a punter",
   teamName: "Bills",
-  when: "2026-09-30T13:00:00Z",
+  when: "2026-09-30T08:30:00Z",
   body: "Buffalo added depth.",
 });
 const arsenalNews = card({
@@ -268,7 +273,7 @@ const arsenalNews = card({
   teamName: "Arsenal",
   sportLabel: "EPL",
   leaguePath: "soccer/eng.1",
-  when: "2026-09-30T12:00:00Z",
+  when: "2026-09-30T08:00:00Z",
   body: "The Arsenal manager spoke for twenty minutes. ".repeat(12),
 });
 const arsenalLeague = card({
@@ -277,7 +282,7 @@ const arsenalLeague = card({
   teamName: "League",
   sportLabel: "EPL",
   leaguePath: "soccer/eng.1",
-  when: "2026-09-30T12:00:00Z",
+  when: "2026-09-30T08:00:00Z",
 });
 assert(isDeskStory(leagueWire), "league wire is desk copy for sport sections");
 const withLeague = buildEdition({
@@ -352,8 +357,8 @@ if (tuesdayFront?.kind === "favorites-front") {
 const tuesdayA = tuesdayPaper.pages[0];
 assert(
   tuesdayA?.kind === "favorites-front" &&
-    tuesdayA.news.every((story) => story.id !== "news-lions-sunday"),
-  "Sunday's rewrite does not lead Tuesday's favorites front",
+    tuesdayA.news.some((story) => story.id === "news-lions-sunday"),
+  "Monday afternoon's Lions story is still inside Tuesday morning's 18 hours",
 );
 
 // Same-day club notes: Lions copy outranks Chiefs on the favorites desk.
@@ -363,7 +368,7 @@ const lionsNote = card({
   favoriteKey: "nfl-det",
   followed: true,
   teamName: "Lions",
-  when: "2026-09-30T16:00:00Z",
+  when: "2026-09-30T10:30:00Z",
   body: "Detroit signed the receiver and will see if he sticks on game day. ".repeat(2),
 });
 const chiefsNote = card({
@@ -372,7 +377,7 @@ const chiefsNote = card({
   favoriteKey: "nfl-kc",
   followed: true,
   teamName: "Chiefs",
-  when: "2026-09-30T16:05:00Z",
+  when: "2026-09-30T10:15:00Z",
   body: "Kansas City listed two starters as limited for Wednesday. ".repeat(2),
 });
 const lionsClub: ClubDesk = {
@@ -406,7 +411,7 @@ const longLead = card({
   teamName: "Cardinals",
   sportLabel: "MLB",
   leaguePath: "baseball/mlb",
-  when: "2026-09-30T17:00:00Z",
+  when: "2026-09-30T10:45:00Z",
   body: "St. Louis spent the afternoon in meetings that stretched past dusk. ".repeat(40),
 });
 const withJump = buildEdition({
@@ -525,14 +530,14 @@ const bluesPreview = card({
   favoriteKey: "nhl-stl",
   headline: "Stars host the Blues to start 2026 season",
   body: "St. Louis Blues (0-0-0) at Dallas Stars (0-0-0). BOTTOM LINE: The Stars open the season at home. ".repeat(6),
-  when: "2026-09-29T12:00:00Z",
+  when: "2026-09-29T20:00:00Z",
 });
 const cardsColumn = card({
   id: "news-cards-column",
   favoriteKey: "mlb-stl",
   headline: "Hochman: Gorman, Baez and Bohm and the Cardinals' infield",
   body: "The Cardinals have choices to make at third base this winter. ".repeat(12),
-  when: "2026-09-29T12:00:00Z",
+  when: "2026-09-29T20:00:00Z",
 });
 assert(isPreviewStory(bluesPreview) && !isPreviewStory(cardsColumn), "a wire preview is a preview; a column is not");
 const previewFront = buildEdition({ stories: [bluesPreview, cardsColumn], clubs: [], edition }).pages.find(
@@ -551,5 +556,47 @@ assert(at("2026-10-01T17:30:00Z").id === "2026-10-01-midday" && at("2026-10-01T1
 assert(at("2026-10-01T22:30:00Z").id === "2026-10-01-evening" && at("2026-10-01T22:30:00Z").next === "6 a.m.", "5 p.m. is the evening edition");
 const untilNoon = msUntilNextPress(new Date("2026-10-01T11:30:00Z"));
 assert(untilNoon > 5 * 3_600_000 && untilNoon < 6 * 3_600_000, "the morning paper holds until noon");
+
+const evening = "2026-09-30-evening";
+const eveningPaper = buildEdition({
+  stories: [
+    card({
+      id: "league-evening",
+      headline: "Around the league on Wednesday afternoon",
+      leaguePath: "football/nfl",
+      when: "2026-09-30T18:00:00Z",
+      body: "Clubs shuffled the report. ".repeat(8),
+    }),
+  ],
+  clubs: [chiefs],
+  edition: evening,
+  missouri: { scout: null, items: [moItem(1)], listen: [] },
+});
+assert(eveningPaper.pages[0]?.kind === "missouri", "noon and evening open on Missouri");
+const eveningNfl = eveningPaper.pages.find((page) => page.folio === "NFL1");
+assert(eveningNfl?.kind === "sport-front" && eveningNfl.focus === "teams", "afternoon sports open on the table");
+assert(
+  !eveningPaper.pages.some((page) => page.kind === "sport-inside"),
+  "afternoon sports stay on stats and graphics",
+);
+
+const filed = fileEditionStories({
+  fresh: [
+    card({ id: "fresh", headline: "Just filed", when: "2026-09-30T04:00:00Z", wrapHref: "https://example.com/fresh" }),
+    card({ id: "seen", headline: "Already on screen", when: "2026-09-30T04:00:00Z", wrapHref: "https://example.com/seen" }),
+    card({ id: "old-fresh", headline: "Last week", when: "2026-09-20T04:00:00Z", wrapHref: "https://example.com/old" }),
+  ],
+  carried: [
+    card({ id: "kept", headline: "Unread from noon", when: "2026-09-20T04:00:00Z", wrapHref: "https://example.com/kept" }),
+    card({ id: "read-carry", headline: "Read at noon", when: "2026-09-30T04:00:00Z", wrapHref: "https://example.com/read-carry" }),
+  ],
+  readKeys: new Set(["https://example.com/seen", "https://example.com/read-carry"]),
+  pressId: edition,
+});
+assert(filed.some((story) => story.id === "fresh"), "a story inside 18 hours is filed");
+assert(!filed.some((story) => story.id === "seen"), "a story already on screen stays out");
+assert(!filed.some((story) => story.id === "old-fresh"), "last week does not file as fresh");
+assert(filed.some((story) => story.id === "kept" && story.holdover), "an unread story carries into the next edition");
+assert(!filed.some((story) => story.id === "read-carry"), "a read story does not carry");
 
 console.log("newspaper-sections ok");

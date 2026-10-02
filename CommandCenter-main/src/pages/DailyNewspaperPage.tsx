@@ -23,11 +23,16 @@ import {
   editionDateline,
   editionIssue,
   editionNewsDay,
+  fileEditionStories,
+  fileMissouriItems,
+  missouriItemInEdition,
   msUntilNextPress,
   pressEdition,
+  previousPressId,
   instantDay,
   romanNumeral,
   splitStoryCopy,
+  storyReadKeys,
 } from "@/lib/newspaper";
 import { fetchLeagueArticles, fetchTeamArticles } from "@/lib/newspaper-news";
 import {
@@ -90,12 +95,13 @@ import { readRemoteIssue, writeDesk, writeRemoteIssue } from "@/lib/newspaper-is
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
+  collectWrapFeeds,
   enrichWrapBodies,
   leaguePathFromEspn,
-  matchWrapToFavorites,
   playerHref,
   wrapFeedsForFavorites,
   type GameWrapCard,
+  type MatchedWrap,
   type TeamInfobox,
 } from "@/lib/newspaper-sports";
 import {
@@ -118,7 +124,7 @@ import {
   type WireGame,
 } from "@/lib/newspaper-wire";
 import { fetchMlbPeopleByIds, fetchMlbPlayoffTree, type MlbPlayoffTree } from "@/lib/mlb";
-import { fetchRssArticle, fetchRssFeed, type RssArticle } from "@/lib/rss";
+import { fetchRssArticle, fetchRssFeed, fetchRssReads, markRssReadMany, type RssArticle } from "@/lib/rss";
 import {
   fetchTeamDetail,
   fetchTeamSnapshot,
@@ -883,6 +889,8 @@ function Story({
         className,
       )}
       style={tint(teamColor(team))}
+      data-tt-keys={storyReadKeys(card).join("|")}
+      data-tt-title={card.headline}
     >
       {artNode ? <div className="wsj-story-art">{artNode}</div> : null}
       <div className="wsj-story-copy">
@@ -930,6 +938,8 @@ function Brief({
     <article
       className={cn("wsj-brief", featured && "featured", (card.photo || crest) && "has-art")}
       style={tint(color)}
+      data-tt-keys={storyReadKeys(card).join("|")}
+      data-tt-title={card.headline}
     >
       {card.photo ? (
         <img className="wsj-brief-photo" src={card.photo} alt="" loading="lazy" />
@@ -2290,7 +2300,15 @@ function ScoresDesk({ page, board, active }: { page: SportFrontPage; board: Sect
       : "Results";
   return (
     <div className="tt-scores">
-      <article className={cn("tt-feature", !photo && "graphic")}>
+      <article
+        className={cn("tt-feature", !photo && "graphic")}
+        {...(card
+          ? {
+              "data-tt-keys": storyReadKeys(card).join("|"),
+              "data-tt-title": card.headline,
+            }
+          : {})}
+      >
         {photo ? (
           <figure className="tt-feature-photo">
             <img src={photo} alt="" loading="lazy" />
@@ -2948,7 +2966,11 @@ function MoStory({ item, size }: { item: MoItem; size: "xl" | "md" | "sm" }) {
   const open = useReader();
   const card = moCard(item);
   return (
-    <article className={cn("tt-mo-story", size, item.photo && size !== "sm" && "has-photo")}>
+    <article
+      className={cn("tt-mo-story", size, item.photo && size !== "sm" && "has-photo")}
+      data-tt-keys={storyReadKeys({ id: item.id, headline: item.headline, wrapHref: item.url }).join("|")}
+      data-tt-title={item.headline}
+    >
       {item.photo && size !== "sm" ? (
         <button type="button" className="tt-mo-photo" onClick={() => open({ card })} aria-label={item.headline}>
           <img src={item.photo} alt="" loading="lazy" />
@@ -3058,7 +3080,11 @@ function ScoutBand({ item, onTurn, hasDesk }: { item: MoItem; onTurn: (folio: st
   const card = moCard(item);
   const dek = item.dek ? cleanDek(item.dek.length > 420 ? item.dek.slice(0, 420) : item.dek) : null;
   return (
-    <section className={cn("tt-scout", item.photo && "has-photo")}>
+    <section
+      className={cn("tt-scout", item.photo && "has-photo")}
+      data-tt-keys={storyReadKeys({ id: item.id, headline: item.headline, wrapHref: item.url }).join("|")}
+      data-tt-title={item.headline}
+    >
       <div className="tt-scout-flag">
         <span>From the</span>
         <strong>Missouri Scout</strong>
@@ -3393,19 +3419,7 @@ function NewspaperDesk() {
           }
         }),
       );
-      const matched = [];
-      const seen = new Set<string>();
-      for (const feed of feeds) {
-        for (const item of feed.items.slice(0, 24)) {
-          const hit = matchWrapToFavorites(item, feed.url, teamFavs);
-          if (!hit) continue;
-          const key = hit.item.link || hit.item.id;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          matched.push(hit);
-        }
-      }
-      return matched;
+      return collectWrapFeeds(feeds, teamFavs);
     },
     enabled: pressing && wrapFeedUrls.length > 0,
     staleTime: Infinity,
@@ -3419,15 +3433,20 @@ function NewspaperDesk() {
     [teamFavs, teamSnaps.data, teamDetailsQ.data],
   );
 
+  const wrapPack = wrapsQ.data as { wraps: MatchedWrap[]; athletic: GameWrapCard[] } | MatchedWrap[] | undefined;
+  const wrapHits = Array.isArray(wrapPack) ? wrapPack : wrapPack?.wraps;
+  const athleticCards = Array.isArray(wrapPack) ? undefined : wrapPack?.athletic;
+
   const teamCards = useMemo(
     () =>
       buildGameWrapCards({
         favs: teamFavs,
         details: teamDetailsQ.data ?? [],
         recapGames: recap.data?.games ?? [],
-        wraps: wrapsQ.data ?? [],
+        wraps: wrapHits ?? [],
+        recapDate: recap.data?.date,
       }),
-    [teamFavs, teamDetailsQ.data, recap.data, wrapsQ.data],
+    [teamFavs, teamDetailsQ.data, recap.data, wrapHits],
   );
 
   const enrichedQ = useQuery({
@@ -3447,7 +3466,7 @@ function NewspaperDesk() {
 
   const newsQ = useQuery({
     queryKey: [pressId, "tt-news", day, favKeys],
-    queryFn: () => fetchTeamArticles(teamFavs, day),
+    queryFn: () => fetchTeamArticles(teamFavs, pressId),
     enabled: pressing && teamFavs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
@@ -3516,7 +3535,7 @@ function NewspaperDesk() {
 
   const leagueNewsQ = useQuery({
     queryKey: [pressId, "tt-league-news", day, sportPaths.join("|")],
-    queryFn: () => fetchLeagueArticles(sportPaths, day),
+    queryFn: () => fetchLeagueArticles(sportPaths, pressId),
     enabled: pressing && sportPaths.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
@@ -3534,9 +3553,29 @@ function NewspaperDesk() {
         teamCards,
         news: newsQ.data,
         leagueNews: leagueNewsQ.data,
+        athletic: athleticCards,
       }),
-    [wireQ.data, teamFavs, teamDetailsQ.data, enrichedQ.data, teamCards, newsQ.data, leagueNewsQ.data],
+    [wireQ.data, teamFavs, teamDetailsQ.data, enrichedQ.data, teamCards, newsQ.data, leagueNewsQ.data, athleticCards],
   );
+
+  const prevPress = previousPressId(pressId);
+  const carriedIssueQ = useQuery({
+    queryKey: ["tt-prev-issue", prevPress],
+    queryFn: () => readRemoteIssue(prevPress!),
+    enabled: pressing && Boolean(prevPress),
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const readsQ = useQuery({
+    queryKey: ["rss-reads", user?.id ?? "anon"],
+    queryFn: () => fetchRssReads(),
+    enabled: pressing && Boolean(user?.id),
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
 
   // Club feeds send a headline and a link. Dispatch's extractor sets the story
   // (and its photo) so Section A prints copy instead of a crest.
@@ -3572,8 +3611,14 @@ function NewspaperDesk() {
   });
 
   const filedStories = useMemo(
-    () => fileExtracts(rawStories, extractsQ.data),
-    [rawStories, extractsQ.data],
+    () =>
+      fileEditionStories({
+        fresh: fileExtracts(rawStories, extractsQ.data),
+        carried: (carriedIssueQ.data?.stories ?? []) as GameWrapCard[],
+        readKeys: new Set(readsQ.data ?? []),
+        pressId,
+      }),
+    [rawStories, extractsQ.data, carriedIssueQ.data, readsQ.data, pressId],
   );
 
   // One commit per press. A filed edition is already committed, so this only runs
@@ -3588,7 +3633,9 @@ function NewspaperDesk() {
     queryIdle(recap, true) &&
     queryIdle(enrichedQ, teamCards.length > 0) &&
     queryIdle(leagueNewsQ, sportPaths.length > 0) &&
-    queryIdle(extractsQ, extractUrls.length > 0);
+    queryIdle(extractsQ, extractUrls.length > 0) &&
+    queryIdle(carriedIssueQ, Boolean(prevPress)) &&
+    queryIdle(readsQ, Boolean(user?.id));
   useEffect(() => {
     if (!copyReady) return;
     setLockedCopy((prev) => (prev?.id === pressId ? prev : { id: pressId, stories: filedStories }));
@@ -3716,10 +3763,10 @@ function NewspaperDesk() {
           g.live &&
           !g.preseason &&
           g.favoriteKeys.length > 0 &&
-          editionCovers(g.startedAt, day),
+          editionCovers(g.startedAt, pressId),
       )
       .slice(0, 6);
-  }, [wireQ.data, day]);
+  }, [wireQ.data, pressId]);
 
   const favPlayersQ = useQuery({
     queryKey: [pressId, "tt-fav-players", user?.id],
@@ -3835,7 +3882,26 @@ function NewspaperDesk() {
     enabled: pressing,
     queryFn: async () => {
       const desk = await fetchMissouriDesk(day);
-      return { ...desk, items: await enrichMissouriItems(desk.items, 7) };
+      const enriched = await enrichMissouriItems(desk.items, 7);
+      const prevId = previousPressId(pressId);
+      const [reads, prev] = await Promise.all([
+        user?.id ? fetchRssReads().catch(() => [] as string[]) : Promise.resolve([] as string[]),
+        prevId ? readRemoteIssue(prevId).catch(() => null) : Promise.resolve(null),
+      ]);
+      const carried = (prev?.queries ?? []).flatMap((query) => {
+        const key = query.key;
+        const data = query.data as { items?: MoItem[] } | null;
+        if (Array.isArray(key) && key[1] === "tt-missouri" && Array.isArray(data?.items)) return data.items;
+        return [];
+      });
+      return {
+        ...desk,
+        items: fileMissouriItems({
+          fresh: enriched.filter((item) => missouriItemInEdition(item.when, pressId)),
+          carried,
+          readKeys: new Set(reads),
+        }),
+      };
     },
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
@@ -4054,8 +4120,8 @@ function NewspaperDesk() {
   ]);
 
   const edition = useMemo(
-    () => buildEdition({ stories, clubs, edition: day, playerPaths, missouri: missouriQ.data ?? null, offseason }),
-    [stories, clubs, day, playerPaths, missouriQ.data, offseason],
+    () => buildEdition({ stories, clubs, edition: pressId, playerPaths, missouri: missouriQ.data ?? null, offseason }),
+    [stories, clubs, pressId, playerPaths, missouriQ.data, offseason],
   );
   const comingUp = useMemo<ComingUp[]>(
     () =>
@@ -4186,7 +4252,7 @@ function NewspaperDesk() {
       pages.map((page, index) => (
           <section key={page.folio} className="wsj-page" aria-label={`Page ${page.folio}`}>
             <div className="wsj-sheet">
-            {page.kind === "favorites-front" ? (
+            {index === 0 ? (
               <Masthead
                 day={day}
                 page={page}
@@ -4316,6 +4382,56 @@ function NewspaperDesk() {
     const el = pagerRef.current;
     if (el) markNearPages(el, pageIndex);
   }, [pageIndex, sheets]);
+
+  // A story that sat on the sheet counts as read. The next press leaves it out.
+  useEffect(() => {
+    const root = pagerRef.current;
+    if (!root || !user?.id) return;
+    const sheet = root.children[pageIndex] as HTMLElement | undefined;
+    if (!sheet) return;
+    const pending = new Map<Element, number>();
+    const marked = new Set<string>();
+    const flush = (el: Element) => {
+      const title = el.getAttribute("data-tt-title") ?? "";
+      const keys = (el.getAttribute("data-tt-keys") ?? "")
+        .split("|")
+        .map((key) => key.trim())
+        .filter((key) => key && !marked.has(key));
+      if (!keys.length) return;
+      for (const key of keys) marked.add(key);
+      void markRssReadMany(
+        keys.map((articleUrl) => ({ articleUrl, articleTitle: title, feedUrl: "thompson-times" })),
+      ).catch(() => {});
+    };
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const el = entry.target;
+        const onScreen =
+          entry.isIntersecting &&
+          (entry.intersectionRatio >= 0.6 ||
+            entry.intersectionRect.height >= Math.min(window.innerHeight * 0.5, entry.boundingClientRect.height));
+        const timer = pending.get(el);
+        if (!onScreen) {
+          if (timer) window.clearTimeout(timer);
+          pending.delete(el);
+          continue;
+        }
+        if (timer) continue;
+        pending.set(
+          el,
+          window.setTimeout(() => {
+            pending.delete(el);
+            flush(el);
+          }, 1000),
+        );
+      }
+    }, { threshold: [0, 0.6, 1] });
+    for (const node of sheet.querySelectorAll<HTMLElement>("[data-tt-keys]")) observer.observe(node);
+    return () => {
+      observer.disconnect();
+      for (const timer of pending.values()) window.clearTimeout(timer);
+    };
+  }, [pageIndex, sheets, user?.id]);
 
   useEffect(() => {
     const el = pagerRef.current;

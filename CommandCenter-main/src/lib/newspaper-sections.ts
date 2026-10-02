@@ -9,14 +9,14 @@
  */
 
 import {
-  editionCovers,
-  editionCoversResult,
   editionNewsDay,
   favoriteDeskWeight,
   instantDay,
+  isDeskPress,
   isNewsMuted,
   isResultCopy,
   splitStoryCopy,
+  withinEditionHours,
 } from "./newspaper.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import type { MissouriDesk, MoItem } from "./newspaper-missouri";
@@ -348,11 +348,10 @@ function chunkClubs(clubs: ClubDesk[], size: number): ClubDesk[][] {
   return out;
 }
 
-/** Dateline or the night before it. Last week is a previous paper. */
+/** Last 18 hours before the press. A holdover was unread in the previous edition. */
 function inEditionWindow(card: GameWrapCard, edition: string): boolean {
-  return isRecapStory(card)
-    ? editionCoversResult(card.when, edition)
-    : editionCovers(card.when, edition);
+  if (card.holdover) return true;
+  return withinEditionHours(card.when, edition);
 }
 
 /** Collapse near-duplicate wires (same game / same head stem). */
@@ -379,7 +378,7 @@ function isStalePreview(card: GameWrapCard, edition: string): boolean {
   if (!/\bpreview\b|\bbreak skid\b|\blook to\b|\binto game\b|\bprobable\b/i.test(hay)) {
     return false;
   }
-  return !editionCovers(card.when, edition);
+  return !withinEditionHours(card.when, edition);
 }
 
 function favoritePages(
@@ -576,12 +575,16 @@ function sportPages(
   const sportFolioByStory: Record<string, string> = {};
   const unique = dedupeStories(stories.filter((card) => !isStalePreview(card, edition)));
   const isMlb = id.path === "baseball/mlb";
+  const desk = isDeskPress(edition);
+  // Morning leads with stories. Noon and 5 p.m. open on standings, form, and the slate.
   const focuses: SportFocus[] = offseason
     ? ["news", "opener", "teams", ...(withPlayers ? (["players"] as const) : [])]
-    : ["news", "recaps", "teams", "schedule", isMlb ? "playoffs" : "form", ...(withPlayers ? (["players"] as const) : [])];
+    : desk
+      ? ["teams", isMlb ? "playoffs" : "form", "schedule", "news", ...(withPlayers ? (["players"] as const) : [])]
+      : ["news", "recaps", "teams", "schedule", isMlb ? "playoffs" : "form", ...(withPlayers ? (["players"] as const) : [])];
   const deskCount = focuses.length;
   const inside: SportInsidePage[] = [];
-  const full = unique.filter(hasStoryCopy);
+  const full = desk ? [] : unique.filter(hasStoryCopy);
   let n = deskCount + 1;
   for (let i = 0; i < full.length; i += 2) {
     const primary = full[i]!;
@@ -714,9 +717,13 @@ export function buildEdition(opts: {
   const favoriteFresh = fresh.filter(isFavoriteStory);
   const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs);
 
-  const pages: EditionPage[] = [...favorites.pages];
-  const sections: EditionSection[] = [
-    {
+  const mo = missouriPages(opts.missouri ?? null);
+  const deskPress = isDeskPress(opts.edition);
+  // Noon and evening open on the statehouse. Morning still opens on the clubs.
+  const pages: EditionPage[] = deskPress ? [...mo, ...favorites.pages] : [...favorites.pages, ...mo];
+  const sections: EditionSection[] = [];
+  if (!deskPress) {
+    sections.push({
       code: "A",
       title: "Favorite Teams",
       folio: "A1",
@@ -724,21 +731,29 @@ export function buildEdition(opts: {
       stories: favoriteFresh.length,
       upcoming: opts.clubs.reduce((n, club) => n + Math.min(1, club.upcoming.length), 0),
       pages: favorites.pages.length,
-    },
-  ];
-
-  const mo = missouriPages(opts.missouri ?? null);
+    });
+  }
   if (mo.length) {
     sections.push({
       code: "MO",
       title: "Missouri",
       folio: "MO1",
-      index: pages.length,
+      index: deskPress ? 0 : favorites.pages.length,
       stories: mo.reduce((n, p) => n + p.items.length, 0),
       upcoming: 0,
       pages: mo.length,
     });
-    pages.push(...mo);
+  }
+  if (deskPress) {
+    sections.push({
+      code: "A",
+      title: "Favorite Teams",
+      folio: favorites.pages[0]?.folio ?? "A1",
+      index: mo.length,
+      stories: favoriteFresh.length,
+      upcoming: opts.clubs.reduce((n, club) => n + Math.min(1, club.upcoming.length), 0),
+      pages: favorites.pages.length,
+    });
   }
 
   for (const part of sportPagesBuilt) {

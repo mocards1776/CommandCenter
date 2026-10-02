@@ -2,19 +2,20 @@
  * One press run. The page and the scheduled desk both set an edition through here,
  * so the paper that is waiting and the paper that prints while you read are the same.
  */
-import { isNewsMuted } from "./newspaper";
+import { fileEditionStories, fileMissouriItems, isNewsMuted, missouriItemInEdition } from "./newspaper";
 import { fetchLeagueArticles, fetchTeamArticles } from "./newspaper-news";
 import { fetchSectionBoard, fetchSectionStandings } from "./newspaper-box";
 import { fetchClubSheet } from "./newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./newspaper-missouri-fetch";
+import type { MoItem } from "./newspaper-missouri";
 import { fetchOpener, type Opener } from "./newspaper-openers";
 import { isBoilerplateDek } from "./newspaper-source";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
+  collectWrapFeeds,
   enrichWrapBodies,
   leaguePathFromEspn,
-  matchWrapToFavorites,
   mergeStoryCards,
   wireStoryCards,
   wrapFeedsForFavorites,
@@ -60,14 +61,14 @@ export function urlsToExtract(cards: GameWrapCard[]): string[] {
   return cards
     .filter(
       (card) =>
-        (card.favoriteKey || card.followed) &&
+        (card.favoriteKey || card.followed || card.caption === "The Athletic") &&
         card.wrapHref &&
         /^https?:\/\//i.test(card.wrapHref) &&
         !/espn\.com\/.+\/(?:game|recap|preview|match)\b/i.test(card.wrapHref) &&
         ((card.body?.trim().length ?? 0) < 600 || !card.photo),
     )
     .map((card) => card.wrapHref!)
-    .slice(0, 16);
+    .slice(0, 20);
 }
 
 export function fileExtracts(cards: GameWrapCard[], extracts: Record<string, RssArticle> | undefined): GameWrapCard[] {
@@ -90,6 +91,7 @@ export function gatherStories(opts: {
   teamCards: GameWrapCard[];
   news: GameWrapCard[] | undefined;
   leagueNews: GameWrapCard[] | undefined;
+  athletic?: GameWrapCard[];
 }): GameWrapCard[] {
   const wire = wireStoryCards({
     games: opts.wire?.games ?? [],
@@ -97,7 +99,8 @@ export function gatherStories(opts: {
     details: opts.details,
   });
   const clubCopy = mergeStoryCards(mergeStoryCards(wire, opts.enriched ?? opts.teamCards), opts.news ?? []);
-  return mergeStoryCards(clubCopy, opts.leagueNews ?? []).filter((card) => !isNewsMuted(card));
+  const withLeague = mergeStoryCards(clubCopy, opts.leagueNews ?? []);
+  return mergeStoryCards(withLeague, opts.athletic ?? []).filter((card) => !isNewsMuted(card));
 }
 
 async function settle<T>(task: Promise<T>, fallback: T): Promise<T> {
@@ -134,13 +137,14 @@ type PressBag = {
   news?: GameWrapCard[];
   weather?: unknown;
   scoutItem?: unknown;
-  missouri?: { items: unknown[] } | null;
+  missouri?: { scout: MoItem | null; items: MoItem[]; listen: MoItem[] } | null;
   openers?: unknown;
   org?: unknown;
   sheets?: unknown;
   paths?: string[];
   pathKey?: string;
   teamCards?: GameWrapCard[];
+  athletic?: GameWrapCard[];
   enriched?: GameWrapCard[];
   leagueNews?: GameWrapCard[];
   leagueCursor?: number;
@@ -168,6 +172,11 @@ export async function pressStep(
     favs: SportsFavorite[];
     layout: SportsLayout;
     userId?: string | null;
+    /** article_url values from rss_reads. A seen story stays out of this press. */
+    readKeys?: string[];
+    /** Stories filed in the previous edition. Unread ones may run again. */
+    carried?: GameWrapCard[];
+    carriedMissouri?: MoItem[];
   },
   bag: PressBag | null,
 ): Promise<PressStep> {
@@ -254,7 +263,7 @@ export async function pressStep(
   }
 
   if (state.stage === 5) {
-    state.wraps = await settle(
+    const packed = await settle(
       poolMap(wrapFeedUrls, 2, async (url) => {
         try {
           const feed = await fetchRssFeed(url);
@@ -262,29 +271,17 @@ export async function pressStep(
         } catch {
           return { url, items: [] as Awaited<ReturnType<typeof fetchRssFeed>>["items"] };
         }
-      }).then((feeds) => {
-        const matched = [];
-        const seen = new Set<string>();
-        for (const feed of feeds) {
-          for (const item of (feed.items ?? []).slice(0, 24)) {
-            const hit = matchWrapToFavorites(item, feed.url, favs);
-            if (!hit) continue;
-            const key = hit.item.link || hit.item.id;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            matched.push(hit);
-          }
-        }
-        return matched;
-      }),
-      [],
+      }).then((feeds) => collectWrapFeeds(feeds, favs)),
+      { wraps: [], athletic: [] as GameWrapCard[] },
     );
+    state.wraps = packed.wraps;
+    state.athletic = packed.athletic;
     state.stage = 6;
     return { done: false, bag: state };
   }
 
   if (state.stage === 6) {
-    state.news = await settle(fetchTeamArticles(favs, day), [] as GameWrapCard[]);
+    state.news = await settle(fetchTeamArticles(favs, pressId), [] as GameWrapCard[]);
     state.stage = 7;
     return { done: false, bag: state };
   }
@@ -300,10 +297,21 @@ export async function pressStep(
   }
 
   if (state.stage === 8) {
-    state.missouri = await settle(
-      fetchMissouriDesk(day).then(async (desk) => ({ ...desk, items: await enrichMissouriItems(desk.items, 7) })),
+    const readKeys = new Set(opts.readKeys ?? []);
+    const desk = await settle(
+      fetchMissouriDesk(day).then(async (fetched) => ({
+        ...fetched,
+        items: await enrichMissouriItems(fetched.items, 7),
+      })),
       null,
     );
+    const fresh = (desk?.items ?? []).filter((item) => missouriItemInEdition(item.when, pressId));
+    const items = fileMissouriItems({
+      fresh,
+      carried: opts.carriedMissouri ?? [],
+      readKeys,
+    });
+    state.missouri = items.length || desk ? { scout: desk?.scout ?? null, items, listen: desk?.listen ?? [] } : null;
     state.stage = 9;
     return { done: false, bag: state };
   }
@@ -334,7 +342,7 @@ export async function pressStep(
     const teams = buildTeamInfoboxes(favs, snaps, details);
     state.paths = sportPathsOf(teams.map((t) => t.fav));
     state.pathKey = state.paths.join("|");
-    state.teamCards = buildGameWrapCards({ favs, details, recapGames: recap.games, wraps });
+    state.teamCards = buildGameWrapCards({ favs, details, recapGames: recap.games, wraps, recapDate: recap.date });
     state.stage = 10;
     return { done: false, bag: state };
   }
@@ -351,7 +359,7 @@ export async function pressStep(
     const cursor = state.leagueCursor ?? 0;
     state.leagueNews ??= [];
     if (cursor < paths.length) {
-      const batch = await settle(fetchLeagueArticles([paths[cursor]!], day), [] as GameWrapCard[]);
+      const batch = await settle(fetchLeagueArticles([paths[cursor]!], pressId), [] as GameWrapCard[]);
       state.leagueNews = [...state.leagueNews, ...batch];
       state.leagueCursor = cursor + 1;
       return { done: false, bag: state };
@@ -432,6 +440,7 @@ export async function pressStep(
     teamCards,
     news: state.news ?? [],
     leagueNews: state.leagueNews ?? [],
+    athletic: state.athletic ?? [],
   });
   const extractUrls = urlsToExtract(raw);
   const extracts = state.extracts ?? {};
@@ -452,7 +461,12 @@ export async function pressStep(
     return { done: false, bag: state };
   }
   if (extractUrls.length) put([pressId, "tt-extracts", day, extractUrls.join("|")], extracts);
-  const stories = fileExtracts(raw, extractUrls.length ? extracts : undefined);
+  const stories = fileEditionStories({
+    fresh: fileExtracts(raw, extractUrls.length ? extracts : undefined),
+    carried: opts.carried ?? [],
+    readKeys: new Set(opts.readKeys ?? []),
+    pressId,
+  });
   return {
     done: true,
     issue: { version: ISSUE_VERSION, id: pressId, stories, queries: state.queries },
