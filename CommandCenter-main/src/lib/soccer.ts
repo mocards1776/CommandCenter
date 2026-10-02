@@ -29,6 +29,8 @@ export type SoccerScoreGame = {
   live: boolean;
   pregame: boolean;
   venue: string | null;
+  /** Kickoff as an ISO instant. */
+  startIso?: string | null;
   away: SoccerScoreSide;
   home: SoccerScoreSide;
   broadcasts: GameBroadcast[];
@@ -246,6 +248,7 @@ function parseScoreboardPayload(
       live,
       pregame,
       venue: comp.venue?.fullName ?? null,
+      startIso: event.date ?? null,
       away: sideFromCompetitor(awayRaw),
       home: sideFromCompetitor(homeRaw),
       broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),

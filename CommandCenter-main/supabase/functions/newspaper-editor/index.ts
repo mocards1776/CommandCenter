@@ -2,8 +2,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 // The Thompson Times AI editor. One call per press: the press (or a device
-// setting the paper itself) sends the top of the story budget, Grok sends back
-// the front, the order, and the spike. Layout, box scores, standings,
+// setting the paper itself) sends the top of the news budget plus the night's
+// game wraps as context; Grok sends back the front, the news order, and the
+// spike. Game wraps are never ranked or spiked here. Layout, box scores, standings,
 // schedules, weather and agate stay on the rule desk and never come here.
 //
 // Callers: newspaper-press with the service-role key, or a signed-in reader.
@@ -18,31 +19,31 @@ const CORS: Record<string, string> = {
 const MODEL = "grok-4.6";
 const XAI_BASE = "https://api.x.ai/v1";
 const MAX_CANDIDATES = 30;
+const MAX_GAMES = 20;
 
-const SYSTEM = `You are the night sports editor of the Thompson Times, a one-reader broadsheet printed three times a day (6 a.m. "morning", noon "midday", 5 p.m. "evening", Central time) for a sports fan in Marshfield, Missouri.
+const SYSTEM = `You are the sports editor of the Thompson Times, a one-reader broadsheet printed three times a day (6 a.m. "morning", noon "midday", 5 p.m. "evening", Central time; the edition id ends in its slot) for a sports fan in Marshfield, Missouri.
 
 The reader follows the St. Louis Cardinals, St. Louis Blues and Missouri Tigers hardest (desk "home"). He also follows the Lions, Chiefs and a handful of other clubs (desk "followed"). League copy (desk "league") is everything else from the leagues those clubs play in.
 
-You get the top of tonight's story budget, already deduped, each with a headline, a short dek and snippet, the club and league, status, source, flags, and where the mechanical ranker put it (ruleRank 0 = its lead). The ranker over-weights the home clubs: a routine Cardinals note will beat the biggest story in baseball. Your job is to fix that without forgetting who the paper is for.
+You get two lists.
+- NEWS: the top of the news budget (team news, league news, The Athletic), already deduped, each with a headline, a short dek and snippet, club, league, status, source, flags, and where the mechanical ranker put it (ruleRank 0 = its first). The ranker over-weights the home clubs: a routine Cardinals note will beat the biggest story in baseball. Fix that without forgetting who the paper is for.
+- GAMES: the game wraps (finals, recaps, club wraps). The desk files one for every game on its own. They are context so you can weigh the news against the results. Never order or spike a game, never ask for one, never invent one. A game may be named in front.
 
-Pick the front and order the budget:
-- lead, second, third: the three stories that open the paper. Lead is the most important sports news this reader would want first today. Usually that is a home club, but a genuinely big league story (a title clincher, a no-hitter, a firing or hiring that reshapes a league, a major trade or injury to a star, a playoff elimination) outranks a routine home-club item. Prefer three different clubs or events on the front when the news allows.
-- Real news over features: finals, results, transactions, injuries, hirings and firings beat columns, previews, odds pieces, power rankings and listicles. A preview may lead only when the game itself is the story (opening day, a decisive playoff game, a rivalry with stakes) and no result tonight is bigger.
-- Postseason beats regular season. Fresh beats holdover; a holdover (carried unread from the last edition) should rarely lead.
-- order: every candidate id you are not spiking, best first, starting with lead, second, third.
-- spike: ids that should not run at all. Spike aggregator and content-farm junk (Yardbarker, FanSided-style hot takes, "X things we learned" filler, slideshow and gambling-odds bait), "Day 2" / "relive Wednesday" packages and takeaways whose day has passed, stale previews of games already played, and near-duplicates of a better story in the budget. Do not spike real news just because it is minor; ranking it low is enough. When unsure, keep it.
+Answer:
+- front: up to three ids, in order (lead, second, third), from NEWS or GAMES, for the stories that open A1. Lead is the most important sports story this reader wants first today. In the morning that is usually last night's home-club result; at midday and evening the day's news matters more and there may be no fresh result. A genuinely big league story (a title clincher, a no-hitter, a firing or hiring that reshapes a league, a major trade or a star's injury, a playoff elimination) outranks a routine home-club item. Only front a game whose hasCopy is true. Prefer different clubs or events. Leave slots off (fewer than three ids, or none) when the desk's usual front is right.
+- Real news over features: results, transactions, injuries, hirings and firings beat columns, previews, odds pieces, power rankings and listicles. A preview may front only when the game itself is the story (opening day, a decisive playoff game) and nothing that happened is bigger. Postseason beats regular season; a holdover (carried unread from the last edition) should rarely front.
+- order: every NEWS id you are not spiking, best first.
+- spike: NEWS ids that should not run at all: aggregator and content-farm junk (Yardbarker, FanSided-style hot takes, "X things we learned" filler, slideshow and gambling-odds bait), "Day 2" / "relive Wednesday" packages and takeaways whose day has passed, stale previews of games already played, and near-duplicates of a better story. Do not spike real news just because it is minor; ranking it low is enough. When unsure, keep it.
 - rationale: one or two plain sentences on why the lead leads.
 
-Use only ids from the budget. Judge from the copy given; do not invent facts.`;
+Use only ids you were given. Judge from the copy given; do not invent facts.`;
 
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["lead", "second", "third", "order", "spike", "rationale"],
+  required: ["front", "order", "spike", "rationale"],
   properties: {
-    lead: { type: "string" },
-    second: { type: "string" },
-    third: { type: "string" },
+    front: { type: "array", items: { type: "string" } },
     order: { type: "array", items: { type: "string" } },
     spike: { type: "array", items: { type: "string" } },
     rationale: { type: "string" },
@@ -100,12 +101,48 @@ function readCandidates(value: unknown): Candidate[] {
   return out;
 }
 
-function budgetText(edition: string, candidates: Candidate[]): string {
-  const lines = candidates.map((c) => {
-    const compact = Object.fromEntries(Object.entries(c).filter(([, v]) => v !== null && v !== false));
-    return JSON.stringify(compact);
-  });
-  return `Edition: ${edition}\nNow: ${new Date().toISOString()}\n\nBudget (${candidates.length} stories, one JSON object per line):\n${lines.join("\n")}`;
+/** Game wraps as context: what happened, not copy. */
+function readGames(value: unknown): Candidate[] {
+  if (!Array.isArray(value)) return [];
+  const out: Candidate[] = [];
+  const seen = new Set<string>();
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const id = clip(r.id, 200);
+    const headline = clip(r.headline, 200);
+    if (!id || !headline || seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      headline,
+      score: clip(r.score, 60),
+      desk: clip(r.desk, 12),
+      club: clip(r.favoriteKey, 40),
+      league: clip(r.league, 8),
+      status: clip(r.status, 40),
+      postseason: r.postseason === true,
+      hasCopy: r.hasCopy === true,
+    });
+    if (out.length >= MAX_GAMES) break;
+  }
+  return out;
+}
+
+const lines = (rows: Candidate[]) =>
+  rows.map((c) => JSON.stringify(Object.fromEntries(Object.entries(c).filter(([, v]) => v !== null && v !== false))));
+
+function budgetText(edition: string, candidates: Candidate[], games: Candidate[]): string {
+  return [
+    `Edition: ${edition}`,
+    `Now: ${new Date().toISOString()}`,
+    "",
+    `NEWS (${candidates.length} stories, one JSON object per line):`,
+    ...lines(candidates),
+    "",
+    `GAMES (${games.length}, context only):`,
+    ...(games.length ? lines(games) : ["(none)"]),
+  ].join("\n");
 }
 
 function responseText(data: Record<string, unknown>): string {
@@ -178,17 +215,19 @@ Deno.serve(async (req: Request) => {
 
   let edition = "";
   let candidates: Candidate[] = [];
+  let games: Candidate[] = [];
   try {
-    const body = (await req.json()) as { edition?: unknown; candidates?: unknown };
+    const body = (await req.json()) as { edition?: unknown; candidates?: unknown; games?: unknown };
     edition = clip(body?.edition, 40) ?? "";
     candidates = readCandidates(body?.candidates);
+    games = readGames(body?.games);
   } catch {
     return json({ ok: false, error: "Expected JSON" }, 400);
   }
   if (candidates.length < 2) return json({ ok: false, error: "Nothing to edit" }, 400);
 
   try {
-    const { desk, model } = await askGrok(apiKey, budgetText(edition, candidates));
+    const { desk, model } = await askGrok(apiKey, budgetText(edition, candidates, games));
     return json({ ok: true, desk: { ...desk, model } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

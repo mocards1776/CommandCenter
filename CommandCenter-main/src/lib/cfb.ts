@@ -164,6 +164,8 @@ export type CfbScoreGame = {
   whenShort: string | null;
   venue: string | null;
   date: string | null;
+  /** Kickoff as an ISO instant. */
+  startIso?: string | null;
   broadcasts: GameBroadcast[];
   /** ESPN period number (1–4 regulation, 5+ OT). */
   period: number | null;
@@ -1075,6 +1077,7 @@ function mapCfbEvent(
     whenShort,
     venue: comp.venue?.fullName ?? null,
     date: chicagoDateFromIso(iso),
+    startIso: iso,
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
     period,
     situation: mapCfbSituation(comp.situation, live),

@@ -92,6 +92,8 @@ export type NflScoreGame = {
   homeWinPct: number | null;
   /** Chicago calendar date (YYYY-MM-DD) for the kickoff. */
   date: string | null;
+  /** Kickoff as an ISO instant. */
+  startIso?: string | null;
   broadcasts: GameBroadcast[];
 };
 
@@ -443,6 +445,7 @@ function mapEvent(event: EspnEvent): NflScoreGame | null {
     situation: mapSituation(comp.situation, live),
     homeWinPct: null,
     date: chicagoDateFromIso(event.date),
+    startIso: event.date ?? null,
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
   };
 }

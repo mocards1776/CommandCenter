@@ -39,6 +39,7 @@ export type WatchGame = {
   competition: string | null;
   away: WatchSide;
   home: WatchSide;
+  /** Start as an ISO instant; the page prints it in Central time. */
   when: string | null;
   status: string | null;
   live: boolean;
@@ -95,20 +96,20 @@ export function watchFromMlb(g: MlbScoredGame): WatchGame {
 }
 
 export function watchFromNfl(g: NflScoredGame): WatchGame {
-  return { ...base(g, "NFL", g.when, g.shortDetail ?? g.status), competition: null, away: side(g.away), home: side(g.home) };
+  return { ...base(g, "NFL", g.startIso ?? null, g.shortDetail ?? g.status), competition: null, away: side(g.away), home: side(g.home) };
 }
 
 export function watchFromNhl(g: NhlScoredGame): WatchGame {
-  return { ...base(g, "NHL", g.when, g.shortDetail ?? g.status), competition: null, away: side(g.away), home: side(g.home) };
+  return { ...base(g, "NHL", g.startIso ?? null, g.shortDetail ?? g.status), competition: null, away: side(g.away), home: side(g.home) };
 }
 
 export function watchFromCfb(g: CfbScoredGame): WatchGame {
-  return { ...base(g, "CFB", g.when, g.shortDetail ?? g.status), competition: null, away: side(g.away), home: side(g.home) };
+  return { ...base(g, "CFB", g.startIso ?? null, g.shortDetail ?? g.status), competition: null, away: side(g.away), home: side(g.home) };
 }
 
 export function watchFromSoccer(g: SoccerScoredGame): WatchGame {
   return {
-    ...base(g, "Soccer", g.date, g.shortDetail ?? g.status),
+    ...base(g, "Soccer", g.startIso ?? null, g.shortDetail ?? g.status),
     competition: g.league || null,
     away: side(g.away),
     home: side(g.home),
