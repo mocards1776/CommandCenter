@@ -99,13 +99,18 @@ workflow (or run `supabase functions deploy rss sports`) → hard-reload the app
 ### Thompson Times AI editor
 
 Once per press, after the stories are filed and deduped, `pressStep`
-(`src/lib/newspaper-compose.ts`) sends the top ~24 candidates (headline, dek,
-a short snippet, club, league, status, source, rule rank) to
-`newspaper-editor`. Grok answers with lead / second / third, an order, and a
-spike list. The answer is stamped onto the filed stories (`editorRank`,
-`editorSpiked`) and saved as the `tt-editor` query, so every device that opens
-the edition sets the same front. `buildEdition` honors the stamps; box
-scores, schedules, standings, weather and agate never go through the editor.
+(`src/lib/newspaper-compose.ts`) sends the top 24 **news** stories (team news
+`news-*`, league news `league-*`, The Athletic `athletic-*`: headline, dek, a
+short snippet, club, league, status, source, rule rank) to `newspaper-editor`.
+Game wraps (`wire-*`, `recap-*`, `recent-*`, `wrap-*`) never count against
+that budget: the rule desk files one for every game, and the editor sees up to
+16 of them only as context. Grok answers with up to three A1 front picks (news
+or a game), an order for the news, and a news spike list. The answer is stamped
+onto the filed stories (`editorFront`, `editorRank`, `editorSpiked`) and saved
+as the `tt-editor` query, so every device that opens the edition sets the same
+front. `buildEdition` reorders the news inside the slots the rule desk gave
+news; wraps keep their places. Box scores, schedules, standings, leaders,
+weather and agate never go through the editor.
 If the call fails, times out (60s), or returns ids it was never shown, the
 stories file unstamped and the rule desk (`storyRank`) sets the paper exactly
 as before. A device that sets the paper itself first adopts the press's filed

@@ -101,6 +101,8 @@ export type NhlScoreGame = {
   whenShort: string | null;
   venue: string | null;
   date: string | null;
+  /** Kickoff as an ISO instant. */
+  startIso?: string | null;
   broadcasts: GameBroadcast[];
 };
 
@@ -208,6 +210,7 @@ function mapScoreEvent(event: EspnEvent): NhlScoreGame | null {
     whenShort: live || final ? (status?.shortDetail ?? null) : whenShort,
     venue: comp.venue?.fullName ?? null,
     date: chicagoDateFromIso(event.date),
+    startIso: event.date ?? null,
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
   };
 }

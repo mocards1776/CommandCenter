@@ -1165,7 +1165,13 @@ mark.rss-hl {
   --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
   --w-gutter: 20px;
 
-  /* One broadsheet. The screen scales it; the page itself does not reflow. */
+  /* One broadsheet. The screen scales it; the page itself does not reflow.
+     iPad Pro 13" portrait is 1032×1376 CSS px; under the Times chrome the pager
+     is about 1032×1290, so --tt-fit = min(1032/1040, 1290/1480) ≈ 0.87 and the
+     sheet is height-bound with ~60px of paper margin each side. Filling the width
+     needs a sheet near 1040×1300 — only change this if every desk (front, A3
+     jumps, sport desks, leaders, viewing guide, Missouri) is checked to still fit
+     that height. Do not add a second canvas size; the fit does the rest. */
   --tt-page-w: 1040px;
   --tt-page-h: 1480px;
   --w-chrome: calc(61px + env(safe-area-inset-top, 0px));
