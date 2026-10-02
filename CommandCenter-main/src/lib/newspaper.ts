@@ -289,8 +289,9 @@ export function fileEditionStories<T extends StoryIdentity>(opts: {
 
 /** A copy of the story without the AI editor's rank or spike. */
 export function withoutEditorStamps<T extends object>(card: T): T {
-  const copy = { ...card } as T & { editorRank?: unknown; editorSpiked?: unknown };
+  const copy = { ...card } as T & { editorRank?: unknown; editorFront?: unknown; editorSpiked?: unknown };
   delete copy.editorRank;
+  delete copy.editorFront;
   delete copy.editorSpiked;
   return copy;
 }

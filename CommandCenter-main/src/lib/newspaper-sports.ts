@@ -437,8 +437,10 @@ export type GameWrapCard = {
   holdover?: boolean;
   /** Place in the source's own list. ESPN leads with what it is pushing; 0 is the top. */
   listRank?: number;
-  /** The AI editor's order for this press; 0, 1, 2 are its lead, second and third. */
+  /** The AI editor's order among this press's news (never set on game wraps). */
   editorRank?: number;
+  /** The AI editor's A1 slot for this press: 0 lead, 1 second, 2 third. */
+  editorFront?: number;
   /** The AI editor spiked it for this press. */
   editorSpiked?: boolean;
 };
