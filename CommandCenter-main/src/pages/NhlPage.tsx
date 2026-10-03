@@ -12,6 +12,7 @@ import {
   pickNhlHeroGame,
   type NhlScoreGame,
 } from "@/lib/nhl";
+import LogoPlate from "@/components/sports/LogoPlate";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
 
@@ -184,13 +185,7 @@ export default function NhlPage() {
                               to={`/sports/nhl/team/${row.teamId}`}
                               className="text-cream inline-flex min-w-0 items-center gap-2 font-medium hover:underline"
                             >
-                              {row.logo ? (
-                                <img
-                                  src={row.logo}
-                                  alt=""
-                                  className="h-5 w-5 shrink-0 object-contain"
-                                />
-                              ) : null}
+                              {row.logo ? <LogoPlate src={row.logo} className="h-5 w-5" /> : null}
                               <span>{row.abbrev}</span>
                               <span className="text-chalk-dim hidden truncate font-normal sm:inline">
                                 {row.name}
@@ -244,7 +239,7 @@ function NhlScoreCard({ game, featured = false }: { game: NhlScoreGame; featured
         <div className="min-w-0 flex-1 space-y-1.5">
           {[game.away, game.home].map((side) => (
             <div key={side.teamId} className="flex items-center gap-2">
-              {side.logo ? <img src={side.logo} alt="" className="h-6 w-6 object-contain" /> : null}
+              {side.logo ? <LogoPlate src={side.logo} className="h-6 w-6" /> : null}
               <span className="text-cream min-w-0 flex-1 truncate text-[13px] font-medium">
                 {side.abbrev}
               </span>
