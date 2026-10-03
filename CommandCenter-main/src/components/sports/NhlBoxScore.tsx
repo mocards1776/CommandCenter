@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { Link } from "react-router-dom";
+import LogoPlate from "@/components/sports/LogoPlate";
 import { Loader2, ShieldCheck } from "lucide-react";
 import {
   nhlAccentColor,
@@ -59,7 +60,7 @@ function SkaterTable({
       <div className="h-[3px]" style={{ background: color }} />
       <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2.5">
         <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
-          {side.logo ? <img src={side.logo} alt="" className="h-5 w-5 object-contain" /> : null}
+          {side.logo ? <LogoPlate src={side.logo} className="h-5 w-5" /> : null}
           {side.abbrev} · Skaters
         </h3>
         <span
@@ -202,7 +203,7 @@ function GoalieCard({
         />
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-1.5 text-[9.5px] font-semibold uppercase tracking-[0.14em] text-white/60">
-            {side.logo ? <img src={side.logo} alt="" className="h-4 w-4 object-contain" /> : null}
+            {side.logo ? <LogoPlate src={side.logo} className="h-4 w-4" /> : null}
             {side.abbrev}
             {row.jersey ? <span className="numeral">#{row.jersey}</span> : null}
             {role ? <span className="text-white/40">· {role}</span> : null}

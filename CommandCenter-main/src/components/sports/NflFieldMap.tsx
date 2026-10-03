@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { cfbDriveStatLine, type CfbDriveGlance } from "@/lib/cfb-drive";
 import type { NflScoreGame } from "@/lib/nfl";
 import { fieldBallPctFromHomeYardLine } from "@/lib/nfl";
+import LogoPlate from "@/components/sports/LogoPlate";
 import { cn } from "@/lib/utils";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 
@@ -396,9 +397,7 @@ export function NflScoreRow({
         <div className="min-w-0 flex-1 space-y-1.5">
           {[game.away, game.home].map((side) => (
             <div key={side.teamId} className="flex items-center gap-2">
-              {side.logo ? (
-                <img src={side.logo} alt="" className="h-6 w-6 object-contain" />
-              ) : null}
+              {side.logo ? <LogoPlate src={side.logo} className="h-6 w-6" /> : null}
               <span className="text-cream min-w-0 flex-1 truncate text-[13px] font-medium">
                 {side.abbrev}
               </span>

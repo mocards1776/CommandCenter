@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import CfbRankLabel from "@/components/sports/CfbRankLabel";
+import LogoPlate from "@/components/sports/LogoPlate";
 import {
   fetchCfbConferenceStandings,
   fetchCfbConferences,
@@ -239,9 +240,7 @@ export default function CfbPage() {
                                 <span className="text-chalk-dim w-4 tabular-nums text-[11px]">
                                   {i + 1}
                                 </span>
-                                {row.logo ? (
-                                  <img src={row.logo} alt="" className="h-6 w-6 object-contain" />
-                                ) : null}
+                                {row.logo ? <LogoPlate src={row.logo} className="h-6 w-6" /> : null}
                                 <span className="truncate">{row.name}</span>
                               </Link>
                             </td>
@@ -317,7 +316,7 @@ export default function CfbPage() {
                             {e.rank}
                           </span>
                           {e.logo ? (
-                            <img src={e.logo} alt="" className="h-8 w-8 object-contain" />
+                            <LogoPlate src={e.logo} className="h-8 w-8" loading="lazy" />
                           ) : (
                             <span className="h-8 w-8 rounded-full bg-white/10" />
                           )}
@@ -426,7 +425,7 @@ export default function CfbPage() {
                           {row.teamId ? (
                             <Link to={`/sports/cfb/team/${row.teamId}`} className="shrink-0">
                               {row.teamLogo ? (
-                                <img src={row.teamLogo} alt="" className="h-7 w-7 object-contain" />
+                                <LogoPlate src={row.teamLogo} className="h-7 w-7" loading="lazy" />
                               ) : null}
                             </Link>
                           ) : null}
@@ -538,9 +537,7 @@ function TeamSide({
         align === "end" ? "items-end text-right" : "items-start",
       )}
     >
-      {side.logo ? (
-        <img src={side.logo} alt="" className="h-8 w-8 object-contain" loading="lazy" />
-      ) : null}
+      {side.logo ? <LogoPlate src={side.logo} className="h-8 w-8" loading="lazy" /> : null}
       <p className="text-cream text-[14px] font-semibold">
         <CfbRankLabel pollRank={side.rank} fpiRank={side.fpiRank} />
         {side.abbrev}

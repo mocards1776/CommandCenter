@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
+import LogoPlate from "@/components/sports/LogoPlate";
 import NflFieldMap, { NflScoreRow } from "@/components/sports/NflFieldMap";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
@@ -129,7 +130,7 @@ export default function NflPage() {
                     <div className="flex items-center gap-4">
                       {[featured.away, featured.home].map((s) => (
                         <div key={s.teamId} className="flex items-center gap-2">
-                          {s.logo && <img src={s.logo} alt="" className="h-8 w-8 object-contain" />}
+                          {s.logo && <LogoPlate src={s.logo} className="h-8 w-8" />}
                           <div>
                             <p className="text-cream text-[14px] font-semibold">{s.abbrev}</p>
                             <p className="text-chalk-dim text-[10px]">{s.record}</p>

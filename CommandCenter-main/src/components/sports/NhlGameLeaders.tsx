@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import LogoPlate from "@/components/sports/LogoPlate";
 import {
   nhlAccentColor,
   nhlHeadshot,
@@ -71,7 +72,7 @@ function TeamColumn({ side, leaders }: { side: NhlScoreSide; leaders: MergedLead
         style={{ background: `radial-gradient(ellipse at 15% 0%, color-mix(in srgb, ${color} 40%, transparent), transparent 70%)` }}
       />
       <div className="relative flex items-center gap-2 px-3 pt-2.5">
-        {side.logo ? <img src={side.logo} alt="" className="h-6 w-6 object-contain" /> : null}
+        {side.logo ? <LogoPlate src={side.logo} className="h-6 w-6" /> : null}
         <span className="text-cream text-[12px] font-semibold uppercase tracking-[0.14em]">{side.abbrev}</span>
       </div>
 

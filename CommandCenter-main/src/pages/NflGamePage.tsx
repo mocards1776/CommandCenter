@@ -1,9 +1,10 @@
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
+import LogoPlate from "@/components/sports/LogoPlate";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel from "@/components/sports/HighlightReel";
@@ -136,7 +137,6 @@ export function NflGameDetailView({
   }
 
   const recapUrl = `https://www.espn.com/nfl/recap/_/gameId/${eventId}`;
-  const boxUrl = `https://www.espn.com/nfl/boxscore/_/gameId/${eventId}`;
   const awayWins = g.final && (g.away.score ?? 0) > (g.home.score ?? 0);
   const homeWins = g.final && (g.home.score ?? 0) > (g.away.score ?? 0);
   const label = statusLabel(g);
@@ -290,25 +290,6 @@ export function NflGameDetailView({
             <NflLinescoreTable away={g.away} home={g.home} />
           </div>
         ) : null}
-
-        <div className="relative z-10 flex flex-wrap gap-3 border-t border-white/[0.06] px-4 py-2.5">
-          <a
-            href={recapUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-chalk-dim hover:text-cream inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.14em]"
-          >
-            ESPN recap <ExternalLink size={11} />
-          </a>
-          <a
-            href={boxUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-chalk-dim hover:text-cream inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.14em]"
-          >
-            ESPN boxscore <ExternalLink size={11} />
-          </a>
-        </div>
       </header>
 
       {(g.live || g.situation || homeYardLine != null) && (
@@ -560,9 +541,7 @@ export function NflGameDetailView({
             return (
               <div key={side.teamId} className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2 px-0.5">
-                  {side.logo ? (
-                    <img src={side.logo} alt="" className="h-7 w-7 object-contain" />
-                  ) : null}
+                  {side.logo ? <LogoPlate src={side.logo} className="h-7 w-7" /> : null}
                   <div className="min-w-0 flex-1">
                     <p className="text-[14px] font-bold text-white">{side.name}</p>
                     <div className="flex flex-wrap items-baseline gap-x-2">
@@ -580,9 +559,7 @@ export function NflGameDetailView({
                   >
                     <div className="border-b border-white/[0.06] px-3 py-2">
                       <p className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
-                        {side.logo ? (
-                          <img src={side.logo} alt="" className="h-5 w-5 object-contain" />
-                        ) : null}
+                        {side.logo ? <LogoPlate src={side.logo} className="h-5 w-5" /> : null}
                         <span>
                           {group.teamAbbrev} · {group.name}
                         </span>
@@ -691,9 +668,7 @@ function NflLinescoreTable({
             <tr key={side.teamId} className="border-t border-white/[0.05]">
               <td className="px-2 py-1.5 text-left">
                 <span className="inline-flex items-center gap-1.5 font-semibold text-cream">
-                  {side.logo ? (
-                    <img src={side.logo} alt="" className="h-4 w-4 object-contain" />
-                  ) : null}
+                  {side.logo ? <LogoPlate src={side.logo} className="h-4 w-4" /> : null}
                   {side.abbrev}
                 </span>
               </td>
@@ -725,7 +700,7 @@ function NflTeamStatHeader({
         align === "right" ? "justify-end" : "justify-start",
       )}
     >
-      {side.logo ? <img src={side.logo} alt="" className="h-5 w-5 object-contain" /> : null}
+      {side.logo ? <LogoPlate src={side.logo} className="h-5 w-5" /> : null}
       {side.abbrev}
     </span>
   );
@@ -754,13 +729,10 @@ function NflMatchupSide({
       )}
     >
       {side.logo ? (
-        <img
+        <LogoPlate
           src={side.logo}
-          alt=""
-          className={cn(
-            "h-16 w-16 object-contain sm:h-[4.5rem] sm:w-[4.5rem]",
-            winner && "drop-shadow-[0_0_12px_rgba(255,255,255,0.35)]",
-          )}
+          className="h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]"
+          imgClassName={winner ? "drop-shadow-[0_0_12px_rgba(255,255,255,0.35)]" : undefined}
         />
       ) : (
         <div className="grid h-16 w-16 place-items-center rounded-full bg-white/10 text-[12px] font-bold text-white">

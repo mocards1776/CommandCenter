@@ -25,6 +25,7 @@ import {
   MlbTeamRecordSplitsSection,
   MlbTeamWinTrend,
 } from "@/components/sports/MlbTeamExtras";
+import LogoPlate from "@/components/sports/LogoPlate";
 import TeamMark from "@/components/sports/TeamMark";
 import { useAuth } from "@/lib/auth-context";
 import { fetchMlbFarmSystemRankings, fetchTeamCurrentGame, mlbHeadshot, teamPagePath } from "@/lib/mlb";
@@ -981,9 +982,7 @@ function YesterdayRecapPanel({
                     <span className="text-[10px] text-[#8b93a7]">{g.detail}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    {g.away.logo ? (
-                      <img src={g.away.logo} alt="" className="h-8 w-8 object-contain" />
-                    ) : null}
+                    {g.away.logo ? <LogoPlate src={g.away.logo} className="h-8 w-8" /> : null}
                     <div className="min-w-0 flex-1">
                       <p
                         className={cn(
@@ -1004,9 +1003,7 @@ function YesterdayRecapPanel({
                         <span className="numeral">{g.home.score ?? "—"}</span>
                       </p>
                     </div>
-                    {g.home.logo ? (
-                      <img src={g.home.logo} alt="" className="h-8 w-8 object-contain" />
-                    ) : null}
+                    {g.home.logo ? <LogoPlate src={g.home.logo} className="h-8 w-8" /> : null}
                   </div>
                   {g.highlight ? (
                     <p className="text-chalk mt-2 line-clamp-2 text-[12px]">
@@ -1329,10 +1326,9 @@ function TeamDetailPanel({
                                 {detail.source === "mlb" && row.teamId ? (
                                   <TeamMark teamId={row.teamId} size="xs" />
                                 ) : row.teamId && isSoccer ? (
-                                  <img
+                                  <LogoPlate
                                     src={`https://a.espncdn.com/i/teamlogos/soccer/500/${row.teamId}.png`}
-                                    alt=""
-                                    className="h-4 w-4 object-contain"
+                                    className="h-4 w-4"
                                     loading="lazy"
                                   />
                                 ) : null}
