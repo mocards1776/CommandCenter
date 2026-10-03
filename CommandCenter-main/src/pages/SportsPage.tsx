@@ -57,6 +57,7 @@ import {
   type BoardTier,
 } from "@/lib/sports-board";
 import { cn } from "@/lib/utils";
+import { boardFavoriteTeamKeys } from "@/lib/board-top-games";
 import { fetchChampionshipPromotionOdds } from "@/lib/soccer";
 import { fetchYesterdayRecap, type YesterdayRecap } from "@/lib/yesterday-recap";
 
@@ -593,6 +594,7 @@ export default function SportsPage() {
   });
 
   const favorites = useMemo(() => visibleFavorites(layout), [layout]);
+  const boardFavoriteKeys = useMemo(() => boardFavoriteTeamKeys(favorites), [favorites]);
 
   const teamFavs = favorites.filter((f) => f.kind === "team");
   const tourFavs = favorites.filter((f) => f.kind === "tour");
@@ -771,7 +773,7 @@ export default function SportsPage() {
         />
       )}
 
-      <SportsSlateSections />
+      <SportsSlateSections favoriteTeamKeys={boardFavoriteKeys} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {boardFavorites.map((fav) => {
