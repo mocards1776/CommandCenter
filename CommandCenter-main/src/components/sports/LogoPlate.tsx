@@ -1,9 +1,9 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Light circular plate behind a team mark so dark logos stay readable on
- * navy sports chrome. The size class is the existing slot; the image is
- * inset onto the disc so the layout rhythm does not grow.
+ * Opaque white disc behind a team mark so dark logos (Iowa hawk class)
+ * stay readable on navy sports chrome. The size class is the existing
+ * slot; the image is inset onto the disc so the layout does not grow.
  */
 export default function LogoPlate({
   src,
@@ -21,7 +21,7 @@ export default function LogoPlate({
   return (
     <span
       className={cn(
-        "relative inline-block shrink-0 rounded-full bg-[#f4f6f8] shadow-[0_0_0_1.5px_rgba(255,255,255,0.82),0_1px_3px_rgba(0,0,0,0.28)] ring-1 ring-black/10",
+        "relative inline-block shrink-0 rounded-full bg-white shadow-md ring-1 ring-black/10",
         className,
       )}
     >
