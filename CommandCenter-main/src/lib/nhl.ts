@@ -110,6 +110,8 @@ export type NhlScoreSide = {
   abbrev: string;
   score: number | null;
   record: string | null;
+  /** Standings points (2 per W, 1 per OTL); game detail only. */
+  points?: number | null;
   logo: string | null;
   color: string;
   linescores: number[];
@@ -838,7 +840,27 @@ function buildNhlIceState(input: {
   };
 }
 
-type NhlSummaryRecord = { type?: string; summary?: string };
+type NhlSummaryRecord = { type?: string; summary?: string; displayValue?: string };
+
+/** Standings points from a W-L-OTL line, for when no source states them outright. */
+export function nhlPointsFromRecord(record: string | null | undefined): number | null {
+  const m = /^(\d+)-(\d+)-(\d+)/.exec(record?.trim() ?? "");
+  return m ? Number(m[1]) * 2 + Number(m[3]) : null;
+}
+
+/** ESPN header totals read "0-1-0, 0 PTS"; standings entries carry `points`. */
+function summaryPoints(
+  competitor: { record?: NhlSummaryRecord[]; records?: NhlSummaryRecord[] } | undefined,
+  standings: Map<string, number>,
+  teamId: number,
+  record: string | null,
+): number | null {
+  const list = competitor?.record ?? competitor?.records ?? [];
+  const total = list.find((r) => r.type === "total") ?? list[0];
+  const stated = /(\d+)\s*PTS/i.exec(total?.displayValue ?? "");
+  if (stated) return Number(stated[1]);
+  return standings.get(String(teamId)) ?? nhlPointsFromRecord(record);
+}
 
 /** Header competitors carry `record` (singular); summary `standings` is the fallback. */
 function summaryRecord(
@@ -944,22 +966,28 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
   if (!base) throw new Error("NHL game missing competitors");
 
   const standingRecords = new Map<string, string>();
+  const standingPoints = new Map<string, number>();
   for (const group of raw.standings?.groups ?? []) {
     for (const e of group.standings?.entries ?? []) {
       if (!e.id) continue;
       const stat = (n: string) => e.stats?.find((s) => s.name === n)?.displayValue ?? "0";
       standingRecords.set(String(e.id), `${stat("wins")}-${stat("losses")}-${stat("otLosses")}`);
+      const pts = Number(e.stats?.find((s) => s.name === "points")?.displayValue);
+      if (Number.isFinite(pts)) standingPoints.set(String(e.id), pts);
     }
   }
   const headerCompetitors = (raw.header?.competitions?.[0]?.competitors ?? []) as (EspnCompetitor & {
     record?: NhlSummaryRecord[];
   })[];
-  const withRecord = (side: NhlScoreSide, homeAway: string): NhlScoreSide => ({
-    ...side,
-    record:
-      side.record ??
-      summaryRecord(headerCompetitors.find((c) => c.homeAway === homeAway), standingRecords, side.teamId),
-  });
+  const withRecord = (side: NhlScoreSide, homeAway: string): NhlScoreSide => {
+    const competitor = headerCompetitors.find((c) => c.homeAway === homeAway);
+    const record = side.record ?? summaryRecord(competitor, standingRecords, side.teamId);
+    return {
+      ...side,
+      record,
+      points: summaryPoints(competitor, standingPoints, side.teamId, record),
+    };
+  };
   base = { ...base, away: withRecord(base.away, "away"), home: withRecord(base.home, "home") };
 
   // Prefer scoreboard broadcasts; fall back to summary broadcast list.
@@ -1250,6 +1278,8 @@ export type NhlGamecenter = {
   goals: NhlGoalClip[];
   /** Finished games only: NHL recap and condensed game, best first. */
   wraps: NhlGameVideo[];
+  /** Official Three Stars; empty until the NHL posts them (usually right after the horn). */
+  threeStars: NhlThreeStar[];
 };
 
 /**
@@ -1448,8 +1478,93 @@ type NhlLandingJson = {
       periodDescriptor?: { number?: number; periodType?: string };
       goals?: NhlLandingGoal[];
     }[];
+    threeStars?: NhlLandingStar[];
   };
 };
+
+type NhlLandingStar = {
+  star?: number;
+  playerId?: number;
+  teamAbbrev?: string;
+  headshot?: string;
+  name?: { default?: string };
+  sweaterNo?: number;
+  position?: string;
+  goals?: number;
+  assists?: number;
+  points?: number;
+  goalsAgainstAverage?: number;
+  savePctg?: number;
+};
+
+/** One of the official NHL Three Stars of the Game (gamecenter landing `summary.threeStars`). */
+export type NhlThreeStar = {
+  star: 1 | 2 | 3;
+  nhlPlayerId: number;
+  /** As posted by the NHL, e.g. "J. Hofer". */
+  name: string;
+  /** ESPN-style abbreviation so it lines up with ESPN sides and box groups. */
+  teamAbbrev: string;
+  headshot: string | null;
+  sweaterNo: string | null;
+  /** NHL code: C / L / R / D / G. */
+  position: string | null;
+  goals: number | null;
+  assists: number | null;
+  points: number | null;
+  goalsAgainstAverage: number | null;
+  savePctg: number | null;
+};
+
+function mapThreeStars(raw: NhlLandingStar[] | undefined): NhlThreeStar[] {
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  return (raw ?? [])
+    .filter((s) => s.playerId && (s.star === 1 || s.star === 2 || s.star === 3))
+    .map((s) => ({
+      star: s.star as 1 | 2 | 3,
+      nhlPlayerId: s.playerId!,
+      name: s.name?.default?.trim() || "Player",
+      teamAbbrev: canonNhlAbbrev(s.teamAbbrev),
+      headshot: s.headshot ?? null,
+      sweaterNo: s.sweaterNo != null ? String(s.sweaterNo) : null,
+      position: s.position ?? null,
+      goals: num(s.goals),
+      assists: num(s.assists),
+      points: num(s.points),
+      goalsAgainstAverage: num(s.goalsAgainstAverage),
+      savePctg: num(s.savePctg),
+    }))
+    .sort((a, b) => a.star - b.star);
+}
+
+/**
+ * Three Stars carry NHL ids; the app's player pages are keyed by ESPN id. Match
+ * the ESPN box-score row on team + sweater number, falling back to last name.
+ */
+export function matchStarToBoxRow(star: NhlThreeStar, groups: NhlBoxGroup[]): NhlBoxRow | null {
+  const rows = groups
+    .filter((g) => canonNhlAbbrev(g.teamAbbrev) === star.teamAbbrev)
+    .flatMap((g) => g.rows);
+  if (star.sweaterNo) {
+    const byNumber = rows.find((r) => r.jersey === star.sweaterNo);
+    if (byNumber) return byNumber;
+  }
+  const last = star.name.split(/[\s.]+/).filter(Boolean).pop()?.toLowerCase();
+  if (!last) return null;
+  return rows.find((r) => r.name.toLowerCase().split(/\s+/).pop() === last) ?? null;
+}
+
+/** Just the Three Stars for an ESPN game — no clip resolution. Empty until the NHL posts them. */
+export async function fetchNhlThreeStars(
+  game: Pick<NhlScoreGame, "id" | "startIso" | "away" | "home">,
+): Promise<NhlThreeStar[]> {
+  const nhlGameId = await resolveNhlGameId(game);
+  if (nhlGameId == null) return [];
+  const landing = await nhlWebJson<NhlLandingJson>(`v1/gamecenter/${nhlGameId}/landing`).catch(
+    () => null,
+  );
+  return mapThreeStars(landing?.summary?.threeStars);
+}
 
 function nhlPeriodLabel(num: number, type: string | undefined): string {
   if (type === "SO") return "SO";
@@ -1551,6 +1666,7 @@ export async function fetchNhlGamecenter(
     situation: mapSituation(landing.situation),
     goals,
     wraps,
+    threeStars: mapThreeStars(landing.summary?.threeStars),
   };
 }
 
@@ -1925,6 +2041,12 @@ export type NhlScheduleItem = {
   label: string;
   detail: string | null;
   state: "pre" | "in" | "post";
+  homeAway: "home" | "away" | null;
+  opponent: { id: string; abbrev: string; name: string; logo: string | null } | null;
+  teamScore: number | null;
+  oppScore: number | null;
+  /** Finished games only. OTL covers overtime and shootout losses. */
+  result: "W" | "L" | "OTL" | null;
 };
 
 export type NhlTeamPage = {
@@ -1935,13 +2057,23 @@ export type NhlTeamPage = {
   color: string;
   logo: string | null;
   record: string | null;
+  points: number | null;
+  homeRecord: string | null;
+  roadRecord: string | null;
+  /** "W3" / "L1", from ESPN's signed streak. */
+  streak: string | null;
+  goalDiff: number | null;
   standing: string | null;
   seasonLabel: string | null;
   venueName: string | null;
   venueCity: string | null;
   coachName: string | null;
+  /** ESPN coach id, for `/sports/nhl/coach/:coachId`. */
+  coachId: string | null;
   nextEvent: { id: string; name: string; date: string | null } | null;
   statGroups: { name: string; stats: NhlStatLine[] }[];
+  /** Every season team stat by ESPN abbreviation (G, GA, S, SA, SV%, SPCT, FO%, PIM, …). */
+  statMap: Record<string, string>;
   playerTables: { name: string; labels: string[]; rows: { id: string; name: string; stats: string[] }[] }[];
   roster: NhlRosterPlayer[];
   schedule: NhlScheduleItem[];
@@ -1958,7 +2090,7 @@ export async function fetchNhlTeamPage(teamId: string): Promise<NhlTeamPage> {
   const id = String(teamId);
   const season = nhlSeasonYear();
   type RosterJson = {
-    coach?: { firstName?: string; lastName?: string }[];
+    coach?: { id?: string; firstName?: string; lastName?: string }[];
     athletes?: {
       position?: string;
       items?: {
@@ -2000,7 +2132,9 @@ export async function fetchNhlTeamPage(teamId: string): Promise<NhlTeamPage> {
         color?: string;
         standingSummary?: string;
         logos?: { href?: string }[];
-        record?: { items?: { summary?: string; type?: string }[] };
+        record?: {
+          items?: { summary?: string; type?: string; stats?: { name?: string; value?: number }[] }[];
+        };
         franchise?: { venue?: { fullName?: string; address?: { city?: string; state?: string } } };
         nextEvent?: { id?: string; name?: string; date?: string; shortName?: string }[];
       };
@@ -2020,7 +2154,17 @@ export async function fetchNhlTeamPage(teamId: string): Promise<NhlTeamPage> {
         name?: string;
         competitions?: {
           status?: { type?: { state?: string; shortDetail?: string; completed?: boolean } };
-          competitors?: { score?: string; homeAway?: string; team?: { abbreviation?: string } }[];
+          competitors?: {
+            score?: string | { value?: number; displayValue?: string };
+            homeAway?: string;
+            winner?: boolean;
+            team?: {
+              id?: string;
+              abbreviation?: string;
+              displayName?: string;
+              logos?: { href?: string }[];
+            };
+          }[];
         }[];
       }[];
     }>(`${ESPN}/teams/${id}/schedule`).catch(() => ({ events: [] })),
@@ -2046,16 +2190,28 @@ export async function fetchNhlTeamPage(teamId: string): Promise<NhlTeamPage> {
     }
   }
   const coach = rosterRes.coach?.[0];
-  const coachName = coach ? [coach.firstName, coach.lastName].filter(Boolean).join(" ") : null;
+  const coachName = coach ? [coach.firstName, coach.lastName].filter(Boolean).join(" ") || null : null;
   const venue = t.franchise?.venue;
   const venueCity = [venue?.address?.city, venue?.address?.state].filter(Boolean).join(", ") || null;
-  const next = t.nextEvent?.[0];
-  const record =
-    t.record?.items?.find((r) => r.type === "total")?.summary ?? t.record?.items?.[0]?.summary ?? null;
+  const recordItem = (type: string) => t.record?.items?.find((r) => r.type === type);
+  const totalItem = recordItem("total") ?? t.record?.items?.[0];
+  const record = totalItem?.summary ?? null;
+  const totalStat = (name: string) => {
+    const v = totalItem?.stats?.find((s) => s.name === name)?.value;
+    return typeof v === "number" && Number.isFinite(v) ? v : null;
+  };
+  const streakRaw = totalStat("streak");
+  const streak = streakRaw ? (streakRaw > 0 ? `W${streakRaw}` : `L${-streakRaw}`) : null;
 
   const statGroups: NhlTeamPage["statGroups"] = [];
+  const statMap: Record<string, string> = {};
   const seasonLabel = statsRes.requestedSeason?.displayName ?? null;
   for (const cat of statsRes.results?.stats?.categories ?? []) {
+    for (const s of cat.stats ?? []) {
+      if (s.abbreviation && s.displayValue != null && !(s.abbreviation in statMap)) {
+        statMap[s.abbreviation] = s.displayValue;
+      }
+    }
     const keep = TEAM_STAT_KEEP[cat.name ?? ""] ?? [];
     const stats = (cat.stats ?? [])
       .filter((s) => !keep.length || keep.includes(s.displayName ?? "") || keep.includes(s.abbreviation ?? ""))
@@ -2128,24 +2284,56 @@ export async function fetchNhlTeamPage(teamId: string): Promise<NhlTeamPage> {
     playerTables.push({ name: "Goalies", labels: ["W", "GAA", "SV%", "SO"], rows: goalieRows });
   }
 
+  const scoreOf = (raw: string | { value?: number; displayValue?: string } | undefined) => {
+    const n = Number(typeof raw === "object" ? (raw.value ?? raw.displayValue) : raw);
+    return raw != null && raw !== "" && Number.isFinite(n) ? n : null;
+  };
   const schedule: NhlScheduleItem[] = (scheduleRes.events ?? []).map((ev) => {
     const comp = ev.competitions?.[0];
     const stateRaw = comp?.status?.type?.state;
     const state: NhlScheduleItem["state"] =
       stateRaw === "in" ? "in" : stateRaw === "post" || comp?.status?.type?.completed ? "post" : "pre";
-    const bits = (comp?.competitors ?? []).map((c) => {
-      const ab = c.team?.abbreviation ?? "";
-      const score = c.score != null && state !== "pre" ? c.score : "";
-      return score ? `${ab} ${score}` : ab;
-    });
+    const competitors = comp?.competitors ?? [];
+    const us = competitors.find((c) => String(c.team?.id ?? "") === id);
+    const them = competitors.find((c) => c !== us);
+    const teamScore = state === "pre" ? null : scoreOf(us?.score);
+    const oppScore = state === "pre" ? null : scoreOf(them?.score);
+    const detail = comp?.status?.type?.shortDetail ?? null;
+    let result: NhlScheduleItem["result"] = null;
+    if (state === "post" && teamScore != null && oppScore != null) {
+      const won = us?.winner ?? teamScore > oppScore;
+      result = won ? "W" : /OT|SO/i.test(detail ?? "") ? "OTL" : "L";
+    }
+    const oppAbbrev = them?.team?.abbreviation ?? "";
     return {
       id: String(ev.id ?? ""),
       date: ev.date ?? null,
-      label: ev.shortName || ev.name || bits.join(" · ") || "Game",
-      detail: comp?.status?.type?.shortDetail ?? null,
+      label: ev.shortName || ev.name || "Game",
+      detail,
       state,
+      homeAway: us?.homeAway === "home" ? "home" : us?.homeAway === "away" ? "away" : null,
+      opponent: them?.team
+        ? {
+            id: String(them.team.id ?? ""),
+            abbrev: oppAbbrev,
+            name: them.team.displayName ?? oppAbbrev,
+            logo: them.team.logos?.[0]?.href ?? (oppAbbrev ? nhlTeamLogo(oppAbbrev) : null),
+          }
+        : null,
+      teamScore,
+      oppScore,
+      result,
     };
   });
+  // ESPN's `nextEvent` lingers on a game that already went final; prefer the schedule.
+  const upcoming = schedule.find((g) => g.state !== "post");
+  const espnNext = t.nextEvent?.[0];
+  const espnNextDone = espnNext?.id ? schedule.some((g) => g.id === String(espnNext.id) && g.state === "post") : true;
+  const nextEvent: NhlTeamPage["nextEvent"] = upcoming
+    ? { id: upcoming.id, name: upcoming.label, date: upcoming.date }
+    : espnNext?.id && !espnNextDone
+      ? { id: String(espnNext.id), name: espnNext.shortName || espnNext.name || "Next game", date: espnNext.date ?? null }
+      : null;
 
   return {
     id,
@@ -2155,17 +2343,383 @@ export async function fetchNhlTeamPage(teamId: string): Promise<NhlTeamPage> {
     color: (t.color ?? "002f87").replace(/^#/, ""),
     logo: t.logos?.[0]?.href ?? (t.abbreviation ? nhlTeamLogo(t.abbreviation) : null),
     record,
+    points: totalStat("points") ?? nhlPointsFromRecord(record),
+    homeRecord: recordItem("home")?.summary ?? null,
+    roadRecord: recordItem("road")?.summary ?? null,
+    streak,
+    goalDiff: totalStat("differential"),
     standing: t.standingSummary ?? null,
     seasonLabel,
     venueName: venue?.fullName ?? null,
     venueCity,
     coachName,
-    nextEvent: next?.id
-      ? { id: String(next.id), name: next.shortName || next.name || "Next game", date: next.date ?? null }
-      : null,
+    coachId: coach?.id ? String(coach.id) : null,
+    nextEvent,
     statGroups,
+    statMap,
     playerTables,
     roster,
     schedule,
+  };
+}
+
+export type NhlCoachRecordLine = {
+  games: number;
+  wins: number;
+  losses: number;
+  /** Overtime + shootout losses (regular season); 0 in playoffs. */
+  otLosses: number;
+  points: number | null;
+  pointPctg: number | null;
+};
+
+export type NhlCoachStint = {
+  franchiseName: string;
+  teamAbbrev: string;
+  /** ESPN team id when the franchise is still in the league. */
+  espnTeamId: number | null;
+  logo: string | null;
+  /** "2018-19". */
+  startSeason: string;
+  endSeason: string;
+  current: boolean;
+  regular: NhlCoachRecordLine | null;
+  playoffs: NhlCoachRecordLine | null;
+  jackAdams: number;
+  stanleyCups: number;
+  cupFinals: number;
+  firstCoached: string | null;
+};
+
+export type NhlCoachProfile = {
+  espnId: string;
+  name: string;
+  image: string | null;
+  birthDate: string | null;
+  age: number | null;
+  birthPlace: string | null;
+  college: string | null;
+  team: {
+    espnId: number;
+    name: string;
+    abbrev: string;
+    color: string;
+    logo: string | null;
+    record: string | null;
+    points: number | null;
+    standing: string | null;
+  } | null;
+  /** Head-coaching totals across every stop (records.nhl.com). */
+  career: {
+    seasons: number;
+    regular: NhlCoachRecordLine;
+    playoffs: NhlCoachRecordLine;
+    jackAdams: number;
+    stanleyCups: number;
+    cupFinals: number;
+    firstCoached: string | null;
+  } | null;
+  stints: NhlCoachStint[];
+  /** ESPN's own career lines ("W-L-T-OTL"), only shown when NHL records are unavailable. */
+  espnRecords: { label: string; summary: string }[];
+  playing: {
+    totals: { gp: number; g: number; a: number; pts: number; pim: number } | null;
+    seasons: { season: string; team: string; gp: number; g: number; a: number; pts: number }[];
+  } | null;
+  bio: string | null;
+  bioUrl: string | null;
+};
+
+type NhlRecordsCoach = {
+  fullName?: string;
+  playerId?: number | null;
+  isActive?: boolean;
+  bio?: string | null;
+};
+
+type NhlRecordsFranchiseRow = {
+  franchiseId?: number;
+  franchiseName?: string;
+  teamAbbrev?: string;
+  gameTypeId?: number;
+  startSeason?: number;
+  endSeason?: number;
+  seasons?: number;
+  games?: number;
+  wins?: number;
+  losses?: number;
+  otLosses?: number | null;
+  ties?: number | null;
+  points?: number | null;
+  pointPctg?: number | null;
+  jackAdams?: number;
+  stanleyCups?: number;
+  stanleyCupFinalAppearances?: number;
+  firstCoachedDate?: string;
+  lastCoachedDate?: string;
+};
+
+function seasonSpan(raw: number | undefined): string {
+  const s = String(raw ?? "");
+  return /^\d{8}$/.test(s) ? `${s.slice(0, 4)}-${s.slice(6, 8)}` : s || "—";
+}
+
+function coachLine(row: NhlRecordsFranchiseRow | undefined): NhlCoachRecordLine | null {
+  if (!row || !row.games) return null;
+  return {
+    games: row.games,
+    wins: row.wins ?? 0,
+    losses: row.losses ?? 0,
+    otLosses: row.otLosses ?? 0,
+    points: row.points ?? null,
+    pointPctg: row.pointPctg ?? null,
+  };
+}
+
+function sumLines(lines: (NhlCoachRecordLine | null)[], withPoints: boolean): NhlCoachRecordLine {
+  const total = { games: 0, wins: 0, losses: 0, otLosses: 0, points: 0 };
+  for (const l of lines) {
+    if (!l) continue;
+    total.games += l.games;
+    total.wins += l.wins;
+    total.losses += l.losses;
+    total.otLosses += l.otLosses;
+    total.points += l.points ?? 0;
+  }
+  return {
+    ...total,
+    points: withPoints ? total.points : null,
+    pointPctg: withPoints && total.games ? total.points / (total.games * 2) : null,
+  };
+}
+
+async function fetchHockeyWikipedia(name: string): Promise<{ extract: string | null; image: string | null; url: string | null }> {
+  for (const title of [`${name} (ice hockey)`, name]) {
+    try {
+      const api = new URL("https://en.wikipedia.org/w/api.php");
+      api.searchParams.set("action", "query");
+      api.searchParams.set("titles", title);
+      api.searchParams.set("redirects", "1");
+      api.searchParams.set("prop", "pageimages|extracts");
+      api.searchParams.set("exintro", "1");
+      api.searchParams.set("explaintext", "1");
+      api.searchParams.set("pithumbsize", "640");
+      api.searchParams.set("pilicense", "any");
+      api.searchParams.set("format", "json");
+      api.searchParams.set("origin", "*");
+      const data = await getJson<{
+        query?: {
+          pages?: Record<string, { missing?: string; title?: string; extract?: string; thumbnail?: { source?: string } }>;
+        };
+      }>(api.toString());
+      const page = Object.values(data.query?.pages ?? {})[0];
+      const extract = page?.extract?.trim() ?? "";
+      // Same-name pages are common; only keep the one that is about hockey.
+      if (!page || page.missing != null || !/hockey|\bNHL\b/i.test(extract)) continue;
+      return {
+        extract: extract || null,
+        image: page.thumbnail?.source ?? null,
+        url: `https://en.wikipedia.org/wiki/${encodeURIComponent((page.title ?? title).replace(/\s+/g, "_"))}`,
+      };
+    } catch {
+      /* try next title */
+    }
+  }
+  return { extract: null, image: null, url: null };
+}
+
+function ageFrom(iso: string | null): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age -= 1;
+  return age;
+}
+
+/**
+ * NHL head coach: ESPN core coach (identity, birth, college, ESPN career lines),
+ * records.nhl.com coach + per-franchise records (career W-L-OTL, playoffs, Jack
+ * Adams, Cups — via `/api/nhl`), NHL player landing for a playing career, and
+ * the Wikipedia intro as the bio. `teamHint` is the ESPN team id the user came from.
+ */
+export async function fetchNhlCoachProfile(coachId: string, teamHint?: string | null): Promise<NhlCoachProfile> {
+  type EspnCoach = {
+    firstName?: string;
+    lastName?: string;
+    dateOfBirth?: string;
+    birthPlace?: { city?: string; state?: string; country?: string };
+    college?: { $ref?: string };
+    careerRecords?: { $ref?: string }[];
+  };
+  const espn = await getJson<EspnCoach>(`${CORE}/coaches/${encodeURIComponent(coachId)}?lang=en&region=us`);
+  const name = [espn.firstName, espn.lastName].filter(Boolean).join(" ").trim();
+  if (!name) throw new Error("Coach not found");
+  const httpsRef = (ref: string | undefined) => (ref ? ref.replace(/^http:/, "https:") : null);
+
+  const [recordsCoach, franchiseRows, college, espnRecords, wiki] = await Promise.all([
+    nhlWebJson<{ data?: NhlRecordsCoach[] }>(`records/coach/${name}`)
+      .then((r) => r.data?.[0] ?? null)
+      .catch(() => null),
+    nhlWebJson<{ data?: NhlRecordsFranchiseRow[] }>(`records/coach-franchise/${name}`)
+      .then((r) => r.data ?? [])
+      .catch((): NhlRecordsFranchiseRow[] => []),
+    httpsRef(espn.college?.$ref)
+      ? getJson<{ name?: string }>(httpsRef(espn.college?.$ref)!)
+          .then((c) => c.name ?? null)
+          .catch(() => null)
+      : Promise.resolve(null),
+    Promise.all(
+      (espn.careerRecords ?? []).map((r) =>
+        httpsRef(r.$ref)
+          ? getJson<{ name?: string; summary?: string }>(httpsRef(r.$ref)!)
+              .then((x) => (x.summary ? { label: x.name ?? "Record", summary: x.summary } : null))
+              .catch(() => null)
+          : Promise.resolve(null),
+      ),
+    ).then((rows) => rows.filter((r): r is { label: string; summary: string } => Boolean(r))),
+    fetchHockeyWikipedia(name),
+  ]);
+
+  const byFranchise = new Map<string, NhlRecordsFranchiseRow[]>();
+  for (const row of franchiseRows) {
+    const key = `${row.franchiseId ?? row.franchiseName}-${row.teamAbbrev}`;
+    byFranchise.set(key, [...(byFranchise.get(key) ?? []), row]);
+  }
+  const lastDate = (rows: NhlRecordsFranchiseRow[]) =>
+    rows.map((r) => r.lastCoachedDate ?? "").sort().pop() ?? "";
+  const latestKey = [...byFranchise.entries()].sort((a, b) => lastDate(b[1]).localeCompare(lastDate(a[1])))[0]?.[0];
+  const recentEnough = (rows: NhlRecordsFranchiseRow[]) =>
+    Date.now() - Date.parse(lastDate(rows)) < 400 * 86_400_000;
+
+  const stints: NhlCoachStint[] = [...byFranchise.entries()]
+    .map(([key, rows]) => {
+      const regular = rows.find((r) => r.gameTypeId === 2);
+      const playoffs = rows.find((r) => r.gameTypeId === 3);
+      const abbrev = canonNhlAbbrev(regular?.teamAbbrev ?? playoffs?.teamAbbrev);
+      const team = NHL_TEAMS.find((t) => canonNhlAbbrev(t.abbrev) === abbrev);
+      const starts = rows.map((r) => r.startSeason ?? 0).filter(Boolean);
+      const ends = rows.map((r) => r.endSeason ?? 0).filter(Boolean);
+      return {
+        franchiseName: regular?.franchiseName ?? playoffs?.franchiseName ?? abbrev,
+        teamAbbrev: abbrev,
+        espnTeamId: team?.id ?? null,
+        logo: abbrev ? nhlTeamLogo(abbrev) : null,
+        startSeason: seasonSpan(Math.min(...starts)),
+        endSeason: seasonSpan(Math.max(...ends)),
+        current: key === latestKey && recordsCoach?.isActive !== false && recentEnough(rows),
+        regular: coachLine(regular),
+        playoffs: coachLine(playoffs),
+        jackAdams: Math.max(0, ...rows.map((r) => r.jackAdams ?? 0)),
+        stanleyCups: playoffs?.stanleyCups ?? 0,
+        cupFinals: playoffs?.stanleyCupFinalAppearances ?? 0,
+        firstCoached: rows.map((r) => r.firstCoachedDate ?? "").filter(Boolean).sort()[0] ?? null,
+      };
+    })
+    .sort((a, b) => b.startSeason.localeCompare(a.startSeason));
+
+  const career: NhlCoachProfile["career"] = stints.length
+    ? {
+        seasons: [...byFranchise.values()].reduce(
+          (n, rows) => n + (rows.find((r) => r.gameTypeId === 2)?.seasons ?? 0),
+          0,
+        ),
+        regular: sumLines(stints.map((s) => s.regular), true),
+        playoffs: sumLines(stints.map((s) => s.playoffs), false),
+        jackAdams: stints.reduce((n, s) => n + s.jackAdams, 0),
+        stanleyCups: stints.reduce((n, s) => n + s.stanleyCups, 0),
+        cupFinals: stints.reduce((n, s) => n + s.cupFinals, 0),
+        firstCoached: stints.map((s) => s.firstCoached ?? "").filter(Boolean).sort()[0] ?? null,
+      }
+    : null;
+
+  const currentStint = stints.find((s) => s.current);
+  const teamEspnId = teamHint && /^\d+$/.test(teamHint) ? Number(teamHint) : currentStint?.espnTeamId ?? null;
+  let team: NhlCoachProfile["team"] = null;
+  if (teamEspnId != null) {
+    const raw = await getJson<{
+      team?: {
+        displayName?: string;
+        abbreviation?: string;
+        color?: string;
+        standingSummary?: string;
+        logos?: { href?: string }[];
+        record?: { items?: { type?: string; summary?: string; stats?: { name?: string; value?: number }[] }[] };
+      };
+    }>(`${ESPN}/teams/${teamEspnId}`).catch(() => null);
+    const t = raw?.team;
+    if (t) {
+      const total = t.record?.items?.find((r) => r.type === "total") ?? t.record?.items?.[0];
+      const pts = total?.stats?.find((s) => s.name === "points")?.value;
+      team = {
+        espnId: teamEspnId,
+        name: t.displayName ?? "NHL team",
+        abbrev: t.abbreviation ?? "",
+        color: (t.color ?? "002f87").replace(/^#/, ""),
+        logo: t.logos?.[0]?.href ?? (t.abbreviation ? nhlTeamLogo(t.abbreviation) : null),
+        record: total?.summary ?? null,
+        points: typeof pts === "number" ? pts : nhlPointsFromRecord(total?.summary),
+        standing: t.standingSummary ?? null,
+      };
+    }
+  }
+
+  let playing: NhlCoachProfile["playing"] = null;
+  if (recordsCoach?.playerId) {
+    type PlayerLanding = {
+      careerTotals?: {
+        regularSeason?: { gamesPlayed?: number; goals?: number; assists?: number; points?: number; pim?: number };
+      };
+      seasonTotals?: {
+        season?: number;
+        gameTypeId?: number;
+        leagueAbbrev?: string;
+        teamName?: { default?: string };
+        gamesPlayed?: number;
+        goals?: number;
+        assists?: number;
+        points?: number;
+      }[];
+    };
+    const landing = await nhlWebJson<PlayerLanding>(`v1/player/${recordsCoach.playerId}/landing`).catch(() => null);
+    const rs = landing?.careerTotals?.regularSeason;
+    const seasons = (landing?.seasonTotals ?? [])
+      .filter((s) => s.leagueAbbrev === "NHL" && s.gameTypeId === 2)
+      .map((s) => ({
+        season: seasonSpan(s.season),
+        team: s.teamName?.default ?? "—",
+        gp: s.gamesPlayed ?? 0,
+        g: s.goals ?? 0,
+        a: s.assists ?? 0,
+        pts: s.points ?? 0,
+      }));
+    if (rs?.gamesPlayed || seasons.length) {
+      playing = {
+        totals: rs?.gamesPlayed
+          ? { gp: rs.gamesPlayed, g: rs.goals ?? 0, a: rs.assists ?? 0, pts: rs.points ?? 0, pim: rs.pim ?? 0 }
+          : null,
+        seasons,
+      };
+    }
+  }
+
+  const birthDate = espn.dateOfBirth ? espn.dateOfBirth.slice(0, 10) : null;
+  const bp = espn.birthPlace;
+  return {
+    espnId: coachId,
+    name,
+    image: wiki.image,
+    birthDate,
+    age: ageFrom(birthDate ? `${birthDate}T12:00:00` : null),
+    birthPlace: [bp?.city, bp?.state, bp?.country].filter(Boolean).join(", ") || null,
+    college,
+    team,
+    career,
+    stints,
+    espnRecords,
+    playing,
+    bio: recordsCoach?.bio?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || wiki.extract,
+    bioUrl: wiki.url,
   };
 }
