@@ -7,7 +7,10 @@ import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 import TeamMark from "@/components/sports/TeamMark";
-import { useRuwtSlate } from "@/hooks/useRuwtSlate";
+import type { UnifiedRuwtItem } from "@/hooks/useRuwtSlate";
+import { useRuwtSlateSplit } from "@/hooks/useRuwtSlateSplit";
+import { kickoffLabel, ruwtStartIso } from "@/lib/ruwt-score-tab";
+import { ruwtTodaysTop } from "@/lib/ruwt-slate";
 import {
   fetchPitcherSeasonLines,
   mlbHeadshot,
@@ -104,6 +107,58 @@ const MLB_TEAMS: { id: number; name: string; abbrev: string }[] = [
   { id: 158, name: "Brewers", abbrev: "MIL" },
 ];
 
+function RuwtBlockHead({ title, count, live }: { title: string; count: number; live?: boolean }) {
+  return (
+    <h2 className="mb-3 inline-flex items-center gap-2">
+      {live ? <span className="bg-alert inline-block h-2 w-2 animate-pulse rounded-full" /> : null}
+      <span className="rule-head">{title}</span>
+      {count > 0 ? <span className="text-chalk-dim numeral text-[11px]">({count})</span> : null}
+    </h2>
+  );
+}
+
+function RuwtGameGrid({
+  items,
+  rankOffset = 0,
+  placeByTeam,
+  compactFinal = false,
+  dimmed = false,
+}: {
+  items: readonly UnifiedRuwtItem[];
+  rankOffset?: number;
+  placeByTeam: Record<number, string>;
+  compactFinal?: boolean;
+  dimmed?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3",
+        dimmed && "opacity-70",
+      )}
+    >
+      {items.map((item, i) => {
+        const rank = rankOffset + i + 1;
+        if (item.sport === "mlb") {
+          return (
+            <RuwtCard
+              key={item.id}
+              game={item.game}
+              rank={rank}
+              compactFinal={compactFinal}
+              placeByTeam={placeByTeam}
+            />
+          );
+        }
+        if (item.sport === "nfl") return <NflRuwtCard key={item.id} game={item.game} rank={rank} />;
+        if (item.sport === "nhl") return <NhlRuwtCard key={item.id} game={item.game} rank={rank} />;
+        if (item.sport === "cfb") return <CfbRuwtCard key={item.id} game={item.game} rank={rank} />;
+        return <SoccerRuwtCard key={item.id} game={item.game} rank={rank} />;
+      })}
+    </div>
+  );
+}
+
 export default function RuwtPage() {
   const [interest, setInterest] = useState<RuwtTeamInterest>(() => loadTeamInterest());
   const [nflInterest, setNflInterest] = useState<RuwtTeamInterest>(() => loadNflTeamInterest());
@@ -122,8 +177,8 @@ export default function RuwtPage() {
     if (params.get("solo") === "1") markSportsSolo();
   }, []);
 
-  const { unified, scoreboard, nflBoard, nhlBoard, cfbBoard, soccerBoard, standings } =
-    useRuwtSlate({
+  const { live, upcoming, finals, scoreboard, nflBoard, nhlBoard, cfbBoard, soccerBoard, standings } =
+    useRuwtSlateSplit({
       interest: {
         mlb: interest,
         nfl: nflInterest,
@@ -179,20 +234,26 @@ export default function RuwtPage() {
     return out;
   }, [standings.data]);
 
-  const filtered = useMemo(() => {
-    if (sportFilter === "all") return unified;
-    return unified.filter((g) => g.sport === sportFilter);
-  }, [unified, sportFilter]);
-
-  const activeGames = useMemo(() => {
-    const open = filtered.filter((g) => !g.game.final);
-    if (!liveOnly) return open;
-    return open.filter((g) => g.game.live);
-  }, [filtered, liveOnly]);
-  const finalGames = useMemo(
-    () => (liveOnly ? [] : filtered.filter((g) => g.game.final)),
-    [filtered, liveOnly],
+  const liveGames = useMemo(
+    () => (sportFilter === "all" ? live : live.filter((g) => g.sport === sportFilter)),
+    [live, sportFilter],
   );
+  const upcomingGames = useMemo(() => {
+    if (liveOnly) return [];
+    return sportFilter === "all" ? upcoming : upcoming.filter((g) => g.sport === sportFilter);
+  }, [upcoming, sportFilter, liveOnly]);
+  const finalGames = useMemo(() => {
+    if (liveOnly) return [];
+    return sportFilter === "all" ? finals : finals.filter((g) => g.sport === sportFilter);
+  }, [finals, sportFilter, liveOnly]);
+  // Full upcoming slate, still in RUWT order. Finals stay in their own block, so
+  // this call does not use the late-night finals fallback (that stays on Sports home).
+  const todaysTop = useMemo(
+    () =>
+      ruwtTodaysTop({ live: liveGames, upcoming: upcomingGames, finals: [] }, upcomingGames.length),
+    [liveGames, upcomingGames],
+  );
+  const nextStart = todaysTop.items[0] ? kickoffLabel(ruwtStartIso(todaysTop.items[0])) : null;
 
   const refresh = () => {
     void Promise.all([
@@ -506,42 +567,35 @@ export default function RuwtPage() {
         <p className="text-chalk flex items-center gap-2 text-[13px]">
           <Loader2 size={14} className="animate-spin" /> Loading slate…
         </p>
-      ) : activeGames.length === 0 && finalGames.length === 0 ? (
+      ) : liveGames.length === 0 && todaysTop.items.length === 0 && finalGames.length === 0 ? (
         <p className="text-chalk-dim text-[13px]">
-          {scoreboard.isError && sportFilter !== "nfl" && sportFilter !== "nhl"
-            ? "Couldn’t load today’s MLB games."
-            : "No games on the board for this filter."}
+          {liveOnly
+            ? "No live games right now."
+            : scoreboard.isError && sportFilter !== "nfl" && sportFilter !== "nhl"
+              ? "Couldn’t load today’s MLB games."
+              : "No games on the board for this filter."}
         </p>
       ) : (
-        <section className="space-y-3">
-          {activeGames.length > 0 ? (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {activeGames.map((item, i) =>
-                item.sport === "mlb" ? (
-                  <RuwtCard
-                    key={item.id}
-                    game={item.game}
-                    rank={i + 1}
-                    placeByTeam={divisionPlaceByTeam}
-                  />
-                ) : item.sport === "nfl" ? (
-                  <NflRuwtCard key={item.id} game={item.game} rank={i + 1} />
-                ) : item.sport === "nhl" ? (
-                  <NhlRuwtCard key={item.id} game={item.game} rank={i + 1} />
-                ) : item.sport === "cfb" ? (
-                  <CfbRuwtCard key={item.id} game={item.game} rank={i + 1} />
-                ) : (
-                  <SoccerRuwtCard key={item.id} game={item.game} rank={i + 1} />
-                ),
-              )}
-            </div>
-          ) : (
-            <p className="text-chalk-dim text-[13px]">
-              {liveOnly
-                ? "No live games right now."
-                : "No live/upcoming games — finals below."}
-            </p>
-          )}
+        <section className="space-y-6">
+          <section>
+            <RuwtBlockHead title="Live" count={liveGames.length} live={liveGames.length > 0} />
+            {liveGames.length > 0 ? (
+              <RuwtGameGrid items={liveGames} placeByTeam={divisionPlaceByTeam} />
+            ) : (
+              <p className="text-chalk-dim text-[13px]">
+                {todaysTop.items.length === 0
+                  ? "No live or upcoming games — finals below."
+                  : `Nothing live right now${nextStart ? ` · next game ${nextStart}` : ""}.`}
+              </p>
+            )}
+          </section>
+
+          {todaysTop.items.length > 0 ? (
+            <section>
+              <RuwtBlockHead title="Today’s Top" count={todaysTop.items.length} />
+              <RuwtGameGrid items={todaysTop.items} placeByTeam={divisionPlaceByTeam} />
+            </section>
+          ) : null}
 
           {finalGames.length > 0 && (
             <section className="space-y-2">
@@ -556,35 +610,13 @@ export default function RuwtPage() {
                 {showFinals ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               </button>
               {showFinals ? (
-                <div className="grid grid-cols-1 gap-2 opacity-70 sm:grid-cols-2 xl:grid-cols-3">
-                  {finalGames.map((item, i) =>
-                    item.sport === "mlb" ? (
-                      <RuwtCard
-                        key={item.id}
-                        game={item.game}
-                        rank={activeGames.length + i + 1}
-                        compactFinal
-                        placeByTeam={divisionPlaceByTeam}
-                      />
-                    ) : item.sport === "nfl" ? (
-                      <NflRuwtCard key={item.id} game={item.game} rank={activeGames.length + i + 1} />
-                    ) : item.sport === "nhl" ? (
-                      <NhlRuwtCard key={item.id} game={item.game} rank={activeGames.length + i + 1} />
-                    ) : item.sport === "cfb" ? (
-                      <CfbRuwtCard
-                        key={item.id}
-                        game={item.game}
-                        rank={activeGames.length + i + 1}
-                      />
-                    ) : (
-                      <SoccerRuwtCard
-                        key={item.id}
-                        game={item.game}
-                        rank={activeGames.length + i + 1}
-                      />
-                    ),
-                  )}
-                </div>
+                <RuwtGameGrid
+                  items={finalGames}
+                  rankOffset={liveGames.length + todaysTop.items.length}
+                  placeByTeam={divisionPlaceByTeam}
+                  compactFinal
+                  dimmed
+                />
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {finalGames.slice(0, 10).map((item) => {
