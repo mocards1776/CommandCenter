@@ -12,6 +12,25 @@
 /** Closeness credit after the ease. One-score remains +28. */
 export const CFB_GOTW_TWO_SCORE_CREDIT = 24;
 
+/**
+ * Leader win chance at or above this is effectively over.
+ * ESPN's 99.9 sits here. 98.6 is the same game. A one-score game at 89 is not.
+ */
+export const CFB_DECIDED_WIN_PCT = 97;
+
+/**
+ * Two scores with no win probability, and the clock at or under this in the
+ * 4th (or OT). 2:36 is inside. A one-score game at 4:00 is not this case.
+ */
+export const CFB_DECIDED_CLOCK_SEC = 3 * 60;
+
+/**
+ * Ceiling once a live game is effectively over.
+ * A one-score game is 68. A two-score game that is still a game is live 40 + tight 10 = 50.
+ * 49 sits under both, so rank, FPI, and a favorite slider cannot put a decided game first.
+ */
+export const CFB_DECIDED_LIVE_CAP = 49;
+
 export type CfbGameOfTheWeekInput = {
   bothRanked: boolean;
   bothSec: boolean;
@@ -74,4 +93,37 @@ export function cfbTwoScoreBucketPoints(diff: number): number {
 export function cfbGotwTwoScoreEase(diff: number, gameOfTheWeek: boolean): number {
   if (!gameOfTheWeek || diff <= 8 || diff > 16) return 0;
   return CFB_GOTW_TWO_SCORE_CREDIT - cfbTwoScoreBucketPoints(diff);
+}
+
+/** Higher of the two side win chances. Percents are 0–100. Missing sides are ignored. */
+export function cfbLeaderWinPct(
+  homeWinPct: number | null | undefined,
+  awayWinPct: number | null | undefined,
+): number | null {
+  const vals = [homeWinPct, awayWinPct].filter(
+    (n): n is number => typeof n === "number" && Number.isFinite(n),
+  );
+  if (!vals.length) return null;
+  return Math.max(...vals);
+}
+
+/**
+ * True when this margin is no longer a live game.
+ * A published leader win chance at or above CFB_DECIDED_WIN_PCT wins over the clock:
+ * 99% with time left is over, and 70% with two minutes left is not.
+ * With no win chance, only a two-score lead (9–16) late and under CFB_DECIDED_CLOCK_SEC.
+ * Three scores (17+) stay on the blowout path. One score without a win chance stays in doubt.
+ */
+export function cfbEffectivelyDecided(input: {
+  diff: number | null;
+  late: boolean;
+  clockSec: number | null;
+  leaderWinPct: number | null;
+}): boolean {
+  const wp = input.leaderWinPct;
+  if (wp != null && Number.isFinite(wp)) return wp >= CFB_DECIDED_WIN_PCT;
+  if (input.diff == null || input.diff < 9 || input.diff > 16) return false;
+  if (!input.late) return false;
+  if (input.clockSec == null || input.clockSec > CFB_DECIDED_CLOCK_SEC) return false;
+  return true;
 }

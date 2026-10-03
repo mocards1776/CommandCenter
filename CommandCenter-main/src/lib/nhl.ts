@@ -260,6 +260,31 @@ export type NhlRuwtContext = {
   watchTeamIds?: Set<string>;
 };
 
+/**
+ * NHL scoreboard rows have no win probability. A two-goal lead in the 3rd
+ * with under three minutes is the same "this is over" shape as a two-score
+ * college game. One-goal games stay in doubt. Three-goal games were already
+ * off the tight bonus and stay on that path.
+ */
+const NHL_DECIDED_CLOCK_SEC = 3 * 60;
+const NHL_DECIDED_LIVE_CAP = 49;
+
+function nhlClockSeconds(detail: string): number | null {
+  const m = detail.match(/\b(\d{1,2}):(\d{2})\b/);
+  if (!m) return null;
+  const min = Number(m[1]);
+  const sec = Number(m[2]);
+  if (!Number.isFinite(min) || !Number.isFinite(sec) || sec > 59) return null;
+  return min * 60 + sec;
+}
+
+function nhlEffectivelyDecided(diff: number, detail: string): boolean {
+  if (diff !== 2) return false;
+  if (!/\b3rd\b/.test(detail)) return false;
+  const clock = nhlClockSeconds(detail);
+  return clock != null && clock <= NHL_DECIDED_CLOCK_SEC;
+}
+
 /** Drama + interest score for RUWT (parallel to NFL / soccer). */
 export function scoreNhlRuwtGame(
   g: NhlScoreGame,
@@ -269,22 +294,24 @@ export function scoreNhlRuwtGame(
   const reasons: string[] = [];
   const detail = `${g.shortDetail ?? ""} ${g.status ?? ""}`.toLowerCase();
   const inOt = /\bot\b|overtime|shootout|\bso\b/.test(detail);
+  const liveDiff = Math.abs((g.away.score ?? 0) - (g.home.score ?? 0));
+  const decided = g.live && !g.final && nhlEffectivelyDecided(liveDiff, detail);
 
   if (g.live) {
     score += 40;
     reasons.push("Live");
-    const diff = Math.abs((g.away.score ?? 0) - (g.home.score ?? 0));
-    if (diff <= 1) {
+    const diff = liveDiff;
+    if (!decided && diff <= 1) {
       score += 28;
       reasons.push("One-goal game");
-    } else if (diff <= 2) {
+    } else if (!decided && diff <= 2) {
       score += 14;
       reasons.push("Tight");
     }
-    if (inOt) {
+    if (!decided && inOt) {
       score += 18;
       reasons.push("Overtime");
-    } else if (/\b3rd\b/.test(detail) && diff <= 1) {
+    } else if (!decided && /\b3rd\b/.test(detail) && diff <= 1) {
       score += 12;
       reasons.push("Late & close");
     }
@@ -322,6 +349,8 @@ export function scoreNhlRuwtGame(
       }
     }
   }
+
+  if (decided) score = Math.min(score, NHL_DECIDED_LIVE_CAP);
 
   const unique: string[] = [];
   for (const r of reasons) if (!unique.includes(r)) unique.push(r);

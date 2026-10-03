@@ -1,8 +1,11 @@
 /** College football via ESPN — scoreboard, RUWT, hot seat, player pages. */
 
 import {
+  CFB_DECIDED_LIVE_CAP,
+  cfbEffectivelyDecided,
   cfbGotwTwoScoreEase,
   cfbIsGameOfTheWeekMatchup,
+  cfbLeaderWinPct,
 } from "./cfb-live-margin";
 import {
   presentCfbPlayText,
@@ -10,7 +13,7 @@ import {
   type CfbPlayTone,
 } from "./cfb-play-text";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
-import { mapCfbWinProbability, type CfbWinProbPoint } from "./cfb-win-probability";
+import { espnRateToPct, mapCfbWinProbability, type CfbWinProbPoint } from "./cfb-win-probability";
 import {
   cfbDriveGlance,
   mapCfbDriveMeta,
@@ -184,6 +187,11 @@ export type CfbLiveSituation = {
   /** Remaining timeouts ESPN reported. Null when the feed omits them. */
   homeTimeouts: number | null;
   awayTimeouts: number | null;
+  /**
+   * Leader win chance from the scoreboard last play, 0–100.
+   * Null when ESPN did not send a probability. Not estimated here.
+   */
+  leaderWinPct: number | null;
 };
 
 export type CfbScoreGame = {
@@ -975,7 +983,7 @@ export async function fetchCfbPollRankByTeam(): Promise<Map<number, number>> {
   return map;
 }
 
-function mapCfbSituation(
+export function mapCfbSituation(
   sit:
     | {
         downDistanceText?: string;
@@ -983,7 +991,11 @@ function mapCfbSituation(
         yardLine?: number;
         isRedZone?: boolean;
         possession?: string;
-        lastPlay?: { text?: string; team?: { id?: string } };
+        lastPlay?: {
+          text?: string;
+          team?: { id?: string };
+          probability?: { homeWinPercentage?: number; awayWinPercentage?: number };
+        };
         homeTimeouts?: number;
         awayTimeouts?: number;
       }
@@ -1001,6 +1013,10 @@ function mapCfbSituation(
     lastPlayText: simplifyCfbPlayText(sit.lastPlay?.text) || null,
     homeTimeouts: typeof sit.homeTimeouts === "number" ? sit.homeTimeouts : null,
     awayTimeouts: typeof sit.awayTimeouts === "number" ? sit.awayTimeouts : null,
+    leaderWinPct: cfbLeaderWinPct(
+      espnRateToPct(sit.lastPlay?.probability?.homeWinPercentage),
+      espnRateToPct(sit.lastPlay?.probability?.awayWinPercentage),
+    ),
   };
 }
 
@@ -1754,6 +1770,7 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
         lastPlayText: play.text,
         homeTimeouts: null,
         awayTimeouts: null,
+        leaderWinPct: null,
       },
     };
   }
@@ -3584,6 +3601,22 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
   const period = g.period;
   const inOt =
     (period != null && period >= 5) || /\bot\b|overtime/.test(detail);
+  const lateGame = inOt || period === 4 || /\b4th\b/.test(detail);
+  const clockSec = parseRuwtClockSeconds(detail) ?? (/end of 4th|end 4th/.test(detail) ? 0 : null);
+  // Win chance is the scoreboard last play when ESPN sent one. Around 99% is over.
+  // Two scores and under three minutes is the fallback when that field is missing.
+  // Three-score leads stay on the blowout path below.
+  const decided =
+    g.live &&
+    !g.final &&
+    diff != null &&
+    diff <= 16 &&
+    cfbEffectivelyDecided({
+      diff,
+      late: lateGame,
+      clockSec,
+      leaderWinPct: g.situation?.leaderWinPct ?? null,
+    });
 
   if (g.live) {
     score += 40;
@@ -3598,15 +3631,17 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
     // Football one-score = TD (+PAT/2pt), i.e. ≤8 — not only a FG (≤3).
     // 9–14 is two scores. "Tight" is the +10 bonus for that band, not a
     // penalty. A game-of-the-week ease for 9–16 is applied after the TV window.
+    // A decided game does not get that credit: the win chance, or two scores
+    // with little time left, says the margin is not drama.
     if (diff != null) {
-      if (diff <= 8) {
+      if (!decided && diff <= 8) {
         score += 28;
         reasons.push("One-score game");
         if (diff <= 3) {
           score += 6;
           reasons.push("Within a kick");
         }
-      } else if (diff <= 14) {
+      } else if (!decided && diff <= 14) {
         score += 10;
         reasons.push("Tight");
       } else if (diff >= 28) {
@@ -3615,15 +3650,18 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
       } else if (diff >= 21) {
         score -= rankedLive ? 10 : 14;
         reasons.push("Blowout");
-      } else {
-        // 15–20: soft drag
+      } else if (!decided) {
+        // 15–20: soft drag. A decided two-score lead does not take this either.
         score -= rankedLive ? 3 : 8;
       }
     }
-    if (inOt) {
+    if (!decided && inOt) {
       score += 32;
       reasons.push("Overtime");
-    } else if (diff == null || diff <= 14 || (rankedLive && diff <= 21)) {
+    } else if (
+      !decided &&
+      (diff == null || diff <= 14 || (rankedLive && diff <= 21))
+    ) {
       // Late-game bump — ranked games keep a light late bump a bit longer.
       if (period === 4 || /\b4th\b/.test(detail)) {
         score += diff != null && diff > 14 ? 10 : 18;
@@ -3635,6 +3673,7 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
     }
     // Final minutes of a one-score game are appointment TV (CCU–WVU :27).
     if (
+      !decided &&
       diff != null &&
       diff <= 8 &&
       (inOt || period === 4 || /\b4th\b/.test(detail))
@@ -3653,12 +3692,13 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
         }
       }
     }
-    if (g.situation?.isRedZone && (diff == null || diff <= 14)) {
+    if (!decided && g.situation?.isRedZone && (diff == null || diff <= 14)) {
       score += 18;
       reasons.push("Red zone");
     }
     // 4th-and-short drama matters late — early-game 4th downs are mostly noise.
     if (
+      !decided &&
       g.situation?.downDistanceText?.startsWith("4th") &&
       (diff == null || diff <= 14) &&
       (period === 4 ||
@@ -3829,7 +3869,8 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
 
   // Live: chalk trailing = upset brewing.
   // Prefer the betting favorite; if live odds are missing, use the better-FPI side.
-  if (g.live && g.away.score != null && g.home.score != null) {
+  // A decided lead is not an upset watch, and it is not "Closest upset".
+  if (!decided && g.live && g.away.score != null && g.home.score != null) {
     const fpiGap =
       awayFpi != null && homeFpi != null ? Math.abs(awayFpi - homeFpi) : null;
     let chalkId = favId;
@@ -3946,7 +3987,8 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
   // Two-score game of the week: ranked SEC, undefeated or one-loss, top FPI,
   // national marquee window. Lands the margin on a credit still under one-score,
   // so it can clear a lesser one-score game. Three scores (17+) get nothing.
-  if (g.live && !g.final && diff != null) {
+  // A decided game does not get the ease — that credit is for a game still in doubt.
+  if (!decided && g.live && !g.final && diff != null) {
     const bothSec =
       CFB_SEC_TEAM_IDS.has(String(g.away.teamId)) &&
       CFB_SEC_TEAM_IDS.has(String(g.home.teamId));
@@ -3984,6 +4026,11 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
     score += 10;
     reasons.push("Close final");
   }
+
+  // Rank, FPI, TV, and interest stay. They cannot lift an effectively over
+  // game above a one-score game that is still in doubt (floor 68) or above a
+  // two-score game that still has its tight credit (50).
+  if (decided) score = Math.min(score, CFB_DECIDED_LIVE_CAP);
 
   return { score: Math.max(0, score), reasons: [...new Set(reasons)].slice(0, 6) };
 }
