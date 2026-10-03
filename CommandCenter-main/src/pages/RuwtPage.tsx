@@ -1,17 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Loader2, RefreshCw, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
 import NflFieldMap from "@/components/sports/NflFieldMap";
-import { CfbWinProbBadge } from "@/components/sports/CfbWinProbability";
+import { CfbWinProbCaption } from "@/components/sports/CfbWinProbability";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 import TeamMark from "@/components/sports/TeamMark";
 import type { UnifiedRuwtItem } from "@/hooks/useRuwtSlate";
 import { useRuwtSlateSplit } from "@/hooks/useRuwtSlateSplit";
 import { kickoffLabel, ruwtStartIso } from "@/lib/ruwt-score-tab";
-import { ruwtTodaysTop } from "@/lib/ruwt-slate";
+import { ruwtCardReasons, ruwtTodaysTop, withoutClosestUpset } from "@/lib/ruwt-slate";
 import {
   fetchPitcherSeasonLines,
   mlbHeadshot,
@@ -34,7 +34,7 @@ import {
   type CfbScoredGame,
 } from "@/lib/cfb";
 import { fetchCfbCurrentWinProbability } from "@/lib/cfb-win-probability";
-import CfbRankLabel from "@/components/sports/CfbRankLabel";
+import CfbRankLabel, { CfbFpiCaption } from "@/components/sports/CfbRankLabel";
 import type { GameBroadcast } from "@/lib/game-broadcasts";
 import {
   fetchPremierLeagueTeams,
@@ -693,6 +693,32 @@ function RuwtBroadcasts({ broadcasts }: { broadcasts?: GameBroadcast[] | null })
   );
 }
 
+function RuwtReasonLine({ reasons }: { reasons: string[] }) {
+  const full = ruwtCardReasons(reasons);
+  const [hideUpset, setHideUpset] = useState(false);
+  const chips = hideUpset ? withoutClosestUpset(full) : full;
+  const ref = useRef<HTMLParagraphElement>(null);
+  const chipKey = chips.join(" · ");
+  const fullKey = full.join(" · ");
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || hideUpset) return;
+    const wraps = el.scrollWidth > el.clientWidth + 1;
+    if (wraps && fullKey.toLowerCase().includes("closest upset")) {
+      setHideUpset(true);
+    }
+  }, [chipKey, hideUpset, fullKey]);
+  if (!chips.length) return null;
+  return (
+    <p
+      ref={ref}
+      className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]"
+    >
+      {chipKey}
+    </p>
+  );
+}
+
 function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
   const winProb = useQuery({
     queryKey: ["cfb-winprob-current", game.id],
@@ -764,24 +790,39 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
               awayHasBall && "text-cream",
             )}
           >
-            <CfbRankLabel pollRank={game.away.rank} fpiRank={game.away.fpiRank} />
+            <CfbRankLabel pollRank={game.away.rank} fpiRank={null} />
             {game.away.abbrev}
             {awayHasBall ? (
               <PossessionFootball className="h-3 w-5 shrink-0" />
             ) : null}
           </p>
+          {game.away.record ? (
+            <p className="numeral text-[11px] text-white/55">{game.away.record}</p>
+          ) : null}
+          <CfbFpiCaption pollRank={game.away.rank} fpiRank={game.away.fpiRank} />
         </div>
-        <p className="font-display text-center text-[28px] tabular-nums text-white">
-          {game.live || game.final ? (
-            <>
-              {game.away.score ?? "—"}
-              <span className="mx-1.5 text-[16px] text-white/30">-</span>
-              {game.home.score ?? "—"}
-            </>
-          ) : (
-            <span className="text-[20px]">{game.whenShort ?? "TBD"}</span>
-          )}
-        </p>
+        <div className="flex flex-col items-center">
+          <p className="numeral text-center text-[28px] font-semibold text-white">
+            {game.live || game.final ? (
+              <>
+                {game.away.score ?? "—"}
+                <span className="mx-1.5 text-[16px] font-medium text-white/30">-</span>
+                {game.home.score ?? "—"}
+              </>
+            ) : (
+              <span className="text-[20px]">{game.whenShort ?? "TBD"}</span>
+            )}
+          </p>
+          {game.live && winProb.data ? (
+            <CfbWinProbCaption
+              homeWinPct={winProb.data.homeWinPct}
+              awayWinPct={winProb.data.awayWinPct}
+              tiePct={winProb.data.tiePct}
+              away={game.away}
+              home={game.home}
+            />
+          ) : null}
+        </div>
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
           <p
@@ -793,25 +834,15 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
             {homeHasBall ? (
               <PossessionFootball className="h-3 w-5 shrink-0" />
             ) : null}
-            <CfbRankLabel pollRank={game.home.rank} fpiRank={game.home.fpiRank} />
+            <CfbRankLabel pollRank={game.home.rank} fpiRank={null} />
             {game.home.abbrev}
           </p>
+          {game.home.record ? (
+            <p className="numeral text-[11px] text-white/55">{game.home.record}</p>
+          ) : null}
+          <CfbFpiCaption pollRank={game.home.rank} fpiRank={game.home.fpiRank} />
         </div>
       </div>
-      {game.live && winProb.data ? (
-        <div className="relative z-10 flex items-center justify-between gap-2 border-t border-white/[0.06] px-3 py-1.5">
-          <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/40">
-            Win %
-          </span>
-          <CfbWinProbBadge
-            homeWinPct={winProb.data.homeWinPct}
-            awayWinPct={winProb.data.awayWinPct}
-            tiePct={winProb.data.tiePct}
-            away={game.away}
-            home={game.home}
-          />
-        </div>
-      ) : null}
       {game.live && game.situation && (
         <div className="relative z-10 border-t border-white/[0.06] px-2 py-2">
           <NflFieldMap
@@ -825,11 +856,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
         </div>
       )}
       <RuwtBroadcasts broadcasts={game.broadcasts} />
-      {game.reasons.length > 0 && (
-        <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
-          {game.reasons.join(" · ")}
-        </p>
-      )}
+      <RuwtReasonLine reasons={game.reasons} />
     </Link>
   );
 }
@@ -890,7 +917,7 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
             {awayHasBall ? <PossessionFootball className="h-3 w-5 shrink-0" /> : null}
           </p>
         </div>
-        <p className="font-display text-center text-[28px] tabular-nums text-white">
+        <p className="numeral text-center text-[28px] font-semibold text-white">
           {game.live || game.final ? (
             <>
               {game.away.score ?? "—"}
@@ -925,11 +952,7 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
         </div>
       )}
       <RuwtBroadcasts broadcasts={game.broadcasts} />
-      {game.reasons.length > 0 && (
-        <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
-          {game.reasons.join(" · ")}
-        </p>
-      )}
+      <RuwtReasonLine reasons={game.reasons} />
     </Link>
   );
 }
@@ -976,7 +999,7 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
           {game.away.logo && <img src={game.away.logo} alt="" className="h-8 w-8 object-contain" />}
           <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
         </div>
-        <p className="font-display text-center text-[28px] tabular-nums text-white">
+        <p className="numeral text-center text-[28px] font-semibold text-white">
           {game.live || game.final ? (
             <>
               {game.away.score ?? "—"}
@@ -993,11 +1016,7 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
         </div>
       </div>
       <RuwtBroadcasts broadcasts={game.broadcasts} />
-      {game.reasons.length > 0 && (
-        <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
-          {game.reasons.join(" · ")}
-        </p>
-      )}
+      <RuwtReasonLine reasons={game.reasons} />
     </Link>
   );
 }
@@ -1039,7 +1058,7 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
           ) : null}
           <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
         </div>
-        <p className="font-display text-center text-[28px] tabular-nums text-white">
+        <p className="numeral text-center text-[28px] font-semibold text-white">
           {game.live || game.final ? (
             <>
               {game.away.score ?? "—"}
@@ -1058,11 +1077,7 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
         </div>
       </div>
       <RuwtBroadcasts broadcasts={game.broadcasts} />
-      {game.reasons.length > 0 && (
-        <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
-          {game.reasons.join(" · ")}
-        </p>
-      )}
+      <RuwtReasonLine reasons={game.reasons} />
     </a>
   );
 }
@@ -1155,7 +1170,7 @@ function RuwtCard({
             align="left"
             place={placeByTeam?.[game.away.teamId ?? -1]}
           />
-          <p className="font-display text-center text-[26px] text-white">
+          <p className="numeral text-center text-[26px] font-semibold text-white">
             {game.whenShort ?? "TBD"}
           </p>
           <Side
@@ -1172,7 +1187,7 @@ function RuwtCard({
             muted={homeWins}
             place={placeByTeam?.[game.away.teamId ?? -1]}
           />
-          <p className="font-display text-center text-[32px] tabular-nums text-white">
+          <p className="numeral text-center text-[32px] font-semibold text-white">
             {game.away.score ?? "—"}
             <span className="mx-1.5 text-[16px] text-white/30">-</span>
             {game.home.score ?? "—"}
@@ -1225,11 +1240,7 @@ function RuwtCard({
 
       <RuwtBroadcasts broadcasts={game.broadcasts} />
 
-      {game.reasons.length > 0 && (
-        <p className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]">
-          {game.reasons.join(" · ")}
-        </p>
-      )}
+      <RuwtReasonLine reasons={game.reasons} />
     </Link>
   );
 }

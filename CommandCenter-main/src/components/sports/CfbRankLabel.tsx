@@ -36,3 +36,25 @@ export default function CfbRankLabel({
   }
   return null;
 }
+
+/** FPI under the record. Hidden when a top-25 poll rank is already on the name. */
+export function CfbFpiCaption({
+  pollRank,
+  fpiRank,
+  className,
+}: {
+  pollRank: number | null | undefined;
+  fpiRank?: number | null | undefined;
+  className?: string;
+}) {
+  if (pollRank != null && pollRank >= 1 && pollRank <= 25) return null;
+  if (fpiRank == null || fpiRank <= 0) return null;
+  return (
+    <p
+      className={cn("text-[10px] font-medium tabular-nums tracking-wide text-white/40", className)}
+      title="ESPN Football Power Index rank"
+    >
+      FPI #{fpiRank}
+    </p>
+  );
+}

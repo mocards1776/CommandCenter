@@ -594,10 +594,11 @@ function broadcastGlance(game: PushGame): string {
 function heatBody(game: PushGame, chips: string): string {
   const lines: string[] = [];
   const clock = clockLabel(game);
-  if (clock) lines.push(clock);
-  if (chips) lines.push(chips);
   const tv = broadcastGlance(game);
-  if (tv) lines.push(tv);
+  // Network stays on the clock line so a name like "CW" is not an orphan chip.
+  const clockLine = [clock, tv].filter(Boolean).join(" · ");
+  if (clockLine) lines.push(clockLine);
+  if (chips) lines.push(chips);
   return lines.join("\n") || "One-score game";
 }
 
