@@ -75,7 +75,7 @@ function toTab(item: UnifiedRuwtItem): ScoreTab {
   };
   const when = "whenShort" in g ? g.whenShort : null;
   const label = pregame
-    ? when || kickoffLabel(g.startIso) || g.shortDetail || "Today"
+    ? (when || kickoffLabel(g.startIso) || g.shortDetail || "Today").replace(/\s+[A-Z]{2,4}T$/, "")
     : g.final
       ? g.shortDetail || "Final"
       : g.shortDetail || g.status || "Live";
@@ -87,10 +87,20 @@ function toTab(item: UnifiedRuwtItem): ScoreTab {
   };
 }
 
+/** ESPN's dark-mode logo set keeps navy/crimson marks legible on the pill background. */
+function espnDarkLogo(url: string): string | null {
+  const dark = url.replace(/(\/i\/teamlogos\/[a-z]+)\/500\//, "$1/500-dark/");
+  return dark === url ? null : dark;
+}
+
 function TabLogo({ side }: { side: TabSide }) {
+  const dark = espnDarkLogo(side.logo);
   return (
     <img
-      src={side.logo}
+      src={dark ?? side.logo}
+      onError={(e) => {
+        if (dark && e.currentTarget.src !== side.logo) e.currentTarget.src = side.logo;
+      }}
       alt={side.abbrev}
       title={side.abbrev}
       loading="lazy"
