@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { cfbDriveStatLine, type CfbDriveGlance } from "@/lib/cfb-drive";
+import { alignCfbOpenDriveToPossession, cfbDriveStatLine, type CfbDriveGlance } from "@/lib/cfb-drive";
 import type { NflScoreGame } from "@/lib/nfl";
 import { fieldBallPctFromHomeYardLine } from "@/lib/nfl";
 import LogoPlate from "@/components/sports/LogoPlate";
@@ -195,10 +195,16 @@ export default function NflFieldMap({
   const toGainWidth =
     ballPct != null && firstDownPct != null ? Math.abs(firstDownPct - ballPct) : null;
 
-  const driveStartPct = fieldBallPctFromHomeYardLine(drive?.startYardLine ?? null);
-  const driveStats = drive ? cfbDriveStatLine(drive) : null;
-  const driveStartTitle = drive?.startText
-    ? `Drive started at ${drive.startText}`
+  const openDrive = alignCfbOpenDriveToPossession(drive, {
+    possessionTeamId: poss,
+    homeYardLine,
+    away: { teamId: game.away.teamId, abbrev: game.away.abbrev },
+    home: { teamId: game.home.teamId, abbrev: game.home.abbrev },
+  });
+  const driveStartPct = fieldBallPctFromHomeYardLine(openDrive?.startYardLine ?? null);
+  const driveStats = openDrive ? cfbDriveStatLine(openDrive) : null;
+  const driveStartTitle = openDrive?.startText
+    ? `Drive started at ${openDrive.startText}`
     : "Drive start";
 
   return (
