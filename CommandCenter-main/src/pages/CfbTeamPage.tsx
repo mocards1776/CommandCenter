@@ -489,19 +489,15 @@ function ScheduleRow({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="hover:bg-white/[0.03] grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3.5 text-left transition"
+        className={cn(
+          "hover:bg-white/[0.03] grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-l-[3px] px-3 py-3 text-left transition",
+          result === "W" && "border-emerald-400",
+          result === "L" && "border-red-400",
+          result === "T" && "border-amber-300",
+          !result && game.live && "border-red-400",
+          !result && !game.live && "border-transparent",
+        )}
       >
-        <div className="flex w-10 justify-center">
-          {result ? (
-            <TeamResultBadge result={result} />
-          ) : game.live ? (
-            <span className="text-alert text-[10px] font-bold uppercase tracking-[0.12em]">Live</span>
-          ) : (
-            <span className="text-chalk-dim text-[10px] font-semibold uppercase tracking-[0.08em]">
-              {game.home ? "vs" : "@"}
-            </span>
-          )}
-        </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2.5">
             {game.oppLogo ? (
@@ -520,11 +516,13 @@ function ScheduleRow({
               <p className="text-chalk-dim text-[11px]">
                 {game.date ? formatSportsDate(game.date) : game.dateLabel || "Date TBD"}
               </p>
-              <div className="mt-1 flex flex-wrap gap-1">
-                {rivalry ? <GameBadge label={rivalry} /> : null}
-                {game.oppRank != null ? <GameBadge label={`AP #${game.oppRank}`} /> : null}
-                {game.bowl ? <GameBadge label={game.bowlName || "Bowl"} /> : null}
-              </div>
+              {rivalry || game.oppRank != null || game.bowl ? (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {rivalry ? <GameBadge label={rivalry} /> : null}
+                  {game.oppRank != null ? <GameBadge label={`AP #${game.oppRank}`} /> : null}
+                  {game.bowl ? <GameBadge label={game.bowlName || "Bowl"} /> : null}
+                </div>
+              ) : null}
               {(game.final || game.live) && (passer || rusher) ? (
                 <p className="text-chalk mt-1 truncate text-[11px]">
                   {[shortLeader(passer, "pass"), shortLeader(rusher, "rush")].filter(Boolean).join(" · ")}
@@ -534,6 +532,13 @@ function ScheduleRow({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {result ? (
+            <TeamResultBadge result={result} solid />
+          ) : game.live ? (
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-red-500/20 text-[9px] font-black uppercase tracking-[0.08em] text-red-300 ring-1 ring-red-400/50">
+              Live
+            </span>
+          ) : null}
           <ScoreStack
             teamAbbrev={team.abbrev}
             oppAbbrev={game.oppAbbrev}
@@ -612,18 +617,18 @@ function ScoreStack({
   return (
     <div className="text-right">
       <p className="flex items-baseline justify-end gap-1.5 leading-none">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-white/45">
+        <span className={cn("text-[11px] font-bold uppercase tracking-[0.08em]", ours)}>
           {teamAbbrev}
         </span>
-        <span className={cn("font-display text-[22px] font-semibold tabular-nums", ours)}>
+        <span className={cn("font-display text-[26px] font-black tabular-nums", ours)}>
           {teamScore ?? "—"}
         </span>
       </p>
       <p className="mt-1 flex items-baseline justify-end gap-1.5 leading-none">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-white/35">
+        <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-white/45">
           {oppAbbrev}
         </span>
-        <span className="font-display text-[16px] font-semibold tabular-nums text-white/45">
+        <span className="font-display text-[16px] font-semibold tabular-nums text-white/40">
           {oppScore ?? "—"}
         </span>
       </p>
@@ -645,10 +650,14 @@ function GameWrap({
   return (
     <div className="border-t border-white/[0.05] bg-black/20 px-4 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-[12px] font-semibold text-white">
-          {team.abbrev} {game.teamScore ?? "—"}
-          <span className="mx-1 text-white/30">–</span>
-          {game.oppScore ?? "—"} {game.oppAbbrev}
+        <p className="text-[13px] font-semibold text-white">
+          <span className={game.won === false ? "text-red-300" : game.won === true ? "text-emerald-300" : "text-white"}>
+            {team.abbrev} {game.teamScore ?? "—"}
+          </span>
+          <span className="mx-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-white/35">
+            {game.oppAbbrev}
+          </span>
+          <span className="text-white/55">{game.oppScore ?? "—"}</span>
         </p>
         <Link
           to={`/sports/cfb/game/${game.id}`}
@@ -860,11 +869,14 @@ function SeasonHistoryRow({
     <li>
       <Link
         to={`/sports/cfb/game/${game.id}`}
-        className="hover:bg-white/[0.03] grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 transition"
+        className={cn(
+          "hover:bg-white/[0.03] grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-l-[3px] px-3 py-2.5 transition",
+          result === "W" && "border-emerald-400",
+          result === "L" && "border-red-400",
+          result === "T" && "border-amber-300",
+          !result && "border-transparent",
+        )}
       >
-        <div className="flex w-9 justify-center">
-          {result ? <TeamResultBadge result={result} /> : null}
-        </div>
         <div className="min-w-0">
           <p className="text-cream truncate text-[13px] font-medium">
             <span className="text-chalk-dim mr-1.5 text-[10px] font-medium uppercase tracking-[0.12em]">
@@ -878,15 +890,18 @@ function SeasonHistoryRow({
             {rivalry ? ` · ${rivalry}` : ""}
           </p>
         </div>
-        <ScoreStack
-          teamAbbrev={teamAbbrev}
-          oppAbbrev={game.oppAbbrev}
-          teamScore={game.teamScore}
-          oppScore={game.oppScore}
-          showScores={game.final || game.live}
-          won={game.won}
-          fallback={game.shortDetail || "TBD"}
-        />
+        <div className="flex items-center gap-2">
+          {result ? <TeamResultBadge result={result} solid /> : null}
+          <ScoreStack
+            teamAbbrev={teamAbbrev}
+            oppAbbrev={game.oppAbbrev}
+            teamScore={game.teamScore}
+            oppScore={game.oppScore}
+            showScores={game.final || game.live}
+            won={game.won}
+            fallback={game.shortDetail || "TBD"}
+          />
+        </div>
       </Link>
     </li>
   );
