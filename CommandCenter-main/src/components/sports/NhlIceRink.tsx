@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { liftTeamColor, type NhlIcePlayer, type NhlIceState, type NhlScoreSide } from "@/lib/nhl";
+import { type NhlIcePlayer, type NhlIceState, type NhlScoreSide } from "@/lib/nhl";
 import { cn } from "@/lib/utils";
 
 /**
@@ -58,7 +58,7 @@ function placeTeam(
   puckX: number,
 ): Placed[] {
   const dir = attacksRight ? 1 : -1;
-  const depth = Math.max(-1, Math.min(1, (puckX * dir) / 70));
+  const depth = Math.max(-0.85, Math.min(0.85, (puckX * dir) / 70));
   const template = depth >= 0 ? TEMPLATES.offense : TEMPLATES.defense;
   const out: Placed[] = [];
   const goalies = players.filter((p) => (p.position ?? "").toUpperCase() === "G");
@@ -74,46 +74,46 @@ function placeTeam(
   return out;
 }
 
-/** Nudge overlapping markers apart (ellipse ≈ marker + label footprint, in feet). */
+/**
+ * Nudge overlapping markers apart. Each marker is a headshot over a name pill,
+ * ≈ 30 × 25 ft at phone width, so separate boxes along the shallower overlap.
+ */
 function relax(points: Placed[]): Placed[] {
-  const RX = 17;
-  const RY = 13;
+  const W = 30;
+  const H = 25;
   const pts = points.map((p) => ({ ...p }));
-  for (let iter = 0; iter < 60; iter++) {
+  for (let iter = 0; iter < 200; iter++) {
     let moved = false;
     for (let i = 0; i < pts.length; i++) {
       for (let j = i + 1; j < pts.length; j++) {
         const a = pts[i]!;
         const b = pts[j]!;
         if (a.fixed && b.fixed) continue;
-        let dx = (b.x - a.x) / RX;
-        let dy = (b.y - a.y) / RY;
-        let d = Math.hypot(dx, dy);
-        if (d >= 1) continue;
-        if (d < 1e-3) {
-          dx = 0;
-          dy = j % 2 ? 1 : -1;
-          d = 1e-3;
-        }
-        const push = (1 - d) / 2 + 0.01;
-        const ux = (dx / d) * push * RX;
-        const uy = (dy / d) * push * RY;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const penX = W - Math.abs(dx);
+        const penY = H - Math.abs(dy);
+        if (penX <= 0 || penY <= 0) continue;
+        // The rink is 200 × 85, so sideways has far more room than up/down.
+        const alongX = penX / W < (penY / H) * 1.8;
+        const sign = (alongX ? dx : dy) >= 0 ? 1 : -1;
+        const step = ((alongX ? penX : penY) / 2 + 0.2) * sign;
         const share = a.fixed || b.fixed ? 2 : 1;
         if (!a.fixed) {
-          a.x -= ux * share;
-          a.y -= uy * share;
+          if (alongX) a.x -= step * share;
+          else a.y -= step * share;
         }
         if (!b.fixed) {
-          b.x += ux * share;
-          b.y += uy * share;
+          if (alongX) b.x += step * share;
+          else b.y += step * share;
         }
         moved = true;
       }
     }
     for (const p of pts) {
       if (p.fixed) continue;
-      p.x = Math.max(-GOAL_X + 2, Math.min(GOAL_X - 2, p.x));
-      p.y = Math.max(-HALF_W + 9, Math.min(HALF_W - 9, p.y));
+      p.x = Math.max(-GOAL_X + 4, Math.min(GOAL_X - 4, p.x));
+      p.y = Math.max(-HALF_W + 10, Math.min(HALF_W - 12, p.y));
     }
     if (!moved) break;
   }
@@ -208,30 +208,35 @@ function Marker({ p, color }: { p: Placed; color: string }) {
       className="absolute z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
       style={{ left: pctX(p.x), top: pctY(p.y) }}
     >
-      <span
-        className="relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border-2 shadow-[0_2px_6px_rgba(0,0,0,0.35)] sm:h-10 sm:w-10"
-        style={{ borderColor: color, background: color }}
-      >
-        <span className="absolute text-[9px] font-bold text-white sm:text-[11px]">{p.player.jersey ?? pos}</span>
-        {p.player.headshot ? (
-          <img
-            src={p.player.headshot}
-            alt=""
-            loading="lazy"
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
-            className="relative h-full w-full bg-[#dfe6f2] object-cover object-top"
-          />
-        ) : null}
-      </span>
-      <span className="mt-0.5 flex max-w-[4.6rem] items-center gap-0.5 whitespace-nowrap rounded-sm bg-[#0a1220]/85 px-1 text-[8px] leading-[13px] text-white sm:max-w-[6.5rem] sm:text-[10px] sm:leading-[15px]">
+      <span className="relative">
+        <span
+          className="relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border-2 shadow-[0_2px_6px_rgba(0,0,0,0.35)] sm:h-10 sm:w-10"
+          style={{ borderColor: color, background: color }}
+        >
+          <span className="absolute text-[9px] font-bold text-white sm:text-[11px]">{p.player.jersey ?? pos}</span>
+          {p.player.headshot ? (
+            <img
+              src={p.player.headshot}
+              alt=""
+              loading="lazy"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+              className="relative h-full w-full bg-[#dfe6f2] object-cover object-top"
+            />
+          ) : null}
+        </span>
         {pos ? (
-          <span className="font-bold" style={{ color: liftTeamColor(color) }}>
+          <span
+            className="absolute -left-1.5 -top-1 min-w-[14px] rounded-full px-[3px] text-center text-[7.5px] font-bold leading-[12px] text-white ring-1 ring-white/80 sm:text-[9px] sm:leading-[14px]"
+            style={{ background: color }}
+          >
             {pos}
           </span>
         ) : null}
-        <span className="truncate">{p.player.lastName}</span>
+      </span>
+      <span className="mt-0.5 max-w-[3.9rem] truncate whitespace-nowrap rounded-sm bg-[#0a1220]/85 px-1 text-[8px] leading-[12px] text-white sm:max-w-[6.5rem] sm:text-[10px] sm:leading-[15px]">
+        {p.player.lastName}
       </span>
     </Link>
   );
@@ -259,14 +264,16 @@ export default function NhlIceRink({
   statusText: string;
 }) {
   const homeRight = ice.homeAttacksRight;
-  const puckX = ice.lastEvent?.x ?? 0;
+  // Only a live snapshot is anchored to the latest play; otherwise show a centre-ice lineup.
+  const tracking = live && ice.source === "live" ? ice.lastEvent : null;
+  const puckX = tracking?.x ?? 0;
   const placed = relax([
     ...placeTeam(ice.away, "away", !homeRight, puckX),
     ...placeTeam(ice.home, "home", homeRight, puckX),
   ]);
   const color = { away: `#${away.color}`, home: `#${home.color}` };
-  const leftTeam = homeRight ? away : home;
-  const rightTeam = homeRight ? home : away;
+  const leftTeam = homeRight ? home : away;
+  const rightTeam = homeRight ? away : home;
   const skaters = (list: NhlIcePlayer[]) => list.filter((p) => (p.position ?? "").toUpperCase() !== "G").length;
   const strength =
     ice.source === "live" ? `${skaters(ice.away)} on ${skaters(ice.home)}` : null;
@@ -301,13 +308,13 @@ export default function NhlIceRink({
               className="pointer-events-none absolute left-1/2 top-1/2 h-[62%] -translate-x-1/2 -translate-y-1/2 object-contain opacity-[0.2]"
             />
           ) : null}
-          {ice.lastEvent && ice.source !== "goalies" ? (
+          {tracking ? (
             <span
-              title={ice.lastEvent.type ? `Last play: ${ice.lastEvent.type}` : "Last play"}
+              title={tracking.type ? `Last play: ${tracking.type}` : "Last play"}
               className="absolute z-[5] h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#0b0f17] ring-2 ring-[#0b0f17]/25 sm:h-2.5 sm:w-2.5"
-              style={{ left: pctX(ice.lastEvent.x), top: pctY(-ice.lastEvent.y) }}
+              style={{ left: pctX(tracking.x), top: pctY(-tracking.y) }}
             >
-              {live ? <span className="absolute inset-0 animate-ping rounded-full bg-[#0b0f17]/50" /> : null}
+              <span className="absolute inset-0 animate-ping rounded-full bg-[#0b0f17]/50" />
             </span>
           ) : null}
           {placed.map((p) => (
@@ -319,10 +326,10 @@ export default function NhlIceRink({
             {leftTeam.logo ? <img src={leftTeam.logo} alt="" className="h-4 w-4 object-contain" /> : null}
             {leftTeam.abbrev} net
           </span>
-          {ice.lastEvent?.type && ice.source !== "goalies" ? (
+          {tracking?.type ? (
             <span className="flex items-center gap-1.5 normal-case tracking-normal text-[#a8b0c2]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#e8e4d9]" />
-              {ice.lastEvent.type}
+              {tracking.type}
             </span>
           ) : null}
           <span className="flex items-center gap-1.5">

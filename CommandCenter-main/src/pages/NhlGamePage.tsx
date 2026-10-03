@@ -589,11 +589,11 @@ function TeamStats({ g }: { g: NhlGameDetail }) {
                 <div className="mt-1.5 flex h-1 gap-0.5 overflow-hidden rounded-full">
                   <span
                     className="rounded-l-full"
-                    style={{ width: `${awayShare}%`, background: liftTeamColor(`#${g.away.color}`, 0.18), opacity: awayLeads ? 1 : 0.55 }}
+                    style={{ width: `${awayShare}%`, background: liftTeamColor(`#${g.away.color}`), opacity: awayLeads ? 1 : 0.55 }}
                   />
                   <span
                     className="flex-1 rounded-r-full"
-                    style={{ background: liftTeamColor(`#${g.home.color}`, 0.18), opacity: homeLeads ? 1 : 0.55 }}
+                    style={{ background: liftTeamColor(`#${g.home.color}`), opacity: homeLeads ? 1 : 0.55 }}
                   />
                 </div>
               ) : null}

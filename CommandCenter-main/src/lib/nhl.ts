@@ -38,15 +38,14 @@ export function nhlTeamLogo(abbrevOrId: string): string {
 }
 
 /** Dark team colors vanish on navy; lift anything under `minLuminance` toward white. */
-export function liftTeamColor(hex: string, minLuminance = 0.55): string {
+export function liftTeamColor(hex: string, minLuminance = 0.3, amount = 0.35): string {
   const raw = hex.replace(/^#/, "");
   const n = Number.parseInt(raw, 16);
   if (!Number.isFinite(n) || raw.length !== 6) return "#ffffff";
   const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   const lum = (0.299 * ch[0]! + 0.587 * ch[1]! + 0.114 * ch[2]!) / 255;
   if (lum > minLuminance) return hex;
-  const t = 0.55;
-  return `rgb(${ch.map((c) => Math.round(c + (255 - c) * t)).join(",")})`;
+  return `rgb(${ch.map((c) => Math.round(c + (255 - c) * amount)).join(",")})`;
 }
 
 export const NHL_TEAMS: { id: number; name: string; abbrev: string }[] = [
