@@ -1,15 +1,17 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Loader2, Play } from "lucide-react";
+import { ArrowLeft, Loader2, Play } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
+import NhlIceRink from "@/components/sports/NhlIceRink";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import {
   dedupeNhlEspnVideos,
   fetchNhlGameDetail,
   fetchNhlGamecenter,
+  liftTeamColor,
   nhlClockKey,
   nhlHeadshot,
   type NhlGameDetail,
@@ -97,7 +99,6 @@ export default function NhlGamePage() {
     ? Math.max(g.away.linescores.length, g.home.linescores.length, g.final || g.live ? 3 : 0)
     : 0;
   const recapUrl = `https://www.espn.com/nhl/recap/_/gameId/${eventId}`;
-  const boxUrl = `https://www.espn.com/nhl/boxscore/_/gameId/${eventId}`;
 
   return (
     <div ref={swipeRef} className="mx-auto max-w-6xl space-y-5 p-4 md:p-7">
@@ -269,34 +270,16 @@ export default function NhlGamePage() {
             )}
           </header>
 
-          <div className="flex flex-wrap gap-2">
-            <a
-              href={recapUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-chalk hover:text-cream inline-flex items-center gap-1.5 rounded-sm border border-white/10 px-2.5 py-1.5 text-[10.5px] uppercase tracking-[0.14em]"
-            >
-              <ExternalLink size={12} /> ESPN recap
-            </a>
-            <a
-              href={boxUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-chalk hover:text-cream inline-flex items-center gap-1.5 rounded-sm border border-white/10 px-2.5 py-1.5 text-[10.5px] uppercase tracking-[0.14em]"
-            >
-              <ExternalLink size={12} /> Box score
-            </a>
-            {gamecenter.data?.nhlUrl ? (
-              <a
-                href={gamecenter.data.nhlUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-chalk hover:text-cream inline-flex items-center gap-1.5 rounded-sm border border-white/10 px-2.5 py-1.5 text-[10.5px] uppercase tracking-[0.14em]"
-              >
-                <ExternalLink size={12} /> NHL.com
-              </a>
-            ) : null}
-          </div>
+          {g.ice ? (
+            <NhlIceRink
+              ice={g.ice}
+              away={g.away}
+              home={g.home}
+              live={g.live}
+              final={g.final}
+              statusText={statusLabel(g)}
+            />
+          ) : null}
 
           <RecentPlays g={g} />
 
@@ -459,35 +442,7 @@ export default function NhlGamePage() {
             </section>
           )}
 
-          {g.teamStats.length > 0 && (
-            <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-              <div className="border-b border-white/[0.06] px-4 py-2.5">
-                <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
-                  Team stats
-                </h3>
-              </div>
-              <table className="w-full text-center text-[13px]">
-                <thead>
-                  <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                    <th className="px-3 py-2 font-medium">{g.away.abbrev}</th>
-                    <th className="px-3 py-2 font-medium"> </th>
-                    <th className="px-3 py-2 font-medium">{g.home.abbrev}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {g.teamStats.map((row) => (
-                    <tr key={row.label} className="border-t border-white/[0.05]">
-                      <td className="numeral text-cream px-3 py-2">{row.away}</td>
-                      <td className="px-3 py-2 text-[11px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                        {row.label}
-                      </td>
-                      <td className="numeral text-cream px-3 py-2">{row.home}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-          )}
+          {g.teamStats.length > 0 && <TeamStats g={g} />}
 
           {g.boxGroups.length > 0 && (
             <section className="space-y-4">
@@ -579,6 +534,74 @@ function TeamBlock({ side, align }: { side: NhlScoreSide; align: "left" | "right
         {side.record ? <p className="text-chalk-dim numeral text-[11px]">{side.record}</p> : null}
       </div>
     </Link>
+  );
+}
+
+const LOWER_IS_BETTER = new Set(["Giveaways", "PIM"]);
+
+function TeamStats({ g }: { g: NhlGameDetail }) {
+  const head = (side: NhlScoreSide, align: "left" | "right") => (
+    <Link
+      to={`/sports/nhl/team/${side.teamId}`}
+      className={cn("flex min-w-0 items-center gap-2", align === "right" && "flex-row-reverse text-right")}
+    >
+      {side.logo ? <img src={side.logo} alt="" className="h-9 w-9 shrink-0 object-contain" /> : null}
+      <span className="min-w-0">
+        <span className="text-cream block text-[13px] font-semibold leading-tight">{side.abbrev}</span>
+        {side.record ? (
+          <span className="numeral text-chalk-dim block text-[10.5px] leading-tight">{side.record}</span>
+        ) : null}
+      </span>
+    </Link>
+  );
+  return (
+    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="border-b border-white/[0.06] px-4 py-2.5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">Team stats</h3>
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-white/[0.06] px-4 py-3">
+        {head(g.away, "left")}
+        <span className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">vs</span>
+        {head(g.home, "right")}
+      </div>
+      <ul className="divide-y divide-white/[0.05]">
+        {g.teamStats.map((row) => {
+          const a = Number.parseFloat(row.away);
+          const h = Number.parseFloat(row.home);
+          const numeric = Number.isFinite(a) && Number.isFinite(h);
+          const total = numeric ? a + h : 0;
+          const awayShare = total > 0 ? (a / total) * 100 : 50;
+          const lower = LOWER_IS_BETTER.has(row.label);
+          const awayLeads = numeric && a !== h && (lower ? a < h : a > h);
+          const homeLeads = numeric && a !== h && !awayLeads;
+          return (
+            <li key={row.label} className="px-4 py-2.5">
+              <div className="grid grid-cols-[3.5rem_minmax(0,1fr)_3.5rem] items-center text-center">
+                <span className={cn("numeral text-left text-[14px]", awayLeads ? "text-cream font-semibold" : "text-white/70")}>
+                  {row.away}
+                </span>
+                <span className="text-[10.5px] uppercase tracking-[0.12em] text-[#8b93a7]">{row.label}</span>
+                <span className={cn("numeral text-right text-[14px]", homeLeads ? "text-cream font-semibold" : "text-white/70")}>
+                  {row.home}
+                </span>
+              </div>
+              {numeric && total > 0 ? (
+                <div className="mt-1.5 flex h-1 gap-0.5 overflow-hidden rounded-full">
+                  <span
+                    className="rounded-l-full"
+                    style={{ width: `${awayShare}%`, background: liftTeamColor(`#${g.away.color}`, 0.18), opacity: awayLeads ? 1 : 0.55 }}
+                  />
+                  <span
+                    className="flex-1 rounded-r-full"
+                    style={{ background: liftTeamColor(`#${g.home.color}`, 0.18), opacity: homeLeads ? 1 : 0.55 }}
+                  />
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
