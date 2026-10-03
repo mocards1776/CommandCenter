@@ -9,6 +9,7 @@ import NhlBoxScore from "@/components/sports/NhlBoxScore";
 import NhlGameLeaders from "@/components/sports/NhlGameLeaders";
 import NhlIceRink from "@/components/sports/NhlIceRink";
 import NhlScoringSummary from "@/components/sports/NhlScoringSummary";
+import NhlThreeStars from "@/components/sports/NhlThreeStars";
 import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
 import {
   dedupeNhlEspnVideos,
@@ -63,11 +64,16 @@ export default function NhlGamePage() {
     queryFn: () => fetchNhlGamecenter(g!),
     enabled: Boolean(g) && started,
     refetchInterval: (q) =>
-      g?.live ? 30_000 : g?.final && q.state.data && !q.state.data.wraps.length ? 120_000 : false,
+      g?.live
+        ? 30_000
+        : g?.final && q.state.data && (!q.state.data.wraps.length || !q.state.data.threeStars.length)
+          ? 120_000
+          : false,
     staleTime: 20_000,
     retry: 1,
   });
   const situation = g?.live ? (gamecenter.data?.situation ?? null) : null;
+  const threeStars = gamecenter.data?.threeStars ?? [];
   const nhlGameId = gamecenter.data?.nhlGameId ?? null;
   const shiftLines = useQuery({
     queryKey: ["nhl-shift-lines", nhlGameId],
@@ -319,7 +325,11 @@ export default function NhlGamePage() {
                 />
               ) : null}
 
-              {g.leaders.length > 0 && <NhlGameLeaders g={g} />}
+              {threeStars.length > 0 ? (
+                <NhlThreeStars stars={threeStars} away={g.away} home={g.home} boxGroups={g.boxGroups} />
+              ) : g.leaders.length > 0 ? (
+                <NhlGameLeaders g={g} />
+              ) : null}
 
               <div
                 className={cn(
@@ -332,6 +342,8 @@ export default function NhlGamePage() {
                 <NhlScoringSummary g={g} goalByClock={goalByClock} onWatch={watchGoal} />
                 {g.teamStats.length > 0 && <TeamStats g={g} />}
               </div>
+
+              {threeStars.length > 0 && g.leaders.length > 0 ? <NhlGameLeaders g={g} /> : null}
 
               {hasStory ? <GameStory g={g} recapUrl={recapUrl} /> : null}
 
@@ -408,6 +420,10 @@ export default function NhlGamePage() {
 
               {g.lastFive.length > 0 ? <LastFive g={g} /> : null}
 
+              {threeStars.length > 0 ? (
+                <NhlThreeStars stars={threeStars} away={g.away} home={g.home} boxGroups={g.boxGroups} />
+              ) : null}
+
               {g.leaders.length > 0 && <NhlGameLeaders g={g} />}
 
               <NhlScoringSummary g={g} goalByClock={goalByClock} onWatch={watchGoal} />
@@ -464,6 +480,11 @@ function TeamBlock({
         <p className="text-cream text-[15px] font-semibold leading-tight sm:text-[22px]">{side.abbrev}</p>
         <p className="text-chalk-dim hidden truncate text-[12px] sm:block">{side.name}</p>
         {side.record ? <p className="text-chalk-dim numeral text-[11px]">{side.record}</p> : null}
+        {side.points != null ? (
+          <p className="numeral text-[10px] tracking-[0.08em] text-[#6f778a]">
+            {side.points} {side.points === 1 ? "PT" : "PTS"}
+          </p>
+        ) : null}
       </div>
     </Link>
   );
