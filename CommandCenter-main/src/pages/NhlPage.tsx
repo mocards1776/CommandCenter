@@ -45,6 +45,11 @@ export default function NhlPage() {
   const upcoming = useMemo(() => games.filter((g) => !g.live && !g.final), [games]);
   const finals = useMemo(() => games.filter((g) => g.final), [games]);
   const hero = games.length ? pickNhlHeroGame(games) : null;
+  const featured = hero?.live ? hero : null;
+  const liveRest = useMemo(
+    () => (featured ? live.filter((g) => g.id !== featured.id) : live),
+    [live, featured],
+  );
   const seasonLabel =
     standings.data?.[0]?.seasonLabel ??
     leaders.data?.[0]?.seasonLabel ??
@@ -97,13 +102,19 @@ export default function NhlPage() {
         <p className="text-alert text-[13px]">Couldn’t load the NHL scoreboard.</p>
       ) : (
         <>
-          {hero?.live && (
+          {live.length > 0 && (
             <section className="space-y-3">
-              <h3 className="rule-head">Live now</h3>
-              <NhlScoreCard game={hero} featured />
+              <h3 className="rule-head">Live</h3>
+              {featured && <NhlScoreCard game={featured} featured />}
+              {liveRest.length > 0 && (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {liveRest.map((g) => (
+                    <NhlScoreCard key={g.id} game={g} />
+                  ))}
+                </div>
+              )}
             </section>
           )}
-          {live.length > 0 && <GameSection title="In progress" games={live} />}
           {upcoming.length > 0 && <GameSection title="Upcoming" games={upcoming} />}
           {finals.length > 0 && <GameSection title="Final" games={finals} />}
           {games.length === 0 && (

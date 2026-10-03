@@ -185,7 +185,7 @@ export default function CfbPage() {
           ) : (
             <>
               {live.length > 0 && (
-                <GameSection title="In progress" games={live} heatById={heatById} />
+                <GameSection title="Live" games={live} heatById={heatById} />
               )}
               {upcoming.length > 0 && (
                 <GameSection title="Upcoming" games={upcoming} heatById={heatById} />
