@@ -8,6 +8,7 @@ import NflFieldMap from "@/components/sports/NflFieldMap";
 import CfbWinProbability from "@/components/sports/CfbWinProbability";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 import CfbRankLabel from "@/components/sports/CfbRankLabel";
+import CfbRecentPlays from "@/components/sports/CfbRecentPlays";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel from "@/components/sports/HighlightReel";
 import { fetchCfbBackupHighlights, fetchCfbGameDetail, type CfbScoreSide } from "@/lib/cfb";
@@ -325,47 +326,7 @@ export function CfbGameDetailView({
         <CfbWinProbability away={g.away} home={g.home} points={g.winProbability} />
       ) : null}
 
-      {g.recentPlays.length > 0 && (
-        <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] shadow-[0_12px_40px_rgba(0,0,0,0.22)]">
-          <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-              Recent plays
-            </h2>
-            <span className="text-[10px] text-[#6b7386]">Cleaned for readability</span>
-          </div>
-          <ul className="max-h-[28rem] divide-y divide-white/[0.05] overflow-y-auto">
-            {g.recentPlays.slice(0, 12).map((p) => (
-              <li
-                key={p.id}
-                className={cn(
-                  "px-4 py-3 transition-colors",
-                  p.scoringPlay && "bg-gradient-to-r from-accent/15 to-transparent",
-                )}
-              >
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  {p.period != null && (
-                    <span className="rounded-sm bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#a8b0c2]">
-                      Q{p.period}
-                      {p.clock ? ` · ${p.clock}` : ""}
-                    </span>
-                  )}
-                  {p.shortDownDistanceText && (
-                    <span className="text-[10px] font-medium text-emerald-200/75">
-                      {p.shortDownDistanceText}
-                    </span>
-                  )}
-                  {p.scoringPlay ? (
-                    <span className="text-accent text-[10px] font-semibold uppercase tracking-[0.12em]">
-                      Score
-                    </span>
-                  ) : null}
-                </div>
-                <p className="text-cream mt-1 text-[13px] leading-relaxed">{p.text}</p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <CfbRecentPlays g={g} />
 
       {primaryHighlight ? (
         <EspnVideoEmbed clip={primaryHighlight} eyebrow={primaryEyebrow} />
