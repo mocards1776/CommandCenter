@@ -64,7 +64,15 @@ function HitSection({
   );
 }
 
-export default function SportsSearch({ className }: { className?: string }) {
+export default function SportsSearch({
+  className,
+  autoFocus,
+  onPicked,
+}: {
+  className?: string;
+  autoFocus?: boolean;
+  onPicked?: () => void;
+}) {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [focused, setFocused] = useState(false);
@@ -143,6 +151,7 @@ export default function SportsSearch({ className }: { className?: string }) {
     setQ("");
     setFocused(false);
     navigate(hit.path);
+    onPicked?.();
   };
 
   return (
@@ -163,6 +172,7 @@ export default function SportsSearch({ className }: { className?: string }) {
             onBlur={() => window.setTimeout(() => setFocused(false), 180)}
             placeholder="Search player, manager, team"
             aria-label="Search sports"
+            autoFocus={autoFocus}
             className="placeholder:text-chalk-dim text-cream min-w-0 flex-1 bg-transparent py-2 text-[12.5px] outline-none"
           />
           {loading ? <Loader2 size={13} className="text-chalk-dim shrink-0 animate-spin" /> : null}

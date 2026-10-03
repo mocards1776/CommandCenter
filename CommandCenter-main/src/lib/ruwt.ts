@@ -31,6 +31,13 @@ const NHL_STORAGE_KEY = "ruwt-nhl-team-interest-v1";
 
 export type RuwtTeamInterest = Record<string, number>; // teamId → 0–10
 
+/** Fired after any RUWT interest slider changes so other slate views re-rank. */
+export const RUWT_INTEREST_EVENT = "cc:ruwt-interest";
+
+export function notifyRuwtInterestChanged(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(RUWT_INTEREST_EVENT));
+}
+
 export type RuwtScoreContext = {
   /** Per-team interest 0–10 (10 = must-watch franchise). */
   teamInterest: RuwtTeamInterest;
@@ -81,6 +88,7 @@ export function setTeamInterestRating(
   if (clamped <= 0) delete next[String(teamId)];
   else next[String(teamId)] = clamped;
   saveTeamInterest(next);
+  notifyRuwtInterestChanged();
   return next;
 }
 
@@ -102,6 +110,7 @@ export function setNflTeamInterestRating(
   if (clamped <= 0) delete next[String(teamId)];
   else next[String(teamId)] = clamped;
   saveNflTeamInterest(next);
+  notifyRuwtInterestChanged();
   return next;
 }
 
@@ -123,6 +132,7 @@ export function setNhlTeamInterestRating(
   if (clamped <= 0) delete next[String(teamId)];
   else next[String(teamId)] = clamped;
   saveNhlTeamInterest(next);
+  notifyRuwtInterestChanged();
   return next;
 }
 
@@ -173,6 +183,7 @@ export function setCfbTeamInterestRating(
   if (floored <= 0) delete next[key];
   else next[key] = floored;
   saveCfbTeamInterest(next);
+  notifyRuwtInterestChanged();
   return next;
 }
 

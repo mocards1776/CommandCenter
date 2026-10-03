@@ -7,23 +7,16 @@ import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 import TeamMark from "@/components/sports/TeamMark";
-import { useAuth } from "@/lib/auth-context";
-import { listFavoritePlayers } from "@/lib/favorite-players";
+import { useRuwtSlate } from "@/hooks/useRuwtSlate";
 import {
-  chicagoToday,
-  fetchMlbScoreboard,
-  fetchMlbStandings,
   fetchPitcherSeasonLines,
   mlbHeadshot,
-  parsePlayoffPercent,
   type MlbPitcherSeasonLine,
   type MlbScoreGame,
   type MlbScoredGame,
 } from "@/lib/mlb";
-import { fetchNflScoreboard, chicagoTodayNfl, NFL_TEAMS, type NflScoredGame } from "@/lib/nfl";
+import { NFL_TEAMS, type NflScoredGame } from "@/lib/nfl";
 import {
-  chicagoTodayNhl,
-  fetchNhlScoreboard,
   NHL_TEAMS,
   nhlTeamLogo,
   type NhlScoredGame,
@@ -32,20 +25,15 @@ import {
   CFB_FOCUS_TEAMS,
   CFB_POWER5_TEAM_IDS,
   CFB_SEC_TEAM_IDS,
-  chicagoTodayCfb,
   cfbTeamLogo,
-  fetchCfbScoreboard,
   type CfbScoredGame,
 } from "@/lib/cfb";
 import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import type { GameBroadcast } from "@/lib/game-broadcasts";
 import {
-  chicagoTodaySoccer,
   fetchPremierLeagueTeams,
-  fetchSoccerRuwtBoard,
   loadSoccerTeamInterest,
   PREMIER_LEAGUE_TEAMS,
-  rankRuwtSoccerGames,
   RUWT_SOCCER_FOCUS,
   setSoccerTeamInterestRating,
   soccerTeamLogo,
@@ -57,17 +45,12 @@ import {
   loadNhlTeamInterest,
   loadNflTeamInterest,
   loadTeamInterest,
-  rankRuwtCfbGames,
-  rankRuwtGames,
-  rankRuwtNhlGames,
-  rankRuwtNflGames,
   setCfbTeamInterestRating,
   setNhlTeamInterestRating,
   setNflTeamInterestRating,
   setTeamInterestRating,
   type RuwtTeamInterest,
 } from "@/lib/ruwt";
-import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
 
@@ -87,13 +70,6 @@ function ordinalPlace(n: number): string {
 }
 
 type RuwtSportFilter = "all" | "mlb" | "nfl" | "nhl" | "cfb" | "soccer";
-
-type UnifiedRuwtItem =
-  | { sport: "mlb"; score: number; id: string; game: MlbScoredGame }
-  | { sport: "nfl"; score: number; id: string; game: NflScoredGame }
-  | { sport: "nhl"; score: number; id: string; game: NhlScoredGame }
-  | { sport: "cfb"; score: number; id: string; game: CfbScoredGame }
-  | { sport: "soccer"; score: number; id: string; game: SoccerScoredGame };
 
 const MLB_TEAMS: { id: number; name: string; abbrev: string }[] = [
   { id: 108, name: "Angels", abbrev: "LAA" },
@@ -129,7 +105,6 @@ const MLB_TEAMS: { id: number; name: string; abbrev: string }[] = [
 ];
 
 export default function RuwtPage() {
-  const { user } = useAuth();
   const [interest, setInterest] = useState<RuwtTeamInterest>(() => loadTeamInterest());
   const [nflInterest, setNflInterest] = useState<RuwtTeamInterest>(() => loadNflTeamInterest());
   const [nhlInterest, setNhlInterest] = useState<RuwtTeamInterest>(() => loadNhlTeamInterest());
@@ -147,65 +122,16 @@ export default function RuwtPage() {
     if (params.get("solo") === "1") markSportsSolo();
   }, []);
 
-  const scoreboard = useQuery({
-    queryKey: ["mlb-scoreboard", "today", chicagoToday()],
-    queryFn: async () => {
-      const today = chicagoToday();
-      const board = await fetchMlbScoreboard(today);
-      // RUWT is same-day only — drop any spill from the schedule hydrate.
-      return board.filter((g) => !g.officialDate || g.officialDate === today);
-    },
-    refetchInterval: 30_000,
-    staleTime: 15_000,
-  });
-
-  const nflBoard = useQuery({
-    queryKey: ["nfl-scoreboard", "today", chicagoTodayNfl()],
-    queryFn: async () => {
-      const today = chicagoTodayNfl();
-      // ESPN week boards mix days — pin to Chicago today.
-      const ymd = today.replace(/-/g, "");
-      const board = await fetchNflScoreboard(ymd).catch(() => fetchNflScoreboard());
-      return board.filter((g) => !g.date || g.date === today);
-    },
-    refetchInterval: 20_000,
-    staleTime: 10_000,
-  });
-
-  const nhlBoard = useQuery({
-    queryKey: ["nhl-scoreboard", "today", chicagoTodayNhl()],
-    queryFn: async () => {
-      const today = chicagoTodayNhl();
-      const ymd = today.replace(/-/g, "");
-      const board = await fetchNhlScoreboard(ymd).catch(() => fetchNhlScoreboard());
-      return board.filter((g) => !g.date || g.date === today);
-    },
-    refetchInterval: 20_000,
-    staleTime: 10_000,
-  });
-
-  const cfbBoard = useQuery({
-    queryKey: ["cfb-scoreboard", "today", chicagoTodayCfb()],
-    queryFn: async () => {
-      const today = chicagoTodayCfb();
-      const ymd = today.replace(/-/g, "");
-      const board = await fetchCfbScoreboard(ymd).catch(() => fetchCfbScoreboard());
-      return board.filter((g) => !g.date || g.date === today);
-    },
-    refetchInterval: 30_000,
-    staleTime: 15_000,
-  });
-
-  const soccerBoard = useQuery({
-    queryKey: ["soccer-ruwt-board", "today-only", chicagoTodaySoccer()],
-    queryFn: async () => {
-      const today = chicagoTodaySoccer();
-      const board = await fetchSoccerRuwtBoard(today);
-      return board.filter((g) => g.date === today);
-    },
-    refetchInterval: 30_000,
-    staleTime: 15_000,
-  });
+  const { unified, scoreboard, nflBoard, nhlBoard, cfbBoard, soccerBoard, standings } =
+    useRuwtSlate({
+      interest: {
+        mlb: interest,
+        nfl: nflInterest,
+        nhl: nhlInterest,
+        cfb: cfbInterest,
+        soccer: soccerInterest,
+      },
+    });
 
   const plTeams = useQuery({
     queryKey: ["epl-teams"],
@@ -240,38 +166,6 @@ export default function RuwtPage() {
     ];
   }, [plTeams.data]);
 
-  const standings = useQuery({
-    queryKey: ["mlb-standings"],
-    queryFn: () => fetchMlbStandings(),
-    staleTime: 120_000,
-  });
-
-  const favorites = useQuery({
-    queryKey: ["favorite-players", user?.id],
-    queryFn: () => listFavoritePlayers(user!.id),
-    enabled: Boolean(user?.id),
-    staleTime: 60_000,
-  });
-
-  const taggedIds = useQuery({
-    queryKey: ["sports-player-tags-ids", user?.id],
-    queryFn: () => fetchTaggedPlayerIds(),
-    enabled: Boolean(user?.id),
-    staleTime: 60_000,
-  });
-
-  const playoffOddsByTeam = useMemo(() => {
-    const out: Record<number, number> = {};
-    for (const div of standings.data ?? []) {
-      for (const row of div.rows) {
-        if (!row.playoffPercent) continue;
-        const n = parsePlayoffPercent(row.playoffPercent);
-        if (n > 0 || row.playoffPercent.trim().startsWith("<")) out[row.teamId] = n;
-      }
-    }
-    return out;
-  }, [standings.data]);
-
   const divisionPlaceByTeam = useMemo(() => {
     const out: Record<number, string> = {};
     for (const div of standings.data ?? []) {
@@ -284,171 +178,6 @@ export default function RuwtPage() {
     }
     return out;
   }, [standings.data]);
-
-  const watchPlayerIds = useMemo(() => {
-    const set = new Set<number>();
-    for (const f of favorites.data ?? []) {
-      if ((f.position ?? "").toLowerCase() === "manager") continue;
-      if (f.sport && f.sport !== "baseball") continue;
-      const id = Number(f.playerId);
-      if (Number.isFinite(id)) set.add(id);
-    }
-    for (const id of taggedIds.data ?? []) set.add(id);
-    return set;
-  }, [favorites.data, taggedIds.data]);
-
-  const watchPlayerNames = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const f of favorites.data ?? []) {
-      if ((f.position ?? "").toLowerCase() === "manager") continue;
-      if (f.sport && f.sport !== "baseball") continue;
-      const id = Number(f.playerId);
-      if (!Number.isFinite(id)) continue;
-      const parts = f.playerName.trim().split(/\s+/);
-      map.set(id, parts[parts.length - 1] || f.playerName);
-    }
-    return map;
-  }, [favorites.data]);
-
-  const watchManagerIds = useMemo(() => {
-    const set = new Set<number>();
-    for (const f of favorites.data ?? []) {
-      if ((f.position ?? "").toLowerCase() !== "manager") continue;
-      const id = Number(f.playerId);
-      if (Number.isFinite(id)) set.add(id);
-    }
-    return set;
-  }, [favorites.data]);
-
-  const managerTeamById = useMemo(() => {
-    const map = new Map<number, number>();
-    for (const f of favorites.data ?? []) {
-      if ((f.position ?? "").toLowerCase() !== "manager") continue;
-      const mid = Number(f.playerId);
-      const tid = f.teamId != null ? Number(f.teamId) : NaN;
-      if (Number.isFinite(mid) && Number.isFinite(tid)) map.set(mid, tid);
-    }
-    return map;
-  }, [favorites.data]);
-
-  const nflWatchTeamIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const f of favorites.data ?? []) {
-      const sport = (f.sport ?? "").toLowerCase();
-      const league = (f.league ?? "").toLowerCase();
-      if (sport !== "football" && sport !== "nfl" && league !== "nfl") continue;
-      if (f.teamId) set.add(String(f.teamId));
-    }
-    return set;
-  }, [favorites.data]);
-
-  const nflWatchPlayerIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const f of favorites.data ?? []) {
-      const sport = (f.sport ?? "").toLowerCase();
-      const league = (f.league ?? "").toLowerCase();
-      if (sport !== "football" && sport !== "nfl" && league !== "nfl") continue;
-      if ((f.position ?? "").toLowerCase() === "coach") continue;
-      set.add(String(f.playerId));
-    }
-    return set;
-  }, [favorites.data]);
-
-  const nhlWatchTeamIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const f of favorites.data ?? []) {
-      const sport = (f.sport ?? "").toLowerCase();
-      const league = (f.league ?? "").toLowerCase();
-      if (sport !== "hockey" && sport !== "nhl" && league !== "nhl") continue;
-      if (f.teamId) set.add(String(f.teamId));
-    }
-    return set;
-  }, [favorites.data]);
-
-  const ranked = useMemo(() => {
-    if (!scoreboard.data) return [] as MlbScoredGame[];
-    return rankRuwtGames(
-      scoreboard.data,
-      {
-        teamInterest: interest,
-        watchPlayerIds,
-        watchPlayerNames,
-        watchManagerIds,
-        managerTeamById,
-        playoffOddsByTeam,
-      },
-      30,
-    );
-  }, [
-    scoreboard.data,
-    interest,
-    watchPlayerIds,
-    watchPlayerNames,
-    watchManagerIds,
-    managerTeamById,
-    playoffOddsByTeam,
-  ]);
-
-  const nflRanked = useMemo(() => {
-    if (!nflBoard.data) return [] as NflScoredGame[];
-    return rankRuwtNflGames(nflBoard.data, nflInterest, 24, {
-      watchPlayerIds: nflWatchPlayerIds,
-      watchTeamIds: nflWatchTeamIds,
-    });
-  }, [nflBoard.data, nflInterest, nflWatchPlayerIds, nflWatchTeamIds]);
-
-  const nhlRanked = useMemo(() => {
-    if (!nhlBoard.data) return [] as NhlScoredGame[];
-    return rankRuwtNhlGames(nhlBoard.data, nhlInterest, 24, {
-      watchTeamIds: nhlWatchTeamIds,
-    });
-  }, [nhlBoard.data, nhlInterest, nhlWatchTeamIds]);
-
-  const cfbRanked = useMemo(() => {
-    if (!cfbBoard.data) return [] as CfbScoredGame[];
-    return rankRuwtCfbGames(cfbBoard.data, cfbInterest, 24);
-  }, [cfbBoard.data, cfbInterest]);
-
-  const soccerRanked = useMemo(() => {
-    if (!soccerBoard.data) return [] as SoccerScoredGame[];
-    return rankRuwtSoccerGames(soccerBoard.data, soccerInterest, 24);
-  }, [soccerBoard.data, soccerInterest]);
-
-  const unified = useMemo((): UnifiedRuwtItem[] => {
-    const mlbItems: UnifiedRuwtItem[] = ranked.map((g) => ({
-      sport: "mlb",
-      score: g.score,
-      id: `mlb-${g.id}`,
-      game: g,
-    }));
-    const nflItems: UnifiedRuwtItem[] = nflRanked.map((g) => ({
-      sport: "nfl",
-      score: g.score,
-      id: `nfl-${g.id}`,
-      game: g,
-    }));
-    const nhlItems: UnifiedRuwtItem[] = nhlRanked.map((g) => ({
-      sport: "nhl",
-      score: g.score,
-      id: `nhl-${g.id}`,
-      game: g,
-    }));
-    const cfbItems: UnifiedRuwtItem[] = cfbRanked.map((g) => ({
-      sport: "cfb",
-      score: g.score,
-      id: `cfb-${g.id}`,
-      game: g,
-    }));
-    const soccerItems: UnifiedRuwtItem[] = soccerRanked.map((g) => ({
-      sport: "soccer",
-      score: g.score,
-      id: `soccer-${g.id}`,
-      game: g,
-    }));
-    return [...mlbItems, ...nflItems, ...nhlItems, ...cfbItems, ...soccerItems].sort(
-      (a, b) => b.score - a.score || a.id.localeCompare(b.id),
-    );
-  }, [ranked, nflRanked, nhlRanked, cfbRanked, soccerRanked]);
 
   const filtered = useMemo(() => {
     if (sportFilter === "all") return unified;

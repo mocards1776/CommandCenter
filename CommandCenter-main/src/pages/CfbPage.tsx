@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import toast from "react-hot-toast";
 import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import {
   fetchCfbConferenceStandings,
@@ -112,27 +111,6 @@ export default function CfbPage() {
   const activePoll = polls.data?.find((p) => p.id === pollId) ?? polls.data?.[0] ?? null;
   const activeStat =
     leaders.data?.categories.find((c) => c.id === statId) ?? leaders.data?.categories[0] ?? null;
-
-  const refresh = () => {
-    const jobs: Promise<unknown>[] = [];
-    if (view === "scores") jobs.push(scoreboard.refetch());
-    if (view === "conferences") {
-      jobs.push(conferences.refetch());
-      if (conferenceId) jobs.push(standings.refetch());
-    }
-    if (view === "polls") jobs.push(polls.refetch());
-    if (view === "stats") jobs.push(leaders.refetch());
-    void Promise.all(jobs).then(() => toast.success("College football updated"));
-  };
-
-
-  useEffect(() => {
-    const onRefresh = () => refresh();
-    window.addEventListener("cc:cfb-refresh", onRefresh);
-    return () => window.removeEventListener("cc:cfb-refresh", onRefresh);
-    // refresh closes over the active view + react-query objects
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional bind to latest view
-  }, [view, conferenceId]);
 
   return (
     <div className="flex min-h-0 flex-col gap-4 p-4 md:p-7">
