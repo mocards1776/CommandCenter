@@ -33,11 +33,15 @@ function readableTeamColor(color: string): string {
   return `rgb(${lifted.join(",")})`;
 }
 
-function teamTint(color: string, alpha: number): string {
+/** Light wash of a team color. Dark primaries are lifted so the tint still reads. */
+function teamWash(color: string, alpha = 0.2): string {
   const raw = color.replace(/^#/, "");
   const n = Number.parseInt(raw, 16);
   if (!Number.isFinite(n) || raw.length !== 6) return `rgba(255,255,255,${alpha})`;
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+  let ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const lum = (0.299 * ch[0]! + 0.587 * ch[1]! + 0.114 * ch[2]!) / 255;
+  if (lum < 0.45) ch = ch.map((c) => Math.round(c + (255 - c) * 0.55));
+  return `rgba(${ch.join(",")},${alpha})`;
 }
 
 /** Magnitude for a comparison bar. Efficiency and completions use the rate; possession uses seconds. */
@@ -584,7 +588,7 @@ export function CfbGameDetailView({
                         "numeral rounded-md px-2 py-1 text-left text-[14px]",
                         awayLeads ? "font-semibold text-cream" : "text-white/75",
                       )}
-                      style={{ backgroundColor: teamTint(g.away.color, 0.16) }}
+                      style={{ backgroundColor: teamWash(g.away.color) }}
                     >
                       {away}
                     </span>
@@ -596,7 +600,7 @@ export function CfbGameDetailView({
                         "numeral rounded-md px-2 py-1 text-right text-[14px]",
                         homeLeads ? "font-semibold text-cream" : "text-white/75",
                       )}
-                      style={{ backgroundColor: teamTint(g.home.color, 0.16) }}
+                      style={{ backgroundColor: teamWash(g.home.color) }}
                     >
                       {home}
                     </span>
@@ -624,6 +628,8 @@ export function CfbGameDetailView({
                         }}
                       />
                     </div>
+                  ) : numeric ? (
+                    <div className={cn("mt-1.5 rounded-full bg-white/[0.05]", possession ? "h-2" : "h-1.5")} />
                   ) : null}
                 </li>
               );

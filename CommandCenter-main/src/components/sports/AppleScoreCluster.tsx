@@ -85,7 +85,7 @@ export default function AppleScoreCluster({
         {showMarks ? <TimeoutDashes count={awayTimeouts} /> : null}
       </div>
       {stacked ? (
-        <div className="mb-0.5 flex w-[3.15rem] shrink-0 flex-col items-center pb-px text-center text-white sm:mb-1 sm:w-[3.5rem]">
+        <div className="mb-0.5 flex w-[3.15rem] shrink-0 translate-y-2 flex-col items-center pb-px text-center text-white sm:mb-1 sm:w-[3.5rem] sm:translate-y-3">
           <span className="text-[9px] font-semibold uppercase leading-none tracking-[0.22em] text-white/60 sm:text-[10px]">
             {parts.period}
           </span>
