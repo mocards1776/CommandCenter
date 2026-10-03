@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type RefObject } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ChevronRight, Loader2, Play } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
@@ -17,11 +17,13 @@ import {
   liftTeamColor,
   nhlClockKey,
   nhlHeadshot,
+  rankNhlWrapVideos,
   type NhlGameDetail,
   type NhlGameVideo,
   type NhlGoalClip,
   type NhlRecentPlay,
   type NhlScoreSide,
+  type NhlWrapKind,
 } from "@/lib/nhl";
 import { fetchNhlShiftLines } from "@/lib/nhl-lines";
 import { cn } from "@/lib/utils";
@@ -60,7 +62,8 @@ export default function NhlGamePage() {
     queryKey: ["nhl-gamecenter", eventId],
     queryFn: () => fetchNhlGamecenter(g!),
     enabled: Boolean(g) && started,
-    refetchInterval: g?.live ? 30_000 : false,
+    refetchInterval: (q) =>
+      g?.live ? 30_000 : g?.final && q.state.data && !q.state.data.wraps.length ? 120_000 : false,
     staleTime: 20_000,
     retry: 1,
   });
@@ -78,17 +81,25 @@ export default function NhlGamePage() {
   const [featuredId, setFeaturedId] = useState<string | null>(null);
   const highlightsRef = useRef<HTMLElement>(null);
 
+  const final = Boolean(g?.final);
   const { clips, goalByClock } = useMemo(() => {
     const goals = gamecenter.data?.goals ?? [];
-    const espn = dedupeNhlEspnVideos((g?.videos ?? []).filter((v) => v.mp4), goals);
+    const espnPlayable = (g?.videos ?? []).filter((v) => v.mp4);
+    const wraps = final ? rankNhlWrapVideos([...espnPlayable, ...(gamecenter.data?.wraps ?? [])]) : [];
+    const wrapIds = new Set(wraps.map((w) => w.id));
+    const espn = dedupeNhlEspnVideos(
+      espnPlayable.filter((v) => !wrapIds.has(v.id)),
+      goals,
+    );
     const byClock = new Map<string, NhlGoalClip>();
     for (const goal of goals) {
       const key = nhlClockKey(goal.periodNumber, goal.timeInPeriod);
       if (key) byClock.set(key, goal);
     }
-    const all: NhlGameVideo[] = [...goals].reverse();
-    return { clips: all.concat(espn), goalByClock: byClock };
-  }, [gamecenter.data, g?.videos]);
+    // Live: newest goal first. Final: the game in order, after the whole-game wraps.
+    const goalOrder: NhlGameVideo[] = final ? goals : [...goals].reverse();
+    return { clips: [...wraps, ...goalOrder, ...espn], goalByClock: byClock };
+  }, [gamecenter.data, g?.videos, final]);
 
   const primaryClip = clips.find((c) => c.id === featuredId) ?? clips[0] ?? null;
   const reel: ReelHighlight[] = clips
@@ -112,6 +123,13 @@ export default function NhlGamePage() {
     ? Math.max(g.away.linescores.length, g.home.linescores.length, g.final || g.live ? 3 : 0)
     : 0;
   const recapUrl = `https://www.espn.com/nhl/recap/_/gameId/${eventId}`;
+  const winner =
+    g?.final && g.away.score != null && g.home.score != null && g.away.score !== g.home.score
+      ? g.away.score > g.home.score
+        ? "away"
+        : "home"
+      : null;
+  const hasStory = Boolean(g?.article?.storyHtml || g?.article?.description);
 
   return (
     <div ref={swipeRef} className="mx-auto max-w-6xl space-y-5 p-4 md:p-7">
@@ -175,13 +193,15 @@ export default function NhlGamePage() {
             </div>
 
             <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1 px-2 py-4 sm:gap-4 sm:px-5 sm:py-6">
-              <TeamBlock side={g.away} align="left" />
+              <TeamBlock side={g.away} align="left" dim={winner === "home"} />
               <div className="flex items-center gap-2 sm:gap-5">
                 {started ? (
                   <ScoreFigure
                     score={g.away.score}
                     pp={situation?.powerPlayAbbrev === g.away.abbrev}
                     side="away"
+                    won={winner === "away"}
+                    dim={winner === "home"}
                   />
                 ) : null}
                 <div className="min-w-[5.5rem] text-center sm:min-w-[8rem]">
@@ -216,10 +236,12 @@ export default function NhlGamePage() {
                     score={g.home.score}
                     pp={situation?.powerPlayAbbrev === g.home.abbrev}
                     side="home"
+                    won={winner === "home"}
+                    dim={winner === "away"}
                   />
                 ) : null}
               </div>
-              <TeamBlock side={g.home} align="right" />
+              <TeamBlock side={g.home} align="right" dim={winner === "away"} />
             </div>
 
             {(g.goalieStarters.away || g.goalieStarters.home) && !g.final ? (
@@ -283,111 +305,123 @@ export default function NhlGamePage() {
             )}
           </header>
 
-          {g.ice ? (
-            <NhlIceRink
-              ice={g.ice}
-              away={g.away}
-              home={g.home}
-              live={g.live}
-              final={g.final}
-              statusText={statusLabel(g)}
-            />
-          ) : null}
-
-          <RecentPlays g={g} />
-
-          {primaryClip ? (
-            <section ref={highlightsRef} className="scroll-mt-4 space-y-2.5">
-              <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
-                Game highlights
-              </h3>
-              <EspnVideoEmbed
-                key={primaryClip.id}
-                clip={primaryClip}
-                eyebrow={clipEyebrow(primaryClip)}
-                autoPlay={primaryClip.id === featuredId}
-              />
-              {reel.length > 0 ? (
-                <HighlightReel highlights={reel} title="More highlights" defaultOpen />
-              ) : null}
-            </section>
-          ) : null}
-
-          {g.article?.storyHtml || g.article?.description ? (
-            <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
-              <div className="border-b border-white/[0.06] px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
-                  {g.final ? "Game wrap" : "Preview"}
-                </p>
-                <h2 className="font-rss mt-1 text-[20px] font-semibold leading-snug text-cream">
-                  {g.article.headline}
-                </h2>
-                {g.article.description ? (
-                  <p className="text-chalk mt-2 text-[13px] leading-relaxed">
-                    {g.article.description.replace(/^—\s*/, "")}
-                  </p>
-                ) : null}
-              </div>
-              {g.article.storyHtml ? (
-                <SelectableHighlightRegion
-                  articleUrl={recapUrl}
-                  articleTitle={g.article.headline}
-                  feedUrl="synthetic:nhl-wraps"
-                  html={g.article.storyHtml}
-                  className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-semibold [&_a]:text-accent [&_a]:hover:underline [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
+          {g.final ? (
+            <>
+              {primaryClip ? (
+                <WrapHero
+                  g={g}
+                  sectionRef={highlightsRef}
+                  primary={primaryClip}
+                  playlist={clips.filter((c) => c.id !== primaryClip.id && c.mp4)}
+                  autoPlay={primaryClip.id === featuredId}
+                  onPick={setFeaturedId}
+                  hasStory={hasStory}
                 />
               ) : null}
-            </section>
-          ) : null}
 
-          {g.lastFive.length > 0 ? (
-            <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
-              <h3 className="rule-head mb-3">Last five</h3>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {g.lastFive.map((side) => (
-                  <div key={side.teamAbbrev}>
-                    <p className="text-cream mb-2 text-[12px] font-semibold">{side.teamAbbrev}</p>
-                    <ul className="space-y-1.5">
-                      {side.results.map((r, i) => (
-                        <li
-                          key={`${side.teamAbbrev}-${i}`}
-                          className="flex items-center justify-between gap-2 text-[12px]"
-                        >
-                          <span className="text-chalk-dim">vs {r.label}</span>
-                          <span
-                            className={cn(
-                              "numeral font-semibold",
-                              /^W/i.test(r.result)
-                                ? "text-emerald-400"
-                                : /^L/i.test(r.result)
-                                  ? "text-alert"
-                                  : "text-cream",
-                            )}
-                          >
-                            {r.result}
-                            {r.score ? ` ${r.score}` : ""}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+              {g.leaders.length > 0 && <NhlGameLeaders g={g} />}
+
+              <div
+                className={cn(
+                  "grid items-start gap-5",
+                  g.scoringPlays.length > 0 &&
+                    g.teamStats.length > 0 &&
+                    "lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]",
+                )}
+              >
+                <NhlScoringSummary g={g} goalByClock={goalByClock} onWatch={watchGoal} />
+                {g.teamStats.length > 0 && <TeamStats g={g} />}
               </div>
-            </section>
-          ) : null}
 
-          {g.leaders.length > 0 && <NhlGameLeaders g={g} />}
+              {hasStory ? <GameStory g={g} recapUrl={recapUrl} /> : null}
 
-          <NhlScoringSummary g={g} goalByClock={goalByClock} onWatch={watchGoal} />
+              {g.boxGroups.length > 0 && (
+                <NhlBoxScore
+                  g={g}
+                  shiftLines={shiftLines.data}
+                  shiftsPending={nhlGameId != null && shiftLines.isPending}
+                />
+              )}
 
-          {g.teamStats.length > 0 && <TeamStats g={g} />}
+              {g.ice ? (
+                <details className="group bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
+                    <span className="flex items-center gap-2">
+                      <ChevronRight
+                        size={14}
+                        className="text-[#8b93a7] transition-transform group-open:rotate-90"
+                      />
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+                        Ice Tracker
+                      </span>
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-[#6f778a]">
+                      Final on ice
+                    </span>
+                  </summary>
+                  <div className="border-t border-white/[0.06] p-3">
+                    <NhlIceRink
+                      ice={g.ice}
+                      away={g.away}
+                      home={g.home}
+                      live={g.live}
+                      final={g.final}
+                      statusText={statusLabel(g)}
+                    />
+                  </div>
+                </details>
+              ) : null}
+            </>
+          ) : (
+            <>
+              {g.ice ? (
+                <NhlIceRink
+                  ice={g.ice}
+                  away={g.away}
+                  home={g.home}
+                  live={g.live}
+                  final={g.final}
+                  statusText={statusLabel(g)}
+                />
+              ) : null}
 
-          {g.boxGroups.length > 0 && (
-            <NhlBoxScore
-              g={g}
-              shiftLines={shiftLines.data}
-              shiftsPending={nhlGameId != null && shiftLines.isPending}
-            />
+              <RecentPlays g={g} />
+
+              {primaryClip ? (
+                <section ref={highlightsRef} className="scroll-mt-4 space-y-2.5">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+                    Game highlights
+                  </h3>
+                  <EspnVideoEmbed
+                    key={primaryClip.id}
+                    clip={primaryClip}
+                    eyebrow={clipEyebrow(primaryClip)}
+                    autoPlay={primaryClip.id === featuredId}
+                  />
+                  {reel.length > 0 ? (
+                    <HighlightReel highlights={reel} title="More highlights" defaultOpen />
+                  ) : null}
+                </section>
+              ) : null}
+
+              {hasStory ? <GameStory g={g} recapUrl={recapUrl} /> : null}
+
+              {g.lastFive.length > 0 ? <LastFive g={g} /> : null}
+
+              {g.leaders.length > 0 && <NhlGameLeaders g={g} />}
+
+              <NhlScoringSummary g={g} goalByClock={goalByClock} onWatch={watchGoal} />
+
+              {g.teamStats.length > 0 && <TeamStats g={g} />}
+
+              {g.boxGroups.length > 0 && (
+                <NhlBoxScore
+                  g={g}
+                  shiftLines={shiftLines.data}
+                  shiftsPending={nhlGameId != null && shiftLines.isPending}
+                />
+              )}
+            </>
           )}
         </>
       )}
@@ -401,13 +435,22 @@ function periodLabel(index: number): string {
   return `OT${index - 2}`;
 }
 
-function TeamBlock({ side, align }: { side: NhlScoreSide; align: "left" | "right" }) {
+function TeamBlock({
+  side,
+  align,
+  dim = false,
+}: {
+  side: NhlScoreSide;
+  align: "left" | "right";
+  dim?: boolean;
+}) {
   return (
     <Link
       to={`/sports/nhl/team/${side.teamId}`}
       className={cn(
-        "flex min-w-0 flex-col items-center gap-1 text-center sm:gap-3",
+        "flex min-w-0 flex-col items-center gap-1 text-center transition-opacity sm:gap-3",
         align === "left" ? "sm:flex-row sm:text-left" : "sm:flex-row-reverse sm:text-right",
+        dim && "opacity-60 hover:opacity-100",
       )}
     >
       {side.logo ? (
@@ -494,14 +537,217 @@ function TeamStats({ g }: { g: NhlGameDetail }) {
   );
 }
 
+function WrapHero({
+  g,
+  sectionRef,
+  primary,
+  playlist,
+  autoPlay,
+  onPick,
+  hasStory,
+}: {
+  g: NhlGameDetail;
+  sectionRef: RefObject<HTMLElement | null>;
+  primary: NhlGameVideo;
+  playlist: NhlGameVideo[];
+  autoPlay: boolean;
+  onPick: (clipId: string) => void;
+  hasStory: boolean;
+}) {
+  const headline =
+    g.article?.headline ??
+    `${g.away.name} ${g.away.score ?? 0}, ${g.home.name} ${g.home.score ?? 0}`;
+  const dek = g.article?.description?.replace(/^—\s*/, "") || null;
+  const pick = (clipId: string) => {
+    onPick(clipId);
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  return (
+    <section
+      ref={sectionRef}
+      className="relative scroll-mt-4 overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.3)]"
+    >
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-40 opacity-50"
+        style={{
+          background: `linear-gradient(100deg, #${g.away.color}55, transparent 45%, transparent 55%, #${g.home.color}55)`,
+        }}
+      />
+      <div className="relative px-4 pb-3 pt-4 sm:px-5">
+        <p className="text-accent flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em]">
+          <Play size={10} className="fill-current" /> Game wrap
+        </p>
+        <h2 className="font-rss text-cream mt-1.5 max-w-4xl text-[21px] font-semibold leading-tight sm:text-[26px]">
+          {headline}
+        </h2>
+        {dek ? (
+          <p className="text-chalk mt-1.5 line-clamp-2 max-w-3xl text-[13px] leading-relaxed">{dek}</p>
+        ) : null}
+        {hasStory ? (
+          <button
+            type="button"
+            onClick={() =>
+              document.getElementById("game-story")?.scrollIntoView({ behavior: "smooth", block: "start" })
+            }
+            className="text-chalk hover:text-cream mt-2 inline-flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
+          >
+            <ArrowDown size={12} /> Read the story
+          </button>
+        ) : null}
+      </div>
+      <div
+        className={cn(
+          "relative grid gap-3 px-3 pb-3 sm:px-4 sm:pb-4",
+          playlist.length > 0 && "lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]",
+        )}
+      >
+        <EspnVideoEmbed
+          key={primary.id}
+          clip={primary}
+          eyebrow={clipEyebrow(primary)}
+          autoPlay={autoPlay}
+        />
+        {playlist.length > 0 ? (
+          <aside className="flex flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-black/25 lg:h-0 lg:min-h-full">
+            <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+                More from this game
+              </p>
+              <span className="rounded-sm bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-[#8b93a7]">
+                {playlist.length}
+              </span>
+            </div>
+            <ul className="max-h-[19rem] divide-y divide-white/[0.05] overflow-y-auto lg:max-h-none lg:min-h-0 lg:flex-1">
+              {playlist.map((c) => {
+                const duration = formatClipDuration(c.durationSec);
+                return (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => pick(c.id)}
+                      className="group flex w-full items-start gap-3 px-3 py-2.5 text-left transition hover:bg-white/[0.04]"
+                    >
+                      <span className="relative aspect-video w-24 shrink-0 overflow-hidden rounded-md bg-black/40">
+                        {c.thumb ? (
+                          <img src={c.thumb} alt="" loading="lazy" className="h-full w-full object-cover" />
+                        ) : null}
+                        <span className="absolute inset-0 grid place-items-center bg-black/25 transition group-hover:bg-black/10">
+                          <Play size={13} className="text-cream fill-current" />
+                        </span>
+                        {duration ? (
+                          <span className="absolute bottom-1 right-1 rounded-sm bg-black/70 px-1 text-[9px] text-[#d5dae6]">
+                            {duration}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="min-w-0">
+                        <span
+                          className={cn(
+                            "block text-[9.5px] font-semibold uppercase tracking-[0.14em]",
+                            c.wrap ? "text-accent" : "text-[#8b93a7]",
+                          )}
+                        >
+                          {playlistEyebrow(c)}
+                        </span>
+                        <span className="text-cream mt-0.5 line-clamp-2 block text-[12.5px] leading-snug">
+                          {c.headline}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </aside>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function GameStory({ g, recapUrl }: { g: NhlGameDetail; recapUrl: string }) {
+  if (!g.article) return null;
+  return (
+    <section
+      id="game-story"
+      className="bg-panel font-rss scroll-mt-4 overflow-hidden rounded-xl border border-white/[0.08]"
+    >
+      <div className="border-b border-white/[0.06] px-4 py-3">
+        <p className="text-accent text-[10px] font-semibold uppercase tracking-[0.16em]">
+          {g.final ? "Game story" : "Preview"}
+        </p>
+        <h2 className="font-rss text-cream mt-1 text-[20px] font-semibold leading-snug">
+          {g.article.headline}
+        </h2>
+        {g.article.description ? (
+          <p className="text-chalk mt-2 text-[13px] leading-relaxed">
+            {g.article.description.replace(/^—\s*/, "")}
+          </p>
+        ) : null}
+      </div>
+      {g.article.storyHtml ? (
+        <SelectableHighlightRegion
+          articleUrl={recapUrl}
+          articleTitle={g.article.headline}
+          feedUrl="synthetic:nhl-wraps"
+          html={g.article.storyHtml}
+          className="rss-reader px-4 py-4 text-[15px] leading-[1.75] text-[#d5dae6] [&_a]:font-semibold [&_a]:text-accent [&_a]:hover:underline [&_p]:my-3.5 [&_mark.rss-hl]:bg-accent/35 [&_mark.rss-hl]:text-cream"
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function LastFive({ g }: { g: NhlGameDetail }) {
+  return (
+    <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
+      <h3 className="rule-head mb-3">Last five</h3>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {g.lastFive.map((side) => (
+          <div key={side.teamAbbrev}>
+            <p className="text-cream mb-2 text-[12px] font-semibold">{side.teamAbbrev}</p>
+            <ul className="space-y-1.5">
+              {side.results.map((r, i) => (
+                <li
+                  key={`${side.teamAbbrev}-${i}`}
+                  className="flex items-center justify-between gap-2 text-[12px]"
+                >
+                  <span className="text-chalk-dim">vs {r.label}</span>
+                  <span
+                    className={cn(
+                      "numeral font-semibold",
+                      /^W/i.test(r.result)
+                        ? "text-emerald-400"
+                        : /^L/i.test(r.result)
+                          ? "text-alert"
+                          : "text-cream",
+                    )}
+                  >
+                    {r.result}
+                    {r.score ? ` ${r.score}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ScoreFigure({
   score,
   pp,
   side,
+  won = false,
+  dim = false,
 }: {
   score: number | null;
   pp: boolean;
   side: "away" | "home";
+  won?: boolean;
+  dim?: boolean;
 }) {
   return (
     <div className={cn("flex items-center gap-1.5", side === "away" ? "flex-row-reverse" : "")}>
@@ -510,7 +756,21 @@ function ScoreFigure({
           PP
         </span>
       ) : null}
-      <span className="font-display text-cream text-[40px] leading-none tabular-nums sm:text-[52px]">
+      {won ? (
+        <span
+          aria-label="Winner"
+          className={cn(
+            "h-0 w-0 border-y-[6px] border-y-transparent",
+            side === "away" ? "border-r-[7px] border-r-cream" : "border-l-[7px] border-l-cream",
+          )}
+        />
+      ) : null}
+      <span
+        className={cn(
+          "font-display text-[40px] leading-none tabular-nums sm:text-[52px]",
+          dim ? "text-white/45" : "text-cream",
+        )}
+      >
         {score ?? 0}
       </span>
     </div>
@@ -608,12 +868,27 @@ function formatClipDuration(sec: number | null): string | null {
 }
 
 function isGoalClip(clip: NhlGameVideo): clip is NhlGoalClip {
-  return clip.source === "nhl";
+  return clip.source === "nhl" && "periodNumber" in clip;
 }
 
+const WRAP_EYEBROW: Record<NhlWrapKind, string> = {
+  "espn-final": "Game highlights",
+  "nhl-recap": "NHL recap",
+  "nhl-condensed": "Condensed game",
+};
+
 function clipEyebrow(clip: NhlGameVideo): string {
+  if (clip.wrap) return WRAP_EYEBROW[clip.wrap];
   if (!isGoalClip(clip)) return "ESPN video";
   return ["NHL goal", clip.teamAbbrev, `${clip.periodLabel} ${clip.timeInPeriod}`.trim(), clip.tag]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function playlistEyebrow(clip: NhlGameVideo): string {
+  if (clip.wrap) return WRAP_EYEBROW[clip.wrap];
+  if (!isGoalClip(clip)) return "ESPN video";
+  return [`${clip.teamAbbrev} goal`, `${clip.periodLabel} ${clip.timeInPeriod}`.trim(), clip.tag]
     .filter(Boolean)
     .join(" · ");
 }
