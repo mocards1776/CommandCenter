@@ -8,6 +8,7 @@ import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import { CfbWinProbCaption } from "@/components/sports/CfbWinProbability";
 import LogoPlate from "@/components/sports/LogoPlate";
+import PossessionFootball from "@/components/sports/PossessionFootball";
 import TeamMark from "@/components/sports/TeamMark";
 import type { UnifiedRuwtItem } from "@/hooks/useRuwtSlate";
 import { useRuwtSlateSplit } from "@/hooks/useRuwtSlateSplit";
@@ -788,6 +789,9 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
           >
             <CfbRankLabel pollRank={game.away.rank} fpiRank={null} />
             {game.away.abbrev}
+            {game.live && awayHasBall ? (
+              <PossessionFootball className="h-3 w-5 shrink-0" />
+            ) : null}
           </p>
           {game.away.record ? (
             <p className="numeral text-[12px] font-medium text-white/85">{game.away.record}</p>
@@ -813,6 +817,9 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
               homeHasBall && "text-cream",
             )}
           >
+            {game.live && homeHasBall ? (
+              <PossessionFootball className="h-3 w-5 shrink-0" />
+            ) : null}
             <CfbRankLabel pollRank={game.home.rank} fpiRank={null} />
             {game.home.abbrev}
           </p>
@@ -904,6 +911,9 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
             )}
           >
             {game.away.abbrev}
+            {game.live && awayHasBall ? (
+              <PossessionFootball className="h-3 w-5 shrink-0" />
+            ) : null}
           </p>
         </div>
         <AppleScoreCluster
@@ -923,6 +933,9 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
               homeHasBall && "text-cream",
             )}
           >
+            {game.live && homeHasBall ? (
+              <PossessionFootball className="h-3 w-5 shrink-0" />
+            ) : null}
             {game.home.abbrev}
           </p>
         </div>

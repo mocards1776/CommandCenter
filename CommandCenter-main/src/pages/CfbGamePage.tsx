@@ -8,6 +8,7 @@ import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import LogoPlate from "@/components/sports/LogoPlate";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import CfbWinProbability from "@/components/sports/CfbWinProbability";
+import PossessionFootball from "@/components/sports/PossessionFootball";
 import CfbRankLabel, { CfbFpiCaption } from "@/components/sports/CfbRankLabel";
 import CfbRecentPlays from "@/components/sports/CfbRecentPlays";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
@@ -135,6 +136,9 @@ export function CfbGameDetailView({
   const recapUrl = `https://www.espn.com/college-football/recap/_/gameId/${eventId}`;
   const awayWins = g.final && (g.away.score ?? 0) > (g.home.score ?? 0);
   const homeWins = g.final && (g.home.score ?? 0) > (g.away.score ?? 0);
+  const possId = g.live ? g.situation?.possessionTeamId : null;
+  const awayHasBall = possId != null && String(possId) === String(g.away.teamId);
+  const homeHasBall = possId != null && String(possId) === String(g.home.teamId);
   const label = statusLabel(g);
   const pregame = !g.final && !g.live;
 
@@ -241,6 +245,7 @@ export function CfbGameDetailView({
             align="left"
             winner={awayWins}
             loser={homeWins}
+            hasBall={awayHasBall}
           />
           <div className="px-1 text-center">
             <AppleScoreCluster
@@ -265,6 +270,7 @@ export function CfbGameDetailView({
             align="right"
             winner={homeWins}
             loser={awayWins}
+            hasBall={homeHasBall}
           />
         </div>
 
@@ -664,11 +670,13 @@ function MatchupSide({
   align,
   winner,
   loser,
+  hasBall,
 }: {
   side: CfbScoreSide;
   align: "left" | "right";
   winner: boolean;
   loser: boolean;
+  hasBall: boolean;
 }) {
   return (
     <Link
@@ -688,8 +696,14 @@ function MatchupSide({
             winner || !loser ? "text-white" : "text-white/85",
           )}
         >
+          {align === "right" && hasBall ? (
+            <PossessionFootball className="h-3 w-5 shrink-0" />
+          ) : null}
           <CfbRankLabel pollRank={side.rank} fpiRank={null} />
           {side.abbrev}
+          {align === "left" && hasBall ? (
+            <PossessionFootball className="h-3 w-5 shrink-0" />
+          ) : null}
         </p>
         <p className="text-[11px] text-white/75">{side.name}</p>
         {side.record ? (
