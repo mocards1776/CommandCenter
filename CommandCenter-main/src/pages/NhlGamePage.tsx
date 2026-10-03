@@ -36,7 +36,7 @@ function statusLabel(g: {
 }): string {
   if (g.live) return g.shortDetail && !/^live$/i.test(g.shortDetail) ? g.shortDetail : "Live";
   if (g.final) {
-    if (g.shortDetail && !/^final\b/i.test(g.shortDetail)) return g.shortDetail;
+    if (g.shortDetail && !/^final$/i.test(g.shortDetail.trim())) return g.shortDetail;
     return "Final";
   }
   if (g.shortDetail && !/scheduled|pregame|pre-game/i.test(g.shortDetail)) return g.shortDetail;
