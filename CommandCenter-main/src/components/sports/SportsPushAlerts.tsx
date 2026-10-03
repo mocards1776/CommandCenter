@@ -80,7 +80,7 @@ export function SportsPushSettings({ layout }: { layout: SportsLayout }) {
         <Toggle
           on={push.permission === "granted" && push.subscribed && push.heat}
           label="Heat alerts"
-          detail="One push when a live game gets as hot as a one-score game. The note says why — one score, late, extras."
+          detail="One push when a live game gets as hot as a one-score game. The note shows the score, the clock, and the card's reason line."
           disabled={locked}
           onChange={(on) => void push.setHeat(on)}
         />
@@ -133,8 +133,8 @@ export function SportsPushBanner({ layout }: { layout: SportsLayout }) {
         One alert when a game gets hot
       </p>
       <p className="text-chalk mt-1 max-w-md pr-6 text-[12px] leading-relaxed">
-        Not every score change, and not the pregame board. The note carries the score and why it
-        fired — one score, late, extras.
+        Not every score change, and not the pregame board. The note carries the score, the clock,
+        and the same reason line as the card.
         {push.ios && !push.standalone
           ? " On iPhone these only arrive in the Home Screen Sports app."
           : ""}

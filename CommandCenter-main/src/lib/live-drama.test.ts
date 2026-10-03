@@ -14,6 +14,7 @@ import {
   favoriteFinalNote,
   favoriteStartNote,
   heatNote,
+  heatReasonChips,
   liveDrama,
   type PushFavorite,
   type PushGame,
@@ -142,11 +143,55 @@ const game: PushGame = {
 };
 const heat = heatNote(game, drama({ sport: "mlb", awayScore: 3, homeScore: 4, detail: "Top 8th" }));
 assert(heat.title === "Cubs 3, Cardinals 4", heat.title);
-assert(heat.body.startsWith("One-run game"), heat.body);
-assert(heat.body.includes("Top 8th"), heat.body);
-assert(!/playoff|favorite/i.test(heat.body), heat.body);
+assert(heat.body.startsWith("Top 8th\n"), heat.body);
+assert(heat.body.includes("One-run game · Late innings"), heat.body);
+assert(!/playoff|favorite|interest|\bheat\b/i.test(`${heat.title}\n${heat.body}`), heat.body);
 assert(heat.icon === "https://example.com/stl.png", "icon is the team in front");
+assert(heat.image === heat.icon, "expanded image uses the same team logo");
+assert(heat.silent === false && heat.renotify === false, "one game does not buzz twice");
 assert(heat.url === "/sports/mlb/game/746189?solo=1", heat.url);
+
+const stripped = heatReasonChips(game, {
+  score: 90,
+  hot: true,
+  why: "One-run game",
+  reasons: ["Live", "Your #1 team", "Playoffs", "Cardinals", "Heat 90", "One-run game"],
+});
+assert(stripped.join(" · ") === "One-run game", stripped.join(" · "));
+
+const cfb: PushGame = {
+  sport: "cfb",
+  id: "401",
+  live: true,
+  final: false,
+  detail: "0:27 - 4th",
+  period: 4,
+  redZone: false,
+  downDistance: null,
+  when: "2:30 PM",
+  broadcasts: ["ABC", "ESPN+"],
+  away: { id: "99", abbrev: "LSU", name: "LSU", score: 24, logo: "https://example.com/lsu.png", rank: 11 },
+  home: { id: "333", abbrev: "ALA", name: "Alabama", score: 17, logo: "https://example.com/ala.png", rank: 6 },
+};
+const cfbHeat = heatNote(cfb, drama({ sport: "cfb", awayScore: 24, homeScore: 17, detail: "0:27 - 4th", period: 4 }));
+assert(cfbHeat.title === "LSU 24, Alabama 17", cfbHeat.title);
+assert(cfbHeat.body.startsWith("0:27 - 4th\n"), cfbHeat.body);
+assert(
+  cfbHeat.body.includes("One-score game") &&
+    cfbHeat.body.includes("Ranked matchup") &&
+    cfbHeat.body.includes("National TV") &&
+    cfbHeat.body.includes("ABC"),
+  cfbHeat.body,
+);
+assert(!/\bheat\b|interest/i.test(`${cfbHeat.title}\n${cfbHeat.body}`), cfbHeat.body);
+assert(cfbHeat.image === "https://example.com/lsu.png", "image is the team in front");
+
+const espnOnly = heatNote(
+  { ...cfb, broadcasts: ["ESPN"], away: { ...cfb.away, rank: null }, home: { ...cfb.home, rank: 99 } },
+  drama({ sport: "cfb", awayScore: 24, homeScore: 17, detail: "0:27 - 4th", period: 4 }),
+);
+assert(!espnOnly.body.includes("National TV"), espnOnly.body);
+assert(!espnOnly.body.includes("Ranked"), espnOnly.body);
 
 const fav: PushFavorite = { key: "mlb-stl", sport: "mlb", teamId: "24", shortName: "Cardinals" };
 const start = favoriteStartNote(
@@ -154,9 +199,25 @@ const start = favoriteStartNote(
   fav,
 );
 assert(start.title === "Cardinals · first pitch", start.title);
+assert(start.body === "Cubs at Cardinals\n7:15 PM", start.body);
 assert(start.reason === "favorite-start", start.reason);
+assert(!/one-run|ranked matchup|national tv/i.test(start.body), "start copy stays off the heat line");
 const fin = favoriteFinalNote({ ...game, live: false, final: true, detail: "Final" }, fav);
 assert(fin.title === "Cardinals final" && fin.body === "Cubs 3, Cardinals 4", `${fin.title} ${fin.body}`);
+assert(fin.icon === "https://example.com/stl.png", "final icon is the favorite");
+const trailing = favoriteFinalNote(
+  {
+    ...game,
+    live: false,
+    final: true,
+    detail: "Final",
+    away: { ...game.away, score: 9 },
+    home: { ...game.home, score: 1 },
+  },
+  fav,
+);
+assert(trailing.icon === "https://example.com/stl.png", "final keeps the favorite logo when they trail");
+assert(trailing.body === "Cubs 9, Cardinals 1", trailing.body);
 
 const mapped = mapEspnEvent("nfl", {
   id: "401547403",
@@ -174,6 +235,35 @@ const mapped = mapEspnEvent("nfl", {
 });
 assert(mapped?.live && mapped.away.score === 3 && mapped.home.name === "Lions", "ESPN live row maps");
 assert(mapped?.when === "12:00 PM", `Chicago kickoff label, got ${mapped?.when}`);
+assert(mapped?.away.rank == null && (mapped?.broadcasts ?? []).length === 0, "missing rank and TV stay empty");
+
+const cfbRow = mapEspnEvent("cfb", {
+  id: "401",
+  competitions: [
+    {
+      status: { period: 4, type: { state: "in", shortDetail: "0:27 - 4th" } },
+      geoBroadcasts: [{ media: { shortName: "ABC" }, names: ["ABC"] }],
+      broadcasts: [{ names: ["ABC"] }],
+      competitors: [
+        {
+          homeAway: "away",
+          score: "24",
+          curatedRank: { current: 11 },
+          team: { id: "99", abbreviation: "LSU", shortDisplayName: "LSU", logo: "https://a.espncdn.com/i/teamlogos/ncaa/500/99.png" },
+        },
+        {
+          homeAway: "home",
+          score: "17",
+          curatedRank: { current: 99 },
+          team: { id: "333", abbreviation: "ALA", shortDisplayName: "Alabama" },
+        },
+      ],
+    },
+  ],
+});
+assert(cfbRow?.away.rank === 11 && cfbRow.home.rank == null, `ranks ${cfbRow?.away.rank}/${cfbRow?.home.rank}`);
+assert(cfbRow?.broadcasts?.join() === "ABC", cfbRow?.broadcasts?.join());
+assert(cfbRow?.away.logo?.includes("espncdn.com"), "logo stays on the ESPN team mark");
 
 const pre = mapEspnEvent("mlb", {
   id: "1",
