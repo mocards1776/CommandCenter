@@ -46,9 +46,19 @@ import {
   type TeamSnapshot,
   type TourSnapshot,
 } from "@/lib/sports";
+import {
+  BOARD_TIER,
+  isoDayOffset,
+  rankBoardFavorites,
+  teamBoardTier,
+  tourBoardTier,
+  type BoardTier,
+} from "@/lib/sports-board";
 import { cn } from "@/lib/utils";
 import { fetchChampionshipPromotionOdds } from "@/lib/soccer";
 import { fetchYesterdayRecap, type YesterdayRecap } from "@/lib/yesterday-recap";
+
+const CARDINALS_MLB_ID = 138;
 
 function ordinalSuffixLocal(n: number): string {
   const v = Math.abs(n) % 100;
@@ -654,8 +664,8 @@ export default function SportsPage() {
   });
 
   const cardsHero = useQuery({
-    queryKey: ["sports-hero-game", 138],
-    queryFn: () => fetchTeamCurrentGame(138),
+    queryKey: ["sports-hero-game", CARDINALS_MLB_ID],
+    queryFn: () => fetchTeamCurrentGame(CARDINALS_MLB_ID),
     staleTime: 30_000,
     refetchInterval: 30_000,
   });
@@ -678,6 +688,25 @@ export default function SportsPage() {
   const byKeyFav = useMemo(
     () => new Map(DEFAULT_FAVORITES.map((f) => [f.key, f] as const)),
     [],
+  );
+
+  const tierByKey = new Map<string, BoardTier>();
+  teamFavs.forEach((fav, i) => tierByKey.set(fav.key, teamBoardTier(teamQueries[i]?.data)));
+  tourFavs.forEach((fav, i) => tierByKey.set(fav.key, tourBoardTier(tourQueries[i]?.data)));
+  const boardFavorites = rankBoardFavorites(
+    favorites,
+    (fav) => tierByKey.get(fav.key) ?? BOARD_TIER.unknown,
+  );
+
+  const cardsKey = DEFAULT_FAVORITES.find((f) => f.mlbTeamId === CARDINALS_MLB_ID)?.key;
+  const otherTeamLive = teamFavs.some(
+    (fav) => fav.key !== cardsKey && tierByKey.get(fav.key) === BOARD_TIER.live,
+  );
+  const heroGame = cardsHero.data;
+  const heroDay = isoDayOffset(heroGame?.officialDate);
+  const heroRecent = heroDay != null && heroDay >= -1 && heroDay <= 3;
+  const showCardsHero = Boolean(
+    heroGame && !selectedKey && (heroGame.live || (heroRecent && !otherTeamLive)),
   );
 
   return (
@@ -720,15 +749,16 @@ export default function SportsPage() {
         />
       ) : (
         <>
-      {/* Hide board hero while team detail is open — panel covers the right half otherwise. */}
-      {cardsHero.data && !selectedKey && (
+      {/* Hide board hero while team detail is open — panel covers the right half otherwise.
+          Off-season finals and nights another followed club is live drop it too. */}
+      {showCardsHero && heroGame && (
         <HeroGameCard
-          game={cardsHero.data}
+          game={heroGame}
           accent="#be0a14"
           label={
-            cardsHero.data.live
+            heroGame.live
               ? "Cardinals · Live"
-              : cardsHero.data.final
+              : heroGame.final
                 ? "Cardinals · Latest"
                 : "Cardinals · Next up"
           }
@@ -736,7 +766,7 @@ export default function SportsPage() {
       )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {favorites.map((fav) => {
+        {boardFavorites.map((fav) => {
           if (fav.kind === "tour") {
             const qi = tourFavs.findIndex((f) => f.key === fav.key);
             const q = tourQueries[qi];
