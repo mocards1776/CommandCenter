@@ -441,6 +441,8 @@ export type NhlScoringPlay = {
   id: string;
   text: string;
   period: string | null;
+  periodNumber: number | null;
+  /** Elapsed time in period, e.g. "5:12" (same basis as NHL `timeInPeriod`). */
   clock: string | null;
   awayScore: number | null;
   homeScore: number | null;
@@ -457,10 +459,38 @@ export type NhlGameLeader = {
   value: string;
 };
 
+export type NhlRecentPlay = {
+  id: string;
+  text: string;
+  type: string;
+  period: string | null;
+  clock: string | null;
+  teamId: string | null;
+  scoringPlay: boolean;
+  awayScore: number | null;
+  homeScore: number | null;
+  athlete: { id: string; name: string; headshot: string | null } | null;
+};
+
+/** Playable clip shape shared by ESPN summary videos and NHL Brightcove goal clips. */
+export type NhlGameVideo = {
+  id: string;
+  headline: string;
+  description: string | null;
+  thumb: string | null;
+  mp4: string | null;
+  href: string | null;
+  durationSec: number | null;
+  source: "nhl" | "espn";
+};
+
 export type NhlGameDetail = NhlScoreGame & {
   teamStats: { label: string; away: string; home: string }[];
   boxGroups: NhlBoxGroup[];
   scoringPlays: NhlScoringPlay[];
+  /** Newest first, faceoffs/stoppages dropped. */
+  recentPlays: NhlRecentPlay[];
+  videos: NhlGameVideo[];
   leaders: NhlGameLeader[];
   article: { headline: string; description: string | null; storyHtml: string | null } | null;
   oddsLine: string | null;
@@ -511,6 +541,57 @@ function statNum(stats: { label: string; value: string }[], label: string): numb
   return Number.isFinite(n) ? n : 0;
 }
 
+const RECENT_PLAY_LIMIT = 12;
+const RECENT_PLAY_SKIP = /^(face ?off|stoppage)$/i;
+
+type NhlEspnVideoRaw = {
+  id?: string | number;
+  headline?: string;
+  title?: string;
+  description?: string;
+  caption?: string;
+  duration?: number;
+  thumbnail?: string;
+  images?: { url?: string }[];
+  posterImages?: { default?: { href?: string }; full?: { href?: string } };
+  links?: {
+    web?: { href?: string };
+    source?: { href?: string; HD?: { href?: string } };
+    mobile?: { source?: { href?: string } };
+  };
+};
+
+function mapNhlEspnVideo(raw: NhlEspnVideoRaw): NhlGameVideo | null {
+  const id = raw.id != null ? String(raw.id) : "";
+  const headline = (raw.headline || raw.title || "").trim();
+  if (!id || !headline) return null;
+  const mp4 =
+    [raw.links?.mobile?.source?.href, raw.links?.source?.HD?.href, raw.links?.source?.href].find(
+      (href): href is string => Boolean(href && /\.mp4(\?|$)/i.test(href)),
+    ) ?? null;
+  const descriptionRaw = (raw.description || raw.caption || "").trim() || null;
+  const description =
+    descriptionRaw &&
+    descriptionRaw.replace(/\s+/g, " ").toLowerCase() !== headline.replace(/\s+/g, " ").toLowerCase()
+      ? descriptionRaw
+      : null;
+  return {
+    id: `espn-${id}`,
+    headline,
+    description,
+    thumb:
+      raw.posterImages?.full?.href ??
+      raw.posterImages?.default?.href ??
+      raw.thumbnail ??
+      raw.images?.[0]?.url ??
+      null,
+    mp4,
+    href: raw.links?.web?.href ?? `https://www.espn.com/video/clip?id=${id}`,
+    durationSec: typeof raw.duration === "number" ? raw.duration : null,
+    source: "espn",
+  };
+}
+
 export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail> {
   const raw = await getJson<{
     header?: { competitions?: EspnEvent["competitions"]; id?: string };
@@ -532,18 +613,20 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
     plays?: {
       id?: string;
       text?: string;
+      type?: { text?: string };
       scoringPlay?: boolean;
       awayScore?: number;
       homeScore?: number;
-      period?: { displayValue?: string };
+      period?: { number?: number; displayValue?: string };
       clock?: { displayValue?: string };
       team?: { id?: string };
       strength?: { text?: string; abbreviation?: string };
       participants?: {
         type?: string;
-        athlete?: { id?: string; displayName?: string };
+        athlete?: { id?: string; displayName?: string; headshot?: { href?: string } };
       }[];
     }[];
+    videos?: NhlEspnVideoRaw[];
     leaders?: {
       team?: { abbreviation?: string };
       leaders?: {
@@ -682,6 +765,7 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
       id: String(p.id ?? Math.random()),
       text: (p.text ?? "").replace(/\s+/g, " ").trim(),
       period: p.period?.displayValue ?? null,
+      periodNumber: typeof p.period?.number === "number" ? p.period.number : null,
       clock: p.clock?.displayValue ?? null,
       awayScore: typeof p.awayScore === "number" ? p.awayScore : null,
       homeScore: typeof p.homeScore === "number" ? p.homeScore : null,
@@ -695,6 +779,43 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
         }))
         .filter((a) => a.id && a.name),
     }));
+
+  const recentPlays: NhlRecentPlay[] = [];
+  const allPlays = raw.plays ?? [];
+  for (let i = allPlays.length - 1; i >= 0 && recentPlays.length < RECENT_PLAY_LIMIT; i--) {
+    const p = allPlays[i]!;
+    const type = p.type?.text ?? "";
+    const text = (p.text ?? "").replace(/\s+/g, " ").trim();
+    if (!text || RECENT_PLAY_SKIP.test(type)) continue;
+    const lead = p.participants?.[0]?.athlete;
+    recentPlays.push({
+      id: String(p.id ?? `${i}`),
+      text,
+      type,
+      period: p.period?.displayValue ?? null,
+      clock: p.clock?.displayValue ?? null,
+      teamId: p.team?.id ?? null,
+      scoringPlay: Boolean(p.scoringPlay),
+      awayScore: typeof p.awayScore === "number" ? p.awayScore : null,
+      homeScore: typeof p.homeScore === "number" ? p.homeScore : null,
+      athlete: lead?.id
+        ? {
+            id: String(lead.id),
+            name: lead.displayName ?? "",
+            headshot: lead.headshot?.href ?? nhlHeadshot(lead.id),
+          }
+        : null,
+    });
+  }
+
+  const videos: NhlGameVideo[] = [];
+  const seenVideo = new Set<string>();
+  for (const rawVid of raw.videos ?? []) {
+    const mapped = mapNhlEspnVideo(rawVid);
+    if (!mapped || seenVideo.has(mapped.id)) continue;
+    seenVideo.add(mapped.id);
+    videos.push(mapped);
+  }
 
   const leaders: NhlGameLeader[] = [];
   for (const block of raw.leaders ?? []) {
@@ -764,6 +885,8 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
     teamStats,
     boxGroups,
     scoringPlays,
+    recentPlays,
+    videos,
     leaders,
     article: raw.article?.headline
       ? {
@@ -777,6 +900,363 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
     venueDetail: venueBits.length ? venueBits.join(" · ") : null,
     goalieStarters: { away: awayGoalie, home: homeGoalie },
   };
+}
+
+// ---------------------------------------------------------------------------
+// NHL gamecenter (api-web.nhle.com) + Brightcove goal clips
+// ---------------------------------------------------------------------------
+
+export type NhlGoalClip = NhlGameVideo & {
+  source: "nhl";
+  periodNumber: number;
+  periodLabel: string;
+  /** "05:12" elapsed in period. */
+  timeInPeriod: string;
+  teamAbbrev: string;
+  scorer: string;
+  scorerLastName: string;
+  scorerHeadshot: string | null;
+  /** "PPG" / "SHG" / "EN" / "PS" — null at even strength. */
+  tag: string | null;
+  awayScore: number | null;
+  homeScore: number | null;
+};
+
+export type NhlSideSituation = {
+  abbrev: string;
+  strength: number | null;
+  /** NHL descriptors such as "PP" or "EN". */
+  descriptors: string[];
+};
+
+export type NhlGameSituation = {
+  away: NhlSideSituation;
+  home: NhlSideSituation;
+  timeRemaining: string | null;
+  powerPlayAbbrev: string | null;
+};
+
+export type NhlGamecenter = {
+  nhlGameId: number;
+  nhlUrl: string;
+  situation: NhlGameSituation | null;
+  goals: NhlGoalClip[];
+};
+
+/**
+ * api-web.nhle.com sends no CORS headers, so browsers go through the same-origin
+ * `/api/nhl` Vercel function (`api/nhl.ts`; Vite dev serves the same route).
+ * The direct call only helps outside the browser (tests, SSR, future CORS).
+ */
+async function nhlWebJson<T>(path: string): Promise<T> {
+  try {
+    const res = await fetch(`/api/nhl?path=${encodeURIComponent(path)}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (res.ok && /json/i.test(res.headers.get("content-type") ?? "")) {
+      return (await res.json()) as T;
+    }
+  } catch {
+    /* fall through to direct */
+  }
+  return getJson<T>(`https://api-web.nhle.com/${path}`);
+}
+
+/** ESPN uses two-letter codes where NHL uses three. Everything else already agrees. */
+const NHL_TO_ESPN_ABBREV: Record<string, string> = { LAK: "LA", NJD: "NJ", SJS: "SJ", TBL: "TB" };
+
+function canonNhlAbbrev(abbrev: string | null | undefined): string {
+  const up = (abbrev ?? "").toUpperCase();
+  return NHL_TO_ESPN_ABBREV[up] ?? up;
+}
+
+type NhlScheduleJson = {
+  gameWeek?: {
+    games?: {
+      id?: number;
+      startTimeUTC?: string;
+      awayTeam?: { abbrev?: string };
+      homeTeam?: { abbrev?: string };
+    }[];
+  }[];
+};
+
+const nhlGameIdCache = new Map<string, Promise<number | null>>();
+
+/**
+ * ESPN event id → NHL game id. ESPN's summary carries no NHL id, so match on
+ * matchup + puck drop: `/v1/schedule/{date}` returns a 7-day week starting at
+ * `date`; we ask from the day before ESPN's start (Eastern) so late UTC starts
+ * and date-line edges still land in the window, then take the game with the same
+ * away/home abbrevs whose `startTimeUTC` is closest (within 36h) to ESPN's.
+ */
+export function resolveNhlGameId(
+  game: Pick<NhlScoreGame, "id" | "startIso" | "away" | "home">,
+): Promise<number | null> {
+  const cached = nhlGameIdCache.get(game.id);
+  if (cached) return cached;
+  const startMs = Date.parse(game.startIso ?? "");
+  if (!Number.isFinite(startMs)) return Promise.resolve(null);
+  const from = new Date(startMs - 86_400_000).toLocaleDateString("en-CA", {
+    timeZone: "America/New_York",
+  });
+  const away = canonNhlAbbrev(game.away.abbrev);
+  const home = canonNhlAbbrev(game.home.abbrev);
+  const job = nhlWebJson<NhlScheduleJson>(`v1/schedule/${from}`)
+    .then((raw) => {
+      let best: { id: number; gap: number } | null = null;
+      for (const day of raw.gameWeek ?? []) {
+        for (const g of day.games ?? []) {
+          if (!g.id) continue;
+          if (canonNhlAbbrev(g.awayTeam?.abbrev) !== away) continue;
+          if (canonNhlAbbrev(g.homeTeam?.abbrev) !== home) continue;
+          const gap = Math.abs(Date.parse(g.startTimeUTC ?? "") - startMs);
+          if (!Number.isFinite(gap) || gap > 36 * 3_600_000) continue;
+          if (!best || gap < best.gap) best = { id: g.id, gap };
+        }
+      }
+      return best?.id ?? null;
+    })
+    .catch(() => null);
+  nhlGameIdCache.set(game.id, job);
+  void job.then((id) => {
+    if (id == null) nhlGameIdCache.delete(game.id);
+  });
+  return job;
+}
+
+/**
+ * NHL.com plays clips through Brightcove (account 6415718365001, player
+ * `default_default`). The Playback API needs that player's public policy key in
+ * the Accept header. We seed with the key verified from
+ * players.brightcove.net/6415718365001/default_default/config.json and, if
+ * Brightcove ever rejects it (rotation), re-read `video_cloud.policy_key` from
+ * that same small, CORS-open config once per session and retry.
+ */
+const NHL_BC_ACCOUNT = "6415718365001";
+const NHL_BC_CONFIG = `https://players.brightcove.net/${NHL_BC_ACCOUNT}/default_default/config.json`;
+let nhlBcPolicyKey =
+  "BCpkADawqM3l37Vq8trLJ95vVwxubXYZXYglAopEZXQTHTWX3YdalyF9xmkuknxjBgiMYwt8VZ_OZ1jAjYxz_yzuNh_cjC3uOaMspVTD-hZfNUHtNnBnhVD0Gmsih8TBF8QlQFXiCQM3W_u4ydJ1qK2Rx8ZutCUg3PHb7Q";
+let nhlBcKeyRefresh: Promise<string | null> | null = null;
+
+function refreshNhlBcPolicyKey(): Promise<string | null> {
+  nhlBcKeyRefresh ??= getJson<{ video_cloud?: { policy_key?: string } }>(NHL_BC_CONFIG)
+    .then((cfg) => {
+      const key = cfg.video_cloud?.policy_key ?? null;
+      if (key) nhlBcPolicyKey = key;
+      return key;
+    })
+    .catch(() => null);
+  return nhlBcKeyRefresh;
+}
+
+type BrightcoveVideo = {
+  name?: string;
+  description?: string;
+  duration?: number;
+  poster?: string;
+  thumbnail?: string;
+  sources?: { container?: string; src?: string; width?: number; avg_bitrate?: number }[];
+};
+
+type ResolvedBrightcove = {
+  name: string | null;
+  description: string | null;
+  mp4: string | null;
+  poster: string | null;
+  durationSec: number | null;
+};
+
+const nhlBcCache = new Map<string, Promise<ResolvedBrightcove | null>>();
+
+async function loadBrightcove(videoId: string): Promise<ResolvedBrightcove | null> {
+  const url = `https://edge.api.brightcove.com/playback/v1/accounts/${NHL_BC_ACCOUNT}/videos/${videoId}`;
+  const call = (key: string) => fetch(url, { headers: { Accept: `application/json;pk=${key}` } });
+  const usedKey = nhlBcPolicyKey;
+  let res = await call(usedKey);
+  if (res.status === 401 || res.status === 403) {
+    const fresh = await refreshNhlBcPolicyKey();
+    if (fresh && fresh !== usedKey) res = await call(fresh);
+  }
+  if (!res.ok) return null;
+  const v = (await res.json()) as BrightcoveVideo;
+  // Progressive MP4 plays in a bare <video> everywhere; HLS/DASH would need a player lib.
+  const mp4 =
+    (v.sources ?? [])
+      .filter((s) => s.container === "MP4" && s.src?.startsWith("https://"))
+      .sort((a, b) => (b.width ?? 0) - (a.width ?? 0) || (b.avg_bitrate ?? 0) - (a.avg_bitrate ?? 0))[0]
+      ?.src ?? null;
+  return {
+    name: v.name?.trim() || null,
+    description: v.description?.trim() || null,
+    mp4,
+    poster: v.poster ?? v.thumbnail ?? null,
+    durationSec: typeof v.duration === "number" ? Math.round(v.duration / 1000) : null,
+  };
+}
+
+function resolveBrightcove(videoId: string): Promise<ResolvedBrightcove | null> {
+  const cached = nhlBcCache.get(videoId);
+  if (cached) return cached;
+  const job = loadBrightcove(videoId).catch(() => null);
+  nhlBcCache.set(videoId, job);
+  void job.then((r) => {
+    if (!r?.mp4) nhlBcCache.delete(videoId);
+  });
+  return job;
+}
+
+type NhlLandingGoal = {
+  eventId?: number;
+  highlightClip?: number;
+  discreteClip?: number;
+  highlightClipSharingUrl?: string;
+  firstName?: { default?: string };
+  lastName?: { default?: string };
+  name?: { default?: string };
+  teamAbbrev?: { default?: string };
+  headshot?: string;
+  strength?: string;
+  goalModifier?: string;
+  awayScore?: number;
+  homeScore?: number;
+  timeInPeriod?: string;
+  assists?: { name?: { default?: string } }[];
+};
+
+type NhlLandingSide = { abbrev?: string; strength?: number; situationDescriptions?: string[] };
+
+type NhlLandingJson = {
+  id?: number;
+  situation?: {
+    awayTeam?: NhlLandingSide;
+    homeTeam?: NhlLandingSide;
+    timeRemaining?: string;
+  };
+  summary?: {
+    scoring?: {
+      periodDescriptor?: { number?: number; periodType?: string };
+      goals?: NhlLandingGoal[];
+    }[];
+  };
+};
+
+function nhlPeriodLabel(num: number, type: string | undefined): string {
+  if (type === "SO") return "SO";
+  if (type === "OT" || num > 3) return num > 4 ? `${num - 3}OT` : "OT";
+  return ["1st", "2nd", "3rd"][num - 1] ?? `P${num}`;
+}
+
+function goalTag(g: NhlLandingGoal): string | null {
+  if (g.goalModifier === "empty-net") return "EN";
+  if (g.goalModifier === "penalty-shot") return "PS";
+  if (g.strength === "pp") return "PPG";
+  if (g.strength === "sh") return "SHG";
+  return null;
+}
+
+function mapSituation(raw: NhlLandingJson["situation"]): NhlGameSituation | null {
+  if (!raw?.awayTeam || !raw.homeTeam) return null;
+  const side = (s: NhlLandingSide): NhlSideSituation => ({
+    abbrev: canonNhlAbbrev(s.abbrev),
+    strength: typeof s.strength === "number" ? s.strength : null,
+    descriptors: s.situationDescriptions ?? [],
+  });
+  const away = side(raw.awayTeam);
+  const home = side(raw.homeTeam);
+  const powerPlayAbbrev = away.descriptors.includes("PP")
+    ? away.abbrev
+    : home.descriptors.includes("PP")
+      ? home.abbrev
+      : null;
+  return { away, home, timeRemaining: raw.timeRemaining ?? null, powerPlayAbbrev };
+}
+
+/** NHL landing for an ESPN game: live strength situation + Brightcove goal clips. */
+export async function fetchNhlGamecenter(
+  game: Pick<NhlScoreGame, "id" | "startIso" | "away" | "home">,
+): Promise<NhlGamecenter | null> {
+  const nhlGameId = await resolveNhlGameId(game);
+  if (nhlGameId == null) return null;
+  const landing = await nhlWebJson<NhlLandingJson>(`v1/gamecenter/${nhlGameId}/landing`);
+
+  const pending: Promise<NhlGoalClip | null>[] = [];
+  for (const period of landing.summary?.scoring ?? []) {
+    const num = period.periodDescriptor?.number ?? 0;
+    const periodLabel = nhlPeriodLabel(num, period.periodDescriptor?.periodType);
+    for (const g of period.goals ?? []) {
+      const clipId = g.highlightClip ?? g.discreteClip;
+      if (!clipId) continue;
+      pending.push(
+        resolveBrightcove(String(clipId)).then((bc): NhlGoalClip | null => {
+          if (!bc?.mp4) return null;
+          const scorer =
+            [g.firstName?.default, g.lastName?.default].filter(Boolean).join(" ") ||
+            g.name?.default ||
+            "Goal";
+          const team = canonNhlAbbrev(g.teamAbbrev?.default);
+          const tag = goalTag(g);
+          const assists = (g.assists ?? []).map((a) => a.name?.default).filter(Boolean);
+          const description = [
+            `${team} · ${periodLabel} ${g.timeInPeriod ?? ""}`.trim(),
+            tag,
+            assists.length ? `Assists: ${assists.join(", ")}` : "Unassisted",
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          return {
+            id: `nhl-${clipId}`,
+            headline: bc.name ?? `${scorer} goal`,
+            description,
+            thumb: bc.poster,
+            mp4: bc.mp4,
+            href: g.highlightClipSharingUrl ?? null,
+            durationSec: bc.durationSec,
+            source: "nhl",
+            periodNumber: num,
+            periodLabel,
+            timeInPeriod: g.timeInPeriod ?? "",
+            teamAbbrev: team,
+            scorer,
+            scorerLastName: g.lastName?.default ?? scorer.split(" ").pop() ?? scorer,
+            scorerHeadshot: g.headshot ?? null,
+            tag,
+            awayScore: typeof g.awayScore === "number" ? g.awayScore : null,
+            homeScore: typeof g.homeScore === "number" ? g.homeScore : null,
+          };
+        }),
+      );
+    }
+  }
+  const goals = (await Promise.all(pending)).filter((g): g is NhlGoalClip => Boolean(g));
+
+  return {
+    nhlGameId,
+    nhlUrl: `https://www.nhl.com/gamecenter/${nhlGameId}`,
+    situation: mapSituation(landing.situation),
+    goals,
+  };
+}
+
+/** "05:12" and "5:12" compare equal. */
+export function nhlClockKey(periodNumber: number | null, clock: string | null): string | null {
+  if (periodNumber == null || !clock) return null;
+  const [m, s] = clock.split(":");
+  if (m == null || s == null) return null;
+  return `${periodNumber}-${Number(m)}:${s.padStart(2, "0")}`;
+}
+
+const GOAL_HEADLINE = /\b(goal|scores?|nets?|ppg|shg|tall(?:y|ies)|buries|snipes?|finishes|lights the lamp)\b/i;
+
+/** Drop ESPN clips that are obviously the same goal as an NHL Brightcove clip. */
+export function dedupeNhlEspnVideos(videos: NhlGameVideo[], goals: NhlGoalClip[]): NhlGameVideo[] {
+  if (!goals.length) return videos;
+  const lastNames = goals.map((g) => g.scorerLastName.toLowerCase()).filter((n) => n.length > 1);
+  return videos.filter((v) => {
+    const h = v.headline.toLowerCase();
+    if (!GOAL_HEADLINE.test(h)) return true;
+    return !lastNames.some((n) => h.includes(n));
+  });
 }
 
 export type NhlStatLine = { label: string; value: string };

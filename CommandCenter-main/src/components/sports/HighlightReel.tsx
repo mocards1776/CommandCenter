@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Play } from "lucide-react";
-import type { MlbHighlight } from "@/lib/mlb";
 import HighlightVideoPlayer from "@/components/sports/HighlightVideoPlayer";
+
+/** Any playable MP4 clip; `MlbHighlight` and mapped ESPN/NHL clips all fit. */
+export type ReelHighlight = {
+  id: string;
+  title: string;
+  duration: string | null;
+  thumb: string | null;
+  url: string;
+};
 
 export default function HighlightReel({
   highlights,
@@ -9,14 +17,14 @@ export default function HighlightReel({
   defaultOpen = false,
   autoPlayFirst = false,
 }: {
-  highlights: MlbHighlight[];
+  highlights: ReelHighlight[];
   title?: string;
   defaultOpen?: boolean;
   /** When true, open the first clip muted+autoplay (MLB Film Room / live game). */
   autoPlayFirst?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen || autoPlayFirst);
-  const [active, setActive] = useState<MlbHighlight | null>(null);
+  const [active, setActive] = useState<ReelHighlight | null>(null);
   const autoStarted = useRef(false);
 
   useEffect(() => {
