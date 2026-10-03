@@ -3,6 +3,7 @@
 import { supabase } from "./supabase";
 import { formatSportsDateLong } from "./utils";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
+import { mlbPostseasonHeat } from "./mlb-playoff-heat";
 
 const MLB = "https://statsapi.mlb.com/api/v1";
 const ESPN_STANDINGS = "https://site.api.espn.com/apis/v2/sports/baseball/mlb/standings";
@@ -3910,7 +3911,13 @@ export type MlbGameInterest = {
 
 const CARDINALS_TEAM_ID = 138;
 
-/** RUWT-style interest score — higher = more worth turning on. */
+/**
+ * RUWT-style interest score — higher = more worth turning on.
+ * October/November games are playoff series games. The heavy series weight
+ * lands on anything not in progress; a live game gets only a small nudge.
+ * Live and Today's Top both read this score and then partition, so the split
+ * has to live here.
+ */
 export function scoreGameInterest(g: MlbScoreGame): MlbGameInterest {
   const reasons: string[] = [];
   let score = 0;
@@ -3991,6 +3998,12 @@ export function scoreGameInterest(g: MlbScoreGame): MlbGameInterest {
   if (g.final && diff === 1) {
     score += 10;
     if (!reasons.includes("One-run game")) reasons.push("One-run final");
+  }
+
+  const postseason = mlbPostseasonHeat(g);
+  if (postseason) {
+    score += postseason.points;
+    reasons.push(postseason.reason);
   }
 
   return { score: Math.max(0, score), reasons: reasons.slice(0, 4) };
