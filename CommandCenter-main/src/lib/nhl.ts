@@ -503,6 +503,14 @@ export type NhlRecentPlay = {
   athlete: { id: string; name: string; headshot: string | null } | null;
 };
 
+/**
+ * Whole-game packages, as opposed to single plays:
+ *  - "espn-final": ESPN summary video tagged `tracking.coverageType: "Final Game Highlight"`
+ *    (or, untagged, headlined like "X vs. Y: Game Highlights" / recap / condensed).
+ *  - "nhl-recap" / "nhl-condensed": NHL right-rail `gameVideo.threeMinRecap` / `condensedGame`.
+ */
+export type NhlWrapKind = "espn-final" | "nhl-recap" | "nhl-condensed";
+
 /** Playable clip shape shared by ESPN summary videos and NHL Brightcove goal clips. */
 export type NhlGameVideo = {
   id: string;
@@ -513,6 +521,7 @@ export type NhlGameVideo = {
   href: string | null;
   durationSec: number | null;
   source: "nhl" | "espn";
+  wrap?: NhlWrapKind | null;
 };
 
 export type NhlIcePlayer = {
@@ -620,7 +629,20 @@ type NhlEspnVideoRaw = {
     source?: { href?: string; HD?: { href?: string } };
     mobile?: { source?: { href?: string } };
   };
+  tracking?: { coverageType?: string };
 };
+
+const ESPN_WRAP_COVERAGE = /final game highlight|game highlights?|condensed|recap/i;
+const ESPN_SINGLE_COVERAGE = /oneplay|interview|press ?conference|analysis/i;
+const ESPN_WRAP_HEADLINE =
+  /\b(?:game|full|extended|condensed)\s+highlights?\b|\bhighlights?\s*$|:\s*highlights?\b|\brecap\b|\bcondensed game\b/i;
+
+function espnWrapKind(raw: NhlEspnVideoRaw, headline: string): NhlWrapKind | null {
+  const coverage = raw.tracking?.coverageType ?? "";
+  if (ESPN_WRAP_COVERAGE.test(coverage)) return "espn-final";
+  if (ESPN_SINGLE_COVERAGE.test(coverage)) return null;
+  return ESPN_WRAP_HEADLINE.test(headline) ? "espn-final" : null;
+}
 
 function mapNhlEspnVideo(raw: NhlEspnVideoRaw): NhlGameVideo | null {
   const id = raw.id != null ? String(raw.id) : "";
@@ -650,6 +672,7 @@ function mapNhlEspnVideo(raw: NhlEspnVideoRaw): NhlGameVideo | null {
     href: raw.links?.web?.href ?? `https://www.espn.com/video/clip?id=${id}`,
     durationSec: typeof raw.duration === "number" ? raw.duration : null,
     source: "espn",
+    wrap: espnWrapKind(raw, headline),
   };
 }
 
@@ -1225,6 +1248,8 @@ export type NhlGamecenter = {
   nhlUrl: string;
   situation: NhlGameSituation | null;
   goals: NhlGoalClip[];
+  /** Finished games only: NHL recap and condensed game, best first. */
+  wraps: NhlGameVideo[];
 };
 
 /**
@@ -1412,6 +1437,7 @@ type NhlLandingSide = { abbrev?: string; strength?: number; situationDescription
 
 type NhlLandingJson = {
   id?: number;
+  gameState?: string;
   situation?: {
     awayTeam?: NhlLandingSide;
     homeTeam?: NhlLandingSide;
@@ -1512,14 +1538,77 @@ export async function fetchNhlGamecenter(
       );
     }
   }
-  const goals = (await Promise.all(pending)).filter((g): g is NhlGoalClip => Boolean(g));
+  const finished = landing.gameState === "OFF" || landing.gameState === "FINAL";
+  const [resolvedGoals, wraps] = await Promise.all([
+    Promise.all(pending),
+    finished ? fetchNhlWrapVideos(nhlGameId) : Promise.resolve([]),
+  ]);
+  const goals = resolvedGoals.filter((g): g is NhlGoalClip => Boolean(g));
 
   return {
     nhlGameId,
     nhlUrl: `https://www.nhl.com/gamecenter/${nhlGameId}`,
     situation: mapSituation(landing.situation),
     goals,
+    wraps,
   };
+}
+
+type NhlRightRailJson = {
+  gameVideo?: { threeMinRecap?: number; condensedGame?: number };
+};
+
+const NHL_WRAP_LABEL: Record<"nhl-recap" | "nhl-condensed", string> = {
+  "nhl-recap": "Recap",
+  "nhl-condensed": "Condensed game",
+};
+
+/** NHL posts these on the right rail a little after the horn; empty until then. */
+async function fetchNhlWrapVideos(nhlGameId: number): Promise<NhlGameVideo[]> {
+  const rail = await nhlWebJson<NhlRightRailJson>(`v1/gamecenter/${nhlGameId}/right-rail`).catch(
+    () => null,
+  );
+  const wanted: [keyof typeof NHL_WRAP_LABEL, number | undefined][] = [
+    ["nhl-recap", rail?.gameVideo?.threeMinRecap],
+    ["nhl-condensed", rail?.gameVideo?.condensedGame],
+  ];
+  const resolved = await Promise.all(
+    wanted.map(async ([kind, clipId]): Promise<NhlGameVideo | null> => {
+      if (!clipId) return null;
+      const bc = await resolveBrightcove(String(clipId));
+      if (!bc?.mp4) return null;
+      // Brightcove names these "BOS at WPG | Recap"; the description spells out team names.
+      const title = (bc.description ?? bc.name ?? NHL_WRAP_LABEL[kind]).replace(/\s*\|\s*/g, " · ");
+      return {
+        id: `nhl-${clipId}`,
+        headline: title,
+        description: null,
+        thumb: bc.poster,
+        mp4: bc.mp4,
+        href: null,
+        durationSec: bc.durationSec,
+        source: "nhl",
+        wrap: kind,
+      };
+    }),
+  );
+  return resolved.filter((v): v is NhlGameVideo => Boolean(v));
+}
+
+const WRAP_RANK: Record<NhlWrapKind, number> = { "espn-final": 0, "nhl-recap": 1, "nhl-condensed": 2 };
+
+/**
+ * Whole-game packages, best first: ESPN's own "Final Game Highlight" (what
+ * Gamecast leads with), then NHL's recap, then the longer condensed game. Within
+ * one kind the longer package wins — it is the fuller game story.
+ */
+export function rankNhlWrapVideos(videos: NhlGameVideo[]): NhlGameVideo[] {
+  return videos
+    .filter((v) => v.wrap && v.mp4)
+    .sort(
+      (a, b) =>
+        WRAP_RANK[a.wrap!] - WRAP_RANK[b.wrap!] || (b.durationSec ?? 0) - (a.durationSec ?? 0),
+    );
 }
 
 /** "05:12" and "5:12" compare equal. */
@@ -1537,6 +1626,7 @@ export function dedupeNhlEspnVideos(videos: NhlGameVideo[], goals: NhlGoalClip[]
   if (!goals.length) return videos;
   const lastNames = goals.map((g) => g.scorerLastName.toLowerCase()).filter((n) => n.length > 1);
   return videos.filter((v) => {
+    if (v.wrap) return true;
     const h = v.headline.toLowerCase();
     if (!GOAL_HEADLINE.test(h)) return true;
     return !lastNames.some((n) => h.includes(n));
