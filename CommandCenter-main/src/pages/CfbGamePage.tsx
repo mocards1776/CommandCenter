@@ -1,10 +1,11 @@
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
+import LogoPlate from "@/components/sports/LogoPlate";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import CfbWinProbability from "@/components/sports/CfbWinProbability";
 import CfbRankLabel, { CfbFpiCaption } from "@/components/sports/CfbRankLabel";
@@ -132,7 +133,6 @@ export function CfbGameDetailView({
   }
 
   const recapUrl = `https://www.espn.com/college-football/recap/_/gameId/${eventId}`;
-  const boxUrl = `https://www.espn.com/college-football/boxscore/_/gameId/${eventId}`;
   const awayWins = g.final && (g.away.score ?? 0) > (g.home.score ?? 0);
   const homeWins = g.final && (g.home.score ?? 0) > (g.away.score ?? 0);
   const label = statusLabel(g);
@@ -273,25 +273,6 @@ export function CfbGameDetailView({
             <CfbLinescoreTable away={g.away} home={g.home} />
           </div>
         ) : null}
-
-        <div className="relative z-10 flex flex-wrap gap-3 border-t border-white/[0.06] px-4 py-2.5">
-          <a
-            href={recapUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-chalk-dim hover:text-cream inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.14em]"
-          >
-            ESPN recap <ExternalLink size={11} />
-          </a>
-          <a
-            href={boxUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-chalk-dim hover:text-cream inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.14em]"
-          >
-            ESPN boxscore <ExternalLink size={11} />
-          </a>
-        </div>
       </header>
 
       {(g.live || g.situation || homeYardLine != null) && (
@@ -475,11 +456,7 @@ export function CfbGameDetailView({
                 <th className="px-1.5 py-2 text-center font-medium sm:px-2">
                   <span className="inline-flex flex-col items-center gap-1">
                     {g.away.logo ? (
-                      <img
-                        src={g.away.logo}
-                        alt=""
-                        className="h-6 w-6 object-contain sm:h-7 sm:w-7"
-                      />
+                      <LogoPlate src={g.away.logo} className="h-6 w-6 sm:h-7 sm:w-7" />
                     ) : null}
                     <span className="numeral">{g.away.abbrev}</span>
                   </span>
@@ -487,11 +464,7 @@ export function CfbGameDetailView({
                 <th className="px-1.5 py-2 text-center font-medium sm:px-3">
                   <span className="inline-flex flex-col items-center gap-1">
                     {g.home.logo ? (
-                      <img
-                        src={g.home.logo}
-                        alt=""
-                        className="h-6 w-6 object-contain sm:h-7 sm:w-7"
-                      />
+                      <LogoPlate src={g.home.logo} className="h-6 w-6 sm:h-7 sm:w-7" />
                     ) : null}
                     <span className="numeral">{g.home.abbrev}</span>
                   </span>
@@ -539,9 +512,7 @@ export function CfbGameDetailView({
             return (
               <div key={side.teamId} className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2 px-0.5">
-                  {side.logo ? (
-                    <img src={side.logo} alt="" className="h-7 w-7 object-contain" />
-                  ) : null}
+                  {side.logo ? <LogoPlate src={side.logo} className="h-7 w-7" /> : null}
                   <div>
                     <p className="text-[14px] font-bold text-white">
                       <CfbRankLabel pollRank={side.rank} fpiRank={null} />
@@ -668,9 +639,7 @@ function CfbLinescoreTable({
             <tr key={side.teamId} className="border-t border-white/[0.05]">
               <td className="px-2 py-1.5 text-left">
                 <span className="inline-flex items-center gap-1.5 font-semibold text-cream">
-                  {side.logo ? (
-                    <img src={side.logo} alt="" className="h-4 w-4 object-contain" />
-                  ) : null}
+                  {side.logo ? <LogoPlate src={side.logo} className="h-4 w-4" /> : null}
                   {side.abbrev}
                 </span>
               </td>
@@ -710,7 +679,7 @@ function MatchupSide({
       )}
     >
       {side.logo ? (
-        <img src={side.logo} alt="" className="h-12 w-12 object-contain sm:h-14 sm:w-14" />
+        <LogoPlate src={side.logo} className="h-12 w-12 sm:h-14 sm:w-14" />
       ) : null}
       <div>
         <p
