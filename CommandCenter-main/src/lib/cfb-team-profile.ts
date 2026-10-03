@@ -130,6 +130,39 @@ export function cfbRivalryName(
   return RIVALRIES[rivalryKey(teamId, oppId)] ?? null;
 }
 
+/** Fill blank schedule scores from the live scoreboard (ESPN schedule omits in-progress totals). */
+export function mergeBoardScores<
+  T extends {
+    id: string;
+    teamScore: number | null;
+    oppScore: number | null;
+    live: boolean;
+    shortDetail: string | null;
+  },
+>(
+  games: T[],
+  board: {
+    id: string;
+    teamScore: number | null;
+    oppScore: number | null;
+    live: boolean;
+    shortDetail: string | null;
+  }[],
+): T[] {
+  const byId = new Map(board.map((game) => [game.id, game]));
+  return games.map((game) => {
+    const hit = byId.get(game.id);
+    if (!hit) return game;
+    return {
+      ...game,
+      teamScore: game.teamScore ?? hit.teamScore,
+      oppScore: game.oppScore ?? hit.oppScore,
+      live: game.live || hit.live,
+      shortDetail: hit.live && hit.shortDetail ? hit.shortDetail : game.shortDetail,
+    };
+  });
+}
+
 export function cfbResultsFromFinals(
   games: { final: boolean; won: boolean | null }[],
 ): CfbFormMark[] {

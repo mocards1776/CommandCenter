@@ -4,6 +4,7 @@
  */
 import {
   cfbResultsFromFinals,
+  mergeBoardScores,
   cfbRivalryName,
   cfbStreakLabel,
   latestCfpWeekRef,
@@ -38,6 +39,36 @@ const marks = cfbResultsFromFinals([
   { final: true, won: false },
   { final: false, won: null },
 ]);
+const merged = mergeBoardScores(
+  [
+    {
+      id: "live",
+      teamScore: null,
+      oppScore: null,
+      live: true,
+      shortDetail: null,
+      name: "ND",
+    },
+    {
+      id: "final",
+      teamScore: 15,
+      oppScore: 10,
+      live: false,
+      shortDetail: "Final",
+      name: "TCU",
+    },
+  ],
+  [
+    { id: "live", teamScore: 20, oppScore: 27, live: true, shortDetail: "15:00 - 3rd" },
+    { id: "final", teamScore: 0, oppScore: 0, live: false, shortDetail: "Final" },
+  ],
+);
+assert.equal(merged[0]?.teamScore, 20);
+assert.equal(merged[0]?.oppScore, 27);
+assert.equal(merged[0]?.shortDetail, "15:00 - 3rd");
+assert.equal(merged[1]?.teamScore, 15);
+assert.equal(merged[1]?.name, "TCU");
+
 assert.equal(marks.join(""), "WWL");
 assert.equal(cfbStreakLabel(marks), "L1");
 assert.equal(cfbStreakLabel(["W", "W", "W"]), "W3");

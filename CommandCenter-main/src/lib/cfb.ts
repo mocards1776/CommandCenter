@@ -9,6 +9,7 @@ import { mapCfbWinProbability, type CfbWinProbPoint } from "./cfb-win-probabilit
 import {
   latestCfpWeekRef,
   mapCfbGameWrap,
+  mergeBoardScores,
   parseCfbCfpWeekRanks,
   parseCfbSeasonStats,
   parseCfbTeamLeaders,
@@ -3250,12 +3251,23 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
   const coaches = staffPack.coaches;
   const staffSource = staffPack.staffSource;
 
-  // Prefer the season schedule (regular + bowls). Fall back empty if ESPN fails.
-  const schedule = scheduleGames;
-
   const recentBoard = await fetchCfbScoreboard().catch(() => [] as CfbScoreGame[]);
   const recent = recentBoard.filter(
     (g) => String(g.away.teamId) === id || String(g.home.teamId) === id,
+  );
+  const schedule = mergeBoardScores(
+    scheduleGames,
+    recent.map((game) => {
+      const self = String(game.home.teamId) === id ? game.home : game.away;
+      const opp = self === game.home ? game.away : game.home;
+      return {
+        id: game.id,
+        teamScore: self.score,
+        oppScore: opp.score,
+        live: game.live,
+        shortDetail: game.shortDetail,
+      };
+    }),
   );
 
   const next = t.nextEvent?.[0];

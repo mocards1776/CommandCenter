@@ -566,7 +566,8 @@ function shortLeader(
   kind: "pass" | "rush",
 ): string | null {
   if (!leader) return null;
-  const last = leader.name.split(" ").slice(-1)[0] ?? leader.name;
+  const cleaned = leader.name.replace(/,?\s+(Jr\.?|Sr\.?|III|II|IV)$/i, "").trim();
+  const last = cleaned.split(/\s+/).slice(-1)[0] ?? cleaned;
   const yds = leader.line.match(/([\d,.]+)\s*YDS/i)?.[1];
   return `${last} ${yds ? `${yds} ${kind} yds` : leader.line}`;
 }
@@ -603,7 +604,11 @@ function ScoreStack({
       </p>
     );
   }
-  const ours = won === true ? "text-emerald-300" : won === false ? "text-red-300" : "text-cream";
+  const lead =
+    teamScore != null && oppScore != null && teamScore !== oppScore
+      ? teamScore > oppScore
+      : won;
+  const ours = lead === true ? "text-emerald-300" : lead === false ? "text-red-300" : "text-cream";
   return (
     <div className="text-right">
       <p className="flex items-baseline justify-end gap-1.5 leading-none">
