@@ -95,6 +95,51 @@ export function cfbGotwTwoScoreEase(diff: number, gameOfTheWeek: boolean): numbe
   return CFB_GOTW_TWO_SCORE_CREDIT - cfbTwoScoreBucketPoints(diff);
 }
 
+/**
+ * A side at or inside this FPI is still a national game.
+ * Best FPI past it, with nobody ranked, is the FPI-100s slate.
+ */
+export const CFB_SITUATION_FPI_LINE = 40;
+
+/**
+ * Quarter from the scoreboard period, then the clock line.
+ * 5 is overtime. Null means the quarter is not on the row.
+ */
+export function cfbLiveQuarter(input: {
+  period: number | null | undefined;
+  detail: string;
+  inOt: boolean;
+}): 1 | 2 | 3 | 4 | 5 | null {
+  if (input.inOt) return 5;
+  const period = input.period ?? null;
+  if (period === 1 || period === 2 || period === 3 || period === 4) return period;
+  if (period != null && period >= 5) return 5;
+  if (/\b4th\b/.test(input.detail)) return 4;
+  if (/\b3rd\b/.test(input.detail)) return 3;
+  if (/\b2nd\b/.test(input.detail)) return 2;
+  if (/\b1st\b/.test(input.detail)) return 1;
+  return null;
+}
+
+/**
+ * Red zone, upset, and the other situation extras are not a flat bonus.
+ * They count once the game is out of the first half, or the slate is ranked,
+ * on a national window, or has a top-40 FPI side.
+ * An early unranked FPI-100s game keeps the one-score credit. The extras
+ * can still be named on the chip line; they do not add points.
+ */
+export function cfbSituationExtrasCount(input: {
+  quarter: 1 | 2 | 3 | 4 | 5 | null;
+  ranked: boolean;
+  bestFpi: number | null;
+  nationalMarquee: boolean;
+}): boolean {
+  if (input.quarter !== 1 && input.quarter !== 2) return true;
+  if (input.ranked || input.nationalMarquee) return true;
+  if (input.bestFpi != null && input.bestFpi <= CFB_SITUATION_FPI_LINE) return true;
+  return false;
+}
+
 /** Higher of the two side win chances. Percents are 0–100. Missing sides are ignored. */
 export function cfbLeaderWinPct(
   homeWinPct: number | null | undefined,

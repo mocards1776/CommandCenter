@@ -6,6 +6,8 @@ import {
   cfbGotwTwoScoreEase,
   cfbIsGameOfTheWeekMatchup,
   cfbLeaderWinPct,
+  cfbLiveQuarter,
+  cfbSituationExtrasCount,
 } from "./cfb-live-margin";
 import {
   presentCfbPlayText,
@@ -3618,12 +3620,30 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
       leaderWinPct: g.situation?.leaderWinPct ?? null,
     });
 
+  const nets = g.broadcasts.map((b) => b.name.toUpperCase());
+  const bigFour = nets.some((n) => /\b(ABC|CBS|NBC|FOX)\b/.test(n));
+  const cableNational = nets.some((n) => /\b(TNT|TBS|USA|PEACOCK|NETFLIX)\b/.test(n));
+  const rankedLive = Boolean(
+    (g.away.rank && g.away.rank <= 25) || (g.home.rank && g.home.rank <= 25),
+  );
+  const fpiRanks = [g.away.fpiRank, g.home.fpiRank].filter(
+    (n): n is number => typeof n === "number" && Number.isFinite(n),
+  );
+  // First-half red zone / upset points only count when someone is actually
+  // worth turning on. An unranked FPI-100s game keeps the chip, not the points.
+  const situationExtras = cfbSituationExtrasCount({
+    quarter: cfbLiveQuarter({ period, detail, inOt }),
+    ranked: rankedLive,
+    bestFpi: fpiRanks.length ? Math.min(...fpiRanks) : null,
+    nationalMarquee: bigFour,
+  });
+  const extra = (points: number) => {
+    if (situationExtras) score += points;
+  };
+
   if (g.live) {
     score += 40;
     reasons.push("Live");
-    const rankedLive = Boolean(
-      (g.away.rank && g.away.rank <= 25) || (g.home.rank && g.home.rank <= 25),
-    );
     // Drama from margin — without this every live game sits at flat 40.
     // Soften mid-range drag when a ranked team is on the field so AP games
     // don't sink below G5 clocks — but still punish true blowouts (≥28)
@@ -3638,7 +3658,7 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
         score += 28;
         reasons.push("One-score game");
         if (diff <= 3) {
-          score += 6;
+          extra(6);
           reasons.push("Within a kick");
         }
       } else if (!decided && diff <= 14) {
@@ -3693,7 +3713,7 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
       }
     }
     if (!decided && g.situation?.isRedZone && (diff == null || diff <= 14)) {
-      score += 18;
+      extra(18);
       reasons.push("Red zone");
     }
     // 4th-and-short drama matters late — early-game 4th downs are mostly noise.
@@ -3906,7 +3926,7 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
           (period === 1 || period === 2 || /\b1st\b|\b2nd\b/.test(detail))
             ? 6
             : 0;
-        score += base + earlyBonus;
+        extra(base + earlyBonus);
         reasons.push(gap >= 25 ? "Upset brewing" : "Upset watch");
       } else if (chalkScore != null && dogScore != null && chalkScore > dogScore) {
         const favMargin = chalkScore - dogScore;
@@ -3916,7 +3936,7 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
           (inOt || period === 4 || /\b4th\b/.test(detail));
         // Huge dog still within a TD late = upset still alive (CCU–WVU).
         if (gap != null && gap >= 30 && lateClose) {
-          score += gap >= 50 ? 14 : 10;
+          extra(gap >= 50 ? 14 : 10);
           reasons.push("Upset alive");
         } else if (
           // Huge FPI dog keeping a ranked/FPI chalk lead modest = closest upset
@@ -3934,7 +3954,7 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
         ) {
           const closeness = 21 - favMargin;
           const gapBonus = gap >= 70 ? 8 : gap >= 55 ? 5 : 3;
-          score += 14 + Math.round(closeness * 0.7) + gapBonus;
+          extra(14 + Math.round(closeness * 0.7) + gapBonus);
           reasons.push(favMargin <= 14 ? "Closest upset" : "Upset watch");
         } else if (
           absSpread != null &&
@@ -3944,7 +3964,7 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
           favMargin <= 10
         ) {
           // Favorite leading but not covering yet → still interesting.
-          score += 8;
+          extra(8);
           reasons.push("Against the number");
         }
       }
@@ -3952,11 +3972,6 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
   }
 
   // Primetime / broadcast window — national CFB windows deserve a bump.
-  const nets = g.broadcasts.map((b) => b.name.toUpperCase());
-  const bigFour = nets.some((n) => /\b(ABC|CBS|NBC|FOX)\b/.test(n));
-  const cableNational = nets.some((n) =>
-    /\b(TNT|TBS|USA|PEACOCK|NETFLIX)\b/.test(n),
-  );
   if (bigFour) {
     score += 8;
     reasons.push("National TV");

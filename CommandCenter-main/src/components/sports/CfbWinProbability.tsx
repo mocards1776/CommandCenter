@@ -57,7 +57,10 @@ export function CfbWinProbBadge({
   );
 }
 
-/** Thin bar and a tiny caption. Used under the score on RUWT cards. */
+/**
+ * Thin win-probability bar across a RUWT card, with a small percentage on it.
+ * Quieter than a caption under the score. Not the colored pill on the game page.
+ */
 export function CfbWinProbCaption({
   homeWinPct,
   away,
@@ -77,15 +80,30 @@ export function CfbWinProbCaption({
     ? `Win probability even ${formatWinPct(leader.pct)} percent`
     : `${leader.abbrev} win probability ${formatWinPct(leader.pct)} percent`;
   return (
-    <div className="mt-1.5 flex flex-col items-center gap-1" aria-label={label}>
-      <div className="flex h-[3px] w-16 overflow-hidden rounded-full bg-white/15" aria-hidden>
-        <div style={{ width: `${awayShare}%`, backgroundColor: teamHex(away.color, "1e3a5f") }} />
+    <div
+      className="relative h-[18px] w-full overflow-hidden rounded-full bg-white/[0.08]"
+      aria-label={label}
+    >
+      <div className="absolute inset-0 flex" aria-hidden>
+        <div
+          style={{
+            width: `${Math.max(0, awayShare)}%`,
+            backgroundColor: teamHex(away.color, "1e3a5f"),
+            opacity: 0.72,
+          }}
+        />
         {tiePct > 0.4 ? (
-          <div style={{ width: `${tiePct}%`, backgroundColor: "rgba(255,255,255,0.45)" }} />
+          <div style={{ width: `${tiePct}%`, backgroundColor: "rgba(255,255,255,0.35)" }} />
         ) : null}
-        <div style={{ width: `${homeWinPct}%`, backgroundColor: teamHex(home.color, "7a1f1f") }} />
+        <div
+          style={{
+            width: `${Math.max(0, homeWinPct)}%`,
+            backgroundColor: teamHex(home.color, "7a1f1f"),
+            opacity: 0.72,
+          }}
+        />
       </div>
-      <p className="text-[12px] font-semibold tabular-nums tracking-tight text-white">
+      <p className="relative z-10 flex h-full items-center justify-center text-[11px] font-medium tabular-nums tracking-tight text-white/75">
         {leader.even ? "Even" : leader.abbrev} {formatWinPct(leader.pct)}%
       </p>
     </div>
