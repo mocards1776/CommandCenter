@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useRuwtSlateSplit } from "@/hooks/useRuwtSlateSplit";
+import { useScoreStripItems } from "@/hooks/useScoreStripItems";
 import { espnDarkLogo, toTab, type ScoreTab, type TabSide } from "@/lib/ruwt-score-tab";
 import { cn } from "@/lib/utils";
 
@@ -87,14 +87,19 @@ function ScorePill({ tab, active }: { tab: ScoreTab; active: boolean }) {
   );
 }
 
-/** ESPN-style scrollable score capsules for games in progress, in RUWT order. */
+/**
+ * ESPN-style scrollable score capsules.
+ * Live games when any are on, otherwise Today's Top / upcoming, otherwise
+ * recent finals (yesterday preferred, favorite clubs first). Hidden only
+ * when every bucket is empty — an empty live list does not unmount the strip.
+ */
 export default function SportsScoreTabs() {
   const { pathname } = useLocation();
-  const { live } = useRuwtSlateSplit();
+  const strip = useScoreStripItems();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const centeredKeyRef = useRef<string | null>(null);
 
-  const tabs = useMemo(() => live.map(toTab), [live]);
+  const tabs = useMemo(() => strip.items.map(toTab), [strip.items]);
 
   const activeKey = useMemo(() => {
     const m = pathname.match(GAME_PATH);
@@ -123,7 +128,10 @@ export default function SportsScoreTabs() {
   if (tabs.length === 0) return null;
 
   return (
-    <div className="bg-ink relative z-10 border-b border-accent/10 print:hidden">
+    <div
+      className="bg-ink relative z-10 border-b border-accent/10 print:hidden"
+      data-score-strip={strip.source}
+    >
       <div
         ref={scrollerRef}
         className="relative flex gap-2 overflow-x-auto overscroll-x-contain px-4 py-2 [-ms-overflow-style:none] [scrollbar-width:none] md:px-8 [&::-webkit-scrollbar]:hidden"
