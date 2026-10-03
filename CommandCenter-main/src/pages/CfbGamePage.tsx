@@ -20,6 +20,78 @@ import type { MlbHighlight } from "@/lib/mlb";
 import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
 import { cn, formatSportsDateLong } from "@/lib/utils";
 
+const LOWER_IS_BETTER = /penalt|turnover|fumble|interception/i;
+const LEADER_STAT = /^(yds|avg|td|long|lng|pts|tot|pct)$/i;
+
+function readableTeamColor(color: string): string {
+  const raw = color.replace(/^#/, "");
+  const n = Number.parseInt(raw, 16);
+  if (!Number.isFinite(n) || raw.length !== 6) return "#d5dae6";
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const lum = (0.299 * ch[0]! + 0.587 * ch[1]! + 0.114 * ch[2]!) / 255;
+  const lifted = lum > 0.42 ? ch : ch.map((c) => Math.round(c + (255 - c) * 0.48));
+  return `rgb(${lifted.join(",")})`;
+}
+
+/** Light wash of a team color. Dark primaries are lifted so the tint still reads. */
+function teamWash(color: string, alpha = 0.2): string {
+  const raw = color.replace(/^#/, "");
+  const n = Number.parseInt(raw, 16);
+  if (!Number.isFinite(n) || raw.length !== 6) return `rgba(255,255,255,${alpha})`;
+  let ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const lum = (0.299 * ch[0]! + 0.587 * ch[1]! + 0.114 * ch[2]!) / 255;
+  if (lum < 0.45) ch = ch.map((c) => Math.round(c + (255 - c) * 0.55));
+  return `rgba(${ch.join(",")},${alpha})`;
+}
+
+/** Magnitude for a comparison bar. Efficiency and completions use the rate; possession uses seconds. */
+function statMagnitude(label: string, value: string): number | null {
+  const text = value.trim();
+  const clock = /^(\d+):(\d{2})$/.exec(text);
+  if (clock) return Number(clock[1]) * 60 + Number(clock[2]);
+  const slash = /^(\d+)\s*\/\s*(\d+)$/.exec(text);
+  if (slash) {
+    const made = Number(slash[1]);
+    const att = Number(slash[2]);
+    if (/comp|efficienc|red zone/i.test(label)) return att > 0 ? made / att : 0;
+    return made;
+  }
+  const dash = /^(\d+)\s*-\s*(\d+)$/.exec(text);
+  if (dash) {
+    const made = Number(dash[1]);
+    const other = Number(dash[2]);
+    if (/efficienc|red zone/i.test(label)) return other > 0 ? made / other : 0;
+    if (/penalt/i.test(label)) return other;
+    return made;
+  }
+  const n = Number.parseFloat(text.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+function leaderColumns(labels: string[], athletes: { stats: string[] }[]): Map<number, Set<number>> {
+  const leaders = new Map<number, Set<number>>();
+  labels.forEach((label, col) => {
+    if (!LEADER_STAT.test(label)) return;
+    const nums = athletes.map((athlete) => {
+      const raw = athlete.stats[col];
+      if (!raw || raw === "—" || raw.includes("/")) return null;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : null;
+    });
+    const finite = nums.filter((n): n is number => n != null);
+    if (finite.length < 2) return;
+    const max = Math.max(...finite);
+    const min = Math.min(...finite);
+    if (max === min || max <= 0) return;
+    const hits = new Set<number>();
+    nums.forEach((n, index) => {
+      if (n === max) hits.add(index);
+    });
+    leaders.set(col, hits);
+  });
+  return leaders;
+}
+
 function statusLabel(g: {
   live: boolean;
   final: boolean;
@@ -449,70 +521,126 @@ export function CfbGameDetailView({
 
       {teamStatLabels.length > 0 && (
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-          <div className="border-b border-white/[0.06] px-3 py-2.5 sm:px-4">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+          <div className="border-b border-white/[0.06] px-4 py-3">
+            <h2 className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#e8e4d9]">
               Team stats
             </h2>
           </div>
-          <table className="w-full table-fixed text-left text-[11px] sm:text-[12px]">
-            <colgroup>
-              <col className="w-[46%]" />
-              <col className="w-[27%]" />
-              <col className="w-[27%]" />
-            </colgroup>
-            <thead>
-              <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                <th className="px-2 py-2 font-medium sm:px-3">Stat</th>
-                <th className="px-1.5 py-2 text-center font-medium sm:px-2">
-                  <span className="inline-flex flex-col items-center gap-1">
-                    {g.away.logo ? (
-                      <LogoPlate src={g.away.logo} className="h-6 w-6 sm:h-7 sm:w-7" />
-                    ) : null}
-                    <span className="numeral">{g.away.abbrev}</span>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-white/[0.06] px-4 py-3">
+            <Link
+              to={`/sports/cfb/team/${g.away.teamId}`}
+              className="flex min-w-0 items-center gap-2 hover:opacity-90"
+            >
+              {g.away.logo ? <LogoPlate src={g.away.logo} className="h-8 w-8" /> : null}
+              <span className="min-w-0">
+                <span className="text-cream block text-[13px] font-semibold leading-tight">
+                  {g.away.abbrev}
+                </span>
+                {g.away.record ? (
+                  <span className="numeral text-chalk-dim block text-[10.5px] leading-tight">
+                    {g.away.record}
                   </span>
-                </th>
-                <th className="px-1.5 py-2 text-center font-medium sm:px-3">
-                  <span className="inline-flex flex-col items-center gap-1">
-                    {g.home.logo ? (
-                      <LogoPlate src={g.home.logo} className="h-6 w-6 sm:h-7 sm:w-7" />
-                    ) : null}
-                    <span className="numeral">{g.home.abbrev}</span>
+                ) : null}
+              </span>
+            </Link>
+            <span className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">vs</span>
+            <Link
+              to={`/sports/cfb/team/${g.home.teamId}`}
+              className="flex min-w-0 items-center justify-end gap-2 text-right hover:opacity-90"
+            >
+              <span className="min-w-0">
+                <span className="text-cream block text-[13px] font-semibold leading-tight">
+                  {g.home.abbrev}
+                </span>
+                {g.home.record ? (
+                  <span className="numeral text-chalk-dim block text-[10.5px] leading-tight">
+                    {g.home.record}
                   </span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {teamStatLabels.map((statLabel) => {
-                const away =
-                  g.teamStats.find(
-                    (s) => s.label === statLabel && s.teamAbbrev === g.away.abbrev,
-                  )?.value ?? "—";
-                const home =
-                  g.teamStats.find(
-                    (s) => s.label === statLabel && s.teamAbbrev === g.home.abbrev,
-                  )?.value ?? "—";
-                return (
-                  <tr key={statLabel} className="border-t border-white/[0.05]">
-                    <td className="px-2 py-1.5 leading-snug text-[#c8cdd8] sm:px-3">
-                      {statLabel}
-                    </td>
-                    <td className="numeral break-words px-1.5 py-1.5 text-center text-white sm:px-2">
+                ) : null}
+              </span>
+              {g.home.logo ? <LogoPlate src={g.home.logo} className="h-8 w-8" /> : null}
+            </Link>
+          </div>
+          <ul>
+            {teamStatLabels.map((statLabel) => {
+              const away =
+                g.teamStats.find(
+                  (s) => s.label === statLabel && s.teamAbbrev === g.away.abbrev,
+                )?.value ?? "—";
+              const home =
+                g.teamStats.find(
+                  (s) => s.label === statLabel && s.teamAbbrev === g.home.abbrev,
+                )?.value ?? "—";
+              const awayMag = statMagnitude(statLabel, away);
+              const homeMag = statMagnitude(statLabel, home);
+              const numeric = awayMag != null && homeMag != null;
+              const total = numeric ? Math.abs(awayMag) + Math.abs(homeMag) : 0;
+              const awayShare = numeric && total > 0 ? (Math.abs(awayMag) / total) * 100 : 50;
+              const lower = LOWER_IS_BETTER.test(statLabel);
+              const awayLeads = numeric && awayMag !== homeMag && (lower ? awayMag < homeMag : awayMag > homeMag);
+              const homeLeads = numeric && awayMag !== homeMag && !awayLeads;
+              const possession = /possession/i.test(statLabel);
+              return (
+                <li key={statLabel} className="border-t border-white/[0.05] px-3 py-2 sm:px-4">
+                  <div className="grid grid-cols-[5.25rem_minmax(0,1fr)_5.25rem] items-center gap-1">
+                    <span
+                      className={cn(
+                        "numeral rounded-md px-2 py-1 text-left text-[14px]",
+                        awayLeads ? "font-semibold text-cream" : "text-white/75",
+                      )}
+                      style={{ backgroundColor: teamWash(g.away.color) }}
+                    >
                       {away}
-                    </td>
-                    <td className="numeral break-words px-1.5 py-1.5 text-center text-white sm:px-3">
+                    </span>
+                    <span className="text-center text-[10px] font-medium uppercase tracking-[0.12em] text-[#8b93a7]">
+                      {statLabel}
+                    </span>
+                    <span
+                      className={cn(
+                        "numeral rounded-md px-2 py-1 text-right text-[14px]",
+                        homeLeads ? "font-semibold text-cream" : "text-white/75",
+                      )}
+                      style={{ backgroundColor: teamWash(g.home.color) }}
+                    >
                       {home}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </span>
+                  </div>
+                  {numeric && total > 0 ? (
+                    <div
+                      className={cn(
+                        "mt-1.5 flex overflow-hidden rounded-full bg-white/[0.05]",
+                        possession ? "h-2" : "h-1.5",
+                      )}
+                    >
+                      <span
+                        className="h-full rounded-l-full"
+                        style={{
+                          width: `${awayShare}%`,
+                          background: readableTeamColor(g.away.color),
+                          opacity: awayLeads ? 0.95 : 0.45,
+                        }}
+                      />
+                      <span
+                        className="h-full flex-1 rounded-r-full"
+                        style={{
+                          background: readableTeamColor(g.home.color),
+                          opacity: homeLeads ? 0.95 : 0.45,
+                        }}
+                      />
+                    </div>
+                  ) : numeric ? (
+                    <div className={cn("mt-1.5 rounded-full bg-white/[0.05]", possession ? "h-2" : "h-1.5")} />
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
         </section>
       )}
 
       {g.boxGroups.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+          <h2 className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#e8e4d9]">
             Box score
           </h2>
           {(["away", "home"] as const).map((which) => {
@@ -534,13 +662,15 @@ export function CfbGameDetailView({
                     <CfbFpiCaption pollRank={side.rank} fpiRank={side.fpiRank} />
                   </div>
                 </div>
-                {groups.map((group) => (
+                {groups.map((group) => {
+                  const leaders = leaderColumns(group.labels, group.athletes);
+                  return (
                   <div
                     key={`${group.teamAbbrev}-${group.name}`}
                     className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]"
                   >
-                    <div className="border-b border-white/[0.06] px-3 py-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+                    <div className="border-b border-white/[0.06] px-3 py-1.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#e8e4d9]">
                         {group.teamAbbrev} · {group.name}
                       </p>
                     </div>
@@ -548,9 +678,9 @@ export function CfbGameDetailView({
                       <table className="w-full min-w-[480px] text-left text-[12px]">
                         <thead>
                           <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                            <th className="px-3 py-2 font-medium">Player</th>
+                            <th className="px-3 py-1.5 font-medium">Player</th>
                             {group.labels.map((lab) => (
-                              <th key={lab} className="numeral px-1.5 py-2 font-medium">
+                              <th key={lab} className="numeral px-1.5 py-1.5 font-medium">
                                 {lab}
                               </th>
                             ))}
@@ -565,7 +695,7 @@ export function CfbGameDetailView({
                                 i % 2 === 1 && "bg-white/[0.02]",
                               )}
                             >
-                              <td className="px-3 py-1.5">
+                              <td className="px-3 py-1">
                                 <Link
                                   to={`/sports/cfb/player/${a.id}`}
                                   className="text-cream hover:text-accent hover:underline"
@@ -573,21 +703,28 @@ export function CfbGameDetailView({
                                   {a.name}
                                 </Link>
                               </td>
-                              {group.labels.map((_, idx) => (
+                              {group.labels.map((_, idx) => {
+                                const leads = leaders.get(idx)?.has(i) ?? false;
+                                return (
                                 <td
                                   key={`${a.id}-${idx}`}
-                                  className="numeral px-1.5 py-1.5 text-white/85"
+                                  className={cn(
+                                    "numeral px-1.5 py-1",
+                                    leads ? "font-semibold text-cream" : "text-white/75",
+                                  )}
                                 >
                                   {a.stats[idx] ?? "—"}
                                 </td>
-                              ))}
+                                );
+                              })}
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             );
           })}

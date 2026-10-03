@@ -74,17 +74,22 @@ export default function AppleScoreCluster({
     : cn("score-tight", size === "header" ? "text-[58px] sm:text-[76px]" : "text-[46px]");
 
   return (
-    <div className="flex items-start justify-center gap-1 sm:gap-2">
+    <div
+      className={cn(
+        "flex justify-center",
+        stacked ? "items-end gap-3 sm:gap-5" : "items-start gap-1 sm:gap-2",
+      )}
+    >
       <div className="flex min-w-[2rem] flex-col items-center">
         <span className={cn("text-white", numeral)}>{away ?? "–"}</span>
         {showMarks ? <TimeoutDashes count={awayTimeouts} /> : null}
       </div>
       {stacked ? (
-        <div className="flex flex-col items-center justify-center self-center px-1 text-center text-white">
-          <span className="text-[12px] font-semibold uppercase leading-none tracking-[0.16em] sm:text-[13px]">
+        <div className="mb-0.5 flex w-[3.15rem] shrink-0 translate-y-2 flex-col items-center pb-px text-center text-white sm:mb-1 sm:w-[3.5rem] sm:translate-y-3">
+          <span className="text-[9px] font-semibold uppercase leading-none tracking-[0.22em] text-white/60 sm:text-[10px]">
             {parts.period}
           </span>
-          <span className="numeral mt-1 text-[20px] font-semibold leading-none sm:text-[24px]">
+          <span className="numeral mt-1 text-[13px] font-semibold leading-none text-white/95 sm:text-[15px]">
             {parts.clock}
           </span>
         </div>

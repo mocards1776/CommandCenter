@@ -68,10 +68,68 @@ export function cfbDriveGlance(drive: CfbDriveMeta): CfbDriveGlance {
   };
 }
 
-/** ESPN's kickoff placeholder starts at the kicking team's 0, not a real snap spot. */
+/** ESPN's kickoff placeholder starts at a goal line ("MIZ 0", yardLine 0 or 100), not a snap spot. */
 export function cfbDriveStartIsKickOrigin(drive: CfbDriveGlance): boolean {
-  if (drive.startYardLine === 0) return true;
-  return Boolean(drive.startText && /\s0$/.test(drive.startText.trim()));
+  const yard = drive.startYardLine;
+  if (yard === 0 || yard === 100) return true;
+  return cfbDriveStartTextIsPlaceholder(drive.startText);
+}
+
+export function cfbDriveStartTextIsPlaceholder(text: string | null | undefined): boolean {
+  return Boolean(text && /\s0$/.test(text.trim()));
+}
+
+/**
+ * One play inside an ESPN drive, only the fields that locate the snap.
+ * Kickoffs and dead-ball "NO PLAY" flags are not the offense's start.
+ */
+export type CfbDrivePlaySpot = {
+  text?: string | null;
+  type?: { text?: string | null } | null;
+  start?: {
+    yardLine?: number | null;
+    possessionText?: string | null;
+  } | null;
+};
+
+function isAdministrativeDrivePlay(play: CfbDrivePlaySpot): boolean {
+  const typeText = play.type?.text ?? "";
+  if (/kickoff|\bpunt\b|end period|timeout|two-minute|coin toss/i.test(typeText)) return true;
+  // Unsportsmanlike / dead-ball flags move the ball before a snap. They are
+  // not the drive start; the next snap (or the live ball) is.
+  if (/penalty/i.test(typeText) && /no play/i.test(play.text ?? "") && !play.start?.possessionText?.trim()) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * ESPN often leaves `drive.start` on the kickoff placeholder ("UAB 0" /
+ * yardLine 0, or the kicking team's "SC 0") after the return and the first
+ * snaps. The opening snap already carries the real spot: a UAB rush that
+ * ESPN still headed "UAB 0" started at SAM 24 (yardLine 76); UK's first
+ * pass while the drive still said "SC 0" started at UK 36 (yardLine 64).
+ * Checked live on 2026-10-03 summaries. Drives whose start is already a
+ * real spot are left alone.
+ */
+export function correctCfbDriveStartFromPlays(
+  drive: CfbDriveMeta,
+  plays: CfbDrivePlaySpot[] | null | undefined,
+): CfbDriveMeta {
+  if (!cfbDriveStartIsKickOrigin(drive)) return drive;
+  const snap = (plays ?? []).find((play) => !isAdministrativeDrivePlay(play));
+  const start = snap?.start;
+  if (!start) return drive;
+  const yard = finiteNumber(start.yardLine);
+  const text = start.possessionText?.trim() || null;
+  const yardReal = yard != null && yard > 0 && yard < 100;
+  const textReal = Boolean(text && !cfbDriveStartTextIsPlaceholder(text));
+  if (!yardReal && !textReal) return drive;
+  return {
+    ...drive,
+    startYardLine: yardReal ? yard : drive.startYardLine,
+    startText: textReal ? text : yardReal ? null : drive.startText,
+  };
 }
 
 function driveHasNoSnaps(drive: CfbDriveGlance): boolean {
@@ -181,7 +239,9 @@ export function cfbDriveStatLine(drive: CfbDriveGlance): string | null {
   }
   if (drive.timeOfPossession) bits.push(drive.timeOfPossession);
   if (drive.displayResult) bits.push(drive.displayResult);
-  if (drive.startText) bits.push(`from ${drive.startText}`);
+  if (drive.startText && !cfbDriveStartTextIsPlaceholder(drive.startText)) {
+    bits.push(`from ${drive.startText}`);
+  }
   if (bits.length) return bits.join(" · ");
   return drive.description;
 }
