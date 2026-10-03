@@ -66,6 +66,11 @@ export default function NflPage() {
   const upcoming = useMemo(() => games.filter((g) => !g.live && !g.final), [games]);
   const finals = useMemo(() => games.filter((g) => g.final), [games]);
   const hero = games.length ? pickNflHeroGame(games) : null;
+  const featured = hero?.live ? hero : null;
+  const liveRest = useMemo(
+    () => (featured ? live.filter((g) => g.id !== featured.id) : live),
+    [live, featured],
+  );
 
   const refresh = () => {
     void scoreboard.refetch().then(() => toast.success("NFL updated"));
@@ -104,42 +109,6 @@ export default function NflPage() {
         </div>
       </header>
 
-      {hero?.live && (
-        <section className="space-y-3">
-          <h3 className="rule-head">Live now</h3>
-          <Link
-            to={`/sports/nfl/game/${hero.id}`}
-            className="bg-panel block overflow-hidden rounded-xl border border-white/[0.1] transition hover:border-white/20"
-          >
-            <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
-              <div className="flex items-center gap-4">
-                {[hero.away, hero.home].map((s) => (
-                  <div key={s.teamId} className="flex items-center gap-2">
-                    {s.logo && <img src={s.logo} alt="" className="h-8 w-8 object-contain" />}
-                    <div>
-                      <p className="text-cream text-[14px] font-semibold">{s.abbrev}</p>
-                      <p className="text-chalk-dim text-[10px]">{s.record}</p>
-                    </div>
-                    <span className="numeral text-cream text-[26px]">{s.score ?? 0}</span>
-                  </div>
-                ))}
-              </div>
-              <p className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", "text-alert")}>
-                {hero.shortDetail}
-              </p>
-            </div>
-            <div className="p-3">
-              <NflFieldMap
-                game={hero}
-                homeYardLine={hero.situation?.yardLine ?? null}
-                possessionTeamId={hero.situation?.possessionTeamId ?? null}
-                downDistanceText={hero.situation?.downDistanceText}
-              />
-            </div>
-          </Link>
-        </section>
-      )}
-
       {scoreboard.isPending ? (
         <p className="text-chalk flex items-center gap-2 text-[13px]">
           <Loader2 size={14} className="animate-spin" /> Loading NFL…
@@ -149,19 +118,53 @@ export default function NflPage() {
       ) : (
         <>
           {live.length > 0 && (
-            <section>
-              <h3 className="rule-head mb-3">In progress</h3>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                {live.map((g) => (
-                  <NflScoreRow
-                    key={g.id}
-                    game={g}
-                    to={`/sports/nfl/game/${g.id}`}
-                    heat={heatById.get(String(g.id))?.score}
-                    reasons={heatById.get(String(g.id))?.reasons}
-                  />
-                ))}
-              </div>
+            <section className="space-y-3">
+              <h3 className="rule-head">Live</h3>
+              {featured && (
+                <Link
+                  to={`/sports/nfl/game/${featured.id}`}
+                  className="bg-panel block overflow-hidden rounded-xl border border-white/[0.1] transition hover:border-white/20"
+                >
+                  <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
+                    <div className="flex items-center gap-4">
+                      {[featured.away, featured.home].map((s) => (
+                        <div key={s.teamId} className="flex items-center gap-2">
+                          {s.logo && <img src={s.logo} alt="" className="h-8 w-8 object-contain" />}
+                          <div>
+                            <p className="text-cream text-[14px] font-semibold">{s.abbrev}</p>
+                            <p className="text-chalk-dim text-[10px]">{s.record}</p>
+                          </div>
+                          <span className="numeral text-cream text-[26px]">{s.score ?? 0}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className={cn("text-[11px] font-semibold uppercase tracking-[0.14em]", "text-alert")}>
+                      {featured.shortDetail}
+                    </p>
+                  </div>
+                  <div className="p-3">
+                    <NflFieldMap
+                      game={featured}
+                      homeYardLine={featured.situation?.yardLine ?? null}
+                      possessionTeamId={featured.situation?.possessionTeamId ?? null}
+                      downDistanceText={featured.situation?.downDistanceText}
+                    />
+                  </div>
+                </Link>
+              )}
+              {liveRest.length > 0 && (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {liveRest.map((g) => (
+                    <NflScoreRow
+                      key={g.id}
+                      game={g}
+                      to={`/sports/nfl/game/${g.id}`}
+                      heat={heatById.get(String(g.id))?.score}
+                      reasons={heatById.get(String(g.id))?.reasons}
+                    />
+                  ))}
+                </div>
+              )}
             </section>
           )}
           {upcoming.length > 0 && (
