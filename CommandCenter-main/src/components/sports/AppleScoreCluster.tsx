@@ -1,5 +1,5 @@
 import PossessionFootball from "@/components/sports/PossessionFootball";
-import { appleClockLine, timeoutMarks } from "@/lib/apple-score";
+import { appleClockParts, timeoutMarks } from "@/lib/apple-score";
 import { cn } from "@/lib/utils";
 
 function TimeoutDashes({ count }: { count: number | null | undefined }) {
@@ -16,9 +16,10 @@ function TimeoutDashes({ count }: { count: number | null | undefined }) {
 
 /**
  * Score cluster with the clock nested between the numerals.
- * The game header uses the condensed face. RUWT cards use the same
- * sans as the rest of the card (`face="sans"`). A football mark is
- * optional and belongs on the game header clock, not on a RUWT card.
+ * The game header stacks the quarter above the clock. RUWT cards use
+ * the same sans as the rest of the card (`face="sans"`) on one line.
+ * A football mark is optional and belongs beside a single-line clock,
+ * not on a RUWT card.
  * Timeout dashes are remaining ESPN counts, drawn small and dim for
  * the game page. RUWT cards omit the counts.
  */
@@ -63,8 +64,10 @@ export default function AppleScoreCluster({
     );
   }
 
-  const clock = appleClockLine(detail) || (final ? "Final" : "Live");
-  const showBall = Boolean(football && live && /\d:\d/.test(clock));
+  const parts = appleClockParts(detail);
+  const clock = parts.line || (final ? "Final" : "Live");
+  const stacked = size === "header" && Boolean(parts.period && parts.clock);
+  const showBall = Boolean(football && live && /\d:\d/.test(clock) && !stacked);
   const showMarks = live && (awayTimeouts != null || homeTimeouts != null);
   const numeral = sans
     ? "numeral text-[28px] font-semibold leading-none"
@@ -76,6 +79,16 @@ export default function AppleScoreCluster({
         <span className={cn("text-white", numeral)}>{away ?? "–"}</span>
         {showMarks ? <TimeoutDashes count={awayTimeouts} /> : null}
       </div>
+      {stacked ? (
+        <div className="flex flex-col items-center justify-center self-center px-1 text-center text-white">
+          <span className="text-[12px] font-semibold uppercase leading-none tracking-[0.16em] sm:text-[13px]">
+            {parts.period}
+          </span>
+          <span className="numeral mt-1 text-[20px] font-semibold leading-none sm:text-[24px]">
+            {parts.clock}
+          </span>
+        </div>
+      ) : (
       <p
         className={cn(
           "flex max-w-[6.75rem] items-center justify-center gap-1 self-center text-center font-semibold leading-tight tracking-tight text-white",
@@ -85,6 +98,7 @@ export default function AppleScoreCluster({
         {showBall ? <PossessionFootball className="h-3.5 w-5 shrink-0" title="Football" /> : null}
         <span>{clock}</span>
       </p>
+      )}
       <div className="flex min-w-[2rem] flex-col items-center">
         <span className={cn("text-white", numeral)}>{home ?? "–"}</span>
         {showMarks ? <TimeoutDashes count={homeTimeouts} /> : null}

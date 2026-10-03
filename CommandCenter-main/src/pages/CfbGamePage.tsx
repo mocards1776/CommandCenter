@@ -13,6 +13,7 @@ import CfbRankLabel, { CfbFpiCaption } from "@/components/sports/CfbRankLabel";
 import CfbRecentPlays from "@/components/sports/CfbRecentPlays";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel from "@/components/sports/HighlightReel";
+import { appleClockParts } from "@/lib/apple-score";
 import { cfbDriveGlance } from "@/lib/cfb-drive";
 import { fetchCfbBackupHighlights, fetchCfbGameDetail, type CfbScoreSide } from "@/lib/cfb";
 import type { MlbHighlight } from "@/lib/mlb";
@@ -141,6 +142,9 @@ export function CfbGameDetailView({
   const homeHasBall = possId != null && String(possId) === String(g.home.teamId);
   const label = statusLabel(g);
   const pregame = !g.final && !g.live;
+  const clockParts = appleClockParts(g.shortDetail);
+  const clockInNest = Boolean(g.live && clockParts.period && clockParts.clock);
+  const barLabel = clockInNest ? "Live" : label;
 
   const articleSection =
     g.article?.storyHtml || g.article?.description ? (
@@ -200,7 +204,7 @@ export function CfbGameDetailView({
               g.final ? "text-cream" : g.live ? "text-alert" : "text-[#a8b0c2]",
             )}
           >
-            {label}
+            {barLabel}
           </p>
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-2 gap-y-1">
             {g.broadcasts.length > 0 ? (
