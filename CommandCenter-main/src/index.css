@@ -1165,15 +1165,14 @@ mark.rss-hl {
   --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
   --w-gutter: 20px;
 
-  /* One broadsheet. The screen scales it; the page itself does not reflow.
-     iPad Pro 13" portrait is 1032×1376 CSS px; under the Times chrome the pager
-     is about 1032×1290, so --tt-fit = min(1032/1040, 1290/1480) ≈ 0.87 and the
-     sheet is height-bound with ~60px of paper margin each side. Filling the width
-     needs a sheet near 1040×1300 — only change this if every desk (front, A3
-     jumps, sport desks, leaders, viewing guide, Missouri) is checked to still fit
-     that height. Do not add a second canvas size; the fit does the rest. */
-  --tt-page-w: 1040px;
-  --tt-page-h: 1480px;
+  /* One broadsheet, as wide as the iPad Pro 13" in portrait (1032 CSS px), so it
+     prints edge to edge there at true size. The fit is width-only: narrower
+     screens zoom the whole sheet down, wider ones get paper margins, and the
+     height is never fit. A sheet is at least one screen tall (--tt-page-min,
+     set by the pager; --tt-page-h before it measures) and grows with its copy;
+     the folio scrolls. Do not add a second canvas size. */
+  --tt-page-w: 1032px;
+  --tt-page-h: 1290px;
   --w-chrome: calc(61px + env(safe-area-inset-top, 0px));
   flex: 1 1 auto;
   height: 100%;
@@ -1314,35 +1313,36 @@ mark.rss-hl {
   min-height: 0;
   max-height: 100%;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: none;
+  touch-action: pan-y;
   scroll-snap-align: start;
   scroll-snap-stop: always;
+  scrollbar-width: none;
   box-sizing: border-box;
   background: #151b28;
+}
+.wsj-page::-webkit-scrollbar {
+  display: none;
 }
 .wsj-fit {
   position: relative;
   flex: none;
-  width: calc(var(--tt-page-w, 1040px) * var(--tt-fit, 1));
-  height: calc(var(--tt-page-h, 1480px) * var(--tt-fit, 1));
-  overflow: hidden;
 }
 .wsj-sheet {
   box-sizing: border-box;
   flex: none;
-  width: var(--tt-page-w, 1040px);
-  height: var(--tt-page-h, 1480px);
-  min-width: var(--tt-page-w, 1040px);
-  max-width: var(--tt-page-w, 1040px);
-  min-height: var(--tt-page-h, 1480px);
-  max-height: var(--tt-page-h, 1480px);
+  width: var(--tt-page-w, 1032px);
+  min-width: var(--tt-page-w, 1032px);
+  max-width: var(--tt-page-w, 1032px);
+  min-height: var(--tt-page-min, var(--tt-page-h, 1290px));
+  zoom: var(--tt-fit, 1);
   margin: 0;
   padding: 14px 18px 28px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow-x: clip;
   touch-action: pan-y;
   display: flex;
   flex-direction: column;
@@ -5463,23 +5463,33 @@ li.counting .tt-count.card {
   text-transform: uppercase;
   color: color-mix(in srgb, var(--tt-team, var(--w-red)) 70%, var(--w-ink));
 }
+/* The story's players, boxed into its columns like a sidebar: it breaks with
+   the copy, never across a column, and holds one name to a row. */
 .wsj-story-facts {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-  padding: 10px 12px;
-  background: var(--w-card);
-  box-shadow: inset 0 3px 0 var(--tt-team, var(--w-ink)), 0 0 0 1px var(--w-hair);
-}
-.wsj-story-facts:not(:has(dl)),
-.wsj-story-facts:not(:has(ul)) {
-  grid-template-columns: 1fr;
+  display: block;
+  break-inside: avoid;
+  margin: 0.55em 0 0.8em;
+  padding: 9px 12px 11px;
+  background: var(--w-paper-2);
+  border-top: 3px solid var(--tt-team, var(--w-ink));
+  border-bottom: 1px solid var(--w-rule);
+  text-align: left;
+  text-indent: 0;
+  hyphens: none;
+  -webkit-hyphens: none;
+  font-family: var(--w-label);
+  line-height: 1.3;
 }
 .wsj-story-facts dl {
   margin: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+.wsj-story-facts dl + .tt-files {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--w-hair);
 }
 .wsj-story-facts dd {
   margin: 0;
@@ -5495,60 +5505,43 @@ li.counting .tt-count.card {
   text-transform: uppercase;
   color: var(--w-muted);
 }
-.wsj-story-facts ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.wsj-story-facts li {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 3px 0;
-  border-bottom: 1px dotted var(--w-hair);
-  font-size: 12px;
-}
-.wsj-story-facts li span {
-  color: var(--w-muted);
-}
-.wsj-story-facts:has(.tt-files) {
-  grid-template-columns: 1fr;
-}
-/* One or two names: a card, not a page-wide band of empty rule. */
-.wsj-story-facts:has(.tt-files):not(:has(dl)) {
-  width: fit-content;
-  max-width: 100%;
-  min-width: min(300px, 100%);
-}
 .tt-files-h {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--w-rule);
   font-family: var(--w-label);
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--w-ink-soft);
+  color: color-mix(in srgb, var(--tt-team, var(--w-ink)) 70%, var(--w-ink));
 }
 .wsj-story-facts .tt-files ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
-  grid-template-columns: repeat(var(--cols, 2), minmax(0, 250px));
-  gap: 10px 28px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  column-gap: 18px;
 }
 .wsj-story-facts .tt-files li {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 48px minmax(0, 1fr);
   align-items: center;
-  justify-content: stretch;
   gap: 10px;
-  padding: 0;
-  border: 0;
+  padding: 7px 0;
+  border-bottom: 1px dotted var(--w-hair);
   font-size: 12.5px;
+}
+.wsj-story-facts .tt-files li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 .tt-files-face {
   display: grid;
   place-items: end center;
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   overflow: hidden;
   border-radius: 50%;
   background: color-mix(in srgb, var(--tt-team, var(--w-navy)) 22%, var(--w-paper));
@@ -5563,7 +5556,7 @@ li.counting .tt-count.card {
 .tt-files-face b {
   place-self: center;
   font-family: var(--w-cond);
-  font-size: 20px;
+  font-size: 18px;
   color: var(--tt-team, var(--w-navy));
 }
 .tt-files-copy {
@@ -5593,10 +5586,13 @@ li.counting .tt-count.card {
   font-style: normal;
   color: var(--w-muted);
 }
-@media (max-width: 700px) {
-  .wsj-story-facts .tt-files ul {
-    grid-template-columns: minmax(0, 1fr);
-  }
+/* A story set in full closes on an end mark, not a "full story" link. */
+.wsj-prose.ended > p:last-of-type::after {
+  content: "\25A0";
+  margin-left: 0.4em;
+  font-size: 0.7em;
+  vertical-align: 0.1em;
+  color: var(--tt-team, var(--w-ink));
 }
 
 /* ── Scores page: the final as a graphic, stars, what's next ────────── */
@@ -7254,16 +7250,14 @@ li.counting .tt-count.card {
 .newspaper-root .tt-hero-side { min-height: 210px; padding: 16px 16px 14px; }
 .newspaper-root .tt-hero-disc { width: 58px; height: 58px; }
 .newspaper-root .tt-hero-id strong { font-size: 22px; }
-.newspaper-root .wsj-story-facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .newspaper-root .wsj-sport-hero { padding: 14px 18px; }
 
-/* One frame for every folio. The sheet is the broadsheet; the frame is the screen. */
-.newspaper-root .wsj-fit .wsj-sheet {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform: scale(var(--tt-fit, 1));
-  transform-origin: top left;
+/* One frame for every folio. The sheet is the broadsheet; the frame is the screen.
+   Zoom, not a transform, so a sheet taller than the screen scrolls its full height. */
+@supports not (zoom: 1) {
+  .wsj-page {
+    overflow-x: auto;
+  }
 }
 .newspaper-root .wsj-shelved {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -7450,8 +7444,8 @@ li.counting .tt-count.card {
     overflow: visible !important;
   }
   .newspaper-root .wsj-fit .wsj-sheet {
-    position: static !important;
-    transform: none !important;
+    zoom: 1 !important;
+    min-height: 0 !important;
   }
 }
 

@@ -680,6 +680,8 @@ function Prose({
   max,
   dress,
   color,
+  inset,
+  ended,
 }: {
   card: GameWrapCard;
   text: string;
@@ -689,6 +691,10 @@ function Prose({
   /** Long inside-page copy: a pull quote and run-in subheads break the gray. */
   dress?: boolean;
   color?: string | null;
+  /** A panel set into the columns (the story's players), so it travels with the copy. */
+  inset?: ReactNode;
+  /** The whole story is set here: close it with an end mark. */
+  ended?: boolean;
 }) {
   const paras = proseParas(text, max);
   if (!paras.length) return null;
@@ -698,10 +704,13 @@ function Prose({
   const seen = new Set<string>();
   const quote = dress && length > 1600 ? pullQuote(paras) : null;
   const quoteAt = quote ? Math.max(2, Math.floor(paras.length * 0.45)) : -1;
+  let insetAt = inset ? (paras.length <= 2 ? paras.length : Math.max(1, Math.round(paras.length * 0.6))) : -1;
+  if (insetAt === quoteAt) insetAt += 1;
   return (
-    <div className={cn("wsj-prose", `c${fit}`, drop && "drop", dress && "dressed")}>
+    <div className={cn("wsj-prose", `c${fit}`, drop && "drop", dress && "dressed", ended && "ended")}>
       {paras.map((p, i) => (
         <Fragment key={i}>
+          {i === insetAt ? inset : null}
           {i === quoteAt && quote ? (
             <blockquote className="wsj-pull" style={tint(color)}>
               <p>{quote}</p>
@@ -719,6 +728,7 @@ function Prose({
           )}
         </Fragment>
       ))}
+      {insetAt >= paras.length ? inset : null}
     </div>
   );
 }
@@ -858,6 +868,7 @@ function Story({
   readOn,
   game,
   dress,
+  inset,
 }: {
   card: GameWrapCard;
   team?: TeamInfobox | null;
@@ -872,12 +883,19 @@ function Story({
   onTurn?: (folio: string) => void;
   max?: number;
   className?: string;
-  /** Offer the whole story in the reader when this page sets only part of it. */
+  /**
+   * Offer the whole story in the reader. Defaults to on when this page sets only
+   * part of the copy; a page that sets all of it ends on an end mark instead.
+   */
   readOn?: boolean;
   game?: BoxGame | null;
   dress?: boolean;
+  /** Set into the story's columns (see `Prose`); after the copy when there is none. */
+  inset?: ReactNode;
 }) {
-  const copy = substantive(card, text ?? cardCopy(card));
+  const full = cardCopy(card);
+  const copy = substantive(card, text ?? full);
+  const partial = readOn ?? Boolean(jump || (copy && copy.length < full.length * 0.9));
   const dek = dekFor(card, copy);
   const artNode =
     art === "none" ? null : card.photo ? (
@@ -904,9 +922,21 @@ function Story({
         <ScoreBug card={card} />
         <Byline card={card} />
         {copy ? (
-          <Prose card={card} text={copy} cols={cols} drop={drop} max={max} dress={dress} color={teamColor(team)} />
-        ) : null}
-        {copy || jump ? <ReadOn card={card} game={game} label="Click for full story" /> : null}
+          <Prose
+            card={card}
+            text={copy}
+            cols={cols}
+            drop={drop}
+            max={max}
+            dress={dress}
+            color={teamColor(team)}
+            inset={inset}
+            ended={!partial}
+          />
+        ) : (
+          inset
+        )}
+        {(copy || jump) && partial ? <ReadOn card={card} game={game} label="Click for full story" /> : null}
       </div>
     </article>
   );
@@ -1659,8 +1689,9 @@ function InsidePage({
               drop
               dress
               game={game}
+              inset={game ? null : <StoryNames card={card} />}
             />
-            {game ? <GameBox game={game} /> : <StoryNames card={card} />}
+            {game ? <GameBox game={game} /> : null}
           </div>
         );
       })}
@@ -1697,13 +1728,17 @@ function InsideFlag({ card, team }: { card: GameWrapCard; team: TeamInfobox | nu
 
 const SubjectsContext = createContext<Record<string, PlayerFile[]>>({});
 
-/** The players the story is about — face, position, season line — set under it when no box score runs. */
+/**
+ * The players the story is about — face, position, season line — boxed into the
+ * story's columns when no box score runs. One name to a row, so it holds its
+ * type at any count.
+ */
 function StoryNames({ card }: { card: GameWrapCard }) {
   const files = useContext(SubjectsContext)[card.id] ?? [];
   const stats = card.stats.slice(0, 6);
   if (!files.length && !stats.length) return null;
   return (
-    <aside className="wsj-story-facts">
+    <aside className="wsj-story-facts" aria-label="In this story">
       {stats.length ? (
         <dl>
           {stats.map((s) => (
@@ -1715,9 +1750,9 @@ function StoryNames({ card }: { card: GameWrapCard }) {
         </dl>
       ) : null}
       {files.length ? (
-        <section className="tt-files" aria-label="In this story">
+        <section className="tt-files">
           <h4 className="tt-files-h">In this story</h4>
-          <ul style={{ ["--cols" as string]: String(Math.min(files.length, 4)) }}>
+          <ul>
             {files.map((f) => (
               <li key={f.href}>
                 <span className="tt-files-face">
@@ -1788,9 +1823,11 @@ function ContinuePage({
               cols={rest.length > 1400 ? 3 : rest.length > 500 ? 2 : 1}
               art="none"
               dress
+              readOn={false}
               game={game}
+              inset={game ? null : <StoryNames card={card} />}
             />
-            {game ? <GameBox game={game} /> : <StoryNames card={card} />}
+            {game ? <GameBox game={game} /> : null}
           </div>
         );
       })}
@@ -3577,9 +3614,11 @@ function NewspaperDesk() {
       if (w < 40 || h < 40) return;
       const root = el.closest(".newspaper-root") ?? el;
       const cs = getComputedStyle(root);
-      const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1040;
-      const pageH = parseFloat(cs.getPropertyValue("--tt-page-h")) || 1480;
-      el.style.setProperty("--tt-fit", String(Math.min(w / pageW, h / pageH)));
+      const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1032;
+      // Width only: the sheet fills the screen across and scrolls down, never shrinks to fit the height.
+      const fit = Math.min(1, w / pageW);
+      el.style.setProperty("--tt-fit", String(fit));
+      el.style.setProperty("--tt-page-min", `${Math.ceil(h / fit)}px`);
       el.dataset.fit = "1";
     };
     apply();
