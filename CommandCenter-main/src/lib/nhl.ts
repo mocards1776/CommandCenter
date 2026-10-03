@@ -37,6 +37,17 @@ export function nhlTeamLogo(abbrevOrId: string): string {
   return `https://a.espncdn.com/i/teamlogos/nhl/500/${abbrevOrId.toLowerCase()}.png`;
 }
 
+/** Dark team colors vanish on navy; lift anything under `minLuminance` toward white. */
+export function liftTeamColor(hex: string, minLuminance = 0.3, amount = 0.35): string {
+  const raw = hex.replace(/^#/, "");
+  const n = Number.parseInt(raw, 16);
+  if (!Number.isFinite(n) || raw.length !== 6) return "#ffffff";
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const lum = (0.299 * ch[0]! + 0.587 * ch[1]! + 0.114 * ch[2]!) / 255;
+  if (lum > minLuminance) return hex;
+  return `rgb(${ch.map((c) => Math.round(c + (255 - c) * amount)).join(",")})`;
+}
+
 export const NHL_TEAMS: { id: number; name: string; abbrev: string }[] = [
   { id: 25, name: "Anaheim Ducks", abbrev: "ANA" },
   { id: 1, name: "Boston Bruins", abbrev: "BOS" },
@@ -485,8 +496,38 @@ export type NhlGameVideo = {
   source: "nhl" | "espn";
 };
 
+export type NhlIcePlayer = {
+  id: string;
+  name: string;
+  lastName: string;
+  jersey: string | null;
+  /** ESPN abbreviation: C / LW / RW / D / G (others possible). */
+  position: string | null;
+  headshot: string | null;
+};
+
+/**
+ * Who is on the ice, for the Ice Tracker-style rink. Neither ESPN nor NHL
+ * publish live player (x, y), so the rink places these players by position.
+ *  - "live": ESPN summary `onIce` (current skaters + goalie per team).
+ *  - "lineup": no `onIce` — top-TOI C/LW/RW, two D and the goalie from the box score.
+ *  - "goalies": pregame — projected starters only.
+ */
+export type NhlIceState = {
+  source: "live" | "lineup" | "goalies";
+  away: NhlIcePlayer[];
+  home: NhlIcePlayer[];
+  /** Period the snapshot belongs to (latest play), null pregame. */
+  period: number | null;
+  /** Home team shoots at the right-hand net this period (from shot coordinates). */
+  homeAttacksRight: boolean;
+  /** Latest located play — ESPN feet from center ice, x ∈ ±100, y ∈ ±42.5. */
+  lastEvent: { x: number; y: number; type: string; teamId: string | null } | null;
+};
+
 export type NhlGameDetail = NhlScoreGame & {
   teamStats: { label: string; away: string; home: string }[];
+  ice: NhlIceState | null;
   boxGroups: NhlBoxGroup[];
   scoringPlays: NhlScoringPlay[];
   /** Newest first, faceoffs/stoppages dropped. */
@@ -593,9 +634,196 @@ function mapNhlEspnVideo(raw: NhlEspnVideoRaw): NhlGameVideo | null {
   };
 }
 
+type NhlSummaryAthlete = {
+  athlete?: {
+    id?: string;
+    displayName?: string;
+    shortName?: string;
+    lastName?: string;
+    jersey?: string;
+    position?: { abbreviation?: string };
+    headshot?: { href?: string };
+  };
+  stats?: string[];
+  starter?: boolean;
+};
+
+type NhlSummaryPlay = {
+  type?: { text?: string; abbreviation?: string };
+  period?: { number?: number };
+  team?: { id?: string };
+  coordinate?: { x?: number; y?: number };
+};
+
+function toIcePlayer(a: NhlSummaryAthlete["athlete"], fallbackPos: string | null): NhlIcePlayer | null {
+  const id = a?.id ? String(a.id) : "";
+  if (!id) return null;
+  const name = a?.displayName ?? "Player";
+  return {
+    id,
+    name,
+    lastName: a?.lastName || name.split(" ").slice(1).join(" ") || name,
+    jersey: a?.jersey ?? null,
+    position: a?.position?.abbreviation ?? fallbackPos,
+    headshot: a?.headshot?.href ?? nhlHeadshot(id),
+  };
+}
+
+function toiSeconds(toi: string | undefined): number {
+  const [m, s] = (toi ?? "").split(":").map(Number);
+  return Number.isFinite(m) && Number.isFinite(s) ? m! * 60 + s! : 0;
+}
+
+/**
+ * Teams switch ends every period (OT plays like the 2nd), so every shot on
+ * goal from beyond a blue line votes on which end home attacks in odd periods.
+ */
+function inferHomeAttacksRight(plays: NhlSummaryPlay[], homeTeamId: string, period: number): boolean {
+  let vote = 0;
+  for (const p of plays) {
+    const kind = p.type?.abbreviation ?? "";
+    const x = p.coordinate?.x;
+    const num = p.period?.number;
+    if ((kind !== "shot-on-goal" && kind !== "goal") || typeof x !== "number" || Math.abs(x) <= 25) continue;
+    if (!p.team?.id || typeof num !== "number" || num > 4) continue;
+    const homeShot = String(p.team.id) === homeTeamId ? 1 : -1;
+    const parity = num % 2 === 1 ? 1 : -1;
+    vote += Math.sign(x) * homeShot * parity;
+  }
+  const oddRight = vote >= 0;
+  return period % 2 === 1 || period > 4 ? oddRight : !oddRight;
+}
+
+function buildNhlIceState(input: {
+  onIce: { teamId?: string; entries?: { athleteid?: string }[] }[] | undefined;
+  players: { team?: { id?: string }; statistics?: { name?: string; labels?: string[]; athletes?: NhlSummaryAthlete[] }[] }[];
+  plays: NhlSummaryPlay[];
+  awayTeamId: string;
+  homeTeamId: string;
+  starters: { away: { id: string; name: string } | null; home: { id: string; name: string } | null };
+}): NhlIceState | null {
+  const roster = new Map<string, NhlIcePlayer>();
+  const lineups = new Map<string, NhlIcePlayer[]>();
+  for (const side of input.players) {
+    const teamId = String(side.team?.id ?? "");
+    const ranked: { p: NhlIcePlayer; toi: number; group: string }[] = [];
+    for (const group of side.statistics ?? []) {
+      const name = (group.name ?? "").toLowerCase();
+      const fallbackPos = name === "goalies" ? "G" : name === "defenses" ? "D" : null;
+      const toiAt = (group.labels ?? []).indexOf("TOI");
+      for (const a of group.athletes ?? []) {
+        const p = toIcePlayer(a.athlete, fallbackPos);
+        if (!p) continue;
+        roster.set(p.id, p);
+        ranked.push({ p, toi: toiAt >= 0 ? toiSeconds(a.stats?.[toiAt]) : 0, group: name });
+      }
+    }
+    ranked.sort((a, b) => b.toi - a.toi);
+    const pick: NhlIcePlayer[] = [];
+    for (const pos of ["C", "LW", "RW"]) {
+      const hit = ranked.find((r) => r.group === "forwards" && r.p.position === pos && !pick.includes(r.p));
+      if (hit) pick.push(hit.p);
+    }
+    pick.push(...ranked.filter((r) => r.group === "defenses").slice(0, 2).map((r) => r.p));
+    const goalie = ranked.find((r) => r.group === "goalies");
+    if (goalie) pick.push(goalie.p);
+    if (pick.length) lineups.set(teamId, pick);
+  }
+
+  const located = input.plays.filter(
+    (p) => typeof p.coordinate?.x === "number" && typeof p.coordinate?.y === "number",
+  );
+  const latest = located[located.length - 1];
+  const period = latest?.period?.number ?? input.plays[input.plays.length - 1]?.period?.number ?? null;
+  const homeAttacksRight = inferHomeAttacksRight(input.plays, input.homeTeamId, period ?? 1);
+  const lastEvent = latest
+    ? {
+        x: latest.coordinate!.x!,
+        y: latest.coordinate!.y!,
+        type: latest.type?.text ?? "",
+        teamId: latest.team?.id ? String(latest.team.id) : null,
+      }
+    : null;
+
+  const live = new Map<string, NhlIcePlayer[]>();
+  for (const block of input.onIce ?? []) {
+    const list = (block.entries ?? [])
+      .map((e) => roster.get(String(e.athleteid ?? "")))
+      .filter((p): p is NhlIcePlayer => Boolean(p));
+    if (list.length) live.set(String(block.teamId ?? ""), list);
+  }
+  if (live.has(input.awayTeamId) && live.has(input.homeTeamId)) {
+    return {
+      source: "live",
+      away: live.get(input.awayTeamId)!,
+      home: live.get(input.homeTeamId)!,
+      period,
+      homeAttacksRight,
+      lastEvent,
+    };
+  }
+  if (lineups.has(input.awayTeamId) || lineups.has(input.homeTeamId)) {
+    return {
+      source: "lineup",
+      away: lineups.get(input.awayTeamId) ?? [],
+      home: lineups.get(input.homeTeamId) ?? [],
+      period,
+      homeAttacksRight,
+      lastEvent,
+    };
+  }
+  const starter = (s: { id: string; name: string } | null): NhlIcePlayer[] =>
+    s
+      ? [
+          {
+            id: s.id,
+            name: s.name,
+            lastName: s.name.split(" ").slice(1).join(" ") || s.name,
+            jersey: null,
+            position: "G",
+            headshot: nhlHeadshot(s.id),
+          },
+        ]
+      : [];
+  if (!input.starters.away && !input.starters.home) return null;
+  return {
+    source: "goalies",
+    away: starter(input.starters.away),
+    home: starter(input.starters.home),
+    period: null,
+    homeAttacksRight: true,
+    lastEvent: null,
+  };
+}
+
+type NhlSummaryRecord = { type?: string; summary?: string };
+
+/** Header competitors carry `record` (singular); summary `standings` is the fallback. */
+function summaryRecord(
+  competitor: { record?: NhlSummaryRecord[]; records?: NhlSummaryRecord[] } | undefined,
+  standings: Map<string, string>,
+  teamId: number,
+): string | null {
+  const list = competitor?.record ?? competitor?.records ?? [];
+  return (
+    list.find((r) => r.type === "total")?.summary ??
+    list[0]?.summary ??
+    standings.get(String(teamId)) ??
+    null
+  );
+}
+
 export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail> {
   const raw = await getJson<{
     header?: { competitions?: EspnEvent["competitions"]; id?: string };
+    onIce?: { teamId?: string; entries?: { athleteid?: string }[] }[];
+    standings?: {
+      groups?: {
+        standings?: {
+          entries?: { id?: string; stats?: { name?: string; displayValue?: string }[] }[];
+        };
+      }[];
+    };
     boxscore?: {
       teams?: {
         homeAway?: string;
@@ -607,14 +835,15 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
         statistics?: {
           name?: string;
           labels?: string[];
-          athletes?: { athlete?: { id?: string; displayName?: string }; stats?: string[] }[];
+          athletes?: NhlSummaryAthlete[];
         }[];
       }[];
     };
     plays?: {
       id?: string;
       text?: string;
-      type?: { text?: string };
+      type?: { text?: string; abbreviation?: string };
+      coordinate?: { x?: number; y?: number };
       scoringPlay?: boolean;
       awayScore?: number;
       homeScore?: number;
@@ -671,6 +900,25 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
   };
   let base = mapScoreEvent(headerEvent);
   if (!base) throw new Error("NHL game missing competitors");
+
+  const standingRecords = new Map<string, string>();
+  for (const group of raw.standings?.groups ?? []) {
+    for (const e of group.standings?.entries ?? []) {
+      if (!e.id) continue;
+      const stat = (n: string) => e.stats?.find((s) => s.name === n)?.displayValue ?? "0";
+      standingRecords.set(String(e.id), `${stat("wins")}-${stat("losses")}-${stat("otLosses")}`);
+    }
+  }
+  const headerCompetitors = (raw.header?.competitions?.[0]?.competitors ?? []) as (EspnCompetitor & {
+    record?: NhlSummaryRecord[];
+  })[];
+  const withRecord = (side: NhlScoreSide, homeAway: string): NhlScoreSide => ({
+    ...side,
+    record:
+      side.record ??
+      summaryRecord(headerCompetitors.find((c) => c.homeAway === homeAway), standingRecords, side.teamId),
+  });
+  base = { ...base, away: withRecord(base.away, "away"), home: withRecord(base.home, "home") };
 
   // Prefer scoreboard broadcasts; fall back to summary broadcast list.
   if (!base.broadcasts.length && raw.broadcasts?.length) {
@@ -882,9 +1130,19 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
     }
   }
 
+  const ice = buildNhlIceState({
+    onIce: raw.onIce,
+    players: raw.boxscore?.players ?? [],
+    plays: raw.plays ?? [],
+    awayTeamId: String(base.away.teamId),
+    homeTeamId: String(base.home.teamId),
+    starters: { away: awayGoalie, home: homeGoalie },
+  });
+
   return {
     ...base,
     teamStats,
+    ice,
     boxGroups,
     scoringPlays,
     recentPlays,
