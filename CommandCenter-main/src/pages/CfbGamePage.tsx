@@ -11,6 +11,7 @@ import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import CfbRecentPlays from "@/components/sports/CfbRecentPlays";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel from "@/components/sports/HighlightReel";
+import { cfbDriveGlance } from "@/lib/cfb-drive";
 import { fetchCfbBackupHighlights, fetchCfbGameDetail, type CfbScoreSide } from "@/lib/cfb";
 import type { MlbHighlight } from "@/lib/mlb";
 import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
@@ -54,6 +55,11 @@ export function CfbGameDetailView({
     const play = g.recentPlays?.[0];
     if (play?.yardLine != null) return play.yardLine;
     return null;
+  }, [g]);
+
+  const currentDrive = useMemo(() => {
+    if (!g?.currentDriveId) return null;
+    return g.drives.find((drive) => drive.id === g.currentDriveId) ?? null;
   }, [g]);
 
   const backups = useQuery({
@@ -310,6 +316,7 @@ export function CfbGameDetailView({
             homeYardLine={homeYardLine}
             possessionTeamId={g.situation?.possessionTeamId ?? null}
             downDistanceText={g.situation?.downDistanceText}
+            drive={currentDrive ? cfbDriveGlance(currentDrive) : null}
           />
           {g.situation?.lastPlayText ? (
             <p className="text-chalk px-1 text-[12px] leading-relaxed">

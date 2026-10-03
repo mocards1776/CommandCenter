@@ -12,6 +12,12 @@ import {
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { mapCfbWinProbability, type CfbWinProbPoint } from "./cfb-win-probability";
 import {
+  cfbDriveGlance,
+  mapCfbDriveMeta,
+  type CfbDriveGlance,
+  type EspnCfbDriveRaw,
+} from "./cfb-drive";
+import {
   latestCfpWeekRef,
   mapCfbGameWrap,
   mergeBoardScores,
@@ -340,9 +346,22 @@ export type CfbDrive = {
   teamId: string | null;
   teamAbbrev: string | null;
   result: string | null;
+  /** ESPN displayResult when the drive has ended ("Touchdown", "Punt"). */
+  displayResult: string | null;
   yards: number | null;
+  /** ESPN offensivePlays. Kickoffs are not counted. */
+  playCount: number | null;
+  /** ESPN timeElapsed.displayValue, e.g. "3:07". */
+  timeOfPossession: string | null;
+  /** Yards from the home end zone — same scale as situation.yardLine. */
+  startYardLine: number | null;
+  /** ESPN spot text, e.g. "MSST 25". */
+  startText: string | null;
   plays: CfbPlay[];
 };
+
+export type { CfbDriveGlance, EspnCfbDriveRaw } from "./cfb-drive";
+export { cfbDriveGlance, cfbDriveStatLine, mapCfbDriveMeta } from "./cfb-drive";
 
 export type CfbBoxPlayerRow = {
   id: string;
@@ -388,6 +407,8 @@ export type CfbBackupHighlights = {
 export type CfbGameDetail = CfbScoreGame & {
   scoringPlays: CfbScoringPlay[];
   drives: CfbDrive[];
+  /** ESPN drives.current id while that drive is in progress. */
+  currentDriveId: string | null;
   recentPlays: CfbPlay[];
   boxGroups: CfbBoxStatGroup[];
   teamStats: CfbTeamGameStat[];
@@ -1380,6 +1401,41 @@ function mapCfbPlay(p: {
   };
 }
 
+type EspnCfbDriveWithPlays = EspnCfbDriveRaw & {
+  plays?: Parameters<typeof mapCfbPlay>[0][];
+};
+
+function mapCfbDrive(d: EspnCfbDriveWithPlays, fallbackId = ""): CfbDrive {
+  return {
+    ...mapCfbDriveMeta(d, fallbackId),
+    plays: (d.plays ?? []).map(mapCfbPlay),
+  };
+}
+
+function collectCfbDrives(drives: {
+  current?: EspnCfbDriveWithPlays;
+  previous?: EspnCfbDriveWithPlays[];
+} | undefined): { drives: CfbDrive[]; currentDriveId: string | null } {
+  const previous = drives?.previous ?? [];
+  const current = drives?.current;
+  const currentId = current?.id != null && String(current.id) ? String(current.id) : null;
+  const out: CfbDrive[] = [];
+  const seen = new Set<string>();
+  previous.forEach((raw, index) => {
+    const mapped = mapCfbDrive(raw, `drive-${index}`);
+    if (mapped.id && seen.has(mapped.id)) return;
+    if (mapped.id) seen.add(mapped.id);
+    out.push(mapped);
+  });
+  if (current) {
+    const mapped = mapCfbDrive(current, currentId ?? "drive-current");
+    const idx = mapped.id ? out.findIndex((d) => d.id === mapped.id) : -1;
+    if (idx >= 0) out[idx] = mapped;
+    else out.push(mapped);
+  }
+  return { drives: out, currentDriveId: currentId };
+}
+
 function assignCfbScoringTeams(drives: CfbDrive[], awayTeamId: string, homeTeamId: string) {
   let away = 0;
   let home = 0;
@@ -1420,22 +1476,8 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
       team?: { abbreviation?: string };
     }[];
     drives?: {
-      current?: {
-        id?: string;
-        description?: string;
-        team?: { id?: string; abbreviation?: string };
-        result?: string;
-        yards?: number;
-        plays?: Parameters<typeof mapCfbPlay>[0][];
-      };
-      previous?: {
-        id?: string;
-        description?: string;
-        team?: { id?: string; abbreviation?: string };
-        result?: string;
-        yards?: number;
-        plays?: Parameters<typeof mapCfbPlay>[0][];
-      }[];
+      current?: EspnCfbDriveRaw;
+      previous?: EspnCfbDriveRaw[];
     };
     boxscore?: {
       teams?: {
@@ -1650,19 +1692,7 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
   const videos = [...videoById.values()];
   const recapVideo = pickCfbRecapVideo(videos);
 
-  const drivesRaw = [
-    ...(raw.drives?.previous ?? []),
-    ...(raw.drives?.current ? [raw.drives.current] : []),
-  ];
-  const drives: CfbDrive[] = drivesRaw.map((d) => ({
-    id: String(d.id ?? Math.random()),
-    description: d.description ?? null,
-    teamId: d.team?.id ?? null,
-    teamAbbrev: d.team?.abbreviation ?? null,
-    result: d.result ?? null,
-    yards: typeof d.yards === "number" ? d.yards : null,
-    plays: (d.plays ?? []).map(mapCfbPlay),
-  }));
+  const { drives, currentDriveId } = collectCfbDrives(raw.drives);
   assignCfbScoringTeams(drives, String(base.away.teamId), String(base.home.teamId));
   const recentPlays: CfbPlay[] = [];
   const seenPlayIds = new Set<string>();
@@ -1729,6 +1759,7 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
       teamAbbrev: s.team?.abbreviation ?? null,
     })),
     drives,
+    currentDriveId,
     recentPlays,
     boxGroups,
     teamStats,
@@ -1741,6 +1772,21 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
     venueDetail: venueBits.length ? venueBits.join(" · ") : null,
     winProbability,
   };
+}
+
+/** Current drive only — used by live RUWT fields. Null when ESPN has no current drive. */
+export async function fetchCfbCurrentDrive(eventId: string): Promise<CfbDriveGlance | null> {
+  try {
+    const res = await fetch(`${ESPN}/summary?event=${encodeURIComponent(eventId)}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const raw = (await res.json()) as { drives?: { current?: EspnCfbDriveRaw } };
+    if (!raw.drives?.current) return null;
+    return cfbDriveGlance(mapCfbDrive(raw.drives.current, "drive-current"));
+  } catch {
+    return null;
+  }
 }
 
 export type CfbTeamWinTrendPoint = {
