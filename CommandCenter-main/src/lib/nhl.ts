@@ -133,6 +133,7 @@ type EspnEvent = {
   shortName?: string;
   competitions?: {
     id?: string;
+    date?: string;
     venue?: { fullName?: string };
     status?: {
       type?: {
@@ -542,7 +543,7 @@ function statNum(stats: { label: string; value: string }[], label: string): numb
 }
 
 const RECENT_PLAY_LIMIT = 12;
-const RECENT_PLAY_SKIP = /^(face ?off|stoppage)$/i;
+const RECENT_PLAY_SKIP = /^(face ?off|stoppage|end of game)$/i;
 
 type NhlEspnVideoRaw = {
   id?: string | number;
@@ -665,6 +666,7 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
 
   const headerEvent: EspnEvent = {
     id: eventId,
+    date: raw.header?.competitions?.[0]?.date,
     competitions: raw.header?.competitions,
   };
   let base = mapScoreEvent(headerEvent);

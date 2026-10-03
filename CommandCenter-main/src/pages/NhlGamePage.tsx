@@ -640,6 +640,9 @@ function RecentPlays({ g }: { g: NhlGameDetail }) {
           <img
             src={latest.athlete.headshot ?? nhlHeadshot(latest.athlete.id)}
             alt=""
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
             className="h-12 w-12 shrink-0 rounded-full bg-[#dfe6f2] object-cover object-top"
           />
         ) : latestTeam?.logo ? (
