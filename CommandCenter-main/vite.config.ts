@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { execSync } from "child_process";
+import { GET as nhlProxyGet } from "./api/nhl";
 
 function git(cmd: string): string {
   try {
@@ -31,27 +32,10 @@ function nhlApiDevProxy(): Plugin {
     name: "nhl-api-dev-proxy",
     configureServer(server) {
       server.middlewares.use("/api/nhl", async (req, res) => {
-        const path = new URL(req.url ?? "", "http://local").searchParams.get("path") ?? "";
-        const shifts = /^stats\/shiftcharts\/(\d{10})$/.exec(path);
-        if (!shifts && !/^v1\/[\w/-]+$/.test(path)) {
-          res.statusCode = 400;
-          res.end('{"error":"Path not allowed"}');
-          return;
-        }
-        const url = shifts
-          ? `https://api.nhle.com/stats/rest/en/shiftcharts?cayenneExp=gameId=${shifts[1]}`
-          : `https://api-web.nhle.com/${path}`;
-        try {
-          const upstream = await fetch(url, {
-            headers: { Accept: "application/json" },
-          });
-          res.statusCode = upstream.status;
-          res.setHeader("Content-Type", "application/json; charset=utf-8");
-          res.end(await upstream.text());
-        } catch {
-          res.statusCode = 502;
-          res.end('{"error":"Upstream unavailable"}');
-        }
+        const upstream = await nhlProxyGet(new Request(new URL(req.url ?? "", "http://local")));
+        res.statusCode = upstream.status;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(await upstream.text());
       });
     },
   };
