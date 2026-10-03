@@ -82,8 +82,16 @@ npm run lint
 - **Sports push** — iOS/Safari web push for the Sports Home Screen app.
   The sender is the `sports-push` edge function. Heat alerts use live drama
   only (a one-score game in another sport, line 68) and ignore series weight,
-  the Cardinals bump, and interest sliders. Favorite start/final is a second
-  channel, off until turned on.
+  the Cardinals bump, and interest sliders. The note itself uses the RUWT
+  card's reason line plus the score and clock — it does not lead with the
+  heat number or mention the interest slider. Favorite start/final is a
+  second channel, off until turned on, and keeps its own wording.
+
+  iOS Home Screen web push usually draws the Sports app icon, not the team
+  logo in `icon`. It also ignores `vibrate` and the expanded `image`. Android
+  and desktop show the team logo, that large image, and a short vibration.
+  There is no Live Activity. The same `tag` replaces a note in place
+  (`renotify` stays off) so one game does not stack alerts.
 
   Generate a VAPID key pair on your machine (the private key never goes in git):
 

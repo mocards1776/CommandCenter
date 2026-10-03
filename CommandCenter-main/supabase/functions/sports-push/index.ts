@@ -162,8 +162,9 @@ async function webPush(): Promise<WebPush | null> {
 function absoluteNote(note: PushNote): PushNote {
   const root = origin();
   const icon = note.icon && /^https?:/i.test(note.icon) ? note.icon : `${root}${BADGE_PATH}`;
+  const image = note.image && /^https?:/i.test(note.image) ? note.image : null;
   const url = note.url.startsWith("http") ? note.url : `${root}${note.url}`;
-  return { ...note, icon, url };
+  return { ...note, icon, image, url };
 }
 
 async function sendOne(lib: WebPush, sub: SubRow, note: PushNote): Promise<"ok" | "gone" | "fail"> {
@@ -176,10 +177,18 @@ async function sendOne(lib: WebPush, sub: SubRow, note: PushNote): Promise<"ok" 
         body: payload.body,
         icon: payload.icon,
         badge: `${origin()}${BADGE_PATH}`,
+        image: payload.image,
         tag: payload.tag,
+        renotify: payload.renotify,
+        silent: payload.silent,
+        vibrate: payload.vibrate,
+        timestamp: Date.now(),
         url: payload.url,
+        sport: payload.sport,
+        gameId: payload.gameId,
+        kind: payload.reason,
       }),
-      { TTL: 60 * 60 * 2, urgency: "high" },
+      { TTL: 60 * 60 * 2, urgency: payload.reason === "favorite-final" ? "normal" : "high" },
     );
     const code = res?.statusCode ?? 201;
     if (code === 404 || code === 410) return "gone";

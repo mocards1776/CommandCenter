@@ -393,6 +393,8 @@ export type PushSide = {
   name: string;
   score: number | null;
   logo: string | null;
+  /** AP Top 25 when the scoreboard has one. 99 and blanks stay empty. */
+  rank?: number | null;
 };
 
 export type PushGame = {
@@ -405,6 +407,10 @@ export type PushGame = {
   redZone: boolean;
   downDistance: string | null;
   when: string | null;
+  /** Network names already shown on the RUWT card. Display only. */
+  broadcasts?: string[];
+  /** Soccer league label, e.g. Premier League. */
+  league?: string | null;
   away: PushSide;
   home: PushSide;
 };
@@ -420,9 +426,17 @@ export type PushNote = {
   title: string;
   body: string;
   icon: string | null;
+  /** Large image for clients that expand the note. Omitted when there is no logo. */
+  image: string | null;
   tag: string;
   url: string;
   reason: AlertKind;
+  sport: string;
+  gameId: string;
+  silent: boolean;
+  /** Same tag updates in place. A second buzz would stack alerts for one game. */
+  renotify: boolean;
+  vibrate: number[];
 };
 
 export function gameKey(game: { sport: string; id: string }): string {
@@ -478,47 +492,165 @@ function leadLogo(game: PushGame): string | null {
   return game.home.logo || game.away.logo;
 }
 
-function clockBit(game: PushGame, why: string): string {
-  const d = game.detail.trim();
-  if (!d || /^live$|in progress|scheduled|pregame/i.test(d)) return why;
-  if (why.toLowerCase().includes(d.toLowerCase())) return why;
-  return `${why} · ${d}`;
+const GENERIC_CARD_REASONS = new Set(["live", "upcoming", "final", "live now"]);
+
+/** Slider and personal chips. Heat copy never mentions them. */
+const PERSONAL_REASON =
+  /interest|your #1|on your board|high interest|favorite|playoff|series|\bcardinals\b|^watch\b/i;
+
+const HEAT_CHIP_CAP = 5;
+const HEAT_VIBRATE = [80, 40, 80];
+const FAVORITE_VIBRATE = [40];
+
+function cleanChip(label: string): string | null {
+  const text = label.trim();
+  if (!text || GENERIC_CARD_REASONS.has(text.toLowerCase())) return null;
+  if (PERSONAL_REASON.test(text) || /^heat\b/i.test(text)) return null;
+  return text;
+}
+
+function shownRank(rank: number | null | undefined): number | null {
+  if (typeof rank !== "number" || !Number.isFinite(rank) || rank < 1 || rank > 25) return null;
+  return rank;
+}
+
+/**
+ * National TV uses the CFB card's window list (ABC/CBS/NBC/FOX and
+ * TNT/TBS/USA/Peacock/Netflix). ESPN-only windows are not that chip.
+ * This does not change the heat score.
+ */
+function cfbNationalTv(names: readonly string[]): boolean {
+  const nets = names.map((name) => name.toUpperCase());
+  const bigFour = nets.some((name) => /\b(ABC|CBS|NBC|FOX)\b/.test(name));
+  const cable = nets.some((name) => /\b(TNT|TBS|USA|PEACOCK|NETFLIX)\b/.test(name));
+  return bigFour || cable;
+}
+
+/** Public reason chips the RUWT card already prints for this game. */
+function publicCardChips(game: PushGame): string[] {
+  const out: string[] = [];
+  if (game.sport === "cfb") {
+    const ranks = [shownRank(game.away.rank), shownRank(game.home.rank)].filter(
+      (rank): rank is number => rank != null,
+    );
+    if (ranks.length >= 2) out.push("Ranked matchup");
+    else if (ranks.length === 1) out.push("Ranked team");
+    if (cfbNationalTv(game.broadcasts ?? [])) out.push("National TV");
+  }
+  if (game.sport === "soccer" && /premier league/i.test(game.league ?? "")) {
+    out.push("Premier League");
+  }
+  return out;
+}
+
+/**
+ * Heat words follow the card reason line: drama chips, then ranked / national
+ * TV when the card would say them. The heat number and the interest slider
+ * are not on this line.
+ */
+export function heatReasonChips(game: PushGame, drama: LiveDrama): string[] {
+  const dramaChips: string[] = [];
+  for (const reason of drama.reasons) {
+    const chip = cleanChip(reason);
+    if (chip && !dramaChips.includes(chip)) dramaChips.push(chip);
+  }
+  if (!dramaChips.length) {
+    const why = cleanChip(drama.why);
+    if (why) dramaChips.push(why);
+  }
+  const clock = clockLabel(game);
+  const visible = dramaChips.filter((chip) => !clockCovers(chip, clock));
+  const base = visible.length ? visible : dramaChips;
+  const extras = publicCardChips(game).filter((chip) => !base.includes(chip));
+  const room = Math.max(1, HEAT_CHIP_CAP - extras.length);
+  return [...base.slice(0, room), ...extras].slice(0, HEAT_CHIP_CAP);
+}
+
+function clockLabel(game: PushGame): string {
+  const detailText = game.detail.trim();
+  if (!detailText || /^(live|in progress|scheduled|pregame)$/i.test(detailText)) return "";
+  return detailText;
+}
+
+/** The clock line already says the period, so the chip does not repeat it. */
+function clockCovers(chip: string, clock: string): boolean {
+  const text = clock.toLowerCase();
+  if (chip === "4th quarter") return /\b4th\b/.test(text);
+  if (chip === "3rd quarter") return /\b3rd\b/.test(text);
+  return false;
+}
+
+function broadcastGlance(game: PushGame): string {
+  const names: string[] = [];
+  for (const raw of game.broadcasts ?? []) {
+    const name = raw.trim();
+    if (!name || names.some((have) => have.toLowerCase() === name.toLowerCase())) continue;
+    names.push(name);
+    if (names.length >= 2) break;
+  }
+  return names.join(" · ");
+}
+
+function heatBody(game: PushGame, chips: string): string {
+  const lines: string[] = [];
+  const clock = clockLabel(game);
+  if (clock) lines.push(clock);
+  if (chips) lines.push(chips);
+  const tv = broadcastGlance(game);
+  if (tv) lines.push(tv);
+  return lines.join("\n") || "One-score game";
+}
+
+function present(
+  game: PushGame,
+  reason: AlertKind,
+  fields: { title: string; body: string; icon: string | null },
+): PushNote {
+  return {
+    ...fields,
+    image: fields.icon,
+    tag: `${reason === "favorite-start" ? "start" : reason === "favorite-final" ? "final" : "heat"}:${gameKey(game)}`,
+    url: gameHref(game),
+    reason,
+    sport: game.sport,
+    gameId: game.id,
+    silent: false,
+    renotify: false,
+    vibrate: reason === "heat" ? HEAT_VIBRATE : FAVORITE_VIBRATE,
+  };
 }
 
 export function heatNote(game: PushGame, drama: LiveDrama): PushNote {
-  return {
+  const chips = heatReasonChips(game, drama).join(" · ");
+  return present(game, "heat", {
     title: scoreLine(game),
-    body: clockBit(game, drama.why || "One-score game"),
+    body: heatBody(game, chips),
     icon: leadLogo(game),
-    tag: `heat:${gameKey(game)}`,
-    url: gameHref(game),
-    reason: "heat",
-  };
+  });
 }
 
 export function favoriteStartNote(game: PushGame, fav: PushFavorite): PushNote {
   const verb = startVerb(game.sport);
-  const when = game.when?.trim();
+  const when = game.when?.trim() || "";
   const matchup = `${game.away.name} at ${game.home.name}`;
-  return {
+  const mark = favoriteSide(game, fav)?.logo || leadLogo(game);
+  return present(game, "favorite-start", {
     title: `${fav.shortName} · ${verb.toLowerCase()}`,
-    body: when ? `${matchup} · ${when}` : matchup,
-    icon: favoriteSide(game, fav)?.logo || leadLogo(game),
-    tag: `start:${gameKey(game)}`,
-    url: gameHref(game),
-    reason: "favorite-start",
-  };
+    body: when ? `${matchup}\n${when}` : matchup,
+    icon: mark,
+  });
 }
 
 export function favoriteFinalNote(game: PushGame, fav: PushFavorite): PushNote {
-  return {
+  const clock = clockLabel(game);
+  const extra = clock && !/^final$/i.test(clock) ? clock : "";
+  const score = scoreLine(game);
+  const mark = favoriteSide(game, fav)?.logo || leadLogo(game);
+  return present(game, "favorite-final", {
     title: `${fav.shortName} final`,
-    body: scoreLine(game),
-    icon: favoriteSide(game, fav)?.logo || leadLogo(game),
-    tag: `final:${gameKey(game)}`,
-    url: gameHref(game),
-    reason: "favorite-final",
-  };
+    body: extra ? `${score}\n${extra}` : score,
+    icon: mark,
+  });
 }
 
 export function dramaInput(game: PushGame): LiveDramaInput | null {

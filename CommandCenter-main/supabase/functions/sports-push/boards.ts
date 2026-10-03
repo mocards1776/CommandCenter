@@ -18,7 +18,13 @@ type RawTeam = {
 type RawCompetitor = {
   homeAway?: string;
   score?: string | number;
+  curatedRank?: { current?: number };
   team?: RawTeam;
+};
+
+type RawBroadcast = {
+  names?: string[];
+  media?: { shortName?: string; name?: string };
 };
 
 type RawStatus = {
@@ -40,6 +46,8 @@ type RawEvent = {
     date?: string;
     status?: RawStatus;
     competitors?: RawCompetitor[];
+    geoBroadcasts?: RawBroadcast[];
+    broadcasts?: RawBroadcast[];
     situation?: {
       isRedZone?: boolean;
       downDistanceText?: string;
@@ -47,10 +55,10 @@ type RawEvent = {
   }[];
 };
 
-const BOARDS: { sport: string; path: string; dated: boolean }[] = [
+const BOARDS: { sport: string; path: string; dated: boolean; league?: string }[] = [
   { sport: "mlb", path: "baseball/mlb", dated: true },
   { sport: "nhl", path: "hockey/nhl", dated: true },
-  { sport: "soccer", path: "soccer/eng.1", dated: true },
+  { sport: "soccer", path: "soccer/eng.1", dated: true, league: "Premier League" },
   { sport: "soccer", path: "soccer/eng.2", dated: true },
   { sport: "nfl", path: "football/nfl", dated: false },
   { sport: "cfb", path: "football/college-football", dated: false },
@@ -73,6 +81,27 @@ function chicagoTime(iso: string | undefined): string | null {
   });
 }
 
+/** Official Top 25 only — ESPN marks unranked teams as curatedRank 99. */
+function pollRank(raw: number | undefined): number | null {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 1 || raw > 25) return null;
+  return raw;
+}
+
+function broadcastNames(rows: RawBroadcast[] | undefined): string[] {
+  const out: string[] = [];
+  const push = (name: string | undefined) => {
+    const label = (name ?? "").replace(/\s+/g, " ").trim();
+    if (!label || label.length > 40) return;
+    if (out.some((have) => have.toLowerCase() === label.toLowerCase())) return;
+    out.push(label);
+  };
+  for (const row of rows ?? []) {
+    push(row.media?.shortName || row.media?.name);
+    for (const name of row.names ?? []) push(name);
+  }
+  return out.slice(0, 4);
+}
+
 function side(raw: RawCompetitor | undefined): PushSide | null {
   const team = raw?.team;
   const id = team?.id != null ? String(team.id) : "";
@@ -84,10 +113,11 @@ function side(raw: RawCompetitor | undefined): PushSide | null {
     name: team?.shortDisplayName || team?.displayName || team?.abbreviation || "Team",
     score: scoreNum != null && Number.isFinite(scoreNum) ? scoreNum : null,
     logo: team?.logo && /^https?:/i.test(team.logo) ? team.logo : null,
+    rank: pollRank(raw?.curatedRank?.current),
   };
 }
 
-export function mapEspnEvent(sport: string, event: RawEvent): PushGame | null {
+export function mapEspnEvent(sport: string, event: RawEvent, league?: string | null): PushGame | null {
   const comp = event.competitions?.[0];
   if (!comp) return null;
   const status = comp.status?.type ?? event.status?.type;
@@ -109,6 +139,8 @@ export function mapEspnEvent(sport: string, event: RawEvent): PushGame | null {
     redZone: Boolean(comp.situation?.isRedZone),
     downDistance: comp.situation?.downDistanceText ?? null,
     when: chicagoTime(event.date || comp.date),
+    broadcasts: broadcastNames([...(comp.geoBroadcasts ?? []), ...(comp.broadcasts ?? [])]),
+    league: league ?? null,
     away,
     home,
   };
@@ -126,7 +158,7 @@ export async function fetchPushBoards(now = new Date()): Promise<PushGame[]> {
         if (!res.ok) return [] as PushGame[];
         const raw = (await res.json()) as { events?: RawEvent[] };
         return (raw.events ?? [])
-          .map((event) => mapEspnEvent(board.sport, event))
+          .map((event) => mapEspnEvent(board.sport, event, board.league ?? null))
           .filter((g): g is PushGame => g != null);
       } catch {
         return [] as PushGame[];
