@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { cfbDriveStatLine, type CfbDriveGlance } from "@/lib/cfb-drive";
 import type { NflScoreGame } from "@/lib/nfl";
 import { fieldBallPctFromHomeYardLine } from "@/lib/nfl";
 import { cn } from "@/lib/utils";
@@ -142,6 +143,7 @@ export default function NflFieldMap({
   possessionTeamId,
   downDistanceText,
   branded = false,
+  drive = null,
   className,
 }: {
   game: FootballFieldGame;
@@ -150,6 +152,8 @@ export default function NflFieldMap({
   downDistanceText?: string | null;
   /** Home midfield mark + end-zone logos. Used by CFB. */
   branded?: boolean;
+  /** Current ESPN drive. Marker + stat line render only when this is set. */
+  drive?: CfbDriveGlance | null;
   className?: string;
 }) {
   const poss = possessionTeamId;
@@ -189,6 +193,12 @@ export default function NflFieldMap({
     ballPct != null && firstDownPct != null ? Math.min(ballPct, firstDownPct) : null;
   const toGainWidth =
     ballPct != null && firstDownPct != null ? Math.abs(firstDownPct - ballPct) : null;
+
+  const driveStartPct = fieldBallPctFromHomeYardLine(drive?.startYardLine ?? null);
+  const driveStats = drive ? cfbDriveStatLine(drive) : null;
+  const driveStartTitle = drive?.startText
+    ? `Drive started at ${drive.startText}`
+    : "Drive start";
 
   return (
     <div className={cn("overflow-hidden rounded-xl border border-emerald-700/35 bg-[#0a1f12]", className)}>
@@ -260,6 +270,21 @@ export default function NflFieldMap({
             />
           )}
 
+          {driveStartPct != null && (
+            <div
+              className="absolute inset-y-0 z-[6]"
+              style={{ left: `${driveStartPct}%` }}
+              title={driveStartTitle}
+            >
+              <span className="absolute inset-y-1 left-0 w-px -translate-x-1/2 border-l border-dashed border-white/85" />
+              <span
+                className="absolute top-1 left-0 h-1.5 w-1.5 -translate-x-1/2 rotate-45 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)]"
+                aria-hidden
+              />
+              <span className="sr-only">{driveStartTitle}</span>
+            </div>
+          )}
+
           {ballPct != null && (
             <div
               className="absolute inset-y-0 z-[5] w-0.5 bg-sky-400 shadow-[0_0_6px_rgba(56,189,248,0.65)]"
@@ -315,6 +340,12 @@ export default function NflFieldMap({
           side="home"
         />
       </div>
+
+      {driveStats ? (
+        <p className="px-3 pb-2 text-[10px] font-semibold leading-snug tracking-[0.08em] text-white/75 uppercase">
+          {driveStats}
+        </p>
+      ) : null}
 
       {game.situation?.lastPlayText && (
         <p className="border-t border-white/[0.06] px-3 py-2 text-[11px] leading-snug text-white/70">

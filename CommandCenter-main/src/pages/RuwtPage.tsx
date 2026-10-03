@@ -30,6 +30,7 @@ import {
   CFB_POWER5_TEAM_IDS,
   CFB_SEC_TEAM_IDS,
   cfbTeamLogo,
+  fetchCfbCurrentDrive,
   type CfbScoredGame,
 } from "@/lib/cfb";
 import { fetchCfbCurrentWinProbability } from "@/lib/cfb-win-probability";
@@ -726,6 +727,13 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
     staleTime: 15_000,
     refetchInterval: game.live ? 20_000 : false,
   });
+  const drive = useQuery({
+    queryKey: ["cfb-current-drive", game.id],
+    queryFn: () => fetchCfbCurrentDrive(game.id),
+    enabled: game.live,
+    staleTime: 15_000,
+    refetchInterval: game.live ? 20_000 : false,
+  });
   const poss = game.situation?.possessionTeamId;
   const awayHasBall = poss != null && String(poss) === String(game.away.teamId);
   const homeHasBall = poss != null && String(poss) === String(game.home.teamId);
@@ -843,6 +851,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
             homeYardLine={game.situation.yardLine}
             possessionTeamId={game.situation.possessionTeamId}
             downDistanceText={game.situation.downDistanceText}
+            drive={drive.data}
           />
         </div>
       )}
