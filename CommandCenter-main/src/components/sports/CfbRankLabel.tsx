@@ -51,7 +51,7 @@ export function CfbFpiCaption({
   if (fpiRank == null || fpiRank <= 0) return null;
   return (
     <p
-      className={cn("text-[10px] font-medium tabular-nums tracking-wide text-white/40", className)}
+      className={cn("text-[11px] font-semibold tabular-nums tracking-wide text-white/80", className)}
       title="ESPN Football Power Index rank"
     >
       FPI #{fpiRank}

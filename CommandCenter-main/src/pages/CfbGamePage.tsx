@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
+import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import CfbWinProbability from "@/components/sports/CfbWinProbability";
 import PossessionFootball from "@/components/sports/PossessionFootball";
@@ -247,31 +248,23 @@ export function CfbGameDetailView({
             hasBall={awayHasBall}
           />
           <div className="px-1 text-center">
+            <AppleScoreCluster
+              away={g.away.score}
+              home={g.home.score}
+              detail={g.shortDetail || label}
+              live={g.live}
+              final={g.final}
+              football
+              size="header"
+              awayTimeouts={g.situation?.awayTimeouts}
+              homeTimeouts={g.situation?.homeTimeouts}
+              preview={g.whenShort}
+            />
             {pregame ? (
-              <>
-                <p className="numeral text-[40px] font-semibold leading-none tracking-tight text-white sm:text-[52px]">
-                  {g.whenShort ?? "TBD"}
-                </p>
-                <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                  Kickoff
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="numeral text-[48px] font-semibold leading-none text-white sm:text-[60px]">
-                  <span className={awayWins ? "text-white" : "text-white/50"}>
-                    {g.away.score ?? "–"}
-                  </span>
-                  <span className="mx-2 text-[22px] text-white/25 sm:mx-3">-</span>
-                  <span className={homeWins ? "text-white" : "text-white/50"}>
-                    {g.home.score ?? "–"}
-                  </span>
-                </p>
-                <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                  {g.final ? "Final" : label}
-                </p>
-              </>
-            )}
+              <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80">
+                Kickoff
+              </p>
+            ) : null}
           </div>
           <MatchupSide
             side={g.home}
@@ -562,7 +555,7 @@ export function CfbGameDetailView({
                       {side.name}
                     </p>
                     {side.record ? (
-                      <p className="numeral text-[12px] text-[#8b93a7]">{side.record}</p>
+                      <p className="numeral text-[12px] font-medium text-white/85">{side.record}</p>
                     ) : null}
                     <CfbFpiCaption pollRank={side.rank} fpiRank={side.fpiRank} />
                   </div>
@@ -732,7 +725,7 @@ function MatchupSide({
         <p
           className={cn(
             "inline-flex items-center gap-1 text-[15px] font-bold sm:text-[17px]",
-            winner ? "text-white" : loser ? "text-white/45" : "text-white",
+            winner || !loser ? "text-white" : "text-white/85",
           )}
         >
           {align === "right" && hasBall ? (
@@ -744,9 +737,9 @@ function MatchupSide({
             <PossessionFootball className="h-3 w-5 shrink-0" />
           ) : null}
         </p>
-        <p className="text-[11px] text-[#8b93a7]">{side.name}</p>
+        <p className="text-[11px] text-white/75">{side.name}</p>
         {side.record ? (
-          <p className="numeral mt-0.5 text-[12px] text-[#a8b0c2]">{side.record}</p>
+          <p className="numeral mt-0.5 text-[12px] font-medium text-white/85">{side.record}</p>
         ) : null}
         <CfbFpiCaption pollRank={side.rank} fpiRank={side.fpiRank} className="mt-0.5" />
       </div>

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Loader2, RefreshCw, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
+import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import { CfbWinProbCaption } from "@/components/sports/CfbWinProbability";
 import PossessionFootball from "@/components/sports/PossessionFootball";
@@ -712,7 +713,7 @@ function RuwtReasonLine({ reasons }: { reasons: string[] }) {
   return (
     <p
       ref={ref}
-      className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[10.5px] text-[#a8b0c2]"
+      className="relative z-10 truncate border-t border-white/[0.06] px-3 py-1.5 text-[11px] text-white/80"
     >
       {chipKey}
     </p>
@@ -797,22 +798,22 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
             ) : null}
           </p>
           {game.away.record ? (
-            <p className="numeral text-[11px] text-white/55">{game.away.record}</p>
+            <p className="numeral text-[12px] font-medium text-white/85">{game.away.record}</p>
           ) : null}
           <CfbFpiCaption pollRank={game.away.rank} fpiRank={game.away.fpiRank} />
         </div>
         <div className="flex flex-col items-center">
-          <p className="numeral text-center text-[28px] font-semibold text-white">
-            {game.live || game.final ? (
-              <>
-                {game.away.score ?? "—"}
-                <span className="mx-1.5 text-[16px] font-medium text-white/30">-</span>
-                {game.home.score ?? "—"}
-              </>
-            ) : (
-              <span className="text-[20px]">{game.whenShort ?? "TBD"}</span>
-            )}
-          </p>
+          <AppleScoreCluster
+            away={game.away.score}
+            home={game.home.score}
+            detail={game.shortDetail}
+            live={game.live}
+            final={game.final}
+            football
+            awayTimeouts={game.situation?.awayTimeouts}
+            homeTimeouts={game.situation?.homeTimeouts}
+            preview={game.whenShort}
+          />
           {game.live && winProb.data ? (
             <CfbWinProbCaption
               homeWinPct={winProb.data.homeWinPct}
@@ -838,7 +839,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
             {game.home.abbrev}
           </p>
           {game.home.record ? (
-            <p className="numeral text-[11px] text-white/55">{game.home.record}</p>
+            <p className="numeral text-[12px] font-medium text-white/85">{game.home.record}</p>
           ) : null}
           <CfbFpiCaption pollRank={game.home.rank} fpiRank={game.home.fpiRank} />
         </div>
@@ -917,17 +918,17 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
             {awayHasBall ? <PossessionFootball className="h-3 w-5 shrink-0" /> : null}
           </p>
         </div>
-        <p className="numeral text-center text-[28px] font-semibold text-white">
-          {game.live || game.final ? (
-            <>
-              {game.away.score ?? "—"}
-              <span className="mx-1.5 text-[16px] text-white/30">-</span>
-              {game.home.score ?? "—"}
-            </>
-          ) : (
-            <span className="text-[20px]">{game.whenShort ?? "TBD"}</span>
-          )}
-        </p>
+        <AppleScoreCluster
+          away={game.away.score}
+          home={game.home.score}
+          detail={game.shortDetail}
+          live={game.live}
+          final={game.final}
+          football
+          awayTimeouts={game.situation?.awayTimeouts}
+          homeTimeouts={game.situation?.homeTimeouts}
+          preview={game.whenShort}
+        />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
           <p
@@ -999,17 +1000,14 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
           {game.away.logo && <img src={game.away.logo} alt="" className="h-8 w-8 object-contain" />}
           <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
         </div>
-        <p className="numeral text-center text-[28px] font-semibold text-white">
-          {game.live || game.final ? (
-            <>
-              {game.away.score ?? "—"}
-              <span className="mx-1.5 text-[16px] text-white/30">-</span>
-              {game.home.score ?? "—"}
-            </>
-          ) : (
-            <span className="text-[20px]">{game.whenShort ?? "TBD"}</span>
-          )}
-        </p>
+        <AppleScoreCluster
+          away={game.away.score}
+          home={game.home.score}
+          detail={game.shortDetail}
+          live={game.live}
+          final={game.final}
+          preview={game.whenShort}
+        />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
           <p className="text-[15px] font-bold text-white">{game.home.abbrev}</p>
@@ -1058,17 +1056,14 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
           ) : null}
           <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
         </div>
-        <p className="numeral text-center text-[28px] font-semibold text-white">
-          {game.live || game.final ? (
-            <>
-              {game.away.score ?? "—"}
-              <span className="mx-1.5 text-[16px] text-white/30">-</span>
-              {game.home.score ?? "—"}
-            </>
-          ) : (
-            <span className="text-[16px] leading-tight">{kickoff}</span>
-          )}
-        </p>
+        <AppleScoreCluster
+          away={game.away.score}
+          home={game.home.score}
+          detail={game.shortDetail || game.status}
+          live={game.live}
+          final={game.final}
+          preview={kickoff}
+        />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo ? (
             <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />
@@ -1170,9 +1165,14 @@ function RuwtCard({
             align="left"
             place={placeByTeam?.[game.away.teamId ?? -1]}
           />
-          <p className="numeral text-center text-[26px] font-semibold text-white">
-            {game.whenShort ?? "TBD"}
-          </p>
+          <AppleScoreCluster
+            away={null}
+            home={null}
+            detail={null}
+            live={false}
+            final={false}
+            preview={game.whenShort}
+          />
           <Side
             side={game.home}
             align="right"
@@ -1187,11 +1187,13 @@ function RuwtCard({
             muted={homeWins}
             place={placeByTeam?.[game.away.teamId ?? -1]}
           />
-          <p className="numeral text-center text-[32px] font-semibold text-white">
-            {game.away.score ?? "—"}
-            <span className="mx-1.5 text-[16px] text-white/30">-</span>
-            {game.home.score ?? "—"}
-          </p>
+          <AppleScoreCluster
+            away={game.away.score}
+            home={game.home.score}
+            detail={game.inning}
+            live={game.live}
+            final={game.final}
+          />
           <Side
             side={game.home}
             align="right"

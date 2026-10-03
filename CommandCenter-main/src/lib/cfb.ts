@@ -181,6 +181,9 @@ export type CfbLiveSituation = {
   isRedZone: boolean;
   possessionTeamId: string | null;
   lastPlayText: string | null;
+  /** Remaining timeouts ESPN reported. Null when the feed omits them. */
+  homeTimeouts: number | null;
+  awayTimeouts: number | null;
 };
 
 export type CfbScoreGame = {
@@ -981,6 +984,8 @@ function mapCfbSituation(
         isRedZone?: boolean;
         possession?: string;
         lastPlay?: { text?: string; team?: { id?: string } };
+        homeTimeouts?: number;
+        awayTimeouts?: number;
       }
     | null
     | undefined,
@@ -994,6 +999,8 @@ function mapCfbSituation(
     isRedZone: Boolean(sit.isRedZone),
     possessionTeamId: sit.possession ?? sit.lastPlay?.team?.id ?? null,
     lastPlayText: simplifyCfbPlayText(sit.lastPlay?.text) || null,
+    homeTimeouts: typeof sit.homeTimeouts === "number" ? sit.homeTimeouts : null,
+    awayTimeouts: typeof sit.awayTimeouts === "number" ? sit.awayTimeouts : null,
   };
 }
 
@@ -1745,6 +1752,8 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
         isRedZone: false,
         possessionTeamId: play.possessionTeamId,
         lastPlayText: play.text,
+        homeTimeouts: null,
+        awayTimeouts: null,
       },
     };
   }
