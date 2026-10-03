@@ -1,11 +1,14 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Play } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
+import NhlBoxScore from "@/components/sports/NhlBoxScore";
+import NhlGameLeaders from "@/components/sports/NhlGameLeaders";
 import NhlIceRink from "@/components/sports/NhlIceRink";
+import NhlScoringSummary from "@/components/sports/NhlScoringSummary";
 import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
 import {
   dedupeNhlEspnVideos,
@@ -20,6 +23,7 @@ import {
   type NhlRecentPlay,
   type NhlScoreSide,
 } from "@/lib/nhl";
+import { fetchNhlShiftLines } from "@/lib/nhl-lines";
 import { cn } from "@/lib/utils";
 
 function statusLabel(g: {
@@ -61,6 +65,15 @@ export default function NhlGamePage() {
     retry: 1,
   });
   const situation = g?.live ? (gamecenter.data?.situation ?? null) : null;
+  const nhlGameId = gamecenter.data?.nhlGameId ?? null;
+  const shiftLines = useQuery({
+    queryKey: ["nhl-shift-lines", nhlGameId],
+    queryFn: () => fetchNhlShiftLines(nhlGameId!),
+    enabled: nhlGameId != null,
+    refetchInterval: g?.live ? 60_000 : false,
+    staleTime: 45_000,
+    retry: 1,
+  });
 
   const [featuredId, setFeaturedId] = useState<string | null>(null);
   const highlightsRef = useRef<HTMLElement>(null);
@@ -363,142 +376,18 @@ export default function NhlGamePage() {
             </section>
           ) : null}
 
-          {g.leaders.length > 0 && (
-            <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
-              <h3 className="rule-head mb-3">Game leaders</h3>
-              <ul className="grid gap-2 sm:grid-cols-2">
-                {g.leaders.map((l) => (
-                  <li key={`${l.teamAbbrev}-${l.category}-${l.id}`}>
-                    <Link
-                      to={`/sports/nhl/player/${l.id}`}
-                      className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-white/[0.03]"
-                    >
-                      <img
-                        src={nhlHeadshot(l.id)}
-                        alt=""
-                        className="h-9 w-9 rounded-full bg-[#dfe6f2] object-cover object-top"
-                      />
-                      <span className="min-w-0">
-                        <span className="text-cream block truncate text-[13px] font-semibold">
-                          {l.name}
-                        </span>
-                        <span className="text-chalk-dim text-[11px]">
-                          {l.teamAbbrev} · {l.category} {l.value}
-                        </span>
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          {g.leaders.length > 0 && <NhlGameLeaders g={g} />}
 
-          {g.scoringPlays.length > 0 && (
-            <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-              <div className="border-b border-white/[0.06] px-4 py-2.5">
-                <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
-                  Scoring
-                </h3>
-              </div>
-              <ul className="divide-y divide-white/[0.05]">
-                {g.scoringPlays.map((p) => {
-                  const clip = goalByClock.get(nhlClockKey(p.periodNumber, p.clock) ?? "");
-                  return (
-                  <li key={p.id} className="flex gap-3 px-4 py-3">
-                    <div className="w-16 shrink-0">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b93a7]">
-                        {p.period ?? "—"}
-                      </p>
-                      <p className="numeral text-chalk text-[12px]">{p.clock ?? ""}</p>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-cream text-[13px] leading-snug">
-                        <ScoringText play={p} />
-                      </p>
-                      {p.strength ? (
-                        <p className="text-accent mt-1 text-[10px] font-semibold uppercase tracking-[0.12em]">
-                          {p.strength}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1.5">
-                      <p className="numeral text-cream text-[13px]">
-                        {p.awayScore ?? 0}–{p.homeScore ?? 0}
-                      </p>
-                      {clip ? (
-                        <button
-                          type="button"
-                          onClick={() => watchGoal(clip.id)}
-                          className="text-accent hover:text-cream inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                        >
-                          <Play size={11} className="fill-current" /> Watch
-                        </button>
-                      ) : null}
-                    </div>
-                  </li>
-                  );
-                })}
-              </ul>
-            </section>
-          )}
+          <NhlScoringSummary g={g} goalByClock={goalByClock} onWatch={watchGoal} />
 
           {g.teamStats.length > 0 && <TeamStats g={g} />}
 
           {g.boxGroups.length > 0 && (
-            <section className="space-y-4">
-              <h2 className="rule-head">Box score</h2>
-              {g.boxGroups.map((group) => (
-                <div
-                  key={`${group.teamId}-${group.name}`}
-                  className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]"
-                >
-                  <div className="border-b border-white/[0.06] px-4 py-2.5">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
-                      {group.teamAbbrev} · {group.name}
-                    </h3>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[560px] text-left text-[12px]">
-                      <thead>
-                        <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                          <th className="px-4 py-2 font-medium">Player</th>
-                          {group.rows[0]?.stats.map((s) => (
-                            <th key={s.label} className="numeral px-2 py-2 text-right font-medium">
-                              {s.label}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {group.rows.map((row) => (
-                          <tr key={row.id} className="border-t border-white/[0.05]">
-                            <td className="px-4 py-2">
-                              <Link
-                                to={`/sports/nhl/player/${row.id}`}
-                                className="text-cream inline-flex items-center gap-2 font-medium hover:underline"
-                              >
-                                <img
-                                  src={nhlHeadshot(row.id)}
-                                  alt=""
-                                  className="h-7 w-7 rounded-full bg-[#dfe6f2] object-cover object-top"
-                                  loading="lazy"
-                                />
-                                {row.name}
-                              </Link>
-                            </td>
-                            {row.stats.map((s) => (
-                              <td key={s.label} className="numeral px-2 py-2 text-right text-white/90">
-                                {s.value}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ))}
-            </section>
+            <NhlBoxScore
+              g={g}
+              shiftLines={shiftLines.data}
+              shiftsPending={nhlGameId != null && shiftLines.isPending}
+            />
           )}
         </>
       )}
@@ -765,38 +654,5 @@ function GoalieChip({
         <span className="text-cream truncate text-[12px] font-semibold">{starter.name}</span>
       </span>
     </Link>
-  );
-}
-
-function ScoringText({
-  play,
-}: {
-  play: { text: string; athletes: { id: string; name: string }[] };
-}) {
-  if (!play.athletes.length) return <>{play.text}</>;
-  const pieces: { key: string; node: ReactNode }[] = [];
-  let rest = play.text;
-  play.athletes.forEach((a, idx) => {
-    const at = rest.indexOf(a.name);
-    if (at < 0) return;
-    if (at > 0) pieces.push({ key: `t-${idx}`, node: rest.slice(0, at) });
-    pieces.push({
-      key: a.id + idx,
-      node: (
-        <Link to={`/sports/nhl/player/${a.id}`} className="hover:text-accent font-semibold">
-          {a.name}
-        </Link>
-      ),
-    });
-    rest = rest.slice(at + a.name.length);
-  });
-  if (rest) pieces.push({ key: "end", node: rest });
-  if (!pieces.length) return <>{play.text}</>;
-  return (
-    <>
-      {pieces.map((p) => (
-        <span key={p.key}>{p.node}</span>
-      ))}
-    </>
   );
 }
