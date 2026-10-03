@@ -1,23 +1,19 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useScoreStripItems } from "@/hooks/useScoreStripItems";
-import { espnDarkLogo, toTab, type ScoreTab, type TabSide } from "@/lib/ruwt-score-tab";
+import LogoPlate from "@/components/sports/LogoPlate";
+import { toTab, type ScoreTab, type TabSide } from "@/lib/ruwt-score-tab";
 import { cn } from "@/lib/utils";
 
 const GAME_PATH = /^\/sports\/(mlb|nfl|nhl|cfb|soccer)\/game\/([^/?#]+)/;
 
 function TabLogo({ side }: { side: TabSide }) {
-  const dark = espnDarkLogo(side.logo);
   return (
-    <img
-      src={dark ?? side.logo}
-      onError={(e) => {
-        if (dark && e.currentTarget.src !== side.logo) e.currentTarget.src = side.logo;
-      }}
+    <LogoPlate
+      src={side.logo}
       alt={side.abbrev}
-      title={side.abbrev}
+      className="h-6 w-6"
       loading="lazy"
-      className="h-6 w-6 shrink-0 object-contain"
     />
   );
 }
@@ -33,6 +29,7 @@ function ScorePill({ tab, active }: { tab: ScoreTab; active: boolean }) {
     <Link
       to={tab.href}
       data-tab-key={tab.key}
+      data-tab-key-end
       aria-current={active ? "page" : undefined}
       aria-label={`${tab.away.abbrev} at ${tab.home.abbrev}`}
       className={cn(
@@ -54,7 +51,7 @@ function ScorePill({ tab, active }: { tab: ScoreTab; active: boolean }) {
                 awayLost ? "text-chalk-dim" : "text-cream",
               )}
             >
-              {tab.away.score ?? "–"}
+              {tab.away.score ?? "\u2013"}
             </span>
           ) : null}
           <span
@@ -77,69 +74,12 @@ function ScorePill({ tab, active }: { tab: ScoreTab; active: boolean }) {
                 homeLost ? "text-chalk-dim" : "text-cream",
               )}
             >
-              {tab.home.score ?? "–"}
+              {tab.home.score ?? "\u2013"}
             </span>
           ) : null}
         </>
       )}
       <TabLogo side={tab.home} />
     </Link>
-  );
-}
-
-/**
- * ESPN-style scrollable score capsules.
- * Live games when any are on, otherwise Today's Top / upcoming, otherwise
- * recent finals (yesterday preferred, favorite clubs first). Hidden only
- * when every bucket is empty — an empty live list does not unmount the strip.
- */
-export default function SportsScoreTabs() {
-  const { pathname } = useLocation();
-  const strip = useScoreStripItems();
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  const centeredKeyRef = useRef<string | null>(null);
-
-  const tabs = useMemo(() => strip.items.map(toTab), [strip.items]);
-
-  const activeKey = useMemo(() => {
-    const m = pathname.match(GAME_PATH);
-    return m ? `${m[1]}-${decodeURIComponent(m[2]!)}` : null;
-  }, [pathname]);
-
-  const activePresent = activeKey != null && tabs.some((t) => t.key === activeKey);
-
-  useEffect(() => {
-    if (!activeKey) {
-      centeredKeyRef.current = null;
-      return;
-    }
-    if (!activePresent || centeredKeyRef.current === activeKey) return;
-    const scroller = scrollerRef.current;
-    const el = scroller?.querySelector<HTMLElement>(`[data-tab-key="${CSS.escape(activeKey)}"]`);
-    if (!scroller || !el) return;
-    const smooth = centeredKeyRef.current != null;
-    centeredKeyRef.current = activeKey;
-    scroller.scrollTo({
-      left: el.offsetLeft - (scroller.clientWidth - el.offsetWidth) / 2,
-      behavior: smooth ? "smooth" : "auto",
-    });
-  }, [activeKey, activePresent]);
-
-  if (tabs.length === 0) return null;
-
-  return (
-    <div
-      className="bg-ink relative z-10 border-b border-accent/10 print:hidden"
-      data-score-strip={strip.source}
-    >
-      <div
-        ref={scrollerRef}
-        className="relative flex gap-2 overflow-x-auto overscroll-x-contain px-4 py-2 [-ms-overflow-style:none] [scrollbar-width:none] md:px-8 [&::-webkit-scrollbar]:hidden"
-      >
-        {tabs.map((tab) => (
-          <ScorePill key={tab.key} tab={tab} active={tab.key === activeKey} />
-        ))}
-      </div>
-    </div>
   );
 }
