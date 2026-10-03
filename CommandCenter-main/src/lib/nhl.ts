@@ -48,6 +48,21 @@ export function liftTeamColor(hex: string, minLuminance = 0.3, amount = 0.35): s
   return `rgb(${ch.map((c) => Math.round(c + (255 - c) * amount)).join(",")})`;
 }
 
+/** ESPN alternate colors for teams whose primary is black, grey or navy-on-navy. */
+const NHL_ACCENT_OVERRIDE: Record<string, string> = {
+  VGK: "#b4975a",
+  BOS: "#fdb71a",
+  PIT: "#fdb71a",
+  UTA: "#7ab2e1",
+  UTAH: "#7ab2e1",
+  SEA: "#99d9d9",
+};
+
+/** Team color that reads as a bright accent (rings, bars, chips) on the navy panels. */
+export function nhlAccentColor(side: { abbrev: string; color: string }): string {
+  return NHL_ACCENT_OVERRIDE[side.abbrev] ?? liftTeamColor(`#${side.color}`);
+}
+
 export const NHL_TEAMS: { id: number; name: string; abbrev: string }[] = [
   { id: 25, name: "Anaheim Ducks", abbrev: "ANA" },
   { id: 1, name: "Boston Bruins", abbrev: "BOS" },
@@ -439,6 +454,10 @@ export async function fetchNhlScoringLeaders(limit = 10): Promise<NhlScoringLead
 export type NhlBoxRow = {
   id: string;
   name: string;
+  jersey: string | null;
+  /** ESPN abbreviation: C / LW / RW / D / G. */
+  position: string | null;
+  toiSec: number;
   stats: { label: string; value: string }[];
 };
 
@@ -561,7 +580,7 @@ function sanitizeNhlStoryHtml(html: string | null | undefined): string | null {
 }
 
 const SKATER_COLS = ["G", "A", "+/-", "S", "SOG", "TOI", "PIM", "HT", "BS"];
-const GOALIE_COLS = ["SV", "SV%", "GA", "SA", "TOI"];
+const GOALIE_COLS = ["SV", "SV%", "GA", "SA", "TOI", "ESSV", "PPSV", "SHSV"];
 
 function pickCols(
   labels: string[],
@@ -978,13 +997,18 @@ export async function fetchNhlGameDetail(eventId: string): Promise<NhlGameDetail
       if (name !== "forwards" && name !== "defenses" && name !== "goalies") continue;
       const labels = group.labels ?? [];
       const want = name === "goalies" ? GOALIE_COLS : SKATER_COLS;
+      const toiAt = labels.indexOf("TOI");
+      const fallbackPos = name === "goalies" ? "G" : name === "defenses" ? "D" : null;
       const rows = (group.athletes ?? [])
-        .map((a) => {
+        .map((a): NhlBoxRow | null => {
           const id = String(a.athlete?.id ?? "");
           if (!id) return null;
           return {
             id,
             name: a.athlete?.displayName ?? "Player",
+            jersey: a.athlete?.jersey ?? null,
+            position: a.athlete?.position?.abbreviation ?? fallbackPos,
+            toiSec: toiAt >= 0 ? toiSeconds(a.stats?.[toiAt]) : 0,
             stats: pickCols(labels, a.stats ?? [], want),
           };
         })
@@ -1208,7 +1232,7 @@ export type NhlGamecenter = {
  * `/api/nhl` Vercel function (`api/nhl.ts`; Vite dev serves the same route).
  * The direct call only helps outside the browser (tests, SSR, future CORS).
  */
-async function nhlWebJson<T>(path: string): Promise<T> {
+export async function nhlWebJson<T>(path: string): Promise<T> {
   try {
     const res = await fetch(`/api/nhl?path=${encodeURIComponent(path)}`, {
       headers: { Accept: "application/json" },
@@ -1225,7 +1249,7 @@ async function nhlWebJson<T>(path: string): Promise<T> {
 /** ESPN uses two-letter codes where NHL uses three. Everything else already agrees. */
 const NHL_TO_ESPN_ABBREV: Record<string, string> = { LAK: "LA", NJD: "NJ", SJS: "SJ", TBL: "TB" };
 
-function canonNhlAbbrev(abbrev: string | null | undefined): string {
+export function canonNhlAbbrev(abbrev: string | null | undefined): string {
   const up = (abbrev ?? "").toUpperCase();
   return NHL_TO_ESPN_ABBREV[up] ?? up;
 }

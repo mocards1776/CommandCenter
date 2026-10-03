@@ -32,13 +32,17 @@ function nhlApiDevProxy(): Plugin {
     configureServer(server) {
       server.middlewares.use("/api/nhl", async (req, res) => {
         const path = new URL(req.url ?? "", "http://local").searchParams.get("path") ?? "";
-        if (!/^v1\/[\w/-]+$/.test(path)) {
+        const shifts = /^stats\/shiftcharts\/(\d{10})$/.exec(path);
+        if (!shifts && !/^v1\/[\w/-]+$/.test(path)) {
           res.statusCode = 400;
           res.end('{"error":"Path not allowed"}');
           return;
         }
+        const url = shifts
+          ? `https://api.nhle.com/stats/rest/en/shiftcharts?cayenneExp=gameId=${shifts[1]}`
+          : `https://api-web.nhle.com/${path}`;
         try {
-          const upstream = await fetch(`https://api-web.nhle.com/${path}`, {
+          const upstream = await fetch(url, {
             headers: { Accept: "application/json" },
           });
           res.statusCode = upstream.status;
