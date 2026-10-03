@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import {
-  liftTeamColor,
+  nhlAccentColor,
   nhlHeadshot,
   type NhlBoxRow,
   type NhlGameDetail,
@@ -52,15 +52,15 @@ function subline(row: NhlBoxRow | null): string {
   return [
     row.position,
     rowStat(row, "TOI") ? `${rowStat(row, "TOI")} TOI` : null,
-    shots ? `${shots} shots` : null,
-    pm ? `${Number(pm) > 0 ? "+" : ""}${pm}` : null,
+    shots ? `${shots} ${shots === "1" ? "shot" : "shots"}` : null,
+    pm ? (Number(pm) > 0 ? `+${pm}` : Number(pm) === 0 ? "E" : pm) : null,
   ]
     .filter(Boolean)
     .join(" · ");
 }
 
 function TeamColumn({ side, leaders }: { side: NhlScoreSide; leaders: MergedLeader[] }) {
-  const color = liftTeamColor(`#${side.color}`);
+  const color = nhlAccentColor(side);
   const [hero, ...rest] = leaders;
   if (!hero) return null;
   return (
@@ -68,7 +68,7 @@ function TeamColumn({ side, leaders }: { side: NhlScoreSide; leaders: MergedLead
       <div className="h-1 w-full" style={{ background: color }} />
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-32 opacity-60"
-        style={{ background: `radial-gradient(ellipse at 15% 0%, #${side.color}66, transparent 70%)` }}
+        style={{ background: `radial-gradient(ellipse at 15% 0%, color-mix(in srgb, ${color} 40%, transparent), transparent 70%)` }}
       />
       <div className="relative flex items-center gap-2 px-3 pt-2.5">
         {side.logo ? <img src={side.logo} alt="" className="h-6 w-6 object-contain" /> : null}

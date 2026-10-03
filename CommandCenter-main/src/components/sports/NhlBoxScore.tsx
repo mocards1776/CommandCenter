@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, ShieldCheck } from "lucide-react";
 import {
-  liftTeamColor,
+  nhlAccentColor,
   nhlHeadshot,
   type NhlBoxRow,
   type NhlGameDetail,
@@ -25,7 +25,7 @@ function clock(sec: number): string {
 }
 
 function teamColor(side: NhlScoreSide): string {
-  return liftTeamColor(`#${side.color}`);
+  return nhlAccentColor(side);
 }
 
 function unitSummary(unit: NhlSkaterUnit): string {
@@ -182,7 +182,9 @@ function GoalieCard({
     >
       <div
         className="pointer-events-none absolute inset-0"
-        style={{ background: `linear-gradient(135deg, #${side.color}aa 0%, #${side.color}33 38%, transparent 70%)` }}
+        style={{
+          background: `linear-gradient(135deg, color-mix(in srgb, ${color} 60%, transparent) 0%, color-mix(in srgb, ${color} 18%, transparent) 38%, transparent 70%)`,
+        }}
       />
       {side.logo ? (
         <img

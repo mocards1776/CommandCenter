@@ -2,7 +2,7 @@ import { Fragment, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Play } from "lucide-react";
 import {
-  liftTeamColor,
+  nhlAccentColor,
   nhlClockKey,
   nhlHeadshot,
   type NhlGameDetail,
@@ -102,7 +102,7 @@ function ScoreChip({ play, scoring, away, home }: {
   home: NhlScoreSide;
 }) {
   const tint = (side: "away" | "home") =>
-    scoring === side ? liftTeamColor(`#${(side === "away" ? away : home).color}`) : undefined;
+    scoring === side ? nhlAccentColor(side === "away" ? away : home) : undefined;
   return (
     <span className="inline-flex items-center gap-1 rounded-md border border-white/[0.1] bg-black/25 px-2 py-1">
       <span
@@ -169,7 +169,7 @@ export default function NhlScoringSummary({
             {period.plays.map((p) => {
               const sideKey = sideOf(p);
               const side = sideKey === "away" ? g.away : sideKey === "home" ? g.home : null;
-              const color = side ? liftTeamColor(`#${side.color}`) : "rgba(255,255,255,0.2)";
+              const color = side ? nhlAccentColor(side) : "rgba(255,255,255,0.2)";
               const parsed = parseGoal(p);
               const clip = goalByClock.get(nhlClockKey(p.periodNumber, p.clock) ?? "");
               const tag = strengthTag(p.strength);
@@ -188,7 +188,13 @@ export default function NhlScoringSummary({
                         src={nhlHeadshot(parsed.scorer.id)}
                         alt=""
                         onError={(e) => {
-                          e.currentTarget.style.visibility = "hidden";
+                          const img = e.currentTarget;
+                          if (side?.logo && img.src !== side.logo) {
+                            img.src = side.logo;
+                            Object.assign(img.style, { objectFit: "contain", padding: "7px", background: "#0b1526" });
+                          } else {
+                            img.style.visibility = "hidden";
+                          }
                         }}
                         className="h-12 w-12 rounded-full bg-[#dfe6f2] object-cover object-top"
                         style={{ boxShadow: `0 0 0 2px ${color}` }}
@@ -233,10 +239,12 @@ export default function NhlScoringSummary({
                               {parsed.assists.map((a, i) => (
                                 <Fragment key={`${a.name}-${i}`}>
                                   {i > 0 ? ", " : null}
-                                  <PlayerName id={a.id} className="text-[#c8cdd8]">
-                                    {a.name}
-                                  </PlayerName>
-                                  {a.count ? <span className="numeral text-white/35"> ({a.count})</span> : null}
+                                  <span className="whitespace-nowrap">
+                                    <PlayerName id={a.id} className="text-[#c8cdd8]">
+                                      {a.name}
+                                    </PlayerName>
+                                    {a.count ? <span className="numeral text-white/35"> ({a.count})</span> : null}
+                                  </span>
                                 </Fragment>
                               ))}
                             </>

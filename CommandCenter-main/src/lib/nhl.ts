@@ -48,6 +48,21 @@ export function liftTeamColor(hex: string, minLuminance = 0.3, amount = 0.35): s
   return `rgb(${ch.map((c) => Math.round(c + (255 - c) * amount)).join(",")})`;
 }
 
+/** ESPN alternate colors for teams whose primary is black, grey or navy-on-navy. */
+const NHL_ACCENT_OVERRIDE: Record<string, string> = {
+  VGK: "#b4975a",
+  BOS: "#fdb71a",
+  PIT: "#fdb71a",
+  UTA: "#7ab2e1",
+  UTAH: "#7ab2e1",
+  SEA: "#99d9d9",
+};
+
+/** Team color that reads as a bright accent (rings, bars, chips) on the navy panels. */
+export function nhlAccentColor(side: { abbrev: string; color: string }): string {
+  return NHL_ACCENT_OVERRIDE[side.abbrev] ?? liftTeamColor(`#${side.color}`);
+}
+
 export const NHL_TEAMS: { id: number; name: string; abbrev: string }[] = [
   { id: 25, name: "Anaheim Ducks", abbrev: "ANA" },
   { id: 1, name: "Boston Bruins", abbrev: "BOS" },
