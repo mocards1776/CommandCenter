@@ -54,6 +54,38 @@ export function ruwtItemHref(item: Pick<UnifiedRuwtItem, "sport"> & { game: { id
   return `/sports/${item.sport}/game/${item.game.id}`;
 }
 
+export type RuwtRankInputs = {
+  interest: RuwtInterestMaps;
+  watchPlayerIds: Set<number>;
+  watchPlayerNames: Map<number, string>;
+  watchManagerIds: Set<number>;
+  managerTeamById: Map<number, number>;
+  playoffOddsByTeam: Record<number, number>;
+  nflWatchPlayerIds: Set<string>;
+  nflWatchTeamIds: Set<string>;
+  nhlWatchTeamIds: Set<string>;
+};
+
+/** Merge per-sport RUWT lists into one slate, highest score first. */
+export function unifyRuwtRanked(parts: {
+  mlb: MlbScoredGame[];
+  nfl: NflScoredGame[];
+  nhl: NhlScoredGame[];
+  cfb: CfbScoredGame[];
+  soccer: SoccerScoredGame[];
+}): UnifiedRuwtItem[] {
+  const items: UnifiedRuwtItem[] = [
+    ...parts.mlb.map((g): UnifiedRuwtItem => ({ sport: "mlb", score: g.score, id: `mlb-${g.id}`, game: g })),
+    ...parts.nfl.map((g): UnifiedRuwtItem => ({ sport: "nfl", score: g.score, id: `nfl-${g.id}`, game: g })),
+    ...parts.nhl.map((g): UnifiedRuwtItem => ({ sport: "nhl", score: g.score, id: `nhl-${g.id}`, game: g })),
+    ...parts.cfb.map((g): UnifiedRuwtItem => ({ sport: "cfb", score: g.score, id: `cfb-${g.id}`, game: g })),
+    ...parts.soccer.map(
+      (g): UnifiedRuwtItem => ({ sport: "soccer", score: g.score, id: `soccer-${g.id}`, game: g }),
+    ),
+  ];
+  return items.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+}
+
 function loadStoredInterest(): RuwtInterestMaps {
   return {
     mlb: loadTeamInterest(),
@@ -311,41 +343,42 @@ export function useRuwtSlate(opts?: { interest?: RuwtInterestMaps }) {
     return rankRuwtSoccerGames(soccerBoard.data, interest.soccer, 24);
   }, [soccerBoard.data, interest.soccer]);
 
-  const unified = useMemo((): UnifiedRuwtItem[] => {
-    const mlbItems: UnifiedRuwtItem[] = ranked.map((g) => ({
-      sport: "mlb",
-      score: g.score,
-      id: `mlb-${g.id}`,
-      game: g,
-    }));
-    const nflItems: UnifiedRuwtItem[] = nflRanked.map((g) => ({
-      sport: "nfl",
-      score: g.score,
-      id: `nfl-${g.id}`,
-      game: g,
-    }));
-    const nhlItems: UnifiedRuwtItem[] = nhlRanked.map((g) => ({
-      sport: "nhl",
-      score: g.score,
-      id: `nhl-${g.id}`,
-      game: g,
-    }));
-    const cfbItems: UnifiedRuwtItem[] = cfbRanked.map((g) => ({
-      sport: "cfb",
-      score: g.score,
-      id: `cfb-${g.id}`,
-      game: g,
-    }));
-    const soccerItems: UnifiedRuwtItem[] = soccerRanked.map((g) => ({
-      sport: "soccer",
-      score: g.score,
-      id: `soccer-${g.id}`,
-      game: g,
-    }));
-    return [...mlbItems, ...nflItems, ...nhlItems, ...cfbItems, ...soccerItems].sort(
-      (a, b) => b.score - a.score || a.id.localeCompare(b.id),
-    );
-  }, [ranked, nflRanked, nhlRanked, cfbRanked, soccerRanked]);
+  const unified = useMemo(
+    (): UnifiedRuwtItem[] =>
+      unifyRuwtRanked({
+        mlb: ranked,
+        nfl: nflRanked,
+        nhl: nhlRanked,
+        cfb: cfbRanked,
+        soccer: soccerRanked,
+      }),
+    [ranked, nflRanked, nhlRanked, cfbRanked, soccerRanked],
+  );
+
+  const rankInputs = useMemo(
+    (): RuwtRankInputs => ({
+      interest,
+      watchPlayerIds,
+      watchPlayerNames,
+      watchManagerIds,
+      managerTeamById,
+      playoffOddsByTeam,
+      nflWatchPlayerIds,
+      nflWatchTeamIds,
+      nhlWatchTeamIds,
+    }),
+    [
+      interest,
+      watchPlayerIds,
+      watchPlayerNames,
+      watchManagerIds,
+      managerTeamById,
+      playoffOddsByTeam,
+      nflWatchPlayerIds,
+      nflWatchTeamIds,
+      nhlWatchTeamIds,
+    ],
+  );
 
   const allPending =
     scoreboard.isPending &&
@@ -356,6 +389,7 @@ export function useRuwtSlate(opts?: { interest?: RuwtInterestMaps }) {
 
   return {
     unified,
+    rankInputs,
     allPending,
     scoreboard,
     nflBoard,

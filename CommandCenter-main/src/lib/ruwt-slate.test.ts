@@ -5,9 +5,13 @@
 import {
   isRuwtLive,
   isRuwtUpcoming,
+  isScoreStripFavorite,
   partitionRuwtSlate,
+  ruwtPinnedTeamKey,
   ruwtTodaysTop,
   ruwtWhyReasons,
+  scoreStripItems,
+  scoreStripTeamKeys,
 } from "./ruwt-slate.ts";
 
 const assert = {
@@ -90,5 +94,86 @@ assert.deepEqual(
 );
 assert.deepEqual(ruwtWhyReasons(["Live", "live", " "]), []);
 assert.deepEqual(ruwtWhyReasons(undefined), []);
+
+// Score strip: live wins, and an empty live list does not hide the strip.
+const stripLive = scoreStripItems(split);
+assert.equal(stripLive.source, "live");
+assert.deepEqual(
+  stripLive.items.map((i) => i.id),
+  ["nhl-stl-chi", "nfl-det-gb", "mlb-blowout"],
+);
+
+const quiet = partitionRuwtSlate([
+  item("cfb-uga-bama", 120, "pre"),
+  item("mlb-final", 90, "post"),
+  item("cfb-lsu-ole", 88, "pre"),
+]);
+const stripTop = scoreStripItems(quiet, {
+  yesterdayFinals: [item("nhl-stl-dal", 40, "post")],
+  isFavorite: (g) => g.id === "nhl-stl-dal",
+});
+assert.equal(stripTop.source, "upcoming");
+assert.deepEqual(
+  stripTop.items.map((i) => i.id),
+  ruwtTodaysTop(quiet, quiet.upcoming.length).items.map((i) => i.id),
+);
+assert.equal(stripTop.items.some((i) => i.id === "mlb-final"), false);
+
+// No live and nothing left to start: favorite finals, yesterday before today, then RUWT.
+const night = partitionRuwtSlate([
+  item("nhl-today-other", 80, "post"),
+  item("nhl-today-fav", 15, "post"),
+  item("mlb-today-low", 5, "post"),
+]);
+const stripFinals = scoreStripItems(night, {
+  yesterdayFinals: [
+    item("nhl-yday-fav", 12, "post"),
+    item("nhl-yday-other", 70, "post"),
+  ],
+  isFavorite: (g) => g.id.endsWith("-fav"),
+});
+assert.equal(stripFinals.source, "finals");
+assert.deepEqual(
+  stripFinals.items.map((i) => i.id),
+  ["nhl-yday-fav", "nhl-today-fav", "nhl-yday-other", "nhl-today-other", "mlb-today-low"],
+);
+
+// Same game on both days keeps the yesterday copy.
+const deduped = scoreStripItems(partitionRuwtSlate([item("nhl-stl-dal", 10, "post")]), {
+  yesterdayFinals: [item("nhl-stl-dal", 50, "post")],
+});
+assert.deepEqual(
+  deduped.items.map((i) => i.score),
+  [50],
+);
+
+assert.equal(scoreStripItems(partitionRuwtSlate([])).source, "empty");
+assert.deepEqual(scoreStripItems(partitionRuwtSlate([])).items, []);
+
+assert.equal(ruwtPinnedTeamKey({ kind: "tour", league: "PGA Tour", espnPath: "golf/pga/scoreboard" }), null);
+assert.equal(
+  ruwtPinnedTeamKey({
+    kind: "team",
+    league: "NHL",
+    sport: "Hockey",
+    espnPath: "hockey/nhl/teams/19",
+  }),
+  "nhl:19",
+);
+assert.equal(
+  ruwtPinnedTeamKey({
+    kind: "team",
+    league: "MLB",
+    sport: "Baseball",
+    mlbTeamId: 138,
+    espnPath: "baseball/mlb/teams/24",
+  }),
+  "mlb:138",
+);
+assert.deepEqual(scoreStripTeamKeys("nhl", 19, 9), ["nhl:19", "nhl:9"]);
+const pinned = new Set(["nhl:19"]);
+assert.equal(isScoreStripFavorite(["nhl:19", "nhl:9"], {}, pinned), true);
+assert.equal(isScoreStripFavorite(["nhl:9", "nhl:25"], { "9": 6 }, new Set()), true);
+assert.equal(isScoreStripFavorite(["nhl:9", "nhl:25"], { "9": 0 }, new Set()), false);
 
 console.log("ruwt-slate: ok");
