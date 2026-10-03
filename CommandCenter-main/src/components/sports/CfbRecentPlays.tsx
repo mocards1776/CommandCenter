@@ -1,3 +1,4 @@
+import LogoPlate from "@/components/sports/LogoPlate";
 import type { CfbGameDetail, CfbPlay, CfbScoreSide } from "@/lib/cfb";
 import { cn } from "@/lib/utils";
 
@@ -181,7 +182,7 @@ function FeaturedPlay({ g, play }: { g: CfbGameDetail; play: CfbPlay }) {
     >
       {accent ? <span className="absolute inset-y-0 left-0 w-[3px]" style={{ background: accent }} /> : null}
       {logo ? (
-        <img src={logo} alt="" className="mt-0.5 h-10 w-10 shrink-0 object-contain" />
+        <LogoPlate src={logo} className="mt-0.5 h-10 w-10" />
       ) : (
         <span className="w-10 shrink-0" />
       )}
@@ -214,7 +215,7 @@ function PlayRow({ g, play }: { g: CfbGameDetail; play: CfbPlay }) {
       }
     >
       {accent ? <span className="absolute inset-y-0 left-0 w-[3px]" style={{ background: accent }} /> : null}
-      {logo ? <img src={logo} alt="" className="mt-0.5 h-6 w-6 shrink-0 object-contain" /> : <span className="w-6 shrink-0" />}
+      {logo ? <LogoPlate src={logo} className="mt-0.5 h-6 w-6" /> : <span className="w-6 shrink-0" />}
       <div className="min-w-0 flex-1">
         <PlayMeta play={play} />
         <p
