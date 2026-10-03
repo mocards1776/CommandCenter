@@ -19,9 +19,11 @@ import { espnRateToPct, mapCfbWinProbability, type CfbWinProbPoint } from "./cfb
 import {
   cfbDriveGlance,
   mapCfbDriveMeta,
+  rebaseCfbDriveAfterKick,
   type CfbDriveGlance,
   type EspnCfbDriveRaw,
 } from "./cfb-drive";
+import { cfbPossessionTeamId } from "./cfb-possession";
 import {
   latestCfpWeekRef,
   mapCfbGameWrap,
@@ -995,7 +997,11 @@ export function mapCfbSituation(
         possession?: string;
         lastPlay?: {
           text?: string;
+          scoringPlay?: boolean;
+          type?: { text?: string };
           team?: { id?: string };
+          start?: { team?: { id?: string } };
+          end?: { team?: { id?: string }; yardLine?: number; possessionText?: string };
           probability?: { homeWinPercentage?: number; awayWinPercentage?: number };
         };
         homeTimeouts?: number;
@@ -1011,7 +1017,7 @@ export function mapCfbSituation(
     possessionText: sit.possessionText ?? null,
     yardLine: typeof sit.yardLine === "number" ? sit.yardLine : null,
     isRedZone: Boolean(sit.isRedZone),
-    possessionTeamId: sit.possession ?? sit.lastPlay?.team?.id ?? null,
+    possessionTeamId: cfbPossessionTeamId(sit),
     lastPlayText: simplifyCfbPlayText(sit.lastPlay?.text) || null,
     homeTimeouts: typeof sit.homeTimeouts === "number" ? sit.homeTimeouts : null,
     awayTimeouts: typeof sit.awayTimeouts === "number" ? sit.awayTimeouts : null,
@@ -1391,6 +1397,7 @@ function mapCfbPlay(p: {
   end?: {
     yardLine?: number;
     shortDownDistanceText?: string;
+    possessionText?: string;
     team?: { id?: string };
   };
   team?: { id?: string };
@@ -1431,9 +1438,11 @@ type EspnCfbDriveWithPlays = EspnCfbDriveRaw & {
 };
 
 function mapCfbDrive(d: EspnCfbDriveWithPlays, fallbackId = ""): CfbDrive {
+  const plays = d.plays ?? [];
+  const last = plays[plays.length - 1];
   return {
-    ...mapCfbDriveMeta(d, fallbackId),
-    plays: (d.plays ?? []).map(mapCfbPlay),
+    ...rebaseCfbDriveAfterKick(mapCfbDriveMeta(d, fallbackId), last ? { lastPlay: last } : null),
+    plays: plays.map(mapCfbPlay),
   };
 }
 
@@ -1759,16 +1768,27 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
   }
 
   // If scoreboard situation was missing, infer yard line from latest play.
+  // A kickoff's play row still names the kicking team; the open drive, once
+  // rebased, names the team that will snap.
   if (base.live && !base.situation && recentPlays[0]) {
     const play = recentPlays[0];
+    const current = currentDriveId ? drives.find((d) => d.id === currentDriveId) : undefined;
+    const receivedKickId =
+      current?.teamId &&
+      play.possessionTeamId &&
+      current.teamId !== play.possessionTeamId &&
+      (current.playCount == null || current.playCount === 0) &&
+      !current.displayResult
+        ? current.teamId
+        : null;
     base = {
       ...base,
       situation: {
         downDistanceText: play.resultDownDistanceText ?? play.shortDownDistanceText,
-        possessionText: null,
+        possessionText: receivedKickId ? current?.startText ?? null : null,
         yardLine: play.yardLine,
         isRedZone: false,
-        possessionTeamId: play.possessionTeamId,
+        possessionTeamId: receivedKickId ?? play.possessionTeamId,
         lastPlayText: play.text,
         homeTimeouts: null,
         awayTimeouts: null,
