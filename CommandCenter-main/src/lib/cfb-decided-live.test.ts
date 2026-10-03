@@ -333,6 +333,87 @@ assert.equal(threeScoreGotw.score, 104, "three-score game of the week stays on t
 assert.ok(threeScoreGotw.score < lesserOneScore.score, `${threeScoreGotw.score} vs ${lesserOneScore.score}`);
 assert.ok(!threeScoreGotw.reasons.includes("Game of the week"));
 
+// 99% is the same cap as 99.9. A two-score lead in the 4th does not stay Tight.
+const decided99 = scoreCfbRuwtGame(
+  cfbGame({
+    id: "decided-99",
+    shortDetail: "2:36 - 4th",
+    period: 4,
+    away: cfbSide({ teamId: 1001, abbrev: "A", score: 37, rank: 3, fpiRank: 8, record: "5-0" }),
+    home: cfbSide({ teamId: 1002, abbrev: "B", score: 26, rank: null, fpiRank: 51, record: "2-1" }),
+    broadcasts: [{ name: "ESPN", logo: null, market: "national" }],
+    situation: sit(99, { isRedZone: true, downDistanceText: "1st & Goal" }),
+  }),
+);
+assert.equal(decided99.score, CFB_DECIDED_LIVE_CAP, "99% late two-score still caps at 49");
+assert.deep(decided99.reasons, ["Live", "Ranked team"]);
+assert.ok(!decided99.reasons.includes("Tight"), decided99.reasons.join(" · "));
+assert.ok(!decided99.reasons.includes("Red zone"), decided99.reasons.join(" · "));
+assert.ok(!decided99.reasons.includes("Closest upset"), decided99.reasons.join(" · "));
+
+assert.ok(
+  !cfbEffectivelyDecided({ diff: 2, late: false, clockSec: 2 * 60, leaderWinPct: 89.2 }),
+  "89.2% in the 2nd is not over",
+);
+
+// Early unranked FPI-100s one-score: red zone, within a kick, and a wide
+// FPI upset still describe the drive. They do not add points in the 2nd.
+// live 40 + one-score 28 + ESPN+ 4 = 72.
+const earlyUnranked = scoreCfbRuwtGame(
+  cfbGame({
+    id: "early-unranked",
+    shortDetail: "2:00 - 2nd",
+    period: 2,
+    away: cfbSide({ teamId: 8001, abbrev: "MAC", score: 8, fpiRank: 62, record: "3-1" }),
+    home: cfbSide({ teamId: 8002, abbrev: "G5", score: 10, fpiRank: 136, record: "1-3" }),
+    broadcasts: [{ name: "ESPN+", logo: null, market: "national" }],
+    situation: sit(89.2, { isRedZone: true }),
+  }),
+);
+assert.equal(earlyUnranked.score, 72, "early unranked one-score is live 40 + 28 + ESPN+ 4");
+assert.deep(earlyUnranked.reasons, [
+  "Live",
+  "One-score game",
+  "Within a kick",
+  "Red zone",
+  "Upset brewing",
+]);
+assert.ok(!earlyUnranked.reasons.some((r) => /interest|heat/i.test(r)), earlyUnranked.reasons.join(" · "));
+assert.ok(earlyUnranked.score < oneScoreDoubt.score, `${earlyUnranked.score} should trail late one-score ${oneScoreDoubt.score}`);
+assert.ok(earlyUnranked.score < gotw.score, `${earlyUnranked.score} should trail two-score game of the week ${gotw.score}`);
+assert.ok(earlyUnranked.score > CFB_DECIDED_LIVE_CAP, "89% is still a game");
+
+// Same shape in the 4th gets the quarter, the two-minute drill, the kick, the red zone, and the upset.
+// 40 + 28 + 6 + 18 + 10 + 18 + 36 + 4 = 160. Early bonus does not apply after halftime.
+const lateUnranked = scoreCfbRuwtGame(
+  cfbGame({
+    id: "late-unranked",
+    shortDetail: "2:00 - 4th",
+    period: 4,
+    away: cfbSide({ teamId: 8001, abbrev: "MAC", score: 8, fpiRank: 62, record: "3-1" }),
+    home: cfbSide({ teamId: 8002, abbrev: "G5", score: 10, fpiRank: 136, record: "1-3" }),
+    broadcasts: [{ name: "ESPN+", logo: null, market: "national" }],
+    situation: sit(89.2, { isRedZone: true }),
+  }),
+);
+assert.equal(lateUnranked.score, 160, "late unranked one-score still gets the situation extras");
+assert.ok(earlyUnranked.score < lateUnranked.score);
+
+// A top-40 side trailing early still gets the upset. Best FPI 31 is not an FPI-100s game.
+const earlyQualityUpset = scoreCfbRuwtGame(
+  cfbGame({
+    id: "early-quality-upset",
+    shortDetail: "12:00 - 2nd",
+    period: 2,
+    away: cfbSide({ teamId: 8101, abbrev: "P5", score: 7, fpiRank: 31, record: "3-1" }),
+    home: cfbSide({ teamId: 8102, abbrev: "DOG", score: 14, fpiRank: 99, record: "2-2" }),
+    situation: sit(55),
+  }),
+);
+assert.equal(earlyQualityUpset.score, 110, "early upset of a top-40 side is live 40 + 28 + upset 42");
+assert.ok(earlyQualityUpset.reasons.includes("Upset brewing"), earlyQualityUpset.reasons.join(" · "));
+assert.ok(earlyQualityUpset.score > earlyUnranked.score);
+
 function nfl(partial: Partial<NflScoreGame> & Pick<NflScoreGame, "id">): NflScoreGame {
   const awayScore = partial.away?.score ?? 0;
   const homeScore = partial.home?.score ?? 0;
@@ -579,6 +660,10 @@ console.log(
     unrankedBlowout: unrankedBlowout.score,
     rankedBlowout: rankedBlowout.score,
     threeScoreGotw: threeScoreGotw.score,
+    decided99: decided99.score,
+    earlyUnranked: earlyUnranked.score,
+    lateUnranked: lateUnranked.score,
+    earlyQualityUpset: earlyQualityUpset.score,
     nflDecided: nflDecided.score,
     nflOneScore: nflOneScore.score,
     nhlOver: nhlOver.score,

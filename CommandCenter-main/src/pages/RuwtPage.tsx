@@ -7,7 +7,6 @@ import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import { CfbWinProbCaption } from "@/components/sports/CfbWinProbability";
-import PossessionFootball from "@/components/sports/PossessionFootball";
 import TeamMark from "@/components/sports/TeamMark";
 import type { UnifiedRuwtItem } from "@/hooks/useRuwtSlate";
 import { useRuwtSlateSplit } from "@/hooks/useRuwtSlateSplit";
@@ -793,9 +792,6 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
           >
             <CfbRankLabel pollRank={game.away.rank} fpiRank={null} />
             {game.away.abbrev}
-            {awayHasBall ? (
-              <PossessionFootball className="h-3 w-5 shrink-0" />
-            ) : null}
           </p>
           {game.away.record ? (
             <p className="numeral text-[12px] font-medium text-white/85">{game.away.record}</p>
@@ -809,20 +805,9 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
             detail={game.shortDetail}
             live={game.live}
             final={game.final}
-            football
-            awayTimeouts={game.situation?.awayTimeouts}
-            homeTimeouts={game.situation?.homeTimeouts}
+            face="sans"
             preview={game.whenShort}
           />
-          {game.live && winProb.data ? (
-            <CfbWinProbCaption
-              homeWinPct={winProb.data.homeWinPct}
-              awayWinPct={winProb.data.awayWinPct}
-              tiePct={winProb.data.tiePct}
-              away={game.away}
-              home={game.home}
-            />
-          ) : null}
         </div>
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
@@ -832,9 +817,6 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
               homeHasBall && "text-cream",
             )}
           >
-            {homeHasBall ? (
-              <PossessionFootball className="h-3 w-5 shrink-0" />
-            ) : null}
             <CfbRankLabel pollRank={game.home.rank} fpiRank={null} />
             {game.home.abbrev}
           </p>
@@ -844,6 +826,17 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
           <CfbFpiCaption pollRank={game.home.rank} fpiRank={game.home.fpiRank} />
         </div>
       </div>
+      {game.live && winProb.data ? (
+        <div className="relative z-10 px-3 pb-2">
+          <CfbWinProbCaption
+            homeWinPct={winProb.data.homeWinPct}
+            awayWinPct={winProb.data.awayWinPct}
+            tiePct={winProb.data.tiePct}
+            away={game.away}
+            home={game.home}
+          />
+        </div>
+      ) : null}
       {game.live && game.situation && (
         <div className="relative z-10 border-t border-white/[0.06] px-2 py-2">
           <NflFieldMap
@@ -915,7 +908,6 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
             )}
           >
             {game.away.abbrev}
-            {awayHasBall ? <PossessionFootball className="h-3 w-5 shrink-0" /> : null}
           </p>
         </div>
         <AppleScoreCluster
@@ -924,9 +916,7 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
           detail={game.shortDetail}
           live={game.live}
           final={game.final}
-          football
-          awayTimeouts={game.situation?.awayTimeouts}
-          homeTimeouts={game.situation?.homeTimeouts}
+          face="sans"
           preview={game.whenShort}
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
@@ -937,7 +927,6 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
               homeHasBall && "text-cream",
             )}
           >
-            {homeHasBall ? <PossessionFootball className="h-3 w-5 shrink-0" /> : null}
             {game.home.abbrev}
           </p>
         </div>
@@ -1006,6 +995,7 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
           detail={game.shortDetail}
           live={game.live}
           final={game.final}
+          face="sans"
           preview={game.whenShort}
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
@@ -1062,6 +1052,7 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
           detail={game.shortDetail || game.status}
           live={game.live}
           final={game.final}
+          face="sans"
           preview={kickoff}
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
@@ -1171,6 +1162,7 @@ function RuwtCard({
             detail={null}
             live={false}
             final={false}
+            face="sans"
             preview={game.whenShort}
           />
           <Side
@@ -1193,6 +1185,7 @@ function RuwtCard({
             detail={game.inning}
             live={game.live}
             final={game.final}
+            face="sans"
           />
           <Side
             side={game.home}
