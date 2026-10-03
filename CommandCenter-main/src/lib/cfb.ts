@@ -4,6 +4,11 @@ import {
   cfbGotwTwoScoreEase,
   cfbIsGameOfTheWeekMatchup,
 } from "./cfb-live-margin";
+import {
+  presentCfbPlayText,
+  simplifyCfbPlayText,
+  type CfbPlayTone,
+} from "./cfb-play-text";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { mapCfbWinProbability, type CfbWinProbPoint } from "./cfb-win-probability";
 import {
@@ -21,6 +26,8 @@ import {
 } from "./cfb-team-profile";
 import { supabase } from "./supabase";
 import { formatSportsDateLong } from "./utils";
+
+export { simplifyCfbPlayText };
 
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/college-football";
 const ESPN_WEB = "https://site.web.api.espn.com/apis/common/v3/sports/football/college-football";
@@ -307,12 +314,24 @@ export type CfbScoringPlay = {
 export type CfbPlay = {
   id: string;
   text: string;
+  /** Nullified attempt, declined penalty, or review — not a second play. */
+  detail: string | null;
+  tags: string[];
+  tone: CfbPlayTone;
+  /** Down faced when the snap (or kick) happened. */
   shortDownDistanceText: string | null;
+  /** ESPN spot for that down, e.g. "ALA 14". */
+  spot: string | null;
+  /** Down after the play. Used only when the live situation feed is missing. */
+  resultDownDistanceText: string | null;
   clock: string | null;
   period: number | null;
   yardLine: number | null;
   possessionTeamId: string | null;
   scoringPlay: boolean;
+  scoringTeamId: string | null;
+  awayScore: number | null;
+  homeScore: number | null;
 };
 
 export type CfbDrive = {
@@ -1305,57 +1324,22 @@ function pickCfbGameArticle(
 }
 
 
-/** Strip jersey numbers, formation boilerplate, and kick metadata from ESPN play text. */
-export function simplifyCfbPlayText(raw: string | null | undefined): string {
-  if (!raw) return "";
-  let t = raw.replace(/\s+/g, " ").trim();
-  if (!t) return "";
-
-  // Leading game clock: (06:12) / (0:45)
-  t = t.replace(/^\(\d{1,2}:\d{2}\)\s*/i, "");
-  // Formation / tempo boilerplate (incl. "No Huddle-Shotgun")
-  t = t.replace(
-    /\b(?:No\s*Huddle(?:[\s-]*Shotgun)?|Shotgun|Under Center|Wildcat|Pistol)\b[\s-]*/gi,
-    "",
-  );
-  // Jersey numbers: #12 / # 12
-  t = t.replace(/#\s*\d+\s*/g, "");
-  // Catch / throw location crumbs ("caught at Mizzou03,")
-  t = t.replace(
-    /\b(?:caught|thrown)\s+at\s+[A-Za-z][A-Za-z0-9.'-]{1,24}\d{0,2},?/gi,
-    "",
-  );
-  // Tackle parentheses without jersey: (T.Williams Jr.)
-  t = t.replace(/\s*\(\s*[A-Z][A-Za-z.']+(?:\s+(?:Jr\.|Sr\.|III|IV|II))?(?:\s*[,/]\s*[^)]+)?\s*\)\s*$/g, "");
-  // Trailing tackle parentheses: (#2 T.Williams Jr.)
-  t = t.replace(/\s*\([^)]*#\d+[^)]*\)\s*/g, " ");
-  // Kick holder / long snapper notes
-  t = t.replace(/\s*\(\s*H:\s*[^)]+\)\s*/gi, " ");
-  t = t.replace(/\s*\(\s*LS:\s*[^)]+\)\s*/gi, " ");
-  t = t.replace(/\s*\(\s*H:\s*[^;)]+;\s*LS:\s*[^)]+\)\s*/gi, " ");
-  // Redundant clock echoes
-  t = t.replace(/,?\s*clock\s+\d{1,2}:\d{2}\b/gi, "");
-  // "1ST DOWN" noise mid-sentence after TD kick lines
-  t = t.replace(/\b1ST DOWN\b/gi, "");
-  // Collapse "pass complete short middle to" spacing leftovers
-  t = t.replace(/\s{2,}/g, " ");
-  t = t.replace(/\s+,/g, ",");
-  t = t.replace(/,\s*,+/g, ",");
-  t = t.replace(/\s+\./g, ".");
-  t = t.replace(/\.\s*\./g, ".");
-  return t.trim().replace(/^[,.\s]+|[,.\s]+$/g, "");
-}
-
 function mapCfbPlay(p: {
   id?: string;
   text?: string;
   shortDownDistanceText?: string;
   scoringPlay?: boolean;
+  isPenalty?: boolean;
+  isTurnover?: boolean;
+  awayScore?: number;
+  homeScore?: number;
+  type?: { text?: string };
   clock?: { displayValue?: string };
   period?: { number?: number };
   start?: {
     yardLine?: number;
     shortDownDistanceText?: string;
+    possessionText?: string;
     team?: { id?: string };
   };
   end?: {
@@ -1366,20 +1350,51 @@ function mapCfbPlay(p: {
   team?: { id?: string };
 }): CfbPlay {
   const end = p.end ?? p.start;
+  const copy = presentCfbPlayText(p.text, {
+    type: p.type?.text ?? null,
+    scoringPlay: Boolean(p.scoringPlay),
+    penalty: Boolean(p.isPenalty),
+    turnover: Boolean(p.isTurnover),
+  });
   return {
     id: String(p.id ?? Math.random()),
-    text: simplifyCfbPlayText(p.text),
+    text: copy.text,
+    detail: copy.detail,
+    tags: copy.tags,
+    tone: copy.tone,
     shortDownDistanceText:
+      p.start?.shortDownDistanceText ??
       p.shortDownDistanceText ??
       end?.shortDownDistanceText ??
-      p.start?.shortDownDistanceText ??
       null,
+    spot: p.start?.possessionText ?? null,
+    resultDownDistanceText: end?.shortDownDistanceText ?? p.start?.shortDownDistanceText ?? null,
     clock: p.clock?.displayValue ?? null,
     period: p.period?.number ?? null,
     yardLine: end?.yardLine ?? null,
-    possessionTeamId: end?.team?.id ?? p.team?.id ?? p.start?.team?.id ?? null,
-    scoringPlay: Boolean(p.scoringPlay),
+    possessionTeamId: p.start?.team?.id ?? p.team?.id ?? end?.team?.id ?? null,
+    scoringPlay: Boolean(p.scoringPlay) || copy.tone === "score",
+    scoringTeamId: null,
+    awayScore: typeof p.awayScore === "number" ? p.awayScore : null,
+    homeScore: typeof p.homeScore === "number" ? p.homeScore : null,
   };
+}
+
+function assignCfbScoringTeams(drives: CfbDrive[], awayTeamId: string, homeTeamId: string) {
+  let away = 0;
+  let home = 0;
+  for (const drive of drives) {
+    for (const play of drive.plays) {
+      const nextAway = play.awayScore;
+      const nextHome = play.homeScore;
+      if (play.scoringPlay && nextAway != null && nextHome != null) {
+        if (nextAway > away && nextHome === home) play.scoringTeamId = awayTeamId;
+        else if (nextHome > home && nextAway === away) play.scoringTeamId = homeTeamId;
+      }
+      if (nextAway != null) away = nextAway;
+      if (nextHome != null) home = nextHome;
+    }
+  }
 }
 
 export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail> {
@@ -1648,11 +1663,16 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
     yards: typeof d.yards === "number" ? d.yards : null,
     plays: (d.plays ?? []).map(mapCfbPlay),
   }));
-  const recentPlays = drives
-    .flatMap((d) => d.plays)
-    .filter((p) => p.text)
-    .slice(-40)
-    .reverse();
+  assignCfbScoringTeams(drives, String(base.away.teamId), String(base.home.teamId));
+  const recentPlays: CfbPlay[] = [];
+  const seenPlayIds = new Set<string>();
+  const chronological = drives.flatMap((d) => d.plays).filter((p) => p.text);
+  for (let i = chronological.length - 1; i >= 0 && recentPlays.length < 40; i--) {
+    const play = chronological[i]!;
+    if (seenPlayIds.has(play.id)) continue;
+    seenPlayIds.add(play.id);
+    recentPlays.push(play);
+  }
   const winProbability = mapCfbWinProbability(
     raw.winprobability,
     drives.flatMap((d) => d.plays),
@@ -1689,7 +1709,7 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
     base = {
       ...base,
       situation: {
-        downDistanceText: play.shortDownDistanceText,
+        downDistanceText: play.resultDownDistanceText ?? play.shortDownDistanceText,
         possessionText: null,
         yardLine: play.yardLine,
         isRedZone: false,
