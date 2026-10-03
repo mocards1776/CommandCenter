@@ -50,7 +50,7 @@ function ScorePill({ tab, active }: { tab: ScoreTab; active: boolean }) {
                 awayLost ? "text-chalk-dim" : "text-cream",
               )}
             >
-              {tab.away.score ?? "\u2013"}
+              {tab.away.score ?? "–"}
             </span>
           ) : null}
           <span
@@ -73,7 +73,7 @@ function ScorePill({ tab, active }: { tab: ScoreTab; active: boolean }) {
                 homeLost ? "text-chalk-dim" : "text-cream",
               )}
             >
-              {tab.home.score ?? "\u2013"}
+              {tab.home.score ?? "–"}
             </span>
           ) : null}
         </>
