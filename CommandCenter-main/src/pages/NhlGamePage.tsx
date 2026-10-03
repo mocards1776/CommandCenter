@@ -1,10 +1,23 @@
-import type { ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2, Play } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
+import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
+import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
-import { fetchNhlGameDetail, nhlHeadshot, type NhlScoreSide } from "@/lib/nhl";
+import {
+  dedupeNhlEspnVideos,
+  fetchNhlGameDetail,
+  fetchNhlGamecenter,
+  nhlClockKey,
+  nhlHeadshot,
+  type NhlGameDetail,
+  type NhlGameVideo,
+  type NhlGoalClip,
+  type NhlRecentPlay,
+  type NhlScoreSide,
+} from "@/lib/nhl";
 import { cn } from "@/lib/utils";
 
 function statusLabel(g: {
@@ -35,9 +48,51 @@ export default function NhlGamePage() {
     staleTime: 8_000,
   });
 
+  const g = game.data;
+  const started = Boolean(g && (g.live || g.final));
+  const gamecenter = useQuery({
+    queryKey: ["nhl-gamecenter", eventId],
+    queryFn: () => fetchNhlGamecenter(g!),
+    enabled: Boolean(g) && started,
+    refetchInterval: g?.live ? 30_000 : false,
+    staleTime: 20_000,
+    retry: 1,
+  });
+  const situation = g?.live ? (gamecenter.data?.situation ?? null) : null;
+
+  const [featuredId, setFeaturedId] = useState<string | null>(null);
+  const highlightsRef = useRef<HTMLElement>(null);
+
+  const { clips, goalByClock } = useMemo(() => {
+    const goals = gamecenter.data?.goals ?? [];
+    const espn = dedupeNhlEspnVideos((g?.videos ?? []).filter((v) => v.mp4), goals);
+    const byClock = new Map<string, NhlGoalClip>();
+    for (const goal of goals) {
+      const key = nhlClockKey(goal.periodNumber, goal.timeInPeriod);
+      if (key) byClock.set(key, goal);
+    }
+    const all: NhlGameVideo[] = [...goals].reverse();
+    return { clips: all.concat(espn), goalByClock: byClock };
+  }, [gamecenter.data, g?.videos]);
+
+  const primaryClip = clips.find((c) => c.id === featuredId) ?? clips[0] ?? null;
+  const reel: ReelHighlight[] = clips
+    .filter((c) => c.id !== primaryClip?.id && c.mp4)
+    .map((c) => ({
+      id: c.id,
+      title: isGoalClip(c) ? `${c.headline} · ${c.periodLabel} ${c.timeInPeriod}` : c.headline,
+      duration: formatClipDuration(c.durationSec),
+      thumb: c.thumb,
+      url: c.mp4!,
+    }));
+
+  const watchGoal = (clipId: string) => {
+    setFeaturedId(clipId);
+    highlightsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   if (!eventId) return <p className="text-alert p-6 text-[13px]">Missing game id</p>;
 
-  const g = game.data;
   const periods = g
     ? Math.max(g.away.linescores.length, g.home.linescores.length, g.final || g.live ? 3 : 0)
     : 0;
@@ -105,23 +160,49 @@ export default function NhlGamePage() {
               <p className="text-[11px] text-[#8b93a7]">{g.venueDetail ?? g.venue ?? "NHL"}</p>
             </div>
 
-            <div className="relative z-10 grid gap-4 px-3 py-5 sm:grid-cols-[1fr_auto_1fr] sm:items-center sm:px-5">
+            <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1 px-2 py-4 sm:gap-4 sm:px-5 sm:py-6">
               <TeamBlock side={g.away} align="left" />
-              <div className="text-center">
-                <p className="font-display text-cream text-[34px] leading-none tabular-nums sm:text-[40px]">
-                  {g.final || g.live ? (
-                    <>
-                      {g.away.score ?? 0}
-                      <span className="mx-2 text-[18px] text-white/35">–</span>
-                      {g.home.score ?? 0}
-                    </>
+              <div className="flex items-center gap-2 sm:gap-5">
+                {started ? (
+                  <ScoreFigure
+                    score={g.away.score}
+                    pp={situation?.powerPlayAbbrev === g.away.abbrev}
+                    side="away"
+                  />
+                ) : null}
+                <div className="min-w-[5.5rem] text-center sm:min-w-[8rem]">
+                  {started ? (
+                    <p
+                      className={cn(
+                        "text-[13px] font-semibold tabular-nums sm:text-[15px]",
+                        g.live ? "text-cream" : "text-chalk",
+                      )}
+                    >
+                      {statusLabel(g)}
+                    </p>
                   ) : (
-                    <span className="text-[22px] sm:text-[26px]">{g.whenShort ?? "vs"}</span>
+                    <>
+                      <p className="font-display text-cream text-[22px] leading-none sm:text-[28px]">
+                        {g.whenShort ?? "vs"}
+                      </p>
+                      <p className="text-chalk-dim mt-1.5 text-[11px]">{g.when}</p>
+                    </>
                   )}
-                </p>
-                <p className="text-chalk-dim mt-1.5 text-[11px]">{g.when}</p>
-                {g.oddsLine ? (
-                  <p className="text-chalk mt-2 text-[11px] font-medium tracking-wide">{g.oddsLine}</p>
+                  {situation?.powerPlayAbbrev && situation.timeRemaining ? (
+                    <p className="text-accent mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums">
+                      {situation.powerPlayAbbrev} PP · {situation.timeRemaining.replace(/^0/, "")}
+                    </p>
+                  ) : null}
+                  {g.oddsLine && !g.final ? (
+                    <p className="text-chalk mt-1.5 text-[10px] font-medium tracking-wide">{g.oddsLine}</p>
+                  ) : null}
+                </div>
+                {started ? (
+                  <ScoreFigure
+                    score={g.home.score}
+                    pp={situation?.powerPlayAbbrev === g.home.abbrev}
+                    side="home"
+                  />
                 ) : null}
               </div>
               <TeamBlock side={g.home} align="right" />
@@ -205,7 +286,36 @@ export default function NhlGamePage() {
             >
               <ExternalLink size={12} /> Box score
             </a>
+            {gamecenter.data?.nhlUrl ? (
+              <a
+                href={gamecenter.data.nhlUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-chalk hover:text-cream inline-flex items-center gap-1.5 rounded-sm border border-white/10 px-2.5 py-1.5 text-[10.5px] uppercase tracking-[0.14em]"
+              >
+                <ExternalLink size={12} /> NHL.com
+              </a>
+            ) : null}
           </div>
+
+          <RecentPlays g={g} />
+
+          {primaryClip ? (
+            <section ref={highlightsRef} className="scroll-mt-4 space-y-2.5">
+              <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+                Game highlights
+              </h3>
+              <EspnVideoEmbed
+                key={primaryClip.id}
+                clip={primaryClip}
+                eyebrow={clipEyebrow(primaryClip)}
+                autoPlay={primaryClip.id === featuredId}
+              />
+              {reel.length > 0 ? (
+                <HighlightReel highlights={reel} title="More highlights" defaultOpen />
+              ) : null}
+            </section>
+          ) : null}
 
           {g.article?.storyHtml || g.article?.description ? (
             <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] font-rss">
@@ -308,7 +418,9 @@ export default function NhlGamePage() {
                 </h3>
               </div>
               <ul className="divide-y divide-white/[0.05]">
-                {g.scoringPlays.map((p) => (
+                {g.scoringPlays.map((p) => {
+                  const clip = goalByClock.get(nhlClockKey(p.periodNumber, p.clock) ?? "");
+                  return (
                   <li key={p.id} className="flex gap-3 px-4 py-3">
                     <div className="w-16 shrink-0">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b93a7]">
@@ -326,11 +438,23 @@ export default function NhlGamePage() {
                         </p>
                       ) : null}
                     </div>
-                    <p className="numeral text-cream shrink-0 text-[13px]">
-                      {p.awayScore ?? 0}–{p.homeScore ?? 0}
-                    </p>
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      <p className="numeral text-cream text-[13px]">
+                        {p.awayScore ?? 0}–{p.homeScore ?? 0}
+                      </p>
+                      {clip ? (
+                        <button
+                          type="button"
+                          onClick={() => watchGoal(clip.id)}
+                          className="text-accent hover:text-cream inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                        >
+                          <Play size={11} className="fill-current" /> Watch
+                        </button>
+                      ) : null}
+                    </div>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             </section>
           )}
@@ -438,18 +562,148 @@ function TeamBlock({ side, align }: { side: NhlScoreSide; align: "left" | "right
     <Link
       to={`/sports/nhl/team/${side.teamId}`}
       className={cn(
-        "flex items-center gap-3",
-        align === "right" && "sm:flex-row-reverse sm:text-right",
+        "flex min-w-0 flex-col items-center gap-1 text-center sm:gap-3",
+        align === "left" ? "sm:flex-row sm:text-left" : "sm:flex-row-reverse sm:text-right",
       )}
     >
-      {side.logo ? <img src={side.logo} alt="" className="h-14 w-14 object-contain" /> : null}
-      <div>
-        <p className="text-cream text-[20px] font-semibold leading-tight">{side.abbrev}</p>
-        <p className="text-chalk-dim text-[12px]">{side.name}</p>
+      {side.logo ? (
+        <img
+          src={side.logo}
+          alt=""
+          className="h-14 w-14 shrink-0 object-contain drop-shadow-[0_4px_14px_rgba(0,0,0,0.45)] sm:h-20 sm:w-20"
+        />
+      ) : null}
+      <div className="min-w-0">
+        <p className="text-cream text-[15px] font-semibold leading-tight sm:text-[22px]">{side.abbrev}</p>
+        <p className="text-chalk-dim hidden truncate text-[12px] sm:block">{side.name}</p>
         {side.record ? <p className="text-chalk-dim numeral text-[11px]">{side.record}</p> : null}
       </div>
     </Link>
   );
+}
+
+function ScoreFigure({
+  score,
+  pp,
+  side,
+}: {
+  score: number | null;
+  pp: boolean;
+  side: "away" | "home";
+}) {
+  return (
+    <div className={cn("flex items-center gap-1.5", side === "away" ? "flex-row-reverse" : "")}>
+      {pp ? (
+        <span className="bg-accent/20 text-accent rounded-sm px-1 py-0.5 text-[9px] font-bold tracking-[0.08em]">
+          PP
+        </span>
+      ) : null}
+      <span className="font-display text-cream text-[40px] leading-none tabular-nums sm:text-[52px]">
+        {score ?? 0}
+      </span>
+    </div>
+  );
+}
+
+function teamForId(g: NhlGameDetail, teamId: string | null): NhlScoreSide | null {
+  if (!teamId) return null;
+  if (String(g.away.teamId) === teamId) return g.away;
+  if (String(g.home.teamId) === teamId) return g.home;
+  return null;
+}
+
+function RecentPlays({ g }: { g: NhlGameDetail }) {
+  const [latest, ...rest] = g.recentPlays;
+  if (!latest) return null;
+  const latestTeam = teamForId(g, latest.teamId);
+  const score = (p: NhlRecentPlay) =>
+    p.awayScore != null && p.homeScore != null ? `${p.awayScore}-${p.homeScore}` : "";
+  return (
+    <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
+      <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2.5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">
+          {g.live ? "Latest" : "Last plays"}
+        </h3>
+        {g.live ? (
+          <span className="text-alert inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em]">
+            <span className="bg-alert h-1.5 w-1.5 animate-pulse rounded-full" /> Live
+          </span>
+        ) : null}
+      </div>
+      <div
+        className={cn(
+          "flex gap-3 px-4 py-3.5",
+          latest.scoringPlay && "bg-gradient-to-r from-accent/15 to-transparent",
+        )}
+      >
+        {latest.athlete ? (
+          <img
+            src={latest.athlete.headshot ?? nhlHeadshot(latest.athlete.id)}
+            alt=""
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+            className="h-12 w-12 shrink-0 rounded-full bg-[#dfe6f2] object-cover object-top"
+          />
+        ) : latestTeam?.logo ? (
+          <img src={latestTeam.logo} alt="" className="h-12 w-12 shrink-0 object-contain" />
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-[11px] text-[#a8b0c2]">
+            {latestTeam?.logo ? <img src={latestTeam.logo} alt="" className="h-4 w-4 object-contain" /> : null}
+            <span className="tabular-nums">
+              {latest.clock ?? ""}
+              {latest.period ? ` - ${latest.period}` : ""}
+            </span>
+            {latest.scoringPlay ? (
+              <span className="text-accent text-[10px] font-semibold uppercase tracking-[0.12em]">Goal</span>
+            ) : null}
+          </p>
+          <p className="text-cream mt-1 text-[14px] leading-snug">{latest.text}</p>
+        </div>
+        <p className="numeral text-cream shrink-0 text-[13px]">{score(latest)}</p>
+      </div>
+      {rest.length > 0 ? (
+        <ul className="divide-y divide-white/[0.05] border-t border-white/[0.06]">
+          {rest.slice(0, 6).map((p) => {
+            const team = teamForId(g, p.teamId);
+            return (
+              <li
+                key={p.id}
+                className={cn(
+                  "grid grid-cols-[3rem_1.25rem_minmax(0,1fr)_auto] items-center gap-2 px-4 py-2.5 text-[12.5px]",
+                  p.scoringPlay && "bg-gradient-to-r from-accent/15 to-transparent",
+                )}
+              >
+                <span className="numeral text-chalk">{p.clock ?? ""}</span>
+                {team?.logo ? <img src={team.logo} alt="" className="h-5 w-5 object-contain" /> : <span />}
+                <span className={cn("leading-snug", p.scoringPlay ? "text-cream font-semibold" : "text-[#c8cdd8]")}>
+                  {p.text}
+                </span>
+                <span className="numeral text-chalk-dim text-[12px]">{score(p)}</span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+function formatClipDuration(sec: number | null): string | null {
+  if (sec == null || !Number.isFinite(sec) || sec <= 0) return null;
+  return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+}
+
+function isGoalClip(clip: NhlGameVideo): clip is NhlGoalClip {
+  return clip.source === "nhl";
+}
+
+function clipEyebrow(clip: NhlGameVideo): string {
+  if (!isGoalClip(clip)) return "ESPN video";
+  return ["NHL goal", clip.teamAbbrev, `${clip.periodLabel} ${clip.timeInPeriod}`.trim(), clip.tag]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function GoalieChip({

@@ -23,11 +23,14 @@ function formatDuration(sec: number | null | undefined): string | null {
 export default function EspnVideoEmbed({
   clip,
   eyebrow = "ESPN video",
+  autoPlay = false,
 }: {
   clip: EspnEmbedClip;
   eyebrow?: string;
+  /** Start in the player instead of the poster (remount via `key` to re-trigger). */
+  autoPlay?: boolean;
 }) {
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(autoPlay);
   const duration = formatDuration(clip.durationSec);
   const canEmbed = Boolean(clip.mp4);
   const desc =

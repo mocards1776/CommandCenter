@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
@@ -25,8 +25,36 @@ const commitTime =
   git("git log -1 --format=%cI") ||
   new Date().toISOString();
 
+/** Dev stand-in for the Vercel `api/nhl.ts` function (api-web.nhle.com has no CORS). */
+function nhlApiDevProxy(): Plugin {
+  return {
+    name: "nhl-api-dev-proxy",
+    configureServer(server) {
+      server.middlewares.use("/api/nhl", async (req, res) => {
+        const path = new URL(req.url ?? "", "http://local").searchParams.get("path") ?? "";
+        if (!/^v1\/[\w/-]+$/.test(path)) {
+          res.statusCode = 400;
+          res.end('{"error":"Path not allowed"}');
+          return;
+        }
+        try {
+          const upstream = await fetch(`https://api-web.nhle.com/${path}`, {
+            headers: { Accept: "application/json" },
+          });
+          res.statusCode = upstream.status;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(await upstream.text());
+        } catch {
+          res.statusCode = 502;
+          res.end('{"error":"Upstream unavailable"}');
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [tailwindcss(), react()],
+  plugins: [tailwindcss(), react(), nhlApiDevProxy()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -44,7 +72,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // No dev proxy: the app talks to Supabase and to the Todoist edge function
-    // over https directly. The old /api -> localhost:8000 FastAPI proxy is gone.
+    // Supabase and the Todoist edge function are called over https directly.
+    // The only local /api route is the NHL proxy plugin above.
   },
 });
