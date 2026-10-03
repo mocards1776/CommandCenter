@@ -185,6 +185,55 @@ ruleIds.forEach((id, i) => {
 const newsOnly = editedIds.filter((id) => id.startsWith("news-"));
 assert(newsOnly.join() === "news-blues-camp,news-cards-note,news-lions-win", "news runs in the editor's order");
 
+// Section A is the favorite-teams desk. Routine league copy the editor fronts stays in its section.
+const routine = card({
+  id: "league-routine",
+  headline: "Yankees option reliever to Triple-A before series opener",
+  body: copy("New York sent the right-hander down to make room on the roster."),
+});
+const firing = card({
+  id: "league-firing",
+  headline: "White Sox fire manager after 100-loss season",
+  leaguePath: "baseball/mlb",
+  body: copy("Chicago dismissed its manager on Monday after a last-place finish."),
+});
+const routineFront = front(
+  stampEditorDesk([...stories, routine], {
+    front: ["league-routine", "news-cards-note"],
+    order: [],
+    spike: [],
+    rationale: "",
+  }),
+);
+assert(routineFront.lead?.id === "news-cards-note", "a routine league story does not bump a home story off A1");
+assert(
+  [routineFront.lead, routineFront.second, routineFront.third].every((c) => !c || c.id !== "league-routine"),
+  "a routine league story never runs on A1",
+);
+const twoMajors = buildEdition({
+  stories: stampEditorDesk([...stories, firing], {
+    front: ["league-no-hitter", "league-firing", "wire-401"],
+    order: [],
+    spike: [],
+    rationale: "",
+  }),
+  clubs: [],
+  edition,
+});
+const twoFront = twoMajors.pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage;
+assert(twoFront.lead?.id === "league-no-hitter", "a major league story may lead A1");
+assert(
+  [twoFront.second, twoFront.third].every((c) => !c || !c.id.startsWith("league-")),
+  "at most one league story runs in Section A",
+);
+assert(twoFront.second?.id === "wire-401", "the home final takes the next slot");
+assert(
+  twoMajors.pages
+    .filter((p) => p.section === "A" && p.kind === "favorites-inside")
+    .every((p) => p.kind === "favorites-inside" && [p.primary, p.secondary, ...p.briefs].every((c) => !c || !c.id.startsWith("league-"))),
+  "no league story fills a Section A inside page",
+);
+
 // A front pick with no copy does not leave a bare photo on A1.
 const thinLead = stampEditorDesk(
   [...stories, card({ id: "league-thin", headline: "Thin item", body: "Short." })],

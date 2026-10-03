@@ -6,7 +6,8 @@
  * Every sport section always runs at least five pages: league news, scores,
  * standings, schedule, and playoffs or form — plus league leaders whenever
  * the league publishes them — then a few full story pages for the best
- * league copy. Followed-club stories run in Section A only.
+ * league copy. Followed-club stories run in Section A only, and league copy
+ * reaches Section A only as an editor-fronted major story (`isMajorStory`).
  */
 
 import {
@@ -504,11 +505,74 @@ function isStalePreview(card: GameWrapCard, edition: string): boolean {
   return !withinEditionHours(card.when, edition);
 }
 
-/** Stories the editor put on A1, in its order. Any league may lead; a front story still needs copy. */
-function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
+const MAJOR_NEWS = new RegExp(
+  [
+    String.raw`no-?hitter`,
+    String.raw`perfect game`,
+    String.raw`clinch(?:es|ed|ing)?`,
+    String.raw`eliminat(?:es|ed|ion)`,
+    String.raw`(?:wins?|won|capture[sd]?|claims?) (?:the |a |its |their )?(?:world series|stanley cup|super bowl|pennant|national (?:championship|title)|(?:\w+ )?title)`,
+    String.raw`champions?hip (?:game|series)? ?(?:win|victory)`,
+    String.raw`(?:fire[sd]?|dismiss(?:es|ed)?|part(?:s|ed)? ways with|hire[sd]?|names?|named) (?:\S+ ){0,4}(?:manager|head coach|coach|general manager|gm|president|skipper)`,
+    String.raw`steps? down`,
+    String.raw`resign(?:s|ed)`,
+    String.raw`traded`,
+    String.raw`acquire[sd]`,
+    String.raw`blockbuster`,
+    String.raw`record (?:deal|contract)`,
+    String.raw`season-ending`,
+    String.raw`out for the season`,
+    String.raw`torn (?:acl|achilles)`,
+    String.raw`tommy john`,
+    String.raw`suspend(?:s|ed)`,
+    String.raw`banned`,
+    String.raw`dies`,
+    String.raw`died`,
+    String.raw`death of`,
+    String.raw`retires`,
+    String.raw`announces? (?:his |her )?retirement`,
+  ]
+    .map((pattern) => String.raw`\b${pattern}\b`)
+    .join("|"),
+  "i",
+);
+
+/**
+ * League copy big enough to run in Section A: a title or clincher, a no-hitter,
+ * a firing or hiring, a major trade, a star lost for the season, a death.
+ * Section A is the favorite-teams desk; routine league wire never runs there.
+ */
+export function isMajorStory(card: GameWrapCard): boolean {
+  if (isPreviewStory(card)) return false;
+  const text = `${card.headline} ${card.dek ?? ""}`.replace(/\s+/g, " ");
+  if (MAJOR_NEWS.test(text)) return true;
+  // A decisive postseason result, not just any October game.
+  return Boolean(
+    card.postseason &&
+      isRecapStory(card) &&
+      /\b(?:advance[sd]?|sweep(?:s|ed)?|game (?:5|7)|series win|win (?:the )?series)\b/i.test(text),
+  );
+}
+
+/** League stories the editor may front in Section A in one edition. */
+const LEAGUE_FRONT_MAX = 1;
+
+/**
+ * Stories the editor put on A1, in its order, held to the desk's beat: a
+ * favorite-club story always may; league copy only when it is major news, and
+ * never more than one. A front story still needs copy.
+ */
+export function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
+  let league = 0;
   return fresh
     .filter((card) => card.editorFront != null && card.editorFront < FRONT_STORIES && hasStoryCopy(card))
-    .sort((a, b) => a.editorFront! - b.editorFront!);
+    .sort((a, b) => a.editorFront! - b.editorFront!)
+    .filter((card) => {
+      if (isFavoriteStory(card)) return true;
+      if (league >= LEAGUE_FRONT_MAX || !isMajorStory(card)) return false;
+      league += 1;
+      return true;
+    });
 }
 
 function favoritePages(
