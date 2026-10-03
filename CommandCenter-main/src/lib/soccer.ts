@@ -3,6 +3,7 @@
 import { supabase } from "@/lib/supabase";
 import { parseEspnBroadcasts } from "@/lib/game-broadcasts";
 import type { GameBroadcast } from "@/lib/game-broadcasts";
+import { notifyRuwtInterestChanged } from "@/lib/ruwt";
 
 export function soccerTeamLogo(teamId: string | number): string {
   return `https://a.espncdn.com/i/teamlogos/soccer/500/${teamId}.png`;
@@ -148,6 +149,7 @@ export function setSoccerTeamInterestRating(
   if (clamped <= 0) delete next[String(teamId)];
   else next[String(teamId)] = clamped;
   saveSoccerTeamInterest(next);
+  notifyRuwtInterestChanged();
   return next;
 }
 
