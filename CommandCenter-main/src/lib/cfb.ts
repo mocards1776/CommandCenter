@@ -1,5 +1,9 @@
 /** College football via ESPN — scoreboard, RUWT, hot seat, player pages. */
 
+import {
+  cfbGotwTwoScoreEase,
+  cfbIsGameOfTheWeekMatchup,
+} from "./cfb-live-margin";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { supabase } from "./supabase";
 import { formatSportsDateLong } from "./utils";
@@ -3364,6 +3368,8 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
     // don't sink below G5 clocks — but still punish true blowouts (≥28)
     // so a 29-pt IU lead doesn't beat a closer ranked-upset watch.
     // Football one-score = TD (+PAT/2pt), i.e. ≤8 — not only a FG (≤3).
+    // 9–14 is two scores. "Tight" is the +10 bonus for that band, not a
+    // penalty. A game-of-the-week ease for 9–16 is applied after the TV window.
     if (diff != null) {
       if (diff <= 8) {
         score += 28;
@@ -3485,7 +3491,9 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
   }
 
   // Both top-25 FPI even when polls disagree — national-caliber slate.
-  if (awayFpi != null && homeFpi != null && awayFpi <= 25 && homeFpi <= 25) {
+  const bothTopFpi =
+    awayFpi != null && homeFpi != null && awayFpi <= 25 && homeFpi <= 25;
+  if (bothTopFpi) {
     score += 12;
     reasons.push("Top FPI clash");
   } else if (
@@ -3705,6 +3713,30 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
     reasons.push("National TV");
   } else if (nets.some((n) => /ESPN|ESPN2|FOX SPORTS|FS1/.test(n))) {
     score += 4;
+  }
+
+  // Two-score game of the week: ranked SEC, undefeated or one-loss, top FPI,
+  // national marquee window. Lands the margin on a credit still under one-score,
+  // so it can clear a lesser one-score game. Three scores (17+) get nothing.
+  if (g.live && !g.final && diff != null) {
+    const bothSec =
+      CFB_SEC_TEAM_IDS.has(String(g.away.teamId)) &&
+      CFB_SEC_TEAM_IDS.has(String(g.home.teamId));
+    const ease = cfbGotwTwoScoreEase(
+      diff,
+      cfbIsGameOfTheWeekMatchup({
+        bothRanked,
+        bothSec,
+        bothTopFpi,
+        nationalMarquee: bigFour,
+        awayRecord: g.away.record,
+        homeRecord: g.home.record,
+      }),
+    );
+    if (ease > 0) {
+      score += ease;
+      reasons.push("Game of the week");
+    }
   }
 
   for (const side of [g.away, g.home]) {
