@@ -29,7 +29,6 @@ function ScorePill({ tab, active }: { tab: ScoreTab; active: boolean }) {
     <Link
       to={tab.href}
       data-tab-key={tab.key}
-      data-tab-key-end
       aria-current={active ? "page" : undefined}
       aria-label={`${tab.away.abbrev} at ${tab.home.abbrev}`}
       className={cn(
@@ -81,5 +80,62 @@ function ScorePill({ tab, active }: { tab: ScoreTab; active: boolean }) {
       )}
       <TabLogo side={tab.home} />
     </Link>
+  );
+}
+
+/**
+ * ESPN-style scrollable score capsules.
+ * Live games when any are on, otherwise Today's Top / upcoming, otherwise
+ * recent finals (yesterday preferred, favorite clubs first). Hidden only
+ * when every bucket is empty — an empty live list does not unmount the strip.
+ */
+export default function SportsScoreTabs() {
+  const { pathname } = useLocation();
+  const strip = useScoreStripItems();
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const centeredKeyRef = useRef<string | null>(null);
+
+  const tabs = useMemo(() => strip.items.map(toTab), [strip.items]);
+
+  const activeKey = useMemo(() => {
+    const m = pathname.match(GAME_PATH);
+    return m ? `${m[1]}-${decodeURIComponent(m[2]!)}` : null;
+  }, [pathname]);
+
+  const activePresent = activeKey != null && tabs.some((t) => t.key === activeKey);
+
+  useEffect(() => {
+    if (!activeKey) {
+      centeredKeyRef.current = null;
+      return;
+    }
+    if (!activePresent || centeredKeyRef.current === activeKey) return;
+    const scroller = scrollerRef.current;
+    const el = scroller?.querySelector<HTMLElement>(`[data-tab-key="${CSS.escape(activeKey)}"]`);
+    if (!scroller || !el) return;
+    const smooth = centeredKeyRef.current != null;
+    centeredKeyRef.current = activeKey;
+    scroller.scrollTo({
+      left: el.offsetLeft - (scroller.clientWidth - el.offsetWidth) / 2,
+      behavior: smooth ? "smooth" : "auto",
+    });
+  }, [activeKey, activePresent]);
+
+  if (tabs.length === 0) return null;
+
+  return (
+    <div
+      className="bg-ink relative z-10 border-b border-accent/10 print:hidden"
+      data-score-strip={strip.source}
+    >
+      <div
+        ref={scrollerRef}
+        className="relative flex gap-2 overflow-x-auto overscroll-x-contain px-4 py-2 [-ms-overflow-style:none] [scrollbar-width:none] md:px-8 [&::-webkit-scrollbar]:hidden"
+      >
+        {tabs.map((tab) => (
+          <ScorePill key={tab.key} tab={tab} active={tab.key === activeKey} />
+        ))}
+      </div>
+    </div>
   );
 }
