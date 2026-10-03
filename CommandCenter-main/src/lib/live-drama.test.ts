@@ -262,7 +262,10 @@ const cfbRow = mapEspnEvent("cfb", {
   ],
 });
 assert(cfbRow?.away.rank === 11 && cfbRow.home.rank == null, `ranks ${cfbRow?.away.rank}/${cfbRow?.home.rank}`);
-assert(cfbRow?.broadcasts?.join() === "ABC", cfbRow?.broadcasts?.join());
+assert(
+  cfbRow?.broadcasts?.join() === "ABC",
+  `broadcasts ${cfbRow?.broadcasts?.join() ?? ""}`,
+);
 assert(cfbRow?.away.logo?.includes("espncdn.com"), "logo stays on the ESPN team mark");
 
 const pre = mapEspnEvent("mlb", {
