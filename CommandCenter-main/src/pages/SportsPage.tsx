@@ -915,3 +915,1133 @@ export default function SportsPage() {
     </div>
   );
 }
+
+function YesterdayRecapPanel({
+  data,
+  loading,
+  error,
+  onRetry,
+}: {
+  data: YesterdayRecap | undefined;
+  loading: boolean;
+  error: boolean;
+  onRetry: () => void;
+}) {
+  if (loading) {
+    return (
+      <p className="text-chalk flex items-center gap-2 text-[13px]">
+        <Loader2 size={14} className="animate-spin" /> Loading yesterday’s games…
+      </p>
+    );
+  }
+  if (error) {
+    return (
+      <div className="space-y-2">
+        <p className="text-alert text-[13px]">Couldn’t load yesterday’s recap.</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="text-chalk hover:text-cream rounded-sm border border-white/10 px-3 py-1.5 text-[10.5px] uppercase tracking-[0.14em]"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+  if (!data || (data.games.length === 0 && data.playerLines.length === 0)) {
+    return (
+      <p className="text-chalk-dim text-[13px]">
+        No favorite-team finals or player lines for {data?.date ?? "yesterday"}.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="rule-head mb-1">Yesterday</div>
+        <h2 className="font-display text-cream text-[26px] leading-tight">{data.date}</h2>
+        <p className="text-chalk mt-1 text-[13px]">
+          Finals for your board · highlights when ESPN has them · favorite players
+        </p>
+      </div>
+
+      {data.games.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            Scores
+          </h3>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {data.games.map((g) => {
+              const inner = (
+                <article className="bg-panel rounded-lg border border-white/[0.08] p-3 transition hover:border-accent/35">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                      {g.sportLabel}
+                    </span>
+                    <span className="text-[10px] text-[#8b93a7]">{g.detail}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {g.away.logo ? <LogoPlate src={g.away.logo} className="h-8 w-8" /> : null}
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={cn(
+                          "text-[15px] font-semibold",
+                          g.away.winner ? "text-cream" : "text-[#a8b0c2]",
+                        )}
+                      >
+                        {g.away.abbrev}{" "}
+                        <span className="numeral">{g.away.score ?? "—"}</span>
+                      </p>
+                      <p
+                        className={cn(
+                          "text-[15px] font-semibold",
+                          g.home.winner ? "text-cream" : "text-[#a8b0c2]",
+                        )}
+                      >
+                        {g.home.abbrev}{" "}
+                        <span className="numeral">{g.home.score ?? "—"}</span>
+                      </p>
+                    </div>
+                    {g.home.logo ? <LogoPlate src={g.home.logo} className="h-8 w-8" /> : null}
+                  </div>
+                  {g.highlight ? (
+                    <p className="text-chalk mt-2 line-clamp-2 text-[12px]">
+                      {g.highlight.headline}
+                    </p>
+                  ) : null}
+                </article>
+              );
+              return g.href.startsWith("http") ? (
+                <a key={g.id} href={g.href} target="_blank" rel="noreferrer">
+                  {inner}
+                </a>
+              ) : (
+                <Link key={g.id} to={g.href}>
+                  {inner}
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {data.playerLines.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+            Favorite players
+          </h3>
+          <ul className="space-y-2">
+            {data.playerLines.map((line) => (
+              <li key={line.playerId}>
+                <Link
+                  to={`/sports/mlb/player/${line.playerId}`}
+                  className="bg-panel flex items-start gap-3 rounded-lg border border-white/[0.08] px-3 py-2.5 transition hover:border-accent/35"
+                >
+                  <img
+                    src={line.headshot}
+                    alt=""
+                    className="h-12 w-10 shrink-0 rounded-md bg-[#dfe6f2] object-cover object-[center_15%]"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <p className="text-cream text-[14px] font-semibold">{line.playerName}</p>
+                      {line.isWin != null && (
+                        <span
+                          className={cn(
+                            "text-[10px] font-bold uppercase tracking-[0.12em]",
+                            line.isWin ? "text-emerald-300" : "text-alert",
+                          )}
+                        >
+                          {line.isWin ? "W" : "L"}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[12px] text-[#a8b0c2]">
+                      {`${line.isHome ? "vs" : "@"} ${line.opponent}`}
+                    </p>
+                    <p className="numeral text-cream mt-1 text-[13px] leading-snug">
+                      {line.summary || "—"}
+                    </p>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function TeamDetailPanel({
+  fav,
+  detail,
+  loading,
+  error,
+  onClose,
+}: {
+  fav: SportsFavorite;
+  detail: TeamDetail | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const accent = fav.color ? `#${fav.color}` : "var(--color-accent)";
+  const title = detail?.shortName ?? fav.shortName;
+  const mlbTeamId = fav.mlbTeamId;
+  const nflTeamId =
+    fav.league === "NFL" ? (fav.espnPath.split("/").pop() ?? null) : null;
+  const nhlTeamId =
+    fav.league === "NHL" ? (fav.espnPath.split("/").pop() ?? null) : null;
+  const cfbTeamId = cfbEspnTeamId(fav);
+  const isSoccer = /soccer\//i.test(fav.espnPath);
+  const isHockey = fav.league === "NHL";
+
+  const hero = useQuery({
+    queryKey: ["team-detail-hero", mlbTeamId],
+    queryFn: () => fetchTeamCurrentGame(mlbTeamId!),
+    enabled: Boolean(mlbTeamId),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  });
+
+  const teamStatRanks = useQuery({
+    queryKey: ["mlb-team-stat-ranks", mlbTeamId],
+    queryFn: () => fetchMlbTeamStatLeagueRanks(mlbTeamId!),
+    enabled: Boolean(mlbTeamId) && detail?.source === "mlb",
+    staleTime: 60 * 60_000,
+  });
+
+  const statRankMap = useMemo(() => {
+    const map: Record<string, { rank: number; of: number }> = {};
+    for (const r of teamStatRanks.data ?? []) map[r.label] = { rank: r.rank, of: r.of };
+    return map;
+  }, [teamStatRanks.data]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/55" onClick={onClose}>
+      <aside
+        className="bg-field flex h-full w-full max-w-full flex-col overflow-hidden border-l border-accent/25"
+        style={{
+          paddingTop: "env(safe-area-inset-top)",
+          paddingBottom: "env(safe-area-inset-bottom)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="shrink-0 border-b border-white/[0.07] px-5 py-4">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="rule-head mb-1">{fav.league}</div>
+              <h2 className="font-display text-cream text-[26px] leading-tight">{title}</h2>
+              <p className="text-chalk-dim mt-0.5 text-[11px] uppercase tracking-[0.14em]">
+                {detail?.name ?? fav.name}
+                {detail?.source === "mlb" ? " · MLB Stats API" : ""}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-chalk hover:text-cream rounded-sm p-2"
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          {detail && (
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              {detail.record && (
+                <span className="numeral text-cream text-[24px] leading-none">
+                  {detail.record}
+                </span>
+              )}
+              {detail.standing && (
+                <span className="text-chalk text-[12px]">{detail.standing}</span>
+              )}
+            </div>
+          )}
+          {nflTeamId && /^\d+$/.test(nflTeamId) && (
+            <Link
+              to={`/sports/nfl/team/${nflTeamId}`}
+              className="text-accent mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Full team page
+            </Link>
+          )}
+          {cfbTeamId && /^\d+$/.test(cfbTeamId) && (
+            <Link
+              to={`/sports/cfb/team/${cfbTeamId}`}
+              className="text-accent mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Full team page
+            </Link>
+          )}
+          {nhlTeamId && /^\d+$/.test(nhlTeamId) && (
+            <Link
+              to={`/sports/nhl/team/${nhlTeamId}`}
+              className="text-accent mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Full team page
+            </Link>
+          )}
+          {detail && (detail.manager || detail.generalManager) && detail.source !== "mlb" ? (
+            <div className="mt-3 flex flex-col gap-1 border-t border-white/[0.06] pt-3">
+              {detail.manager ? (
+                <p className="text-chalk text-[12px]">
+                  <span className="text-chalk-dim uppercase tracking-[0.12em]">
+                    {detail.manager.title || "Manager"}
+                  </span>
+                  {" · "}
+                  <Link
+                    to={`/sports/mlb/managers/${detail.manager.id}`}
+                    className="text-cream hover:text-accent"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {detail.manager.name}
+                  </Link>
+                </p>
+              ) : null}
+              {detail.generalManager ? (
+                <p className="text-chalk text-[12px]">
+                  <span className="text-chalk-dim uppercase tracking-[0.12em]">
+                    {detail.generalManager.title || "GM"}
+                  </span>
+                  {" · "}
+                  <span className="text-cream">{detail.generalManager.name}</span>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5">
+          {loading && !detail && (
+            <div className="text-chalk flex items-center justify-center gap-2 py-20 text-[13px]">
+              <Loader2 size={16} className="animate-spin" />
+              Loading team…
+            </div>
+          )}
+          {error && !detail && (
+            <p className="text-alert text-[13px]">{error}</p>
+          )}
+          {detail && (
+            <div className="flex flex-col gap-7">
+              {hero.data && (
+                <HeroGameCard
+                  game={hero.data}
+                  accent={accent}
+                  label={
+                    hero.data.live
+                      ? `${title} · Live`
+                      : hero.data.final
+                        ? `${title} · Latest`
+                        : `${title} · Next up`
+                  }
+                />
+              )}
+
+              {mlbTeamId && detail.source === "mlb" && detail.abbrev && (
+                <MlbTeamOrgSummary
+                  abbrev={detail.abbrev}
+                  accent={accent}
+                  teamId={mlbTeamId}
+                  fallbackRecord={detail.record}
+                  fallbackStanding={detail.standing}
+                  fallbackManager={
+                    detail.manager
+                      ? {
+                          id: detail.manager.id,
+                          name: detail.manager.name,
+                          record: detail.record,
+                        }
+                      : null
+                  }
+                  fallbackGeneralManager={
+                    detail.generalManager
+                      ? {
+                          name: detail.generalManager.name,
+                          title: detail.generalManager.title,
+                        }
+                      : null
+                  }
+                  playoffOdds={formatOdds(detail.playoffOdds)}
+                  wildCardOdds={
+                    detail.wildCardOdds ? formatOdds(detail.wildCardOdds) : null
+                  }
+                />
+              )}
+
+              {mlbTeamId && detail.source === "mlb" && (
+                <MlbTeamWinTrend teamId={mlbTeamId} accent={accent} />
+              )}
+
+              <DetailSection title="Standings">
+                {detail.division.length === 0 ? (
+                  <EmptyLine>No standings available.</EmptyLine>
+                ) : (
+                  <div className="bg-panel overflow-x-auto rounded border border-white/[0.07]">
+                    <table className="w-full min-w-[420px] text-left text-[12px]">
+                      <thead className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">
+                        <tr className="border-b border-white/[0.06]">
+                          <th className="px-3 py-2 font-medium">Team</th>
+                          <th className="px-2 py-2 font-medium">{isSoccer ? "Pld" : "Rec"}</th>
+                          {isSoccer || isHockey ? (
+                            <>
+                              <th className="px-2 py-2 font-medium">{isHockey ? "DIFF" : "GD"}</th>
+                              <th className="px-2 py-2 font-medium">Pts</th>
+                            </>
+                          ) : (
+                            <>
+                              <th className="px-2 py-2 font-medium">Pct</th>
+                              <th className="px-2 py-2 font-medium">GB</th>
+                            </>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detail.division.map((row) => (
+                          <tr
+                            key={`${row.rank}-${row.team}`}
+                            className={cn(
+                              "border-t border-white/[0.04]",
+                              row.isMe && "bg-white/[0.04]",
+                              isSoccer &&
+                                Number(row.rank) <= 2 &&
+                                "bg-emerald-500/[0.04]",
+                              isSoccer &&
+                                Number(row.rank) >= 3 &&
+                                Number(row.rank) <= 6 &&
+                                "bg-sky-500/[0.03]",
+                              isSoccer &&
+                                Number(row.rank) >= 22 &&
+                                "bg-rose-500/[0.04]",
+                            )}
+                          >
+                            <td className={cn("px-3 py-2", row.isMe ? "text-cream font-medium" : "text-chalk")}>
+                              <span className="inline-flex items-center gap-2">
+                                <span className="text-chalk-dim numeral w-3">{row.rank}</span>
+                                {detail.source === "mlb" && row.teamId ? (
+                                  <TeamMark teamId={row.teamId} size="xs" />
+                                ) : row.teamId && isSoccer ? (
+                                  <LogoPlate
+                                    src={`https://a.espncdn.com/i/teamlogos/soccer/500/${row.teamId}.png`}
+                                    className="h-4 w-4"
+                                    loading="lazy"
+                                  />
+                                ) : null}
+                                {detail.source === "mlb" && row.teamId ? (
+                                  <Link
+                                    to={teamPagePath(Number(row.teamId))}
+                                    className="hover:text-cream hover:underline"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {row.team}
+                                    {row.isMe ? " ★" : ""}
+                                  </Link>
+                                ) : (
+                                  <>
+                                    {row.team}
+                                    {row.isMe ? " ★" : ""}
+                                  </>
+                                )}
+                              </span>
+                            </td>
+                            <td className="numeral text-cream px-2 py-2">
+                              {isSoccer ? row.record : row.record}
+                            </td>
+                            {isSoccer || isHockey ? (
+                              <>
+                                <td className="numeral text-chalk px-2 py-2">{row.gd || "—"}</td>
+                                <td className="numeral text-cream px-2 py-2 font-medium">
+                                  {row.pts || "—"}
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="numeral text-chalk px-2 py-2">{row.pct || "—"}</td>
+                                <td className="numeral text-chalk px-2 py-2">{row.gb}</td>
+                              </>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {isSoccer ? (
+                      <p className="text-chalk-dim border-t border-white/[0.05] px-3 py-2 text-[10px]">
+                        Green = auto-promotion (1–2) · Blue = playoffs (3–6) · Red = relegation
+                      </p>
+                    ) : null}
+                  </div>
+                )}
+              </DetailSection>
+
+              <CollapsibleDetailSection title="Upcoming" count={detail.upcoming.length} defaultOpen={false}>
+                <GameList
+                  games={detail.upcoming}
+                  empty="No upcoming games."
+                  mlbBoxscores={detail.source === "mlb"}
+                  gameBase={isHockey ? "/sports/nhl/game" : null}
+                />
+              </CollapsibleDetailSection>
+
+              <CollapsibleDetailSection title="Recent" count={detail.recent.length} defaultOpen={false}>
+                <GameList
+                  games={detail.recent}
+                  empty="No recent games."
+                  mlbBoxscores={detail.source === "mlb"}
+                  gameBase={isHockey ? "/sports/nhl/game" : null}
+                />
+              </CollapsibleDetailSection>
+
+              <CollapsibleDetailSection title="Roster" count={detail.roster.length} defaultOpen={false}>
+                {detail.roster.length === 0 ? (
+                  <EmptyLine>Roster unavailable.</EmptyLine>
+                ) : isSoccer ? (
+                  <SoccerRosterList roster={detail.roster} />
+                ) : (
+                  <ul className="bg-panel divide-y divide-white/[0.05] rounded border border-white/[0.07]">
+                    {detail.roster.map((p) => {
+                      const mlbClickable =
+                        detail.source === "mlb" && /^\d+$/.test(String(p.id));
+                      const nflClickable =
+                        fav.league === "NFL" && /^\d+$/.test(String(p.id));
+                      const cfbClickable =
+                        fav.league === "NCAA" &&
+                        fav.sport === "Football" &&
+                        /^\d+$/.test(String(p.id));
+                      const nhlClickable = fav.league === "NHL" && /^\d+$/.test(String(p.id));
+                      const href = mlbClickable
+                        ? `/sports/mlb/player/${p.id}`
+                        : nflClickable
+                          ? `/sports/nfl/player/${p.id}`
+                          : cfbClickable
+                            ? `/sports/cfb/player/${p.id}`
+                            : nhlClickable
+                              ? `/sports/nhl/player/${p.id}`
+                              : null;
+                      const row = (
+                        <>
+                          <span className="text-chalk-dim numeral w-8 shrink-0 text-[11px]">
+                            {p.number ? `#${p.number}` : "—"}
+                          </span>
+                          <span className="text-cream min-w-0 flex-1 truncate group-hover:underline">
+                            {p.name}
+                          </span>
+                          <span className="text-chalk-dim shrink-0 text-[10px] uppercase tracking-[0.12em]">
+                            {p.position ?? "—"}
+                          </span>
+                        </>
+                      );
+                      return (
+                        <li key={p.id}>
+                          {href ? (
+                            <Link
+                              to={href}
+                              className="group flex items-baseline gap-2 px-3 py-2 text-[12.5px] hover:bg-white/[0.03]"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {row}
+                            </Link>
+                          ) : (
+                            <div className="flex items-baseline gap-2 px-3 py-2 text-[12.5px]">
+                              {row}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </CollapsibleDetailSection>
+
+              {!isSoccer ? (
+              <DetailSection title="Team stats">
+                {(detail.teamHitting.length > 0 || detail.teamPitching.length > 0) ? (
+                  <div className="flex flex-col gap-3">
+                    {detail.teamHitting.length > 0 && (
+                      <StatGrid
+                        title="Hitting"
+                        rows={detail.teamHitting}
+                        ranks={statRankMap}
+                      />
+                    )}
+                    {detail.teamPitching.length > 0 && (
+                      <StatGrid
+                        title="Pitching"
+                        rows={detail.teamPitching}
+                        ranks={statRankMap}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <EmptyLine>
+                    {detail.source === "mlb"
+                      ? "Team stats unavailable."
+                      : "Detailed team stats via MLB for Cardinals; other leagues show standings & roster."}
+                  </EmptyLine>
+                )}
+              </DetailSection>
+              ) : null}
+
+              {mlbTeamId && detail.source === "mlb" && (
+                <MlbTeamRecordSplitsSection teamId={mlbTeamId} accent={accent} />
+              )}
+
+              {mlbTeamId && detail.source === "mlb" && (
+                <MlbTeamLeadersSection teamId={mlbTeamId} accent={accent} />
+              )}
+
+              {(detail.hittingLeaders.length > 0 || detail.pitchingLeaders.length > 0) &&
+                detail.source !== "mlb" && (
+                <DetailSection title="Leaders">
+                  <div className="flex flex-col gap-4">
+                    {detail.hittingLeaders.length > 0 && (
+                      <LeaderList title="Hitting" leaders={detail.hittingLeaders} sport="mlb" />
+                    )}
+                    {detail.pitchingLeaders.length > 0 && (
+                      <LeaderList title="Pitching" leaders={detail.pitchingLeaders} sport="mlb" />
+                    )}
+                  </div>
+                </DetailSection>
+              )}
+
+              {detail.playerTables.length > 0 && (
+                <DetailSection title="Player stats">
+                  <div className="flex flex-col gap-4">
+                    {detail.playerTables.map((table) => (
+                      <PlayerStatTable
+                        key={table.name}
+                        table={table}
+                        sport={
+                          detail.source === "mlb" ? "mlb" : fav.league === "NHL" ? "nhl" : "nfl"
+                        }
+                      />
+                    ))}
+                  </div>
+                </DetailSection>
+              )}
+
+              {mlbTeamId && detail.source === "mlb" && detail.abbrev && (
+                <MlbTeamPayrollTable abbrev={detail.abbrev} />
+              )}
+
+              {isSoccer && detail.teamFacts.length > 0 ? (
+                <DetailSection title="Club form">
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                    {detail.teamFacts.map((f) => (
+                      <div
+                        key={f.label}
+                        className="bg-panel rounded border border-white/[0.07] px-2.5 py-2 text-center"
+                      >
+                        <p className="text-chalk-dim text-[9px] uppercase tracking-[0.14em]">
+                          {f.label}
+                        </p>
+                        <p className="numeral text-cream mt-1 text-[16px] leading-none">{f.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </DetailSection>
+              ) : null}
+
+              {detail.source !== "mlb" ? (
+              <DetailSection title={isSoccer ? "Promotion odds" : "Playoff odds"}>
+                {isSoccer && detail.soccerPromotion ? (
+                  <div className="bg-panel rounded border border-white/[0.07] p-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
+                          To be promoted
+                        </p>
+                        <p
+                          className="numeral text-cream mt-1 text-[36px] leading-none"
+                          style={{ color: accent }}
+                        >
+                          {detail.soccerPromotion.percent != null
+                            ? `${detail.soccerPromotion.percent}%`
+                            : "—"}
+                        </p>
+                      </div>
+                      {detail.soccerPromotion.american ? (
+                        <div className="text-right">
+                          <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
+                            American
+                          </p>
+                          <p className="numeral text-cream mt-1 text-[22px]">
+                            {detail.soccerPromotion.american}
+                          </p>
+                        </div>
+                      ) : null}
+                      {detail.soccerPromotion.projectedPlace != null ? (
+                        <div className="text-right">
+                          <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
+                            ESPN project
+                          </p>
+                          <p className="numeral text-cream mt-1 text-[22px]">
+                            {detail.soccerPromotion.projectedPlace}
+                            {ordinalSuffixLocal(detail.soccerPromotion.projectedPlace)}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                    {detail.soccerPromotion.percent != null ? (
+                      <div className="bg-field mt-3 h-1.5 overflow-hidden rounded-full">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, detail.soccerPromotion.percent))}%`,
+                            background: accent,
+                          }}
+                        />
+                      </div>
+                    ) : null}
+                    <p className="text-chalk-dim mt-2 text-[11px]">
+                      {detail.soccerPromotion.source
+                        ? `${detail.soccerPromotion.source}`
+                        : "Promotion markets"}
+                      {detail.soccerPromotion.zone
+                        ? ` · currently ${detail.soccerPromotion.zone === "auto" ? "auto-promotion" : detail.soccerPromotion.zone === "playoff" ? "playoff places" : detail.soccerPromotion.zone === "relegation" ? "relegation zone" : "mid-table"}`
+                        : ""}
+                      {detail.soccerPromotion.url ? (
+                        <>
+                          {" · "}
+                          <a
+                            href={detail.soccerPromotion.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-accent hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            Source
+                          </a>
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                ) : detail.playoffOdds || detail.wildCardOdds ? (
+                  <div className="bg-panel rounded border border-white/[0.07] p-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
+                          Make playoffs
+                        </p>
+                        <p className="numeral text-cream mt-1 text-[36px] leading-none" style={{ color: accent }}>
+                          {formatOdds(detail.playoffOdds)}
+                        </p>
+                      </div>
+                      {detail.wildCardOdds && (
+                        <div className="text-right">
+                          <p className="text-chalk-dim text-[10.5px] uppercase tracking-[0.14em]">
+                            Wild card
+                          </p>
+                          <p className="numeral text-cream mt-1 text-[22px]">
+                            {formatOdds(detail.wildCardOdds)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    {pctNumber(detail.playoffOdds) != null && (
+                      <div className="bg-field mt-3 h-1.5 overflow-hidden rounded-full">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, pctNumber(detail.playoffOdds)!))}%`,
+                            background: accent,
+                          }}
+                        />
+                      </div>
+                    )}
+                    <p className="text-chalk-dim mt-2 text-[11px]">ESPN projections</p>
+                  </div>
+                ) : (
+                  <EmptyLine>
+                    {isSoccer ? "Promotion odds not available yet." : "Playoff odds not available yet."}
+                  </EmptyLine>
+                )}
+              </DetailSection>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function CollapsibleDetailSection({
+  title,
+  children,
+  count,
+  defaultOpen = false,
+}: {
+  title: string;
+  children: ReactNode;
+  count?: number;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="mb-3 flex w-full items-center justify-between gap-2 text-left"
+      >
+        <span className="inline-flex items-center gap-2">
+          <h3 className="rule-head">{title}</h3>
+          {count != null && count > 0 ? (
+            <span className="text-chalk-dim numeral text-[11px]">({count})</span>
+          ) : null}
+        </span>
+        {open ? (
+          <ChevronUp size={16} className="text-chalk-dim shrink-0" />
+        ) : (
+          <ChevronDown size={16} className="text-chalk-dim shrink-0" />
+        )}
+      </button>
+      {open ? children : null}
+    </section>
+  );
+}
+
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <h3 className="rule-head mb-3">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function EmptyLine({ children }: { children: ReactNode }) {
+  return <p className="text-chalk-dim text-[12.5px]">{children}</p>;
+}
+
+function PitcherChip({ name, id }: { name?: string | null; id?: number | null }) {
+  const label = name ?? "TBD";
+  const body = (
+    <span className="inline-flex min-w-0 items-center gap-2">
+      {id != null ? (
+        <img
+          src={mlbHeadshot(id, 213)}
+          alt=""
+          className="h-9 w-9 shrink-0 rounded-full bg-[#0c1a2e] object-cover object-top ring-1 ring-white/15"
+        />
+      ) : (
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/[0.06] text-[9px] text-[#8b93a7]">
+          TBD
+        </span>
+      )}
+      <span className="text-cream truncate text-[12.5px] leading-snug">{label}</span>
+    </span>
+  );
+  if (id == null) return body;
+  return (
+    <Link
+      to={`/sports/mlb/player/${id}`}
+      onClick={(e) => e.stopPropagation()}
+      className="hover:opacity-90"
+    >
+      {body}
+    </Link>
+  );
+}
+
+function GameList({
+  games,
+  empty,
+  mlbBoxscores,
+  gameBase,
+}: {
+  games: ScheduleGame[];
+  empty: string;
+  mlbBoxscores?: boolean;
+  gameBase?: string | null;
+}) {
+  if (games.length === 0) return <EmptyLine>{empty}</EmptyLine>;
+  const upcomingStyle = games.some((g) => g.myPitcher || g.oppPitcher || g.pitchers);
+  return (
+    <ul className="bg-panel divide-y divide-white/[0.05] rounded border border-white/[0.07]">
+      {games.map((g) => {
+        const canOpen = (mlbBoxscores || Boolean(gameBase)) && /^\d+$/.test(g.id);
+        const gameHref = mlbBoxscores
+          ? `/sports/mlb/game/${g.id}`
+          : gameBase
+            ? `${gameBase}/${g.id}`
+            : null;
+        const showMatchup = Boolean(g.myPitcher || g.oppPitcher || g.pitchers);
+        const body = (
+          <>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {g.opponentTeamId != null && (
+                  <TeamMark teamId={g.opponentTeamId} size="sm" />
+                )}
+                <span className="text-cream text-[14px] font-semibold group-hover:underline">
+                  {g.label}
+                </span>
+                {g.detail ? (
+                  <span
+                    className={cn(
+                      "numeral text-[14px]",
+                      g.won === true && "text-turf",
+                      g.won === false && "text-alert",
+                      g.won == null && "text-chalk",
+                    )}
+                  >
+                    {g.detail}
+                  </span>
+                ) : null}
+                {g.live ? (
+                  <span className="text-alert text-[10px] font-semibold uppercase tracking-wide">
+                    Live
+                  </span>
+                ) : null}
+              </div>
+              {showMatchup && (
+                <div className="mt-2 rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-2">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[#b8c0d2]">
+                    Expected pitching
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                    <PitcherChip name={g.myPitcher} id={g.myPitcherId} />
+                    <span className="text-[11px] uppercase tracking-[0.14em] text-[#8b93a7]">vs</span>
+                    <PitcherChip name={g.oppPitcher} id={g.oppPitcherId} />
+                  </div>
+                </div>
+              )}
+            </div>
+            <span className="text-chalk-dim shrink-0 text-[11px]">
+              {g.when ?? g.status}
+              {canOpen ? " · Box" : ""}
+            </span>
+          </>
+        );
+        return (
+          <li key={g.id}>
+            {canOpen && gameHref ? (
+              <Link
+                to={gameHref}
+                className={cn(
+                  "group flex flex-wrap items-start justify-between gap-2 px-3 text-[12.5px] hover:bg-white/[0.03]",
+                  upcomingStyle && showMatchup ? "py-3" : "items-baseline py-2.5",
+                )}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {body}
+              </Link>
+            ) : (
+              <div
+                className={cn(
+                  "flex flex-wrap items-start justify-between gap-2 px-3 text-[12.5px]",
+                  upcomingStyle && showMatchup ? "py-3" : "items-baseline py-2.5",
+                )}
+              >
+                {body}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function StatGrid({
+  title,
+  rows,
+  ranks,
+}: {
+  title: string;
+  rows: { label: string; value: string }[];
+  ranks?: Record<string, { rank: number; of: number }>;
+}) {
+  return (
+    <div>
+      <p className="text-chalk-dim mb-2 text-[10.5px] uppercase tracking-[0.14em]">{title}</p>
+      <dl className="grid grid-cols-3 gap-2">
+        {rows.map((s) => {
+          const rank = ranks?.[s.label];
+          return (
+            <div key={s.label} className="bg-panel rounded border border-white/[0.07] px-2.5 py-2">
+              <dt className="text-chalk-dim text-[10px] uppercase tracking-[0.12em]">{s.label}</dt>
+              <dd className="numeral text-cream mt-0.5 text-[18px]">{s.value}</dd>
+              {rank ? (
+                <p className="text-chalk-dim mt-0.5 text-[10px]">
+                  {`${rank.rank}${ordinalSuffixLocal(rank.rank)}`} in MLB
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+      </dl>
+    </div>
+  );
+}
+
+function LeaderList({
+  title,
+  leaders,
+  sport = "mlb",
+}: {
+  title: string;
+  leaders: { id?: string; name: string; line: string }[];
+  sport?: "mlb" | "nfl" | "nhl";
+}) {
+  return (
+    <div>
+      <p className="text-chalk-dim mb-2 text-[10.5px] uppercase tracking-[0.14em]">{title}</p>
+      <ul className="flex flex-col gap-2">
+        {leaders.map((l) => {
+          const href =
+            l.id && sport === "mlb"
+              ? `/sports/mlb/player/${l.id}`
+              : l.id && sport === "nfl"
+                ? `/sports/nfl/player/${l.id}`
+                : l.id && sport === "nhl"
+                  ? `/sports/nhl/player/${l.id}`
+                  : null;
+          const body = (
+            <span className="flex items-center gap-2.5">
+              {l.id && sport === "mlb" ? (
+                <img
+                  src={mlbHeadshot(Number(l.id), 213)}
+                  alt=""
+                  className="h-9 w-9 shrink-0 rounded-full bg-[#0c1a2e] object-cover object-top ring-1 ring-white/15"
+                  loading="lazy"
+                />
+              ) : null}
+              <span className="min-w-0">
+                <p className="text-cream text-[13px] group-hover:underline">{l.name}</p>
+                <p className="text-chalk-dim numeral mt-0.5 text-[11.5px]">{l.line}</p>
+              </span>
+            </span>
+          );
+          return (
+            <li
+              key={`${title}-${l.id ?? l.name}-${l.line}`}
+              className="border-b border-white/[0.05] pb-2 last:border-0"
+            >
+              {href ? (
+                <Link to={href} className="group block" onClick={(e) => e.stopPropagation()}>
+                  {body}
+                </Link>
+              ) : (
+                body
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function PlayerStatTable({
+  table,
+  sport,
+}: {
+  table: { name: string; labels: string[]; rows: { id: string; name: string; stats: string[] }[] };
+  sport: "mlb" | "nfl" | "nhl";
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-white/[0.08]">
+      <div className="border-b border-white/[0.06] px-3 py-2">
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-[#e8e4d9]">
+          {table.name}
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[360px] text-left text-[12px]">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
+              <th className="px-3 py-2 font-medium">Player</th>
+              {table.labels.map((lab) => (
+                <th key={lab} className="numeral px-2 py-2 text-right font-medium">
+                  {lab}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row) => (
+              <tr key={`${table.name}-${row.id}`} className="border-t border-white/[0.05]">
+                <td className="px-3 py-1.5">
+                  <Link
+                    to={
+                      sport === "mlb"
+                        ? `/sports/mlb/player/${row.id}`
+                        : sport === "nhl"
+                          ? `/sports/nhl/player/${row.id}`
+                          : `/sports/nfl/player/${row.id}`
+                    }
+                    className="text-cream inline-flex items-center gap-2 hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {sport === "mlb" ? (
+                      <img
+                        src={mlbHeadshot(Number(row.id), 213)}
+                        alt=""
+                        className="h-7 w-7 rounded-full object-cover object-top"
+                        loading="lazy"
+                      />
+                    ) : null}
+                    {row.name}
+                  </Link>
+                </td>
+                {row.stats.map((val, i) => (
+                  <td
+                    key={`${row.id}-${table.labels[i] ?? i}`}
+                    className="numeral px-2 py-1.5 text-right text-white/90"
+                  >
+                    {val}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function formatOdds(raw: string | null): string {
+  if (!raw) return "—";
+  const n = pctNumber(raw);
+  if (n != null) return `${Number.isInteger(n) ? n : n.toFixed(1)}%`;
+  return raw.includes("%") ? raw : `${raw}%`;
+}
+
+function pctNumber(raw: string | null): number | null {
+  if (!raw) return null;
+  const n = parseFloat(raw.replace("%", "").trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return "Couldn’t load";
+}
+
+function SkeletonCard({ wide }: { wide?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "bg-panel h-[180px] animate-pulse rounded border border-white/[0.06]",
+        wide && "sm:col-span-2",
+      )}
+    />
+  );
+}
+
+function ErrorCard({ fav, message }: { fav: SportsFavorite; message: string }) {
+  return (
+    <article className="bg-panel rounded border border-alert/25 p-4">
+      <h3 className="font-display text-cream text-[18px]">{fav.shortName}</h3>
+      <p className="text-alert mt-2 text-[12px]">{message}</p>
+    </article>
+  );
+}
