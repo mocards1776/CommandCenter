@@ -7,6 +7,7 @@ import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import { CfbWinProbCaption } from "@/components/sports/CfbWinProbability";
+import LogoPlate from "@/components/sports/LogoPlate";
 import TeamMark from "@/components/sports/TeamMark";
 import type { UnifiedRuwtItem } from "@/hooks/useRuwtSlate";
 import { useRuwtSlateSplit } from "@/hooks/useRuwtSlateSplit";
@@ -386,10 +387,9 @@ export default function RuwtPage() {
                       key={t.id}
                       className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
                     >
-                      <img
+                      <LogoPlate
                         src={`https://a.espncdn.com/i/teamlogos/nfl/500/${t.abbrev.toLowerCase()}.png`}
-                        alt=""
-                        className="h-6 w-6 object-contain"
+                        className="h-6 w-6"
                       />
                       <span className="text-cream min-w-0 flex-1 truncate text-[13px]">
                         {t.abbrev} · {t.name}
@@ -429,11 +429,7 @@ export default function RuwtPage() {
                       key={t.id}
                       className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
                     >
-                      <img
-                        src={nhlTeamLogo(t.abbrev)}
-                        alt=""
-                        className="h-6 w-6 object-contain"
-                      />
+                      <LogoPlate src={nhlTeamLogo(t.abbrev)} className="h-6 w-6" />
                       <span className="text-cream min-w-0 flex-1 truncate text-[13px]">
                         {t.abbrev} · {t.name}
                       </span>
@@ -477,7 +473,7 @@ export default function RuwtPage() {
                       key={t.id}
                       className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
                     >
-                      <img src={cfbTeamLogo(t.id)} alt="" className="h-6 w-6 object-contain" />
+                      <LogoPlate src={cfbTeamLogo(t.id)} className="h-6 w-6" />
                       <span className="text-cream min-w-0 flex-1 truncate text-[13px]">
                         {t.abbrev} · {t.name}
                         {secFloor ? (
@@ -522,7 +518,7 @@ export default function RuwtPage() {
                       className="flex items-center gap-3 rounded-lg border border-white/[0.06] px-3 py-2"
                     >
                       {t.logo ? (
-                        <img src={t.logo} alt="" className="h-6 w-6 object-contain" />
+                        <LogoPlate src={t.logo} className="h-6 w-6" />
                       ) : (
                         <span className="grid h-6 w-6 place-items-center rounded-full bg-white/10 text-[9px] font-bold text-white/70">
                           {t.abbrev.slice(0, 2)}
@@ -783,7 +779,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
       </div>
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
-          {game.away.logo && <img src={game.away.logo} alt="" className="h-8 w-8 object-contain" />}
+          {game.away.logo && <LogoPlate src={game.away.logo} className="h-8 w-8" />}
           <p
             className={cn(
               "inline-flex items-center gap-1 text-[15px] font-bold text-white",
@@ -810,7 +806,7 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
           />
         </div>
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
-          {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
+          {game.home.logo && <LogoPlate src={game.home.logo} className="h-8 w-8" />}
           <p
             className={cn(
               "inline-flex items-center gap-1 text-[15px] font-bold text-white",
@@ -900,7 +896,7 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
       </div>
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
-          {game.away.logo && <img src={game.away.logo} alt="" className="h-8 w-8 object-contain" />}
+          {game.away.logo && <LogoPlate src={game.away.logo} className="h-8 w-8" />}
           <p
             className={cn(
               "inline-flex items-center gap-1 text-[15px] font-bold text-white",
@@ -920,7 +916,7 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
           preview={game.whenShort}
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
-          {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
+          {game.home.logo && <LogoPlate src={game.home.logo} className="h-8 w-8" />}
           <p
             className={cn(
               "inline-flex items-center gap-1 text-[15px] font-bold text-white",
@@ -986,7 +982,7 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
       </div>
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
-          {game.away.logo && <img src={game.away.logo} alt="" className="h-8 w-8 object-contain" />}
+          {game.away.logo && <LogoPlate src={game.away.logo} className="h-8 w-8" />}
           <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
         </div>
         <AppleScoreCluster
@@ -999,7 +995,7 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
           preview={game.whenShort}
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
-          {game.home.logo && <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />}
+          {game.home.logo && <LogoPlate src={game.home.logo} className="h-8 w-8" />}
           <p className="text-[15px] font-bold text-white">{game.home.abbrev}</p>
         </div>
       </div>
@@ -1042,7 +1038,7 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
       <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5">
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-start">
           {game.away.logo ? (
-            <img src={game.away.logo} alt="" className="h-8 w-8 object-contain" />
+            <LogoPlate src={game.away.logo} className="h-8 w-8" />
           ) : null}
           <p className="text-[15px] font-bold text-white">{game.away.abbrev}</p>
         </div>
@@ -1057,7 +1053,7 @@ function SoccerRuwtCard({ game, rank }: { game: SoccerScoredGame; rank: number }
         />
         <div className="flex min-w-0 flex-col items-center gap-1 sm:items-end">
           {game.home.logo ? (
-            <img src={game.home.logo} alt="" className="h-8 w-8 object-contain" />
+            <LogoPlate src={game.home.logo} className="h-8 w-8" />
           ) : null}
           <p className="text-[15px] font-bold text-white">{game.home.abbrev}</p>
         </div>
