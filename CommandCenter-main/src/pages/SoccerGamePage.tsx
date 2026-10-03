@@ -8,6 +8,7 @@ import {
   type SoccerGameOdds,
   type SoccerGameSide,
 } from "@/lib/soccer-game";
+import LogoPlate from "@/components/sports/LogoPlate";
 import { soccerTeamLogo } from "@/lib/soccer";
 import { cn } from "@/lib/utils";
 
@@ -240,7 +241,7 @@ function MatchupSide({
       )}
     >
       {logo ? (
-        <img src={logo} alt="" className="h-14 w-14 object-contain sm:h-16 sm:w-16" />
+        <LogoPlate src={logo} className="h-14 w-14 sm:h-16 sm:w-16" />
       ) : (
         <div className="bg-white/5 h-14 w-14 rounded-full sm:h-16 sm:w-16" />
       )}
