@@ -5,6 +5,8 @@ import { ArrowLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import NflFieldMap from "@/components/sports/NflFieldMap";
+import CfbWinProbability from "@/components/sports/CfbWinProbability";
+import PossessionFootball from "@/components/sports/PossessionFootball";
 import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel from "@/components/sports/HighlightReel";
@@ -126,6 +128,9 @@ export function CfbGameDetailView({
   const boxUrl = `https://www.espn.com/college-football/boxscore/_/gameId/${eventId}`;
   const awayWins = g.final && (g.away.score ?? 0) > (g.home.score ?? 0);
   const homeWins = g.final && (g.home.score ?? 0) > (g.away.score ?? 0);
+  const possId = g.live ? g.situation?.possessionTeamId : null;
+  const awayHasBall = possId != null && String(possId) === String(g.away.teamId);
+  const homeHasBall = possId != null && String(possId) === String(g.home.teamId);
   const label = statusLabel(g);
   const pregame = !g.final && !g.live;
 
@@ -227,7 +232,13 @@ export function CfbGameDetailView({
         </div>
 
         <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-7 sm:gap-4 sm:px-6">
-          <MatchupSide side={g.away} align="left" winner={awayWins} loser={homeWins} />
+          <MatchupSide
+            side={g.away}
+            align="left"
+            winner={awayWins}
+            loser={homeWins}
+            hasBall={awayHasBall}
+          />
           <div className="px-1 text-center">
             {pregame ? (
               <>
@@ -255,7 +266,13 @@ export function CfbGameDetailView({
               </>
             )}
           </div>
-          <MatchupSide side={g.home} align="right" winner={homeWins} loser={awayWins} />
+          <MatchupSide
+            side={g.home}
+            align="right"
+            winner={homeWins}
+            loser={awayWins}
+            hasBall={homeHasBall}
+          />
         </div>
 
         {!pregame ? (
@@ -288,6 +305,7 @@ export function CfbGameDetailView({
         <section className="space-y-2">
           <NflFieldMap
             game={g}
+            branded
             homeYardLine={homeYardLine}
             possessionTeamId={g.situation?.possessionTeamId ?? null}
             downDistanceText={g.situation?.downDistanceText}
@@ -302,6 +320,10 @@ export function CfbGameDetailView({
           ) : null}
         </section>
       )}
+
+      {g.winProbability.length > 0 ? (
+        <CfbWinProbability away={g.away} home={g.home} points={g.winProbability} />
+      ) : null}
 
       {g.recentPlays.length > 0 && (
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] shadow-[0_12px_40px_rgba(0,0,0,0.22)]">
@@ -718,11 +740,13 @@ function MatchupSide({
   align,
   winner,
   loser,
+  hasBall,
 }: {
   side: CfbScoreSide;
   align: "left" | "right";
   winner: boolean;
   loser: boolean;
+  hasBall: boolean;
 }) {
   return (
     <Link
@@ -738,12 +762,18 @@ function MatchupSide({
       <div>
         <p
           className={cn(
-            "text-[15px] font-bold sm:text-[17px]",
+            "inline-flex items-center gap-1 text-[15px] font-bold sm:text-[17px]",
             winner ? "text-white" : loser ? "text-white/45" : "text-white",
           )}
         >
+          {align === "right" && hasBall ? (
+            <PossessionFootball className="h-3 w-5 shrink-0" />
+          ) : null}
           <CfbRankLabel pollRank={side.rank} fpiRank={side.fpiRank} />
           {side.abbrev}
+          {align === "left" && hasBall ? (
+            <PossessionFootball className="h-3 w-5 shrink-0" />
+          ) : null}
         </p>
         <p className="text-[11px] text-[#8b93a7]">{side.name}</p>
         {side.record ? (

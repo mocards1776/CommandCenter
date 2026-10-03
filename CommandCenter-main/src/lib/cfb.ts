@@ -1,6 +1,7 @@
 /** College football via ESPN — scoreboard, RUWT, hot seat, player pages. */
 
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
+import { mapCfbWinProbability, type CfbWinProbPoint } from "./cfb-win-probability";
 import { supabase } from "./supabase";
 import { formatSportsDateLong } from "./utils";
 
@@ -372,6 +373,8 @@ export type CfbGameDetail = CfbScoreGame & {
     results: { label: string; result: string; score: string | null }[];
   }[];
   venueDetail: string | null;
+  /** ESPN in-game win probability, one point per play. Empty when ESPN has none. */
+  winProbability: CfbWinProbPoint[];
 };
 
 type EspnVideoRaw = {
@@ -1389,6 +1392,11 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
       venue?: { fullName?: string; address?: { city?: string; state?: string } };
       weather?: { displayValue?: string; temperature?: number };
     };
+    winprobability?: {
+      homeWinPercentage?: number;
+      tiePercentage?: number;
+      playId?: string;
+    }[];
   };
 
   const headerComp = raw.header?.competitions?.[0];
@@ -1558,6 +1566,10 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
     .filter((p) => p.text)
     .slice(-40)
     .reverse();
+  const winProbability = mapCfbWinProbability(
+    raw.winprobability,
+    drives.flatMap((d) => d.plays),
+  );
 
   // Prefer header/boxscore linescores when the mapped sides are empty.
   const headerComps = raw.header?.competitions?.[0]?.competitors ?? [];
@@ -1620,6 +1632,7 @@ export async function fetchCfbGameDetail(eventId: string): Promise<CfbGameDetail
     predictor,
     lastFive,
     venueDetail: venueBits.length ? venueBits.join(" · ") : null,
+    winProbability,
   };
 }
 

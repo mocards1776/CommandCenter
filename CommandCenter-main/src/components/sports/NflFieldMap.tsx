@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { NflScoreGame } from "@/lib/nfl";
 import { fieldBallPctFromHomeYardLine } from "@/lib/nfl";
@@ -6,8 +7,8 @@ import PossessionFootball from "@/components/sports/PossessionFootball";
 
 /** Minimal shape for NFL / CFB live field maps on RUWT cards. */
 export type FootballFieldGame = {
-  away: { teamId: string | number; abbrev: string; color?: string };
-  home: { teamId: string | number; abbrev: string; color?: string };
+  away: { teamId: string | number; abbrev: string; color?: string; logo?: string | null };
+  home: { teamId: string | number; abbrev: string; color?: string; logo?: string | null };
   situation?: {
     downDistanceText?: string | null;
     lastPlayText?: string | null;
@@ -70,11 +71,69 @@ function FootballGlyph({
   );
 }
 
+function EndZoneMark({
+  abbrev,
+  color,
+  logo,
+  branded,
+  side,
+}: {
+  abbrev: string;
+  color: string;
+  logo?: string | null;
+  branded: boolean;
+  side: "away" | "home";
+}) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div
+      className="relative flex items-center justify-center overflow-hidden"
+      style={{ background: color, boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.22)" }}
+      aria-hidden
+    >
+      {branded && logo && !failed ? (
+        <span className="flex size-8 items-center justify-center rounded-full bg-white p-1 shadow-[0_1px_3px_rgba(0,0,0,0.45)] @md:size-11 @lg:size-14 @md:p-1.5">
+          <img
+            src={logo}
+            alt=""
+            className="h-full w-full object-contain"
+            onError={() => setFailed(true)}
+          />
+        </span>
+      ) : (
+        <span
+          className={cn(
+            "text-[8px] font-black tracking-wider text-white/80",
+            side === "away" ? "-rotate-90" : "rotate-90",
+          )}
+        >
+          {abbrev}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function MidfieldLogo({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <img
+      src={src}
+      alt=""
+      onError={() => setFailed(true)}
+      className="pointer-events-none absolute left-1/2 top-1/2 z-[2] h-[70%] w-auto max-w-[26%] -translate-x-1/2 -translate-y-1/2 object-contain opacity-50 drop-shadow-[0_2px_8px_rgba(0,0,0,0.4)] @md:max-w-[18%]"
+    />
+  );
+}
+
 /**
  * Horizontal football field with:
  * - team-colored end zones
  * - blue line of scrimmage + yellow first-down stakes
  * - brown football glyph + team-colored direction chevron
+ *
+ * `branded` (CFB) paints the home logo at midfield and both logos in the end zones.
  */
 export default function NflFieldMap({
   game,
@@ -82,12 +141,15 @@ export default function NflFieldMap({
   homeYardLine,
   possessionTeamId,
   downDistanceText,
+  branded = false,
   className,
 }: {
   game: FootballFieldGame;
   homeYardLine: number | null;
   possessionTeamId: string | null;
   downDistanceText?: string | null;
+  /** Home midfield mark + end-zone logos. Used by CFB. */
+  branded?: boolean;
   className?: string;
 }) {
   const poss = possessionTeamId;
@@ -120,19 +182,13 @@ export default function NflFieldMap({
     }
   }
 
-  /** Map 0–100 yard pct onto the playable strip (between end zones). */
-  const fieldLeft = (pct: number) => 8 + pct * 0.84;
-
   const ticks = [10, 20, 30, 40, 50, 40, 30, 20, 10];
 
+  // Percents are of the playing field (between the end zones), not the whole strip.
   const toGainLeft =
-    ballPct != null && firstDownPct != null
-      ? Math.min(fieldLeft(ballPct), fieldLeft(firstDownPct))
-      : null;
+    ballPct != null && firstDownPct != null ? Math.min(ballPct, firstDownPct) : null;
   const toGainWidth =
-    ballPct != null && firstDownPct != null
-      ? Math.abs(fieldLeft(firstDownPct) - fieldLeft(ballPct))
-      : null;
+    ballPct != null && firstDownPct != null ? Math.abs(firstDownPct - ballPct) : null;
 
   return (
     <div className={cn("overflow-hidden rounded-xl border border-emerald-700/35 bg-[#0a1f12]", className)}>
@@ -160,64 +216,63 @@ export default function NflFieldMap({
         </span>
       </div>
 
-      <div className="relative mx-2 mb-3 mt-2 h-[4.5rem] overflow-hidden rounded-md border border-white/10 bg-gradient-to-b from-[#1a5c34] to-[#0d3d22]">
-        {/* End zones — team-colored */}
-        <div className="absolute inset-y-0 left-0 z-[1] w-[8%]" style={{ background: awayColor }} />
-        <div className="absolute inset-y-0 right-0 z-[1] w-[8%]" style={{ background: homeColor }} />
-        <span className="pointer-events-none absolute left-[1%] top-1/2 z-[2] -translate-y-1/2 -rotate-90 text-[8px] font-black tracking-wider text-white/80">
-          {game.away.abbrev}
-        </span>
-        <span className="pointer-events-none absolute right-[1%] top-1/2 z-[2] -translate-y-1/2 rotate-90 text-[8px] font-black tracking-wider text-white/80">
-          {game.home.abbrev}
-        </span>
-
-        {/* Yard lines */}
-        <div className="absolute inset-y-0 left-[8%] right-[8%] z-0">
+      <div
+        className={cn(
+          "@container mx-2 mb-3 mt-2 grid overflow-hidden rounded-md border border-white/10 bg-gradient-to-b from-[#1a5c34] to-[#0d3d22]",
+          branded
+            ? "h-[5.6rem] grid-cols-[minmax(2.55rem,11%)_1fr_minmax(2.55rem,11%)]"
+            : "h-[4.5rem] grid-cols-[8%_1fr_8%]",
+        )}
+      >
+        <EndZoneMark
+          abbrev={game.away.abbrev}
+          color={awayColor}
+          logo={game.away.logo}
+          branded={branded}
+          side="away"
+        />
+        <div className="relative min-w-0">
+          {branded && game.home.logo ? <MidfieldLogo src={game.home.logo} /> : null}
           {ticks.map((n, i) => (
             <div
               key={`${n}-${i}`}
-              className="absolute inset-y-0 border-l border-white/25"
+              className="absolute inset-y-0 z-0 border-l border-white/25"
               style={{ left: `${((i + 1) / 10) * 100}%` }}
             >
-              <span className="absolute bottom-1 left-0.5 -translate-x-1/2 text-[8px] font-bold text-white/50">
+              <span className="absolute bottom-1 left-0.5 -translate-x-1/2 text-[8px] font-bold text-white/55">
                 {n}
               </span>
             </div>
           ))}
-        </div>
 
-        {/* To-gain wash between LOS and first-down stakes */}
-        {toGainLeft != null && toGainWidth != null && toGainWidth > 0.3 && (
-          <div
-            className="absolute inset-y-0 z-[3] bg-amber-300/35"
-            style={{ left: `${toGainLeft}%`, width: `${toGainWidth}%` }}
-          />
-        )}
+          {toGainLeft != null && toGainWidth != null && toGainWidth > 0.3 && (
+            <div
+              className="absolute inset-y-0 z-[3] bg-amber-300/35"
+              style={{ left: `${toGainLeft}%`, width: `${toGainWidth}%` }}
+            />
+          )}
 
-        {/* First-down marker (yellow) */}
-        {firstDownPct != null && (
-          <div
-            className="absolute inset-y-0 z-[4] w-0.5 bg-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.7)]"
-            style={{ left: `${fieldLeft(firstDownPct)}%` }}
-            title="First down"
-          />
-        )}
+          {firstDownPct != null && (
+            <div
+              className="absolute inset-y-0 z-[4] w-0.5 bg-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.7)]"
+              style={{ left: `${firstDownPct}%` }}
+              title="First down"
+            />
+          )}
 
-        {/* Line of scrimmage (blue) */}
-        {ballPct != null && (
-          <div
-            className="absolute inset-y-0 z-[5] w-0.5 bg-sky-400 shadow-[0_0_6px_rgba(56,189,248,0.65)]"
-            style={{ left: `${fieldLeft(ballPct)}%` }}
-            title="Line of scrimmage"
-          />
-        )}
+          {ballPct != null && (
+            <div
+              className="absolute inset-y-0 z-[5] w-0.5 bg-sky-400 shadow-[0_0_6px_rgba(56,189,248,0.65)]"
+              style={{ left: `${ballPct}%` }}
+              title="Line of scrimmage"
+            />
+          )}
 
-        {/* Ball + team-colored direction of attack (ESPN-style) */}
-        {ballPct != null && (
-          <div
-            className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
-            style={{ left: `${fieldLeft(ballPct)}%` }}
-          >
+          {ballPct != null && (
+            <div
+              className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
+              style={{ left: `${ballPct}%` }}
+            >
             {/* Soft team glow behind the football */}
             <span
               className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-50 blur-[3px]"
@@ -251,6 +306,14 @@ export default function NflFieldMap({
             )}
           </div>
         )}
+        </div>
+        <EndZoneMark
+          abbrev={game.home.abbrev}
+          color={homeColor}
+          logo={game.home.logo}
+          branded={branded}
+          side="home"
+        />
       </div>
 
       {game.situation?.lastPlayText && (
