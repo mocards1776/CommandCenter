@@ -175,7 +175,8 @@ const cfb: PushGame = {
 };
 const cfbHeat = heatNote(cfb, drama({ sport: "cfb", awayScore: 24, homeScore: 17, detail: "0:27 - 4th", period: 4 }));
 assert(cfbHeat.title === "LSU 24, Alabama 17", cfbHeat.title);
-assert(cfbHeat.body.startsWith("0:27 - 4th\n"), cfbHeat.body);
+assert(cfbHeat.body.startsWith("0:27 - 4th · ABC · ESPN+\n"), cfbHeat.body);
+assert(!cfbHeat.body.split("\n").slice(1).some((line) => line.trim() === "ABC"), cfbHeat.body);
 assert(
   cfbHeat.body.includes("One-score game") &&
     cfbHeat.body.includes("Ranked matchup") &&
@@ -192,6 +193,13 @@ const espnOnly = heatNote(
 );
 assert(!espnOnly.body.includes("National TV"), espnOnly.body);
 assert(!espnOnly.body.includes("Ranked"), espnOnly.body);
+
+const cw = heatNote(
+  { ...cfb, detail: "15:00 - 3rd", broadcasts: ["CW"] },
+  drama({ sport: "cfb", awayScore: 24, homeScore: 17, detail: "15:00 - 3rd", period: 3 }),
+);
+assert(cw.body.startsWith("15:00 - 3rd · CW\n"), cw.body);
+assert(!cw.body.split("\n").slice(1).includes("CW"), cw.body);
 
 const fav: PushFavorite = { key: "mlb-stl", sport: "mlb", teamId: "24", shortName: "Cardinals" };
 const start = favoriteStartNote(

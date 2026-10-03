@@ -7,7 +7,7 @@ import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightR
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import CfbWinProbability from "@/components/sports/CfbWinProbability";
 import PossessionFootball from "@/components/sports/PossessionFootball";
-import CfbRankLabel from "@/components/sports/CfbRankLabel";
+import CfbRankLabel, { CfbFpiCaption } from "@/components/sports/CfbRankLabel";
 import CfbRecentPlays from "@/components/sports/CfbRecentPlays";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel from "@/components/sports/HighlightReel";
@@ -243,7 +243,7 @@ export function CfbGameDetailView({
           <div className="px-1 text-center">
             {pregame ? (
               <>
-                <p className="font-display text-[40px] leading-none tracking-tight text-white sm:text-[52px]">
+                <p className="numeral text-[40px] font-semibold leading-none tracking-tight text-white sm:text-[52px]">
                   {g.whenShort ?? "TBD"}
                 </p>
                 <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
@@ -252,7 +252,7 @@ export function CfbGameDetailView({
               </>
             ) : (
               <>
-                <p className="font-display text-[48px] leading-none tabular-nums text-white sm:text-[60px]">
+                <p className="numeral text-[48px] font-semibold leading-none text-white sm:text-[60px]">
                   <span className={awayWins ? "text-white" : "text-white/50"}>
                     {g.away.score ?? "–"}
                   </span>
@@ -551,12 +551,13 @@ export function CfbGameDetailView({
                   ) : null}
                   <div>
                     <p className="text-[14px] font-bold text-white">
-                      <CfbRankLabel pollRank={side.rank} fpiRank={side.fpiRank} />
+                      <CfbRankLabel pollRank={side.rank} fpiRank={null} />
                       {side.name}
                     </p>
                     {side.record ? (
                       <p className="numeral text-[12px] text-[#8b93a7]">{side.record}</p>
                     ) : null}
+                    <CfbFpiCaption pollRank={side.rank} fpiRank={side.fpiRank} />
                   </div>
                 </div>
                 {groups.map((group) => (
@@ -730,7 +731,7 @@ function MatchupSide({
           {align === "right" && hasBall ? (
             <PossessionFootball className="h-3 w-5 shrink-0" />
           ) : null}
-          <CfbRankLabel pollRank={side.rank} fpiRank={side.fpiRank} />
+          <CfbRankLabel pollRank={side.rank} fpiRank={null} />
           {side.abbrev}
           {align === "left" && hasBall ? (
             <PossessionFootball className="h-3 w-5 shrink-0" />
@@ -740,6 +741,7 @@ function MatchupSide({
         {side.record ? (
           <p className="numeral mt-0.5 text-[12px] text-[#a8b0c2]">{side.record}</p>
         ) : null}
+        <CfbFpiCaption pollRank={side.rank} fpiRank={side.fpiRank} className="mt-0.5" />
       </div>
     </Link>
   );

@@ -9,7 +9,9 @@ import {
   partitionRuwtSlate,
   ruwtPinnedTeamKey,
   ruwtTodaysTop,
+  ruwtCardReasons,
   ruwtWhyReasons,
+  withoutClosestUpset,
   scoreStripItems,
   scoreStripTeamKeys,
 } from "./ruwt-slate.ts";
@@ -175,5 +177,14 @@ const pinned = new Set(["nhl:19"]);
 assert.equal(isScoreStripFavorite(["nhl:19", "nhl:9"], {}, pinned), true);
 assert.equal(isScoreStripFavorite(["nhl:9", "nhl:25"], { "9": 6 }, new Set()), true);
 assert.equal(isScoreStripFavorite(["nhl:9", "nhl:25"], { "9": 0 }, new Set()), false);
+
+assert.deepEqual(
+  ruwtCardReasons(["Live", "One-score game", "3rd quarter", "Red zone", "Ranked team", "Closest upset"]),
+  ["One-score game", "3rd quarter", "Red zone", "Ranked team", "Closest upset"],
+);
+assert.deepEqual(
+  withoutClosestUpset(["One-score game", "Closest upset", "Ranked team"]),
+  ["One-score game", "Ranked team"],
+);
 
 console.log("ruwt-slate: ok");
