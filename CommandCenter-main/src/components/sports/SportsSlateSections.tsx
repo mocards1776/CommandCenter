@@ -50,6 +50,7 @@ function WhyLine({ item }: { item: UnifiedRuwtItem }) {
 
 function BoardGameCard({ item, favorite }: { item: UnifiedRuwtItem; favorite: boolean }) {
   const tab = toTab(item);
+  const showScore = tab.live || tab.final;
   const rows = [
     { side: tab.away, rank: sideRank(item, "away") },
     { side: tab.home, rank: sideRank(item, "home") },
@@ -89,7 +90,7 @@ function BoardGameCard({ item, favorite }: { item: UnifiedRuwtItem; favorite: bo
               {rank ? <span className="text-chalk-dim numeral mr-1 text-[11px]">{rank}</span> : null}
               {side.abbrev}
             </span>
-            {side.score != null ? (
+            {showScore && side.score != null ? (
               <span className="numeral text-cream text-[18px] font-bold leading-none">{side.score}</span>
             ) : null}
           </div>
