@@ -1,97 +1,10 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { ruwtItemHref, useRuwtSlate, type UnifiedRuwtItem } from "@/hooks/useRuwtSlate";
-import { cfbTeamLogo } from "@/lib/cfb";
-import { nflTeamLogo } from "@/lib/nfl";
-import { nhlTeamLogo } from "@/lib/nhl";
-import { soccerTeamLogo } from "@/lib/soccer";
+import { useRuwtSlateSplit } from "@/hooks/useRuwtSlateSplit";
+import { espnDarkLogo, toTab, type ScoreTab, type TabSide } from "@/lib/ruwt-score-tab";
 import { cn } from "@/lib/utils";
 
-type TabSide = { abbrev: string; logo: string; score: string | null };
-
-type ScoreTab = {
-  key: string;
-  href: string;
-  away: TabSide;
-  home: TabSide;
-  status: [string, string | null];
-  live: boolean;
-  final: boolean;
-};
-
 const GAME_PATH = /^\/sports\/(mlb|nfl|nhl|cfb|soccer)\/game\/([^/?#]+)/;
-
-function scoreText(n: number | string | null | undefined): string | null {
-  return n == null || n === "" ? null : String(n);
-}
-
-function kickoffLabel(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleTimeString("en-US", {
-    timeZone: "America/Chicago",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-/** "12:20 - 2nd" → ["12:20", "2nd"]; ESPN-style two-line clock. */
-function splitStatus(label: string): [string, string | null] {
-  const parts = label.split(/\s+-\s+/);
-  if (parts.length >= 2) return [parts[0]!, parts.slice(1).join(" ")];
-  return [label, null];
-}
-
-function toTab(item: UnifiedRuwtItem): ScoreTab {
-  const base = { key: item.id, href: ruwtItemHref(item), live: item.game.live, final: item.game.final };
-  const pregame = !item.game.live && !item.game.final;
-
-  if (item.sport === "mlb") {
-    const g = item.game;
-    const logo = (id: number) => `https://www.mlbstatic.com/team-logos/team-cap-on-dark/${id}.svg`;
-    const label = g.live ? g.inning || "Live" : g.final ? "Final" : g.whenShort || "Today";
-    return {
-      ...base,
-      away: { abbrev: g.away.abbrev, logo: logo(g.away.teamId), score: scoreText(g.away.score) },
-      home: { abbrev: g.home.abbrev, logo: logo(g.home.teamId), score: scoreText(g.home.score) },
-      status: splitStatus(label),
-    };
-  }
-
-  const g = item.game;
-  const logoFor = (side: typeof g.away): string => {
-    if (side.logo) return side.logo;
-    switch (item.sport) {
-      case "nfl":
-        return nflTeamLogo(side.abbrev);
-      case "nhl":
-        return nhlTeamLogo(side.abbrev);
-      case "cfb":
-        return cfbTeamLogo(side.teamId);
-      default:
-        return soccerTeamLogo(side.teamId);
-    }
-  };
-  const when = "whenShort" in g ? g.whenShort : null;
-  const label = pregame
-    ? (when || kickoffLabel(g.startIso) || g.shortDetail || "Today").replace(/\s+[A-Z]{2,4}T$/, "")
-    : g.final
-      ? g.shortDetail || "Final"
-      : g.shortDetail || g.status || "Live";
-  return {
-    ...base,
-    away: { abbrev: g.away.abbrev, logo: logoFor(g.away), score: scoreText(g.away.score) },
-    home: { abbrev: g.home.abbrev, logo: logoFor(g.home), score: scoreText(g.home.score) },
-    status: splitStatus(label),
-  };
-}
-
-/** ESPN's dark-mode logo set keeps navy/crimson marks legible on the pill background. */
-function espnDarkLogo(url: string): string | null {
-  const dark = url.replace(/(\/i\/teamlogos\/[a-z]+)\/500\//, "$1/500-dark/");
-  return dark === url ? null : dark;
-}
 
 function TabLogo({ side }: { side: TabSide }) {
   const dark = espnDarkLogo(side.logo);
@@ -174,18 +87,14 @@ function ScorePill({ tab, active }: { tab: ScoreTab; active: boolean }) {
   );
 }
 
-/** ESPN-style scrollable score capsules for today's slate, in RUWT order. */
+/** ESPN-style scrollable score capsules for games in progress, in RUWT order. */
 export default function SportsScoreTabs() {
   const { pathname } = useLocation();
-  const { unified } = useRuwtSlate();
+  const { live } = useRuwtSlateSplit();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const centeredKeyRef = useRef<string | null>(null);
 
-  const tabs = useMemo(() => {
-    const open = unified.filter((i) => !i.game.final);
-    const finals = unified.filter((i) => i.game.final);
-    return [...open, ...finals].map(toTab);
-  }, [unified]);
+  const tabs = useMemo(() => live.map(toTab), [live]);
 
   const activeKey = useMemo(() => {
     const m = pathname.match(GAME_PATH);

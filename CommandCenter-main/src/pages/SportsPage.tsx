@@ -16,6 +16,7 @@ import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
 import GolfSidebar from "@/components/sports/GolfSidebar";
 import HeroGameCard from "@/components/sports/HeroGameCard";
+import SportsSlateSections from "@/components/sports/SportsSlateSections";
 import {
   MlbTeamLeadersSection,
   MlbTeamOrgSummary,
@@ -764,6 +765,8 @@ export default function SportsPage() {
           }
         />
       )}
+
+      <SportsSlateSections />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {boardFavorites.map((fav) => {
