@@ -341,7 +341,11 @@ function mapSituation(
         yardLine?: number;
         isRedZone?: boolean;
         possession?: string;
-        lastPlay?: { text?: string; team?: { id?: string } };
+        lastPlay?: {
+          text?: string;
+          team?: { id?: string };
+          probability?: { homeWinPercentage?: number; awayWinPercentage?: number };
+        };
         homeTimeouts?: number;
         awayTimeouts?: number;
       }
@@ -411,6 +415,17 @@ type EspnEvent = {
   };
 };
 
+/** Scoreboard last-play home win chance, 0–100. Null when ESPN omits it. */
+function nflBoardHomeWinPct(
+  sit: { lastPlay?: { probability?: { homeWinPercentage?: number } } } | null | undefined,
+): number | null {
+  const raw = sit?.lastPlay?.probability?.homeWinPercentage;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+  const pct = raw <= 1 ? raw * 100 : raw;
+  const clamped = Math.max(0, Math.min(100, pct));
+  return Math.round(clamped * 10) / 10;
+}
+
 function mapEvent(event: EspnEvent): NflScoreGame | null {
   const comp = event.competitions?.[0];
   if (!comp) return null;
@@ -443,7 +458,7 @@ function mapEvent(event: EspnEvent): NflScoreGame | null {
     whenShort: live || final ? (status?.shortDetail ?? null) : whenShort,
     venue: comp.venue?.fullName ?? null,
     situation: mapSituation(comp.situation, live),
-    homeWinPct: null,
+    homeWinPct: nflBoardHomeWinPct(comp.situation),
     date: chicagoDateFromIso(event.date),
     startIso: event.date ?? null,
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
@@ -2420,35 +2435,68 @@ export type NflRuwtContext = {
   watchTeamIds?: Set<string>;
 };
 
+/**
+ * Leader win chance around 99% (home ≥ 97 or home ≤ 3). Same bar as college.
+ * With no win chance on the row, a two-score lead in the 4th under three minutes.
+ * The scoreboard often has no probability; the clock is the signal it does have.
+ */
+const NFL_DECIDED_WIN_PCT = 97;
+const NFL_DECIDED_CLOCK_SEC = 3 * 60;
+const NFL_DECIDED_LIVE_CAP = 49;
+
+function nflClockSeconds(detail: string): number | null {
+  const m = detail.match(/\b(\d{1,2}):(\d{2})\b/);
+  if (!m) return null;
+  const min = Number(m[1]);
+  const sec = Number(m[2]);
+  if (!Number.isFinite(min) || !Number.isFinite(sec) || sec > 59) return null;
+  return min * 60 + sec;
+}
+
+function nflEffectivelyDecided(diff: number, detail: string, homeWinPct: number | null): boolean {
+  if (diff > 16) return false;
+  if (homeWinPct != null && Number.isFinite(homeWinPct)) {
+    return homeWinPct >= NFL_DECIDED_WIN_PCT || homeWinPct <= 100 - NFL_DECIDED_WIN_PCT;
+  }
+  if (diff < 9) return false;
+  const fourth = /\b4th\b/.test(detail) || /\bot\b|overtime/.test(detail);
+  if (!fourth) return false;
+  const clock = nflClockSeconds(detail);
+  return clock != null && clock <= NFL_DECIDED_CLOCK_SEC;
+}
+
 /** Drama + interest score for RUWT (parallel to MLB). */
 export function scoreNflRuwtGame(g: NflScoreGame, ctx?: NflRuwtContext): { score: number; reasons: string[] } {
   let score = 0;
   const reasons: string[] = [];
 
+  const detail = `${g.shortDetail ?? ""} ${g.status ?? ""}`.toLowerCase();
+  const liveDiff = Math.abs((g.away.score ?? 0) - (g.home.score ?? 0));
+  const decided = g.live && !g.final && nflEffectivelyDecided(liveDiff, detail, g.homeWinPct);
+
   if (g.live) {
     score += 40;
     reasons.push("Live");
-    const diff = Math.abs((g.away.score ?? 0) - (g.home.score ?? 0));
-    if (diff <= 3) {
+    const diff = liveDiff;
+    if (!decided && diff <= 3) {
       score += 28;
       reasons.push("One-score game");
-    } else if (diff <= 8) {
+    } else if (!decided && diff <= 8) {
       score += 14;
       reasons.push("Tight");
     }
-    if (g.situation?.isRedZone) {
+    if (!decided && g.situation?.isRedZone) {
       score += 18;
       reasons.push("Red zone");
     }
     // 4th-down heat is for late drama — early-game 4th downs are mostly noise.
     // NflScoreGame has no period field; infer from ESPN shortDetail ("3rd", "4th", OT).
-    const detail = `${g.shortDetail ?? ""} ${g.status ?? ""}`.toLowerCase();
     const late = /\b(3rd|4th)\b/.test(detail) || /\bot\b|overtime/.test(detail);
-    if (g.situation?.downDistanceText?.startsWith("4th") && late) {
+    if (!decided && g.situation?.downDistanceText?.startsWith("4th") && late) {
       score += 12;
       reasons.push("4th down");
     }
-    if (g.homeWinPct != null && g.homeWinPct >= 35 && g.homeWinPct <= 65) {
+    if (!decided && g.homeWinPct != null && g.homeWinPct >= 35 && g.homeWinPct <= 65) {
       score += 10;
       reasons.push("Toss-up");
     }
@@ -2490,6 +2538,8 @@ export function scoreNflRuwtGame(g: NflScoreGame, ctx?: NflRuwtContext): { score
       void ctx.watchPlayerIds;
     }
   }
+
+  if (decided) score = Math.min(score, NFL_DECIDED_LIVE_CAP);
 
   const unique: string[] = [];
   for (const r of reasons) if (!unique.includes(r)) unique.push(r);
