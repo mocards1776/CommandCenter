@@ -59,7 +59,7 @@ npm run lint
   editing them.
 - **Edge functions** — `supabase functions deploy <name>` (`todoist`,
   `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`, `sports`, `rss`,
-  `newspaper-editor`).
+  `newspaper-editor`, `sports-push`).
   Canonical source: `supabase/functions/`. Keep the mirror in sync with
   `scripts/sync-edge-copies.sh` (CI fails on drift). On `main`, GitHub Actions
   deploys `rss` / `sports` when that tree changes — requires repo secrets
@@ -79,6 +79,38 @@ npm run lint
   `supabase functions deploy sports --project-ref esdgrgulaxnewmhjuyzh --no-verify-jwt`
 - **Migrations** — applied to the Supabase project; `supabase/migrations/`
   is the record.
+- **Sports push** — iOS/Safari web push for the Sports Home Screen app.
+  The sender is the `sports-push` edge function. Heat alerts use live drama
+  only (a one-score game in another sport, line 68) and ignore series weight,
+  the Cardinals bump, and interest sliders. Favorite start/final is a second
+  channel, off until turned on.
+
+  Generate a VAPID key pair on your machine (the private key never goes in git):
+
+  ```bash
+  npx web-push generate-vapid-keys
+  ```
+
+  Then set the secrets on project `esdgrgulaxnewmhjuyzh` and redeploy the function:
+
+  ```bash
+  supabase secrets set \
+    VAPID_PUBLIC_KEY="<public key>" \
+    VAPID_PRIVATE_KEY="<private key>" \
+    VAPID_SUBJECT="mailto:you@example.com" \
+    SPORTS_PUSH_CRON_SECRET="$(openssl rand -hex 24)" \
+    SPORTS_PUSH_ORIGIN="https://command-center-flax-gamma.vercel.app" \
+    --project-ref esdgrgulaxnewmhjuyzh
+  supabase functions deploy sports-push --project-ref esdgrgulaxnewmhjuyzh --no-verify-jwt
+  ```
+
+  The sweep runs every two minutes from `pg_cron` once the same cron secret
+  is in Vault as `sports_push_cron` (alongside the existing `project_url` and
+  `anon_key` secrets). Re-run the schedule block in
+  `supabase/migrations/20261003_sports_push.sql` after the vault secret exists.
+  On iPhone, open the installed Sports app once after deploy, then allow alerts
+  from the board or Customize. A denied permission stays off until iOS Settings
+  → Notifications → Sports.
 
 ### Why changes can feel “stuck”
 

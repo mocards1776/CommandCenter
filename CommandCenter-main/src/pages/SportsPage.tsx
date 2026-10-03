@@ -15,6 +15,7 @@ import {
 import toast from "react-hot-toast";
 import StarField from "@/components/StarField";
 import GolfSidebar from "@/components/sports/GolfSidebar";
+import { SportsPushBanner, SportsPushSettings } from "@/components/sports/SportsPushAlerts";
 import HeroGameCard from "@/components/sports/HeroGameCard";
 import SportsSlateSections from "@/components/sports/SportsSlateSections";
 import {
@@ -442,6 +443,8 @@ function CustomizePanel({
           </button>
         </div>
 
+        <SportsPushSettings layout={layout} />
+
         <ul className="flex flex-col gap-2">
           {layout.order.map((key) => {
             const fav = byKey.get(key);
@@ -752,6 +755,8 @@ export default function SportsPage() {
         <>
       {/* Hide board hero while team detail is open — panel covers the right half otherwise.
           Off-season finals and nights another followed club is live drop it too. */}
+      <SportsPushBanner layout={layout} />
+
       {showCardsHero && heroGame && (
         <HeroGameCard
           game={heroGame}
