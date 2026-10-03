@@ -56,6 +56,7 @@ function StarCard({
   const first = star.star === 1;
   const color = side ? nhlAccentColor(side) : medal.color;
   const stats = statLine(star, row);
+  const longValues = stats.some((s) => s.value.length > 3);
   const name = row?.name ?? star.name;
   const body = (
     <>
@@ -102,7 +103,7 @@ function StarCard({
       <div className="relative px-2 pb-3 pt-2.5 text-center">
         <p
           className={cn(
-            "text-cream truncate font-semibold leading-tight",
+            "text-cream line-clamp-2 break-words font-semibold leading-tight",
             first ? "text-[15px] sm:text-[17px]" : "text-[13px] sm:text-[15px]",
           )}
         >
@@ -114,13 +115,17 @@ function StarCard({
             .join(" · ")}
         </p>
         {stats.length ? (
-          <div className="mt-2.5 flex justify-center gap-3 sm:gap-4">
+          <div className={cn("mt-2.5 flex flex-wrap justify-center", longValues ? "gap-x-2 gap-y-1.5 sm:gap-x-3" : "gap-3 sm:gap-4")}>
             {stats.map((s) => (
               <div key={s.label} className="leading-none">
                 <span
                   className={cn(
                     "font-display text-cream block tabular-nums",
-                    first ? "text-[24px] sm:text-[28px]" : "text-[20px] sm:text-[24px]",
+                    longValues
+                      ? "text-[16px] sm:text-[22px]"
+                      : first
+                        ? "text-[24px] sm:text-[28px]"
+                        : "text-[20px] sm:text-[24px]",
                   )}
                 >
                   {s.value}
