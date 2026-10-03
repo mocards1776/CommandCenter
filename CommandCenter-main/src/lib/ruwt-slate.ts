@@ -175,7 +175,26 @@ function orderRecentFinals<T extends ScoredSlateEntry>(
     .map((row) => row.item);
 }
 
-const GENERIC_REASONS = new Set(["live", "upcoming", "final"]);
+const GENERIC_REASONS = new Set(["live", "upcoming", "final", "live now"]);
+
+/**
+ * Drama chips on a RUWT card. "Live" is dropped because the section already
+ * says the game is live. Order otherwise matches the scorer.
+ */
+export function ruwtCardReasons(reasons: readonly string[] | null | undefined): string[] {
+  const out: string[] = [];
+  for (const raw of reasons ?? []) {
+    const t = raw.trim();
+    if (!t || GENERIC_REASONS.has(t.toLowerCase()) || out.includes(t)) continue;
+    out.push(t);
+  }
+  return out;
+}
+
+/** First chip to drop when the reason line would wrap. */
+export function withoutClosestUpset(reasons: readonly string[]): string[] {
+  return reasons.filter((reason) => reason.toLowerCase() !== "closest upset");
+}
 
 /** Ranking reasons worth showing on a card ("Your #1 team", "Both teams ranked"…). */
 export function ruwtWhyReasons(reasons: readonly string[] | null | undefined, max = 2): string[] {

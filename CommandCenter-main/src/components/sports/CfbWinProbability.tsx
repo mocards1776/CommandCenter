@@ -57,6 +57,41 @@ export function CfbWinProbBadge({
   );
 }
 
+/** Thin bar and a tiny caption. Used under the score on RUWT cards. */
+export function CfbWinProbCaption({
+  homeWinPct,
+  away,
+  home,
+  tiePct = 0,
+  awayWinPct,
+}: {
+  homeWinPct: number;
+  away: CfbWinProbTeam;
+  home: CfbWinProbTeam;
+  tiePct?: number;
+  awayWinPct?: number | null;
+}) {
+  const leader = cfbWinProbLeader(homeWinPct, away, home, tiePct, awayWinPct);
+  const awayShare = awayWinPct ?? Math.max(0, 100 - homeWinPct - tiePct);
+  const label = leader.even
+    ? `Win probability even ${formatWinPct(leader.pct)} percent`
+    : `${leader.abbrev} win probability ${formatWinPct(leader.pct)} percent`;
+  return (
+    <div className="mt-1.5 flex w-16 flex-col items-center gap-1" aria-label={label}>
+      <div className="flex h-[3px] w-full overflow-hidden rounded-full bg-white/10" aria-hidden>
+        <div style={{ width: `${awayShare}%`, backgroundColor: teamHex(away.color, "1e3a5f") }} />
+        {tiePct > 0.4 ? (
+          <div style={{ width: `${tiePct}%`, backgroundColor: "rgba(255,255,255,0.45)" }} />
+        ) : null}
+        <div style={{ width: `${homeWinPct}%`, backgroundColor: teamHex(home.color, "7a1f1f") }} />
+      </div>
+      <p className="text-[9px] font-medium tabular-nums tracking-[0.04em] text-white/50">
+        {leader.even ? "Even" : leader.abbrev} {formatWinPct(leader.pct)}%
+      </p>
+    </div>
+  );
+}
+
 function plotOf(points: CfbWinProbPoint[]) {
   const domain = cfbWinProbDomainSec(points);
   const coords = points.map((p) => ({
