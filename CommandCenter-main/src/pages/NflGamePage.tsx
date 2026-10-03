@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
@@ -15,7 +15,7 @@ import {
   type NflScoreSide,
 } from "@/lib/nfl";
 import type { MlbHighlight } from "@/lib/mlb";
-import { useSwipeBack } from "@/hooks/useSwipeBack";
+import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
 import { cn, formatSportsDateLong } from "@/lib/utils";
 
 function statusLabel(g: {
@@ -789,8 +789,8 @@ function NflMatchupSide({
 
 export default function NflGamePage() {
   const { eventId } = useParams<{ eventId: string }>();
-  const navigate = useNavigate();
-  const swipeRef = useSwipeBack(() => navigate(-1));
+  const goBack = useSportsBack("/sports/nfl?solo=1");
+  const swipeRef = useSwipeBack(goBack);
 
   const detail = useQuery({
     queryKey: ["nfl-game", eventId],
@@ -813,7 +813,7 @@ export default function NflGamePage() {
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={goBack}
           className="text-chalk hover:text-cream flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
         >
           <ArrowLeft size={14} /> Back

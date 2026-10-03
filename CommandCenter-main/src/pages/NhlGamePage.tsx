@@ -1,12 +1,12 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, Play } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
 import NhlIceRink from "@/components/sports/NhlIceRink";
-import { useSwipeBack } from "@/hooks/useSwipeBack";
+import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
 import {
   dedupeNhlEspnVideos,
   fetchNhlGameDetail,
@@ -39,8 +39,8 @@ function statusLabel(g: {
 
 export default function NhlGamePage() {
   const { eventId } = useParams<{ eventId: string }>();
-  const navigate = useNavigate();
-  const swipeRef = useSwipeBack(() => navigate(-1));
+  const goBack = useSportsBack("/sports/nhl?solo=1");
+  const swipeRef = useSwipeBack(goBack);
 
   const game = useQuery({
     queryKey: ["nhl-game", eventId],
@@ -105,7 +105,7 @@ export default function NhlGamePage() {
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={goBack}
           className="text-chalk hover:text-cream flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
         >
           <ArrowLeft size={14} /> Back
