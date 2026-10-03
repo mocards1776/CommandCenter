@@ -6,6 +6,7 @@ import {
   alignCfbOpenDriveToPossession,
   cfbDriveGlance,
   cfbDriveStatLine,
+  correctCfbDriveStartFromPlays,
   mapCfbDriveMeta,
   rebaseCfbDriveAfterKick,
 } from "./cfb-drive.ts";
@@ -156,6 +157,117 @@ const realDrive = alignCfbOpenDriveToPossession(cfbDriveGlance(started), {
 assert(
   realDrive?.teamAbbrev === "FLA" && realDrive.playCount === 3,
   "a drive that has snapped does not follow a stale flag",
+);
+
+assert(
+  cfbDriveStatLine(cfbDriveGlance(placeholder)) === "MIZ · 0 plays · 0 yds · 0:00",
+  "a kickoff placeholder is not labeled as a drive start",
+);
+
+// Live 2026-10-03: UAB's current drive still said "UAB 0" after a 10-yard rush
+// that ESPN's own snap placed at SAM 24 (yardLine 76).
+const uabLag = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "401862793",
+    team: { id: "5", abbreviation: "UAB" },
+    yards: 10,
+    offensivePlays: 1,
+    start: { yardLine: 0, text: "UAB 0" },
+  }),
+  [
+    {
+      type: { text: "Rush" },
+      text: "Shotgun rush right for 10 yards gain to the SAM14",
+      start: { yardLine: 76, possessionText: "SAM 24" },
+    },
+  ],
+);
+assert(uabLag.teamAbbrev === "UAB", "offense on the drive stays the offense");
+assert(uabLag.startText === "SAM 24" && uabLag.startYardLine === 76, "snap spot replaces UAB 0");
+assert(
+  cfbDriveStatLine(cfbDriveGlance(uabLag)) === "UAB · 1 play · 10 yds · from SAM 24",
+  cfbDriveStatLine(cfbDriveGlance(uabLag)) ?? "empty uab line",
+);
+
+// Same window on UK @ SC: drive.start was "SC 0" while the incomplete pass
+// started at UK 36.
+const ukLag = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "401856709",
+    team: { id: "96", abbreviation: "UK" },
+    yards: 0,
+    offensivePlays: 1,
+    start: { yardLine: 0, text: "SC 0" },
+  }),
+  [
+    {
+      type: { text: "Pass Incompletion" },
+      text: "Shotgun pass incomplete short right",
+      start: { yardLine: 64, possessionText: "UK 36" },
+    },
+  ],
+);
+assert(ukLag.startText === "UK 36" && ukLag.startYardLine === 64, "SC 0 yields to the UK snap");
+
+// FLA @ MIZ touchback, then the 12-yard completion. ESPN's drive.start was
+// still "MIZ 0" while the snap and the kickoff end were FLA 25.
+const flaLag = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "40185670828",
+    team: { id: "57", abbreviation: "FLA" },
+    yards: 12,
+    offensivePlays: 1,
+    timeElapsed: { displayValue: "0:10" },
+    start: { yardLine: 0, text: "MIZ 0" },
+  }),
+  [
+    {
+      type: { text: "Kickoff" },
+      text: "B.Reus kickoff 65 yards to the Gators00, Touchback",
+      start: { yardLine: 35 },
+    },
+    {
+      type: { text: "Pass Reception" },
+      text: "A.Philo pass complete short middle to L.Harpring for 12 yards to the Gators37",
+      start: { yardLine: 75, possessionText: "FLA 25" },
+    },
+  ],
+);
+assert(flaLag.startText === "FLA 25" && flaLag.startYardLine === 75, "touchback snap is FLA 25, not MIZ 0");
+assert(
+  cfbDriveStatLine(cfbDriveGlance(flaLag)) === "FLA · 1 play · 12 yds · 0:10 · from FLA 25",
+  cfbDriveStatLine(cfbDriveGlance(flaLag)) ?? "empty fla line",
+);
+
+// A dead-ball unsportsmanlike flag is not a snap. Leave the placeholder for
+// the 0-play possession align instead of pinning the marker at the flag spot.
+const deadBall = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "flag",
+    team: { id: "142", abbreviation: "MIZ" },
+    yards: -15,
+    offensivePlays: 0,
+    start: { yardLine: 0, text: "MIZ 0" },
+  }),
+  [
+    {
+      type: { text: "Penalty" },
+      text: "PENALTY Mizzou UNS: Unsportsmanlike Conduct 15 yards from Mizzou35 to Mizzou20. NO PLAY",
+      start: { yardLine: 35 },
+    },
+  ],
+);
+assert(deadBall.startText === "MIZ 0" && deadBall.startYardLine === 0, "NO PLAY flag is not the drive start");
+
+const alreadyReal = correctCfbDriveStartFromPlays(started, [
+  {
+    type: { text: "Rush" },
+    start: { yardLine: 40, possessionText: "MIZ 40" },
+  },
+]);
+assert(
+  alreadyReal.startText === "FLA 31" && alreadyReal.startYardLine === 69,
+  "a drive ESPN already spotted is not rewritten from a later play",
 );
 
 console.log("cfb-drive.test.ts ok");

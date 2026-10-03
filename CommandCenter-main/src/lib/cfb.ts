@@ -18,6 +18,7 @@ import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { espnRateToPct, mapCfbWinProbability, type CfbWinProbPoint } from "./cfb-win-probability";
 import {
   cfbDriveGlance,
+  correctCfbDriveStartFromPlays,
   mapCfbDriveMeta,
   rebaseCfbDriveAfterKick,
   type CfbDriveGlance,
@@ -1440,8 +1441,12 @@ type EspnCfbDriveWithPlays = EspnCfbDriveRaw & {
 function mapCfbDrive(d: EspnCfbDriveWithPlays, fallbackId = ""): CfbDrive {
   const plays = d.plays ?? [];
   const last = plays[plays.length - 1];
+  const meta = correctCfbDriveStartFromPlays(
+    rebaseCfbDriveAfterKick(mapCfbDriveMeta(d, fallbackId), last ? { lastPlay: last } : null),
+    plays,
+  );
   return {
-    ...rebaseCfbDriveAfterKick(mapCfbDriveMeta(d, fallbackId), last ? { lastPlay: last } : null),
+    ...meta,
     plays: plays.map(mapCfbPlay),
   };
 }

@@ -201,7 +201,13 @@ export default function NflFieldMap({
     away: { teamId: game.away.teamId, abbrev: game.away.abbrev },
     home: { teamId: game.home.teamId, abbrev: game.home.abbrev },
   });
-  const driveStartPct = fieldBallPctFromHomeYardLine(openDrive?.startYardLine ?? null);
+  const startYard = openDrive?.startYardLine ?? null;
+  // Goal-line placeholders (0 / 100) sit in the end zone. A real drive start
+  // is between them; the mapper replaces a stale kickoff 0 before this.
+  const driveStartPct =
+    startYard != null && startYard > 0 && startYard < 100
+      ? fieldBallPctFromHomeYardLine(startYard)
+      : null;
   const driveStats = openDrive ? cfbDriveStatLine(openDrive) : null;
   const driveStartTitle = openDrive?.startText
     ? `Drive started at ${openDrive.startText}`
