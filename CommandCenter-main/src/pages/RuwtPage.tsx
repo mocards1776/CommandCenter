@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Loader2, RefreshCw, Settings2 } from "lucide
 import toast from "react-hot-toast";
 import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
 import NflFieldMap from "@/components/sports/NflFieldMap";
+import { CfbWinProbBadge } from "@/components/sports/CfbWinProbability";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 import TeamMark from "@/components/sports/TeamMark";
 import type { UnifiedRuwtItem } from "@/hooks/useRuwtSlate";
@@ -31,6 +32,7 @@ import {
   cfbTeamLogo,
   type CfbScoredGame,
 } from "@/lib/cfb";
+import { fetchCfbCurrentWinProbability } from "@/lib/cfb-win-probability";
 import CfbRankLabel from "@/components/sports/CfbRankLabel";
 import type { GameBroadcast } from "@/lib/game-broadcasts";
 import {
@@ -691,6 +693,13 @@ function RuwtBroadcasts({ broadcasts }: { broadcasts?: GameBroadcast[] | null })
 }
 
 function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
+  const winProb = useQuery({
+    queryKey: ["cfb-winprob-current", game.id],
+    queryFn: () => fetchCfbCurrentWinProbability(game.id),
+    enabled: game.live,
+    staleTime: 15_000,
+    refetchInterval: game.live ? 20_000 : false,
+  });
   const poss = game.situation?.possessionTeamId;
   const awayHasBall = poss != null && String(poss) === String(game.away.teamId);
   const homeHasBall = poss != null && String(poss) === String(game.home.teamId);
@@ -781,10 +790,25 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
           </p>
         </div>
       </div>
+      {game.live && winProb.data ? (
+        <div className="relative z-10 flex items-center justify-between gap-2 border-t border-white/[0.06] px-3 py-1.5">
+          <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/40">
+            Win %
+          </span>
+          <CfbWinProbBadge
+            homeWinPct={winProb.data.homeWinPct}
+            awayWinPct={winProb.data.awayWinPct}
+            tiePct={winProb.data.tiePct}
+            away={game.away}
+            home={game.home}
+          />
+        </div>
+      ) : null}
       {game.live && game.situation && (
         <div className="relative z-10 border-t border-white/[0.06] px-2 py-2">
           <NflFieldMap
             game={game}
+            branded
             homeYardLine={game.situation.yardLine}
             possessionTeamId={game.situation.possessionTeamId}
             downDistanceText={game.situation.downDistanceText}
