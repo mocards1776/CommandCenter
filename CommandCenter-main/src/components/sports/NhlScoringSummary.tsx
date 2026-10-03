@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import LogoPlate from "@/components/sports/LogoPlate";
 import { Play } from "lucide-react";
 import {
   nhlAccentColor,
@@ -149,7 +150,7 @@ export default function NhlScoringSummary({
         <span className="flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">
           {[g.away, g.home].map((side) => (
             <span key={side.teamId} className="inline-flex items-center gap-1">
-              {side.logo ? <img src={side.logo} alt="" className="h-4 w-4 object-contain" /> : null}
+              {side.logo ? <LogoPlate src={side.logo} className="h-4 w-4" /> : null}
               <span className="numeral text-cream">
                 {g.scoringPlays.filter((p) => p.teamId === String(side.teamId)).length}
               </span>
@@ -201,11 +202,7 @@ export default function NhlScoringSummary({
                       />
                     ) : null}
                     {side?.logo ? (
-                      <img
-                        src={side.logo}
-                        alt=""
-                        className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full bg-[#0b1526] object-contain p-0.5 ring-1 ring-white/10"
-                      />
+                      <LogoPlate src={side.logo} className="absolute -bottom-1 -right-1 h-6 w-6" />
                     ) : null}
                   </div>
                   <div className="min-w-0 flex-1">
