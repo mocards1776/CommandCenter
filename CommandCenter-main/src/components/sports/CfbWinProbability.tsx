@@ -77,15 +77,15 @@ export function CfbWinProbCaption({
     ? `Win probability even ${formatWinPct(leader.pct)} percent`
     : `${leader.abbrev} win probability ${formatWinPct(leader.pct)} percent`;
   return (
-    <div className="mt-1.5 flex w-16 flex-col items-center gap-1" aria-label={label}>
-      <div className="flex h-[3px] w-full overflow-hidden rounded-full bg-white/10" aria-hidden>
+    <div className="mt-1.5 flex flex-col items-center gap-1" aria-label={label}>
+      <div className="flex h-[3px] w-16 overflow-hidden rounded-full bg-white/15" aria-hidden>
         <div style={{ width: `${awayShare}%`, backgroundColor: teamHex(away.color, "1e3a5f") }} />
         {tiePct > 0.4 ? (
           <div style={{ width: `${tiePct}%`, backgroundColor: "rgba(255,255,255,0.45)" }} />
         ) : null}
         <div style={{ width: `${homeWinPct}%`, backgroundColor: teamHex(home.color, "7a1f1f") }} />
       </div>
-      <p className="text-[9px] font-medium tabular-nums tracking-[0.04em] text-white/50">
+      <p className="text-[12px] font-semibold tabular-nums tracking-tight text-white">
         {leader.even ? "Even" : leader.abbrev} {formatWinPct(leader.pct)}%
       </p>
     </div>

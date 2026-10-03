@@ -137,6 +137,15 @@
     font-feature-settings: "tnum" 1, "lnum" 1;
   }
 
+  /* Apple Sports score: condensed, tall, tight. RUWT cards and the CFB header. */
+  .score-tight {
+    font-family: "Barlow Condensed", "Oswald", "Arial Narrow", sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 0.8;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
   /* The flag: canton, star, stripes. Small enough to need real proportions. */
   .flag-mark {
     width: 30px;
