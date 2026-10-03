@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, ChevronRight, Loader2, Play } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
+import LogoPlate from "@/components/sports/LogoPlate";
 import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
 import NhlBoxScore from "@/components/sports/NhlBoxScore";
 import NhlGameLeaders from "@/components/sports/NhlGameLeaders";
@@ -470,11 +471,7 @@ function TeamBlock({
       )}
     >
       {side.logo ? (
-        <img
-          src={side.logo}
-          alt=""
-          className="h-14 w-14 shrink-0 object-contain drop-shadow-[0_4px_14px_rgba(0,0,0,0.45)] sm:h-20 sm:w-20"
-        />
+        <LogoPlate src={side.logo} className="h-14 w-14 sm:h-20 sm:w-20" />
       ) : null}
       <div className="min-w-0">
         <p className="text-cream text-[15px] font-semibold leading-tight sm:text-[22px]">{side.abbrev}</p>
@@ -498,7 +495,7 @@ function TeamStats({ g }: { g: NhlGameDetail }) {
       to={`/sports/nhl/team/${side.teamId}`}
       className={cn("flex min-w-0 items-center gap-2", align === "right" && "flex-row-reverse text-right")}
     >
-      {side.logo ? <img src={side.logo} alt="" className="h-9 w-9 shrink-0 object-contain" /> : null}
+      {side.logo ? <LogoPlate src={side.logo} className="h-9 w-9" /> : null}
       <span className="min-w-0">
         <span className="text-cream block text-[13px] font-semibold leading-tight">{side.abbrev}</span>
         {side.record ? (
