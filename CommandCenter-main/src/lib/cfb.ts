@@ -6,6 +6,18 @@ import {
 } from "./cfb-live-margin";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { mapCfbWinProbability, type CfbWinProbPoint } from "./cfb-win-probability";
+import {
+  latestCfpWeekRef,
+  mapCfbGameWrap,
+  parseCfbCfpWeekRanks,
+  parseCfbSeasonStats,
+  parseCfbTeamLeaders,
+  powerIndexStatIndex,
+  readRankValue,
+  type CfbGameWrap,
+  type CfbSeasonStatLine,
+  type CfbTeamLeaderChip,
+} from "./cfb-team-profile";
 import { supabase } from "./supabase";
 import { formatSportsDateLong } from "./utils";
 
@@ -768,46 +780,116 @@ export function mergeCfbPollRank(
   return cfbPollRank(curated) ?? cfbPollRank(fromPolls);
 }
 
-let fpiRankCache: { map: Map<number, number>; fetchedAt: number } | null = null;
+let powerIndexCache: {
+  fpi: Map<number, number>;
+  sos: Map<number, number>;
+  fetchedAt: number;
+} | null = null;
 let pollRankCache: { map: Map<number, number>; fetchedAt: number } | null = null;
+let cfpRankCache: { map: Map<number, number>; fetchedAt: number } | null = null;
 const FPI_CACHE_MS = 30 * 60 * 1000;
 const POLL_RANK_CACHE_MS = 15 * 60 * 1000;
 
-/** ESPN Football Power Index ranks for all FBS teams (ordinal 1…N). */
-export async function fetchCfbFpiRanks(): Promise<Map<number, number>> {
+type PowerIndexPayload = {
+  categories?: { name?: string; names?: string[] }[];
+  teams?: {
+    team?: { id?: string };
+    categories?: { name?: string; values?: number[] }[];
+  }[];
+};
+
+async function loadCfbPowerIndex(): Promise<{
+  fpi: Map<number, number>;
+  sos: Map<number, number>;
+}> {
   const now = Date.now();
-  if (fpiRankCache && now - fpiRankCache.fetchedAt < FPI_CACHE_MS) {
-    return fpiRankCache.map;
+  if (powerIndexCache && now - powerIndexCache.fetchedAt < FPI_CACHE_MS) {
+    return powerIndexCache;
   }
-  const map = new Map<number, number>();
+  const fpi = new Map<number, number>();
+  const sos = new Map<number, number>();
   try {
     const url =
       "https://site.web.api.espn.com/apis/fitt/v3/sports/football/college-football/powerindex?limit=200";
     const res = await fetch(url, { headers: { Accept: "application/json" } });
     if (!res.ok) throw new Error(`FPI ${res.status}`);
-    const data = (await res.json()) as {
-      teams?: {
-        team?: { id?: string };
-        categories?: { name?: string; values?: number[]; names?: string[] }[];
-      }[];
-    };
+    const data = (await res.json()) as PowerIndexPayload;
+    const fpiIdx = powerIndexStatIndex(data.categories, "fpi", "fpirank");
+    const sosIdx = powerIndexStatIndex(data.categories, "resume", "avgsosrank");
     for (const row of data.teams ?? []) {
       const id = Number(row.team?.id);
       if (!id) continue;
-      const fpi = (row.categories ?? []).find((c) => c.name === "fpi");
-      if (!fpi?.values?.length) continue;
-      const names = fpi.names ?? [];
-      const rankIdx = names.indexOf("fpirank");
-      const rankVal = rankIdx >= 0 ? fpi.values[rankIdx] : fpi.values[1];
-      if (typeof rankVal === "number" && rankVal > 0) {
-        map.set(id, Math.round(rankVal));
-      }
+      const fpiRow = (row.categories ?? []).find((c) => c.name === "fpi");
+      const fpiRank = readRankValue(fpiRow?.values, fpiIdx >= 0 ? fpiIdx : 1);
+      if (fpiRank != null) fpi.set(id, fpiRank);
+      const resume = (row.categories ?? []).find((c) => c.name === "resume");
+      const sosRank = readRankValue(resume?.values, sosIdx);
+      if (sosRank != null) sos.set(id, sosRank);
     }
   } catch {
     /* keep empty — UI falls back to poll-only */
   }
-  fpiRankCache = { map, fetchedAt: now };
+  powerIndexCache = { fpi, sos, fetchedAt: now };
+  return powerIndexCache;
+}
+
+/** ESPN Football Power Index ranks for all FBS teams (ordinal 1…N). */
+export async function fetchCfbFpiRanks(): Promise<Map<number, number>> {
+  return (await loadCfbPowerIndex()).fpi;
+}
+
+/** ESPN FPI average in-season SOS rank. 1 is the hardest schedule. */
+export async function fetchCfbSosRanks(): Promise<Map<number, number>> {
+  return (await loadCfbPowerIndex()).sos;
+}
+
+/**
+ * CFP committee ranks when that poll exists. Empty before the first release
+ * (ESPN omits rankings/21 until then). Never copies the AP poll.
+ */
+export async function fetchCfbCfpRankByTeam(
+  season = new Date().getFullYear(),
+): Promise<Map<number, number>> {
+  const now = Date.now();
+  if (cfpRankCache && now - cfpRankCache.fetchedAt < POLL_RANK_CACHE_MS) {
+    return cfpRankCache.map;
+  }
+  const map = new Map<number, number>();
+  try {
+    const index = await fetchCoreJson<{ items?: { $ref?: string }[] }>(
+      `${CORE}/seasons/${season}/rankings?limit=20`,
+    );
+    const cfpRef = (index?.items ?? []).find((item) =>
+      /\/rankings\/21(?:\?|$)/.test(item.$ref ?? ""),
+    )?.$ref;
+    if (cfpRef) {
+      const meta = await fetchCoreJson<{
+        type?: string;
+        rankings?: { $ref?: string }[];
+      }>(cfpRef);
+      const weekRef = latestCfpWeekRef(index?.items, meta);
+      if (weekRef) {
+        const week = await fetchCoreJson<{
+          type?: string;
+          ranks?: { current?: number; team?: { id?: string; $ref?: string } }[];
+        }>(weekRef);
+        for (const [id, rank] of parseCfbCfpWeekRanks(week)) map.set(id, rank);
+      }
+    }
+  } catch {
+    /* CFP not published yet */
+  }
+  cfpRankCache = { map, fetchedAt: now };
   return map;
+}
+
+export async function fetchCfbGameWrap(eventId: string, teamId: string): Promise<CfbGameWrap> {
+  const res = await fetch(`${ESPN}/summary?event=${encodeURIComponent(eventId)}`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`CFB summary ${res.status}`);
+  const raw = (await res.json()) as Parameters<typeof mapCfbGameWrap>[0];
+  return mapCfbGameWrap(raw, teamId);
 }
 
 /**
@@ -1695,7 +1777,13 @@ export type CfbTeamPage = {
   conference: string | null;
   /** AP Top 25 only. */
   rank: number | null;
+  /** Playoff committee rank when ESPN has published a CFP poll. */
+  cfpRank: number | null;
   fpiRank: number | null;
+  /** ESPN FPI average in-season strength-of-schedule rank (1 = hardest). */
+  sosRank: number | null;
+  seasonStats: CfbSeasonStatLine;
+  leaders: CfbTeamLeaderChip[];
   nextEvent: { id: string; name: string; date: string | null } | null;
   roster: {
     id: string;
@@ -3050,16 +3138,52 @@ async function buildCfbCoachingStaff(opts: {
   return { coaches, staffSource };
 }
 
+async function readCfbSeasonStats(res: Response | null): Promise<CfbSeasonStatLine> {
+  const empty = parseCfbSeasonStats(null);
+  if (!res?.ok) return empty;
+  try {
+    const json = (await res.json()) as {
+      results?: Parameters<typeof parseCfbSeasonStats>[0];
+    };
+    return parseCfbSeasonStats(json.results ?? null);
+  } catch {
+    return empty;
+  }
+}
+
+async function readCfbTeamLeaders(
+  res: Response | null,
+  teamId: string,
+): Promise<CfbTeamLeaderChip[]> {
+  if (!res?.ok) return [];
+  try {
+    const json = (await res.json()) as Parameters<typeof parseCfbTeamLeaders>[0];
+    return parseCfbTeamLeaders(json, teamId);
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
   const id = String(teamId);
   const season = new Date().getFullYear();
-  const [fpiByTeam, pollByTeam, teamRes, rosterRes, scheduleGames, seasonRec] = await Promise.all([
+  const [fpiByTeam, pollByTeam, sosByTeam, cfpByTeam, teamRes, rosterRes, scheduleGames, seasonRec, statsRes, leadersRes] =
+    await Promise.all([
     fetchCfbFpiRanks().catch(() => new Map<number, number>()),
     fetchCfbPollRankByTeam().catch(() => new Map<number, number>()),
+    fetchCfbSosRanks().catch(() => new Map<number, number>()),
+    fetchCfbCfpRankByTeam(season).catch(() => new Map<number, number>()),
     fetch(`${ESPN}/teams/${id}`, { headers: { Accept: "application/json" } }),
     fetch(`${ESPN}/teams/${id}/roster`, { headers: { Accept: "application/json" } }),
     fetchCfbTeamSeasonSchedule(id, season).catch(() => [] as CfbTeamScheduleGame[]),
     fetchCfbTeamSeasonRecord(id, season).catch(() => null),
+    fetch(`${ESPN}/teams/${id}/statistics`, { headers: { Accept: "application/json" } }).catch(
+      () => null,
+    ),
+    fetch(
+      `https://site.api.espn.com/apis/site/v3/sports/football/college-football/leaders?season=${season}&team=${id}`,
+      { headers: { Accept: "application/json" } },
+    ).catch(() => null),
   ]);
   if (!teamRes.ok) throw new Error(`CFB team ${teamRes.status}`);
   const teamJson = (await teamRes.json()) as {
@@ -3154,7 +3278,11 @@ export async function fetchCfbTeamPage(teamId: string): Promise<CfbTeamPage> {
     standing: t.standingSummary ?? null,
     conference,
     rank: pollByTeam.get(Number(id)) ?? null,
+    cfpRank: cfpByTeam.get(Number(id)) ?? null,
     fpiRank: fpiByTeam.get(Number(id)) ?? null,
+    sosRank: sosByTeam.get(Number(id)) ?? null,
+    seasonStats: await readCfbSeasonStats(statsRes),
+    leaders: await readCfbTeamLeaders(leadersRes, id),
     nextEvent: next?.id
       ? { id: String(next.id), name: next.name ?? "Next game", date: next.date ?? null }
       : null,

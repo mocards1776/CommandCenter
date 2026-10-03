@@ -2,6 +2,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Calendar, ChevronRight, Loader2 } from "lucide-react";
 import NhlThreeStars from "@/components/sports/NhlThreeStars";
+import TeamResultBadge from "@/components/sports/TeamResultBadge";
 import { useSwipeBack } from "@/hooks/useSwipeBack";
 import {
   fetchNhlGameDetail,
@@ -13,12 +14,6 @@ import {
   type NhlTeamPage,
 } from "@/lib/nhl";
 import { cn, formatSportsDate } from "@/lib/utils";
-
-const RESULT_TONE: Record<NonNullable<NhlScheduleItem["result"]>, string> = {
-  W: "bg-emerald-400/15 text-emerald-300 ring-emerald-300/30",
-  L: "bg-red-400/15 text-red-300 ring-red-300/30",
-  OTL: "bg-amber-300/15 text-amber-200 ring-amber-200/30",
-};
 
 const LEADER_SHORT: Record<string, string> = { goals: "G", assists: "A", points: "PTS", saves: "SV" };
 
@@ -105,8 +100,8 @@ export default function NhlTeamPage() {
             {lastGame ? <LastGameCard team={t} game={lastGame} accent={accent} /> : null}
             <div className="space-y-4">
               {!liveGame && upcoming[0] ? <NextGameRow team={t} game={upcoming[0]} /> : null}
-              <ScheduleList title="Upcoming" games={upcoming.slice(liveGame ? 0 : 1)} />
-              <ScheduleList title="Recent" games={recent} />
+              <ScheduleList title="Upcoming" games={upcoming.slice(liveGame ? 0 : 1)} teamAbbrev={t.abbrev} />
+              <ScheduleList title="Recent" games={recent} teamAbbrev={t.abbrev} />
             </div>
           </div>
 
@@ -357,16 +352,7 @@ function LastGameCard({ team, game, accent }: { team: NhlTeamPage; game: NhlSche
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
           <ScoreSide logo={team.logo} abbrev={team.abbrev} score={game.teamScore} won={game.result === "W"} />
           <div className="text-center">
-            {game.result ? (
-              <span
-                className={cn(
-                  "inline-block rounded-md px-2 py-0.5 text-[12px] font-bold tracking-[0.08em] ring-1",
-                  RESULT_TONE[game.result],
-                )}
-              >
-                {game.result}
-              </span>
-            ) : null}
+            {game.result ? <TeamResultBadge result={game.result} /> : null}
             <p className="text-chalk mt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em]">
               {finalTag(game.detail)}
             </p>
@@ -494,7 +480,15 @@ function ScoreSide({
   );
 }
 
-function ScheduleList({ title, games }: { title: string; games: NhlScheduleItem[] }) {
+function ScheduleList({
+  title,
+  games,
+  teamAbbrev,
+}: {
+  title: string;
+  games: NhlScheduleItem[];
+  teamAbbrev: string;
+}) {
   return (
     <div className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] px-4 py-2.5">
@@ -510,16 +504,7 @@ function ScheduleList({ title, games }: { title: string; games: NhlScheduleItem[
                 to={`/sports/nhl/game/${g.id}`}
                 className="flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.03]"
               >
-                {g.result ? (
-                  <span
-                    className={cn(
-                      "w-9 shrink-0 rounded py-0.5 text-center text-[10.5px] font-bold ring-1",
-                      RESULT_TONE[g.result],
-                    )}
-                  >
-                    {g.result}
-                  </span>
-                ) : null}
+                {g.result ? <TeamResultBadge result={g.result} className="w-9" /> : null}
                 <span className="text-chalk-dim w-4 shrink-0 text-center text-[11px]">
                   {g.homeAway === "away" ? "@" : "vs"}
                 </span>
@@ -530,8 +515,20 @@ function ScheduleList({ title, games }: { title: string; games: NhlScheduleItem[
                   {g.opponent?.abbrev ?? g.label}
                 </span>
                 {g.state === "post" && g.teamScore != null && g.oppScore != null ? (
-                  <span className="numeral text-cream shrink-0 text-[14px] font-semibold">
-                    {g.teamScore}–{g.oppScore}
+                  <span className="numeral shrink-0 text-right text-[13px] font-semibold leading-tight">
+                    <span className={g.result === "W" ? "text-emerald-300" : g.result === "L" || g.result === "OTL" ? "text-red-300" : "text-cream"}>
+                      <span className="mr-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-white/40">
+                        {teamAbbrev}
+                      </span>
+                      {g.teamScore}
+                    </span>
+                    <span className="mx-1 text-white/30">–</span>
+                    <span className="text-white/55">
+                      {g.oppScore}
+                      <span className="ml-1 text-[9px] font-semibold uppercase tracking-[0.08em] text-white/35">
+                        {g.opponent?.abbrev ?? ""}
+                      </span>
+                    </span>
                     {/OT|SO/i.test(g.detail ?? "") ? (
                       <span className="text-chalk-dim ml-1 text-[10px] font-normal">
                         {finalTag(g.detail).replace("Final/", "")}

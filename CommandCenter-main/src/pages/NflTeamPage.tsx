@@ -54,21 +54,23 @@ export default function NflTeamPage() {
       ) : (
         <>
           <TeamHero team={t} accent={accent} />
+          <NflSeasonLeaders team={t} />
 
           {t.nextEvent && (
             <Link
               to={`/sports/nfl/game/${t.nextEvent.id}`}
               className="bg-panel hover:border-accent/40 flex items-center gap-3 rounded-xl border border-white/[0.08] px-4 py-3.5 transition"
+              style={{ boxShadow: `inset 3px 0 0 ${accent}` }}
             >
               <Calendar size={16} className="text-accent shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
-                  Next event
+                  Next up
                 </p>
-                <p className="text-cream truncate text-[14px] font-medium">{t.nextEvent.name}</p>
+                <p className="text-cream truncate text-[15px] font-semibold">{t.nextEvent.name}</p>
               </div>
               {t.nextEvent.date && (
-                <span className="text-chalk-dim shrink-0 text-[12px]">
+                <span className="text-chalk-dim shrink-0 text-right text-[12px]">
                   {formatSportsDate(t.nextEvent.date)}
                 </span>
               )}
@@ -183,6 +185,48 @@ export default function NflTeamPage() {
         </>
       )}
     </div>
+  );
+}
+
+function NflSeasonLeaders({ team }: { team: NflTeamPage }) {
+  const chips = ["Passing", "Rushing", "Receiving"]
+    .map((name) => {
+      const table = team.playerTables.find((item) => item.name === name);
+      const row = table?.rows[0];
+      if (!table || !row) return null;
+      const ydsIdx = table.labels.findIndex((label) => label.toUpperCase() === "YDS");
+      const yds = ydsIdx >= 0 ? row.stats[ydsIdx] : null;
+      return {
+        key: name,
+        id: row.id,
+        name: row.name,
+        line: yds ? `${yds} YDS` : row.stats.filter(Boolean).slice(0, 3).join(" · "),
+      };
+    })
+    .filter((chip): chip is { key: string; id: string; name: string; line: string } => Boolean(chip));
+  if (chips.length === 0) return null;
+  return (
+    <section>
+      <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+        Season leaders
+      </h2>
+      <ul className="grid gap-2 sm:grid-cols-3">
+        {chips.map((chip) => (
+          <li key={chip.key}>
+            <Link
+              to={`/sports/nfl/player/${chip.id}`}
+              className="bg-panel hover:border-accent/40 block rounded-xl border border-white/[0.08] px-3 py-2.5 transition"
+            >
+              <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7]">
+                {chip.key}
+              </span>
+              <span className="text-cream mt-0.5 block truncate text-[14px] font-semibold">{chip.name}</span>
+              <span className="numeral mt-0.5 block text-[12px] text-white/70">{chip.line}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
