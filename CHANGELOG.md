@@ -2,6 +2,13 @@
 
 ---
 
+## Heat cards: smaller field, live WP, Apple-style stats — October 4, 2026
+
+- RUWT heat Telegram photos keep the 1080×1350 slot. The live field is compact instead of filling the card. Under it: the same live win-probability chart as the game page (#281 — historical fill only, dashed hold for remaining regulation) and Apple Sports-style team stats (centered labels, opposing team-color bars). Key rows only: yards, pass, rush, 1st downs, 3rd down, turnovers, possession.
+- `sports-telegram` still draws the card from live ESPN data. RUWT still owns when heat fires and the caption reason. Newspaper / Thompson Times unchanged.
+
+---
+
 ## Heat alert photos — October 4, 2026
 
 - Sports App renders a tall (1080×1300) heat-alert PNG from the live game: logos, scores, clock nest, down and distance, then the same field, ice, or diamond geometry the app already draws.

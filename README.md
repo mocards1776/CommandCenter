@@ -115,7 +115,8 @@ npm run lint
 - **Heat alert photos** — when a heat alert fires, `sports-push` asks the
   `sports-telegram` edge function for a tall PNG and Telegram `sendPhoto`.
   Sports App owns the drawing (logos, score, clock nest, down and distance,
-  and the field / ice / diamond). RUWT owns the caption reason. The picture
+  a compact field / ice / diamond, the live win-probability chart, and
+  Apple-style team stats). RUWT owns the caption reason. The picture
   is rendered from the game, not from a screenshot and not from a stock photo.
 
   The signed-in preview is `/sports/heat-alert?sport=nfl&game=<espn id>`.

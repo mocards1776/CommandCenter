@@ -1,15 +1,24 @@
+import {
+  CFB_QUARTER_SEC,
+  CFB_REGULATION_SEC,
+  cfbWinProbLeader,
+  formatWinPct,
+  isLightTeamColor,
+  paintWinProbColor,
+  plotCfbWinProbability,
+} from "../win-probability.ts";
 import { clockParts, isBreakStatus } from "./clock.ts";
 import { onDark } from "./color.ts";
 import { formatHeatTimestamp, leagueLabel, phaseLabel, situationLine } from "./copy.ts";
 import { footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
 import { RINK_HEIGHT_FT, RINK_WIDTH_FT, rinkMarkings } from "./ice.ts";
-import { HEAT_ALERT_HEIGHT, HEAT_ALERT_WIDTH, type HeatAlertCard } from "./types.ts";
+import { HEAT_ALERT_HEIGHT, HEAT_ALERT_WIDTH, type HeatAlertCard, type HeatStat } from "./types.ts";
 
 /**
  * Tall heat-alert graphic in the same visual language as the finals card:
  * navy board, team washes, 1080×1350 Telegram slot, logos + score hierarchy,
- * then the live map. Football chains still come from NflFieldMap math.
- * Nothing here is a photo.
+ * a compact live map, the live WP chart, then Apple-style team stats.
+ * Football chains still come from NflFieldMap math. Nothing here is a photo.
  */
 
 const W = HEAT_ALERT_WIDTH;
@@ -60,7 +69,7 @@ function footballGlyph(): string {
   `;
 }
 
-function placedFootball(cx: number, cy: number, facingRight: boolean, scale = 2.35): string {
+function placedFootball(cx: number, cy: number, facingRight: boolean, scale = 1.7): string {
   const flip = facingRight ? 1 : -1;
   return `<g transform="translate(${cx} ${cy}) scale(${flip} 1) scale(${scale}) translate(-16 -8)">${footballGlyph()}</g>`;
 }
@@ -69,7 +78,7 @@ function placedFootball(cx: number, cy: number, facingRight: boolean, scale = 2.
 function attackArrow(facingRight: boolean, facingLeft: boolean, color: string): string {
   if (!facingRight && !facingLeft) return "";
   const d = facingRight ? "M1.2 1.2 L12.2 5 L1.2 8.8 Z" : "M12.8 1.2 L1.8 5 L12.8 8.8 Z";
-  return `<g transform="translate(-22 -74) scale(3.14)"><path d="${d}" fill="${color}" stroke="#ffffff" stroke-width="0.9" stroke-linejoin="round"/></g>`;
+  return `<g transform="translate(-16 -48) scale(2.2)"><path d="${d}" fill="${color}" stroke="#ffffff" stroke-width="0.9" stroke-linejoin="round"/></g>`;
 }
 
 function textEl(
@@ -261,10 +270,10 @@ function footballPanel(card: HeatAlertCard, panelX: number, panelY: number, pane
   };
 
   const grassX = panelX + 16;
-  const grassY = panelY + 62;
+  const grassY = panelY + 54;
   const grassW = panelW - 32;
-  const lastReserve = spot.lastPlayText ? 36 : 16;
-  const grassH = Math.max(220, panelH - 70 - lastReserve);
+  const lastReserve = spot.lastPlayText ? 28 : 12;
+  const grassH = Math.max(132, panelH - 62 - lastReserve);
   const endFrac = 0.11;
   const endW = grassW * endFrac;
   const playX = grassX + endW;
@@ -276,7 +285,7 @@ function footballPanel(card: HeatAlertCard, panelX: number, panelY: number, pane
       const x = playX + ((i + 1) / 10) * playW;
       return `
         <line x1="${x}" y1="${grassY}" x2="${x}" y2="${grassY + grassH}" stroke="#ffffff" stroke-opacity="0.28" stroke-width="2"/>
-        ${textEl(String(n), x + 8, grassY + grassH - 16, { size: 18, fill: "rgba(255,255,255,0.62)", weight: 700, anchor: "start" })}
+        ${textEl(String(n), x + 6, grassY + grassH - 12, { size: 14, fill: "rgba(255,255,255,0.62)", weight: 700, anchor: "start" })}
       `;
     })
     .join("");
@@ -321,19 +330,19 @@ function footballPanel(card: HeatAlertCard, panelX: number, panelY: number, pane
   }
 
   const mid = card.home.logoHref
-    ? logoImage(card.home.logoHref, playX + playW / 2 - 70, grassY + grassH / 2 - 70, 140, 140, 0.42)
+    ? logoImage(card.home.logoHref, playX + playW / 2 - 36, grassY + grassH / 2 - 36, 72, 72, 0.38)
     : "";
 
   let ball = "";
   if (marks.ballPct != null && (marks.homeHasBall || marks.awayHasBall || spot.yardLine != null)) {
     const rawX = xAt(marks.ballPct);
-    const pad = 78;
+    const pad = 52;
     const x = Math.max(playX + pad, Math.min(playX + playW - pad, rawX));
     const y = grassY + grassH / 2;
     const possLogo = marks.homeHasBall ? card.home.logoHref : marks.awayHasBall ? card.away.logoHref : null;
     const arrow = attackArrow(marks.facingRight, marks.facingLeft, possColor);
     if (possLogo) {
-      ball = `<g transform="translate(${x} ${y})">${arrow}${logoImage(possLogo, -36, -36, 72, 72)}</g>`;
+      ball = `<g transform="translate(${x} ${y})">${arrow}${logoImage(possLogo, -24, -24, 48, 48)}</g>`;
     } else {
       ball = `<g transform="translate(${x} ${y})">${placedFootball(0, 0, marks.facingRight || !marks.facingLeft)}${arrow}</g>`;
     }
@@ -369,11 +378,12 @@ function footballPanel(card: HeatAlertCard, panelX: number, panelY: number, pane
 
 function icePanel(card: HeatAlertCard, panelX: number, panelY: number, panelW: number, panelH: number): string {
   if (!card.ice) return "";
-  const rinkW = Math.min(940, panelW - 48);
-  const rinkH = (rinkW * RINK_HEIGHT_FT) / RINK_WIDTH_FT;
+  const rinkW = Math.min(620, panelW - 80);
+  const rinkH = Math.min(panelH - 56, (rinkW * RINK_HEIGHT_FT) / RINK_WIDTH_FT);
+  const fittedW = rinkH * (RINK_WIDTH_FT / RINK_HEIGHT_FT);
   const cx = panelX + panelW / 2;
-  const cy = panelY + 64 + rinkH / 2;
-  const scale = rinkW / RINK_WIDTH_FT;
+  const cy = panelY + 28 + rinkH / 2;
+  const scale = fittedW / RINK_WIDTH_FT;
   const spot = card.ice;
   let puck = "";
   if (spot.puckX != null && spot.puckY != null) {
@@ -381,12 +391,12 @@ function icePanel(card: HeatAlertCard, panelX: number, panelY: number, panelW: n
     const y = Math.max(-40, Math.min(40, spot.puckY));
     puck = `<circle cx="${x}" cy="${y}" r="2.2" fill="#111827" stroke="#f8fafc" stroke-width="0.45"/>`;
   }
-  const logo = card.home.logoHref ? logoImage(card.home.logoHref, cx - 70, cy - 70, 140, 140, 0.18) : "";
+  const logo = card.home.logoHref ? logoImage(card.home.logoHref, cx - 36, cy - 36, 72, 72, 0.18) : "";
   return `
     ${panel(panelX, panelY, panelW, panelH, "#0d1b2e")}
-    ${textEl("ICE", panelX + 28, panelY + 40, { size: 18, fill: "#e8e4d9", weight: 700, anchor: "start", spacing: 2.4 })}
-    ${textEl(card.away.abbrev, panelX + 28, panelY + panelH - 22, { size: 22, fill: onDark(card.away.color), weight: 700, anchor: "start", spacing: 1.4 })}
-    ${textEl(card.home.abbrev, panelX + panelW - 28, panelY + panelH - 22, { size: 22, fill: onDark(card.home.color), weight: 700, anchor: "end", spacing: 1.4 })}
+    ${textEl("ICE", panelX + 22, panelY + 28, { size: 14, fill: "#e8e4d9", weight: 700, anchor: "start", spacing: 2.4 })}
+    ${textEl(card.away.abbrev, panelX + 22, panelY + panelH - 16, { size: 18, fill: onDark(card.away.color), weight: 700, anchor: "start", spacing: 1.4 })}
+    ${textEl(card.home.abbrev, panelX + panelW - 22, panelY + panelH - 16, { size: 18, fill: onDark(card.home.color), weight: 700, anchor: "end", spacing: 1.4 })}
     <g transform="translate(${cx} ${cy}) scale(${scale})">
       ${rinkMarkings()}
       ${puck}
@@ -403,15 +413,15 @@ function bag(on: boolean, cx: number, cy: number): string {
 function diamondPanel(card: HeatAlertCard, panelX: number, panelY: number, panelW: number, panelH: number): string {
   const spot = card.diamond;
   if (!spot) return "";
-  const cx = panelX + 360;
-  const cy = panelY + panelH / 2 + 10;
-  const arm = 140;
+  const cx = panelX + 300;
+  const cy = panelY + panelH / 2 + 6;
+  const arm = 88;
   const outs = `${spot.outs} out${spot.outs === 1 ? "" : "s"}`;
   const people = [spot.batter ? `Batter  ${spot.batter}` : "", spot.pitcher ? `Pitcher  ${spot.pitcher}` : ""]
     .filter(Boolean)
     .map((line, i) =>
-      textEl(clipText(line, 28), panelX + 760, panelY + 230 + i * 50, {
-        size: 22,
+      textEl(clipText(line, 28), panelX + 760, panelY + 150 + i * 36, {
+        size: 18,
         fill: "#f4f1e9",
         weight: 600,
         anchor: "middle",
@@ -429,8 +439,8 @@ function diamondPanel(card: HeatAlertCard, panelX: number, panelY: number, panel
     ${bag(spot.onThird, cx - arm, cy)}
     ${bag(spot.onFirst, cx + arm, cy)}
     <polygon points="${cx}, ${cy + arm + 18} ${cx - 16}, ${cy + arm} ${cx - 10}, ${cy + arm - 8} ${cx + 10}, ${cy + arm - 8} ${cx + 16}, ${cy + arm}" fill="#f4f1e9"/>
-    ${textEl(`${spot.balls}-${spot.strikes}`, panelX + 760, panelY + 168, { size: 68, family: "condensed", fill: "#ffffff", weight: 700 })}
-    ${textEl(outs, panelX + 760, panelY + 200, { size: 22, fill: "rgba(244,241,233,0.72)", weight: 600, spacing: 1.2 })}
+    ${textEl(`${spot.balls}-${spot.strikes}`, panelX + 760, panelY + 108, { size: 48, family: "condensed", fill: "#ffffff", weight: 700 })}
+    ${textEl(outs, panelX + 760, panelY + 136, { size: 18, fill: "rgba(244,241,233,0.72)", weight: 600, spacing: 1.2 })}
     ${people}
   `;
 }
@@ -438,15 +448,151 @@ function diamondPanel(card: HeatAlertCard, panelX: number, panelY: number, panel
 function matchupPanel(card: HeatAlertCard, panelX: number, panelY: number, panelW: number, panelH: number): string {
   return `
     ${panel(panelX, panelY, panelW, panelH, "#0d1d3c")}
-    ${textEl(card.away.name, 540, panelY + panelH / 2 - 40, { size: 48, family: "condensed", fill: "#ffffff", weight: 700 })}
-    ${textEl("at", 540, panelY + panelH / 2 + 8, { size: 24, fill: "rgba(244,241,233,0.55)", weight: 600, spacing: 2 })}
-    ${textEl(card.home.name, 540, panelY + panelH / 2 + 70, { size: 48, family: "condensed", fill: "#ffffff", weight: 700 })}
+    ${textEl(card.away.name, 540, panelY + panelH / 2 - 28, { size: 40, family: "condensed", fill: "#ffffff", weight: 700 })}
+    ${textEl("at", 540, panelY + panelH / 2 + 4, { size: 20, fill: "rgba(244,241,233,0.55)", weight: 600, spacing: 2 })}
+    ${textEl(card.home.name, 540, panelY + panelH / 2 + 48, { size: 40, family: "condensed", fill: "#ffffff", weight: 700 })}
+  `;
+}
+
+function winProbPanel(
+  card: HeatAlertCard,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  awayPaint: string,
+  homePaint: string,
+): string {
+  const plot = plotCfbWinProbability(card.winProbability);
+  if (!plot) return "";
+  const last = card.winProbability[card.winProbability.length - 1]!;
+  const leader = cfbWinProbLeader(last.homeWinPct, {
+    abbrev: card.away.abbrev,
+    color: awayPaint,
+  }, {
+    abbrev: card.home.abbrev,
+    color: homePaint,
+  }, last.tiePct);
+  const badgeFill = leader.even ? "#334155" : leader.abbrev === card.home.abbrev ? homePaint : awayPaint;
+  const badgeText = isLightTeamColor(badgeFill) ? "#140c08" : "#f7f4ee";
+  const badgeLabel = leader.even
+    ? `EVEN ${formatWinPct(leader.pct)}%`
+    : `${leader.abbrev} ${formatWinPct(leader.pct)}%`;
+  const badgeW = Math.max(128, badgeLabel.length * 12 + 24);
+  const chartX = x + 18;
+  const chartY = y + 46;
+  const chartW = w - 36;
+  const chartH = h - 76;
+  const nowX = (plot.nowX / 100) * chartW;
+  const future = plot.future;
+  const coords = card.winProbability.map((point) => ({
+    x: (point.elapsedSec / Math.max(plot.domain, 1)) * chartW,
+    y: chartH - (Math.max(0, Math.min(100, point.homeWinPct)) / 100) * chartH,
+  }));
+  const line = coords
+    .map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(2)} ${c.y.toFixed(2)}`)
+    .join(" ");
+  const first = coords[0];
+  const lastPt = coords[coords.length - 1];
+  const area =
+    first && lastPt
+      ? `M${first.x.toFixed(2)} ${chartH} ${coords.map((c) => `L${c.x.toFixed(2)} ${c.y.toFixed(2)}`).join(" ")} L${lastPt.x.toFixed(2)} ${chartH} Z`
+      : "";
+  const ticks = [1, 2, 3].map((q) => {
+    const tx = ((q * CFB_QUARTER_SEC) / plot.domain) * chartW;
+    return `<line x1="${tx.toFixed(2)}" y1="0" x2="${tx.toFixed(2)}" y2="${chartH}" stroke="white" stroke-opacity="0.16" stroke-width="2"/>`;
+  });
+  const futureLine =
+    future && lastPt
+      ? `<path d="M${lastPt.x.toFixed(2)} ${lastPt.y.toFixed(2)} L${chartW} ${lastPt.y.toFixed(2)}" fill="none" stroke="#f7f4ee" stroke-opacity="0.35" stroke-width="3" stroke-dasharray="8 7"/>`
+      : "";
+  const nowMark = future
+    ? `<line x1="${nowX.toFixed(2)}" y1="0" x2="${nowX.toFixed(2)}" y2="${chartH}" stroke="#f7f4ee" stroke-opacity="0.45" stroke-width="2"/>`
+    : "";
+  const labels = ["Q1", "Q2", "Q3", "Q4"].map((label, i) => {
+    const cx = chartX + ((i + 0.5) * CFB_QUARTER_SEC * chartW) / plot.domain;
+    return textEl(label, cx, y + h - 10, { size: 13, fill: "#8b93a7", weight: 700, spacing: 1 });
+  });
+  if (plot.domain > CFB_REGULATION_SEC + 1) {
+    const cx = chartX + (((CFB_REGULATION_SEC + plot.domain) / 2) * chartW) / plot.domain;
+    labels.push(textEl("OT", cx, y + h - 10, { size: 13, fill: "#8b93a7", weight: 700, spacing: 1 }));
+  }
+  return `
+    ${panel(x, y, w, h)}
+    ${textEl("Win probability", x + 20, y + 30, { size: 16, fill: "#e8e4d9", weight: 700, spacing: 0.4, anchor: "start" })}
+    ${textEl("ESPN", x + 248, y + 30, { size: 12, fill: "rgba(255,255,255,0.38)", weight: 700, spacing: 1.2, anchor: "start" })}
+    <rect x="${x + w - 20 - badgeW}" y="${y + 10}" width="${badgeW}" height="28" rx="8" fill="${badgeFill}"/>
+    ${textEl(badgeLabel, x + w - 20 - badgeW / 2, y + 30, { size: 14, fill: badgeText, weight: 700, spacing: 0.3 })}
+    <svg x="${chartX}" y="${chartY}" width="${chartW}" height="${chartH}" viewBox="0 0 ${chartW} ${chartH}">
+      <defs><clipPath id="wpHist"><rect x="0" y="0" width="${Math.max(0, nowX).toFixed(2)}" height="${chartH}"/></clipPath></defs>
+      <rect width="${chartW}" height="${chartH}" fill="#0b1220"/>
+      <g clip-path="url(#wpHist)">
+        <rect width="${chartW}" height="${chartH}" fill="${awayPaint}"/>
+        ${area ? `<path d="${area}" fill="${homePaint}"/>` : ""}
+      </g>
+      ${futureLine}
+      ${nowMark}
+      <line x1="0" y1="${chartH / 2}" x2="${chartW}" y2="${chartH / 2}" stroke="white" stroke-opacity="0.28" stroke-width="2"/>
+      ${ticks.join("")}
+      ${line ? `<path d="${line}" fill="none" stroke="#f7f4ee" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>` : ""}
+      ${lastPt ? `<circle cx="${lastPt.x.toFixed(2)}" cy="${lastPt.y.toFixed(2)}" r="6.5" fill="#f7f4ee"/>` : ""}
+      ${textEl(card.away.abbrev, 14, 18, { size: 12, fill: "#ffffff", weight: 700, spacing: 0.8, anchor: "start" })}
+      ${textEl(card.home.abbrev, 14, chartH - 8, { size: 12, fill: "#ffffff", weight: 700, spacing: 0.8, anchor: "start" })}
+    </svg>
+    ${labels.join("")}
+  `;
+}
+
+function statsPanel(
+  card: HeatAlertCard,
+  stats: HeatStat[],
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  awayPaint: string,
+  homePaint: string,
+): string {
+  const rowH = stats.length ? Math.min(40, (h - 46) / stats.length) : 36;
+  const inner = w - 40;
+  const barX = x + 20;
+  const rows = stats.map((stat, i) => {
+    const top = y + 42 + i * rowH;
+    const awayFill = stat.awayLeads ? "#f7f4ee" : "#a8b0c2";
+    const homeFill = stat.homeLeads ? "#f7f4ee" : "#a8b0c2";
+    const barY = top + rowH - 9;
+    const share = stat.awayShare == null ? 50 : Math.max(0, Math.min(100, stat.awayShare));
+    const awayW = (share / 100) * inner;
+    const homeW = inner - awayW;
+    const bars =
+      stat.awayShare == null
+        ? `<rect x="${barX}" y="${barY}" width="${inner}" height="6" rx="3" fill="rgba(255,255,255,0.06)"/>`
+        : [
+            `<rect x="${barX}" y="${barY}" width="${inner}" height="6" rx="3" fill="rgba(255,255,255,0.06)"/>`,
+            `<rect x="${barX}" y="${barY}" width="${awayW.toFixed(2)}" height="6" rx="3" fill="${awayPaint}" opacity="${stat.awayLeads ? 0.95 : 0.55}"/>`,
+            `<rect x="${(barX + awayW).toFixed(2)}" y="${barY}" width="${Math.max(0, homeW).toFixed(2)}" height="6" rx="3" fill="${homePaint}" opacity="${stat.homeLeads ? 0.95 : 0.55}"/>`,
+          ].join("");
+    return `
+      ${textEl(stat.away, barX, top + 16, { size: 20, fill: awayFill, weight: stat.awayLeads ? 700 : 500, anchor: "start" })}
+      ${textEl(stat.label, x + w / 2, top + 16, { size: 13, fill: "#8b93a7", weight: 700, spacing: 0.5 })}
+      ${textEl(stat.home, barX + inner, top + 16, { size: 20, fill: homeFill, weight: stat.homeLeads ? 700 : 500, anchor: "end" })}
+      ${bars}
+    `;
+  });
+  return `
+    ${panel(x, y, w, h)}
+    ${textEl(card.away.abbrev, x + 20, y + 28, { size: 14, fill: awayPaint, weight: 700, spacing: 0.6, anchor: "start" })}
+    ${textEl("Team stats", x + w / 2, y + 28, { size: 16, fill: "#e8e4d9", weight: 700, spacing: 0.4 })}
+    ${textEl(card.home.abbrev, x + w - 20, y + 28, { size: 14, fill: homePaint, weight: 700, spacing: 0.6, anchor: "end" })}
+    ${rows.join("")}
   `;
 }
 
 export function renderHeatAlertSvg(card: HeatAlertCard): string {
   const started = card.live || card.final;
   const stamp = formatHeatTimestamp(card.date);
+  const awayPaint = paintWinProbColor(card.away.color, card.away.alternateColor);
+  const homePaint = paintWinProbColor(card.home.color, card.home.alternateColor);
   let y = 70;
   const board = scoreboard(card, started);
   y = 356;
@@ -455,10 +601,30 @@ export function renderHeatAlertSvg(card: HeatAlertCard): string {
   const sit = situationBar(card, y);
   y += sit.height + 14;
   const footerTop = H - 52;
-  const mapY = y;
-  const mapH = Math.max(240, footerTop - mapY - 12);
+  const gap = 12;
   const mapX = M;
   const mapW = W - M * 2;
+  const hasWp = (card.winProbability ?? []).length > 0;
+  const statsAll = card.stats ?? [];
+  const mapWant = card.football ? 224 : card.ice ? 196 : card.diamond ? 210 : 128;
+  const wpWant = hasWp ? 184 : 0;
+  const statsHFor = (n: number) => (n > 0 ? 42 + n * 34 + 6 : 0);
+  let rows = statsAll.length;
+  let remaining = footerTop - y - 8;
+  let mapH = mapWant;
+  let statsH = statsHFor(rows);
+  const pack = (mh: number, sh: number, n: number) => {
+    const blocks = 1 + (hasWp ? 1 : 0) + (n > 0 ? 1 : 0);
+    return mh + wpWant + sh + Math.max(0, blocks - 1) * gap;
+  };
+  while (pack(mapH, statsH, rows) > remaining && rows > 5) {
+    rows -= 1;
+    statsH = statsHFor(rows);
+  }
+  if (pack(mapH, statsH, rows) > remaining) {
+    mapH = Math.max(188, mapH - (pack(mapH, statsH, rows) - remaining));
+  }
+  const mapY = y;
   const map = card.football
     ? footballPanel(card, mapX, mapY, mapW, mapH)
     : card.ice
@@ -466,6 +632,11 @@ export function renderHeatAlertSvg(card: HeatAlertCard): string {
       : card.diamond
         ? diamondPanel(card, mapX, mapY, mapW, mapH)
         : matchupPanel(card, mapX, mapY, mapW, mapH);
+  y += mapH + gap;
+  const wp = hasWp ? winProbPanel(card, mapX, y, mapW, wpWant, awayPaint, homePaint) : "";
+  if (hasWp) y += wpWant + gap;
+  const shownStats = statsAll.slice(0, rows);
+  const stats = shownStats.length ? statsPanel(card, shownStats, mapX, y, mapW, statsH, awayPaint, homePaint) : "";
   const footerRight = card.live ? "Live" : card.final ? "Final" : card.when || "Upcoming";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
@@ -493,6 +664,8 @@ export function renderHeatAlertSvg(card: HeatAlertCard): string {
   ${table.svg}
   ${sit.svg}
   ${map}
+  ${wp}
+  ${stats}
   ${textEl(stamp, M, H - 22, { size: 18, fill: "#c5cce0", weight: 700, spacing: 0.4, anchor: "start" })}
   ${textEl(footerRight, W - M, H - 22, { size: 18, fill: "#d5dae6", weight: 700, spacing: 0.2, anchor: "end" })}
 </svg>`;
