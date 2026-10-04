@@ -32,13 +32,29 @@ export function appleClockLine(detail: string | null | undefined): string {
 }
 
 /**
- * Period breaks have no running clock. "End of 1st" and "Halftime" belong
+ * Period breaks have no running clock. "End of 1st", "Halftime",
+ * "1st Intermission", and baseball "Middle 7th" / "End 7th" belong
  * in the status chip, not in the band between the score numerals.
  */
 export function isBreakStatus(detail: string | null | undefined): boolean {
   const text = (detail ?? "").replace(/\s+/g, " ").trim();
   if (!text) return false;
-  return /^(end of\b|halftime\b)/i.test(text);
+  return /^(end of\b|end\s+\d|halftime\b|ht\b|intermission\b|middle\b|\d+(?:st|nd|rd|th)\s+intermission\b)/i.test(
+    text,
+  );
+}
+
+/**
+ * Header status while a game is in progress.
+ * A running clock or live words sit between the tall scores, so the header
+ * just says Live. A period break stays in the header — that copy reads as a
+ * third numeral when it is parked between the scores.
+ */
+export function liveScoreHeader(detail: string | null | undefined, fallback: string): string {
+  const text = (detail ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return fallback;
+  if (isBreakStatus(text)) return text;
+  return "Live";
 }
 
 function tidyPeriod(raw: string): string {

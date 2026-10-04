@@ -115,17 +115,15 @@ export function isScoreStripFavorite(
 
 /**
  * Global score-tab strip.
- * 1. Live games, RUWT order, when any are in progress.
- * 2. Else today's upcoming (Today's Top source), RUWT order.
- * 3. Else recent finals: favorite clubs first, yesterday before today, then RUWT score.
- * Empty only when live, upcoming, and finals are all empty.
+ * 1. Any game still live → those live games only, in live RUWT heat order.
+ *    Finals and upcoming stay off the ribbon so they don't mix with heat.
+ * 2. Nothing live, games still to start → Today's Top (upcoming), same order.
+ * 3. Slate is all final → Today's Top order of those finals. Live heat flattens
+ *    decided games, so this does not re-sort finals by heat, favorites, or yesterday.
+ * Empty only when the slate has no games.
  */
 export function scoreStripItems<T extends ScoredSlateEntry>(
   partition: RuwtSlatePartition<T>,
-  opts?: {
-    yesterdayFinals?: readonly T[];
-    isFavorite?: (item: T) => boolean;
-  },
 ): { source: ScoreStripSource; items: T[] } {
   if (partition.live.length > 0) {
     return { source: "live", items: partition.live.slice() };
@@ -136,43 +134,8 @@ export function scoreStripItems<T extends ScoredSlateEntry>(
       items: ruwtTodaysTop(partition, partition.upcoming.length).items,
     };
   }
-  const items = orderRecentFinals(
-    partition.finals,
-    opts?.yesterdayFinals ?? [],
-    opts?.isFavorite ?? (() => false),
-  );
+  const items = ruwtTodaysTop(partition, partition.finals.length).items;
   return { source: items.length > 0 ? "finals" : "empty", items };
-}
-
-function orderRecentFinals<T extends ScoredSlateEntry>(
-  today: readonly T[],
-  yesterday: readonly T[],
-  isFavorite: (item: T) => boolean,
-): T[] {
-  type Row = { item: T; recency: number; favorite: boolean };
-  const rows = new Map<string, Row>();
-  const add = (item: T, recency: number) => {
-    const favorite = isFavorite(item);
-    const prev = rows.get(item.id);
-    if (!prev) {
-      rows.set(item.id, { item, recency, favorite });
-      return;
-    }
-    if (recency < prev.recency) {
-      rows.set(item.id, { item, recency, favorite: favorite || prev.favorite });
-    } else if (favorite) {
-      prev.favorite = true;
-    }
-  };
-  for (const item of yesterday) add(item, 0);
-  for (const item of today) add(item, 1);
-  return [...rows.values()]
-    .sort((a, b) => {
-      if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
-      if (a.recency !== b.recency) return a.recency - b.recency;
-      return b.item.score - a.item.score || a.item.id.localeCompare(b.item.id);
-    })
-    .map((row) => row.item);
 }
 
 const GENERIC_REASONS = new Set(["live", "upcoming", "final", "live now"]);

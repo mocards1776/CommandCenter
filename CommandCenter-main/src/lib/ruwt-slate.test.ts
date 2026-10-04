@@ -110,10 +110,7 @@ const quiet = partitionRuwtSlate([
   item("mlb-final", 90, "post"),
   item("cfb-lsu-ole", 88, "pre"),
 ]);
-const stripTop = scoreStripItems(quiet, {
-  yesterdayFinals: [item("nhl-stl-dal", 40, "post")],
-  isFavorite: (g) => g.id === "nhl-stl-dal",
-});
+const stripTop = scoreStripItems(quiet);
 assert.equal(stripTop.source, "upcoming");
 assert.deepEqual(
   stripTop.items.map((i) => i.id),
@@ -121,32 +118,35 @@ assert.deepEqual(
 );
 assert.equal(stripTop.items.some((i) => i.id === "mlb-final"), false);
 
-// No live and nothing left to start: favorite finals, yesterday before today, then RUWT.
+// Slate is all final: Today's Top order (partition order). Not live heat,
+// and not a favorites / yesterday re-sort — heat flattens decided games.
 const night = partitionRuwtSlate([
   item("nhl-today-other", 80, "post"),
   item("nhl-today-fav", 15, "post"),
   item("mlb-today-low", 5, "post"),
 ]);
-const stripFinals = scoreStripItems(night, {
-  yesterdayFinals: [
-    item("nhl-yday-fav", 12, "post"),
-    item("nhl-yday-other", 70, "post"),
-  ],
-  isFavorite: (g) => g.id.endsWith("-fav"),
-});
+const stripFinals = scoreStripItems(night);
 assert.equal(stripFinals.source, "finals");
 assert.deepEqual(
   stripFinals.items.map((i) => i.id),
-  ["nhl-yday-fav", "nhl-today-fav", "nhl-yday-other", "nhl-today-other", "mlb-today-low"],
+  ruwtTodaysTop(night, night.finals.length).items.map((i) => i.id),
+);
+assert.deepEqual(
+  stripFinals.items.map((i) => i.id),
+  ["nhl-today-other", "nhl-today-fav", "mlb-today-low"],
 );
 
-// Same game on both days keeps the yesterday copy.
-const deduped = scoreStripItems(partitionRuwtSlate([item("nhl-stl-dal", 10, "post")]), {
-  yesterdayFinals: [item("nhl-stl-dal", 50, "post")],
-});
+// A live game keeps finals off the ribbon even when finals outscore it.
+const mixed = partitionRuwtSlate([
+  item("mlb-final-hot", 200, "post"),
+  item("nhl-live", 40, "in"),
+  item("cfb-later", 90, "pre"),
+]);
+const stripMixed = scoreStripItems(mixed);
+assert.equal(stripMixed.source, "live");
 assert.deepEqual(
-  deduped.items.map((i) => i.score),
-  [50],
+  stripMixed.items.map((i) => i.id),
+  ["nhl-live"],
 );
 
 assert.equal(scoreStripItems(partitionRuwtSlate([])).source, "empty");
