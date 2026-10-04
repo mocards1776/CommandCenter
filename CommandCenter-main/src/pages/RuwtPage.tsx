@@ -22,7 +22,8 @@ import {
   type MlbScoreGame,
   type MlbScoredGame,
 } from "@/lib/mlb";
-import { NFL_TEAMS, type NflScoredGame } from "@/lib/nfl";
+import { fetchNflCurrentDrive, NFL_TEAMS, type NflScoredGame } from "@/lib/nfl";
+import { nflInternationalMidfieldLogo } from "@/lib/nfl-venue";
 import {
   NHL_TEAMS,
   nhlTeamLogo,
@@ -860,6 +861,13 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
 }
 
 function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
+  const drive = useQuery({
+    queryKey: ["nfl-current-drive", game.id],
+    queryFn: () => fetchNflCurrentDrive(game.id),
+    enabled: game.live,
+    staleTime: 15_000,
+    refetchInterval: game.live ? 20_000 : false,
+  });
   const poss = game.situation?.possessionTeamId;
   const awayHasBall = poss != null && String(poss) === String(game.away.teamId);
   const homeHasBall = poss != null && String(poss) === String(game.home.teamId);
@@ -945,9 +953,12 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
         <div className="relative z-10 border-t border-white/[0.06] px-2 py-2">
           <NflFieldMap
             game={game}
+            branded
             homeYardLine={game.situation.yardLine}
             possessionTeamId={game.situation.possessionTeamId}
             downDistanceText={game.situation.downDistanceText}
+            drive={drive.data}
+            midfieldLogo={nflInternationalMidfieldLogo(game)}
           />
         </div>
       )}

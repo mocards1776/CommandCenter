@@ -185,10 +185,11 @@ function MidfieldLogo({ src }: { src: string }) {
 
 /**
  * Horizontal football field with team-colored end zones.
- * NFL keeps a full-height amber chain and the football glyph.
- * CFB (`branded`) puts the possession logo on the line of scrimmage, a short
- * bright bar to the line to gain, and a thin tick at the sticks.
- * Drive-start marker, midfield logo, and end zones stay as they are.
+ * `branded` is the chains both leagues use: possession logo on the line of
+ * scrimmage (football if the logo fails), a short bar to the sticks, and a
+ * thin tick at the line to gain. Pass `drive` for the drive-start marker and
+ * the ESPN stat line. `midfieldLogo` replaces the home club at midfield —
+ * overseas NFL passes the league shield.
  */
 export default function NflFieldMap({
   game,
@@ -198,6 +199,7 @@ export default function NflFieldMap({
   downDistanceText,
   branded = false,
   drive = null,
+  midfieldLogo,
   omitLastPlay = false,
   className,
 }: {
@@ -205,10 +207,15 @@ export default function NflFieldMap({
   homeYardLine: number | null;
   possessionTeamId: string | null;
   downDistanceText?: string | null;
-  /** Home midfield mark + end-zone logos. Used by CFB. */
+  /** Logo on the line of scrimmage, short bar to the sticks, end-zone logos. */
   branded?: boolean;
   /** Current ESPN drive. Marker + stat line render only when this is set. */
   drive?: CfbDriveGlance | null;
+  /**
+   * Midfield image. Undefined uses the home club when `branded`. Null hides it.
+   * Overseas NFL passes the league shield.
+   */
+  midfieldLogo?: string | null;
   /** Game detail prints the same sentence under the field. Skip the copy here. */
   omitLastPlay?: boolean;
   className?: string;
@@ -268,6 +275,7 @@ export default function NflFieldMap({
   const driveStartTitle = openDrive?.startText
     ? `Drive started at ${openDrive.startText}`
     : "Drive start";
+  const midfieldSrc = midfieldLogo === undefined ? (branded ? game.home.logo : null) : midfieldLogo;
 
   return (
     <div className={cn("overflow-hidden rounded-xl border border-emerald-700/35 bg-[#0a1f12]", className)}>
@@ -313,7 +321,7 @@ export default function NflFieldMap({
           side="away"
         />
         <div className="relative min-w-0">
-          {branded && game.home.logo ? <MidfieldLogo src={game.home.logo} /> : null}
+          {midfieldSrc ? <MidfieldLogo src={midfieldSrc} /> : null}
           {ticks.map((n, i) => (
             <div
               key={`${n}-${i}`}

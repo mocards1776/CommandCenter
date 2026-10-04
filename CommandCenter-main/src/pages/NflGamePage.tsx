@@ -17,6 +17,7 @@ import {
   fetchNflGameDetail,
   type NflScoreSide,
 } from "@/lib/nfl";
+import { nflInternationalMidfieldLogo } from "@/lib/nfl-venue";
 import type { MlbHighlight } from "@/lib/mlb";
 import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
 import { cn, formatSportsDateLong } from "@/lib/utils";
@@ -291,9 +292,13 @@ export function NflGameDetailView({
         <section className="space-y-2">
           <NflFieldMap
             game={g}
+            branded
             homeYardLine={homeYardLine}
             possessionTeamId={g.situation?.possessionTeamId ?? null}
             downDistanceText={g.situation?.downDistanceText}
+            drive={g.currentDrive}
+            midfieldLogo={nflInternationalMidfieldLogo(g)}
+            omitLastPlay
           />
           {g.situation?.lastPlayText ? (
             <p className="text-chalk px-1 text-[12px] leading-relaxed">

@@ -106,10 +106,9 @@ function isAdministrativeDrivePlay(play: CfbDrivePlaySpot): boolean {
   // PAT and two-point tries are the previous score, not the next drive's snap.
   if (/extra point|two[- ]point|\bpat\b/i.test(typeText)) return true;
   // Unsportsmanlike / dead-ball flags move the ball before a snap. They are
-  // not the drive start; the next snap (or the live ball) is.
-  if (/penalty/i.test(typeText) && /no play/i.test(play.text ?? "") && !play.start?.possessionText?.trim()) {
-    return true;
-  }
+  // not the drive start; the next snap (or the live ball) is. A "NO PLAY"
+  // still carries a spot, so the possession text does not make it a snap.
+  if (/penalty/i.test(typeText) && /no play/i.test(play.text ?? "")) return true;
   return false;
 }
 
@@ -132,18 +131,66 @@ function playSpot(
   return { yardLine: yardReal ? yard : null, text: textReal ? text : null };
 }
 
-function spotsMatch(
-  drive: CfbDriveGlance,
-  spot: { yardLine: number | null; text: string | null },
-): boolean {
+export type CfbSpot = { yardLine: number | null; text: string | null };
+
+function spotsMatch(drive: CfbDriveGlance, spot: CfbSpot): boolean {
   if (spot.yardLine != null && drive.startYardLine === spot.yardLine) return true;
   return Boolean(spot.text && drive.startText === spot.text);
 }
 
-function withSpot(
-  drive: CfbDriveMeta,
-  spot: { yardLine: number | null; text: string | null },
-): CfbDriveMeta {
+/**
+ * Kick or punt that ends this drive (nothing from scrimmage after it).
+ * An opening kickoff that this offense then snaps is not the next drive's spot.
+ */
+export function cfbTerminalKickEnd(
+  plays: CfbDrivePlaySpot[] | null | undefined,
+): CfbSpot | null {
+  const list = plays ?? [];
+  let lastKick = -1;
+  for (let i = 0; i < list.length; i++) {
+    if (isKickOrPuntPlay(list[i]!)) lastKick = i;
+  }
+  if (lastKick < 0) return null;
+  const laterSnap = list.slice(lastKick + 1).some((play) => !isAdministrativeDrivePlay(play));
+  if (laterSnap) return null;
+  return playSpot(list[lastKick]?.end);
+}
+
+/**
+ * Spot the previous drive's punt or kickoff left for this one.
+ * `driveId` is the drive being spotted. When that id is already in `previous`,
+ * the kick is the drive before it — not this drive's own punt.
+ */
+export function cfbInheritedKickEnd(
+  previous: { id?: string; plays?: CfbDrivePlaySpot[] | null }[] | null | undefined,
+  driveId: string | null,
+): CfbSpot | null {
+  const prev = previous ?? [];
+  const idx = driveId ? prev.findIndex((drive) => String(drive.id ?? "") === driveId) : -1;
+  if (idx > 0) return cfbTerminalKickEnd(prev[idx - 1]?.plays);
+  if (idx === 0) return null;
+  if (!prev.length) return null;
+  const last = prev[prev.length - 1]!;
+  if (driveId && String(last.id ?? "") === driveId) {
+    return prev.length > 1 ? cfbTerminalKickEnd(prev[prev.length - 2]?.plays) : null;
+  }
+  return cfbTerminalKickEnd(last.plays);
+}
+
+/** Kick and punt ends that happen before this drive's first scrimmage. */
+function preSnapKickSpots(plays: CfbDrivePlaySpot[]): CfbSpot[] {
+  const snapIdx = plays.findIndex((play) => !isAdministrativeDrivePlay(play));
+  if (snapIdx < 0) return [];
+  const spots: CfbSpot[] = [];
+  for (const play of plays.slice(0, snapIdx)) {
+    if (!isKickOrPuntPlay(play)) continue;
+    const spot = playSpot(play.end);
+    if (spot) spots.push(spot);
+  }
+  return spots;
+}
+
+function withSpot(drive: CfbDriveMeta, spot: CfbSpot): CfbDriveMeta {
   return {
     ...drive,
     startYardLine: spot.yardLine ?? drive.startYardLine,
@@ -160,21 +207,34 @@ function withSpot(
  * USU at Boise State game: a 0-play drive still said "from BOIS 25" while the
  * ball was on the goal line after a two-point try.
  *
- * The first scrimmage of this drive replaces either placeholder. A 25 that
+ * A punt can do the same thing with a real-looking yard. The next drive's
+ * `start` (or a punt parked on that drive) stays where the other team kicked
+ * the ball, after the return or the first snap has already moved. WASH @ USC
+ * on 2026-10-03 fair-caught at WASH 5 and snapped there — that spot is the
+ * scrimmage. A return that leaves `start` on the punt spot is not.
+ *
+ * The first scrimmage replaces a placeholder or a kick/punt end. A 25 that
  * no kickoff has confirmed and no snap has reached is dropped, so the card
- * does not invent a start. A drive ESPN already spotted at a real yard is
- * left alone.
+ * does not invent a start. A drive ESPN already spotted at a real yard that
+ * is not a kick or punt end is left alone.
  */
 export function correctCfbDriveStartFromPlays(
   drive: CfbDriveMeta,
   plays: CfbDrivePlaySpot[] | null | undefined,
+  previousKickEnd?: CfbSpot | null,
 ): CfbDriveMeta {
   const list = plays ?? [];
   const snap = list.find((play) => !isAdministrativeDrivePlay(play));
   const snapSpot = playSpot(snap?.start);
   const placeholder = cfbDriveStartIsKickOrigin(drive) || cfbDriveStartIsTouchbackSpot(drive);
+  const kickSpots = preSnapKickSpots(list);
+  if (previousKickEnd && (previousKickEnd.yardLine != null || previousKickEnd.text)) {
+    kickSpots.push(previousKickEnd);
+  }
+  const startIsKickEnd = kickSpots.some((spot) => spotsMatch(drive, spot));
 
-  if (snapSpot && placeholder) {
+  if (snapSpot && (placeholder || startIsKickEnd)) {
+    // Touchback or fair catch: the snap really is the spot ESPN stored.
     if (!cfbDriveStartIsKickOrigin(drive) && spotsMatch(drive, snapSpot)) return drive;
     return withSpot(drive, snapSpot);
   }
