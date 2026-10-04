@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import { cardFromSummary, loadFinalCard, type FinalCard } from "../supabase/functions/sports-finals/card.ts";
+import { tablesFromStandings } from "../supabase/functions/sports-finals/standings.ts";
 import { renderFinalSvg } from "../supabase/functions/sports-finals/svg.ts";
 
 function arg(name: string): string | null {
@@ -165,6 +166,165 @@ export function steelersBrownsFixture(): FinalCard {
   });
 }
 
+export function bluesBruinsFixture(): FinalCard {
+  const card = cardFromSummary("nhl", "401812345", {
+    header: {
+      competitions: [
+        {
+          status: { type: { state: "post", completed: true, shortDetail: "Final" } },
+          venue: { fullName: "Enterprise Center" },
+          competitors: [
+            {
+              homeAway: "away",
+              score: "2",
+              record: [{ type: "total", summary: "2-1-0" }],
+              linescores: [{ value: 0 }, { value: 1 }, { value: 1 }],
+              team: { id: "1", abbreviation: "BOS", displayName: "Boston Bruins", color: "000000", alternateColor: "ffb81c" },
+            },
+            {
+              homeAway: "home",
+              score: "3",
+              record: [{ type: "total", summary: "2-0-1" }],
+              linescores: [{ value: 1 }, { value: 1 }, { value: 1 }],
+              team: { id: "19", abbreviation: "STL", displayName: "St. Louis Blues", color: "002f87", alternateColor: "ffb81c" },
+            },
+          ],
+        },
+      ],
+    },
+    article: { headline: "Blues take a 3-2 decision from the Bruins" },
+    boxscore: {
+      teams: [
+        { team: { abbreviation: "BOS" }, statistics: [{ label: "Shots", displayValue: "28" }, { label: "Hits", displayValue: "22" }] },
+        { team: { abbreviation: "STL" }, statistics: [{ label: "Shots", displayValue: "31" }, { label: "Hits", displayValue: "18" }] },
+      ],
+      players: [
+        {
+          team: { abbreviation: "STL" },
+          statistics: [
+            {
+              name: "skaters",
+              labels: ["G", "A", "P"],
+              athletes: [{ athlete: { displayName: "Robert Thomas" }, stats: ["1", "1", "2"] }],
+            },
+          ],
+        },
+      ],
+    },
+  });
+  card.standings = tablesFromStandings(
+    "nhl",
+    {
+      children: [
+        {
+          name: "Atlantic Division",
+          standings: {
+            entries: [
+              { team: { id: "6", abbreviation: "FLA" }, stats: [{ name: "wins", displayValue: "3" }, { name: "losses", displayValue: "0" }, { name: "otLosses", displayValue: "0" }, { name: "points", displayValue: "6" }] },
+              { team: { id: "1", abbreviation: "BOS" }, stats: [{ name: "wins", displayValue: "2" }, { name: "losses", displayValue: "1" }, { name: "otLosses", displayValue: "0" }, { name: "points", displayValue: "4" }] },
+            ],
+          },
+        },
+        {
+          name: "Central Division",
+          standings: {
+            entries: [
+              { team: { id: "19", abbreviation: "STL" }, stats: [{ name: "wins", displayValue: "2" }, { name: "losses", displayValue: "0" }, { name: "otLosses", displayValue: "1" }, { name: "points", displayValue: "5" }] },
+              { team: { id: "21", abbreviation: "COL" }, stats: [{ name: "wins", displayValue: "2" }, { name: "losses", displayValue: "1" }, { name: "otLosses", displayValue: "0" }, { name: "points", displayValue: "4" }] },
+            ],
+          },
+        },
+      ],
+    },
+    card.away,
+    card.home,
+  );
+  return card;
+}
+
+export function cubsCardinalsFixture(): FinalCard {
+  const card = cardFromSummary("mlb", "401581234", {
+    header: {
+      competitions: [
+        {
+          status: { type: { state: "post", completed: true, shortDetail: "Final" } },
+          venue: { fullName: "Busch Stadium" },
+          competitors: [
+            {
+              homeAway: "away",
+              score: "3",
+              record: [{ type: "total", summary: "83-79" }],
+              linescores: [{ value: 0 }, { value: 1 }, { value: 0 }, { value: 2 }],
+              team: { id: "16", abbreviation: "CHC", displayName: "Chicago Cubs", color: "0e3386", alternateColor: "cc3433" },
+            },
+            {
+              homeAway: "home",
+              score: "5",
+              record: [{ type: "total", summary: "78-84" }],
+              linescores: [{ value: 2 }, { value: 0 }, { value: 1 }, { value: 2 }],
+              team: { id: "24", abbreviation: "STL", displayName: "St. Louis Cardinals", color: "c41e3a", alternateColor: "0c2340" },
+            },
+          ],
+        },
+      ],
+    },
+    article: { headline: "Cardinals hold off the Cubs at Busch" },
+  });
+  card.standings = tablesFromStandings(
+    "mlb",
+    {
+      children: [
+        {
+          name: "National League Central",
+          standings: {
+            entries: [
+              { team: { id: "17", abbreviation: "MIL" }, stats: [{ name: "overall", displayValue: "97-65" }, { name: "gamesBehind", displayValue: "-" }] },
+              { team: { id: "16", abbreviation: "CHC" }, stats: [{ name: "overall", displayValue: "83-79" }, { name: "gamesBehind", displayValue: "14" }] },
+              { team: { id: "24", abbreviation: "STL" }, stats: [{ name: "overall", displayValue: "78-84" }, { name: "gamesBehind", displayValue: "19" }] },
+              { team: { id: "29", abbreviation: "CIN" }, stats: [{ name: "overall", displayValue: "77-85" }, { name: "gamesBehind", displayValue: "20" }] },
+              { team: { id: "23", abbreviation: "PIT" }, stats: [{ name: "overall", displayValue: "71-91" }, { name: "gamesBehind", displayValue: "26" }] },
+            ],
+          },
+        },
+      ],
+    },
+    card.away,
+    card.home,
+  );
+  return card;
+}
+
+function fixtureFor(sport: string): FinalCard {
+  if (sport === "nhl") return bluesBruinsFixture();
+  if (sport === "mlb") return cubsCardinalsFixture();
+  return attachAfcNorth(steelersBrownsFixture());
+}
+
+function attachAfcNorth(card: FinalCard): FinalCard {
+  card.standings = tablesFromStandings(
+    "nfl",
+    {
+      name: "National Football League",
+      children: [
+        {
+          name: "AFC North",
+          standings: {
+            entries: [
+              { team: { id: "5", abbreviation: "CLE", shortDisplayName: "Browns" }, stats: [{ name: "overall", displayValue: "3-1" }, { name: "gamesBehind", displayValue: "-" }] },
+              { team: { id: "33", abbreviation: "BAL", shortDisplayName: "Ravens" }, stats: [{ name: "overall", displayValue: "2-2" }, { name: "gamesBehind", displayValue: "1" }] },
+              { team: { id: "4", abbreviation: "CIN", shortDisplayName: "Bengals" }, stats: [{ name: "overall", displayValue: "2-2" }, { name: "gamesBehind", displayValue: "1" }] },
+              { team: { id: "23", abbreviation: "PIT", shortDisplayName: "Steelers" }, stats: [{ name: "overall", displayValue: "2-2" }, { name: "gamesBehind", displayValue: "1" }] },
+            ],
+          },
+        },
+      ],
+    },
+    card.away,
+    card.home,
+  );
+  return card;
+}
+
 async function rasterize(svg: string): Promise<Uint8Array> {
   const [wasm, regular, bold] = await Promise.all([
     readFile(path.join(vendor, "resvg.wasm")),
@@ -202,14 +362,14 @@ const outPath = path.resolve(arg("out") || path.join(here, "..", "artifacts", "f
 let card: FinalCard;
 let source = "fixture";
 if (has("fixture") || !gameId) {
-  card = steelersBrownsFixture();
+  card = fixtureFor(sport);
 } else {
   try {
     card = await loadFinalCard(sport, gameId);
     source = "espn";
   } catch (err) {
     console.error("ESPN summary failed, using fixture", err);
-    card = steelersBrownsFixture();
+    card = fixtureFor(sport);
     source = "fixture-fallback";
   }
 }
@@ -232,6 +392,7 @@ console.log(
       home: `${card.home.abbrev} ${card.home.score ?? "–"}`,
       stats: card.stats.length,
       leaders: card.leaders.length,
+      standings: card.standings.map((table) => `${table.title} (${table.rows.length})`),
       width: size.width,
       height: size.height,
       png: outPath,

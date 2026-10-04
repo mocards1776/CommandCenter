@@ -3,8 +3,10 @@
  *
  * Same feed the NFL and CFB game pages use (`summary?event=`). The graphic
  * keeps the page's final score, records, linescore, team stats, box leaders,
- * and win-probability series. It does not include the live field.
+ * win-probability series, and each club's division or conference table.
+ * It does not include the live field.
  */
+import { loadCardStandings, type StandingTable } from "./standings.ts";
 import {
   mapCfbWinProbability,
   type CfbWinProbPlayRef,
@@ -97,6 +99,8 @@ export type FinalCard = {
   stats: FinalStat[];
   leaders: FinalLeader[];
   winProbability: CfbWinProbPoint[];
+  /** Division / conference tables for the two clubs. Empty when ESPN has none. */
+  standings: StandingTable[];
   path: string;
 };
 
@@ -376,6 +380,7 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
     periods: periodHeaders(sport, periodCount),
     stats: pickStats(away.abbrev, home.abbrev, body),
     leaders: pickLeaders(body),
+    standings: [],
     winProbability: mapCfbWinProbability(
       arr(body.winprobability).map((row) => {
         const item = rec(row);
@@ -444,11 +449,13 @@ export async function fetchLogoDataUri(url: string | null): Promise<string | nul
 
 export async function loadFinalCard(sport: string, eventId: string): Promise<FinalCard> {
   const card = cardFromSummary(sport, eventId, await fetchSummary(sport, eventId));
-  const [away, home] = await Promise.all([
+  const [away, home, standings] = await Promise.all([
     fetchLogoDataUri(card.away.logoUrl),
     fetchLogoDataUri(card.home.logoUrl),
+    loadCardStandings(sport, card.away, card.home),
   ]);
   card.away.logoData = away;
   card.home.logoData = home;
+  card.standings = standings;
   return card;
 }

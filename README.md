@@ -171,10 +171,12 @@ npm run lint
 
 - **Finals and Stats** — Telegram photos when a tracked game goes final.
   Bot `@FinalsAndStats_bot`. Token secret `TELEGRAM_FINALS_BOT_TOKEN` (not the
-  heat bot’s `TELEGRAM_BOT_TOKEN`). The graphic is the post-game page: score,
-  logos, records, linescore, team stats, box leaders, and the win-probability
-  chart when ESPN has a series. The live field is left out. Samples:
-  `docs/sports-finals/`.
+  heat bot’s `TELEGRAM_BOT_TOKEN`).   The graphic is the post-game page: score,
+  logos, records, linescore, team stats, box leaders, the win-probability
+  chart when ESPN has a series, and each club’s division or conference
+  standings beside that chart (full-width WP if standings are missing).
+  The live field is left out. Canvas is 1080×~1350. Samples:
+  `artifacts/` and `docs/sports-finals/`.
 
   Which games fire (`TELEGRAM_FINALS_SCOPE`, default `favorites,ruwt`):
 
