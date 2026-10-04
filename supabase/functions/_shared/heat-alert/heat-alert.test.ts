@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { clockParts, isBreakStatus } from "./clock.ts";
-import { heatAlertCaption, situationLine } from "./copy.ts";
+import { formatHeatTimestamp, heatAlertCaption, situationLine } from "./copy.ts";
 import { fieldBallPct, footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
 import { renderHeatAlertSvg } from "./svg.ts";
 import { parseChatAllowlist, resolveChatTargets } from "./telegram.ts";
@@ -26,6 +26,21 @@ test("away offense's line to gain moves toward the home end zone", () => {
   assert.equal(marks.facingRight, true);
   assert.equal(marks.firstDownPct, 70);
   assert.equal(marks.awayHasBall, true);
+});
+
+test("1st and 10 at the home 15 puts the sticks on the home 25", () => {
+  const marks = footballMarks({
+    yardLine: 15,
+    possessionTeamId: "13",
+    awayId: "12",
+    homeId: "13",
+    downDistanceText: "1st & 10 at LV 15",
+    driveStartYardLine: 15,
+  });
+  assert.equal(marks.ballPct, 85);
+  assert.equal(marks.facingLeft, true);
+  assert.equal(marks.firstDownPct, 75);
+  assert.equal(marks.driveStartPct, 85);
 });
 
 test("home offense's line to gain moves toward the away end zone", () => {
@@ -79,6 +94,8 @@ const sample: HeatAlertCard = {
     abbrev: "IND",
     name: "Colts",
     score: 7,
+    record: "3-0",
+    linescores: [0, 7, null, null],
     color: "#003b75",
     logoHref: null,
   },
@@ -87,9 +104,14 @@ const sample: HeatAlertCard = {
     abbrev: "WSH",
     name: "Commanders",
     score: 6,
+    record: "2-1",
+    linescores: [3, 3, null, null],
     color: "#5a1414",
     logoHref: null,
   },
+  venue: "Northwest Stadium",
+  date: "2026-10-04T17:00:00Z",
+  periodLabels: ["Q1", "Q2", "Q3", "Q4"],
   football: {
     downDistanceText: "1st & 10 at WSH 40",
     yardLine: 40,
@@ -125,20 +147,27 @@ test("chat allowlist rejects ids that were not configured", () => {
   assert.equal(empty.ok, false);
 });
 
-test("portrait svg carries the scoreboard and the field, not a photo", () => {
+test("portrait svg matches the finals photo slot and score hierarchy", () => {
   const svg = renderHeatAlertSvg(sample);
   assert.match(svg, /width="1080"/);
-  assert.match(svg, /height="1300"/);
+  assert.match(svg, /height="1350"/);
   assert.match(svg, />HEAT</);
   assert.match(svg, />NFL/);
   assert.match(svg, />2ND</);
   assert.match(svg, />2:00</);
   assert.match(svg, />IND</);
   assert.match(svg, />WSH</);
+  assert.match(svg, />3-0</);
+  assert.match(svg, />Q1</);
   assert.match(svg, /1st &amp; 10 at WSH 40/);
   assert.match(svg, /id="grass"/);
   assert.match(svg, /#ffe500/);
   assert.match(svg, /#2f9bff/);
-  assert.match(svg, /<circle /);
+  assert.match(svg, /Northwest Stadium/);
+  assert.match(svg, /CT</);
   assert.doesNotMatch(svg, /unsplash|stock/i);
+});
+
+test("CT stamp matches the finals footer", () => {
+  assert.equal(formatHeatTimestamp("2026-10-04T17:00Z"), "Sun, Oct 4, 12:00 PM CT");
 });

@@ -54,6 +54,24 @@ export function situationLine(card: HeatAlertCard): string {
   return card.when ? `${kick}  ·  ${card.when} CT` : kick;
 }
 
+const CHICAGO = "America/Chicago";
+
+/** Same CT stamp as the finals graphic footer. */
+export function formatHeatTimestamp(iso: string | null | undefined, fallback: Date = new Date()): string {
+  const parsed = iso ? new Date(iso) : null;
+  const date = parsed && !Number.isNaN(parsed.getTime()) ? parsed : fallback;
+  const stamped = date.toLocaleString("en-US", {
+    timeZone: CHICAGO,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  return stamped.replace(/\sC[DS]T$/, " CT");
+}
+
 export function openGameUrl(origin: string, path: string): string {
   const root = origin.replace(/\/$/, "") || "https://command-center-flax-gamma.vercel.app";
   const href = path.startsWith("/") ? path : `/${path}`;

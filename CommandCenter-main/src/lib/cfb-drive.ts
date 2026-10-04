@@ -419,6 +419,74 @@ export function alignCfbOpenDriveToPossession(
   };
 }
 
+/** Punt, score, turnover, or other result that means this drive is over. */
+export function isTerminalFootballResult(result: string | null | undefined): boolean {
+  const text = (result ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  return /punt|touchdown|field goal|interception|fumble|downs|safety|missed fg|turnover|end of (half|game|quarter)|blocked|touchback/i.test(
+    text,
+  );
+}
+
+/** "1st & 10 at LV 15" → home-end-zone yard line. */
+export function homeYardLineFromDownDistance(
+  text: string | null | undefined,
+  homeAbbrev: string,
+  awayAbbrev: string,
+): number | null {
+  if (!text) return null;
+  const match = text.match(/\bat\s+([A-Za-z]{2,5})\s+(\d{1,2})\b/i);
+  if (!match) return null;
+  return homeYardLineFromSpotText(`${match[1]} ${match[2]}`, homeAbbrev, awayAbbrev);
+}
+
+/**
+ * Live ball spot. Header text wins when ESPN's numeric yardLine disagrees
+ * with "at LV 15", because the chains have to match the down-and-distance.
+ */
+export function liveHomeYardLine(args: {
+  situationYardLine: number | null | undefined;
+  downDistanceText?: string | null;
+  possessionText?: string | null;
+  fallbackYardLine?: number | null;
+  homeAbbrev: string;
+  awayAbbrev: string;
+}): number | null {
+  const fromDown = homeYardLineFromDownDistance(args.downDistanceText, args.homeAbbrev, args.awayAbbrev);
+  const fromPoss = homeYardLineFromSpotText(args.possessionText, args.homeAbbrev, args.awayAbbrev);
+  const fromText = fromDown ?? fromPoss;
+  const sit = typeof args.situationYardLine === "number" && Number.isFinite(args.situationYardLine)
+    ? args.situationYardLine
+    : null;
+  if (sit != null && fromText != null && Math.abs(sit - fromText) >= 8) return fromText;
+  if (sit != null) return sit;
+  return fromText ?? args.fallbackYardLine ?? null;
+}
+
+/**
+ * Drive overlay for the live field. A completed punt/score still sitting in
+ * `drives.current` must not keep its diamond, dots, or "from KC 42" line
+ * after the situation has moved to the next possession.
+ */
+export function liveDriveForField(
+  drive: CfbDriveGlance | null | undefined,
+  args: {
+    possessionTeamId: string | null;
+    homeYardLine: number | null;
+    away: { teamId: string | number; abbrev: string };
+    home: { teamId: string | number; abbrev: string };
+  },
+): CfbDriveGlance | null {
+  const aligned = syncCfbDriveStartToLabel(
+    alignCfbOpenDriveToPossession(drive, args),
+    args.home.abbrev,
+    args.away.abbrev,
+  );
+  if (!aligned) return null;
+  if (isTerminalFootballResult(aligned.displayResult)) return null;
+  return aligned;
+}
+
 /** Plays, yards, time of possession, result, and start spot — ESPN fields only. */
 export function cfbDriveStatLine(drive: CfbDriveGlance): string | null {
   const bits: string[] = [];

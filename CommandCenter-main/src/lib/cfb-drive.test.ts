@@ -4,7 +4,11 @@
  */
 import {
   alignCfbOpenDriveToPossession,
+  homeYardLineFromDownDistance,
   homeYardLineFromSpotText,
+  isTerminalFootballResult,
+  liveDriveForField,
+  liveHomeYardLine,
   syncCfbDriveStartToLabel,
   cfbDriveGlance,
   cfbDriveGlanceWithPlaySpots,
@@ -605,5 +609,40 @@ assert(
   "glance copy keeps the snap spots",
 );
 assert(cfbDriveScrimmageSpots([]).length === 0, "a drive with no snaps has no dots");
+
+assert(isTerminalFootballResult("Punt") === true, "punt is terminal");
+assert(isTerminalFootballResult(null) === false, "open drive is not terminal");
+assert(homeYardLineFromDownDistance("1st & 10 at LV 15", "LV", "KC") === 15, "LV 15 is home 15");
+assert(homeYardLineFromDownDistance("1ST & 10 AT KC 42", "LV", "KC") === 58, "KC 42 is home 58");
+
+const stalePunt = cfbDriveGlance(
+  mapCfbDriveMeta({
+    id: "kc-punt",
+    team: { id: "12", abbreviation: "KC" },
+    offensivePlays: 3,
+    yards: 3,
+    timeElapsed: { displayValue: "0:58" },
+    displayResult: "Punt",
+    start: { yardLine: 58, text: "KC 42" },
+  }),
+);
+assert(
+  liveDriveForField(stalePunt, {
+    possessionTeamId: "13",
+    homeYardLine: 15,
+    away: { teamId: "12", abbrev: "KC" },
+    home: { teamId: "13", abbrev: "LV" },
+  }) === null,
+  "a completed punt does not keep the diamond after the next possession",
+);
+assert(
+  liveHomeYardLine({
+    situationYardLine: 25,
+    downDistanceText: "1st & 10 at LV 15",
+    homeAbbrev: "LV",
+    awayAbbrev: "KC",
+  }) === 15,
+  "down-and-distance text wins when the numeric yard disagrees",
+);
 
 console.log("cfb-drive.test.ts ok");

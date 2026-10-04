@@ -13,7 +13,7 @@ import CfbRecentPlays from "@/components/sports/CfbRecentPlays";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel from "@/components/sports/HighlightReel";
 import { appleClockParts } from "@/lib/apple-score";
-import { cfbDriveGlance } from "@/lib/cfb-drive";
+import { cfbDriveGlance, liveHomeYardLine } from "@/lib/cfb-drive";
 import { fetchCfbBackupHighlights, fetchCfbGameDetail, type CfbScoreSide } from "@/lib/cfb";
 import type { MlbHighlight } from "@/lib/mlb";
 import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
@@ -125,10 +125,14 @@ export function CfbGameDetailView({
 
   const homeYardLine = useMemo(() => {
     if (!g) return null;
-    if (g.situation?.yardLine != null) return g.situation.yardLine;
-    const play = g.recentPlays?.[0];
-    if (play?.yardLine != null) return play.yardLine;
-    return null;
+    return liveHomeYardLine({
+      situationYardLine: g.situation?.yardLine,
+      downDistanceText: g.situation?.downDistanceText,
+      possessionText: g.situation?.possessionText,
+      fallbackYardLine: g.recentPlays?.[0]?.yardLine ?? null,
+      homeAbbrev: g.home.abbrev,
+      awayAbbrev: g.away.abbrev,
+    });
   }, [g]);
 
   const currentDrive = useMemo(() => {

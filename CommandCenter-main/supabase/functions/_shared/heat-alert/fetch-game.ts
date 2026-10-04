@@ -144,14 +144,46 @@ function readSide(raw: unknown, sport: HeatSport, homeAway: "away" | "home"): He
   const logos = asArray(team.logos);
   const fromList = logos.map(asRecord).find((logo) => logo && /^https?:/i.test(str(logo.href)));
   const logo = str(team.logo) || (fromList ? str(fromList.href) : "");
+  const records = asArray(row.records).map(asRecord);
+  const total = records.find((rec) => rec && str(rec.type) === "total");
+  const linescores = asArray(row.linescores).map((item) => {
+    const rec = asRecord(item);
+    return rec ? num(rec.value) ?? num(rec.displayValue) : null;
+  });
   return {
     id,
     abbrev,
     name: str(team.shortDisplayName) || str(team.displayName) || abbrev,
     score: num(row.score),
+    record: str(total?.summary) || null,
+    linescores,
     color: hexColor(str(team.color) || null, homeAway === "away" ? "1e3a5f" : "7a1f1f"),
     logoHref: largeLogo(logo || null, sport, abbrev),
   };
+}
+
+function periodLabelsFor(sport: HeatSport, count: number): string[] {
+  if (count <= 0) return [];
+  if (sport === "mlb") return Array.from({ length: count }, (_, i) => String(i + 1));
+  if (sport === "nhl") return ["1st", "2nd", "3rd", "OT", "SO"].slice(0, count);
+  return ["Q1", "Q2", "Q3", "Q4", "OT"].slice(0, count);
+}
+
+function isTerminalDriveResult(result: string): boolean {
+  return /punt|touchdown|field goal|interception|fumble|downs|safety|missed fg|turnover|end of (half|game|quarter)|blocked|touchback/i.test(
+    result,
+  );
+}
+
+function possessionAfterKick(sit: Record<string, unknown> | null, fallback: string | null): string | null {
+  const last = asRecord(sit?.lastPlay);
+  const typeText = str(asRecord(last?.type)?.text);
+  const kicking = str(asRecord(asRecord(last?.start)?.team)?.id);
+  const receiving = str(asRecord(asRecord(last?.end)?.team)?.id);
+  if (/kickoff|\bpunt\b/i.test(typeText) && kicking && receiving && kicking !== receiving) {
+    if (!fallback || fallback === kicking) return receiving;
+  }
+  return fallback;
 }
 
 function readDiamond(sit: Record<string, unknown> | null): DiamondSpot | null {
@@ -187,10 +219,11 @@ function readDiamond(sit: Record<string, unknown> | null): DiamondSpot | null {
 
 function readFootball(sit: Record<string, unknown> | null): FootballSpot {
   const last = asRecord(sit?.lastPlay);
+  const possession = possessionAfterKick(sit, str(sit?.possession) || str(asRecord(last?.team)?.id) || null);
   return {
     downDistanceText: str(sit?.downDistanceText) || null,
     yardLine: num(sit?.yardLine),
-    possessionTeamId: str(sit?.possession) || null,
+    possessionTeamId: possession,
     lastPlayText: str(last?.text) || null,
     driveStartYardLine: null,
     redZone: sit?.isRedZone === true,
@@ -222,6 +255,7 @@ function cardFromEvent(sport: HeatSport, event: Record<string, unknown>): HeatAl
   const football = sport === "nfl" || sport === "cfb" ? readFootball(sit) : null;
   const diamond = sport === "mlb" ? readDiamond(sit) : null;
   const ice: IceSpot | null = sport === "nhl" ? { puckX: null, puckY: null } : null;
+  const periodCount = Math.max(away.linescores.length, home.linescores.length);
   return {
     sport,
     gameId: id,
@@ -231,6 +265,9 @@ function cardFromEvent(sport: HeatSport, event: Record<string, unknown>): HeatAl
     when: live || final ? null : chicagoTime(str(event.date) || str(comp.date)),
     away,
     home,
+    venue: str(asRecord(comp.venue)?.fullName) || null,
+    date: str(event.date) || str(comp.date) || null,
+    periodLabels: periodLabelsFor(sport, periodCount),
     football,
     ice,
     diamond,
@@ -261,6 +298,25 @@ function applySummary(card: HeatAlertCard, summary: Record<string, unknown>): He
       if (color) next[side].color = hexColor(color, next[side].color);
       const name = str(team?.shortDisplayName) || str(team?.displayName);
       if (name) next[side].name = name;
+      const rec = asArray(asRecord(row)?.records).map(asRecord).find((item) => item && str(item.type) === "total");
+      if (str(rec?.summary)) next[side].record = str(rec?.summary);
+      const lines = asArray(asRecord(row)?.linescores).map((item) => {
+        const cell = asRecord(item);
+        return cell ? num(cell.value) ?? num(cell.displayValue) : null;
+      });
+      if (lines.length) next[side].linescores = lines;
+    }
+    const headerSit = asRecord(comp.situation);
+    if (headerSit && next.football) {
+      const headerSpot = readFootball(headerSit);
+      next.football = {
+        ...next.football,
+        yardLine: headerSpot.yardLine ?? next.football.yardLine,
+        downDistanceText: headerSpot.downDistanceText || next.football.downDistanceText,
+        possessionTeamId: headerSpot.possessionTeamId || next.football.possessionTeamId,
+        lastPlayText: headerSpot.lastPlayText || next.football.lastPlayText,
+        redZone: headerSit.isRedZone === true || next.football.redZone,
+      };
     }
   }
 
@@ -268,36 +324,23 @@ function applySummary(card: HeatAlertCard, summary: Record<string, unknown>): He
     const drives = asRecord(summary.drives);
     const current = asRecord(drives?.current);
     const plays = asArray(current?.plays).map(asRecord).filter((row): row is Record<string, unknown> => Boolean(row));
-    const playYardLines = scrimmageYards(plays);
+    const displayResult = str(current?.displayResult) || str(current?.shortDisplayResult) || str(current?.result);
+    const terminal = isTerminalDriveResult(displayResult);
+    const playYardLines = terminal ? [] : scrimmageYards(plays);
     const last = plays.length ? plays[plays.length - 1] : null;
-    const end = asRecord(last?.end);
-    const driveTeam = str(asRecord(current?.team)?.id);
     const start = asRecord(current?.start);
-    const yard = num(end?.yardLine);
-    const down = str(end?.downDistanceText);
-    const yardsToEnd = num(end?.yardsToEndzone);
-    if (yard != null || down) {
-      next.football = {
-        ...next.football,
-        yardLine: yard ?? next.football.yardLine,
-        downDistanceText: down || next.football.downDistanceText,
-        possessionTeamId: driveTeam || str(asRecord(end?.team)?.id) || next.football.possessionTeamId,
-        lastPlayText: str(last?.text) || next.football.lastPlayText,
-        driveStartYardLine: num(start?.yardLine),
-        playYardLines,
-        redZone: down
-          ? yardsToEnd == null
-            ? next.football.redZone
-            : yardsToEnd > 0 && yardsToEnd <= 20
-          : false,
-      };
-    } else if (num(start?.yardLine) != null || playYardLines.length) {
-      next.football = {
-        ...next.football,
-        driveStartYardLine: num(start?.yardLine) ?? next.football.driveStartYardLine,
-        playYardLines,
-      };
-    }
+    next.football = {
+      ...next.football,
+      lastPlayText: str(last?.text) || next.football.lastPlayText,
+      driveStartYardLine: terminal ? null : num(start?.yardLine) ?? next.football.driveStartYardLine,
+      playYardLines,
+    };
+  }
+  const periodCount = Math.max(next.away.linescores.length, next.home.linescores.length);
+  if (periodCount && !next.periodLabels.length) {
+    next.periodLabels = periodLabelsFor(next.sport, periodCount);
+  } else if (periodCount > next.periodLabels.length) {
+    next.periodLabels = periodLabelsFor(next.sport, periodCount);
   }
 
   if (next.ice) {

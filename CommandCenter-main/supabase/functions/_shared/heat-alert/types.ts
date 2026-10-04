@@ -7,6 +7,8 @@ export type HeatSide = {
   abbrev: string;
   name: string;
   score: number | null;
+  record: string | null;
+  linescores: (number | null)[];
   /** #rrggbb */
   color: string;
   /** https URL in the app preview, or a data URI once logos are inlined for PNG. */
@@ -54,6 +56,10 @@ export type HeatAlertCard = {
   when: string | null;
   away: HeatSide;
   home: HeatSide;
+  venue: string | null;
+  /** ISO kickoff / game time for the CT footer stamp. */
+  date: string | null;
+  periodLabels: string[];
   football: FootballSpot | null;
   ice: IceSpot | null;
   diamond: DiamondSpot | null;
@@ -62,4 +68,5 @@ export type HeatAlertCard = {
 };
 
 export const HEAT_ALERT_WIDTH = 1080;
-export const HEAT_ALERT_HEIGHT = 1300;
+/** Same Telegram photo slot as finals (~1080×1326–1360). */
+export const HEAT_ALERT_HEIGHT = 1350;

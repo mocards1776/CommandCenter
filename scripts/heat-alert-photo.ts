@@ -3,7 +3,7 @@
  *
  *   cd scripts && npm install
  *   node --experimental-strip-types heat-alert-photo.ts --sport nfl
- *   node --experimental-strip-types heat-alert-photo.ts --sport nfl --game 401872965 --out ../artifacts/heat-alert-sample.png
+ *   node --experimental-strip-types heat-alert-photo.ts --fixture kc-lv --out ../artifacts/heat-alert-nfl-kc-lv.png
  *   TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_IDS=123 \
  *     node --experimental-strip-types heat-alert-photo.ts --sport nfl --send --reason "One-score game"
  *
@@ -27,6 +27,54 @@ import { embedLogos } from "../supabase/functions/_shared/heat-alert/logos.ts";
 import { heatAlertFonts, heatAlertResvgOptions } from "../supabase/functions/_shared/heat-alert/raster-options.ts";
 import { renderHeatAlertSvg } from "../supabase/functions/_shared/heat-alert/svg.ts";
 import { parseChatAllowlist, resolveChatTargets, sendTelegramPhoto } from "../supabase/functions/_shared/heat-alert/telegram.ts";
+import type { HeatAlertCard } from "../supabase/functions/_shared/heat-alert/types.ts";
+
+/** Screenshot moment: KC @ LV, 3rd 3:35, 1st & 10 at LV 15 after a KC punt. */
+function kcLvFixture(): HeatAlertCard {
+  return {
+    sport: "nfl",
+    gameId: "401872976",
+    live: true,
+    final: false,
+    detail: "3:35 - 3rd",
+    when: null,
+    away: {
+      id: "12",
+      abbrev: "KC",
+      name: "Chiefs",
+      score: 10,
+      record: "3-0",
+      linescores: [7, 3, 0, null],
+      color: "#e31837",
+      logoHref: "https://a.espncdn.com/i/teamlogos/nfl/500/kc.png",
+    },
+    home: {
+      id: "13",
+      abbrev: "LV",
+      name: "Raiders",
+      score: 13,
+      record: "3-0",
+      linescores: [7, 6, 0, null],
+      color: "#000000",
+      logoHref: "https://a.espncdn.com/i/teamlogos/nfl/500/lv.png",
+    },
+    venue: "Allegiant Stadium",
+    date: "2026-10-04T20:05:00Z",
+    periodLabels: ["Q1", "Q2", "Q3", "Q4"],
+    football: {
+      downDistanceText: "1st & 10 at LV 15",
+      yardLine: 15,
+      possessionTeamId: "13",
+      lastPlayText: "Official Timeout at 03:35.",
+      driveStartYardLine: 15,
+      playYardLines: [15],
+      redZone: true,
+    },
+    ice: null,
+    diamond: null,
+    gamePath: "/sports/nfl/game/401872976?solo=1",
+  };
+}
 
 function arg(name: string): string | null {
   const i = process.argv.indexOf(`--${name}`);
@@ -46,7 +94,10 @@ const reason = arg("reason");
 const origin = process.env.SPORTS_PUSH_ORIGIN || process.env.HEAT_ALERT_ORIGIN || "https://command-center-flax-gamma.vercel.app";
 const outPath = path.resolve(arg("out") || path.join("..", "artifacts", "heat-alert-sample.png"));
 
-const card = await loadHeatAlertCard({ sport, gameId });
+const fixture = arg("fixture");
+const card = fixture === "kc-lv" || fixture === ""
+  ? kcLvFixture()
+  : await loadHeatAlertCard({ sport, gameId });
 const withLogos = await embedLogos(card);
 const svg = renderHeatAlertSvg(withLogos);
 const caption = heatAlertCaption(reason, openGameUrl(origin, card.gamePath));

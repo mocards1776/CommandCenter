@@ -37,6 +37,7 @@ export type CfbWinProbSnapshot = {
 export type CfbWinProbTeam = {
   abbrev: string;
   color: string;
+  alternateColor?: string | null;
   logo?: string | null;
 };
 
@@ -194,6 +195,83 @@ export function mapCfbWinProbability(
 export function cfbWinProbDomainSec(points: CfbWinProbPoint[]): number {
   const maxT = points.reduce((m, p) => Math.max(m, p.elapsedSec), 0);
   return Math.max(CFB_REGULATION_SEC, maxT);
+}
+
+export type CfbWinProbPlot = {
+  domain: number;
+  /** Last historical x, 0–100. Future time sits to the right. */
+  nowX: number;
+  line: string;
+  area: string;
+  last: { x: number; y: number } | null;
+  ticks: number[];
+  future: boolean;
+};
+
+/**
+ * Chart geometry for the ESPN series.
+ * Team fills stop at the last play. Remaining regulation is not a solid block.
+ */
+export function plotCfbWinProbability(points: CfbWinProbPoint[]): CfbWinProbPlot | null {
+  if (!points.length) return null;
+  const domain = cfbWinProbDomainSec(points);
+  const coords = points.map((p) => ({
+    x: (p.elapsedSec / Math.max(domain, 1)) * 100,
+    y: 100 - Math.max(0, Math.min(100, p.homeWinPct)),
+  }));
+  const first = coords[0];
+  const last = coords[coords.length - 1] ?? null;
+  const nowX = last ? last.x : 0;
+  const line = coords
+    .map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(2)} ${c.y.toFixed(2)}`)
+    .join(" ");
+  const area =
+    first && last
+      ? `M${first.x.toFixed(2)} 100 ${coords
+          .map((c) => `L${c.x.toFixed(2)} ${c.y.toFixed(2)}`)
+          .join(" ")} L${last.x.toFixed(2)} 100 Z`
+      : "";
+  const ticks = [1, 2, 3].map((q) => (q * CFB_QUARTER_SEC * 100) / domain);
+  return {
+    domain,
+    nowX,
+    line,
+    area,
+    last,
+    ticks,
+    future: nowX < 99.2,
+  };
+}
+
+/**
+ * Team color that still reads on the navy card.
+ * Near-black primaries (Raiders, Steelers) take the alternate or a lift
+ * so the historical fill is not a black slab.
+ */
+export function paintWinProbColor(primary: string, alternate?: string | null): string {
+  const normalize = (color: string | null | undefined): string | null => {
+    const raw = (color ?? "").replace(/^#/, "").trim();
+    return /^[0-9a-fA-F]{6}$/.test(raw) ? `#${raw.toLowerCase()}` : null;
+  };
+  const lum = (hex: string): number => {
+    const raw = hex.replace("#", "");
+    const r = parseInt(raw.slice(0, 2), 16);
+    const g = parseInt(raw.slice(2, 4), 16);
+    const b = parseInt(raw.slice(4, 6), 16);
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  };
+  const main = normalize(primary);
+  const alt = normalize(alternate);
+  const mainY = main ? lum(main) : 0;
+  const altY = alt ? lum(alt) : 0;
+  if (main && mainY >= 0.18) return main;
+  if (alt && altY >= 0.22) return alt;
+  const base = main ?? alt;
+  if (!base) return "#94a3b8";
+  const raw = base.replace("#", "");
+  const ch = [0, 2, 4].map((i) => parseInt(raw.slice(i, i + 2), 16));
+  const lifted = ch.map((c) => Math.round(c + (255 - c) * 0.5));
+  return `#${lifted.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function cfbWinProbLeader(

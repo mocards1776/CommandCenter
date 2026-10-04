@@ -51,7 +51,8 @@ export function TeamStandingLine({
   if (!standing) return null;
   const compact = standing
     .replace(/ in American League$/i, " AL")
-    .replace(/ in National League$/i, " NL");
+    .replace(/ in National League$/i, " NL")
+    .replace(/^(\d+(?:st|nd|rd|th)) in /i, "$1 ");
   return (
     <p
       className={cn(

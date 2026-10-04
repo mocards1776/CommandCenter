@@ -22,7 +22,7 @@ import {
 } from "./win-probability.ts";
 
 export const FINALS_ALERT_WIDTH = 1080;
-/** Heat is 1080×1300. After #276 a full NFL card was ~1276; use the spare height. */
+/** Heat is 1080×1350. Keep finals in the same Telegram photo slot. */
 export const FINALS_ALERT_TARGET_HEIGHT = 1350;
 const W = FINALS_ALERT_WIDTH;
 const M = 36;
@@ -251,6 +251,8 @@ function winChart(
     .join(" ");
   const first = coords[0];
   const last = coords[coords.length - 1];
+  const nowX = last ? last.x : 0;
+  const future = nowX < w * 0.992;
   const area =
     first && last
       ? `M${first.x.toFixed(2)} ${h} ${coords.map((c) => `L${c.x.toFixed(2)} ${c.y.toFixed(2)}`).join(" ")} L${last.x.toFixed(2)} ${h} Z`
@@ -265,10 +267,23 @@ function winChart(
   const dot = last
     ? `<circle cx="${last.x.toFixed(2)}" cy="${last.y.toFixed(2)}" r="8" fill="#f7f4ee"/>`
     : "";
+  const futureLine =
+    future && last
+      ? `<path d="M${last.x.toFixed(2)} ${last.y.toFixed(2)} L${w} ${last.y.toFixed(2)}" fill="none" stroke="#f7f4ee" stroke-opacity="0.35" stroke-width="3" stroke-dasharray="8 7"/>`
+      : "";
+  const nowMark = future
+    ? `<line x1="${nowX.toFixed(2)}" y1="0" x2="${nowX.toFixed(2)}" y2="${h}" stroke="#f7f4ee" stroke-opacity="0.45" stroke-width="2"/>`
+    : "";
   return [
     `<svg x="${x}" y="${y}" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`,
+    `<clipPath id="wpHist"><rect x="0" y="0" width="${Math.max(0, nowX).toFixed(2)}" height="${h}"/></clipPath>`,
+    `<rect width="${w}" height="${h}" fill="#0b1220"/>`,
+    `<g clip-path="url(#wpHist)">`,
     `<rect width="${w}" height="${h}" fill="${awayPaint}"/>`,
     area ? `<path d="${area}" fill="${homePaint}"/>` : "",
+    `</g>`,
+    futureLine,
+    nowMark,
     `<line x1="0" y1="${h / 2}" x2="${w}" y2="${h / 2}" stroke="white" stroke-opacity="0.28" stroke-width="2"/>`,
     ticks.join(""),
     line ? `<path d="${line}" fill="none" stroke="#f7f4ee" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>` : "",

@@ -1,6 +1,18 @@
 /** Recent W-L form for teams (MLB via Stats API, NFL via ESPN scoreboard history). */
 
 import { chicagoToday } from "./mlb";
+import {
+  formatDivisionPlace,
+  standingLineFromEspnTree,
+} from "./division-place";
+
+export {
+  formatDivisionPlace,
+  isBareConferenceLabel,
+  ordinalPlace,
+  shortDivisionLabel,
+  standingLineFromEspnTree,
+} from "./division-place";
 
 export type TeamFormStrip = {
   teamId: number | string;
@@ -12,15 +24,6 @@ export type TeamFormStrip = {
   last10: string;
   last20: string;
 };
-
-function ordinalPlace(n: number): string {
-  const j = n % 10;
-  const k = n % 100;
-  if (j === 1 && k !== 11) return `${n}st`;
-  if (j === 2 && k !== 12) return `${n}nd`;
-  if (j === 3 && k !== 13) return `${n}rd`;
-  return `${n}th`;
-}
 
 /** Compact L5 / L10 / L20 line for team box scores. */
 export function formatTeamFormLine(form: TeamFormStrip | null | undefined): string | null {
@@ -142,13 +145,9 @@ export async function fetchMlbTeamForm(
                 : /american/i.test(rawDiv)
                   ? "American League"
                   : "league";
-        const rankNum = Number.parseInt(String(row.leagueRank ?? ""), 10);
-        standing =
-          Number.isFinite(rankNum) && rankNum > 0
-            ? `${ordinalPlace(rankNum)} in ${leagueName}`
-            : row.leagueRank
-              ? `${row.leagueRank} in ${leagueName}`
-              : null;
+        const divRank = Number.parseInt(String(row.divisionRank ?? ""), 10);
+        const leagueRank = Number.parseInt(String(row.leagueRank ?? ""), 10);
+        standing = formatDivisionPlace(divRank, rawDiv) || formatDivisionPlace(leagueRank, leagueName);
         if (!record && row.leagueRecord) {
           record = `${row.leagueRecord.wins ?? 0}-${row.leagueRecord.losses ?? 0}`;
         }
@@ -358,52 +357,16 @@ export async function fetchNflTeamForm(
 
   let standing: string | null = null;
   try {
-    const standRes = await fetch(
+    const urls = [
+      "https://site.api.espn.com/apis/v2/sports/football/nfl/standings?level=3",
+      "https://site.web.api.espn.com/apis/v2/sports/football/nfl/standings?level=3",
       "https://site.api.espn.com/apis/v2/sports/football/nfl/standings",
-      { headers: { Accept: "application/json" } },
-    );
-    if (standRes.ok) {
-      const stand = (await standRes.json()) as {
-        children?: {
-          name?: string;
-          children?: {
-            name?: string;
-            standings?: {
-              entries?: {
-                team?: { id?: string };
-                stats?: { name?: string; value?: number; displayValue?: string }[];
-              }[];
-            };
-          }[];
-          standings?: {
-            entries?: {
-              team?: { id?: string };
-              stats?: { name?: string; value?: number; displayValue?: string }[];
-            }[];
-          };
-        }[];
-      };
-      outer: for (const conf of stand.children ?? []) {
-        const divs = conf.children?.length ? conf.children : [conf];
-        for (const div of divs) {
-          for (const entry of div.standings?.entries ?? []) {
-            if (String(entry.team?.id) !== id) continue;
-            const rankStat = (entry.stats ?? []).find(
-              (s) => s.name === "rank" || s.name === "playoffseed",
-            );
-            const rank = Number(rankStat?.value ?? rankStat?.displayValue ?? NaN);
-            const divName = (div.name ?? conf.name ?? "")
-              .replace(/American Football Conference/i, "AFC")
-              .replace(/National Football Conference/i, "NFC")
-              .replace(/\s+Division$/i, "");
-            standing =
-              Number.isFinite(rank) && rank > 0 && divName
-                ? `${ordinalPlace(rank)} in ${divName}`
-                : divName || null;
-            break outer;
-          }
-        }
-      }
+    ];
+    for (const url of urls) {
+      const standRes = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!standRes.ok) continue;
+      standing = standingLineFromEspnTree(await standRes.json(), id);
+      if (standing) break;
     }
   } catch {
     /* standings optional */
