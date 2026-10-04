@@ -160,13 +160,19 @@ export default function NhlGamePage() {
         <>
           <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
             <div
-              className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-90"
+              className={cn(
+                "pointer-events-none absolute inset-y-0 left-0 w-1/2",
+                winner === "home" ? "opacity-40" : "opacity-90",
+              )}
               style={{
                 background: `radial-gradient(ellipse at 20% 45%, #${g.away.color}88, transparent 58%)`,
               }}
             />
             <div
-              className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-90"
+              className={cn(
+                "pointer-events-none absolute inset-y-0 right-0 w-1/2",
+                winner === "away" ? "opacity-40" : "opacity-90",
+              )}
               style={{
                 background: `radial-gradient(ellipse at 80% 45%, #${g.home.color}88, transparent 58%)`,
               }}
@@ -203,6 +209,8 @@ export default function NhlGamePage() {
                   final={g.final}
                   size="header"
                   preview={g.whenShort ?? "vs"}
+                  awayDim={winner === "home"}
+                  homeDim={winner === "away"}
                 />
                 {!started && g.when ? (
                   <p className="text-chalk-dim mt-1.5 text-[11px]">{g.when}</p>
@@ -438,16 +446,26 @@ function TeamBlock({
       className={cn(
         "flex min-w-0 flex-col items-center gap-1 text-center transition-opacity sm:gap-3",
         align === "left" ? "sm:flex-row sm:text-left" : "sm:flex-row-reverse sm:text-right",
-        dim && "opacity-60 hover:opacity-100",
       )}
     >
       {side.logo ? (
-        <LogoPlate src={side.logo} className="h-14 w-14 sm:h-20 sm:w-20" />
+        <LogoPlate src={side.logo} className={cn("h-14 w-14 sm:h-20 sm:w-20", dim && "opacity-40")} />
       ) : null}
       <div className="min-w-0">
-        <p className="text-cream text-[15px] font-semibold leading-tight sm:text-[22px]">{side.abbrev}</p>
-        <p className="text-chalk-dim hidden truncate text-[12px] sm:block">{side.name}</p>
-        {side.record ? <p className="text-chalk-dim numeral text-[11px]">{side.record}</p> : null}
+        <p
+          className={cn(
+            "text-[15px] font-semibold leading-tight sm:text-[22px]",
+            dim ? "text-white/40" : "text-cream",
+          )}
+        >
+          {side.abbrev}
+        </p>
+        <p className={cn("hidden truncate text-[12px] sm:block", dim ? "text-white/30" : "text-chalk-dim")}>
+          {side.name}
+        </p>
+        {side.record ? (
+          <p className={cn("numeral text-[11px]", dim ? "text-white/30" : "text-chalk-dim")}>{side.record}</p>
+        ) : null}
         {side.points != null ? (
           <p className="numeral text-[10px] tracking-[0.08em] text-[#6f778a]">
             {side.points} {side.points === 1 ? "PT" : "PTS"}

@@ -5,7 +5,8 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { cardFromSummary, finalCaption, statMagnitude } from "./card.ts";
+import { cardFromSummary, finalCaption, formatFinalsTimestamp, statMagnitude } from "./card.ts";
+import { oddsFromSummary, parseDetails, spreadOutcome } from "./odds.ts";
 import {
   DEFAULT_FINALS_CHAT_ID,
   parseChatIds,
@@ -128,6 +129,7 @@ const card = cardFromSummary("nfl", "401872964", {
     competitions: [
       {
         status: { type: { state: "post", completed: true, shortDetail: "Final" } },
+        date: "2026-10-02T00:15Z",
         venue: { fullName: "Huntington Bank Field" },
         competitors: [
           {
@@ -202,6 +204,20 @@ const card = cardFromSummary("nfl", "401872964", {
       },
     ],
   },
+  pickcenter: [
+    {
+      details: "PIT -2.5",
+      spread: 2.5,
+      overUnder: 38.5,
+      provider: { name: "DraftKings" },
+      awayTeamOdds: { favorite: true, moneyLine: -148 },
+      homeTeamOdds: { favorite: false, moneyLine: 124 },
+      pointSpread: {
+        away: { close: { line: "-2.5" } },
+        home: { close: { line: "+2.5" } },
+      },
+    },
+  ],
   winprobability: [
     { homeWinPercentage: 0.42, tiePercentage: 0, playId: "a" },
     { homeWinPercentage: 1, tiePercentage: 0, playId: "b" },
@@ -222,6 +238,15 @@ assert.match(card.leaders[0]!.line, /22\/40/);
 assert.equal(card.winProbability.length, 2);
 assert.equal(card.path, "/sports/nfl/game/401872964?solo=1");
 assert.deepEqual(card.standings, []);
+assert.equal(card.date, "2026-10-02T00:15Z");
+assert.equal(card.odds?.details, "PIT -2.5");
+assert.equal(card.odds?.favoriteAbbrev, "PIT");
+assert.equal(card.odds?.favoriteSpread, -2.5);
+assert.equal(card.odds?.spreadResult, "not covered");
+assert.equal(card.odds?.underdogWon, true);
+assert.equal(card.odds?.noteworthyUpset, false);
+assert.match(card.odds?.graphicLine ?? "", /PIT -2\.5 did not cover/);
+assert.match(card.odds?.captionLine ?? "", /CLE \+124/);
 
 const nflTree = {
   name: "National Football League",
@@ -277,10 +302,14 @@ assert.deepEqual(
   ["2", "3", "4", "5", "13", "14", "15", "16"],
 );
 card.standings = afcNorth;
-assert.equal(
-  finalCaption(card, "https://command-center-flax-gamma.vercel.app/"),
-  "Final\nOpen game: https://command-center-flax-gamma.vercel.app/sports/nfl/game/401872964?solo=1",
-);
+const caption = finalCaption(card, "https://command-center-flax-gamma.vercel.app/");
+assert.match(caption, /^Final: Pittsburgh Steelers 24, Browns 27/);
+assert.match(caption, /PIT 2-2 · CLE 3-1/);
+assert.match(caption, /Underdog CLE \+124 won/);
+assert.match(caption, /Odds: PIT -2\.5 did not cover · ML CLE \+124 won/);
+assert.match(caption, /Passing: PIT Aaron Rodgers/);
+assert.match(caption, /Open game: https:\/\/command-center-flax-gamma\.vercel\.app\/sports\/nfl\/game\/401872964\?solo=1/);
+assert.ok(caption.length <= 1000);
 
 assert.equal(paintColor("000000", "ffb612"), "#ffb612");
 assert.equal(paintColor("472a08", "ff3c00"), "#ff3c00");
@@ -307,6 +336,10 @@ assert.match(svg, /Total Yards/);
 assert.match(svg, /Huntington Bank Field/);
 assert.match(svg, />2-2</);
 assert.match(svg, />3-1</);
+assert.match(svg, /Thu, Oct 1, 7:15 PM CT/);
+assert.match(svg, /PIT -2\.5 did not cover/);
+assert.match(svg, /opacity="0\.38"/);
+assert.doesNotMatch(svg, /Finals and Stats/);
 assert.doesNotMatch(svg, /Last play|yard line|Field map|chains/i);
 assert.equal((svg.match(/<image /g) ?? []).length, 0);
 assert.match(svg, new RegExp(`width="${FINALS_ALERT_WIDTH}"`));
@@ -403,5 +436,58 @@ assert.match(nhlSvg, /Standings/);
 assert.match(nhlSvg, /Atlantic/);
 assert.match(nhlSvg, /Central/);
 assert.match(nhlSvg, />2-1-0</);
+assert.match(nhlSvg, / CT</);
+
+assert.deepEqual(parseDetails("GB -2.5"), { abbrev: "GB", line: -2.5 });
+assert.equal(spreadOutcome(-2.5, 17, 14), "covered");
+assert.equal(spreadOutcome(-3, 20, 17), "push");
+assert.equal(spreadOutcome(-2.5, 24, 27), "not covered");
+assert.equal(formatFinalsTimestamp("2026-10-04T17:00Z"), "Sun, Oct 4, 12:00 PM CT");
+
+const covered = oddsFromSummary(
+  {
+    pickcenter: [
+      {
+        details: "GB -2.5",
+        awayTeamOdds: { favorite: true, moneyLine: -148 },
+        homeTeamOdds: { favorite: false, moneyLine: 124 },
+        pointSpread: { away: { close: { line: "-2.5" } }, home: { close: { line: "+2.5" } } },
+      },
+    ],
+  },
+  { abbrev: "GB", score: 17 },
+  { abbrev: "TB", score: 14 },
+  true,
+);
+assert.equal(covered?.spreadResult, "covered");
+assert.equal(covered?.underdogWon, false);
+assert.match(covered?.graphicLine ?? "", /GB -2\.5 covered/);
+
+const upset = oddsFromSummary(
+  {
+    pickcenter: [
+      {
+        details: "KC -7.5",
+        awayTeamOdds: { favorite: true, moneyLine: -320 },
+        homeTeamOdds: { favorite: false, moneyLine: 260 },
+        pointSpread: { away: { close: { line: "-7.5" } }, home: { close: { line: "+7.5" } } },
+      },
+    ],
+  },
+  { abbrev: "KC", score: 14 },
+  { abbrev: "LV", score: 21 },
+  true,
+);
+assert.equal(upset?.noteworthyUpset, true);
+assert.match(upset?.upsetLine ?? "", /Upset: LV \+260 beat KC/);
+
+assert.equal(
+  oddsFromSummary({}, { abbrev: "GB", score: 17 }, { abbrev: "TB", score: 14 }, true),
+  null,
+);
+
+const missingOddsSvg = renderFinalSvg(quiet);
+assert.doesNotMatch(missingOddsSvg, /covered|did not cover|O\/U/);
+assert.match(missingOddsSvg, / CT</);
 
 console.log("sports-finals.test.ts ok");
