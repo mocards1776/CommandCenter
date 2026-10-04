@@ -59,7 +59,7 @@ npm run lint
   editing them.
 - **Edge functions** — `supabase functions deploy <name>` (`todoist`,
   `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`, `sports`, `rss`,
-  `newspaper-editor`, `sports-push`).
+  `newspaper-editor`, `sports-push`, `sports-finals`).
   Canonical source: `supabase/functions/`. Keep the mirror in sync with
   `scripts/sync-edge-copies.sh` (CI fails on drift). On `main`, GitHub Actions
   deploys `rss` / `sports` when that tree changes — requires repo secrets
@@ -119,6 +119,53 @@ npm run lint
   On iPhone, open the installed Sports app once after deploy, then allow alerts
   from the board or Customize. A denied permission stays off until iOS Settings
   → Notifications → Sports.
+
+- **Finals and Stats** — Telegram photos when a tracked game goes final.
+  Bot `@FinalsAndStats_bot`. Token secret `TELEGRAM_FINALS_BOT_TOKEN` (not the
+  heat bot’s `TELEGRAM_BOT_TOKEN`). The graphic is the post-game page: score,
+  logos, records, linescore, team stats, box leaders, and the win-probability
+  chart when ESPN has a series. The live field is left out. Samples:
+  `docs/sports-finals/`.
+
+  Which games fire (`TELEGRAM_FINALS_SCOPE`, default `favorites,ruwt`):
+
+  - `favorites` — teams in `TELEGRAM_FINALS_FAVORITES` (`nfl:CLE`, `cfb:333`,
+    team id or abbreviation). If that secret is unset, favorites are the ones
+    already stored on sports-push subscriptions with favorite alerts on.
+  - `ruwt` — the game was hot on the live-drama line while it was in progress.
+  - `all` — every final in `TELEGRAM_FINALS_SPORTS` (default `nfl,cfb`; `mlb`
+    and `nhl` also render).
+
+  The first time a game is seen, nothing sends, so a deploy does not photo
+  finals already on the board. Chat allowlist `TELEGRAM_FINALS_CHAT_IDS`
+  defaults to Josh’s DM `857547432`. A `chat_id` outside that list is refused.
+
+  ```bash
+  supabase secrets set \
+    TELEGRAM_FINALS_BOT_TOKEN="<bot token from BotFather>" \
+    TELEGRAM_FINALS_CRON_SECRET="$(openssl rand -hex 24)" \
+    TELEGRAM_FINALS_CHAT_IDS="857547432" \
+    TELEGRAM_FINALS_SCOPE="favorites,ruwt" \
+    TELEGRAM_FINALS_SPORTS="nfl,cfb" \
+    SPORTS_FINALS_ORIGIN="https://command-center-flax-gamma.vercel.app" \
+    --project-ref esdgrgulaxnewmhjuyzh
+  supabase functions deploy sports-finals --project-ref esdgrgulaxnewmhjuyzh --no-verify-jwt
+  ```
+
+  Put the same cron secret in Vault as `sports_finals_cron`, then re-run the
+  schedule block in `supabase/migrations/20261004_sports_finals.sql`. The sweep
+  is every two minutes. `TELEGRAM_FINALS_CRON_SECRET` may fall back to
+  `SPORTS_PUSH_CRON_SECRET`, and the header `x-sports-push-cron` is accepted.
+
+  Test one final (records the send so the sweep will not repeat it). `render`
+  returns the PNG and does not text anyone. `record:false` skips the sent log.
+
+  ```bash
+  curl -X POST "$SUPABASE_URL/functions/v1/sports-finals" \
+    -H "Content-Type: application/json" \
+    -H "x-sports-finals-cron: $TELEGRAM_FINALS_CRON_SECRET" \
+    -d '{"action":"send","sport":"nfl","eventId":"401872964"}'
+  ```
 
 ### Why changes can feel “stuck”
 
