@@ -5,7 +5,7 @@
 ## Heat alert photos — October 4, 2026
 
 - Sports App renders a tall (1080×1300) heat-alert PNG from the live game: logos, scores, clock nest, down and distance, then the same field, ice, or diamond geometry the app already draws.
-- `sports-telegram` rasterizes that drawing and can `sendPhoto`. When RUWT heat fires, `sports-push` asks it to send. The caption is the heat reason plus the open-game link.
+- `sports-telegram` rasterizes that drawing and can `sendPhoto`. When a live game newly crosses the heat line and the claim sticks, `sports-push` asks it to send the photo — web push success is not a gate. The caption is the heat reason plus the open-game link.
 - Secrets stay out of git: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`, `SPORTS_TELEGRAM_SECRET`. A local render is `node --experimental-strip-types scripts/heat-alert-photo.ts`.
 
 ---
