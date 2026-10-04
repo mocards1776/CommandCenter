@@ -395,10 +395,29 @@ export async function fetchSummary(sport: string, eventId: string): Promise<unkn
   const path = SUMMARY_PATH[sport];
   if (!path) throw new Error(`No summary feed for ${sport}`);
   if (!/^\d{5,16}$/.test(eventId)) throw new Error("Bad event id");
-  const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/summary?event=${eventId}`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(`ESPN summary ${res.status}`);
-  return res.json();
+  const hosts = [
+    "https://site.web.api.espn.com/apis/site/v2/sports",
+    "https://site.api.espn.com/apis/site/v2/sports",
+  ];
+  const headers = { Accept: "application/json", "User-Agent": "CommandCenterSportsFinals" };
+  let lastStatus = 0;
+  for (const host of hosts) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12_000);
+    try {
+      const res = await fetch(`${host}/${path}/summary?event=${eventId}`, {
+        headers,
+        signal: controller.signal,
+      });
+      if (res.ok) return res.json();
+      lastStatus = res.status;
+    } catch {
+      /* next host */
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error(`ESPN summary ${lastStatus}`);
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
