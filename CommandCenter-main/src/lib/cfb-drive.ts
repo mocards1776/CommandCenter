@@ -25,6 +25,12 @@ export type CfbDriveGlance = {
   startText: string | null;
   displayResult: string | null;
   description: string | null;
+  /**
+   * Scrimmage snap spots on this drive only, yards from the home end zone.
+   * Kickoffs, punts, and dead-ball flags are omitted. Empty when the drive
+   * has not snapped.
+   */
+  playSpots?: number[];
 };
 
 export type CfbDriveMeta = CfbDriveGlance & {
@@ -65,7 +71,35 @@ export function cfbDriveGlance(drive: CfbDriveMeta): CfbDriveGlance {
     startText: drive.startText,
     displayResult: drive.displayResult,
     description: drive.description,
+    playSpots: drive.playSpots,
   };
+}
+
+/**
+ * Yard line of each scrimmage snap on this drive, in order.
+ * The spot is where the play started. A goal-line placeholder (0 or 100)
+ * falls through to the end spot when that one is on the field.
+ * Kicks, punts, PATs, timeouts, and "NO PLAY" flags are not plotted.
+ */
+export function cfbDriveScrimmageSpots(plays: CfbDrivePlaySpot[] | null | undefined): number[] {
+  const spots: number[] = [];
+  for (const play of plays ?? []) {
+    if (isAdministrativeDrivePlay(play)) continue;
+    const start = finiteNumber(play.start?.yardLine);
+    const end = finiteNumber(play.end?.yardLine);
+    const yard = start != null && start > 0 && start < 100 ? start : end;
+    if (yard == null || yard <= 0 || yard >= 100) continue;
+    spots.push(yard);
+  }
+  return spots;
+}
+
+/** Glance plus the current drive's snap spots. Previous drives are not included. */
+export function cfbDriveGlanceWithPlaySpots(
+  drive: CfbDriveMeta,
+  plays: CfbDrivePlaySpot[] | null | undefined,
+): CfbDriveGlance {
+  return { ...cfbDriveGlance(drive), playSpots: cfbDriveScrimmageSpots(plays) };
 }
 
 /** ESPN's kickoff placeholder starts at a goal line ("MIZ 0", yardLine 0 or 100), not a snap spot. */

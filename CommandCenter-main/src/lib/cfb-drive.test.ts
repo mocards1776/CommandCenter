@@ -7,6 +7,8 @@ import {
   homeYardLineFromSpotText,
   syncCfbDriveStartToLabel,
   cfbDriveGlance,
+  cfbDriveGlanceWithPlaySpots,
+  cfbDriveScrimmageSpots,
   cfbDriveStatLine,
   cfbInheritedKickEnd,
   cfbTerminalKickEnd,
@@ -573,5 +575,35 @@ assert(
   )?.startYardLine === 25,
   "a kickoff placeholder label does not move the yard line",
 );
+
+const drivePlays = [
+  { type: { text: "Kickoff" }, start: { yardLine: 35 }, end: { yardLine: 70, possessionText: "ALA 30" } },
+  { type: { text: "Rush" }, start: { yardLine: 70, possessionText: "ALA 30" }, end: { yardLine: 75 } },
+  { type: { text: "Pass" }, start: { yardLine: 75, possessionText: "ALA 25" }, end: { yardLine: 80 } },
+  { type: { text: "Penalty" }, text: "False start, NO PLAY", start: { yardLine: 80 } },
+  { type: { text: "Timeout" }, start: { yardLine: 80 } },
+  { type: { text: "Rush" }, start: { yardLine: 0 }, end: { yardLine: 82, possessionText: "ALA 18" } },
+  { type: { text: "Extra Point" }, start: { yardLine: 97 } },
+];
+assert(
+  cfbDriveScrimmageSpots(drivePlays).join(",") === "70,75,82",
+  `scrimmage spots are snap yards, not kicks or flags: ${cfbDriveScrimmageSpots(drivePlays).join(",")}`,
+);
+const glanced = cfbDriveGlanceWithPlaySpots(
+  mapCfbDriveMeta({
+    id: "d1",
+    team: { abbreviation: "ALA" },
+    offensivePlays: 3,
+    yards: 12,
+    start: { yardLine: 70, text: "ALA 30" },
+  }),
+  drivePlays,
+);
+assert(glanced.playSpots?.join(",") === "70,75,82", "glance carries only this drive's snaps");
+assert(
+  cfbDriveGlance({ ...glanced, id: "d1", teamId: null, result: null }).playSpots?.join(",") === "70,75,82",
+  "glance copy keeps the snap spots",
+);
+assert(cfbDriveScrimmageSpots([]).length === 0, "a drive with no snaps has no dots");
 
 console.log("cfb-drive.test.ts ok");
