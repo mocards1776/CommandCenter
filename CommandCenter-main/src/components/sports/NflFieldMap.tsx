@@ -143,6 +143,7 @@ export default function NflFieldMap({
   downDistanceText,
   branded = false,
   drive = null,
+  omitLastPlay = false,
   className,
 }: {
   game: FootballFieldGame;
@@ -153,6 +154,8 @@ export default function NflFieldMap({
   branded?: boolean;
   /** Current ESPN drive. Marker + stat line render only when this is set. */
   drive?: CfbDriveGlance | null;
+  /** Game detail prints the same sentence under the field. Skip the copy here. */
+  omitLastPlay?: boolean;
   className?: string;
 }) {
   const poss = possessionTeamId;
@@ -358,7 +361,7 @@ export default function NflFieldMap({
         </p>
       ) : null}
 
-      {game.situation?.lastPlayText && (
+      {!omitLastPlay && game.situation?.lastPlayText && (
         <p className="border-t border-white/[0.06] px-3 py-2 text-[11px] leading-snug text-white/70">
           {game.situation.lastPlayText}
         </p>

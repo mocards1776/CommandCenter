@@ -314,7 +314,7 @@ export function CfbGameDetailView({
           </div>
         </div>
 
-        <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5 sm:gap-4 sm:px-6 sm:py-4">
+        <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-2 sm:gap-4 sm:px-6 sm:py-3">
           <MatchupSide
             side={g.away}
             align="left"
@@ -365,6 +365,7 @@ export function CfbGameDetailView({
             possessionTeamId={g.situation?.possessionTeamId ?? null}
             downDistanceText={g.situation?.downDistanceText}
             drive={currentDrive ? cfbDriveGlance(currentDrive) : null}
+            omitLastPlay
           />
           {g.situation?.lastPlayText ? (
             <p className="text-chalk px-1 text-[12px] leading-relaxed">
@@ -771,30 +772,30 @@ function CfbLinescoreTable({
       <table className="w-full min-w-[280px] text-center text-[12px]">
         <thead>
           <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-            <th className="px-2 py-1.5 text-left font-medium">Team</th>
+            <th className="px-2 py-1 text-left font-medium">Team</th>
             {headers.map((h) => (
-              <th key={h} className="numeral px-1.5 py-1.5 font-medium">
+              <th key={h} className="numeral px-1.5 py-1 font-medium">
                 {h}
               </th>
             ))}
-            <th className="numeral px-2 py-1.5 font-semibold text-cream/80">T</th>
+            <th className="numeral px-2 py-1 font-semibold text-cream/80">T</th>
           </tr>
         </thead>
         <tbody>
           {[away, home].map((side) => (
             <tr key={side.teamId} className="border-t border-white/[0.05]">
-              <td className="px-2 py-1.5 text-left">
+              <td className="px-2 py-1 text-left">
                 <span className="inline-flex items-center gap-1.5 font-semibold text-cream">
                   {side.logo ? <LogoPlate src={side.logo} className="h-4 w-4" /> : null}
                   {side.abbrev}
                 </span>
               </td>
               {headers.map((_, i) => (
-                <td key={`${side.teamId}-${i}`} className="numeral px-1.5 py-1.5 text-white/85">
+                <td key={`${side.teamId}-${i}`} className="numeral px-1.5 py-1 text-white/85">
                   {side.linescores[i] ?? "–"}
                 </td>
               ))}
-              <td className="numeral px-2 py-1.5 font-bold text-white">
+              <td className="numeral px-2 py-1 font-bold text-white">
                 {side.score ?? "–"}
               </td>
             </tr>
@@ -829,10 +830,10 @@ function MatchupSide({
       {side.logo ? (
         <LogoPlate src={side.logo} className="h-12 w-12 sm:h-14 sm:w-14" />
       ) : null}
-      <div>
+      <div className="min-w-0">
         <p
           className={cn(
-            "inline-flex items-center gap-1 text-[15px] font-bold sm:text-[17px]",
+            "inline-flex items-center gap-1 text-[15px] font-bold leading-tight sm:text-[17px]",
             winner || !loser ? "text-white" : "text-white/85",
           )}
         >
@@ -845,7 +846,7 @@ function MatchupSide({
             <PossessionFootball className="h-3 w-5 shrink-0" />
           ) : null}
         </p>
-        <p className="text-[11px] text-white/75">{side.name}</p>
+        <p className="text-[11px] leading-tight text-white/75">{side.name}</p>
         {side.record ? (
           <p className="numeral mt-0.5 text-[12px] font-medium text-white/85">{side.record}</p>
         ) : null}
