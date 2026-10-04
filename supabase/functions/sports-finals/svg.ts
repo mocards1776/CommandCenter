@@ -585,20 +585,6 @@ export function renderFinalSvg(card: FinalCard): string {
     y += table.height + GAP;
   }
 
-  if (card.odds?.graphicLine) {
-    y += 8;
-    parts.push(
-      text(card.odds.graphicLine, W / 2, y + 18, {
-        size: 20,
-        fill: "#d5dae6",
-        anchor: "middle",
-        weight: 700,
-        spacing: 0.2,
-      }),
-    );
-    y += 36;
-  }
-
   if (headline.length) {
     for (const line of headline) {
       y += 30;
@@ -690,17 +676,18 @@ export function renderFinalSvg(card: FinalCard): string {
   if (hasStats || hasLeaders) y += colH + GAP;
 
   y += 4;
+  const footerRight = card.odds?.graphicLine || centerStatus(card.statusLabel);
   parts.push(text(stamp, M, y + 22, { size: 18, fill: "#c5cce0", weight: 700, spacing: 0.4 }));
   parts.push(
-    text(centerStatus(card.statusLabel), W - M, y + 22, {
-      size: 18,
-      fill: "#8b93a7",
+    text(footerRight, W - M, y + 22, {
+      size: footerRight.length > 28 ? 16 : 18,
+      fill: "#d5dae6",
       anchor: "end",
       weight: 700,
-      spacing: 1,
+      spacing: 0.2,
     }),
   );
-  y += 44;
+  y += 42;
 
   const wash = [
     `<defs>`,
