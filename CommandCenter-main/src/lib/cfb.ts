@@ -7,6 +7,7 @@ import {
   cfbIsGameOfTheWeekMatchup,
   cfbLeaderWinPct,
   cfbLiveQuarter,
+  cfbRankingWinPct,
   cfbSituationExtrasCount,
 } from "./cfb-live-margin";
 import {
@@ -15,7 +16,12 @@ import {
   type CfbPlayTone,
 } from "./cfb-play-text";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
-import { espnRateToPct, mapCfbWinProbability, type CfbWinProbPoint } from "./cfb-win-probability";
+import {
+  espnRateToPct,
+  fetchCfbCurrentWinProbability,
+  mapCfbWinProbability,
+  type CfbWinProbPoint,
+} from "./cfb-win-probability";
 import {
   cfbDriveGlance,
   correctCfbDriveStartFromPlays,
@@ -217,6 +223,12 @@ export type CfbScoreGame = {
   /** ESPN period number (1–4 regulation, 5+ OT). */
   period: number | null;
   situation: CfbLiveSituation | null;
+  /**
+   * Leader win chance from the probabilities feed the RUWT bar draws, 0–100.
+   * Null when that feed was not read or ESPN has not published a row.
+   * Extra points and kickoffs often omit last-play probability while this is 99%.
+   */
+  barLeaderWinPct?: number | null;
   /** DraftKings (etc.) line from ESPN scoreboard — watchability only. */
   odds: CfbGameOdds | null;
 };
@@ -1254,7 +1266,38 @@ function cfbScoreboardUrl(dates?: string): string {
   return `${ESPN}/scoreboard?${params.toString()}`;
 }
 
-export async function fetchCfbScoreboard(dates?: string): Promise<CfbScoreGame[]> {
+export type CfbScoreboardOptions = {
+  /**
+   * Read the probabilities feed behind the RUWT win bar and store the leader's
+   * chance on each live game that is still inside two scores. Ranking uses that
+   * number for the 97% cap. Without it, a kick that omits last-play probability
+   * keeps closeness, late, red-zone, and upset points until the clock is short.
+   */
+  barWinChance?: boolean;
+};
+
+/** Live and inside two scores: the only rows the 97% cap can change. */
+export function cfbGameNeedsBarWinChance(g: CfbScoreGame): boolean {
+  if (!g.live || g.final) return false;
+  if (g.away.score == null || g.home.score == null) return false;
+  return Math.abs(g.away.score - g.home.score) <= 16;
+}
+
+async function attachCfbBarWinChances(games: CfbScoreGame[]): Promise<void> {
+  const close = games.filter(cfbGameNeedsBarWinChance);
+  await mapWithConcurrency(close, 6, async (g) => {
+    const snap = await fetchCfbCurrentWinProbability(g.id);
+    const pct = snap ? cfbLeaderWinPct(snap.homeWinPct, snap.awayWinPct) : null;
+    if (pct == null) return null;
+    g.barLeaderWinPct = pct;
+    return g;
+  });
+}
+
+export async function fetchCfbScoreboard(
+  dates?: string,
+  opts?: CfbScoreboardOptions,
+): Promise<CfbScoreGame[]> {
   const [fpiByTeam, pollByTeam, boardRes] = await Promise.all([
     fetchCfbFpiRanks().catch(() => new Map<number, number>()),
     fetchCfbPollRankByTeam().catch(() => new Map<number, number>()),
@@ -1264,9 +1307,11 @@ export async function fetchCfbScoreboard(dates?: string): Promise<CfbScoreGame[]
   ]);
   if (!boardRes.ok) throw new Error(`CFB scoreboard ${boardRes.status}`);
   const raw = (await boardRes.json()) as { events?: EspnEvent[] };
-  return (raw.events ?? [])
+  const games = (raw.events ?? [])
     .map((e) => mapCfbEvent(e, fpiByTeam, pollByTeam))
     .filter((g): g is CfbScoreGame => Boolean(g?.id));
+  if (opts?.barWinChance) await attachCfbBarWinChances(games);
+  return games;
 }
 
 function cfbArticleRelevantToGame(
@@ -3630,9 +3675,10 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
     (period != null && period >= 5) || /\bot\b|overtime/.test(detail);
   const lateGame = inOt || period === 4 || /\b4th\b/.test(detail);
   const clockSec = parseRuwtClockSeconds(detail) ?? (/end of 4th|end 4th/.test(detail) ? 0 : null);
-  // Win chance is the scoreboard last play when ESPN sent one. Around 99% is over.
-  // Two scores and under three minutes is the fallback when that field is missing.
-  // Three-score leads stay on the blowout path below.
+  // The bar's win chance decides the 97% line at any clock. 99.6% with 9:31 left is over.
+  // Last-play probability is the fallback when the bar has no row. Kicks often omit it.
+  // With neither number, only a two-score lead under three minutes counts as over.
+  // Three-score leads stay on the blowout path below. 89% stays in doubt.
   const decided =
     g.live &&
     !g.final &&
@@ -3642,7 +3688,7 @@ export function scoreCfbRuwtGame(g: CfbScoreGame, ctx?: CfbRuwtContext): { score
       diff,
       late: lateGame,
       clockSec,
-      leaderWinPct: g.situation?.leaderWinPct ?? null,
+      leaderWinPct: cfbRankingWinPct(g.barLeaderWinPct, g.situation?.leaderWinPct),
     });
 
   const nets = g.broadcasts.map((b) => b.name.toUpperCase());

@@ -164,7 +164,9 @@ export function useRuwtSlate(opts?: { interest?: RuwtInterestMaps }) {
     queryFn: async () => {
       const today = chicagoTodayCfb();
       const ymd = today.replace(/-/g, "");
-      const board = await fetchCfbScoreboard(ymd).catch(() => fetchCfbScoreboard());
+      const board = await fetchCfbScoreboard(ymd, { barWinChance: true }).catch(() =>
+        fetchCfbScoreboard(undefined, { barWinChance: true }),
+      );
       return board.filter((g) => !g.date || g.date === today);
     },
     refetchInterval: 30_000,

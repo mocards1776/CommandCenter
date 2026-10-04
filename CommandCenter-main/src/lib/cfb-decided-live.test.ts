@@ -6,13 +6,15 @@
  * sit above a one-score game that is still in doubt. These assert the scores
  * the scorers return, not a parallel copy of the weights.
  */
-import { mapCfbSituation, scoreCfbRuwtGame, type CfbScoreGame } from "./cfb.ts";
+import { cfbGameNeedsBarWinChance, mapCfbSituation, scoreCfbRuwtGame, type CfbScoreGame } from "./cfb.ts";
 import {
   CFB_DECIDED_LIVE_CAP,
   CFB_DECIDED_WIN_PCT,
   cfbEffectivelyDecided,
   cfbLeaderWinPct,
+  cfbRankingWinPct,
 } from "./cfb-live-margin.ts";
+import { ruwtCardReasons } from "./ruwt-slate.ts";
 import { scoreGameInterest, type MlbScoreGame } from "./mlb.ts";
 import { scoreNflRuwtGame, type NflScoreGame } from "./nfl.ts";
 import { scoreNhlRuwtGame, type NhlScoreGame } from "./nhl.ts";
@@ -82,6 +84,10 @@ const mapped = mapCfbSituation(
   true,
 );
 assert.equal(mapped?.leaderWinPct, 99.9, "scoreboard last-play probability reaches the scorer");
+assert.equal(cfbRankingWinPct(99.6, null), 99.6, "the bar is the win chance when the last play omitted it");
+assert.equal(cfbRankingWinPct(null, 99.9), 99.9, "last play fills in when the bar has no row");
+assert.equal(cfbRankingWinPct(89.2, 99.9), 89.2, "a stale last-play 99.9 does not outrank the bar");
+assert.equal(cfbRankingWinPct(null, null), null);
 
 function cfbSide(
   partial: Partial<CfbScoreGame["away"]> & { teamId: number; abbrev: string; score: number | null },
@@ -355,6 +361,66 @@ assert.ok(
   !cfbEffectivelyDecided({ diff: 2, late: false, clockSec: 2 * 60, leaderWinPct: 89.2 }),
   "89.2% in the 2nd is not over",
 );
+
+// Utah State 18, #22 Boise State 31, 9:31 in the 4th, bar 99.6%, red zone.
+// The last play was the two-point kick and carried no probability. The bar did.
+// That used to stack Tight + 4th quarter + red zone + closest upset to 137.
+function boisShape(win: { bar?: number | null; lastPlay?: number | null }): CfbScoreGame {
+  return cfbGame({
+    id: "bois-931",
+    shortDetail: "9:31 - 4th",
+    period: 4,
+    away: cfbSide({ teamId: 328, abbrev: "USU", score: 18, rank: null, fpiRank: 90, record: "1-3" }),
+    home: cfbSide({ teamId: 68, abbrev: "BOIS", score: 31, rank: 22, fpiRank: 30, record: "3-1" }),
+    broadcasts: [{ name: "CBSSN", logo: null, market: "national" }],
+    situation: sit(win.lastPlay ?? null, { isRedZone: true, downDistanceText: "1st & 10" }),
+    barLeaderWinPct: win.bar,
+  });
+}
+
+const boisMissing = scoreCfbRuwtGame(boisShape({}));
+assert.equal(boisMissing.score, 137, "no win chance at 9:31 still scores the old stack");
+assert.deep(ruwtCardReasons(boisMissing.reasons), [
+  "Tight",
+  "4th quarter",
+  "Red zone",
+  "Ranked team",
+  "Closest upset",
+]);
+assert.ok(cfbGameNeedsBarWinChance(boisShape({})), "a two-score live game is the row the bar has to fill");
+assert.ok(
+  !cfbGameNeedsBarWinChance(
+    cfbGame({
+      id: "three-scores",
+      live: true,
+      final: false,
+      away: cfbSide({ teamId: 1, abbrev: "A", score: 0 }),
+      home: cfbSide({ teamId: 2, abbrev: "B", score: 17 }),
+    }),
+  ),
+  "three scores stay on the blowout path and do not need the bar",
+);
+
+const boisBar = scoreCfbRuwtGame(boisShape({ bar: 99.6 }));
+assert.equal(boisBar.score, CFB_DECIDED_LIVE_CAP, "99.6% at 9:31 caps at 49");
+assert.deep(ruwtCardReasons(boisBar.reasons), ["Ranked team"]);
+assert.ok(boisBar.score < oneScoreDoubt.score, "a decided 99.6% game trails a one-score game around 60%");
+
+const boisKick = scoreCfbRuwtGame(boisShape({ bar: 99.6, lastPlay: null }));
+assert.equal(boisKick.score, CFB_DECIDED_LIVE_CAP, "a kick with no last-play probability still uses the bar");
+assert.deep(ruwtCardReasons(boisKick.reasons), ["Ranked team"]);
+
+const boisStale = scoreCfbRuwtGame(boisShape({ bar: 89.2, lastPlay: 99.9 }));
+assert.equal(boisStale.score, 137, "89% on the bar is still a game even if the last play says 99.9");
+assert.ok(ruwtCardReasons(boisStale.reasons).includes("Tight"));
+assert.ok(boisStale.score > oneScoreDoubt.score);
+
+const boisJustUnder = scoreCfbRuwtGame(boisShape({ bar: 96.9 }));
+assert.equal(boisJustUnder.score, 137, "96.9% is not the 97% line, at any clock");
+assert.ok(ruwtCardReasons(boisJustUnder.reasons).includes("Closest upset"));
+
+const boisLine = scoreCfbRuwtGame(boisShape({ bar: 97 }));
+assert.equal(boisLine.score, CFB_DECIDED_LIVE_CAP, "97% at 9:31 is over");
 
 // Early unranked FPI-100s one-score: red zone, within a kick, and a wide
 // FPI upset still describe the drive. They do not add points in the 2nd.

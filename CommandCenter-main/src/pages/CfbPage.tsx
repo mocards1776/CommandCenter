@@ -42,7 +42,7 @@ export default function CfbPage() {
 
   const scoreboard = useQuery({
     queryKey: ["cfb-scoreboard-fbs"],
-    queryFn: () => fetchCfbScoreboard(),
+    queryFn: () => fetchCfbScoreboard(undefined, { barWinChance: true }),
     refetchInterval: view === "scores" ? 30_000 : false,
     staleTime: 15_000,
   });
