@@ -1,5 +1,13 @@
 /** NFL via ESPN site API — scoreboard, live field, plays, players, RUWT. */
 
+import {
+  cfbDriveGlance,
+  cfbInheritedKickEnd,
+  correctCfbDriveStartFromPlays,
+  mapCfbDriveMeta,
+  type CfbDriveGlance,
+  type CfbDrivePlaySpot,
+} from "./cfb-drive";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { seriesLineFromEspn } from "./playoff-series";
 import { supabase } from "./supabase";
@@ -88,6 +96,12 @@ export type NflScoreGame = {
   when: string | null;
   whenShort: string | null;
   venue: string | null;
+  /** ESPN neutralSite. True for the Super Bowl and for overseas games. */
+  neutralSite?: boolean;
+  venueCity?: string | null;
+  venueCountry?: string | null;
+  /** ESPN competition note, e.g. "NFL London Games". */
+  venueNote?: string | null;
   situation: NflLiveSituation | null;
   /** 0–100 home win % when ESPN provides it. */
   homeWinPct: number | null;
@@ -205,6 +219,8 @@ export type NflGameDetail = NflScoreGame & {
     results: { label: string; result: string; score: string | null }[];
   }[];
   venueDetail: string | null;
+  /** In-progress drive, spotted at the first scrimmage. Null when ESPN has none. */
+  currentDrive: CfbDriveGlance | null;
 };
 
 export type NflPlayerTeamStop = {
@@ -375,7 +391,11 @@ type EspnEvent = {
   shortName?: string;
   competitions?: {
     id?: string;
-    venue?: { fullName?: string };
+    venue?: {
+      fullName?: string;
+      address?: { city?: string; state?: string; country?: string };
+    };
+    neutralSite?: boolean;
     status?: {
       type?: {
         state?: string;
@@ -462,6 +482,14 @@ function mapEvent(event: EspnEvent): NflScoreGame | null {
     when: final || live ? (status?.shortDetail ?? when) : when,
     whenShort: live || final ? (status?.shortDetail ?? null) : whenShort,
     venue: comp.venue?.fullName ?? null,
+    neutralSite: Boolean(comp.neutralSite),
+    venueCity: comp.venue?.address?.city ?? null,
+    venueCountry: comp.venue?.address?.country ?? null,
+    venueNote:
+      (comp.notes ?? [])
+        .map((note) => note.headline?.trim())
+        .filter((headline): headline is string => Boolean(headline))
+        .join(" · ") || null,
     situation: mapSituation(comp.situation, live),
     homeWinPct: nflBoardHomeWinPct(comp.situation),
     date: chicagoDateFromIso(event.date),
@@ -651,6 +679,20 @@ function mapPlay(p: {
   };
 }
 
+type EspnNflDriveRaw = {
+  id?: string;
+  description?: string;
+  displayResult?: string;
+  shortDisplayResult?: string;
+  team?: { id?: string; abbreviation?: string };
+  result?: string;
+  yards?: number;
+  offensivePlays?: number;
+  timeElapsed?: { displayValue?: string };
+  start?: { yardLine?: number; text?: string };
+  plays?: Parameters<typeof mapPlay>[0][];
+};
+
 export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail> {
   const res = await fetch(`${ESPN}/summary?event=${encodeURIComponent(eventId)}`, {
     headers: { Accept: "application/json" },
@@ -659,22 +701,8 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
   const raw = (await res.json()) as {
     header?: { competitions?: EspnEvent["competitions"]; id?: string };
     drives?: {
-      current?: {
-        id?: string;
-        description?: string;
-        team?: { id?: string; abbreviation?: string };
-        result?: string;
-        yards?: number;
-        plays?: Parameters<typeof mapPlay>[0][];
-      };
-      previous?: {
-        id?: string;
-        description?: string;
-        team?: { id?: string; abbreviation?: string };
-        result?: string;
-        yards?: number;
-        plays?: Parameters<typeof mapPlay>[0][];
-      }[];
+      current?: EspnNflDriveRaw;
+      previous?: EspnNflDriveRaw[];
     };
     scoringPlays?: {
       id?: string;
@@ -731,7 +759,7 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
     gameInfo?: {
       venue?: {
         fullName?: string;
-        address?: { city?: string; state?: string };
+        address?: { city?: string; state?: string; country?: string };
       };
       weather?: { displayValue?: string; temperature?: number };
     };
@@ -759,10 +787,31 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
     base = { ...base, situation: mapSituation(headerComp.situation, true) };
   }
 
-  const drivesRaw = [
-    ...(raw.drives?.previous ?? []),
-    ...(raw.drives?.current ? [raw.drives.current] : []),
-  ];
+  const infoVenue = raw.gameInfo?.venue;
+  if (infoVenue) {
+    base = {
+      ...base,
+      venue: base.venue ?? infoVenue.fullName ?? null,
+      venueCity: base.venueCity ?? infoVenue.address?.city ?? null,
+      venueCountry: base.venueCountry ?? infoVenue.address?.country ?? null,
+    };
+  }
+  if (headerComp?.neutralSite) base = { ...base, neutralSite: true };
+
+  const previousDrives = raw.drives?.previous ?? [];
+  const currentRaw = raw.drives?.current;
+  const currentDriveId = currentRaw?.id != null && String(currentRaw.id) ? String(currentRaw.id) : null;
+  const currentDrive = currentRaw
+    ? cfbDriveGlance(
+        correctCfbDriveStartFromPlays(
+          mapCfbDriveMeta(currentRaw, currentDriveId ?? "drive-current"),
+          (currentRaw.plays ?? []) as CfbDrivePlaySpot[],
+          cfbInheritedKickEnd(previousDrives, currentDriveId),
+        ),
+      )
+    : null;
+
+  const drivesRaw = [...previousDrives, ...(currentRaw ? [currentRaw] : [])];
   const drives: NflDrive[] = drivesRaw.map((d) => ({
     id: String(d.id ?? Math.random()),
     description: d.description ?? null,
@@ -925,7 +974,33 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
     predictor,
     lastFive,
     venueDetail: venueBits.length ? venueBits.join(" · ") : null,
+    currentDrive,
   };
+}
+
+/** Current drive only — live NFL fields. Null when ESPN has no current drive. */
+export async function fetchNflCurrentDrive(eventId: string): Promise<CfbDriveGlance | null> {
+  try {
+    const res = await fetch(`${ESPN}/summary?event=${encodeURIComponent(eventId)}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const raw = (await res.json()) as {
+      drives?: { current?: EspnNflDriveRaw; previous?: EspnNflDriveRaw[] };
+    };
+    const current = raw.drives?.current;
+    if (!current) return null;
+    const currentId = current.id != null && String(current.id) ? String(current.id) : null;
+    return cfbDriveGlance(
+      correctCfbDriveStartFromPlays(
+        mapCfbDriveMeta(current, currentId ?? "drive-current"),
+        (current.plays ?? []) as CfbDrivePlaySpot[],
+        cfbInheritedKickEnd(raw.drives?.previous, currentId),
+      ),
+    );
+  } catch {
+    return null;
+  }
 }
 
 /** NFL season year: Sep–Dec = calendar year; Jan–Aug = prior year (regular season + playoffs). */

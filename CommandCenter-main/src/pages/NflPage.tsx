@@ -7,7 +7,8 @@ import LogoPlate from "@/components/sports/LogoPlate";
 import NflFieldMap, { NflScoreRow } from "@/components/sports/NflFieldMap";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
-import { fetchNflScoreboard, pickNflHeroGame, rankNflRuwtGames } from "@/lib/nfl";
+import { fetchNflCurrentDrive, fetchNflScoreboard, pickNflHeroGame, rankNflRuwtGames } from "@/lib/nfl";
+import { nflInternationalMidfieldLogo } from "@/lib/nfl-venue";
 import { loadNflTeamInterest } from "@/lib/ruwt";
 import { markSportsSolo } from "@/lib/sports-home";
 import { cn } from "@/lib/utils";
@@ -68,6 +69,13 @@ export default function NflPage() {
   const finals = useMemo(() => games.filter((g) => g.final), [games]);
   const hero = games.length ? pickNflHeroGame(games) : null;
   const featured = hero?.live ? hero : null;
+  const featuredDrive = useQuery({
+    queryKey: ["nfl-current-drive", featured?.id],
+    queryFn: () => fetchNflCurrentDrive(featured!.id),
+    enabled: Boolean(featured?.live && featured.id),
+    staleTime: 15_000,
+    refetchInterval: featured?.live ? 20_000 : false,
+  });
   const liveRest = useMemo(
     () => (featured ? live.filter((g) => g.id !== featured.id) : live),
     [live, featured],
@@ -146,9 +154,12 @@ export default function NflPage() {
                   <div className="p-3">
                     <NflFieldMap
                       game={featured}
+                      branded
                       homeYardLine={featured.situation?.yardLine ?? null}
                       possessionTeamId={featured.situation?.possessionTeamId ?? null}
                       downDistanceText={featured.situation?.downDistanceText}
+                      drive={featuredDrive.data}
+                      midfieldLogo={nflInternationalMidfieldLogo(featured)}
                     />
                   </div>
                 </Link>
