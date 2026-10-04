@@ -1,6 +1,7 @@
 /** NHL via ESPN site API — scoreboard, standings, teams, games, players. */
 
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
+import { seriesLineFromEspn } from "./playoff-series";
 import { espnBirthDate, espnBirthPlace, formatSportsDateLong } from "./utils";
 
 const ESPN = "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl";
@@ -132,6 +133,8 @@ export type NhlScoreGame = {
   /** Kickoff as an ISO instant. */
   startIso?: string | null;
   broadcasts: GameBroadcast[];
+  /** Playoff series only. Null in the regular season and when ESPN omits it. */
+  seriesLine?: string | null;
 };
 
 export type NhlScoredGame = NhlScoreGame & {
@@ -179,6 +182,8 @@ type EspnEvent = {
       media?: { shortName?: string; name?: string; logo?: string; darkLogo?: string };
     }[];
     competitors?: EspnCompetitor[];
+    series?: { type?: string | null; summary?: string | null; totalCompetitions?: number | null };
+    notes?: { headline?: string | null }[];
   }[];
 };
 
@@ -241,6 +246,7 @@ function mapScoreEvent(event: EspnEvent): NhlScoreGame | null {
     date: chicagoDateFromIso(event.date),
     startIso: event.date ?? null,
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
+    seriesLine: seriesLineFromEspn(comp),
   };
 }
 

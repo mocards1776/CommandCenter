@@ -270,4 +270,108 @@ assert(
   "a drive ESPN already spotted is not rewritten from a later play",
 );
 
+// After a two-point try ESPN opens the next drive at the touchback 25 with
+// no kickoff and no snap. That is not the scrimmage. Live USU @ BOIS, 2026-10-03.
+const seeded25 = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "after-2pt",
+    team: { id: "68", abbreviation: "BOIS" },
+    yards: 0,
+    offensivePlays: 0,
+    timeElapsed: { displayValue: "0:00" },
+    start: { yardLine: 25, text: "BOIS 25" },
+  }),
+  [
+    {
+      type: { text: "Two-Point Conversion" },
+      text: "G. Brosterhous pass to E. Wood GOOD for Two-Point Conversion",
+      start: { yardLine: 97, possessionText: "BOIS 3" },
+    },
+  ],
+);
+assert(seeded25.startText == null && seeded25.startYardLine == null, "unconfirmed 25 is not a drive start");
+assert(
+  cfbDriveStatLine(cfbDriveGlance(seeded25)) === "BOIS · 0 plays · 0 yds · 0:00",
+  cfbDriveStatLine(cfbDriveGlance(seeded25)) ?? "empty seeded line",
+);
+
+// Same window with an empty play list (the conversion is only on situation.lastPlay).
+const emptySeed = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "empty-25",
+    team: { id: "68", abbreviation: "BOIS" },
+    yards: 0,
+    offensivePlays: 0,
+    start: { yardLine: 25, text: "BOIS 25" },
+  }),
+  [],
+);
+assert(emptySeed.startText == null && emptySeed.startYardLine == null, "a 25 with no plays is omitted");
+
+// Kickoff return, then the first snap is not the seeded 25.
+const returned = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "return",
+    team: { id: "68", abbreviation: "BOIS" },
+    yards: 6,
+    offensivePlays: 1,
+    start: { yardLine: 25, text: "BOIS 25" },
+  }),
+  [
+    {
+      type: { text: "Kickoff" },
+      text: "kickoff returned to the BOI40",
+      end: { yardLine: 40, possessionText: "BOIS 40" },
+    },
+    {
+      type: { text: "Rush" },
+      text: "rush for 6 yards",
+      start: { yardLine: 40, possessionText: "BOIS 40" },
+    },
+  ],
+);
+assert(returned.startText === "BOIS 40" && returned.startYardLine === 40, "first snap replaces the seeded 25");
+
+// Touchback: the kickoff end and the snap both really are the 25.
+const touchback = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "tb",
+    team: { id: "68", abbreviation: "BOIS" },
+    yards: 8,
+    offensivePlays: 1,
+    start: { yardLine: 25, text: "BOIS 25" },
+  }),
+  [
+    {
+      type: { text: "Kickoff" },
+      text: "kickoff 65 yards, Touchback",
+      end: { yardLine: 25, possessionText: "BOIS 25" },
+    },
+    {
+      type: { text: "Pass Reception" },
+      start: { yardLine: 25, possessionText: "BOIS 25" },
+    },
+  ],
+);
+assert(touchback.startText === "BOIS 25" && touchback.startYardLine === 25, "a confirmed touchback stays at the 25");
+
+// Kickoff is in the drive, snap has not happened, return spot is not the 25.
+const kickOnly = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "kick-only",
+    team: { id: "68", abbreviation: "BOIS" },
+    yards: 0,
+    offensivePlays: 0,
+    start: { yardLine: 25, text: "BOIS 25" },
+  }),
+  [
+    {
+      type: { text: "Kickoff" },
+      text: "kickoff returned to the BOI18",
+      end: { yardLine: 18, possessionText: "BOIS 18" },
+    },
+  ],
+);
+assert(kickOnly.startText === "BOIS 18" && kickOnly.startYardLine === 18, "a return spot replaces the seeded 25");
+
 console.log("cfb-drive.test.ts ok");

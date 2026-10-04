@@ -8,6 +8,7 @@ import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { liveScoreHeader } from "@/lib/apple-score";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
+import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import HighlightReel from "@/components/sports/HighlightReel";
 import MlbLiveMatchupPanel from "@/components/sports/MlbLiveMatchupPanel";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
@@ -1239,6 +1240,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
               First pitch
             </p>
           ) : null}
+          <PlayoffSeriesLine line={g.seriesLine} className="mx-auto mt-1.5 max-w-[14rem] text-center" />
         </div>
         <EspnTeam
           side={g.home}

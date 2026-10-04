@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import { liveScoreHeader } from "@/lib/apple-score";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
+import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import LogoPlate from "@/components/sports/LogoPlate";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
@@ -268,6 +269,7 @@ export function NflGameDetailView({
                 Kickoff
               </p>
             ) : null}
+            <PlayoffSeriesLine line={g.seriesLine} className="mx-auto mt-1.5 max-w-[14rem] text-center" />
           </div>
           <NflMatchupSide
             side={g.home}

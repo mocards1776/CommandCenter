@@ -115,6 +115,61 @@ function EndZoneMark({
   );
 }
 
+/** Possession mark on the line of scrimmage. Logo when we have one; football if it fails. */
+function LosPossessionMark({
+  logo,
+  facingRight,
+  facingLeft,
+  possColor,
+}: {
+  logo: string | null | undefined;
+  facingRight: boolean;
+  facingLeft: boolean;
+  possColor: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (logo && !failed) {
+    return (
+      <img
+        src={logo}
+        alt=""
+        onError={() => setFailed(true)}
+        className="relative h-7 w-7 object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]"
+      />
+    );
+  }
+  return (
+    <>
+      <span
+        className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-50 blur-[3px]"
+        style={{ backgroundColor: possColor }}
+        aria-hidden
+      />
+      <FootballGlyph
+        facingRight={facingRight || !facingLeft}
+        className="relative h-[18px] w-8 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]"
+      />
+      {(facingLeft || facingRight) && (
+        <span
+          className="absolute top-1/2 -translate-y-1/2"
+          style={{
+            ...(facingRight ? { left: "calc(100% + 3px)" } : { right: "calc(100% + 3px)" }),
+            width: 0,
+            height: 0,
+            borderTop: "7px solid transparent",
+            borderBottom: "7px solid transparent",
+            ...(facingRight
+              ? { borderLeft: `12px solid ${possColor}` }
+              : { borderRight: `12px solid ${possColor}` }),
+            filter: "drop-shadow(0 0 2px rgba(0,0,0,0.7))",
+          }}
+          aria-hidden
+        />
+      )}
+    </>
+  );
+}
+
 function MidfieldLogo({ src }: { src: string }) {
   const [failed, setFailed] = useState(false);
   if (failed) return null;
@@ -129,12 +184,11 @@ function MidfieldLogo({ src }: { src: string }) {
 }
 
 /**
- * Horizontal football field with:
- * - team-colored end zones
- * - blue line of scrimmage + yellow first-down stakes
- * - brown football glyph + team-colored direction chevron
- *
- * `branded` (CFB) paints the home logo at midfield and both logos in the end zones.
+ * Horizontal football field with team-colored end zones.
+ * NFL keeps a full-height amber chain and the football glyph.
+ * CFB (`branded`) puts the possession logo on the line of scrimmage, a short
+ * bright bar to the line to gain, and a thin tick at the sticks.
+ * Drive-start marker, midfield logo, and end zones stay as they are.
  */
 export default function NflFieldMap({
   game,
@@ -272,19 +326,102 @@ export default function NflFieldMap({
             </div>
           ))}
 
-          {toGainLeft != null && toGainWidth != null && toGainWidth > 0.3 && (
-            <div
-              className="absolute inset-y-0 z-[3] bg-amber-300/35"
-              style={{ left: `${toGainLeft}%`, width: `${toGainWidth}%` }}
-            />
-          )}
-
-          {firstDownPct != null && (
-            <div
-              className="absolute inset-y-0 z-[4] w-0.5 bg-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.7)]"
-              style={{ left: `${firstDownPct}%` }}
-              title="First down"
-            />
+          {branded ? (
+            <>
+              {toGainLeft != null && toGainWidth != null && toGainWidth > 0.3 && (
+                <div
+                  className="absolute top-1/2 z-[3] h-1.5 -translate-y-1/2 bg-[#2f9bff] shadow-[0_0_8px_rgba(47,155,255,0.9)]"
+                  style={{ left: `${toGainLeft}%`, width: `${toGainWidth}%` }}
+                  title="Line to gain"
+                />
+              )}
+              {firstDownPct != null && (
+                <div
+                  className="absolute top-1/2 z-[4] h-4 w-px -translate-y-1/2 bg-white"
+                  style={{ left: `${firstDownPct}%` }}
+                  title="First down"
+                />
+              )}
+              {ballPct != null && (
+                <div
+                  className="absolute top-1/2 z-[5] h-5 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.9)]"
+                  style={{ left: `${ballPct}%` }}
+                  title="Line of scrimmage"
+                />
+              )}
+              {ballPct != null && (
+                <div
+                  className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
+                  style={{ left: `${ballPct}%` }}
+                >
+                  <LosPossessionMark
+                    logo={homeHasBall ? game.home.logo : awayHasBall ? game.away.logo : null}
+                    facingRight={facingRight}
+                    facingLeft={facingLeft}
+                    possColor={possColor}
+                  />
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {toGainLeft != null && toGainWidth != null && toGainWidth > 0.3 && (
+                <div
+                  className="absolute inset-y-0 z-[3] bg-amber-300/35"
+                  style={{ left: `${toGainLeft}%`, width: `${toGainWidth}%` }}
+                />
+              )}
+              {firstDownPct != null && (
+                <div
+                  className="absolute inset-y-0 z-[4] w-0.5 bg-amber-300 shadow-[0_0_6px_rgba(251,191,36,0.7)]"
+                  style={{ left: `${firstDownPct}%` }}
+                  title="First down"
+                />
+              )}
+              {ballPct != null && (
+                <div
+                  className="absolute inset-y-0 z-[5] w-0.5 bg-sky-400 shadow-[0_0_6px_rgba(56,189,248,0.65)]"
+                  style={{ left: `${ballPct}%` }}
+                  title="Line of scrimmage"
+                />
+              )}
+              {ballPct != null && (
+                <div
+                  className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
+                  style={{ left: `${ballPct}%` }}
+                >
+                  <span
+                    className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-50 blur-[3px]"
+                    style={{ backgroundColor: possColor }}
+                    aria-hidden
+                  />
+                  <FootballGlyph
+                    facingRight={facingRight || !facingLeft}
+                    className="relative h-[18px] w-8 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]"
+                  />
+                  {(facingLeft || facingRight) && (
+                    <span
+                      className="absolute top-1/2 -translate-y-1/2"
+                      style={{
+                        ...(facingRight
+                          ? { left: "calc(100% + 3px)" }
+                          : { right: "calc(100% + 3px)" }),
+                        width: 0,
+                        height: 0,
+                        borderTop: "7px solid transparent",
+                        borderBottom: "7px solid transparent",
+                        ...(facingRight
+                          ? { borderLeft: `12px solid ${possColor}` }
+                          : { borderRight: `12px solid ${possColor}` }),
+                        filter: "drop-shadow(0 0 2px rgba(0,0,0,0.7))",
+                      }}
+                      title={facingRight ? "Driving right" : "Driving left"}
+                      aria-hidden
+                    />
+                  )}
+                </div>
+              )}
+            </>
           )}
 
           {driveStartPct != null && (
@@ -301,53 +438,6 @@ export default function NflFieldMap({
               <span className="sr-only">{driveStartTitle}</span>
             </div>
           )}
-
-          {ballPct != null && (
-            <div
-              className="absolute inset-y-0 z-[5] w-0.5 bg-sky-400 shadow-[0_0_6px_rgba(56,189,248,0.65)]"
-              style={{ left: `${ballPct}%` }}
-              title="Line of scrimmage"
-            />
-          )}
-
-          {ballPct != null && (
-            <div
-              className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
-              style={{ left: `${ballPct}%` }}
-            >
-            {/* Soft team glow behind the football */}
-            <span
-              className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-50 blur-[3px]"
-              style={{ backgroundColor: possColor }}
-              aria-hidden
-            />
-            <FootballGlyph
-              facingRight={facingRight || !facingLeft}
-              className="relative h-[18px] w-8 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]"
-            />
-            {/* Direction chevron — team color, points toward the end zone they're attacking */}
-            {(facingLeft || facingRight) && (
-              <span
-                className="absolute top-1/2 -translate-y-1/2"
-                style={{
-                  ...(facingRight
-                    ? { left: "calc(100% + 3px)" }
-                    : { right: "calc(100% + 3px)" }),
-                  width: 0,
-                  height: 0,
-                  borderTop: "7px solid transparent",
-                  borderBottom: "7px solid transparent",
-                  ...(facingRight
-                    ? { borderLeft: `12px solid ${possColor}` }
-                    : { borderRight: `12px solid ${possColor}` }),
-                  filter: "drop-shadow(0 0 2px rgba(0,0,0,0.7))",
-                }}
-                title={facingRight ? "Driving right" : "Driving left"}
-                aria-hidden
-              />
-            )}
-          </div>
-        )}
         </div>
         <EndZoneMark
           abbrev={game.home.abbrev}
