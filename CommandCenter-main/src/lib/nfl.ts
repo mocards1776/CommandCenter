@@ -8,6 +8,7 @@ import {
   type CfbDriveGlance,
   type CfbDrivePlaySpot,
 } from "./cfb-drive";
+import { mapCfbWinProbability, type CfbWinProbPoint } from "./cfb-win-probability";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { seriesLineFromEspn } from "./playoff-series";
 import { supabase } from "./supabase";
@@ -221,6 +222,8 @@ export type NflGameDetail = NflScoreGame & {
   venueDetail: string | null;
   /** In-progress drive, spotted at the first scrimmage. Null when ESPN has none. */
   currentDrive: CfbDriveGlance | null;
+  /** ESPN play-by-play win probability. Empty until the feed publishes a series. */
+  winProbability: CfbWinProbPoint[];
 };
 
 export type NflPlayerTeamStop = {
@@ -763,7 +766,11 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
       };
       weather?: { displayValue?: string; temperature?: number };
     };
-    winprobability?: { homeWinPercentage?: number }[];
+    winprobability?: {
+      homeWinPercentage?: number;
+      tiePercentage?: number;
+      playId?: string;
+    }[];
   };
 
   const headerComp = raw.header?.competitions?.[0];
@@ -975,6 +982,10 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
     lastFive,
     venueDetail: venueBits.length ? venueBits.join(" · ") : null,
     currentDrive,
+    winProbability: mapCfbWinProbability(
+      raw.winprobability,
+      drives.flatMap((d) => d.plays),
+    ),
   };
 }
 

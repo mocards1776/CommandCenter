@@ -4,6 +4,8 @@
  */
 import {
   alignCfbOpenDriveToPossession,
+  homeYardLineFromSpotText,
+  syncCfbDriveStartToLabel,
   cfbDriveGlance,
   cfbDriveStatLine,
   cfbInheritedKickEnd,
@@ -531,6 +533,45 @@ assert(
     "wash",
   )?.text === "WASH 5",
   "the drive before this one supplies the punt spot",
+);
+
+// IND @ WSH, London, 2026-10-04: the stat line said "from WSH 46" while a
+// yardLine of 50 would paint the diamond on the midfield logo. The label wins.
+const wsh46 = syncCfbDriveStartToLabel(
+  {
+    teamAbbrev: "IND",
+    playCount: 6,
+    yards: 33,
+    timeOfPossession: "3:17",
+    startYardLine: 50,
+    startText: "WSH 46",
+    displayResult: null,
+    description: null,
+  },
+  "WSH",
+  "IND",
+);
+assert(wsh46?.startText === "WSH 46" && wsh46.startYardLine === 46, "WSH 46 text pulls a midfield yard line back to 46");
+assert(
+  homeYardLineFromSpotText("IND 32", "WSH", "IND") === 68,
+  "an away spot is measured from the home end zone",
+);
+assert(
+  syncCfbDriveStartToLabel(
+    { ...wsh46!, startYardLine: 46, startText: "WSH 46" },
+    "WSH",
+    "IND",
+  )?.startYardLine === 46,
+  "a label that already matches the yard line is left alone",
+);
+assert(homeYardLineFromSpotText("50", "WSH", "IND") === 50, "a bare 50 is midfield");
+assert(
+  syncCfbDriveStartToLabel(
+    { ...wsh46!, startText: "WSH 0", startYardLine: 25 },
+    "WSH",
+    "IND",
+  )?.startYardLine === 25,
+  "a kickoff placeholder label does not move the yard line",
 );
 
 console.log("cfb-drive.test.ts ok");
