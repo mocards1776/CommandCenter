@@ -153,6 +153,23 @@ export function cfbLeaderWinPct(
 }
 
 /**
+ * Win chance for the 97% line.
+ * The RUWT bar is the probabilities feed. That number wins when ESPN published it.
+ * The scoreboard last play is only the fallback: extra points and kickoffs often
+ * omit it while the bar still shows 99%. A missing bar does not invent a chance.
+ */
+export function cfbRankingWinPct(
+  barLeaderPct: number | null | undefined,
+  lastPlayLeaderPct: number | null | undefined,
+): number | null {
+  if (typeof barLeaderPct === "number" && Number.isFinite(barLeaderPct)) return barLeaderPct;
+  if (typeof lastPlayLeaderPct === "number" && Number.isFinite(lastPlayLeaderPct)) {
+    return lastPlayLeaderPct;
+  }
+  return null;
+}
+
+/**
  * True when this margin is no longer a live game.
  * A published leader win chance at or above CFB_DECIDED_WIN_PCT wins over the clock:
  * 99% with time left is over, and 70% with two minutes left is not.

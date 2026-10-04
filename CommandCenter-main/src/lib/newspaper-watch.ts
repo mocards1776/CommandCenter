@@ -148,7 +148,7 @@ export async function fetchWatchList(day: string, limit = WATCH_PAGE_GAMES): Pro
     board(fetchMlbScoreboard(day)).then((games) => games.filter((g) => !g.officialDate || g.officialDate === day)),
     board(fetchNflScoreboard(ymd)).then(onDay),
     board(fetchNhlScoreboard(ymd)).then(onDay),
-    board(fetchCfbScoreboard(ymd)).then(onDay),
+    board(fetchCfbScoreboard(ymd, { barWinChance: true })).then(onDay),
     board(fetchSoccerRuwtBoard(day)).then((games) => games.filter((g) => g.date === day)),
   ]);
   const flag = <G extends { final: boolean }>(fn: (g: G) => WatchGame) => (g: G) => ({ ...fn(g), final: g.final });
