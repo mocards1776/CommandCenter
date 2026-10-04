@@ -398,12 +398,17 @@ function rowIsFocus(row: StandingRow, card: FinalCard): "away" | "home" | null {
   return null;
 }
 
+/** Baseline of the panel "Standings" title. Group labels start below this. */
+export const STANDINGS_TITLE_DY = 36;
+/** First group label ("AFC North") sits this far below the panel top. */
+export const STANDINGS_GROUP_DY = 68;
+
 function standingsHeight(tables: StandingTable[], stacked: boolean): number {
   if (!tables.length) return 0;
   const rows = tables.reduce((sum, table) => sum + table.rows.length, 0);
   const titles = tables.length;
   const rowH = stacked ? 28 : 32;
-  return 48 + titles * 28 + rows * rowH + (tables.length - 1) * 10 + 12;
+  return STANDINGS_GROUP_DY + titles * 28 + rows * rowH + (tables.length - 1) * 10 + 12;
 }
 
 function standingsBlock(
@@ -419,7 +424,7 @@ function standingsBlock(
   const parts: string[] = [];
   const inner = w - CARD_IN * 2;
   const gap = tables.length > 1 ? 10 : 0;
-  const header = 44;
+  const header = STANDINGS_GROUP_DY;
   const titleH = 26;
   const usable = h - header - (tables.length - 1) * gap;
   const totalRows = tables.reduce((sum, table) => sum + table.rows.length, 0);
@@ -431,7 +436,7 @@ function standingsBlock(
   for (let t = 0; t < tables.length; t++) {
     const table = tables[t]!;
     const label = table.rows.length < table.total ? `${table.title} · ${table.rows.length}/${table.total}` : table.title;
-    parts.push(text(label, x + CARD_IN, cursor, { size: 15, fill: "#e8e4d9", weight: 700, spacing: 0.8 }));
+    parts.push(text(label, x + CARD_IN, cursor, { size: 15, fill: "#8b93a7", weight: 700, spacing: 0.8 }));
     parts.push(
       text(table.extraLabel, x + CARD_IN + inner, cursor, {
         size: 13,
@@ -624,7 +629,7 @@ export function renderFinalSvg(card: FinalCard): string {
       const stX = splitWp ? M + halfW + GAP : M;
       const stW = splitWp ? halfW : fullW;
       parts.push(panel(stX, y, stW, blockH));
-      parts.push(sectionTitle("Standings", stX + CARD_IN, y + 36));
+      parts.push(sectionTitle("Standings", stX + CARD_IN, y + STANDINGS_TITLE_DY));
       parts.push(standingsBlock(card, standings, stX, y, stW, blockH, awayPaint, homePaint));
     }
     y += blockH + GAP;

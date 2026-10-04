@@ -15,7 +15,14 @@ import {
   shouldSendFinal,
 } from "./select.ts";
 import { tablesFromStandings, windowRows, shortGroupTitle } from "./standings.ts";
-import { FINALS_ALERT_WIDTH, FINALS_ALERT_TARGET_HEIGHT, paintColor, renderFinalSvg } from "./svg.ts";
+import {
+  FINALS_ALERT_TARGET_HEIGHT,
+  FINALS_ALERT_WIDTH,
+  STANDINGS_GROUP_DY,
+  STANDINGS_TITLE_DY,
+  paintColor,
+  renderFinalSvg,
+} from "./svg.ts";
 import { mapCfbWinProbability as edgeMap } from "./win-probability.ts";
 
 const appModuleUrl = [
@@ -286,6 +293,13 @@ assert.match(svg, />27</);
 assert.match(svg, /Win probability/);
 assert.match(svg, /Standings/);
 assert.match(svg, /AFC North/);
+const standingsTitleY = Number(/<text[^>]*y="(\d+(?:\.\d+)?)"[^>]*>Standings<\/text>/.exec(svg)?.[1] ?? 0);
+const groupLabelY = Number(/<text[^>]*y="(\d+(?:\.\d+)?)"[^>]*>AFC North<\/text>/.exec(svg)?.[1] ?? 0);
+assert.ok(standingsTitleY > 0 && groupLabelY > 0, "Standings title and group label must both render");
+assert.ok(
+  groupLabelY - standingsTitleY >= STANDINGS_GROUP_DY - STANDINGS_TITLE_DY,
+  `Standings title and group label overlap: title y=${standingsTitleY} group y=${groupLabelY}`,
+);
 assert.match(svg, /Team stats/);
 assert.match(svg, /Box leaders/);
 assert.match(svg, /Aaron Rodgers/);
