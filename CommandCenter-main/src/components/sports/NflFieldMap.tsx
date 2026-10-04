@@ -8,6 +8,7 @@ import {
 } from "@/lib/cfb-drive";
 import type { NflScoreGame } from "@/lib/nfl";
 import { fieldBallPctFromHomeYardLine } from "@/lib/nfl";
+import { layoutDrivePlayDots } from "@/lib/field-play-dots";
 import LogoPlate from "@/components/sports/LogoPlate";
 import { isBreakStatus } from "@/lib/apple-score";
 import { cn } from "@/lib/utils";
@@ -120,6 +121,21 @@ function EndZoneMark({
   );
 }
 
+/** Team-colored attack arrow. Away drives right, home drives left. */
+function AttackArrow({ facingRight, color }: { facingRight: boolean; color: string }) {
+  return (
+    <svg viewBox="0 0 14 10" className="h-3 w-4" aria-hidden>
+      <path
+        d={facingRight ? "M1.2 1.2 L12.2 5 L1.2 8.8 Z" : "M12.8 1.2 L1.8 5 L12.8 8.8 Z"}
+        fill={color}
+        stroke="#fff"
+        strokeWidth="0.9"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** Possession mark on the line of scrimmage. Logo when we have one; football if it fails. */
 function LosPossessionMark({
   logo,
@@ -133,14 +149,25 @@ function LosPossessionMark({
   possColor: string;
 }) {
   const [failed, setFailed] = useState(false);
+  const showArrow = facingLeft || facingRight;
   if (logo && !failed) {
     return (
-      <img
-        src={logo}
-        alt=""
-        onError={() => setFailed(true)}
-        className="relative h-7 w-7 object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]"
-      />
+      <span className="relative block h-7 w-7">
+        {showArrow ? (
+          <span
+            className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2"
+            title={facingRight ? "Driving right" : "Driving left"}
+          >
+            <AttackArrow facingRight={facingRight} color={possColor} />
+          </span>
+        ) : null}
+        <img
+          src={logo}
+          alt=""
+          onError={() => setFailed(true)}
+          className="relative h-7 w-7 object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]"
+        />
+      </span>
     );
   }
   return (
@@ -191,10 +218,12 @@ function MidfieldLogo({ src }: { src: string }) {
 /**
  * Horizontal football field with team-colored end zones.
  * `branded` is the chains both leagues use: possession logo on the line of
- * scrimmage (football if the logo fails), a short bar to the sticks, and a
- * thin tick at the line to gain. Pass `drive` for the drive-start marker and
- * the ESPN stat line. `midfieldLogo` replaces the home club at midfield —
- * overseas NFL passes the league shield.
+ * scrimmage (football if the logo fails) with a team-colored attack arrow,
+ * a short bar to the sticks, and a yellow line at the first down. The line of
+ * scrimmage stays an amber tick under the logo. Pass `drive` for the
+ * drive-start marker, the current drive's play dots, and the ESPN stat line.
+ * `midfieldLogo` replaces the home club at midfield — overseas NFL passes the
+ * league shield.
  */
 export default function NflFieldMap({
   game,
@@ -212,9 +241,9 @@ export default function NflFieldMap({
   homeYardLine: number | null;
   possessionTeamId: string | null;
   downDistanceText?: string | null;
-  /** Logo on the line of scrimmage, short bar to the sticks, end-zone logos. */
+  /** Logo on the line of scrimmage, yellow sticks, end-zone logos. */
   branded?: boolean;
-  /** Current ESPN drive. Marker + stat line render only when this is set. */
+  /** Current ESPN drive. Marker, play dots, and stat line render only when this is set. */
   drive?: CfbDriveGlance | null;
   /**
    * Midfield image. Undefined uses the home club when `branded`. Null hides it.
@@ -286,6 +315,7 @@ export default function NflFieldMap({
       ? fieldBallPctFromHomeYardLine(startYard)
       : null;
   const driveStats = openDrive ? cfbDriveStatLine(openDrive) : null;
+  const driveDots = branded ? layoutDrivePlayDots(openDrive?.playSpots ?? []) : [];
   const driveStartTitle = openDrive?.startText
     ? `Drive started at ${openDrive.startText}`
     : "Drive start";
@@ -354,19 +384,31 @@ export default function NflFieldMap({
                 <div
                   className="absolute top-1/2 z-[3] h-1.5 -translate-y-1/2 bg-[#2f9bff] shadow-[0_0_8px_rgba(47,155,255,0.9)]"
                   style={{ left: `${toGainLeft}%`, width: `${toGainWidth}%` }}
-                  title="Line to gain"
+                  title="Yards to the sticks"
                 />
               )}
               {firstDownPct != null && (
                 <div
-                  className="absolute top-1/2 z-[4] h-4 w-px -translate-y-1/2 bg-white"
+                  className="absolute inset-y-0 z-[7] w-[3px] -translate-x-1/2 bg-[#ffe500] shadow-[0_0_8px_rgba(255,229,0,0.95)]"
                   style={{ left: `${firstDownPct}%` }}
                   title="First down"
                 />
               )}
+              {driveDots.map((dot, i) => (
+                <span
+                  key={`play-${i}`}
+                  className="absolute z-[4] size-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)]"
+                  style={{
+                    left: `calc(${dot.pct}% + ${dot.x}px)`,
+                    top: `calc(50% + ${dot.y}px)`,
+                    backgroundColor: possColor,
+                  }}
+                  title="Play on this drive"
+                />
+              ))}
               {ballPct != null && (
                 <div
-                  className="absolute top-1/2 z-[5] h-5 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.9)]"
+                  className="absolute top-1/2 z-[8] h-10 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.9)]"
                   style={{ left: `${ballPct}%` }}
                   title="Line of scrimmage"
                 />

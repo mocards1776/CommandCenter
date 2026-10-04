@@ -24,6 +24,7 @@ import {
 } from "./cfb-win-probability";
 import {
   cfbDriveGlance,
+  cfbDriveScrimmageSpots,
   cfbInheritedKickEnd,
   cfbTerminalKickEnd,
   correctCfbDriveStartFromPlays,
@@ -387,6 +388,8 @@ export type CfbDrive = {
   startYardLine: number | null;
   /** ESPN spot text, e.g. "MSST 25". */
   startText: string | null;
+  /** Scrimmage snap spots, yards from the home end zone. Current drive only when plotted. */
+  playSpots: number[];
   plays: CfbPlay[];
 };
 
@@ -1499,6 +1502,7 @@ function mapCfbDrive(
   );
   return {
     ...meta,
+    playSpots: cfbDriveScrimmageSpots(plays),
     plays: plays.map(mapCfbPlay),
   };
 }

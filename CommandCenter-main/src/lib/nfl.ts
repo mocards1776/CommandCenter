@@ -1,7 +1,7 @@
 /** NFL via ESPN site API — scoreboard, live field, plays, players, RUWT. */
 
 import {
-  cfbDriveGlance,
+  cfbDriveGlanceWithPlaySpots,
   cfbInheritedKickEnd,
   correctCfbDriveStartFromPlays,
   mapCfbDriveMeta,
@@ -808,13 +808,15 @@ export async function fetchNflGameDetail(eventId: string): Promise<NflGameDetail
   const previousDrives = raw.drives?.previous ?? [];
   const currentRaw = raw.drives?.current;
   const currentDriveId = currentRaw?.id != null && String(currentRaw.id) ? String(currentRaw.id) : null;
+  const currentDrivePlays = (currentRaw?.plays ?? []) as CfbDrivePlaySpot[];
   const currentDrive = currentRaw
-    ? cfbDriveGlance(
+    ? cfbDriveGlanceWithPlaySpots(
         correctCfbDriveStartFromPlays(
           mapCfbDriveMeta(currentRaw, currentDriveId ?? "drive-current"),
-          (currentRaw.plays ?? []) as CfbDrivePlaySpot[],
+          currentDrivePlays,
           cfbInheritedKickEnd(previousDrives, currentDriveId),
         ),
+        currentDrivePlays,
       )
     : null;
 
@@ -1002,12 +1004,14 @@ export async function fetchNflCurrentDrive(eventId: string): Promise<CfbDriveGla
     const current = raw.drives?.current;
     if (!current) return null;
     const currentId = current.id != null && String(current.id) ? String(current.id) : null;
-    return cfbDriveGlance(
+    const plays = (current.plays ?? []) as CfbDrivePlaySpot[];
+    return cfbDriveGlanceWithPlaySpots(
       correctCfbDriveStartFromPlays(
         mapCfbDriveMeta(current, currentId ?? "drive-current"),
-        (current.plays ?? []) as CfbDrivePlaySpot[],
+        plays,
         cfbInheritedKickEnd(raw.drives?.previous, currentId),
       ),
+      plays,
     );
   } catch {
     return null;
