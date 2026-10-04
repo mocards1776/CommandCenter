@@ -94,14 +94,12 @@ function EndZoneMark({
       aria-hidden
     >
       {branded && logo && !failed ? (
-        <span className="flex size-8 items-center justify-center rounded-full bg-white p-1 shadow-[0_1px_3px_rgba(0,0,0,0.45)] @md:size-11 @lg:size-14 @md:p-1.5">
-          <img
-            src={logo}
-            alt=""
-            className="h-full w-full object-contain"
-            onError={() => setFailed(true)}
-          />
-        </span>
+        <img
+          src={logo}
+          alt=""
+          className="size-7 object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)] @md:size-10 @lg:size-12"
+          onError={() => setFailed(true)}
+        />
       ) : (
         <span
           className={cn(

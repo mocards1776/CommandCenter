@@ -1,9 +1,8 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Opaque white disc behind a team mark so dark logos (Iowa hawk class)
- * stay readable on navy sports chrome. The size class is the existing
- * slot; the image is inset onto the disc so the layout does not grow.
+ * Team mark at the call site's size. The size class is the image slot.
+ * No backing disc — marks render on the surface behind them.
  */
 export default function LogoPlate({
   src,
@@ -19,21 +18,11 @@ export default function LogoPlate({
   loading?: "eager" | "lazy";
 }) {
   return (
-    <span
-      className={cn(
-        "relative inline-block shrink-0 rounded-full bg-white shadow-md ring-1 ring-black/10",
-        className,
-      )}
-    >
-      <img
-        src={src}
-        alt={alt}
-        loading={loading}
-        className={cn(
-          "absolute left-[12%] top-[12%] h-[76%] w-[76%] object-contain",
-          imgClassName,
-        )}
-      />
-    </span>
+    <img
+      src={src}
+      alt={alt}
+      loading={loading}
+      className={cn("shrink-0 object-contain", className, imgClassName)}
+    />
   );
 }

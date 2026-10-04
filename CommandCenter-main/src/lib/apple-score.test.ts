@@ -1,4 +1,4 @@
-import { appleClockLine, appleClockParts, timeoutMarks } from "./apple-score.ts";
+import { appleClockLine, appleClockParts, isBreakStatus, timeoutMarks } from "./apple-score.ts";
 
 const assert = {
   equal(actual: unknown, expected: unknown) {
@@ -18,6 +18,12 @@ assert.equal(appleClockParts("1:59 - 2nd").period, "2nd");
 assert.equal(appleClockParts("1:59 - 2nd").clock, "1:59");
 assert.equal(appleClockParts("Halftime").period, null);
 assert.equal(appleClockParts("Halftime").clock, null);
+assert.equal(isBreakStatus("End of 1st"), true);
+assert.equal(isBreakStatus("End of 1st Quarter"), true);
+assert.equal(isBreakStatus("Halftime"), true);
+assert.equal(isBreakStatus("12:02 - 4th"), false);
+assert.equal(isBreakStatus("Final"), false);
+assert.equal(isBreakStatus("1:03 - 1st"), false);
 
 assert.equal(timeoutMarks(null), 0);
 assert.equal(timeoutMarks(undefined), 0);

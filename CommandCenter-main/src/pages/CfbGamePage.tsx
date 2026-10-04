@@ -1,8 +1,7 @@
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
-import toast from "react-hot-toast";
+import { Loader2 } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import LogoPlate from "@/components/sports/LogoPlate";
@@ -255,7 +254,7 @@ export function CfbGameDetailView({
     ) : null;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
         <div
           className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-90"
@@ -269,7 +268,7 @@ export function CfbGameDetailView({
             background: `radial-gradient(ellipse at 80% 45%, #${g.home.color}88, transparent 58%)`,
           }}
         />
-        <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.07] px-3 py-2.5 sm:px-4">
+        <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/[0.07] px-3 py-2 sm:px-4">
           <p
             className={cn(
               "shrink-0 text-[11px] font-bold uppercase tracking-[0.16em]",
@@ -315,7 +314,7 @@ export function CfbGameDetailView({
           </div>
         </div>
 
-        <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-7 sm:gap-4 sm:px-6">
+        <div className="relative z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-3.5 sm:gap-4 sm:px-6 sm:py-4">
           <MatchupSide
             side={g.away}
             align="left"
@@ -351,7 +350,7 @@ export function CfbGameDetailView({
         </div>
 
         {!pregame ? (
-          <div className="relative z-10 border-t border-white/[0.06] px-3 pb-3 pt-1 sm:px-4">
+          <div className="relative z-10 border-t border-white/[0.06] px-3 pb-2 pt-0.5 sm:px-4">
             <CfbLinescoreTable away={g.away} home={g.home} />
           </div>
         ) : null}
@@ -861,50 +860,12 @@ export default function CfbGamePage() {
   const goBack = useSportsBack("/sports/cfb?solo=1");
   const swipeRef = useSwipeBack(goBack);
 
-  const detail = useQuery({
-    queryKey: ["cfb-game-v2", eventId],
-    queryFn: () => fetchCfbGameDetail(eventId!),
-    enabled: Boolean(eventId),
-    refetchInterval: (q) => (q.state.data?.live ? 12_000 : false),
-    staleTime: 8_000,
-  });
-
-  const refresh = () => {
-    void detail.refetch().then(() => toast.success("Game updated"));
-  };
-
   if (!eventId) {
     return <p className="text-alert p-6 text-[13px]">Missing game id</p>;
   }
 
   return (
-    <div ref={swipeRef} className="mx-auto max-w-5xl space-y-4 p-3 sm:space-y-5 sm:p-4 md:p-7">
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={goBack}
-          className="text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={refresh}
-            disabled={detail.isFetching}
-            className="text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] disabled:opacity-40"
-          >
-            <RefreshCw size={13} className={detail.isFetching ? "animate-spin" : ""} />
-            Refresh
-          </button>
-          <Link
-            to="/sports/cfb?solo=1"
-            className="text-chalk-dim hover:text-cream text-[11px] uppercase tracking-[0.14em]"
-          >
-            CFB hub
-          </Link>
-        </div>
-      </div>
+    <div ref={swipeRef} className="mx-auto max-w-5xl px-3 pb-3 pt-1.5 sm:p-4 md:p-7">
       <CfbGameDetailView eventId={eventId} />
     </div>
   );
