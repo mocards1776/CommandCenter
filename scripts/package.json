@@ -1,0 +1,8 @@
+{
+  "name": "heat-alert-photo",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@resvg/resvg-wasm": "2.6.2"
+  }
+}
