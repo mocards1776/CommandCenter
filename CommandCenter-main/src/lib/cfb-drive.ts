@@ -90,11 +90,21 @@ export type CfbDrivePlaySpot = {
     yardLine?: number | null;
     possessionText?: string | null;
   } | null;
+  end?: {
+    yardLine?: number | null;
+    possessionText?: string | null;
+  } | null;
 };
+
+function isKickOrPuntPlay(play: CfbDrivePlaySpot): boolean {
+  return /kickoff|\bpunt\b/i.test(play.type?.text ?? "");
+}
 
 function isAdministrativeDrivePlay(play: CfbDrivePlaySpot): boolean {
   const typeText = play.type?.text ?? "";
   if (/kickoff|\bpunt\b|end period|timeout|two-minute|coin toss/i.test(typeText)) return true;
+  // PAT and two-point tries are the previous score, not the next drive's snap.
+  if (/extra point|two[- ]point|\bpat\b/i.test(typeText)) return true;
   // Unsportsmanlike / dead-ball flags move the ball before a snap. They are
   // not the drive start; the next snap (or the live ball) is.
   if (/penalty/i.test(typeText) && /no play/i.test(play.text ?? "") && !play.start?.possessionText?.trim()) {
@@ -103,33 +113,80 @@ function isAdministrativeDrivePlay(play: CfbDrivePlaySpot): boolean {
   return false;
 }
 
+/** Own or opponent 25 — the spot ESPN seeds before a kickoff is returned or snapped. */
+export function cfbDriveStartIsTouchbackSpot(drive: CfbDriveGlance): boolean {
+  const yard = drive.startYardLine;
+  if (yard === 25 || yard === 75) return true;
+  return Boolean(drive.startText && /\s25$/.test(drive.startText.trim()));
+}
+
+function playSpot(
+  side: { yardLine?: number | null; possessionText?: string | null } | null | undefined,
+): { yardLine: number | null; text: string | null } | null {
+  if (!side) return null;
+  const yard = finiteNumber(side.yardLine);
+  const text = side.possessionText?.trim() || null;
+  const yardReal = yard != null && yard > 0 && yard < 100;
+  const textReal = Boolean(text && !cfbDriveStartTextIsPlaceholder(text));
+  if (!yardReal && !textReal) return null;
+  return { yardLine: yardReal ? yard : null, text: textReal ? text : null };
+}
+
+function spotsMatch(
+  drive: CfbDriveGlance,
+  spot: { yardLine: number | null; text: string | null },
+): boolean {
+  if (spot.yardLine != null && drive.startYardLine === spot.yardLine) return true;
+  return Boolean(spot.text && drive.startText === spot.text);
+}
+
+function withSpot(
+  drive: CfbDriveMeta,
+  spot: { yardLine: number | null; text: string | null },
+): CfbDriveMeta {
+  return {
+    ...drive,
+    startYardLine: spot.yardLine ?? drive.startYardLine,
+    startText: spot.text ?? (spot.yardLine != null ? null : drive.startText),
+  };
+}
+
 /**
- * ESPN often leaves `drive.start` on the kickoff placeholder ("UAB 0" /
- * yardLine 0, or the kicking team's "SC 0") after the return and the first
- * snaps. The opening snap already carries the real spot: a UAB rush that
- * ESPN still headed "UAB 0" started at SAM 24 (yardLine 76); UK's first
- * pass while the drive still said "SC 0" started at UK 36 (yardLine 64).
- * Checked live on 2026-10-03 summaries. Drives whose start is already a
- * real spot are left alone.
+ * ESPN often leaves `drive.start` on a kickoff placeholder after the return
+ * and the first snaps. Goal-line placeholders are "UAB 0" / yardLine 0 (or
+ * the kicking team's "SC 0"). After a score, ESPN also seeds the next drive
+ * at the touchback 25 ("BOIS 25") before the kickoff or the first snap of
+ * that drive exists. Checked live on 2026-10-03 summaries and the 2026-10-03
+ * USU at Boise State game: a 0-play drive still said "from BOIS 25" while the
+ * ball was on the goal line after a two-point try.
+ *
+ * The first scrimmage of this drive replaces either placeholder. A 25 that
+ * no kickoff has confirmed and no snap has reached is dropped, so the card
+ * does not invent a start. A drive ESPN already spotted at a real yard is
+ * left alone.
  */
 export function correctCfbDriveStartFromPlays(
   drive: CfbDriveMeta,
   plays: CfbDrivePlaySpot[] | null | undefined,
 ): CfbDriveMeta {
-  if (!cfbDriveStartIsKickOrigin(drive)) return drive;
-  const snap = (plays ?? []).find((play) => !isAdministrativeDrivePlay(play));
-  const start = snap?.start;
-  if (!start) return drive;
-  const yard = finiteNumber(start.yardLine);
-  const text = start.possessionText?.trim() || null;
-  const yardReal = yard != null && yard > 0 && yard < 100;
-  const textReal = Boolean(text && !cfbDriveStartTextIsPlaceholder(text));
-  if (!yardReal && !textReal) return drive;
-  return {
-    ...drive,
-    startYardLine: yardReal ? yard : drive.startYardLine,
-    startText: textReal ? text : yardReal ? null : drive.startText,
-  };
+  const list = plays ?? [];
+  const snap = list.find((play) => !isAdministrativeDrivePlay(play));
+  const snapSpot = playSpot(snap?.start);
+  const placeholder = cfbDriveStartIsKickOrigin(drive) || cfbDriveStartIsTouchbackSpot(drive);
+
+  if (snapSpot && placeholder) {
+    if (!cfbDriveStartIsKickOrigin(drive) && spotsMatch(drive, snapSpot)) return drive;
+    return withSpot(drive, snapSpot);
+  }
+  if (snapSpot || !cfbDriveStartIsTouchbackSpot(drive)) return drive;
+
+  const kick = [...list].reverse().find(isKickOrPuntPlay);
+  const kickSpot = playSpot(kick?.end);
+  if (kickSpot) {
+    if (spotsMatch(drive, kickSpot)) return drive;
+    return withSpot(drive, kickSpot);
+  }
+  return { ...drive, startYardLine: null, startText: null };
 }
 
 function driveHasNoSnaps(drive: CfbDriveGlance): boolean {

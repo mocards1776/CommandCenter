@@ -6,6 +6,7 @@ import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightR
 import { liveScoreHeader } from "@/lib/apple-score";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
+import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import LogoPlate from "@/components/sports/LogoPlate";
 import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
 import NhlBoxScore from "@/components/sports/NhlBoxScore";
@@ -214,6 +215,7 @@ export default function NhlGamePage() {
                 {g.oddsLine && !g.final ? (
                   <p className="text-chalk mt-1.5 text-[10px] font-medium tracking-wide">{g.oddsLine}</p>
                 ) : null}
+                <PlayoffSeriesLine line={g.seriesLine} className="mx-auto mt-1.5 max-w-[14rem] text-center" />
               </div>
               <TeamBlock side={g.home} align="right" dim={winner === "away"} />
             </div>

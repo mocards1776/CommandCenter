@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Loader2, RefreshCw, Settings2 } from "lucide-react";
 import toast from "react-hot-toast";
 import LiveSituationStrip from "@/components/sports/LiveSituationStrip";
+import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import { CfbWinProbCaption } from "@/components/sports/CfbWinProbability";
@@ -951,6 +952,10 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
         </div>
       )}
       <RuwtBroadcasts broadcasts={game.broadcasts} />
+      <PlayoffSeriesLine
+        line={game.seriesLine}
+        className="relative z-10 border-t border-white/[0.06] px-3 py-1.5 text-center"
+      />
       <RuwtReasonLine reasons={game.reasons} />
     </Link>
   );
@@ -1013,6 +1018,10 @@ function NhlRuwtCard({ game, rank }: { game: NhlScoredGame; rank: number }) {
         </div>
       </div>
       <RuwtBroadcasts broadcasts={game.broadcasts} />
+      <PlayoffSeriesLine
+        line={game.seriesLine}
+        className="relative z-10 border-t border-white/[0.06] px-3 py-1.5 text-center"
+      />
       <RuwtReasonLine reasons={game.reasons} />
     </Link>
   );
@@ -1117,6 +1126,7 @@ function RuwtCard({
         <p className="mt-1 text-[13px] text-cream">
           {game.away.abbrev} {game.away.score} · {game.home.score} {game.home.abbrev}
         </p>
+        <PlayoffSeriesLine line={game.seriesLine} className="mt-0.5" />
       </Link>
     );
   }
@@ -1243,7 +1253,10 @@ function RuwtCard({
       ) : null}
 
       <RuwtBroadcasts broadcasts={game.broadcasts} />
-
+      <PlayoffSeriesLine
+        line={game.seriesLine}
+        className="relative z-10 border-t border-white/[0.06] px-3 py-1.5 text-center"
+      />
       <RuwtReasonLine reasons={game.reasons} />
     </Link>
   );

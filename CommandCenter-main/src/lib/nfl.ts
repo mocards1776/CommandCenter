@@ -1,6 +1,7 @@
 /** NFL via ESPN site API — scoreboard, live field, plays, players, RUWT. */
 
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
+import { seriesLineFromEspn } from "./playoff-series";
 import { supabase } from "./supabase";
 import { espnBirthDate, espnBirthPlace, formatSportsDateLong } from "./utils";
 
@@ -95,6 +96,8 @@ export type NflScoreGame = {
   /** Kickoff as an ISO instant. */
   startIso?: string | null;
   broadcasts: GameBroadcast[];
+  /** Playoff series only. Null in the regular season and when ESPN omits it. */
+  seriesLine?: string | null;
 };
 
 export type NflScoredGame = NflScoreGame & {
@@ -401,6 +404,8 @@ type EspnEvent = {
         logos?: { href?: string }[];
       };
     }[];
+    series?: { type?: string | null; summary?: string | null; totalCompetitions?: number | null };
+    notes?: { headline?: string | null }[];
     situation?: Parameters<typeof mapSituation>[0];
   }[];
   status?: {
@@ -462,6 +467,7 @@ function mapEvent(event: EspnEvent): NflScoreGame | null {
     date: chicagoDateFromIso(event.date),
     startIso: event.date ?? null,
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
+    seriesLine: seriesLineFromEspn(comp),
   };
 }
 

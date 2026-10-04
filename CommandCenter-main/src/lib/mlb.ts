@@ -4,6 +4,7 @@ import { supabase } from "./supabase";
 import { formatSportsDateLong } from "./utils";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { mlbPostseasonHeat } from "./mlb-playoff-heat";
+import { mergeSeriesLines, seriesLineFromEspn, seriesLineFromMlb } from "./playoff-series";
 
 const MLB = "https://statsapi.mlb.com/api/v1";
 const ESPN_STANDINGS = "https://site.api.espn.com/apis/v2/sports/baseball/mlb/standings";
@@ -73,6 +74,8 @@ export type MlbScoreGame = {
   situation: MlbLiveSituation | null;
   /** TV / stream networks (MLB.TV, locals, national). */
   broadcasts: GameBroadcast[];
+  /** Playoff series only. Null in the regular season and when the feed omits it. */
+  seriesLine?: string | null;
 };
 
 export type MlbScoreSide = {
@@ -1635,6 +1638,8 @@ export type MlbBoxscore = {
   away: MlbBoxscoreSide;
   home: MlbBoxscoreSide;
   situation: MlbLiveSituation | null;
+  /** Playoff series only. Null in the regular season and when the feed omits it. */
+  seriesLine: string | null;
 };
 
 export type MlbGameRecap = {
@@ -1821,9 +1826,39 @@ type LiveFeedCurrentPlay = {
   playEvents?: LiveFeedPitchEvent[];
 };
 
+async function fetchMlbSeriesLine(gamePk: string): Promise<string | null> {
+  try {
+    const raw = (await mlbGet("schedule", {
+      sportId: "1",
+      gamePk,
+      hydrate: "seriesStatus",
+    })) as {
+      dates?: {
+        games?: {
+          gameType?: string;
+          seriesGameNumber?: number;
+          gamesInSeries?: number;
+          seriesStatus?: {
+            result?: string | null;
+            shortDescription?: string | null;
+            gameNumber?: number | null;
+            totalGames?: number | null;
+            wins?: number | null;
+            losses?: number | null;
+            isTied?: boolean | null;
+          };
+        }[];
+      }[];
+    };
+    return seriesLineFromMlb(raw.dates?.[0]?.games?.[0]);
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxscore> {
   const pk = String(gamePk);
-  const [box, live] = await Promise.all([
+  const [box, live, seriesLine] = await Promise.all([
     mlbGet(`game/${pk}/boxscore`) as Promise<{ teams?: { away?: BoxTeamRaw; home?: BoxTeamRaw } }>,
     fetch(`https://statsapi.mlb.com/api/v1.1/game/${pk}/feed/live`, {
       headers: { Accept: "application/json" },
@@ -1872,7 +1907,8 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
         };
         plays?: { currentPlay?: LiveFeedCurrentPlay };
       };
-    } | null>,
+      } | null>,
+    fetchMlbSeriesLine(pk),
   ]);
 
   const ls = live?.liveData?.linescore;
@@ -1937,6 +1973,7 @@ export async function fetchMlbBoxscore(gamePk: number | string): Promise<MlbBoxs
       awayRaw: box.teams?.away,
       homeRaw: box.teams?.home,
     }),
+    seriesLine,
   };
 }
 
@@ -3739,7 +3776,7 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
   const raw = (await mlbGet("schedule", {
     sportId: "1",
     date,
-    hydrate: "linescore,team,probablePitcher,venue,broadcasts(all)",
+    hydrate: "linescore,team,probablePitcher,venue,broadcasts(all),seriesStatus",
   })) as {
     dates?: {
       date?: string;
@@ -3747,6 +3784,18 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
         gamePk?: number;
         gameDate?: string;
         officialDate?: string;
+        gameType?: string;
+        seriesGameNumber?: number;
+        gamesInSeries?: number;
+        seriesStatus?: {
+          result?: string | null;
+          shortDescription?: string | null;
+          gameNumber?: number | null;
+          totalGames?: number | null;
+          wins?: number | null;
+          losses?: number | null;
+          isTied?: boolean | null;
+        };
         status?: { detailedState?: string; abstractGameState?: string };
         venue?: { name?: string };
         broadcasts?: {
@@ -3849,6 +3898,7 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
       gameDate: g.gameDate ?? null,
       situation: mapLiveSituation(g.linescore, live),
       broadcasts: parseEspnBroadcasts(undefined, named),
+      seriesLine: seriesLineFromMlb(g),
     } satisfies MlbScoreGame;
   });
 
@@ -3865,11 +3915,18 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
             media?: { shortName?: string; name?: string; logo?: string; darkLogo?: string };
           }[];
           competitors?: { homeAway?: string; team?: { abbreviation?: string } }[];
+          series?: { type?: string | null; summary?: string | null; totalCompetitions?: number | null };
+          notes?: { headline?: string | null }[];
         }[];
       }[];
     } | null;
     if (!espn) throw new Error("no espn board");
-    const espnRows: { away: string; home: string; broadcasts: GameBroadcast[] }[] = [];
+    const espnRows: {
+      away: string;
+      home: string;
+      broadcasts: GameBroadcast[];
+      seriesLine: string | null;
+    }[] = [];
     for (const ev of espn.events ?? []) {
       const comp = ev.competitions?.[0];
       if (!comp) continue;
@@ -3880,14 +3937,17 @@ export async function fetchMlbScoreboard(date = chicagoToday()): Promise<MlbScor
         away,
         home,
         broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
+        seriesLine: seriesLineFromEspn(comp),
       });
     }
     for (const g of mapped) {
-      const espnBroadcasts = espnRows.find(
+      const espnRow = espnRows.find(
         (row) =>
           mlbAbbrevsMatch(row.away, g.away.abbrev) && mlbAbbrevsMatch(row.home, g.home.abbrev),
-      )?.broadcasts;
+      );
+      const espnBroadcasts = espnRow?.broadcasts;
       if (espnBroadcasts?.length) g.broadcasts = espnBroadcasts;
+      g.seriesLine = mergeSeriesLines(g.seriesLine ?? null, espnRow?.seriesLine ?? null);
       // Always keep at least MLB.TV so the RUWT chip row is never empty for MLB.
       if (!g.broadcasts.length) {
         g.broadcasts = parseEspnBroadcasts(undefined, [{ market: "national", names: ["MLB.TV"] }]);
