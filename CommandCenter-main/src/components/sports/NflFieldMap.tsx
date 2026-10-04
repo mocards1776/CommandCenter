@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { alignCfbOpenDriveToPossession, cfbDriveStatLine, type CfbDriveGlance } from "@/lib/cfb-drive";
+import {
+  alignCfbOpenDriveToPossession,
+  cfbDriveStatLine,
+  syncCfbDriveStartToLabel,
+  type CfbDriveGlance,
+} from "@/lib/cfb-drive";
 import type { NflScoreGame } from "@/lib/nfl";
 import { fieldBallPctFromHomeYardLine } from "@/lib/nfl";
 import LogoPlate from "@/components/sports/LogoPlate";
@@ -258,13 +263,22 @@ export default function NflFieldMap({
   const toGainWidth =
     ballPct != null && firstDownPct != null ? Math.abs(firstDownPct - ballPct) : null;
 
-  const openDrive = alignCfbOpenDriveToPossession(drive, {
-    possessionTeamId: poss,
-    homeYardLine,
-    away: { teamId: game.away.teamId, abbrev: game.away.abbrev },
-    home: { teamId: game.home.teamId, abbrev: game.home.abbrev },
-  });
+  const openDrive = syncCfbDriveStartToLabel(
+    alignCfbOpenDriveToPossession(drive, {
+      possessionTeamId: poss,
+      homeYardLine,
+      away: { teamId: game.away.teamId, abbrev: game.away.abbrev },
+      home: { teamId: game.home.teamId, abbrev: game.home.abbrev },
+    }),
+    game.home.abbrev,
+    game.away.abbrev,
+  );
   const startYard = openDrive?.startYardLine ?? null;
+  // The midfield logo covers the 40s. A spot like WSH 46 is only four yards
+  // off the 50, so the diamond carries the yard number when it sits on that logo.
+  const startNum = openDrive?.startText?.trim().match(/(\d{1,2})$/)?.[1] ?? null;
+  const startOnLogo =
+    startYard != null && startYard >= 38 && startYard <= 62 && startNum != null && startNum !== "0";
   // Goal-line placeholders (0 / 100) sit in the end zone. A real drive start
   // is between them; the mapper replaces a stale kickoff 0 before this.
   const driveStartPct =
@@ -438,11 +452,16 @@ export default function NflFieldMap({
               style={{ left: `${driveStartPct}%` }}
               title={driveStartTitle}
             >
-              <span className="absolute inset-y-1 left-0 w-px -translate-x-1/2 border-l border-dashed border-white/85" />
+              <span className="absolute inset-y-1 left-0 w-px -translate-x-1/2 border-l border-dashed border-white" />
               <span
-                className="absolute top-1 left-0 h-1.5 w-1.5 -translate-x-1/2 rotate-45 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)]"
+                className="absolute top-1 left-0 h-2 w-2 -translate-x-1/2 rotate-45 border border-black/70 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.85)]"
                 aria-hidden
               />
+              {startOnLogo ? (
+                <span className="absolute top-3.5 left-1.5 rounded-sm bg-black/80 px-0.5 text-[8px] font-black leading-none text-white tabular-nums shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                  {startNum}
+                </span>
+              ) : null}
               <span className="sr-only">{driveStartTitle}</span>
             </div>
           )}

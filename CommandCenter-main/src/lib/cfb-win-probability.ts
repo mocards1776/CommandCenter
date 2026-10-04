@@ -6,8 +6,7 @@
  * source for the current number on a live card. Nothing here is estimated locally.
  */
 
-const CORE =
-  "https://sports.core.api.espn.com/v2/sports/football/leagues/college-football";
+const FOOTBALL_CORE = "https://sports.core.api.espn.com/v2/sports/football/leagues";
 
 export const CFB_QUARTER_SEC = 15 * 60;
 export const CFB_REGULATION_SEC = 4 * CFB_QUARTER_SEC;
@@ -256,11 +255,12 @@ type ProbPage = {
  * Two small core-API pages (count, then the last row). Returns null when ESPN
  * has not published a probability yet.
  */
-export async function fetchCfbCurrentWinProbability(
+async function fetchFootballCurrentWinProbability(
+  league: "college-football" | "nfl",
   eventId: string,
 ): Promise<CfbWinProbSnapshot | null> {
   try {
-    const base = `${CORE}/events/${encodeURIComponent(eventId)}/competitions/${encodeURIComponent(eventId)}/probabilities?limit=1`;
+    const base = `${FOOTBALL_CORE}/${league}/events/${encodeURIComponent(eventId)}/competitions/${encodeURIComponent(eventId)}/probabilities?limit=1`;
     const firstRes = await fetch(base, { headers: { Accept: "application/json" } });
     if (!firstRes.ok) return null;
     const first = (await firstRes.json()) as ProbPage;
@@ -281,4 +281,18 @@ export async function fetchCfbCurrentWinProbability(
   } catch {
     return null;
   }
+}
+
+/** Latest ESPN win probability for one college game. */
+export function fetchCfbCurrentWinProbability(
+  eventId: string,
+): Promise<CfbWinProbSnapshot | null> {
+  return fetchFootballCurrentWinProbability("college-football", eventId);
+}
+
+/** Latest ESPN win probability for one NFL game. Same feed shape as college. */
+export function fetchNflCurrentWinProbability(
+  eventId: string,
+): Promise<CfbWinProbSnapshot | null> {
+  return fetchFootballCurrentWinProbability("nfl", eventId);
 }

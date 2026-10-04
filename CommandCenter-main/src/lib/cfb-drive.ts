@@ -277,6 +277,48 @@ export function rebaseCfbDriveAfterKick(
 }
 
 /**
+ * Home-end-zone yard line implied by a spot label.
+ * "WSH 46" with home WSH is 46. "IND 32" with away IND is 68. A bare "50" is midfield.
+ * The number on a spot is 1–50. A trailing 0 is the kickoff placeholder, not a snap.
+ */
+export function homeYardLineFromSpotText(
+  text: string | null | undefined,
+  homeAbbrev: string,
+  awayAbbrev: string,
+): number | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (trimmed === "50") return 50;
+  const match = trimmed.match(/^([A-Za-z]{2,5})\s+(\d{1,2})$/);
+  if (!match) return null;
+  const abbrev = match[1]!.toUpperCase();
+  const yards = Number(match[2]);
+  if (!Number.isFinite(yards) || yards <= 0 || yards > 50) return null;
+  if (yards === 50) return 50;
+  const home = homeAbbrev.trim().toUpperCase();
+  const away = awayAbbrev.trim().toUpperCase();
+  if (abbrev === home) return yards;
+  if (abbrev === away) return 100 - yards;
+  return null;
+}
+
+/**
+ * The dashed marker is drawn from `startYardLine`. The "from …" line is `startText`.
+ * Those two can name different spots (text "WSH 46", yardLine 50). The words on the
+ * card win, so the diamond sits on the spot the stat line prints.
+ */
+export function syncCfbDriveStartToLabel(
+  drive: CfbDriveGlance | null | undefined,
+  homeAbbrev: string,
+  awayAbbrev: string,
+): CfbDriveGlance | null {
+  if (!drive) return null;
+  const fromText = homeYardLineFromSpotText(drive.startText, homeAbbrev, awayAbbrev);
+  if (fromText == null || fromText === drive.startYardLine) return drive;
+  return { ...drive, startYardLine: fromText };
+}
+
+/**
  * Spot label for a yard line measured from the home end zone.
  * 69 with home MIZ / away FLA is "FLA 31". The 0 and 100 goal lines are
  * the kickoff placeholder, not a drive start.

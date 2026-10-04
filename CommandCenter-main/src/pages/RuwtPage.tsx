@@ -37,7 +37,10 @@ import {
   fetchCfbCurrentDrive,
   type CfbScoredGame,
 } from "@/lib/cfb";
-import { fetchCfbCurrentWinProbability } from "@/lib/cfb-win-probability";
+import {
+  fetchCfbCurrentWinProbability,
+  fetchNflCurrentWinProbability,
+} from "@/lib/cfb-win-probability";
 import CfbRankLabel, { CfbFpiCaption } from "@/components/sports/CfbRankLabel";
 import type { GameBroadcast } from "@/lib/game-broadcasts";
 import {
@@ -861,6 +864,13 @@ function CfbRuwtCard({ game, rank }: { game: CfbScoredGame; rank: number }) {
 }
 
 function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
+  const winProb = useQuery({
+    queryKey: ["nfl-winprob-current", game.id],
+    queryFn: () => fetchNflCurrentWinProbability(game.id),
+    enabled: game.live,
+    staleTime: 15_000,
+    refetchInterval: game.live ? 20_000 : false,
+  });
   const drive = useQuery({
     queryKey: ["nfl-current-drive", game.id],
     queryFn: () => fetchNflCurrentDrive(game.id),
@@ -949,6 +959,17 @@ function NflRuwtCard({ game, rank }: { game: NflScoredGame; rank: number }) {
           </p>
         </div>
       </div>
+      {game.live && winProb.data ? (
+        <div className="relative z-10 px-3 pb-2">
+          <CfbWinProbCaption
+            homeWinPct={winProb.data.homeWinPct}
+            awayWinPct={winProb.data.awayWinPct}
+            tiePct={winProb.data.tiePct}
+            away={game.away}
+            home={game.home}
+          />
+        </div>
+      ) : null}
       {game.live && game.situation && (
         <div className="relative z-10 border-t border-white/[0.06] px-2 py-2">
           <NflFieldMap
