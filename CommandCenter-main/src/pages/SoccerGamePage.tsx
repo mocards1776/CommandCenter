@@ -1,6 +1,9 @@
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
+import { ExternalLink, Loader2 } from "lucide-react";
+import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
+import { liveScoreHeader } from "@/lib/apple-score";
+import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import {
   fetchSoccerGameDetail,
   type SoccerGameDetail,
@@ -89,42 +92,17 @@ export function SoccerGameDetailView({
 
 export default function SoccerGamePage() {
   const { eventId } = useParams<{ eventId: string }>();
-  const navigate = useNavigate();
+  const goBack = useSportsBack("/sports");
+  const swipeRef = useSwipeBack(goBack);
   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
   const leagueHint = params.get("league");
 
   if (!eventId) {
-    return (
-      <div className="p-6">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="text-chalk hover:text-cream mb-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <p className="text-alert text-[13px]">Match not found</p>
-      </div>
-    );
+    return <p className="text-alert p-6 text-[13px]">Match not found</p>;
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5 p-4 md:p-7">
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="text-chalk hover:text-cream flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <Link
-          to="/sports"
-          className="text-chalk-dim hover:text-cream text-[11px] uppercase tracking-[0.14em]"
-        >
-          Sports
-        </Link>
-      </div>
+    <div ref={swipeRef} className="mx-auto max-w-3xl space-y-5 px-3 pb-4 pt-1.5 sm:p-4 md:p-7">
       <SoccerGameDetailView eventId={eventId} leagueHint={leagueHint} />
     </div>
   );
@@ -148,6 +126,9 @@ function SoccerMatchupHeader({
     g.home.score != null &&
     Number(g.home.score) > Number(g.away.score);
   const pregame = g.state === "pre";
+  const live = g.state === "in";
+  const final = g.state === "post";
+  const barLabel = live ? liveScoreHeader(g.status, g.status) : g.status;
 
   return (
     <header className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
@@ -155,10 +136,10 @@ function SoccerMatchupHeader({
         <p
           className={cn(
             "text-[11px] font-bold uppercase tracking-[0.16em]",
-            g.state === "post" ? "text-cream" : g.state === "in" ? "text-alert" : "text-[#a8b0c2]",
+            final ? "text-cream" : live ? "text-alert" : "text-[#a8b0c2]",
           )}
         >
-          {g.status}
+          {barLabel}
         </p>
         <p className="truncate text-[11px] text-[#8b93a7]">
           {[g.leagueName, g.venue].filter(Boolean).join(" · ")}
@@ -174,31 +155,20 @@ function SoccerMatchupHeader({
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-6 sm:gap-4 sm:px-6">
         <MatchupSide side={g.away} align="left" winner={awayWins} loser={homeWins} />
         <div className="px-1 text-center">
+          <AppleScoreCluster
+            away={g.away.score}
+            home={g.home.score}
+            detail={final ? "Final" : g.status}
+            live={live}
+            final={final}
+            size="header"
+            preview={g.when?.split(" · ").pop() || "TBD"}
+          />
           {pregame ? (
-            <>
-              <p className="font-display text-[22px] leading-snug tracking-tight text-white sm:text-[26px]">
-                {g.when?.split(" · ").pop() || "TBD"}
-              </p>
-              <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                Kickoff
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="font-display text-[48px] leading-none tabular-nums text-white sm:text-[56px]">
-                <span className={awayWins ? "text-white" : "text-white/50"}>
-                  {g.away.score ?? "–"}
-                </span>
-                <span className="mx-2 text-[22px] text-white/25 sm:mx-3">-</span>
-                <span className={homeWins ? "text-white" : "text-white/50"}>
-                  {g.home.score ?? "–"}
-                </span>
-              </p>
-              <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                {g.state === "post" ? "Full time" : g.status}
-              </p>
-            </>
-          )}
+            <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+              Kickoff
+            </p>
+          ) : null}
         </div>
         <MatchupSide side={g.home} align="right" winner={homeWins} loser={awayWins} />
       </div>

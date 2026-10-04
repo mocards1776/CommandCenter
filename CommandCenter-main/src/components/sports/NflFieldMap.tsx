@@ -4,6 +4,7 @@ import { alignCfbOpenDriveToPossession, cfbDriveStatLine, type CfbDriveGlance } 
 import type { NflScoreGame } from "@/lib/nfl";
 import { fieldBallPctFromHomeYardLine } from "@/lib/nfl";
 import LogoPlate from "@/components/sports/LogoPlate";
+import { isBreakStatus } from "@/lib/apple-score";
 import { cn } from "@/lib/utils";
 import PossessionFootball from "@/components/sports/PossessionFootball";
 
@@ -227,7 +228,9 @@ export default function NflFieldMap({
           {game.away.abbrev}
           {awayHasBall ? <PossessionFootball className="h-2.5 w-4" /> : null}
         </span>
-        <span className="text-emerald-200/70">{ddText || "Field"}</span>
+        <span className="text-emerald-200/70">
+          {ddText && !isBreakStatus(ddText) ? ddText : "Field"}
+        </span>
         <span
           className={cn(
             "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5",

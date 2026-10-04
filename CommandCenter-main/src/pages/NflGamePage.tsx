@@ -1,9 +1,10 @@
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
-import toast from "react-hot-toast";
+import { Loader2 } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
+import { liveScoreHeader } from "@/lib/apple-score";
+import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import LogoPlate from "@/components/sports/LogoPlate";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
@@ -141,6 +142,7 @@ export function NflGameDetailView({
   const homeWins = g.final && (g.home.score ?? 0) > (g.away.score ?? 0);
   const label = statusLabel(g);
   const pregame = !g.final && !g.live;
+  const barLabel = g.live ? liveScoreHeader(g.shortDetail || label, label) : label;
 
   const articleSection =
     g.article?.storyHtml || g.article?.description ? (
@@ -202,7 +204,7 @@ export function NflGameDetailView({
               g.final ? "text-cream" : g.live ? "text-alert" : "text-[#a8b0c2]",
             )}
           >
-            {label}
+            {barLabel}
           </p>
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-2 gap-y-1">
             {g.broadcasts.length > 0 ? (
@@ -250,31 +252,22 @@ export function NflGameDetailView({
             form={awayForm.data ?? null}
           />
           <div className="px-1 text-center">
+            <AppleScoreCluster
+              away={g.away.score}
+              home={g.home.score}
+              detail={g.shortDetail || label}
+              live={g.live}
+              final={g.final}
+              size="header"
+              awayTimeouts={g.situation?.awayTimeouts}
+              homeTimeouts={g.situation?.homeTimeouts}
+              preview={g.whenShort}
+            />
             {pregame ? (
-              <>
-                <p className="font-display text-[40px] leading-none tracking-tight text-white sm:text-[52px]">
-                  {g.whenShort ?? "TBD"}
-                </p>
-                <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                  Kickoff
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="font-display text-[48px] leading-none tabular-nums text-white sm:text-[60px]">
-                  <span className={awayWins ? "text-white" : "text-white/50"}>
-                    {g.away.score ?? "–"}
-                  </span>
-                  <span className="mx-2 text-[22px] text-white/25 sm:mx-3">-</span>
-                  <span className={homeWins ? "text-white" : "text-white/50"}>
-                    {g.home.score ?? "–"}
-                  </span>
-                </p>
-                <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
-                  {g.final ? "Final" : label}
-                </p>
-              </>
-            )}
+              <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80">
+                Kickoff
+              </p>
+            ) : null}
           </div>
           <NflMatchupSide
             side={g.home}
@@ -764,50 +757,12 @@ export default function NflGamePage() {
   const goBack = useSportsBack("/sports/nfl?solo=1");
   const swipeRef = useSwipeBack(goBack);
 
-  const detail = useQuery({
-    queryKey: ["nfl-game", eventId],
-    queryFn: () => fetchNflGameDetail(eventId!),
-    enabled: Boolean(eventId),
-    refetchInterval: (q) => (q.state.data?.live ? 12_000 : false),
-    staleTime: 8_000,
-  });
-
-  const refresh = () => {
-    void detail.refetch().then(() => toast.success("Game updated"));
-  };
-
   if (!eventId) {
     return <p className="text-alert p-6 text-[13px]">Missing game id</p>;
   }
 
   return (
-    <div ref={swipeRef} className="mx-auto max-w-4xl space-y-5 p-4 md:p-7">
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={goBack}
-          className="text-chalk hover:text-cream flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={refresh}
-            disabled={detail.isFetching}
-            className="text-chalk hover:text-cream inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] disabled:opacity-40"
-          >
-            <RefreshCw size={13} className={detail.isFetching ? "animate-spin" : ""} />
-            Refresh
-          </button>
-          <Link
-            to="/sports/nfl?solo=1"
-            className="text-chalk-dim hover:text-cream text-[11px] uppercase tracking-[0.14em]"
-          >
-            NFL hub
-          </Link>
-        </div>
-      </div>
+    <div ref={swipeRef} className="mx-auto max-w-4xl space-y-5 px-3 pb-4 pt-1.5 sm:p-4 md:p-7">
       <NflGameDetailView eventId={eventId} />
     </div>
   );

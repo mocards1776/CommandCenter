@@ -1,6 +1,18 @@
 import { Link } from "react-router-dom";
+import { isBreakStatus } from "@/lib/apple-score";
 import { type NhlIcePlayer, type NhlIceState, type NhlScoreSide } from "@/lib/nhl";
 import { cn } from "@/lib/utils";
+
+/** Compact tonight line for the goalie sitting under the skater list. */
+export type NhlIceGoalieBadge = {
+  id: string;
+  name: string;
+  lastName: string;
+  jersey: string | null;
+  headshot: string | null;
+  sv: string | null;
+  svPct: string | null;
+};
 
 /**
  * Ice Tracker-style top-down rink. Coordinates are ESPN's: feet from center ice,
@@ -255,6 +267,7 @@ export default function NhlIceRink({
   live,
   final,
   statusText,
+  goalieBadges,
 }: {
   ice: NhlIceState;
   away: NhlScoreSide;
@@ -262,6 +275,7 @@ export default function NhlIceRink({
   live: boolean;
   final: boolean;
   statusText: string;
+  goalieBadges?: { away: NhlIceGoalieBadge | null; home: NhlIceGoalieBadge | null };
 }) {
   const homeRight = ice.homeAttacksRight;
   // Only a live snapshot is anchored to the latest play; otherwise show a centre-ice lineup.
@@ -278,6 +292,10 @@ export default function NhlIceRink({
   const strength =
     ice.source === "live" ? `${skaters(ice.away)} on ${skaters(ice.home)}` : null;
   const sourceLabel = ice.source === "live" && final ? "Final on ice" : SOURCE_LABEL[ice.source];
+  // The scoreboard header already carries "End of 1st" / intermission.
+  const periodStatus = statusText && !isBreakStatus(statusText) ? statusText : null;
+  const badges = goalieBadges ?? { away: null, home: null };
+  const showBadges = Boolean(badges.away || badges.home);
 
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
@@ -287,7 +305,9 @@ export default function NhlIceRink({
           {live ? <span className="bg-alert h-1.5 w-1.5 animate-pulse rounded-full" /> : null}
           <span>{sourceLabel}</span>
           {strength ? <span className="text-cream tabular-nums">{strength}</span> : null}
-          {live || final ? <span className="text-chalk tabular-nums normal-case">{statusText}</span> : null}
+          {periodStatus && (live || final) ? (
+            <span className="text-chalk tabular-nums normal-case">{periodStatus}</span>
+          ) : null}
         </p>
       </div>
 
@@ -353,7 +373,9 @@ export default function NhlIceRink({
                 {team.logo ? <img src={team.logo} alt="" className="h-4 w-4 object-contain" /> : null}
                 {team.abbrev}
               </li>
-              {ice[side].map((p) => (
+              {ice[side]
+                .filter((p) => (p.position ?? "").toUpperCase() !== "G")
+                .map((p) => (
                 <li
                   key={p.id}
                   className={cn("flex items-center gap-1.5 text-[11.5px]", side === "home" && "flex-row-reverse")}
@@ -369,6 +391,58 @@ export default function NhlIceRink({
           );
         })}
       </div>
+
+      {showBadges ? (
+        <div className="grid grid-cols-2 gap-2 border-t border-white/[0.06] px-3 py-2.5 sm:px-4">
+          {(["away", "home"] as const).map((side) => (
+            <GoalieBadge key={side} badge={badges[side]} align={side === "home" ? "right" : "left"} />
+          ))}
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+function GoalieBadge({
+  badge,
+  align,
+}: {
+  badge: NhlIceGoalieBadge | null;
+  align: "left" | "right";
+}) {
+  if (!badge) return <span />;
+  const stat =
+    [badge.sv != null ? `SV ${badge.sv}` : null, badge.svPct].filter(Boolean).join(" · ") || "G";
+  return (
+    <Link
+      to={`/sports/nhl/player/${badge.id}`}
+      className={cn(
+        "flex min-w-0 items-center gap-2 rounded-md border border-white/[0.08] bg-black/25 px-2 py-1.5",
+        align === "right" && "flex-row-reverse text-right",
+      )}
+    >
+      {badge.headshot ? (
+        <img
+          src={badge.headshot}
+          alt=""
+          loading="lazy"
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
+          className="h-7 w-7 shrink-0 rounded-full bg-[#dfe6f2] object-cover object-top"
+        />
+      ) : (
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] font-bold text-white">
+          G
+        </span>
+      )}
+      <span className="min-w-0">
+        <span className="text-cream block truncate text-[11.5px] font-semibold leading-tight">
+          {badge.jersey ? <span className="text-chalk numeral">#{badge.jersey} </span> : null}
+          {badge.lastName || badge.name}
+        </span>
+        <span className="numeral block truncate text-[10px] text-[#a8b0c2]">{stat}</span>
+      </span>
+    </Link>
   );
 }

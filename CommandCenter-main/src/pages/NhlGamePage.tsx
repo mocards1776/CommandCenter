@@ -1,14 +1,16 @@
 import { useMemo, useRef, useState, type RefObject } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDown, ArrowLeft, ChevronRight, Loader2, Play } from "lucide-react";
+import { ArrowDown, ChevronRight, Loader2, Play } from "lucide-react";
 import { SelectableHighlightRegion } from "@/components/rss/SelectableHighlightRegion";
+import { liveScoreHeader } from "@/lib/apple-score";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
+import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import LogoPlate from "@/components/sports/LogoPlate";
 import HighlightReel, { type ReelHighlight } from "@/components/sports/HighlightReel";
 import NhlBoxScore from "@/components/sports/NhlBoxScore";
 import NhlGameLeaders from "@/components/sports/NhlGameLeaders";
-import NhlIceRink from "@/components/sports/NhlIceRink";
+import NhlIceRink, { type NhlIceGoalieBadge } from "@/components/sports/NhlIceRink";
 import NhlScoringSummary from "@/components/sports/NhlScoringSummary";
 import NhlThreeStars from "@/components/sports/NhlThreeStars";
 import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
@@ -138,24 +140,14 @@ export default function NhlGamePage() {
       : null;
   const hasStory = Boolean(g?.article?.storyHtml || g?.article?.description);
 
-  return (
-    <div ref={swipeRef} className="mx-auto max-w-6xl space-y-5 p-4 md:p-7">
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={goBack}
-          className="text-chalk hover:text-cream flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <Link
-          to="/sports/nhl?solo=1"
-          className="text-chalk-dim hover:text-cream text-[11px] uppercase tracking-[0.14em]"
-        >
-          NHL hub
-        </Link>
-      </div>
+  const label = g ? statusLabel(g) : "";
+  const barLabel = g?.live ? liveScoreHeader(g.shortDetail || label, label) : label;
+  const goalieBadges = g?.ice
+    ? { away: goalieBadgeFor(g, "away"), home: goalieBadgeFor(g, "home") }
+    : undefined;
 
+  return (
+    <div ref={swipeRef} className="mx-auto max-w-6xl space-y-5 px-3 pb-4 pt-1.5 sm:p-4 md:p-7">
       {game.isPending ? (
         <div className="text-chalk flex min-h-[40vh] items-center justify-center gap-2">
           <Loader2 size={18} className="animate-spin" />
@@ -190,62 +182,37 @@ export default function NhlGamePage() {
                 {g.live ? (
                   <span className="inline-flex items-center gap-1.5">
                     <span className="bg-alert h-1.5 w-1.5 animate-pulse rounded-full" />
-                    {statusLabel(g)}
+                    {barLabel}
                   </span>
                 ) : (
-                  statusLabel(g)
+                  barLabel
                 )}
               </p>
               <p className="text-[11px] text-[#8b93a7]">{g.venueDetail ?? g.venue ?? "NHL"}</p>
             </div>
 
-            <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1 px-2 py-4 sm:gap-4 sm:px-5 sm:py-6">
+            <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1 px-2 py-3 sm:gap-4 sm:px-5 sm:py-4">
               <TeamBlock side={g.away} align="left" dim={winner === "home"} />
-              <div className="flex items-center gap-2 sm:gap-5">
-                {started ? (
-                  <ScoreFigure
-                    score={g.away.score}
-                    pp={situation?.powerPlayAbbrev === g.away.abbrev}
-                    side="away"
-                    won={winner === "away"}
-                    dim={winner === "home"}
-                  />
+              <div className="px-1 text-center">
+                <AppleScoreCluster
+                  away={g.away.score}
+                  home={g.home.score}
+                  detail={g.shortDetail || label}
+                  live={g.live}
+                  final={g.final}
+                  size="header"
+                  preview={g.whenShort ?? "vs"}
+                />
+                {!started && g.when ? (
+                  <p className="text-chalk-dim mt-1.5 text-[11px]">{g.when}</p>
                 ) : null}
-                <div className="min-w-[5.5rem] text-center sm:min-w-[8rem]">
-                  {started ? (
-                    <p
-                      className={cn(
-                        "text-[13px] font-semibold tabular-nums sm:text-[15px]",
-                        g.live ? "text-cream" : "text-chalk",
-                      )}
-                    >
-                      {statusLabel(g)}
-                    </p>
-                  ) : (
-                    <>
-                      <p className="font-display text-cream text-[22px] leading-none sm:text-[28px]">
-                        {g.whenShort ?? "vs"}
-                      </p>
-                      <p className="text-chalk-dim mt-1.5 text-[11px]">{g.when}</p>
-                    </>
-                  )}
-                  {situation?.powerPlayAbbrev && situation.timeRemaining ? (
-                    <p className="text-accent mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums">
-                      {situation.powerPlayAbbrev} PP · {situation.timeRemaining.replace(/^0/, "")}
-                    </p>
-                  ) : null}
-                  {g.oddsLine && !g.final ? (
-                    <p className="text-chalk mt-1.5 text-[10px] font-medium tracking-wide">{g.oddsLine}</p>
-                  ) : null}
-                </div>
-                {started ? (
-                  <ScoreFigure
-                    score={g.home.score}
-                    pp={situation?.powerPlayAbbrev === g.home.abbrev}
-                    side="home"
-                    won={winner === "home"}
-                    dim={winner === "away"}
-                  />
+                {situation?.powerPlayAbbrev && situation.timeRemaining ? (
+                  <p className="text-accent mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] tabular-nums">
+                    {situation.powerPlayAbbrev} PP · {situation.timeRemaining.replace(/^0/, "")}
+                  </p>
+                ) : null}
+                {g.oddsLine && !g.final ? (
+                  <p className="text-chalk mt-1.5 text-[10px] font-medium tracking-wide">{g.oddsLine}</p>
                 ) : null}
               </div>
               <TeamBlock side={g.home} align="right" dim={winner === "away"} />
@@ -379,7 +346,8 @@ export default function NhlGamePage() {
                       home={g.home}
                       live={g.live}
                       final={g.final}
-                      statusText={statusLabel(g)}
+                      statusText={label}
+                      goalieBadges={goalieBadges}
                     />
                   </div>
                 </details>
@@ -394,7 +362,8 @@ export default function NhlGamePage() {
                   home={g.home}
                   live={g.live}
                   final={g.final}
-                  statusText={statusLabel(g)}
+                  statusText={label}
+                  goalieBadges={goalieBadges}
                 />
               ) : null}
 
@@ -754,45 +723,27 @@ function LastFive({ g }: { g: NhlGameDetail }) {
   );
 }
 
-function ScoreFigure({
-  score,
-  pp,
-  side,
-  won = false,
-  dim = false,
-}: {
-  score: number | null;
-  pp: boolean;
-  side: "away" | "home";
-  won?: boolean;
-  dim?: boolean;
-}) {
-  return (
-    <div className={cn("flex items-center gap-1.5", side === "away" ? "flex-row-reverse" : "")}>
-      {pp ? (
-        <span className="bg-accent/20 text-accent rounded-sm px-1 py-0.5 text-[9px] font-bold tracking-[0.08em]">
-          PP
-        </span>
-      ) : null}
-      {won ? (
-        <span
-          aria-label="Winner"
-          className={cn(
-            "h-0 w-0 border-y-[6px] border-y-transparent",
-            side === "away" ? "border-r-[7px] border-r-cream" : "border-l-[7px] border-l-cream",
-          )}
-        />
-      ) : null}
-      <span
-        className={cn(
-          "font-display text-[40px] leading-none tabular-nums sm:text-[52px]",
-          dim ? "text-white/45" : "text-cream",
-        )}
-      >
-        {score ?? 0}
-      </span>
-    </div>
-  );
+function goalieBadgeFor(g: NhlGameDetail, side: "away" | "home"): NhlIceGoalieBadge | null {
+  const goalie = (g.ice?.[side] ?? []).find((p) => (p.position ?? "").toUpperCase() === "G");
+  if (!goalie) return null;
+  const team = side === "away" ? g.away : g.home;
+  const row = g.boxGroups
+    .find(
+      (b) =>
+        b.name === "Goalies" &&
+        (b.teamId === String(team.teamId) || b.teamAbbrev === team.abbrev),
+    )
+    ?.rows.find((r) => r.id === goalie.id);
+  const read = (stat: string) => row?.stats.find((s) => s.label === stat)?.value ?? null;
+  return {
+    id: goalie.id,
+    name: goalie.name,
+    lastName: goalie.lastName,
+    jersey: goalie.jersey,
+    headshot: goalie.headshot,
+    sv: read("SV"),
+    svPct: read("SV%"),
+  };
 }
 
 function teamForId(g: NhlGameDetail, teamId: string | null): NhlScoreSide | null {

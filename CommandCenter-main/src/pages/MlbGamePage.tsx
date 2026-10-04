@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, Eye, Loader2, Star } from "lucide-react";
+import { ExternalLink, Eye, Loader2, Star } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
+import { liveScoreHeader } from "@/lib/apple-score";
+import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import HighlightReel from "@/components/sports/HighlightReel";
 import MlbLiveMatchupPanel from "@/components/sports/MlbLiveMatchupPanel";
 import PlayerHeadshot from "@/components/sports/PlayerHeadshot";
@@ -373,40 +376,15 @@ export function MlbGameDetail({
 
 export default function MlbGamePage() {
   const { gamePk } = useParams<{ gamePk: string }>();
-  const navigate = useNavigate();
+  const goBack = useSportsBack("/sports/mlb");
+  const swipeRef = useSwipeBack(goBack);
 
   if (!gamePk) {
-    return (
-      <div className="p-6">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="text-chalk hover:text-cream mb-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <p className="text-alert text-[13px]">Game not found</p>
-      </div>
-    );
+    return <p className="text-alert p-6 text-[13px]">Game not found</p>;
   }
 
   return (
-    <div className={cn(dispatchReaderColumnClass, "space-y-5 p-4 md:p-7")}>
-      <div className="flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="text-chalk hover:text-cream flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]"
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
-        <Link
-          to="/sports/mlb"
-          className="text-chalk-dim hover:text-cream text-[11px] uppercase tracking-[0.14em]"
-        >
-          MLB hub
-        </Link>
-      </div>
+    <div ref={swipeRef} className={cn(dispatchReaderColumnClass, "space-y-5 px-3 pb-4 pt-1.5 sm:p-4 md:p-7")}>
       <MlbGameDetail gamePk={gamePk} />
     </div>
   );
@@ -1198,6 +1176,15 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
   const showLiveMatchup =
     Boolean(g.situation) && (g.live || /warmup|in progress/i.test(g.status));
   const pregameClock = g.pregame && !/warmup/i.test(g.status);
+  const warmup = /warmup/i.test(g.status);
+  const playing = g.live || warmup;
+  const final = !g.pregame && !g.live;
+  const detail = g.inning || g.status;
+  const barLabel = playing
+    ? liveScoreHeader(detail, g.status)
+    : g.pregame
+      ? "Preview"
+      : g.status;
   return (
     <header className="relative w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
       <div
@@ -1221,7 +1208,7 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
             g.status === "Final" ? "text-cream" : g.live ? "text-alert" : "text-[#a8b0c2]",
           )}
         >
-          {g.pregame ? (/warmup/i.test(g.status) ? g.status : "Preview") : g.live ? g.inning || g.status : g.status}
+          {barLabel}
         </p>
         {g.officialDate && (
           <p className="shrink-0 text-[11px] text-[#8b93a7]">{formatSportsDateLong(g.officialDate)}</p>
@@ -1237,56 +1224,21 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
           form={awayForm.data ?? null}
           showForm={pregameClock}
         />
-        <div className="w-[5.75rem] shrink-0 self-center text-center sm:w-auto sm:min-w-[8rem] md:min-w-[9rem] lg:px-2">
+        <div className="shrink-0 self-center px-1 text-center">
+          <AppleScoreCluster
+            away={g.away.runs}
+            home={g.home.runs}
+            detail={detail}
+            live={playing}
+            final={final}
+            size="header"
+            preview={g.whenShort}
+          />
           {pregameClock ? (
-            <>
-              <p className="font-display text-[26px] leading-none tracking-tight text-white sm:text-[52px]">
-                {g.whenShort ?? "TBD"}
-              </p>
-              <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7] sm:mt-2 sm:text-[10px] sm:tracking-[0.16em]">
-                First pitch
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="font-display text-[28px] leading-none tabular-nums tracking-tight text-white sm:text-[52px] md:text-[64px]">
-                <span
-                  className={cn(
-                    "drop-shadow-[0_0_28px_rgba(255,255,255,0.16)]",
-                    awayWins ? "text-white" : "text-white/45",
-                  )}
-                >
-                  {g.away.runs}
-                </span>
-                <span className="mx-1 text-[16px] font-light text-white/25 sm:mx-3 sm:text-[22px]">–</span>
-                <span
-                  className={cn(
-                    "drop-shadow-[0_0_28px_rgba(255,255,255,0.16)]",
-                    homeWins ? "text-white" : "text-white/45",
-                  )}
-                >
-                  {g.home.runs}
-                </span>
-              </p>
-              <p
-                className={cn(
-                  "mt-1.5 inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] sm:mt-2.5 sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[10px] sm:tracking-[0.16em]",
-                  g.live || /warmup/i.test(g.status) ? "bg-alert/90 text-ink" : "bg-white/10 text-[#c8cdd8]",
-                )}
-              >
-                {g.live || /warmup/i.test(g.status) ? (
-                  <>
-                    <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />
-                    <span className="truncate">{g.inning || g.status || "Live"}</span>
-                  </>
-                ) : g.status === "Final" ? (
-                  "Final"
-                ) : (
-                  <span className="truncate">{g.inning || g.status}</span>
-                )}
-              </p>
-            </>
-          )}
+            <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7] sm:mt-2 sm:text-[10px] sm:tracking-[0.16em]">
+              First pitch
+            </p>
+          ) : null}
         </div>
         <EspnTeam
           side={g.home}
