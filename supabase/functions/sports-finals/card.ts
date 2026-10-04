@@ -6,6 +6,7 @@
  * win-probability series, and each club's division or conference table.
  * It does not include the live field.
  */
+import { oddsFromSummary, type FinalOdds } from "./odds.ts";
 import { loadCardStandings, type StandingTable } from "./standings.ts";
 import {
   mapCfbWinProbability,
@@ -101,6 +102,10 @@ export type FinalCard = {
   winProbability: CfbWinProbPoint[];
   /** Division / conference tables for the two clubs. Empty when ESPN has none. */
   standings: StandingTable[];
+  /** Kickoff (or game) ISO from ESPN. Null when the summary omits it. */
+  date: string | null;
+  /** Pregame spread / ML from ESPN pickcenter. Null when ESPN has no line. */
+  odds: FinalOdds | null;
   path: string;
 };
 
@@ -143,10 +148,67 @@ export function gamePath(sport: string, eventId: string): string {
   }
 }
 
+const CHICAGO = "America/Chicago";
+
+/** Kickoff / game time in CT. Falls back to `fallback` (usually send time). */
+export function formatFinalsTimestamp(iso: string | null | undefined, fallback: Date = new Date()): string {
+  const parsed = iso ? new Date(iso) : null;
+  const date = parsed && !Number.isNaN(parsed.getTime()) ? parsed : fallback;
+  const stamped = date.toLocaleString("en-US", {
+    timeZone: CHICAGO,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  return stamped.replace(/\sC[DS]T$/, " CT");
+}
+
+function scoreLine(card: FinalCard): string {
+  const away = `${card.away.name} ${card.away.score ?? "–"}`;
+  const home = `${card.home.name} ${card.home.score ?? "–"}`;
+  return `${away}, ${home}`;
+}
+
+function recordLine(card: FinalCard): string | null {
+  if (!card.away.record && !card.home.record) return null;
+  const away = card.away.record ? `${card.away.abbrev} ${card.away.record}` : card.away.abbrev;
+  const home = card.home.record ? `${card.home.abbrev} ${card.home.record}` : card.home.abbrev;
+  return `${away} · ${home}`;
+}
+
+function leaderCaptionLines(card: FinalCard): string[] {
+  const groups = new Map<string, string[]>();
+  for (const row of card.leaders) {
+    const slot = groups.get(row.groupLabel) ?? [];
+    slot.push(`${row.teamAbbrev} ${row.name} ${row.line}`);
+    groups.set(row.groupLabel, slot);
+  }
+  const lines: string[] = [];
+  for (const [label, rows] of groups) {
+    for (const row of rows) lines.push(`${label}: ${row}`);
+  }
+  return lines.slice(0, 6);
+}
+
 export function finalCaption(card: FinalCard, origin: string): string {
   const root = origin.replace(/\/$/, "");
   const head = /^final\b/i.test(card.statusLabel) ? "Final" : card.statusLabel || "Final";
-  return `${head}\nOpen game: ${root}${card.path}`;
+  const lines = [`${head}: ${scoreLine(card)}`];
+  const records = recordLine(card);
+  if (records) lines.push(records);
+  if (card.odds?.upsetLine) lines.push(card.odds.upsetLine);
+  if (card.odds?.captionLine) lines.push(card.odds.captionLine);
+  const leaders = leaderCaptionLines(card);
+  if (leaders.length) {
+    lines.push("");
+    lines.push(...leaders);
+  }
+  lines.push("");
+  lines.push(`Open game: ${root}${card.path}`);
+  return lines.join("\n").slice(0, 1000);
 }
 
 function logoHref(team: Rec): string | null {
@@ -367,6 +429,7 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
   const venue =
     str(rec(rec(body.gameInfo).venue).fullName) || str(rec(comp.venue).fullName) || null;
   const headline = str(rec(body.article).headline) || null;
+  const date = str(comp.date) || str(rec(body.header).date) || null;
   return {
     sport,
     sportLabel: SPORT_LABEL[sport] ?? sport.toUpperCase(),
@@ -381,6 +444,8 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
     stats: pickStats(away.abbrev, home.abbrev, body),
     leaders: pickLeaders(body),
     standings: [],
+    date,
+    odds: oddsFromSummary(body, away, home, final),
     winProbability: mapCfbWinProbability(
       arr(body.winprobability).map((row) => {
         const item = rec(row);

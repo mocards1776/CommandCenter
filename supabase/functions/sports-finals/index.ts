@@ -19,10 +19,11 @@ import { sendTelegramPhoto } from "./telegram.ts";
 /**
  * Telegram final-score photos for @FinalsAndStats_bot.
  *
- * The game-detail React view is the wrong share target: it still mounts the
- * live field, and Tailwind cannot be rasterized here. This function builds a
- * post-game card from the same ESPN summary (score, records, linescore, team
- * stats, box leaders, win-probability series) and sends it with sendPhoto.
+ * The game-detail React view is the wrong share target: Tailwind cannot be
+ * rasterized here. This function builds a post-game card from the same ESPN
+ * summary (score, records, linescore, team stats, box leaders, win-probability
+ * series, pregame odds) and sends it with sendPhoto. The live field stays off
+ * the graphic; the in-app NFL/CFB pages also hide it after the whistle.
  *
  * Secrets (never commit the token):
  *   TELEGRAM_FINALS_BOT_TOKEN

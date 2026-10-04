@@ -232,13 +232,19 @@ export function NflGameDetailView({
     <div className="space-y-5">
       <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
         <div
-          className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-90"
+          className={cn(
+            "pointer-events-none absolute inset-y-0 left-0 w-1/2",
+            homeWins ? "opacity-40" : "opacity-90",
+          )}
           style={{
             background: `radial-gradient(ellipse at 20% 45%, #${g.away.color}88, transparent 58%)`,
           }}
         />
         <div
-          className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-90"
+          className={cn(
+            "pointer-events-none absolute inset-y-0 right-0 w-1/2",
+            awayWins ? "opacity-40" : "opacity-90",
+          )}
           style={{
             background: `radial-gradient(ellipse at 80% 45%, #${g.home.color}88, transparent 58%)`,
           }}
@@ -310,6 +316,8 @@ export function NflGameDetailView({
               awayTimeouts={g.situation?.awayTimeouts}
               homeTimeouts={g.situation?.homeTimeouts}
               preview={g.whenShort}
+              awayDim={homeWins}
+              homeDim={awayWins}
             />
             {pregame ? (
               <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80">
@@ -334,7 +342,7 @@ export function NflGameDetailView({
         ) : null}
       </header>
 
-      {(g.live || g.situation || homeYardLine != null) && (
+      {!g.final && (g.live || g.situation || homeYardLine != null) && (
         <section className="space-y-2">
           <NflFieldMap
             game={g}
@@ -357,7 +365,7 @@ export function NflGameDetailView({
         </section>
       )}
 
-      {g.winProbability.length > 0 ? (
+      {!g.final && g.winProbability.length > 0 ? (
         <CfbWinProbability away={g.away} home={g.home} points={g.winProbability} />
       ) : null}
 
@@ -741,6 +749,10 @@ export function NflGameDetailView({
         </section>
       )}
 
+      {g.final && g.winProbability.length > 0 ? (
+        <CfbWinProbability away={g.away} home={g.home} points={g.winProbability} />
+      ) : null}
+
       {g.scoringPlays.length > 0 && (
         <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
           <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
@@ -831,13 +843,12 @@ function NflMatchupSide({
       className={cn(
         "flex min-w-0 flex-col items-center gap-2.5 transition hover:opacity-90",
         align === "left" ? "sm:items-start" : "sm:items-end",
-        loser && "opacity-70",
       )}
     >
       {side.logo ? (
         <LogoPlate
           src={side.logo}
-          className="h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]"
+          className={cn("h-16 w-16 sm:h-[4.5rem] sm:w-[4.5rem]", loser && "opacity-40")}
           imgClassName={winner ? "drop-shadow-[0_0_12px_rgba(255,255,255,0.35)]" : undefined}
         />
       ) : (
@@ -849,13 +860,20 @@ function NflMatchupSide({
         <p
           className={cn(
             "text-[18px] font-bold tracking-wide sm:text-[22px]",
-            winner ? "text-white" : loser ? "text-white/55" : "text-white",
+            winner ? "text-white" : loser ? "text-white/40" : "text-white",
           )}
         >
           {side.abbrev}
         </p>
         {side.record ? (
-          <p className="numeral mt-1 text-[13px] font-medium text-white/70">{side.record}</p>
+          <p
+            className={cn(
+              "numeral mt-1 text-[13px] font-medium",
+              loser ? "text-white/35" : "text-white/70",
+            )}
+          >
+            {side.record}
+          </p>
         ) : (
           <p className="mt-1 truncate text-[11px] text-[#8b93a7]">{side.name}</p>
         )}

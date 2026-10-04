@@ -37,6 +37,7 @@ export function steelersBrownsFixture(): FinalCard {
       competitions: [
         {
           status: { type: { state: "post", completed: true, shortDetail: "Final" } },
+          date: "2026-10-02T00:15Z",
           venue: { fullName: "Huntington Bank Field" },
           competitors: [
             {
@@ -158,6 +159,20 @@ export function steelersBrownsFixture(): FinalCard {
         },
       ],
     },
+    pickcenter: [
+      {
+        details: "PIT -2.5",
+        spread: 2.5,
+        overUnder: 38.5,
+        provider: { name: "DraftKings" },
+        awayTeamOdds: { favorite: true, moneyLine: -148 },
+        homeTeamOdds: { favorite: false, moneyLine: 124 },
+        pointSpread: {
+          away: { close: { line: "-2.5" } },
+          home: { close: { line: "+2.5" } },
+        },
+      },
+    ],
     winprobability: [
       { homeWinPercentage: 0.42, tiePercentage: 0, playId: "a" },
       { homeWinPercentage: 0.78, tiePercentage: 0, playId: "b" },
@@ -172,6 +187,7 @@ export function bluesBruinsFixture(): FinalCard {
       competitions: [
         {
           status: { type: { state: "post", completed: true, shortDetail: "Final" } },
+          date: "2026-10-03T00:00Z",
           venue: { fullName: "Enterprise Center" },
           competitors: [
             {
@@ -248,6 +264,7 @@ export function cubsCardinalsFixture(): FinalCard {
       competitions: [
         {
           status: { type: { state: "post", completed: true, shortDetail: "Final" } },
+          date: "2026-09-28T18:15Z",
           venue: { fullName: "Busch Stadium" },
           competitors: [
             {

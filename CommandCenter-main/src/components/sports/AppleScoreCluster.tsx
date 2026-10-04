@@ -37,6 +37,8 @@ export default function AppleScoreCluster({
   awayTimeouts = null,
   homeTimeouts = null,
   preview,
+  awayDim = false,
+  homeDim = false,
 }: {
   away: number | string | null;
   home: number | string | null;
@@ -49,6 +51,9 @@ export default function AppleScoreCluster({
   awayTimeouts?: number | null;
   homeTimeouts?: number | null;
   preview?: string | null;
+  /** Fade the away numeral (losing side on a final). */
+  awayDim?: boolean;
+  homeDim?: boolean;
 }) {
   const sans = face === "sans";
   if (!live && !final) {
@@ -90,7 +95,7 @@ export default function AppleScoreCluster({
       )}
     >
       <div className="flex min-w-[2rem] flex-col items-center">
-        <span className={cn("text-white", numeral)}>{away ?? "–"}</span>
+        <span className={cn(awayDim ? "text-white/40" : "text-white", numeral)}>{away ?? "–"}</span>
         {showMarks ? <TimeoutDashes count={awayTimeouts} /> : null}
       </div>
       {breakInHeader ? null : stacked ? (
@@ -114,7 +119,7 @@ export default function AppleScoreCluster({
       </p>
       )}
       <div className="flex min-w-[2rem] flex-col items-center">
-        <span className={cn("text-white", numeral)}>{home ?? "–"}</span>
+        <span className={cn(homeDim ? "text-white/40" : "text-white", numeral)}>{home ?? "–"}</span>
         {showMarks ? <TimeoutDashes count={homeTimeouts} /> : null}
       </div>
     </div>

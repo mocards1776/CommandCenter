@@ -1189,13 +1189,19 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
   return (
     <header className="relative w-full max-w-full min-w-0 overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
       <div
-        className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-90"
+        className={cn(
+          "pointer-events-none absolute inset-y-0 left-0 w-1/2",
+          homeWins ? "opacity-40" : "opacity-90",
+        )}
         style={{
           background: `radial-gradient(ellipse at 20% 45%, #${g.away.primaryColor}88, transparent 58%)`,
         }}
       />
       <div
-        className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-90"
+        className={cn(
+          "pointer-events-none absolute inset-y-0 right-0 w-1/2",
+          awayWins ? "opacity-40" : "opacity-90",
+        )}
         style={{
           background: `radial-gradient(ellipse at 80% 45%, #${g.home.primaryColor}88, transparent 58%)`,
         }}
@@ -1234,6 +1240,8 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
             final={final}
             size="header"
             preview={g.whenShort}
+            awayDim={homeWins}
+            homeDim={awayWins}
           />
           {pregameClock ? (
             <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7] sm:mt-2 sm:text-[10px] sm:tracking-[0.16em]">
@@ -1289,7 +1297,6 @@ function EspnTeam({
       className={cn(
         "flex min-w-0 flex-[1.1] flex-col items-center gap-1.5 transition hover:opacity-90 sm:gap-2.5 md:max-w-none",
         align === "left" ? "sm:items-start" : "sm:items-end",
-        loser && "opacity-70",
       )}
     >
       <TeamMark
@@ -1298,6 +1305,7 @@ function EspnTeam({
         className={cn(
           "shadow-[0_8px_28px_rgba(0,0,0,0.45)] sm:!h-16 sm:!w-16 sm:!p-2",
           winner && "ring-2 ring-white/35",
+          loser && "opacity-40",
         )}
       />
       <div
@@ -1309,13 +1317,18 @@ function EspnTeam({
         <p
           className={cn(
             "truncate text-[17px] font-bold tracking-wide sm:text-[22px]",
-            winner ? "text-white" : loser ? "text-white/55" : "text-white",
+            winner ? "text-white" : loser ? "text-white/40" : "text-white",
           )}
         >
           {side.abbrev}
         </p>
         {side.record ? (
-          <p className="numeral mt-0.5 truncate text-[12px] font-medium text-white/70 sm:mt-1 sm:text-[13px]">
+          <p
+            className={cn(
+              "numeral mt-0.5 truncate text-[12px] font-medium sm:mt-1 sm:text-[13px]",
+              loser ? "text-white/35" : "text-white/70",
+            )}
+          >
             {side.record}
           </p>
         ) : (

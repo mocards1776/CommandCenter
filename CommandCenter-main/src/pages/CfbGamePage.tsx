@@ -257,13 +257,19 @@ export function CfbGameDetailView({
     <div className="space-y-3">
       <header className="relative overflow-hidden rounded-xl border border-white/[0.1] bg-[#07101d] shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
         <div
-          className="pointer-events-none absolute inset-y-0 left-0 w-1/2 opacity-90"
+          className={cn(
+            "pointer-events-none absolute inset-y-0 left-0 w-1/2",
+            homeWins ? "opacity-40" : "opacity-90",
+          )}
           style={{
             background: `radial-gradient(ellipse at 20% 45%, #${g.away.color}88, transparent 58%)`,
           }}
         />
         <div
-          className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-90"
+          className={cn(
+            "pointer-events-none absolute inset-y-0 right-0 w-1/2",
+            awayWins ? "opacity-40" : "opacity-90",
+          )}
           style={{
             background: `radial-gradient(ellipse at 80% 45%, #${g.home.color}88, transparent 58%)`,
           }}
@@ -333,6 +339,8 @@ export function CfbGameDetailView({
               awayTimeouts={g.situation?.awayTimeouts}
               homeTimeouts={g.situation?.homeTimeouts}
               preview={g.whenShort}
+              awayDim={homeWins}
+              homeDim={awayWins}
             />
             {pregame ? (
               <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80">
@@ -356,7 +364,7 @@ export function CfbGameDetailView({
         ) : null}
       </header>
 
-      {(g.live || g.situation || homeYardLine != null) && (
+      {!g.final && (g.live || g.situation || homeYardLine != null) && (
         <section className="space-y-2">
           <NflFieldMap
             game={g}
@@ -378,7 +386,7 @@ export function CfbGameDetailView({
         </section>
       )}
 
-      {g.winProbability.length > 0 ? (
+      {!g.final && g.winProbability.length > 0 ? (
         <CfbWinProbability away={g.away} home={g.home} points={g.winProbability} />
       ) : null}
 
@@ -731,6 +739,10 @@ export function CfbGameDetailView({
         </section>
       )}
 
+      {g.final && g.winProbability.length > 0 ? (
+        <CfbWinProbability away={g.away} home={g.home} points={g.winProbability} />
+      ) : null}
+
       {g.scoringPlays.length > 0 && (
         <section className="bg-panel rounded-xl border border-white/[0.08] p-4">
           <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
@@ -828,13 +840,13 @@ function MatchupSide({
       )}
     >
       {side.logo ? (
-        <LogoPlate src={side.logo} className="h-12 w-12 sm:h-14 sm:w-14" />
+        <LogoPlate src={side.logo} className={cn("h-12 w-12 sm:h-14 sm:w-14", loser && "opacity-40")} />
       ) : null}
       <div className="min-w-0">
         <p
           className={cn(
             "inline-flex items-center gap-1 text-[15px] font-bold leading-tight sm:text-[17px]",
-            winner || !loser ? "text-white" : "text-white/85",
+            winner ? "text-white" : loser ? "text-white/40" : "text-white",
           )}
         >
           {align === "right" && hasBall ? (
@@ -846,9 +858,18 @@ function MatchupSide({
             <PossessionFootball className="h-3 w-5 shrink-0" />
           ) : null}
         </p>
-        <p className="text-[11px] leading-tight text-white/75">{side.name}</p>
+        <p className={cn("text-[11px] leading-tight", loser ? "text-white/35" : "text-white/75")}>
+          {side.name}
+        </p>
         {side.record ? (
-          <p className="numeral mt-0.5 text-[12px] font-medium text-white/85">{side.record}</p>
+          <p
+            className={cn(
+              "numeral mt-0.5 text-[12px] font-medium",
+              loser ? "text-white/35" : "text-white/85",
+            )}
+          >
+            {side.record}
+          </p>
         ) : null}
         <CfbFpiCaption pollRank={side.rank} fpiRank={side.fpiRank} className="mt-0.5" />
       </div>

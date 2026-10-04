@@ -11,7 +11,7 @@
  * probability shares a row with division/conference standings when ESPN has
  * both; missing standings leave the chart full width.
  */
-import type { FinalCard, FinalLeader, FinalSide, FinalStat } from "./card.ts";
+import { formatFinalsTimestamp, type FinalCard, type FinalLeader, type FinalSide, type FinalStat } from "./card.ts";
 import type { StandingRow, StandingTable } from "./standings.ts";
 import {
   CFB_QUARTER_SEC,
@@ -151,16 +151,18 @@ function text(
   return `<text x="${x}" y="${y}" fill="${opts.fill}" font-size="${opts.size}" font-weight="${weight}" text-anchor="${anchor}"${spacing}>${esc(value)}</text>`;
 }
 
-function logo(side: FinalSide, x: number, y: number, size: number, paint: string): string {
-  if (side.logoData) {
-    return `<image href="${side.logoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"/>`;
-  }
-  const cx = x + size / 2;
-  const cy = y + size / 2;
-  return [
-    `<circle cx="${cx}" cy="${cy}" r="${size / 2 - 3}" fill="none" stroke="${paint}" stroke-width="4"/>`,
-    text(side.abbrev, cx, cy + 9, { size: 26, fill: paint, anchor: "middle", weight: 700 }),
-  ].join("");
+function logo(side: FinalSide, x: number, y: number, size: number, paint: string, faded = false): string {
+  const inner = side.logoData
+    ? `<image href="${side.logoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"/>`
+    : [
+        `<circle cx="${x + size / 2}" cy="${y + size / 2}" r="${size / 2 - 3}" fill="none" stroke="${paint}" stroke-width="4"/>`,
+        text(side.abbrev, x + size / 2, y + size / 2 + 9, { size: 26, fill: paint, anchor: "middle", weight: 700 }),
+      ].join("");
+  return faded ? `<g opacity="0.38">${inner}</g>` : inner;
+}
+
+function loserOf(card: FinalCard, which: "away" | "home"): boolean {
+  return winner(card, which === "away" ? "home" : "away");
 }
 
 function linescore(card: FinalCard, y: number, awayPaint: string, homePaint: string): { svg: string; height: number } {
@@ -193,11 +195,14 @@ function linescore(card: FinalCard, y: number, awayPaint: string, homePaint: str
     }),
   );
   const rows = sides.map((side, row) => {
+    const faded = loserOf(card, row === 0 ? "away" : "home");
+    const cellFill = faded ? "#8b93a7" : "#d5dae6";
+    const totalFill = faded ? "#8b93a7" : "#f7f4ee";
     const cells = periods.map((_, i) => {
       const value = side.linescores[i];
       return text(value == null ? "" : String(value), x + 16 + teamW + colW * i + colW / 2, rowY[row]!, {
         size: 26,
-        fill: "#d5dae6",
+        fill: cellFill,
         anchor: "middle",
         weight: 500,
       });
@@ -206,13 +211,19 @@ function linescore(card: FinalCard, y: number, awayPaint: string, homePaint: str
     cells.push(
       text(total, x + 16 + teamW + colW * periods.length + colW / 2, rowY[row]!, {
         size: 28,
-        fill: "#f7f4ee",
+        fill: totalFill,
         anchor: "middle",
         weight: 700,
       }),
     );
     return [
-      text(side.abbrev, x + 16, rowY[row]!, { size: 22, fill: paints[row]!, anchor: "start", weight: 700, spacing: 0.7 }),
+      text(side.abbrev, x + 16, rowY[row]!, {
+        size: 22,
+        fill: faded ? "#8b93a7" : paints[row]!,
+        anchor: "start",
+        weight: 700,
+        spacing: 0.7,
+      }),
       ...cells,
     ].join("");
   });
@@ -474,8 +485,11 @@ export function renderFinalSvg(card: FinalCard): string {
   const homePaint = paintColor(card.home.color, card.home.alternateColor);
   const awayWins = winner(card, "away");
   const homeWins = winner(card, "home");
+  const awayLoses = loserOf(card, "away");
+  const homeLoses = loserOf(card, "home");
   const headline = wrap(card.headline, 58, 2);
   const parts: string[] = [];
+  const stamp = formatFinalsTimestamp(card.date);
 
   let y = 28;
   parts.push(
@@ -492,8 +506,8 @@ export function renderFinalSvg(card: FinalCard): string {
 
   const logoSize = 124;
   const logoY = y;
-  parts.push(logo(card.away, M + 8, logoY, logoSize, awayPaint));
-  parts.push(logo(card.home, W - M - 8 - logoSize, logoY, logoSize, homePaint));
+  parts.push(logo(card.away, M + 8, logoY, logoSize, awayPaint, awayLoses));
+  parts.push(logo(card.home, W - M - 8 - logoSize, logoY, logoSize, homePaint, homeLoses));
   const scoreY = logoY + 88;
   const awayScore = card.away.score == null ? "–" : String(card.away.score);
   const homeScore = card.home.score == null ? "–" : String(card.home.score);
@@ -526,7 +540,7 @@ export function renderFinalSvg(card: FinalCard): string {
   parts.push(
     text(sideTitle(card.away), M, y, {
       size: 24,
-      fill: awayWins || !homeWins ? "#f7f4ee" : "#c5cce0",
+      fill: awayLoses ? "#8b93a7" : "#f7f4ee",
       anchor: "start",
       weight: 700,
     }),
@@ -534,7 +548,7 @@ export function renderFinalSvg(card: FinalCard): string {
   parts.push(
     text(sideTitle(card.home), W - M, y, {
       size: 24,
-      fill: homeWins || !awayWins ? "#f7f4ee" : "#c5cce0",
+      fill: homeLoses ? "#8b93a7" : "#f7f4ee",
       anchor: "end",
       weight: 700,
     }),
@@ -545,7 +559,7 @@ export function renderFinalSvg(card: FinalCard): string {
       parts.push(
         text(card.away.record, M, y, {
           size: 32,
-          fill: "#f7f4ee",
+          fill: awayLoses ? "#6f778a" : "#f7f4ee",
           anchor: "start",
           weight: 700,
         }),
@@ -555,7 +569,7 @@ export function renderFinalSvg(card: FinalCard): string {
       parts.push(
         text(card.home.record, W - M, y, {
           size: 32,
-          fill: "#f7f4ee",
+          fill: homeLoses ? "#6f778a" : "#f7f4ee",
           anchor: "end",
           weight: 700,
         }),
@@ -662,32 +676,33 @@ export function renderFinalSvg(card: FinalCard): string {
   if (hasStats || hasLeaders) y += colH + GAP;
 
   y += 4;
-  parts.push(text("Finals and Stats", M, y + 20, { size: 16, fill: "#6f778a", weight: 700, spacing: 1.4 }));
+  const footerRight = card.odds?.graphicLine || centerStatus(card.statusLabel);
+  parts.push(text(stamp, M, y + 22, { size: 18, fill: "#c5cce0", weight: 700, spacing: 0.4 }));
   parts.push(
-    text(centerStatus(card.statusLabel), W - M, y + 20, {
-      size: 16,
-      fill: "#6f778a",
+    text(footerRight, W - M, y + 22, {
+      size: footerRight.length > 28 ? 16 : 18,
+      fill: "#d5dae6",
       anchor: "end",
-      weight: 600,
-      spacing: 1,
+      weight: 700,
+      spacing: 0.2,
     }),
   );
-  y += 40;
+  y += 42;
 
   const wash = [
     `<defs>`,
     `<radialGradient id="awayWash" cx="18%" cy="22%" r="58%">`,
-    `<stop offset="0%" stop-color="${awayPaint}" stop-opacity="0.5"/>`,
+    `<stop offset="0%" stop-color="${awayPaint}" stop-opacity="${awayLoses ? 0.22 : 0.5}"/>`,
     `<stop offset="72%" stop-color="${awayPaint}" stop-opacity="0"/>`,
     `</radialGradient>`,
     `<radialGradient id="homeWash" cx="82%" cy="22%" r="58%">`,
-    `<stop offset="0%" stop-color="${homePaint}" stop-opacity="0.5"/>`,
+    `<stop offset="0%" stop-color="${homePaint}" stop-opacity="${homeLoses ? 0.22 : 0.5}"/>`,
     `<stop offset="72%" stop-color="${homePaint}" stop-opacity="0"/>`,
     `</radialGradient>`,
     `</defs>`,
     `<rect width="${W}" height="${y}" fill="#07101d"/>`,
-    `<rect width="${W / 2}" height="8" fill="${awayPaint}"/>`,
-    `<rect x="${W / 2}" width="${W / 2}" height="8" fill="${homePaint}"/>`,
+    `<rect width="${W / 2}" height="8" fill="${awayPaint}" opacity="${awayLoses ? 0.35 : 1}"/>`,
+    `<rect x="${W / 2}" width="${W / 2}" height="8" fill="${homePaint}" opacity="${homeLoses ? 0.35 : 1}"/>`,
     `<rect width="${W}" height="${headerBottom}" fill="url(#awayWash)"/>`,
     `<rect width="${W}" height="${headerBottom}" fill="url(#homeWash)"/>`,
   ].join("");
