@@ -46,6 +46,7 @@ function kcLvFixture(): HeatAlertCard {
       record: "3-0",
       linescores: [7, 3, 0, null],
       color: "#e31837",
+      alternateColor: "#ffb81c",
       logoHref: "https://a.espncdn.com/i/teamlogos/nfl/500/kc.png",
     },
     home: {
@@ -56,6 +57,7 @@ function kcLvFixture(): HeatAlertCard {
       record: "3-0",
       linescores: [7, 6, 0, null],
       color: "#000000",
+      alternateColor: "#a5acaf",
       logoHref: "https://a.espncdn.com/i/teamlogos/nfl/500/lv.png",
     },
     venue: "Allegiant Stadium",
@@ -72,6 +74,23 @@ function kcLvFixture(): HeatAlertCard {
     },
     ice: null,
     diamond: null,
+    winProbability: [
+      { playId: "1", homeWinPct: 47.2, tiePct: 0, elapsedSec: 0, period: 1 },
+      { playId: "2", homeWinPct: 52.8, tiePct: 0, elapsedSec: 540, period: 1 },
+      { playId: "3", homeWinPct: 58.4, tiePct: 0, elapsedSec: 900, period: 2 },
+      { playId: "4", homeWinPct: 61.1, tiePct: 0, elapsedSec: 1480, period: 2 },
+      { playId: "5", homeWinPct: 55.6, tiePct: 0, elapsedSec: 1800, period: 3 },
+      { playId: "6", homeWinPct: 57.9, tiePct: 0, elapsedSec: 2485, period: 3 },
+    ],
+    stats: [
+      { label: "Yards", away: "301", home: "254", awayLeads: true, homeLeads: false, awayShare: 54.2 },
+      { label: "Passing", away: "141", home: "211", awayLeads: false, homeLeads: true, awayShare: 40.1 },
+      { label: "Rushing", away: "160", home: "43", awayLeads: true, homeLeads: false, awayShare: 78.8 },
+      { label: "1st Downs", away: "13", home: "17", awayLeads: false, homeLeads: true, awayShare: 43.3 },
+      { label: "3rd Down", away: "4/10", home: "3/9", awayLeads: true, homeLeads: false, awayShare: 54.5 },
+      { label: "Turnovers", away: "0", home: "0", awayLeads: false, homeLeads: false, awayShare: 50 },
+      { label: "Possession", away: "20:21", home: "24:39", awayLeads: false, homeLeads: true, awayShare: 45.2 },
+    ],
     gamePath: "/sports/nfl/game/401872976?solo=1",
   };
 }

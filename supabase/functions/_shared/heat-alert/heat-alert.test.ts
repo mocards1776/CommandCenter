@@ -1,11 +1,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { plotCfbWinProbability as edgePlot } from "../win-probability.ts";
 import { clockParts, isBreakStatus } from "./clock.ts";
 import { formatHeatTimestamp, heatAlertCaption, situationLine } from "./copy.ts";
+import { applyHeatSummary, heatStatMagnitude, pickHeatStats } from "./fetch-game.ts";
 import { fieldBallPct, footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
 import { renderHeatAlertSvg } from "./svg.ts";
 import { parseChatAllowlist, resolveChatTargets } from "./telegram.ts";
 import type { HeatAlertCard } from "./types.ts";
+
+const appModuleUrl = [
+  new URL("../../../../CommandCenter-main/src/lib/cfb-win-probability.ts", import.meta.url),
+  new URL("../../../../src/lib/cfb-win-probability.ts", import.meta.url),
+].find((url) => existsSync(fileURLToPath(url)));
+if (!appModuleUrl) throw new Error("game-page win-probability module not found");
+const { plotCfbWinProbability: appPlot, mapCfbWinProbability: appMap } = await import(appModuleUrl.href);
 
 test("yard line matches the app field map", () => {
   assert.equal(fieldBallPct(40), 60);
@@ -97,6 +108,7 @@ const sample: HeatAlertCard = {
     record: "3-0",
     linescores: [0, 7, null, null],
     color: "#003b75",
+    alternateColor: "#ffffff",
     logoHref: null,
   },
   home: {
@@ -107,6 +119,7 @@ const sample: HeatAlertCard = {
     record: "2-1",
     linescores: [3, 3, null, null],
     color: "#5a1414",
+    alternateColor: "#ffb612",
     logoHref: null,
   },
   venue: "Northwest Stadium",
@@ -123,6 +136,20 @@ const sample: HeatAlertCard = {
   },
   ice: null,
   diamond: null,
+  winProbability: [
+    { playId: "a", homeWinPct: 48.2, tiePct: 0, elapsedSec: 0, period: 1 },
+    { playId: "b", homeWinPct: 41.6, tiePct: 0, elapsedSec: 880, period: 1 },
+    { playId: "c", homeWinPct: 55.4, tiePct: 0, elapsedSec: 1680, period: 2 },
+  ],
+  stats: [
+    { label: "Yards", away: "188", home: "142", awayLeads: true, homeLeads: false, awayShare: 57 },
+    { label: "Passing", away: "121", home: "98", awayLeads: true, homeLeads: false, awayShare: 55.3 },
+    { label: "Rushing", away: "67", home: "44", awayLeads: true, homeLeads: false, awayShare: 60.4 },
+    { label: "1st Downs", away: "9", home: "8", awayLeads: true, homeLeads: false, awayShare: 52.9 },
+    { label: "3rd Down", away: "3/7", home: "2/6", awayLeads: true, homeLeads: false, awayShare: 56.2 },
+    { label: "Turnovers", away: "0", home: "1", awayLeads: true, homeLeads: false, awayShare: 0 },
+    { label: "Possession", away: "14:22", home: "15:38", awayLeads: false, homeLeads: true, awayShare: 47.9 },
+  ],
   gamePath: "/sports/nfl/game/401872965?solo=1",
 };
 
@@ -165,7 +192,119 @@ test("portrait svg matches the finals photo slot and score hierarchy", () => {
   assert.match(svg, /#2f9bff/);
   assert.match(svg, /Northwest Stadium/);
   assert.match(svg, /CT</);
+  assert.match(svg, /Win probability/);
+  assert.match(svg, /id="wpHist"/);
+  assert.match(svg, /stroke-dasharray="8 7"/);
+  assert.match(svg, />Yards</);
+  assert.match(svg, />Passing</);
+  assert.match(svg, />3rd Down</);
+  assert.match(svg, />Possession</);
+  assert.match(svg, />Team stats</);
   assert.doesNotMatch(svg, /unsplash|stock/i);
+  const grass = /id="grassClip"><rect[^>]+height="(\d+(?:\.\d+)?)"/.exec(svg);
+  assert.ok(grass, "grass clip is present");
+  assert.ok(Number(grass![1]) <= 180, `field grass should stay compact, got ${grass![1]}`);
+  const clip = /id="wpHist"><rect[^>]+width="(\d+(?:\.\d+)?)"/.exec(svg);
+  assert.ok(clip, "historical WP clip is present");
+  assert.ok(Number(clip![1]) < 900, `live WP must not fill the future, clip ${clip![1]}`);
+});
+
+test("live WP plot matches the game-page clip and does not paint unused future", () => {
+  const points = appMap(
+    [
+      { playId: "a", homeWinPercentage: 0.48 },
+      { playId: "b", homeWinPercentage: 0.41 },
+      { playId: "c", homeWinPercentage: 0.55 },
+    ],
+    [
+      { id: "a", period: 1, clock: "15:00" },
+      { id: "b", period: 1, clock: "0:20" },
+      { id: "c", period: 2, clock: "2:00" },
+    ],
+  );
+  const edge = edgePlot(points);
+  const app = appPlot(points);
+  assert.deepEqual(edge, app);
+  assert.ok(edge?.future, "Q2 still has remaining regulation");
+  assert.ok(edge && !edge.area.includes("L100 "), "home fill stops at the last play");
+});
+
+test("Apple-style stat pick prefers the compact football rows", () => {
+  const rows = pickHeatStats("nfl", "KC", "LV", {
+    boxscore: {
+      teams: [
+        {
+          team: { abbreviation: "KC" },
+          statistics: [
+            { label: "Total Yards", displayValue: "301" },
+            { label: "Passing", displayValue: "141" },
+            { label: "Rushing", displayValue: "160" },
+            { label: "1st Downs", displayValue: "13" },
+            { label: "3rd down efficiency", displayValue: "4/10" },
+            { label: "Turnovers", displayValue: "0" },
+            { label: "Possession", displayValue: "20:21" },
+            { label: "Total Plays", displayValue: "44" },
+          ],
+        },
+        {
+          team: { abbreviation: "LV" },
+          statistics: [
+            { label: "Total Yards", displayValue: "254" },
+            { label: "Passing", displayValue: "211" },
+            { label: "Rushing", displayValue: "43" },
+            { label: "1st Downs", displayValue: "17" },
+            { label: "3rd down efficiency", displayValue: "3/9" },
+            { label: "Turnovers", displayValue: "0" },
+            { label: "Possession", displayValue: "24:39" },
+            { label: "Total Plays", displayValue: "49" },
+          ],
+        },
+      ],
+    },
+  });
+  assert.deepEqual(rows.map((row) => row.label), [
+    "Yards",
+    "Passing",
+    "Rushing",
+    "1st Downs",
+    "3rd Down",
+    "Turnovers",
+    "Possession",
+  ]);
+  assert.equal(rows[0]?.away, "301");
+  assert.equal(rows[0]?.home, "254");
+  assert.equal(rows[0]?.awayLeads, true);
+  assert.ok((rows[2]?.awayShare ?? 0) > 70, "rushing bar leans KC");
+  assert.equal(heatStatMagnitude("Possession", "20:21"), 20 * 60 + 21);
+});
+
+test("summary applies the ESPN WP series and box score", () => {
+  const next = applyHeatSummary(sample, {
+    winprobability: [
+      { playId: "p1", homeWinPercentage: 0.42, tiePercentage: 0 },
+      { playId: "p2", homeWinPercentage: 0.61, tiePercentage: 0 },
+    ],
+    drives: {
+      previous: [
+        {
+          plays: [
+            { id: "p1", period: { number: 1 }, clock: { displayValue: "10:00" } },
+            { id: "p2", period: { number: 2 }, clock: { displayValue: "8:00" } },
+          ],
+        },
+      ],
+    },
+    boxscore: {
+      teams: [
+        { team: { abbreviation: "IND" }, statistics: [{ label: "Total Yards", displayValue: "210" }] },
+        { team: { abbreviation: "WSH" }, statistics: [{ label: "Total Yards", displayValue: "180" }] },
+      ],
+    },
+  });
+  assert.equal(next.winProbability.length, 2);
+  assert.equal(next.winProbability[1]?.homeWinPct, 61);
+  assert.equal(next.stats[0]?.label, "Yards");
+  assert.equal(next.stats[0]?.away, "210");
 });
 
 test("CT stamp matches the finals footer", () => {

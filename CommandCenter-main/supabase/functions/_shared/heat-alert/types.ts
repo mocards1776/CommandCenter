@@ -1,5 +1,7 @@
 /** Portrait heat-alert card. Sports App owns this shape; RUWT supplies the caption reason. */
 
+import type { CfbWinProbPoint } from "../win-probability.ts";
+
 export type HeatSport = "nfl" | "cfb" | "nhl" | "mlb" | "soccer";
 
 export type HeatSide = {
@@ -11,8 +13,20 @@ export type HeatSide = {
   linescores: (number | null)[];
   /** #rrggbb */
   color: string;
+  /** ESPN alternate; used so near-black clubs still paint on the WP chart. */
+  alternateColor?: string | null;
   /** https URL in the app preview, or a data URI once logos are inlined for PNG. */
   logoHref: string | null;
+};
+
+export type HeatStat = {
+  label: string;
+  away: string;
+  home: string;
+  awayLeads: boolean;
+  homeLeads: boolean;
+  /** Away share of the dual bar, 0–100. Null when the values are not numeric. */
+  awayShare: number | null;
 };
 
 /** ESPN situation.yardLine is yards from the home end zone (0 home goal, 100 away goal). */
@@ -63,6 +77,10 @@ export type HeatAlertCard = {
   football: FootballSpot | null;
   ice: IceSpot | null;
   diamond: DiamondSpot | null;
+  /** ESPN home-win series. Empty when the summary has not published one. */
+  winProbability: CfbWinProbPoint[];
+  /** Compact team-stat rows for the Apple-style comparison. */
+  stats: HeatStat[];
   /** Sports app path, including the solo query the push notes already use. */
   gamePath: string;
 };

@@ -24,14 +24,14 @@ import {
   paintColor,
   renderFinalSvg,
 } from "./svg.ts";
-import { mapCfbWinProbability as edgeMap } from "./win-probability.ts";
+import { mapCfbWinProbability as edgeMap, plotCfbWinProbability as edgePlot } from "./win-probability.ts";
 
 const appModuleUrl = [
   new URL("../../../CommandCenter-main/src/lib/cfb-win-probability.ts", import.meta.url),
   new URL("../../../src/lib/cfb-win-probability.ts", import.meta.url),
 ].find((url) => existsSync(fileURLToPath(url)));
 if (!appModuleUrl) throw new Error("game-page win-probability module not found");
-const { mapCfbWinProbability: appMap } = await import(appModuleUrl.href);
+const { mapCfbWinProbability: appMap, plotCfbWinProbability: appPlot } = await import(appModuleUrl.href);
 
 const series = [
   { homeWinPercentage: 0.45, tiePercentage: 0, playId: "a" },
@@ -47,6 +47,12 @@ const plays = [
 ];
 assert.deepEqual(edgeMap(series, plays), appMap(series, plays));
 assert.equal(edgeMap(undefined, []).length, 0);
+{
+  const live = edgeMap(series.slice(0, 2), plays.slice(0, 2));
+  assert.deepEqual(edgePlot(live), appPlot(live));
+  assert.ok(edgePlot(live)?.future, "live WP leaves remaining regulation unfilled");
+  assert.ok(edgePlot(live) && !edgePlot(live)!.area.includes("L100 "), "home fill stops at last play");
+}
 
 assert.deepEqual(parseScope(undefined), { favorites: true, ruwt: true, all: false });
 assert.deepEqual(parseScope("all"), { favorites: false, ruwt: false, all: true });

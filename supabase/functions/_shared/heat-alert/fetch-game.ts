@@ -1,10 +1,15 @@
 import { hexColor } from "./color.ts";
+import {
+  mapCfbWinProbability,
+  type CfbWinProbPlayRef,
+} from "../win-probability.ts";
 import type {
   DiamondSpot,
   FootballSpot,
   HeatAlertCard,
   HeatSide,
   HeatSport,
+  HeatStat,
   IceSpot,
 } from "./types.ts";
 
@@ -158,8 +163,160 @@ function readSide(raw: unknown, sport: HeatSport, homeAway: "away" | "home"): He
     record: str(total?.summary) || null,
     linescores,
     color: hexColor(str(team.color) || null, homeAway === "away" ? "1e3a5f" : "7a1f1f"),
+    alternateColor: str(team.alternateColor) ? hexColor(str(team.alternateColor), "888888") : null,
     logoHref: largeLogo(logo || null, sport, abbrev),
   };
+}
+
+const FOOTBALL_STATS = [
+  "Total Yards",
+  "Passing",
+  "Rushing",
+  "1st Downs",
+  "3rd down efficiency",
+  "Turnovers",
+  "Possession",
+];
+
+const HOCKEY_STATS = ["Shots", "Hits", "Faceoffs Won", "Power Play", "Penalty Minutes", "Giveaways"];
+const BASEBALL_STATS = ["Hits", "Home Runs", "Stolen Bases", "Left On Base", "Strikeouts", "Walks"];
+const SOCCER_STATS = ["Possession", "Shots", "Shots on Target", "Corners", "Fouls", "Offsides"];
+
+const STAT_SHORT: Record<string, string> = {
+  "Total Yards": "Yards",
+  Passing: "Passing",
+  Rushing: "Rushing",
+  "1st Downs": "1st Downs",
+  "3rd down efficiency": "3rd Down",
+  Turnovers: "Turnovers",
+  Possession: "Possession",
+  "Yards per Play": "Yards / Play",
+  "Faceoffs Won": "Faceoffs",
+  "Penalty Minutes": "PIM",
+  "Power Play": "Power Play",
+  "Shots on Target": "Shots on Goal",
+  "Left On Base": "LOB",
+  "Home Runs": "Home Runs",
+  "Stolen Bases": "Steals",
+};
+
+function preferredStats(sport: HeatSport): string[] {
+  if (sport === "nfl" || sport === "cfb") return FOOTBALL_STATS;
+  if (sport === "nhl") return HOCKEY_STATS;
+  if (sport === "mlb") return BASEBALL_STATS;
+  return SOCCER_STATS;
+}
+
+/** Magnitude for a comparison bar. Same reading as the game page / finals card. */
+export function heatStatMagnitude(label: string, value: string): number | null {
+  const text = value.trim();
+  const clock = /^(\d+):(\d{2})$/.exec(text);
+  if (clock) return Number(clock[1]) * 60 + Number(clock[2]);
+  const slash = /^(\d+)\s*\/\s*(\d+)$/.exec(text);
+  if (slash) {
+    const made = Number(slash[1]);
+    const att = Number(slash[2]);
+    if (/comp|efficienc|red zone|power play/i.test(label)) return att > 0 ? made / att : 0;
+    return made;
+  }
+  const dash = /^(\d+)\s*-\s*(\d+)$/.exec(text);
+  if (dash) {
+    const made = Number(dash[1]);
+    const other = Number(dash[2]);
+    if (/efficienc|red zone|power play/i.test(label)) return other > 0 ? made / other : 0;
+    if (/penalt/i.test(label)) return other;
+    return made;
+  }
+  const n = Number.parseFloat(text.replace(/,/g, "").replace(/%$/, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+export function pickHeatStats(
+  sport: HeatSport,
+  awayAbbrev: string,
+  homeAbbrev: string,
+  summary: Record<string, unknown>,
+  limit = 7,
+): HeatStat[] {
+  const byLabel = new Map<string, { away?: string; home?: string }>();
+  for (const side of asArray(asRecord(summary.boxscore)?.teams)) {
+    const team = asRecord(side);
+    const abbrev = str(asRecord(team?.team)?.abbreviation);
+    const which = abbrev === awayAbbrev ? "away" : abbrev === homeAbbrev ? "home" : null;
+    if (!which) continue;
+    for (const stat of asArray(team?.statistics)) {
+      const row = asRecord(stat);
+      const label = str(row?.label) || str(row?.abbreviation) || str(row?.name);
+      const value = str(row?.displayValue);
+      if (!label || !value || value === "—") continue;
+      const slot = byLabel.get(label) ?? {};
+      slot[which] = value;
+      byLabel.set(label, slot);
+    }
+  }
+  const ordered: string[] = [];
+  for (const label of preferredStats(sport)) {
+    if (byLabel.has(label)) ordered.push(label);
+  }
+  for (const label of byLabel.keys()) {
+    if (ordered.includes(label)) continue;
+    if (/1st downs from|passing 1st|rushing 1st|total drives|total plays/i.test(label)) continue;
+    ordered.push(label);
+  }
+  return ordered.slice(0, limit).map((label) => {
+    const slot = byLabel.get(label)!;
+    const away = slot.away ?? "—";
+    const home = slot.home ?? "—";
+    const awayMag = heatStatMagnitude(label, away);
+    const homeMag = heatStatMagnitude(label, home);
+    const numeric = awayMag != null && homeMag != null;
+    const lower = /penalt|turnover|fumble|interception|giveaway|pim|fouls/i.test(label);
+    const awayLeads = Boolean(numeric && awayMag !== homeMag && (lower ? awayMag! < homeMag! : awayMag! > homeMag!));
+    const homeLeads = Boolean(numeric && awayMag !== homeMag && !awayLeads);
+    const total = numeric ? Math.abs(awayMag!) + Math.abs(homeMag!) : 0;
+    const awayShare = numeric && total > 0 ? (Math.abs(awayMag!) / total) * 100 : numeric ? 50 : null;
+    return {
+      label: STAT_SHORT[label] || label,
+      away,
+      home,
+      awayLeads,
+      homeLeads,
+      awayShare,
+    };
+  });
+}
+
+function playRefs(summary: Record<string, unknown>): CfbWinProbPlayRef[] {
+  const drives = asRecord(summary.drives);
+  const lists = [...asArray(drives?.previous), ...(drives?.current ? [drives.current] : [])];
+  const refs: CfbWinProbPlayRef[] = [];
+  for (const drive of lists) {
+    for (const play of asArray(asRecord(drive)?.plays)) {
+      const row = asRecord(play);
+      const id = str(row?.id);
+      if (!id) continue;
+      const periodObj = asRecord(row?.period);
+      const period = num(periodObj?.number) ?? num(row?.period);
+      const clock = str(asRecord(row?.clock)?.displayValue) || str(row?.clock) || null;
+      refs.push({ id, period, clock });
+    }
+  }
+  return refs;
+}
+
+function readWinProbability(sport: HeatSport, summary: Record<string, unknown>) {
+  if (sport !== "nfl" && sport !== "cfb") return [];
+  return mapCfbWinProbability(
+    asArray(summary.winprobability).map((row) => {
+      const item = asRecord(row);
+      return {
+        homeWinPercentage: num(item?.homeWinPercentage) ?? undefined,
+        tiePercentage: num(item?.tiePercentage) ?? undefined,
+        playId: str(item?.playId) || undefined,
+      };
+    }),
+    playRefs(summary),
+  );
 }
 
 function periodLabelsFor(sport: HeatSport, count: number): string[] {
@@ -271,6 +428,8 @@ function cardFromEvent(sport: HeatSport, event: Record<string, unknown>): HeatAl
     football,
     ice,
     diamond,
+    winProbability: [],
+    stats: [],
     gamePath: gamePath(sport, id),
   };
 }
@@ -296,6 +455,8 @@ function applySummary(card: HeatAlertCard, summary: Record<string, unknown>): He
       if (score != null) next[side].score = score;
       const color = str(team?.color);
       if (color) next[side].color = hexColor(color, next[side].color);
+      const alt = str(team?.alternateColor);
+      if (alt) next[side].alternateColor = hexColor(alt, next[side].alternateColor ?? "888888");
       const name = str(team?.shortDisplayName) || str(team?.displayName);
       if (name) next[side].name = name;
       const rec = asArray(asRecord(row)?.records).map(asRecord).find((item) => item && str(item.type) === "total");
@@ -355,7 +516,15 @@ function applySummary(card: HeatAlertCard, summary: Record<string, unknown>): He
       break;
     }
   }
+
+  next.winProbability = readWinProbability(next.sport, summary);
+  next.stats = pickHeatStats(next.sport, next.away.abbrev, next.home.abbrev, summary);
   return next;
+}
+
+/** Test hook: apply an ESPN summary onto a scoreboard card. */
+export function applyHeatSummary(card: HeatAlertCard, summary: Record<string, unknown>): HeatAlertCard {
+  return applySummary(card, summary);
 }
 
 async function summaryFor(path: string, gameId: string, reach: Reach): Promise<Record<string, unknown> | null> {
