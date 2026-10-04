@@ -93,3 +93,9 @@ export function toTab(item: UnifiedRuwtItem): ScoreTab {
     status: splitStatus(label),
   };
 }
+
+/** ESPN ships a dark-background variant beside the standard 500 logo. */
+export function espnDarkLogo(url: string): string | null {
+  const dark = url.replace(/(\/i\/teamlogos\/[a-z]+)\/500\//, "$1/500-dark/");
+  return dark === url ? null : dark;
+}

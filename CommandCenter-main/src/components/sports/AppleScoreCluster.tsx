@@ -1,5 +1,5 @@
 import PossessionFootball from "@/components/sports/PossessionFootball";
-import { appleClockParts, timeoutMarks } from "@/lib/apple-score";
+import { appleClockParts, isBreakStatus, timeoutMarks } from "@/lib/apple-score";
 import { cn } from "@/lib/utils";
 
 function TimeoutDashes({ count }: { count: number | null | undefined }) {
@@ -16,10 +16,12 @@ function TimeoutDashes({ count }: { count: number | null | undefined }) {
 
 /**
  * Score cluster with the clock nested between the numerals.
- * The game header stacks the quarter above the clock. RUWT cards use
- * the same sans as the rest of the card (`face="sans"`) on one line.
- * A football mark is optional and belongs beside a single-line clock,
- * not on a RUWT card.
+ * The game header stacks the quarter above the clock. A period break
+ * ("End of 1st", "Halftime") stays out of that band so it does not
+ * read as a third numeral — the header chip carries it.
+ * RUWT cards use the same sans as the rest of the card (`face="sans"`)
+ * on one line. A football mark is optional and belongs beside a
+ * single-line clock, not on a RUWT card.
  * Timeout dashes are remaining ESPN counts, drawn small and dim for
  * the game page. RUWT cards omit the counts.
  */
@@ -67,7 +69,10 @@ export default function AppleScoreCluster({
   const parts = appleClockParts(detail);
   const clock = parts.line || (final ? "Final" : "Live");
   const stacked = size === "header" && Boolean(parts.period && parts.clock);
-  const showBall = Boolean(football && live && /\d:\d/.test(clock) && !stacked);
+  // Break copy already lives in the game-detail status chip. Keeping it
+  // between the tall scores makes "End of 1st" read as another numeral.
+  const breakInHeader = size === "header" && !stacked && isBreakStatus(clock);
+  const showBall = Boolean(football && live && /\d:\d/.test(clock) && !stacked && !breakInHeader);
   const showMarks = live && (awayTimeouts != null || homeTimeouts != null);
   const numeral = sans
     ? "numeral text-[28px] font-semibold leading-none"
@@ -77,14 +82,18 @@ export default function AppleScoreCluster({
     <div
       className={cn(
         "flex justify-center",
-        stacked ? "items-end gap-3 sm:gap-5" : "items-start gap-1 sm:gap-2",
+        breakInHeader
+          ? "items-end gap-5 sm:gap-7"
+          : stacked
+            ? "items-end gap-3 sm:gap-5"
+            : "items-start gap-1 sm:gap-2",
       )}
     >
       <div className="flex min-w-[2rem] flex-col items-center">
         <span className={cn("text-white", numeral)}>{away ?? "–"}</span>
         {showMarks ? <TimeoutDashes count={awayTimeouts} /> : null}
       </div>
-      {stacked ? (
+      {breakInHeader ? null : stacked ? (
         <div className="mb-0.5 flex w-[3.15rem] shrink-0 translate-y-2 flex-col items-center pb-px text-center text-white sm:mb-1 sm:w-[3.5rem] sm:translate-y-3">
           <span className="text-[9px] font-semibold uppercase leading-none tracking-[0.22em] text-white/60 sm:text-[10px]">
             {parts.period}

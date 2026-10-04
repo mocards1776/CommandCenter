@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useScoreStripItems } from "@/hooks/useScoreStripItems";
-import LogoPlate from "@/components/sports/LogoPlate";
-import { toTab, type ScoreTab, type TabSide } from "@/lib/ruwt-score-tab";
+import { espnDarkLogo, toTab, type ScoreTab, type TabSide } from "@/lib/ruwt-score-tab";
 import { cn } from "@/lib/utils";
 
 const GAME_PATH = /^\/sports\/(mlb|nfl|nhl|cfb|soccer)\/game\/([^/?#]+)/;
 
 function TabLogo({ side }: { side: TabSide }) {
+  const dark = espnDarkLogo(side.logo);
   return (
-    <LogoPlate
-      src={side.logo}
+    <img
+      src={dark ?? side.logo}
+      onError={(e) => {
+        if (dark && e.currentTarget.src !== side.logo) e.currentTarget.src = side.logo;
+      }}
       alt={side.abbrev}
-      className="h-6 w-6"
+      title={side.abbrev}
       loading="lazy"
+      className="h-6 w-6 shrink-0 object-contain"
     />
   );
 }

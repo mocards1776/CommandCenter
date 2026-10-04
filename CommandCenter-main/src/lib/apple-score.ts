@@ -31,6 +31,16 @@ export function appleClockLine(detail: string | null | undefined): string {
   return appleClockParts(detail).line;
 }
 
+/**
+ * Period breaks have no running clock. "End of 1st" and "Halftime" belong
+ * in the status chip, not in the band between the score numerals.
+ */
+export function isBreakStatus(detail: string | null | undefined): boolean {
+  const text = (detail ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  return /^(end of\b|halftime\b)/i.test(text);
+}
+
 function tidyPeriod(raw: string): string {
   return raw
     .replace(/\bquarter\b/gi, "")

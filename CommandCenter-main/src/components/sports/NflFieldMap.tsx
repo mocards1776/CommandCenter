@@ -94,14 +94,12 @@ function EndZoneMark({
       aria-hidden
     >
       {branded && logo && !failed ? (
-        <span className="flex size-8 items-center justify-center rounded-full bg-white p-1 shadow-[0_1px_3px_rgba(0,0,0,0.45)] @md:size-11 @lg:size-14 @md:p-1.5">
-          <img
-            src={logo}
-            alt=""
-            className="h-full w-full object-contain"
-            onError={() => setFailed(true)}
-          />
-        </span>
+        <img
+          src={logo}
+          alt=""
+          className="size-7 object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.65)] @md:size-10 @lg:size-12"
+          onError={() => setFailed(true)}
+        />
       ) : (
         <span
           className={cn(
@@ -145,6 +143,7 @@ export default function NflFieldMap({
   downDistanceText,
   branded = false,
   drive = null,
+  omitLastPlay = false,
   className,
 }: {
   game: FootballFieldGame;
@@ -155,6 +154,8 @@ export default function NflFieldMap({
   branded?: boolean;
   /** Current ESPN drive. Marker + stat line render only when this is set. */
   drive?: CfbDriveGlance | null;
+  /** Game detail prints the same sentence under the field. Skip the copy here. */
+  omitLastPlay?: boolean;
   className?: string;
 }) {
   const poss = possessionTeamId;
@@ -360,7 +361,7 @@ export default function NflFieldMap({
         </p>
       ) : null}
 
-      {game.situation?.lastPlayText && (
+      {!omitLastPlay && game.situation?.lastPlayText && (
         <p className="border-t border-white/[0.06] px-3 py-2 text-[11px] leading-snug text-white/70">
           {game.situation.lastPlayText}
         </p>

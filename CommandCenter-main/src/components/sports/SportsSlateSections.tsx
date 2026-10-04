@@ -4,8 +4,8 @@ import type { UnifiedRuwtItem } from "@/hooks/useRuwtSlate";
 import { useRuwtSlateSplit } from "@/hooks/useRuwtSlateSplit";
 import { boardGameIsFavorite, selectBoardTopGames } from "@/lib/board-top-games";
 import { ruwtWhyReasons } from "@/lib/ruwt-slate";
-import LogoPlate from "@/components/sports/LogoPlate";
 import {
+  espnDarkLogo,
   RUWT_SPORT_LABEL,
   toTab,
   type TabSide,
@@ -13,7 +13,18 @@ import {
 import { cn } from "@/lib/utils";
 
 function SlateLogo({ side }: { side: TabSide }) {
-  return <LogoPlate src={side.logo} className="h-7 w-7" loading="lazy" />;
+  const dark = espnDarkLogo(side.logo);
+  return (
+    <img
+      src={dark ?? side.logo}
+      onError={(e) => {
+        if (dark && e.currentTarget.src !== side.logo) e.currentTarget.src = side.logo;
+      }}
+      alt=""
+      loading="lazy"
+      className="h-7 w-7 shrink-0 object-contain"
+    />
+  );
 }
 
 function SportBadge({ item }: { item: UnifiedRuwtItem }) {
