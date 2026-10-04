@@ -39,6 +39,7 @@ import NhlPlayerPage from "@/pages/NhlPlayerPage";
 import NhlTeamPage from "@/pages/NhlTeamPage";
 import NhlCoachPage from "@/pages/NhlCoachPage";
 import SoccerGamePage from "@/pages/SoccerGamePage";
+import HeatAlertPreviewPage from "@/pages/HeatAlertPreviewPage";
 const RssPage = lazy(() => import("@/pages/RssPage"));
 import PublicStoryPage from "@/pages/PublicStoryPage";
 import BuenaVistaNotebookPage from "@/pages/BuenaVistaNotebookPage";
@@ -164,6 +165,7 @@ export default function App() {
               <Route path="/sports/cfb/coach/:coachId" element={<CfbCoachPage />} />
               <Route path="/sports/cfb/player/:playerId" element={<CfbPlayerPage />} />
               <Route path="/sports/soccer/game/:eventId" element={<SoccerGamePage />} />
+              <Route path="/sports/heat-alert" element={<HeatAlertPreviewPage />} />
               <Route
                 path="/rss"
                 element={

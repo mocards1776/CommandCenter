@@ -10,6 +10,7 @@ import {
   gameKey,
   gamePhase,
   heatNote,
+  heatReasonChips,
   liveDrama,
   type AlertKind,
   type PhaseSnapshot,
@@ -267,6 +268,7 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
   let baselined = 0;
   let fired = 0;
   let delivered = 0;
+  const telegram: { game: string; result: string }[] = [];
   const preview: { game: string; kind: AlertKind; title: string; body: string }[] = [];
   const gone = new Set<string>();
   const nowIso = new Date().toISOString();
@@ -291,7 +293,18 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
       const claimed = await claim(db, key, kind);
       if (!claimed) continue;
       fired += 1;
-      if (!targets.length || !lib) continue;
+      const sendPhoto = () => {
+        if (kind !== "heat") return;
+        const reason = heatReasonChips(game, drama).join(" · ");
+        return postHeatPhoto(game.sport, game.id, reason).then((result) => {
+          telegram.push({ game: key, result });
+        });
+      };
+      // No web-push targets: the heat claim still sticks, so the photo goes once.
+      if (!targets.length || !lib) {
+        await sendPhoto();
+        continue;
+      }
       let ok = 0;
       for (const target of targets) {
         const note = noteFor(kind, game, target.fav);
@@ -304,9 +317,13 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
         }
       }
       // Keep the previous phase so the next sweep still sees the cross.
+      // A failed push releases the claim; hold the photo until that claim sticks
+      // so a retry does not send the same picture again.
       if (ok === 0) {
         await release(db, key, kind);
         persist = false;
+      } else {
+        await sendPhoto();
       }
     }
 
@@ -339,6 +356,7 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
     baselined,
     fired,
     delivered,
+    telegram: telegram.slice(0, 20),
     dryRun,
     preview: dryRun ? preview.slice(0, 40) : undefined,
   });
@@ -360,6 +378,44 @@ function recipients(
     if (fav) out.push({ sub, fav });
   }
   return out;
+}
+
+function telegramConfigured(): boolean {
+  const token = Deno.env.get("TELEGRAM_BOT_TOKEN")?.trim() ?? "";
+  const chats = Deno.env.get("TELEGRAM_CHAT_IDS") ?? Deno.env.get("TELEGRAM_CHAT_ID") ?? "";
+  return Boolean(token && chats.trim());
+}
+
+/**
+ * Heat photos are a separate sender (`sports-telegram`). A missing secret or a
+ * failed photo does not undo the web-push claim.
+ */
+async function postHeatPhoto(sport: string, gameId: string, reason: string): Promise<string> {
+  if (!telegramConfigured()) return "skipped";
+  const base = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/$/, "");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!base || !key) return "skipped";
+  try {
+    const res = await fetch(`${base}/functions/v1/sports-telegram`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+        apikey: key,
+      },
+      body: JSON.stringify({ action: "send", sport, gameId, reason }),
+      signal: AbortSignal.timeout(25_000),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("telegram heat photo", res.status, text.slice(0, 240));
+      return `error:${res.status}`;
+    }
+    return "sent";
+  } catch (err) {
+    console.error("telegram heat photo", err);
+    return "error";
+  }
 }
 
 function daysAgo(days: number): string {

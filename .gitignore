@@ -1,2 +1,3 @@
 CommandCenter-main/supabase/.temp/
 supabase/functions/**/node_modules/
+scripts/node_modules/

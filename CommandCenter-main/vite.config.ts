@@ -46,6 +46,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@heat": path.resolve(__dirname, "../supabase/functions/_shared/heat-alert"),
     },
   },
   define: {

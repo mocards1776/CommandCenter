@@ -62,7 +62,7 @@ npm run lint
   `newspaper-editor`, `sports-push`).
   Canonical source: `supabase/functions/`. Keep the mirror in sync with
   `scripts/sync-edge-copies.sh` (CI fails on drift). On `main`, GitHub Actions
-  deploys `rss` / `sports` when that tree changes — requires repo secrets
+  deploys `rss` / `sports` / `sports-push` / `sports-telegram` when that tree changes — requires repo secrets
   `SUPABASE_ACCESS_TOKEN` (and optional `SUPABASE_PROJECT_REF`).
 
   **One-time GitHub secret setup** (so edge deploys aren’t skipped):
@@ -111,6 +111,55 @@ npm run lint
     --project-ref esdgrgulaxnewmhjuyzh
   supabase functions deploy sports-push --project-ref esdgrgulaxnewmhjuyzh --no-verify-jwt
   ```
+
+- **Heat alert photos** — when a heat alert fires, `sports-push` asks the
+  `sports-telegram` edge function for a tall PNG and Telegram `sendPhoto`.
+  Sports App owns the drawing (logos, score, clock nest, down and distance,
+  and the field / ice / diamond). RUWT owns the caption reason. The picture
+  is rendered from the game, not from a screenshot and not from a stock photo.
+
+  The signed-in preview is `/sports/heat-alert?sport=nfl&game=<espn id>`.
+  Sending does not use that page.
+
+  Secrets (Supabase → Edge Functions → Secrets). Never commit the token:
+
+  ```bash
+  supabase secrets set \
+    TELEGRAM_BOT_TOKEN="<bot token from @BotFather>" \
+    TELEGRAM_CHAT_IDS="<numeric chat id, comma-separated>" \
+    SPORTS_TELEGRAM_SECRET="$(openssl rand -hex 24)" \
+    SPORTS_PUSH_ORIGIN="https://command-center-flax-gamma.vercel.app" \
+    --project-ref esdgrgulaxnewmhjuyzh
+  supabase functions deploy sports-telegram --project-ref esdgrgulaxnewmhjuyzh --no-verify-jwt
+  ```
+
+  `TELEGRAM_CHAT_IDS` is the allowlist. A request `chatId` must be on that
+  list; omit it to send to every listed chat. Group ids are negative numbers.
+
+  Render one live (or recent) game on your machine, without signing in:
+
+  ```bash
+  cd scripts && npm install
+  node --experimental-strip-types heat-alert-photo.ts --sport nfl
+  # optional real send — token stays in the environment
+  TELEGRAM_BOT_TOKEN="…" TELEGRAM_CHAT_IDS="123" \
+    node --experimental-strip-types heat-alert-photo.ts --sport nfl --send --reason "One-score game"
+  ```
+
+  The same render through the deployed function (POST required to send):
+
+  ```bash
+  curl -X POST "$SUPABASE_URL/functions/v1/sports-telegram" \
+    -H "Content-Type: application/json" \
+    -H "x-sports-telegram-secret: $SPORTS_TELEGRAM_SECRET" \
+    -d '{"action":"render","sport":"nfl"}' \
+    -o heat-alert.png
+  ```
+
+  `action` is `render` (PNG back) or `send`. `reason` is the short heat line
+  from RUWT. `gameId` is the ESPN event id; omit it to take the best live game.
+  Fonts are SIL OFL (`supabase/functions/_shared/heat-alert/fonts`). Regenerating
+  the embedded copies after a font change: `python3 scripts/embed-heat-alert-assets.py`.
 
   The sweep runs every two minutes from `pg_cron` once the same cron secret
   is in Vault as `sports_push_cron` (alongside the existing `project_url` and

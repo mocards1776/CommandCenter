@@ -22,6 +22,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@heat/*": [
+        "../supabase/functions/_shared/heat-alert/*"
       ]
     },
     "noUnusedLocals": false,

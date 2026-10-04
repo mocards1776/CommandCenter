@@ -2,6 +2,14 @@
 
 ---
 
+## Heat alert photos — October 4, 2026
+
+- Sports App renders a tall (1080×1300) heat-alert PNG from the live game: logos, scores, clock nest, down and distance, then the same field, ice, or diamond geometry the app already draws.
+- `sports-telegram` rasterizes that drawing and can `sendPhoto`. When RUWT heat fires, `sports-push` asks it to send. The caption is the heat reason plus the open-game link.
+- Secrets stay out of git: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_IDS`, `SPORTS_TELEGRAM_SECRET`. A local render is `node --experimental-strip-types scripts/heat-alert-photo.ts`.
+
+---
+
 ## Thompson Times: an AI editor picks the front — October 2, 2026
 
 - Each press, Grok reads the top of the story budget and picks the lead, second and third, reorders the rest, and spikes junk (aggregator filler, stale "Day 2" packages, old previews). The Cardinals, Blues and Mizzou still come first on an ordinary day, but the day's biggest sports story can now lead the paper.
