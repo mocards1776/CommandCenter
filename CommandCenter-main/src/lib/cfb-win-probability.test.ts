@@ -10,6 +10,8 @@ import {
   formatWinPct,
   isLightTeamColor,
   mapCfbWinProbability,
+  paintWinProbColor,
+  plotCfbWinProbability,
   snapshotFromEspnProbability,
 } from "./cfb-win-probability.ts";
 
@@ -102,5 +104,12 @@ assert.equal(isLightTeamColor("FFD700"), true);
 assert.equal(isLightTeamColor("#9e1b32"), false);
 assert.equal(cfbWinProbDomainSec(points.slice(0, 3)), CFB_REGULATION_SEC);
 assert.ok(cfbWinProbDomainSec(points) > CFB_REGULATION_SEC, "domain grows in overtime");
+
+const livePlot = plotCfbWinProbability(points.slice(0, 3));
+assert.ok(livePlot, "plot exists");
+assert.ok(livePlot!.nowX < 100, "elapsed Q4 kickoff is not the full domain");
+assert.ok(livePlot!.future, "remaining regulation is marked future");
+assert.ok(!livePlot!.area.includes("L100 "), "home fill does not cover unused future");
+assert.equal(paintWinProbColor("000000", "a5acaf"), "#a5acaf");
 
 console.log("cfb-win-probability.test.ts ok");

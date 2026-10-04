@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  alignCfbOpenDriveToPossession,
   cfbDriveStatLine,
-  syncCfbDriveStartToLabel,
+  liveDriveForField,
   type CfbDriveGlance,
 } from "@/lib/cfb-drive";
 import type { NflScoreGame } from "@/lib/nfl";
@@ -292,16 +291,12 @@ export default function NflFieldMap({
   const toGainWidth =
     ballPct != null && firstDownPct != null ? Math.abs(firstDownPct - ballPct) : null;
 
-  const openDrive = syncCfbDriveStartToLabel(
-    alignCfbOpenDriveToPossession(drive, {
-      possessionTeamId: poss,
-      homeYardLine,
-      away: { teamId: game.away.teamId, abbrev: game.away.abbrev },
-      home: { teamId: game.home.teamId, abbrev: game.home.abbrev },
-    }),
-    game.home.abbrev,
-    game.away.abbrev,
-  );
+  const openDrive = liveDriveForField(drive, {
+    possessionTeamId: poss,
+    homeYardLine,
+    away: { teamId: game.away.teamId, abbrev: game.away.abbrev },
+    home: { teamId: game.home.teamId, abbrev: game.home.abbrev },
+  });
   const startYard = openDrive?.startYardLine ?? null;
   // The midfield logo covers the 40s. A spot like WSH 46 is only four yards
   // off the 50, so the diamond carries the yard number when it sits on that logo.

@@ -1,11 +1,12 @@
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 import {
   CFB_QUARTER_SEC,
   CFB_REGULATION_SEC,
-  cfbWinProbDomainSec,
   cfbWinProbLeader,
   formatWinPct,
   isLightTeamColor,
+  paintWinProbColor,
+  plotCfbWinProbability,
   type CfbWinProbPoint,
   type CfbWinProbTeam,
 } from "@/lib/cfb-win-probability";
@@ -110,30 +111,9 @@ export function CfbWinProbCaption({
   );
 }
 
-function plotOf(points: CfbWinProbPoint[]) {
-  const domain = cfbWinProbDomainSec(points);
-  const coords = points.map((p) => ({
-    x: (p.elapsedSec / domain) * 100,
-    y: 100 - Math.max(0, Math.min(100, p.homeWinPct)),
-  }));
-  const line = coords
-    .map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(2)} ${c.y.toFixed(2)}`)
-    .join(" ");
-  const first = coords[0];
-  const last = coords[coords.length - 1];
-  const area =
-    first && last
-      ? `M${first.x.toFixed(2)} 100 ${coords
-          .map((c) => `L${c.x.toFixed(2)} ${c.y.toFixed(2)}`)
-          .join(" ")} L${last.x.toFixed(2)} 100 Z`
-      : "";
-  const ticks = [1, 2, 3].map((q) => (q * CFB_QUARTER_SEC * 100) / domain);
-  return { domain, line, area, last: last ?? null, ticks };
-}
-
 /**
  * ESPN-style win probability: away color above the line, home color below,
- * with the current leader labeled (ALA 86.8%).
+ * through elapsed game only. Remaining time is a dark future, not a team fill.
  */
 export default function CfbWinProbability({
   away,
@@ -144,12 +124,13 @@ export default function CfbWinProbability({
   home: CfbWinProbTeam;
   points: CfbWinProbPoint[];
 }) {
-  const plot = useMemo(() => (points.length ? plotOf(points) : null), [points]);
+  const clipId = useId().replace(/:/g, "");
+  const plot = useMemo(() => (points.length ? plotCfbWinProbability(points) : null), [points]);
   if (!plot || !points.length) return null;
 
   const current = points[points.length - 1];
-  const awayColor = teamHex(away.color, "1e3a5f");
-  const homeColor = teamHex(home.color, "7a1f1f");
+  const awayColor = paintWinProbColor(teamHex(away.color, "1e3a5f"), away.alternateColor);
+  const homeColor = paintWinProbColor(teamHex(home.color, "7a1f1f"), home.alternateColor);
   const quarters = ["Q1", "Q2", "Q3", "Q4"] as const;
   const showOt = plot.domain > CFB_REGULATION_SEC + 1;
 
@@ -175,10 +156,41 @@ export default function CfbWinProbability({
             preserveAspectRatio="none"
             className="absolute inset-0 h-full w-full"
             role="img"
-            aria-label={`Win probability chart. ${home.abbrev} is the lower color, ${away.abbrev} the upper color.`}
+            aria-label={`Win probability chart. ${home.abbrev} is the lower color, ${away.abbrev} the upper color. Remaining time is unfilled.`}
           >
-            <rect width="100" height="100" fill={awayColor} />
-            {plot.area ? <path d={plot.area} fill={homeColor} /> : null}
+            <defs>
+              <clipPath id={`${clipId}-hist`}>
+                <rect x="0" y="0" width={Math.max(0, plot.nowX)} height="100" />
+              </clipPath>
+            </defs>
+            <rect width="100" height="100" fill="#0b1220" />
+            <g clipPath={`url(#${clipId}-hist)`}>
+              <rect width="100" height="100" fill={awayColor} />
+              {plot.area ? <path d={plot.area} fill={homeColor} /> : null}
+            </g>
+            {plot.future && plot.last ? (
+              <path
+                d={`M${plot.last.x.toFixed(2)} ${plot.last.y.toFixed(2)} L100 ${plot.last.y.toFixed(2)}`}
+                fill="none"
+                stroke="#f7f4ee"
+                strokeOpacity="0.35"
+                strokeWidth="1.6"
+                strokeDasharray="2.4 2.2"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            {plot.future ? (
+              <line
+                x1={plot.nowX}
+                y1="0"
+                x2={plot.nowX}
+                y2="100"
+                stroke="#f7f4ee"
+                strokeOpacity="0.45"
+                strokeWidth="1.15"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
             <line
               x1="0"
               y1="50"

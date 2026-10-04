@@ -12,6 +12,7 @@ import CfbWinProbability from "@/components/sports/CfbWinProbability";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel from "@/components/sports/HighlightReel";
 import { TeamStandingLine } from "@/components/sports/TeamFormChips";
+import { liveHomeYardLine } from "@/lib/cfb-drive";
 import { fetchNflTeamForm, type TeamFormStrip } from "@/lib/team-form";
 import {
   fetchNflBackupHighlights,
@@ -130,10 +131,14 @@ export function NflGameDetailView({
 
   const homeYardLine = useMemo(() => {
     if (!g) return null;
-    if (g.situation?.yardLine != null) return g.situation.yardLine;
-    const play = g.recentPlays[0];
-    if (play?.yardLine != null) return play.yardLine;
-    return null;
+    return liveHomeYardLine({
+      situationYardLine: g.situation?.yardLine,
+      downDistanceText: g.situation?.downDistanceText,
+      possessionText: g.situation?.possessionText,
+      fallbackYardLine: g.recentPlays[0]?.yardLine ?? null,
+      homeAbbrev: g.home.abbrev,
+      awayAbbrev: g.away.abbrev,
+    });
   }, [g]);
 
   const teamStatLabels = useMemo(() => {

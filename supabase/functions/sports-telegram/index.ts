@@ -134,7 +134,7 @@ Deno.serve(async (req: Request) => {
         detail: card.detail,
         caption,
         width: 1080,
-        height: 1300,
+        height: 1350,
         pngBase64: bytesToBase64(png),
       });
     }

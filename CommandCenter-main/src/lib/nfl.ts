@@ -8,6 +8,7 @@ import {
   type CfbDriveGlance,
   type CfbDrivePlaySpot,
 } from "./cfb-drive";
+import { cfbPossessionTeamId } from "./cfb-possession";
 import { mapCfbWinProbability, type CfbWinProbPoint } from "./cfb-win-probability";
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
 import { seriesLineFromEspn } from "./playoff-series";
@@ -365,7 +366,10 @@ function mapSituation(
         possession?: string;
         lastPlay?: {
           text?: string;
+          type?: { text?: string };
           team?: { id?: string };
+          start?: { team?: { id?: string } };
+          end?: { team?: { id?: string }; yardLine?: number; possessionText?: string };
           probability?: { homeWinPercentage?: number; awayWinPercentage?: number };
         };
         homeTimeouts?: number;
@@ -381,7 +385,7 @@ function mapSituation(
     possessionText: sit.possessionText ?? null,
     yardLine: typeof sit.yardLine === "number" ? sit.yardLine : null,
     isRedZone: Boolean(sit.isRedZone),
-    possessionTeamId: sit.possession ?? sit.lastPlay?.team?.id ?? null,
+    possessionTeamId: cfbPossessionTeamId(sit),
     lastPlayText: sit.lastPlay?.text ?? null,
     homeTimeouts: sit.homeTimeouts ?? null,
     awayTimeouts: sit.awayTimeouts ?? null,
