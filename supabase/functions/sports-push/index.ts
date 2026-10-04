@@ -293,18 +293,15 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
       const claimed = await claim(db, key, kind);
       if (!claimed) continue;
       fired += 1;
-      const sendPhoto = () => {
-        if (kind !== "heat") return;
+      // Photo on claim, not on web-push success. The claim is the spam gate.
+      if (kind === "heat") {
         const reason = heatReasonChips(game, drama).join(" · ");
-        return postHeatPhoto(game.sport, game.id, reason).then((result) => {
-          telegram.push({ game: key, result });
+        telegram.push({
+          game: key,
+          result: await postHeatPhoto(game.sport, game.id, reason),
         });
-      };
-      // No web-push targets: the heat claim still sticks, so the photo goes once.
-      if (!targets.length || !lib) {
-        await sendPhoto();
-        continue;
       }
+      if (!targets.length || !lib) continue;
       let ok = 0;
       for (const target of targets) {
         const note = noteFor(kind, game, target.fav);
@@ -316,14 +313,12 @@ async function sweep(db: SupabaseClient, dryRun: boolean): Promise<Response> {
           delivered += 1;
         }
       }
-      // Keep the previous phase so the next sweep still sees the cross.
-      // A failed push releases the claim; hold the photo until that claim sticks
-      // so a retry does not send the same picture again.
-      if (ok === 0) {
+      // Favorite alerts still retry: a failed push releases the claim so the
+      // next sweep sees the same cross. Heat claims stay — the photo already
+      // went, and releasing would send it again.
+      if (ok === 0 && kind !== "heat") {
         await release(db, key, kind);
         persist = false;
-      } else {
-        await sendPhoto();
       }
     }
 
@@ -387,8 +382,9 @@ function telegramConfigured(): boolean {
 }
 
 /**
- * Heat photos are a separate sender (`sports-telegram`). A missing secret or a
- * failed photo does not undo the web-push claim.
+ * Heat photos are a separate sender (`sports-telegram`). They fire when the
+ * heat claim sticks, whether or not web push delivers. A missing secret or a
+ * failed photo does not undo the claim.
  */
 async function postHeatPhoto(sport: string, gameId: string, reason: string): Promise<string> {
   if (!telegramConfigured()) return "skipped";
