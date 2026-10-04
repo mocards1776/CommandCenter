@@ -14,7 +14,7 @@ import {
   parseSports,
   shouldSendFinal,
 } from "./select.ts";
-import { paintColor, renderFinalSvg } from "./svg.ts";
+import { FINALS_ALERT_WIDTH, paintColor, renderFinalSvg } from "./svg.ts";
 import { mapCfbWinProbability as edgeMap } from "./win-probability.ts";
 
 const appModuleUrl = [
@@ -234,6 +234,9 @@ assert.match(svg, /Total Yards/);
 assert.match(svg, /Huntington Bank Field/);
 assert.doesNotMatch(svg, /Last play|yard line|Field map|chains/i);
 assert.equal((svg.match(/<image /g) ?? []).length, 0);
+assert.match(svg, new RegExp(`width="${FINALS_ALERT_WIDTH}"`));
+const fullHeight = Number(/<svg [^>]*height="(\d+(?:\.\d+)?)"/.exec(svg)?.[1] ?? 0);
+assert.ok(fullHeight > 700 && fullHeight <= 1550, `Telegram card should stay near heat-alert height, got ${fullHeight}`);
 
 const quiet = cardFromSummary("cfb", "1", {
   header: {
