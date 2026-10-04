@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { clockParts, isBreakStatus } from "./clock.ts";
 import { heatAlertCaption, situationLine } from "./copy.ts";
-import { fieldBallPct, footballMarks, spotIsRedZone } from "./field.ts";
+import { fieldBallPct, footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
 import { renderHeatAlertSvg } from "./svg.ts";
 import { parseChatAllowlist, resolveChatTargets } from "./telegram.ts";
 import type { HeatAlertCard } from "./types.ts";
@@ -40,6 +40,16 @@ test("home offense's line to gain moves toward the away end zone", () => {
   assert.equal(marks.facingLeft, true);
   assert.equal(marks.firstDownPct, 59);
   assert.equal(marks.driveStartPct, 80);
+});
+
+test("current-drive dots stack a goal-line cluster and skip a separate snap", () => {
+  const stacked = layoutPlayDots([40, 40, 40]);
+  assert.equal(stacked.length, 3);
+  assert.equal(new Set(stacked.map((dot) => dot.pct)).size, 1);
+  assert.notEqual(stacked[0]?.y, stacked[1]?.y);
+  const apart = layoutPlayDots([20, 80]);
+  assert.equal(apart.length, 2);
+  assert.notEqual(apart[0]?.pct, apart[1]?.pct);
 });
 
 test("red zone follows the goal the offense is attacking", () => {
@@ -86,6 +96,7 @@ const sample: HeatAlertCard = {
     possessionTeamId: "28",
     lastPlayText: "Two-Minute Warning",
     driveStartYardLine: 81,
+    playYardLines: [55, 48],
     redZone: false,
   },
   ice: null,
@@ -126,5 +137,8 @@ test("portrait svg carries the scoreboard and the field, not a photo", () => {
   assert.match(svg, />WSH</);
   assert.match(svg, /1st &amp; 10 at WSH 40/);
   assert.match(svg, /id="grass"/);
+  assert.match(svg, /#ffe500/);
+  assert.match(svg, /#2f9bff/);
+  assert.match(svg, /<circle /);
   assert.doesNotMatch(svg, /unsplash|stock/i);
 });

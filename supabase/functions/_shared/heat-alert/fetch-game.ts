@@ -79,6 +79,24 @@ async function getJson(pathAndQuery: string, reach: Reach): Promise<unknown | nu
   return null;
 }
 
+/** Scrimmage snaps on this drive. Kicks, punts, PATs, and dead-ball flags stay off the field. */
+function scrimmageYards(plays: Record<string, unknown>[]): number[] {
+  const spots: number[] = [];
+  for (const play of plays) {
+    const typeText = str(asRecord(play.type)?.text);
+    const text = str(play.text);
+    if (/kickoff|\bpunt\b|end period|timeout|two-minute|coin toss/i.test(typeText)) continue;
+    if (/extra point|two[- ]point|\bpat\b/i.test(typeText)) continue;
+    if (/penalty/i.test(typeText) && /no play/i.test(text)) continue;
+    const startYard = num(asRecord(play.start)?.yardLine);
+    const endYard = num(asRecord(play.end)?.yardLine);
+    const yard = startYard != null && startYard > 0 && startYard < 100 ? startYard : endYard;
+    if (yard == null || yard <= 0 || yard >= 100) continue;
+    spots.push(yard);
+  }
+  return spots;
+}
+
 function unreachable(reach: Reach): boolean {
   return reach.ok === 0 && reach.failed > 0;
 }
@@ -250,6 +268,7 @@ function applySummary(card: HeatAlertCard, summary: Record<string, unknown>): He
     const drives = asRecord(summary.drives);
     const current = asRecord(drives?.current);
     const plays = asArray(current?.plays).map(asRecord).filter((row): row is Record<string, unknown> => Boolean(row));
+    const playYardLines = scrimmageYards(plays);
     const last = plays.length ? plays[plays.length - 1] : null;
     const end = asRecord(last?.end);
     const driveTeam = str(asRecord(current?.team)?.id);
@@ -265,14 +284,19 @@ function applySummary(card: HeatAlertCard, summary: Record<string, unknown>): He
         possessionTeamId: driveTeam || str(asRecord(end?.team)?.id) || next.football.possessionTeamId,
         lastPlayText: str(last?.text) || next.football.lastPlayText,
         driveStartYardLine: num(start?.yardLine),
+        playYardLines,
         redZone: down
           ? yardsToEnd == null
             ? next.football.redZone
             : yardsToEnd > 0 && yardsToEnd <= 20
           : false,
       };
-    } else if (num(start?.yardLine) != null) {
-      next.football = { ...next.football, driveStartYardLine: num(start?.yardLine) };
+    } else if (num(start?.yardLine) != null || playYardLines.length) {
+      next.football = {
+        ...next.football,
+        driveStartYardLine: num(start?.yardLine) ?? next.football.driveStartYardLine,
+        playYardLines,
+      };
     }
   }
 

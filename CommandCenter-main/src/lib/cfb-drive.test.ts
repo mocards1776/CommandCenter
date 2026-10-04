@@ -4,8 +4,14 @@
  */
 import {
   alignCfbOpenDriveToPossession,
+  homeYardLineFromSpotText,
+  syncCfbDriveStartToLabel,
   cfbDriveGlance,
+  cfbDriveGlanceWithPlaySpots,
+  cfbDriveScrimmageSpots,
   cfbDriveStatLine,
+  cfbInheritedKickEnd,
+  cfbTerminalKickEnd,
   correctCfbDriveStartFromPlays,
   mapCfbDriveMeta,
   rebaseCfbDriveAfterKick,
@@ -373,5 +379,231 @@ const kickOnly = correctCfbDriveStartFromPlays(
   ],
 );
 assert(kickOnly.startText === "BOIS 18" && kickOnly.startYardLine === 18, "a return spot replaces the seeded 25");
+
+// WASH @ USC, 2026-10-03: Carrigan's punt was fair-caught at WASH 5 and the
+// first snap (incomplete) was at WASH 5. The punt spot and the scrimmage are
+// the same yard, so the marker stays.
+const fairCatch = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "40185847832",
+    team: { id: "264", abbreviation: "WASH" },
+    yards: 3,
+    offensivePlays: 2,
+    timeElapsed: { displayValue: "0:46" },
+    start: { yardLine: 95, text: "WASH 5" },
+  }),
+  [
+    {
+      type: { text: "Pass Incompletion" },
+      text: "Shotgun pass incomplete short left",
+      start: { yardLine: 95, possessionText: "WASH 5" },
+    },
+    {
+      type: { text: "Rush" },
+      text: "rush middle for 3 yards",
+      start: { yardLine: 95, possessionText: "WASH 5" },
+    },
+  ],
+  { yardLine: 95, text: "WASH 5" },
+);
+assert(
+  fairCatch.startText === "WASH 5" && fairCatch.startYardLine === 95,
+  "a fair catch that is snapped is the drive start",
+);
+assert(
+  cfbDriveStatLine(cfbDriveGlance(fairCatch)) === "WASH · 2 plays · 3 yds · 0:46 · from WASH 5",
+  cfbDriveStatLine(cfbDriveGlance(fairCatch)) ?? "empty fair catch line",
+);
+
+// Punt parked on the new drive. ESPN leaves start on the punt spot (WASH 5)
+// after the return. The first scrimmage is WASH 28.
+const puntThenSnap = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "punt-on-drive",
+    team: { id: "264", abbreviation: "WASH" },
+    yards: 6,
+    offensivePlays: 1,
+    timeElapsed: { displayValue: "0:18" },
+    start: { yardLine: 95, text: "WASH 5" },
+  }),
+  [
+    {
+      type: { text: "Punt" },
+      text: "punt 45 yards to the UW05",
+      end: { yardLine: 95, possessionText: "WASH 5" },
+    },
+    {
+      type: { text: "Punt Return" },
+      text: "return to the UW28",
+      end: { yardLine: 72, possessionText: "WASH 28" },
+    },
+    {
+      type: { text: "Penalty" },
+      text: "PENALTY false start. NO PLAY",
+      start: { yardLine: 72, possessionText: "WASH 28" },
+    },
+    {
+      type: { text: "Rush" },
+      text: "rush for 6 yards",
+      start: { yardLine: 72, possessionText: "WASH 28" },
+    },
+  ],
+);
+assert(
+  puntThenSnap.startText === "WASH 28" && puntThenSnap.startYardLine === 72,
+  "first snap replaces a punt parked on the drive",
+);
+assert(
+  cfbDriveStatLine(cfbDriveGlance(puntThenSnap)) === "WASH · 1 play · 6 yds · 0:18 · from WASH 28",
+  cfbDriveStatLine(cfbDriveGlance(puntThenSnap)) ?? "empty punt-then-snap line",
+);
+
+// The punt stayed on the previous drive. This drive's start is still the punt
+// spot, and the snap is not.
+const afterPunt = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "after-punt",
+    team: { id: "264", abbreviation: "WASH" },
+    yards: 4,
+    offensivePlays: 1,
+    start: { yardLine: 95, text: "WASH 5" },
+  }),
+  [
+    {
+      type: { text: "Rush" },
+      text: "rush for 4 yards",
+      start: { yardLine: 80, possessionText: "WASH 20" },
+    },
+  ],
+  { yardLine: 95, text: "WASH 5" },
+);
+assert(
+  afterPunt.startText === "WASH 20" && afterPunt.startYardLine === 80,
+  "previous drive's punt spot yields to this offense's first snap",
+);
+assert(
+  cfbDriveStatLine(cfbDriveGlance(afterPunt)) === "WASH · 1 play · 4 yds · from WASH 20",
+  cfbDriveStatLine(cfbDriveGlance(afterPunt)) ?? "empty after-punt line",
+);
+
+// This drive's own punt is the other team's next spot, not a reason to move
+// where this drive began.
+const ownPunt = correctCfbDriveStartFromPlays(
+  mapCfbDriveMeta({
+    id: "own-punt",
+    team: { abbreviation: "WASH" },
+    yards: 12,
+    offensivePlays: 3,
+    displayResult: "Punt",
+    start: { yardLine: 75, text: "WASH 25" },
+  }),
+  [
+    {
+      type: { text: "Rush" },
+      start: { yardLine: 75, possessionText: "WASH 25" },
+    },
+    {
+      type: { text: "Punt" },
+      end: { yardLine: 20, possessionText: "USC 20" },
+    },
+  ],
+);
+assert(ownPunt.startText === "WASH 25" && ownPunt.startYardLine === 75, "a punt that ends the drive is not the start");
+
+assert(
+  cfbTerminalKickEnd([
+    { type: { text: "Kickoff" }, end: { yardLine: 75, possessionText: "WASH 25" } },
+    { type: { text: "Rush" }, start: { yardLine: 75, possessionText: "WASH 25" } },
+  ]) == null,
+  "an opening kickoff is not the next drive's spot",
+);
+assert(
+  cfbTerminalKickEnd([
+    { type: { text: "Rush" }, start: { yardLine: 50, possessionText: "50" } },
+    { type: { text: "Punt" }, end: { yardLine: 95, possessionText: "WASH 5" } },
+  ])?.text === "WASH 5",
+  "a punt with no snap after it is the inherited spot",
+);
+assert(
+  cfbInheritedKickEnd(
+    [
+      {
+        id: "usc-punt",
+        plays: [{ type: { text: "Punt" }, end: { yardLine: 95, possessionText: "WASH 5" } }],
+      },
+    ],
+    "wash",
+  )?.text === "WASH 5",
+  "the drive before this one supplies the punt spot",
+);
+
+// IND @ WSH, London, 2026-10-04: the stat line said "from WSH 46" while a
+// yardLine of 50 would paint the diamond on the midfield logo. The label wins.
+const wsh46 = syncCfbDriveStartToLabel(
+  {
+    teamAbbrev: "IND",
+    playCount: 6,
+    yards: 33,
+    timeOfPossession: "3:17",
+    startYardLine: 50,
+    startText: "WSH 46",
+    displayResult: null,
+    description: null,
+  },
+  "WSH",
+  "IND",
+);
+assert(wsh46?.startText === "WSH 46" && wsh46.startYardLine === 46, "WSH 46 text pulls a midfield yard line back to 46");
+assert(
+  homeYardLineFromSpotText("IND 32", "WSH", "IND") === 68,
+  "an away spot is measured from the home end zone",
+);
+assert(
+  syncCfbDriveStartToLabel(
+    { ...wsh46!, startYardLine: 46, startText: "WSH 46" },
+    "WSH",
+    "IND",
+  )?.startYardLine === 46,
+  "a label that already matches the yard line is left alone",
+);
+assert(homeYardLineFromSpotText("50", "WSH", "IND") === 50, "a bare 50 is midfield");
+assert(
+  syncCfbDriveStartToLabel(
+    { ...wsh46!, startText: "WSH 0", startYardLine: 25 },
+    "WSH",
+    "IND",
+  )?.startYardLine === 25,
+  "a kickoff placeholder label does not move the yard line",
+);
+
+const drivePlays = [
+  { type: { text: "Kickoff" }, start: { yardLine: 35 }, end: { yardLine: 70, possessionText: "ALA 30" } },
+  { type: { text: "Rush" }, start: { yardLine: 70, possessionText: "ALA 30" }, end: { yardLine: 75 } },
+  { type: { text: "Pass" }, start: { yardLine: 75, possessionText: "ALA 25" }, end: { yardLine: 80 } },
+  { type: { text: "Penalty" }, text: "False start, NO PLAY", start: { yardLine: 80 } },
+  { type: { text: "Timeout" }, start: { yardLine: 80 } },
+  { type: { text: "Rush" }, start: { yardLine: 0 }, end: { yardLine: 82, possessionText: "ALA 18" } },
+  { type: { text: "Extra Point" }, start: { yardLine: 97 } },
+];
+assert(
+  cfbDriveScrimmageSpots(drivePlays).join(",") === "70,75,82",
+  `scrimmage spots are snap yards, not kicks or flags: ${cfbDriveScrimmageSpots(drivePlays).join(",")}`,
+);
+const glanced = cfbDriveGlanceWithPlaySpots(
+  mapCfbDriveMeta({
+    id: "d1",
+    team: { abbreviation: "ALA" },
+    offensivePlays: 3,
+    yards: 12,
+    start: { yardLine: 70, text: "ALA 30" },
+  }),
+  drivePlays,
+);
+assert(glanced.playSpots?.join(",") === "70,75,82", "glance carries only this drive's snaps");
+assert(
+  cfbDriveGlance({ ...glanced, id: "d1", teamId: null, result: null }).playSpots?.join(",") === "70,75,82",
+  "glance copy keeps the snap spots",
+);
+assert(cfbDriveScrimmageSpots([]).length === 0, "a drive with no snaps has no dots");
 
 console.log("cfb-drive.test.ts ok");

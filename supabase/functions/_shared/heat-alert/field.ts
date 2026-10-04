@@ -89,3 +89,51 @@ export function footballMarks(input: {
     driveStartPct,
   };
 }
+
+export type PlayDot = { pct: number; x: number; y: number };
+
+const CLUSTER_YARDS = 1.75;
+const MAX_ROWS = 5;
+/** Matches NflFieldMap's play-dot spacing, then the portrait scales it. */
+const DOT_STEP = 16;
+
+/**
+ * Current-drive snaps only. Same stacking as layoutDrivePlayDots in the app:
+ * spots within about two yards stack up the field, then spill into a second column.
+ */
+export function layoutPlayDots(homeYardLines: number[]): PlayDot[] {
+  const spots = homeYardLines
+    .map((yard, i) => {
+      if (typeof yard !== "number" || !Number.isFinite(yard)) return null;
+      const pct = Math.max(0, Math.min(100, 100 - yard));
+      return { pct, i };
+    })
+    .filter((spot): spot is { pct: number; i: number } => spot != null);
+
+  const order = [...spots].sort((a, b) => a.pct - b.pct || a.i - b.i);
+  const clusters: { pct: number; i: number }[][] = [];
+  for (const spot of order) {
+    const last = clusters[clusters.length - 1];
+    const anchor = last?.[0];
+    if (!last || !anchor || spot.pct - anchor.pct > CLUSTER_YARDS) clusters.push([spot]);
+    else last.push(spot);
+  }
+
+  const laid: PlayDot[] = new Array(spots.length);
+  for (const cluster of clusters) {
+    const cols = Math.ceil(cluster.length / MAX_ROWS);
+    cluster.forEach((spot, idx) => {
+      const col = Math.floor(idx / MAX_ROWS);
+      const row = idx % MAX_ROWS;
+      const rowsHere = Math.min(MAX_ROWS, cluster.length - col * MAX_ROWS);
+      const ySpan = (rowsHere - 1) * DOT_STEP;
+      const xSpan = (cols - 1) * DOT_STEP;
+      laid[spot.i] = {
+        pct: spot.pct,
+        x: col * DOT_STEP - xSpan / 2,
+        y: row * DOT_STEP - ySpan / 2,
+      };
+    });
+  }
+  return laid.filter((dot): dot is PlayDot => dot != null);
+}

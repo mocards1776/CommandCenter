@@ -21,6 +21,8 @@ export type FootballSpot = {
   lastPlayText: string | null;
   /** Yards from the home end zone. Drawn only when strictly between the goal lines. */
   driveStartYardLine: number | null;
+  /** Scrimmage spots on the current drive only, yards from the home end zone. */
+  playYardLines?: number[];
   redZone: boolean;
 };
 

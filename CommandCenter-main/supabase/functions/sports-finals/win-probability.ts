@@ -1,12 +1,12 @@
 /**
- * ESPN college-football win probability.
+ * Football win-probability series for final-score graphics.
  *
- * The game summary (`winprobability`) is the series behind the chart: each row is
- * `homeWinPercentage` (0–1) for a play. The core probabilities feed is the lightweight
- * source for the current number on a live card. Nothing here is estimated locally.
+ * Same elapsed join as CommandCenter-main/src/lib/cfb-win-probability.ts
+ * (`mapCfbWinProbability`). NFL and college both use 15:00 quarters, and the
+ * NFL game page charts this series. sports-finals.test.ts locks the two copies
+ * together. The edge function cannot import the Vite app across the twin
+ * function trees.
  */
-
-const FOOTBALL_CORE = "https://sports.core.api.espn.com/v2/sports/football/leagues";
 
 export const CFB_QUARTER_SEC = 15 * 60;
 export const CFB_REGULATION_SEC = 4 * CFB_QUARTER_SEC;
@@ -196,103 +196,3 @@ export function cfbWinProbDomainSec(points: CfbWinProbPoint[]): number {
   return Math.max(CFB_REGULATION_SEC, maxT);
 }
 
-export function cfbWinProbLeader(
-  homeWinPct: number,
-  away: CfbWinProbTeam,
-  home: CfbWinProbTeam,
-  tiePct = 0,
-  awayWinPct?: number | null,
-): CfbWinProbLeader {
-  const awayPct =
-    awayWinPct != null && Number.isFinite(awayWinPct)
-      ? awayWinPct
-      : Math.max(0, 100 - homeWinPct - tiePct);
-  if (Math.abs(homeWinPct - awayPct) < 0.05) {
-    return {
-      abbrev: "EVEN",
-      pct: homeWinPct,
-      color: "334155",
-      logo: null,
-      even: true,
-    };
-  }
-  if (homeWinPct > awayPct) {
-    return {
-      abbrev: home.abbrev,
-      pct: homeWinPct,
-      color: home.color,
-      logo: home.logo ?? null,
-      even: false,
-    };
-  }
-  return {
-    abbrev: away.abbrev,
-    pct: awayPct,
-    color: away.color,
-    logo: away.logo ?? null,
-    even: false,
-  };
-}
-
-export function snapshotFromEspnProbability(
-  row: EspnWinProbRow | null | undefined,
-): CfbWinProbSnapshot | null {
-  const home = espnRateToPct(row?.homeWinPercentage);
-  if (home == null || !row) return null;
-  const tie = espnRateToPct(row.tiePercentage) ?? 0;
-  const away = espnRateToPct(row.awayWinPercentage) ?? Math.max(0, 100 - home - tie);
-  return { homeWinPct: home, awayWinPct: away, tiePct: tie };
-}
-
-type ProbPage = {
-  count?: number;
-  pageCount?: number;
-  items?: EspnWinProbRow[];
-};
-
-/**
- * Latest ESPN win probability for one game.
- * Two small core-API pages (count, then the last row). Returns null when ESPN
- * has not published a probability yet.
- */
-async function fetchFootballCurrentWinProbability(
-  league: "college-football" | "nfl",
-  eventId: string,
-): Promise<CfbWinProbSnapshot | null> {
-  try {
-    const base = `${FOOTBALL_CORE}/${league}/events/${encodeURIComponent(eventId)}/competitions/${encodeURIComponent(eventId)}/probabilities?limit=1`;
-    const firstRes = await fetch(base, { headers: { Accept: "application/json" } });
-    if (!firstRes.ok) return null;
-    const first = (await firstRes.json()) as ProbPage;
-    const pageCount = Number(first.pageCount) || 0;
-    if (!pageCount) return null;
-    const row =
-      pageCount <= 1
-        ? first.items?.[0]
-        : await (async () => {
-            const res = await fetch(`${base}&page=${pageCount}`, {
-              headers: { Accept: "application/json" },
-            });
-            if (!res.ok) return null;
-            const page = (await res.json()) as ProbPage;
-            return page.items?.[0] ?? null;
-          })();
-    return snapshotFromEspnProbability(row);
-  } catch {
-    return null;
-  }
-}
-
-/** Latest ESPN win probability for one college game. */
-export function fetchCfbCurrentWinProbability(
-  eventId: string,
-): Promise<CfbWinProbSnapshot | null> {
-  return fetchFootballCurrentWinProbability("college-football", eventId);
-}
-
-/** Latest ESPN win probability for one NFL game. Same feed shape as college. */
-export function fetchNflCurrentWinProbability(
-  eventId: string,
-): Promise<CfbWinProbSnapshot | null> {
-  return fetchFootballCurrentWinProbability("nfl", eventId);
-}

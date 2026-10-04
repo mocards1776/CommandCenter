@@ -10,6 +10,13 @@
 
 ---
 
+## Telegram final-score photos — October 4, 2026
+
+- When a tracked NFL or college game goes final, @FinalsAndStats_bot sends a tall graphic: score, logos, records, linescore, team stats, box leaders, and the win-probability chart. The live field stays off the card.
+- The bot token is `TELEGRAM_FINALS_BOT_TOKEN`, separate from the heat bot. Josh’s DM `857547432` is the default allowlist. Favorites and games that were hot while live are the default triggers.
+
+---
+
 ## Thompson Times: an AI editor picks the front — October 2, 2026
 
 - Each press, Grok reads the top of the story budget and picks the lead, second and third, reorders the rest, and spikes junk (aggregator filler, stale "Day 2" packages, old previews). The Cardinals, Blues and Mizzou still come first on an ordinary day, but the day's biggest sports story can now lead the paper.

@@ -24,6 +24,9 @@ import {
 } from "./cfb-win-probability";
 import {
   cfbDriveGlance,
+  cfbDriveScrimmageSpots,
+  cfbInheritedKickEnd,
+  cfbTerminalKickEnd,
   correctCfbDriveStartFromPlays,
   mapCfbDriveMeta,
   rebaseCfbDriveAfterKick,
@@ -385,6 +388,8 @@ export type CfbDrive = {
   startYardLine: number | null;
   /** ESPN spot text, e.g. "MSST 25". */
   startText: string | null;
+  /** Scrimmage snap spots, yards from the home end zone. Current drive only when plotted. */
+  playSpots: number[];
   plays: CfbPlay[];
 };
 
@@ -1483,15 +1488,21 @@ type EspnCfbDriveWithPlays = EspnCfbDriveRaw & {
   plays?: Parameters<typeof mapCfbPlay>[0][];
 };
 
-function mapCfbDrive(d: EspnCfbDriveWithPlays, fallbackId = ""): CfbDrive {
+function mapCfbDrive(
+  d: EspnCfbDriveWithPlays,
+  fallbackId = "",
+  previousKickEnd: ReturnType<typeof cfbInheritedKickEnd> = null,
+): CfbDrive {
   const plays = d.plays ?? [];
   const last = plays[plays.length - 1];
   const meta = correctCfbDriveStartFromPlays(
     rebaseCfbDriveAfterKick(mapCfbDriveMeta(d, fallbackId), last ? { lastPlay: last } : null),
     plays,
+    previousKickEnd,
   );
   return {
     ...meta,
+    playSpots: cfbDriveScrimmageSpots(plays),
     plays: plays.map(mapCfbPlay),
   };
 }
@@ -1506,13 +1517,22 @@ function collectCfbDrives(drives: {
   const out: CfbDrive[] = [];
   const seen = new Set<string>();
   previous.forEach((raw, index) => {
-    const mapped = mapCfbDrive(raw, `drive-${index}`);
+    const rawId = raw.id != null && String(raw.id) ? String(raw.id) : null;
+    const mapped = mapCfbDrive(
+      raw,
+      rawId ?? `drive-${index}`,
+      index > 0 ? cfbTerminalKickEnd(previous[index - 1]?.plays) : null,
+    );
     if (mapped.id && seen.has(mapped.id)) return;
     if (mapped.id) seen.add(mapped.id);
     out.push(mapped);
   });
   if (current) {
-    const mapped = mapCfbDrive(current, currentId ?? "drive-current");
+    const mapped = mapCfbDrive(
+      current,
+      currentId ?? "drive-current",
+      cfbInheritedKickEnd(previous, currentId),
+    );
     const idx = mapped.id ? out.findIndex((d) => d.id === mapped.id) : -1;
     if (idx >= 0) out[idx] = mapped;
     else out.push(mapped);
@@ -1879,9 +1899,19 @@ export async function fetchCfbCurrentDrive(eventId: string): Promise<CfbDriveGla
       headers: { Accept: "application/json" },
     });
     if (!res.ok) return null;
-    const raw = (await res.json()) as { drives?: { current?: EspnCfbDriveRaw } };
-    if (!raw.drives?.current) return null;
-    return cfbDriveGlance(mapCfbDrive(raw.drives.current, "drive-current"));
+    const raw = (await res.json()) as {
+      drives?: { current?: EspnCfbDriveWithPlays; previous?: EspnCfbDriveWithPlays[] };
+    };
+    const current = raw.drives?.current;
+    if (!current) return null;
+    const currentId = current.id != null && String(current.id) ? String(current.id) : null;
+    return cfbDriveGlance(
+      mapCfbDrive(
+        current,
+        currentId ?? "drive-current",
+        cfbInheritedKickEnd(raw.drives?.previous, currentId),
+      ),
+    );
   } catch {
     return null;
   }

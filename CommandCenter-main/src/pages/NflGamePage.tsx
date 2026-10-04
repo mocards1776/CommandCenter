@@ -8,6 +8,7 @@ import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import LogoPlate from "@/components/sports/LogoPlate";
 import NflFieldMap from "@/components/sports/NflFieldMap";
+import CfbWinProbability from "@/components/sports/CfbWinProbability";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
 import HighlightReel from "@/components/sports/HighlightReel";
 import { TeamStandingLine } from "@/components/sports/TeamFormChips";
@@ -17,9 +18,55 @@ import {
   fetchNflGameDetail,
   type NflScoreSide,
 } from "@/lib/nfl";
+import { nflInternationalMidfieldLogo } from "@/lib/nfl-venue";
 import type { MlbHighlight } from "@/lib/mlb";
 import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
 import { cn, formatSportsDateLong } from "@/lib/utils";
+
+const LOWER_IS_BETTER = /penalt|turnover|fumble|interception/i;
+
+function readableTeamColor(color: string): string {
+  const raw = color.replace(/^#/, "");
+  const n = Number.parseInt(raw, 16);
+  if (!Number.isFinite(n) || raw.length !== 6) return "#d5dae6";
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const lum = (0.299 * ch[0]! + 0.587 * ch[1]! + 0.114 * ch[2]!) / 255;
+  const lifted = lum > 0.42 ? ch : ch.map((c) => Math.round(c + (255 - c) * 0.48));
+  return `rgb(${lifted.join(",")})`;
+}
+
+function teamWash(color: string, alpha = 0.2): string {
+  const raw = color.replace(/^#/, "");
+  const n = Number.parseInt(raw, 16);
+  if (!Number.isFinite(n) || raw.length !== 6) return `rgba(255,255,255,${alpha})`;
+  let ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const lum = (0.299 * ch[0]! + 0.587 * ch[1]! + 0.114 * ch[2]!) / 255;
+  if (lum < 0.45) ch = ch.map((c) => Math.round(c + (255 - c) * 0.55));
+  return `rgba(${ch.join(",")},${alpha})`;
+}
+
+function statMagnitude(label: string, value: string): number | null {
+  const text = value.trim();
+  const clock = /^(\d+):(\d{2})$/.exec(text);
+  if (clock) return Number(clock[1]) * 60 + Number(clock[2]);
+  const slash = /^(\d+)\s*\/\s*(\d+)$/.exec(text);
+  if (slash) {
+    const made = Number(slash[1]);
+    const att = Number(slash[2]);
+    if (/comp|efficienc|red zone/i.test(label)) return att > 0 ? made / att : 0;
+    return made;
+  }
+  const dash = /^(\d+)\s*-\s*(\d+)$/.exec(text);
+  if (dash) {
+    const made = Number(dash[1]);
+    const other = Number(dash[2]);
+    if (/efficienc|red zone/i.test(label)) return other > 0 ? made / other : 0;
+    if (/penalt/i.test(label)) return other;
+    return made;
+  }
+  const n = Number.parseFloat(text.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
 
 function statusLabel(g: {
   live: boolean;
@@ -291,9 +338,13 @@ export function NflGameDetailView({
         <section className="space-y-2">
           <NflFieldMap
             game={g}
+            branded
             homeYardLine={homeYardLine}
             possessionTeamId={g.situation?.possessionTeamId ?? null}
             downDistanceText={g.situation?.downDistanceText}
+            drive={g.currentDrive}
+            midfieldLogo={nflInternationalMidfieldLogo(g)}
+            omitLastPlay
           />
           {g.situation?.lastPlayText ? (
             <p className="text-chalk px-1 text-[12px] leading-relaxed">
@@ -305,6 +356,10 @@ export function NflGameDetailView({
           ) : null}
         </section>
       )}
+
+      {g.winProbability.length > 0 ? (
+        <CfbWinProbability away={g.away} home={g.home} points={g.winProbability} />
+      ) : null}
 
       {g.recentPlays.length > 0 && (
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08] shadow-[0_12px_40px_rgba(0,0,0,0.22)]">
@@ -481,45 +536,121 @@ export function NflGameDetailView({
 
       {teamStatLabels.length > 0 && (
         <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
-          <div className="border-b border-white/[0.06] px-4 py-2.5">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8b93a7]">
+          <div className="border-b border-white/[0.06] px-4 py-3">
+            <h2 className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#e8e4d9]">
               Team stats
             </h2>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px] text-left text-[12px]">
-              <thead>
-                <tr className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-                  <th className="px-3 py-2 font-medium">Stat</th>
-                  <th className="numeral px-2 py-2 text-right font-medium">
-                    <NflTeamStatHeader side={g.away} align="right" />
-                  </th>
-                  <th className="numeral px-3 py-2 text-right font-medium">
-                    <NflTeamStatHeader side={g.home} align="right" />
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {teamStatLabels.map((statLabel) => {
-                  const away =
-                    g.teamStats.find(
-                      (s) => s.label === statLabel && s.teamAbbrev === g.away.abbrev,
-                    )?.value ?? "—";
-                  const home =
-                    g.teamStats.find(
-                      (s) => s.label === statLabel && s.teamAbbrev === g.home.abbrev,
-                    )?.value ?? "—";
-                  return (
-                    <tr key={statLabel} className="border-t border-white/[0.05]">
-                      <td className="px-3 py-1.5 text-[#c8cdd8]">{statLabel}</td>
-                      <td className="numeral px-2 py-1.5 text-right text-white">{away}</td>
-                      <td className="numeral px-3 py-1.5 text-right text-white">{home}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-white/[0.06] px-4 py-3">
+            <Link
+              to={`/sports/nfl/team/${g.away.teamId}`}
+              className="flex min-w-0 items-center gap-2 hover:opacity-90"
+            >
+              {g.away.logo ? <LogoPlate src={g.away.logo} className="h-8 w-8" /> : null}
+              <span className="min-w-0">
+                <span className="text-cream block text-[13px] font-semibold leading-tight">
+                  {g.away.abbrev}
+                </span>
+                {g.away.record ? (
+                  <span className="numeral text-chalk-dim block text-[10.5px] leading-tight">
+                    {g.away.record}
+                  </span>
+                ) : null}
+              </span>
+            </Link>
+            <span className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">vs</span>
+            <Link
+              to={`/sports/nfl/team/${g.home.teamId}`}
+              className="flex min-w-0 items-center justify-end gap-2 text-right hover:opacity-90"
+            >
+              <span className="min-w-0">
+                <span className="text-cream block text-[13px] font-semibold leading-tight">
+                  {g.home.abbrev}
+                </span>
+                {g.home.record ? (
+                  <span className="numeral text-chalk-dim block text-[10.5px] leading-tight">
+                    {g.home.record}
+                  </span>
+                ) : null}
+              </span>
+              {g.home.logo ? <LogoPlate src={g.home.logo} className="h-8 w-8" /> : null}
+            </Link>
           </div>
+          <ul>
+            {teamStatLabels.map((statLabel) => {
+              const away =
+                g.teamStats.find(
+                  (s) => s.label === statLabel && s.teamAbbrev === g.away.abbrev,
+                )?.value ?? "—";
+              const home =
+                g.teamStats.find(
+                  (s) => s.label === statLabel && s.teamAbbrev === g.home.abbrev,
+                )?.value ?? "—";
+              const awayMag = statMagnitude(statLabel, away);
+              const homeMag = statMagnitude(statLabel, home);
+              const numeric = awayMag != null && homeMag != null;
+              const total = numeric ? Math.abs(awayMag) + Math.abs(homeMag) : 0;
+              const awayShare = numeric && total > 0 ? (Math.abs(awayMag) / total) * 100 : 50;
+              const lower = LOWER_IS_BETTER.test(statLabel);
+              const awayLeads =
+                numeric && awayMag !== homeMag && (lower ? awayMag < homeMag : awayMag > homeMag);
+              const homeLeads = numeric && awayMag !== homeMag && !awayLeads;
+              const possession = /possession/i.test(statLabel);
+              return (
+                <li key={statLabel} className="border-t border-white/[0.05] px-3 py-2 sm:px-4">
+                  <div className="grid grid-cols-[5.25rem_minmax(0,1fr)_5.25rem] items-center gap-1">
+                    <span
+                      className={cn(
+                        "numeral rounded-md px-2 py-1 text-left text-[14px]",
+                        awayLeads ? "font-semibold text-cream" : "text-white/75",
+                      )}
+                      style={{ backgroundColor: teamWash(g.away.color) }}
+                    >
+                      {away}
+                    </span>
+                    <span className="text-center text-[10px] font-medium uppercase tracking-[0.12em] text-[#8b93a7]">
+                      {statLabel}
+                    </span>
+                    <span
+                      className={cn(
+                        "numeral rounded-md px-2 py-1 text-right text-[14px]",
+                        homeLeads ? "font-semibold text-cream" : "text-white/75",
+                      )}
+                      style={{ backgroundColor: teamWash(g.home.color) }}
+                    >
+                      {home}
+                    </span>
+                  </div>
+                  {numeric && total > 0 ? (
+                    <div
+                      className={cn(
+                        "mt-1.5 flex overflow-hidden rounded-full bg-white/[0.05]",
+                        possession ? "h-2" : "h-1.5",
+                      )}
+                    >
+                      <span
+                        className="h-full rounded-l-full"
+                        style={{
+                          width: `${awayShare}%`,
+                          background: readableTeamColor(g.away.color),
+                          opacity: awayLeads ? 0.95 : 0.45,
+                        }}
+                      />
+                      <span
+                        className="h-full flex-1 rounded-r-full"
+                        style={{
+                          background: readableTeamColor(g.home.color),
+                          opacity: homeLeads ? 0.95 : 0.45,
+                        }}
+                      />
+                    </div>
+                  ) : numeric ? (
+                    <div className={cn("mt-1.5 rounded-full bg-white/[0.05]", possession ? "h-2" : "h-1.5")} />
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
         </section>
       )}
 
@@ -678,26 +809,6 @@ function NflLinescoreTable({
         </tbody>
       </table>
     </div>
-  );
-}
-
-function NflTeamStatHeader({
-  side,
-  align,
-}: {
-  side: NflScoreSide;
-  align: "left" | "right";
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5",
-        align === "right" ? "justify-end" : "justify-start",
-      )}
-    >
-      {side.logo ? <LogoPlate src={side.logo} className="h-5 w-5" /> : null}
-      {side.abbrev}
-    </span>
   );
 }
 

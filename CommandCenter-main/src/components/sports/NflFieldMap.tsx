@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { alignCfbOpenDriveToPossession, cfbDriveStatLine, type CfbDriveGlance } from "@/lib/cfb-drive";
+import {
+  alignCfbOpenDriveToPossession,
+  cfbDriveStatLine,
+  syncCfbDriveStartToLabel,
+  type CfbDriveGlance,
+} from "@/lib/cfb-drive";
 import type { NflScoreGame } from "@/lib/nfl";
 import { fieldBallPctFromHomeYardLine } from "@/lib/nfl";
+import { layoutDrivePlayDots } from "@/lib/field-play-dots";
 import LogoPlate from "@/components/sports/LogoPlate";
 import { isBreakStatus } from "@/lib/apple-score";
 import { cn } from "@/lib/utils";
@@ -115,6 +121,21 @@ function EndZoneMark({
   );
 }
 
+/** Team-colored attack arrow. Away drives right, home drives left. */
+function AttackArrow({ facingRight, color }: { facingRight: boolean; color: string }) {
+  return (
+    <svg viewBox="0 0 14 10" className="h-3 w-4" aria-hidden>
+      <path
+        d={facingRight ? "M1.2 1.2 L12.2 5 L1.2 8.8 Z" : "M12.8 1.2 L1.8 5 L12.8 8.8 Z"}
+        fill={color}
+        stroke="#fff"
+        strokeWidth="0.9"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** Possession mark on the line of scrimmage. Logo when we have one; football if it fails. */
 function LosPossessionMark({
   logo,
@@ -128,14 +149,25 @@ function LosPossessionMark({
   possColor: string;
 }) {
   const [failed, setFailed] = useState(false);
+  const showArrow = facingLeft || facingRight;
   if (logo && !failed) {
     return (
-      <img
-        src={logo}
-        alt=""
-        onError={() => setFailed(true)}
-        className="relative h-7 w-7 object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]"
-      />
+      <span className="relative block h-7 w-7">
+        {showArrow ? (
+          <span
+            className="absolute bottom-full left-1/2 mb-1 -translate-x-1/2"
+            title={facingRight ? "Driving right" : "Driving left"}
+          >
+            <AttackArrow facingRight={facingRight} color={possColor} />
+          </span>
+        ) : null}
+        <img
+          src={logo}
+          alt=""
+          onError={() => setFailed(true)}
+          className="relative h-7 w-7 object-contain drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]"
+        />
+      </span>
     );
   }
   return (
@@ -185,10 +217,13 @@ function MidfieldLogo({ src }: { src: string }) {
 
 /**
  * Horizontal football field with team-colored end zones.
- * NFL keeps a full-height amber chain and the football glyph.
- * CFB (`branded`) puts the possession logo on the line of scrimmage, a short
- * bright bar to the line to gain, and a thin tick at the sticks.
- * Drive-start marker, midfield logo, and end zones stay as they are.
+ * `branded` is the chains both leagues use: possession logo on the line of
+ * scrimmage (football if the logo fails) with a team-colored attack arrow,
+ * a short bar to the sticks, and a yellow line at the first down. The line of
+ * scrimmage stays an amber tick under the logo. Pass `drive` for the
+ * drive-start marker, the current drive's play dots, and the ESPN stat line.
+ * `midfieldLogo` replaces the home club at midfield — overseas NFL passes the
+ * league shield.
  */
 export default function NflFieldMap({
   game,
@@ -198,6 +233,7 @@ export default function NflFieldMap({
   downDistanceText,
   branded = false,
   drive = null,
+  midfieldLogo,
   omitLastPlay = false,
   className,
 }: {
@@ -205,10 +241,15 @@ export default function NflFieldMap({
   homeYardLine: number | null;
   possessionTeamId: string | null;
   downDistanceText?: string | null;
-  /** Home midfield mark + end-zone logos. Used by CFB. */
+  /** Logo on the line of scrimmage, yellow sticks, end-zone logos. */
   branded?: boolean;
-  /** Current ESPN drive. Marker + stat line render only when this is set. */
+  /** Current ESPN drive. Marker, play dots, and stat line render only when this is set. */
   drive?: CfbDriveGlance | null;
+  /**
+   * Midfield image. Undefined uses the home club when `branded`. Null hides it.
+   * Overseas NFL passes the league shield.
+   */
+  midfieldLogo?: string | null;
   /** Game detail prints the same sentence under the field. Skip the copy here. */
   omitLastPlay?: boolean;
   className?: string;
@@ -251,13 +292,22 @@ export default function NflFieldMap({
   const toGainWidth =
     ballPct != null && firstDownPct != null ? Math.abs(firstDownPct - ballPct) : null;
 
-  const openDrive = alignCfbOpenDriveToPossession(drive, {
-    possessionTeamId: poss,
-    homeYardLine,
-    away: { teamId: game.away.teamId, abbrev: game.away.abbrev },
-    home: { teamId: game.home.teamId, abbrev: game.home.abbrev },
-  });
+  const openDrive = syncCfbDriveStartToLabel(
+    alignCfbOpenDriveToPossession(drive, {
+      possessionTeamId: poss,
+      homeYardLine,
+      away: { teamId: game.away.teamId, abbrev: game.away.abbrev },
+      home: { teamId: game.home.teamId, abbrev: game.home.abbrev },
+    }),
+    game.home.abbrev,
+    game.away.abbrev,
+  );
   const startYard = openDrive?.startYardLine ?? null;
+  // The midfield logo covers the 40s. A spot like WSH 46 is only four yards
+  // off the 50, so the diamond carries the yard number when it sits on that logo.
+  const startNum = openDrive?.startText?.trim().match(/(\d{1,2})$/)?.[1] ?? null;
+  const startOnLogo =
+    startYard != null && startYard >= 38 && startYard <= 62 && startNum != null && startNum !== "0";
   // Goal-line placeholders (0 / 100) sit in the end zone. A real drive start
   // is between them; the mapper replaces a stale kickoff 0 before this.
   const driveStartPct =
@@ -265,9 +315,11 @@ export default function NflFieldMap({
       ? fieldBallPctFromHomeYardLine(startYard)
       : null;
   const driveStats = openDrive ? cfbDriveStatLine(openDrive) : null;
+  const driveDots = branded ? layoutDrivePlayDots(openDrive?.playSpots ?? []) : [];
   const driveStartTitle = openDrive?.startText
     ? `Drive started at ${openDrive.startText}`
     : "Drive start";
+  const midfieldSrc = midfieldLogo === undefined ? (branded ? game.home.logo : null) : midfieldLogo;
 
   return (
     <div className={cn("overflow-hidden rounded-xl border border-emerald-700/35 bg-[#0a1f12]", className)}>
@@ -313,7 +365,7 @@ export default function NflFieldMap({
           side="away"
         />
         <div className="relative min-w-0">
-          {branded && game.home.logo ? <MidfieldLogo src={game.home.logo} /> : null}
+          {midfieldSrc ? <MidfieldLogo src={midfieldSrc} /> : null}
           {ticks.map((n, i) => (
             <div
               key={`${n}-${i}`}
@@ -332,19 +384,31 @@ export default function NflFieldMap({
                 <div
                   className="absolute top-1/2 z-[3] h-1.5 -translate-y-1/2 bg-[#2f9bff] shadow-[0_0_8px_rgba(47,155,255,0.9)]"
                   style={{ left: `${toGainLeft}%`, width: `${toGainWidth}%` }}
-                  title="Line to gain"
+                  title="Yards to the sticks"
                 />
               )}
               {firstDownPct != null && (
                 <div
-                  className="absolute top-1/2 z-[4] h-4 w-px -translate-y-1/2 bg-white"
+                  className="absolute inset-y-0 z-[7] w-[3px] -translate-x-1/2 bg-[#ffe500] shadow-[0_0_8px_rgba(255,229,0,0.95)]"
                   style={{ left: `${firstDownPct}%` }}
                   title="First down"
                 />
               )}
+              {driveDots.map((dot, i) => (
+                <span
+                  key={`play-${i}`}
+                  className="absolute z-[4] size-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)]"
+                  style={{
+                    left: `calc(${dot.pct}% + ${dot.x}px)`,
+                    top: `calc(50% + ${dot.y}px)`,
+                    backgroundColor: possColor,
+                  }}
+                  title="Play on this drive"
+                />
+              ))}
               {ballPct != null && (
                 <div
-                  className="absolute top-1/2 z-[5] h-5 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.9)]"
+                  className="absolute top-1/2 z-[8] h-10 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.9)]"
                   style={{ left: `${ballPct}%` }}
                   title="Line of scrimmage"
                 />
@@ -430,11 +494,16 @@ export default function NflFieldMap({
               style={{ left: `${driveStartPct}%` }}
               title={driveStartTitle}
             >
-              <span className="absolute inset-y-1 left-0 w-px -translate-x-1/2 border-l border-dashed border-white/85" />
+              <span className="absolute inset-y-1 left-0 w-px -translate-x-1/2 border-l border-dashed border-white" />
               <span
-                className="absolute top-1 left-0 h-1.5 w-1.5 -translate-x-1/2 rotate-45 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)]"
+                className="absolute top-1 left-0 h-2 w-2 -translate-x-1/2 rotate-45 border border-black/70 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.85)]"
                 aria-hidden
               />
+              {startOnLogo ? (
+                <span className="absolute top-3.5 left-1.5 rounded-sm bg-black/80 px-0.5 text-[8px] font-black leading-none text-white tabular-nums shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                  {startNum}
+                </span>
+              ) : null}
               <span className="sr-only">{driveStartTitle}</span>
             </div>
           )}

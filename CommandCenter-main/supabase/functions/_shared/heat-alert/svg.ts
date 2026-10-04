@@ -1,7 +1,7 @@
 import { clockParts, isBreakStatus } from "./clock.ts";
 import { onDark } from "./color.ts";
 import { leagueLabel, phaseLabel, situationLine } from "./copy.ts";
-import { footballMarks, spotIsRedZone } from "./field.ts";
+import { footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
 import { RINK_HEIGHT_FT, RINK_WIDTH_FT, rinkMarkings } from "./ice.ts";
 import { HEAT_ALERT_HEIGHT, HEAT_ALERT_WIDTH, type HeatAlertCard, type HeatSide } from "./types.ts";
 
@@ -10,8 +10,9 @@ import { HEAT_ALERT_HEIGHT, HEAT_ALERT_WIDTH, type HeatAlertCard, type HeatSide 
  *
  * The scoreboard follows the hierarchy of the alert the product liked:
  * HEAT chip, league · status, logos, scores, clock nest, down-and-distance.
- * Under that, football uses NflFieldMap's yard lines, end zones, line of
- * scrimmage, and line to gain. Hockey uses NhlIceRink's markings. Baseball
+ * Under that, football uses NflFieldMap's branded chains: yellow first-down
+ * sticks, a blue bar to the sticks, a team-colored attack arrow, and dots for
+ * the current drive only. Hockey uses NhlIceRink's markings. Baseball
  * uses the same base diagram as LiveSituationStrip. Nothing here is a photo.
  */
 
@@ -62,6 +63,13 @@ function footballGlyph(): string {
 function placedFootball(cx: number, cy: number, facingRight: boolean, scale = 2.35): string {
   const flip = facingRight ? 1 : -1;
   return `<g transform="translate(${cx} ${cy}) scale(${flip} 1) scale(${scale}) translate(-16 -8)">${footballGlyph()}</g>`;
+}
+
+/** Same wedge as NflFieldMap's AttackArrow, sitting above the possession mark. */
+function attackArrow(facingRight: boolean, facingLeft: boolean, color: string): string {
+  if (!facingRight && !facingLeft) return "";
+  const d = facingRight ? "M1.2 1.2 L12.2 5 L1.2 8.8 Z" : "M12.8 1.2 L1.8 5 L12.8 8.8 Z";
+  return `<g transform="translate(-22 -74) scale(3.14)"><path d="${d}" fill="${color}" stroke="#ffffff" stroke-width="0.9" stroke-linejoin="round"/></g>`;
 }
 
 function textEl(
@@ -144,7 +152,6 @@ function situationBar(card: HeatAlertCard): string {
 function footballPanel(card: HeatAlertCard): string {
   const spot = card.football;
   if (!spot) return "";
-  const branded = card.sport === "cfb";
   const marks = footballMarks({
     yardLine: spot.yardLine,
     possessionTeamId: spot.possessionTeamId,
@@ -177,7 +184,7 @@ function footballPanel(card: HeatAlertCard): string {
   const grassY = panelY + 70;
   const grassW = panelW - 32;
   const grassH = spot.lastPlayText ? 430 : 490;
-  const endFrac = branded ? 0.11 : 0.09;
+  const endFrac = 0.11;
   const endW = grassW * endFrac;
   const playX = grassX + endW;
   const playW = grassW - endW * 2;
@@ -196,10 +203,9 @@ function footballPanel(card: HeatAlertCard): string {
   const endZone = (x: number, abbrev: string, color: string, logo: string | null, rotate: number) => {
     const cx = x + endW / 2;
     const cy = grassY + grassH / 2;
-    const mark =
-      branded && logo
-        ? logoImage(logo, x + 8, cy - endW * 0.38, endW - 16, endW * 0.76)
-        : `<text x="${cx}" y="${cy}" fill="rgba(255,255,255,0.84)" font-family="Libre Franklin" font-size="26" font-weight="700" text-anchor="middle" letter-spacing="2" transform="rotate(${rotate} ${cx} ${cy})">${esc(abbrev)}</text>`;
+    const mark = logo
+      ? logoImage(logo, x + 8, cy - endW * 0.38, endW - 16, endW * 0.76)
+      : `<text x="${cx}" y="${cy}" fill="rgba(255,255,255,0.84)" font-family="Libre Franklin" font-size="26" font-weight="700" text-anchor="middle" letter-spacing="2" transform="rotate(${rotate} ${cx} ${cy})">${esc(abbrev)}</text>`;
     return `<rect x="${x}" y="${grassY}" width="${endW}" height="${grassH}" fill="${color}"/>${mark}`;
   };
 
@@ -207,25 +213,19 @@ function footballPanel(card: HeatAlertCard): string {
   if (marks.toGainLeft != null && marks.toGainWidth != null && marks.toGainWidth > 0.3) {
     const left = xAt(marks.toGainLeft);
     const width = (marks.toGainWidth / 100) * playW;
-    if (branded) {
-      chain += `<rect x="${left}" y="${grassY + grassH / 2 - 7}" width="${width}" height="14" fill="#2f9bff"/>`;
-    } else {
-      chain += `<rect x="${left}" y="${grassY}" width="${width}" height="${grassH}" fill="#fcd34d" fill-opacity="0.35"/>`;
-    }
+    chain += `<rect x="${left}" y="${grassY + grassH / 2 - 7}" width="${width}" height="14" fill="#2f9bff"/>`;
+  }
+  const dotScale = playW / 520;
+  for (const dot of layoutPlayDots(spot.playYardLines ?? [])) {
+    const cx = xAt(dot.pct) + dot.x * dotScale;
+    const cy = grassY + grassH / 2 + dot.y * dotScale;
+    chain += `<circle cx="${cx}" cy="${cy}" r="7" fill="${possColor}" stroke="#ffffff" stroke-width="1.6"/>`;
   }
   if (marks.firstDownPct != null) {
     const x = xAt(marks.firstDownPct);
-    if (branded) {
-      chain += `<line x1="${x}" y1="${grassY + grassH / 2 - 28}" x2="${x}" y2="${grassY + grassH / 2 + 28}" stroke="#ffffff" stroke-width="3"/>`;
-    } else {
-      chain += `<line x1="${x}" y1="${grassY}" x2="${x}" y2="${grassY + grassH}" stroke="#fcd34d" stroke-width="4"/>`;
-    }
+    chain += `<line x1="${x}" y1="${grassY}" x2="${x}" y2="${grassY + grassH}" stroke="#ffe500" stroke-width="5"/>`;
   }
-  if (marks.ballPct != null && !branded) {
-    const x = xAt(marks.ballPct);
-    chain += `<line x1="${x}" y1="${grassY}" x2="${x}" y2="${grassY + grassH}" stroke="#38bdf8" stroke-width="4"/>`;
-  }
-  if (marks.ballPct != null && branded) {
+  if (marks.ballPct != null) {
     const x = xAt(marks.ballPct);
     chain += `<line x1="${x}" y1="${grassY + grassH / 2 - 36}" x2="${x}" y2="${grassY + grassH / 2 + 36}" stroke="#fcd34d" stroke-width="5"/>`;
   }
@@ -239,17 +239,16 @@ function footballPanel(card: HeatAlertCard): string {
     `;
   }
 
-  const mid =
-    branded && card.home.logoHref
-      ? logoImage(
-          card.home.logoHref,
-          playX + playW / 2 - 78,
-          grassY + grassH / 2 - 78,
-          156,
-          156,
-          0.42,
-        )
-      : "";
+  const mid = card.home.logoHref
+    ? logoImage(
+        card.home.logoHref,
+        playX + playW / 2 - 78,
+        grassY + grassH / 2 - 78,
+        156,
+        156,
+        0.42,
+      )
+    : "";
 
   let ball = "";
   if (marks.ballPct != null && (marks.homeHasBall || marks.awayHasBall || spot.yardLine != null)) {
@@ -258,14 +257,10 @@ function footballPanel(card: HeatAlertCard): string {
     const x = Math.max(playX + pad, Math.min(playX + playW - pad, rawX));
     const y = grassY + grassH / 2;
     const possLogo = marks.homeHasBall ? card.home.logoHref : marks.awayHasBall ? card.away.logoHref : null;
-    if (branded && possLogo) {
-      ball = logoImage(possLogo, x - 36, y - 36, 72, 72);
+    const arrow = attackArrow(marks.facingRight, marks.facingLeft, possColor);
+    if (possLogo) {
+      ball = `<g transform="translate(${x} ${y})">${arrow}${logoImage(possLogo, -36, -36, 72, 72)}</g>`;
     } else {
-      const dir = marks.facingRight ? 1 : marks.facingLeft ? -1 : 0;
-      const arrow =
-        dir === 0
-          ? ""
-          : `<polygon points="${dir * 46},-12 ${dir * 46},12 ${dir * 68},0" fill="${possColor}"/>`;
       ball = `<g transform="translate(${x} ${y})">${placedFootball(0, 0, marks.facingRight || !marks.facingLeft)}${arrow}</g>`;
     }
   }
