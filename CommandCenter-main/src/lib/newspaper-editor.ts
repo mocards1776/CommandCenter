@@ -69,6 +69,8 @@ export type EditorGame = {
   postseason: boolean;
   /** Whether the wrap has enough copy to front the paper. */
   hasCopy: boolean;
+  /** Unread copy carried from the last edition — must not front, is not "last night". */
+  holdover: boolean;
 };
 
 export type EditorRequest = {
@@ -142,6 +144,7 @@ export function editorRequest(
       status: card.status ?? null,
       postseason: Boolean(card.postseason),
       hasCopy: cleanStoryCopy(card.body).text.length >= 400,
+      holdover: Boolean(card.holdover),
     }),
   );
   return { edition, candidates, games: context };

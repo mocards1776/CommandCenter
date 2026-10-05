@@ -222,6 +222,20 @@ export function dedupeMo(items: MoItem[]): MoItem[] {
   return out;
 }
 
+/** Newest dated item by pubDate. Items without a parseable date do not win. */
+export function newestPublished<T extends { publishedAt: string | null }>(items: T[]): T | null {
+  let best: T | null = null;
+  let bestAt = -Infinity;
+  for (const item of items) {
+    if (!item.publishedAt) continue;
+    const at = Date.parse(item.publishedAt);
+    if (Number.isNaN(at) || at < bestAt) continue;
+    best = item;
+    bestAt = at;
+  }
+  return best;
+}
+
 export function feedItemToMo(
   item: { title: string; link: string; image: string | null; snippet: string; publishedAt: string | null },
   source: string,

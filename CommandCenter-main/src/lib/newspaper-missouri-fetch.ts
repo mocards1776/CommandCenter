@@ -1,13 +1,16 @@
+import { missouriItemInEdition, pressEdition } from "./newspaper";
 import {
   buildMissouriDesk,
   combestUrl,
   feedItemToMo,
+  newestPublished,
   parseCombest,
   type MissouriDesk,
   type MoItem,
 } from "./newspaper-missouri";
 import { fetchRssArticle, fetchRssFeed, type RssFeedItem } from "./rss";
 
+export const MOSCOUT_NATIVE_FEED = "https://moscout.com/daily-updates-1?format=rss";
 export const MOSCOUT_FEED = "https://rss.app/feeds/nG7WGKJTs5LOQjxd.xml";
 const COMBEST_FEED = "https://johncombest.com/feed/";
 const WIRES: { url: string; source: string }[] = [
@@ -64,10 +67,13 @@ async function feedItems(url: string): Promise<RssFeedItem[]> {
   }
 }
 
-export async function fetchMissouriScout(): Promise<MoItem | null> {
-  const items = await feedItems(MOSCOUT_FEED);
-  const latest = items[0];
+export async function fetchMissouriScout(pressId?: string): Promise<MoItem | null> {
+  const native = await feedItems(MOSCOUT_NATIVE_FEED);
+  const items = native.length ? native : await feedItems(MOSCOUT_FEED);
+  const latest = newestPublished(items.filter((item) => item.link));
   if (!latest?.link) return null;
+  const edition = pressId ?? pressEdition().id;
+  if (!missouriItemInEdition(latest.publishedAt, edition)) return null;
   const item = feedItemToMo(latest, "Missouri Scout");
   return { ...item, headline: item.headline.replace(/^MOScout Daily Update:\s*/i, "") };
 }
@@ -102,11 +108,11 @@ async function wireItems(): Promise<MoItem[]> {
   return lists.flat();
 }
 
-export async function fetchMissouriDesk(day: string): Promise<MissouriDesk> {
+export async function fetchMissouriDesk(day: string, pressId?: string): Promise<MissouriDesk> {
   const [combest, wires, scout] = await Promise.all([
     combestLinks(day),
     wireItems(),
-    fetchMissouriScout().catch(() => null),
+    fetchMissouriScout(pressId).catch(() => null),
   ]);
   return buildMissouriDesk({ combest, wires, scout });
 }

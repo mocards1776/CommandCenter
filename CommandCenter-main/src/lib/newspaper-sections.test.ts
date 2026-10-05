@@ -19,7 +19,9 @@ import { rankStandings } from "./newspaper-box.ts";
 import {
   buildEdition,
   dedupeStories,
+  editorFront,
   isDeskStory,
+  isHoldoverGame,
   isPreviewStory,
   MIN_SECTION_PAGES,
   staleNamedPackage,
@@ -631,6 +633,27 @@ assert(filed.some((story) => story.id === "fresh"), "a story inside 18 hours is 
 assert(!filed.some((story) => story.id === "seen"), "a story already on screen stays out");
 assert(!filed.some((story) => story.id === "old-fresh"), "last week does not file as fresh");
 assert(filed.some((story) => story.id === "kept" && story.holdover), "an unread story carries into the next edition");
+const heldWrap = card({
+  id: "recap-held",
+  headline: "Blues lose 6-1",
+  holdover: true,
+  body: "Dallas scored six. The Blues scored one. ".repeat(20),
+  editorFront: 0,
+});
+const heldNews = card({
+  id: "news-held",
+  headline: "Cardinals note",
+  holdover: true,
+  favoriteKey: "mlb-stl",
+  body: "The Cardinals named a pitcher. ".repeat(20),
+  editorFront: 1,
+});
+assert(isHoldoverGame(heldWrap), "a carried recap is a holdover game");
+assert(!isHoldoverGame(heldNews), "holdover news is not a holdover game");
+assert(
+  editorFront([heldWrap, heldNews]).map((c) => c.id).join() === "news-held",
+  "editorFront drops a holdover wrap and keeps holdover news",
+);
 assert(!filed.some((story) => story.id === "stale"), "an unread story older than a day and a half does not carry");
 assert(!filed.some((story) => story.id === "read-carry"), "a read story does not carry");
 

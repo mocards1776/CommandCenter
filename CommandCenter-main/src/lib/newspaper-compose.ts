@@ -323,7 +323,7 @@ export async function pressStep(
     state.weather = await settle(fetchMarshfieldWeather(), null);
     state.watch = await settle(fetchWatchList(day), [] as WatchGame[]);
     state.scoutItem = await settle(
-      fetchMissouriScout().then(async (item) => (item ? ((await enrichMissouriItems([item], 1))[0] ?? item) : null)),
+      fetchMissouriScout(pressId).then(async (item) => (item ? ((await enrichMissouriItems([item], 1))[0] ?? item) : null)),
       null,
     );
     state.stage = 8;
@@ -333,7 +333,7 @@ export async function pressStep(
   if (state.stage === 8) {
     const readKeys = new Set(opts.readKeys ?? []);
     const desk = await settle(
-      fetchMissouriDesk(day).then(async (fetched) => ({
+      fetchMissouriDesk(day, pressId).then(async (fetched) => ({
         ...fetched,
         items: await enrichMissouriItems(fetched.items, 7),
       })),
