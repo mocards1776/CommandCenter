@@ -27,7 +27,9 @@ import {
   fetchLeagueClubs,
   fetchLeagueSlate,
   fetchNewspaperWire,
+  logWireFiling,
   markFavoriteClubs,
+  tallyWireGames,
   type NewspaperWire,
 } from "./newspaper-wire";
 import { fetchMlbPlayoffTree } from "./mlb";
@@ -262,7 +264,7 @@ export async function pressStep(
   }
 
   if (state.stage === 2) {
-    state.wire = await settle(fetchNewspaperWire({ favs, day }), { games: [], postseasonLeagues: [] } as NewspaperWire);
+    state.wire = await settle(fetchNewspaperWire({ favs, day, pressId }), { games: [], postseasonLeagues: [] } as NewspaperWire);
     state.wireCursor = 0;
     state.stage = 3;
     return { done: false, bag: state };
@@ -281,6 +283,8 @@ export async function pressStep(
       state.wireCursor = cursor + slice.length;
       return { done: false, bag: state };
     }
+    logWireFiling(`filed ${pressId}`, wire.games);
+    put([pressId, "tt-wire-log", day], tallyWireGames(wire.games));
     state.stage = 4;
     return { done: false, bag: state };
   }
@@ -511,6 +515,19 @@ export async function pressStep(
     readKeys: new Set(opts.readKeys ?? []),
     pressId,
   });
+  const filedByLeague = new Map<string, { games: number; wraps: number }>();
+  for (const card of filed) {
+    if (!/^(?:wire|recap|recent)-/.test(card.id)) continue;
+    const league = card.sportLabel || card.leaguePath || "other";
+    const row = filedByLeague.get(league) ?? { games: 0, wraps: 0 };
+    row.games += 1;
+    if ((card.body?.trim().length ?? 0) >= 60 || (card.scoreLine && /\d/.test(card.scoreLine))) row.wraps += 1;
+    filedByLeague.set(league, row);
+  }
+  const filedLine = [...filedByLeague.entries()]
+    .map(([league, row]) => `${league} games=${row.games} wraps=${row.wraps}`)
+    .join(" · ");
+  console.info(`[times-wire] stories ${pressId}${filedLine ? ` ${filedLine}` : " (no wraps)"}`);
   let stories = clearEditorStamps(filed);
   if (opts.editor) {
     const edited = await editEdition(filed, pressId, opts.editor);

@@ -7558,6 +7558,12 @@ li.counting .tt-count.card {
   object-fit: contain;
 }
 .tt-cfb-clubs b { font-size: 13px; }
+.tt-cfb-rank {
+  font-size: 10px;
+  font-weight: 800;
+  margin-right: 3px;
+  color: var(--w-muted);
+}
 .tt-cfb-clubs i {
   font-style: normal;
   font-size: 10px;

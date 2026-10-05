@@ -8,10 +8,10 @@
  */
 
 import { editionNewsDay } from "./newspaper.ts";
+import { isNewspaperCfbDeskGame, newspaperEspnGet } from "./newspaper-espn.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 
 const MLB_API = "https://statsapi.mlb.com/api/v1";
-const ESPN_SITE = "https://site.web.api.espn.com/apis/site/v2/sports";
 
 export type BoxSide = {
   id: string | null;
@@ -25,6 +25,8 @@ export type BoxSide = {
   errors: string | null;
   record: string | null;
   winner: boolean;
+  /** AP / ESPN curated rank, when the board carries one. */
+  rank: string | null;
   /** Runs / goals / points per period, null for an unplayed frame. */
   lines: (number | null)[];
 };
@@ -270,6 +272,7 @@ function mlbGame(raw: MlbScheduleGameRaw, day: string): BoxGame | null {
     record:
       s.leagueRecord?.wins != null ? `${s.leagueRecord.wins}-${s.leagueRecord.losses ?? 0}` : null,
     winner: Boolean(s.isWinner),
+    rank: null,
     lines: line(key),
   });
   const decisions: BoxGame["decisions"] = [];
@@ -492,6 +495,7 @@ type EspnCompetitorRaw = {
   homeAway?: string;
   score?: string;
   winner?: boolean;
+  curatedRank?: { current?: number };
   linescores?: { value?: number }[];
   records?: { type?: string; summary?: string }[];
   leaders?: EspnLeaderGroup[];
@@ -600,6 +604,10 @@ function espnGame(path: string, ev: EspnEventRaw, day: string): BoxGame | null {
     errors: c.errors != null ? String(c.errors) : null,
     record: c.records?.find((r) => r.type === "total")?.summary ?? c.records?.[0]?.summary ?? null,
     winner: Boolean(c.winner),
+    rank: (() => {
+      const n = c.curatedRank?.current;
+      return n && n > 0 && n < 99 ? String(n) : null;
+    })(),
     lines: periods.map((_, i) => {
       const v = c.linescores?.[i]?.value;
       return typeof v === "number" ? v : null;
@@ -680,9 +688,14 @@ function espnGame(path: string, ev: EspnEventRaw, day: string): BoxGame | null {
 }
 
 async function espnBoard(path: string, query: string): Promise<EspnBoardRaw | null> {
-  // College football's default board is the Top 25 slate; a limit opens all of FBS.
-  const limit = path === "football/college-football" ? "" : "limit=200";
-  return getJson<EspnBoardRaw>(`${ESPN_SITE}/${path}/scoreboard?${limit}${query}`);
+  const limit = path === "football/college-football" ? "limit=300" : "limit=200";
+  const extra = query.startsWith("&") ? query.slice(1) : query;
+  const qs = [limit, extra].filter(Boolean).join("&");
+  try {
+    return (await newspaperEspnGet(qs ? `${path}/scoreboard?${qs}` : `${path}/scoreboard`)) as EspnBoardRaw;
+  } catch {
+    return null;
+  }
 }
 
 function espnDayOf(iso: string | undefined, fallback: string): string {
@@ -705,11 +718,13 @@ const summaries = new Map<string, { at: number; data: Promise<unknown> }>();
  * for the story and the box at once, so one request serves both for a minute.
  */
 export function fetchEspnSummary<T = unknown>(path: string, eventId: string): Promise<T | null> {
-  const url = `${ESPN_SITE}/${path}/summary?event=${eventId}`;
-  const hit = summaries.get(url);
+  const key = `${path}/summary?event=${eventId}`;
+  const hit = summaries.get(key);
   if (hit && Date.now() - hit.at < 60_000) return hit.data as Promise<T | null>;
-  const data = getJson<T>(url);
-  summaries.set(url, { at: Date.now(), data });
+  const data = newspaperEspnGet(key)
+    .then((raw) => raw as T)
+    .catch(() => null);
+  summaries.set(key, { at: Date.now(), data });
   return data;
 }
 
@@ -735,7 +750,12 @@ function faceOff(iso: string | null): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d
-    .toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })
+    .toLocaleTimeString("en-US", {
+      timeZone: "America/Chicago",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
     .replace(":00 ", " ");
 }
 
@@ -1073,6 +1093,15 @@ function uniqueGames(games: BoxGame[]): BoxGame[] {
 const byStart = (a: BoxGame, b: BoxGame) => String(a.startIso ?? "").localeCompare(String(b.startIso ?? ""));
 const byDayThenStart = (a: BoxGame, b: BoxGame) => a.day.localeCompare(b.day) || byStart(a, b);
 
+function isCfbScheduleRow(game: BoxGame): boolean {
+  return isNewspaperCfbDeskGame({
+    awayId: game.away.id,
+    homeId: game.home.id,
+    awayRank: game.away.rank ? Number(game.away.rank) : null,
+    homeRank: game.home.rank ? Number(game.home.rank) : null,
+  });
+}
+
 /**
  * Results and slate for one sport section. Daily leagues read last night,
  * today and tomorrow; football reads this week and, when this week has no
@@ -1094,17 +1123,26 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
     };
   }
   if (path.startsWith("football/")) {
+    const college = path.includes("college-football");
     const current = await espnBoard(path, "");
-    const games = boardGames(path, current, edition);
-    const results = games.filter((g) => g.final || g.live);
     const week = current?.week?.number;
+    const seasonType = current?.season?.type ?? 2;
+    const games = boardGames(path, current, edition);
     const prev =
-      week && week > 1 ? await espnBoard(path, `&week=${week - 1}&seasontype=${current?.season?.type ?? 2}`) : null;
+      week && week > 1 ? await espnBoard(path, `&week=${week - 1}&seasontype=${seasonType}`) : null;
     const prior = prev ? boardGames(path, prev, newsDay).filter((g) => g.final) : [];
+    let upcoming = games.filter((g) => !g.final);
+    if (college && !upcoming.length && week) {
+      const next = await espnBoard(path, `&week=${week + 1}&seasontype=${seasonType}`);
+      upcoming = next ? boardGames(path, next, edition).filter((g) => !g.final) : [];
+    }
+    const played = games.filter((g) => g.final || g.live);
+    const results = uniqueGames(played.length ? played : college ? prior : played).sort(byStart);
+    const slate = uniqueGames(college ? upcoming.filter(isCfbScheduleRow) : upcoming).sort(byStart);
     return {
-      results: uniqueGames(results).sort(byStart),
-      slate: games.filter((g) => !g.final).sort(byStart),
-      week: uniqueGames(games).sort(byStart),
+      results,
+      slate,
+      week: uniqueGames(played.length ? games : [...prior, ...upcoming]).sort(byStart),
       weekLabel: week ? `Week ${week}` : null,
       prior: uniqueGames(prior).sort(byStart),
       priorLabel: week && week > 1 ? `Week ${week - 1}` : null,
