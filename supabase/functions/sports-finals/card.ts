@@ -859,18 +859,22 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
     standings: [],
     date,
     odds: oddsFromSummary(body, away, home, final),
-    // ESPN site + core APIs do not ship a hockey winprobability series.
-    winProbability: mapCfbWinProbability(
-      arr(body.winprobability).map((row) => {
-        const item = rec(row);
-        return {
-          homeWinPercentage: num(item.homeWinPercentage) ?? undefined,
-          tiePercentage: num(item.tiePercentage) ?? undefined,
-          playId: str(item.playId) || undefined,
-        };
-      }),
-      playRefs(body),
-    ),
+    // Football mapper is 15:00 quarters. ESPN hockey has no WP series;
+    // baseball WP exists but the chart labels would be Q1–Q4, so leave it off.
+    winProbability:
+      sport === "nfl" || sport === "cfb"
+        ? mapCfbWinProbability(
+            arr(body.winprobability).map((row) => {
+              const item = rec(row);
+              return {
+                homeWinPercentage: num(item.homeWinPercentage) ?? undefined,
+                tiePercentage: num(item.tiePercentage) ?? undefined,
+                playId: str(item.playId) || undefined,
+              };
+            }),
+            playRefs(body),
+          )
+        : [],
     path: gamePath(sport, eventId),
   };
 }

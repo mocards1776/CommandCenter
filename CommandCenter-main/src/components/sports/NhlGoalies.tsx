@@ -46,12 +46,8 @@ function Goalie({ side, row }: GoalieCard) {
 
 /** Final goalie lines from the ESPN box. Renders nothing without goalie rows. */
 export default function NhlGoalies({
-  away,
-  home,
   rows,
 }: {
-  away: NhlScoreSide;
-  home: NhlScoreSide;
   rows: { side: NhlScoreSide; row: NhlBoxRow }[];
 }) {
   if (!rows.length) return null;

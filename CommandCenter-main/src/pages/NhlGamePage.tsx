@@ -311,7 +311,7 @@ export default function NhlGamePage() {
               ) : g.leaders.length > 0 ? (
                 <NhlGameLeaders g={g} />
               ) : null}
-              {g.final ? <NhlGoalies away={g.away} home={g.home} rows={goalieRows(g)} /> : null}
+              {g.final ? <NhlGoalies rows={goalieRows(g)} /> : null}
 
               <div
                 className={cn(

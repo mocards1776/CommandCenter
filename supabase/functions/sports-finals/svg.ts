@@ -626,12 +626,13 @@ function peopleBlock(
   return parts.join("");
 }
 
+const MLB_ROW_H = 22;
+
 function mlbBoxHeight(box: MlbBox): number {
   const bat = Math.max(box.batting.away.rows.length, box.batting.home.rows.length);
   const pit = Math.max(box.pitching.away.rows.length, box.pitching.home.rows.length);
-  const rowH = 26;
-  const header = 70;
-  return header + (bat + 1) * rowH + 36 + (pit + 1) * rowH + 16;
+  const header = 64;
+  return header + (bat + 1) * MLB_ROW_H + 28 + (pit + 1) * MLB_ROW_H + 12;
 }
 
 function mlbSideTable(side: MlbBoxSide, x: number, y: number, w: number, paint: string, title: string): string {
@@ -642,7 +643,7 @@ function mlbSideTable(side: MlbBoxSide, x: number, y: number, w: number, paint: 
     text(title, x, y, { size: 14, fill: paint, weight: 700, spacing: 0.6 }),
     text(side.abbrev, x + w, y, { size: 14, fill: "#8b93a7", anchor: "end", weight: 700 }),
   ];
-  const headY = y + 22;
+  const headY = y + 20;
   parts.push(text("Player", x, headY, { size: 12, fill: "#8b93a7", weight: 700 }));
   cols.forEach((label, i) => {
     parts.push(
@@ -655,9 +656,9 @@ function mlbSideTable(side: MlbBoxSide, x: number, y: number, w: number, paint: 
     );
   });
   side.rows.forEach((row, r) => {
-    const ry = headY + 26 + r * 26;
-    const label = row.pos ? `${row.name} ${row.pos}` : row.name;
-    parts.push(text(label.length > 16 ? row.name : label, x, ry, { size: 15, fill: "#f4f0e6", weight: 500 }));
+    const ry = headY + MLB_ROW_H + r * MLB_ROW_H;
+    const label = row.pos ? `${row.name}, ${row.pos}` : row.name;
+    parts.push(text(label.length > 18 ? row.name : label, x, ry, { size: 14, fill: "#f4f0e6", weight: 500 }));
     row.cells.forEach((cell, i) => {
       parts.push(
         text(cell, x + nameW + colW * i + colW / 2, ry, {
@@ -674,7 +675,7 @@ function mlbSideTable(side: MlbBoxSide, x: number, y: number, w: number, paint: 
 
 function mlbBoxBlock(box: MlbBox, x: number, y: number, w: number, awayPaint: string, homePaint: string): string {
   const half = (w - GAP) / 2;
-  const batH = 36 + (Math.max(box.batting.away.rows.length, box.batting.home.rows.length) + 1) * 26;
+  const batH = 32 + (Math.max(box.batting.away.rows.length, box.batting.home.rows.length) + 1) * MLB_ROW_H;
   const parts = [
     sectionTitle("Box score", x + CARD_IN, y + 34),
     mlbSideTable(box.batting.away, x + CARD_IN, y + 56, half - CARD_IN, awayPaint, "Batting"),
@@ -891,7 +892,10 @@ export function renderFinalSvg(card: FinalCard): string {
   const colW = stackedStats || stackedPeople ? (fullW - GAP) / 2 : fullW;
 
   if (hasMlbBox && mlbBox) {
-    const boxH = mlbBoxHeight(mlbBox);
+    let boxH = mlbBoxHeight(mlbBox);
+    const footerH = 46;
+    const used = y + boxH + GAP + footerH;
+    if (used < FINALS_ALERT_TARGET_HEIGHT) boxH += FINALS_ALERT_TARGET_HEIGHT - used;
     parts.push(panel(M, y, fullW, boxH));
     parts.push(mlbBoxBlock(mlbBox, M, y, fullW, awayPaint, homePaint));
     y += boxH + GAP;

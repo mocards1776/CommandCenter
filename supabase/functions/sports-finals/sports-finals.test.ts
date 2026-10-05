@@ -661,7 +661,7 @@ const mlbPlayoff = cardFromSummary("mlb", "401908003", {
   },
 });
 assert.equal(mlbPlayoff.playoff, true);
-assert.match(mlbPlayoff.seriesLine ?? "", /MIL leads series 2-0/);
+assert.match(mlbPlayoff.seriesLine ?? "", /MIL leads series 2-0 · Game 2 of 5/);
 assert.ok(mlbPlayoff.mlbBox?.batting.home.rows.length);
 assert.equal(mlbPlayoffFromSummary("mlb", { header: { season: { type: 3 } }, seasonseries: [{ type: "playoff", summary: "MIL leads series 2-0", totalCompetitions: 5 }] }, {}).playoff, true);
 mlbPlayoff.standings = tablesFromStandings(
@@ -688,7 +688,7 @@ assert.match(mlbPlayoffSvg, /MIL leads series 2-0/);
 assert.match(mlbPlayoffSvg, /Box score/);
 assert.match(mlbPlayoffSvg, /J\. Chourio|F\. Tatis Jr\./);
 assert.match(mlbPlayoffSvg, /L\. Henderson|M\. King/);
-assert.doesNotMatch(mlbPlayoffSvg, /Standings|NL Central/);
+assert.doesNotMatch(mlbPlayoffSvg, /Standings|NL Central|Win probability/);
 assert.doesNotMatch(mlbPlayoffSvg, />103-59<|>91-71</);
 assert.match(mlbPlayoffSvg, new RegExp(`width="${FINALS_ALERT_WIDTH}"`));
 const mlbH = Number(/<svg [^>]*height="(\d+(?:\.\d+)?)"/.exec(mlbPlayoffSvg)?.[1] ?? 0);

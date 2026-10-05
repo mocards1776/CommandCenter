@@ -28,7 +28,7 @@ export function polishSeriesSummary(raw: string | null | undefined): string | nu
   return text.replace(/\blead series\b/gi, "leads series");
 }
 
-function gameNumberFromNote(note: string | null | undefined): number | null {
+export function gameNumberFromNote(note: string | null | undefined): number | null {
   const match = note?.match(/game\s*(\d+)/i);
   if (!match) return null;
   const n = Number(match[1]);
@@ -121,9 +121,11 @@ export function mlbPlayoffFromSummary(sport: string, body: unknown, comp: unknow
   const wins = arr(series.competitors)
     .map((row) => num(rec(row).wins))
     .filter((n): n is number => n != null);
+  const played = wins.reduce((sum, n) => sum + n, 0);
   const line = formatPlayoffSeriesLine({
     playoff: true,
     summary: str(series.summary) || str(series.shortSummary) || null,
+    gameNumber: gameNumberFromNote(noteFrom(competition, series)) ?? (played > 0 ? played : null),
     totalGames: num(series.totalCompetitions),
     note: noteFrom(competition, series),
     wins: wins.length ? Math.max(...wins) : null,
