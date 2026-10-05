@@ -2,6 +2,14 @@
 
 ---
 
+## Times: The Beez page in Section A — October 5, 2026
+
+- Thompson Times prints a new Section A sports page for Josh's adult rec hockey club, the Beez, immediately before the RUWT viewing guide. The Day Ahead and every other folio stay put; the guide remains last in A and later folios renumber.
+- The page reads `public.times_beez` (`id = 'current'`) in morning, midday, and evening editions. No row, or a failed read, leaves Section A unchanged.
+- Rule-built headline, last-game linescore, league standings, scoring leaders (Josh's row marked), results, and next-up. Empty arrays stay quiet. No sports, Telegram, press, or editor changes.
+
+---
+
 ## Times national-news deploy hotfix — October 5, 2026
 
 - `newspaper-national` now bundles: nested backticks around `paragraphs` / `summary` in the Grok SYSTEM prompt are escaped so Deno no longer dies on `supabase functions deploy`.

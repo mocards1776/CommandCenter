@@ -29,6 +29,7 @@ import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import type { MissouriDesk, MoItem } from "./newspaper-missouri";
 import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
+import type { FavoritesBeezPage } from "./newspaper-beez.ts";
 import type { NationalDesk, NationalStory } from "./newspaper-national.ts";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
@@ -222,6 +223,8 @@ export type EditionPage =
   | FavoritesWatchPage
   /** Set client-side by insertDayAhead (newspaper-day-ahead.ts); buildEdition never makes one. */
   | FavoritesDayPage
+  /** Set client-side by insertBeez (newspaper-beez.ts); buildEdition never makes one. */
+  | FavoritesBeezPage
   | SportFrontPage
   | SportInsidePage;
 

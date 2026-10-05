@@ -111,6 +111,9 @@ import WatchGuide from "@/components/newspaper/WatchGuide";
 import DayAhead from "@/components/newspaper/DayAhead";
 import { insertDayAhead, scheduleDateFor } from "@/lib/newspaper-day-ahead";
 import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
+import BeezPage from "@/components/newspaper/BeezPage";
+import { insertBeez } from "@/lib/newspaper-beez";
+import { readTimesBeez } from "@/lib/newspaper-beez-fetch";
 import { newspaperParas, sampleNationalDesk, type NationalStory } from "@/lib/newspaper-national";
 import { readTimesNationalNews } from "@/lib/newspaper-national-fetch";
 import {
@@ -514,6 +517,8 @@ function pageLabel(page: EditionPage): string {
       return "What to Watch";
     case "favorites-day":
       return "The Day Ahead";
+    case "favorites-beez":
+      return "The Beez";
     default:
       return "Front Page";
   }
@@ -4327,6 +4332,17 @@ function NewspaperDesk() {
     retry: 1,
   });
 
+  // The Beez: one current row, reprinted in every edition. No row (or a failed
+  // read): the page stays out and Section A is unchanged.
+  const beezQ = useQuery({
+    queryKey: ["tt-beez"],
+    enabled: open && Boolean(user?.id),
+    queryFn: () => readTimesBeez(),
+    staleTime: 5 * 60_000,
+    gcTime: 20 * 60 * 60_000,
+    retry: 1,
+  });
+
   const scoutQ = useQuery({
     queryKey: [pressId, "tt-mo-scout", day],
     enabled: pressing,
@@ -4617,7 +4633,10 @@ function NewspaperDesk() {
   );
   // No schedule row for the date (or not read yet): no page, never an older day's.
   const daySchedule = dayAheadQ.data?.date === scheduleDate ? dayAheadQ.data : null;
-  const edition = useMemo(() => insertDayAhead(builtEdition, daySchedule), [builtEdition, daySchedule]);
+  const edition = useMemo(
+    () => insertBeez(insertDayAhead(builtEdition, daySchedule), beezQ.data ?? null),
+    [builtEdition, daySchedule, beezQ.data],
+  );
   const comingUp = useMemo<ComingUp[]>(
     () =>
       clubs.flatMap((club) =>
@@ -4844,6 +4863,8 @@ function NewspaperDesk() {
                 <WatchGuide games={watchQ.data ?? []} editionLabel={press.label} />
               ) : page.kind === "favorites-day" ? (
                 <DayAhead date={page.date} events={page.events} upcoming={page.upcoming} editionLabel={press.label} />
+              ) : page.kind === "favorites-beez" ? (
+                <BeezPage desk={page.desk} editionLabel={press.label} />
               ) : page.kind === "favorites-continue" ? (
                 <ContinuePage
                   jumps={page.jumps}

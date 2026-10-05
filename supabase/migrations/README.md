@@ -43,5 +43,10 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
     `upcoming`, the next five days as filed that morning). RLS on; SELECT for
     `authenticated` only, no anon access, writes by the service role.
 
+13. `times_beez` — Thompson Times Beez page (adult rec hockey). One current
+    row (`id = 'current'`). RLS on; SELECT for `authenticated`. The table is
+    already live; the migration is `create table if not exists` plus a guarded
+    policy so a re-apply is a no-op.
+
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.
