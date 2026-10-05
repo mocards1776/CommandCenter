@@ -1,4 +1,4 @@
-import type { WatchGame, WatchSide } from "@/lib/newspaper-watch";
+import { watchLeagueLabel, type WatchGame, type WatchSide } from "@/lib/newspaper-watch";
 
 const TZ = "America/Chicago";
 
@@ -11,7 +11,7 @@ function clock(game: WatchGame): string {
 }
 
 function leagueTag(game: WatchGame): string {
-  return game.league === "Soccer" ? game.competition || "Soccer" : game.league;
+  return watchLeagueLabel(game);
 }
 
 function Crest({ side, size }: { side: WatchSide; size: "lg" | "sm" }) {

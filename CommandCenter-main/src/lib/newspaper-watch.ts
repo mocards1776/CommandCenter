@@ -5,15 +5,27 @@
  * Heat is frozen at press time as the pregame pick — never the in-game drama
  * score — and team-interest comes from the Times desk, not RUWT sliders.
  */
-import { fetchCfbScoreboard, type CfbScoredGame } from "./cfb";
-import { cfbRivalryName } from "./cfb-team-profile";
-import type { GameBroadcast } from "./game-broadcasts";
-import { fetchMlbScoreboard, mlbTeamLogo, type MlbScoredGame } from "./mlb";
-import { fetchNflScoreboard, type NflScoredGame } from "./nfl";
-import { fetchNhlScoreboard, type NhlScoredGame } from "./nhl";
-import { rankRuwtCfbGames, rankRuwtGames, rankRuwtNflGames, rankRuwtNhlGames } from "./ruwt";
-import { fetchSoccerRuwtBoard, rankRuwtSoccerGames, type SoccerScoredGame } from "./soccer";
-import { DEFAULT_FAVORITES } from "./sports";
+import { cfbRivalryName } from "./cfb-team-profile.ts";
+import type { GameBroadcast } from "./game-broadcasts.ts";
+import { fetchMlbScoreboard, mlbTeamLogo, type MlbScoredGame } from "./mlb.ts";
+import {
+  fetchWatchCfbBoard,
+  fetchWatchNbaBoard,
+  fetchWatchNflBoard,
+  fetchWatchNhlBoard,
+  fetchWatchSoccerBoard,
+  fetchWatchWnbaBoard,
+  rankWatchSoccerGames,
+  scoreWatchBasket,
+  wnbaInSeason,
+  type WatchBasketGame,
+  type WatchSoccerGame,
+} from "./newspaper-watch-scoreboard.ts";
+import { rankRuwtCfbGames, rankRuwtGames, rankRuwtNflGames, rankRuwtNhlGames } from "./ruwt.ts";
+import { DEFAULT_FAVORITES } from "./sports.ts";
+import type { CfbScoredGame } from "./cfb.ts";
+import type { NflScoredGame } from "./nfl.ts";
+import type { NhlScoredGame } from "./nhl.ts";
 import {
   asPrintGame,
   pickWatchGames,
@@ -27,9 +39,9 @@ import {
   type WatchLeague,
   type WatchListOpts,
   type WatchSide,
-} from "./newspaper-watch-page";
+} from "./newspaper-watch-page.ts";
 
-export * from "./newspaper-watch-page";
+export * from "./newspaper-watch-page.ts";
 
 const tvOf = (broadcasts: GameBroadcast[] | null | undefined) =>
   [...new Set((broadcasts ?? []).map((b) => b.name).filter(Boolean))];
@@ -107,12 +119,27 @@ export function watchFromCfb(g: CfbScoredGame): WatchGame {
   };
 }
 
-export function watchFromSoccer(g: SoccerScoredGame): WatchGame {
+export function watchFromSoccer(g: WatchSoccerGame & { score: number; reasons: string[] }): WatchGame {
   return {
     ...base(g, "Soccer", g.startIso ?? null, g.shortDetail ?? g.status),
     competition: g.league || null,
     away: side(g.away),
     home: side(g.home),
+  };
+}
+
+export function watchFromBasket(
+  g: WatchBasketGame & { score: number; reasons: string[] },
+  league: "NBA" | "WNBA",
+): WatchGame {
+  const series = g.seriesLine?.trim();
+  return {
+    ...base(g, league, g.startIso ?? null, g.shortDetail ?? g.status),
+    competition: null,
+    away: side(g.away),
+    home: side(g.home),
+    preseason: g.preseason,
+    reasons: [series, ...g.reasons].filter((r): r is string => Boolean(r)).slice(0, 3),
   };
 }
 
@@ -146,10 +173,11 @@ function stampDesk(game: WatchGame, byId: Map<string, WatchFavorite>): WatchGame
   };
 }
 
-async function board<T>(task: Promise<T[]>): Promise<T[]> {
+async function board<T>(league: string, task: Promise<T[]>): Promise<T[]> {
   try {
     return await task;
-  } catch {
+  } catch (err) {
+    console.warn(`watch desk ${league} scoreboard failed`, err);
     return [];
   }
 }
@@ -162,9 +190,22 @@ function parseWatchArgs(limitOrOpts?: number | WatchListOpts): { limit: number; 
   };
 }
 
+function rankBasket(
+  games: WatchBasketGame[],
+  interest: Record<string, number>,
+): (WatchBasketGame & { score: number; reasons: string[] })[] {
+  return games
+    .map((g) => {
+      const { score, reasons } = scoreWatchBasket(g, interest);
+      return { ...g, score, reasons };
+    })
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+}
+
 /**
- * Today's RUWT slate across every league RUWT covers, trimmed to one page.
- * NBA is skipped: there is no RUWT NBA ranker on this path.
+ * Today's RUWT slate across every league the desk covers, trimmed to one page.
+ * NBA and in-season WNBA ride along at low heat so a light day still prints
+ * the full slate; preseason basketball stays in the lowest tier.
  */
 export async function fetchWatchList(day: string, limitOrOpts?: number | WatchListOpts): Promise<WatchGame[]> {
   const { limit, favorites } = parseWatchArgs(limitOrOpts);
@@ -172,12 +213,14 @@ export async function fetchWatchList(day: string, limitOrOpts?: number | WatchLi
   const interest = timesTeamInterest(desk);
   const ymd = day.replace(/-/g, "");
   const onDay = <G extends { date?: string | null }>(games: G[]) => games.filter((g) => !g.date || g.date === day);
-  const [mlb, nfl, nhl, cfb, soccer] = await Promise.all([
-    board(fetchMlbScoreboard(day)).then((games) => games.filter((g) => !g.officialDate || g.officialDate === day)),
-    board(fetchNflScoreboard(ymd)).then(onDay),
-    board(fetchNhlScoreboard(ymd)).then(onDay),
-    board(fetchCfbScoreboard(ymd, { barWinChance: true })).then(onDay),
-    board(fetchSoccerRuwtBoard(day)).then((games) => games.filter((g) => g.date === day)),
+  const [mlb, nfl, nhl, cfb, soccer, nba, wnba] = await Promise.all([
+    board("MLB", fetchMlbScoreboard(day)).then((games) => games.filter((g) => !g.officialDate || g.officialDate === day)),
+    fetchWatchNflBoard(ymd).then(onDay),
+    fetchWatchNhlBoard(ymd).then(onDay),
+    fetchWatchCfbBoard(ymd).then(onDay),
+    fetchWatchSoccerBoard(day),
+    fetchWatchNbaBoard(ymd).then(onDay),
+    wnbaInSeason(day) ? fetchWatchWnbaBoard(ymd).then(onDay) : Promise.resolve([] as WatchBasketGame[]),
   ]);
   type Orig = { id: string; final: boolean; live: boolean; status?: string | null; shortDetail?: string | null };
   const attach =
@@ -209,7 +252,9 @@ export async function fetchWatchList(day: string, limitOrOpts?: number | WatchLi
       ...rankRuwtNflGames(nfl.map(asPrintGame), interest.nfl, 24).map(attach(watchFromNfl, nfl)),
       ...rankRuwtNhlGames(nhl.map(asPrintGame), interest.nhl, 24).map(attach(watchFromNhl, nhl)),
       ...rankRuwtCfbGames(cfb.map(asPrintGame), interest.cfb, 24).map(attach(watchFromCfb, cfb)),
-      ...rankRuwtSoccerGames(soccer.map(asPrintGame), interest.soccer, 24).map(attach(watchFromSoccer, soccer)),
+      ...rankWatchSoccerGames(soccer.map(asPrintGame), interest.soccer, 24).map(attach(watchFromSoccer, soccer)),
+      ...rankBasket(nba.map(asPrintGame), interest.nba).map(attach((g) => watchFromBasket(g, "NBA"), nba)),
+      ...rankBasket(wnba.map(asPrintGame), interest.wnba).map(attach((g) => watchFromBasket(g, "WNBA"), wnba)),
     ],
     limit,
   );

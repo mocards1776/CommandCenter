@@ -1,5 +1,7 @@
 import {
   composeWatchPage,
+  watchLeagueColor,
+  watchLeagueLabel,
   type WatchGame,
   type WatchListing,
   type WatchNetwork,
@@ -32,7 +34,7 @@ function teamLine(side: WatchSide): string {
 }
 
 function leagueTag(game: WatchListing): string {
-  return game.league === "Soccer" ? game.competition || "Soccer" : game.league;
+  return watchLeagueLabel(game);
 }
 
 function Networks({ networks }: { networks: WatchNetwork[] }) {
@@ -51,7 +53,7 @@ function Networks({ networks }: { networks: WatchNetwork[] }) {
 
 function MustRow({ game }: { game: WatchListing }) {
   return (
-    <li className="tt-watch-row must">
+    <li className="tt-watch-row must" data-league={game.league}>
       <time className="tt-watch-time" dateTime={game.when ?? undefined}>
         {game.clock}
       </time>
@@ -72,7 +74,7 @@ function MustRow({ game }: { game: WatchListing }) {
 
 function WorthRow({ game }: { game: WatchListing }) {
   return (
-    <li className="tt-watch-row worth">
+    <li className="tt-watch-row worth" data-league={game.league}>
       <time className="tt-watch-time" dateTime={game.when ?? undefined}>
         {game.clock}
       </time>
@@ -90,7 +92,7 @@ function WorthRow({ game }: { game: WatchListing }) {
 
 function AroundRow({ game }: { game: WatchListing }) {
   return (
-    <li className="tt-watch-row around">
+    <li className="tt-watch-row around" data-league={game.league}>
       <time className="tt-watch-time" dateTime={game.when ?? undefined}>
         {game.clock}
       </time>
@@ -129,7 +131,10 @@ export default function WatchGuide({ games, editionLabel }: { games: WatchGame[]
         <>
           <section className="tt-watch-feature" aria-label="Game of the day">
             <p className="tt-watch-flag">
-              Game of the Day <span>{leagueTag(feature)}</span>
+              Game of the Day{" "}
+              <span data-league={feature.league} style={{ color: watchLeagueColor(feature.league) }}>
+                {leagueTag(feature)}
+              </span>
             </p>
             <div className="tt-watch-match">
               <div className="tt-watch-team">
