@@ -69,6 +69,16 @@ export function alertReplyMarkup(
   return telegramInlineKeyboard(buttons);
 }
 
+/** Evening preview / slate photos: RUWT board + sports home, no single game. */
+export function previewReplyMarkup(origin: string | null | undefined): string | null {
+  const ruwt = ruwtBoardUrl(origin);
+  const home = sportsHomeUrl(origin);
+  const buttons: TelegramCommandCenterButton[] = [];
+  if (ruwt) buttons.push({ text: "RUWT board", url: ruwt });
+  if (home) buttons.push({ text: "Sports home", url: home });
+  return telegramInlineKeyboard(buttons);
+}
+
 /** NHL highlightClipSharingUrl, or a Brightcove page. Anything else is dropped. */
 export function clipShareUrl(raw: string | null | undefined): string | null {
   const href = (raw ?? "").trim();

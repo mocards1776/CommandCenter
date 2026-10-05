@@ -232,6 +232,34 @@ npm run lint
     -d '{"action":"send","sport":"nfl","eventId":"401872964"}'
   ```
 
+  **Evening preview** — one Telegram photo around 5:00pm America/Chicago with
+  tonight's top not-started games (MLB / NFL / NHL / CFB / soccer). Ranking is
+  a Deno port of RUWT Today's Top (`rankRuwtGames`, `rankRuwtNflGames`,
+  `rankRuwtNhlGames`, `rankRuwtCfbGames`, `rankRuwtSoccerGames`). Live heat and
+  `sports_push_game_state.drama_score` are not used. Cap is 8 (board target;
+  the RUWT section default is 6). Window is send time through ~1:30am CT so
+  late West Coast games count. Empty slate skips the send. Idempotent once per
+  Chicago date via `sports_finals_preview_sent`.
+
+  Cron job `sports-finals-evening-preview` is in
+  `supabase/migrations/20261005_sports_finals_preview.sql`. Same Vault secret
+  and `x-sports-finals-cron` header as the sweep. The schedule is `0 17 * * *`
+  with `timezone = America/Chicago` when pg_cron has that column; otherwise it
+  falls back to `0 22 * * *` UTC (5pm CDT / 4pm CST).
+
+  ```bash
+  curl -X POST "$SUPABASE_URL/functions/v1/sports-finals" \
+    -H "Content-Type: application/json" \
+    -H "x-sports-finals-cron: $TELEGRAM_FINALS_CRON_SECRET" \
+    -d '{"action":"evening-preview","dryRun":true}'
+
+  curl -X POST "$SUPABASE_URL/functions/v1/sports-finals" \
+    -H "Content-Type: application/json" \
+    -H "x-sports-finals-cron: $TELEGRAM_FINALS_CRON_SECRET" \
+    -d '{"action":"evening-preview","render":true}' \
+    -o evening-preview.png
+  ```
+
 - **Blues goal highlights** — Telegram `sendVideo` of NHL goal MP4s to a
   private DM. Bot `@CommandCenterHighlights_bot`. Token secret
   `TELEGRAM_HIGHLIGHTS_BOT_TOKEN` (not the heat or finals bots). Clips come
