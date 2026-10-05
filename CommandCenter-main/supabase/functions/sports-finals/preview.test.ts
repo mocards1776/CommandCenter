@@ -301,7 +301,8 @@ assert.equal(
 );
 
 const caption = previewCaption(slate, "2026-10-05");
-assert.match(caption, /Tonight's top games/);
+assert.equal(caption, "Tonight's top games · Mon, Oct 5");
+assert.doesNotMatch(caption, /@/);
 assert.doesNotMatch(caption, /\bheat\b/i);
 
 assert.equal(lastName("Shane Bieber"), "Bieber");

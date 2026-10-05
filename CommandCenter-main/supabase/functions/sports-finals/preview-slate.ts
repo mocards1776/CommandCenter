@@ -332,19 +332,13 @@ export function sortPreviewForDisplay(games: PreviewGame[]): PreviewGame[] {
   );
 }
 
-export function previewCaption(games: PreviewGame[], chicagoDate: string): string {
+/** Telegram caption only — the PNG already lists matchups. */
+export function previewCaption(_games: PreviewGame[], chicagoDate: string): string {
   const when = new Date(`${chicagoDate}T18:00:00-05:00`);
   const day = Number.isNaN(when.getTime())
     ? chicagoDate
     : when.toLocaleDateString("en-US", { timeZone: PREVIEW_TZ, weekday: "short", month: "short", day: "numeric" });
-  const lines = [
-    `Tonight's top games · ${day}`,
-    ...games.slice(0, PREVIEW_LIMIT).map((g) => {
-      const clock = printClock(g.startIso);
-      return `${g.away.abbrev} @ ${g.home.abbrev} · ${clock} CT`;
-    }),
-  ];
-  return lines.join("\n").slice(0, 1000);
+  return `Tonight's top games · ${day}`;
 }
 
 export function previewGamePath(sport: PreviewSport, eventId: string): string {
