@@ -3,15 +3,17 @@ import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.9.6";
 import { alertText, editionTitle, frontFor, replyMarkup } from "../times-telegram/alert.ts";
 
 /**
- * Thompson Times image alert: the front page (A1) and the weather report,
- * screenshotted by the GitHub Actions runner (.github/workflows/times-telegram-shots.yml,
- * script CommandCenter-main/scripts/times-shots.mjs) and sent by this function.
+ * Thompson Times image alert: the front page (A1) plus phone cards for weather,
+ * The Day Ahead, and Best Games to Watch, screenshotted by the GitHub Actions
+ * runner (.github/workflows/times-telegram-shots.yml, script
+ * CommandCenter-main/scripts/times-shots.mjs) and sent by this function.
  *
  *   peek   → is an edition waiting for its image alert? (records the runner heartbeat)
  *   claim  → claim it in public.times_telegram_alerts and mint a short-lived session for
  *            the household desk's user so the runner can open the paper behind the login
- *   send   → multipart front + weather PNGs: photo 1 carries the caption and the
- *            web_app "Read the paper" button, photo 2 is the weather
+ *   send   → multipart front + optional weather/day/watch PNGs: photo 1 carries
+ *            the caption and the web_app "Read the paper" button; the rest follow
+ *            in order (weather, The Day Ahead, Best Games). Missing extras are skipped.
  *   logout → revoke the minted session once the pictures are taken
  *   release→ the runner failed; let times-telegram send the text alert right away
  *
@@ -237,9 +239,12 @@ Deno.serve(async (req) => {
     if (action === "send") {
       if (!askedId) return json({ ok: false, error: "issue_id required" }, 400);
       const front = form?.get("front");
-      const weather = form?.get("weather");
+      const extraNames = ["weather", "day", "watch"] as const;
+      const extras = extraNames
+        .map((name) => [name, form?.get(name)] as const)
+        .filter((entry): entry is readonly [typeof extraNames[number], Blob] => entry[1] instanceof Blob && entry[1].size > 0);
       if (!(front instanceof Blob) || !front.size) return json({ ok: false, error: "front image required" }, 400);
-      if (front.size > MAX_PHOTO_BYTES || (weather instanceof Blob && weather.size > MAX_PHOTO_BYTES)) {
+      if (front.size > MAX_PHOTO_BYTES || extras.some(([, blob]) => blob.size > MAX_PHOTO_BYTES)) {
         return json({ ok: false, error: "image too large" }, 413);
       }
       if (!test) {
@@ -259,17 +264,30 @@ Deno.serve(async (req) => {
       const front3 = frontFor(issue);
       const caption = alertText(issue.id, front3);
       const { date } = editionTitle(issue.id);
-      const results = [];
+      const extraCaption: Record<(typeof extraNames)[number], string> = {
+        weather: `Weather · Marshfield, Mo.${date ? ` · ${date}` : ""}`,
+        day: `The Day Ahead${date ? ` · ${date}` : ""}`,
+        watch: `Best Games to Watch${date ? ` · ${date}` : ""}`,
+      };
+      const results: {
+        chat: string;
+        front: Awaited<ReturnType<typeof telegramPhoto>>;
+        extras: Record<string, Awaited<ReturnType<typeof telegramPhoto>>>;
+      }[] = [];
       for (const chat of chats) {
         const first = await telegramPhoto(token, chat, front, `${issue.id}-front.png`, caption, replyMarkup());
-        const second =
-          first.ok && weather instanceof Blob && weather.size
-            ? await telegramPhoto(token, chat, weather, `${issue.id}-weather.png`, `Weather · Marshfield, Mo. · ${date}`)
-            : null;
-        results.push({ chat, front: first, weather: second });
+        const follow: Record<string, Awaited<ReturnType<typeof telegramPhoto>>> = {};
+        if (first.ok) {
+          for (const [name, blob] of extras) {
+            follow[name] = await telegramPhoto(token, chat, blob, `${issue.id}-${name}.png`, extraCaption[name]);
+          }
+        }
+        results.push({ chat, front: first, extras: follow });
       }
       const sent = results.some((r) => r.front.ok);
-      const failed = results.filter((r) => !r.front.ok || (r.weather && !r.weather.ok));
+      const failed = results.filter(
+        (r) => !r.front.ok || Object.values(r.extras).some((photo) => !photo.ok),
+      );
       if (!test) {
         await db
           .from("times_telegram_alerts")
@@ -280,10 +298,18 @@ Deno.serve(async (req) => {
               chat: r.chat,
               ok: r.front.ok,
               message_id: r.front.message_id ?? null,
-              weather_message_id: r.weather?.message_id ?? null,
+              weather_message_id: r.extras.weather?.message_id ?? null,
+              day_message_id: r.extras.day?.message_id ?? null,
+              watch_message_id: r.extras.watch?.message_id ?? null,
             })),
             error: failed.length
-              ? failed.map((r) => `${r.chat}: ${r.front.error ?? r.weather?.error ?? ""}`).join("; ").slice(0, 500)
+              ? failed
+                  .map((r) => {
+                    const extraErr = Object.values(r.extras).find((photo) => !photo.ok)?.error;
+                    return `${r.chat}: ${r.front.error ?? extraErr ?? ""}`;
+                  })
+                  .join("; ")
+                  .slice(0, 500)
               : null,
             // A failed image send goes back to the text alert on its next sweep.
             ...(sent ? {} : { claimed_at: new Date(Date.now() - RETRY_AFTER_MS - 60_000).toISOString(), mode: "text" }),
@@ -297,7 +323,15 @@ Deno.serve(async (req) => {
         headline: front3[0]?.headline ?? null,
         results: results.map((r) => ({
           front: { ok: r.front.ok, message_id: r.front.message_id ?? null, error: r.front.error ?? null },
-          weather: r.weather ? { ok: r.weather.ok, message_id: r.weather.message_id ?? null, error: r.weather.error ?? null } : null,
+          weather: r.extras.weather
+            ? { ok: r.extras.weather.ok, message_id: r.extras.weather.message_id ?? null, error: r.extras.weather.error ?? null }
+            : null,
+          day: r.extras.day
+            ? { ok: r.extras.day.ok, message_id: r.extras.day.message_id ?? null, error: r.extras.day.error ?? null }
+            : null,
+          watch: r.extras.watch
+            ? { ok: r.extras.watch.ok, message_id: r.extras.watch.message_id ?? null, error: r.extras.watch.error ?? null }
+            : null,
         })),
       });
     }

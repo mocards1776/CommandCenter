@@ -1,7 +1,8 @@
 /**
  * Thompson Times image alert runner: screenshots the edition's front page (A1)
- * and the weather report as they render on a 13-inch iPad, then hands both PNGs
- * to the times-telegram-shots edge function, which sends them on @ThompsonTimes_bot.
+ * at 13-inch iPad width, then phone-sized cards for weather, The Day Ahead, and
+ * Best Games to Watch. Hands the PNGs to times-telegram-shots, which sends them
+ * on @ThompsonTimes_bot (front page first, with caption + Mini App button).
  *
  * Run by .github/workflows/times-telegram-shots.yml (auth: GitHub Actions OIDC, no secrets).
  * Manual test from a machine holding the admin secret:
@@ -11,6 +12,7 @@
  *
  * The browser is read-only: every write to Supabase REST and every call to the press or
  * editor functions is aborted, so opening the paper here can never change the desk or an issue.
+ * Day Ahead and watch cards are skipped when there is no schedule row / no games.
  */
 import { chromium } from "playwright";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
@@ -21,11 +23,15 @@ const SUPABASE_URL = (process.env.TIMES_SUPABASE_URL || "https://esdgrgulaxnewmh
 const SHOTS_URL = `${SUPABASE_URL}/functions/v1/times-telegram-shots`;
 const PROJECT_REF = new URL(SUPABASE_URL).hostname.split(".")[0];
 const AUDIENCE = "times-telegram-shots";
-/** iPad Pro 13-inch, portrait, in CSS pixels; rendered at 2x. */
+/** iPad Pro 13-inch, portrait, in CSS pixels; rendered at 2x. Front page only. */
 const VIEW = { width: 1032, height: 1376 };
 const SCALE = 2;
+/** Portrait iPhone CSS width; phone cards render at 3x. */
+const PHONE = { width: 430, height: 932 };
+const PHONE_SCALE = 3;
 /** Taller than this (CSS px) and the front is cut to its top, so Telegram's 2560px cap keeps it legible. */
 const FRONT_MAX_H = 1720;
+const PHONE_CARDS = ["weather", "day", "watch"];
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -111,10 +117,100 @@ async function settle(page, scope) {
   await page.waitForTimeout(1_200);
 }
 
+function sessionInit(claim) {
+  return {
+    script: ({ key, session, layout }) => {
+      try {
+        localStorage.setItem(key, JSON.stringify(session));
+        localStorage.setItem("sports-layout-v1", JSON.stringify(layout));
+        localStorage.setItem("newspaper-solo", "1");
+        sessionStorage.setItem("newspaper-solo", "1");
+      } catch {}
+    },
+    arg: { key: `sb-${PROJECT_REF}-auth-token`, session: claim.session, layout: claim.layout },
+  };
+}
+
+async function harden(context, blocked) {
+  await context.route("**/*", (route) => {
+    const req = route.request();
+    const url = req.url();
+    const method = req.method();
+    const supa = url.startsWith(SUPABASE_URL);
+    if (supa && url.includes("/rest/v1/") && method !== "GET" && method !== "HEAD") {
+      blocked.push(`${method} ${new URL(url).pathname}`);
+      return route.abort();
+    }
+    if (supa && /\/functions\/v1\/(newspaper-press|newspaper-editor)/.test(url)) {
+      blocked.push(`${method} ${new URL(url).pathname}`);
+      return route.abort();
+    }
+    return route.continue();
+  });
+}
+
+async function pinClock(page, issueId) {
+  if (pressIdAt(new Date()) === issueId) return;
+  const at = instantFor(issueId);
+  if (!at) throw new Error(`Cannot place ${issueId} on the clock`);
+  log("pinning clock to", at.toISOString(), "for", issueId);
+  await page.clock.setFixedTime(at);
+}
+
+/** Phone cards: dedicated route, 430 CSS px at 3x. Skip when the card reports empty/error. */
+async function shootPhoneCard(context, issueId, card) {
+  const page = await context.newPage();
+  page.on("pageerror", (err) => log(`${card} page error:`, err.message));
+  try {
+    await pinClock(page, issueId);
+    await page.goto(`${APP}/newspaper/phone-card?card=${card}&issue=${encodeURIComponent(issueId)}&solo=1`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60_000,
+    });
+    if (new URL(page.url()).pathname.startsWith("/login")) throw new Error("Session was not accepted (landed on /login)");
+    const root = page.locator(`[data-phone-card="${card}"]`);
+    await root.waitFor({ state: "attached", timeout: 45_000 });
+    await page.waitForFunction(
+      (kind) => {
+        const ready = document.querySelector(`[data-phone-card="${kind}"]`)?.getAttribute("data-ready");
+        return ready && ready !== "loading";
+      },
+      card,
+      { timeout: 45_000 },
+    );
+    const ready = await root.getAttribute("data-ready");
+    if (ready !== "1") {
+      log(`${card} skipped: ${ready ?? "missing"}`);
+      return null;
+    }
+    const body = page.locator(".tt-phone-card");
+    await body.waitFor({ state: "visible", timeout: 15_000 });
+    await settle(page, ".tt-phone-card");
+    const box = await body.boundingBox();
+    if (box) {
+      await page.setViewportSize({
+        width: PHONE.width,
+        height: Math.max(PHONE.height, Math.ceil(box.height) + 24),
+      });
+      await page.waitForTimeout(400);
+    }
+    const png = await body.screenshot({ animations: "disabled" });
+    log(`${card} ${png.length} bytes`);
+    return png;
+  } catch (err) {
+    log(`${card} not shot:`, err.message);
+    return null;
+  } finally {
+    await page.close();
+  }
+}
+
 async function shoot(claim) {
   const browser = await chromium.launch({ args: ["--force-color-profile=srgb"] });
   try {
-    const context = await browser.newContext({
+    const blocked = [];
+    const init = sessionInit(claim);
+    const pad = await browser.newContext({
       viewport: VIEW,
       deviceScaleFactor: SCALE,
       hasTouch: true,
@@ -122,43 +218,13 @@ async function shoot(claim) {
       timezoneId: "America/Chicago",
       colorScheme: "light",
     });
-    const blocked = [];
-    await context.route("**/*", (route) => {
-      const req = route.request();
-      const url = req.url();
-      const method = req.method();
-      const supa = url.startsWith(SUPABASE_URL);
-      if (supa && url.includes("/rest/v1/") && method !== "GET" && method !== "HEAD") {
-        blocked.push(`${method} ${new URL(url).pathname}`);
-        return route.abort();
-      }
-      if (supa && /\/functions\/v1\/(newspaper-press|newspaper-editor)/.test(url)) {
-        blocked.push(`${method} ${new URL(url).pathname}`);
-        return route.abort();
-      }
-      return route.continue();
-    });
-    await context.addInitScript(
-      ({ key, session, layout }) => {
-        try {
-          localStorage.setItem(key, JSON.stringify(session));
-          localStorage.setItem("sports-layout-v1", JSON.stringify(layout));
-          localStorage.setItem("newspaper-solo", "1");
-          sessionStorage.setItem("newspaper-solo", "1");
-        } catch {}
-      },
-      { key: `sb-${PROJECT_REF}-auth-token`, session: claim.session, layout: claim.layout },
-    );
-    const page = await context.newPage();
+    await harden(pad, blocked);
+    await pad.addInitScript(init.script, init.arg);
+    const page = await pad.newPage();
     page.on("pageerror", (err) => log("page error:", err.message));
 
     // The stand opens whatever edition the clock says; pin the clock if the alert is for another.
-    if (pressIdAt(new Date()) !== claim.issue_id) {
-      const at = instantFor(claim.issue_id);
-      if (!at) throw new Error(`Cannot place ${claim.issue_id} on the clock`);
-      log("pinning clock to", at.toISOString(), "for", claim.issue_id);
-      await page.clock.setFixedTime(at);
-    }
+    await pinClock(page, claim.issue_id);
 
     await page.goto(`${APP}/newspaper?solo=1#A1`, { waitUntil: "domcontentloaded", timeout: 60_000 });
     if (new URL(page.url()).pathname.startsWith("/login")) throw new Error("Session was not accepted (landed on /login)");
@@ -177,28 +243,25 @@ async function shoot(claim) {
       animations: "disabled",
     });
     log(`front ${Math.round(box.width)}x${Math.round(box.height)} css, kept ${Math.min(box.height, FRONT_MAX_H)}`);
+    await pad.close();
 
-    // The weather report runs on the clubs page (A2).
-    let weatherPng = null;
-    const wx = page.locator("section.wsj-page .wx").first();
-    await page.evaluate(() => {
-      const target = [...document.querySelectorAll("section.wsj-page")].find((s) => s.querySelector(".wx"));
-      target?.scrollIntoView({ behavior: "instant", inline: "start", block: "nearest" });
+    const phone = await browser.newContext({
+      viewport: PHONE,
+      deviceScaleFactor: PHONE_SCALE,
+      hasTouch: true,
+      locale: "en-US",
+      timezoneId: "America/Chicago",
+      colorScheme: "light",
     });
-    try {
-      await wx.waitFor({ state: "visible", timeout: 45_000 });
-      await page.waitForFunction(
-        () => (document.querySelector("section.wsj-page .wx")?.textContent ?? "").replace(/\s+/g, "").length > 60,
-        null,
-        { timeout: 45_000 },
-      );
-      await settle(page, "section.wsj-page .wx");
-      weatherPng = await wx.screenshot({ animations: "disabled" });
-    } catch (err) {
-      log("weather not shot:", err.message);
+    await harden(phone, blocked);
+    await phone.addInitScript(init.script, init.arg);
+    const extras = {};
+    for (const card of PHONE_CARDS) {
+      extras[`${card}Png`] = await shootPhoneCard(phone, claim.issue_id, card);
     }
+    await phone.close();
     if (blocked.length) log("blocked writes:", [...new Set(blocked)].join(", "));
-    return { frontPng, weatherPng };
+    return { frontPng, weatherPng: extras.weatherPng, dayPng: extras.dayPng, watchPng: extras.watchPng };
   } finally {
     await browser.close();
   }
@@ -246,10 +309,16 @@ async function main() {
   const frontPath = path.join(outDir, `${claim.issue_id}-front.png`);
   await writeFile(frontPath, shots.frontPng);
   log("wrote", frontPath);
-  if (shots.weatherPng) {
-    const wxPath = path.join(outDir, `${claim.issue_id}-weather.png`);
-    await writeFile(wxPath, shots.weatherPng);
-    log("wrote", wxPath);
+  const extras = [
+    ["weather", shots.weatherPng],
+    ["day", shots.dayPng],
+    ["watch", shots.watchPng],
+  ];
+  for (const [name, png] of extras) {
+    if (!png) continue;
+    const dest = path.join(outDir, `${claim.issue_id}-${name}.png`);
+    await writeFile(dest, png);
+    log("wrote", dest);
   }
   if (!send) return;
 
@@ -258,7 +327,9 @@ async function main() {
   form.set("issue_id", claim.issue_id);
   if (test) form.set("test", "true");
   form.set("front", new Blob([shots.frontPng], { type: "image/png" }), `${claim.issue_id}-front.png`);
-  if (shots.weatherPng) form.set("weather", new Blob([shots.weatherPng], { type: "image/png" }), `${claim.issue_id}-weather.png`);
+  for (const [name, png] of extras) {
+    if (png) form.set(name, new Blob([png], { type: "image/png" }), `${claim.issue_id}-${name}.png`);
+  }
   const res = await fetch(SHOTS_URL, { method: "POST", headers: await authHeaders(), body: form });
   const body = await res.json().catch(() => null);
   log("send:", JSON.stringify(body));
