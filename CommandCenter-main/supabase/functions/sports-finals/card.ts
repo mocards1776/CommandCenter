@@ -6,7 +6,14 @@
  * win-probability series, and each club's division or conference table.
  * It does not include the live field.
  */
+import {
+  fetchNhlThreeStarsWithRetry,
+  starLine,
+  type NhlLandingStar,
+} from "./nhl-stars.ts";
 import { oddsFromSummary, type FinalOdds } from "./odds.ts";
+import { mapMlbWinProbability, mlbPlayRefs } from "./mlb-win-probability.ts";
+import { mlbPlayoffFromSummary, type SeriesGame } from "./series.ts";
 import { loadCardStandings, type StandingTable } from "./standings.ts";
 import {
   mapCfbWinProbability,
@@ -66,6 +73,9 @@ export type FinalSide = {
   logoData: string | null;
   linescores: (number | null)[];
   rank: number | null;
+  /** MLB R-H-E. Null for other sports. */
+  hits: number | null;
+  errors: number | null;
 };
 
 export type FinalStat = {
@@ -87,6 +97,51 @@ export type FinalLeader = {
   /** Caption-only sentence. The graphic still draws `line`. */
   highlight?: string | null;
   highlightScore?: number;
+  photoUrl?: string | null;
+  photoData?: string | null;
+};
+
+export type FinalStar = {
+  star: 1 | 2 | 3;
+  name: string;
+  teamAbbrev: string;
+  line: string;
+  position: string | null;
+  sweaterNo: string | null;
+  goals: number | null;
+  assists: number | null;
+  points: number | null;
+  savePctg: number | null;
+  gaa: number | null;
+  photoUrl: string | null;
+  photoData: string | null;
+};
+
+export type FinalPlayer = {
+  name: string;
+  teamAbbrev: string;
+  line: string;
+  photoUrl: string | null;
+  photoData: string | null;
+};
+
+export type MlbBoxRow = {
+  name: string;
+  pos: string;
+  cells: string[];
+  photoUrl?: string | null;
+  note?: string | null;
+};
+
+export type MlbBoxSide = {
+  abbrev: string;
+  labels: string[];
+  rows: MlbBoxRow[];
+};
+
+export type MlbBox = {
+  batting: { away: MlbBoxSide; home: MlbBoxSide };
+  pitching: { away: MlbBoxSide; home: MlbBoxSide };
 };
 
 export type FinalCard = {
@@ -95,6 +150,12 @@ export type FinalCard = {
   eventId: string;
   statusLabel: string;
   final: boolean;
+  /** MLB postseason only. Regular-season cards stay false. */
+  playoff: boolean;
+  /** ESPN series copy, e.g. "MIL leads series 2-0 · Game 2 of 5". */
+  seriesLine: string | null;
+  /** Playoff series games (completed + upcoming) from ESPN seasonseries. */
+  seriesGames: SeriesGame[];
   venue: string | null;
   headline: string | null;
   away: FinalSide;
@@ -102,6 +163,11 @@ export type FinalCard = {
   periods: string[];
   stats: FinalStat[];
   leaders: FinalLeader[];
+  /** Official NHL Three Stars. Empty until NHL.com posts them. */
+  threeStars: FinalStar[];
+  goalies: FinalPlayer[];
+  /** MLB batting + pitching lines. Null for other sports. */
+  mlbBox: MlbBox | null;
   winProbability: CfbWinProbPoint[];
   /** Division / conference tables for the two clubs. Empty when ESPN has none. */
   standings: StandingTable[];
@@ -220,6 +286,7 @@ function resultLine(card: FinalCard): string {
 }
 
 function recordMoveLine(card: FinalCard): string | null {
+  if (card.playoff) return card.seriesLine;
   const sides = resultSides(card);
   if (sides) {
     if (!sides.winner.record || !sides.loser.record) return null;
@@ -364,19 +431,24 @@ export function finalCaption(card: FinalCard, _origin?: string): string {
   return lines.join("\n").slice(0, 1000);
 }
 
-function logoHref(team: Rec): string | null {
-  for (const row of arr(team.logos)) {
-    const logo = rec(row);
-    const href = str(logo.href);
-    const rel = arr(logo.rel).map((item) => str(item));
-    if (href.startsWith("https://") && rel.includes("default")) return href;
-  }
-  for (const row of arr(team.logos)) {
-    const href = str(rec(row).href);
-    if (href.startsWith("https://")) return href;
-  }
-  const direct = str(team.logo);
-  return direct.startsWith("https://") ? direct : null;
+/** ESPN `dark` rel is the light mark for navy cards. Fall back to 500-dark. */
+export function pickCardLogoHref(team: Rec): string | null {
+  const logos = arr(team.logos)
+    .map((row) => rec(row))
+    .filter((logo) => str(logo.href).startsWith("https://"));
+  const scored = logos.map((logo) => {
+    const rel = arr(logo.rel).map((item) => str(item).toLowerCase());
+    let score = 0;
+    if (rel.includes("dark") && !rel.includes("scoreboard")) score += 12;
+    else if (rel.includes("dark")) score += 6;
+    else if (rel.includes("default")) score += 2;
+    if (rel.includes("full")) score += 1;
+    return { href: str(logo.href), score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const picked = scored[0]?.href || (str(team.logo).startsWith("https://") ? str(team.logo) : "");
+  if (!picked) return null;
+  return picked.replace(/\/i\/teamlogos\/([a-z]+)\/500\//i, "/i/teamlogos/$1/500-dark/");
 }
 
 function linescores(comp: Rec): (number | null)[] {
@@ -406,15 +478,17 @@ function sideFrom(comp: Rec): FinalSide {
   return {
     teamId: str(team.id),
     abbrev: str(team.abbreviation) || "—",
-    name: display.length > 0 && display.length <= 22 ? display : short,
+    name: display.length > 0 && display.length <= 32 ? display : short,
     record: recordOf(comp),
     score: num(comp.score),
     color: str(team.color) || "334155",
     alternateColor: str(team.alternateColor) || null,
-    logoUrl: logoHref(team),
+    logoUrl: pickCardLogoHref(team),
     logoData: null,
     linescores: linescores(comp),
     rank: rankOf(comp),
+    hits: num(comp.hits),
+    errors: num(comp.errors),
   };
 }
 
@@ -545,6 +619,8 @@ function pickLeaders(raw: Rec): FinalLeader[] {
         line,
         highlight: hint?.text ?? null,
         highlightScore: hint?.score,
+        photoUrl: headshotHref(person),
+        photoData: null,
       });
       groups.set(name, slot);
     }
@@ -554,6 +630,299 @@ function pickLeaders(raw: Rec): FinalLeader[] {
     ...[...groups.keys()].filter((name) => !GROUP_PREFERENCE.includes(name)),
   ].slice(0, 3);
   return ordered.flatMap((name) => groups.get(name)?.rows ?? []);
+}
+
+function headshotHref(person: Rec): string | null {
+  const nested = str(rec(person.headshot).href);
+  if (nested.startsWith("https://")) return nested;
+  const direct = str(person.headshot);
+  return direct.startsWith("https://") ? direct : null;
+}
+
+function statCell(labels: string[], stats: string[], ...keys: string[]): string {
+  for (const key of keys) {
+    const idx = labels.findIndex((label) => label.toUpperCase() === key.toUpperCase());
+    if (idx >= 0 && stats[idx]) return stats[idx];
+  }
+  return "";
+}
+
+function pickGoalies(raw: Rec): FinalPlayer[] {
+  const out: FinalPlayer[] = [];
+  for (const side of arr(rec(raw.boxscore).players)) {
+    const abbrev = str(rec(rec(side).team).abbreviation) || "—";
+    for (const group of arr(rec(side).statistics)) {
+      const block = rec(group);
+      if (str(block.name).toLowerCase() !== "goalies" && str(block.type).toLowerCase() !== "goalies") {
+        continue;
+      }
+      const labels = arr(block.labels).map((label) => str(label));
+      for (const athlete of arr(block.athletes)) {
+        const person = rec(rec(athlete).athlete);
+        const player = str(person.shortName) || str(person.displayName);
+        if (!player) continue;
+        const stats = arr(rec(athlete).stats).map((stat) => str(stat));
+        const ga = statCell(labels, stats, "GA");
+        const sa = statCell(labels, stats, "SA");
+        const sv = statCell(labels, stats, "SV");
+        const pct = statCell(labels, stats, "SV%");
+        const line = [
+          sv && sa ? `${sv}/${sa} SV` : sv ? `${sv} SV` : null,
+          ga ? `${ga} GA` : null,
+          pct ? `${pct} SV%` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        if (!line) continue;
+        out.push({
+          name: player,
+          teamAbbrev: abbrev,
+          line,
+          photoUrl: headshotHref(person),
+          photoData: null,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+const MLB_BAT_COLS = ["AB", "R", "H", "RBI", "HR", "BB", "K"];
+const MLB_PITCH_COLS = ["IP", "H", "R", "ER", "BB", "K"];
+
+function mlbGroupKind(block: Rec): "batting" | "pitching" | null {
+  const type = str(block.type).toLowerCase() || str(block.name).toLowerCase();
+  if (type === "batting" || type === "hitting") return "batting";
+  if (type === "pitching") return "pitching";
+  const labels = arr(block.labels).map((label) => str(label).toUpperCase());
+  if (labels.includes("AB") || labels.includes("H-AB") || labels.includes("RBI")) return "batting";
+  if (labels.includes("IP") && labels.includes("ER")) return "pitching";
+  return null;
+}
+
+function pickMlbSide(raw: Rec, abbrev: string, kind: "batting" | "pitching"): MlbBoxSide {
+  const want = kind === "batting" ? MLB_BAT_COLS : MLB_PITCH_COLS;
+  const empty: MlbBoxSide = { abbrev, labels: want, rows: [] };
+  for (const side of arr(rec(raw.boxscore).players)) {
+    if (str(rec(rec(side).team).abbreviation) !== abbrev) continue;
+    for (const group of arr(rec(side).statistics)) {
+      const block = rec(group);
+      if (mlbGroupKind(block) !== kind) continue;
+      const labels = arr(block.labels).map((label) => str(label));
+      const rows: MlbBoxRow[] = [];
+      for (const athlete of arr(block.athletes)) {
+        const row = rec(athlete);
+        const person = rec(row.athlete);
+        const player = str(person.shortName) || str(person.displayName);
+        if (!player) continue;
+        const stats = arr(row.stats).map((stat) => str(stat));
+        const cells = want.map((key) => statCell(labels, stats, key) || "–");
+        const played = cells.some((cell) => cell !== "–" && cell !== "0" && cell !== "0.0");
+        const starter = row.starter === true;
+        if (!played && !starter) continue;
+        const decision = arr(row.notes)
+          .map((note) => str(rec(note).text))
+          .find((text) => /^(W|L|SV|S|H|BS)\b/i.test(text));
+        rows.push({
+          name: player,
+          pos: str(rec(row.position).abbreviation) || str(rec(person.position).abbreviation),
+          cells,
+          photoUrl: headshotHref(person),
+          note: decision ? decision.split(/[,\s]/)[0]!.toUpperCase() : null,
+        });
+      }
+      if (rows.length) return { abbrev, labels: want, rows };
+    }
+  }
+  return empty;
+}
+
+export function pickMlbBox(raw: Rec, awayAbbrev: string, homeAbbrev: string): MlbBox {
+  return {
+    batting: {
+      away: pickMlbSide(raw, awayAbbrev, "batting"),
+      home: pickMlbSide(raw, homeAbbrev, "batting"),
+    },
+    pitching: {
+      away: pickMlbSide(raw, awayAbbrev, "pitching"),
+      home: pickMlbSide(raw, homeAbbrev, "pitching"),
+    },
+  };
+}
+
+function mlbBoxHasRows(box: MlbBox | null): boolean {
+  if (!box) return false;
+  return [box.batting.away, box.batting.home, box.pitching.away, box.pitching.home].some(
+    (side) => side.rows.length > 0,
+  );
+}
+
+function mlbCellNum(side: MlbBoxSide, row: MlbBoxRow, key: string): number {
+  const at = side.labels.indexOf(key);
+  if (at < 0) return 0;
+  const n = Number.parseFloat(row.cells[at] ?? "");
+  return Number.isFinite(n) ? n : 0;
+}
+
+function mlbCellText(side: MlbBoxSide, row: MlbBoxRow, key: string): string {
+  const at = side.labels.indexOf(key);
+  if (at < 0) return "";
+  const raw = row.cells[at] ?? "";
+  return !raw || raw === "–" ? "" : raw;
+}
+
+/** Compact playoff-card strip: top batters + pitching lines, not the full box. */
+export function pickMlbPerformers(box: MlbBox): FinalLeader[] {
+  const bats: { row: MlbBoxRow; side: MlbBoxSide; score: number }[] = [];
+  for (const side of [box.batting.away, box.batting.home]) {
+    for (const row of side.rows) {
+      const hr = mlbCellNum(side, row, "HR");
+      const h = mlbCellNum(side, row, "H");
+      const rbi = mlbCellNum(side, row, "RBI");
+      const r = mlbCellNum(side, row, "R");
+      const score = hr * 60 + rbi * 14 + h * 12 + r * 8;
+      if (score <= 0) continue;
+      bats.push({ row, side, score });
+    }
+  }
+  const pits: { row: MlbBoxRow; side: MlbBoxSide; score: number }[] = [];
+  for (const side of [box.pitching.away, box.pitching.home]) {
+    for (const row of side.rows) {
+      const k = mlbCellNum(side, row, "K");
+      const ip = mlbCellNum(side, row, "IP");
+      const er = mlbCellNum(side, row, "ER");
+      if (ip <= 0 && k <= 0) continue;
+      pits.push({ row, side, score: k * 10 + ip * 8 - er * 6 + (row.note === "W" ? 20 : 0) });
+    }
+  }
+  bats.sort((a, b) => b.score - a.score);
+  pits.sort((a, b) => b.score - a.score);
+  const pickedBats: typeof bats = [];
+  for (const item of bats) {
+    if (pickedBats.length >= 2) break;
+    if (pickedBats.some((row) => row.side.abbrev === item.side.abbrev)) continue;
+    pickedBats.push(item);
+  }
+  if (!pickedBats.length && bats[0]) pickedBats.push(bats[0]);
+  const pickedPits: typeof pits = [];
+  for (const item of pits) {
+    if (pickedPits.length >= 2) break;
+    if (pickedPits.some((row) => row.side.abbrev === item.side.abbrev)) continue;
+    pickedPits.push(item);
+  }
+  const toLeader = (
+    item: { row: MlbBoxRow; side: MlbBoxSide; score: number },
+    group: "batting" | "pitching",
+  ): FinalLeader => {
+    const hint = highlightFromBox(group, item.side.labels, item.row.cells, item.row.name);
+    const line =
+      group === "batting"
+        ? [
+            mlbCellNum(item.side, item.row, "HR")
+              ? `${mlbCellText(item.side, item.row, "HR")} HR`
+              : null,
+            mlbCellText(item.side, item.row, "H")
+              ? `${mlbCellText(item.side, item.row, "H")} H`
+              : null,
+            mlbCellText(item.side, item.row, "RBI")
+              ? `${mlbCellText(item.side, item.row, "RBI")} RBI`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        : [
+            item.row.note,
+            mlbCellText(item.side, item.row, "IP")
+              ? `${mlbCellText(item.side, item.row, "IP")} IP`
+              : null,
+            mlbCellText(item.side, item.row, "K") ? `${mlbCellText(item.side, item.row, "K")} K` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+    return {
+      group,
+      groupLabel: group === "batting" ? "Batting" : "Pitching",
+      teamAbbrev: item.side.abbrev,
+      name: item.row.name,
+      line,
+      highlight: hint?.text,
+      highlightScore: hint?.score ?? item.score,
+      photoUrl: item.row.photoUrl ?? null,
+      photoData: null,
+    };
+  };
+  return [...pickedBats.map((row) => toLeader(row, "batting")), ...pickedPits.map((row) => toLeader(row, "pitching"))];
+}
+
+function leadersFromMlbBox(box: MlbBox): FinalLeader[] {
+  const out: FinalLeader[] = [];
+  for (const side of [box.batting.away, box.batting.home]) {
+    const hrAt = side.labels.indexOf("HR");
+    const hAt = side.labels.indexOf("H");
+    const rbiAt = side.labels.indexOf("RBI");
+    for (const row of side.rows) {
+      const hint = highlightFromBox(
+        "batting",
+        side.labels,
+        row.cells,
+        row.name,
+      );
+      if (!hint) continue;
+      out.push({
+        group: "batting",
+        groupLabel: "Batting",
+        teamAbbrev: side.abbrev,
+        name: row.name,
+        line: [
+          hrAt >= 0 && row.cells[hrAt] && row.cells[hrAt] !== "0" ? `${row.cells[hrAt]} HR` : null,
+          hAt >= 0 ? `${row.cells[hAt]} H` : null,
+          rbiAt >= 0 ? `${row.cells[rbiAt]} RBI` : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        highlight: hint.text,
+        highlightScore: hint.score,
+      });
+    }
+  }
+  for (const side of [box.pitching.away, box.pitching.home]) {
+    const kAt = side.labels.indexOf("K");
+    const ipAt = side.labels.indexOf("IP");
+    for (const row of side.rows) {
+      const hint = highlightFromBox("pitching", side.labels, row.cells, row.name);
+      if (!hint) continue;
+      out.push({
+        group: "pitching",
+        groupLabel: "Pitching",
+        teamAbbrev: side.abbrev,
+        name: row.name,
+        line: [ipAt >= 0 ? `${row.cells[ipAt]} IP` : null, kAt >= 0 ? `${row.cells[kAt]} K` : null]
+          .filter(Boolean)
+          .join(" · "),
+        highlight: hint.text,
+        highlightScore: hint.score,
+      });
+    }
+  }
+  return out;
+}
+
+export function starsFromLanding(stars: NhlLandingStar[]): FinalStar[] {
+  return stars.map((star) => ({
+    star: star.star,
+    name: star.name,
+    teamAbbrev: star.teamAbbrev,
+    line: starLine(star),
+    position: star.position,
+    sweaterNo: star.sweaterNo,
+    goals: star.goals,
+    assists: star.assists,
+    points: star.points,
+    savePctg: star.savePctg,
+    gaa: star.goalsAgainstAverage,
+    photoUrl: star.headshot,
+    photoData: null,
+  }));
 }
 
 function playRefs(raw: Rec): CfbWinProbPlayRef[] {
@@ -592,33 +961,65 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
     str(rec(rec(body.gameInfo).venue).fullName) || str(rec(comp.venue).fullName) || null;
   const headline = str(rec(body.article).headline) || null;
   const date = str(comp.date) || str(rec(body.header).date) || null;
+  const playoff = mlbPlayoffFromSummary(sport, body, comp);
+  const mlbBox = sport === "mlb" ? pickMlbBox(body, away.abbrev, home.abbrev) : null;
+  const leaders = pickLeaders(body);
+  if (sport === "mlb" && mlbBoxHasRows(mlbBox)) {
+    const performers = pickMlbPerformers(mlbBox!);
+    if (performers.length) leaders.splice(0, leaders.length, ...performers);
+    else if (!leaders.length) leaders.push(...leadersFromMlbBox(mlbBox!));
+  }
   return {
     sport,
     sportLabel: SPORT_LABEL[sport] ?? sport.toUpperCase(),
     eventId,
     statusLabel,
     final,
+    playoff: playoff.playoff,
+    seriesLine: playoff.seriesLine,
+    seriesGames: playoff.seriesGames,
     venue,
     headline: headline ? headline.replace(/\s+/g, " ").slice(0, 180) : null,
     away,
     home,
     periods: periodHeaders(sport, periodCount),
-    stats: pickStats(away.abbrev, home.abbrev, body),
-    leaders: pickLeaders(body),
+    stats: sport === "mlb" ? [] : pickStats(away.abbrev, home.abbrev, body),
+    leaders,
+    threeStars: [],
+    goalies: sport === "nhl" ? pickGoalies(body) : [],
+    mlbBox: mlbBoxHasRows(mlbBox) ? mlbBox : null,
     standings: [],
     date,
     odds: oddsFromSummary(body, away, home, final),
-    winProbability: mapCfbWinProbability(
-      arr(body.winprobability).map((row) => {
-        const item = rec(row);
-        return {
-          homeWinPercentage: num(item.homeWinPercentage) ?? undefined,
-          tiePercentage: num(item.tiePercentage) ?? undefined,
-          playId: str(item.playId) || undefined,
-        };
-      }),
-      playRefs(body),
-    ),
+    // Football: 15:00 quarters. Baseball: inning/half mapper.
+    // ESPN hockey probabilities are unsupported (400) and NHL.com has no WP
+    // series on landing / play-by-play / right-rail. Do not invent a chart.
+    winProbability:
+      sport === "nfl" || sport === "cfb"
+        ? mapCfbWinProbability(
+            arr(body.winprobability).map((row) => {
+              const item = rec(row);
+              return {
+                homeWinPercentage: num(item.homeWinPercentage) ?? undefined,
+                tiePercentage: num(item.tiePercentage) ?? undefined,
+                playId: str(item.playId) || undefined,
+              };
+            }),
+            playRefs(body),
+          )
+        : sport === "mlb"
+          ? mapMlbWinProbability(
+              arr(body.winprobability).map((row) => {
+                const item = rec(row);
+                return {
+                  homeWinPercentage: num(item.homeWinPercentage) ?? undefined,
+                  tiePercentage: num(item.tiePercentage) ?? undefined,
+                  playId: str(item.playId) || undefined,
+                };
+              }),
+              mlbPlayRefs(body),
+            )
+          : [],
     path: gamePath(sport, eventId),
   };
 }
@@ -674,15 +1075,42 @@ export async function fetchLogoDataUri(url: string | null): Promise<string | nul
   }
 }
 
-export async function loadFinalCard(sport: string, eventId: string): Promise<FinalCard> {
+async function hydratePhotos(card: FinalCard): Promise<void> {
+  const urls = [
+    ...card.threeStars.map((row) => row.photoUrl),
+    ...card.goalies.map((row) => row.photoUrl),
+    ...card.leaders.map((row) => row.photoUrl ?? null),
+  ].filter((url): url is string => Boolean(url));
+  const unique = [...new Set(urls)];
+  const fetched = await Promise.all(unique.map((url) => fetchLogoDataUri(url)));
+  const byUrl = new Map(unique.map((url, i) => [url, fetched[i] ?? null]));
+  for (const row of card.threeStars) row.photoData = row.photoUrl ? byUrl.get(row.photoUrl) ?? null : null;
+  for (const row of card.goalies) row.photoData = row.photoUrl ? byUrl.get(row.photoUrl) ?? null : null;
+  for (const row of card.leaders) row.photoData = row.photoUrl ? byUrl.get(row.photoUrl) ?? null : null;
+}
+
+export async function loadFinalCard(
+  sport: string,
+  eventId: string,
+  opts: { waitForStars?: boolean } = {},
+): Promise<FinalCard> {
   const card = cardFromSummary(sport, eventId, await fetchSummary(sport, eventId));
-  const [away, home, standings] = await Promise.all([
+  const skipStandings = card.playoff && card.sport === "mlb";
+  const [away, home, standings, stars] = await Promise.all([
     fetchLogoDataUri(card.away.logoUrl),
     fetchLogoDataUri(card.home.logoUrl),
-    loadCardStandings(sport, card.away, card.home),
+    skipStandings ? Promise.resolve([]) : loadCardStandings(sport, card.away, card.home),
+    sport === "nhl"
+      ? fetchNhlThreeStarsWithRetry(
+          { date: card.date, awayAbbrev: card.away.abbrev, homeAbbrev: card.home.abbrev },
+          { wait: Boolean(opts.waitForStars) },
+        )
+      : Promise.resolve([]),
   ]);
   card.away.logoData = away;
   card.home.logoData = home;
   card.standings = standings;
+  card.threeStars = starsFromLanding(stars);
+  await hydratePhotos(card);
   return card;
 }

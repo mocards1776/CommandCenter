@@ -12,6 +12,7 @@ import {
   type SoccerGameSide,
 } from "@/lib/soccer-game";
 import LogoPlate from "@/components/sports/LogoPlate";
+import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
 import { soccerTeamLogo } from "@/lib/soccer";
 import { cn } from "@/lib/utils";
 
@@ -424,13 +425,24 @@ function TeamStatsBars({
 }) {
   return (
     <section className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0a1424]">
-      <div className="flex items-center justify-between gap-2 border-b border-white/[0.07] px-4 py-2.5">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
+      <div className="border-b border-white/[0.07]">
+        <p className="px-4 pt-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8b93a7]">
           Team stats
         </p>
-        <p className="text-[10px] uppercase tracking-[0.12em] text-[#8b93a7]">
-          {away.abbrev} · {home.abbrev}
-        </p>
+        <TeamStatsLogos
+          away={{
+            logo: away.logo || soccerTeamLogo(away.id),
+            abbrev: away.abbrev,
+            name: away.name,
+            record: away.record,
+          }}
+          home={{
+            logo: home.logo || soccerTeamLogo(home.id),
+            abbrev: home.abbrev,
+            name: home.name,
+            record: home.record,
+          }}
+        />
       </div>
       <ul className="divide-y divide-white/[0.05] px-4">
         {stats.map((s) => {
