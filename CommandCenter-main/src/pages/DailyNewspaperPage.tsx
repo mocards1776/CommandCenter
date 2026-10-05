@@ -126,6 +126,8 @@ import {
   waitForPrintedReveal,
   withDeadline,
 } from "@/lib/newspaper-document";
+import { ElectionEar } from "@/components/newspaper/ElectionEar";
+import { electionEar } from "@/lib/newspaper-election";
 import { TimesHold, TimesHoldShell } from "@/components/newspaper/TimesHold";
 import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
 import { fetchWatchList, WATCH_PAGE_GAMES } from "@/lib/newspaper-watch";
@@ -591,13 +593,18 @@ function Masthead({
   readingNote: string | null;
 }) {
   const { volume, issue } = editionIssue(day);
+  const ballot = electionEar(day);
   return (
     <header className="wsj-mast">
       <div className="wsj-mast-row">
-        <div className="wsj-ear">
-          <strong>Sports Final</strong>
-          <span>All the scores fit to print</span>
-        </div>
+        {ballot ? (
+          <ElectionEar day={day} />
+        ) : (
+          <div className="wsj-ear">
+            <strong>Sports Final</strong>
+            <span>All the scores fit to print</span>
+          </div>
+        )}
         <h1 className="wsj-nameplate">The Thompson Times</h1>
         <div className="wsj-ear right">
           <strong>{live ? `${live} live now` : editionLabel}</strong>

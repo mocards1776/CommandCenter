@@ -2,6 +2,14 @@
 
 ---
 
+## Times: Election Day countdown on A1 — October 5, 2026
+
+- Page one carries a classic masthead ear counting down to Election Day (Tuesday, Nov. 3, 2026). The day count is the edition dateline in America/Chicago, so a back issue stays accurate. On the day the ear reads “ELECTION DAY · Polls close 7 p.m.”; after that it hides and Sports Final returns.
+- Same ear on the iPhone A1 flag (`/newspaper/phone-card?card=front`). Client-rendered from the issue date — no press-bundle refresh.
+- `ELECTION_DAY` in `newspaper-election.ts` is the one date to change for 2028.
+
+---
+
 ## Blues highlights: scoring team only — October 5, 2026
 
 - `sports-highlights` sends a clip only when the awarded goal belongs to the
