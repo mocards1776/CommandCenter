@@ -1,11 +1,13 @@
 import { StandingsTable } from "@/components/newspaper/BoxScore";
 import {
+  cfbNetworkLabel,
   formatKickoffLine,
   footballWeekTitle,
   gameClock,
   isCfbDeskGame,
   looksLikeEspnZoneClock,
   secStandingsGroup,
+  sortCfbDeskGames,
   type BoxGame,
   type BoxSide,
   type CfbPollRow,
@@ -47,15 +49,14 @@ function CfbBlock({
   kind: "results" | "schedule";
   title: string;
 }) {
-  const ranked = [...games].sort(
-    (a, b) => cfbWatch(b) - cfbWatch(a) || String(a.startIso).localeCompare(String(b.startIso)),
-  );
+  const ranked = sortCfbDeskGames(games);
+  const rowCount = Math.max(1, Math.ceil(ranked.length / 2));
   return (
     <section className="tt-cfb-block">
       <h3 className="wsj-band-title">
         {title} <em>{ranked.length} {ranked.length === 1 ? "game" : "games"}</em>
       </h3>
-      <ol className="tt-cfb-rows">
+      <ol className="tt-cfb-rows" style={{ ["--cfb-rows" as string]: String(rowCount) }}>
         {ranked.map((game) => (
           <li key={game.id} className="tt-cfb-row" data-kind={kind}>
             <time dateTime={game.startIso ?? undefined}>{rowWhen(game, kind)}</time>
@@ -66,19 +67,15 @@ function CfbBlock({
               {game.home.logo ? <img src={game.home.logo} alt="" /> : null}
               {clubMark(game.home, kind === "results")}
             </span>
-            <em>
-              {kind === "schedule"
-                ? game.broadcasts.filter(Boolean).join(" · ") || game.venue || ""
-                : ""}
-            </em>
             {kind === "schedule" ? (
-              <span className="tt-cfb-watch" title="RUwT watchability">
-                <i>Watch</i>
-                {cfbWatch(game)}
-              </span>
-            ) : (
-              <span />
-            )}
+              <>
+                <em className="tt-cfb-tv">{cfbNetworkLabel(game)}</em>
+                <span className="tt-cfb-watch" title="RUwT watchability">
+                  <i>Watch</i>
+                  {cfbWatch(game)}
+                </span>
+              </>
+            ) : null}
           </li>
         ))}
       </ol>

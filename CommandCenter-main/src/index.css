@@ -8011,19 +8011,21 @@ li.counting .tt-count.card {
   padding: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: repeat(var(--cfb-rows, 8), auto);
+  grid-auto-flow: column;
   column-gap: 22px;
 }
 .tt-cfb-row {
   display: grid;
-  grid-template-columns: 7.2rem minmax(0, 1fr) minmax(44px, 0.7fr) 26px;
+  grid-template-columns: 7.2rem minmax(0, 1fr) minmax(0, 5.6rem) 2.75rem;
   align-items: center;
-  gap: 6px;
+  gap: 6px 8px;
   padding: 4px 0;
   border-bottom: 1px solid var(--w-hair);
   font-size: 13px;
 }
 .tt-cfb-row[data-kind="results"] {
-  grid-template-columns: 3.4rem minmax(0, 1fr) 0 0;
+  grid-template-columns: 3.4rem minmax(0, 1fr);
 }
 .tt-cfb-row time {
   font-family: var(--w-cond);
@@ -8067,18 +8069,26 @@ li.counting .tt-count.card {
   text-transform: uppercase;
   color: var(--w-muted);
 }
-.tt-cfb-row em {
+.tt-cfb-row em,
+.tt-cfb-tv {
   font-style: normal;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--w-ink-soft);
   text-align: right;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tt-cfb-watch {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  justify-self: end;
+  width: 2.75rem;
+  min-width: 2.75rem;
   font-family: var(--w-cond);
   font-size: 16px;
   font-weight: 600;

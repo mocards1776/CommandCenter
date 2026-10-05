@@ -3,7 +3,9 @@
  * from CommandCenter-main/.
  */
 import {
+  cfbNetworkLabel,
   footballWeekTitle,
+  sortCfbDeskGames,
   sportScoreBands,
   weekDayStamp,
   type BoxGame,
@@ -109,6 +111,31 @@ const mixed = sportScoreBands(
 assert(
   mixed[0]!.games.every((g) => g.final) && mixed[1]!.games.every((g) => !g.final),
   "even if week is mixed, the printed bands stay split",
+);
+
+const scattered = [
+  game({ id: "sat-late", day: "2026-10-10", final: false, startIso: "2026-10-10T23:30:00Z" }),
+  game({ id: "fri-late", day: "2026-10-09", final: false, startIso: "2026-10-10T02:15:00Z" }),
+  game({ id: "sat-noon", day: "2026-10-10", final: false, startIso: "2026-10-10T16:00:00Z" }),
+  game({ id: "fri-early", day: "2026-10-09", final: false, startIso: "2026-10-10T01:00:00Z" }),
+];
+const chrono = sortCfbDeskGames(scattered).map((g) => g.id);
+assert(
+  chrono.join(",") === "fri-early,fri-late,sat-noon,sat-late",
+  `CFB slate is kickoff order, got ${chrono.join(",")}`,
+);
+
+const noTv = game({
+  id: "husky",
+  day: "2026-10-09",
+  final: false,
+  venue: "Husky Stadium",
+  broadcasts: [],
+});
+assert(cfbNetworkLabel(noTv) === "", "unknown TV stays blank instead of the venue");
+assert(
+  cfbNetworkLabel({ ...noTv, broadcasts: ["ABC"] }) === "ABC",
+  "known TV still prints the network",
 );
 
 console.log("newspaper-cfb-weeks ok");
