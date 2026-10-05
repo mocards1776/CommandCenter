@@ -21,7 +21,7 @@ import {
   type EspnSummaryForWrap,
 } from "./newspaper-box-wrap.ts";
 import { formatFixtureWhen } from "./newspaper-box.ts";
-import { packFromSides, type RecapGamePack, type RecapLeader, type RecapSide } from "./newspaper-recap.ts";
+import { packFromSides, splitApDateline, type RecapGamePack, type RecapLeader, type RecapSide } from "./newspaper-recap.ts";
 import { isNewspaperCfbDeskGame, isNewspaperSecGame, newspaperEspnGet } from "./newspaper-espn.ts";
 import type { SportsFavorite } from "./sports.ts";
 
@@ -775,13 +775,7 @@ function stripStoryHtml(html: string): string {
  * the page can set it in small caps the way a wire story prints.
  */
 function splitDateline(text: string): { dateline: string | null; body: string } {
-  // Wire datelines are set in caps: "MIAMI GARDENS, FLA. -- — Kenneth Walker…".
-  const m =
-    /^([A-Z][A-Z.'’]*(?:[ -][A-Z][A-Z.'’]*){0,3}(?:,\s*[A-Z][A-Za-z.]{1,12})?)\s*(?:--+|—|–)\s*(?:[—–-]+\s*)?/.exec(
-      text,
-    );
-  if (!m) return { dateline: null, body: text };
-  return { dateline: m[1]!.trim(), body: text.slice(m[0].length).trim() };
+  return splitApDateline(text);
 }
 
 function leadersWithHref(path: string, rows: ReturnType<typeof leadersFromSummary>, existing: RecapLeader[]): RecapLeader[] {

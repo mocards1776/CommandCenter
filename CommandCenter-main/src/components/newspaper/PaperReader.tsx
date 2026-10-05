@@ -13,9 +13,11 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
 import { SaveMark } from "@/components/newspaper/SaveMark";
 import { fetchEspnRecapStory } from "@/lib/newspaper-box";
+import { formatRecapWhen, recapBodyForPage, recapIsScoreOnly, recapShouldDropCap } from "@/lib/newspaper-recap";
 import { cleanStoryCopy, isNavSoup, proseParas, readableCopy } from "@/lib/newspaper-copy";
 import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
 import { fetchRssArticle, scrubReaderChrome, stripDuplicateContentImages } from "@/lib/rss";
+import { cn } from "@/lib/utils";
 import { ReaderContext, type ReaderStory } from "@/components/newspaper/reader-context";
 
 type ReaderBody = {
@@ -62,10 +64,7 @@ function espnEventOf(story: ReaderStory): string | null {
 }
 
 function whenLine(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString([], { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return formatRecapWhen(iso);
 }
 
 function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => void }) {
@@ -151,7 +150,12 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
     if (!raw) return null;
     return stripDuplicateContentImages(scrubReaderChrome(raw), photo);
   }, [body.data?.html, photo]);
-  const paras = useMemo(() => proseParas(body.data?.text ?? ""), [body.data?.text]);
+  const paras = useMemo(() => {
+    const text = recapBodyForPage(body.data?.text ?? "");
+    return text ? proseParas(text) : [];
+  }, [body.data?.text]);
+  const dropCap = recapShouldDropCap(paras.join(" "));
+  const skipBody = !html && recapIsScoreOnly(body.data?.text ?? paras.join(" "));
   const lifted = cleanStoryCopy(card.body).author;
   const outlet = storySource(card) ?? `${card.sportLabel} Wire`;
   const byline = body.data?.byline || (lifted ? `${lifted} · ${outlet}` : card.dateline || null);
@@ -209,9 +213,9 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
           {body.isLoading ? (
             <p className="tt-reader-wait">Setting the story in type…</p>
           ) : html ? (
-            <div className="tt-reader-body" dangerouslySetInnerHTML={{ __html: html }} />
-          ) : paras.length ? (
-            <div className="tt-reader-body">
+            <div className={cn("tt-reader-body", recapShouldDropCap(html.replace(/<[^>]+>/g, " ")) && "drop")} dangerouslySetInnerHTML={{ __html: html }} />
+          ) : skipBody ? null : paras.length ? (
+            <div className={cn("tt-reader-body", dropCap && "drop")}>
               {paras.map((p, i) => (
                 <p key={i}>{p}</p>
               ))}

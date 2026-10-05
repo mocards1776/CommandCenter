@@ -4,9 +4,15 @@
  *   node --experimental-strip-types scripts/render-times-recap-template.ts
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { fetchEspnBox } from "../src/lib/newspaper-agate.ts";
+import { fetchEspnBox, printEspnBoxHtml } from "../src/lib/newspaper-agate.ts";
 import { newspaperEspnGet } from "../src/lib/newspaper-espn.ts";
-import { pickRecapLeaders, recapPhotoKind, type RecapLeader } from "../src/lib/newspaper-recap.ts";
+import {
+  formatRecapWhen,
+  pickRecapLeaders,
+  recapPhotoKind,
+  recapPrintStory,
+  type RecapLeader,
+} from "../src/lib/newspaper-recap.ts";
 
 type Event = {
   id?: string;
@@ -18,6 +24,8 @@ type Event = {
       homeAway?: string;
       score?: string;
       winner?: boolean;
+      hits?: number;
+      errors?: number;
       linescores?: { value?: number }[];
       records?: { type?: string; summary?: string }[];
       team?: { displayName?: string; shortDisplayName?: string; abbreviation?: string; color?: string; logo?: string };
@@ -76,14 +84,38 @@ function htmlFor(opts: {
   venue: string | null;
   status: string;
   compact: boolean;
-  away: { name: string; short: string; abbrev: string; color: string | null; logo: string | null; score: string; record: string | null; lines: (number | null)[] };
-  home: { name: string; short: string; abbrev: string; color: string | null; logo: string | null; score: string; record: string | null; lines: (number | null)[] };
+  dateline: string | null;
+  away: {
+    name: string;
+    short: string;
+    abbrev: string;
+    color: string | null;
+    logo: string | null;
+    score: string;
+    record: string | null;
+    hits: string | null;
+    errors: string | null;
+    lines: (number | null)[];
+  };
+  home: {
+    name: string;
+    short: string;
+    abbrev: string;
+    color: string | null;
+    logo: string | null;
+    score: string;
+    record: string | null;
+    hits: string | null;
+    errors: string | null;
+    lines: (number | null)[];
+  };
   periods: string[];
   leaders: RecapLeader[];
   photo: string | null;
   photoWidth: number | null;
   caption: string;
   story: string;
+  dropCap: boolean;
   boxHtml: string;
 }): string {
   const kind = recapPhotoKind(opts.photo, opts.photoWidth);
@@ -91,9 +123,6 @@ function htmlFor(opts: {
     kind === "none" || !opts.photo
       ? ""
       : `<figure class="tt-recap-photo ${kind}"><img src="${esc(opts.photo)}" alt="" />${opts.caption ? `<figcaption>${esc(opts.caption)}</figcaption>` : ""}</figure>`;
-  const drop = opts.story.trim();
-  const first = drop.slice(0, 1);
-  const rest = drop.slice(1);
   const chips = opts.leaders
     .map((l) => {
       const face = l.headshot
@@ -104,15 +133,22 @@ function htmlFor(opts: {
       return `<li>${face}<span><em>${esc(l.label)}${l.team ? ` · ${esc(l.team)}` : ""}</em><b>${esc(l.name)}</b>${l.line ? `<i>${esc(l.line)}</i>` : ""}</span></li>`;
     })
     .join("");
+  const mlb = opts.path.startsWith("baseball/");
   const lineRows = [opts.away, opts.home]
     .map(
       (s) => `<tr>
         <th class="team"><span class="tt-line-team">${s.logo ? `<img class="tt-mark xs" src="${esc(s.logo)}" alt="" />` : ""}<b>${esc(s.short)}</b>${s.record ? `<em>${esc(s.record)}</em>` : ""}</span></th>
         ${opts.periods.map((_, i) => `<td class="per">${s.lines[i] ?? "–"}</td>`).join("")}
         <td class="tot">${esc(s.score)}</td>
+        ${mlb ? `<td class="rhe">${esc(s.hits ?? "–")}</td><td class="rhe">${esc(s.errors ?? "–")}</td>` : ""}
       </tr>`,
     )
     .join("");
+  const story =
+    opts.story &&
+    `<p class="story${opts.dropCap ? " drop" : ""} ended">${
+      opts.dateline ? `<span class="wsj-dateline">${esc(opts.dateline)} — </span>` : ""
+    }${opts.dropCap ? `<span class="drop">${esc(opts.story.slice(0, 1))}</span>${esc(opts.story.slice(1))}` : esc(opts.story)}</p>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -126,6 +162,7 @@ function htmlFor(opts: {
     h1 { margin: 6px 0 8px; font-family: "Playfair Display", Georgia, serif; font-size: ${opts.compact ? "32px" : "42px"}; line-height: 1.05; }
     .by { margin: 0 0 14px; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: #5b5f68; }
     .by em { font-style: italic; font-family: "Source Serif 4", Georgia, serif; text-transform: none; letter-spacing: 0; margin-right: 4px; }
+    .wsj-dateline { font-weight: 800; letter-spacing: 0.08em; font-size: 0.78em; text-transform: uppercase; }
     .tt-score-mast { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; background: #121418; border: 3px solid #121418; }
     .tt-score-mast-side { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 10px; min-height: ${opts.compact ? "56px" : "72px"}; padding: 10px 12px; color: #fff; }
     .tt-score-mast-side em { display: block; font-style: normal; font-size: 9px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.8; }
@@ -153,11 +190,25 @@ function htmlFor(opts: {
     .tt-recap-photo.inset img { width: 100%; height: auto; display: block; }
     .tt-recap-photo figcaption { margin-top: 5px; font-size: 12px; font-style: italic; color: #6b6f78; }
     .story { font-family: "Source Serif 4", Georgia, serif; font-size: 18px; line-height: 1.6; max-width: 42rem; }
-    .story .drop { float: left; margin: 0.05em 0.1em 0 0; font-family: "Playfair Display", Georgia, serif; font-weight: 900; font-size: 4.2em; line-height: 0.8; }
+    .story.drop .drop { float: left; margin: 0.05em 0.1em 0 0; font-family: "Playfair Display", Georgia, serif; font-weight: 900; font-size: 4.2em; line-height: 0.8; }
     .ended::after { content: " ■"; }
     .box { clear: both; margin-top: 22px; padding-top: 10px; border-top: 2px solid #121418; }
     .box h3 { margin: 0 0 10px; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
     .note { margin: 0 0 16px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #6b6f78; }
+    .tt-print-group { margin: 14px 0; }
+    .tt-print-group.twins { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    .tt-print-group.twins h4 { grid-column: 1 / -1; }
+    .tt-print-group h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+    table.tt-print-agate { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+    table.tt-print-agate th, table.tt-print-agate td { padding: 2px 4px; border-bottom: 1px solid #e4e0d4; text-align: right; font-family: Oswald, sans-serif; font-weight: 600; }
+    table.tt-print-agate th.n, table.tt-print-agate td.n { text-align: left; font-family: "Libre Franklin", sans-serif; font-weight: 600; }
+    table.tt-print-agate tr.sub td.n { padding-left: 12px; color: #4a4e56; }
+    table.tt-print-agate tfoot td { border-top: 2px solid #121418; }
+    table.tt-print-agate tr.per th { text-align: left; letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px; padding-top: 8px; }
+    table.tt-print-agate td.play { font-family: "Libre Franklin", sans-serif; font-weight: 500; text-align: left; }
+    table.tt-print-agate i { font-style: italic; font-weight: 500; color: #5b5f68; }
+    .tt-print-notes { font-size: 11px; color: #5b5f68; }
+    .tt-print-notes i { font-style: normal; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
   </style>
 </head>
 <body>
@@ -165,7 +216,7 @@ function htmlFor(opts: {
     <p class="note">${opts.compact ? "Compact desk wrap" : "Full recap"} · ${esc(opts.league)} · iPad 1032</p>
     <p class="wsj-kicker">${esc(opts.league)}</p>
     <h1>${esc(opts.headline)}</h1>
-    <p class="by"><em>By</em> ${esc(opts.byline)} · ${esc(opts.when)}</p>
+    <p class="by"><em>By</em> ${esc(opts.byline)}${opts.when ? ` · ${esc(opts.when)}` : ""}</p>
     <div class="tt-score-mast">
       <div class="tt-score-mast-side" style="background:${paint(opts.away.color)}">
         ${opts.away.logo ? `<img class="tt-mark" src="${esc(opts.away.logo)}" alt="" />` : ""}
@@ -181,35 +232,16 @@ function htmlFor(opts: {
     </div>
     <div class="tt-recap-linehead"><b>${esc(opts.status)}</b><span>${esc(opts.venue || "")}</span></div>
     <table class="tt-line">
-      <thead><tr><th class="team"></th>${opts.periods.map((p) => `<th>${esc(p)}</th>`).join("")}<th class="tot">${opts.path.startsWith("baseball/") ? "R" : "T"}</th></tr></thead>
+      <thead><tr><th class="team"></th>${opts.periods.map((p) => `<th>${esc(p)}</th>`).join("")}<th class="tot">${mlb ? "R" : "T"}</th>${mlb ? "<th>H</th><th>E</th>" : ""}</tr></thead>
       <tbody>${lineRows}</tbody>
     </table>
     <ul class="tt-recap-chips">${chips}</ul>
     ${photo}
-    <p class="story ended"><span class="drop">${esc(first)}</span>${esc(rest)}</p>
+    ${story || ""}
     ${opts.boxHtml ? `<section class="box"><h3>Box score</h3>${opts.boxHtml}</section>` : ""}
   </div>
 </body>
 </html>`;
-}
-
-function boxPreview(box: Awaited<ReturnType<typeof fetchEspnBox>>, compact: boolean): string {
-  if (!box) return "";
-  const scoring = box.scoring
-    .slice(0, compact ? 1 : 4)
-    .map((p) => `<p><b>${esc(p.label)}</b> ${p.plays.length} plays</p>`)
-    .join("");
-  const stats = box.teamStats
-    .slice(0, compact ? 4 : 8)
-    .map((s) => `<div>${esc(s.label)} · ${esc(s.away)}–${esc(s.home)}</div>`)
-    .join("");
-  const pairs = compact
-    ? ""
-    : box.pairs
-        .slice(0, 3)
-        .map((p) => `<p><b>${esc(p.label || p.key)}</b> ${p.away?.rows.length ?? 0} / ${p.home?.rows.length ?? 0} lines</p>`)
-        .join("");
-  return `${scoring}${stats ? `<div>${stats}</div>` : ""}${pairs}`;
 }
 
 const outDir = process.env.TIMES_RECAP_OUT || "/tmp/times-recap-template";
@@ -231,18 +263,23 @@ for (const desk of DESKS) {
   const awayC = comp?.competitors?.find((c) => c.homeAway === "away");
   const homeC = comp?.competitors?.find((c) => c.homeAway === "home");
   if (!awayC?.team || !homeC?.team) continue;
-  const side = (c: NonNullable<typeof awayC>) => ({
-    name: c.team!.displayName || c.team!.shortDisplayName || "—",
-    short: c.team!.shortDisplayName || c.team!.displayName || "—",
-    abbrev: (c.team!.abbreviation || "—").toUpperCase(),
-    color: c.team!.color ? `#${c.team!.color}` : null,
-    logo: c.team!.logo ?? null,
-    score: c.score ?? "–",
-    record: c.records?.find((r) => r.type === "total")?.summary ?? null,
-    lines: (c.linescores ?? []).map((l) => (typeof l.value === "number" ? l.value : null)),
-  });
-  const away = side(awayC);
-  const home = side(homeC);
+  const side = (c: NonNullable<typeof awayC>, packed: typeof box) => {
+    const packSide = packed && (c.homeAway === "away" ? packed.game.away : packed.game.home);
+    return {
+      name: c.team!.displayName || c.team!.shortDisplayName || "—",
+      short: c.team!.shortDisplayName || c.team!.displayName || "—",
+      abbrev: (c.team!.abbreviation || "—").toUpperCase(),
+      color: c.team!.color ? `#${c.team!.color}` : packSide?.color ?? null,
+      logo: c.team!.logo ?? packSide?.logo ?? null,
+      score: c.score ?? "–",
+      record: c.records?.find((r) => r.type === "total")?.summary ?? null,
+      hits: packSide?.hits ?? (c.hits != null ? String(c.hits) : null),
+      errors: packSide?.errors ?? (c.errors != null ? String(c.errors) : null),
+      lines: (c.linescores ?? []).map((l) => (typeof l.value === "number" ? l.value : null)),
+    };
+  };
+  const away = side(awayC, box);
+  const home = side(homeC, box);
   const leaders = pickRecapLeaders(
     desk.path,
     (box?.game.leaders ?? []).map((l) => ({
@@ -256,19 +293,18 @@ for (const desk of DESKS) {
     })),
     box?.game.decisions ?? [],
   );
-  const story =
-    (sum.article?.story || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() ||
-    `${away.short} ${away.score}, ${home.short} ${home.score}.`;
+  const printed = recapPrintStory(sum.article?.story || "", desk.compact ? 420 : null);
   const image = sum.article?.images?.[0];
   const html = htmlFor({
     league: desk.league,
     path: desk.path,
     headline: comp?.headlines?.[0]?.shortLinkText || `${away.short} ${away.score}, ${home.short} ${home.score}`,
     byline: sum.article?.byline || `${desk.league} Wire`,
-    when: found.event.date ? new Date(found.event.date).toUTCString() : found.day,
+    when: formatRecapWhen(found.event.date ?? null),
     venue: box?.game.venue || comp?.venue?.fullName || null,
     status: comp?.status?.type?.shortDetail || "Final",
     compact: desk.compact,
+    dateline: printed.dateline,
     away,
     home,
     periods: box?.game.periods ?? away.lines.map((_, i) => String(i + 1)),
@@ -276,8 +312,9 @@ for (const desk of DESKS) {
     photo: image?.url ?? null,
     photoWidth: image?.width ?? null,
     caption: `${away.name} at ${home.name}.`,
-    story: story.slice(0, desk.compact ? 420 : 900),
-    boxHtml: desk.compact ? "" : boxPreview(box, false),
+    story: printed.body,
+    dropCap: printed.dropCap,
+    boxHtml: desk.compact || !box ? "" : printEspnBoxHtml(box),
   });
   const file = `${outDir}/${desk.file}.html`;
   writeFileSync(file, html);

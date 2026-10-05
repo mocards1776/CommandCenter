@@ -4,15 +4,21 @@
  */
 import {
   boxGameFromPack,
+  formatRecapWhen,
   mlbTeamColor,
   packFromBoxGame,
   pickRecapLeaders,
   recapIsFull,
+  recapIsScoreOnly,
   recapPhotoKind,
+  recapPrintStory,
+  recapShouldDropCap,
   recapSportFamily,
+  splitApDateline,
   type RecapGamePack,
   type RecapLeader,
 } from "./newspaper-recap.ts";
+import { pitchingDecisionCode, printEspnBoxHtml, type EspnBox } from "./newspaper-agate.ts";
 import { periodLabels, type BoxGame, type BoxSide } from "./newspaper-box.ts";
 import { ESPN_BOX_PATHS } from "./newspaper-agate.ts";
 
@@ -83,6 +89,18 @@ const mlb = pickRecapLeaders(
 );
 assert(mlb[0]?.label === "Winner" && mlb[0]?.name === "S. Gray", "winning pitcher");
 assert(mlb.map((l) => l.label).join(",") === "Winner,Loser,Save", "save takes the third chip");
+const mlbSaveFromPool = pickRecapLeaders(
+  "baseball/mlb",
+  [
+    { label: "Save", name: "R. Helsley", line: "1 IP", headshot: null, team: "STL", id: "3", href: null },
+    { label: "Batting", name: "N. Arenado", line: "3-4", headshot: null, team: "STL", id: "4", href: null },
+  ],
+  [
+    { label: "W", person: { id: "1", name: "S. Gray", line: "6 IP", headshot: null } },
+    { label: "L", person: { id: "2", name: "S. Imanaga", line: "5 IP", headshot: null } },
+  ],
+);
+assert(mlbSaveFromPool.map((l) => l.label).join(",") === "Winner,Loser,Save", "save from the leader pool still prints");
 const mlbHit = pickRecapLeaders(
   "baseball/mlb",
   [{ label: "Batting", name: "N. Arenado", line: "3-4, HR, 2 RBI", headshot: "a.jpg", team: "STL", id: "4", href: null }],
@@ -195,5 +213,82 @@ assert(periodLabels("hockey/nhl", 5).includes("SO"), "NHL shootout");
 assert(periodLabels("basketball/nba", 5).includes("OT"), "NBA OT");
 assert(periodLabels("football/nfl", 4).join(",") === "1,2,3,4", "NFL quarters");
 assert(ESPN_BOX_PATHS.has("basketball/nba") && ESPN_BOX_PATHS.has("baseball/mlb") && ESPN_BOX_PATHS.has("football/college-football"), "every desk sport has an ESPN box");
+
+const london = splitApDateline("LONDON -- — Jonathan Taylor ran for two touchdowns.");
+assert(london.dateline === "LONDON", `dateline city, got ${london.dateline}`);
+assert(london.body.startsWith("Jonathan Taylor"), `body after the dash, got ${london.body}`);
+assert(!/--/.test(london.body) && !london.body.startsWith("—"), "no leftover dashes on the body");
+const milwaukee = splitApDateline("MILWAUKEE -- — Jackson Chourio hit a two-run single.");
+assert(milwaukee.dateline === "MILWAUKEE" && milwaukee.body.startsWith("Jackson"), "Milwaukee dateline");
+
+const when = formatRecapWhen("2026-10-04T13:30:00Z");
+assert(/Sun\., Oct\. 4/.test(when), `friendly Central date, got ${when}`);
+assert(/CT/.test(when) && !/GMT/.test(when), `Central clock, got ${when}`);
+assert(/a\.m\.|p\.m\./.test(when), `a.m./p.m., got ${when}`);
+
+assert(recapIsScoreOnly("Jazz 109, Nuggets 97."), "a score line is not a story");
+assert(!recapShouldDropCap("Jazz 109, Nuggets 97."), "no drop cap on a one-line score");
+assert(recapShouldDropCap("Taylor scored twice. Jones added a rushing touchdown. The Colts won."), "two sentences get a drop");
+const mid = recapPrintStory("LONDON -- — Jonathan Taylor ran for two touchdowns. Daniel Jones also ran one in. The Colts won a third-string snap.", 80);
+assert(mid.body.endsWith("."), `cut on a sentence, got ${mid.body}`);
+assert(!/third-strin/.test(mid.body), "does not stop mid-word");
+assert(mid.dateline === "LONDON", "print story keeps the city");
+assert(recapPrintStory("Jazz 109, Nuggets 97.", 420).body === "", "score-only body is omitted");
+const plugged = recapPrintStory(
+  "LONDON -- — Taylor scored twice. The Colts won. ------ See AP’s full NFL coverage here",
+  null,
+);
+assert(!/See AP/i.test(plugged.body) && plugged.body.endsWith("won."), `AP plug strips, got ${plugged.body}`);
+
+assert(pitchingDecisionCode("W, 1-0") === "W", "winning pitcher note");
+assert(pitchingDecisionCode("L, 0-1, B, 1") === "L", "losing pitcher note");
+assert(pitchingDecisionCode("S, 12") === "S", "save note");
+assert(pitchingDecisionCode("H, 1") === null, "a hold is not a save");
+
+const box: EspnBox = {
+  game: rebuilt,
+  pairs: [
+    {
+      key: "passing",
+      label: "Passing",
+      away: {
+        title: "Colts",
+        columns: ["C/ATT", "YDS", "TD"],
+        rows: [{ id: "1", name: "D. Jones", cells: ["19/34", "143", "1"] }],
+        totals: null,
+      },
+      home: {
+        title: "Commanders",
+        columns: ["C/ATT", "YDS", "TD"],
+        rows: [{ id: "2", name: "M. Mariota", cells: ["12/21", "129", "1"] }],
+        totals: null,
+      },
+    },
+  ],
+  teamStats: [{ label: "Total yards", away: "257", home: "317" }],
+  scoring: [
+    {
+      label: "First quarter",
+      plays: [
+        {
+          side: "away",
+          team: "IND",
+          clock: "8:12",
+          tag: "TD",
+          lead: ["J. Taylor 20 yd run"],
+          detail: ["(J. Gay kick)"],
+          score: "7-0",
+        },
+      ],
+    },
+  ],
+  shots: null,
+  stars: [],
+  info: [],
+};
+const printed = printEspnBoxHtml(box);
+assert(printed.includes("D. Jones") && printed.includes("19/34"), "passing table prints the line");
+assert(printed.includes("J. Taylor 20 yd run"), "scoring lists the play");
+assert(!/plays<\/|lines</i.test(printed) && !/\d+ plays/.test(printed) && !/\d+ \/ \d+ lines/.test(printed), "no count stubs");
 
 console.log("newspaper-recap ok");

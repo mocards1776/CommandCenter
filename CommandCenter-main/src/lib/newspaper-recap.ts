@@ -6,6 +6,7 @@
  * Sport adapters pick the line labels and the three leader chips.
  */
 
+import { tidy, truncateAtSentence } from "./newspaper-copy.ts";
 import type { BoxGame, BoxLeader, BoxPerson, BoxSide } from "./newspaper-box.ts";
 
 export const RECAP_WIDE_MIN = 800;
@@ -228,7 +229,9 @@ export function pickRecapLeaders(
   if (family === "baseball") {
     const winner = fromDecisions.find((l) => l.label === "Winner");
     const loser = fromDecisions.find((l) => l.label === "Loser");
-    const save = fromDecisions.find((l) => l.label === "Save");
+    const save =
+      fromDecisions.find((l) => l.label === "Save") ??
+      pool.find((l) => /save|^s(?:v)?$/i.test(l.label));
     const hitter = pool.find((l) => /hit|hr|home|rbi|bat|avg/i.test(`${l.label} ${l.line}`));
     if (winner) take(winner);
     if (loser) take(loser);
@@ -396,4 +399,107 @@ export function boxGameFromPack(pack: RecapGamePack, espnEventId: string | null 
     espnEventId,
     href: null,
   };
+}
+
+/**
+ * ESPN files "LONDON -- — Jonathan Taylor…". City off the dash, leftover
+ * dashes dropped, so the page can set `LONDON —` once.
+ */
+export function splitApDateline(text: string): { dateline: string | null; body: string } {
+  const raw = tidy(text)
+    .replace(/\s*-{3,}\s*See AP['’]?s[\s\S]*$/i, "")
+    .replace(/\s*_{3,}\s*AP [\s\S]*$/i, "")
+    .replace(/\s*-{3,}\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return { dateline: null, body: "" };
+  const m =
+    /^([A-Z][A-Z.'’]*(?:[ -][A-Z][A-Z.'’]*){0,3}(?:,\s*[A-Z][A-Za-z.]{1,12})?)\s*(?:--+|—|–)\s*(?:[—–-]+\s*)?/.exec(
+      raw,
+    );
+  if (!m) return { dateline: null, body: raw.replace(/^(?:--+|—|–)\s+/, "") };
+  return { dateline: m[1]!.trim(), body: raw.slice(m[0].length).replace(/^(?:--+|—|–)\s+/, "").trim() };
+}
+
+const AP_MONTHS: Record<string, string> = {
+  Jan: "Jan.",
+  Feb: "Feb.",
+  Mar: "March",
+  Apr: "April",
+  May: "May",
+  Jun: "June",
+  Jul: "July",
+  Aug: "Aug.",
+  Sep: "Sept.",
+  Oct: "Oct.",
+  Nov: "Nov.",
+  Dec: "Dec.",
+};
+
+/** Central, friendly: `Sun., Oct. 4 · 8:30 a.m. CT`. */
+export function formatRecapWhen(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const weekday = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/Chicago" });
+  const month = d.toLocaleDateString("en-US", { month: "short", timeZone: "America/Chicago" });
+  const day = d.toLocaleDateString("en-US", { day: "numeric", timeZone: "America/Chicago" });
+  const clock = d
+    .toLocaleTimeString("en-US", {
+      timeZone: "America/Chicago",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .replace(" AM", " a.m.")
+    .replace(" PM", " p.m.");
+  return `${weekday}., ${AP_MONTHS[month] ?? `${month}.`} ${day} · ${clock} CT`;
+}
+
+function recapSentences(text: string): string[] {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/(?<=[.!?])\s+(?=["“A-Z0-9])/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** A one-line score (`Jazz 109, Nuggets 97.`) is not a story. */
+export function recapIsScoreOnly(text: string | null | undefined): boolean {
+  const t = (text ?? "").replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  if (recapSentences(t).length > 1) return false;
+  return /^.+?\s\d{1,3},\s+.+?\s\d{1,3}\.?$/.test(t);
+}
+
+export function recapShouldDropCap(text: string | null | undefined): boolean {
+  const t = (text ?? "").replace(/\s+/g, " ").trim();
+  if (!t || recapIsScoreOnly(t)) return false;
+  return recapSentences(t).length >= 2;
+}
+
+export function recapBodyForPage(text: string | null | undefined): string {
+  const { body } = splitApDateline(text ?? "");
+  if (!body || recapIsScoreOnly(body)) return "";
+  return body;
+}
+
+/** Full story when it fits; otherwise the last complete sentence before `max`. */
+export function recapPrintStory(
+  htmlOrText: string,
+  maxChars: number | null,
+): { dateline: string | null; body: string; dropCap: boolean } {
+  const stripped = (htmlOrText ?? "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s*-{3,}\s*See AP['’]?s[\s\S]*$/i, "")
+    .replace(/\s*_{3,}\s*AP [\s\S]*$/i, "")
+    .replace(/\s*-{3,}\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const { dateline, body: raw } = splitApDateline(stripped);
+  if (!raw || recapIsScoreOnly(raw)) return { dateline, body: "", dropCap: false };
+  const body = maxChars != null ? truncateAtSentence(raw, maxChars) : raw;
+  if (!body || recapIsScoreOnly(body)) return { dateline, body: "", dropCap: false };
+  return { dateline, body, dropCap: recapShouldDropCap(body) };
 }

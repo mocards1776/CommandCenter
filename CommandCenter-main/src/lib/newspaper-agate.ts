@@ -167,11 +167,17 @@ type SumCompetitor = {
   statistics?: { name?: string; displayValue?: string }[];
 };
 
+type SumAthleteRow = {
+  athlete?: SumAthlete;
+  stats?: string[];
+  notes?: { type?: string; text?: string }[];
+};
+
 type SumStatBlock = {
   name?: string;
   labels?: string[];
   totals?: string[];
-  athletes?: { athlete?: SumAthlete; stats?: string[] }[];
+  athletes?: SumAthleteRow[];
 };
 
 type SumPlay = {
@@ -320,18 +326,21 @@ function headerGame(path: string, data: SummaryRaw, eventId: string): BoxGame | 
   const winnerId = away.winner ? away.id : home.winner ? home.id : null;
   const featured = comp.status?.featuredAthletes ?? [];
   const decisions: BoxGame["decisions"] = [];
+  const have = new Set<string>();
   for (const f of featured) {
     if (!f.athlete?.id && !f.athlete?.displayName) continue;
-    const name = f.name ?? "";
-    const person = {
-      id: f.athlete.id ?? null,
-      name: f.athlete.displayName || agateName(f.athlete),
-      line: null,
-      headshot: headshotOf(f.athlete),
-    };
-    if (/winning(Pitcher|Goalie)/i.test(name)) decisions.push({ label: "W", person });
-    else if (/losing(Pitcher|Goalie)/i.test(name)) decisions.push({ label: "L", person });
-    else if (/savePitcher|^save$/i.test(name)) decisions.push({ label: "S", person });
+    const code = featuredDecisionLabel(f.name ?? "");
+    if (!code || have.has(code)) continue;
+    have.add(code);
+    decisions.push({
+      label: code,
+      person: {
+        id: f.athlete.id ?? null,
+        name: f.athlete.displayName || agateName(f.athlete),
+        line: null,
+        headshot: headshotOf(f.athlete),
+      },
+    });
   }
   return {
     id: `${path}-${eventId}`,
@@ -361,11 +370,29 @@ function headerGame(path: string, data: SummaryRaw, eventId: string): BoxGame | 
 }
 
 /** A stat block cut down to the columns the paper prints, in its order. */
+function featuredDecisionLabel(name: string): "W" | "L" | "S" | null {
+  const n = name.replace(/[\s_-]/g, "");
+  if (/save/i.test(n)) return "S";
+  if (/winning/i.test(n)) return "W";
+  if (/losing/i.test(n)) return "L";
+  return null;
+}
+
+/** ESPN pitcher notes look like `W, 1-0`, `L, 0-1, B, 1`, `S, 12`. Holds stay off. */
+export function pitchingDecisionCode(text: string | null | undefined): "W" | "L" | "S" | null {
+  const t = (text ?? "").trim();
+  if (!t) return null;
+  if (/^(?:S|SV|SAVE)\b/i.test(t) || /^save\b/i.test(t)) return "S";
+  if (/^W\b/i.test(t)) return "W";
+  if (/^L\b/i.test(t)) return "L";
+  return null;
+}
+
 function blockTable(
   block: SumStatBlock | undefined,
   title: string,
   cols: { from: string; as?: string }[],
-  opts: { limit?: number; note?: (a: SumAthlete) => string | null; totals?: boolean } = {},
+  opts: { limit?: number; note?: (a: SumAthlete, row: SumAthleteRow) => string | null; totals?: boolean } = {},
 ): AgateTable | null {
   if (!block?.athletes?.length) return null;
   const labels = block.labels ?? [];
@@ -374,7 +401,7 @@ function blockTable(
   const rows = block.athletes.slice(0, opts.limit ?? block.athletes.length).map((a) => ({
     id: a.athlete?.id ?? null,
     name: agateName(a.athlete),
-    note: opts.note?.(a.athlete ?? {}) ?? null,
+    note: opts.note?.(a.athlete ?? {}, a) ?? null,
     cells: pick(a.stats),
   }));
   const showTotals = opts.totals !== false && (block.totals?.length ?? 0) > 0 && block.athletes.length > 1;
@@ -480,20 +507,32 @@ function mlbBatters(blocks: SumStatBlock[], title: string): AgateTable | null {
       { from: "AB" },
       { from: "R" },
       { from: "H" },
-      { from: "RBI", as: "BI" },
+      { from: "RBI", as: "RBI" },
       { from: "BB" },
-      { from: "K" },
-      { from: "AVG", as: "Avg" },
+      { from: "K", as: "SO" },
+      { from: "AVG", as: "AVG" },
     ],
     { note: (a) => a.position?.abbreviation?.toLowerCase() ?? null },
   );
 }
 
-function mlbPitchers(blocks: SumStatBlock[], title: string): AgateTable | null {
+function mlbPitchers(blocks: SumStatBlock[], title: string, decisions: Map<string, string>): AgateTable | null {
   const block = blocks.find((b) => /pitching|pitchers/i.test(b.name ?? "")) ?? blocks.find((b) => (b.labels ?? []).includes("IP"));
-  return blockTable(block, title, [{ from: "IP" }, { from: "H" }, { from: "R" }, { from: "ER" }, { from: "BB" }, { from: "K" }], {
-    totals: false,
-  });
+  return blockTable(
+    block,
+    title,
+    [{ from: "IP" }, { from: "H" }, { from: "R" }, { from: "ER" }, { from: "BB" }, { from: "K", as: "SO" }],
+    {
+      totals: false,
+      note: (a, row) => {
+        const fromMap = a.id && decisions.get(a.id);
+        const fromNote = (row.notes ?? [])
+          .map((n) => pitchingDecisionCode(n.text))
+          .find((c): c is "W" | "L" | "S" => Boolean(c));
+        return fromMap || fromNote || null;
+      },
+    },
+  );
 }
 
 function mlbScoring(data: SummaryRaw, game: BoxGame, people: Map<string, string>): ScoringPeriod[] {
@@ -802,11 +841,36 @@ export async function fetchEspnBox(path: string, eventId: string): Promise<EspnB
   const decisions = new Map<string, string>();
   for (const f of featured) {
     if (!f.athlete?.id) continue;
-    if (f.name === "winningGoalie" || f.name === "winningPitcher") decisions.set(f.athlete.id, "W");
-    if (f.name === "losingGoalie" || f.name === "losingPitcher") {
-      decisions.set(f.athlete.id, hockey && game.periods.length > 3 ? "OTL" : "L");
+    const code = featuredDecisionLabel(f.name ?? "");
+    if (!code) continue;
+    decisions.set(
+      f.athlete.id,
+      code === "L" && hockey && game.periods.length > 3 ? "OTL" : code,
+    );
+  }
+  for (const block of [...awayBlocks, ...homeBlocks]) {
+    for (const a of block.athletes ?? []) {
+      if (!a.athlete?.id || decisions.has(a.athlete.id)) continue;
+      const code = (a.notes ?? []).map((n) => pitchingDecisionCode(n.text)).find((c): c is "W" | "L" | "S" => Boolean(c));
+      if (code) decisions.set(a.athlete.id, code);
     }
-    if (f.name === "savePitcher") decisions.set(f.athlete.id, "S");
+  }
+  const haveDecision = new Set(game.decisions.map((d) => d.label));
+  for (const block of [...awayBlocks, ...homeBlocks]) {
+    for (const a of block.athletes ?? []) {
+      const code = (a.notes ?? []).map((n) => pitchingDecisionCode(n.text)).find((c): c is "W" | "L" | "S" => Boolean(c));
+      if (!code || haveDecision.has(code) || !a.athlete) continue;
+      haveDecision.add(code);
+      game.decisions.push({
+        label: code,
+        person: {
+          id: a.athlete.id ?? null,
+          name: agateName(a.athlete),
+          line: null,
+          headshot: headshotOf(a.athlete),
+        },
+      });
+    }
   }
   const abbrevOf = (id: string | undefined) => (id === game.away.id ? game.away.abbrev : id === game.home.id ? game.home.abbrev : null);
   const stars: StarPick[] = ["firstStar", "secondStar", "thirdStar"]
@@ -866,7 +930,7 @@ export async function fetchEspnBox(path: string, eventId: string): Promise<EspnB
     : baseball
       ? [
           { key: "batting", label: "Batting", away: mlbBatters(awayBlocks, game.away.short), home: mlbBatters(homeBlocks, game.home.short) },
-          { key: "pitching", label: "Pitching", away: mlbPitchers(awayBlocks, game.away.short), home: mlbPitchers(homeBlocks, game.home.short) },
+          { key: "pitching", label: "Pitching", away: mlbPitchers(awayBlocks, game.away.short, decisions), home: mlbPitchers(homeBlocks, game.home.short, decisions) },
         ]
       : basketball
         ? [{ key: "players", label: null, away: nbaPlayers(awayBlocks, game.away.short), home: nbaPlayers(homeBlocks, game.home.short) }]
@@ -924,4 +988,84 @@ export function statSplit(rows: StatLine[]): number {
     }
   }
   return rows.length;
+}
+
+function escPrint(s: string): string {
+  return s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]!));
+}
+
+function pieceText(pieces: NamePiece[]): string {
+  return pieces.map((p) => (typeof p === "string" ? p : p.name)).join("");
+}
+
+function printTable(table: AgateTable): string {
+  const head = `<tr><th class="n">${escPrint(table.title)}</th>${table.columns.map((c) => `<th>${escPrint(c)}</th>`).join("")}</tr>`;
+  const rows = table.rows
+    .map((r) => {
+      const name = `${r.lead ? `<i class="lead">${escPrint(r.lead)}</i>` : ""}${escPrint(r.name)}${r.note ? `<i> ${escPrint(r.note)}</i>` : ""}`;
+      return `<tr class="${r.sub ? "sub" : ""}"><td class="n">${name}</td>${r.cells.map((c) => `<td>${escPrint(c)}</td>`).join("")}</tr>`;
+    })
+    .join("");
+  const foot = table.totals
+    ? `<tfoot><tr class="tot"><td class="n">Totals</td>${table.totals.map((c) => `<td>${escPrint(c)}</td>`).join("")}</tr></tfoot>`
+    : "";
+  return `<table class="tt-print-agate"><thead>${head}</thead><tbody>${rows}</tbody>${foot}</table>`;
+}
+
+/**
+ * Fully expanded newspaper box: scoring plays, team stats, and every
+ * club's player table. Used by proofs and any print path — never a count stub.
+ */
+export function printEspnBoxHtml(box: EspnBox): string {
+  const parts: string[] = [];
+  if (box.scoring.length) {
+    const periods = box.scoring
+      .map((period) => {
+        const plays = period.plays
+          .map((play) => {
+            const detail = play.detail.length ? ` <i>${escPrint(pieceText(play.detail))}</i>` : "";
+            return `<tr><td class="n">${escPrint(play.team)}</td><td>${escPrint(play.clock)}</td><td class="n play">${escPrint(pieceText(play.lead))}${detail}</td><td>${play.tag ? escPrint(play.tag) : ""}</td><td>${escPrint(play.score)}</td></tr>`;
+          })
+          .join("");
+        return `<tbody><tr class="per"><th colspan="5">${escPrint(period.label)}</th></tr>${plays}</tbody>`;
+      })
+      .join("");
+    parts.push(
+      `<div class="tt-print-group"><h4>Scoring</h4><table class="tt-print-agate plays"><thead><tr><th class="n">Team</th><th>Time</th><th class="n">Play</th><th></th><th>${escPrint(box.game.away.abbrev)}-${escPrint(box.game.home.abbrev)}</th></tr></thead>${periods}</table></div>`,
+    );
+  }
+  if (box.teamStats.length) {
+    const rows = box.teamStats
+      .map(
+        (s) =>
+          `<tr class="${s.sub ? "sub" : ""}"><td class="n">${escPrint(s.label)}</td><td>${escPrint(s.away)}</td><td>${escPrint(s.home)}</td></tr>`,
+      )
+      .join("");
+    parts.push(
+      `<div class="tt-print-group"><h4>Team stats</h4><table class="tt-print-agate"><thead><tr><th class="n"></th><th>${escPrint(box.game.away.abbrev)}</th><th>${escPrint(box.game.home.abbrev)}</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+    );
+  }
+  if (box.shots) {
+    const head = [...box.shots.periods, "T"].map((p) => `<th>${escPrint(p)}</th>`).join("");
+    const away = [...box.shots.away.map((v) => (v == null ? "–" : String(v))), box.shots.awayTotal]
+      .map((c) => `<td>${escPrint(c)}</td>`)
+      .join("");
+    const home = [...box.shots.home.map((v) => (v == null ? "–" : String(v))), box.shots.homeTotal]
+      .map((c) => `<td>${escPrint(c)}</td>`)
+      .join("");
+    parts.push(
+      `<div class="tt-print-group"><h4>Shots on goal</h4><table class="tt-print-agate"><thead><tr><th class="n"></th>${head}</tr></thead><tbody><tr><td class="n">${escPrint(box.game.away.short)}</td>${away}</tr><tr><td class="n">${escPrint(box.game.home.short)}</td>${home}</tr></tbody></table></div>`,
+    );
+  }
+  for (const pair of box.pairs) {
+    if (!pair.away && !pair.home) continue;
+    const twins = [pair.away, pair.home].filter((t): t is AgateTable => Boolean(t)).map(printTable).join("");
+    parts.push(`<div class="tt-print-group twins">${pair.label ? `<h4>${escPrint(pair.label)}</h4>` : ""}${twins}</div>`);
+  }
+  if (box.info.length) {
+    parts.push(
+      `<p class="tt-print-notes">${box.info.map((n) => `<i>${escPrint(n.label)}</i> ${escPrint(n.value)}.`).join(" ")}</p>`,
+    );
+  }
+  return parts.join("");
 }
