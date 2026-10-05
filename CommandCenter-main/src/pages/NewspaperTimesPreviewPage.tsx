@@ -178,6 +178,16 @@ function favoriteGame(game: BoxGame): boolean {
   return FAVORITES.some((f) => involvesAbbrev(game, f.abbrev));
 }
 
+function scheduleDayLabel(day: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return day;
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function TimesChrome({
   folio,
   kicker,
@@ -352,7 +362,7 @@ function NflSchedule({ board }: { board: SectionBoard | null }) {
         {[...days.entries()].map(([day, list]) => (
           <section key={day}>
             <h3 className="wsj-band-title">
-              {day} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
+              {scheduleDayLabel(day)} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
             </h3>
             <div className="tt-matchups" style={{ ["--cols" as string]: "2" }}>
               {list.map((g) => (
