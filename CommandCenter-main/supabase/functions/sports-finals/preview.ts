@@ -6,6 +6,7 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { previewReplyMarkup } from "../_shared/telegram-markup.ts";
 import { fetchLogoDataUri } from "./card.ts";
 import { rasterizeSvg } from "./png.ts";
+import { applyLightningLogos } from "./preview-logos.ts";
 import { fetchPreviewBoards, hydratePreviewStarters, rankPreviewBoards } from "./preview-boards.ts";
 import {
   chicagoYmd,
@@ -43,20 +44,22 @@ export async function buildEveningPreview(now = new Date()): Promise<PreviewBuil
 }
 
 export async function hydratePreviewLogos(games: PreviewGame[]): Promise<void> {
-  const urls = [...new Set(games.flatMap((g) => [g.away.logo, g.home.logo]).filter((u): u is string => Boolean(u)))];
-  const fetched = await Promise.all(
-    urls.map(async (url) => {
-      const data = await fetchLogoDataUri(url);
-      if (data) return data;
-      const fallback = url.replace(/\/500-dark\//i, "/500/");
-      return fallback !== url ? fetchLogoDataUri(fallback) : null;
-    }),
-  );
+  const urls = [
+    ...new Set(
+      games
+        .flatMap((g) => [g.away.logo, g.home.logo, g.awayStarter?.photoUrl, g.homeStarter?.photoUrl])
+        .filter((u): u is string => Boolean(u)),
+    ),
+  ];
+  const fetched = await Promise.all(urls.map((url) => fetchLogoDataUri(url)));
   const byUrl = new Map(urls.map((url, i) => [url, fetched[i] ?? null]));
   for (const game of games) {
     game.away.logoData = game.away.logo ? byUrl.get(game.away.logo) ?? null : null;
     game.home.logoData = game.home.logo ? byUrl.get(game.home.logo) ?? null : null;
+    if (game.awayStarter) game.awayStarter.photoData = game.awayStarter.photoUrl ? byUrl.get(game.awayStarter.photoUrl) ?? null : null;
+    if (game.homeStarter) game.homeStarter.photoData = game.homeStarter.photoUrl ? byUrl.get(game.homeStarter.photoUrl) ?? null : null;
   }
+  await applyLightningLogos(games);
 }
 
 export async function renderEveningPreviewPng(display: PreviewGame[], chicagoDate: string): Promise<Uint8Array> {

@@ -2,11 +2,11 @@
  * Evening-preview Telegram graphic. Same 1080×1350 family as finals cards:
  * navy field, team-color washes, Inter, split away/home, no live field.
  *
- * Logos stay bare. Dark marks (Lightning) get the ESPN 500-dark asset plus a
- * white stroke filter — never a disc, plate, or circle behind the mark.
+ * Team logos stay bare — no discs and no stroke filters. Lightning uses a
+ * vendored PNG that already has its white rim in the pixels.
  */
 import { FINALS_ALERT_TARGET_HEIGHT, FINALS_ALERT_WIDTH } from "./svg.ts";
-import { printClock, type PreviewGame, type PreviewSide } from "./preview-slate.ts";
+import { printClock, type PreviewGame, type PreviewSide, type PreviewStarter } from "./preview-slate.ts";
 
 export const PREVIEW_ALERT_WIDTH = FINALS_ALERT_WIDTH;
 export const PREVIEW_ALERT_HEIGHT = FINALS_ALERT_TARGET_HEIGHT;
@@ -90,12 +90,6 @@ function sideName(side: PreviewSide): string {
   return name.length > 16 ? `${rank}${side.abbrev}` : name;
 }
 
-function starterRole(sport: PreviewGame["sport"]): string | null {
-  if (sport === "mlb") return "P";
-  if (sport === "nhl") return "G";
-  return null;
-}
-
 function chipWidth(label: string): number {
   return Math.min(188, Math.max(72, label.length * 8.6 + 20));
 }
@@ -113,8 +107,7 @@ function chip(label: string, x: number, y: number): { svg: string; width: number
 
 function logoMark(side: PreviewSide, x: number, y: number, size: number): string {
   if (side.logoData) {
-    const stroke = side.outline ? ` class="logo-stroke" filter="url(#logoStroke)"` : "";
-    return `<image${stroke} href="${side.logoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"/>`;
+    return `<image href="${side.logoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"/>`;
   }
   return text(side.abbrev.slice(0, 3), x + size / 2, y + size / 2 + 6, {
     size: 16,
@@ -122,6 +115,16 @@ function logoMark(side: PreviewSide, x: number, y: number, size: number): string
     anchor: "middle",
     weight: 700,
   });
+}
+
+function playerShot(starter: PreviewStarter, x: number, y: number, size: number, clipId: string): string {
+  if (!starter.photoData) return "";
+  const r = 6;
+  return [
+    `<clipPath id="${clipId}"><rect x="${x}" y="${y}" width="${size}" height="${size}" rx="${r}"/></clipPath>`,
+    `<rect x="${x}" y="${y}" width="${size}" height="${size}" rx="${r}" fill="#dfe6f2"/>`,
+    `<image href="${starter.photoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})"/>`,
+  ].join("");
 }
 
 function defs(games: PreviewGame[], awayWash: string, homeWash: string): string {
@@ -149,15 +152,6 @@ function defs(games: PreviewGame[], awayWash: string, homeWash: string): string 
     `<stop offset="0%" stop-color="${esc(homeWash)}" stop-opacity="0.46"/>`,
     `<stop offset="72%" stop-color="${esc(homeWash)}" stop-opacity="0"/>`,
     `</radialGradient>`,
-    `<filter id="logoStroke" x="-45%" y="-45%" width="190%" height="190%" color-interpolation-filters="sRGB">`,
-    `<feMorphology in="SourceAlpha" operator="dilate" radius="2.2" result="dilated"/>`,
-    `<feFlood flood-color="#ffffff" flood-opacity="0.92" result="white"/>`,
-    `<feComposite in="white" in2="dilated" operator="in" result="stroke"/>`,
-    `<feMerge>`,
-    `<feMergeNode in="stroke"/>`,
-    `<feMergeNode in="SourceGraphic"/>`,
-    `</feMerge>`,
-    `</filter>`,
     washes.join(""),
     `</defs>`,
   ].join("");
@@ -228,7 +222,7 @@ export function renderPreviewSvg(card: PreviewCard): string {
     const homeTx = homeLogoX - 14;
     const nameY = logoY + (roomy ? 28 : 22);
     const recY = nameY + (roomy ? 26 : 22);
-    const startY = recY + (roomy ? 24 : 20);
+    const startY = recY + (roomy ? 38 : 30);
     parts.push(text(sideName(game.away), awayTx, nameY, { size: roomy ? 26 : 22, fill: "#f7f4ee", weight: 700 }));
     parts.push(text(sideName(game.home), homeTx, nameY, { size: roomy ? 26 : 22, fill: "#f7f4ee", weight: 700, anchor: "end" }));
     if (game.away.record) {
@@ -237,15 +231,27 @@ export function renderPreviewSvg(card: PreviewCard): string {
     if (game.home.record) {
       parts.push(text(game.home.record, homeTx, recY, { size: roomy ? 20 : 17, fill: "#e8e4d9", weight: 700, anchor: "end" }));
     }
-    const role = starterRole(game.sport);
-    if (game.probableAway) {
-      const line = role ? `${role}  ${game.probableAway}` : game.probableAway;
-      parts.push(text(line, awayTx, startY, { size: 14, fill: "#c5cce0", weight: 600 }));
-    }
-    if (game.probableHome) {
-      const line = role ? `${role}  ${game.probableHome}` : game.probableHome;
-      parts.push(text(line, homeTx, startY, { size: 14, fill: "#c5cce0", weight: 600, anchor: "end" }));
-    }
+    const shot = roomy ? 36 : 30;
+    const drawStarter = (starter: PreviewStarter | null, tx: number, anchor: "start" | "end", clip: string) => {
+      if (!starter) return;
+      const hasShot = Boolean(starter.photoData);
+      const shotX = anchor === "start" ? tx : tx - shot;
+      const textX = hasShot ? (anchor === "start" ? tx + shot + 8 : tx - shot - 8) : tx;
+      if (hasShot) parts.push(playerShot(starter, shotX, startY - 22, shot, clip));
+      parts.push(
+        text(`${starter.role}  ${starter.name}`, textX, startY - (starter.line ? 6 : 2), {
+          size: 14,
+          fill: "#e8e4d9",
+          weight: 700,
+          anchor,
+        }),
+      );
+      if (starter.line) {
+        parts.push(text(starter.line, textX, startY + 12, { size: 12, fill: "#c5cce0", weight: 600, anchor }));
+      }
+    };
+    drawStarter(game.awayStarter, awayTx, "start", `hs-a-${i}`);
+    drawStarter(game.homeStarter, homeTx, "end", `hs-h-${i}`);
 
     const midX = W / 2;
     const clock = `${printClock(game.startIso)} CT`;

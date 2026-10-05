@@ -24,8 +24,15 @@ export type PreviewSide = {
   record: string | null;
   rank?: number | null;
   color?: string | null;
-  /** White stroke / 500-dark asset — dark marks only, never a backing disc. */
-  outline?: boolean;
+};
+
+export type PreviewStarter = {
+  id: string | null;
+  name: string;
+  role: "P" | "G";
+  line: string | null;
+  photoUrl: string | null;
+  photoData?: string | null;
 };
 
 export type PreviewGame = {
@@ -48,6 +55,8 @@ export type PreviewGame = {
   /** Last names: MLB probable pitchers or NHL starting goalies. */
   probableAway: string | null;
   probableHome: string | null;
+  awayStarter: PreviewStarter | null;
+  homeStarter: PreviewStarter | null;
   /** Short NFL/CFB spread when the board already has a line. */
   oddsLine: string | null;
 };
@@ -230,13 +239,8 @@ export function espnDarkLogoUrl(url: string | null | undefined): string | null {
   return dark === url ? url : dark;
 }
 
-export function decoratePreviewSide(side: PreviewSide, sport: PreviewSport): PreviewSide {
-  const outline = side.outline ?? darkLogoMark(side.color, sport, side.teamId);
-  return {
-    ...side,
-    outline,
-    logo: outline ? espnDarkLogoUrl(side.logo) ?? side.logo : side.logo,
-  };
+export function decoratePreviewSide(side: PreviewSide, _sport: PreviewSport): PreviewSide {
+  return { ...side };
 }
 
 /** "Shane Bieber" → "Bieber". Used for pitchers and goalies on the card. */
@@ -270,16 +274,27 @@ export function starterLine(game: Pick<PreviewGame, "sport" | "away" | "home" | 
 }
 
 export function decoratePreviewGame(
-  game: Omit<PreviewGame, "why" | "network" | "probableAway" | "probableHome" | "oddsLine"> &
-    Partial<Pick<PreviewGame, "why" | "network" | "probableAway" | "probableHome" | "oddsLine">>,
+  game: Omit<PreviewGame, "why" | "network" | "probableAway" | "probableHome" | "oddsLine" | "awayStarter" | "homeStarter"> &
+    Partial<Pick<PreviewGame, "why" | "network" | "probableAway" | "probableHome" | "oddsLine" | "awayStarter" | "homeStarter">>,
 ): PreviewGame {
   const networks = printNetworks(game.tv);
+  const role = game.sport === "mlb" ? "P" : game.sport === "nhl" ? "G" : null;
+  const starter = (
+    existing: PreviewStarter | null | undefined,
+    name: string | null | undefined,
+  ): PreviewStarter | null => {
+    if (existing) return existing;
+    if (!name || !role) return null;
+    return { id: null, name, role, line: null, photoUrl: null };
+  };
   return {
     ...game,
     away: decoratePreviewSide(game.away, game.sport),
     home: decoratePreviewSide(game.home, game.sport),
-    probableAway: game.probableAway ?? null,
-    probableHome: game.probableHome ?? null,
+    probableAway: game.probableAway ?? game.awayStarter?.name ?? null,
+    probableHome: game.probableHome ?? game.homeStarter?.name ?? null,
+    awayStarter: starter(game.awayStarter, game.probableAway ?? game.awayStarter?.name),
+    homeStarter: starter(game.homeStarter, game.probableHome ?? game.homeStarter?.name),
     oddsLine: game.oddsLine ?? null,
     why: game.why ?? printReason(game),
     network: game.network ?? networks[0] ?? null,

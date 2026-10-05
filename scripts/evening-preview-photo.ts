@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import { fetchLogoDataUri } from "../supabase/functions/sports-finals/card.ts";
+import { applyLightningLogos } from "../supabase/functions/sports-finals/preview-logos.ts";
 import { fetchPreviewBoards, hydratePreviewStarters, rankPreviewBoards } from "../supabase/functions/sports-finals/preview-boards.ts";
 import {
   chicagoYmd,
@@ -69,6 +70,8 @@ function fixtureSlate(day = "2026-10-05"): PreviewGame[] {
       seriesLine: "Playoff Gm 3",
       probableAway: "Wheeler",
       probableHome: "Glasnow",
+      awayStarter: { id: "554430", name: "Wheeler", role: "P", line: "16-7 · 2.46 ERA", photoUrl: "https://img.mlbstatic.com/mlb-photos/image/upload/w_213,q_auto:best/v1/people/554430/headshot/67/current" },
+      homeStarter: { id: "621242", name: "Glasnow", role: "P", line: "4-3 · 3.11 ERA", photoUrl: "https://img.mlbstatic.com/mlb-photos/image/upload/w_213,q_auto:best/v1/people/621242/headshot/67/current" },
     }),
     g({
       id: "nfl-kc-buf",
@@ -96,6 +99,8 @@ function fixtureSlate(day = "2026-10-05"): PreviewGame[] {
       tv: ["ESPN+"],
       probableAway: "Ersson",
       probableHome: "Vasilevskiy",
+      awayStarter: { id: "4271575", name: "Ersson", role: "G", line: "1-0-0 · 2.10 GAA · .922 SV%", photoUrl: "https://a.espncdn.com/i/headshots/nhl/players/full/4271575.png" },
+      homeStarter: { id: "2976847", name: "Vasilevskiy", role: "G", line: "1-1-0 · 2.59 GAA · .889 SV%", photoUrl: "https://a.espncdn.com/i/headshots/nhl/players/full/2976847.png" },
     }),
     g({
       id: "cfb-ore-osu",
@@ -123,6 +128,8 @@ function fixtureSlate(day = "2026-10-05"): PreviewGame[] {
       tv: ["ESPN"],
       probableAway: "Gray",
       probableHome: "Imanaga",
+      awayStarter: { id: "543243", name: "Gray", role: "P", line: "14-10 · 3.89 ERA", photoUrl: "https://img.mlbstatic.com/mlb-photos/image/upload/w_213,q_auto:best/v1/people/543243/headshot/67/current" },
+      homeStarter: { id: "684007", name: "Imanaga", role: "P", line: "15-3 · 2.91 ERA", photoUrl: "https://img.mlbstatic.com/mlb-photos/image/upload/w_213,q_auto:best/v1/people/684007/headshot/67/current" },
     }),
     g({
       id: "soccer-ars-liv",
@@ -195,10 +202,18 @@ async function loadLogo(url: string | null | undefined): Promise<string | null> 
 }
 
 for (const game of display) {
-  const [away, home] = await Promise.all([loadLogo(game.away.logo), loadLogo(game.home.logo)]);
+  const [away, home, awayShot, homeShot] = await Promise.all([
+    loadLogo(game.away.logo),
+    loadLogo(game.home.logo),
+    loadLogo(game.awayStarter?.photoUrl),
+    loadLogo(game.homeStarter?.photoUrl),
+  ]);
   game.away.logoData = away;
   game.home.logoData = home;
+  if (game.awayStarter) game.awayStarter.photoData = awayShot;
+  if (game.homeStarter) game.homeStarter.photoData = homeShot;
 }
+await applyLightningLogos(display);
 
 const svg = renderPreviewSvg(previewCardModel(display, previewDateLabel(chicagoDate)));
 const png = await rasterize(svg);

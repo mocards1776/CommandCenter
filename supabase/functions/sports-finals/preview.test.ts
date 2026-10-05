@@ -23,7 +23,8 @@ import {
   type PreviewGame,
 } from "./preview-slate.ts";
 import { PREVIEW_ALERT_HEIGHT, PREVIEW_ALERT_WIDTH, previewCardModel, renderPreviewSvg } from "./preview-svg.ts";
-import { goaliesFromSummary } from "./preview-boards.ts";
+import { goaliesFromSummary, pitcherLineFromStat } from "./preview-boards.ts";
+import { applyLightningLogos, isLightningSide, lightningLogoDataUri } from "./preview-logos.ts";
 import {
   mlbPostseasonHeat,
   MLB_PLAYOFF_SERIES_HEAT,
@@ -239,6 +240,8 @@ function game(partial: Partial<PreviewGame> & Pick<PreviewGame, "id" | "startIso
     network: "FOX",
     probableAway: null,
     probableHome: null,
+    awayStarter: null,
+    homeStarter: null,
     oddsLine: null,
     ...partial,
   };
@@ -314,6 +317,8 @@ const detailed = game({
   home: { teamId: "119", name: "Dodgers", abbrev: "LAD", logo: null, record: "98-64" },
   probableAway: "Wheeler",
   probableHome: "Glasnow",
+  awayStarter: { id: "1", name: "Wheeler", role: "P", line: "16-7 · 2.46 ERA", photoUrl: null },
+  homeStarter: { id: "2", name: "Glasnow", role: "P", line: "4-3 · 3.11 ERA", photoUrl: null },
   why: "ALDS Game 2",
 });
 assert.equal(recordsLine(detailed), "PHI 96-66  ·  LAD 98-64");
@@ -334,14 +339,34 @@ assert.equal(
   "Ersson / Vasilevskiy",
 );
 
-assert.deepEqual(
+assert.equal(
   goaliesFromSummary({
     goalies: {
-      away: [{ starter: true, athlete: { displayName: "Samuel Ersson" } }],
-      home: [{ starter: true, athlete: { displayName: "Andrei Vasilevskiy" } }],
+      awayTeam: {
+        athletes: [
+          {
+            id: "1",
+            displayName: "Samuel Ersson",
+            statistics: [
+              { abbreviation: "W", displayValue: "1" },
+              { abbreviation: "L", displayValue: "0" },
+              { abbreviation: "OTL", displayValue: "0" },
+              { abbreviation: "GAA", displayValue: "2.10" },
+              { abbreviation: "SV%", displayValue: ".922" },
+            ],
+          },
+        ],
+      },
+      homeTeam: {
+        athletes: [{ id: "2976847", displayName: "Andrei Vasilevskiy", headshot: { href: "https://a.espncdn.com/i/headshots/nhl/players/full/2976847.png" } }],
+      },
     },
-  }),
-  { away: "Ersson", home: "Vasilevskiy" },
+  }).away?.line,
+  "1-0-0 · 2.10 GAA · .922 SV%",
+);
+assert.equal(
+  pitcherLineFromStat({ wins: 10, losses: 9, era: "4.44" }),
+  "10-9 · 4.44 ERA",
 );
 
 const svg = renderPreviewSvg(
@@ -364,10 +389,11 @@ const svg = renderPreviewSvg(
           record: "1-0-0",
           logoData: "data:image/png;base64,bbb",
           color: "#002868",
-          outline: true,
         },
         probableAway: "Ersson",
         probableHome: "Vasilevskiy",
+        awayStarter: { id: "4", name: "Ersson", role: "G", line: "1-0-0 · 2.10 GAA", photoUrl: null },
+        homeStarter: { id: "20", name: "Vasilevskiy", role: "G", line: "1-1-0 · 2.59 GAA · .889 SV%", photoUrl: null },
         why: null,
         network: "ESPN+",
       }),
@@ -383,19 +409,36 @@ assert.equal(PREVIEW_ALERT_HEIGHT, 1350);
 assert.doesNotMatch(svg, />86</);
 assert.doesNotMatch(svg, /live field/i);
 assert.doesNotMatch(svg, /logo-plate/);
-assert.doesNotMatch(svg, /class="logo-plate"/);
-assert.match(svg, /id="logoStroke"/);
-assert.match(svg, /class="logo-stroke"/);
+assert.doesNotMatch(svg, /id="logoStroke"/);
+assert.doesNotMatch(svg, /feMorphology/);
 assert.match(svg, /96-66/);
 assert.match(svg, /98-64/);
 assert.match(svg, /Wheeler/);
+assert.match(svg, /2\.46 ERA/);
 assert.match(svg, /Glasnow/);
 assert.match(svg, /Ersson/);
+assert.match(svg, /2\.59 GAA/);
 assert.match(svg, /Vasilevskiy/);
 assert.match(svg, /ALDS Game 2/);
 assert.equal(darkLogoMark("#002868", "nhl", "20"), true);
 assert.equal(darkLogoMark("#fe5823", "nhl", "15"), false);
 assert.match(espnDarkLogoUrl("https://a.espncdn.com/i/teamlogos/nhl/500/20.png") ?? "", /500-dark\/20/);
+assert.equal(isLightningSide("nhl", { teamId: "20", abbrev: "TB" }), true);
+assert.equal(isLightningSide("nhl", { teamId: "15", abbrev: "PHI" }), false);
+assert.equal(isLightningSide("mlb", { teamId: "139", abbrev: "TB" }), false);
+const lightningUri = await lightningLogoDataUri();
+assert.ok(lightningUri?.startsWith("data:image/png;base64,"));
+assert.ok((lightningUri?.length ?? 0) > 1000);
+const lightningGame = game({
+  id: "tb-logo",
+  startIso: "2026-10-05T18:00:00-05:00",
+  heat: 50,
+  sport: "nhl",
+  league: "NHL",
+  home: { teamId: "20", name: "Lightning", abbrev: "TB", logo: "https://a.espncdn.com/i/teamlogos/nhl/500/20.png", record: "1-0-0", logoData: "data:image/png;base64,espn" },
+});
+await applyLightningLogos([lightningGame]);
+assert.equal(lightningGame.home.logoData, lightningUri);
 
 const markup = previewReplyMarkup("https://command-center-flax-gamma.vercel.app");
 assert.ok(markup);
