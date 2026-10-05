@@ -140,6 +140,8 @@ import {
   asNationalDesk,
   newspaperParas,
   sampleNationalDesk,
+  nationalDropParts,
+  nationalLeadColumns,
   nationalPhotoSize,
   type NationalDesk,
   type NationalPhotoSize,
@@ -3222,13 +3224,45 @@ function natDate(day: string): string {
   });
 }
 
+function NatDropText({ text }: { text: string }) {
+  const { letter, rest } = nationalDropParts(text);
+  if (!letter) return <>{rest}</>;
+  return (
+    <>
+      <span className="tt-nat-drop">{letter}</span>
+      {rest}
+    </>
+  );
+}
+
 function NatSummary({ story, cols, drop }: { story: NationalStory; cols: 1 | 2 | 3; drop?: boolean }) {
   const paras = newspaperParas(story.paragraphs?.length ? story.paragraphs : story.summary);
   if (!paras.length) return null;
+  /* Shared `.wsj-prose.drop` + CSS columns parks ::first-letter in column 2.
+     National leads set a real drop span in a two-column grid instead. */
+  if (drop && cols > 1) {
+    const { left, right } = nationalLeadColumns(paras);
+    return (
+      <div className="tt-nat-lead-cols ended">
+        <div className="tt-nat-lead-col">
+          {left.map((p, i) => (
+            <p key={i}>{i === 0 ? <NatDropText text={p} /> : p}</p>
+          ))}
+        </div>
+        {right.length ? (
+          <div className="tt-nat-lead-col">
+            {right.map((p, i) => (
+              <p key={i}>{p}</p>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
   return (
-    <div className={cn("wsj-prose", `c${cols}`, drop && "drop", "ended")}>
+    <div className={cn("wsj-prose", `c${cols}`, "ended")}>
       {paras.map((p, i) => (
-        <p key={i}>{p}</p>
+        <p key={i}>{drop && i === 0 ? <NatDropText text={p} /> : p}</p>
       ))}
     </div>
   );

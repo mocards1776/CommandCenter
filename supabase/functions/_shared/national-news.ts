@@ -150,6 +150,42 @@ export function nationalPhotoSize(index: number, hasImage: boolean): NationalPho
   return "thumb";
 }
 
+/** First letter (plus a leading quote) for a National drop cap. */
+export function nationalDropParts(text: string): { letter: string; rest: string } {
+  const chars = Array.from(text);
+  if (!chars.length) return { letter: "", rest: "" };
+  let end = 1;
+  if (/[“”"']/.test(chars[0]!) && chars[1]) end = 2;
+  return { letter: chars.slice(0, end).join(""), rest: chars.slice(end).join("") };
+}
+
+/**
+ * Split lead grafs so a drop cap can sit in the left column. CSS multi-column
+ * + ::first-letter parks the letter in the right column; the paper sets two
+ * real columns instead.
+ */
+export function nationalLeadColumns(paras: string[]): { left: string[]; right: string[] } {
+  const clean = paras.map((p) => p.replace(/\s+/g, " ").trim()).filter(Boolean);
+  if (clean.length <= 1) {
+    const bits = clean[0] ? splitNewspaperSentences(clean[0]) : [];
+    if (bits.length >= 2) {
+      const mid = Math.ceil(bits.length / 2);
+      return { left: [bits.slice(0, mid).join(" ")], right: [bits.slice(mid).join(" ")] };
+    }
+    return { left: clean, right: [] };
+  }
+  const total = clean.reduce((n, p) => n + p.length, 0);
+  const left = [clean[0]!];
+  let n = clean[0]!.length;
+  let i = 1;
+  while (i < clean.length - 1 && n < total / 2) {
+    left.push(clean[i]!);
+    n += clean[i]!.length;
+    i += 1;
+  }
+  return { left, right: clean.slice(i) };
+}
+
 const TZ = "America/Chicago";
 const PRESS = [
   { hour: 6, slot: "morning" as const, label: "Morning Edition" },

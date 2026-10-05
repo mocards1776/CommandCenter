@@ -13,6 +13,8 @@ import {
   isExcludedItem,
   itemsFromFeed,
   mechanicalStories,
+  nationalDropParts,
+  nationalLeadColumns,
   nationalPhotoSize,
   nationalPress,
   NATIONAL_SOURCES,
@@ -260,5 +262,17 @@ const filedWithArt = asNationalDesk({
   printed_at: "2026-10-05T11:07:00Z",
 });
 assert(filedWithArt?.stories[0]!.imageUrl?.includes("capitol.jpg"), "a filed row keeps its photograph");
+
+assert(nationalDropParts("Negotiators returned to the Capitol.").letter === "N", "drop cap is the first letter");
+assert(nationalDropParts("Negotiators returned to the Capitol.").rest.startsWith("egotiators"), "the rest of the word stays on the line");
+assert(nationalDropParts("“Hello,” said the aide.").letter === "“H", "an opening quote rides with the cap");
+const leadCols = nationalLeadColumns([
+  "Negotiators returned to the Capitol overnight after a weekend of stalled talks.",
+  "Party leaders said a short-term measure was still possible.",
+  "The wire desks treated it as the lead in Washington.",
+]);
+assert(leadCols.left[0]!.startsWith("Negotiators"), "the opener stays in the left column");
+assert(leadCols.right.length >= 1 && !leadCols.right[0]!.startsWith("Negotiators"), "later grafs fill the right column");
+assert(nationalLeadColumns(["One sentence only."]).right.length === 0, "a single short graf does not invent a second column");
 
 console.log("newspaper-national ok");

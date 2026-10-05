@@ -6417,6 +6417,49 @@ li.counting .tt-count.card {
   text-transform: none;
 }
 .tt-nat-story.lead .wsj-hl { margin: 0 0 8px; }
+/* Real columns + a real letter. Do not use `.wsj-prose.drop` here: CSS
+   columns + ::first-letter parks the cap in the second column. */
+.tt-nat-lead-cols {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 24px;
+  font-family: var(--w-body);
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--w-ink);
+  text-align: justify;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+.tt-nat-lead-cols::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--w-hair);
+}
+.tt-nat-lead-col { min-width: 0; }
+.tt-nat-lead-col p { margin: 0; }
+.tt-nat-lead-col p + p { text-indent: 1.3em; }
+.tt-nat-drop {
+  float: left;
+  margin: 0.04em 0.1em 0 0;
+  font-family: var(--w-head);
+  font-weight: 900;
+  font-size: 4.4em;
+  line-height: 0.8;
+  color: var(--w-ink);
+}
+.tt-nat-lead-cols.ended .tt-nat-lead-col:last-child > p:last-of-type::after {
+  content: "\25A0";
+  margin-left: 0.4em;
+  font-size: 0.7em;
+  vertical-align: 0.1em;
+  color: var(--w-ink);
+}
 .tt-nat-mediums {
   display: grid;
   grid-template-columns: 1fr;
@@ -7160,6 +7203,12 @@ li.counting .tt-count.card {
   .wsj-prose.c3 {
     columns: 1;
   }
+  .tt-nat-lead-cols {
+    grid-template-columns: 1fr;
+  }
+  .tt-nat-lead-cols::before {
+    display: none;
+  }
   .wsj-story.art-side,
   .wsj-front-row.two,
   .wsj-brief.featured.has-art {
@@ -7410,6 +7459,7 @@ li.counting .tt-count.card {
 .newspaper-root .tt-mo-briefs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .newspaper-root .tt-mo-seconds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-mo-flag p { display: block; }
+.newspaper-root .tt-nat-lead-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .newspaper-root .tt-nat-cols { columns: 3; }
 .newspaper-root .tt-nat-mediums { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .newspaper-root .tt-nat-inside { grid-template-columns: repeat(2, minmax(0, 1fr)); }
