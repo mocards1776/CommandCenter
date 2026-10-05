@@ -3428,6 +3428,7 @@ function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
               </p>
             ) : null}
             {stat ? <p className="tt-coach-stat">{stat}</p> : null}
+            <CoachFacts tile={tile} />
             {tile.headlines.length ? (
               <ul className="tt-coach-hed">
                 {tile.headlines.map((card) => (
@@ -3441,6 +3442,46 @@ function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
         );
       })}
     </div>
+  );
+}
+
+function CoachFacts({ tile }: { tile: FavoriteCoachTile }) {
+  const bits = [
+    tile.schoolRecord
+      ? ["At school", tile.schoolRecord, tile.yearsAtSchool].filter(Boolean).join(" · ")
+      : null,
+    tile.careerRecord ? `Career ${tile.careerRecord}` : null,
+    tile.nflRecord,
+    tile.bowlRecord ? `Bowls ${tile.bowlRecord}` : null,
+    tile.playoffRecord ? `CFP ${tile.playoffRecord}` : null,
+    tile.vsRanked ? `vs ranked ${tile.vsRanked}` : null,
+    tile.titles,
+    tile.salary ? [tile.salary, tile.contractEnd].filter(Boolean).join(" · ") : tile.contractEnd,
+    tile.buyout ? `Buyout ${tile.buyout}` : null,
+  ].filter(Boolean) as string[];
+  if (!bits.length && !tile.sourceLabel && !tile.statusNote) return null;
+  return (
+    <>
+      {bits.length ? (
+        <ul className="tt-coach-facts">
+          {bits.map((bit) => (
+            <li key={bit}>{bit}</li>
+          ))}
+        </ul>
+      ) : null}
+      {tile.statusNote ? <p className="tt-coach-status">{tile.statusNote}</p> : null}
+      {tile.sourceLabel ? (
+        <p className="tt-coach-src">
+          {tile.sourceUrl ? (
+            <a href={tile.sourceUrl} target="_blank" rel="noreferrer">
+              Salary: {tile.sourceLabel}
+            </a>
+          ) : (
+            `Salary: ${tile.sourceLabel}`
+          )}
+        </p>
+      ) : null}
+    </>
   );
 }
 
