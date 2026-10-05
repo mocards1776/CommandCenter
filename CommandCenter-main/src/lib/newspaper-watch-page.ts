@@ -427,6 +427,30 @@ export function watchContext(game: WatchGame): string {
   return watchLeagueLabel(game);
 }
 
+export function watchLinesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[·—–−-]/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+  if (!a?.trim() || !b?.trim()) return false;
+  const x = norm(a);
+  const y = norm(b);
+  return x === y || x.includes(y) || y.includes(x);
+}
+
+/** Hero copy: series once in the meta row; a different why-watch underneath, or nothing. */
+export function watchFeatureCopy(game: WatchGame): { series: string | null; why: string | null } {
+  const series = watchSeriesDisplay(game) ?? game.series?.trim() ?? null;
+  const why = watchContext(game);
+  if (why && series && watchLinesMatch(why, series)) return { series, why: null };
+  return { series, why: why || null };
+}
+
+/** Listing why-watch. Drop a line that only repeats the league chip. */
+export function watchListingWhy(game: WatchGame): string | null {
+  const why = watchContext(game);
+  if (!why) return null;
+  if (watchLinesMatch(why, watchLeagueLabel(game))) return null;
+  return why;
+}
+
 export function watchStarters(game: WatchGame): string | null {
   const away = game.away.starter?.trim();
   const home = game.home.starter?.trim();
