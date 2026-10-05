@@ -622,14 +622,11 @@ export function MatchupCard({ game }: { game: BoxGame }) {
             <Mark src={side.logo} size="lg" />
             <div className="tt-matchup-who">
               <strong>{side.short}</strong>
-              <em>{side.record || ""}</em>
+              <em>{align === "away" ? "at" : "home"}{side.record ? ` · ${side.record}` : ""}</em>
             </div>
             {game.live ? <span className="tt-matchup-score">{side.score}</span> : null}
           </div>
         ))}
-        <span className="tt-matchup-at" aria-hidden="true">
-          at
-        </span>
       </div>
       {baseball || hasProbables ? (
         <div className="tt-matchup-probs">
