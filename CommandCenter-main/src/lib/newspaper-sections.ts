@@ -38,7 +38,7 @@ import {
 import type { MissouriDesk, MoItem } from "./newspaper-missouri";
 import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
 import type { FavoritesBeezPage } from "./newspaper-beez.ts";
-import type { NationalDesk, NationalStory } from "./newspaper-national.ts";
+import { NATIONAL_PAGE_FRONT, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
 const LEAD_TEASER = 1050;
@@ -212,10 +212,12 @@ export type MissouriPage = PageBase & {
   listen: MoItem[];
 };
 
-/** National News: one broadsheet page, hidden when the edition has no row. */
+/** National News: one or two broadsheet pages, hidden when the edition has no row. */
 export type NationalPage = PageBase & {
   kind: "national";
   stories: NationalStory[];
+  /** Index of `stories[0]` in the filed desk, so B2 keeps thumb art. */
+  startIndex: number;
   editionLabel: string;
   day: string;
 };
@@ -945,19 +947,38 @@ function missouriPages(desk: MissouriDesk | null, code = "B"): MissouriPage[] {
 
 function nationalPages(desk: NationalDesk | null): NationalPage[] {
   if (!desk?.stories.length) return [];
-  return stampCounts([
+  const front = desk.stories.slice(0, NATIONAL_PAGE_FRONT);
+  const rest = desk.stories.slice(NATIONAL_PAGE_FRONT);
+  const pages: NationalPage[] = [
     {
-      kind: "national" as const,
+      kind: "national",
       folio: "B1",
       section: "B",
       sectionTitle: "National News",
       sectionPage: 1,
       sectionCount: 0,
-      stories: desk.stories,
+      stories: front,
+      startIndex: 0,
       editionLabel: desk.label,
       day: desk.day,
+      jumpFolio: rest.length ? "B2" : undefined,
     },
-  ]);
+  ];
+  if (rest.length) {
+    pages.push({
+      kind: "national",
+      folio: "B2",
+      section: "B",
+      sectionTitle: "National News",
+      sectionPage: 2,
+      sectionCount: 0,
+      stories: rest,
+      startIndex: front.length,
+      editionLabel: desk.label,
+      day: desk.day,
+    });
+  }
+  return stampCounts(pages);
 }
 
 /** Copy that can run in this edition: filed, deduped, inside the press window. */
@@ -1073,7 +1094,7 @@ export function buildEdition(opts: {
       title: "National News",
       folio: "B1",
       index: favorites.pages.length,
-      stories: national[0]!.stories.length,
+      stories: national.reduce((n, p) => n + p.stories.length, 0),
       upcoming: 0,
       pages: national.length,
     });

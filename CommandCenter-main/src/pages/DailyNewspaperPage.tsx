@@ -140,7 +140,11 @@ import {
   asNationalDesk,
   newspaperParas,
   sampleNationalDesk,
+  nationalDropParts,
+  nationalLeadColumns,
+  nationalPhotoSize,
   type NationalDesk,
+  type NationalPhotoSize,
   type NationalStory,
 } from "@/lib/newspaper-national";
 import { readTimesNationalNews } from "@/lib/newspaper-national-fetch";
@@ -534,7 +538,7 @@ function pageLabel(page: EditionPage): string {
         opener: "Countdown",
       }[page.focus];
     case "national":
-      return "National News";
+      return page.sectionPage === 1 ? "National News" : "More National News";
     case "missouri":
       return page.sectionPage === 1 ? "Statehouse" : "Around the State";
     case "sport-inside":
@@ -3348,64 +3352,164 @@ function natDate(day: string): string {
   });
 }
 
+function NatDropText({ text }: { text: string }) {
+  const { letter, rest } = nationalDropParts(text);
+  if (!letter) return <>{rest}</>;
+  return (
+    <>
+      <span className="tt-nat-drop">{letter}</span>
+      {rest}
+    </>
+  );
+}
+
 function NatSummary({ story, cols, drop }: { story: NationalStory; cols: 1 | 2 | 3; drop?: boolean }) {
   const paras = newspaperParas(story.paragraphs?.length ? story.paragraphs : story.summary);
   if (!paras.length) return null;
+  /* Shared `.wsj-prose.drop` + CSS columns parks ::first-letter in column 2.
+     National leads set a real drop span in a two-column grid instead. */
+  if (drop && cols > 1) {
+    const { left, right } = nationalLeadColumns(paras);
+    return (
+      <div className="tt-nat-lead-cols ended">
+        <div className="tt-nat-lead-col">
+          {left.map((p, i) => (
+            <p key={i}>{i === 0 ? <NatDropText text={p} /> : p}</p>
+          ))}
+        </div>
+        {right.length ? (
+          <div className="tt-nat-lead-col">
+            {right.map((p, i) => (
+              <p key={i}>{p}</p>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
   return (
-    <div className={cn("wsj-prose", `c${cols}`, drop && "drop", "ended")}>
+    <div className={cn("wsj-prose", `c${cols}`, "ended")}>
       {paras.map((p, i) => (
-        <p key={i}>{p}</p>
+        <p key={i}>{drop && i === 0 ? <NatDropText text={p} /> : p}</p>
       ))}
     </div>
   );
 }
 
-function NatStory({ story, size }: { story: NationalStory; size: "lead" | "col" }) {
+function NatPhoto({
+  story,
+  size,
+  onFail,
+}: {
+  story: NationalStory;
+  size: NationalPhotoSize;
+  onFail: () => void;
+}) {
+  if (!story.imageUrl) return null;
+  const credit = story.imageCredit || story.source;
   return (
-    <article className={cn("tt-nat-story", size)}>
-      <p className="tt-nat-src">
-        <b>{story.source}</b>
-        {story.credit && story.credit !== story.source ? <span> · {story.credit}</span> : null}
-        {natWhen(story.publishedAt) ? <em> · {natWhen(story.publishedAt)}</em> : null}
-      </p>
-      <h3 className={cn("wsj-hl", size === "lead" ? "xl" : "md")}>
-        <a href={story.url} target="_blank" rel="noreferrer" className="wsj-a wsj-story-link">
-          {story.headline}
-        </a>
-      </h3>
-      <NatSummary story={story} cols={size === "lead" ? 2 : 1} drop={size === "lead"} />
+    <figure className={cn("tt-nat-cut", size)}>
+      <img
+        src={story.imageUrl}
+        alt=""
+        loading={size === "lead" ? "eager" : "lazy"}
+        onError={onFail}
+      />
+      {credit ? <figcaption>Photo: {credit}</figcaption> : null}
+    </figure>
+  );
+}
+
+function NatStory({
+  story,
+  size,
+  photo,
+}: {
+  story: NationalStory;
+  size: "lead" | "medium" | "col";
+  photo: NationalPhotoSize | null;
+}) {
+  const [failed, setFailed] = useState(false);
+  const showPhoto = Boolean(photo && story.imageUrl && !failed);
+  return (
+    <article className={cn("tt-nat-story", size, showPhoto && "has-photo")}>
+      {showPhoto && photo ? <NatPhoto story={story} size={photo} onFail={() => setFailed(true)} /> : null}
+      <div className="tt-nat-copy">
+        <p className="tt-nat-src">
+          <b>{story.source}</b>
+          {story.credit && story.credit !== story.source ? <span> · {story.credit}</span> : null}
+          {natWhen(story.publishedAt) ? <em> · {natWhen(story.publishedAt)}</em> : null}
+        </p>
+        <h3 className={cn("wsj-hl", size === "lead" ? "xl" : size === "medium" ? "md" : "sm")}>
+          <a href={story.url} target="_blank" rel="noreferrer" className="wsj-a wsj-story-link">
+            {story.headline}
+          </a>
+        </h3>
+        <NatSummary story={story} cols={size === "lead" ? 2 : 1} drop={size === "lead"} />
+      </div>
     </article>
   );
 }
 
-function NationalNewsDesk({ page }: { page: NationalEditionPage }) {
-  const lead = page.stories[0];
-  const rest = page.stories.slice(1);
-  if (!lead) return null;
+function NationalNewsDesk({
+  page,
+  onTurn,
+}: {
+  page: NationalEditionPage;
+  onTurn: (folio: string) => void;
+}) {
+  if (!page.stories.length) return null;
+  const front = page.sectionPage === 1;
+  const lead = front ? page.stories[0] : null;
+  const afterLead = front ? page.stories.slice(1) : page.stories;
+  const mediums = front ? afterLead.slice(0, 3) : [];
+  const rest = front ? afterLead.slice(3) : afterLead;
+  const more = page.sectionPage < page.sectionCount ? `${page.section}${page.sectionPage + 1}` : null;
+  const photoAt = (offset: number, story: NationalStory) =>
+    nationalPhotoSize(page.startIndex + offset, Boolean(story.imageUrl));
   return (
-    <div className="tt-nat">
+    <div className={cn("tt-nat", !front && "inside")}>
       <header className="wsj-sport-hero tt-nat-hero">
         <div className="wsj-sport-hero-mark">
           <span className="wsj-sport-code">{page.section}</span>
           <div>
             <h3>National News</h3>
             <p>
-              {page.editionLabel} · {natDate(page.day)} · {page.stories.length} stories
+              {front ? page.editionLabel : "Inside the desk"} · {natDate(page.day)} · {page.stories.length}{" "}
+              {page.stories.length === 1 ? "story" : "stories"}
+              {page.sectionCount > 1 ? ` · ${page.folio}` : ""}
             </p>
           </div>
         </div>
       </header>
-      <p className="tt-nat-byline">
-        The Times national desk · {page.editionLabel} · {natDate(page.day)}
-      </p>
-      <NatStory story={lead} size="lead" />
-      {rest.length ? (
-        <div className="tt-nat-cols">
-          {rest.map((story) => (
-            <NatStory key={story.id} story={story} size="col" />
+      {front ? (
+        <p className="tt-nat-byline">
+          The Times national desk · {page.editionLabel} · {natDate(page.day)}
+        </p>
+      ) : (
+        <p className="tt-nat-byline">Continued from B1 · news only</p>
+      )}
+      {lead ? <NatStory story={lead} size="lead" photo={photoAt(0, lead)} /> : null}
+      {mediums.length ? (
+        <div className="tt-nat-mediums">
+          {mediums.map((story, i) => (
+            <NatStory key={story.id} story={story} size="medium" photo={photoAt(1 + i, story)} />
           ))}
         </div>
       ) : null}
+      {rest.length ? (
+        <div className={cn(front ? "tt-nat-cols" : "tt-nat-inside")}>
+          {rest.map((story, i) => (
+            <NatStory
+              key={story.id}
+              story={story}
+              size="col"
+              photo={photoAt((front ? 4 : 0) + i, story)}
+            />
+          ))}
+        </div>
+      ) : null}
+      {more ? <TurnBar onTurn={onTurn} folio={more} label="More national news" /> : null}
     </div>
   );
 }
@@ -5270,7 +5374,7 @@ function NewspaperDesk() {
                   onTurn={goFolio}
                 />
               ) : page.kind === "national" ? (
-                <NationalNewsDesk page={page} />
+                <NationalNewsDesk page={page} onTurn={goFolio} />
               ) : page.kind === "missouri" ? (
                 <MissouriDesk page={page} onTurn={goFolio} />
               ) : (
