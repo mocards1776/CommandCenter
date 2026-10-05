@@ -479,6 +479,28 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["newspaper_issues"]["Insert"]>;
         Relationships: [];
       };
+      times_national_news: {
+        Row: {
+          issue_id: string;
+          day: string;
+          edition: string;
+          stories: Json;
+          sources: Json;
+          editor: Json;
+          printed_at: string;
+        };
+        Insert: {
+          issue_id: string;
+          day: string;
+          edition: string;
+          stories?: Json;
+          sources?: Json;
+          editor?: Json;
+          printed_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["times_national_news"]["Insert"]>;
+        Relationships: [];
+      };
       newspaper_desk: {
         Row: {
           id: string;
