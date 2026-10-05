@@ -479,6 +479,66 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["newspaper_issues"]["Insert"]>;
         Relationships: [];
       };
+      times_coach_profiles: {
+        Row: {
+          coach_id: string;
+          coach_name: string;
+          school: string | null;
+          team_id: string | null;
+          league: string;
+          hire_year: number | null;
+          school_wins: number | null;
+          school_losses: number | null;
+          career_wins: number | null;
+          career_losses: number | null;
+          bowl_wins: number | null;
+          bowl_losses: number | null;
+          playoff_wins: number | null;
+          playoff_losses: number | null;
+          titles_note: string | null;
+          nfl_record: string | null;
+          salary_annual: number | null;
+          salary_note: string | null;
+          contract_end_year: number | null;
+          buyout: number | null;
+          source_url: string;
+          source_label: string;
+          record_source_url: string | null;
+          record_source_label: string | null;
+          as_of: string;
+          updated_at: string;
+        };
+        Insert: {
+          coach_id: string;
+          coach_name: string;
+          school?: string | null;
+          team_id?: string | null;
+          league?: string;
+          hire_year?: number | null;
+          school_wins?: number | null;
+          school_losses?: number | null;
+          career_wins?: number | null;
+          career_losses?: number | null;
+          bowl_wins?: number | null;
+          bowl_losses?: number | null;
+          playoff_wins?: number | null;
+          playoff_losses?: number | null;
+          titles_note?: string | null;
+          nfl_record?: string | null;
+          salary_annual?: number | null;
+          salary_note?: string | null;
+          contract_end_year?: number | null;
+          buyout?: number | null;
+          source_url: string;
+          source_label: string;
+          record_source_url?: string | null;
+          record_source_label?: string | null;
+          as_of: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["times_coach_profiles"]["Insert"]>;
+        Relationships: [];
+      };
       times_national_news: {
         Row: {
           issue_id: string;

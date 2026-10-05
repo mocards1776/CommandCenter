@@ -7,16 +7,24 @@ import {
   FAVORITE_COACHES_PRINT,
   FEATURED_COACH_TEAM_ID,
   TIMES_FAVORITE_COACHES_USER_ID,
+  applyCoachProfile,
+  cfbSeasonYear,
+  coachFactLines,
   coachLeaguePath,
   coachPathsOf,
+  coachStatusNote,
   editionDayOf,
   favoriteCoachesWeekday,
+  formatCoachMoney,
   isCfbSeasonDay,
   isFavoriteCoachPosition,
   isFeaturedCoachTeam,
   mapFavoriteCoachRow,
   mapFavoriteCoachRows,
+  parseWl,
   printsFavoriteCoaches,
+  seasonStripFromEvents,
+  yearsAtSchoolLabel,
 } from "./newspaper-favorite-coaches.ts";
 
 function assert(cond: unknown, msg: string) {
@@ -164,5 +172,142 @@ assert(
   coachPathsOf(mapped).join() === "football/college-football",
   "coach paths are the distinct league paths",
 );
+
+assert(cfbSeasonYear("2026-10-05") === 2026, "October is the 2026 CFB season");
+assert(cfbSeasonYear("2026-01-10") === 2025, "January is still the prior CFB season");
+assert(parseWl("4-1")?.wins === 4 && parseWl("4-1")?.losses === 1, "season W-L parses");
+assert(yearsAtSchoolLabel(2020, 2026) === "7th season", "Drinkwitz is in year 7");
+assert(yearsAtSchoolLabel(2026, 2026) === "1st season", "Golesh is a first-year coach");
+assert(formatCoachMoney(10750000) === "$10.75M", "salary formats in millions");
+assert(formatCoachMoney(6750000) === "$6.75M", "6.75M keeps two decimals");
+assert(formatCoachMoney(10000000) === "$10M", "ten million keeps the ten");
+assert(formatCoachMoney(10100000) === "$10.1M", "10.1M drops the trailing zero");
+assert(coachStatusNote([{ headline: "Vols hold serve in Knoxville" }], "Alex Golesh") === null, "ordinary hed is not a status note");
+assert(
+  coachStatusNote([{ headline: "Drinkwitz signs a six-year extension at Missouri" }], "Eliah Drinkwitz") ===
+    "Drinkwitz signs a six-year extension at Missouri",
+  "status note stays grounded in a sourced headline",
+);
+
+const enriched = applyCoachProfile(
+  {
+    coachId: "4409388",
+    name: "Eliah Drinkwitz",
+    leaguePath: "football/college-football",
+    league: "CFB",
+    teamId: "142",
+    teamName: "Missouri",
+    teamAbbrev: "MIZ",
+    teamLogo: null,
+    teamColor: null,
+    headshot: null,
+    featured: true,
+    seasonYear: 2026,
+    record: "4-1",
+    conferenceRecord: "1-1",
+    standing: null,
+    rank: 14,
+    pointsForAvg: "37.6",
+    pointsAgainstAvg: "20",
+    lastGame: null,
+    nextGame: null,
+    seasonStrip: [],
+    headlines: [],
+    schoolRecord: null,
+    yearsAtSchool: null,
+    careerRecord: null,
+    bowlRecord: null,
+    playoffRecord: null,
+    vsRanked: "1-1",
+    titles: null,
+    nflRecord: null,
+    salary: null,
+    contractEnd: null,
+    buyout: null,
+    sourceLabel: null,
+    sourceUrl: null,
+    statusNote: null,
+  },
+  {
+    coach_id: "4409388",
+    hire_year: 2020,
+    school_wins: 46,
+    school_losses: 29,
+    career_wins: 58,
+    career_losses: 30,
+    bowl_wins: 2,
+    bowl_losses: 3,
+    titles_note: "1 Sun Belt (2019)",
+    salary_annual: 10750000,
+    salary_note: "avg",
+    contract_end_year: 2031,
+    source_url: "https://mutigers.com/",
+    source_label: "Mizzou Athletics, Nov 2025",
+  },
+  2026,
+  "1–1",
+);
+assert(enriched.schoolRecord === "50–30", "school record adds the live season");
+assert(enriched.careerRecord === "62–31", "career record adds the live season");
+assert(enriched.yearsAtSchool === "7th season", "years at school from hire year");
+assert(enriched.bowlRecord === "2–3", "bowl record is cited, not invented");
+assert(enriched.salary === "$10.75M avg", "annual salary keeps its note");
+assert(enriched.contractEnd === "thru 2031", "contract end year prints");
+assert(enriched.sourceLabel === "Mizzou Athletics, Nov 2025", "salary source line is cited");
+assert(applyCoachProfile(enriched, null, 2026, null).salary === null, "missing profile omits salary");
+assert(
+  coachFactLines(enriched).join("|") ===
+    "At school 50–30 · 7th season|Career 62–31|Bowls 2–3|vs ranked 1–1|1 Sun Belt (2019)|$10.75M avg · thru 2031",
+  "fact lines skip empty fields and keep the cited salary",
+);
+assert(
+  coachFactLines(applyCoachProfile(enriched, null, 2026, "1–1")).join("|") === "vs ranked 1–1",
+  "no profile means only live facts",
+);
+
+const strip = seasonStripFromEvents(
+  [
+    {
+      id: "1",
+      competitions: [
+        {
+          status: { type: { completed: true } },
+          competitors: [
+            { homeAway: "home", winner: true, team: { id: "142", abbreviation: "MIZ" } },
+            { homeAway: "away", winner: false, team: { id: "57", abbreviation: "FLA" } },
+          ],
+        },
+      ],
+    },
+    {
+      id: "2",
+      competitions: [
+        {
+          status: { type: { completed: false } },
+          competitors: [
+            { homeAway: "home", team: { id: "142", abbreviation: "MIZ" } },
+            { homeAway: "away", team: { id: "245", abbreviation: "TA&M" } },
+          ],
+        },
+      ],
+    },
+    {
+      id: "3",
+      competitions: [
+        {
+          status: { type: { completed: true } },
+          competitors: [
+            { homeAway: "away", winner: false, team: { id: "142", abbreviation: "MIZ" } },
+            { homeAway: "home", winner: true, curatedRank: { current: 4 }, team: { id: "333", abbreviation: "ALA" } },
+          ],
+        },
+      ],
+    },
+  ],
+  "142",
+);
+assert(strip.length === 2, "upcoming games stay off the season strip");
+assert(strip[0]?.result === "W" && strip[0]?.opponent === "FLA", "first chip is the Florida win");
+assert(strip[1]?.result === "L" && strip[1]?.opponentRank === 4, "Alabama loss keeps the AP rank");
 
 console.log("newspaper-favorite-coaches ok");

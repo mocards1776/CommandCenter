@@ -106,6 +106,14 @@ export type CoachNextGame = {
   line: string | null;
 };
 
+/** One completed 2026 game from the ESPN schedule — never invented. */
+export type CoachSeasonChip = {
+  id: string;
+  result: "W" | "L" | "T";
+  opponent: string;
+  opponentRank: number | null;
+};
+
 export type FavoriteCoachTile = {
   coachId: string;
   name: string;
@@ -118,6 +126,7 @@ export type FavoriteCoachTile = {
   teamColor: string | null;
   headshot: string | null;
   featured: boolean;
+  seasonYear: number | null;
   record: string | null;
   conferenceRecord: string | null;
   standing: string | null;
@@ -126,7 +135,49 @@ export type FavoriteCoachTile = {
   pointsAgainstAvg: string | null;
   lastGame: CoachLastGame | null;
   nextGame: CoachNextGame | null;
+  seasonStrip: CoachSeasonChip[];
   headlines: GameWrapCard[];
+  schoolRecord: string | null;
+  yearsAtSchool: string | null;
+  careerRecord: string | null;
+  bowlRecord: string | null;
+  playoffRecord: string | null;
+  vsRanked: string | null;
+  titles: string | null;
+  nflRecord: string | null;
+  salary: string | null;
+  contractEnd: string | null;
+  buyout: string | null;
+  sourceLabel: string | null;
+  sourceUrl: string | null;
+  statusNote: string | null;
+};
+
+export type TimesCoachProfile = {
+  coach_id: string;
+  coach_name?: string | null;
+  school?: string | null;
+  team_id?: string | null;
+  hire_year?: number | null;
+  school_wins?: number | null;
+  school_losses?: number | null;
+  career_wins?: number | null;
+  career_losses?: number | null;
+  bowl_wins?: number | null;
+  bowl_losses?: number | null;
+  playoff_wins?: number | null;
+  playoff_losses?: number | null;
+  titles_note?: string | null;
+  nfl_record?: string | null;
+  salary_annual?: number | string | null;
+  salary_note?: string | null;
+  contract_end_year?: number | null;
+  buyout?: number | string | null;
+  source_url?: string | null;
+  source_label?: string | null;
+  record_source_url?: string | null;
+  record_source_label?: string | null;
+  as_of?: string | null;
 };
 
 export type FavoriteCoachDesk = {
@@ -231,6 +282,155 @@ export function mapFavoriteCoachRows(rows: FavoriteCoachRow[]): FavoriteCoachRef
 
 export function coachPathsOf(refs: { leaguePath: string }[]): string[] {
   return [...new Set(refs.map((r) => r.leaguePath).filter(Boolean))].sort();
+}
+
+/** CFB season year for a Central calendar date (Aug–July). */
+export function cfbSeasonYear(day: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  return month >= 8 ? year : year - 1;
+}
+
+export function parseWl(summary: string | null | undefined): { wins: number; losses: number } | null {
+  const m = /^(\d+)\s*[-–]\s*(\d+)/.exec((summary ?? "").trim());
+  if (!m) return null;
+  return { wins: Number(m[1]), losses: Number(m[2]) };
+}
+
+export function formatWl(wins: number, losses: number): string {
+  return `${wins}–${losses}`;
+}
+
+export function yearsAtSchoolLabel(hireYear: number | null | undefined, seasonYear: number | null): string | null {
+  if (hireYear == null || seasonYear == null || hireYear > seasonYear) return null;
+  const n = seasonYear - hireYear + 1;
+  if (n === 1) return "1st season";
+  if (n === 2) return "2nd season";
+  if (n === 3) return "3rd season";
+  return `${n}th season`;
+}
+
+export function formatCoachMoney(value: number | string | null | undefined): string | null {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n >= 1_000_000) {
+    const m = n / 1_000_000;
+    const raw = Number.isInteger(m) ? String(m) : m.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+    return `$${raw}M`;
+  }
+  return `$${Math.round(n).toLocaleString("en-US")}`;
+}
+
+export function coachStatusNote(headlines: { headline?: string }[], name: string): string | null {
+  const coach = name.toLowerCase();
+  const hit = headlines.find((h) => {
+    const t = (h.headline ?? "").replace(/\s+/g, " ").trim();
+    if (!t) return false;
+    const low = t.toLowerCase();
+    if (coach && !low.includes(coach.split(" ").pop() ?? coach)) return false;
+    return /\b(hot seat|buyout|extension|fired|safe|must[- ]win|on the clock)\b/i.test(t);
+  });
+  const text = (hit?.headline ?? "").replace(/\s+/g, " ").trim();
+  return text || null;
+}
+
+export function coachFactLines(tile: FavoriteCoachTile): string[] {
+  return [
+    tile.schoolRecord
+      ? ["At school " + tile.schoolRecord, tile.yearsAtSchool].filter(Boolean).join(" · ")
+      : null,
+    tile.careerRecord ? `Career ${tile.careerRecord}` : null,
+    tile.nflRecord,
+    tile.bowlRecord ? `Bowls ${tile.bowlRecord}` : null,
+    tile.playoffRecord ? `CFP ${tile.playoffRecord}` : null,
+    tile.vsRanked ? `vs ranked ${tile.vsRanked}` : null,
+    tile.titles,
+    tile.salary ? [tile.salary, tile.contractEnd].filter(Boolean).join(" · ") : tile.contractEnd,
+    tile.buyout ? `Buyout ${tile.buyout}` : null,
+  ].filter((bit): bit is string => Boolean(bit));
+}
+
+export function applyCoachProfile(
+  tile: FavoriteCoachTile,
+  profile: TimesCoachProfile | null | undefined,
+  seasonYear: number | null,
+  vsRanked: string | null,
+): FavoriteCoachTile {
+  const season = parseWl(tile.record);
+  const schoolBase =
+    profile?.school_wins != null && profile.school_losses != null
+      ? { wins: Number(profile.school_wins), losses: Number(profile.school_losses) }
+      : null;
+  const careerBase =
+    profile?.career_wins != null && profile.career_losses != null
+      ? { wins: Number(profile.career_wins), losses: Number(profile.career_losses) }
+      : null;
+  const school = schoolBase && season ? { wins: schoolBase.wins + season.wins, losses: schoolBase.losses + season.losses } : schoolBase;
+  const career = careerBase && season ? { wins: careerBase.wins + season.wins, losses: careerBase.losses + season.losses } : careerBase;
+  const bowl =
+    profile?.bowl_wins != null && profile.bowl_losses != null
+      ? formatWl(Number(profile.bowl_wins), Number(profile.bowl_losses))
+      : null;
+  const playoff =
+    profile?.playoff_wins != null && profile.playoff_losses != null
+      ? formatWl(Number(profile.playoff_wins), Number(profile.playoff_losses))
+      : null;
+  const salary = formatCoachMoney(profile?.salary_annual ?? null);
+  const buyout = formatCoachMoney(profile?.buyout ?? null);
+  return {
+    ...tile,
+    schoolRecord: school ? formatWl(school.wins, school.losses) : null,
+    yearsAtSchool: yearsAtSchoolLabel(profile?.hire_year, seasonYear),
+    careerRecord: career ? formatWl(career.wins, career.losses) : null,
+    bowlRecord: bowl,
+    playoffRecord: playoff,
+    vsRanked,
+    titles: (profile?.titles_note ?? "").trim() || null,
+    nflRecord: (profile?.nfl_record ?? "").trim() || null,
+    salary: salary ? (profile?.salary_note ? `${salary} ${profile.salary_note}` : salary) : null,
+    contractEnd: profile?.contract_end_year ? `thru ${profile.contract_end_year}` : null,
+    buyout,
+    sourceLabel: (profile?.source_label ?? "").trim() || null,
+    sourceUrl: (profile?.source_url ?? "").trim() || null,
+    statusNote: coachStatusNote(tile.headlines, tile.name),
+  };
+}
+
+function blankProfileFields(): Pick<
+  FavoriteCoachTile,
+  | "schoolRecord"
+  | "yearsAtSchool"
+  | "careerRecord"
+  | "bowlRecord"
+  | "playoffRecord"
+  | "vsRanked"
+  | "titles"
+  | "nflRecord"
+  | "salary"
+  | "contractEnd"
+  | "buyout"
+  | "sourceLabel"
+  | "sourceUrl"
+  | "statusNote"
+> {
+  return {
+    schoolRecord: null,
+    yearsAtSchool: null,
+    careerRecord: null,
+    bowlRecord: null,
+    playoffRecord: null,
+    vsRanked: null,
+    titles: null,
+    nflRecord: null,
+    salary: null,
+    contractEnd: null,
+    buyout: null,
+    sourceLabel: null,
+    sourceUrl: null,
+    statusNote: null,
+  };
 }
 
 type EspnStat = { name?: string; type?: string; value?: number; displayValue?: string };
@@ -481,6 +681,44 @@ async function coachHeadshot(path: string, coachId: string): Promise<string | nu
   return null;
 }
 
+export function seasonStripFromEvents(events: EspnEvent[], teamId: string | null): CoachSeasonChip[] {
+  const chips: CoachSeasonChip[] = [];
+  for (const event of events) {
+    const comp = event.competitions?.[0];
+    if (!comp?.status?.type?.completed) continue;
+    const { opp, me } = oppOf(comp.competitors, teamId);
+    const result = resultOf(me);
+    if (!result) continue;
+    const opponent =
+      opp?.team?.abbreviation || opp?.team?.shortDisplayName || opp?.team?.displayName || "";
+    if (!opponent) continue;
+    chips.push({
+      id: String(event.id ?? comp.id ?? `${result}-${opponent}-${chips.length}`),
+      result,
+      opponent,
+      opponentRank: apRank(opp?.curatedRank?.current),
+    });
+  }
+  return chips;
+}
+
+function vsRankedLine(events: EspnEvent[], teamId: string | null): string | null {
+  let wins = 0;
+  let losses = 0;
+  for (const event of events) {
+    const comp = event.competitions?.[0];
+    if (!comp?.status?.type?.completed) continue;
+    const { opp, me } = oppOf(comp.competitors, teamId);
+    const rank = apRank(opp?.curatedRank?.current);
+    if (rank == null) continue;
+    const result = resultOf(me);
+    if (result === "W") wins += 1;
+    else if (result === "L") losses += 1;
+  }
+  if (!wins && !losses) return null;
+  return formatWl(wins, losses);
+}
+
 function lastAndNext(events: EspnEvent[], teamId: string | null): { last: EspnEvent | null; next: EspnEvent | null } {
   let last: EspnEvent | null = null;
   let next: EspnEvent | null = null;
@@ -584,6 +822,7 @@ async function fetchOneTile(ref: FavoriteCoachRef, standings: StandGroup[]): Pro
     teamColor: team?.color ? `#${team.color.replace(/^#/, "")}` : null,
     headshot,
     featured: ref.featured,
+    seasonYear: null,
     record: total?.summary ?? null,
     conferenceRecord: vsconf?.summary ?? conferenceFromStandings(standings, teamId),
     standing: team?.standingSummary ?? null,
@@ -592,7 +831,10 @@ async function fetchOneTile(ref: FavoriteCoachRef, standings: StandGroup[]): Pro
     pointsAgainstAvg: pa != null ? pa.toFixed(1).replace(/\.0$/, "") : null,
     lastGame: last ? lastGameFromEvent(last, teamId, lastBits.summary) : null,
     nextGame: next ? nextGameFromEvent(next, teamId, { tv: nextBits.tv, line: nextBits.line }) : null,
+    seasonStrip: seasonStripFromEvents(events, teamId),
     headlines: pickHeadlines(newsRaw?.articles ?? [], ref),
+    ...blankProfileFields(),
+    vsRanked: vsRankedLine(events, teamId),
   };
 }
 
@@ -636,12 +878,49 @@ export async function loadTimesFavoriteCoachRefs(): Promise<FavoriteCoachRef[]> 
   return mapFavoriteCoachRows(Array.isArray(rows) ? rows : []);
 }
 
+export async function loadTimesCoachProfiles(): Promise<Record<string, TimesCoachProfile>> {
+  const rows = await readCoachProfileRows();
+  const out: Record<string, TimesCoachProfile> = {};
+  for (const row of rows) {
+    const id = String(row.coach_id ?? "").trim();
+    if (id) out[id] = row;
+  }
+  return out;
+}
+
+async function readCoachProfileRows(): Promise<TimesCoachProfile[]> {
+  try {
+    const { supabase } = await import("./supabase.ts");
+    const { data, error } = await supabase.from("times_coach_profiles").select("*");
+    if (!error && Array.isArray(data) && data.length) return data as TimesCoachProfile[];
+  } catch {
+    /* scheduled press / node tests */
+  }
+  const svc = denoService();
+  if (!svc) return [];
+  const url = new URL(`${svc.url}/rest/v1/times_coach_profiles`);
+  url.searchParams.set("select", "*");
+  const res = await fetch(url, {
+    headers: {
+      apikey: svc.key,
+      Authorization: `Bearer ${svc.key}`,
+      Accept: "application/json",
+    },
+  });
+  if (!res.ok) return [];
+  const rows = (await res.json()) as TimesCoachProfile[];
+  return Array.isArray(rows) ? rows : [];
+}
+
 export async function fetchFavoriteCoachDesk(opts?: {
   day?: string;
   refs?: FavoriteCoachRef[];
+  profiles?: Record<string, TimesCoachProfile>;
 }): Promise<FavoriteCoachDesk> {
   const refs = opts?.refs ?? (await loadTimesFavoriteCoachRefs());
   if (!refs.length) return { tiles: [] };
+  const profiles = opts?.profiles ?? (await loadTimesCoachProfiles());
+  const seasonYear = opts?.day ? cfbSeasonYear(opts.day) : null;
   const paths = coachPathsOf(refs);
   const standByPath: Record<string, StandGroup[]> = {};
   await Promise.all(
@@ -672,6 +951,7 @@ export async function fetchFavoriteCoachDesk(opts?: {
           teamColor: null,
           headshot: null,
           featured: ref.featured,
+          seasonYear: null,
           record: null,
           conferenceRecord: null,
           standing: null,
@@ -680,14 +960,20 @@ export async function fetchFavoriteCoachDesk(opts?: {
           pointsAgainstAvg: null,
           lastGame: null,
           nextGame: null,
+          seasonStrip: [],
           headlines: [],
+          ...blankProfileFields(),
         });
       }
     }
   }
   await Promise.all([worker(), worker(), worker()]);
-  tiles.sort((a, b) => Number(b.featured) - Number(a.featured) || a.name.localeCompare(b.name));
-  return { tiles };
+  const merged = tiles.map((tile) => ({
+    ...applyCoachProfile(tile, profiles[tile.coachId], seasonYear, tile.vsRanked),
+    seasonYear,
+  }));
+  merged.sort((a, b) => Number(b.featured) - Number(a.featured) || a.name.localeCompare(b.name));
+  return { tiles: merged };
 }
 
 export function asFavoriteCoachDesk(value: unknown): FavoriteCoachDesk | null {

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchFavoriteCoachDesk, type FavoriteCoachTile } from "@/lib/newspaper-favorite-coaches";
+import { coachFactLines, fetchFavoriteCoachDesk, type FavoriteCoachTile } from "@/lib/newspaper-favorite-coaches";
 import { editionDateline } from "@/lib/newspaper";
 
 const TZ = "America/Chicago";
@@ -89,19 +89,35 @@ function CoachesPreview({ tiles }: { tiles: FavoriteCoachTile[] }) {
                 </span>
               </span>
             </header>
-            {lastBits ? (
-              <p className={`tt-coach-last${last?.result === "W" ? " w" : last?.result === "L" ? " l" : ""}`}>
-                {last?.opponentLogo ? <img src={last.opponentLogo} alt="" /> : null}
-                <span>{lastBits}</span>
-              </p>
-            ) : null}
-            {last?.summary ? <p className="tt-coach-sum">{last.summary}</p> : null}
-            {nextBits ? (
-              <p className="tt-coach-next">
-                <b>Next</b> {nextBits}
-              </p>
-            ) : null}
-            {stat ? <p className="tt-coach-stat">{stat}</p> : null}
+            <div className="tt-coach-body">
+              <div className="tt-coach-story">
+                {lastBits ? (
+                  <p className={`tt-coach-last${last?.result === "W" ? " w" : last?.result === "L" ? " l" : ""}`}>
+                    {last?.opponentLogo ? <img src={last.opponentLogo} alt="" /> : null}
+                    <span>{lastBits}</span>
+                  </p>
+                ) : null}
+                {last?.summary ? <p className="tt-coach-sum">{last.summary}</p> : null}
+                {nextBits ? (
+                  <p className="tt-coach-next">
+                    <b>Next</b> {nextBits}
+                  </p>
+                ) : null}
+                {stat ? <p className="tt-coach-stat">{stat}</p> : null}
+                {tile.featured ? null : <CoachPreviewFacts tile={tile} />}
+              </div>
+              {tile.featured ? (
+                <aside className="tt-coach-aside">
+                  {tile.teamLogo ? (
+                    <span className="tt-coach-mark">
+                      <img src={tile.teamLogo} alt="" />
+                    </span>
+                  ) : null}
+                  <CoachSeasonStrip tile={tile} />
+                  <CoachPreviewFacts tile={tile} />
+                </aside>
+              ) : null}
+            </div>
             {tile.headlines.length ? (
               <ul className="tt-coach-hed">
                 {tile.headlines.map((card) => (
@@ -115,5 +131,49 @@ function CoachesPreview({ tiles }: { tiles: FavoriteCoachTile[] }) {
         );
       })}
     </div>
+  );
+}
+
+function CoachSeasonStrip({ tile }: { tile: FavoriteCoachTile }) {
+  const chips = tile.seasonStrip ?? [];
+  if (!chips.length) return null;
+  return (
+    <div className="tt-coach-strip">
+      <b>{tile.seasonYear ?? "Season"}</b>
+      {chips.map((chip) => (
+        <i key={chip.id} className={chip.result === "W" ? "w" : chip.result === "L" ? "l" : undefined}>
+          {chip.result}
+          {chip.opponentRank != null ? ` #${chip.opponentRank}` : ""} {chip.opponent}
+        </i>
+      ))}
+    </div>
+  );
+}
+
+function CoachPreviewFacts({ tile }: { tile: FavoriteCoachTile }) {
+  const bits = coachFactLines(tile);
+  if (!bits.length && !tile.sourceLabel && !tile.statusNote) return null;
+  return (
+    <>
+      {bits.length ? (
+        <ul className="tt-coach-facts">
+          {bits.map((bit) => (
+            <li key={bit}>{bit}</li>
+          ))}
+        </ul>
+      ) : null}
+      {tile.statusNote ? <p className="tt-coach-status">{tile.statusNote}</p> : null}
+      {tile.sourceLabel ? (
+        <p className="tt-coach-src">
+          {tile.sourceUrl ? (
+            <a href={tile.sourceUrl} target="_blank" rel="noreferrer">
+              Salary: {tile.sourceLabel}
+            </a>
+          ) : (
+            `Salary: ${tile.sourceLabel}`
+          )}
+        </p>
+      ) : null}
+    </>
   );
 }
