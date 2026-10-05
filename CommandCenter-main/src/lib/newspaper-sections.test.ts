@@ -32,6 +32,7 @@ import {
   MIN_SECTION_PAGES,
   sortComingUp,
   sourceStoryId,
+  sportSectionFocuses,
   staleNamedPackage,
   storyBodyForJump,
   type ClubDesk,
@@ -228,7 +229,7 @@ assert(
 );
 
 const nfl = paper.pages.find((page) => page.folio === "NFL1");
-assert(nfl?.kind === "sport-front" && nfl.focus === "recaps", "NFL1 is the football recaps page");
+assert(nfl?.kind === "sport-front" && nfl.focus === "front", "NFL1 is the football section front");
 if (nfl?.kind === "sport-front") {
   assert(nfl.upcoming.some((game) => game.label === "at Ravens"), "the section carries the upcoming schedule");
   assert(!nfl.upcoming.some((game) => /dolphins/i.test(game.label)), "last weekend is not the schedule");
@@ -237,14 +238,24 @@ if (nfl?.kind === "sport-front") {
   assert(nfl.articles.every((article) => article.card.id !== "news-injury"), "a followed club's story runs in Section A, not NFL");
   assert(nfl.articles.every((article) => article.card.id !== "wire-nfl-weekend"), "weekend recap is too old for a fresh midweek desk");
 }
-const nflSched = paper.pages.find((page) => page.folio === "NFL2");
-assert(nflSched?.kind === "sport-front" && nflSched.focus === "schedule", "NFL2 is the schedule page");
-const nflNews = paper.pages.find((page) => page.folio === "NFL3");
-assert(nflNews?.kind === "sport-front" && nflNews.focus === "news", "NFL3 is the football news page");
-const nflTeams = paper.pages.find((page) => page.folio === "NFL4");
-assert(nflTeams?.kind === "sport-front" && nflTeams.focus === "teams", "NFL4 is the all-teams page");
-const nflForm = paper.pages.find((page) => page.folio === "NFL5");
-assert(nflForm?.kind === "sport-front" && nflForm.focus === "form", "NFL5 is the club form page");
+const nflRecaps = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "recaps");
+assert(nflRecaps?.kind === "sport-front", "the NFL recaps desk follows the front");
+const nflNews = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "news");
+assert(nflNews?.kind === "sport-front", "the NFL news desk follows the wraps");
+const nflTeams = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "teams");
+assert(nflTeams?.kind === "sport-front", "standings sit with the reference pages");
+const nflForm = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "form");
+assert(nflForm?.kind === "sport-front", "club form sits with the reference pages");
+const nflSched = paper.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "schedule");
+assert(nflSched?.kind === "sport-front", "the schedule is at the back of the section");
+assert(
+  nflTeams &&
+    nflSched &&
+    nflNews &&
+    nflTeams.sectionPage > nflNews.sectionPage &&
+    nflSched.sectionPage > nflTeams.sectionPage,
+  "news, then standings, then the schedule",
+);
 
 const mlb = paper.pages.find((page) => page.folio === "MLB1");
 assert(
@@ -255,12 +266,15 @@ assert(
   paper.pages.every((page) => page.kind !== "sport-inside" || (page.primary.id !== "news-cards" && page.secondary?.id !== "news-cards")),
   "no MLB story page carries a Cardinals story",
 );
-const mlbPlayoffs = paper.pages.find((page) => page.folio === "MLB5");
-assert(mlbPlayoffs?.kind === "sport-front" && mlbPlayoffs.focus === "playoffs", "MLB5 is the playoff tree page");
+const mlbPlayoffs = paper.pages.find((page) => page.kind === "sport-front" && page.section === "MLB" && page.focus === "playoffs");
+assert(mlbPlayoffs?.kind === "sport-front", "MLB still prints the playoff tree");
 assert((paper.sections.find((s) => s.code === "NFL")?.pages ?? 0) >= MIN_SECTION_PAGES, "NFL section always has at least five pages");
 assert((paper.sections.find((s) => s.code === "A")?.pages ?? 0) >= MIN_SECTION_PAGES, "A always has at least five pages");
 assert((paper.sections.find((s) => s.code === "MLB")?.pages ?? 0) >= MIN_SECTION_PAGES, "MLB always has at least five pages");
-assert(!paper.pages.some((page) => page.folio === "NFL6"), "no league copy, no NFL story page");
+assert(
+  !paper.pages.some((page) => page.kind === "sport-inside" && page.section === "NFL"),
+  "no league copy, no NFL story page",
+);
 assert(paper.pages.some((page) => page.kind === "favorites-form"), "Section A pads with club-form pages");
 
 const leagueWire = card({
@@ -560,17 +574,20 @@ const shortNational = buildEdition({
 assert(shortNational.pages.filter((p) => p.kind === "national").length >= 1, "a shorter desk still prints National News");
 assert(!buildEdition({ stories: [lionsNote], clubs: [lionsClub], edition }).pages.some((p) => p.kind === "national"), "empty national hides");
 
-const nflPlayers = withDesks.pages.find((page) => page.folio === "NFL6");
-assert(nflPlayers?.kind === "sport-front" && nflPlayers.focus === "players", "a sport with followed players gets NFL6");
-assert(!deskFolios.includes("MLB6"), "no players page without followed players in the league");
+const nflPlayers = withDesks.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "players");
+assert(nflPlayers?.kind === "sport-front", "a sport with followed players gets a players desk");
+assert(
+  !withDesks.pages.some((page) => page.kind === "sport-front" && page.section === "MLB" && page.focus === "players"),
+  "no players page without followed players in the league",
+);
 assert(!buildEdition({ stories: [lionsNote], clubs: [lionsClub], edition }).pages.some((p) => p.kind === "missouri"), "no desk, no section");
 
 const offPaper = buildEdition({ stories: [chiefsNote], clubs: [chiefs], edition, offseason: ["football/nfl"] });
 const offDesks = offPaper.pages.filter((p) => p.kind === "sport-front" && p.path === "football/nfl");
 assert(
   offDesks.map((p) => (p.kind === "sport-front" ? `${p.folio}:${p.focus}` : "")).join(",") ===
-    "NFL1:news,NFL2:opener,NFL3:teams",
-  "an offseason section runs news, the countdown and last season's tables",
+    "NFL1:front,NFL2:opener,NFL3:news,NFL4:teams",
+  "an offseason section runs a front, the countdown, news and last season's tables",
 );
 assert(
   offDesks.every((p) => p.kind === "sport-front" && p.offseason),
@@ -578,8 +595,8 @@ assert(
 );
 const offTurn = offDesks[0]?.kind === "sport-front" ? offDesks[0].turn : null;
 assert(offTurn?.folio === "NFL2" && offTurn.focus === "opener", "the front turns to the countdown");
-const offLast = offDesks[2]?.kind === "sport-front" ? offDesks[2].turn : undefined;
-assert(offLast === null, "the last desk has no turn line");
+const offTail = offDesks.at(-1);
+assert(offTail?.kind === "sport-front" && offTail.turn === null, "the last desk has no turn line");
 
 const bluesPreview = card({
   id: "news-blues-preview",
@@ -635,7 +652,7 @@ assert(
   "Missouri is section B in the afternoon paper",
 );
 const eveningNfl = eveningPaper.pages.find((page) => page.folio === "NFL1");
-assert(eveningNfl?.kind === "sport-front" && eveningNfl.focus === "teams", "afternoon sports open on the table");
+assert(eveningNfl?.kind === "sport-front" && eveningNfl.focus === "front", "afternoon sports still open on a section front");
 assert(
   !eveningPaper.pages.some((page) => page.kind === "sport-inside"),
   "afternoon sports stay on stats and graphics",
@@ -981,7 +998,10 @@ for (const press of ["2026-09-30-morning", "2026-09-30-midday", "2026-09-30-even
   const withLeaders = buildEdition({ stories: [], clubs: [leaderClub], edition: press, leaderPaths: ["football/nfl"] });
   const nflFocuses = focusesOf(withLeaders, "NFL");
   assert(nflFocuses.includes("leaders"), `${press}: the NFL section runs a leaders desk`);
-  assert(nflFocuses.indexOf("leaders") === nflFocuses.indexOf("teams") + (press.endsWith("morning") ? 1 : 2), `${press}: leaders sit by the standings`);
+  assert(nflFocuses[0] === "front", `${press}: the section opens on a front`);
+  assert(nflFocuses.indexOf("leaders") > nflFocuses.indexOf("teams"), `${press}: leaders sit with the reference pages`);
+  assert(nflFocuses.indexOf("teams") > nflFocuses.indexOf("news"), `${press}: standings follow the news`);
+  assert(nflFocuses.at(-1) === "schedule" || nflFocuses.at(-2) === "schedule", `${press}: the schedule is at the back`);
   const without = buildEdition({ stories: [], clubs: [leaderClub], edition: press });
   assert(!focusesOf(without, "NFL").includes("leaders"), `${press}: no list, no leaders desk`);
   assert(focusesOf(without, "NFL").length === nflFocuses.length - 1, `${press}: the leaders desk adds exactly one page`);
@@ -1184,7 +1204,11 @@ const recapsFirst = buildEdition({
 });
 const recapsPage = recapsFirst.pages.find((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps");
 const firstNfl = recapsFirst.pages.find((p) => p.kind === "sport-front" && p.section === "NFL");
-assert(firstNfl?.kind === "sport-front" && firstNfl.focus === "recaps", "morning sport sections open on recaps");
+assert(firstNfl?.kind === "sport-front" && firstNfl.focus === "front", "morning sport sections open on a section front");
+assert(
+  firstNfl?.kind === "sport-front" && firstNfl.articles[0]?.card.id === "wire-nfl-kc-lead",
+  "the favorite-team game leads the NFL section front",
+);
 assert(
   recapsPage?.kind === "sport-front" && recapsPage.articles[0]?.card.id === "wire-nfl-kc-lead",
   "the favorite-team game leads the NFL recaps desk",
@@ -1250,6 +1274,37 @@ const draftTwice = dedupeStories([
   }),
 ]);
 assert(draftTwice.length === 1, "the same draft wrap does not run twice");
+
+assert(
+  sportSectionFocuses({ path: "baseball/mlb" }).join() === "front,recaps,news,teams,playoffs,schedule",
+  "regular-season MLB keeps standings and the bracket at the back",
+);
+assert(
+  sportSectionFocuses({ path: "baseball/mlb", postseason: true }).join() === "front,recaps,news,playoffs,schedule",
+  "postseason MLB drops regular-season standings; the bracket replaces them",
+);
+assert(
+  sportSectionFocuses({ path: "hockey/nhl", postseason: true }).includes("teams") === false,
+  "NHL playoffs drop the regular-season table",
+);
+assert(sportSectionFocuses({ path: "football/nfl" })[0] === "front", "every in-season section opens on a front");
+
+const mlbPost = buildEdition({
+  stories: [],
+  clubs: [cards],
+  edition: "2026-10-05-morning",
+  postseasonPaths: ["baseball/mlb"],
+});
+assert(
+  !mlbPost.pages.some((p) => p.kind === "sport-front" && p.section === "MLB" && p.focus === "teams"),
+  "an October MLB section does not print the 162-game table",
+);
+assert(
+  mlbPost.pages.some((p) => p.kind === "sport-front" && p.section === "MLB" && p.focus === "playoffs"),
+  "the Postseason Picture still runs",
+);
+const mlbPostFront = mlbPost.pages.find((p) => p.kind === "sport-front" && p.section === "MLB");
+assert(mlbPostFront?.kind === "sport-front" && mlbPostFront.focus === "front", "October MLB still opens on a front");
 
 const coming = sortComingUp([
   { id: "mizzou-bb", when: "Tue, Nov 3", startIso: "2026-11-03T05:00:00Z" },

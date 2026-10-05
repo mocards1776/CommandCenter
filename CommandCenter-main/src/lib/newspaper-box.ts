@@ -83,25 +83,110 @@ export type SectionBoard = {
   results: BoxGame[];
   /** Tonight and tomorrow — the schedule page. */
   slate: BoxGame[];
-  /** Football: every game of the current week, finals and kickoffs together. */
+  /** Football: the current ESPN week only — never mixed with last week. */
   week?: BoxGame[];
   weekLabel?: string | null;
+  weekNumber?: number | null;
   /** Football: last week's finals, for the days before this week's games are played. */
   prior?: BoxGame[];
   priorLabel?: string | null;
+  priorWeekNumber?: number | null;
+  /** Week number that belongs on the results band (may be last week). */
+  resultsWeekNumber?: number | null;
+  /** Week number that belongs on the upcoming slate (may be next week). */
+  slateWeekNumber?: number | null;
 };
 
+export type ScoreBand = { title: string; games: BoxGame[] };
+
+/** Saturday (or the day's midpoint) as "Sat Oct 3". */
+export function weekDayStamp(games: BoxGame[]): string | null {
+  const days = [...new Set(games.map((g) => g.day).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort();
+  if (!days.length) return null;
+  const sat = days.find((d) => new Date(`${d}T12:00:00Z`).getUTCDay() === 6);
+  const pick = sat ?? days[Math.floor(days.length / 2)] ?? days[0]!;
+  const raw = new Date(`${pick}T12:00:00Z`).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+  return raw.replace(/,/g, "");
+}
+
+export function footballWeekTitle(
+  kind: "results" | "schedule",
+  weekNum: number | null | undefined,
+  games: BoxGame[],
+): string {
+  const week = weekNum && weekNum > 0 ? `Week ${weekNum}` : kind === "results" ? "Last week" : "This week";
+  const when = weekDayStamp(games);
+  if (kind === "results") return when ? `${week} results (${when})` : `${week} results`;
+  return when ? `${week} schedule (${when})` : `${week} schedule`;
+}
+
+/**
+ * Score / schedule bands for a sport section. College football never mixes
+ * last week's finals and this week's kickoffs under one week label.
+ */
+export function sportScoreBands(path: string, board: SectionBoard | null, edition: string): ScoreBand[] {
+  if (!board) return [];
+  if (path.includes("college-football")) {
+    const results = board.results.length ? board.results : (board.prior ?? []);
+    const slate = (board.slate ?? []).filter((g) => !g.final && !g.live);
+    const bands: ScoreBand[] = [];
+    if (results.length) {
+      bands.push({
+        title: footballWeekTitle("results", board.resultsWeekNumber ?? board.priorWeekNumber, results),
+        games: results,
+      });
+    }
+    if (slate.length) {
+      bands.push({
+        title: footballWeekTitle("schedule", board.slateWeekNumber ?? board.weekNumber, slate),
+        games: slate,
+      });
+    }
+    return bands;
+  }
+  if (path.startsWith("football/")) {
+    const day = new Date(`${editionYmd(edition)}T12:00:00Z`).getUTCDay();
+    const turned = day === 4 || day === 5 || day === 6 || day === 0 || day === 1;
+    if (turned && board.week?.length) {
+      return [{ title: `${board.weekLabel ?? "This week"} · scores and kickoffs`, games: board.week }];
+    }
+    if (board.results.length) {
+      return [{ title: `${board.weekLabel ?? "This week"} finals`, games: [...board.results].reverse() }];
+    }
+    return board.prior?.length
+      ? [{ title: `${board.priorLabel ?? "Last week"} finals`, games: [...board.prior].reverse() }]
+      : [];
+  }
+  const games = path.startsWith("soccer/") ? [...board.results].reverse() : board.results;
+  return games.length ? [{ title: "Last night’s scores", games }] : [];
+}
+
+function editionYmd(edition: string): string {
+  return /^(\d{4}-\d{2}-\d{2})/.exec(edition)?.[1] ?? edition;
+}
+
 function shiftDay(day: string, delta: number): string {
-  const d = new Date(`${day}T12:00:00Z`);
+  const d = new Date(`${editionYmd(day)}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + delta);
   return d.toISOString().slice(0, 10);
 }
 
 async function getJson<T>(url: string): Promise<T | null> {
   try {
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
+    const ctl = new AbortController();
+    const t = globalThis.setTimeout(() => ctl.abort(), 12_000);
+    try {
+      const res = await fetch(url, { headers: { Accept: "application/json" }, signal: ctl.signal });
+      if (!res.ok) return null;
+      return (await res.json()) as T;
+    } finally {
+      globalThis.clearTimeout(t);
+    }
   } catch {
     return null;
   }
@@ -624,14 +709,19 @@ function espnGame(path: string, ev: EspnEventRaw, day: string): BoxGame | null {
   const probable = (c: EspnCompetitorRaw): BoxPerson | null => {
     const p = c.probables?.[0];
     if (!p?.athlete) return null;
-    const stats = (p.statistics ?? [])
-      .filter((s) => /^(W|L|ERA)$/i.test(s.abbreviation ?? ""))
-      .map((s) => `${s.displayValue} ${s.abbreviation}`)
-      .join(", ");
+    const stat = (abbr: string) =>
+      (p.statistics ?? []).find((s) => (s.abbreviation ?? "").toUpperCase() === abbr)?.displayValue;
+    const w = stat("W");
+    const l = stat("L");
+    const era = stat("ERA");
+    const bits: string[] = [];
+    if (w != null && l != null) bits.push(`${w}-${l}`);
+    else if (w != null) bits.push(`${w} W`);
+    if (era) bits.push(`${era} ERA`);
     return {
       id: p.athlete.id ?? null,
       name: p.athlete.displayName || p.athlete.shortName || "",
-      line: stats || null,
+      line: bits.join(", ") || null,
       headshot: headshotOf(p.athlete),
     };
   };
@@ -730,18 +820,37 @@ export async function fetchEspnRecapStory(
   };
 }
 
-function faceOff(iso: string | null): string {
+const CT = "America/Chicago";
+
+/** ESPN shortDetail like "10/10 - 12:00 PM EDT" — never print this on a Times clock. */
+export function looksLikeEspnZoneClock(status: string | null | undefined): boolean {
+  if (!status) return false;
+  return (
+    /\b(?:EDT|EST|CDT|CST|MDT|MST|PDT|PST)\b/.test(status) ||
+    /\d{1,2}\/\d{1,2}\s*[-–]\s*\d/.test(status)
+  );
+}
+
+function clockInCentral(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d
-    .toLocaleTimeString("en-US", {
-      timeZone: "America/Chicago",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    })
-    .replace(":00 ", " ");
+  return d.toLocaleTimeString("en-US", {
+    timeZone: CT,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+/** "Sat 11:00 AM" in Central time — weekday + clock, no zone, no wrapping date. */
+export function formatKickoffLine(iso: string | null): string {
+  const time = clockInCentral(iso);
+  if (!time || !iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const weekday = d.toLocaleDateString("en-US", { weekday: "short", timeZone: CT });
+  return `${weekday} ${time}`;
 }
 
 export function formatPaperDay(d: Date): string {
@@ -782,10 +891,15 @@ export function gameDay(game: BoxGame): string {
 }
 
 export function gameClock(game: BoxGame): string {
-  if (game.final) return /final/i.test(game.status) ? game.status : "Final";
-  if (game.live) return game.status;
-  if (/postponed|delayed|suspended|canceled/i.test(game.status)) return game.status;
-  return faceOff(game.startIso) || game.status;
+  if (game.final) {
+    if (/final/i.test(game.status) && !looksLikeEspnZoneClock(game.status)) return game.status;
+    return "Final";
+  }
+  if (game.live) return looksLikeEspnZoneClock(game.status) ? "Live" : game.status;
+  if (/postponed|delayed|suspended|canceled/i.test(game.status) && !looksLikeEspnZoneClock(game.status)) {
+    return game.status;
+  }
+  return clockInCentral(game.startIso);
 }
 
 /**
@@ -1071,6 +1185,55 @@ export function rankStandings(groups: StandGroup[]): StandGroup[] {
     .map((row) => row.group);
 }
 
+export type CfbPollRow = {
+  rank: number;
+  name: string;
+  abbrev: string;
+  record: string | null;
+  logo: string | null;
+};
+
+/** AP Top 25 via the Times ESPN client — never the Sports App fetch. */
+export async function fetchCfbApPoll(): Promise<CfbPollRow[]> {
+  const data = (await newspaperEspnGet("football/college-football/rankings").catch(() => null)) as {
+    rankings?: {
+      name?: string;
+      shortName?: string;
+      type?: string;
+      ranks?: {
+        current?: number;
+        recordSummary?: string;
+        team?: {
+          abbreviation?: string;
+          displayName?: string;
+          location?: string;
+          logos?: { href?: string }[];
+        };
+      }[];
+    }[];
+  } | null;
+  if (!data) return [];
+  const polls = data.rankings ?? [];
+  const poll =
+    polls.find((p) => /associated press|\bap top|\bap\b/i.test(`${p.name ?? ""} ${p.shortName ?? ""} ${p.type ?? ""}`)) ??
+    polls[0];
+  return (poll?.ranks ?? [])
+    .filter((r): r is typeof r & { current: number } => r.current != null && r.current > 0 && r.current <= 25)
+    .map((r) => ({
+      rank: r.current,
+      name: r.team?.displayName ?? r.team?.location ?? "—",
+      abbrev: (r.team?.abbreviation ?? "—").toUpperCase(),
+      record: r.recordSummary ?? null,
+      logo: r.team?.logos?.[0]?.href ?? null,
+    }))
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, 25);
+}
+
+export function secStandingsGroup(groups: StandGroup[]): StandGroup | null {
+  return groups.find((g) => /\bsec\b|southeastern/i.test(g.name)) ?? null;
+}
+
 export function ordinalPlace(n: number): string {
   const j = n % 10;
   const k = n % 100;
@@ -1121,24 +1284,46 @@ export function applyTableStandings<T extends { key: string; standing: string | 
 export type LeagueLeaderRow = {
   name: string;
   team: string;
+  /** The category value — HR "4", AVG ".500", ERA "0.00" — never a game box line. */
   line: string;
+  /** Games or innings, when the feed gives them. */
+  note?: string;
   headshot: string | null;
 };
 
-export type LeagueLeaderGroup = { category: string; rows: LeagueLeaderRow[] };
+export type LeagueLeaderGroup = {
+  category: string;
+  /** ESPN season type: 2 regular, 3 postseason. */
+  seasonType?: number;
+  rows: LeagueLeaderRow[];
+};
 
-const LEADER_SKIP = /kickoff|punt|fieldgoal|extrapoint|returnyards|netavg|longfield/i;
+const LEADER_SKIP = /kickoff|puntreturn|punts|extrapoint|returnyards|netavg|longfield|kickreturn/i;
 const LEADER_FIRST = [
   "passingyards",
-  "rushingyards",
-  "receivingyards",
   "passingtouchdowns",
+  "quarterbackrating",
+  "rating",
+  "completions",
+  "passingcompletions",
+  "interceptions",
+  "passinginterceptions",
+  "rushingyards",
   "rushingtouchdowns",
+  "receivingyards",
+  "receptions",
   "receivingtouchdowns",
   "sacks",
   "totaltackles",
+  "defensiveinterceptions",
+  "interceptionstotal",
+  "fieldgoals",
+  "fieldgoalsmade",
   "homeruns",
   "battingaverage",
+  "rbi",
+  "runs",
+  "ops",
   "era",
   "strikeouts",
   "wins",
@@ -1149,21 +1334,96 @@ const LEADER_FIRST = [
   "avgpoints",
 ];
 
+/** Fill the printed leaders page: more categories and a longer list than the old top five. */
+export function leaderDeskSize(path: string): { categories: number; rows: number } {
+  if (path.startsWith("football/")) return { categories: 12, rows: 10 };
+  if (path === "baseball/mlb") return { categories: 12, rows: 8 };
+  return { categories: 12, rows: 8 };
+}
+
 type LeaderCat = {
   name?: string;
   displayName?: string;
+  abbreviation?: string;
   leaders?: {
     displayValue?: string;
+    value?: number;
     athlete?: { displayName?: string; shortName?: string; fullName?: string; headshot?: { href?: string } };
     team?: { abbreviation?: string; shortDisplayName?: string };
   }[];
 };
 
+type LeadersPayload = {
+  currentSeason?: { type?: { type?: number; name?: string } };
+  requestedSeason?: { type?: { type?: number; name?: string } };
+  leaders?: { categories?: LeaderCat[] };
+};
+
+/** ESPN's `displayValue` on league leaders is often last night's box line. The category total is `value`. */
+export function isLeaderBoxLine(text: string | null | undefined): boolean {
+  const s = (text ?? "").trim();
+  if (!s) return false;
+  if (/,/.test(s)) return true;
+  if (/\bIP\b/i.test(s)) return true;
+  return /\b\d+-\d+\b/.test(s) && /\b(?:HR|RBI|TB|BB|SO|K|2B|3B|H|R)\b/i.test(s);
+}
+
+function isRateCategory(name: string): boolean {
+  const key = name.toLowerCase();
+  if (/\bera\b|whip|avggoals/.test(key)) return true;
+  return /(?:^|[^a-z])(?:avg|obp|slg|ops|pct|average|percentage)/.test(key);
+}
+
+function isEraLike(name: string): boolean {
+  return /\bera\b|whip|avggoals|against/.test(name.toLowerCase());
+}
+
+export function formatLeaderStat(name: string, value: number | undefined, displayValue?: string): string {
+  const shown = (displayValue ?? "").trim();
+  if (shown && !isLeaderBoxLine(shown) && value == null) return shown;
+  if (value == null || Number.isNaN(value)) return shown && !isLeaderBoxLine(shown) ? shown : "";
+  if (isRateCategory(name)) {
+    if (isEraLike(name) || /\bwhip\b/.test(name.toLowerCase())) return value.toFixed(2);
+    const body = value.toFixed(3);
+    return value < 1 && value >= 0 ? body.slice(1) : body;
+  }
+  if (Math.abs(value - Math.round(value)) < 1e-6) return String(Math.round(value));
+  if (shown && !isLeaderBoxLine(shown)) return shown;
+  return String(value);
+}
+
+export function leaderNoteFromBox(name: string, displayValue?: string): string | undefined {
+  const shown = (displayValue ?? "").trim();
+  if (!shown) return undefined;
+  const ip = /\b(\d+(?:\.\d+)?)\s*IP\b/i.exec(shown);
+  if (ip && /era|whip|win|save|strike|inning|pitch/i.test(name)) return `${ip[1]} IP`;
+  return undefined;
+}
+
+/** Turn one ESPN leader row into the printed line (category value, optional IP note). */
+export function leaderLineFromEspn(
+  categoryName: string,
+  row: { displayValue?: string; value?: number },
+): { line: string; note?: string } {
+  const line = formatLeaderStat(categoryName, row.value, row.displayValue);
+  const note = leaderNoteFromBox(categoryName, row.displayValue);
+  return note ? { line, note } : { line };
+}
+
+function seasonTypeOf(data: LeadersPayload | null | undefined): number | undefined {
+  const raw = data?.requestedSeason?.type?.type ?? data?.currentSeason?.type?.type;
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+}
+
 /** League leaders (passing yards, home runs, points). ESPN's list, top of each category. */
-export async function fetchLeagueLeaders(path: string, categories = 8, rows = 5): Promise<LeagueLeaderGroup[]> {
-  const data = await getJson<{ leaders?: { categories?: LeaderCat[] } }>(
-    `https://site.web.api.espn.com/apis/site/v3/sports/${path}/leaders?limit=${rows}`,
-  );
+export async function fetchLeagueLeaders(path: string, categories?: number, rows?: number): Promise<LeagueLeaderGroup[]> {
+  const size = leaderDeskSize(path);
+  const catCap = categories ?? size.categories;
+  const rowCap = rows ?? size.rows;
+  const data = (await newspaperEspnGet(`${path}/leaders?limit=${rowCap}`, { site: 3 }).catch(() => null)) as
+    | LeadersPayload
+    | null;
+  const seasonType = seasonTypeOf(data);
   const cats = (data?.leaders?.categories ?? []).filter(
     (cat) => cat.displayName && cat.leaders?.length && !LEADER_SKIP.test(`${cat.name ?? ""} ${cat.displayName}`),
   );
@@ -1173,22 +1433,29 @@ export async function fetchLeagueLeaders(path: string, categories = 8, rows = 5)
     return (ia < 0 ? 40 : ia) - (ib < 0 ? 40 : ib);
   });
   return cats
-    .slice(0, categories)
-    .map((cat) => ({
-      category: cat.displayName!,
-      rows: (cat.leaders ?? []).slice(0, rows).flatMap((row) => {
-        const name = row.athlete?.shortName || row.athlete?.displayName || row.athlete?.fullName || "";
-        if (!name) return [];
-        return [
-          {
-            name,
-            team: row.team?.abbreviation || row.team?.shortDisplayName || "",
-            line: row.displayValue ?? "",
-            headshot: row.athlete?.headshot?.href ?? null,
-          },
-        ];
-      }),
-    }))
+    .slice(0, catCap)
+    .map((cat) => {
+      const label = `${cat.name ?? ""} ${cat.displayName ?? ""} ${cat.abbreviation ?? ""}`;
+      return {
+        category: cat.displayName!,
+        seasonType,
+        rows: (cat.leaders ?? []).slice(0, rowCap).flatMap((row) => {
+          const name = row.athlete?.shortName || row.athlete?.displayName || row.athlete?.fullName || "";
+          if (!name) return [];
+          const printed = leaderLineFromEspn(label, row);
+          if (!printed.line) return [];
+          return [
+            {
+              name,
+              team: row.team?.abbreviation || row.team?.shortDisplayName || "",
+              line: printed.line,
+              ...(printed.note ? { note: printed.note } : {}),
+              headshot: row.athlete?.headshot?.href ?? null,
+            },
+          ];
+        }),
+      };
+    })
     .filter((group) => group.rows.length > 0);
 }
 
@@ -1275,7 +1542,7 @@ function uniqueGames(games: BoxGame[]): BoxGame[] {
 const byStart = (a: BoxGame, b: BoxGame) => String(a.startIso ?? "").localeCompare(String(b.startIso ?? ""));
 const byDayThenStart = (a: BoxGame, b: BoxGame) => a.day.localeCompare(b.day) || byStart(a, b);
 
-function isCfbScheduleRow(game: BoxGame): boolean {
+export function isCfbDeskGame(game: BoxGame): boolean {
   return isNewspaperCfbDeskGame({
     awayId: game.away.id,
     homeId: game.home.id,
@@ -1290,17 +1557,28 @@ function isCfbScheduleRow(game: BoxGame): boolean {
  * finals yet, last week.
  */
 export async function fetchSectionBoard(path: string, edition: string): Promise<SectionBoard> {
-  const newsDay = editionNewsDay(edition);
-  const tomorrow = shiftDay(edition, 1);
+  const day = editionYmd(edition);
+  const newsDay = editionNewsDay(day);
+  const tomorrow = shiftDay(day, 1);
   if (path === "baseball/mlb") {
     const [last, today, next, after] = await Promise.all([
       fetchMlbBoxDay(newsDay),
-      fetchMlbBoxDay(edition),
+      fetchMlbBoxDay(day),
       fetchMlbBoxDay(tomorrow),
-      fetchMlbBoxDay(shiftDay(edition, 2)),
+      fetchMlbBoxDay(shiftDay(day, 2)),
     ]);
+    let results = [...last.filter((g) => g.final), ...today.filter((g) => g.final || g.live)].sort(byStart);
+    // Off days (a playoff Sunday) still need a scores rail — walk back two nights.
+    if (!results.length) {
+      const older = await Promise.all([shiftDay(newsDay, -1), shiftDay(newsDay, -2)].map(fetchMlbBoxDay));
+      results = older.flat().filter((g) => g.final).sort(byStart);
+    }
+    if (!results.length) {
+      const espn = await espnBoard(path, `&dates=${newsDay.replace(/-/g, "")}`);
+      results = boardGames(path, espn, newsDay).filter((g) => g.final || g.live).sort(byStart);
+    }
     return {
-      results: [...last.filter((g) => g.final), ...today.filter((g) => g.final || g.live)].sort(byStart),
+      results,
       slate: uniqueGames([...today.filter((g) => !g.final), ...next, ...after]).sort(byDayThenStart),
     };
   }
@@ -1309,25 +1587,35 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
     const current = await espnBoard(path, "");
     const week = current?.week?.number;
     const seasonType = current?.season?.type ?? 2;
-    const games = boardGames(path, current, edition);
+    const games = boardGames(path, current, day);
     const prev =
       week && week > 1 ? await espnBoard(path, `&week=${week - 1}&seasontype=${seasonType}`) : null;
-    const prior = prev ? boardGames(path, prev, newsDay).filter((g) => g.final) : [];
+    const priorRaw = prev ? boardGames(path, prev, newsDay).filter((g) => g.final) : [];
+    const prior = college ? priorRaw.filter(isCfbDeskGame) : priorRaw;
     let upcoming = games.filter((g) => !g.final);
+    let fetchedNext = false;
     if (college && !upcoming.length && week) {
       const next = await espnBoard(path, `&week=${week + 1}&seasontype=${seasonType}`);
-      upcoming = next ? boardGames(path, next, edition).filter((g) => !g.final) : [];
+      upcoming = next ? boardGames(path, next, day).filter((g) => !g.final) : [];
+      fetchedNext = upcoming.length > 0;
     }
+    const desk = (list: BoxGame[]) =>
+      uniqueGames(college ? list.filter(isCfbDeskGame) : list).sort(byStart);
     const played = games.filter((g) => g.final || g.live);
-    const results = uniqueGames(played.length ? played : college ? prior : played).sort(byStart);
-    const slate = uniqueGames(college ? upcoming.filter(isCfbScheduleRow) : upcoming).sort(byStart);
+    const results = desk(played.length ? played : college ? prior : played);
+    const slate = desk(upcoming);
+    const priorWeekNumber = week && week > 1 ? week - 1 : (prev?.week?.number ?? null);
     return {
       results,
       slate,
-      week: uniqueGames(played.length ? games : [...prior, ...upcoming]).sort(byStart),
+      week: uniqueGames(games).sort(byStart),
       weekLabel: week ? `Week ${week}` : null,
+      weekNumber: week ?? null,
       prior: uniqueGames(prior).sort(byStart),
-      priorLabel: week && week > 1 ? `Week ${week - 1}` : null,
+      priorLabel: priorWeekNumber ? `Week ${priorWeekNumber}` : null,
+      priorWeekNumber,
+      resultsWeekNumber: played.length ? (week ?? null) : priorWeekNumber,
+      slateWeekNumber: fetchedNext && week ? week + 1 : (week ?? null),
     };
   }
   const ymd = (d: string) => d.replace(/-/g, "");
@@ -1335,17 +1623,17 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
     // Clubs play twice a week at most; a single night is usually empty.
     // ESPN's soccer board ignores date ranges, so walk back a day at a time;
     // the undated board already shows the next matchday.
-    const days = Array.from({ length: 14 }, (_, i) => shiftDay(edition, -i));
+    const days = Array.from({ length: 14 }, (_, i) => shiftDay(day, -i));
     const [ahead, ...back] = await Promise.all([
       espnBoard(path, ""),
       ...days.map((d) => espnBoard(path, `&dates=${ymd(d)}`)),
     ]);
     const past = uniqueGames(back.flatMap((board, i) => boardGames(path, board, days[i]!)));
-    const first = boardGames(path, ahead, edition).filter((g) => !g.final && !g.live);
+    const first = boardGames(path, ahead, day).filter((g) => !g.final && !g.live);
     // The undated board stops at the matchday's first date; read the rest of the round.
     const firstDay = first.map((g) => g.startIso ?? "").filter(Boolean).sort()[0];
     const restDays = firstDay
-      ? [1, 2, 3].map((n) => shiftDay(espnDayOf(firstDay, edition), n))
+      ? [1, 2, 3].map((n) => shiftDay(espnDayOf(firstDay, day), n))
       : [];
     const rest = await Promise.all(restDays.map((d) => espnBoard(path, `&dates=${ymd(d)}`)));
     const round = rest.flatMap((board, i) => boardGames(path, board, restDays[i]!));
@@ -1356,10 +1644,10 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
   }
   const [last, today, next] = await Promise.all([
     espnBoard(path, `&dates=${ymd(newsDay)}`),
-    espnBoard(path, `&dates=${ymd(edition)}`),
+    espnBoard(path, `&dates=${ymd(day)}`),
     espnBoard(path, `&dates=${ymd(tomorrow)}`),
   ]);
-  const todays = boardGames(path, today, edition);
+  const todays = boardGames(path, today, day);
   return {
     results: uniqueGames([
       ...boardGames(path, last, newsDay).filter((g) => g.final),

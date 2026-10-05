@@ -9,6 +9,7 @@ import {
   isSecCard,
   isSportFiller,
   orderSportRecaps,
+  orderSportSectionFront,
   sportFillerReason,
   storyFitsSection,
 } from "./newspaper-sport-desk.ts";
@@ -169,5 +170,43 @@ const lions = card({
 });
 assert(!isSecCard(lions), "an NFL club that shares an ESPN id with Arkansas is not SEC");
 assert(isSecCard(miz), "Mizzou stays SEC");
+
+const staleHold = card({
+  id: "wire-nfl-old",
+  headline: "Saturday leftover",
+  holdover: true,
+  scoreLine: "AA 10 · BB 7",
+  when: "2026-10-03T16:00:00Z",
+});
+const lastNight = card({
+  id: "wire-nfl-sun",
+  headline: "Sunday night final",
+  scoreLine: "KC 30 · LV 27",
+  when: "2026-10-04T20:15:00Z",
+  photo: "https://example.com/sun.jpg",
+});
+const editorNews = card({
+  id: "league-news-lead",
+  headline: "League names an MVP favorite",
+  when: "2026-10-05T08:00:00Z",
+  editorFront: 0,
+  photo: "https://example.com/mvp.jpg",
+});
+const frontOrder = orderSportSectionFront(
+  [staleHold, lastNight, editorNews],
+  "football/nfl",
+  "2026-10-05-morning",
+);
+assert(frontOrder[0]?.id === "league-news-lead", "an editor-fronted story still leads the section");
+const wrapLead = orderSportSectionFront(
+  [staleHold, lastNight],
+  "football/nfl",
+  "2026-10-05-morning",
+);
+assert(wrapLead[0]?.id === "wire-nfl-sun", "last night's wrap leads when the editor is quiet");
+assert(
+  !wrapLead.some((c) => c.id === "wire-nfl-old") || wrapLead[0]?.id !== "wire-nfl-old",
+  "a holdover wrap never opens the section when a fresh game is on file",
+);
 
 console.log("newspaper-sport-desk ok");

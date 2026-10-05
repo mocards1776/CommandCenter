@@ -5,11 +5,12 @@
  * story / club-form pages, the Day Ahead, and the RUWT watch page.
  * National News is its own section immediately after A (B when the edition
  * has a filed row). Missouri follows as C, or stays B when National is off.
- * Every sport section always runs at least five pages: league news, scores,
- * standings, schedule, and playoffs or form — plus league leaders whenever
- * the league publishes them — then a few full story pages for the best
- * league copy. Followed-club stories run in Section A only, and league copy
- * reaches Section A only as an editor-fronted major story (`isMajorStory`).
+ * Every sport section opens on a real section front (flag, lead wrap or
+ * news of the day, score banner, secondary art, and a scores rail), then
+ * wraps and news, then the reference desks — standings or the playoff
+ * bracket, leaders, schedule — at the back. Followed-club stories run in
+ * Section A only, and league copy reaches Section A only as an
+ * editor-fronted major story (`isMajorStory`).
  */
 
 import {
@@ -32,6 +33,7 @@ import type { GameWrapCard } from "./newspaper-sports";
 import {
   isSportFiller,
   orderSportRecaps,
+  orderSportSectionFront,
   SPORT_NEWS_CAP,
   storyFitsSection,
 } from "./newspaper-sport-desk.ts";
@@ -175,6 +177,7 @@ export type ClubDesk = {
 };
 
 export type SportFocus =
+  | "front"
   | "news"
   | "recaps"
   | "teams"
@@ -194,6 +197,8 @@ export type SportFrontPage = PageBase & {
   offseason?: boolean;
   /** The next desk in this section, for the page's turn line. */
   turn?: { folio: string; focus: SportFocus } | null;
+  /** Every desk in this section, so a page can point at the schedule without guessing folios. */
+  sectionDesks?: { focus: SportFocus; folio: string }[];
   clubs: ClubDesk[];
   upcoming: DeskFixture[];
   articles: { card: GameWrapCard; folio: string }[];
@@ -1007,6 +1012,28 @@ function favoritePages(
   };
 }
 
+/**
+ * Desk order for one sport section. Story pages (front, wraps, news) first;
+ * standings / bracket / leaders / schedule at the back. Postseason drops
+ * regular-season standings — MLB's bracket replaces that page.
+ */
+export function sportSectionFocuses(opts: {
+  path: string;
+  offseason?: boolean;
+  withLeaders?: boolean;
+  withPlayers?: boolean;
+  postseason?: boolean;
+}): SportFocus[] {
+  const leaders = opts.withLeaders ? (["leaders"] as const) : [];
+  const players = opts.withPlayers ? (["players"] as const) : [];
+  const isMlb = opts.path === "baseball/mlb";
+  if (opts.offseason) return ["front", "opener", "news", "teams", ...leaders, ...players];
+  const reference: SportFocus[] = [];
+  if (!opts.postseason) reference.push("teams");
+  reference.push(isMlb ? "playoffs" : "form", ...leaders, "schedule", ...players);
+  return ["front", "recaps", "news", ...reference];
+}
+
 function sportPages(
   id: SportSectionId,
   clubs: ClubDesk[],
@@ -1015,12 +1042,12 @@ function sportPages(
   withPlayers = false,
   offseason = false,
   withLeaders = false,
+  postseason = false,
 ): {
   pages: (SportFrontPage | SportInsidePage)[];
   sportFolioByStory: Record<string, string>;
 } {
   const upcoming = upcomingFor(clubs);
-  const sportFolioByStory: Record<string, string> = {};
   const unique = dedupeStories(
     stories.filter(
       (card) =>
@@ -1029,20 +1056,18 @@ function sportPages(
         (isGameWrap(card) || !isSportFiller(card)),
     ),
   );
-  const isMlb = id.path === "baseball/mlb";
   const desk = isDeskPress(edition);
-  // News inside pages stay bounded. Game wraps size the section to the night.
   const NEWS_INSIDE_CAP = 6;
-  // Morning leads with stories. Noon and 5 p.m. open on standings, form, and the slate.
-  // League leaders run beside the standings in every edition, whenever the league publishes them.
-  const leaders = withLeaders ? (["leaders"] as const) : [];
-  const players = withPlayers ? (["players"] as const) : [];
-  const focuses: SportFocus[] = offseason
-    ? ["news", "opener", "teams", ...leaders, ...players]
-    : desk
-      ? ["teams", isMlb ? "playoffs" : "form", ...leaders, "schedule", "news", ...players]
-      : ["recaps", "schedule", "news", "teams", ...leaders, isMlb ? "playoffs" : "form", ...players];
-  const deskCount = focuses.length;
+  const focuses = sportSectionFocuses({
+    path: id.path,
+    offseason,
+    withLeaders,
+    withPlayers,
+    postseason,
+  });
+  const isStoryFocus = (f: SportFocus): boolean => f === "front" || f === "recaps" || f === "news" || f === "opener";
+  const storyFocuses = focuses.filter(isStoryFocus);
+  const refFocuses = focuses.filter((f) => !isStoryFocus(f));
   const recapPool = orderSportRecaps(
     unique.filter((card) => isGameWrap(card) || isRecapStory(card)),
     id.path,
@@ -1050,6 +1075,7 @@ function sportPages(
   const newsPool = unique
     .filter((card) => !isGameWrap(card) && !isSportFiller(card, recapPool))
     .slice(0, SPORT_NEWS_CAP);
+  const frontPool = orderSportSectionFront([...recapPool, ...newsPool], id.path, edition);
   const inside: SportInsidePage[] = [];
   const full = desk
     ? []
@@ -1057,59 +1083,99 @@ function sportPages(
         ...recapPool.filter(hasStoryCopy),
         ...newsPool.filter(hasStoryCopy).slice(0, NEWS_INSIDE_CAP),
       ];
-  let n = deskCount + 1;
   for (let i = 0; i < full.length; i += 2) {
     const primary = full[i]!;
     const secondary = full[i + 1];
-    const folio = `${id.code}${n}`;
-    sportFolioByStory[primary.id] = folio;
-    if (secondary) sportFolioByStory[secondary.id] = folio;
     inside.push({
       kind: "sport-inside",
-      folio,
+      folio: "",
       section: id.code,
       sectionTitle: id.title,
-      sectionPage: n,
+      sectionPage: 0,
       sectionCount: 0,
       path: id.path,
       primary,
       secondary,
     });
-    n += 1;
   }
 
-  // A brief with no story page opens in the reader; its folio is its own desk.
-  const articles = unique.map((card) => ({
-    card,
-    folio: sportFolioByStory[card.id] ?? `${id.code}1`,
-  }));
-  const newsArticles = newsPool.map((card) => ({
-    card,
-    folio: sportFolioByStory[card.id] ?? `${id.code}${Math.max(1, focuses.indexOf("news") + 1)}`,
-  }));
-  const recapArticles = recapPool.map((card) => ({
-    card,
-    folio: sportFolioByStory[card.id] ?? `${id.code}1`,
-  }));
+  const raw: (SportFrontPage | SportInsidePage)[] = [
+    ...storyFocuses.map((focus) => ({
+      section: id.code,
+      sectionTitle: id.title,
+      sectionCount: 0,
+      path: id.path,
+      clubs,
+      upcoming,
+      kind: "sport-front" as const,
+      folio: "",
+      sectionPage: 0,
+      focus,
+      offseason,
+      turn: null,
+      articles: [] as { card: GameWrapCard; folio: string }[],
+    })),
+    ...inside,
+    ...refFocuses.map((focus) => ({
+      section: id.code,
+      sectionTitle: id.title,
+      sectionCount: 0,
+      path: id.path,
+      clubs,
+      upcoming,
+      kind: "sport-front" as const,
+      folio: "",
+      sectionPage: 0,
+      focus,
+      offseason,
+      turn: null,
+      articles: [] as { card: GameWrapCard; folio: string }[],
+    })),
+  ];
 
-  const desks: SportFrontPage[] = focuses.map((focus, i) => ({
-    section: id.code,
-    sectionTitle: id.title,
-    sectionCount: 0,
-    path: id.path,
-    clubs,
-    upcoming,
-    kind: "sport-front",
+  const numbered = raw.map((page, i) => ({
+    ...page,
     folio: `${id.code}${i + 1}`,
     sectionPage: i + 1,
-    focus,
-    offseason,
-    turn: focuses[i + 1] ? { folio: `${id.code}${i + 2}`, focus: focuses[i + 1]! } : null,
-    articles: focus === "news" ? newsArticles : focus === "recaps" ? recapArticles : articles,
   }));
+  const sportFolioByStory: Record<string, string> = {};
+  for (const page of numbered) {
+    if (page.kind !== "sport-inside") continue;
+    sportFolioByStory[page.primary.id] = page.folio;
+    if (page.secondary) sportFolioByStory[page.secondary.id] = page.folio;
+  }
+  const sectionDesks = numbered.flatMap((page) =>
+    page.kind === "sport-front" ? [{ focus: page.focus, folio: page.folio }] : [],
+  );
+  const fallbackDesk = (focus: SportFocus) =>
+    sectionDesks.find((d) => d.focus === focus)?.folio ?? `${id.code}1`;
+  const articlesFor = (focus: SportFocus, cards: GameWrapCard[]) =>
+    cards.map((card) => ({
+      card,
+      folio: sportFolioByStory[card.id] ?? fallbackDesk(focus),
+    }));
+
+  const pages = numbered.map((page, i) => {
+    if (page.kind !== "sport-front") return page;
+    const nextFront = numbered.slice(i + 1).find((p) => p.kind === "sport-front");
+    const pool =
+      page.focus === "front"
+        ? frontPool
+        : page.focus === "news"
+          ? newsPool
+          : page.focus === "recaps"
+            ? recapPool
+            : unique;
+    return {
+      ...page,
+      sectionDesks,
+      turn: nextFront && nextFront.kind === "sport-front" ? { folio: nextFront.folio, focus: nextFront.focus } : null,
+      articles: articlesFor(page.focus, pool),
+    };
+  });
 
   return {
-    pages: stampCounts([...desks, ...inside]),
+    pages: stampCounts(pages),
     sportFolioByStory,
   };
 }
@@ -1198,6 +1264,8 @@ export function buildEdition(opts: {
   offseason?: string[];
   /** League paths with a league-leaders list on file — each gets a leaders desk. */
   leaderPaths?: string[];
+  /** Leagues in their postseason — regular-season standings drop; MLB's bracket stays. */
+  postseasonPaths?: string[];
 }): Edition {
   const fresh = rankStories(
     deskCopy(opts.stories, opts.edition).filter((card) => !card.editorSpiked),
@@ -1241,6 +1309,7 @@ export function buildEdition(opts: {
       opts.playerPaths?.includes(id.path) ?? false,
       opts.offseason?.includes(id.path) ?? false,
       opts.leaderPaths?.includes(id.path) ?? false,
+      opts.postseasonPaths?.includes(id.path) ?? false,
     ),
   }));
   const sportFolioByStory: Record<string, string> = {};

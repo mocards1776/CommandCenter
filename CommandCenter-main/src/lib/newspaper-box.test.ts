@@ -8,7 +8,10 @@ import {
   dedupeBoxGames,
   dropBogusSameSlot,
   formatFixtureWhen,
+  formatKickoffLine,
+  gameClock,
   gameDay,
+  looksLikeEspnZoneClock,
   standingFromGroups,
   type BoxGame,
   type BoxSide,
@@ -187,6 +190,35 @@ assert(
 assert(
   formatFixtureWhen("2026-10-10T14:00:00Z").startsWith("Sat Oct 10 ·"),
   `fixture clock is day + time, got ${formatFixtureWhen("2026-10-10T14:00:00Z")}`,
+);
+
+assert(formatKickoffLine("2026-10-10T16:00:00Z") === "Sat 11:00 AM", "CFB kickoff is weekday + CT, with minutes");
+assert(looksLikeEspnZoneClock("10/10 - 12:00 PM EDT"), "ESPN date+EDT stamp is rejected");
+assert(looksLikeEspnZoneClock("12:00 PM EDT"), "bare EDT stamp is rejected");
+assert(!looksLikeEspnZoneClock("Final"), "Final is not an ESPN zone clock");
+assertEqual(
+  gameClock(
+    game({
+      id: "cfb-kick",
+      path: "football/college-football",
+      startIso: "2026-10-10T16:00:00Z",
+      status: "10/10 - 12:00 PM EDT",
+    }),
+  ),
+  "11:00 AM",
+  "upcoming clock never prints ESPN EDT",
+);
+assertEqual(
+  gameClock(
+    game({
+      id: "cfb-notz",
+      path: "football/college-football",
+      startIso: null,
+      status: "10/10 - 12:00 PM EDT",
+    }),
+  ),
+  "",
+  "missing ISO does not fall back to the ESPN zone stamp",
 );
 
 console.log("newspaper-box ok");
