@@ -2,6 +2,14 @@
 
 ---
 
+## Times national-news deploy hotfix — October 5, 2026
+
+- `newspaper-national` now bundles: nested backticks around `paragraphs` / `summary` in the Grok SYSTEM prompt are escaped so Deno no longer dies on `supabase functions deploy`.
+- Manual `{ "refresh": true }` accepts a trimmed `SUPABASE_SERVICE_ROLE_KEY` **or** a bearer JWT whose verified Auth role is `service_role`. Anon and signed-in readers still cannot force a refile.
+- Mirror copy kept in sync. Redeploy `newspaper-national` after merge. No other functions, sports, Telegram, press, or editor changes.
+
+---
+
 ## Telegram Mini App buttons — October 5, 2026
 
 - Heat (`@AreYouWatchingThis_bot` / `sports-telegram`) and finals (`@FinalsAndStats_bot` / `sports-finals`) now send **Open game** and **RUWT board** as Telegram Mini App `web_app` buttons. Private DMs open Command Center inside Telegram — no “Open link?” / Safari confirm.
