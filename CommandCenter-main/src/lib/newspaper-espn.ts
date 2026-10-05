@@ -9,6 +9,13 @@
 
 const ESPN_API = "https://site.api.espn.com/apis/site/v2/sports";
 const ESPN_WEB = "https://site.web.api.espn.com/apis/site/v2/sports";
+const ESPN_API_V3 = "https://site.api.espn.com/apis/site/v3/sports";
+const ESPN_WEB_V3 = "https://site.web.api.espn.com/apis/site/v3/sports";
+
+export type NewspaperEspnGetOpts = {
+  /** League leaders live on the v3 site API; scoreboards stay on v2. */
+  site?: 2 | 3;
+};
 
 /** Current SEC (ESPN group 8). Kept here so the press bundle does not pull cfb.ts. */
 export const NEWSPAPER_CFB_SEC_IDS = new Set([
@@ -123,16 +130,21 @@ async function espnViaSportsProxy(clean: string): Promise<unknown> {
 }
 
 /** ESPN site API with the same hosts, headers, timeouts, and proxy fallback as espnGet. */
-export async function newspaperEspnGet(path: string): Promise<unknown> {
+export async function newspaperEspnGet(path: string, opts?: NewspaperEspnGetOpts): Promise<unknown> {
   const clean = path.replace(/^\/+/, "");
   const headers = { Accept: "application/json" };
-  const hosts = [ESPN_API, ESPN_WEB];
+  const hosts = opts?.site === 3 ? [ESPN_WEB_V3, ESPN_API_V3, ESPN_API, ESPN_WEB] : [ESPN_API, ESPN_WEB];
   for (const host of hosts) {
     try {
       const { signal, clear } = abortAfter(12_000);
       try {
         const res = await fetch(`${host}/${clean}`, { signal, headers });
-        if (res.ok) return await res.json();
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (data && typeof data === "object" && "code" in (data as object) && !("leaders" in (data as object))) {
+          continue;
+        }
+        return data;
       } finally {
         clear();
       }

@@ -1,4 +1,5 @@
 import type { MlbPlayoffRoundId, MlbPlayoffSeries, MlbPlayoffSide, MlbPlayoffTree } from "@/lib/mlb";
+import { formatSeriesGameLine } from "@/lib/newspaper-playoff-dates";
 import { cn } from "@/lib/utils";
 
 const ROUND_NAMES: Record<MlbPlayoffRoundId, string> = {
@@ -144,15 +145,7 @@ function SeriesLog({ tree }: { tree: MlbPlayoffTree }) {
             <ol>
               {s.games.map((g) => (
                 <li key={g.gamePk} className={cn(g.live && "live")}>
-                  <em>G{g.gameNumber}</em>
-                  {g.final || g.live ? (
-                    <span>
-                      {s.away.abbrev} {g.awayScore ?? 0}, {s.home.abbrev} {g.homeScore ?? 0}
-                      {g.live ? ` · ${g.status}` : ""}
-                    </span>
-                  ) : (
-                    <span>{g.when || g.status}</span>
-                  )}
+                  <span>{formatSeriesGameLine(g, s.away.abbrev, s.home.abbrev)}</span>
                 </li>
               ))}
             </ol>

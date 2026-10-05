@@ -1121,11 +1121,19 @@ export function applyTableStandings<T extends { key: string; standing: string | 
 export type LeagueLeaderRow = {
   name: string;
   team: string;
+  /** The category value — HR "4", AVG ".500", ERA "0.00" — never a game box line. */
   line: string;
+  /** Games or innings, when the feed gives them. */
+  note?: string;
   headshot: string | null;
 };
 
-export type LeagueLeaderGroup = { category: string; rows: LeagueLeaderRow[] };
+export type LeagueLeaderGroup = {
+  category: string;
+  /** ESPN season type: 2 regular, 3 postseason. */
+  seasonType?: number;
+  rows: LeagueLeaderRow[];
+};
 
 const LEADER_SKIP = /kickoff|punt|fieldgoal|extrapoint|returnyards|netavg|longfield/i;
 const LEADER_FIRST = [
@@ -1152,18 +1160,83 @@ const LEADER_FIRST = [
 type LeaderCat = {
   name?: string;
   displayName?: string;
+  abbreviation?: string;
   leaders?: {
     displayValue?: string;
+    value?: number;
     athlete?: { displayName?: string; shortName?: string; fullName?: string; headshot?: { href?: string } };
     team?: { abbreviation?: string; shortDisplayName?: string };
   }[];
 };
 
+type LeadersPayload = {
+  currentSeason?: { type?: { type?: number; name?: string } };
+  requestedSeason?: { type?: { type?: number; name?: string } };
+  leaders?: { categories?: LeaderCat[] };
+};
+
+/** ESPN's `displayValue` on league leaders is often last night's box line. The category total is `value`. */
+export function isLeaderBoxLine(text: string | null | undefined): boolean {
+  const s = (text ?? "").trim();
+  if (!s) return false;
+  if (/,/.test(s)) return true;
+  if (/\bIP\b/i.test(s)) return true;
+  return /\b\d+-\d+\b/.test(s) && /\b(?:HR|RBI|TB|BB|SO|K|2B|3B|H|R)\b/i.test(s);
+}
+
+function isRateCategory(name: string): boolean {
+  const key = name.toLowerCase();
+  if (/\bera\b|whip|avggoals/.test(key)) return true;
+  return /(?:^|[^a-z])(?:avg|obp|slg|ops|pct|average|percentage)/.test(key);
+}
+
+function isEraLike(name: string): boolean {
+  return /\bera\b|whip|avggoals|against/.test(name.toLowerCase());
+}
+
+export function formatLeaderStat(name: string, value: number | undefined, displayValue?: string): string {
+  const shown = (displayValue ?? "").trim();
+  if (shown && !isLeaderBoxLine(shown) && value == null) return shown;
+  if (value == null || Number.isNaN(value)) return shown && !isLeaderBoxLine(shown) ? shown : "";
+  if (isRateCategory(name)) {
+    if (isEraLike(name) || /\bwhip\b/.test(name.toLowerCase())) return value.toFixed(2);
+    const body = value.toFixed(3);
+    return value < 1 && value >= 0 ? body.slice(1) : body;
+  }
+  if (Math.abs(value - Math.round(value)) < 1e-6) return String(Math.round(value));
+  if (shown && !isLeaderBoxLine(shown)) return shown;
+  return String(value);
+}
+
+export function leaderNoteFromBox(name: string, displayValue?: string): string | undefined {
+  const shown = (displayValue ?? "").trim();
+  if (!shown) return undefined;
+  const ip = /\b(\d+(?:\.\d+)?)\s*IP\b/i.exec(shown);
+  if (ip && /era|whip|win|save|strike|inning|pitch/i.test(name)) return `${ip[1]} IP`;
+  return undefined;
+}
+
+/** Turn one ESPN leader row into the printed line (category value, optional IP note). */
+export function leaderLineFromEspn(
+  categoryName: string,
+  row: { displayValue?: string; value?: number },
+): { line: string; note?: string } {
+  const line = formatLeaderStat(categoryName, row.value, row.displayValue);
+  const note = leaderNoteFromBox(categoryName, row.displayValue);
+  return note ? { line, note } : { line };
+}
+
+function seasonTypeOf(data: LeadersPayload | null | undefined): number | undefined {
+  const raw = data?.requestedSeason?.type?.type ?? data?.currentSeason?.type?.type;
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+}
+
 /** League leaders (passing yards, home runs, points). ESPN's list, top of each category. */
 export async function fetchLeagueLeaders(path: string, categories = 8, rows = 5): Promise<LeagueLeaderGroup[]> {
-  const data = await getJson<{ leaders?: { categories?: LeaderCat[] } }>(
-    `https://site.web.api.espn.com/apis/site/v3/sports/${path}/leaders?limit=${rows}`,
-  );
+  const data = (await newspaperEspnGet(`${path}/leaders?limit=${rows}`, { site: 3 }).catch(() => null)) as
+    | LeadersPayload
+    | null;
+  const seasonType = seasonTypeOf(data);
   const cats = (data?.leaders?.categories ?? []).filter(
     (cat) => cat.displayName && cat.leaders?.length && !LEADER_SKIP.test(`${cat.name ?? ""} ${cat.displayName}`),
   );
@@ -1174,21 +1247,28 @@ export async function fetchLeagueLeaders(path: string, categories = 8, rows = 5)
   });
   return cats
     .slice(0, categories)
-    .map((cat) => ({
-      category: cat.displayName!,
-      rows: (cat.leaders ?? []).slice(0, rows).flatMap((row) => {
-        const name = row.athlete?.shortName || row.athlete?.displayName || row.athlete?.fullName || "";
-        if (!name) return [];
-        return [
-          {
-            name,
-            team: row.team?.abbreviation || row.team?.shortDisplayName || "",
-            line: row.displayValue ?? "",
-            headshot: row.athlete?.headshot?.href ?? null,
-          },
-        ];
-      }),
-    }))
+    .map((cat) => {
+      const label = `${cat.name ?? ""} ${cat.displayName ?? ""} ${cat.abbreviation ?? ""}`;
+      return {
+        category: cat.displayName!,
+        seasonType,
+        rows: (cat.leaders ?? []).slice(0, rows).flatMap((row) => {
+          const name = row.athlete?.shortName || row.athlete?.displayName || row.athlete?.fullName || "";
+          if (!name) return [];
+          const printed = leaderLineFromEspn(label, row);
+          if (!printed.line) return [];
+          return [
+            {
+              name,
+              team: row.team?.abbreviation || row.team?.shortDisplayName || "",
+              line: printed.line,
+              ...(printed.note ? { note: printed.note } : {}),
+              headshot: row.athlete?.headshot?.href ?? null,
+            },
+          ];
+        }),
+      };
+    })
     .filter((group) => group.rows.length > 0);
 }
 

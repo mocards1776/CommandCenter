@@ -57,6 +57,7 @@ import {
   Face,
   MatchupCard,
   ScoreCard,
+  ScoreMast,
   ScoreStrip,
   StandingsTable,
   Decisions,
@@ -536,6 +537,7 @@ function pageLabel(page: EditionPage): string {
   switch (page.kind) {
     case "sport-front":
       return {
+        front: page.sectionTitle,
         news: "News",
         recaps: "Recaps",
         teams: "Standings",
@@ -1966,6 +1968,7 @@ function GameBox({ game, agate = true }: { game: BoxGame; agate?: boolean }) {
 type SportFrontPage = Extract<EditionPage, { kind: "sport-front" }>;
 
 const FOCUS_TITLES: Record<SportFrontPage["focus"], string> = {
+  front: "Section Front",
   news: "News",
   recaps: "Recaps",
   teams: "Standings",
@@ -1978,6 +1981,7 @@ const FOCUS_TITLES: Record<SportFrontPage["focus"], string> = {
 };
 
 const TURN_LABELS: Record<SportFrontPage["focus"], string> = {
+  front: "The section front",
   news: "League news",
   recaps: "Recaps",
   teams: "The standings",
@@ -2141,17 +2145,19 @@ function SportHero({
   page,
   leagueClubs,
   blurb,
+  deskTitle,
 }: {
   page: SportFrontPage;
   leagueClubs: LeagueClub[];
   blurb: string;
+  deskTitle?: string;
 }) {
-  if (page.focus !== "news") {
+  if (page.focus !== "front") {
     return (
       <header className="wsj-sport-band">
         <span className="wsj-sport-code">{page.section}</span>
         <h3>
-          {page.sectionTitle} <em>{FOCUS_TITLES[page.focus]}</em>
+          {page.sectionTitle} <em>{deskTitle ?? FOCUS_TITLES[page.focus]}</em>
         </h3>
         <p>{blurb}</p>
       </header>
@@ -2239,7 +2245,126 @@ function stripFor(path: string, board: SectionBoard | null, edition: string): { 
   return games.length ? [{ title: "Last night’s scores", games }] : [];
 }
 
-/** League news front: last night's board, then the stories with their art. */
+function deskFolio(page: SportFrontPage, focus: SportFrontPage["focus"], fallback: string): string {
+  return page.sectionDesks?.find((d) => d.focus === focus)?.folio ?? fallback;
+}
+
+/** Section front: flag already printed, then the lead, secondaries, and a scores rail. */
+function SportSectionFront({
+  page,
+  board,
+  leagueClubs,
+  edition,
+  onTurn,
+}: {
+  page: SportFrontPage;
+  board: SectionBoard | null;
+  leagueClubs: LeagueClub[];
+  edition: string;
+  onTurn: (folio: string) => void;
+}) {
+  const open = useReader();
+  const strips = stripFor(page.path, board, edition);
+  const football = page.path.startsWith("football/");
+  const finals = football ? [...(board?.results ?? []), ...(board?.prior ?? [])] : board?.results ?? [];
+  const recent = page.path.startsWith("soccer/") || football ? [...finals].reverse() : finals;
+  const gameById = new Map<string, BoxGame>();
+  for (const g of [...recent, ...(board?.slate ?? [])]) {
+    const card = boxStoryCard(g);
+    if (card) gameById.set(card.id, g);
+  }
+  const stories = page.articles.map((a) => a.card).filter((c) => c.headline);
+  const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
+  const lead = stories[0] ?? null;
+  const seconds = stories.filter((c) => c !== lead).slice(0, 4);
+  const more = stories.filter((c) => c !== lead && !seconds.includes(c)).slice(0, 6);
+  const leadGame = lead ? (gameById.get(lead.id) ?? null) : null;
+  const recapsFolio = deskFolio(page, "recaps", `${page.section}2`);
+  const crestFor = (card: GameWrapCard) =>
+    leagueClubs.find((c) => c.short && card.teamName?.toLowerCase().includes(c.short.toLowerCase()))?.logo ?? null;
+  const railGames = strips.flatMap((s) => s.games).slice(0, 12);
+
+  return (
+    <div className="tt-section-front">
+      {lead ? (
+        <div className={cn("tt-front-grid", (seconds.length || railGames.length) && "with-side")}>
+          <div className="tt-front-lead">
+            <Story
+              className="lead"
+              card={lead}
+              text={splitStoryCopy(cardCopy(lead), seconds.length ? 900 : 1200).teaser}
+              size="xl"
+              cols={1}
+              art="top"
+              drop
+              readOn
+              game={leadGame}
+              jump={folios[lead.id] && folios[lead.id] !== page.folio ? folios[lead.id] : undefined}
+              onTurn={onTurn}
+            />
+            {leadGame ? (
+              <div className="tt-front-banner">
+                <ScoreMast game={leadGame} />
+                <Linescore game={leadGame} compact />
+              </div>
+            ) : null}
+          </div>
+          <div className="tt-front-side">
+            {seconds.length ? (
+              <div className="wsj-sport-seconds">
+                {seconds.map((card) => (
+                  <Story
+                    key={card.id}
+                    card={card}
+                    text={recapDek(card, 2)}
+                    size="md"
+                    art="top"
+                    readOn
+                    game={gameById.get(card.id) ?? null}
+                    jump={folios[card.id] && folios[card.id] !== page.folio ? folios[card.id] : undefined}
+                    onTurn={onTurn}
+                  />
+                ))}
+              </div>
+            ) : null}
+            {railGames.length ? (
+              <section className="tt-front-rail" aria-label="Scores">
+                <h3 className="wsj-band-title">
+                  {strips[0]?.title ?? "Scores"}
+                  <button type="button" className="tt-band-link" onClick={() => onTurn(recapsFolio)}>
+                    Recaps, page {recapsFolio} →
+                  </button>
+                </h3>
+                <ScoreStrip
+                  games={railGames}
+                  onOpen={(g) => {
+                    const card = boxStoryCard(g);
+                    if (card) open({ card, game: g });
+                    else onTurn(recapsFolio);
+                  }}
+                />
+              </section>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <p className="wsj-empty">The league wire is quiet. Scores, tables and the slate follow.</p>
+      )}
+      {more.length ? (
+        <BriefGrid
+          cards={more}
+          title="Also in this section"
+          folios={folios}
+          here={page.folio}
+          onTurn={onTurn}
+          crestFor={crestFor}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** League news desk: last night's board, then the stories with their art. */
 function SportNewsDesk({
   page,
   board,
@@ -2301,8 +2426,8 @@ function SportNewsDesk({
           <section className="tt-strip-wrap" key={strip.title}>
             <h3 className="wsj-band-title">
               {strip.title}
-              <button type="button" className="tt-band-link" onClick={() => onTurn(`${page.section}2`)}>
-                Box scores, page {page.section}2 →
+              <button type="button" className="tt-band-link" onClick={() => onTurn(deskFolio(page, "recaps", `${page.section}2`))}>
+                Box scores, page {deskFolio(page, "recaps", `${page.section}2`)} →
               </button>
             </h3>
             <ScoreStrip
@@ -2310,7 +2435,7 @@ function SportNewsDesk({
               onOpen={(g) => {
                 const card = boxStoryCard(g);
                 if (card) open({ card, game: g });
-                else onTurn(`${page.section}2`);
+                else onTurn(deskFolio(page, "recaps", `${page.section}2`));
               }}
             />
           </section>
@@ -2572,7 +2697,11 @@ function ScoresDesk({
   const games = current.length ? current : prior;
   const behind = current.length ? prior : [];
   if (!games.length && !wrapCards.length) {
-    return <p className="wsj-empty">No finals on the board — the schedule is on page {page.section}4.</p>;
+    return (
+      <p className="wsj-empty">
+        No finals on the board — the schedule is on page {deskFolio(page, "schedule", `${page.section}4`)}.
+      </p>
+    );
   }
   if (!games.length) {
     return (
@@ -2906,7 +3035,7 @@ function StandingsDesk({
   edition: string;
   onTurn: (folio: string) => void;
 }) {
-  const scheduleFolio = `${page.section}${isDeskPress(edition) ? 3 : 4}`;
+  const scheduleFolio = deskFolio(page, "schedule", `${page.section}${isDeskPress(edition) ? 3 : 4}`);
   const upcoming = (board?.slate ?? []).filter((g) => !g.final).slice(0, 16);
   const schedule = upcoming.length ? (
     <section className="tt-strip-wrap tt-stand-next">
@@ -2958,39 +3087,31 @@ function offseasonTables(standings: StandGroup[], page: SportFrontPage, leagueCl
 /** Passing yards, home runs, points — the league list, not one club's leaders. Rule-filed from ESPN. */
 function LeadersDesk({ groups }: { groups: LeagueLeaderGroup[] }) {
   if (!groups.length) return <p className="wsj-empty">The league has not posted its leaders.</p>;
+  const post = groups.some((g) => g.seasonType === 3);
   return (
-    <section className="tt-lleaders tt-lleaders-desk" aria-label="League leaders">
+    <section className="tt-lleaders tt-lleaders-desk" aria-label={post ? "Postseason leaders" : "League leaders"}>
       <div className="tt-lleaders-grid">
-        {groups.map((group) => {
-          const [top, ...rest] = group.rows;
-          return (
-            <div key={group.category} className="tt-lleaders-cat">
-              <h4>{group.category}</h4>
-              {top ? (
-                <div className="tt-lleaders-top">
-                  {top.headshot ? <img src={top.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
-                  <span>
-                    <strong>{top.name}</strong>
-                    <em>{top.team}</em>
+        {groups.map((group) => (
+          <div key={group.category} className="tt-lleaders-cat">
+            <h4>{group.category}</h4>
+            <ol>
+              {group.rows.map((row, i) => (
+                <li key={`${group.category}-${row.name}-${i}`}>
+                  <i>{i + 1}</i>
+                  {row.headshot ? <img src={row.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
+                  <span className="tt-lleaders-who">
+                    <strong>{row.name}</strong>
+                    <em>{row.team}</em>
                   </span>
-                  <b>{top.line}</b>
-                </div>
-              ) : null}
-              <ol start={2}>
-                {rest.map((row, i) => (
-                  <li key={`${group.category}-${row.name}`}>
-                    <i>{i + 2}</i>
-                    <span>
-                      <strong>{row.name}</strong>
-                      <em>{row.team}</em>
-                    </span>
+                  <span className="tt-lleaders-val">
                     <b>{row.line}</b>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          );
-        })}
+                    {row.note ? <em>{row.note}</em> : null}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -3037,7 +3158,13 @@ function SportFront({
           label: turnFocus === "teams" && page.offseason ? "Last season’s final standings" : TURN_LABELS[turnFocus],
         }
       : null;
+  const postLeaders = leaders.some((g) => g.seasonType === 3);
   const blurb = {
+    front: page.articles.length
+      ? `${page.articles.length} ${page.articles.length === 1 ? "story" : "stories"} · ${results || upcoming ? `${results || upcoming} on the board` : "the night’s desk"}`
+      : results
+        ? `${results} ${results === 1 ? "final" : "finals"} · the night’s board`
+        : "The section front",
     news: `${page.articles.length + results} stories and finals · ${leagueClubs.length || page.clubs.length} clubs`,
     recaps: page.articles.length
       ? `${page.articles.length} ${page.articles.length === 1 ? "wrap" : "wraps"} · every final in the window`
@@ -3045,7 +3172,11 @@ function SportFront({
         ? `${results} ${results === 1 ? "final" : "finals"} · lines, decisions and the agate`
         : "Box scores",
     teams: standings.length ? `${standings.length} ${standings.length === 1 ? "table" : "tables"} · your clubs marked` : "League tables",
-    leaders: leaders.length ? `${leaders.length} categories · the top five in each` : "League leaders",
+    leaders: leaders.length
+      ? `${leaders.length} categories · the top five in each${postLeaders ? " · postseason" : ""}`
+      : postLeaders
+        ? "Postseason leaders"
+        : "League leaders",
     schedule: upcoming ? `${upcoming} games ahead · probables, TV and venues` : "League calendar",
     playoffs: playoffs ? `${playoffs.season} postseason bracket` : "Postseason bracket",
     form: `${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"} · numbers, leaders, the table`,
@@ -3062,10 +3193,17 @@ function SportFront({
 
   return (
     <div className={cn("wsj-sport", `focus-${page.focus}`, page.offseason && "offseason")}>
-      <SportHero page={page} leagueClubs={leagueClubs} blurb={offBlurb} />
+      <SportHero
+        page={page}
+        leagueClubs={leagueClubs}
+        blurb={offBlurb}
+        deskTitle={page.focus === "leaders" && postLeaders ? "Postseason Leaders" : undefined}
+      />
       <div className="wsj-sport-solo">
         {page.focus === "news" && page.offseason ? <OpenerBand page={page} /> : null}
-        {page.focus === "news" ? (
+        {page.focus === "front" ? (
+          <SportSectionFront page={page} board={board} leagueClubs={leagueClubs} edition={edition} onTurn={onTurn} />
+        ) : page.focus === "news" ? (
           <SportNewsDesk page={page} board={board} leagueClubs={leagueClubs} edition={edition} onTurn={onTurn} />
         ) : page.focus === "opener" ? (
           <OpenerDesk page={page} onTurn={onTurn} />
@@ -4696,6 +4834,17 @@ function NewspaperDesk() {
     () => Object.entries(leadersQ.data ?? {}).flatMap(([path, groups]) => (groups.length ? [path] : [])),
     [leadersQ.data],
   );
+  const postseasonPaths = useMemo(() => {
+    const paths = new Set<string>();
+    if (mlbPlayoffsQ.data?.active) paths.add("baseball/mlb");
+    for (const game of wireQ.data?.games ?? []) {
+      if (game.postseason && game.path) paths.add(game.path);
+    }
+    for (const [path, groups] of Object.entries(leadersQ.data ?? {})) {
+      if (groups.some((g) => g.seasonType === 3)) paths.add(path);
+    }
+    return [...paths];
+  }, [mlbPlayoffsQ.data, wireQ.data, leadersQ.data]);
 
   /** Pairs a club story with the game it reports, so the reader can set the box. */
   const findGame = useCallback(
@@ -5178,8 +5327,9 @@ function NewspaperDesk() {
         national: nationalDesk,
         offseason,
         leaderPaths,
+        postseasonPaths,
       }),
-    [stories, clubs, pressId, playerPaths, missouriQ.data, nationalDesk, offseason, leaderPaths],
+    [stories, clubs, pressId, playerPaths, missouriQ.data, nationalDesk, offseason, leaderPaths, postseasonPaths],
   );
   // No schedule row for the date (or not read yet): no page, never an older day's.
   const daySchedule =

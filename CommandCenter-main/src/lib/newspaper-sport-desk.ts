@@ -3,7 +3,7 @@
  * per game, order the night, and attach a feature as a related item.
  */
 
-import { favoriteDeskWeight, isGameWrapStory } from "./newspaper.ts";
+import { favoriteDeskWeight, gameWrapCovers, isGameWrapStory } from "./newspaper.ts";
 import { isNewspaperSecGame } from "./newspaper-espn.ts";
 import { wrapBriefSentences } from "./newspaper-box-wrap.ts";
 import { storySource } from "./newspaper-source.ts";
@@ -187,6 +187,47 @@ export function isSecCard(card: GameWrapCard): boolean {
   if (card.sec) return true;
   if (card.favoriteKey === "cfb-mizzou") return true;
   return false;
+}
+
+function isFreshSectionLead(card: GameWrapCard, path: string, edition: string): boolean {
+  if (card.holdover) return false;
+  if (isGameWrapCard(card) || (card.scoreLine && /\d/.test(card.scoreLine))) {
+    return gameWrapCovers(card.when, edition, path);
+  }
+  return true;
+}
+
+/**
+ * Section-front order: today's / last night's wraps and news, never a stale
+ * holdover. An editor-fronted story still leads when it is in the window.
+ */
+export function orderSportSectionFront(
+  cards: GameWrapCard[],
+  path: string,
+  edition: string,
+): GameWrapCard[] {
+  const seen = new Set<string>();
+  const unique = cards.filter((card) => {
+    if (seen.has(card.id)) return false;
+    seen.add(card.id);
+    return true;
+  });
+  const fresh = unique.filter((card) => isFreshSectionLead(card, path, edition));
+  const pool = fresh.length ? fresh : unique;
+  const editorLead = pool.find((card) => card.editorFront === 0);
+  const wraps = orderSportRecaps(
+    pool.filter((card) => isGameWrapCard(card) || Boolean(card.scoreLine && /\d/.test(card.scoreLine))),
+    path,
+  );
+  const news = pool
+    .filter((card) => !isGameWrapCard(card) && !(card.scoreLine && /\d/.test(card.scoreLine)))
+    .sort((a, b) => (a.editorRank ?? 99) - (b.editorRank ?? 99) || String(b.when ?? "").localeCompare(String(a.when ?? "")));
+  const lead = editorLead ?? wraps[0] ?? news[0] ?? pool[0];
+  if (!lead) return [];
+  const rest = pool.filter((card) => card.id !== lead.id);
+  const withPhoto = rest.filter((card) => card.photo);
+  const without = rest.filter((card) => !card.photo);
+  return [lead, ...withPhoto, ...without];
 }
 
 export function orderSportRecaps(cards: GameWrapCard[], path: string): GameWrapCard[] {

@@ -7653,6 +7653,7 @@ li.counting .tt-count.card {
 .newspaper-root .tt-score-grid.agate { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-stand-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-stand-grid.single { grid-template-columns: 1fr; }
+.newspaper-root .tt-front-grid.with-side { grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr); }
 .newspaper-root .wsj-sport-lead-grid.with-side { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
 .newspaper-root .wsj-sport-lead-grid.with-side > .wsj-story.lead {
   padding-right: var(--w-gutter);
@@ -7884,40 +7885,92 @@ li.counting .tt-count.card {
   }
 }
 
-/* League leaders desk: a full sport-section page, the leader of each category set big. */
+/* League leaders desk: a full sport-section page, one fixed row grid so names never collide. */
 .tt-lleaders-desk { margin-top: 0; }
 .tt-lleaders-desk .tt-lleaders-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px 16px;
 }
 .tt-lleaders-desk h4 { font-size: 11px; }
-.tt-lleaders-top {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  column-gap: 8px;
+.tt-lleaders-desk li {
+  grid-template-columns: 16px 28px minmax(0, 1fr) auto;
   align-items: center;
-  padding: 4px 0 8px;
-  border-bottom: 1px solid var(--w-rule);
+  column-gap: 8px;
+  min-width: 0;
 }
-.tt-lleaders-top img,
-.tt-lleaders-top .tt-lleaders-ph {
-  grid-row: 1 / span 2;
-  width: 56px;
-  height: 56px;
-}
-.tt-lleaders-top strong { font-size: 14px; }
-.tt-lleaders-top b {
-  grid-column: 2;
-  font-size: 26px;
-  line-height: 1;
-}
-.tt-lleaders-desk li { grid-template-columns: 14px minmax(0, 1fr) auto; }
 .tt-lleaders-desk li i {
   font-style: normal;
   font-family: var(--w-cond);
   font-size: 12px;
   color: var(--w-muted);
+}
+.tt-lleaders-who {
+  min-width: 0;
+}
+.tt-lleaders-who strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tt-lleaders-val {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  line-height: 1;
+}
+.tt-lleaders-val b {
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  font-weight: 600;
+  font-family: var(--w-cond);
+}
+.tt-lleaders-val em {
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+
+.tt-section-front {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+.tt-front-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  min-height: 0;
+}
+.tt-front-grid.with-side {
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr);
+  align-items: start;
+}
+.tt-front-lead {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.tt-front-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tt-front-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.tt-front-rail .tt-strip {
+  display: grid;
+  grid-template-columns: 1fr;
 }
 
 /* The viewing guide (end of Section A): game of the day, then a Central-time timetable. */
