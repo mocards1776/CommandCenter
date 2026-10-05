@@ -62,6 +62,15 @@ const nhl = pickRecapLeaders("hockey/nhl", [
   { label: "Goals", name: "P. Buchnevich", line: "2 G", headshot: null, team: "STL", id: "3", href: null },
 ]);
 assert(nhl[0]?.label === "Points" && nhl[1]?.label === "Goals" && nhl[2]?.label === "Goalie", nhl.map((l) => l.label).join(","));
+const nhlGoalies = pickRecapLeaders(
+  "hockey/nhl",
+  [{ label: "Points", name: "K. Connor", line: "3 PTS", headshot: null, team: "WPG", id: "1", href: null }],
+  [
+    { label: "W", person: { id: "2", name: "S. Skinner", line: "33 SV", headshot: "s.jpg" } },
+    { label: "L", person: { id: "3", name: "J. Gibson", line: "24 SV", headshot: "g.jpg" } },
+  ],
+);
+assert(nhlGoalies.some((l) => l.label === "Goalie" && l.name === "S. Skinner"), "winning goalie is the Goalie chip");
 
 const mlb = pickRecapLeaders(
   "baseball/mlb",

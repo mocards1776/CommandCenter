@@ -213,7 +213,8 @@ export function pickRecapLeaders(
   const family = recapSportFamily(path);
   const fromDecisions = decisions
     .map((d) => fromDecision(d.label, d.person))
-    .filter((l): l is RecapLeader => Boolean(l));
+    .filter((l): l is RecapLeader => Boolean(l))
+    .map((l) => (family === "hockey" && /winner|loser/i.test(l.label) ? { ...l, label: "Goalie" } : l));
   const pool = [...fromDecisions, ...leaders].filter((l) => l.name);
   const seen = new Set<string>();
   const out: RecapLeader[] = [];
