@@ -14,6 +14,7 @@ import {
   type SectionBoard,
   type StandGroup,
 } from "@/lib/newspaper-box";
+import { attachHeismanLogos, type HeismanBoard } from "@/lib/newspaper-heisman";
 import { getCfbTeamInterestRating } from "@/lib/ruwt";
 
 function cfbWatch(game: BoxGame): number {
@@ -83,26 +84,60 @@ function CfbBlock({
   );
 }
 
-function CfbFill({ poll, standings }: { poll: CfbPollRow[]; standings: StandGroup[] }) {
+function CfbFill({
+  poll,
+  standings,
+  heisman,
+}: {
+  poll: CfbPollRow[];
+  standings: StandGroup[];
+  heisman?: HeismanBoard | null;
+}) {
   const sec = secStandingsGroup(standings);
-  if (!poll.length && !sec) return null;
+  const hints = [
+    ...poll.map((row) => ({ name: row.name, abbrev: row.abbrev, logo: row.logo })),
+    ...(sec?.rows ?? []).map((row) => ({ name: row.name, abbrev: row.abbrev, logo: row.logo })),
+  ];
+  const odds = heisman?.rows.length ? attachHeismanLogos(heisman, hints) : null;
+  if (!poll.length && !sec && !odds) return null;
   return (
     <div className="tt-cfb-fill">
-      {poll.length ? (
-        <section className="tt-cfb-poll" aria-label="AP Top 25">
-          <h3 className="wsj-band-title">AP Top 25</h3>
-          <ol>
-            {poll.map((row) => (
-              <li key={`${row.rank}-${row.abbrev}`}>
-                <i>#{row.rank}</i>
-                {row.logo ? <img src={row.logo} alt="" /> : null}
-                <b>{row.abbrev}</b>
-                <em>{row.record || ""}</em>
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
+      <div className="tt-cfb-fill-left">
+        {poll.length ? (
+          <section className="tt-cfb-poll" aria-label="AP Top 25">
+            <h3 className="wsj-band-title">AP Top 25</h3>
+            <ol>
+              {poll.map((row) => (
+                <li key={`${row.rank}-${row.abbrev}`}>
+                  <i>#{row.rank}</i>
+                  {row.logo ? <img src={row.logo} alt="" /> : null}
+                  <b>{row.abbrev}</b>
+                  <em>{row.record || ""}</em>
+                </li>
+              ))}
+            </ol>
+          </section>
+        ) : null}
+        {odds ? (
+          <section className="tt-cfb-heisman" aria-label="Heisman Trophy odds">
+            <h3 className="wsj-band-title">Heisman Trophy</h3>
+            <ol>
+              {odds.rows.map((row, i) => (
+                <li key={row.ticker}>
+                  <i>{i + 1}</i>
+                  {row.logo ? <img src={row.logo} alt="" /> : <span className="tt-cfb-heisman-ph" />}
+                  <span className="tt-cfb-heisman-who">
+                    <b>{row.name}</b>
+                    <em>{row.school}</em>
+                  </span>
+                  <strong>{row.pct}%</strong>
+                </li>
+              ))}
+            </ol>
+            <p className="tt-cfb-heisman-credit">{odds.asOf}</p>
+          </section>
+        ) : null}
+      </div>
       {sec ? (
         <section className="tt-cfb-sec" aria-label="SEC standings">
           <StandingsTable group={sec} mine={() => false} />
@@ -118,16 +153,18 @@ export function CfbScheduleDesk({
   edition,
   standings = [],
   poll = [],
+  heisman = null,
 }: {
   board?: SectionBoard | null;
   edition?: string;
   standings?: StandGroup[];
   poll?: CfbPollRow[];
+  heisman?: HeismanBoard | null;
 }) {
   const rawResults = board?.results.length ? board.results : (board?.prior ?? []);
   const results = rawResults.filter(isCfbDeskGame);
   const slate = (board?.slate ?? []).filter((g) => !g.final && !g.live && isCfbDeskGame(g));
-  if (!results.length && !slate.length && !poll.length && !secStandingsGroup(standings)) {
+  if (!results.length && !slate.length && !poll.length && !secStandingsGroup(standings) && !heisman?.rows.length) {
     return <p className="wsj-empty">The college slate is quiet.</p>;
   }
   return (
@@ -146,7 +183,7 @@ export function CfbScheduleDesk({
           title={footballWeekTitle("schedule", board?.slateWeekNumber ?? board?.weekNumber, slate)}
         />
       ) : null}
-      <CfbFill poll={poll} standings={standings} />
+      <CfbFill poll={poll} standings={standings} heisman={heisman} />
     </div>
   );
 }

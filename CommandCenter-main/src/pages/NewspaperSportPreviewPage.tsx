@@ -14,6 +14,7 @@ import {
   type LeagueLeaderGroup,
   type SectionBoard,
 } from "@/lib/newspaper-box";
+import { fetchHeismanOdds } from "@/lib/newspaper-heisman";
 import { newspaperEspnGet } from "@/lib/newspaper-espn";
 import { editionNewsDay, pressEdition } from "@/lib/newspaper";
 
@@ -55,6 +56,12 @@ export default function NewspaperSportPreviewPage() {
     staleTime: 30 * 60_000,
     enabled: page === "cfb-schedule",
   });
+  const cfbHeisman = useQuery({
+    queryKey: ["tt-sport-preview", "cfb-heisman"],
+    queryFn: fetchHeismanOdds,
+    staleTime: 5 * 60_000,
+    enabled: page === "cfb-schedule",
+  });
   const nflLeaders = useQuery({
     queryKey: ["tt-sport-preview", "nfl-leaders"],
     queryFn: () => fetchLeagueLeaders("football/nfl"),
@@ -92,7 +99,7 @@ export default function NewspaperSportPreviewPage() {
       : page === "nfl-front"
         ? nflBoard.isFetched
         : page === "cfb-schedule"
-          ? cfbBoard.isFetched && cfbStandings.isFetched && cfbPoll.isFetched
+          ? cfbBoard.isFetched && cfbStandings.isFetched && cfbPoll.isFetched && cfbHeisman.isFetched
           : page === "mlb-leaders"
             ? mlbLeaders.isFetched
             : page === "nfl-leaders"
@@ -165,6 +172,7 @@ export default function NewspaperSportPreviewPage() {
                   edition={press.day}
                   standings={cfbStandings.data ?? []}
                   poll={cfbPoll.data ?? []}
+                  heisman={cfbHeisman.data ?? null}
                 />
               </SportChrome>
             ) : page === "nfl-front" ? (
