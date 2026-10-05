@@ -24,7 +24,7 @@ export function ElectionEar({
   return (
     <div className={classes} aria-label={`${state.days} days to Election Day, ${electionDayLabel()}`}>
       <em className="tt-election-num">{state.days}</em>
-      <span className="tt-election-line">Days to Election Day</span>
+      <span className="tt-election-line">{compact ? "Days to Election" : "Days to Election Day"}</span>
       {compact ? null : <i className="tt-election-date">{electionDayLabel()}</i>}
     </div>
   );

@@ -1594,16 +1594,18 @@ mark.rss-hl {
 .wsj-ear.tt-election-ear .tt-election-num {
   display: block;
   margin: 1px 0 0;
+  padding-bottom: 2px;
   font-family: var(--w-head);
   font-style: normal;
   font-size: 38px;
   font-weight: 800;
-  line-height: 0.88;
+  line-height: 1;
   letter-spacing: -0.03em;
   color: var(--w-ink);
 }
 .wsj-ear.tt-election-ear .tt-election-line {
-  margin-top: 3px;
+  display: block;
+  margin-top: 4px;
   font-family: var(--w-label);
   font-style: normal;
   font-size: 8px;
@@ -8248,15 +8250,19 @@ li.counting .tt-count.card {
 }
 .tt-phone-front .tt-election-ear {
   flex: none;
-  max-width: 118px;
-  padding: 5px 7px 5px;
+  max-width: 122px;
+  padding: 5px 7px 6px;
 }
 .tt-phone-front .tt-election-num {
   font-size: 34px;
+  line-height: 1;
+  padding-bottom: 2px;
 }
 .tt-phone-front .tt-election-line {
-  font-size: 8px;
-  letter-spacing: 0.08em;
+  margin-top: 4px;
+  font-size: 7.5px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
 }
 .tt-phone-front .wsj-ear.tt-election-ear .tt-election-date {
   display: none;
