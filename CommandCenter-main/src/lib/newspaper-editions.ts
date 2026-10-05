@@ -1,0 +1,110 @@
+/**
+ * Last-24-hours edition stand: which filed issues the Times may reopen,
+ * how `?edition=` resolves, and the printed picker / folio copy.
+ */
+import { parsePressId, pressInstant, type PressSlot } from "./newspaper.ts";
+
+export const EDITION_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
+export type FiledIssueMeta = {
+  id: string;
+  printedAt: string;
+};
+
+const SLOT_WORD: Record<PressSlot, string> = {
+  morning: "Morning",
+  midday: "Midday",
+  evening: "Evening",
+};
+
+/** Instant the edition was published: `printed_at` when valid, else the press clock. */
+export function issuePublishedAt(issue: { id: string; printedAt?: string | null }, fallback = 0): number {
+  if (issue.printedAt) {
+    const t = Date.parse(issue.printedAt);
+    if (Number.isFinite(t)) return t;
+  }
+  return pressInstant(issue.id)?.getTime() ?? fallback;
+}
+
+export function isIssueWithinLookback(
+  issue: { id: string; printedAt?: string | null },
+  now = Date.now(),
+  windowMs = EDITION_LOOKBACK_MS,
+): boolean {
+  if (!parsePressId(issue.id)) return false;
+  const published = issuePublishedAt(issue, NaN);
+  if (!Number.isFinite(published)) return false;
+  return published <= now && now - published <= windowMs;
+}
+
+/** Ready issues from the last 24 hours, newest first. Older rows are dropped. */
+export function filterRecentFiledIssues(
+  rows: FiledIssueMeta[],
+  now = Date.now(),
+  windowMs = EDITION_LOOKBACK_MS,
+): FiledIssueMeta[] {
+  return rows
+    .filter((row) => isIssueWithinLookback(row, now, windowMs))
+    .sort((a, b) => {
+      const byTime = issuePublishedAt(b) - issuePublishedAt(a);
+      if (byTime !== 0) return byTime;
+      return b.id.localeCompare(a.id);
+    });
+}
+
+/**
+ * `?edition=` is honored only when that id is in the last-24h stand.
+ * Otherwise the newest filed issue wins. An empty stand has no selection.
+ */
+export function resolveEditionParam(
+  requested: string | null | undefined,
+  recent: FiledIssueMeta[],
+): string | null {
+  if (!recent.length) return null;
+  if (requested && recent.some((row) => row.id === requested)) return requested;
+  return recent[0]!.id;
+}
+
+export function editionSlotWord(id: string): string {
+  const parsed = parsePressId(id);
+  return parsed ? SLOT_WORD[parsed.slot] : id;
+}
+
+/** Picker label: "Morning", or "Sun. Evening" when two days are on the stand. */
+export function editionPickerLabel(id: string, recent: FiledIssueMeta[]): string {
+  const parsed = parsePressId(id);
+  if (!parsed) return id;
+  const word = SLOT_WORD[parsed.slot];
+  const days = new Set(recent.map((row) => parsePressId(row.id)?.day).filter(Boolean));
+  if (days.size <= 1) return word;
+  const latestDay = parsePressId(recent[0]?.id ?? "")?.day;
+  if (parsed.day === latestDay) return word;
+  return `${weekdayShort(parsed.day)}. ${word}`;
+}
+
+export function backEditionNote(id: string, printedAt?: string | null): string {
+  const parsed = parsePressId(id);
+  const label = parsed?.label ?? "edition";
+  return `You are reading the ${label}, printed ${formatPrintedClock(printedAt, id)}`;
+}
+
+export function formatPrintedClock(printedAt?: string | null, id?: string): string {
+  const fromIso = printedAt ? new Date(printedAt) : null;
+  const d = fromIso && !Number.isNaN(fromIso.getTime()) ? fromIso : id ? pressInstant(id) : null;
+  if (!d) return "earlier";
+  const raw = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+  return raw.replace(/\s/g, " ").replace(/\s*AM$/i, " a.m.").replace(/\s*PM$/i, " p.m.");
+}
+
+function weekdayShort(day: string): string {
+  const d = new Date(`${day}T12:00:00`);
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    weekday: "short",
+  }).format(d);
+}

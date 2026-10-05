@@ -118,6 +118,26 @@ export function previousPressId(pressId: string): string | null {
   return `${shiftDay(day, -1)}-evening`;
 }
 
+const PRESS_ID = /^(\d{4}-\d{2}-\d{2})-(morning|midday|evening)$/;
+
+/** A filed issue id, or null if the string is not a press run. */
+export function parsePressId(id: string): PressEdition | null {
+  const match = PRESS_ID.exec(id);
+  if (!match) return null;
+  const day = match[1]!;
+  const slot = match[2] as PressSlot;
+  const spec = PRESS_HOURS.find((p) => p.slot === slot);
+  if (!spec) return null;
+  const next = PRESS_HOURS.find((p) => p.hour > spec.hour);
+  return {
+    id,
+    day,
+    slot,
+    label: spec.label,
+    next: next ? (next.hour === 12 ? "noon" : "5 p.m.") : "6 a.m.",
+  };
+}
+
 /** Wall-clock press time in Central, as a real instant. A bare day is the 6 a.m. press. */
 export function pressInstant(pressId: string): Date | null {
   const match = /^(\d{4}-\d{2}-\d{2})(?:-(morning|midday|evening))?$/.exec(pressId);

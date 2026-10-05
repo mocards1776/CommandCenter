@@ -2,6 +2,14 @@
 
 ---
 
+## Thompson Times: back editions + finished open — October 5, 2026
+
+- The masthead now carries a printed edition line (Morning · Midday · Evening) for issues published in the last 24 hours. `?edition=<issue id>` opens one of those; older ids are ignored. A back edition uses that issue’s stored stories and companions (Day Ahead by date, National News by issue, the current Beez row, RUWT watch, weather when filed) and a small “You are reading the … printed …” note.
+- The paper holds on a printed cover until the issue, companions, web fonts, and above-the-fold images are ready (or ~7s), then reveals as one document. Companion and issue fetches have short deadlines so a cold open (empty IndexedDB, hung National News / Day Ahead / Beez) still leaves boot and can reveal A1 for `times-shots`. A cached current issue opens from IndexedDB immediately; a newer edition shows “New edition available — tap to read” instead of reflowing. Last 24h of issues stay in cache.
+- No sports, Telegram, press, or editor files changed. Phone-card routes are untouched; the paper sets `data-times-ready` once A1 is actually composed.
+
+---
+
 ## Times: The Beez page in Section A — October 5, 2026
 
 - Thompson Times prints a new Section A sports page for Josh's adult rec hockey club, the Beez, immediately before the RUWT viewing guide. The Day Ahead and every other folio stay put; the guide remains last in A and later folios renumber.
