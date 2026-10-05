@@ -9,15 +9,19 @@ import { previewReplyMarkup } from "../_shared/telegram-markup.ts";
 import {
   eveningWindowEnd,
   inEveningWindow,
+  lastName,
   PREVIEW_LIMIT,
   printReason,
   previewClaimKey,
   previewCaption,
+  recordsLine,
   selectEveningPreview,
   sortPreviewForDisplay,
+  starterLine,
   type PreviewGame,
 } from "./preview-slate.ts";
 import { PREVIEW_ALERT_HEIGHT, PREVIEW_ALERT_WIDTH, previewCardModel, renderPreviewSvg } from "./preview-svg.ts";
+import { goaliesFromSummary } from "./preview-boards.ts";
 import {
   mlbPostseasonHeat,
   MLB_PLAYOFF_SERIES_HEAT,
@@ -231,6 +235,9 @@ function game(partial: Partial<PreviewGame> & Pick<PreviewGame, "id" | "startIso
     path: "/sports/mlb/game/1",
     why: "Playoff Gm 3",
     network: "FOX",
+    probableAway: null,
+    probableHome: null,
+    oddsLine: null,
     ...partial,
   };
 }
@@ -292,7 +299,71 @@ const caption = previewCaption(slate, "2026-10-05");
 assert.match(caption, /Tonight's top games/);
 assert.doesNotMatch(caption, /\bheat\b/i);
 
-const svg = renderPreviewSvg(previewCardModel(sortPreviewForDisplay(slate), "Monday, October 5 · Central"));
+assert.equal(lastName("Shane Bieber"), "Bieber");
+assert.equal(lastName("Andrei Vasilevskiy"), "Vasilevskiy");
+assert.equal(lastName("Kenley Jansen Jr."), "Jansen");
+assert.equal(lastName(null), null);
+
+const detailed = game({
+  id: "detail",
+  startIso: "2026-10-05T20:08:00-05:00",
+  heat: 80,
+  away: { teamId: "143", name: "Phillies", abbrev: "PHI", logo: null, record: "96-66" },
+  home: { teamId: "119", name: "Dodgers", abbrev: "LAD", logo: null, record: "98-64" },
+  probableAway: "Wheeler",
+  probableHome: "Glasnow",
+  why: "ALDS Game 2",
+});
+assert.equal(recordsLine(detailed), "PHI 96-66  ·  LAD 98-64");
+assert.equal(starterLine(detailed), "Wheeler vs Glasnow");
+assert.equal(
+  starterLine(game({ id: "nfl-line", startIso: "2026-10-05T19:15:00-05:00", heat: 40, sport: "nfl", league: "NFL", oddsLine: "ATL -3.5" })),
+  "ATL -3.5",
+);
+assert.equal(
+  starterLine({
+    sport: "nhl",
+    away: { teamId: "4", name: "Flyers", abbrev: "PHI", logo: null, record: "1-0" },
+    home: { teamId: "27", name: "Lightning", abbrev: "TB", logo: null, record: "1-0" },
+    probableAway: "Ersson",
+    probableHome: "Vasilevskiy",
+    oddsLine: null,
+  }),
+  "Ersson / Vasilevskiy",
+);
+
+assert.deepEqual(
+  goaliesFromSummary({
+    goalies: {
+      away: [{ starter: true, athlete: { displayName: "Samuel Ersson" } }],
+      home: [{ starter: true, athlete: { displayName: "Andrei Vasilevskiy" } }],
+    },
+  }),
+  { away: "Ersson", home: "Vasilevskiy" },
+);
+
+const svg = renderPreviewSvg(
+  previewCardModel(
+    [
+      ...sortPreviewForDisplay(slate),
+      detailed,
+      game({
+        id: "lightning",
+        startIso: "2026-10-05T18:00:00-05:00",
+        heat: 60,
+        sport: "nhl",
+        league: "NHL",
+        away: { teamId: "4", name: "Flyers", abbrev: "PHI", logo: null, record: "1-0-0", logoData: "data:image/png;base64,aaa" },
+        home: { teamId: "27", name: "Lightning", abbrev: "TB", logo: null, record: "1-0-0", logoData: "data:image/png;base64,bbb" },
+        probableAway: "Ersson",
+        probableHome: "Vasilevskiy",
+        why: null,
+        network: "ESPN+",
+      }),
+    ],
+    "Monday, October 5 · Central",
+  ),
+);
 assert.match(svg, /Tonight(&apos;|')s top games/);
 assert.match(svg, /width="1080"/);
 assert.match(svg, /height="1350"/);
@@ -300,6 +371,12 @@ assert.equal(PREVIEW_ALERT_WIDTH, 1080);
 assert.equal(PREVIEW_ALERT_HEIGHT, 1350);
 assert.doesNotMatch(svg, />86</);
 assert.doesNotMatch(svg, /live field/i);
+assert.match(svg, /class="logo-plate"/);
+assert.match(svg, /#f4f0e6/);
+assert.match(svg, /PHI 96-66/);
+assert.match(svg, /Wheeler vs Glasnow/);
+assert.match(svg, /Ersson \/ Vasilevskiy/);
+assert.match(svg, /ALDS Game 2/);
 
 const markup = previewReplyMarkup("https://command-center-flax-gamma.vercel.app");
 assert.ok(markup);

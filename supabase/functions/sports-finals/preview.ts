@@ -6,7 +6,7 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { previewReplyMarkup } from "../_shared/telegram-markup.ts";
 import { fetchLogoDataUri } from "./card.ts";
 import { rasterizeSvg } from "./png.ts";
-import { fetchPreviewBoards, rankPreviewBoards } from "./preview-boards.ts";
+import { fetchPreviewBoards, hydratePreviewStarters, rankPreviewBoards } from "./preview-boards.ts";
 import {
   chicagoYmd,
   PREVIEW_LIMIT,
@@ -32,6 +32,7 @@ export async function buildEveningPreview(now = new Date()): Promise<PreviewBuil
   const chicagoDate = chicagoYmd(now);
   const ranked = rankPreviewBoards(await fetchPreviewBoards(now));
   const games = selectEveningPreview(ranked, now, PREVIEW_LIMIT);
+  await hydratePreviewStarters(games);
   return {
     chicagoDate,
     claimKey: previewClaimKey(chicagoDate),
@@ -115,6 +116,9 @@ export function previewJsonMeta(build: PreviewBuild): Record<string, unknown> {
       clock: g.startIso,
       network: g.network,
       why: g.why,
+      records: `${g.away.record ?? "—"} / ${g.home.record ?? "—"}`,
+      starters: [g.probableAway, g.probableHome].filter(Boolean).join(" / ") || null,
+      odds: g.oddsLine,
       heat: g.heat,
     })),
   };

@@ -43,6 +43,11 @@ export type PreviewGame = {
   path: string;
   why: string | null;
   network: string | null;
+  /** Last names: MLB probable pitchers or NHL starting goalies. */
+  probableAway: string | null;
+  probableHome: string | null;
+  /** Short NFL/CFB spread when the board already has a line. */
+  oddsLine: string | null;
 };
 
 /**
@@ -199,12 +204,48 @@ export function printReason(game: Pick<PreviewGame, "reasons" | "seriesLine" | "
   return null;
 }
 
-export function decoratePreviewGame(game: Omit<PreviewGame, "why" | "network">): PreviewGame {
+/** "Shane Bieber" → "Bieber". Used for pitchers and goalies on the card. */
+export function lastName(full: string | null | undefined): string | null {
+  if (!full) return null;
+  const cleaned = full.replace(/\s+(Jr\.?|Sr\.?|III|II|IV)$/i, "").trim();
+  if (!cleaned) return null;
+  const parts = cleaned.split(/\s+/);
+  const name = parts[parts.length - 1] || cleaned;
+  if (name.length > 14) return `${name.slice(0, 13)}…`;
+  return name;
+}
+
+export function recordsLine(game: Pick<PreviewGame, "away" | "home">): string | null {
+  const a = game.away.record?.trim() || null;
+  const h = game.home.record?.trim() || null;
+  if (!a && !h) return null;
+  if (a && h) return `${game.away.abbrev} ${a}  ·  ${game.home.abbrev} ${h}`;
+  return a ? `${game.away.abbrev} ${a}` : `${game.home.abbrev} ${h}`;
+}
+
+/** Pitchers, goalies, or a short spread — one line for the right column. */
+export function starterLine(game: Pick<PreviewGame, "sport" | "away" | "home" | "probableAway" | "probableHome" | "oddsLine">): string | null {
+  const a = game.probableAway;
+  const h = game.probableHome;
+  if (a && h) return game.sport === "mlb" ? `${a} vs ${h}` : `${a} / ${h}`;
+  if (a) return `${game.away.abbrev}: ${a}`;
+  if (h) return `${game.home.abbrev}: ${h}`;
+  const odds = game.oddsLine?.trim();
+  return odds && odds.length <= 18 ? odds : null;
+}
+
+export function decoratePreviewGame(
+  game: Omit<PreviewGame, "why" | "network" | "probableAway" | "probableHome" | "oddsLine"> &
+    Partial<Pick<PreviewGame, "why" | "network" | "probableAway" | "probableHome" | "oddsLine">>,
+): PreviewGame {
   const networks = printNetworks(game.tv);
   return {
     ...game,
-    why: printReason(game),
-    network: networks[0] ?? null,
+    probableAway: game.probableAway ?? null,
+    probableHome: game.probableHome ?? null,
+    oddsLine: game.oddsLine ?? null,
+    why: game.why ?? printReason(game),
+    network: game.network ?? networks[0] ?? null,
   };
 }
 

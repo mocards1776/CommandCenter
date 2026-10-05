@@ -18,9 +18,11 @@ import {
   type NhlScoreGame,
   type SoccerScoreGame,
 } from "./ruwt-rank.ts";
+import { fetchSummary } from "./card.ts";
 import {
   DEFAULT_PREVIEW_INTEREST,
   decoratePreviewGame,
+  lastName,
   nextChicagoYmd,
   previewGamePath,
   type PreviewGame,
@@ -92,12 +94,19 @@ type RawTeam = {
   logos?: { href?: string }[];
 };
 
+type RawProbable = {
+  displayName?: string;
+  athlete?: { displayName?: string; shortName?: string; lastName?: string };
+  starter?: boolean;
+};
+
 type RawCompetitor = {
   homeAway?: string;
   score?: string | number;
   curatedRank?: { current?: number };
   records?: { type?: string; name?: string; summary?: string }[];
   team?: RawTeam;
+  probables?: RawProbable[];
 };
 
 type RawBroadcast = {
@@ -157,6 +166,9 @@ export type BoardRow = {
   nhl?: NhlScoreGame;
   cfb?: CfbScoreGame;
   soccer?: SoccerScoreGame;
+  goalieAway: string | null;
+  goalieHome: string | null;
+  oddsLine: string | null;
 };
 
 function pollRank(raw: number | undefined): number | null {
@@ -185,6 +197,19 @@ function espnLogo(sport: string, id: string, raw?: RawTeam): string | null {
   if (!id) return null;
   const folder = sport === "cfb" ? "ncaa" : sport;
   return `https://a.espncdn.com/i/teamlogos/${folder}/500/${id}.png`;
+}
+
+function probableFromCompetitor(c: RawCompetitor | undefined): string | null {
+  const row = c?.probables?.[0];
+  return lastName(row?.athlete?.shortName || row?.athlete?.lastName || row?.athlete?.displayName || row?.displayName);
+}
+
+function shortOddsLine(raw: RawOdds[] | undefined): string | null {
+  const row = raw?.[0];
+  if (!row) return null;
+  const details = (row.details ?? "").replace(/\s+/g, " ").trim();
+  if (details && details.length <= 16 && !/^even$/i.test(details)) return details;
+  return null;
 }
 
 function mlbLogo(teamId: number): string | null {
@@ -309,6 +334,9 @@ function mapEspn(
     path: previewGamePath(sport, id),
     away,
     home,
+    goalieAway: sport === "nhl" ? probableFromCompetitor((comp.competitors ?? []).find((c) => c.homeAway === "away")) : null,
+    goalieHome: sport === "nhl" ? probableFromCompetitor((comp.competitors ?? []).find((c) => c.homeAway === "home")) : null,
+    oddsLine: sport === "nfl" || sport === "cfb" ? shortOddsLine(comp.odds) : null,
   };
 
   if (sport === "nfl") {
@@ -483,6 +511,9 @@ async function fetchMlbDay(day: string): Promise<BoardRow[]> {
             record: home.record,
           },
           mlb,
+          goalieAway: null,
+          goalieHome: null,
+          oddsLine: null,
         };
       })
       .filter((row): row is BoardRow => row != null);
@@ -583,6 +614,9 @@ export function rankPreviewBoards(rows: BoardRow[]): PreviewGame[] {
         tv: row.tv,
         seriesLine: row.seriesLine,
         path: row.path,
+        probableAway: lastName(row.mlb?.away.probablePitcher) ?? row.goalieAway,
+        probableHome: lastName(row.mlb?.home.probablePitcher) ?? row.goalieHome,
+        oddsLine: row.oddsLine,
       }),
     );
   };
@@ -610,4 +644,78 @@ export function rankPreviewBoards(rows: BoardRow[]): PreviewGame[] {
     push("soccer", g);
   }
   return out;
+}
+
+function rec(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function arr(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function athleteLastName(row: unknown): string | null {
+  const item = rec(row);
+  const athlete = rec(item.athlete);
+  return lastName(
+    (typeof athlete.shortName === "string" && athlete.shortName) ||
+      (typeof athlete.lastName === "string" && athlete.lastName) ||
+      (typeof athlete.displayName === "string" && athlete.displayName) ||
+      (typeof item.displayName === "string" && item.displayName) ||
+      null,
+  );
+}
+
+function pickStarterName(list: unknown): string | null {
+  const rows = arr(list);
+  const starter = rows.find((row) => rec(row).starter === true) ?? rows[0];
+  return athleteLastName(starter);
+}
+
+export function goaliesFromSummary(raw: unknown): { away: string | null; home: string | null } {
+  const body = rec(raw);
+  const goalies = rec(body.goalies);
+  let away = pickStarterName(goalies.away);
+  let home = pickStarterName(goalies.home);
+  if (!away || !home) {
+    for (const block of arr(body.goalies)) {
+      const row = rec(block);
+      const side = rec(row.team).homeAway;
+      const name = pickStarterName(row.athletes) ?? athleteLastName(row);
+      if (side === "away") away = away ?? name;
+      if (side === "home") home = home ?? name;
+    }
+  }
+  if (!away || !home) {
+    const comps = arr(rec(arr(rec(body.header).competitions)[0]).competitors);
+    for (const c of comps) {
+      const row = rec(c);
+      const name = pickStarterName(row.probables);
+      if (row.homeAway === "away") away = away ?? name;
+      if (row.homeAway === "home") home = home ?? name;
+    }
+  }
+  return { away, home };
+}
+
+function previewEventId(game: PreviewGame): string {
+  const prefix = `${game.sport}-`;
+  return game.id.startsWith(prefix) ? game.id.slice(prefix.length) : game.id;
+}
+
+/** Scoreboard rarely lists NHL starters. Pull them from the summary for the picked slate only. */
+export async function hydratePreviewStarters(games: PreviewGame[]): Promise<void> {
+  await Promise.all(
+    games.map(async (game) => {
+      if (game.sport !== "nhl") return;
+      if (game.probableAway && game.probableHome) return;
+      try {
+        const starters = goaliesFromSummary(await fetchSummary("nhl", previewEventId(game)));
+        game.probableAway = game.probableAway ?? starters.away;
+        game.probableHome = game.probableHome ?? starters.home;
+      } catch {
+        /* omit — records still fill the row */
+      }
+    }),
+  );
 }
