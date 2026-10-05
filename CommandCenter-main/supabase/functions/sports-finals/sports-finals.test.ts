@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { cardFromSummary, finalCaption, formatFinalsTimestamp, highlightFromBox, pickCardLogoHref, pickMlbPerformers, starsFromLanding, statMagnitude } from "./card.ts";
 import { mapMlbWinProbability, mlbInningLabels, mlbPlayRefs, mlbWinProbDomain } from "./mlb-win-probability.ts";
 import { mapThreeStars } from "./nhl-stars.ts";
-import { formatPlayoffSeriesLine, mlbPlayoffFromSummary } from "./series.ts";
+import { formatBestOf, formatPlayoffSeriesLine, mlbPlayoffFromSummary } from "./series.ts";
 import { alertReplyMarkup } from "../_shared/telegram-markup.ts";
 import { oddsFromSummary, parseDetails, spreadOutcome } from "./odds.ts";
 import {
@@ -642,6 +642,9 @@ assert.equal(
   null,
   "regular-season series is not a playoff line",
 );
+assert.equal(formatBestOf(5), "Best of 5");
+assert.equal(formatBestOf(7), "Best of 7");
+assert.equal(formatBestOf(2), null);
 
 const mlbPlayoff = cardFromSummary("mlb", "401908003", {
   header: {
@@ -801,6 +804,9 @@ const mlbPlayoff = cardFromSummary("mlb", "401908003", {
 });
 assert.equal(mlbPlayoff.playoff, true);
 assert.match(mlbPlayoff.seriesLine ?? "", /MIL leads series 2-0 · Game 2 of 5/);
+assert.equal(mlbPlayoff.seriesStanding, "MIL leads series 2-0");
+assert.equal(mlbPlayoff.seriesBestOf, "Best of 5");
+assert.equal(mlbPlayoff.seriesGameLabel, "Game 2 of 5");
 assert.ok(mlbPlayoff.mlbBox?.batting.home.rows.length);
 assert.equal(mlbPlayoffFromSummary("mlb", { header: { season: { type: 3 } }, seasonseries: [{ type: "playoff", summary: "MIL leads series 2-0", totalCompetitions: 5 }] }, {}).playoff, true);
 {
@@ -834,6 +840,29 @@ assert.equal(mlbPlayoffFromSummary("mlb", { header: { season: { type: 3 } }, sea
   assert.equal(mixed.seriesGames[0]?.winnerAbbrev, "MIL");
   assert.equal(mixed.seriesGames[0]?.awayScore, 2);
 }
+{
+  const fromCurrent = mlbPlayoffFromSummary(
+    "mlb",
+    {
+      header: { id: "401908003", season: { type: 3 } },
+      seasonseries: [
+        {
+          type: "playoff",
+          summary: "MIL leads series 2-0",
+          totalCompetitions: 5,
+          events: [
+            { id: "401908002", date: "2026-10-04T00:30:00Z" },
+            { id: "401908003", date: "2026-10-04T20:00:00Z" },
+            { id: "401908004", date: "2026-10-07T01:30:00Z" },
+          ],
+        },
+      ],
+    },
+    { id: "401908003" },
+  );
+  assert.equal(fromCurrent.seriesBestOf, "Best of 5");
+  assert.equal(fromCurrent.seriesGameLabel, "Game 2 of 5");
+}
 mlbPlayoff.standings = tablesFromStandings(
   "mlb",
   {
@@ -862,10 +891,17 @@ assert.doesNotMatch(mlbPlayoffSvg, /Standings|NL Central/);
 assert.match(mlbPlayoffSvg, /Win probability/);
 assert.doesNotMatch(mlbPlayoffSvg, />Q1<|>Q2<|>Q3<|>Q4</);
 assert.match(mlbPlayoffSvg, /Key performers/);
-assert.match(mlbPlayoffSvg, />Series</);
+assert.match(mlbPlayoffSvg, /Best of 5/);
+assert.doesNotMatch(mlbPlayoffSvg, /Game 2 of 5/);
+assert.match(mlbPlayoffSvg, />Series · Best of 5</);
 assert.match(mlbPlayoffSvg, />G1</);
 assert.match(mlbPlayoffSvg, />G3</);
 assert.match(mlbPlayoffSvg, /MIL 3–2|MIL 4–3/);
+{
+  const boxY = Number(/y="(\d+(?:\.\d+)?)"[^>]*>Box score</.exec(mlbPlayoffSvg)?.[1] ?? 0);
+  const seriesY = Number(/y="(\d+(?:\.\d+)?)"[^>]*>Series · Best of 5</.exec(mlbPlayoffSvg)?.[1] ?? 0);
+  assert.ok(boxY > 0 && seriesY > boxY, `series slate should sit under the box (box y=${boxY}, series y=${seriesY})`);
+}
 assert.doesNotMatch(mlbPlayoffSvg, /logoHalo|<ellipse/);
 assert.equal(mlbPlayoff.seriesGames.length, 5);
 assert.equal(mlbPlayoff.seriesGames[1]?.current, true);

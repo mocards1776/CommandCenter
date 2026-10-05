@@ -154,6 +154,12 @@ export type FinalCard = {
   playoff: boolean;
   /** ESPN series copy, e.g. "MIL leads series 2-0 · Game 2 of 5". */
   seriesLine: string | null;
+  /** Standing only, e.g. "MIL leads series 2-0". */
+  seriesStanding: string | null;
+  /** "Best of 5" / "Best of 7" from ESPN totalCompetitions. */
+  seriesBestOf: string | null;
+  /** "Game 2 of 5" when ESPN has a game number. */
+  seriesGameLabel: string | null;
   /** Playoff series games (completed + upcoming) from ESPN seasonseries. */
   seriesGames: SeriesGame[];
   venue: string | null;
@@ -977,6 +983,9 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
     final,
     playoff: playoff.playoff,
     seriesLine: playoff.seriesLine,
+    seriesStanding: playoff.seriesStanding,
+    seriesBestOf: playoff.seriesBestOf,
+    seriesGameLabel: playoff.seriesGameLabel,
     seriesGames: playoff.seriesGames,
     venue,
     headline: headline ? headline.replace(/\s+/g, " ").slice(0, 180) : null,
