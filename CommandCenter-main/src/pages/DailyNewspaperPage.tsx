@@ -105,6 +105,12 @@ import {
   type PlayerNight,
 } from "@/lib/newspaper-players";
 import { listFavoritePlayers } from "@/lib/favorite-players";
+import {
+  asFavoriteCoachDesk,
+  fetchFavoriteCoachDesk,
+  printsFavoriteCoaches,
+  type FavoriteCoachTile,
+} from "@/lib/newspaper-favorite-coaches";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { fileExtracts, gatherStories, sportPathsOf, urlsToExtract } from "@/lib/newspaper-compose";
 import {
@@ -558,6 +564,7 @@ function pageLabel(page: EditionPage): string {
         form: "Club Form",
         players: "Your Players",
         opener: "Countdown",
+        coaches: "Favorite Coaches",
       }[page.focus];
     case "national":
       return page.sectionPage === 1 ? "National News" : "More National News";
@@ -2020,6 +2027,7 @@ const FOCUS_TITLES: Record<SportFrontPage["focus"], string> = {
   form: "Club Form",
   players: "Your Players",
   opener: "Countdown to Opening Night",
+  coaches: "Favorite Coaches",
 };
 
 const TURN_LABELS: Record<SportFrontPage["focus"], string> = {
@@ -2033,6 +2041,7 @@ const TURN_LABELS: Record<SportFrontPage["focus"], string> = {
   form: "Club form",
   players: "Your players — last night’s lines",
   opener: "Countdown to opening night",
+  coaches: "Favorite coaches",
 };
 
 /** Offseason desk: days to each followed club's first game, then what follows it. */
@@ -3136,6 +3145,7 @@ function SportFront({
   active,
   hasPlayers,
   nights,
+  coaches,
   sheets,
   leaders,
   heisman,
@@ -3151,6 +3161,7 @@ function SportFront({
   active: boolean;
   hasPlayers: boolean;
   nights: PlayerNight[];
+  coaches: FavoriteCoachTile[];
   sheets: Record<string, ClubSheet>;
   leaders: LeagueLeaderGroup[];
   heisman?: HeismanBoard | null;
@@ -3192,6 +3203,9 @@ function SportFront({
     form: `${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"} · numbers, leaders, the table`,
     players: `${nights.length} followed · ${played} played last night`,
     opener: `${page.clubs.length} followed ${page.clubs.length === 1 ? "club" : "clubs"} · days to the first game`,
+    coaches: coaches.length
+      ? `${coaches.length} ${coaches.length === 1 ? "coach" : "coaches"} · this week’s desk`
+      : "Favorite coaches",
   }[page.focus];
   const offStandings = page.offseason ? offseasonTables(standings, page, leagueClubs) : standings;
   const offBlurb =
@@ -3236,6 +3250,8 @@ function SportFront({
           <PlayoffDesk tree={playoffs} />
         ) : page.focus === "players" ? (
           <PlayersDesk nights={nights} newsDay={newsDay} />
+        ) : page.focus === "coaches" ? (
+          <CoachesDesk tiles={coaches} />
         ) : page.clubs.length ? (
           <>
             <ClubFormGrid clubs={page.clubs} sheets={sheets} />
@@ -3341,6 +3357,89 @@ function PlayersDesk({ nights, newsDay }: { nights: PlayerNight[]; newsDay: stri
           </div>
         </section>
       ) : null}
+    </div>
+  );
+}
+
+function lastGameLine(tile: FavoriteCoachTile): string | null {
+  const g = tile.lastGame;
+  if (!g) return null;
+  const bits = [
+    g.result,
+    g.score,
+    g.homeAway && g.opponent ? `${g.homeAway} ${g.opponent}` : g.opponent,
+    g.date,
+  ].filter(Boolean);
+  return bits.length ? bits.join(" · ") : null;
+}
+
+function nextGameLine(tile: FavoriteCoachTile): string | null {
+  const g = tile.nextGame;
+  if (!g) return null;
+  const match = g.homeAway && g.opponent ? `${g.homeAway} ${g.opponent}` : g.opponent;
+  const bits = [match, g.kickoff, g.tv, g.line].filter(Boolean);
+  return bits.length ? bits.join(" · ") : null;
+}
+
+/** Weekly desk: one tile per favorite coach. Mizzou runs wide when he is on the list. */
+function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
+  if (!tiles.length) return <p className="wsj-empty">No favorite coaches on file this week.</p>;
+  return (
+    <div className="tt-coaches" style={{ ["--cols" as string]: "2" }}>
+      {tiles.map((tile) => {
+        const face = tile.headshot || tile.teamLogo;
+        const last = lastGameLine(tile);
+        const next = nextGameLine(tile);
+        const stat =
+          tile.pointsForAvg || tile.pointsAgainstAvg
+            ? [tile.pointsForAvg ? `${tile.pointsForAvg} PF` : null, tile.pointsAgainstAvg ? `${tile.pointsAgainstAvg} PA` : null]
+                .filter(Boolean)
+                .join(" · ")
+            : null;
+        return (
+          <article
+            key={`${tile.leaguePath}-${tile.coachId}`}
+            className={cn("tt-coach", tile.featured && "featured")}
+            style={tile.teamColor ? tint(tile.teamColor) : undefined}
+          >
+            <header>
+              <span className="tt-coach-face">{face ? <img src={face} alt="" loading="lazy" /> : null}</span>
+              <span className="tt-coach-id">
+                <em>
+                  {[tile.teamName, tile.rank != null ? `#${tile.rank}` : null, tile.standing].filter(Boolean).join(" · ")}
+                </em>
+                <strong>{tile.name}</strong>
+                <span>
+                  {[tile.record, tile.conferenceRecord ? `${tile.conferenceRecord} conf` : null].filter(Boolean).join(" · ") ||
+                    "Record not posted"}
+                </span>
+              </span>
+            </header>
+            {last ? (
+              <p className={cn("tt-coach-last", tile.lastGame?.result === "W" && "w", tile.lastGame?.result === "L" && "l")}>
+                {tile.lastGame?.opponentLogo ? <img src={tile.lastGame.opponentLogo} alt="" /> : null}
+                <span>{last}</span>
+              </p>
+            ) : null}
+            {tile.lastGame?.summary ? <p className="tt-coach-sum">{tile.lastGame.summary}</p> : null}
+            {next ? (
+              <p className="tt-coach-next">
+                <b>Next</b> {next}
+              </p>
+            ) : null}
+            {stat ? <p className="tt-coach-stat">{stat}</p> : null}
+            {tile.headlines.length ? (
+              <ul className="tt-coach-hed">
+                {tile.headlines.map((card) => (
+                  <li key={card.id}>
+                    <StoryLink card={card}>{card.headline}</StoryLink>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -4942,6 +5041,23 @@ function NewspaperDesk() {
     return out;
   }, [nightsQ.data]);
 
+  const coachesQ = useQuery({
+    queryKey: [pressId, "tt-favorite-coaches", day],
+    queryFn: () => fetchFavoriteCoachDesk({ day }),
+    enabled: pressing && printsFavoriteCoaches(pressId),
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const coachDesk = asFavoriteCoachDesk(coachesQ.data);
+  const coachesByPath = useMemo(() => {
+    const out: Record<string, FavoriteCoachTile[]> = {};
+    for (const tile of coachDesk?.tiles ?? []) (out[tile.leaguePath] ??= []).push(tile);
+    return out;
+  }, [coachDesk]);
+  const coachPaths = useMemo(() => Object.keys(coachesByPath).sort(), [coachesByPath]);
+
   const sheetsQ = useQuery({
     queryKey: [pressId, "tt-club-sheets", day, favKeys],
     queryFn: async () => {
@@ -5228,7 +5344,8 @@ function NewspaperDesk() {
       quiet(openersQ, teamFavs.length > 0) &&
       quiet(filesQ, subjectHrefs.length > 0) &&
       quiet(orgQ, teamFavs.some((fav) => fav.mlbTeamId)) &&
-      quiet(mlbPlayoffsQ, sportPaths.includes("baseball/mlb"));
+      quiet(mlbPlayoffsQ, sportPaths.includes("baseball/mlb")) &&
+      quiet(coachesQ, printsFavoriteCoaches(pressId));
     if (!deskQuiet) return;
     const failed = [wrapsQ, newsQ, wireQ, recap, leagueNewsQ, extractsQ].some((q) => q.isError);
     if (!stories.length && failed) return;
@@ -5279,6 +5396,7 @@ function NewspaperDesk() {
     subjectHrefs,
     orgQ,
     mlbPlayoffsQ,
+    coachesQ,
     wrapsQ,
     newsQ,
     wireQ,
@@ -5310,8 +5428,9 @@ function NewspaperDesk() {
       offseason,
       leaderPaths,
       postseasonPaths,
+      coachPaths,
     });
-  }, [stories, clubs, pressId, playerPaths, missouriQ.data, nationalDesk, offseason, leaderPaths, postseasonPaths]);
+  }, [stories, clubs, pressId, playerPaths, missouriQ.data, nationalDesk, offseason, leaderPaths, postseasonPaths, coachPaths]);
   // No schedule row for the date (or not read yet): no page, never an older day's.
   const daySchedule =
     companions?.id === pressId && companions.dayAhead?.date === scheduleDate
@@ -5599,6 +5718,7 @@ function NewspaperDesk() {
                   edition={day}
                   hasPlayers={playerPaths.includes(page.path)}
                   nights={nightsByPath[page.path] ?? []}
+                  coaches={coachesByPath[page.path] ?? []}
                   sheets={sheetsQ.data ?? {}}
                   leaders={leadersQ.data?.[page.path] ?? []}
                   heisman={page.path.includes("college-football") ? heismanQ.data ?? null : null}
@@ -5647,6 +5767,7 @@ function NewspaperDesk() {
       mlbPlayoffsQ.data,
       playerPaths,
       nightsByPath,
+      coachesByPath,
       weatherQ.data,
       weatherFolio,
       press.label,

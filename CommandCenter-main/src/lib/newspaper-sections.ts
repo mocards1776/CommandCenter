@@ -49,6 +49,7 @@ import { isPromoMissouriItem, type MissouriDesk, type MoItem } from "./newspaper
 import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
 import type { FavoritesBeezPage } from "./newspaper-beez.ts";
 import { packNationalPages, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
+import { printsFavoriteCoaches } from "./newspaper-favorite-coaches.ts";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
 const LEAD_TEASER = 1050;
@@ -239,7 +240,8 @@ export type SportFocus =
   | "form"
   | "playoffs"
   | "players"
-  | "opener";
+  | "opener"
+  | "coaches";
 
 export type SportFrontPage = PageBase & {
   kind: "sport-front";
@@ -1266,6 +1268,20 @@ export function sportSectionFocuses(opts: {
   return ["front", "recaps", "news", ...reference];
 }
 
+/** After the section front / wraps, before standings and the schedule. */
+export function insertCoachesFocus(focuses: SportFocus[], include: boolean): SportFocus[] {
+  if (!include || focuses.includes("coaches")) return focuses;
+  const recapsAt = focuses.indexOf("recaps");
+  if (recapsAt >= 0) {
+    return [...focuses.slice(0, recapsAt + 1), "coaches", ...focuses.slice(recapsAt + 1)];
+  }
+  const refAt = focuses.findIndex((focus) => focus === "teams" || focus === "schedule");
+  if (refAt >= 0) {
+    return [...focuses.slice(0, refAt), "coaches", ...focuses.slice(refAt)];
+  }
+  return [...focuses, "coaches"];
+}
+
 function sportPages(
   id: SportSectionId,
   clubs: ClubDesk[],
@@ -1275,6 +1291,7 @@ function sportPages(
   offseason = false,
   withLeaders = false,
   postseason = false,
+  withCoaches = false,
 ): {
   pages: (SportFrontPage | SportInsidePage)[];
   sportFolioByStory: Record<string, string>;
@@ -1290,13 +1307,16 @@ function sportPages(
   );
   const desk = isDeskPress(edition);
   const NEWS_INSIDE_CAP = 6;
-  const focuses = sportSectionFocuses({
-    path: id.path,
-    offseason,
-    withLeaders,
-    withPlayers,
-    postseason,
-  });
+  const focuses = insertCoachesFocus(
+    sportSectionFocuses({
+      path: id.path,
+      offseason,
+      withLeaders,
+      withPlayers,
+      postseason,
+    }),
+    withCoaches && printsFavoriteCoaches(edition),
+  );
   const isStoryFocus = (f: SportFocus): boolean => f === "front" || f === "recaps" || f === "news" || f === "opener";
   const storyFocuses = focuses.filter(isStoryFocus);
   const refFocuses = focuses.filter((f) => !isStoryFocus(f));
@@ -1498,6 +1518,8 @@ export function buildEdition(opts: {
   leaderPaths?: string[];
   /** Leagues in their postseason — regular-season standings drop; MLB's bracket stays. */
   postseasonPaths?: string[];
+  /** League paths with favorite coaches on file — each may get the weekly coaches desk. */
+  coachPaths?: string[];
 }): Edition {
   const fresh = rankStories(
     deskCopy(opts.stories, opts.edition).filter((card) => !card.editorSpiked),
@@ -1540,6 +1562,7 @@ export function buildEdition(opts: {
       opts.offseason?.includes(id.path) ?? false,
       opts.leaderPaths?.includes(id.path) ?? false,
       opts.postseasonPaths?.includes(id.path) ?? false,
+      opts.coachPaths?.includes(id.path) ?? false,
     ),
   }));
   const sportFolioByStory: Record<string, string> = {};
