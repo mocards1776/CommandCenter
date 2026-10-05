@@ -22,6 +22,7 @@ import {
   type ScoringPeriod,
   type StarPick,
 } from "@/lib/newspaper-agate";
+import { mlbTeamColor } from "@/lib/newspaper-recap";
 import { cn } from "@/lib/utils";
 import { PersonName } from "./PlayerPop";
 import "./box-agate.css";
@@ -441,8 +442,8 @@ export function KeyStats({ box }: { box: EspnBox }) {
   );
 }
 
-/** NFL and NHL box: scoring by period, team stats, and every club's agate. */
-export function EspnAgate({ box, path }: { box: EspnBox; path: string }) {
+/** Sport box: scoring by period, team stats, and every club's agate. */
+export function EspnAgate({ box, path, condensed }: { box: EspnBox; path: string; condensed?: boolean }) {
   const { game } = box;
   const stat = (rows: EspnBox["teamStats"], title: string): AgateTable => ({
     title,
@@ -495,17 +496,23 @@ export function EspnAgate({ box, path }: { box: EspnBox; path: string }) {
           )}
         </div>
       ) : null}
-      {box.pairs.map((pair: AgatePair) => (
-        <AgateTwin key={pair.key} away={pair.away} home={pair.home} path={path} label={pair.label} />
-      ))}
-      <AgateNotes notes={box.info} />
+      {condensed
+        ? null
+        : box.pairs.map((pair: AgatePair) => (
+            <AgateTwin key={pair.key} away={pair.away} home={pair.home} path={path} label={pair.label} />
+          ))}
+      {condensed ? null : <AgateNotes notes={box.info} />}
     </div>
   );
 }
 
-function sidePaint(color: string | null): string {
-  if (!color) return "#1f2a44";
-  return color.startsWith("#") ? color : `#${color}`;
+function sidePaint(color: string | null, abbrev?: string, path?: string): string {
+  if (color) return color.startsWith("#") ? color : `#${color}`;
+  if (path?.startsWith("baseball/")) {
+    const mlb = mlbTeamColor(abbrev);
+    if (mlb) return mlb;
+  }
+  return "#1f2a44";
 }
 
 /** The final the way the sports pages set it: both clubs, their marks, the score. */
@@ -513,7 +520,7 @@ export function ScoreMast({ game }: { game: BoxGame }) {
   return (
     <div className="tt-score-mast">
       {[game.away, game.home].map((side, i) => (
-        <div key={i} className={cn("tt-score-mast-side", side.winner && "won", game.final && !side.winner && "lost")} style={{ background: sidePaint(side.color) }}>
+        <div key={i} className={cn("tt-score-mast-side", side.winner && "won", game.final && !side.winner && "lost")} style={{ background: sidePaint(side.color, side.abbrev, game.path) }}>
           <Mark src={side.logo} size="lg" />
           <span>
             <em>{i === 0 ? "Away" : "Home"}</em>

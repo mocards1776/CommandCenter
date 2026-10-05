@@ -10,20 +10,10 @@ import {
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink } from "lucide-react";
+import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
 import { SaveMark } from "@/components/newspaper/SaveMark";
-import {
-  Decisions,
-  EspnAgate,
-  Goals,
-  KeyStats,
-  Leaders,
-  Linescore,
-  MlbAgate,
-  ScoreMast,
-  Stars,
-} from "@/components/newspaper/BoxScore";
-import { ESPN_BOX_PATHS, fetchEspnBox } from "@/lib/newspaper-agate";
-import { fetchEspnRecapStory, gameClock } from "@/lib/newspaper-box";
+import { fetchEspnRecapStory } from "@/lib/newspaper-box";
+import { formatRecapWhen, recapBodyForPage, recapDropLead, recapIsScoreOnly, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
 import { cleanStoryCopy, isNavSoup, proseParas, readableCopy } from "@/lib/newspaper-copy";
 import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
 import { fetchRssArticle, scrubReaderChrome, stripDuplicateContentImages } from "@/lib/rss";
@@ -34,6 +24,7 @@ type ReaderBody = {
   html: string | null;
   text: string | null;
   photo: string | null;
+  photoWidth: number | null;
   byline: string | null;
 };
 
@@ -73,10 +64,7 @@ function espnEventOf(story: ReaderStory): string | null {
 }
 
 function whenLine(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString([], { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return formatRecapWhen(iso);
 }
 
 function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => void }) {
@@ -91,12 +79,18 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
     queryKey: ["tt-reader", card.id, source, espnEvent],
     queryFn: async (): Promise<ReaderBody> => {
       if (game?.recap?.html && !isNavSoup(game.recap.html.replace(/<[^>]+>/g, " "))) {
-        return { html: game.recap.html, text: null, photo: game.recap.photo, byline: game.recap.byline };
+        return { html: game.recap.html, text: null, photo: game.recap.photo, photoWidth: card.photoWidth ?? null, byline: game.recap.byline };
       }
       const own = readableCopy(card.body);
       const filed = card.sportLabel === "National" ? 80 : LONG_BODY;
       if (own.length >= filed) {
-        return { html: null, text: own, photo: card.photo ?? null, byline: card.dateline ?? null };
+        return {
+          html: null,
+          text: own,
+          photo: card.photo ?? null,
+          photoWidth: card.photoWidth ?? null,
+          byline: card.dateline ?? null,
+        };
       }
       if (source && !isEspnGamePage(source)) {
         try {
@@ -110,7 +104,7 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
             const html = article.contentHtml && !isNavSoup(article.contentHtml.replace(/<[^>]+>/g, " "))
               ? article.contentHtml
               : null;
-            return { html, text: html ? null : text, photo: article.image, byline: article.byline };
+            return { html, text: html ? null : text, photo: article.image, photoWidth: card.photoWidth ?? null, byline: article.byline };
           }
         } catch {
           /* fall through to the wire copy */
@@ -119,25 +113,13 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
       if (espnEvent && path) {
         const espn = await fetchEspnRecapStory(path, espnEvent);
         if (espn && !isNavSoup(espn.html.replace(/<[^>]+>/g, " "))) {
-          return { html: espn.html, text: null, photo: espn.photo, byline: espn.byline };
+          return { html: espn.html, text: null, photo: espn.photo, photoWidth: espn.photoWidth ?? card.photoWidth ?? null, byline: espn.byline };
         }
       }
-      return { html: null, text: own, photo: null, byline: null };
+      return { html: null, text: own, photo: null, photoWidth: card.photoWidth ?? null, byline: null };
     },
     staleTime: 10 * 60_000,
   });
-
-  const espnBoxed = Boolean(espnEvent && path && ESPN_BOX_PATHS.has(path));
-  const espnBox = useQuery({
-    queryKey: ["tt-espn-box", path, espnEvent],
-    queryFn: () => fetchEspnBox(path!, espnEvent!),
-    enabled: espnBoxed,
-    staleTime: game?.live ? 60_000 : 30 * 60_000,
-  });
-  const espnGame = espnBox.data?.game ?? null;
-  const boxGame =
-    game && !game.scoring.length && espnGame?.scoring.length ? { ...game, scoring: espnGame.scoring } : (game ?? espnGame);
-  const stars = espnBox.data?.stars ?? [];
 
   useEffect(() => {
     document.documentElement.classList.add("tt-reader-open");
@@ -168,7 +150,12 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
     if (!raw) return null;
     return stripDuplicateContentImages(scrubReaderChrome(raw), photo);
   }, [body.data?.html, photo]);
-  const paras = useMemo(() => proseParas(body.data?.text ?? ""), [body.data?.text]);
+  const paras = useMemo(() => {
+    const text = recapBodyForPage(body.data?.text ?? "");
+    return text ? proseParas(text) : [];
+  }, [body.data?.text]);
+  const dropCap = recapShouldDropCap(paras.join(" "));
+  const skipBody = !html && recapIsScoreOnly(body.data?.text ?? paras.join(" "));
   const lifted = cleanStoryCopy(card.body).author;
   const outlet = storySource(card) ?? `${card.sportLabel} Wire`;
   const byline = body.data?.byline || (lifted ? `${lifted} · ${outlet}` : card.dateline || null);
@@ -215,57 +202,57 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
             {card.when ? <span> · {whenLine(card.when)}</span> : null}
           </p>
 
-          {boxGame && (boxGame.final || boxGame.live) ? (
-            <section className="tt-reader-box">
-              <ScoreMast game={boxGame} />
-              <header>
-                <b>{gameClock(boxGame)}</b>
-                <span>{[boxGame.round, boxGame.series, boxGame.venue].filter(Boolean).join(" · ")}</span>
-              </header>
-              <Linescore game={boxGame} />
-              <Decisions game={boxGame} faces />
-              {espnBox.data ? <KeyStats box={espnBox.data} /> : null}
-              <Goals game={boxGame} />
-              {stars.length ? <Stars stars={stars} path={boxGame.path} /> : <Leaders game={boxGame} max={4} />}
-            </section>
-          ) : null}
+          <RecapChrome card={card} game={game ?? null} />
 
-          {photo ? (
-            <figure className="tt-reader-photo">
-              <img src={photo} alt="" />
-              {card.caption ? <figcaption>{card.caption}</figcaption> : null}
-            </figure>
-          ) : null}
+          <RecapPhoto
+            url={photo}
+            width={body.data?.photoWidth ?? card.photoWidth}
+            caption={card.caption}
+          />
 
           {body.isLoading ? (
             <p className="tt-reader-wait">Setting the story in type…</p>
           ) : html ? (
-            <div className="tt-reader-body" dangerouslySetInnerHTML={{ __html: html }} />
-          ) : paras.length ? (
-            <div className="tt-reader-body">
-              {paras.map((p, i) => (
-                <p key={i}>{p}</p>
-              ))}
+            <div className={cn("tt-reader-body", recapShouldDropCap(html.replace(/<[^>]+>/g, " ")) && "drop")} dangerouslySetInnerHTML={{ __html: html }} />
+          ) : skipBody ? null : paras.length ? (
+            <div className={cn("tt-reader-body", dropCap && "drop")}>
+              {paras.map((p, i) => {
+                if (i === 0 && dropCap) {
+                  const lead = recapDropLead(card.dateline, p);
+                  if (lead) {
+                    return (
+                      <p key={i}>
+                        <span className="wsj-drop">{lead.letter}</span>
+                        {lead.datelineRest != null ? <span className="wsj-dateline">{lead.datelineRest} — </span> : null}
+                        {lead.body}
+                      </p>
+                    );
+                  }
+                }
+                if (i === 0) {
+                  const split = splitApDateline(p);
+                  const city = card.dateline || split.dateline;
+                  return (
+                    <p key={i}>
+                      {city ? <span className="wsj-dateline">{city} — </span> : null}
+                      {split.body}
+                    </p>
+                  );
+                }
+                return <p key={i}>{p}</p>;
+              })}
             </div>
           ) : dek ? null : (
             <p className="tt-reader-wait">The wire filed a headline only.</p>
           )}
 
-          {game?.path === "baseball/mlb" && (game.final || game.live) ? (
-            <section className={cn("tt-reader-agate")}>
-              <h3>Box score</h3>
-              <MlbAgate game={game} />
-            </section>
-          ) : espnBoxed && boxGame?.path !== "baseball/mlb" && (espnBox.isLoading || espnBox.data) ? (
-            <section className="tt-reader-agate">
-              <h3>Box score</h3>
-              {espnBox.data ? (
-                <EspnAgate box={espnBox.data} path={espnBox.data.game.path} />
-              ) : (
-                <p className="tt-agate-wait">Setting the box…</p>
-              )}
-            </section>
-          ) : null}
+          <RecapBox
+            card={card}
+            game={
+              game && espnEvent && !game.espnEventId ? { ...game, espnEventId: espnEvent } : game ?? null
+            }
+            forceFull
+          />
         </article>
       </div>
     </div>

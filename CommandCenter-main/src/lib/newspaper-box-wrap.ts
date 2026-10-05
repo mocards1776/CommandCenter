@@ -26,6 +26,10 @@ export type BoxWrapLine = {
 export type BoxWrapLeader = {
   name: string;
   line: string;
+  label?: string | null;
+  headshot?: string | null;
+  team?: string | null;
+  id?: string | null;
 };
 
 export type BoxWrapGame = {
@@ -43,43 +47,82 @@ export type BoxWrapGame = {
 };
 
 export type EspnSummaryForWrap = {
-  article?: { story?: string; headline?: string; images?: { url?: string }[] };
+  article?: { story?: string; headline?: string; images?: { url?: string; width?: number }[]; byline?: string };
   header?: {
     competitions?: {
       notes?: { headline?: string }[];
-      status?: { type?: { detail?: string; shortDetail?: string } };
+      status?: {
+        type?: { detail?: string; shortDetail?: string };
+        featuredAthletes?: {
+          name?: string;
+          athlete?: { id?: string; displayName?: string; shortName?: string; headshot?: string | { href?: string } };
+        }[];
+      };
       competitors?: {
         homeAway?: string;
         score?: string;
         winner?: boolean;
+        hits?: number;
+        errors?: number;
         linescores?: { value?: number }[];
         records?: { type?: string; summary?: string }[];
-        team?: { displayName?: string; shortDisplayName?: string; abbreviation?: string };
+        team?: {
+          id?: string;
+          displayName?: string;
+          shortDisplayName?: string;
+          abbreviation?: string;
+          color?: string;
+          logo?: string;
+          logos?: { href?: string }[];
+        };
       }[];
     }[];
   };
+  gameInfo?: { venue?: { fullName?: string } };
   leaders?: {
     shortDisplayName?: string;
     displayName?: string;
+    name?: string;
+    team?: { abbreviation?: string };
     leaders?: {
       displayValue?: string;
-      athlete?: { displayName?: string; shortName?: string };
+      athlete?: {
+        id?: string;
+        displayName?: string;
+        shortName?: string;
+        headshot?: string | { href?: string };
+      };
     }[];
   }[];
   boxscore?: {
+    teams?: { team?: { id?: string }; homeAway?: string; statistics?: { name?: string; displayValue?: string }[] }[];
     players?: {
       statistics?: {
         name?: string;
         labels?: string[];
         names?: string[];
         athletes?: {
-          athlete?: { displayName?: string; shortName?: string };
+          athlete?: { id?: string; displayName?: string; shortName?: string; headshot?: string | { href?: string } };
           stats?: string[];
         }[];
       }[];
     }[];
   };
 };
+
+export function summaryImageWidth(sum: EspnSummaryForWrap | null | undefined): number | null {
+  const w = sum?.article?.images?.[0]?.width;
+  return typeof w === "number" && w > 0 ? w : null;
+}
+
+export function summaryVenue(sum: EspnSummaryForWrap | null | undefined): string | null {
+  return sum?.gameInfo?.venue?.fullName ?? null;
+}
+
+function headshotUrl(raw: string | { href?: string } | undefined): string | null {
+  if (!raw) return null;
+  return typeof raw === "string" ? raw : raw.href ?? null;
+}
 
 const ORDINALS: Record<string, string> = {
   "1": "first",
@@ -300,7 +343,14 @@ export function leadersFromSummary(sum: EspnSummaryForWrap | null | undefined): 
     const line = top?.displayValue;
     if (!name || !line) continue;
     if (out.some((l) => l.name === name)) continue;
-    out.push({ name, line });
+    out.push({
+      name,
+      line,
+      label: group.shortDisplayName || group.displayName || group.name || null,
+      headshot: headshotUrl(top.athlete?.headshot),
+      team: group.team?.abbreviation ?? null,
+      id: top.athlete?.id ?? null,
+    });
     if (out.length >= 4) break;
   }
   if (out.length) return out;
@@ -316,7 +366,13 @@ export function leadersFromSummary(sum: EspnSummaryForWrap | null | undefined): 
         .slice(0, 3);
       if (!bits.length) continue;
       if (out.some((l) => l.name === name)) continue;
-      out.push({ name, line: bits.join(", ") });
+      out.push({
+        name,
+        line: bits.join(", "),
+        label: stat.name ?? null,
+        headshot: headshotUrl(athlete.athlete?.headshot),
+        id: athlete.athlete?.id ?? null,
+      });
       if (out.length >= 3) break;
     }
     if (out.length >= 3) break;

@@ -4,6 +4,7 @@ import { espnGet, type SportsFavorite, type TeamDetail, type TeamSnapshot, type 
 import type { RssFeedItem } from "./rss";
 import { pickBestStoryImage } from "./newspaper-images.ts";
 import { favoriteDeskWeight } from "./newspaper";
+import type { RecapGamePack, RecapLeader } from "./newspaper-recap";
 import type { WireGame } from "./newspaper-wire";
 import type { YesterdayRecapGame } from "./yesterday-recap";
 
@@ -49,6 +50,9 @@ export function playerHref(sportPath: string, playerId: string): string | null {
   }
   if (/hockey\/nhl\//.test(sportPath) || sportPath === "nhl") {
     return `/sports/nhl/player/${playerId}`;
+  }
+  if (/basketball\/nba\//.test(sportPath) || sportPath === "nba") {
+    return `https://www.espn.com/nba/player/_/id/${playerId}`;
   }
   return null;
 }
@@ -419,11 +423,15 @@ export type GameWrapCard = {
   feedUrl: string | null;
   gameId: string | null;
   stats: { label: string; value: string }[];
-  leaders: { name: string; line: string; href: string | null }[];
+  leaders: RecapLeader[] | { name: string; line: string; href: string | null }[];
   teamStats: TeamStatLine[];
   division: { rank: string; team: string; record: string; me: boolean }[];
   /** Wire extras — present on stories built from a league board. */
   photo?: string | null;
+  /** Pixel width of `photo` when ESPN sent one, used to inset small cuts. */
+  photoWidth?: number | null;
+  /** Score banner, line, and chips stored with the wrap. */
+  recapGame?: RecapGamePack | null;
   /** A player cutout on a transparent ground, set on the club's color rather than cropped. */
   photoStyle?: "cutout";
   caption?: string | null;
@@ -845,6 +853,8 @@ export function wireStoryCards(opts: {
       teamStats: fav ? teamStatsFromDetail(detail) : [],
       division: fav ? divisionFromDetail(detail) : [],
       photo: g.photo,
+      photoWidth: g.photoWidth ?? null,
+      recapGame: g.recapGame ?? null,
       caption: g.wrapKind === "box"
         ? "Times box wrap"
         : scored

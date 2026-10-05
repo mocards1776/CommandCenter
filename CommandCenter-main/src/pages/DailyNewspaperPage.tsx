@@ -55,6 +55,7 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
+import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
 import {
   Face,
   MatchupCard,
@@ -68,6 +69,7 @@ import {
   Linescore,
   MlbAgate,
 } from "@/components/newspaper/BoxScore";
+import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
@@ -339,11 +341,11 @@ function substantive(card: GameWrapCard, text: string): string {
 }
 
 function recapDek(card: GameWrapCard, sentences = 1): string {
-  const raw = tidy((card.body || card.dek || "").replace(/\s+/g, " "));
+  const raw = recapBodyForPage(tidy((card.body || card.dek || "").replace(/\s+/g, " ")));
   if (!raw || squash(raw) === squash(card.headline)) return "";
   const parts = raw.split(/(?<=[.!?])\s(?=["“A-Z0-9])/).slice(0, sentences);
   const out = parts.join(" ");
-  return out.length > 260 ? `${out.slice(0, 257).trimEnd()}…` : out;
+  return truncateAtSentence(out, 260);
 }
 
 function dekFor(card: GameWrapCard, copy: string): string | null {
@@ -827,8 +829,30 @@ function Prose({
             </p>
           ) : (
             <p>
-              {i === 0 && card.dateline ? <span className="wsj-dateline">{card.dateline} — </span> : null}
-              <NamedText text={p} seen={seen} />
+              {i === 0 && drop
+                ? (() => {
+                    const lead = recapDropLead(card.dateline, p);
+                    if (!lead) return <NamedText text={p} seen={seen} />;
+                    return (
+                      <>
+                        <span className="wsj-drop">{lead.letter}</span>
+                        {lead.datelineRest != null ? <span className="wsj-dateline">{lead.datelineRest} — </span> : null}
+                        <NamedText text={lead.body} seen={seen} />
+                      </>
+                    );
+                  })()
+                : i === 0
+                  ? (() => {
+                      const split = splitApDateline(p);
+                      const city = card.dateline || split.dateline;
+                      return (
+                        <>
+                          {city ? <span className="wsj-dateline">{city} — </span> : null}
+                          <NamedText text={split.body} seen={seen} />
+                        </>
+                      );
+                    })()
+                  : <NamedText text={p} seen={seen} />}
             </p>
           )}
         </Fragment>
@@ -1009,10 +1033,13 @@ function Story({
 }) {
   const full = cardCopy(card);
   const copy = substantive(card, text ?? full);
-  const partial = readOn ?? Boolean(jump || (copy && copy.length < full.length * 0.9));
-  const dek = dekFor(card, copy);
+  const recap = Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
+  const storyCopy = recap ? recapBodyForPage(copy) : copy;
+  const partial = readOn ?? Boolean(jump || (storyCopy && storyCopy.length < full.length * 0.9));
+  const dek = dekFor(card, storyCopy);
+  const useDrop = Boolean(drop && storyCopy && recapShouldDropCap(storyCopy));
   const artNode =
-    art === "none" ? null : card.photo ? (
+    recap || art === "none" ? null : card.photo ? (
       <Cut card={card} shape={art === "side" && copy.length > 450 ? "square" : "wide"} />
     ) : poster ? (
       <StatPoster team={team ?? null} card={card} layout={poster === "band" ? "band" : "block"} />
@@ -1032,15 +1059,17 @@ function Story({
       {artNode ? <div className="wsj-story-art">{artNode}</div> : null}
       <div className="wsj-story-copy">
         <Headline card={card} size={size} game={game} />
-        {dek ? <p className="wsj-dek">{dek}</p> : null}
-        <ScoreBug card={card} />
+        {dek && !recap ? <p className="wsj-dek">{dek}</p> : null}
+        {recap ? null : <ScoreBug card={card} />}
         <Byline card={card} />
-        {copy ? (
+        {recap ? <RecapChrome card={card} game={game ?? null} /> : null}
+        {recap ? <RecapPhoto url={card.photo} width={card.photoWidth} caption={card.caption} /> : null}
+        {storyCopy ? (
           <Prose
             card={card}
-            text={copy}
+            text={storyCopy}
             cols={cols}
-            drop={drop}
+            drop={useDrop}
             max={max}
             dress={dress}
             color={teamColor(team)}
@@ -1050,7 +1079,7 @@ function Story({
         ) : (
           inset
         )}
-        {(copy || jump) && partial ? <ReadOn card={card} game={game} label="Click for full story" /> : null}
+        {(storyCopy || jump) && partial ? <ReadOn card={card} game={game} label="Click for full story" /> : null}
       </div>
     </article>
   );
@@ -1808,7 +1837,7 @@ function InsidePage({
               game={game}
               inset={game ? null : <StoryNames card={card} />}
             />
-            {game ? <GameBox game={game} /> : null}
+            {game || card.recapGame ? <RecapBox card={card} game={game ?? null} /> : null}
           </div>
         );
       })}
@@ -1944,7 +1973,7 @@ function ContinuePage({
               game={game}
               inset={game ? null : <StoryNames card={card} />}
             />
-            {game ? <GameBox game={game} /> : null}
+            {game || card.recapGame ? <RecapBox card={card} game={game ?? null} /> : null}
           </div>
         );
       })}
@@ -2623,18 +2652,22 @@ function WrapPlayers({ card }: { card: GameWrapCard }) {
 }
 
 function WrapBrief({ card }: { card: GameWrapCard }) {
+  const lookup = useContext(GameLookup);
+  const game = lookup(card);
   const copy = wrapBriefCopy(card, 4);
+  const recap = Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
+  const brief = recap && recapIsScoreOnly(copy) ? "" : recap ? recapBodyForPage(copy) : copy;
   return (
     <article className="tt-wrap-brief" data-tt-keys={storyReadKeys(card).join("|")} data-tt-title={card.headline}>
       <Kicker card={card} />
       <h3 className="wsj-hl sm">
         <HeadlineSave card={card}>
-          <StoryLink card={card}>{card.headline}</StoryLink>
+          <StoryLink card={card} game={game}>{card.headline}</StoryLink>
         </HeadlineSave>
       </h3>
-      <ScoreBug card={card} />
-      {copy ? <p className="tt-wrap-copy">{copy}</p> : null}
-      <WrapPlayers card={card} />
+      {recap ? <RecapChrome card={card} game={game} compact /> : <ScoreBug card={card} />}
+      {brief ? <p className="tt-wrap-copy">{brief}</p> : null}
+      {recap ? null : <WrapPlayers card={card} />}
       {card.related?.length ? (
         <ul className="tt-wrap-related">
           {card.related.map((item) => (
