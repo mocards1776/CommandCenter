@@ -68,3 +68,13 @@ export function alertReplyMarkup(
   else if (home) buttons.push({ text: "Sports home", url: home });
   return telegramInlineKeyboard(buttons);
 }
+
+/** Goal clips only need the game. No RUWT board — that pair stays on heat/finals. */
+export function gameReplyMarkup(
+  origin: string | null | undefined,
+  gamePath: string | null | undefined,
+): string | null {
+  const game = gameDetailUrl(origin, gamePath);
+  if (!game) return null;
+  return telegramInlineKeyboard([{ text: "Open game", url: game }]);
+}

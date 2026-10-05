@@ -48,5 +48,10 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
     already live; the migration is `create table if not exists` plus a guarded
     policy so a re-apply is a no-op.
 
+14. `sports_highlights_sent` — Telegram Blues goal-clip dedupe
+    (`highlight_id` primary key, service-role only). Written by
+    `sports-highlights`. Optional `pg_cron` job `sports-highlights-sweep`
+    once Vault has `sports_highlights_cron`.
+
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.

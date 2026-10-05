@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   alertReplyMarkup,
   gameDetailUrl,
+  gameReplyMarkup,
   ruwtBoardUrl,
   telegramInlineKeyboard,
 } from "./telegram-markup.ts";
@@ -69,4 +70,20 @@ test("game paths keep query params including solo=1", () => {
     gameDetailUrl("https://command-center-flax-gamma.vercel.app", "/sports/nhl/game/9?solo=1"),
     "https://command-center-flax-gamma.vercel.app/sports/nhl/game/9?solo=1",
   );
+});
+
+test("highlight videos ship only the Open game Mini App button", () => {
+  const row = parseRow(
+    gameReplyMarkup("https://command-center-flax-gamma.vercel.app", "/sports/nhl/game/401891782?solo=1"),
+  );
+  assert.deepEqual(
+    row.map((button) => button.text),
+    ["Open game"],
+  );
+  assert.equal(
+    row[0]!.web_app?.url,
+    "https://command-center-flax-gamma.vercel.app/sports/nhl/game/401891782?solo=1",
+  );
+  assert.equal(row[0]!.url, undefined);
+  assert.equal(gameReplyMarkup("https://command-center-flax-gamma.vercel.app", ""), null);
 });
