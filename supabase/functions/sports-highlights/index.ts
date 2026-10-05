@@ -1,12 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
-import { gameReplyMarkup } from "../_shared/telegram-markup.ts";
+import { alertReplyMarkup, gameReplyMarkup } from "../_shared/telegram-markup.ts";
 import {
-  collectGoalClips,
+  collectHighlights,
   fetchGoalClipsForGame,
+  fetchWrapForGame,
   loadClubGame,
   resolveEspnEventId,
   sortClips,
+  type GameWrap,
   type GoalClip,
 } from "./nhl-clips.ts";
 import {
@@ -16,7 +18,7 @@ import {
   parseChatIds,
   parseTeamFilter,
 } from "./select.ts";
-import { sendTelegramVideo } from "./telegram.ts";
+import { noticeMethod, sendTelegramNotice, sendTelegramVideo } from "./telegram.ts";
 
 /**
  * Telegram goal MP4s for @CommandCenterHighlights_bot.
@@ -25,8 +27,10 @@ import { sendTelegramVideo } from "./telegram.ts";
  * A clip is sent only when the scoring team (landing abbrev and, when present,
  * play-by-play eventOwnerTeamId) is in HIGHLIGHTS_TEAM_IDS. Opponent goals,
  * empty-net goals, own goals, and discreteClip stand-ins are skipped.
- * Game recaps and condensed wraps are not uploaded. The message can include
- * a Watch clip link to highlightClipSharingUrl.
+ * Goal messages can include a Watch clip link to highlightClipSharingUrl.
+ * Game wraps are never sendVideo. A finished game with a right-rail recap
+ * (or condensed game) gets one text or photo plus the heat/finals Mini App
+ * buttons, deep-linked to the Command Center game page where the wrap plays.
  * Each clip id is claimed in sports_highlights_sent so a cron rerun never resends.
  *
  * Secrets (never commit the token):
@@ -101,15 +105,24 @@ function daysAgo(days: number): string {
 
 type Claim = "ok" | "dup" | "error";
 
-async function claim(db: SupabaseClient, clip: GoalClip): Promise<Claim> {
+type Claimable = {
+  highlightId: string;
+  teamAbbrev: string;
+  nhlGameId: string;
+  espnEventId: string | null;
+  caption: string;
+  sharingUrl: string | null;
+};
+
+async function claim(db: SupabaseClient, row: Claimable): Promise<Claim> {
   const { error } = await db.from("sports_highlights_sent").insert({
-    highlight_id: clip.highlightId,
+    highlight_id: row.highlightId,
     source: "nhl",
-    team_abbrev: clip.teamAbbrev,
-    nhl_game_id: clip.nhlGameId,
-    espn_event_id: clip.espnEventId,
-    caption: clip.caption,
-    sharing_url: clip.sharingUrl,
+    team_abbrev: row.teamAbbrev,
+    nhl_game_id: row.nhlGameId,
+    espn_event_id: row.espnEventId,
+    caption: row.caption,
+    sharing_url: row.sharingUrl,
   });
   if (!error) return "ok";
   if (String(error.code) === "23505" || /duplicate/i.test(error.message)) return "dup";
@@ -127,8 +140,22 @@ function previewRow(clip: GoalClip) {
     caption: clip.caption,
     nhlGameId: clip.nhlGameId,
     espnEventId: clip.espnEventId,
+    delivery: "sendVideo" as const,
     mp4: clip.mp4,
     durationSec: clip.durationSec,
+  };
+}
+
+function wrapPreview(wrap: GameWrap) {
+  return {
+    highlightId: wrap.highlightId,
+    caption: wrap.caption,
+    nhlGameId: wrap.nhlGameId,
+    espnEventId: wrap.espnEventId,
+    kind: wrap.kind,
+    delivery: noticeMethod(wrap.poster),
+    gamePath: wrap.gamePath,
+    photo: wrap.poster,
   };
 }
 
@@ -151,6 +178,28 @@ async function deliver(clip: GoalClip, chats: string[], token: string) {
   return results;
 }
 
+async function deliverWrap(wrap: GameWrap, chats: string[], token: string) {
+  const results = await sendTelegramNotice({
+    token,
+    caption: wrap.caption,
+    chatIds: chats,
+    photoUrl: wrap.poster,
+    replyMarkup: alertReplyMarkup(origin(), wrap.gamePath),
+  });
+  const sent = results.filter((row) => row.ok).length;
+  if (!sent) {
+    const first = results.find((row) => row.error)?.error ?? "wrap notice failed";
+    throw new Error(first);
+  }
+  return results;
+}
+
+type SweepItem = {
+  row: Claimable;
+  preview: Record<string, unknown>;
+  send: (chats: string[], token: string) => Promise<unknown>;
+};
+
 async function alreadySent(db: SupabaseClient, ids: string[]): Promise<Set<string>> {
   const sent = new Set<string>();
   for (let i = 0; i < ids.length; i += 100) {
@@ -166,36 +215,56 @@ async function alreadySent(db: SupabaseClient, ids: string[]): Promise<Set<strin
   return sent;
 }
 
-async function sweep(db: SupabaseClient, dryRun: boolean, clips: GoalClip[]): Promise<Response> {
+async function sweep(
+  db: SupabaseClient,
+  dryRun: boolean,
+  clips: GoalClip[],
+  wraps: GameWrap[],
+): Promise<Response> {
   const chats = parseChatIds(Deno.env.get("TELEGRAM_HIGHLIGHTS_CHAT_IDS"));
   const token = Deno.env.get("TELEGRAM_HIGHLIGHTS_BOT_TOKEN")?.trim() ?? "";
   const cap = dryRun ? 20 : maxSends(Deno.env.get("HIGHLIGHTS_MAX_SENDS"));
   if (!dryRun && !token) return json({ error: "TELEGRAM_HIGHLIGHTS_BOT_TOKEN is not set" }, 503);
   if (!dryRun && !chats.length) return json({ error: "TELEGRAM_HIGHLIGHTS_CHAT_IDS is empty" }, 503);
 
-  const sent = await alreadySent(db, clips.map((clip) => clip.highlightId));
+  const items: SweepItem[] = [
+    ...clips.map((clip) => ({
+      row: clip,
+      preview: previewRow(clip),
+      send: (ids: string[], bot: string) => deliver(clip, ids, bot),
+    })),
+    ...wraps.map((wrap) => ({
+      row: wrap,
+      preview: wrapPreview(wrap),
+      send: (ids: string[], bot: string) => deliverWrap(wrap, ids, bot),
+    })),
+  ];
+  const sent = await alreadySent(db, items.map((item) => item.row.highlightId));
   let delivered = 0;
   let skipped = 0;
   let deferred = 0;
   const preview: ReturnType<typeof previewRow>[] = [];
+  const wrapPreviewRows: ReturnType<typeof wrapPreview>[] = [];
   const errors: { highlightId: string; error: string }[] = [];
 
-  for (const clip of clips) {
-    if (sent.has(clip.highlightId)) {
+  for (const item of items) {
+    const id = item.row.highlightId;
+    if (sent.has(id)) {
       skipped += 1;
       continue;
     }
-    if (delivered + preview.length >= cap) {
+    if (delivered + preview.length + wrapPreviewRows.length >= cap) {
       deferred += 1;
       continue;
     }
     if (dryRun) {
-      preview.push(previewRow(clip));
+      if (item.preview.delivery === "sendVideo") preview.push(item.preview as ReturnType<typeof previewRow>);
+      else wrapPreviewRows.push(item.preview as ReturnType<typeof wrapPreview>);
       continue;
     }
-    const claimed = await claim(db, clip);
+    const claimed = await claim(db, item.row);
     if (claimed === "error") {
-      errors.push({ highlightId: clip.highlightId, error: "claim failed" });
+      errors.push({ highlightId: id, error: "claim failed" });
       continue;
     }
     if (claimed === "dup") {
@@ -203,13 +272,13 @@ async function sweep(db: SupabaseClient, dryRun: boolean, clips: GoalClip[]): Pr
       continue;
     }
     try {
-      await deliver(clip, chats, token);
+      await item.send(chats, token);
       delivered += 1;
     } catch (err) {
-      await release(db, clip.highlightId);
+      await release(db, id);
       const message = err instanceof Error ? err.message : "send failed";
-      errors.push({ highlightId: clip.highlightId, error: message });
-      console.error("highlights send", clip.highlightId, message);
+      errors.push({ highlightId: id, error: message });
+      console.error("highlights send", id, message);
     }
   }
 
@@ -222,12 +291,14 @@ async function sweep(db: SupabaseClient, dryRun: boolean, clips: GoalClip[]): Pr
     teams: parseTeamFilter(Deno.env.get("HIGHLIGHTS_TEAM_IDS")).nhlAbbrevs,
     lookbackHours: lookbackHours(Deno.env.get("HIGHLIGHTS_LOOKBACK_HOURS")),
     found: clips.length,
+    wrapsFound: wraps.length,
     skipped,
     delivered,
     deferred,
     dryRun,
     chats: chats.length,
     preview: dryRun ? preview : undefined,
+    wrapPreview: dryRun ? wrapPreviewRows : undefined,
     errors: errors.length ? errors : undefined,
   });
 }
@@ -262,25 +333,35 @@ Deno.serve(async (req: Request) => {
       const nhlGameId = String(body.nhlGameId ?? "").replace(/\D/g, "");
       const clipId = String(body.clipId ?? body.highlightId ?? "").replace(/^nhl-/, "").replace(/\D/g, "");
       let clips: GoalClip[];
+      let wraps: GameWrap[];
       if (nhlGameId) {
         const game = await loadClubGame(nhlGameId);
         if (!game) return json({ error: `NHL game ${nhlGameId} not found` }, 404);
         const espnEventId = await resolveEspnEventId(game);
         clips = await fetchGoalClipsForGame(game, filter, espnEventId);
+        const wrap = clipId ? null : await fetchWrapForGame(game, filter, espnEventId);
+        wraps = wrap ? [wrap] : [];
       } else {
-        clips = await collectGoalClips(filter, hours);
+        const found = await collectHighlights(filter, hours);
+        clips = found.clips;
+        wraps = found.wraps;
       }
-      if (clipId) clips = clips.filter((clip) => clip.clipId === clipId);
+      if (clipId) {
+        clips = clips.filter((clip) => clip.clipId === clipId);
+        wraps = [];
+      }
       clips = sortClips(clips);
       if (action === "send" && dryRun) {
         return json({
           ok: true,
           dryRun: true,
           found: clips.length,
+          wrapsFound: wraps.length,
           clips: clips.map(previewRow),
+          wrapPreview: wraps.map(wrapPreview),
         });
       }
-      return await sweep(db, action === "sweep" && dryRun, clips);
+      return await sweep(db, action === "sweep" && dryRun, clips, wraps);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "highlights failed";

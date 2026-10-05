@@ -324,10 +324,46 @@ export function highlightCaption(opts: {
   return `${team} score — ${scorer} vs ${opp}`.slice(0, 1024);
 }
 
+/**
+ * ESPN game page in the Mini App. Finals play the wrap in the hero on this
+ * route; there is no separate wrap path.
+ */
 export function nhlGamePath(espnEventId: string | null | undefined): string | null {
   const id = (espnEventId ?? "").replace(/\D/g, "");
   if (!id) return null;
   return `/sports/nhl/game/${id}?solo=1`;
+}
+
+export type WrapKind = "nhl-recap" | "nhl-condensed";
+
+/** Right-rail ids. Recap wins over the longer condensed game. French recap is ignored. */
+export function pickRailWrap(
+  gameVideo: { threeMinRecap?: unknown; condensedGame?: unknown } | null | undefined,
+): { kind: WrapKind; clipId: string } | null {
+  const id = (value: unknown) =>
+    digits(typeof value === "number" || typeof value === "string" ? value : null);
+  const recap = id(gameVideo?.threeMinRecap);
+  if (recap) return { kind: "nhl-recap", clipId: recap };
+  const condensed = id(gameVideo?.condensedGame);
+  if (condensed) return { kind: "nhl-condensed", clipId: condensed };
+  return null;
+}
+
+export function wrapHighlightId(kind: WrapKind, clipId: string | number): string {
+  const id = digits(clipId);
+  return kind === "nhl-condensed" ? `nhl-condensed-${id}` : `nhl-recap-${id}`;
+}
+
+export function wrapCaption(opts: {
+  teamAbbrev: string;
+  teamName?: string | null;
+  opponentAbbrev: string;
+  kind: WrapKind;
+}): string {
+  const team = teamNick(opts.teamAbbrev, opts.teamName);
+  const opp = canonEspnAbbrev(opts.opponentAbbrev) || "OPP";
+  const label = opts.kind === "nhl-condensed" ? "condensed wrap" : "wrap";
+  return `${team} ${label} vs ${opp}`.slice(0, 1024);
 }
 
 export function highlightId(clipId: string | number): string {

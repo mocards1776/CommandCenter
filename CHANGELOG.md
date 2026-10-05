@@ -8,7 +8,11 @@
   filtered club (default STL / event owner id 19). Opponent goals in the same
   game, empty-net goals, own goals, and non-`highlightClip` videos are dropped.
 - Goal messages add a **Watch clip** button to `highlightClipSharingUrl` when
-  NHL provides one. Recaps and condensed game wraps are not sent as video.
+  NHL provides one. Goals stay `sendVideo` MP4s.
+- A finished game with an NHL recap (or condensed game, if that is all the
+  right rail has) sends one text or photo. The wrap MP4 is not uploaded. The
+  buttons match heat and finals: Mini App **Open game** and **RUWT board**,
+  deep-linked to `/sports/nhl/game/{espnId}?solo=1` where the wrap plays.
 
 ## Blues goal highlights Telegram bot — October 5, 2026
 

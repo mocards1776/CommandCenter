@@ -4,7 +4,9 @@
  * Same path the Sports app already uses in CommandCenter-main/src/lib/nhl.ts
  * (`api-web.nhle.com` landing `highlightClip`, then the public Brightcove
  * Playback API). Only the scoring team's highlightClip is kept — not an
- * opponent goal, empty-net, own goal, or discreteClip. Edge calls NHL directly.
+ * opponent goal, empty-net, own goal, or discreteClip. A finished game can
+ * also yield one wrap notice from the right rail. That path reads a poster
+ * only and never returns the wrap MP4. Edge calls NHL directly.
  */
 import {
   acceptScoringHighlight,
@@ -12,8 +14,14 @@ import {
   canonNhlAbbrev,
   highlightCaption,
   highlightId,
+  nhlGamePath,
+  pickRailWrap,
+  teamMatchesFilter,
+  wrapCaption,
+  wrapHighlightId,
   parseClockSeconds,
   type TeamFilter,
+  type WrapKind,
 } from "./select.ts";
 
 const NHL = "https://api-web.nhle.com";
@@ -80,7 +88,7 @@ export type BrightcoveMp4 = {
   height: number | null;
 };
 
-export async function loadBrightcoveMp4(videoId: string): Promise<BrightcoveMp4 | null> {
+async function brightcoveVideo(videoId: string): Promise<Rec | null> {
   const url = `https://edge.api.brightcove.com/playback/v1/accounts/${NHL_BC_ACCOUNT}/videos/${videoId}`;
   const call = (key: string) =>
     fetch(url, {
@@ -94,7 +102,20 @@ export async function loadBrightcoveMp4(videoId: string): Promise<BrightcoveMp4 
     if (fresh && fresh !== usedKey) res = await call(fresh);
   }
   if (!res.ok) return null;
-  const v = rec(await res.json());
+  return rec(await res.json());
+}
+
+/** Poster only. Callers must not turn this into a Telegram video upload. */
+export async function loadBrightcovePoster(videoId: string): Promise<string | null> {
+  const v = await brightcoveVideo(videoId);
+  if (!v) return null;
+  const poster = str(v.poster) || str(v.thumbnail);
+  return poster.startsWith("https://") ? poster : null;
+}
+
+export async function loadBrightcoveMp4(videoId: string): Promise<BrightcoveMp4 | null> {
+  const v = await brightcoveVideo(videoId);
+  if (!v) return null;
   const sources = arr(v.sources)
     .map(rec)
     .filter((s) => str(s.container) === "MP4" && str(s.src).startsWith("https://"))
@@ -382,15 +403,91 @@ export async function fetchGoalClipsForGame(
   return sortClips(resolved.filter((c): c is GoalClip => c != null));
 }
 
-export async function collectGoalClips(filter: TeamFilter, hours: number, now = new Date()): Promise<GoalClip[]> {
+export type GameWrap = {
+  highlightId: string;
+  clipId: string;
+  kind: WrapKind;
+  nhlGameId: string;
+  espnEventId: string | null;
+  teamAbbrev: string;
+  opponentAbbrev: string;
+  caption: string;
+  /** https poster, or null. Never an MP4. */
+  poster: string | null;
+  gamePath: string | null;
+  sharingUrl: null;
+};
+
+function followedSide(game: ClubGame, filter: TeamFilter): { abbrev: string; name: string } | null {
+  if (teamMatchesFilter(filter, { abbrev: game.awayAbbrev, teamId: game.awayId })) {
+    return { abbrev: game.awayAbbrev, name: game.awayName };
+  }
+  if (teamMatchesFilter(filter, { abbrev: game.homeAbbrev, teamId: game.homeId })) {
+    return { abbrev: game.homeAbbrev, name: game.homeName };
+  }
+  return null;
+}
+
+/**
+ * One wrap per finished game: NHL recap when the right rail has it, otherwise
+ * the condensed game. The Brightcove MP4 is not loaded.
+ */
+export async function fetchWrapForGame(
+  game: ClubGame,
+  filter: TeamFilter,
+  espnEventId: string | null,
+): Promise<GameWrap | null> {
+  if (!game.finished) return null;
+  const side = followedSide(game, filter);
+  if (!side) return null;
+  let rail: Rec;
+  try {
+    rail = rec(await nhlJson(`v1/gamecenter/${game.nhlGameId}/right-rail`));
+  } catch {
+    return null;
+  }
+  const picked = pickRailWrap(rec(rail.gameVideo));
+  if (!picked) return null;
+  const poster = await loadBrightcovePoster(picked.clipId).catch(() => null);
+  return {
+    highlightId: wrapHighlightId(picked.kind, picked.clipId),
+    clipId: picked.clipId,
+    kind: picked.kind,
+    nhlGameId: game.nhlGameId,
+    espnEventId,
+    teamAbbrev: side.abbrev,
+    opponentAbbrev: opponentAbbrev(game, side.abbrev),
+    caption: wrapCaption({
+      teamAbbrev: side.abbrev,
+      teamName: side.name,
+      opponentAbbrev: opponentAbbrev(game, side.abbrev),
+      kind: picked.kind,
+    }),
+    poster,
+    gamePath: nhlGamePath(espnEventId),
+    sharingUrl: null,
+  };
+}
+
+export async function collectHighlights(
+  filter: TeamFilter,
+  hours: number,
+  now = new Date(),
+): Promise<{ clips: GoalClip[]; wraps: GameWrap[] }> {
   const games = await fetchRecentClubGames(filter, hours, now);
   const clips: GoalClip[] = [];
+  const wraps: GameWrap[] = [];
   for (const game of games) {
     const espnEventId = await resolveEspnEventId(game);
-    const found = await fetchGoalClipsForGame(game, filter, espnEventId);
-    clips.push(...found);
+    clips.push(...(await fetchGoalClipsForGame(game, filter, espnEventId)));
+    const wrap = await fetchWrapForGame(game, filter, espnEventId);
+    if (wrap) wraps.push(wrap);
   }
-  return sortClips(clips);
+  return { clips: sortClips(clips), wraps };
+}
+
+export async function collectGoalClips(filter: TeamFilter, hours: number, now = new Date()): Promise<GoalClip[]> {
+  return (await collectHighlights(filter, hours, now)).clips;
 }
 
 export async function loadClubGame(nhlGameId: string): Promise<ClubGame | null> {
