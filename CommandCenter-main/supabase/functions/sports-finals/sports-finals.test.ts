@@ -5,7 +5,8 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { cardFromSummary, finalCaption, formatFinalsTimestamp, highlightFromBox, starsFromLanding, statMagnitude } from "./card.ts";
+import { cardFromSummary, finalCaption, formatFinalsTimestamp, highlightFromBox, pickCardLogoHref, pickMlbPerformers, starsFromLanding, statMagnitude } from "./card.ts";
+import { mapMlbWinProbability, mlbInningLabels, mlbPlayRefs, mlbWinProbDomain } from "./mlb-win-probability.ts";
 import { mapThreeStars } from "./nhl-stars.ts";
 import { formatPlayoffSeriesLine, mlbPlayoffFromSummary } from "./series.ts";
 import { alertReplyMarkup } from "../_shared/telegram-markup.ts";
@@ -56,6 +57,44 @@ assert.equal(edgeMap(undefined, []).length, 0);
   assert.ok(edgePlot(live)?.future, "live WP leaves remaining regulation unfilled");
   assert.ok(edgePlot(live) && !edgePlot(live)!.area.includes("L100 "), "home fill stops at last play");
 }
+
+{
+  const mlbSeries = [
+    { homeWinPercentage: 0.55, playId: "t1a" },
+    { homeWinPercentage: 0.52, playId: "t1b" },
+    { homeWinPercentage: 0.48, playId: "b1" },
+    { homeWinPercentage: 0.41, playId: "t9" },
+    { homeWinPercentage: 1, playId: "b9" },
+    { homeWinPercentage: 0.62, playId: "t10" },
+  ];
+  const mlbPlays = [
+    { id: "t1a", inning: 1, half: "top" as const },
+    { id: "t1b", inning: 1, half: "top" as const },
+    { id: "b1", inning: 1, half: "bottom" as const },
+    { id: "t9", inning: 9, half: "top" as const },
+    { id: "b9", inning: 9, half: "bottom" as const },
+    { id: "t10", inning: 10, half: "top" as const },
+  ];
+  const mapped = mapMlbWinProbability(mlbSeries, mlbPlays);
+  assert.equal(mapped.length, 6);
+  assert.ok(mapped[0]!.elapsedSec < mapped[1]!.elapsedSec);
+  assert.ok(mapped[0]!.elapsedSec < 1);
+  assert.ok(mapped[2]!.elapsedSec >= 1 && mapped[2]!.elapsedSec < 2);
+  assert.ok(mapped[4]!.elapsedSec >= 17);
+  const domain = mlbWinProbDomain(mapped);
+  assert.ok(domain > 18);
+  assert.deepEqual(mlbInningLabels(18).map((row) => row.label), ["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+  assert.ok(mlbInningLabels(domain).some((row) => row.label === "EX"));
+  assert.equal(mlbPlayRefs({ plays: [{ id: "x", period: { number: 4, type: "Bottom" } }] })[0]?.half, "bottom");
+}
+assert.ok(
+  pickCardLogoHref({
+    logos: [
+      { href: "https://a.espncdn.com/i/teamlogos/mlb/500/sd.png", rel: ["full", "default"] },
+      { href: "https://a.espncdn.com/i/teamlogos/mlb/500-dark/sd.png", rel: ["full", "dark"] },
+    ],
+  })?.includes("500-dark/sd.png"),
+);
 
 assert.deepEqual(parseScope(undefined), { favorites: true, ruwt: true, all: false });
 assert.deepEqual(parseScope("all"), { favorites: false, ruwt: false, all: true });
@@ -603,13 +642,27 @@ const mlbPlayoff = cardFromSummary("mlb", "401908003", {
             score: "3",
             record: [{ type: "total", summary: "91-71" }],
             linescores: Array.from({ length: 9 }, (_, i) => ({ value: i === 0 || i === 4 || i === 6 ? 1 : 0 })),
-            team: { id: "25", abbreviation: "SD", displayName: "San Diego Padres", color: "2f241d", alternateColor: "ffc425" },
+            hits: 5,
+            errors: 2,
+            team: {
+              id: "25",
+              abbreviation: "SD",
+              displayName: "San Diego Padres",
+              color: "2f241d",
+              alternateColor: "ffc425",
+              logos: [
+                { href: "https://a.espncdn.com/i/teamlogos/mlb/500/sd.png", rel: ["full", "default"] },
+                { href: "https://a.espncdn.com/i/teamlogos/mlb/500-dark/sd.png", rel: ["full", "dark"] },
+              ],
+            },
           },
           {
             homeAway: "home",
             score: "4",
             record: [{ type: "total", summary: "103-59" }],
             linescores: Array.from({ length: 9 }, (_, i) => ({ value: i === 6 || i === 8 ? (i === 8 ? 2 : 1) : 0 })),
+            hits: 5,
+            errors: 3,
             team: { id: "8", abbreviation: "MIL", displayName: "Milwaukee Brewers", color: "0a2351", alternateColor: "b6922e" },
           },
         ],
@@ -659,6 +712,18 @@ const mlbPlayoff = cardFromSummary("mlb", "401908003", {
       },
     ],
   },
+  plays: [
+    { id: "t1", period: { number: 1, type: "Top" } },
+    { id: "b3", period: { number: 3, type: "Bottom" } },
+    { id: "t9", period: { number: 9, type: "Top" } },
+    { id: "b9", period: { number: 9, type: "Bottom" } },
+  ],
+  winprobability: [
+    { homeWinPercentage: 0.67, playId: "t1" },
+    { homeWinPercentage: 0.51, playId: "b3" },
+    { homeWinPercentage: 0.44, playId: "t9" },
+    { homeWinPercentage: 1, playId: "b9" },
+  ],
 });
 assert.equal(mlbPlayoff.playoff, true);
 assert.match(mlbPlayoff.seriesLine ?? "", /MIL leads series 2-0 · Game 2 of 5/);
@@ -688,11 +753,22 @@ assert.match(mlbPlayoffSvg, /MIL leads series 2-0/);
 assert.match(mlbPlayoffSvg, /Box score/);
 assert.match(mlbPlayoffSvg, /J\. Chourio|F\. Tatis Jr\./);
 assert.match(mlbPlayoffSvg, /L\. Henderson|M\. King/);
-assert.doesNotMatch(mlbPlayoffSvg, /Standings|NL Central|Win probability/);
+assert.doesNotMatch(mlbPlayoffSvg, /Standings|NL Central/);
+assert.match(mlbPlayoffSvg, /Win probability/);
+assert.doesNotMatch(mlbPlayoffSvg, />Q1<|>Q2<|>Q3<|>Q4</);
+assert.match(mlbPlayoffSvg, /Key performers/);
+assert.match(mlbPlayoffSvg, /logoHalo/);
 assert.doesNotMatch(mlbPlayoffSvg, />103-59<|>91-71</);
 assert.match(mlbPlayoffSvg, new RegExp(`width="${FINALS_ALERT_WIDTH}"`));
 const mlbH = Number(/<svg [^>]*height="(\d+(?:\.\d+)?)"/.exec(mlbPlayoffSvg)?.[1] ?? 0);
-assert.ok(mlbH > 700 && mlbH <= FINALS_ALERT_TARGET_HEIGHT + 80, `MLB playoff card height ${mlbH}`);
+assert.ok(mlbH > 700 && mlbH <= FINALS_ALERT_TARGET_HEIGHT + 400, `MLB playoff card height ${mlbH}`);
+assert.equal(mlbPlayoff.winProbability.length, 4);
+assert.ok(mlbPlayoff.winProbability[0]!.elapsedSec < 2, "first MLB WP point sits in the first inning");
+assert.ok(mlbPlayoff.winProbability.at(-1)!.elapsedSec > 16, "last MLB WP point sits in the ninth");
+assert.match(mlbPlayoff.away.logoUrl ?? "", /500-dark\/sd/);
+assert.equal(mlbPlayoff.away.hits, 5);
+assert.equal(mlbPlayoff.home.errors, 3);
+assert.ok(pickMlbPerformers(mlbPlayoff.mlbBox!).length >= 2);
 
 const stars = mapThreeStars([
   { star: 1, playerId: 1, teamAbbrev: "VGK", name: { default: "M. Marner" }, position: "R", goals: 1, assists: 0, points: 1, headshot: "https://example.com/a.png" },
@@ -707,11 +783,16 @@ nhlCard.goalies = [
 ];
 const nhlStarsSvg = renderFinalSvg(nhlCard);
 assert.match(nhlStarsSvg, /Three Stars/);
+assert.match(nhlStarsSvg, /1ST STAR/);
+assert.match(nhlStarsSvg, /2ND STAR/);
+assert.match(nhlStarsSvg, /3RD STAR/);
+assert.match(nhlStarsSvg, /NHL official/);
 assert.match(nhlStarsSvg, /M\. Marner/);
 assert.match(nhlStarsSvg, /Goalies/);
 assert.match(nhlStarsSvg, /A\. Hill/);
 assert.doesNotMatch(nhlStarsSvg, /Box leaders/);
 assert.doesNotMatch(nhlStarsSvg, /Win probability/);
+assert.equal(nhlCard.winProbability.length, 0, "ESPN/NHL.com still ship no hockey WP series");
 
 nhlCard.stats = [
   { label: "Shots", away: "28", home: "31", awayLeads: false, homeLeads: true, awayShare: 47 },
