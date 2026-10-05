@@ -62,8 +62,8 @@ assert(!pageExceedsCanvas(PAGE_CHROME_PX + frontH), "NFL1 folio stays on the can
 const a1H = estimateA1Height({ railItems: 2, hasLeadPhoto: true, fillRows: 3 });
 assert(a1H <= PAGE_BODY_PX, `A1 with photo, two rail wraps, and a kickoff fill fits (${a1H} <= ${PAGE_BODY_PX})`);
 
-const a4H = estimateInsideRecapHeight({ grafs: 7, condensedBox: true });
-assert(a4H <= PAGE_BODY_PX, `A4 condensed recap fits (${a4H} <= ${PAGE_BODY_PX})`);
+const a4H = estimateInsideRecapHeight({ grafs: 6, condensedBox: false });
+assert(a4H <= PAGE_BODY_PX, `A4 recap without a full box fits (${a4H} <= ${PAGE_BODY_PX})`);
 
 const nfl2H = estimateScoreGridHeight(12, 3);
 assert(nfl2H <= PAGE_BODY_PX, `NFL2 12-game board fits (${nfl2H} <= ${PAGE_BODY_PX})`);

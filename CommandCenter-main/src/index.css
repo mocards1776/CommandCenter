@@ -8675,6 +8675,7 @@ li.counting .tt-count.card {
 .tt-slate-desk {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 12px;
   flex: 1;
   min-height: 0;
@@ -8685,8 +8686,8 @@ li.counting .tt-count.card {
   gap: 8px;
   min-height: 0;
 }
-.tt-slate-desk section:nth-child(2) {
-  flex: 1;
+.tt-slate-desk .tt-slate-heavy {
+  min-height: 0;
 }
 .tt-slate-list {
   display: grid;
@@ -8883,8 +8884,13 @@ li.counting .tt-count.card {
   display: grid;
   grid-template-columns: 1fr 1fr;
 }
-.tt-front-lead .tt-recap-photo.wide img {
-  max-height: 300px;
+.tt-front-lead,
+.tt-front-side {
+  overflow: hidden;
+}
+.tt-front-lead .tt-recap-photo.wide img,
+.wsj-inside-story .tt-recap-photo.wide img {
+  max-height: 220px;
 }
 .tt-rail-recap {
   display: flex;
@@ -8904,6 +8910,24 @@ li.counting .tt-count.card {
 }
 .tt-week-fill {
   flex: 0 0 auto;
+  margin-top: auto;
+}
+.tt-slate-desk .tt-week-fill {
+  margin-top: 0;
+}
+.tt-slate-desk .tt-week-fill .tt-strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.tt-watch-preview .tt-scorecard-recap span,
+.tt-watch-preview .tt-scorecard-recap em {
+  display: none;
+}
+.tt-watch-preview .tt-scorecard-recap strong {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .tt-score-fill {
   flex: 1;
@@ -8941,6 +8965,11 @@ li.counting .tt-count.card {
   align-items: center;
   gap: 24px;
   padding: 24px 0 48px;
+}
+.tt-watch-preview.tt-locked-page .wsj-sport,
+.tt-watch-preview.tt-locked-page .wsj-sport-solo,
+.tt-watch-preview.tt-locked-page .tt-section-front {
+  overflow: hidden;
 }
 .tt-watch-preview.tt-locked-page .wsj-page,
 .tt-watch-preview.tt-locked-page .wsj-fit,

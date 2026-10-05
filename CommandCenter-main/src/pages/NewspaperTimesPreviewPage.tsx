@@ -60,7 +60,14 @@ export default function NewspaperTimesPreviewPage() {
     page === "a4"
       ? [
           <TimesChrome key="a4" folio="A4" kicker="The Essentials" desk="Lions">
-            {lions ? <FullRecap recap={lions} grafs={7} /> : <p className="wsj-empty">Setting the Lions recap…</p>}
+            {lions ? (
+              <div className="tt-section-front">
+                <FullRecap recap={lions} grafs={5} box={false} />
+                {chiefs ? <RailRecap recap={chiefs} grafs={1} /> : null}
+              </div>
+            ) : (
+              <p className="wsj-empty">Setting the Lions recap…</p>
+            )}
           </TimesChrome>,
         ]
       : page === "a-favorites"
@@ -99,6 +106,7 @@ export default function NewspaperTimesPreviewPage() {
                     folio={schedulePacks.length > 1 ? `NFL${7 + i}` : "NFL7"}
                     week={board?.slateWeekNumber ?? 5}
                     continued={i > 0}
+                    fill={i === schedulePacks.length - 1 ? weekGames : []}
                   />
                 ))
               : [
@@ -192,11 +200,9 @@ async function recapCardFor(game: BoxGame, fav: (typeof FAVORITES)[number]): Pro
       const text = sanitizeArticleBody(String(raw));
       if (isPrintableStoryBody(text) && text.length > (body?.length ?? 0)) body = text;
     }
-    const art = pickSummaryPhoto([
-      ...(sum.article?.images ?? []),
-      ...(sum.news?.articles ?? []).flatMap((a) => a.images ?? []),
-    ]);
-    if (art && (!photo || (art.width ?? 0) > (photoWidth ?? 0))) {
+    // Recap art only — news-rail galleries (history cuts, etc.) are not the game photo.
+    const art = pickSummaryPhoto(sum.article?.images ?? []);
+    if (art) {
       photo = art.url;
       photoWidth = art.width ?? photoWidth;
     }
@@ -332,20 +338,20 @@ function TimesChrome({
   );
 }
 
-function FullRecap({ recap, grafs = 8 }: { recap: FavRecap; grafs?: number }) {
+function FullRecap({ recap, grafs = 4, box = false }: { recap: FavRecap; grafs?: number; box?: boolean }) {
   const paras = pageParas(recap.card.body, grafs);
   return (
     <article className="wsj-inside-story first">
       <p className="wsj-kicker">{recap.card.teamName} · NFL</p>
       <h2 className="wsj-hl xl">{recap.card.headline}</h2>
       <RecapChrome card={recap.card} game={recap.game} compact />
-      <RecapPhoto url={recap.card.photo} width={recap.card.photoWidth} caption={recap.card.caption} />
+      <RecapPhoto url={recap.card.photo} width={Math.max(recap.card.photoWidth ?? 1200, 1200)} caption={recap.card.caption} />
       <div className="wsj-prose">
         {paras.map((p) => (
           <p key={p.slice(0, 40)}>{p}</p>
         ))}
       </div>
-      <RecapBox card={recap.card} game={recap.game} compact forceFull />
+      {box ? <RecapBox card={recap.card} game={recap.game} compact forceFull /> : null}
     </article>
   );
 }
@@ -374,7 +380,7 @@ function WeekPreview({ games, week }: { games: BoxGame[]; week: number }) {
         Week {week} <em>kickoffs · CT</em>
       </h3>
       <div className="tt-slate-list cols-2">
-        {games.slice(0, 6).map((g) => (
+        {games.slice(0, 4).map((g) => (
           <SlateLine key={g.id} game={g} />
         ))}
       </div>
@@ -393,7 +399,7 @@ function A1Front({
 }) {
   const lead = recaps.find((r) => r.card.favoriteKey === "nfl-dal") ?? recaps[0] ?? null;
   const seconds = recaps.filter((r) => r !== lead);
-  const paras = lead ? pageParas(lead.card.body, 5) : [];
+  const paras = lead ? pageParas(lead.card.body, 3) : [];
   return (
     <TimesChrome folio="A1" kicker="The Essentials">
       {lead ? (
@@ -412,7 +418,7 @@ function A1Front({
             </div>
             <div className="tt-front-side">
               {seconds.map((r) => (
-                <RailRecap key={r.card.id} recap={r} grafs={2} />
+                <RailRecap key={r.card.id} recap={r} grafs={1} />
               ))}
             </div>
           </div>
@@ -439,7 +445,7 @@ function NflFront({
   const strips = sportScoreBands("football/nfl", board, EDITION_DAY);
   const lead = recaps.find((r) => r.card.favoriteKey === "nfl-kc") ?? recaps[0] ?? null;
   const seconds = recaps.filter((r) => r !== lead).slice(0, 2);
-  const paras = lead ? pageParas(lead.card.body, 3) : [];
+  const paras = lead ? pageParas(lead.card.body, 2) : [];
   return (
     <TimesChrome folio="NFL1" kicker="NFL" desk="National Football League">
       {lead ? (
@@ -504,11 +510,13 @@ function NflSchedule({
   folio,
   week,
   continued,
+  fill,
 }: {
   games: BoxGame[];
   folio: string;
   week: number;
   continued?: boolean;
+  fill?: BoxGame[];
 }) {
   const days = groupByDay(games);
   return (
@@ -518,7 +526,7 @@ function NflSchedule({
           Week {week} {continued ? "schedule, continued" : "schedule"} <em>{games.length} games · times CT</em>
         </h2>
         {days.map(([day, list]) => (
-          <section key={day}>
+          <section key={day} className={list.length >= 6 ? "tt-slate-heavy" : undefined}>
             <h3 className="wsj-band-title">
               {scheduleDayLabel(day)}{" "}
               <em>
@@ -532,6 +540,14 @@ function NflSchedule({
             </div>
           </section>
         ))}
+        {fill?.length ? (
+          <section className="tt-week-fill" aria-label="Last week">
+            <h3 className="wsj-band-title">
+              Week {Math.max(week - 1, 1)} finals <em>{fill.length} games</em>
+            </h3>
+            <ScoreStrip games={fill} />
+          </section>
+        ) : null}
         {!games.length ? <p className="wsj-empty">Setting the Week 5 slate…</p> : null}
       </div>
     </TimesChrome>
