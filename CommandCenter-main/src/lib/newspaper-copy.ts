@@ -140,6 +140,7 @@ export function isCaptionOnlyLine(line: string): boolean {
   if (!t) return true;
   if (isTeamNameCaption(t)) return true;
   if (/^(?:photo|image|courtesy|ap photo|getty)\b/i.test(t) && t.length < 80) return true;
+  if (/:\s*(?:game |full )?highlights\s*$/i.test(t) && t.length < 140) return true;
   return false;
 }
 

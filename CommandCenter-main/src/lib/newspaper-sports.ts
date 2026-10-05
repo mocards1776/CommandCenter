@@ -989,9 +989,18 @@ export function attachFavoriteRecapChrome(cards: GameWrapCard[], games: WireGame
     const game = fromId ?? (named.length === 1 ? named[0] : favGames.length === 1 ? favGames[0] : undefined);
     if (!game) return card;
     const scored = game.away.score != null && game.home.score != null;
+    const cardPrintable = isPrintableStoryBody(card.body);
+    const gamePrintable = isPrintableStoryBody(game.body);
+    const highlightHead = /:\s*game highlights\s*$/i.test(card.headline);
     return {
       ...card,
       gameId: card.gameId || game.eventId,
+      leaguePath: card.leaguePath || game.path,
+      headline: highlightHead && game.headline ? game.headline : card.headline,
+      body: cardPrintable ? card.body : gamePrintable ? game.body : card.body,
+      dateline: card.dateline || game.dateline,
+      when: card.when || game.startedAt,
+      wrapKind: card.wrapKind ?? game.wrapKind ?? null,
       scoreLine:
         card.scoreLine && /\d/.test(card.scoreLine)
           ? card.scoreLine

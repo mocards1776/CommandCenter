@@ -2368,7 +2368,7 @@ function SportSectionFront({
                       </button>
                     </h3>
                     <ScoreStrip
-                      games={strip.games.slice(0, 10)}
+                      games={strip.games}
                       onOpen={(g) => {
                         const card = boxStoryCard(g);
                         if (card) open({ card, game: g });

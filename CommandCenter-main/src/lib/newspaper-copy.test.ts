@@ -157,4 +157,9 @@ assert(isPrintableStoryBody(mixed), "a real recap with chrome stripped is printa
 const captionOnly = sanitizeArticleBody("Dallas Cowboys");
 assertEqual(captionOnly, "", "a team-name caption is not a story");
 
+const eveningCowboys = `not buying into Cowboys after win over Texans Stephen A. not buying into Cowboys after win over Texans 1:33 Did Drake Maye prove doubters wrong with win over Bills? Did Drake Maye prove doubters wrong with win over Bills? 2:13 Stephen A. disappointed by C.J. Gardner-Johnson's 'classless' response to Bills' loss Stephen A. disappointed by C.J. Gardner-Johnson's 'classless' response to Bills' loss 0:51 Rex Ryan: Eagles O-line is 'hot garbage' Rex Ryan: Eagles O-line is 'hot garbage' 0:34 Referee livid after collision with Vikings LB Eric Wilson Referee livid after collision with Vikings LB Eric Wilson Terms of Use Privacy Policy Your US State Privacy Rights Children's Online Privacy Policy Interest-Based Ads About Nielsen Measurement Your Privacy Choices Contact Us Disney Ad Sales Site Work for ESPN Corrections GAMBLING PROBLEM? CALL 1-800-GAMBLER or 1-800-MY-RESET, (800) 327-5050 or visit gamblinghelplinema.org (MA). Call 877-8-HOPENY/text HOPENY (467369) (NY). Call 888-789-7777/visit ccpg.org (CT), or visit www.mdgamblinghelp.org (MD), 1-800-981-0023 (PR). 21+ and present in most states. (18+ DC/KY/NH/PR/WY). Void in ONT. Eligibility restrictions apply. Terms: draftkings.com/sportsbook. On behalf of Boot Hill Casino (KS). Pass-thru of per wager tax may apply in IL. Copyright: © 2026 ESPN Enterprises, LLC.`;
+assertEqual(sanitizeArticleBody(eveningCowboys), "", "2026-10-05-evening Cowboys scrape sanitizes to empty");
+assert(!isPrintableStoryBody(eveningCowboys), "evening Cowboys scrape is not printable");
+assertEqual(sanitizeArticleBody("Dallas Cowboys vs. Houston Texans: Game Highlights"), "", "highlights title is not a recap");
+
 console.log("newspaper-copy ok");

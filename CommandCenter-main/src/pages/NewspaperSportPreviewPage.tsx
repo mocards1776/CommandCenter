@@ -20,7 +20,7 @@ import { editionNewsDay, pressEdition } from "@/lib/newspaper";
 
 /**
  * Public iPad proof of the sport-section work. Not linked from nav.
- * `?page=mlb-front|mlb-playoffs|mlb-leaders|mlb-schedule|nfl-front|nfl-leaders|cfb-schedule`
+ * `?page=mlb-front|mlb-playoffs|mlb-leaders|mlb-schedule|nfl-front|nfl-schedule|nfl-leaders|cfb-schedule`
  */
 export default function NewspaperSportPreviewPage() {
   const [params] = useSearchParams();
@@ -36,7 +36,7 @@ export default function NewspaperSportPreviewPage() {
     queryKey: ["tt-sport-preview", "nfl-board", press.day],
     queryFn: () => fetchSectionBoard("football/nfl", press.day),
     staleTime: 5 * 60_000,
-    enabled: page === "nfl-front",
+    enabled: page === "nfl-front" || page === "nfl-schedule",
   });
   const cfbBoard = useQuery({
     queryKey: ["tt-sport-preview", "cfb-board", press.day],
@@ -96,7 +96,7 @@ export default function NewspaperSportPreviewPage() {
   const ready =
     page === "mlb-front" || page === "mlb-schedule"
       ? mlbBoard.isFetched
-      : page === "nfl-front"
+      : page === "nfl-front" || page === "nfl-schedule"
         ? nflBoard.isFetched
         : page === "cfb-schedule"
           ? cfbBoard.isFetched && cfbStandings.isFetched && cfbPoll.isFetched && cfbHeisman.isFetched
@@ -174,6 +174,16 @@ export default function NewspaperSportPreviewPage() {
                   poll={cfbPoll.data ?? []}
                   heisman={cfbHeisman.data ?? null}
                 />
+              </SportChrome>
+            ) : page === "nfl-schedule" ? (
+              <SportChrome
+                code="NFL"
+                title="National Football League"
+                desk="Schedule"
+                blurb={`${(nflBoard.data?.slate ?? []).filter((g) => !g.final).length} games ahead · Week ${nflBoard.data?.slateWeekNumber ?? nflBoard.data?.weekNumber ?? ""} · times CT`}
+                folio="NFL7"
+              >
+                <SchedulePreview games={(nflBoard.data?.slate ?? []).filter((g) => !g.final && !g.live)} />
               </SportChrome>
             ) : page === "nfl-front" ? (
               <FrontPreview
@@ -338,7 +348,7 @@ function FrontPreview({
               {games.length ? (
                 <section className="tt-front-rail" aria-label="Scores">
                   <h3 className="wsj-band-title">Last night’s scores</h3>
-                  <ScoreStrip games={games.slice(0, 10)} />
+                  <ScoreStrip games={games} />
                 </section>
               ) : null}
             </div>
