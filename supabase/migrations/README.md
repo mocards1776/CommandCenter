@@ -38,6 +38,10 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
     `payload`, `updated_at`). RLS on, service-role only. Warmed every 15
     minutes by `pg_cron` + `pg_net` (`warm-mlb-wraps` job) so Dispatch can
     serve MLB/Cardinals wraps without the app being open.
+12. `times_day_schedule` + `times_day_schedule_upcoming` — the Thompson Times
+    "The Day Ahead" page: one row per America/Chicago date (`events`, plus
+    `upcoming`, the next five days as filed that morning). RLS on; SELECT for
+    `authenticated` only, no anon access, writes by the service role.
 
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.
