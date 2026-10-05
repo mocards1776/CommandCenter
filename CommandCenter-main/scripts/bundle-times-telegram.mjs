@@ -2,8 +2,9 @@
  * Bundle the Times front (A1 picks) for the times-telegram edge function.
  * Run from CommandCenter-main: node scripts/bundle-times-telegram.mjs
  *
- * times-telegram imports the bundle directly; redeploy the function after a rebuild
- * so the alert keeps choosing the same A1 lead as the paper.
+ * Writes the canonical copy (/supabase/functions/times-telegram); then run
+ * bash scripts/sync-edge-copies.sh from the repo root and redeploy times-telegram and
+ * times-telegram-shots so the alerts keep choosing the same A1 lead as the paper.
  */
 import * as esbuild from "esbuild";
 import path from "node:path";
@@ -47,7 +48,7 @@ await esbuild.build({
   format: "esm",
   platform: "browser",
   target: "es2022",
-  outfile: "supabase/functions/times-telegram/front.bundle.js",
+  outfile: "../supabase/functions/times-telegram/front.bundle.js",
   plugins: [alias],
   minify: false,
   banner: { js: banner },
