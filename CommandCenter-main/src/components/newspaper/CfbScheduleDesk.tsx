@@ -23,7 +23,7 @@ function cfbWatch(game: BoxGame): number {
 function clubMark(side: BoxSide, scores: boolean) {
   return (
     <b>
-      {side.rank ? <span className="tt-cfb-rank">#{side.rank}</span> : null}
+      {side.rank ? <span className="tt-cfb-rank">#{side.rank} </span> : null}
       {side.abbrev}
       {scores && side.score != null ? <i className="tt-cfb-score">{side.score}</i> : null}
     </b>
