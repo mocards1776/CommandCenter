@@ -1079,25 +1079,6 @@ function BbrefStatTable({
   );
 }
 
-function BaseDiamond({
-  onFirst,
-  onSecond,
-  onThird,
-}: {
-  onFirst: boolean;
-  onSecond: boolean;
-  onThird: boolean;
-}) {
-  const bag = (on: boolean) => (on ? "bg-cream shadow-[0_0_0_1px_rgba(255,255,255,0.35)]" : "bg-white/15");
-  return (
-    <div className="relative mx-auto h-11 w-11" aria-hidden>
-      <span className={cn("absolute top-0 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45", bag(onSecond))} />
-      <span className={cn("absolute top-1/2 left-0 h-3 w-3 -translate-y-1/2 rotate-45", bag(onThird))} />
-      <span className={cn("absolute top-1/2 right-0 h-3 w-3 -translate-y-1/2 rotate-45", bag(onFirst))} />
-    </div>
-  );
-}
-
 function LiveSituationBar({
   inning,
   situation,
@@ -1141,23 +1122,11 @@ function LiveSituationBar({
             </p>
           ) : null}
         </div>
-        <div className="flex items-center gap-4">
-          <BaseDiamond
-            onFirst={situation.onFirst}
-            onSecond={situation.onSecond}
-            onThird={situation.onThird}
-          />
-          <div className="text-right">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/70">
-              {inning || "Live"}
-            </p>
-            <p className="numeral mt-1 text-[15px] text-cream">
-              {situation.balls}-{situation.strikes}
-              <span className="mx-1.5 text-white/30">·</span>
-              {situation.outs} out{situation.outs === 1 ? "" : "s"}
-            </p>
-          </div>
-        </div>
+        {inning ? (
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/55">
+            {inning}
+          </p>
+        ) : null}
       </div>
     </div>
   );

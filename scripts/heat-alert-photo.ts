@@ -99,7 +99,7 @@ function kcLvFixture(): HeatAlertCard {
 }
 
 /** Screenshot moment: CHW @ CLE, Top 4th, 0-2, empty, one-run game. */
-function chwCleFixture(): HeatAlertCard {
+function chwCleFixture(variant: "empty" | "risp" | "2outs" = "empty"): HeatAlertCard {
   return {
     sport: "mlb",
     gameId: "401696444",
@@ -134,16 +134,39 @@ function chwCleFixture(): HeatAlertCard {
     periodLabels: ["1", "2", "3", "4"],
     football: null,
     ice: null,
-    diamond: {
-      balls: 0,
-      strikes: 2,
-      outs: 0,
-      onFirst: false,
-      onSecond: false,
-      onThird: false,
-      batter: "Andrew Benintendi",
-      pitcher: "Gavin Williams",
-    },
+    diamond:
+      variant === "risp"
+        ? {
+            balls: 2,
+            strikes: 1,
+            outs: 1,
+            onFirst: true,
+            onSecond: true,
+            onThird: false,
+            batter: "Andrew Benintendi",
+            pitcher: "Gavin Williams",
+          }
+        : variant === "2outs"
+          ? {
+              balls: 3,
+              strikes: 2,
+              outs: 2,
+              onFirst: false,
+              onSecond: false,
+              onThird: true,
+              batter: "Andrew Benintendi",
+              pitcher: "Gavin Williams",
+            }
+          : {
+              balls: 0,
+              strikes: 2,
+              outs: 0,
+              onFirst: false,
+              onSecond: false,
+              onThird: false,
+              batter: "Andrew Benintendi",
+              pitcher: "Gavin Williams",
+            },
     homeWinPct: 58.4,
     winProbability: [],
     stats: [
@@ -175,11 +198,15 @@ const outPath = path.resolve(arg("out") || path.join("..", "artifacts", "heat-al
 
 const fixture = arg("fixture");
 const card =
-  fixture === "chw-cle"
-    ? chwCleFixture()
-    : fixture === "kc-lv" || fixture === ""
-      ? kcLvFixture()
-      : await loadHeatAlertCard({ sport, gameId });
+  fixture === "chw-cle" || fixture === "chw-cle-empty"
+    ? chwCleFixture("empty")
+    : fixture === "chw-cle-risp"
+      ? chwCleFixture("risp")
+      : fixture === "chw-cle-2outs"
+        ? chwCleFixture("2outs")
+        : fixture === "kc-lv" || fixture === ""
+          ? kcLvFixture()
+          : await loadHeatAlertCard({ sport, gameId });
 const withLogos = await embedLogos(card);
 const svg = renderHeatAlertSvg(withLogos);
 const caption = heatAlertCaption(reason);

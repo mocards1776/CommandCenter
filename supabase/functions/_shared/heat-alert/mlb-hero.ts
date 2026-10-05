@@ -1,8 +1,7 @@
 /**
- * Shared MLB score-nest copy for the heat-alert SVG and the in-app hero.
- * Baseball has no clock between the tall scores — the live count is the
- * equivalent, with outs + a runners shorthand underneath. The inning stays
- * on the status strip, not in this nest.
+ * Shared MLB live-hero model for the heat-alert SVG and the in-app instrument.
+ * Count is lamps (B/S/O), runners are a diamond — not a cramped text stack.
+ * The inning is a single chip, never the thing between the tall scores.
  */
 
 import { formatWinPct, cfbWinProbLeader } from "../win-probability.ts";
@@ -25,14 +24,24 @@ export type MlbHeroInput = {
   homeAbbrev?: string | null;
 };
 
-export type MlbHeroNest = {
-  /** Count "0-2" on a live pitch, otherwise Final / first-pitch / break copy. */
-  primary: string;
-  secondary: string | null;
-  runners: string | null;
+export type MlbCountLamps = {
+  balls: number;
+  strikes: number;
+  outs: number;
+};
+
+export type MlbHeroInstrument = {
+  livePlay: boolean;
+  lamps: MlbCountLamps | null;
+  onFirst: boolean;
+  onSecond: boolean;
+  onThird: boolean;
+  inning: string | null;
   winChip: string | null;
-  /** Primary is balls-strikes — render it like a clock numeral. */
-  liveCount: boolean;
+  homeShare: number | null;
+  /** Pregame / final / break word when lamps are off. */
+  status: string | null;
+  statusHint: string | null;
 };
 
 export function runnersShorthand(spot: MlbHeroDiamond): string {
@@ -43,6 +52,20 @@ export function runnersShorthand(spot: MlbHeroDiamond): string {
   return [first ? "1st" : null, second ? "2nd" : null, third ? "3rd" : null]
     .filter((bag): bag is string => Boolean(bag))
     .join(" & ");
+}
+
+export function mlbCountLamps(spot: MlbHeroDiamond): MlbCountLamps {
+  return {
+    balls: Math.max(0, Math.min(3, Math.floor(spot.balls))),
+    strikes: Math.max(0, Math.min(2, Math.floor(spot.strikes))),
+    outs: Math.max(0, Math.min(3, Math.floor(spot.outs))),
+  };
+}
+
+export function mlbInningChip(detail: string | null | undefined): string | null {
+  const text = (detail ?? "").replace(/\s+/g, " ").trim();
+  if (!text || /^final$/i.test(text) || /^live$/i.test(text)) return null;
+  return text;
 }
 
 export function mlbWinChip(input: {
@@ -64,47 +87,82 @@ export function mlbWinChip(input: {
   return `${leader.abbrev} ${formatWinPct(leader.pct)}%`;
 }
 
-export function mlbHeroNest(input: MlbHeroInput): MlbHeroNest {
+export function mlbPlaybugLabel(hero: MlbHeroInstrument): string {
+  if (!hero.lamps) return hero.status || "MLB";
+  const { balls, strikes, outs } = hero.lamps;
+  const bags = [
+    hero.onFirst ? "first" : null,
+    hero.onSecond ? "second" : null,
+    hero.onThird ? "third" : null,
+  ].filter((bag): bag is string => Boolean(bag));
+  const runners = bags.length ? `runners on ${bags.join(" and ")}` : "bases empty";
+  return `${balls} and ${strikes}, ${outs} out${outs === 1 ? "" : "s"}, ${runners}`;
+}
+
+export function mlbHeroInstrument(input: MlbHeroInput): MlbHeroInstrument {
   const winChip = mlbWinChip(input);
+  const homeShare =
+    input.homeWinPct != null && Number.isFinite(input.homeWinPct)
+      ? Math.max(0, Math.min(100, input.homeWinPct))
+      : null;
   const diamond = input.diamond;
+  const inning = mlbInningChip(input.detail);
 
   if (input.live && diamond && !isBreakStatus(input.detail)) {
-    const outs = diamond.outs;
     return {
-      primary: `${diamond.balls}-${diamond.strikes}`,
-      secondary: `${outs} out${outs === 1 ? "" : "s"}`,
-      runners: runnersShorthand(diamond),
+      livePlay: true,
+      lamps: mlbCountLamps(diamond),
+      onFirst: diamond.onFirst,
+      onSecond: diamond.onSecond,
+      onThird: diamond.onThird,
+      inning,
       winChip,
-      liveCount: true,
+      homeShare,
+      status: null,
+      statusHint: null,
     };
   }
 
   if (input.final) {
     return {
-      primary: "Final",
-      secondary: null,
-      runners: null,
+      livePlay: false,
+      lamps: null,
+      onFirst: false,
+      onSecond: false,
+      onThird: false,
+      inning: null,
       winChip,
-      liveCount: false,
+      homeShare,
+      status: "Final",
+      statusHint: null,
     };
   }
 
   if (!input.live) {
     return {
-      primary: (input.when || "").trim() || "TBD",
-      secondary: "First pitch",
-      runners: null,
+      livePlay: false,
+      lamps: null,
+      onFirst: false,
+      onSecond: false,
+      onThird: false,
+      inning: null,
       winChip: null,
-      liveCount: false,
+      homeShare: null,
+      status: (input.when || "").trim() || "TBD",
+      statusHint: "First pitch",
     };
   }
 
-  const line = (input.detail || "Live").replace(/\s+/g, " ").trim();
   return {
-    primary: line,
-    secondary: null,
-    runners: diamond ? runnersShorthand(diamond) : null,
+    livePlay: Boolean(diamond),
+    lamps: diamond ? mlbCountLamps(diamond) : null,
+    onFirst: Boolean(diamond?.onFirst),
+    onSecond: Boolean(diamond?.onSecond),
+    onThird: Boolean(diamond?.onThird),
+    inning: inning || (input.detail || "Live").replace(/\s+/g, " ").trim(),
     winChip,
-    liveCount: false,
+    homeShare,
+    status: diamond ? null : (input.detail || "Live").replace(/\s+/g, " ").trim(),
+    statusHint: null,
   };
 }

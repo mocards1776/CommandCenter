@@ -8,7 +8,7 @@ import { formatHeatTimestamp, heatAlertCaption, situationLine } from "./copy.ts"
 import { alertReplyMarkup } from "../telegram-markup.ts";
 import { applyHeatSummary, heatStatMagnitude, pickHeatStats } from "./fetch-game.ts";
 import { driveCapsuleSpan, fieldBallPct, footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
-import { mlbHeroNest, runnersShorthand } from "./mlb-hero.ts";
+import { mlbHeroInstrument, mlbPlaybugLabel, runnersShorthand } from "./mlb-hero.ts";
 import { renderHeatAlertSvg } from "./svg.ts";
 import { parseChatAllowlist, resolveChatTargets } from "./telegram.ts";
 import type { HeatAlertCard } from "./types.ts";
@@ -385,11 +385,11 @@ const mlbLive: HeatAlertCard = {
   gamePath: "/sports/mlb/game/401696444?solo=1",
 };
 
-test("MLB nest uses count, outs, and runners instead of repeating the inning", () => {
+test("MLB instrument uses lamps and a diamond instead of a text nest", () => {
   assert.equal(runnersShorthand({ balls: 0, strikes: 0, outs: 0, onFirst: true, onSecond: true, onThird: true }), "Loaded");
   assert.equal(runnersShorthand({ balls: 0, strikes: 0, outs: 0, onFirst: true, onSecond: false, onThird: true }), "Corners");
   assert.equal(runnersShorthand({ balls: 0, strikes: 0, outs: 0, onFirst: false, onSecond: true, onThird: false }), "2nd");
-  const nest = mlbHeroNest({
+  const hero = mlbHeroInstrument({
     live: true,
     final: false,
     detail: "Top 4th",
@@ -398,22 +398,47 @@ test("MLB nest uses count, outs, and runners instead of repeating the inning", (
     awayAbbrev: "CHW",
     homeAbbrev: "CLE",
   });
-  assert.equal(nest.primary, "0-2");
-  assert.equal(nest.secondary, "0 outs");
-  assert.equal(nest.runners, "Empty");
-  assert.equal(nest.winChip, "CLE 58.4%");
-  assert.equal(nest.liveCount, true);
-  assert.equal(situationLine(mlbLive), "Top 4th");
+  assert.equal(hero.livePlay, true);
+  assert.deepEqual(hero.lamps, { balls: 0, strikes: 2, outs: 0 });
+  assert.equal(hero.onFirst, false);
+  assert.equal(hero.onSecond, false);
+  assert.equal(hero.onThird, false);
+  assert.equal(hero.inning, "Top 4th");
+  assert.equal(hero.winChip, "CLE 58.4%");
+  assert.equal(mlbPlaybugLabel(hero), "0 and 2, 0 outs, bases empty");
+  assert.match(situationLine(mlbLive), /Batter/);
+  assert.match(situationLine(mlbLive), /Pitcher/);
 });
 
-test("MLB heat SVG fills the score nest and drops the empty black plate", () => {
+test("MLB heat SVG owns the nest with a playbug and drops the empty black plate", () => {
   const svg = renderHeatAlertSvg(mlbLive);
   assert.match(svg, />MLB/);
-  assert.match(svg, />0-2</);
-  assert.match(svg, />0 OUTS</);
-  assert.match(svg, />EMPTY</);
+  assert.match(svg, /id="mlbDiamond"/);
+  assert.match(svg, /id="mlbInstrument"/);
+  assert.match(svg, />B</);
+  assert.match(svg, />S</);
+  assert.match(svg, />O</);
   assert.match(svg, />CLE 58.4%</);
-  assert.match(svg, />Top 4th</);
+  assert.match(svg, />TOP 4TH</);
+  assert.match(svg, />Andrew Benintendi</);
+  assert.match(svg, />Gavin Williams</);
+  assert.doesNotMatch(svg, />0-2</);
+  assert.doesNotMatch(svg, />EMPTY</);
   assert.doesNotMatch(svg, /fill="#050505"/);
-  assert.equal((svg.match(/>Top 4th</g) || []).length, 1, "inning belongs on the situation bar only");
+  assert.equal((svg.match(/>TOP 4TH</g) || []).length, 1, "inning lives once on the field chip");
+});
+
+test("MLB heat SVG lights occupied bags and two-out lamps", () => {
+  const risp = renderHeatAlertSvg({
+    ...mlbLive,
+    diamond: { ...mlbLive.diamond!, onFirst: true, onSecond: true, outs: 1, balls: 2, strikes: 1 },
+  });
+  assert.match(risp, /id="mlbDiamond"/);
+  assert.match(risp, /r="30" fill="#ffffff"/);
+  const twoOut = renderHeatAlertSvg({
+    ...mlbLive,
+    diamond: { ...mlbLive.diamond!, outs: 2, balls: 3, strikes: 2, onThird: true },
+  });
+  assert.match(twoOut, /id="mlbDiamond"/);
+  assert.match(twoOut, /#ef5b5b/);
 });
