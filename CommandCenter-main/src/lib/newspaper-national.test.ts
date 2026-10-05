@@ -5,6 +5,7 @@
 import {
   asNationalDesk,
   asHttpImageUrl,
+  isPlaceholderNewsImage,
   cleanHeadline,
   clusterItems,
   clusterBriefs,
@@ -246,6 +247,14 @@ assert(sample.stories[0]!.imageUrl && sample.stories[0]!.imageCredit, "lead samp
 assert(nationalPhotoSize(0, true) === "lead" && nationalPhotoSize(2, true) === "medium" && nationalPhotoSize(5, true) === "thumb", "photo scale follows rank");
 assert(nationalPhotoSize(0, false) == null, "no art, no hole");
 assert(asHttpImageUrl("javascript:alert(1)") == null, "non-http image is dropped");
+assert(isPlaceholderNewsImage("https://news.google.com/photos/reuters-logo"), "Google News asset is a placeholder");
+assert(
+  isPlaceholderNewsImage("https://lh3.googleusercontent.com/proxy/abc=s0-w100-h100"),
+  "googleusercontent favicon is a placeholder",
+);
+assert(isPlaceholderNewsImage("https://www.gstatic.com/images/branding/googleg/1x/googleg_standard_20dp.png"), "gstatic mark is a placeholder");
+assert(asHttpImageUrl("https://news.google.com/photos/x.png") == null, "placeholder URL is not kept as art");
+assert(asHttpImageUrl("https://a57.foxnews.com/static.foxnews.com/photo.jpg")?.includes("foxnews.com"), "a real photo stays");
 assert(parseOgImage('<meta property="og:image" content="https://www.foxnews.com/og.jpg">') === "https://www.foxnews.com/og.jpg", "og:image is read");
 assert(
   feedImage(`<item><enclosure url="https://nypost.com/photo.jpg" type="image/jpeg" /></item>`).url?.includes("photo.jpg"),

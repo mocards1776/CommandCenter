@@ -6,6 +6,7 @@ import {
   hockeyRecord,
   isBeezRow,
   printDate,
+  teamGameNumber,
   wpctLabel,
   type BeezDesk,
   type BeezGoalie,
@@ -22,7 +23,7 @@ function periodLabels(n: number): string[] {
   return Array.from({ length: n }, (_, i) => (i < 3 ? String(i + 1) : i === 3 ? "OT" : `OT${i - 2}`));
 }
 
-function LastGame({ game, club }: { game: BeezLastGame; club: string }) {
+function LastGame({ game, club, desk }: { game: BeezLastGame; club: string; desk: BeezDesk }) {
   const n = Math.max(game.periods.home.length, game.periods.away.length);
   const labels = periodLabels(n);
   const sides = [
@@ -33,7 +34,8 @@ function LastGame({ game, club }: { game: BeezLastGame; club: string }) {
   if (game.date) meta.push(printDate(game.date));
   if (game.time) meta.push(clockOrTba(game.time));
   if (game.stage) meta.push(game.stage);
-  if (game.game_no != null) meta.push(`Game ${game.game_no}`);
+  const gameNo = teamGameNumber(desk, game);
+  if (gameNo != null) meta.push(`Game ${gameNo}`);
   const title = (
     <h3 className="wsj-band-title">Last Game</h3>
   );
@@ -225,7 +227,7 @@ export default function BeezPage({ desk, editionLabel }: { desk: BeezDesk; editi
       ) : (
         <>
           <div className="tt-beez-top">
-            {desk.last_game ? <LastGame game={desk.last_game} club={club} /> : <section className="tt-beez-box" aria-label="Last game">
+            {desk.last_game ? <LastGame game={desk.last_game} club={club} desk={desk} /> : <section className="tt-beez-box" aria-label="Last game">
               <h3 className="wsj-band-title">Last Game</h3>
               <p className="tt-beez-empty-line">No result on file.</p>
             </section>}

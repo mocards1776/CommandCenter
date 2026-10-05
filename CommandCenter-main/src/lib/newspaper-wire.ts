@@ -18,6 +18,7 @@ import {
   type BoxWrapLine,
   type EspnSummaryForWrap,
 } from "./newspaper-box-wrap.ts";
+import { formatFixtureWhen } from "./newspaper-box.ts";
 import { isNewspaperCfbDeskGame, isNewspaperSecGame, newspaperEspnGet } from "./newspaper-espn.ts";
 import type { SportsFavorite } from "./sports.ts";
 
@@ -896,11 +897,14 @@ async function slateFromEspn(path: string, day: string): Promise<LeagueSlateGame
       const iso = comp?.date || ev.date;
       if (!iso) return null;
       try {
-        return new Date(iso).toLocaleTimeString("en-US", {
-          timeZone: "America/Chicago",
-          hour: "numeric",
-          minute: "2-digit",
-        });
+        if (!path.startsWith("soccer/") || final || live) {
+          return new Date(iso).toLocaleTimeString("en-US", {
+            timeZone: "America/Chicago",
+            hour: "numeric",
+            minute: "2-digit",
+          });
+        }
+        return formatFixtureWhen(iso) || null;
       } catch {
         return null;
       }
@@ -945,7 +949,10 @@ export async function fetchLeagueSlate(path: string, edition: string): Promise<L
       } else {
         for (const row of await slateFromEspn(path, day)) {
           if (seen.has(row.id)) continue;
+          const pair = `${row.day}|${[row.away.abbrev, row.home.abbrev].sort().join("-")}|${row.when ?? ""}`;
+          if (seen.has(pair)) continue;
           seen.add(row.id);
+          seen.add(pair);
           out.push(row);
         }
       }

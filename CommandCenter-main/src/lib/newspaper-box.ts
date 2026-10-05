@@ -8,6 +8,7 @@
  */
 
 import { editionNewsDay } from "./newspaper.ts";
+import { htmlToNewspaperText } from "./newspaper-copy.ts";
 import { isNewspaperCfbDeskGame, newspaperEspnGet } from "./newspaper-espn.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 
@@ -130,23 +131,7 @@ export function cleanStoryHtml(html: string): string {
 }
 
 export function htmlToText(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|h[1-6]|li|blockquote)>/gi, "\n\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;|&rsquo;/gi, "’")
-    .replace(/&lsquo;/gi, "‘")
-    .replace(/&ldquo;/gi, "“")
-    .replace(/&rdquo;/gi, "”")
-    .replace(/&mdash;/gi, "—")
-    .replace(/&ndash;/gi, "–")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+  return htmlToNewspaperText(html);
 }
 
 /* ───────────────────────── MLB ───────────────────────── */
@@ -759,12 +744,41 @@ function faceOff(iso: string | null): string {
     .replace(":00 ", " ");
 }
 
-/** "Sat, Oct 3" for a game that hasn't started; empty once it has. */
-export function gameDay(game: BoxGame): string {
-  if (game.final || game.live || !game.startIso) return "";
-  const d = new Date(game.startIso);
+export function formatPaperDay(d: Date): string {
+  return d
+    .toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      timeZone: "America/Chicago",
+    })
+    .replace(",", "");
+}
+
+/** "Sat Oct 10 · 9:00 AM" in Central time. */
+export function formatFixtureWhen(iso: string): string {
+  const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const time = d.toLocaleTimeString("en-US", {
+    timeZone: "America/Chicago",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${formatPaperDay(d)} · ${time}`;
+}
+
+/** "Sat Oct 3" for a game that hasn't started; empty once it has. */
+export function gameDay(game: BoxGame): string {
+  if (game.final || game.live) return "";
+  if (game.startIso) {
+    const d = new Date(game.startIso);
+    if (!Number.isNaN(d.getTime())) return formatPaperDay(d);
+  }
+  if (game.day && /^\d{4}-\d{2}-\d{2}$/.test(game.day)) {
+    const d = new Date(`${game.day}T17:00:00Z`);
+    if (!Number.isNaN(d.getTime())) return formatPaperDay(d);
+  }
+  return "";
 }
 
 export function gameClock(game: BoxGame): string {
@@ -924,7 +938,28 @@ const STAND_SPECS: { test: (path: string) => boolean; spec: StandSpec }[] = [
       sort: (g) => g("winpercent") * 1000 + g("pointdifferential") / 100,
     },
   },
+  {
+    test: (p) => /basketball\/(nba|wnba)/.test(p),
+    spec: {
+      columns: [
+        { label: "W", type: "wins" },
+        { label: "L", type: "losses" },
+        { label: "Pct", type: "winpercent" },
+        { label: "GB", type: "gamesbehind" },
+        { label: "L10", type: "lasttengames" },
+        { label: "Strk", type: "streak" },
+      ],
+      bar: (g) => g("winpercent"),
+      sort: (g) => g("winpercent") * 1000 + g("wins"),
+    },
+  },
 ];
+
+const NBA_PRESEASON_SPEC: StandSpec = {
+  columns: [{ label: "Preseason", type: "total" }],
+  bar: (g) => g("winpercent"),
+  sort: (g) => g("winpercent") * 1000 + g("wins"),
+};
 
 const COLLEGE_SPEC: StandSpec = {
   columns: [
@@ -945,15 +980,44 @@ function standGroups(node: StandNodeRaw, out: { name: string; entries: StandEntr
   for (const child of node.children ?? []) standGroups(child, out);
 }
 
+function entryDisplay(entry: StandEntryRaw, type: string): string {
+  const stats = entry.stats ?? [];
+  const hit = stats.find((s) => (s.type ?? s.name ?? "").toLowerCase() === type);
+  return (hit?.displayValue ?? "").replace(/, \d+ PTS$/, "") || "";
+}
+
+function emptyRecord(v: string): boolean {
+  return !v || v === "—" || /^0-0(?:-0)?$/.test(v);
+}
+
+/** Regular NBA spec, a one-column preseason table, or hide when nothing is in. */
+export function basketballStandingsSpec(
+  path: string,
+  groups: { name: string; entries: StandEntryRaw[] }[],
+): StandSpec | "hide" | null {
+  if (!/basketball\/(nba|wnba)/.test(path)) return null;
+  const rows = groups.flatMap((g) => g.entries);
+  const regular = STAND_SPECS.find((s) => s.test(path))?.spec ?? null;
+  if (!rows.length) return "hide";
+  const totals = rows.map((e) => entryDisplay(e, "total"));
+  if (!totals.every(emptyRecord)) return regular;
+  const confType = rows.some((e) => !emptyRecord(entryDisplay(e, "vsconf"))) ? "vsconf" : "overall";
+  const conf = rows.map((e) => entryDisplay(e, confType));
+  if (conf.every(emptyRecord)) return "hide";
+  return { ...NBA_PRESEASON_SPEC, columns: [{ label: "Preseason", type: confType }] };
+}
+
 /** Division / conference / league tables, sorted the way the league prints them. */
 export async function fetchSectionStandings(path: string): Promise<StandGroup[]> {
   const data = await getJson<StandNodeRaw>(
     `https://site.web.api.espn.com/apis/v2/sports/${path}/standings?level=3`,
   );
   if (!data) return [];
-  const spec = STAND_SPECS.find((s) => s.test(path))?.spec ?? COLLEGE_SPEC;
   const groups: { name: string; entries: StandEntryRaw[] }[] = [];
   standGroups(data, groups);
+  const hoop = basketballStandingsSpec(path, groups);
+  if (hoop === "hide") return [];
+  const spec = hoop ?? STAND_SPECS.find((s) => s.test(path))?.spec ?? COLLEGE_SPEC;
   return rankStandings(groups.map((group) => {
     const rows = group.entries.map((entry) => {
       const stats = entry.stats ?? [];
@@ -1005,6 +1069,53 @@ export function rankStandings(groups: StandGroup[]): StandGroup[] {
     })
     .sort((a, b) => a.rank - b.rank || a.index - b.index)
     .map((row) => row.group);
+}
+
+export function ordinalPlace(n: number): string {
+  const j = n % 10;
+  const k = n % 100;
+  if (j === 1 && k !== 11) return `${n}st`;
+  if (j === 2 && k !== 12) return `${n}nd`;
+  if (j === 3 && k !== 13) return `${n}rd`;
+  return `${n}th`;
+}
+
+export function shortGroupName(name: string): string {
+  const n = name.replace(/^\d{4}(-\d{2})?\s+/, "").trim();
+  if (/\bsec\b|southeastern/i.test(n)) return "SEC";
+  if (/big ten/i.test(n)) return "Big Ten";
+  if (/big 12|big twelve/i.test(n)) return "Big 12";
+  if (/\bacc\b|atlantic coast/i.test(n)) return "ACC";
+  if (/premier league/i.test(n)) return "Premier League";
+  if (/championship/i.test(n) && /efl|english/i.test(n)) return "Championship";
+  return n.replace(/\s+Conference$/i, "") || n;
+}
+
+/** Club-strip place from the same sorted table the A2 / CFB pages print. */
+export function standingFromGroups(groups: StandGroup[], teamId: string): string | null {
+  for (const group of groups) {
+    const i = group.rows.findIndex((row) => row.id === teamId);
+    if (i < 0) continue;
+    return `${ordinalPlace(i + 1)} in ${shortGroupName(group.name)}`;
+  }
+  return null;
+}
+
+export function applyTableStandings<T extends { key: string; standing: string | null }>(
+  snaps: T[],
+  standingsByPath: Record<string, StandGroup[]> | null | undefined,
+  favs: { key: string; espnPath: string }[],
+): T[] {
+  if (!standingsByPath) return snaps;
+  const pathOf = new Map(favs.map((fav) => [fav.key, fav.espnPath]));
+  return snaps.map((snap) => {
+    const path = pathOf.get(snap.key);
+    if (!path) return snap;
+    const league = path.replace(/\/teams\/.*$/, "");
+    const teamId = path.split("/").pop() ?? "";
+    const standing = teamId ? standingFromGroups(standingsByPath[league] ?? [], teamId) : null;
+    return standing ? { ...snap, standing } : snap;
+  });
 }
 
 export type LeagueLeaderRow = {
@@ -1081,13 +1192,84 @@ export async function fetchLeagueLeaders(path: string, categories = 8, rows = 5)
     .filter((group) => group.rows.length > 0);
 }
 
+function eventKey(game: BoxGame): string | null {
+  if (game.espnEventId) return `espn:${game.espnEventId}`;
+  if (game.gamePk != null) return `mlb:${game.gamePk}`;
+  return null;
+}
+
+function teamDateKey(game: BoxGame): string | null {
+  const away = game.away.id;
+  const home = game.home.id;
+  if (!away || !home || !game.day) return null;
+  const slot = game.startIso ? game.startIso.slice(0, 16) : "";
+  return `${game.day}|${[away, home].sort().join("-")}|${slot}`;
+}
+
+function completeness(game: BoxGame): number {
+  return (
+    (game.venue ? 4 : 0) +
+    (game.startIso ? 2 : 0) +
+    (game.broadcasts.length ? 1 : 0) +
+    (game.espnEventId || game.gamePk != null ? 2 : 0)
+  );
+}
+
+/** One row per ESPN / MLB id; same teams+date+slot collapse as a fallback. */
+export function dedupeBoxGames(games: BoxGame[]): BoxGame[] {
+  const seenId = new Set<string>();
+  const seenPair = new Set<string>();
+  const out: BoxGame[] = [];
+  for (const game of games) {
+    const eid = eventKey(game);
+    if (eid) {
+      if (seenId.has(eid)) continue;
+      seenId.add(eid);
+    } else if (seenId.has(game.id)) {
+      continue;
+    }
+    seenId.add(game.id);
+    const pair = teamDateKey(game);
+    if (pair) {
+      if (seenPair.has(pair)) continue;
+      seenPair.add(pair);
+    }
+    out.push(game);
+  }
+  return out;
+}
+
+/**
+ * Same club in two games at the same tip is a split-squad only when the
+ * venues differ. Otherwise the extra row is a stale ESPN duplicate.
+ */
+export function dropBogusSameSlot(games: BoxGame[]): BoxGame[] {
+  const bySlot = new Map<string, BoxGame[]>();
+  for (const game of games) {
+    const slot = game.startIso ? game.startIso.slice(0, 16) : "";
+    if (!slot) continue;
+    for (const id of [game.away.id, game.home.id]) {
+      if (!id) continue;
+      const key = `${id}|${slot}`;
+      const list = bySlot.get(key) ?? [];
+      list.push(game);
+      bySlot.set(key, list);
+    }
+  }
+  const drop = new Set<string>();
+  for (const group of bySlot.values()) {
+    const uniq = [...new Map(group.map((g) => [g.id, g])).values()];
+    if (uniq.length < 2) continue;
+    const venues = new Set(uniq.map((g) => (g.venue ?? "").trim()).filter(Boolean));
+    if (venues.size >= 2) continue;
+    const ranked = [...uniq].sort((a, b) => completeness(b) - completeness(a));
+    for (const extra of ranked.slice(1)) drop.add(extra.id);
+  }
+  return games.filter((g) => !drop.has(g.id));
+}
+
 function uniqueGames(games: BoxGame[]): BoxGame[] {
-  const seen = new Set<string>();
-  return games.filter((g) => {
-    if (seen.has(g.id)) return false;
-    seen.add(g.id);
-    return true;
-  });
+  return dropBogusSameSlot(dedupeBoxGames(games));
 }
 
 const byStart = (a: BoxGame, b: BoxGame) => String(a.startIso ?? "").localeCompare(String(b.startIso ?? ""));

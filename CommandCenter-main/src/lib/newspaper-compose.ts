@@ -4,13 +4,13 @@
  */
 import { fileEditionStories, fileMissouriItems, isNewsMuted, missouriItemInEdition } from "./newspaper";
 import { fetchLeagueArticles, fetchTeamArticles } from "./newspaper-news";
-import { fetchLeagueLeaders, fetchSectionBoard, fetchSectionStandings } from "./newspaper-box";
+import { applyTableStandings, fetchLeagueLeaders, fetchSectionBoard, fetchSectionStandings, type StandGroup } from "./newspaper-box";
 import { fetchClubSheet } from "./newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./newspaper-missouri-fetch";
 import type { MoItem } from "./newspaper-missouri";
 import { fetchOpener, type Opener } from "./newspaper-openers";
 import { attachRelatedGameCopy } from "./newspaper-sport-desk";
-import { cleanStoryCopy, isNavSoup, isPeripheralClubStory, killedSource } from "./newspaper-copy";
+import { cleanStoryCopy, htmlToNewspaperText, isNavSoup, isPeripheralClubStory, killedSource, truncateAtSentence } from "./newspaper-copy";
 import { isBoilerplateDek, storySource } from "./newspaper-source";
 import {
   buildGameWrapCards,
@@ -95,21 +95,25 @@ function filedBody(card: GameWrapCard, text: string | null | undefined): string 
 export function fileExtracts(cards: GameWrapCard[], extracts: Record<string, RssArticle> | undefined): GameWrapCard[] {
   const clean = cards.filter(runnable).map((card) => {
     const dek = cleanStoryCopy(card.dek);
+    const dekText = dek.text ? truncateAtSentence(dek.text, 280) : "";
     return {
       ...card,
-      dek: !dek.text || isBoilerplateDek(dek.text) ? null : dek.text,
+      headline: card.headline ? cleanStoryCopy(card.headline).text || card.headline : card.headline,
+      dek: !dekText || isBoilerplateDek(dekText) ? null : dekText,
       body: filedBody(card, card.body),
+      caption: card.caption ? cleanStoryCopy(card.caption).text || null : card.caption,
     };
   });
   if (!extracts) return clean;
   return clean.map((card) => {
     const hit = card.wrapHref ? extracts[card.wrapHref] : undefined;
     if (!hit || killedSource(card.wrapHref)) return card;
-    const text = cleanStoryCopy(hit.contentText).text;
+    const source = hit.contentHtml ? htmlToNewspaperText(hit.contentHtml) : hit.contentText;
+    const text = cleanStoryCopy(source).text;
     const adopt = text.length > (card.body?.trim().length ?? 0) + 120 && !isNavSoup(text);
     return {
       ...card,
-      body: adopt ? filedBody(card, hit.contentText) : card.body,
+      body: adopt ? filedBody(card, source) : card.body,
       photo: card.photo || hit.image || firstContentImageUrl(hit.contentHtml),
     };
   });
@@ -477,6 +481,16 @@ export async function pressStep(
       put([pressId, "tt-leaders", day, pathsKey], state.leaders);
     }
     if (paths.includes("baseball/mlb")) put([pressId, "tt-mlb-playoffs", day], state.playoffs);
+    if (state.snaps && state.standings) {
+      const snaps = applyTableStandings(
+        state.snaps as { key: string; standing: string | null }[],
+        state.standings as Record<string, StandGroup[]>,
+        favs,
+      );
+      state.snaps = snaps;
+      const snapQuery = state.queries.find((q) => Array.isArray(q.key) && q.key[1] === "tt-team-snaps");
+      if (snapQuery) snapQuery.data = snaps;
+    }
     state.extracts = {};
     state.extractCursor = 0;
     state.stage = 14;

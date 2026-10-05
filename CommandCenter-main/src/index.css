@@ -6604,8 +6604,12 @@ li.counting .tt-count.card {
   margin: 0;
 }
 .tt-nat-story.col.has-photo .tt-nat-cut figcaption {
-  letter-spacing: 0.08em;
-  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  font-size: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
 }
 
 /* ── Section A: the Missouri Scout ──────────────────────────────────── */
@@ -8630,6 +8634,16 @@ li.counting .tt-count.card {
   width: 52px;
   font-family: var(--w-cond);
   font-size: 13px;
+}
+.tt-phone-coming ul li span {
+  min-width: 0;
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+  line-height: 1.25;
 }
 .tt-phone-open,
 .tt-phone-more {

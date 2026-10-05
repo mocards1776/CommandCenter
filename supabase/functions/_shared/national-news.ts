@@ -272,6 +272,20 @@ function looksLikeImagePath(url: string): boolean {
   return /\.(jpe?g|png|gif|webp|avif)(?:$|[?#])/i.test(url);
 }
 
+/** Google News publisher marks and favicons are not story photographs. */
+export function isPlaceholderNewsImage(url: string): boolean {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+    if (host === "news.google.com" || host.endsWith(".news.google.com")) return true;
+    if (host === "lh3.googleusercontent.com" || host.endsWith(".googleusercontent.com")) return true;
+    if (/\bfavicon\b|gstatic\.com\/images|encrypted-tbn/i.test(u.href)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 /** Absolute http(s) image URL, or null. Relative URLs resolve against `base`. */
 export function asHttpImageUrl(raw: string | null | undefined, base?: string): string | null {
   if (!raw) return null;
@@ -282,6 +296,7 @@ export function asHttpImageUrl(raw: string | null | undefined, base?: string): s
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;
     if (u.hostname === "invalid.example") return null;
     if (/\b(1x1|pixel|spacer|sprite|tracking)\b/i.test(u.pathname)) return null;
+    if (isPlaceholderNewsImage(u.href)) return null;
     return u.href;
   } catch {
     return null;

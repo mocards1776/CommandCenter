@@ -332,6 +332,17 @@ export function gamesPlayed(team: Pick<BeezTeam, "gp" | "w" | "l" | "t" | "otl" 
   return team.gp || team.w + team.l + team.t + team.otl + team.sol;
 }
 
+/**
+ * The club's own game number. SportNinja files a league-wide game id
+ * (`game_no: 59`) that is not "Game 59" for a team that has played four.
+ */
+export function teamGameNumber(desk: BeezDesk, game: BeezLastGame | null = desk.last_game): number | null {
+  const played = gamesPlayed(desk.team) || desk.results.length;
+  const n = game?.game_no ?? null;
+  if (n != null && n > 0 && n <= Math.max(played, 1) + 1) return n;
+  return played || null;
+}
+
 function foldName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
