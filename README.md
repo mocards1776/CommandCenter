@@ -238,8 +238,14 @@ npm run lint
   `rankRuwtNhlGames`, `rankRuwtCfbGames`, `rankRuwtSoccerGames`). Live heat and
   `sports_push_game_state.drama_score` are not used. Cap is 8 (board target;
   the RUWT section default is 6). Window is send time through ~1:30am CT so
-  late West Coast games count. Empty slate skips the send. Idempotent once per
-  Chicago date via `sports_finals_preview_sent`.
+  late West Coast games count. Each row fills the right side with records,
+  MLB probables, NHL starters when known, or a short NFL/CFB spread, plus one
+  why-chip. MLB/NHL rows show probable pitcher or goalie with season line
+  and a small headshot when the existing ESPN / MLB Stats feeds have them.
+  Logos stay bare (no discs). Lightning uses a vendored navy bolt that
+  already has a white rim in the PNG.
+  Empty slate skips the send. Idempotent once per Chicago date via
+  `sports_finals_preview_sent`.
 
   Cron job `sports-finals-evening-preview` is in
   `supabase/migrations/20261005_sports_finals_preview.sql`. Same Vault secret

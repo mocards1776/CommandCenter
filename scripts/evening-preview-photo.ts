@@ -13,7 +13,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import { fetchLogoDataUri } from "../supabase/functions/sports-finals/card.ts";
-import { fetchPreviewBoards, rankPreviewBoards } from "../supabase/functions/sports-finals/preview-boards.ts";
+import { applyLightningLogos } from "../supabase/functions/sports-finals/preview-logos.ts";
+import { fetchPreviewBoards, hydratePreviewStarters, rankPreviewBoards } from "../supabase/functions/sports-finals/preview-boards.ts";
 import {
   chicagoYmd,
   decoratePreviewGame,
@@ -67,6 +68,10 @@ function fixtureSlate(day = "2026-10-05"): PreviewGame[] {
       reasons: ["Playoff series"],
       tv: ["FOX"],
       seriesLine: "Playoff Gm 3",
+      probableAway: "Wheeler",
+      probableHome: "Glasnow",
+      awayStarter: { id: "554430", name: "Wheeler", role: "P", line: "16-7 · 2.46 ERA", photoUrl: "https://img.mlbstatic.com/mlb-photos/image/upload/w_213,q_auto:best/v1/people/554430/headshot/67/current" },
+      homeStarter: { id: "621242", name: "Glasnow", role: "P", line: "4-3 · 3.11 ERA", photoUrl: "https://img.mlbstatic.com/mlb-photos/image/upload/w_213,q_auto:best/v1/people/621242/headshot/67/current" },
     }),
     g({
       id: "nfl-kc-buf",
@@ -79,18 +84,23 @@ function fixtureSlate(day = "2026-10-05"): PreviewGame[] {
       heat: 54,
       reasons: ["Upcoming", "Your #1 team"],
       tv: ["NBC"],
+      oddsLine: "KC -2.5",
     }),
     g({
-      id: "nhl-stl-dal",
+      id: "nhl-phi-tb",
       sport: "nhl",
       league: "NHL",
       competition: null,
-      away: { teamId: "19", name: "Blues", abbrev: "STL", logo: espn("nhl", "19"), record: "2-1-0", color: "#002f87" },
-      home: { teamId: "9", name: "Stars", abbrev: "DAL", logo: espn("nhl", "9"), record: "2-1-1" },
-      startIso: ctIso(day, 19, 0),
-      heat: 54,
-      reasons: ["Upcoming", "Your #1 team"],
-      tv: ["FanDuel"],
+      away: { teamId: "15", name: "Flyers", abbrev: "PHI", logo: espn("nhl", "15"), record: "1-0-0" },
+      home: { teamId: "20", name: "Lightning", abbrev: "TB", logo: espn("nhl", "20"), record: "1-0-0", color: "#002868" },
+      startIso: ctIso(day, 18, 0),
+      heat: 62,
+      reasons: ["Upcoming"],
+      tv: ["ESPN+"],
+      probableAway: "Ersson",
+      probableHome: "Vasilevskiy",
+      awayStarter: { id: "4271575", name: "Ersson", role: "G", line: "1-0-0 · 2.10 GAA · .922 SV%", photoUrl: "https://a.espncdn.com/i/headshots/nhl/players/full/4271575.png" },
+      homeStarter: { id: "2976847", name: "Vasilevskiy", role: "G", line: "1-1-0 · 2.59 GAA · .889 SV%", photoUrl: "https://a.espncdn.com/i/headshots/nhl/players/full/2976847.png" },
     }),
     g({
       id: "cfb-ore-osu",
@@ -103,6 +113,7 @@ function fixtureSlate(day = "2026-10-05"): PreviewGame[] {
       heat: 80,
       reasons: ["Ranked matchup"],
       tv: ["FOX"],
+      oddsLine: "OSU -3.5",
     }),
     g({
       id: "mlb-stl-chc",
@@ -115,6 +126,10 @@ function fixtureSlate(day = "2026-10-05"): PreviewGame[] {
       heat: 92,
       reasons: ["Cardinals", "Rivalry"],
       tv: ["ESPN"],
+      probableAway: "Gray",
+      probableHome: "Imanaga",
+      awayStarter: { id: "543243", name: "Gray", role: "P", line: "14-10 · 3.89 ERA", photoUrl: "https://img.mlbstatic.com/mlb-photos/image/upload/w_213,q_auto:best/v1/people/543243/headshot/67/current" },
+      homeStarter: { id: "684007", name: "Imanaga", role: "P", line: "15-3 · 2.91 ERA", photoUrl: "https://img.mlbstatic.com/mlb-photos/image/upload/w_213,q_auto:best/v1/people/684007/headshot/67/current" },
     }),
     g({
       id: "soccer-ars-liv",
@@ -166,6 +181,7 @@ if (has("live")) {
     const ranked = rankPreviewBoards(await fetchPreviewBoards(now));
     const picked = selectEveningPreview(ranked, now, PREVIEW_LIMIT);
     if (picked.length) {
+      await hydratePreviewStarters(picked);
       display = sortPreviewForDisplay(picked);
       chicagoDate = chicagoYmd(now);
       source = "live";
@@ -178,11 +194,26 @@ if (has("live")) {
   }
 }
 
+async function loadLogo(url: string | null | undefined): Promise<string | null> {
+  const data = await fetchLogoDataUri(url ?? null);
+  if (data) return data;
+  const fallback = (url ?? "").replace(/\/500-dark\//i, "/500/");
+  return fallback && fallback !== url ? fetchLogoDataUri(fallback) : null;
+}
+
 for (const game of display) {
-  const [away, home] = await Promise.all([fetchLogoDataUri(game.away.logo), fetchLogoDataUri(game.home.logo)]);
+  const [away, home, awayShot, homeShot] = await Promise.all([
+    loadLogo(game.away.logo),
+    loadLogo(game.home.logo),
+    loadLogo(game.awayStarter?.photoUrl),
+    loadLogo(game.homeStarter?.photoUrl),
+  ]);
   game.away.logoData = away;
   game.home.logoData = home;
+  if (game.awayStarter) game.awayStarter.photoData = awayShot;
+  if (game.homeStarter) game.homeStarter.photoData = homeShot;
 }
+await applyLightningLogos(display);
 
 const svg = renderPreviewSvg(previewCardModel(display, previewDateLabel(chicagoDate)));
 const png = await rasterize(svg);

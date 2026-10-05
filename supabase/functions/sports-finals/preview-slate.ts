@@ -26,6 +26,15 @@ export type PreviewSide = {
   color?: string | null;
 };
 
+export type PreviewStarter = {
+  id: string | null;
+  name: string;
+  role: "P" | "G";
+  line: string | null;
+  photoUrl: string | null;
+  photoData?: string | null;
+};
+
 export type PreviewGame = {
   id: string;
   sport: PreviewSport;
@@ -43,6 +52,13 @@ export type PreviewGame = {
   path: string;
   why: string | null;
   network: string | null;
+  /** Last names: MLB probable pitchers or NHL starting goalies. */
+  probableAway: string | null;
+  probableHome: string | null;
+  awayStarter: PreviewStarter | null;
+  homeStarter: PreviewStarter | null;
+  /** Short NFL/CFB spread when the board already has a line. */
+  oddsLine: string | null;
 };
 
 /**
@@ -199,12 +215,89 @@ export function printReason(game: Pick<PreviewGame, "reasons" | "seriesLine" | "
   return null;
 }
 
-export function decoratePreviewGame(game: Omit<PreviewGame, "why" | "network">): PreviewGame {
+function hexLuminance(color: string | null | undefined): number | null {
+  const hex = (color ?? "").replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+/** Lightning bolt and other near-navy marks that vanish on the card. */
+export function darkLogoMark(color: string | null | undefined, sport: PreviewSport, teamId: string): boolean {
+  const id = String(teamId).toLowerCase();
+  if (sport === "nhl" && (id === "20" || id === "tb")) return true;
+  const y = hexLuminance(color);
+  return y != null && y < 0.14;
+}
+
+/** ESPN light-on-dark variant — the better Lightning asset, not a plate. */
+export function espnDarkLogoUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const dark = url.replace(/(\/i\/teamlogos\/[a-z0-9]+)\/500\//i, "$1/500-dark/");
+  return dark === url ? url : dark;
+}
+
+export function decoratePreviewSide(side: PreviewSide, _sport: PreviewSport): PreviewSide {
+  return { ...side };
+}
+
+/** "Shane Bieber" → "Bieber". Used for pitchers and goalies on the card. */
+export function lastName(full: string | null | undefined): string | null {
+  if (!full) return null;
+  const cleaned = full.replace(/\s+(Jr\.?|Sr\.?|III|II|IV)$/i, "").trim();
+  if (!cleaned) return null;
+  const parts = cleaned.split(/\s+/);
+  const name = parts[parts.length - 1] || cleaned;
+  if (name.length > 14) return `${name.slice(0, 13)}…`;
+  return name;
+}
+
+export function recordsLine(game: Pick<PreviewGame, "away" | "home">): string | null {
+  const a = game.away.record?.trim() || null;
+  const h = game.home.record?.trim() || null;
+  if (!a && !h) return null;
+  if (a && h) return `${game.away.abbrev} ${a}  ·  ${game.home.abbrev} ${h}`;
+  return a ? `${game.away.abbrev} ${a}` : `${game.home.abbrev} ${h}`;
+}
+
+/** Pitchers, goalies, or a short spread — one line for the right column. */
+export function starterLine(game: Pick<PreviewGame, "sport" | "away" | "home" | "probableAway" | "probableHome" | "oddsLine">): string | null {
+  const a = game.probableAway;
+  const h = game.probableHome;
+  if (a && h) return game.sport === "mlb" ? `${a} vs ${h}` : `${a} / ${h}`;
+  if (a) return `${game.away.abbrev}: ${a}`;
+  if (h) return `${game.home.abbrev}: ${h}`;
+  const odds = game.oddsLine?.trim();
+  return odds && odds.length <= 18 ? odds : null;
+}
+
+export function decoratePreviewGame(
+  game: Omit<PreviewGame, "why" | "network" | "probableAway" | "probableHome" | "oddsLine" | "awayStarter" | "homeStarter"> &
+    Partial<Pick<PreviewGame, "why" | "network" | "probableAway" | "probableHome" | "oddsLine" | "awayStarter" | "homeStarter">>,
+): PreviewGame {
   const networks = printNetworks(game.tv);
+  const role = game.sport === "mlb" ? "P" : game.sport === "nhl" ? "G" : null;
+  const starter = (
+    existing: PreviewStarter | null | undefined,
+    name: string | null | undefined,
+  ): PreviewStarter | null => {
+    if (existing) return existing;
+    if (!name || !role) return null;
+    return { id: null, name, role, line: null, photoUrl: null };
+  };
   return {
     ...game,
-    why: printReason(game),
-    network: networks[0] ?? null,
+    away: decoratePreviewSide(game.away, game.sport),
+    home: decoratePreviewSide(game.home, game.sport),
+    probableAway: game.probableAway ?? game.awayStarter?.name ?? null,
+    probableHome: game.probableHome ?? game.homeStarter?.name ?? null,
+    awayStarter: starter(game.awayStarter, game.probableAway ?? game.awayStarter?.name),
+    homeStarter: starter(game.homeStarter, game.probableHome ?? game.homeStarter?.name),
+    oddsLine: game.oddsLine ?? null,
+    why: game.why ?? printReason(game),
+    network: game.network ?? networks[0] ?? null,
   };
 }
 

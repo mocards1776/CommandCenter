@@ -18,15 +18,18 @@ import {
   type NhlScoreGame,
   type SoccerScoreGame,
 } from "./ruwt-rank.ts";
+import { fetchSummary } from "./card.ts";
 import {
   DEFAULT_PREVIEW_INTEREST,
   decoratePreviewGame,
+  lastName,
   nextChicagoYmd,
   previewGamePath,
   type PreviewGame,
   type PreviewLeague,
   type PreviewSide,
   type PreviewSport,
+  type PreviewStarter,
 } from "./preview-slate.ts";
 
 const MLB = "https://statsapi.mlb.com/api/v1";
@@ -92,12 +95,19 @@ type RawTeam = {
   logos?: { href?: string }[];
 };
 
+type RawProbable = {
+  displayName?: string;
+  athlete?: { displayName?: string; shortName?: string; lastName?: string };
+  starter?: boolean;
+};
+
 type RawCompetitor = {
   homeAway?: string;
   score?: string | number;
   curatedRank?: { current?: number };
   records?: { type?: string; name?: string; summary?: string }[];
   team?: RawTeam;
+  probables?: RawProbable[];
 };
 
 type RawBroadcast = {
@@ -157,6 +167,9 @@ export type BoardRow = {
   nhl?: NhlScoreGame;
   cfb?: CfbScoreGame;
   soccer?: SoccerScoreGame;
+  goalieAway: string | null;
+  goalieHome: string | null;
+  oddsLine: string | null;
 };
 
 function pollRank(raw: number | undefined): number | null {
@@ -187,10 +200,52 @@ function espnLogo(sport: string, id: string, raw?: RawTeam): string | null {
   return `https://a.espncdn.com/i/teamlogos/${folder}/500/${id}.png`;
 }
 
+function probableFromCompetitor(c: RawCompetitor | undefined): string | null {
+  const row = c?.probables?.[0];
+  return lastName(row?.athlete?.shortName || row?.athlete?.lastName || row?.athlete?.displayName || row?.displayName);
+}
+
+function shortOddsLine(raw: RawOdds[] | undefined): string | null {
+  const row = raw?.[0];
+  if (!row) return null;
+  const details = (row.details ?? "").replace(/\s+/g, " ").trim();
+  if (details && details.length <= 16 && !/^even$/i.test(details)) return details;
+  return null;
+}
+
 function mlbLogo(teamId: number): string | null {
   const espn = MLB_ESPN_ID[teamId];
   if (!espn) return `https://a.espncdn.com/i/teamlogos/mlb/500/${teamId}.png`;
   return `https://a.espncdn.com/i/teamlogos/mlb/500/${espn}.png`;
+}
+
+function mlbHeadshotUrl(id: number | string | null | undefined): string | null {
+  if (id == null || id === "") return null;
+  return `https://img.mlbstatic.com/mlb-photos/image/upload/w_213,q_auto:best/v1/people/${id}/headshot/67/current`;
+}
+
+function nhlHeadshotUrl(id: string | number | null | undefined): string | null {
+  if (id == null || id === "") return null;
+  return `https://a.espncdn.com/i/headshots/nhl/players/full/${id}.png`;
+}
+
+function mlbStarter(row: BoardRow, side: "away" | "home"): PreviewStarter | null {
+  const person = row.mlb?.[side];
+  const name = lastName(person?.probablePitcher);
+  if (!name) return null;
+  const id = person?.probablePitcherId ?? null;
+  return {
+    id: id != null ? String(id) : null,
+    name,
+    role: "P",
+    line: null,
+    photoUrl: mlbHeadshotUrl(id),
+  };
+}
+
+function nhlNameStarter(name: string | null): PreviewStarter | null {
+  if (!name) return null;
+  return { id: null, name, role: "G", line: null, photoUrl: null };
 }
 
 function rivalryName(a: string | number, b: string | number): string | null {
@@ -309,6 +364,9 @@ function mapEspn(
     path: previewGamePath(sport, id),
     away,
     home,
+    goalieAway: sport === "nhl" ? probableFromCompetitor((comp.competitors ?? []).find((c) => c.homeAway === "away")) : null,
+    goalieHome: sport === "nhl" ? probableFromCompetitor((comp.competitors ?? []).find((c) => c.homeAway === "home")) : null,
+    oddsLine: sport === "nfl" || sport === "cfb" ? shortOddsLine(comp.odds) : null,
   };
 
   if (sport === "nfl") {
@@ -483,6 +541,9 @@ async function fetchMlbDay(day: string): Promise<BoardRow[]> {
             record: home.record,
           },
           mlb,
+          goalieAway: null,
+          goalieHome: null,
+          oddsLine: null,
         };
       })
       .filter((row): row is BoardRow => row != null);
@@ -583,6 +644,11 @@ export function rankPreviewBoards(rows: BoardRow[]): PreviewGame[] {
         tv: row.tv,
         seriesLine: row.seriesLine,
         path: row.path,
+        probableAway: lastName(row.mlb?.away.probablePitcher) ?? row.goalieAway,
+        probableHome: lastName(row.mlb?.home.probablePitcher) ?? row.goalieHome,
+        awayStarter: mlbStarter(row, "away") ?? nhlNameStarter(row.goalieAway),
+        homeStarter: mlbStarter(row, "home") ?? nhlNameStarter(row.goalieHome),
+        oddsLine: row.oddsLine,
       }),
     );
   };
@@ -610,4 +676,190 @@ export function rankPreviewBoards(rows: BoardRow[]): PreviewGame[] {
     push("soccer", g);
   }
   return out;
+}
+
+function rec(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function arr(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function athleteLastName(row: unknown): string | null {
+  const item = rec(row);
+  const athlete = rec(item.athlete);
+  return lastName(
+    (typeof athlete.shortName === "string" && athlete.shortName) ||
+      (typeof athlete.lastName === "string" && athlete.lastName) ||
+      (typeof athlete.displayName === "string" && athlete.displayName) ||
+      (typeof item.displayName === "string" && item.displayName) ||
+      null,
+  );
+}
+
+function pickStarterName(list: unknown): string | null {
+  const rows = arr(list);
+  const starter = rows.find((row) => rec(row).starter === true) ?? rows[0];
+  return athleteLastName(starter);
+}
+
+function statMap(rows: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const row of arr(rows)) {
+    const item = rec(row);
+    const abbr = typeof item.abbreviation === "string" ? item.abbreviation.toUpperCase() : "";
+    const name = typeof item.name === "string" ? item.name : "";
+    const value = typeof item.displayValue === "string" ? item.displayValue.replace(/\.0$/, "") : "";
+    if (!value) continue;
+    if (abbr) out[abbr] = value;
+    if (name) out[name] = value;
+  }
+  return out;
+}
+
+function goalieLine(stats: Record<string, string>): string | null {
+  const w = stats.W ?? stats.WINS ?? null;
+  const l = stats.L ?? null;
+  const ot = stats.OTL ?? null;
+  const gaa = stats.GAA ?? stats.avgGoalsAgainst ?? null;
+  const sv = stats["SV%"] ?? stats.savePct ?? null;
+  const bits: string[] = [];
+  if (w != null && l != null) bits.push(ot != null ? `${w}-${l}-${ot}` : `${w}-${l}`);
+  if (gaa) bits.push(`${gaa} GAA`);
+  if (sv) bits.push(`${sv} SV%`);
+  return bits.length ? bits.join(" · ") : null;
+}
+
+function goalieFromAthletes(list: unknown): PreviewStarter | null {
+  const rows = arr(list);
+  const raw = rows.find((row) => rec(row).starter === true) ?? rows[0];
+  if (!raw) return null;
+  const item = rec(raw);
+  const athlete = rec(item.athlete);
+  const id =
+    (typeof athlete.id === "string" && athlete.id) ||
+    (typeof item.id === "string" && item.id) ||
+    (typeof athlete.id === "number" && String(athlete.id)) ||
+    (typeof item.id === "number" && String(item.id)) ||
+    null;
+  const name = lastName(
+    (typeof athlete.shortName === "string" && athlete.shortName) ||
+      (typeof athlete.displayName === "string" && athlete.displayName) ||
+      (typeof item.displayName === "string" && item.displayName) ||
+      (typeof item.shortName === "string" && item.shortName) ||
+      null,
+  );
+  if (!name) return null;
+  const photo =
+    (typeof rec(item.headshot).href === "string" && rec(item.headshot).href) ||
+    (typeof rec(athlete.headshot).href === "string" && rec(athlete.headshot).href) ||
+    nhlHeadshotUrl(id);
+  const line = goalieLine(statMap(item.statistics ?? athlete.statistics));
+  return { id, name, role: "G", line, photoUrl: photo };
+}
+
+export function goaliesFromSummary(raw: unknown): { away: PreviewStarter | null; home: PreviewStarter | null } {
+  const body = rec(raw);
+  const goalies = rec(body.goalies);
+  let away = goalieFromAthletes(rec(goalies.awayTeam).athletes) ?? goalieFromAthletes(goalies.away);
+  let home = goalieFromAthletes(rec(goalies.homeTeam).athletes) ?? goalieFromAthletes(goalies.home);
+  if (!away || !home) {
+    for (const block of arr(body.goalies)) {
+      const row = rec(block);
+      const side = rec(row.team).homeAway;
+      const starter = goalieFromAthletes(row.athletes) ?? goalieFromAthletes([row]);
+      if (side === "away") away = away ?? starter;
+      if (side === "home") home = home ?? starter;
+    }
+  }
+  return { away, home };
+}
+
+export function pitcherLineFromStat(stat: Record<string, unknown> | null | undefined): string | null {
+  if (!stat) return null;
+  const w = stat.wins;
+  const l = stat.losses;
+  const era = stat.era;
+  const bits: string[] = [];
+  if (w != null && l != null) bits.push(`${w}-${l}`);
+  if (era != null && String(era).trim()) bits.push(`${era} ERA`);
+  return bits.length ? bits.join(" · ") : null;
+}
+
+function previewEventId(game: PreviewGame): string {
+  const prefix = `${game.sport}-`;
+  return game.id.startsWith(prefix) ? game.id.slice(prefix.length) : game.id;
+}
+
+function mlbSeasonYear(now = new Date()): number {
+  const y = now.getFullYear();
+  return now.getMonth() < 2 ? y - 1 : y;
+}
+
+async function fetchMlbPitcherLines(ids: number[]): Promise<Map<number, string>> {
+  const uniq = [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))];
+  const out = new Map<number, string>();
+  if (!uniq.length) return out;
+  try {
+    const url = `${MLB}/people?personIds=${uniq.join(",")}&hydrate=${encodeURIComponent(
+      `stats(group=[pitching],type=[season],season=${mlbSeasonYear()})`,
+    )}`;
+    const res = await fetch(url, {
+      headers: { Accept: "application/json", "User-Agent": "CommandCenterSportsFinalsPreview" },
+    });
+    if (!res.ok) return out;
+    const raw = (await res.json()) as {
+      people?: { id?: number; stats?: { splits?: { stat?: Record<string, unknown> }[] }[] }[];
+    };
+    for (const person of raw.people ?? []) {
+      if (person.id == null) continue;
+      const line = pitcherLineFromStat(person.stats?.[0]?.splits?.[0]?.stat);
+      if (line) out.set(person.id, line);
+    }
+  } catch {
+    /* omit */
+  }
+  return out;
+}
+
+function applyStarter(game: PreviewGame, side: "away" | "home", starter: PreviewStarter | null): void {
+  if (!starter) return;
+  if (side === "away") {
+    game.awayStarter = starter;
+    game.probableAway = starter.name;
+  } else {
+    game.homeStarter = starter;
+    game.probableHome = starter.name;
+  }
+}
+
+/** NHL summary goalies (stats + headshots) and MLB people season lines — selected slate only. */
+export async function hydratePreviewStarters(games: PreviewGame[]): Promise<void> {
+  const nhlGames = games.filter((g) => g.sport === "nhl");
+  const mlbGames = games.filter((g) => g.sport === "mlb");
+  const pitcherIds = mlbGames.flatMap((g) => [Number(g.awayStarter?.id), Number(g.homeStarter?.id)]);
+
+  await Promise.all([
+    ...nhlGames.map(async (game) => {
+      try {
+        const starters = goaliesFromSummary(await fetchSummary("nhl", previewEventId(game)));
+        applyStarter(game, "away", starters.away);
+        applyStarter(game, "home", starters.home);
+      } catch {
+        /* omit — name-only still prints */
+      }
+    }),
+    (async () => {
+      const lines = await fetchMlbPitcherLines(pitcherIds);
+      for (const game of mlbGames) {
+        for (const side of ["awayStarter", "homeStarter"] as const) {
+          const starter = game[side];
+          if (!starter?.id) continue;
+          starter.line = lines.get(Number(starter.id)) ?? starter.line;
+          starter.photoUrl = starter.photoUrl ?? mlbHeadshotUrl(starter.id);
+        }
+      }
+    })(),
+  ]);
 }
