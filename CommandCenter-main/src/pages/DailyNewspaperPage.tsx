@@ -15,7 +15,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Share } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
@@ -111,6 +111,8 @@ import WatchGuide from "@/components/newspaper/WatchGuide";
 import DayAhead from "@/components/newspaper/DayAhead";
 import { insertDayAhead, scheduleDateFor } from "@/lib/newspaper-day-ahead";
 import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
+import { sampleNationalDesk, type NationalStory } from "@/lib/newspaper-national";
+import { readTimesNationalNews } from "@/lib/newspaper-national-fetch";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
@@ -495,6 +497,8 @@ function pageLabel(page: EditionPage): string {
         players: "Your Players",
         opener: "Countdown",
       }[page.focus];
+    case "national":
+      return "National News";
     case "missouri":
       return page.sectionPage === 1 ? "Statehouse" : "Around the State";
     case "sport-inside":
@@ -1369,8 +1373,8 @@ function FrontPage({
   thirdTeaser?: string;
   scout?: MoItem | null;
 }) {
-  const hasDesk = sections.some((s) => s.code === "B");
-  const scoutBand = scout ? <ScoutBand item={scout} onTurn={onTurn} hasDesk={hasDesk} /> : null;
+  const moFolio = sections.find((s) => s.title === "Missouri")?.folio ?? null;
+  const scoutBand = scout ? <ScoutBand item={scout} onTurn={onTurn} deskFolio={moFolio} /> : null;
   const rail = (
     <FrontRail
       teams={teams}
@@ -3129,6 +3133,95 @@ function ClubFormGrid({ clubs, sheets = {} }: { clubs: ClubDesk[]; sheets?: Reco
   );
 }
 
+/* ───────────────────────── National News ───────────────────────── */
+
+type NationalEditionPage = Extract<EditionPage, { kind: "national" }>;
+
+function natWhen(iso: string | null): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  return new Date(t).toLocaleString("en-US", {
+    timeZone: "America/Chicago",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function natDate(day: string): string {
+  return new Date(`${day}T12:00:00`).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function NatSummary({ text, cols, drop }: { text: string; cols: 1 | 2 | 3; drop?: boolean }) {
+  const paras = proseParas(text);
+  if (!paras.length) return null;
+  return (
+    <div className={cn("wsj-prose", `c${cols}`, drop && "drop", "ended")}>
+      {paras.map((p, i) => (
+        <p key={i}>{p}</p>
+      ))}
+    </div>
+  );
+}
+
+function NatStory({ story, size }: { story: NationalStory; size: "lead" | "col" }) {
+  return (
+    <article className={cn("tt-nat-story", size)}>
+      <p className="tt-nat-src">
+        <b>{story.source}</b>
+        {story.credit && story.credit !== story.source ? <span> · {story.credit}</span> : null}
+        {natWhen(story.publishedAt) ? <em> · {natWhen(story.publishedAt)}</em> : null}
+      </p>
+      <h3 className={cn("wsj-hl", size === "lead" ? "xl" : "md")}>
+        <a href={story.url} target="_blank" rel="noreferrer" className="wsj-a wsj-story-link">
+          {story.headline}
+        </a>
+      </h3>
+      <NatSummary text={story.summary} cols={size === "lead" ? 2 : 1} drop={size === "lead"} />
+    </article>
+  );
+}
+
+function NationalNewsDesk({ page }: { page: NationalEditionPage }) {
+  const lead = page.stories[0];
+  const rest = page.stories.slice(1);
+  if (!lead) return null;
+  return (
+    <div className="tt-nat">
+      <header className="wsj-sport-hero tt-nat-hero">
+        <div className="wsj-sport-hero-mark">
+          <span className="wsj-sport-code">{page.section}</span>
+          <div>
+            <h3>National News</h3>
+            <p>
+              {page.editionLabel} · {natDate(page.day)} · {page.stories.length} stories
+            </p>
+          </div>
+        </div>
+      </header>
+      <p className="tt-nat-byline">
+        The Times national desk · {page.editionLabel} · {natDate(page.day)}
+      </p>
+      <NatStory story={lead} size="lead" />
+      {rest.length ? (
+        <div className="tt-nat-cols">
+          {rest.map((story) => (
+            <NatStory key={story.id} story={story} size="col" />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /* ───────────────────────── Missouri ───────────────────────── */
 
 type MissouriEditionPage = Extract<EditionPage, { kind: "missouri" }>;
@@ -3228,7 +3321,7 @@ function MissouriDesk({ page, onTurn }: { page: MissouriEditionPage; onTurn: (fo
   const flag = (
     <header className="wsj-sport-hero tt-mo-hero">
       <div className="wsj-sport-hero-mark">
-        <span className="wsj-sport-code">B</span>
+        <span className="wsj-sport-code">{page.section}</span>
         <div>
           <h3>Missouri</h3>
           <p>
@@ -3238,7 +3331,7 @@ function MissouriDesk({ page, onTurn }: { page: MissouriEditionPage; onTurn: (fo
       </div>
     </header>
   );
-  const more = page.sectionPage < page.sectionCount ? `B${page.sectionPage + 1}` : null;
+  const more = page.sectionPage < page.sectionCount ? `${page.section}${page.sectionPage + 1}` : null;
   if (page.sectionPage > 1) {
     return (
       <div className="tt-mo">
@@ -3303,7 +3396,7 @@ function MissouriDesk({ page, onTurn }: { page: MissouriEditionPage; onTurn: (fo
 }
 
 /** Section A's window on the statehouse: the Missouri Scout's latest. */
-function ScoutBand({ item, onTurn, hasDesk }: { item: MoItem; onTurn: (folio: string) => void; hasDesk: boolean }) {
+function ScoutBand({ item, onTurn, deskFolio }: { item: MoItem; onTurn: (folio: string) => void; deskFolio: string | null }) {
   const open = useReader();
   const card = moCard(item);
   const dek = item.dek ? cleanDek(item.dek.length > 420 ? item.dek.slice(0, 420) : item.dek) : null;
@@ -3330,9 +3423,9 @@ function ScoutBand({ item, onTurn, hasDesk }: { item: MoItem; onTurn: (folio: st
           <button type="button" className="wsj-jump-btn" onClick={() => open({ card })}>
             Read the update <span aria-hidden="true">→</span>
           </button>
-          {hasDesk ? (
-            <button type="button" className="wsj-jump-btn" onClick={() => onTurn("B1")}>
-              Missouri news, page B1 <span aria-hidden="true">→</span>
+          {deskFolio ? (
+            <button type="button" className="wsj-jump-btn" onClick={() => onTurn(deskFolio)}>
+              Missouri news, page {deskFolio} <span aria-hidden="true">→</span>
             </button>
           ) : null}
         </p>
@@ -3502,6 +3595,8 @@ export default function DailyNewspaperPage() {
 function NewspaperDesk() {
   const opened = use(openingIssuePromise);
   const queryClient = useQueryClient();
+  const [params] = useSearchParams();
+  const nationalSample = import.meta.env.DEV && params.get("national_sample") === "1";
   const seeded = useRef<string | null>(null);
   if (opened && seeded.current !== opened.id) {
     for (const q of opened.queries) queryClient.setQueryData(q.key, q.data);
@@ -4245,6 +4340,16 @@ function NewspaperDesk() {
     refetchOnReconnect: false,
   });
 
+  const nationalQ = useQuery({
+    queryKey: [pressId, "tt-national"],
+    enabled: open && Boolean(user?.id) && !nationalSample,
+    queryFn: () => readTimesNationalNews(pressId),
+    staleTime: 60_000,
+    gcTime: 20 * 60 * 60_000,
+    refetchInterval: (q) => (q.state.data ? 5 * 60_000 : 30_000),
+    retry: 1,
+  });
+
   const missouriQ = useQuery({
     queryKey: [pressId, "tt-missouri", day],
     enabled: pressing,
@@ -4504,10 +4609,11 @@ function NewspaperDesk() {
         edition: pressId,
         playerPaths,
         missouri: missouriQ.data ?? null,
+        national: nationalSample ? sampleNationalDesk(pressId) : nationalQ.data ?? null,
         offseason,
         leaderPaths,
       }),
-    [stories, clubs, pressId, playerPaths, missouriQ.data, offseason, leaderPaths],
+    [stories, clubs, pressId, playerPaths, missouriQ.data, nationalQ.data, nationalSample, offseason, leaderPaths],
   );
   // No schedule row for the date (or not read yet): no page, never an older day's.
   const daySchedule = dayAheadQ.data?.date === scheduleDate ? dayAheadQ.data : null;
@@ -4773,6 +4879,8 @@ function NewspaperDesk() {
                   leaders={leadersQ.data?.[page.path] ?? []}
                   onTurn={goFolio}
                 />
+              ) : page.kind === "national" ? (
+                <NationalNewsDesk page={page} />
               ) : page.kind === "missouri" ? (
                 <MissouriDesk page={page} onTurn={goFolio} />
               ) : (

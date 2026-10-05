@@ -2,7 +2,9 @@
  * Thompson Times sections.
  *
  * Section A is the clubs you follow — a front, a clubs desk, then inside
- * story / club-form pages. Section B is Missouri, in every edition, after A.
+ * story / club-form pages, the Day Ahead, and the RUWT watch page.
+ * National News is its own section immediately after A (B when the edition
+ * has a filed row). Missouri follows as C, or stays B when National is off.
  * Every sport section always runs at least five pages: league news, scores,
  * standings, schedule, and playoffs or form — plus league leaders whenever
  * the league publishes them — then a few full story pages for the best
@@ -27,6 +29,7 @@ import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import type { MissouriDesk, MoItem } from "./newspaper-missouri";
 import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
+import type { NationalDesk, NationalStory } from "./newspaper-national.ts";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
 const LEAD_TEASER = 1050;
@@ -200,7 +203,16 @@ export type MissouriPage = PageBase & {
   listen: MoItem[];
 };
 
+/** National News: one broadsheet page, hidden when the edition has no row. */
+export type NationalPage = PageBase & {
+  kind: "national";
+  stories: NationalStory[];
+  editionLabel: string;
+  day: string;
+};
+
 export type EditionPage =
+  | NationalPage
   | MissouriPage
   | FavoritesFrontPage
   | FavoritesClubsPage
@@ -377,7 +389,7 @@ function frontSplit(
 }
 
 function uniqueCodes(ids: SportSectionId[]): SportSectionId[] {
-  const used = new Set<string>(["A", "B"]);
+  const used = new Set<string>(["A", "B", "C"]);
   return ids.map((id) => {
     let code = id.code;
     if (used.has(code)) {
@@ -856,7 +868,7 @@ function sportPages(
 const MO_FRONT = 11;
 const MO_PAGE = 16;
 
-function missouriPages(desk: MissouriDesk | null): MissouriPage[] {
+function missouriPages(desk: MissouriDesk | null, code = "B"): MissouriPage[] {
   if (!desk?.items.length) return [];
   const chunks: MoItem[][] = [desk.items.slice(0, MO_FRONT)];
   for (let i = MO_FRONT; i < desk.items.length && chunks.length < 3; i += MO_PAGE) {
@@ -865,8 +877,8 @@ function missouriPages(desk: MissouriDesk | null): MissouriPage[] {
   return stampCounts(
     chunks.map((items, i) => ({
       kind: "missouri" as const,
-      folio: `B${i + 1}`,
-      section: "B",
+      folio: `${code}${i + 1}`,
+      section: code,
       sectionTitle: "Missouri",
       sectionPage: i + 1,
       sectionCount: 0,
@@ -874,6 +886,23 @@ function missouriPages(desk: MissouriDesk | null): MissouriPage[] {
       listen: i === 0 ? desk.listen : [],
     })),
   );
+}
+
+function nationalPages(desk: NationalDesk | null): NationalPage[] {
+  if (!desk?.stories.length) return [];
+  return stampCounts([
+    {
+      kind: "national" as const,
+      folio: "B1",
+      section: "B",
+      sectionTitle: "National News",
+      sectionPage: 1,
+      sectionCount: 0,
+      stories: desk.stories,
+      editionLabel: desk.label,
+      day: desk.day,
+    },
+  ]);
 }
 
 /** Copy that can run in this edition: filed, deduped, inside the press window. */
@@ -909,6 +938,8 @@ export function buildEdition(opts: {
   /** League paths with followed or tagged players — each gets a "Your players" desk. */
   playerPaths?: string[];
   missouri?: MissouriDesk | null;
+  /** Filed national-news row for this edition. No row, no section. */
+  national?: NationalDesk | null;
   /** League paths between seasons. */
   offseason?: string[];
   /** League paths with a league-leaders list on file — each gets a leaders desk. */
@@ -962,9 +993,12 @@ export function buildEdition(opts: {
   const favoriteFresh = fresh.filter(isFavoriteStory);
   const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs, editorFront(fresh));
 
-  const mo = missouriPages(opts.missouri ?? null);
-  // Section A, then Missouri as B, then sports. Every edition, including noon and 5 p.m.
-  const pages: EditionPage[] = [...favorites.pages, ...mo];
+  const national = nationalPages(opts.national ?? null);
+  // National News sits in B, right after Section A, when the edition has a
+  // filed row. Missouri keeps B when National is off so existing folios hold;
+  // with National on, Missouri becomes C. Sports never take B or C.
+  const mo = missouriPages(opts.missouri ?? null, national.length ? "C" : "B");
+  const pages: EditionPage[] = [...favorites.pages, ...national, ...mo];
   const sections: EditionSection[] = [
     {
       code: "A",
@@ -976,12 +1010,24 @@ export function buildEdition(opts: {
       pages: favorites.pages.length,
     },
   ];
-  if (mo.length) {
+  if (national.length) {
     sections.push({
       code: "B",
-      title: "Missouri",
+      title: "National News",
       folio: "B1",
       index: favorites.pages.length,
+      stories: national[0]!.stories.length,
+      upcoming: 0,
+      pages: national.length,
+    });
+  }
+  if (mo.length) {
+    const moCode = national.length ? "C" : "B";
+    sections.push({
+      code: moCode,
+      title: "Missouri",
+      folio: `${moCode}1`,
+      index: favorites.pages.length + national.length,
       stories: mo.reduce((n, p) => n + p.items.length, 0),
       upcoming: 0,
       pages: mo.length,
