@@ -1,6 +1,6 @@
 import { ELECTION_DAY_TODAY, electionDayLabel, electionEar } from "@/lib/newspaper-election";
 
-/** Classic A1 ear: small-caps label, big numeral, days line, and the date. */
+/** Classic A1 ear: big numeral, days line, and the date. Phone omits the date. */
 export function ElectionEar({ day, className }: { day: string; className?: string }) {
   const state = electionEar(day);
   if (!state) return null;
@@ -15,7 +15,6 @@ export function ElectionEar({ day, className }: { day: string; className?: strin
   }
   return (
     <div className={classes} aria-label={`${state.days} days to Election Day, ${electionDayLabel()}`}>
-      <strong>Election</strong>
       <em className="tt-election-num">{state.days}</em>
       <span className="tt-election-line">Days to Election Day</span>
       <i className="tt-election-date">{electionDayLabel()}</i>
