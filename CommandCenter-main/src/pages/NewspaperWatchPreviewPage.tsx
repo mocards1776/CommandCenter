@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import WatchGuide from "@/components/newspaper/WatchGuide";
 import { fetchWatchList, sampleWatchSlate, WATCH_PAGE_GAMES } from "@/lib/newspaper-watch";
 
@@ -7,16 +8,20 @@ const TZ = "America/Chicago";
 /**
  * Public fixture of the Section A viewing guide at iPad Pro 13" width.
  * Not linked from nav. Used to proof the printed timetable.
+ * `?sample=1` forces the designed slate so a screenshot does not wait on boards.
  */
 export default function NewspaperWatchPreviewPage() {
+  const [params] = useSearchParams();
+  const sample = params.get("sample") === "1";
   const day = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
   const live = useQuery({
     queryKey: ["tt-watch-preview", day],
     queryFn: () => fetchWatchList(day, { limit: WATCH_PAGE_GAMES }),
+    enabled: !sample,
     staleTime: 5 * 60_000,
     retry: 1,
   });
-  const games = live.data?.length ? live.data : sampleWatchSlate(day);
+  const games = sample ? sampleWatchSlate(day) : live.data?.length ? live.data : sampleWatchSlate(day);
 
   return (
     <div className="newspaper-root wsj-shell tt-watch-preview">
