@@ -1,0 +1,33 @@
+name: Apply Times lead-guard patches
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/press-editor-trim]
+    paths:
+      - "docs/times-lead-guard-sections.patch"
+      - "docs/times-lead-guard-sections-test.patch"
+      - ".github/workflows/apply-times-lead-guard.yml"
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/press-editor-trim
+      - name: Apply patches
+        run: |
+          set -euo pipefail
+          patch -p1 < docs/times-lead-guard-sections.patch
+          patch -p1 < docs/times-lead-guard-sections-test.patch || true
+          rm -f docs/times-lead-guard-sections.patch docs/times-lead-guard-sections-test.patch
+          rm -f docs/times-lead-guard-sections.patch.bak CommandCenter-main/src/lib/newspaper-lead-guard.ts || true
+      - name: Commit
+        run: |
+          git config user.name "mocards1776"
+          git config user.email "56750647+mocards1776@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "nothing to commit" && exit 0
+          git commit -m "fix(times): apply betting/stale-preview A1 lead guard"
+          git push

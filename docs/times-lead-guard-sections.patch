@@ -57,3 +57,84 @@
    let score = 0;
 +  if (isBettingPreview(card)) score -= 250;
    if (isPreviewStory(card)) score -= 150;
+   if (day === editionNewsDay(edition) && card.status && /final/i.test(card.status)) score += 100;
+   if (card.postseason) score += 40;
+@@ -1165,17 +1213,29 @@
+  */
+ export function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
+   let league = 0;
+-  return fresh
++  const picked: GameWrapCard[] = [];
++  const taken = new Set<string>();
++  const ordered = fresh
+     .filter((card) => card.editorFront != null && card.editorFront < FRONT_STORIES && hasStoryCopy(card))
+     .filter((card) => !isHoldoverGame(card))
+-    .sort((a, b) => a.editorFront! - b.editorFront!)
+-    .filter((card) => {
+-      if (isFavoriteStory(card) || card.sportLabel === "Missouri" || isHistoricNationalCard(card)) return true;
+-      if (card.sportLabel === "National") return false;
+-      if (league >= LEAGUE_FRONT_MAX || !isMajorStory(card)) return false;
++    .sort((a, b) => a.editorFront! - b.editorFront!);
++  for (const card of ordered) {
++    let choice: GameWrapCard | null = card;
++    if (cannotLeadFront(card, fresh)) {
++      choice = leadReplacement(card, fresh, taken);
++      if (!choice) continue;
++    }
++    if (taken.has(choice.id)) continue;
++    if (!(isFavoriteStory(choice) || choice.sportLabel === "Missouri" || isHistoricNationalCard(choice))) {
++      if (choice.sportLabel === "National") continue;
++      if (league >= LEAGUE_FRONT_MAX || !isMajorStory(choice)) continue;
+       league += 1;
+-      return true;
+-    });
++    }
++    picked.push(choice);
++    taken.add(choice.id);
++    if (picked.length >= FRONT_STORIES) break;
++  }
++  return picked;
+ }
+ 
+ function favoritePages(
+@@ -1197,18 +1257,35 @@
+   const favoriteFolioByStory: Record<string, string> = {};
+   const freshIds = new Set(freshStories.map((c) => c.id));
+   const frontPool = [...freshStories, ...sectionStories.filter((c) => !freshIds.has(c.id))];
+-  const picks: GameWrapCard[] = frontPicks.filter((card) => !isHoldoverGame(card)).slice(0, FRONT_STORIES);
+   const clubOf = (c: GameWrapCard) => c.favoriteKey ?? c.teamName ?? c.id;
++  const picks: GameWrapCard[] = [];
++  const taken = new Set<string>();
++  // Editor picks first, but betting sheets / stale previews never open A1 —
++  // swap in that matchup's recap when we have one.
++  for (const card of frontPicks) {
++    if (picks.length >= FRONT_STORIES) break;
++    let choice: GameWrapCard | null = card;
++    if (cannotLeadFront(card, frontPool)) choice = leadReplacement(card, frontPool, taken);
++    if (!choice || taken.has(choice.id) || cannotLeadFront(choice, frontPool)) continue;
++    picks.push(choice);
++    taken.add(choice.id);
++  }
+   // A video stub or one-line note leaves a column of bare photo on the front.
+-  const written = frontPool.filter((c) => hasStoryCopy(c) && !isPreviewStory(c) && !isHoldoverGame(c));
++  const written = frontPool.filter(
++    (c) => hasStoryCopy(c) && !cannotLeadFront(c, frontPool) && !taken.has(c.id),
++  );
+   for (const card of written) {
+     if (picks.length >= 3) break;
+-    if (!picks.some((f) => clubOf(f) === clubOf(card))) picks.push(card);
++    if (!picks.some((f) => clubOf(f) === clubOf(card))) {
++      picks.push(card);
++      taken.add(card.id);
++    }
+   }
+   for (const card of [...written, ...frontPool]) {
+     if (picks.length >= 3) break;
+-    if (isHoldoverGame(card)) continue;
+-    if (!picks.includes(card)) picks.push(card);
++    if (cannotLeadFront(card, frontPool) || taken.has(card.id)) continue;
++    picks.push(card);
++    taken.add(card.id);
+   }
+   const [lead = null, second = null, third = null] = picks;
+   for (const card of [lead, second, third]) {
