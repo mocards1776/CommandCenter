@@ -26,6 +26,12 @@ export type WatchSide = {
   /** Probable pitcher (MLB) or starting goalie (NHL). */
   starter?: string | null;
   starterLine?: string | null;
+  /** ESPN / MLB player id for a starter headshot. */
+  starterId?: string | null;
+  /** Frozen headshot URL when the press already resolved one. */
+  headshot?: string | null;
+  /** Standing line, e.g. 1st in AL East. */
+  place?: string | null;
 };
 
 export type WatchGame = {
@@ -113,6 +119,10 @@ export type WatchSlot = {
 
 export type WatchPageModel = {
   feature: WatchListing | null;
+  /** Chronological real games after the hero (no exhibitions). */
+  slate: WatchListing[];
+  /** NBA/WNBA preseason, printed as a one-line strip. */
+  preseason: WatchListing[];
   slots: WatchSlot[];
   density: WatchDensity;
   /** @deprecated Kickoff slots replaced the coarse day-parts. Kept empty for old callers. */
@@ -451,6 +461,44 @@ export function watchListingWhy(game: WatchGame): string | null {
   return why;
 }
 
+export function watchPersonName(name: string): { first: string; last: string } {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { first: "", last: "" };
+  if (parts.length === 1) return { first: "", last: parts[0]! };
+  return { first: parts.slice(0, -1).join(" "), last: parts[parts.length - 1]! };
+}
+
+export function watchHeadshot(side: WatchSide, league: WatchLeague): string | null {
+  if (side.headshot) return side.headshot;
+  const id = side.starterId?.trim();
+  if (!id) return null;
+  if (league === "MLB") {
+    return `https://img.mlbstatic.com/mlb-photos/image/upload/w_213,q_auto:best/v1/people/${id}/headshot/67/current`;
+  }
+  const sport =
+    league === "NHL"
+      ? "nhl"
+      : league === "NFL"
+        ? "nfl"
+        : league === "NBA"
+          ? "nba"
+          : league === "WNBA"
+            ? "wnba"
+            : league === "CFB"
+              ? "college-football"
+              : "soccer";
+  return `https://a.espncdn.com/i/headshots/${sport}/players/full/${id}.png`;
+}
+
+export function watchHeatPct(heat: number): number {
+  if (!Number.isFinite(heat)) return 0;
+  return Math.max(0, Math.min(100, Math.round(heat)));
+}
+
+export function watchIsExhibition(game: Pick<WatchGame, "preseason">): boolean {
+  return Boolean(game.preseason);
+}
+
 export function watchStarters(game: WatchGame): string | null {
   const away = game.away.starter?.trim();
   const home = game.home.starter?.trim();
@@ -620,17 +668,21 @@ function toListing(game: WatchGame, tier: WatchTier): WatchListing {
   };
 }
 
-/** Heat picks the hero and the tiers; the printed grid is kickoff-time slots. */
+/** Heat picks the hero; real games stay cards; exhibitions fold into a strip. */
 export function composeWatchPage(games: WatchGame[]): WatchPageModel {
-  if (!games.length) return { feature: null, slots: [], density: "light", blocks: [] };
+  if (!games.length) return { feature: null, slate: [], preseason: [], slots: [], density: "light", blocks: [] };
   const tiers = assignWatchTiers(games);
-  const featureGame = [...games].sort(byHeat)[0]!;
+  const ranked = [...games].sort(byHeat);
+  const featureGame = ranked.find((g) => !watchIsExhibition(g)) ?? ranked[0]!;
   const feature = toListing(featureGame, tiers.get(featureGame.id) ?? "must");
-  const rest = games.filter((g) => g.id !== featureGame.id).sort(byKickoff);
-  const density = watchDensityOf(games.length);
+  const rest = games.filter((g) => g.id !== featureGame.id);
+  const real = rest.filter((g) => !watchIsExhibition(g)).sort(byKickoff);
+  const exhibitions = rest.filter((g) => watchIsExhibition(g)).sort(byKickoff);
+  const density = watchDensityOf(real.length + 1);
+  const slate = real.map((g) => toListing(g, tiers.get(g.id) ?? "around"));
+  const preseason = exhibitions.map((g) => toListing(g, "around"));
   const byClock = new Map<string, WatchListing[]>();
-  for (const g of rest) {
-    const listing = toListing(g, tiers.get(g.id) ?? "around");
+  for (const listing of slate) {
     const bucket = watchSlotBucket(listing.clock, density);
     const list = byClock.get(bucket) ?? [];
     list.push(listing);
@@ -638,21 +690,24 @@ export function composeWatchPage(games: WatchGame[]): WatchPageModel {
   }
   const slots: WatchSlot[] = [];
   const seen = new Set<string>();
-  for (const g of rest) {
-    const clock = watchSlotBucket(printClock(g.when), density);
+  for (const listing of slate) {
+    const clock = watchSlotBucket(listing.clock, density);
     if (seen.has(clock)) continue;
     seen.add(clock);
     slots.push({ clock, listings: byClock.get(clock) ?? [] });
   }
-  return { feature, slots, density, blocks: [] };
+  return { feature, slate, preseason, slots, density, blocks: [] };
 }
 
-/** Today's slate, hottest first. Finals stay on the page so an evening read still shows the afternoon. */
+/** Real games take the page first; leftover slots fill with exhibitions. Finals stay so an evening read still shows the afternoon. */
 export function pickWatchGames(
   games: (WatchGame & { final?: boolean })[],
   limit = WATCH_PAGE_GAMES,
 ): WatchGame[] {
-  return games.sort(byHeat).slice(0, limit);
+  const real = games.filter((g) => !watchIsExhibition(g)).sort(byHeat);
+  const exhibitions = games.filter((g) => watchIsExhibition(g)).sort(byHeat);
+  const taken = real.slice(0, limit);
+  return taken.concat(exhibitions.slice(0, Math.max(0, limit - taken.length)));
 }
 
 function ctIso(day: string, hour: number, minute = 0): string {
@@ -707,6 +762,9 @@ export function sampleWatchSlateLight(day = "2026-10-05"): WatchGame[] {
           teamId: "145",
           color: "27251f",
           starter: "Garrett Crochet",
+          starterId: "676979",
+          starterLine: "18-8 · 2.09 ERA",
+          place: "2nd in AL Central",
         },
         home: {
           name: "Cleveland Guardians",
@@ -717,6 +775,9 @@ export function sampleWatchSlateLight(day = "2026-10-05"): WatchGame[] {
           teamId: "114",
           color: "e31937",
           starter: "Gavin Williams",
+          starterId: "668909",
+          starterLine: "12-5 · 3.11 ERA",
+          place: "1st in AL Central",
         },
         when: ctIso(day, 16, 0),
         venue: "Progressive Field",
@@ -738,6 +799,9 @@ export function sampleWatchSlateLight(day = "2026-10-05"): WatchGame[] {
           teamId: "147",
           color: "0c2340",
           starter: "Max Fried",
+          starterId: "608331",
+          starterLine: "14-6 · 1.95 ERA",
+          place: "2nd in AL East",
         },
         home: {
           name: "Tampa Bay Rays",
@@ -748,6 +812,9 @@ export function sampleWatchSlateLight(day = "2026-10-05"): WatchGame[] {
           teamId: "139",
           color: "092c5c",
           starter: "Shane Baz",
+          starterId: "669371",
+          starterLine: "10-11 · 4.42 ERA",
+          place: "1st in AL East",
         },
         when: ctIso(day, 19, 0),
         venue: "Tropicana Field",
@@ -798,6 +865,7 @@ export function sampleWatchSlateLight(day = "2026-10-05"): WatchGame[] {
           teamId: "15",
           color: "f74902",
           starter: "Samuel Ersson",
+          starterLine: "11-14 · .883 SV%",
         },
         home: {
           name: "Tampa Bay Lightning",
@@ -808,6 +876,7 @@ export function sampleWatchSlateLight(day = "2026-10-05"): WatchGame[] {
           teamId: "20",
           color: "002868",
           starter: "Andrei Vasilevskiy",
+          starterLine: "18-10 · .911 SV%",
         },
         when: ctIso(day, 18, 0),
         venue: "Amalie Arena",
@@ -828,6 +897,7 @@ export function sampleWatchSlateLight(day = "2026-10-05"): WatchGame[] {
           teamId: "14",
           color: "c52032",
           starter: "Linus Ullmark",
+          starterLine: "22-14 · .910 SV%",
         },
         home: {
           name: "Boston Bruins",
@@ -838,6 +908,7 @@ export function sampleWatchSlateLight(day = "2026-10-05"): WatchGame[] {
           teamId: "1",
           color: "ffb81c",
           starter: "Jeremy Swayman",
+          starterLine: "22-16 · .896 SV%",
         },
         when: ctIso(day, 18, 30),
         venue: "TD Garden",

@@ -123,7 +123,12 @@ export type EspnWatchCompetitor = {
   curatedRank?: { current?: number };
   records?: { type?: string; name?: string; summary?: string; displayValue?: string }[];
   probables?: {
-    athlete?: { displayName?: string; shortName?: string };
+    athlete?: {
+      id?: string | number;
+      displayName?: string;
+      shortName?: string;
+      headshot?: { href?: string } | string;
+    };
     statistics?: { abbreviation?: string; displayValue?: string }[];
   }[];
   team?: {
@@ -215,15 +220,27 @@ function teamColorOf(team: EspnWatchCompetitor["team"]): string | null {
   return c && /^[0-9a-f]{6}$/i.test(c) ? c : null;
 }
 
-export function starterOf(c: EspnWatchCompetitor): { name: string; line: string | null } | null {
+export function starterOf(c: EspnWatchCompetitor): {
+  name: string;
+  line: string | null;
+  id: string | null;
+  headshot: string | null;
+} | null {
   const p = c.probables?.[0];
   const name = p?.athlete?.shortName || p?.athlete?.displayName || "";
   if (!name) return null;
-  const stats = (p?.statistics ?? [])
-    .filter((s) => /^(W|L|ERA|GAA|SV%|SVPCT)$/i.test(s.abbreviation ?? ""))
-    .map((s) => `${s.displayValue} ${s.abbreviation}`)
-    .join(", ");
-  return { name, line: stats || null };
+  const wins = (p?.statistics ?? []).find((s) => /^W$/i.test(s.abbreviation ?? ""))?.displayValue;
+  const losses = (p?.statistics ?? []).find((s) => /^L$/i.test(s.abbreviation ?? ""))?.displayValue;
+  const era = (p?.statistics ?? []).find((s) => /^(ERA|GAA)$/i.test(s.abbreviation ?? ""));
+  const save = (p?.statistics ?? []).find((s) => /^(SV%|SVPCT)$/i.test(s.abbreviation ?? ""));
+  const bits: string[] = [];
+  if (wins && losses) bits.push(`${wins}-${losses}`);
+  if (era?.displayValue) bits.push(`${era.displayValue} ${era.abbreviation}`);
+  if (save?.displayValue) bits.push(`${save.displayValue} ${/sv/i.test(save.abbreviation ?? "") ? "SV%" : save.abbreviation}`);
+  const rawShot = p?.athlete?.headshot;
+  const headshot = typeof rawShot === "string" ? rawShot : rawShot?.href?.trim() || null;
+  const id = p?.athlete?.id != null && String(p.athlete.id) !== "" ? String(p.athlete.id) : null;
+  return { name, line: bits.join(" · ") || null, id, headshot };
 }
 
 export function oddsLineOf(event: EspnWatchEvent): string | null {
@@ -292,6 +309,8 @@ function nflSide(c: EspnWatchCompetitor): NflScoreSide {
     short: teamShort(team, abbrev),
     starter: starter?.name ?? null,
     starterLine: starter?.line ?? null,
+    starterId: starter?.id ?? null,
+    headshot: starter?.headshot ?? null,
   });
 }
 
@@ -313,6 +332,8 @@ function nhlSide(c: EspnWatchCompetitor): NhlScoreSide {
     short: teamShort(team, abbrev),
     starter: starter?.name ?? null,
     starterLine: starter?.line ?? null,
+    starterId: starter?.id ?? null,
+    headshot: starter?.headshot ?? null,
   });
 }
 

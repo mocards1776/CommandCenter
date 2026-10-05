@@ -1,4 +1,4 @@
-/* Today's Games — RUWT hierarchy on newsprint. Logos and heat, thin rules, no color boxes. */
+/* Today's Games — RUWT face-off on newsprint. Crisp chips, no color smudges. */
 
 .tt-watch {
   display: flex;
@@ -40,27 +40,14 @@
 }
 
 .tt-watch-feature {
-  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 8px 10px 10px;
+  padding: 6px 4px 12px;
   border-bottom: 2px solid var(--w-rule);
-  overflow: hidden;
-}
-
-.tt-watch-feature::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse at 10% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 28%, transparent), transparent 58%),
-    radial-gradient(ellipse at 90% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 28%, transparent), transparent 58%);
-  pointer-events: none;
 }
 
 .tt-watch-flag {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -87,6 +74,9 @@
 }
 
 .tt-watch-heat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--w-label);
   font-size: 10px;
   font-weight: 700;
@@ -95,96 +85,57 @@
   color: var(--w-muted);
 }
 
-.tt-watch-lead {
-  position: relative;
+.tt-watch-heat i {
+  display: inline-block;
+  width: 40px;
+  height: 3px;
+  background: var(--w-hair);
+}
+
+.tt-watch-heat i b {
+  display: block;
+  width: var(--tt-heat, 0%);
+  height: 100%;
+  background: var(--w-rule);
+}
+
+.tt-watch-feature-why {
+  margin: -2px 0 2px;
+  text-align: center;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--w-ink);
+}
+
+.tt-watch-lead,
+.tt-watch-match {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 16px;
-  min-height: 132px;
+  gap: 12px;
+}
+
+.tt-watch-lead {
+  min-height: 120px;
 }
 
 .tt-watch-team {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
 .tt-watch-team.home {
-  align-items: flex-end;
+  flex-direction: row-reverse;
   text-align: right;
 }
 
-.tt-watch-team strong {
-  font-family: var(--w-cond);
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  line-height: 1.05;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.tt-watch-team em {
-  font-style: normal;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--w-ink-soft);
-}
-
-.tt-watch-lead-mid {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.tt-watch-mid-clock {
-  margin: 0;
-  font-family: var(--w-cond);
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  line-height: 1;
-}
-
-.tt-watch-mid {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.tt-watch-mid b {
-  font-family: var(--w-cond);
-  font-size: 42px;
-  font-weight: 700;
-  line-height: 0.9;
-  font-variant-numeric: tabular-nums;
-}
-
-.tt-watch-mid span {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--w-ink-soft);
-}
-
-.tt-watch-mid.live span {
-  color: var(--w-red);
-}
-
-.tt-watch-lead-tv {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+.tt-watch-swatch {
+  width: 5px;
+  height: 36px;
+  flex: none;
 }
 
 .tt-watch-crest {
@@ -194,32 +145,217 @@
 }
 
 .tt-watch-crest.lg {
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
 }
 
 .tt-watch-crest.md {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
+}
+
+.tt-watch-crest.sm {
+  width: 16px;
+  height: 16px;
 }
 
 .tt-watch-crest.blank {
   display: inline-grid;
   place-items: center;
   border: 1px solid var(--w-hair);
-  border-radius: 50%;
   font-size: 9px;
   font-weight: 800;
   color: var(--w-muted);
   background: #fff;
 }
 
-.tt-watch-crest.lg.blank {
-  font-size: 14px;
+.tt-watch-team span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tt-watch-team strong {
+  font-family: var(--w-cond);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.tt-watch-team em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--w-ink-soft);
+}
+
+.tt-watch-team small {
+  font-size: 10px;
+  color: var(--w-muted);
+}
+
+.tt-watch-mid {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: center;
+  justify-items: center;
+  align-items: baseline;
+  column-gap: 12px;
+  row-gap: 4px;
+  text-align: center;
+}
+
+.tt-watch-mid.pre {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tt-watch-mid-clock {
+  margin: 0;
+  font-family: var(--w-cond);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.tt-watch-mid.lg .tt-watch-mid-clock {
+  font-size: 34px;
+}
+
+.tt-watch-mid b {
+  font-family: var(--w-cond);
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+
+.tt-watch-mid.lg b {
+  font-size: 44px;
+}
+
+.tt-watch-mid > span,
+.tt-watch-mid .tt-watch-tv {
+  grid-column: 1 / -1;
+}
+
+.tt-watch-mid > span {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--w-ink-soft);
+}
+
+.tt-watch-mid > span.live {
+  color: var(--w-red);
+}
+
+.tt-watch-live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--w-red);
+  vertical-align: 1px;
+}
+
+.tt-watch-tv {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+.tt-watch-tv span {
+  padding: 1px 6px;
+  border: 1px solid var(--w-rule);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tt-watch-tv .stream {
+  border-color: var(--w-hair);
+  color: var(--w-ink-soft);
+}
+
+.tt-watch-arms {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  gap: 16px;
+  padding: 4px 8px 0;
+}
+
+.tt-watch-arms > span {
+  padding-bottom: 22px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+
+.tt-watch-arm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tt-watch-arm.home {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.tt-watch-arm img,
+.tt-watch-arm .blank {
+  width: 64px;
+  height: 80px;
+  object-fit: cover;
+  object-position: top;
+  background: #e8e4d8;
+  border: 1px solid var(--w-hair);
+}
+
+.tt-watch-arm .blank {
+  display: grid;
+  place-items: center;
+  font-family: var(--w-head);
+  font-size: 28px;
+}
+
+.tt-watch-arm em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+
+.tt-watch-arm strong {
+  font-family: var(--w-head);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.tt-watch-arm small {
+  font-family: var(--w-cond);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--w-ink-soft);
 }
 
 .tt-watch-meta {
-  position: relative;
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
@@ -227,32 +363,6 @@
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--w-ink-soft);
-}
-
-.tt-watch-meta .tv {
-  color: var(--w-ink);
-}
-
-.tt-watch-feature-why {
-  position: relative;
-  margin: 0;
-  text-align: center;
-  font-family: var(--w-body);
-  font-style: italic;
-  font-size: 15px;
-  color: var(--w-ink);
-}
-
-.tt-watch-starters {
-  position: relative;
-  margin: 0;
-  text-align: center;
-  font-family: var(--w-cond);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--w-ink-soft);
 }
@@ -265,7 +375,8 @@
   min-height: 0;
 }
 
-.tt-watch-slate h3 {
+.tt-watch-slate h3,
+.tt-watch-pre h3 {
   margin: 0;
   padding-bottom: 4px;
   border-bottom: 2px solid var(--w-rule);
@@ -282,14 +393,14 @@
   padding: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 28px;
+  column-gap: 24px;
   flex: 1;
   align-content: start;
 }
 
 .tt-watch[data-density="dense"] .tt-watch-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  column-gap: 18px;
+  column-gap: 16px;
 }
 
 .tt-watch[data-density="light"] .tt-watch-grid {
@@ -297,25 +408,13 @@
 }
 
 .tt-watch-card {
-  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
-  padding: 10px 4px 11px;
+  padding: 10px 2px 12px;
   border-bottom: 1px solid var(--w-hair);
-  overflow: hidden;
-}
-
-.tt-watch-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse at 8% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 20%, transparent), transparent 52%),
-    radial-gradient(ellipse at 92% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 20%, transparent), transparent 52%);
-  pointer-events: none;
 }
 
 .tt-watch-card.must {
@@ -323,32 +422,14 @@
   padding-left: 10px;
 }
 
-.tt-watch-card.around {
-  opacity: 0.92;
-}
-
-.tt-watch-card[data-league="NBA"].around,
-.tt-watch-card[data-league="WNBA"].around {
-  opacity: 0.82;
-}
-
 .tt-watch-card-top {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
 }
 
-.tt-watch-card-top time {
-  font-family: var(--w-cond);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.tt-watch-card-top time.live {
-  color: var(--w-red);
+.tt-watch-card-top .tt-watch-heat {
+  margin-left: auto;
 }
 
 .tt-watch-fav {
@@ -359,98 +440,71 @@
   color: var(--w-red);
 }
 
-.tt-watch-nets {
-  display: flex;
-  gap: 6px;
-  margin-left: auto;
-  font-family: var(--w-label);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+.tt-watch-card .tt-watch-team strong {
+  font-size: 18px;
+}
+
+.tt-watch-card .tt-watch-mid-clock {
+  font-size: 22px;
+}
+
+.tt-watch-card .tt-watch-mid b {
+  font-size: 28px;
+}
+
+.tt-watch-card-series {
+  margin: 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--w-ink);
-  white-space: nowrap;
-}
-
-.tt-watch-card-top .tt-watch-heat {
-  margin-left: auto;
-}
-
-.tt-watch-card-top .tt-watch-nets + .tt-watch-heat {
-  margin-left: 0;
-}
-
-.tt-watch-nets .stream {
   color: var(--w-ink-soft);
 }
 
-.tt-watch-sides {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
+.tt-watch-pre ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.tt-watch-side {
+.tt-watch-pre li {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--w-hair);
+  font-size: 13px;
 }
 
-.tt-watch-side span {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  line-height: 1.1;
-  flex: 1;
-}
-
-.tt-watch-side strong {
+.tt-watch-pre strong {
   font-family: var(--w-cond);
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tt-watch-side em {
-  font-style: normal;
-  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
+}
+
+.tt-watch-pre .at {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--w-muted);
 }
 
-.tt-watch-side b {
+.tt-watch-pre time {
+  margin-left: auto;
   font-family: var(--w-cond);
-  font-size: 22px;
   font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
 }
 
-.tt-watch-whyline,
-.tt-watch-card-starters {
-  position: relative;
-  margin: 0;
-  font-family: var(--w-body);
-  font-size: 12px;
-  color: var(--w-ink-soft);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tt-watch-card-starters {
-  font-family: var(--w-cond);
+.tt-watch-pre em {
+  font-style: normal;
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 800;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: var(--w-ink-soft);
 }
 
 .tt-watch-legend {
@@ -469,35 +523,14 @@
 }
 
 .tt-watch[data-density="dense"] .tt-watch-lead {
-  min-height: 108px;
+  min-height: 96px;
 }
 
-.tt-watch[data-density="dense"] .tt-watch-team strong {
-  font-size: 20px;
-}
-
-.tt-watch[data-density="dense"] .tt-watch-crest.lg {
-  width: 44px;
-  height: 44px;
+.tt-watch[data-density="dense"] .tt-watch-team.lg strong {
+  font-size: 22px;
 }
 
 .tt-watch[data-density="dense"] .tt-watch-card {
   padding: 7px 2px 8px;
-  gap: 4px;
-}
-
-.tt-watch[data-density="dense"] .tt-watch-side strong {
-  font-size: 13px;
-}
-
-.tt-watch[data-density="dense"] .tt-watch-side b {
-  font-size: 18px;
-}
-
-.tt-watch[data-density="light"] .tt-watch-card {
-  padding: 12px 6px 14px;
-}
-
-.tt-watch[data-density="light"] .tt-watch-lead {
-  min-height: 156px;
+  gap: 5px;
 }

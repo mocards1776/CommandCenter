@@ -7,7 +7,14 @@
  */
 import { cfbRivalryName } from "./cfb-team-profile.ts";
 import type { GameBroadcast } from "./game-broadcasts.ts";
-import { fetchMlbScoreboard, mlbTeamLogo, type MlbScoredGame } from "./mlb.ts";
+import {
+  fetchMlbScoreboard,
+  fetchMlbStandings,
+  fetchPitcherSeasonLines,
+  mlbHeadshot,
+  mlbTeamLogo,
+  type MlbScoredGame,
+} from "./mlb.ts";
 import {
   fetchWatchCfbBoard,
   fetchWatchNbaBoard,
@@ -60,7 +67,11 @@ type Side = {
   score?: unknown;
   starter?: string | null;
   starterLine?: string | null;
+  starterId?: string | number | null;
   probablePitcher?: string | null;
+  probablePitcherId?: number | null;
+  headshot?: string | null;
+  place?: string | null;
 };
 const numScore = (v: unknown): number | null => {
   if (v == null || v === "") return null;
@@ -79,6 +90,11 @@ const side = (s: Side, logo: string | null = s.logo ?? null): WatchSide => ({
   ...(numScore(s.score) != null ? { score: numScore(s.score) } : {}),
   ...((s.starter ?? s.probablePitcher) ? { starter: s.starter ?? s.probablePitcher } : {}),
   ...(s.starterLine ? { starterLine: s.starterLine } : {}),
+  ...((s.starterId ?? s.probablePitcherId) != null && String(s.starterId ?? s.probablePitcherId) !== ""
+    ? { starterId: String(s.starterId ?? s.probablePitcherId) }
+    : {}),
+  ...(s.headshot ? { headshot: s.headshot } : {}),
+  ...(s.place ? { place: s.place } : {}),
 });
 
 type ExtraBits = {
@@ -115,8 +131,20 @@ export function watchFromMlb(g: MlbScoredGame): WatchGame {
   return {
     ...base(g, "MLB", g.gameDate ?? g.when, g.status),
     competition: null,
-    away: side({ ...g.away, color: g.away.primaryColor, starter: g.away.probablePitcher }),
-    home: side({ ...g.home, color: g.home.primaryColor, starter: g.home.probablePitcher }),
+    away: side({
+      ...g.away,
+      color: g.away.primaryColor,
+      starter: g.away.probablePitcher,
+      starterId: g.away.probablePitcherId,
+      headshot: g.away.probablePitcherId ? mlbHeadshot(g.away.probablePitcherId) : null,
+    }),
+    home: side({
+      ...g.home,
+      color: g.home.primaryColor,
+      starter: g.home.probablePitcher,
+      starterId: g.home.probablePitcherId,
+      headshot: g.home.probablePitcherId ? mlbHeadshot(g.home.probablePitcherId) : null,
+    }),
     ...(series ? { series } : {}),
   };
 }
@@ -190,6 +218,69 @@ export function watchFromBasket(
     ...(series ? { series } : {}),
     ...(g.line ? { line: g.line } : {}),
   };
+}
+
+function ordinalPlace(n: number): string {
+  const mod = n % 100;
+  if (mod >= 11 && mod <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
+async function decorateWatchExtras(games: WatchGame[]): Promise<WatchGame[]> {
+  const mlbIds = games
+    .filter((g) => g.league === "MLB")
+    .flatMap((g) => [g.away.teamId, g.home.teamId])
+    .filter((id): id is string => Boolean(id));
+  const pitcherIds = games
+    .filter((g) => g.league === "MLB")
+    .flatMap((g) => [Number(g.away.starterId), Number(g.home.starterId)])
+    .filter((id) => Number.isFinite(id) && id > 0);
+  const [standings, lines] = await Promise.all([
+    mlbIds.length
+      ? fetchMlbStandings().catch((err) => {
+          console.warn("watch desk standings failed", err);
+          return [];
+        })
+      : Promise.resolve([]),
+    pitcherIds.length
+      ? fetchPitcherSeasonLines(pitcherIds).catch((err) => {
+          console.warn("watch desk pitcher lines failed", err);
+          return new Map();
+        })
+      : Promise.resolve(new Map()),
+  ]);
+  const place = new Map<string, string>();
+  for (const div of standings) {
+    for (const row of div.rows) {
+      const n = Number.parseInt(String(row.rank), 10);
+      if (!Number.isFinite(n) || n < 1 || !row.teamId) continue;
+      place.set(String(row.teamId), `${ordinalPlace(n)} in ${div.shortName}`);
+    }
+  }
+  const stampSide = (side: WatchGame["away"], league: WatchGame["league"]) => {
+    const next = { ...side };
+    if (!next.place && side.teamId && place.has(side.teamId)) next.place = place.get(side.teamId)!;
+    const pid = Number(side.starterId);
+    const line = Number.isFinite(pid) ? lines.get(pid) : undefined;
+    if (line && !next.starterLine) next.starterLine = `${line.wins}-${line.losses} · ${line.era} ERA`;
+    if (line && !next.starter) next.starter = line.name;
+    if (!next.headshot && next.starterId && league === "MLB") next.headshot = mlbHeadshot(next.starterId);
+    return next;
+  };
+  return games.map((g) => ({
+    ...g,
+    away: stampSide(g.away, g.league),
+    home: stampSide(g.home, g.league),
+  }));
 }
 
 function deskFavorites(favs?: WatchFavorite[]): WatchFavorite[] {
@@ -290,7 +381,7 @@ export async function fetchWatchList(day: string, limitOrOpts?: number | WatchLi
       };
       };
     };
-  return pickWatchGames(
+  const mapped = pickWatchGames(
     [
       ...rankRuwtGames(
         mlb.map(asPrintGame),
@@ -306,4 +397,5 @@ export async function fetchWatchList(day: string, limitOrOpts?: number | WatchLi
     ],
     limit,
   );
+  return decorateWatchExtras(mapped);
 }

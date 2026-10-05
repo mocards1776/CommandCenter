@@ -19,7 +19,9 @@ import {
   watchDensityOf,
   watchFavoriteLabel,
   watchFeatureCopy,
+  watchHeatPct,
   watchListingWhy,
+  watchPersonName,
   watchSeriesDisplay,
   watchSlotBucket,
   watchLeagueColor,
@@ -94,6 +96,33 @@ const lightPage = composeWatchPage(light);
 assert(lightPage.density === "light", "Monday fixture is a light day");
 assert(lightPage.slots.every((s) => s.listings.every((g) => g.away.name && g.home.name)), "no bare MEM–ATL rows");
 assert(lightPage.feature?.away.starter && lightPage.feature.home.starter, "hero carries probable pitchers");
+assert(lightPage.feature && !lightPage.feature.preseason, "Game of the Day is a real game");
+assert(lightPage.preseason.length === 5, "NBA exhibitions fold into a preseason strip");
+assert(
+  lightPage.preseason.every((g) => g.preseason && g.league === "NBA"),
+  "preseason strip is NBA exhibitions",
+);
+assert(lightPage.slate.every((g) => !g.preseason), "slate cards are real games");
+assert(
+  lightPage.slots.every((s) => s.listings.every((g) => !g.preseason)),
+  "slots exclude exhibitions",
+);
+assert(
+  lightPage.slate.some((g) => g.league === "NFL" && g.away.abbrev === "ATL" && g.home.abbrev === "NO"),
+  "MNF sits above the preseason strip",
+);
+assert(lightPage.slate.filter((g) => g.league === "NHL").length === 4, "NHL openers sit in the real slate");
+assert(!lightPage.slate.some((g) => g.league === "NBA"), "NBA preseason is not a full card");
+assert(Boolean(lightPage.feature?.away.place && lightPage.feature?.home.place), "hero carries standing lines");
+const folded = composeWatchPage([
+  game({ id: "real-hot", heat: 90 }),
+  game({ id: "real-late", heat: 40, when: "2026-10-05T23:00:00.000Z" }),
+  game({ id: "nba-pre-x", heat: 8, league: "NBA", preseason: true }),
+  game({ id: "nba-pre-y", heat: 5, league: "NBA", preseason: true }),
+]);
+assert(folded.feature?.id === "real-hot", "hottest real game is the hero");
+assert(folded.slate.map((g) => g.id).join() === "real-late", "the other real game stays a card");
+assert(folded.preseason.map((g) => g.id).join() === "nba-pre-x,nba-pre-y", "exhibitions become the strip");
 
 const tiers = assignWatchTiers(slate);
 const must = slate.filter((g) => tiers.get(g.id) === "must");
@@ -193,6 +222,8 @@ assert(watchListingWhy(game({ id: "nba-pre-why", heat: 5, league: "NBA", preseas
 assert(watchContext(game({ id: "c2", heat: 5, reasons: [], competition: "Premier League", league: "Soccer" })) === "Premier League", "soccer competition");
 assert(watchClockState(game({ id: "live", heat: 5, live: true, status: "Bot 5th" })).kind === "live", "live state");
 assert(watchClockState(game({ id: "fin", heat: 5, final: true, status: "Final" })).kind === "final", "final state");
+assert(watchPersonName("Garrett Crochet").last === "Crochet" && watchPersonName("Garrett Crochet").first === "Garrett", "pitcher name splits");
+assert(watchHeatPct(96) === 96 && watchHeatPct(140) === 100 && watchHeatPct(-4) === 0, "heat meter clamps 0–100");
 assert(watchDensityOf(12) === "light" && watchDensityOf(20) === "full" && watchDensityOf(30) === "dense", "density bands");
 assert(watchSlotBucket("7:15 PM", "light") === "7:15 PM", "light days keep the exact kickoff");
 assert(watchSlotBucket("7:15 PM", "dense") === "7 PM", "dense days bucket :15 with the hour");
@@ -214,6 +245,17 @@ const heatPick = pickWatchGames(
   1,
 );
 assert(heatPick[0]!.id === "hot", "heat, not kickoff, chooses who makes the page");
+assert(
+  pickWatchGames(
+    [game({ id: "real-low", heat: 10 }), game({ id: "pre-hot", heat: 99, league: "NBA", preseason: true })],
+    1,
+  )[0]!.id === "real-low",
+  "a real game beats a hotter exhibition for the last slot",
+);
+assert(
+  pickWatchGames([game({ id: "only-pre", heat: 5, league: "NBA", preseason: true })], 1)[0]!.id === "only-pre",
+  "an exhibition-only day still prints",
+);
 
 const live = asPrintGame({
   live: true,

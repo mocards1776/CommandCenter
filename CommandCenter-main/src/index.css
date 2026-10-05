@@ -8712,65 +8712,90 @@ body:has([data-phone-card="watch"]),
   text-transform: uppercase;
 }
 .tt-phone-heat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--w-muted);
 }
+.tt-phone-heat i {
+  display: inline-block;
+  width: 36px;
+  height: 3px;
+  background: var(--w-hair);
+}
+.tt-phone-heat i b {
+  display: block;
+  width: var(--tt-heat, 0%);
+  height: 100%;
+  background: var(--w-rule);
+}
 .tt-phone-lead {
-  position: relative;
   margin: 10px 0 8px;
   padding-bottom: 10px;
   border-bottom: 2px solid var(--w-rule);
-  overflow: hidden;
 }
-.tt-phone-lead::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse at 8% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 26%, transparent), transparent 56%),
-    radial-gradient(ellipse at 92% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 26%, transparent), transparent 56%);
-  pointer-events: none;
-}
-.tt-phone-lead-match {
-  position: relative;
+.tt-phone-lead-match,
+.tt-phone-match {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 8px;
 }
-.tt-phone-lead-team {
+.tt-phone-team {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
-.tt-phone-lead-team.home {
-  align-items: flex-end;
+.tt-phone-team.home {
+  flex-direction: row-reverse;
   text-align: right;
 }
-.tt-phone-lead-team strong {
+.tt-phone-swatch {
+  width: 4px;
+  height: 28px;
+  flex: none;
+}
+.tt-phone-team span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tt-phone-team strong {
   font-family: var(--w-cond);
   font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
-  line-height: 1.1;
+  line-height: 1.05;
 }
-.tt-phone-lead-team em {
+.tt-phone-team em {
   font-style: normal;
   font-size: 11px;
   font-weight: 700;
   color: var(--w-ink-soft);
 }
-.tt-phone-lead-mid {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
+.tt-phone-team small {
+  font-size: 9px;
+  color: var(--w-muted);
+}
+.tt-phone-mid {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: center;
+  justify-items: center;
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 2px;
+  text-align: center;
+}
+.tt-phone-mid.pre {
+  grid-template-columns: minmax(0, 1fr);
 }
 .tt-phone-mid-clock {
   margin: 0;
@@ -8779,33 +8804,37 @@ body:has([data-phone-card="watch"]),
   font-weight: 700;
   letter-spacing: 0.04em;
 }
-.tt-phone-mid {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
 .tt-phone-mid b {
   font-family: var(--w-cond);
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
   line-height: 0.9;
   font-variant-numeric: tabular-nums;
 }
-.tt-phone-mid span {
+.tt-phone-mid > span,
+.tt-phone-mid > em,
+.tt-phone-tv {
+  grid-column: 1 / -1;
+}
+.tt-phone-mid > span {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--w-ink-soft);
 }
-.tt-phone-mid.live span {
+.tt-phone-mid.live > span,
+.tt-phone-mid > span.live {
   color: var(--w-red);
 }
-.tt-phone-lead-tv {
+.tt-phone-tv,
+.tt-phone-mid > em {
+  font-style: normal;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: var(--w-ink-soft);
 }
 .tt-phone-crest {
   display: inline-block;
@@ -8824,7 +8853,6 @@ body:has([data-phone-card="watch"]),
   display: inline-grid;
   place-items: center;
   border: 1px solid var(--w-hair);
-  border-radius: 50%;
   font-size: 9px;
   font-weight: 800;
   color: var(--w-muted);
@@ -8834,7 +8862,6 @@ body:has([data-phone-card="watch"]),
   font-size: 13px;
 }
 .tt-phone-meta {
-  position: relative;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -8847,22 +8874,71 @@ body:has([data-phone-card="watch"]),
   color: var(--w-ink-soft);
 }
 .tt-phone-feature-why {
-  position: relative;
-  margin: 6px 0 0;
+  margin: 0 0 8px;
   text-align: center;
   font-family: var(--w-body);
   font-style: italic;
-  font-size: 14px;
+  font-size: 15px;
 }
-.tt-phone-watch .tt-phone-game-starters {
-  position: relative;
-  margin: 4px 0 0;
-  text-align: center;
-  font-family: var(--w-cond);
+.tt-phone-arms {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  gap: 10px;
+  margin-top: 8px;
+}
+.tt-phone-arms > span {
+  padding-bottom: 16px;
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tt-phone-arm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
+.tt-phone-arm.home {
+  align-items: flex-end;
+  text-align: right;
+}
+.tt-phone-arm img,
+.tt-phone-arm .blank {
+  width: 48px;
+  height: 60px;
+  object-fit: cover;
+  object-position: top;
+  background: #e8e4d8;
+  border: 1px solid var(--w-hair);
+}
+.tt-phone-arm .blank {
+  display: grid;
+  place-items: center;
+  font-family: var(--w-head);
+  font-size: 22px;
+}
+.tt-phone-arm em {
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tt-phone-arm strong {
+  font-family: var(--w-head);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+}
+.tt-phone-arm small {
+  font-family: var(--w-cond);
+  font-size: 11px;
+  font-weight: 600;
   color: var(--w-ink-soft);
 }
 .tt-phone-listings ol {
@@ -8871,89 +8947,69 @@ body:has([data-phone-card="watch"]),
   gap: 0;
 }
 .tt-phone-row {
-  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   padding: 8px 0 7px;
   border-bottom: 1px solid var(--w-hair);
-  overflow: hidden;
-}
-.tt-phone-row::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse at 6% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 18%, transparent), transparent 50%),
-    radial-gradient(ellipse at 94% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 18%, transparent), transparent 50%);
-  pointer-events: none;
 }
 .tt-phone-row.must {
   box-shadow: inset 3px 0 0 var(--w-rule);
   padding-left: 8px;
 }
 .tt-phone-row-top {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 7px;
 }
-.tt-phone-row-top time {
-  font-family: var(--w-cond);
-  font-size: 12px;
-  font-weight: 700;
-}
-.tt-phone-row-top time.live {
-  color: var(--w-red);
-}
-.tt-phone-net {
+.tt-phone-row-top .tt-phone-heat {
   margin-left: auto;
-  font-family: var(--w-label);
-  font-size: 9px;
+}
+.tt-phone-row-series {
+  margin: 0;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--w-ink-soft);
+}
+.tt-phone-pre ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tt-phone-pre li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--w-hair);
+  font-size: 13px;
+}
+.tt-phone-pre strong {
+  font-family: var(--w-cond);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.tt-phone-pre span {
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-}
-.tt-phone-row-side {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-}
-.tt-phone-row-side span {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  line-height: 1.1;
-  flex: 1;
-}
-.tt-phone-row-side strong {
-  font-family: var(--w-cond);
-  font-size: 14px;
-  font-weight: 700;
-  text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tt-phone-row-side em {
-  font-style: normal;
-  font-size: 10px;
-  font-weight: 700;
   color: var(--w-muted);
 }
-.tt-phone-row-side b {
+.tt-phone-pre time {
+  margin-left: auto;
   font-family: var(--w-cond);
-  font-size: 18px;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
+  font-weight: 700;
 }
-.tt-phone-row-why {
-  position: relative;
-  margin: 0;
-  font-family: var(--w-body);
-  font-size: 12px;
+.tt-phone-pre em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--w-ink-soft);
 }
 .tt-phone-legend {

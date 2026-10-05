@@ -11,6 +11,7 @@ import {
   mapWatchSoccerGame,
   rankWatchSoccerGames,
   scoreWatchBasket,
+  starterOf,
   watchSeriesFromEspn,
   WATCH_BASKET_HEAT,
   wnbaInSeason,
@@ -230,5 +231,36 @@ const nhlBits = mapWatchNhlGame({
 });
 assert((nhlBits!.away as { short?: string }).short === "Blackhawks", "NHL short name");
 assert((nhlBits!.away as { starter?: string }).starter === "Spencer Knight", "NHL starting goalie");
+assert((nhlBits!.away as { starterLine?: string }).starterLine === "2.10 GAA", "NHL goalie line");
+
+const arms = starterOf({
+  probables: [
+    {
+      athlete: { id: "608331", displayName: "Max Fried", headshot: { href: "https://example.com/fried.png" } },
+      statistics: [
+        { abbreviation: "W", displayValue: "14" },
+        { abbreviation: "L", displayValue: "6" },
+        { abbreviation: "ERA", displayValue: "1.95" },
+      ],
+    },
+  ],
+});
+assert(arms?.name === "Max Fried" && arms.line === "14-6 · 1.95 ERA", "pitcher record and ERA");
+assert(arms?.id === "608331" && arms.headshot?.includes("fried"), "pitcher headshot + id");
+assert(
+  starterOf({
+    probables: [
+      {
+        athlete: { displayName: "Andrei Vasilevskiy" },
+        statistics: [
+          { abbreviation: "W", displayValue: "18" },
+          { abbreviation: "L", displayValue: "10" },
+          { abbreviation: "SV%", displayValue: ".911" },
+        ],
+      },
+    ],
+  })?.line === "18-10 · .911 SV%",
+  "goalie save percentage",
+);
 
 console.log("newspaper-watch-scoreboard ok");

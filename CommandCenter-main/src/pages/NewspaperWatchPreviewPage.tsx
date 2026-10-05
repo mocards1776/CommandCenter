@@ -33,17 +33,18 @@ export default function NewspaperWatchPreviewPage() {
       : live.data?.length
         ? live.data
         : sampleWatchSlateLight(day);
+  const ready = dense || light || live.isSuccess || live.isError;
 
   if (phone) {
     return (
-      <div className="tt-phone-page" data-phone-card="watch" data-ready="1">
+      <div className="tt-phone-page" data-phone-card="watch" data-ready={ready ? "1" : "0"}>
         <PhoneWatchCard games={games} editionLabel="Midday Edition" />
       </div>
     );
   }
 
   return (
-    <div className="newspaper-root wsj-shell tt-watch-preview">
+    <div className="newspaper-root wsj-shell tt-watch-preview" data-ready={ready ? "1" : "0"}>
       <div className="wsj-page" data-watch-preview="1">
         <div className="wsj-fit">
           <div className="wsj-sheet">
