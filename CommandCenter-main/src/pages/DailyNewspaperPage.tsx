@@ -3416,20 +3416,35 @@ function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
                 </span>
               </span>
             </header>
-            {last ? (
-              <p className={cn("tt-coach-last", tile.lastGame?.result === "W" && "w", tile.lastGame?.result === "L" && "l")}>
-                {tile.lastGame?.opponentLogo ? <img src={tile.lastGame.opponentLogo} alt="" /> : null}
-                <span>{last}</span>
-              </p>
-            ) : null}
-            {tile.lastGame?.summary ? <p className="tt-coach-sum">{tile.lastGame.summary}</p> : null}
-            {next ? (
-              <p className="tt-coach-next">
-                <b>Next</b> {next}
-              </p>
-            ) : null}
-            {stat ? <p className="tt-coach-stat">{stat}</p> : null}
-            <CoachFacts tile={tile} />
+            <div className="tt-coach-body">
+              <div className="tt-coach-story">
+                {last ? (
+                  <p className={cn("tt-coach-last", tile.lastGame?.result === "W" && "w", tile.lastGame?.result === "L" && "l")}>
+                    {tile.lastGame?.opponentLogo ? <img src={tile.lastGame.opponentLogo} alt="" /> : null}
+                    <span>{last}</span>
+                  </p>
+                ) : null}
+                {tile.lastGame?.summary ? <p className="tt-coach-sum">{tile.lastGame.summary}</p> : null}
+                {next ? (
+                  <p className="tt-coach-next">
+                    <b>Next</b> {next}
+                  </p>
+                ) : null}
+                {stat ? <p className="tt-coach-stat">{stat}</p> : null}
+                {tile.featured ? null : <CoachFacts tile={tile} />}
+              </div>
+              {tile.featured ? (
+                <aside className="tt-coach-aside">
+                  {tile.teamLogo ? (
+                    <span className="tt-coach-mark">
+                      <img src={tile.teamLogo} alt="" />
+                    </span>
+                  ) : null}
+                  <CoachSeasonStrip tile={tile} />
+                  <CoachFacts tile={tile} />
+                </aside>
+              ) : null}
+            </div>
             {tile.headlines.length ? (
               <ul className="tt-coach-hed">
                 {tile.headlines.map((card) => (
@@ -3442,6 +3457,22 @@ function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
           </article>
         );
       })}
+    </div>
+  );
+}
+
+function CoachSeasonStrip({ tile }: { tile: FavoriteCoachTile }) {
+  const chips = tile.seasonStrip ?? [];
+  if (!chips.length) return null;
+  return (
+    <div className="tt-coach-strip">
+      <b>{tile.seasonYear ?? "Season"}</b>
+      {chips.map((chip) => (
+        <i key={chip.id} className={chip.result === "W" ? "w" : chip.result === "L" ? "l" : undefined}>
+          {chip.result}
+          {chip.opponentRank != null ? ` #${chip.opponentRank}` : ""} {chip.opponent}
+        </i>
+      ))}
     </div>
   );
 }

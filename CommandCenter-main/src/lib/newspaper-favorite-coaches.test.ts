@@ -23,6 +23,7 @@ import {
   mapFavoriteCoachRows,
   parseWl,
   printsFavoriteCoaches,
+  seasonStripFromEvents,
   yearsAtSchoolLabel,
 } from "./newspaper-favorite-coaches.ts";
 
@@ -201,6 +202,7 @@ const enriched = applyCoachProfile(
     teamColor: null,
     headshot: null,
     featured: true,
+    seasonYear: 2026,
     record: "4-1",
     conferenceRecord: "1-1",
     standing: null,
@@ -209,6 +211,7 @@ const enriched = applyCoachProfile(
     pointsAgainstAvg: "20",
     lastGame: null,
     nextGame: null,
+    seasonStrip: [],
     headlines: [],
     schoolRecord: null,
     yearsAtSchool: null,
@@ -261,5 +264,50 @@ assert(
   coachFactLines(applyCoachProfile(enriched, null, 2026, "1–1")).join("|") === "vs ranked 1–1",
   "no profile means only live facts",
 );
+
+const strip = seasonStripFromEvents(
+  [
+    {
+      id: "1",
+      competitions: [
+        {
+          status: { type: { completed: true } },
+          competitors: [
+            { homeAway: "home", winner: true, team: { id: "142", abbreviation: "MIZ" } },
+            { homeAway: "away", winner: false, team: { id: "57", abbreviation: "FLA" } },
+          ],
+        },
+      ],
+    },
+    {
+      id: "2",
+      competitions: [
+        {
+          status: { type: { completed: false } },
+          competitors: [
+            { homeAway: "home", team: { id: "142", abbreviation: "MIZ" } },
+            { homeAway: "away", team: { id: "245", abbreviation: "TA&M" } },
+          ],
+        },
+      ],
+    },
+    {
+      id: "3",
+      competitions: [
+        {
+          status: { type: { completed: true } },
+          competitors: [
+            { homeAway: "away", winner: false, team: { id: "142", abbreviation: "MIZ" } },
+            { homeAway: "home", winner: true, curatedRank: { current: 4 }, team: { id: "333", abbreviation: "ALA" } },
+          ],
+        },
+      ],
+    },
+  ],
+  "142",
+);
+assert(strip.length === 2, "upcoming games stay off the season strip");
+assert(strip[0]?.result === "W" && strip[0]?.opponent === "FLA", "first chip is the Florida win");
+assert(strip[1]?.result === "L" && strip[1]?.opponentRank === 4, "Alabama loss keeps the AP rank");
 
 console.log("newspaper-favorite-coaches ok");

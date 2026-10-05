@@ -106,6 +106,14 @@ export type CoachNextGame = {
   line: string | null;
 };
 
+/** One completed 2026 game from the ESPN schedule — never invented. */
+export type CoachSeasonChip = {
+  id: string;
+  result: "W" | "L" | "T";
+  opponent: string;
+  opponentRank: number | null;
+};
+
 export type FavoriteCoachTile = {
   coachId: string;
   name: string;
@@ -118,6 +126,7 @@ export type FavoriteCoachTile = {
   teamColor: string | null;
   headshot: string | null;
   featured: boolean;
+  seasonYear: number | null;
   record: string | null;
   conferenceRecord: string | null;
   standing: string | null;
@@ -126,6 +135,7 @@ export type FavoriteCoachTile = {
   pointsAgainstAvg: string | null;
   lastGame: CoachLastGame | null;
   nextGame: CoachNextGame | null;
+  seasonStrip: CoachSeasonChip[];
   headlines: GameWrapCard[];
   schoolRecord: string | null;
   yearsAtSchool: string | null;
@@ -671,6 +681,27 @@ async function coachHeadshot(path: string, coachId: string): Promise<string | nu
   return null;
 }
 
+export function seasonStripFromEvents(events: EspnEvent[], teamId: string | null): CoachSeasonChip[] {
+  const chips: CoachSeasonChip[] = [];
+  for (const event of events) {
+    const comp = event.competitions?.[0];
+    if (!comp?.status?.type?.completed) continue;
+    const { opp, me } = oppOf(comp.competitors, teamId);
+    const result = resultOf(me);
+    if (!result) continue;
+    const opponent =
+      opp?.team?.abbreviation || opp?.team?.shortDisplayName || opp?.team?.displayName || "";
+    if (!opponent) continue;
+    chips.push({
+      id: String(event.id ?? comp.id ?? `${result}-${opponent}-${chips.length}`),
+      result,
+      opponent,
+      opponentRank: apRank(opp?.curatedRank?.current),
+    });
+  }
+  return chips;
+}
+
 function vsRankedLine(events: EspnEvent[], teamId: string | null): string | null {
   let wins = 0;
   let losses = 0;
@@ -791,6 +822,7 @@ async function fetchOneTile(ref: FavoriteCoachRef, standings: StandGroup[]): Pro
     teamColor: team?.color ? `#${team.color.replace(/^#/, "")}` : null,
     headshot,
     featured: ref.featured,
+    seasonYear: null,
     record: total?.summary ?? null,
     conferenceRecord: vsconf?.summary ?? conferenceFromStandings(standings, teamId),
     standing: team?.standingSummary ?? null,
@@ -799,6 +831,7 @@ async function fetchOneTile(ref: FavoriteCoachRef, standings: StandGroup[]): Pro
     pointsAgainstAvg: pa != null ? pa.toFixed(1).replace(/\.0$/, "") : null,
     lastGame: last ? lastGameFromEvent(last, teamId, lastBits.summary) : null,
     nextGame: next ? nextGameFromEvent(next, teamId, { tv: nextBits.tv, line: nextBits.line }) : null,
+    seasonStrip: seasonStripFromEvents(events, teamId),
     headlines: pickHeadlines(newsRaw?.articles ?? [], ref),
     ...blankProfileFields(),
     vsRanked: vsRankedLine(events, teamId),
@@ -918,6 +951,7 @@ export async function fetchFavoriteCoachDesk(opts?: {
           teamColor: null,
           headshot: null,
           featured: ref.featured,
+          seasonYear: null,
           record: null,
           conferenceRecord: null,
           standing: null,
@@ -926,6 +960,7 @@ export async function fetchFavoriteCoachDesk(opts?: {
           pointsAgainstAvg: null,
           lastGame: null,
           nextGame: null,
+          seasonStrip: [],
           headlines: [],
           ...blankProfileFields(),
         });
@@ -933,7 +968,10 @@ export async function fetchFavoriteCoachDesk(opts?: {
     }
   }
   await Promise.all([worker(), worker(), worker()]);
-  const merged = tiles.map((tile) => applyCoachProfile(tile, profiles[tile.coachId], seasonYear, tile.vsRanked));
+  const merged = tiles.map((tile) => ({
+    ...applyCoachProfile(tile, profiles[tile.coachId], seasonYear, tile.vsRanked),
+    seasonYear,
+  }));
   merged.sort((a, b) => Number(b.featured) - Number(a.featured) || a.name.localeCompare(b.name));
   return { tiles: merged };
 }
