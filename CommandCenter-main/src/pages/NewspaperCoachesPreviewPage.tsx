@@ -108,7 +108,7 @@ function CoachesPreview({ tiles }: { tiles: FavoriteCoachTile[] }) {
               {tile.featured ? (
                 <aside className="tt-coach-aside">
                   <div className="tt-coach-lead">
-                    <CoachShot tile={tile} lead />
+                    <CoachLeadMark tile={tile} />
                     <CoachSeasonStrip tile={tile} />
                   </div>
                   <CoachPreviewFacts tile={tile} />
@@ -123,18 +123,27 @@ function CoachesPreview({ tiles }: { tiles: FavoriteCoachTile[] }) {
   );
 }
 
-function CoachShot({ tile, lead = false }: { tile: FavoriteCoachTile; lead?: boolean }) {
+function CoachShot({ tile }: { tile: FavoriteCoachTile }) {
   const photo = tile.headshot;
   const logo = tile.teamLogo;
   if (!photo && !logo) return null;
   return (
-    <span className={lead ? "tt-coach-shot lead" : "tt-coach-shot"}>
+    <span className="tt-coach-shot">
       <img className={photo ? "portrait" : "portrait logo-only"} src={photo || logo || ""} alt="" />
       {photo && logo ? (
         <span className="tt-coach-badge">
           <img src={logo} alt="" />
         </span>
       ) : null}
+    </span>
+  );
+}
+
+function CoachLeadMark({ tile }: { tile: FavoriteCoachTile }) {
+  if (!tile.teamLogo) return null;
+  return (
+    <span className="tt-coach-mark">
+      <img src={tile.teamLogo} alt="" />
     </span>
   );
 }
