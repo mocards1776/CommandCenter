@@ -908,10 +908,121 @@ function storyUrlKey(card: GameWrapCard): string | null {
 
 function storyGameId(card: GameWrapCard): string | null {
   const raw = card.gameId ?? "";
-  const fromId = raw.match(/(\d{6,})/)?.[1] ?? (raw.length >= 4 ? raw : null);
-  if (fromId) return fromId;
+  const fromField = raw.match(/(\d{6,})/)?.[1] ?? (raw.length >= 4 ? raw : null);
+  if (fromField) return fromField;
   const href = `${card.wrapHref ?? ""} ${card.gameHref ?? ""}`;
-  return href.match(/(?:gameId|event)[=/](\d{6,})/i)?.[1] ?? null;
+  const fromHref = href.match(/(?:gameId|event)[=/](\d{6,})/i)?.[1];
+  if (fromHref) return fromHref;
+  // Wire / recap / recent ids carry the ESPN game id. News- and league- ids
+  // are article ids — do not treat those as the game.
+  return /^(?:wire|recap|recent|wrap)[^\d]*(\d{6,})/.exec(card.id)?.[1] ?? null;
+}
+
+const TEAM_ALIASES: [string, string[]][] = [
+  ["cowboys", ["cowboys", "dallas"]],
+  ["texans", ["texans", "houston"]],
+  ["lions", ["lions", "detroit"]],
+  ["panthers", ["panthers", "carolina"]],
+  ["chiefs", ["chiefs"]],
+  ["raiders", ["raiders", "vegas"]],
+  ["blues", ["blues"]],
+  ["avalanche", ["avalanche", "colorado"]],
+  ["mizzou", ["mizzou", "missouri", "tigers"]],
+  ["florida", ["florida", "gators"]],
+];
+
+const FAVORITE_TEAM: Record<string, string> = {
+  "nfl-dal": "cowboys",
+  "nfl-det": "lions",
+  "nfl-kc": "chiefs",
+  "nhl-stl": "blues",
+  "cfb-mizzou": "mizzou",
+  "mlb-stl": "cardinals",
+};
+
+function namedTeams(card: GameWrapCard): Set<string> {
+  const text = `${card.headline} ${card.dek ?? ""} ${card.teamName ?? ""}`.toLowerCase();
+  const out = new Set<string>();
+  const fav = card.favoriteKey ? FAVORITE_TEAM[card.favoriteKey] : null;
+  if (fav) out.add(fav);
+  for (const [canon, aliases] of TEAM_ALIASES) {
+    if (aliases.some((alias) => new RegExp(`\\b${alias}\\b`, "i").test(text))) out.add(canon);
+  }
+  return out;
+}
+
+function shareMatchup(a: GameWrapCard, b: GameWrapCard): boolean {
+  const shared = [...namedTeams(a)].filter((team) => namedTeams(b).has(team));
+  return shared.length >= 2;
+}
+
+/**
+ * A write-up of one game: the wrap, a recap, highlights, or a takeaways
+ * piece on that matchup. Columns, betting notes, and week-wide roundups
+ * stay out so they do not swallow the recap.
+ */
+export function isGameRecapCopy(card: GameWrapCard): boolean {
+  if (isColumnStory(card) || isPreviewStory(card)) return false;
+  const head = `${card.headline} ${card.dek ?? ""}`;
+  if (/\bhow to bet\b|\bprop plays\b/i.test(head)) return false;
+  if (isMultiGameRoundup(card)) return false;
+  if (isMainGameStory(card)) return true;
+  if (/\bgame highlights\b|\bfull highlights\b/i.test(head)) return true;
+  if (/\btakeaways\b/i.test(head) && namedTeams(card).size >= 2) return true;
+  if (
+    /\b(?:win over|defeat(?:s|ed)?|trounc(?:es|ed)|beats?\b|rout(?:s|ed)?|crushed|whipped|edging|hold off|held off|thriller)\b/i.test(
+      head,
+    )
+  ) {
+    return true;
+  }
+  if (/\bvs\.?\b/i.test(head) && /\b(?:highlights|final|recap|score)\b/i.test(head)) return true;
+  // A star's line from the same game ("17 catches, go-ahead score") is
+  // another write-up of the recap, not a separate story.
+  return (
+    /\b(?:go-ahead|touchdowns?|\btds?\b|catches?|\byards?\b)\b/i.test(head) &&
+    !/\binjur|dislocat|surgery|doubtful|questionable/i.test(head)
+  );
+}
+
+/** Week-wide or three-team copy — not one final. */
+export function isMultiGameRoundup(card: GameWrapCard): boolean {
+  const head = `${card.headline} ${card.dek ?? ""}`;
+  if (/\bweek \d+\b/i.test(head) && /\b(takeaways|comebacks?|roundup|results|scores)\b/i.test(head) && !/\bvs\.?\b/i.test(head)) {
+    return true;
+  }
+  return namedTeams(card).size >= 3;
+}
+
+/**
+ * Score banner, line score, and leaders belong only on that game's recap.
+ * A week-wide roundup or injury note does not wear another game's chrome.
+ */
+export function isSingleGameRecap(card: GameWrapCard): boolean {
+  if (isColumnStory(card) || isPreviewStory(card) || isMultiGameRoundup(card)) return false;
+  return isGameWrap(card) || isRecapStory(card) || isGameRecapCopy(card);
+}
+
+/** When a club has one final in the slate, stamp that game id on its recaps. */
+function attachInferredGameIds(stories: GameWrapCard[]): GameWrapCard[] {
+  const byFav = new Map<string, Set<string>>();
+  for (const card of stories) {
+    if (!card.favoriteKey) continue;
+    const gid = storyGameId(card);
+    if (!gid) continue;
+    if (!(isGameWrap(card) || (card.status && /final/i.test(card.status)))) continue;
+    const set = byFav.get(card.favoriteKey) ?? new Set<string>();
+    set.add(gid);
+    byFav.set(card.favoriteKey, set);
+  }
+  return stories.map((card) => {
+    if (storyGameId(card) || !card.favoriteKey || isColumnStory(card) || !isGameRecapCopy(card)) {
+      return card;
+    }
+    const ids = byFav.get(card.favoriteKey);
+    if (!ids || ids.size !== 1) return card;
+    return { ...card, gameId: [...ids][0] };
+  });
 }
 
 /** Signed columns and opinion stay even when they cover the same game. */
@@ -937,7 +1048,7 @@ function headlineTokens(card: GameWrapCard): string[] {
   return significantWords(card.headline).map((word) => aliases[word] ?? word);
 }
 
-function sameSectionAStory(a: GameWrapCard, b: GameWrapCard): boolean {
+export function sameSectionAStory(a: GameWrapCard, b: GameWrapCard): boolean {
   if (a.id && a.id === b.id) return true;
   const urlA = storyUrlKey(a);
   const urlB = storyUrlKey(b);
@@ -950,25 +1061,39 @@ function sameSectionAStory(a: GameWrapCard, b: GameWrapCard): boolean {
   }
   const gameA = storyGameId(a);
   const gameB = storyGameId(b);
-  if (gameA && gameB && gameA === gameB && isMainGameStory(a) && isMainGameStory(b)) return true;
+  if (gameA && gameB && gameA === gameB) return true;
+  if (isGameRecapCopy(a) && isGameRecapCopy(b) && shareMatchup(a, b)) return true;
   if (isMainGameStory(a) && isMainGameStory(b) && sameStory(headlineTokens(a), headlineTokens(b))) {
     return true;
   }
   return sameStory(headlineTokens(a), headlineTokens(b));
 }
 
-/** One story per event. The better source stays; columns like Hochman stay separate. */
+function pickBetterStory(cards: GameWrapCard[]): GameWrapCard {
+  return cards.reduce((best, card) => (preferStory(card, best) ? card : best));
+}
+
+/** One story per event. The better / fuller copy stays; columns like Hochman stay separate. */
 export function dedupeStories(stories: GameWrapCard[]): GameWrapCard[] {
-  const kept: GameWrapCard[] = [];
-  for (const card of stories) {
-    const idx = kept.findIndex((prev) => sameSectionAStory(card, prev));
-    if (idx < 0) {
-      kept.push(card);
+  const stamped = attachInferredGameIds(stories);
+  const groups: GameWrapCard[][] = [];
+  for (const card of stamped) {
+    const hits: number[] = [];
+    for (let i = 0; i < groups.length; i += 1) {
+      if (groups[i]!.some((prev) => sameSectionAStory(card, prev))) hits.push(i);
+    }
+    if (!hits.length) {
+      groups.push([card]);
       continue;
     }
-    if (preferStory(card, kept[idx]!)) kept[idx] = card;
+    const [first, ...rest] = hits;
+    groups[first!]!.push(card);
+    for (const i of rest.sort((a, b) => b - a)) {
+      groups[first!]!.push(...groups[i]!);
+      groups.splice(i, 1);
+    }
   }
-  return kept;
+  return groups.map(pickBetterStory);
 }
 
 function isStalePreview(card: GameWrapCard, edition: string): boolean {
@@ -1479,9 +1604,11 @@ function nationalPages(desk: NationalDesk | null): NationalPage[] {
 
 /** Copy that can run in this edition: filed, deduped, inside the press window. */
 export function deskCopy(stories: GameWrapCard[], edition: string): GameWrapCard[] {
-  return dedupeStories(
-    stories.filter((card) => isDeskStory(card) && !isNewsMuted(card) && !staleNamedPackage(card, edition)),
-  ).filter((card) => inEditionWindow(card, edition));
+  const inWindow = stories.filter(
+    (card) =>
+      isDeskStory(card) && !isNewsMuted(card) && !staleNamedPackage(card, edition) && inEditionWindow(card, edition),
+  );
+  return dedupeStories(inWindow);
 }
 
 /**
@@ -1525,11 +1652,11 @@ export function buildEdition(opts: {
     deskCopy(opts.stories, opts.edition).filter((card) => !card.editorSpiked),
     opts.edition,
   );
-  const sectionCopy = fresh;
+  const favoriteFresh = fresh.filter(isSectionAStory);
 
   const paths = new Set<string>();
   for (const club of opts.clubs) if (club.leaguePath) paths.add(club.leaguePath);
-  for (const story of sectionCopy) if (story.leaguePath) paths.add(story.leaguePath);
+  for (const story of fresh) if (story.leaguePath) paths.add(story.leaguePath);
 
   const ids = uniqueCodes(orderSportSections([...paths].map(sportSectionId), opts.edition));
 
@@ -1540,12 +1667,13 @@ export function buildEdition(opts: {
     list.push(club);
     clubsBy.set(club.leaguePath, list);
   }
-  // Favorite-club news stays on Section A. Game wraps also run in the sport
-  // section, favorite-team first, so a Sunday Chiefs final leads the NFL recaps.
+  // Favorite-club news stays on Section A. A story that already ran in A —
+  // including the favorite-team recap — does not reprint on a later sport
+  // front. League copy that never made A still leads its section.
   const storiesBy = new Map<string, GameWrapCard[]>();
-  for (const story of sectionCopy) {
+  for (const story of fresh) {
     if (!story.leaguePath) continue;
-    if (isFavoriteStory(story) && !isGameWrap(story)) continue;
+    if (favoriteFresh.some((a) => a.id === story.id || sameSectionAStory(a, story))) continue;
     const list = storiesBy.get(story.leaguePath) ?? [];
     list.push(story);
     storiesBy.set(story.leaguePath, list);
@@ -1568,7 +1696,6 @@ export function buildEdition(opts: {
   const sportFolioByStory: Record<string, string> = {};
   for (const part of sportPagesBuilt) Object.assign(sportFolioByStory, part.built.sportFolioByStory);
 
-  const favoriteFresh = fresh.filter(isSectionAStory);
   const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs, editorFront(fresh));
 
   const national = nationalPages(opts.national ?? null);

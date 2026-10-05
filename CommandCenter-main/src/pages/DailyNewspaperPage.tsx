@@ -189,6 +189,7 @@ import {
   isFavoriteStory,
   isGameWrap,
   isRecapStory,
+  isSingleGameRecap,
   missouriStoryCard,
   nationalStoryCard,
   sortComingUp,
@@ -1041,7 +1042,9 @@ function Story({
 }) {
   const full = cardCopy(card);
   const copy = substantive(card, text ?? full);
-  const recap = Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
+  const recap =
+    isSingleGameRecap(card) &&
+    Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
   const storyCopy = recap ? recapBodyForPage(copy) : copy;
   const partial = readOn ?? Boolean(jump || (storyCopy && storyCopy.length < full.length * 0.9));
   const dek = dekFor(card, storyCopy);
@@ -1825,7 +1828,7 @@ function InsidePage({
         const team = teamForCard(teams, card);
         const text = cardCopy(card);
         const { art, cols } = artFor(card, text);
-        const game = lookup(card);
+        const game = isSingleGameRecap(card) ? lookup(card) : null;
         // No photograph: the club's poster carries the art, unless its notebook already runs here.
         const poster = !card.photo && Boolean(team) && !noted.has(team!.fav.key);
         return (
@@ -1845,7 +1848,7 @@ function InsidePage({
               game={game}
               inset={game ? null : <StoryNames card={card} />}
             />
-            {game || card.recapGame ? <RecapBox card={card} game={game ?? null} /> : null}
+            {game || (isSingleGameRecap(card) && card.recapGame) ? <RecapBox card={card} game={game ?? null} /> : null}
           </div>
         );
       })}
@@ -1960,7 +1963,7 @@ function ContinuePage({
   return (
     <div className="wsj-continue">
       {jumps.map(({ card, rest }, i) => {
-        const game = lookup(card);
+        const game = isSingleGameRecap(card) ? lookup(card) : null;
         return (
           <div key={card.id} className="wsj-inside-story">
             <p className="wsj-continued-from">
@@ -1981,7 +1984,7 @@ function ContinuePage({
               game={game}
               inset={game ? null : <StoryNames card={card} />}
             />
-            {game || card.recapGame ? <RecapBox card={card} game={game ?? null} /> : null}
+            {game || (isSingleGameRecap(card) && card.recapGame) ? <RecapBox card={card} game={game ?? null} /> : null}
           </div>
         );
       })}
@@ -2663,9 +2666,11 @@ function WrapPlayers({ card }: { card: GameWrapCard }) {
 
 function WrapBrief({ card }: { card: GameWrapCard }) {
   const lookup = useContext(GameLookup);
-  const game = lookup(card);
+  const game = isSingleGameRecap(card) ? lookup(card) : null;
   const copy = wrapBriefCopy(card, 4);
-  const recap = Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
+  const recap =
+    isSingleGameRecap(card) &&
+    Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
   const brief = recap && recapIsScoreOnly(copy) ? "" : recap ? recapBodyForPage(copy) : copy;
   return (
     <article className="tt-wrap-brief" data-tt-keys={storyReadKeys(card).join("|")} data-tt-title={card.headline}>
@@ -4988,6 +4993,8 @@ function NewspaperDesk() {
   /** Pairs a club story with the game it reports, so the reader can set the box. */
   const findGame = useCallback(
     (card: GameWrapCard): BoxGame | null => {
+      // A week-wide roundup or club note must not inherit last night's box.
+      if (!isSingleGameRecap(card)) return null;
       const board = card.leaguePath ? boardQ.data?.[card.leaguePath] : undefined;
       if (!board) return null;
       const games = [...board.results, ...board.slate, ...(board.prior ?? [])];

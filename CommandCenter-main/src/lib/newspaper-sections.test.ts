@@ -30,11 +30,14 @@ import {
   insertCoachesFocus,
   isColumnStory,
   isDeskStory,
+  isGameRecapCopy,
+  isSingleGameRecap,
   isHistoricNationalEvent,
   isHistoricNationalStory,
   isHoldoverGame,
   isPreviewStory,
   isSectionAStory,
+  sameSectionAStory,
   MIN_SECTION_PAGES,
   orderSportSections,
   SECTION_A_TITLE,
@@ -926,6 +929,310 @@ const aIds = jumpOnly.pages
 assert(aIds.filter((id) => id === "rss-cfb-same").length === 0, "the same game does not reprint as a second Section A story");
 assert(aIds.includes("wire-cfb-one"), "the wrap still runs in Section A");
 
+// Real 2026-10-05 duplicates: wrap + highlight clip + second write-up of the same game.
+const cowboysWrap = card({
+  id: "wire-nfl-401872967",
+  headline: "Cowboys beat the Texans",
+  favoriteKey: "nfl-dal",
+  followed: true,
+  teamName: "Cowboys",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  gameId: "401872967",
+  wrapKind: "espn",
+  status: "Final",
+  scoreLine: "DAL 27 · HOU 24",
+  wrapHref: "https://www.espn.com/nfl/game/_/gameId/401872967",
+  when: "2026-10-04T20:15:00Z",
+  body: "Dallas came back in Houston. ".repeat(20),
+});
+const cowboysHighlights = card({
+  id: "news-50103615",
+  headline: "Dallas Cowboys vs. Houston Texans: Game Highlights",
+  favoriteKey: "nfl-dal",
+  followed: true,
+  teamName: "Cowboys",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Media",
+  wrapHref: "https://www.espn.com/video/clip/_/id/50103615/game-highlights",
+  when: "2026-10-04T23:00:00Z",
+  body: "Video highlights of Cowboys-Texans. ".repeat(8),
+});
+const cowboysBounce = card({
+  id: "news-50105829",
+  headline: "Cowboys bounce back with 'exhilarating' win over Texans",
+  favoriteKey: "nfl-dal",
+  followed: true,
+  teamName: "Cowboys",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Media",
+  wrapHref: "https://www.espn.com/video/clip/_/id/50105829/cowboys-bounce-back-exhilarating-win-texans",
+  when: "2026-10-04T23:10:00Z",
+  body: "Dallas flipped the script after the Rio loss. ".repeat(8),
+});
+const cowboysFlip = card({
+  id: "news-50105860",
+  headline: "Cowboys flip script after Rio loss with key win over Texans",
+  favoriteKey: "nfl-dal",
+  followed: true,
+  teamName: "Cowboys",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Story",
+  wrapHref: "https://www.espn.com/nfl/story/_/id/50105860/dallas-cowboys-ceedee-lamb-dak-texans",
+  when: "2026-10-05T08:00:00Z",
+  body: "CeeDee Lamb and Dak Prescott beat Houston. ".repeat(16),
+});
+const cowboysLamb = card({
+  id: "news-50104876",
+  headline: "CeeDee Lamb's 17 catches, go-ahead score power Cowboys",
+  favoriteKey: "nfl-dal",
+  followed: true,
+  teamName: "Cowboys",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "HeadlineNews",
+  wrapHref: "https://www.espn.com/nfl/story/_/id/50104876/ceedee-lamb-17-catches-go-ahead-score-power-c",
+  body: "Lamb caught 17 passes and scored the go-ahead touchdown against Houston. ".repeat(12),
+});
+const cowboysTakeaways = card({
+  id: "wrap-athletic-cowboys-texans",
+  headline: "Did CeeDee Lamb's historic day save the Cowboys' and sink the Texans' seasons?",
+  favoriteKey: "nfl-dal",
+  teamName: "Cowboys",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  wrapHref: "https://www.nytimes.com/athletic/7659243/2026/10/04/cowboys-texans-result-nfl-week-4-takeaways/",
+  body: "The Athletic takeaways from Cowboys-Texans. ".repeat(16),
+});
+const cowboysMeeting = card({
+  id: "news-50095892",
+  headline: "Brian Schottenheimer owned up to Rio mistakes in Cowboys meeting",
+  favoriteKey: "nfl-dal",
+  followed: true,
+  teamName: "Cowboys",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "HeadlineNews",
+  wrapHref: "https://www.espn.com/nfl/story/_/id/50095892/brian-schottenheimer-owned-rio-mistakes-cowbo",
+  body: "The coach addressed last week's loss in the team meeting. ".repeat(12),
+});
+assert(isGameRecapCopy(cowboysHighlights) && isGameRecapCopy(cowboysBounce), "highlights and a win-over write-up are recaps");
+assert(!isGameRecapCopy(cowboysMeeting), "a team-meeting note is not the game recap");
+const cowboysOnce = dedupeStories([
+  cowboysWrap,
+  cowboysHighlights,
+  cowboysBounce,
+  cowboysFlip,
+  cowboysLamb,
+  cowboysTakeaways,
+  cowboysMeeting,
+]);
+assert(cowboysOnce.some((c) => c.id === "wire-nfl-401872967"), "the full Cowboys recap stays");
+assert(
+  cowboysOnce.filter((c) =>
+    ["news-50103615", "news-50105829", "news-50105860", "news-50104876", "wrap-athletic-cowboys-texans"].includes(c.id),
+  ).length === 0,
+  "Cowboys-Texans highlights, bounce-back clip, flip-script story, Lamb write-up and Athletic takeaways collapse into the wrap",
+);
+assert(cowboysOnce.some((c) => c.id === "news-50095892"), "the Rio meeting note is a different story");
+
+const weekComebacks = card({
+  id: "news-50100800",
+  headline: "How the Rams, Cowboys, Patriots pulled Week 4 comebacks to save their seasons",
+  favoriteKey: "nfl-dal",
+  followed: true,
+  teamName: "Cowboys",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Story",
+  wrapHref: "https://www.espn.com/nfl/story/_/id/50100800/week-4-rams-cowboys-patriots-comeback-wins-sa",
+  when: "2026-10-05T12:00:00Z",
+  body: "Three clubs came back from double-digit holes in Week 4. ".repeat(16),
+  photo: "https://a.espncdn.com/rams.jpg",
+});
+assert(!isGameRecapCopy(weekComebacks), "a week-wide comeback roundup is not one game's recap");
+assert(!isSingleGameRecap(weekComebacks), "the week-wide roundup does not wear a single game's score banner");
+assert(isSingleGameRecap(cowboysWrap), "the full Cowboys wrap still wears recap chrome");
+assert(isSingleGameRecap(cowboysFlip), "a win-over write-up still wears recap chrome");
+
+const lionsWrap = card({
+  id: "wire-nfl-401872978",
+  headline: "Panthers beat the Lions",
+  favoriteKey: "nfl-det",
+  followed: true,
+  teamName: "Lions",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  gameId: "401872978",
+  wrapKind: "espn",
+  status: "Final",
+  scoreLine: "CAR 27 · DET 24",
+  body: "Carolina held on in Detroit. ".repeat(20),
+});
+const lionsClip = card({
+  id: "news-50107279",
+  headline: "Panthers hold off Lions in a SNF thriller",
+  favoriteKey: "nfl-det",
+  followed: true,
+  teamName: "Lions",
+  sportLabel: "NFL",
+  status: "Media",
+  body: "Short clip of the Sunday night finish. ".repeat(8),
+});
+const lionsDefeat = card({
+  id: "news-50107710",
+  headline: "Tetairoa McMillan, Bryce Young star as Panthers defeat Lions",
+  favoriteKey: "nfl-det",
+  followed: true,
+  teamName: "Lions",
+  sportLabel: "NFL",
+  status: "HeadlineNews",
+  body: "Young and McMillan beat Detroit in prime time. ".repeat(16),
+});
+const lionsBet = card({
+  id: "news-50053980",
+  headline: "How to bet Lions-Panthers on 'SNF': Analysis, tips and top prop plays",
+  favoriteKey: "nfl-det",
+  followed: true,
+  teamName: "Lions",
+  sportLabel: "NFL",
+  status: "Story",
+  body: "Betting lines for Sunday night. ".repeat(12),
+});
+const lionsOnce = dedupeStories([lionsWrap, lionsClip, lionsDefeat, lionsBet]);
+assert(lionsOnce.some((c) => c.id === "wire-nfl-401872978") && !lionsOnce.some((c) => c.id === "news-50107279" || c.id === "news-50107710"), "Lions-Panthers files once");
+assert(lionsOnce.some((c) => c.id === "news-50053980"), "the betting note is not the recap");
+
+const chiefsHighlights = card({
+  id: "news-50105678",
+  headline: "Kansas City Chiefs vs Las Vegas Raiders: Game Highlights",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  teamName: "Chiefs",
+  sportLabel: "NFL",
+  status: "Media",
+  body: "Highlights from Allegiant Stadium. ".repeat(8),
+});
+const chiefsTakeaways = card({
+  id: "wrap-athletic-chiefs",
+  headline: "Are the Chiefs the AFC's team to beat after edging the Raiders to stay undefeated?",
+  favoriteKey: "nfl-kc",
+  teamName: "Chiefs",
+  sportLabel: "NFL",
+  wrapHref: "https://www.nytimes.com/athletic/7659261/2026/10/04/chiefs-raiders-nfl-2026-score-result-takeaways/",
+  body: "The Athletic on the Chiefs staying unbeaten. ".repeat(16),
+});
+const chiefsHill = card({
+  id: "news-50109680",
+  headline: "Tyreek Hill could sign with new team soon, agent says",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  teamName: "Chiefs",
+  sportLabel: "NFL",
+  status: "HeadlineNews",
+  body: "Hill is a free-agent story, not the Raiders recap. ".repeat(12),
+});
+const chiefsOnce = dedupeStories([chiefsHighlights, chiefsTakeaways, chiefsHill]);
+assert(chiefsOnce.length === 2 && chiefsOnce.some((c) => c.id === "wrap-athletic-chiefs") && chiefsOnce.some((c) => c.id === "news-50109680"), "Chiefs-Raiders recaps collapse; Hill signing stays");
+
+const bluesHighlights = card({
+  id: "news-50096947",
+  headline: "St. Louis Blues vs. Colorado Avalanche: Game Highlights",
+  favoriteKey: "nhl-stl",
+  followed: true,
+  teamName: "Blues",
+  sportLabel: "NHL",
+  leaguePath: "hockey/nhl",
+  status: "Media",
+  body: "Highlight package from Denver. ".repeat(8),
+});
+const bluesWrap = card({
+  id: "wrap-stltoday-blues",
+  headline: "Blues crushed 6-1 by Avalanche in first loss of the season",
+  favoriteKey: "nhl-stl",
+  teamName: "Blues",
+  sportLabel: "NHL",
+  leaguePath: "hockey/nhl",
+  wrapHref: "https://www.stltoday.com/sports/professional/nhl/blues/article_b7c963f6.html",
+  body: "Colorado scored six and St. Louis scored one. ".repeat(16),
+});
+const bluesOnce = dedupeStories([bluesHighlights, bluesWrap]);
+assert(bluesOnce.length === 1 && bluesOnce[0]!.id === "wrap-stltoday-blues", "Blues-Avalanche files the full recap once");
+
+const mizzouNet = card({
+  id: "mo-wuufpw",
+  headline: "Mizzou breaks through with memorable Homecoming win over No. 8 Florida",
+  sportLabel: "Missouri",
+  teamName: "Missourinet",
+  wrapHref: "https://www.missourinet.com/2026/10/05/mizzou-breaks-through-with-memorable-homecoming-win-over-no-8-florida/",
+  body: "The Tigers scored 35 straight after a 10-10 tie. ".repeat(12),
+});
+const mizzouHighlights = card({
+  id: "news-50094160",
+  headline: "Florida Gators vs. Missouri Tigers: Game Highlights",
+  favoriteKey: "cfb-mizzou",
+  followed: true,
+  teamName: "Mizzou FB",
+  sportLabel: "NCAA",
+  leaguePath: "football/college-football",
+  status: "Media",
+  body: "Highlight clip from Memorial Stadium. ".repeat(8),
+});
+const mizzouGame = dedupeStories([
+  wrapAndRss[0]!,
+  mizzouHighlights,
+  mizzouNet,
+  wrapAndRss.find((c) => c.id === "wrap-stltoday-hochman")!,
+]);
+assert(mizzouGame.some((c) => c.id === "wire-college-football-401856708"), "the ESPN Mizzou wrap stays");
+assert(!mizzouGame.some((c) => c.id === "news-50094160" || c.id === "mo-wuufpw"), "the highlight clip and the Missourinet rewrite drop");
+assert(mizzouGame.some((c) => c.id === "wrap-stltoday-hochman"), "Hochman stays a separate column");
+assert(
+  sameSectionAStory(cowboysHighlights, cowboysBounce),
+  "a highlight package and a win-over story are the same Cowboys-Texans game",
+);
+
+const cowboysPaper = buildEdition({
+  stories: [
+    cowboysWrap,
+    cowboysHighlights,
+    cowboysBounce,
+    cowboysFlip,
+    card({
+      id: "wire-nfl-ind-other",
+      headline: "Colts beat the Commanders",
+      sportLabel: "NFL",
+      leaguePath: "football/nfl",
+      status: "Final",
+      scoreLine: "IND 30 · WSH 13",
+      gameId: "401-ind-other",
+      when: "2026-10-04T17:00:00Z",
+      body: "Indianapolis scored early. ".repeat(8),
+    }),
+  ],
+  clubs: [chiefs],
+  edition: "2026-10-05-morning",
+});
+const cowboysA = cowboysPaper.pages
+  .filter((p) => p.section === "A")
+  .flatMap((p) => {
+    if (p.kind === "favorites-front") return [p.lead, p.second, p.third, ...p.briefs];
+    if (p.kind === "favorites-inside") return [p.primary, p.secondary, ...p.briefs];
+    if (p.kind === "favorites-continue") return p.jumps.map((j) => j.card);
+    return [];
+  })
+  .filter(Boolean)
+  .map((c) => c!.id);
+assert(cowboysA.includes("wire-nfl-401872967"), "Section A keeps the full Cowboys recap");
+assert(!cowboysA.includes("news-50103615") && !cowboysA.includes("news-50105829"), "Section A does not reprint the clip");
+assert(
+  !JSON.stringify(cowboysPaper.pages.filter((p) => p.section === "NFL")).includes("wire-nfl-401872967"),
+  "the Cowboys recap does not reprint on the NFL front",
+);
+
 const oneTrade = dedupeStories([
   card({
     id: "espn-trade",
@@ -1216,12 +1523,20 @@ const recapsPage = recapsFirst.pages.find((p) => p.kind === "sport-front" && p.s
 const firstNfl = recapsFirst.pages.find((p) => p.kind === "sport-front" && p.section === "NFL");
 assert(firstNfl?.kind === "sport-front" && firstNfl.focus === "front", "morning sport sections open on a section front");
 assert(
-  firstNfl?.kind === "sport-front" && firstNfl.articles[0]?.card.id === "wire-nfl-kc-lead",
-  "the favorite-team game leads the NFL section front",
+  firstNfl?.kind === "sport-front" && firstNfl.articles.every((a) => a.card.id !== "wire-nfl-kc-lead"),
+  "the favorite-team recap stays in Section A and does not reprint on the NFL front",
 );
 assert(
-  recapsPage?.kind === "sport-front" && recapsPage.articles[0]?.card.id === "wire-nfl-kc-lead",
-  "the favorite-team game leads the NFL recaps desk",
+  recapsPage?.kind === "sport-front" && recapsPage.articles.every((a) => a.card.id !== "wire-nfl-kc-lead"),
+  "the favorite-team recap does not reprint on the NFL recaps desk",
+);
+assert(
+  recapsFirst.pages.some((p) => p.kind === "favorites-front" && [p.lead, p.second, p.third].some((c) => c?.id === "wire-nfl-kc-lead")),
+  "the Chiefs recap still runs in Section A",
+);
+assert(
+  firstNfl?.kind === "sport-front" && firstNfl.articles[0]?.card.id === "wire-nfl-ind-lead",
+  "a league wrap leads the NFL front once the favorite recap is in A",
 );
 assert(
   recapsPage?.kind === "sport-front" && recapsPage.articles.some((a) => a.card.id === "wire-nfl-ind-lead"),
