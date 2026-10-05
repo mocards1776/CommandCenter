@@ -8494,6 +8494,47 @@ li.counting .tt-count.card {
   line-height: 1.2;
   text-align: left;
 }
+.tt-coach-slate {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--w-hair);
+}
+.tt-coach-slate.one {
+  grid-template-columns: 1fr;
+}
+.tt-coach-slate b {
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  margin-bottom: 3px;
+}
+.tt-coach-slate ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tt-coach-slate ol.flat {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 14px;
+}
+.tt-coach-slate li {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--w-ink-soft);
+}
+.tt-coach-slate li.w { color: var(--w-up); }
+.tt-coach-slate li.l { color: var(--w-down); }
 @media print {
   .wsj-fit {
     width: auto !important;

@@ -25,6 +25,8 @@ import {
   pickCoachHeadshot,
   printsFavoriteCoaches,
   seasonStripFromEvents,
+  slateFromEvents,
+  slateLine,
   yearsAtSchoolLabel,
 } from "./newspaper-favorite-coaches.ts";
 
@@ -213,6 +215,7 @@ const enriched = applyCoachProfile(
     lastGame: null,
     nextGame: null,
     seasonStrip: [],
+    slate: [],
     headlines: [],
     schoolRecord: null,
     yearsAtSchool: null,
@@ -310,6 +313,134 @@ const strip = seasonStripFromEvents(
 assert(strip.length === 2, "upcoming games stay off the season strip");
 assert(strip[0]?.result === "W" && strip[0]?.opponent === "FLA", "first chip is the Florida win");
 assert(strip[1]?.result === "L" && strip[1]?.opponentRank === 4, "Alabama loss keeps the AP rank");
+
+const slateEvents = [
+  {
+    id: "old-1",
+    date: "2026-08-30T16:00:00Z",
+    competitions: [
+      {
+        date: "2026-08-30T16:00:00Z",
+        status: { type: { completed: true } },
+        competitors: [
+          { homeAway: "home", winner: true, score: "51", team: { id: "142", shortDisplayName: "Missouri" } },
+          { homeAway: "away", winner: false, score: "6", team: { id: "202", shortDisplayName: "Central Arkansas" } },
+        ],
+      },
+    ],
+  },
+  {
+    id: "old-2",
+    date: "2026-09-06T16:00:00Z",
+    competitions: [
+      {
+        date: "2026-09-06T16:00:00Z",
+        status: { type: { completed: true } },
+        competitors: [
+          { homeAway: "away", winner: true, score: "42", team: { id: "142", shortDisplayName: "Missouri" } },
+          { homeAway: "home", winner: false, score: "10", team: { id: "249", shortDisplayName: "Kansas" } },
+        ],
+      },
+    ],
+  },
+  {
+    id: "last-w",
+    date: "2026-09-20T16:00:00Z",
+    competitions: [
+      {
+        date: "2026-09-20T16:00:00Z",
+        status: { type: { completed: true } },
+        competitors: [
+          { homeAway: "home", winner: true, score: "35", team: { id: "142", shortDisplayName: "Missouri" } },
+          { homeAway: "away", winner: false, score: "10", team: { id: "57", shortDisplayName: "Florida" } },
+        ],
+      },
+    ],
+  },
+  {
+    id: "last-l",
+    date: "2026-09-27T23:30:00Z",
+    competitions: [
+      {
+        date: "2026-09-27T23:30:00Z",
+        status: { type: { completed: true } },
+        competitors: [
+          { homeAway: "away", winner: false, score: "10", team: { id: "142", shortDisplayName: "Missouri" } },
+          { homeAway: "home", winner: true, curatedRank: { current: 4 }, score: "27", team: { id: "333", shortDisplayName: "Alabama" } },
+        ],
+      },
+    ],
+  },
+  {
+    id: "next-1",
+    date: "2026-10-11T16:00:00Z",
+    timeValid: true,
+    competitions: [
+      {
+        date: "2026-10-11T16:00:00Z",
+        broadcasts: [{ media: { shortName: "SEC Network" }, type: { shortName: "TV" } }],
+        odds: [{ details: "MIZ -3.5" }],
+        status: { type: { completed: false } },
+        competitors: [
+          { homeAway: "home", team: { id: "142", shortDisplayName: "Missouri" } },
+          { homeAway: "away", curatedRank: { current: 8 }, team: { id: "245", shortDisplayName: "Texas A&M" } },
+        ],
+      },
+    ],
+  },
+  {
+    id: "next-2",
+    date: "2026-10-18T16:00:00Z",
+    competitions: [
+      {
+        date: "2026-10-18T16:00:00Z",
+        status: { type: { completed: false } },
+        competitors: [
+          { homeAway: "away", team: { id: "142", shortDisplayName: "Missouri" } },
+          { homeAway: "home", team: { id: "238", shortDisplayName: "Vanderbilt" } },
+        ],
+      },
+    ],
+  },
+  {
+    id: "next-3",
+    date: "2026-10-25T16:00:00Z",
+    competitions: [
+      {
+        date: "2026-10-25T16:00:00Z",
+        status: { type: { completed: false } },
+        competitors: [
+          { homeAway: "home", team: { id: "142", shortDisplayName: "Missouri" } },
+          { homeAway: "away", team: { id: "96", shortDisplayName: "Kentucky" } },
+        ],
+      },
+    ],
+  },
+  {
+    id: "next-4",
+    date: "2026-11-01T16:00:00Z",
+    competitions: [
+      {
+        date: "2026-11-01T16:00:00Z",
+        status: { type: { completed: false } },
+        competitors: [
+          { homeAway: "away", team: { id: "142", shortDisplayName: "Missouri" } },
+          { homeAway: "home", team: { id: "8", shortDisplayName: "Arkansas" } },
+        ],
+      },
+    ],
+  },
+];
+const slate = slateFromEvents(slateEvents, "142", { "next-2": { tv: "ESPN", line: "VAN -1.5" } });
+assert(slate.length === 6, "slate keeps the last 3 results and next 3 games");
+assert(slate[0]?.id === "old-2" && slate[2]?.id === "last-l", "oldest of the four finals is dropped");
+assert(slate[3]?.id === "next-1" && slate[5]?.id === "next-3", "fourth upcoming game stays off the slate");
+assert(slate.every((g, i, all) => i === 0 || all[i - 1]!.kind === "final" || g.kind === "upcoming"), "finals precede upcoming");
+assert(slateLine(slate[2]!) === "L · 10–27 · at #4 Alabama · Sun Sep 27", "final line has result, score, rank and date");
+assert(slateLine(slate[3]!).includes("vs #8 Texas A&M"), "upcoming line keeps the opponent rank");
+assert(slateLine(slate[3]!).includes("SEC Network"), "upcoming TV comes from the schedule");
+assert(slateLine(slate[3]!).includes("MIZ -3.5"), "upcoming line comes from the schedule");
+assert(slateLine(slate[4]!).includes("ESPN") && slateLine(slate[4]!).includes("VAN -1.5"), "summary extras fill TV and line");
 assert(
   pickCoachHeadshot("https://mutigers.com/eli.jpg", "https://a.espncdn.com/x.png") === "https://mutigers.com/eli.jpg",
   "cited athletics portrait wins over ESPN",

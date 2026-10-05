@@ -114,6 +114,21 @@ export type CoachSeasonChip = {
   opponentRank: number | null;
 };
 
+/** Last 2–3 results and next 2–3 games, in chronological order. */
+export type CoachSlateGame = {
+  id: string;
+  kind: "final" | "upcoming";
+  result: "W" | "L" | "T" | null;
+  score: string | null;
+  opponent: string;
+  opponentRank: number | null;
+  homeAway: "vs" | "at" | null;
+  date: string | null;
+  kickoff: string | null;
+  tv: string | null;
+  line: string | null;
+};
+
 export type FavoriteCoachTile = {
   coachId: string;
   name: string;
@@ -136,6 +151,7 @@ export type FavoriteCoachTile = {
   lastGame: CoachLastGame | null;
   nextGame: CoachNextGame | null;
   seasonStrip: CoachSeasonChip[];
+  slate: CoachSlateGame[];
   headlines: GameWrapCard[];
   schoolRecord: string | null;
   yearsAtSchool: string | null;
@@ -718,6 +734,63 @@ export function seasonStripFromEvents(events: EspnEvent[], teamId: string | null
   return chips;
 }
 
+function slateGameFromEvent(
+  event: EspnEvent,
+  teamId: string | null,
+  extras?: { tv?: string | null; line?: string | null },
+): CoachSlateGame | null {
+  const comp = event.competitions?.[0];
+  const { opp, me } = oppOf(comp?.competitors, teamId);
+  const opponent =
+    opp?.team?.shortDisplayName || opp?.team?.abbreviation || opp?.team?.displayName || "";
+  if (!opponent) return null;
+  const done = Boolean(comp?.status?.type?.completed);
+  const result = resultOf(me);
+  if (done && !result) return null;
+  const myScore = scoreOf(me ?? undefined);
+  const oppScore = scoreOf(opp ?? undefined);
+  return {
+    id: String(event.id ?? comp?.id ?? `${done ? "f" : "u"}-${opponent}`),
+    kind: done ? "final" : "upcoming",
+    result: done ? result : null,
+    score: myScore != null && oppScore != null ? `${myScore}–${oppScore}` : null,
+    opponent,
+    opponentRank: apRank(opp?.curatedRank?.current),
+    homeAway: homeAwayOf(me),
+    date: chicagoDate(comp?.date ?? event.date),
+    kickoff: done ? null : kickoffLine(comp?.date ?? event.date, event.timeValid !== false),
+    tv: extras?.tv ?? broadcastLine(comp?.broadcasts) ?? null,
+    line: extras?.line ?? comp?.odds?.[0]?.details ?? null,
+  };
+}
+
+export function slateFromEvents(
+  events: EspnEvent[],
+  teamId: string | null,
+  extrasById: Record<string, { tv?: string | null; line?: string | null }> = {},
+): CoachSlateGame[] {
+  const finals: CoachSlateGame[] = [];
+  const upcoming: CoachSlateGame[] = [];
+  for (const event of events) {
+    const id = String(event.id ?? event.competitions?.[0]?.id ?? "");
+    const game = slateGameFromEvent(event, teamId, extrasById[id]);
+    if (!game) continue;
+    if (game.kind === "final") finals.push(game);
+    else upcoming.push(game);
+  }
+  return [...finals.slice(-3), ...upcoming.slice(0, 3)];
+}
+
+export function slateLine(game: CoachSlateGame): string {
+  const opp = [game.homeAway, game.opponentRank != null ? `#${game.opponentRank}` : null, game.opponent]
+    .filter(Boolean)
+    .join(" ");
+  if (game.kind === "final") {
+    return [game.result, game.score, opp, game.date].filter(Boolean).join(" · ");
+  }
+  return [opp, game.kickoff || game.date, game.tv, game.line].filter(Boolean).join(" · ");
+}
+
 function vsRankedLine(events: EspnEvent[], teamId: string | null): string | null {
   let wins = 0;
   let losses = 0;
@@ -821,8 +894,19 @@ async function fetchOneTile(ref: FavoriteCoachRef, standings: StandGroup[]): Pro
   const vsconf = (team?.record?.items ?? []).find((i) => i.type === "vsconf" || /conf/i.test(i.description ?? ""));
   const events = schedRaw?.events ?? [];
   const { last, next } = lastAndNext(events, teamId);
-  const lastBits = last?.id ? await summaryBits(path, String(last.id)) : { summary: null, tv: null, line: null };
-  const nextBits = next?.id ? await summaryBits(path, String(next.id)) : { summary: null, tv: null, line: null };
+  const upcomingIds: string[] = [];
+  for (const event of events) {
+    if (event.competitions?.[0]?.status?.type?.completed) continue;
+    const id = String(event.id ?? "");
+    if (id) upcomingIds.push(id);
+    if (upcomingIds.length >= 3) break;
+  }
+  const extraIds = [...new Set([last?.id ? String(last.id) : "", ...upcomingIds].filter(Boolean))];
+  const extras = Object.fromEntries(
+    await Promise.all(extraIds.map(async (id) => [id, await summaryBits(path, id)] as const)),
+  );
+  const lastBits = last?.id ? extras[String(last.id)] ?? { summary: null, tv: null, line: null } : { summary: null, tv: null, line: null };
+  const nextBits = next?.id ? extras[String(next.id)] ?? { summary: null, tv: null, line: null } : { summary: null, tv: null, line: null };
   const pf = statValue(total, "avgPointsFor");
   const pa = statValue(total, "avgPointsAgainst");
   const logo = team?.logos?.[0]?.href ?? (teamId ? `https://a.espncdn.com/i/teamlogos/ncaa/500/${teamId}.png` : null);
@@ -848,6 +932,7 @@ async function fetchOneTile(ref: FavoriteCoachRef, standings: StandGroup[]): Pro
     lastGame: last ? lastGameFromEvent(last, teamId, lastBits.summary) : null,
     nextGame: next ? nextGameFromEvent(next, teamId, { tv: nextBits.tv, line: nextBits.line }) : null,
     seasonStrip: seasonStripFromEvents(events, teamId),
+    slate: slateFromEvents(events, teamId, extras),
     headlines: pickHeadlines(newsRaw?.articles ?? [], ref),
     ...blankProfileFields(),
     vsRanked: vsRankedLine(events, teamId),
@@ -977,6 +1062,7 @@ export async function fetchFavoriteCoachDesk(opts?: {
           lastGame: null,
           nextGame: null,
           seasonStrip: [],
+          slate: [],
           headlines: [],
           ...blankProfileFields(),
         });

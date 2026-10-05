@@ -110,6 +110,7 @@ import {
   coachFactLines,
   fetchFavoriteCoachDesk,
   printsFavoriteCoaches,
+  slateLine,
   type FavoriteCoachTile,
 } from "@/lib/newspaper-favorite-coaches";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
@@ -3447,15 +3448,7 @@ function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
                 </aside>
               ) : null}
             </div>
-            {tile.headlines.length ? (
-              <ul className="tt-coach-hed">
-                {tile.headlines.map((card) => (
-                  <li key={card.id}>
-                    <StoryLink card={card}>{card.headline}</StoryLink>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <CoachSlate tile={tile} />
           </article>
         );
       })}
@@ -3491,6 +3484,40 @@ function CoachSeasonStrip({ tile }: { tile: FavoriteCoachTile }) {
           {chip.opponentRank != null ? ` #${chip.opponentRank}` : ""} {chip.opponent}
         </i>
       ))}
+    </div>
+  );
+}
+
+function CoachSlate({ tile }: { tile: FavoriteCoachTile }) {
+  const games = tile.slate ?? [];
+  if (!games.length) return null;
+  const recent = games.filter((g) => g.kind === "final");
+  const upcoming = games.filter((g) => g.kind === "upcoming");
+  const cols = recent.length && upcoming.length;
+  return (
+    <div className={cols ? "tt-coach-slate" : "tt-coach-slate one"}>
+      {recent.length ? (
+        <div>
+          <b>Recent</b>
+          <ol className={cols ? undefined : "flat"}>
+            {recent.map((g) => (
+              <li key={g.id} className={g.result === "W" ? "w" : g.result === "L" ? "l" : undefined}>
+                {slateLine(g)}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+      {upcoming.length ? (
+        <div>
+          <b>Upcoming</b>
+          <ol className={cols ? undefined : "flat"}>
+            {upcoming.map((g) => (
+              <li key={g.id}>{slateLine(g)}</li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
     </div>
   );
 }
