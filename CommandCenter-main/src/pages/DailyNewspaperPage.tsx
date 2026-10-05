@@ -1278,8 +1278,8 @@ function ClubTicker({ teams, onTurn }: { teams: TeamInfobox[]; onTurn?: (folio: 
   const cols = balancedCols(teams.length, [5, 4, 3]);
   return (
     <ul className="wsj-ticker" style={{ ["--cols" as string]: String(cols) }}>
-      {teams.map((t) => (
-        <li key={t.fav.key} style={tint(teamColor(t))}>
+      {teams.map((t, i) => (
+        <li key={t.fav.key} style={tint(teamColor(t))} {...(i >= 6 ? { "data-tt-trim": 8 + i } : {})}>
           <ExternalOrLink href={t.href} className="wsj-ticker-cell wsj-a">
             <span className="wsj-ticker-id">
               <TeamLogo src={t.snap.logo || t.detail?.logo} size="sm" />
@@ -1641,6 +1641,7 @@ function FrontPage({
                   poster={secondPoster}
                   jump={secondContinue}
                   onTurn={onTurn}
+                  trim={14}
                 />
               ) : null}
               {third ? (
@@ -1654,6 +1655,7 @@ function FrontPage({
                   poster={thirdPoster}
                   jump={thirdContinue}
                   onTurn={onTurn}
+                  trim={24}
                 />
               ) : null}
             </div>

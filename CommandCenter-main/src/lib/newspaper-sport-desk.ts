@@ -95,7 +95,6 @@ export function isEflChampionshipStory(card: GameWrapCard): boolean {
   if (card.leaguePath && card.leaguePath !== "soccer/eng.2") return false;
   const text = hay(card);
   if (NOT_EFL.test(text) && !EFL_CLUB.test(text)) return false;
-  if (card.leaguePath === "soccer/eng.2") return true;
   return EFL_CLUB.test(text);
 }
 
@@ -215,11 +214,16 @@ export function isSecCard(card: GameWrapCard): boolean {
   return false;
 }
 
+function isWrapLead(card: GameWrapCard): boolean {
+  return isGameWrapCard(card) || Boolean(card.scoreLine && /\d/.test(card.scoreLine));
+}
+
 function isFreshSectionLead(card: GameWrapCard, path: string, edition: string): boolean {
-  if (card.holdover) return false;
-  if (isGameWrapCard(card) || (card.scoreLine && /\d/.test(card.scoreLine))) {
-    return gameWrapCovers(card.when, edition, path);
+  if (isWrapLead(card)) {
+    if (!card.when) return true;
+    return gameWrapCovers(card.when, edition, path) || Boolean(card.holdover);
   }
+  if (card.holdover) return false;
   return true;
 }
 
@@ -241,17 +245,15 @@ export function orderSportSectionFront(
   });
   const fresh = unique.filter((card) => isFreshSectionLead(card, path, edition));
   const pool = fresh.length ? fresh : unique;
-  const wraps = orderSportRecaps(
-    pool.filter((card) => isGameWrapCard(card) || Boolean(card.scoreLine && /\d/.test(card.scoreLine))),
-    path,
-  );
+  const wraps = orderSportRecaps(pool.filter(isWrapLead), path);
+  const freshWraps = wraps.filter((card) => !card.holdover);
   const news = pool
-    .filter((card) => !isGameWrapCard(card) && !(card.scoreLine && /\d/.test(card.scoreLine)))
+    .filter((card) => !isWrapLead(card))
     .sort((a, b) => (a.editorRank ?? 99) - (b.editorRank ?? 99) || String(b.when ?? "").localeCompare(String(a.when ?? "")));
   const newsLead = news.find((card) => !isInjuryNote(card));
   const editorLead = pool.find((card) => card.editorFront === 0 && !isInjuryNote(card));
-  // Wraps (favorites, then the night) beat an editor-fronted news item.
-  const lead = wraps[0] ?? editorLead ?? newsLead ?? news[0] ?? pool[0];
+  // Wraps beat editor news. A holdover wrap still leads when every final is marked holdover.
+  const lead = (freshWraps[0] ?? wraps[0]) ?? editorLead ?? newsLead ?? news[0] ?? pool[0];
   if (!lead) return [];
   const rest = pool.filter((card) => card.id !== lead.id);
   const withPhoto = rest.filter((card) => card.photo);

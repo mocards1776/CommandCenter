@@ -267,8 +267,42 @@ const wrexham = card({
   sportLabel: "EFL",
   scoreLine: "WXM 1 · WOL 1",
 });
+const canada = card({
+  id: "league-can",
+  headline: "State of Canada men's soccer as USMNT clash looms",
+  leaguePath: "soccer/eng.2",
+  sportLabel: "EFL",
+});
 assert(!storyFitsSection(messi, "soccer/eng.2"), "Messi/Ronaldo/Reyna is not Championship news");
 assert(!isEflChampionshipStory(messi), "international stars are not EFL");
+assert(!storyFitsSection(canada, "soccer/eng.2"), "a USMNT feature tagged eng.2 is still not EFL");
 assert(storyFitsSection(wrexham, "soccer/eng.2"), "a Wrexham–Wolves wrap stays on EFL");
+
+const holdoverAla = card({
+  id: "wire-cfb-ala-hold",
+  headline: "No. 7 Alabama routs Mississippi State 56-23",
+  leaguePath: "football/college-football",
+  sportLabel: "CFB",
+  sec: true,
+  holdover: true,
+  scoreLine: "ALA 56 · MSST 23",
+  when: "2026-10-03T16:00:00Z",
+  photo: "https://example.com/ala.jpg",
+});
+const nebHbo = card({
+  id: "league-neb-hbo",
+  headline: "Is Nebraska's next QB a Manhunter?",
+  leaguePath: "football/college-football",
+  sportLabel: "CFB",
+  editorFront: 0,
+  photo: "https://example.com/neb.jpg",
+  when: "2026-10-05T18:00:00Z",
+});
+const holdoverFront = orderSportSectionFront(
+  [nebHbo, holdoverAla],
+  "football/college-football",
+  "2026-10-05-evening",
+);
+assert(holdoverFront[0]?.id === "wire-cfb-ala-hold", "a holdover ranked wrap still leads when the press marked every final holdover");
 
 console.log("newspaper-sport-desk ok");

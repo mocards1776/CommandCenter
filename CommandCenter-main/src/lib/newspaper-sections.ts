@@ -1566,7 +1566,7 @@ function sportPages(
     .filter((card) => !isGameWrap(card) && !isSportFiller(card, recapPool))
     .slice(0, SPORT_NEWS_CAP);
   const frontPool = orderSportSectionFront([...recapPool, ...newsPool], id.path, edition);
-  const FRONT_SHOW = 7;
+  const FRONT_SHOW = 5;
   const frontShown = frontPool.slice(0, FRONT_SHOW);
   const shownIds = new Set(frontShown.map((card) => card.id));
   const recapsLeft = recapPool.filter((card) => !shownIds.has(card.id));
