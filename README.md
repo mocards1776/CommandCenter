@@ -244,6 +244,7 @@ npm run lint
   and a small headshot when the existing ESPN / MLB Stats feeds have them.
   Logos stay bare (no discs). Lightning uses a vendored navy bolt that
   already has a white rim in the PNG.
+  Telegram caption is just the title and date — the PNG carries the slate.
   Empty slate skips the send. Idempotent once per Chicago date via
   `sports_finals_preview_sent`.
 
