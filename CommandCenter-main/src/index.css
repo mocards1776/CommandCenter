@@ -1520,8 +1520,13 @@ mark.rss-hl {
 .wsj-body {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 16px;
   min-width: 0;
+  min-height: 0;
+}
+[data-tt-trimmed] {
+  display: none !important;
 }
 
 .wsj-logo {
@@ -4092,6 +4097,7 @@ li.counting .tt-count.card {
 .wsj-sport {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 18px;
   flex: 1;
   min-height: 0;
@@ -4167,6 +4173,7 @@ li.counting .tt-count.card {
 .wsj-sport-solo {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 18px;
   flex: 1;
   min-height: 0;
@@ -4908,8 +4915,19 @@ li.counting .tt-count.card {
   padding-top: 14px;
   border-top: 1px solid var(--w-hair);
 }
-.wsj-sport-seconds .wsj-cut img {
+.wsj-sport-seconds .wsj-cut,
+.tt-front-lead .wsj-cut,
+.wsj-story.lead .wsj-cut {
+  max-width: 100%;
+}
+.wsj-sport-seconds .wsj-cut img,
+.tt-front-lead .wsj-cut img,
+.wsj-story.lead .wsj-cut img {
+  width: 100%;
   aspect-ratio: 3 / 2;
+  max-height: none;
+  object-fit: cover;
+  object-position: center 18%;
 }
 
 /* Desk pages behind the section front carry a slim flag, not the hero. */
@@ -4950,7 +4968,9 @@ li.counting .tt-count.card {
 .tt-scores {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 16px;
+  min-height: 0;
 }
 .tt-wrap-flow {
   columns: 2;
@@ -6601,7 +6621,9 @@ li.counting .tt-count.card {
 .tt-mo {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 16px;
+  min-height: 0;
 }
 .tt-mo-flag {
   display: flex;
@@ -6803,6 +6825,7 @@ li.counting .tt-count.card {
 .tt-nat {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 18px;
   min-height: calc(var(--tt-page-min, var(--tt-page-h, 1290px)) - 88px);
 }
@@ -8206,6 +8229,7 @@ li.counting .tt-count.card {
 .tt-cfb-desk {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 10px;
   min-height: 100%;
 }
@@ -8219,6 +8243,18 @@ li.counting .tt-count.card {
   grid-template-rows: repeat(var(--cfb-rows, 8), auto);
   grid-auto-flow: column;
   column-gap: 22px;
+}
+.tt-cfb-day {
+  grid-column: 1 / -1;
+  margin: 8px 0 2px;
+  padding: 3px 0 2px;
+  border-bottom: 2px solid var(--w-rule);
+  font-family: var(--w-cond);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-red);
 }
 .tt-cfb-row {
   display: grid;
@@ -8615,7 +8651,10 @@ li.counting .tt-count.card {
   }
   .newspaper-root .wsj-fit .wsj-sheet {
     zoom: 1 !important;
+    height: auto !important;
     min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 }
 
@@ -8683,6 +8722,7 @@ li.counting .tt-count.card {
 .tt-section-front {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 16px;
   flex: 1;
   min-height: 0;
@@ -8690,6 +8730,7 @@ li.counting .tt-count.card {
 .tt-front-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  flex: 1 1 auto;
   gap: 18px;
   flex: 1;
   min-height: 0;
@@ -8731,6 +8772,7 @@ li.counting .tt-count.card {
   gap: 14px;
 }
 .tt-schedule-fill {
+  flex: 1 1 auto;
   min-height: 100%;
   flex: 1;
 }

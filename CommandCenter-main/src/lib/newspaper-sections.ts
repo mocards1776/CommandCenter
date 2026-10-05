@@ -51,7 +51,7 @@ import { isPromoMissouriItem, type MissouriDesk, type MoItem } from "./newspaper
 import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
 import type { FavoritesBeezPage } from "./newspaper-beez.ts";
 import type { FavoritesRacesPage } from "./newspaper-races.ts";
-import { packNationalPages, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
+import { cleanNationalStories, packNationalPages, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
 import { printsFavoriteCoaches } from "./newspaper-favorite-coaches.ts";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
@@ -767,10 +767,18 @@ export function comingUpHasClock(when: string | null | undefined): boolean {
 }
 
 function parseComingUpWhen(when: string, now: number): number | null {
-  const cleaned = when.replace(/,/g, " ").replace(/\s+/g, " ").trim();
+  const cleaned = when
+    .replace(/^@\s*[A-Za-z0-9.&']+\s+/i, "")
+    .replace(/^(vs\.?|at)\s+[A-Za-z0-9.&']+\s+/i, "")
+    .replace(/,/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!cleaned) return null;
   const year = new Date(now).getFullYear();
-  const attempts = [cleaned, `${cleaned} ${year}`, `${cleaned}, ${year}`];
+  // Never parse a yearless "Sat Oct 31" — Date.parse treats 31 as the year.
+  const attempts = /\b(?:19|20)\d{2}\b/.test(cleaned)
+    ? [cleaned]
+    : [`${cleaned} ${year}`, `${cleaned}, ${year}`];
   for (const text of attempts) {
     const t = Date.parse(text);
     if (Number.isNaN(t)) continue;
@@ -801,9 +809,12 @@ export function comingUpSortMs(
 }
 
 /** Favorite-team next games, soonest first. Date-only listings close their day. */
-export function sortComingUp<T extends { when: string | null; startIso?: string | null }>(games: T[]): T[] {
+export function sortComingUp<T extends { when: string | null; startIso?: string | null }>(
+  games: T[],
+  now = Date.now(),
+): T[] {
   return [...games].sort((a, b) => {
-    const d = comingUpSortMs(a) - comingUpSortMs(b);
+    const d = comingUpSortMs(a, now) - comingUpSortMs(b, now);
     if (d !== 0) return d;
     return (a.when ?? "").localeCompare(b.when ?? "");
   });
@@ -1547,8 +1558,6 @@ function sportPages(
     withCoaches && printsFavoriteCoaches(edition),
   );
   const isStoryFocus = (f: SportFocus): boolean => f === "front" || f === "recaps" || f === "news" || f === "opener";
-  const storyFocuses = focuses.filter(isStoryFocus);
-  const refFocuses = focuses.filter((f) => !isStoryFocus(f));
   const recapPool = orderSportRecaps(
     unique.filter((card) => isGameWrap(card) || isRecapStory(card)),
     id.path,
@@ -1557,6 +1566,19 @@ function sportPages(
     .filter((card) => !isGameWrap(card) && !isSportFiller(card, recapPool))
     .slice(0, SPORT_NEWS_CAP);
   const frontPool = orderSportSectionFront([...recapPool, ...newsPool], id.path, edition);
+  const FRONT_SHOW = 7;
+  const frontShown = frontPool.slice(0, FRONT_SHOW);
+  const shownIds = new Set(frontShown.map((card) => card.id));
+  const recapsLeft = recapPool.filter((card) => !shownIds.has(card.id));
+  recapsLeft.forEach((card) => shownIds.add(card.id));
+  const newsLeft = newsPool.filter((card) => !shownIds.has(card.id));
+  const storyFocuses = focuses.filter((f) => {
+    if (!isStoryFocus(f)) return false;
+    if (f === "recaps") return recapsLeft.length > 0;
+    if (f === "news") return newsLeft.length > 0 || offseason;
+    return true;
+  });
+  const refFocuses = focuses.filter((f) => !isStoryFocus(f));
   const inside: SportInsidePage[] = [];
   const full = desk
     ? []
@@ -1641,11 +1663,11 @@ function sportPages(
     const nextFront = numbered.slice(i + 1).find((p) => p.kind === "sport-front");
     const pool =
       page.focus === "front"
-        ? frontPool
+        ? frontShown
         : page.focus === "news"
-          ? newsPool
+          ? newsLeft
           : page.focus === "recaps"
-            ? recapPool
+            ? recapsLeft
             : unique;
     return {
       ...page,
@@ -1688,7 +1710,7 @@ function missouriPages(desk: MissouriDesk | null, code = "B"): MissouriPage[] {
 
 function nationalPages(desk: NationalDesk | null): NationalPage[] {
   if (!desk?.stories.length) return [];
-  const packed = packNationalPages(desk.stories);
+  const packed = packNationalPages(cleanNationalStories(desk.stories));
   return stampCounts(
     packed.map((page, i) => ({
       kind: "national" as const,
@@ -1783,13 +1805,12 @@ export function buildEdition(opts: {
     list.push(club);
     clubsBy.set(club.leaguePath, list);
   }
-  // Favorite-club news stays on Section A. A story that already ran in A —
-  // including the favorite-team recap — does not reprint on a later sport
-  // front. League copy that never made A still leads its section.
+  // Favorite-club copy still leads its sport front (Mizzou on CFB, Blues on
+  // NHL, Arsenal on EPL). Section A already ran it; the section front must
+  // not go looking for a lesser league item instead.
   const storiesBy = new Map<string, GameWrapCard[]>();
   for (const story of fresh) {
     if (!story.leaguePath) continue;
-    if (favoriteFresh.some((a) => a.id === story.id || sameSectionAStory(a, story))) continue;
     const list = storiesBy.get(story.leaguePath) ?? [];
     list.push(story);
     storiesBy.set(story.leaguePath, list);

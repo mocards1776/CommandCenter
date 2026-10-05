@@ -28,8 +28,8 @@ function assert(cond: unknown, msg: string) {
 }
 
 assert(recapPhotoKind(null) === "none", "no photo is skipped");
-assert(recapPhotoKind("https://img/x.jpg", 640) === "inset", "under 800 is inset");
-assert(recapPhotoKind("https://img/x.jpg", 1200) === "wide", "a wide cut stretches");
+assert(recapPhotoKind("https://img/x.jpg", 640) === "wide", "a smaller file still fills the column");
+assert(recapPhotoKind("https://img/x.jpg", 1200) === "wide", "a wide cut fills the column");
 assert(recapPhotoKind("https://img/x.jpg") === "wide", "unknown width stays wide");
 assert(recapPhotoKind("https://img/x.jpg", 0) === "wide", "a zero width is treated as unknown");
 

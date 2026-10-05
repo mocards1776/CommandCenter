@@ -586,8 +586,8 @@ export function ScoreStrip({ games, onOpen }: { games: BoxGame[]; onOpen?: (game
   if (!games.length) return null;
   return (
     <ul className="tt-strip">
-      {games.map((g) => (
-        <li key={g.id}>
+      {games.map((g, i) => (
+        <li key={g.id} data-tt-trim={55 + i}>
           <button type="button" onClick={() => onOpen?.(g)} disabled={!g.recap && !onOpen}>
             <span className="tt-strip-st">{gameClock(g)}</span>
             {[g.away, g.home].map((s, i) => (

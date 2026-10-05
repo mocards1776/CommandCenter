@@ -1,2 +1,10 @@
+import * as NationalNews from "../../../supabase/functions/_shared/national-news.ts";
 export * from "../../../supabase/functions/_shared/national-news.ts";
 export * from "../../../supabase/functions/_shared/newspaper-paras.ts";
+export const cleanNationalStories = NationalNews.cleanNationalStories;
+export const isLeadCaption = NationalNews.isLeadCaption;
+export const isNationalLeadWorthy = NationalNews.isNationalLeadWorthy;
+export const isPaywallStubNote = NationalNews.isPaywallStubNote;
+export const sameNationalEvent = NationalNews.sameNationalEvent;
+export const storyEntityKeys = NationalNews.storyEntityKeys;
+export const stripLeadCaption = NationalNews.stripLeadCaption;

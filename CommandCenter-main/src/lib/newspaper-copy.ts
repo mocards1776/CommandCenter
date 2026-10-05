@@ -306,8 +306,7 @@ export function tidy(text: string): string {
       .replace(/[^\S\n]{2,}/g, " ")
       .replace(/\n{3,}/g, "\n\n")
       .trim(),
-  );
-}
+  );}
 
 /**
  * Cut a blurb at the last full sentence. Abbreviations (No., St., Mr.)

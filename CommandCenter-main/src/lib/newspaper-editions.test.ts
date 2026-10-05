@@ -37,7 +37,12 @@ assert(resolveEditionParam(null, recent) === "2026-10-05-midday", "defaults to t
 assert(resolveEditionParam("2026-10-05-morning", []) === null, "empty stand has no selection");
 
 assert(editionPickerLabel("2026-10-05-morning", recent) === "Morning", "same-day slot is just the name");
-assert(editionPickerLabel("2026-10-04-evening", recent) === "Sun. Evening", "yesterday gets a weekday");
+assert(editionPickerLabel("2026-10-04-evening", recent) === "Sun. Evening · Oct 4", "yesterday gets a weekday and date");
+const dupStand = filterRecentFiledIssues(
+  [morning, midday, { ...midday, printedAt: "2026-10-05T17:05:00.000Z" }, evening],
+  Date.parse("2026-10-05T23:00:00.000Z"),
+);
+assert(dupStand.filter((r) => r.id === "2026-10-05-midday").length === 1, "same day+slot prints once");
 assert(backEditionNote("2026-10-05-morning", morning.printedAt) === "You are reading the Morning Edition, printed 6:02 a.m.", "folio note uses the print clock");
 
 const justMorning = filterRecentFiledIssues([morning], Date.parse("2026-10-05T14:00:00.000Z"));

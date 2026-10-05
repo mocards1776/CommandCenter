@@ -84,7 +84,23 @@ export function isSportFiller(card: GameWrapCard, recaps: GameWrapCard[] = []): 
   return sportFillerReason(card, recaps) != null;
 }
 
+/** Championship clubs (and the league name). International / MLS stars are not EFL copy. */
+const EFL_CLUB =
+  /\b(wrexham|wolves|wolverhampton|leicester|southampton|ipswich|leeds|norwich|sheffield wednesday|sheffield united|west brom|coventry|middlesbrough|stoke|hull|bristol city|watford|swansea|cardiff|qpr|queens park|millwall|preston|blackburn|derby|portsmouth|oxford|plymouth|charlton|birmingham|sunderland|championship|efl)\b/i;
+const NOT_EFL =
+  /\b(messi|ronaldo|reyna|inter miami|mls|lafc|galaxy|premier league|champions league|liga mx)\b/i;
+
+/** True when the card is actually Championship / EFL news. */
+export function isEflChampionshipStory(card: GameWrapCard): boolean {
+  if (card.leaguePath && card.leaguePath !== "soccer/eng.2") return false;
+  const text = hay(card);
+  if (NOT_EFL.test(text) && !EFL_CLUB.test(text)) return false;
+  if (card.leaguePath === "soccer/eng.2") return true;
+  return EFL_CLUB.test(text);
+}
+
 export function storyFitsSection(card: GameWrapCard, path: string): boolean {
+  if (path === "soccer/eng.2") return isEflChampionshipStory(card);
   if (!card.leaguePath) return true;
   return card.leaguePath === path;
 }
@@ -208,8 +224,9 @@ function isFreshSectionLead(card: GameWrapCard, path: string, edition: string): 
 }
 
 /**
- * Section-front order: today's / last night's wraps and news, never a stale
- * holdover. An editor-fronted story still leads when it is in the window.
+ * Section-front order: today's / last night's wraps first (Josh's clubs,
+ * then current / ranked / postseason games), then editor news. A stale
+ * holdover never opens the section when a fresh game is on file.
  */
 export function orderSportSectionFront(
   cards: GameWrapCard[],
@@ -232,10 +249,9 @@ export function orderSportSectionFront(
     .filter((card) => !isGameWrapCard(card) && !(card.scoreLine && /\d/.test(card.scoreLine)))
     .sort((a, b) => (a.editorRank ?? 99) - (b.editorRank ?? 99) || String(b.when ?? "").localeCompare(String(a.when ?? "")));
   const newsLead = news.find((card) => !isInjuryNote(card));
-  // An injury note never opens the section when a result is on the board —
-  // even if the editor fronted it.
   const editorLead = pool.find((card) => card.editorFront === 0 && !isInjuryNote(card));
-  const lead = editorLead ?? wraps[0] ?? newsLead ?? news[0] ?? pool[0];
+  // Wraps (favorites, then the night) beat an editor-fronted news item.
+  const lead = wraps[0] ?? editorLead ?? newsLead ?? news[0] ?? pool[0];
   if (!lead) return [];
   const rest = pool.filter((card) => card.id !== lead.id);
   const withPhoto = rest.filter((card) => card.photo);

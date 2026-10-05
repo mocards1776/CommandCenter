@@ -1347,6 +1347,40 @@ export type LeagueLeaderGroup = {
   rows: LeagueLeaderRow[];
 };
 
+const LEADER_ABBREV: Record<string, string> = {
+  rat: "Rating",
+  rating: "Rating",
+  per: "PER",
+  qbr: "QBR",
+  avg: "AVG",
+  era: "ERA",
+  ops: "OPS",
+  whip: "WHIP",
+};
+
+/** Print "Rating", not ESPN's "RAT". */
+export function leaderCategoryLabel(name: string, displayName?: string, abbreviation?: string): string {
+  const key = (abbreviation || name || displayName || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (LEADER_ABBREV[key]) return LEADER_ABBREV[key];
+  if (displayName && displayName.length > 3) return displayName;
+  if (name && name.length > 3 && !/^[A-Z]{2,4}$/.test(name)) return name;
+  return displayName || abbreviation || name;
+}
+
+function parseLeaderValue(line: string): number | null {
+  const n = Number(String(line).replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Hide a category when every printed line is empty or zero. */
+export function leaderGroupHasValidData(group: LeagueLeaderGroup): boolean {
+  if (!group.rows.length) return false;
+  const vals = group.rows.map((row) => parseLeaderValue(row.line));
+  if (vals.every((v) => v == null)) return false;
+  if (vals.every((v) => v === 0)) return false;
+  return true;
+}
+
 const LEADER_SKIP = /kickoff|puntreturn|punts|extrapoint|returnyards|netavg|longfield|kickreturn/i;
 const LEADER_FIRST = [
   "passingyards",
@@ -1486,7 +1520,7 @@ export async function fetchLeagueLeaders(path: string, categories?: number, rows
     .map((cat) => {
       const label = `${cat.name ?? ""} ${cat.displayName ?? ""} ${cat.abbreviation ?? ""}`;
       return {
-        category: cat.displayName!,
+        category: leaderCategoryLabel(cat.name ?? "", cat.displayName, cat.abbreviation),
         seasonType,
         rows: (cat.leaders ?? []).slice(0, rowCap).flatMap((row) => {
           const name = row.athlete?.shortName || row.athlete?.displayName || row.athlete?.fullName || "";
@@ -1505,7 +1539,7 @@ export async function fetchLeagueLeaders(path: string, categories?: number, rows
         }),
       };
     })
-    .filter((group) => group.rows.length > 0);
+    .filter((group) => group.rows.length > 0 && leaderGroupHasValidData(group));
 }
 
 function eventKey(game: BoxGame): string | null {
@@ -1610,6 +1644,97 @@ export function sortCfbDeskGames(games: BoxGame[]): BoxGame[] {
     if (!aIso && bIso) return 1;
     return a.id.localeCompare(b.id);
   });
+}
+
+export type CfbDayGroup = { key: string; label: string; games: BoxGame[] };
+
+function cfbDayKey(game: BoxGame): string {
+  if (game.day && /^\d{4}-\d{2}-\d{2}$/.test(game.day)) return game.day;
+  if (game.startIso) {
+    const d = new Date(game.startIso);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString("en-CA", { timeZone: CT });
+    }
+  }
+  return "undated";
+}
+
+function cfbDayHeader(key: string, game: BoxGame): string {
+  const iso = game.startIso || (key !== "undated" ? `${key}T17:00:00-05:00` : null);
+  if (!iso) return "Later";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Later";
+  return d.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    timeZone: CT,
+  });
+}
+
+/** Friday, then Saturday — each block labeled, Central time. */
+export function groupCfbGamesByDay(games: BoxGame[]): CfbDayGroup[] {
+  const groups = new Map<string, BoxGame[]>();
+  for (const game of sortCfbDeskGames(games)) {
+    const key = cfbDayKey(game);
+    const list = groups.get(key) ?? [];
+    list.push(game);
+    groups.set(key, list);
+  }
+  return [...groups.entries()].map(([key, dayGames]) => ({
+    key,
+    label: cfbDayHeader(key, dayGames[0]!),
+    games: dayGames,
+  }));
+}
+
+/** Scores printed in a recap hed — "edge Padres 3-2". */
+export function scoresInHeadline(headline: string): [number, number] | null {
+  const hit = headline.match(/(\d+)\s*[-–to]+\s*(\d+)/i);
+  if (!hit) return null;
+  return [Number(hit[1]), Number(hit[2])];
+}
+
+function recapTeamHay(card: { teamName?: string | null; headline?: string | null }): string {
+  return `${card.teamName ?? ""} ${card.headline ?? ""}`.toLowerCase();
+}
+
+function recapNamesGame(game: BoxGame, card: { teamName?: string | null; headline?: string | null }): boolean {
+  const hay = recapTeamHay(card);
+  return [game.away, game.home].some((side) => {
+    const names = [side.short, side.abbrev, side.name].filter(Boolean).map((n) => n.toLowerCase());
+    return names.some((n) => n.length >= 3 && hay.includes(n));
+  });
+}
+
+/**
+ * Pair a recap with the game it reports. Headline scores beat a same-series
+ * neighbor; a 30-hour window is too wide for a playoff set.
+ */
+export function gameMatchesRecap(
+  game: BoxGame,
+  card: { gameId?: string | null; headline?: string | null; teamName?: string | null; when?: string | null },
+): boolean {
+  const idHit =
+    Boolean(card.gameId) &&
+    (game.espnEventId === card.gameId || (game.gamePk != null && String(game.gamePk) === card.gameId));
+  const scores = scoresInHeadline(card.headline ?? "");
+  if (scores && game.away.score != null && game.home.score != null) {
+    const a = Number(game.away.score);
+    const h = Number(game.home.score);
+    const match = (a === scores[0] && h === scores[1]) || (a === scores[1] && h === scores[0]);
+    if (match && recapNamesGame(game, card)) return true;
+    if (!match && recapNamesGame(game, card)) return false;
+  }
+  if (idHit) return true;
+  if (!recapNamesGame(game, card) || !card.when) return false;
+  return game.day === instantDayOf(card.when);
+}
+
+function instantDayOf(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-CA", { timeZone: CT });
 }
 
 /** TV only. Unknown network stays blank — never the venue. */

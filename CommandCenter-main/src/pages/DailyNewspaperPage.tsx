@@ -31,7 +31,6 @@ import {
   parsePressId,
   pressEdition,
   previousPressId,
-  instantDay,
   isDeskPress,
   romanNumeral,
   splitStoryCopy,
@@ -44,8 +43,12 @@ import {
   fetchCfbApPoll,
   fetchLeagueLeaders,
   fetchSectionBoard,
+  formatFixtureWhen,
   gameClock,
+  gameMatchesRecap,
   fetchSectionStandings,
+  leaderCategoryLabel,
+  leaderGroupHasValidData,
   rankStandings,
   sportScoreBands,
   type BoxGame,
@@ -241,6 +244,7 @@ import {
   type WireGame,
 } from "@/lib/newspaper-wire";
 import { fetchMlbPeopleByIds, fetchMlbPlayoffTree, type MlbPlayoffTree } from "@/lib/mlb";
+import { fillMlbPlayoffPlaceholders } from "@/lib/newspaper-playoff-tree";
 import { fetchRssArticle, fetchRssFeed, fetchRssReads, markRssReadMany, type RssArticle } from "@/lib/rss";
 import {
   fetchTeamDetail,
@@ -923,21 +927,12 @@ function runIn(text: string): [string, string] {
 }
 
 function Cut({ card, shape = "wide" }: { card: GameWrapCard; shape?: "wide" | "tall" | "square" }) {
-  const [narrow, setNarrow] = useState(() => isNarrowStoryImage(card.photo));
   if (!card.photo) return null;
   const caption =
     card.caption && squash(card.caption) !== squash(card.teamName) ? card.caption : null;
   return (
-    <figure className={cn("wsj-cut", shape, narrow && "inset", card.photoStyle === "cutout" && "cutout")}>
-      <img
-        src={card.photo}
-        alt=""
-        loading="lazy"
-        onLoad={(e) => {
-          const w = e.currentTarget.naturalWidth;
-          if (w > 0 && w < 800) setNarrow(true);
-        }}
-      />
+    <figure className={cn("wsj-cut", shape, card.photoStyle === "cutout" && "cutout")}>
+      <img src={card.photo} alt="" loading="lazy" />
       {caption ? <figcaption>{caption}</figcaption> : null}
     </figure>
   );
@@ -1048,6 +1043,7 @@ function Story({
   game,
   dress,
   inset,
+  trim,
 }: {
   card: GameWrapCard;
   team?: TeamInfobox | null;
@@ -1071,6 +1067,8 @@ function Story({
   dress?: boolean;
   /** Set into the story's columns (see `Prose`); after the copy when there is none. */
   inset?: ReactNode;
+  /** Higher drops first when the folio runs past the 1040×1480 canvas. */
+  trim?: number;
 }) {
   const full = cardCopy(card);
   const copy = substantive(card, text ?? full);
@@ -1098,6 +1096,7 @@ function Story({
       style={tint(teamColor(team))}
       data-tt-keys={storyReadKeys(card).join("|")}
       data-tt-title={card.headline}
+      {...(trim != null ? { "data-tt-trim": trim } : {})}
     >
       {artNode ? <div className="wsj-story-art">{artNode}</div> : null}
       <div className="wsj-story-copy">
@@ -1146,6 +1145,7 @@ function Brief({
   onTurn,
   crest,
   color,
+  trim,
 }: {
   card: GameWrapCard;
   featured?: boolean;
@@ -1153,6 +1153,7 @@ function Brief({
   onTurn?: (folio: string) => void;
   crest?: string | null;
   color?: string | null;
+  trim?: number;
 }) {
   const dek = recapDek(card, featured ? 2 : 1);
   return (
@@ -1161,6 +1162,7 @@ function Brief({
       style={tint(color)}
       data-tt-keys={storyReadKeys(card).join("|")}
       data-tt-title={card.headline}
+      {...(trim != null ? { "data-tt-trim": trim } : {})}
     >
       {card.photo ? (
         <img className="wsj-brief-photo" src={card.photo} alt="" loading="lazy" />
@@ -1224,6 +1226,7 @@ function BriefGrid({
               onTurn={onTurn}
               crest={crestFor?.(c)}
               color={colorFor?.(c)}
+              trim={40 + i}
             />
           );
         })}
@@ -1438,13 +1441,13 @@ function FrontRail({
         <section className="wsj-rail-block">
           <h3>Coming Up</h3>
           <ul className="wsj-upcoming">
-            {comingUp.map((g) => (
-              <li key={g.id} style={tint(g.color)}>
+            {comingUp.map((g, i) => (
+              <li key={g.id} style={tint(g.color)} data-tt-trim={30 + i}>
                 <TeamLogo src={g.logo} size="xs" />
                 <span className="t">
                   <strong>{g.team}</strong> {g.label}
                 </span>
-                <em>{g.when || "TBD"}</em>
+                <em>{g.startIso ? formatFixtureWhen(g.startIso) || g.when || "TBD" : g.when || "TBD"}</em>
               </li>
             ))}
           </ul>
@@ -2575,7 +2578,7 @@ function SportNewsDesk({
           />
           {seconds.length ? (
             <div className="wsj-sport-seconds">
-              {seconds.map((card) => (
+              {seconds.map((card, i) => (
                 <Story
                   key={card.id}
                   card={card}
@@ -2584,6 +2587,7 @@ function SportNewsDesk({
                   art="top"
                   readOn
                   game={gameById.get(card.id) ?? null}
+                  trim={20 + i}
                 />
               ))}
             </div>
@@ -2747,7 +2751,7 @@ function WrapPlayers({ card }: { card: GameWrapCard }) {
   );
 }
 
-function WrapBrief({ card }: { card: GameWrapCard }) {
+function WrapBrief({ card, trim }: { card: GameWrapCard; trim?: number }) {
   const lookup = useContext(GameLookup);
   const game = isSingleGameRecap(card) ? lookup(card) : null;
   const copy = wrapBriefCopy(card, 4);
@@ -2756,7 +2760,12 @@ function WrapBrief({ card }: { card: GameWrapCard }) {
     Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
   const brief = recap && recapIsScoreOnly(copy) ? "" : recap ? recapBodyForPage(copy) : copy;
   return (
-    <article className="tt-wrap-brief" data-tt-keys={storyReadKeys(card).join("|")} data-tt-title={card.headline}>
+    <article
+      className="tt-wrap-brief"
+      data-tt-keys={storyReadKeys(card).join("|")}
+      data-tt-title={card.headline}
+      {...(trim != null ? { "data-tt-trim": trim } : {})}
+    >
       <Kicker card={card} />
       <h3 className="wsj-hl sm">
         <HeadlineSave card={card}>
@@ -2790,8 +2799,8 @@ function WrapFlow({ cards, path }: { cards: GameWrapCard[]; path: string }) {
           <h3 className="wsj-band-title">
             {band.title} <em>{band.cards.length}</em>
           </h3>
-          {band.cards.map((card) => (
-            <WrapBrief key={card.id} card={card} />
+          {band.cards.map((card, i) => (
+            <WrapBrief key={card.id} card={card} trim={45 + i} />
           ))}
         </section>
       ))}
@@ -2931,15 +2940,16 @@ function ScoresDesk({
               className="tt-score-grid"
               style={{ ["--cols" as string]: String(balancedCols(band.rows.length, [3, 2, 4])) }}
             >
-              {band.rows.map((g) => (
-                <ScoreCard
-                  key={g.id}
-                  game={g}
-                  onOpen={(game) => {
-                    const c = boxStoryCard(game);
-                    if (c) open({ card: c, game });
-                  }}
-                />
+              {band.rows.map((g, i) => (
+                <div key={g.id} data-tt-trim={50 + i}>
+                  <ScoreCard
+                    game={g}
+                    onOpen={(game) => {
+                      const c = boxStoryCard(game);
+                      if (c) open({ card: c, game });
+                    }}
+                  />
+                </div>
               ))}
             </div>
           </section>
@@ -2954,17 +2964,18 @@ function ScoresDesk({
             className={cn("tt-score-grid", isMlb && "agate", sparse && "roomy")}
             style={{ ["--cols" as string]: String(isMlb ? 2 : balancedCols(rest.length, [3, 2, 4])) }}
           >
-            {rest.map((g) => (
-              <ScoreCard
-                key={g.id}
-                game={g}
-                agate={isMlb}
-                agateEnabled={active}
-                onOpen={(game) => {
-                  const c = boxStoryCard(game);
-                  if (c) open({ card: c, game });
-                }}
-              />
+            {rest.map((g, i) => (
+              <div key={g.id} data-tt-trim={50 + i}>
+                <ScoreCard
+                  game={g}
+                  agate={isMlb}
+                  agateEnabled={active}
+                  onOpen={(game) => {
+                    const c = boxStoryCard(game);
+                    if (c) open({ card: c, game });
+                  }}
+                />
+              </div>
             ))}
           </div>
         </section>
@@ -2986,8 +2997,10 @@ function ScoresDesk({
         <section className="tt-ahead">
           <h3 className="wsj-band-title">Up next</h3>
           <div className="tt-matchups" style={{ ["--cols" as string]: String(balancedCols(ahead.length, [3, 2, 4])) }}>
-            {ahead.map((g) => (
-              <MatchupCard key={g.id} game={g} />
+            {ahead.map((g, i) => (
+              <div key={g.id} data-tt-trim={60 + i}>
+                <MatchupCard game={g} />
+              </div>
             ))}
           </div>
         </section>
@@ -3230,17 +3243,22 @@ function offseasonTables(standings: StandGroup[], page: SportFrontPage, leagueCl
 
 /** Passing yards, home runs, points — the league list, not one club's leaders. Rule-filed from ESPN. */
 function LeadersDesk({ groups }: { groups: LeagueLeaderGroup[] }) {
-  if (!groups.length) return <p className="wsj-empty">The league has not posted its leaders.</p>;
-  const post = groups.some((g) => g.seasonType === 3);
+  const printable = groups.filter(leaderGroupHasValidData);
+  if (!printable.length) return <p className="wsj-empty">The league has not posted its leaders.</p>;
+  const post = printable.some((g) => g.seasonType === 3);
   return (
     <section className="tt-lleaders tt-lleaders-desk" aria-label={post ? "Postseason leaders" : "League leaders"}>
       <div className="tt-lleaders-grid">
-        {groups.map((group) => (
+        {printable.map((group) => (
           <div key={group.category} className="tt-lleaders-cat">
-            <h4>{group.category}</h4>
+            <h4>{leaderCategoryLabel(group.category)}</h4>
             <ol>
               {group.rows.map((row, i) => (
-                <li key={`${group.category}-${row.name}-${i}`} className={i === 0 ? "lead" : undefined}>
+                <li
+                  key={`${group.category}-${row.name}-${i}`}
+                  className={i === 0 ? "lead" : undefined}
+                  {...(i > 0 ? { "data-tt-trim": 35 + i } : {})}
+                >
                   <i>{i + 1}</i>
                   {row.headshot ? <img src={row.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
                   <span className="tt-lleaders-who">
@@ -3716,7 +3734,7 @@ function PlayoffDesk({ tree }: { tree: MlbPlayoffTree | null }) {
   if (!tree || !tree.rounds.some((r) => r.series.length)) {
     return <p className="wsj-empty">Postseason bracket isn’t published yet.</p>;
   }
-  return <PlayoffBracket tree={tree} />;
+  return <PlayoffBracket tree={fillMlbPlayoffPlaceholders(tree)} />;
 }
 
 function ClubFormGrid({ clubs, sheets = {} }: { clubs: ClubDesk[]; sheets?: Record<string, ClubSheet> }) {
@@ -3946,10 +3964,12 @@ function NatStory({
   story,
   size,
   photo,
+  trim,
 }: {
   story: NationalStory;
   size: NationalStorySize;
   photo: NationalPhotoSize | null;
+  trim?: number;
 }) {
   const open = useReader();
   const [failed, setFailed] = useState(false);
@@ -3961,6 +3981,7 @@ function NatStory({
       className={cn("tt-nat-story", size, showPhoto && "has-photo")}
       data-tt-keys={storyReadKeys({ id: story.id, headline: story.headline, wrapHref: story.url }).join("|")}
       data-tt-title={story.headline}
+      {...(trim != null ? { "data-tt-trim": trim } : {})}
     >
       {showPhoto && photo ? (
         <button type="button" className="tt-nat-photo-btn" onClick={() => open({ card })} aria-label={story.headline}>
@@ -4037,7 +4058,7 @@ function NationalNewsDesk({
       {mediums.length ? (
         <div className="tt-nat-mediums">
           {mediums.map((story, i) => (
-            <NatStory key={story.id} story={story} size="medium" photo={photoAt(1 + i, story)} />
+            <NatStory key={story.id} story={story} size="medium" photo={photoAt(1 + i, story)} trim={18 + i} />
           ))}
         </div>
       ) : null}
@@ -4049,6 +4070,7 @@ function NationalNewsDesk({
               story={story}
               size="col"
               photo={photoAt(1 + mediums.length + i, story)}
+              trim={28 + i}
             />
           ))}
         </div>
@@ -4092,7 +4114,7 @@ function MoSource({ item }: { item: MoItem }) {
   );
 }
 
-function MoStory({ item, size }: { item: MoItem; size: "xl" | "md" | "sm" }) {
+function MoStory({ item, size, trim }: { item: MoItem; size: "xl" | "md" | "sm"; trim?: number }) {
   const open = useReader();
   const card = moCard(item);
   return (
@@ -4100,6 +4122,7 @@ function MoStory({ item, size }: { item: MoItem; size: "xl" | "md" | "sm" }) {
       className={cn("tt-mo-story", size, item.photo && size !== "sm" && "has-photo")}
       data-tt-keys={storyReadKeys({ id: item.id, headline: item.headline, wrapHref: item.url }).join("|")}
       data-tt-title={item.headline}
+      {...(trim != null ? { "data-tt-trim": trim } : {})}
     >
       {item.photo && size !== "sm" ? (
         <button type="button" className="tt-mo-photo" onClick={() => open({ card })} aria-label={item.headline}>
@@ -4148,8 +4171,8 @@ function MissouriDesk({ page, onTurn }: { page: MissouriEditionPage; onTurn: (fo
       <div className="tt-mo">
         {flag}
         <div className="tt-mo-briefs">
-          {items.map((item) => (
-            <MoStory key={item.id} item={item} size={item.photo ? "md" : "sm"} />
+          {items.map((item, i) => (
+            <MoStory key={item.id} item={item} size={item.photo ? "md" : "sm"} trim={22 + i} />
           ))}
         </div>
         {more ? <TurnBar onTurn={onTurn} folio={more} label="More from around the state" /> : null}
@@ -4167,8 +4190,8 @@ function MissouriDesk({ page, onTurn }: { page: MissouriEditionPage; onTurn: (fo
           <MoStory item={lead} size="xl" />
           {seconds.length ? (
             <div className={cn("tt-mo-seconds", seconds.length === 1 && "one")}>
-              {seconds.map((item) => (
-                <MoStory key={item.id} item={item} size="md" />
+              {seconds.map((item, i) => (
+                <MoStory key={item.id} item={item} size="md" trim={16 + i} />
               ))}
             </div>
           ) : null}
@@ -4177,8 +4200,8 @@ function MissouriDesk({ page, onTurn }: { page: MissouriEditionPage; onTurn: (fo
           <section>
             <h4>The headlines</h4>
             <ol className="tt-mo-list">
-              {list.map((item) => (
-                <li key={item.id}>
+              {list.map((item, i) => (
+                <li key={item.id} data-tt-trim={24 + i}>
                   <MoStory item={item} size="sm" />
                 </li>
               ))}
@@ -5330,19 +5353,7 @@ function NewspaperDesk() {
         );
         if (hit) return hit;
       }
-      const team = squash(card.teamName);
-      if (!team || !card.when) return null;
-      const day = instantDay(card.when);
-      return (
-        [...board.results, ...(board.prior ?? [])].find(
-          (g) =>
-            [g.away, g.home].some((s) => {
-              const n = squash(s.short);
-              return n === team || n.includes(team) || team.includes(n);
-            }) &&
-            (g.day === day || Math.abs(new Date(g.startIso ?? 0).getTime() - new Date(card.when!).getTime()) < 30 * 3_600_000),
-        ) ?? null
-      );
+      return games.find((g) => gameMatchesRecap(g, card)) ?? null;
     },
     [boardQ.data],
   );
@@ -5953,6 +5964,7 @@ function NewspaperDesk() {
     let timer = 0;
     const settle = () => {
       window.clearTimeout(timer);
+      if (document.documentElement.classList.contains("tt-reader-open")) return;
       const idx = Math.round(el.scrollLeft / (el.clientWidth || 1));
       const next = Math.max(0, Math.min(pages.length - 1, idx));
       startTransition(() => setPageIndex(next));
@@ -5970,6 +5982,30 @@ function NewspaperDesk() {
       el.removeEventListener("scrollend", settle);
     };
   }, [pages.length, markFolio]);
+
+  // Closing the full story reflows the pager to scrollLeft 0. Put the reader back.
+  useEffect(() => {
+    const root = document.documentElement;
+    let open = root.classList.contains("tt-reader-open");
+    const saved = { idx: pageIndexRef.current };
+    const obs = new MutationObserver(() => {
+      const now = root.classList.contains("tt-reader-open");
+      if (now && !open) saved.idx = pageIndexRef.current;
+      if (!now && open) {
+        const idx = saved.idx;
+        requestAnimationFrame(() => {
+          const el = pagerRef.current;
+          if (!el) return;
+          el.scrollTo({ left: idx * el.clientWidth, behavior: "instant" });
+          setPageIndex(idx);
+          markFolio(idx);
+        });
+      }
+      open = now;
+    });
+    obs.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, [markFolio]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

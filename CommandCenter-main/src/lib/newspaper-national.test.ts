@@ -26,6 +26,10 @@ import {
   nationalStoryWeight,
   packNationalPages,
   pickExtractedBody,
+  cleanNationalStories,
+  isLeadCaption,
+  stripLeadCaption,
+  sameNationalEvent,
   NATIONAL_SOURCES,
   NATIONAL_STORY_MAX,
   NATIONAL_STORY_MIN,
@@ -294,8 +298,54 @@ const rssOnly = pickExtractedBody(
   [],
   "The RSS description is the only copy the desk could get after the wall.",
 );
-assert(rssOnly.note?.includes("RSS brief"), "a dead extract is marked as the RSS brief");
-assert(rssOnly.text.includes("RSS description"), "the RSS brief is what prints");
+assert(!rssOnly.note, "a dead extract does not print a paywall stub");
+assert(!rssOnly.text, "the paywalled RSS brief is dropped");
+
+const bomberFox = item({ id: "b1a", title: "Pentagon to pull B-1 bombers from Britain", outlet: "Fox News", outletWeight: 1.2 });
+const bomberWsj = item({ id: "b1b", title: "U.S. withdraws B-1 Lancers in a European pullout", outlet: "WSJ", outletWeight: 1.3 });
+assert(sameNationalEvent({ title: bomberFox.title }, { title: bomberWsj.title }), "B-1 pullout titles cluster");
+const climateA = item({ id: "clima", title: "Supreme Court takes up EPA climate rule", outlet: "WSJ" });
+const climateB = item({ id: "climb", title: "Justices will hear the clean power emissions case", outlet: "Fox News" });
+assert(sameNationalEvent({ title: climateA.title }, { title: climateB.title }), "SCOTUS climate titles cluster");
+const bomberGroups = clusterItems([bomberFox, bomberWsj, court]);
+assert(bomberGroups.some((g) => g.length === 2 && g.some((i) => i.id === "b1a")), "B-1 items share a cluster");
+
+assert(isLeadCaption("Newt Gingrich discusses the week in Washington"), "a speaker caption is flagged");
+assert(
+  stripLeadCaption("Newt Gingrich discusses the week in Washington. Dennis Hastert was convicted in 2016.")
+    .startsWith("Dennis Hastert"),
+  "the Gingrich caption drops off the Hastert lede",
+);
+
+const filedDupes = cleanNationalStories([
+  {
+    id: "n1",
+    headline: "Pentagon to pull B-1 bombers from Britain",
+    summary: "The Air Force will withdraw the bombers.",
+    url: "https://www.foxnews.com/b1",
+    source: "Fox News",
+    credit: "Fox News",
+    outlets: ["Fox News"],
+    publishedAt: "2026-10-05T08:00:00Z",
+    imageUrl: null,
+    imageCredit: null,
+  },
+  {
+    id: "n2",
+    headline: "U.S. withdraws B-1 Lancers in a European pullout",
+    summary: "WSJ on the same bomber withdrawal.",
+    url: "https://www.wsj.com/b1",
+    source: "WSJ",
+    credit: "WSJ",
+    outlets: ["WSJ"],
+    publishedAt: "2026-10-05T09:00:00Z",
+    imageUrl: null,
+    imageCredit: null,
+    bodyNote: "FULL TEXT WAS PAYWALLED",
+  },
+]);
+assert(filedDupes.length === 1, "filed National copy is clustered to one B-1 story");
+assert(!filedDupes[0]!.bodyNote, "the paywall stub is stripped");
 
 const packed = packNationalPages(sample.stories);
 assert(packed.length >= 2, "a full desk paginates by height");

@@ -43,7 +43,8 @@ assertEqual(
   "James, Embiid, Maxey sit out 76ers' preseason opener vs. Knicks",
   "printHeadline repairs a filed 76ers sit-out hed",
 );
-assertEqual(tidy('" The Greatest Offense There Is "'), '"The Greatest Offense There Is"', "quoted title inner spaces");
+assertEqual(tidy("James, Embiid, Maxey sit out 76ers' preseason opener vs. Knicks"), "James, Embiid, Maxey sit out 76ers' preseason opener vs. Knicks", "space after a possessive stays");
+assertEqual(tidy("the teams' inaugural season"), "the teams' inaugural season", "teams' inaugural keeps the space");assertEqual(tidy('" The Greatest Offense There Is "'), '"The Greatest Offense There Is"', "quoted title inner spaces");
 assertEqual(tidy("Raiders ."), "Raiders.", "space before a period still drops");
 assertEqual(tidy('Prescott said,"I knew it was a touchdown."'), 'Prescott said, "I knew it was a touchdown."', "space after comma before a quote");
 assertEqual(tidy("HOUSTON -- — CeeDee Lamb shined."), "HOUSTON — CeeDee Lamb shined.", "double dash collapses to one em dash");

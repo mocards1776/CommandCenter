@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { StandingsTable } from "@/components/newspaper/BoxScore";
 import {
   cfbNetworkLabel,
@@ -7,7 +8,7 @@ import {
   isCfbDeskGame,
   looksLikeEspnZoneClock,
   secStandingsGroup,
-  sortCfbDeskGames,
+  groupCfbGamesByDay,
   type BoxGame,
   type BoxSide,
   type CfbPollRow,
@@ -50,34 +51,46 @@ function CfbBlock({
   kind: "results" | "schedule";
   title: string;
 }) {
-  const ranked = sortCfbDeskGames(games);
-  const rowCount = Math.max(1, Math.ceil(ranked.length / 2));
+  const days = groupCfbGamesByDay(games);
+  const rowCount = Math.max(1, Math.ceil(games.length / 2) + days.length);
   return (
     <section className="tt-cfb-block">
       <h3 className="wsj-band-title">
-        {title} <em>{ranked.length} {ranked.length === 1 ? "game" : "games"}</em>
+        {title} <em>{games.length} {games.length === 1 ? "game" : "games"}</em>
       </h3>
       <ol className="tt-cfb-rows" style={{ ["--cfb-rows" as string]: String(rowCount) }}>
-        {ranked.map((game) => (
-          <li key={game.id} className="tt-cfb-row" data-kind={kind}>
-            <time dateTime={game.startIso ?? undefined}>{rowWhen(game, kind)}</time>
-            <span className="tt-cfb-clubs">
-              {game.away.logo ? <img src={game.away.logo} alt="" /> : null}
-              {clubMark(game.away, kind === "results")}
-              <i>at</i>
-              {game.home.logo ? <img src={game.home.logo} alt="" /> : null}
-              {clubMark(game.home, kind === "results")}
-            </span>
-            {kind === "schedule" ? (
-              <>
-                <em className="tt-cfb-tv">{cfbNetworkLabel(game)}</em>
-                <span className="tt-cfb-watch" title="RUwT watchability">
-                  <i>Watch</i>
-                  {cfbWatch(game)}
+        {days.map((day) => (
+          <Fragment key={day.key}>
+            <li className="tt-cfb-day" aria-label={day.label}>
+              {day.label}
+            </li>
+            {day.games.map((game, i) => (
+              <li
+                key={game.id}
+                className="tt-cfb-row"
+                data-kind={kind}
+                data-tt-trim={(kind === "schedule" ? 70 : 40) + i}
+              >
+                <time dateTime={game.startIso ?? undefined}>{rowWhen(game, kind)}</time>
+                <span className="tt-cfb-clubs">
+                  {game.away.logo ? <img src={game.away.logo} alt="" /> : null}
+                  {clubMark(game.away, kind === "results")}
+                  <i>at</i>
+                  {game.home.logo ? <img src={game.home.logo} alt="" /> : null}
+                  {clubMark(game.home, kind === "results")}
                 </span>
-              </>
-            ) : null}
-          </li>
+                {kind === "schedule" ? (
+                  <>
+                    <em className="tt-cfb-tv">{cfbNetworkLabel(game)}</em>
+                    <span className="tt-cfb-watch" title="RUwT watchability">
+                      <i>Watch</i>
+                      {cfbWatch(game)}
+                    </span>
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </Fragment>
         ))}
       </ol>
     </section>
@@ -109,8 +122,8 @@ function CfbFill({
             <section className="tt-cfb-poll" aria-label="AP Top 25">
               <h3 className="wsj-band-title">AP Top 25</h3>
               <ol>
-                {poll.map((row) => (
-                  <li key={`${row.rank}-${row.abbrev}`}>
+                {poll.map((row, i) => (
+                  <li key={`${row.rank}-${row.abbrev}`} {...(i >= 15 ? { "data-tt-trim": 90 + i } : {})}>
                     <i>#{row.rank}</i>
                     {row.logo ? <img src={row.logo} alt="" /> : null}
                     <b>{row.abbrev}</b>

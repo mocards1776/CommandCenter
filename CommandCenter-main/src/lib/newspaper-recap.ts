@@ -120,10 +120,10 @@ export function recapPaint(color: string | null | undefined): string {
 
 export function recapPhotoKind(
   url: string | null | undefined,
-  width?: number | null,
+  _width?: number | null,
 ): "wide" | "inset" | "none" {
   if (!url) return "none";
-  if (width != null && width > 0 && width < RECAP_WIDE_MIN) return "inset";
+  // Fill the column. A pixel-width cutoff left white gaps beside sharp art.
   return "wide";
 }
 

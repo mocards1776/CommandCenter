@@ -10,6 +10,7 @@ import {
   isSecCard,
   isSportFiller,
   orderSportRecaps,
+  isEflChampionshipStory,
   orderSportSectionFront,
   sportFillerReason,
   storyFitsSection,
@@ -198,7 +199,7 @@ const frontOrder = orderSportSectionFront(
   "football/nfl",
   "2026-10-05-morning",
 );
-assert(frontOrder[0]?.id === "league-news-lead", "an editor-fronted story still leads the section");
+assert(frontOrder[0]?.id === "wire-nfl-sun", "last night's wrap leads the section over editor news");
 const wrapLead = orderSportSectionFront(
   [staleHold, lastNight],
   "football/nfl",
@@ -224,5 +225,50 @@ const injuryLead = orderSportSectionFront(
   "2026-10-05-evening",
 );
 assert(injuryLead[0]?.id === "wire-nfl-sun", "NFL1 leads with last night's result, not an injury");
+
+const wvuShooting = card({
+  id: "league-wvu",
+  headline: "West Virginia football recruit Chris Wilson Jr. killed in shooting",
+  leaguePath: "football/college-football",
+  sportLabel: "CFB",
+  editorFront: 0,
+  photo: "https://example.com/wvu.jpg",
+  when: "2026-10-05T12:00:00Z",
+});
+const mizWin = card({
+  id: "wire-cfb-miz-win",
+  headline: "Missouri beats No. 8 Florida 45-17",
+  favoriteKey: "cfb-mizzou",
+  followed: true,
+  leaguePath: "football/college-football",
+  sportLabel: "CFB",
+  sec: true,
+  scoreLine: "MIZ 45 · FLA 17",
+  when: "2026-10-04T16:00:00Z",
+  photo: "https://example.com/miz.jpg",
+});
+const cfbFront = orderSportSectionFront(
+  [wvuShooting, mizWin],
+  "football/college-football",
+  "2026-10-05-evening",
+);
+assert(cfbFront[0]?.id === "wire-cfb-miz-win", "Mizzou's win leads CFB over a recruit shooting");
+
+const messi = card({
+  id: "league-messi",
+  headline: "Messi, Ronaldo and Reyna headline a friendly",
+  leaguePath: "",
+  sportLabel: "EFL",
+});
+const wrexham = card({
+  id: "wire-wrexham",
+  headline: "Wrexham hold Wolves in the Championship",
+  leaguePath: "soccer/eng.2",
+  sportLabel: "EFL",
+  scoreLine: "WXM 1 · WOL 1",
+});
+assert(!storyFitsSection(messi, "soccer/eng.2"), "Messi/Ronaldo/Reyna is not Championship news");
+assert(!isEflChampionshipStory(messi), "international stars are not EFL");
+assert(storyFitsSection(wrexham, "soccer/eng.2"), "a Wrexham–Wolves wrap stays on EFL");
 
 console.log("newspaper-sport-desk ok");

@@ -43,12 +43,21 @@ export function filterRecentFiledIssues(
   now = Date.now(),
   windowMs = EDITION_LOOKBACK_MS,
 ): FiledIssueMeta[] {
+  const seen = new Set<string>();
   return rows
     .filter((row) => isIssueWithinLookback(row, now, windowMs))
     .sort((a, b) => {
       const byTime = issuePublishedAt(b) - issuePublishedAt(a);
       if (byTime !== 0) return byTime;
       return b.id.localeCompare(a.id);
+    })
+    .filter((row) => {
+      const parsed = parsePressId(row.id);
+      const key = parsed ? `${parsed.day}-${parsed.slot}` : row.id;
+      if (seen.has(key) || seen.has(row.id)) return false;
+      seen.add(key);
+      seen.add(row.id);
+      return true;
     });
 }
 
@@ -70,7 +79,7 @@ export function editionSlotWord(id: string): string {
   return parsed ? SLOT_WORD[parsed.slot] : id;
 }
 
-/** Picker label: "Morning", or "Sun. Evening" when two days are on the stand. */
+/** Picker label: "Morning", or "Sun. Evening · Oct 4" when a prior day is on the stand. */
 export function editionPickerLabel(id: string, recent: FiledIssueMeta[]): string {
   const parsed = parsePressId(id);
   if (!parsed) return id;
@@ -79,7 +88,7 @@ export function editionPickerLabel(id: string, recent: FiledIssueMeta[]): string
   if (days.size <= 1) return word;
   const latestDay = parsePressId(recent[0]?.id ?? "")?.day;
   if (parsed.day === latestDay) return word;
-  return `${weekdayShort(parsed.day)}. ${word}`;
+  return `${weekdayShort(parsed.day)}. ${word} · ${monthDay(parsed.day)}`;
 }
 
 export function backEditionNote(id: string, printedAt?: string | null): string {
@@ -106,5 +115,14 @@ function weekdayShort(day: string): string {
   return new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Chicago",
     weekday: "short",
+  }).format(d);
+}
+
+function monthDay(day: string): string {
+  const d = new Date(`${day}T12:00:00`);
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    month: "short",
+    day: "numeric",
   }).format(d);
 }
