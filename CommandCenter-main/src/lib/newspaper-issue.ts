@@ -3,6 +3,8 @@
  * so opening the Times shows that issue instead of setting it again.
  */
 
+import { isIssueWithinLookback } from "./newspaper-editions.ts";
+
 export const ISSUE_VERSION = 1;
 
 export type PrintedQuery = {
@@ -10,11 +12,19 @@ export type PrintedQuery = {
   data: unknown;
 };
 
+export type IssueCompanions = {
+  dayAhead?: unknown;
+  national?: unknown;
+  beez?: unknown;
+};
+
 export type PrintedIssue = {
   version: number;
   id: string;
   stories: unknown[];
   queries: PrintedQuery[];
+  printedAt?: string;
+  companions?: IssueCompanions;
 };
 
 const DB_NAME = "thompson-times";
@@ -32,15 +42,21 @@ export function asPrintedIssue(
   version: unknown,
   stories: unknown,
   queries: unknown,
+  extra?: { printedAt?: unknown; companions?: unknown },
 ): PrintedIssue | null {
   if (version !== ISSUE_VERSION) return null;
   if (!Array.isArray(stories) || !Array.isArray(queries)) return null;
-  return {
+  const issue: PrintedIssue = {
     version: ISSUE_VERSION,
     id,
     stories,
     queries: queries.filter(isQuery),
   };
+  if (typeof extra?.printedAt === "string" && extra.printedAt) issue.printedAt = extra.printedAt;
+  if (extra?.companions && typeof extra.companions === "object") {
+    issue.companions = extra.companions as IssueCompanions;
+  }
+  return issue;
 }
 
 /** Article HTML is what makes a press file huge. Copy is already on the story. */
@@ -68,6 +84,15 @@ export function slimIssue(issue: PrintedIssue, maxChars = 4_000_000): PrintedIss
   return cloned;
 }
 
+/** Keep the issue being written plus any other cached issues still inside 24 hours. */
+export function retainCachedIssues<T extends { id: string; printedAt?: string }>(
+  rows: T[],
+  keepId: string,
+  now = Date.now(),
+): T[] {
+  return rows.filter((row) => row.id === keepId || isIssueWithinLookback(row, now));
+}
+
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -77,6 +102,15 @@ function openDb(): Promise<IDBDatabase> {
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+  });
+}
+
+function rowAsIssue(id: string, row: unknown): PrintedIssue | null {
+  if (!row || typeof row !== "object") return null;
+  const issue = row as PrintedIssue;
+  return asPrintedIssue(id, issue.version, issue.stories, issue.queries, {
+    printedAt: issue.printedAt,
+    companions: issue.companions,
   });
 }
 
@@ -91,11 +125,33 @@ export async function readLocalIssue(id: string): Promise<PrintedIssue | null> {
       req.onerror = () => reject(req.error);
     });
     db.close();
-    if (!row || typeof row !== "object") return null;
-    const issue = row as PrintedIssue;
-    return asPrintedIssue(id, issue.version, issue.stories, issue.queries);
+    const issue = rowAsIssue(id, row);
+    return issue && isIssueWithinLookback(issue) ? issue : null;
   } catch {
     return null;
+  }
+}
+
+/** Every locally cached issue that is still a valid press file. */
+export async function listLocalIssues(): Promise<PrintedIssue[]> {
+  if (typeof indexedDB === "undefined") return [];
+  try {
+    const db = await openDb();
+    const rows = await new Promise<unknown[]>((resolve, reject) => {
+      const tx = db.transaction(STORE, "readonly");
+      const req = tx.objectStore(STORE).getAll();
+      req.onsuccess = () => resolve((req.result as unknown[]) ?? []);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return rows.flatMap((row) => {
+      if (!row || typeof row !== "object") return [];
+      const raw = row as PrintedIssue;
+      const issue = rowAsIssue(raw.id, raw);
+      return issue ? [issue] : [];
+    });
+  } catch {
+    return [];
   }
 }
 
@@ -107,10 +163,11 @@ export async function writeLocalIssue(issue: PrintedIssue): Promise<void> {
     const tx = db.transaction(STORE, "readwrite");
     const store = tx.objectStore(STORE);
     store.put(slim, slim.id);
-    const keys = store.getAllKeys();
-    keys.onsuccess = () => {
-      for (const key of keys.result) {
-        if (key !== slim.id) store.delete(key);
+    const all = store.getAll();
+    all.onsuccess = () => {
+      const kept = new Set(retainCachedIssues((all.result as PrintedIssue[]) ?? [], slim.id).map((row) => row.id));
+      for (const row of (all.result as PrintedIssue[]) ?? []) {
+        if (row?.id && !kept.has(row.id)) store.delete(row.id);
       }
     };
     tx.oncomplete = () => resolve();

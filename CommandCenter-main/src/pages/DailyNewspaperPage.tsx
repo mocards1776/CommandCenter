@@ -28,6 +28,7 @@ import {
   fileMissouriItems,
   missouriItemInEdition,
   msUntilNextPress,
+  parsePressId,
   pressEdition,
   previousPressId,
   instantDay,
@@ -96,25 +97,52 @@ import {
 import { listFavoritePlayers } from "@/lib/favorite-players";
 import { fetchTaggedPlayerIds } from "@/lib/sports-player-tags";
 import { fileExtracts, gatherStories, sportPathsOf, urlsToExtract } from "@/lib/newspaper-compose";
-import { ISSUE_VERSION, readLocalIssue, writeLocalIssue, type PrintedIssue } from "@/lib/newspaper-issue";
+import {
+  ISSUE_VERSION,
+  listLocalIssues,
+  readLocalIssue,
+  writeLocalIssue,
+  type PrintedIssue,
+} from "@/lib/newspaper-issue";
 import {
   askRemoteEditor,
+  listRecentIssues,
   readRemoteIssue,
-  readRemoteQueries,
   readRemoteStories,
   writeDesk,
   writeRemoteIssue,
 } from "@/lib/newspaper-issue-remote";
+import {
+  backEditionNote,
+  editionPickerLabel,
+  filterRecentFiledIssues,
+  isIssueWithinLookback,
+  type FiledIssueMeta,
+} from "@/lib/newspaper-editions";
+import {
+  COMPANION_WAIT_MS,
+  ISSUE_WAIT_MS,
+  queryNamed,
+  waitForPrintedReveal,
+  withDeadline,
+} from "@/lib/newspaper-document";
+import { TimesHold, TimesHoldShell } from "@/components/newspaper/TimesHold";
 import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
 import { fetchWatchList } from "@/lib/newspaper-watch";
 import WatchGuide from "@/components/newspaper/WatchGuide";
 import DayAhead from "@/components/newspaper/DayAhead";
-import { insertDayAhead, scheduleDateFor } from "@/lib/newspaper-day-ahead";
+import { insertDayAhead, scheduleDateFor, type DaySchedule } from "@/lib/newspaper-day-ahead";
 import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
 import BeezPage from "@/components/newspaper/BeezPage";
-import { insertBeez } from "@/lib/newspaper-beez";
+import { asBeezDesk, insertBeez, type BeezDesk } from "@/lib/newspaper-beez";
 import { readTimesBeez } from "@/lib/newspaper-beez-fetch";
-import { newspaperParas, sampleNationalDesk, type NationalStory } from "@/lib/newspaper-national";
+import {
+  asNationalDesk,
+  newspaperParas,
+  sampleNationalDesk,
+  type NationalDesk,
+  type NationalStory,
+} from "@/lib/newspaper-national";
 import { readTimesNationalNews } from "@/lib/newspaper-national-fetch";
 import {
   buildGameWrapCards,
@@ -535,6 +563,10 @@ function Masthead({
   weather,
   weatherFolio,
   onTurn,
+  editions,
+  selectedId,
+  onSelectEdition,
+  readingNote,
 }: {
   day: string;
   page: EditionPage;
@@ -544,6 +576,10 @@ function Masthead({
   weather: MarshfieldWeather | null | undefined;
   weatherFolio: string | null;
   onTurn: (folio: string) => void;
+  editions: FiledIssueMeta[];
+  selectedId: string;
+  onSelectEdition: (id: string) => void;
+  readingNote: string | null;
 }) {
   const { volume, issue } = editionIssue(day);
   return (
@@ -559,6 +595,25 @@ function Masthead({
           <span>{clubs} clubs on the desk</span>
         </div>
       </div>
+      {editions.length ? (
+        <nav className="tt-editions" aria-label="Editions">
+          <span className="tt-editions-label">Edition</span>
+          {editions.map((row, i) => (
+            <Fragment key={row.id}>
+              {i > 0 ? <span className="tt-editions-dot">·</span> : null}
+              <button
+                type="button"
+                className={row.id === selectedId ? "is-current" : undefined}
+                aria-current={row.id === selectedId ? "page" : undefined}
+                onClick={() => onSelectEdition(row.id)}
+              >
+                {editionPickerLabel(row.id, editions)}
+              </button>
+            </Fragment>
+          ))}
+        </nav>
+      ) : null}
+      {readingNote ? <p className="tt-reading-note">{readingNote}</p> : null}
       <div className="wsj-dateline-bar">
         <span>
           Vol. {romanNumeral(volume)} · No. {issue}
@@ -3555,43 +3610,36 @@ function warmEdition(pager: HTMLElement, cap = 4): () => void {
 
 /* ───────────────────────── page ───────────────────────── */
 
-const openingPressId = pressEdition().id;
+function openingCandidateId(): string {
+  if (typeof window === "undefined") return pressEdition().id;
+  const asked = new URLSearchParams(window.location.search).get("edition");
+  return asked && parsePressId(asked) ? asked : pressEdition().id;
+}
+
+const openingPressId = openingCandidateId();
 const openingIssuePromise: Promise<PrintedIssue | null> =
   typeof indexedDB === "undefined" ? Promise.resolve(null) : readLocalIssue(openingPressId);
 
-function CoverSheet() {
-  const press = pressEdition();
-  const { volume, issue } = editionIssue(press.day);
-  return (
-    <section className="wsj-page" aria-label={press.label}>
-      <div className="wsj-fit">
-      <div className="wsj-sheet tt-cover">
-        <p className="tt-cover-kicker">Sports Final</p>
-        <h1 className="wsj-nameplate">The Thompson Times</h1>
-        <p className="tt-cover-edition">{press.label}</p>
-        <p className="tt-cover-date">
-          Vol. {romanNumeral(volume)} · No. {issue}
-          <span>{editionDateline(press.day)}</span>
-        </p>
-      </div>
-      </div>
-    </section>
-  );
+function asStoredSchedule(value: unknown): DaySchedule | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as DaySchedule;
+  return typeof row.date === "string" && Array.isArray(row.events) ? row : null;
 }
 
-function EditionCover() {
-  return (
-    <div className="newspaper-root wsj-shell">
-      <div className="tt-spread">
-        <CoverSheet />
-      </div>
-    </div>
-  );
+function asStoredNational(value: unknown): NationalDesk | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as NationalDesk;
+  if (typeof row.issueId === "string" && Array.isArray(row.stories) && row.stories.length) return row;
+  return asNationalDesk(value as Parameters<typeof asNationalDesk>[0]);
+}
+
+function asStoredBeez(value: unknown): BeezDesk | null {
+  return asBeezDesk(value);
 }
 
 export default function DailyNewspaperPage() {
   return (
-    <Suspense fallback={<EditionCover />}>
+    <Suspense fallback={<TimesHoldShell />}>
       <NewspaperDesk />
     </Suspense>
   );
@@ -3600,23 +3648,39 @@ export default function DailyNewspaperPage() {
 function NewspaperDesk() {
   const opened = use(openingIssuePromise);
   const queryClient = useQueryClient();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const nationalSample = import.meta.env.DEV && params.get("national_sample") === "1";
+  const askedEdition = parsePressId(params.get("edition") ?? "")?.id ?? null;
   const seeded = useRef<string | null>(null);
   if (opened && seeded.current !== opened.id) {
     for (const q of opened.queries) queryClient.setQueryData(q.key, q.data);
     seeded.current = opened.id;
   }
   const { user } = useAuth();
-  const [press, setPress] = useState(() => pressEdition());
-  const day = press.day;
-  const pressId = press.id;
+  const [clockPress, setClockPress] = useState(() => pressEdition());
+  const [recent, setRecent] = useState<FiledIssueMeta[] | null>(null);
+  const [viewId, setViewId] = useState(() => askedEdition ?? pressEdition().id);
+  const viewing = parsePressId(viewId) ?? clockPress;
+  const day = viewing.day;
+  const pressId = viewId;
+  const press = viewing;
+  const latestId = recent?.[0]?.id ?? clockPress.id;
   const [docPhase, setDocPhase] = useState<"boot" | "document" | "press">(() =>
-    opened?.id === pressEdition().id ? "document" : "boot",
+    opened?.id === openingPressId ? "document" : "boot",
   );
   const [lockedCopy, setLockedCopy] = useState<{ id: string; stories: GameWrapCard[] } | null>(() =>
-    opened?.id === pressEdition().id ? { id: opened.id, stories: opened.stories as GameWrapCard[] } : null,
+    opened?.id === openingPressId ? { id: opened.id, stories: opened.stories as GameWrapCard[] } : null,
   );
+  const [companions, setCompanions] = useState<{
+    id: string;
+    dayAhead: DaySchedule | null;
+    national: NationalDesk | null;
+    beez: BeezDesk | null;
+    printedAt?: string;
+  } | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  const [newerEdition, setNewerEdition] = useState<string | null>(null);
+  const revealFor = useRef<string | null>(null);
   const layout = useMemo(() => loadSportsLayout(), []);
   const teamFavs = useMemo(
     () => visibleFavorites(layout).filter((f) => f.kind === "team"),
@@ -3625,10 +3689,11 @@ function NewspaperDesk() {
 
   // Three presses a day. A slept iPad often drops the long timer and never
   // fires visibilitychange, so the stand also checks on focus, pageshow, and
-  // once a minute. The clock only changes which filed edition is open.
+  // once a minute. The clock only names the latest slot — it does not swap
+  // the document under the reader.
   useEffect(() => {
     const sync = () => {
-      setPress((prev) => {
+      setClockPress((prev) => {
         const next = pressEdition();
         return next.id === prev.id ? prev : next;
       });
@@ -3658,42 +3723,175 @@ function NewspaperDesk() {
     };
   }, []);
 
-  // The edition on the stand is a file. Read it before any desk starts pulling copy.
-  const phaseRef = useRef(docPhase);
-  phaseRef.current = docPhase;
-  const lockRef = useRef(lockedCopy);
-  lockRef.current = lockedCopy;
   useEffect(() => {
-    if (phaseRef.current === "document" && lockRef.current?.id === pressId) return;
     let cancel = false;
-    setDocPhase("boot");
+    const fallback = window.setTimeout(() => {
+      if (!cancel) setRecent((prev) => prev ?? []);
+    }, 4_000);
     void (async () => {
-      const local = await readLocalIssue(pressId);
+      const [remote, local] = await Promise.all([
+        listRecentIssues().catch(() => [] as FiledIssueMeta[]),
+        listLocalIssues().catch(() => [] as PrintedIssue[]),
+      ]);
+      window.clearTimeout(fallback);
       if (cancel) return;
-      if (local?.id === pressId) {
-        for (const q of local.queries) queryClient.setQueryData(q.key, q.data);
-        setLockedCopy({ id: local.id, stories: local.stories as GameWrapCard[] });
-        setDocPhase("document");
-        return;
+      setRecent(
+        filterRecentFiledIssues([
+          ...remote,
+          ...local.map((issue) => ({ id: issue.id, printedAt: issue.printedAt ?? "" })),
+        ]),
+      );
+    })();
+    const pulse = window.setInterval(() => {
+      void listRecentIssues()
+        .then((rows) => {
+          if (rows.length) setRecent(rows);
+        })
+        .catch(() => {});
+    }, 60_000);
+    return () => {
+      cancel = true;
+      window.clearTimeout(fallback);
+      window.clearInterval(pulse);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!recent) return;
+    setViewId((current) => {
+      if (recent.some((row) => row.id === current)) return current;
+      return recent[0]?.id ?? current;
+    });
+    if (askedEdition && !recent.some((row) => row.id === askedEdition)) {
+      const next = new URLSearchParams(params);
+      if (next.has("edition")) {
+        next.delete("edition");
+        setParams(next, { replace: true });
       }
-      const stories = await readRemoteStories(pressId).catch(() => null);
-      if (cancel) return;
-      if (stories) {
-        setLockedCopy({ id: pressId, stories: stories as GameWrapCard[] });
-        setDocPhase("document");
-        const queries = await readRemoteQueries(pressId).catch(() => null);
-        if (cancel || !queries) return;
-        for (const q of queries) queryClient.setQueryData(q.key, q.data);
-        void writeLocalIssue({ version: ISSUE_VERSION, id: pressId, stories, queries });
-        return;
-      }
+    }
+  }, [recent, askedEdition, params, setParams]);
+
+  useEffect(() => {
+    const newest = recent?.[0]?.id;
+    setNewerEdition(newest && newest !== viewId ? newest : null);
+  }, [recent, viewId]);
+
+  const selectEdition = useCallback(
+    (id: string) => {
+      if (id === viewId) return;
+      setRevealed(false);
+      revealFor.current = null;
+      setNewerEdition(null);
+      setViewId(id);
+      const next = new URLSearchParams(params);
+      if (id === latestId) next.delete("edition");
+      else next.set("edition", id);
+      setParams(next, { replace: true });
+    },
+    [viewId, params, setParams, latestId],
+  );
+
+  // One complete file (stories + desks + companions), never stories first then desks.
+  const loadedRef = useRef<string | null>(null);
+  const latestRef = useRef(latestId);
+  latestRef.current = latestId;
+  useEffect(() => {
+    if (loadedRef.current === pressId) return;
+    let cancel = false;
+    const fallToPress = () => {
+      if (cancel || loadedRef.current === pressId || pressId !== clockPress.id) return;
       setLockedCopy((prev) => (prev?.id === pressId ? prev : null));
       setDocPhase("press");
+      loadedRef.current = pressId;
+    };
+    const bootEscape = window.setTimeout(fallToPress, ISSUE_WAIT_MS + COMPANION_WAIT_MS);
+    void (async () => {
+      const apply = (
+        issue: PrintedIssue,
+        extra: { dayAhead: DaySchedule | null; national: NationalDesk | null; beez: BeezDesk | null },
+      ) => {
+        for (const q of issue.queries) queryClient.setQueryData(q.key, q.data);
+        const date = scheduleDateFor(issue.id);
+        if (date) queryClient.setQueryData(["tt-day-ahead", date], extra.dayAhead);
+        queryClient.setQueryData([issue.id, "tt-national"], extra.national);
+        queryClient.setQueryData(["tt-beez"], extra.beez);
+        setLockedCopy({ id: issue.id, stories: issue.stories as GameWrapCard[] });
+        setCompanions({
+          id: issue.id,
+          dayAhead: extra.dayAhead,
+          national: extra.national,
+          beez: extra.beez,
+          printedAt: issue.printedAt,
+        });
+        setDocPhase("document");
+        loadedRef.current = issue.id;
+        void writeLocalIssue({ ...issue, companions: extra });
+      };
+
+      const loadCompanions = (cached?: {
+        dayAhead?: DaySchedule | null;
+        national?: NationalDesk | null;
+        beez?: BeezDesk | null;
+      }) => {
+        const date = scheduleDateFor(pressId);
+        return Promise.all([
+          cached?.dayAhead ??
+            (date
+              ? withDeadline(fetchDaySchedule(date).catch(() => null), COMPANION_WAIT_MS, null)
+              : Promise.resolve(null)),
+          cached?.national ??
+            withDeadline(readTimesNationalNews(pressId).catch(() => null), COMPANION_WAIT_MS, null),
+          cached?.beez ?? withDeadline(readTimesBeez().catch(() => null), COMPANION_WAIT_MS, null),
+        ] as const);
+      };
+
+      const local = await withDeadline(readLocalIssue(pressId).catch(() => null), COMPANION_WAIT_MS, null);
+      if (cancel) return;
+      if (local?.id === pressId) {
+        const cachedDay = asStoredSchedule(local.companions?.dayAhead);
+        const cachedNat = asStoredNational(local.companions?.national);
+        const cachedBeez = asStoredBeez(local.companions?.beez);
+        const [dayAhead, national, beez] = await loadCompanions({
+          dayAhead: cachedDay,
+          national: cachedNat,
+          beez: cachedBeez,
+        });
+        if (cancel) return;
+        apply(local, {
+          dayAhead: cachedDay ?? dayAhead,
+          national: cachedNat ?? national,
+          beez: cachedBeez ?? beez,
+        });
+        return;
+      }
+
+      const remote = await withDeadline(readRemoteIssue(pressId).catch(() => null), ISSUE_WAIT_MS, null);
+      if (cancel) return;
+      if (remote?.id === pressId && isIssueWithinLookback(remote)) {
+        const [dayAhead, national, beez] = await loadCompanions();
+        if (cancel) return;
+        const isLatest = latestRef.current === pressId;
+        let queries = remote.queries;
+        if (isLatest && queryNamed(queries, "tt-weather-marshfield") == null) {
+          const wx = await withDeadline(fetchMarshfieldWeather().catch(() => null), COMPANION_WAIT_MS, null);
+          if (wx) queries = [...queries, { key: [pressId, "tt-weather-marshfield"], data: wx }];
+        }
+        if (isLatest && queryNamed(queries, "tt-watch") == null) {
+          const watch = await withDeadline(fetchWatchList(day).catch(() => []), COMPANION_WAIT_MS, []);
+          queries = [...queries, { key: [pressId, "tt-watch", day], data: watch }];
+        }
+        if (cancel) return;
+        apply({ ...remote, queries }, { dayAhead, national, beez });
+        return;
+      }
+
+      fallToPress();
     })();
     return () => {
       cancel = true;
+      window.clearTimeout(bootEscape);
     };
-  }, [pressId, queryClient]);
+  }, [pressId, queryClient, day, clockPress.id]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -3735,7 +3933,6 @@ function NewspaperDesk() {
   const favKeys = teamFavs.map((t) => t.key).join(",");
   // "press" is the only time the desks go out for copy. A filed edition just opens.
   const pressing = docPhase === "press";
-  const open = docPhase !== "boot";
 
   const teamSnaps = useQuery({
     queryKey: [pressId, "tt-team-snaps", day, favKeys],
@@ -4217,7 +4414,7 @@ function NewspaperDesk() {
   const favPlayersQ = useQuery({
     queryKey: [pressId, "tt-fav-players", user?.id],
     queryFn: () => listFavoritePlayers(user!.id),
-    enabled: open && Boolean(user?.id),
+    enabled: pressing && Boolean(user?.id),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -4231,7 +4428,7 @@ function NewspaperDesk() {
       if (!ids.length) return [];
       return [...(await fetchMlbPeopleByIds(ids)).values()];
     },
-    enabled: open && Boolean(user?.id),
+    enabled: pressing && Boolean(user?.id),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -4272,7 +4469,7 @@ function NewspaperDesk() {
       const [y, m] = day.split("-").map(Number) as [number, number];
       return fetchPlayerNights(followed, m < 3 ? y - 1 : y);
     },
-    enabled: open && followed.length > 0,
+    enabled: pressing && followed.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -4320,12 +4517,12 @@ function NewspaperDesk() {
     refetchOnReconnect: false,
   });
 
-  // The Day Ahead: the schedule filed for the edition's date. Keyed without pressId on purpose,
-  // so it is never filed into the printed issue; every edition of the day reads the same row.
+  // The Day Ahead: the schedule filed for the edition's date. During a live press
+  // the desk fetches it; a filed edition uses the companion loaded with the issue.
   const scheduleDate = scheduleDateFor(pressId);
   const dayAheadQ = useQuery({
     queryKey: ["tt-day-ahead", scheduleDate],
-    enabled: open && Boolean(user?.id) && Boolean(scheduleDate),
+    enabled: pressing && Boolean(user?.id) && Boolean(scheduleDate),
     queryFn: () => fetchDaySchedule(scheduleDate!),
     staleTime: 5 * 60_000,
     gcTime: 20 * 60 * 60_000,
@@ -4336,7 +4533,7 @@ function NewspaperDesk() {
   // read): the page stays out and Section A is unchanged.
   const beezQ = useQuery({
     queryKey: ["tt-beez"],
-    enabled: open && Boolean(user?.id),
+    enabled: pressing && Boolean(user?.id),
     queryFn: () => readTimesBeez(),
     staleTime: 5 * 60_000,
     gcTime: 20 * 60 * 60_000,
@@ -4358,11 +4555,12 @@ function NewspaperDesk() {
 
   const nationalQ = useQuery({
     queryKey: [pressId, "tt-national"],
-    enabled: open && Boolean(user?.id) && !nationalSample,
+    enabled: pressing && Boolean(user?.id) && !nationalSample,
     queryFn: () => readTimesNationalNews(pressId),
-    staleTime: 60_000,
+    staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
-    refetchInterval: (q) => (q.state.data ? 5 * 60_000 : 30_000),
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     retry: 1,
   });
 
@@ -4516,7 +4714,7 @@ function NewspaperDesk() {
       );
       return files;
     },
-    enabled: open && subjectHrefs.length > 0,
+    enabled: pressing && subjectHrefs.length > 0,
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -4581,7 +4779,18 @@ function NewspaperDesk() {
         if (!Array.isArray(q.queryKey) || q.queryKey[0] !== pressId || q.state.status !== "success") return [];
         return [{ key: [...q.queryKey], data: q.state.data }];
       });
-    const issue: PrintedIssue = { version: ISSUE_VERSION, id: pressId, stories, queries };
+    const issue: PrintedIssue = {
+      version: ISSUE_VERSION,
+      id: pressId,
+      stories,
+      queries,
+      printedAt: new Date().toISOString(),
+      companions: {
+        dayAhead: dayAheadQ.data ?? companions?.dayAhead ?? null,
+        national: nationalQ.data ?? companions?.national ?? null,
+        beez: beezQ.data ?? companions?.beez ?? null,
+      },
+    };
     void writeLocalIssue(issue);
     void writeRemoteIssue(issue);
   }, [
@@ -4615,8 +4824,17 @@ function NewspaperDesk() {
     leagueNewsQ,
     extractsQ,
     queryClient,
+    dayAheadQ.data,
+    nationalQ.data,
+    beezQ.data,
+    companions,
   ]);
 
+  const nationalDesk = nationalSample
+    ? sampleNationalDesk(pressId)
+    : companions?.id === pressId
+      ? companions.national
+      : (nationalQ.data ?? null);
   const builtEdition = useMemo(
     () =>
       buildEdition({
@@ -4625,17 +4843,23 @@ function NewspaperDesk() {
         edition: pressId,
         playerPaths,
         missouri: missouriQ.data ?? null,
-        national: nationalSample ? sampleNationalDesk(pressId) : nationalQ.data ?? null,
+        national: nationalDesk,
         offseason,
         leaderPaths,
       }),
-    [stories, clubs, pressId, playerPaths, missouriQ.data, nationalQ.data, nationalSample, offseason, leaderPaths],
+    [stories, clubs, pressId, playerPaths, missouriQ.data, nationalDesk, offseason, leaderPaths],
   );
   // No schedule row for the date (or not read yet): no page, never an older day's.
-  const daySchedule = dayAheadQ.data?.date === scheduleDate ? dayAheadQ.data : null;
+  const daySchedule =
+    companions?.id === pressId && companions.dayAhead?.date === scheduleDate
+      ? companions.dayAhead
+      : dayAheadQ.data?.date === scheduleDate
+        ? dayAheadQ.data
+        : null;
+  const beezDesk = companions?.id === pressId ? companions.beez : (beezQ.data ?? null);
   const edition = useMemo(
-    () => insertBeez(insertDayAhead(builtEdition, daySchedule), beezQ.data ?? null),
-    [builtEdition, daySchedule, beezQ.data],
+    () => insertBeez(insertDayAhead(builtEdition, daySchedule), beezDesk),
+    [builtEdition, daySchedule, beezDesk],
   );
   const comingUp = useMemo<ComingUp[]>(
     () =>
@@ -4820,6 +5044,19 @@ function NewspaperDesk() {
                 weather={weatherQ.data}
                 weatherFolio={weatherFolio}
                 onTurn={goFolio}
+                editions={recent ?? []}
+                selectedId={pressId}
+                onSelectEdition={selectEdition}
+                readingNote={
+                  recent?.[0] && recent[0].id !== pressId
+                    ? backEditionNote(
+                        pressId,
+                        companions?.id === pressId
+                          ? companions.printedAt
+                          : recent.find((row) => row.id === pressId)?.printedAt,
+                      )
+                    : null
+                }
               />
             ) : (
               <RunningHead day={day} page={page} />
@@ -4945,6 +5182,10 @@ function NewspaperDesk() {
       weatherQ.data,
       weatherFolio,
       press.label,
+      recent,
+      pressId,
+      selectEdition,
+      companions,
     ],
   );
 
@@ -4952,6 +5193,31 @@ function NewspaperDesk() {
     const el = pagerRef.current;
     if (el) markNearPages(el, pageIndex);
   }, [pageIndex, sheets]);
+
+  useLayoutEffect(() => {
+    const packReady =
+      recent != null &&
+      ((docPhase === "document" && lockedCopy?.id === pressId && companions?.id === pressId) ||
+        (docPhase === "press" && pressReady));
+    if (!packReady || revealFor.current === pressId) return;
+    let cancel = false;
+    const cap = window.setTimeout(() => {
+      if (cancel) return;
+      revealFor.current = pressId;
+      setRevealed(true);
+    }, 7_000);
+    void (async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      await waitForPrintedReveal(pagerRef.current);
+      if (cancel) return;
+      revealFor.current = pressId;
+      setRevealed(true);
+    })();
+    return () => {
+      cancel = true;
+      window.clearTimeout(cap);
+    };
+  }, [docPhase, pressReady, pressId, lockedCopy?.id, companions?.id, sheets, recent]);
 
   // A story that sat on the sheet counts as read. The next press leaves it out.
   useEffect(() => {
@@ -5020,7 +5286,7 @@ function NewspaperDesk() {
   const sectionIdx = edition.sections.findIndex((s) => s.code === current?.section);
 
   return (
-    <div className="newspaper-root wsj-shell">
+    <div className="newspaper-root wsj-shell" data-times-ready={revealed ? "1" : "0"}>
       <GameLookup.Provider value={findGame}>
       <OpenerContext.Provider value={openers}>
       <SubjectsContext.Provider value={storyFiles}>
@@ -5100,14 +5366,27 @@ function NewspaperDesk() {
 
       <PagerIndexContext.Provider value={pageIndex}>
         <div className="tt-spread">
-          <div className="newspaper-edition wsj-pager" ref={pagerRef}>
-            {docPhase === "boot" ? <CoverSheet /> : sheets}
+          <div
+            className="newspaper-edition wsj-pager"
+            ref={pagerRef}
+            style={{ visibility: revealed ? "visible" : "hidden" }}
+            aria-hidden={revealed ? undefined : true}
+          >
+            {docPhase === "boot" ? null : sheets}
           </div>
-          {docPhase === "press" && !pressReady ? (
-            <div className="tt-pressing">
-              <p>Setting the {press.label.toLowerCase()}</p>
-              <span>The paper is held until the next press, at {press.next}.</span>
+          {!revealed ? (
+            <div className="tt-hold" aria-busy="true">
+              <TimesHold line="Today's edition" day={day} />
             </div>
+          ) : null}
+          {revealed && newerEdition ? (
+            <button
+              type="button"
+              className="tt-new-edition"
+              onClick={() => selectEdition(newerEdition)}
+            >
+              New edition available — tap to read
+            </button>
           ) : null}
         </div>
       </PagerIndexContext.Provider>

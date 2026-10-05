@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { asPrintedIssue, ISSUE_VERSION, slimIssue, type PrintedIssue } from "./newspaper-issue";
+import { filterRecentFiledIssues, EDITION_LOOKBACK_MS, type FiledIssueMeta } from "./newspaper-editions";
 import type { EditorRequest } from "./newspaper-editor";
 
 function filed(data: { version?: unknown; status?: unknown } | null, error: unknown): boolean {
@@ -37,11 +38,31 @@ function isQuery(value: unknown): value is PrintedIssue["queries"][number] {
 export async function readRemoteIssue(id: string): Promise<PrintedIssue | null> {
   const { data, error } = await supabase
     .from("newspaper_issues")
-    .select("version, status, stories, queries")
+    .select("version, status, stories, queries, printed_at")
     .eq("id", id)
     .maybeSingle();
   if (error || !data || data.status !== "ready") return null;
-  return asPrintedIssue(id, data.version, data.stories, data.queries);
+  return asPrintedIssue(id, data.version, data.stories, data.queries, { printedAt: data.printed_at });
+}
+
+/** Ready issues printed in the last 24 hours, newest first. */
+export async function listRecentIssues(now = Date.now()): Promise<FiledIssueMeta[]> {
+  const since = new Date(now - EDITION_LOOKBACK_MS).toISOString();
+  const { data, error } = await supabase
+    .from("newspaper_issues")
+    .select("id, printed_at")
+    .eq("status", "ready")
+    .gte("printed_at", since)
+    .order("printed_at", { ascending: false });
+  if (error || !data) return [];
+  return filterRecentFiledIssues(
+    data.flatMap((row) =>
+      typeof row.id === "string" && typeof row.printed_at === "string"
+        ? [{ id: row.id, printedAt: row.printed_at }]
+        : [],
+    ),
+    now,
+  );
 }
 
 /** The AI editor, for a device setting the paper itself. A throw means the rule desk sets it. */

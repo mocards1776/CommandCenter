@@ -45,6 +45,7 @@ const RssPage = lazy(() => import("@/pages/RssPage"));
 import PublicStoryPage from "@/pages/PublicStoryPage";
 import BuenaVistaNotebookPage from "@/pages/BuenaVistaNotebookPage";
 import DailyNewspaperPage from "@/pages/DailyNewspaperPage";
+import { TimesHoldShell } from "@/components/newspaper/TimesHold";
 const NewspaperPhoneCardPage = lazy(() => import("@/pages/NewspaperPhoneCardPage"));
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
 import { markSportsSolo } from "@/lib/sports-home";
@@ -81,6 +82,7 @@ function Protected() {
   // Render nothing while the stored session resolves, otherwise a refresh
   // flashes the login screen before landing back on the library/dashboard.
   if (loading) {
+    if (location.pathname === "/newspaper") return <TimesHoldShell />;
     return (
       <div className="min-h-screen grid place-items-center">
         <span className="label-caps animate-pulse">Loading</span>
