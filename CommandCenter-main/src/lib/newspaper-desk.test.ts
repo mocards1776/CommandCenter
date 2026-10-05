@@ -2,7 +2,8 @@
  * Run with: node --experimental-strip-types src/lib/newspaper-desk.test.ts
  * from CommandCenter-main/.
  */
-import { buildMissouriDesk, combestUrl, dedupeMo, parseCombest, type MoItem } from "./newspaper-missouri.ts";
+import { missouriItemInEdition } from "./newspaper.ts";
+import { buildMissouriDesk, combestUrl, dedupeMo, newestPublished, parseCombest, type MoItem } from "./newspaper-missouri.ts";
 import { nameIndex, namePieces, type Person } from "./newspaper-people.ts";
 import { daysUntil, espnOpener, mlbOpener, openerDate, openerMatchup } from "./newspaper-openers.ts";
 import { isBoilerplateDek, outletFor, storySource } from "./newspaper-source.ts";
@@ -68,6 +69,19 @@ const desk = buildMissouriDesk({
   scout,
 });
 assert(!desk.items.some((i) => i.url === scout.url), "the Scout runs in Section A, not twice");
+
+const sundayScout = { title: "Sunday update", link: "https://moscout.com/sun", publishedAt: "Sun, 04 Oct 2026 10:50:00 GMT" };
+const mondayScout = { title: "Monday update", link: "https://moscout.com/mon", publishedAt: "Mon, 05 Oct 2026 10:50:00 GMT" };
+assert(newestPublished([sundayScout, mondayScout])?.link === mondayScout.link, "newest pubDate wins even if listed second");
+assert(newestPublished([{ ...sundayScout, publishedAt: null }]) === null, "an undated item is not the Scout");
+assert(
+  missouriItemInEdition("2026-10-05T10:50:00Z", "2026-10-05-morning"),
+  "Monday 5:50 a.m. CT is inside the morning window",
+);
+assert(
+  !missouriItemInEdition("2026-10-04T10:50:00Z", "2026-10-05-morning"),
+  "Sunday's Scout is outside Monday morning's 18 hours",
+);
 assert(desk.items.filter((i) => /Boeing/.test(i.headline)).length === 1, "wire copies of Combest items drop");
 assert(desk.listen.length === 1 && !desk.items.some((i) => i.kind === "listen"), "listen items keep their own rail");
 

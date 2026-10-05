@@ -4544,7 +4544,7 @@ function NewspaperDesk() {
     queryKey: [pressId, "tt-mo-scout", day],
     enabled: pressing,
     queryFn: async () => {
-      const item = await fetchMissouriScout();
+      const item = await fetchMissouriScout(pressId);
       return item ? ((await enrichMissouriItems([item], 1))[0] ?? item) : null;
     },
     staleTime: Infinity,
@@ -4568,7 +4568,7 @@ function NewspaperDesk() {
     queryKey: [pressId, "tt-missouri", day],
     enabled: pressing,
     queryFn: async () => {
-      const desk = await fetchMissouriDesk(day);
+      const desk = await fetchMissouriDesk(day, pressId);
       const enriched = await enrichMissouriItems(desk.items, 7);
       const prevId = previousPressId(pressId);
       const [reads, prev] = await Promise.all([

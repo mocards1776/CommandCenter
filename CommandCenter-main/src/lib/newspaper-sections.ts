@@ -337,6 +337,11 @@ export function isGameWrap(card: GameWrapCard): boolean {
   return /^(?:wire|recap|recent|wrap)-/.test(card.id);
 }
 
+/** Carried unread game copy. It may run inside; it is not last night and must not open A1. */
+export function isHoldoverGame(card: GameWrapCard): boolean {
+  return Boolean(card.holdover && isGameWrap(card));
+}
+
 function ruleOrder(cards: GameWrapCard[], edition: string): GameWrapCard[] {
   return [...cards].sort((a, b) => {
     const byRank = storyRank(b, edition) - storyRank(a, edition);
@@ -584,6 +589,7 @@ export function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
   let league = 0;
   return fresh
     .filter((card) => card.editorFront != null && card.editorFront < FRONT_STORIES && hasStoryCopy(card))
+    .filter((card) => !isHoldoverGame(card))
     .sort((a, b) => a.editorFront! - b.editorFront!)
     .filter((card) => {
       if (isFavoriteStory(card)) return true;
@@ -612,16 +618,17 @@ function favoritePages(
   const favoriteFolioByStory: Record<string, string> = {};
   const freshIds = new Set(freshStories.map((c) => c.id));
   const frontPool = [...freshStories, ...sectionStories.filter((c) => !freshIds.has(c.id))];
-  const picks: GameWrapCard[] = frontPicks.slice(0, FRONT_STORIES);
+  const picks: GameWrapCard[] = frontPicks.filter((card) => !isHoldoverGame(card)).slice(0, FRONT_STORIES);
   const clubOf = (c: GameWrapCard) => c.favoriteKey ?? c.teamName ?? c.id;
   // A video stub or one-line note leaves a column of bare photo on the front.
-  const written = frontPool.filter((c) => hasStoryCopy(c) && !isPreviewStory(c));
+  const written = frontPool.filter((c) => hasStoryCopy(c) && !isPreviewStory(c) && !isHoldoverGame(c));
   for (const card of written) {
     if (picks.length >= 3) break;
     if (!picks.some((f) => clubOf(f) === clubOf(card))) picks.push(card);
   }
   for (const card of [...written, ...frontPool]) {
     if (picks.length >= 3) break;
+    if (isHoldoverGame(card)) continue;
     if (!picks.includes(card)) picks.push(card);
   }
   const [lead = null, second = null, third = null] = picks;

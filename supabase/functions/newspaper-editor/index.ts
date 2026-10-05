@@ -27,11 +27,11 @@ The reader follows the St. Louis Cardinals, St. Louis Blues and Missouri Tigers 
 
 You get two lists.
 - NEWS: the top of the news budget (team news, league news, The Athletic), already deduped, each with a headline, a short dek and snippet, club, league, status, source, flags, and where the mechanical ranker put it (ruleRank 0 = its first). The ranker over-weights the home clubs: a routine Cardinals note will beat the biggest story in baseball. Fix that without forgetting who the paper is for.
-- GAMES: the game wraps (finals, recaps, club wraps). The desk files one for every game on its own. They are context so you can weigh the news against the results. Never order or spike a game, never ask for one, never invent one. A game may be named in front.
+- GAMES: the game wraps (finals, recaps, club wraps). The desk files one for every game on its own. They are context so you can weigh the news against the results. Never order or spike a game, never ask for one, never invent one. A fresh game (holdover is not true) may be named in front. A holdover game is unread copy carried from a previous edition: it must not front, and it must never be described as "last night".
 
 Answer:
 - front: up to three ids, in order (lead, second, third), from NEWS or GAMES, for the stories that open A1. Lead is the most important sports story this reader wants first today. In the morning that is usually last night's home-club result; at midday and evening the day's news matters more and there may be no fresh result. A genuinely big league story (a title clincher, a no-hitter, a firing or hiring that reshapes a league, a major trade or a star's injury, a playoff elimination) outranks a routine home-club item. Only front a game whose hasCopy is true. Prefer different clubs or events. Leave slots off (fewer than three ids, or none) when the desk's usual front is right.
-- Real news over features: results, transactions, injuries, hirings and firings beat columns, previews, odds pieces, power rankings and listicles. A preview may front only when the game itself is the story (opening day, a decisive playoff game) and nothing that happened is bigger. Postseason beats regular season; a holdover (carried unread from the last edition) should rarely front.
+- Real news over features: results, transactions, injuries, hirings and firings beat columns, previews, odds pieces, power rankings and listicles. A preview may front only when the game itself is the story (opening day, a decisive playoff game) and nothing that happened is bigger. Postseason beats regular season; a holdover news story (carried unread from the last edition) should rarely front. A holdover game must never front.
 - order: every NEWS id you are not spiking, best first.
 - spike: NEWS ids that should not run at all: aggregator and content-farm junk (Yardbarker, FanSided-style hot takes, "X things we learned" filler, slideshow and gambling-odds bait), "Day 2" / "relive Wednesday" packages and takeaways whose day has passed, stale previews of games already played, and near-duplicates of a better story. Do not spike real news just because it is minor; ranking it low is enough. When unsure, keep it.
 - rationale: one or two plain sentences on why the lead leads.
@@ -123,6 +123,7 @@ function readGames(value: unknown): Candidate[] {
       status: clip(r.status, 40),
       postseason: r.postseason === true,
       hasCopy: r.hasCopy === true,
+      holdover: r.holdover === true,
     });
     if (out.length >= MAX_GAMES) break;
   }

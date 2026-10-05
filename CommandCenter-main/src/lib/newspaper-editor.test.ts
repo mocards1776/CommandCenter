@@ -116,6 +116,9 @@ assert(request.candidates.every((c) => !/^(wire|recap|recent|wrap)-/.test(c.id))
 assert(request.games.map((g) => g.id).sort().join() === "recap-402,wire-401", "game wraps arrive as context");
 assert(request.games.find((g) => g.id === "wire-401")?.hasCopy === true, "a written wrap can front");
 assert(request.games.find((g) => g.id === "recap-402")?.hasCopy === false, "a bare recap cannot");
+assert(request.games.every((g) => g.holdover === false), "fresh wraps are not holdovers");
+const heldReq = editorRequest([{ ...cardsFinal, holdover: true }, cardsNote, bluesCamp, lionsWin], edition);
+assert(heldReq.games.find((g) => g.id === "wire-401")?.holdover === true, "a carried wrap is marked holdover");
 assert(request.candidates[0]!.ruleRank === 0, "candidates arrive in rule order");
 assert(request.candidates.every((c) => (c.snippet?.length ?? 0) <= 320), "snippets, not bodies");
 assert(request.candidates.find((c) => c.id === "news-cards-note")?.desk === "home", "Cardinals are the home desk");
@@ -280,5 +283,62 @@ const carried = fileEditionStories({
 assert(carried.length === 2, "unread copy carries");
 assert(carried.every((c) => c.editorRank == null && c.editorFront == null && !c.editorSpiked), "a holdover is not still the lead");
 assert(clearEditorStamps([cardsNote])[0] === cardsNote, "clean copy is left alone");
+
+// A holdover game wrap the editor names as last night stays off A1; fresh news takes the slot.
+const monday = "2026-10-05-morning";
+const satBlues = card({
+  id: "recap-sat-blues",
+  headline: "Stars rout Blues 6-1",
+  favoriteKey: "nhl-stl",
+  teamName: "Blues",
+  leaguePath: "hockey/nhl",
+  sportLabel: "NHL",
+  scoreLine: "STL 1 DAL 6",
+  status: "Final",
+  gameId: "sat",
+  when: "2026-10-04T04:30:00Z",
+  holdover: true,
+  body: copy("Dallas scored six unanswered after the first. The Blues managed one Saturday night."),
+});
+const mondayCards = card({
+  id: "news-cards-monday",
+  headline: "Cardinals name their spring rotation",
+  favoriteKey: "mlb-stl",
+  teamName: "Cardinals",
+  when: "2026-10-05T09:00:00Z",
+  body: copy("St. Louis listed its first spring rotation on Monday morning."),
+});
+const mondayCamp = { ...bluesCamp, when: "2026-10-05T08:30:00Z" };
+const mondayLions = { ...lionsWin, when: "2026-10-05T08:00:00Z" };
+const mondayHeld = stampEditorDesk([satBlues, mondayCards, mondayCamp, mondayLions], {
+  front: ["recap-sat-blues", "news-cards-monday"],
+  order: [],
+  spike: [],
+  rationale: "Last night the Blues lost.",
+});
+assert(mondayHeld.find((c) => c.id === "recap-sat-blues")?.editorFront === 0, "the desk still records the pick");
+const mondayA1 = buildEdition({ stories: mondayHeld, clubs: [], edition: monday }).pages.find(
+  (p) => p.kind === "favorites-front",
+) as FavoritesFrontPage;
+assert(mondayA1.lead?.id !== "recap-sat-blues", "a holdover wrap does not lead");
+assert(
+  [mondayA1.lead, mondayA1.second, mondayA1.third].every((c) => !c || c.id !== "recap-sat-blues"),
+  "a holdover wrap never runs on A1",
+);
+assert(mondayA1.lead?.id === "news-cards-monday", "fresh news takes the lead the wrap vacated");
+
+// Holdover news may still front.
+const heldNews = stampEditorDesk(
+  [
+    { ...cardsNote, holdover: true, when: "2026-10-05T08:00:00Z" },
+    { ...bluesCamp, when: "2026-10-05T08:30:00Z" },
+    { ...lionsWin, when: "2026-10-05T08:15:00Z" },
+  ],
+  { front: ["news-cards-note"], order: [], spike: [], rationale: "" },
+);
+const heldNewsA1 = buildEdition({ stories: heldNews, clubs: [], edition: monday }).pages.find(
+  (p) => p.kind === "favorites-front",
+) as FavoritesFrontPage;
+assert(heldNewsA1.lead?.id === "news-cards-note", "holdover news may still lead");
 
 console.log("newspaper-editor ok");
