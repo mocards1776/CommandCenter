@@ -643,13 +643,27 @@ export function espnGameHref(path: string, id: string): string | null {
 }
 
 export function periodLabels(path: string, count: number): string[] {
-  const base = path.startsWith("soccer/") ? ["1H", "2H"] : path.startsWith("hockey/") ? ["1", "2", "3"] : path === "basketball/mens-college-basketball" ? ["1H", "2H"] : ["1", "2", "3", "4"];
+  const baseball = path.startsWith("baseball/");
+  const hockey = path.startsWith("hockey/");
+  const soccer = path.startsWith("soccer/");
+  const cbb = path === "basketball/mens-college-basketball";
+  const base = soccer
+    ? ["1H", "2H"]
+    : hockey
+      ? ["1", "2", "3"]
+      : baseball
+        ? ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+        : cbb
+          ? ["1H", "2H"]
+          : ["1", "2", "3", "4"];
   const out = [...base];
   while (out.length < count) {
     const extra = out.length - base.length + 1;
-    out.push(path.startsWith("hockey/") ? (extra === 1 ? "OT" : "SO") : extra === 1 ? "OT" : `${extra}OT`);
+    if (baseball) out.push(String(out.length + 1));
+    else if (hockey) out.push(extra === 1 ? "OT" : extra === 2 ? "SO" : `${extra - 1}OT`);
+    else out.push(extra === 1 ? "OT" : `${extra}OT`);
   }
-  return out.slice(0, Math.max(count, base.length));
+  return out.slice(0, Math.max(count, baseball && count > 0 ? count : base.length));
 }
 
 function espnGame(path: string, ev: EspnEventRaw, day: string): BoxGame | null {
@@ -807,15 +821,17 @@ export function fetchEspnSummary<T = unknown>(path: string, eventId: string): Pr
 export async function fetchEspnRecapStory(
   path: string,
   eventId: string,
-): Promise<{ html: string; photo: string | null; byline: string | null } | null> {
+): Promise<{ html: string; photo: string | null; photoWidth: number | null; byline: string | null } | null> {
   const data = await fetchEspnSummary<{
-    article?: { story?: string; images?: { url?: string }[]; byline?: string };
+    article?: { story?: string; images?: { url?: string; width?: number }[]; byline?: string };
   }>(path, eventId);
   const story = data?.article?.story;
   if (!story || story.length < 200) return null;
+  const image = data?.article?.images?.[0];
   return {
     html: cleanStoryHtml(story),
-    photo: data?.article?.images?.[0]?.url ?? null,
+    photo: image?.url ?? null,
+    photoWidth: typeof image?.width === "number" ? image.width : null,
     byline: data?.article?.byline ?? null,
   };
 }

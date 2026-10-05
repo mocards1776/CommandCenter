@@ -68,6 +68,7 @@ import {
   Linescore,
   MlbAgate,
 } from "@/components/newspaper/BoxScore";
+import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
@@ -1011,8 +1012,9 @@ function Story({
   const copy = substantive(card, text ?? full);
   const partial = readOn ?? Boolean(jump || (copy && copy.length < full.length * 0.9));
   const dek = dekFor(card, copy);
+  const recap = Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
   const artNode =
-    art === "none" ? null : card.photo ? (
+    recap || art === "none" ? null : card.photo ? (
       <Cut card={card} shape={art === "side" && copy.length > 450 ? "square" : "wide"} />
     ) : poster ? (
       <StatPoster team={team ?? null} card={card} layout={poster === "band" ? "band" : "block"} />
@@ -1032,9 +1034,11 @@ function Story({
       {artNode ? <div className="wsj-story-art">{artNode}</div> : null}
       <div className="wsj-story-copy">
         <Headline card={card} size={size} game={game} />
-        {dek ? <p className="wsj-dek">{dek}</p> : null}
-        <ScoreBug card={card} />
+        {dek && !recap ? <p className="wsj-dek">{dek}</p> : null}
+        {recap ? null : <ScoreBug card={card} />}
         <Byline card={card} />
+        {recap ? <RecapChrome card={card} game={game ?? null} /> : null}
+        {recap ? <RecapPhoto url={card.photo} width={card.photoWidth} caption={card.caption} /> : null}
         {copy ? (
           <Prose
             card={card}
@@ -1808,7 +1812,7 @@ function InsidePage({
               game={game}
               inset={game ? null : <StoryNames card={card} />}
             />
-            {game ? <GameBox game={game} /> : null}
+            {game || card.recapGame ? <RecapBox card={card} game={game ?? null} /> : null}
           </div>
         );
       })}
@@ -1944,7 +1948,7 @@ function ContinuePage({
               game={game}
               inset={game ? null : <StoryNames card={card} />}
             />
-            {game ? <GameBox game={game} /> : null}
+            {game || card.recapGame ? <RecapBox card={card} game={game ?? null} /> : null}
           </div>
         );
       })}
@@ -2623,18 +2627,21 @@ function WrapPlayers({ card }: { card: GameWrapCard }) {
 }
 
 function WrapBrief({ card }: { card: GameWrapCard }) {
+  const lookup = useContext(GameLookup);
+  const game = lookup(card);
   const copy = wrapBriefCopy(card, 4);
+  const recap = Boolean((card.scoreLine && /\d/.test(card.scoreLine)) || card.recapGame || game);
   return (
     <article className="tt-wrap-brief" data-tt-keys={storyReadKeys(card).join("|")} data-tt-title={card.headline}>
       <Kicker card={card} />
       <h3 className="wsj-hl sm">
         <HeadlineSave card={card}>
-          <StoryLink card={card}>{card.headline}</StoryLink>
+          <StoryLink card={card} game={game}>{card.headline}</StoryLink>
         </HeadlineSave>
       </h3>
-      <ScoreBug card={card} />
+      {recap ? <RecapChrome card={card} game={game} compact /> : <ScoreBug card={card} />}
       {copy ? <p className="tt-wrap-copy">{copy}</p> : null}
-      <WrapPlayers card={card} />
+      {recap ? null : <WrapPlayers card={card} />}
       {card.related?.length ? (
         <ul className="tt-wrap-related">
           {card.related.map((item) => (

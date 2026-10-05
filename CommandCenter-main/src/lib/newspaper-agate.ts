@@ -1,7 +1,7 @@
 /**
  * Agate for the Thompson Times reader: the table model every box score is set
- * in (MLB batting and pitching, NFL and NHL player lines), plus the ESPN game
- * summary read into that model for football and hockey.
+ * in (MLB batting and pitching, NFL/CFB, NHL, and NBA player lines), plus the
+ * ESPN game summary read into that model for every desk sport.
  */
 
 import {
@@ -159,9 +159,12 @@ type SumCompetitor = {
   homeAway?: string;
   winner?: boolean;
   score?: string;
+  hits?: number;
+  errors?: number;
   team?: SumTeam;
   linescores?: { displayValue?: string; value?: number }[];
   record?: { type?: string; summary?: string }[];
+  statistics?: { name?: string; displayValue?: string }[];
 };
 
 type SumStatBlock = {
@@ -224,6 +227,11 @@ function agateName(a: SumAthlete | undefined): string {
   return a.displayName || a.fullName || "—";
 }
 
+function summaryStat(c: SumCompetitor, name: string): string | null {
+  const hit = c.statistics?.find((s) => s.name === name)?.displayValue;
+  return hit && hit !== "--" ? hit : null;
+}
+
 function summarySide(c: SumCompetitor, periods: string[]): BoxSide {
   const t = c.team ?? {};
   return {
@@ -234,8 +242,8 @@ function summarySide(c: SumCompetitor, periods: string[]): BoxSide {
     logo: t.logos?.[0]?.href ?? t.logo ?? null,
     color: t.color ? `#${t.color}` : null,
     score: c.score ?? null,
-    hits: null,
-    errors: null,
+    hits: c.hits != null ? String(c.hits) : summaryStat(c, "hits"),
+    errors: c.errors != null ? String(c.errors) : summaryStat(c, "errors"),
     record: c.record?.find((r) => r.type === "total")?.summary ?? c.record?.[0]?.summary ?? null,
     winner: Boolean(c.winner),
     rank: null,
@@ -249,11 +257,22 @@ function summarySide(c: SumCompetitor, periods: string[]): BoxSide {
 
 const LEADER_LABEL: Record<string, string> = {
   passingYards: "Pass",
+  passingTouchdowns: "Pass",
   rushingYards: "Rush",
   receivingYards: "Rec",
   goals: "Goals",
   assists: "Assists",
   points: "Points",
+  saves: "Goalie",
+  savePercentage: "Goalie",
+  rating: "Points",
+  rebounds: "Rebounds",
+  totalRebounds: "Rebounds",
+  pointsPerGame: "Points",
+  battingAverage: "Hit",
+  homeRuns: "Hit",
+  runsBattedIn: "Hit",
+  wins: "Winner",
 };
 
 function summaryLeaders(data: SummaryRaw, winnerId: string | null): BoxLeader[] {
@@ -299,6 +318,21 @@ function headerGame(path: string, data: SummaryRaw, eventId: string): BoxGame | 
       return { team: abbrevOf(p.team?.id), text: `${agateName(scorer)} ${p.clock?.displayValue ?? ""}`.trim() };
     });
   const winnerId = away.winner ? away.id : home.winner ? home.id : null;
+  const featured = comp.status?.featuredAthletes ?? [];
+  const decisions: BoxGame["decisions"] = [];
+  for (const f of featured) {
+    if (!f.athlete?.id && !f.athlete?.displayName) continue;
+    const name = f.name ?? "";
+    const person = {
+      id: f.athlete.id ?? null,
+      name: f.athlete.displayName || agateName(f.athlete),
+      line: null,
+      headshot: headshotOf(f.athlete),
+    };
+    if (/winning(Pitcher|Goalie)/i.test(name)) decisions.push({ label: "W", person });
+    else if (/losing(Pitcher|Goalie)/i.test(name)) decisions.push({ label: "L", person });
+    else if (/savePitcher|^save$/i.test(name)) decisions.push({ label: "S", person });
+  }
   return {
     id: `${path}-${eventId}`,
     path,
@@ -314,7 +348,7 @@ function headerGame(path: string, data: SummaryRaw, eventId: string): BoxGame | 
     periods,
     away,
     home,
-    decisions: [],
+    decisions,
     probables: { away: null, home: null },
     leaders: summaryLeaders(data, winnerId),
     scoring: path.startsWith("hockey/") ? scoring : [],
@@ -377,6 +411,118 @@ const NFL_BLOCKS: { key: string; label: string; cols: { from: string; as?: strin
   { key: "kickReturns", label: "Kick returns", cols: [{ from: "NO" }, { from: "YDS" }, { from: "AVG" }, { from: "LONG", as: "LG" }, { from: "TD" }] },
   { key: "puntReturns", label: "Punt returns", cols: [{ from: "NO" }, { from: "YDS" }, { from: "AVG" }, { from: "LONG", as: "LG" }, { from: "TD" }] },
 ];
+
+const NBA_TEAM_STATS: { name: string; label: string; sub?: boolean }[] = [
+  { name: "fieldGoalsMade-fieldGoalsAttempted", label: "FG" },
+  { name: "fieldGoalPct", label: "FG%" },
+  { name: "threePointFieldGoalsMade-threePointFieldGoalsAttempted", label: "3PT" },
+  { name: "threePointFieldGoalPct", label: "3P%", sub: true },
+  { name: "freeThrowsMade-freeThrowsAttempted", label: "FT" },
+  { name: "rebounds", label: "Rebounds" },
+  { name: "offensiveRebounds", label: "Offensive", sub: true },
+  { name: "defensiveRebounds", label: "Defensive", sub: true },
+  { name: "assists", label: "Assists" },
+  { name: "steals", label: "Steals" },
+  { name: "blocks", label: "Blocks" },
+  { name: "turnovers", label: "Turnovers" },
+  { name: "totalTurnovers", label: "Turnovers" },
+  { name: "points", label: "Points" },
+];
+
+function nbaPlayers(blocks: SumStatBlock[], title: string): AgateTable | null {
+  const want = [
+    { from: "MIN" },
+    { from: "PTS" },
+    { from: "REB" },
+    { from: "AST" },
+    { from: "FG" },
+    { from: "3PT" },
+  ];
+  const rows: AgateRow[] = [];
+  let columns: string[] = want.map((c) => c.from);
+  for (const block of blocks) {
+    if (!block.athletes?.length) continue;
+    const labels = block.labels ?? [];
+    if (!labels.includes("MIN") && !labels.includes("PTS")) continue;
+    const idx = want.map((c) => labels.indexOf(c.from));
+    if (idx.every((i) => i < 0)) continue;
+    columns = want.map((c) => c.from);
+    for (const a of block.athletes) {
+      if (rows.some((r) => r.id && r.id === a.athlete?.id)) continue;
+      const cells = idx.map((i) => (i >= 0 ? (a.stats?.[i] ?? "") : "")).map((v) => (v === "--" ? "" : v));
+      if (cells.every((c) => !c)) continue;
+      rows.push({
+        id: a.athlete?.id ?? null,
+        name: agateName(a.athlete),
+        note: a.athlete?.position?.abbreviation?.toLowerCase() ?? null,
+        sub: /bench/i.test(block.name ?? ""),
+        cells,
+      });
+    }
+  }
+  if (!rows.length) return null;
+  const tot = blocks.find((b) => b.totals?.length && (b.labels?.includes("PTS") || b.labels?.includes("MIN")));
+  const totals = tot
+    ? want.map((c) => {
+        const i = (tot.labels ?? []).indexOf(c.from);
+        return i >= 0 ? (tot.totals?.[i] ?? "") : "";
+      })
+    : null;
+  return { title, columns, rows, totals };
+}
+
+function mlbBatters(blocks: SumStatBlock[], title: string): AgateTable | null {
+  const block = blocks.find((b) => /batting|hitters/i.test(b.name ?? "")) ?? blocks.find((b) => (b.labels ?? []).includes("AB"));
+  return blockTable(
+    block,
+    title,
+    [
+      { from: "AB" },
+      { from: "R" },
+      { from: "H" },
+      { from: "RBI", as: "BI" },
+      { from: "BB" },
+      { from: "K" },
+      { from: "AVG", as: "Avg" },
+    ],
+    { note: (a) => a.position?.abbreviation?.toLowerCase() ?? null },
+  );
+}
+
+function mlbPitchers(blocks: SumStatBlock[], title: string): AgateTable | null {
+  const block = blocks.find((b) => /pitching|pitchers/i.test(b.name ?? "")) ?? blocks.find((b) => (b.labels ?? []).includes("IP"));
+  return blockTable(block, title, [{ from: "IP" }, { from: "H" }, { from: "R" }, { from: "ER" }, { from: "BB" }, { from: "K" }], {
+    totals: false,
+  });
+}
+
+function mlbScoring(data: SummaryRaw, game: BoxGame, people: Map<string, string>): ScoringPeriod[] {
+  const plays = (data.scoringPlays?.length ? data.scoringPlays : data.plays ?? []).filter((p) => p.scoringPlay);
+  const byInning = new Map<number, ScoringPlay[]>();
+  for (const p of plays) {
+    const n = p.period?.number ?? 0;
+    const side = p.team?.id === game.home.id ? "home" : "away";
+    const text = (p.text ?? "").trim();
+    const kind = p.scoringType?.abbreviation || p.type?.abbreviation || null;
+    const list = byInning.get(n) ?? [];
+    list.push({
+      side,
+      team: (side === "home" ? game.home : game.away).abbrev,
+      clock: p.period?.displayValue ?? (n ? `${n}` : ""),
+      tag: kind && kind.length <= 4 ? kind : null,
+      lead: linkNames(text, people),
+      detail: [],
+      score: `${p.awayScore ?? 0}-${p.homeScore ?? 0}`,
+    });
+    byInning.set(n, list);
+  }
+  return [...byInning.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([n, periodPlays]) => ({
+      label: n ? `${n}${n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"}` : "Scoring",
+      plays: periodPlays,
+    }));
+}
 
 const NFL_TEAM_STATS: { name: string; label: string; sub?: boolean }[] = [
   { name: "firstDowns", label: "First downs" },
@@ -605,33 +751,62 @@ function nhlShots(data: SummaryRaw, game: BoxGame, totals: { away: string; home:
   };
 }
 
-/** NFL and NHL box score off ESPN's game summary: lines, scoring, team stats and agate. */
-export async function fetchEspnBox(path: string, eventId: string): Promise<EspnBox | null> {
-  const data = await fetchEspnSummary<SummaryRaw>(path, eventId);
-  if (!data) return null;
-  const game = headerGame(path, data, eventId);
-  if (!game) return null;
-  const hockey = path.startsWith("hockey/");
-  const players = data.boxscore?.players ?? [];
-  const blocksOf = (side: BoxSide) => players.find((p) => p.team?.id === side.id)?.statistics ?? [];
-  const awayBlocks = blocksOf(game.away);
-  const homeBlocks = blocksOf(game.home);
-
+function collectPeople(blocks: SumStatBlock[]): Map<string, string> {
   const people = new Map<string, string>();
-  for (const block of [...awayBlocks, ...homeBlocks]) {
+  for (const block of blocks) {
     for (const a of block.athletes ?? []) {
       const id = a.athlete?.id;
       if (!id) continue;
       for (const n of [a.athlete?.displayName, a.athlete?.fullName]) if (n) people.set(n, id);
     }
   }
+  return people;
+}
+
+function boxInfo(data: SummaryRaw): { label: string; value: string }[] {
+  const gi = data.gameInfo;
+  const officials = (role: RegExp) =>
+    (gi?.officials ?? [])
+      .filter((o) => role.test(o.position?.displayName ?? ""))
+      .map((o) => o.displayName || o.fullName || "")
+      .filter(Boolean);
+  const info: { label: string; value: string }[] = [];
+  const refs = officials(/^referee$/i);
+  if (refs.length) info.push({ label: refs.length > 1 ? "Referees" : "Referee", value: refs.join(", ") });
+  const lines = officials(/linesm/i);
+  if (lines.length) info.push({ label: "Linesmen", value: lines.join(", ") });
+  if (gi?.weather?.displayValue) {
+    info.push({ label: "Weather", value: `${gi.weather.temperature != null ? `${gi.weather.temperature}°, ` : ""}${gi.weather.displayValue}` });
+  }
+  if (gi?.venue?.fullName) info.push({ label: "Site", value: gi.venue.fullName });
+  if (gi?.attendance) info.push({ label: "Att", value: gi.attendance.toLocaleString("en-US") });
+  return info;
+}
+
+/** Box score off ESPN's game summary: lines, scoring, team stats and agate. */
+export async function fetchEspnBox(path: string, eventId: string): Promise<EspnBox | null> {
+  const data = await fetchEspnSummary<SummaryRaw>(path, eventId);
+  if (!data) return null;
+  const game = headerGame(path, data, eventId);
+  if (!game) return null;
+  const hockey = path.startsWith("hockey/");
+  const baseball = path.startsWith("baseball/");
+  const basketball = path.startsWith("basketball/");
+  const players = data.boxscore?.players ?? [];
+  const blocksOf = (side: BoxSide) => players.find((p) => p.team?.id === side.id)?.statistics ?? [];
+  const awayBlocks = blocksOf(game.away);
+  const homeBlocks = blocksOf(game.home);
+  const people = collectPeople([...awayBlocks, ...homeBlocks]);
 
   const featured = data.header?.competitions?.[0]?.status?.featuredAthletes ?? [];
   const decisions = new Map<string, string>();
   for (const f of featured) {
     if (!f.athlete?.id) continue;
-    if (f.name === "winningGoalie") decisions.set(f.athlete.id, "W");
-    if (f.name === "losingGoalie") decisions.set(f.athlete.id, game.periods.length > 3 ? "OTL" : "L");
+    if (f.name === "winningGoalie" || f.name === "winningPitcher") decisions.set(f.athlete.id, "W");
+    if (f.name === "losingGoalie" || f.name === "losingPitcher") {
+      decisions.set(f.athlete.id, hockey && game.periods.length > 3 ? "OTL" : "L");
+    }
+    if (f.name === "savePitcher") decisions.set(f.athlete.id, "S");
   }
   const abbrevOf = (id: string | undefined) => (id === game.away.id ? game.away.abbrev : id === game.home.id ? game.home.abbrev : null);
   const stars: StarPick[] = ["firstStar", "secondStar", "thirdStar"]
@@ -657,11 +832,26 @@ export async function fetchEspnBox(path: string, eventId: string): Promise<EspnB
     const t = teamRaw.find((x) => x.team?.id === id) ?? teamRaw.find((x) => x.homeAway === side);
     return t?.statistics?.find((s) => s.name === name)?.displayValue ?? "";
   };
-  const teamStats = (
-    hockey
-      ? nhlTeamStats(statOf)
-      : NFL_TEAM_STATS.map((s) => ({ label: s.label, away: statOf("away", s.name), home: statOf("home", s.name), sub: s.sub }))
-  ).filter((s) => s.away !== "" || s.home !== "");
+  if (baseball) {
+    if (!game.away.hits) game.away.hits = statOf("away", "hits") || null;
+    if (!game.home.hits) game.home.hits = statOf("home", "hits") || null;
+    if (!game.away.errors) game.away.errors = statOf("away", "errors") || null;
+    if (!game.home.errors) game.home.errors = statOf("home", "errors") || null;
+  }
+  const teamRows = hockey
+    ? nhlTeamStats(statOf)
+    : basketball
+      ? NBA_TEAM_STATS.map((s) => ({ label: s.label, away: statOf("away", s.name), home: statOf("home", s.name), sub: s.sub }))
+      : baseball
+        ? []
+        : NFL_TEAM_STATS.map((s) => ({ label: s.label, away: statOf("away", s.name), home: statOf("home", s.name), sub: s.sub }));
+  const seenStat = new Set<string>();
+  const teamStats = teamRows.filter((s) => {
+    if (s.away === "" && s.home === "") return false;
+    if (seenStat.has(s.label)) return false;
+    seenStat.add(s.label);
+    return true;
+  });
 
   const pairs: AgatePair[] = hockey
     ? [
@@ -673,56 +863,50 @@ export async function fetchEspnBox(path: string, eventId: string): Promise<EspnB
           home: nhlGoalies(homeBlocks, game.home.short, decisions),
         },
       ]
-    : NFL_BLOCKS.map((b) => ({
-        key: b.key,
-        label: b.label,
-        away: blockTable(
-          awayBlocks.find((x) => x.name === b.key),
-          game.away.short,
-          b.cols,
-          { limit: b.limit },
-        ),
-        home: blockTable(
-          homeBlocks.find((x) => x.name === b.key),
-          game.home.short,
-          b.cols,
-          { limit: b.limit },
-        ),
-      }));
+    : baseball
+      ? [
+          { key: "batting", label: "Batting", away: mlbBatters(awayBlocks, game.away.short), home: mlbBatters(homeBlocks, game.home.short) },
+          { key: "pitching", label: "Pitching", away: mlbPitchers(awayBlocks, game.away.short), home: mlbPitchers(homeBlocks, game.home.short) },
+        ]
+      : basketball
+        ? [{ key: "players", label: null, away: nbaPlayers(awayBlocks, game.away.short), home: nbaPlayers(homeBlocks, game.home.short) }]
+        : NFL_BLOCKS.map((b) => ({
+            key: b.key,
+            label: b.label,
+            away: blockTable(awayBlocks.find((x) => x.name === b.key), game.away.short, b.cols, { limit: b.limit }),
+            home: blockTable(homeBlocks.find((x) => x.name === b.key), game.home.short, b.cols, { limit: b.limit }),
+          }));
 
-  const gi = data.gameInfo;
-  const officials = (role: RegExp) =>
-    (gi?.officials ?? [])
-      .filter((o) => role.test(o.position?.displayName ?? ""))
-      .map((o) => o.displayName || o.fullName || "")
-      .filter(Boolean);
-  const info: { label: string; value: string }[] = [];
-  const refs = officials(/^referee$/i);
-  if (refs.length) info.push({ label: refs.length > 1 ? "Referees" : "Referee", value: refs.join(", ") });
-  const lines = officials(/linesm/i);
-  if (lines.length) info.push({ label: "Linesmen", value: lines.join(", ") });
-  if (gi?.weather?.displayValue) {
-    info.push({ label: "Weather", value: `${gi.weather.temperature != null ? `${gi.weather.temperature}°, ` : ""}${gi.weather.displayValue}` });
-  }
-  if (gi?.venue?.fullName) info.push({ label: "Site", value: gi.venue.fullName });
-  if (gi?.attendance) info.push({ label: "Att", value: gi.attendance.toLocaleString("en-US") });
+  const scoring = hockey
+    ? nhlScoring(data, path, game)
+    : baseball
+      ? mlbScoring(data, game, people)
+      : nflScoring(data, path, game, people);
 
   return {
     game,
     pairs: pairs.filter((p) => p.away || p.home),
     teamStats,
-    scoring: hockey ? nhlScoring(data, path, game) : nflScoring(data, path, game, people),
+    scoring,
     shots: hockey ? nhlShots(data, game, { away: statOf("away", "shotsTotal"), home: statOf("home", "shotsTotal") }) : null,
     stars,
-    info,
+    info: boxInfo(data),
   };
 }
 
-export const ESPN_BOX_PATHS = new Set(["football/nfl", "hockey/nhl"]);
+export const ESPN_BOX_PATHS = new Set([
+  "football/nfl",
+  "football/college-football",
+  "hockey/nhl",
+  "basketball/nba",
+  "baseball/mlb",
+]);
 
 const KEY_STATS: Record<string, string[]> = {
   "football/nfl": ["Total yards", "Turnovers", "Third down", "Possession"],
+  "football/college-football": ["Total yards", "Turnovers", "Third down", "Possession"],
   "hockey/nhl": ["Shots on goal", "Power plays", "Faceoffs won", "Hits"],
+  "basketball/nba": ["Points", "Rebounds", "Assists", "Turnovers"],
 };
 
 /** The handful of team numbers the top box runs under the line. */

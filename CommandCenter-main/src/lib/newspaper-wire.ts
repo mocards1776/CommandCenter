@@ -14,11 +14,14 @@ import {
   linesFromSummary,
   nextFromSummary,
   periodLabelsFor,
+  summaryImageWidth,
+  summaryVenue,
   writeBoxWrap,
   type BoxWrapLine,
   type EspnSummaryForWrap,
 } from "./newspaper-box-wrap.ts";
 import { formatFixtureWhen } from "./newspaper-box.ts";
+import { packFromSides, type RecapGamePack, type RecapLeader, type RecapSide } from "./newspaper-recap.ts";
 import { isNewspaperCfbDeskGame, isNewspaperSecGame, newspaperEspnGet } from "./newspaper-espn.ts";
 import type { SportsFavorite } from "./sports.ts";
 
@@ -58,10 +61,13 @@ export type WireSide = {
   short: string;
   abbrev: string;
   logo: string | null;
+  color: string | null;
   score: string | null;
   winner: boolean;
   record: string | null;
   seed: string | null;
+  hits?: string | null;
+  errors?: string | null;
 };
 
 /** Full-league club for sport-section team walls. */
@@ -105,13 +111,16 @@ export type WireGame = {
   dateline: string | null;
   photo: string | null;
   href: string;
-  leaders: { name: string; line: string; href: string | null }[];
+  leaders: RecapLeader[];
   favoriteKeys: string[];
   /** ESPN recap of 200+ characters, or a Times box wrap when that is missing. */
   wrapKind?: "espn" | "box" | null;
   lines?: BoxWrapLine[];
   next?: string | null;
   sec?: boolean;
+  venue?: string | null;
+  photoWidth?: number | null;
+  recapGame?: RecapGamePack | null;
 };
 
 type EspnCompetitor = {
@@ -128,7 +137,10 @@ type EspnCompetitor = {
     abbreviation?: string;
     logo?: string;
     logos?: { href?: string }[];
+    color?: string;
   };
+  hits?: number;
+  errors?: number;
 };
 
 type EspnHeadline = {
@@ -153,9 +165,11 @@ type EspnEvent = {
     headlines?: EspnHeadline[];
     highlights?: { thumbnail?: string }[];
     leaders?: {
+      shortDisplayName?: string;
+      displayName?: string;
       leaders?: {
         displayValue?: string;
-        athlete?: { id?: string; displayName?: string; shortName?: string };
+        athlete?: { id?: string; displayName?: string; shortName?: string; headshot?: string | { href?: string } };
       }[];
     }[];
   }[];
@@ -269,10 +283,13 @@ function side(c: EspnCompetitor | undefined): WireSide {
     short: c?.team?.shortDisplayName ?? c?.team?.displayName ?? "—",
     abbrev: (c?.team?.abbreviation ?? "—").toUpperCase(),
     logo: c?.team?.logo ?? c?.team?.logos?.[0]?.href ?? null,
+    color: c?.team?.color ? `#${c.team.color}` : null,
     score: c?.score ?? null,
     winner: Boolean(c?.winner),
     record: overall?.summary ?? null,
     seed: rank && rank > 0 && rank < 99 ? `No. ${rank}` : null,
+    hits: c?.hits != null ? String(c.hits) : null,
+    errors: c?.errors != null ? String(c.errors) : null,
   };
 }
 
@@ -441,6 +458,7 @@ function playerHrefFor(league: WireLeague, id: string | undefined): string | nul
   if (league.slug === "nhl") return `/sports/nhl/player/${id}`;
   if (league.slug === "nfl") return `/sports/nfl/player/${id}`;
   if (league.slug === "college-football") return `/sports/cfb/player/${id}`;
+  if (league.slug === "nba") return `https://www.espn.com/nba/player/_/id/${id}`;
   return null;
 }
 
@@ -493,15 +511,23 @@ function toWireGame(
       : `${away.short} at ${home.short}`;
   const headline = recap?.shortLinkText?.trim() || (final ? scoreHead : `${away.short} at ${home.short}`);
 
-  const leaders = (comp.leaders ?? [])
-    .flatMap((group) => group.leaders ?? [])
-    .filter((l) => l.athlete?.displayName && l.displayValue)
-    .slice(0, 5)
-    .map((l) => ({
-      name: l.athlete!.shortName || l.athlete!.displayName!,
-      line: l.displayValue!,
-      href: playerHrefFor(league, l.athlete?.id),
-    }));
+  const leaders: RecapLeader[] = (comp.leaders ?? []).flatMap((group) => {
+    const top = group.leaders?.[0];
+    if (!top?.athlete?.displayName && !top?.athlete?.shortName) return [];
+    if (!top.displayValue) return [];
+    const shot = top.athlete.headshot;
+    return [
+      {
+        name: top.athlete.shortName || top.athlete.displayName!,
+        line: top.displayValue,
+        href: playerHrefFor(league, top.athlete.id),
+        label: group.shortDisplayName || group.displayName || "Star",
+        headshot: typeof shot === "string" ? shot : shot?.href ?? null,
+        team: null,
+        id: top.athlete.id ?? null,
+      },
+    ];
+  });
 
   const lineCount = Math.max(awayC.linescores?.length ?? 0, homeC.linescores?.length ?? 0);
   const labels = periodLabelsFor(league.path, lineCount);
@@ -539,7 +565,64 @@ function toWireGame(
     lines,
     next: null,
     sec: isNewspaperSecGame(league.path, awayC.team.id, homeC.team.id),
+    venue: null,
+    photoWidth: null,
+    recapGame: recapPackFromWire({
+      path: league.path,
+      league: league.league,
+      venue: null,
+      status: st?.detail ?? st?.description ?? (final ? "Final" : "Scheduled"),
+      final,
+      live,
+      lines,
+      away,
+      home,
+      leaders,
+    }),
   };
+}
+
+function recapSideFromWire(side: WireSide, lines: (number | null)[]): RecapSide {
+  return {
+    id: side.id,
+    name: side.name,
+    short: side.short,
+    abbrev: side.abbrev,
+    logo: side.logo,
+    color: side.color,
+    score: side.score,
+    record: side.record,
+    winner: side.winner,
+    hits: side.hits ?? null,
+    errors: side.errors ?? null,
+    lines,
+  };
+}
+
+function recapPackFromWire(opts: {
+  path: string;
+  league: string;
+  venue: string | null;
+  status: string;
+  final: boolean;
+  live: boolean;
+  lines: BoxWrapLine[];
+  away: WireSide;
+  home: WireSide;
+  leaders: RecapLeader[];
+}): RecapGamePack {
+  return packFromSides({
+    path: opts.path,
+    league: opts.league,
+    venue: opts.venue,
+    status: opts.status,
+    final: opts.final,
+    live: opts.live,
+    periods: opts.lines.map((l) => l.period),
+    away: recapSideFromWire(opts.away, opts.lines.map((l) => l.away)),
+    home: recapSideFromWire(opts.home, opts.lines.map((l) => l.home)),
+    leaders: opts.leaders,
+  });
 }
 
 /**
@@ -701,11 +784,63 @@ function splitDateline(text: string): { dateline: string | null; body: string } 
   return { dateline: m[1]!.trim(), body: text.slice(m[0].length).trim() };
 }
 
-function applyBoxWrap(g: WireGame, sum: EspnSummaryForWrap | null): WireGame {
-  const leaders = g.leaders.length
-    ? g.leaders
-    : leadersFromSummary(sum).map((l) => ({ ...l, href: null }));
+function leadersWithHref(path: string, rows: ReturnType<typeof leadersFromSummary>, existing: RecapLeader[]): RecapLeader[] {
+  if (existing.length) return existing;
+  const league = LEAGUES.find((l) => l.path === path);
+  return rows.map((l) => ({
+    name: l.name,
+    line: l.line,
+    href: playerHrefFor(league ?? { slug: path.split("/").pop() ?? "" } as WireLeague, l.id ?? undefined),
+    label: l.label || "Star",
+    headshot: l.headshot ?? null,
+    team: l.team ?? null,
+    id: l.id ?? null,
+  }));
+}
+
+function applySummaryChrome(g: WireGame, sum: EspnSummaryForWrap | null): Partial<WireGame> {
+  const leaders = leadersWithHref(g.path, leadersFromSummary(sum), g.leaders);
   const lines = g.lines?.length ? g.lines : linesFromSummary(g.path, sum);
+  const venue = g.venue ?? summaryVenue(sum);
+  const photoWidth = g.photoWidth ?? summaryImageWidth(sum);
+  const away = applySummarySide(g.away, sum, "away");
+  const home = applySummarySide(g.home, sum, "home");
+  return {
+    leaders,
+    lines,
+    venue,
+    photoWidth,
+    away,
+    home,
+    recapGame: recapPackFromWire({
+      path: g.path,
+      league: g.league,
+      venue,
+      status: g.statusDetail,
+      final: g.final,
+      live: g.live,
+      lines,
+      away,
+      home,
+      leaders,
+    }),
+  };
+}
+
+function applySummarySide(side: WireSide, sum: EspnSummaryForWrap | null, which: "away" | "home"): WireSide {
+  const raw = sum?.header?.competitions?.[0]?.competitors?.find((c) => c.homeAway === which);
+  if (!raw) return side;
+  const color = side.color || (raw.team?.color ? `#${raw.team.color}` : null);
+  const logo = side.logo || raw.team?.logo || raw.team?.logos?.[0]?.href || null;
+  const hits = side.hits ?? (raw.hits != null ? String(raw.hits) : null);
+  const errors = side.errors ?? (raw.errors != null ? String(raw.errors) : null);
+  return { ...side, color, logo, hits, errors };
+}
+
+function applyBoxWrap(g: WireGame, sum: EspnSummaryForWrap | null): WireGame {
+  const chrome = applySummaryChrome(g, sum);
+  const leaders = chrome.leaders ?? g.leaders;
+  const lines = chrome.lines ?? g.lines ?? [];
   const next = g.next ?? nextFromSummary(sum);
   const { body, wrapKind } = writeBoxWrap({
     league: g.league,
@@ -714,18 +849,17 @@ function applyBoxWrap(g: WireGame, sum: EspnSummaryForWrap | null): WireGame {
     postseason: g.postseason,
     round: g.round,
     statusDetail: g.statusDetail,
-    away: g.away,
-    home: g.home,
+    away: chrome.away ?? g.away,
+    home: chrome.home ?? g.home,
     leaders,
     lines,
     next,
   });
   return {
     ...g,
+    ...chrome,
     body,
     wrapKind,
-    leaders,
-    lines,
     next,
     dateline: g.dateline,
   };
@@ -739,10 +873,7 @@ export async function enrichWireStories(
   const targets = games.filter((g) => g.final).slice(0, limit);
   const wanted = new Set(targets.map((g) => g.id));
 
-  const filled = new Map<
-    string,
-    { body: string; dateline: string | null; photo: string | null; wrapKind: "espn"; next: string | null; lines: BoxWrapLine[]; leaders: WireGame["leaders"] }
-  >();
+  const filled = new Map<string, WireGame>();
   const summaries = new Map<string, EspnSummaryForWrap | null>();
   let storyNext = 0;
   const pullStory = async () => {
@@ -754,16 +885,15 @@ export async function enrichWireStories(
         const story = stripStoryHtml(sum.article?.story ?? "");
         if (!hasEspnRecap(story)) continue;
         const { dateline, body } = splitDateline(story);
+        const chrome = applySummaryChrome(g, sum);
         filled.set(g.id, {
+          ...g,
+          ...chrome,
           body,
           dateline,
           photo: g.photo ?? sum.article?.images?.[0]?.url ?? null,
           wrapKind: "espn",
-          next: nextFromSummary(sum),
-          lines: g.lines?.length ? g.lines : linesFromSummary(g.path, sum),
-          leaders: g.leaders.length
-            ? g.leaders
-            : leadersFromSummary(sum).map((l) => ({ ...l, href: null })),
+          next: nextFromSummary(sum) ?? g.next,
         });
       } catch {
         summaries.set(g.id, null);
@@ -773,20 +903,7 @@ export async function enrichWireStories(
   await Promise.all([pullStory(), pullStory(), pullStory()]);
   const merged = games.map((g) => {
     if (!wanted.has(g.id)) return g;
-    const hit = filled.get(g.id);
-    if (hit) {
-      return {
-        ...g,
-        body: hit.body,
-        dateline: hit.dateline,
-        photo: hit.photo,
-        wrapKind: hit.wrapKind,
-        next: hit.next ?? g.next,
-        lines: hit.lines,
-        leaders: hit.leaders,
-      };
-    }
-    return applyBoxWrap(g, summaries.get(g.id) ?? null);
+    return filled.get(g.id) ?? applyBoxWrap(g, summaries.get(g.id) ?? null);
   });
   logWireFiling("summaries", merged);
 
