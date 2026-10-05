@@ -34,6 +34,7 @@ import {
   type NewspaperWire,
 } from "./newspaper-wire";
 import { fetchMlbPlayoffTree } from "./mlb";
+import { pickBestStoryImage } from "./newspaper-images.ts";
 import { fetchRssArticle, fetchRssFeed, firstContentImageUrl, type RssArticle } from "./rss";
 import {
   DEFAULT_FAVORITES,
@@ -102,6 +103,7 @@ export function fileExtracts(cards: GameWrapCard[], extracts: Record<string, Rss
       dek: !dekText || isBoilerplateDek(dekText) ? null : dekText,
       body: filedBody(card, card.body),
       caption: card.caption ? cleanStoryCopy(card.caption).text || null : card.caption,
+      photo: pickBestStoryImage([card.photo]),
     };
   });
   if (!extracts) return clean;
@@ -114,7 +116,7 @@ export function fileExtracts(cards: GameWrapCard[], extracts: Record<string, Rss
     return {
       ...card,
       body: adopt ? filedBody(card, source) : card.body,
-      photo: card.photo || hit.image || firstContentImageUrl(hit.contentHtml),
+      photo: pickBestStoryImage([card.photo, hit.image, firstContentImageUrl(hit.contentHtml)]),
     };
   });
 }

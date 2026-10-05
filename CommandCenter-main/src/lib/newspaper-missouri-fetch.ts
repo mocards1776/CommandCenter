@@ -11,6 +11,7 @@ import {
   type MoItem,
 } from "./newspaper-missouri";
 import { stripGettyCredit, truncateAtSentence } from "./newspaper-copy";
+import { pickBestStoryImage, srcsetCandidates } from "./newspaper-images.ts";
 import { fetchRssArticle, fetchRssFeed, type RssFeedItem } from "./rss";
 
 export const MOSCOUT_NATIVE_FEED = "https://moscout.com/daily-updates-1?format=rss";
@@ -41,16 +42,29 @@ async function directFeed(url: string): Promise<RssFeedItem[]> {
   return [...doc.querySelectorAll("item")].map((el, i) => {
     const pick = (sel: string) => el.getElementsByTagName(sel)[0]?.textContent?.trim() ?? "";
     const desc = pick("description");
-    const media = el.getElementsByTagName("media:content")[0]?.getAttribute("url");
-    const enclosure = el.getElementsByTagName("enclosure")[0]?.getAttribute("url");
+    const candidates: { url: string; width: number | null }[] = [];
+    const take = (node: Element | undefined) => {
+      const href = node?.getAttribute("url");
+      if (!href) return;
+      const width = Number(node?.getAttribute("width") || 0);
+      candidates.push({ url: href, width: width > 0 ? width : null });
+    };
+    for (const name of ["media:content", "media:thumbnail"]) {
+      for (const node of el.getElementsByTagName(name)) take(node);
+    }
+    take(el.getElementsByTagName("enclosure")[0]);
     const inline = desc.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1];
+    if (inline) candidates.push({ url: inline, width: null });
+    for (const srcset of desc.matchAll(/\bsrcset=["']([^"']+)["']/gi)) {
+      candidates.push(...srcsetCandidates(srcset[1]));
+    }
     return {
       id: pick("guid") || `${url}-${i}`,
       title: pick("title"),
       link: pick("link"),
       author: pick("dc:creator") || null,
       publishedAt: pick("pubDate") || null,
-      image: media || enclosure || inline || null,
+      image: pickBestStoryImage(candidates),
       snippet: desc.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 600),
     };
   });
@@ -134,7 +148,7 @@ export async function enrichMissouriItems(items: MoItem[], count = 6): Promise<M
         const published = parseArticlePublished(article.contentHtml ?? "");
         return {
           ...item,
-          photo: item.photo ?? article.image ?? null,
+          photo: pickBestStoryImage([item.photo, article.image]),
           dek: item.dek ?? (text || null),
           when: preferArticleDate(item.when, published),
         };

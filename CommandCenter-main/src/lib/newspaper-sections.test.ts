@@ -22,6 +22,7 @@ import { cleanStoryCopy, isNavSoup, isPeripheralClubStory, killedSource } from "
 import { rankStandings } from "./newspaper-box.ts";
 import {
   buildEdition,
+  comingUpHasClock,
   dedupeStories,
   editorFront,
   isColumnStory,
@@ -29,6 +30,7 @@ import {
   isHoldoverGame,
   isPreviewStory,
   MIN_SECTION_PAGES,
+  sortComingUp,
   sourceStoryId,
   staleNamedPackage,
   storyBodyForJump,
@@ -1248,5 +1250,18 @@ const draftTwice = dedupeStories([
   }),
 ]);
 assert(draftTwice.length === 1, "the same draft wrap does not run twice");
+
+const coming = sortComingUp([
+  { id: "mizzou-bb", when: "Tue, Nov 3", startIso: "2026-11-03T05:00:00Z" },
+  { id: "sixers", when: "Mon, Oct 5, 6:00 PM", startIso: "2026-10-05T23:00:00Z" },
+  { id: "blues", when: "Tue, Oct 6, 7:00 PM", startIso: "2026-10-07T00:00:00Z" },
+  { id: "mizzou-fb", when: "Sat, Oct 10, 11:00 AM", startIso: "2026-10-10T16:00:00Z" },
+  { id: "same-day-open", when: "Tue, Oct 6", startIso: "2026-10-06T05:00:00Z" },
+]);
+assert(
+  coming.map((g) => g.id).join(",") === "sixers,blues,same-day-open,mizzou-fb,mizzou-bb",
+  `Coming Up is chronological, date-only last that day: ${coming.map((g) => g.id).join(",")}`,
+);
+assert(comingUpHasClock("Mon, Oct 5, 6:00 PM") && !comingUpHasClock("Tue, Nov 3"), "clock vs date-only");
 
 console.log("newspaper-sections ok");

@@ -151,6 +151,8 @@ export type DeskFixture = {
   team: string;
   label: string;
   when: string | null;
+  /** ISO start when known; used to sort Coming Up by kickoff. */
+  startIso?: string | null;
   detail: string | null;
 };
 
@@ -169,7 +171,7 @@ export type ClubDesk = {
   division: DeskRow[];
   stats: DeskStat[];
   leaders: DeskLeader[];
-  upcoming: { id: string; label: string; when: string | null; detail: string | null }[];
+  upcoming: { id: string; label: string; when: string | null; startIso?: string | null; detail: string | null }[];
 };
 
 export type SportFocus =
@@ -442,9 +444,78 @@ function upcomingFor(clubs: ClubDesk[]): DeskFixture[] {
       team: club.shortName,
       label: game.label,
       when: game.when,
+      startIso: game.startIso ?? null,
       detail: game.detail,
     })),
   );
+}
+
+const COMING_UP_CLOCK = /\d{1,2}:\d{2}|\d{1,2}\s*[ap](?:\.?m\.?)/i;
+const CHICAGO = "America/Chicago";
+
+function chicagoYmd(ms: number): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: CHICAGO,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+}
+
+function endOfChicagoDay(ms: number): number {
+  const ymd = chicagoYmd(ms);
+  for (const offset of ["-05:00", "-06:00"]) {
+    const t = Date.parse(`${ymd}T23:59:59.999${offset}`);
+    if (!Number.isNaN(t) && chicagoYmd(t) === ymd) return t;
+  }
+  return Date.parse(`${ymd}T23:59:59.999-05:00`);
+}
+
+export function comingUpHasClock(when: string | null | undefined): boolean {
+  return Boolean(when && COMING_UP_CLOCK.test(when));
+}
+
+function parseComingUpWhen(when: string, now: number): number | null {
+  const cleaned = when.replace(/,/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+  const year = new Date(now).getFullYear();
+  const attempts = [cleaned, `${cleaned} ${year}`, `${cleaned}, ${year}`];
+  for (const text of attempts) {
+    const t = Date.parse(text);
+    if (Number.isNaN(t)) continue;
+    if (t < now - 150 * 86_400_000) {
+      const next = Date.parse(text.replace(String(year), String(year + 1)));
+      if (!Number.isNaN(next)) return next;
+    }
+    return t;
+  }
+  return null;
+}
+
+/** Sort key: kickoff ms, or the end of that Chicago day when the listing has a date but no clock. */
+export function comingUpSortMs(
+  game: { when: string | null; startIso?: string | null },
+  now = Date.now(),
+): number {
+  const when = game.when?.trim() || "";
+  const timed = comingUpHasClock(when);
+  if (game.startIso) {
+    const t = Date.parse(game.startIso);
+    if (!Number.isNaN(t)) return timed || !when ? t : endOfChicagoDay(t);
+  }
+  if (!when) return Number.POSITIVE_INFINITY;
+  const parsed = parseComingUpWhen(when, now);
+  if (parsed == null) return Number.POSITIVE_INFINITY;
+  return timed ? parsed : endOfChicagoDay(parsed);
+}
+
+/** Favorite-team next games, soonest first. Date-only listings close their day. */
+export function sortComingUp<T extends { when: string | null; startIso?: string | null }>(games: T[]): T[] {
+  return [...games].sort((a, b) => {
+    const d = comingUpSortMs(a) - comingUpSortMs(b);
+    if (d !== 0) return d;
+    return (a.when ?? "").localeCompare(b.when ?? "");
+  });
 }
 
 function chunkClubs(clubs: ClubDesk[], size: number): ClubDesk[][] {

@@ -166,11 +166,13 @@ import {
   type MatchedWrap,
   type TeamInfobox,
 } from "@/lib/newspaper-sports";
+import { isNarrowStoryImage } from "@/lib/newspaper-images";
 import {
   buildEdition,
   isFavoriteStory,
   isGameWrap,
   isRecapStory,
+  sortComingUp,
   storyBodyForJump,
   type ClubDesk,
   type EditionPage,
@@ -209,6 +211,7 @@ type ComingUp = {
   team: string;
   label: string;
   when: string | null;
+  startIso?: string | null;
   logo: string | null;
   color: string | null;
 };
@@ -842,12 +845,21 @@ function runIn(text: string): [string, string] {
 }
 
 function Cut({ card, shape = "wide" }: { card: GameWrapCard; shape?: "wide" | "tall" | "square" }) {
+  const [narrow, setNarrow] = useState(() => isNarrowStoryImage(card.photo));
   if (!card.photo) return null;
   const caption =
     card.caption && squash(card.caption) !== squash(card.teamName) ? card.caption : null;
   return (
-    <figure className={cn("wsj-cut", shape, card.photoStyle === "cutout" && "cutout")}>
-      <img src={card.photo} alt="" loading="lazy" />
+    <figure className={cn("wsj-cut", shape, narrow && "inset", card.photoStyle === "cutout" && "cutout")}>
+      <img
+        src={card.photo}
+        alt=""
+        loading="lazy"
+        onLoad={(e) => {
+          const w = e.currentTarget.naturalWidth;
+          if (w > 0 && w < 800) setNarrow(true);
+        }}
+      />
       {caption ? <figcaption>{caption}</figcaption> : null}
     </figure>
   );
@@ -1035,6 +1047,7 @@ function Story({
 function artFor(card: GameWrapCard, text: string): { art: ArtMode; cols: 1 | 2 | 3 } {
   const len = text.length;
   if (!card.photo) return { art: "top", cols: len > 1400 ? 3 : len > 500 ? 2 : 1 };
+  if (isNarrowStoryImage(card.photo)) return { art: "side", cols: len > 700 ? 2 : 1 };
   if (len > 1400) return { art: "top", cols: 3 };
   return { art: "side", cols: len > 700 ? 2 : 1 };
 }
@@ -1172,21 +1185,21 @@ function DeskFiller({
 /** The front's scoreboard: every club, its record, its last five. */
 function ClubTicker({ teams, onTurn }: { teams: TeamInfobox[]; onTurn?: (folio: string) => void }) {
   if (!teams.length) return null;
-  const cols = balancedCols(teams.length, [6, 5, 4, 7, 3]);
+  const cols = balancedCols(teams.length, [5, 4, 3]);
   return (
     <ul className="wsj-ticker" style={{ ["--cols" as string]: String(cols) }}>
       {teams.map((t) => (
         <li key={t.fav.key} style={tint(teamColor(t))}>
           <ExternalOrLink href={t.href} className="wsj-ticker-cell wsj-a">
-            <TeamLogo src={t.snap.logo || t.detail?.logo} size="sm" />
             <span className="wsj-ticker-id">
+              <TeamLogo src={t.snap.logo || t.detail?.logo} size="sm" />
               <strong>{t.fav.shortName}</strong>
-              <em>{t.snap.standing || t.fav.league}</em>
             </span>
             <span className="wsj-ticker-rec">
               <b>{clubRecord(t) || "—"}</b>
               <FormDots form={t.form} />
             </span>
+            <em className="wsj-ticker-place">{t.snap.standing || t.fav.league}</em>
           </ExternalOrLink>
         </li>
       ))}
@@ -4392,6 +4405,7 @@ function NewspaperDesk() {
           id: `${team.fav.key}-${game.id}`,
           label: game.label,
           when: game.when,
+          startIso: game.startIso ?? null,
           detail: game.detail,
         }));
         if (!upcoming.length && team.snap.nextGame && team.seasonState === "active") {
@@ -4399,6 +4413,7 @@ function NewspaperDesk() {
             id: `${team.fav.key}-next`,
             label: team.snap.nextGame.label,
             when: team.snap.nextGame.when,
+            startIso: null,
             detail: team.snap.nextGame.detail,
           });
         }
@@ -5180,15 +5195,18 @@ function NewspaperDesk() {
   );
   const comingUp = useMemo<ComingUp[]>(
     () =>
-      clubs.flatMap((club) =>
-        club.upcoming.slice(0, 1).map((game) => ({
-          id: game.id,
-          team: teams.find((t) => t.fav.key === club.key)?.fav.shortName || club.shortName,
-          label: game.label,
-          when: game.when,
-          logo: club.logo,
-          color: club.color ?? null,
-        })),
+      sortComingUp(
+        clubs.flatMap((club) =>
+          club.upcoming.slice(0, 1).map((game) => ({
+            id: game.id,
+            team: teams.find((t) => t.fav.key === club.key)?.fav.shortName || club.shortName,
+            label: game.label,
+            when: game.when,
+            startIso: game.startIso ?? null,
+            logo: club.logo,
+            color: club.color ?? null,
+          })),
+        ),
       ),
     [clubs, teams],
   );

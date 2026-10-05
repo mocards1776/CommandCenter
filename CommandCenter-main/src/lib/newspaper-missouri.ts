@@ -5,6 +5,8 @@
  */
 import { stripGettyCredit, truncateAtSentence } from "./newspaper-copy.ts";
 
+import { pickBestStoryImage } from "./newspaper-images.ts";
+
 export type MoItem = {
   id: string;
   source: string;
@@ -295,7 +297,7 @@ export function feedItemToMo(
     headline: textOf(item.title),
     url: item.link,
     kind: "story",
-    photo: item.image,
+    photo: pickBestStoryImage([item.image]),
     dek: dek || null,
     when: item.publishedAt,
   };

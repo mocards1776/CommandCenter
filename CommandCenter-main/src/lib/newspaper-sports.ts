@@ -2,6 +2,7 @@
 
 import { espnGet, type SportsFavorite, type TeamDetail, type TeamSnapshot, type TeamStatLine } from "./sports";
 import type { RssFeedItem } from "./rss";
+import { pickBestStoryImage } from "./newspaper-images.ts";
 import { favoriteDeskWeight } from "./newspaper";
 import type { WireGame } from "./newspaper-wire";
 import type { YesterdayRecapGame } from "./yesterday-recap";
@@ -705,7 +706,7 @@ export function buildGameWrapCards(opts: {
 function feedPhoto(src: string | null | undefined): string | null {
   if (!src || !/^https?:\/\//i.test(src)) return null;
   if (/team-?logos?|\/logos?\/|teamlogos|\.svg(\?|$)|placeholder|default-?image/i.test(src)) return null;
-  return src;
+  return pickBestStoryImage([src]);
 }
 
 /** A league story from The Athletic that did not name a followed club. */
