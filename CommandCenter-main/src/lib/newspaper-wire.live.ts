@@ -103,6 +103,7 @@ const missing: string[] = [];
 for (const league of need) {
   const row = tallies.find((r) => r.league === league);
   if (!row || row.finals < 1) missing.push(`${league} finals=${row?.finals ?? 0}`);
+  if (row && row.wraps < row.finals) missing.push(`${league} wraps=${row.wraps} of ${row.finals} finals`);
 }
 const nfl = tallies.find((r) => r.league === "NFL");
 if (!nfl || nfl.finals < 14) missing.push(`NFL Sunday slate finals=${nfl?.finals ?? 0} (want 14)`);

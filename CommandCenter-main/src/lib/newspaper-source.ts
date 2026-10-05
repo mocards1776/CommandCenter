@@ -78,7 +78,10 @@ export function storySource(card: {
   gameHref?: string | null;
   feedUrl?: string | null;
   body?: string | null;
+  wrapKind?: "espn" | "box" | null;
+  caption?: string | null;
 }): string | null {
+  if (card.wrapKind === "box" || card.caption === "Times box wrap") return "Times box wrap";
   const outlet = outletFor(card.wrapHref) ?? outletFor(card.feedUrl) ?? outletFor(card.gameHref);
   if (outlet === "ESPN" && /\bAP\b|Associated Press/.test(card.body?.slice(-400) ?? "")) return "The Associated Press";
   if (outlet) return outlet;
