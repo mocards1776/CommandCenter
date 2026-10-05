@@ -10,7 +10,7 @@ import {
 import { clockParts, isBreakStatus } from "./clock.ts";
 import { onDark } from "./color.ts";
 import { formatHeatTimestamp, leagueLabel, phaseLabel, situationLine } from "./copy.ts";
-import { footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
+import { footballMarks, spotIsRedZone } from "./field.ts";
 import { RINK_HEIGHT_FT, RINK_WIDTH_FT, rinkMarkings } from "./ice.ts";
 import { HEAT_ALERT_HEIGHT, HEAT_ALERT_WIDTH, type HeatAlertCard, type HeatStat } from "./types.ts";
 
@@ -18,7 +18,7 @@ import { HEAT_ALERT_HEIGHT, HEAT_ALERT_WIDTH, type HeatAlertCard, type HeatStat 
  * Tall heat-alert graphic in the same visual language as the finals card:
  * navy board, team washes, 1080×1350 Telegram slot, logos + score hierarchy,
  * a compact live map, the live WP chart, then Apple-style team stats.
- * Football chains still come from NflFieldMap math. Nothing here is a photo.
+ * Drive capsule / LOS / sticks still come from NflFieldMap math. Nothing here is a photo.
  */
 
 const W = HEAT_ALERT_WIDTH;
@@ -52,33 +52,19 @@ function logoImage(href: string | null, x: number, y: number, w: number, h: numb
   return `<image href="${safe}" xlink:href="${safe}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"${fade}/>`;
 }
 
-function footballGlyph(): string {
-  const laces = [12, 14, 16, 18, 20]
-    .map(
-      (x) =>
-        `<path d="M${x} 5.3 V10.7" stroke="#f5efe4" stroke-width="0.95" stroke-linecap="round"/>`,
-    )
+/** Circular Apple Sports LOS football. Sits on the end of the drive capsule. */
+function circularLosFootball(cx: number, cy: number, r = 11): string {
+  const laces = [-0.32, -0.16, 0, 0.16, 0.32]
+    .map((t) => {
+      const x = (cx + r * t).toFixed(2);
+      return `<path d="M${x} ${(cy - r * 0.28).toFixed(2)} V${(cy + r * 0.28).toFixed(2)}" stroke="#f5efe4" stroke-width="0.85" stroke-linecap="round"/>`;
+    })
     .join("");
   return `
-    <path d="M2 8 C2 3.2 7.5 1.2 16 1.2 C24.5 1.2 30 3.2 30 8 C30 12.8 24.5 14.8 16 14.8 C7.5 14.8 2 12.8 2 8 Z" fill="#6b3a14" stroke="#2a1508" stroke-width="1.1"/>
-    <path d="M3.2 8 C3.2 4.2 8.2 2.6 16 2.6 C23.8 2.6 28.8 4.2 28.8 8 C28.8 11.8 23.8 13.4 16 13.4 C8.2 13.4 3.2 11.8 3.2 8 Z" fill="#8b4e1c"/>
-    <path d="M10 8 H22" stroke="#f5efe4" stroke-width="1.2" stroke-linecap="round"/>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#losBall)" stroke="#5c4320" stroke-width="0.9"/>
+    <path d="M${(cx - r * 0.55).toFixed(2)} ${cy} H${(cx + r * 0.55).toFixed(2)}" stroke="#f5efe4" stroke-width="1.15" stroke-linecap="round"/>
     ${laces}
-    <ellipse cx="4.4" cy="8" rx="1.5" ry="2.3" fill="#2a1508" opacity="0.5"/>
-    <ellipse cx="27.6" cy="8" rx="1.5" ry="2.3" fill="#2a1508" opacity="0.5"/>
   `;
-}
-
-function placedFootball(cx: number, cy: number, facingRight: boolean, scale = 1.7): string {
-  const flip = facingRight ? 1 : -1;
-  return `<g transform="translate(${cx} ${cy}) scale(${flip} 1) scale(${scale}) translate(-16 -8)">${footballGlyph()}</g>`;
-}
-
-/** Same wedge as NflFieldMap's AttackArrow, sitting above the possession mark. */
-function attackArrow(facingRight: boolean, facingLeft: boolean, color: string): string {
-  if (!facingRight && !facingLeft) return "";
-  const d = facingRight ? "M1.2 1.2 L12.2 5 L1.2 8.8 Z" : "M12.8 1.2 L1.8 5 L12.8 8.8 Z";
-  return `<g transform="translate(-16 -48) scale(2.2)"><path d="${d}" fill="${color}" stroke="#ffffff" stroke-width="0.9" stroke-linejoin="round"/></g>`;
 }
 
 function textEl(
@@ -255,7 +241,6 @@ function footballPanel(card: HeatAlertCard, panelX: number, panelY: number, pane
   });
   const awayColor = card.away.color;
   const homeColor = card.home.color;
-  const possColor = marks.homeHasBall ? homeColor : marks.awayHasBall ? awayColor : "#f0e6c8";
   const down = spot.downDistanceText && !isBreakStatus(spot.downDistanceText) ? spot.downDistanceText : "Field";
 
   const chip = (abbrev: string, active: boolean, color: string, x: number, anchor: "start" | "end") => {
@@ -299,54 +284,24 @@ function footballPanel(card: HeatAlertCard, panelX: number, panelY: number, pane
     return `<rect x="${x}" y="${grassY}" width="${endW}" height="${grassH}" fill="${color}"/>${mark}`;
   };
 
-  let chain = "";
-  if (marks.toGainLeft != null && marks.toGainWidth != null && marks.toGainWidth > 0.3) {
-    const left = xAt(marks.toGainLeft);
-    const width = (marks.toGainWidth / 100) * playW;
-    chain += `<rect x="${left}" y="${grassY + grassH / 2 - 7}" width="${width}" height="14" fill="#2f9bff"/>`;
-  }
-  const dotScale = playW / 520;
-  for (const dot of layoutPlayDots(spot.playYardLines ?? [])) {
-    const cx = xAt(dot.pct) + dot.x * dotScale;
-    const cy = grassY + grassH / 2 + dot.y * dotScale;
-    chain += `<circle cx="${cx}" cy="${cy}" r="7" fill="${possColor}" stroke="#ffffff" stroke-width="1.6"/>`;
+  const midY = grassY + grassH / 2;
+  let drive = "";
+  if (marks.capsule) {
+    const x = xAt(marks.capsule.leftPct);
+    const width = Math.max((marks.capsule.widthPct / 100) * playW, 18);
+    drive += `<rect x="${x}" y="${midY - 6}" width="${width}" height="12" rx="6" fill="url(#driveCapsule)" stroke="rgba(255,255,255,0.95)" stroke-width="1.1"/>`;
   }
   if (marks.firstDownPct != null) {
     const x = xAt(marks.firstDownPct);
-    chain += `<line x1="${x}" y1="${grassY}" x2="${x}" y2="${grassY + grassH}" stroke="#ffe500" stroke-width="5"/>`;
+    drive += `<line x1="${x}" y1="${midY - 16}" x2="${x}" y2="${midY + 16}" stroke="#ffe500" stroke-width="3" stroke-linecap="round"/>`;
   }
-  if (marks.ballPct != null) {
-    const x = xAt(marks.ballPct);
-    chain += `<line x1="${x}" y1="${grassY + grassH / 2 - 36}" x2="${x}" y2="${grassY + grassH / 2 + 36}" stroke="#fcd34d" stroke-width="5"/>`;
-  }
-
-  let drive = "";
-  if (marks.driveStartPct != null) {
-    const x = xAt(marks.driveStartPct);
-    drive = `
-      <line x1="${x}" y1="${grassY + 10}" x2="${x}" y2="${grassY + grassH - 10}" stroke="#ffffff" stroke-width="2" stroke-dasharray="8 7" stroke-opacity="0.9"/>
-      <rect x="${x - 6}" y="${grassY + 12}" width="12" height="12" fill="#ffffff" transform="rotate(45 ${x} ${grassY + 18})"/>
-    `;
+  if (marks.ballPct != null && (marks.homeHasBall || marks.awayHasBall || spot.yardLine != null)) {
+    drive += circularLosFootball(xAt(marks.ballPct), midY, 11);
   }
 
   const mid = card.home.logoHref
     ? logoImage(card.home.logoHref, playX + playW / 2 - 36, grassY + grassH / 2 - 36, 72, 72, 0.38)
     : "";
-
-  let ball = "";
-  if (marks.ballPct != null && (marks.homeHasBall || marks.awayHasBall || spot.yardLine != null)) {
-    const rawX = xAt(marks.ballPct);
-    const pad = 52;
-    const x = Math.max(playX + pad, Math.min(playX + playW - pad, rawX));
-    const y = grassY + grassH / 2;
-    const possLogo = marks.homeHasBall ? card.home.logoHref : marks.awayHasBall ? card.away.logoHref : null;
-    const arrow = attackArrow(marks.facingRight, marks.facingLeft, possColor);
-    if (possLogo) {
-      ball = `<g transform="translate(${x} ${y})">${arrow}${logoImage(possLogo, -24, -24, 48, 48)}</g>`;
-    } else {
-      ball = `<g transform="translate(${x} ${y})">${placedFootball(0, 0, marks.facingRight || !marks.facingLeft)}${arrow}</g>`;
-    }
-  }
 
   const last = spot.lastPlayText
     ? textEl(clipText(spot.lastPlayText, 88), panelX + panelW / 2, panelY + panelH - 14, {
@@ -368,9 +323,7 @@ function footballPanel(card: HeatAlertCard, panelX: number, panelY: number, pane
       ${endZone(grassX + grassW - endW, card.home.abbrev, homeColor, card.home.logoHref, 90)}
       ${ticks}
       ${mid}
-      ${chain}
       ${drive}
-      ${ball}
     </g>
     ${last}
   `;
@@ -645,6 +598,15 @@ export function renderHeatAlertSvg(card: HeatAlertCard): string {
       <stop offset="0" stop-color="#1a5c34"/>
       <stop offset="1" stop-color="#0d3d22"/>
     </linearGradient>
+    <linearGradient id="driveCapsule" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#dfe6ef" stop-opacity="0.88"/>
+    </linearGradient>
+    <radialGradient id="losBall" cx="35%" cy="32%" r="68%">
+      <stop offset="0" stop-color="#f7f1e6"/>
+      <stop offset="55%" stop-color="#c4a574"/>
+      <stop offset="100%" stop-color="#6b4520"/>
+    </radialGradient>
     <radialGradient id="awayWash" cx="18%" cy="22%" r="58%">
       <stop offset="0" stop-color="${card.away.color}" stop-opacity="0.5"/>
       <stop offset="72%" stop-color="${card.away.color}" stop-opacity="0"/>

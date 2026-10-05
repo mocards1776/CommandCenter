@@ -38,9 +38,10 @@ export default function HeatAlertPreviewPage() {
         <p className="label-caps">Sports</p>
         <h1 className="text-cream text-2xl">Heat alert photo</h1>
         <p className="text-chalk text-[13px] leading-relaxed">
-          This is the drawing Telegram receives: scoreboard, a compact field, the live
-          win-probability chart, and Apple-style team stats from the live game. The heat
-          reason stays in the caption. Telegram adds Open game and RUWT board buttons.
+          This is the drawing Telegram receives: scoreboard, a compact field with the
+          Apple Sports drive capsule, the live win-probability chart, and Apple-style
+          team stats from the live game. The heat reason stays in the caption. Telegram
+          adds Open game and RUWT board buttons.
         </p>
       </header>
       <form
