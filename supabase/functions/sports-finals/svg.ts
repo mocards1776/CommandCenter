@@ -228,15 +228,27 @@ function text(
   return `<text x="${x}" y="${y}" fill="${opts.fill}" font-size="${opts.size}" font-weight="${weight}" text-anchor="${anchor}"${spacing}>${esc(value)}</text>`;
 }
 
-function logo(side: FinalSide, x: number, y: number, size: number, paint: string, faded = false): string {
+function logo(
+  side: FinalSide,
+  x: number,
+  y: number,
+  size: number,
+  paint: string,
+  faded = false,
+  wash = false,
+): string {
   const cx = x + size / 2;
   const cy = y + size / 2;
-  const inner = side.logoData
+  const disc = wash
+    ? `<circle cx="${cx}" cy="${cy}" r="${(size / 2 + 6).toFixed(1)}" fill="${paint}" opacity="0.18"/>`
+    : "";
+  const mark = side.logoData
     ? `<image href="${side.logoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"/>`
     : [
         `<circle cx="${cx}" cy="${cy}" r="${size / 2 - 3}" fill="none" stroke="${paint}" stroke-width="4"/>`,
         text(side.abbrev, cx, cy + 9, { size: 26, fill: paint, anchor: "middle", weight: 700 }),
       ].join("");
+  const inner = `${disc}${mark}`;
   return faded ? `<g opacity="0.38">${inner}</g>` : inner;
 }
 
@@ -248,14 +260,15 @@ function linescore(card: FinalCard, y: number, awayPaint: string, homePaint: str
   const periods = card.periods;
   const rhe = card.away.hits != null || card.home.hits != null || card.away.errors != null || card.home.errors != null;
   const extras = rhe ? (["H", "E"] as const) : [];
-  const height = 118;
+  const compact = card.sport === "mlb" && card.playoff;
+  const height = compact ? 108 : 118;
   const x = M;
   const w = W - M * 2;
   const cols = periods.length + 1 + extras.length;
   const teamW = 108;
   const colW = (w - 32 - teamW) / cols;
-  const headerY = y + 34;
-  const rowY = [y + 68, y + 100];
+  const headerY = y + (compact ? 30 : 34);
+  const rowY = compact ? [y + 62, y + 92] : [y + 68, y + 100];
   const paints = [awayPaint, homePaint];
   const sides = [card.away, card.home];
   const labels = periods.map((label, i) =>
@@ -849,7 +862,7 @@ function peopleBlock(
 
 function performersHeight(rows: FinalLeader[]): number {
   if (!rows.length) return 0;
-  return 128;
+  return 104;
 }
 
 function performersBlock(
@@ -863,14 +876,14 @@ function performersBlock(
 ): string {
   const inner = w - CARD_IN * 2;
   const colW = inner / Math.max(rows.length, 1);
-  const parts = [sectionTitle("Key performers", x + CARD_IN, y + 32)];
+  const parts = [sectionTitle("Key performers", x + CARD_IN, y + 28)];
   rows.forEach((row, i) => {
     const cx = x + CARD_IN + colW * i;
     const paint = row.teamAbbrev === card.away.abbrev ? awayPaint : homePaint;
-    parts.push(playerPhoto(row.photoData, cx, y + 48, 44, row.name));
-    parts.push(text(row.name, cx + 54, y + 68, { size: 18, fill: "#f7f4ee", weight: 700 }));
-    parts.push(text(row.line || row.groupLabel, cx + 54, y + 90, { size: 15, fill: paint, weight: 600 }));
-    parts.push(text(row.teamAbbrev, cx + 54, y + 110, { size: 13, fill: "#a8b0c2", weight: 700, spacing: 0.6 }));
+    parts.push(playerPhoto(row.photoData, cx, y + 42, 40, row.name));
+    parts.push(text(row.name, cx + 50, y + 60, { size: 17, fill: "#f7f4ee", weight: 700 }));
+    parts.push(text(row.line || row.groupLabel, cx + 50, y + 80, { size: 14, fill: paint, weight: 600 }));
+    parts.push(text(row.teamAbbrev, cx + 50, y + 98, { size: 12, fill: "#a8b0c2", weight: 700, spacing: 0.6 }));
   });
   return parts.join("");
 }
@@ -908,7 +921,121 @@ function seriesGameLine(game: SeriesGame): { result: string; site: string } {
 
 function seriesScheduleHeight(games: SeriesGame[]): number {
   if (!games.length) return 0;
-  return 118;
+  return 90;
+}
+
+function seriesWinsNeeded(bestOf: string | null | undefined): number | null {
+  const n = Number((bestOf ?? "").match(/Best of (\d+)/i)?.[1]);
+  if (!Number.isFinite(n) || n < 3) return null;
+  return Math.ceil(n / 2);
+}
+
+function countSeriesWins(card: FinalCard): { away: number; home: number } {
+  let away = 0;
+  let home = 0;
+  for (const game of card.seriesGames ?? []) {
+    if (game.winnerAbbrev === card.away.abbrev) away += 1;
+    else if (game.winnerAbbrev === card.home.abbrev) home += 1;
+  }
+  return { away, home };
+}
+
+function seriesPips(cx: number, y: number, filled: number, total: number, paint: string): string {
+  const gap = 16;
+  const r = 5;
+  const start = cx - ((total - 1) * gap) / 2;
+  return Array.from({ length: total }, (_, i) => {
+    const x = start + i * gap;
+    const on = i < filled;
+    return `<circle cx="${x.toFixed(1)}" cy="${y}" r="${r}" fill="${on ? paint : "rgba(247,244,238,0.08)"}" stroke="${on ? paint : "rgba(247,244,238,0.3)"}" stroke-width="1.4"/>`;
+  }).join("");
+}
+
+function seriesHeroHeight(card: FinalCard): number {
+  if (!(card.seriesStanding || card.seriesLine)) return 0;
+  const needed = seriesWinsNeeded(card.seriesBestOf);
+  const hasPips = Boolean(needed && (card.seriesGames?.length ?? 0));
+  const hasMeta = Boolean(card.seriesBestOf || card.seriesGameLabel);
+  return 34 + (hasMeta ? 28 : 0) + (hasPips ? 20 : 0);
+}
+
+function seriesHeroBlock(card: FinalCard, y: number, awayPaint: string, homePaint: string): string {
+  const standing = card.seriesStanding || card.seriesLine || "";
+  const parts = [
+    text(standing, W / 2, y + 6, {
+      size: 30,
+      fill: "#f7f4ee",
+      anchor: "middle",
+      weight: 700,
+    }),
+  ];
+  let cursor = y + 34;
+  if (card.seriesBestOf) {
+    const pillW = Math.max(98, card.seriesBestOf.length * 9.4 + 26);
+    const game = card.seriesGameLabel;
+    const groupW = pillW + (game ? game.length * 8.6 + 22 : 0);
+    const left = W / 2 - groupW / 2;
+    parts.push(
+      `<rect x="${left.toFixed(1)}" y="${cursor - 16}" width="${pillW.toFixed(1)}" height="26" rx="8" fill="rgba(247,244,238,0.10)" stroke="rgba(247,244,238,0.34)"/>`,
+    );
+    parts.push(
+      text(card.seriesBestOf, left + pillW / 2, cursor + 3, {
+        size: 14,
+        fill: "#f7f4ee",
+        anchor: "middle",
+        weight: 700,
+        spacing: 0.7,
+      }),
+    );
+    if (game) {
+      parts.push(
+        text(game, left + pillW + 14, cursor + 3, {
+          size: 18,
+          fill: "#d5dae6",
+          anchor: "start",
+          weight: 700,
+          spacing: 0.35,
+        }),
+      );
+    }
+    cursor += 28;
+  } else if (card.seriesGameLabel) {
+    parts.push(
+      text(card.seriesGameLabel, W / 2, cursor + 2, {
+        size: 18,
+        fill: "#d5dae6",
+        anchor: "middle",
+        weight: 700,
+        spacing: 0.5,
+      }),
+    );
+    cursor += 24;
+  }
+  const needed = seriesWinsNeeded(card.seriesBestOf);
+  if (needed && (card.seriesGames?.length ?? 0)) {
+    const wins = countSeriesWins(card);
+    parts.push(
+      text(card.away.abbrev, W / 2 - 108, cursor + 10, {
+        size: 12,
+        fill: awayPaint,
+        anchor: "end",
+        weight: 700,
+        spacing: 0.6,
+      }),
+    );
+    parts.push(seriesPips(W / 2 - 58, cursor + 6, wins.away, needed, awayPaint));
+    parts.push(seriesPips(W / 2 + 58, cursor + 6, wins.home, needed, homePaint));
+    parts.push(
+      text(card.home.abbrev, W / 2 + 108, cursor + 10, {
+        size: 12,
+        fill: homePaint,
+        anchor: "start",
+        weight: 700,
+        spacing: 0.6,
+      }),
+    );
+  }
+  return parts.join("");
 }
 
 function seriesScheduleBlock(
@@ -919,64 +1046,67 @@ function seriesScheduleBlock(
   awayPaint: string,
   homePaint: string,
   awayAbbrev: string,
+  bestOf?: string | null,
 ): string {
   const inner = w - CARD_IN * 2;
   const colW = inner / Math.max(games.length, 1);
-  const parts = [sectionTitle("Series", x + CARD_IN, y + 32)];
+  const title = bestOf ? `Series · ${bestOf}` : "Series";
+  const parts = [sectionTitle(title, x + CARD_IN, y + 24)];
   games.forEach((game, i) => {
     const cx = x + CARD_IN + colW * i + colW / 2;
-    const boxX = x + CARD_IN + colW * i + 4;
-    const boxW = colW - 8;
+    const boxX = x + CARD_IN + colW * i + 3;
+    const boxW = colW - 6;
     const paint = game.winnerAbbrev
       ? game.winnerAbbrev === awayAbbrev
         ? awayPaint
         : homePaint
       : "#8b93a7";
     const { result, site } = seriesGameLine(game);
-    if (game.current) {
-      parts.push(
-        `<rect x="${boxX}" y="${y + 44}" width="${boxW}" height="64" rx="10" fill="rgba(247,244,238,0.08)" stroke="#f7f4ee" stroke-opacity="0.35"/>`,
-      );
+    parts.push(
+      `<rect x="${boxX}" y="${y + 36}" width="${boxW}" height="48" rx="10" fill="${game.current ? "rgba(247,244,238,0.08)" : "rgba(255,255,255,0.03)"}" stroke="${game.current ? "#f7f4ee" : "rgba(255,255,255,0.08)"}" stroke-opacity="${game.current ? 0.38 : 1}"/>`,
+    );
+    if (game.winnerAbbrev) {
+      parts.push(`<rect x="${boxX + 8}" y="${y + 36}" width="${boxW - 16}" height="3" rx="1.5" fill="${paint}"/>`);
     }
     parts.push(
-      text(`G${game.gameNumber}`, cx, y + 64, {
-        size: 13,
+      text(`G${game.gameNumber}`, cx, y + 52, {
+        size: 11,
         fill: game.current ? "#f7f4ee" : "#8b93a7",
         anchor: "middle",
         weight: 700,
         spacing: 0.8,
       }),
     );
-    parts.push(text(result, cx, y + 86, { size: 16, fill: paint, anchor: "middle", weight: 700 }));
+    parts.push(text(result, cx, y + 68, { size: 14, fill: paint, anchor: "middle", weight: 700 }));
     const third = game.final ? `${site} · ${seriesWhen(game.date, true)}` : site;
-    parts.push(text(third, cx, y + 104, { size: 13, fill: "#c5cce0", anchor: "middle", weight: 500 }));
+    parts.push(text(third, cx, y + 82, { size: 11, fill: "#c5cce0", anchor: "middle", weight: 500 }));
   });
   return parts.join("");
 }
 
-const MLB_ROW_H = 22;
+const MLB_ROW_H = 20;
 
 function mlbBoxHeight(box: MlbBox): number {
   const bat = Math.max(box.batting.away.rows.length, box.batting.home.rows.length);
   const pit = Math.max(box.pitching.away.rows.length, box.pitching.home.rows.length);
-  const header = 64;
-  return header + (bat + 1) * MLB_ROW_H + 28 + (pit + 1) * MLB_ROW_H + 12;
+  const header = 54;
+  return header + (bat + 1) * MLB_ROW_H + 22 + (pit + 1) * MLB_ROW_H + 8;
 }
 
 function mlbSideTable(side: MlbBoxSide, x: number, y: number, w: number, paint: string, title: string): string {
   const cols = side.labels;
-  const nameW = Math.max(118, w * 0.34);
+  const nameW = Math.max(112, w * 0.34);
   const colW = (w - nameW) / Math.max(cols.length, 1);
   const parts = [
-    text(title, x, y, { size: 14, fill: paint, weight: 700, spacing: 0.6 }),
-    text(side.abbrev, x + w, y, { size: 14, fill: "#8b93a7", anchor: "end", weight: 700 }),
+    text(title, x, y, { size: 13, fill: paint, weight: 700, spacing: 0.6 }),
+    text(side.abbrev, x + w, y, { size: 13, fill: "#8b93a7", anchor: "end", weight: 700 }),
   ];
-  const headY = y + 20;
-  parts.push(text("Player", x, headY, { size: 12, fill: "#8b93a7", weight: 700 }));
+  const headY = y + 18;
+  parts.push(text("Player", x, headY, { size: 11, fill: "#8b93a7", weight: 700 }));
   cols.forEach((label, i) => {
     parts.push(
       text(label, x + nameW + colW * i + colW / 2, headY, {
-        size: 12,
+        size: 11,
         fill: "#8b93a7",
         anchor: "middle",
         weight: 700,
@@ -986,11 +1116,11 @@ function mlbSideTable(side: MlbBoxSide, x: number, y: number, w: number, paint: 
   side.rows.forEach((row, r) => {
     const ry = headY + MLB_ROW_H + r * MLB_ROW_H;
     const label = row.pos ? `${row.name}, ${row.pos}` : row.name;
-    parts.push(text(label.length > 18 ? row.name : label, x, ry, { size: 14, fill: "#f4f0e6", weight: 500 }));
+    parts.push(text(label.length > 18 ? row.name : label, x, ry, { size: 13, fill: "#f4f0e6", weight: 500 }));
     row.cells.forEach((cell, i) => {
       parts.push(
         text(cell, x + nameW + colW * i + colW / 2, ry, {
-          size: 15,
+          size: 14,
           fill: "#d5dae6",
           anchor: "middle",
           weight: 500,
@@ -1003,16 +1133,16 @@ function mlbSideTable(side: MlbBoxSide, x: number, y: number, w: number, paint: 
 
 function mlbBoxBlock(box: MlbBox, x: number, y: number, w: number, awayPaint: string, homePaint: string): string {
   const half = (w - GAP) / 2;
-  const batH = 32 + (Math.max(box.batting.away.rows.length, box.batting.home.rows.length) + 1) * MLB_ROW_H;
+  const batH = 28 + (Math.max(box.batting.away.rows.length, box.batting.home.rows.length) + 1) * MLB_ROW_H;
   const parts = [
-    sectionTitle("Box score", x + CARD_IN, y + 34),
-    mlbSideTable(box.batting.away, x + CARD_IN, y + 56, half - CARD_IN, awayPaint, "Batting"),
-    mlbSideTable(box.batting.home, x + CARD_IN + half + GAP, y + 56, half - CARD_IN, homePaint, "Batting"),
-    mlbSideTable(box.pitching.away, x + CARD_IN, y + 56 + batH, half - CARD_IN, awayPaint, "Pitching"),
+    sectionTitle("Box score", x + CARD_IN, y + 28),
+    mlbSideTable(box.batting.away, x + CARD_IN, y + 48, half - CARD_IN, awayPaint, "Batting"),
+    mlbSideTable(box.batting.home, x + CARD_IN + half + GAP, y + 48, half - CARD_IN, homePaint, "Batting"),
+    mlbSideTable(box.pitching.away, x + CARD_IN, y + 48 + batH, half - CARD_IN, awayPaint, "Pitching"),
     mlbSideTable(
       box.pitching.home,
       x + CARD_IN + half + GAP,
-      y + 56 + batH,
+      y + 48 + batH,
       half - CARD_IN,
       homePaint,
       "Pitching",
@@ -1051,10 +1181,11 @@ export function renderFinalSvg(card: FinalCard): string {
   parts.push(text(meta, W - M, y + 22, { size: 18, fill: "#8b93a7", anchor: "end", weight: 500 }));
   y += 40;
 
-  const logoSize = 124;
+  const playoffMlb = card.sport === "mlb" && card.playoff;
+  const logoSize = playoffMlb ? 112 : 124;
   const logoY = y;
-  parts.push(logo(card.away, M + 8, logoY, logoSize, awayPaint, awayLoses));
-  parts.push(logo(card.home, W - M - 8 - logoSize, logoY, logoSize, homePaint, homeLoses));
+  parts.push(logo(card.away, M + 8, logoY, logoSize, awayPaint, awayLoses, playoffMlb));
+  parts.push(logo(card.home, W - M - 8 - logoSize, logoY, logoSize, homePaint, homeLoses, playoffMlb));
   const scoreY = logoY + 88;
   const awayScore = card.away.score == null ? "–" : String(card.away.score);
   const homeScore = card.home.score == null ? "–" : String(card.home.score);
@@ -1110,16 +1241,9 @@ export function renderFinalSvg(card: FinalCard): string {
     }
     y += 30;
   }
-  if (card.playoff && card.seriesLine) {
-    parts.push(
-      text(card.seriesLine, W / 2, y + 4, {
-        size: 26,
-        fill: "#f7f4ee",
-        anchor: "middle",
-        weight: 700,
-      }),
-    );
-    y += 28;
+  if (card.playoff && (card.seriesStanding || card.seriesLine)) {
+    parts.push(seriesHeroBlock(card, y, awayPaint, homePaint));
+    y += seriesHeroHeight(card);
   } else if (card.away.record || card.home.record) {
     if (card.away.record) {
       parts.push(
@@ -1169,8 +1293,9 @@ export function renderFinalSvg(card: FinalCard): string {
 
   if (hasWp || hasStandings) {
     const standH = hasStandings ? standingsHeight(standings, splitWp, card.sport === "nhl") : 0;
-    const chartH = splitWp ? 214 : 220;
-    const wpH = hasWp ? 56 + chartH + 34 : 0;
+    const slimWp = card.sport === "mlb" && !splitWp;
+    const chartH = splitWp ? 214 : slimWp ? 118 : 220;
+    const wpH = hasWp ? (slimWp ? 42 : 56) + chartH + (slimWp ? 22 : 34) : 0;
     const blockH = Math.max(wpH, standH, splitWp ? 340 : 0);
     if (hasWp) {
       const badge = leaderBadge(card, wpPaints.away, wpPaints.home);
@@ -1178,15 +1303,15 @@ export function renderFinalSvg(card: FinalCard): string {
       const wpW = splitWp ? halfW : fullW;
       const wpX = M;
       parts.push(panel(wpX, y, wpW, blockH));
-      parts.push(sectionTitle("Win probability", wpX + CARD_IN, y + 36));
+      parts.push(sectionTitle("Win probability", wpX + CARD_IN, y + (slimWp ? 30 : 36)));
       if (!splitWp) {
-        parts.push(text("ESPN", wpX + 196, y + 36, { size: 14, fill: "rgba(255,255,255,0.38)", weight: 700, spacing: 1.2 }));
+        parts.push(text("ESPN", wpX + 196, y + (slimWp ? 30 : 36), { size: 14, fill: "rgba(255,255,255,0.38)", weight: 700, spacing: 1.2 }));
       }
       parts.push(
-        `<rect x="${wpX + wpW - CARD_IN - badgeW}" y="${y + 14}" width="${badgeW}" height="32" rx="8" fill="${badge.fill}"/>`,
+        `<rect x="${wpX + wpW - CARD_IN - badgeW}" y="${y + (slimWp ? 10 : 14)}" width="${badgeW}" height="32" rx="8" fill="${badge.fill}"/>`,
       );
       parts.push(
-        text(badge.label, wpX + wpW - CARD_IN - badgeW / 2, y + 36, {
+        text(badge.label, wpX + wpW - CARD_IN - badgeW / 2, y + (slimWp ? 32 : 36), {
           size: 15,
           fill: badge.text,
           anchor: "middle",
@@ -1195,7 +1320,7 @@ export function renderFinalSvg(card: FinalCard): string {
         }),
       );
       const chartX = wpX + CARD_IN;
-      const chartY = y + 50;
+      const chartY = y + (slimWp ? 42 : 50);
       const chartW = wpW - CARD_IN * 2;
       parts.push(
         `<clipPath id="wp"><rect x="${chartX}" y="${chartY}" width="${chartW}" height="${chartH}" rx="14"/></clipPath>`,
@@ -1234,21 +1359,29 @@ export function renderFinalSvg(card: FinalCard): string {
   }
 
   const seriesGames = card.playoff ? card.seriesGames ?? [] : [];
-  if (seriesGames.length) {
-    const schedH = seriesScheduleHeight(seriesGames);
-    parts.push(panel(M, y, fullW, schedH));
-    parts.push(seriesScheduleBlock(seriesGames, M, y, fullW, awayPaint, homePaint, card.away.abbrev));
-    y += schedH + GAP;
-  }
 
   if (hasMlbBox && mlbBox) {
-    let boxH = mlbBoxHeight(mlbBox);
-    const footerH = 46;
-    const used = y + boxH + GAP + footerH;
-    if (used < FINALS_ALERT_TARGET_HEIGHT) boxH += FINALS_ALERT_TARGET_HEIGHT - used;
+    const boxH = mlbBoxHeight(mlbBox);
     parts.push(panel(M, y, fullW, boxH));
     parts.push(mlbBoxBlock(mlbBox, M, y, fullW, awayPaint, homePaint));
     y += boxH + GAP;
+    if (seriesGames.length) {
+      const schedH = seriesScheduleHeight(seriesGames);
+      parts.push(panel(M, y, fullW, schedH));
+      parts.push(
+        seriesScheduleBlock(
+          seriesGames,
+          M,
+          y,
+          fullW,
+          awayPaint,
+          homePaint,
+          card.away.abbrev,
+          card.seriesBestOf,
+        ),
+      );
+      y += schedH + GAP;
+    }
   } else {
     if (hasStars) {
       const starH = starsHeight(card.threeStars);

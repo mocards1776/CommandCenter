@@ -73,6 +73,13 @@ export function formatPlayoffSeriesLine(input: PlayoffSeriesFields): string | nu
   return summary ?? game;
 }
 
+/** ESPN `totalCompetitions` is the series length (5, 7). */
+export function formatBestOf(total: number | null | undefined): string | null {
+  const n = finite(total);
+  if (n == null || n < 3) return null;
+  return `Best of ${n}`;
+}
+
 type Rec = Record<string, unknown>;
 
 function rec(value: unknown): Rec {
@@ -157,9 +164,20 @@ export function seriesGamesFromEspn(series: unknown, currentEventId: string): Se
 export function mlbPlayoffFromSummary(sport: string, body: unknown, comp: unknown): {
   playoff: boolean;
   seriesLine: string | null;
+  seriesStanding: string | null;
+  seriesBestOf: string | null;
+  seriesGameLabel: string | null;
   seriesGames: SeriesGame[];
 } {
-  if (sport !== "mlb") return { playoff: false, seriesLine: null, seriesGames: [] };
+  const empty = {
+    playoff: false,
+    seriesLine: null,
+    seriesStanding: null,
+    seriesBestOf: null,
+    seriesGameLabel: null,
+    seriesGames: [] as SeriesGame[],
+  };
+  if (sport !== "mlb") return empty;
   const raw = rec(body);
   const competition = rec(comp);
   const blobs = seriesBlobs(competition, raw);
@@ -169,14 +187,14 @@ export function mlbPlayoffFromSummary(sport: string, body: unknown, comp: unknow
     (isMlbPostseason(raw) ? blobs.find((row) => str(row.type) === "current" && seriesEventsHydrated(row)) : undefined) ??
     (isMlbPostseason(raw) ? blobs.find((row) => str(row.type) === "current") : undefined);
   const postseason = Boolean(playoffRow) || isMlbPostseason(raw);
-  if (!postseason) return { playoff: false, seriesLine: null, seriesGames: [] };
+  if (!postseason) return empty;
   const series = playoffRow ?? {};
   const wins = arr(series.competitors)
     .map((row) => num(rec(row).wins))
     .filter((n): n is number => n != null);
   const played = wins.reduce((sum, n) => sum + n, 0);
   const currentId = str(rec(raw.header).id) || str(competition.id);
-  const line = formatPlayoffSeriesLine({
+  const fields: PlayoffSeriesFields = {
     playoff: true,
     summary: str(series.summary) || str(series.shortSummary) || null,
     gameNumber: gameNumberFromNote(noteFrom(competition, series)) ?? (played > 0 ? played : null),
@@ -185,6 +203,13 @@ export function mlbPlayoffFromSummary(sport: string, body: unknown, comp: unknow
     wins: wins.length ? Math.max(...wins) : null,
     losses: wins.length >= 2 ? Math.min(...wins) : null,
     isTied: /tied/i.test(str(series.summary)) || (wins.length >= 2 && wins[0] === wins[1] && (wins[0] ?? 0) > 0),
-  });
-  return { playoff: true, seriesLine: line, seriesGames: seriesGamesFromEspn(series, currentId) };
+  };
+  return {
+    playoff: true,
+    seriesLine: formatPlayoffSeriesLine(fields),
+    seriesStanding: polishSeriesSummary(fields.summary) ?? tiedFromCounts(fields),
+    seriesBestOf: formatBestOf(fields.totalGames),
+    seriesGameLabel: gameLabel(fields),
+    seriesGames: seriesGamesFromEspn(series, currentId),
+  };
 }
