@@ -1227,7 +1227,6 @@ assert(
   `news is capped ~6–8, got ${newsPage && newsPage.kind === "sport-front" ? newsPage.articles.length : 0}`,
 );
 
-<<<<<<< HEAD
 assert(sourceStoryId(card({ id: "news-4012345", headline: "x" })) === "4012345", "news- prefix is the ESPN id");
 assert(sourceStoryId(card({ id: "league-4012345", headline: "x" })) === "4012345", "league- prefix is the same id");
 assert(
@@ -1275,7 +1274,7 @@ const draftTwice = dedupeStories([
   }),
 ]);
 assert(draftTwice.length === 1, "the same draft wrap does not run twice");
-=======
+
 assert(
   sportSectionFocuses({ path: "baseball/mlb" }).join() === "front,recaps,news,teams,playoffs,schedule",
   "regular-season MLB keeps standings and the bracket at the back",
@@ -1306,7 +1305,6 @@ assert(
 );
 const mlbPostFront = mlbPost.pages.find((p) => p.kind === "sport-front" && p.section === "MLB");
 assert(mlbPostFront?.kind === "sport-front" && mlbPostFront.focus === "front", "October MLB still opens on a front");
->>>>>>> b60ccd8 (Times: sport sections open on a real front; MLB playoff desks.)
 
 const coming = sortComingUp([
   { id: "mizzou-bb", when: "Tue, Nov 3", startIso: "2026-11-03T05:00:00Z" },

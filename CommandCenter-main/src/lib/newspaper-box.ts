@@ -91,17 +91,27 @@ export type SectionBoard = {
   priorLabel?: string | null;
 };
 
+function editionYmd(edition: string): string {
+  return /^(\d{4}-\d{2}-\d{2})/.exec(edition)?.[1] ?? edition;
+}
+
 function shiftDay(day: string, delta: number): string {
-  const d = new Date(`${day}T12:00:00Z`);
+  const d = new Date(`${editionYmd(day)}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + delta);
   return d.toISOString().slice(0, 10);
 }
 
 async function getJson<T>(url: string): Promise<T | null> {
   try {
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
+    const ctl = new AbortController();
+    const t = globalThis.setTimeout(() => ctl.abort(), 12_000);
+    try {
+      const res = await fetch(url, { headers: { Accept: "application/json" }, signal: ctl.signal });
+      if (!res.ok) return null;
+      return (await res.json()) as T;
+    } finally {
+      globalThis.clearTimeout(t);
+    }
   } catch {
     return null;
   }
@@ -1370,17 +1380,28 @@ function isCfbScheduleRow(game: BoxGame): boolean {
  * finals yet, last week.
  */
 export async function fetchSectionBoard(path: string, edition: string): Promise<SectionBoard> {
-  const newsDay = editionNewsDay(edition);
-  const tomorrow = shiftDay(edition, 1);
+  const day = editionYmd(edition);
+  const newsDay = editionNewsDay(day);
+  const tomorrow = shiftDay(day, 1);
   if (path === "baseball/mlb") {
     const [last, today, next, after] = await Promise.all([
       fetchMlbBoxDay(newsDay),
-      fetchMlbBoxDay(edition),
+      fetchMlbBoxDay(day),
       fetchMlbBoxDay(tomorrow),
-      fetchMlbBoxDay(shiftDay(edition, 2)),
+      fetchMlbBoxDay(shiftDay(day, 2)),
     ]);
+    let results = [...last.filter((g) => g.final), ...today.filter((g) => g.final || g.live)].sort(byStart);
+    // Off days (a playoff Sunday) still need a scores rail — walk back two nights.
+    if (!results.length) {
+      const older = await Promise.all([shiftDay(newsDay, -1), shiftDay(newsDay, -2)].map(fetchMlbBoxDay));
+      results = older.flat().filter((g) => g.final).sort(byStart);
+    }
+    if (!results.length) {
+      const espn = await espnBoard(path, `&dates=${newsDay.replace(/-/g, "")}`);
+      results = boardGames(path, espn, newsDay).filter((g) => g.final || g.live).sort(byStart);
+    }
     return {
-      results: [...last.filter((g) => g.final), ...today.filter((g) => g.final || g.live)].sort(byStart),
+      results,
       slate: uniqueGames([...today.filter((g) => !g.final), ...next, ...after]).sort(byDayThenStart),
     };
   }
@@ -1389,14 +1410,14 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
     const current = await espnBoard(path, "");
     const week = current?.week?.number;
     const seasonType = current?.season?.type ?? 2;
-    const games = boardGames(path, current, edition);
+    const games = boardGames(path, current, day);
     const prev =
       week && week > 1 ? await espnBoard(path, `&week=${week - 1}&seasontype=${seasonType}`) : null;
     const prior = prev ? boardGames(path, prev, newsDay).filter((g) => g.final) : [];
     let upcoming = games.filter((g) => !g.final);
     if (college && !upcoming.length && week) {
       const next = await espnBoard(path, `&week=${week + 1}&seasontype=${seasonType}`);
-      upcoming = next ? boardGames(path, next, edition).filter((g) => !g.final) : [];
+      upcoming = next ? boardGames(path, next, day).filter((g) => !g.final) : [];
     }
     const played = games.filter((g) => g.final || g.live);
     const results = uniqueGames(played.length ? played : college ? prior : played).sort(byStart);
@@ -1415,17 +1436,17 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
     // Clubs play twice a week at most; a single night is usually empty.
     // ESPN's soccer board ignores date ranges, so walk back a day at a time;
     // the undated board already shows the next matchday.
-    const days = Array.from({ length: 14 }, (_, i) => shiftDay(edition, -i));
+    const days = Array.from({ length: 14 }, (_, i) => shiftDay(day, -i));
     const [ahead, ...back] = await Promise.all([
       espnBoard(path, ""),
       ...days.map((d) => espnBoard(path, `&dates=${ymd(d)}`)),
     ]);
     const past = uniqueGames(back.flatMap((board, i) => boardGames(path, board, days[i]!)));
-    const first = boardGames(path, ahead, edition).filter((g) => !g.final && !g.live);
+    const first = boardGames(path, ahead, day).filter((g) => !g.final && !g.live);
     // The undated board stops at the matchday's first date; read the rest of the round.
     const firstDay = first.map((g) => g.startIso ?? "").filter(Boolean).sort()[0];
     const restDays = firstDay
-      ? [1, 2, 3].map((n) => shiftDay(espnDayOf(firstDay, edition), n))
+      ? [1, 2, 3].map((n) => shiftDay(espnDayOf(firstDay, day), n))
       : [];
     const rest = await Promise.all(restDays.map((d) => espnBoard(path, `&dates=${ymd(d)}`)));
     const round = rest.flatMap((board, i) => boardGames(path, board, restDays[i]!));
@@ -1436,10 +1457,10 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
   }
   const [last, today, next] = await Promise.all([
     espnBoard(path, `&dates=${ymd(newsDay)}`),
-    espnBoard(path, `&dates=${ymd(edition)}`),
+    espnBoard(path, `&dates=${ymd(day)}`),
     espnBoard(path, `&dates=${ymd(tomorrow)}`),
   ]);
-  const todays = boardGames(path, today, edition);
+  const todays = boardGames(path, today, day);
   return {
     results: uniqueGames([
       ...boardGames(path, last, newsDay).filter((g) => g.final),

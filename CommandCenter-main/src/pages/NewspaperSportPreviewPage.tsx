@@ -9,7 +9,9 @@ import {
   fetchSectionBoard,
   type BoxGame,
   type LeagueLeaderGroup,
+  type SectionBoard,
 } from "@/lib/newspaper-box";
+import { newspaperEspnGet } from "@/lib/newspaper-espn";
 import { editionNewsDay, pressEdition } from "@/lib/newspaper";
 
 /**
@@ -22,33 +24,49 @@ export default function NewspaperSportPreviewPage() {
   const press = pressEdition();
   const mlbBoard = useQuery({
     queryKey: ["tt-sport-preview", "mlb-board", press.day],
-    queryFn: () => fetchSectionBoard("baseball/mlb", press.id),
+    queryFn: () => fetchSectionBoard("baseball/mlb", press.day),
     staleTime: 5 * 60_000,
+    enabled: page === "mlb-front",
   });
   const nflBoard = useQuery({
     queryKey: ["tt-sport-preview", "nfl-board", press.day],
-    queryFn: () => fetchSectionBoard("football/nfl", press.id),
+    queryFn: () => fetchSectionBoard("football/nfl", press.day),
     staleTime: 5 * 60_000,
+    enabled: page === "nfl-front",
+  });
+  const mlbNews = useQuery({
+    queryKey: ["tt-sport-preview", "mlb-news"],
+    queryFn: () => fetchPreviewNews("baseball/mlb"),
+    staleTime: 5 * 60_000,
+    enabled: page === "mlb-front",
+  });
+  const nflNews = useQuery({
+    queryKey: ["tt-sport-preview", "nfl-news"],
+    queryFn: () => fetchPreviewNews("football/nfl"),
+    staleTime: 5 * 60_000,
+    enabled: page === "nfl-front",
   });
   const mlbLeaders = useQuery({
     queryKey: ["tt-sport-preview", "mlb-leaders"],
     queryFn: () => fetchLeagueLeaders("baseball/mlb"),
     staleTime: 5 * 60_000,
+    enabled: page === "mlb-leaders",
   });
   const playoffs = useQuery({
     queryKey: ["tt-sport-preview", "mlb-playoffs"],
     queryFn: () => fetchMlbPlayoffTree(),
     staleTime: 5 * 60_000,
+    enabled: page === "mlb-playoffs",
   });
 
   const ready =
     page === "mlb-front"
-      ? Boolean(mlbBoard.data)
+      ? mlbBoard.isFetched
       : page === "nfl-front"
-        ? Boolean(nflBoard.data)
+        ? nflBoard.isFetched
         : page === "mlb-leaders"
-          ? Boolean(mlbLeaders.data)
-          : Boolean(playoffs.data);
+          ? mlbLeaders.isFetched
+          : playoffs.isFetched;
 
   return (
     <div className="newspaper-root wsj-shell tt-watch-preview" data-sport-preview={page} data-ready={ready ? "1" : "0"}>
@@ -83,14 +101,16 @@ export default function NewspaperSportPreviewPage() {
               <FrontPreview
                 code="NFL"
                 title="National Football League"
-                board={nflBoard.data?.results ?? nflBoard.data?.prior ?? []}
+                games={boardFinals(nflBoard.data)}
+                stories={nflNews.data ?? []}
                 newsDay={editionNewsDay(press.day)}
               />
             ) : (
               <FrontPreview
                 code="MLB"
                 title="Major League Baseball"
-                board={mlbBoard.data?.results ?? []}
+                games={boardFinals(mlbBoard.data)}
+                stories={mlbNews.data ?? []}
                 newsDay={editionNewsDay(press.day)}
               />
             )}
@@ -99,6 +119,33 @@ export default function NewspaperSportPreviewPage() {
       </div>
     </div>
   );
+}
+
+type PreviewStory = { id: string; headline: string; dek: string | null; photo: string | null };
+
+async function fetchPreviewNews(path: string): Promise<PreviewStory[]> {
+  const data = (await newspaperEspnGet(`${path}/news?limit=20`).catch(() => null)) as {
+    articles?: { id?: string; headline?: string; description?: string; images?: { url?: string }[] }[];
+  } | null;
+  return (data?.articles ?? []).flatMap((article, i) => {
+    const headline = article.headline?.trim();
+    if (!headline) return [];
+    return [
+      {
+        id: String(article.id ?? `news-${i}`),
+        headline,
+        dek: article.description ?? null,
+        photo: article.images?.[0]?.url ?? null,
+      },
+    ];
+  });
+}
+
+function boardFinals(board?: SectionBoard): BoxGame[] {
+  if (!board) return [];
+  if (board.results.length) return board.results;
+  if (board.prior?.length) return board.prior;
+  return (board.week ?? []).filter((g) => g.final);
 }
 
 function SportChrome({
@@ -148,26 +195,39 @@ function SportChrome({
 function FrontPreview({
   code,
   title,
-  board,
+  games,
+  stories,
   newsDay,
 }: {
   code: string;
   title: string;
-  board: BoxGame[];
+  games: BoxGame[];
+  stories: PreviewStory[];
   newsDay: string;
 }) {
-  const lead = board.find((g) => g.recap?.photo) ?? board.find((g) => g.recap) ?? board[0] ?? null;
-  const seconds = board.filter((g) => g !== lead && g.recap).slice(0, 3);
+  const lead = games.find((g) => g.recap?.photo) ?? games.find((g) => g.recap) ?? games[0] ?? null;
+  const seconds = [
+    ...games.filter((g) => g !== lead && g.recap).map((g) => ({
+      id: g.id,
+      headline: g.recap?.headline || `${g.away.short} ${g.away.score}, ${g.home.short} ${g.home.score}`,
+      photo: g.recap?.photo ?? null,
+    })),
+    ...stories
+      .filter((s) => s.photo)
+      .map((s) => ({ id: s.id, headline: s.headline, photo: s.photo })),
+  ]
+    .filter((s, i, all) => all.findIndex((x) => x.headline === s.headline) === i)
+    .slice(0, 4);
   return (
     <SportChrome
       code={code}
       title={title}
-      blurb={`${board.length} ${board.length === 1 ? "final" : "finals"} · ${newsDay} board`}
+      blurb={`${games.length} ${games.length === 1 ? "final" : "finals"} · ${newsDay} board`}
       folio={`${code}1`}
     >
       {lead ? (
         <div className="tt-section-front">
-          <div className={`tt-front-grid${seconds.length || board.length ? " with-side" : ""}`}>
+          <div className={`tt-front-grid${seconds.length || games.length ? " with-side" : ""}`}>
             <div className="tt-front-lead">
               {lead.recap?.photo ? (
                 <figure className="wsj-story-art">
@@ -185,22 +245,22 @@ function FrontPreview({
             <div className="tt-front-side">
               {seconds.length ? (
                 <div className="wsj-sport-seconds">
-                  {seconds.map((g) => (
-                    <article key={g.id} className="wsj-story art-top">
-                      {g.recap?.photo ? (
+                  {seconds.map((story) => (
+                    <article key={story.id} className="wsj-story art-top">
+                      {story.photo ? (
                         <div className="wsj-story-art">
-                          <img src={g.recap.photo} alt="" />
+                          <img src={story.photo} alt="" />
                         </div>
                       ) : null}
-                      <h3 className="wsj-hl md">{g.recap?.headline}</h3>
+                      <h3 className="wsj-hl md">{story.headline}</h3>
                     </article>
                   ))}
                 </div>
               ) : null}
-              {board.length ? (
+              {games.length ? (
                 <section className="tt-front-rail" aria-label="Scores">
                   <h3 className="wsj-band-title">Last night’s scores</h3>
-                  <ScoreStrip games={board.slice(0, 10)} />
+                  <ScoreStrip games={games.slice(0, 10)} />
                 </section>
               ) : null}
             </div>
