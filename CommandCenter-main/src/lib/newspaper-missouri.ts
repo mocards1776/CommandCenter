@@ -3,6 +3,7 @@
  * headlines, the statehouse wires, and the latest Missouri Scout update.
  * Parsing and dedupe live here (no network) so they can be tested in node.
  */
+import { stripGettyCredit, truncateAtSentence } from "./newspaper-copy.ts";
 
 export type MoItem = {
   id: string;
@@ -236,10 +237,38 @@ export function newestPublished<T extends { publishedAt: string | null }>(items:
   return best;
 }
 
+/** Article-page date (og/article:published_time or <time>), not a feed-level stamp. */
+export function parseArticlePublished(html: string): string | null {
+  const patterns = [
+    /<meta[^>]+property=["']article:published_time["'][^>]*content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]*property=["']article:published_time["']/i,
+    /<time[^>]+datetime=["']([^"']+)["']/i,
+    /<meta[^>]+property=["']og:updated_time["'][^>]*content=["']([^"']+)["']/i,
+  ];
+  for (const re of patterns) {
+    const raw = re.exec(html)?.[1]?.trim();
+    if (!raw) continue;
+    const t = Date.parse(raw);
+    if (!Number.isNaN(t)) return new Date(t).toISOString();
+  }
+  return null;
+}
+
+/** Prefer the story's own date when the feed stamped an old channel date. */
+export function preferArticleDate(feed: string | null, article: string | null): string | null {
+  if (article && feed) {
+    const a = Date.parse(article);
+    const f = Date.parse(feed);
+    if (!Number.isNaN(a) && !Number.isNaN(f) && Math.abs(a - f) > 14 * 86_400_000) return article;
+  }
+  return article || feed;
+}
+
 export function feedItemToMo(
   item: { title: string; link: string; image: string | null; snippet: string; publishedAt: string | null },
   source: string,
 ): MoItem {
+  const dek = truncateAtSentence(stripGettyCredit(textOf(item.snippet)), 260);
   return {
     id: hashId(normalizeUrl(item.link)),
     source,
@@ -247,7 +276,7 @@ export function feedItemToMo(
     url: item.link,
     kind: "story",
     photo: item.image,
-    dek: textOf(item.snippet).slice(0, 260) || null,
+    dek: dek || null,
     when: item.publishedAt,
   };
 }

@@ -518,9 +518,46 @@ function sourceRank(card: GameWrapCard): number {
 }
 
 function preferStory(next: GameWrapCard, prev: GameWrapCard): boolean {
+  const nextId = sourceStoryId(next);
+  const prevId = sourceStoryId(prev);
+  if (nextId && nextId === prevId && next.leaguePath !== prev.leaguePath) {
+    const nextFit = sectionFitScore(next, next.leaguePath ?? "");
+    const prevFit = sectionFitScore(prev, prev.leaguePath ?? "");
+    if (nextFit !== prevFit) return nextFit > prevFit;
+  }
   const rank = sourceRank(next) - sourceRank(prev);
   if (rank) return rank < 0;
+  if ((next.followed || next.favoriteKey) !== (prev.followed || prev.favoriteKey)) {
+    return Boolean(next.followed || next.favoriteKey);
+  }
   return cleanStoryCopy(next.body).text.length > cleanStoryCopy(prev.body).text.length;
+}
+
+/** ESPN article id shared by `news-123` and `league-123`, or a /id/ link. */
+export function sourceStoryId(card: Pick<GameWrapCard, "id" | "wrapHref" | "gameHref">): string | null {
+  const prefixed = /^(?:news|league|espn)-(\d+)$/.exec(card.id);
+  if (prefixed) return prefixed[1];
+  const href = `${card.wrapHref ?? ""} ${card.gameHref ?? ""}`;
+  return href.match(/\/(?:id|story)\/(\d{5,})/i)?.[1] ?? null;
+}
+
+const PATH_HINTS: [string, RegExp][] = [
+  ["football/college-football", /\b(football|cfb|fbs|quarterback|touchdown|sec football|college football)\b/i],
+  ["basketball/mens-college-basketball", /\b(basketball|hoops|cbb|ncaa tournament|march madness|tip-?off)\b/i],
+  ["football/nfl", /\b(nfl|super bowl|draft)\b/i],
+  ["baseball/mlb", /\b(mlb|world series|pitcher|home run)\b/i],
+  ["hockey/nhl", /\b(nhl|hockey|stanley cup)\b/i],
+  ["basketball/nba", /\b(nba|lakers|celtics)\b/i],
+];
+
+export function sectionFitScore(card: GameWrapCard, path: string): number {
+  const hay = `${card.headline} ${card.dek ?? ""} ${card.body ?? ""}`;
+  const hint = PATH_HINTS.find(([p]) => p === path)?.[1];
+  let score = 0;
+  if (card.leaguePath === path) score += 2;
+  if (hint?.test(hay)) score += 4;
+  if (card.followed || card.favoriteKey) score += 3;
+  return score;
 }
 
 /** One story per event. The better source stays; the rest are spiked. */
@@ -528,7 +565,9 @@ export function dedupeStories(stories: GameWrapCard[]): GameWrapCard[] {
   const kept: GameWrapCard[] = [];
   for (const card of stories) {
     const mine = significantWords(card.headline);
+    const id = sourceStoryId(card);
     const idx = kept.findIndex((prev) => {
+      if (id && sourceStoryId(prev) === id) return true;
       if (card.gameId && prev.gameId && card.gameId === prev.gameId) return true;
       return sameStory(mine, significantWords(prev.headline));
     });

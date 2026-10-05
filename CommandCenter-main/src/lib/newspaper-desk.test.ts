@@ -3,7 +3,17 @@
  * from CommandCenter-main/.
  */
 import { missouriItemInEdition } from "./newspaper.ts";
-import { buildMissouriDesk, combestUrl, dedupeMo, newestPublished, parseCombest, type MoItem } from "./newspaper-missouri.ts";
+import {
+  buildMissouriDesk,
+  combestUrl,
+  dedupeMo,
+  feedItemToMo,
+  newestPublished,
+  parseArticlePublished,
+  parseCombest,
+  preferArticleDate,
+  type MoItem,
+} from "./newspaper-missouri.ts";
 import { nameIndex, namePieces, type Person } from "./newspaper-people.ts";
 import { daysUntil, espnOpener, mlbOpener, openerDate, openerMatchup } from "./newspaper-openers.ts";
 import { isBoilerplateDek, outletFor, storySource } from "./newspaper-source.ts";
@@ -237,5 +247,31 @@ assert(
   `ear forecast reads like the paper: ${earForecast(wx)}`,
 );
 assert(writtenForecast(wx).startsWith("Cloudy, breezy and very warm. High 88. Winds S at 19 mph, gusting to 29."), "written forecast");
+
+assert(
+  parseArticlePublished(
+    `<html><meta property="article:published_time" content="2026-10-05T14:30:00Z"></html>`,
+  ) === "2026-10-05T14:30:00.000Z",
+  "article published_time is read",
+);
+assert(
+  preferArticleDate("2023-08-01T00:00:00Z", "2026-10-05T14:30:00Z") === "2026-10-05T14:30:00Z",
+  "a stale feed-level date loses to the article date",
+);
+assert(
+  preferArticleDate("2026-10-05T12:00:00Z", "2026-10-05T14:30:00Z") === "2026-10-05T14:30:00Z",
+  "same-week dates keep the article stamp",
+);
+const moWire = feedItemToMo(
+  {
+    title: "Jefferson City budget",
+    link: "https://example.com/jc",
+    image: null,
+    snippet: "Lawmakers met at the Capitol (Getty images). The vote is Tuesday.",
+    publishedAt: "2023-08-01T00:00:00Z",
+  },
+  "Missouri Times",
+);
+assert(!/\(Getty/i.test(moWire.dek ?? ""), "Getty credit is stripped from a Missouri dek");
 
 console.log("newspaper-desk ok");

@@ -39,6 +39,7 @@ import {
 } from "@/lib/newspaper";
 import { fetchLeagueArticles, fetchTeamArticles } from "@/lib/newspaper-news";
 import {
+  applyTableStandings,
   boxStoryCard,
   fetchLeagueLeaders,
   fetchSectionBoard,
@@ -51,7 +52,7 @@ import {
   type SectionBoard,
   type StandGroup,
 } from "@/lib/newspaper-box";
-import { cleanStoryCopy, proseParas, tidy } from "@/lib/newspaper-copy";
+import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
 import {
   Face,
   MatchupCard,
@@ -3564,12 +3565,7 @@ function moWhen(iso: string | null): string {
 
 /** Feed snippets stop mid-word; end them on a sentence, or at least a word. */
 function cleanDek(text: string): string {
-  const t = text.replace(/\s+/g, " ").trim();
-  if (/[.!?”"’)]$/.test(t)) return t;
-  const stop = Math.max(t.lastIndexOf(". "), t.lastIndexOf("? "), t.lastIndexOf("! "));
-  if (stop > 120) return t.slice(0, stop + 1);
-  const space = t.lastIndexOf(" ");
-  return `${(space > 40 ? t.slice(0, space) : t).replace(/[,;:\-–—]+$/, "")}…`;
+  return truncateAtSentence(text, 420);
 }
 
 function MoSource({ item }: { item: MoItem }) {
@@ -4277,7 +4273,7 @@ function NewspaperDesk() {
     refetchOnReconnect: false,
   });
 
-  const teams = useMemo(
+  const teamsRaw = useMemo(
     () => buildTeamInfoboxes(teamFavs, teamSnaps.data ?? [], teamDetailsQ.data ?? []),
     [teamFavs, teamSnaps.data, teamDetailsQ.data],
   );
@@ -4323,10 +4319,10 @@ function NewspaperDesk() {
     refetchOnReconnect: false,
   });
 
-  const clubs = useMemo<ClubDesk[]>(
+  const clubsRaw = useMemo<ClubDesk[]>(
     () =>
       // teams already sorted by desk weight (Cardinals / Blues / Mizzou → Lions → Chiefs → soccer).
-      teams.map((team) => {
+      teamsRaw.map((team) => {
         const path = leaguePathFromEspn(team.fav.espnPath);
         const upcoming = (team.detail?.upcoming ?? []).slice(0, 5).map((game) => ({
           id: `${team.fav.key}-${game.id}`,
@@ -4378,10 +4374,10 @@ function NewspaperDesk() {
           upcoming,
         };
       }),
-    [teams],
+    [teamsRaw],
   );
 
-  const sportPaths = useMemo(() => sportPathsOf(teams.map((t) => t.fav)), [teams]);
+  const sportPaths = useMemo(() => sportPathsOf(teamFavs), [teamFavs]);
 
   const leagueNewsQ = useQuery({
     queryKey: [pressId, "tt-league-news", day, sportPaths.join("|")],
@@ -4588,6 +4584,20 @@ function NewspaperDesk() {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+
+  const teams = useMemo(() => {
+    if (!standingsQ.data) return teamsRaw;
+    return buildTeamInfoboxes(
+      teamFavs,
+      applyTableStandings(teamSnaps.data ?? [], standingsQ.data, teamFavs),
+      teamDetailsQ.data ?? [],
+    );
+  }, [teamsRaw, standingsQ.data, teamFavs, teamSnaps.data, teamDetailsQ.data]);
+
+  const clubs = useMemo(() => {
+    const byKey = new Map(teams.map((t) => [t.fav.key, t.snap.standing]));
+    return clubsRaw.map((club) => ({ ...club, standing: byKey.get(club.key) ?? club.standing }));
+  }, [clubsRaw, teams]);
 
   const leadersQ = useQuery({
     queryKey: [pressId, "tt-leaders", day, sportPaths.join("|")],

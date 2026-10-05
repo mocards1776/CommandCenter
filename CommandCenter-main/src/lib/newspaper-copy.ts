@@ -35,16 +35,201 @@ export function killedSource(url: string | null | undefined): boolean {
 const JUNK_CUT =
   /\b(?:more must-reads|related stories|receive daily headlines|kicker:\s*headline|sign up today|recaptcha|all rights reserved|you may also like|recommended for you)\b/i;
 
-/** A module spliced into the story: Athletic's reporter poll, ESPN's link rail. */
-function stripModules(text: string): string {
+/** Decode HTML entities once. `&amp;amp;` stays `&amp;` after one pass. */
+export function decodeNewspaperEntities(text: string): string {
   return text
-    .replace(
-      /\bWE ASKED OUR REPORTERS\b.{0,1400}?(?=\s(?:Now|The|But|If|Asked|He|She|They|In|When|After|Before|It|That|This|So)\b)/i,
-      " ",
-    )
-    .replace(/\bKey links:\s*.+$/i, " ")
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n: string) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;|&#0*39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&[lr]squo;/gi, "’")
+    .replace(/&[lr]dquo;/gi, "”")
+    .replace(/&ndash;/gi, "–")
+    .replace(/&mdash;/gi, "—");
+}
+
+function looksLikeHtml(text: string): boolean {
+  return /<\/?[a-z][\s\S]*>/i.test(text);
+}
+
+function collapseInline(text: string): string {
+  return text.replace(/[^\S\n]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Join `532. 8` / `21. 5%` when the dot belongs to a number. Leave
+ * `ended. 5 players` alone. `above. 500` becomes a batting average.
+ */
+export function joinBrokenDecimals(text: string): string {
+  let out = text.replace(/(\d)\.\s+(\d)/g, "$1.$2");
+  out = out.replace(/\b(above|below|under|over|from|to|than)\.\s+(\d{3})\b/gi, "$1 .$2");
+  return out;
+}
+
+/**
+ * ESPN often files the tagged club as `images[0].name` ("Dallas Cowboys").
+ * That is not a caption of the picture.
+ */
+export function isTeamNameCaption(text: string): boolean {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  if (/[.!?,:;]/.test(t)) return false;
+  const words = t.split(" ");
+  if (words.length > 4) return false;
+  return /^(the\s+)?[A-Za-z.]+(?:\s+[A-Za-z.]+){0,3}$/.test(t);
+}
+
+/** Source caption only. A tagged team name is not the picture's subject. */
+export function newsImageCaption(
+  images: { caption?: string; name?: string; alt?: string }[] | undefined,
+): string | null {
+  const raw = (images?.[0]?.caption ?? "").trim();
+  if (!raw) return null;
+  const cap = tidy(raw);
+  if (!cap || isTeamNameCaption(cap)) return null;
+  return cap;
+}
+
+/** Getty stock slugs that ride along on otherwise usable art. */
+export function stripGettyCredit(text: string): string {
+  return text
+    .replace(/\s*\((?:Getty(?:\s+Images)?|getty images)\)/gi, "")
+    .replace(/^\s*(?:Getty(?:\s+Images)?)\s*$/i, "")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+const BOILERPLATE_LINE =
+  /^(?:-{3,}|_{3,}|\*{3,}|sign up for\b|subscribe:|jump to:|posted in\b|share this:|to read this\b|click here\b|download the app\b|follow us on\b|read more\b|advertisement\b|related stories\b|you may also like\b)/i;
+
+const BOILERPLATE_GETTY = /^\(?getty(?:\s+images)?\)?\.?$/i;
+
+/** Conservative web-chrome lines that should never print. */
+export function isBoilerplateLine(line: string): boolean {
+  const t = line.replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  if (BOILERPLATE_GETTY.test(t)) return true;
+  if (BOILERPLATE_LINE.test(t)) return true;
+  if (/^sign up for\b/i.test(t) && /\balerts?\b/i.test(t)) return true;
+  return false;
+}
+
+export function stripBoilerplateCopy(text: string): string {
+  return text
+    .split(/\n{2,}|\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => !isBoilerplateLine(line))
+    .join("\n\n")
+    .trim();
+}
+
+export function isSubheadBlock(html: string): boolean {
+  const t = html.replace(/\s+/g, " ").trim();
+  if (!t) return false;
+  if (/^<(h[1-6])\b/i.test(t)) return true;
+  if (/^<p\b[^>]*>\s*<(?:strong|b)\b/i.test(t) && /<\/(?:strong|b)>\s*<\/p>$/i.test(t)) {
+    const inner = t.replace(/^<p\b[^>]*>/i, "").replace(/<\/p>$/i, "");
+    return !/<(?:p|div|h[1-6]|ul|ol|li)\b/i.test(inner.replace(/<\/?(?:strong|b|em|i|span|a)\b[^>]*>/gi, ""));
+  }
+  return false;
+}
+
+/**
+ * Article HTML → newspaper text. h2/h3 and strong-only paragraphs stay on
+ * their own line so a subhead is not glued onto the next graf.
+ */
+export function htmlToNewspaperText(html: string): string {
+  if (!html.trim()) return "";
+  let raw = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n");
+  const blocks: string[] = [];
+  const re = /<(p|h[1-6]|li|blockquote|div)\b[^>]*>[\s\S]*?<\/\1>/gi;
+  let match: RegExpExecArray | null;
+  let last = 0;
+  while ((match = re.exec(raw))) {
+    const before = raw.slice(last, match.index);
+    if (before.replace(/<[^>]+>/g, " ").trim()) {
+      blocks.push(before);
+    }
+    blocks.push(match[0]!);
+    last = match.index + match[0]!.length;
+  }
+  if (last < raw.length) blocks.push(raw.slice(last));
+  const paras = (blocks.length ? blocks : [raw])
+    .map((block) => {
+      const text = decodeNewspaperEntities(block.replace(/<[^>]+>/g, " "))
+        .replace(/\s+/g, " ")
+        .trim();
+      return text;
+    })
+    .filter(Boolean);
+  return paras.join("\n\n").trim();
+}
+
+/** Wire copy arrives with link residue: "Raiders ." and "Chiefs ,". */
+export function tidy(text: string): string {
+  return joinBrokenDecimals(
+    decodeNewspaperEntities(stripGettyCredit(text))
+      .replace(/\s+([,;:!?])/g, "$1")
+      .replace(/\s+\.(?!\d)/g, ".")
+      .replace(/(\w)\s+([’'])/g, "$1$2")
+      .replace(/([‘'])\s+(\w)/g, "$1$2")
+      .replace(/(["“])\s+/g, "$1")
+      .replace(/\s+(["”])/g, "$1")
+      .replace(/\(\s+/g, "(")
+      .replace(/\s+\)/g, ")"),
+  )
+    .replace(/[^\S\n]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Cut a blurb at the last full sentence. Abbreviations (No., St., Mr.)
+ * are not sentence ends. Incomplete tails are dropped.
+ */
+export function truncateAtSentence(text: string, max = 260): string {
+  const raw = tidy(text).replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  if (raw.length <= max) {
+    if (/[.!?…]["'”’)]*$/.test(raw)) return raw;
+    const parts = splitNewspaperSentences(raw);
+    if (parts.length >= 2) {
+      const complete = parts.slice(0, -1).join(" ");
+      if (complete.length >= Math.min(40, max / 3)) return complete;
+    }
+    return raw;
+  }
+  const parts = splitNewspaperSentences(raw);
+  let out = "";
+  for (const s of parts) {
+    const next = out ? `${out} ${s}` : s;
+    if (next.length > max) break;
+    out = next;
+  }
+  if (out && /[.!?…]["'”’)]*$/.test(out)) return out;
+  if (out.length >= Math.min(40, max / 3)) return out;
+  const slice = raw.slice(0, max);
+  const space = slice.lastIndexOf(" ");
+  return `${(space > 40 ? slice.slice(0, space) : slice).replace(/[,;:\-–—]+$/, "")}…`;
+}
+
+/** A module spliced into the story: Athletic's reporter poll, ESPN's link rail. */
+function stripModules(text: string): string {
+  return collapseInline(
+    text
+      .replace(
+        /\bWE ASKED OUR REPORTERS\b.{0,1400}?(?=\s(?:Now|The|But|If|Asked|He|She|They|In|When|After|Before|It|That|This|So)\b)/i,
+        " ",
+      )
+      .replace(/\bKey links:\s*.+$/i, " "),
+  );
 }
 
 const BYLINE =
@@ -68,21 +253,48 @@ function stripLeadingMenu(text: string): string {
   return text;
 }
 
+function prepareCopy(text: string | null | undefined): string {
+  let raw = text ?? "";
+  if (!raw.trim()) return "";
+  if (looksLikeHtml(raw)) raw = htmlToNewspaperText(raw);
+  else raw = decodeNewspaperEntities(raw);
+  raw = stripBoilerplateCopy(raw);
+  const paras = raw
+    .split(/\n{2,}/)
+    .map((p) => tidy(p.replace(/\s+/g, " ")))
+    .filter((p) => p && !isBoilerplateLine(p));
+  return paras.join("\n\n");
+}
+
 /**
  * Copy a desk can set: junk tails cut, a leading menu dropped, the author
  * lifted out, and a menu or an empty shell rejected.
  */
 export function cleanStoryCopy(text: string | null | undefined): { author: string | null; text: string } {
-  let raw = (text ?? "").replace(/\s+/g, " ").trim();
+  let raw = prepareCopy(text);
   if (!raw) return { author: null, text: "" };
-  const cut = raw.search(JUNK_CUT);
-  if (cut >= 0) raw = raw.slice(0, cut).trim();
-  raw = stripModules(raw);
-  raw = stripLeadingMenu(raw);
-  const lifted = liftByline(raw);
-  raw = lifted.text;
-  if (!raw || isNavSoup(raw)) return { author: lifted.author, text: "" };
-  return { author: lifted.author, text: raw };
+  const keepBreaks = raw.includes("\n\n");
+  const line = raw.replace(/\s+/g, " ").trim();
+  const cut = line.search(JUNK_CUT);
+  let working = cut >= 0 ? line.slice(0, cut).trim() : line;
+  working = stripModules(working);
+  working = stripLeadingMenu(working);
+  const lifted = liftByline(working);
+  working = lifted.text;
+  if (!working || isNavSoup(working)) return { author: lifted.author, text: "" };
+  if (keepBreaks && cut < 0) {
+    const paras = raw
+      .split(/\n{2,}/)
+      .map((p) => tidy(p))
+      .filter((p) => p && !isBoilerplateLine(p) && !JUNK_CUT.test(p));
+    working = paras.join("\n\n") || working;
+    const again = liftByline(working.replace(/\s+/g, " ").trim());
+    if (again.author) {
+      working = working.replace(BYLINE, "").trim();
+      return { author: again.author, text: collapseInline(working) };
+    }
+  }
+  return { author: lifted.author, text: collapseInline(working) };
 }
 
 const PERIPHERAL =
@@ -111,16 +323,6 @@ export function readableCopy(text: string | null | undefined): string {
   return cleanStoryCopy(text).text;
 }
 
-/** Wire copy arrives with link residue: "Raiders ." and "Chiefs ,". */
-export function tidy(text: string): string {
-  return text
-    .replace(/\s+([,.;:!?])/g, "$1")
-    .replace(/\(\s+/g, "(")
-    .replace(/\s+\)/g, ")")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
 /**
  * Real paragraphs where the wire has them; otherwise group sentences into
  * paragraphs of a few hundred characters so an indent never lands mid-sentence.
@@ -131,7 +333,7 @@ export function proseParas(text: string, max = 60): string[] {
   if (!raw) return [];
   const blocks = raw
     .split(/\n{2,}/)
-    .map((p) => tidy(p.replace(/\s+/g, " ")))
+    .map((p) => tidy(p.replace(/[^\S\n]+/g, " ")))
     .filter(Boolean);
   const out: string[] = [];
   for (const block of blocks) {

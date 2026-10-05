@@ -28,6 +28,7 @@ import {
   isHoldoverGame,
   isPreviewStory,
   MIN_SECTION_PAGES,
+  sourceStoryId,
   staleNamedPackage,
   storyBodyForJump,
   type ClubDesk,
@@ -1063,5 +1064,53 @@ assert(
   newsPage?.kind === "sport-front" && newsPage.articles.length <= 8 && newsPage.articles.length >= 6,
   `news is capped ~6–8, got ${newsPage && newsPage.kind === "sport-front" ? newsPage.articles.length : 0}`,
 );
+
+assert(sourceStoryId(card({ id: "news-4012345", headline: "x" })) === "4012345", "news- prefix is the ESPN id");
+assert(sourceStoryId(card({ id: "league-4012345", headline: "x" })) === "4012345", "league- prefix is the same id");
+assert(
+  sourceStoryId(
+    card({ id: "other", headline: "x", wrapHref: "https://www.espn.com/college-football/story/_/id/4012345/act" }),
+  ) === "4012345",
+  "espn story URL is the source id",
+);
+
+const collegeAct = dedupeStories([
+  card({
+    id: "league-4012345",
+    headline: "Protect College Sports Act heads to the House",
+    body: "Basketball coaches weighed in on the House bill. ".repeat(6),
+    leaguePath: "basketball/mens-college-basketball",
+    wrapHref: "https://www.espn.com/mens-college-basketball/story/_/id/4012345/act",
+  }),
+  card({
+    id: "news-4012345",
+    headline: "Protect College Sports Act heads to the House",
+    body: "Football coaches and SEC programs backed the House bill. ".repeat(8),
+    leaguePath: "football/college-football",
+    favoriteKey: "cfb-mizzou",
+    followed: true,
+    wrapHref: "https://www.espn.com/college-football/story/_/id/4012345/act",
+  }),
+]);
+assert(collegeAct.length === 1, "one ESPN id files once");
+assert(collegeAct[0]?.leaguePath === "football/college-football", "the better-fit section keeps the College Sports Act");
+
+const draftTwice = dedupeStories([
+  card({
+    id: "news-5550001",
+    headline: "2027 NFL draft: Ohio State prospects to watch",
+    body: "A look at the Buckeyes on the board. ".repeat(8),
+    leaguePath: "football/college-football",
+    wrapHref: "https://www.espn.com/college-football/story/_/id/5550001/draft",
+  }),
+  card({
+    id: "league-5550001",
+    headline: "2027 NFL draft: Ohio State prospects to watch",
+    body: "A look at the Buckeyes on the board. ".repeat(8),
+    leaguePath: "football/nfl",
+    wrapHref: "https://www.espn.com/nfl/story/_/id/5550001/draft",
+  }),
+]);
+assert(draftTwice.length === 1, "the same draft wrap does not run twice");
 
 console.log("newspaper-sections ok");

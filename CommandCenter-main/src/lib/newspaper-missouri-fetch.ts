@@ -4,10 +4,13 @@ import {
   combestUrl,
   feedItemToMo,
   newestPublished,
+  parseArticlePublished,
   parseCombest,
+  preferArticleDate,
   type MissouriDesk,
   type MoItem,
 } from "./newspaper-missouri";
+import { stripGettyCredit, truncateAtSentence } from "./newspaper-copy";
 import { fetchRssArticle, fetchRssFeed, type RssFeedItem } from "./rss";
 
 export const MOSCOUT_NATIVE_FEED = "https://moscout.com/daily-updates-1?format=rss";
@@ -122,14 +125,18 @@ export async function enrichMissouriItems(items: MoItem[], count = 6): Promise<M
   const head = items.slice(0, count);
   const enriched = await Promise.all(
     head.map(async (item) => {
-      if (item.photo && item.dek) return item;
+      const feedAge = item.when ? Date.now() - Date.parse(item.when) : 0;
+      const staleStamp = Number.isFinite(feedAge) && feedAge > 14 * 86_400_000;
+      if (item.photo && item.dek && !staleStamp) return item;
       try {
         const article = await fetchRssArticle(item.url);
-        const text = (article.contentText ?? "").replace(/\s+/g, " ").trim();
+        const text = truncateAtSentence(stripGettyCredit((article.contentText ?? "").replace(/\s+/g, " ").trim()), 320);
+        const published = parseArticlePublished(article.contentHtml ?? "");
         return {
           ...item,
           photo: item.photo ?? article.image ?? null,
-          dek: item.dek ?? (text ? text.slice(0, 320) : null),
+          dek: item.dek ?? (text || null),
+          when: preferArticleDate(item.when, published),
         };
       } catch {
         return item;

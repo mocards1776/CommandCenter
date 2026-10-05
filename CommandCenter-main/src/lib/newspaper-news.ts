@@ -7,6 +7,7 @@
  */
 
 import { favoriteDeskWeight, withinEditionHours } from "./newspaper";
+import { htmlToNewspaperText, newsImageCaption, tidy } from "./newspaper-copy";
 import {
   clubMentionNames,
   favoriteTeamHref,
@@ -21,33 +22,30 @@ type NewsCategory = {
   description?: string;
 };
 
+type NewsImage = {
+  url?: string;
+  caption?: string;
+  credit?: string;
+  name?: string;
+  alt?: string;
+};
+
 type NewsArticle = {
   id?: number | string;
   headline?: string;
   description?: string;
   published?: string;
   type?: string;
-  images?: { url?: string }[];
+  images?: NewsImage[];
   links?: { web?: { href?: string } };
   categories?: NewsCategory[];
 };
 
 function stripHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|h[1-6]|li|tr|blockquote)>/gi, "\n\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/\s+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+  return htmlToNewspaperText(html);
 }
+
+export { newsImageCaption } from "./newspaper-copy";
 
 function mentionsClub(fav: SportsFavorite, article: NewsArticle): boolean {
   const teamId = fav.espnPath.split("/").pop() ?? "";
@@ -121,12 +119,12 @@ function toCard(
   body: string,
   listRank?: number,
 ): GameWrapCard | null {
-  const headline = article.headline?.trim() ?? "";
+  const headline = tidy(article.headline?.trim() ?? "");
   const id = String(article.id ?? "");
   if (!headline || !id) return null;
   const path = leaguePathFromEspn(fav.espnPath);
   const href = article.links?.web?.href ?? favoriteTeamHref(fav);
-  const dek = wireCopy(article.description ?? "") || null;
+  const dek = tidy(wireCopy(article.description ?? "")) || null;
   return {
     id: `news-${id}`,
     favoriteKey: fav.key,
@@ -149,7 +147,7 @@ function toCard(
     teamStats: [],
     division: [],
     photo: article.images?.[0]?.url ?? null,
-    caption: fav.name,
+    caption: newsImageCaption(article.images),
     followed: true,
     status: article.type ?? null,
     listRank,
@@ -243,13 +241,13 @@ function toLeagueCard(
   body: string,
   listRank?: number,
 ): GameWrapCard | null {
-  const headline = article.headline?.trim() ?? "";
+  const headline = tidy(article.headline?.trim() ?? "");
   const id = String(article.id ?? "");
   if (!headline || !id) return null;
   const teamCat = (article.categories ?? []).find((cat) => cat.type === "team" && cat.description);
   const teamName = teamCat?.description?.trim() || leagueLabel(path);
   const href = article.links?.web?.href ?? null;
-  const dek = wireCopy(article.description ?? "") || null;
+  const dek = tidy(wireCopy(article.description ?? "")) || null;
   return {
     id: `league-${id}`,
     favoriteKey: "",
@@ -272,7 +270,7 @@ function toLeagueCard(
     teamStats: [],
     division: [],
     photo: article.images?.[0]?.url ?? null,
-    caption: teamName,
+    caption: newsImageCaption(article.images),
     followed: false,
     status: article.type ?? null,
     listRank,

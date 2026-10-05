@@ -15,6 +15,7 @@ import {
   printDate,
   sampleBeezDesk,
   sourceLabel,
+  teamGameNumber,
   wpctLabel,
   type BeezDesk,
 } from "./newspaper-beez.ts";
@@ -202,5 +203,12 @@ for (const press of ["2026-10-05-morning", "2026-10-05-midday", "2026-10-05-even
     `${press}: day, Beez, and guide each appear once`,
   );
 }
+
+assert(teamGameNumber(desk({ last_game: { ...desk().last_game!, game_no: 59 } })) === 4, "league-wide game 59 becomes the club's 4th");
+assert(teamGameNumber(desk({ last_game: { ...desk().last_game!, game_no: 4 } })) === 4, "a real team game number is kept");
+assert(
+  teamGameNumber(desk({ team: { ...desk().team, gp: 0, w: 0, l: 0 }, last_game: null, results: [] })) === null,
+  "no games, no number",
+);
 
 console.log("newspaper-beez ok");
