@@ -15,9 +15,11 @@
 import {
   editionNewsDay,
   favoriteDeskWeight,
+  gameWrapCovers,
   holdoverCovers,
   instantDay,
   isDeskPress,
+  isGameWrapStory,
   isNewsMuted,
   isResultCopy,
   splitStoryCopy,
@@ -27,6 +29,12 @@ import {
 import { cleanStoryCopy, isPeripheralClubStory, killedSource } from "./newspaper-copy.ts";
 import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
+import {
+  isSportFiller,
+  orderSportRecaps,
+  SPORT_NEWS_CAP,
+  storyFitsSection,
+} from "./newspaper-sport-desk.ts";
 import type { MissouriDesk, MoItem } from "./newspaper-missouri";
 import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
 import type { FavoritesBeezPage } from "./newspaper-beez.ts";
@@ -119,7 +127,7 @@ export type FavoritesContinuePage = PageBase & {
   jumps: { card: GameWrapCard; rest: string }[];
 };
 
-/** The viewing guide: today's best games to watch, by RUWT. Last page of Section A, every edition. */
+/** The viewing guide: today's games as a Central-time timetable. Last page of Section A, every edition. */
 export type FavoritesWatchPage = PageBase & {
   kind: "favorites-watch";
 };
@@ -270,6 +278,17 @@ export function isDeskStory(card: GameWrapCard): boolean {
   if (isPeripheralClubStory(card)) return false;
   if (isAthleticCard(card)) return Boolean(card.headline && card.leaguePath);
   if (card.id.startsWith("league-")) return Boolean(card.headline && card.leaguePath);
+  if (isGameWrapStory(card)) {
+    if (
+      card.status &&
+      /final|postponed/i.test(card.status) &&
+      card.scoreLine &&
+      /\d/.test(card.scoreLine)
+    ) {
+      return true;
+    }
+    return cleanStoryCopy(card.body).text.length >= 80;
+  }
   if (!isFavoriteStory(card)) return false;
   if (card.id.startsWith("news-")) return Boolean(card.headline);
   if (cleanStoryCopy(card.body).text.length >= 80) return true;
@@ -336,7 +355,7 @@ export function storyRank(card: GameWrapCard, edition: string): number {
  * one from the rule desk, so these never spend the AI editor's news budget.
  */
 export function isGameWrap(card: GameWrapCard): boolean {
-  return /^(?:wire|recap|recent|wrap)-/.test(card.id);
+  return isGameWrapStory(card);
 }
 
 /** Carried unread game copy. It may run inside; it is not last night and must not open A1. */
@@ -457,8 +476,9 @@ export function staleNamedPackage(card: GameWrapCard, edition: string): boolean 
   return named.some((day) => !allowed.has(day));
 }
 
-/** Last 18 hours before the press. An unread holdover may return for one more edition. */
+/** News stays on the 18-hour clock. Game wraps key off the news-day window. */
 function inEditionWindow(card: GameWrapCard, edition: string): boolean {
+  if (isGameWrap(card)) return gameWrapCovers(card.when, edition, card.leaguePath);
   if (card.holdover) return holdoverCovers(card.when, edition);
   return withinEditionHours(card.when, edition);
 }
@@ -809,11 +829,18 @@ function sportPages(
 } {
   const upcoming = upcomingFor(clubs);
   const sportFolioByStory: Record<string, string> = {};
-  const unique = dedupeStories(stories.filter((card) => !isStalePreview(card, edition)));
+  const unique = dedupeStories(
+    stories.filter(
+      (card) =>
+        !isStalePreview(card, edition) &&
+        storyFitsSection(card, id.path) &&
+        (isGameWrap(card) || !isSportFiller(card)),
+    ),
+  );
   const isMlb = id.path === "baseball/mlb";
   const desk = isDeskPress(edition);
-  // A morning sport section runs the best few long stories, not every wire rewrite.
-  const INSIDE_CAP = 6;
+  // News inside pages stay bounded. Game wraps size the section to the night.
+  const NEWS_INSIDE_CAP = 6;
   // Morning leads with stories. Noon and 5 p.m. open on standings, form, and the slate.
   // League leaders run beside the standings in every edition, whenever the league publishes them.
   const leaders = withLeaders ? (["leaders"] as const) : [];
@@ -822,10 +849,22 @@ function sportPages(
     ? ["news", "opener", "teams", ...leaders, ...players]
     : desk
       ? ["teams", isMlb ? "playoffs" : "form", ...leaders, "schedule", "news", ...players]
-      : ["news", "recaps", "teams", ...leaders, "schedule", isMlb ? "playoffs" : "form", ...players];
+      : ["recaps", "schedule", "news", "teams", ...leaders, isMlb ? "playoffs" : "form", ...players];
   const deskCount = focuses.length;
+  const recapPool = orderSportRecaps(
+    unique.filter((card) => isGameWrap(card) || isRecapStory(card)),
+    id.path,
+  );
+  const newsPool = unique
+    .filter((card) => !isGameWrap(card) && !isSportFiller(card, recapPool))
+    .slice(0, SPORT_NEWS_CAP);
   const inside: SportInsidePage[] = [];
-  const full = desk ? [] : unique.filter(hasStoryCopy).slice(0, INSIDE_CAP);
+  const full = desk
+    ? []
+    : [
+        ...recapPool.filter(hasStoryCopy),
+        ...newsPool.filter(hasStoryCopy).slice(0, NEWS_INSIDE_CAP),
+      ];
   let n = deskCount + 1;
   for (let i = 0; i < full.length; i += 2) {
     const primary = full[i]!;
@@ -852,8 +891,14 @@ function sportPages(
     card,
     folio: sportFolioByStory[card.id] ?? `${id.code}1`,
   }));
-  const newsArticles = articles.slice(0, 12);
-  const recapArticles = articles.filter((a) => isRecapStory(a.card)).slice(0, 8);
+  const newsArticles = newsPool.map((card) => ({
+    card,
+    folio: sportFolioByStory[card.id] ?? `${id.code}${Math.max(1, focuses.indexOf("news") + 1)}`,
+  }));
+  const recapArticles = recapPool.map((card) => ({
+    card,
+    folio: sportFolioByStory[card.id] ?? `${id.code}1`,
+  }));
 
   const desks: SportFrontPage[] = focuses.map((focus, i) => ({
     section: id.code,
@@ -958,7 +1003,7 @@ export function editorCandidates(
   const ranked = ruleOrder(deskCopy(stories, edition).map(withoutEditorStamps), edition);
   return {
     news: ranked.filter((card) => !isGameWrap(card)).slice(0, limit),
-    games: ranked.filter(isGameWrap).slice(0, gameLimit),
+    games: ranked.filter(isGameWrap),
   };
 }
 
@@ -997,10 +1042,12 @@ export function buildEdition(opts: {
     list.push(club);
     clubsBy.set(club.leaguePath, list);
   }
-  // Your clubs are Section A's beat. Sport sections carry the rest of the league.
+  // Favorite-club news stays on Section A. Game wraps also run in the sport
+  // section, favorite-team first, so a Sunday Chiefs final leads the NFL recaps.
   const storiesBy = new Map<string, GameWrapCard[]>();
   for (const story of sectionCopy) {
-    if (!story.leaguePath || isFavoriteStory(story)) continue;
+    if (!story.leaguePath) continue;
+    if (isFavoriteStory(story) && !isGameWrap(story)) continue;
     const list = storiesBy.get(story.leaguePath) ?? [];
     list.push(story);
     storiesBy.set(story.leaguePath, list);

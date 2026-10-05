@@ -1,0 +1,17 @@
+/* Tighten timetable rows on top of the Times watch page styles in index.css. */
+.tt-watch-row {
+  align-items: start;
+}
+.tt-watch-teams {
+  flex-wrap: wrap;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+}
+.tt-watch-row.worth .tt-watch-teams,
+.tt-watch-row.around .tt-watch-teams {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -9,10 +9,14 @@ import {
   editionDay,
   favoriteDeskWeight,
   fileEditionStories,
+  gameWrapCovers,
+  isGameWrapStory,
   isResultCopy,
   msUntilNextPress,
   pressEdition,
+  previousSaturday,
   splitStoryCopy,
+  wireBoardDays,
 } from "./newspaper.ts";
 import { cleanStoryCopy, isNavSoup, isPeripheralClubStory, killedSource } from "./newspaper-copy.ts";
 import { rankStandings } from "./newspaper-box.ts";
@@ -220,7 +224,7 @@ assert(
 );
 
 const nfl = paper.pages.find((page) => page.folio === "NFL1");
-assert(nfl?.kind === "sport-front" && nfl.focus === "news", "NFL1 is the football news page");
+assert(nfl?.kind === "sport-front" && nfl.focus === "recaps", "NFL1 is the football recaps page");
 if (nfl?.kind === "sport-front") {
   assert(nfl.upcoming.some((game) => game.label === "at Ravens"), "the section carries the upcoming schedule");
   assert(!nfl.upcoming.some((game) => /dolphins/i.test(game.label)), "last weekend is not the schedule");
@@ -229,12 +233,12 @@ if (nfl?.kind === "sport-front") {
   assert(nfl.articles.every((article) => article.card.id !== "news-injury"), "a followed club's story runs in Section A, not NFL");
   assert(nfl.articles.every((article) => article.card.id !== "wire-nfl-weekend"), "weekend recap is too old for a fresh midweek desk");
 }
-const nflRecaps = paper.pages.find((page) => page.folio === "NFL2");
-assert(nflRecaps?.kind === "sport-front" && nflRecaps.focus === "recaps", "NFL2 is the recaps page");
-const nflTeams = paper.pages.find((page) => page.folio === "NFL3");
-assert(nflTeams?.kind === "sport-front" && nflTeams.focus === "teams", "NFL3 is the all-teams page");
-const nflSched = paper.pages.find((page) => page.folio === "NFL4");
-assert(nflSched?.kind === "sport-front" && nflSched.focus === "schedule", "NFL4 is the schedule page");
+const nflSched = paper.pages.find((page) => page.folio === "NFL2");
+assert(nflSched?.kind === "sport-front" && nflSched.focus === "schedule", "NFL2 is the schedule page");
+const nflNews = paper.pages.find((page) => page.folio === "NFL3");
+assert(nflNews?.kind === "sport-front" && nflNews.focus === "news", "NFL3 is the football news page");
+const nflTeams = paper.pages.find((page) => page.folio === "NFL4");
+assert(nflTeams?.kind === "sport-front" && nflTeams.focus === "teams", "NFL4 is the all-teams page");
 const nflForm = paper.pages.find((page) => page.folio === "NFL5");
 assert(nflForm?.kind === "sport-front" && nflForm.focus === "form", "NFL5 is the club form page");
 
@@ -312,7 +316,7 @@ assert(
   aLead?.kind === "favorites-front" && aLead.news.every((story) => story.id !== "league-wire-1"),
   "league wire stays off the favorites front",
 );
-const nflWithLeague = withLeague.pages.find((page) => page.folio === "NFL1");
+const nflWithLeague = withLeague.pages.find((page) => page.kind === "sport-front" && page.section === "NFL" && page.focus === "news");
 assert(
   nflWithLeague?.kind === "sport-front" &&
     nflWithLeague.articles.some((article) => article.card.id === "league-wire-1"),
@@ -824,7 +828,7 @@ const spiked = buildEdition({
 });
 assert(!spiked.favoriteFolioByStory.junk, "a killed host never gets a folio");
 assert(!spiked.favoriteFolioByStory.perry, "a fan feature never leads the club");
-const athleticPage = spiked.pages.find((page) => page.folio === "NHL1");
+const athleticPage = spiked.pages.find((page) => page.kind === "sport-front" && page.section === "NHL" && page.focus === "news");
 assert(
   athleticPage?.kind === "sport-front" && athleticPage.articles.some((article) => article.card.id === "athletic-1"),
   "The Athletic runs in the sport section",
@@ -851,5 +855,213 @@ for (const press of ["2026-09-30-morning", "2026-09-30-midday", "2026-09-30-even
   assert(withLeaders.pages[watchAt + 1]?.section !== "A", `${press}: Section B or the sports follow the guide`);
   assert(withLeaders.sections[0]!.pages === a.length, `${press}: Section A counts the guide`);
 }
+
+assert(previousSaturday("2026-10-05") === "2026-10-03", "Monday's previous Saturday is the 3rd");
+assert(previousSaturday("2026-10-10") === "2026-10-03", "Saturday morning still looks at last Saturday");
+assert(previousSaturday("2026-10-04") === "2026-10-03", "Sunday looks at Saturday");
+assert(
+  gameWrapCovers("2026-10-03T16:00:00Z", "2026-10-05-morning", "football/college-football"),
+  "Saturday CFB kickoff is in Monday morning's game window",
+);
+assert(
+  gameWrapCovers("2026-10-04T20:00:00Z", "2026-10-05-morning", "football/nfl"),
+  "Sunday NFL is in Monday morning's game window",
+);
+assert(
+  !gameWrapCovers("2026-10-03T16:00:00Z", "2026-10-07-morning", "football/nfl"),
+  "Saturday NFL is not in Wednesday morning",
+);
+assert(
+  gameWrapCovers("2026-10-03T16:00:00Z", "2026-10-07-morning", "football/college-football"),
+  "Saturday CFB stays in Wednesday morning's college window",
+);
+assert(
+  wireBoardDays("2026-10-05", "2026-10-05-morning", "football/nfl").join() === "2026-10-03,2026-10-04,2026-10-05",
+  "Monday morning NFL boards include Saturday",
+);
+assert(isGameWrapStory({ id: "wire-nfl-1" }), "a wire id is a game wrap");
+
+const satCfb = card({
+  id: "wire-cfb-miz",
+  headline: "Missouri beats Florida",
+  favoriteKey: "cfb-mizzou",
+  followed: true,
+  teamName: "Mizzou",
+  sportLabel: "CFB",
+  leaguePath: "football/college-football",
+  status: "Final",
+  scoreLine: "FLA 17 · MIZ 24",
+  gameId: "sat-cfb",
+  when: "2026-10-03T16:00:00Z",
+  body: "Missouri scored in the fourth quarter in Gainesville. ".repeat(20),
+});
+const mondayNfl = card({
+  id: "wire-nfl-kc",
+  headline: "Chiefs beat the Raiders",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  teamName: "Chiefs",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Final",
+  scoreLine: "KC 30 · LV 27",
+  gameId: "sun-nfl",
+  when: "2026-10-04T20:15:00Z",
+  body: "Kansas City won in Las Vegas on Sunday night. ".repeat(20),
+});
+const mondayCardsNews = card({
+  id: "news-cards-oct5",
+  headline: "Cardinals name a spring starter",
+  favoriteKey: "mlb-stl",
+  followed: true,
+  teamName: "Cardinals",
+  when: "2026-10-05T09:00:00Z",
+  body: "St. Louis listed its first spring rotation on Monday morning. ".repeat(8),
+});
+const mondayFiled = fileEditionStories({
+  fresh: [satCfb, mondayNfl, mondayCardsNews],
+  carried: [],
+  readKeys: new Set(),
+  pressId: "2026-10-05-morning",
+});
+assert(mondayFiled.some((c) => c.id === "wire-cfb-miz" && c.holdover), "Saturday CFB files on Monday as a holdover wrap");
+assert(mondayFiled.some((c) => c.id === "wire-nfl-kc" && !c.holdover), "Sunday NFL files as fresh on Monday");
+assert(mondayFiled.some((c) => c.id === "news-cards-oct5"), "Monday news still files on the 18-hour clock");
+
+const mondayPaper = buildEdition({
+  stories: mondayFiled,
+  clubs: [chiefs],
+  edition: "2026-10-05-morning",
+});
+const mondayA1 = mondayPaper.pages.find((p) => p.kind === "favorites-front");
+assert(
+  mondayA1?.kind === "favorites-front" &&
+    [mondayA1.lead, mondayA1.second, mondayA1.third].every((c) => c?.id !== "wire-cfb-miz"),
+  "a Saturday holdover wrap never fronts A1",
+);
+assert(
+  mondayA1?.kind === "favorites-front" && mondayA1.lead?.id !== "wire-cfb-miz",
+  "fresh news or Sunday's final takes A1 instead",
+);
+
+const leagueFinal = card({
+  id: "wire-nfl-ind-wsh",
+  headline: "Colts beat the Commanders",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Final",
+  scoreLine: "IND 30 · WSH 13",
+  gameId: "401-ind",
+  when: "2026-10-04T17:00:00Z",
+  body: "Indianapolis scored early and held on in Washington. ".repeat(20),
+});
+assert(isDeskStory(leagueFinal), "a league wire final files without a followed club");
+const sundayNflPaper = buildEdition({
+  stories: [leagueFinal, ...Array.from({ length: 13 }, (_, i) =>
+    card({
+      id: `wire-nfl-sun-${i}`,
+      headline: `Sunday final ${i}`,
+      sportLabel: "NFL",
+      leaguePath: "football/nfl",
+      status: "Final",
+      scoreLine: `AA ${10 + i} · BB ${7 + i}`,
+      gameId: `401-sun-${i}`,
+      when: "2026-10-04T18:00:00Z",
+      body: `The visiting club won game ${i} on Sunday afternoon. `.repeat(20),
+    }),
+  )],
+  clubs: [chiefs],
+  edition: "2026-10-05-morning",
+});
+const sundayNflInside = sundayNflPaper.pages.filter((p) => p.kind === "sport-inside" && p.section === "NFL");
+assert(sundayNflInside.length > 3, "NFL inside pages grow with Sunday's slate instead of stopping at six wraps");
+const sundayNflRecaps = sundayNflPaper.pages.find((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps");
+assert(
+  sundayNflRecaps?.kind === "sport-front" && sundayNflRecaps.articles.length >= 14,
+  "the recaps desk lists every in-window NFL final",
+);
+
+const favoriteWrap = card({
+  id: "wire-nfl-kc-lead",
+  headline: "Chiefs beat the Raiders",
+  favoriteKey: "nfl-kc",
+  followed: true,
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Final",
+  scoreLine: "KC 30 · LV 27",
+  gameId: "fav-kc",
+  when: "2026-10-04T20:15:00Z",
+  body: "Kansas City won in Las Vegas. ".repeat(8),
+});
+const otherWrap = card({
+  id: "wire-nfl-ind-lead",
+  headline: "Colts beat the Commanders",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Final",
+  scoreLine: "IND 30 · WSH 13",
+  gameId: "oth-ind",
+  when: "2026-10-04T17:00:00Z",
+  body: "Indianapolis scored early. ".repeat(8),
+});
+const videoJunk = card({
+  id: "league-highlights",
+  headline: "Game Highlights: Colts at Commanders",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Video",
+  when: "2026-10-04T23:00:00Z",
+  wrapHref: "https://www.espn.com/video/clip?id=99",
+});
+const newsTopics = [
+  "Jets shuffle the practice report",
+  "Bears sign a veteran tackle",
+  "Eagles add a returner",
+  "Cowboys list their quarterback as limited",
+  "Packers elevate a practice-squad guard",
+  "Ravens sign a kicker",
+  "Steelers shuffle the backfield",
+  "Bengals list a receiver as questionable",
+  "Browns add a safety",
+  "Titans waive a linebacker",
+  "Colts sign a tight end",
+  "Texans elevate a corner",
+];
+const newsFlood = newsTopics.map((headline, i) =>
+  card({
+    id: `league-news-${i}`,
+    headline,
+    sportLabel: "NFL",
+    leaguePath: "football/nfl",
+    when: "2026-10-05T08:00:00Z",
+    body: `${headline}. The club made the move Monday morning. `.repeat(4),
+  }),
+);
+const recapsFirst = buildEdition({
+  stories: [otherWrap, favoriteWrap, videoJunk, ...newsFlood],
+  clubs: [chiefs],
+  edition: "2026-10-05-morning",
+});
+const recapsPage = recapsFirst.pages.find((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "recaps");
+const firstNfl = recapsFirst.pages.find((p) => p.kind === "sport-front" && p.section === "NFL");
+assert(firstNfl?.kind === "sport-front" && firstNfl.focus === "recaps", "morning sport sections open on recaps");
+assert(
+  recapsPage?.kind === "sport-front" && recapsPage.articles[0]?.card.id === "wire-nfl-kc-lead",
+  "the favorite-team game leads the NFL recaps desk",
+);
+assert(
+  recapsPage?.kind === "sport-front" && recapsPage.articles.some((a) => a.card.id === "wire-nfl-ind-lead"),
+  "the rest of Sunday's wraps still run",
+);
+assert(
+  !JSON.stringify(recapsFirst.pages.filter((p) => p.section === "NFL")).includes("league-highlights"),
+  "video clips are spiked from the NFL section",
+);
+const newsPage = recapsFirst.pages.find((p) => p.kind === "sport-front" && p.section === "NFL" && p.focus === "news");
+assert(
+  newsPage?.kind === "sport-front" && newsPage.articles.length <= 8 && newsPage.articles.length >= 6,
+  `news is capped ~6–8, got ${newsPage && newsPage.kind === "sport-front" ? newsPage.articles.length : 0}`,
+);
 
 console.log("newspaper-sections ok");

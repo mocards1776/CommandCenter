@@ -9,6 +9,7 @@ import { fetchClubSheet } from "./newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./newspaper-missouri-fetch";
 import type { MoItem } from "./newspaper-missouri";
 import { fetchOpener, type Opener } from "./newspaper-openers";
+import { attachRelatedGameCopy } from "./newspaper-sport-desk";
 import { cleanStoryCopy, isNavSoup, isPeripheralClubStory, killedSource } from "./newspaper-copy";
 import { isBoilerplateDek, storySource } from "./newspaper-source";
 import {
@@ -27,7 +28,9 @@ import {
   fetchLeagueClubs,
   fetchLeagueSlate,
   fetchNewspaperWire,
+  logWireFiling,
   markFavoriteClubs,
+  tallyWireGames,
   type NewspaperWire,
 } from "./newspaper-wire";
 import { fetchMlbPlayoffTree } from "./mlb";
@@ -42,7 +45,7 @@ import {
   type TeamDetail,
 } from "./sports";
 import { fetchMarshfieldWeather } from "./newspaper-weather";
-import { fetchWatchList, type WatchGame } from "./newspaper-watch";
+import { fetchWatchList, WATCH_PAGE_GAMES, type WatchGame } from "./newspaper-watch";
 import { fetchYesterdayRecap, type YesterdayRecap } from "./yesterday-recap";
 import { ISSUE_VERSION, type PrintedIssue, type PrintedQuery } from "./newspaper-issue";
 import { clearEditorStamps, editEdition, type EditorRequest } from "./newspaper-editor";
@@ -129,7 +132,8 @@ export function gatherStories(opts: {
   });
   const clubCopy = mergeStoryCards(mergeStoryCards(wire, opts.enriched ?? opts.teamCards), opts.news ?? []);
   const withLeague = mergeStoryCards(clubCopy, opts.leagueNews ?? []);
-  return mergeStoryCards(withLeague, opts.athletic ?? []).filter((card) => !isNewsMuted(card));
+  const merged = mergeStoryCards(withLeague, opts.athletic ?? []).filter((card) => !isNewsMuted(card));
+  return attachRelatedGameCopy(merged);
 }
 
 async function settle<T>(task: Promise<T>, fallback: T): Promise<T> {
@@ -262,7 +266,7 @@ export async function pressStep(
   }
 
   if (state.stage === 2) {
-    state.wire = await settle(fetchNewspaperWire({ favs, day }), { games: [], postseasonLeagues: [] } as NewspaperWire);
+    state.wire = await settle(fetchNewspaperWire({ favs, day, pressId }), { games: [], postseasonLeagues: [] } as NewspaperWire);
     state.wireCursor = 0;
     state.stage = 3;
     return { done: false, bag: state };
@@ -281,6 +285,8 @@ export async function pressStep(
       state.wireCursor = cursor + slice.length;
       return { done: false, bag: state };
     }
+    logWireFiling(`filed ${pressId}`, wire.games);
+    put([pressId, "tt-wire-log", day], tallyWireGames(wire.games));
     state.stage = 4;
     return { done: false, bag: state };
   }
@@ -321,7 +327,10 @@ export async function pressStep(
 
   if (state.stage === 7) {
     state.weather = await settle(fetchMarshfieldWeather(), null);
-    state.watch = await settle(fetchWatchList(day), [] as WatchGame[]);
+    state.watch = await settle(
+      fetchWatchList(day, { limit: WATCH_PAGE_GAMES, favorites: favs }),
+      [] as WatchGame[],
+    );
     state.scoutItem = await settle(
       fetchMissouriScout(pressId).then(async (item) => (item ? ((await enrichMissouriItems([item], 1))[0] ?? item) : null)),
       null,
@@ -511,6 +520,19 @@ export async function pressStep(
     readKeys: new Set(opts.readKeys ?? []),
     pressId,
   });
+  const filedByLeague = new Map<string, { games: number; wraps: number }>();
+  for (const card of filed) {
+    if (!/^(?:wire|recap|recent)-/.test(card.id)) continue;
+    const league = card.sportLabel || card.leaguePath || "other";
+    const row = filedByLeague.get(league) ?? { games: 0, wraps: 0 };
+    row.games += 1;
+    if ((card.body?.trim().length ?? 0) >= 60 || (card.scoreLine && /\d/.test(card.scoreLine))) row.wraps += 1;
+    filedByLeague.set(league, row);
+  }
+  const filedLine = [...filedByLeague.entries()]
+    .map(([league, row]) => `${league} games=${row.games} wraps=${row.wraps}`)
+    .join(" · ");
+  console.info(`[times-wire] stories ${pressId}${filedLine ? ` ${filedLine}` : " (no wraps)"}`);
   let stories = clearEditorStamps(filed);
   if (opts.editor) {
     const edited = await editEdition(filed, pressId, opts.editor);

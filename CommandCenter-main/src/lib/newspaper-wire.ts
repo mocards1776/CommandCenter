@@ -7,9 +7,19 @@
  * prose, highlight still, series line, and star lines off the same payload.
  */
 
-import { editionNewsDay } from "./newspaper";
-import { fetchMlbScoreboard, type MlbScoreGame } from "./mlb";
-import type { SportsFavorite } from "./sports";
+import { editionNewsDay, wireBoardDays } from "./newspaper.ts";
+import {
+  hasEspnRecap,
+  leadersFromSummary,
+  linesFromSummary,
+  nextFromSummary,
+  periodLabelsFor,
+  writeBoxWrap,
+  type BoxWrapLine,
+  type EspnSummaryForWrap,
+} from "./newspaper-box-wrap.ts";
+import { isNewspaperCfbDeskGame, isNewspaperSecGame, newspaperEspnGet } from "./newspaper-espn.ts";
+import type { SportsFavorite } from "./sports.ts";
 
 /** One game on a section's schedule page — league-wide, with pitchers when known. */
 export type LeagueSlateGame = {
@@ -40,8 +50,6 @@ export type LeagueSlateGame = {
     pitcher: string | null;
   };
 };
-
-const ESPN_SITE = "https://site.api.espn.com/apis/site/v2/sports";
 
 export type WireSide = {
   id: string | null;
@@ -98,6 +106,11 @@ export type WireGame = {
   href: string;
   leaders: { name: string; line: string; href: string | null }[];
   favoriteKeys: string[];
+  /** ESPN recap of 200+ characters, or a Times box wrap when that is missing. */
+  wrapKind?: "espn" | "box" | null;
+  lines?: BoxWrapLine[];
+  next?: string | null;
+  sec?: boolean;
 };
 
 type EspnCompetitor = {
@@ -105,6 +118,7 @@ type EspnCompetitor = {
   score?: string;
   winner?: boolean;
   curatedRank?: { current?: number };
+  linescores?: { value?: number }[];
   records?: { type?: string; summary?: string }[];
   team?: {
     id?: string;
@@ -153,8 +167,8 @@ export type WireLeague = {
   /** espn.com slug for recap links. */
   slug: string;
   /**
-   * How many days back from the edition's news day to scan. One day is the
-   * night the paper covers. A later edition does not reprint the weekend.
+   * Unused by the press (the news-day window now picks the days). Kept so
+   * older call sites that list leagues still type-check.
    */
   lookback: number;
   /** Internal game route builder, when the app has a page for it. */
@@ -430,10 +444,9 @@ function playerHrefFor(league: WireLeague, id: string | undefined): string | nul
 }
 
 async function fetchBoard(league: WireLeague, day: string): Promise<EspnEvent[]> {
-  const url = `${ESPN_SITE}/${league.path}/scoreboard?dates=${yyyymmdd(day)}&limit=300`;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(`${league.path} board ${res.status}`);
-  const data = (await res.json()) as { events?: EspnEvent[] };
+  const data = (await newspaperEspnGet(
+    `${league.path}/scoreboard?dates=${yyyymmdd(day)}&limit=300`,
+  )) as { events?: EspnEvent[] };
   return data.events ?? [];
 }
 
@@ -489,6 +502,14 @@ function toWireGame(
       href: playerHrefFor(league, l.athlete?.id),
     }));
 
+  const lineCount = Math.max(awayC.linescores?.length ?? 0, homeC.linescores?.length ?? 0);
+  const labels = periodLabelsFor(league.path, lineCount);
+  const lines = labels.map((period, i) => ({
+    period,
+    away: typeof awayC.linescores?.[i]?.value === "number" ? awayC.linescores[i]!.value! : null,
+    home: typeof homeC.linescores?.[i]?.value === "number" ? homeC.linescores[i]!.value! : null,
+  }));
+
   return {
     id: `${league.slug}-${id}`,
     eventId: id,
@@ -513,6 +534,10 @@ function toWireGame(
     href: league.gameHref?.(id) ?? `https://www.espn.com/${league.slug}/game/_/gameId/${id}`,
     leaders,
     favoriteKeys: favoriteKeysFor(favs, league, awayC.team.id, homeC.team.id),
+    wrapKind: hasEspnRecap(body) ? "espn" : null,
+    lines,
+    next: null,
+    sec: isNewspaperSecGame(league.path, awayC.team.id, homeC.team.id),
   };
 }
 
@@ -543,17 +568,55 @@ export type NewspaperWire = {
   postseasonLeagues: string[];
 };
 
-function daysBack(from: string, count: number): string[] {
-  const out: string[] = [];
-  for (let i = 0; i < count; i++) out.push(shiftIso(from, -i));
-  return out;
+export type WireLeagueTally = {
+  league: string;
+  games: number;
+  finals: number;
+  wraps: number;
+  espnWraps: number;
+  boxWraps: number;
+};
+
+export function tallyWireGames(games: WireGame[]): WireLeagueTally[] {
+  const by = new Map<string, WireLeagueTally>();
+  for (const g of games) {
+    const row = by.get(g.league) ?? {
+      league: g.league,
+      games: 0,
+      finals: 0,
+      wraps: 0,
+      espnWraps: 0,
+      boxWraps: 0,
+    };
+    row.games += 1;
+    if (g.final) row.finals += 1;
+    if (g.final && (g.body?.length ?? 0) >= 60) {
+      row.wraps += 1;
+      if (g.wrapKind === "box") row.boxWraps += 1;
+      else row.espnWraps += 1;
+    }
+    by.set(g.league, row);
+  }
+  return [...by.values()].sort((a, b) => a.league.localeCompare(b.league));
 }
 
-function shiftIso(iso: string, days: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y!, m! - 1, d!));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return dt.toISOString().slice(0, 10);
+/** How many games the desk pulled, and how many of those have wrap copy. */
+export function logWireFiling(label: string, games: WireGame[]): WireLeagueTally[] {
+  const rows = tallyWireGames(games);
+  const line = rows.map((r) => `${r.league} games=${r.games} finals=${r.finals} wraps=${r.wraps}`).join(" · ");
+  console.info(`[times-wire] ${label}${line ? ` ${line}` : " (empty)"}`);
+  return rows;
+}
+
+function keepWireGame(game: WireGame): boolean {
+  if (game.league !== "CFB") return true;
+  return isNewspaperCfbDeskGame({
+    awayId: game.away.id,
+    homeId: game.home.id,
+    awayRank: game.away.seed ? Number(game.away.seed.replace(/\D/g, "")) : null,
+    homeRank: game.home.seed ? Number(game.home.seed.replace(/\D/g, "")) : null,
+    favorite: game.favoriteKeys.length > 0,
+  });
 }
 
 /**
@@ -563,13 +626,14 @@ function shiftIso(iso: string, days: number): string {
 export async function fetchNewspaperWire(opts: {
   favs: SportsFavorite[];
   day: string;
+  pressId?: string;
 }): Promise<NewspaperWire> {
   const leagues = wireLeaguesForFavorites(opts.favs);
   const byId = new Map<string, WireGame>();
   const postseason = new Set<string>();
 
   const boards = leagues.flatMap((league) =>
-    [opts.day, ...daysBack(editionNewsDay(opts.day), league.lookback)].map((day) => ({ league, day })),
+    wireBoardDays(opts.day, opts.pressId, league.path).map((day) => ({ league, day })),
   );
   let boardNext = 0;
   const pullBoard = async () => {
@@ -579,7 +643,7 @@ export async function fetchNewspaperWire(opts: {
         const events = await fetchBoard(league, day);
         for (const ev of events) {
           const game = toWireGame(ev, league, day, opts.favs);
-          if (!game) continue;
+          if (!game || !keepWireGame(game)) continue;
           if (game.postseason) postseason.add(game.league);
           // A later board wins only when it carries more: the same game shows
           // up on both days around midnight, and the newer copy has the recap.
@@ -595,8 +659,10 @@ export async function fetchNewspaperWire(opts: {
   };
   await Promise.all([pullBoard(), pullBoard(), pullBoard()]);
 
+  const games = [...byId.values()].sort(deskOrder);
+  logWireFiling("boards", games);
   return {
-    games: [...byId.values()].sort(deskOrder),
+    games,
     postseasonLeagues: [...postseason],
   };
 }
@@ -634,7 +700,37 @@ function splitDateline(text: string): { dateline: string | null; body: string } 
   return { dateline: m[1]!.trim(), body: text.slice(m[0].length).trim() };
 }
 
-/** Fill in full ESPN recap prose for the games that will actually run as stories. */
+function applyBoxWrap(g: WireGame, sum: EspnSummaryForWrap | null): WireGame {
+  const leaders = g.leaders.length
+    ? g.leaders
+    : leadersFromSummary(sum).map((l) => ({ ...l, href: null }));
+  const lines = g.lines?.length ? g.lines : linesFromSummary(g.path, sum);
+  const next = g.next ?? nextFromSummary(sum);
+  const { body, wrapKind } = writeBoxWrap({
+    league: g.league,
+    path: g.path,
+    preseason: g.preseason,
+    postseason: g.postseason,
+    round: g.round,
+    statusDetail: g.statusDetail,
+    away: g.away,
+    home: g.home,
+    leaders,
+    lines,
+    next,
+  });
+  return {
+    ...g,
+    body,
+    wrapKind,
+    leaders,
+    lines,
+    next,
+    dateline: g.dateline,
+  };
+}
+
+/** Fill in ESPN recap prose, or a Times box wrap when that copy is missing. */
 export async function enrichWireStories(
   games: WireGame[],
   limit: number,
@@ -642,45 +738,70 @@ export async function enrichWireStories(
   const targets = games.filter((g) => g.final).slice(0, limit);
   const wanted = new Set(targets.map((g) => g.id));
 
-  const filled = new Map<string, { body: string; dateline: string | null; photo: string | null }>();
+  const filled = new Map<
+    string,
+    { body: string; dateline: string | null; photo: string | null; wrapKind: "espn"; next: string | null; lines: BoxWrapLine[]; leaders: WireGame["leaders"] }
+  >();
+  const summaries = new Map<string, EspnSummaryForWrap | null>();
   let storyNext = 0;
   const pullStory = async () => {
     while (storyNext < targets.length) {
       const g = targets[storyNext++]!;
       try {
-        const res = await fetch(`${ESPN_SITE}/${g.path}/summary?event=${g.eventId}`, {
-          headers: { Accept: "application/json" },
-        });
-        if (!res.ok) continue;
-        const sum = (await res.json()) as {
-          article?: { story?: string; headline?: string; images?: { url?: string }[] };
-        };
+        const sum = (await newspaperEspnGet(`${g.path}/summary?event=${g.eventId}`)) as EspnSummaryForWrap;
+        summaries.set(g.id, sum);
         const story = stripStoryHtml(sum.article?.story ?? "");
-        if (story.length < 200) continue;
+        if (!hasEspnRecap(story)) continue;
         const { dateline, body } = splitDateline(story);
         filled.set(g.id, {
           body,
           dateline,
           photo: g.photo ?? sum.article?.images?.[0]?.url ?? null,
+          wrapKind: "espn",
+          next: nextFromSummary(sum),
+          lines: g.lines?.length ? g.lines : linesFromSummary(g.path, sum),
+          leaders: g.leaders.length
+            ? g.leaders
+            : leadersFromSummary(sum).map((l) => ({ ...l, href: null })),
         });
       } catch {
-        /* keep the short wire body */
+        summaries.set(g.id, null);
       }
     }
   };
   await Promise.all([pullStory(), pullStory(), pullStory()]);
+  const merged = games.map((g) => {
+    if (!wanted.has(g.id)) return g;
+    const hit = filled.get(g.id);
+    if (hit) {
+      return {
+        ...g,
+        body: hit.body,
+        dateline: hit.dateline,
+        photo: hit.photo,
+        wrapKind: hit.wrapKind,
+        next: hit.next ?? g.next,
+        lines: hit.lines,
+        leaders: hit.leaders,
+      };
+    }
+    return applyBoxWrap(g, summaries.get(g.id) ?? null);
+  });
+  logWireFiling("summaries", merged);
 
-  return games
-    .map((g) => {
-      if (!wanted.has(g.id)) return g;
-      const hit = filled.get(g.id);
-      if (!hit) return g;
-      return { ...g, body: hit.body, dateline: hit.dateline, photo: hit.photo };
-    })
-    .sort(deskOrder);
+  return merged.sort(deskOrder);
 }
 
-function mlbSlateSide(side: MlbScoreGame["away"]) {
+type MlbSlateSide = {
+  name: string;
+  abbrev: string;
+  teamId?: number | null;
+  score?: number | string | null;
+  record: string | null;
+  probablePitcher: string | null;
+};
+
+function mlbSlateSide(side: MlbSlateSide) {
   return {
     name: side.name,
     abbrev: side.abbrev,
@@ -691,7 +812,21 @@ function mlbSlateSide(side: MlbScoreGame["away"]) {
   };
 }
 
-function slateFromMlb(game: MlbScoreGame, day: string): LeagueSlateGame {
+function slateFromMlb(
+  game: {
+    id: string;
+    whenShort?: string | null;
+    when: string | null;
+    live: boolean;
+    inning?: string | null;
+    status: string;
+    final: boolean;
+    venue: string | null;
+    away: MlbSlateSide;
+    home: MlbSlateSide;
+  },
+  day: string,
+): LeagueSlateGame {
   return {
     id: `mlb-${game.id}`,
     path: "baseball/mlb",
@@ -710,11 +845,7 @@ function slateFromMlb(game: MlbScoreGame, day: string): LeagueSlateGame {
 
 async function slateFromEspn(path: string, day: string): Promise<LeagueSlateGame[]> {
   const ymd = day.replace(/-/g, "");
-  const res = await fetch(`${ESPN_SITE}/${path}/scoreboard?dates=${ymd}&limit=300`, {
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) return [];
-  const data = (await res.json()) as {
+  let data: {
     events?: {
       id?: string;
       date?: string;
@@ -739,6 +870,11 @@ async function slateFromEspn(path: string, day: string): Promise<LeagueSlateGame
       }[];
     }[];
   };
+  try {
+    data = (await newspaperEspnGet(`${path}/scoreboard?dates=${ymd}&limit=300`)) as typeof data;
+  } catch {
+    return [];
+  }
   const out: LeagueSlateGame[] = [];
   for (const ev of data.events ?? []) {
     const comp = ev.competitions?.[0];
@@ -798,6 +934,7 @@ export async function fetchLeagueSlate(path: string, edition: string): Promise<L
   for (const day of days) {
     try {
       if (path === "baseball/mlb") {
+        const { fetchMlbScoreboard } = await import("./mlb");
         const board = await fetchMlbScoreboard(day);
         for (const g of board) {
           const row = slateFromMlb(g, day);
