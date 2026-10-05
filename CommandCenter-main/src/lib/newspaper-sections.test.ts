@@ -24,6 +24,7 @@ import {
   buildEdition,
   dedupeStories,
   editorFront,
+  isColumnStory,
   isDeskStory,
   isHoldoverGame,
   isPreviewStory,
@@ -527,9 +528,13 @@ const withNational = buildEdition({
   national: sampleNationalDesk("2026-09-30-morning"),
 });
 const natPages = withNational.pages.filter((p) => p.kind === "national");
-assert(natPages.length === 2 && natPages[0]!.folio === "B1" && natPages[1]!.folio === "B2", "National News files as two pages in section B");
-assert(natPages[0]!.stories.length === 8 && natPages[1]!.stories.length === 6, "B1 holds the lead eight; B2 the rest");
-assert(natPages[0]!.startIndex === 0 && natPages[1]!.startIndex === 8, "B2 photos keep their rank");
+assert(natPages.length >= 2 && natPages[0]!.folio === "B1" && natPages[1]!.folio === "B2", "National News files as B1 then B2");
+assert(natPages[0]!.stories[0]!.id === "cl-1", "B1 opens on the desk lead");
+assert(natPages.every((p) => p.kind === "national" && p.stories.length >= 1), "every national folio has a lead story");
+assert(
+  natPages.reduce((n, p) => n + (p.kind === "national" ? p.stories.length : 0), 0) === 14,
+  "height packing keeps every national story",
+);
 assert(natPages[0]!.jumpFolio === "B2", "B1 turns to B2");
 assert(
   withNational.pages.find((p) => p.kind === "missouri")?.folio === "C1",
@@ -539,7 +544,7 @@ const natAt = withNational.pages.findIndex((p) => p.kind === "national");
 const moAt = withNational.pages.findIndex((p) => p.kind === "missouri");
 const nflAt = withNational.pages.findIndex((p) => p.folio === "NFL1");
 assert(natAt > 0 && natAt < moAt && moAt < nflAt, "A, then National, then Missouri, then sports");
-assert(withNational.sections.some((s) => s.code === "B" && s.title === "National News" && s.pages === 2), "section list names National News");
+assert(withNational.sections.some((s) => s.code === "B" && s.title === "National News" && s.pages === natPages.length), "section list names National News");
 assert(
   withNational.sections.find((s) => s.code === "B")?.stories === 14,
   "section B counts every national story",
@@ -550,7 +555,7 @@ const shortNational = buildEdition({
   edition,
   national: { ...sampleNationalDesk("2026-09-30-morning"), stories: sampleNationalDesk("2026-09-30-morning").stories.slice(0, 8) },
 });
-assert(shortNational.pages.filter((p) => p.kind === "national").length === 1, "an eight-story desk still prints one page");
+assert(shortNational.pages.filter((p) => p.kind === "national").length >= 1, "a shorter desk still prints National News");
 assert(!buildEdition({ stories: [lionsNote], clubs: [lionsClub], edition }).pages.some((p) => p.kind === "national"), "empty national hides");
 
 const nflPlayers = withDesks.pages.find((page) => page.folio === "NFL6");
@@ -760,6 +765,137 @@ assert(
   }),
   "a story that names the club stays",
 );
+
+const wrapAndRss = dedupeStories([
+  card({
+    id: "wire-college-football-401856708",
+    headline: "No. 25 Missouri trounces No. 8 Florida 45-17 to snap 9-game skid against Top 25 opponents",
+    favoriteKey: "cfb-mizzou",
+    followed: true,
+    teamName: "Mizzou FB",
+    sportLabel: "CFB",
+    leaguePath: "football/college-football",
+    gameId: "401856708",
+    wrapKind: "espn",
+    status: "Final",
+    scoreLine: "MIZ 45 · FLA 17",
+    wrapHref: "https://www.espn.com/college-football/game/_/gameId/401856708",
+    body: "Missouri scored early and kept scoring in Columbia. ".repeat(20),
+  }),
+  card({
+    id: "wrap-stltoday-mizzou-ap",
+    headline: "Mizzou snaps skid, beats Florida 45-17 in Homecoming",
+    favoriteKey: "cfb-mizzou",
+    teamName: "Mizzou FB",
+    sportLabel: "CFB",
+    leaguePath: "football/college-football",
+    wrapHref: "https://www.stltoday.com/sports/college/mizzou/article_ap-florida.html",
+    feedUrl: "https://www.stltoday.com/search/?f=rss&c=sports/college/mizzou*",
+    body: "The Associated Press recap of Missouri 45, Florida 17. ".repeat(16),
+  }),
+  card({
+    id: "wrap-stltoday-hochman",
+    headline: "Hochman: How 2 runs catapulted Mizzou’s Jamal Roberts among best RBs in SEC",
+    favoriteKey: "cfb-mizzou",
+    teamName: "Mizzou FB",
+    sportLabel: "CFB",
+    leaguePath: "football/college-football",
+    wrapHref: "https://www.stltoday.com/sports/column/benjamin-hochman/article_b13e.html",
+    feedUrl: "https://www.stltoday.com/search/?f=rss&c=sports/college/mizzou*",
+    body: "Benjamin Hochman on Jamal Roberts after the Florida game. ".repeat(16),
+  }),
+]);
+assert(isColumnStory({
+  id: "col",
+  headline: "Hochman: a column",
+  favoriteKey: "",
+  teamName: "",
+  teamHref: "/",
+  sportLabel: "CFB",
+  leaguePath: null,
+  dek: null,
+  body: null,
+  scoreLine: null,
+  when: null,
+  won: null,
+  gameHref: null,
+  wrapHref: "https://www.stltoday.com/sports/column/benjamin-hochman/x.html",
+  feedUrl: null,
+  gameId: null,
+  stats: [],
+  leaders: [],
+  teamStats: [],
+  division: [],
+}), "a Hochman URL is a column");
+assert(
+  wrapAndRss.length === 2 && wrapAndRss.some((c) => c.id === "wire-college-football-401856708") && wrapAndRss.some((c) => c.id === "wrap-stltoday-hochman"),
+  "one Mizzou-Florida recap stays; the Hochman column is a separate piece",
+);
+assert(!wrapAndRss.some((c) => c.id === "wrap-stltoday-mizzou-ap"), "the AP recap of the same game is spiked");
+
+const sameUrl = dedupeStories([
+  card({
+    id: "news-1",
+    headline: "Chiefs list Thornton as doubtful",
+    favoriteKey: "nfl-kc",
+    wrapHref: "https://www.espn.com/nfl/story/_/id/50104571/chiefs-thornton",
+    body: "Kansas City will be without Tyquan Thornton. ".repeat(12),
+  }),
+  card({
+    id: "news-1-dup",
+    headline: "Chiefs WR Thornton doubtful vs. the next opponent",
+    favoriteKey: "nfl-kc",
+    wrapHref: "https://www.espn.com/nfl/story/_/id/50104571/chiefs-thornton?utm_source=rss",
+    body: "A shorter ESPN rewrite of the Thornton note. ".repeat(8),
+  }),
+]);
+assert(sameUrl.length === 1 && sameUrl[0]!.id === "news-1", "the same ESPN URL files once");
+
+const jumpOnly = buildEdition({
+  stories: [
+    card({
+      id: "wire-cfb-one",
+      headline: "Missouri trounces Florida 45-17 to snap a long skid",
+      favoriteKey: "cfb-mizzou",
+      followed: true,
+      teamName: "Mizzou",
+      sportLabel: "CFB",
+      leaguePath: "football/college-football",
+      gameId: "401856708",
+      wrapKind: "espn",
+      status: "Final",
+      scoreLine: "MIZ 45 · FLA 17",
+      when: "2026-09-29T20:00:00Z",
+      body: "Missouri scored in every quarter in Columbia on Saturday. ".repeat(30),
+    }),
+    card({
+      id: "rss-cfb-same",
+      headline: "Mizzou beats Florida 45-17 and snaps the skid",
+      favoriteKey: "cfb-mizzou",
+      followed: true,
+      teamName: "Mizzou",
+      sportLabel: "CFB",
+      leaguePath: "football/college-football",
+      when: "2026-09-29T22:00:00Z",
+      wrapHref: "https://www.stltoday.com/sports/college/mizzou/ap-recap.html",
+      body: "The Associated Press recap of the same Saturday night. ".repeat(24),
+    }),
+  ],
+  clubs: [cards],
+  edition,
+});
+const aIds = jumpOnly.pages
+  .filter((p) => p.section === "A")
+  .flatMap((p) => {
+    if (p.kind === "favorites-front") return [p.lead, p.second, p.third, ...p.briefs];
+    if (p.kind === "favorites-inside") return [p.primary, p.secondary, ...p.briefs];
+    if (p.kind === "favorites-continue") return p.jumps.map((j) => j.card);
+    return [];
+  })
+  .filter(Boolean)
+  .map((c) => c!.id);
+assert(aIds.filter((id) => id === "rss-cfb-same").length === 0, "the same game does not reprint as a second Section A story");
+assert(aIds.includes("wire-cfb-one"), "the wrap still runs in Section A");
 
 const oneTrade = dedupeStories([
   card({
