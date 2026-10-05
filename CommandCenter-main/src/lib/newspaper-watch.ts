@@ -354,8 +354,24 @@ export async function fetchWatchList(day: string, limitOrOpts?: number | WatchLi
     live: boolean;
     status?: string | null;
     shortDetail?: string | null;
+    inning?: string | null;
+    period?: number | string | null;
     away?: { score?: unknown };
     home?: { score?: unknown };
+  };
+  const GENERIC_LIVE = /^(live(\s+now)?|in progress|scheduled|pregame|pre-game|pre game)$/i;
+  const liveStatus = (orig: Orig | undefined, fallback: string | null) => {
+    const period =
+      orig?.period != null && String(orig.period).trim() !== ""
+        ? /^\d+$/.test(String(orig.period))
+          ? `P${orig.period}`
+          : String(orig.period)
+        : null;
+    for (const raw of [orig?.inning, orig?.shortDetail, period, orig?.status, fallback]) {
+      const s = raw?.trim();
+      if (s && !GENERIC_LIVE.test(s)) return s;
+    }
+    return fallback;
   };
   const attach =
     <S extends { id: string }>(toWatch: (g: S) => WatchGame, originals: Orig[]) => {
@@ -370,7 +386,7 @@ export async function fetchWatchList(day: string, limitOrOpts?: number | WatchLi
           {
             ...watch,
             live: orig?.live ?? watch.live,
-            status: orig?.shortDetail ?? orig?.status ?? watch.status,
+            status: liveStatus(orig, watch.status),
             final: orig?.final ?? watch.final ?? false,
             away: { ...watch.away, ...(awayScore != null ? { score: awayScore } : {}) },
             home: { ...watch.home, ...(homeScore != null ? { score: homeScore } : {}) },

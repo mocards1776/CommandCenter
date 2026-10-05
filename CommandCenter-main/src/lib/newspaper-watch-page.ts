@@ -366,9 +366,14 @@ export function watchIsFinal(game: Pick<WatchGame, "final" | "status">): boolean
 
 export type WatchClockKind = "pre" | "live" | "final";
 
+const GENERIC_LIVE_CLOCK = /^(live(\s+now)?|in progress|scheduled|pregame|pre-game|pre game)$/i;
+
 export function watchClockState(game: WatchGame): { kind: WatchClockKind; label: string } {
   if (watchIsFinal(game)) return { kind: "final", label: "Final" };
-  if (game.live) return { kind: "live", label: game.status?.trim() || "Live" };
+  if (game.live) {
+    const raw = game.status?.trim() || "";
+    return { kind: "live", label: raw && !GENERIC_LIVE_CLOCK.test(raw) ? raw : "Live" };
+  }
   return { kind: "pre", label: printClock(game.when) };
 }
 

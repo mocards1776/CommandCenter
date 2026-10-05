@@ -221,6 +221,8 @@ assert(watchListingWhy(game({ id: "nhl-why", heat: 12, league: "NHL", reasons: [
 assert(watchListingWhy(game({ id: "nba-pre-why", heat: 5, league: "NBA", preseason: true, reasons: [] })) === "Preseason", "listing still prints Preseason");
 assert(watchContext(game({ id: "c2", heat: 5, reasons: [], competition: "Premier League", league: "Soccer" })) === "Premier League", "soccer competition");
 assert(watchClockState(game({ id: "live", heat: 5, live: true, status: "Bot 5th" })).kind === "live", "live state");
+assert(watchClockState(game({ id: "live-inn", heat: 5, live: true, status: "Bot 5th" })).label === "Bot 5th", "live keeps the inning");
+assert(watchClockState(game({ id: "live-gen", heat: 5, live: true, status: "In Progress" })).label === "Live", "generic In Progress is just LIVE");
 assert(watchClockState(game({ id: "fin", heat: 5, final: true, status: "Final" })).kind === "final", "final state");
 assert(watchPersonName("Garrett Crochet").last === "Crochet" && watchPersonName("Garrett Crochet").first === "Garrett", "pitcher name splits");
 assert(watchHeatPct(96) === 96 && watchHeatPct(140) === 100 && watchHeatPct(-4) === 0, "heat meter clamps 0–100");
