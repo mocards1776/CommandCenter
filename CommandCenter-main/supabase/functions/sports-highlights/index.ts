@@ -37,7 +37,8 @@ import { sendTelegramVideo } from "./telegram.ts";
  *
  * Sweep: POST { "action": "sweep" } with header x-sports-highlights-cron.
  * Preview: POST { "action": "sweep", "dryRun": true }.
- * One game: POST { "action": "send", "nhlGameId": "2026020020" }.
+ * One clip: POST { "action": "send", "nhlGameId": "2026020020", "clipId": "6406147120112" }.
+ * Local one-clip dry-run / send: scripts/highlights-send-one.ts
  */
 
 const CORS: Record<string, string> = {

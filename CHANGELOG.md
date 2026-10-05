@@ -16,6 +16,10 @@
   `TELEGRAM_HIGHLIGHTS_CHAT_IDS=857547432`, `TELEGRAM_HIGHLIGHTS_CRON_SECRET`,
   optional `HIGHLIGHTS_TEAM_IDS=STL`. Vault name for cron: `sports_highlights_cron`.
   Deploy with `--no-verify-jwt`.
+- One-clip test: `node --experimental-strip-types scripts/highlights-send-one.ts`
+  prints a live Blues MP4 and does not send. Add `--send` only on a box that
+  has `TELEGRAM_HIGHLIGHTS_BOT_TOKEN`; it `sendVideo`s that one clip to
+  `857547432`. Edge `send` with `clipId` is the claiming version of the same test.
 
 ---
 

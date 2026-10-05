@@ -264,7 +264,44 @@ npm run lint
   accepted. Optional: `HIGHLIGHTS_LOOKBACK_HOURS` (default 72),
   `HIGHLIGHTS_MAX_SENDS` (default 6).
 
-  Dry-run lists recent Blues MP4s and does not text anyone:
+  One-clip dry-run (resolves a live MP4, does not text anyone, no token):
+
+  ```bash
+  node --experimental-strip-types scripts/highlights-send-one.ts
+  ```
+
+  One real test video to Josh's DM `857547432`. Run this on a machine that has
+  the bot token. It sends that single clip and then stops. It does **not**
+  write `sports_highlights_sent`, so the first cron sweep will send the same
+  clip again unless you claim it (edge `send` below does claim).
+
+  ```bash
+  TELEGRAM_HIGHLIGHTS_BOT_TOKEN="<@CommandCenterHighlights_bot token>" \
+    node --experimental-strip-types scripts/highlights-send-one.ts \
+    --send --clip 6406147120112 --nhl-game 2026020020
+  ```
+
+  That clip is Mason McTavish vs DAL (NHL `2026020020`, ESPN `401891782`).
+  Brightcove URLs are signed and expire, so re-run the script instead of
+  pasting an old `mp4` into Telegram.
+
+  After the function is deployed, the same one-clip test through the edge
+  function claims the id (cron will not repeat it). Omit `clipId` only when
+  you mean every unsent goal in that game.
+
+  ```bash
+  curl -X POST "$SUPABASE_URL/functions/v1/sports-highlights" \
+    -H "Content-Type: application/json" \
+    -H "x-sports-highlights-cron: $TELEGRAM_HIGHLIGHTS_CRON_SECRET" \
+    -d '{"action":"send","nhlGameId":"2026020020","clipId":"6406147120112","dryRun":true}'
+
+  curl -X POST "$SUPABASE_URL/functions/v1/sports-highlights" \
+    -H "Content-Type: application/json" \
+    -H "x-sports-highlights-cron: $TELEGRAM_HIGHLIGHTS_CRON_SECRET" \
+    -d '{"action":"send","nhlGameId":"2026020020","clipId":"6406147120112"}'
+  ```
+
+  List every recent Blues MP4 without sending:
 
   ```bash
   curl -X POST "$SUPABASE_URL/functions/v1/sports-highlights" \
@@ -273,16 +310,7 @@ npm run lint
     -d '{"action":"sweep","dryRun":true}'
   ```
 
-  Send one finished game (records each clip so the sweep will not repeat it):
-
-  ```bash
-  curl -X POST "$SUPABASE_URL/functions/v1/sports-highlights" \
-    -H "Content-Type: application/json" \
-    -H "x-sports-highlights-cron: $TELEGRAM_HIGHLIGHTS_CRON_SECRET" \
-    -d '{"action":"send","nhlGameId":"2026020020"}'
-  ```
-
-  Local clip check without Telegram:
+  Local unit check without Telegram:
 
   ```bash
   node --experimental-strip-types supabase/functions/sports-highlights/sports-highlights.test.ts
