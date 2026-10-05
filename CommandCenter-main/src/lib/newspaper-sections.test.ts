@@ -26,8 +26,11 @@ import {
   dedupeStories,
   editorFront,
   essentialsFromDesks,
+  HISTORIC_NATIONAL_STATUS,
   isColumnStory,
   isDeskStory,
+  isHistoricNationalEvent,
+  isHistoricNationalStory,
   isHoldoverGame,
   isPreviewStory,
   isSectionAStory,
@@ -1423,6 +1426,59 @@ const nationalLead = {
   imageUrl: null,
   imageCredit: null,
 };
+const EVERY_DESK = ["Fox News", "WSJ", "New York Post", "Washington Examiner", "National Review", "AP", "Reuters"];
+const attempt = {
+  id: "nat-attempt",
+  headline: "Trump survives assassination attempt at Pennsylvania rally",
+  summary: "The former president was rushed from the stage after gunfire. Every national desk led with it.",
+  body: "Gunfire rang out at a campaign rally in Pennsylvania. Secret Service rushed the former president from the stage. ".repeat(8),
+  url: "https://example.com/attempt",
+  source: "Fox News",
+  credit: "Fox News, WSJ, AP",
+  outlets: EVERY_DESK,
+  publishedAt: "2026-10-05T10:00:00Z",
+  imageUrl: null,
+  imageCredit: null,
+};
+const war = {
+  ...attempt,
+  id: "nat-war",
+  headline: "Russia launches a full-scale invasion of Ukraine",
+  summary: "Columns crossed the border before dawn. Kyiv said a war has begun.",
+  url: "https://example.com/war",
+};
+const flood = {
+  ...attempt,
+  id: "nat-flood",
+  headline: "Catastrophic flood swallows the lower Mississippi",
+  summary: "Towns from Cairo to New Orleans went under overnight.",
+  url: "https://example.com/flood",
+};
+const confirmedDesk = {
+  issueId: "2026-10-05-morning",
+  day: "2026-10-05",
+  edition: "morning" as const,
+  label: "Morning",
+  stories: [nationalLead, attempt],
+  sources: [],
+  editor: { model: "grok-4.6", fallback: false, rationale: "The attempt is the only historic story." },
+  printedAt: "2026-10-05T11:00:00Z",
+};
+const fallbackDesk = { ...confirmedDesk, editor: { model: null, fallback: true, rationale: "" }, stories: [attempt] };
+const thinCoverage = { ...attempt, outlets: ["AP", "Fox News"] };
+assert(isHistoricNationalEvent(attempt.headline), "an assassination attempt is historic");
+assert(isHistoricNationalEvent(war.headline), "a war starting is historic");
+assert(isHistoricNationalEvent("Supreme Court overturns Roe in landmark ruling"), "a landmark Court ruling is historic");
+assert(isHistoricNationalEvent("Stock market crash wipes out two trillion"), "a market crash is historic");
+assert(isHistoricNationalEvent("Category 5 hurricane flattens the Gulf Coast"), "a huge disaster is historic");
+assert(isHistoricNationalEvent("President resigns and leaves office at noon"), "a president leaving office is historic");
+assert(isHistoricNationalEvent("Terrorist attack kills dozens in downtown Manhattan"), "a major terror attack is historic");
+assert(!isHistoricNationalEvent(nationalLead.headline), "a funding bill is not historic");
+assert(!isHistoricNationalEvent("Justices take up a challenge to a federal firearms rule"), "granting cert is not historic");
+assert(isHistoricNationalStory(attempt, confirmedDesk), "historic + every desk + editor confirmation clears the gate");
+assert(!isHistoricNationalStory(nationalLead, confirmedDesk), "ordinary national news fails the event test");
+assert(!isHistoricNationalStory(thinCoverage, confirmedDesk), "historic copy without near-universal coverage stays in B");
+assert(!isHistoricNationalStory(attempt, fallbackDesk), "historic copy without editor confirmation stays in B");
 const moScout = {
   id: "mo-scout-1",
   source: "Missouri Scout",
@@ -1433,17 +1489,28 @@ const moScout = {
   dek: "The governor signed the package in Jefferson City.",
   when: "2026-10-05T14:00:00Z",
 };
-const extras = essentialsFromDesks(
-  { issueId: "2026-10-05-morning", day: "2026-10-05", edition: "morning", label: "Morning", stories: [nationalLead], sources: [], editor: { model: null, fallback: true, rationale: "" }, printedAt: "2026-10-05T11:00:00Z" },
-  { scout: moScout, items: [moScout], listen: [] },
+const extras = essentialsFromDesks(confirmedDesk, { scout: moScout, items: [moScout], listen: [] });
+assert(!extras.some((c) => c.id === "nat-lead"), "a funding bill stays in National News");
+assert(
+  extras.some((c) => c.id === "nat-attempt" && c.status === HISTORIC_NATIONAL_STATUS && isSectionAStory(c)),
+  "a historic national story that every desk led with may run in Section A",
 );
-assert(extras.some((c) => c.id === "nat-lead" && isSectionAStory(c)), "major national news qualifies for Section A");
 assert(extras.some((c) => c.id === "mo-scout-1" && isSectionAStory(c)), "MoScout qualifies for Section A");
+const sampleExtras = essentialsFromDesks(sampleNationalDesk("2026-10-05-morning"), { scout: moScout, items: [moScout], listen: [] });
+assert(
+  sampleExtras.every((c) => c.sportLabel !== "National"),
+  "a typical national slate puts zero national stories in Section A",
+);
+const capped = essentialsFromDesks(
+  { ...confirmedDesk, stories: [attempt, war, flood] },
+  { scout: null, items: [], listen: [] },
+);
+assert(capped.filter((c) => c.sportLabel === "National").length === 2, "even a historic day caps Section A at two national stories");
 const withEssentials = buildEdition({
   stories: [tuesday, ...extras],
   clubs: [chiefs],
   edition: "2026-10-05-morning",
-  national: { issueId: "2026-10-05-morning", day: "2026-10-05", edition: "morning", label: "Morning", stories: [nationalLead], sources: [], editor: { model: null, fallback: true, rationale: "" }, printedAt: "2026-10-05T11:00:00Z" },
+  national: confirmedDesk,
   missouri: { scout: moScout, items: [moScout], listen: [] },
 });
 assert(withEssentials.pages.some((p) => p.kind === "national"), "National pages stay in their section");
@@ -1451,8 +1518,13 @@ assert(withEssentials.pages.some((p) => p.kind === "missouri"), "Missouri pages 
 const aFront = withEssentials.pages.find((p) => p.kind === "favorites-front");
 assert(
   aFront?.kind === "favorites-front" &&
-    [aFront.lead, aFront.second, aFront.third, ...aFront.news].some((c) => c && (c.id === "nat-lead" || c.id === "mo-scout-1")),
-  "Section A also runs the essentials from National and Missouri",
+    [aFront.lead, aFront.second, aFront.third, ...aFront.news].some((c) => c && (c.id === "nat-attempt" || c.id === "mo-scout-1")),
+  "Section A may run a historic national story or Missouri, not the ordinary national lead",
+);
+assert(
+  aFront?.kind === "favorites-front" &&
+    [aFront.lead, aFront.second, aFront.third, ...aFront.news].every((c) => !c || c.id !== "nat-lead"),
+  "the funding bill never reaches A1",
 );
 
 console.log("newspaper-sections ok");

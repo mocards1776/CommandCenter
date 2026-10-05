@@ -2,12 +2,17 @@
  * Thompson Times sections.
  *
  * Section A is the essentials — the stuff that matters most to the reader:
- * favorite clubs, MoScout and Missouri politics, the election, The Day Ahead,
- * the Beez, and genuinely major national news. Other teams reach A only when
- * the story is major (`isMajorStory`). A front, a clubs desk, inside story /
- * club-form pages, the Day Ahead, the Beez, and the RUWT watch page stay in A.
- * National News is its own section immediately after A (B when the edition
- * has a filed row). Missouri follows as C, or stays B when National is off.
+ * favorite clubs, MoScout and Missouri politics, the Day Ahead, the Beez,
+ * and — almost never — a historic national story. Other teams reach A only
+ * when the story is major (`isMajorStory`). National news stays in Section B
+ * unless it is major-major (assassination attempt, war starting, major terror
+ * attack, landmark Court ruling, market crash, huge disaster, a president
+ * leaving office), near-universal across outlets, and the national editor
+ * confirmed the slate. Most days, zero national stories make A; at most 1–2
+ * on a historic day. A front, a clubs desk, inside story / club-form pages,
+ * the Day Ahead, the Beez, and the RUWT watch page stay in A. National News
+ * is its own section immediately after A (B when the edition has a filed
+ * row). Missouri follows as C, or stays B when National is off.
  * Every sport section opens on a real section front (flag, lead wrap or
  * news of the day, score banner, secondary art, and a scores rail), then
  * wraps and news, then the reference desks — standings or the playoff
@@ -322,12 +327,91 @@ export function isEssentialsDesk(card: GameWrapCard): boolean {
   return card.sportLabel === "National" || card.sportLabel === "Missouri";
 }
 
+/** Mark set on a National card that cleared the historic Section A gate. */
+export const HISTORIC_NATIONAL_STATUS = "historic-national";
+
 /**
- * What belongs in Section A: followed clubs, the Missouri / national desks,
- * and other teams only when the story is genuinely major news.
+ * National copy big enough for Section A: not a funding bill, a hearing, or
+ * the day's Washington lead — only the rare major-major event. Close to a
+ * 9/11-class day, not merely important. The phrases match Josh's bar:
+ * assassination attempt, war starting, major terror attack, landmark Court
+ * ruling, market crash, huge natural disaster, a president leaving office.
+ */
+const HISTORIC_NATIONAL = new RegExp(
+  [
+    String.raw`assassinat`,
+    String.raw`attempt on (?:the )?(?:u\.?s\.? )?(?:president|vice[- ]president)`,
+    String.raw`(?:president|vice[- ]president)\S{0,24}(?:is |was |has been )?(?:shot|wounded|killed)`,
+    String.raw`(?:shot|wounded|killed) (?:the )?(?:u\.?s\.? )?(?:president|vice[- ]president)`,
+    String.raw`declares? war`,
+    String.raw`war (?:has )?begun`,
+    String.raw`war breaks? out`,
+    String.raw`full-scale invasion`,
+    String.raw`launches? (?:a |an |its )?(?:full-scale )?invasion`,
+    String.raw`\binvades\b`,
+    String.raw`terror(?:ist)? attack`,
+    String.raw`suicide bomb`,
+    String.raw`mass-casualty (?:attack|bombing)`,
+    String.raw`landmark (?:supreme court |scotus )?(?:ruling|decision|opinion|holding)`,
+    String.raw`(?:supreme court|scotus) (?:overturns?|strikes? down)`,
+    String.raw`(?:stock[- ]?)?market crash`,
+    String.raw`markets? crash`,
+    String.raw`category [45] hurricane`,
+    String.raw`magnitude \d+(?:\.\d+)? earthquake`,
+    String.raw`(?:devastating|deadliest|catastrophic) (?:hurricane|earthquake|tsunami|wildfire|tornado|flood)`,
+    String.raw`president (?:resigns|steps down|leaves office)`,
+    String.raw`(?:25th|twenty-fifth) amendment`,
+    String.raw`removed from office`,
+    String.raw`sworn in as president`,
+    String.raw`takes? the oath of office`,
+  ].join("|"),
+  "i",
+);
+
+/** Distinct desks that must have filed the same event (~10 national outlets). */
+export const NATIONAL_A_OUTLET_MIN = 6;
+
+export function isHistoricNationalEvent(text: string): boolean {
+  return HISTORIC_NATIONAL.test(text.replace(/\s+/g, " "));
+}
+
+/** Grok actually sat the national slate — not the mechanical fallback. */
+export function nationalDeskConfirmed(desk: NationalDesk | null | undefined): boolean {
+  return Boolean(desk?.editor.model && desk.editor.fallback !== true);
+}
+
+/** Near-universal: most of the national roster filed the same lead. */
+export function nationalNearUniversalCoverage(story: Pick<NationalStory, "outlets">): boolean {
+  const names = [...new Set((story.outlets ?? []).map((outlet) => outlet.trim()).filter(Boolean))];
+  return names.length >= NATIONAL_A_OUTLET_MIN;
+}
+
+/**
+ * Rule gate for a National story in Section A: historic event language,
+ * near-universal cross-outlet lead coverage, and national-editor confirmation.
+ * Fail any one and it stays in National News (Section B).
+ */
+export function isHistoricNationalStory(
+  story: Pick<NationalStory, "headline" | "summary" | "outlets">,
+  desk: NationalDesk | null | undefined,
+): boolean {
+  if (!nationalDeskConfirmed(desk)) return false;
+  if (!nationalNearUniversalCoverage(story)) return false;
+  return isHistoricNationalEvent(`${story.headline} ${story.summary ?? ""}`);
+}
+
+export function isHistoricNationalCard(card: GameWrapCard): boolean {
+  return card.sportLabel === "National" && card.status === HISTORIC_NATIONAL_STATUS;
+}
+
+/**
+ * What belongs in Section A: followed clubs, Missouri, a historic national
+ * story that cleared the gate, and other teams only when the copy is major.
+ * Ordinary National News never qualifies.
  */
 export function isSectionAStory(card: GameWrapCard): boolean {
-  if (isFavoriteStory(card) || isEssentialsDesk(card)) return true;
+  if (isFavoriteStory(card) || card.sportLabel === "Missouri") return true;
+  if (isHistoricNationalCard(card)) return true;
   return isMajorStory(card);
 }
 
@@ -355,7 +439,7 @@ function blankDeskCard(partial: Partial<GameWrapCard> & Pick<GameWrapCard, "id" 
   };
 }
 
-export function nationalStoryCard(story: NationalStory): GameWrapCard {
+export function nationalStoryCard(story: NationalStory, historic = false): GameWrapCard {
   const body = story.body?.trim() || story.summary;
   return blankDeskCard({
     id: story.id,
@@ -369,6 +453,7 @@ export function nationalStoryCard(story: NationalStory): GameWrapCard {
     photo: story.imageUrl,
     caption: story.imageCredit || story.source,
     dateline: story.byline || story.credit,
+    status: historic ? HISTORIC_NATIONAL_STATUS : null,
   });
 }
 
@@ -395,8 +480,12 @@ export function essentialsFromDesks(
   missouri: MissouriDesk | null | undefined,
 ): GameWrapCard[] {
   const out: GameWrapCard[] = [];
-  for (const story of (national?.stories ?? []).slice(0, NATIONAL_A_CAP)) {
-    out.push(nationalStoryCard(story));
+  let nationalInA = 0;
+  for (const story of national?.stories ?? []) {
+    if (nationalInA >= NATIONAL_A_CAP) break;
+    if (!isHistoricNationalStory(story, national)) continue;
+    out.push(nationalStoryCard(story, true));
+    nationalInA += 1;
   }
   if (missouri?.scout) out.push(missouriStoryCard(missouri.scout));
   const scoutId = missouri?.scout?.id;
@@ -943,8 +1032,9 @@ const LEAGUE_FRONT_MAX = FRONT_STORIES;
 
 /**
  * Stories the editor put on A1, in its order, held to the desk's beat: a
- * favorite-club or essentials-desk story always may; other teams only when
- * the copy is major news. A front story still needs copy.
+ * favorite-club, Missouri, or historic-national story always may; other
+ * teams only when the copy is major news. Ordinary National News may not,
+ * even if the editor named it. A front story still needs copy.
  */
 export function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
   let league = 0;
@@ -953,7 +1043,8 @@ export function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
     .filter((card) => !isHoldoverGame(card))
     .sort((a, b) => a.editorFront! - b.editorFront!)
     .filter((card) => {
-      if (isFavoriteStory(card) || isEssentialsDesk(card)) return true;
+      if (isFavoriteStory(card) || card.sportLabel === "Missouri" || isHistoricNationalCard(card)) return true;
+      if (card.sportLabel === "National") return false;
       if (league >= LEAGUE_FRONT_MAX || !isMajorStory(card)) return false;
       league += 1;
       return true;

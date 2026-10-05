@@ -4,7 +4,7 @@
  */
 import type { GameWrapCard } from "./newspaper-sports.ts";
 import { fileEditionStories } from "./newspaper.ts";
-import { buildEdition, type FavoritesFrontPage } from "./newspaper-sections.ts";
+import { buildEdition, HISTORIC_NATIONAL_STATUS, type FavoritesFrontPage } from "./newspaper-sections.ts";
 import {
   clearEditorStamps,
   editEdition,
@@ -230,6 +230,45 @@ assert(
   [twoFront.lead, twoFront.second, twoFront.third].filter((c) => c?.id.startsWith("league-")).length >= 1,
   "major league news may run in Section A",
 );
+
+// Ordinary national news the editor names still stays in Section B.
+const fundingBill = card({
+  id: "nat-funding",
+  sportLabel: "National",
+  leaguePath: null,
+  headline: "House passes the funding bill after an all-night vote",
+  body: copy("The House passed a stopgap funding bill after an all-night session."),
+});
+const fundingFront = front(
+  stampEditorDesk([...stories, fundingBill], {
+    front: ["nat-funding", "news-cards-note"],
+    order: [],
+    spike: [],
+    rationale: "",
+  }),
+);
+assert(fundingFront.lead?.id !== "nat-funding", "ordinary national news does not take A1 even if the editor names it");
+assert(
+  [fundingFront.lead, fundingFront.second, fundingFront.third].every((c) => !c || c.id !== "nat-funding"),
+  "ordinary national news never runs on A1",
+);
+const attemptCard = card({
+  id: "nat-attempt",
+  sportLabel: "National",
+  leaguePath: null,
+  status: HISTORIC_NATIONAL_STATUS,
+  headline: "Trump survives assassination attempt at Pennsylvania rally",
+  body: copy("Gunfire rang out at a campaign rally. Secret Service rushed him from the stage."),
+});
+const attemptFront = front(
+  stampEditorDesk([...stories, attemptCard], {
+    front: ["nat-attempt", "news-cards-note"],
+    order: [],
+    spike: [],
+    rationale: "",
+  }),
+);
+assert(attemptFront.lead?.id === "nat-attempt", "a historic national story the editor confirms may lead A1");
 
 // A front pick with no copy does not leave a bare photo on A1.
 const thinLead = stampEditorDesk(
