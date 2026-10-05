@@ -24,6 +24,8 @@ export type PreviewSide = {
   record: string | null;
   rank?: number | null;
   color?: string | null;
+  /** White stroke / 500-dark asset — dark marks only, never a backing disc. */
+  outline?: boolean;
 };
 
 export type PreviewGame = {
@@ -204,6 +206,39 @@ export function printReason(game: Pick<PreviewGame, "reasons" | "seriesLine" | "
   return null;
 }
 
+function hexLuminance(color: string | null | undefined): number | null {
+  const hex = (color ?? "").replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+/** Lightning bolt and other near-navy marks that vanish on the card. */
+export function darkLogoMark(color: string | null | undefined, sport: PreviewSport, teamId: string): boolean {
+  const id = String(teamId).toLowerCase();
+  if (sport === "nhl" && (id === "20" || id === "tb")) return true;
+  const y = hexLuminance(color);
+  return y != null && y < 0.14;
+}
+
+/** ESPN light-on-dark variant — the better Lightning asset, not a plate. */
+export function espnDarkLogoUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const dark = url.replace(/(\/i\/teamlogos\/[a-z0-9]+)\/500\//i, "$1/500-dark/");
+  return dark === url ? url : dark;
+}
+
+export function decoratePreviewSide(side: PreviewSide, sport: PreviewSport): PreviewSide {
+  const outline = side.outline ?? darkLogoMark(side.color, sport, side.teamId);
+  return {
+    ...side,
+    outline,
+    logo: outline ? espnDarkLogoUrl(side.logo) ?? side.logo : side.logo,
+  };
+}
+
 /** "Shane Bieber" → "Bieber". Used for pitchers and goalies on the card. */
 export function lastName(full: string | null | undefined): string | null {
   if (!full) return null;
@@ -241,6 +276,8 @@ export function decoratePreviewGame(
   const networks = printNetworks(game.tv);
   return {
     ...game,
+    away: decoratePreviewSide(game.away, game.sport),
+    home: decoratePreviewSide(game.home, game.sport),
     probableAway: game.probableAway ?? null,
     probableHome: game.probableHome ?? null,
     oddsLine: game.oddsLine ?? null,

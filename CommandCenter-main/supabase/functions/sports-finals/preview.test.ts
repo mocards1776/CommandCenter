@@ -7,7 +7,9 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { previewReplyMarkup } from "../_shared/telegram-markup.ts";
 import {
+  darkLogoMark,
   eveningWindowEnd,
+  espnDarkLogoUrl,
   inEveningWindow,
   lastName,
   PREVIEW_LIMIT,
@@ -354,7 +356,16 @@ const svg = renderPreviewSvg(
         sport: "nhl",
         league: "NHL",
         away: { teamId: "4", name: "Flyers", abbrev: "PHI", logo: null, record: "1-0-0", logoData: "data:image/png;base64,aaa" },
-        home: { teamId: "27", name: "Lightning", abbrev: "TB", logo: null, record: "1-0-0", logoData: "data:image/png;base64,bbb" },
+        home: {
+          teamId: "20",
+          name: "Lightning",
+          abbrev: "TB",
+          logo: null,
+          record: "1-0-0",
+          logoData: "data:image/png;base64,bbb",
+          color: "#002868",
+          outline: true,
+        },
         probableAway: "Ersson",
         probableHome: "Vasilevskiy",
         why: null,
@@ -371,12 +382,20 @@ assert.equal(PREVIEW_ALERT_WIDTH, 1080);
 assert.equal(PREVIEW_ALERT_HEIGHT, 1350);
 assert.doesNotMatch(svg, />86</);
 assert.doesNotMatch(svg, /live field/i);
-assert.match(svg, /class="logo-plate"/);
-assert.match(svg, /#f4f0e6/);
-assert.match(svg, /PHI 96-66/);
-assert.match(svg, /Wheeler vs Glasnow/);
-assert.match(svg, /Ersson \/ Vasilevskiy/);
+assert.doesNotMatch(svg, /logo-plate/);
+assert.doesNotMatch(svg, /class="logo-plate"/);
+assert.match(svg, /id="logoStroke"/);
+assert.match(svg, /class="logo-stroke"/);
+assert.match(svg, /96-66/);
+assert.match(svg, /98-64/);
+assert.match(svg, /Wheeler/);
+assert.match(svg, /Glasnow/);
+assert.match(svg, /Ersson/);
+assert.match(svg, /Vasilevskiy/);
 assert.match(svg, /ALDS Game 2/);
+assert.equal(darkLogoMark("#002868", "nhl", "20"), true);
+assert.equal(darkLogoMark("#fe5823", "nhl", "15"), false);
+assert.match(espnDarkLogoUrl("https://a.espncdn.com/i/teamlogos/nhl/500/20.png") ?? "", /500-dark\/20/);
 
 const markup = previewReplyMarkup("https://command-center-flax-gamma.vercel.app");
 assert.ok(markup);

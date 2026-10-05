@@ -44,7 +44,14 @@ export async function buildEveningPreview(now = new Date()): Promise<PreviewBuil
 
 export async function hydratePreviewLogos(games: PreviewGame[]): Promise<void> {
   const urls = [...new Set(games.flatMap((g) => [g.away.logo, g.home.logo]).filter((u): u is string => Boolean(u)))];
-  const fetched = await Promise.all(urls.map((url) => fetchLogoDataUri(url)));
+  const fetched = await Promise.all(
+    urls.map(async (url) => {
+      const data = await fetchLogoDataUri(url);
+      if (data) return data;
+      const fallback = url.replace(/\/500-dark\//i, "/500/");
+      return fallback !== url ? fetchLogoDataUri(fallback) : null;
+    }),
+  );
   const byUrl = new Map(urls.map((url, i) => [url, fetched[i] ?? null]));
   for (const game of games) {
     game.away.logoData = game.away.logo ? byUrl.get(game.away.logo) ?? null : null;

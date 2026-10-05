@@ -187,8 +187,15 @@ if (has("live")) {
   }
 }
 
+async function loadLogo(url: string | null | undefined): Promise<string | null> {
+  const data = await fetchLogoDataUri(url ?? null);
+  if (data) return data;
+  const fallback = (url ?? "").replace(/\/500-dark\//i, "/500/");
+  return fallback && fallback !== url ? fetchLogoDataUri(fallback) : null;
+}
+
 for (const game of display) {
-  const [away, home] = await Promise.all([fetchLogoDataUri(game.away.logo), fetchLogoDataUri(game.home.logo)]);
+  const [away, home] = await Promise.all([loadLogo(game.away.logo), loadLogo(game.home.logo)]);
   game.away.logoData = away;
   game.home.logoData = home;
 }

@@ -240,7 +240,8 @@ npm run lint
   the RUWT section default is 6). Window is send time through ~1:30am CT so
   late West Coast games count. Each row fills the right side with records,
   MLB probables, NHL starters when known, or a short NFL/CFB spread, plus one
-  why-chip. Logos sit on a light disc so dark marks (Lightning) read on navy.
+  why-chip. Logos stay bare; dark marks (Lightning) use the ESPN 500-dark
+  asset plus a white stroke — no backing disc.
   Empty slate skips the send. Idempotent once per Chicago date via
   `sports_finals_preview_sent`.
 
