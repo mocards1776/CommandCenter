@@ -1,0 +1,56 @@
+name: Rebuild Times bundles from source
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/press-editor-trim]
+    paths:
+      - ".github/workflows/rebuild-times-bundles.yml"
+permissions:
+  contents: write
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/press-editor-trim
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: CommandCenter-main/package-lock.json
+      - name: Install
+        working-directory: CommandCenter-main
+        run: npm ci
+      - name: Bundle press + telegram
+        run: |
+          set -euo pipefail
+          cd CommandCenter-main
+          node scripts/bundle-newspaper-press.mjs
+          node scripts/bundle-times-telegram.mjs
+          cd ..
+          bash scripts/sync-edge-copies.sh
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          h = hashlib.sha256(Path("supabase/functions/newspaper-press/compose.bundle.js").read_bytes()).hexdigest()
+          print("compose sha256", h)
+          assert h == "c2f05fa1e5ec8c7f0953f600dfd182c5fb58450cc16d4d60e766eb788d257827", h
+          fh = hashlib.sha256(Path("supabase/functions/times-telegram/front.bundle.js").read_bytes()).hexdigest()
+          print("front sha256", fh)
+          assert fh == "e95b3ce0a350b96d2ace3fcf3e1283525cda0070ffef92f498578fe56d5792d0", fh
+          PY
+      - name: Commit regenerated bundles
+        run: |
+          git config user.name "mocards1776"
+          git config user.email "56750647+mocards1776@users.noreply.github.com"
+          git rm -f --ignore-unmatch \
+            .github/workflows/install-regenerated-bundles.yml \
+            .github/workflows/install-times-bundles.yml \
+            .github/workflows/apply-times-lead-guard.yml \
+            .github/workflows/rebuild-times-bundles.yml \
+            docs/bundle-upload/compose-00.b64 || true
+          git add -A
+          git diff --cached --quiet && echo "nothing to commit" && exit 0
+          git commit -m "fix(times): regenerate compose/front bundles to match live (c2f05fa1)"
+          git push
