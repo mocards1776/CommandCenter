@@ -1237,6 +1237,18 @@ function RuwtCard({
             live={game.live}
             final={game.final}
             face="sans"
+            mlb={
+              game.live && game.situation
+                ? {
+                    balls: game.situation.balls,
+                    strikes: game.situation.strikes,
+                    outs: game.situation.outs,
+                    onFirst: game.situation.onFirst,
+                    onSecond: game.situation.onSecond,
+                    onThird: game.situation.onThird,
+                  }
+                : null
+            }
           />
           <Side
             side={game.home}

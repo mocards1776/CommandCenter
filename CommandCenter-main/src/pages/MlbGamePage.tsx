@@ -1186,7 +1186,9 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
   const final = !g.pregame && !g.live;
   const detail = g.inning || g.status;
   const barLabel = playing
-    ? liveScoreHeader(detail, g.status)
+    ? g.situation
+      ? g.inning || liveScoreHeader(detail, g.status)
+      : liveScoreHeader(detail, g.status)
     : g.pregame
       ? "Preview"
       : g.status;
@@ -1246,6 +1248,18 @@ function GameMatchupHeader({ game: g }: { game: MlbBoxscore }) {
             preview={g.whenShort}
             awayDim={homeWins}
             homeDim={awayWins}
+            mlb={
+              g.situation
+                ? {
+                    balls: g.situation.balls,
+                    strikes: g.situation.strikes,
+                    outs: g.situation.outs,
+                    onFirst: g.situation.onFirst,
+                    onSecond: g.situation.onSecond,
+                    onThird: g.situation.onThird,
+                  }
+                : null
+            }
           />
           {pregameClock ? (
             <p className="mt-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#8b93a7] sm:mt-2 sm:text-[10px] sm:tracking-[0.16em]">
