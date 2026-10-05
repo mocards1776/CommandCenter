@@ -7,8 +7,9 @@ import {
 } from "@/lib/newspaper-watch";
 
 function recordBit(side: WatchSide): string | null {
+  if (side.record) return side.record;
   if (side.rank) return `No. ${side.rank}`;
-  return side.record;
+  return null;
 }
 
 function mustSub(game: WatchListing): string {
