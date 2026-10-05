@@ -15,9 +15,11 @@
 import {
   editionNewsDay,
   favoriteDeskWeight,
+  gameWrapCovers,
   holdoverCovers,
   instantDay,
   isDeskPress,
+  isGameWrapStory,
   isNewsMuted,
   isResultCopy,
   splitStoryCopy,
@@ -268,6 +270,17 @@ export function isDeskStory(card: GameWrapCard): boolean {
   if (isPeripheralClubStory(card)) return false;
   if (isAthleticCard(card)) return Boolean(card.headline && card.leaguePath);
   if (card.id.startsWith("league-")) return Boolean(card.headline && card.leaguePath);
+  if (isGameWrapStory(card)) {
+    if (
+      card.status &&
+      /final|postponed/i.test(card.status) &&
+      card.scoreLine &&
+      /\d/.test(card.scoreLine)
+    ) {
+      return true;
+    }
+    return cleanStoryCopy(card.body).text.length >= 80;
+  }
   if (!isFavoriteStory(card)) return false;
   if (card.id.startsWith("news-")) return Boolean(card.headline);
   if (cleanStoryCopy(card.body).text.length >= 80) return true;
@@ -334,7 +347,7 @@ export function storyRank(card: GameWrapCard, edition: string): number {
  * one from the rule desk, so these never spend the AI editor's news budget.
  */
 export function isGameWrap(card: GameWrapCard): boolean {
-  return /^(?:wire|recap|recent|wrap)-/.test(card.id);
+  return isGameWrapStory(card);
 }
 
 /** Carried unread game copy. It may run inside; it is not last night and must not open A1. */
@@ -455,8 +468,9 @@ export function staleNamedPackage(card: GameWrapCard, edition: string): boolean 
   return named.some((day) => !allowed.has(day));
 }
 
-/** Last 18 hours before the press. An unread holdover may return for one more edition. */
+/** News stays on the 18-hour clock. Game wraps key off the news-day window. */
 function inEditionWindow(card: GameWrapCard, edition: string): boolean {
+  if (isGameWrap(card)) return gameWrapCovers(card.when, edition, card.leaguePath);
   if (card.holdover) return holdoverCovers(card.when, edition);
   return withinEditionHours(card.when, edition);
 }
@@ -810,8 +824,8 @@ function sportPages(
   const unique = dedupeStories(stories.filter((card) => !isStalePreview(card, edition)));
   const isMlb = id.path === "baseball/mlb";
   const desk = isDeskPress(edition);
-  // A morning sport section runs the best few long stories, not every wire rewrite.
-  const INSIDE_CAP = 6;
+  // News inside pages stay bounded. Game wraps size the section to the night.
+  const NEWS_INSIDE_CAP = 6;
   // Morning leads with stories. Noon and 5 p.m. open on standings, form, and the slate.
   // League leaders run beside the standings in every edition, whenever the league publishes them.
   const leaders = withLeaders ? (["leaders"] as const) : [];
@@ -823,7 +837,12 @@ function sportPages(
       : ["news", "recaps", "teams", ...leaders, "schedule", isMlb ? "playoffs" : "form", ...players];
   const deskCount = focuses.length;
   const inside: SportInsidePage[] = [];
-  const full = desk ? [] : unique.filter(hasStoryCopy).slice(0, INSIDE_CAP);
+  const full = desk
+    ? []
+    : [
+        ...unique.filter((card) => isGameWrap(card) && hasStoryCopy(card)),
+        ...unique.filter((card) => !isGameWrap(card) && hasStoryCopy(card)).slice(0, NEWS_INSIDE_CAP),
+      ];
   let n = deskCount + 1;
   for (let i = 0; i < full.length; i += 2) {
     const primary = full[i]!;
@@ -850,8 +869,8 @@ function sportPages(
     card,
     folio: sportFolioByStory[card.id] ?? `${id.code}1`,
   }));
-  const newsArticles = articles.slice(0, 12);
-  const recapArticles = articles.filter((a) => isRecapStory(a.card)).slice(0, 8);
+  const newsArticles = articles.filter((a) => !isGameWrap(a.card)).slice(0, 12);
+  const recapArticles = articles.filter((a) => isRecapStory(a.card) || isGameWrap(a.card));
 
   const desks: SportFrontPage[] = focuses.map((focus, i) => ({
     section: id.code,
@@ -937,7 +956,7 @@ export function editorCandidates(
   const ranked = ruleOrder(deskCopy(stories, edition).map(withoutEditorStamps), edition);
   return {
     news: ranked.filter((card) => !isGameWrap(card)).slice(0, limit),
-    games: ranked.filter(isGameWrap).slice(0, gameLimit),
+    games: ranked.filter(isGameWrap),
   };
 }
 

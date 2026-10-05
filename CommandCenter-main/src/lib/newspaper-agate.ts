@@ -238,6 +238,7 @@ function summarySide(c: SumCompetitor, periods: string[]): BoxSide {
     errors: null,
     record: c.record?.find((r) => r.type === "total")?.summary ?? c.record?.[0]?.summary ?? null,
     winner: Boolean(c.winner),
+    rank: null,
     lines: periods.map((_, i) => {
       const l = c.linescores?.[i];
       const v = typeof l?.value === "number" ? l.value : Number.parseFloat(l?.displayValue ?? "");

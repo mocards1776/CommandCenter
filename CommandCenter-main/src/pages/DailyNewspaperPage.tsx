@@ -2273,7 +2273,7 @@ function SportNewsDesk({
               </button>
             </h3>
             <ScoreStrip
-              games={strip.games.slice(0, 16)}
+              games={strip.games}
               onOpen={(g) => {
                 const card = boxStoryCard(g);
                 if (card) open({ card, game: g });
@@ -2444,7 +2444,7 @@ function ScoresDesk({
     featuredPool.find((g) => g.recap?.photo && !involvesClub(g, page.clubs)) ??
     featuredPool.find((g) => g.recap) ??
     featuredPool[0]!;
-  const rest = (collegeSplit ? [] : games.filter((g) => g !== featured)).slice(0, 18);
+  const rest = collegeSplit ? [] : games.filter((g) => g !== featured);
   const yesterdayRest = collegeSplit?.yesterday.filter((g) => g !== featured) ?? [];
   const weekRest = collegeSplit?.rest.filter((g) => g.final && g !== featured) ?? [];
   const card = boxStoryCard(featured);
@@ -2630,10 +2630,16 @@ function CfbSchedule({ games, edition }: { games: BoxGame[]; edition: string }) 
                   <time>{gameClock(game)}</time>
                   <span className="tt-cfb-clubs">
                     {game.away.logo ? <img src={game.away.logo} alt="" /> : null}
-                    <b>{game.away.abbrev}</b>
+                    <b>
+                      {game.away.rank ? <span className="tt-cfb-rank">#{game.away.rank}</span> : null}
+                      {game.away.abbrev}
+                    </b>
                     <i>at</i>
                     {game.home.logo ? <img src={game.home.logo} alt="" /> : null}
-                    <b>{game.home.abbrev}</b>
+                    <b>
+                      {game.home.rank ? <span className="tt-cfb-rank">#{game.home.rank}</span> : null}
+                      {game.home.abbrev}
+                    </b>
                   </span>
                   <em>{game.broadcasts.filter(Boolean).join(" · ") || game.venue || ""}</em>
                   <span className="tt-cfb-watch" title="RUwT watchability">
@@ -2667,7 +2673,7 @@ function ScheduleDesk({
   }
   if (games.length) {
     const days = new Map<string, BoxGame[]>();
-    for (const g of games.slice(0, 24)) {
+    for (const g of games) {
       const list = days.get(g.day) ?? [];
       list.push(g);
       days.set(g.day, list);
@@ -3989,7 +3995,7 @@ function NewspaperDesk() {
   const wireQ = useQuery({
     queryKey: [pressId, "tt-wire", day, favKeys],
     queryFn: async () => {
-      const wire = await fetchNewspaperWire({ favs: teamFavs, day });
+      const wire = await fetchNewspaperWire({ favs: teamFavs, day, pressId });
       const games = await enrichWireStories(wire.games, DEEP_STORIES);
       return { ...wire, games };
     },

@@ -187,6 +187,75 @@ export function holdoverCovers(iso: string | null | undefined, pressId: string):
   return t <= endMs && t >= endMs - HOLDOVER_HOURS * 3_600_000;
 }
 
+/** Wire / recap / club wrap ids — one card per game, not news. */
+export function isGameWrapStory(card: { id: string }): boolean {
+  return /^(?:wire|recap|recent|wrap)-/.test(card.id);
+}
+
+function centralWeekday(day: string): number {
+  return new Date(`${day}T12:00:00Z`).getUTCDay();
+}
+
+/** The Saturday before `day`. On Saturday itself, the previous Saturday. */
+export function previousSaturday(day: string): string {
+  const wd = centralWeekday(day);
+  return shiftDay(day, wd === 6 ? -7 : -(wd + 1));
+}
+
+function asPressId(pressId: string): string {
+  return parsePressId(pressId) ? pressId : `${pressId}-morning`;
+}
+
+/**
+ * When the game desk opens for this press. Morning papers cover every final
+ * since the previous morning; Monday morning reaches back to Saturday
+ * morning. College football keeps last Saturday through the next Saturday
+ * morning so the week does not vanish on Tuesday.
+ */
+export function gameWindowStart(pressId: string, leaguePath?: string | null): Date | null {
+  const parsed = parsePressId(asPressId(pressId));
+  if (!parsed) return null;
+  const { day, slot } = parsed;
+  const wd = centralWeekday(day);
+  if (leaguePath === "football/college-football") {
+    if (slot !== "morning" && wd === 6) return pressInstant(`${day}-morning`);
+    return pressInstant(`${previousSaturday(day)}-morning`);
+  }
+  if (slot === "morning" && wd === 1) return pressInstant(`${shiftDay(day, -2)}-morning`);
+  if (slot === "morning") return pressInstant(`${shiftDay(day, -1)}-morning`);
+  return pressInstant(`${day}-morning`);
+}
+
+/** A game wrap belongs in this edition when its kickoff is inside the news-day window. */
+export function gameWrapCovers(
+  iso: string | null | undefined,
+  pressId: string,
+  leaguePath?: string | null,
+): boolean {
+  const end = pressInstant(asPressId(pressId));
+  const start = gameWindowStart(pressId, leaguePath);
+  if (!end || !start || !iso) return false;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  return t <= end.getTime() && t >= start.getTime();
+}
+
+/** Calendar days the wire should read for a league, inclusive of the dateline. */
+export function wireBoardDays(day: string, pressId: string | undefined, leaguePath: string): string[] {
+  const id = asPressId(pressId ?? `${day}-morning`);
+  const start = gameWindowStart(id, leaguePath);
+  const startDay = start ? start.toLocaleDateString("en-CA", { timeZone: TZ }) : editionNewsDay(day);
+  const out: string[] = [];
+  let cursor = startDay;
+  for (let i = 0; i < 10; i++) {
+    out.push(cursor);
+    if (cursor >= day) break;
+    cursor = shiftDay(cursor, 1);
+  }
+  if (!out.includes(day)) out.push(day);
+  return [...new Set(out)];
+}
+
 /**
  * Whether a timestamp belongs in this edition: the 18 hours before its press.
  */
@@ -243,6 +312,8 @@ export type StoryIdentity = {
   gameId?: string | null;
   when?: string | null;
   holdover?: boolean;
+  /** ESPN path, used to key college-football's longer weekend window. */
+  leaguePath?: string | null;
 };
 
 /** Same shape `rss_reads` stores, so a story seen in the paper matches a story seen in Dispatch. */
@@ -291,14 +362,26 @@ export function fileEditionStories<T extends StoryIdentity>(opts: {
   readKeys: ReadonlySet<string>;
   pressId: string;
 }): T[] {
-  const fresh = opts.fresh.filter(
-    (card) => withinEditionHours(card.when, opts.pressId) && !storyWasRead(card, opts.readKeys),
-  );
+  const inWindow = (card: T) =>
+    isGameWrapStory(card)
+      ? gameWrapCovers(card.when, opts.pressId, card.leaguePath)
+      : withinEditionHours(card.when, opts.pressId);
+  const carryWindow = (card: T) =>
+    isGameWrapStory(card)
+      ? gameWrapCovers(card.when, opts.pressId, card.leaguePath)
+      : holdoverCovers(card.when, opts.pressId);
+  const stampOlderFinal = (card: T): T =>
+    isGameWrapStory(card) && !withinEditionHours(card.when, opts.pressId)
+      ? { ...withoutEditorStamps(card), holdover: true }
+      : card;
+  const fresh = opts.fresh
+    .filter((card) => inWindow(card) && !storyWasRead(card, opts.readKeys))
+    .map(stampOlderFinal);
   const seen = new Set(fresh.flatMap((card) => storyReadKeys(card)));
   const carried = opts.carried
     .filter(
       (card) =>
-        holdoverCovers(card.when, opts.pressId) &&
+        carryWindow(card) &&
         !storyWasRead(card, opts.readKeys) &&
         !storyReadKeys(card).some((key) => seen.has(key)),
     )
