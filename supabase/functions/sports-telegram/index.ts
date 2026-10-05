@@ -1,9 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { heatAlertCaption, openGameUrl } from "../_shared/heat-alert/copy.ts";
+import { heatAlertCaption } from "../_shared/heat-alert/copy.ts";
 import { HeatAlertLookupError, loadHeatAlertCard } from "../_shared/heat-alert/fetch-game.ts";
 import { embedLogos } from "../_shared/heat-alert/logos.ts";
 import { renderHeatAlertSvg } from "../_shared/heat-alert/svg.ts";
 import { parseChatAllowlist, resolveChatTargets, sendTelegramPhoto } from "../_shared/heat-alert/telegram.ts";
+import { alertReplyMarkup } from "../_shared/telegram-markup.ts";
 import { bytesToBase64 } from "../_shared/heat-alert/binary.ts";
 import { rasterizeHeatAlert } from "./raster.ts";
 
@@ -12,6 +13,7 @@ import { rasterizeHeatAlert } from "./raster.ts";
  *
  * Render does not need Telegram. Send calls sendPhoto for chats listed in
  * TELEGRAM_CHAT_IDS. Heat copy is the caller's `reason` (RUWT owns that line).
+ * Open game and RUWT board are inline keyboard URL buttons, not caption links.
  *
  * Auth: Authorization bearer equals SUPABASE_SERVICE_ROLE_KEY, or header
  * x-sports-telegram-secret equals SPORTS_TELEGRAM_SECRET.
@@ -115,7 +117,8 @@ Deno.serve(async (req: Request) => {
     return json({ error: message }, status);
   }
 
-  const caption = heatAlertCaption(job.reason, openGameUrl(origin(), card.gamePath));
+  const caption = heatAlertCaption(job.reason);
+  const replyMarkup = alertReplyMarkup(origin(), card.gamePath);
   let png: Uint8Array;
   try {
     const withLogos = await embedLogos(card);
@@ -163,6 +166,7 @@ Deno.serve(async (req: Request) => {
     caption,
     chatIds: targets.ids,
     filename: `${card.sport}-${card.gameId}.png`,
+    replyMarkup,
   });
   const sent = chats.filter((row) => row.ok).length;
   return json(

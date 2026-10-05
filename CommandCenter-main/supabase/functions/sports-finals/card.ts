@@ -84,6 +84,9 @@ export type FinalLeader = {
   teamAbbrev: string;
   name: string;
   line: string;
+  /** Caption-only sentence. The graphic still draws `line`. */
+  highlight?: string | null;
+  highlightScore?: number;
 };
 
 export type FinalCard = {
@@ -166,48 +169,198 @@ export function formatFinalsTimestamp(iso: string | null | undefined, fallback: 
   return stamped.replace(/\sC[DS]T$/, " CT");
 }
 
-function scoreLine(card: FinalCard): string {
-  const away = `${card.away.name} ${card.away.score ?? "–"}`;
-  const home = `${card.home.name} ${card.home.score ?? "–"}`;
-  return `${away}, ${home}`;
+const SPORT_TAG: Record<string, string> = {
+  nfl: "NFL",
+  cfb: "CFB",
+  mlb: "MLB",
+  nhl: "NHL",
+};
+
+const SINGULAR_NICKNAMES =
+  /\b(sox|jazz|lightning|avalanche|wild|heat|magic|thunder|united|city|fc)\b/i;
+
+function teamTakesPluralVerb(name: string): boolean {
+  const last = name.trim().split(/\s+/).pop() ?? "";
+  if (SINGULAR_NICKNAMES.test(last)) return false;
+  return /s$/i.test(last);
 }
 
-function recordLine(card: FinalCard): string | null {
-  if (!card.away.record && !card.home.record) return null;
-  const away = card.away.record ? `${card.away.abbrev} ${card.away.record}` : card.away.abbrev;
-  const home = card.home.record ? `${card.home.abbrev} ${card.home.record}` : card.home.abbrev;
-  return `${away} · ${home}`;
+function conjugate(name: string, plural: string, singular: string): string {
+  return teamTakesPluralVerb(name) ? plural : singular;
 }
 
-function leaderCaptionLines(card: FinalCard): string[] {
-  const groups = new Map<string, string[]>();
+function beatVerb(sport: string, winner: string): string {
+  if (sport === "nhl") return conjugate(winner, "beat", "beats");
+  return conjugate(winner, "defeat", "defeats");
+}
+
+function resultSides(card: FinalCard): { winner: FinalSide; loser: FinalSide } | null {
+  const away = card.away.score;
+  const home = card.home.score;
+  if (away == null || home == null || away === home) return null;
+  return away > home ? { winner: card.away, loser: card.home } : { winner: card.home, loser: card.away };
+}
+
+function scorePair(winner: number, loser: number): string {
+  return `${winner}-${loser}`;
+}
+
+function resultLine(card: FinalCard): string {
+  const sides = resultSides(card);
+  if (!sides) {
+    const away = card.away.score ?? "–";
+    const home = card.home.score ?? "–";
+    if (card.away.score != null && card.home.score != null && card.away.score === card.home.score) {
+      return `${card.away.name} and ${card.home.name} tie ${away}-${home}.`;
+    }
+    return `${card.away.name} ${away}, ${card.home.name} ${home}.`;
+  }
+  const verb = beatVerb(card.sport, sides.winner.name);
+  return `${sides.winner.name} ${verb} ${sides.loser.name} ${scorePair(sides.winner.score!, sides.loser.score!)}.`;
+}
+
+function recordMoveLine(card: FinalCard): string | null {
+  const sides = resultSides(card);
+  if (sides) {
+    if (!sides.winner.record || !sides.loser.record) return null;
+    const move = conjugate(sides.winner.name, "move", "moves");
+    const fall = conjugate(sides.loser.name, "fall", "falls");
+    return `${sides.winner.name} ${move} to ${sides.winner.record}, ${sides.loser.name} ${fall} to ${sides.loser.record}.`;
+  }
+  if (!card.away.record || !card.home.record) return null;
+  const awayMove = conjugate(card.away.name, "move", "moves");
+  const homeMove = conjugate(card.home.name, "move", "moves");
+  return `${card.away.name} ${awayMove} to ${card.away.record}, ${card.home.name} ${homeMove} to ${card.home.record}.`;
+}
+
+function statAt(labels: string[], stats: string[], keys: string[]): string {
+  for (const key of keys) {
+    const idx = labels.findIndex((label) => label.toUpperCase() === key.toUpperCase());
+    if (idx >= 0 && stats[idx]) return stats[idx];
+  }
+  return "";
+}
+
+function numAt(labels: string[], stats: string[], keys: string[]): number | null {
+  const raw = statAt(labels, stats, keys).replace(/,/g, "");
+  if (!raw) return null;
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function yardsFromLine(line: string): number | null {
+  const match = /(\d+)\s*YDS\b/i.exec(line);
+  return match ? Number(match[1]) : null;
+}
+
+function tdFromLine(line: string): number | null {
+  const match = /(\d+)\s*TD\b/i.exec(line);
+  return match ? Number(match[1]) : null;
+}
+
+export function highlightFromBox(
+  group: string,
+  labels: string[],
+  stats: string[],
+  player: string,
+): { text: string; score: number } | null {
+  const name = player.trim();
+  if (!name) return null;
+  const yds = numAt(labels, stats, ["YDS", "YARDS"]) ?? yardsFromLine(stats.join(" "));
+  const td = numAt(labels, stats, ["TD", "TDS"]) ?? tdFromLine(stats.join(" "));
+
+  if (group === "passing" || /pass/i.test(group)) {
+    if (yds == null || yds < 1) return null;
+    const text =
+      td && td >= 2
+        ? `${name} threw for ${yds} yards and ${td} touchdowns.`
+        : `${name} threw for ${yds} yards.`;
+    return { text, score: yds + (td ?? 0) * 40 };
+  }
+  if (group === "rushing" || /rush/i.test(group)) {
+    if (yds == null || yds < 40) return null;
+    const text =
+      td && td >= 2
+        ? `${name} rushed for ${yds} yards and ${td} touchdowns.`
+        : `${name} rushed for ${yds} yards.`;
+    return { text, score: yds * 1.4 + (td ?? 0) * 50 };
+  }
+  if (group === "receiving" || /receiv/i.test(group)) {
+    if (yds == null || yds < 80) return null;
+    const text =
+      td && td >= 2
+        ? `${name} had ${yds} receiving yards and ${td} touchdowns.`
+        : `${name} had ${yds} receiving yards.`;
+    return { text, score: yds * 1.2 + (td ?? 0) * 45 };
+  }
+
+  const goals = numAt(labels, stats, ["G", "GOALS"]);
+  const assists = numAt(labels, stats, ["A", "ASSISTS"]);
+  const points = numAt(labels, stats, ["P", "PTS", "POINTS"]) ?? (goals != null || assists != null ? (goals ?? 0) + (assists ?? 0) : null);
+  if (/skat|forward|defense|scoring/i.test(group)) {
+    if (goals && goals >= 2) return { text: `${name} scored ${goals} goals.`, score: goals * 80 + (assists ?? 0) * 30 };
+    if (points && points >= 2) return { text: `${name} had ${points} points.`, score: points * 50 };
+    if (goals && goals >= 1) return { text: `${name} scored.`, score: 40 };
+  }
+  if (/goal/i.test(group)) {
+    const saves = numAt(labels, stats, ["SV", "SAVES", "SVS"]);
+    if (saves && saves >= 20) return { text: `${name} made ${saves} saves.`, score: saves };
+  }
+
+  if (/pitch/i.test(group)) {
+    const punchouts = numAt(labels, stats, ["K", "SO", "STRIKEOUTS"]);
+    const innings = statAt(labels, stats, ["IP", "INNINGS"]);
+    if (punchouts && punchouts >= 6) return { text: `${name} struck out ${punchouts}.`, score: punchouts * 15 };
+    if (innings) return { text: `${name} pitched ${innings} innings.`, score: 20 };
+  }
+  if (/batt|hitt|hitting/i.test(group)) {
+    const homers = numAt(labels, stats, ["HR", "HRUNS"]);
+    const hits = numAt(labels, stats, ["H", "HITS"]);
+    const rbi = numAt(labels, stats, ["RBI"]);
+    if (homers && homers >= 2) return { text: `${name} hit ${homers} home runs.`, score: homers * 60 };
+    if (homers === 1) return { text: `${name} hit a home run.`, score: 60 };
+    if (hits && hits >= 3) return { text: `${name} had ${hits} hits.`, score: hits * 20 };
+    if (rbi && rbi >= 3) return { text: `${name} drove in ${rbi}.`, score: rbi * 18 };
+  }
+  return null;
+}
+
+export function narrativeHighlight(card: FinalCard): string | null {
+  let best: { text: string; score: number } | null = null;
   for (const row of card.leaders) {
-    const slot = groups.get(row.groupLabel) ?? [];
-    slot.push(`${row.teamAbbrev} ${row.name} ${row.line}`);
-    groups.set(row.groupLabel, slot);
+    const fromCard =
+      row.highlight && row.highlightScore != null
+        ? { text: row.highlight, score: row.highlightScore }
+        : null;
+    const parsed = fromCard ?? highlightFromLine(row);
+    if (!parsed) continue;
+    if (!best || parsed.score > best.score) best = parsed;
   }
-  const lines: string[] = [];
-  for (const [label, rows] of groups) {
-    for (const row of rows) lines.push(`${label}: ${row}`);
-  }
-  return lines.slice(0, 6);
+  return best?.text ?? null;
 }
 
-export function finalCaption(card: FinalCard, origin: string): string {
-  const root = origin.replace(/\/$/, "");
-  const head = /^final\b/i.test(card.statusLabel) ? "Final" : card.statusLabel || "Final";
-  const lines = [`${head}: ${scoreLine(card)}`];
-  const records = recordLine(card);
-  if (records) lines.push(records);
-  if (card.odds?.upsetLine) lines.push(card.odds.upsetLine);
-  if (card.odds?.captionLine) lines.push(card.odds.captionLine);
-  const leaders = leaderCaptionLines(card);
-  if (leaders.length) {
-    lines.push("");
-    lines.push(...leaders);
+function highlightFromLine(row: FinalLeader): { text: string; score: number } | null {
+  const yds = yardsFromLine(row.line);
+  const td = tdFromLine(row.line);
+  if (row.group === "passing" && yds != null) {
+    return highlightFromBox(row.group, ["YDS", "TD"], [String(yds), td != null ? String(td) : ""], row.name);
   }
-  lines.push("");
-  lines.push(`Open game: ${root}${card.path}`);
+  if (row.group === "rushing" && yds != null) {
+    return highlightFromBox(row.group, ["YDS", "TD"], [String(yds), td != null ? String(td) : ""], row.name);
+  }
+  if (row.group === "receiving" && yds != null) {
+    return highlightFromBox(row.group, ["YDS", "TD"], [String(yds), td != null ? String(td) : ""], row.name);
+  }
+  return highlightFromBox(row.group, [], [], row.name);
+}
+
+export function finalCaption(card: FinalCard, _origin?: string): string {
+  const tag = SPORT_TAG[card.sport] ?? card.sportLabel.toUpperCase();
+  const lines = [`FINAL · ${tag}`, resultLine(card)];
+  const records = recordMoveLine(card);
+  if (records) lines.push(records);
+  const highlight = narrativeHighlight(card);
+  if (highlight) lines.push(highlight);
   return lines.join("\n").slice(0, 1000);
 }
 
@@ -382,8 +535,17 @@ function pickLeaders(raw: Rec): FinalLeader[] {
       const stats = arr(rec(athlete).stats).map((stat) => str(stat));
       const line = leaderLine(name, labels, stats);
       if (!line) continue;
+      const hint = highlightFromBox(name, labels, stats, player);
       const slot = groups.get(name) ?? { label: titleGroup(str(block.name) || name), rows: [] };
-      slot.rows.push({ group: name, groupLabel: slot.label, teamAbbrev: abbrev, name: player, line });
+      slot.rows.push({
+        group: name,
+        groupLabel: slot.label,
+        teamAbbrev: abbrev,
+        name: player,
+        line,
+        highlight: hint?.text ?? null,
+        highlightScore: hint?.score,
+      });
       groups.set(name, slot);
     }
   }

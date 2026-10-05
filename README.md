@@ -116,8 +116,10 @@ npm run lint
   `sports-telegram` edge function for a tall PNG and Telegram `sendPhoto`.
   Sports App owns the drawing (logos, score, clock nest, down and distance,
   a compact field / ice / diamond, the live win-probability chart, and
-  Apple-style team stats). RUWT owns the caption reason. The picture
-  is rendered from the game, not from a screenshot and not from a stock photo.
+  Apple-style team stats). RUWT owns the caption reason. Open game and
+  RUWT board are Telegram inline keyboard buttons (not caption links).
+  The picture is rendered from the game, not from a screenshot and not
+  from a stock photo.
 
   The signed-in preview is `/sports/heat-alert?sport=nfl&game=<espn id>`.
   Sending does not use that page.
@@ -185,8 +187,17 @@ npm run lint
     team id or abbreviation). If that secret is unset, favorites are the ones
     already stored on sports-push subscriptions with favorite alerts on.
   - `ruwt` — the game was hot on the live-drama line while it was in progress.
-  - `all` — every final in `TELEGRAM_FINALS_SPORTS` (default `nfl,cfb`; `mlb`
-    and `nhl` also render).
+  - `all` — every final in `TELEGRAM_FINALS_SPORTS` (default
+    `nfl,cfb,mlb,nhl` when the secret is empty).
+
+  Claim scope stays `favorites,ruwt` unless you set `all`. A favorite
+  team only fires when `TELEGRAM_FINALS_FAVORITES` lists it or a
+  sports-push subscription has `favorite_alerts` on. Cardinals / Blues
+  will not get a finals photo from favorites if `favorite_alerts` is
+  false and the game was never `ever_hot`.
+
+  The caption is a short narrative (winner, records, one highlight).
+  Open game and RUWT board are inline keyboard buttons.
 
   The first time a game is seen, nothing sends, so a deploy does not photo
   finals already on the board. Chat allowlist `TELEGRAM_FINALS_CHAT_IDS`
@@ -198,7 +209,7 @@ npm run lint
     TELEGRAM_FINALS_CRON_SECRET="$(openssl rand -hex 24)" \
     TELEGRAM_FINALS_CHAT_IDS="857547432" \
     TELEGRAM_FINALS_SCOPE="favorites,ruwt" \
-    TELEGRAM_FINALS_SPORTS="nfl,cfb" \
+    TELEGRAM_FINALS_SPORTS="nfl,cfb,mlb,nhl" \
     SPORTS_FINALS_ORIGIN="https://command-center-flax-gamma.vercel.app" \
     --project-ref esdgrgulaxnewmhjuyzh
   supabase functions deploy sports-finals --project-ref esdgrgulaxnewmhjuyzh --no-verify-jwt

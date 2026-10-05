@@ -5,7 +5,8 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { cardFromSummary, finalCaption, formatFinalsTimestamp, statMagnitude } from "./card.ts";
+import { cardFromSummary, finalCaption, formatFinalsTimestamp, highlightFromBox, statMagnitude } from "./card.ts";
+import { alertReplyMarkup } from "../_shared/telegram-markup.ts";
 import { oddsFromSummary, parseDetails, spreadOutcome } from "./odds.ts";
 import {
   DEFAULT_FINALS_CHAT_ID,
@@ -57,8 +58,10 @@ assert.equal(edgeMap(undefined, []).length, 0);
 assert.deepEqual(parseScope(undefined), { favorites: true, ruwt: true, all: false });
 assert.deepEqual(parseScope("all"), { favorites: false, ruwt: false, all: true });
 assert.deepEqual(parseScope("favorites"), { favorites: true, ruwt: false, all: false });
-assert.deepEqual(parseSports(undefined), ["nfl", "cfb"]);
+assert.deepEqual(parseSports(undefined), ["nfl", "cfb", "mlb", "nhl"]);
+assert.deepEqual(parseSports(""), ["nfl", "cfb", "mlb", "nhl"]);
 assert.deepEqual(parseSports("nhl,soccer,mlb"), ["nhl", "mlb"]);
+assert.deepEqual(parseSports("nfl,cfb"), ["nfl", "cfb"]);
 assert.deepEqual(parseFavoriteTokens("nfl:CLE, cfb:333, nba:1"), [
   { sport: "nfl", token: "cle" },
   { sport: "cfb", token: "333" },
@@ -125,6 +128,32 @@ assert.equal(
     nextPhase: "final",
   }),
   true,
+);
+assert.equal(
+  shouldSendFinal({
+    ...base,
+    sport: "nhl",
+    favorites: [{ sport: "nhl", token: "stl" }],
+    away: { id: "1", abbrev: "BOS" },
+    home: { id: "19", abbrev: "STL" },
+    prev: { phase: "live", everHot: false },
+    nextPhase: "final",
+  }),
+  true,
+  "NHL favorite final fires the same way as football",
+);
+assert.equal(
+  shouldSendFinal({
+    ...base,
+    sport: "mlb",
+    favorites: [{ sport: "mlb", token: "stl" }],
+    away: { id: "16", abbrev: "CHC" },
+    home: { id: "24", abbrev: "STL" },
+    prev: { phase: "live", everHot: false },
+    nextPhase: "final",
+  }),
+  true,
+  "MLB favorite final fires the same way as football",
 );
 
 assert.equal(statMagnitude("3rd down efficiency", "4-13"), 4 / 13);
@@ -309,13 +338,20 @@ assert.deepEqual(
 );
 card.standings = afcNorth;
 const caption = finalCaption(card, "https://command-center-flax-gamma.vercel.app/");
-assert.match(caption, /^Final: Pittsburgh Steelers 24, Browns 27/);
-assert.match(caption, /PIT 2-2 · CLE 3-1/);
-assert.match(caption, /Underdog CLE \+124 won/);
-assert.match(caption, /Odds: PIT -2\.5 did not cover · ML CLE \+124 won/);
-assert.match(caption, /Passing: PIT Aaron Rodgers/);
-assert.match(caption, /Open game: https:\/\/command-center-flax-gamma\.vercel\.app\/sports\/nfl\/game\/401872964\?solo=1/);
+assert.match(caption, /^FINAL · NFL\nBrowns defeat Pittsburgh Steelers 27-24\./);
+assert.match(caption, /Browns move to 3-1, Pittsburgh Steelers fall to 2-2\./);
+assert.match(caption, /Aaron Rodgers threw for 299 yards/);
+assert.doesNotMatch(caption, /Open game:|Odds:|Passing:|Underdog/);
 assert.ok(caption.length <= 1000);
+const finalsMarkup = alertReplyMarkup("https://command-center-flax-gamma.vercel.app/", card.path);
+assert.ok(finalsMarkup?.includes("/sports/nfl/game/401872964?solo=1"));
+assert.ok(finalsMarkup?.includes("/sports/ruwt?solo=1"));
+assert.ok(finalsMarkup?.includes("Open game"));
+assert.ok(finalsMarkup?.includes("RUWT board"));
+assert.equal(
+  highlightFromBox("passing", ["C/ATT", "YDS", "TD", "INT"], ["22/40", "350", "3", "0"], "Josh Allen")?.text,
+  "Josh Allen threw for 350 yards and 3 touchdowns.",
+);
 
 assert.equal(paintColor("000000", "ffb612"), "#ffb612");
 assert.equal(paintColor("472a08", "ff3c00"), "#ff3c00");
@@ -436,6 +472,42 @@ nhlCard.standings = tablesFromStandings(
 );
 assert.equal(nhlCard.winProbability.length, 0);
 assert.equal(nhlCard.standings.length, 2);
+const nhlCaption = finalCaption(nhlCard);
+assert.match(nhlCaption, /^FINAL · NHL\nSt\. Louis Blues beat Boston Bruins 3-2\./);
+assert.match(nhlCaption, /St\. Louis Blues move to 2-0-1, Boston Bruins fall to 2-1-0\./);
+assert.doesNotMatch(nhlCaption, /Open game:|Odds:|skaters:/i);
+const mlbCaption = finalCaption(
+  cardFromSummary("mlb", "401581234", {
+    header: {
+      competitions: [
+        {
+          status: { type: { state: "post", completed: true, shortDetail: "Final" } },
+          competitors: [
+            { homeAway: "away", score: "3", record: [{ type: "total", summary: "83-79" }], team: { id: "16", abbreviation: "CHC", displayName: "Chicago Cubs" } },
+            { homeAway: "home", score: "5", record: [{ type: "total", summary: "78-84" }], team: { id: "24", abbreviation: "STL", displayName: "St. Louis Cardinals" } },
+          ],
+        },
+      ],
+    },
+    boxscore: {
+      players: [
+        {
+          team: { abbreviation: "STL" },
+          statistics: [
+            {
+              name: "batting",
+              labels: ["H", "HR", "RBI"],
+              athletes: [{ athlete: { displayName: "Nolan Arenado" }, stats: ["3", "1", "2"] }],
+            },
+          ],
+        },
+      ],
+    },
+  }),
+);
+assert.match(mlbCaption, /^FINAL · MLB\nSt\. Louis Cardinals defeat Chicago Cubs 5-3\./);
+assert.match(mlbCaption, /St\. Louis Cardinals move to 78-84, Chicago Cubs fall to 83-79\./);
+assert.match(mlbCaption, /Nolan Arenado hit a home run\./);
 const nhlSvg = renderFinalSvg(nhlCard);
 assert.doesNotMatch(nhlSvg, /Win probability/);
 assert.match(nhlSvg, /Standings/);
