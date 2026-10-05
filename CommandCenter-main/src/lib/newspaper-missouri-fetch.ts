@@ -11,7 +11,7 @@ import {
   type MoItem,
 } from "./newspaper-missouri";
 import { stripGettyCredit, truncateAtSentence } from "./newspaper-copy";
-import { pickBestStoryImage, srcsetCandidates } from "./newspaper-images.ts";
+import { pickBestStoryImage, srcsetCandidates, type StoryImageCandidate } from "./newspaper-images.ts";
 import { fetchRssArticle, fetchRssFeed, type RssFeedItem } from "./rss";
 
 export const MOSCOUT_NATIVE_FEED = "https://moscout.com/daily-updates-1?format=rss";
@@ -42,7 +42,7 @@ async function directFeed(url: string): Promise<RssFeedItem[]> {
   return [...doc.querySelectorAll("item")].map((el, i) => {
     const pick = (sel: string) => el.getElementsByTagName(sel)[0]?.textContent?.trim() ?? "";
     const desc = pick("description");
-    const candidates: { url: string; width: number | null }[] = [];
+    const candidates: StoryImageCandidate[] = [];
     const take = (node: Element | undefined) => {
       const href = node?.getAttribute("url");
       if (!href) return;
