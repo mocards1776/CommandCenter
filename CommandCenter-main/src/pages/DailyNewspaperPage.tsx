@@ -71,13 +71,10 @@ import {
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
-<<<<<<< HEAD
 import { HeadlineSave } from "@/components/newspaper/SaveMark";
 import { SavedDrawer } from "@/components/newspaper/SavedDrawer";
 import { SavedProvider } from "@/components/newspaper/saved-context";
-=======
 import { fetchHeismanOdds, type HeismanBoard } from "@/lib/newspaper-heisman";
->>>>>>> d25a921 (Times: fill CFB5 leftover with Kalshi Heisman odds.)
 import { PlayoffBracket } from "@/components/newspaper/PlayoffBracket";
 import { NamedText, PlayerName, PlayerPopProvider } from "@/components/newspaper/PlayerPop";
 import { fetchClubSheet, type ClubSheet } from "@/lib/newspaper-clubsheet";
