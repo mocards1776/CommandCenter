@@ -8011,19 +8011,21 @@ li.counting .tt-count.card {
   padding: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: repeat(var(--cfb-rows, 8), auto);
+  grid-auto-flow: column;
   column-gap: 22px;
 }
 .tt-cfb-row {
   display: grid;
-  grid-template-columns: 7.2rem minmax(0, 1fr) minmax(44px, 0.7fr) 26px;
+  grid-template-columns: 7.2rem minmax(0, 1fr) minmax(0, 5.6rem) 2.75rem;
   align-items: center;
-  gap: 6px;
+  gap: 6px 8px;
   padding: 4px 0;
   border-bottom: 1px solid var(--w-hair);
   font-size: 13px;
 }
 .tt-cfb-row[data-kind="results"] {
-  grid-template-columns: 3.4rem minmax(0, 1fr) 0 0;
+  grid-template-columns: 3.4rem minmax(0, 1fr);
 }
 .tt-cfb-row time {
   font-family: var(--w-cond);
@@ -8067,18 +8069,26 @@ li.counting .tt-count.card {
   text-transform: uppercase;
   color: var(--w-muted);
 }
-.tt-cfb-row em {
+.tt-cfb-row em,
+.tt-cfb-tv {
   font-style: normal;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--w-ink-soft);
   text-align: right;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tt-cfb-watch {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  justify-self: end;
+  width: 2.75rem;
+  min-width: 2.75rem;
   font-family: var(--w-cond);
   font-size: 16px;
   font-weight: 600;
@@ -8215,6 +8225,16 @@ li.counting .tt-count.card {
   gap: 18px 24px;
   padding-top: 8px;
   border-top: 2px solid var(--w-rule);
+  align-items: stretch;
+}
+.tt-cfb-fill.solo {
+  grid-template-columns: 1fr;
+}
+.tt-cfb-fill-left {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 10px;
 }
 .tt-cfb-poll ol {
   list-style: none;
@@ -8251,6 +8271,79 @@ li.counting .tt-count.card {
 }
 .tt-cfb-sec .tt-stand {
   font-size: 12px;
+}
+.tt-cfb-heisman {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.tt-cfb-heisman ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 14px;
+  align-content: start;
+}
+.tt-cfb-heisman li {
+  display: grid;
+  grid-template-columns: 1.1rem 16px minmax(0, 1fr) 2.2rem;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--w-hair);
+  font-size: 11px;
+}
+.tt-cfb-heisman li i {
+  font-style: normal;
+  font-family: var(--w-cond);
+  font-weight: 800;
+  color: var(--w-muted);
+}
+.tt-cfb-heisman li img,
+.tt-cfb-heisman-ph {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+.tt-cfb-heisman-ph {
+  display: block;
+  background: var(--w-paper-2);
+}
+.tt-cfb-heisman-who {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.tt-cfb-heisman-who b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tt-cfb-heisman-who em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--w-muted);
+}
+.tt-cfb-heisman li strong {
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.tt-cfb-heisman-credit {
+  margin: auto 0 0;
+  padding-top: 6px;
+  font-size: 9px;
+  font-style: italic;
+  color: var(--w-muted);
 }
 .tt-front-rail .tt-strip {
   display: grid;

@@ -1551,6 +1551,23 @@ export function isCfbDeskGame(game: BoxGame): boolean {
   });
 }
 
+/** Kickoff order for CFB5 — Friday first, then Saturday, never by watch rating. */
+export function sortCfbDeskGames(games: BoxGame[]): BoxGame[] {
+  return [...games].sort((a, b) => {
+    const aIso = a.startIso ?? "";
+    const bIso = b.startIso ?? "";
+    if (aIso && bIso && aIso !== bIso) return aIso.localeCompare(bIso);
+    if (aIso && !bIso) return -1;
+    if (!aIso && bIso) return 1;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+/** TV only. Unknown network stays blank — never the venue. */
+export function cfbNetworkLabel(game: BoxGame): string {
+  return game.broadcasts.filter(Boolean).join(" · ");
+}
+
 /**
  * Results and slate for one sport section. Daily leagues read last night,
  * today and tomorrow; football reads this week and, when this week has no

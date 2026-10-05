@@ -5,6 +5,7 @@
 import { fileEditionStories, fileMissouriItems, isNewsMuted, missouriItemInEdition } from "./newspaper";
 import { fetchLeagueArticles, fetchTeamArticles } from "./newspaper-news";
 import { applyTableStandings, fetchLeagueLeaders, fetchSectionBoard, fetchSectionStandings, type StandGroup } from "./newspaper-box";
+import { fetchHeismanOdds } from "./newspaper-heisman";
 import { fetchClubSheet } from "./newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./newspaper-missouri-fetch";
 import type { MoItem } from "./newspaper-missouri";
@@ -199,6 +200,7 @@ type PressBag = {
   board?: unknown;
   standings?: unknown;
   leaders?: unknown;
+  heisman?: unknown;
   extractCursor?: number;
   extracts?: Record<string, RssArticle>;
 };
@@ -476,6 +478,9 @@ export async function pressStep(
           {},
         )
       : {};
+    state.heisman = paths.includes("football/college-football")
+      ? await settle(fetchHeismanOdds(), null)
+      : null;
     const teamCards = state.teamCards ?? [];
     const pathsKey = state.pathKey ?? "";
     put([pressId, "tt-wrap-bodies", day, teamCards.map((c) => `${c.id}:${c.gameId}`).join("|")], state.enriched ?? teamCards);
@@ -486,6 +491,7 @@ export async function pressStep(
       put([pressId, "tt-board", day, pathsKey], state.board);
       put([pressId, "tt-standings", day, pathsKey], state.standings);
       put([pressId, "tt-leaders", day, pathsKey], state.leaders);
+      if (paths.includes("football/college-football")) put([pressId, "tt-heisman", day], state.heisman);
     }
     if (paths.includes("baseball/mlb")) put([pressId, "tt-mlb-playoffs", day], state.playoffs);
     if (state.snaps && state.standings) {

@@ -74,6 +74,7 @@ import { CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
 import { HeadlineSave } from "@/components/newspaper/SaveMark";
 import { SavedDrawer } from "@/components/newspaper/SavedDrawer";
 import { SavedProvider } from "@/components/newspaper/saved-context";
+import { fetchHeismanOdds, type HeismanBoard } from "@/lib/newspaper-heisman";
 import { PlayoffBracket } from "@/components/newspaper/PlayoffBracket";
 import { NamedText, PlayerName, PlayerPopProvider } from "@/components/newspaper/PlayerPop";
 import { fetchClubSheet, type ClubSheet } from "@/lib/newspaper-clubsheet";
@@ -2879,12 +2880,14 @@ function ScheduleDesk({
   slate,
   edition,
   standings,
+  heisman,
 }: {
   page: SportFrontPage;
   board: SectionBoard | null;
   slate: LeagueSlateGame[];
   edition: string;
   standings: StandGroup[];
+  heisman?: HeismanBoard | null;
 }) {
   const college = page.path.includes("college-football");
   const pollQ = useQuery({
@@ -2901,6 +2904,7 @@ function ScheduleDesk({
         edition={edition}
         standings={standings}
         poll={pollQ.data ?? []}
+        heisman={heisman}
       />
     );
   }
@@ -3101,6 +3105,7 @@ function SportFront({
   nights,
   sheets,
   leaders,
+  heisman,
   onTurn,
 }: {
   page: SportFrontPage;
@@ -3115,6 +3120,7 @@ function SportFront({
   nights: PlayerNight[];
   sheets: Record<string, ClubSheet>;
   leaders: LeagueLeaderGroup[];
+  heisman?: HeismanBoard | null;
   onTurn: (folio: string) => void;
 }) {
   const results = (board?.results.length || board?.prior?.length) ?? 0;
@@ -3192,7 +3198,7 @@ function SportFront({
         ) : page.focus === "leaders" ? (
           <LeadersDesk groups={leaders} />
         ) : page.focus === "schedule" ? (
-          <ScheduleDesk page={page} board={board} slate={slate} edition={edition} standings={standings} />
+          <ScheduleDesk page={page} board={board} slate={slate} edition={edition} standings={standings} heisman={heisman} />
         ) : page.focus === "playoffs" ? (
           <PlayoffDesk tree={playoffs} />
         ) : page.focus === "players" ? (
@@ -4761,6 +4767,15 @@ function NewspaperDesk() {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+  const heismanQ = useQuery({
+    queryKey: [pressId, "tt-heisman", day],
+    queryFn: fetchHeismanOdds,
+    enabled: pressing && sportPaths.includes("football/college-football"),
+    staleTime: Infinity,
+    gcTime: 20 * 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
   const leaderPaths = useMemo(
     () => Object.entries(leadersQ.data ?? {}).flatMap(([path, groups]) => (groups.length ? [path] : [])),
     [leadersQ.data],
@@ -5172,6 +5187,7 @@ function NewspaperDesk() {
       quiet(boardQ, sportPaths.length > 0) &&
       quiet(standingsQ, sportPaths.length > 0) &&
       quiet(leadersQ, sportPaths.length > 0) &&
+      quiet(heismanQ, sportPaths.includes("football/college-football")) &&
       quiet(leagueSlateQ, sportPaths.length > 0) &&
       quiet(leagueClubsQ, sportPaths.length > 0) &&
       quiet(scoutQ, true) &&
@@ -5220,6 +5236,7 @@ function NewspaperDesk() {
     boardQ,
     standingsQ,
     leadersQ,
+    heismanQ,
     leagueSlateQ,
     leagueClubsQ,
     scoutQ,
@@ -5551,6 +5568,7 @@ function NewspaperDesk() {
                   nights={nightsByPath[page.path] ?? []}
                   sheets={sheetsQ.data ?? {}}
                   leaders={leadersQ.data?.[page.path] ?? []}
+                  heisman={page.path.includes("college-football") ? heismanQ.data ?? null : null}
                   onTurn={goFolio}
                 />
               ) : page.kind === "national" ? (
@@ -5586,6 +5604,7 @@ function NewspaperDesk() {
       missouriQ.data?.scout,
       sheetsQ.data,
       leadersQ.data,
+      heismanQ.data,
       watchQ.data,
       notebookByFolio,
       leagueClubsQ.data,
