@@ -1,6 +1,9 @@
 /**
- * Printed timetable for the Times viewing guide: tiers, Central-time blocks,
- * short network names, and the sample slate. Fetching lives in newspaper-watch.ts.
+ * Printed viewing guide for the Times: tiers, Central-time slots,
+ * short network names, and the sample slates. Fetching lives in newspaper-watch.ts.
+ *
+ * The stored press contract is still a flat WatchGame[]. New fields are optional
+ * so older issues render; the client builds the layout from whatever is there.
  */
 
 export type WatchLeague = "MLB" | "NFL" | "NHL" | "CFB" | "Soccer" | "NBA" | "WNBA";
@@ -14,6 +17,15 @@ export type WatchSide = {
   rank?: number | null;
   /** ESPN / MLB team id — used to match the Times desk at press time. */
   teamId?: string | null;
+  /** Short display name (White Sox). Client derives one if the press omitted it. */
+  short?: string | null;
+  /** Team brand hex, with or without #. */
+  color?: string | null;
+  /** Live / final score when the page is viewed after first pitch. */
+  score?: number | null;
+  /** Probable pitcher (MLB) or starting goalie (NHL). */
+  starter?: string | null;
+  starterLine?: string | null;
 };
 
 export type WatchGame = {
@@ -39,6 +51,12 @@ export type WatchGame = {
   printReason?: string | null;
   /** ESPN season type 1. NBA/WNBA exhibitions always print in the lowest tier. */
   preseason?: boolean;
+  /** Playoff series line (Tied 1-1, CLE leads 2-0). */
+  series?: string | null;
+  /** ESPN betting line, e.g. CLE -1.5. */
+  line?: string | null;
+  /** True when the stored game is over. Optional so older issues still render. */
+  final?: boolean;
 };
 
 export type WatchFavorite = {
@@ -86,8 +104,18 @@ export type WatchTimeBlock = {
   alsoOn: WatchAlsoOn[];
 };
 
+export type WatchDensity = "light" | "full" | "dense";
+
+export type WatchSlot = {
+  clock: string;
+  listings: WatchListing[];
+};
+
 export type WatchPageModel = {
   feature: WatchListing | null;
+  slots: WatchSlot[];
+  density: WatchDensity;
+  /** @deprecated Kickoff slots replaced the coarse day-parts. Kept empty for old callers. */
   blocks: WatchTimeBlock[];
 };
 
@@ -252,6 +280,111 @@ export function watchLeagueColor(league: WatchLeague): string {
   return WATCH_LEAGUE_COLOR[league];
 }
 
+const TWO_WORD_NICK = /^(red sox|white sox|blue jays|blue jackets|maple leafs|golden knights|trail blazers|timberwolves|76ers)$/i;
+
+/** City-or-nickname line used on every card so leagues don't mix full names and abbrevs. */
+export function watchTeamShort(side: WatchSide): string {
+  const given = side.short?.trim();
+  if (given) return given;
+  const name = (side.name ?? "").trim();
+  if (!name) return side.abbrev || "—";
+  const parts = name.split(/\s+/);
+  if (parts.length <= 2) return name;
+  const lastTwo = parts.slice(-2).join(" ");
+  if (TWO_WORD_NICK.test(lastTwo)) return lastTwo;
+  return parts[parts.length - 1] ?? name;
+}
+
+export function watchHex(color: string | null | undefined): string | null {
+  const c = (color ?? "").replace(/^#/, "").trim();
+  return /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null;
+}
+
+/** Ink that reads on a team-color panel — gold and yellow clubs take black. */
+export function watchInkOn(hex: string): string {
+  const n = Number.parseInt(hex.slice(1), 16);
+  if (!Number.isFinite(n)) return "#ffffff";
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b! > 0.36 ? "#14161b" : "#ffffff";
+}
+
+export function watchTeamColor(side: WatchSide, league: WatchLeague): string {
+  return watchHex(side.color) ?? watchLeagueColor(league);
+}
+
+export function watchTint(color: string | null | undefined): { ["--tt-team"]: string; ["--tt-on"]: string } | undefined {
+  const hex = watchHex(color);
+  if (!hex) return undefined;
+  return { ["--tt-team"]: hex, ["--tt-on"]: watchInkOn(hex) };
+}
+
+const ESPN_LOGO: Record<WatchLeague, string> = {
+  MLB: "mlb",
+  NFL: "nfl",
+  NHL: "nhl",
+  CFB: "ncaa",
+  Soccer: "soccer",
+  NBA: "nba",
+  WNBA: "wnba",
+};
+
+/** Prefer the stored mark; otherwise a CDN crest from team id or abbreviation. */
+export function watchLogo(side: WatchSide, league: WatchLeague): string | null {
+  if (side.logo) return side.logo;
+  if (league === "MLB" && side.teamId) return `https://www.mlbstatic.com/team-logos/${side.teamId}.svg`;
+  const sport = ESPN_LOGO[league];
+  if (league === "CFB" && side.teamId) return `https://a.espncdn.com/i/teamlogos/${sport}/500/${side.teamId}.png`;
+  const key = side.abbrev?.toLowerCase();
+  if (key && key !== "—") return `https://a.espncdn.com/i/teamlogos/${sport}/500/${key}.png`;
+  if (side.teamId) return `https://a.espncdn.com/i/teamlogos/${sport}/500/${side.teamId}.png`;
+  return null;
+}
+
+export function watchIsFinal(game: Pick<WatchGame, "final" | "status">): boolean {
+  if (game.final) return true;
+  return Boolean(game.status && /final/i.test(game.status));
+}
+
+export type WatchClockKind = "pre" | "live" | "final";
+
+export function watchClockState(game: WatchGame): { kind: WatchClockKind; label: string } {
+  if (watchIsFinal(game)) return { kind: "final", label: "Final" };
+  if (game.live) return { kind: "live", label: game.status?.trim() || "Live" };
+  return { kind: "pre", label: printClock(game.when) };
+}
+
+/** One printed why-watch line. Never an empty stub — every card gets context. */
+export function watchContext(game: WatchGame): string {
+  if (game.preseason) return game.printReason && /preseason/i.test(game.printReason) ? game.printReason : "Preseason";
+  const printed = printReason(game);
+  if (printed) return printed;
+  if (game.series?.trim()) return game.series.trim();
+  if (game.competition) return game.competition;
+  return watchLeagueLabel(game);
+}
+
+export function watchStarters(game: WatchGame): string | null {
+  const away = game.away.starter?.trim();
+  const home = game.home.starter?.trim();
+  if (!away && !home) return null;
+  const bit = (name: string | undefined, line: string | null | undefined) => {
+    if (!name) return "TBD";
+    return line ? `${name} (${line})` : name;
+  };
+  if (game.league === "MLB") return `${bit(away, game.away.starterLine)} vs ${bit(home, game.home.starterLine)}`;
+  if (game.league === "NHL") return `${bit(away, game.away.starterLine)} vs ${bit(home, game.home.starterLine)}`;
+  return `${bit(away, game.away.starterLine)} vs ${bit(home, game.home.starterLine)}`;
+}
+
+export function watchDensityOf(count: number): WatchDensity {
+  if (count <= 14) return "light";
+  if (count <= 24) return "full";
+  return "dense";
+}
+
 /** NBA/WNBA exhibitions never take a must-watch or worth-it slot. */
 export function isWatchPreseasonLowTier(game: WatchGame): boolean {
   return Boolean(game.preseason && (game.league === "NBA" || game.league === "WNBA"));
@@ -309,11 +442,12 @@ export function printNetworks(tv: string[]): WatchNetwork[] {
 
 export function printReason(game: WatchGame, favoriteLabel = game.favoriteLabel ?? null): string | null {
   if (game.printReason) return game.printReason;
+  if (game.series?.trim()) return game.series.trim();
   const awayR = game.away.rank;
   const homeR = game.home.rank;
   if (awayR && homeR && awayR <= 10 && homeR <= 10) return "Top-10 clash";
   for (const r of game.reasons) {
-    if (/playoff|series|october|world series|alcs|nlcs|wild card|pennant/i.test(r)) return r;
+    if (/playoff|series|october|world series|alcs|nlcs|wild card|pennant|alds|nlds/i.test(r)) return r;
   }
   for (const r of game.reasons) {
     if (/rivalry/i.test(r)) return r.length <= 28 ? r : "Rivalry";
@@ -395,63 +529,37 @@ function toListing(game: WatchGame, tier: WatchTier): WatchListing {
   };
 }
 
-function foldOverflowSoccer(listings: WatchListing[]): { listings: WatchListing[]; alsoOn: WatchAlsoOn[] } {
-  if (listings.length <= WATCH_BLOCK_OVERFLOW) return { listings, alsoOn: [] };
-  const extra = listings.length - WATCH_BLOCK_OVERFLOW;
-  const foldable = listings.filter((g) => g.tier === "around" && g.league === "Soccer");
-  const toFold = [...foldable].sort((a, b) => a.heat - b.heat || byKickoff(a, b)).slice(0, extra);
-  if (!toFold.length) return { listings, alsoOn: [] };
-  const foldIds = new Set(toFold.map((g) => g.id));
-  return {
-    listings: listings.filter((g) => !foldIds.has(g.id)),
-    alsoOn: [...toFold].sort(byKickoff).map((g) => ({
-      id: g.id,
-      match: `${g.away.name}–${g.home.name}`,
-      clock: g.clock,
-      network: g.networks[0]?.name ?? "",
-    })),
-  };
-}
-
-/** Heat picks the page and the tiers; the printed grid is kickoff order. */
+/** Heat picks the hero and the tiers; the printed grid is kickoff-time slots. */
 export function composeWatchPage(games: WatchGame[]): WatchPageModel {
-  if (!games.length) return { feature: null, blocks: [] };
+  if (!games.length) return { feature: null, slots: [], density: "light", blocks: [] };
   const tiers = assignWatchTiers(games);
   const featureGame = [...games].sort(byHeat)[0]!;
   const feature = toListing(featureGame, tiers.get(featureGame.id) ?? "must");
-  const rest = games.filter((g) => g.id !== featureGame.id);
-  const blocks: WatchTimeBlock[] = [];
-  for (const meta of WATCH_BLOCKS) {
-    const inBlock = rest.filter((g) => watchBlockId(g.when) === meta.id).sort(byKickoff);
-    if (!inBlock.length) continue;
-    const folded = foldOverflowSoccer(inBlock.map((g) => toListing(g, tiers.get(g.id) ?? "around")));
-    if (!folded.listings.length && !folded.alsoOn.length) continue;
-    blocks.push({
-      id: meta.id,
-      label: meta.label,
-      hours: meta.hours,
-      mark: meta.mark,
-      listings: folded.listings,
-      alsoOn: folded.alsoOn,
-    });
+  const rest = games.filter((g) => g.id !== featureGame.id).sort(byKickoff);
+  const byClock = new Map<string, WatchListing[]>();
+  for (const g of rest) {
+    const listing = toListing(g, tiers.get(g.id) ?? "around");
+    const list = byClock.get(listing.clock) ?? [];
+    list.push(listing);
+    byClock.set(listing.clock, list);
   }
-  return { feature, blocks };
+  const slots: WatchSlot[] = [];
+  const seen = new Set<string>();
+  for (const g of rest) {
+    const clock = printClock(g.when);
+    if (seen.has(clock)) continue;
+    seen.add(clock);
+    slots.push({ clock, listings: byClock.get(clock) ?? [] });
+  }
+  return { feature, slots, density: watchDensityOf(games.length), blocks: [] };
 }
 
-/** Games still worth turning on, hottest first. Finished games are yesterday's paper. */
+/** Today's slate, hottest first. Finals stay on the page so an evening read still shows the afternoon. */
 export function pickWatchGames(
   games: (WatchGame & { final?: boolean })[],
   limit = WATCH_PAGE_GAMES,
 ): WatchGame[] {
-  return games
-    .filter((g) => !g.final)
-    .sort(byHeat)
-    .slice(0, limit)
-    .map((g) => {
-      const out = { ...g };
-      delete out.final;
-      return out;
-    });
+  return games.sort(byHeat).slice(0, limit);
 }
 
 function ctIso(day: string, hour: number, minute = 0): string {
@@ -461,27 +569,412 @@ function ctIso(day: string, hour: number, minute = 0): string {
   return new Date(utc).toISOString();
 }
 
+function sampleGame(
+  partial: Omit<WatchGame, "live" | "status" | "competition"> & {
+    competition?: string | null;
+    live?: boolean;
+    status?: string | null;
+  },
+): WatchGame {
+  return {
+    live: false,
+    status: null,
+    competition: partial.competition ?? null,
+    ...partial,
+  };
+}
+
+const mlbMark = (id: number) => `https://www.mlbstatic.com/team-logos/${id}.svg`;
+const espnMark = (sport: string, id: string) => `https://a.espncdn.com/i/teamlogos/${sport}/500/${id}.png`;
+
+function aroundLogo(league: WatchLeague, abbrev: string, teamId?: string): string {
+  if (league === "MLB" && teamId) return mlbMark(Number(teamId));
+  if (league === "CFB" && teamId) return espnMark("ncaa", teamId);
+  const sport = ESPN_LOGO[league];
+  return espnMark(sport, (teamId && league !== "NFL" && league !== "NHL" && league !== "NBA" && league !== "WNBA" ? teamId : abbrev).toLowerCase());
+}
+
+/**
+ * Monday Oct 5, 2026: two ALDS games, MNF, four NHL openers, five NBA exhibitions.
+ * Used to proof a light day at iPad width.
+ */
+export function sampleWatchSlateLight(day = "2026-10-05"): WatchGame[] {
+  const g = sampleGame;
+  return pickWatchGames(
+    [
+      g({
+        id: "mlb-cws-cle",
+        league: "MLB",
+        away: {
+          name: "Chicago White Sox",
+          short: "White Sox",
+          abbrev: "CWS",
+          logo: mlbMark(145),
+          record: "1-0",
+          teamId: "145",
+          color: "27251f",
+          starter: "Garrett Crochet",
+        },
+        home: {
+          name: "Cleveland Guardians",
+          short: "Guardians",
+          abbrev: "CLE",
+          logo: mlbMark(114),
+          record: "0-1",
+          teamId: "114",
+          color: "e31937",
+          starter: "Gavin Williams",
+        },
+        when: ctIso(day, 16, 0),
+        venue: "Progressive Field",
+        tv: ["ESPN", "TBS"],
+        heat: 94,
+        reasons: ["ALDS", "Series tied 1-1"],
+        series: "Series tied 1-1",
+        printReason: "ALDS — series tied 1-1",
+      }),
+      g({
+        id: "mlb-nyy-tb",
+        league: "MLB",
+        away: {
+          name: "New York Yankees",
+          short: "Yankees",
+          abbrev: "NYY",
+          logo: mlbMark(147),
+          record: "0-1",
+          teamId: "147",
+          color: "0c2340",
+          starter: "Max Fried",
+        },
+        home: {
+          name: "Tampa Bay Rays",
+          short: "Rays",
+          abbrev: "TB",
+          logo: mlbMark(139),
+          record: "1-0",
+          teamId: "139",
+          color: "092c5c",
+          starter: "Shane Baz",
+        },
+        when: ctIso(day, 19, 0),
+        venue: "Tropicana Field",
+        tv: ["TBS"],
+        heat: 88,
+        reasons: ["ALDS"],
+        series: "TB leads 1-0",
+        printReason: "ALDS — TB leads 1-0",
+      }),
+      g({
+        id: "nfl-atl-no",
+        league: "NFL",
+        away: {
+          name: "Atlanta Falcons",
+          short: "Falcons",
+          abbrev: "ATL",
+          logo: espnMark("nfl", "atl"),
+          record: "2-2",
+          teamId: "1",
+          color: "a71930",
+        },
+        home: {
+          name: "New Orleans Saints",
+          short: "Saints",
+          abbrev: "NO",
+          logo: espnMark("nfl", "no"),
+          record: "1-3",
+          teamId: "18",
+          color: "d3bc8d",
+        },
+        when: ctIso(day, 19, 15),
+        venue: "Caesars Superdome",
+        tv: ["ESPN", "ABC"],
+        heat: 86,
+        reasons: ["Monday Night Football"],
+        printReason: "Monday Night Football",
+        line: "ATL -3.5",
+      }),
+      g({
+        id: "nhl-phi-tb",
+        league: "NHL",
+        away: {
+          name: "Philadelphia Flyers",
+          short: "Flyers",
+          abbrev: "PHI",
+          logo: espnMark("nhl", "phi"),
+          record: "0-1-0",
+          teamId: "15",
+          color: "f74902",
+          starter: "Samuel Ersson",
+        },
+        home: {
+          name: "Tampa Bay Lightning",
+          short: "Lightning",
+          abbrev: "TB",
+          logo: espnMark("nhl", "tb"),
+          record: "0-1-0",
+          teamId: "20",
+          color: "002868",
+          starter: "Andrei Vasilevskiy",
+        },
+        when: ctIso(day, 18, 0),
+        venue: "Amalie Arena",
+        tv: ["ESPN+"],
+        heat: 62,
+        reasons: ["Opening week"],
+        printReason: "Opening week",
+      }),
+      g({
+        id: "nhl-ott-bos",
+        league: "NHL",
+        away: {
+          name: "Ottawa Senators",
+          short: "Senators",
+          abbrev: "OTT",
+          logo: espnMark("nhl", "ott"),
+          record: "1-0-0",
+          teamId: "14",
+          color: "c52032",
+          starter: "Linus Ullmark",
+        },
+        home: {
+          name: "Boston Bruins",
+          short: "Bruins",
+          abbrev: "BOS",
+          logo: espnMark("nhl", "bos"),
+          record: "1-0-0",
+          teamId: "1",
+          color: "ffb81c",
+          starter: "Jeremy Swayman",
+        },
+        when: ctIso(day, 18, 30),
+        venue: "TD Garden",
+        tv: ["ESPN+"],
+        heat: 64,
+        reasons: ["Opening week"],
+        printReason: "Opening week",
+      }),
+      g({
+        id: "nhl-wpg-pit",
+        league: "NHL",
+        away: {
+          name: "Winnipeg Jets",
+          short: "Jets",
+          abbrev: "WPG",
+          logo: espnMark("nhl", "wpg"),
+          record: "0-0-0",
+          teamId: "28",
+          color: "041e42",
+        },
+        home: {
+          name: "Pittsburgh Penguins",
+          short: "Penguins",
+          abbrev: "PIT",
+          logo: espnMark("nhl", "pit"),
+          record: "0-0-0",
+          teamId: "16",
+          color: "fcb514",
+        },
+        when: ctIso(day, 18, 30),
+        venue: "PPG Paints Arena",
+        tv: ["ESPN+"],
+        heat: 58,
+        reasons: ["Opening week"],
+        printReason: "Opening week",
+      }),
+      g({
+        id: "nhl-sj-dal",
+        league: "NHL",
+        away: {
+          name: "San Jose Sharks",
+          short: "Sharks",
+          abbrev: "SJ",
+          logo: espnMark("nhl", "sj"),
+          record: "0-0-0",
+          teamId: "18",
+          color: "006d75",
+        },
+        home: {
+          name: "Dallas Stars",
+          short: "Stars",
+          abbrev: "DAL",
+          logo: espnMark("nhl", "dal"),
+          record: "0-0-0",
+          teamId: "9",
+          color: "006847",
+        },
+        when: ctIso(day, 19, 0),
+        venue: "American Airlines Center",
+        tv: ["ESPN+"],
+        heat: 52,
+        reasons: ["Opening week"],
+        printReason: "Opening week",
+      }),
+      g({
+        id: "nba-mem-atl",
+        league: "NBA",
+        away: {
+          name: "Memphis Grizzlies",
+          short: "Grizzlies",
+          abbrev: "MEM",
+          logo: espnMark("nba", "mem"),
+          record: "0-1",
+          teamId: "29",
+          color: "5d76a9",
+        },
+        home: {
+          name: "Atlanta Hawks",
+          short: "Hawks",
+          abbrev: "ATL",
+          logo: espnMark("nba", "atl"),
+          record: "0-2",
+          teamId: "1",
+          color: "e03a3e",
+        },
+        when: ctIso(day, 18, 0),
+        venue: "State Farm Arena",
+        tv: ["NBA TV"],
+        heat: 8,
+        reasons: ["Preseason"],
+        printReason: "Preseason",
+        preseason: true,
+      }),
+      g({
+        id: "nba-phx-det",
+        league: "NBA",
+        away: {
+          name: "Phoenix Suns",
+          short: "Suns",
+          abbrev: "PHX",
+          logo: espnMark("nba", "phx"),
+          record: "1-1",
+          teamId: "21",
+          color: "e56020",
+        },
+        home: {
+          name: "Detroit Pistons",
+          short: "Pistons",
+          abbrev: "DET",
+          logo: espnMark("nba", "det"),
+          record: "2-0",
+          teamId: "8",
+          color: "1d428a",
+        },
+        when: ctIso(day, 18, 0),
+        venue: "Little Caesars Arena",
+        tv: [],
+        heat: 6,
+        reasons: ["Preseason"],
+        printReason: "Preseason",
+        preseason: true,
+      }),
+      g({
+        id: "nba-ny-phi",
+        league: "NBA",
+        away: {
+          name: "New York Knicks",
+          short: "Knicks",
+          abbrev: "NY",
+          logo: espnMark("nba", "ny"),
+          record: "1-0",
+          teamId: "18",
+          color: "006bb6",
+        },
+        home: {
+          name: "Philadelphia 76ers",
+          short: "76ers",
+          abbrev: "PHI",
+          logo: espnMark("nba", "phi"),
+          record: "0-2",
+          teamId: "20",
+          color: "006bb6",
+        },
+        when: ctIso(day, 18, 0),
+        venue: "Xfinity Mobile Arena",
+        tv: ["NBA TV"],
+        heat: 9,
+        reasons: ["Preseason"],
+        printReason: "Preseason",
+        favorite: true,
+        favoriteLabel: "Sixers",
+        preseason: true,
+      }),
+      g({
+        id: "nba-min-mil",
+        league: "NBA",
+        away: {
+          name: "Minnesota Timberwolves",
+          short: "Timberwolves",
+          abbrev: "MIN",
+          logo: espnMark("nba", "min"),
+          record: "0-2",
+          teamId: "16",
+          color: "0c2340",
+        },
+        home: {
+          name: "Milwaukee Bucks",
+          short: "Bucks",
+          abbrev: "MIL",
+          logo: espnMark("nba", "mil"),
+          record: "1-1",
+          teamId: "15",
+          color: "00471b",
+        },
+        when: ctIso(day, 19, 0),
+        venue: "Fiserv Forum",
+        tv: [],
+        heat: 5,
+        reasons: ["Preseason"],
+        printReason: "Preseason",
+        preseason: true,
+      }),
+      g({
+        id: "nba-lal-sac",
+        league: "NBA",
+        away: {
+          name: "Los Angeles Lakers",
+          short: "Lakers",
+          abbrev: "LAL",
+          logo: espnMark("nba", "lal"),
+          record: "1-1",
+          teamId: "13",
+          color: "552583",
+        },
+        home: {
+          name: "Sacramento Kings",
+          short: "Kings",
+          abbrev: "SAC",
+          logo: espnMark("nba", "sac"),
+          record: "2-1",
+          teamId: "23",
+          color: "5a2d81",
+        },
+        when: ctIso(day, 21, 0),
+        venue: "Golden 1 Center",
+        tv: ["NBA TV"],
+        heat: 7,
+        reasons: ["Preseason"],
+        printReason: "Preseason",
+        preseason: true,
+      }),
+    ],
+    WATCH_PAGE_GAMES,
+  );
+}
+
 /**
  * A full printed slate for tests and the watch-page preview. Heat-ordered so
  * the first row is the game of the day; composeWatchPage then sorts by clock.
  */
 export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
-  const mlb = (id: number) => `https://www.mlbstatic.com/team-logos/${id}.svg`;
-  const espn = (sport: string, id: string) => `https://a.espncdn.com/i/teamlogos/${sport}/500/${id}.png`;
-  const g = (
-    partial: Omit<WatchGame, "live" | "status" | "competition"> & { competition?: string | null; live?: boolean; status?: string | null },
-  ): WatchGame => ({
-    live: false,
-    status: null,
-    competition: partial.competition ?? null,
-    ...partial,
-  });
+  const mlb = mlbMark;
+  const espn = espnMark;
+  const g = sampleGame;
   const games: WatchGame[] = [
     g({
       id: "mlb-stl-chc",
       league: "MLB",
-      away: { name: "St. Louis Cardinals", abbrev: "STL", logo: mlb(138), record: "83-79", teamId: "138" },
-      home: { name: "Chicago Cubs", abbrev: "CHC", logo: mlb(112), record: "92-70", teamId: "112" },
+      away: { name: "St. Louis Cardinals", short: "Cardinals", abbrev: "STL", logo: mlb(138), record: "83-79", teamId: "138", color: "be0a14" },
+      home: { name: "Chicago Cubs", short: "Cubs", abbrev: "CHC", logo: mlb(112), record: "92-70", teamId: "112", color: "0e3386" },
       when: ctIso(day, 19, 15),
       venue: "Wrigley Field",
       tv: ["ESPN"],
@@ -494,8 +987,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     g({
       id: "nfl-kc-buf",
       league: "NFL",
-      away: { name: "Kansas City Chiefs", abbrev: "KC", logo: espn("nfl", "12"), record: "4-1", teamId: "12" },
-      home: { name: "Buffalo Bills", abbrev: "BUF", logo: espn("nfl", "2"), record: "4-1", teamId: "2" },
+      away: { name: "Kansas City Chiefs", short: "Chiefs", abbrev: "KC", logo: espn("nfl", "kc"), record: "4-1", teamId: "12", color: "e31837" },
+      home: { name: "Buffalo Bills", short: "Bills", abbrev: "BUF", logo: espn("nfl", "buf"), record: "4-1", teamId: "2", color: "00338d" },
       when: ctIso(day, 19, 20),
       venue: "Highmark Stadium",
       tv: ["NBC"],
@@ -508,8 +1001,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     g({
       id: "cfb-miz-ala",
       league: "CFB",
-      away: { name: "Missouri", abbrev: "MIZ", logo: espn("ncaa", "142"), record: "5-1", rank: 21, teamId: "142" },
-      home: { name: "Alabama", abbrev: "BAMA", logo: espn("ncaa", "333"), record: "5-1", rank: 8, teamId: "333" },
+      away: { name: "Missouri", short: "Missouri", abbrev: "MIZ", logo: espn("ncaa", "142"), record: "5-1", rank: 21, teamId: "142", color: "f1b82d" },
+      home: { name: "Alabama", short: "Alabama", abbrev: "BAMA", logo: espn("ncaa", "333"), record: "5-1", rank: 8, teamId: "333", color: "9e1b32" },
       when: ctIso(day, 14, 30),
       venue: "Bryant-Denny Stadium",
       tv: ["ABC"],
@@ -522,8 +1015,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     g({
       id: "mlb-playoff-3",
       league: "MLB",
-      away: { name: "Philadelphia Phillies", abbrev: "PHI", logo: mlb(143), record: "96-66", teamId: "143" },
-      home: { name: "Los Angeles Dodgers", abbrev: "LAD", logo: mlb(119), record: "98-64", teamId: "119" },
+      away: { name: "Philadelphia Phillies", short: "Phillies", abbrev: "PHI", logo: mlb(143), record: "96-66", teamId: "143", color: "e81828" },
+      home: { name: "Los Angeles Dodgers", short: "Dodgers", abbrev: "LAD", logo: mlb(119), record: "98-64", teamId: "119", color: "005a9c" },
       when: ctIso(day, 20, 8),
       venue: "Dodger Stadium",
       tv: ["FOX"],
@@ -534,8 +1027,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     g({
       id: "cfb-top10",
       league: "CFB",
-      away: { name: "Oregon", abbrev: "ORE", logo: espn("ncaa", "2483"), record: "6-0", rank: 3, teamId: "2483" },
-      home: { name: "Ohio State", abbrev: "OSU", logo: espn("ncaa", "194"), record: "6-0", rank: 1, teamId: "194" },
+      away: { name: "Oregon", short: "Oregon", abbrev: "ORE", logo: espn("ncaa", "2483"), record: "6-0", rank: 3, teamId: "2483", color: "154733" },
+      home: { name: "Ohio State", short: "Ohio State", abbrev: "OSU", logo: espn("ncaa", "194"), record: "6-0", rank: 1, teamId: "194", color: "bb0000" },
       when: ctIso(day, 18, 30),
       venue: "Ohio Stadium",
       tv: ["FOX"],
@@ -546,8 +1039,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     g({
       id: "nfl-det-min",
       league: "NFL",
-      away: { name: "Detroit Lions", abbrev: "DET", logo: espn("nfl", "8"), record: "4-1", teamId: "8" },
-      home: { name: "Minnesota Vikings", abbrev: "MIN", logo: espn("nfl", "16"), record: "3-2", teamId: "16" },
+      away: { name: "Detroit Lions", short: "Lions", abbrev: "DET", logo: espn("nfl", "det"), record: "4-1", teamId: "8", color: "0076b6" },
+      home: { name: "Minnesota Vikings", short: "Vikings", abbrev: "MIN", logo: espn("nfl", "min"), record: "3-2", teamId: "16", color: "4f2683" },
       when: ctIso(day, 12, 0),
       venue: "U.S. Bank Stadium",
       tv: ["FOX"],
@@ -560,8 +1053,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     g({
       id: "nhl-stl-dal",
       league: "NHL",
-      away: { name: "St. Louis Blues", abbrev: "STL", logo: espn("nhl", "19"), record: "2-1-0", teamId: "19" },
-      home: { name: "Dallas Stars", abbrev: "DAL", logo: espn("nhl", "9"), record: "2-1-1", teamId: "9" },
+      away: { name: "St. Louis Blues", short: "Blues", abbrev: "STL", logo: espn("nhl", "stl"), record: "2-1-0", teamId: "19", color: "002f87" },
+      home: { name: "Dallas Stars", short: "Stars", abbrev: "DAL", logo: espn("nhl", "dal"), record: "2-1-1", teamId: "9", color: "006847" },
       when: ctIso(day, 19, 0),
       venue: "American Airlines Center",
       tv: ["FanDuel Sports"],
@@ -574,8 +1067,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     g({
       id: "cfb-sec-night",
       league: "CFB",
-      away: { name: "Georgia", abbrev: "UGA", logo: espn("ncaa", "61"), record: "5-1", rank: 5, teamId: "61" },
-      home: { name: "Texas", abbrev: "TEX", logo: espn("ncaa", "251"), record: "5-1", rank: 7, teamId: "251" },
+      away: { name: "Georgia", short: "Georgia", abbrev: "UGA", logo: espn("ncaa", "61"), record: "5-1", rank: 5, teamId: "61", color: "ba0c2f" },
+      home: { name: "Texas", short: "Texas", abbrev: "TEX", logo: espn("ncaa", "251"), record: "5-1", rank: 7, teamId: "251", color: "bf5700" },
       when: ctIso(day, 18, 0),
       venue: "Darrell K Royal Stadium",
       tv: ["ABC"],
@@ -587,8 +1080,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
       id: "soccer-ars",
       league: "Soccer",
       competition: "Premier League",
-      away: { name: "Arsenal", abbrev: "ARS", logo: espn("soccer", "359"), record: "6-1-1", teamId: "359" },
-      home: { name: "Liverpool", abbrev: "LIV", logo: espn("soccer", "364"), record: "5-2-1", teamId: "364" },
+      away: { name: "Arsenal", short: "Arsenal", abbrev: "ARS", logo: espn("soccer", "359"), record: "6-1-1", teamId: "359", color: "ef0107" },
+      home: { name: "Liverpool", short: "Liverpool", abbrev: "LIV", logo: espn("soccer", "364"), record: "5-2-1", teamId: "364", color: "c8102e" },
       when: ctIso(day, 11, 30),
       venue: "Anfield",
       tv: ["Peacock"],
@@ -601,8 +1094,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     g({
       id: "nfl-dal-nyg",
       league: "NFL",
-      away: { name: "Dallas Cowboys", abbrev: "DAL", logo: espn("nfl", "6"), record: "3-2", teamId: "6" },
-      home: { name: "New York Giants", abbrev: "NYG", logo: espn("nfl", "19"), record: "1-4", teamId: "19" },
+      away: { name: "Dallas Cowboys", short: "Cowboys", abbrev: "DAL", logo: espn("nfl", "dal"), record: "3-2", teamId: "6", color: "041e42" },
+      home: { name: "New York Giants", short: "Giants", abbrev: "NYG", logo: espn("nfl", "nyg"), record: "1-4", teamId: "19", color: "0b2265" },
       when: ctIso(day, 15, 25),
       venue: "MetLife Stadium",
       tv: ["CBS"],
@@ -615,8 +1108,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     g({
       id: "cfb-noon-big",
       league: "CFB",
-      away: { name: "Penn State", abbrev: "PSU", logo: espn("ncaa", "213"), record: "5-1", rank: 9, teamId: "213" },
-      home: { name: "Iowa", abbrev: "IOWA", logo: espn("ncaa", "2294"), record: "4-2", teamId: "2294" },
+      away: { name: "Penn State", short: "Penn State", abbrev: "PSU", logo: espn("ncaa", "213"), record: "5-1", rank: 9, teamId: "213", color: "002d62" },
+      home: { name: "Iowa", short: "Iowa", abbrev: "IOWA", logo: espn("ncaa", "2294"), record: "4-2", teamId: "2294", color: "ffcd00" },
       when: ctIso(day, 11, 0),
       venue: "Kinnick Stadium",
       tv: ["CBS"],
@@ -627,8 +1120,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     g({
       id: "mlb-afternoon",
       league: "MLB",
-      away: { name: "New York Yankees", abbrev: "NYY", logo: mlb(147), record: "94-68", teamId: "147" },
-      home: { name: "Boston Red Sox", abbrev: "BOS", logo: mlb(111), record: "81-81", teamId: "111" },
+      away: { name: "New York Yankees", short: "Yankees", abbrev: "NYY", logo: mlb(147), record: "94-68", teamId: "147", color: "0c2340" },
+      home: { name: "Boston Red Sox", short: "Red Sox", abbrev: "BOS", logo: mlb(111), record: "81-81", teamId: "111", color: "bd3039" },
       when: ctIso(day, 15, 10),
       venue: "Fenway Park",
       tv: ["ESPN", "MLB.TV"],
@@ -639,8 +1132,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     g({
       id: "cfb-btn",
       league: "CFB",
-      away: { name: "Michigan", abbrev: "MICH", logo: espn("ncaa", "130"), record: "4-2", rank: 22, teamId: "130" },
-      home: { name: "Washington", abbrev: "WASH", logo: espn("ncaa", "264"), record: "5-1", rank: 18, teamId: "264" },
+      away: { name: "Michigan", short: "Michigan", abbrev: "MICH", logo: espn("ncaa", "130"), record: "4-2", rank: 22, teamId: "130", color: "00274c" },
+      home: { name: "Washington", short: "Washington", abbrev: "WASH", logo: espn("ncaa", "264"), record: "5-1", rank: 18, teamId: "264", color: "4b2e83" },
       when: ctIso(day, 14, 30),
       venue: "Husky Stadium",
       tv: ["NBC"],
@@ -651,8 +1144,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     g({
       id: "nhl-early",
       league: "NHL",
-      away: { name: "Colorado Avalanche", abbrev: "COL", logo: espn("nhl", "17"), record: "3-0-0", teamId: "17" },
-      home: { name: "Vegas Golden Knights", abbrev: "VGK", logo: espn("nhl", "37"), record: "2-1-0", teamId: "37" },
+      away: { name: "Colorado Avalanche", short: "Avalanche", abbrev: "COL", logo: espn("nhl", "col"), record: "3-0-0", teamId: "17", color: "6f263d" },
+      home: { name: "Vegas Golden Knights", short: "Golden Knights", abbrev: "VGK", logo: espn("nhl", "vgk"), record: "2-1-0", teamId: "37", color: "b4975a" },
       when: ctIso(day, 21, 0),
       venue: "T-Mobile Arena",
       tv: ["ESPN"],
@@ -664,8 +1157,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
       id: "soccer-wxm",
       league: "Soccer",
       competition: "Championship",
-      away: { name: "Wrexham", abbrev: "WXM", logo: espn("soccer", "352"), record: "8-2-2", teamId: "352" },
-      home: { name: "Leeds United", abbrev: "LEE", logo: espn("soccer", "357"), record: "7-3-2", teamId: "357" },
+      away: { name: "Wrexham", short: "Wrexham", abbrev: "WXM", logo: espn("soccer", "352"), record: "8-2-2", teamId: "352", color: "c8102e" },
+      home: { name: "Leeds United", short: "Leeds", abbrev: "LEE", logo: espn("soccer", "357"), record: "7-3-2", teamId: "357", color: "ffcd00" },
       when: ctIso(day, 9, 0),
       venue: "Elland Road",
       tv: ["Paramount+"],
@@ -725,8 +1218,22 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
         id: row.id,
         league: row.league,
         competition: row.competition ?? null,
-        away: { name: row.away[0], abbrev: row.away[1], logo: null, record: null, teamId: row.away[2] ?? null },
-        home: { name: row.home[0], abbrev: row.home[1], logo: null, record: null, teamId: row.home[2] ?? null },
+        away: {
+          name: row.away[0],
+          short: row.away[0],
+          abbrev: row.away[1],
+          logo: aroundLogo(row.league, row.away[1], row.away[2]),
+          record: null,
+          teamId: row.away[2] ?? null,
+        },
+        home: {
+          name: row.home[0],
+          short: row.home[0],
+          abbrev: row.home[1],
+          logo: aroundLogo(row.league, row.home[1], row.home[2]),
+          record: null,
+          teamId: row.home[2] ?? null,
+        },
         when: ctIso(day, row.hour, row.minute ?? 0),
         venue: null,
         tv: row.tv ?? [],

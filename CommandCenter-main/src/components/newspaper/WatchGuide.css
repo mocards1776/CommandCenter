@@ -1,17 +1,529 @@
-/* Tighten timetable rows on top of the Times watch page styles in index.css. */
-.tt-watch-row {
-  align-items: start;
+/* Today's Games — recap-language viewing guide. Fills the broadsheet. */
+
+.tt-watch {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
 }
-.tt-watch-teams {
-  flex-wrap: wrap;
-  white-space: normal;
-  overflow: visible;
-  text-overflow: unset;
+
+.tt-watch-head {
+  text-align: center;
+  border-bottom: 3px double var(--w-rule);
+  padding-bottom: 8px;
 }
-.tt-watch-row.worth .tt-watch-teams,
-.tt-watch-row.around .tt-watch-teams {
-  flex-wrap: nowrap;
+
+.tt-watch-kicker {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--w-red);
+}
+
+.tt-watch-head h2 {
+  margin: 4px 0 2px;
+  font-family: var(--w-head);
+  font-size: 44px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.tt-watch-dek {
+  margin: 0;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--w-ink-soft);
+}
+
+.tt-watch-feature {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tt-watch-flag {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.tt-watch-chip {
+  display: inline-block;
+  padding: 2px 7px 1px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+
+.tt-watch-banner {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  background: var(--w-rule);
+  border: 3px solid var(--w-rule);
+}
+
+.tt-watch-banner-side {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 8px 12px;
+  min-height: 148px;
+  padding: 14px 16px 16px;
+  overflow: hidden;
+  color: var(--tt-on, #fff);
+  background: linear-gradient(160deg, var(--tt-team, #1f2a44) 0%, color-mix(in srgb, var(--tt-team, #1f2a44) 62%, black) 100%);
+}
+
+.tt-watch-banner-side.home {
+  text-align: right;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.tt-watch-banner-side.home .tt-watch-id {
+  order: -1;
+}
+
+.tt-watch-ghost {
+  position: absolute;
+  right: -16%;
+  bottom: -28%;
+  width: 72%;
+  opacity: 0.12;
+  pointer-events: none;
+}
+
+.tt-watch-banner-side.home .tt-watch-ghost {
+  right: auto;
+  left: -16%;
+}
+
+.tt-watch-disc {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  z-index: 1;
+}
+
+.tt-watch-id {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+  z-index: 1;
+}
+
+.tt-watch-id em {
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.tt-watch-id strong {
+  font-family: var(--w-cond);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.tt-watch-id i {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+.tt-watch-score {
+  grid-column: 1 / -1;
+  font-family: var(--w-cond);
+  font-size: 64px;
+  font-weight: 700;
+  line-height: 0.85;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.2);
+}
+
+.tt-watch-state {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translate(-50%, -50%);
+  padding: 3px 12px;
+  background: var(--w-rule);
+  color: #fff;
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.tt-watch-state.live {
+  background: var(--w-red);
+}
+
+.tt-watch-crest {
+  display: inline-block;
+  object-fit: contain;
+  flex: none;
+}
+
+.tt-watch-crest.lg {
+  width: 48px;
+  height: 48px;
+}
+
+.tt-watch-crest.md {
+  width: 28px;
+  height: 28px;
+}
+
+.tt-watch-crest.sm {
+  width: 18px;
+  height: 18px;
+}
+
+.tt-watch-crest.blank {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--w-hair);
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--w-muted);
+  background: #fff;
+}
+
+.tt-watch-crest.lg.blank {
+  font-size: 14px;
+}
+
+.tt-watch-meta {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-ink-soft);
+}
+
+.tt-watch-meta .tv {
+  color: var(--w-ink);
+}
+
+.tt-watch-feature-why {
+  margin: 0;
+  text-align: center;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--w-ink);
+}
+
+.tt-watch-starters {
+  margin: 0;
+  text-align: center;
+  font-family: var(--w-cond);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--w-ink-soft);
+}
+
+.tt-watch-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+
+.tt-watch-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tt-watch-slot-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 3px;
+  border-bottom: 2px solid var(--w-rule);
+}
+
+.tt-watch-slot-head h3 {
+  margin: 0;
+  font-family: var(--w-cond);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.tt-watch-slot-head span {
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--w-muted);
+}
+
+.tt-watch-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  flex: 1;
+}
+
+.tt-watch[data-density="dense"] .tt-watch-grid {
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 7px;
+}
+
+.tt-watch[data-density="light"] .tt-watch-card {
+  min-height: 118px;
+}
+
+.tt-watch-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--w-rule);
+  background: var(--w-paper);
+}
+
+.tt-watch-card.must {
+  outline: 1px solid var(--w-rule);
+  outline-offset: 2px;
+}
+
+.tt-watch-card.around {
+  opacity: 0.92;
+}
+
+.tt-watch-card[data-league="NBA"].around,
+.tt-watch-card[data-league="WNBA"].around {
+  opacity: 0.82;
+}
+
+.tt-watch-card-banner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 52px;
+}
+
+.tt-watch-card.must .tt-watch-card-banner {
+  min-height: 64px;
+}
+
+.tt-watch-card-side {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px 8px;
+  color: var(--tt-on, #fff);
+  background: linear-gradient(160deg, var(--tt-team, #1f2a44) 0%, color-mix(in srgb, var(--tt-team, #1f2a44) 70%, black) 100%);
+}
+
+.tt-watch-card-side.home {
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+.tt-watch-card-side .tt-watch-crest {
+  background: #fff;
+  border-radius: 50%;
+  padding: 2px;
+  width: 30px;
+  height: 30px;
+}
+
+.tt-watch-card.must .tt-watch-card-side .tt-watch-crest {
+  width: 36px;
+  height: 36px;
+}
+
+.tt-watch-card-side span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.tt-watch-card-side strong {
+  font-family: var(--w-cond);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tt-watch-card.must .tt-watch-card-side strong {
+  font-size: 16px;
+}
+
+.tt-watch-card-side em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+
+.tt-watch-card-side b {
+  font-family: var(--w-cond);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+.tt-watch-card-side.home b {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.tt-watch-card-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px 7px;
+}
+
+.tt-watch-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tt-watch-card-top time {
+  font-family: var(--w-cond);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.tt-watch-card[data-state="live"] .tt-watch-card-top time {
+  color: var(--w-red);
+}
+
+.tt-watch-nets {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  font-family: var(--w-label);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-ink);
+  white-space: nowrap;
+}
+
+.tt-watch-nets .stream {
+  color: var(--w-ink-soft);
+}
+
+.tt-watch-whyline,
+.tt-watch-card-starters {
+  margin: 0;
+  font-family: var(--w-body);
+  font-size: 12px;
+  color: var(--w-ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tt-watch-card-starters {
+  font-family: var(--w-cond);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tt-watch-legend {
+  margin: 4px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--w-hair);
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--w-muted);
+  text-align: center;
+}
+
+.tt-watch[data-density="dense"] .tt-watch-card-side strong {
+  font-size: 12px;
+}
+
+.tt-watch[data-density="dense"] .tt-watch-card-banner {
+  min-height: 46px;
+}
+
+.tt-watch[data-density="dense"] .tt-watch-head h2 {
+  font-size: 38px;
+}
+
+.tt-watch[data-density="dense"] .tt-watch-banner-side {
+  min-height: 120px;
+}
+
+.tt-watch[data-density="light"] .tt-watch-timeline {
+  justify-content: stretch;
+}
+
+.tt-watch[data-density="light"] .tt-watch-slot {
+  flex: 1;
+}
+
+.tt-watch[data-density="light"] .tt-watch-grid {
+  align-content: stretch;
+}
+
+.tt-watch[data-density="light"] .tt-watch-card {
+  height: 100%;
 }

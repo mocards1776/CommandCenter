@@ -161,4 +161,57 @@ assert(!wnbaInSeason("2026-01-12"), "January is not WNBA season");
 
 assert(mapWatchNflGame({ id: "x" }) == null, "an event without competitors is dropped");
 
+const pitched: EspnWatchEvent = {
+  ...mnf,
+  competitions: [
+    {
+      ...mnf.competitions![0]!,
+      odds: [{ details: "ATL -3.5", spread: -3.5 }],
+      competitors: [
+        {
+          ...mnf.competitions![0]!.competitors![0]!,
+          team: {
+            ...mnf.competitions![0]!.competitors![0]!.team,
+            shortDisplayName: "Falcons",
+            color: "a71930",
+          },
+        },
+        {
+          ...mnf.competitions![0]!.competitors![1]!,
+          team: {
+            ...mnf.competitions![0]!.competitors![1]!.team,
+            shortDisplayName: "Saints",
+            color: "d3bc8d",
+          },
+          probables: [{ athlete: { shortName: "S. Rattler" } }],
+        },
+      ],
+    },
+  ],
+};
+const nflBits = mapWatchNflGame(pitched) as ReturnType<typeof mapWatchNflGame> & { line?: string | null };
+assert((nflBits!.away as { short?: string }).short === "Falcons", "ESPN short name is kept");
+assert(nflBits!.away.color === "a71930", "team color is kept");
+assert((nflBits!.home as { starter?: string }).starter === "S. Rattler", "probable from ESPN");
+assert(nflBits!.line === "ATL -3.5", "spread line is kept");
+
+const nhlBits = mapWatchNhlGame({
+  ...nhlEvent,
+  competitions: [
+    {
+      ...nhlEvent.competitions![0]!,
+      competitors: [
+        {
+          ...nhlEvent.competitions![0]!.competitors![0]!,
+          team: { ...nhlEvent.competitions![0]!.competitors![0]!.team, shortDisplayName: "Blackhawks", color: "ce1126" },
+          probables: [{ athlete: { displayName: "Spencer Knight" }, statistics: [{ abbreviation: "GAA", displayValue: "2.10" }] }],
+        },
+        nhlEvent.competitions![0]!.competitors![1]!,
+      ],
+    },
+  ],
+});
+assert((nhlBits!.away as { short?: string }).short === "Blackhawks", "NHL short name");
+assert((nhlBits!.away as { starter?: string }).starter === "Spencer Knight", "NHL starting goalie");
+
 console.log("newspaper-watch-scoreboard ok");

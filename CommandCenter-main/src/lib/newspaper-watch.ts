@@ -53,6 +53,18 @@ type Side = {
   logo?: string | null;
   rank?: number | null;
   teamId?: string | number | null;
+  short?: string | null;
+  color?: string | null;
+  primaryColor?: string | null;
+  score?: unknown;
+  starter?: string | null;
+  starterLine?: string | null;
+  probablePitcher?: string | null;
+};
+const numScore = (v: unknown): number | null => {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 };
 const side = (s: Side, logo: string | null = s.logo ?? null): WatchSide => ({
   name: s.name,
@@ -61,7 +73,20 @@ const side = (s: Side, logo: string | null = s.logo ?? null): WatchSide => ({
   record: s.record,
   ...(s.rank != null ? { rank: s.rank } : {}),
   ...(s.teamId != null && String(s.teamId) !== "" ? { teamId: String(s.teamId) } : {}),
+  ...(s.short ? { short: s.short } : {}),
+  ...((s.color ?? s.primaryColor) ? { color: s.color ?? s.primaryColor } : {}),
+  ...(numScore(s.score) != null ? { score: numScore(s.score) } : {}),
+  ...((s.starter ?? s.probablePitcher) ? { starter: s.starter ?? s.probablePitcher } : {}),
+  ...(s.starterLine ? { starterLine: s.starterLine } : {}),
 });
+
+type ExtraBits = {
+  short?: string | null;
+  starter?: string | null;
+  starterLine?: string | null;
+  line?: string | null;
+};
+const bits = <T,>(row: T): T & ExtraBits => row as T & ExtraBits;
 
 type Scored = {
   id: string;
@@ -85,37 +110,58 @@ const base = (g: Scored, league: WatchLeague, when: string | null, status: strin
 });
 
 export function watchFromMlb(g: MlbScoredGame): WatchGame {
+  const series = g.seriesLine?.trim();
   return {
     ...base(g, "MLB", g.gameDate ?? g.when, g.status),
     competition: null,
-    away: side(g.away, mlbTeamLogo(g.away.teamId)),
-    home: side(g.home, mlbTeamLogo(g.home.teamId)),
+    away: side({ ...g.away, color: g.away.primaryColor, starter: g.away.probablePitcher }),
+    home: side({ ...g.home, color: g.home.primaryColor, starter: g.home.probablePitcher }),
+    ...(series ? { series } : {}),
   };
 }
 
 export function watchFromNfl(g: NflScoredGame): WatchGame {
-  return { ...base(g, "NFL", g.startIso ?? null, g.shortDetail ?? g.status), competition: null, away: side(g.away), home: side(g.home) };
+  const extra = bits(g);
+  const away = bits(g.away);
+  const home = bits(g.home);
+  return {
+    ...base(g, "NFL", g.startIso ?? null, g.shortDetail ?? g.status),
+    competition: null,
+    away: side(away),
+    home: side(home),
+    ...(g.seriesLine?.trim() ? { series: g.seriesLine.trim() } : {}),
+    ...(extra.line ? { line: extra.line } : {}),
+  };
 }
 
 export function watchFromNhl(g: NhlScoredGame): WatchGame {
   const series = g.seriesLine?.trim();
+  const extra = bits(g);
+  const away = bits(g.away);
+  const home = bits(g.home);
   return {
     ...base(g, "NHL", g.startIso ?? null, g.shortDetail ?? g.status),
     competition: null,
-    away: side(g.away),
-    home: side(g.home),
+    away: side(away),
+    home: side(home),
     reasons: [series, ...g.reasons].filter((r): r is string => Boolean(r)).slice(0, 3),
+    ...(series ? { series } : {}),
+    ...(extra.line ? { line: extra.line } : {}),
   };
 }
 
 export function watchFromCfb(g: CfbScoredGame): WatchGame {
   const rivalry = cfbRivalryName(g.away.teamId, g.home.teamId);
+  const away = bits(g.away);
+  const home = bits(g.home);
+  const line = g.odds?.details?.trim();
   return {
     ...base(g, "CFB", g.startIso ?? null, g.shortDetail ?? g.status),
     competition: null,
-    away: side(g.away),
-    home: side(g.home),
+    away: side(away),
+    home: side(home),
     reasons: [rivalry, ...g.reasons].filter((r): r is string => Boolean(r)).slice(0, 3),
+    ...(line ? { line } : {}),
   };
 }
 
@@ -123,8 +169,8 @@ export function watchFromSoccer(g: WatchSoccerGame & { score: number; reasons: s
   return {
     ...base(g, "Soccer", g.startIso ?? null, g.shortDetail ?? g.status),
     competition: g.league || null,
-    away: side(g.away),
-    home: side(g.home),
+    away: side({ ...g.away, score: g.away.score }),
+    home: side({ ...g.home, score: g.home.score }),
   };
 }
 
@@ -140,6 +186,8 @@ export function watchFromBasket(
     home: side(g.home),
     preseason: g.preseason,
     reasons: [series, ...g.reasons].filter((r): r is string => Boolean(r)).slice(0, 3),
+    ...(series ? { series } : {}),
+    ...(g.line ? { line: g.line } : {}),
   };
 }
 
@@ -222,19 +270,32 @@ export async function fetchWatchList(day: string, limitOrOpts?: number | WatchLi
     fetchWatchNbaBoard(ymd).then(onDay),
     wnbaInSeason(day) ? fetchWatchWnbaBoard(ymd).then(onDay) : Promise.resolve([] as WatchBasketGame[]),
   ]);
-  type Orig = { id: string; final: boolean; live: boolean; status?: string | null; shortDetail?: string | null };
+  type Orig = {
+    id: string;
+    final: boolean;
+    live: boolean;
+    status?: string | null;
+    shortDetail?: string | null;
+    away?: { score?: unknown };
+    home?: { score?: unknown };
+  };
   const attach =
     <S extends { id: string }>(toWatch: (g: S) => WatchGame, originals: Orig[]) => {
       const byId = new Map(originals.map((row) => [row.id, row]));
       return (g: S): WatchGame & { final?: boolean } => {
       const orig = byId.get(g.id);
       const watch = toWatch(g);
+      const awayScore = numScore(orig?.away?.score) ?? watch.away.score ?? null;
+      const homeScore = numScore(orig?.home?.score) ?? watch.home.score ?? null;
       return {
         ...stampDesk(
           {
             ...watch,
             live: orig?.live ?? watch.live,
             status: orig?.shortDetail ?? orig?.status ?? watch.status,
+            final: orig?.final ?? watch.final ?? false,
+            away: { ...watch.away, ...(awayScore != null ? { score: awayScore } : {}) },
+            home: { ...watch.home, ...(homeScore != null ? { score: homeScore } : {}) },
           },
           interest.byId,
         ),

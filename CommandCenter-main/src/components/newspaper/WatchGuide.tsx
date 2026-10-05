@@ -1,7 +1,15 @@
+import type { CSSProperties } from "react";
 import {
   composeWatchPage,
+  watchClockState,
+  watchContext,
   watchLeagueColor,
   watchLeagueLabel,
+  watchLogo,
+  watchStarters,
+  watchTeamColor,
+  watchTeamShort,
+  watchTint,
   type WatchGame,
   type WatchListing,
   type WatchNetwork,
@@ -9,114 +17,145 @@ import {
 } from "@/lib/newspaper-watch";
 import "./WatchGuide.css";
 
-function recordBit(side: WatchSide): string | null {
-  if (side.record) return side.record;
-  if (side.rank) return `No. ${side.rank}`;
-  return null;
-}
-
-function mustSub(game: WatchListing): string {
-  const bits = [recordBit(game.away), recordBit(game.home)].filter(Boolean);
-  if (game.reason) bits.push(game.reason);
-  return bits.join(" · ");
-}
-
-function Crest({ side, size }: { side: WatchSide; size: "lg" | "md" | "sm" }) {
-  return side.logo ? (
-    <img className={`tt-watch-crest ${size}`} src={side.logo} alt="" loading="lazy" />
+function Crest({ side, league, size }: { side: WatchSide; league: WatchListing["league"]; size: "lg" | "md" | "sm" }) {
+  const src = watchLogo(side, league);
+  return src ? (
+    <img className={`tt-watch-crest ${size}`} src={src} alt="" loading="lazy" />
   ) : (
     <span className={`tt-watch-crest ${size} blank`}>{side.abbrev.slice(0, 3)}</span>
   );
 }
 
-function teamLine(side: WatchSide): string {
-  return side.rank ? `No. ${side.rank} ${side.name}` : side.name;
-}
-
-function leagueTag(game: WatchListing): string {
-  return watchLeagueLabel(game);
+function LeagueChip({ game }: { game: WatchListing }) {
+  return (
+    <span className="tt-watch-chip" style={{ background: watchLeagueColor(game.league) }}>
+      {watchLeagueLabel(game)}
+    </span>
+  );
 }
 
 function Networks({ networks }: { networks: WatchNetwork[] }) {
-  if (!networks.length) return <span className="tt-watch-nets" />;
+  if (!networks.length) return null;
   return (
     <span className="tt-watch-nets">
       {networks.map((n, i) => (
         <span key={`${n.name}-${i}`} className={n.streaming ? "stream" : undefined}>
           {n.name}
-          {n.streaming ? <i>stream</i> : null}
         </span>
       ))}
     </span>
   );
 }
 
-function MustRow({ game }: { game: WatchListing }) {
+function teamTitle(side: WatchSide): string {
+  return side.rank ? `No. ${side.rank} ${watchTeamShort(side)}` : watchTeamShort(side);
+}
+
+function BannerSide({
+  side,
+  league,
+  align,
+  showScore,
+}: {
+  side: WatchSide;
+  league: WatchListing["league"];
+  align: "away" | "home";
+  showScore: boolean;
+}) {
   return (
-    <li className="tt-watch-row must" data-league={game.league}>
-      <time className="tt-watch-time" dateTime={game.when ?? undefined}>
-        {game.clock}
-      </time>
-      <div className="tt-watch-copy">
-        <p className="tt-watch-teams">
-          <Crest side={game.away} size="md" />
-          <b>{teamLine(game.away)}</b>
-          <i>at</i>
-          <Crest side={game.home} size="md" />
-          <b>{teamLine(game.home)}</b>
-        </p>
-        {mustSub(game) ? <p className="tt-watch-whyline">{mustSub(game)}</p> : null}
+    <div
+      className={`tt-watch-banner-side ${align}`}
+      style={watchTint(watchTeamColor(side, league)) as CSSProperties}
+    >
+      {watchLogo(side, league) ? (
+        <img className="tt-watch-ghost" src={watchLogo(side, league)!} alt="" aria-hidden="true" />
+      ) : null}
+      <span className="tt-watch-disc">
+        <Crest side={side} league={league} size="lg" />
+      </span>
+      <span className="tt-watch-id">
+        <em>{align === "away" ? "Away" : "Home"}</em>
+        <strong>{teamTitle(side)}</strong>
+        {side.record ? <i>{side.record}</i> : null}
+      </span>
+      {showScore ? <b className="tt-watch-score">{side.score ?? "–"}</b> : null}
+    </div>
+  );
+}
+
+function Feature({ game }: { game: WatchListing }) {
+  const clock = watchClockState(game);
+  const showScore = clock.kind !== "pre";
+  const starters = watchStarters(game);
+  return (
+    <section className="tt-watch-feature" aria-label="Game of the day">
+      <p className="tt-watch-flag">
+        <span>Game of the Day</span>
+        <LeagueChip game={game} />
+      </p>
+      <div className="tt-watch-banner">
+        <BannerSide side={game.away} league={game.league} align="away" showScore={showScore} />
+        <BannerSide side={game.home} league={game.league} align="home" showScore={showScore} />
+        <span className={`tt-watch-state ${clock.kind}`}>{clock.kind === "pre" ? game.clock : clock.label}</span>
       </div>
-      <Networks networks={game.networks} />
-    </li>
+      <div className="tt-watch-meta">
+        {game.networks.length ? (
+          <span className="tv">{game.networks.map((n) => n.name).join(" · ")}</span>
+        ) : null}
+        {game.venue ? <span>{game.venue}</span> : null}
+        {game.series ? <span>{game.series}</span> : null}
+        {game.line ? <span>{game.line}</span> : null}
+      </div>
+      <p className="tt-watch-feature-why">{watchContext(game)}</p>
+      {starters ? <p className="tt-watch-starters">{starters}</p> : null}
+    </section>
   );
 }
 
-function WorthRow({ game }: { game: WatchListing }) {
+function GameCard({ game }: { game: WatchListing }) {
+  const clock = watchClockState(game);
+  const showScore = clock.kind !== "pre";
+  const starters = watchStarters(game);
   return (
-    <li className="tt-watch-row worth" data-league={game.league}>
-      <time className="tt-watch-time" dateTime={game.when ?? undefined}>
-        {game.clock}
-      </time>
-      <p className="tt-watch-teams">
-        <Crest side={game.away} size="sm" />
-        {game.away.abbrev}
-        <i>at</i>
-        <Crest side={game.home} size="sm" />
-        {game.home.abbrev}
-      </p>
-      <Networks networks={game.networks} />
+    <li className={`tt-watch-card ${game.tier}`} data-league={game.league} data-state={clock.kind}>
+      <div className="tt-watch-card-banner">
+        {(["away", "home"] as const).map((align) => {
+          const side = game[align];
+          return (
+            <div
+              key={align}
+              className={`tt-watch-card-side ${align}`}
+              style={watchTint(watchTeamColor(side, game.league)) as CSSProperties}
+            >
+              <Crest side={side} league={game.league} size="md" />
+              <span>
+                <strong>{teamTitle(side)}</strong>
+                {side.record ? <em>{side.record}</em> : null}
+              </span>
+              {showScore ? <b>{side.score ?? "–"}</b> : null}
+            </div>
+          );
+        })}
+      </div>
+      <div className="tt-watch-card-foot">
+        <div className="tt-watch-card-top">
+          <LeagueChip game={game} />
+          <time dateTime={game.when ?? undefined}>{clock.kind === "pre" ? game.clock : clock.label}</time>
+          <Networks networks={game.networks} />
+        </div>
+        <p className="tt-watch-whyline">{watchContext(game)}</p>
+        {starters ? <p className="tt-watch-card-starters">{starters}</p> : null}
+      </div>
     </li>
   );
 }
 
-function AroundRow({ game }: { game: WatchListing }) {
-  return (
-    <li className="tt-watch-row around" data-league={game.league}>
-      <time className="tt-watch-time" dateTime={game.when ?? undefined}>
-        {game.clock}
-      </time>
-      <p className="tt-watch-teams text">
-        {game.away.abbrev}–{game.home.abbrev}
-      </p>
-      <Networks networks={game.networks} />
-    </li>
-  );
-}
-
-function Listing({ game }: { game: WatchListing }) {
-  if (game.tier === "must") return <MustRow game={game} />;
-  if (game.tier === "worth") return <WorthRow game={game} />;
-  return <AroundRow game={game} />;
-}
-
-/** One page: the game of the day, then a Central-time timetable. */
+/** One page: the game of the day, then a Central-time grid of every remaining game. */
 export default function WatchGuide({ games, editionLabel }: { games: WatchGame[]; editionLabel: string }) {
   const page = composeWatchPage(games);
-  const feature = page.feature;
 
   return (
-    <div className="tt-watch">
+    <div className="tt-watch" data-density={page.density}>
       <header className="tt-watch-head">
         <p className="tt-watch-kicker">The Viewing Guide · {editionLabel}</p>
         <h2>Today&apos;s Games</h2>
@@ -125,77 +164,31 @@ export default function WatchGuide({ games, editionLabel }: { games: WatchGame[]
         </p>
       </header>
 
-      {!feature ? (
+      {!page.feature ? (
         <p className="wsj-empty">Nothing left on the slate today. The guide returns with tomorrow’s games.</p>
       ) : (
         <>
-          <section className="tt-watch-feature" aria-label="Game of the day">
-            <p className="tt-watch-flag">
-              Game of the Day{" "}
-              <span data-league={feature.league} style={{ color: watchLeagueColor(feature.league) }}>
-                {leagueTag(feature)}
-              </span>
-            </p>
-            <div className="tt-watch-match">
-              <div className="tt-watch-team">
-                <Crest side={feature.away} size="lg" />
-                <strong>{teamLine(feature.away)}</strong>
-                {feature.away.record ? <em>{feature.away.record}</em> : null}
-              </div>
-              <div className="tt-watch-at">
-                <b>{feature.clock}</b>
-                <span>at</span>
-              </div>
-              <div className="tt-watch-team">
-                <Crest side={feature.home} size="lg" />
-                <strong>{teamLine(feature.home)}</strong>
-                {feature.home.record ? <em>{feature.home.record}</em> : null}
-              </div>
-            </div>
-            <div className="tt-watch-meta">
-              {feature.networks.length ? (
-                <span className="tv">
-                  {feature.networks.map((n) => (n.streaming ? `${n.name} (stream)` : n.name)).join(" · ")}
-                </span>
-              ) : null}
-              {feature.venue ? <span>{feature.venue}</span> : null}
-            </div>
-            {feature.reason ? <p className="tt-watch-feature-why">{feature.reason}</p> : null}
-          </section>
-
-          {page.blocks.length ? (
+          <Feature game={page.feature} />
+          {page.slots.length ? (
             <div className="tt-watch-timeline" aria-label="By the Central clock">
-              {page.blocks.map((block) => (
-                <section key={block.id} className="tt-watch-block" aria-label={`${block.label}, ${block.hours}`}>
-                  <header className="tt-watch-block-head">
-                    <span className="tt-watch-mark">{block.mark}</span>
-                    <h3>
-                      {block.label} <em>{block.hours}</em>
-                    </h3>
+              {page.slots.map((slot) => (
+                <section key={slot.clock} className="tt-watch-slot" aria-label={slot.clock}>
+                  <header className="tt-watch-slot-head">
+                    <h3>{slot.clock}</h3>
+                    <span>
+                      {slot.listings.length} {slot.listings.length === 1 ? "game" : "games"}
+                    </span>
                   </header>
-                  {block.listings.length ? (
-                    <ol className="tt-watch-cols">
-                      {block.listings.map((game) => (
-                        <Listing key={game.id} game={game} />
-                      ))}
-                    </ol>
-                  ) : null}
-                  {block.alsoOn.length ? (
-                    <p className="tt-watch-also">
-                      <span>Also on:</span>{" "}
-                      {block.alsoOn.map((row, i) => (
-                        <span key={row.id}>
-                          {i ? " · " : ""}
-                          {row.match} {row.clock}
-                          {row.network ? ` ${row.network}` : ""}
-                        </span>
-                      ))}
-                    </p>
-                  ) : null}
+                  <ol className="tt-watch-grid">
+                    {slot.listings.map((game) => (
+                      <GameCard key={game.id} game={game} />
+                    ))}
+                  </ol>
                 </section>
               ))}
             </div>
           ) : null}
+          <p className="tt-watch-legend">Times in Central. Networks: national TV and streaming.</p>
         </>
       )}
     </div>
