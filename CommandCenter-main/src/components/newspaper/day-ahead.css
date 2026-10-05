@@ -1,0 +1,292 @@
+/* The Day Ahead (Section A, before the viewing guide): the day's calendar as a printed timetable.
+   Two inks: work in navy, family in red. Open time is hatched. */
+.tt-day { display: flex; flex-direction: column; gap: 14px; }
+.tt-day-head { text-align: center; border-bottom: 3px double var(--w-rule); padding-bottom: 10px; }
+.tt-day-kicker {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--w-red);
+}
+.tt-day-head h2 {
+  margin: 4px 0 2px;
+  font-family: var(--w-head);
+  font-size: 48px;
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.tt-day-dek { margin: 0; font-family: var(--w-body); font-style: italic; font-size: 13px; color: var(--w-ink-soft); }
+.tt-day-count {
+  display: inline-block;
+  margin: 8px 0 0;
+  padding: 3px 0;
+  border-top: 1px solid var(--w-rule);
+  border-bottom: 1px solid var(--w-rule);
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.tt-day-tag {
+  display: inline-block;
+  padding: 0 5px;
+  font-family: var(--w-label);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  line-height: 15px;
+  text-transform: uppercase;
+  color: var(--w-paper);
+  background: var(--w-navy);
+}
+.tt-day-tag.family { background: var(--w-red); }
+
+.tt-day-allday {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  align-items: stretch;
+  border-top: 2px solid var(--w-rule);
+  border-bottom: 1px solid var(--w-rule);
+  background: var(--w-paper-2);
+}
+.tt-day-allday-flag {
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--w-paper);
+  background: var(--w-ink);
+}
+.tt-day-allday ul { display: flex; flex-wrap: wrap; list-style: none; margin: 0; padding: 0; }
+.tt-day-allday li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 14px;
+  border-right: 1px solid var(--w-hair);
+  border-left: 4px solid var(--w-navy);
+}
+.tt-day-allday li.family { border-left-color: var(--w-red); }
+.tt-day-allday li strong { font-family: var(--w-head); font-size: 16px; font-weight: 700; }
+.tt-day-allday li em { font-family: var(--w-body); font-size: 12px; color: var(--w-muted); }
+
+.tt-day-grid { display: grid; grid-template-columns: minmax(0, 1fr) 288px; gap: 22px; align-items: start; }
+.tt-day-table { display: grid; grid-template-columns: 58px minmax(0, 1fr); padding: 8px 0 10px; border-top: 1px solid var(--w-rule); }
+.tt-day-rail { position: relative; border-right: 2px solid var(--w-rule); }
+.tt-day-hour {
+  position: absolute;
+  right: 8px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  white-space: nowrap;
+}
+.tt-day-hour b { font-family: var(--w-cond); font-size: 17px; font-weight: 700; line-height: 1; }
+.tt-day-hour i { font-family: var(--w-label); font-style: normal; font-size: 8px; font-weight: 700; letter-spacing: 0.06em; color: var(--w-muted); }
+.tt-day-lane { position: relative; }
+.tt-day-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--w-hair);
+  background-image: linear-gradient(to right, var(--w-hair) 50%, transparent 0);
+  background-size: 6px 1px;
+  background-repeat: repeat-x;
+  background-position: 0 50%;
+}
+.tt-day-lane::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px solid var(--w-hair); }
+.tt-day-open {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  background: repeating-linear-gradient(-45deg, rgba(18, 20, 24, 0.055) 0 1px, transparent 1px 7px);
+}
+.tt-day-open span {
+  padding: 1px 8px;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--w-muted);
+  background: var(--w-paper);
+}
+.tt-day-ev {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  padding: 4px 8px 4px 9px;
+  border-left: 5px solid var(--w-navy);
+  border-top: 1px solid rgba(12, 29, 56, 0.35);
+  background: #eef0f4;
+  box-shadow: 0 0 0 1px var(--w-paper);
+  color: var(--w-navy);
+}
+.tt-day-ev.family { border-left-color: var(--w-red); border-top-color: rgba(179, 18, 29, 0.35); background: #f8ecea; color: #7d0d14; }
+.tt-day-ev.open-ended { border-bottom: 1px dashed currentColor; }
+.tt-day-ev b {
+  font-family: var(--w-cond);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+.tt-day-ev strong { font-family: var(--w-head); font-size: 16px; font-weight: 700; line-height: 1.12; color: var(--w-ink); }
+.tt-day-ev em { font-family: var(--w-body); font-size: 12px; line-height: 1.2; color: var(--w-ink-soft); }
+.tt-day-ev.short strong { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-day-ev.short em { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tt-day-ev.tiny { flex-direction: row; align-items: baseline; gap: 6px; padding-top: 2px; padding-bottom: 2px; }
+.tt-day-ev.tiny strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.tt-day-side { display: flex; flex-direction: column; gap: 16px; }
+.tt-day-first {
+  border: 1px solid var(--w-rule);
+  outline: 1px solid var(--w-rule);
+  outline-offset: 3px;
+  margin: 4px;
+  padding: 12px 14px 12px;
+  background: var(--w-paper-2);
+}
+.tt-day-first-flag {
+  margin: 0 0 4px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--w-red);
+}
+.tt-day-first-time { margin: 0; font-family: var(--w-cond); font-size: 40px; font-weight: 700; line-height: 1; color: var(--w-navy); }
+.tt-day-first-time.family { color: var(--w-red); }
+.tt-day-first h3 { margin: 4px 0 6px; font-family: var(--w-head); font-size: 23px; font-weight: 900; line-height: 1.08; }
+.tt-day-first-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; font-size: 11px; color: var(--w-ink-soft); }
+.tt-day-first-meta em { font-family: var(--w-body); font-size: 13px; }
+.tt-day-first-meta span { font-family: var(--w-cond); letter-spacing: 0.08em; text-transform: uppercase; }
+.tt-day-then {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--w-hair);
+  font-family: var(--w-body);
+  font-size: 13px;
+  line-height: 1.3;
+}
+.tt-day-then i { font-weight: 700; color: var(--w-muted); }
+
+.tt-day-legend {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 2px;
+  border-top: 1px solid var(--w-rule);
+  border-bottom: 1px solid var(--w-rule);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.tt-day-legend span { display: flex; align-items: center; gap: 6px; }
+.tt-day-legend i { display: inline-block; width: 18px; height: 11px; }
+.tt-day-legend .work i { background: #eef0f4; border-left: 5px solid var(--w-navy); }
+.tt-day-legend .family i { background: #f8ecea; border-left: 5px solid var(--w-red); }
+.tt-day-legend .open i {
+  border: 1px solid var(--w-hair);
+  background: repeating-linear-gradient(-45deg, rgba(18, 20, 24, 0.25) 0 1px, transparent 1px 4px);
+}
+
+.tt-day-rundown ol { list-style: none; margin: 6px 0 0; padding: 0; }
+.tt-day-rundown li {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--w-hair);
+}
+.tt-day-rundown li b { font-family: var(--w-cond); font-size: 15px; font-weight: 700; color: var(--w-navy); }
+.tt-day-rundown li.family b { color: var(--w-red); }
+.tt-day-rundown li span { display: flex; flex-direction: column; min-width: 0; }
+.tt-day-rundown li strong { font-size: 13px; font-weight: 700; line-height: 1.2; }
+.tt-day-rundown li em { font-family: var(--w-body); font-size: 11.5px; color: var(--w-muted); }
+
+.tt-day-tally { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 3px double var(--w-rule); padding-top: 8px; text-align: center; }
+.tt-day-tally div + div { border-left: 1px solid var(--w-hair); }
+.tt-day-tally b { display: block; font-family: var(--w-cond); font-size: 19px; font-weight: 700; line-height: 1.1; }
+.tt-day-tally span { font-size: 9.5px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: var(--w-muted); }
+
+.tt-day-empty {
+  margin: 18px auto 0;
+  max-width: 720px;
+  padding: 34px 40px 28px;
+  text-align: center;
+  border: 1px solid var(--w-rule);
+  outline: 1px solid var(--w-rule);
+  outline-offset: 4px;
+  background: repeating-linear-gradient(-45deg, rgba(18, 20, 24, 0.04) 0 1px, transparent 1px 8px), var(--w-paper);
+}
+.tt-day-orn { margin: 0; font-size: 34px; line-height: 1; color: var(--w-red); }
+.tt-day-empty h3 { margin: 8px 0 6px; font-family: var(--w-head); font-style: italic; font-weight: 900; font-size: 46px; line-height: 1; }
+.tt-day-empty-dek { margin: 0 auto; max-width: 500px; font-family: var(--w-body); font-size: 16px; line-height: 1.4; color: var(--w-ink-soft); }
+.tt-day-empty-rail {
+  display: grid;
+  grid-template-columns: repeat(17, 1fr);
+  margin: 24px 0 6px;
+  border-top: 2px solid var(--w-rule);
+  border-bottom: 1px solid var(--w-rule);
+}
+.tt-day-empty-rail span {
+  padding: 6px 0;
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--w-muted);
+  background: var(--w-paper);
+}
+.tt-day-empty-rail span + span { border-left: 1px solid var(--w-hair); }
+.tt-day-empty-foot { margin: 0; font-size: 10.5px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--w-muted); }
+
+/* Coming Up: the next five days as filed that morning, an almanac strip at the foot of The Day Ahead. */
+.tt-day-ahead-strip { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 4px double var(--w-rule); }
+.tt-day-ahead-strip > ol { display: grid; list-style: none; margin: 0; padding: 0; }
+.tt-day-ahead-strip > ol > li { display: flex; flex-direction: column; min-width: 0; padding: 0 12px; }
+.tt-day-ahead-strip > ol > li:first-child { padding-left: 0; }
+.tt-day-ahead-strip > ol > li:last-child { padding-right: 0; }
+.tt-day-ahead-strip > ol > li + li { border-left: 1px solid var(--w-hair); }
+.tt-day-ahead-strip header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 2px solid var(--w-rule);
+}
+.tt-day-ahead-strip header b { font-family: var(--w-head); font-size: 18px; font-weight: 800; line-height: 1; }
+.tt-day-ahead-strip header span { font-family: var(--w-cond); font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--w-muted); }
+.tt-day-ahead-strip ul { list-style: none; margin: 0; padding: 0; }
+.tt-day-ahead-strip ul li {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+  padding: 3px 0 3px 6px;
+  border-left: 3px solid var(--w-navy);
+  border-bottom: 1px solid var(--w-hair);
+}
+.tt-day-ahead-strip ul li.family { border-left-color: var(--w-red); }
+.tt-day-ahead-strip ul li b { font-family: var(--w-cond); font-size: 12.5px; font-weight: 700; color: var(--w-navy); white-space: nowrap; }
+.tt-day-ahead-strip ul li.family b { color: var(--w-red); }
+.tt-day-ahead-strip ul li span { font-size: 12px; font-weight: 600; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.tt-day-ahead-open { margin: 6px 0 0; font-family: var(--w-body); font-style: italic; font-size: 13px; color: var(--w-muted); }
+.tt-day-ahead-more { margin: 4px 0 0; font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--w-muted); }

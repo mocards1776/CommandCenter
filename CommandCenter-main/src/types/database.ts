@@ -497,6 +497,24 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["newspaper_desk"]["Insert"]>;
         Relationships: [];
       };
+      times_day_schedule: {
+        Row: {
+          schedule_date: string;
+          events: Json;
+          upcoming: Json;
+          source: string | null;
+          received_at: string | null;
+        };
+        Insert: {
+          schedule_date: string;
+          events?: Json;
+          upcoming?: Json;
+          source?: string | null;
+          received_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["times_day_schedule"]["Insert"]>;
+        Relationships: [];
+      };
       favorite_sports_players: {
         Row: {
           id: string;
