@@ -1581,6 +1581,60 @@ mark.rss-hl {
   font-size: 11.5px;
   color: var(--w-ink-soft);
 }
+.wsj-ear.tt-election-ear {
+  max-width: 158px;
+  padding: 5px 8px 6px;
+}
+.wsj-ear.tt-election-ear strong {
+  font-family: var(--w-label);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+.wsj-ear.tt-election-ear .tt-election-num {
+  display: block;
+  margin: 1px 0 0;
+  font-family: var(--w-head);
+  font-style: normal;
+  font-size: 38px;
+  font-weight: 800;
+  line-height: 0.88;
+  letter-spacing: -0.03em;
+  color: var(--w-ink);
+}
+.wsj-ear.tt-election-ear .tt-election-line {
+  margin-top: 3px;
+  font-family: var(--w-label);
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--w-ink);
+}
+.wsj-ear.tt-election-ear .tt-election-date {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--w-ink-soft);
+}
+.wsj-ear.tt-election-ear.is-today {
+  max-width: 168px;
+  padding: 8px 10px;
+}
+.wsj-ear.tt-election-ear.is-today strong {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+.wsj-ear.tt-election-ear.is-today .tt-election-line {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
 .wsj-nameplate {
   margin: 0;
   font-family: var(--w-plate);
@@ -7441,6 +7495,7 @@ li.counting .tt-count.card {
 .newspaper-root .wsj-poster-names { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .wsj-mast-row { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
 .newspaper-root .wsj-ear { display: block; }
+.newspaper-root .wsj-ear.tt-election-ear { display: block; }
 .newspaper-root .wsj-ear.wx-ear {
   display: block;
   max-width: 168px;
@@ -8077,6 +8132,7 @@ li.counting .tt-count.card {
   --w-red: #b3121d;
   --w-navy: #0c1d38;
   --w-head: "Playfair Display", "Times New Roman", Georgia, serif;
+  --w-plate: "UnifrakturMaguntia", "Playfair Display", Georgia, serif;
   --w-label: "Libre Franklin", system-ui, sans-serif;
   --w-cond: "Oswald", "Libre Franklin", sans-serif;
   --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
@@ -8158,6 +8214,56 @@ li.counting .tt-count.card {
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+.tt-phone-page .wsj-ear {
+  display: block;
+}
+.tt-phone-front-mast {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 4px double var(--w-rule);
+  text-align: left;
+}
+.tt-phone-front-plate .tt-phone-kicker {
+  text-align: left;
+}
+.tt-phone-front .wsj-nameplate {
+  margin: 4px 0 2px;
+  font-size: 32px;
+  text-align: left;
+  white-space: nowrap;
+}
+.tt-phone-front .tt-phone-dek {
+  text-align: left;
+}
+.tt-phone-front .tt-election-ear {
+  justify-self: end;
+  max-width: 136px;
+}
+.tt-phone-front .tt-election-ear strong {
+  font-size: 9.5px;
+}
+.tt-phone-front .tt-election-num {
+  font-size: 48px;
+}
+.tt-phone-front .tt-election-line {
+  font-size: 8.5px;
+}
+.tt-phone-front .tt-election-date {
+  font-size: 11px;
+}
+.tt-phone-front .tt-election-ear.is-today {
+  max-width: 148px;
+  padding: 10px 12px;
+}
+.tt-phone-front .tt-election-ear.is-today strong {
+  font-size: 13px;
+}
+.tt-phone-front .tt-election-ear.is-today .tt-election-line {
+  font-size: 12px;
 }
 
 .tt-phone-now {

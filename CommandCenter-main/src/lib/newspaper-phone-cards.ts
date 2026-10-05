@@ -1,5 +1,5 @@
 /**
- * Shared helpers for the Telegram phone cards (weather, The Day Ahead, watch).
+ * Shared helpers for the Telegram phone cards (A1 flag, weather, The Day Ahead, watch).
  * These routes are only opened by the screenshot runner — the printed paper
  * does not import this file.
  */
@@ -7,7 +7,7 @@ import { PRESS_HOURS } from "./newspaper.ts";
 import { scheduleDateFor, type DayEvent, type DaySchedule } from "./newspaper-day-ahead.ts";
 import type { WatchGame } from "./newspaper-watch.ts";
 
-export const PHONE_CARD_KINDS = ["weather", "day", "watch"] as const;
+export const PHONE_CARD_KINDS = ["front", "weather", "day", "watch"] as const;
 export type PhoneCardKind = (typeof PHONE_CARD_KINDS)[number];
 
 const TZ = "America/Chicago";

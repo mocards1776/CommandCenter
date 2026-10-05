@@ -1,6 +1,7 @@
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { PhoneDayAheadCard } from "@/components/newspaper/PhoneDayAheadCard";
+import { PhoneFrontCard } from "@/components/newspaper/PhoneFrontCard";
 import { PhoneWatchCard } from "@/components/newspaper/PhoneWatchCard";
 import { PhoneWeatherCard } from "@/components/newspaper/PhoneWeatherCard";
 import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
@@ -19,7 +20,7 @@ import { fetchWatchList } from "@/lib/newspaper-watch";
  * Dedicated render route for the Times Telegram screenshot runner.
  * The printed paper never links here. Same data as the paper pages; phone layout only.
  *
- *   /newspaper/phone-card?card=weather|day|watch&issue=2026-10-05-evening&solo=1
+ *   /newspaper/phone-card?card=front|weather|day|watch&issue=2026-10-05-evening&solo=1
  *   &sample=1  — verification fixtures (not used by the production runner)
  */
 export default function NewspaperPhoneCardPage() {
@@ -68,32 +69,35 @@ export default function NewspaperPhoneCardPage() {
   });
 
   const ready =
-    card === "weather"
-      ? weatherQ.isError
-        ? "error"
-        : weatherQ.data?.days.length
-          ? "1"
-          : weatherQ.isFetched
-            ? "empty"
-            : "loading"
-      : card === "day"
-        ? dayQ.isError
+    card === "front"
+      ? "1"
+      : card === "weather"
+        ? weatherQ.isError
           ? "error"
-          : dayQ.data
+          : weatherQ.data?.days.length
             ? "1"
-            : dayQ.isFetched
+            : weatherQ.isFetched
               ? "empty"
               : "loading"
-        : watchQ.isError
-          ? "error"
-          : watchQ.data?.length
-            ? "1"
-            : watchQ.isFetched
-              ? "empty"
-              : "loading";
+        : card === "day"
+          ? dayQ.isError
+            ? "error"
+            : dayQ.data
+              ? "1"
+              : dayQ.isFetched
+                ? "empty"
+                : "loading"
+          : watchQ.isError
+            ? "error"
+            : watchQ.data?.length
+              ? "1"
+              : watchQ.isFetched
+                ? "empty"
+                : "loading";
 
   return (
     <div className="tt-phone-page" data-phone-card={card} data-ready={ready}>
+      {card === "front" ? <PhoneFrontCard date={date} editionLabel={editionLabel} /> : null}
       {card === "weather" && weatherQ.data?.days.length ? <PhoneWeatherCard weather={weatherQ.data} /> : null}
       {card === "day" && dayQ.data ? (
         <PhoneDayAheadCard

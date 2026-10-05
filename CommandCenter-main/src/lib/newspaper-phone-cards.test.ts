@@ -14,8 +14,8 @@ function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
 }
 
-assert(isPhoneCardKind("weather") && isPhoneCardKind("day") && isPhoneCardKind("watch"), "known cards");
-assert(!isPhoneCardKind("front") && !isPhoneCardKind(""), "unknown cards are rejected");
+assert(isPhoneCardKind("front") && isPhoneCardKind("weather") && isPhoneCardKind("day") && isPhoneCardKind("watch"), "known cards");
+assert(!isPhoneCardKind("a1") && !isPhoneCardKind(""), "unknown cards are rejected");
 assert(phoneCardDate("2026-10-05-evening") === "2026-10-05", "issue id yields its Central date");
 assert(phoneCardDate("nonsense") === new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" }), "bad id falls back to today");
 assert(phoneCardEditionLabel("2026-10-05-morning") === "Morning Edition", "morning label");
