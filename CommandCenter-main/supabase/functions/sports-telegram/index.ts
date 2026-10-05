@@ -13,7 +13,8 @@ import { rasterizeHeatAlert } from "./raster.ts";
  *
  * Render does not need Telegram. Send calls sendPhoto for chats listed in
  * TELEGRAM_CHAT_IDS. Heat copy is the caller's `reason` (RUWT owns that line).
- * Open game and RUWT board are inline keyboard URL buttons, not caption links.
+ * Open game and RUWT board are Mini App (web_app) buttons, not Safari URL
+ * buttons or caption links. Private DMs only.
  *
  * Auth: Authorization bearer equals SUPABASE_SERVICE_ROLE_KEY, or header
  * x-sports-telegram-secret equals SPORTS_TELEGRAM_SECRET.

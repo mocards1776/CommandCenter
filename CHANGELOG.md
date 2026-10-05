@@ -2,6 +2,16 @@
 
 ---
 
+## Telegram Mini App buttons — October 5, 2026
+
+- Heat (`@AreYouWatchingThis_bot` / `sports-telegram`) and finals (`@FinalsAndStats_bot` / `sports-finals`) now send **Open game** and **RUWT board** as Telegram Mini App `web_app` buttons. Private DMs open Command Center inside Telegram — no “Open link?” / Safari confirm.
+- Button destinations are unchanged: game `?solo=1` and `/sports/ruwt?solo=1` on `SPORTS_PUSH_ORIGIN` / `SPORTS_FINALS_ORIGIN` (default `https://command-center-flax-gamma.vercel.app`).
+- **BotFather (required, code alone is not enough):** `/setdomain` on **both** bots to `command-center-flax-gamma.vercel.app` (or the production host if that changes). Channels/groups are out of scope — `web_app` is DM-only.
+- Redeploy `sports-telegram` and `sports-finals` after merge (CI deploys the edge tree on `main`). Vercel ships the small Telegram WebView expand/ready helper with the frontend; no env change.
+- Newspaper / Thompson Times and RUWT heat-*when* logic are unchanged.
+
+---
+
 ## Apple Sports drive capsule — October 5, 2026
 
 - Every football drive overlay (NFL/CFB game detail, RUWT cards, heat Telegram / sports-telegram field) now draws an Apple Sports-style glassy capsule from the first snap of the drive to the line of scrimmage, a circular football at the LOS, and a thin yellow first-down stick.

@@ -47,6 +47,25 @@
   <body>
     <div id="root"></div>
     <script>
+      // Telegram Mini App: load the official script only inside Telegram's
+      // WebView so heat/finals web_app buttons can expand fullscreen. Query
+      // params such as ?solo=1 stay on the URL; Telegram uses the hash.
+      (function () {
+        try {
+          var inTelegram =
+            !!window.TelegramWebviewProxy ||
+            /tgWebAppData=/.test(location.hash) ||
+            /\bTelegram/i.test(navigator.userAgent);
+          if (!inTelegram) return;
+          var s = document.createElement("script");
+          s.src = "https://telegram.org/js/telegram-web-app.js";
+          s.async = true;
+          s.setAttribute("data-telegram-web-app", "1");
+          document.head.appendChild(s);
+        } catch (e) {}
+      })();
+    </script>
+    <script>
       // Standalone Home Screen apps launch with ?solo=1. Persist the flag before
       // React auth redirects can strip the query, and send bare "/" back to
       // whichever section the icon belongs to.

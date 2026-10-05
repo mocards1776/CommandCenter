@@ -41,7 +41,7 @@ export default function HeatAlertPreviewPage() {
           This is the drawing Telegram receives: scoreboard, a compact field with the
           Apple Sports drive capsule, the live win-probability chart, and Apple-style
           team stats from the live game. The heat reason stays in the caption. Telegram
-          adds Open game and RUWT board buttons.
+          adds Open game and RUWT board Mini App buttons.
         </p>
       </header>
       <form

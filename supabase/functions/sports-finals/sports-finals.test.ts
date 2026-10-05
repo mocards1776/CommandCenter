@@ -386,10 +386,21 @@ assert.match(caption, /Aaron Rodgers threw for 299 yards/);
 assert.doesNotMatch(caption, /Open game:|Odds:|Passing:|Underdog/);
 assert.ok(caption.length <= 1000);
 const finalsMarkup = alertReplyMarkup("https://command-center-flax-gamma.vercel.app/", card.path);
-assert.ok(finalsMarkup?.includes("/sports/nfl/game/401872964?solo=1"));
-assert.ok(finalsMarkup?.includes("/sports/ruwt?solo=1"));
-assert.ok(finalsMarkup?.includes("Open game"));
-assert.ok(finalsMarkup?.includes("RUWT board"));
+const finalsButtons = JSON.parse(finalsMarkup ?? "null") as {
+  inline_keyboard: { text: string; url?: string; web_app?: { url: string } }[][];
+} | null;
+assert.ok(finalsButtons);
+assert.equal(finalsButtons.inline_keyboard[0]![0]!.text, "Open game");
+assert.equal(finalsButtons.inline_keyboard[0]![1]!.text, "RUWT board");
+assert.equal(finalsButtons.inline_keyboard[0]![0]!.url, undefined);
+assert.equal(
+  finalsButtons.inline_keyboard[0]![0]!.web_app?.url,
+  "https://command-center-flax-gamma.vercel.app/sports/nfl/game/401872964?solo=1",
+);
+assert.equal(
+  finalsButtons.inline_keyboard[0]![1]!.web_app?.url,
+  "https://command-center-flax-gamma.vercel.app/sports/ruwt?solo=1",
+);
 assert.equal(
   highlightFromBox("passing", ["C/ATT", "YDS", "TD", "INT"], ["22/40", "350", "3", "0"], "Josh Allen")?.text,
   "Josh Allen threw for 350 yards and 3 touchdowns.",

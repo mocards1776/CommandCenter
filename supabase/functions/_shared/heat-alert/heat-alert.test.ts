@@ -178,26 +178,28 @@ test("caption keeps RUWT copy and leaves links off the text", () => {
   assert.doesNotMatch(caption, /Open game|command-center|https:\/\//);
 });
 
-test("inline keyboard puts Open game and RUWT board on one row", () => {
+test("inline keyboard puts Open game and RUWT board on one Mini App row", () => {
   const markup = alertReplyMarkup(
     "https://command-center-flax-gamma.vercel.app/",
     "/sports/nfl/game/1?solo=1",
   );
   assert.ok(markup);
   const parsed = JSON.parse(markup!) as {
-    inline_keyboard: { text: string; url: string }[][];
+    inline_keyboard: { text: string; url?: string; web_app?: { url: string } }[][];
   };
   assert.equal(parsed.inline_keyboard.length, 1);
   assert.deepEqual(
     parsed.inline_keyboard[0]!.map((button) => button.text),
     ["Open game", "RUWT board"],
   );
+  assert.equal(parsed.inline_keyboard[0]![0]!.url, undefined);
   assert.equal(
-    parsed.inline_keyboard[0]![0]!.url,
+    parsed.inline_keyboard[0]![0]!.web_app?.url,
     "https://command-center-flax-gamma.vercel.app/sports/nfl/game/1?solo=1",
   );
+  assert.equal(parsed.inline_keyboard[0]![1]!.url, undefined);
   assert.equal(
-    parsed.inline_keyboard[0]![1]!.url,
+    parsed.inline_keyboard[0]![1]!.web_app?.url,
     "https://command-center-flax-gamma.vercel.app/sports/ruwt?solo=1",
   );
 });

@@ -7,7 +7,7 @@
  *   TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_IDS=123 \
  *     node --experimental-strip-types heat-alert-photo.ts --sport nfl --send --reason "One-score game"
  *
- * `--reason` is the RUWT why-it-fired line. Links go on inline keyboard buttons.
+ * `--reason` is the RUWT why-it-fired line. Game / RUWT open as Mini App buttons.
  * The token is read from the environment. It is never written into the repo.
  */
 import { mkdir, writeFile } from "node:fs/promises";
