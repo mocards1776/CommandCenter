@@ -7646,8 +7646,8 @@ li.counting .tt-count.card {
   color: var(--w-muted);
 }
 
-/* The viewing guide (end of Section A): one page, the game of the day set big, listings with RUWT heat. */
-.tt-watch { display: flex; flex-direction: column; gap: 14px; height: 100%; min-height: 0; overflow: hidden; }
+/* The viewing guide (end of Section A): game of the day, then a Central-time timetable. */
+.tt-watch { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
 .tt-watch-head { text-align: center; border-bottom: 3px double var(--w-rule); padding-bottom: 10px; }
 .tt-watch-kicker {
   margin: 0;
@@ -7688,11 +7688,11 @@ li.counting .tt-count.card {
 .tt-watch-team em { font-style: normal; font-size: 11px; font-weight: 700; color: var(--w-muted); letter-spacing: 0.06em; }
 .tt-watch-at { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .tt-watch-at b { font-family: var(--w-cond); font-size: 34px; font-weight: 700; line-height: 1; }
-.tt-watch-at b.live, .tt-watch-time.live, .tt-watch-meta .live, .tt-watch-clock .live b { color: var(--w-red); }
 .tt-watch-at span { font-family: var(--w-body); font-style: italic; font-size: 13px; color: var(--w-muted); }
 .tt-watch-crest { display: inline-block; object-fit: contain; flex: none; }
 .tt-watch-crest.lg { width: 72px; height: 72px; }
-.tt-watch-crest.sm { width: 18px; height: 18px; vertical-align: -4px; }
+.tt-watch-crest.md { width: 22px; height: 22px; vertical-align: -5px; }
+.tt-watch-crest.sm { width: 16px; height: 16px; vertical-align: -3px; }
 .tt-watch-crest.blank {
   display: inline-grid;
   place-items: center;
@@ -7716,45 +7716,182 @@ li.counting .tt-count.card {
   color: var(--w-ink-soft);
 }
 .tt-watch-meta .tv { color: var(--w-ink); }
-.tt-watch-why { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; list-style: none; margin: 10px 0 0; padding: 0; }
-.tt-watch-why li {
-  border: 1px solid var(--w-rule);
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+.tt-watch-feature-why {
+  margin: 8px 0 0;
+  text-align: center;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--w-ink);
+}
+.tt-watch-timeline {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 8px;
+}
+.tt-watch-timeline::before {
+  content: "";
+  position: absolute;
+  left: 22px;
+  top: 6px;
+  bottom: 8px;
+  width: 1px;
+  background: var(--w-rule);
+}
+.tt-watch-block { position: relative; }
+.tt-watch-block-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 4px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--w-rule);
+}
+.tt-watch-mark {
+  position: relative;
+  z-index: 1;
+  width: 28px;
+  flex: none;
+  font-family: var(--w-cond);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  text-align: right;
+  color: var(--w-ink);
+  background: var(--w-paper);
+}
+.tt-watch-block-head h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
-.tt-watch-list { min-height: 0; }
-.tt-watch-list ol {
+.tt-watch-block-head em {
+  font-family: var(--w-body);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--w-muted);
+}
+.tt-watch-cols {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 0 0 40px;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  column-gap: 24px;
+  column-gap: 28px;
   column-rule: 1px solid var(--w-hair);
 }
-.tt-watch-list li {
+.tt-watch-row {
   display: grid;
-  grid-template-columns: 22px 58px minmax(0, 1fr) 64px;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  padding: 7px 0;
+  padding: 5px 0;
   border-bottom: 1px solid var(--w-hair);
+  min-width: 0;
 }
-.tt-watch-rank { font-family: var(--w-head); font-size: 22px; line-height: 1; color: var(--w-muted); }
-.tt-watch-time { font-family: var(--w-cond); font-size: 16px; font-weight: 700; }
-.tt-watch-row { display: flex; flex-direction: column; min-width: 0; }
-.tt-watch-teams { display: flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 800; }
+.tt-watch-row.must {
+  align-items: start;
+  padding: 7px 0 6px;
+}
+.tt-watch-time {
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.tt-watch-copy { min-width: 0; }
+.tt-watch-teams {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tt-watch-teams b { font-family: var(--w-head); font-weight: 700; font-size: 14px; }
 .tt-watch-teams i { font-style: italic; font-weight: 400; font-family: var(--w-body); color: var(--w-muted); margin: 0 2px; }
-.tt-watch-sub { font-size: 10.5px; color: var(--w-ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tt-watch-sub em { font-style: normal; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--w-ink); }
-.tt-watch-heat { display: block; height: 6px; background: var(--w-paper-2); border: 1px solid var(--w-hair); }
-.tt-watch-heat span { display: block; height: 100%; background: var(--w-red); }
-.tt-watch-clock { margin-top: auto; }
-.tt-watch-clock div { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 11px; font-weight: 700; }
-.tt-watch-clock b { font-family: var(--w-cond); margin-right: 4px; }
+.tt-watch-teams.text { font-family: var(--w-body); font-weight: 600; }
+.tt-watch-whyline {
+  margin: 2px 0 0;
+  font-family: var(--w-body);
+  font-size: 11px;
+  color: var(--w-ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tt-watch-nets {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  min-width: 52px;
+  font-family: var(--w-label);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: right;
+  color: var(--w-ink);
+  white-space: nowrap;
+}
+.tt-watch-nets .stream { color: var(--w-ink-soft); }
+.tt-watch-nets i {
+  margin-left: 3px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-size: 7px;
+}
+.tt-watch-also {
+  margin: 6px 0 0 40px;
+  font-family: var(--w-body);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--w-ink-soft);
+}
+.tt-watch-also span:first-child {
+  font-family: var(--w-cond);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-ink);
+}
+
+/* Public proof of the viewing guide at iPad Pro 13" width. Not linked from nav. */
+.tt-watch-preview.newspaper-root.wsj-shell {
+  height: auto;
+  max-height: none;
+  overflow: auto;
+}
+.tt-watch-preview .wsj-page {
+  flex: none;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+.tt-watch-preview .wsj-sheet {
+  margin: 24px auto 48px;
+}
 
 /* ── Telegram phone cards (screenshot runner only; not the printed paper) ─ */
 .tt-phone-page {

@@ -128,7 +128,7 @@ import {
 } from "@/lib/newspaper-document";
 import { TimesHold, TimesHoldShell } from "@/components/newspaper/TimesHold";
 import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
-import { fetchWatchList } from "@/lib/newspaper-watch";
+import { fetchWatchList, WATCH_PAGE_GAMES } from "@/lib/newspaper-watch";
 import WatchGuide from "@/components/newspaper/WatchGuide";
 import DayAhead from "@/components/newspaper/DayAhead";
 import { insertDayAhead, scheduleDateFor, type DaySchedule } from "@/lib/newspaper-day-ahead";
@@ -3883,7 +3883,11 @@ function NewspaperDesk() {
           if (wx) queries = [...queries, { key: [pressId, "tt-weather-marshfield"], data: wx }];
         }
         if (isLatest && queryNamed(queries, "tt-watch") == null) {
-          const watch = await withDeadline(fetchWatchList(day).catch(() => []), COMPANION_WAIT_MS, []);
+          const watch = await withDeadline(
+            fetchWatchList(day, { limit: WATCH_PAGE_GAMES, favorites: teamFavs }).catch(() => []),
+            COMPANION_WAIT_MS,
+            [],
+          );
           queries = [...queries, { key: [pressId, "tt-watch", day], data: watch }];
         }
         if (cancel) return;
@@ -3897,7 +3901,7 @@ function NewspaperDesk() {
       cancel = true;
       window.clearTimeout(bootEscape);
     };
-  }, [pressId, queryClient, day, clockPress.id]);
+  }, [pressId, queryClient, day, clockPress.id, teamFavs]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -4516,7 +4520,7 @@ function NewspaperDesk() {
   const watchQ = useQuery({
     queryKey: [pressId, "tt-watch", day],
     enabled: pressing,
-    queryFn: () => fetchWatchList(day),
+    queryFn: () => fetchWatchList(day, { limit: WATCH_PAGE_GAMES, favorites: teamFavs }),
     staleTime: Infinity,
     gcTime: 20 * 60 * 60_000,
     refetchOnWindowFocus: false,

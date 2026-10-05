@@ -44,7 +44,7 @@ import {
   type TeamDetail,
 } from "./sports";
 import { fetchMarshfieldWeather } from "./newspaper-weather";
-import { fetchWatchList, type WatchGame } from "./newspaper-watch";
+import { fetchWatchList, WATCH_PAGE_GAMES, type WatchGame } from "./newspaper-watch";
 import { fetchYesterdayRecap, type YesterdayRecap } from "./yesterday-recap";
 import { ISSUE_VERSION, type PrintedIssue, type PrintedQuery } from "./newspaper-issue";
 import { clearEditorStamps, editEdition, type EditorRequest } from "./newspaper-editor";
@@ -325,7 +325,10 @@ export async function pressStep(
 
   if (state.stage === 7) {
     state.weather = await settle(fetchMarshfieldWeather(), null);
-    state.watch = await settle(fetchWatchList(day), [] as WatchGame[]);
+    state.watch = await settle(
+      fetchWatchList(day, { limit: WATCH_PAGE_GAMES, favorites: favs }),
+      [] as WatchGame[],
+    );
     state.scoutItem = await settle(
       fetchMissouriScout(pressId).then(async (item) => (item ? ((await enrichMissouriItems([item], 1))[0] ?? item) : null)),
       null,
