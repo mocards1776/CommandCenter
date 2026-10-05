@@ -7610,3 +7610,621 @@ li.counting .tt-count.card {
 .tt-watch-clock { margin-top: auto; }
 .tt-watch-clock div { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 11px; font-weight: 700; }
 .tt-watch-clock b { font-family: var(--w-cond); margin-right: 4px; }
+
+/* ── Telegram phone cards (screenshot runner only; not the printed paper) ─ */
+.tt-phone-page {
+  --w-paper: #fbfaf6;
+  --w-paper-2: #f2efe6;
+  --w-card: #ffffff;
+  --w-ink: #121418;
+  --w-ink-soft: #3a3e46;
+  --w-muted: #6b6f78;
+  --w-hair: rgba(18, 20, 24, 0.15);
+  --w-rule: #121418;
+  --w-red: #b3121d;
+  --w-navy: #0c1d38;
+  --w-head: "Playfair Display", "Times New Roman", Georgia, serif;
+  --w-label: "Libre Franklin", system-ui, sans-serif;
+  --w-cond: "Oswald", "Libre Franklin", sans-serif;
+  --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --wx-sun: #e3a008;
+  --wx-rain: #1f5fa8;
+  --wx-cloud: #ffffff;
+  --wx-cloud-dark: #c9ced6;
+  box-sizing: border-box;
+  width: 430px;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0;
+  background: var(--w-paper);
+  color: var(--w-ink);
+  font-family: var(--w-label);
+}
+.tt-phone-card {
+  box-sizing: border-box;
+  width: 430px;
+  max-width: 100%;
+  padding: 18px 18px 16px;
+  background: var(--w-paper);
+}
+.tt-phone-mast {
+  text-align: center;
+  padding-bottom: 10px;
+  border-bottom: 3px double var(--w-rule);
+}
+.tt-phone-kicker {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--w-red);
+}
+.tt-phone-mast h1 {
+  margin: 6px 0 4px;
+  font-family: var(--w-head);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 30px;
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+}
+.tt-phone-mast h1 span {
+  font-family: var(--w-label);
+  font-style: normal;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--w-ink-soft);
+}
+.tt-phone-dek {
+  margin: 0;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--w-ink-soft);
+}
+.tt-phone-count {
+  display: inline-block;
+  margin: 8px 0 0;
+  padding: 3px 0;
+  border-top: 1px solid var(--w-rule);
+  border-bottom: 1px solid var(--w-rule);
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.tt-phone-card h2 {
+  margin: 0 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 2px solid var(--w-rule);
+  font-family: var(--w-label);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.tt-phone-now {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 14px 0 10px;
+}
+.tt-phone-temp {
+  display: block;
+  font-family: var(--w-cond);
+  font-size: 76px;
+  font-weight: 600;
+  line-height: 0.88;
+  letter-spacing: -0.03em;
+}
+.tt-phone-sum {
+  margin: 4px 0 0;
+  font-family: var(--w-head);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 22px;
+  line-height: 1.1;
+}
+.tt-phone-hl {
+  margin: 6px 0 0;
+  font-family: var(--w-cond);
+  font-size: 18px;
+  color: var(--w-muted);
+}
+.tt-phone-hl b {
+  color: var(--w-red);
+  font-weight: 600;
+}
+.tt-phone-today {
+  margin: 0 0 12px;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--w-hair);
+  font-family: var(--w-body);
+  font-size: 15.5px;
+  line-height: 1.4;
+}
+.tt-phone-today span {
+  font-family: var(--w-label);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-right: 6px;
+}
+.tt-phone-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0 0 14px;
+  border-top: 2px solid var(--w-rule);
+}
+.tt-phone-facts div {
+  padding: 8px 8px 6px 0;
+  border-bottom: 1px solid var(--w-hair);
+}
+.tt-phone-facts dt {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tt-phone-facts dd {
+  margin: 2px 0 0;
+  font-family: var(--w-cond);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.1;
+}
+.tt-phone-facts small {
+  font-family: var(--w-label);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--w-muted);
+}
+.tt-phone-hourly {
+  margin: 0 0 14px;
+}
+.tt-phone-hourly figcaption {
+  margin: 0 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 2px solid var(--w-rule);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.tt-phone-hourly svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.tt-phone-hourly .wx-t {
+  font-size: 13px;
+}
+.tt-phone-hourly .wx-h {
+  font-size: 11px;
+}
+.tt-phone-days ol,
+.tt-phone-listings ol,
+.tt-phone-rundown ol,
+.tt-phone-coming ol,
+.tt-phone-allday ul,
+.tt-phone-coming ul,
+.tt-phone-why {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tt-phone-days {
+  margin: 0 0 14px;
+}
+.tt-phone-days li {
+  display: grid;
+  grid-template-columns: 46px 30px minmax(0, 1fr) 62px 36px;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--w-hair);
+  font-size: 14px;
+}
+.tt-phone-days li.wet {
+  background: linear-gradient(90deg, rgba(31, 95, 168, 0.08), transparent);
+}
+.tt-phone-dayname {
+  font-family: var(--w-cond);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tt-phone-dayword {
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 14px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tt-phone-dayhl {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  font-family: var(--w-cond);
+  font-size: 17px;
+}
+.tt-phone-dayhl b {
+  color: var(--w-red);
+}
+.tt-phone-dayhl i {
+  font-style: normal;
+  color: var(--wx-rain);
+}
+.tt-phone-dayrain {
+  text-align: right;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--w-muted);
+}
+.tt-phone-days li.wet .tt-phone-dayrain {
+  color: var(--wx-rain);
+}
+.tt-phone-almanac {
+  margin: 0;
+}
+.tt-phone-sunmoon {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.tt-phone-sunmoon span,
+.tt-phone-moon em {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tt-phone-sunmoon b,
+.tt-phone-moon b {
+  font-family: var(--w-cond);
+  font-size: 16px;
+  font-weight: 600;
+}
+.tt-phone-moon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--w-hair);
+}
+.tt-phone-yday {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--w-hair);
+  font-family: var(--w-body);
+  font-size: 14px;
+}
+.tt-phone-yday b {
+  font-family: var(--w-cond);
+  font-size: 16px;
+  color: var(--w-red);
+}
+.tt-phone-credit {
+  margin: 12px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+
+.tt-phone-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-paper);
+  background: var(--w-navy);
+}
+.tt-phone-tag.family {
+  background: var(--w-red);
+}
+.tt-phone-allday,
+.tt-phone-first,
+.tt-phone-rundown,
+.tt-phone-coming {
+  margin-top: 14px;
+}
+.tt-phone-allday li,
+.tt-phone-rundown li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--w-hair);
+  border-left: 4px solid var(--w-navy);
+  padding-left: 10px;
+}
+.tt-phone-allday li.family,
+.tt-phone-rundown li.family {
+  border-left-color: var(--w-red);
+}
+.tt-phone-allday strong,
+.tt-phone-rundown strong,
+.tt-phone-first h2 {
+  font-family: var(--w-head);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.tt-phone-allday em,
+.tt-phone-rundown em,
+.tt-phone-first-meta em {
+  display: block;
+  font-family: var(--w-body);
+  font-size: 13px;
+  color: var(--w-muted);
+}
+.tt-phone-flag {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.tt-phone-flag span {
+  color: var(--w-muted);
+  margin-left: 8px;
+}
+.tt-phone-first {
+  padding: 10px 12px;
+  background: var(--w-paper-2);
+  border: 1px solid var(--w-rule);
+}
+.tt-phone-first-time {
+  margin: 0;
+  font-family: var(--w-cond);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+}
+.tt-phone-first-time.family {
+  color: var(--w-red);
+}
+.tt-phone-first h2 {
+  margin: 4px 0 6px;
+  padding: 0;
+  border: 0;
+  font-size: 22px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.tt-phone-first-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+}
+.tt-phone-rundown li {
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  align-items: start;
+}
+.tt-phone-rundown b {
+  font-family: var(--w-cond);
+  font-size: 15px;
+  font-weight: 600;
+}
+.tt-phone-empty {
+  margin: 16px 0 0;
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 16px;
+}
+.tt-phone-coming li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--w-hair);
+}
+.tt-phone-coming header {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--w-cond);
+  font-size: 15px;
+  font-weight: 600;
+}
+.tt-phone-coming header span {
+  font-family: var(--w-label);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--w-muted);
+}
+.tt-phone-coming ul li {
+  display: flex;
+  gap: 8px;
+  padding: 3px 0 0;
+  border: 0;
+  font-size: 14px;
+}
+.tt-phone-coming ul b {
+  flex: none;
+  width: 52px;
+  font-family: var(--w-cond);
+  font-size: 13px;
+}
+.tt-phone-open,
+.tt-phone-more {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--w-muted);
+}
+
+.tt-phone-feature {
+  margin: 14px 0;
+  padding: 12px;
+  background: var(--w-paper-2);
+  border: 1px solid var(--w-rule);
+}
+.tt-phone-match {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.tt-phone-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+}
+.tt-phone-side strong {
+  font-family: var(--w-head);
+  font-size: 15px;
+  line-height: 1.15;
+}
+.tt-phone-side em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--w-muted);
+}
+.tt-phone-at {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.tt-phone-at b,
+.tt-phone-when {
+  font-family: var(--w-cond);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+.tt-phone-at b.live,
+.tt-phone-when.live {
+  color: var(--w-red);
+}
+.tt-phone-at span {
+  font-family: var(--w-body);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--w-muted);
+}
+.tt-phone-crest {
+  display: inline-block;
+  object-fit: contain;
+  flex: none;
+}
+.tt-phone-crest.lg {
+  width: 52px;
+  height: 52px;
+}
+.tt-phone-crest.sm {
+  width: 18px;
+  height: 18px;
+}
+.tt-phone-crest.blank {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--w-hair);
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--w-muted);
+}
+.tt-phone-crest.lg.blank {
+  font-size: 14px;
+}
+.tt-phone-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 12px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--w-ink-soft);
+}
+.tt-phone-why {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+.tt-phone-why li {
+  border: 1px solid var(--w-rule);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tt-phone-listings li {
+  display: grid;
+  grid-template-columns: 22px 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--w-hair);
+}
+.tt-phone-rank {
+  font-family: var(--w-head);
+  font-size: 20px;
+  color: var(--w-muted);
+}
+.tt-phone-listing {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tt-phone-teams {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 800;
+}
+.tt-phone-teams i {
+  font-family: var(--w-body);
+  font-style: italic;
+  font-weight: 400;
+  color: var(--w-muted);
+}
+.tt-phone-sub {
+  font-size: 11px;
+  color: var(--w-ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tt-phone-sub em {
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--w-ink);
+}
+.tt-phone-heat {
+  grid-column: 2 / -1;
+  display: block;
+  height: 5px;
+  background: var(--w-paper-2);
+  border: 1px solid var(--w-hair);
+}
+.tt-phone-heat span {
+  display: block;
+  height: 100%;
+  background: var(--w-red);
+}

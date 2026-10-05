@@ -45,6 +45,7 @@ const RssPage = lazy(() => import("@/pages/RssPage"));
 import PublicStoryPage from "@/pages/PublicStoryPage";
 import BuenaVistaNotebookPage from "@/pages/BuenaVistaNotebookPage";
 import DailyNewspaperPage from "@/pages/DailyNewspaperPage";
+const NewspaperPhoneCardPage = lazy(() => import("@/pages/NewspaperPhoneCardPage"));
 import { homePath, markReadingSolo, safeNextPath } from "@/lib/reading-home";
 import { markSportsSolo } from "@/lib/sports-home";
 import { markRssSolo } from "@/lib/rss-home";
@@ -136,6 +137,20 @@ export default function App() {
               <Route path="/" element={<HomeRedirect />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/newspaper" element={<DailyNewspaperPage />} />
+              <Route
+                path="/newspaper/phone-card"
+                element={
+                  <Suspense
+                    fallback={
+                      <div className="tt-phone-page" data-phone-card="loading" data-ready="loading">
+                        Loading card…
+                      </div>
+                    }
+                  >
+                    <NewspaperPhoneCardPage />
+                  </Suspense>
+                }
+              />
               <Route path="/todos" element={<TodosPage />} />
               <Route path="/habits" element={<HabitsPage />} />
               <Route path="/reading" element={<ReadingPage />} />

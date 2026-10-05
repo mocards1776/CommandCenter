@@ -6,11 +6,9 @@
  * assistant files it each morning; the midday and evening editions reprint the
  * same day's schedule. With no row for the date, the page is left out entirely.
  *
- * The page is set client-side after buildEdition, so the scheduled press and its
- * bundle never change. Pure helpers only here (no Supabase), so tests run in node.
+ * The printed page (and insertDayAhead) lives on the times-day-ahead branch.
+ * These helpers are the shared data shape the phone card — and that page — read.
  */
-import type { EditionPage, EditionSection } from "./newspaper-sections.ts";
-
 export type DayKind = "work" | "family";
 
 export type DayEvent = {
@@ -32,20 +30,6 @@ export type DaySchedule = { date: string; events: DayEvent[]; upcoming?: DayUpco
 export const UPCOMING_DAYS = 5;
 /** Events printed per Coming Up day before "+N more". */
 export const UPCOMING_PER_DAY = 4;
-
-/** The timetable page. Section A, folio set when it is slotted in. */
-export type FavoritesDayPage = {
-  kind: "favorites-day";
-  folio: string;
-  section: string;
-  sectionTitle: string;
-  sectionPage: number;
-  sectionCount: number;
-  jumpFolio?: string;
-  date: string;
-  events: DayEvent[];
-  upcoming: DayUpcoming[];
-};
 
 /** "2026-10-05-morning" → "2026-10-05". Every edition of a day prints that day's schedule. */
 export function scheduleDateFor(pressId: string): string | null {
@@ -257,40 +241,4 @@ export function durationLabel(minutes: number): string {
   if (!rest) return `${h} hr`;
   if (rest === 30) return `${h}½ hr`;
   return `${h} hr ${rest} min`;
-}
-
-/**
- * Slot the timetable in right before the viewing guide (the last page of Section A),
- * renumbering the guide and Section A's page counts and shifting later sections.
- * No schedule, no guide: the edition comes back untouched.
- */
-export function insertDayAhead<
-  E extends { pages: (EditionPage | FavoritesDayPage)[]; sections: EditionSection[] },
->(edition: E, schedule: DaySchedule | null): E {
-  if (!schedule) return edition;
-  const at = edition.pages.findIndex((p) => p.kind === "favorites-watch");
-  if (at < 0) return edition;
-  const watch = edition.pages[at]!;
-  const n = watch.sectionPage;
-  const count = watch.sectionCount + 1;
-  const day: FavoritesDayPage = {
-    kind: "favorites-day",
-    folio: `${watch.section}${n}`,
-    section: watch.section,
-    sectionTitle: watch.sectionTitle,
-    sectionPage: n,
-    sectionCount: count,
-    date: schedule.date,
-    events: schedule.events,
-    upcoming: schedule.upcoming ?? [],
-  };
-  const pages = edition.pages.flatMap((page, i) => {
-    if (page.section !== watch.section) return [page];
-    if (i === at) return [day, { ...page, folio: `${watch.section}${n + 1}`, sectionPage: n + 1, sectionCount: count }];
-    return [{ ...page, sectionCount: count }];
-  });
-  const sections = edition.sections.map((s) =>
-    s.code === watch.section ? { ...s, pages: s.pages + 1 } : s.index > at ? { ...s, index: s.index + 1 } : s,
-  );
-  return { ...edition, pages, sections };
 }
