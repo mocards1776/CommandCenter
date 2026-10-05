@@ -892,7 +892,7 @@ assert.match(mlbPlayoffSvg, /Win probability/);
 assert.doesNotMatch(mlbPlayoffSvg, />Q1<|>Q2<|>Q3<|>Q4</);
 assert.match(mlbPlayoffSvg, /Key performers/);
 assert.match(mlbPlayoffSvg, /Best of 5/);
-assert.match(mlbPlayoffSvg, /Game 2 of 5/);
+assert.doesNotMatch(mlbPlayoffSvg, /Game 2 of 5/);
 assert.match(mlbPlayoffSvg, />Series · Best of 5</);
 assert.match(mlbPlayoffSvg, />G1</);
 assert.match(mlbPlayoffSvg, />G3</);

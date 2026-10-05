@@ -228,27 +228,15 @@ function text(
   return `<text x="${x}" y="${y}" fill="${opts.fill}" font-size="${opts.size}" font-weight="${weight}" text-anchor="${anchor}"${spacing}>${esc(value)}</text>`;
 }
 
-function logo(
-  side: FinalSide,
-  x: number,
-  y: number,
-  size: number,
-  paint: string,
-  faded = false,
-  wash = false,
-): string {
+function logo(side: FinalSide, x: number, y: number, size: number, paint: string, faded = false): string {
   const cx = x + size / 2;
   const cy = y + size / 2;
-  const disc = wash
-    ? `<circle cx="${cx}" cy="${cy}" r="${(size / 2 + 6).toFixed(1)}" fill="${paint}" opacity="0.18"/>`
-    : "";
-  const mark = side.logoData
+  const inner = side.logoData
     ? `<image href="${side.logoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"/>`
     : [
         `<circle cx="${cx}" cy="${cy}" r="${size / 2 - 3}" fill="none" stroke="${paint}" stroke-width="4"/>`,
         text(side.abbrev, cx, cy + 9, { size: 26, fill: paint, anchor: "middle", weight: 700 }),
       ].join("");
-  const inner = `${disc}${mark}`;
   return faded ? `<g opacity="0.38">${inner}</g>` : inner;
 }
 
@@ -955,12 +943,15 @@ function seriesHeroHeight(card: FinalCard): number {
   if (!(card.seriesStanding || card.seriesLine)) return 0;
   const needed = seriesWinsNeeded(card.seriesBestOf);
   const hasPips = Boolean(needed && (card.seriesGames?.length ?? 0));
-  const hasMeta = Boolean(card.seriesBestOf || card.seriesGameLabel);
-  return 34 + (hasMeta ? 28 : 0) + (hasPips ? 20 : 0);
+  const hasBestOf = Boolean(card.seriesBestOf);
+  return 34 + (hasBestOf ? 28 : 0) + (hasPips ? 20 : 0);
 }
 
 function seriesHeroBlock(card: FinalCard, y: number, awayPaint: string, homePaint: string): string {
-  const standing = card.seriesStanding || card.seriesLine || "";
+  const standing = (card.seriesStanding || card.seriesLine || "").replace(
+    /\s*·\s*Game \d+( of \d+)?/i,
+    "",
+  );
   const parts = [
     text(standing, W / 2, y + 6, {
       size: 30,
@@ -972,9 +963,7 @@ function seriesHeroBlock(card: FinalCard, y: number, awayPaint: string, homePain
   let cursor = y + 34;
   if (card.seriesBestOf) {
     const pillW = Math.max(98, card.seriesBestOf.length * 9.4 + 26);
-    const game = card.seriesGameLabel;
-    const groupW = pillW + (game ? game.length * 8.6 + 22 : 0);
-    const left = W / 2 - groupW / 2;
+    const left = W / 2 - pillW / 2;
     parts.push(
       `<rect x="${left.toFixed(1)}" y="${cursor - 16}" width="${pillW.toFixed(1)}" height="26" rx="8" fill="rgba(247,244,238,0.10)" stroke="rgba(247,244,238,0.34)"/>`,
     );
@@ -987,29 +976,7 @@ function seriesHeroBlock(card: FinalCard, y: number, awayPaint: string, homePain
         spacing: 0.7,
       }),
     );
-    if (game) {
-      parts.push(
-        text(game, left + pillW + 14, cursor + 3, {
-          size: 18,
-          fill: "#d5dae6",
-          anchor: "start",
-          weight: 700,
-          spacing: 0.35,
-        }),
-      );
-    }
     cursor += 28;
-  } else if (card.seriesGameLabel) {
-    parts.push(
-      text(card.seriesGameLabel, W / 2, cursor + 2, {
-        size: 18,
-        fill: "#d5dae6",
-        anchor: "middle",
-        weight: 700,
-        spacing: 0.5,
-      }),
-    );
-    cursor += 24;
   }
   const needed = seriesWinsNeeded(card.seriesBestOf);
   if (needed && (card.seriesGames?.length ?? 0)) {
@@ -1184,8 +1151,8 @@ export function renderFinalSvg(card: FinalCard): string {
   const playoffMlb = card.sport === "mlb" && card.playoff;
   const logoSize = playoffMlb ? 104 : 124;
   const logoY = y;
-  parts.push(logo(card.away, M + 8, logoY, logoSize, awayPaint, awayLoses, playoffMlb));
-  parts.push(logo(card.home, W - M - 8 - logoSize, logoY, logoSize, homePaint, homeLoses, playoffMlb));
+  parts.push(logo(card.away, M + 8, logoY, logoSize, awayPaint, awayLoses));
+  parts.push(logo(card.home, W - M - 8 - logoSize, logoY, logoSize, homePaint, homeLoses));
   const scoreY = logoY + 88;
   const awayScore = card.away.score == null ? "–" : String(card.away.score);
   const homeScore = card.home.score == null ? "–" : String(card.home.score);
@@ -1445,12 +1412,12 @@ export function renderFinalSvg(card: FinalCard): string {
   const wash = [
     `<defs>`,
     `<radialGradient id="awayWash" cx="18%" cy="22%" r="58%">`,
-    `<stop offset="0%" stop-color="${playoffMlb ? wpPaints.away : awayPaint}" stop-opacity="${awayLoses ? 0.22 : 0.5}"/>`,
-    `<stop offset="72%" stop-color="${playoffMlb ? wpPaints.away : awayPaint}" stop-opacity="0"/>`,
+    `<stop offset="0%" stop-color="${awayPaint}" stop-opacity="${awayLoses ? 0.22 : 0.5}"/>`,
+    `<stop offset="72%" stop-color="${awayPaint}" stop-opacity="0"/>`,
     `</radialGradient>`,
     `<radialGradient id="homeWash" cx="82%" cy="22%" r="58%">`,
-    `<stop offset="0%" stop-color="${playoffMlb ? wpPaints.home : homePaint}" stop-opacity="${homeLoses ? 0.22 : 0.5}"/>`,
-    `<stop offset="72%" stop-color="${playoffMlb ? wpPaints.home : homePaint}" stop-opacity="0"/>`,
+    `<stop offset="0%" stop-color="${homePaint}" stop-opacity="${homeLoses ? 0.22 : 0.5}"/>`,
+    `<stop offset="72%" stop-color="${homePaint}" stop-opacity="0"/>`,
     `</radialGradient>`,
     `</defs>`,
     `<rect width="${W}" height="${y}" fill="#07101d"/>`,
