@@ -26,6 +26,7 @@ import { cleanStoryCopy, isPeripheralClubStory, killedSource } from "./newspaper
 import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import type { MissouriDesk, MoItem } from "./newspaper-missouri";
+import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
 const LEAD_TEASER = 1050;
@@ -207,6 +208,8 @@ export type EditionPage =
   | FavoritesInsidePage
   | FavoritesContinuePage
   | FavoritesWatchPage
+  /** Set client-side by insertDayAhead (newspaper-day-ahead.ts); buildEdition never makes one. */
+  | FavoritesDayPage
   | SportFrontPage
   | SportInsidePage;
 

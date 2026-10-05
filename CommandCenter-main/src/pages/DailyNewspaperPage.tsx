@@ -108,6 +108,9 @@ import {
 import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
 import { fetchWatchList } from "@/lib/newspaper-watch";
 import WatchGuide from "@/components/newspaper/WatchGuide";
+import DayAhead from "@/components/newspaper/DayAhead";
+import { insertDayAhead, scheduleDateFor } from "@/lib/newspaper-day-ahead";
+import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
 import {
   buildGameWrapCards,
   buildTeamInfoboxes,
@@ -505,6 +508,8 @@ function pageLabel(page: EditionPage): string {
       return "Continued";
     case "favorites-watch":
       return "What to Watch";
+    case "favorites-day":
+      return "The Day Ahead";
     default:
       return "Front Page";
   }
@@ -4215,6 +4220,18 @@ function NewspaperDesk() {
     refetchOnReconnect: false,
   });
 
+  // The Day Ahead: the schedule filed for the edition's date. Keyed without pressId on purpose,
+  // so it is never filed into the printed issue; every edition of the day reads the same row.
+  const scheduleDate = scheduleDateFor(pressId);
+  const dayAheadQ = useQuery({
+    queryKey: ["tt-day-ahead", scheduleDate],
+    enabled: open && Boolean(user?.id) && Boolean(scheduleDate),
+    queryFn: () => fetchDaySchedule(scheduleDate!),
+    staleTime: 5 * 60_000,
+    gcTime: 20 * 60 * 60_000,
+    retry: 1,
+  });
+
   const scoutQ = useQuery({
     queryKey: [pressId, "tt-mo-scout", day],
     enabled: pressing,
@@ -4479,7 +4496,7 @@ function NewspaperDesk() {
     queryClient,
   ]);
 
-  const edition = useMemo(
+  const builtEdition = useMemo(
     () =>
       buildEdition({
         stories,
@@ -4492,6 +4509,9 @@ function NewspaperDesk() {
       }),
     [stories, clubs, pressId, playerPaths, missouriQ.data, offseason, leaderPaths],
   );
+  // No schedule row for the date (or not read yet): no page, never an older day's.
+  const daySchedule = dayAheadQ.data?.date === scheduleDate ? dayAheadQ.data : null;
+  const edition = useMemo(() => insertDayAhead(builtEdition, daySchedule), [builtEdition, daySchedule]);
   const comingUp = useMemo<ComingUp[]>(
     () =>
       clubs.flatMap((club) =>
@@ -4716,6 +4736,8 @@ function NewspaperDesk() {
                 </div>
               ) : page.kind === "favorites-watch" ? (
                 <WatchGuide games={watchQ.data ?? []} editionLabel={press.label} />
+              ) : page.kind === "favorites-day" ? (
+                <DayAhead date={page.date} events={page.events} upcoming={page.upcoming} editionLabel={press.label} />
               ) : page.kind === "favorites-continue" ? (
                 <ContinuePage
                   jumps={page.jumps}
