@@ -145,8 +145,8 @@ function htmlFor(path: string, title: string, code: string): string {
     .code { font-family: Oswald, sans-serif; font-size: 46px; line-height: 0.9; }
     header p { margin: 0; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #6b6f78; }
     .flow { columns: 3; column-gap: 24px; }
-    .band { break-inside: avoid; margin: 0 0 18px; }
-    .band h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; border-bottom: 1px solid #121418; padding-bottom: 4px; }
+    .band { break-inside: auto; margin: 0 0 18px; }
+    .band h2 { break-after: avoid; margin: 0 0 10px; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; border-bottom: 1px solid #121418; padding-bottom: 4px; }
     .band h2 em { font-style: normal; color: #6b6f78; margin-left: 8px; }
     .tt-wrap-brief { break-inside: avoid; margin: 0 0 14px; padding: 0 0 12px; border-bottom: 1px solid rgba(18,20,24,0.15); }
     .kicker { margin: 0; font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: #b3121d; }

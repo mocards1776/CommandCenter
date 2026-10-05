@@ -4877,8 +4877,11 @@ li.counting .tt-count.card {
   column-gap: 22px;
 }
 .tt-wrap-band {
-  break-inside: avoid;
+  break-inside: auto;
   margin: 0 0 18px;
+}
+.tt-wrap-band > .wsj-band-title {
+  break-after: avoid;
 }
 .tt-wrap-brief {
   break-inside: avoid;
