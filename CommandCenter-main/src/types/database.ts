@@ -506,6 +506,10 @@ export type Database = {
           record_source_url: string | null;
           record_source_label: string | null;
           as_of: string;
+          headshot_url: string | null;
+          headshot_source_url: string | null;
+          headshot_source_label: string | null;
+          headshot_as_of: string | null;
           updated_at: string;
         };
         Insert: {
@@ -534,6 +538,10 @@ export type Database = {
           record_source_url?: string | null;
           record_source_label?: string | null;
           as_of: string;
+          headshot_url?: string | null;
+          headshot_source_url?: string | null;
+          headshot_source_label?: string | null;
+          headshot_as_of?: string | null;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["times_coach_profiles"]["Insert"]>;

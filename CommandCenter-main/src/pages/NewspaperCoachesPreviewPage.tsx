@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { coachFactLines, fetchFavoriteCoachDesk, type FavoriteCoachTile } from "@/lib/newspaper-favorite-coaches";
+import { coachFactLines, fetchFavoriteCoachDesk, slateLine, type FavoriteCoachTile } from "@/lib/newspaper-favorite-coaches";
 import { editionDateline } from "@/lib/newspaper";
 
 const TZ = "America/Chicago";
@@ -52,7 +52,6 @@ function CoachesPreview({ tiles }: { tiles: FavoriteCoachTile[] }) {
   return (
     <div className="tt-coaches" style={{ ["--cols" as string]: "2" }}>
       {tiles.map((tile) => {
-        const face = tile.headshot || tile.teamLogo;
         const last = tile.lastGame;
         const next = tile.nextGame;
         const lastBits = last
@@ -79,7 +78,7 @@ function CoachesPreview({ tiles }: { tiles: FavoriteCoachTile[] }) {
         return (
           <article key={`${tile.leaguePath}-${tile.coachId}`} className={tile.featured ? "tt-coach featured" : "tt-coach"}>
             <header>
-              <span className="tt-coach-face">{face ? <img src={face} alt="" /> : null}</span>
+              <CoachShot tile={tile} />
               <span className="tt-coach-id">
                 <em>{[tile.teamName, tile.rank != null ? `#${tile.rank}` : null, tile.standing].filter(Boolean).join(" · ")}</em>
                 <strong>{tile.name}</strong>
@@ -108,29 +107,35 @@ function CoachesPreview({ tiles }: { tiles: FavoriteCoachTile[] }) {
               </div>
               {tile.featured ? (
                 <aside className="tt-coach-aside">
-                  {tile.teamLogo ? (
-                    <span className="tt-coach-mark">
-                      <img src={tile.teamLogo} alt="" />
-                    </span>
-                  ) : null}
-                  <CoachSeasonStrip tile={tile} />
+                  <div className="tt-coach-lead">
+                    <CoachShot tile={tile} lead />
+                    <CoachSeasonStrip tile={tile} />
+                  </div>
                   <CoachPreviewFacts tile={tile} />
                 </aside>
               ) : null}
             </div>
-            {tile.headlines.length ? (
-              <ul className="tt-coach-hed">
-                {tile.headlines.map((card) => (
-                  <li key={card.id}>
-                    <a href={card.wrapHref || card.gameHref || "#"}>{card.headline}</a>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <CoachSlate tile={tile} />
           </article>
         );
       })}
     </div>
+  );
+}
+
+function CoachShot({ tile, lead = false }: { tile: FavoriteCoachTile; lead?: boolean }) {
+  const photo = tile.headshot;
+  const logo = tile.teamLogo;
+  if (!photo && !logo) return null;
+  return (
+    <span className={lead ? "tt-coach-shot lead" : "tt-coach-shot"}>
+      <img className={photo ? "portrait" : "portrait logo-only"} src={photo || logo || ""} alt="" />
+      {photo && logo ? (
+        <span className="tt-coach-badge">
+          <img src={logo} alt="" />
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -146,6 +151,40 @@ function CoachSeasonStrip({ tile }: { tile: FavoriteCoachTile }) {
           {chip.opponentRank != null ? ` #${chip.opponentRank}` : ""} {chip.opponent}
         </i>
       ))}
+    </div>
+  );
+}
+
+function CoachSlate({ tile }: { tile: FavoriteCoachTile }) {
+  const games = tile.slate ?? [];
+  if (!games.length) return null;
+  const recent = games.filter((g) => g.kind === "final");
+  const upcoming = games.filter((g) => g.kind === "upcoming");
+  const cols = recent.length && upcoming.length;
+  return (
+    <div className={cols ? "tt-coach-slate" : "tt-coach-slate one"}>
+      {recent.length ? (
+        <div>
+          <b>Recent</b>
+          <ol className={cols ? undefined : "flat"}>
+            {recent.map((g) => (
+              <li key={g.id} className={g.result === "W" ? "w" : g.result === "L" ? "l" : undefined}>
+                {slateLine(g)}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+      {upcoming.length ? (
+        <div>
+          <b>Upcoming</b>
+          <ol className={cols ? undefined : "flat"}>
+            {upcoming.map((g) => (
+              <li key={g.id}>{slateLine(g)}</li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
     </div>
   );
 }
