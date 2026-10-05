@@ -32,6 +32,7 @@ import {
   printNetworks,
   printReason,
   timesTeamInterest,
+  watchFavoriteLabel,
   WATCH_LIST_DEFAULT,
   WATCH_PAGE_GAMES,
   type WatchFavorite,
@@ -196,22 +197,8 @@ function deskFavorites(favs?: WatchFavorite[]): WatchFavorite[] {
   return DEFAULT_FAVORITES.filter((f) => f.kind === "team");
 }
 
-function favoriteLabelFor(game: WatchGame, byId: Map<string, WatchFavorite>): string | null {
-  const hits = [game.away.teamId, game.home.teamId]
-    .filter((id): id is string => Boolean(id))
-    .map((id) => byId.get(id))
-    .filter((f): f is WatchFavorite => Boolean(f));
-  if (!hits.length) {
-    if (game.reasons.some((r) => /cardinals/i.test(r))) return "Cardinals";
-    return null;
-  }
-  if (hits.length > 1) return "Favorite team";
-  const name = (hits[0]!.shortName ?? hits[0]!.name ?? "Favorite team").replace(/\s+(FB|BB)$/i, "");
-  return name || "Favorite team";
-}
-
 function stampDesk(game: WatchGame, byId: Map<string, WatchFavorite>): WatchGame {
-  const favoriteLabel = favoriteLabelFor(game, byId);
+  const favoriteLabel = watchFavoriteLabel(game, byId);
   const favorite = Boolean(favoriteLabel);
   return {
     ...game,

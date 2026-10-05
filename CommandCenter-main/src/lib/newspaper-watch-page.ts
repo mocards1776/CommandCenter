@@ -167,7 +167,7 @@ const NETWORKS: { test: RegExp; name: string; streaming?: boolean }[] = [
   { test: /^apple(\s*tv\+?)?$/i, name: "Apple TV+", streaming: true },
   { test: /^peacock$/i, name: "Peacock", streaming: true },
   { test: /paramount\+|^para\+$/i, name: "Para+", streaming: true },
-  { test: /prime\s*video|^amazon|^\s*prime\s*$/i, name: "Prime", streaming: true },
+  { test: /prime\s*video|^amazon|^\s*prime\s*$/i, name: "Prime Video", streaming: true },
   { test: /^netflix$/i, name: "Netflix", streaming: true },
   { test: /^usa(\s*network)?$/i, name: "USA" },
   { test: /^tnt$/i, name: "TNT" },
@@ -203,6 +203,12 @@ export function espnTeamIdFromPath(espnPath: string): string | null {
   return m?.[1] ?? null;
 }
 
+/** ESPN team ids collide across leagues (NBA 20 = 76ers, NHL 20 = Lightning). */
+export function watchDeskKey(league: string, teamId: string): string {
+  const lg = /^soccer$/i.test(league) ? "soccer" : league.toLowerCase();
+  return `${lg}:${teamId}`;
+}
+
 export function timesTeamInterest(favs: WatchFavorite[]): {
   mlb: Record<string, number>;
   nfl: Record<string, number>;
@@ -223,29 +229,29 @@ export function timesTeamInterest(favs: WatchFavorite[]): {
   const wnba: Record<string, number> = {};
   const ids = new Set<string>();
   const byId = new Map<string, WatchFavorite>();
-  const bump = (map: Record<string, number>, id: string | null | undefined, fav: WatchFavorite) => {
+  const bump = (map: Record<string, number>, id: string | null | undefined, fav: WatchFavorite, league: string) => {
     if (!id) return;
     map[id] = TIMES_INTEREST;
     ids.add(id);
-    byId.set(id, fav);
+    byId.set(watchDeskKey(league, id), fav);
   };
   for (const fav of favs) {
     const path = fav.espnPath ?? "";
     const espnId = espnTeamIdFromPath(path);
     if (fav.mlbTeamId != null || /baseball\/mlb/i.test(path) || fav.league === "MLB") {
-      bump(mlb, fav.mlbTeamId != null ? String(fav.mlbTeamId) : espnId, fav);
+      bump(mlb, fav.mlbTeamId != null ? String(fav.mlbTeamId) : espnId, fav, "MLB");
     } else if (/football\/nfl/i.test(path) || fav.league === "NFL") {
-      bump(nfl, espnId, fav);
+      bump(nfl, espnId, fav, "NFL");
     } else if (/hockey\/nhl/i.test(path) || fav.league === "NHL") {
-      bump(nhl, espnId, fav);
+      bump(nhl, espnId, fav, "NHL");
     } else if (/college-football/i.test(path)) {
-      bump(cfb, espnId, fav);
+      bump(cfb, espnId, fav, "CFB");
     } else if (/basketball\/wnba/i.test(path) || fav.league === "WNBA") {
-      bump(wnba, espnId, fav);
+      bump(wnba, espnId, fav, "WNBA");
     } else if (/basketball\/nba/i.test(path) || fav.league === "NBA") {
-      bump(nba, espnId, fav);
+      bump(nba, espnId, fav, "NBA");
     } else if (/\/soccer\//i.test(path) || fav.sport === "Soccer") {
-      bump(soccer, espnId, fav);
+      bump(soccer, espnId, fav, "Soccer");
     }
   }
   return { mlb, nfl, nhl, cfb, soccer, nba, wnba, ids, byId };
@@ -356,12 +362,67 @@ export function watchClockState(game: WatchGame): { kind: WatchClockKind; label:
   return { kind: "pre", label: printClock(game.when) };
 }
 
+const GENERIC_PLAYOFF = /^(playoff series|playoffs)$/i;
+const SERIES_TAG =
+  /\b(ALDS|NLDS|ALCS|NLCS|World Series|Wild Card(?: Series)?|Stanley Cup|NBA Finals|WNBA Finals|First Round|Conference Finals?|Round \d+)\b/i;
+
+function normalizeSeriesTag(tag: string): string {
+  const key = tag.toLowerCase();
+  const known: Record<string, string> = {
+    alds: "ALDS",
+    nlds: "NLDS",
+    alcs: "ALCS",
+    nlcs: "NLCS",
+    "world series": "World Series",
+    "wild card": "Wild Card",
+    "wild card series": "Wild Card",
+    "stanley cup": "Stanley Cup",
+    "nba finals": "NBA Finals",
+    "wnba finals": "WNBA Finals",
+    "first round": "First Round",
+  };
+  return known[key] ?? tag;
+}
+
+/** ALDS · CLE leads 1-0 — never a bare "Playoff series" when ESPN named the round. */
+export function watchSeriesDisplay(game: Pick<WatchGame, "series" | "reasons" | "printReason" | "preseason">): string | null {
+  if (game.preseason) return null;
+  const series = game.series?.trim() || null;
+  if (series && GENERIC_PLAYOFF.test(series)) return null;
+  const blob = [game.series, game.printReason, ...(game.reasons ?? [])].filter(Boolean).join(" · ");
+  const tagMatch = blob.match(SERIES_TAG);
+  const tag = tagMatch?.[0] ? normalizeSeriesTag(tagMatch[0]) : null;
+  if (series && tag && !new RegExp(`\\b${tag.replace(/\s+/g, "\\s+")}\\b`, "i").test(series)) {
+    const lead = series.replace(/\s+series\s+/i, " ").replace(/\s+/g, " ").trim();
+    return `${tag} · ${lead}`;
+  }
+  if (series) return series.replace(/\s+series\s+/i, " ").replace(/\s+/g, " ").trim();
+  if (tag) {
+    const gameN = blob.match(/game\s*(\d+)/i);
+    return gameN ? `${tag} Game ${gameN[1]}` : tag;
+  }
+  return null;
+}
+
+/** Desk stamp: league + team id only. City names never match a favorite. */
+export function watchFavoriteLabel(game: WatchGame, byId: Map<string, WatchFavorite>): string | null {
+  const hits = [game.away.teamId, game.home.teamId]
+    .filter((id): id is string => Boolean(id))
+    .map((id) => byId.get(watchDeskKey(game.league, id)))
+    .filter((f): f is WatchFavorite => Boolean(f));
+  if (!hits.length) return null;
+  if (hits.length > 1) return "Favorite team";
+  const name = (hits[0]!.shortName ?? hits[0]!.name ?? "Favorite team").replace(/\s+(FB|BB)$/i, "");
+  return name || "Favorite team";
+}
+
 /** One printed why-watch line. Never an empty stub — every card gets context. */
 export function watchContext(game: WatchGame): string {
   if (game.preseason) return game.printReason && /preseason/i.test(game.printReason) ? game.printReason : "Preseason";
   const printed = printReason(game);
   if (printed) return printed;
-  if (game.series?.trim()) return game.series.trim();
+  const series = watchSeriesDisplay(game);
+  if (series) return series;
   if (game.competition) return game.competition;
   return watchLeagueLabel(game);
 }
@@ -426,11 +487,7 @@ export function printNetworks(tv: string[]): WatchNetwork[] {
         break;
       }
     }
-    if (!mapped) {
-      // Already-short API names may print; long unknown RSNs stay blank.
-      if (name.length <= 12 && !/\s/.test(name)) mapped = { name, streaming: false };
-      else continue;
-    }
+    if (!mapped) continue;
     const key = mapped.name.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -441,12 +498,14 @@ export function printNetworks(tv: string[]): WatchNetwork[] {
 }
 
 export function printReason(game: WatchGame, favoriteLabel = game.favoriteLabel ?? null): string | null {
-  if (game.printReason) return game.printReason;
-  if (game.series?.trim()) return game.series.trim();
+  if (game.printReason && !GENERIC_PLAYOFF.test(game.printReason)) return game.printReason;
+  const series = watchSeriesDisplay(game);
+  if (series) return series;
   const awayR = game.away.rank;
   const homeR = game.home.rank;
   if (awayR && homeR && awayR <= 10 && homeR <= 10) return "Top-10 clash";
   for (const r of game.reasons) {
+    if (GENERIC_PLAYOFF.test(r)) continue;
     if (/playoff|series|october|world series|alcs|nlcs|wild card|pennant|alds|nlds/i.test(r)) return r;
   }
   for (const r of game.reasons) {
@@ -456,7 +515,7 @@ export function printReason(game: WatchGame, favoriteLabel = game.favoriteLabel 
   if (awayR && homeR) return "Ranked matchup";
   if ((awayR && awayR <= 10) || (homeR && homeR <= 10)) return "Top-10 team";
   for (const r of game.reasons) {
-    if (!SKIP_REASON.test(r) && !/\binterest \d/i.test(r)) return r;
+    if (!SKIP_REASON.test(r) && !GENERIC_PLAYOFF.test(r) && !/\binterest \d/i.test(r)) return r;
   }
   return null;
 }

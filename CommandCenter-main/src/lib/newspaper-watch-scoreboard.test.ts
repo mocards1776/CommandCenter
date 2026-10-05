@@ -11,6 +11,7 @@ import {
   mapWatchSoccerGame,
   rankWatchSoccerGames,
   scoreWatchBasket,
+  watchSeriesFromEspn,
   WATCH_BASKET_HEAT,
   wnbaInSeason,
   type EspnWatchEvent,
@@ -77,6 +78,22 @@ const nhl = mapWatchNhlGame(nhlEvent);
 assert(nhl?.away.abbrev === "CHI" && nhl.home.abbrev === "SEA", "NHL sides");
 assert(nhl?.date === "2026-10-05", "NHL Chicago date");
 assert(nhl?.seriesLine && /leads/i.test(nhl.seriesLine), "playoff series line");
+assert(/Round 1/i.test(nhl!.seriesLine!), "playoff note names the round");
+assert(
+  watchSeriesFromEspn({ series: { type: "regular", summary: "Season series tied 1-1" }, notes: [{ headline: "Game 2" }] }) === null,
+  "regular-season series stays off the page",
+);
+assert(
+  watchSeriesFromEspn({
+    series: { type: "playoff", summary: "CLE leads series 1-0", totalCompetitions: 5 },
+    notes: [{ headline: "ALDS - Game 2" }],
+  }) === "ALDS · CLE leads 1-0",
+  "ALDS plus the lead",
+);
+assert(
+  watchSeriesFromEspn({ series: { type: "playoff", summary: "" }, notes: [{ headline: "ALDS - Game 1" }] }) === "ALDS Game 1",
+  "ALDS Game 1 when ESPN has no lead yet",
+);
 
 const cfbEvent: EspnWatchEvent = {
   id: "401752001",

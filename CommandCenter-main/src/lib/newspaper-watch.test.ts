@@ -17,6 +17,8 @@ import {
   watchClockState,
   watchContext,
   watchDensityOf,
+  watchFavoriteLabel,
+  watchSeriesDisplay,
   watchLeagueColor,
   watchLeagueLabel,
   watchTeamShort,
@@ -127,9 +129,13 @@ assert(printNetworks(["Paramount+"])[0]?.name === "Para+", "Paramount+ shortens 
 assert(printNetworks(["USA Network"])[0]?.name === "USA", "USA Network shortens to USA");
 assert(printNetworks([]).length === 0, "unknown stays blank");
 assert(printNetworks(["Mystery Regional Sports"]).length === 0, "long unknown RSNs are omitted, not invented");
-assert(printNetworks(["NESN"])[0]?.name === "NESN", "an already-short API name may print");
+assert(printNetworks(["NESN"])[0]?.name === "NESN", "NESN is a known regional");
 assert(printNetworks(["NBA TV"])[0]?.name === "NBA TV", "NBA TV prints as a small-caps network");
 assert(printNetworks(["NBA League Pass"])[0]?.streaming, "League Pass is marked streaming");
+assert(printNetworks(["ERADM"]).length === 0, "ESPN market codes are dropped");
+assert(printNetworks(["ESPN", "ERADM"]).map((n) => n.name).join() === "ESPN", "codes do not crowd out real networks");
+assert(printNetworks(["Prime Video"])[0]?.name === "Prime Video", "Prime Video prints as Prime Video");
+assert(printNetworks(["ABCDZ"]).length === 0, "unknown all-caps codes stay off the page");
 
 assert(printReason(game({ id: "r1", heat: 10, reasons: ["Playoff Game 3"] })) === "Playoff Game 3", "playoff reason");
 assert(
@@ -154,6 +160,17 @@ assert(
   printReason(game({ id: "r6", heat: 10, reasons: [], series: "CLE leads 2-0" })) === "CLE leads 2-0",
   "series line is a printed reason",
 );
+assert(
+  printReason(game({ id: "r7", heat: 10, reasons: ["Playoff series"], series: "CLE leads 1-0" })) === "CLE leads 1-0",
+  "generic Playoff series yields to the actual series state",
+);
+assert(
+  printReason(game({ id: "r8", heat: 10, reasons: ["ALDS"], series: "CLE leads 1-0" })) === "ALDS · CLE leads 1-0",
+  "ALDS plus a lead prints as ALDS · CLE leads 1-0",
+);
+assert(printReason(game({ id: "r9", heat: 10, reasons: ["Playoff series"] })) !== "Playoff series", "bare Playoff series is not printed");
+assert(watchSeriesDisplay(game({ id: "s1", heat: 10, reasons: ["ALDS Game 1"] })) === "ALDS Game 1", "ALDS Game 1 from a reason");
+assert(watchSeriesDisplay(game({ id: "s2", heat: 10, league: "NBA", preseason: true, series: "PHI leads 1-0" })) === null, "preseason has no series line");
 
 assert(watchTeamShort({ name: "Chicago White Sox", abbrev: "CWS", logo: null, record: null }) === "White Sox", "White Sox nickname");
 assert(watchTeamShort({ name: "New York Yankees", abbrev: "NYY", logo: null, record: null }) === "Yankees", "Yankees nickname");
@@ -215,6 +232,46 @@ assert(desk.cfb["142"] === 10, "Mizzou from the Times desk");
 assert(desk.soccer["359"] === 10, "Arsenal from the Times desk");
 assert(desk.nba["20"] === 10, "Sixers from the Times desk");
 assert(!("24" in desk.mlb), "ESPN MLB path id is not the interest key");
+assert(
+  watchFavoriteLabel(
+    game({
+      id: "nhl-phi-tb",
+      league: "NHL",
+      heat: 10,
+      away: { name: "Philadelphia Flyers", abbrev: "PHI", logo: null, record: "0-1-2", teamId: "15" },
+      home: { name: "Tampa Bay Lightning", abbrev: "TB", logo: null, record: "1-1-0", teamId: "20" },
+    }),
+    desk.byId,
+  ) === null,
+  "NHL Lightning id 20 is not the Sixers",
+);
+assert(
+  watchFavoriteLabel(
+    game({
+      id: "nba-ny-phi",
+      league: "NBA",
+      heat: 10,
+      away: { name: "New York Knicks", abbrev: "NY", logo: null, record: null, teamId: "18" },
+      home: { name: "Philadelphia 76ers", abbrev: "PHI", logo: null, record: null, teamId: "20" },
+    }),
+    desk.byId,
+  ) === "76ers",
+  "NBA team 20 is the Sixers",
+);
+assert(
+  watchFavoriteLabel(
+    game({
+      id: "nhl-phi-name",
+      league: "NHL",
+      heat: 5,
+      away: { name: "Philadelphia Flyers", abbrev: "PHI", logo: null, record: null },
+      home: { name: "Tampa Bay Lightning", abbrev: "TB", logo: null, record: null },
+      reasons: ["Philadelphia"],
+    }),
+    desk.byId,
+  ) === null,
+  "city name is not a favorite match",
+);
 
 assert(watchLeagueLabel(game({ id: "nba-lab", heat: 5, league: "NBA" })) === "NBA", "NBA league label");
 assert(watchLeagueLabel(game({ id: "wnba-lab", heat: 5, league: "WNBA" })) === "WNBA", "WNBA league label");

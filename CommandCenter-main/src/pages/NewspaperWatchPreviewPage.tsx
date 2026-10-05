@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
+import { PhoneWatchCard } from "@/components/newspaper/PhoneWatchCard";
 import WatchGuide from "@/components/newspaper/WatchGuide";
 import { fetchWatchList, sampleWatchSlate, sampleWatchSlateLight, WATCH_PAGE_GAMES } from "@/lib/newspaper-watch";
 
@@ -14,6 +15,7 @@ const TZ = "America/Chicago";
 export default function NewspaperWatchPreviewPage() {
   const [params] = useSearchParams();
   const sample = params.get("sample");
+  const phone = params.get("phone") === "1";
   const dense = sample === "1" || sample === "dense";
   const light = sample === "light";
   const day = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
@@ -31,6 +33,14 @@ export default function NewspaperWatchPreviewPage() {
       : live.data?.length
         ? live.data
         : sampleWatchSlateLight(day);
+
+  if (phone) {
+    return (
+      <div className="tt-phone-page" data-phone-card="watch" data-ready="1">
+        <PhoneWatchCard games={games} editionLabel="Midday Edition" />
+      </div>
+    );
+  }
 
   return (
     <div className="newspaper-root wsj-shell tt-watch-preview">

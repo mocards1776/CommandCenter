@@ -8,6 +8,31 @@
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts.ts";
 import { newspaperEspnGet } from "./newspaper-espn.ts";
 import { seriesLineFromEspn } from "./playoff-series.ts";
+
+const SERIES_NOTE =
+  /\b(ALDS|NLDS|ALCS|NLCS|World Series|Wild Card(?: Series)?|Stanley Cup|NBA Finals|WNBA Finals|First Round|Conference Finals?|Round \d+)\b/i;
+
+/** Times page copy. Regular-season ESPN series objects stay blank. */
+export function watchSeriesFromEspn(
+  comp: { series?: { type?: string | null; summary?: string | null; totalCompetitions?: number | null }; notes?: { headline?: string | null }[] } | null | undefined,
+): string | null {
+  if (!comp?.series || comp.series.type !== "playoff") return null;
+  const base = seriesLineFromEspn(comp);
+  const note = (comp.notes ?? []).map((n) => n.headline).find((h) => h?.trim())?.trim() ?? "";
+  const rawTag = note.match(SERIES_NOTE)?.[0];
+  if (rawTag && base) {
+    if (new RegExp(`\\b${rawTag.replace(/\s+/g, "\\s+")}\\b`, "i").test(base)) return base;
+    if (/^Game \d+( of \d+)?$/i.test(base)) return `${rawTag} ${base}`;
+    const lead = base
+      .replace(/\s*·\s*Game \d+( of \d+)?/i, "")
+      .replace(/\bleads series\b/i, "leads")
+      .replace(/\s+/g, " ")
+      .trim();
+    return lead ? `${rawTag} · ${lead}` : rawTag;
+  }
+  if (rawTag) return note.replace(/\s*[-–—]\s*/g, " ").replace(/\s+/g, " ").trim();
+  return base;
+}
 import type { CfbScoreGame, CfbScoreSide } from "./cfb.ts";
 import type { NflScoreGame, NflScoreSide } from "./nfl.ts";
 import type { NhlScoreGame, NhlScoreSide } from "./nhl.ts";
@@ -385,7 +410,7 @@ export function mapWatchNflGame(event: EspnWatchEvent): NflScoreGame | null {
     date: chicagoDateFromIso(iso),
     startIso: iso,
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
-    seriesLine: seriesLineFromEspn(comp),
+    seriesLine: watchSeriesFromEspn(comp),
   };
   return Object.assign(mapped, { line: oddsLineOf(event) });
 }
@@ -410,7 +435,7 @@ export function mapWatchNhlGame(event: EspnWatchEvent): NhlScoreGame | null {
     date: chicagoDateFromIso(iso),
     startIso: iso,
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
-    seriesLine: seriesLineFromEspn(comp),
+    seriesLine: watchSeriesFromEspn(comp),
   };
   return Object.assign(mapped, { line: oddsLineOf(event) });
 }
@@ -488,7 +513,7 @@ export function mapWatchBasketGame(event: EspnWatchEvent, sport: "nba" | "wnba")
     final: st.final,
     venue: comp.venue?.fullName ?? null,
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
-    seriesLine: seriesLineFromEspn(comp),
+    seriesLine: watchSeriesFromEspn(comp),
     preseason: seasonType === 1,
     postseason: seasonType === 3,
     line: oddsLineOf(event),
