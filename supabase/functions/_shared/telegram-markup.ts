@@ -4,8 +4,7 @@
  * Heat (sports-telegram) and finals (sports-finals) share this shape so both
  * bots send the same two Mini App buttons instead of a caption markdown link
  * or a Safari URL button. Private DMs only — web_app is not valid in
- * channels/groups. BotFather /setdomain on both bots must list the Command
- * Center host or Telegram will reject the buttons.
+ * channels/groups. BotFather /setdomain is not required for these buttons.
  */
 
 export const DEFAULT_COMMAND_CENTER_ORIGIN = "https://command-center-flax-gamma.vercel.app";

@@ -1,7 +1,14 @@
-import assert from "node:assert/strict";
+/**
+ * Run with: node --experimental-strip-types src/lib/telegram-webapp.test.ts
+ * from CommandCenter-main/.
+ */
 import { activateTelegramWebApp, isTelegramWebView } from "./telegram-webapp.ts";
 
-assert.equal(isTelegramWebView(), false, "node tests are not a Telegram WebView");
+function assert(cond: unknown, message: string) {
+  if (!cond) throw new Error(message);
+}
+
+assert(!isTelegramWebView(), "node tests are not a Telegram WebView");
 
 const calls: string[] = [];
 const ok = activateTelegramWebApp({
@@ -11,5 +18,8 @@ const ok = activateTelegramWebApp({
   setHeaderColor: (color) => calls.push(`header:${color}`),
   setBackgroundColor: (color) => calls.push(`bg:${color}`),
 });
-assert.equal(ok, true);
-assert.deepEqual(calls, ["ready", "expand", "noswipe", "header:#081228", "bg:#081228"]);
+assert(ok, "activateTelegramWebApp should succeed with a stub");
+assert(
+  calls.join(",") === "ready,expand,noswipe,header:#081228,bg:#081228",
+  `unexpected Telegram.WebApp calls: ${calls.join(",")}`,
+);
