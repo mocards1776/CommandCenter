@@ -3,10 +3,17 @@
  */
 
 export const REVEAL_CAP_MS = 7_000;
+export const COMPANION_WAIT_MS = 3_000;
+export const ISSUE_WAIT_MS = 10_000;
 export const ATF_PAGES = 2;
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Resolve with `fallback` if `task` has not settled. The original work is not cancelled. */
+export async function withDeadline<T>(task: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([task, sleep(ms).then(() => fallback)]);
 }
 
 function pageIndexOf(img: Element): number {

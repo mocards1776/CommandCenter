@@ -119,7 +119,13 @@ import {
   isIssueWithinLookback,
   type FiledIssueMeta,
 } from "@/lib/newspaper-editions";
-import { queryNamed, waitForPrintedReveal } from "@/lib/newspaper-document";
+import {
+  COMPANION_WAIT_MS,
+  ISSUE_WAIT_MS,
+  queryNamed,
+  waitForPrintedReveal,
+  withDeadline,
+} from "@/lib/newspaper-document";
 import { TimesHold, TimesHoldShell } from "@/components/newspaper/TimesHold";
 import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
 import { fetchWatchList } from "@/lib/newspaper-watch";
@@ -3792,6 +3798,13 @@ function NewspaperDesk() {
   useEffect(() => {
     if (loadedRef.current === pressId) return;
     let cancel = false;
+    const fallToPress = () => {
+      if (cancel || loadedRef.current === pressId || pressId !== clockPress.id) return;
+      setLockedCopy((prev) => (prev?.id === pressId ? prev : null));
+      setDocPhase("press");
+      loadedRef.current = pressId;
+    };
+    const bootEscape = window.setTimeout(fallToPress, ISSUE_WAIT_MS + COMPANION_WAIT_MS);
     void (async () => {
       const apply = (
         issue: PrintedIssue,
@@ -3815,18 +3828,34 @@ function NewspaperDesk() {
         void writeLocalIssue({ ...issue, companions: extra });
       };
 
-      const local = await readLocalIssue(pressId);
+      const loadCompanions = (cached?: {
+        dayAhead?: DaySchedule | null;
+        national?: NationalDesk | null;
+        beez?: BeezDesk | null;
+      }) => {
+        const date = scheduleDateFor(pressId);
+        return Promise.all([
+          cached?.dayAhead ??
+            (date
+              ? withDeadline(fetchDaySchedule(date).catch(() => null), COMPANION_WAIT_MS, null)
+              : Promise.resolve(null)),
+          cached?.national ??
+            withDeadline(readTimesNationalNews(pressId).catch(() => null), COMPANION_WAIT_MS, null),
+          cached?.beez ?? withDeadline(readTimesBeez().catch(() => null), COMPANION_WAIT_MS, null),
+        ] as const);
+      };
+
+      const local = await withDeadline(readLocalIssue(pressId).catch(() => null), COMPANION_WAIT_MS, null);
       if (cancel) return;
       if (local?.id === pressId) {
-        const date = scheduleDateFor(pressId);
         const cachedDay = asStoredSchedule(local.companions?.dayAhead);
         const cachedNat = asStoredNational(local.companions?.national);
         const cachedBeez = asStoredBeez(local.companions?.beez);
-        const [dayAhead, national, beez] = await Promise.all([
-          cachedDay ?? (date ? fetchDaySchedule(date).catch(() => null) : Promise.resolve(null)),
-          cachedNat ?? readTimesNationalNews(pressId),
-          cachedBeez ?? readTimesBeez(),
-        ]);
+        const [dayAhead, national, beez] = await loadCompanions({
+          dayAhead: cachedDay,
+          national: cachedNat,
+          beez: cachedBeez,
+        });
         if (cancel) return;
         apply(local, {
           dayAhead: cachedDay ?? dayAhead,
@@ -3836,24 +3865,19 @@ function NewspaperDesk() {
         return;
       }
 
-      const remote = await readRemoteIssue(pressId).catch(() => null);
+      const remote = await withDeadline(readRemoteIssue(pressId).catch(() => null), ISSUE_WAIT_MS, null);
       if (cancel) return;
       if (remote?.id === pressId && isIssueWithinLookback(remote)) {
-        const date = scheduleDateFor(pressId);
-        const [dayAhead, national, beez] = await Promise.all([
-          date ? fetchDaySchedule(date).catch(() => null) : Promise.resolve(null),
-          readTimesNationalNews(pressId),
-          readTimesBeez(),
-        ]);
+        const [dayAhead, national, beez] = await loadCompanions();
         if (cancel) return;
         const isLatest = latestRef.current === pressId;
         let queries = remote.queries;
         if (isLatest && queryNamed(queries, "tt-weather-marshfield") == null) {
-          const wx = await fetchMarshfieldWeather().catch(() => null);
+          const wx = await withDeadline(fetchMarshfieldWeather().catch(() => null), COMPANION_WAIT_MS, null);
           if (wx) queries = [...queries, { key: [pressId, "tt-weather-marshfield"], data: wx }];
         }
         if (isLatest && queryNamed(queries, "tt-watch") == null) {
-          const watch = await fetchWatchList(day).catch(() => []);
+          const watch = await withDeadline(fetchWatchList(day).catch(() => []), COMPANION_WAIT_MS, []);
           queries = [...queries, { key: [pressId, "tt-watch", day], data: watch }];
         }
         if (cancel) return;
@@ -3861,15 +3885,11 @@ function NewspaperDesk() {
         return;
       }
 
-      if (pressId === clockPress.id) {
-        setLockedCopy((prev) => (prev?.id === pressId ? prev : null));
-        setDocPhase("press");
-        loadedRef.current = pressId;
-        return;
-      }
+      fallToPress();
     })();
     return () => {
       cancel = true;
+      window.clearTimeout(bootEscape);
     };
   }, [pressId, queryClient, day, clockPress.id]);
 
