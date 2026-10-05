@@ -1,0 +1,120 @@
+diff --git a/CommandCenter-main/src/lib/newspaper-sections.ts b/CommandCenter-main/src/lib/newspaper-sections.ts
+index bb55f85..cfb9343 100644
+--- a/CommandCenter-main/src/lib/newspaper-sections.ts
++++ b/CommandCenter-main/src/lib/newspaper-sections.ts
+@@ -26,6 +26,7 @@ import { cleanStoryCopy, isPeripheralClubStory, killedSource } from "./newspaper
+ import { storySource } from "./newspaper-source.ts";
+ import type { GameWrapCard } from "./newspaper-sports";
+ import type { MissouriDesk, MoItem } from "./newspaper-missouri";
++import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
+ 
+ /** Front-page teaser budgets — rest jumps to a real continuation folio. */
+ const LEAD_TEASER = 1050;
+@@ -207,6 +208,8 @@ export type EditionPage =
+   | FavoritesInsidePage
+   | FavoritesContinuePage
+   | FavoritesWatchPage
++  /** Set client-side by insertDayAhead (newspaper-day-ahead.ts); buildEdition never makes one. */
++  | FavoritesDayPage
+   | SportFrontPage
+   | SportInsidePage;
+ 
+diff --git a/CommandCenter-main/src/pages/DailyNewspaperPage.tsx b/CommandCenter-main/src/pages/DailyNewspaperPage.tsx
+index 8fa2f75..bcbd01a 100644
+--- a/CommandCenter-main/src/pages/DailyNewspaperPage.tsx
++++ b/CommandCenter-main/src/pages/DailyNewspaperPage.tsx
+@@ -108,6 +108,9 @@ import {
+ import { clearEditorStamps, editEdition } from "@/lib/newspaper-editor";
+ import { fetchWatchList } from "@/lib/newspaper-watch";
+ import WatchGuide from "@/components/newspaper/WatchGuide";
++import DayAhead from "@/components/newspaper/DayAhead";
++import { insertDayAhead, scheduleDateFor } from "@/lib/newspaper-day-ahead";
++import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
+ import {
+   buildGameWrapCards,
+   buildTeamInfoboxes,
+@@ -505,6 +508,8 @@ function pageLabel(page: EditionPage): string {
+       return "Continued";
+     case "favorites-watch":
+       return "What to Watch";
++    case "favorites-day":
++      return "The Day Ahead";
+     default:
+       return "Front Page";
+   }
+@@ -4215,6 +4220,18 @@ function NewspaperDesk() {
+     refetchOnReconnect: false,
+   });
+ 
++  // The Day Ahead: the schedule filed for the edition's date. Keyed without pressId on purpose,
++  // so it is never filed into the printed issue; every edition of the day reads the same row.
++  const scheduleDate = scheduleDateFor(pressId);
++  const dayAheadQ = useQuery({
++    queryKey: ["tt-day-ahead", scheduleDate],
++    enabled: open && Boolean(user?.id) && Boolean(scheduleDate),
++    queryFn: () => fetchDaySchedule(scheduleDate!),
++    staleTime: 5 * 60_000,
++    gcTime: 20 * 60 * 60_000,
++    retry: 1,
++  });
++
+   const scoutQ = useQuery({
+     queryKey: [pressId, "tt-mo-scout", day],
+     enabled: pressing,
+@@ -4479,7 +4496,7 @@ function NewspaperDesk() {
+     queryClient,
+   ]);
+ 
+-  const edition = useMemo(
++  const builtEdition = useMemo(
+     () =>
+       buildEdition({
+         stories,
+@@ -4492,6 +4509,9 @@ function NewspaperDesk() {
+       }),
+     [stories, clubs, pressId, playerPaths, missouriQ.data, offseason, leaderPaths],
+   );
++  // No schedule row for the date (or not read yet): no page, never an older day's.
++  const daySchedule = dayAheadQ.data?.date === scheduleDate ? dayAheadQ.data : null;
++  const edition = useMemo(() => insertDayAhead(builtEdition, daySchedule), [builtEdition, daySchedule]);
+   const comingUp = useMemo<ComingUp[]>(
+     () =>
+       clubs.flatMap((club) =>
+@@ -4716,6 +4736,8 @@ function NewspaperDesk() {
+                 </div>
+               ) : page.kind === "favorites-watch" ? (
+                 <WatchGuide games={watchQ.data ?? []} editionLabel={press.label} />
++              ) : page.kind === "favorites-day" ? (
++                <DayAhead date={page.date} events={page.events} upcoming={page.upcoming} editionLabel={press.label} />
+               ) : page.kind === "favorites-continue" ? (
+                 <ContinuePage
+                   jumps={page.jumps}
+diff --git a/CommandCenter-main/src/types/database.ts b/CommandCenter-main/src/types/database.ts
+index 99f1b35..d75ac15 100644
+--- a/CommandCenter-main/src/types/database.ts
++++ b/CommandCenter-main/src/types/database.ts
+@@ -497,6 +497,24 @@ export type Database = {
+         Update: Partial<Database["public"]["Tables"]["newspaper_desk"]["Insert"]>;
+         Relationships: [];
+       };
++      times_day_schedule: {
++        Row: {
++          schedule_date: string;
++          events: Json;
++          upcoming: Json;
++          source: string | null;
++          received_at: string | null;
++        };
++        Insert: {
++          schedule_date: string;
++          events?: Json;
++          upcoming?: Json;
++          source?: string | null;
++          received_at?: string | null;
++        };
++        Update: Partial<Database["public"]["Tables"]["times_day_schedule"]["Insert"]>;
++        Relationships: [];
++      };
+       favorite_sports_players: {
+         Row: {
+           id: string;
