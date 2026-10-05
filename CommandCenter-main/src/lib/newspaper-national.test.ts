@@ -15,9 +15,17 @@ import {
   itemsFromFeed,
   mechanicalStories,
   nationalDropParts,
+  extractArticleFromHtml,
+  looksPaywalled,
   nationalLeadColumns,
+  nationalPageCopy,
   nationalPhotoSize,
   nationalPress,
+  nationalStoryHasMore,
+  nationalStorySize,
+  nationalStoryWeight,
+  packNationalPages,
+  pickExtractedBody,
   NATIONAL_SOURCES,
   NATIONAL_STORY_MAX,
   NATIONAL_STORY_MIN,
@@ -245,6 +253,58 @@ const sample = sampleNationalDesk("2026-10-05-morning");
 assert(sample.stories.length >= NATIONAL_STORY_MIN && sample.stories.length <= NATIONAL_STORY_MAX, "sample desk is a two-page budget");
 assert(sample.stories[0]!.imageUrl && sample.stories[0]!.imageCredit, "lead sample has art and a credit");
 assert(nationalPhotoSize(0, true) === "lead" && nationalPhotoSize(2, true) === "medium" && nationalPhotoSize(5, true) === "thumb", "photo scale follows rank");
+assert(nationalStorySize(0) === "lead" && nationalStorySize(1) === "medium" && nationalStorySize(3) === "col", "folio roles: lead, two mediums, then columns");
+
+const foxHtml = `
+<article>
+  <meta name="author" content="Bill McCarthy">
+  <div class="article-body">
+    <p>Negotiators returned to the Capitol overnight after a weekend of stalled talks on a stopgap spending bill.</p>
+    <p>Party leaders said a short-term measure was still possible before agencies start to close, but neither side released a text.</p>
+    <p>The wire desks treated it as the lead in Washington and followed the talks into the morning.</p>
+    <p>Subscribe to continue reading this article.</p>
+  </div>
+</article>
+<meta property="og:image" content="https://www.foxnews.com/og.jpg">
+`;
+const extracted = extractArticleFromHtml(foxHtml, "https://www.foxnews.com/politics/spending");
+assert(extracted.text.includes("Negotiators returned"), "extract keeps the lede");
+assert(extracted.text.includes("wire desks"), "extract keeps later grafs");
+assert(!extracted.text.includes("Subscribe to continue"), "extract drops the subscribe rail");
+assert(extracted.byline === "Bill McCarthy", "author meta becomes the byline");
+assert(extracted.imageUrl === "https://www.foxnews.com/og.jpg", "og:image rides on the extract");
+
+const wsjWall = `<html>piano-paywall<div><p>Tennessee's prison chief resigned.</p></div></html>`;
+assert(looksPaywalled(wsjWall, "Tennessee's prison chief resigned."), "a short WSJ wall is flagged");
+const apFull = {
+  text: "NASHVILLE — The head of Tennessee's prisons resigned Monday after a failed lethal injection. Officials said the attempt was halted. ".repeat(4),
+  byline: "Associated Press",
+  imageUrl: null,
+  paywalled: false,
+};
+const picked = pickExtractedBody(
+  { text: "Tennessee's prison chief resigned.", byline: null, imageUrl: null, paywalled: true },
+  [{ outlet: "AP", extract: apFull }],
+  "RSS brief of the resignation.",
+);
+assert(picked.text.startsWith("NASHVILLE"), "paywalled WSJ falls back to the AP account");
+assert(picked.note?.includes("AP"), "the fallback is marked as the AP account");
+const rssOnly = pickExtractedBody(
+  { text: "Too short.", byline: null, imageUrl: null, paywalled: true },
+  [],
+  "The RSS description is the only copy the desk could get after the wall.",
+);
+assert(rssOnly.note?.includes("RSS brief"), "a dead extract is marked as the RSS brief");
+assert(rssOnly.text.includes("RSS description"), "the RSS brief is what prints");
+
+const packed = packNationalPages(sample.stories);
+assert(packed.length >= 2, "a full desk paginates by height");
+assert(packed[0]!.stories[0]!.id === "cl-1", "B1 still opens on the lead");
+assert(packed.every((page) => page.stories.length >= 1), "every folio has a lead");
+assert(packed.reduce((n, page) => n + page.stories.length, 0) === sample.stories.length, "packing keeps every story");
+assert(nationalPageCopy(sample.stories[0]!, "lead").length >= 1, "the folio sets lead grafs");
+assert(nationalStoryHasMore(sample.stories[0]!, "col") || nationalPageCopy(sample.stories[0]!, "lead").length >= 1, "longer copy can jump to the reader");
+assert(nationalStoryWeight(sample.stories[0]!, "lead") > nationalStoryWeight(sample.stories[0]!, "col"), "a lead spends more of the sheet");
 assert(nationalPhotoSize(0, false) == null, "no art, no hole");
 assert(asHttpImageUrl("javascript:alert(1)") == null, "non-http image is dropped");
 assert(isPlaceholderNewsImage("https://news.google.com/photos/reuters-logo"), "Google News asset is a placeholder");

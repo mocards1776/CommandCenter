@@ -2,6 +2,8 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
   clusterBriefs,
+  clusterExtractTargets,
+  extractArticleFromHtml,
   imageCreditFor,
   itemsFromFeed,
   mechanicalStories,
@@ -12,10 +14,13 @@ import {
   padStories,
   parseOgImage,
   parseRss,
+  pickExtractedBody,
   rankClusters,
   readNationalEditor,
   storiesFromEditor,
+  type ExtractedArticle,
   type FeedStatus,
+  type NationalCluster,
   type NationalDesk,
   type NationalItem,
   type NationalSource,
@@ -47,6 +52,7 @@ const MODEL = "grok-4.6";
 const XAI_BASE = "https://api.x.ai/v1";
 const EDITOR_TIMEOUT_MS = 60_000;
 const OG_TIMEOUT_MS = 6_000;
+const EXTRACT_TIMEOUT_MS = 8_000;
 const OG_UA = "ThompsonTimes/1.0 (national-news desk)";
 
 const SYSTEM = `You are the national-news editor of the Thompson Times, a one-reader broadsheet printed three times a day (6 a.m. morning, noon midday, 5 p.m. evening, Central time) for a reader in Marshfield, Missouri.
@@ -211,6 +217,72 @@ async function attachStoryImages(stories: NationalStory[]): Promise<NationalStor
   return out;
 }
 
+async function fetchArticlePage(articleUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(articleUrl, {
+      headers: {
+        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "User-Agent": OG_UA,
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(EXTRACT_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    return html.length >= 80 ? html : null;
+  } catch {
+    return null;
+  }
+}
+
+async function extractUrl(url: string): Promise<ExtractedArticle | null> {
+  const html = await fetchArticlePage(url);
+  if (!html) return null;
+  return extractArticleFromHtml(html, url);
+}
+
+/** Full text at file time, so the paper reader can set it like a sports wrap. */
+async function attachStoryBodies(
+  stories: NationalStory[],
+  clusters: NationalCluster[],
+): Promise<NationalStory[]> {
+  const byId = new Map(clusters.map((c) => [c.id, c]));
+  const out: NationalStory[] = new Array(stories.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(3, stories.length) }, async () => {
+    while (next < stories.length) {
+      const i = next++;
+      const story = stories[i]!;
+      const cluster = byId.get(story.id);
+      const targets = cluster
+        ? clusterExtractTargets(cluster, story.url).slice(0, 4)
+        : [{ url: story.url, outlet: story.source, snippet: story.summary }];
+      const preferred = await extractUrl(targets[0]!.url);
+      const alts: { outlet: string; extract: ExtractedArticle }[] = [];
+      const needFallback = !preferred || preferred.paywalled || preferred.text.length < 360;
+      if (needFallback) {
+        for (const target of targets.slice(1, 3)) {
+          const extract = await extractUrl(target.url);
+          if (extract) alts.push({ outlet: target.outlet, extract });
+        }
+      }
+      const rss = targets.map((t) => t.snippet).find((s) => (s?.length ?? 0) >= 80) ?? story.summary;
+      const picked = pickExtractedBody(preferred, alts, rss);
+      const imageUrl = story.imageUrl || picked.imageUrl || null;
+      out[i] = {
+        ...story,
+        body: picked.text || story.body || null,
+        byline: picked.byline,
+        bodyNote: picked.note,
+        imageUrl,
+        imageCredit: imageUrl ? imageCreditFor(story.source, story.imageCredit) : null,
+      };
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ ok: false, error: "POST only" }, 405);
@@ -286,6 +358,7 @@ Deno.serve(async (req: Request) => {
   }
 
   stories = await attachStoryImages(stories);
+  stories = await attachStoryBodies(stories, clusters);
 
   if (!stories.length) return json({ ok: false, error: "Nothing to file", sources }, 502);
 

@@ -93,7 +93,10 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
         return { html: game.recap.html, text: null, photo: game.recap.photo, byline: game.recap.byline };
       }
       const own = readableCopy(card.body);
-      if (own.length >= LONG_BODY) return { html: null, text: own, photo: null, byline: null };
+      const filed = card.sportLabel === "National" ? 80 : LONG_BODY;
+      if (own.length >= filed) {
+        return { html: null, text: own, photo: card.photo ?? null, byline: card.dateline ?? null };
+      }
       if (source && !isEspnGamePage(source)) {
         try {
           const article = await queryClient.fetchQuery({
@@ -167,7 +170,7 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
   const paras = useMemo(() => proseParas(body.data?.text ?? ""), [body.data?.text]);
   const lifted = cleanStoryCopy(card.body).author;
   const outlet = storySource(card) ?? `${card.sportLabel} Wire`;
-  const byline = body.data?.byline || (lifted ? `${lifted} · ${outlet}` : null);
+  const byline = body.data?.byline || (lifted ? `${lifted} · ${outlet}` : card.dateline || null);
   const kicker = [card.sportLabel, card.round || (card.postseason ? "Postseason" : null), card.teamName]
     .filter(Boolean)
     .join(" · ");

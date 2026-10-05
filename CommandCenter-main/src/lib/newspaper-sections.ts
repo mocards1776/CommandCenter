@@ -35,10 +35,10 @@ import {
   SPORT_NEWS_CAP,
   storyFitsSection,
 } from "./newspaper-sport-desk.ts";
-import type { MissouriDesk, MoItem } from "./newspaper-missouri";
+import { isPromoMissouriItem, type MissouriDesk, type MoItem } from "./newspaper-missouri.ts";
 import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
 import type { FavoritesBeezPage } from "./newspaper-beez.ts";
-import { NATIONAL_PAGE_FRONT, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
+import { packNationalPages, type NationalDesk } from "./newspaper-national.ts";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
 const LEAD_TEASER = 1050;
@@ -517,20 +517,16 @@ function sourceRank(card: GameWrapCard): number {
   return 4;
 }
 
-function preferStory(next: GameWrapCard, prev: GameWrapCard): boolean {
-  const nextId = sourceStoryId(next);
-  const prevId = sourceStoryId(prev);
-  if (nextId && nextId === prevId && next.leaguePath !== prev.leaguePath) {
-    const nextFit = sectionFitScore(next, next.leaguePath ?? "");
-    const prevFit = sectionFitScore(prev, prev.leaguePath ?? "");
-    if (nextFit !== prevFit) return nextFit > prevFit;
-  }
-  const rank = sourceRank(next) - sourceRank(prev);
-  if (rank) return rank < 0;
-  if ((next.followed || next.favoriteKey) !== (prev.followed || prev.favoriteKey)) {
-    return Boolean(next.followed || next.favoriteKey);
-  }
-  return cleanStoryCopy(next.body).text.length > cleanStoryCopy(prev.body).text.length;
+/**
+ * Same-game recaps: the ESPN/wire wrap wins, even when an RSS recap also
+ * carries a `wrap-` id (Post-Dispatch AP). Source rank still decides news.
+ */
+function gameWrapRank(card: GameWrapCard): number {
+  if (card.wrapKind === "espn" || card.id.startsWith("wire-")) return 0;
+  if (card.wrapKind === "box") return 2;
+  if (isGameWrap(card)) return 3;
+  if (isRecapStory(card)) return 4;
+  return 5;
 }
 
 /** ESPN article id shared by `news-123` and `league-123`, or a /id/ link. */
@@ -560,17 +556,104 @@ export function sectionFitScore(card: GameWrapCard, path: string): number {
   return score;
 }
 
-/** One story per event. The better source stays; the rest are spiked. */
+function preferStory(next: GameWrapCard, prev: GameWrapCard): boolean {
+  const nextId = sourceStoryId(next);
+  const prevId = sourceStoryId(prev);
+  if (nextId && nextId === prevId && next.leaguePath !== prev.leaguePath) {
+    const nextFit = sectionFitScore(next, next.leaguePath ?? "");
+    const prevFit = sectionFitScore(prev, prev.leaguePath ?? "");
+    if (nextFit !== prevFit) return nextFit > prevFit;
+  }
+  const nextWrap = gameWrapRank(next);
+  const prevWrap = gameWrapRank(prev);
+  // A wire/ESPN wrap beats an RSS recap of the same game, even when the
+  // RSS card is not classified as a recap (and even when its host is the
+  // Post-Dispatch). Source rank still decides two news items.
+  if (nextWrap !== prevWrap && Math.min(nextWrap, prevWrap) <= 2) {
+    return nextWrap < prevWrap;
+  }
+  if (isMainGameStory(next) && isMainGameStory(prev) && nextWrap !== prevWrap) {
+    return nextWrap < prevWrap;
+  }
+  const rank = sourceRank(next) - sourceRank(prev);
+  if (rank) return rank < 0;
+  if ((next.followed || next.favoriteKey) !== (prev.followed || prev.favoriteKey)) {
+    return Boolean(next.followed || next.favoriteKey);
+  }
+  return cleanStoryCopy(next.body).text.length > cleanStoryCopy(prev.body).text.length;
+}
+
+function storyUrlKey(card: GameWrapCard): string | null {
+  const raw = card.wrapHref || card.gameHref;
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    u.hash = "";
+    ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid"].forEach((k) =>
+      u.searchParams.delete(k),
+    );
+    return `${u.hostname.replace(/^www\./, "")}${u.pathname.replace(/\/+$/, "")}${u.search}`.toLowerCase();
+  } catch {
+    return raw.toLowerCase();
+  }
+}
+
+function storyGameId(card: GameWrapCard): string | null {
+  const raw = card.gameId ?? "";
+  const fromId = raw.match(/(\d{6,})/)?.[1] ?? (raw.length >= 4 ? raw : null);
+  if (fromId) return fromId;
+  const href = `${card.wrapHref ?? ""} ${card.gameHref ?? ""}`;
+  return href.match(/(?:gameId|event)[=/](\d{6,})/i)?.[1] ?? null;
+}
+
+/** Signed columns and opinion stay even when they cover the same game. */
+export function isColumnStory(card: GameWrapCard): boolean {
+  const href = `${card.wrapHref ?? ""} ${card.feedUrl ?? ""}`;
+  if (/\/(column|columns|opinion|commentary|editors-view)\b/i.test(href)) return true;
+  if (/^(hochman|bernhard|goold|hummel|strauss|dunkley|caesar)\s*:/i.test(card.headline)) return true;
+  return /\b(column|op-?ed|commentary)\b/i.test(card.headline);
+}
+
+function isMainGameStory(card: GameWrapCard): boolean {
+  if (isColumnStory(card)) return false;
+  return isGameWrap(card) || isRecapStory(card);
+}
+
+function headlineTokens(card: GameWrapCard): string[] {
+  const aliases: Record<string, string> = {};
+  if (card.favoriteKey === "cfb-mizzou") {
+    aliases.mizzou = "missouri";
+    aliases.tigers = "missouri";
+    aliases.gators = "florida";
+  }
+  return significantWords(card.headline).map((word) => aliases[word] ?? word);
+}
+
+function sameSectionAStory(a: GameWrapCard, b: GameWrapCard): boolean {
+  if (a.id && a.id === b.id) return true;
+  const urlA = storyUrlKey(a);
+  const urlB = storyUrlKey(b);
+  if (urlA && urlB && urlA === urlB) return true;
+  const srcA = sourceStoryId(a);
+  const srcB = sourceStoryId(b);
+  if (srcA && srcB && srcA === srcB) return true;
+  if (isColumnStory(a) || isColumnStory(b)) {
+    return sameStory(headlineTokens(a), headlineTokens(b));
+  }
+  const gameA = storyGameId(a);
+  const gameB = storyGameId(b);
+  if (gameA && gameB && gameA === gameB && isMainGameStory(a) && isMainGameStory(b)) return true;
+  if (isMainGameStory(a) && isMainGameStory(b) && sameStory(headlineTokens(a), headlineTokens(b))) {
+    return true;
+  }
+  return sameStory(headlineTokens(a), headlineTokens(b));
+}
+
+/** One story per event. The better source stays; columns like Hochman stay separate. */
 export function dedupeStories(stories: GameWrapCard[]): GameWrapCard[] {
   const kept: GameWrapCard[] = [];
   for (const card of stories) {
-    const mine = significantWords(card.headline);
-    const id = sourceStoryId(card);
-    const idx = kept.findIndex((prev) => {
-      if (id && sourceStoryId(prev) === id) return true;
-      if (card.gameId && prev.gameId && card.gameId === prev.gameId) return true;
-      return sameStory(mine, significantWords(prev.headline));
-    });
+    const idx = kept.findIndex((prev) => sameSectionAStory(card, prev));
     if (idx < 0) {
       kept.push(card);
       continue;
@@ -782,10 +865,9 @@ function favoritePages(
     lead,
     second,
     third,
-    briefs: (freshStories.length ? freshStories : sectionStories).slice(
-      FRONT_STORIES,
-      FRONT_STORIES + 6,
-    ),
+    briefs: (freshStories.length ? freshStories : sectionStories)
+      .filter((c) => !frontIds.has(c.id))
+      .slice(0, 6),
     news: freshStories.length ? freshStories : sectionStories,
     leadContinue: leadJump.folio,
     secondContinue: secondJump.folio,
@@ -966,9 +1048,11 @@ const MO_PAGE = 16;
 
 function missouriPages(desk: MissouriDesk | null, code = "B"): MissouriPage[] {
   if (!desk?.items.length) return [];
-  const chunks: MoItem[][] = [desk.items.slice(0, MO_FRONT)];
-  for (let i = MO_FRONT; i < desk.items.length && chunks.length < 3; i += MO_PAGE) {
-    chunks.push(desk.items.slice(i, i + MO_PAGE));
+  const clean = desk.items.filter((item) => !isPromoMissouriItem(item));
+  if (!clean.length) return [];
+  const chunks: MoItem[][] = [clean.slice(0, MO_FRONT)];
+  for (let i = MO_FRONT; i < clean.length && chunks.length < 3; i += MO_PAGE) {
+    chunks.push(clean.slice(i, i + MO_PAGE));
   }
   return stampCounts(
     chunks.map((items, i) => ({
@@ -986,38 +1070,22 @@ function missouriPages(desk: MissouriDesk | null, code = "B"): MissouriPage[] {
 
 function nationalPages(desk: NationalDesk | null): NationalPage[] {
   if (!desk?.stories.length) return [];
-  const front = desk.stories.slice(0, NATIONAL_PAGE_FRONT);
-  const rest = desk.stories.slice(NATIONAL_PAGE_FRONT);
-  const pages: NationalPage[] = [
-    {
-      kind: "national",
-      folio: "B1",
+  const packed = packNationalPages(desk.stories);
+  return stampCounts(
+    packed.map((page, i) => ({
+      kind: "national" as const,
+      folio: `B${i + 1}`,
       section: "B",
       sectionTitle: "National News",
-      sectionPage: 1,
+      sectionPage: i + 1,
       sectionCount: 0,
-      stories: front,
+      stories: page.stories,
       startIndex: 0,
       editionLabel: desk.label,
       day: desk.day,
-      jumpFolio: rest.length ? "B2" : undefined,
-    },
-  ];
-  if (rest.length) {
-    pages.push({
-      kind: "national",
-      folio: "B2",
-      section: "B",
-      sectionTitle: "National News",
-      sectionPage: 2,
-      sectionCount: 0,
-      stories: rest,
-      startIndex: front.length,
-      editionLabel: desk.label,
-      day: desk.day,
-    });
-  }
-  return stampCounts(pages);
+      jumpFolio: packed[i + 1] ? `B${i + 2}` : undefined,
+    })),
+  );
 }
 
 /** Copy that can run in this edition: filed, deduped, inside the press window. */

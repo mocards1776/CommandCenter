@@ -91,6 +91,18 @@ export type NationalStory = {
   summary: string;
   /** Grok-filed grafs. When present the paper prints these and does not resplit. */
   paragraphs?: string[];
+  /**
+   * Full extracted article, filed the same way a sports wrap stores `body`.
+   * The on-page teaser is a prefix; the reader sets the rest.
+   */
+  body?: string | null;
+  /** Byline lifted from the outlet page, when the extract found one. */
+  byline?: string | null;
+  /**
+   * Why this body is not the chosen outlet's full text: a paywall fallback
+   * (AP/Reuters) or the RSS brief. Printed under the story.
+   */
+  bodyNote?: string | null;
   url: string;
   source: string;
   credit: string;
@@ -137,17 +149,28 @@ export type NationalEditorDesk = {
 export const NATIONAL_CLUSTER_CAP = 32;
 export const NATIONAL_STORY_MIN = 12;
 export const NATIONAL_STORY_MAX = 16;
-/** Lead page of Section B; the rest jump to B2. */
+/** @deprecated Height packing replaced the fixed eight-story front. */
 export const NATIONAL_PAGE_FRONT = 8;
+/** Units that fit one 13" iPad portrait sheet after the section flag. */
+export const NATIONAL_PAGE_BUDGET = 170;
+const NATIONAL_PAGE_CAP = 4;
 
 export type NationalPhotoSize = "lead" | "medium" | "thumb";
+export type NationalStorySize = "lead" | "medium" | "col";
 
-/** Art scale by rank: lead large, next few medium, the rest thumbs or none. */
+/** Art scale by rank on this folio: lead large, next two medium, the rest thumbs. */
 export function nationalPhotoSize(index: number, hasImage: boolean): NationalPhotoSize | null {
   if (!hasImage) return null;
   if (index <= 0) return "lead";
-  if (index < 4) return "medium";
+  if (index < 3) return "medium";
   return "thumb";
+}
+
+/** Role of a story on its folio: first is the lead, next two are mediums. */
+export function nationalStorySize(indexOnPage: number): NationalStorySize {
+  if (indexOnPage <= 0) return "lead";
+  if (indexOnPage < 3) return "medium";
+  return "col";
 }
 
 /** First letter (plus a leading quote) for a National drop cap. */
@@ -184,6 +207,209 @@ export function nationalLeadColumns(paras: string[]): { left: string[]; right: s
     i += 1;
   }
   return { left, right: clean.slice(i) };
+}
+
+const PAGE_COPY = {
+  lead: { grafs: 6, chars: 1100 },
+  medium: { grafs: 4, chars: 640 },
+  col: { grafs: 3, chars: 420 },
+} as const;
+
+/** Grafs the folio sets. Full text lives on `body` for the reader. */
+export function nationalPageCopy(story: NationalStory, size: NationalStorySize): string[] {
+  const raw = (story.body && story.body.trim().length >= 80 ? story.body : null)
+    ?? (story.paragraphs?.length ? story.paragraphs.join("\n\n") : story.summary);
+  const paras = newspaperParas(raw);
+  if (!paras.length) return [];
+  const cap = PAGE_COPY[size];
+  const out: string[] = [];
+  let n = 0;
+  for (const p of paras) {
+    if (out.length >= cap.grafs || n >= cap.chars) break;
+    out.push(p);
+    n += p.length;
+  }
+  return out.length ? out : paras.slice(0, 1);
+}
+
+export function nationalStoryHasMore(story: NationalStory, size: NationalStorySize): boolean {
+  const shown = nationalPageCopy(story, size).join(" ").replace(/\s+/g, " ").trim();
+  const full = ((story.body && story.body.trim()) || story.summary || "").replace(/\s+/g, " ").trim();
+  return full.length > shown.length + 80;
+}
+
+/** How much of a 13" sheet this story spends, given the copy the folio will set. */
+export function nationalStoryWeight(story: NationalStory, size: NationalStorySize): number {
+  const copy = nationalPageCopy(story, size).join(" ").length;
+  const photo = story.imageUrl
+    ? size === "lead" ? 32 : size === "medium" ? 18 : 10
+    : 0;
+  const head = size === "lead" ? 10 : 6;
+  return head + photo + Math.max(4, Math.ceil(copy / 28));
+}
+
+/**
+ * Paginate National News by estimated sheet height. Each folio opens on a
+ * lead with a large cut, then mediums, then column briefs, instead of a
+ * fixed eight-and-six split that left B2 half empty.
+ */
+export function packNationalPages(stories: NationalStory[]): { stories: NationalStory[]; startIndex: number }[] {
+  if (!stories.length) return [];
+  const pages: { stories: NationalStory[]; startIndex: number }[] = [];
+  let i = 0;
+  while (i < stories.length) {
+    const start = i;
+    const batch: NationalStory[] = [stories[i]!];
+    let used = nationalStoryWeight(stories[i]!, "lead");
+    i += 1;
+    while (i < stories.length) {
+      const size = nationalStorySize(batch.length);
+      const w = nationalStoryWeight(stories[i]!, size);
+      if (used + w > NATIONAL_PAGE_BUDGET && batch.length >= 3) break;
+      batch.push(stories[i]!);
+      used += w;
+      i += 1;
+      if (used >= NATIONAL_PAGE_BUDGET && batch.length >= 3) break;
+    }
+    pages.push({ stories: batch, startIndex: start });
+    if (pages.length >= NATIONAL_PAGE_CAP && i < stories.length) {
+      pages[pages.length - 1]!.stories.push(...stories.slice(i));
+      break;
+    }
+  }
+  return pages;
+}
+
+const EXTRACT_BOILER =
+  /\b(?:subscribe to continue|subscribers? only|sign up for|create an account|advertisement|you may also like|recommended for you|related stories|more from|read more|all rights reserved|cookie (?:policy|settings)|enable javascript|continue reading)\b/i;
+
+const PAYWALL_MARK =
+  /\b(?:subscribe to (?:continue|read)|subscribers? only|for subscribers|this article is (?:exclusive|available) to|piano-paywall|wsj-e2e-paywall|paywall|remaining \d+ (?:free )?article)\b/i;
+
+/** Drop chrome, modules, and leftover tags from an extracted article. */
+export function cleanExtractedCopy(text: string): string {
+  let raw = decodeEntities(text)
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return "";
+  const cut = raw.search(EXTRACT_BOILER);
+  if (cut >= 40) raw = raw.slice(0, cut).trim();
+  raw = raw
+    .replace(/^(?:Advertisement|Sponsored|Skip (?:to )?content)\s+/i, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return raw;
+}
+
+export function looksPaywalled(html: string, text: string): boolean {
+  if (PAYWALL_MARK.test(html)) return text.length < 900;
+  return text.length > 0 && text.length < 280 && /wsj\.com|dowjones/i.test(html);
+}
+
+function extractByline(html: string): string | null {
+  const patterns = [
+    /<meta[^>]+name=["']author["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']author["']/i,
+    /<meta[^>]+property=["']article:author["'][^>]+content=["']([^"']+)["']/i,
+    /<(?:span|a|div)[^>]+(?:class|rel)=["'][^"']*(?:author|byline)[^"']*["'][^>]*>([\s\S]*?)<\/(?:span|a|div)>/i,
+  ];
+  for (const re of patterns) {
+    const raw = stripHtml(re.exec(html)?.[1] ?? "");
+    const name = raw.replace(/^by\s+/i, "").replace(/\s+/g, " ").trim();
+    if (name.length >= 4 && name.length <= 80 && !/subscribe|advertisement/i.test(name)) return name;
+  }
+  return null;
+}
+
+function paragraphTexts(html: string): string[] {
+  const out: string[] = [];
+  const re = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html))) {
+    const text = cleanExtractedCopy(stripHtml(match[1] ?? ""));
+    if (text.length < 40) continue;
+    if (EXTRACT_BOILER.test(text) && text.length < 160) continue;
+    if (/^by\s+[A-Z][a-z]+(\s+[A-Z][a-z]+){0,3}$/.test(text)) continue;
+    out.push(text);
+  }
+  return out;
+}
+
+function sliceArticleHtml(html: string): string {
+  const patterns = [
+    /<(?:div|section|article)[^>]*(?:itemprop=["']articleBody["']|class=["'][^"']*(?:article-body|article-content|story-body|article__body|paywall-article|content__body|l-article__body)[^"']*["'])[^>]*>([\s\S]*?)<\/(?:div|section|article)>/i,
+    /<article\b[^>]*>([\s\S]*?)<\/article>/i,
+    /<main\b[^>]*>([\s\S]*?)<\/main>/i,
+  ];
+  for (const re of patterns) {
+    const frag = re.exec(html)?.[1];
+    if (frag && paragraphTexts(frag).join(" ").length >= 200) return frag;
+  }
+  return html;
+}
+
+export type ExtractedArticle = {
+  text: string;
+  byline: string | null;
+  imageUrl: string | null;
+  paywalled: boolean;
+};
+
+/** Readability-style extract: article grafs, byline, og:image, paywall flag. */
+export function extractArticleFromHtml(html: string, base?: string): ExtractedArticle {
+  const frag = sliceArticleHtml(html);
+  let paras = paragraphTexts(frag);
+  if (paras.join(" ").length < 200) paras = paragraphTexts(html);
+  const text = cleanExtractedCopy(paras.join("\n\n"));
+  return {
+    text,
+    byline: extractByline(html),
+    imageUrl: parseOgImage(html, base),
+    paywalled: looksPaywalled(html, text),
+  };
+}
+
+const BODY_MIN = 360;
+
+/** Prefer the chosen outlet; if it is paywalled, take the longest syndicate. */
+export function pickExtractedBody(
+  preferred: ExtractedArticle | null,
+  alternates: { outlet: string; extract: ExtractedArticle }[],
+  rssFallback: string | null,
+): { text: string; byline: string | null; imageUrl: string | null; note: string | null } {
+  const usable = (row: ExtractedArticle | null) =>
+    Boolean(row && row.text.length >= BODY_MIN && !row.paywalled);
+  if (usable(preferred)) {
+    return {
+      text: preferred!.text,
+      byline: preferred!.byline,
+      imageUrl: preferred!.imageUrl,
+      note: null,
+    };
+  }
+  const wires = alternates
+    .filter((row) => usable(row.extract))
+    .sort((a, b) => b.extract.text.length - a.extract.text.length);
+  const wire = wires.find((row) => WIRE_OUTLETS.has(row.outlet)) ?? wires[0] ?? null;
+  if (wire) {
+    const outlet = preferred && (preferred.paywalled || preferred.text.length < BODY_MIN)
+      ? wire.outlet
+      : wire.outlet;
+    return {
+      text: wire.extract.text,
+      byline: wire.extract.byline ?? preferred?.byline ?? null,
+      imageUrl: preferred?.imageUrl ?? wire.extract.imageUrl,
+      note: `Paywalled at the original; this is the ${outlet} account.`,
+    };
+  }
+  const brief = cleanExtractedCopy(rssFallback ?? preferred?.text ?? "");
+  return {
+    text: brief,
+    byline: preferred?.byline ?? null,
+    imageUrl: preferred?.imageUrl ?? null,
+    note: brief ? "Full text was paywalled; printed from the RSS brief." : null,
+  };
 }
 
 const TZ = "America/Chicago";
@@ -591,6 +817,30 @@ export function rankClusters(items: NationalItem[], now = new Date()): NationalC
     .sort((a, b) => b.score - a.score || b.items.length - a.items.length);
 }
 
+/** Outlet pages to try for a full extract: chosen link, then conservative, then wires. */
+export function clusterExtractTargets(
+  cluster: NationalCluster,
+  preferredUrl: string,
+): { url: string; outlet: string; snippet: string | null }[] {
+  const seen = new Set<string>();
+  const out: { url: string; outlet: string; snippet: string | null }[] = [];
+  const take = (item: NationalItem) => {
+    const key = normalizeUrl(item.url);
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ url: item.url, outlet: item.outlet, snippet: item.snippet });
+  };
+  const preferred = cluster.items.find((item) => item.url === preferredUrl);
+  if (preferred) take(preferred);
+  for (const item of cluster.items) {
+    if (!WIRE_OUTLETS.has(item.outlet)) take(item);
+  }
+  for (const item of cluster.items) {
+    if (WIRE_OUTLETS.has(item.outlet)) take(item);
+  }
+  return out;
+}
+
 export function preferredItem(items: NationalItem[]): NationalItem {
   const conservative = items.filter((i) => !WIRE_OUTLETS.has(i.outlet));
   const pool = conservative.length ? conservative : items;
@@ -638,6 +888,9 @@ export function storyFromCluster(cluster: NationalCluster): NationalStory {
     headline: pick.title,
     summary,
     paragraphs: newspaperParas(summary),
+    body: null,
+    byline: null,
+    bodyNote: null,
     url: pick.url,
     source: pick.outlet,
     credit: creditLine(cluster.items),
@@ -762,6 +1015,9 @@ export function storiesFromEditor(
       headline: pick.headline,
       summary: pick.summary,
       paragraphs: pick.paragraphs,
+      body: null,
+      byline: null,
+      bodyNote: null,
       url: item.url,
       source: item.outlet,
       credit: pick.credit || creditLine(cluster.items),
@@ -804,11 +1060,17 @@ export function asNationalDesk(row: {
       source,
       typeof s.imageCredit === "string" ? s.imageCredit : null,
     );
+    const body = typeof s.body === "string" ? cleanExtractedCopy(s.body) : "";
+    const byline = typeof s.byline === "string" ? s.byline.replace(/\s+/g, " ").trim() : "";
+    const bodyNote = typeof s.bodyNote === "string" ? s.bodyNote.replace(/\s+/g, " ").trim() : "";
     stories.push({
       id: typeof s.id === "string" ? s.id : hashId(s.url),
       headline: s.headline.trim(),
       summary: paragraphs.join(" ") || summary,
       paragraphs,
+      body: body.length >= 80 ? body : null,
+      byline: byline || null,
+      bodyNote: bodyNote || null,
       url: s.url,
       source,
       credit: typeof s.credit === "string" ? s.credit : source,
@@ -1039,6 +1301,13 @@ export function sampleNationalDesk(issueId = "2026-10-05-morning"): NationalDesk
         imageUrl: null,
         imageCredit: null,
       },
-    ].map((story) => ({ ...story, paragraphs: newspaperParas(story.summary) })),
+    ].map((story) => {
+      const paragraphs = newspaperParas(story.summary);
+      const extra =
+        `${story.summary} Officials who spoke later in the day did not change the facts on the record. ` +
+        `A second account from the wire desk matched the first on the who, what and where. ` +
+        `The Times is setting the full extract here so the folio and the reader share the same copy.`;
+      return { ...story, paragraphs, body: extra, byline: null, bodyNote: null };
+    }),
   };
 }

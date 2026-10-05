@@ -141,14 +141,17 @@ import { asBeezDesk, insertBeez, type BeezDesk } from "@/lib/newspaper-beez";
 import { readTimesBeez } from "@/lib/newspaper-beez-fetch";
 import {
   asNationalDesk,
-  newspaperParas,
   sampleNationalDesk,
   nationalDropParts,
   nationalLeadColumns,
+  nationalPageCopy,
   nationalPhotoSize,
+  nationalStoryHasMore,
+  nationalStorySize,
   type NationalDesk,
   type NationalPhotoSize,
   type NationalStory,
+  type NationalStorySize,
 } from "@/lib/newspaper-national";
 import { readTimesNationalNews } from "@/lib/newspaper-national-fetch";
 import {
@@ -3371,15 +3374,56 @@ function NatDropText({ text }: { text: string }) {
   );
 }
 
-function NatSummary({ story, cols, drop }: { story: NationalStory; cols: 1 | 2 | 3; drop?: boolean }) {
-  const paras = newspaperParas(story.paragraphs?.length ? story.paragraphs : story.summary);
+function natCard(story: NationalStory): GameWrapCard {
+  const body = story.body?.trim() || story.summary;
+  return {
+    id: story.id,
+    favoriteKey: "",
+    teamName: story.source,
+    teamHref: "",
+    sportLabel: "National",
+    leaguePath: null,
+    headline: story.headline,
+    dek: story.summary,
+    body,
+    scoreLine: null,
+    when: story.publishedAt,
+    won: null,
+    gameHref: null,
+    wrapHref: story.url,
+    feedUrl: null,
+    gameId: null,
+    stats: [],
+    leaders: [],
+    teamStats: [],
+    division: [],
+    photo: story.imageUrl,
+    caption: story.imageCredit || story.source,
+    dateline: story.byline || story.credit,
+  };
+}
+
+function NatSummary({
+  story,
+  cols,
+  drop,
+  size,
+  ended,
+}: {
+  story: NationalStory;
+  cols: 1 | 2 | 3;
+  drop?: boolean;
+  size: NationalStorySize;
+  ended?: boolean;
+}) {
+  const paras = nationalPageCopy(story, size);
   if (!paras.length) return null;
   /* Shared `.wsj-prose.drop` + CSS columns parks ::first-letter in column 2.
      National leads set a real drop span in a two-column grid instead. */
   if (drop && cols > 1) {
     const { left, right } = nationalLeadColumns(paras);
     return (
-      <div className="tt-nat-lead-cols ended">
+      <div className={cn("tt-nat-lead-cols", ended && "ended")}>
         <div className="tt-nat-lead-col">
           {left.map((p, i) => (
             <p key={i}>{i === 0 ? <NatDropText text={p} /> : p}</p>
@@ -3396,7 +3440,7 @@ function NatSummary({ story, cols, drop }: { story: NationalStory; cols: 1 | 2 |
     );
   }
   return (
-    <div className={cn("wsj-prose", `c${cols}`, "ended")}>
+    <div className={cn("wsj-prose", `c${cols}`, ended && "ended")}>
       {paras.map((p, i) => (
         <p key={i}>{drop && i === 0 ? <NatDropText text={p} /> : p}</p>
       ))}
@@ -3434,26 +3478,46 @@ function NatStory({
   photo,
 }: {
   story: NationalStory;
-  size: "lead" | "medium" | "col";
+  size: NationalStorySize;
   photo: NationalPhotoSize | null;
 }) {
+  const open = useReader();
   const [failed, setFailed] = useState(false);
   const showPhoto = Boolean(photo && story.imageUrl && !failed);
+  const card = natCard(story);
+  const more = nationalStoryHasMore(story, size);
   return (
-    <article className={cn("tt-nat-story", size, showPhoto && "has-photo")}>
-      {showPhoto && photo ? <NatPhoto story={story} size={photo} onFail={() => setFailed(true)} /> : null}
+    <article
+      className={cn("tt-nat-story", size, showPhoto && "has-photo")}
+      data-tt-keys={storyReadKeys({ id: story.id, headline: story.headline, wrapHref: story.url }).join("|")}
+      data-tt-title={story.headline}
+    >
+      {showPhoto && photo ? (
+        <button type="button" className="tt-nat-photo-btn" onClick={() => open({ card })} aria-label={story.headline}>
+          <NatPhoto story={story} size={photo} onFail={() => setFailed(true)} />
+        </button>
+      ) : null}
       <div className="tt-nat-copy">
         <p className="tt-nat-src">
           <b>{story.source}</b>
           {story.credit && story.credit !== story.source ? <span> · {story.credit}</span> : null}
+          {story.byline ? <span> · {story.byline}</span> : null}
           {natWhen(story.publishedAt) ? <em> · {natWhen(story.publishedAt)}</em> : null}
         </p>
         <h3 className={cn("wsj-hl", size === "lead" ? "xl" : size === "medium" ? "md" : "sm")}>
-          <a href={story.url} target="_blank" rel="noreferrer" className="wsj-a wsj-story-link">
+          <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
             {story.headline}
-          </a>
+          </button>
         </h3>
-        <NatSummary story={story} cols={size === "lead" ? 2 : 1} drop={size === "lead"} />
+        <NatSummary story={story} cols={size === "lead" ? 2 : 1} drop={size === "lead"} size={size} ended={!more} />
+        {story.bodyNote ? <p className="tt-nat-note">{story.bodyNote}</p> : null}
+        {more ? (
+          <p className="wsj-jump">
+            <button type="button" className="wsj-jump-btn" onClick={() => open({ card })}>
+              Click for full story <span aria-hidden="true">→</span>
+            </button>
+          </p>
+        ) : null}
       </div>
     </article>
   );
@@ -3467,16 +3531,16 @@ function NationalNewsDesk({
   onTurn: (folio: string) => void;
 }) {
   if (!page.stories.length) return null;
-  const front = page.sectionPage === 1;
-  const lead = front ? page.stories[0] : null;
-  const afterLead = front ? page.stories.slice(1) : page.stories;
-  const mediums = front ? afterLead.slice(0, 3) : [];
-  const rest = front ? afterLead.slice(3) : afterLead;
-  const more = page.sectionPage < page.sectionCount ? `${page.section}${page.sectionPage + 1}` : null;
+  const lead = page.stories[0]!;
+  const afterLead = page.stories.slice(1);
+  const mediums = afterLead.filter((_, i) => nationalStorySize(1 + i) === "medium");
+  const rest = afterLead.filter((_, i) => nationalStorySize(1 + i) === "col");
+  const more = page.jumpFolio ?? (page.sectionPage < page.sectionCount ? `${page.section}${page.sectionPage + 1}` : null);
   const photoAt = (offset: number, story: NationalStory) =>
-    nationalPhotoSize(page.startIndex + offset, Boolean(story.imageUrl));
+    nationalPhotoSize(offset, Boolean(story.imageUrl));
+  const front = page.sectionPage === 1;
   return (
-    <div className={cn("tt-nat", !front && "inside")}>
+    <div className="tt-nat">
       <header className="wsj-sport-hero tt-nat-hero">
         <div className="wsj-sport-hero-mark">
           <span className="wsj-sport-code">{page.section}</span>
@@ -3495,9 +3559,9 @@ function NationalNewsDesk({
           The Times national desk · {page.editionLabel} · {natDate(page.day)}
         </p>
       ) : (
-        <p className="tt-nat-byline">Continued from B1 · news only</p>
+        <p className="tt-nat-byline">Continued from B{page.sectionPage - 1} · news only</p>
       )}
-      {lead ? <NatStory story={lead} size="lead" photo={photoAt(0, lead)} /> : null}
+      <NatStory story={lead} size="lead" photo={photoAt(0, lead)} />
       {mediums.length ? (
         <div className="tt-nat-mediums">
           {mediums.map((story, i) => (
@@ -3506,13 +3570,13 @@ function NationalNewsDesk({
         </div>
       ) : null}
       {rest.length ? (
-        <div className={cn(front ? "tt-nat-cols" : "tt-nat-inside")}>
+        <div className="tt-nat-cols">
           {rest.map((story, i) => (
             <NatStory
               key={story.id}
               story={story}
               size="col"
-              photo={photoAt((front ? 4 : 0) + i, story)}
+              photo={photoAt(1 + mediums.length + i, story)}
             />
           ))}
         </div>

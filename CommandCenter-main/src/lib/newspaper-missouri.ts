@@ -55,7 +55,26 @@ export function combestUrl(day: string): string {
 const LISTEN_HOSTS =
   /(^|\.)(podcasts\.apple\.com|open\.spotify\.com|spotify\.com|youtube\.com|youtu\.be|soundcloud\.com|rumble\.com|iheart\.com|podbean\.com|anchor\.fm|buzzsprout\.com|vimeo\.com)$/i;
 const SKIP_HOSTS =
-  /(^|\.)(archive\.is|archive\.ph|archive\.today|web\.archive\.org|johncombest\.com|msn\.com|amzn\.to|amazon\.com|facebook\.com|x\.com|twitter\.com)$/i;
+  /(^|\.)(archive\.is|archive\.ph|archive\.today|web\.archive\.org|johncombest\.com|johncombestblog\.com|msn\.com|amzn\.to|amazon\.com|facebook\.com|x\.com|twitter\.com)$/i;
+
+const PROMO_MARK =
+  /\b(advertorial|sponsored content|presented by|paid (?:content|post)|partner content|click for full story)\b/i;
+const PROMO_SERIES =
+  /\b(debt collection series|how to collect debt|empathy in debt collection|delinquent debtor)\b/i;
+const PROMO_PATH =
+  /johncombestblog\.com|blogcategory=debt|\/f\/(?:empathy-in-debt|how-to-collect-debt)/i;
+
+/**
+ * Self-promo, advertorial, and off-topic series copy — Combest's own
+ * johncombestblog.com "Debt collection series" is the type specimen.
+ */
+export function isPromoMissouriItem(item: { source?: string; headline: string; url: string }): boolean {
+  const hay = `${item.source ?? ""} ${item.headline} ${item.url}`;
+  if (PROMO_PATH.test(item.url) || PROMO_PATH.test(hay)) return true;
+  if (PROMO_MARK.test(hay) || PROMO_SERIES.test(hay)) return true;
+  if (/^combest$/i.test(item.source ?? "") && /johncombestblog\.com/i.test(item.url)) return true;
+  return false;
+}
 
 function decodeEntities(s: string): string {
   return s
@@ -160,6 +179,7 @@ export function parseCombest(html: string): MoItem[] {
     const text = textOf(m[2]!);
     if (text.length < 20 || /^(archived version|free syndicated|syndicated|here\b|read more|click)/i.test(text)) continue;
     const { source, headline } = splitSourceLine(text);
+    if (isPromoMissouriItem({ source, headline, url })) continue;
     out.push({
       id: hashId(normalizeUrl(url)),
       source: source || sourceFromHost(host),
@@ -287,7 +307,7 @@ export function buildMissouriDesk(input: {
   wires: MoItem[];
   scout: MoItem | null;
 }): MissouriDesk {
-  const all = dedupeMo([...input.combest, ...input.wires]);
+  const all = dedupeMo([...input.combest, ...input.wires]).filter((i) => !isPromoMissouriItem(i));
   const scoutKey = input.scout ? normalizeUrl(input.scout.url) : "";
   const items = all.filter((i) => i.kind === "story" && normalizeUrl(i.url) !== scoutKey);
   const listen = all.filter((i) => i.kind === "listen");
