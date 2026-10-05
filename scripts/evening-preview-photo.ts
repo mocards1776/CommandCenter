@@ -13,7 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import { fetchLogoDataUri } from "../supabase/functions/sports-finals/card.ts";
-import { fetchPreviewBoards, rankPreviewBoards } from "../supabase/functions/sports-finals/preview-boards.ts";
+import { fetchPreviewBoards, hydratePreviewStarters, rankPreviewBoards } from "../supabase/functions/sports-finals/preview-boards.ts";
 import {
   chicagoYmd,
   decoratePreviewGame,
@@ -67,6 +67,8 @@ function fixtureSlate(day = "2026-10-05"): PreviewGame[] {
       reasons: ["Playoff series"],
       tv: ["FOX"],
       seriesLine: "Playoff Gm 3",
+      probableAway: "Wheeler",
+      probableHome: "Glasnow",
     }),
     g({
       id: "nfl-kc-buf",
@@ -79,18 +81,21 @@ function fixtureSlate(day = "2026-10-05"): PreviewGame[] {
       heat: 54,
       reasons: ["Upcoming", "Your #1 team"],
       tv: ["NBC"],
+      oddsLine: "KC -2.5",
     }),
     g({
-      id: "nhl-stl-dal",
+      id: "nhl-phi-tb",
       sport: "nhl",
       league: "NHL",
       competition: null,
-      away: { teamId: "19", name: "Blues", abbrev: "STL", logo: espn("nhl", "19"), record: "2-1-0", color: "#002f87" },
-      home: { teamId: "9", name: "Stars", abbrev: "DAL", logo: espn("nhl", "9"), record: "2-1-1" },
-      startIso: ctIso(day, 19, 0),
-      heat: 54,
-      reasons: ["Upcoming", "Your #1 team"],
-      tv: ["FanDuel"],
+      away: { teamId: "4", name: "Flyers", abbrev: "PHI", logo: espn("nhl", "4"), record: "1-0-0" },
+      home: { teamId: "27", name: "Lightning", abbrev: "TB", logo: espn("nhl", "27"), record: "1-0-0", color: "#002868" },
+      startIso: ctIso(day, 18, 0),
+      heat: 62,
+      reasons: ["Upcoming"],
+      tv: ["ESPN+"],
+      probableAway: "Ersson",
+      probableHome: "Vasilevskiy",
     }),
     g({
       id: "cfb-ore-osu",
@@ -103,6 +108,7 @@ function fixtureSlate(day = "2026-10-05"): PreviewGame[] {
       heat: 80,
       reasons: ["Ranked matchup"],
       tv: ["FOX"],
+      oddsLine: "OSU -3.5",
     }),
     g({
       id: "mlb-stl-chc",
@@ -115,6 +121,8 @@ function fixtureSlate(day = "2026-10-05"): PreviewGame[] {
       heat: 92,
       reasons: ["Cardinals", "Rivalry"],
       tv: ["ESPN"],
+      probableAway: "Gray",
+      probableHome: "Imanaga",
     }),
     g({
       id: "soccer-ars-liv",
@@ -166,6 +174,7 @@ if (has("live")) {
     const ranked = rankPreviewBoards(await fetchPreviewBoards(now));
     const picked = selectEveningPreview(ranked, now, PREVIEW_LIMIT);
     if (picked.length) {
+      await hydratePreviewStarters(picked);
       display = sortPreviewForDisplay(picked);
       chicagoDate = chicagoYmd(now);
       source = "live";

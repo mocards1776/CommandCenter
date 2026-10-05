@@ -2,10 +2,12 @@
  * Evening-preview Telegram graphic. Same 1080×1350 family as finals cards:
  * navy field, team-color washes, Inter, no live field.
  *
- * Lead with matchup, time, network, and one RUWT why chip. Heat stays off.
+ * Left: logos + matchup + league/time/network. Right: records, starters or
+ * a short spread, and one why chip. Logos sit on a light disc so dark marks
+ * (Lightning bolt on navy) stay readable — same idea as TeamMark.
  */
 import { FINALS_ALERT_TARGET_HEIGHT, FINALS_ALERT_WIDTH } from "./svg.ts";
-import { printClock, type PreviewGame } from "./preview-slate.ts";
+import { printClock, recordsLine, starterLine, type PreviewGame } from "./preview-slate.ts";
 
 export const PREVIEW_ALERT_WIDTH = FINALS_ALERT_WIDTH;
 export const PREVIEW_ALERT_HEIGHT = FINALS_ALERT_TARGET_HEIGHT;
@@ -60,15 +62,29 @@ function leagueLabel(game: PreviewGame): string {
   return game.league;
 }
 
+const LOGO_PLATE = "#f4f0e6";
+
+function chipWidth(label: string): number {
+  return Math.min(200, Math.max(88, label.length * 9.2 + 22));
+}
+
 function logoMark(side: PreviewGame["away"], x: number, y: number, size: number): string {
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const r = size / 2;
+  const plate = `<circle class="logo-plate" cx="${cx}" cy="${cy}" r="${r}" fill="${LOGO_PLATE}" stroke="rgba(255,255,255,0.55)" stroke-width="1.5"/>`;
+  const inset = Math.max(5, Math.round(size * 0.12));
   if (side.logoData) {
-    return `<image href="${side.logoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"/>`;
+    return [
+      plate,
+      `<image href="${side.logoData}" x="${x + inset}" y="${y + inset}" width="${size - inset * 2}" height="${size - inset * 2}" preserveAspectRatio="xMidYMid meet"/>`,
+    ].join("");
   }
   return [
-    `<circle cx="${x + size / 2}" cy="${y + size / 2}" r="${size / 2 - 2}" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.18)"/>`,
-    text(side.abbrev.slice(0, 3), x + size / 2, y + size / 2 + 7, {
-      size: 16,
-      fill: "#d5dae6",
+    plate,
+    text(side.abbrev.slice(0, 3), cx, cy + 6, {
+      size: 15,
+      fill: "#1a2438",
       anchor: "middle",
       weight: 700,
     }),
@@ -76,7 +92,7 @@ function logoMark(side: PreviewGame["away"], x: number, y: number, size: number)
 }
 
 function chip(label: string, x: number, y: number): { svg: string; width: number } {
-  const w = Math.min(240, Math.max(88, label.length * 9.2 + 22));
+  const w = chipWidth(label);
   return {
     width: w,
     svg: [
@@ -134,18 +150,27 @@ export function renderPreviewSvg(card: PreviewCard): string {
     parts.push(logoMark(game.home, M + pad + 4 + logo + 10, logoY, logo));
     const textX = M + pad + 4 + logo * 2 + 28;
     const why = game.why;
-    const chipW = why ? Math.min(240, Math.max(88, why.length * 9.2 + 22)) : 0;
-    const textMax = W - M - pad - (why ? chipW + 20 : 0) - textX;
-    void textMax;
+    const chipW = why ? chipWidth(why) : 0;
+    const colRight = W - M - pad;
+    const detailRight = chipW ? colRight - chipW - 16 : colRight;
+    const mid = boxY + boxH / 2;
     parts.push(
-      text(matchupLabel(game), textX, boxY + boxH / 2 - 6, { size: 24, fill: "#f7f4ee", weight: 700 }),
+      text(matchupLabel(game), textX, mid - 6, { size: 24, fill: "#f7f4ee", weight: 700 }),
     );
     const meta = [leagueLabel(game), `${printClock(game.startIso)} CT`, game.network]
       .filter(Boolean)
       .join("  ·  ");
-    parts.push(text(meta, textX, boxY + boxH / 2 + 22, { size: 16, fill: "#c5cce0", weight: 600 }));
+    parts.push(text(meta, textX, mid + 22, { size: 16, fill: "#c5cce0", weight: 600 }));
+    const records = recordsLine(game);
+    const starters = starterLine(game);
+    if (records) {
+      parts.push(text(records, detailRight, mid - 6, { size: 16, fill: "#f7f4ee", anchor: "end", weight: 700 }));
+    }
+    if (starters) {
+      parts.push(text(starters, detailRight, mid + 22, { size: 15, fill: "#c5cce0", anchor: "end", weight: 600 }));
+    }
     if (why) {
-      const drawn = chip(why, W - M - pad - chipW, boxY + (boxH - 28) / 2);
+      const drawn = chip(why, colRight - chipW, mid - 14);
       parts.push(drawn.svg);
     }
   });
