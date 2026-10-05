@@ -171,8 +171,8 @@ assert(
   "a spiked story never reaches the sport section",
 );
 assert(
-  mlb?.kind === "sport-front" && mlb.articles.some((a) => a.card.id === "league-no-hitter"),
-  "the league lead still runs in its section",
+  mlb?.kind === "sport-front" && mlb.articles.every((a) => a.card.id !== "league-no-hitter"),
+  "the league lead stays on A1 and does not reprint in its sport section",
 );
 
 // News reorders inside its own slots; the wraps hold the rule desk's places.
