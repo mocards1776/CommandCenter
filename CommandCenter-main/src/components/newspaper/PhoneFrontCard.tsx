@@ -18,7 +18,7 @@ export function PhoneFrontCard({
     <article className="tt-phone-card tt-phone-front" aria-label="Page A1">
       <header className="tt-phone-front-mast">
         <div className="tt-phone-front-plate">
-          <p className="tt-phone-kicker">Sports Final · {editionLabel}</p>
+          <p className="tt-phone-kicker">{editionLabel}</p>
           <h1 className="wsj-nameplate">The Thompson Times</h1>
           <p className="tt-phone-dek">
             {editionDateline(date)} · Section A · A1

@@ -8229,6 +8229,7 @@ li.counting .tt-count.card {
 }
 .tt-phone-front-plate .tt-phone-kicker {
   text-align: left;
+  white-space: nowrap;
 }
 .tt-phone-front .wsj-nameplate {
   margin: 4px 0 2px;
