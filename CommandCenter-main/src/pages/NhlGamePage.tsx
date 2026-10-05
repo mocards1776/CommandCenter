@@ -13,7 +13,9 @@ import NhlBoxScore from "@/components/sports/NhlBoxScore";
 import NhlGameLeaders from "@/components/sports/NhlGameLeaders";
 import NhlIceRink, { type NhlIceGoalieBadge } from "@/components/sports/NhlIceRink";
 import NhlScoringSummary from "@/components/sports/NhlScoringSummary";
+import NhlGoalies from "@/components/sports/NhlGoalies";
 import NhlThreeStars from "@/components/sports/NhlThreeStars";
+import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
 import { useSportsBack, useSwipeBack } from "@/hooks/useSwipeBack";
 import {
   dedupeNhlEspnVideos,
@@ -23,6 +25,7 @@ import {
   nhlClockKey,
   nhlHeadshot,
   rankNhlWrapVideos,
+  type NhlBoxRow,
   type NhlGameDetail,
   type NhlGameVideo,
   type NhlGoalClip,
@@ -308,6 +311,7 @@ export default function NhlGamePage() {
               ) : g.leaders.length > 0 ? (
                 <NhlGameLeaders g={g} />
               ) : null}
+              {g.final ? <NhlGoalies away={g.away} home={g.home} rows={goalieRows(g)} /> : null}
 
               <div
                 className={cn(
@@ -478,31 +482,39 @@ function TeamBlock({
 
 const LOWER_IS_BETTER = new Set(["Giveaways", "PIM"]);
 
+function goalieRows(g: NhlGameDetail): { side: NhlScoreSide; row: NhlBoxRow }[] {
+  const out: { side: NhlScoreSide; row: NhlBoxRow }[] = [];
+  for (const side of [g.away, g.home]) {
+    const group = g.boxGroups.find(
+      (b) => b.name === "Goalies" && (b.teamId === String(side.teamId) || b.teamAbbrev === side.abbrev),
+    );
+    for (const row of group?.rows ?? []) out.push({ side, row });
+  }
+  return out;
+}
+
 function TeamStats({ g }: { g: NhlGameDetail }) {
-  const head = (side: NhlScoreSide, align: "left" | "right") => (
-    <Link
-      to={`/sports/nhl/team/${side.teamId}`}
-      className={cn("flex min-w-0 items-center gap-2", align === "right" && "flex-row-reverse text-right")}
-    >
-      {side.logo ? <LogoPlate src={side.logo} className="h-9 w-9" /> : null}
-      <span className="min-w-0">
-        <span className="text-cream block text-[13px] font-semibold leading-tight">{side.abbrev}</span>
-        {side.record ? (
-          <span className="numeral text-chalk-dim block text-[10.5px] leading-tight">{side.record}</span>
-        ) : null}
-      </span>
-    </Link>
-  );
   return (
     <section className="bg-panel overflow-hidden rounded-xl border border-white/[0.08]">
       <div className="border-b border-white/[0.06] px-4 py-2.5">
         <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e8e4d9]">Team stats</h3>
       </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-white/[0.06] px-4 py-3">
-        {head(g.away, "left")}
-        <span className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">vs</span>
-        {head(g.home, "right")}
-      </div>
+      <TeamStatsLogos
+        away={{
+          logo: g.away.logo,
+          abbrev: g.away.abbrev,
+          name: g.away.name,
+          record: g.away.record,
+          href: `/sports/nhl/team/${g.away.teamId}`,
+        }}
+        home={{
+          logo: g.home.logo,
+          abbrev: g.home.abbrev,
+          name: g.home.name,
+          record: g.home.record,
+          href: `/sports/nhl/team/${g.home.teamId}`,
+        }}
+      />
       <ul className="divide-y divide-white/[0.05]">
         {g.teamStats.map((row) => {
           const a = Number.parseFloat(row.away);

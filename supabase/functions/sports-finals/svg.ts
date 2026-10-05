@@ -11,7 +11,17 @@
  * probability shares a row with division/conference standings when ESPN has
  * both; missing standings leave the chart full width.
  */
-import { formatFinalsTimestamp, type FinalCard, type FinalLeader, type FinalSide, type FinalStat } from "./card.ts";
+import {
+  formatFinalsTimestamp,
+  type FinalCard,
+  type FinalLeader,
+  type FinalPlayer,
+  type FinalSide,
+  type FinalStar,
+  type FinalStat,
+  type MlbBox,
+  type MlbBoxSide,
+} from "./card.ts";
 import type { StandingRow, StandingTable } from "./standings.ts";
 import {
   CFB_QUARTER_SEC,
@@ -71,11 +81,12 @@ export function paintColor(primary: string, alternate: string | null): string {
   return `#${lifted.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function sideTitle(side: FinalSide): string {
+function sideTitleLines(side: FinalSide): string[] {
   const rank = side.rank ? `#${side.rank} ` : "";
   const text = `${rank}${side.name}`;
-  if (text.length <= 24) return text;
-  return `${rank}${side.abbrev}`;
+  if (text.length <= 20) return [text];
+  const wrapped = wrap(text, 18, 2);
+  return wrapped.length ? wrapped : [side.abbrev];
 }
 
 function wrap(text: string | null, max: number, limit: number): string[] {
@@ -485,13 +496,199 @@ function standingsBlock(
         );
       }
       parts.push(text(String(row.rank || i + 1), x + CARD_IN, cursor + 4, { size: 16, fill: paint, weight: 700 }));
-      parts.push(text(row.abbrev, x + CARD_IN + 28, cursor + 4, { size: 18, fill: nameFill, weight }));
-      parts.push(text(row.record, x + CARD_IN + inner - 56, cursor + 4, { size: 17, fill: nameFill, anchor: "end", weight }));
-      parts.push(text(row.extra || "–", x + CARD_IN + inner, cursor + 4, { size: 16, fill: "#a8b0c2", anchor: "end", weight: 500 }));
+      parts.push(text(row.abbrev, x + CARD_IN + 32, cursor + 4, { size: 18, fill: nameFill, weight }));
+      const extraW = table.extraLabel ? 52 : 0;
+      parts.push(
+        text(row.record, x + CARD_IN + inner - extraW, cursor + 4, {
+          size: 17,
+          fill: nameFill,
+          anchor: "end",
+          weight,
+        }),
+      );
+      if (table.extraLabel) {
+        parts.push(
+          text(row.extra || "–", x + CARD_IN + inner, cursor + 4, {
+            size: 16,
+            fill: "#a8b0c2",
+            anchor: "end",
+            weight: 500,
+          }),
+        );
+      }
       cursor += rowH;
     }
     cursor += gap;
   }
+  return parts.join("");
+}
+
+let photoClip = 0;
+
+function playerPhoto(
+  photo: string | null | undefined,
+  x: number,
+  y: number,
+  size: number,
+  fallback: string,
+): string {
+  if (photo) {
+    photoClip += 1;
+    const id = `ph${photoClip}`;
+    const cx = x + size / 2;
+    const cy = y + size / 2;
+    return [
+      `<clipPath id="${id}"><circle cx="${cx}" cy="${cy}" r="${size / 2}"/></clipPath>`,
+      `<image href="${photo}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})"/>`,
+    ].join("");
+  }
+  return [
+    `<circle cx="${x + size / 2}" cy="${y + size / 2}" r="${size / 2}" fill="rgba(255,255,255,0.08)"/>`,
+    text(fallback.slice(0, 1), x + size / 2, y + size / 2 + 8, {
+      size: 18,
+      fill: "#c5cce0",
+      anchor: "middle",
+      weight: 700,
+    }),
+  ].join("");
+}
+
+function sideLogoMark(side: FinalSide, cx: number, y: number, size: number, paint: string, anchor: "start" | "end"): string {
+  const x = anchor === "end" ? cx - size : cx;
+  if (side.logoData) {
+    return `<image href="${side.logoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"/>`;
+  }
+  return text(side.abbrev, anchor === "end" ? cx : cx, y + size - 8, {
+    size: 16,
+    fill: paint,
+    anchor,
+    weight: 700,
+    spacing: 0.4,
+  });
+}
+
+function starsHeight(stars: FinalStar[]): number {
+  if (!stars.length) return 0;
+  return 56 + 168;
+}
+
+function starsBlock(
+  stars: FinalStar[],
+  card: FinalCard,
+  x: number,
+  y: number,
+  w: number,
+  awayPaint: string,
+  homePaint: string,
+): string {
+  const order = [2, 1, 3]
+    .map((n) => stars.find((row) => row.star === n))
+    .filter((row): row is FinalStar => Boolean(row));
+  const colW = (w - CARD_IN * 2) / Math.max(order.length, 1);
+  const parts = [sectionTitle("Three Stars", x + CARD_IN, y + 34)];
+  order.forEach((star, i) => {
+    const cx = x + CARD_IN + colW * i + colW / 2;
+    const photo = 72;
+    const paint = star.teamAbbrev === card.away.abbrev ? awayPaint : homePaint;
+    const medal = star.star === 1 ? "#f5c84c" : star.star === 2 ? "#d4dae6" : "#d9925a";
+    parts.push(playerPhoto(star.photoData, cx - photo / 2, y + 50, photo, star.name));
+    parts.push(text(`${star.star}`, cx, y + 50 + photo + 22, { size: 14, fill: medal, anchor: "middle", weight: 700 }));
+    parts.push(text(star.name, cx, y + 50 + photo + 46, { size: 18, fill: "#f4f0e6", anchor: "middle", weight: 700 }));
+    parts.push(text(star.line, cx, y + 50 + photo + 68, { size: 14, fill: paint, anchor: "middle", weight: 500 }));
+  });
+  return parts.join("");
+}
+
+function peopleHeight(_title: string, rows: FinalPlayer[]): number {
+  if (!rows.length) return 0;
+  return 50 + rows.length * 56 + 12;
+}
+
+function peopleBlock(
+  title: string,
+  rows: FinalPlayer[],
+  x: number,
+  y: number,
+  w: number,
+  awayPaint: string,
+  homePaint: string,
+  awayAbbrev: string,
+): string {
+  const parts = [sectionTitle(title, x + CARD_IN, y + 34)];
+  let cursor = y + 50;
+  for (const row of rows) {
+    const paint = row.teamAbbrev === awayAbbrev ? awayPaint : homePaint;
+    parts.push(playerPhoto(row.photoData, x + CARD_IN, cursor, 40, row.name));
+    parts.push(text(row.name, x + CARD_IN + 52, cursor + 18, { size: 20, fill: "#f4f0e6", weight: 700 }));
+    parts.push(text(row.line, x + CARD_IN + 52, cursor + 40, { size: 15, fill: paint, weight: 500 }));
+    cursor += 56;
+  }
+  return parts.join("");
+}
+
+function mlbBoxHeight(box: MlbBox): number {
+  const bat = Math.max(box.batting.away.rows.length, box.batting.home.rows.length);
+  const pit = Math.max(box.pitching.away.rows.length, box.pitching.home.rows.length);
+  const rowH = 26;
+  const header = 70;
+  return header + (bat + 1) * rowH + 36 + (pit + 1) * rowH + 16;
+}
+
+function mlbSideTable(side: MlbBoxSide, x: number, y: number, w: number, paint: string, title: string): string {
+  const cols = side.labels;
+  const nameW = Math.max(118, w * 0.34);
+  const colW = (w - nameW) / Math.max(cols.length, 1);
+  const parts = [
+    text(title, x, y, { size: 14, fill: paint, weight: 700, spacing: 0.6 }),
+    text(side.abbrev, x + w, y, { size: 14, fill: "#8b93a7", anchor: "end", weight: 700 }),
+  ];
+  const headY = y + 22;
+  parts.push(text("Player", x, headY, { size: 12, fill: "#8b93a7", weight: 700 }));
+  cols.forEach((label, i) => {
+    parts.push(
+      text(label, x + nameW + colW * i + colW / 2, headY, {
+        size: 12,
+        fill: "#8b93a7",
+        anchor: "middle",
+        weight: 700,
+      }),
+    );
+  });
+  side.rows.forEach((row, r) => {
+    const ry = headY + 26 + r * 26;
+    const label = row.pos ? `${row.name} ${row.pos}` : row.name;
+    parts.push(text(label.length > 16 ? row.name : label, x, ry, { size: 15, fill: "#f4f0e6", weight: 500 }));
+    row.cells.forEach((cell, i) => {
+      parts.push(
+        text(cell, x + nameW + colW * i + colW / 2, ry, {
+          size: 15,
+          fill: "#d5dae6",
+          anchor: "middle",
+          weight: 500,
+        }),
+      );
+    });
+  });
+  return parts.join("");
+}
+
+function mlbBoxBlock(box: MlbBox, x: number, y: number, w: number, awayPaint: string, homePaint: string): string {
+  const half = (w - GAP) / 2;
+  const batH = 36 + (Math.max(box.batting.away.rows.length, box.batting.home.rows.length) + 1) * 26;
+  const parts = [
+    sectionTitle("Box score", x + CARD_IN, y + 34),
+    mlbSideTable(box.batting.away, x + CARD_IN, y + 56, half - CARD_IN, awayPaint, "Batting"),
+    mlbSideTable(box.batting.home, x + CARD_IN + half + GAP, y + 56, half - CARD_IN, homePaint, "Batting"),
+    mlbSideTable(box.pitching.away, x + CARD_IN, y + 56 + batH, half - CARD_IN, awayPaint, "Pitching"),
+    mlbSideTable(
+      box.pitching.home,
+      x + CARD_IN + half + GAP,
+      y + 56 + batH,
+      half - CARD_IN,
+      homePaint,
+      "Pitching",
+    ),
+  ];
   return parts.join("");
 }
 
@@ -552,24 +749,43 @@ export function renderFinalSvg(card: FinalCard): string {
     }),
   );
   y = logoY + logoSize + 28;
-  parts.push(
-    text(sideTitle(card.away), M, y, {
-      size: 24,
-      fill: awayLoses ? "#8b93a7" : "#f7f4ee",
-      anchor: "start",
-      weight: 700,
-    }),
-  );
-  parts.push(
-    text(sideTitle(card.home), W - M, y, {
-      size: 24,
-      fill: homeLoses ? "#8b93a7" : "#f7f4ee",
-      anchor: "end",
-      weight: 700,
-    }),
-  );
-  y += 28;
-  if (card.away.record || card.home.record) {
+  const awayNames = sideTitleLines(card.away);
+  const homeNames = sideTitleLines(card.home);
+  const nameLines = Math.max(awayNames.length, homeNames.length);
+  for (let i = 0; i < nameLines; i++) {
+    if (awayNames[i]) {
+      parts.push(
+        text(awayNames[i]!, M, y, {
+          size: 26,
+          fill: awayLoses ? "#8b93a7" : "#f7f4ee",
+          anchor: "start",
+          weight: 700,
+        }),
+      );
+    }
+    if (homeNames[i]) {
+      parts.push(
+        text(homeNames[i]!, W - M, y, {
+          size: 26,
+          fill: homeLoses ? "#8b93a7" : "#f7f4ee",
+          anchor: "end",
+          weight: 700,
+        }),
+      );
+    }
+    y += 30;
+  }
+  if (card.playoff && card.seriesLine) {
+    parts.push(
+      text(card.seriesLine, W / 2, y + 4, {
+        size: 26,
+        fill: "#f7f4ee",
+        anchor: "middle",
+        weight: 700,
+      }),
+    );
+    y += 28;
+  } else if (card.away.record || card.home.record) {
     if (card.away.record) {
       parts.push(
         text(card.away.record, M, y, {
@@ -610,7 +826,7 @@ export function renderFinalSvg(card: FinalCard): string {
 
   const headerBottom = y;
   const hasWp = card.winProbability.length > 0;
-  const standings = (card.standings ?? []).filter((table) => table.rows.length > 0);
+  const standings = (card.playoff ? [] : card.standings ?? []).filter((table) => table.rows.length > 0);
   const hasStandings = standings.length > 0;
   const splitWp = hasWp && hasStandings;
   const fullW = W - M * 2;
@@ -664,31 +880,66 @@ export function renderFinalSvg(card: FinalCard): string {
     y += blockH + GAP;
   }
 
+  const mlbBox = card.sport === "mlb" ? card.mlbBox : null;
+  const hasMlbBox = Boolean(mlbBox && (mlbBox.batting.away.rows.length || mlbBox.batting.home.rows.length));
+  const hasStars = card.threeStars.length > 0;
+  const hasGoalies = card.goalies.length > 0;
   const hasStats = card.stats.length > 0;
-  const hasLeaders = card.leaders.length > 0;
-  const stacked = hasStats && hasLeaders;
-  const colW = stacked ? (fullW - GAP) / 2 : fullW;
-  const statsH = hasStats ? statsHeight(card.stats.length) : 0;
-  const boxH = hasLeaders ? leadersHeight(card.leaders, stacked) : 0;
-  const colH = Math.max(statsH, boxH);
+  const hasLeaders = !hasStars && card.leaders.length > 0;
+  const stackedPeople = hasStars && (hasGoalies || hasLeaders || hasStats);
+  const stackedStats = hasStats && (hasStars || hasGoalies || hasLeaders);
+  const colW = stackedStats || stackedPeople ? (fullW - GAP) / 2 : fullW;
 
-  if (hasStats) {
-    const x = M;
-    parts.push(panel(x, y, colW, colH));
-    parts.push(text(card.away.abbrev, x + CARD_IN, y + 34, { size: 16, fill: awayPaint, weight: 700, spacing: 0.6 }));
-    parts.push(text("Team stats", x + colW / 2, y + 34, { size: 17, fill: "#e8e4d9", anchor: "middle", weight: 700, spacing: 1.2 }));
-    parts.push(text(card.home.abbrev, x + colW - CARD_IN, y + 34, { size: 16, fill: homePaint, anchor: "end", weight: 700, spacing: 0.6 }));
-    parts.push(statRows(card.stats, x, y + 50, colW, awayPaint, homePaint));
+  if (hasMlbBox && mlbBox) {
+    const boxH = mlbBoxHeight(mlbBox);
+    parts.push(panel(M, y, fullW, boxH));
+    parts.push(mlbBoxBlock(mlbBox, M, y, fullW, awayPaint, homePaint));
+    y += boxH + GAP;
+  } else {
+    const statsH = hasStats ? statsHeight(card.stats.length) : 0;
+    const starH = hasStars ? starsHeight(card.threeStars) : 0;
+    const goalieH = hasGoalies ? peopleHeight("Goalies", card.goalies) : 0;
+    const leadH = hasLeaders ? leadersHeight(card.leaders, stackedStats) : 0;
+    const rightH = hasStars ? starH + (hasGoalies ? goalieH + 8 : 0) : hasGoalies ? goalieH : leadH;
+    const colH = Math.max(statsH, rightH, starH, leadH);
+
+    if (hasStats) {
+      const x = M;
+      parts.push(panel(x, y, colW, colH));
+      parts.push(sideLogoMark(card.away, x + CARD_IN, y + 12, 28, awayPaint, "start"));
+      parts.push(
+        text("Team stats", x + colW / 2, y + 34, {
+          size: 17,
+          fill: "#e8e4d9",
+          anchor: "middle",
+          weight: 700,
+          spacing: 1.2,
+        }),
+      );
+      parts.push(sideLogoMark(card.home, x + colW - CARD_IN, y + 12, 28, homePaint, "end"));
+      parts.push(statRows(card.stats, x, y + 50, colW, awayPaint, homePaint));
+    }
+
+    if (hasStars || hasGoalies || hasLeaders) {
+      const x = hasStats ? M + colW + GAP : M;
+      const rightW = hasStats ? colW : fullW;
+      parts.push(panel(x, y, rightW, colH));
+      if (hasStars) {
+        parts.push(starsBlock(card.threeStars, card, x, y, rightW, awayPaint, homePaint));
+        if (hasGoalies) {
+          const gy = y + starsHeight(card.threeStars);
+          parts.push(peopleBlock("Goalies", card.goalies, x, gy, rightW, awayPaint, homePaint, card.away.abbrev));
+        }
+      } else if (hasGoalies) {
+        parts.push(peopleBlock("Goalies", card.goalies, x, y, rightW, awayPaint, homePaint, card.away.abbrev));
+      } else {
+        parts.push(sectionTitle("Box leaders", x + CARD_IN, y + 34));
+        parts.push(leaderBlock(card.leaders, x, y + 50, rightW, awayPaint, homePaint, card.away.abbrev, stackedStats));
+      }
+    }
+
+    if (hasStats || hasStars || hasGoalies || hasLeaders) y += colH + GAP;
   }
-
-  if (hasLeaders) {
-    const x = stacked ? M + colW + GAP : M;
-    parts.push(panel(x, y, colW, colH));
-    parts.push(sectionTitle("Box leaders", x + CARD_IN, y + 34));
-    parts.push(leaderBlock(card.leaders, x, y + 50, colW, awayPaint, homePaint, card.away.abbrev, stacked));
-  }
-
-  if (hasStats || hasLeaders) y += colH + GAP;
 
   y += 4;
   const footerRight = card.odds?.graphicLine || centerStatus(card.statusLabel);

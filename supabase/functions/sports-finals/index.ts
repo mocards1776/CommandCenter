@@ -132,7 +132,7 @@ async function favorites(db: SupabaseClient): Promise<FavoriteToken[]> {
 }
 
 async function deliver(game: PushGame, chats: string[], token: string): Promise<{ caption: string; bytes: number }> {
-  const card = await loadFinalCard(game.sport, game.id);
+  const card = await loadFinalCard(game.sport, game.id, { waitForStars: true });
   if (!card.final) throw new Error(`${game.sport}:${game.id} is not final`);
   const png = await rasterizeSvg(renderFinalSvg(card));
   const caption = finalCaption(card, origin());
@@ -292,7 +292,7 @@ Deno.serve(async (req: Request) => {
       return json({ error: "sport and eventId are required" }, 400);
     }
     try {
-      const card = await loadFinalCard(sport, eventId);
+      const card = await loadFinalCard(sport, eventId, { waitForStars: action === "send" });
       if (action === "send" && body.allowLive !== true && !card.final) {
         return json({ error: "Game is not final" }, 409);
       }

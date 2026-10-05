@@ -7,6 +7,7 @@ import { liveScoreHeader } from "@/lib/apple-score";
 import AppleScoreCluster from "@/components/sports/AppleScoreCluster";
 import PlayoffSeriesLine from "@/components/sports/PlayoffSeriesLine";
 import LogoPlate from "@/components/sports/LogoPlate";
+import TeamStatsLogos from "@/components/sports/TeamStatsLogos";
 import NflFieldMap from "@/components/sports/NflFieldMap";
 import CfbWinProbability from "@/components/sports/CfbWinProbability";
 import EspnVideoEmbed from "@/components/sports/EspnVideoEmbed";
@@ -554,41 +555,22 @@ export function NflGameDetailView({
               Team stats
             </h2>
           </div>
-          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-white/[0.06] px-4 py-3">
-            <Link
-              to={`/sports/nfl/team/${g.away.teamId}`}
-              className="flex min-w-0 items-center gap-2 hover:opacity-90"
-            >
-              {g.away.logo ? <LogoPlate src={g.away.logo} className="h-8 w-8" /> : null}
-              <span className="min-w-0">
-                <span className="text-cream block text-[13px] font-semibold leading-tight">
-                  {g.away.abbrev}
-                </span>
-                {g.away.record ? (
-                  <span className="numeral text-chalk-dim block text-[10.5px] leading-tight">
-                    {g.away.record}
-                  </span>
-                ) : null}
-              </span>
-            </Link>
-            <span className="text-[10px] uppercase tracking-[0.14em] text-[#8b93a7]">vs</span>
-            <Link
-              to={`/sports/nfl/team/${g.home.teamId}`}
-              className="flex min-w-0 items-center justify-end gap-2 text-right hover:opacity-90"
-            >
-              <span className="min-w-0">
-                <span className="text-cream block text-[13px] font-semibold leading-tight">
-                  {g.home.abbrev}
-                </span>
-                {g.home.record ? (
-                  <span className="numeral text-chalk-dim block text-[10.5px] leading-tight">
-                    {g.home.record}
-                  </span>
-                ) : null}
-              </span>
-              {g.home.logo ? <LogoPlate src={g.home.logo} className="h-8 w-8" /> : null}
-            </Link>
-          </div>
+          <TeamStatsLogos
+            away={{
+              logo: g.away.logo,
+              abbrev: g.away.abbrev,
+              name: g.away.name,
+              record: g.away.record,
+              href: `/sports/nfl/team/${g.away.teamId}`,
+            }}
+            home={{
+              logo: g.home.logo,
+              abbrev: g.home.abbrev,
+              name: g.home.name,
+              record: g.home.record,
+              href: `/sports/nfl/team/${g.home.teamId}`,
+            }}
+          />
           <ul>
             {teamStatLabels.map((statLabel) => {
               const away =

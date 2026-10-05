@@ -6,7 +6,13 @@
  * win-probability series, and each club's division or conference table.
  * It does not include the live field.
  */
+import {
+  fetchNhlThreeStarsWithRetry,
+  starLine,
+  type NhlLandingStar,
+} from "./nhl-stars.ts";
 import { oddsFromSummary, type FinalOdds } from "./odds.ts";
+import { mlbPlayoffFromSummary } from "./series.ts";
 import { loadCardStandings, type StandingTable } from "./standings.ts";
 import {
   mapCfbWinProbability,
@@ -87,6 +93,43 @@ export type FinalLeader = {
   /** Caption-only sentence. The graphic still draws `line`. */
   highlight?: string | null;
   highlightScore?: number;
+  photoUrl?: string | null;
+  photoData?: string | null;
+};
+
+export type FinalStar = {
+  star: 1 | 2 | 3;
+  name: string;
+  teamAbbrev: string;
+  line: string;
+  position: string | null;
+  photoUrl: string | null;
+  photoData: string | null;
+};
+
+export type FinalPlayer = {
+  name: string;
+  teamAbbrev: string;
+  line: string;
+  photoUrl: string | null;
+  photoData: string | null;
+};
+
+export type MlbBoxRow = {
+  name: string;
+  pos: string;
+  cells: string[];
+};
+
+export type MlbBoxSide = {
+  abbrev: string;
+  labels: string[];
+  rows: MlbBoxRow[];
+};
+
+export type MlbBox = {
+  batting: { away: MlbBoxSide; home: MlbBoxSide };
+  pitching: { away: MlbBoxSide; home: MlbBoxSide };
 };
 
 export type FinalCard = {
@@ -95,6 +138,10 @@ export type FinalCard = {
   eventId: string;
   statusLabel: string;
   final: boolean;
+  /** MLB postseason only. Regular-season cards stay false. */
+  playoff: boolean;
+  /** ESPN series copy, e.g. "MIL leads series 2-0 · Game 2 of 5". */
+  seriesLine: string | null;
   venue: string | null;
   headline: string | null;
   away: FinalSide;
@@ -102,6 +149,11 @@ export type FinalCard = {
   periods: string[];
   stats: FinalStat[];
   leaders: FinalLeader[];
+  /** Official NHL Three Stars. Empty until NHL.com posts them. */
+  threeStars: FinalStar[];
+  goalies: FinalPlayer[];
+  /** MLB batting + pitching lines. Null for other sports. */
+  mlbBox: MlbBox | null;
   winProbability: CfbWinProbPoint[];
   /** Division / conference tables for the two clubs. Empty when ESPN has none. */
   standings: StandingTable[];
@@ -220,6 +272,7 @@ function resultLine(card: FinalCard): string {
 }
 
 function recordMoveLine(card: FinalCard): string | null {
+  if (card.playoff) return card.seriesLine;
   const sides = resultSides(card);
   if (sides) {
     if (!sides.winner.record || !sides.loser.record) return null;
@@ -406,7 +459,7 @@ function sideFrom(comp: Rec): FinalSide {
   return {
     teamId: str(team.id),
     abbrev: str(team.abbreviation) || "—",
-    name: display.length > 0 && display.length <= 22 ? display : short,
+    name: display.length > 0 && display.length <= 32 ? display : short,
     record: recordOf(comp),
     score: num(comp.score),
     color: str(team.color) || "334155",
@@ -545,6 +598,8 @@ function pickLeaders(raw: Rec): FinalLeader[] {
         line,
         highlight: hint?.text ?? null,
         highlightScore: hint?.score,
+        photoUrl: headshotHref(person),
+        photoData: null,
       });
       groups.set(name, slot);
     }
@@ -554,6 +609,191 @@ function pickLeaders(raw: Rec): FinalLeader[] {
     ...[...groups.keys()].filter((name) => !GROUP_PREFERENCE.includes(name)),
   ].slice(0, 3);
   return ordered.flatMap((name) => groups.get(name)?.rows ?? []);
+}
+
+function headshotHref(person: Rec): string | null {
+  const nested = str(rec(person.headshot).href);
+  if (nested.startsWith("https://")) return nested;
+  const direct = str(person.headshot);
+  return direct.startsWith("https://") ? direct : null;
+}
+
+function statCell(labels: string[], stats: string[], ...keys: string[]): string {
+  for (const key of keys) {
+    const idx = labels.findIndex((label) => label.toUpperCase() === key.toUpperCase());
+    if (idx >= 0 && stats[idx]) return stats[idx];
+  }
+  return "";
+}
+
+function pickGoalies(raw: Rec): FinalPlayer[] {
+  const out: FinalPlayer[] = [];
+  for (const side of arr(rec(raw.boxscore).players)) {
+    const abbrev = str(rec(rec(side).team).abbreviation) || "—";
+    for (const group of arr(rec(side).statistics)) {
+      const block = rec(group);
+      if (str(block.name).toLowerCase() !== "goalies" && str(block.type).toLowerCase() !== "goalies") {
+        continue;
+      }
+      const labels = arr(block.labels).map((label) => str(label));
+      for (const athlete of arr(block.athletes)) {
+        const person = rec(rec(athlete).athlete);
+        const player = str(person.shortName) || str(person.displayName);
+        if (!player) continue;
+        const stats = arr(rec(athlete).stats).map((stat) => str(stat));
+        const ga = statCell(labels, stats, "GA");
+        const sa = statCell(labels, stats, "SA");
+        const sv = statCell(labels, stats, "SV");
+        const pct = statCell(labels, stats, "SV%");
+        const line = [
+          sv && sa ? `${sv}/${sa} SV` : sv ? `${sv} SV` : null,
+          ga ? `${ga} GA` : null,
+          pct ? `${pct} SV%` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        if (!line) continue;
+        out.push({
+          name: player,
+          teamAbbrev: abbrev,
+          line,
+          photoUrl: headshotHref(person),
+          photoData: null,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+const MLB_BAT_COLS = ["AB", "R", "H", "RBI", "HR", "BB", "K"];
+const MLB_PITCH_COLS = ["IP", "H", "R", "ER", "BB", "K"];
+
+function mlbGroupKind(block: Rec): "batting" | "pitching" | null {
+  const type = str(block.type).toLowerCase() || str(block.name).toLowerCase();
+  if (type === "batting" || type === "hitting") return "batting";
+  if (type === "pitching") return "pitching";
+  const labels = arr(block.labels).map((label) => str(label).toUpperCase());
+  if (labels.includes("AB") || labels.includes("H-AB") || labels.includes("RBI")) return "batting";
+  if (labels.includes("IP") && labels.includes("ER")) return "pitching";
+  return null;
+}
+
+function pickMlbSide(raw: Rec, abbrev: string, kind: "batting" | "pitching"): MlbBoxSide {
+  const want = kind === "batting" ? MLB_BAT_COLS : MLB_PITCH_COLS;
+  const empty: MlbBoxSide = { abbrev, labels: want, rows: [] };
+  for (const side of arr(rec(raw.boxscore).players)) {
+    if (str(rec(rec(side).team).abbreviation) !== abbrev) continue;
+    for (const group of arr(rec(side).statistics)) {
+      const block = rec(group);
+      if (mlbGroupKind(block) !== kind) continue;
+      const labels = arr(block.labels).map((label) => str(label));
+      const rows: MlbBoxRow[] = [];
+      for (const athlete of arr(block.athletes)) {
+        const row = rec(athlete);
+        const person = rec(row.athlete);
+        const player = str(person.shortName) || str(person.displayName);
+        if (!player) continue;
+        const stats = arr(row.stats).map((stat) => str(stat));
+        const cells = want.map((key) => statCell(labels, stats, key) || "–");
+        const played = cells.some((cell) => cell !== "–" && cell !== "0" && cell !== "0.0");
+        const starter = row.starter === true;
+        if (!played && !starter) continue;
+        rows.push({
+          name: player,
+          pos: str(rec(row.position).abbreviation) || str(rec(person.position).abbreviation),
+          cells,
+        });
+      }
+      if (rows.length) return { abbrev, labels: want, rows };
+    }
+  }
+  return empty;
+}
+
+export function pickMlbBox(raw: Rec, awayAbbrev: string, homeAbbrev: string): MlbBox {
+  return {
+    batting: {
+      away: pickMlbSide(raw, awayAbbrev, "batting"),
+      home: pickMlbSide(raw, homeAbbrev, "batting"),
+    },
+    pitching: {
+      away: pickMlbSide(raw, awayAbbrev, "pitching"),
+      home: pickMlbSide(raw, homeAbbrev, "pitching"),
+    },
+  };
+}
+
+function mlbBoxHasRows(box: MlbBox | null): boolean {
+  if (!box) return false;
+  return [box.batting.away, box.batting.home, box.pitching.away, box.pitching.home].some(
+    (side) => side.rows.length > 0,
+  );
+}
+
+function leadersFromMlbBox(box: MlbBox): FinalLeader[] {
+  const out: FinalLeader[] = [];
+  for (const side of [box.batting.away, box.batting.home]) {
+    const hrAt = side.labels.indexOf("HR");
+    const hAt = side.labels.indexOf("H");
+    const rbiAt = side.labels.indexOf("RBI");
+    for (const row of side.rows) {
+      const hint = highlightFromBox(
+        "batting",
+        side.labels,
+        row.cells,
+        row.name,
+      );
+      if (!hint) continue;
+      out.push({
+        group: "batting",
+        groupLabel: "Batting",
+        teamAbbrev: side.abbrev,
+        name: row.name,
+        line: [
+          hrAt >= 0 && row.cells[hrAt] && row.cells[hrAt] !== "0" ? `${row.cells[hrAt]} HR` : null,
+          hAt >= 0 ? `${row.cells[hAt]} H` : null,
+          rbiAt >= 0 ? `${row.cells[rbiAt]} RBI` : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        highlight: hint.text,
+        highlightScore: hint.score,
+      });
+    }
+  }
+  for (const side of [box.pitching.away, box.pitching.home]) {
+    const kAt = side.labels.indexOf("K");
+    const ipAt = side.labels.indexOf("IP");
+    for (const row of side.rows) {
+      const hint = highlightFromBox("pitching", side.labels, row.cells, row.name);
+      if (!hint) continue;
+      out.push({
+        group: "pitching",
+        groupLabel: "Pitching",
+        teamAbbrev: side.abbrev,
+        name: row.name,
+        line: [ipAt >= 0 ? `${row.cells[ipAt]} IP` : null, kAt >= 0 ? `${row.cells[kAt]} K` : null]
+          .filter(Boolean)
+          .join(" · "),
+        highlight: hint.text,
+        highlightScore: hint.score,
+      });
+    }
+  }
+  return out;
+}
+
+export function starsFromLanding(stars: NhlLandingStar[]): FinalStar[] {
+  return stars.map((star) => ({
+    star: star.star,
+    name: star.name,
+    teamAbbrev: star.teamAbbrev,
+    line: starLine(star),
+    position: star.position,
+    photoUrl: star.headshot,
+    photoData: null,
+  }));
 }
 
 function playRefs(raw: Rec): CfbWinProbPlayRef[] {
@@ -592,22 +832,34 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
     str(rec(rec(body.gameInfo).venue).fullName) || str(rec(comp.venue).fullName) || null;
   const headline = str(rec(body.article).headline) || null;
   const date = str(comp.date) || str(rec(body.header).date) || null;
+  const playoff = mlbPlayoffFromSummary(sport, body, comp);
+  const mlbBox = sport === "mlb" ? pickMlbBox(body, away.abbrev, home.abbrev) : null;
+  const leaders = pickLeaders(body);
+  if (sport === "mlb" && mlbBoxHasRows(mlbBox) && !leaders.length) {
+    leaders.push(...leadersFromMlbBox(mlbBox!));
+  }
   return {
     sport,
     sportLabel: SPORT_LABEL[sport] ?? sport.toUpperCase(),
     eventId,
     statusLabel,
     final,
+    playoff: playoff.playoff,
+    seriesLine: playoff.seriesLine,
     venue,
     headline: headline ? headline.replace(/\s+/g, " ").slice(0, 180) : null,
     away,
     home,
     periods: periodHeaders(sport, periodCount),
-    stats: pickStats(away.abbrev, home.abbrev, body),
-    leaders: pickLeaders(body),
+    stats: sport === "mlb" ? [] : pickStats(away.abbrev, home.abbrev, body),
+    leaders,
+    threeStars: [],
+    goalies: sport === "nhl" ? pickGoalies(body) : [],
+    mlbBox: mlbBoxHasRows(mlbBox) ? mlbBox : null,
     standings: [],
     date,
     odds: oddsFromSummary(body, away, home, final),
+    // ESPN site + core APIs do not ship a hockey winprobability series.
     winProbability: mapCfbWinProbability(
       arr(body.winprobability).map((row) => {
         const item = rec(row);
@@ -674,15 +926,42 @@ export async function fetchLogoDataUri(url: string | null): Promise<string | nul
   }
 }
 
-export async function loadFinalCard(sport: string, eventId: string): Promise<FinalCard> {
+async function hydratePhotos(card: FinalCard): Promise<void> {
+  const urls = [
+    ...card.threeStars.map((row) => row.photoUrl),
+    ...card.goalies.map((row) => row.photoUrl),
+    ...card.leaders.map((row) => row.photoUrl ?? null),
+  ].filter((url): url is string => Boolean(url));
+  const unique = [...new Set(urls)];
+  const fetched = await Promise.all(unique.map((url) => fetchLogoDataUri(url)));
+  const byUrl = new Map(unique.map((url, i) => [url, fetched[i] ?? null]));
+  for (const row of card.threeStars) row.photoData = row.photoUrl ? byUrl.get(row.photoUrl) ?? null : null;
+  for (const row of card.goalies) row.photoData = row.photoUrl ? byUrl.get(row.photoUrl) ?? null : null;
+  for (const row of card.leaders) row.photoData = row.photoUrl ? byUrl.get(row.photoUrl) ?? null : null;
+}
+
+export async function loadFinalCard(
+  sport: string,
+  eventId: string,
+  opts: { waitForStars?: boolean } = {},
+): Promise<FinalCard> {
   const card = cardFromSummary(sport, eventId, await fetchSummary(sport, eventId));
-  const [away, home, standings] = await Promise.all([
+  const skipStandings = card.playoff && card.sport === "mlb";
+  const [away, home, standings, stars] = await Promise.all([
     fetchLogoDataUri(card.away.logoUrl),
     fetchLogoDataUri(card.home.logoUrl),
-    loadCardStandings(sport, card.away, card.home),
+    skipStandings ? Promise.resolve([]) : loadCardStandings(sport, card.away, card.home),
+    sport === "nhl"
+      ? fetchNhlThreeStarsWithRetry(
+          { date: card.date, awayAbbrev: card.away.abbrev, homeAbbrev: card.home.abbrev },
+          { wait: Boolean(opts.waitForStars) },
+        )
+      : Promise.resolve([]),
   ]);
   card.away.logoData = away;
   card.home.logoData = home;
   card.standings = standings;
+  card.threeStars = starsFromLanding(stars);
+  await hydratePhotos(card);
   return card;
 }

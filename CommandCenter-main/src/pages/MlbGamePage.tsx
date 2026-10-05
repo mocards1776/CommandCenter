@@ -749,8 +749,12 @@ function EspnPreviewExtras({
                   <tr key={row.abbrev} className="border-b border-white/[0.05] last:border-0">
                     <td className="px-3 py-2">
                       <span className="inline-flex items-center gap-2 font-semibold text-white">
-                        {row.teamId ? <TeamMark teamId={row.teamId} size="xs" /> : null}
-                        {row.abbrev}
+                        {row.teamId ? (
+                          <TeamMark teamId={row.teamId} size="xs" />
+                        ) : (
+                          <span>{row.abbrev}</span>
+                        )}
+                        <span className="sr-only">{row.abbrev}</span>
                       </span>
                     </td>
                     {(
