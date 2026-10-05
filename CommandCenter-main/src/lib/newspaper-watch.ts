@@ -41,7 +41,7 @@ import {
   type WatchSide,
 } from "./newspaper-watch-page.ts";
 
-export * from "./newspaper-watch-page";
+export * from "./newspaper-watch-page.ts";
 
 const tvOf = (broadcasts: GameBroadcast[] | null | undefined) =>
   [...new Set((broadcasts ?? []).map((b) => b.name).filter(Boolean))];
