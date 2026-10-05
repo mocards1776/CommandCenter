@@ -1850,7 +1850,7 @@ mark.rss-hl {
 .wsj-prose.c1 { columns: 1; }
 .wsj-prose.c2 { columns: 2; }
 .wsj-prose.c3 { columns: 3; }
-.wsj-prose.drop > p:first-child::first-letter {
+.wsj-prose.drop > p:first-child .wsj-drop {
   float: left;
   margin: 0.04em 0.1em 0 0;
   font-family: var(--w-head);
@@ -5775,7 +5775,7 @@ li.counting .tt-count.card {
   vertical-align: 0.1em;
   color: var(--w-ink);
 }
-.tt-reader-body.drop > p:first-of-type::first-letter {
+.tt-reader-body.drop > p:first-of-type .wsj-drop {
   float: left;
   margin: 0.05em 0.1em 0 0;
   font-family: var(--w-head);

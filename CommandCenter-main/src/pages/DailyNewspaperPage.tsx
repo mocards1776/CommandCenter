@@ -55,7 +55,7 @@ import {
   type StandGroup,
 } from "@/lib/newspaper-box";
 import { cleanStoryCopy, proseParas, tidy, truncateAtSentence } from "@/lib/newspaper-copy";
-import { recapBodyForPage, recapIsScoreOnly, recapShouldDropCap } from "@/lib/newspaper-recap";
+import { recapBodyForPage, recapDropLead, recapIsScoreOnly, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
 import {
   Face,
   MatchupCard,
@@ -829,8 +829,30 @@ function Prose({
             </p>
           ) : (
             <p>
-              {i === 0 && card.dateline ? <span className="wsj-dateline">{card.dateline} — </span> : null}
-              <NamedText text={p} seen={seen} />
+              {i === 0 && drop
+                ? (() => {
+                    const lead = recapDropLead(card.dateline, p);
+                    if (!lead) return <NamedText text={p} seen={seen} />;
+                    return (
+                      <>
+                        <span className="wsj-drop">{lead.letter}</span>
+                        {lead.datelineRest != null ? <span className="wsj-dateline">{lead.datelineRest} — </span> : null}
+                        <NamedText text={lead.body} seen={seen} />
+                      </>
+                    );
+                  })()
+                : i === 0
+                  ? (() => {
+                      const split = splitApDateline(p);
+                      const city = card.dateline || split.dateline;
+                      return (
+                        <>
+                          {city ? <span className="wsj-dateline">{city} — </span> : null}
+                          <NamedText text={split.body} seen={seen} />
+                        </>
+                      );
+                    })()
+                  : <NamedText text={p} seen={seen} />}
             </p>
           )}
         </Fragment>

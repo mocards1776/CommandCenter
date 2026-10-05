@@ -11,6 +11,7 @@ import {
   recapIsFull,
   recapIsScoreOnly,
   recapPhotoKind,
+  recapDropLead,
   recapPrintStory,
   recapShouldDropCap,
   recapSportFamily,
@@ -239,6 +240,14 @@ const plugged = recapPrintStory(
   null,
 );
 assert(!/See AP/i.test(plugged.body) && plugged.body.endsWith("won."), `AP plug strips, got ${plugged.body}`);
+
+const milwaukeeDrop = recapDropLead("MILWAUKEE", "MILWAUKEE — Jackson Chourio hit a two-run single.");
+assert(milwaukeeDrop?.letter === "M", `drop is the dateline letter, got ${milwaukeeDrop?.letter}`);
+assert(milwaukeeDrop?.datelineRest === "ILWAUKEE", `rest of the city, got ${milwaukeeDrop?.datelineRest}`);
+assert(milwaukeeDrop?.body.startsWith("Jackson Chourio"), `word stays whole, got ${milwaukeeDrop?.body}`);
+assert(!/MILWAUKEE/.test(milwaukeeDrop?.body ?? ""), "body does not repeat the dateline");
+const noCity = recapDropLead(null, "Jackson Chourio hit a two-run single.");
+assert(noCity?.letter === "J" && noCity.datelineRest === null && noCity.body.startsWith("ackson Chourio"), `no dateline drops the first word, got ${JSON.stringify(noCity)}`);
 
 assert(pitchingDecisionCode("W, 1-0") === "W", "winning pitcher note");
 assert(pitchingDecisionCode("L, 0-1, B, 1") === "L", "losing pitcher note");

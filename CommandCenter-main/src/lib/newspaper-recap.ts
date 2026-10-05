@@ -485,6 +485,37 @@ export function recapBodyForPage(text: string | null | undefined): string {
   return body;
 }
 
+export type RecapDropLead = {
+  /** Drop-cap letter: first of the dateline, else first of the opening word. */
+  letter: string;
+  /** Full city when a dateline is set. */
+  city: string | null;
+  /** Rest of the city after the drop letter, or null when there is no dateline. */
+  datelineRest: string | null;
+  /** Story with any leading AP dateline stripped. No city: rest after the drop letter. */
+  body: string;
+};
+
+/**
+ * Build the drop-cap lead. The letter is the dateline's first character
+ * (`M` of `MILWAUKEE — Jackson…`). Without a city it is the first word's
+ * first letter, with the rest of that word immediately after. Any city
+ * already on the body is stripped so the dateline is not printed twice.
+ */
+export function recapDropLead(
+  dateline: string | null | undefined,
+  body: string | null | undefined,
+): RecapDropLead | null {
+  const split = splitApDateline(body ?? "");
+  const city = (dateline ?? "").trim() || split.dateline;
+  const clean = split.body;
+  if (city) {
+    return { letter: city.slice(0, 1), city, datelineRest: city.slice(1), body: clean };
+  }
+  if (!clean) return null;
+  return { letter: clean.slice(0, 1), city: null, datelineRest: null, body: clean.slice(1) };
+}
+
 /** Full story when it fits; otherwise the last complete sentence before `max`. */
 export function recapPrintStory(
   htmlOrText: string,

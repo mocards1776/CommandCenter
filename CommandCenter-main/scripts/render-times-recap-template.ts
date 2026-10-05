@@ -10,6 +10,7 @@ import {
   formatRecapWhen,
   pickRecapLeaders,
   recapPhotoKind,
+  recapDropLead,
   recapPrintStory,
   type RecapLeader,
 } from "../src/lib/newspaper-recap.ts";
@@ -144,11 +145,18 @@ function htmlFor(opts: {
       </tr>`,
     )
     .join("");
+  const lead = recapDropLead(opts.dateline, opts.story);
   const story =
-    opts.story &&
+    lead &&
     `<p class="story${opts.dropCap ? " drop" : ""} ended">${
-      opts.dateline ? `<span class="wsj-dateline">${esc(opts.dateline)} — </span>` : ""
-    }${opts.dropCap ? `<span class="drop">${esc(opts.story.slice(0, 1))}</span>${esc(opts.story.slice(1))}` : esc(opts.story)}</p>`;
+      opts.dropCap
+        ? `<span class="drop">${esc(lead.letter)}</span>${
+            lead.datelineRest != null ? `<span class="wsj-dateline">${esc(lead.datelineRest)} — </span>` : ""
+          }${esc(lead.body)}`
+        : `${lead.city ? `<span class="wsj-dateline">${esc(lead.city)} — </span>` : ""}${esc(
+            lead.city ? lead.body : `${lead.letter}${lead.body}`,
+          )}`
+    }</p>`;
   return `<!doctype html>
 <html lang="en">
 <head>

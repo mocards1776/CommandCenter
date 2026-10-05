@@ -13,7 +13,7 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
 import { SaveMark } from "@/components/newspaper/SaveMark";
 import { fetchEspnRecapStory } from "@/lib/newspaper-box";
-import { formatRecapWhen, recapBodyForPage, recapIsScoreOnly, recapShouldDropCap } from "@/lib/newspaper-recap";
+import { formatRecapWhen, recapBodyForPage, recapDropLead, recapIsScoreOnly, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
 import { cleanStoryCopy, isNavSoup, proseParas, readableCopy } from "@/lib/newspaper-copy";
 import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
 import { fetchRssArticle, scrubReaderChrome, stripDuplicateContentImages } from "@/lib/rss";
@@ -216,9 +216,31 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
             <div className={cn("tt-reader-body", recapShouldDropCap(html.replace(/<[^>]+>/g, " ")) && "drop")} dangerouslySetInnerHTML={{ __html: html }} />
           ) : skipBody ? null : paras.length ? (
             <div className={cn("tt-reader-body", dropCap && "drop")}>
-              {paras.map((p, i) => (
-                <p key={i}>{p}</p>
-              ))}
+              {paras.map((p, i) => {
+                if (i === 0 && dropCap) {
+                  const lead = recapDropLead(card.dateline, p);
+                  if (lead) {
+                    return (
+                      <p key={i}>
+                        <span className="wsj-drop">{lead.letter}</span>
+                        {lead.datelineRest != null ? <span className="wsj-dateline">{lead.datelineRest} — </span> : null}
+                        {lead.body}
+                      </p>
+                    );
+                  }
+                }
+                if (i === 0) {
+                  const split = splitApDateline(p);
+                  const city = card.dateline || split.dateline;
+                  return (
+                    <p key={i}>
+                      {city ? <span className="wsj-dateline">{city} — </span> : null}
+                      {split.body}
+                    </p>
+                  );
+                }
+                return <p key={i}>{p}</p>;
+              })}
             </div>
           ) : dek ? null : (
             <p className="tt-reader-wait">The wire filed a headline only.</p>
