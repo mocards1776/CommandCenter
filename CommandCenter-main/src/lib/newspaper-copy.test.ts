@@ -32,6 +32,9 @@ assertEqual(tidy("Tyreek Hill 's catch"), "Tyreek Hill's catch", "space before a
 assertEqual(tidy("Blake Craig 's kick"), "Blake Craig's kick", "another possessive");
 assertEqual(tidy('" The Greatest Offense There Is "'), '"The Greatest Offense There Is"', "quoted title inner spaces");
 assertEqual(tidy("Raiders ."), "Raiders.", "space before a period still drops");
+assertEqual(tidy('Prescott said,"I knew it was a touchdown."'), 'Prescott said, "I knew it was a touchdown."', "space after comma before a quote");
+assertEqual(tidy("HOUSTON -- — CeeDee Lamb shined."), "HOUSTON — CeeDee Lamb shined.", "double dash collapses to one em dash");
+assertEqual(tidy("HOUSTON --— CeeDee Lamb shined."), "HOUSTON — CeeDee Lamb shined.", "dash run without a space also collapses");
 
 assertEqual(joinBrokenDecimals("532. 8 yards"), "532.8 yards", "join a broken yardage decimal");
 assertEqual(joinBrokenDecimals("21. 5%"), "21.5%", "join a broken percentage");

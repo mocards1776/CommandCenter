@@ -659,6 +659,28 @@ export function MatchupCard({ game }: { game: BoxGame }) {
   );
 }
 
+/** One compact slate row: time, crests, matchup, TV. Used so NFL7 fits the canvas. */
+export function SlateLine({ game }: { game: BoxGame }) {
+  const when = [gameDay(game), gameClock(game)].filter(Boolean).join(" · ");
+  return (
+    <article className={cn("tt-slate-line", game.live && "live")}>
+      <time dateTime={game.startIso ?? undefined}>{when || game.status}</time>
+      <span className="tt-slate-line-side away">
+        <Mark src={game.away.logo} size="xs" />
+        <b>{game.away.abbrev}</b>
+        {game.away.record ? <em>{game.away.record}</em> : null}
+      </span>
+      <i>at</i>
+      <span className="tt-slate-line-side home">
+        <Mark src={game.home.logo} size="xs" />
+        <b>{game.home.abbrev}</b>
+        {game.home.record ? <em>{game.home.record}</em> : null}
+      </span>
+      <span className="tt-slate-line-tv">{game.broadcasts.filter(Boolean)[0] || game.venue || ""}</span>
+    </article>
+  );
+}
+
 export function StandingsTable({
   group,
   mine,

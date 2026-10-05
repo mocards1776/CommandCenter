@@ -68,8 +68,10 @@ import {
   Leaders,
   Linescore,
   MlbAgate,
+  SlateLine,
 } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
+import { groupByDay, planSchedulePages } from "@/lib/newspaper-page";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
@@ -1849,7 +1851,9 @@ function InsidePage({
               game={game}
               inset={game ? null : <StoryNames card={card} />}
             />
-            {game || (isSingleGameRecap(card) && card.recapGame) ? <RecapBox card={card} game={game ?? null} /> : null}
+            {game || (isSingleGameRecap(card) && card.recapGame) ? (
+              <RecapBox card={card} game={game ?? null} compact />
+            ) : null}
           </div>
         );
       })}
@@ -1985,7 +1989,9 @@ function ContinuePage({
               game={game}
               inset={game ? null : <StoryNames card={card} />}
             />
-            {game || (isSingleGameRecap(card) && card.recapGame) ? <RecapBox card={card} game={game ?? null} /> : null}
+            {game || (isSingleGameRecap(card) && card.recapGame) ? (
+              <RecapBox card={card} game={game ?? null} compact />
+            ) : null}
           </div>
         );
       })}
@@ -2306,8 +2312,10 @@ function SportSectionFront({
   const stories = page.articles.map((a) => a.card).filter((c) => c.headline);
   const folios = Object.fromEntries(page.articles.map((a) => [a.card.id, a.folio]));
   const lead = stories[0] ?? null;
-  const seconds = stories.filter((c) => c !== lead).slice(0, 4);
-  const more = stories.filter((c) => c !== lead && !seconds.includes(c)).slice(0, 6);
+  const rest = stories.filter((c) => c !== lead);
+  const underLead = rest.slice(0, 2);
+  const railSeconds = rest.slice(2, 4);
+  const more = rest.slice(4, 8);
   const leadGame = lead ? (gameById.get(lead.id) ?? null) : null;
   const recapsFolio = deskFolio(page, "recaps", `${page.section}2`);
   const crestFor = (card: GameWrapCard) =>
@@ -2317,12 +2325,12 @@ function SportSectionFront({
   return (
     <div className="tt-section-front">
       {lead ? (
-        <div className={cn("tt-front-grid", (seconds.length || railGames.length) && "with-side")}>
+        <div className={cn("tt-front-grid", (underLead.length || railSeconds.length || railGames.length) && "with-side")}>
           <div className="tt-front-lead">
             <Story
               className="lead"
               card={lead}
-              text={splitStoryCopy(cardCopy(lead), seconds.length ? 900 : 1200).teaser}
+              text={splitStoryCopy(cardCopy(lead), 1600).teaser}
               size="xl"
               cols={1}
               art="top"
@@ -2332,17 +2340,48 @@ function SportSectionFront({
               jump={folios[lead.id] && folios[lead.id] !== page.folio ? folios[lead.id] : undefined}
               onTurn={onTurn}
             />
-            {leadGame ? (
+            {leadGame && !isSingleGameRecap(lead) ? (
               <div className="tt-front-banner">
                 <ScoreMast game={leadGame} />
                 <Linescore game={leadGame} compact />
               </div>
             ) : null}
+            {underLead.length ? (
+              <div className="tt-front-under">
+                {underLead.map((card) => (
+                  <Story
+                    key={card.id}
+                    card={card}
+                    text={recapDek(card, 3)}
+                    size="md"
+                    art="none"
+                    readOn
+                    game={gameById.get(card.id) ?? null}
+                    jump={folios[card.id] && folios[card.id] !== page.folio ? folios[card.id] : undefined}
+                    onTurn={onTurn}
+                  />
+                ))}
+              </div>
+            ) : football && (board?.slate ?? []).some((g) => !g.final && !g.live) ? (
+              <section className="tt-front-under" aria-label="This week">
+                <h3 className="wsj-band-title">
+                  {board?.slateWeekNumber ? `Week ${board.slateWeekNumber}` : "This week"} <em>kickoffs</em>
+                </h3>
+                <div className="tt-slate-list cols-2">
+                  {(board?.slate ?? [])
+                    .filter((g) => !g.final && !g.live)
+                    .slice(0, 6)
+                    .map((g) => (
+                      <SlateLine key={g.id} game={g} />
+                    ))}
+                </div>
+              </section>
+            ) : null}
           </div>
           <div className="tt-front-side">
-            {seconds.length ? (
+            {railSeconds.length ? (
               <div className="wsj-sport-seconds">
-                {seconds.map((card) => (
+                {railSeconds.map((card) => (
                   <Story
                     key={card.id}
                     card={card}
@@ -2946,6 +2985,7 @@ function ScheduleDesk({
     enabled: college,
   });
   const games = board?.slate ?? [];
+  const nfl = page.path === "football/nfl";
   if (college) {
     return (
       <CfbScheduleDesk
@@ -2965,6 +3005,31 @@ function ScheduleDesk({
       days.set(g.day, list);
     }
     const mlb = page.path === "baseball/mlb";
+    if (nfl) {
+      const pages = planSchedulePages(games);
+      const pack = pages[0] ?? games;
+      return (
+        <div className="tt-schedule tt-schedule-fill tt-slate-desk">
+          {pages.length > 1 ? (
+            <p className="wsj-band-title">
+              This week <em>folio 1 of {pages.length}</em>
+            </p>
+          ) : null}
+          {groupByDay(pack).map(([day, list]) => (
+            <section key={day}>
+              <h3 className="wsj-band-title">
+                {dayHeading(day, edition)} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
+              </h3>
+              <div className="tt-slate-list">
+                {list.map((g) => (
+                  <SlateLine key={g.id} game={g} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      );
+    }
     return (
       <div className="tt-schedule tt-schedule-fill">
         {[...days.entries()].map(([day, list]) => (
@@ -4555,11 +4620,10 @@ function NewspaperDesk() {
       if (w < 40 || h < 40) return;
       const root = el.closest(".newspaper-root") ?? el;
       const cs = getComputedStyle(root);
-      const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1032;
-      // Width only: the sheet fills the screen across and scrolls down, never shrinks to fit the height.
-      const fit = Math.min(1, w / pageW);
+      const pageW = parseFloat(cs.getPropertyValue("--tt-page-w")) || 1040;
+      const pageH = parseFloat(cs.getPropertyValue("--tt-page-h")) || 1480;
+      const fit = Math.min(1, w / pageW, h / pageH);
       el.style.setProperty("--tt-fit", String(fit));
-      el.style.setProperty("--tt-page-min", `${Math.ceil(h / fit)}px`);
       el.dataset.fit = "1";
     };
     apply();

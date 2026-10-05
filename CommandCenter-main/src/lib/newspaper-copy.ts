@@ -280,6 +280,8 @@ export function tidy(text: string): string {
       .replace(/([‘'])\s+(\w)/g, "$1$2")
       .replace(/(["“])\s+/g, "$1")
       .replace(/\s+(["”])/g, "$1")
+      .replace(/([,;:.!?])(["“])(?=\S)/g, "$1 $2")
+      .replace(/\s*(?:--|—|–)[\s—–-]+/g, " — ")
       .replace(/\(\s+/g, "(")
       .replace(/\s+\)/g, ")"),
   )

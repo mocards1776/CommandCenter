@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { Linescore, MatchupCard, ScoreMast, ScoreStrip } from "@/components/newspaper/BoxScore";
+import { Linescore, MatchupCard, ScoreMast, ScoreStrip, SlateLine } from "@/components/newspaper/BoxScore";
 import { CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
 import { PlayoffBracket } from "@/components/newspaper/PlayoffBracket";
 import { fetchMlbPlayoffTree } from "@/lib/mlb";
@@ -17,6 +17,7 @@ import {
 import { fetchHeismanOdds } from "@/lib/newspaper-heisman";
 import { newspaperEspnGet } from "@/lib/newspaper-espn";
 import { editionNewsDay, pressEdition } from "@/lib/newspaper";
+import { groupByDay, planSchedulePages } from "@/lib/newspaper-page";
 
 /**
  * Public iPad proof of the sport-section work. Not linked from nav.
@@ -107,7 +108,7 @@ export default function NewspaperSportPreviewPage() {
               : playoffs.isFetched;
 
   return (
-    <div className="newspaper-root wsj-shell tt-watch-preview" data-sport-preview={page} data-ready={ready ? "1" : "0"}>
+    <div className="newspaper-root wsj-shell tt-watch-preview tt-locked-page" data-sport-preview={page} data-ready={ready ? "1" : "0"}>
       <div className="wsj-page">
         <div className="wsj-fit">
           <div className="wsj-sheet">
@@ -183,7 +184,11 @@ export default function NewspaperSportPreviewPage() {
                 blurb={`${(nflBoard.data?.slate ?? []).filter((g) => !g.final).length} games ahead · Week ${nflBoard.data?.slateWeekNumber ?? nflBoard.data?.weekNumber ?? ""} · times CT`}
                 folio="NFL7"
               >
-                <SchedulePreview games={(nflBoard.data?.slate ?? []).filter((g) => !g.final && !g.live)} />
+                <SchedulePreview
+                  games={(nflBoard.data?.slate ?? []).filter((g) => !g.final && !g.live)}
+                  compact
+                  week={nflBoard.data?.slateWeekNumber ?? nflBoard.data?.weekNumber ?? null}
+                />
               </SportChrome>
             ) : page === "nfl-front" ? (
               <FrontPreview
@@ -329,6 +334,15 @@ function FrontPreview({
                 <ScoreMast game={lead} />
                 <Linescore game={lead} compact />
               </div>
+              {seconds.length ? (
+                <div className="tt-front-under">
+                  {seconds.slice(0, 2).map((story) => (
+                    <article key={story.id} className="tt-under-story">
+                      <h3 className="wsj-hl md">{story.headline}</h3>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="tt-front-side">
               {seconds.length ? (
@@ -361,20 +375,63 @@ function FrontPreview({
   );
 }
 
-function SchedulePreview({ games }: { games: BoxGame[] }) {
+function scheduleDayLabel(day: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return day;
+  return new Date(`${day}T17:00:00Z`).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    timeZone: "America/Chicago",
+  });
+}
+
+function SchedulePreview({
+  games,
+  compact,
+  week,
+}: {
+  games: BoxGame[];
+  compact?: boolean;
+  week?: number | null;
+}) {
   if (!games.length) return <p className="wsj-empty">Nothing on the league calendar this week.</p>;
-  const days = new Map<string, BoxGame[]>();
-  for (const g of games) {
-    const list = days.get(g.day) ?? [];
-    list.push(g);
-    days.set(g.day, list);
+  const pack = compact ? (planSchedulePages(games)[0] ?? games) : games;
+  const days = groupByDay(pack);
+  if (compact) {
+    return (
+      <div className="tt-schedule tt-schedule-fill tt-slate-desk">
+        {week ? (
+          <h2 className="wsj-band-title">
+            Week {week} schedule <em>{pack.length} games · times CT</em>
+          </h2>
+        ) : null}
+        {days.map(([day, list]) => (
+          <section key={day}>
+            <h3 className="wsj-band-title">
+              {scheduleDayLabel(day)}{" "}
+              <em>
+                {list.length} {list.length === 1 ? "game" : "games"}
+              </em>
+            </h3>
+            <div className="tt-slate-list">
+              {list.map((g) => (
+                <SlateLine key={g.id} game={g} />
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    );
   }
   return (
     <div className="tt-schedule tt-schedule-fill">
-      {[...days.entries()].map(([day, list]) => (
+      {days.map(([day, list]) => (
         <section key={day}>
           <h3 className="wsj-band-title">
-            {day} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
+            {scheduleDayLabel(day)}{" "}
+            <em>
+              {list.length} {list.length === 1 ? "game" : "games"}
+            </em>
           </h3>
           <div className="tt-matchups" style={{ ["--cols" as string]: "2" }}>
             {list.map((g) => (

@@ -1181,14 +1181,10 @@ mark.rss-hl {
   --w-body: "Source Serif 4", Georgia, "Times New Roman", serif;
   --w-gutter: 20px;
 
-  /* One broadsheet, as wide as the iPad Pro 13" in portrait (1032 CSS px), so it
-     prints edge to edge there at true size. The fit is width-only: narrower
-     screens zoom the whole sheet down, wider ones get paper margins, and the
-     height is never fit. A sheet is at least one screen tall (--tt-page-min,
-     set by the pager; --tt-page-h before it measures) and grows with its copy;
-     the folio scrolls. Do not add a second canvas size. */
-  --tt-page-w: 1032px;
-  --tt-page-h: 1290px;
+  /* Locked broadsheet. Every folio is this canvas; the pager zooms to fit
+     both axes. Sheets do not grow, and they do not scroll. */
+  --tt-page-w: 1040px;
+  --tt-page-h: 1480px;
   --w-chrome: calc(61px + env(safe-area-inset-top, 0px));
   flex: 1 1 auto;
   height: 100%;
@@ -1355,14 +1351,16 @@ mark.rss-hl {
 .wsj-sheet {
   box-sizing: border-box;
   flex: none;
-  width: var(--tt-page-w, 1032px);
-  min-width: var(--tt-page-w, 1032px);
-  max-width: var(--tt-page-w, 1032px);
-  min-height: var(--tt-page-min, var(--tt-page-h, 1290px));
+  width: var(--tt-page-w, 1040px);
+  min-width: var(--tt-page-w, 1040px);
+  max-width: var(--tt-page-w, 1040px);
+  height: var(--tt-page-h, 1480px);
+  min-height: var(--tt-page-h, 1480px);
+  max-height: var(--tt-page-h, 1480px);
   zoom: var(--tt-fit, 1);
   margin: 0;
-  padding: 14px 18px 28px;
-  overflow-x: clip;
+  padding: 14px 18px 18px;
+  overflow: hidden;
   touch-action: pan-y;
   display: flex;
   flex-direction: column;
@@ -2554,6 +2552,8 @@ li.counting .tt-count.card {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  flex: 1;
+  min-height: 0;
 }
 .wsj-ticker {
   list-style: none;
@@ -2633,7 +2633,9 @@ li.counting .tt-count.card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 296px;
   gap: 0 var(--w-gutter);
-  align-items: start;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 .wsj-front-main {
   min-width: 0;
@@ -4056,6 +4058,8 @@ li.counting .tt-count.card {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  flex: 1;
+  min-height: 0;
 }
 .wsj-inside > .wsj-story + .wsj-story {
   padding-top: 18px;
@@ -4087,6 +4091,8 @@ li.counting .tt-count.card {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  flex: 1;
+  min-height: 0;
 }
 .wsj-sport-hero {
   position: relative;
@@ -4160,6 +4166,8 @@ li.counting .tt-count.card {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  flex: 1;
+  min-height: 0;
 }
 .wsj-sport-news {
   display: flex;
@@ -6794,7 +6802,7 @@ li.counting .tt-count.card {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  min-height: calc(var(--tt-page-min, var(--tt-page-h, 1290px)) - 88px);
+  min-height: calc(var(--tt-page-h, 1480px) - 88px);
 }
 .tt-nat-hero h3 {
   font-family: var(--w-head);
@@ -8614,23 +8622,34 @@ li.counting .tt-count.card {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex: 1;
   min-height: 0;
 }
 .tt-front-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 18px;
+  flex: 1;
   min-height: 0;
 }
 .tt-front-grid.with-side {
   grid-template-columns: minmax(0, 1.7fr) minmax(260px, 1fr);
-  align-items: start;
+  align-items: stretch;
 }
 .tt-front-lead {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+  min-height: 0;
+}
+.tt-front-under {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--w-hair);
 }
 .tt-front-banner {
   display: flex;
@@ -8642,6 +8661,7 @@ li.counting .tt-count.card {
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+  min-height: 0;
 }
 .tt-front-rails {
   display: flex;
@@ -8650,6 +8670,87 @@ li.counting .tt-count.card {
 }
 .tt-schedule-fill {
   min-height: 100%;
+  flex: 1;
+}
+.tt-slate-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+.tt-slate-desk section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+.tt-slate-desk section:nth-child(2) {
+  flex: 1;
+}
+.tt-slate-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 10px;
+  align-content: start;
+}
+.tt-slate-list.cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.tt-slate-line {
+  display: grid;
+  grid-template-columns: 5.4rem minmax(0, 1fr) 1.1rem minmax(0, 1fr) 3.6rem;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding: 5px 7px;
+  background: var(--w-card);
+  box-shadow: 0 0 0 1px var(--w-hair);
+  font-size: 12px;
+}
+.tt-slate-line time {
+  font-family: var(--w-cond);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  white-space: nowrap;
+}
+.tt-slate-line-side {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.tt-slate-line-side b {
+  font-family: var(--w-cond);
+  font-weight: 700;
+}
+.tt-slate-line-side em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--w-muted);
+}
+.tt-slate-line i {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  text-align: center;
+}
+.tt-slate-line-tv {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tt-cfb-fill {
   margin-top: auto;
@@ -8780,7 +8881,36 @@ li.counting .tt-count.card {
 }
 .tt-front-rail .tt-strip {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 1fr;
+}
+.tt-front-lead .tt-recap-photo.wide img {
+  max-height: 300px;
+}
+.tt-rail-recap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--w-hair);
+}
+.tt-rail-recap:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+  flex: 1;
+}
+.tt-under-story + .tt-under-story {
+  padding-top: 8px;
+  border-top: 1px solid var(--w-hair);
+}
+.tt-week-fill {
+  flex: 0 0 auto;
+}
+.tt-score-fill {
+  flex: 1;
+  align-content: stretch;
+}
+.tt-score-fill > * {
+  min-height: 0;
 }
 
 /* The viewing guide lives in WatchGuide.css so the printed page and the
@@ -8802,6 +8932,26 @@ li.counting .tt-count.card {
 }
 .tt-watch-preview .wsj-sheet {
   margin: 24px auto 48px;
+}
+.tt-watch-preview.tt-locked-page {
+  height: auto;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 24px 0 48px;
+}
+.tt-watch-preview.tt-locked-page .wsj-page,
+.tt-watch-preview.tt-locked-page .wsj-fit,
+.tt-watch-preview.tt-locked-page .wsj-sheet {
+  width: var(--tt-page-w);
+  height: var(--tt-page-h);
+  min-height: var(--tt-page-h);
+  max-height: var(--tt-page-h);
+  overflow: hidden;
+  margin: 0;
+  zoom: 1;
 }
 
 /* ── Telegram phone cards (screenshot runner only; not the printed paper) ─ */

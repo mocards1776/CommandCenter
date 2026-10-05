@@ -1,7 +1,7 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { Linescore, MatchupCard, ScoreCard, ScoreMast, ScoreStrip } from "@/components/newspaper/BoxScore";
+import { Linescore, ScoreCard, ScoreMast, ScoreStrip, SlateLine } from "@/components/newspaper/BoxScore";
 import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRecap";
 import {
   boxStoryCard,
@@ -13,6 +13,8 @@ import {
 import { isPrintableStoryBody, proseParas, sanitizeArticleBody } from "@/lib/newspaper-copy";
 import { newspaperEspnGet } from "@/lib/newspaper-espn";
 import { editionDateline, editionIssue, romanNumeral } from "@/lib/newspaper";
+import { PAGE_CANVAS, groupByDay, planSchedulePages } from "@/lib/newspaper-page";
+import { recapBodyForPage } from "@/lib/newspaper-recap";
 import type { GameWrapCard } from "@/lib/newspaper-sports";
 import { PlayerPopProvider } from "@/components/newspaper/PlayerPop";
 
@@ -51,43 +53,110 @@ export default function NewspaperTimesPreviewPage() {
   const cowboys = recaps.find((r) => r.card.favoriteKey === "nfl-dal") ?? null;
   const weekGames = boardFinals(board);
   const otherFinals = weekGames.filter((g) => !favoriteGame(g));
+  const slate = (board?.slate ?? []).filter((g) => !g.final && !g.live);
+  const schedulePacks = planSchedulePages(slate);
 
-  return (
-    <PlayerPopProvider people={[]}>
-      <div className="newspaper-root wsj-shell tt-watch-preview" data-times-preview={page} data-ready={ready ? "1" : "0"}>
-        <div className="wsj-page">
-          <div className="wsj-fit">
-            <div className="wsj-sheet">
-              {page === "a4" ? (
-                <TimesChrome folio="A4" kicker="The Essentials" desk="Lions">
-                  {lions ? <FullRecap recap={lions} /> : <p className="wsj-empty">Setting the Lions recap…</p>}
-                </TimesChrome>
-              ) : page === "a-favorites" ? (
-                <TimesChrome folio="A2" kicker="The Essentials" desk="Favorite finals">
-                  {chiefs ? <FullRecap recap={chiefs} /> : null}
-                  {cowboys ? <FullRecap recap={cowboys} /> : null}
-                  {!chiefs && !cowboys ? <p className="wsj-empty">Setting favorite recaps…</p> : null}
-                </TimesChrome>
-              ) : page === "nfl1" ? (
-                <NflFront board={board} recaps={recaps} games={weekGames} />
-              ) : page === "nfl2" ? (
-                <TimesChrome folio="NFL2" kicker="NFL" desk="Recaps">
-                  <div className="tt-score-grid" style={{ ["--cols" as string]: "3" }}>
+  const sheets =
+    page === "a4"
+      ? [
+          <TimesChrome key="a4" folio="A4" kicker="The Essentials" desk="Lions">
+            {lions ? <FullRecap recap={lions} grafs={7} /> : <p className="wsj-empty">Setting the Lions recap…</p>}
+          </TimesChrome>,
+        ]
+      : page === "a-favorites"
+        ? [
+            <TimesChrome key="a-fav" folio="A2" kicker="The Essentials" desk="Favorite finals">
+              {chiefs ? <RailRecap recap={chiefs} grafs={3} /> : null}
+              {cowboys ? <RailRecap recap={cowboys} grafs={3} /> : null}
+              {!chiefs && !cowboys ? <p className="wsj-empty">Setting favorite recaps…</p> : null}
+            </TimesChrome>,
+          ]
+        : page === "nfl1"
+          ? [
+              <NflFront
+                key="nfl1"
+                board={board}
+                recaps={recaps}
+                games={weekGames}
+                slate={slate}
+              />,
+            ]
+          : page === "nfl2"
+            ? [
+                <TimesChrome key="nfl2" folio="NFL2" kicker="NFL" desk="Recaps">
+                  <div className="tt-score-grid tt-score-fill" style={{ ["--cols" as string]: "3" }}>
                     {otherFinals.map((g) => (
                       <ScoreCard key={g.id} game={g} />
                     ))}
                   </div>
-                </TimesChrome>
-              ) : page === "nfl-schedule" ? (
-                <NflSchedule board={board} />
-              ) : (
-                <A1Front recaps={recaps} />
-              )}
+                </TimesChrome>,
+              ]
+            : page === "nfl-schedule"
+              ? schedulePacks.map((pack, i) => (
+                  <NflSchedule
+                    key={`sched-${i}`}
+                    games={pack}
+                    folio={schedulePacks.length > 1 ? `NFL${7 + i}` : "NFL7"}
+                    week={board?.slateWeekNumber ?? 5}
+                    continued={i > 0}
+                  />
+                ))
+              : [
+                  <A1Front key="a1" recaps={recaps} slate={slate} week={board?.slateWeekNumber ?? 5} />,
+                ];
+
+  return (
+    <PlayerPopProvider people={[]}>
+      <div
+        className="newspaper-root wsj-shell tt-watch-preview tt-locked-page"
+        data-times-preview={page}
+        data-ready={ready ? "1" : "0"}
+        data-canvas={`${PAGE_CANVAS.width}x${PAGE_CANVAS.height}`}
+      >
+        {sheets.map((sheet, i) => (
+          <div className="wsj-page" key={i}>
+            <div className="wsj-fit">
+              <LockedSheet folio={sheet.key ?? String(i)}>{sheet}</LockedSheet>
             </div>
           </div>
-        </div>
+        ))}
       </div>
     </PlayerPopProvider>
+  );
+}
+
+function LockedSheet({ folio, children }: { folio: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => {
+      setOverflow(el.scrollHeight > PAGE_CANVAS.height + 1);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    for (const node of el.querySelectorAll("img")) {
+      node.addEventListener("load", check);
+    }
+    return () => {
+      ro.disconnect();
+      for (const node of el.querySelectorAll("img")) {
+        node.removeEventListener("load", check);
+      }
+    };
+  }, [children]);
+  return (
+    <div
+      ref={ref}
+      className="wsj-sheet"
+      data-folio={folio}
+      data-overflow={overflow ? "1" : "0"}
+      data-canvas={`${PAGE_CANVAS.width}x${PAGE_CANVAS.height}`}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -105,19 +174,31 @@ async function favoriteRecaps(board: SectionBoard): Promise<FavRecap[]> {
   return out;
 }
 
+type SummaryArt = { url?: string; href?: string; width?: number };
+
 async function recapCardFor(game: BoxGame, fav: (typeof FAVORITES)[number]): Promise<GameWrapCard> {
   const base = boxStoryCard(game);
   const eventId = game.espnEventId || game.id;
   let body = sanitizeArticleBody(base?.body);
+  let photo = base?.photo ?? game.recap?.photo ?? null;
+  let photoWidth = base?.photoWidth ?? null;
   try {
     const sum = (await newspaperEspnGet(`football/nfl/summary?event=${eventId}`)) as {
-      article?: { story?: string; headline?: string };
-      news?: { articles?: { story?: string; headline?: string }[] };
+      article?: { story?: string; headline?: string; images?: SummaryArt[] };
+      news?: { articles?: { story?: string; headline?: string; images?: SummaryArt[] }[] };
     };
     const raws = [sum.article?.story, ...(sum.news?.articles ?? []).map((a) => a.story)].filter(Boolean);
     for (const raw of raws) {
       const text = sanitizeArticleBody(String(raw));
       if (isPrintableStoryBody(text) && text.length > (body?.length ?? 0)) body = text;
+    }
+    const art = pickSummaryPhoto([
+      ...(sum.article?.images ?? []),
+      ...(sum.news?.articles ?? []).flatMap((a) => a.images ?? []),
+    ]);
+    if (art && (!photo || (art.width ?? 0) > (photoWidth ?? 0))) {
+      photo = art.url;
+      photoWidth = art.width ?? photoWidth;
     }
   } catch {
     /* box wrap / scoreboard recap stays */
@@ -135,7 +216,21 @@ async function recapCardFor(game: BoxGame, fav: (typeof FAVORITES)[number]): Pro
     body: body || base?.body || `${game.away.short} ${game.away.score}, ${game.home.short} ${game.home.score}.`,
     gameId: eventId,
     leaguePath: "football/nfl",
+    photo,
+    photoWidth,
+    caption: base?.caption ?? `${game.away.name} at ${game.home.name}${game.venue ? `, ${game.venue}` : ""}.`,
   };
+}
+
+function pickSummaryPhoto(images: SummaryArt[]): { url: string; width: number | null } | null {
+  let best: { url: string; width: number | null } | null = null;
+  for (const img of images) {
+    const url = img.url || img.href;
+    if (!url || !/^https?:\/\//i.test(url)) continue;
+    const width = typeof img.width === "number" ? img.width : null;
+    if (!best || (width ?? 0) > (best.width ?? 0)) best = { url, width };
+  }
+  return best;
 }
 
 function emptyCard(game: BoxGame): GameWrapCard {
@@ -180,12 +275,16 @@ function favoriteGame(game: BoxGame): boolean {
 
 function scheduleDayLabel(day: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return day;
-  return new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", {
+  return new Date(`${day}T17:00:00Z`).toLocaleDateString("en-US", {
     weekday: "long",
     month: "short",
     day: "numeric",
-    timeZone: "UTC",
+    timeZone: "America/Chicago",
   });
+}
+
+function pageParas(body: string | null | undefined, max: number): string[] {
+  return proseParas(recapBodyForPage(body ?? ""), max);
 }
 
 function TimesChrome({
@@ -233,27 +332,68 @@ function TimesChrome({
   );
 }
 
-function FullRecap({ recap }: { recap: FavRecap }) {
-  const paras = proseParas(recap.card.body ?? "", 12);
+function FullRecap({ recap, grafs = 8 }: { recap: FavRecap; grafs?: number }) {
+  const paras = pageParas(recap.card.body, grafs);
   return (
     <article className="wsj-inside-story first">
       <p className="wsj-kicker">{recap.card.teamName} · NFL</p>
       <h2 className="wsj-hl xl">{recap.card.headline}</h2>
-      <RecapChrome card={recap.card} game={recap.game} />
+      <RecapChrome card={recap.card} game={recap.game} compact />
       <RecapPhoto url={recap.card.photo} width={recap.card.photoWidth} caption={recap.card.caption} />
       <div className="wsj-prose">
         {paras.map((p) => (
           <p key={p.slice(0, 40)}>{p}</p>
         ))}
       </div>
-      <RecapBox card={recap.card} game={recap.game} forceFull />
+      <RecapBox card={recap.card} game={recap.game} compact forceFull />
     </article>
   );
 }
 
-function A1Front({ recaps }: { recaps: FavRecap[] }) {
+function RailRecap({ recap, grafs = 2 }: { recap: FavRecap; grafs?: number }) {
+  const paras = pageParas(recap.card.body, grafs);
+  return (
+    <article className="tt-rail-recap">
+      <p className="wsj-kicker">{recap.card.teamName} · NFL</p>
+      <h3 className="wsj-hl md">{recap.card.headline}</h3>
+      <RecapChrome card={recap.card} game={recap.game} compact />
+      {paras.map((p) => (
+        <p key={p.slice(0, 40)} className="wsj-dek">
+          {p}
+        </p>
+      ))}
+    </article>
+  );
+}
+
+function WeekPreview({ games, week }: { games: BoxGame[]; week: number }) {
+  if (!games.length) return null;
+  return (
+    <section className="tt-front-under tt-week-fill" aria-label="This week">
+      <h3 className="wsj-band-title">
+        Week {week} <em>kickoffs · CT</em>
+      </h3>
+      <div className="tt-slate-list cols-2">
+        {games.slice(0, 6).map((g) => (
+          <SlateLine key={g.id} game={g} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function A1Front({
+  recaps,
+  slate,
+  week,
+}: {
+  recaps: FavRecap[];
+  slate: BoxGame[];
+  week: number;
+}) {
   const lead = recaps.find((r) => r.card.favoriteKey === "nfl-dal") ?? recaps[0] ?? null;
   const seconds = recaps.filter((r) => r !== lead);
+  const paras = lead ? pageParas(lead.card.body, 5) : [];
   return (
     <TimesChrome folio="A1" kicker="The Essentials">
       {lead ? (
@@ -262,27 +402,21 @@ function A1Front({ recaps }: { recaps: FavRecap[] }) {
             <div className="tt-front-lead">
               <p className="wsj-kicker">{lead.card.teamName} · NFL</p>
               <h2 className="wsj-hl xl">{lead.card.headline}</h2>
-              <RecapChrome card={lead.card} game={lead.game} />
-              <RecapPhoto url={lead.card.photo} width={lead.card.photoWidth} caption={lead.card.caption} />
+              <RecapPhoto url={lead.card.photo} width={Math.max(lead.card.photoWidth ?? 1200, 1200)} caption={lead.card.caption} />
+              <RecapChrome card={lead.card} game={lead.game} compact />
               <div className="wsj-prose">
-                {proseParas(lead.card.body ?? "", 4).map((p) => (
+                {paras.map((p) => (
                   <p key={p.slice(0, 40)}>{p}</p>
                 ))}
               </div>
             </div>
             <div className="tt-front-side">
               {seconds.map((r) => (
-                <article key={r.card.id} className="wsj-story art-top">
-                  <p className="wsj-kicker">{r.card.teamName}</p>
-                  <h3 className="wsj-hl md">{r.card.headline}</h3>
-                  <div className="tt-front-banner">
-                    <ScoreMast game={r.game} />
-                    <Linescore game={r.game} compact />
-                  </div>
-                </article>
+                <RailRecap key={r.card.id} recap={r} grafs={2} />
               ))}
             </div>
           </div>
+          <WeekPreview games={slate} week={week} />
         </div>
       ) : (
         <p className="wsj-empty">Setting the front…</p>
@@ -295,14 +429,17 @@ function NflFront({
   board,
   recaps,
   games,
+  slate,
 }: {
   board: SectionBoard | null;
   recaps: FavRecap[];
   games: BoxGame[];
+  slate: BoxGame[];
 }) {
   const strips = sportScoreBands("football/nfl", board, EDITION_DAY);
   const lead = recaps.find((r) => r.card.favoriteKey === "nfl-kc") ?? recaps[0] ?? null;
   const seconds = recaps.filter((r) => r !== lead).slice(0, 2);
+  const paras = lead ? pageParas(lead.card.body, 3) : [];
   return (
     <TimesChrome folio="NFL1" kicker="NFL" desk="National Football League">
       {lead ? (
@@ -311,18 +448,32 @@ function NflFront({
             <div className="tt-front-lead">
               <p className="wsj-kicker">NFL · {lead.card.teamName}</p>
               <h2 className="wsj-hl xl">{lead.card.headline}</h2>
-              {lead.card.body ? <p className="wsj-dek">{proseParas(lead.card.body, 1)[0]}</p> : null}
-              <div className="tt-front-banner">
-                <ScoreMast game={lead.game} />
-                <Linescore game={lead.game} compact />
+              <RecapPhoto url={lead.card.photo} width={Math.max(lead.card.photoWidth ?? 1200, 1200)} caption={lead.card.caption} />
+              <RecapChrome card={lead.card} game={lead.game} compact />
+              <div className="wsj-prose">
+                {paras.map((p) => (
+                  <p key={p.slice(0, 40)}>{p}</p>
+                ))}
               </div>
+              {seconds.length ? (
+                <div className="tt-front-under">
+                  {seconds.map((r) => (
+                    <article key={r.card.id} className="tt-under-story">
+                      <p className="wsj-kicker">{r.card.teamName}</p>
+                      <h3 className="wsj-hl md">{r.card.headline}</h3>
+                      {pageParas(r.card.body, 1).map((p) => (
+                        <p key={p.slice(0, 40)} className="wsj-dek">
+                          {p}
+                        </p>
+                      ))}
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <WeekPreview games={slate} week={board?.slateWeekNumber ?? 5} />
+              )}
             </div>
             <div className="tt-front-side">
-              {seconds.map((r) => (
-                <article key={r.card.id} className="wsj-story">
-                  <h3 className="wsj-hl md">{r.card.headline}</h3>
-                </article>
-              ))}
               {strips.map((strip) => (
                 <section className="tt-front-rail" aria-label={strip.title} key={strip.title}>
                   <h3 className="wsj-band-title">
@@ -348,25 +499,35 @@ function NflFront({
   );
 }
 
-function NflSchedule({ board }: { board: SectionBoard | null }) {
-  const games = (board?.slate ?? []).filter((g) => !g.final && !g.live);
-  const days = new Map<string, BoxGame[]>();
-  for (const g of games) {
-    const list = days.get(g.day) ?? [];
-    list.push(g);
-    days.set(g.day, list);
-  }
+function NflSchedule({
+  games,
+  folio,
+  week,
+  continued,
+}: {
+  games: BoxGame[];
+  folio: string;
+  week: number;
+  continued?: boolean;
+}) {
+  const days = groupByDay(games);
   return (
-    <TimesChrome folio="NFL7" kicker="NFL" desk="Schedule">
-      <div className="tt-schedule tt-schedule-fill">
-        {[...days.entries()].map(([day, list]) => (
+    <TimesChrome folio={folio} kicker="NFL" desk={continued ? `Schedule · continued` : "Schedule"}>
+      <div className="tt-schedule tt-schedule-fill tt-slate-desk">
+        <h2 className="wsj-band-title">
+          Week {week} {continued ? "schedule, continued" : "schedule"} <em>{games.length} games · times CT</em>
+        </h2>
+        {days.map(([day, list]) => (
           <section key={day}>
             <h3 className="wsj-band-title">
-              {scheduleDayLabel(day)} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
+              {scheduleDayLabel(day)}{" "}
+              <em>
+                {list.length} {list.length === 1 ? "game" : "games"}
+              </em>
             </h3>
-            <div className="tt-matchups" style={{ ["--cols" as string]: "2" }}>
+            <div className="tt-slate-list">
               {list.map((g) => (
-                <MatchupCard key={g.id} game={g} />
+                <SlateLine key={g.id} game={g} />
               ))}
             </div>
           </section>
