@@ -53,5 +53,11 @@ Applied to Supabase project `esdgrgulaxnewmhjuyzh`, in order:
     `sports-highlights`. Optional `pg_cron` job `sports-highlights-sweep`
     once Vault has `sports_highlights_cron`.
 
+15. `sports_finals_preview_sent` — one Telegram evening-preview photo per
+    America/Chicago date (`chicago_date` primary key, service-role only).
+    Written by `sports-finals` `evening-preview`. Cron job
+    `sports-finals-evening-preview` at 5:00pm America/Chicago once Vault has
+    `sports_finals_cron`.
+
 Run `get_advisors` after any schema change; it catches missing RLS and
 mutable-search_path functions.

@@ -6,6 +6,16 @@ import { alertReplyMarkup } from "../_shared/telegram-markup.ts";
 import { finalCaption, loadFinalCard, SUMMARY_PATH } from "./card.ts";
 import { rasterizeSvg } from "./png.ts";
 import {
+  buildEveningPreview,
+  claimPreview,
+  deliverPreview,
+  markPreviewSent,
+  previewJsonMeta,
+  releasePreview,
+  renderEveningPreviewPng,
+} from "./preview.ts";
+import { previewCaption } from "./preview-slate.ts";
+import {
   parseChatIds,
   parseFavoriteTokens,
   parseScope,
@@ -38,6 +48,10 @@ import { sendTelegramPhoto } from "./telegram.ts";
  * Sweep: POST { "action": "sweep" } with header x-sports-finals-cron.
  * Test:  POST { "action": "send", "sport": "nfl", "eventId": "401872964" }.
  * PNG:   POST { "action": "render", "sport": "nfl", "eventId": "401872964" }.
+ * Evening preview (RUWT Today's Top, ~5pm CT):
+ *   POST { "action": "evening-preview" }
+ *   POST { "action": "evening-preview", "dryRun": true }
+ *   POST { "action": "evening-preview", "render": true }  → PNG
  */
 
 const CORS: Record<string, string> = {
@@ -350,6 +364,61 @@ Deno.serve(async (req: Request) => {
     } catch (err) {
       const message = err instanceof Error ? err.message : "sweep failed";
       console.error("finals sweep", message);
+      return json({ error: message }, 500);
+    }
+  }
+
+  if (action === "evening-preview" || action === "preview") {
+    try {
+      const build = await buildEveningPreview();
+      const meta = previewJsonMeta(build);
+      if (build.skipped === "empty") {
+        return json({ ok: true, dryRun: body.dryRun === true, ...meta });
+      }
+      if (body.render === true) {
+        const png = await renderEveningPreviewPng(build.display, build.chicagoDate);
+        return new Response(png, {
+          headers: { ...CORS, "Content-Type": "image/png", "Cache-Control": "no-store" },
+        });
+      }
+      if (body.dryRun === true) {
+        return json({
+          ok: true,
+          dryRun: true,
+          caption: previewCaption(build.display, build.chicagoDate),
+          ...meta,
+        });
+      }
+      const token = Deno.env.get("TELEGRAM_FINALS_BOT_TOKEN")?.trim() ?? "";
+      if (!token) return json({ error: "TELEGRAM_FINALS_BOT_TOKEN is not set" }, 503);
+      let chats = parseChatIds(Deno.env.get("TELEGRAM_FINALS_CHAT_IDS"));
+      if (body.chatId != null && String(body.chatId).trim()) {
+        const chatId = String(body.chatId).trim();
+        if (!chats.includes(chatId)) return json({ error: "chat_id is not on the finals allowlist" }, 403);
+        chats = [chatId];
+      }
+      if (!chats.length) return json({ error: "TELEGRAM_FINALS_CHAT_IDS is empty" }, 503);
+      const db = admin();
+      if (!db) return json({ error: "Supabase service role is not available" }, 500);
+      const claimed = await claimPreview(db, build.chicagoDate);
+      if (claimed === "dup") return json({ ok: true, alreadySent: true, ...meta });
+      if (claimed === "error") return json({ error: "preview claim failed" }, 500);
+      try {
+        const sent = await deliverPreview(build.display, build.chicagoDate, chats, token, origin());
+        await markPreviewSent(
+          db,
+          build.chicagoDate,
+          build.display.map((g) => g.id),
+          sent.bytes,
+        );
+        return json({ ok: true, chats, caption: sent.caption, bytes: sent.bytes, ...meta });
+      } catch (err) {
+        await releasePreview(db, build.chicagoDate);
+        throw err;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "evening preview failed";
+      console.error("finals evening-preview", message);
       return json({ error: message }, 500);
     }
   }

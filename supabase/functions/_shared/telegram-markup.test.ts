@@ -9,6 +9,7 @@ import {
   gameDetailUrl,
   clipShareUrl,
   gameReplyMarkup,
+  previewReplyMarkup,
   ruwtBoardUrl,
   telegramInlineKeyboard,
 } from "./telegram-markup.ts";
@@ -115,4 +116,15 @@ test("highlight messages add a Watch clip link when the NHL share URL is present
     ["Watch clip"],
   );
   assert.equal(clipOnly[0]!.url, share);
+});
+
+test("evening preview ships RUWT board and sports home Mini Apps", () => {
+  const row = parseRow(previewReplyMarkup("https://command-center-flax-gamma.vercel.app/"));
+  assert.deepEqual(
+    row.map((button) => button.text),
+    ["RUWT board", "Sports home"],
+  );
+  assert.equal(row[0]!.web_app?.url, "https://command-center-flax-gamma.vercel.app/sports/ruwt?solo=1");
+  assert.equal(row[1]!.web_app?.url, "https://command-center-flax-gamma.vercel.app/sports?solo=1");
+  for (const button of row) assert.equal(button.url, undefined);
 });

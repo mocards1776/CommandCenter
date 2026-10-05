@@ -2,6 +2,22 @@
 
 ---
 
+## Evening RUWT preview on Finals Telegram — October 5, 2026
+
+- `sports-finals` adds `evening-preview` (alias `preview`): one 1080×1350 PNG
+  of tonight's top not-started games, sent via `@FinalsAndStats_bot` with the
+  existing `TELEGRAM_FINALS_*` secrets. Per-game finals sweep is unchanged.
+- Ranking is a Deno port of RUWT Today's Top (`rankRuwt*` in `ruwt.ts` /
+  `soccer.ts`, including October MLB series weight). Not live-drama heat.
+  Server interest defaults keep Cardinals (MLB 138) and Blues (NHL 19).
+- Window: send time through ~1:30am America/Chicago, cap 8, skip if empty.
+  Idempotent once per Chicago date (`sports_finals_preview_sent`).
+- Cron `sports-finals-evening-preview` at 5:00pm America/Chicago (same
+  `x-sports-finals-cron` header). Newspaper / Times files were not edited.
+- Dry run / PNG: `{"action":"evening-preview","dryRun":true}` or `"render":true`.
+
+---
+
 ## Times: Election Day countdown on A1 — October 5, 2026
 
 - Page one carries a classic masthead ear counting down to Election Day (Tuesday, Nov. 3, 2026). The day count is the edition dateline in America/Chicago, so a back issue stays accurate. On the day the ear reads “ELECTION DAY · Polls close 7 p.m.”; after that it hides and Sports Final returns.
