@@ -6361,6 +6361,45 @@ li.counting .tt-count.card {
   padding-bottom: 16px;
   border-bottom: 2px solid var(--w-rule);
 }
+.tt-nat-cut {
+  margin: 0 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--w-paper-2);
+}
+.tt-nat-cut img {
+  display: block;
+  width: 100%;
+  object-fit: cover;
+  object-position: center 20%;
+  background: #d8d2c4;
+  filter: grayscale(0.18) contrast(1.08) saturate(0.78);
+  border: 1px solid var(--w-hair);
+}
+.tt-nat-cut.lead img {
+  aspect-ratio: 16 / 9;
+  max-height: 420px;
+}
+.tt-nat-cut.medium img {
+  aspect-ratio: 3 / 2;
+  max-height: 210px;
+}
+.tt-nat-cut.thumb img {
+  aspect-ratio: 4 / 3;
+  max-height: 92px;
+}
+.tt-nat-cut figcaption {
+  margin: 0;
+  padding: 0 1px 3px;
+  border-bottom: 1px solid var(--w-hair);
+  font-family: var(--w-label);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
 .tt-nat-src {
   margin: 0 0 4px;
   font-size: 10px;
@@ -6378,19 +6417,48 @@ li.counting .tt-count.card {
   text-transform: none;
 }
 .tt-nat-story.lead .wsj-hl { margin: 0 0 8px; }
+.tt-nat-mediums {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--w-rule);
+}
 .tt-nat-cols {
-  columns: 3;
+  columns: 2;
   column-gap: 24px;
   column-rule: 1px solid var(--w-hair);
   column-fill: balance;
 }
-.tt-nat-story.col {
+.tt-nat-inside {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+.tt-nat-story.col,
+.tt-nat-story.medium {
   break-inside: avoid;
+  min-width: 0;
+}
+.tt-nat-story.col {
   padding: 0 0 16px;
 }
 .tt-nat-story.col + .tt-nat-story.col {
   padding-top: 12px;
   border-top: 1px solid var(--w-hair);
+}
+.tt-nat-story.col.has-photo {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px 12px;
+  align-items: start;
+}
+.tt-nat-story.col.has-photo .tt-nat-cut {
+  margin: 0;
+}
+.tt-nat-story.col.has-photo .tt-nat-cut figcaption {
+  letter-spacing: 0.08em;
+  font-size: 8.5px;
 }
 
 /* ── Section A: the Missouri Scout ──────────────────────────────────── */
@@ -7343,8 +7411,11 @@ li.counting .tt-count.card {
 .newspaper-root .tt-mo-seconds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-mo-flag p { display: block; }
 .newspaper-root .tt-nat-cols { columns: 3; }
+.newspaper-root .tt-nat-mediums { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.newspaper-root .tt-nat-inside { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .newspaper-root .tt-nat-hero h3 { font-size: 34px; }
 .newspaper-root .tt-nat-story.lead .wsj-hl.xl { font-size: 42px; }
+.newspaper-root .tt-nat-cut.lead img { max-height: 480px; }
 .newspaper-root .tt-stars { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
 .newspaper-root .tt-pl-grid { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
 .newspaper-root .tt-feature { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }

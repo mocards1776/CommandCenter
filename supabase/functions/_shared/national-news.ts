@@ -3,8 +3,9 @@
  *
  * Pure ranking: parse public RSS, drop opinion/fluff, cluster the same event
  * across outlets, score by consensus / prominence / recency, then (optionally)
- * let Grok pick the 6–8 stories that run. No network. The newspaper-national
- * edge function fetches feeds and calls Grok; the paper only reads the filed row.
+ * let Grok pick the 12–16 stories that run. No network. The newspaper-national
+ * edge function fetches feeds, fills missing art from og:image, and calls Grok;
+ * the paper only reads the filed row.
  */
 
 import { newspaperParas, splitNewspaperSentences } from "./newspaper-paras.ts";
@@ -53,6 +54,8 @@ export type RawFeedItem = {
   url: string;
   snippet: string | null;
   publishedAt: string | null;
+  imageUrl: string | null;
+  imageCredit: string | null;
 };
 
 export type NationalItem = {
@@ -65,6 +68,8 @@ export type NationalItem = {
   url: string;
   snippet: string | null;
   publishedAt: string | null;
+  imageUrl: string | null;
+  imageCredit: string | null;
   /** 0-based position in that outlet's feed. */
   position: number;
 };
@@ -91,6 +96,8 @@ export type NationalStory = {
   credit: string;
   outlets: string[];
   publishedAt: string | null;
+  imageUrl: string | null;
+  imageCredit: string | null;
 };
 
 export type FeedStatus = {
@@ -127,9 +134,21 @@ export type NationalEditorDesk = {
   model?: string | null;
 };
 
-export const NATIONAL_CLUSTER_CAP = 25;
-export const NATIONAL_STORY_MIN = 6;
-export const NATIONAL_STORY_MAX = 8;
+export const NATIONAL_CLUSTER_CAP = 32;
+export const NATIONAL_STORY_MIN = 12;
+export const NATIONAL_STORY_MAX = 16;
+/** Lead page of Section B; the rest jump to B2. */
+export const NATIONAL_PAGE_FRONT = 8;
+
+export type NationalPhotoSize = "lead" | "medium" | "thumb";
+
+/** Art scale by rank: lead large, next few medium, the rest thumbs or none. */
+export function nationalPhotoSize(index: number, hasImage: boolean): NationalPhotoSize | null {
+  if (!hasImage) return null;
+  if (index <= 0) return "lead";
+  if (index < 4) return "medium";
+  return "thumb";
+}
 
 const TZ = "America/Chicago";
 const PRESS = [
@@ -213,6 +232,94 @@ function toIso(raw: string): string | null {
   return Number.isNaN(t) ? null : new Date(t).toISOString();
 }
 
+function looksLikeImagePath(url: string): boolean {
+  return /\.(jpe?g|png|gif|webp|avif)(?:$|[?#])/i.test(url);
+}
+
+/** Absolute http(s) image URL, or null. Relative URLs resolve against `base`. */
+export function asHttpImageUrl(raw: string | null | undefined, base?: string): string | null {
+  if (!raw) return null;
+  const cleaned = decodeEntities(raw).trim();
+  if (!cleaned) return null;
+  try {
+    const u = new URL(cleaned, base || "https://invalid.example");
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (u.hostname === "invalid.example") return null;
+    if (/\b(1x1|pixel|spacer|sprite|tracking)\b/i.test(u.pathname)) return null;
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+
+function mediaTagIsImage(attrs: string, url: string): boolean {
+  const type = /(?:^|\s)type=["']([^"']+)["']/i.exec(attrs)?.[1] ?? "";
+  const medium = /(?:^|\s)medium=["']([^"']+)["']/i.exec(attrs)?.[1] ?? "";
+  if (medium && medium.toLowerCase() !== "image") return false;
+  if (type && !/^image\//i.test(type)) return false;
+  if (!type && !medium) return looksLikeImagePath(url) || /\/image|\/photo|\/media\//i.test(url);
+  return true;
+}
+
+/** Art on the RSS item: media:content, media:thumbnail, enclosure, or an inline img. */
+export function feedImage(block: string): { url: string | null; credit: string | null } {
+  const candidates: { url: string; width: number }[] = [];
+  const take = (attrs: string) => {
+    const raw = /(?:^|\s)url=["']([^"']+)["']/i.exec(attrs)?.[1] ?? "";
+    const url = asHttpImageUrl(raw);
+    if (!url || !mediaTagIsImage(attrs, url)) return;
+    const width = Number(/(?:^|\s)width=["'](\d+)["']/i.exec(attrs)?.[1] ?? 0);
+    candidates.push({ url, width });
+  };
+  for (const name of ["media:content", "media:thumbnail"]) {
+    const re = new RegExp(`<${name}\\b([^>]*)\\/?>`, "gi");
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(block))) take(match[1] ?? "");
+  }
+  const enc = /<enclosure\b([^>]*)\/?>/gi;
+  let enclosure: RegExpExecArray | null;
+  while ((enclosure = enc.exec(block))) take(enclosure[1] ?? "");
+  if (!candidates.length) {
+    const inline = /<img[^>]+src=["']([^"']+)["']/i.exec(block)?.[1];
+    const url = asHttpImageUrl(inline);
+    if (url) candidates.push({ url, width: 0 });
+  }
+  candidates.sort((a, b) => b.width - a.width);
+  const credit = stripHtml(tagText(block, "media:credit") || tagText(block, "media:title"));
+  return { url: candidates[0]?.url ?? null, credit: credit || null };
+}
+
+/** og:image (or twitter:image) from an article page. */
+export function parseOgImage(html: string, base?: string): string | null {
+  const patterns = [
+    /<meta[^>]+property=["']og:image:secure_url["'][^>]*content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:image:secure_url["']/i,
+    /<meta[^>]+property=["']og:image["'][^>]*content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:image["']/i,
+    /<meta[^>]+name=["']twitter:image(?::src)?["'][^>]*content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]*name=["']twitter:image(?::src)?["']/i,
+  ];
+  for (const re of patterns) {
+    const url = asHttpImageUrl(re.exec(html)?.[1], base);
+    if (url) return url;
+  }
+  return null;
+}
+
+export function imageCreditFor(outlet: string, filed?: string | null): string {
+  const credit = (filed ?? "").replace(/\s+/g, " ").trim();
+  return credit || outlet || "";
+}
+
+function clusterArt(items: NationalItem[], preferred: NationalItem): { imageUrl: string | null; imageCredit: string | null } {
+  if (preferred.imageUrl) {
+    return { imageUrl: preferred.imageUrl, imageCredit: imageCreditFor(preferred.outlet, preferred.imageCredit) };
+  }
+  const hit = items.find((i) => i.imageUrl);
+  if (!hit?.imageUrl) return { imageUrl: null, imageCredit: null };
+  return { imageUrl: hit.imageUrl, imageCredit: imageCreditFor(hit.outlet, hit.imageCredit) };
+}
+
 /** RSS 2 and Atom. Google News items keep the original article URL when present. */
 export function parseRss(xml: string): RawFeedItem[] {
   const items: RawFeedItem[] = [];
@@ -238,11 +345,14 @@ export function parseRss(xml: string): RawFeedItem[] {
       tagText(block, "published") ||
       tagText(block, "updated") ||
       tagText(block, "dc:date");
+    const art = feedImage(block);
     items.push({
       title,
       url: url.replace(/&amp;/g, "&"),
       snippet: stripHtml(desc).slice(0, 420) || null,
       publishedAt: toIso(published),
+      imageUrl: art.url,
+      imageCredit: art.credit,
     });
   }
   return items;
@@ -256,9 +366,9 @@ export function cleanHeadline(title: string): string {
 }
 
 const SKIP_PATH =
-  /\/(opinion|op-ed|oped|opinions|column|columns|commentary|editorial|editorials|podcasts?|video(?:s|watch)?|watch|sponsored|advertisement|entertainment|celebrity|page-six|sports|horoscope|comics|crossword|recipe|lifestyle|shopping|deals|newsletter|newsletters|shows?|videos|down-the-rabbit-hole)\b/i;
+  /\/(opinion|op-ed|oped|opinions|column|columns|commentary|editorial|editorials|analysis|analyses|podcasts?|video(?:s|watch)?|watch|sponsored|advertisement|entertainment|celebrity|page-six|sports|horoscope|comics|crossword|recipe|lifestyle|shopping|deals|newsletter|newsletters|shows?|videos|down-the-rabbit-hole)\b/i;
 const SKIP_TITLE =
-  /\b(opinion|op-?ed|column(?:ist)?|podcast|watch now|sponsored|fox nation|editorial|your letters|horoscope|page six)\b/i;
+  /\b(opinion|op-?ed|column(?:ist)?|analysis|analyses|podcast|watch now|sponsored|fox nation|editorial|your letters|horoscope|page six)\b/i;
 const SKIP_HOST = /(^|\.)(youtube\.com|youtu\.be|spotify\.com|apple\.com)$/i;
 
 function hostOf(url: string): string {
@@ -323,6 +433,8 @@ export function itemsFromFeed(
       url,
       snippet: row.snippet,
       publishedAt: row.publishedAt,
+      imageUrl: asHttpImageUrl(row.imageUrl),
+      imageCredit: row.imageCredit?.replace(/\s+/g, " ").trim() || null,
       position,
     });
   });
@@ -469,6 +581,7 @@ export function storyFromCluster(cluster: NationalCluster): NationalStory {
   const summary =
     sentences(pick.snippet ?? "", 3) ||
     `${pick.title}.`;
+  const art = clusterArt(cluster.items, pick);
   return {
     id: cluster.id,
     headline: pick.title,
@@ -479,7 +592,27 @@ export function storyFromCluster(cluster: NationalCluster): NationalStory {
     credit: creditLine(cluster.items),
     outlets: [...new Set(cluster.items.map((i) => i.outlet))],
     publishedAt: pick.publishedAt,
+    imageUrl: art.imageUrl,
+    imageCredit: art.imageCredit,
   };
+}
+
+/** Keep Grok's order; top up a short desk from the mechanical list. */
+export function padStories(
+  picked: NationalStory[],
+  fallback: NationalStory[],
+  min = NATIONAL_STORY_MIN,
+  max = NATIONAL_STORY_MAX,
+): NationalStory[] {
+  const seen = new Set(picked.map((s) => s.id));
+  const out = picked.slice(0, max);
+  for (const story of fallback) {
+    if (out.length >= min || out.length >= max) break;
+    if (seen.has(story.id)) continue;
+    seen.add(story.id);
+    out.push(story);
+  }
+  return out.slice(0, max);
 }
 
 export function mechanicalStories(clusters: NationalCluster[], limit = NATIONAL_STORY_MAX): NationalStory[] {
@@ -522,7 +655,7 @@ const ids = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 
 /**
- * Hold Grok to the clusters it was shown. Unknown ids drop; 6–8 picks;
+ * Hold Grok to the clusters it was shown. Unknown ids drop; 12–16 picks;
  * a junk answer (too few, empty copy) is null and the mechanical desk runs.
  */
 export function readNationalEditor(
@@ -555,7 +688,7 @@ export function readNationalEditor(
     picks.push({ clusterId, headline, summary, paragraphs, sourceItemId, credit });
     if (picks.length >= NATIONAL_STORY_MAX) break;
   }
-  const need = briefs.length >= NATIONAL_STORY_MIN ? 4 : Math.min(2, briefs.length);
+  const need = briefs.length >= NATIONAL_STORY_MIN ? 8 : Math.min(2, briefs.length);
   if (picks.length < need) return null;
   const rationale = typeof rec.rationale === "string" ? rec.rationale.trim().slice(0, 400) : "";
   const model = typeof rec.model === "string" ? rec.model : null;
@@ -572,6 +705,7 @@ export function storiesFromEditor(
     const cluster = byId.get(pick.clusterId);
     if (!cluster) continue;
     const item = cluster.items.find((i) => i.id === pick.sourceItemId) ?? preferredItem(cluster.items);
+    const art = clusterArt(cluster.items, item);
     out.push({
       id: cluster.id,
       headline: pick.headline,
@@ -582,6 +716,8 @@ export function storiesFromEditor(
       credit: pick.credit || creditLine(cluster.items),
       outlets: [...new Set(cluster.items.map((i) => i.outlet))],
       publishedAt: item.publishedAt,
+      imageUrl: art.imageUrl,
+      imageCredit: art.imageCredit,
     });
   }
   return out;
@@ -606,16 +742,29 @@ export function asNationalDesk(row: {
     if (!s.headline.trim() || !/^https?:\/\//i.test(s.url)) continue;
     const summary = typeof s.summary === "string" ? s.summary : "";
     const paragraphs = storyParagraphs(summary, s.paragraphs);
+    const source = typeof s.source === "string" ? s.source : "";
+    const imageUrl = asHttpImageUrl(
+      (typeof s.imageUrl === "string" && s.imageUrl) ||
+        (typeof s.image === "string" && s.image) ||
+        (typeof s.photo === "string" && s.photo) ||
+        null,
+    );
+    const imageCredit = imageCreditFor(
+      source,
+      typeof s.imageCredit === "string" ? s.imageCredit : null,
+    );
     stories.push({
       id: typeof s.id === "string" ? s.id : hashId(s.url),
       headline: s.headline.trim(),
       summary: paragraphs.join(" ") || summary,
       paragraphs,
       url: s.url,
-      source: typeof s.source === "string" ? s.source : "",
-      credit: typeof s.credit === "string" ? s.credit : typeof s.source === "string" ? s.source : "",
+      source,
+      credit: typeof s.credit === "string" ? s.credit : source,
       outlets: Array.isArray(s.outlets) ? s.outlets.filter((v): v is string => typeof v === "string") : [],
       publishedAt: typeof s.publishedAt === "string" ? s.publishedAt : null,
+      imageUrl,
+      imageCredit: imageUrl ? imageCredit : null,
     });
   }
   if (!stories.length) return null;
@@ -667,6 +816,8 @@ export function sampleNationalDesk(issueId = "2026-10-05-morning"): NationalDesk
         credit: "Fox News, WSJ, AP",
         outlets: ["Fox News", "WSJ", "AP"],
         publishedAt: `${day}T08:20:00.000Z`,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4f/US_Capitol_west_side.JPG/1280px-US_Capitol_west_side.JPG",
+        imageCredit: "Fox News",
       },
       {
         id: "cl-2",
@@ -678,6 +829,8 @@ export function sampleNationalDesk(issueId = "2026-10-05-morning"): NationalDesk
         credit: "WSJ, National Review, Reuters",
         outlets: ["WSJ", "National Review", "Reuters"],
         publishedAt: `${day}T07:05:00.000Z`,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f3/United_States_Supreme_Court_Building.jpg/1280px-United_States_Supreme_Court_Building.jpg",
+        imageCredit: "WSJ",
       },
       {
         id: "cl-3",
@@ -689,6 +842,8 @@ export function sampleNationalDesk(issueId = "2026-10-05-morning"): NationalDesk
         credit: "Fox News, WSJ, Reuters",
         outlets: ["Fox News", "WSJ", "Reuters"],
         publishedAt: `${day}T06:40:00.000Z`,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Flag_of_the_White_House.svg/1280px-Flag_of_the_White_House.svg.png",
+        imageCredit: "Fox News",
       },
       {
         id: "cl-4",
@@ -700,6 +855,8 @@ export function sampleNationalDesk(issueId = "2026-10-05-morning"): NationalDesk
         credit: "WSJ, AP, Washington Examiner",
         outlets: ["WSJ", "AP", "Washington Examiner"],
         publishedAt: `${day}T09:10:00.000Z`,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Marriner_S._Eccles_Federal_Reserve_Board_Building.jpg/1280px-Marriner_S._Eccles_Federal_Reserve_Board_Building.jpg",
+        imageCredit: "WSJ",
       },
       {
         id: "cl-5",
@@ -711,6 +868,8 @@ export function sampleNationalDesk(issueId = "2026-10-05-morning"): NationalDesk
         credit: "Washington Examiner, Fox News, The Dispatch",
         outlets: ["Washington Examiner", "Fox News", "The Dispatch"],
         publishedAt: `${day}T05:55:00.000Z`,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/US_Capitol_Building.jpg/1280px-US_Capitol_Building.jpg",
+        imageCredit: "Washington Examiner",
       },
       {
         id: "cl-6",
@@ -722,6 +881,8 @@ export function sampleNationalDesk(issueId = "2026-10-05-morning"): NationalDesk
         credit: "New York Post, Fox News, AP",
         outlets: ["New York Post", "Fox News", "AP"],
         publishedAt: `${day}T04:15:00.000Z`,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/US-Mexico_border_fence.jpg/1280px-US-Mexico_border_fence.jpg",
+        imageCredit: "New York Post",
       },
       {
         id: "cl-7",
@@ -733,6 +894,8 @@ export function sampleNationalDesk(issueId = "2026-10-05-morning"): NationalDesk
         credit: "WSJ, Reuters, National Review",
         outlets: ["WSJ", "Reuters", "National Review"],
         publishedAt: `${day}T03:30:00.000Z`,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Flag_of_the_United_States.svg/1280px-Flag_of_the_United_States.svg.png",
+        imageCredit: "WSJ",
       },
       {
         id: "cl-8",
@@ -744,6 +907,86 @@ export function sampleNationalDesk(issueId = "2026-10-05-morning"): NationalDesk
         credit: "Washington Free Beacon, The Dispatch",
         outlets: ["Washington Free Beacon", "The Dispatch"],
         publishedAt: `${day}T02:50:00.000Z`,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Missouri_State_Capitol_2009.jpg/1280px-Missouri_State_Capitol_2009.jpg",
+        imageCredit: "Washington Free Beacon",
+      },
+      {
+        id: "cl-9",
+        headline: "Pentagon sends a new Patriot battery to the Middle East",
+        summary:
+          "The Defense Department said it had moved an additional Patriot battery and several hundred troops to the region after weekend strikes on commercial shipping. Officials called the deployment defensive. No timeline for a withdrawal was given.",
+        url: "https://www.foxnews.com/politics/pentagon-patriot-battery",
+        source: "Fox News",
+        credit: "Fox News, WSJ, Reuters",
+        outlets: ["Fox News", "WSJ", "Reuters"],
+        publishedAt: `${day}T08:05:00.000Z`,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Pentagon_US_Department_of_Defense_building.jpg/1280px-Pentagon_US_Department_of_Defense_building.jpg",
+        imageCredit: "Fox News",
+      },
+      {
+        id: "cl-10",
+        headline: "House votes to keep Ukraine aid flowing through the winter",
+        summary:
+          "The House passed a short-term Ukraine assistance bill after a weekend of talks with holdouts. The Senate is expected to take it up this week. The White House said the package does not include new long-range weapons.",
+        url: "https://www.wsj.com/politics/ukraine-aid-house",
+        source: "WSJ",
+        credit: "WSJ, The Dispatch, AP",
+        outlets: ["WSJ", "The Dispatch", "AP"],
+        publishedAt: `${day}T07:40:00.000Z`,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/Flag_of_Ukraine.svg/1280px-Flag_of_Ukraine.svg.png",
+        imageCredit: "WSJ",
+      },
+      {
+        id: "cl-11",
+        headline: "Gulf hurricane makes landfall as a Category 2 storm",
+        summary:
+          "The National Hurricane Center said the storm came ashore west of Tampa with 100-mile-an-hour winds. Evacuation orders covered three coastal counties. Power companies reported more than 400,000 customers without electricity at press time.",
+        url: "https://nypost.com/news/gulf-hurricane-landfall",
+        source: "New York Post",
+        credit: "New York Post, Fox News, AP",
+        outlets: ["New York Post", "Fox News", "AP"],
+        publishedAt: `${day}T06:10:00.000Z`,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/Hurricane_Ian_2022-09-28_1510Z.jpg/1280px-Hurricane_Ian_2022-09-28_1510Z.jpg",
+        imageCredit: "New York Post",
+      },
+      {
+        id: "cl-12",
+        headline: "Justice Department charges a former aide in a classified-files case",
+        summary:
+          "Prosecutors unsealed an indictment accusing a former White House aide of retaining classified documents after leaving office. The defendant’s lawyer said the files were stored by mistake. A first appearance is set for Thursday.",
+        url: "https://www.washingtonexaminer.com/news/doj-classified-files",
+        source: "Washington Examiner",
+        credit: "Washington Examiner, Fox News",
+        outlets: ["Washington Examiner", "Fox News"],
+        publishedAt: `${day}T05:20:00.000Z`,
+        imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/US-DeptOfJustice-Seal.svg/1024px-US-DeptOfJustice-Seal.svg.png",
+        imageCredit: "Washington Examiner",
+      },
+      {
+        id: "cl-13",
+        headline: "September jobs report shows hiring slowed but did not stall",
+        summary:
+          "Employers added fewer jobs than economists had forecast, and the unemployment rate ticked up a tenth of a point. Wage growth cooled. The figures landed as Fed officials debate whether to wait on a rate cut.",
+        url: "https://www.wsj.com/economy/september-jobs-report",
+        source: "WSJ",
+        credit: "WSJ, AP",
+        outlets: ["WSJ", "AP"],
+        publishedAt: `${day}T12:30:00.000Z`,
+        imageUrl: null,
+        imageCredit: null,
+      },
+      {
+        id: "cl-14",
+        headline: "Taiwan reports a new surge of Chinese military flights",
+        summary:
+          "Taiwan’s defense ministry said more than 40 Chinese military aircraft crossed the median line of the Taiwan Strait overnight. Beijing said the drills were routine. Washington called on both sides to avoid an incident.",
+        url: "https://thedispatch.com/taiwan-strait-flights",
+        source: "The Dispatch",
+        credit: "The Dispatch, Reuters",
+        outlets: ["The Dispatch", "Reuters"],
+        publishedAt: `${day}T03:05:00.000Z`,
+        imageUrl: null,
+        imageCredit: null,
       },
     ].map((story) => ({ ...story, paragraphs: newspaperParas(story.summary) })),
   };

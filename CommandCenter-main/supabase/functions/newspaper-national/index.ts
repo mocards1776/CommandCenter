@@ -2,11 +2,15 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
   clusterBriefs,
+  imageCreditFor,
   itemsFromFeed,
   mechanicalStories,
   NATIONAL_CLUSTER_CAP,
   NATIONAL_SOURCES,
+  NATIONAL_STORY_MIN,
   nationalPress,
+  padStories,
+  parseOgImage,
   parseRss,
   rankClusters,
   readNationalEditor,
@@ -15,6 +19,7 @@ import {
   type NationalDesk,
   type NationalItem,
   type NationalSource,
+  type NationalStory,
 } from "../_shared/national-news.ts";
 import {
   bearerToken,
@@ -40,15 +45,17 @@ const CORS: Record<string, string> = {
 
 const MODEL = "grok-4.6";
 const XAI_BASE = "https://api.x.ai/v1";
-const EDITOR_TIMEOUT_MS = 45_000;
+const EDITOR_TIMEOUT_MS = 60_000;
+const OG_TIMEOUT_MS = 6_000;
+const OG_UA = "ThompsonTimes/1.0 (national-news desk)";
 
 const SYSTEM = `You are the national-news editor of the Thompson Times, a one-reader broadsheet printed three times a day (6 a.m. morning, noon midday, 5 p.m. evening, Central time) for a reader in Marshfield, Missouri.
 
 You receive CLUSTER briefs: events already grouped across conservative-leaning straight-news desks (Fox News, WSJ, New York Post, Washington Examiner, Washington Free Beacon, The Dispatch, National Review news, Daily Wire) plus AP and Reuters as a wire check. Each cluster has a mechanical score. Opinion, columns, podcasts, videos and celebrity fluff should already be thin; reject any that slipped through.
 
-Pick the 6 to 8 most important NATIONAL stories for this edition.
+Pick the 12 to 16 most important NATIONAL stories for this edition. News only — no opinion, analysis or columns.
 - Importance: government, war and diplomacy, the courts, the economy, the border, elections, major disasters. Not sports, not celebrity, not culture-war bait unless it is actual news.
-- Reject duplicates, day-old process pieces, and anything that is really an opinion column.
+- Reject duplicates, day-old process pieces, and anything that is really an opinion column, analysis or signed column.
 - For each pick write a clean newspaper headline (no outlet name, no question-mark tease) and a 2–3 sentence factual summary in neutral newspaper voice. Put each sentence in the \`paragraphs\` array (one sentence per string). Also set \`summary\` to those paragraphs joined by spaces. Do not editorialize. Do not invent facts that are not in the cluster.
 - sourceItemId must be one of the item ids in that cluster. Prefer the conservative outlet's straight-news piece (Fox, WSJ, Examiner, Post) over the wire; use AP or Reuters only when they are the clearest account.
 - credit is the outlets that filed it, conservative first, like "Fox News, WSJ" or "WSJ, AP".
@@ -115,7 +122,7 @@ async function askGrok(apiKey: string, user: string): Promise<{ desk: Record<str
       model: MODEL,
       store: false,
       reasoning: { effort: "low" },
-      max_output_tokens: 4000,
+      max_output_tokens: 8000,
       input: [
         { role: "system", content: SYSTEM },
         { role: "user", content: user },
@@ -160,6 +167,48 @@ function budgetText(edition: string, briefs: ReturnType<typeof clusterBriefs>): 
     `CLUSTERS (${briefs.length}, best first, one JSON object per line):`,
     ...briefs.map((b) => JSON.stringify(b)),
   ].join("\n");
+}
+
+async function fetchOgImage(articleUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(articleUrl, {
+      headers: {
+        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "User-Agent": OG_UA,
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(OG_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    if (html.length < 80) return null;
+    return parseOgImage(html, articleUrl);
+  } catch {
+    return null;
+  }
+}
+
+async function attachStoryImages(stories: NationalStory[]): Promise<NationalStory[]> {
+  const out: NationalStory[] = new Array(stories.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(4, stories.length) }, async () => {
+    while (next < stories.length) {
+      const i = next++;
+      const story = stories[i]!;
+      if (story.imageUrl) {
+        out[i] = { ...story, imageCredit: imageCreditFor(story.source, story.imageCredit) };
+        continue;
+      }
+      const imageUrl = await fetchOgImage(story.url);
+      out[i] = {
+        ...story,
+        imageUrl,
+        imageCredit: imageUrl ? imageCreditFor(story.source, story.imageCredit) : null,
+      };
+    }
+  });
+  await Promise.all(workers);
+  return out;
 }
 
 Deno.serve(async (req: Request) => {
@@ -215,7 +264,8 @@ Deno.serve(async (req: Request) => {
 
   const clusters = rankClusters(items);
   const briefs = clusterBriefs(clusters, NATIONAL_CLUSTER_CAP);
-  let stories = mechanicalStories(clusters);
+  const mechanical = mechanicalStories(clusters);
+  let stories = mechanical;
   let editor: NationalDesk["editor"] = { model: null, fallback: true, rationale: "Mechanical ranking." };
 
   const apiKey = Deno.env.get("XAI_API_KEY");
@@ -225,8 +275,8 @@ Deno.serve(async (req: Request) => {
       const read = readNationalEditor({ ...desk, model }, briefs);
       if (read) {
         const picked = storiesFromEditor(read, clusters);
-        if (picked.length >= 4) {
-          stories = picked;
+        if (picked.length >= 8 || (picked.length >= 4 && briefs.length < NATIONAL_STORY_MIN)) {
+          stories = padStories(picked, mechanical);
           editor = { model, fallback: false, rationale: read.rationale };
         }
       }
@@ -234,6 +284,8 @@ Deno.serve(async (req: Request) => {
       /* the mechanical desk still files */
     }
   }
+
+  stories = await attachStoryImages(stories);
 
   if (!stories.length) return json({ ok: false, error: "Nothing to file", sources }, 502);
 

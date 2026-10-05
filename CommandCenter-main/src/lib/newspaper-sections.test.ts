@@ -522,7 +522,10 @@ const withNational = buildEdition({
   national: sampleNationalDesk("2026-09-30-morning"),
 });
 const natPages = withNational.pages.filter((p) => p.kind === "national");
-assert(natPages.length === 1 && natPages[0]!.folio === "B1", "National News files as section B");
+assert(natPages.length === 2 && natPages[0]!.folio === "B1" && natPages[1]!.folio === "B2", "National News files as two pages in section B");
+assert(natPages[0]!.stories.length === 8 && natPages[1]!.stories.length === 6, "B1 holds the lead eight; B2 the rest");
+assert(natPages[0]!.startIndex === 0 && natPages[1]!.startIndex === 8, "B2 photos keep their rank");
+assert(natPages[0]!.jumpFolio === "B2", "B1 turns to B2");
 assert(
   withNational.pages.find((p) => p.kind === "missouri")?.folio === "C1",
   "Missouri yields B to National News and becomes C",
@@ -531,7 +534,18 @@ const natAt = withNational.pages.findIndex((p) => p.kind === "national");
 const moAt = withNational.pages.findIndex((p) => p.kind === "missouri");
 const nflAt = withNational.pages.findIndex((p) => p.folio === "NFL1");
 assert(natAt > 0 && natAt < moAt && moAt < nflAt, "A, then National, then Missouri, then sports");
-assert(withNational.sections.some((s) => s.code === "B" && s.title === "National News"), "section list names National News");
+assert(withNational.sections.some((s) => s.code === "B" && s.title === "National News" && s.pages === 2), "section list names National News");
+assert(
+  withNational.sections.find((s) => s.code === "B")?.stories === 14,
+  "section B counts every national story",
+);
+const shortNational = buildEdition({
+  stories: [cardinals, lionsNote],
+  clubs: [cards, chiefs, lionsClub],
+  edition,
+  national: { ...sampleNationalDesk("2026-09-30-morning"), stories: sampleNationalDesk("2026-09-30-morning").stories.slice(0, 8) },
+});
+assert(shortNational.pages.filter((p) => p.kind === "national").length === 1, "an eight-story desk still prints one page");
 assert(!buildEdition({ stories: [lionsNote], clubs: [lionsClub], edition }).pages.some((p) => p.kind === "national"), "empty national hides");
 
 const nflPlayers = withDesks.pages.find((page) => page.folio === "NFL6");

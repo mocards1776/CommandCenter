@@ -4,15 +4,22 @@
  */
 import {
   asNationalDesk,
+  asHttpImageUrl,
   cleanHeadline,
   clusterItems,
   clusterBriefs,
   creditLine,
+  feedImage,
   isExcludedItem,
   itemsFromFeed,
   mechanicalStories,
+  nationalPhotoSize,
   nationalPress,
   NATIONAL_SOURCES,
+  NATIONAL_STORY_MAX,
+  NATIONAL_STORY_MIN,
+  padStories,
+  parseOgImage,
   parseRss,
   preferredItem,
   rankClusters,
@@ -46,6 +53,8 @@ const rss = `<?xml version="1.0"?>
     <link>https://www.foxnews.com/politics/spending-talks</link>
     <pubDate>Sun, 05 Oct 2026 08:00:00 GMT</pubDate>
     <description>Negotiators returned to the Capitol overnight.</description>
+    <media:content url="https://a57.foxnews.com/static.foxnews.com/foxnews.com/content/uploads/2026/10/capitol.jpg?ve=1&amp;tl=1" type="image/jpeg" width="931" height="523" />
+    <media:credit>Fox News</media:credit>
   </item>
   <item>
     <title>Bari Weiss: Why the left cannot quit Trump</title>
@@ -67,15 +76,20 @@ assert(parsed.length === 4, "parseRss reads every item");
 assert(parsed[0]!.title.includes("White House"), "title comes out of CDATA");
 assert(parsed[0]!.url.includes("foxnews.com/politics"), "link is kept");
 assert(parsed[0]!.publishedAt?.startsWith("2026-10-05"), "pubDate becomes ISO");
+assert(parsed[0]!.imageUrl?.includes("foxnews.com") && parsed[0]!.imageUrl.includes("capitol.jpg"), "media:content url is kept");
+assert(parsed[0]!.imageCredit === "Fox News", "media:credit is kept");
 
 assert(cleanHeadline("White House talks - Fox News") === "White House talks", "outlet suffix drops");
 assert(isExcludedItem({ title: "A column", url: "https://www.wsj.com/opinion/x" }), "opinion path is spiked");
 assert(isExcludedItem({ title: "Watch now: the debate", url: "https://www.foxnews.com/politics/debate" }), "watch-now title is spiked");
+assert(isExcludedItem({ title: "Analysis: the spending fight", url: "https://www.wsj.com/politics/spending-analysis" }), "analysis title is spiked");
+assert(isExcludedItem({ title: "Senate math", url: "https://www.washingtonexaminer.com/analysis/senate-math" }), "analysis path is spiked");
 assert(!isExcludedItem({ title: "Senate reopens the spending fight", url: "https://www.foxnews.com/politics/spending" }), "straight news stays");
 
 const foxItems = itemsFromFeed(fox, parsed);
 assert(foxItems.length === 1 && foxItems[0]!.position === 0, "opinion, video and sports drop; lead keeps its rank");
 assert(foxItems[0]!.title === "White House and Senate reopen spending talks", "headline is cleaned");
+assert(foxItems[0]!.imageUrl?.includes("capitol.jpg"), "feed art rides on the item");
 
 const google = parseRss(`<rss><channel>
   <item>
@@ -96,12 +110,14 @@ function item(partial: Partial<NationalItem> & Pick<NationalItem, "id" | "title"
     url: `https://example.com/${partial.id}`,
     snippet: `${partial.title}. More copy follows for the summary.`,
     publishedAt: "2026-10-05T08:00:00Z",
+    imageUrl: null,
+    imageCredit: null,
     position: 0,
     ...partial,
   };
 }
 
-const spendFox = item({ id: "a", title: "White House and Senate reopen spending talks", outlet: "Fox News", outletWeight: 1.2, position: 0, kind: "popular" });
+const spendFox = item({ id: "a", title: "White House and Senate reopen spending talks", outlet: "Fox News", outletWeight: 1.2, position: 0, kind: "popular", imageUrl: "https://a57.foxnews.com/capitol.jpg", imageCredit: "Fox News" });
 const spendWsj = item({ id: "b", title: "Senate spending talks restart at the White House", outlet: "WSJ", outletWeight: 1.3, position: 1 });
 const spendAp = item({ id: "c", title: "White House spending talks resume in Senate", outlet: "AP", outletWeight: 1.15, kind: "wire", position: 0 });
 const celeb = item({ id: "d", title: "A singer posts a new album teaser online", outlet: "New York Post", outletWeight: 1, position: 2, publishedAt: "2026-10-03T08:00:00Z" });
@@ -210,8 +226,6 @@ const filed = asNationalDesk({
 assert(filed?.stories.length === 2 && filed.issueId === "2026-10-05-morning", "a filed row becomes a desk");
 assert(asNationalDesk({ issue_id: "2026-10-05-morning", stories: [] }) == null, "empty row hides the section");
 
-const sample = sampleNationalDesk("2026-10-05-morning");
-assert(sample.stories.length === 8 && sample.stories[0]!.headline.length > 20, "sample desk is a full page");
 assert(NATIONAL_SOURCES.some((s) => s.id === "fox-popular" && s.kind === "popular"), "Fox most-read is in the list");
 assert(NATIONAL_SOURCES.every((s) => s.url.startsWith("https://")), "every source is a public https feed");
 
@@ -222,5 +236,29 @@ assert(nationalPress(new Date("2026-10-05T22:30:00Z")).edition === "evening", "5
 
 const story = storyFromCluster(ranked[0]!);
 assert(story.summary.length > 20 && story.credit.includes("AP"), "cluster story has a summary and wire credit");
+assert(story.imageUrl?.includes("capitol.jpg") && story.imageCredit === "Fox News", "cluster keeps the conservative desk's photo");
+
+const sample = sampleNationalDesk("2026-10-05-morning");
+assert(sample.stories.length >= NATIONAL_STORY_MIN && sample.stories.length <= NATIONAL_STORY_MAX, "sample desk is a two-page budget");
+assert(sample.stories[0]!.imageUrl && sample.stories[0]!.imageCredit, "lead sample has art and a credit");
+assert(nationalPhotoSize(0, true) === "lead" && nationalPhotoSize(2, true) === "medium" && nationalPhotoSize(5, true) === "thumb", "photo scale follows rank");
+assert(nationalPhotoSize(0, false) == null, "no art, no hole");
+assert(asHttpImageUrl("javascript:alert(1)") == null, "non-http image is dropped");
+assert(parseOgImage('<meta property="og:image" content="https://www.foxnews.com/og.jpg">') === "https://www.foxnews.com/og.jpg", "og:image is read");
+assert(
+  feedImage(`<item><enclosure url="https://nypost.com/photo.jpg" type="image/jpeg" /></item>`).url?.includes("photo.jpg"),
+  "enclosure image is accepted",
+);
+assert(padStories(edited.slice(0, 1), mech, 3, 8).length === 3, "a short editor desk is topped up");
+
+const filedWithArt = asNationalDesk({
+  issue_id: "2026-10-05-morning",
+  edition: "morning",
+  stories: [{ ...edited[0]!, imageUrl: "https://a57.foxnews.com/capitol.jpg", imageCredit: "Fox News" }],
+  sources: [],
+  editor: { fallback: false, model: "grok-4.6" },
+  printed_at: "2026-10-05T11:07:00Z",
+});
+assert(filedWithArt?.stories[0]!.imageUrl?.includes("capitol.jpg"), "a filed row keeps its photograph");
 
 console.log("newspaper-national ok");
