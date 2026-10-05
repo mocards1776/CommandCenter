@@ -792,6 +792,37 @@ assert.equal(mlbPlayoff.playoff, true);
 assert.match(mlbPlayoff.seriesLine ?? "", /MIL leads series 2-0 · Game 2 of 5/);
 assert.ok(mlbPlayoff.mlbBox?.batting.home.rows.length);
 assert.equal(mlbPlayoffFromSummary("mlb", { header: { season: { type: 3 } }, seasonseries: [{ type: "playoff", summary: "MIL leads series 2-0", totalCompetitions: 5 }] }, {}).playoff, true);
+{
+  const mixed = mlbPlayoffFromSummary(
+    "mlb",
+    {
+      header: { id: "401908003", season: { type: 3 } },
+      seasonseries: [
+        {
+          type: "playoff",
+          events: [
+            {
+              id: "401908002",
+              date: "2026-10-04T00:30:00Z",
+              status: "post",
+              statusType: { completed: true, state: "post" },
+              competitors: [
+                { homeAway: "away", score: "2", winner: false, team: { abbreviation: "SD" } },
+                { homeAway: "home", score: "3", winner: true, team: { abbreviation: "MIL" } },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "401908003",
+      series: [{ type: "playoff", events: [{ id: "401908002", $ref: "http://stub" }] }],
+    },
+  );
+  assert.equal(mixed.seriesGames[0]?.winnerAbbrev, "MIL");
+  assert.equal(mixed.seriesGames[0]?.awayScore, 2);
+}
 mlbPlayoff.standings = tablesFromStandings(
   "mlb",
   {

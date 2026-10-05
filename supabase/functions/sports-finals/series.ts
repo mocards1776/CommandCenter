@@ -95,6 +95,13 @@ function num(value: unknown): number | null {
   return null;
 }
 
+function seriesEventsHydrated(series: Rec): boolean {
+  return arr(series.events).some((event) => {
+    const row = rec(event);
+    return Boolean(str(row.date) || arr(row.competitors).length);
+  });
+}
+
 function seriesBlobs(comp: Rec, body: Rec): Rec[] {
   const fromComp = arr(comp.series).length ? arr(comp.series) : comp.series ? [comp.series] : [];
   return [...fromComp, ...arr(body.seasonseries)].map(rec);
@@ -157,7 +164,9 @@ export function mlbPlayoffFromSummary(sport: string, body: unknown, comp: unknow
   const competition = rec(comp);
   const blobs = seriesBlobs(competition, raw);
   const playoffRow =
+    blobs.find((row) => str(row.type) === "playoff" && seriesEventsHydrated(row)) ??
     blobs.find((row) => str(row.type) === "playoff") ??
+    (isMlbPostseason(raw) ? blobs.find((row) => str(row.type) === "current" && seriesEventsHydrated(row)) : undefined) ??
     (isMlbPostseason(raw) ? blobs.find((row) => str(row.type) === "current") : undefined);
   const postseason = Boolean(playoffRow) || isMlbPostseason(raw);
   if (!postseason) return { playoff: false, seriesLine: null, seriesGames: [] };

@@ -97,8 +97,8 @@ function mixHex(hex: string, toward: string, t: number): string {
 
 function liftReadable(hex: string, minY: number): string {
   let cur = hex;
-  for (let i = 0; i < 8 && luminance(cur) < minY; i++) {
-    cur = mixHex(cur, "#ffffff", 0.2);
+  for (let i = 0; i < 6 && luminance(cur) < minY; i++) {
+    cur = mixHex(cur, "#ffffff", 0.12);
   }
   return cur;
 }
@@ -205,7 +205,7 @@ function abbrevChip(abbrev: string, x: number, y: number, fill: string): string 
   const w = Math.max(58, abbrev.length * 15 + 20);
   const ink = isLightTeamColor(fill) ? "#140c08" : "#f7f4ee";
   return [
-    `<rect x="${x}" y="${y}" width="${w}" height="30" rx="7" fill="${fill}"/>`,
+    `<rect x="${x}" y="${y}" width="${w}" height="30" rx="7" fill="${fill}" stroke="#07101d" stroke-width="2"/>`,
     text(abbrev, x + 10, y + 21, { size: 16, fill: ink, weight: 700, spacing: 0.7 }),
   ].join("");
 }
