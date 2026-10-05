@@ -3,7 +3,7 @@
  * short network names, and the sample slate. Fetching lives in newspaper-watch.ts.
  */
 
-export type WatchLeague = "MLB" | "NFL" | "NHL" | "CFB" | "Soccer";
+export type WatchLeague = "MLB" | "NFL" | "NHL" | "CFB" | "Soccer" | "NBA" | "WNBA";
 
 export type WatchSide = {
   name: string;
@@ -37,6 +37,8 @@ export type WatchGame = {
   favoriteLabel?: string | null;
   /** One-line reason printed on must-watch rows. Frozen with the issue. */
   printReason?: string | null;
+  /** ESPN season type 1. NBA/WNBA exhibitions always print in the lowest tier. */
+  preseason?: boolean;
 };
 
 export type WatchFavorite = {
@@ -153,6 +155,9 @@ const NETWORKS: { test: RegExp; name: string; streaming?: boolean }[] = [
   { test: /^big\s*ten(\s*network)?$|^btn$/i, name: "BTN" },
   { test: /^nfl\s*network$|^nfln$/i, name: "NFLN" },
   { test: /^nhl\s*network$|^nhln$/i, name: "NHLN" },
+  { test: /^nba\s*tv$|^nbatv$/i, name: "NBA TV" },
+  { test: /^nba\s*(league\s*)?pass$/i, name: "NBA Pass", streaming: true },
+  { test: /^wnba\s*(league\s*)?pass$/i, name: "WNBA Pass", streaming: true },
   { test: /^ion$/i, name: "ION" },
   { test: /^the\s*cw$|^cw$/i, name: "CW" },
   { test: /^unim[aá]s$/i, name: "UniMás" },
@@ -176,6 +181,8 @@ export function timesTeamInterest(favs: WatchFavorite[]): {
   nhl: Record<string, number>;
   cfb: Record<string, number>;
   soccer: Record<string, number>;
+  nba: Record<string, number>;
+  wnba: Record<string, number>;
   ids: Set<string>;
   byId: Map<string, WatchFavorite>;
 } {
@@ -184,6 +191,8 @@ export function timesTeamInterest(favs: WatchFavorite[]): {
   const nhl: Record<string, number> = {};
   const cfb: Record<string, number> = {};
   const soccer: Record<string, number> = {};
+  const nba: Record<string, number> = {};
+  const wnba: Record<string, number> = {};
   const ids = new Set<string>();
   const byId = new Map<string, WatchFavorite>();
   const bump = (map: Record<string, number>, id: string | null | undefined, fav: WatchFavorite) => {
@@ -203,11 +212,49 @@ export function timesTeamInterest(favs: WatchFavorite[]): {
       bump(nhl, espnId, fav);
     } else if (/college-football/i.test(path)) {
       bump(cfb, espnId, fav);
+    } else if (/basketball\/wnba/i.test(path) || fav.league === "WNBA") {
+      bump(wnba, espnId, fav);
+    } else if (/basketball\/nba/i.test(path) || fav.league === "NBA") {
+      bump(nba, espnId, fav);
     } else if (/\/soccer\//i.test(path) || fav.sport === "Soccer") {
       bump(soccer, espnId, fav);
     }
   }
-  return { mlb, nfl, nhl, cfb, soccer, ids, byId };
+  return { mlb, nfl, nhl, cfb, soccer, nba, wnba, ids, byId };
+}
+
+export const WATCH_LEAGUE_LABEL: Record<WatchLeague, string> = {
+  MLB: "MLB",
+  NFL: "NFL",
+  NHL: "NHL",
+  CFB: "CFB",
+  Soccer: "Soccer",
+  NBA: "NBA",
+  WNBA: "WNBA",
+};
+
+export const WATCH_LEAGUE_COLOR: Record<WatchLeague, string> = {
+  MLB: "#002d72",
+  NFL: "#013369",
+  NHL: "#111111",
+  CFB: "#7a1f1f",
+  Soccer: "#1b6b3a",
+  NBA: "#c8102e",
+  WNBA: "#fa4616",
+};
+
+export function watchLeagueLabel(game: Pick<WatchGame, "league" | "competition">): string {
+  if (game.league === "Soccer") return game.competition || WATCH_LEAGUE_LABEL.Soccer;
+  return WATCH_LEAGUE_LABEL[game.league];
+}
+
+export function watchLeagueColor(league: WatchLeague): string {
+  return WATCH_LEAGUE_COLOR[league];
+}
+
+/** NBA/WNBA exhibitions never take a must-watch or worth-it slot. */
+export function isWatchPreseasonLowTier(game: WatchGame): boolean {
+  return Boolean(game.preseason && (game.league === "NBA" || game.league === "WNBA"));
 }
 
 export function asPrintGame<G extends { live: boolean }>(g: G): G {
@@ -314,12 +361,19 @@ export function watchBlockId(iso: string | null | undefined): WatchBlockId {
 
 export function assignWatchTiers(games: WatchGame[]): Map<string, WatchTier> {
   const ranked = [...games].sort(byHeat);
-  const mustN = ranked.length >= 16 ? 5 : Math.min(4, ranked.length);
-  const worthN = Math.min(10, Math.max(0, ranked.length - mustN));
+  const counted = ranked.filter((g) => !isWatchPreseasonLowTier(g));
+  const mustN = counted.length >= 16 ? 5 : Math.min(4, counted.length);
+  const worthN = Math.min(10, Math.max(0, counted.length - mustN));
   const map = new Map<string, WatchTier>();
-  ranked.forEach((g, i) => {
+  let i = 0;
+  for (const g of ranked) {
+    if (isWatchPreseasonLowTier(g)) {
+      map.set(g.id, "around");
+      continue;
+    }
     map.set(g.id, i < mustN ? "must" : i < mustN + worthN ? "worth" : "around");
-  });
+    i += 1;
+  }
   return map;
 }
 
@@ -634,6 +688,7 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     tv?: string[];
     heat: number;
     reason?: string;
+    preseason?: boolean;
   }> = [
     { id: "mlb-cle-det", league: "MLB", away: ["Cleveland", "CLE"], home: ["Detroit", "DET"], hour: 12, minute: 10, tv: ["MLB.TV"], heat: 48, reason: "Contenders" },
     { id: "mlb-hou-sea", league: "MLB", away: ["Houston", "HOU"], home: ["Seattle", "SEA"], hour: 15, minute: 40, tv: ["FS1"], heat: 47 },
@@ -656,6 +711,8 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
     { id: "soccer-around2", league: "Soccer", competition: "Championship", away: ["Burnley", "BUR"], home: ["QPR", "QPR"], hour: 9, minute: 0, tv: [], heat: 21 },
     { id: "mlb-late-west", league: "MLB", away: ["San Diego", "SD"], home: ["San Francisco", "SF"], hour: 21, minute: 45, tv: ["MLB.TV"], heat: 41 },
     { id: "nhl-late", league: "NHL", away: ["Edmonton", "EDM"], home: ["Vancouver", "VAN"], hour: 21, minute: 30, tv: ["ESPN+"], heat: 37 },
+    { id: "nba-pre-den", league: "NBA", away: ["Denver", "DEN"], home: ["Utah", "UTA"], hour: 20, minute: 0, tv: ["NBA TV"], heat: 8, reason: "Preseason", preseason: true },
+    { id: "nba-pre-phi", league: "NBA", away: ["Philadelphia", "PHI"], home: ["Boston", "BOS"], hour: 18, minute: 30, tv: ["ESPN"], heat: 5, reason: "Preseason", preseason: true },
     { id: "cfb-late", league: "CFB", away: ["USC", "USC"], home: ["Michigan St.", "MSU"], hour: 21, minute: 0, tv: ["FS1"], heat: 39 },
     { id: "mlb-mid", league: "MLB", away: ["Milwaukee", "MIL"], home: ["Cincinnati", "CIN"], hour: 12, minute: 40, tv: [], heat: 28 },
     { id: "mlb-unknown-tv", league: "MLB", away: ["Kansas City", "KC"], home: ["Minnesota", "MIN"], hour: 13, minute: 10, tv: ["Mystery Regional Sports"], heat: 27 },
@@ -678,6 +735,7 @@ export function sampleWatchSlate(day = "2026-10-05"): WatchGame[] {
         printReason: row.reason ?? null,
         favorite: Boolean(row.reason && /wolves|wrexham|arsenal|lions|chiefs|cardinals|blues|mizzou/i.test(row.reason)),
         favoriteLabel: row.reason && /wolves/i.test(row.reason) ? "Wolves" : null,
+        preseason: row.preseason,
       }),
     );
   }

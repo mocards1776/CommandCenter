@@ -13,7 +13,10 @@ import {
   sampleWatchSlate,
   timesTeamInterest,
   watchBlockId,
+  watchLeagueColor,
+  watchLeagueLabel,
   WATCH_BLOCK_OVERFLOW,
+  WATCH_LEAGUE_COLOR,
   WATCH_PAGE_GAMES,
   type WatchGame,
 } from "./newspaper-watch-page.ts";
@@ -101,6 +104,8 @@ assert(printNetworks(["USA Network"])[0]?.name === "USA", "USA Network shortens 
 assert(printNetworks([]).length === 0, "unknown stays blank");
 assert(printNetworks(["Mystery Regional Sports"]).length === 0, "long unknown RSNs are omitted, not invented");
 assert(printNetworks(["NESN"])[0]?.name === "NESN", "an already-short API name may print");
+assert(printNetworks(["NBA TV"])[0]?.name === "NBA TV", "NBA TV prints as a small-caps network");
+assert(printNetworks(["NBA League Pass"])[0]?.streaming, "League Pass is marked streaming");
 
 assert(printReason(game({ id: "r1", heat: 10, reasons: ["Playoff Game 3"] })) === "Playoff Game 3", "playoff reason");
 assert(
@@ -161,13 +166,28 @@ const desk = timesTeamInterest([
   { league: "NHL", sport: "Hockey", espnPath: "hockey/nhl/teams/19", shortName: "Blues" },
   { league: "NCAA", sport: "Football", espnPath: "football/college-football/teams/142", shortName: "Mizzou FB" },
   { league: "Premier League", sport: "Soccer", espnPath: "soccer/eng.1/teams/359", shortName: "Arsenal" },
+  { league: "NBA", sport: "Basketball", espnPath: "basketball/nba/teams/20", shortName: "76ers" },
 ]);
 assert(desk.mlb["138"] === 10, "Cardinals use the MLB id, not the ESPN path id");
 assert(desk.nfl["8"] === 10 && desk.nfl["12"] === 10, "Lions and Chiefs from the Times desk");
 assert(desk.nhl["19"] === 10, "Blues from the Times desk");
 assert(desk.cfb["142"] === 10, "Mizzou from the Times desk");
 assert(desk.soccer["359"] === 10, "Arsenal from the Times desk");
+assert(desk.nba["20"] === 10, "Sixers from the Times desk");
 assert(!("24" in desk.mlb), "ESPN MLB path id is not the interest key");
+
+assert(watchLeagueLabel(game({ id: "nba-lab", heat: 5, league: "NBA" })) === "NBA", "NBA league label");
+assert(watchLeagueLabel(game({ id: "wnba-lab", heat: 5, league: "WNBA" })) === "WNBA", "WNBA league label");
+assert(WATCH_LEAGUE_COLOR.NBA && WATCH_LEAGUE_COLOR.WNBA, "NBA and WNBA have colors");
+assert(watchLeagueColor("NBA") === WATCH_LEAGUE_COLOR.NBA, "NBA color map");
+
+const preseasonOnly = assignWatchTiers([
+  game({ id: "nba-pre-a", heat: 90, league: "NBA", preseason: true }),
+  game({ id: "nba-pre-b", heat: 80, league: "NBA", preseason: true }),
+  game({ id: "mlb-hot", heat: 40 }),
+]);
+assert(preseasonOnly.get("nba-pre-a") === "around" && preseasonOnly.get("nba-pre-b") === "around", "NBA preseason is always the lowest tier");
+assert(preseasonOnly.get("mlb-hot") === "must", "a real game still takes the must-watch slot");
 
 const overflowGames: WatchGame[] = [game({ id: "hero-fold", heat: 99, when: "2026-10-05T23:00:00.000Z" })];
 for (let i = 0; i < 20; i++) {
