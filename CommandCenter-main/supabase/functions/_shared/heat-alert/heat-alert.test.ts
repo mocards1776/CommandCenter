@@ -413,7 +413,6 @@ test("MLB instrument uses lamps and a diamond instead of a text nest", () => {
 test("MLB heat SVG owns the nest with a playbug and drops the empty black plate", () => {
   const svg = renderHeatAlertSvg(mlbLive);
   assert.match(svg, />MLB/);
-  assert.match(svg, /id="mlbPlaybug"/);
   assert.match(svg, /id="mlbDiamond"/);
   assert.match(svg, /id="mlbInstrument"/);
   assert.match(svg, />B</);
@@ -421,10 +420,12 @@ test("MLB heat SVG owns the nest with a playbug and drops the empty black plate"
   assert.match(svg, />O</);
   assert.match(svg, />CLE 58.4%</);
   assert.match(svg, />TOP 4TH</);
+  assert.match(svg, />Andrew Benintendi</);
+  assert.match(svg, />Gavin Williams</);
   assert.doesNotMatch(svg, />0-2</);
   assert.doesNotMatch(svg, />EMPTY</);
   assert.doesNotMatch(svg, /fill="#050505"/);
-  assert.equal((svg.match(/>TOP 4TH</g) || []).length, 1, "inning lives once on the instrument chip");
+  assert.equal((svg.match(/>TOP 4TH</g) || []).length, 1, "inning lives once on the field chip");
 });
 
 test("MLB heat SVG lights occupied bags and two-out lamps", () => {
@@ -432,12 +433,12 @@ test("MLB heat SVG lights occupied bags and two-out lamps", () => {
     ...mlbLive,
     diamond: { ...mlbLive.diamond!, onFirst: true, onSecond: true, outs: 1, balls: 2, strikes: 1 },
   });
-  assert.match(risp, /id="mlbPlaybug"/);
-  assert.match(risp, /r="20" fill="#f4f1e9"/);
+  assert.match(risp, /id="mlbDiamond"/);
+  assert.match(risp, /r="30" fill="#ffffff"/);
   const twoOut = renderHeatAlertSvg({
     ...mlbLive,
     diamond: { ...mlbLive.diamond!, outs: 2, balls: 3, strikes: 2, onThird: true },
   });
-  assert.match(twoOut, /id="mlbPlaybug"/);
+  assert.match(twoOut, /id="mlbDiamond"/);
   assert.match(twoOut, /#ef5b5b/);
 });

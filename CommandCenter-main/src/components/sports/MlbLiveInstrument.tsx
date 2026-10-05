@@ -17,17 +17,17 @@ export function MlbHeroDiamond({
 }) {
   const box = size === "lg" ? "h-[3.4rem] w-[3.4rem]" : size === "sm" ? "h-9 w-9" : "h-11 w-11";
   const bag = size === "lg" ? "h-3 w-3" : size === "sm" ? "h-2 w-2" : "h-2.5 w-2.5";
-  const onBag = "bg-[#f4f1e9] shadow-[0_0_10px_rgba(244,241,233,0.5)]";
-  const offBag = "bg-white/20";
+  const onBag = "bg-white shadow-[0_0_14px_rgba(255,255,255,0.7)]";
+  const offBag = "bg-[#07101d]/40 shadow-[0_0_0_1.5px_rgba(255,255,255,0.65)]";
   return (
     <div className={cn("relative shrink-0", box)} aria-hidden>
       <svg className="absolute inset-0 h-full w-full" viewBox="0 0 40 40">
         <path
           d="M20 33 L8 20 L20 7 L32 20 Z"
-          fill="#3a2718"
-          fillOpacity="0.55"
-          stroke="rgba(255,255,255,0.22)"
-          strokeWidth="1.2"
+          fill="#c4a06a"
+          fillOpacity="0.4"
+          stroke="rgba(255,255,255,0.55)"
+          strokeWidth="1.3"
         />
         <path
           d="M20 33 L5 16"
@@ -134,7 +134,7 @@ export function MlbPlaybug({
   return (
     <div
       className={cn(
-        "flex items-center rounded-2xl bg-[#10281f]/45",
+        "flex items-center rounded-2xl bg-[#143d2a]/80",
         header ? "gap-2.5 px-2.5 py-1.5" : "gap-1.5 px-1.5 py-1",
       )}
       aria-label={mlbPlaybugLabel(hero)}
