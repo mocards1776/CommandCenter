@@ -2,8 +2,8 @@ import type { CSSProperties } from "react";
 import {
   composeWatchPage,
   watchClockState,
-  watchContext,
   watchFeatureCopy,
+  watchListingWhy,
   watchLeagueColor,
   watchLeagueLabel,
   watchLogo,
@@ -53,6 +53,7 @@ function PhoneRow({ game }: { game: WatchListing }) {
   const clock = watchClockState(game);
   const showScore = clock.kind !== "pre";
   const nets = game.networks;
+  const why = watchListingWhy(game);
   return (
     <li className={`tt-phone-row ${game.tier}`} data-state={clock.kind} style={washStyle(game)}>
       <div className="tt-phone-row-top">
@@ -78,7 +79,7 @@ function PhoneRow({ game }: { game: WatchListing }) {
           </div>
         );
       })}
-      <p className="tt-phone-row-why">{watchContext(game)}</p>
+      {why ? <p className="tt-phone-row-why">{why}</p> : null}
     </li>
   );
 }

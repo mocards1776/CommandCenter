@@ -54,8 +54,8 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at 10% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 18%, transparent), transparent 58%),
-    radial-gradient(ellipse at 90% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 18%, transparent), transparent 58%);
+    radial-gradient(ellipse at 10% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 28%, transparent), transparent 58%),
+    radial-gradient(ellipse at 90% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 28%, transparent), transparent 58%);
   pointer-events: none;
 }
 
@@ -313,8 +313,8 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at 8% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 12%, transparent), transparent 52%),
-    radial-gradient(ellipse at 92% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 12%, transparent), transparent 52%);
+    radial-gradient(ellipse at 8% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 20%, transparent), transparent 52%),
+    radial-gradient(ellipse at 92% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 20%, transparent), transparent 52%);
   pointer-events: none;
 }
 

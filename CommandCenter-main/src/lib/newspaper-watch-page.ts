@@ -443,6 +443,14 @@ export function watchFeatureCopy(game: WatchGame): { series: string | null; why:
   return { series, why: why || null };
 }
 
+/** Listing why-watch. Drop a line that only repeats the league chip. */
+export function watchListingWhy(game: WatchGame): string | null {
+  const why = watchContext(game);
+  if (!why) return null;
+  if (watchLinesMatch(why, watchLeagueLabel(game))) return null;
+  return why;
+}
+
 export function watchStarters(game: WatchGame): string | null {
   const away = game.away.starter?.trim();
   const home = game.home.starter?.trim();

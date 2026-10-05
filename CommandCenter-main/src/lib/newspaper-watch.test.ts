@@ -19,6 +19,7 @@ import {
   watchDensityOf,
   watchFavoriteLabel,
   watchFeatureCopy,
+  watchListingWhy,
   watchSeriesDisplay,
   watchSlotBucket,
   watchLeagueColor,
@@ -187,6 +188,8 @@ const heroWhy = watchFeatureCopy(
   game({ id: "mnf", heat: 80, league: "NFL", reasons: ["Monday Night Football"], printReason: "Monday Night Football" }),
 );
 assert(heroWhy.series == null && heroWhy.why === "Monday Night Football", "a distinct why-watch still prints under the hero");
+assert(watchListingWhy(game({ id: "nhl-why", heat: 12, league: "NHL", reasons: [] })) == null, "listing does not repeat the NHL chip");
+assert(watchListingWhy(game({ id: "nba-pre-why", heat: 5, league: "NBA", preseason: true, reasons: [] })) === "Preseason", "listing still prints Preseason");
 assert(watchContext(game({ id: "c2", heat: 5, reasons: [], competition: "Premier League", league: "Soccer" })) === "Premier League", "soccer competition");
 assert(watchClockState(game({ id: "live", heat: 5, live: true, status: "Bot 5th" })).kind === "live", "live state");
 assert(watchClockState(game({ id: "fin", heat: 5, final: true, status: "Final" })).kind === "final", "final state");

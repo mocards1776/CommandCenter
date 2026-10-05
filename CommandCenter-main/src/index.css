@@ -8730,8 +8730,8 @@ body:has([data-phone-card="watch"]),
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at 8% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 16%, transparent), transparent 56%),
-    radial-gradient(ellipse at 92% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 16%, transparent), transparent 56%);
+    radial-gradient(ellipse at 8% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 26%, transparent), transparent 56%),
+    radial-gradient(ellipse at 92% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 26%, transparent), transparent 56%);
   pointer-events: none;
 }
 .tt-phone-lead-match {
@@ -8884,8 +8884,8 @@ body:has([data-phone-card="watch"]),
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at 6% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 11%, transparent), transparent 50%),
-    radial-gradient(ellipse at 94% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 11%, transparent), transparent 50%);
+    radial-gradient(ellipse at 6% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 18%, transparent), transparent 50%),
+    radial-gradient(ellipse at 94% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 18%, transparent), transparent 50%);
   pointer-events: none;
 }
 .tt-phone-row.must {

@@ -2,8 +2,8 @@ import type { CSSProperties } from "react";
 import {
   composeWatchPage,
   watchClockState,
-  watchContext,
   watchFeatureCopy,
+  watchListingWhy,
   watchLeagueColor,
   watchLeagueLabel,
   watchLogo,
@@ -148,6 +148,7 @@ function GameRow({ game, away }: { game: WatchListing; away: boolean }) {
 function GameCard({ game }: { game: WatchListing }) {
   const clock = watchClockState(game);
   const starters = watchStarters(game);
+  const why = watchListingWhy(game);
   return (
     <li className={`tt-watch-card ${game.tier}`} data-league={game.league} data-state={clock.kind} style={washStyle(game)}>
       <div className="tt-watch-card-top">
@@ -163,7 +164,7 @@ function GameCard({ game }: { game: WatchListing }) {
         <GameRow game={game} away />
         <GameRow game={game} away={false} />
       </div>
-      <p className="tt-watch-whyline">{watchContext(game)}</p>
+      {why ? <p className="tt-watch-whyline">{why}</p> : null}
       {starters ? <p className="tt-watch-card-starters">{starters}</p> : null}
     </li>
   );
