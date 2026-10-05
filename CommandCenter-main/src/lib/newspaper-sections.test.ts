@@ -25,14 +25,23 @@ import {
   comingUpHasClock,
   dedupeStories,
   editorFront,
+  essentialsFromDesks,
+  HISTORIC_NATIONAL_STATUS,
   isColumnStory,
   isDeskStory,
+  isHistoricNationalEvent,
+  isHistoricNationalStory,
   isHoldoverGame,
   isPreviewStory,
+  isSectionAStory,
   MIN_SECTION_PAGES,
+  orderSportSections,
+  SECTION_A_TITLE,
   sortComingUp,
   sourceStoryId,
+  sportInSeason,
   sportSectionFocuses,
+  sportSectionId,
   staleNamedPackage,
   storyBodyForJump,
   type ClubDesk,
@@ -1318,5 +1327,204 @@ assert(
   `Coming Up is chronological, date-only last that day: ${coming.map((g) => g.id).join(",")}`,
 );
 assert(comingUpHasClock("Mon, Oct 5, 6:00 PM") && !comingUpHasClock("Tue, Nov 3"), "clock vs date-only");
+
+const oct = "2026-10-05";
+assert(sportInSeason("soccer/eng.1", oct) && sportInSeason("soccer/eng.2", oct), "October is soccer season");
+assert(sportInSeason("football/nfl", oct) && sportInSeason("baseball/mlb", oct), "October is NFL and MLB");
+assert(sportInSeason("hockey/nhl", oct), "October is NHL");
+assert(!sportInSeason("basketball/nba", oct), "NBA preseason in early October is out of season");
+assert(!sportInSeason("basketball/mens-college-basketball", oct), "CBB has not opened in early October");
+assert(sportInSeason("basketball/nba", "2026-10-22"), "late October is NBA regular season");
+const seasonal = orderSportSections(
+  [
+    "baseball/mlb",
+    "football/nfl",
+    "football/college-football",
+    "hockey/nhl",
+    "basketball/nba",
+    "basketball/mens-college-basketball",
+    "soccer/eng.1",
+    "soccer/eng.2",
+  ].map(sportSectionId),
+  oct,
+);
+assert(
+  seasonal.map((s) => s.code).join(",") === "MLB,NFL,CFB,NHL,EPL,EFL,NBA,CBB",
+  `Oct 5 puts soccer ahead of NBA/CBB: ${seasonal.map((s) => s.code).join(",")}`,
+);
+
+const seasonPaper = buildEdition({
+  stories: [
+    tuesday,
+    card({
+      id: "news-nba-camp",
+      headline: "76ers open camp in Philadelphia",
+      favoriteKey: "nba-phi",
+      followed: true,
+      sportLabel: "NBA",
+      leaguePath: "basketball/nba",
+      when: "2026-10-04T18:00:00Z",
+      body: "Philadelphia opened camp with a short practice and a longer meeting. ".repeat(8),
+    }),
+    card({
+      id: "news-epl-note",
+      headline: "Arsenal hold firm at the top",
+      favoriteKey: "eng-arsenal",
+      followed: true,
+      sportLabel: "EPL",
+      leaguePath: "soccer/eng.1",
+      when: "2026-10-04T18:00:00Z",
+      body: "Arsenal beat a rival and kept first place in the table. ".repeat(8),
+    }),
+  ],
+  clubs: [
+    chiefs,
+    cards,
+    {
+      key: "nba-phi",
+      shortName: "76ers",
+      logo: null,
+      leaguePath: "basketball/nba",
+      record: "0-0",
+      standing: null,
+      division: [],
+      stats: [],
+      leaders: [],
+      upcoming: [],
+    },
+    {
+      key: "eng-arsenal",
+      shortName: "Arsenal",
+      logo: null,
+      leaguePath: "soccer/eng.1",
+      record: "7-1-1",
+      standing: "1st",
+      division: [],
+      stats: [],
+      leaders: [],
+      upcoming: [],
+    },
+  ],
+  edition: "2026-10-05-morning",
+});
+const sportCodes = seasonPaper.sections.filter((s) => !["A", "B", "C"].includes(s.code)).map((s) => s.code);
+assert(sportCodes.indexOf("EPL") < sportCodes.indexOf("NBA"), "the pager lists EPL before NBA in October");
+assert(seasonPaper.pages.findIndex((p) => p.section === "EPL") < seasonPaper.pages.findIndex((p) => p.section === "NBA"), "EPL pages come before NBA");
+assert(seasonPaper.sections[0]?.title === SECTION_A_TITLE, "Section A is labeled The Essentials");
+assert(seasonPaper.pages.filter((p) => p.section === "A").every((p) => p.sectionTitle === SECTION_A_TITLE), "A pages say The Essentials");
+
+const nationalLead = {
+  id: "nat-lead",
+  headline: "House passes the funding bill after an all-night vote",
+  summary: "The chamber cleared the stopgap before dawn.",
+  body: "The House passed a stopgap funding bill after an all-night session. ".repeat(8),
+  url: "https://example.com/funding",
+  source: "AP",
+  credit: "AP",
+  outlets: ["AP"],
+  publishedAt: "2026-10-05T10:00:00Z",
+  imageUrl: null,
+  imageCredit: null,
+};
+const EVERY_DESK = ["Fox News", "WSJ", "New York Post", "Washington Examiner", "National Review", "AP", "Reuters"];
+const attempt = {
+  id: "nat-attempt",
+  headline: "Trump survives assassination attempt at Pennsylvania rally",
+  summary: "The former president was rushed from the stage after gunfire. Every national desk led with it.",
+  body: "Gunfire rang out at a campaign rally in Pennsylvania. Secret Service rushed the former president from the stage. ".repeat(8),
+  url: "https://example.com/attempt",
+  source: "Fox News",
+  credit: "Fox News, WSJ, AP",
+  outlets: EVERY_DESK,
+  publishedAt: "2026-10-05T10:00:00Z",
+  imageUrl: null,
+  imageCredit: null,
+};
+const war = {
+  ...attempt,
+  id: "nat-war",
+  headline: "Russia launches a full-scale invasion of Ukraine",
+  summary: "Columns crossed the border before dawn. Kyiv said a war has begun.",
+  url: "https://example.com/war",
+};
+const flood = {
+  ...attempt,
+  id: "nat-flood",
+  headline: "Catastrophic flood swallows the lower Mississippi",
+  summary: "Towns from Cairo to New Orleans went under overnight.",
+  url: "https://example.com/flood",
+};
+const confirmedDesk = {
+  issueId: "2026-10-05-morning",
+  day: "2026-10-05",
+  edition: "morning" as const,
+  label: "Morning",
+  stories: [nationalLead, attempt],
+  sources: [],
+  editor: { model: "grok-4.6", fallback: false, rationale: "The attempt is the only historic story." },
+  printedAt: "2026-10-05T11:00:00Z",
+};
+const fallbackDesk = { ...confirmedDesk, editor: { model: null, fallback: true, rationale: "" }, stories: [attempt] };
+const thinCoverage = { ...attempt, outlets: ["AP", "Fox News"] };
+assert(isHistoricNationalEvent(attempt.headline), "an assassination attempt is historic");
+assert(isHistoricNationalEvent(war.headline), "a war starting is historic");
+assert(isHistoricNationalEvent("Supreme Court overturns Roe in landmark ruling"), "a landmark Court ruling is historic");
+assert(isHistoricNationalEvent("Stock market crash wipes out two trillion"), "a market crash is historic");
+assert(isHistoricNationalEvent("Category 5 hurricane flattens the Gulf Coast"), "a huge disaster is historic");
+assert(isHistoricNationalEvent("President resigns and leaves office at noon"), "a president leaving office is historic");
+assert(isHistoricNationalEvent("Terrorist attack kills dozens in downtown Manhattan"), "a major terror attack is historic");
+assert(!isHistoricNationalEvent(nationalLead.headline), "a funding bill is not historic");
+assert(!isHistoricNationalEvent("Justices take up a challenge to a federal firearms rule"), "granting cert is not historic");
+assert(isHistoricNationalStory(attempt, confirmedDesk), "historic + every desk + editor confirmation clears the gate");
+assert(!isHistoricNationalStory(nationalLead, confirmedDesk), "ordinary national news fails the event test");
+assert(!isHistoricNationalStory(thinCoverage, confirmedDesk), "historic copy without near-universal coverage stays in B");
+assert(!isHistoricNationalStory(attempt, fallbackDesk), "historic copy without editor confirmation stays in B");
+const moScout = {
+  id: "mo-scout-1",
+  source: "Missouri Scout",
+  headline: "Kehoe signs the education bill",
+  url: "https://example.com/scout",
+  kind: "story" as const,
+  photo: null,
+  dek: "The governor signed the package in Jefferson City.",
+  when: "2026-10-05T14:00:00Z",
+};
+const extras = essentialsFromDesks(confirmedDesk, { scout: moScout, items: [moScout], listen: [] });
+assert(!extras.some((c) => c.id === "nat-lead"), "a funding bill stays in National News");
+assert(
+  extras.some((c) => c.id === "nat-attempt" && c.status === HISTORIC_NATIONAL_STATUS && isSectionAStory(c)),
+  "a historic national story that every desk led with may run in Section A",
+);
+assert(extras.some((c) => c.id === "mo-scout-1" && isSectionAStory(c)), "MoScout qualifies for Section A");
+const sampleExtras = essentialsFromDesks(sampleNationalDesk("2026-10-05-morning"), { scout: moScout, items: [moScout], listen: [] });
+assert(
+  sampleExtras.every((c) => c.sportLabel !== "National"),
+  "a typical national slate puts zero national stories in Section A",
+);
+const capped = essentialsFromDesks(
+  { ...confirmedDesk, stories: [attempt, war, flood] },
+  { scout: null, items: [], listen: [] },
+);
+assert(capped.filter((c) => c.sportLabel === "National").length === 2, "even a historic day caps Section A at two national stories");
+const withEssentials = buildEdition({
+  stories: [tuesday, ...extras],
+  clubs: [chiefs],
+  edition: "2026-10-05-morning",
+  national: confirmedDesk,
+  missouri: { scout: moScout, items: [moScout], listen: [] },
+});
+assert(withEssentials.pages.some((p) => p.kind === "national"), "National pages stay in their section");
+assert(withEssentials.pages.some((p) => p.kind === "missouri"), "Missouri pages stay in their section");
+const aFront = withEssentials.pages.find((p) => p.kind === "favorites-front");
+assert(
+  aFront?.kind === "favorites-front" &&
+    [aFront.lead, aFront.second, aFront.third, ...aFront.news].some((c) => c && (c.id === "nat-attempt" || c.id === "mo-scout-1")),
+  "Section A may run a historic national story or Missouri, not the ordinary national lead",
+);
+assert(
+  aFront?.kind === "favorites-front" &&
+    [aFront.lead, aFront.second, aFront.third, ...aFront.news].every((c) => !c || c.id !== "nat-lead"),
+  "the funding bill never reaches A1",
+);
 
 console.log("newspaper-sections ok");

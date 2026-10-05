@@ -17,7 +17,7 @@ import {
 } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Share } from "lucide-react";
+import { Bookmark, ChevronLeft, ChevronRight, Share } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import {
   editionCovers,
@@ -71,6 +71,9 @@ import {
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
 import { CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
+import { HeadlineSave } from "@/components/newspaper/SaveMark";
+import { SavedDrawer } from "@/components/newspaper/SavedDrawer";
+import { SavedProvider } from "@/components/newspaper/saved-context";
 import { PlayoffBracket } from "@/components/newspaper/PlayoffBracket";
 import { NamedText, PlayerName, PlayerPopProvider } from "@/components/newspaper/PlayerPop";
 import { fetchClubSheet, type ClubSheet } from "@/lib/newspaper-clubsheet";
@@ -172,9 +175,12 @@ import {
 import { isNarrowStoryImage } from "@/lib/newspaper-images";
 import {
   buildEdition,
+  essentialsFromDesks,
   isFavoriteStory,
   isGameWrap,
   isRecapStory,
+  missouriStoryCard,
+  nationalStoryCard,
   sortComingUp,
   storyBodyForJump,
   type ClubDesk,
@@ -727,9 +733,11 @@ function Headline({
     <>
       <Kicker card={card} />
       <h2 className={cn("wsj-hl", size)}>
-        <StoryLink card={card} game={game}>
-          {card.headline}
-        </StoryLink>
+        <HeadlineSave card={card}>
+          <StoryLink card={card} game={game}>
+            {card.headline}
+          </StoryLink>
+        </HeadlineSave>
       </h2>
     </>
   );
@@ -1091,9 +1099,11 @@ function Brief({
       <div className="wsj-brief-copy">
         <Kicker card={card} />
         <h3>
-          <StoryLink card={card} color={color}>
-            {card.headline}
-          </StoryLink>
+          <HeadlineSave card={card}>
+            <StoryLink card={card} color={color}>
+              {card.headline}
+            </StoryLink>
+          </HeadlineSave>
         </h3>
         <ScoreBug card={card} />
         {dek ? <p className="wsj-brief-dek">{dek}</p> : null}
@@ -2104,7 +2114,9 @@ function OpenerDesk({ page, onTurn }: { page: SportFrontPage; onTurn: (folio: st
               <li key={card.id}>
                 <Kicker card={card} />
                 <h4>
-                  <StoryLink card={card}>{card.headline}</StoryLink>
+                  <HeadlineSave card={card}>
+                    <StoryLink card={card}>{card.headline}</StoryLink>
+                  </HeadlineSave>
                 </h4>
                 {card.dek ? <p>{card.dek}</p> : null}
                 <ReadOn card={card} label="Click for full story" />
@@ -2615,7 +2627,9 @@ function WrapBrief({ card }: { card: GameWrapCard }) {
     <article className="tt-wrap-brief" data-tt-keys={storyReadKeys(card).join("|")} data-tt-title={card.headline}>
       <Kicker card={card} />
       <h3 className="wsj-hl sm">
-        <StoryLink card={card}>{card.headline}</StoryLink>
+        <HeadlineSave card={card}>
+          <StoryLink card={card}>{card.headline}</StoryLink>
+        </HeadlineSave>
       </h3>
       <ScoreBug card={card} />
       {copy ? <p className="tt-wrap-copy">{copy}</p> : null}
@@ -2742,9 +2756,11 @@ function ScoresDesk({
           </p>
           <h2 className="wsj-hl lg">
             {card ? (
-              <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card, game: featured })}>
-                {card.headline}
-              </button>
+              <HeadlineSave card={card}>
+                <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card, game: featured })}>
+                  {card.headline}
+                </button>
+              </HeadlineSave>
             ) : (
               `${featured.away.short} ${featured.away.score ?? ""}, ${featured.home.short} ${featured.home.score ?? ""}`
             )}
@@ -3481,32 +3497,7 @@ function NatDropText({ text }: { text: string }) {
 }
 
 function natCard(story: NationalStory): GameWrapCard {
-  const body = story.body?.trim() || story.summary;
-  return {
-    id: story.id,
-    favoriteKey: "",
-    teamName: story.source,
-    teamHref: "",
-    sportLabel: "National",
-    leaguePath: null,
-    headline: story.headline,
-    dek: story.summary,
-    body,
-    scoreLine: null,
-    when: story.publishedAt,
-    won: null,
-    gameHref: null,
-    wrapHref: story.url,
-    feedUrl: null,
-    gameId: null,
-    stats: [],
-    leaders: [],
-    teamStats: [],
-    division: [],
-    photo: story.imageUrl,
-    caption: story.imageCredit || story.source,
-    dateline: story.byline || story.credit,
-  };
+  return nationalStoryCard(story);
 }
 
 function NatSummary({
@@ -3611,9 +3602,11 @@ function NatStory({
           {natWhen(story.publishedAt) ? <em> · {natWhen(story.publishedAt)}</em> : null}
         </p>
         <h3 className={cn("wsj-hl", size === "lead" ? "xl" : size === "medium" ? "md" : "sm")}>
-          <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
-            {story.headline}
-          </button>
+          <HeadlineSave card={card}>
+            <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
+              {story.headline}
+            </button>
+          </HeadlineSave>
         </h3>
         <NatSummary story={story} cols={size === "lead" ? 2 : 1} drop={size === "lead"} size={size} ended={!more} />
         {story.bodyNote ? <p className="tt-nat-note">{story.bodyNote}</p> : null}
@@ -3698,29 +3691,7 @@ type MissouriEditionPage = Extract<EditionPage, { kind: "missouri" }>;
 
 /** A Missouri item set as a story card, so the reader can pull and set it. */
 function moCard(item: MoItem): GameWrapCard {
-  return {
-    id: item.id,
-    favoriteKey: "",
-    teamName: item.source,
-    teamHref: "",
-    sportLabel: "Missouri",
-    leaguePath: null,
-    headline: item.headline,
-    dek: item.dek,
-    body: null,
-    scoreLine: null,
-    when: item.when,
-    won: null,
-    gameHref: null,
-    wrapHref: item.url,
-    feedUrl: null,
-    gameId: null,
-    stats: [],
-    leaders: [],
-    teamStats: [],
-    division: [],
-    photo: item.photo,
-  };
+  return missouriStoryCard(item);
 }
 
 function moWhen(iso: string | null): string {
@@ -3765,9 +3736,11 @@ function MoStory({ item, size }: { item: MoItem; size: "xl" | "md" | "sm" }) {
       <div className="tt-mo-copy">
         <MoSource item={item} />
         <h3 className={cn("wsj-hl", size === "xl" ? "xl" : size === "md" ? "md" : "sm")}>
-          <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
-            {item.headline}
-          </button>
+          <HeadlineSave card={card}>
+            <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
+              {item.headline}
+            </button>
+          </HeadlineSave>
         </h3>
         {item.dek && size !== "sm" ? <p className="tt-mo-dek">{cleanDek(item.dek)}</p> : null}
         <p className="wsj-jump">
@@ -3879,9 +3852,11 @@ function ScoutBand({ item, onTurn, deskFolio }: { item: MoItem; onTurn: (folio: 
       {item.photo ? <img className="tt-scout-photo" src={item.photo} alt="" loading="lazy" /> : null}
       <div className="tt-scout-copy">
         <h3 className="wsj-hl md">
-          <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
-            {item.headline}
-          </button>
+          <HeadlineSave card={card}>
+            <button type="button" className="wsj-a wsj-story-link" onClick={() => open({ card })}>
+              {item.headline}
+            </button>
+          </HeadlineSave>
         </h3>
         {dek ? <p>{dek}</p> : null}
         <p className="tt-scout-links">
@@ -4084,6 +4059,7 @@ function NewspaperDesk() {
     printedAt?: string;
   } | null>(null);
   const [revealed, setRevealed] = useState(false);
+  const [savedOpen, setSavedOpen] = useState(false);
   const [newerEdition, setNewerEdition] = useState<string | null>(null);
   const revealFor = useRef<string | null>(null);
   const layout = useMemo(() => loadSportsLayout(), []);
@@ -5271,21 +5247,21 @@ function NewspaperDesk() {
     : companions?.id === pressId
       ? companions.national
       : (nationalQ.data ?? null);
-  const builtEdition = useMemo(
-    () =>
-      buildEdition({
-        stories,
-        clubs,
-        edition: pressId,
-        playerPaths,
-        missouri: missouriQ.data ?? null,
-        national: nationalDesk,
-        offseason,
-        leaderPaths,
-        postseasonPaths,
-      }),
-    [stories, clubs, pressId, playerPaths, missouriQ.data, nationalDesk, offseason, leaderPaths, postseasonPaths],
-  );
+  const builtEdition = useMemo(() => {
+    const extras = essentialsFromDesks(nationalDesk, missouriQ.data ?? null);
+    const have = new Set(stories.map((card) => card.id));
+    return buildEdition({
+      stories: [...stories, ...extras.filter((card) => !have.has(card.id))],
+      clubs,
+      edition: pressId,
+      playerPaths,
+      missouri: missouriQ.data ?? null,
+      national: nationalDesk,
+      offseason,
+      leaderPaths,
+      postseasonPaths,
+    });
+  }, [stories, clubs, pressId, playerPaths, missouriQ.data, nationalDesk, offseason, leaderPaths, postseasonPaths]);
   // No schedule row for the date (or not read yet): no page, never an older day's.
   const daySchedule =
     companions?.id === pressId && companions.dayAhead?.date === scheduleDate
@@ -5731,6 +5707,7 @@ function NewspaperDesk() {
       <OpenerContext.Provider value={openers}>
       <SubjectsContext.Provider value={storyFiles}>
       <PlayerPopProvider people={people}>
+      <SavedProvider edition={pressId}>
       <ReaderProvider>
       <div className="wsj-chrome print:hidden">
         <div className="wsj-chrome-l">
@@ -5798,6 +5775,16 @@ function NewspaperDesk() {
             <Share size={12} />
             Home Screen
           </a>
+          <button
+            type="button"
+            className={cn("wsj-chrome-btn", savedOpen && "is-on")}
+            title="Saved stories"
+            aria-pressed={savedOpen}
+            onClick={() => setSavedOpen((open) => !open)}
+          >
+            <Bookmark size={12} fill={savedOpen ? "currentColor" : "none"} />
+            Saved
+          </button>
           <span className="wsj-chrome-btn" title={`Next edition at ${press.next}. This one stays as printed.`}>
             {press.label}
           </span>
@@ -5830,7 +5817,9 @@ function NewspaperDesk() {
           ) : null}
         </div>
       </PagerIndexContext.Provider>
+      {savedOpen ? <SavedDrawer onClose={() => setSavedOpen(false)} /> : null}
       </ReaderProvider>
+      </SavedProvider>
       </PlayerPopProvider>
       </SubjectsContext.Provider>
       </OpenerContext.Provider>

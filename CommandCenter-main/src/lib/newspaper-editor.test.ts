@@ -4,7 +4,7 @@
  */
 import type { GameWrapCard } from "./newspaper-sports.ts";
 import { fileEditionStories } from "./newspaper.ts";
-import { buildEdition, type FavoritesFrontPage } from "./newspaper-sections.ts";
+import { buildEdition, HISTORIC_NATIONAL_STATUS, type FavoritesFrontPage } from "./newspaper-sections.ts";
 import {
   clearEditorStamps,
   editEdition,
@@ -188,7 +188,7 @@ ruleIds.forEach((id, i) => {
 const newsOnly = editedIds.filter((id) => id.startsWith("news-"));
 assert(newsOnly.join() === "news-blues-camp,news-cards-note,news-lions-win", "news runs in the editor's order");
 
-// Section A is the favorite-teams desk. Routine league copy the editor fronts stays in its section.
+// Section A is the essentials desk. Routine league copy the editor fronts stays in its section.
 const routine = card({
   id: "league-routine",
   headline: "Yankees option reliever to Triple-A before series opener",
@@ -225,17 +225,50 @@ const twoMajors = buildEdition({
 });
 const twoFront = twoMajors.pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage;
 assert(twoFront.lead?.id === "league-no-hitter", "a major league story may lead A1");
+assert(twoFront.second?.id === "league-firing" || twoFront.second?.id === "wire-401", "a second major may take the next A1 slot");
 assert(
-  [twoFront.second, twoFront.third].every((c) => !c || !c.id.startsWith("league-")),
-  "at most one league story runs in Section A",
+  [twoFront.lead, twoFront.second, twoFront.third].filter((c) => c?.id.startsWith("league-")).length >= 1,
+  "major league news may run in Section A",
 );
-assert(twoFront.second?.id === "wire-401", "the home final takes the next slot");
+
+// Ordinary national news the editor names still stays in Section B.
+const fundingBill = card({
+  id: "nat-funding",
+  sportLabel: "National",
+  leaguePath: null,
+  headline: "House passes the funding bill after an all-night vote",
+  body: copy("The House passed a stopgap funding bill after an all-night session."),
+});
+const fundingFront = front(
+  stampEditorDesk([...stories, fundingBill], {
+    front: ["nat-funding", "news-cards-note"],
+    order: [],
+    spike: [],
+    rationale: "",
+  }),
+);
+assert(fundingFront.lead?.id !== "nat-funding", "ordinary national news does not take A1 even if the editor names it");
 assert(
-  twoMajors.pages
-    .filter((p) => p.section === "A" && p.kind === "favorites-inside")
-    .every((p) => p.kind === "favorites-inside" && [p.primary, p.secondary, ...p.briefs].every((c) => !c || !c.id.startsWith("league-"))),
-  "no league story fills a Section A inside page",
+  [fundingFront.lead, fundingFront.second, fundingFront.third].every((c) => !c || c.id !== "nat-funding"),
+  "ordinary national news never runs on A1",
 );
+const attemptCard = card({
+  id: "nat-attempt",
+  sportLabel: "National",
+  leaguePath: null,
+  status: HISTORIC_NATIONAL_STATUS,
+  headline: "Trump survives assassination attempt at Pennsylvania rally",
+  body: copy("Gunfire rang out at a campaign rally. Secret Service rushed him from the stage."),
+});
+const attemptFront = front(
+  stampEditorDesk([...stories, attemptCard], {
+    front: ["nat-attempt", "news-cards-note"],
+    order: [],
+    spike: [],
+    rationale: "",
+  }),
+);
+assert(attemptFront.lead?.id === "nat-attempt", "a historic national story the editor confirms may lead A1");
 
 // A front pick with no copy does not leave a bare photo on A1.
 const thinLead = stampEditorDesk(

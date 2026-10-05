@@ -50,6 +50,7 @@ import { fetchWatchList, WATCH_PAGE_GAMES, type WatchGame } from "./newspaper-wa
 import { fetchYesterdayRecap, type YesterdayRecap } from "./yesterday-recap";
 import { ISSUE_VERSION, type PrintedIssue, type PrintedQuery } from "./newspaper-issue";
 import { clearEditorStamps, editEdition, type EditorRequest } from "./newspaper-editor";
+import { essentialsFromDesks } from "./newspaper-sections";
 
 export function deskFavorites(order: string[] | null | undefined, hidden: string[] | null | undefined): SportsFavorite[] {
   const layout: SportsLayout = {
@@ -68,7 +69,11 @@ export function urlsToExtract(cards: GameWrapCard[]): string[] {
   return cards
     .filter(
       (card) =>
-        (card.favoriteKey || card.followed || card.caption === "The Athletic") &&
+        (card.favoriteKey ||
+          card.followed ||
+          card.caption === "The Athletic" ||
+          card.sportLabel === "National" ||
+          card.sportLabel === "Missouri") &&
         card.wrapHref &&
         /^https?:\/\//i.test(card.wrapHref) &&
         !/espn\.com\/.+\/(?:game|recap|preview|match)\b/i.test(card.wrapHref) &&
@@ -530,8 +535,9 @@ export async function pressStep(
     return { done: false, bag: state };
   }
   if (extractUrls.length) put([pressId, "tt-extracts", day, extractUrls.join("|")], extracts);
+  const extras = essentialsFromDesks(null, state.missouri);
   const filed = fileEditionStories({
-    fresh: fileExtracts(raw, extractUrls.length ? extracts : undefined),
+    fresh: fileExtracts([...raw, ...extras], extractUrls.length ? extracts : undefined),
     carried: opts.carried ?? [],
     readKeys: new Set(opts.readKeys ?? []),
     pressId,
@@ -549,9 +555,11 @@ export async function pressStep(
     .map(([league, row]) => `${league} games=${row.games} wraps=${row.wraps}`)
     .join(" · ");
   console.info(`[times-wire] stories ${pressId}${filedLine ? ` ${filedLine}` : " (no wraps)"}`);
-  let stories = clearEditorStamps(filed);
+  const extraIds = new Set(filed.map((card) => card.id));
+  const keptExtras = extras.filter((card) => !extraIds.has(card.id));
+  let stories = clearEditorStamps([...filed, ...keptExtras]);
   if (opts.editor) {
-    const edited = await editEdition(filed, pressId, opts.editor);
+    const edited = await editEdition(stories, pressId, opts.editor);
     stories = edited.stories;
     if (edited.desk) put([pressId, "tt-editor", day], edited.desk);
   }

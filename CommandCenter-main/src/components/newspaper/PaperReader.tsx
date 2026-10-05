@@ -10,6 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink } from "lucide-react";
+import { SaveMark } from "@/components/newspaper/SaveMark";
 import {
   Decisions,
   EspnAgate,
@@ -184,13 +185,14 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
           <ArrowLeft size={14} /> Back to the paper
         </button>
         <span className="tt-reader-plate">The Thompson Times</span>
-        {source ? (
-          <a href={source} target="_blank" rel="noreferrer" className="tt-reader-orig">
-            Original <ExternalLink size={12} />
-          </a>
-        ) : (
-          <span />
-        )}
+        <span className="tt-reader-tools">
+          <SaveMark card={card} className="tt-save-reader" label="Save" />
+          {source ? (
+            <a href={source} target="_blank" rel="noreferrer" className="tt-reader-orig">
+              Original <ExternalLink size={12} />
+            </a>
+          ) : null}
+        </span>
       </div>
       <div className="tt-reader-scroll" ref={sheetRef} onClick={(e) => e.target === e.currentTarget && onClose()}>
         <article

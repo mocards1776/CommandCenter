@@ -533,6 +533,40 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["times_beez"]["Insert"]>;
         Relationships: [];
       };
+      times_saved_articles: {
+        Row: {
+          id: string;
+          user_id: string;
+          story_id: string;
+          headline: string;
+          dek: string | null;
+          body: string | null;
+          byline: string | null;
+          source: string | null;
+          url: string | null;
+          image: string | null;
+          section: string | null;
+          edition_date: string | null;
+          saved_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          story_id: string;
+          headline: string;
+          dek?: string | null;
+          body?: string | null;
+          byline?: string | null;
+          source?: string | null;
+          url?: string | null;
+          image?: string | null;
+          section?: string | null;
+          edition_date?: string | null;
+          saved_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["times_saved_articles"]["Insert"]>;
+        Relationships: [];
+      };
       newspaper_desk: {
         Row: {
           id: string;
