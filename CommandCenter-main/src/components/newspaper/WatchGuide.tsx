@@ -5,6 +5,7 @@ import {
   type WatchNetwork,
   type WatchSide,
 } from "@/lib/newspaper-watch";
+import "./WatchGuide.css";
 
 function recordBit(side: WatchSide): string | null {
   if (side.record) return side.record;
