@@ -599,13 +599,13 @@ export function renderHeatAlertSvg(card: HeatAlertCard): string {
       <stop offset="1" stop-color="#0d3d22"/>
     </linearGradient>
     <linearGradient id="driveCapsule" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.96"/>
-      <stop offset="1" stop-color="#dfe6ef" stop-opacity="0.88"/>
+      <stop offset="0" stop-color="#f7f8fb"/>
+      <stop offset="1" stop-color="#dce3ee"/>
     </linearGradient>
     <radialGradient id="losBall" cx="35%" cy="32%" r="68%">
-      <stop offset="0" stop-color="#f7f1e6"/>
-      <stop offset="55%" stop-color="#c4a574"/>
-      <stop offset="100%" stop-color="#6b4520"/>
+      <stop offset="0" stop-color="#f3ead8"/>
+      <stop offset="45%" stop-color="#c4a574"/>
+      <stop offset="100%" stop-color="#5c3a16"/>
     </radialGradient>
     <radialGradient id="awayWash" cx="18%" cy="22%" r="58%">
       <stop offset="0" stop-color="${card.away.color}" stop-opacity="0.5"/>

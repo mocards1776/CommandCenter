@@ -35,9 +35,9 @@ function CircularLosFootball({ className }: { className?: string }) {
     <svg viewBox="0 0 20 20" className={className} aria-hidden>
       <defs>
         <radialGradient id={gid} cx="35%" cy="32%" r="68%">
-          <stop offset="0" stopColor="#f7f1e6" />
-          <stop offset="55%" stopColor="#c4a574" />
-          <stop offset="100%" stopColor="#6b4520" />
+          <stop offset="0" stopColor="#f3ead8" />
+          <stop offset="45%" stopColor="#c4a574" />
+          <stop offset="100%" stopColor="#5c3a16" />
         </radialGradient>
       </defs>
       <circle cx="10" cy="10" r="9.2" fill={`url(#${gid})`} stroke="#5c4320" strokeWidth="0.8" />
@@ -237,12 +237,11 @@ export default function NflFieldMap({
 
           {marks.capsule ? (
             <div
-              className="absolute top-1/2 z-[5] h-2.5 min-w-4 -translate-y-1/2 rounded-full border border-white/90 shadow-[0_1px_3px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.95)]"
+              className="absolute top-1/2 z-[5] h-2.5 min-w-4 -translate-y-1/2 rounded-full border border-white shadow-[0_1px_3px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.95)]"
               style={{
                 left: `${marks.capsule.leftPct}%`,
                 width: `${marks.capsule.widthPct}%`,
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.96), rgba(223,230,239,0.88))",
+                background: "linear-gradient(180deg, #f7f8fb, #dce3ee)",
               }}
               title={driveStartTitle}
             >
