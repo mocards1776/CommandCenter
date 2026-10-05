@@ -1,3 +1,5 @@
+import { mergeShortNewspaperParas, splitNewspaperSentences } from "../../../supabase/functions/_shared/newspaper-paras.ts";
+
 const NAV_MARKERS = ["my quiz activity", "my favorites", "add sports/teams", "home quizzes"];
 
 /**
@@ -122,6 +124,7 @@ export function tidy(text: string): string {
 /**
  * Real paragraphs where the wire has them; otherwise group sentences into
  * paragraphs of a few hundred characters so an indent never lands mid-sentence.
+ * Never splits after abbreviations / initials; stubs under ~25 characters merge.
  */
 export function proseParas(text: string, max = 60): string[] {
   const raw = text.trim();
@@ -136,7 +139,7 @@ export function proseParas(text: string, max = 60): string[] {
       out.push(block);
       continue;
     }
-    const sentences = block.split(/(?<=[.!?]["'”’)]?)\s+(?=["“‘'(]?[A-Z0-9])/);
+    const sentences = splitNewspaperSentences(block);
     let buf = "";
     for (const s of sentences) {
       if (buf && buf.length + s.length > 440) {
@@ -147,5 +150,5 @@ export function proseParas(text: string, max = 60): string[] {
     }
     if (buf) out.push(buf);
   }
-  return out.slice(0, max);
+  return mergeShortNewspaperParas(out).slice(0, max);
 }

@@ -42,7 +42,7 @@ You receive CLUSTER briefs: events already grouped across conservative-leaning s
 Pick the 6 to 8 most important NATIONAL stories for this edition.
 - Importance: government, war and diplomacy, the courts, the economy, the border, elections, major disasters. Not sports, not celebrity, not culture-war bait unless it is actual news.
 - Reject duplicates, day-old process pieces, and anything that is really an opinion column.
-- For each pick write a clean newspaper headline (no outlet name, no question-mark tease) and a 2–3 sentence factual summary in neutral newspaper voice. Do not editorialize. Do not invent facts that are not in the cluster.
+- For each pick write a clean newspaper headline (no outlet name, no question-mark tease) and a 2–3 sentence factual summary in neutral newspaper voice. Put each sentence in the `paragraphs` array (one sentence per string). Also set `summary` to those paragraphs joined by spaces. Do not editorialize. Do not invent facts that are not in the cluster.
 - sourceItemId must be one of the item ids in that cluster. Prefer the conservative outlet's straight-news piece (Fox, WSJ, Examiner, Post) over the wire; use AP or Reuters only when they are the clearest account.
 - credit is the outlets that filed it, conservative first, like "Fox News, WSJ" or "WSJ, AP".
 
@@ -58,11 +58,12 @@ const SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["clusterId", "headline", "summary", "sourceItemId", "credit"],
+        required: ["clusterId", "headline", "summary", "paragraphs", "sourceItemId", "credit"],
         properties: {
           clusterId: { type: "string" },
           headline: { type: "string" },
           summary: { type: "string" },
+          paragraphs: { type: "array", items: { type: "string" } },
           sourceItemId: { type: "string" },
           credit: { type: "string" },
         },

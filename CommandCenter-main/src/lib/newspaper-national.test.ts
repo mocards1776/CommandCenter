@@ -169,6 +169,35 @@ assert(readNationalEditor({ picks: [] }, briefs) == null, "an empty editor is un
 const edited = storiesFromEditor(desk!, ranked);
 assert(edited[0]!.headline === "Washington reopens the spending fight", "Grok headline is what prints");
 assert(edited[0]!.url === spendFox.url, "chosen conservative link is kept");
+assert(edited[0]!.paragraphs?.length === 1, "a one-sentence summary becomes one graf");
+
+const grafDesk = readNationalEditor(
+  {
+    picks: [
+      {
+        clusterId: briefs[0]!.id,
+        headline: "Washington reopens the spending fight",
+        summary: "The U.S. Coast Guard and Sen. Smith briefed reporters.",
+        paragraphs: ["The U.S.", "Coast Guard and Sen. Smith briefed reporters in D.C. after the U.K. notice."],
+        sourceItemId: spendFox.id,
+        credit: "Fox News, WSJ",
+      },
+      {
+        clusterId: briefs.find((b) => b.items.some((i) => i.id === "e"))!.id,
+        headline: "Court takes a firearms rule",
+        summary: "The justices agreed to hear a challenge that has split the appeals courts this year.",
+        sourceItemId: court.id,
+        credit: "WSJ",
+      },
+    ],
+    rationale: "Grafs from Grok.",
+    model: "grok-4.6",
+  },
+  briefs,
+);
+assert(grafDesk && grafDesk.picks[0]!.paragraphs.length === 1, "Grok stub 'The U.S.' merges into the next graf");
+assert(grafDesk!.picks[0]!.paragraphs[0]!.startsWith("The U.S. Coast Guard"), "merged graf keeps U.S. on the Coast Guard");
+assert(grafDesk!.picks[0]!.summary.startsWith("The U.S. Coast Guard"), "joined summary matches the guarded grafs");
 
 const filed = asNationalDesk({
   issue_id: "2026-10-05-morning",

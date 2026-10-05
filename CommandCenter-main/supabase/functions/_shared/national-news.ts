@@ -7,6 +7,8 @@
  * edge function fetches feeds and calls Grok; the paper only reads the filed row.
  */
 
+import { newspaperParas, splitNewspaperSentences } from "./newspaper-paras.ts";
+
 export type FeedKind = "lead" | "section" | "popular" | "wire";
 
 export type NationalSource = {
@@ -82,6 +84,8 @@ export type NationalStory = {
   id: string;
   headline: string;
   summary: string;
+  /** Grok-filed grafs. When present the paper prints these and does not resplit. */
+  paragraphs?: string[];
   url: string;
   source: string;
   credit: string;
@@ -112,6 +116,7 @@ export type NationalEditorPick = {
   clusterId: string;
   headline: string;
   summary: string;
+  paragraphs: string[];
   sourceItemId: string;
   credit: string;
 };
@@ -448,8 +453,15 @@ export function creditLine(items: NationalItem[]): string {
 function sentences(text: string, max = 3): string {
   const clean = text.replace(/\s+/g, " ").trim();
   if (!clean) return "";
-  const parts = clean.split(/(?<=[.!?])\s+(?=[A-Z“"])/).filter(Boolean);
+  const parts = splitNewspaperSentences(clean);
   return (parts.slice(0, max).join(" ") || clean).slice(0, 520);
+}
+
+function storyParagraphs(summary: string, filed?: unknown): string[] {
+  const fromFiled = Array.isArray(filed)
+    ? filed.filter((p): p is string => typeof p === "string")
+    : [];
+  return newspaperParas(fromFiled.length ? fromFiled : summary);
 }
 
 export function storyFromCluster(cluster: NationalCluster): NationalStory {
@@ -461,6 +473,7 @@ export function storyFromCluster(cluster: NationalCluster): NationalStory {
     id: cluster.id,
     headline: pick.title,
     summary,
+    paragraphs: newspaperParas(summary),
     url: pick.url,
     source: pick.outlet,
     credit: creditLine(cluster.items),
@@ -529,7 +542,8 @@ export function readNationalEditor(
     const clusterId = typeof r.clusterId === "string" ? r.clusterId : "";
     if (!known.has(clusterId) || seen.has(clusterId)) continue;
     const headline = typeof r.headline === "string" ? cleanHeadline(r.headline).slice(0, 160) : "";
-    const summary = typeof r.summary === "string" ? r.summary.replace(/\s+/g, " ").trim().slice(0, 520) : "";
+    const paragraphs = storyParagraphs(typeof r.summary === "string" ? r.summary : "", r.paragraphs);
+    const summary = (paragraphs.join(" ") || (typeof r.summary === "string" ? r.summary : "")).replace(/\s+/g, " ").trim().slice(0, 520);
     if (!headline || summary.length < 40) continue;
     let sourceItemId = typeof r.sourceItemId === "string" ? r.sourceItemId : "";
     if (!itemIds.has(sourceItemId)) {
@@ -538,7 +552,7 @@ export function readNationalEditor(
     }
     const credit = typeof r.credit === "string" ? r.credit.replace(/\s+/g, " ").trim().slice(0, 80) : "";
     seen.add(clusterId);
-    picks.push({ clusterId, headline, summary, sourceItemId, credit });
+    picks.push({ clusterId, headline, summary, paragraphs, sourceItemId, credit });
     if (picks.length >= NATIONAL_STORY_MAX) break;
   }
   const need = briefs.length >= NATIONAL_STORY_MIN ? 4 : Math.min(2, briefs.length);
@@ -562,6 +576,7 @@ export function storiesFromEditor(
       id: cluster.id,
       headline: pick.headline,
       summary: pick.summary,
+      paragraphs: pick.paragraphs,
       url: item.url,
       source: item.outlet,
       credit: pick.credit || creditLine(cluster.items),
@@ -589,10 +604,13 @@ export function asNationalDesk(row: {
     const s = raw as Record<string, unknown>;
     if (typeof s.headline !== "string" || typeof s.url !== "string") continue;
     if (!s.headline.trim() || !/^https?:\/\//i.test(s.url)) continue;
+    const summary = typeof s.summary === "string" ? s.summary : "";
+    const paragraphs = storyParagraphs(summary, s.paragraphs);
     stories.push({
       id: typeof s.id === "string" ? s.id : hashId(s.url),
       headline: s.headline.trim(),
-      summary: typeof s.summary === "string" ? s.summary : "",
+      summary: paragraphs.join(" ") || summary,
+      paragraphs,
       url: s.url,
       source: typeof s.source === "string" ? s.source : "",
       credit: typeof s.credit === "string" ? s.credit : typeof s.source === "string" ? s.source : "",
@@ -727,6 +745,6 @@ export function sampleNationalDesk(issueId = "2026-10-05-morning"): NationalDesk
         outlets: ["Washington Free Beacon", "The Dispatch"],
         publishedAt: `${day}T02:50:00.000Z`,
       },
-    ],
+    ].map((story) => ({ ...story, paragraphs: newspaperParas(story.summary) })),
   };
 }

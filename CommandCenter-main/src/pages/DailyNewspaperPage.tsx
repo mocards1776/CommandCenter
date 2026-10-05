@@ -111,7 +111,7 @@ import WatchGuide from "@/components/newspaper/WatchGuide";
 import DayAhead from "@/components/newspaper/DayAhead";
 import { insertDayAhead, scheduleDateFor } from "@/lib/newspaper-day-ahead";
 import { fetchDaySchedule } from "@/lib/newspaper-day-ahead-fetch";
-import { sampleNationalDesk, type NationalStory } from "@/lib/newspaper-national";
+import { newspaperParas, sampleNationalDesk, type NationalStory } from "@/lib/newspaper-national";
 import { readTimesNationalNews } from "@/lib/newspaper-national-fetch";
 import {
   buildGameWrapCards,
@@ -3160,8 +3160,8 @@ function natDate(day: string): string {
   });
 }
 
-function NatSummary({ text, cols, drop }: { text: string; cols: 1 | 2 | 3; drop?: boolean }) {
-  const paras = proseParas(text);
+function NatSummary({ story, cols, drop }: { story: NationalStory; cols: 1 | 2 | 3; drop?: boolean }) {
+  const paras = newspaperParas(story.paragraphs?.length ? story.paragraphs : story.summary);
   if (!paras.length) return null;
   return (
     <div className={cn("wsj-prose", `c${cols}`, drop && "drop", "ended")}>
@@ -3185,7 +3185,7 @@ function NatStory({ story, size }: { story: NationalStory; size: "lead" | "col" 
           {story.headline}
         </a>
       </h3>
-      <NatSummary text={story.summary} cols={size === "lead" ? 2 : 1} drop={size === "lead"} />
+      <NatSummary story={story} cols={size === "lead" ? 2 : 1} drop={size === "lead"} />
     </article>
   );
 }
