@@ -41,6 +41,7 @@ import NhlCoachPage from "@/pages/NhlCoachPage";
 import SoccerGamePage from "@/pages/SoccerGamePage";
 import HeatAlertPreviewPage from "@/pages/HeatAlertPreviewPage";
 import FieldDrivePreviewPage from "@/pages/FieldDrivePreviewPage";
+import NewspaperWatchPreviewPage from "@/pages/NewspaperWatchPreviewPage";
 const RssPage = lazy(() => import("@/pages/RssPage"));
 import PublicStoryPage from "@/pages/PublicStoryPage";
 import BuenaVistaNotebookPage from "@/pages/BuenaVistaNotebookPage";
@@ -135,6 +136,7 @@ export default function App() {
             {/* Token-gated client presentations — public, no app chrome */}
             <Route path="/story/:token" element={<PublicStoryPage />} />
             <Route path="/sports/field-drive-preview" element={<FieldDrivePreviewPage />} />
+            <Route path="/newspaper/watch-preview" element={<NewspaperWatchPreviewPage />} />
             <Route element={<Protected />}>
               <Route path="/" element={<HomeRedirect />} />
               <Route path="/dashboard" element={<DashboardPage />} />
