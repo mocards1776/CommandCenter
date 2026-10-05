@@ -3,8 +3,12 @@ import {
   alertText,
   frontFor,
   IMAGE_WAIT_MS,
+  imageAlertDecision,
+  kickedIssueFromDetail,
   replyMarkup,
-  RUNNER_FRESH_MS,
+  shotsDispatchAccepted,
+  shotsDispatchBody,
+  shotsDispatchUrl,
 } from "./alert.ts";
 
 /**
@@ -17,17 +21,20 @@ import {
  * chat in TIMES_TELEGRAM_CHAT_IDS. The claim makes every edition alert once,
  * even if two runs overlap or a run is retried. Older issues never alert.
  *
- * Image alerts: while the GitHub Actions screenshot runner (times-telegram-shots)
- * has polled recently, a fresh edition is left for it for IMAGE_WAIT_MS. If the
- * runner does not claim it in time, releases it, or its claim goes stale, this
- * function sends the text alert instead, so an edition never goes unannounced.
+ * Image alerts: this function starts `.github/workflows/times-telegram-shots.yml`
+ * via GitHub `workflow_dispatch` (secret TIMES_TELEGRAM_GITHUB_TOKEN) as soon as
+ * an edition is ready, then waits IMAGE_WAIT_MS for times-telegram-shots to claim
+ * it. If dispatch fails, the token is missing, the runner releases, or the wait
+ * expires, the text alert goes instead, so an edition never goes unannounced
+ * and never alerts twice.
  *
  * A specific issue (`{"issue_id": "..."}`) may be sent only with the
  * x-times-telegram-admin header matching TIMES_TELEGRAM_ADMIN_SECRET. It still
  * claims first, so it never re-sends an edition that already alerted.
  *
  * Secrets: TIMES_TELEGRAM_BOT_TOKEN, TIMES_TELEGRAM_CHAT_IDS,
- * TIMES_TELEGRAM_ADMIN_SECRET (optional). Never the Sports App bots.
+ * TIMES_TELEGRAM_ADMIN_SECRET (optional), TIMES_TELEGRAM_GITHUB_TOKEN (optional;
+ * without it, text goes immediately). Never the Sports App bots.
  */
 
 /** Only issues that went ready this recently alert. Keeps a first run from backfilling. */
@@ -93,6 +100,44 @@ async function claim(db: SupabaseClient, issueId: string): Promise<boolean> {
     .is("sent_at", null)
     .select("issue_id");
   return Boolean(retaken?.length);
+}
+
+/** Start the screenshot workflow for this edition. False → send text now. */
+async function kickShotsWorkflow(issueId: string): Promise<boolean> {
+  const token = Deno.env.get("TIMES_TELEGRAM_GITHUB_TOKEN");
+  if (!token) {
+    console.error("times-telegram: TIMES_TELEGRAM_GITHUB_TOKEN unset; text fallback");
+    return false;
+  }
+  try {
+    const res = await fetch(shotsDispatchUrl(), {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(shotsDispatchBody(issueId)),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const body = await res.text().catch(() => "");
+    if (shotsDispatchAccepted(res.status, body)) return true;
+    console.error("times-telegram: workflow_dispatch failed", res.status, body.slice(0, 200));
+    return false;
+  } catch (err) {
+    console.error("times-telegram: workflow_dispatch error", err instanceof Error ? err.message : String(err));
+    return false;
+  }
+}
+
+async function markRunnerKicked(db: SupabaseClient, issueId: string) {
+  const now = new Date().toISOString();
+  const { error } = await db.from("times_telegram_runner").upsert(
+    { id: "github-actions", last_poll_at: now, detail: { kicked_issue: issueId, kicked_at: now } },
+    { onConflict: "id" },
+  );
+  if (error) console.error("times-telegram: runner kick record failed", error.message);
 }
 
 async function alertIssue(db: SupabaseClient, token: string, chats: string[], issue: IssueRow) {
@@ -180,20 +225,43 @@ Deno.serve(async (req) => {
       const ledger = new Set((done ?? []).map((r) => r.issue_id as string));
       const { data: runner } = await db
         .from("times_telegram_runner")
-        .select("last_poll_at")
+        .select("last_poll_at, detail")
         .eq("id", "github-actions")
         .maybeSingle();
-      const runnerFresh = Boolean(runner && Date.now() - new Date(runner.last_poll_at).getTime() < RUNNER_FRESH_MS);
+      let kickedIssue = kickedIssueFromDetail(runner?.detail);
       const waiting: string[] = [];
-      const pending = ids.filter((id) => {
-        if (finished.has(id)) return false;
-        // A claimed row (image or text) is settled by claim(): taken again only once stale.
-        if (ledger.has(id) || !runnerFresh) return true;
-        if (Date.now() - (printedAt.get(id) ?? 0) >= IMAGE_WAIT_MS) return true;
-        waiting.push(id);
-        return false;
-      });
-      if (!pending.length) return Response.json({ ok: true, alerts: [], waiting_for_image: waiting });
+      const pending: string[] = [];
+      for (const id of ids) {
+        const decision = imageAlertDecision({
+          alreadyFinished: finished.has(id),
+          alreadyClaimed: ledger.has(id),
+          printedAgeMs: Date.now() - (printedAt.get(id) ?? 0),
+          kickedIssue,
+          issueId: id,
+        });
+        if (decision === "skip") continue;
+        if (decision === "wait") {
+          waiting.push(id);
+          continue;
+        }
+        if (decision === "kick") {
+          if (await kickShotsWorkflow(id)) {
+            await markRunnerKicked(db, id);
+            kickedIssue = id;
+            waiting.push(id);
+            continue;
+          }
+        }
+        pending.push(id);
+      }
+      if (!pending.length) {
+        return Response.json({
+          ok: true,
+          alerts: [],
+          waiting_for_image: waiting,
+          image_wait_ms: IMAGE_WAIT_MS,
+        });
+      }
       const { data, error: storiesError } = await db
         .from("newspaper_issues")
         .select("id, status, printed_at, stories")

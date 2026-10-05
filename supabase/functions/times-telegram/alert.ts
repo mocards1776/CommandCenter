@@ -73,7 +73,55 @@ export function replyMarkup() {
   return { inline_keyboard: [[{ text: "Read the paper", web_app: { url: PAPER_URL } }]] };
 }
 
-/** When a runner heartbeat is fresher than this, the text alert waits for the image alert. */
-export const RUNNER_FRESH_MS = 40 * 60_000;
-/** How long after an edition goes ready the text alert waits for the image alert. */
-export const IMAGE_WAIT_MS = 45 * 60_000;
+/**
+ * How long after an edition goes ready the text alert waits for the image runner.
+ * Matches the workflow's 12-minute job timeout, so a late Chromium install still
+ * wins the ledger before text fires. GitHub's `schedule:` cron is not trusted.
+ */
+export const IMAGE_WAIT_MS = 12 * 60_000;
+
+export const SHOTS_WORKFLOW_REPO = "mocards1776/CommandCenter";
+export const SHOTS_WORKFLOW_FILE = "times-telegram-shots.yml";
+export const SHOTS_WORKFLOW_REF = "main";
+
+export function shotsDispatchUrl(): string {
+  return `https://api.github.com/repos/${SHOTS_WORKFLOW_REPO}/actions/workflows/${SHOTS_WORKFLOW_FILE}/dispatches`;
+}
+
+export function shotsDispatchBody(issueId: string): { ref: string; inputs: { issue_id: string } } {
+  return { ref: SHOTS_WORKFLOW_REF, inputs: { issue_id: issueId } };
+}
+
+/** GitHub returns 204 on queue; 422 when that workflow is already running. */
+export function shotsDispatchAccepted(status: number, body = ""): boolean {
+  if (status === 204 || status === 200) return true;
+  return status === 422 && /already|running|limit/i.test(body);
+}
+
+export function kickedIssueFromDetail(detail: unknown): string | null {
+  if (!detail || typeof detail !== "object") return null;
+  const id = (detail as { kicked_issue?: unknown }).kicked_issue;
+  return typeof id === "string" && id ? id : null;
+}
+
+export type ImageAlertDecision = "skip" | "send_text" | "wait" | "kick";
+
+/**
+ * One edition, one alert: images if the runner was kicked for this issue and is
+ * still inside the wait window; text if that fails or times out. `kick` means
+ * try workflow_dispatch; the caller sends text immediately when that fails so
+ * Josh is never left without an alert.
+ */
+export function imageAlertDecision(input: {
+  alreadyFinished: boolean;
+  alreadyClaimed: boolean;
+  printedAgeMs: number;
+  kickedIssue: string | null;
+  issueId: string;
+}): ImageAlertDecision {
+  if (input.alreadyFinished) return "skip";
+  if (input.alreadyClaimed) return "send_text";
+  if (input.printedAgeMs >= IMAGE_WAIT_MS) return "send_text";
+  if (input.kickedIssue === input.issueId) return "wait";
+  return "kick";
+}

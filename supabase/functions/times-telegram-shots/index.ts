@@ -8,7 +8,8 @@ import { alertText, editionTitle, frontFor, replyMarkup } from "../times-telegra
  * runner (.github/workflows/times-telegram-shots.yml, script
  * CommandCenter-main/scripts/times-shots.mjs) and sent by this function.
  *
- *   peek   → is an edition waiting for its image alert? (records the runner heartbeat)
+ *   peek   → is an edition waiting for its image alert? (records the runner heartbeat;
+ *            the runner may name an issue_id from workflow_dispatch)
  *   claim  → claim it in public.times_telegram_alerts and mint a short-lived session for
  *            the household desk's user so the runner can open the paper behind the login
  *   send   → multipart front + optional weather/day/watch PNGs: photo 1 carries
@@ -187,7 +188,7 @@ Deno.serve(async (req) => {
   const action = String(field("action") ?? "");
   const test = caller === "admin" && (field("test") === true || field("test") === "true");
   const askedId = typeof field("issue_id") === "string" ? String(field("issue_id")) : "";
-  if (askedId && caller !== "admin" && action !== "send" && action !== "release") {
+  if (askedId && caller !== "admin" && action !== "send" && action !== "release" && action !== "peek" && action !== "claim") {
     return json({ ok: false, error: "Only admin may name an issue" }, 403);
   }
 
@@ -198,7 +199,15 @@ Deno.serve(async (req) => {
           .from("times_telegram_runner")
           .upsert({ id: "github-actions", last_poll_at: new Date().toISOString() }, { onConflict: "id" });
       }
-      return json({ ok: true, issue_id: askedId || (await pendingIssue(db)) });
+      if (askedId) {
+        const { data: row } = await db
+          .from("times_telegram_alerts")
+          .select("sent_at")
+          .eq("issue_id", askedId)
+          .maybeSingle();
+        return json({ ok: true, issue_id: row?.sent_at ? null : askedId });
+      }
+      return json({ ok: true, issue_id: await pendingIssue(db) });
     }
 
     if (action === "claim") {
