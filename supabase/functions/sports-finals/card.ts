@@ -6,6 +6,7 @@
  * win-probability series, and each club's division or conference table.
  * It does not include the live field.
  */
+import { nhlDarkRimDataUri, nhlDarkRimFile } from "../_shared/nhl-dark-logos.ts";
 import {
   fetchNhlThreeStarsWithRetry,
   starLine,
@@ -1070,6 +1071,15 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
+async function logoDataForSide(sport: string, side: { abbrev: string; teamId: string; logoUrl: string | null }): Promise<string | null> {
+  const file = nhlDarkRimFile({ sport, abbrev: side.abbrev, teamId: side.teamId, url: side.logoUrl });
+  if (file) {
+    const rim = await nhlDarkRimDataUri(file);
+    if (rim) return rim;
+  }
+  return fetchLogoDataUri(side.logoUrl);
+}
+
 export async function fetchLogoDataUri(url: string | null): Promise<string | null> {
   if (!url || !url.startsWith("https://")) return null;
   try {
@@ -1106,8 +1116,8 @@ export async function loadFinalCard(
   const card = cardFromSummary(sport, eventId, await fetchSummary(sport, eventId));
   const skipStandings = card.playoff && card.sport === "mlb";
   const [away, home, standings, stars] = await Promise.all([
-    fetchLogoDataUri(card.away.logoUrl),
-    fetchLogoDataUri(card.home.logoUrl),
+    logoDataForSide(card.sport, card.away),
+    logoDataForSide(card.sport, card.home),
     skipStandings ? Promise.resolve([]) : loadCardStandings(sport, card.away, card.home),
     sport === "nhl"
       ? fetchNhlThreeStarsWithRetry(

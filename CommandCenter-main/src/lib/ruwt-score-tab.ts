@@ -1,6 +1,7 @@
 import { ruwtItemHref, type UnifiedRuwtItem } from "@/hooks/useRuwtSlate";
 import { cfbTeamLogo } from "@/lib/cfb";
 import { nflTeamLogo } from "@/lib/nfl";
+import { resolveNhlDarkRimHref } from "@/lib/nhl-dark-logos";
 import { nhlTeamLogo } from "@/lib/nhl";
 import { soccerTeamLogo } from "@/lib/soccer";
 
@@ -96,6 +97,8 @@ export function toTab(item: UnifiedRuwtItem): ScoreTab {
 
 /** ESPN ships a dark-background variant beside the standard 500 logo. */
 export function espnDarkLogo(url: string): string | null {
+  const rim = resolveNhlDarkRimHref({ url });
+  if (rim) return rim;
   const dark = url.replace(/(\/i\/teamlogos\/[a-z]+)\/500\//, "$1/500-dark/");
   return dark === url ? null : dark;
 }

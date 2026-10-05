@@ -24,7 +24,14 @@ import {
 } from "./preview-slate.ts";
 import { PREVIEW_ALERT_HEIGHT, PREVIEW_ALERT_WIDTH, previewCardModel, renderPreviewSvg } from "./preview-svg.ts";
 import { goaliesFromSummary, pitcherLineFromStat } from "./preview-boards.ts";
-import { applyLightningLogos, isLightningSide, lightningLogoDataUri } from "./preview-logos.ts";
+import {
+  applyLightningLogos,
+  capitalsLogoDataUri,
+  isCapitalsSide,
+  isLightningSide,
+  lightningLogoDataUri,
+} from "./preview-logos.ts";
+import { nhlDarkRimFile } from "../_shared/nhl-dark-logos.ts";
 import {
   mlbPostseasonHeat,
   MLB_PLAYOFF_SERIES_HEAT,
@@ -427,9 +434,18 @@ assert.match(espnDarkLogoUrl("https://a.espncdn.com/i/teamlogos/nhl/500/20.png")
 assert.equal(isLightningSide("nhl", { teamId: "20", abbrev: "TB" }), true);
 assert.equal(isLightningSide("nhl", { teamId: "15", abbrev: "PHI" }), false);
 assert.equal(isLightningSide("mlb", { teamId: "139", abbrev: "TB" }), false);
+assert.equal(isCapitalsSide("nhl", { teamId: "23", abbrev: "WSH" }), true);
+assert.equal(isCapitalsSide("nhl", { teamId: "20", abbrev: "TB" }), false);
+assert.equal(isCapitalsSide("mlb", { teamId: "120", abbrev: "WSH" }), false);
+assert.equal(nhlDarkRimFile({ sport: "nhl", abbrev: "WSH" }), "nhl-wsh.png");
+assert.equal(nhlDarkRimFile({ sport: "mlb", abbrev: "WSH" }), null);
 const lightningUri = await lightningLogoDataUri();
 assert.ok(lightningUri?.startsWith("data:image/png;base64,"));
 assert.ok((lightningUri?.length ?? 0) > 1000);
+const capitalsUri = await capitalsLogoDataUri();
+assert.ok(capitalsUri?.startsWith("data:image/png;base64,"));
+assert.ok((capitalsUri?.length ?? 0) > 1000);
+assert.notEqual(lightningUri, capitalsUri);
 const lightningGame = game({
   id: "tb-logo",
   startIso: "2026-10-05T18:00:00-05:00",
@@ -440,6 +456,16 @@ const lightningGame = game({
 });
 await applyLightningLogos([lightningGame]);
 assert.equal(lightningGame.home.logoData, lightningUri);
+const capitalsGame = game({
+  id: "wsh-logo",
+  startIso: "2026-10-05T19:00:00-05:00",
+  heat: 50,
+  sport: "nhl",
+  league: "NHL",
+  away: { teamId: "23", name: "Capitals", abbrev: "WSH", logo: "https://a.espncdn.com/i/teamlogos/nhl/500/wsh.png", record: "1-0-0", logoData: "data:image/png;base64,espn" },
+});
+await applyLightningLogos([capitalsGame]);
+assert.equal(capitalsGame.away.logoData, capitalsUri);
 
 const markup = previewReplyMarkup("https://command-center-flax-gamma.vercel.app");
 assert.ok(markup);

@@ -1,5 +1,6 @@
+import { nhlDarkRimDataUri, nhlDarkRimFile } from "../nhl-dark-logos.ts";
 import { bytesToBase64 } from "./binary.ts";
-import type { HeatAlertCard, HeatSide } from "./types.ts";
+import type { HeatAlertCard, HeatSide, HeatSport } from "./types.ts";
 
 async function inlineLogo(href: string | null): Promise<string | null> {
   if (!href) return null;
@@ -23,12 +24,17 @@ async function inlineLogo(href: string | null): Promise<string | null> {
   }
 }
 
-async function withLogo(side: HeatSide): Promise<HeatSide> {
+async function withLogo(side: HeatSide, sport: HeatSport): Promise<HeatSide> {
+  const file = nhlDarkRimFile({ sport, abbrev: side.abbrev, teamId: side.id, url: side.logoHref });
+  if (file) {
+    const rim = await nhlDarkRimDataUri(file);
+    if (rim) return { ...side, logoHref: rim };
+  }
   return { ...side, logoHref: await inlineLogo(side.logoHref) };
 }
 
 /** resvg does not fetch remote images. Inline the ESPN marks before rasterizing. */
 export async function embedLogos(card: HeatAlertCard): Promise<HeatAlertCard> {
-  const [away, home] = await Promise.all([withLogo(card.away), withLogo(card.home)]);
+  const [away, home] = await Promise.all([withLogo(card.away, card.sport), withLogo(card.home, card.sport)]);
   return { ...card, away, home };
 }

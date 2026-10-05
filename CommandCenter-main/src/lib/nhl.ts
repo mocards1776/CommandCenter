@@ -1,6 +1,7 @@
 /** NHL via ESPN site API — scoreboard, standings, teams, games, players. */
 
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts";
+import { nhlLogoOnDark, resolveNhlDarkRimHref } from "./nhl-dark-logos";
 import { seriesLineFromEspn } from "./playoff-series";
 import { espnBirthDate, espnBirthPlace, formatSportsDateLong } from "./utils";
 
@@ -35,7 +36,10 @@ export function nhlHeadshot(playerId: string | number, size = "full"): string {
 }
 
 export function nhlTeamLogo(abbrevOrId: string): string {
-  return `https://a.espncdn.com/i/teamlogos/nhl/500/${abbrevOrId.toLowerCase()}.png`;
+  return (
+    resolveNhlDarkRimHref({ abbrev: abbrevOrId, teamId: abbrevOrId }) ??
+    `https://a.espncdn.com/i/teamlogos/nhl/500/${abbrevOrId.toLowerCase()}.png`
+  );
 }
 
 /** Dark team colors vanish on navy; lift anything under `minLuminance` toward white. */
@@ -209,7 +213,7 @@ function sideFromCompetitor(c: EspnCompetitor): NhlScoreSide {
     abbrev: team.abbreviation ?? "—",
     score,
     record,
-    logo: team.logos?.[0]?.href ?? team.logo ?? (team.abbreviation ? nhlTeamLogo(team.abbreviation) : null),
+    logo: nhlLogoOnDark(team.logos?.[0]?.href ?? team.logo, team.abbreviation, team.id),
     color: (team.color ?? "002f87").replace(/^#/, ""),
     linescores,
   };
@@ -426,7 +430,7 @@ function mapStandings(raw: StandingsPayload, seasonLabel: string | null): NhlSta
         teamId: String(team.id ?? ""),
         name: team.displayName ?? "Team",
         abbrev: team.abbreviation ?? "—",
-        logo: team.logos?.[0]?.href ?? (team.abbreviation ? nhlTeamLogo(team.abbreviation) : null),
+        logo: nhlLogoOnDark(team.logos?.[0]?.href, team.abbreviation, team.id),
         record: `${wins}-${losses}-${otl}`,
         points: stat("points") || "0",
         diff: stat("pointDifferential") || stat("differential") || "0",
@@ -1940,7 +1944,7 @@ export async function fetchNhlPlayerProfile(playerId: string): Promise<NhlPlayer
     if (!t.id) continue;
     teamById.set(String(t.id), {
       name: t.displayName ?? t.abbreviation ?? "Team",
-      logo: t.logos?.[0]?.href ?? (t.abbreviation ? nhlTeamLogo(t.abbreviation) : null),
+      logo: nhlLogoOnDark(t.logos?.[0]?.href, t.abbreviation, t.id),
     });
   }
   const careerRows = (careerCat?.statistics ?? [])
@@ -2036,7 +2040,7 @@ export async function fetchNhlPlayerProfile(playerId: string): Promise<NhlPlayer
     teamName: team.displayName ?? null,
     teamAbbrev: team.abbreviation ?? null,
     teamColor: team.color ?? null,
-    teamLogo: team.logos?.[0]?.href ?? (team.abbreviation ? nhlTeamLogo(team.abbreviation) : null),
+    teamLogo: nhlLogoOnDark(team.logos?.[0]?.href, team.abbreviation, team.id),
     headshot: (a.headshot as { href?: string } | undefined)?.href ?? nhlHeadshot(id),
     height: (a.displayHeight as string | undefined) ?? null,
     weight: (a.displayWeight as string | undefined) ?? null,
@@ -2352,7 +2356,7 @@ export async function fetchNhlTeamPage(teamId: string): Promise<NhlTeamPage> {
             id: String(them.team.id ?? ""),
             abbrev: oppAbbrev,
             name: them.team.displayName ?? oppAbbrev,
-            logo: them.team.logos?.[0]?.href ?? (oppAbbrev ? nhlTeamLogo(oppAbbrev) : null),
+            logo: nhlLogoOnDark(them.team.logos?.[0]?.href, oppAbbrev, them.team.id),
           }
         : null,
       teamScore,
@@ -2376,7 +2380,7 @@ export async function fetchNhlTeamPage(teamId: string): Promise<NhlTeamPage> {
     shortName: t.shortDisplayName ?? t.abbreviation ?? "NHL",
     abbrev: t.abbreviation ?? "NHL",
     color: (t.color ?? "002f87").replace(/^#/, ""),
-    logo: t.logos?.[0]?.href ?? (t.abbreviation ? nhlTeamLogo(t.abbreviation) : null),
+    logo: nhlLogoOnDark(t.logos?.[0]?.href, t.abbreviation, id),
     record,
     points: totalStat("points") ?? nhlPointsFromRecord(record),
     homeRecord: recordItem("home")?.summary ?? null,
@@ -2692,7 +2696,7 @@ export async function fetchNhlCoachProfile(coachId: string, teamHint?: string | 
         name: t.displayName ?? "NHL team",
         abbrev: t.abbreviation ?? "",
         color: (t.color ?? "002f87").replace(/^#/, ""),
-        logo: t.logos?.[0]?.href ?? (t.abbreviation ? nhlTeamLogo(t.abbreviation) : null),
+        logo: nhlLogoOnDark(t.logos?.[0]?.href, t.abbreviation, teamEspnId),
         record: total?.summary ?? null,
         points: typeof pts === "number" ? pts : nhlPointsFromRecord(total?.summary),
         standing: t.standingSummary ?? null,
