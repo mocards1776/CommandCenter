@@ -2,6 +2,14 @@
 
 ---
 
+## Apple Sports drive capsule — October 5, 2026
+
+- Every football drive overlay (NFL/CFB game detail, RUWT cards, heat Telegram / sports-telegram field) now draws an Apple Sports-style glassy capsule from the first snap of the drive to the line of scrimmage, a circular football at the LOS, and a thin yellow first-down stick.
+- The field canvas is unchanged: grass, end zones, midfield logos, and yard lines stay as they were. Start-diamond, play dots, and the blue to-gain bar are gone.
+- Drive-start semantics are the same (first snap of the drive, not a punt spot or kickoff placeholder). Sports finals still omit the live field. Newspaper / Thompson Times unchanged.
+
+---
+
 ## Telegram buttons, short finals captions, NHL/MLB sweep — October 5, 2026
 
 - Heat and finals Telegram photos send **Open game** and **RUWT board** as one-row inline keyboard URL buttons. The caption no longer repeats a plain “Open game” / “Open in Command Center” link.

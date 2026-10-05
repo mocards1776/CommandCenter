@@ -41,7 +41,44 @@ export type FootballMarks = {
   homeHasBall: boolean;
   awayHasBall: boolean;
   driveStartPct: number | null;
+  capsule: DriveCapsule | null;
 };
+
+/** Glassy Apple Sports pill from the first snap of the drive to the LOS. */
+export type DriveCapsule = {
+  leftPct: number;
+  widthPct: number;
+};
+
+/**
+ * Continuous capsule from drive start → current LOS.
+ * A brand-new drive (start ≈ ball) still gets a short tail behind the ball
+ * so the pill reads, instead of collapsing to nothing.
+ */
+export function driveCapsuleSpan(
+  driveStartPct: number | null,
+  ballPct: number | null,
+  facingRight = false,
+  facingLeft = false,
+): DriveCapsule | null {
+  if (ballPct == null || driveStartPct == null) return null;
+  const minW = 1.5;
+  let left = Math.min(driveStartPct, ballPct);
+  let right = Math.max(driveStartPct, ballPct);
+  if (right - left < minW) {
+    if (facingRight) {
+      left = Math.max(0, ballPct - minW);
+      right = Math.min(100, Math.max(left + minW, ballPct));
+    } else if (facingLeft) {
+      left = Math.max(0, Math.min(ballPct, 100 - minW));
+      right = Math.min(100, left + minW);
+    } else {
+      left = Math.max(0, ballPct - minW / 2);
+      right = Math.min(100, left + minW);
+    }
+  }
+  return { leftPct: left, widthPct: right - left };
+}
 
 export function footballMarks(input: {
   yardLine: number | null;
@@ -87,6 +124,7 @@ export function footballMarks(input: {
     homeHasBall,
     awayHasBall,
     driveStartPct,
+    capsule: driveCapsuleSpan(driveStartPct, ballPct, facingRight, facingLeft),
   };
 }
 
@@ -94,12 +132,12 @@ export type PlayDot = { pct: number; x: number; y: number };
 
 const CLUSTER_YARDS = 1.75;
 const MAX_ROWS = 5;
-/** Matches NflFieldMap's play-dot spacing, then the portrait scales it. */
+/** Kept so existing snap-spot tests stay valid. The overlay no longer draws dots. */
 const DOT_STEP = 16;
 
 /**
- * Current-drive snaps only. Same stacking as layoutDrivePlayDots in the app:
- * spots within about two yards stack up the field, then spill into a second column.
+ * Current-drive snaps only. The live overlay uses a capsule now; this layout
+ * remains for tests and any caller that still wants stacked snap spots.
  */
 export function layoutPlayDots(homeYardLines: number[]): PlayDot[] {
   const spots = homeYardLines

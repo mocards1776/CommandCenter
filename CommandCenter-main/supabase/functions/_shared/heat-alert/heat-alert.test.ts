@@ -7,7 +7,7 @@ import { clockParts, isBreakStatus } from "./clock.ts";
 import { formatHeatTimestamp, heatAlertCaption, situationLine } from "./copy.ts";
 import { alertReplyMarkup } from "../telegram-markup.ts";
 import { applyHeatSummary, heatStatMagnitude, pickHeatStats } from "./fetch-game.ts";
-import { fieldBallPct, footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
+import { driveCapsuleSpan, fieldBallPct, footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
 import { renderHeatAlertSvg } from "./svg.ts";
 import { parseChatAllowlist, resolveChatTargets } from "./telegram.ts";
 import type { HeatAlertCard } from "./types.ts";
@@ -38,6 +38,7 @@ test("away offense's line to gain moves toward the home end zone", () => {
   assert.equal(marks.facingRight, true);
   assert.equal(marks.firstDownPct, 70);
   assert.equal(marks.awayHasBall, true);
+  assert.equal(marks.capsule, null);
 });
 
 test("1st and 10 at the home 15 puts the sticks on the home 25", () => {
@@ -53,6 +54,7 @@ test("1st and 10 at the home 15 puts the sticks on the home 25", () => {
   assert.equal(marks.facingLeft, true);
   assert.equal(marks.firstDownPct, 75);
   assert.equal(marks.driveStartPct, 85);
+  assert.deepEqual(marks.capsule, { leftPct: 85, widthPct: 1.5 });
 });
 
 test("home offense's line to gain moves toward the away end zone", () => {
@@ -67,6 +69,17 @@ test("home offense's line to gain moves toward the away end zone", () => {
   assert.equal(marks.facingLeft, true);
   assert.equal(marks.firstDownPct, 59);
   assert.equal(marks.driveStartPct, 80);
+  assert.deepEqual(marks.capsule, { leftPct: 66, widthPct: 14 });
+});
+
+test("capsule spans drive start to the LOS and keeps a short tail on a new drive", () => {
+  const longDrive = driveCapsuleSpan(19, 60, false, true);
+  assert.deepEqual(longDrive, { leftPct: 19, widthPct: 41 });
+  const newDrive = driveCapsuleSpan(85, 85, false, true);
+  assert.deepEqual(newDrive, { leftPct: 85, widthPct: 1.5 });
+  const awayNew = driveCapsuleSpan(20, 20, true, false);
+  assert.deepEqual(awayNew, { leftPct: 18.5, widthPct: 1.5 });
+  assert.equal(driveCapsuleSpan(null, 50, true, false), null);
 });
 
 test("current-drive dots stack a goal-line cluster and skip a separate snap", () => {
@@ -215,7 +228,11 @@ test("portrait svg matches the finals photo slot and score hierarchy", () => {
   assert.match(svg, /1st &amp; 10 at WSH 40/);
   assert.match(svg, /id="grass"/);
   assert.match(svg, /#ffe500/);
-  assert.match(svg, /#2f9bff/);
+  assert.match(svg, /id="driveCapsule"/);
+  assert.match(svg, /id="losBall"/);
+  assert.doesNotMatch(svg, /#2f9bff/);
+  assert.doesNotMatch(svg, /r="7"/);
+  assert.doesNotMatch(svg, /width="12" height="12" fill="#ffffff" transform="rotate/);
   assert.match(svg, /Northwest Stadium/);
   assert.match(svg, /CT</);
   assert.match(svg, /Win probability/);

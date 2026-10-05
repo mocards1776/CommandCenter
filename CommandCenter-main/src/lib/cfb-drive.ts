@@ -337,9 +337,9 @@ export function homeYardLineFromSpotText(
 }
 
 /**
- * The dashed marker is drawn from `startYardLine`. The "from …" line is `startText`.
+ * The capsule starts at `startYardLine`. The "from …" line is `startText`.
  * Those two can name different spots (text "WSH 46", yardLine 50). The words on the
- * card win, so the diamond sits on the spot the stat line prints.
+ * card win, so the capsule starts on the spot the stat line prints.
  */
 export function syncCfbDriveStartToLabel(
   drive: CfbDriveGlance | null | undefined,
@@ -465,8 +465,8 @@ export function liveHomeYardLine(args: {
 
 /**
  * Drive overlay for the live field. A completed punt/score still sitting in
- * `drives.current` must not keep its diamond, dots, or "from KC 42" line
- * after the situation has moved to the next possession.
+ * `drives.current` must not keep the capsule or "from KC 42" line after the
+ * situation has moved to the next possession.
  */
 export function liveDriveForField(
   drive: CfbDriveGlance | null | undefined,

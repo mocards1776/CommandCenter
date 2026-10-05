@@ -1,4 +1,4 @@
-/** One scrimmage snap drawn on the branded field. `pct` runs away-left to home-right. */
+/** One scrimmage snap. The live overlay uses a capsule now; this layout stays for tests. */
 export type DrivePlayDot = {
   pct: number;
   /** Horizontal nudge, in px, when a cluster needs a second column. */

@@ -542,7 +542,7 @@ assert(
 );
 
 // IND @ WSH, London, 2026-10-04: the stat line said "from WSH 46" while a
-// yardLine of 50 would paint the diamond on the midfield logo. The label wins.
+// yardLine of 50 would start the capsule on the midfield logo. The label wins.
 const wsh46 = syncCfbDriveStartToLabel(
   {
     teamAbbrev: "IND",
@@ -633,7 +633,7 @@ assert(
     away: { teamId: "12", abbrev: "KC" },
     home: { teamId: "13", abbrev: "LV" },
   }) === null,
-  "a completed punt does not keep the diamond after the next possession",
+  "a completed punt does not keep the capsule after the next possession",
 );
 assert(
   liveHomeYardLine({
