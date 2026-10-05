@@ -19,6 +19,7 @@ import {
   watchDensityOf,
   watchFavoriteLabel,
   watchSeriesDisplay,
+  watchSlotBucket,
   watchLeagueColor,
   watchLeagueLabel,
   watchTeamShort,
@@ -183,6 +184,11 @@ assert(watchContext(game({ id: "c2", heat: 5, reasons: [], competition: "Premier
 assert(watchClockState(game({ id: "live", heat: 5, live: true, status: "Bot 5th" })).kind === "live", "live state");
 assert(watchClockState(game({ id: "fin", heat: 5, final: true, status: "Final" })).kind === "final", "final state");
 assert(watchDensityOf(12) === "light" && watchDensityOf(20) === "full" && watchDensityOf(30) === "dense", "density bands");
+assert(watchSlotBucket("7:15 PM", "light") === "7:15 PM", "light days keep the exact kickoff");
+assert(watchSlotBucket("7:15 PM", "dense") === "7 PM", "dense days bucket :15 with the hour");
+assert(watchSlotBucket("7:30 PM", "dense") === "7 PM", "dense :30 joins the hour");
+assert(watchSlotBucket("12:10 PM", "dense") === "12 PM", "dense noon-ish games share 12 PM");
+assert(page.slots.length <= 16, `dense page groups kickoffs (${page.slots.length} slots)`);
 
 const keptFinals = pickWatchGames(
   [

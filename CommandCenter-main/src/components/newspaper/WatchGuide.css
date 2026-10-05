@@ -311,9 +311,17 @@
   flex: 1;
 }
 
+.tt-watch-grid:has(> .tt-watch-card:only-child) {
+  grid-template-columns: 1fr;
+}
+
 .tt-watch[data-density="dense"] .tt-watch-grid {
   grid-template-columns: 1fr 1fr 1fr;
   gap: 7px;
+}
+
+.tt-watch[data-density="dense"] .tt-watch-grid:has(> .tt-watch-card:only-child) {
+  grid-template-columns: 1fr;
 }
 
 .tt-watch[data-density="light"] .tt-watch-card {

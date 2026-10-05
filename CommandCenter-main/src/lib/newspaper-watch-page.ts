@@ -446,6 +446,14 @@ export function watchDensityOf(count: number): WatchDensity {
   return "dense";
 }
 
+/** Dense Saturdays bucket 7:15 with 7:00 so the grid does not sprout a header per kickoff. */
+export function watchSlotBucket(clock: string, density: WatchDensity): string {
+  if (density !== "dense") return clock;
+  const m = clock.match(/^(\d+)(?::\d{2})?\s*(AM|PM)$/i);
+  if (!m) return clock;
+  return `${m[1]} ${m[2]!.toUpperCase()}`;
+}
+
 /** NBA/WNBA exhibitions never take a must-watch or worth-it slot. */
 export function isWatchPreseasonLowTier(game: WatchGame): boolean {
   return Boolean(game.preseason && (game.league === "NBA" || game.league === "WNBA"));
@@ -595,22 +603,24 @@ export function composeWatchPage(games: WatchGame[]): WatchPageModel {
   const featureGame = [...games].sort(byHeat)[0]!;
   const feature = toListing(featureGame, tiers.get(featureGame.id) ?? "must");
   const rest = games.filter((g) => g.id !== featureGame.id).sort(byKickoff);
+  const density = watchDensityOf(games.length);
   const byClock = new Map<string, WatchListing[]>();
   for (const g of rest) {
     const listing = toListing(g, tiers.get(g.id) ?? "around");
-    const list = byClock.get(listing.clock) ?? [];
+    const bucket = watchSlotBucket(listing.clock, density);
+    const list = byClock.get(bucket) ?? [];
     list.push(listing);
-    byClock.set(listing.clock, list);
+    byClock.set(bucket, list);
   }
   const slots: WatchSlot[] = [];
   const seen = new Set<string>();
   for (const g of rest) {
-    const clock = printClock(g.when);
+    const clock = watchSlotBucket(printClock(g.when), density);
     if (seen.has(clock)) continue;
     seen.add(clock);
     slots.push({ clock, listings: byClock.get(clock) ?? [] });
   }
-  return { feature, slots, density: watchDensityOf(games.length), blocks: [] };
+  return { feature, slots, density, blocks: [] };
 }
 
 /** Today's slate, hottest first. Finals stay on the page so an evening read still shows the afternoon. */
