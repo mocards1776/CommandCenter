@@ -43,9 +43,10 @@ export default function NewspaperPhoneCardPage() {
     queryFn: async () => {
       if (sample) return sampleDaySchedule(date);
       try {
+        // Same fetch as DailyNewspaperPage: one row per America/Chicago date.
         return await fetchDaySchedule(date);
       } catch {
-        // Table missing (Day Ahead PR not merged) or RLS — skip the photo.
+        // No readable row (RLS, missing date) — skip the photo.
         return null;
       }
     },
@@ -94,7 +95,14 @@ export default function NewspaperPhoneCardPage() {
   return (
     <div className="tt-phone-page" data-phone-card={card} data-ready={ready}>
       {card === "weather" && weatherQ.data?.days.length ? <PhoneWeatherCard weather={weatherQ.data} /> : null}
-      {card === "day" && dayQ.data ? <PhoneDayAheadCard schedule={dayQ.data} editionLabel={editionLabel} /> : null}
+      {card === "day" && dayQ.data ? (
+        <PhoneDayAheadCard
+          date={dayQ.data.date}
+          events={dayQ.data.events}
+          upcoming={dayQ.data.upcoming}
+          editionLabel={editionLabel}
+        />
+      ) : null}
       {card === "watch" && watchQ.data?.length ? (
         <PhoneWatchCard games={watchQ.data} editionLabel={editionLabel} />
       ) : null}
