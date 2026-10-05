@@ -7,6 +7,8 @@ import { clockParts, isBreakStatus } from "./clock.ts";
 import { formatHeatTimestamp, heatAlertCaption, situationLine } from "./copy.ts";
 import { alertReplyMarkup } from "../telegram-markup.ts";
 import { applyHeatSummary, heatStatMagnitude, pickHeatStats } from "./fetch-game.ts";
+import { embedLogos } from "./logos.ts";
+import { nhlDarkRimFile } from "../nhl-dark-logos.ts";
 import { driveCapsuleSpan, fieldBallPct, footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
 import { mlbHeroNest, runnersShorthand } from "./mlb-hero.ts";
 import { renderHeatAlertSvg } from "./svg.ts";
@@ -416,4 +418,37 @@ test("MLB heat SVG fills the score nest and drops the empty black plate", () => 
   assert.match(svg, />Top 4th</);
   assert.doesNotMatch(svg, /fill="#050505"/);
   assert.equal((svg.match(/>Top 4th</g) || []).length, 1, "inning belongs on the situation bar only");
+});
+
+test("NHL Lightning and Capitals inline vendored rim PNGs; NFL WSH does not", async () => {
+  assert.equal(nhlDarkRimFile({ sport: "nhl", abbrev: "TB", teamId: "20" }), "nhl-tb.png");
+  assert.equal(nhlDarkRimFile({ sport: "nhl", abbrev: "WSH", teamId: "23" }), "nhl-wsh.png");
+  assert.equal(nhlDarkRimFile({ sport: "nfl", abbrev: "WSH", teamId: "28" }), null);
+  const nhl = await embedLogos({
+    ...sample,
+    sport: "nhl",
+    gameId: "401800001",
+    detail: "2nd 8:12",
+    away: {
+      ...sample.away,
+      id: "20",
+      abbrev: "TB",
+      name: "Lightning",
+      logoHref: "https://a.espncdn.com/i/teamlogos/nhl/500/tb.png",
+    },
+    home: {
+      ...sample.home,
+      id: "23",
+      abbrev: "WSH",
+      name: "Capitals",
+      logoHref: "https://a.espncdn.com/i/teamlogos/nhl/500/wsh.png",
+    },
+    football: null,
+    ice: { puckX: 0, puckY: 0 },
+  });
+  assert.match(nhl.away.logoHref ?? "", /^data:image\/png;base64,/);
+  assert.match(nhl.home.logoHref ?? "", /^data:image\/png;base64,/);
+  assert.notEqual(nhl.away.logoHref, nhl.home.logoHref);
+  const nfl = await embedLogos(sample);
+  assert.equal(nfl.home.logoHref, null);
 });

@@ -242,8 +242,8 @@ npm run lint
   MLB probables, NHL starters when known, or a short NFL/CFB spread, plus one
   why-chip. MLB/NHL rows show probable pitcher or goalie with season line
   and a small headshot when the existing ESPN / MLB Stats feeds have them.
-  Logos stay bare (no discs). Lightning uses a vendored navy bolt that
-  already has a white rim in the PNG.
+  Logos stay bare (no discs). Navy-on-navy NHL marks (Lightning bolt,
+  Capitals Weagle) swap to vendored PNGs that already have a white rim.
   Telegram caption is just the title and date — the PNG carries the slate.
   Empty slate skips the send. Idempotent once per Chicago date via
   `sports_finals_preview_sent`.
