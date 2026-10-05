@@ -2,16 +2,17 @@
  * NHL.com gamecenter landing + Brightcove progressive MP4s.
  *
  * Same path the Sports app already uses in CommandCenter-main/src/lib/nhl.ts
- * (`api-web.nhle.com` landing `highlightClip` / `discreteClip`, then the
- * public Brightcove Playback API). Edge can call NHL directly — no CORS proxy.
+ * (`api-web.nhle.com` landing `highlightClip`, then the public Brightcove
+ * Playback API). Only the scoring team's highlightClip is kept — not an
+ * opponent goal, empty-net, own goal, or discreteClip. Edge calls NHL directly.
  */
 import {
+  acceptScoringHighlight,
   canonEspnAbbrev,
   canonNhlAbbrev,
   highlightCaption,
   highlightId,
   parseClockSeconds,
-  teamMatchesFilter,
   type TeamFilter,
 } from "./select.ts";
 
@@ -220,12 +221,6 @@ function sideName(game: ClubGame, abbrev: string): string {
   return abbrev;
 }
 
-function scoringTeamId(game: ClubGame, teamAbbrev: string): string {
-  if (canonNhlAbbrev(teamAbbrev) === game.awayAbbrev) return game.awayId;
-  if (canonNhlAbbrev(teamAbbrev) === game.homeAbbrev) return game.homeId;
-  return "";
-}
-
 function opponentAbbrev(game: ClubGame, teamAbbrev: string): string {
   return canonNhlAbbrev(teamAbbrev) === game.awayAbbrev ? game.homeAbbrev : game.awayAbbrev;
 }
@@ -275,12 +270,59 @@ export async function resolveEspnEventId(game: ClubGame): Promise<string | null>
   return null;
 }
 
+type PlayGoal = {
+  eventId: string;
+  highlightClip: string;
+  eventOwnerTeamId: string;
+  scorerTeamId: string;
+};
+
+/** Play-by-play is where eventOwnerTeamId lives. Landing teamAbbrev is the fallback. */
+async function loadPlayGoals(nhlGameId: string): Promise<PlayGoal[]> {
+  try {
+    const raw = rec(await nhlJson(`v1/gamecenter/${nhlGameId}/play-by-play`));
+    const roster = new Map<string, string>();
+    for (const spot of arr(raw.rosterSpots)) {
+      const row = rec(spot);
+      const playerId = str(row.playerId);
+      const teamId = str(row.teamId);
+      if (playerId && teamId) roster.set(playerId, teamId);
+    }
+    const goals: PlayGoal[] = [];
+    for (const play of arr(raw.plays)) {
+      const row = rec(play);
+      if (str(row.typeDescKey) !== "goal") continue;
+      const details = rec(row.details);
+      goals.push({
+        eventId: str(row.eventId),
+        highlightClip: str(details.highlightClip),
+        eventOwnerTeamId: str(details.eventOwnerTeamId),
+        scorerTeamId: roster.get(str(details.scoringPlayerId)) ?? "",
+      });
+    }
+    return goals;
+  } catch {
+    return [];
+  }
+}
+
+function matchPlayGoal(goals: PlayGoal[], eventId: string, highlightClip: string): PlayGoal | null {
+  return (
+    goals.find((goal) => highlightClip && goal.highlightClip === highlightClip) ??
+    goals.find((goal) => eventId && goal.eventId === eventId) ??
+    null
+  );
+}
+
 export async function fetchGoalClipsForGame(
   game: ClubGame,
   filter: TeamFilter,
   espnEventId: string | null,
 ): Promise<GoalClip[]> {
-  const landing = rec(await nhlJson(`v1/gamecenter/${game.nhlGameId}/landing`));
+  const [landing, playGoals] = await Promise.all([
+    nhlJson(`v1/gamecenter/${game.nhlGameId}/landing`).then(rec),
+    loadPlayGoals(game.nhlGameId),
+  ]);
   const pending: Promise<GoalClip | null>[] = [];
   for (const period of arr(rec(landing.summary).scoring)) {
     const p = rec(period);
@@ -288,11 +330,20 @@ export async function fetchGoalClipsForGame(
     const periodNumber = num(desc.number) ?? 0;
     for (const goal of arr(p.goals)) {
       const g = rec(goal);
-      const teamAbbrev = canonNhlAbbrev(str(rec(g.teamAbbrev).default) || str(g.teamAbbrev));
-      const teamId = scoringTeamId(game, teamAbbrev);
-      if (!teamMatchesFilter(filter, { abbrev: teamAbbrev, teamId })) continue;
-      const clipId = str(g.highlightClip || g.discreteClip);
-      if (!clipId) continue;
+      const listedAbbrev = str(rec(g.teamAbbrev).default) || str(g.teamAbbrev);
+      const clipHint = str(g.highlightClip);
+      const play = matchPlayGoal(playGoals, str(g.eventId), clipHint);
+      const decision = acceptScoringHighlight(filter, game, {
+        teamAbbrev: listedAbbrev,
+        eventOwnerTeamId: play?.eventOwnerTeamId,
+        scorerTeamId: play?.scorerTeamId,
+        goalModifier: str(g.goalModifier),
+        situationCode: str(g.situationCode),
+        isHome: typeof g.isHome === "boolean" ? g.isHome : null,
+        highlightClip: g.highlightClip,
+      });
+      if (!decision.ok) continue;
+      const { clipId, teamAbbrev } = decision;
       pending.push(
         loadBrightcoveMp4(clipId).then((bc): GoalClip | null => {
           if (!bc?.mp4) return null;

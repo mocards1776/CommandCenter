@@ -16,6 +16,8 @@ import {
   parseClockSeconds,
   parseTeamFilter,
   teamMatchesFilter,
+  acceptScoringHighlight,
+  type GameSides,
 } from "./select.ts";
 import {
   gameInLookback,
@@ -44,6 +46,111 @@ test("team filter defaults to Blues and accepts STL or 19", () => {
   assert.ok(teamMatchesFilter(unset, { abbrev: "STL", teamId: 19 }));
   assert.ok(!teamMatchesFilter(unset, { abbrev: "DAL", teamId: 25 }));
   assert.ok(teamMatchesFilter(parseTeamFilter("SJ"), { abbrev: "SJS" }));
+});
+
+const STL_AT_DAL: GameSides = {
+  awayAbbrev: "STL",
+  homeAbbrev: "DAL",
+  awayId: "19",
+  homeId: "25",
+};
+
+test("only Blues scoring highlightClips pass", () => {
+  const blues = parseTeamFilter("STL");
+  const good = acceptScoringHighlight(blues, STL_AT_DAL, {
+    teamAbbrev: "STL",
+    eventOwnerTeamId: 19,
+    scorerTeamId: 19,
+    goalModifier: "none",
+    situationCode: "1551",
+    isHome: false,
+    highlightClip: 6406147120112,
+  });
+  assert.equal(good.ok, true);
+  if (good.ok) {
+    assert.equal(good.teamAbbrev, "STL");
+    assert.equal(good.teamId, "19");
+    assert.equal(good.clipId, "6406147120112");
+  }
+
+  const opponent = acceptScoringHighlight(blues, STL_AT_DAL, {
+    teamAbbrev: "DAL",
+    eventOwnerTeamId: 25,
+    scorerTeamId: 25,
+    goalModifier: "none",
+    situationCode: "1551",
+    isHome: true,
+    highlightClip: 111,
+  });
+  assert.deepEqual(opponent, { ok: false, reason: "not-scoring-team" });
+
+  const emptyNet = acceptScoringHighlight(blues, STL_AT_DAL, {
+    teamAbbrev: "STL",
+    eventOwnerTeamId: 19,
+    scorerTeamId: 19,
+    goalModifier: "empty-net",
+    situationCode: "1560",
+    isHome: false,
+    highlightClip: 6406151827112,
+  });
+  assert.deepEqual(emptyNet, { ok: false, reason: "empty-net" });
+
+  const pulledNet = acceptScoringHighlight(blues, STL_AT_DAL, {
+    teamAbbrev: "STL",
+    eventOwnerTeamId: 19,
+    goalModifier: "none",
+    situationCode: "1560",
+    isHome: false,
+    highlightClip: 222,
+  });
+  assert.deepEqual(pulledNet, { ok: false, reason: "empty-net" });
+
+  const ownGoal = acceptScoringHighlight(blues, STL_AT_DAL, {
+    teamAbbrev: "STL",
+    eventOwnerTeamId: 19,
+    scorerTeamId: 25,
+    goalModifier: "none",
+    situationCode: "1551",
+    isHome: false,
+    highlightClip: 333,
+  });
+  assert.deepEqual(ownGoal, { ok: false, reason: "own-goal" });
+
+  const ownerOnly = acceptScoringHighlight(blues, STL_AT_DAL, {
+    eventOwnerTeamId: 19,
+    scorerTeamId: 19,
+    goalModifier: "none",
+    situationCode: "1551",
+    highlightClip: 777,
+  });
+  assert.equal(ownerOnly.ok, true);
+  if (ownerOnly.ok) assert.equal(ownerOnly.teamAbbrev, "STL");
+
+  const mismatch = acceptScoringHighlight(blues, STL_AT_DAL, {
+    teamAbbrev: "STL",
+    eventOwnerTeamId: 25,
+    scorerTeamId: 25,
+    goalModifier: "none",
+    situationCode: "1551",
+    highlightClip: 444,
+  });
+  assert.deepEqual(mismatch, { ok: false, reason: "owner-mismatch" });
+
+  const discreteOnly = acceptScoringHighlight(blues, STL_AT_DAL, {
+    teamAbbrev: "STL",
+    eventOwnerTeamId: 19,
+    goalModifier: "none",
+    situationCode: "1551",
+    highlightClip: null,
+  });
+  assert.deepEqual(discreteOnly, { ok: false, reason: "no-highlight" });
+
+  const unattributed = acceptScoringHighlight(blues, STL_AT_DAL, {
+    goalModifier: "none",
+    situationCode: "1551",
+    highlightClip: 555,
+  });
+  assert.deepEqual(unattributed, { ok: false, reason: "unknown-team" });
 });
 
 test("caption stays short and names the opponent", () => {
@@ -141,10 +248,12 @@ test("live NHL landing still returns Blues MP4s", { timeout: 30_000 }, async () 
   const espnId = await resolveEspnEventId(game!);
   assert.equal(espnId, "401891782");
   const clips = await fetchGoalClipsForGame(game!, parseTeamFilter("STL"), espnId);
-  assert.ok(clips.length >= 4, `expected Blues goals, got ${clips.length}`);
+  assert.ok(clips.length >= 2, `expected Blues goals, got ${clips.length}`);
   assert.ok(clips.every((c) => c.teamAbbrev === "STL"));
   assert.ok(clips.every((c) => /^https:\/\/.+\.mp4(\?|$)/i.test(c.mp4)));
   assert.equal(clips[0]!.caption, "Blues score — Mason McTavish vs DAL");
+  assert.ok(!clips.some((c) => c.clipId === "6406151827112" || c.clipId === "6406155078112"));
+  assert.ok(!clips.some((c) => /snuggerud|suter/i.test(c.scorer)));
   const head = await fetch(clips[0]!.mp4, { method: "HEAD", signal: AbortSignal.timeout(15_000) });
   assert.ok(head.ok, `mp4 HEAD ${head.status}`);
   const bc = await loadBrightcoveMp4(clips[0]!.clipId);

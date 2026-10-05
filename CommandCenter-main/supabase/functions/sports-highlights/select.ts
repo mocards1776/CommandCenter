@@ -184,6 +184,134 @@ export function teamMatchesFilter(
   return Boolean(id && filter.ids.includes(id));
 }
 
+export type GameSides = {
+  awayAbbrev: string;
+  homeAbbrev: string;
+  awayId: string;
+  homeId: string;
+};
+
+/** One scoring row from landing and/or play-by-play. Playing in the game is not enough. */
+export type ScoringClipInput = {
+  teamAbbrev?: string | null;
+  eventOwnerTeamId?: string | number | null;
+  scorerTeamId?: string | number | null;
+  goalModifier?: string | null;
+  situationCode?: string | null;
+  isHome?: boolean | null;
+  highlightClip?: string | number | null;
+};
+
+export type ScoringReject =
+  | "no-highlight"
+  | "unknown-team"
+  | "owner-mismatch"
+  | "not-scoring-team"
+  | "empty-net"
+  | "own-goal";
+
+export type ScoringDecision =
+  | { ok: true; teamAbbrev: string; teamId: string; clipId: string }
+  | { ok: false; reason: ScoringReject };
+
+function digits(value: string | number | null | undefined): string {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+function abbrevForTeamId(game: GameSides, id: string): string {
+  if (!id) return "";
+  if (id === game.awayId) return canonNhlAbbrev(game.awayAbbrev);
+  if (id === game.homeId) return canonNhlAbbrev(game.homeAbbrev);
+  return ID_TO_NHL_ABBREV[id] ?? "";
+}
+
+function teamIdForAbbrev(game: GameSides, abbrev: string): string {
+  const nhl = canonNhlAbbrev(abbrev);
+  if (!nhl) return "";
+  if (nhl === canonNhlAbbrev(game.awayAbbrev)) return game.awayId;
+  if (nhl === canonNhlAbbrev(game.homeAbbrev)) return game.homeId;
+  return "";
+}
+
+/** goalModifier "empty-net", or the defending goalie digit is 0 in situationCode. */
+export function isEmptyNetGoal(
+  goalModifier: string | null | undefined,
+  situationCode: string | null | undefined,
+  scoringIsHome: boolean | null,
+): boolean {
+  const modifier = (goalModifier ?? "").trim().toLowerCase().replace(/[\s_]+/g, "-");
+  if (modifier === "empty-net" || modifier === "emptynet" || (modifier.includes("empty") && modifier.includes("net"))) {
+    return true;
+  }
+  const code = (situationCode ?? "").trim();
+  if (!/^\d{4}$/.test(code)) return false;
+  // away goalie, away skaters, home skaters, home goalie. 1 = in net, 0 = pulled.
+  if (scoringIsHome === true) return code[0] === "0";
+  if (scoringIsHome === false) return code[3] === "0";
+  return false;
+}
+
+export function isOwnGoal(opts: {
+  goalModifier?: string | null;
+  eventOwnerTeamId?: string | null;
+  scorerTeamId?: string | null;
+}): boolean {
+  const modifier = (opts.goalModifier ?? "").trim().toLowerCase().replace(/[\s_]+/g, "-");
+  if (modifier === "own-goal" || modifier === "owngoal" || modifier.includes("own-goal") || modifier.includes("own goal")) {
+    return true;
+  }
+  const owner = opts.eventOwnerTeamId ?? "";
+  const scorerTeam = opts.scorerTeamId ?? "";
+  return Boolean(owner && scorerTeam && owner !== scorerTeam);
+}
+
+/**
+ * Positive highlight: the filtered club is the team that was awarded the goal,
+ * the clip is that play's highlightClip, and it is not an empty-net or own goal.
+ * Opponent goals in the same game are rejected. discreteClip is not a substitute.
+ */
+export function acceptScoringHighlight(
+  filter: TeamFilter,
+  game: GameSides,
+  goal: ScoringClipInput,
+): ScoringDecision {
+  const clipId = digits(goal.highlightClip);
+  if (!clipId) return { ok: false, reason: "no-highlight" };
+
+  const listedAbbrev = canonNhlAbbrev(goal.teamAbbrev);
+  const ownerId = digits(goal.eventOwnerTeamId);
+  const ownerAbbrev = abbrevForTeamId(game, ownerId);
+  if (ownerAbbrev && listedAbbrev && ownerAbbrev !== listedAbbrev) {
+    return { ok: false, reason: "owner-mismatch" };
+  }
+
+  const scoringAbbrev = ownerAbbrev || listedAbbrev;
+  const scoringId = ownerId || teamIdForAbbrev(game, scoringAbbrev);
+  if (!scoringAbbrev && !scoringId) return { ok: false, reason: "unknown-team" };
+  if (!teamMatchesFilter(filter, { abbrev: scoringAbbrev || null, teamId: scoringId || null })) {
+    return { ok: false, reason: "not-scoring-team" };
+  }
+
+  const isHome =
+    typeof goal.isHome === "boolean"
+      ? goal.isHome
+      : scoringAbbrev
+        ? scoringAbbrev === canonNhlAbbrev(game.homeAbbrev)
+        : scoringId
+          ? scoringId === game.homeId
+          : null;
+  if (isEmptyNetGoal(goal.goalModifier, goal.situationCode, isHome)) {
+    return { ok: false, reason: "empty-net" };
+  }
+  const scorerTeamId = digits(goal.scorerTeamId);
+  if (isOwnGoal({ goalModifier: goal.goalModifier, eventOwnerTeamId: ownerId || scoringId, scorerTeamId })) {
+    return { ok: false, reason: "own-goal" };
+  }
+
+  const teamAbbrev = scoringAbbrev || abbrevForTeamId(game, scoringId);
+  return { ok: true, teamAbbrev, teamId: scoringId, clipId };
+}
+
 export function highlightCaption(opts: {
   teamAbbrev: string;
   teamName?: string | null;

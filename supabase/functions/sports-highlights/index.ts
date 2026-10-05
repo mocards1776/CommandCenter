@@ -21,10 +21,11 @@ import { sendTelegramVideo } from "./telegram.ts";
 /**
  * Telegram goal MP4s for @CommandCenterHighlights_bot.
  *
- * Source: NHL gamecenter landing clips resolved through Brightcove — the same
- * path the Sports app already uses. v1 is Blues-only unless HIGHLIGHTS_TEAM_IDS
- * lists more clubs. Each clip id is claimed in sports_highlights_sent so a
- * cron rerun never resends.
+ * Source: NHL gamecenter landing highlightClip resolved through Brightcove.
+ * A clip is sent only when the scoring team (landing abbrev and, when present,
+ * play-by-play eventOwnerTeamId) is in HIGHLIGHTS_TEAM_IDS. Opponent goals,
+ * empty-net goals, own goals, and discreteClip stand-ins are skipped.
+ * Each clip id is claimed in sports_highlights_sent so a cron rerun never resends.
  *
  * Secrets (never commit the token):
  *   TELEGRAM_HIGHLIGHTS_BOT_TOKEN

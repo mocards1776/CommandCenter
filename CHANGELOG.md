@@ -2,6 +2,12 @@
 
 ---
 
+## Blues highlights: scoring team only — October 5, 2026
+
+- `sports-highlights` sends a clip only when the awarded goal belongs to the
+  filtered club (default STL / event owner id 19). Opponent goals in the same
+  game, empty-net goals, own goals, and non-`highlightClip` videos are dropped.
+
 ## Blues goal highlights Telegram bot — October 5, 2026
 
 - New `sports-highlights` edge function sends St. Louis Blues goal MP4s to
