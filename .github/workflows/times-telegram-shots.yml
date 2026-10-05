@@ -8,18 +8,26 @@ name: Times Telegram image alert
 # the function mints and revokes. Day Ahead / watch photos are skipped when
 # there is no schedule row or no games.
 #
-# While this runner polls, times-telegram holds the text alert for up to 45 minutes
-# after an edition goes ready; if the image alert has not gone out by then (late
-# schedule, failure), the text alert goes instead.
+# times-telegram starts this workflow with workflow_dispatch as soon as an
+# edition is ready (Supabase secret TIMES_TELEGRAM_GITHUB_TOKEN). The schedule
+# below is only a backup; GitHub's schedule: cron in this repo is hours late
+# and this workflow has sat at 0 runs. After a kick, times-telegram holds the
+# text alert for 12 minutes; if the image alert has not gone out by then
+# (dispatch failure, render error, timeout), the text alert goes instead.
 on:
   schedule:
-    # Every 10 minutes from about an hour before to ~2-3 hours after each press
-    # (6 a.m., noon, 5 p.m. Central), in UTC for both CDT and CST.
+    # Backup only. Every 10 minutes around each press (6 a.m., noon, 5 p.m.
+    # Central), in UTC for both CDT and CST.
     - cron: "2-59/10 10-13 * * *"
     - cron: "2-59/10 16-19 * * *"
     - cron: "2-59/10 21-23 * * *"
     - cron: "2-59/10 0 * * *"
   workflow_dispatch:
+    inputs:
+      issue_id:
+        description: Edition id to screenshot (optional; otherwise the newest waiting edition)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -47,7 +55,14 @@ jobs:
       - name: Any edition waiting?
         id: peek
         working-directory: ${{ runner.temp }}/times-shots
-        run: node times-shots.mjs --peek
+        env:
+          ISSUE_ID: ${{ github.event.inputs.issue_id }}
+        run: |
+          if [ -n "$ISSUE_ID" ]; then
+            node times-shots.mjs --peek --issue "$ISSUE_ID"
+          else
+            node times-shots.mjs --peek
+          fi
       - name: Install Chromium
         if: steps.peek.outputs.issue != ''
         working-directory: ${{ runner.temp }}/times-shots
@@ -58,4 +73,6 @@ jobs:
       - name: Shoot and send
         if: steps.peek.outputs.issue != ''
         working-directory: ${{ runner.temp }}/times-shots
-        run: node times-shots.mjs --out shots
+        env:
+          ISSUE_ID: ${{ steps.peek.outputs.issue }}
+        run: node times-shots.mjs --out shots --issue "$ISSUE_ID"

@@ -9,6 +9,7 @@
  *   TIMES_TELEGRAM_ADMIN_SECRET=… node scripts/times-shots.mjs --issue 2026-10-04-evening --test --out ./shots
  * Add --no-send to only write the PNGs. --peek only asks whether an edition is waiting
  * (and, from the workflow, records the runner heartbeat) and writes issue=<id> to $GITHUB_OUTPUT.
+ * --peek --issue <id> is used when times-telegram dispatches this workflow for a specific edition.
  *
  * The browser is read-only: every write to Supabase REST and every call to the press or
  * editor functions is aborted, so opening the paper here can never change the desk or an issue.
@@ -274,14 +275,15 @@ async function logout(session) {
 }
 
 async function main() {
+  if (flag("peek")) {
+    const peek = await call({ action: "peek", ...(asked ? { issue_id: asked } : {}) });
+    // Workflow gate: only install a browser when an edition is waiting.
+    if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `issue=${peek.issue_id ?? ""}\n`);
+    log(peek.issue_id ? `edition waiting: ${peek.issue_id}` : "no edition waiting");
+    return;
+  }
   if (!asked) {
     const peek = await call({ action: "peek" });
-    if (flag("peek")) {
-      // Workflow gate: only install a browser when an edition is waiting.
-      if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `issue=${peek.issue_id ?? ""}\n`);
-      log(peek.issue_id ? `edition waiting: ${peek.issue_id}` : "no edition waiting");
-      return;
-    }
     if (!peek.issue_id) {
       log("no edition waiting");
       return;
