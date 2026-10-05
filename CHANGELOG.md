@@ -7,6 +7,8 @@
 - `sports-highlights` sends a clip only when the awarded goal belongs to the
   filtered club (default STL / event owner id 19). Opponent goals in the same
   game, empty-net goals, own goals, and non-`highlightClip` videos are dropped.
+- Goal messages add a **Watch clip** button to `highlightClipSharingUrl` when
+  NHL provides one. Recaps and condensed game wraps are not sent as video.
 
 ## Blues goal highlights Telegram bot — October 5, 2026
 

@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   alertReplyMarkup,
   gameDetailUrl,
+  clipShareUrl,
   gameReplyMarkup,
   ruwtBoardUrl,
   telegramInlineKeyboard,
@@ -86,4 +87,32 @@ test("highlight videos ship only the Open game Mini App button", () => {
   );
   assert.equal(row[0]!.url, undefined);
   assert.equal(gameReplyMarkup("https://command-center-flax-gamma.vercel.app", ""), null);
+});
+
+test("highlight messages add a Watch clip link when the NHL share URL is present", () => {
+  const share = "https://nhl.com/video/stl-dal-mctavish-scores-goal-6406147120112";
+  assert.equal(clipShareUrl(share), share);
+  assert.equal(clipShareUrl("http://nhl.com/video/nope"), null);
+  assert.equal(clipShareUrl("https://example.com/video/nope"), null);
+  const row = parseRow(
+    gameReplyMarkup(
+      "https://command-center-flax-gamma.vercel.app",
+      "/sports/nhl/game/401891782?solo=1",
+      share,
+    ),
+  );
+  assert.deepEqual(
+    row.map((button) => button.text),
+    ["Open game", "Watch clip"],
+  );
+  assert.equal(row[0]!.url, undefined);
+  assert.ok(row[0]!.web_app?.url?.includes("/sports/nhl/game/401891782?solo=1"));
+  assert.equal(row[1]!.url, share);
+  assert.equal(row[1]!.web_app, undefined);
+  const clipOnly = parseRow(gameReplyMarkup("", null, share));
+  assert.deepEqual(
+    clipOnly.map((button) => button.text),
+    ["Watch clip"],
+  );
+  assert.equal(clipOnly[0]!.url, share);
 });

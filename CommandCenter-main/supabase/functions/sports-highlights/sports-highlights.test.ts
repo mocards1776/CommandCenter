@@ -168,9 +168,16 @@ test("clip ids and game paths are stable", () => {
   assert.equal(highlightId(6406147120112), "nhl-6406147120112");
   assert.equal(nhlGamePath("401891782"), "/sports/nhl/game/401891782?solo=1");
   assert.equal(nhlGamePath(""), null);
-  const markup = gameReplyMarkup("https://command-center-flax-gamma.vercel.app", nhlGamePath("401891782"));
+  const share = "https://nhl.com/video/stl-dal-mctavish-scores-goal-6406147120112";
+  const markup = gameReplyMarkup(
+    "https://command-center-flax-gamma.vercel.app",
+    nhlGamePath("401891782"),
+    share,
+  );
   assert.ok(markup?.includes("web_app"));
   assert.ok(markup?.includes("/sports/nhl/game/401891782?solo=1"));
+  assert.ok(markup?.includes(share));
+  assert.ok(markup?.includes("Watch clip"));
   assert.ok(!markup?.includes("RUWT"));
 });
 

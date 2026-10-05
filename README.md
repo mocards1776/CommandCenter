@@ -245,7 +245,9 @@ npm run lint
   Each Brightcove id is claimed in `sports_highlights_sent` before send, so a
   cron rerun is safe. Caption is short (`Blues score — Player vs OPP`). If the
   ESPN event id resolves, the message includes an **Open game** Mini App
-  button. Heat / finals / newspaper / Times are unchanged.
+  button. When NHL provides `highlightClipSharingUrl`, a **Watch clip** link
+  opens that page. Recaps and condensed wraps are not uploaded. Heat / finals /
+  newspaper / Times are unchanged.
 
   Secrets for Josh (Supabase project `esdgrgulaxnewmhjuyzh`). Never commit:
 

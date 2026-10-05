@@ -25,6 +25,8 @@ import { sendTelegramVideo } from "./telegram.ts";
  * A clip is sent only when the scoring team (landing abbrev and, when present,
  * play-by-play eventOwnerTeamId) is in HIGHLIGHTS_TEAM_IDS. Opponent goals,
  * empty-net goals, own goals, and discreteClip stand-ins are skipped.
+ * Game recaps and condensed wraps are not uploaded. The message can include
+ * a Watch clip link to highlightClipSharingUrl.
  * Each clip id is claimed in sports_highlights_sent so a cron rerun never resends.
  *
  * Secrets (never commit the token):
@@ -136,7 +138,7 @@ async function deliver(clip: GoalClip, chats: string[], token: string) {
     videoUrl: clip.mp4,
     caption: clip.caption,
     chatIds: chats,
-    replyMarkup: gameReplyMarkup(origin(), nhlGamePath(clip.espnEventId)),
+    replyMarkup: gameReplyMarkup(origin(), nhlGamePath(clip.espnEventId), clip.sharingUrl),
     durationSec: clip.durationSec,
     width: clip.width,
     height: clip.height,
