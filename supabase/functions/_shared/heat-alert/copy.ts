@@ -43,6 +43,8 @@ export function situationLine(card: HeatAlertCard): string {
     return (isBreakStatus(card.detail) ? card.detail : down).replace(/\s+/g, " ").trim();
   }
   if (card.diamond && card.live) {
+    const inning = (card.detail || "").replace(/\s+/g, " ").trim();
+    if (inning) return inning;
     const spot = card.diamond;
     const outs = `${spot.outs} out${spot.outs === 1 ? "" : "s"}`;
     return `${spot.balls}-${spot.strikes}  ·  ${outs}`;

@@ -1,6 +1,7 @@
 import { hexColor } from "./color.ts";
 import {
   mapCfbWinProbability,
+  snapshotFromEspnProbability,
   type CfbWinProbPlayRef,
 } from "../win-probability.ts";
 import type {
@@ -319,6 +320,21 @@ function readWinProbability(sport: HeatSport, summary: Record<string, unknown>) 
   );
 }
 
+/** Last published ESPN home-win rate. Safe for MLB — no football elapsed join. */
+function lastHomeWinPct(summary: Record<string, unknown>): number | null {
+  const rows = asArray(summary.winprobability);
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const item = asRecord(rows[i]);
+    const snap = snapshotFromEspnProbability({
+      homeWinPercentage: num(item?.homeWinPercentage) ?? undefined,
+      awayWinPercentage: num(item?.awayWinPercentage) ?? undefined,
+      tiePercentage: num(item?.tiePercentage) ?? undefined,
+    });
+    if (snap) return snap.homeWinPct;
+  }
+  return null;
+}
+
 function periodLabelsFor(sport: HeatSport, count: number): string[] {
   if (count <= 0) return [];
   if (sport === "mlb") return Array.from({ length: count }, (_, i) => String(i + 1));
@@ -428,6 +444,7 @@ function cardFromEvent(sport: HeatSport, event: Record<string, unknown>): HeatAl
     football,
     ice,
     diamond,
+    homeWinPct: null,
     winProbability: [],
     stats: [],
     gamePath: gamePath(sport, id),
@@ -518,6 +535,7 @@ function applySummary(card: HeatAlertCard, summary: Record<string, unknown>): He
   }
 
   next.winProbability = readWinProbability(next.sport, summary);
+  next.homeWinPct = lastHomeWinPct(summary);
   next.stats = pickHeatStats(next.sport, next.away.abbrev, next.home.abbrev, summary);
   return next;
 }

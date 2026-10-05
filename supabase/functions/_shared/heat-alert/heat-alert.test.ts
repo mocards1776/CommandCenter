@@ -8,6 +8,7 @@ import { formatHeatTimestamp, heatAlertCaption, situationLine } from "./copy.ts"
 import { alertReplyMarkup } from "../telegram-markup.ts";
 import { applyHeatSummary, heatStatMagnitude, pickHeatStats } from "./fetch-game.ts";
 import { driveCapsuleSpan, fieldBallPct, footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
+import { mlbHeroNest, runnersShorthand } from "./mlb-hero.ts";
 import { renderHeatAlertSvg } from "./svg.ts";
 import { parseChatAllowlist, resolveChatTargets } from "./telegram.ts";
 import type { HeatAlertCard } from "./types.ts";
@@ -150,6 +151,7 @@ const sample: HeatAlertCard = {
   },
   ice: null,
   diamond: null,
+  homeWinPct: 55.4,
   winProbability: [
     { playId: "a", homeWinPct: 48.2, tiePct: 0, elapsedSec: 0, period: 1 },
     { playId: "b", homeWinPct: 41.6, tiePct: 0, elapsedSec: 880, period: 1 },
@@ -348,10 +350,70 @@ test("summary applies the ESPN WP series and box score", () => {
   });
   assert.equal(next.winProbability.length, 2);
   assert.equal(next.winProbability[1]?.homeWinPct, 61);
+  assert.equal(next.homeWinPct, 61);
   assert.equal(next.stats[0]?.label, "Yards");
   assert.equal(next.stats[0]?.away, "210");
 });
 
 test("CT stamp matches the finals footer", () => {
   assert.equal(formatHeatTimestamp("2026-10-04T17:00Z"), "Sun, Oct 4, 12:00 PM CT");
+});
+
+const mlbLive: HeatAlertCard = {
+  ...sample,
+  sport: "mlb",
+  gameId: "401696444",
+  detail: "Top 4th",
+  venue: "Progressive Field",
+  periodLabels: ["1", "2", "3", "4"],
+  football: null,
+  diamond: {
+    balls: 0,
+    strikes: 2,
+    outs: 0,
+    onFirst: false,
+    onSecond: false,
+    onThird: false,
+    batter: "Andrew Benintendi",
+    pitcher: "Gavin Williams",
+  },
+  homeWinPct: 58.4,
+  winProbability: [],
+  stats: [{ label: "Hits", away: "4", home: "6", awayLeads: false, homeLeads: true, awayShare: 40 }],
+  away: { ...sample.away, abbrev: "CHW", name: "White Sox", score: 1, record: "84-78", linescores: [0, 0, 0, 1], color: "#27251f" },
+  home: { ...sample.home, abbrev: "CLE", name: "Guardians", score: 2, record: "85-77", linescores: [2, 0, 0, 0], color: "#00385d" },
+  gamePath: "/sports/mlb/game/401696444?solo=1",
+};
+
+test("MLB nest uses count, outs, and runners instead of repeating the inning", () => {
+  assert.equal(runnersShorthand({ balls: 0, strikes: 0, outs: 0, onFirst: true, onSecond: true, onThird: true }), "Loaded");
+  assert.equal(runnersShorthand({ balls: 0, strikes: 0, outs: 0, onFirst: true, onSecond: false, onThird: true }), "Corners");
+  assert.equal(runnersShorthand({ balls: 0, strikes: 0, outs: 0, onFirst: false, onSecond: true, onThird: false }), "2nd");
+  const nest = mlbHeroNest({
+    live: true,
+    final: false,
+    detail: "Top 4th",
+    diamond: mlbLive.diamond,
+    homeWinPct: 58.4,
+    awayAbbrev: "CHW",
+    homeAbbrev: "CLE",
+  });
+  assert.equal(nest.primary, "0-2");
+  assert.equal(nest.secondary, "0 outs");
+  assert.equal(nest.runners, "Empty");
+  assert.equal(nest.winChip, "CLE 58.4%");
+  assert.equal(nest.liveCount, true);
+  assert.equal(situationLine(mlbLive), "Top 4th");
+});
+
+test("MLB heat SVG fills the score nest and drops the empty black plate", () => {
+  const svg = renderHeatAlertSvg(mlbLive);
+  assert.match(svg, />MLB/);
+  assert.match(svg, />0-2</);
+  assert.match(svg, />0 OUTS</);
+  assert.match(svg, />EMPTY</);
+  assert.match(svg, />CLE 58.4%</);
+  assert.match(svg, />Top 4th</);
+  assert.doesNotMatch(svg, /fill="#050505"/);
+  assert.equal((svg.match(/>Top 4th</g) || []).length, 1, "inning belongs on the situation bar only");
 });

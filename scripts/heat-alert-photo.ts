@@ -4,6 +4,7 @@
  *   cd scripts && npm install
  *   node --experimental-strip-types heat-alert-photo.ts --sport nfl
  *   node --experimental-strip-types heat-alert-photo.ts --fixture kc-lv --out ../artifacts/heat-alert-nfl-kc-lv.png
+ *   node --experimental-strip-types heat-alert-photo.ts --fixture chw-cle --out ../artifacts/heat-alert-mlb-chw-cle.png
  *   TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_IDS=123 \
  *     node --experimental-strip-types heat-alert-photo.ts --sport nfl --send --reason "One-score game"
  *
@@ -75,6 +76,7 @@ function kcLvFixture(): HeatAlertCard {
     },
     ice: null,
     diamond: null,
+    homeWinPct: 57.9,
     winProbability: [
       { playId: "1", homeWinPct: 47.2, tiePct: 0, elapsedSec: 0, period: 1 },
       { playId: "2", homeWinPct: 52.8, tiePct: 0, elapsedSec: 540, period: 1 },
@@ -93,6 +95,63 @@ function kcLvFixture(): HeatAlertCard {
       { label: "Possession", away: "20:21", home: "24:39", awayLeads: false, homeLeads: true, awayShare: 45.2 },
     ],
     gamePath: "/sports/nfl/game/401872976?solo=1",
+  };
+}
+
+/** Screenshot moment: CHW @ CLE, Top 4th, 0-2, empty, one-run game. */
+function chwCleFixture(): HeatAlertCard {
+  return {
+    sport: "mlb",
+    gameId: "401696444",
+    live: true,
+    final: false,
+    detail: "Top 4th",
+    when: null,
+    away: {
+      id: "4",
+      abbrev: "CHW",
+      name: "White Sox",
+      score: 1,
+      record: "84-78",
+      linescores: [0, 0, 0, 1],
+      color: "#27251f",
+      alternateColor: "#c4ced4",
+      logoHref: "https://a.espncdn.com/i/teamlogos/mlb/500/chw.png",
+    },
+    home: {
+      id: "5",
+      abbrev: "CLE",
+      name: "Guardians",
+      score: 2,
+      record: "85-77",
+      linescores: [2, 0, 0, 0],
+      color: "#00385d",
+      alternateColor: "#e31937",
+      logoHref: "https://a.espncdn.com/i/teamlogos/mlb/500/cle.png",
+    },
+    venue: "Progressive Field",
+    date: "2026-10-05T21:00:00Z",
+    periodLabels: ["1", "2", "3", "4"],
+    football: null,
+    ice: null,
+    diamond: {
+      balls: 0,
+      strikes: 2,
+      outs: 0,
+      onFirst: false,
+      onSecond: false,
+      onThird: false,
+      batter: "Andrew Benintendi",
+      pitcher: "Gavin Williams",
+    },
+    homeWinPct: 58.4,
+    winProbability: [],
+    stats: [
+      { label: "Hits", away: "4", home: "6", awayLeads: false, homeLeads: true, awayShare: 40 },
+      { label: "HR", away: "0", home: "1", awayLeads: false, homeLeads: true, awayShare: 0 },
+      { label: "Ks", away: "3", home: "5", awayLeads: false, homeLeads: true, awayShare: 37.5 },
+    ],
+    gamePath: "/sports/mlb/game/401696444?solo=1",
   };
 }
 
@@ -115,9 +174,12 @@ const origin = process.env.SPORTS_PUSH_ORIGIN || process.env.HEAT_ALERT_ORIGIN |
 const outPath = path.resolve(arg("out") || path.join("..", "artifacts", "heat-alert-sample.png"));
 
 const fixture = arg("fixture");
-const card = fixture === "kc-lv" || fixture === ""
-  ? kcLvFixture()
-  : await loadHeatAlertCard({ sport, gameId });
+const card =
+  fixture === "chw-cle"
+    ? chwCleFixture()
+    : fixture === "kc-lv" || fixture === ""
+      ? kcLvFixture()
+      : await loadHeatAlertCard({ sport, gameId });
 const withLogos = await embedLogos(card);
 const svg = renderHeatAlertSvg(withLogos);
 const caption = heatAlertCaption(reason);

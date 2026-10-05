@@ -79,6 +79,8 @@ export type HeatAlertCard = {
   diamond: DiamondSpot | null;
   /** ESPN home-win series. Empty when the summary has not published one. */
   winProbability: CfbWinProbPoint[];
+  /** Latest ESPN home win chance, 0–100. Used as a compact MLB hero chip. */
+  homeWinPct: number | null;
   /** Compact team-stat rows for the Apple-style comparison. */
   stats: HeatStat[];
   /** Sports app path, including the solo query the push notes already use. */

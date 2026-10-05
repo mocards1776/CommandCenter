@@ -10,6 +10,7 @@ import {
 import { clockParts, isBreakStatus } from "./clock.ts";
 import { onDark } from "./color.ts";
 import { formatHeatTimestamp, leagueLabel, phaseLabel, situationLine } from "./copy.ts";
+import { mlbHeroNest } from "./mlb-hero.ts";
 import { footballMarks, spotIsRedZone } from "./field.ts";
 import { RINK_HEIGHT_FT, RINK_WIDTH_FT, rinkMarkings } from "./ice.ts";
 import { HEAT_ALERT_HEIGHT, HEAT_ALERT_WIDTH, type HeatAlertCard, type HeatStat } from "./types.ts";
@@ -105,13 +106,57 @@ function header(card: HeatAlertCard): string {
   `;
 }
 
+function nestChip(label: string, cx: number, cy: number): string {
+  const w = Math.max(128, label.length * 11 + 28);
+  return `
+    <rect x="${cx - w / 2}" y="${cy - 16}" width="${w}" height="28" rx="14" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.14)"/>
+    ${textEl(label, cx, cy + 5, { size: 15, fill: "#d1fae5", weight: 700, spacing: 0.3 })}
+  `;
+}
+
+function mlbScoreNest(card: HeatAlertCard): string {
+  const hero = mlbHeroNest({
+    live: card.live,
+    final: card.final,
+    detail: card.detail,
+    when: card.when,
+    diamond: card.diamond,
+    homeWinPct: card.homeWinPct,
+    awayAbbrev: card.away.abbrev,
+    homeAbbrev: card.home.abbrev,
+  });
+  if (hero.liveCount) {
+    return `
+      ${textEl((hero.secondary || "").toUpperCase(), 540, 164, { size: 22, fill: "#c8f5d4", weight: 700, spacing: 0.8 })}
+      ${textEl(hero.primary, 540, 236, { size: 84, family: "condensed", fill: "#ffffff", weight: 700 })}
+      ${hero.runners ? textEl(hero.runners.toUpperCase(), 540, 278, { size: 20, fill: "#c5cce0", weight: 700, spacing: 0.6 }) : ""}
+      ${hero.winChip ? nestChip(hero.winChip, 540, 316) : ""}
+    `;
+  }
+  const size = hero.primary.length > 12 ? 40 : hero.primary.length > 8 ? 52 : 68;
+  return `
+    ${textEl(hero.primary, 540, hero.secondary || hero.winChip ? 214 : 230, {
+      size,
+      family: "condensed",
+      fill: "#ffffff",
+      weight: 700,
+    })}
+    ${hero.secondary ? textEl(hero.secondary.toUpperCase(), 540, 258, { size: 18, fill: "#8b93a7", weight: 700, spacing: 0.8 }) : ""}
+    ${hero.runners ? textEl(hero.runners.toUpperCase(), 540, 286, { size: 18, fill: "#c5cce0", weight: 700, spacing: 0.6 }) : ""}
+    ${hero.winChip ? nestChip(hero.winChip, 540, 318) : ""}
+  `;
+}
+
 function scoreboard(card: HeatAlertCard, started: boolean): string {
   const logo = 124;
   const awayPaint = onDark(card.away.color);
   const homePaint = onDark(card.home.color);
   const parts = clockParts(card.detail);
+  const mlb = card.sport === "mlb";
   let nest = "";
-  if (parts.period && parts.clock && !isBreakStatus(card.detail)) {
+  if (mlb) {
+    nest = mlbScoreNest(card);
+  } else if (parts.period && parts.clock && !isBreakStatus(card.detail)) {
     nest = `
       ${textEl(parts.period.toUpperCase(), 540, 168, { size: 28, fill: "#c8f5d4", weight: 700, spacing: 3 })}
       ${textEl(parts.clock, 540, 268, { size: 92, family: "condensed", fill: "#ffffff", weight: 700 })}
@@ -133,8 +178,11 @@ function scoreboard(card: HeatAlertCard, started: boolean): string {
   const homeRecord = card.home.record
     ? textEl(card.home.record, homeCx, 338, { size: 26, fill: "#f7f4ee", weight: 700 })
     : "";
+  const plate = mlb
+    ? ""
+    : `<rect x="392" y="96" width="296" height="196" rx="28" fill="#050505" fill-opacity="0.55"/>`;
   return `
-    <rect x="392" y="96" width="296" height="196" rx="28" fill="#050505" fill-opacity="0.55"/>
+    ${plate}
     ${nest}
     ${logoImage(card.away.logoHref, awayLogo, 86, logo, logo)}
     ${logoImage(card.home.logoHref, homeLogo, 86, logo, logo)}
@@ -383,7 +431,6 @@ function diamondPanel(card: HeatAlertCard, panelX: number, panelY: number, panel
     .join("");
   return `
     ${panel(panelX, panelY, panelW, panelH, "#10281f")}
-    ${textEl(clipText(card.detail || "At bat", 24), panelX + 28, panelY + 42, { size: 20, fill: "#d1fae5", weight: 700, anchor: "start", spacing: 1.4 })}
     <line x1="${cx}" y1="${cy + arm}" x2="${cx - arm - 30}" y2="${cy - 20}" stroke="rgba(255,255,255,0.35)" stroke-width="3"/>
     <line x1="${cx}" y1="${cy + arm}" x2="${cx + arm + 30}" y2="${cy - 20}" stroke="rgba(255,255,255,0.35)" stroke-width="3"/>
     <line x1="${cx - arm}" y1="${cy}" x2="${cx}" y2="${cy - arm}" stroke="rgba(255,255,255,0.28)" stroke-width="3"/>
