@@ -1,0 +1,59 @@
+--- a/CommandCenter-main/src/lib/newspaper-sections.ts
++++ b/CommandCenter-main/src/lib/newspaper-sections.ts
+@@ -568,10 +568,58 @@
+     || /\b(preview|what to watch|how to watch|keys to the game|prediction)\b/i.test(card.headline);
+ }
+ 
++/**
++ * Betting tips, odds sheets, prop picks — fine inside a sport section, never the
++ * A1 lead or the Telegram alert lead. Prefer the actual recap of that final.
++ */
++export function isBettingPreview(card: GameWrapCard): boolean {
++  const head = `${card.headline} ${card.dek ?? ""}`;
++  return /\bhow to bet\b|\bprop plays?\b|\bbetting (?:lines?|tips?|preview|odds)\b|\bagainst the spread\b|\bpicks and props\b|\btop prop\b|\bmoneyline\b|\bover\/under\b|\b(odds|spreads?) to (?:bet|know|watch)\b/i.test(
++    head,
++  );
++}
++
++/** A preview (or betting sheet) whose matchup already has a final/recap on the slate. */
++export function isStaleGamePreview(card: GameWrapCard, pool: GameWrapCard[]): boolean {
++  if (!isPreviewStory(card) && !isBettingPreview(card)) return false;
++  return pool.some(
++    (other) =>
++      other.id !== card.id &&
++      shareMatchup(card, other) &&
++      (isRecapStory(other) ||
++        isGameRecapCopy(other) ||
++        isGameWrap(other) ||
++        Boolean(other.status && /final/i.test(other.status))),
++  );
++}
++
++/** Never open A1 or the edition alert on these. */
++export function cannotLeadFront(card: GameWrapCard, pool: GameWrapCard[] = []): boolean {
++  if (isHoldoverGame(card)) return true;
++  if (isBettingPreview(card)) return true;
++  if (pool.length && isStaleGamePreview(card, pool)) return true;
++  if (isPreviewStory(card)) return true;
++  return false;
++}
++
++/** When a banned lead is the editor's pick, swap in the matchup's recap if we have one. */
++function leadReplacement(bad: GameWrapCard, pool: GameWrapCard[], taken: Set<string>): GameWrapCard | null {
++  const recap = pool.find(
++    (c) =>
++      !taken.has(c.id) &&
++      c.id !== bad.id &&
++      shareMatchup(c, bad) &&
++      (isRecapStory(c) || isGameRecapCopy(c) || isGameWrap(c)) &&
++      hasStoryCopy(c),
++  );
++  return recap ?? null;
++}
++
+ /** Last night's result outranks a feature; home clubs outrank the rest. */
+ export function storyRank(card: GameWrapCard, edition: string): number {
+   const day = card.when ? instantDay(card.when) : null;
+   let score = 0;
++  if (isBettingPreview(card)) score -= 250;
+   if (isPreviewStory(card)) score -= 150;
