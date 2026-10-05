@@ -8,6 +8,7 @@
 
 import { favoriteDeskWeight, withinEditionHours } from "./newspaper";
 import { htmlToNewspaperText, newsImageCaption, tidy } from "./newspaper-copy";
+import { pickBestStoryImage } from "./newspaper-images.ts";
 import {
   clubMentionNames,
   favoriteTeamHref,
@@ -146,7 +147,7 @@ function toCard(
     leaders: [],
     teamStats: [],
     division: [],
-    photo: article.images?.[0]?.url ?? null,
+    photo: pickBestStoryImage([article.images?.[0]?.url]),
     caption: newsImageCaption(article.images),
     followed: true,
     status: article.type ?? null,
@@ -269,7 +270,7 @@ function toLeagueCard(
     leaders: [],
     teamStats: [],
     division: [],
-    photo: article.images?.[0]?.url ?? null,
+    photo: pickBestStoryImage([article.images?.[0]?.url]),
     caption: newsImageCaption(article.images),
     followed: false,
     status: article.type ?? null,

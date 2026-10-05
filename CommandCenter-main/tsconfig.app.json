@@ -36,6 +36,7 @@
   "include": [
     "src",
     "../supabase/functions/_shared/national-news.ts",
-    "../supabase/functions/_shared/newspaper-paras.ts"
+    "../supabase/functions/_shared/newspaper-paras.ts",
+    "../supabase/functions/_shared/newspaper-images.ts"
   ]
 }

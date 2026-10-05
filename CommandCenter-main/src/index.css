@@ -1911,6 +1911,15 @@ mark.rss-hl {
     linear-gradient(160deg, color-mix(in srgb, var(--tt-team, var(--w-navy)) 18%, var(--w-paper)) 0%, color-mix(in srgb, var(--tt-team, var(--w-navy)) 38%, var(--w-paper)) 100%);
   border-bottom: 3px solid var(--tt-team, var(--w-navy));
 }
+.wsj-cut.inset {
+  max-width: min(460px, 52%);
+}
+.wsj-story.art-side .wsj-cut.inset {
+  max-width: 100%;
+}
+.wsj-cut.inset img {
+  max-height: 240px;
+}
 .wsj-cut figcaption {
   padding-bottom: 5px;
   border-bottom: 1px solid var(--w-hair);
@@ -2559,48 +2568,49 @@ li.counting .tt-count.card {
 }
 .wsj-ticker-cell {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 10px 7px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 9px 8px 8px;
   min-width: 0;
 }
 .wsj-ticker-id {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  flex: 1;
   line-height: 1.15;
 }
 .wsj-ticker-id strong {
   font-family: var(--w-cond);
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.wsj-ticker-id em {
-  font-style: normal;
-  font-size: 10px;
-  color: var(--w-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.15;
 }
 .wsj-ticker-rec {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-left: 30px;
 }
 .wsj-ticker-rec b {
   font-family: var(--w-cond);
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.wsj-ticker-place {
+  display: block;
+  padding-left: 30px;
+  font-style: normal;
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: var(--w-muted);
 }
 .wsj-form {
   display: inline-flex;
@@ -7311,6 +7321,9 @@ li.counting .tt-count.card {
 }
 
 @media (max-width: 640px) {
+  .wsj-cut.inset {
+    max-width: 100%;
+  }
   .wsj-sheet {
     padding: 10px 12px 22px;
     gap: 12px;
@@ -7511,7 +7524,7 @@ li.counting .tt-count.card {
 .newspaper-root .wsj-prose.c1 { columns: 1; }
 .newspaper-root .wsj-briefs { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
 .newspaper-root .wsj-brief.featured { grid-column: span 2; }
-.newspaper-root .wsj-ticker { grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); }
+.newspaper-root .wsj-ticker { grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr)); }
 .newspaper-root .wsj-deskboard ul { grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); }
 .newspaper-root .wsj-clubs-grid { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }
 .newspaper-root .wsj-shelved { grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); }

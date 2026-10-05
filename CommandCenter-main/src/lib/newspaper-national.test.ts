@@ -320,6 +320,15 @@ assert(
   feedImage(`<item><enclosure url="https://nypost.com/photo.jpg" type="image/jpeg" /></item>`).url?.includes("photo.jpg"),
   "enclosure image is accepted",
 );
+const bloxFeed = feedImage(`<item>
+  <media:thumbnail url="https://bloximages.newyork1.vip.townnews.com/stltoday.com/photo.image.jpg?resize=200,133" width="200" />
+  <media:content url="https://bloximages.newyork1.vip.townnews.com/stltoday.com/photo.image.jpg?resize=1200,800" width="1200" type="image/jpeg" />
+  <img srcset="https://bloximages.newyork1.vip.townnews.com/stltoday.com/photo.image.jpg?w=160 160w, https://bloximages.newyork1.vip.townnews.com/stltoday.com/photo.image.jpg?w=400 400w" />
+</item>`);
+assert(
+  bloxFeed.url?.includes("photo.image.jpg") && !/[?&](?:resize|w)=/i.test(bloxFeed.url ?? ""),
+  "BLOX feed art prefers the widest media:content and drops the resize",
+);
 assert(padStories(edited.slice(0, 1), mech, 3, 8).length === 3, "a short editor desk is topped up");
 
 const filedWithArt = asNationalDesk({

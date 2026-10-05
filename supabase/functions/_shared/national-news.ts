@@ -9,6 +9,7 @@
  */
 
 import { newspaperParas, splitNewspaperSentences } from "./newspaper-paras.ts";
+import { pickBestStoryImage, srcsetCandidates, type StoryImageCandidate } from "./newspaper-images.ts";
 
 export type FeedKind = "lead" | "section" | "popular" | "wire";
 
@@ -538,15 +539,15 @@ function mediaTagIsImage(attrs: string, url: string): boolean {
   return true;
 }
 
-/** Art on the RSS item: media:content, media:thumbnail, enclosure, or an inline img. */
+/** Art on the RSS item: media:content, media:thumbnail, enclosure, srcset, or an inline img. */
 export function feedImage(block: string): { url: string | null; credit: string | null } {
-  const candidates: { url: string; width: number }[] = [];
+  const candidates: StoryImageCandidate[] = [];
   const take = (attrs: string) => {
     const raw = /(?:^|\s)url=["']([^"']+)["']/i.exec(attrs)?.[1] ?? "";
     const url = asHttpImageUrl(raw);
     if (!url || !mediaTagIsImage(attrs, url)) return;
     const width = Number(/(?:^|\s)width=["'](\d+)["']/i.exec(attrs)?.[1] ?? 0);
-    candidates.push({ url, width });
+    candidates.push({ url, width: width > 0 ? width : null });
   };
   for (const name of ["media:content", "media:thumbnail"]) {
     const re = new RegExp(`<${name}\\b([^>]*)\\/?>`, "gi");
@@ -556,14 +557,19 @@ export function feedImage(block: string): { url: string | null; credit: string |
   const enc = /<enclosure\b([^>]*)\/?>/gi;
   let enclosure: RegExpExecArray | null;
   while ((enclosure = enc.exec(block))) take(enclosure[1] ?? "");
+  for (const srcset of block.matchAll(/\bsrcset=["']([^"']+)["']/gi)) {
+    for (const c of srcsetCandidates(srcset[1])) {
+      const url = asHttpImageUrl(c.url);
+      if (url) candidates.push({ url, width: c.width });
+    }
+  }
   if (!candidates.length) {
     const inline = /<img[^>]+src=["']([^"']+)["']/i.exec(block)?.[1];
     const url = asHttpImageUrl(inline);
-    if (url) candidates.push({ url, width: 0 });
+    if (url) candidates.push({ url, width: null });
   }
-  candidates.sort((a, b) => b.width - a.width);
   const credit = stripHtml(tagText(block, "media:credit") || tagText(block, "media:title"));
-  return { url: candidates[0]?.url ?? null, credit: credit || null };
+  return { url: pickBestStoryImage(candidates), credit: credit || null };
 }
 
 /** og:image (or twitter:image) from an article page. */
@@ -578,7 +584,7 @@ export function parseOgImage(html: string, base?: string): string | null {
   ];
   for (const re of patterns) {
     const url = asHttpImageUrl(re.exec(html)?.[1], base);
-    if (url) return url;
+    if (url) return pickBestStoryImage([url]);
   }
   return null;
 }
