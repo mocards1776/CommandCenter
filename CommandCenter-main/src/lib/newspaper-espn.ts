@@ -30,6 +30,19 @@ export const NEWSPAPER_CFB_SEC_IDS = new Set([
   "238",
 ]);
 
+/** SEC IDs collide with NFL/NBA/NHL club IDs (Arkansas 8 = Lions 8). CFB path only. */
+export function isNewspaperSecGame(
+  path: string,
+  awayId?: string | null,
+  homeId?: string | null,
+): boolean {
+  if (path !== "football/college-football") return false;
+  return Boolean(
+    (awayId && NEWSPAPER_CFB_SEC_IDS.has(String(awayId))) ||
+      (homeId && NEWSPAPER_CFB_SEC_IDS.has(String(homeId))),
+  );
+}
+
 export function isNewspaperCfbDeskGame(opts: {
   awayId?: string | null;
   homeId?: string | null;

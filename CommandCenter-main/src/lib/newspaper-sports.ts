@@ -443,6 +443,14 @@ export type GameWrapCard = {
   editorFront?: number;
   /** The AI editor spiked it for this press. */
   editorSpiked?: boolean;
+  /** ESPN recap or a Times box wrap generated from the box. */
+  wrapKind?: "espn" | "box" | null;
+  /** SEC game (CFB). */
+  sec?: boolean;
+  /** Ranked matchup (AP 1–25). */
+  ranked?: boolean;
+  preseason?: boolean;
+  related?: { id: string; headline: string; href: string | null; source: string | null }[];
 };
 
 export function buildTeamInfoboxes(
@@ -836,9 +844,11 @@ export function wireStoryCards(opts: {
       teamStats: fav ? teamStatsFromDetail(detail) : [],
       division: fav ? divisionFromDetail(detail) : [],
       photo: g.photo,
-      caption: scored
-        ? `${g.away.name} at ${g.home.name}. ${g.statusDetail}.`
-        : `${g.away.name} at ${g.home.name}.`,
+      caption: g.wrapKind === "box"
+        ? "Times box wrap"
+        : scored
+          ? `${g.away.name} at ${g.home.name}. ${g.statusDetail}.`
+          : `${g.away.name} at ${g.home.name}.`,
       dateline: g.dateline,
       round: g.round,
       series: g.series,
@@ -849,6 +859,10 @@ export function wireStoryCards(opts: {
         { label: scoreNoun(g.league), away: g.away.score ?? "—", home: g.home.score ?? "—" },
         { label: "Record", away: g.away.record ?? "—", home: g.home.record ?? "—" },
       ],
+      wrapKind: g.wrapKind ?? (g.body && g.body.length >= 200 ? "espn" : null),
+      sec: g.sec,
+      ranked: Boolean(g.away.seed || g.home.seed),
+      preseason: g.preseason,
     } satisfies GameWrapCard;
   });
 }

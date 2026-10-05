@@ -9,6 +9,7 @@ import { fetchClubSheet } from "./newspaper-clubsheet";
 import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./newspaper-missouri-fetch";
 import type { MoItem } from "./newspaper-missouri";
 import { fetchOpener, type Opener } from "./newspaper-openers";
+import { attachRelatedGameCopy } from "./newspaper-sport-desk";
 import { cleanStoryCopy, isNavSoup, isPeripheralClubStory, killedSource } from "./newspaper-copy";
 import { isBoilerplateDek, storySource } from "./newspaper-source";
 import {
@@ -131,7 +132,8 @@ export function gatherStories(opts: {
   });
   const clubCopy = mergeStoryCards(mergeStoryCards(wire, opts.enriched ?? opts.teamCards), opts.news ?? []);
   const withLeague = mergeStoryCards(clubCopy, opts.leagueNews ?? []);
-  return mergeStoryCards(withLeague, opts.athletic ?? []).filter((card) => !isNewsMuted(card));
+  const merged = mergeStoryCards(withLeague, opts.athletic ?? []).filter((card) => !isNewsMuted(card));
+  return attachRelatedGameCopy(merged);
 }
 
 async function settle<T>(task: Promise<T>, fallback: T): Promise<T> {

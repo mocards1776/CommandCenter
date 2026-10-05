@@ -63,6 +63,8 @@ const rows = tallyWireGames([
 assert(rows.find((r) => r.league === "NFL")?.games === 2, "NFL counts both games");
 assert(rows.find((r) => r.league === "NFL")?.finals === 2, "both NFL games are finals");
 assert(rows.find((r) => r.league === "NFL")?.wraps === 1, "only the written NFL recap is a wrap");
+assert(rows.find((r) => r.league === "NFL")?.espnWraps === 1, "a written recap counts as an ESPN wrap");
+assert(rows.find((r) => r.league === "NFL")?.boxWraps === 0, "no box wrap until enrich");
 assert(rows.find((r) => r.league === "NHL")?.finals === 0, "a scheduled NHL game is not a final");
 
 const ordered = [game({ id: "pre", league: "NBA", preseason: true }), game({ id: "reg", league: "NBA" })].sort(deskOrder);
