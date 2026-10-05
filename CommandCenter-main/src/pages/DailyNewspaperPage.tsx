@@ -5345,7 +5345,8 @@ function NewspaperDesk() {
       quiet(openersQ, teamFavs.length > 0) &&
       quiet(filesQ, subjectHrefs.length > 0) &&
       quiet(orgQ, teamFavs.some((fav) => fav.mlbTeamId)) &&
-      quiet(mlbPlayoffsQ, sportPaths.includes("baseball/mlb"));
+      quiet(mlbPlayoffsQ, sportPaths.includes("baseball/mlb")) &&
+      quiet(coachesQ, printsFavoriteCoaches(pressId));
     if (!deskQuiet) return;
     const failed = [wrapsQ, newsQ, wireQ, recap, leagueNewsQ, extractsQ].some((q) => q.isError);
     if (!stories.length && failed) return;
@@ -5396,6 +5397,7 @@ function NewspaperDesk() {
     subjectHrefs,
     orgQ,
     mlbPlayoffsQ,
+    coachesQ,
     wrapsQ,
     newsQ,
     wireQ,

@@ -418,22 +418,38 @@ function pickHeadlines(
 ): GameWrapCard[] {
   const coach = ref.name.toLowerCase();
   const team = (ref.teamName ?? "").toLowerCase();
-  const nick = team.replace(/\s+(tigers|tar heels|buffaloes|trojans)\s*$/i, "").trim();
+  const nick = team.replace(/\s+(tigers|tar heels|buffaloes|trojans|bears)\s*$/i, "").trim();
   const scored = articles.map((article, i) => {
     const head = `${article.headline ?? ""} ${article.description ?? ""}`.toLowerCase();
     let score = 0;
     if (coach && head.includes(coach)) score += 50;
-    if (nick && nick.length > 3 && head.includes(nick)) score += 30;
+    if (nick && nick.length > 2 && head.includes(nick)) score += 30;
     if (team && head.includes(team)) score += 20;
     if (JUNK_HEAD.test(article.headline ?? "") || JUNK_HEAD.test(article.type ?? "")) score -= 25;
     return { article, score, i };
   });
-  return scored
+  const picked = new Set<string>();
+  const cards: GameWrapCard[] = [];
+  const take = (article: EspnArticle) => {
+    const card = headlineCard(article, ref.teamName ?? ref.name, ref.leaguePath);
+    const key = String(article.id ?? card?.id ?? "");
+    if (!card || !key || picked.has(key)) return;
+    picked.add(key);
+    cards.push(card);
+  };
+  for (const row of scored
     .filter((row) => row.score >= 20)
-    .sort((a, b) => b.score - a.score || a.i - b.i)
-    .slice(0, 2)
-    .map((row) => headlineCard(row.article, ref.teamName ?? ref.name, ref.leaguePath))
-    .filter((c): c is GameWrapCard => Boolean(c));
+    .sort((a, b) => b.score - a.score || a.i - b.i)) {
+    if (cards.length >= 2) break;
+    take(row.article);
+  }
+  /* Team news is already scoped; fill leftover slots from latest items. */
+  for (const row of scored) {
+    if (cards.length >= 2) break;
+    if (row.score < 0) continue;
+    take(row.article);
+  }
+  return cards;
 }
 
 function conferenceFromStandings(groups: StandGroup[], teamId: string | null): string | null {
@@ -530,7 +546,7 @@ async function summaryBits(
     broadcasts?: EspnBroadcast[];
   }>(`${path}/summary?event=${eventId}`);
   if (!raw) return { summary: null, tv: null, line: null };
-  const text = raw.article?.description || raw.article?.headline || "";
+  const text = (raw.article?.description || raw.article?.headline || "").replace(/^[\s—–-]+/, "");
   const summary = text ? truncateAtSentence(text, 280) : null;
   const tv = broadcastLine(raw.header?.competitions?.[0]?.broadcasts ?? raw.broadcasts);
   const line = raw.pickcenter?.[0]?.details ?? null;
