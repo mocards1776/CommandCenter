@@ -22,6 +22,7 @@ import {
   mapFavoriteCoachRow,
   mapFavoriteCoachRows,
   parseWl,
+  pickCoachHeadshot,
   printsFavoriteCoaches,
   seasonStripFromEvents,
   yearsAtSchoolLabel,
@@ -309,5 +310,12 @@ const strip = seasonStripFromEvents(
 assert(strip.length === 2, "upcoming games stay off the season strip");
 assert(strip[0]?.result === "W" && strip[0]?.opponent === "FLA", "first chip is the Florida win");
 assert(strip[1]?.result === "L" && strip[1]?.opponentRank === 4, "Alabama loss keeps the AP rank");
+assert(
+  pickCoachHeadshot("https://mutigers.com/eli.jpg", "https://a.espncdn.com/x.png") === "https://mutigers.com/eli.jpg",
+  "cited athletics portrait wins over ESPN",
+);
+assert(pickCoachHeadshot("  ", "https://a.espncdn.com/x.png") === "https://a.espncdn.com/x.png", "ESPN fills only when the profile has no photo");
+assert(pickCoachHeadshot(null, null) === null, "no photo is omitted");
+assert(applyCoachProfile(enriched, { coach_id: "4409388", headshot_url: "https://mutigers.com/eli.jpg" }, 2026, null).headshot === "https://mutigers.com/eli.jpg", "profile headshot prints on the tile");
 
 console.log("newspaper-favorite-coaches ok");

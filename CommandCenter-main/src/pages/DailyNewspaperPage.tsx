@@ -3393,7 +3393,6 @@ function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
   return (
     <div className="tt-coaches" style={{ ["--cols" as string]: "2" }}>
       {tiles.map((tile) => {
-        const face = tile.headshot || tile.teamLogo;
         const last = lastGameLine(tile);
         const next = nextGameLine(tile);
         const stat =
@@ -3409,7 +3408,7 @@ function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
             style={tile.teamColor ? tint(tile.teamColor) : undefined}
           >
             <header>
-              <span className="tt-coach-face">{face ? <img src={face} alt="" loading="lazy" /> : null}</span>
+              <CoachShot tile={tile} />
               <span className="tt-coach-id">
                 <em>
                   {[tile.teamName, tile.rank != null ? `#${tile.rank}` : null, tile.standing].filter(Boolean).join(" · ")}
@@ -3440,12 +3439,10 @@ function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
               </div>
               {tile.featured ? (
                 <aside className="tt-coach-aside">
-                  {tile.teamLogo ? (
-                    <span className="tt-coach-mark">
-                      <img src={tile.teamLogo} alt="" />
-                    </span>
-                  ) : null}
-                  <CoachSeasonStrip tile={tile} />
+                  <div className="tt-coach-lead">
+                    <CoachShot tile={tile} lead />
+                    <CoachSeasonStrip tile={tile} />
+                  </div>
                   <CoachFacts tile={tile} />
                 </aside>
               ) : null}
@@ -3463,6 +3460,22 @@ function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
         );
       })}
     </div>
+  );
+}
+
+function CoachShot({ tile, lead = false }: { tile: FavoriteCoachTile; lead?: boolean }) {
+  const photo = tile.headshot;
+  const logo = tile.teamLogo;
+  if (!photo && !logo) return null;
+  return (
+    <span className={lead ? "tt-coach-shot lead" : "tt-coach-shot"}>
+      <img className={photo ? "portrait" : "portrait logo-only"} src={photo || logo || ""} alt="" />
+      {photo && logo ? (
+        <span className="tt-coach-badge">
+          <img src={logo} alt="" />
+        </span>
+      ) : null}
+    </span>
   );
 }
 

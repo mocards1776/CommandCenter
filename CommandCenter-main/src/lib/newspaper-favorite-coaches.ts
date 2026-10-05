@@ -178,6 +178,10 @@ export type TimesCoachProfile = {
   record_source_url?: string | null;
   record_source_label?: string | null;
   as_of?: string | null;
+  headshot_url?: string | null;
+  headshot_source_url?: string | null;
+  headshot_source_label?: string | null;
+  headshot_as_of?: string | null;
 };
 
 export type FavoriteCoachDesk = {
@@ -352,6 +356,17 @@ export function coachFactLines(tile: FavoriteCoachTile): string[] {
   ].filter((bit): bit is string => Boolean(bit));
 }
 
+export function pickCoachHeadshot(
+  profileUrl: string | null | undefined,
+  espnUrl: string | null | undefined,
+): string | null {
+  const cited = (profileUrl ?? "").trim();
+  if (cited && /^https?:\/\//i.test(cited)) return cited;
+  const espn = (espnUrl ?? "").trim();
+  if (espn && /^https?:\/\//i.test(espn)) return espn;
+  return null;
+}
+
 export function applyCoachProfile(
   tile: FavoriteCoachTile,
   profile: TimesCoachProfile | null | undefined,
@@ -381,6 +396,7 @@ export function applyCoachProfile(
   const buyout = formatCoachMoney(profile?.buyout ?? null);
   return {
     ...tile,
+    headshot: pickCoachHeadshot(profile?.headshot_url, tile.headshot),
     schoolRecord: school ? formatWl(school.wins, school.losses) : null,
     yearsAtSchool: yearsAtSchoolLabel(profile?.hire_year, seasonYear),
     careerRecord: career ? formatWl(career.wins, career.losses) : null,
