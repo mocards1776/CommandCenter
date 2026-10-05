@@ -25,14 +25,20 @@ import {
   comingUpHasClock,
   dedupeStories,
   editorFront,
+  essentialsFromDesks,
   isColumnStory,
   isDeskStory,
   isHoldoverGame,
   isPreviewStory,
+  isSectionAStory,
   MIN_SECTION_PAGES,
+  orderSportSections,
+  SECTION_A_TITLE,
   sortComingUp,
   sourceStoryId,
+  sportInSeason,
   sportSectionFocuses,
+  sportSectionId,
   staleNamedPackage,
   storyBodyForJump,
   type ClubDesk,
@@ -1318,5 +1324,135 @@ assert(
   `Coming Up is chronological, date-only last that day: ${coming.map((g) => g.id).join(",")}`,
 );
 assert(comingUpHasClock("Mon, Oct 5, 6:00 PM") && !comingUpHasClock("Tue, Nov 3"), "clock vs date-only");
+
+const oct = "2026-10-05";
+assert(sportInSeason("soccer/eng.1", oct) && sportInSeason("soccer/eng.2", oct), "October is soccer season");
+assert(sportInSeason("football/nfl", oct) && sportInSeason("baseball/mlb", oct), "October is NFL and MLB");
+assert(sportInSeason("hockey/nhl", oct), "October is NHL");
+assert(!sportInSeason("basketball/nba", oct), "NBA preseason in early October is out of season");
+assert(!sportInSeason("basketball/mens-college-basketball", oct), "CBB has not opened in early October");
+assert(sportInSeason("basketball/nba", "2026-10-22"), "late October is NBA regular season");
+const seasonal = orderSportSections(
+  [
+    "baseball/mlb",
+    "football/nfl",
+    "football/college-football",
+    "hockey/nhl",
+    "basketball/nba",
+    "basketball/mens-college-basketball",
+    "soccer/eng.1",
+    "soccer/eng.2",
+  ].map(sportSectionId),
+  oct,
+);
+assert(
+  seasonal.map((s) => s.code).join(",") === "MLB,NFL,CFB,NHL,EPL,EFL,NBA,CBB",
+  `Oct 5 puts soccer ahead of NBA/CBB: ${seasonal.map((s) => s.code).join(",")}`,
+);
+
+const seasonPaper = buildEdition({
+  stories: [
+    tuesday,
+    card({
+      id: "news-nba-camp",
+      headline: "76ers open camp in Philadelphia",
+      favoriteKey: "nba-phi",
+      followed: true,
+      sportLabel: "NBA",
+      leaguePath: "basketball/nba",
+      when: "2026-10-04T18:00:00Z",
+      body: "Philadelphia opened camp with a short practice and a longer meeting. ".repeat(8),
+    }),
+    card({
+      id: "news-epl-note",
+      headline: "Arsenal hold firm at the top",
+      favoriteKey: "eng-arsenal",
+      followed: true,
+      sportLabel: "EPL",
+      leaguePath: "soccer/eng.1",
+      when: "2026-10-04T18:00:00Z",
+      body: "Arsenal beat a rival and kept first place in the table. ".repeat(8),
+    }),
+  ],
+  clubs: [
+    chiefs,
+    cards,
+    {
+      key: "nba-phi",
+      shortName: "76ers",
+      logo: null,
+      leaguePath: "basketball/nba",
+      record: "0-0",
+      standing: null,
+      division: [],
+      stats: [],
+      leaders: [],
+      upcoming: [],
+    },
+    {
+      key: "eng-arsenal",
+      shortName: "Arsenal",
+      logo: null,
+      leaguePath: "soccer/eng.1",
+      record: "7-1-1",
+      standing: "1st",
+      division: [],
+      stats: [],
+      leaders: [],
+      upcoming: [],
+    },
+  ],
+  edition: "2026-10-05-morning",
+});
+const sportCodes = seasonPaper.sections.filter((s) => !["A", "B", "C"].includes(s.code)).map((s) => s.code);
+assert(sportCodes.indexOf("EPL") < sportCodes.indexOf("NBA"), "the pager lists EPL before NBA in October");
+assert(seasonPaper.pages.findIndex((p) => p.section === "EPL") < seasonPaper.pages.findIndex((p) => p.section === "NBA"), "EPL pages come before NBA");
+assert(seasonPaper.sections[0]?.title === SECTION_A_TITLE, "Section A is labeled The Essentials");
+assert(seasonPaper.pages.filter((p) => p.section === "A").every((p) => p.sectionTitle === SECTION_A_TITLE), "A pages say The Essentials");
+
+const nationalLead = {
+  id: "nat-lead",
+  headline: "House passes the funding bill after an all-night vote",
+  summary: "The chamber cleared the stopgap before dawn.",
+  body: "The House passed a stopgap funding bill after an all-night session. ".repeat(8),
+  url: "https://example.com/funding",
+  source: "AP",
+  credit: "AP",
+  outlets: ["AP"],
+  publishedAt: "2026-10-05T10:00:00Z",
+  imageUrl: null,
+  imageCredit: null,
+};
+const moScout = {
+  id: "mo-scout-1",
+  source: "Missouri Scout",
+  headline: "Kehoe signs the education bill",
+  url: "https://example.com/scout",
+  kind: "story" as const,
+  photo: null,
+  dek: "The governor signed the package in Jefferson City.",
+  when: "2026-10-05T14:00:00Z",
+};
+const extras = essentialsFromDesks(
+  { issueId: "2026-10-05-morning", day: "2026-10-05", edition: "morning", label: "Morning", stories: [nationalLead], sources: [], editor: { model: null, fallback: true, rationale: "" }, printedAt: "2026-10-05T11:00:00Z" },
+  { scout: moScout, items: [moScout], listen: [] },
+);
+assert(extras.some((c) => c.id === "nat-lead" && isSectionAStory(c)), "major national news qualifies for Section A");
+assert(extras.some((c) => c.id === "mo-scout-1" && isSectionAStory(c)), "MoScout qualifies for Section A");
+const withEssentials = buildEdition({
+  stories: [tuesday, ...extras],
+  clubs: [chiefs],
+  edition: "2026-10-05-morning",
+  national: { issueId: "2026-10-05-morning", day: "2026-10-05", edition: "morning", label: "Morning", stories: [nationalLead], sources: [], editor: { model: null, fallback: true, rationale: "" }, printedAt: "2026-10-05T11:00:00Z" },
+  missouri: { scout: moScout, items: [moScout], listen: [] },
+});
+assert(withEssentials.pages.some((p) => p.kind === "national"), "National pages stay in their section");
+assert(withEssentials.pages.some((p) => p.kind === "missouri"), "Missouri pages stay in their section");
+const aFront = withEssentials.pages.find((p) => p.kind === "favorites-front");
+assert(
+  aFront?.kind === "favorites-front" &&
+    [aFront.lead, aFront.second, aFront.third, ...aFront.news].some((c) => c && (c.id === "nat-lead" || c.id === "mo-scout-1")),
+  "Section A also runs the essentials from National and Missouri",
+);
 
 console.log("newspaper-sections ok");

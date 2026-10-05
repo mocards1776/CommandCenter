@@ -188,7 +188,7 @@ ruleIds.forEach((id, i) => {
 const newsOnly = editedIds.filter((id) => id.startsWith("news-"));
 assert(newsOnly.join() === "news-blues-camp,news-cards-note,news-lions-win", "news runs in the editor's order");
 
-// Section A is the favorite-teams desk. Routine league copy the editor fronts stays in its section.
+// Section A is the essentials desk. Routine league copy the editor fronts stays in its section.
 const routine = card({
   id: "league-routine",
   headline: "Yankees option reliever to Triple-A before series opener",
@@ -225,16 +225,10 @@ const twoMajors = buildEdition({
 });
 const twoFront = twoMajors.pages.find((p) => p.kind === "favorites-front") as FavoritesFrontPage;
 assert(twoFront.lead?.id === "league-no-hitter", "a major league story may lead A1");
+assert(twoFront.second?.id === "league-firing" || twoFront.second?.id === "wire-401", "a second major may take the next A1 slot");
 assert(
-  [twoFront.second, twoFront.third].every((c) => !c || !c.id.startsWith("league-")),
-  "at most one league story runs in Section A",
-);
-assert(twoFront.second?.id === "wire-401", "the home final takes the next slot");
-assert(
-  twoMajors.pages
-    .filter((p) => p.section === "A" && p.kind === "favorites-inside")
-    .every((p) => p.kind === "favorites-inside" && [p.primary, p.secondary, ...p.briefs].every((c) => !c || !c.id.startsWith("league-"))),
-  "no league story fills a Section A inside page",
+  [twoFront.lead, twoFront.second, twoFront.third].filter((c) => c?.id.startsWith("league-")).length >= 1,
+  "major league news may run in Section A",
 );
 
 // A front pick with no copy does not leave a bare photo on A1.

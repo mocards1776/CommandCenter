@@ -41,8 +41,8 @@ export type EditorCandidate = {
   snippet: string | null;
   /** Followed club key, or null for league copy. */
   favoriteKey: string | null;
-  /** "home" (Cardinals/Blues/Mizzou), "followed", or "league". */
-  desk: "home" | "followed" | "league";
+  /** "home" (Cardinals/Blues/Mizzou), "followed", "national", "missouri", or "league". */
+  desk: "home" | "followed" | "national" | "missouri" | "league";
   league: string | null;
   status: string | null;
   source: string | null;
@@ -97,6 +97,8 @@ function clip(text: string | null | undefined, max: number): string | null {
 }
 
 function deskOf(card: GameWrapCard): EditorCandidate["desk"] {
+  if (card.sportLabel === "National") return "national";
+  if (card.sportLabel === "Missouri") return "missouri";
   if (!card.favoriteKey && !card.followed) return "league";
   return card.favoriteKey && favoriteDeskWeight(card.favoriteKey) >= 100 ? "home" : "followed";
 }

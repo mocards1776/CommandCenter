@@ -1,8 +1,11 @@
 /**
  * Thompson Times sections.
  *
- * Section A is the clubs you follow — a front, a clubs desk, then inside
- * story / club-form pages, the Day Ahead, and the RUWT watch page.
+ * Section A is the essentials — the stuff that matters most to the reader:
+ * favorite clubs, MoScout and Missouri politics, the election, The Day Ahead,
+ * the Beez, and genuinely major national news. Other teams reach A only when
+ * the story is major (`isMajorStory`). A front, a clubs desk, inside story /
+ * club-form pages, the Day Ahead, the Beez, and the RUWT watch page stay in A.
  * National News is its own section immediately after A (B when the edition
  * has a filed row). Missouri follows as C, or stays B when National is off.
  * Every sport section opens on a real section front (flag, lead wrap or
@@ -57,6 +60,51 @@ const KNOWN: Record<string, { code: string; title: string; order: number }> = {
   "soccer/eng.1": { code: "EPL", title: "Premier League", order: 60 },
   "soccer/eng.2": { code: "EFL", title: "EFL Championship", order: 70 },
 };
+
+/** Section A masthead / chrome label. The pages stay; the beat is the essentials. */
+export const SECTION_A_TITLE = "The Essentials";
+
+/**
+ * In-season from a Central calendar date (YYYY-MM-DD or an edition id).
+ * NBA preseason (before late October) counts as out of season.
+ *
+ * NFL Sep–Feb, CFB late Aug–Jan, MLB Mar–Oct (postseason Oct), NHL Oct–Jun,
+ * NBA late Oct–Jun, CBB Nov–Apr, EPL/EFL Aug–May.
+ */
+export function sportInSeason(path: string, day: string, now = day): boolean {
+  const stamp = (now || day).slice(0, 10);
+  const month = Number(stamp.slice(5, 7));
+  const date = Number(stamp.slice(8, 10));
+  if (!month || !date) return true;
+  switch (path) {
+    case "football/nfl":
+      return month >= 9 || month <= 2;
+    case "football/college-football":
+      return month > 8 || month === 1 || (month === 8 && date >= 20);
+    case "baseball/mlb":
+      return month >= 3 && month <= 10;
+    case "hockey/nhl":
+      return month >= 10 || month <= 6;
+    case "basketball/nba":
+      return month >= 11 || month <= 6 || (month === 10 && date >= 22);
+    case "basketball/mens-college-basketball":
+      return month >= 11 || month <= 4;
+    case "soccer/eng.1":
+    case "soccer/eng.2":
+      return month >= 8 || month <= 5;
+    default:
+      return true;
+  }
+}
+
+/** In-season sports first; tie-break with the existing KNOWN order. */
+export function orderSportSections(ids: SportSectionId[], day: string): SportSectionId[] {
+  return [...ids].sort((a, b) => {
+    const season = Number(sportInSeason(b.path, day)) - Number(sportInSeason(a.path, day));
+    if (season) return season;
+    return a.order - b.order || a.code.localeCompare(b.code);
+  });
+}
 
 /** Every section prints at least this many pages. */
 export const MIN_SECTION_PAGES = 5;
@@ -269,6 +317,96 @@ export function isFavoriteStory(card: GameWrapCard): boolean {
   return Boolean(card.favoriteKey || card.followed);
 }
 
+/** National or Missouri copy filed as a card so Section A can run the essentials. */
+export function isEssentialsDesk(card: GameWrapCard): boolean {
+  return card.sportLabel === "National" || card.sportLabel === "Missouri";
+}
+
+/**
+ * What belongs in Section A: followed clubs, the Missouri / national desks,
+ * and other teams only when the story is genuinely major news.
+ */
+export function isSectionAStory(card: GameWrapCard): boolean {
+  if (isFavoriteStory(card) || isEssentialsDesk(card)) return true;
+  return isMajorStory(card);
+}
+
+function blankDeskCard(partial: Partial<GameWrapCard> & Pick<GameWrapCard, "id" | "headline">): GameWrapCard {
+  return {
+    favoriteKey: "",
+    teamName: "",
+    teamHref: "",
+    sportLabel: "Wire",
+    leaguePath: null,
+    dek: null,
+    body: null,
+    scoreLine: null,
+    when: null,
+    won: null,
+    gameHref: null,
+    wrapHref: null,
+    feedUrl: null,
+    gameId: null,
+    stats: [],
+    leaders: [],
+    teamStats: [],
+    division: [],
+    ...partial,
+  };
+}
+
+export function nationalStoryCard(story: NationalStory): GameWrapCard {
+  const body = story.body?.trim() || story.summary;
+  return blankDeskCard({
+    id: story.id,
+    teamName: story.source,
+    sportLabel: "National",
+    headline: story.headline,
+    dek: story.summary,
+    body,
+    when: story.publishedAt,
+    wrapHref: story.url,
+    photo: story.imageUrl,
+    caption: story.imageCredit || story.source,
+    dateline: story.byline || story.credit,
+  });
+}
+
+export function missouriStoryCard(item: MoItem): GameWrapCard {
+  return blankDeskCard({
+    id: item.id,
+    teamName: item.source,
+    sportLabel: "Missouri",
+    headline: item.headline,
+    dek: item.dek,
+    body: item.dek,
+    when: item.when,
+    wrapHref: item.url,
+    photo: item.photo,
+  });
+}
+
+const NATIONAL_A_CAP = 2;
+const MISSOURI_A_CAP = 3;
+
+/** Cards the rule desk may run in Section A from the National and Missouri pages. */
+export function essentialsFromDesks(
+  national: NationalDesk | null | undefined,
+  missouri: MissouriDesk | null | undefined,
+): GameWrapCard[] {
+  const out: GameWrapCard[] = [];
+  for (const story of (national?.stories ?? []).slice(0, NATIONAL_A_CAP)) {
+    out.push(nationalStoryCard(story));
+  }
+  if (missouri?.scout) out.push(missouriStoryCard(missouri.scout));
+  const scoutId = missouri?.scout?.id;
+  const politics = (missouri?.items ?? []).filter((item) => item.kind !== "listen" && item.id !== scoutId);
+  for (const item of politics.slice(0, MISSOURI_A_CAP)) {
+    out.push(missouriStoryCard(item));
+  }
+  return out;
+}
+
 /**
  * Copy the desk will set. A line on the schedule is not an article. A final
  * needs a score. A fetched story needs a body. League wire (not a followed
@@ -283,6 +421,7 @@ function isAthleticCard(card: GameWrapCard): boolean {
 export function isDeskStory(card: GameWrapCard): boolean {
   if (killedSource(card.wrapHref) || killedSource(card.feedUrl) || killedSource(card.gameHref)) return false;
   if (isPeripheralClubStory(card)) return false;
+  if (isEssentialsDesk(card)) return Boolean(card.headline);
   if (isAthleticCard(card)) return Boolean(card.headline && card.leaguePath);
   if (card.id.startsWith("league-")) return Boolean(card.headline && card.leaguePath);
   if (isGameWrapStory(card)) {
@@ -554,6 +693,8 @@ export function staleNamedPackage(card: GameWrapCard, edition: string): boolean 
 
 /** News stays on the 18-hour clock. Game wraps key off the news-day window. */
 function inEditionWindow(card: GameWrapCard, edition: string): boolean {
+  // National / Missouri desks already belong to this edition.
+  if (isEssentialsDesk(card)) return true;
   if (isGameWrap(card)) return gameWrapCovers(card.when, edition, card.leaguePath);
   if (card.holdover) return holdoverCovers(card.when, edition);
   return withinEditionHours(card.when, edition);
@@ -783,7 +924,7 @@ const MAJOR_NEWS = new RegExp(
 /**
  * League copy big enough to run in Section A: a title or clincher, a no-hitter,
  * a firing or hiring, a major trade, a star lost for the season, a death.
- * Section A is the favorite-teams desk; routine league wire never runs there.
+ * Section A is the essentials desk; routine league wire never runs there.
  */
 export function isMajorStory(card: GameWrapCard): boolean {
   if (isPreviewStory(card)) return false;
@@ -798,12 +939,12 @@ export function isMajorStory(card: GameWrapCard): boolean {
 }
 
 /** League stories the editor may front in Section A in one edition. */
-const LEAGUE_FRONT_MAX = 1;
+const LEAGUE_FRONT_MAX = FRONT_STORIES;
 
 /**
  * Stories the editor put on A1, in its order, held to the desk's beat: a
- * favorite-club story always may; league copy only when it is major news, and
- * never more than one. A front story still needs copy.
+ * favorite-club or essentials-desk story always may; other teams only when
+ * the copy is major news. A front story still needs copy.
  */
 export function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
   let league = 0;
@@ -812,7 +953,7 @@ export function editorFront(fresh: GameWrapCard[]): GameWrapCard[] {
     .filter((card) => !isHoldoverGame(card))
     .sort((a, b) => a.editorFront! - b.editorFront!)
     .filter((card) => {
-      if (isFavoriteStory(card)) return true;
+      if (isFavoriteStory(card) || isEssentialsDesk(card)) return true;
       if (league >= LEAGUE_FRONT_MAX || !isMajorStory(card)) return false;
       league += 1;
       return true;
@@ -879,7 +1020,7 @@ function favoritePages(
           kind: "favorites-continue",
           folio: jumpFolio,
           section: "A",
-          sectionTitle: "Favorite Teams",
+          sectionTitle: SECTION_A_TITLE,
           sectionPage: 3,
           sectionCount: 0,
           continuedFrom: "A1",
@@ -920,7 +1061,7 @@ function favoritePages(
       kind: "favorites-inside",
       folio,
       section: "A",
-      sectionTitle: "Favorite Teams",
+      sectionTitle: SECTION_A_TITLE,
       sectionPage: n,
       sectionCount: 0,
       primary,
@@ -935,7 +1076,7 @@ function favoritePages(
     kind: "favorites-front",
     folio: "A1",
     section: "A",
-    sectionTitle: "Favorite Teams",
+    sectionTitle: SECTION_A_TITLE,
     sectionPage: 1,
     sectionCount: 0,
     lead,
@@ -957,7 +1098,7 @@ function favoritePages(
     kind: "favorites-clubs",
     folio: "A2",
     section: "A",
-    sectionTitle: "Favorite Teams",
+    sectionTitle: SECTION_A_TITLE,
     sectionPage: 2,
     sectionCount: 0,
   };
@@ -986,7 +1127,7 @@ function favoritePages(
       kind: "favorites-form",
       folio: `A${pageN}`,
       section: "A",
-      sectionTitle: "Favorite Teams",
+      sectionTitle: SECTION_A_TITLE,
       sectionPage: pageN,
       sectionCount: 0,
       clubs: chunk.length ? chunk : orderedClubs,
@@ -1001,7 +1142,7 @@ function favoritePages(
     kind: "favorites-watch",
     folio: `A${watchN}`,
     section: "A",
-    sectionTitle: "Favorite Teams",
+    sectionTitle: SECTION_A_TITLE,
     sectionPage: watchN,
     sectionCount: 0,
   });
@@ -1277,9 +1418,7 @@ export function buildEdition(opts: {
   for (const club of opts.clubs) if (club.leaguePath) paths.add(club.leaguePath);
   for (const story of sectionCopy) if (story.leaguePath) paths.add(story.leaguePath);
 
-  const ids = uniqueCodes(
-    [...paths].map(sportSectionId).sort((a, b) => a.order - b.order || a.code.localeCompare(b.code)),
-  );
+  const ids = uniqueCodes(orderSportSections([...paths].map(sportSectionId), opts.edition));
 
   const clubsBy = new Map<string, ClubDesk[]>();
   for (const club of opts.clubs) {
@@ -1315,7 +1454,7 @@ export function buildEdition(opts: {
   const sportFolioByStory: Record<string, string> = {};
   for (const part of sportPagesBuilt) Object.assign(sportFolioByStory, part.built.sportFolioByStory);
 
-  const favoriteFresh = fresh.filter(isFavoriteStory);
+  const favoriteFresh = fresh.filter(isSectionAStory);
   const favorites = favoritePages(favoriteFresh, favoriteFresh, opts.clubs, editorFront(fresh));
 
   const national = nationalPages(opts.national ?? null);
@@ -1327,7 +1466,7 @@ export function buildEdition(opts: {
   const sections: EditionSection[] = [
     {
       code: "A",
-      title: "Favorite Teams",
+      title: SECTION_A_TITLE,
       folio: "A1",
       index: 0,
       stories: favoriteFresh.length,
