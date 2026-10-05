@@ -150,10 +150,11 @@ export function renderPreviewSvg(card: PreviewCard): string {
     parts.push(logoMark(game.home, M + pad + 4 + logo + 10, logoY, logo));
     const textX = M + pad + 4 + logo * 2 + 28;
     const why = game.why;
-    const chipW = why ? chipWidth(why) : 0;
-    const colRight = W - M - pad;
-    const detailRight = chipW ? colRight - chipW - 16 : colRight;
+    const records = recordsLine(game);
+    const starters = starterLine(game);
+    const rightX = Math.max(textX + 340, 560);
     const mid = boxY + boxH / 2;
+    const stacked = boxH >= 120 && Boolean(why && (records || starters));
     parts.push(
       text(matchupLabel(game), textX, mid - 6, { size: 24, fill: "#f7f4ee", weight: 700 }),
     );
@@ -161,17 +162,16 @@ export function renderPreviewSvg(card: PreviewCard): string {
       .filter(Boolean)
       .join("  ·  ");
     parts.push(text(meta, textX, mid + 22, { size: 16, fill: "#c5cce0", weight: 600 }));
-    const records = recordsLine(game);
-    const starters = starterLine(game);
+    const detailY = stacked ? mid - 18 : mid - 6;
     if (records) {
-      parts.push(text(records, detailRight, mid - 6, { size: 16, fill: "#f7f4ee", anchor: "end", weight: 700 }));
+      parts.push(text(records, rightX, detailY, { size: 17, fill: "#f7f4ee", weight: 700 }));
     }
     if (starters) {
-      parts.push(text(starters, detailRight, mid + 22, { size: 15, fill: "#c5cce0", anchor: "end", weight: 600 }));
+      parts.push(text(starters, rightX, detailY + 24, { size: 15, fill: "#c5cce0", weight: 600 }));
     }
     if (why) {
-      const drawn = chip(why, colRight - chipW, mid - 14);
-      parts.push(drawn.svg);
+      const chipY = stacked ? detailY + 36 : mid - 14;
+      parts.push(chip(why, rightX, chipY).svg);
     }
   });
 
