@@ -307,7 +307,7 @@ export function formatCoachMoney(value: number | string | null | undefined): str
   if (!Number.isFinite(n) || n <= 0) return null;
   if (n >= 1_000_000) {
     const m = n / 1_000_000;
-    const raw = (m % 1 === 0 ? String(m) : m.toFixed(2)).replace(/\.?0+$/, "");
+    const raw = Number.isInteger(m) ? String(m) : m.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
     return `$${raw}M`;
   }
   return `$${Math.round(n).toLocaleString("en-US")}`;
@@ -329,7 +329,7 @@ export function coachStatusNote(headlines: { headline?: string }[], name: string
 export function coachFactLines(tile: FavoriteCoachTile): string[] {
   return [
     tile.schoolRecord
-      ? ["At school", tile.schoolRecord, tile.yearsAtSchool].filter(Boolean).join(" · ")
+      ? ["At school " + tile.schoolRecord, tile.yearsAtSchool].filter(Boolean).join(" · ")
       : null,
     tile.careerRecord ? `Career ${tile.careerRecord}` : null,
     tile.nflRecord,

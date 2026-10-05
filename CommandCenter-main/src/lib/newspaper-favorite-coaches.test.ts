@@ -179,6 +179,8 @@ assert(yearsAtSchoolLabel(2020, 2026) === "7th season", "Drinkwitz is in year 7"
 assert(yearsAtSchoolLabel(2026, 2026) === "1st season", "Golesh is a first-year coach");
 assert(formatCoachMoney(10750000) === "$10.75M", "salary formats in millions");
 assert(formatCoachMoney(6750000) === "$6.75M", "6.75M keeps two decimals");
+assert(formatCoachMoney(10000000) === "$10M", "ten million keeps the ten");
+assert(formatCoachMoney(10100000) === "$10.1M", "10.1M drops the trailing zero");
 assert(coachStatusNote([{ headline: "Vols hold serve in Knoxville" }], "Alex Golesh") === null, "ordinary hed is not a status note");
 assert(
   coachStatusNote([{ headline: "Drinkwitz signs a six-year extension at Missouri" }], "Eliah Drinkwitz") ===
