@@ -66,18 +66,6 @@ export async function isServiceRoleToken(
   return false;
 }
 
-export async function verifyJwtClaimsViaAuth(
-  url: string,
-  apiKey: string,
-  jwt: string,
-  getClaims: (jwt: string) => Promise<{ data: { claims?: JwtClaims } | null; error: unknown }>,
-): Promise<JwtClaims | null> {
-  if (!url || !apiKey || !jwt) return null;
-  const { data, error } = await getClaims(jwt);
-  if (error || !data?.claims) return null;
-  return data.claims;
-}
-
 export async function probeAuthAdmin(
   url: string,
   jwt: string,
