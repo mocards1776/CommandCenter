@@ -2,12 +2,14 @@ import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Linescore, MatchupCard, ScoreMast, ScoreStrip } from "@/components/newspaper/BoxScore";
+import { CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
 import { PlayoffBracket } from "@/components/newspaper/PlayoffBracket";
 import { fetchMlbPlayoffTree } from "@/lib/mlb";
 import {
+  fetchCfbApPoll,
   fetchLeagueLeaders,
   fetchSectionBoard,
-  footballWeekTitle,
+  fetchSectionStandings,
   type BoxGame,
   type LeagueLeaderGroup,
   type SectionBoard,
@@ -39,6 +41,18 @@ export default function NewspaperSportPreviewPage() {
     queryKey: ["tt-sport-preview", "cfb-board", press.day],
     queryFn: () => fetchSectionBoard("football/college-football", press.day),
     staleTime: 5 * 60_000,
+    enabled: page === "cfb-schedule",
+  });
+  const cfbStandings = useQuery({
+    queryKey: ["tt-sport-preview", "cfb-standings"],
+    queryFn: () => fetchSectionStandings("football/college-football"),
+    staleTime: 30 * 60_000,
+    enabled: page === "cfb-schedule",
+  });
+  const cfbPoll = useQuery({
+    queryKey: ["tt-sport-preview", "cfb-poll"],
+    queryFn: fetchCfbApPoll,
+    staleTime: 30 * 60_000,
     enabled: page === "cfb-schedule",
   });
   const nflLeaders = useQuery({
@@ -78,7 +92,7 @@ export default function NewspaperSportPreviewPage() {
       : page === "nfl-front"
         ? nflBoard.isFetched
         : page === "cfb-schedule"
-          ? cfbBoard.isFetched
+          ? cfbBoard.isFetched && cfbStandings.isFetched && cfbPoll.isFetched
           : page === "mlb-leaders"
             ? mlbLeaders.isFetched
             : page === "nfl-leaders"
@@ -143,10 +157,15 @@ export default function NewspaperSportPreviewPage() {
                 code="CFB"
                 title="College Football"
                 desk="Schedule"
-                blurb="Last week’s results and this week’s kickoffs"
+                blurb="SEC and ranked results, this week’s kickoffs, AP Top 25"
                 folio="CFB5"
               >
-                <CfbPreview board={cfbBoard.data} />
+                <CfbScheduleDesk
+                  board={cfbBoard.data}
+                  edition={press.day}
+                  standings={cfbStandings.data ?? []}
+                  poll={cfbPoll.data ?? []}
+                />
               </SportChrome>
             ) : page === "nfl-front" ? (
               <FrontPreview
@@ -346,55 +365,6 @@ function SchedulePreview({ games }: { games: BoxGame[] }) {
           </div>
         </section>
       ))}
-    </div>
-  );
-}
-
-function CfbPreview({ board }: { board?: SectionBoard }) {
-  const results = board?.results.length ? board.results : (board?.prior ?? []);
-  const slate = (board?.slate ?? []).filter((g) => !g.final && !g.live);
-  if (!results.length && !slate.length) return <p className="wsj-empty">The college slate is quiet.</p>;
-  return (
-    <div className="tt-schedule tt-schedule-fill">
-      {results.length ? (
-        <section>
-          <h3 className="wsj-band-title">
-            {footballWeekTitle("results", board?.resultsWeekNumber ?? board?.priorWeekNumber, results)}
-          </h3>
-          <ul className="tt-cfb-rows">
-            {results.slice(0, 16).map((g) => (
-              <li key={g.id} className="tt-cfb-row">
-                <time>{g.final ? "Final" : g.status}</time>
-                <span className="tt-cfb-clubs">
-                  <b>{g.away.abbrev}</b>
-                  <i>{g.away.score ?? ""}</i>
-                  <b>{g.home.abbrev}</b>
-                  <i>{g.home.score ?? ""}</i>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-      {slate.length ? (
-        <section>
-          <h3 className="wsj-band-title">
-            {footballWeekTitle("schedule", board?.slateWeekNumber ?? board?.weekNumber, slate)}
-          </h3>
-          <ul className="tt-cfb-rows">
-            {slate.slice(0, 16).map((g) => (
-              <li key={g.id} className="tt-cfb-row">
-                <time>{g.status}</time>
-                <span className="tt-cfb-clubs">
-                  <b>{g.away.abbrev}</b>
-                  <i>at</i>
-                  <b>{g.home.abbrev}</b>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
     </div>
   );
 }

@@ -41,9 +41,9 @@ import { fetchLeagueArticles, fetchTeamArticles } from "@/lib/newspaper-news";
 import {
   applyTableStandings,
   boxStoryCard,
+  fetchCfbApPoll,
   fetchLeagueLeaders,
   fetchSectionBoard,
-  footballWeekTitle,
   gameClock,
   fetchSectionStandings,
   rankStandings,
@@ -70,6 +70,7 @@ import {
 } from "@/components/newspaper/BoxScore";
 import { ReaderProvider } from "@/components/newspaper/PaperReader";
 import { useReader } from "@/components/newspaper/reader-context";
+import { CfbScheduleDesk } from "@/components/newspaper/CfbScheduleDesk";
 import { PlayoffBracket } from "@/components/newspaper/PlayoffBracket";
 import { NamedText, PlayerName, PlayerPopProvider } from "@/components/newspaper/PlayerPop";
 import { fetchClubSheet, type ClubSheet } from "@/lib/newspaper-clubsheet";
@@ -80,7 +81,6 @@ import { fetchPlayerFiles, imageLoads, storySubjects, type PlayerFile } from "@/
 import { fetchMarshfieldWeather, type MarshfieldWeather } from "@/lib/newspaper-weather";
 import { WeatherReport, WeatherStrip } from "@/components/newspaper/WeatherReport";
 import { storySource } from "@/lib/newspaper-source";
-import { getCfbTeamInterestRating } from "@/lib/ruwt";
 import {
   daysUntil,
   fetchOpener,
@@ -2857,107 +2857,36 @@ function dayHeading(day: string, edition: string): string {
   return d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-function cfbWatch(game: BoxGame): number {
-  const away = game.away.id ? getCfbTeamInterestRating(game.away.id) : 0;
-  const home = game.home.id ? getCfbTeamInterestRating(game.home.id) : 0;
-  return away + home;
-}
-
-/** College football is a full Saturday slate. Agate, with a RUwT watch number, not matchup cards. */
-function CfbSchedule({
-  games,
-  edition,
-  title,
-}: {
-  games: BoxGame[];
-  edition: string;
-  title?: string;
-}) {
-  const days = new Map<string, BoxGame[]>();
-  for (const game of games) {
-    const list = days.get(game.day) ?? [];
-    list.push(game);
-    days.set(game.day, list);
-  }
-  return (
-    <div className="tt-cfb-slate">
-      {title ? <h3 className="wsj-band-title">{title}</h3> : null}
-      {[...days.entries()].map(([day, list]) => {
-        const ranked = [...list].sort((a, b) => cfbWatch(b) - cfbWatch(a) || String(a.startIso).localeCompare(String(b.startIso)));
-        return (
-          <section key={day}>
-            <h3 className="wsj-band-title">
-              {dayHeading(day, edition)} <em>{ranked.length} {ranked.length === 1 ? "game" : "games"}</em>
-            </h3>
-            <ol className="tt-cfb-rows">
-              {ranked.map((game) => (
-                <li key={game.id} className="tt-cfb-row">
-                  <time>{gameClock(game)}</time>
-                  <span className="tt-cfb-clubs">
-                    {game.away.logo ? <img src={game.away.logo} alt="" /> : null}
-                    <b>
-                      {game.away.rank ? <span className="tt-cfb-rank">#{game.away.rank}</span> : null}
-                      {game.away.abbrev}
-                    </b>
-                    <i>at</i>
-                    {game.home.logo ? <img src={game.home.logo} alt="" /> : null}
-                    <b>
-                      {game.home.rank ? <span className="tt-cfb-rank">#{game.home.rank}</span> : null}
-                      {game.home.abbrev}
-                    </b>
-                  </span>
-                  <em>{game.broadcasts.filter(Boolean).join(" · ") || game.venue || ""}</em>
-                  <span className="tt-cfb-watch" title="RUwT watchability">
-                    <i>Watch</i>
-                    {cfbWatch(game)}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-
 function ScheduleDesk({
   page,
   board,
   slate,
   edition,
+  standings,
 }: {
   page: SportFrontPage;
   board: SectionBoard | null;
   slate: LeagueSlateGame[];
   edition: string;
+  standings: StandGroup[];
 }) {
+  const college = page.path.includes("college-football");
+  const pollQ = useQuery({
+    queryKey: ["tt-cfb-ap-poll", edition],
+    queryFn: fetchCfbApPoll,
+    staleTime: 30 * 60_000,
+    enabled: college,
+  });
   const games = board?.slate ?? [];
-  if (page.path.includes("college-football")) {
-    const results = board?.results.length ? board.results : (board?.prior ?? []);
-    const slate = games.filter((g) => !g.final && !g.live);
-    if (!results.length && !slate.length) {
-      /* fall through */
-    } else {
-      return (
-        <div className="tt-schedule tt-schedule-fill">
-          {results.length ? (
-            <CfbSchedule
-              games={results}
-              edition={edition}
-              title={footballWeekTitle("results", board?.resultsWeekNumber ?? board?.priorWeekNumber, results)}
-            />
-          ) : null}
-          {slate.length ? (
-            <CfbSchedule
-              games={slate}
-              edition={edition}
-              title={footballWeekTitle("schedule", board?.slateWeekNumber ?? board?.weekNumber, slate)}
-            />
-          ) : null}
-        </div>
-      );
-    }
+  if (college) {
+    return (
+      <CfbScheduleDesk
+        board={board}
+        edition={edition}
+        standings={standings}
+        poll={pollQ.data ?? []}
+      />
+    );
   }
   if (games.length) {
     const days = new Map<string, BoxGame[]>();
@@ -3247,7 +3176,7 @@ function SportFront({
         ) : page.focus === "leaders" ? (
           <LeadersDesk groups={leaders} />
         ) : page.focus === "schedule" ? (
-          <ScheduleDesk page={page} board={board} slate={slate} edition={edition} />
+          <ScheduleDesk page={page} board={board} slate={slate} edition={edition} standings={standings} />
         ) : page.focus === "playoffs" ? (
           <PlayoffDesk tree={playoffs} />
         ) : page.focus === "players" ? (

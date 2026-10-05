@@ -7828,27 +7828,39 @@ li.counting .tt-count.card {
   font-size: 16px;
   font-weight: 600;
 }
+.tt-cfb-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100%;
+}
+.tt-cfb-block { min-height: 0; }
 .tt-cfb-rows {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  column-gap: 28px;
+  column-gap: 22px;
 }
 .tt-cfb-row {
   display: grid;
-  grid-template-columns: 78px minmax(0, 1fr) minmax(72px, auto) 28px;
+  grid-template-columns: 7.2rem minmax(0, 1fr) minmax(44px, 0.7fr) 26px;
   align-items: center;
-  gap: 8px;
-  padding: 6px 0;
+  gap: 6px;
+  padding: 4px 0;
   border-bottom: 1px solid var(--w-hair);
   font-size: 13px;
 }
+.tt-cfb-row[data-kind="results"] {
+  grid-template-columns: 3.4rem minmax(0, 1fr) 0 0;
+}
 .tt-cfb-row time {
   font-family: var(--w-cond);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .tt-cfb-clubs {
   display: flex;
@@ -7867,6 +7879,16 @@ li.counting .tt-count.card {
   font-weight: 800;
   margin-right: 3px;
   color: var(--w-muted);
+}
+.tt-cfb-score {
+  margin-left: 5px;
+  font-family: var(--w-cond);
+  font-size: 14px;
+  font-weight: 700;
+  font-style: normal;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--w-ink);
 }
 .tt-cfb-clubs i {
   font-style: normal;
@@ -8014,7 +8036,51 @@ li.counting .tt-count.card {
   gap: 14px;
 }
 .tt-schedule-fill {
-  min-height: 0;
+  min-height: 100%;
+}
+.tt-cfb-fill {
+  margin-top: auto;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 18px 24px;
+  padding-top: 8px;
+  border-top: 2px solid var(--w-rule);
+}
+.tt-cfb-poll ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 2px 12px;
+}
+.tt-cfb-poll li {
+  display: grid;
+  grid-template-columns: 1.6rem 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--w-hair);
+  font-size: 12px;
+}
+.tt-cfb-poll li i {
+  font-style: normal;
+  font-family: var(--w-cond);
+  font-weight: 800;
+}
+.tt-cfb-poll li img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+.tt-cfb-poll li em {
+  font-style: normal;
+  font-family: var(--w-cond);
+  font-size: 11px;
+  color: var(--w-muted);
+}
+.tt-cfb-sec .tt-stand {
+  font-size: 12px;
 }
 .tt-front-rail .tt-strip {
   display: grid;

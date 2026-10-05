@@ -820,18 +820,37 @@ export async function fetchEspnRecapStory(
   };
 }
 
-function faceOff(iso: string | null): string {
+const CT = "America/Chicago";
+
+/** ESPN shortDetail like "10/10 - 12:00 PM EDT" — never print this on a Times clock. */
+export function looksLikeEspnZoneClock(status: string | null | undefined): boolean {
+  if (!status) return false;
+  return (
+    /\b(?:EDT|EST|CDT|CST|MDT|MST|PDT|PST)\b/.test(status) ||
+    /\d{1,2}\/\d{1,2}\s*[-–]\s*\d/.test(status)
+  );
+}
+
+function clockInCentral(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d
-    .toLocaleTimeString("en-US", {
-      timeZone: "America/Chicago",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    })
-    .replace(":00 ", " ");
+  return d.toLocaleTimeString("en-US", {
+    timeZone: CT,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+/** "Sat 11:00 AM" in Central time — weekday + clock, no zone, no wrapping date. */
+export function formatKickoffLine(iso: string | null): string {
+  const time = clockInCentral(iso);
+  if (!time || !iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const weekday = d.toLocaleDateString("en-US", { weekday: "short", timeZone: CT });
+  return `${weekday} ${time}`;
 }
 
 export function formatPaperDay(d: Date): string {
@@ -872,10 +891,15 @@ export function gameDay(game: BoxGame): string {
 }
 
 export function gameClock(game: BoxGame): string {
-  if (game.final) return /final/i.test(game.status) ? game.status : "Final";
-  if (game.live) return game.status;
-  if (/postponed|delayed|suspended|canceled/i.test(game.status)) return game.status;
-  return faceOff(game.startIso) || game.status;
+  if (game.final) {
+    if (/final/i.test(game.status) && !looksLikeEspnZoneClock(game.status)) return game.status;
+    return "Final";
+  }
+  if (game.live) return looksLikeEspnZoneClock(game.status) ? "Live" : game.status;
+  if (/postponed|delayed|suspended|canceled/i.test(game.status) && !looksLikeEspnZoneClock(game.status)) {
+    return game.status;
+  }
+  return clockInCentral(game.startIso);
 }
 
 /**
@@ -1159,6 +1183,55 @@ export function rankStandings(groups: StandGroup[]): StandGroup[] {
     })
     .sort((a, b) => a.rank - b.rank || a.index - b.index)
     .map((row) => row.group);
+}
+
+export type CfbPollRow = {
+  rank: number;
+  name: string;
+  abbrev: string;
+  record: string | null;
+  logo: string | null;
+};
+
+/** AP Top 25 via the Times ESPN client — never the Sports App fetch. */
+export async function fetchCfbApPoll(): Promise<CfbPollRow[]> {
+  const data = (await newspaperEspnGet("football/college-football/rankings").catch(() => null)) as {
+    rankings?: {
+      name?: string;
+      shortName?: string;
+      type?: string;
+      ranks?: {
+        current?: number;
+        recordSummary?: string;
+        team?: {
+          abbreviation?: string;
+          displayName?: string;
+          location?: string;
+          logos?: { href?: string }[];
+        };
+      }[];
+    }[];
+  } | null;
+  if (!data) return [];
+  const polls = data.rankings ?? [];
+  const poll =
+    polls.find((p) => /associated press|\bap top|\bap\b/i.test(`${p.name ?? ""} ${p.shortName ?? ""} ${p.type ?? ""}`)) ??
+    polls[0];
+  return (poll?.ranks ?? [])
+    .filter((r): r is typeof r & { current: number } => r.current != null && r.current > 0 && r.current <= 25)
+    .map((r) => ({
+      rank: r.current,
+      name: r.team?.displayName ?? r.team?.location ?? "—",
+      abbrev: (r.team?.abbreviation ?? "—").toUpperCase(),
+      record: r.recordSummary ?? null,
+      logo: r.team?.logos?.[0]?.href ?? null,
+    }))
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, 25);
+}
+
+export function secStandingsGroup(groups: StandGroup[]): StandGroup | null {
+  return groups.find((g) => /\bsec\b|southeastern/i.test(g.name)) ?? null;
 }
 
 export function ordinalPlace(n: number): string {
@@ -1469,7 +1542,7 @@ function uniqueGames(games: BoxGame[]): BoxGame[] {
 const byStart = (a: BoxGame, b: BoxGame) => String(a.startIso ?? "").localeCompare(String(b.startIso ?? ""));
 const byDayThenStart = (a: BoxGame, b: BoxGame) => a.day.localeCompare(b.day) || byStart(a, b);
 
-function isCfbScheduleRow(game: BoxGame): boolean {
+export function isCfbDeskGame(game: BoxGame): boolean {
   return isNewspaperCfbDeskGame({
     awayId: game.away.id,
     homeId: game.home.id,
@@ -1517,7 +1590,8 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
     const games = boardGames(path, current, day);
     const prev =
       week && week > 1 ? await espnBoard(path, `&week=${week - 1}&seasontype=${seasonType}`) : null;
-    const prior = prev ? boardGames(path, prev, newsDay).filter((g) => g.final) : [];
+    const priorRaw = prev ? boardGames(path, prev, newsDay).filter((g) => g.final) : [];
+    const prior = college ? priorRaw.filter(isCfbDeskGame) : priorRaw;
     let upcoming = games.filter((g) => !g.final);
     let fetchedNext = false;
     if (college && !upcoming.length && week) {
@@ -1525,9 +1599,11 @@ export async function fetchSectionBoard(path: string, edition: string): Promise<
       upcoming = next ? boardGames(path, next, day).filter((g) => !g.final) : [];
       fetchedNext = upcoming.length > 0;
     }
+    const desk = (list: BoxGame[]) =>
+      uniqueGames(college ? list.filter(isCfbDeskGame) : list).sort(byStart);
     const played = games.filter((g) => g.final || g.live);
-    const results = uniqueGames(played.length ? played : college ? prior : played).sort(byStart);
-    const slate = uniqueGames(college ? upcoming.filter(isCfbScheduleRow) : upcoming).sort(byStart);
+    const results = desk(played.length ? played : college ? prior : played);
+    const slate = desk(upcoming);
     const priorWeekNumber = week && week > 1 ? week - 1 : (prev?.week?.number ?? null);
     return {
       results,
