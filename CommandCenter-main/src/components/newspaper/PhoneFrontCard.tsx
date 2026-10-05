@@ -19,7 +19,7 @@ export function PhoneFrontCard({
       <header className="tt-phone-front-mast">
         <div className="tt-phone-front-top">
           <p className="tt-phone-kicker">{editionLabel}</p>
-          {ballot ? <ElectionEar day={date} className="phone" /> : null}
+          {ballot ? <ElectionEar day={date} className="phone" compact /> : null}
         </div>
         <h1 className="wsj-nameplate">The Thompson Times</h1>
         <p className="tt-phone-dek">
