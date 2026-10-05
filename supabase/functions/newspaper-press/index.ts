@@ -50,13 +50,101 @@ type PressModule = {
 /** Long enough for one Grok pass; short enough that a hung editor still leaves time to file the rule desk's paper. */
 const EDITOR_TIMEOUT_MS = 60_000;
 
+/** Soft ceiling for the POST body to newspaper-editor after local trim. */
+const EDITOR_REQUEST_MAX_BYTES = 120_000;
+
+type EditorCand = Record<string, unknown> & { id?: unknown; headline?: unknown };
+type EditorReq = { edition?: unknown; candidates?: unknown; games?: unknown };
+
+/**
+ * Keep only what the editor needs to judge the front: id, headline, dek, source,
+ * desk/club/league flags. Drop body snippets/HTML. Cap list sizes so a busy slate
+ * cannot bloat the edge hop.
+ */
+function trimEditorRequest(raw: unknown): { request: EditorReq; bytesBefore: number; bytesAfter: number } {
+  const bytesBefore = JSON.stringify(raw ?? null).length;
+  const src = (raw && typeof raw === "object" ? raw : {}) as EditorReq;
+  const trimCand = (row: unknown, kind: "news" | "game"): EditorCand | null => {
+    if (!row || typeof row !== "object") return null;
+    const r = row as Record<string, unknown>;
+    const id = typeof r.id === "string" ? r.id.slice(0, 200) : "";
+    const headline = typeof r.headline === "string" ? r.headline.replace(/\s+/g, " ").trim().slice(0, 240) : "";
+    if (!id || !headline) return null;
+    if (kind === "game") {
+      return {
+        id,
+        headline,
+        score: typeof r.score === "string" ? r.score.slice(0, 60) : null,
+        favoriteKey: typeof r.favoriteKey === "string" ? r.favoriteKey.slice(0, 40) : null,
+        desk: typeof r.desk === "string" ? r.desk.slice(0, 12) : null,
+        league: typeof r.league === "string" ? r.league.slice(0, 8) : null,
+        status: typeof r.status === "string" ? r.status.slice(0, 40) : null,
+        postseason: r.postseason === true,
+        hasCopy: r.hasCopy === true,
+        holdover: r.holdover === true,
+      };
+    }
+    const dek =
+      typeof r.dek === "string"
+        ? r.dek.replace(/\s+/g, " ").trim().slice(0, 200)
+        : null;
+    return {
+      id,
+      headline,
+      dek: dek || null,
+      // Intentionally omit snippet/body — headline+dek+source+ids is enough to judge.
+      favoriteKey: typeof r.favoriteKey === "string" ? r.favoriteKey.slice(0, 40) : null,
+      desk: typeof r.desk === "string" ? r.desk.slice(0, 12) : null,
+      league: typeof r.league === "string" ? r.league.slice(0, 8) : null,
+      status: typeof r.status === "string" ? r.status.slice(0, 40) : null,
+      source: typeof r.source === "string" ? r.source.slice(0, 60) : null,
+      when: typeof r.when === "string" ? r.when.slice(0, 40) : null,
+      final: r.final === true,
+      recap: r.recap === true,
+      preview: r.preview === true,
+      postseason: r.postseason === true,
+      holdover: r.holdover === true,
+      ruleRank: typeof r.ruleRank === "number" ? r.ruleRank : null,
+      ruleScore: typeof r.ruleScore === "number" ? r.ruleScore : null,
+    };
+  };
+  const candidates = (Array.isArray(src.candidates) ? src.candidates : [])
+    .map((row) => trimCand(row, "news"))
+    .filter((row): row is EditorCand => Boolean(row))
+    .slice(0, 24);
+  const games = (Array.isArray(src.games) ? src.games : [])
+    .map((row) => trimCand(row, "game"))
+    .filter((row): row is EditorCand => Boolean(row))
+    .slice(0, 16);
+  const request: EditorReq = {
+    edition: typeof src.edition === "string" ? src.edition.slice(0, 40) : "",
+    candidates,
+    games,
+  };
+  return { request, bytesBefore, bytesAfter: JSON.stringify(request).length };
+}
+
 /** One call to the newspaper-editor function. A throw means the rule desk sets the paper. */
 function askEditor(url: string, key: string) {
   return async (request: unknown): Promise<unknown> => {
+    const { request: trimmed, bytesBefore, bytesAfter } = trimEditorRequest(request);
+    if (bytesAfter > EDITOR_REQUEST_MAX_BYTES) {
+      console.error(
+        `[newspaper-press] EDITOR SKIPPED: trimmed request still ${bytesAfter} bytes ` +
+          `(was ${bytesBefore}) exceeds ${EDITOR_REQUEST_MAX_BYTES}. Rule desk will file.`,
+      );
+      throw new Error(`editor request too large after trim (${bytesAfter} bytes)`);
+    }
+    if (bytesBefore !== bytesAfter) {
+      console.info(
+        `[newspaper-press] editor request trimmed ${bytesBefore} → ${bytesAfter} bytes ` +
+          `(${(trimmed.candidates as unknown[]).length} news, ${(trimmed.games as unknown[]).length} games)`,
+      );
+    }
     const res = await fetch(`${url}/functions/v1/newspaper-editor`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, apikey: key },
-      body: JSON.stringify(request),
+      body: JSON.stringify(trimmed),
       signal: AbortSignal.timeout(EDITOR_TIMEOUT_MS),
     });
     const body = (await res.json().catch(() => null)) as { ok?: boolean; desk?: unknown; error?: string } | null;
@@ -194,16 +282,37 @@ Deno.serve(async (req) => {
         readKeys,
         carried,
         carriedMissouri,
+        // Editor always runs unless NEWSPAPER_EDITOR=off. askEditor trims the
+        // payload (headline+dek+source+ids, capped lists) and only throws — with a
+        // loud log — if the trimmed request still exceeds EDITOR_REQUEST_MAX_BYTES.
         editor: Deno.env.get("NEWSPAPER_EDITOR") === "off" ? undefined : askEditor(url, key),
       },
       bag,
     );
     if (!step.done) {
+      // Stage 13 already wrote board/standings/etc. to cache. Drop them from the
+      // checkpoint so stage-14 continues and finalize stay under the edge memory cap.
+      // Keeping a 5MB+ bag made finalize return HTTP 546 (resource limit).
+      const drop = new Set([
+        "board", "standings", "leaders", "playoffs", "leagueClubs", "leagueSlate",
+        "wraps", "coaches", "org", "openers", "sheets", "watch", "snaps", "weather",
+        "missouri", "heisman", "scoutItem", "paths", "pathKey", "recap",
+        "wireCursor", "leagueCursor",
+      ]);
+      const bag: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(step.bag ?? {})) {
+        if (!drop.has(k)) bag[k] = v;
+      }
+      // Prefer teamCards over the heavier enriched copy when both exist.
+      if (bag.teamCards != null && bag.enriched != null) delete bag.enriched;
+      // Extracts are done once extractCursor covers the 20-URL cap; drop the blob.
+      const cursor = typeof bag.extractCursor === "number" ? bag.extractCursor : 0;
+      if (cursor >= 20 && bag.extracts != null) delete bag.extracts;
       const { error } = await supabase
         .from("newspaper_issues")
         .update({
           status: "printing",
-          queries: { checkpoint: true, bag: step.bag },
+          queries: { checkpoint: true, bag },
           printed_at: new Date().toISOString(),
         })
         .eq("id", press.id);
