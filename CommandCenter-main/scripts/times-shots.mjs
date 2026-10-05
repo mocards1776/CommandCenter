@@ -15,7 +15,6 @@
  * editor functions is aborted, so opening the paper here can never change the desk or an issue.
  * Day Ahead and watch cards are skipped when there is no schedule row / no games.
  */
-import { chromium } from "playwright";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -207,6 +206,7 @@ async function shootPhoneCard(context, issueId, card) {
 }
 
 async function shoot(claim) {
+  const { chromium } = await import("playwright");
   const browser = await chromium.launch({ args: ["--force-color-profile=srgb"] });
   try {
     const blocked = [];
