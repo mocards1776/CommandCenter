@@ -5,7 +5,9 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { cardFromSummary, finalCaption, formatFinalsTimestamp, highlightFromBox, statMagnitude } from "./card.ts";
+import { cardFromSummary, finalCaption, formatFinalsTimestamp, highlightFromBox, starsFromLanding, statMagnitude } from "./card.ts";
+import { mapThreeStars } from "./nhl-stars.ts";
+import { formatPlayoffSeriesLine, mlbPlayoffFromSummary } from "./series.ts";
 import { alertReplyMarkup } from "../_shared/telegram-markup.ts";
 import { oddsFromSummary, parseDetails, spreadOutcome } from "./odds.ts";
 import {
@@ -514,6 +516,9 @@ assert.match(nhlSvg, /Standings/);
 assert.match(nhlSvg, /Atlantic/);
 assert.match(nhlSvg, /Central/);
 assert.match(nhlSvg, />2-1-0</);
+assert.match(nhlSvg, /PTS/);
+assert.match(nhlSvg, />4</);
+assert.match(nhlSvg, />5</);
 assert.match(nhlSvg, / CT</);
 
 assert.deepEqual(parseDetails("GB -2.5"), { abbrev: "GB", line: -2.5 });
@@ -567,5 +572,155 @@ assert.equal(
 const missingOddsSvg = renderFinalSvg(quiet);
 assert.doesNotMatch(missingOddsSvg, /covered|did not cover|O\/U/);
 assert.match(missingOddsSvg, / CT</);
+
+assert.equal(
+  formatPlayoffSeriesLine({
+    playoff: true,
+    summary: "MIL lead series 2-0",
+    gameNumber: 2,
+    totalGames: 5,
+  }),
+  "MIL leads series 2-0 · Game 2 of 5",
+);
+assert.equal(
+  formatPlayoffSeriesLine({ playoff: false, summary: "VGK leads series 1-0" }),
+  null,
+  "regular-season series is not a playoff line",
+);
+
+const mlbPlayoff = cardFromSummary("mlb", "401908003", {
+  header: {
+    season: { year: 2026, type: 3 },
+    competitions: [
+      {
+        status: { type: { state: "post", completed: true, shortDetail: "Final" } },
+        date: "2026-10-05T00:00Z",
+        venue: { fullName: "American Family Field" },
+        notes: [{ headline: "NLDS - Game 2" }],
+        competitors: [
+          {
+            homeAway: "away",
+            score: "3",
+            record: [{ type: "total", summary: "91-71" }],
+            linescores: Array.from({ length: 9 }, (_, i) => ({ value: i === 0 || i === 4 || i === 6 ? 1 : 0 })),
+            team: { id: "25", abbreviation: "SD", displayName: "San Diego Padres", color: "2f241d", alternateColor: "ffc425" },
+          },
+          {
+            homeAway: "home",
+            score: "4",
+            record: [{ type: "total", summary: "103-59" }],
+            linescores: Array.from({ length: 9 }, (_, i) => ({ value: i === 6 || i === 8 ? (i === 8 ? 2 : 1) : 0 })),
+            team: { id: "8", abbreviation: "MIL", displayName: "Milwaukee Brewers", color: "0a2351", alternateColor: "b6922e" },
+          },
+        ],
+      },
+    ],
+  },
+  seasonseries: [
+    { type: "playoff", title: "Playoff Series", summary: "MIL leads series 2-0", totalCompetitions: 5 },
+    { type: "season", summary: "SD wins series 4-2" },
+  ],
+  boxscore: {
+    players: [
+      {
+        team: { abbreviation: "SD" },
+        statistics: [
+          {
+            type: "batting",
+            labels: ["AB", "R", "H", "RBI", "HR", "BB", "K"],
+            athletes: [
+              { starter: true, athlete: { shortName: "F. Tatis Jr.", position: { abbreviation: "RF" } }, stats: ["5", "1", "0", "0", "0", "0", "1"] },
+              { starter: true, athlete: { shortName: "M. Machado", position: { abbreviation: "3B" } }, stats: ["4", "0", "1", "1", "0", "0", "1"] },
+            ],
+          },
+          {
+            type: "pitching",
+            labels: ["IP", "H", "R", "ER", "BB", "K"],
+            athletes: [{ starter: true, athlete: { shortName: "M. King" }, stats: ["5.0", "3", "1", "1", "0", "6"] }],
+          },
+        ],
+      },
+      {
+        team: { abbreviation: "MIL" },
+        statistics: [
+          {
+            type: "batting",
+            labels: ["AB", "R", "H", "RBI", "HR", "BB", "K"],
+            athletes: [
+              { starter: true, athlete: { shortName: "J. Chourio", position: { abbreviation: "CF" } }, stats: ["4", "0", "1", "2", "0", "0", "0"] },
+            ],
+          },
+          {
+            type: "pitching",
+            labels: ["IP", "H", "R", "ER", "BB", "K"],
+            athletes: [{ starter: true, athlete: { shortName: "L. Henderson" }, stats: ["5.0", "2", "2", "1", "3", "4"] }],
+          },
+        ],
+      },
+    ],
+  },
+});
+assert.equal(mlbPlayoff.playoff, true);
+assert.match(mlbPlayoff.seriesLine ?? "", /MIL leads series 2-0/);
+assert.ok(mlbPlayoff.mlbBox?.batting.home.rows.length);
+assert.equal(mlbPlayoffFromSummary("mlb", { header: { season: { type: 3 } }, seasonseries: [{ type: "playoff", summary: "MIL leads series 2-0", totalCompetitions: 5 }] }, {}).playoff, true);
+mlbPlayoff.standings = tablesFromStandings(
+  "mlb",
+  {
+    children: [
+      {
+        name: "NL Central",
+        standings: {
+          entries: [{ team: { id: "8", abbreviation: "MIL" }, stats: [{ name: "overall", displayValue: "103-59" }] }],
+        },
+      },
+    ],
+  },
+  mlbPlayoff.away,
+  mlbPlayoff.home,
+);
+const mlbPlayoffCaption = finalCaption(mlbPlayoff);
+assert.match(mlbPlayoffCaption, /Milwaukee Brewers defeat San Diego Padres 4-3/);
+assert.match(mlbPlayoffCaption, /MIL leads series 2-0/);
+assert.doesNotMatch(mlbPlayoffCaption, /103-59|91-71|move to/);
+const mlbPlayoffSvg = renderFinalSvg(mlbPlayoff);
+assert.match(mlbPlayoffSvg, /MIL leads series 2-0/);
+assert.match(mlbPlayoffSvg, /Box score/);
+assert.match(mlbPlayoffSvg, /J\. Chourio|F\. Tatis Jr\./);
+assert.match(mlbPlayoffSvg, /L\. Henderson|M\. King/);
+assert.doesNotMatch(mlbPlayoffSvg, /Standings|NL Central/);
+assert.doesNotMatch(mlbPlayoffSvg, />103-59<|>91-71</);
+assert.match(mlbPlayoffSvg, new RegExp(`width="${FINALS_ALERT_WIDTH}"`));
+const mlbH = Number(/<svg [^>]*height="(\d+(?:\.\d+)?)"/.exec(mlbPlayoffSvg)?.[1] ?? 0);
+assert.ok(mlbH > 700 && mlbH <= FINALS_ALERT_TARGET_HEIGHT + 80, `MLB playoff card height ${mlbH}`);
+
+const stars = mapThreeStars([
+  { star: 1, playerId: 1, teamAbbrev: "VGK", name: { default: "M. Marner" }, position: "R", goals: 1, assists: 0, points: 1, headshot: "https://example.com/a.png" },
+  { star: 3, playerId: 3, teamAbbrev: "VAN", name: { default: "E. Pettersson" }, position: "C", goals: 0, assists: 1, points: 1 },
+  { star: 2, playerId: 2, teamAbbrev: "VGK", name: { default: "V. Olofsson" }, position: "L", goals: 1, assists: 0, points: 1 },
+]);
+assert.deepEqual(stars.map((s) => s.star), [1, 2, 3]);
+nhlCard.threeStars = starsFromLanding(stars);
+nhlCard.goalies = [
+  { name: "A. Hill", teamAbbrev: "VGK", line: "18/20 SV · 2 GA", photoUrl: null, photoData: null },
+  { name: "K. Lankinen", teamAbbrev: "VAN", line: "25/28 SV · 3 GA", photoUrl: null, photoData: null },
+];
+const nhlStarsSvg = renderFinalSvg(nhlCard);
+assert.match(nhlStarsSvg, /Three Stars/);
+assert.match(nhlStarsSvg, /M\. Marner/);
+assert.match(nhlStarsSvg, /Goalies/);
+assert.match(nhlStarsSvg, /A\. Hill/);
+assert.doesNotMatch(nhlStarsSvg, /Box leaders/);
+assert.doesNotMatch(nhlStarsSvg, /Win probability/);
+
+nhlCard.stats = [
+  { label: "Shots", away: "28", home: "31", awayLeads: false, homeLeads: true, awayShare: 47 },
+];
+nhlCard.away.logoData = "data:image/png;base64,aaa";
+nhlCard.home.logoData = "data:image/png;base64,bbb";
+const logoSvg = renderFinalSvg(nhlCard);
+assert.match(logoSvg, /Team stats/);
+assert.match(logoSvg, /data:image\/png;base64,aaa/);
+assert.match(logoSvg, /data:image\/png;base64,bbb/);
 
 console.log("sports-finals.test.ts ok");
