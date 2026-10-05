@@ -501,6 +501,38 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["times_national_news"]["Insert"]>;
         Relationships: [];
       };
+      times_beez: {
+        Row: {
+          id: string;
+          season: string | null;
+          division: string | null;
+          team: Json;
+          standings: Json;
+          skaters: Json;
+          goalies: Json;
+          last_game: Json | null;
+          results: Json;
+          upcoming: Json;
+          source: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          season?: string | null;
+          division?: string | null;
+          team?: Json;
+          standings?: Json;
+          skaters?: Json;
+          goalies?: Json;
+          last_game?: Json | null;
+          results?: Json;
+          upcoming?: Json;
+          source?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["times_beez"]["Insert"]>;
+        Relationships: [];
+      };
       newspaper_desk: {
         Row: {
           id: string;

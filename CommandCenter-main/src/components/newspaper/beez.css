@@ -1,0 +1,267 @@
+/* The Beez (Section A, immediately before the viewing guide): adult rec hockey. */
+.tt-beez { display: flex; flex-direction: column; gap: 14px; }
+.tt-beez-head { text-align: center; border-bottom: 3px double var(--w-rule); padding-bottom: 10px; }
+.tt-beez-kicker {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--w-red);
+}
+.tt-beez-head h2 {
+  margin: 6px 0 4px;
+  font-family: var(--w-head);
+  font-size: 36px;
+  font-weight: 900;
+  font-style: italic;
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+}
+.tt-beez-dek { margin: 0; font-family: var(--w-body); font-style: italic; font-size: 13px; color: var(--w-ink-soft); }
+.tt-beez-record {
+  display: inline-block;
+  margin: 8px 0 0;
+  padding: 3px 0;
+  border-top: 1px solid var(--w-rule);
+  border-bottom: 1px solid var(--w-rule);
+  font-family: var(--w-cond);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.tt-beez-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.8fr);
+  gap: 18px 24px;
+}
+.tt-beez-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 18px 24px;
+}
+
+.tt-beez-box,
+.tt-beez-next {
+  min-width: 0;
+}
+.tt-beez-box-link { color: inherit; text-decoration: none; }
+.tt-beez-box-link:hover .wsj-band-title { color: var(--w-red); }
+.tt-beez-box-meta {
+  margin: -4px 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+
+table.tt-beez-line {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--w-cond);
+  font-size: 15px;
+}
+table.tt-beez-line th,
+table.tt-beez-line td {
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 7px;
+  border: 0;
+  border-bottom: 1px solid var(--w-hair);
+  text-align: center;
+  vertical-align: middle;
+}
+table.tt-beez-line thead th {
+  height: 22px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  border-bottom: 1px solid var(--w-rule);
+}
+table.tt-beez-line th.team,
+table.tt-beez-line td.team { text-align: left; padding-left: 0; }
+table.tt-beez-line .per { width: 2.2em; }
+table.tt-beez-line .tot {
+  width: 2.6em;
+  border-left: 1px solid var(--w-rule);
+  font-weight: 700;
+}
+table.tt-beez-line tbody tr.me th,
+table.tt-beez-line tbody tr.me td { background: color-mix(in srgb, var(--w-navy) 7%, var(--w-paper)); }
+table.tt-beez-line tbody tr:last-child > * { border-bottom: 0; }
+
+.tt-beez-box-agate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 8px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--w-ink-soft);
+}
+
+.tt-beez-next {
+  border: 1px solid var(--w-rule);
+  outline: 1px solid var(--w-rule);
+  outline-offset: 3px;
+  padding: 10px 12px 12px;
+  background: var(--w-paper-2);
+}
+.tt-beez-next-flag {
+  margin: 2px 0 0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--w-red);
+}
+.tt-beez-next h4 {
+  margin: 2px 0 4px;
+  font-family: var(--w-head);
+  font-size: 24px;
+  line-height: 1.05;
+}
+.tt-beez-next-when {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 0;
+  font-family: var(--w-cond);
+  font-size: 16px;
+  font-weight: 700;
+}
+.tt-beez-next-when span { color: var(--w-navy); }
+.tt-beez-next-rink {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tt-beez-next-rest {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--w-hair);
+}
+.tt-beez-next-rest li {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.tt-beez-next-rest b { font-family: var(--w-cond); }
+.tt-beez-next-rest em { font-style: normal; color: var(--w-muted); font-weight: 700; }
+
+.tt-beez-standings table,
+.tt-beez-skaters table,
+.tt-beez-goalies table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--w-label);
+  font-size: 12px;
+}
+.tt-beez-standings th,
+.tt-beez-standings td,
+.tt-beez-skaters th,
+.tt-beez-skaters td,
+.tt-beez-goalies th,
+.tt-beez-goalies td {
+  padding: 4px 5px;
+  border-bottom: 1px solid var(--w-hair);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.tt-beez-standings thead th,
+.tt-beez-skaters thead th,
+.tt-beez-goalies thead th {
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+  border-bottom: 1px solid var(--w-rule);
+}
+.tt-beez-standings .name,
+.tt-beez-skaters .name,
+.tt-beez-goalies .name,
+.tt-beez-standings th.name,
+.tt-beez-skaters th.name,
+.tt-beez-goalies th.name { text-align: left; font-weight: 700; }
+.tt-beez-standings .rk { width: 1.6em; text-align: center; color: var(--w-muted); }
+.tt-beez-skaters .num,
+.tt-beez-goalies .num { width: 2em; text-align: center; color: var(--w-muted); }
+.tt-beez-standings td.pts,
+.tt-beez-skaters td.pts { font-weight: 800; }
+.tt-beez-standings tr.me,
+.tt-beez-skaters tr.josh,
+.tt-beez-goalies tr.josh {
+  background: color-mix(in srgb, var(--w-navy) 8%, var(--w-paper));
+}
+.tt-beez-skaters tr.josh th,
+.tt-beez-goalies tr.josh th { box-shadow: inset 3px 0 0 var(--w-red); }
+
+.tt-beez-goalies { margin-top: 14px; }
+
+.tt-beez-results ol { list-style: none; margin: 0; padding: 0; }
+.tt-beez-results li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 2px 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--w-hair);
+  font-size: 13px;
+}
+.tt-beez-results li b {
+  font-family: var(--w-cond);
+  font-size: 15px;
+}
+.tt-beez-results li b.w { color: var(--w-up, #1c7c43); }
+.tt-beez-results li b.l { color: var(--w-red); }
+.tt-beez-results li em {
+  grid-column: 2;
+  font-style: italic;
+  font-size: 11px;
+  color: var(--w-muted);
+}
+
+.tt-beez-empty {
+  text-align: center;
+  padding: 36px 12px 28px;
+  border-top: 1px solid var(--w-rule);
+  border-bottom: 1px solid var(--w-rule);
+}
+.tt-beez-orn { margin: 0 0 8px; font-size: 22px; color: var(--w-muted); }
+.tt-beez-empty h3 {
+  margin: 0 0 6px;
+  font-family: var(--w-head);
+  font-size: 26px;
+  font-style: italic;
+}
+.tt-beez-empty p,
+.tt-beez-empty-line {
+  margin: 0;
+  font-family: var(--w-body);
+  font-style: italic;
+  color: var(--w-ink-soft);
+}
+.tt-beez-empty-line { padding: 8px 0; }
+
+.tt-beez-credit {
+  margin: 4px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--w-hair);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
