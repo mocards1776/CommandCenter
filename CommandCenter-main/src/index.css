@@ -8109,6 +8109,14 @@ li.counting .tt-count.card {
 }
 
 /* ── Telegram phone cards (screenshot runner only; not the printed paper) ─ */
+html:has([data-phone-card="watch"]),
+body:has([data-phone-card="watch"]),
+#root:has([data-phone-card="watch"]) {
+  min-height: 0;
+  height: auto;
+  background: #fbfaf6;
+}
+
 .tt-phone-page {
   --w-paper: #fbfaf6;
   --w-paper-2: #f2efe6;
@@ -8667,18 +8675,32 @@ li.counting .tt-count.card {
   color: var(--w-muted);
 }
 
-.tt-phone-watch .tt-phone-feature {
-  margin: 12px 0 14px;
+.tt-phone-card.tt-phone-watch {
+  min-height: 0;
+  padding: 14px 16px 12px;
 }
-.tt-phone-flag {
+.tt-phone-watch .tt-phone-mast {
+  padding-bottom: 8px;
+}
+.tt-phone-watch .tt-phone-mast h1 {
+  margin: 4px 0 2px;
+  font-size: 28px;
+}
+.tt-phone-watch .tt-phone-dek {
+  font-size: 13px;
+}
+.tt-phone-watch .tt-phone-flag {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   margin: 0 0 8px;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+.tt-phone-watch .tt-phone-flag .tt-phone-chip {
+  margin-left: auto;
 }
 .tt-phone-chip {
   display: inline-block;
@@ -8689,95 +8711,135 @@ li.counting .tt-count.card {
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
-.tt-phone-banner {
+.tt-phone-heat {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--w-muted);
+}
+.tt-phone-lead {
+  position: relative;
+  margin: 10px 0 8px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--w-rule);
+  overflow: hidden;
+}
+.tt-phone-lead::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 8% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 16%, transparent), transparent 56%),
+    radial-gradient(ellipse at 92% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 16%, transparent), transparent 56%);
+  pointer-events: none;
+}
+.tt-phone-lead-match {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px;
-  background: var(--w-rule);
-  border: 2px solid var(--w-rule);
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
 }
-.tt-phone-banner-side {
+.tt-phone-lead-team {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 12px 8px 14px;
-  color: var(--tt-on, #fff);
-  background: linear-gradient(160deg, var(--tt-team, #1f2a44) 0%, color-mix(in srgb, var(--tt-team, #1f2a44) 62%, black) 100%);
-  text-align: center;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
 }
-.tt-phone-banner-side strong {
+.tt-phone-lead-team.home {
+  align-items: flex-end;
+  text-align: right;
+}
+.tt-phone-lead-team strong {
   font-family: var(--w-cond);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
   line-height: 1.1;
 }
-.tt-phone-banner-side em {
+.tt-phone-lead-team em {
   font-style: normal;
   font-size: 11px;
   font-weight: 700;
-  opacity: 0.85;
+  color: var(--w-ink-soft);
 }
-.tt-phone-banner-side b {
+.tt-phone-lead-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.tt-phone-mid-clock {
+  margin: 0;
   font-family: var(--w-cond);
-  font-size: 36px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.tt-phone-mid {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.tt-phone-mid b {
+  font-family: var(--w-cond);
+  font-size: 28px;
   font-weight: 700;
   line-height: 0.9;
+  font-variant-numeric: tabular-nums;
 }
-.tt-phone-state {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  transform: translate(-50%, -50%);
-  padding: 2px 10px;
-  background: var(--w-rule);
-  color: #fff;
-  font-family: var(--w-cond);
-  font-size: 12px;
-  font-weight: 700;
+.tt-phone-mid span {
+  font-size: 10px;
+  font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  color: var(--w-ink-soft);
 }
-.tt-phone-state.live {
-  background: var(--w-red);
+.tt-phone-mid.live span {
+  color: var(--w-red);
+}
+.tt-phone-lead-tv {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .tt-phone-crest {
   display: inline-block;
   object-fit: contain;
   flex: none;
-  background: #fff;
-  border-radius: 50%;
-  padding: 3px;
 }
 .tt-phone-crest.lg {
-  width: 48px;
-  height: 48px;
+  width: 42px;
+  height: 42px;
 }
 .tt-phone-crest.sm {
   width: 22px;
   height: 22px;
-  padding: 2px;
 }
 .tt-phone-crest.blank {
   display: inline-grid;
   place-items: center;
   border: 1px solid var(--w-hair);
+  border-radius: 50%;
   font-size: 9px;
   font-weight: 800;
   color: var(--w-muted);
+  background: #fff;
 }
 .tt-phone-crest.lg.blank {
   font-size: 13px;
 }
 .tt-phone-meta {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 4px 12px;
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -8785,83 +8847,63 @@ li.counting .tt-count.card {
   color: var(--w-ink-soft);
 }
 .tt-phone-feature-why {
-  margin: 8px 0 0;
+  position: relative;
+  margin: 6px 0 0;
   text-align: center;
   font-family: var(--w-body);
   font-style: italic;
   font-size: 14px;
 }
+.tt-phone-watch .tt-phone-game-starters {
+  position: relative;
+  margin: 4px 0 0;
+  text-align: center;
+  font-family: var(--w-cond);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--w-ink-soft);
+}
 .tt-phone-listings ol {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
 }
-.tt-phone-game {
-  border: 1px solid var(--w-rule);
-}
-.tt-phone-game.must {
-  outline: 1px solid var(--w-rule);
-  outline-offset: 2px;
-}
-.tt-phone-game-banner {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-.tt-phone-game-side {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 7px 8px;
-  color: var(--tt-on, #fff);
-  background: linear-gradient(160deg, var(--tt-team, #1f2a44) 0%, color-mix(in srgb, var(--tt-team, #1f2a44) 70%, black) 100%);
-}
-.tt-phone-game-side.home {
-  flex-direction: row-reverse;
-  text-align: right;
-}
-.tt-phone-game-side span {
-  min-width: 0;
+.tt-phone-row {
+  position: relative;
   display: flex;
   flex-direction: column;
-  line-height: 1.1;
-}
-.tt-phone-game-side strong {
-  font-family: var(--w-cond);
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  white-space: nowrap;
+  gap: 4px;
+  padding: 8px 0 7px;
+  border-bottom: 1px solid var(--w-hair);
   overflow: hidden;
-  text-overflow: ellipsis;
 }
-.tt-phone-game-side em {
-  font-style: normal;
-  font-size: 10px;
-  font-weight: 700;
-  opacity: 0.8;
+.tt-phone-row::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 6% 50%, color-mix(in srgb, var(--tt-away, #1f2a44) 11%, transparent), transparent 50%),
+    radial-gradient(ellipse at 94% 50%, color-mix(in srgb, var(--tt-home, #1f2a44) 11%, transparent), transparent 50%);
+  pointer-events: none;
 }
-.tt-phone-game-side b {
-  font-family: var(--w-cond);
-  font-size: 20px;
-  line-height: 1;
-  margin-left: auto;
+.tt-phone-row.must {
+  box-shadow: inset 3px 0 0 var(--w-rule);
+  padding-left: 8px;
 }
-.tt-phone-game-side.home b {
-  margin-left: 0;
-  margin-right: auto;
-}
-.tt-phone-game-meta {
+.tt-phone-row-top {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 6px 8px 0;
+  gap: 7px;
+}
+.tt-phone-row-top time {
   font-family: var(--w-cond);
   font-size: 12px;
   font-weight: 700;
 }
-.tt-phone-game-meta time.live {
+.tt-phone-row-top time.live {
   color: var(--w-red);
 }
 .tt-phone-net {
@@ -8872,21 +8914,47 @@ li.counting .tt-count.card {
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
-.tt-phone-game-why,
-.tt-phone-game-starters {
+.tt-phone-row-side {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.tt-phone-row-side span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  flex: 1;
+}
+.tt-phone-row-side strong {
+  font-family: var(--w-cond);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tt-phone-row-side em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--w-muted);
+}
+.tt-phone-row-side b {
+  font-family: var(--w-cond);
+  font-size: 18px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.tt-phone-row-why {
+  position: relative;
   margin: 0;
-  padding: 2px 8px 7px;
   font-family: var(--w-body);
   font-size: 12px;
   color: var(--w-ink-soft);
-}
-.tt-phone-game-starters {
-  font-family: var(--w-cond);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding-top: 0;
 }
 .tt-phone-legend {
   margin: 12px 0 0;

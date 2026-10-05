@@ -1,17 +1,15 @@
 import type { CSSProperties } from "react";
 import {
   composeWatchPage,
-  printClock,
-  printNetworks,
   watchClockState,
   watchContext,
+  watchFeatureCopy,
   watchLeagueColor,
   watchLeagueLabel,
   watchLogo,
   watchStarters,
   watchTeamColor,
   watchTeamShort,
-  watchTint,
   type WatchGame,
   type WatchListing,
   type WatchSide,
@@ -30,50 +28,34 @@ function teamTitle(side: WatchSide): string {
   return side.rank ? `No. ${side.rank} ${watchTeamShort(side)}` : watchTeamShort(side);
 }
 
-function BannerSide({
-  side,
-  league,
-  align,
-  showScore,
-}: {
-  side: WatchSide;
-  league: WatchGame["league"];
-  align: "away" | "home";
-  showScore: boolean;
-}) {
+function washStyle(game: WatchListing): CSSProperties {
+  return {
+    ["--tt-away"]: watchTeamColor(game.away, game.league),
+    ["--tt-home"]: watchTeamColor(game.home, game.league),
+  } as CSSProperties;
+}
+
+function ScoreMid({ game }: { game: WatchListing }) {
+  const clock = watchClockState(game);
+  if (clock.kind === "pre") {
+    return <p className="tt-phone-mid-clock">{game.clock}</p>;
+  }
   return (
-    <div className={`tt-phone-banner-side ${align}`} style={watchTint(watchTeamColor(side, league)) as CSSProperties}>
-      <Crest side={side} league={league} size="lg" />
-      <strong>{teamTitle(side)}</strong>
-      {side.record ? <em>{side.record}</em> : null}
-      {showScore ? <b>{side.score ?? "–"}</b> : null}
+    <div className={`tt-phone-mid ${clock.kind}`}>
+      <b>{game.away.score ?? "–"}</b>
+      <span>{clock.label}</span>
+      <b>{game.home.score ?? "–"}</b>
     </div>
   );
 }
 
-function PhoneCard({ game }: { game: WatchListing }) {
+function PhoneRow({ game }: { game: WatchListing }) {
   const clock = watchClockState(game);
   const showScore = clock.kind !== "pre";
-  const nets = game.networks.length ? game.networks : printNetworks(game.tv);
-  const starters = watchStarters(game);
+  const nets = game.networks;
   return (
-    <li className={`tt-phone-game ${game.tier}`} data-state={clock.kind}>
-      <div className="tt-phone-game-banner">
-        {(["away", "home"] as const).map((align) => {
-          const side = game[align];
-          return (
-            <div key={align} className={`tt-phone-game-side ${align}`} style={watchTint(watchTeamColor(side, game.league)) as CSSProperties}>
-              <Crest side={side} league={game.league} size="sm" />
-              <span>
-                <strong>{teamTitle(side)}</strong>
-                {side.record ? <em>{side.record}</em> : null}
-              </span>
-              {showScore ? <b>{side.score ?? "–"}</b> : null}
-            </div>
-          );
-        })}
-      </div>
-      <p className="tt-phone-game-meta">
+    <li className={`tt-phone-row ${game.tier}`} data-state={clock.kind} style={washStyle(game)}>
+      <div className="tt-phone-row-top">
         <span className="tt-phone-chip" style={{ background: watchLeagueColor(game.league) }}>
           {watchLeagueLabel(game)}
         </span>
@@ -81,22 +63,35 @@ function PhoneCard({ game }: { game: WatchListing }) {
           {clock.kind === "pre" ? game.clock : clock.label}
         </time>
         {nets[0] ? <span className="tt-phone-net">{nets.map((n) => n.name).join(" · ")}</span> : null}
-      </p>
-      <p className="tt-phone-game-why">{watchContext(game)}</p>
-      {starters ? <p className="tt-phone-game-starters">{starters}</p> : null}
+        <span className="tt-phone-heat">Heat {Math.round(game.heat)}</span>
+      </div>
+      {(["away", "home"] as const).map((align) => {
+        const side = game[align];
+        return (
+          <div key={align} className="tt-phone-row-side">
+            <Crest side={side} league={game.league} size="sm" />
+            <span>
+              <strong>{teamTitle(side)}</strong>
+              {side.record ? <em>{side.record}</em> : null}
+            </span>
+            {showScore ? <b>{side.score ?? "–"}</b> : null}
+          </div>
+        );
+      })}
+      <p className="tt-phone-row-why">{watchContext(game)}</p>
     </li>
   );
 }
 
-/** Portrait iPhone watch card. Same recap language as the paper's viewing guide. */
+/** Portrait iPhone watch card. RUWT logos and heat, newsprint ink, no empty band. */
 export function PhoneWatchCard({ games, editionLabel }: { games: WatchGame[]; editionLabel: string }) {
   const page = composeWatchPage(games);
   const feature = page.feature;
   if (!feature) return null;
   const clock = watchClockState(feature);
-  const showScore = clock.kind !== "pre";
   const rest = page.slots.flatMap((s) => s.listings);
   const starters = watchStarters(feature);
+  const { series, why } = watchFeatureCopy(feature);
 
   return (
     <article className="tt-phone-card tt-phone-watch" aria-label="Best Games to Watch Today">
@@ -106,25 +101,40 @@ export function PhoneWatchCard({ games, editionLabel }: { games: WatchGame[]; ed
         <p className="tt-phone-dek">Ranked by RUWT — stakes, closeness, and the clubs you care about.</p>
       </header>
 
-      <section className="tt-phone-feature" aria-label="Game of the day">
+      <section className="tt-phone-lead" aria-label="Game of the day" style={washStyle(feature)}>
         <p className="tt-phone-flag">
           Game of the Day
           <span className="tt-phone-chip" style={{ background: watchLeagueColor(feature.league) }}>
             {watchLeagueLabel(feature)}
           </span>
+          <span className="tt-phone-heat">Heat {Math.round(feature.heat)}</span>
         </p>
-        <div className="tt-phone-banner">
-          <BannerSide side={feature.away} league={feature.league} align="away" showScore={showScore} />
-          <BannerSide side={feature.home} league={feature.league} align="home" showScore={showScore} />
-          <span className={`tt-phone-state ${clock.kind}`}>
-            {clock.kind === "pre" ? printClock(feature.when) : clock.label}
-          </span>
+        <div className="tt-phone-lead-match">
+          <div className="tt-phone-lead-team away">
+            <Crest side={feature.away} league={feature.league} size="lg" />
+            <strong>{teamTitle(feature.away)}</strong>
+            {feature.away.record ? <em>{feature.away.record}</em> : null}
+          </div>
+          <div className="tt-phone-lead-mid">
+            <ScoreMid game={feature} />
+            {clock.kind === "pre" && feature.networks.length ? (
+              <span className="tt-phone-lead-tv">{feature.networks.map((n) => n.name).join(" · ")}</span>
+            ) : null}
+          </div>
+          <div className="tt-phone-lead-team home">
+            <Crest side={feature.home} league={feature.league} size="lg" />
+            <strong>{teamTitle(feature.home)}</strong>
+            {feature.home.record ? <em>{feature.home.record}</em> : null}
+          </div>
         </div>
         <p className="tt-phone-meta">
-          {feature.networks.length ? <span>{feature.networks.map((n) => n.name).join(" · ")}</span> : null}
+          {clock.kind !== "pre" && feature.networks.length ? (
+            <span>{feature.networks.map((n) => n.name).join(" · ")}</span>
+          ) : null}
           {feature.venue ? <span>{feature.venue}</span> : null}
+          {series ? <span>{series}</span> : null}
         </p>
-        <p className="tt-phone-feature-why">{watchContext(feature)}</p>
+        {why ? <p className="tt-phone-feature-why">{why}</p> : null}
         {starters ? <p className="tt-phone-game-starters">{starters}</p> : null}
       </section>
 
@@ -133,7 +143,7 @@ export function PhoneWatchCard({ games, editionLabel }: { games: WatchGame[]; ed
           <h2>Also on</h2>
           <ol>
             {rest.map((game) => (
-              <PhoneCard key={game.id} game={game} />
+              <PhoneRow key={game.id} game={game} />
             ))}
           </ol>
         </section>

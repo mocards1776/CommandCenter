@@ -18,6 +18,7 @@ import {
   watchContext,
   watchDensityOf,
   watchFavoriteLabel,
+  watchFeatureCopy,
   watchSeriesDisplay,
   watchSlotBucket,
   watchLeagueColor,
@@ -180,6 +181,12 @@ assert(watchTeamShort({ name: "Toronto Maple Leafs", abbrev: "TOR", logo: null, 
 assert(watchTeamShort({ name: "Long Name", short: "Short", abbrev: "X", logo: null, record: null }) === "Short", "stored short wins");
 
 assert(watchContext(game({ id: "c1", heat: 5, league: "NBA", preseason: true, reasons: [] })) === "Preseason", "preseason context");
+const heroSeries = watchFeatureCopy(game({ id: "dup", heat: 90, reasons: [], series: "TB leads 1-0 · Game 2 of 5" }));
+assert(heroSeries.series === "TB leads 1-0 · Game 2 of 5" && heroSeries.why == null, "Game of the Day prints the series once");
+const heroWhy = watchFeatureCopy(
+  game({ id: "mnf", heat: 80, league: "NFL", reasons: ["Monday Night Football"], printReason: "Monday Night Football" }),
+);
+assert(heroWhy.series == null && heroWhy.why === "Monday Night Football", "a distinct why-watch still prints under the hero");
 assert(watchContext(game({ id: "c2", heat: 5, reasons: [], competition: "Premier League", league: "Soccer" })) === "Premier League", "soccer competition");
 assert(watchClockState(game({ id: "live", heat: 5, live: true, status: "Bot 5th" })).kind === "live", "live state");
 assert(watchClockState(game({ id: "fin", heat: 5, final: true, status: "Final" })).kind === "final", "final state");

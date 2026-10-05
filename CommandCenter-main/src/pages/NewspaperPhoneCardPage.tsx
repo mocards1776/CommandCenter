@@ -14,7 +14,7 @@ import {
   type PhoneCardKind,
 } from "@/lib/newspaper-phone-cards";
 import { fetchMarshfieldWeather } from "@/lib/newspaper-weather";
-import { fetchWatchList } from "@/lib/newspaper-watch";
+import { fetchWatchList, WATCH_PAGE_GAMES } from "@/lib/newspaper-watch";
 
 /**
  * Dedicated render route for the Times Telegram screenshot runner.
@@ -59,7 +59,7 @@ export default function NewspaperPhoneCardPage() {
   const watchQ = useQuery({
     queryKey: ["tt-phone-watch", date, sample],
     queryFn: async () => {
-      const live = await fetchWatchList(date);
+      const live = await fetchWatchList(date, { limit: WATCH_PAGE_GAMES });
       if (live.length) return live;
       return sample ? sampleWatchGames() : [];
     },
