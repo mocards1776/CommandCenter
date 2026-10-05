@@ -3414,7 +3414,6 @@ function CoachesDesk({ tiles }: { tiles: FavoriteCoachTile[] }) {
                     "Record not posted"}
                 </span>
               </span>
-              {tile.teamLogo ? <img className="tt-coach-crest" src={tile.teamLogo} alt="" /> : null}
             </header>
             {last ? (
               <p className={cn("tt-coach-last", tile.lastGame?.result === "W" && "w", tile.lastGame?.result === "L" && "l")}>

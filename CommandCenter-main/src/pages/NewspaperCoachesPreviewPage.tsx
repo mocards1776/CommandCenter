@@ -88,7 +88,6 @@ function CoachesPreview({ tiles }: { tiles: FavoriteCoachTile[] }) {
                     "Record not posted"}
                 </span>
               </span>
-              {tile.teamLogo ? <img className="tt-coach-crest" src={tile.teamLogo} alt="" /> : null}
             </header>
             {lastBits ? (
               <p className={`tt-coach-last${last?.result === "W" ? " w" : last?.result === "L" ? " l" : ""}`}>

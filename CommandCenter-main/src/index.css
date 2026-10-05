@@ -8310,12 +8310,6 @@ li.counting .tt-count.card {
   font-weight: 700;
   color: var(--w-red);
 }
-.tt-coach-crest {
-  width: 36px;
-  height: 36px;
-  object-fit: contain;
-  flex: none;
-}
 .tt-coach-last,
 .tt-coach-next,
 .tt-coach-stat {
