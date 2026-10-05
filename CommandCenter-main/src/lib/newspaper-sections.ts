@@ -119,7 +119,7 @@ export type FavoritesContinuePage = PageBase & {
   jumps: { card: GameWrapCard; rest: string }[];
 };
 
-/** The viewing guide: today's best games to watch, by RUWT. Last page of Section A, every edition. */
+/** The viewing guide: today's games as a Central-time timetable. Last page of Section A, every edition. */
 export type FavoritesWatchPage = PageBase & {
   kind: "favorites-watch";
 };
