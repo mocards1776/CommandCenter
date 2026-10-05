@@ -8,6 +8,31 @@
 import { parseEspnBroadcasts, type GameBroadcast } from "./game-broadcasts.ts";
 import { newspaperEspnGet } from "./newspaper-espn.ts";
 import { seriesLineFromEspn } from "./playoff-series.ts";
+
+const SERIES_NOTE =
+  /\b(ALDS|NLDS|ALCS|NLCS|World Series|Wild Card(?: Series)?|Stanley Cup|NBA Finals|WNBA Finals|First Round|Conference Finals?|Round \d+)\b/i;
+
+/** Times page copy. Regular-season ESPN series objects stay blank. */
+export function watchSeriesFromEspn(
+  comp: { series?: { type?: string | null; summary?: string | null; totalCompetitions?: number | null }; notes?: { headline?: string | null }[] } | null | undefined,
+): string | null {
+  if (!comp?.series || comp.series.type !== "playoff") return null;
+  const base = seriesLineFromEspn(comp);
+  const note = (comp.notes ?? []).map((n) => n.headline).find((h) => h?.trim())?.trim() ?? "";
+  const rawTag = note.match(SERIES_NOTE)?.[0];
+  if (rawTag && base) {
+    if (new RegExp(`\\b${rawTag.replace(/\s+/g, "\\s+")}\\b`, "i").test(base)) return base;
+    if (/^Game \d+( of \d+)?$/i.test(base)) return `${rawTag} ${base}`;
+    const lead = base
+      .replace(/\s*·\s*Game \d+( of \d+)?/i, "")
+      .replace(/\bleads series\b/i, "leads")
+      .replace(/\s+/g, " ")
+      .trim();
+    return lead ? `${rawTag} · ${lead}` : rawTag;
+  }
+  if (rawTag) return note.replace(/\s*[-–—]\s*/g, " ").replace(/\s+/g, " ").trim();
+  return base;
+}
 import type { CfbScoreGame, CfbScoreSide } from "./cfb.ts";
 import type { NflScoreGame, NflScoreSide } from "./nfl.ts";
 import type { NhlScoreGame, NhlScoreSide } from "./nhl.ts";
@@ -22,6 +47,8 @@ export type WatchSoccerSide = {
   logo: string | null;
   score: string | null;
   record: string | null;
+  short: string | null;
+  color: string | null;
 };
 
 export type WatchSoccerGame = {
@@ -60,6 +87,9 @@ export type WatchBasketSide = {
   abbrev: string;
   record: string | null;
   logo: string | null;
+  short: string | null;
+  color: string | null;
+  score: number | null;
 };
 
 export type WatchBasketGame = {
@@ -75,6 +105,7 @@ export type WatchBasketGame = {
   seriesLine: string | null;
   preseason: boolean;
   postseason: boolean;
+  line?: string | null;
   away: WatchBasketSide;
   home: WatchBasketSide;
 };
@@ -91,6 +122,10 @@ export type EspnWatchCompetitor = {
   score?: unknown;
   curatedRank?: { current?: number };
   records?: { type?: string; name?: string; summary?: string; displayValue?: string }[];
+  probables?: {
+    athlete?: { displayName?: string; shortName?: string };
+    statistics?: { abbreviation?: string; displayValue?: string }[];
+  }[];
   team?: {
     id?: string;
     displayName?: string;
@@ -171,6 +206,32 @@ function overallRecord(c: EspnWatchCompetitor): string | null {
   return summary?.trim() || null;
 }
 
+function teamShort(team: EspnWatchCompetitor["team"], fallback: string): string {
+  return team?.shortDisplayName?.trim() || fallback;
+}
+
+function teamColorOf(team: EspnWatchCompetitor["team"]): string | null {
+  const c = team?.color?.replace(/^#/, "").trim();
+  return c && /^[0-9a-f]{6}$/i.test(c) ? c : null;
+}
+
+export function starterOf(c: EspnWatchCompetitor): { name: string; line: string | null } | null {
+  const p = c.probables?.[0];
+  const name = p?.athlete?.shortName || p?.athlete?.displayName || "";
+  if (!name) return null;
+  const stats = (p?.statistics ?? [])
+    .filter((s) => /^(W|L|ERA|GAA|SV%|SVPCT)$/i.test(s.abbreviation ?? ""))
+    .map((s) => `${s.displayValue} ${s.abbreviation}`)
+    .join(", ");
+  return { name, line: stats || null };
+}
+
+export function oddsLineOf(event: EspnWatchEvent): string | null {
+  const row = event.competitions?.[0]?.odds?.[0];
+  const details = row?.details?.trim();
+  return details || null;
+}
+
 function cfbPollRank(raw: number | null | undefined): number | null {
   if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
   if (raw < 1 || raw > 25) return null;
@@ -216,7 +277,8 @@ function sidesOf(event: EspnWatchEvent): { away: EspnWatchCompetitor; home: Espn
 function nflSide(c: EspnWatchCompetitor): NflScoreSide {
   const team = c.team ?? {};
   const abbrev = team.abbreviation ?? "—";
-  return {
+  const starter = starterOf(c);
+  const base: NflScoreSide = {
     teamId: Number(team.id) || 0,
     name: team.displayName ?? team.shortDisplayName ?? abbrev,
     abbrev,
@@ -226,12 +288,18 @@ function nflSide(c: EspnWatchCompetitor): NflScoreSide {
     color: (team.color ?? "555555").replace(/^#/, ""),
     linescores: [],
   };
+  return Object.assign(base, {
+    short: teamShort(team, abbrev),
+    starter: starter?.name ?? null,
+    starterLine: starter?.line ?? null,
+  });
 }
 
 function nhlSide(c: EspnWatchCompetitor): NhlScoreSide {
   const team = c.team ?? {};
   const abbrev = team.abbreviation ?? "—";
-  return {
+  const starter = starterOf(c);
+  const base: NhlScoreSide = {
     teamId: Number(team.id) || 0,
     name: team.displayName ?? "Team",
     abbrev,
@@ -241,13 +309,18 @@ function nhlSide(c: EspnWatchCompetitor): NhlScoreSide {
     color: (team.color ?? "002f87").replace(/^#/, ""),
     linescores: [],
   };
+  return Object.assign(base, {
+    short: teamShort(team, abbrev),
+    starter: starter?.name ?? null,
+    starterLine: starter?.line ?? null,
+  });
 }
 
 function cfbSide(c: EspnWatchCompetitor): CfbScoreSide {
   const team = c.team ?? {};
   const abbrev = team.abbreviation ?? "—";
   const teamId = Number(team.id) || 0;
-  return {
+  const base: CfbScoreSide = {
     teamId,
     name: team.displayName ?? team.shortDisplayName ?? abbrev,
     abbrev,
@@ -259,6 +332,7 @@ function cfbSide(c: EspnWatchCompetitor): CfbScoreSide {
     fpiRank: null,
     linescores: [],
   };
+  return Object.assign(base, { short: teamShort(team, team.displayName ?? abbrev) });
 }
 
 function soccerSide(c: EspnWatchCompetitor): WatchSoccerSide {
@@ -270,6 +344,8 @@ function soccerSide(c: EspnWatchCompetitor): WatchSoccerSide {
     logo: teamLogo("soccer", team, team.id),
     score: c.score != null ? String(c.score) : null,
     record: overallRecord(c),
+    short: teamShort(team, team.displayName ?? team.abbreviation ?? "Team"),
+    color: teamColorOf(team),
   };
 }
 
@@ -282,6 +358,9 @@ function basketSide(c: EspnWatchCompetitor, sport: "nba" | "wnba"): WatchBasketS
     abbrev,
     record: overallRecord(c),
     logo: teamLogo(sport, team, team.id),
+    short: teamShort(team, abbrev),
+    color: teamColorOf(team),
+    score: parseScore(c.score),
   };
 }
 
@@ -315,7 +394,7 @@ export function mapWatchNflGame(event: EspnWatchEvent): NflScoreGame | null {
   if (!comp || !pair) return null;
   const st = statusOf(event);
   const iso = event.date ?? comp.date ?? null;
-  return {
+  const mapped: NflScoreGame = {
     id: String(event.id ?? comp.id ?? ""),
     status: st.description,
     shortDetail: st.shortDetail,
@@ -331,8 +410,9 @@ export function mapWatchNflGame(event: EspnWatchEvent): NflScoreGame | null {
     date: chicagoDateFromIso(iso),
     startIso: iso,
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
-    seriesLine: seriesLineFromEspn(comp),
+    seriesLine: watchSeriesFromEspn(comp),
   };
+  return Object.assign(mapped, { line: oddsLineOf(event) });
 }
 
 export function mapWatchNhlGame(event: EspnWatchEvent): NhlScoreGame | null {
@@ -341,7 +421,7 @@ export function mapWatchNhlGame(event: EspnWatchEvent): NhlScoreGame | null {
   if (!comp || !pair) return null;
   const st = statusOf(event);
   const iso = event.date ?? comp.date ?? null;
-  return {
+  const mapped: NhlScoreGame = {
     id: String(event.id ?? comp.id ?? ""),
     status: st.description,
     shortDetail: st.shortDetail,
@@ -355,8 +435,9 @@ export function mapWatchNhlGame(event: EspnWatchEvent): NhlScoreGame | null {
     date: chicagoDateFromIso(iso),
     startIso: iso,
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
-    seriesLine: seriesLineFromEspn(comp),
+    seriesLine: watchSeriesFromEspn(comp),
   };
+  return Object.assign(mapped, { line: oddsLineOf(event) });
 }
 
 export function mapWatchCfbGame(event: EspnWatchEvent): CfbScoreGame | null {
@@ -432,9 +513,10 @@ export function mapWatchBasketGame(event: EspnWatchEvent, sport: "nba" | "wnba")
     final: st.final,
     venue: comp.venue?.fullName ?? null,
     broadcasts: parseEspnBroadcasts(comp.geoBroadcasts, comp.broadcasts),
-    seriesLine: seriesLineFromEspn(comp),
+    seriesLine: watchSeriesFromEspn(comp),
     preseason: seasonType === 1,
     postseason: seasonType === 3,
+    line: oddsLineOf(event),
     away: basketSide(pair.away, sport),
     home: basketSide(pair.home, sport),
   };

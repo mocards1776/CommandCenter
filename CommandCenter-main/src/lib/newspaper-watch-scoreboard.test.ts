@@ -11,6 +11,7 @@ import {
   mapWatchSoccerGame,
   rankWatchSoccerGames,
   scoreWatchBasket,
+  watchSeriesFromEspn,
   WATCH_BASKET_HEAT,
   wnbaInSeason,
   type EspnWatchEvent,
@@ -77,6 +78,22 @@ const nhl = mapWatchNhlGame(nhlEvent);
 assert(nhl?.away.abbrev === "CHI" && nhl.home.abbrev === "SEA", "NHL sides");
 assert(nhl?.date === "2026-10-05", "NHL Chicago date");
 assert(nhl?.seriesLine && /leads/i.test(nhl.seriesLine), "playoff series line");
+assert(/Round 1/i.test(nhl!.seriesLine!), "playoff note names the round");
+assert(
+  watchSeriesFromEspn({ series: { type: "regular", summary: "Season series tied 1-1" }, notes: [{ headline: "Game 2" }] }) === null,
+  "regular-season series stays off the page",
+);
+assert(
+  watchSeriesFromEspn({
+    series: { type: "playoff", summary: "CLE leads series 1-0", totalCompetitions: 5 },
+    notes: [{ headline: "ALDS - Game 2" }],
+  }) === "ALDS · CLE leads 1-0",
+  "ALDS plus the lead",
+);
+assert(
+  watchSeriesFromEspn({ series: { type: "playoff", summary: "" }, notes: [{ headline: "ALDS - Game 1" }] }) === "ALDS Game 1",
+  "ALDS Game 1 when ESPN has no lead yet",
+);
 
 const cfbEvent: EspnWatchEvent = {
   id: "401752001",
@@ -160,5 +177,58 @@ assert(wnbaInSeason("2026-05-15"), "May is WNBA season");
 assert(!wnbaInSeason("2026-01-12"), "January is not WNBA season");
 
 assert(mapWatchNflGame({ id: "x" }) == null, "an event without competitors is dropped");
+
+const pitched: EspnWatchEvent = {
+  ...mnf,
+  competitions: [
+    {
+      ...mnf.competitions![0]!,
+      odds: [{ details: "ATL -3.5", spread: -3.5 }],
+      competitors: [
+        {
+          ...mnf.competitions![0]!.competitors![0]!,
+          team: {
+            ...mnf.competitions![0]!.competitors![0]!.team,
+            shortDisplayName: "Falcons",
+            color: "a71930",
+          },
+        },
+        {
+          ...mnf.competitions![0]!.competitors![1]!,
+          team: {
+            ...mnf.competitions![0]!.competitors![1]!.team,
+            shortDisplayName: "Saints",
+            color: "d3bc8d",
+          },
+          probables: [{ athlete: { shortName: "S. Rattler" } }],
+        },
+      ],
+    },
+  ],
+};
+const nflBits = mapWatchNflGame(pitched) as ReturnType<typeof mapWatchNflGame> & { line?: string | null };
+assert((nflBits!.away as { short?: string }).short === "Falcons", "ESPN short name is kept");
+assert(nflBits!.away.color === "a71930", "team color is kept");
+assert((nflBits!.home as { starter?: string }).starter === "S. Rattler", "probable from ESPN");
+assert(nflBits!.line === "ATL -3.5", "spread line is kept");
+
+const nhlBits = mapWatchNhlGame({
+  ...nhlEvent,
+  competitions: [
+    {
+      ...nhlEvent.competitions![0]!,
+      competitors: [
+        {
+          ...nhlEvent.competitions![0]!.competitors![0]!,
+          team: { ...nhlEvent.competitions![0]!.competitors![0]!.team, shortDisplayName: "Blackhawks", color: "ce1126" },
+          probables: [{ athlete: { displayName: "Spencer Knight" }, statistics: [{ abbreviation: "GAA", displayValue: "2.10" }] }],
+        },
+        nhlEvent.competitions![0]!.competitors![1]!,
+      ],
+    },
+  ],
+});
+assert((nhlBits!.away as { short?: string }).short === "Blackhawks", "NHL short name");
+assert((nhlBits!.away as { starter?: string }).starter === "Spencer Knight", "NHL starting goalie");
 
 console.log("newspaper-watch-scoreboard ok");
