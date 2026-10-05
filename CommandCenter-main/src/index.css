@@ -5080,44 +5080,67 @@ li.counting .tt-count.card {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 12px 14px 12px;
   background: var(--w-card);
   box-shadow: inset 0 3px 0 var(--w-navy), 0 0 0 1px var(--w-hair);
 }
 .tt-matchup.live {
   box-shadow: inset 0 3px 0 var(--w-red), 0 0 0 1px var(--w-hair);
 }
+.tt-matchup-series {
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--w-navy);
+  color: var(--w-paper);
+  font-family: var(--w-label);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+}
 .tt-matchup > header b {
   font-family: var(--w-cond);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.04em;
 }
 .tt-matchup-teams {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 28px 1fr;
+  align-items: center;
   gap: 8px;
 }
 .tt-matchup-side {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 8px 4px 6px;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 6px 8px;
   text-align: center;
   background: color-mix(in srgb, var(--tt-side, #888) 9%, transparent);
   border-bottom: 3px solid var(--tt-side, var(--w-hair));
 }
+.tt-matchup-who {
+  min-width: 0;
+  width: 100%;
+}
 .tt-matchup-side strong {
+  display: block;
   font-family: var(--w-head);
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 800;
-  line-height: 1.05;
+  line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tt-matchup-side em {
+  display: block;
   font-style: normal;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--w-muted);
 }
 .tt-matchup-score {
@@ -5126,29 +5149,44 @@ li.counting .tt-count.card {
   font-weight: 700;
 }
 .tt-matchup-at {
-  position: absolute;
-  left: 50%;
-  top: 36%;
-  transform: translate(-50%, -50%);
-  padding: 2px 6px;
-  background: var(--w-paper);
+  justify-self: center;
+  padding: 2px 0;
   font-family: var(--w-body);
   font-style: italic;
   font-size: 12px;
   color: var(--w-muted);
 }
 .tt-matchup-probs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--w-hair);
 }
+.tt-matchup-probs-label {
+  margin: 0;
+  font-family: var(--w-label);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--w-muted);
+}
+.tt-matchup-probs-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
 .tt-prob {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
+}
+.tt-prob.home {
+  flex-direction: row-reverse;
+  text-align: right;
 }
 .tt-prob span {
   min-width: 0;
@@ -5157,14 +5195,14 @@ li.counting .tt-count.card {
   line-height: 1.2;
 }
 .tt-prob b {
-  font-size: 12px;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .tt-prob em {
   font-style: normal;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--w-muted);
 }
 .tt-matchup footer {
@@ -5193,10 +5231,13 @@ li.counting .tt-count.card {
 .tt-stand-grid.single {
   grid-template-columns: 1fr;
 }
+.tt-stand-fill {
+  margin-top: 18px;
+}
 .tt-stand {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 .tt-stand caption {
@@ -7889,7 +7930,7 @@ li.counting .tt-count.card {
 .tt-lleaders-desk { margin-top: 0; }
 .tt-lleaders-desk .tt-lleaders-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px 16px;
+  gap: 14px 14px;
 }
 .tt-lleaders-desk h4 { font-size: 11px; }
 .tt-lleaders-desk li {
@@ -7898,6 +7939,17 @@ li.counting .tt-count.card {
   column-gap: 8px;
   min-width: 0;
 }
+.tt-lleaders-desk li.lead {
+  grid-template-columns: 16px 52px minmax(0, 1fr) auto;
+  padding: 7px 0 8px;
+}
+.tt-lleaders-desk li.lead img,
+.tt-lleaders-desk li.lead .tt-lleaders-ph {
+  width: 52px;
+  height: 52px;
+}
+.tt-lleaders-desk li.lead strong { font-size: 14px; }
+.tt-lleaders-desk li.lead .tt-lleaders-val b { font-size: 22px; }
 .tt-lleaders-desk li i {
   font-style: normal;
   font-family: var(--w-cond);
@@ -7967,6 +8019,14 @@ li.counting .tt-count.card {
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+}
+.tt-front-rails {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tt-schedule-fill {
+  min-height: 0;
 }
 .tt-front-rail .tt-strip {
   display: grid;

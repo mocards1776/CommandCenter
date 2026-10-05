@@ -594,28 +594,36 @@ export function ScoreStrip({ games, onOpen }: { games: BoxGame[]; onOpen?: (game
   );
 }
 
-/** Tonight's game as a matchup: crests, records, probables with season lines, TV. */
+/** Tonight's game as a matchup: crests, records, series, probables with season lines, venue, TV. */
 export function MatchupCard({ game }: { game: BoxGame }) {
   const sides = [
-    { side: game.away, prob: game.probables.away },
-    { side: game.home, prob: game.probables.home },
+    { side: game.away, prob: game.probables.away, align: "away" as const },
+    { side: game.home, prob: game.probables.home, align: "home" as const },
   ];
+  const series = [game.round, game.series].filter(Boolean).join(" · ");
+  const when = [gameDay(game), gameClock(game)].filter(Boolean).join(" · ");
+  const baseball = game.path === "baseball/mlb";
   const hasProbables = Boolean(game.probables.away || game.probables.home);
   return (
     <article className={cn("tt-matchup", game.live && "live")}>
+      {series ? <p className="tt-matchup-series">{series}</p> : null}
       <header>
         <b>
-          {gameDay(game) ? <time dateTime={game.startIso ?? undefined}>{gameDay(game)} · </time> : null}
-          {gameClock(game)}
+          {gameDay(game) ? <time dateTime={game.startIso ?? undefined}>{when}</time> : when}
         </b>
-        <span>{[game.round, game.series].filter(Boolean).join(" · ") || game.venue || ""}</span>
       </header>
       <div className="tt-matchup-teams">
-        {sides.map(({ side }, i) => (
-          <div key={i} className="tt-matchup-side" style={side.color ? { ["--tt-side" as string]: side.color } : undefined}>
+        {sides.map(({ side, align }) => (
+          <div
+            key={align}
+            className={cn("tt-matchup-side", align)}
+            style={side.color ? { ["--tt-side" as string]: side.color } : undefined}
+          >
             <Mark src={side.logo} size="lg" />
-            <strong>{side.short}</strong>
-            <em>{side.record || ""}</em>
+            <div className="tt-matchup-who">
+              <strong>{side.short}</strong>
+              <em>{side.record || ""}</em>
+            </div>
             {game.live ? <span className="tt-matchup-score">{side.score}</span> : null}
           </div>
         ))}
@@ -623,21 +631,24 @@ export function MatchupCard({ game }: { game: BoxGame }) {
           at
         </span>
       </div>
-      {hasProbables ? (
+      {baseball || hasProbables ? (
         <div className="tt-matchup-probs">
-          {sides.map(({ prob }, i) => (
-            <div key={i} className="tt-prob">
-              <Face person={prob} size="md" />
-              <span>
-                <b>{prob ? <PersonName path={game.path} id={prob.id} name={prob.name} /> : "TBD"}</b>
-                <em>{prob?.line ?? ""}</em>
-              </span>
-            </div>
-          ))}
+          <p className="tt-matchup-probs-label">{baseball ? "Probable pitchers" : "Probables"}</p>
+          <div className="tt-matchup-probs-row">
+            {sides.map(({ prob, align }) => (
+              <div key={align} className={cn("tt-prob", align)}>
+                <Face person={prob} size="lg" />
+                <span>
+                  <b>{prob ? <PersonName path={game.path} id={prob.id} name={prob.name} /> : "TBD"}</b>
+                  <em>{prob?.line || (baseball ? "Line pending" : "")}</em>
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
       <footer>
-        {game.venue && (game.round || game.series) ? <span>{game.venue}</span> : null}
+        {game.venue ? <span>{game.venue}</span> : <span />}
         {game.broadcasts.length ? <span className="tv">{game.broadcasts.join(" · ")}</span> : null}
       </footer>
     </article>

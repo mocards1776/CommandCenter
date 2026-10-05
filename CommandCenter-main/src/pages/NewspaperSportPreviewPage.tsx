@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { Linescore, ScoreMast, ScoreStrip } from "@/components/newspaper/BoxScore";
+import { Linescore, MatchupCard, ScoreMast, ScoreStrip } from "@/components/newspaper/BoxScore";
 import { PlayoffBracket } from "@/components/newspaper/PlayoffBracket";
 import { fetchMlbPlayoffTree } from "@/lib/mlb";
 import {
   fetchLeagueLeaders,
   fetchSectionBoard,
+  footballWeekTitle,
   type BoxGame,
   type LeagueLeaderGroup,
   type SectionBoard,
@@ -16,7 +17,7 @@ import { editionNewsDay, pressEdition } from "@/lib/newspaper";
 
 /**
  * Public iPad proof of the sport-section work. Not linked from nav.
- * `?page=mlb-front|mlb-playoffs|mlb-leaders|nfl-front`
+ * `?page=mlb-front|mlb-playoffs|mlb-leaders|mlb-schedule|nfl-front|nfl-leaders|cfb-schedule`
  */
 export default function NewspaperSportPreviewPage() {
   const [params] = useSearchParams();
@@ -26,13 +27,25 @@ export default function NewspaperSportPreviewPage() {
     queryKey: ["tt-sport-preview", "mlb-board", press.day],
     queryFn: () => fetchSectionBoard("baseball/mlb", press.day),
     staleTime: 5 * 60_000,
-    enabled: page === "mlb-front",
+    enabled: page === "mlb-front" || page === "mlb-schedule",
   });
   const nflBoard = useQuery({
     queryKey: ["tt-sport-preview", "nfl-board", press.day],
     queryFn: () => fetchSectionBoard("football/nfl", press.day),
     staleTime: 5 * 60_000,
     enabled: page === "nfl-front",
+  });
+  const cfbBoard = useQuery({
+    queryKey: ["tt-sport-preview", "cfb-board", press.day],
+    queryFn: () => fetchSectionBoard("football/college-football", press.day),
+    staleTime: 5 * 60_000,
+    enabled: page === "cfb-schedule",
+  });
+  const nflLeaders = useQuery({
+    queryKey: ["tt-sport-preview", "nfl-leaders"],
+    queryFn: () => fetchLeagueLeaders("football/nfl"),
+    staleTime: 5 * 60_000,
+    enabled: page === "nfl-leaders",
   });
   const mlbNews = useQuery({
     queryKey: ["tt-sport-preview", "mlb-news"],
@@ -60,13 +73,17 @@ export default function NewspaperSportPreviewPage() {
   });
 
   const ready =
-    page === "mlb-front"
+    page === "mlb-front" || page === "mlb-schedule"
       ? mlbBoard.isFetched
       : page === "nfl-front"
         ? nflBoard.isFetched
-        : page === "mlb-leaders"
-          ? mlbLeaders.isFetched
-          : playoffs.isFetched;
+        : page === "cfb-schedule"
+          ? cfbBoard.isFetched
+          : page === "mlb-leaders"
+            ? mlbLeaders.isFetched
+            : page === "nfl-leaders"
+              ? nflLeaders.isFetched
+              : playoffs.isFetched;
 
   return (
     <div className="newspaper-root wsj-shell tt-watch-preview" data-sport-preview={page} data-ready={ready ? "1" : "0"}>
@@ -90,12 +107,46 @@ export default function NewspaperSportPreviewPage() {
                 desk={mlbLeaders.data?.some((g) => g.seasonType === 3) ? "Postseason Leaders" : "League Leaders"}
                 blurb={
                   mlbLeaders.data?.length
-                    ? `${mlbLeaders.data.length} categories · the top five in each · postseason`
+                    ? `${mlbLeaders.data.length} categories · the top ${Math.max(...mlbLeaders.data.map((g) => g.rows.length), 5)} in each · postseason`
                     : "League leaders"
                 }
                 folio="MLB5"
               >
                 <LeadersPreview groups={mlbLeaders.data ?? []} />
+              </SportChrome>
+            ) : page === "nfl-leaders" ? (
+              <SportChrome
+                code="NFL"
+                title="National Football League"
+                desk="League Leaders"
+                blurb={
+                  nflLeaders.data?.length
+                    ? `${nflLeaders.data.length} categories · the top ${Math.max(...nflLeaders.data.map((g) => g.rows.length), 5)} in each`
+                    : "League leaders"
+                }
+                folio="NFL3"
+              >
+                <LeadersPreview groups={nflLeaders.data ?? []} />
+              </SportChrome>
+            ) : page === "mlb-schedule" ? (
+              <SportChrome
+                code="MLB"
+                title="Major League Baseball"
+                desk="Schedule"
+                blurb={`${mlbBoard.data?.slate.length ?? 0} games ahead · probables, TV and venues`}
+                folio="MLB4"
+              >
+                <SchedulePreview games={(mlbBoard.data?.slate ?? []).filter((g) => !g.final)} />
+              </SportChrome>
+            ) : page === "cfb-schedule" ? (
+              <SportChrome
+                code="CFB"
+                title="College Football"
+                desk="Schedule"
+                blurb="Last week’s results and this week’s kickoffs"
+                folio="CFB5"
+              >
+                <CfbPreview board={cfbBoard.data} />
               </SportChrome>
             ) : page === "nfl-front" ? (
               <FrontPreview
@@ -273,6 +324,81 @@ function FrontPreview({
   );
 }
 
+function SchedulePreview({ games }: { games: BoxGame[] }) {
+  if (!games.length) return <p className="wsj-empty">Nothing on the league calendar this week.</p>;
+  const days = new Map<string, BoxGame[]>();
+  for (const g of games) {
+    const list = days.get(g.day) ?? [];
+    list.push(g);
+    days.set(g.day, list);
+  }
+  return (
+    <div className="tt-schedule tt-schedule-fill">
+      {[...days.entries()].map(([day, list]) => (
+        <section key={day}>
+          <h3 className="wsj-band-title">
+            {day} <em>{list.length} {list.length === 1 ? "game" : "games"}</em>
+          </h3>
+          <div className="tt-matchups" style={{ ["--cols" as string]: "2" }}>
+            {list.map((g) => (
+              <MatchupCard key={g.id} game={g} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function CfbPreview({ board }: { board?: SectionBoard }) {
+  const results = board?.results.length ? board.results : (board?.prior ?? []);
+  const slate = (board?.slate ?? []).filter((g) => !g.final && !g.live);
+  if (!results.length && !slate.length) return <p className="wsj-empty">The college slate is quiet.</p>;
+  return (
+    <div className="tt-schedule tt-schedule-fill">
+      {results.length ? (
+        <section>
+          <h3 className="wsj-band-title">
+            {footballWeekTitle("results", board?.resultsWeekNumber ?? board?.priorWeekNumber, results)}
+          </h3>
+          <ul className="tt-cfb-rows">
+            {results.slice(0, 16).map((g) => (
+              <li key={g.id} className="tt-cfb-row">
+                <time>{g.final ? "Final" : g.status}</time>
+                <span className="tt-cfb-clubs">
+                  <b>{g.away.abbrev}</b>
+                  <i>{g.away.score ?? ""}</i>
+                  <b>{g.home.abbrev}</b>
+                  <i>{g.home.score ?? ""}</i>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {slate.length ? (
+        <section>
+          <h3 className="wsj-band-title">
+            {footballWeekTitle("schedule", board?.slateWeekNumber ?? board?.weekNumber, slate)}
+          </h3>
+          <ul className="tt-cfb-rows">
+            {slate.slice(0, 16).map((g) => (
+              <li key={g.id} className="tt-cfb-row">
+                <time>{g.status}</time>
+                <span className="tt-cfb-clubs">
+                  <b>{g.away.abbrev}</b>
+                  <i>at</i>
+                  <b>{g.home.abbrev}</b>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 function LeadersPreview({ groups }: { groups: LeagueLeaderGroup[] }) {
   if (!groups.length) return <p className="wsj-empty">The league has not posted its leaders.</p>;
   const post = groups.some((g) => g.seasonType === 3);
@@ -284,7 +410,7 @@ function LeadersPreview({ groups }: { groups: LeagueLeaderGroup[] }) {
             <h4>{group.category}</h4>
             <ol>
               {group.rows.map((row, i) => (
-                <li key={`${group.category}-${row.name}-${i}`}>
+                <li key={`${group.category}-${row.name}-${i}`} className={i === 0 ? "lead" : undefined}>
                   <i>{i + 1}</i>
                   {row.headshot ? <img src={row.headshot} alt="" /> : <span className="tt-lleaders-ph" />}
                   <span className="tt-lleaders-who">

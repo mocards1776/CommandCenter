@@ -5,6 +5,7 @@
 import {
   formatLeaderStat,
   isLeaderBoxLine,
+  leaderDeskSize,
   leaderLineFromEspn,
   leaderNoteFromBox,
 } from "./newspaper-box.ts";
@@ -38,5 +39,9 @@ const hr = leaderLineFromEspn("homeRuns Home Runs", { displayValue: "2-7, 2 HR, 
 assert(hr.line === "2" && !hr.note, "a mixed-up HR row prints the value only");
 const era = leaderLineFromEspn("ERA", { displayValue: "1.0 IP, 0 ER, 0 H", value: 0 });
 assert(era.line === "0.00" && era.note === "1.0 IP", "ERA prints 0.00 and the innings");
+
+assert(leaderDeskSize("football/nfl").rows === 10, "NFL leaders print a top ten");
+assert(leaderDeskSize("football/nfl").categories === 12, "NFL leaders fill the page with more categories");
+assert(leaderDeskSize("baseball/mlb").rows === 8, "MLB leaders print more than five");
 
 console.log("newspaper-box-leaders ok");
