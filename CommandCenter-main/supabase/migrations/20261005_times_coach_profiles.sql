@@ -110,12 +110,12 @@ insert into public.times_coach_profiles (
     0, 0, 23, 15,
     2, 0, null, null,
     null, null,
-    6750000, '2026', 2031, null,
+    6750000, null, 2031, null,
     'https://www.montgomeryadvertiser.com/story/sports/college/auburn/2026/08/24/alex-golesh-contract-auburn-football-buyout-details/87624147007/',
     'Montgomery Advertiser, Aug 2026',
     'https://en.wikipedia.org/wiki/Alex_Golesh',
     'Wikipedia (through 2025)',
-    '2026-01-20'
+    '2026-08-24'
   )
 on conflict (coach_id) do update set
   coach_name = excluded.coach_name,

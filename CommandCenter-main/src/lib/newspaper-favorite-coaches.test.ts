@@ -9,6 +9,7 @@ import {
   TIMES_FAVORITE_COACHES_USER_ID,
   applyCoachProfile,
   cfbSeasonYear,
+  coachFactLines,
   coachLeaguePath,
   coachPathsOf,
   coachStatusNote,
@@ -249,5 +250,14 @@ assert(enriched.salary === "$10.75M avg", "annual salary keeps its note");
 assert(enriched.contractEnd === "thru 2031", "contract end year prints");
 assert(enriched.sourceLabel === "Mizzou Athletics, Nov 2025", "salary source line is cited");
 assert(applyCoachProfile(enriched, null, 2026, null).salary === null, "missing profile omits salary");
+assert(
+  coachFactLines(enriched).join("|") ===
+    "At school 50–30 · 7th season|Career 62–31|Bowls 2–3|vs ranked 1–1|1 Sun Belt (2019)|$10.75M avg · thru 2031",
+  "fact lines skip empty fields and keep the cited salary",
+);
+assert(
+  coachFactLines(applyCoachProfile(enriched, null, 2026, "1–1")).join("|") === "vs ranked 1–1",
+  "no profile means only live facts",
+);
 
 console.log("newspaper-favorite-coaches ok");

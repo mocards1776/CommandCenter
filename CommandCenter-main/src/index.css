@@ -8347,16 +8347,19 @@ li.counting .tt-count.card {
 }
 .tt-coach-facts {
   list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px 12px;
-  margin: 2px 0 0;
-  padding: 8px 0 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 6px 0 0;
   border-top: 1px solid var(--w-hair);
   font-size: 12px;
   font-weight: 700;
   line-height: 1.25;
   color: var(--w-ink);
+}
+.tt-coach.featured .tt-coach-facts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .tt-coach-status {
   margin: 0;
