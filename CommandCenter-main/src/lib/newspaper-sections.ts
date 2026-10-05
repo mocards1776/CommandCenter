@@ -38,7 +38,7 @@ import {
 import { isPromoMissouriItem, type MissouriDesk, type MoItem } from "./newspaper-missouri.ts";
 import type { FavoritesDayPage } from "./newspaper-day-ahead.ts";
 import type { FavoritesBeezPage } from "./newspaper-beez.ts";
-import { packNationalPages, type NationalDesk } from "./newspaper-national.ts";
+import { packNationalPages, type NationalDesk, type NationalStory } from "./newspaper-national.ts";
 
 /** Front-page teaser budgets — rest jumps to a real continuation folio. */
 const LEAD_TEASER = 1050;
