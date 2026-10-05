@@ -205,7 +205,7 @@ function abbrevChip(abbrev: string, x: number, y: number, fill: string): string 
   const w = Math.max(58, abbrev.length * 15 + 20);
   const ink = isLightTeamColor(fill) ? "#140c08" : "#f7f4ee";
   return [
-    `<rect x="${x}" y="${y}" width="${w}" height="30" rx="7" fill="${fill}" stroke="#07101d" stroke-width="2"/>`,
+    `<rect x="${x}" y="${y}" width="${w}" height="30" rx="7" fill="${fill}" stroke="#f7f4ee" stroke-width="2"/>`,
     text(abbrev, x + 10, y + 21, { size: 16, fill: ink, weight: 700, spacing: 0.7 }),
   ].join("");
 }
