@@ -8,6 +8,7 @@
  */
 
 import { editionNewsDay, wireBoardDays } from "./newspaper.ts";
+import { isPrintableStoryBody, sanitizeArticleBody } from "./newspaper-copy.ts";
 import {
   hasEspnRecap,
   leadersFromSummary,
@@ -448,7 +449,7 @@ export function espnTeamLogo(path: string, teamId: string | null | undefined): s
 
 /** ESPN prefixes recap descriptions with an em dash datelineless stub. */
 function cleanBody(text: string | undefined): string | null {
-  const t = (text ?? "").replace(/^\s*—\s*/, "").replace(/\s+/g, " ").trim();
+  const t = sanitizeArticleBody((text ?? "").replace(/^\s*—\s*/, ""));
   return t.length >= 60 ? t : null;
 }
 
@@ -876,8 +877,13 @@ export async function enrichWireStories(
       try {
         const sum = (await newspaperEspnGet(`${g.path}/summary?event=${g.eventId}`)) as EspnSummaryForWrap;
         summaries.set(g.id, sum);
-        const story = stripStoryHtml(sum.article?.story ?? "");
-        if (!hasEspnRecap(story)) continue;
+        const raws = [sum.article?.story, ...(sum.news?.articles ?? []).map((a) => a.story)].filter(Boolean);
+        let story = "";
+        for (const raw of raws) {
+          const text = sanitizeArticleBody(stripStoryHtml(String(raw)));
+          if (isPrintableStoryBody(text) && text.length > story.length) story = text;
+        }
+        if (!story || !hasEspnRecap(story) || !isPrintableStoryBody(story)) continue;
         const { dateline, body } = splitDateline(story);
         const chrome = applySummaryChrome(g, sum);
         filled.set(g.id, {

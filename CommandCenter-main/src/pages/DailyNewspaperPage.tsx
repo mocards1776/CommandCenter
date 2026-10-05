@@ -5046,7 +5046,7 @@ function NewspaperDesk() {
       if (!isSingleGameRecap(card)) return null;
       const board = card.leaguePath ? boardQ.data?.[card.leaguePath] : undefined;
       if (!board) return null;
-      const games = [...board.results, ...board.slate, ...(board.prior ?? [])];
+      const games = [...board.results, ...board.slate, ...(board.prior ?? []), ...(board.week ?? [])];
       if (card.gameId) {
         const hit = games.find(
           (g) => g.espnEventId === card.gameId || (g.gamePk != null && String(g.gamePk) === card.gameId),

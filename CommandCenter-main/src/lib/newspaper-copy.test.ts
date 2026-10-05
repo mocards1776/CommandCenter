@@ -7,9 +7,13 @@ import {
   decodeNewspaperEntities,
   htmlToNewspaperText,
   isBoilerplateLine,
+  isGamblingDisclaimer,
+  isPrintableStoryBody,
   isTeamNameCaption,
+  isVideoTitleSoup,
   joinBrokenDecimals,
   newsImageCaption,
+  sanitizeArticleBody,
   stripBoilerplateCopy,
   stripGettyCredit,
   tidy,
@@ -115,5 +119,42 @@ assertEqual(
   "Rams receiver Puka Nacua hauls in a catch.",
   "a real source caption is kept",
 );
+
+assert(isBoilerplateLine("Terms of Use"), "terms of use is chrome");
+assert(isBoilerplateLine("Privacy Policy"), "privacy policy is chrome");
+assert(isBoilerplateLine("Watch: Cowboys postgame"), "watch-rail is chrome");
+assert(isBoilerplateLine("Read more about the Cowboys"), "read-more is chrome");
+assert(isBoilerplateLine("If you or someone you know has a gambling problem, call 1-800-GAMBLER"), "hotline line is chrome");
+assert(isGamblingDisclaimer("Gambling problem? Call 1-800-GAMBLER or visit DraftKings"), "draftkings disclaimer");
+
+const videoSoup =
+  "not buying into Cowboys after win over Texans Stephen A. not buying into Cowboys after win over Texans 1:33 Did Drake Maye prove doubters wrong with win over Bills? Did Drake Maye prove doubters wrong with win over Bills?";
+assert(isVideoTitleSoup(videoSoup), "repeated ESPN video titles are soup");
+assertEqual(sanitizeArticleBody(videoSoup), "", "video-title soup sanitizes to empty");
+assert(!isPrintableStoryBody(videoSoup), "video-title soup is not printable");
+
+const gambler =
+  "Gambling problem? Call 1-800-GAMBLER or 1-800-NEXT-STEP. Must be 21+. Void where prohibited. DraftKings. Terms of Use. Privacy Policy.";
+assertEqual(sanitizeArticleBody(gambler), "", "a gambling disclaimer sanitizes to empty");
+assert(
+  !isPrintableStoryBody(gambler),
+  "a disclaimer is not a recap",
+);
+
+const mixed = [
+  "CeeDee Lamb caught two touchdowns and Dallas held on in Houston after a late Texans drive stalled at the goal line.",
+  "Gambling problem? Call 1-800-GAMBLER.",
+  "Watch: Cowboys highlights 1:33",
+  "Dak Prescott threw for 312 yards as the Cowboys beat the Texans 34-30 and moved to 2-2 in the NFC East.",
+].join("\n\n");
+const cleanedMixed = sanitizeArticleBody(mixed);
+assert(cleanedMixed.includes("CeeDee Lamb caught two touchdowns"), "the lede stays");
+assert(cleanedMixed.includes("Dak Prescott threw for 312 yards"), "the second graf stays");
+assert(!/GAMBLER/i.test(cleanedMixed), "the hotline drops out of a real story");
+assert(!/Watch:/i.test(cleanedMixed), "the watch rail drops out of a real story");
+assert(isPrintableStoryBody(mixed), "a real recap with chrome stripped is printable");
+
+const captionOnly = sanitizeArticleBody("Dallas Cowboys");
+assertEqual(captionOnly, "", "a team-name caption is not a story");
 
 console.log("newspaper-copy ok");

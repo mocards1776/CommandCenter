@@ -56,6 +56,16 @@ export function isGameWrapCard(card: GameWrapCard): boolean {
   return isGameWrapStory(card);
 }
 
+/** A transaction / injury note — not a recap, and not Section A filler. */
+export function isInjuryNote(card: GameWrapCard): boolean {
+  if (isGameWrapCard(card)) return false;
+  if (card.scoreLine && /\d/.test(card.scoreLine) && /\bfinal\b/i.test(card.status ?? "")) return false;
+  const head = `${card.headline} ${card.dek ?? ""}`;
+  return /\binjur|surgery|questionable|doubtful|out for the season|season-ending|torn (?:acl|achilles)|dislocat|to have surgery\b/i.test(
+    head,
+  );
+}
+
 export function sportFillerReason(card: GameWrapCard, recaps: GameWrapCard[] = []): SpikeReason | null {
   if (isGameWrapCard(card)) return null;
   const text = hay(card);
@@ -214,7 +224,6 @@ export function orderSportSectionFront(
   });
   const fresh = unique.filter((card) => isFreshSectionLead(card, path, edition));
   const pool = fresh.length ? fresh : unique;
-  const editorLead = pool.find((card) => card.editorFront === 0);
   const wraps = orderSportRecaps(
     pool.filter((card) => isGameWrapCard(card) || Boolean(card.scoreLine && /\d/.test(card.scoreLine))),
     path,
@@ -222,7 +231,11 @@ export function orderSportSectionFront(
   const news = pool
     .filter((card) => !isGameWrapCard(card) && !(card.scoreLine && /\d/.test(card.scoreLine)))
     .sort((a, b) => (a.editorRank ?? 99) - (b.editorRank ?? 99) || String(b.when ?? "").localeCompare(String(a.when ?? "")));
-  const lead = editorLead ?? wraps[0] ?? news[0] ?? pool[0];
+  const newsLead = news.find((card) => !isInjuryNote(card));
+  // An injury note never opens the section when a result is on the board —
+  // even if the editor fronted it.
+  const editorLead = pool.find((card) => card.editorFront === 0 && !isInjuryNote(card));
+  const lead = editorLead ?? wraps[0] ?? newsLead ?? news[0] ?? pool[0];
   if (!lead) return [];
   const rest = pool.filter((card) => card.id !== lead.id);
   const withPhoto = rest.filter((card) => card.photo);

@@ -4,6 +4,7 @@ import { espnGet, type SportsFavorite, type TeamDetail, type TeamSnapshot, type 
 import type { RssFeedItem } from "./rss";
 import { pickBestStoryImage } from "./newspaper-images.ts";
 import { favoriteDeskWeight } from "./newspaper";
+import { isPrintableStoryBody, sanitizeArticleBody } from "./newspaper-copy.ts";
 import type { RecapGamePack, RecapLeader } from "./newspaper-recap";
 import type { WireGame } from "./newspaper-wire";
 import type { YesterdayRecapGame } from "./yesterday-recap";
@@ -337,13 +338,13 @@ export async function fetchEspnWrapStoryText(opts: {
         ].filter(Boolean);
         let best = "";
         for (const a of candidates) {
-          const text = stripHtml(a?.story || "");
+          const text = sanitizeArticleBody(stripHtml(a?.story || ""));
           if (text.length > best.length) best = text;
         }
-        if (best.length >= 160) return best;
-        const desc = (sum.article?.description || "").replace(/^—\s*/, "").trim();
-        if (best.length < 80 && desc.length >= 80) return desc;
-        if (best.length >= 80) return best;
+        if (isPrintableStoryBody(best)) return best;
+        const desc = sanitizeArticleBody((sum.article?.description || "").replace(/^—\s*/, ""));
+        if (isPrintableStoryBody(desc)) return desc;
+        if (isPrintableStoryBody(best)) return best;
       } catch {
         /* try next path */
       }
@@ -353,8 +354,8 @@ export async function fetchEspnWrapStoryText(opts: {
   try {
     const { fetchRssArticle } = await import("./rss");
     const article = await fetchRssArticle(opts.link);
-    const text = (article.contentText || stripHtml(article.contentHtml || "")).trim();
-    if (text.length >= 120 && readsLikeProse(text)) return text;
+    const text = sanitizeArticleBody(article.contentText || stripHtml(article.contentHtml || ""));
+    if (isPrintableStoryBody(text) && readsLikeProse(text)) return text;
   } catch {
     /* ignore */
   }
@@ -928,11 +929,83 @@ export async function enrichWrapBodies(
         link: card.wrapHref || card.gameHref || "",
         fav,
       });
-      if (!body) return card;
+      if (!body || !isPrintableStoryBody(body)) return card;
       return { ...card, body, dek: card.dek || body.slice(0, 180) };
     }),
   );
   return out;
+}
+
+/** Tag league copy that is clearly about a followed club. */
+export function favoriteKeyFromCopy(card: GameWrapCard, favs: SportsFavorite[]): string {
+  if (card.favoriteKey) return card.favoriteKey;
+  const hay = `${card.headline} ${card.dek ?? ""} ${card.teamName ?? ""}`.toLowerCase();
+  const hits = favs.filter((f) => f.kind === "team" && strongNames(f).some((n) => hayHasName(hay, n)));
+  if (!hits.length) return "";
+  hits.sort((a, b) => favoriteDeskWeight(b.key) - favoriteDeskWeight(a.key));
+  return hits[0]!.key;
+}
+
+export function tagFavoriteStories(cards: GameWrapCard[], favs: SportsFavorite[]): GameWrapCard[] {
+  return cards.map((card) => {
+    const key = favoriteKeyFromCopy(card, favs);
+    if (!key) return card;
+    if (card.favoriteKey === key && card.followed) return card;
+    const fav = favs.find((f) => f.key === key);
+    return {
+      ...card,
+      favoriteKey: key,
+      followed: true,
+      teamName: card.teamName || fav?.shortName || card.teamName,
+    };
+  });
+}
+
+/**
+ * Favorite-team recaps always carry the score banner / line / box pointer,
+ * even when the story arrived as a news item without a game id.
+ */
+export function attachFavoriteRecapChrome(cards: GameWrapCard[], games: WireGame[]): GameWrapCard[] {
+  const byEvent = new Map(games.filter((g) => g.eventId).map((g) => [g.eventId, g]));
+  const byFav = new Map<string, WireGame[]>();
+  for (const g of games) {
+    for (const key of g.favoriteKeys) {
+      const list = byFav.get(key) ?? [];
+      list.push(g);
+      byFav.set(key, list);
+    }
+  }
+  return cards.map((card) => {
+    if (!(card.favoriteKey || card.followed)) return card;
+    const fromId = card.gameId ? byEvent.get(card.gameId) : undefined;
+    const favGames = (card.favoriteKey ? byFav.get(card.favoriteKey) ?? [] : []).filter((g) => g.final);
+    const hay = `${card.headline} ${card.dek ?? ""} ${card.teamName ?? ""}`.toLowerCase();
+    const named = favGames.filter((g) => {
+      const names = [g.away.name, g.home.name, g.away.short, g.home.short, g.away.abbrev, g.home.abbrev]
+        .map((n) => n.toLowerCase())
+        .filter((n) => n.length >= 3);
+      return names.filter((n) => hayHasName(hay, n)).length >= 1;
+    });
+    const game = fromId ?? (named.length === 1 ? named[0] : favGames.length === 1 ? favGames[0] : undefined);
+    if (!game) return card;
+    const scored = game.away.score != null && game.home.score != null;
+    return {
+      ...card,
+      gameId: card.gameId || game.eventId,
+      scoreLine:
+        card.scoreLine && /\d/.test(card.scoreLine)
+          ? card.scoreLine
+          : scored
+            ? `${game.away.abbrev} ${game.away.score}  ·  ${game.home.abbrev} ${game.home.score}`
+            : card.scoreLine,
+      recapGame: card.recapGame ?? game.recapGame ?? null,
+      leaders: card.leaders?.length ? card.leaders : game.leaders,
+      photo: card.photo || game.photo,
+      photoWidth: card.photoWidth ?? game.photoWidth ?? null,
+      status: card.status && /final/i.test(card.status) ? card.status : game.statusDetail,
+      followed: true,
+    };
+  });
 }
 
 export function chunkPages<T>(items: T[], size: number): T[][] {

@@ -39,6 +39,7 @@ import { cleanStoryCopy, isPeripheralClubStory, killedSource } from "./newspaper
 import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports";
 import {
+  isInjuryNote,
   isSportFiller,
   orderSportRecaps,
   orderSportSectionFront,
@@ -1192,6 +1193,9 @@ const MAJOR_NEWS = new RegExp(
  */
 export function isMajorStory(card: GameWrapCard): boolean {
   if (isPreviewStory(card)) return false;
+  // Non-favorite injury news stays in the sport section, even a star lost
+  // for the season. Section A is the essentials desk, not the league wire.
+  if (isInjuryNote(card)) return false;
   const text = `${card.headline} ${card.dek ?? ""}`.replace(/\s+/g, " ");
   if (MAJOR_NEWS.test(text)) return true;
   // A decisive postseason result, not just any October game.

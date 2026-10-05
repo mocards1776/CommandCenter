@@ -7,11 +7,13 @@ import {
   basketballStandingsSpec,
   dedupeBoxGames,
   dropBogusSameSlot,
+  footballWeeksBoard,
   formatFixtureWhen,
   formatKickoffLine,
   gameClock,
   gameDay,
   looksLikeEspnZoneClock,
+  sportScoreBands,
   standingFromGroups,
   type BoxGame,
   type BoxSide,
@@ -220,5 +222,90 @@ assertEqual(
   "",
   "missing ISO does not fall back to the ESPN zone stamp",
 );
+
+function nflGame(
+  id: string,
+  day: string,
+  startIso: string,
+  away: string,
+  home: string,
+  extra: Partial<BoxGame> = {},
+): BoxGame {
+  return game({
+    id,
+    path: "football/nfl",
+    league: "NFL",
+    day,
+    startIso,
+    espnEventId: id,
+    away: side({ id: away.toLowerCase(), abbrev: away }),
+    home: side({ id: home.toLowerCase(), abbrev: home }),
+    ...extra,
+  });
+}
+
+const week4 = [
+  nflGame("kc-lv", "2026-10-04", "2026-10-04T20:05:00Z", "KC", "LV", {
+    final: true,
+    status: "Final",
+    away: side({ id: "kc", abbrev: "KC", score: "30", winner: true }),
+    home: side({ id: "lv", abbrev: "LV", score: "27" }),
+  }),
+  nflGame("dal-hou", "2026-10-04", "2026-10-04T17:00:00Z", "DAL", "HOU", {
+    final: true,
+    status: "Final",
+    away: side({ id: "dal", abbrev: "DAL", score: "34", winner: true }),
+    home: side({ id: "hou", abbrev: "HOU", score: "30" }),
+  }),
+  nflGame("car-det", "2026-10-04", "2026-10-05T00:20:00Z", "CAR", "DET", {
+    final: true,
+    status: "Final",
+    away: side({ id: "car", abbrev: "CAR", score: "32", winner: true }),
+    home: side({ id: "det", abbrev: "DET", score: "26" }),
+  }),
+  nflGame("atl-no", "2026-10-05", "2026-10-06T00:15:00Z", "ATL", "NO", {
+    final: false,
+    status: "8:15 PM",
+  }),
+];
+const week5 = [
+  nflGame("dal-tb", "2026-10-08", "2026-10-09T00:15:00Z", "DAL", "TB"),
+  nflGame("kc-jax", "2026-10-11", "2026-10-11T17:00:00Z", "KC", "JAX"),
+  nflGame("det-kc-later", "2026-10-12", "2026-10-13T00:20:00Z", "DET", "KC"),
+];
+
+const mondayBoard = footballWeeksBoard({
+  day: "2026-10-05",
+  newsDay: "2026-10-04",
+  week: 4,
+  thisGames: week4,
+  priorGames: [],
+  nextGames: week5,
+  college: false,
+});
+assert(mondayBoard.week?.some((g) => g.id === "kc-lv"), "KC is on the Week 4 board");
+assert(mondayBoard.week?.some((g) => g.id === "car-det"), "DET is on the Week 4 board");
+assert((mondayBoard.week?.length ?? 0) === 4, "the results week keeps every game, including MNF");
+assert(mondayBoard.slate.every((g) => week5.some((n) => n.id === g.id)), "the slate is the next week");
+assert(mondayBoard.slate.some((g) => g.id === "dal-tb"), "Thursday's Cowboys game is on the schedule");
+assert(mondayBoard.slate[0]?.id === "dal-tb", "the schedule is chronological");
+assert(mondayBoard.weekLabel === "Week 4", "Monday still labels last week's board");
+assert(mondayBoard.slateWeekNumber === 5, "the upcoming week is 5");
+
+const rolled = footballWeeksBoard({
+  day: "2026-10-06",
+  newsDay: "2026-10-05",
+  week: 5,
+  thisGames: week5,
+  priorGames: week4.filter((g) => g.final),
+  nextGames: [],
+  college: false,
+});
+assert(rolled.week?.some((g) => g.id === "kc-lv"), "after ESPN rolls, last week's KC final still prints");
+assert(rolled.slate.some((g) => g.id === "dal-tb"), "Week 5 is the schedule once ESPN rolls");
+
+const bands = sportScoreBands("football/nfl", mondayBoard, "2026-10-05-evening");
+assert(bands[0]?.games.some((g) => g.id === "kc-lv"), "NFL1's rail includes KC");
+assert(bands[0]?.games.some((g) => g.id === "car-det"), "NFL1's rail includes DET");
 
 console.log("newspaper-box ok");

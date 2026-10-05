@@ -11,15 +11,17 @@ import { enrichMissouriItems, fetchMissouriDesk, fetchMissouriScout } from "./ne
 import type { MoItem } from "./newspaper-missouri";
 import { fetchOpener, type Opener } from "./newspaper-openers";
 import { attachRelatedGameCopy } from "./newspaper-sport-desk";
-import { cleanStoryCopy, htmlToNewspaperText, isNavSoup, isPeripheralClubStory, killedSource, truncateAtSentence } from "./newspaper-copy";
+import { cleanStoryCopy, htmlToNewspaperText, isNavSoup, isPeripheralClubStory, isPrintableStoryBody, killedSource, truncateAtSentence } from "./newspaper-copy";
 import { isBoilerplateDek, storySource } from "./newspaper-source";
 import {
+  attachFavoriteRecapChrome,
   buildGameWrapCards,
   buildTeamInfoboxes,
   collectWrapFeeds,
   enrichWrapBodies,
   leaguePathFromEspn,
   mergeStoryCards,
+  tagFavoriteStories,
   wireStoryCards,
   wrapFeedsForFavorites,
   type GameWrapCard,
@@ -119,10 +121,13 @@ export function fileExtracts(cards: GameWrapCard[], extracts: Record<string, Rss
     if (!hit || killedSource(card.wrapHref)) return card;
     const source = hit.contentHtml ? htmlToNewspaperText(hit.contentHtml) : hit.contentText;
     const text = cleanStoryCopy(source).text;
-    const adopt = text.length > (card.body?.trim().length ?? 0) + 120 && !isNavSoup(text);
+    const currentPrintable = isPrintableStoryBody(card.body);
+    const extractPrintable = isPrintableStoryBody(text) && !isNavSoup(text);
+    const adopt =
+      extractPrintable && (!currentPrintable || text.length > (card.body?.trim().length ?? 0) + 120);
     return {
       ...card,
-      body: adopt ? filedBody(card, source) : card.body,
+      body: adopt ? filedBody(card, source) : currentPrintable ? card.body : filedBody(card, card.body),
       photo: pickBestStoryImage([card.photo, hit.image, firstContentImageUrl(hit.contentHtml)]),
     };
   });
@@ -146,7 +151,8 @@ export function gatherStories(opts: {
   const clubCopy = mergeStoryCards(mergeStoryCards(wire, opts.enriched ?? opts.teamCards), opts.news ?? []);
   const withLeague = mergeStoryCards(clubCopy, opts.leagueNews ?? []);
   const merged = mergeStoryCards(withLeague, opts.athletic ?? []).filter((card) => !isNewsMuted(card));
-  return attachRelatedGameCopy(merged);
+  const tagged = tagFavoriteStories(attachRelatedGameCopy(merged), opts.favs);
+  return attachFavoriteRecapChrome(tagged, opts.wire?.games ?? []);
 }
 
 async function settle<T>(task: Promise<T>, fallback: T): Promise<T> {
