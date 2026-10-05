@@ -21,6 +21,28 @@
     <meta name="apple-mobile-web-app-title" content="Command" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="icon" href="/icon-192.png" />
+    <script>
+      // Opened from @ThompsonTimes_bot's "Read the paper" button (a Telegram Mini App):
+      // load Telegram's WebApp script, then tell Telegram the page is ready and take
+      // the full sheet. Normal browsers never load the script, so this is a no-op there.
+      (function () {
+        try {
+          var inTelegram =
+            /(?:^|[#&])tgWebApp(?:Data|Platform|Version)=/.test(location.hash) ||
+            typeof window.TelegramWebviewProxy !== "undefined";
+          if (!inTelegram) return;
+          var s = document.createElement("script");
+          s.src = "https://telegram.org/js/telegram-web-app.js";
+          s.onload = function () {
+            var app = window.Telegram && window.Telegram.WebApp;
+            if (!app) return;
+            app.ready();
+            app.expand();
+          };
+          document.head.appendChild(s);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -103,10 +103,15 @@
         var standalone =
           (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
           window.navigator.standalone === true;
+        // Opened as a Telegram Mini App (@ThompsonTimes_bot) → the edition too.
+        var telegram =
+          /(?:^|[#&])tgWebApp(?:Data|Platform|Version)=/.test(location.hash) ||
+          typeof window.TelegramWebviewProxy !== "undefined";
         // Home Screen launch → straight into the edition (not Dashboard).
         // Stay put in Safari so Share → Add captures /times.html.
-        if (standalone) {
-          location.replace("/newspaper?solo=1");
+        if (standalone || telegram) {
+          // Keep Telegram's #tgWebApp… launch params for the edition page.
+          location.replace("/newspaper?solo=1" + (telegram ? location.hash : ""));
         }
       })();
     </script>

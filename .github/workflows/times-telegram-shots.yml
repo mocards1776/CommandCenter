@@ -1,0 +1,59 @@
+name: Times Telegram image alert
+
+# Screenshots each new Thompson Times edition's front page (A1) and weather report
+# on a 13-inch iPad viewport and sends them on @ThompsonTimes_bot through the
+# times-telegram-shots edge function. No repo secrets: the function trusts this
+# workflow's GitHub OIDC token (repo + main branch + this file). The paper is opened
+# read-only with a short-lived session the function mints and revokes.
+#
+# While this runner polls, times-telegram holds the text alert for up to 45 minutes
+# after an edition goes ready; if the image alert has not gone out by then (late
+# schedule, failure), the text alert goes instead.
+on:
+  schedule:
+    # Every 10 minutes from about an hour before to ~2-3 hours after each press
+    # (6 a.m., noon, 5 p.m. Central), in UTC for both CDT and CST.
+    - cron: "2-59/10 10-13 * * *"
+    - cron: "2-59/10 16-19 * * *"
+    - cron: "2-59/10 21-23 * * *"
+    - cron: "2-59/10 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: times-telegram-shots
+  cancel-in-progress: false
+
+jobs:
+  shoot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: CommandCenter-main/scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Stage runner
+        run: |
+          mkdir -p "$RUNNER_TEMP/times-shots"
+          cp CommandCenter-main/scripts/times-shots.mjs "$RUNNER_TEMP/times-shots/"
+      - name: Any edition waiting?
+        id: peek
+        working-directory: ${{ runner.temp }}/times-shots
+        run: node times-shots.mjs --peek
+      - name: Install Chromium
+        if: steps.peek.outputs.issue != ''
+        working-directory: ${{ runner.temp }}/times-shots
+        run: |
+          npm init -y > /dev/null
+          npm i --no-audit --no-fund playwright@1.48.2
+          npx playwright install --with-deps chromium
+      - name: Shoot and send
+        if: steps.peek.outputs.issue != ''
+        working-directory: ${{ runner.temp }}/times-shots
+        run: node times-shots.mjs --out shots
