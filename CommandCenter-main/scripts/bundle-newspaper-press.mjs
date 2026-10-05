@@ -7,7 +7,7 @@
  */
 import * as esbuild from "esbuild";
 import path from "node:path";
-import { existsSync } from "node:fs";
+import { copyFileSync, existsSync } from "node:fs";
 
 const banner = `
 const __mem = () => {
@@ -61,3 +61,11 @@ await esbuild.build({
   },
   legalComments: "none",
 });
+
+const dest = "supabase/functions/newspaper-press/compose.bundle.js";
+const rootCopy = "../supabase/functions/newspaper-press/compose.bundle.js";
+try {
+  copyFileSync(dest, rootCopy);
+} catch {
+  /* repo-root copy is optional when this tree is opened alone */
+}

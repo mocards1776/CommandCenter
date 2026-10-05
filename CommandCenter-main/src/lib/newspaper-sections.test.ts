@@ -27,6 +27,7 @@ import {
   editorFront,
   essentialsFromDesks,
   HISTORIC_NATIONAL_STATUS,
+  insertCoachesFocus,
   isColumnStory,
   isDeskStory,
   isHistoricNationalEvent,
@@ -1525,6 +1526,76 @@ assert(
   aFront?.kind === "favorites-front" &&
     [aFront.lead, aFront.second, aFront.third, ...aFront.news].every((c) => !c || c.id !== "nat-lead"),
   "the funding bill never reaches A1",
+);
+
+assert(
+  insertCoachesFocus(["front", "recaps", "news", "teams", "form", "schedule"], true).join(",") ===
+    "front,recaps,coaches,news,teams,form,schedule",
+  "coaches sit after wraps, before the reference desks",
+);
+assert(
+  insertCoachesFocus(["teams", "form", "schedule", "news"], true).join(",") ===
+    "coaches,teams,form,schedule,news",
+  "without wraps, coaches lead the reference desks",
+);
+assert(insertCoachesFocus(["recaps", "schedule"], false).join(",") === "recaps,schedule", "no flag, no coaches desk");
+
+const mizzouCfb: ClubDesk = {
+  key: "cfb-mizzou",
+  shortName: "Missouri",
+  logo: null,
+  leaguePath: "football/college-football",
+  record: "4-1",
+  standing: "7th in SEC",
+  division: [],
+  stats: [],
+  leaders: [],
+  upcoming: [],
+};
+const mondayCfb = buildEdition({
+  stories: [],
+  clubs: [mizzouCfb],
+  edition: "2026-10-05-morning",
+  coachPaths: ["football/college-football"],
+});
+const mondayFocus = mondayCfb.pages
+  .filter((p) => p.kind === "sport-front" && p.section === "CFB")
+  .map((p) => (p.kind === "sport-front" ? p.focus : ""));
+assert(mondayFocus[0] === "front", "Monday CFB still opens on the section front");
+assert(mondayFocus.includes("recaps"), "wraps still print");
+assert(mondayFocus.includes("coaches"), "Favorite Coaches prints on Monday");
+assert(mondayFocus.indexOf("recaps") < mondayFocus.indexOf("coaches"), "Favorite Coaches follows the wraps");
+assert(mondayFocus.indexOf("coaches") < mondayFocus.indexOf("schedule"), "coaches print before the schedule");
+assert(mondayFocus.indexOf("coaches") < mondayFocus.indexOf("teams"), "coaches print before standings");
+
+const mondayDesk = buildEdition({
+  stories: [],
+  clubs: [mizzouCfb],
+  edition: "2026-10-05-midday",
+  coachPaths: ["football/college-football"],
+});
+const deskFocus = mondayDesk.pages
+  .filter((p) => p.kind === "sport-front" && p.section === "CFB")
+  .map((p) => (p.kind === "sport-front" ? p.focus : ""));
+assert(deskFocus.includes("coaches"), "Monday midday still prints the coaches desk");
+assert(deskFocus.indexOf("coaches") < deskFocus.indexOf("teams"), "midday coaches sit before standings");
+
+assert(
+  !buildEdition({
+    stories: [],
+    clubs: [mizzouCfb],
+    edition: "2026-10-06-morning",
+    coachPaths: ["football/college-football"],
+  }).pages.some((p) => p.kind === "sport-front" && p.focus === "coaches"),
+  "Tuesday skips the weekly coaches page",
+);
+assert(
+  !buildEdition({
+    stories: [],
+    clubs: [mizzouCfb],
+    edition: "2026-10-05-morning",
+  }).pages.some((p) => p.kind === "sport-front" && p.focus === "coaches"),
+  "no coaches on file, no coaches page",
 );
 
 console.log("newspaper-sections ok");

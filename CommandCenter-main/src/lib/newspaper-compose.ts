@@ -52,6 +52,7 @@ import { fetchYesterdayRecap, type YesterdayRecap } from "./yesterday-recap";
 import { ISSUE_VERSION, type PrintedIssue, type PrintedQuery } from "./newspaper-issue";
 import { clearEditorStamps, editEdition, type EditorRequest } from "./newspaper-editor";
 import { essentialsFromDesks } from "./newspaper-sections";
+import { fetchFavoriteCoachDesk, printsFavoriteCoaches } from "./newspaper-favorite-coaches";
 
 export function deskFavorites(order: string[] | null | undefined, hidden: string[] | null | undefined): SportsFavorite[] {
   const layout: SportsLayout = {
@@ -203,6 +204,7 @@ type PressBag = {
   heisman?: unknown;
   extractCursor?: number;
   extracts?: Record<string, RssArticle>;
+  coaches?: unknown;
 };
 
 export type PressStep =
@@ -494,6 +496,10 @@ export async function pressStep(
       if (paths.includes("football/college-football")) put([pressId, "tt-heisman", day], state.heisman);
     }
     if (paths.includes("baseball/mlb")) put([pressId, "tt-mlb-playoffs", day], state.playoffs);
+    if (printsFavoriteCoaches(pressId)) {
+      state.coaches = await settle(fetchFavoriteCoachDesk({ day }), { tiles: [] });
+      put([pressId, "tt-favorite-coaches", day], state.coaches);
+    }
     if (state.snaps && state.standings) {
       const snaps = applyTableStandings(
         state.snaps as { key: string; standing: string | null }[],

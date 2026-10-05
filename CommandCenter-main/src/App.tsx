@@ -44,6 +44,7 @@ import FieldDrivePreviewPage from "@/pages/FieldDrivePreviewPage";
 import NewspaperWatchPreviewPage from "@/pages/NewspaperWatchPreviewPage";
 import NewspaperA1PreviewPage from "@/pages/NewspaperA1PreviewPage";
 import NewspaperSportPreviewPage from "@/pages/NewspaperSportPreviewPage";
+import NewspaperCoachesPreviewPage from "@/pages/NewspaperCoachesPreviewPage";
 const RssPage = lazy(() => import("@/pages/RssPage"));
 import PublicStoryPage from "@/pages/PublicStoryPage";
 import BuenaVistaNotebookPage from "@/pages/BuenaVistaNotebookPage";
@@ -141,6 +142,7 @@ export default function App() {
             <Route path="/newspaper/watch-preview" element={<NewspaperWatchPreviewPage />} />
             <Route path="/newspaper/a1-preview" element={<NewspaperA1PreviewPage />} />
             <Route path="/newspaper/sport-preview" element={<NewspaperSportPreviewPage />} />
+            <Route path="/newspaper/coaches-preview" element={<NewspaperCoachesPreviewPage />} />
             <Route element={<Protected />}>
               <Route path="/" element={<HomeRedirect />} />
               <Route path="/dashboard" element={<DashboardPage />} />
