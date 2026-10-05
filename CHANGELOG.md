@@ -2,6 +2,27 @@
 
 ---
 
+## Blues goal highlights Telegram bot — October 5, 2026
+
+- New `sports-highlights` edge function sends St. Louis Blues goal MP4s to
+  `@CommandCenterHighlights_bot` via Telegram `sendVideo` (Josh's DM
+  `857547432`). Same NHL gamecenter + Brightcove path the Sports app already
+  uses. Each clip id is stored in `sports_highlights_sent` so cron reruns
+  never resend.
+- Caption is `Blues score — Player vs OPP`. An **Open game** Mini App button
+  ships when the ESPN event id resolves. Heat, finals, newspaper, and Times
+  are unchanged.
+- Secrets (Josh, do not commit): `TELEGRAM_HIGHLIGHTS_BOT_TOKEN`,
+  `TELEGRAM_HIGHLIGHTS_CHAT_IDS=857547432`, `TELEGRAM_HIGHLIGHTS_CRON_SECRET`,
+  optional `HIGHLIGHTS_TEAM_IDS=STL`. Vault name for cron: `sports_highlights_cron`.
+  Deploy with `--no-verify-jwt`.
+- One-clip test: `node --experimental-strip-types scripts/highlights-send-one.ts`
+  prints a live Blues MP4 and does not send. Add `--send` only on a box that
+  has `TELEGRAM_HIGHLIGHTS_BOT_TOKEN`; it `sendVideo`s that one clip to
+  `857547432`. Edge `send` with `clipId` is the claiming version of the same test.
+
+---
+
 ## Thompson Times: back editions + finished open — October 5, 2026
 
 - The masthead now carries a printed edition line (Morning · Midday · Evening) for issues published in the last 24 hours. `?edition=<issue id>` opens one of those; older ids are ignored. A back edition uses that issue’s stored stories and companions (Day Ahead by date, National News by issue, the current Beez row, RUWT watch, weather when filed) and a small “You are reading the … printed …” note.

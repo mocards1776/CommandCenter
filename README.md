@@ -59,10 +59,10 @@ npm run lint
   editing them.
 - **Edge functions** — `supabase functions deploy <name>` (`todoist`,
   `book-lookup`, `backfill-covers`, `readwise-sync`, `book-ai`, `sports`, `rss`,
-  `newspaper-editor`, `sports-push`, `sports-finals`).
+  `newspaper-editor`, `sports-push`, `sports-finals`, `sports-highlights`).
   Canonical source: `supabase/functions/`. Keep the mirror in sync with
   `scripts/sync-edge-copies.sh` (CI fails on drift). On `main`, GitHub Actions
-  deploys `rss` / `sports` / `sports-push` / `sports-telegram` / `sports-finals` when that tree changes — requires repo secrets
+  deploys `rss` / `sports` / `sports-push` / `sports-telegram` / `sports-finals` / `sports-highlights` when that tree changes — requires repo secrets
   `SUPABASE_ACCESS_TOKEN` (and optional `SUPABASE_PROJECT_REF`).
 
   **One-time GitHub secret setup** (so edge deploys aren’t skipped):
@@ -230,6 +230,90 @@ npm run lint
     -H "Content-Type: application/json" \
     -H "x-sports-finals-cron: $TELEGRAM_FINALS_CRON_SECRET" \
     -d '{"action":"send","sport":"nfl","eventId":"401872964"}'
+  ```
+
+- **Blues goal highlights** — Telegram `sendVideo` of NHL goal MP4s to a
+  private DM. Bot `@CommandCenterHighlights_bot`. Token secret
+  `TELEGRAM_HIGHLIGHTS_BOT_TOKEN` (not the heat or finals bots). Clips come
+  from the same NHL gamecenter + Brightcove path the Sports app already uses
+  (`highlightClip` / `discreteClip` on `api-web.nhle.com`, then a progressive
+  MP4). v1 is Blues-only (`HIGHLIGHTS_TEAM_IDS` default `STL`).
+
+  Each Brightcove id is claimed in `sports_highlights_sent` before send, so a
+  cron rerun is safe. Caption is short (`Blues score — Player vs OPP`). If the
+  ESPN event id resolves, the message includes an **Open game** Mini App
+  button. Heat / finals / newspaper / Times are unchanged.
+
+  Secrets for Josh (Supabase project `esdgrgulaxnewmhjuyzh`). Never commit:
+
+  ```bash
+  supabase secrets set \
+    TELEGRAM_HIGHLIGHTS_BOT_TOKEN="<bot token from BotFather>" \
+    TELEGRAM_HIGHLIGHTS_CHAT_IDS="857547432" \
+    TELEGRAM_HIGHLIGHTS_CRON_SECRET="$(openssl rand -hex 24)" \
+    HIGHLIGHTS_TEAM_IDS="STL" \
+    SPORTS_HIGHLIGHTS_ORIGIN="https://command-center-flax-gamma.vercel.app" \
+    --project-ref esdgrgulaxnewmhjuyzh
+  supabase functions deploy sports-highlights --project-ref esdgrgulaxnewmhjuyzh --no-verify-jwt
+  ```
+
+  Put the same cron secret in Vault as `sports_highlights_cron`, then re-run
+  the schedule block in `supabase/migrations/20261005_sports_highlights.sql`.
+  The sweep is every two minutes. `TELEGRAM_HIGHLIGHTS_CRON_SECRET` may fall
+  back to `SPORTS_PUSH_CRON_SECRET`, and the header `x-sports-push-cron` is
+  accepted. Optional: `HIGHLIGHTS_LOOKBACK_HOURS` (default 72),
+  `HIGHLIGHTS_MAX_SENDS` (default 6).
+
+  One-clip dry-run (resolves a live MP4, does not text anyone, no token):
+
+  ```bash
+  node --experimental-strip-types scripts/highlights-send-one.ts
+  ```
+
+  One real test video to Josh's DM `857547432`. Run this on a machine that has
+  the bot token. It sends that single clip and then stops. It does **not**
+  write `sports_highlights_sent`, so the first cron sweep will send the same
+  clip again unless you claim it (edge `send` below does claim).
+
+  ```bash
+  TELEGRAM_HIGHLIGHTS_BOT_TOKEN="<@CommandCenterHighlights_bot token>" \
+    node --experimental-strip-types scripts/highlights-send-one.ts \
+    --send --clip 6406147120112 --nhl-game 2026020020
+  ```
+
+  That clip is Mason McTavish vs DAL (NHL `2026020020`, ESPN `401891782`).
+  Brightcove URLs are signed and expire, so re-run the script instead of
+  pasting an old `mp4` into Telegram.
+
+  After the function is deployed, the same one-clip test through the edge
+  function claims the id (cron will not repeat it). Omit `clipId` only when
+  you mean every unsent goal in that game.
+
+  ```bash
+  curl -X POST "$SUPABASE_URL/functions/v1/sports-highlights" \
+    -H "Content-Type: application/json" \
+    -H "x-sports-highlights-cron: $TELEGRAM_HIGHLIGHTS_CRON_SECRET" \
+    -d '{"action":"send","nhlGameId":"2026020020","clipId":"6406147120112","dryRun":true}'
+
+  curl -X POST "$SUPABASE_URL/functions/v1/sports-highlights" \
+    -H "Content-Type: application/json" \
+    -H "x-sports-highlights-cron: $TELEGRAM_HIGHLIGHTS_CRON_SECRET" \
+    -d '{"action":"send","nhlGameId":"2026020020","clipId":"6406147120112"}'
+  ```
+
+  List every recent Blues MP4 without sending:
+
+  ```bash
+  curl -X POST "$SUPABASE_URL/functions/v1/sports-highlights" \
+    -H "Content-Type: application/json" \
+    -H "x-sports-highlights-cron: $TELEGRAM_HIGHLIGHTS_CRON_SECRET" \
+    -d '{"action":"sweep","dryRun":true}'
+  ```
+
+  Local unit check without Telegram:
+
+  ```bash
+  node --experimental-strip-types supabase/functions/sports-highlights/sports-highlights.test.ts
   ```
 
 ### Why changes can feel “stuck”
