@@ -66,19 +66,24 @@ const SCHOOL_IDS: Record<string, string> = {
   "miz": "142",
   nebraska: "158",
   "notre dame": "87",
+  michigan: "130",
   "ohio state": "194",
   "oklahoma": "201",
   "oklahoma state": "197",
   "ole miss": "145",
   mississippi: "145",
   "mississippi state": "344",
+  "north texas": "249",
   oregon: "2483",
   pitt: "221",
   pittsburgh: "221",
   "penn state": "213",
+  smu: "2567",
+  tcu: "2628",
   tennessee: "2633",
   texas: "251",
   "texas a&m": "245",
+  "texas tech": "2641",
   ucla: "26",
   "usc": "30",
   utah: "254",
@@ -111,7 +116,7 @@ export function kalshiDollar(raw: string | null | undefined): number | null {
   return n;
 }
 
-/** Last price, else yes bid/ask midpoint, as 0–1. */
+/** Yes bid/ask midpoint, else last price, as 0–1. */
 export function impliedYesProb(m: {
   yes_bid_dollars?: string | null;
   yes_ask_dollars?: string | null;
@@ -163,12 +168,22 @@ export function attachHeismanLogos(board: HeismanBoard, hints: HeismanLogoHint[]
   };
 }
 
+function kalshiUrl(path: string): string {
+  const clean = path.replace(/^\/+/, "");
+  // The press bundle polyfills `window` onto globalThis. A real browser
+  // has `document`; Deno/Node press talks to Kalshi directly.
+  if (typeof document !== "undefined") {
+    return `/api/kalshi?path=${encodeURIComponent(clean)}`;
+  }
+  return `${KALSHI}/${clean}`;
+}
+
 async function kalshiGet<T>(path: string, ms = 6_000): Promise<T | null> {
   try {
     const ctl = new AbortController();
     const t = globalThis.setTimeout(() => ctl.abort(), ms);
     try {
-      const res = await fetch(`${KALSHI}${path}`, {
+      const res = await fetch(kalshiUrl(path), {
         headers: { Accept: "application/json" },
         signal: ctl.signal,
       });

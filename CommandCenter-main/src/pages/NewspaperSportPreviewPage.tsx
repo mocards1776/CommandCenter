@@ -164,7 +164,7 @@ export default function NewspaperSportPreviewPage() {
                 code="CFB"
                 title="College Football"
                 desk="Schedule"
-                blurb="SEC and ranked results, this week’s kickoffs, AP Top 25"
+                blurb="SEC and ranked results, this week’s kickoffs, AP Top 25, Heisman odds"
                 folio="CFB5"
               >
                 <CfbScheduleDesk

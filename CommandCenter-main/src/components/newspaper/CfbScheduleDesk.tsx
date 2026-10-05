@@ -100,44 +100,47 @@ function CfbFill({
   ];
   const odds = heisman?.rows.length ? attachHeismanLogos(heisman, hints) : null;
   if (!poll.length && !sec && !odds) return null;
+  const left = poll.length > 0 || odds != null;
   return (
-    <div className="tt-cfb-fill">
-      <div className="tt-cfb-fill-left">
-        {poll.length ? (
-          <section className="tt-cfb-poll" aria-label="AP Top 25">
-            <h3 className="wsj-band-title">AP Top 25</h3>
-            <ol>
-              {poll.map((row) => (
-                <li key={`${row.rank}-${row.abbrev}`}>
-                  <i>#{row.rank}</i>
-                  {row.logo ? <img src={row.logo} alt="" /> : null}
-                  <b>{row.abbrev}</b>
-                  <em>{row.record || ""}</em>
-                </li>
-              ))}
-            </ol>
-          </section>
-        ) : null}
-        {odds ? (
-          <section className="tt-cfb-heisman" aria-label="Heisman Trophy odds">
-            <h3 className="wsj-band-title">Heisman Trophy</h3>
-            <ol>
-              {odds.rows.map((row, i) => (
-                <li key={row.ticker}>
-                  <i>{i + 1}</i>
-                  {row.logo ? <img src={row.logo} alt="" /> : <span className="tt-cfb-heisman-ph" />}
-                  <span className="tt-cfb-heisman-who">
-                    <b>{row.name}</b>
-                    <em>{row.school}</em>
-                  </span>
-                  <strong>{row.pct}%</strong>
-                </li>
-              ))}
-            </ol>
-            <p className="tt-cfb-heisman-credit">{odds.asOf}</p>
-          </section>
-        ) : null}
-      </div>
+    <div className={left && sec ? "tt-cfb-fill" : "tt-cfb-fill solo"}>
+      {left ? (
+        <div className="tt-cfb-fill-left">
+          {poll.length ? (
+            <section className="tt-cfb-poll" aria-label="AP Top 25">
+              <h3 className="wsj-band-title">AP Top 25</h3>
+              <ol>
+                {poll.map((row) => (
+                  <li key={`${row.rank}-${row.abbrev}`}>
+                    <i>#{row.rank}</i>
+                    {row.logo ? <img src={row.logo} alt="" /> : null}
+                    <b>{row.abbrev}</b>
+                    <em>{row.record || ""}</em>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
+          {odds ? (
+            <section className="tt-cfb-heisman" aria-label="Heisman Trophy odds">
+              <h3 className="wsj-band-title">Heisman Trophy</h3>
+              <ol>
+                {odds.rows.map((row, i) => (
+                  <li key={row.ticker}>
+                    <i>{i + 1}</i>
+                    {row.logo ? <img src={row.logo} alt="" /> : <span className="tt-cfb-heisman-ph" />}
+                    <span className="tt-cfb-heisman-who">
+                      <b>{row.name}</b>
+                      <em>{row.school}</em>
+                    </span>
+                    <strong>{row.pct}%</strong>
+                  </li>
+                ))}
+              </ol>
+              <p className="tt-cfb-heisman-credit">{odds.asOf}</p>
+            </section>
+          ) : null}
+        </div>
+      ) : null}
       {sec ? (
         <section className="tt-cfb-sec" aria-label="SEC standings">
           <StandingsTable group={sec} mine={() => false} />

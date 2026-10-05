@@ -8227,6 +8227,9 @@ li.counting .tt-count.card {
   border-top: 2px solid var(--w-rule);
   align-items: stretch;
 }
+.tt-cfb-fill.solo {
+  grid-template-columns: 1fr;
+}
 .tt-cfb-fill-left {
   display: flex;
   flex-direction: column;
@@ -8280,18 +8283,19 @@ li.counting .tt-count.card {
   margin: 0;
   padding: 0;
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 14px;
+  align-content: start;
 }
 .tt-cfb-heisman li {
   display: grid;
-  grid-template-columns: 1.2rem 18px minmax(0, 1fr) 2.6rem;
+  grid-template-columns: 1.1rem 16px minmax(0, 1fr) 2.2rem;
   align-items: center;
-  gap: 6px;
-  padding: 3px 0;
+  gap: 4px;
+  padding: 2px 0;
   border-bottom: 1px solid var(--w-hair);
-  font-size: 12px;
+  font-size: 11px;
 }
 .tt-cfb-heisman li i {
   font-style: normal;
@@ -8329,14 +8333,15 @@ li.counting .tt-count.card {
 }
 .tt-cfb-heisman li strong {
   font-family: var(--w-cond);
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 .tt-cfb-heisman-credit {
-  margin: 6px 0 0;
-  font-size: 10px;
+  margin: auto 0 0;
+  padding-top: 6px;
+  font-size: 9px;
   font-style: italic;
   color: var(--w-muted);
 }

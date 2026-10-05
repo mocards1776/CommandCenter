@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { execSync } from "child_process";
 import { GET as nhlProxyGet } from "./api/nhl";
+import { GET as kalshiProxyGet } from "./api/kalshi";
 
 function git(cmd: string): string {
   try {
@@ -37,6 +38,12 @@ function nhlApiDevProxy(): Plugin {
         res.setHeader("Content-Type", "application/json; charset=utf-8");
         res.end(await upstream.text());
       });
+      server.middlewares.use("/api/kalshi", async (req, res) => {
+        const upstream = await kalshiProxyGet(new Request(new URL(req.url ?? "", "http://local")));
+        res.statusCode = upstream.status;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(await upstream.text());
+      });
     },
   };
 }
@@ -62,6 +69,6 @@ export default defineConfig({
   server: {
     port: 5173,
     // Supabase and the Todoist edge function are called over https directly.
-    // The only local /api route is the NHL proxy plugin above.
+    // Local /api routes are the NHL and Kalshi proxy plugins above.
   },
 });
