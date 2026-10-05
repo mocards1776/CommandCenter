@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { plotCfbWinProbability as edgePlot } from "../win-probability.ts";
 import { clockParts, isBreakStatus } from "./clock.ts";
 import { formatHeatTimestamp, heatAlertCaption, situationLine } from "./copy.ts";
+import { alertReplyMarkup } from "../telegram-markup.ts";
 import { applyHeatSummary, heatStatMagnitude, pickHeatStats } from "./fetch-game.ts";
 import { fieldBallPct, footballMarks, layoutPlayDots, spotIsRedZone } from "./field.ts";
 import { renderHeatAlertSvg } from "./svg.ts";
@@ -157,10 +158,35 @@ test("situation line is the down and the ball, not the heat reason", () => {
   assert.equal(situationLine(sample), "1st & 10 at WSH 40  ·  WSH ball");
 });
 
-test("caption keeps RUWT copy and adds the open-game link", () => {
-  const caption = heatAlertCaption("One-score game", "https://example.test/sports/nfl/game/1?solo=1");
-  assert.match(caption, /^One-score game\nOpen game: https:\/\/example\.test\/sports\/nfl\/game\/1/);
-  assert.equal(heatAlertCaption("  ", "https://example.test/g"), "Open game: https://example.test/g");
+test("caption keeps RUWT copy and leaves links off the text", () => {
+  const caption = heatAlertCaption("One-score game");
+  assert.equal(caption, "One-score game");
+  assert.equal(heatAlertCaption("  "), "");
+  assert.doesNotMatch(caption, /Open game|command-center|https:\/\//);
+});
+
+test("inline keyboard puts Open game and RUWT board on one row", () => {
+  const markup = alertReplyMarkup(
+    "https://command-center-flax-gamma.vercel.app/",
+    "/sports/nfl/game/1?solo=1",
+  );
+  assert.ok(markup);
+  const parsed = JSON.parse(markup!) as {
+    inline_keyboard: { text: string; url: string }[][];
+  };
+  assert.equal(parsed.inline_keyboard.length, 1);
+  assert.deepEqual(
+    parsed.inline_keyboard[0]!.map((button) => button.text),
+    ["Open game", "RUWT board"],
+  );
+  assert.equal(
+    parsed.inline_keyboard[0]![0]!.url,
+    "https://command-center-flax-gamma.vercel.app/sports/nfl/game/1?solo=1",
+  );
+  assert.equal(
+    parsed.inline_keyboard[0]![1]!.url,
+    "https://command-center-flax-gamma.vercel.app/sports/ruwt?solo=1",
+  );
 });
 
 test("chat allowlist rejects ids that were not configured", () => {

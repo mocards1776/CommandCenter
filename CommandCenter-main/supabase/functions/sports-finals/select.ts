@@ -5,6 +5,9 @@
  * hot on the live-drama line while it was in progress (ever_hot). The first
  * time a game is seen, nothing fires — that sample is the baseline, so a
  * deploy does not photo every final already on the board.
+ *
+ * Empty TELEGRAM_FINALS_SPORTS watches nfl, cfb, mlb, and nhl. The claim
+ * gate is still favorites+ruwt, not every game on those boards.
  */
 
 export type FinalsScope = {
@@ -31,6 +34,9 @@ export type WatchSnap = {
 
 const SPORTS = new Set(["nfl", "cfb", "mlb", "nhl"]);
 
+/** Empty TELEGRAM_FINALS_SPORTS must still watch every league we can photo. */
+export const DEFAULT_FINALS_SPORTS = ["nfl", "cfb", "mlb", "nhl"];
+
 /** Josh's DM. Override with TELEGRAM_FINALS_CHAT_IDS. */
 export const DEFAULT_FINALS_CHAT_ID = "857547432";
 
@@ -46,14 +52,14 @@ export function parseScope(raw: string | undefined | null): FinalsScope {
 }
 
 export function parseSports(raw: string | undefined | null): string[] {
-  if (raw == null || raw.trim() === "") return ["nfl", "cfb"];
+  if (raw == null || raw.trim() === "") return [...DEFAULT_FINALS_SPORTS];
   const out: string[] = [];
   for (const part of raw.split(/[,\s]+/)) {
     const sport = part.trim().toLowerCase();
     if (!SPORTS.has(sport) || out.includes(sport)) continue;
     out.push(sport);
   }
-  return out;
+  return out.length ? out : [...DEFAULT_FINALS_SPORTS];
 }
 
 export function parseFavoriteTokens(raw: string | undefined | null): FavoriteToken[] {

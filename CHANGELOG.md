@@ -2,6 +2,15 @@
 
 ---
 
+## Telegram buttons, short finals captions, NHL/MLB sweep — October 5, 2026
+
+- Heat and finals Telegram photos send **Open game** and **RUWT board** as one-row inline keyboard URL buttons. The caption no longer repeats a plain “Open game” / “Open in Command Center” link.
+- Finals captions are a short narrative: winner/loser + score, record move, and one box-score highlight when ESPN has a leader. Odds dumps and multi-bullet stat lists stay on the graphic, not in the text.
+- `TELEGRAM_FINALS_SPORTS` empty now defaults to `nfl,cfb,mlb,nhl`. MLB and NHL already rendered; they were never written to `sports_finals_watch` because the default list was football-only. Scope stays `favorites,ruwt` (not `all`).
+- Redeploy `sports-telegram` and `sports-finals` after merge. If the project already set `TELEGRAM_FINALS_SPORTS=nfl,cfb`, unset it or expand it — the code default only applies when that secret is empty.
+
+---
+
 ## Heat cards: smaller field, live WP, Apple-style stats — October 4, 2026
 
 - RUWT heat Telegram photos keep the 1080×1350 slot. The live field is compact instead of filling the card. Under it: the same live win-probability chart as the game page (#281 — historical fill only, dashed hold for remaining regulation) and Apple Sports-style team stats (centered labels, opposing team-color bars). Key rows only: yards, pass, rush, 1st downs, 3rd down, turnovers, possession.

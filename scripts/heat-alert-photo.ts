@@ -7,7 +7,7 @@
  *   TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_IDS=123 \
  *     node --experimental-strip-types heat-alert-photo.ts --sport nfl --send --reason "One-score game"
  *
- * `--reason` is the RUWT why-it-fired line. Omit it and the caption is only the open-game link.
+ * `--reason` is the RUWT why-it-fired line. Links go on inline keyboard buttons.
  * The token is read from the environment. It is never written into the repo.
  */
 import { mkdir, writeFile } from "node:fs/promises";
@@ -21,12 +21,13 @@ import {
   RESVG_WASM,
 } from "../supabase/functions/_shared/heat-alert/assets.ts";
 import { decodeBase64 } from "../supabase/functions/_shared/heat-alert/binary.ts";
-import { heatAlertCaption, openGameUrl } from "../supabase/functions/_shared/heat-alert/copy.ts";
+import { heatAlertCaption } from "../supabase/functions/_shared/heat-alert/copy.ts";
 import { loadHeatAlertCard } from "../supabase/functions/_shared/heat-alert/fetch-game.ts";
 import { embedLogos } from "../supabase/functions/_shared/heat-alert/logos.ts";
 import { heatAlertFonts, heatAlertResvgOptions } from "../supabase/functions/_shared/heat-alert/raster-options.ts";
 import { renderHeatAlertSvg } from "../supabase/functions/_shared/heat-alert/svg.ts";
 import { parseChatAllowlist, resolveChatTargets, sendTelegramPhoto } from "../supabase/functions/_shared/heat-alert/telegram.ts";
+import { alertReplyMarkup } from "../supabase/functions/_shared/telegram-markup.ts";
 import type { HeatAlertCard } from "../supabase/functions/_shared/heat-alert/types.ts";
 
 /** Screenshot moment: KC @ LV, 3rd 3:35, 1st & 10 at LV 15 after a KC punt. */
@@ -119,7 +120,8 @@ const card = fixture === "kc-lv" || fixture === ""
   : await loadHeatAlertCard({ sport, gameId });
 const withLogos = await embedLogos(card);
 const svg = renderHeatAlertSvg(withLogos);
-const caption = heatAlertCaption(reason, openGameUrl(origin, card.gamePath));
+const caption = heatAlertCaption(reason);
+const replyMarkup = alertReplyMarkup(origin, card.gamePath);
 
 await initWasm(decodeBase64(RESVG_WASM));
 const fonts = heatAlertFonts({
@@ -168,7 +170,7 @@ if (has("send")) {
     console.error(targets.error);
     process.exit(1);
   }
-  const chats = await sendTelegramPhoto({ token, png, caption, chatIds: targets.ids });
+  const chats = await sendTelegramPhoto({ token, png, caption, chatIds: targets.ids, replyMarkup });
   console.log(JSON.stringify({ chats }, null, 2));
   if (!chats.some((row) => row.ok)) process.exit(1);
 }

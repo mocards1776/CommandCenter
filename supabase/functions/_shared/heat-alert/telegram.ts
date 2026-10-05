@@ -40,6 +40,7 @@ export async function sendTelegramPhoto(opts: {
   caption: string;
   chatIds: readonly string[];
   filename?: string;
+  replyMarkup?: string | null;
 }): Promise<TelegramSendResult[]> {
   const token = opts.token.trim();
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN is not set");
@@ -49,7 +50,8 @@ export async function sendTelegramPhoto(opts: {
   for (const chatId of opts.chatIds) {
     const body = new FormData();
     body.set("chat_id", chatId);
-    body.set("caption", caption);
+    if (caption) body.set("caption", caption);
+    if (opts.replyMarkup) body.set("reply_markup", opts.replyMarkup);
     body.set("photo", new Blob([opts.png], { type: "image/png" }), filename);
     try {
       const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {

@@ -28,9 +28,9 @@ export default function HeatAlertPreviewPage() {
     queryFn: () => loadHeatAlertCard({ sport, gameId: gameId || null }),
   });
 
-  const caption = card.data
-    ? heatAlertCaption(params.get("reason"), openGameUrl(window.location.origin, card.data.gamePath))
-    : "";
+  const caption = card.data ? heatAlertCaption(params.get("reason")) : "";
+  const openUrl = card.data ? openGameUrl(window.location.origin, card.data.gamePath) : "";
+  const ruwtUrl = `${window.location.origin.replace(/\/$/, "")}/sports/ruwt?solo=1`;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
@@ -40,7 +40,7 @@ export default function HeatAlertPreviewPage() {
         <p className="text-chalk text-[13px] leading-relaxed">
           This is the drawing Telegram receives: scoreboard, a compact field, the live
           win-probability chart, and Apple-style team stats from the live game. The heat
-          reason stays in the caption.
+          reason stays in the caption. Telegram adds Open game and RUWT board buttons.
         </p>
       </header>
       <form
@@ -94,8 +94,18 @@ export default function HeatAlertPreviewPage() {
           <HeatAlertImage card={card.data} />
           <p className="text-chalk text-[12px]">{situationLine(card.data)}</p>
           <pre className="whitespace-pre-wrap rounded-lg border border-white/10 bg-ink px-3 py-2 text-[12px] text-cream">
-            {caption}
+            {caption || "(no heat reason)"}
           </pre>
+          <p className="text-chalk text-[12px]">
+            Buttons:{" "}
+            <a className="text-accent underline" href={openUrl}>
+              Open game
+            </a>
+            {" · "}
+            <a className="text-accent underline" href={ruwtUrl}>
+              RUWT board
+            </a>
+          </p>
         </div>
       ) : null}
     </div>

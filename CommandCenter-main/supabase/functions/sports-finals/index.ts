@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { fetchPushBoards } from "../sports-push/boards.ts";
 import { dramaInput, gameKey, gamePhase, liveDrama, type PushGame } from "../sports-push/live-drama.ts";
+import { alertReplyMarkup } from "../_shared/telegram-markup.ts";
 import { finalCaption, loadFinalCard, SUMMARY_PATH } from "./card.ts";
 import { rasterizeSvg } from "./png.ts";
 import {
@@ -30,7 +31,7 @@ import { sendTelegramPhoto } from "./telegram.ts";
  *   TELEGRAM_FINALS_CRON_SECRET   (falls back to SPORTS_PUSH_CRON_SECRET)
  *   TELEGRAM_FINALS_CHAT_IDS      allowlist, default 857547432
  *   TELEGRAM_FINALS_SCOPE         favorites,ruwt | all
- *   TELEGRAM_FINALS_SPORTS        nfl,cfb (mlb and nhl also render)
+ *   TELEGRAM_FINALS_SPORTS        default nfl,cfb,mlb,nhl when unset
  *   TELEGRAM_FINALS_FAVORITES     nfl:11,cfb:333 or nfl:CLE — overrides push favorites
  *   SPORTS_FINALS_ORIGIN          game links; falls back to SPORTS_PUSH_ORIGIN
  *
@@ -135,8 +136,9 @@ async function deliver(game: PushGame, chats: string[], token: string): Promise<
   if (!card.final) throw new Error(`${game.sport}:${game.id} is not final`);
   const png = await rasterizeSvg(renderFinalSvg(card));
   const caption = finalCaption(card, origin());
+  const replyMarkup = alertReplyMarkup(origin(), card.path);
   for (const chatId of chats) {
-    await sendTelegramPhoto(token, chatId, png, caption);
+    await sendTelegramPhoto(token, chatId, png, caption, replyMarkup);
   }
   return { caption, bytes: png.byteLength };
 }
@@ -296,6 +298,7 @@ Deno.serve(async (req: Request) => {
       }
       const png = await rasterizeSvg(renderFinalSvg(card));
       const caption = finalCaption(card, origin());
+      const replyMarkup = alertReplyMarkup(origin(), card.path);
       const meta = {
         sport,
         eventId,
@@ -321,7 +324,7 @@ Deno.serve(async (req: Request) => {
         chats = [chatId];
       }
       if (!chats.length) return json({ error: "TELEGRAM_FINALS_CHAT_IDS is empty" }, 503);
-      for (const chatId of chats) await sendTelegramPhoto(token, chatId, png, caption);
+      for (const chatId of chats) await sendTelegramPhoto(token, chatId, png, caption, replyMarkup);
       if (body.record !== false) {
         const db = admin();
         if (db) {

@@ -5,10 +5,12 @@ export async function sendTelegramPhoto(
   chatId: string,
   png: Uint8Array,
   caption: string,
+  replyMarkup?: string | null,
 ): Promise<void> {
   const form = new FormData();
   form.set("chat_id", chatId);
-  form.set("caption", caption.slice(0, 1000));
+  if (caption) form.set("caption", caption.slice(0, 1000));
+  if (replyMarkup) form.set("reply_markup", replyMarkup);
   form.set("photo", new Blob([png], { type: "image/png" }), "final.png");
   const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
     method: "POST",

@@ -80,11 +80,8 @@ export function openGameUrl(origin: string, path: string): string {
 
 /**
  * Telegram caption. `reason` is RUWT's why-it-fired line (the same chips as the
- * heat push). This module does not invent heat copy when that line is empty.
+ * heat push). Game / RUWT links live on the inline keyboard, not in this text.
  */
-export function heatAlertCaption(reason: string | null | undefined, openUrl: string): string {
-  const why = (reason ?? "").replace(/\s+/g, " ").trim().slice(0, 700);
-  const link = `Open game: ${openUrl}`;
-  const text = why ? `${why}\n${link}` : link;
-  return text.slice(0, 1024);
+export function heatAlertCaption(reason: string | null | undefined): string {
+  return (reason ?? "").replace(/\s+/g, " ").trim().slice(0, 1024);
 }

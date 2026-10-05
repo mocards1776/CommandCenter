@@ -1,0 +1,66 @@
+Telegram caption samples (text only; Open game / RUWT board are inline keyboard buttons after this change)
+
+================================================================================
+HEAT (sports-telegram)
+================================================================================
+
+BEFORE
+------
+One-score · late · possession
+Open game: https://command-center-flax-gamma.vercel.app/sports/cfb/game/401752829?solo=1
+
+AFTER
+-----
+One-score · late · possession
+
+Buttons (reply_markup.inline_keyboard, one row):
+  Open game  -> https://command-center-flax-gamma.vercel.app/sports/cfb/game/401752829?solo=1
+  RUWT board -> https://command-center-flax-gamma.vercel.app/sports/ruwt?solo=1
+
+================================================================================
+FINALS NFL (sports-finals) — PIT 24 @ CLE 27
+================================================================================
+
+BEFORE
+------
+Final: Pittsburgh Steelers 24, Browns 27
+PIT 2-2 · CLE 3-1
+Underdog CLE +124 won
+Odds: PIT -2.5 did not cover · ML CLE +124 won
+
+Passing: PIT Aaron Rodgers 22/40 · 299 YDS · 3 TD · 2 INT
+Passing: CLE Joe Flacco 18/25 · 220 YDS · 2 TD · 0 INT
+
+Open game: https://command-center-flax-gamma.vercel.app/sports/nfl/game/401872964?solo=1
+
+AFTER
+-----
+FINAL · NFL
+Browns defeat Pittsburgh Steelers 27-24.
+Browns move to 3-1, Pittsburgh Steelers fall to 2-2.
+Aaron Rodgers threw for 299 yards.
+
+Buttons:
+  Open game  -> https://command-center-flax-gamma.vercel.app/sports/nfl/game/401872964?solo=1
+  RUWT board -> https://command-center-flax-gamma.vercel.app/sports/ruwt?solo=1
+
+================================================================================
+FINALS NHL — BOS 2 @ STL 3
+================================================================================
+
+AFTER
+-----
+FINAL · NHL
+St. Louis Blues beat Boston Bruins 3-2.
+St. Louis Blues move to 2-0-1, Boston Bruins fall to 2-1-0.
+
+================================================================================
+FINALS MLB — CHC 3 @ STL 5
+================================================================================
+
+AFTER
+-----
+FINAL · MLB
+St. Louis Cardinals defeat Chicago Cubs 5-3.
+St. Louis Cardinals move to 78-84, Chicago Cubs fall to 83-79.
+Nolan Arenado hit a home run.
