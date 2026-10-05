@@ -22,9 +22,11 @@
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="icon" href="/icon-192.png" />
     <script>
-      // Opened from @ThompsonTimes_bot's "Read the paper" button (a Telegram Mini App):
-      // load Telegram's WebApp script, then tell Telegram the page is ready and take
-      // the full sheet. Normal browsers never load the script, so this is a no-op there.
+      // Shared Telegram Mini App bootstrap (Times "Read the paper", heat Open game,
+      // finals RUWT board). Load the official script only inside Telegram's
+      // WebView, then ready() + expand() so the sheet is full height.
+      // Query params such as ?solo=1 stay on the URL; Telegram uses the hash.
+      // Normal browsers never load the script.
       (function () {
         try {
           var inTelegram =
@@ -33,9 +35,11 @@
           if (!inTelegram) return;
           var s = document.createElement("script");
           s.src = "https://telegram.org/js/telegram-web-app.js";
+          s.setAttribute("data-telegram-web-app", "1");
           s.onload = function () {
             var app = window.Telegram && window.Telegram.WebApp;
             if (!app) return;
+            document.documentElement.classList.add("telegram-mini-app");
             app.ready();
             app.expand();
           };

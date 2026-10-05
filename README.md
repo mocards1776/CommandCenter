@@ -117,7 +117,8 @@ npm run lint
   Sports App owns the drawing (logos, score, clock nest, down and distance,
   a compact field / ice / diamond, the live win-probability chart, and
   Apple-style team stats). RUWT owns the caption reason. Open game and
-  RUWT board are Telegram inline keyboard buttons (not caption links).
+  RUWT board are Telegram Mini App (`web_app`) buttons (not Safari URL
+  buttons or caption links). BotFather `/setdomain` is not required.
   The picture is rendered from the game, not from a screenshot and not
   from a stock photo.
 
@@ -197,7 +198,8 @@ npm run lint
   false and the game was never `ever_hot`.
 
   The caption is a short narrative (winner, records, one highlight).
-  Open game and RUWT board are inline keyboard buttons.
+  Open game and RUWT board are Mini App (`web_app`) buttons. BotFather
+  `/setdomain` is not required.
 
   The first time a game is seen, nothing sends, so a deploy does not photo
   finals already on the board. Chat allowlist `TELEGRAM_FINALS_CHAT_IDS`

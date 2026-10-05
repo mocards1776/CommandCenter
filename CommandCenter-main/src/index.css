@@ -37,6 +37,13 @@
   --font-rss: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Palatino, serif;
 }
 
+/* Telegram Mini App WebView: official script sets --tg-viewport-stable-height. */
+html.telegram-mini-app,
+html.telegram-mini-app body,
+html.telegram-mini-app #root {
+  min-height: var(--tg-viewport-stable-height, 100vh);
+}
+
 @layer base {
   * {
     box-sizing: border-box;

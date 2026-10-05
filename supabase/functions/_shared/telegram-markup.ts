@@ -2,12 +2,14 @@
  * Telegram inline keyboards for sports photos.
  *
  * Heat (sports-telegram) and finals (sports-finals) share this shape so both
- * bots send the same two URL buttons instead of a caption markdown link.
+ * bots send the same two Mini App buttons instead of a caption markdown link
+ * or a Safari URL button. Private DMs only — web_app is not valid in
+ * channels/groups. BotFather /setdomain is not required for these buttons.
  */
 
 export const DEFAULT_COMMAND_CENTER_ORIGIN = "https://command-center-flax-gamma.vercel.app";
 
-export type TelegramUrlButton = {
+export type TelegramCommandCenterButton = {
   text: string;
   url: string;
 };
@@ -31,11 +33,20 @@ export function gameDetailUrl(origin: string | null | undefined, path: string | 
   return `${root}${href.startsWith("/") ? href : `/${href}`}`;
 }
 
-export function telegramInlineKeyboard(buttons: readonly TelegramUrlButton[]): string | null {
+export function telegramMiniAppButton(text: string, url: string): { text: string; web_app: { url: string } } {
+  return { text, web_app: { url } };
+}
+
+/**
+ * One row of Mini App buttons. Destinations stay Command Center HTTPS URLs
+ * (including ?solo=1). Telegram opens them in its WebView — no url: field,
+ * so clients do not treat them as external Safari links.
+ */
+export function telegramInlineKeyboard(buttons: readonly TelegramCommandCenterButton[]): string | null {
   const row = buttons.filter((button) => button.text && /^https:\/\//i.test(button.url));
   if (!row.length) return null;
   return JSON.stringify({
-    inline_keyboard: [row.map((button) => ({ text: button.text, url: button.url }))],
+    inline_keyboard: [row.map((button) => telegramMiniAppButton(button.text, button.url))],
   });
 }
 
@@ -51,7 +62,7 @@ export function alertReplyMarkup(
   const game = gameDetailUrl(origin, gamePath);
   const ruwt = ruwtBoardUrl(origin);
   const home = sportsHomeUrl(origin);
-  const buttons: TelegramUrlButton[] = [];
+  const buttons: TelegramCommandCenterButton[] = [];
   if (game) buttons.push({ text: "Open game", url: game });
   if (ruwt) buttons.push({ text: "RUWT board", url: ruwt });
   else if (home) buttons.push({ text: "Sports home", url: home });
