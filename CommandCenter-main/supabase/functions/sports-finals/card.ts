@@ -13,7 +13,7 @@ import {
 } from "./nhl-stars.ts";
 import { oddsFromSummary, type FinalOdds } from "./odds.ts";
 import { mapMlbWinProbability, mlbPlayRefs } from "./mlb-win-probability.ts";
-import { mlbPlayoffFromSummary } from "./series.ts";
+import { mlbPlayoffFromSummary, type SeriesGame } from "./series.ts";
 import { loadCardStandings, type StandingTable } from "./standings.ts";
 import {
   mapCfbWinProbability,
@@ -154,6 +154,8 @@ export type FinalCard = {
   playoff: boolean;
   /** ESPN series copy, e.g. "MIL leads series 2-0 · Game 2 of 5". */
   seriesLine: string | null;
+  /** Playoff series games (completed + upcoming) from ESPN seasonseries. */
+  seriesGames: SeriesGame[];
   venue: string | null;
   headline: string | null;
   away: FinalSide;
@@ -975,6 +977,7 @@ export function cardFromSummary(sport: string, eventId: string, raw: unknown): F
     final,
     playoff: playoff.playoff,
     seriesLine: playoff.seriesLine,
+    seriesGames: playoff.seriesGames,
     venue,
     headline: headline ? headline.replace(/\s+/g, " ").slice(0, 180) : null,
     away,

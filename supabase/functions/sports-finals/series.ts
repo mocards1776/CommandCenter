@@ -6,6 +6,19 @@
  * nothing is guessed. Regular-season "season series" is ignored.
  */
 
+export type SeriesGame = {
+  eventId: string;
+  gameNumber: number;
+  date: string | null;
+  final: boolean;
+  awayAbbrev: string;
+  homeAbbrev: string;
+  awayScore: number | null;
+  homeScore: number | null;
+  winnerAbbrev: string | null;
+  current: boolean;
+};
+
 export type PlayoffSeriesFields = {
   playoff: boolean;
   summary?: string | null;
@@ -104,11 +117,42 @@ function noteFrom(comp: Rec, series: Rec): string | null {
  * ESPN's game summary labels the live series `current` and also ships a
  * `playoff` seasonseries row with the same summary.
  */
+export function seriesGamesFromEspn(series: unknown, currentEventId: string): SeriesGame[] {
+  return arr(rec(series).events)
+    .map((event, i) => {
+      const row = rec(event);
+      const id = str(row.id);
+      const comps = arr(row.competitors).map(rec);
+      const away = comps.find((c) => str(c.homeAway) === "away") ?? {};
+      const home = comps.find((c) => str(c.homeAway) === "home") ?? {};
+      const status = rec(row.statusType);
+      const final = status.completed === true || str(row.status) === "post" || str(status.state) === "post";
+      const awayAbbrev = str(rec(away.team).abbreviation);
+      const homeAbbrev = str(rec(home.team).abbreviation);
+      const winnerAbbrev =
+        away.winner === true ? awayAbbrev : home.winner === true ? homeAbbrev : null;
+      return {
+        eventId: id,
+        gameNumber: i + 1,
+        date: str(row.date) || null,
+        final,
+        awayAbbrev,
+        homeAbbrev,
+        awayScore: final ? num(away.score) : null,
+        homeScore: final ? num(home.score) : null,
+        winnerAbbrev,
+        current: Boolean(id) && id === currentEventId,
+      };
+    })
+    .filter((game) => Boolean(game.eventId));
+}
+
 export function mlbPlayoffFromSummary(sport: string, body: unknown, comp: unknown): {
   playoff: boolean;
   seriesLine: string | null;
+  seriesGames: SeriesGame[];
 } {
-  if (sport !== "mlb") return { playoff: false, seriesLine: null };
+  if (sport !== "mlb") return { playoff: false, seriesLine: null, seriesGames: [] };
   const raw = rec(body);
   const competition = rec(comp);
   const blobs = seriesBlobs(competition, raw);
@@ -116,12 +160,13 @@ export function mlbPlayoffFromSummary(sport: string, body: unknown, comp: unknow
     blobs.find((row) => str(row.type) === "playoff") ??
     (isMlbPostseason(raw) ? blobs.find((row) => str(row.type) === "current") : undefined);
   const postseason = Boolean(playoffRow) || isMlbPostseason(raw);
-  if (!postseason) return { playoff: false, seriesLine: null };
+  if (!postseason) return { playoff: false, seriesLine: null, seriesGames: [] };
   const series = playoffRow ?? {};
   const wins = arr(series.competitors)
     .map((row) => num(rec(row).wins))
     .filter((n): n is number => n != null);
   const played = wins.reduce((sum, n) => sum + n, 0);
+  const currentId = str(rec(raw.header).id) || str(competition.id);
   const line = formatPlayoffSeriesLine({
     playoff: true,
     summary: str(series.summary) || str(series.shortSummary) || null,
@@ -132,5 +177,5 @@ export function mlbPlayoffFromSummary(sport: string, body: unknown, comp: unknow
     losses: wins.length >= 2 ? Math.min(...wins) : null,
     isTied: /tied/i.test(str(series.summary)) || (wins.length >= 2 && wins[0] === wins[1] && (wins[0] ?? 0) > 0),
   });
-  return { playoff: true, seriesLine: line };
+  return { playoff: true, seriesLine: line, seriesGames: seriesGamesFromEspn(series, currentId) };
 }

@@ -22,6 +22,7 @@ import {
   type MlbBox,
   type MlbBoxSide,
 } from "./card.ts";
+import type { SeriesGame } from "./series.ts";
 import {
   mlbInningLabels,
   mlbInningTicks,
@@ -80,10 +81,69 @@ export function paintColor(primary: string, alternate: string | null): string {
   if (alt && altY >= 0.22) return alt;
   const base = main ?? alt;
   if (!base) return "#94a3b8";
-  const raw = base.replace("#", "");
-  const ch = [0, 2, 4].map((i) => parseInt(raw.slice(i, i + 2), 16));
-  const lifted = ch.map((c) => Math.round(c + (255 - c) * 0.5));
-  return `#${lifted.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+  return liftReadable(base, 0.28);
+}
+
+function mixHex(hex: string, toward: string, t: number): string {
+  const a = hex.replace("#", "");
+  const b = toward.replace("#", "");
+  const ch = [0, 2, 4].map((i) => {
+    const x = parseInt(a.slice(i, i + 2), 16);
+    const y = parseInt(b.slice(i, i + 2), 16);
+    return Math.round(x + (y - x) * t);
+  });
+  return `#${ch.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function liftReadable(hex: string, minY: number): string {
+  let cur = hex;
+  for (let i = 0; i < 8 && luminance(cur) < minY; i++) {
+    cur = mixHex(cur, "#ffffff", 0.2);
+  }
+  return cur;
+}
+
+function colorDistance(a: string, b: string): number {
+  const ax = a.replace("#", "");
+  const bx = b.replace("#", "");
+  const ch = [0, 2, 4].map((i) => {
+    const x = parseInt(ax.slice(i, i + 2), 16);
+    const y = parseInt(bx.slice(i, i + 2), 16);
+    return x - y;
+  });
+  return Math.sqrt(ch[0]! ** 2 + ch[1]! ** 2 + ch[2]! ** 2);
+}
+
+function colorCandidates(primary: string, alternate: string | null): string[] {
+  const main = normalizeHex(primary);
+  const alt = normalizeHex(alternate);
+  const out: string[] = [];
+  if (main) out.push(luminance(main) >= 0.2 ? main : liftReadable(main, 0.28));
+  if (alt && luminance(alt) >= 0.2) out.push(alt);
+  return [...new Set(out)];
+}
+
+/** Keep away/home WP fills and chips visually different (Padres gold ≠ Brewers navy). */
+export function distinctTeamPaints(
+  awayPrimary: string,
+  awayAlt: string | null,
+  homePrimary: string,
+  homeAlt: string | null,
+): { away: string; home: string } {
+  const awayOpts = colorCandidates(awayPrimary, awayAlt);
+  const homeOpts = colorCandidates(homePrimary, homeAlt);
+  let best = {
+    away: awayOpts[0] ?? paintColor(awayPrimary, awayAlt),
+    home: homeOpts[0] ?? paintColor(homePrimary, homeAlt),
+    score: -1,
+  };
+  for (const away of awayOpts) {
+    for (const home of homeOpts) {
+      const score = colorDistance(away, home);
+      if (score > best.score) best = { away, home, score };
+    }
+  }
+  return { away: best.away, home: best.home };
 }
 
 function sideTitleLines(side: FinalSide): string[] {
@@ -141,11 +201,12 @@ function panel(x: number, y: number, w: number, h: number, fill = "#0c1628"): st
   return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="18" fill="${fill}" stroke="rgba(255,255,255,0.08)"/>`;
 }
 
-function abbrevChip(abbrev: string, x: number, y: number): string {
+function abbrevChip(abbrev: string, x: number, y: number, fill: string): string {
   const w = Math.max(58, abbrev.length * 15 + 20);
+  const ink = isLightTeamColor(fill) ? "#140c08" : "#f7f4ee";
   return [
-    `<rect x="${x}" y="${y}" width="${w}" height="30" rx="7" fill="rgba(0,0,0,0.5)"/>`,
-    text(abbrev, x + 10, y + 21, { size: 16, fill: "#ffffff", weight: 700, spacing: 0.7 }),
+    `<rect x="${x}" y="${y}" width="${w}" height="30" rx="7" fill="${fill}"/>`,
+    text(abbrev, x + 10, y + 21, { size: 16, fill: ink, weight: 700, spacing: 0.7 }),
   ].join("");
 }
 
@@ -167,30 +228,16 @@ function text(
   return `<text x="${x}" y="${y}" fill="${opts.fill}" font-size="${opts.size}" font-weight="${weight}" text-anchor="${anchor}"${spacing}>${esc(value)}</text>`;
 }
 
-function logoHaloFilter(): string {
-  return [
-    `<filter id="logoHalo" x="-28%" y="-28%" width="156%" height="156%">`,
-    `<feMorphology in="SourceAlpha" operator="dilate" radius="2.4" result="spread"/>`,
-    `<feFlood flood-color="#f7f4ee" flood-opacity="0.92" result="haloColor"/>`,
-    `<feComposite in="haloColor" in2="spread" operator="in" result="halo"/>`,
-    `<feGaussianBlur in="halo" stdDeviation="1.15" result="soft"/>`,
-    `<feMerge><feMergeNode in="soft"/><feMergeNode in="halo"/><feMergeNode in="SourceGraphic"/></feMerge>`,
-    `</filter>`,
-  ].join("");
-}
-
 function logo(side: FinalSide, x: number, y: number, size: number, paint: string, faded = false): string {
   const cx = x + size / 2;
   const cy = y + size / 2;
-  const disc = `<circle cx="${cx}" cy="${cy}" r="${size / 2 - 1}" fill="rgba(247,244,238,0.16)"/>`;
   const inner = side.logoData
-    ? `<image href="${side.logoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet" filter="url(#logoHalo)"/>`
+    ? `<image href="${side.logoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"/>`
     : [
         `<circle cx="${cx}" cy="${cy}" r="${size / 2 - 3}" fill="none" stroke="${paint}" stroke-width="4"/>`,
         text(side.abbrev, cx, cy + 9, { size: 26, fill: paint, anchor: "middle", weight: 700 }),
       ].join("");
-  const mark = `${disc}${inner}`;
-  return faded ? `<g opacity="0.38">${mark}</g>` : mark;
+  return faded ? `<g opacity="0.38">${inner}</g>` : inner;
 }
 
 function loserOf(card: FinalCard, which: "away" | "home"): boolean {
@@ -341,8 +388,8 @@ function winChart(
     ticks.join(""),
     line ? `<path d="${line}" fill="none" stroke="#f7f4ee" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>` : "",
     dot,
-    abbrevChip(card.away.abbrev, 12, 10),
-    abbrevChip(card.home.abbrev, 12, h - 40),
+    abbrevChip(card.away.abbrev, 12, 10, awayPaint),
+    abbrevChip(card.home.abbrev, 12, h - 40, homePaint),
     `</svg>`,
   ].join("");
 }
@@ -660,7 +707,7 @@ function starStatCells(star: FinalStar): { value: string; label: string }[] {
 function sideLogoMark(side: FinalSide, cx: number, y: number, size: number, paint: string, anchor: "start" | "end"): string {
   const x = anchor === "end" ? cx - size : cx;
   if (side.logoData) {
-    return `<image href="${side.logoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet" filter="url(#logoHalo)"/>`;
+    return `<image href="${side.logoData}" x="${x}" y="${y}" width="${size}" height="${size}" preserveAspectRatio="xMidYMid meet"/>`;
   }
   return text(side.abbrev, anchor === "end" ? cx : cx, y + size - 8, {
     size: 16,
@@ -713,9 +760,6 @@ function starsBlock(
     const photo = first ? 96 : 80;
     parts.push(
       `<rect x="${colX + 4}" y="${cardY}" width="${colW - 8}" height="${cardH}" rx="12" fill="#0a1424" stroke="${medal}" stroke-opacity="0.45"/>`,
-    );
-    parts.push(
-      `<ellipse cx="${cx}" cy="${cardY + 8}" rx="${colW * 0.38}" ry="36" fill="${medal}" opacity="0.16"/>`,
     );
     const starCount = 4 - star.star;
     const starR = first ? 6.5 : 5.5;
@@ -831,6 +875,85 @@ function performersBlock(
   return parts.join("");
 }
 
+function seriesWhen(iso: string | null, final: boolean): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  if (final) {
+    return date.toLocaleDateString("en-US", {
+      timeZone: "America/Chicago",
+      month: "short",
+      day: "numeric",
+    });
+  }
+  return date.toLocaleDateString("en-US", {
+    timeZone: "America/Chicago",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function seriesGameLine(game: SeriesGame): { result: string; site: string } {
+  if (game.final && game.winnerAbbrev && game.awayScore != null && game.homeScore != null) {
+    const top = Math.max(game.awayScore, game.homeScore);
+    const bot = Math.min(game.awayScore, game.homeScore);
+    return { result: `${game.winnerAbbrev} ${top}–${bot}`, site: `@ ${game.homeAbbrev}` };
+  }
+  if (game.final && game.awayScore != null && game.homeScore != null) {
+    return { result: `${game.awayScore}–${game.homeScore}`, site: `@ ${game.homeAbbrev}` };
+  }
+  return { result: seriesWhen(game.date, false) || "TBD", site: `@ ${game.homeAbbrev}` };
+}
+
+function seriesScheduleHeight(games: SeriesGame[]): number {
+  if (!games.length) return 0;
+  return 118;
+}
+
+function seriesScheduleBlock(
+  games: SeriesGame[],
+  x: number,
+  y: number,
+  w: number,
+  awayPaint: string,
+  homePaint: string,
+  awayAbbrev: string,
+): string {
+  const inner = w - CARD_IN * 2;
+  const colW = inner / Math.max(games.length, 1);
+  const parts = [sectionTitle("Series", x + CARD_IN, y + 32)];
+  games.forEach((game, i) => {
+    const cx = x + CARD_IN + colW * i + colW / 2;
+    const boxX = x + CARD_IN + colW * i + 4;
+    const boxW = colW - 8;
+    const paint = game.winnerAbbrev
+      ? game.winnerAbbrev === awayAbbrev
+        ? awayPaint
+        : homePaint
+      : "#8b93a7";
+    const { result, site } = seriesGameLine(game);
+    if (game.current) {
+      parts.push(
+        `<rect x="${boxX}" y="${y + 44}" width="${boxW}" height="64" rx="10" fill="rgba(247,244,238,0.08)" stroke="#f7f4ee" stroke-opacity="0.35"/>`,
+      );
+    }
+    parts.push(
+      text(`G${game.gameNumber}`, cx, y + 64, {
+        size: 13,
+        fill: game.current ? "#f7f4ee" : "#8b93a7",
+        anchor: "middle",
+        weight: 700,
+        spacing: 0.8,
+      }),
+    );
+    parts.push(text(result, cx, y + 86, { size: 16, fill: paint, anchor: "middle", weight: 700 }));
+    const third = game.final ? `${site} · ${seriesWhen(game.date, true)}` : site;
+    parts.push(text(third, cx, y + 104, { size: 13, fill: "#c5cce0", anchor: "middle", weight: 500 }));
+  });
+  return parts.join("");
+}
+
 const MLB_ROW_H = 22;
 
 function mlbBoxHeight(box: MlbBox): number {
@@ -901,6 +1024,12 @@ function mlbBoxBlock(box: MlbBox, x: number, y: number, w: number, awayPaint: st
 export function renderFinalSvg(card: FinalCard): string {
   const awayPaint = paintColor(card.away.color, card.away.alternateColor);
   const homePaint = paintColor(card.home.color, card.home.alternateColor);
+  const wpPaints = distinctTeamPaints(
+    card.away.color,
+    card.away.alternateColor,
+    card.home.color,
+    card.home.alternateColor,
+  );
   const awayWins = winner(card, "away");
   const homeWins = winner(card, "home");
   const awayLoses = loserOf(card, "away");
@@ -1044,7 +1173,7 @@ export function renderFinalSvg(card: FinalCard): string {
     const wpH = hasWp ? 56 + chartH + 34 : 0;
     const blockH = Math.max(wpH, standH, splitWp ? 340 : 0);
     if (hasWp) {
-      const badge = leaderBadge(card, awayPaint, homePaint);
+      const badge = leaderBadge(card, wpPaints.away, wpPaints.home);
       const badgeW = Math.max(132, badge.label.length * 13 + 28);
       const wpW = splitWp ? halfW : fullW;
       const wpX = M;
@@ -1072,7 +1201,7 @@ export function renderFinalSvg(card: FinalCard): string {
         `<clipPath id="wp"><rect x="${chartX}" y="${chartY}" width="${chartW}" height="${chartH}" rx="14"/></clipPath>`,
       );
       parts.push(`<g clip-path="url(#wp)">`);
-      parts.push(winChart(card, chartX, chartY, chartW, chartH, awayPaint, homePaint));
+      parts.push(winChart(card, chartX, chartY, chartW, chartH, wpPaints.away, wpPaints.home));
       parts.push(`</g>`);
       parts.push(quarterLabels(card, chartX, chartY + chartH + 22, chartW));
     }
@@ -1102,6 +1231,14 @@ export function renderFinalSvg(card: FinalCard): string {
     parts.push(panel(M, y, fullW, perfH));
     parts.push(performersBlock(card.leaders, card, M, y, fullW, awayPaint, homePaint));
     y += perfH + GAP;
+  }
+
+  const seriesGames = card.playoff ? card.seriesGames ?? [] : [];
+  if (seriesGames.length) {
+    const schedH = seriesScheduleHeight(seriesGames);
+    parts.push(panel(M, y, fullW, schedH));
+    parts.push(seriesScheduleBlock(seriesGames, M, y, fullW, awayPaint, homePaint, card.away.abbrev));
+    y += schedH + GAP;
   }
 
   if (hasMlbBox && mlbBox) {
@@ -1182,7 +1319,6 @@ export function renderFinalSvg(card: FinalCard): string {
     `<stop offset="0%" stop-color="${homePaint}" stop-opacity="${homeLoses ? 0.22 : 0.5}"/>`,
     `<stop offset="72%" stop-color="${homePaint}" stop-opacity="0"/>`,
     `</radialGradient>`,
-    logoHaloFilter(),
     `</defs>`,
     `<rect width="${W}" height="${y}" fill="#07101d"/>`,
     `<rect width="${W / 2}" height="8" fill="${awayPaint}" opacity="${awayLoses ? 0.35 : 1}"/>`,

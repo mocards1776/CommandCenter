@@ -25,6 +25,7 @@ import {
   FINALS_ALERT_WIDTH,
   STANDINGS_GROUP_DY,
   STANDINGS_TITLE_DY,
+  distinctTeamPaints,
   paintColor,
   renderFinalSvg,
 } from "./svg.ts";
@@ -397,6 +398,10 @@ assert.equal(
 assert.equal(paintColor("000000", "ffb612"), "#ffb612");
 assert.equal(paintColor("472a08", "ff3c00"), "#ff3c00");
 assert.equal(paintColor("ba0c2f", "a8adb4"), "#ba0c2f");
+{
+  const paints = distinctTeamPaints("2f241d", "ffc425", "13294b", "ffc72c");
+  assert.notEqual(paints.away.toLowerCase(), paints.home.toLowerCase(), "Padres and Brewers WP paints must differ");
+}
 assert.ok(Math.abs((card.stats.find((stat) => stat.label === "Turnovers")?.awayShare ?? 0) - 200 / 3) < 0.01);
 
 const svg = renderFinalSvg(card);
@@ -629,6 +634,7 @@ assert.equal(
 
 const mlbPlayoff = cardFromSummary("mlb", "401908003", {
   header: {
+    id: "401908003",
     season: { year: 2026, type: 3 },
     competitions: [
       {
@@ -670,7 +676,64 @@ const mlbPlayoff = cardFromSummary("mlb", "401908003", {
     ],
   },
   seasonseries: [
-    { type: "playoff", title: "Playoff Series", summary: "MIL leads series 2-0", totalCompetitions: 5 },
+    {
+      type: "playoff",
+      title: "Playoff Series",
+      summary: "MIL leads series 2-0",
+      totalCompetitions: 5,
+      events: [
+        {
+          id: "401908002",
+          date: "2026-10-04T00:30:00Z",
+          status: "post",
+          statusType: { state: "post", completed: true },
+          competitors: [
+            { homeAway: "away", score: "2", winner: false, team: { abbreviation: "SD" } },
+            { homeAway: "home", score: "3", winner: true, team: { abbreviation: "MIL" } },
+          ],
+        },
+        {
+          id: "401908003",
+          date: "2026-10-04T20:00:00Z",
+          status: "post",
+          statusType: { state: "post", completed: true },
+          competitors: [
+            { homeAway: "away", score: "3", winner: false, team: { abbreviation: "SD" } },
+            { homeAway: "home", score: "4", winner: true, team: { abbreviation: "MIL" } },
+          ],
+        },
+        {
+          id: "401908004",
+          date: "2026-10-07T01:30:00Z",
+          status: "pre",
+          statusType: { state: "pre", completed: false },
+          competitors: [
+            { homeAway: "away", team: { abbreviation: "MIL" } },
+            { homeAway: "home", team: { abbreviation: "SD" } },
+          ],
+        },
+        {
+          id: "401908005",
+          date: "2026-10-08T02:00:00Z",
+          status: "pre",
+          statusType: { state: "pre", completed: false },
+          competitors: [
+            { homeAway: "away", team: { abbreviation: "MIL" } },
+            { homeAway: "home", team: { abbreviation: "SD" } },
+          ],
+        },
+        {
+          id: "401908006",
+          date: "2026-10-09T20:30:00Z",
+          status: "pre",
+          statusType: { state: "pre", completed: false },
+          competitors: [
+            { homeAway: "away", team: { abbreviation: "SD" } },
+            { homeAway: "home", team: { abbreviation: "MIL" } },
+          ],
+        },
+      ],
+    },
     { type: "season", summary: "SD wins series 4-2" },
   ],
   boxscore: {
@@ -757,7 +820,13 @@ assert.doesNotMatch(mlbPlayoffSvg, /Standings|NL Central/);
 assert.match(mlbPlayoffSvg, /Win probability/);
 assert.doesNotMatch(mlbPlayoffSvg, />Q1<|>Q2<|>Q3<|>Q4</);
 assert.match(mlbPlayoffSvg, /Key performers/);
-assert.match(mlbPlayoffSvg, /logoHalo/);
+assert.match(mlbPlayoffSvg, />Series</);
+assert.match(mlbPlayoffSvg, />G1</);
+assert.match(mlbPlayoffSvg, />G3</);
+assert.match(mlbPlayoffSvg, /MIL 3–2|MIL 4–3/);
+assert.doesNotMatch(mlbPlayoffSvg, /logoHalo|<ellipse/);
+assert.equal(mlbPlayoff.seriesGames.length, 5);
+assert.equal(mlbPlayoff.seriesGames[1]?.current, true);
 assert.doesNotMatch(mlbPlayoffSvg, />103-59<|>91-71</);
 assert.match(mlbPlayoffSvg, new RegExp(`width="${FINALS_ALERT_WIDTH}"`));
 const mlbH = Number(/<svg [^>]*height="(\d+(?:\.\d+)?)"/.exec(mlbPlayoffSvg)?.[1] ?? 0);
@@ -792,6 +861,7 @@ assert.match(nhlStarsSvg, /Goalies/);
 assert.match(nhlStarsSvg, /A\. Hill/);
 assert.doesNotMatch(nhlStarsSvg, /Box leaders/);
 assert.doesNotMatch(nhlStarsSvg, /Win probability/);
+assert.doesNotMatch(nhlStarsSvg, /<ellipse/);
 assert.equal(nhlCard.winProbability.length, 0, "ESPN/NHL.com still ship no hockey WP series");
 
 nhlCard.stats = [
