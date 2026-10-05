@@ -92,7 +92,7 @@ const results = await sendTelegramVideo({
   videoUrl: clip.mp4,
   caption: clip.caption,
   chatIds: [TEST_CHAT_ID],
-  replyMarkup: gameReplyMarkup(origin, nhlGamePath(clip.espnEventId)),
+  replyMarkup: gameReplyMarkup(origin, nhlGamePath(clip.espnEventId), clip.sharingUrl),
   durationSec: clip.durationSec,
   width: clip.width,
   height: clip.height,

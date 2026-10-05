@@ -236,13 +236,26 @@ npm run lint
   private DM. Bot `@CommandCenterHighlights_bot`. Token secret
   `TELEGRAM_HIGHLIGHTS_BOT_TOKEN` (not the heat or finals bots). Clips come
   from the same NHL gamecenter + Brightcove path the Sports app already uses
-  (`highlightClip` / `discreteClip` on `api-web.nhle.com`, then a progressive
-  MP4). v1 is Blues-only (`HIGHLIGHTS_TEAM_IDS` default `STL`).
+  (`highlightClip` on `api-web.nhle.com`, then a progressive MP4). A clip is
+  sent only when the scoring team — landing abbrev, and play-by-play
+  `eventOwnerTeamId` when that feed is up — is in `HIGHLIGHTS_TEAM_IDS`
+  (default `STL` / id 19). Opponent goals, empty-net goals, own goals, and
+  `discreteClip` stand-ins are skipped.
 
   Each Brightcove id is claimed in `sports_highlights_sent` before send, so a
   cron rerun is safe. Caption is short (`Blues score — Player vs OPP`). If the
   ESPN event id resolves, the message includes an **Open game** Mini App
-  button. Heat / finals / newspaper / Times are unchanged.
+  button. When NHL provides `highlightClipSharingUrl`, a **Watch clip** link
+  opens that page.
+
+  Game wraps are never `sendVideo`. When the right rail has `threeMinRecap`
+  (otherwise `condensedGame`) for a finished Blues game, the bot sends one
+  text message, or a photo when Brightcove has an https poster. The keyboard
+  matches heat and finals: **Open game** and **RUWT board**, both Mini App
+  `web_app` buttons. Open game goes to `/sports/nhl/game/{espnId}?solo=1` on
+  `SPORTS_HIGHLIGHTS_ORIGIN` — that page is where the wrap plays. There is no
+  separate wrap route. If the ESPN id is missing, RUWT still ships alone.
+  The wrap MP4 is not downloaded. Heat / finals / newspaper / Times are unchanged.
 
   Secrets for Josh (Supabase project `esdgrgulaxnewmhjuyzh`). Never commit:
 

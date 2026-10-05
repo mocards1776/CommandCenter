@@ -69,12 +69,43 @@ export function alertReplyMarkup(
   return telegramInlineKeyboard(buttons);
 }
 
-/** Goal clips only need the game. No RUWT board — that pair stays on heat/finals. */
+/** NHL highlightClipSharingUrl, or a Brightcove page. Anything else is dropped. */
+export function clipShareUrl(raw: string | null | undefined): string | null {
+  const href = (raw ?? "").trim();
+  if (!href) return null;
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:") return null;
+  const host = url.hostname.toLowerCase();
+  const allowed =
+    host === "nhl.com" ||
+    host.endsWith(".nhl.com") ||
+    host === "brightcove.com" ||
+    host.endsWith(".brightcove.com") ||
+    host === "brightcovecdn.com" ||
+    host.endsWith(".brightcovecdn.com");
+  return allowed ? url.toString() : null;
+}
+
+/**
+ * Open game stays a Mini App button. When highlightClipSharingUrl is present,
+ * Watch clip is a normal link to that NHL/Brightcove page — not another video upload.
+ * No RUWT board; that pair stays on heat/finals.
+ */
 export function gameReplyMarkup(
   origin: string | null | undefined,
   gamePath: string | null | undefined,
+  clipShare?: string | null,
 ): string | null {
+  const row: Array<{ text: string; web_app: { url: string } } | { text: string; url: string }> = [];
   const game = gameDetailUrl(origin, gamePath);
-  if (!game) return null;
-  return telegramInlineKeyboard([{ text: "Open game", url: game }]);
+  if (game) row.push(telegramMiniAppButton("Open game", game));
+  const clip = clipShareUrl(clipShare);
+  if (clip) row.push({ text: "Watch clip", url: clip });
+  if (!row.length) return null;
+  return JSON.stringify({ inline_keyboard: [row] });
 }
