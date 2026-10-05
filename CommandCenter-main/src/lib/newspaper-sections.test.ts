@@ -31,6 +31,7 @@ import {
   isColumnStory,
   isDeskStory,
   isGameRecapCopy,
+  isSingleGameRecap,
   isHistoricNationalEvent,
   isHistoricNationalStory,
   isHoldoverGame,
@@ -1037,6 +1038,25 @@ assert(
   "Cowboys-Texans highlights, bounce-back clip, flip-script story, Lamb write-up and Athletic takeaways collapse into the wrap",
 );
 assert(cowboysOnce.some((c) => c.id === "news-50095892"), "the Rio meeting note is a different story");
+
+const weekComebacks = card({
+  id: "news-50100800",
+  headline: "How the Rams, Cowboys, Patriots pulled Week 4 comebacks to save their seasons",
+  favoriteKey: "nfl-dal",
+  followed: true,
+  teamName: "Cowboys",
+  sportLabel: "NFL",
+  leaguePath: "football/nfl",
+  status: "Story",
+  wrapHref: "https://www.espn.com/nfl/story/_/id/50100800/week-4-rams-cowboys-patriots-comeback-wins-sa",
+  when: "2026-10-05T12:00:00Z",
+  body: "Three clubs came back from double-digit holes in Week 4. ".repeat(16),
+  photo: "https://a.espncdn.com/rams.jpg",
+});
+assert(!isGameRecapCopy(weekComebacks), "a week-wide comeback roundup is not one game's recap");
+assert(!isSingleGameRecap(weekComebacks), "the week-wide roundup does not wear a single game's score banner");
+assert(isSingleGameRecap(cowboysWrap), "the full Cowboys wrap still wears recap chrome");
+assert(isSingleGameRecap(cowboysFlip), "a win-over write-up still wears recap chrome");
 
 const lionsWrap = card({
   id: "wire-nfl-401872978",

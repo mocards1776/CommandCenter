@@ -965,7 +965,7 @@ export function isGameRecapCopy(card: GameWrapCard): boolean {
   if (isColumnStory(card) || isPreviewStory(card)) return false;
   const head = `${card.headline} ${card.dek ?? ""}`;
   if (/\bhow to bet\b|\bprop plays\b/i.test(head)) return false;
-  if (/\bweek \d+ takeaways\b/i.test(head) && !/\bvs\.?\b/i.test(head)) return false;
+  if (isMultiGameRoundup(card)) return false;
   if (isMainGameStory(card)) return true;
   if (/\bgame highlights\b|\bfull highlights\b/i.test(head)) return true;
   if (/\btakeaways\b/i.test(head) && namedTeams(card).size >= 2) return true;
@@ -983,6 +983,24 @@ export function isGameRecapCopy(card: GameWrapCard): boolean {
     /\b(?:go-ahead|touchdowns?|\btds?\b|catches?|\byards?\b)\b/i.test(head) &&
     !/\binjur|dislocat|surgery|doubtful|questionable/i.test(head)
   );
+}
+
+/** Week-wide or three-team copy — not one final. */
+export function isMultiGameRoundup(card: GameWrapCard): boolean {
+  const head = `${card.headline} ${card.dek ?? ""}`;
+  if (/\bweek \d+\b/i.test(head) && /\b(takeaways|comebacks?|roundup|results|scores)\b/i.test(head) && !/\bvs\.?\b/i.test(head)) {
+    return true;
+  }
+  return namedTeams(card).size >= 3;
+}
+
+/**
+ * Score banner, line score, and leaders belong only on that game's recap.
+ * A week-wide roundup or injury note does not wear another game's chrome.
+ */
+export function isSingleGameRecap(card: GameWrapCard): boolean {
+  if (isColumnStory(card) || isPreviewStory(card) || isMultiGameRoundup(card)) return false;
+  return isGameWrap(card) || isRecapStory(card) || isGameRecapCopy(card);
 }
 
 /** When a club has one final in the slate, stamp that game id on its recaps. */

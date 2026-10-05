@@ -14,6 +14,7 @@ import { RecapBox, RecapChrome, RecapPhoto } from "@/components/newspaper/GameRe
 import { SaveMark } from "@/components/newspaper/SaveMark";
 import { fetchEspnRecapStory } from "@/lib/newspaper-box";
 import { formatRecapWhen, recapBodyForPage, recapDropLead, recapIsScoreOnly, recapShouldDropCap, splitApDateline } from "@/lib/newspaper-recap";
+import { isSingleGameRecap } from "@/lib/newspaper-sections";
 import { cleanStoryCopy, isNavSoup, proseParas, readableCopy } from "@/lib/newspaper-copy";
 import { isBoilerplateDek, storySource } from "@/lib/newspaper-source";
 import { fetchRssArticle, scrubReaderChrome, stripDuplicateContentImages } from "@/lib/rss";
@@ -202,7 +203,7 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
             {card.when ? <span> · {whenLine(card.when)}</span> : null}
           </p>
 
-          <RecapChrome card={card} game={game ?? null} />
+          {isSingleGameRecap(card) ? <RecapChrome card={card} game={game ?? null} /> : null}
 
           <RecapPhoto
             url={photo}
@@ -246,13 +247,15 @@ function PaperReader({ story, onClose }: { story: ReaderStory; onClose: () => vo
             <p className="tt-reader-wait">The wire filed a headline only.</p>
           )}
 
-          <RecapBox
-            card={card}
-            game={
-              game && espnEvent && !game.espnEventId ? { ...game, espnEventId: espnEvent } : game ?? null
-            }
-            forceFull
-          />
+          {isSingleGameRecap(card) ? (
+            <RecapBox
+              card={card}
+              game={
+                game && espnEvent && !game.espnEventId ? { ...game, espnEventId: espnEvent } : game ?? null
+              }
+              forceFull
+            />
+          ) : null}
         </article>
       </div>
     </div>
