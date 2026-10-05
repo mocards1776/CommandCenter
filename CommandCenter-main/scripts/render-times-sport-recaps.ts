@@ -13,7 +13,7 @@ import {
   logWireFiling,
   tallyWireGames,
 } from "../src/lib/newspaper-wire.ts";
-import { wireStoryCards } from "../src/lib/newspaper-sports.ts";
+import type { GameWrapCard } from "../src/lib/newspaper-sports.ts";
 import type { SportsFavorite } from "../src/lib/sports.ts";
 
 const favs: SportsFavorite[] = [
@@ -34,17 +34,52 @@ const enriched = await enrichWireStories(finals, finals.length);
 const tallies = tallyWireGames(enriched);
 logWireFiling(`recaps ${pressId}`, enriched);
 
-const cards = wireStoryCards({ games: enriched, favs, details: [] });
+function asCard(g: (typeof enriched)[number]): GameWrapCard {
+  const scored = g.away.score != null && g.home.score != null;
+  const favKey = [...g.favoriteKeys].sort((a, b) => {
+    const w = (k: string) => (k.endsWith("-stl") || k.includes("mizzou") ? 100 : k.includes("det") ? 70 : k.includes("kc") ? 50 : 10);
+    return w(b) - w(a);
+  })[0] ?? "";
+  return {
+    id: `wire-${g.id}`,
+    favoriteKey: favKey,
+    teamName: favKey ? favs.find((f) => f.key === favKey)?.shortName ?? "" : g.away.winner ? g.away.short : g.home.short,
+    teamHref: "/",
+    sportLabel: g.league,
+    leaguePath: g.path,
+    headline: g.headline,
+    dek: g.series,
+    body: g.body,
+    scoreLine: scored ? `${g.away.abbrev} ${g.away.score}  ·  ${g.home.abbrev} ${g.home.score}` : `${g.away.abbrev} at ${g.home.abbrev}`,
+    when: g.startedAt,
+    won: null,
+    gameHref: g.href,
+    wrapHref: null,
+    feedUrl: null,
+    gameId: g.eventId,
+    stats: scored
+      ? [
+          { label: g.away.abbrev, value: String(g.away.score) },
+          { label: g.home.abbrev, value: String(g.home.score) },
+        ]
+      : [],
+    leaders: g.leaders,
+    teamStats: [],
+    division: [],
+    wrapKind: g.wrapKind ?? null,
+    sec: g.sec,
+    ranked: Boolean(g.away.seed || g.home.seed),
+    preseason: g.preseason,
+    postseason: g.postseason,
+    followed: g.favoriteKeys.length > 0,
+    status: g.statusDetail,
+    caption: g.wrapKind === "box" ? "Times box wrap" : null,
+  };
+}
+
+const cards = enriched.map(asCard);
 const filed = fileEditionStories({
-  fresh: cards.map((c) => ({
-    id: c.id,
-    headline: c.headline,
-    when: c.when,
-    leaguePath: c.leaguePath,
-    gameId: c.gameId,
-    scoreLine: c.scoreLine,
-    body: c.body,
-  })),
+  fresh: cards,
   carried: [],
   readKeys: new Set(),
   pressId,
@@ -61,7 +96,12 @@ function htmlFor(path: string, title: string, code: string): string {
       const items = band.cards
         .map((card) => {
           const copy = wrapBriefSentences(card.body || "", 4);
-          const kicker = card.wrapKind === "box" ? "Times box wrap" : card.sec ? `${card.sportLabel} · SEC` : card.sportLabel;
+          const kicker =
+            card.wrapKind === "box"
+              ? "Times box wrap"
+              : card.sec && card.leaguePath === "football/college-football"
+                ? `${card.sportLabel} · SEC`
+                : card.sportLabel;
           const leaders = card.leaders
             .slice(0, 4)
             .map((l) => `<li><strong>${esc(l.name)}</strong> <span>${esc(l.line)}</span></li>`)
@@ -92,6 +132,7 @@ function htmlFor(path: string, title: string, code: string): string {
   <style>
     html, body { margin: 0; background: #151b28; }
     .sheet {
+      box-sizing: border-box;
       width: 1032px;
       min-height: 1290px;
       margin: 0 auto;

@@ -18,7 +18,7 @@ import {
   type BoxWrapLine,
   type EspnSummaryForWrap,
 } from "./newspaper-box-wrap.ts";
-import { isNewspaperCfbDeskGame, newspaperEspnGet, NEWSPAPER_CFB_SEC_IDS } from "./newspaper-espn.ts";
+import { isNewspaperCfbDeskGame, isNewspaperSecGame, newspaperEspnGet } from "./newspaper-espn.ts";
 import type { SportsFavorite } from "./sports.ts";
 
 /** One game on a section's schedule page — league-wide, with pitchers when known. */
@@ -537,10 +537,7 @@ function toWireGame(
     wrapKind: hasEspnRecap(body) ? "espn" : null,
     lines,
     next: null,
-    sec: Boolean(
-      (awayC.team.id && NEWSPAPER_CFB_SEC_IDS.has(String(awayC.team.id))) ||
-        (homeC.team.id && NEWSPAPER_CFB_SEC_IDS.has(String(homeC.team.id))),
-    ),
+    sec: isNewspaperSecGame(league.path, awayC.team.id, homeC.team.id),
   };
 }
 

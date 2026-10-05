@@ -2,7 +2,7 @@
  * Run with: node --experimental-strip-types src/lib/newspaper-espn.test.ts
  * from CommandCenter-main/.
  */
-import { isNewspaperCfbDeskGame, NEWSPAPER_CFB_SEC_IDS } from "./newspaper-espn.ts";
+import { isNewspaperCfbDeskGame, isNewspaperSecGame, NEWSPAPER_CFB_SEC_IDS } from "./newspaper-espn.ts";
 
 function assert(cond: unknown, msg: string) {
   if (!cond) throw new Error(`FAIL: ${msg}`);
@@ -10,6 +10,15 @@ function assert(cond: unknown, msg: string) {
 
 assert(NEWSPAPER_CFB_SEC_IDS.has("142"), "Missouri is SEC");
 assert(NEWSPAPER_CFB_SEC_IDS.has("333"), "Alabama is SEC");
+assert(NEWSPAPER_CFB_SEC_IDS.has("8"), "Arkansas is SEC id 8 — same number as the Lions");
+assert(
+  isNewspaperSecGame("football/college-football", "8", "333"),
+  "Arkansas-Alabama is an SEC game",
+);
+assert(
+  !isNewspaperSecGame("football/nfl", "8", "29"),
+  "Lions (NFL id 8) are not labeled SEC",
+);
 assert(
   isNewspaperCfbDeskGame({ awayId: "57", homeId: "142" }),
   "an SEC game files even if neither side is ranked",

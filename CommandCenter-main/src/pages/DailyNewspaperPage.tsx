@@ -339,7 +339,7 @@ function kickerOf(card: GameWrapCard): string {
   const bits = [card.sportLabel];
   if (card.round) bits.push(card.round);
   else if (card.postseason) bits.push("Postseason");
-  if (card.sec) bits.push("SEC");
+  if (card.sec && card.leaguePath === "football/college-football") bits.push("SEC");
   if (card.teamName && squash(card.teamName) !== squash(card.sportLabel)) bits.push(card.teamName);
   return bits.join(" · ");
 }

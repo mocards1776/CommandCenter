@@ -6,6 +6,7 @@ import type { GameWrapCard } from "./newspaper-sports.ts";
 import {
   attachRelatedGameCopy,
   groupSportRecaps,
+  isSecCard,
   isSportFiller,
   orderSportRecaps,
   sportFillerReason,
@@ -157,5 +158,16 @@ const nflOrder = orderSportRecaps([other, playoff, chiefs], "football/nfl");
 assert(nflOrder[0]?.id === "wire-nfl-kc2", "favorite NFL game leads");
 assert(nflOrder[1]?.id === "wire-nfl-wc", "playoff games are marquee");
 assert(nflOrder[2]?.id === "wire-nfl-ind", "the rest of the slate follows");
+
+const lions = card({
+  id: "wire-nfl-det",
+  headline: "Panthers beat Lions",
+  favoriteKey: "nfl-det",
+  leaguePath: "football/nfl",
+  sportLabel: "NFL",
+  sec: true,
+});
+assert(!isSecCard(lions), "an NFL club that shares an ESPN id with Arkansas is not SEC");
+assert(isSecCard(miz), "Mizzou stays SEC");
 
 console.log("newspaper-sport-desk ok");

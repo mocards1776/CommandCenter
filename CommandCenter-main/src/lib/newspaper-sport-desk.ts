@@ -4,7 +4,7 @@
  */
 
 import { favoriteDeskWeight, isGameWrapStory } from "./newspaper.ts";
-import { NEWSPAPER_CFB_SEC_IDS } from "./newspaper-espn.ts";
+import { isNewspaperSecGame } from "./newspaper-espn.ts";
 import { wrapBriefSentences } from "./newspaper-box-wrap.ts";
 import { storySource } from "./newspaper-source.ts";
 import type { GameWrapCard } from "./newspaper-sports.ts";
@@ -183,6 +183,7 @@ function bySignificance(a: GameWrapCard, b: GameWrapCard): number {
 }
 
 export function isSecCard(card: GameWrapCard): boolean {
+  if (card.leaguePath && card.leaguePath !== "football/college-football") return false;
   if (card.sec) return true;
   if (card.favoriteKey === "cfb-mizzou") return true;
   return false;
@@ -231,10 +232,7 @@ export function wrapBriefCopy(card: GameWrapCard, max = 4): string {
 }
 
 export function isCfbSecIds(awayId?: string | null, homeId?: string | null): boolean {
-  return Boolean(
-    (awayId && NEWSPAPER_CFB_SEC_IDS.has(String(awayId))) ||
-      (homeId && NEWSPAPER_CFB_SEC_IDS.has(String(homeId))),
-  );
+  return isNewspaperSecGame("football/college-football", awayId, homeId);
 }
 
 export function spikeSportCopy(
