@@ -862,7 +862,7 @@ function peopleBlock(
 
 function performersHeight(rows: FinalLeader[]): number {
   if (!rows.length) return 0;
-  return 104;
+  return 94;
 }
 
 function performersBlock(
@@ -876,14 +876,14 @@ function performersBlock(
 ): string {
   const inner = w - CARD_IN * 2;
   const colW = inner / Math.max(rows.length, 1);
-  const parts = [sectionTitle("Key performers", x + CARD_IN, y + 28)];
+  const parts = [sectionTitle("Key performers", x + CARD_IN, y + 24)];
   rows.forEach((row, i) => {
     const cx = x + CARD_IN + colW * i;
     const paint = row.teamAbbrev === card.away.abbrev ? awayPaint : homePaint;
-    parts.push(playerPhoto(row.photoData, cx, y + 42, 40, row.name));
-    parts.push(text(row.name, cx + 50, y + 60, { size: 17, fill: "#f7f4ee", weight: 700 }));
-    parts.push(text(row.line || row.groupLabel, cx + 50, y + 80, { size: 14, fill: paint, weight: 600 }));
-    parts.push(text(row.teamAbbrev, cx + 50, y + 98, { size: 12, fill: "#a8b0c2", weight: 700, spacing: 0.6 }));
+    parts.push(playerPhoto(row.photoData, cx, y + 38, 36, row.name));
+    parts.push(text(row.name, cx + 46, y + 54, { size: 16, fill: "#f7f4ee", weight: 700 }));
+    parts.push(text(row.line || row.groupLabel, cx + 46, y + 72, { size: 13, fill: paint, weight: 600 }));
+    parts.push(text(row.teamAbbrev, cx + 46, y + 88, { size: 12, fill: "#a8b0c2", weight: 700, spacing: 0.6 }));
   });
   return parts.join("");
 }
@@ -1182,7 +1182,7 @@ export function renderFinalSvg(card: FinalCard): string {
   y += 40;
 
   const playoffMlb = card.sport === "mlb" && card.playoff;
-  const logoSize = playoffMlb ? 112 : 124;
+  const logoSize = playoffMlb ? 104 : 124;
   const logoY = y;
   parts.push(logo(card.away, M + 8, logoY, logoSize, awayPaint, awayLoses, playoffMlb));
   parts.push(logo(card.home, W - M - 8 - logoSize, logoY, logoSize, homePaint, homeLoses, playoffMlb));
@@ -1214,7 +1214,7 @@ export function renderFinalSvg(card: FinalCard): string {
       weight: 700,
     }),
   );
-  y = logoY + logoSize + 28;
+  y = logoY + logoSize + (playoffMlb ? 18 : 28);
   const awayNames = sideTitleLines(card.away);
   const homeNames = sideTitleLines(card.home);
   const nameLines = Math.max(awayNames.length, homeNames.length);
@@ -1239,7 +1239,7 @@ export function renderFinalSvg(card: FinalCard): string {
         }),
       );
     }
-    y += 30;
+    y += playoffMlb ? 26 : 30;
   }
   if (card.playoff && (card.seriesStanding || card.seriesLine)) {
     parts.push(seriesHeroBlock(card, y, awayPaint, homePaint));
@@ -1267,7 +1267,7 @@ export function renderFinalSvg(card: FinalCard): string {
     }
     y += 16;
   }
-  y += 14;
+  y += playoffMlb ? 8 : 14;
 
   if (card.periods.length) {
     const table = linescore(card, y, awayPaint, homePaint);
@@ -1294,8 +1294,8 @@ export function renderFinalSvg(card: FinalCard): string {
   if (hasWp || hasStandings) {
     const standH = hasStandings ? standingsHeight(standings, splitWp, card.sport === "nhl") : 0;
     const slimWp = card.sport === "mlb" && !splitWp;
-    const chartH = splitWp ? 214 : slimWp ? 118 : 220;
-    const wpH = hasWp ? (slimWp ? 42 : 56) + chartH + (slimWp ? 22 : 34) : 0;
+    const chartH = splitWp ? 214 : slimWp ? 104 : 220;
+    const wpH = hasWp ? (slimWp ? 40 : 56) + chartH + (slimWp ? 20 : 34) : 0;
     const blockH = Math.max(wpH, standH, splitWp ? 340 : 0);
     if (hasWp) {
       const badge = leaderBadge(card, wpPaints.away, wpPaints.home);
@@ -1445,12 +1445,12 @@ export function renderFinalSvg(card: FinalCard): string {
   const wash = [
     `<defs>`,
     `<radialGradient id="awayWash" cx="18%" cy="22%" r="58%">`,
-    `<stop offset="0%" stop-color="${awayPaint}" stop-opacity="${awayLoses ? 0.22 : 0.5}"/>`,
-    `<stop offset="72%" stop-color="${awayPaint}" stop-opacity="0"/>`,
+    `<stop offset="0%" stop-color="${playoffMlb ? wpPaints.away : awayPaint}" stop-opacity="${awayLoses ? 0.22 : 0.5}"/>`,
+    `<stop offset="72%" stop-color="${playoffMlb ? wpPaints.away : awayPaint}" stop-opacity="0"/>`,
     `</radialGradient>`,
     `<radialGradient id="homeWash" cx="82%" cy="22%" r="58%">`,
-    `<stop offset="0%" stop-color="${homePaint}" stop-opacity="${homeLoses ? 0.22 : 0.5}"/>`,
-    `<stop offset="72%" stop-color="${homePaint}" stop-opacity="0"/>`,
+    `<stop offset="0%" stop-color="${playoffMlb ? wpPaints.home : homePaint}" stop-opacity="${homeLoses ? 0.22 : 0.5}"/>`,
+    `<stop offset="72%" stop-color="${playoffMlb ? wpPaints.home : homePaint}" stop-opacity="0"/>`,
     `</radialGradient>`,
     `</defs>`,
     `<rect width="${W}" height="${y}" fill="#07101d"/>`,

@@ -194,10 +194,15 @@ export function mlbPlayoffFromSummary(sport: string, body: unknown, comp: unknow
     .filter((n): n is number => n != null);
   const played = wins.reduce((sum, n) => sum + n, 0);
   const currentId = str(rec(raw.header).id) || str(competition.id);
+  const seriesGames = seriesGamesFromEspn(series, currentId);
+  const currentGame = seriesGames.find((game) => game.current);
   const fields: PlayoffSeriesFields = {
     playoff: true,
     summary: str(series.summary) || str(series.shortSummary) || null,
-    gameNumber: gameNumberFromNote(noteFrom(competition, series)) ?? (played > 0 ? played : null),
+    gameNumber:
+      gameNumberFromNote(noteFrom(competition, series)) ??
+      currentGame?.gameNumber ??
+      (played > 0 ? played : null),
     totalGames: num(series.totalCompetitions),
     note: noteFrom(competition, series),
     wins: wins.length ? Math.max(...wins) : null,
@@ -210,6 +215,6 @@ export function mlbPlayoffFromSummary(sport: string, body: unknown, comp: unknow
     seriesStanding: polishSeriesSummary(fields.summary) ?? tiedFromCounts(fields),
     seriesBestOf: formatBestOf(fields.totalGames),
     seriesGameLabel: gameLabel(fields),
-    seriesGames: seriesGamesFromEspn(series, currentId),
+    seriesGames,
   };
 }
