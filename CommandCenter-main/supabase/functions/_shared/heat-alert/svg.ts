@@ -10,7 +10,7 @@ import {
 import { clockParts, isBreakStatus } from "./clock.ts";
 import { onDark } from "./color.ts";
 import { formatHeatTimestamp, leagueLabel, phaseLabel, situationLine } from "./copy.ts";
-import { mlbHeroNest } from "./mlb-hero.ts";
+import { mlbHeroInstrument } from "./mlb-hero.ts";
 import { footballMarks, spotIsRedZone } from "./field.ts";
 import { RINK_HEIGHT_FT, RINK_WIDTH_FT, rinkMarkings } from "./ice.ts";
 import { HEAT_ALERT_HEIGHT, HEAT_ALERT_WIDTH, type HeatAlertCard, type HeatStat } from "./types.ts";
@@ -106,16 +106,71 @@ function header(card: HeatAlertCard): string {
   `;
 }
 
-function nestChip(label: string, cx: number, cy: number): string {
-  const w = Math.max(128, label.length * 11 + 28);
+function miniBag(on: boolean, cx: number, cy: number, half = 13): string {
+  const fill = on ? "#f4f1e9" : "rgba(255,255,255,0.16)";
+  const stroke = on ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.14)";
+  const glow = on
+    ? `<circle cx="${cx}" cy="${cy}" r="${half + 8}" fill="#f4f1e9" opacity="0.2"/>`
+    : "";
+  return `${glow}<rect x="${cx - half}" y="${cy - half}" width="${half * 2}" height="${half * 2}" rx="3" fill="${fill}" stroke="${stroke}" stroke-width="1.4" transform="rotate(45 ${cx} ${cy})"/>`;
+}
+
+function mlbDiamond(cx: number, cy: number, arm: number, onFirst: boolean, onSecond: boolean, onThird: boolean): string {
+  const home = cy + arm + 9;
+  const dirt = `M${cx} ${cy + arm} L${cx - arm} ${cy} L${cx} ${cy - arm} L${cx + arm} ${cy} Z`;
   return `
-    <rect x="${cx - w / 2}" y="${cy - 16}" width="${w}" height="28" rx="14" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.14)"/>
-    ${textEl(label, cx, cy + 5, { size: 15, fill: "#d1fae5", weight: 700, spacing: 0.3 })}
+    <g id="mlbDiamond">
+      <path d="${dirt}" fill="#3a2718" fill-opacity="0.62"/>
+      <path d="${dirt}" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="2.2"/>
+      <line x1="${cx}" y1="${cy + arm}" x2="${cx - arm - 16}" y2="${cy - 6}" stroke="rgba(255,255,255,0.34)" stroke-width="3.2" stroke-linecap="round"/>
+      <line x1="${cx}" y1="${cy + arm}" x2="${cx + arm + 16}" y2="${cy - 6}" stroke="rgba(255,255,255,0.34)" stroke-width="3.2" stroke-linecap="round"/>
+      ${miniBag(onSecond, cx, cy - arm, 12)}
+      ${miniBag(onThird, cx - arm, cy, 12)}
+      ${miniBag(onFirst, cx + arm, cy, 12)}
+      <polygon points="${cx},${home} ${cx - 11},${cy + arm} ${cx - 6},${cy + arm - 6} ${cx + 6},${cy + arm - 6} ${cx + 11},${cy + arm}" fill="#f4f1e9"/>
+    </g>
   `;
 }
 
-function mlbScoreNest(card: HeatAlertCard): string {
-  const hero = mlbHeroNest({
+function lampGroup(
+  label: string,
+  filled: number,
+  total: number,
+  x: number,
+  y: number,
+  onFill: string,
+  compact = false,
+): string {
+  const r = compact ? 8.5 : 12;
+  const step = compact ? 23 : 32;
+  const labelGap = compact ? 20 : 30;
+  const lamps = Array.from({ length: total }, (_, i) => {
+    const cx = x + labelGap + i * step;
+    const on = i < filled;
+    return `<circle cx="${cx}" cy="${y}" r="${r}" fill="${on ? onFill : "rgba(255,255,255,0.14)"}" stroke="${on ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.1)"}" stroke-width="1.1"/>`;
+  }).join("");
+  return `
+    ${textEl(label, x, y + 5, { size: compact ? 15 : 18, fill: "#8b93a7", weight: 700, anchor: "start" })}
+    ${lamps}
+  `;
+}
+
+function mlbPlaybug(hero: ReturnType<typeof mlbHeroInstrument>): string {
+  if (!hero.livePlay || !hero.lamps) return "";
+  const lamps = hero.lamps;
+  return `
+    <g id="mlbPlaybug">
+      <ellipse cx="528" cy="196" rx="138" ry="88" fill="#10281f" opacity="0.5"/>
+      ${mlbDiamond(476, 196, 50, hero.onFirst, hero.onSecond, hero.onThird)}
+      ${lampGroup("B", lamps.balls, 3, 558, 156, "#f5c14a", true)}
+      ${lampGroup("S", lamps.strikes, 2, 558, 196, "#ef5b5b", true)}
+      ${lampGroup("O", lamps.outs, 3, 558, 236, "#ef5b5b", true)}
+    </g>
+  `;
+}
+
+function mlbInstrumentCard(card: HeatAlertCard, y: number): { svg: string; height: number } {
+  const hero = mlbHeroInstrument({
     live: card.live,
     final: card.final,
     detail: card.detail,
@@ -125,37 +180,79 @@ function mlbScoreNest(card: HeatAlertCard): string {
     awayAbbrev: card.away.abbrev,
     homeAbbrev: card.home.abbrev,
   });
-  if (hero.liveCount) {
-    return `
-      ${textEl((hero.secondary || "").toUpperCase(), 540, 164, { size: 22, fill: "#c8f5d4", weight: 700, spacing: 0.8 })}
-      ${textEl(hero.primary, 540, 236, { size: 84, family: "condensed", fill: "#ffffff", weight: 700 })}
-      ${hero.runners ? textEl(hero.runners.toUpperCase(), 540, 278, { size: 20, fill: "#c5cce0", weight: 700, spacing: 0.6 }) : ""}
-      ${hero.winChip ? nestChip(hero.winChip, 540, 316) : ""}
+  const x = M;
+  const w = W - M * 2;
+  const h = 108;
+  const chipW = hero.inning ? Math.max(148, hero.inning.length * 11 + 36) : 0;
+  const inning = hero.inning
+    ? `
+      <rect x="${x + 22}" y="${y + 30}" width="${chipW}" height="48" rx="14" fill="#10281f"/>
+      ${textEl(hero.inning.toUpperCase(), x + 22 + chipW / 2, y + 61, { size: 20, fill: "#d1fae5", weight: 700 })}
+    `
+    : "";
+  let win = "";
+  if (hero.homeShare != null) {
+    const barX = x + (hero.inning ? 22 + chipW + 28 : 28);
+    const barW = x + w - 28 - barX;
+    const barY = y + 52;
+    const homeW = (hero.homeShare / 100) * barW;
+    const awayW = barW - homeW;
+    const awayPaint = onDark(card.away.color);
+    const homePaint = onDark(card.home.color);
+    win = `
+      ${textEl(card.away.abbrev, barX, barY - 10, { size: 16, fill: awayPaint, weight: 700, anchor: "start" })}
+      ${textEl(hero.winChip || "", barX + barW, barY - 10, { size: 16, fill: "#d1fae5", weight: 700, anchor: "end" })}
+      <rect x="${barX}" y="${barY}" width="${barW}" height="16" rx="8" fill="rgba(255,255,255,0.08)"/>
+      <rect x="${barX}" y="${barY}" width="${awayW.toFixed(2)}" height="16" rx="8" fill="${awayPaint}" opacity="0.55"/>
+      <rect x="${(barX + awayW).toFixed(2)}" y="${barY}" width="${Math.max(0, homeW).toFixed(2)}" height="16" rx="8" fill="${homePaint}" opacity="0.95"/>
     `;
-  }
-  const size = hero.primary.length > 12 ? 40 : hero.primary.length > 8 ? 52 : 68;
-  return `
-    ${textEl(hero.primary, 540, hero.secondary || hero.winChip ? 214 : 230, {
-      size,
+  } else if (hero.status && !hero.livePlay) {
+    win = textEl(hero.status, 540, y + 66, {
+      size: hero.status.length > 10 ? 32 : 42,
       family: "condensed",
       fill: "#ffffff",
       weight: 700,
-    })}
-    ${hero.secondary ? textEl(hero.secondary.toUpperCase(), 540, 258, { size: 18, fill: "#8b93a7", weight: 700, spacing: 0.8 }) : ""}
-    ${hero.runners ? textEl(hero.runners.toUpperCase(), 540, 286, { size: 18, fill: "#c5cce0", weight: 700, spacing: 0.6 }) : ""}
-    ${hero.winChip ? nestChip(hero.winChip, 540, 318) : ""}
-  `;
+    });
+  }
+  return {
+    height: h,
+    svg: `
+      <g id="mlbInstrument">
+        <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="22" fill="#0c1624" stroke="rgba(255,255,255,0.08)"/>
+        ${inning}
+        ${win}
+      </g>
+    `,
+  };
 }
 
-function scoreboard(card: HeatAlertCard, started: boolean): string {
+function scoreboard(card: HeatAlertCard, started: boolean): { svg: string; height: number } {
   const logo = 124;
   const awayPaint = onDark(card.away.color);
   const homePaint = onDark(card.home.color);
   const parts = clockParts(card.detail);
   const mlb = card.sport === "mlb";
+  const hero = mlb
+    ? mlbHeroInstrument({
+        live: card.live,
+        final: card.final,
+        detail: card.detail,
+        when: card.when,
+        diamond: card.diamond,
+        homeWinPct: card.homeWinPct,
+        awayAbbrev: card.away.abbrev,
+        homeAbbrev: card.home.abbrev,
+      })
+    : null;
   let nest = "";
-  if (mlb) {
-    nest = mlbScoreNest(card);
+  if (mlb && hero?.livePlay) {
+    nest = mlbPlaybug(hero);
+  } else if (mlb && hero?.status) {
+    const size = hero.status.length > 12 ? 40 : hero.status.length > 8 ? 52 : 68;
+    nest = `
+      ${textEl(hero.status, 540, 220, { size, family: "condensed", fill: "#ffffff", weight: 700 })}
+      ${hero.statusHint ? textEl(hero.statusHint.toUpperCase(), 540, 258, { size: 16, fill: "#8b93a7", weight: 700 }) : ""}
+    `;
   } else if (parts.period && parts.clock && !isBreakStatus(card.detail)) {
     nest = `
       ${textEl(parts.period.toUpperCase(), 540, 168, { size: 28, fill: "#c8f5d4", weight: 700, spacing: 3 })}
@@ -181,20 +278,26 @@ function scoreboard(card: HeatAlertCard, started: boolean): string {
   const plate = mlb
     ? ""
     : `<rect x="392" y="96" width="296" height="196" rx="28" fill="#050505" fill-opacity="0.55"/>`;
-  return `
+  const instrument = mlb && (hero?.livePlay || hero?.winChip) ? mlbInstrumentCard(card, 368) : null;
+  const height = instrument ? 368 + instrument.height + 16 : 356;
+  return {
+    height,
+    svg: `
     ${plate}
     ${nest}
     ${logoImage(card.away.logoHref, awayLogo, 86, logo, logo)}
     ${logoImage(card.home.logoHref, homeLogo, 86, logo, logo)}
     ${card.away.logoHref ? "" : `<circle cx="${awayCx}" cy="${148}" r="${logo / 2 - 4}" fill="none" stroke="${awayPaint}" stroke-width="4"/>`}
     ${card.home.logoHref ? "" : `<circle cx="${homeCx}" cy="${148}" r="${logo / 2 - 4}" fill="none" stroke="${homePaint}" stroke-width="4"/>`}
-    ${textEl(scoreText(card.away.score, started), 318, 230, { size: 118, family: "condensed", fill: "#f7f4ee", weight: 700 })}
-    ${textEl(scoreText(card.home.score, started), 762, 230, { size: 118, family: "condensed", fill: "#f7f4ee", weight: 700 })}
+    ${textEl(scoreText(card.away.score, started), mlb ? 286 : 318, 230, { size: mlb ? 108 : 118, family: "condensed", fill: "#f7f4ee", weight: 700 })}
+    ${textEl(scoreText(card.home.score, started), mlb ? 794 : 762, 230, { size: mlb ? 108 : 118, family: "condensed", fill: "#f7f4ee", weight: 700 })}
     ${textEl(card.away.abbrev, awayCx, 300, { size: 26, fill: awayPaint, weight: 700, spacing: 1.4 })}
     ${textEl(card.home.abbrev, homeCx, 300, { size: 26, fill: homePaint, weight: 700, spacing: 1.4 })}
     ${awayRecord}
     ${homeRecord}
-  `;
+    ${instrument?.svg ?? ""}
+  `,
+  };
 }
 
 function linescore(card: HeatAlertCard, y: number): { svg: string; height: number } {
@@ -406,42 +509,17 @@ function icePanel(card: HeatAlertCard, panelX: number, panelY: number, panelW: n
   `;
 }
 
-function bag(on: boolean, cx: number, cy: number): string {
-  const fill = on ? "#f4f1e9" : "rgba(255,255,255,0.16)";
-  return `<rect x="${cx - 16}" y="${cy - 16}" width="32" height="32" rx="3" fill="${fill}" transform="rotate(45 ${cx} ${cy})"/>`;
-}
-
 function diamondPanel(card: HeatAlertCard, panelX: number, panelY: number, panelW: number, panelH: number): string {
   const spot = card.diamond;
   if (!spot) return "";
-  const cx = panelX + 300;
-  const cy = panelY + panelH / 2 + 6;
-  const arm = 88;
-  const outs = `${spot.outs} out${spot.outs === 1 ? "" : "s"}`;
-  const people = [spot.batter ? `Batter  ${spot.batter}` : "", spot.pitcher ? `Pitcher  ${spot.pitcher}` : ""]
-    .filter(Boolean)
-    .map((line, i) =>
-      textEl(clipText(line, 28), panelX + 760, panelY + 150 + i * 36, {
-        size: 18,
-        fill: "#f4f1e9",
-        weight: 600,
-        anchor: "middle",
-      }),
-    )
-    .join("");
+  const batter = spot.batter ? clipText(spot.batter, 22) : "TBD";
+  const pitcher = spot.pitcher ? clipText(spot.pitcher, 22) : "TBD";
   return `
     ${panel(panelX, panelY, panelW, panelH, "#10281f")}
-    <line x1="${cx}" y1="${cy + arm}" x2="${cx - arm - 30}" y2="${cy - 20}" stroke="rgba(255,255,255,0.35)" stroke-width="3"/>
-    <line x1="${cx}" y1="${cy + arm}" x2="${cx + arm + 30}" y2="${cy - 20}" stroke="rgba(255,255,255,0.35)" stroke-width="3"/>
-    <line x1="${cx - arm}" y1="${cy}" x2="${cx}" y2="${cy - arm}" stroke="rgba(255,255,255,0.28)" stroke-width="3"/>
-    <line x1="${cx + arm}" y1="${cy}" x2="${cx}" y2="${cy - arm}" stroke="rgba(255,255,255,0.28)" stroke-width="3"/>
-    ${bag(spot.onSecond, cx, cy - arm)}
-    ${bag(spot.onThird, cx - arm, cy)}
-    ${bag(spot.onFirst, cx + arm, cy)}
-    <polygon points="${cx}, ${cy + arm + 18} ${cx - 16}, ${cy + arm} ${cx - 10}, ${cy + arm - 8} ${cx + 10}, ${cy + arm - 8} ${cx + 16}, ${cy + arm}" fill="#f4f1e9"/>
-    ${textEl(`${spot.balls}-${spot.strikes}`, panelX + 760, panelY + 108, { size: 48, family: "condensed", fill: "#ffffff", weight: 700 })}
-    ${textEl(outs, panelX + 760, panelY + 136, { size: 18, fill: "rgba(244,241,233,0.72)", weight: 600, spacing: 1.2 })}
-    ${people}
+    ${textEl("Batter", panelX + 80, panelY + 38, { size: 15, fill: "rgba(244,241,233,0.5)", weight: 700, anchor: "start" })}
+    ${textEl(batter, panelX + 80, panelY + 72, { size: 28, family: "condensed", fill: "#f4f1e9", weight: 700, anchor: "start" })}
+    ${textEl("Pitcher", panelX + panelW - 80, panelY + 38, { size: 15, fill: "rgba(244,241,233,0.5)", weight: 700, anchor: "end" })}
+    ${textEl(pitcher, panelX + panelW - 80, panelY + 72, { size: 28, family: "condensed", fill: "#f4f1e9", weight: 700, anchor: "end" })}
   `;
 }
 
@@ -595,18 +673,21 @@ export function renderHeatAlertSvg(card: HeatAlertCard): string {
   const homePaint = paintWinProbColor(card.home.color, card.home.alternateColor);
   let y = 70;
   const board = scoreboard(card, started);
-  y = 356;
+  y = board.height;
   const table = linescore(card, y);
   if (table.height) y += table.height + 14;
-  const sit = situationBar(card, y);
-  y += sit.height + 14;
+  const sit =
+    card.sport === "mlb" && card.live && card.diamond
+      ? { svg: "", height: 0 }
+      : situationBar(card, y);
+  if (sit.height) y += sit.height + 14;
   const footerTop = H - 52;
   const gap = 12;
   const mapX = M;
   const mapW = W - M * 2;
   const hasWp = (card.winProbability ?? []).length > 0;
   const statsAll = card.stats ?? [];
-  const mapWant = card.football ? 224 : card.ice ? 196 : card.diamond ? 210 : 128;
+  const mapWant = card.football ? 224 : card.ice ? 196 : card.diamond ? 108 : 128;
   const wpWant = hasWp ? 184 : 0;
   const statsHFor = (n: number) => (n > 0 ? 42 + n * 34 + 6 : 0);
   let rows = statsAll.length;
@@ -666,10 +747,10 @@ export function renderHeatAlertSvg(card: HeatAlertCard): string {
   <rect width="${W}" height="${H}" fill="#07101d"/>
   <rect width="${W / 2}" height="8" fill="${card.away.color}"/>
   <rect x="${W / 2}" width="${W / 2}" height="8" fill="${card.home.color}"/>
-  <rect width="${W}" height="360" fill="url(#awayWash)"/>
-  <rect width="${W}" height="360" fill="url(#homeWash)"/>
+  <rect width="${W}" height="${Math.max(360, board.height)}" fill="url(#awayWash)"/>
+  <rect width="${W}" height="${Math.max(360, board.height)}" fill="url(#homeWash)"/>
   ${header(card)}
-  ${board}
+  ${board.svg}
   ${table.svg}
   ${sit.svg}
   ${map}

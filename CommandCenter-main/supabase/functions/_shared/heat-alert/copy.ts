@@ -43,11 +43,12 @@ export function situationLine(card: HeatAlertCard): string {
     return (isBreakStatus(card.detail) ? card.detail : down).replace(/\s+/g, " ").trim();
   }
   if (card.diamond && card.live) {
-    const inning = (card.detail || "").replace(/\s+/g, " ").trim();
-    if (inning) return inning;
-    const spot = card.diamond;
-    const outs = `${spot.outs} out${spot.outs === 1 ? "" : "s"}`;
-    return `${spot.balls}-${spot.strikes}  ·  ${outs}`;
+    const people = [
+      card.diamond.batter ? `Batter  ${card.diamond.batter}` : "",
+      card.diamond.pitcher ? `Pitcher  ${card.diamond.pitcher}` : "",
+    ].filter(Boolean);
+    if (people.length) return people.join("   ·   ");
+    return "At bat";
   }
   if (card.final) return card.detail && !/^final$/i.test(card.detail) ? card.detail : "Final";
   if (card.live) return card.detail || "Live";

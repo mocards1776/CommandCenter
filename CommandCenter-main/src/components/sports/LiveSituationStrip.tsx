@@ -43,13 +43,17 @@ export default function LiveSituationStrip({
   game,
   linkPlayers = false,
   compact = false,
+  peopleOnly = false,
 }: {
   game: MlbScoreGame;
   linkPlayers?: boolean;
   compact?: boolean;
+  /** Hide diamond/count when the hero already owns that instrument. */
+  peopleOnly?: boolean;
 }) {
   const sit = game.situation;
   if (!sit) return null;
+  if (peopleOnly && !sit.batter && !sit.pitcher) return null;
 
   const person = (
     role: string,
@@ -89,24 +93,26 @@ export default function LiveSituationStrip({
         {person("Batter", sit.batter)}
         {person("Pitcher", sit.pitcher)}
       </div>
-      <div className="flex items-center gap-3">
-        <BaseDiamond
-          onFirst={sit.onFirst}
-          onSecond={sit.onSecond}
-          onThird={sit.onThird}
-          size={compact ? "sm" : "md"}
-        />
-        <div className="text-right">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">
-            {game.inning || "Live"}
-          </p>
-          <p className="numeral mt-0.5 text-[14px] text-cream">
-            {sit.balls}-{sit.strikes}
-            <span className="mx-1 text-white/30">·</span>
-            {sit.outs} out{sit.outs === 1 ? "" : "s"}
-          </p>
+      {peopleOnly ? null : (
+        <div className="flex items-center gap-3">
+          <BaseDiamond
+            onFirst={sit.onFirst}
+            onSecond={sit.onSecond}
+            onThird={sit.onThird}
+            size={compact ? "sm" : "md"}
+          />
+          <div className="text-right">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">
+              {game.inning || "Live"}
+            </p>
+            <p className="numeral mt-0.5 text-[14px] text-cream">
+              {sit.balls}-{sit.strikes}
+              <span className="mx-1 text-white/30">·</span>
+              {sit.outs} out{sit.outs === 1 ? "" : "s"}
+            </p>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -1261,7 +1261,7 @@ function RuwtCard({
 
       {game.live && game.situation ? (
         <div className="relative z-10 border-t border-white/[0.06] px-3 py-2.5">
-          <LiveSituationStrip game={game} compact />
+          <LiveSituationStrip game={game} compact peopleOnly />
         </div>
       ) : null}
 
