@@ -2,10 +2,12 @@
  * Run with: node --experimental-strip-types src/lib/newspaper-day-ahead.test.ts
  * from CommandCenter-main/. Sample events are made up.
  */
+import { buildEdition } from "./newspaper-sections.ts";
 import {
   clockLabel,
   countLine,
   durationLabel,
+  insertDayAhead,
   layoutDay,
   normalizeEvents,
   normalizeUpcoming,
@@ -120,5 +122,35 @@ const lines = upcomingLines([
 assert(lines.shown.map((e) => e.title).join() === "Sample all-day,Sample A,Sample B,Sample C", "all-day first, then by clock, four max");
 assert(lines.more === 2, "+2 more");
 assert(upcomingLines([ev("09:00", null, "Sample")]).more === 0, "no +more when it fits");
+
+// Slotting the page in: right before the viewing guide, in every edition.
+for (const press of ["2026-10-05-morning", "2026-10-05-midday", "2026-10-05-evening"]) {
+  const built = buildEdition({ stories: [], clubs: [], edition: press });
+  assert(insertDayAhead(built, null) === built, `${press}: no schedule, edition untouched`);
+  const watchAt = built.pages.findIndex((p) => p.kind === "favorites-watch");
+  const watch = built.pages[watchAt]!;
+  const withDay = insertDayAhead(built, {
+    date: scheduleDateFor(press)!,
+    events: [ev("09:00", "10:00", "Sample")],
+    upcoming: [{ date: "2026-10-06", events: [] }],
+  });
+  const a = withDay.pages.filter((p) => p.section === "A");
+  const day = withDay.pages[watchAt]!;
+  const guide = withDay.pages[watchAt + 1]!;
+  assert(day.kind === "favorites-day" && day.folio === watch.folio, `${press}: the day takes the guide's folio`);
+  assert(day.kind === "favorites-day" && day.upcoming.length === 1, `${press}: the page carries Coming Up`);
+  assert(guide.kind === "favorites-watch" && guide.folio === `A${watch.sectionPage + 1}`, `${press}: the guide moves back one`);
+  assert(a[a.length - 1]!.kind === "favorites-watch", `${press}: the guide stays last in Section A`);
+  assert(a.every((p) => p.sectionCount === a.length), `${press}: Section A counts the new page`);
+  assert(a.map((p) => p.folio).join() === a.map((_, i) => `A${i + 1}`).join(), `${press}: Section A folios run in order`);
+  assert(withDay.pages[0]!.folio === "A1" && withDay.pages[1]!.folio === "A2", `${press}: A1 and A2 never move`);
+  assert(withDay.sections[0]!.pages === built.sections[0]!.pages + 1, `${press}: section A grows by one`);
+  for (const s of withDay.sections.slice(1)) {
+    const before = built.sections.find((b) => b.code === s.code)!;
+    assert(s.index === before.index + 1, `${press}: ${s.code} shifts by one`);
+    assert(withDay.pages[s.index]!.folio === `${s.code}1`, `${press}: ${s.code} still opens on ${s.code}1`);
+  }
+  assert(withDay.pages.length === built.pages.length + 1, `${press}: exactly one page added`);
+}
 
 console.log("newspaper-day-ahead ok");
